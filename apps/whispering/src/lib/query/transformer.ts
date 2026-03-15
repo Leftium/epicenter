@@ -12,18 +12,35 @@ import {
 	type WhisperingResult,
 } from '$lib/result';
 import { services } from '$lib/services';
-import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
 import type {
 	TransformationRunCompleted,
 	TransformationRunFailed,
 	TransformationRunRunning,
 	} from '$lib/services/db';
-	import type { Transformation } from '$lib/state/workspace-transformations.svelte';
+import { deviceConfig } from '$lib/state/device-config.svelte';
+import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
 import type { TransformationStep } from '$lib/state/workspace-transformation-steps.svelte';
 import { workspaceTransformationSteps } from '$lib/state/workspace-transformation-steps.svelte';
-import { deviceConfig } from '$lib/state/device-config.svelte';
+	import type { Transformation } from '$lib/state/workspace-transformations.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { dbKeys } from './db';
+
+/**
+ * Config map for standard completion providers that share the same
+ * `{ apiKey, model, systemPrompt, userPrompt }` call signature.
+ * Custom is handled separately because it has per-step baseUrl logic.
+ */
+const STANDARD_PROVIDER_CONFIG = {
+	OpenAI: { service: services.completions.openai, apiKeyPath: 'apiKeys.openai', modelKey: 'openaiModel' },
+	Groq: { service: services.completions.groq, apiKeyPath: 'apiKeys.groq', modelKey: 'groqModel' },
+	Anthropic: { service: services.completions.anthropic, apiKeyPath: 'apiKeys.anthropic', modelKey: 'anthropicModel' },
+	Google: { service: services.completions.google, apiKeyPath: 'apiKeys.google', modelKey: 'googleModel' },
+	OpenRouter: { service: services.completions.openrouter, apiKeyPath: 'apiKeys.openrouter', modelKey: 'openrouterModel' },
+} as const satisfies Record<string, {
+	service: { complete: (opts: { apiKey: string; model: string; systemPrompt: string; userPrompt: string }) => Promise<Result<string, { message: string }>> };
+	apiKeyPath: Parameters<typeof deviceConfig.get>[0];
+	modelKey: keyof TransformationStep;
+}>;
 
 export const TransformError = defineErrors({
 	InvalidInput: ({ message }: { message: string }) => ({ message }),
@@ -181,126 +198,43 @@ async function handleStep({
 			const { inferenceProvider, systemPromptTemplate, userPromptTemplate } = step;
 			const systemPrompt = interpolateTemplate(
 				asTemplateString(systemPromptTemplate),
+				{ input },
 			);
 			const userPrompt = interpolateTemplate(
 				asTemplateString(userPromptTemplate),
 				{ input },
 			);
 
-			switch (inferenceProvider) {
-				case 'OpenAI': {
-					const { data: completionResponse, error: completionError } =
-						await services.completions.openai.complete({
-						apiKey: deviceConfig.get("apiKeys.openai"),
-							systemPrompt,
-							userPrompt,
-							model: step.openaiModel,
-						});
+			// Handle Custom separately—it has per-step baseUrl logic.
+			if (inferenceProvider === 'Custom') {
+				const model = step.customModel?.trim();
+				const stepBaseUrl = step.customBaseUrl?.trim();
+				const defaultBaseUrl = deviceConfig.get('completion.custom.baseUrl')?.trim();
+				const baseUrl = stepBaseUrl || defaultBaseUrl || '';
 
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completionResponse);
-				}
-
-				case 'Groq': {
-					const model = step.groqModel;
-					const { data: completionResponse, error: completionError } =
-						await services.completions.groq.complete({
-						apiKey: deviceConfig.get("apiKeys.groq"),
-							model,
-							systemPrompt,
-							userPrompt,
-						});
-
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completionResponse);
-				}
-
-				case 'Anthropic': {
-					const { data: completionResponse, error: completionError } =
-						await services.completions.anthropic.complete({
-						apiKey: deviceConfig.get("apiKeys.anthropic"),
-							model: step.anthropicModel,
-							systemPrompt,
-							userPrompt,
-						});
-
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completionResponse);
-				}
-
-				case 'Google': {
-					const { data: completion, error: completionError } =
-						await services.completions.google.complete({
-						apiKey: deviceConfig.get("apiKeys.google"),
-							model: step.googleModel,
-							systemPrompt,
-							userPrompt,
-						});
-
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completion);
-				}
-
-				case 'OpenRouter': {
-					const { data: completionResponse, error: completionError } =
-						await services.completions.openrouter.complete({
-						apiKey: deviceConfig.get("apiKeys.openrouter"),
-							model: step.openrouterModel,
-							systemPrompt,
-							userPrompt,
-						});
-
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completionResponse);
-				}
-
-				case 'Custom': {
-					const model = step.customModel?.trim();
-
-					// baseUrl is per-step because local LLM setups often have multiple endpoints
-					// (Ollama, LM Studio, llama.cpp) running on different ports
-					const stepBaseUrl = step.customBaseUrl?.trim();
-					// Fall back to global default from Settings → API Keys → Custom section
-					const defaultBaseUrl =
-						deviceConfig.get("completion.custom.baseUrl")?.trim();
-					// Use || so empty string falls back to next value (cleared field = use default)
-					const baseUrl = stepBaseUrl || defaultBaseUrl || '';
-
-					// API key is global because most local endpoints don't require auth
-					const { data: completionResponse, error: completionError } =
-						await services.completions.custom.complete({
-						apiKey: deviceConfig.get("apiKeys.custom"),
-							model,
-							baseUrl,
-							systemPrompt,
-							userPrompt,
-						});
-
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completionResponse);
-				}
-
-				default:
-					return Err(`Unsupported provider: ${inferenceProvider}`);
+				const { data, error } = await services.completions.custom.complete({
+					apiKey: deviceConfig.get('apiKeys.custom'),
+					model,
+					baseUrl,
+					systemPrompt,
+					userPrompt,
+				});
+				if (error) return Err(error.message);
+				return Ok(data);
 			}
+
+			// Standard providers all share the same call signature.
+			const config = STANDARD_PROVIDER_CONFIG[inferenceProvider];
+			if (!config) return Err(`Unsupported provider: ${inferenceProvider}`);
+
+			const { data, error } = await config.service.complete({
+				apiKey: deviceConfig.get(config.apiKeyPath),
+				model: step[config.modelKey] as string,
+				systemPrompt,
+				userPrompt,
+			});
+			if (error) return Err(error.message);
+			return Ok(data);
 		}
 
 		default:

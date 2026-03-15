@@ -92,6 +92,23 @@ type AuthPhase =
 	| { status: 'signed-in' }
 	| { status: 'signed-out'; error?: string };
 
+/**
+ * Custom session fields returned by the API's `customSession` plugin.
+ *
+ * The server derives a per-user encryption key via HKDF and attaches it
+ * to the getSession() response alongside the standard user/session data.
+ * These fields appear at the top level of the response—signIn/signUp
+ * responses don't include them.
+ *
+ * This type mirrors the server-side return shape (apps/api/src/app.ts)
+ * without importing the server's auth type, since the API and extension
+ * are separate build targets.
+ */
+type CustomSessionFields = {
+	encryptionKey: string;
+	keyVersion: number;
+};
+
 function createAuthState() {
 	let phase = $state<AuthPhase>({ status: 'checking' });
 	let email = $state('');
@@ -132,11 +149,8 @@ function createAuthState() {
 	async function refreshEncryptionKey() {
 		const { data } = await client.getSession();
 		if (data) {
-			const session = data.session as Record<string, unknown> | undefined;
-			encryptionKey =
-				typeof session?.encryptionKey === 'string'
-					? session.encryptionKey
-					: undefined;
+			const customData = data as typeof data & CustomSessionFields;
+			encryptionKey = customData.encryptionKey;
 		}
 	}
 
@@ -402,9 +416,8 @@ function createAuthState() {
 
 			const user = serializeDates(data.user);
 			await authUser.set(user);
-			// Extract per-user encryption key from customSession plugin
-			const session = data.session as Record<string, unknown> | undefined;
-			encryptionKey = typeof session?.encryptionKey === 'string' ? session.encryptionKey : undefined;
+			const customData = data as typeof data & CustomSessionFields;
+			encryptionKey = customData.encryptionKey;
 			phase = { status: 'signed-in' };
 			return Ok(user);
 		},

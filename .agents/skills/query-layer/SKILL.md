@@ -208,25 +208,20 @@ Use in Svelte components for automatic state management. Pass `.options` (a stat
 	import { rpc } from '$lib/query';
 
 	// Reactive query - wrap in accessor function, access .options (no parentheses)
-	const recordings = createQuery(() => rpc.db.recordings.getAll.options);
+	const recorderState = createQuery(() => rpc.recorder.getRecorderState.options);
 
 	// Reactive mutation - same pattern
-	const deleteRecording = createMutation(
-		() => rpc.db.recordings.delete.options,
+	const transformRecording = createMutation(
+		rpc.transformer.transformRecording.options,
 	);
 </script>
 
-{#if recordings.isPending}
+{#if recorderState.isPending}
 	<Spinner />
-{:else if recordings.error}
-	<Error message={recordings.error.description} />
+{:else if recorderState.error}
+	<Error message={recorderState.error.description} />
 {:else}
-	{#each recordings.data as recording}
-		<RecordingCard
-			{recording}
-			onDelete={() => deleteRecording.mutate(recording)}
-		/>
-	{/each}
+	<RecorderIndicator state={recorderState.data} />
 {/if}
 ```
 
@@ -236,15 +231,16 @@ Use in event handlers and workflows without reactive overhead:
 
 ```typescript
 // In an event handler or workflow
-async function handleBulkDelete(recordings: Recording[]) {
-	for (const recording of recordings) {
-		const { error } = await rpc.db.recordings.delete.execute(recording);
-		if (error) {
-			notify.error.execute(error);
-			return;
-		}
+async function handleTransform(recordingId: string, transformation: Transformation) {
+	const { error } = await rpc.transformer.transformRecording.execute({
+		recordingId,
+		transformation,
+	});
+	if (error) {
+		notify.error.execute(error);
+		return;
 	}
-	notify.success.execute({ title: 'All recordings deleted' });
+	notify.success.execute({ title: 'Transformation complete' });
 }
 
 // In a sequential workflow
@@ -399,7 +395,7 @@ All queries are bundled into a unified `rpc` namespace:
 ```typescript
 // query/index.ts
 export const rpc = {
-	db,
+	audio,
 	recorder,
 	transcription,
 	clipboard,
@@ -413,7 +409,7 @@ export const rpc = {
 import { rpc } from '$lib/query';
 
 // Reactive (in components)
-const query = createQuery(() => rpc.db.recordings.getAll.options);
+const query = createQuery(() => rpc.recorder.getRecorderState.options);
 
 // Imperative (in handlers/workflows)
 const { data, error } = await rpc.recorder.startRecording.execute({ toastId });

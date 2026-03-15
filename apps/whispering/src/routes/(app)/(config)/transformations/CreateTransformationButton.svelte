@@ -6,12 +6,11 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { rpc } from '$lib/query';
+	import { type TransformationStep } from '$lib/state/workspace-transformation-steps.svelte';
 	import {
-		workspaceTransformationSteps,
-		type TransformationStep,
-	} from '$lib/state/workspace-transformation-steps.svelte';
-	import { generateDefaultTransformation, workspaceTransformations } from '$lib/state/workspace-transformations.svelte';
-	import workspace from '$lib/workspace';
+		generateDefaultTransformation,
+		saveTransformationWithSteps,
+	} from '$lib/state/workspace-transformations.svelte';
 
 
 	let isModalOpen = $state(false);
@@ -30,19 +29,10 @@
 	}
 
 	function createTransformation() {
-		const snapshot = $state.snapshot(transformation);
-		const stepsSnapshot = $state.snapshot(steps);
-
-		workspace.batch(() => {
-			workspaceTransformations.set(snapshot);
-			for (const [order, step] of stepsSnapshot.entries()) {
-				workspaceTransformationSteps.set({
-					...step,
-					transformationId: snapshot.id,
-					order,
-				});
-			}
-		});
+		saveTransformationWithSteps(
+			$state.snapshot(transformation),
+			$state.snapshot(steps),
+		);
 
 		isModalOpen = false;
 		transformation = generateDefaultTransformation();

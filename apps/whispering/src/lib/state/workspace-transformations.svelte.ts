@@ -20,6 +20,7 @@
  */
 import { SvelteMap } from 'svelte/reactivity';
 import workspace from '$lib/workspace';
+import { workspaceTransformationSteps, type TransformationStep } from './workspace-transformation-steps.svelte';
 
 /** Transformation row type inferred from the workspace table schema. */
 export type Transformation = ReturnType<
@@ -128,4 +129,41 @@ export function generateDefaultTransformation(): Transformation {
 		updatedAt: now,
 		_v: 1,
 	};
+}
+
+/**
+ * Atomically save a transformation and its steps in a single workspace batch.
+ *
+ * Works for both create and update:
+ * - Sets `updatedAt` to now (harmless on create since it was already "now").
+ * - Deletes existing steps first (no-op on create since none exist yet),
+ *   then re-inserts with correct ordering.
+ *
+ * Callers should pass `$state.snapshot()` values—this function takes plain data.
+ *
+ * @example
+ * ```typescript
+ * const snap = $state.snapshot(transformation);
+ * const stepsSnap = $state.snapshot(steps);
+ * saveTransformationWithSteps(snap, stepsSnap);
+ * ```
+ */
+export function saveTransformationWithSteps(
+	transformation: Transformation,
+	steps: TransformationStep[],
+) {
+	workspace.batch(() => {
+		workspaceTransformations.set({
+			...transformation,
+			updatedAt: new Date().toISOString(),
+		});
+		workspaceTransformationSteps.deleteByTransformationId(transformation.id);
+		for (const [order, step] of steps.entries()) {
+			workspaceTransformationSteps.set({
+				...step,
+				transformationId: transformation.id,
+				order,
+			});
+		}
+	});
 }

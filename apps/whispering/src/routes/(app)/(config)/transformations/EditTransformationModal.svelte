@@ -10,9 +10,11 @@
 	import { Editor } from '$lib/components/transformations-editor';
 	import { rpc } from '$lib/query';
 	import { workspaceTransformationSteps } from '$lib/state/workspace-transformation-steps.svelte';
-	import type { Transformation } from '$lib/state/workspace-transformations.svelte';
-	import { workspaceTransformations } from '$lib/state/workspace-transformations.svelte';
-	import workspace from '$lib/workspace';
+	import {
+		saveTransformationWithSteps,
+		workspaceTransformations,
+		type Transformation,
+	} from '$lib/state/workspace-transformations.svelte';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
 
 	let {
@@ -66,26 +68,10 @@
 	}
 
 	function saveTransformation() {
-		const snapshot = $state.snapshot(workingCopy);
-		const stepsSnapshot = $state.snapshot(workingSteps);
-
-		workspace.batch(() => {
-			// Save transformation metadata
-			workspaceTransformations.set({
-				...snapshot,
-				updatedAt: new Date().toISOString(),
-			});
-
-			// Replace all steps: delete existing, then set new ones with correct order
-			workspaceTransformationSteps.deleteByTransformationId(snapshot.id);
-			for (const [order, step] of stepsSnapshot.entries()) {
-				workspaceTransformationSteps.set({
-					...step,
-					transformationId: snapshot.id,
-					order,
-				});
-			}
-		});
+		saveTransformationWithSteps(
+			$state.snapshot(workingCopy),
+			$state.snapshot(workingSteps),
+		);
 
 		rpc.notify.success({
 			title: 'Updated transformation!',

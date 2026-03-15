@@ -1354,10 +1354,35 @@ export type WorkspaceClient<
 	 */
 	batch(fn: () => void): void;
 
-	/** Promise resolving when all extensions are ready */
+	/**
+	 * Resolves when all extensions have finished initializing.
+	 *
+	 * This is a composite promise—it resolves when every extension's individual
+	 * `whenReady` has resolved. Use it as a render gate in UI frameworks to
+	 * avoid showing the app before data is loaded.
+	 *
+	 * @example
+	 * ```svelte
+	 * {#await client.whenReady}
+	 *   <Loading />
+	 * {:then}
+	 *   <App />
+	 * {/await}
+	 * ```
+	 */
 	whenReady: Promise<void>;
 
-	/** Cleanup all resources — data is preserved on disk */
+	/**
+	 * Release all resources—data is preserved on disk.
+	 *
+	 * Calls `dispose()` on every extension in LIFO order (last registered, first disposed).
+	 * Stops observers, closes database connections, disconnects sync providers.
+	 *
+	 * After calling, the client is unusable. For sign-out (wipe data + dispose),
+	 * use {@link signOut} instead.
+	 *
+	 * Safe to call multiple times (idempotent).
+	 */
 	dispose(): Promise<void>;
 
 	/**

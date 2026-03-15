@@ -2,14 +2,13 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Modal from '@epicenter/ui/modal';
 	import HistoryIcon from '@lucide/svelte/icons/history';
-	import { createQuery } from '@tanstack/svelte-query';
 	import { Runs } from '$lib/components/transformations-editor';
-	import { rpc } from '$lib/query';
+	import { workspaceTransformationRuns } from '$lib/state/workspace-transformation-runs.svelte';
 
 	let { recordingId }: { recordingId: string } = $props();
 
-	const transformationRunsByRecordingIdQuery = createQuery(
-		() => rpc.db.runs.getByRecordingId(() => recordingId).options,
+	const runs = $derived(
+		workspaceTransformationRuns.getByRecordingId(recordingId),
 	);
 
 	let isOpen = $state(false);
@@ -35,17 +34,7 @@
 				View all transformation runs for this recording
 			</Modal.Description>
 		</Modal.Header>
-		<div class="max-h-[60vh] overflow-y-auto">
-			{#if transformationRunsByRecordingIdQuery.isPending}
-				<div class="text-muted-foreground text-sm">Loading runs...</div>
-			{:else if transformationRunsByRecordingIdQuery.error}
-				<div class="text-destructive text-sm">
-					{transformationRunsByRecordingIdQuery.error.message}
-				</div>
-			{:else if transformationRunsByRecordingIdQuery.data}
-				<Runs runs={transformationRunsByRecordingIdQuery.data} />
-			{/if}
-		</div>
+		<div class="max-h-[60vh] overflow-y-auto"><Runs {runs} /></div>
 		<Modal.Footer>
 			<Button variant="outline" onclick={() => (isOpen = false)}>Close</Button>
 		</Modal.Footer>

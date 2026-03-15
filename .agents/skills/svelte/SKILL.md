@@ -370,3 +370,57 @@ When building interactive components (especially with dialogs/modals), create se
 - When you find yourself passing callbacks just to update parent state
 
 The key insight: It's perfectly fine to instantiate multiple dialogs (one per row) rather than managing a single shared dialog with complex state. Modern frameworks handle this efficiently, and the code clarity is worth it.
+
+# Referential Stability for Reactive Data Sources
+
+## The Problem: New Array = Infinite Loop with TanStack Table
+
+When feeding data from a reactive SvelteMap (or any signal-based store) into `createSvelteTable`, the `get data()` getter must return a **referentially stable** array. If it creates a new array on every access, TanStack Table's internal `$derived` enters an infinite loop:
+
+```
+1. $derived calls get data() → new array (Array.from().sort())
+2. TanStack Table sees "data changed" → updates internal $state (row model)
+3. $state mutation invalidates the $derived
+4. $derived re-runs → get data() → new array again (always new!)
+5. → infinite loop → page freeze
+```
+
+TanStack Query hid this problem because its cache returns the **same reference** until a refetch. SvelteMap getters that do `Array.from(map.values()).sort()` create a new array every call.
+
+## The Fix: Memoize with `$derived`
+
+In `.svelte.ts` modules, use `$derived` to compute the sorted/filtered array once per SvelteMap change:
+
+```typescript
+// ❌ BAD: New array on every access → infinite loop with TanStack Table
+get sorted(): Recording[] {
+    return Array.from(map.values()).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+}
+
+// ✅ GOOD: $derived caches the result, stable reference between SvelteMap changes
+const sorted = $derived(
+    Array.from(map.values()).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    ),
+);
+
+// Expose via getter (returns cached $derived value)
+get sorted(): Recording[] {
+    return sorted;
+}
+```
+
+## When This Matters
+
+The infinite loop only happens when the array is consumed by something that **tracks reference identity in a reactive context**:
+
+- `createSvelteTable({ get data() { ... } })` — **DANGEROUS** (infinite loop)
+- `$derived(someStore.sorted)` where the result feeds back into state — **DANGEROUS**
+- `{#each someStore.sorted as item}` in a template — **SAFE** (Svelte's each block diffs by value, renders once per change)
+- `$derived(someStore.get(id))` — **SAFE** (returns existing object reference from SvelteMap.get())
+
+## Rule of Thumb
+
+If a `.svelte.ts` state module has a computed getter that returns an array/object, and that getter could be consumed by TanStack Table or a `$derived` chain that feeds into `$state`, **always memoize with `$derived`**. The cost is near-zero (one extra signal), and it prevents a class of bugs that's invisible in development until the page freezes.

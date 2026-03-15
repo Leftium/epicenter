@@ -5,7 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
-import { defineMutation, queryClient } from '$lib/query/client';
+import { defineMutation } from '$lib/query/client';
 import {
 	WhisperingErr,
 	type WhisperingError,
@@ -23,7 +23,6 @@ import type { TransformationStep } from '$lib/state/workspace-transformation-ste
 import { workspaceTransformationSteps } from '$lib/state/workspace-transformation-steps.svelte';
 	import type { Transformation } from '$lib/state/workspace-transformations.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
-import { dbKeys } from './db';
 
 /**
  * Config map for standard completion providers that share the same
@@ -107,13 +106,6 @@ export const transformer = {
 
 			const transformationOutputResult = await getTransformationOutput();
 
-			queryClient.invalidateQueries({
-				queryKey: dbKeys.runs.byTransformationId(transformation.id),
-			});
-			queryClient.invalidateQueries({
-				queryKey: dbKeys.transformations.byId(transformation.id),
-			});
-
 			return transformationOutputResult;
 		},
 	}),
@@ -155,16 +147,6 @@ export const transformer = {
 					title: '⚠️ Transformation failed',
 					serviceError: transformationRunError,
 				});
-
-			queryClient.invalidateQueries({
-				queryKey: dbKeys.runs.byRecordingId(recordingId),
-			});
-			queryClient.invalidateQueries({
-				queryKey: dbKeys.runs.byTransformationId(transformation.id),
-			});
-			queryClient.invalidateQueries({
-				queryKey: dbKeys.transformations.byId(transformation.id),
-			});
 
 			return Ok(transformationRun);
 		},

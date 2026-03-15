@@ -1204,7 +1204,7 @@ export type ExtensionContext<
 		TAwarenessDefinitions,
 		TExtensions
 	>,
-	'dispose' | 'teardown' | typeof Symbol.asyncDispose
+	'dispose' | 'clearLocalData' | 'teardown' | typeof Symbol.asyncDispose
 >;
 
 /**
@@ -1403,38 +1403,48 @@ export type WorkspaceClient<
 	 * Calls `dispose()` on every extension in LIFO order (last registered, first disposed).
 	 * Stops observers, closes database connections, disconnects sync providers.
 	 *
-	 * After calling, the client is unusable. For a hard wipe (data + dispose),
-	 * use {@link teardown} instead.
+	 * After calling, the client is unusable. For wiping data without killing
+	 * the client, use {@link clearLocalData}. For a full teardown (wipe + dispose),
+	 * use {@link teardown}.
 	 *
 	 * Safe to call multiple times (idempotent).
 	 */
 	dispose(): Promise<void>;
 
 	/**
-	 * Hard teardown — lock encryption, wipe local data, then dispose.
+	 * Wipe all persisted data and lock encryption. Client stays alive.
 	 *
-	 * This is the "log out" operation (vs `dispose()` which is "close").
-	 * Follows the Bitwarden/1Password model:
-	 * - `lock()` = clear key, keep data (soft lock)
-	 * - `dispose()` = release resources, keep data (normal cleanup)
-	 * - `teardown()` = clear key + wipe data + release resources (hard logout)
-	 *
-	 * After calling `teardown()`, the client is unusable (same as `dispose()`).
-	 * Next sign-in should create a fresh workspace and re-sync from the server.
+	 * This is the sign-out operation for singleton workspace clients that
+	 * can't be disposed and recreated. Wipes IndexedDB (and any other
+	 * extension persistence) so no data remains on disk, then locks to
+	 * block writes. The client remains reusable—next sign-in can call
+	 * `unlock()` and the workspace re-syncs from the server.
 	 *
 	 * Steps:
 	 * 1. `lock()` — clear encryption key, block writes
 	 * 2. `clearData()` on every extension that supports it (LIFO order)
-	 * 3. `dispose()` — release all resources
+	 *
+	 * For a full teardown (wipe + dispose + kill client), use {@link teardown}.
 	 *
 	 * @example
 	 * ```typescript
-	 * async function handleSignOut() {
-	 *   await authClient.signOut();
-	 *   await workspaceClient.teardown();
-	 *   // Client is now unusable — redirect to login
+	 * // In encryption wiring, on sign-out:
+	 * if (authState.status === 'signing-out') {
+	 *   await workspaceClient.clearLocalData();
 	 * }
 	 * ```
+	 */
+	clearLocalData(): Promise<void>;
+
+	/**
+	 * Hard teardown — wipe local data, then dispose. Client is dead after this.
+	 *
+	 * Equivalent to `clearLocalData()` followed by `dispose()`. Use for app
+	 * shutdown, tests, or explicit "delete everything" flows that will reload
+	 * the page.
+	 *
+	 * For sign-out flows where the client must survive, use
+	 * {@link clearLocalData} instead.
 	 */
 	teardown(): Promise<void>;
 

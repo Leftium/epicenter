@@ -310,16 +310,19 @@ export function createWorkspace<
 			},
 			whenReady,
 			dispose,
-			async teardown(): Promise<void> {
+			async clearLocalData(): Promise<void> {
 				client.lock();
 				// LIFO clearData on extensions that support it
 				for (let i = state.clearDataCallbacks.length - 1; i >= 0; i--) {
 					try {
 						await state.clearDataCallbacks[i]?.();
 					} catch (err) {
-						console.error('Extension clearData error during teardown:', err);
+						console.error('Extension clearData error:', err);
 					}
 				}
+			},
+			async teardown(): Promise<void> {
+				await client.clearLocalData();
 				await dispose();
 			},
 			[Symbol.asyncDispose]: dispose,

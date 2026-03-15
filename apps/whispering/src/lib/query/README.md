@@ -1068,10 +1068,10 @@ Use workspace state for data, RPC for everything else:
 ```svelte
 <script>
 	import { rpc } from '$lib/query';
-	import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
+	import { recordings } from '$lib/state/recordings.svelte';
 
 	// Domain data — workspace state (reactive, no queries needed)
-	const latestRecording = $derived(workspaceRecordings.sorted[0]);
+	const latestRecording = $derived(recordings.sorted[0]);
 
 	// Audio blob — still needs TanStack Query
 	const audioUrl = createQuery(() => ({
@@ -1098,7 +1098,7 @@ This keeps everything organized and testable while giving you a unified way to a
 
 ## Query Layer vs State
 
-After migrating recordings, transformations, and transformation runs to Yjs workspace state modules (`$lib/state/workspace-*.svelte.ts`), the query layer's role has narrowed. Workspace state modules now handle all CRUD operations for domain data—TanStack Query is reserved for things that don't fit in CRDTs.
+After migrating recordings, transformations, and transformation runs to Yjs workspace state modules (`$lib/state/*.svelte.ts`), the query layer's role has narrowed. Workspace state modules now handle all CRUD operations for domain data—TanStack Query is reserved for things that don't fit in CRDTs.
 
 The query layer follows the **stale-while-revalidate** pattern: data is cached and refreshed in the background. For **live reactive state** that must update immediately (like hardware state or user preferences), use `$lib/state/` instead.
 
@@ -1114,7 +1114,7 @@ The query layer follows the **stale-while-revalidate** pattern: data is cached a
 - External APIs (transcription, LLM completions) → Query layer (`rpc.transcription.*`, `rpc.transformer.*`)
 - Hardware state (recorder, microphone devices) → Query layer (`rpc.recorder.*`)
 - Audio blob access (too large for Yjs CRDTs) → Query layer (`rpc.audio.getPlaybackUrl`)
-- Recordings, transformations, transformation runs → Workspace state (`workspaceRecordings`, `workspaceTransformations`, etc.)
+- Recordings, transformations, transformation runs → Workspace state (`recordings`, `transformations`, etc.)
 - User settings → State (`settings.value`)
 - VAD hardware state → State (`vadRecorder.state`)
 

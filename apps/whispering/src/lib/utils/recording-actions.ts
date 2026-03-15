@@ -35,14 +35,14 @@ export const recordingActions = {
 	 * Workspace deletes are synchronous fire-and-forget (Yjs write). Audio URLs are
 	 * revoked before delete to prevent memory leaks.
 	 *
-	 * @param recordings - Single recording or array of recordings to delete
+	 * @param toDelete - Single recording or array of recordings to delete
 	 * @param options.onSuccess - Called after successful deletion (e.g., close a modal)
 	 */
 	deleteWithConfirmation(
-		recordings: Recording | Recording[],
+		toDelete: Recording | Recording[],
 		options?: { onSuccess?: () => void },
 	) {
-		const arr = Array.isArray(recordings) ? recordings : [recordings];
+		const arr = Array.isArray(toDelete) ? toDelete : [toDelete];
 		const isSingle = arr.length === 1;
 		const noun = isSingle ? 'recording' : 'recordings';
 

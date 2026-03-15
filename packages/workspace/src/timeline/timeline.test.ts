@@ -11,9 +11,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTimeline, readEntry } from './timeline.js';
-import { restoreFromSnapshot } from './restore.js';
-import type { DocumentHandle } from '../workspace/types.js';
+import { createTimeline, readEntry, restoreFromSnapshot } from './timeline.js';
 
 function setup() {
 	return createTimeline(new Y.Doc());
@@ -117,52 +115,10 @@ describe('createTimeline - sheet entries', () => {
 	});
 });
 
-/**
- * Build a minimal DocumentHandle from a Y.Doc for testing.
- * Mirrors the essential behavior of makeHandle in create-document.ts.
- */
-function createTestHandle(ydoc: Y.Doc): DocumentHandle {
-	const tl = createTimeline(ydoc);
-	return {
-		ydoc,
-		get mode() {
-			return tl.currentMode;
-		},
-		read() {
-			return tl.readAsString();
-		},
-		write(text: string) {
-			if (tl.currentMode === 'text') {
-				const ytext = tl.currentEntry?.get('content') as Y.Text;
-				ydoc.transact(() => {
-					ytext.delete(0, ytext.length);
-					ytext.insert(0, text);
-				});
-			} else {
-				ydoc.transact(() => tl.pushText(text));
-			}
-		},
-		asText() {
-			throw new Error('Not implemented in test handle');
-		},
-		asRichText() {
-			throw new Error('Not implemented in test handle');
-		},
-		asSheet() {
-			throw new Error('Not implemented in test handle');
-		},
-		timeline: tl,
-		batch(fn: () => void) {
-			ydoc.transact(fn);
-		},
-		exports: {},
-	};
-}
-
 /** Create a snapshot binary from a Y.Doc with content set up by the callback. */
-function createSnapshotBinary(setup: (tl: ReturnType<typeof createTimeline>) => void): Uint8Array {
+function createSnapshotBinary(fn: (tl: ReturnType<typeof createTimeline>) => void): Uint8Array {
 	const doc = new Y.Doc({ gc: false });
-	setup(createTimeline(doc));
+	fn(createTimeline(doc));
 	const binary = Y.encodeStateAsUpdateV2(doc);
 	doc.destroy();
 	return binary;
@@ -170,79 +126,73 @@ function createSnapshotBinary(setup: (tl: ReturnType<typeof createTimeline>) => 
 
 describe('restoreFromSnapshot', () => {
 	test('text → text (same mode): content matches, timeline length unchanged', () => {
-		const liveDoc = new Y.Doc({ gc: false });
-		const handle = createTestHandle(liveDoc);
-		handle.timeline.pushText('original content');
-		expect(handle.timeline.length).toBe(1);
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.pushText('original content');
+		expect(tl.length).toBe(1);
 
-		const binary = createSnapshotBinary((tl) => tl.pushText('restored content'));
-		restoreFromSnapshot(handle, binary);
+		restoreFromSnapshot(doc, createSnapshotBinary((s) => s.pushText('restored content')));
 
-		expect(handle.read()).toBe('restored content');
-		expect(handle.timeline.length).toBe(1);
-		expect(handle.mode).toBe('text');
-		liveDoc.destroy();
+		expect(tl.readAsString()).toBe('restored content');
+		expect(tl.length).toBe(1);
+		expect(tl.currentMode).toBe('text');
+		doc.destroy();
 	});
 
 	test('text → sheet (different mode): new entry pushed, content matches', () => {
-		const liveDoc = new Y.Doc({ gc: false });
-		const handle = createTestHandle(liveDoc);
-		handle.timeline.pushSheet();
-		expect(handle.timeline.length).toBe(1);
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.pushSheet();
+		expect(tl.length).toBe(1);
 
-		const binary = createSnapshotBinary((tl) => tl.pushText('snapshot text'));
-		restoreFromSnapshot(handle, binary);
+		restoreFromSnapshot(doc, createSnapshotBinary((s) => s.pushText('snapshot text')));
 
-		expect(handle.read()).toBe('snapshot text');
-		expect(handle.mode).toBe('text');
-		expect(handle.timeline.length).toBe(2);
-		liveDoc.destroy();
+		expect(tl.readAsString()).toBe('snapshot text');
+		expect(tl.currentMode).toBe('text');
+		expect(tl.length).toBe(2);
+		doc.destroy();
 	});
 
 	test('sheet snapshot: restores sheet entry with columns and rows', () => {
-		const liveDoc = new Y.Doc({ gc: false });
-		const handle = createTestHandle(liveDoc);
-		handle.timeline.pushText('some text');
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.pushText('some text');
 
 		const csv = 'Name,Age\nAlice,30\nBob,25\n';
-		const binary = createSnapshotBinary((tl) => tl.pushSheetFromCsv(csv));
-		restoreFromSnapshot(handle, binary);
+		restoreFromSnapshot(doc, createSnapshotBinary((s) => s.pushSheetFromCsv(csv)));
 
-		expect(handle.mode).toBe('sheet');
-		expect(handle.read()).toBe(csv);
+		expect(tl.currentMode).toBe('sheet');
+		expect(tl.readAsString()).toBe(csv);
 
-		const entry = readEntry(handle.timeline.currentEntry);
+		const entry = readEntry(tl.currentEntry);
 		expect(entry.mode).toBe('sheet');
 		if (entry.mode === 'sheet') {
 			expect(entry.columns.size).toBe(2);
 			expect(entry.rows.size).toBe(2);
 		}
-		liveDoc.destroy();
+		doc.destroy();
 	});
 
 	test('empty snapshot: no-op, no crash', () => {
-		const liveDoc = new Y.Doc({ gc: false });
-		const handle = createTestHandle(liveDoc);
-		handle.timeline.pushText('should stay');
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.pushText('should stay');
 
-		const binary = createSnapshotBinary(() => {});
-		restoreFromSnapshot(handle, binary);
+		restoreFromSnapshot(doc, createSnapshotBinary(() => {}));
 
-		expect(handle.read()).toBe('should stay');
-		expect(handle.timeline.length).toBe(1);
-		liveDoc.destroy();
+		expect(tl.readAsString()).toBe('should stay');
+		expect(tl.length).toBe(1);
+		doc.destroy();
 	});
 
-	test('temp doc is destroyed even on corrupted binary', () => {
-		const liveDoc = new Y.Doc({ gc: false });
-		const handle = createTestHandle(liveDoc);
-		handle.timeline.pushText('original');
+	test('corrupted binary throws but does not corrupt live doc', () => {
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.pushText('original');
 
-		// Corrupted binary should throw but not hang
-		expect(() => restoreFromSnapshot(handle, new Uint8Array([1, 2, 3]))).toThrow();
+		expect(() => restoreFromSnapshot(doc, new Uint8Array([1, 2, 3]))).toThrow();
 
-		// Live doc should be unchanged
-		expect(handle.read()).toBe('original');
-		liveDoc.destroy();
+		expect(tl.readAsString()).toBe('original');
+		doc.destroy();
 	});
 });

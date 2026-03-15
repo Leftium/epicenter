@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import type { ContentMode } from './entries.js';
-import { xmlFragmentToPlaintext } from './richtext.js';
+import { populateFragmentFromText, xmlFragmentToPlaintext } from './richtext.js';
 import { parseSheetFromCsv, serializeSheetToCsv } from './sheet.js';
 
 type TimelineEntry = Y.Map<unknown>;
@@ -157,4 +157,81 @@ export function readEntry(entry: Y.Map<unknown> | undefined): ValidatedEntry {
 	}
 
 	return { mode: 'empty' };
+}
+
+/**
+ * Restore a document's content to match a past snapshot.
+ *
+ * Creates a temporary Y.Doc from the snapshot binary, reads its timeline entry,
+ * and writes matching content to the live Y.Doc's timeline. Mode-aware: text
+ * snapshots replace in-place (if the live doc is already text) or push a new
+ * entry; sheet and richtext always push new entries.
+ *
+ * Richtext is flattened to plaintext—formatting is not preserved. See
+ * `populateFragmentFromText` for the conversion.
+ *
+ * The caller is responsible for saving a safety snapshot before calling this.
+ *
+ * @param ydoc - The live document's Y.Doc (must have `gc: false`)
+ * @param snapshotBinary - Full snapshot state as `Uint8Array` from `Y.encodeStateAsUpdateV2`
+ *
+ * @example
+ * ```typescript
+ * // 1. Save safety snapshot via API
+ * await api.saveSnapshot(docId, 'Before restore');
+ *
+ * // 2. Fetch snapshot binary
+ * const binary = await api.getSnapshot(docId, snapshotId);
+ *
+ * // 3. Restore
+ * restoreFromSnapshot(handle.ydoc, binary);
+ * ```
+ */
+export function restoreFromSnapshot(
+	ydoc: Y.Doc,
+	snapshotBinary: Uint8Array,
+): void {
+	const tempDoc = new Y.Doc({ gc: false });
+	try {
+		Y.applyUpdateV2(tempDoc, snapshotBinary);
+
+		const snapshotTl = createTimeline(tempDoc);
+		const entry = readEntry(snapshotTl.currentEntry);
+
+		const liveTl = createTimeline(ydoc);
+
+		switch (entry.mode) {
+			case 'text': {
+				const text = entry.content.toString();
+				if (liveTl.currentMode === 'text') {
+					const ytext = liveTl.currentEntry!.get('content') as Y.Text;
+					ydoc.transact(() => {
+						ytext.delete(0, ytext.length);
+						ytext.insert(0, text);
+					});
+				} else {
+					ydoc.transact(() => liveTl.pushText(text));
+				}
+				break;
+			}
+			case 'sheet': {
+				const csv = serializeSheetToCsv(entry.columns, entry.rows);
+				ydoc.transact(() => liveTl.pushSheetFromCsv(csv));
+				break;
+			}
+			case 'richtext': {
+				const plaintext = xmlFragmentToPlaintext(entry.content);
+				ydoc.transact(() => {
+					const rtEntry = liveTl.pushRichtext();
+					const fragment = rtEntry.get('content') as Y.XmlFragment;
+					populateFragmentFromText(fragment, plaintext);
+				});
+				break;
+			}
+			case 'empty':
+				break;
+		}
+	} finally {
+		tempDoc.destroy();
+	}
 }

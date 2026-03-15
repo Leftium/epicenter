@@ -13,6 +13,7 @@ export {
 export {
 	createTimeline,
 	readEntry,
+	restoreFromSnapshot,
 	type Timeline,
 	type ValidatedEntry,
 } from './timeline.js';
@@ -21,4 +22,3 @@ export {
 	populateFragmentFromText,
 	type SheetBinding,
 } from './richtext.js';
-export { restoreFromSnapshot } from './restore.js';

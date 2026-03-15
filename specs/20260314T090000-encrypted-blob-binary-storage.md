@@ -1,7 +1,7 @@
 # EncryptedBlob: Binary Storage via Yjs writeAny
 
 **Date**: 2026-03-14
-**Status**: Draft
+**Status**: Implemented & Superseded by `specs/20260314T230000-bare-uint8array-encrypted-blob.md`
 **Author**: AI-assisted
 
 > **Note (2026-03-14)**: The `{ v: 1, ct: Uint8Array }` object wrapper has been replaced with a bare `Uint8Array` with a self-describing binary header (`blob[0]` = format version, `blob[1]` = key version). See `specs/20260314T230000-bare-uint8array-encrypted-blob.md`.
@@ -257,3 +257,16 @@ Current guard checks `Object.keys(value).length === 2 && v === 1 && ct instanceo
 | `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` | Uses `encryptValue`/`decryptValue`/`isEncryptedBlob` via imports. The `EncryptedBlob \| T` union type widens automatically. No code changes. |
 | `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww.ts` | Unaware of encryption. Stores whatever value type it receives. |
 | `apps/api/src/app.ts` | Uses `bytesToBase64` for key transport over JSON—separate concern, no change |
+
+ ## Review
+
+**Completed**: 2026-03-14
+
+### Summary
+
+All phases implemented: `EncryptedBlob.ct` changed from base64 string to raw `Uint8Array`, base64 removed from the encrypt/decrypt hot path, `isEncryptedBlob` simplified to check `ct instanceof Uint8Array`. Subsequently superseded by `specs/20260314T230000-bare-uint8array-encrypted-blob.md`, which removed the `{ v: 1, ct }` object wrapper entirely in favor of a bare `Uint8Array` with a self-describing binary header. The algorithm was also changed from AES-256-GCM to XChaCha20-Poly1305 during the same session.
+
+### Deviations from Spec
+
+- **No version bump**: Spec proposed `v: 2` but the design decision table already said no. Implementation kept `v: 1`.
+- **Superseded same day**: The bare-uint8array spec went further and removed the object wrapper entirely, making this spec's format (`{ v: 1, ct: Uint8Array }`) an intermediate step that never shipped to users.

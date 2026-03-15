@@ -1,7 +1,7 @@
 # Encryption Hygiene — Lifecycle Rename, Sign-Out Wipe, Type Safety, Documentation
 
 **Date**: 2026-03-14
-**Status**: Approved
+**Status**: Implemented
 
 ## Problem
 
@@ -48,66 +48,66 @@ No `destroy` anywhere in the API vocabulary.
 All changes are pure renames — no behavior changes.
 
 **Core types and implementation:**
-- [ ] `packages/workspace/src/workspace/lifecycle.ts` — `destroy` → `dispose` in type + JSDoc + `defineExtension()`
-- [ ] `packages/workspace/src/workspace/types.ts` — all `destroy` refs in `Extension`, `ExtensionFactory`, `DocumentExtensionRegistration`, `WorkspaceClient`, `WorkspaceClientBuilder`
-- [ ] `packages/workspace/src/workspace/create-workspace.ts` — `destroyLifo` → `disposeLifo`, internal var names, method implementations
-- [ ] `packages/workspace/src/workspace/create-document.ts` — internal destroy refs
-- [ ] `packages/workspace/src/workspace/index.ts` — re-exports if any
+- [x] `packages/workspace/src/workspace/lifecycle.ts` — `destroy` → `dispose` in type + JSDoc + `defineExtension()`
+- [x] `packages/workspace/src/workspace/types.ts` — all `destroy` refs in `Extension`, `ExtensionFactory`, `DocumentExtensionRegistration`, `WorkspaceClient`, `WorkspaceClientBuilder`
+- [x] `packages/workspace/src/workspace/create-workspace.ts` — `destroyLifo` → `disposeLifo`, internal var names, method implementations
+- [x] `packages/workspace/src/workspace/create-document.ts` — internal destroy refs
+- [x] `packages/workspace/src/workspace/index.ts` — re-exports if any
 
 **Extensions:**
-- [ ] `packages/workspace/src/extensions/sync/web.ts` — `destroy:` → `dispose:`
-- [ ] `packages/workspace/src/extensions/sync/desktop.ts` — `destroy()` → `dispose()` in return objects
-- [ ] `packages/workspace/src/extensions/sync/broadcast-channel.ts` — `destroy()` → `dispose()`
-- [ ] `packages/workspace/src/extensions/sync.ts` — `destroy()` → `dispose()`
+- [x] `packages/workspace/src/extensions/sync/web.ts` — `destroy:` → `dispose:`
+- [x] `packages/workspace/src/extensions/sync/desktop.ts` — `destroy()` → `dispose()` in return objects
+- [x] `packages/workspace/src/extensions/sync/broadcast-channel.ts` — `destroy()` → `dispose()`
+- [x] `packages/workspace/src/extensions/sync.ts` — `destroy()` → `dispose()`
 
 **Sync client:**
-- [ ] `packages/sync-client/src/types.ts` — `destroy` → `dispose` on `SyncProvider`
-- [ ] `packages/sync-client/src/provider.ts` — `destroy()` → `dispose()` method
+- [x] `packages/sync-client/src/types.ts` — `destroy` → `dispose` on `SyncProvider`
+- [x] `packages/sync-client/src/provider.ts` — `destroy()` → `dispose()` method
 
 **Apps (consumers):**
-- [ ] `apps/tab-manager/src/lib/state/chat-state.svelte.ts`
-- [ ] `apps/tab-manager/src/lib/state/saved-tab-state.svelte.ts`
-- [ ] `apps/tab-manager-markdown/src/markdown-persistence-extension.ts`
-- [ ] `apps/tab-manager-markdown/src/index.ts`
-- [ ] `apps/opensidian/src/lib/fs/fs-state.svelte.ts`
-- [ ] `apps/whispering/src/lib/state/vad-recorder.svelte.ts`
-- [ ] `apps/whispering/src/routes/transform-clipboard/transformClipboardWindow.tauri.ts`
-- [ ] `apps/honeycrisp/src/lib/workspace.ts`
-- [ ] `apps/api/worker-configuration.d.ts` (if referencing our destroy)
+- [x] `apps/tab-manager/src/lib/state/chat-state.svelte.ts`
+- [x] `apps/tab-manager/src/lib/state/saved-tab-state.svelte.ts`
+- [x] `apps/tab-manager-markdown/src/markdown-persistence-extension.ts`
+- [x] `apps/tab-manager-markdown/src/index.ts`
+- [x] `apps/opensidian/src/lib/fs/fs-state.svelte.ts`
+- [x] `apps/whispering/src/lib/state/vad-recorder.svelte.ts`
+- [x] `apps/whispering/src/routes/transform-clipboard/transformClipboardWindow.tauri.ts`
+- [x] `apps/honeycrisp/src/lib/workspace.ts`
+- [x] `apps/api/worker-configuration.d.ts` (if referencing our destroy)
 
 **.svelte files:**
-- [ ] `apps/opensidian/src/lib/components/ContentEditor.svelte`
-- [ ] `apps/whispering/src/lib/components/TransformationPickerBody.svelte`
-- [ ] `apps/honeycrisp/src/lib/components/Editor.svelte`
-- [ ] `apps/fuji/src/lib/components/EntryEditor.svelte`
+- [x] `apps/opensidian/src/lib/components/ContentEditor.svelte`
+- [x] `apps/whispering/src/lib/components/TransformationPickerBody.svelte`
+- [x] `apps/honeycrisp/src/lib/components/Editor.svelte`
+- [x] `apps/fuji/src/lib/components/EntryEditor.svelte`
 
 **Tests:**
-- [ ] `packages/workspace/src/workspace/create-workspace.test.ts`
-- [ ] `packages/workspace/src/workspace/create-document.test.ts`
-- [ ] `packages/workspace/src/workspace/define-workspace.test.ts`
-- [ ] `packages/workspace/src/workspace/benchmark.test.ts`
-- [ ] `packages/workspace/src/extensions/sync.test.ts`
-- [ ] `packages/sync-client/src/provider.test.ts`
+- [x] `packages/workspace/src/workspace/create-workspace.test.ts`
+- [x] `packages/workspace/src/workspace/create-document.test.ts`
+- [x] `packages/workspace/src/workspace/define-workspace.test.ts`
+- [x] `packages/workspace/src/workspace/benchmark.test.ts`
+- [x] `packages/workspace/src/extensions/sync.test.ts`
+- [x] `packages/sync-client/src/provider.test.ts`
 
 **Scripts:**
-- [ ] `packages/workspace/scripts/stress-test-static.ts`
-- [ ] `packages/workspace/scripts/reddit-import-test.ts`
+- [x] `packages/workspace/scripts/stress-test-static.ts`
+- [x] `packages/workspace/scripts/reddit-import-test.ts`
 
 **Docs (only where referencing our API, not general prose):**
-- [ ] Docs referencing `destroy()` as our API method — update to `dispose()`
+- [x] Docs referencing `destroy()` as our API method — update to `dispose()`
 
 ### Wave 2: Add `clearData` to Lifecycle + `clearLocalData()` to WorkspaceClient
 
-- [ ] Add optional `clearData` to `Lifecycle` type in `lifecycle.ts`
-- [ ] Update `defineExtension()` to pass through `clearData` if present
-- [ ] Update `Extension<T>` type to include optional `clearData`
-- [ ] Add `clearLocalData()` to `WorkspaceClient` in `create-workspace.ts`:
+- [x] Add optional `clearData` to `Lifecycle` type in `lifecycle.ts`
+- [x] Update `defineExtension()` to pass through `clearData` if present
+- [x] Update `Extension<T>` type to include optional `clearData`
+- [x] Add `clearLocalData()` to `WorkspaceClient` in `create-workspace.ts`:
   - Calls `lock()`
   - Iterates extensions in LIFO order, calls `clearData()` on those that have it
   - Does NOT call `dispose()` — client stays alive for next sign-in
-- [ ] Update `WorkspaceClient` type in `types.ts` to include `clearLocalData()`
-- [ ] Add test for `clearLocalData()` — verify mode is locked, clearData called, client still usable
-- [ ] Add `clearData` to desktop persistence (`desktop.ts`) — delete SQLite file
+- [x] Update `WorkspaceClient` type in `types.ts` to include `clearLocalData()`
+- [x] Add test for `clearLocalData()` — verify mode is locked, clearData called, client still usable
+- [x] Add `clearData` to desktop persistence (`desktop.ts`) — delete SQLite file
 
 ### Wave 3: Fix Auth Type Safety
 
@@ -175,3 +175,16 @@ Full list in Wave 1 checklist above.
 - KeyCache clearing in `clearLocalData()` — interface not yet implemented
 - Renaming `ydoc.destroy()` — that's Yjs's API, not ours
 - Docs that use "destroy" in general prose (not our API) — left as-is
+
+## Review
+
+**Completed**: 2026-03-14
+
+### Summary
+
+Renamed all `destroy` → `dispose` across the lifecycle API (~29 TS files, ~4 Svelte files). Added `clearData` to the `Lifecycle` protocol and `clearLocalData()` to `WorkspaceClient` for Bitwarden-model sign-out (lock + wipe persisted data, client stays alive). Fixed auth type safety by defining a shared session type for `encryptionKey`. Documented encryption behaviors (plaintext→encrypted migration, fire-and-forget gap, lock vs clearLocalData semantics).
+
+### Deviations from Spec
+
+- **Remaining `.destroy()` calls are all third-party APIs** (Yjs `ydoc.destroy()`, IndexedDB Persistence `idb.destroy()`, TipTap/editor `ed.destroy()`). These are explicitly excluded by the spec's "Deliberately Excluded" section.
+- **`clearDataCallbacks` array pattern** — `create-workspace.ts` collects `clearData` callbacks into a flat array with LIFO iteration, rather than iterating extensions directly. Equivalent behavior, cleaner implementation.

@@ -1,7 +1,7 @@
 # Bare Uint8Array Encrypted Blob Format
 
 **Date**: 2026-03-14
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
 
 ## Overview
@@ -187,42 +187,42 @@ truncated blobs fail decrypt and get quarantined |
 
 ### Phase 1: Core Type and Crypto Changes
 
-- [ ] **1.1** Change `EncryptedBlob` type from `{ v: 1; ct: Uint8Array }` to `Uint8Array` in `packages/workspace/src/shared/crypto/index.ts`
-- [ ] **1.2** Update `encryptValue()` to return a bare `Uint8Array` with format version at byte 0:
+- [x] **1.1** Change `EncryptedBlob` type from `{ v: 1; ct: Uint8Array }` to `Uint8Array` in `packages/workspace/src/shared/crypto/index.ts`
+- [x] **1.2** Update `encryptValue()` to return a bare `Uint8Array` with format version at byte 0:
   - `packed[0] = 1` (format version)
   - `packed[1] = keyVersion`
   - `packed.set(nonce, 2)`
   - `packed.set(ciphertext, 2 + NONCE_LENGTH)`
-- [ ] **1.3** Update `decryptValue()` to read format version from byte 0, key version from byte 1, nonce from bytes 2-25, ciphertext from byte 26+
-- [ ] **1.4** Update `getKeyVersion()` to read from `blob[1]` instead of `blob.ct[0]`
-- [ ] **1.5** Add `getFormatVersion()` function: `return blob[0]`
-- [ ] **1.6** Rewrite `isEncryptedBlob()`:
+- [x] **1.3** Update `decryptValue()` to read format version from byte 0, key version from byte 1, nonce from bytes 2-25, ciphertext from byte 26+
+- [x] **1.4** Update `getKeyVersion()` to read from `blob[1]` instead of `blob.ct[0]`
+- [x] **1.5** Add `getFormatVersion()` function: `return blob[0]`
+- [x] **1.6** Rewrite `isEncryptedBlob()`:
   ```typescript
   function isEncryptedBlob(value: unknown): value is EncryptedBlob {
     return value instanceof Uint8Array && value[0] === 1;
   }
   ```
-- [ ] **1.7** Update all JSDoc on EncryptedBlob, encryptValue, decryptValue, isEncryptedBlob, getKeyVersion with new binary layout documentation
-- [ ] **1.8** Update module-level JSDoc encryption flow diagram
+- [x] **1.7** Update all JSDoc on EncryptedBlob, encryptValue, decryptValue, isEncryptedBlob, getKeyVersion with new binary layout documentation
+- [x] **1.8** Update module-level JSDoc encryption flow diagram
 
 ### Phase 2: Encrypted KV Wrapper Updates
 
-- [ ] **2.1** Update `y-keyvalue-lww-encrypted.ts` — the `maybeDecrypt` function uses `isEncryptedBlob(value)` which will now check for Uint8Array instead of object shape. Verify this works with no call-site changes needed.
-- [ ] **2.2** Update any type annotations that reference the old `EncryptedBlob` shape (e.g., `EncryptedBlob | T` in generics)
-- [ ] **2.3** Verify the observer and quarantine logic still works with Uint8Array values
+- [x] **2.1** Update `y-keyvalue-lww-encrypted.ts` — the `maybeDecrypt` function uses `isEncryptedBlob(value)` which will now check for Uint8Array instead of object shape. Verify this works with no call-site changes needed.
+- [x] **2.2** Update any type annotations that reference the old `EncryptedBlob` shape (e.g., `EncryptedBlob | T` in generics)
+- [x] **2.3** Verify the observer and quarantine logic still works with Uint8Array values
 
 ### Phase 3: Test Updates
 
-- [ ] **3.1** Update `crypto.test.ts` — all tests that construct or assert on `{ v: 1, ct }` must change to bare Uint8Array
-- [ ] **3.2** Update `isEncryptedBlob` test cases — object-based tests become Uint8Array-based tests
-- [ ] **3.3** Update `y-keyvalue-lww-encrypted.test.ts` — any assertions on inner CRDT values that check for `{ v, ct }` shape
-- [ ] **3.4** Run full test suite: `bun test` in `packages/workspace` — all tests must pass
+- [x] **3.1** Update `crypto.test.ts` — all tests that construct or assert on `{ v: 1, ct }` must change to bare Uint8Array
+- [x] **3.2** Update `isEncryptedBlob` test cases — object-based tests become Uint8Array-based tests
+- [x] **3.3** Update `y-keyvalue-lww-encrypted.test.ts` — any assertions on inner CRDT values that check for `{ v, ct }` shape
+- [x] **3.4** Run full test suite: `bun test` in `packages/workspace` — all tests must pass
 
 ### Phase 4: Documentation
 
-- [ ] **4.1** Update encryption skill (`.agents/skills/encryption/SKILL.md`) with bare Uint8Array format
-- [ ] **4.2** Update HKDF key derivation spec if it references the old blob format
-- [ ] **4.3** Verify no other specs reference `{ v: 1, ct }` pattern
+- [x] **4.1** Update encryption skill (`.agents/skills/encryption/SKILL.md`) with bare Uint8Array format
+- [x] **4.2** Update HKDF key derivation spec if it references the old blob format
+- [x] **4.3** Verify no other specs reference `{ v: 1, ct }` pattern
 
 ## Edge Cases
 
@@ -240,30 +240,26 @@ A more robust approach would check `ct[0] >= 1` in `isEncryptedBlob` and handle 
 
 User values stored in plaintext mode are always JS objects (from schema definitions). They are never Uint8Arrays. If this invariant ever changes (e.g., a table stores raw binary data), the detection logic would need to be updated. This should be documented as a constraint in the encrypted wrapper's JSDoc.
 
-## Open Questions
+## Open Questions (Resolved)
 
 1. **Should `isEncryptedBlob` check `ct[0] === 1` (exact version) or `ct[0] >= 1` (any known version)?**
-   - `=== 1`: Safest---unknown versions fall through to plaintext handling
-   - `>= 1`: More forward-compatible---unknown versions are recognized as encrypted and can produce better error messages
-   - **Recommendation**: Use `ct[0] >= 1` with explicit version validation inside `decryptValue`. This way `isEncryptedBlob` identifies "this is encrypted data" and `decryptValue` handles "but I don't know this version" with a clear error.
+   - **Resolved**: Exact check (`=== 1`). Implementation uses `value instanceof Uint8Array && value[0] === 1`. Unknown format versions fall through to plaintext handling and get quarantined by the encrypted wrapper's error containment.
 
 2. **Should `EncryptedBlob` be a branded type or plain `Uint8Array`?**
-   - Branded: `type EncryptedBlob = Uint8Array & { readonly __brand: 'EncryptedBlob' }` prevents accidental assignment
-   - Plain: `type EncryptedBlob = Uint8Array` is simpler but loses type safety
-   - **Recommendation**: Plain `Uint8Array` with `isEncryptedBlob` as the runtime guard. The brand adds ceremony without practical safety gains since all construction goes through `encryptValue`.
+   - **Resolved**: Branded. `type EncryptedBlob = Uint8Array & Brand<'EncryptedBlob'>`. Contrary to the original recommendation, the brand was adopted using the codebase's existing `Brand<T>` utility. All construction goes through `encryptValue` which casts `as EncryptedBlob`, so the brand adds type safety at call sites without ceremony at construction sites.
 
 ## Success Criteria
 
-- [ ] `EncryptedBlob` type is `Uint8Array` (no object wrapper)
-- [ ] `isEncryptedBlob` detects bare Uint8Array with format version check
-- [ ] `encryptValue` returns a bare Uint8Array with format version at byte 0, key version at byte 1
-- [ ] `decryptValue` reads format version from byte 0, key version from byte 1, nonce from bytes 2-25
-- [ ] `getKeyVersion` reads from `blob[1]`
-- [ ] All 485+ tests pass in `packages/workspace`
-- [ ] No TypeScript errors (lsp_diagnostics clean on all changed files)
-- [ ] Binary layout documented in JSDoc with byte offsets
-- [ ] Encryption skill updated with new format
-- [ ] No remaining references to `{ v: 1, ct }` pattern in source code
+- [x] `EncryptedBlob` type is `Uint8Array` (no object wrapper) — branded via `Uint8Array & Brand<'EncryptedBlob'>`
+- [x] `isEncryptedBlob` detects bare Uint8Array with format version check (`instanceof Uint8Array && value[0] === 1`)
+- [x] `encryptValue` returns a bare Uint8Array with format version at byte 0, key version at byte 1
+- [x] `decryptValue` reads format version from byte 0, key version from byte 1, nonce from bytes 2-25
+- [x] `getKeyVersion` reads from `blob[1]`
+- [x] All 485+ tests pass in `packages/workspace`
+- [x] No TypeScript errors (lsp_diagnostics clean on all changed files)
+- [x] Binary layout documented in JSDoc with byte offsets
+- [x] Encryption skill updated with new format
+- [x] No remaining references to `{ v: 1, ct }` pattern in source code
 
 ## References
 
@@ -273,3 +269,17 @@ User values stored in plaintext mode are always JS objects (from schema definiti
 - `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.test.ts` — Integration tests for encrypted wrapper
 - `.agents/skills/encryption/SKILL.md` — Encryption skill documentation
 - `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md` — HKDF spec (may reference old blob format)
+
+## Review
+
+**Completed**: 2026-03-14
+
+### Summary
+
+Replaced the `{ v: 1, ct: Uint8Array }` object wrapper with a bare `Uint8Array` stored directly in the CRDT. Format version lives at byte 0, key version at byte 1, followed by the 24-byte nonce and XChaCha20-Poly1305 ciphertext. `isEncryptedBlob` is now a simple `instanceof Uint8Array && value[0] === 1` check. Saves ~9 bytes per blob in Yjs encoding overhead.
+
+### Deviations from Spec
+
+- **Branded type chosen**: Spec recommended plain `Uint8Array`, but implementation uses `Uint8Array & Brand<'EncryptedBlob'>` for type safety at call sites.
+- **Exact version check chosen**: Spec recommended `ct[0] >= 1` for forward compatibility, but implementation uses exact `=== 1` check. Unknown format versions fall through to plaintext handling and get quarantined.
+- **Algorithm changed**: During implementation, the cipher was changed from AES-256-GCM (12-byte nonce) to XChaCha20-Poly1305 (24-byte nonce). This changed the binary layout offsets: nonce is bytes 2–25 (24 bytes) instead of the 12 bytes that AES-GCM would use.

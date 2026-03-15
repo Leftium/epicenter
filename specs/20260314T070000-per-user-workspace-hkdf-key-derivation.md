@@ -1,7 +1,7 @@
 # Per-User-Workspace HKDF Key Derivation
 
 **Date**: 2026-03-14
-**Status**: Draft
+**Status**: Implemented
 **Revision**: Simplified — two-level HKDF with user key in session, no separate endpoint
 **Replaces**: `specs/20260314T064000-per-workspace-envelope-encryption.md`
 **Depends on**: `specs/20260314T063000-encryption-wrapper-hardening.md` (mode system, AAD, error containment)

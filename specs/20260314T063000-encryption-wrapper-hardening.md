@@ -6,6 +6,7 @@
 **Blocks**: `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md` (key derivation depends on hardening being in place)
 
 > **Note (2026-03-14)**: The `{ v: 1, ct: Uint8Array }` object wrapper referenced below has been replaced with a bare `Uint8Array` with self-describing binary header. See `specs/20260314T230000-bare-uint8array-encrypted-blob.md`.
+> **Note (2026-03-14)**: References to AES-256-GCM and `gcm(key, nonce, aad)` below reflect the cipher used at the time of writing. The codebase now uses **XChaCha20-Poly1305** (`xchacha20poly1305(key, nonce, aad)`), which also supports AAD. All AAD concepts described here still apply.
 
 ## Overview
 

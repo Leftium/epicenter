@@ -757,16 +757,16 @@ transcribeRecording: defineMutation({
       });
     }
 
-    workspaceRecordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
+    recordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
     const { data: transcribedText, error: transcribeError } =
       await transcribeBlob(audioBlob);
 
     if (transcribeError) {
-      workspaceRecordings.update(recording.id, { transcriptionStatus: 'FAILED' });
+      recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
       return Err(transcribeError);
     }
 
-    workspaceRecordings.update(recording.id, {
+    recordings.update(recording.id, {
       transcribedText,
       transcriptionStatus: 'DONE',
     });

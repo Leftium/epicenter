@@ -13,7 +13,6 @@
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
 	import * as Modal from '@epicenter/ui/modal';
-	import { Skeleton } from '@epicenter/ui/skeleton';
 	import * as Table from '@epicenter/ui/table';
 	import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
 	import { Textarea } from '@epicenter/ui/textarea';
@@ -27,7 +26,7 @@
 	import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { createMutation } from '@tanstack/svelte-query';
 	import {
 		createTable as createSvelteTable,
 		FlexRender,
@@ -52,7 +51,7 @@
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
-	import type { Recording } from '$lib/services/db';
+	import { workspaceRecordings, type Recording } from '$lib/state/workspace-recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { recordingActions } from '$lib/utils/recording-actions';
 	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
@@ -78,9 +77,6 @@
 		};
 	}
 
-	const getAllRecordingsQuery = createQuery(
-		() => rpc.db.recordings.getAll.options,
-	);
 	const transcribeRecordings = createMutation(
 		() => rpc.transcription.transcribeRecordings.options,
 	);
@@ -288,7 +284,7 @@
 	const table = createSvelteTable({
 		getRowId: (originalRow) => originalRow.id,
 		get data() {
-			return getAllRecordingsQuery.data ?? [];
+			return workspaceRecordings.sorted;
 		},
 		columns,
 		getCoreRowModel: getCoreRowModel(),
@@ -465,12 +461,12 @@
 						{#if transcribeRecordings.isPending}
 							<EllipsisIcon class="size-4" />
 						{:else if selectedRecordingRows.some(({ id }) => {
-							const currentRow = getAllRecordingsQuery.data?.find((r) => r.id === id);
+							const currentRow = workspaceRecordings.get(id);
 							return currentRow?.transcriptionStatus === 'TRANSCRIBING';
 						})}
 							<LoadingTranscriptionIcon class="size-4" />
 						{:else if selectedRecordingRows.some(({ id }) => {
-							const currentRow = getAllRecordingsQuery.data?.find((r) => r.id === id);
+							const currentRow = workspaceRecordings.get(id);
 							return currentRow?.transcriptionStatus === 'DONE';
 						})}
 							<RetryTranscriptionIcon class="size-4" />
@@ -602,16 +598,7 @@
 					{/each}
 				</Table.Header>
 				<Table.Body>
-					{#if getAllRecordingsQuery.isPending}
-						{#each { length: 5 } as _}
-							<Table.Row>
-								<Table.Cell> <Skeleton class="size-4" /> </Table.Cell>
-								<Table.Cell colspan={columns.length - 1}>
-									<Skeleton class="h-4 w-full" />
-								</Table.Cell>
-							</Table.Row>
-						{/each}
-					{:else if table.getRowModel().rows?.length}
+					{#if table.getRowModel().rows?.length}
 						{#each table.getRowModel().rows as row (row.id)}
 							<Table.Row>
 								{#each row.getVisibleCells() as cell}

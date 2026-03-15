@@ -13,11 +13,12 @@
 	import RepeatIcon from '@lucide/svelte/icons/repeat';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { createMutation } from '@tanstack/svelte-query';
 	import { nanoid } from 'nanoid/non-secure';
 	import { rpc } from '$lib/query';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { recordingActions } from '$lib/utils/recording-actions';
+	import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import EditRecordingModal from './EditRecordingModal.svelte';
 	import TransformationPicker from './TransformationPicker.svelte';
@@ -37,11 +38,7 @@
 		() => rpc.db.runs.getLatestByRecordingId(() => recordingId).options,
 	);
 
-	const recordingQuery = createQuery(
-		() => rpc.db.recordings.getById(() => recordingId).options,
-	);
-
-	const recording = $derived(recordingQuery.data);
+	const recording = $derived(workspaceRecordings.get(recordingId));
 </script>
 
 <div class="flex items-center gap-1">

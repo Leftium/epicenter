@@ -39,16 +39,13 @@
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	const getRecorderStateQuery = createQuery(
 		() => rpc.recorder.getRecorderState.options,
 	);
-	const latestRecordingQuery = createQuery(
-		() => rpc.db.recordings.getLatest.options,
-	);
-
-	const latestRecording = $derived(latestRecordingQuery.data);
+	const latestRecording = $derived(workspaceRecordings.sorted[0]);
 
 	const audioPlaybackUrlQuery = createQuery(() => ({
 		...rpc.db.recordings.getAudioPlaybackUrl(() => latestRecording?.id ?? '')

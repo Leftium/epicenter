@@ -240,9 +240,11 @@ export const workspaceRecordings = createWorkspaceRecordings();
 
 ### Phase 2: Switch component reads from TanStack Query to reactive state
 
-- [ ] **2.1** Find all imports of `db.recordings.getAll` / `db.recordings.getById` / `db.recordings.getLatest` and replace with `workspaceRecordings.all` / `.get(id)` / `.sorted[0]`
-- [ ] **2.2** Find all imports of `db.transformations.getAll` / `db.transformations.getById` and replace with `workspaceTransformations`
-- [ ] **2.3** Update the recordings data table to read from `workspaceRecordings.sorted` instead of the TanStack Query
+- [x] **2.1** Find all imports of `db.recordings.getAll` / `db.recordings.getById` / `db.recordings.getLatest` and replace with `workspaceRecordings.all` / `.get(id)` / `.sorted[0]`
+  > Switched: recordings/+page.svelte, RecordingRowActions.svelte, home +page.svelte
+- [x] **2.2** Find all imports of `db.transformations.getAll` / `db.transformations.getById` and replace with `workspaceTransformations`
+  > Switched: transformations/+page.svelte, TransformationSelector.svelte. Deferred TransformationRowActions and TransformationPickerBody (depend on `.steps` restructuring in Phase 3).
+- [x] **2.3** Update the recordings data table to read from `workspaceRecordings.sorted` instead of the TanStack Query
 
 ### Phase 3: Switch component writes from TanStack mutations to direct workspace writes
 

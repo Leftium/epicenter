@@ -8,13 +8,11 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Input } from '@epicenter/ui/input';
-	import { Skeleton } from '@epicenter/ui/skeleton';
 	import * as Table from '@epicenter/ui/table';
 	import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
-	import { createQuery } from '@tanstack/svelte-query';
 	import {
 		createTable as createSvelteTable,
 		FlexRender,
@@ -36,15 +34,12 @@
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
-	import { type Transformation } from '$lib/services/db';
+	import { workspaceTransformations, type Transformation } from '$lib/state/workspace-transformations.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import CreateTransformationButton from './CreateTransformationButton.svelte';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
 	import TransformationRowActions from './TransformationRowActions.svelte';
 
-	const transformationsQuery = createQuery(
-		() => rpc.db.transformations.getAll.options,
-	);
 
 	const columns: ColumnDef<Transformation>[] = [
 		{
@@ -127,7 +122,7 @@
 	const table = createSvelteTable({
 		getRowId: (originalRow) => originalRow.id,
 		get data() {
-			return transformationsQuery.data ?? [];
+			return workspaceTransformations.sorted;
 		},
 		columns,
 		getCoreRowModel: getCoreRowModel(),
@@ -278,16 +273,7 @@
 				{/each}
 			</Table.Header>
 			<Table.Body>
-				{#if transformationsQuery.isPending}
-					{#each { length: 5 } as _}
-						<Table.Row>
-							<Table.Cell> <Skeleton class="size-4" /> </Table.Cell>
-							<Table.Cell colspan={columns.length - 1}>
-								<Skeleton class="h-4 w-full" />
-							</Table.Cell>
-						</Table.Row>
-					{/each}
-				{:else if table.getRowModel().rows?.length}
+				{#if table.getRowModel().rows?.length}
 					{#each table.getRowModel().rows as row (row.id)}
 						<Table.Row
 							style="view-transition-name: {viewTransition.transformation(

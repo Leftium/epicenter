@@ -9,18 +9,13 @@
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import WandIcon from '@lucide/svelte/icons/wand';
-	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/db';
+	import { workspaceTransformations, type Transformation } from '$lib/state/workspace-transformations.svelte';
 	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
-	const transformationsQuery = createQuery(
-		() => rpc.db.transformations.getAll.options,
-	);
-
-	const transformations = $derived(transformationsQuery.data ?? []);
+	const transformations = $derived(workspaceTransformations.sorted);
 
 	let {
 		class: className,

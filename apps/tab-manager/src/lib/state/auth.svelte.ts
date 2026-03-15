@@ -94,6 +94,8 @@ type AuthPhase =
 	| { status: 'signed-out'; error?: string };
 
 function createAuthState() {
+	// ─── State ───
+
 	let phase = $state<AuthPhase>({ status: 'checking' });
 	let email = $state('');
 	let password = $state('');
@@ -118,34 +120,9 @@ function createAuthState() {
 		}),
 	);
 
-	async function clearState() {
-		await Promise.all([authToken.set(undefined), authUser.set(undefined)]);
-	}
-
-	/**
-	 * Fetch the session to extract the encryption key.
-	 *
-	 * Better Auth's signIn/signUp responses don't include customSession
-	 * fields—only getSession() returns them. Awaited after successful
-	 * sign-in so the encryption wiring unlocks before the caller's
-	 * post-sign-in code runs. No timing gap.
-	 *
-	 * Network errors are swallowed via `.catch()` because getSession()
-	 * can throw on DNS/connectivity failures (better-fetch doesn't wrap
-	 * the raw `fetch()` call). Non-fatal—workspace stays in plaintext
-	 * mode until the next checkSession() on visibility change.
-	 */
-	async function refreshEncryptionKey() {
-		// .catch(→ null) swallows network errors; { data: null } covers HTTP errors
-		const result = await client.getSession().catch(() => null);
-		if (result?.data) {
-			const customData = result.data as typeof result.data & CustomSessionFields;
-			encryptionKey = customData.encryptionKey;
-		}
-	}
-
-	// Listeners notified when an *external* context signs in (e.g. another sidepanel).
 	const externalSignInListeners = new Set<() => void>();
+
+	// ─── Effects ───
 
 	$effect.root(() => {
 		// Token cleared externally (e.g. sign-out in another extension context).
@@ -170,6 +147,51 @@ function createAuthState() {
 			}
 		});
 	});
+
+	// ─── Helpers (private) ───
+
+	/**
+	 * Typed wrapper around `client.getSession()` that includes custom session fields.
+	 *
+	 * Better Auth's client doesn't know about customSession fields without
+	 * `customSessionClient<typeof auth>()` (which requires the server type).
+	 * This wrapper centralizes the single type assertion so callers get
+	 * typed access to `encryptionKey` and `keyVersion` without casting.
+	 */
+	async function getSession() {
+		const { data, error } = await client.getSession();
+		const customData = data
+			? (data as typeof data & CustomSessionFields)
+			: null;
+		return { data: customData, error };
+	}
+
+	async function clearState() {
+		await Promise.all([authToken.set(undefined), authUser.set(undefined)]);
+	}
+
+	/**
+	 * Fetch the session to extract the encryption key.
+	 *
+	 * Better Auth's signIn/signUp responses don't include customSession
+	 * fields—only getSession() returns them. Awaited after successful
+	 * sign-in so the encryption wiring unlocks before the caller's
+	 * post-sign-in code runs. No timing gap.
+	 *
+	 * Network errors are swallowed via `.catch()` because getSession()
+	 * can throw on DNS/connectivity failures (better-fetch doesn't wrap
+	 * the raw `fetch()` call). Non-fatal—workspace stays in plaintext
+	 * mode until the next checkSession() on visibility change.
+	 */
+	async function refreshEncryptionKey() {
+		// .catch(→ null) swallows network errors; { data: null } covers HTTP errors
+		const result = await getSession().catch(() => null);
+		if (result?.data) {
+			encryptionKey = result.data.encryptionKey;
+		}
+	}
+
+	// ─── Public API ───
 
 	return {
 		get status() {
@@ -379,7 +401,7 @@ function createAuthState() {
 				return Ok(null);
 			}
 
-			const { data, error: sessionError } = await client.getSession();
+			const { data, error: sessionError } = await getSession();
 
 			if (sessionError) {
 				const isAuthRejection =
@@ -406,8 +428,7 @@ function createAuthState() {
 
 			const user = serializeDates(data.user);
 			await authUser.set(user);
-			const customData = data as typeof data & CustomSessionFields;
-			encryptionKey = customData.encryptionKey;
+			encryptionKey = data.encryptionKey;
 			phase = { status: 'signed-in' };
 			return Ok(user);
 		},

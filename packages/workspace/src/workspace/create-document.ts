@@ -42,12 +42,7 @@
  */
 
 import * as Y from 'yjs';
-import { createTimeline, readEntry } from '../timeline/timeline.js';
-import { serializeSheetToCsv } from '../timeline/sheet.js';
-import {
-	xmlFragmentToPlaintext,
-	populateFragmentFromText,
-} from '../timeline/richtext.js';
+import { createTimeline } from '../timeline/timeline.js';
 import {
 	defineExtension,
 	type Extension,
@@ -95,97 +90,18 @@ type DocEntry = {
 };
 
 /**
- * Create a lightweight handle wrapping an open Y.Doc and its resolved extensions.
+ * Create a handle from a Y.Doc and its resolved extensions.
  *
- * Handles are cheap (8 properties). The Y.Doc underneath is the expensive
- * shared resource. Calling `open()` twice returns fresh handles backed
- * by the same cached Y.Doc.
- *
- * Timeline-backed content methods are exposed directly on the handle.
+ * The handle IS the timeline with `exports` stapled on.
+ * `Object.assign` preserves Timeline's getters since it mutates
+ * the target (the fresh Timeline object) rather than spreading.
  */
 function makeHandle(
 	ydoc: Y.Doc,
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Extension<any>>,
 ): DocumentHandle {
-	const tl = createTimeline(ydoc);
-
-	return {
-		ydoc,
-		get mode() {
-			return tl.currentMode;
-		},
-		read() {
-			return tl.readAsString();
-		},
-		write(text: string) {
-			ydoc.transact(() => tl.replaceCurrentText(text));
-		},
-		asText() {
-			const validated = readEntry(tl.currentEntry);
-			switch (validated.mode) {
-				case 'text':
-					return validated.content;
-				case 'empty':
-					return ydoc.transact(() => tl.pushText('')).content;
-				case 'richtext': {
-					const plaintext = xmlFragmentToPlaintext(validated.content);
-					return ydoc.transact(() => tl.pushText(plaintext)).content;
-				}
-				case 'sheet': {
-					const csv = serializeSheetToCsv(validated.columns, validated.rows);
-					return ydoc.transact(() => tl.pushText(csv)).content;
-				}
-			}
-		},
-		asRichText() {
-			const validated = readEntry(tl.currentEntry);
-			switch (validated.mode) {
-				case 'richtext':
-					return validated.content;
-				case 'empty':
-					return ydoc.transact(() => tl.pushRichtext()).content;
-				case 'text': {
-					const plaintext = validated.content.toString();
-					return ydoc.transact(() => {
-						const { content } = tl.pushRichtext();
-						populateFragmentFromText(content, plaintext);
-						return { content };
-					}).content;
-				}
-				case 'sheet': {
-					const csv = serializeSheetToCsv(validated.columns, validated.rows);
-					return ydoc.transact(() => {
-						const { content } = tl.pushRichtext();
-						populateFragmentFromText(content, csv);
-						return { content };
-					}).content;
-				}
-			}
-		},
-		asSheet() {
-			const validated = readEntry(tl.currentEntry);
-			switch (validated.mode) {
-				case 'sheet':
-					return { columns: validated.columns, rows: validated.rows };
-				case 'empty':
-					return ydoc.transact(() => tl.pushSheet());
-				case 'text': {
-					const plaintext = validated.content.toString();
-					return ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
-				}
-				case 'richtext': {
-					const plaintext = xmlFragmentToPlaintext(validated.content);
-					return ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
-				}
-			}
-		},
-		timeline: tl,
-		batch(fn: () => void) {
-			ydoc.transact(fn);
-		},
-		exports: extensions,
-	};
+	return Object.assign(createTimeline(ydoc), { exports: extensions });
 }
 
 /**

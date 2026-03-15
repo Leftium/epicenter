@@ -5,18 +5,27 @@ import type {
 	SheetEntry,
 	TextEntry,
 } from './entries.js';
-import { xmlFragmentToPlaintext } from './richtext.js';
+import {
+	populateFragmentFromText,
+	type SheetBinding,
+	xmlFragmentToPlaintext,
+} from './richtext.js';
 import { parseSheetFromCsv, serializeSheetToCsv } from './sheet.js';
 
 type TimelineYMap = Y.Map<unknown>;
 
 export type Timeline = {
+	/** The Y.Doc this timeline is bound to. */
+	readonly ydoc: Y.Doc;
 	/** Number of entries in the timeline. */
 	readonly length: number;
 	/** The most recent entry, or undefined if empty. O(1). */
 	readonly currentEntry: TimelineYMap | undefined;
 	/** Content mode of the current entry, or undefined if empty. */
 	readonly currentMode: ContentMode | undefined;
+
+	// ── Low-level push (no transact, for batching) ──────────────────────
+
 	/** Append a new text entry. Returns all atomically-set fields. */
 	pushText(content: string): TextEntry;
 	/** Append a new empty sheet entry. Returns all atomically-set fields. */
@@ -27,11 +36,8 @@ export type Timeline = {
 	pushSheetFromCsv(csv: string): SheetEntry;
 	/**
 	 * Replace the current text content in-place, or push a new text entry
-	 * if the current mode is not text.
-	 *
-	 * This is the canonical "write text" operation that `DocumentHandle.write()`
-	 * delegates to. Callers are responsible for wrapping in `ydoc.transact()`
-	 * if batching is desired.
+	 * if the current mode is not text. Does NOT wrap in `ydoc.transact()`—
+	 * callers batch this via `batch()` or explicit transact.
 	 */
 	replaceCurrentText(content: string): void;
 	/**
@@ -43,8 +49,48 @@ export type Timeline = {
 	 * formatting must survive the move between Y.Doc instances.
 	 */
 	pushRichtextFromFragment(source: Y.XmlFragment): RichTextEntry;
+
+	// ── Content access (mode-aware, transact-wrapped) ───────────────────
+
 	/** Read the current entry as a string. Returns '' if empty. */
+	read(): string;
+	/** Read the current entry as a string. Alias for `read()`. */
 	readAsString(): string;
+	/**
+	 * Replace text content, wrapped in a single transaction.
+	 * If current mode is text, replaces in-place. Otherwise pushes new text entry.
+	 */
+	write(text: string): void;
+
+	/**
+	 * Get current content as Y.Text for editor binding.
+	 *
+	 * If already text mode, returns the existing Y.Text. If the timeline is
+	 * empty, creates a new text entry. If the current entry is a different mode,
+	 * converts the content and pushes a new text entry.
+	 *
+	 * All conversions always succeed. Richtext→text is lossy (strips formatting).
+	 */
+	asText(): Y.Text;
+
+	/**
+	 * Get current content as Y.XmlFragment for richtext editor binding.
+	 *
+	 * If already richtext mode, returns the existing Y.XmlFragment. If empty,
+	 * creates a new richtext entry. If different mode, converts and pushes.
+	 */
+	asRichText(): Y.XmlFragment;
+
+	/**
+	 * Get current content as sheet columns/rows for spreadsheet binding.
+	 *
+	 * If already sheet mode, returns existing columns and rows. If empty,
+	 * creates a new sheet entry. If different mode, converts (parsed as CSV).
+	 */
+	asSheet(): SheetBinding;
+
+	/** Batch mutations into a single Yjs transaction. */
+	batch(fn: () => void): void;
 };
 
 export type ValidatedEntry =
@@ -77,6 +123,9 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	}
 
 	return {
+		get ydoc() {
+			return ydoc;
+		},
 		get length() {
 			return timeline.length;
 		},
@@ -86,6 +135,8 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		get currentMode() {
 			return currentMode();
 		},
+
+		// ── Low-level push ────────────────────────────────────────────────
 
 		pushText(content: string): TextEntry {
 			const entry = new Y.Map();
@@ -162,7 +213,9 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return result;
 		},
 
-		readAsString(): string {
+		// ── Content access (transact-wrapped) ─────────────────────────────
+
+		read(): string {
 			const validated = readEntry(currentEntry());
 			switch (validated.mode) {
 				case 'text':
@@ -174,6 +227,80 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				case 'empty':
 					return '';
 			}
+		},
+
+		readAsString(): string {
+			return this.read();
+		},
+
+		write(text: string) {
+			ydoc.transact(() => this.replaceCurrentText(text));
+		},
+
+		asText(): Y.Text {
+			const validated = readEntry(currentEntry());
+			switch (validated.mode) {
+				case 'text':
+					return validated.content;
+				case 'empty':
+					return ydoc.transact(() => this.pushText('')).content;
+				case 'richtext': {
+					const plaintext = xmlFragmentToPlaintext(validated.content);
+					return ydoc.transact(() => this.pushText(plaintext)).content;
+				}
+				case 'sheet': {
+					const csv = serializeSheetToCsv(validated.columns, validated.rows);
+					return ydoc.transact(() => this.pushText(csv)).content;
+				}
+			}
+		},
+
+		asRichText(): Y.XmlFragment {
+			const validated = readEntry(currentEntry());
+			switch (validated.mode) {
+				case 'richtext':
+					return validated.content;
+				case 'empty':
+					return ydoc.transact(() => this.pushRichtext()).content;
+				case 'text': {
+					const plaintext = validated.content.toString();
+					return ydoc.transact(() => {
+						const { content } = this.pushRichtext();
+						populateFragmentFromText(content, plaintext);
+						return { content };
+					}).content;
+				}
+				case 'sheet': {
+					const csv = serializeSheetToCsv(validated.columns, validated.rows);
+					return ydoc.transact(() => {
+						const { content } = this.pushRichtext();
+						populateFragmentFromText(content, csv);
+						return { content };
+					}).content;
+				}
+			}
+		},
+
+		asSheet(): SheetBinding {
+			const validated = readEntry(currentEntry());
+			switch (validated.mode) {
+				case 'sheet':
+					return { columns: validated.columns, rows: validated.rows };
+				case 'empty':
+					return ydoc.transact(() => this.pushSheet());
+				case 'text': {
+					const plaintext = validated.content.toString();
+					return ydoc.transact(() => this.pushSheetFromCsv(plaintext));
+				}
+				case 'richtext': {
+					const plaintext = xmlFragmentToPlaintext(validated.content);
+					return ydoc.transact(() => this.pushSheetFromCsv(plaintext));
+				}
+			}
+		},
+
+		batch(fn: () => void) {
+			ydoc.transact(fn);
 		},
 	};
 }

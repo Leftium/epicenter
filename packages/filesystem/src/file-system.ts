@@ -190,7 +190,7 @@ export function createYjsFileSystem(
 			const textData =
 				typeof data === 'string' ? data : new TextDecoder().decode(data);
 			const handle = await contentDocuments.open(id);
-			const validated = readEntry(handle.timeline.currentEntry);
+			const validated = readEntry(handle.currentEntry);
 
 			let size: number;
 			if (validated.mode === 'sheet') {
@@ -222,7 +222,7 @@ export function createYjsFileSystem(
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
 			const handle = await contentDocuments.open(id);
-			const validated = readEntry(handle.timeline.currentEntry);
+			const validated = readEntry(handle.currentEntry);
 
 			if (validated.mode !== 'text') {
 				await this.writeFile(path, data);

@@ -11,8 +11,6 @@ import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
-import type { ContentMode } from '../timeline/entries.js';
-import type { SheetBinding } from '../timeline/richtext.js';
 import type { Timeline } from '../timeline/timeline.js';
 
 // Re-export JSON types for consumers
@@ -249,8 +247,9 @@ export type ClaimedDocumentColumns<
 /**
  * A handle to an open content Y.Doc, returned by `documents.open()`.
  *
- * All operations are scoped to this specific document. Timeline-backed
- * read/write methods are exposed directly on the handle.
+ * The handle IS the timeline—all push, read, write, and mode conversion
+ * methods are available directly. The only addition over a bare `Timeline`
+ * is `exports` for per-doc extension methods.
  *
  * @example
  * ```typescript
@@ -260,68 +259,12 @@ export type ClaimedDocumentColumns<
  * handle.asText();          // Y.Text for editor binding (converts if needed)
  * handle.asRichText();      // Y.XmlFragment for richtext binding (converts if needed)
  * handle.asSheet();         // Sheet columns/rows (converts if needed)
- * handle.mode;              // current content mode
- * handle.timeline;          // escape hatch for advanced ops
+ * handle.currentMode;       // current content mode
+ * handle.pushRichtext();    // low-level push (for batching)
+ * handle.batch(() => {});   // wraps ydoc.transact
  * ```
  */
-export type DocumentHandle = {
-	ydoc: Y.Doc;
-
-	/** Current content mode, or undefined if timeline is empty. */
-	readonly mode: ContentMode | undefined;
-
-	/** Read current content as string. Always succeeds. Text/richtext/sheet all flatten. */
-	read(): string;
-
-	/** Replace text content. If current mode is text, replaces in-place. Otherwise pushes new text entry. */
-	write(text: string): void;
-
-	/**
-	 * Get current content as Y.Text for editor binding.
-	 *
-	 * If already text mode, returns the existing Y.Text. If the timeline is
-	 * empty, creates a new text entry. If the current entry is a different mode,
-	 * converts the content and pushes a new text entry.
-	 *
-	 * All conversions always succeed—no content type can fail to convert to
-	 * another. Richtext→text is lossy (strips formatting).
-	 *
-	 * ```
-	 * DocumentHandle
-	 * ├── mode              → 'text' | 'richtext' | 'sheet' | undefined
-	 * ├── read()            → string           (always works, flattens any mode)
-	 * ├── write(text)       → void             (always works, text mode)
-	 * ├── asText()          → Y.Text           (converts if needed, editor binding)
-	 * ├── asRichText()      → Y.XmlFragment    (converts if needed, Tiptap binding)
-	 * ├── asSheet()         → SheetBinding     (converts if needed, spreadsheet)
-	 * ├── timeline          → Timeline         (escape hatch for advanced ops)
-	 * ├── batch(fn)         → void             (wraps ydoc.transact)
-	 * ├── ydoc              → Y.Doc            (escape hatch)
-	 * └── exports           → Record           (extension exports)
-	 * ```
-	 */
-	asText(): Y.Text;
-
-	/**
-	 * Get current content as Y.XmlFragment for richtext editor binding.
-	 *
-	 * If already richtext mode, returns the existing Y.XmlFragment. If empty,
-	 * creates a new richtext entry. If different mode, converts and pushes.
-	 */
-	asRichText(): Y.XmlFragment;
-
-	/**
-	 * Get current content as sheet columns/rows for spreadsheet binding.
-	 *
-	 * If already sheet mode, returns existing columns and rows. If empty,
-	 * creates a new sheet entry. If different mode, converts (parsed as CSV).
-	 */
-	asSheet(): SheetBinding;
-
-	/** Direct access to the timeline for advanced operations. */
-	timeline: Timeline;
-	/** Batch mutations into a single Yjs transaction. */
-	batch(fn: () => void): void;
+export type DocumentHandle = Timeline & {
 	/** Per-doc extension exports. */
 	exports: Record<string, Record<string, unknown>>;
 };

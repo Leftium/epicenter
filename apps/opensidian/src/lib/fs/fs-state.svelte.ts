@@ -1,4 +1,5 @@
 import {
+	createSqliteIndex,
 	createYjsFileSystem,
 	type FileId,
 	type FileRow,
@@ -32,14 +33,17 @@ function createFsState() {
 	const ws = createWorkspace({
 		id: 'opensidian',
 		tables: { files: filesTable },
-	}).withExtension('persistence', indexeddbPersistence);
+	}).withExtension('persistence', indexeddbPersistence)
+		.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 	const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
+	const documents = ws.documents.files.content;
 
 	// ── Reactive state ────────────────────────────────────────────────
 	let version = $state(0);
 	let activeFileId = $state<FileId | null>(null);
 	let openFileIds = $state<FileId[]>([]);
 	const expandedIds = new SvelteSet<FileId>();
+	let focusedId = $state<FileId | null>(null);
 
 	// ── rAF-coalesced observer ────────────────────────────────────────
 	let pendingBump = false;
@@ -102,9 +106,14 @@ function createFsState() {
 		get selectedPath() {
 			return selectedPath;
 		},
+		get focusedId() {
+			return focusedId;
+		},
 
 		expandedIds,
 		fs,
+		documents,
+		sqliteIndex: ws.extensions.sqliteIndex,
 
 		/**
 		 * Get child FileIds of a folder. Reads from FileSystemIndex.
@@ -155,6 +164,10 @@ function createFsState() {
 			toggleExpand(id: FileId) {
 				if (expandedIds.has(id)) expandedIds.delete(id);
 				else expandedIds.add(id);
+			},
+
+			focus(id: FileId | null) {
+				focusedId = id;
 			},
 
 			async createFile(parentId: FileId | null, name: string) {
@@ -223,14 +236,13 @@ function createFsState() {
 			},
 
 			/**
-			 * Read file content as string via the documents manager.
+			 * Read file content as string.
 			 *
-			 * Opens (or reuses) the per-file Y.Doc via the document handle,
-			 * then reads the text content synchronously.
+			 * Opens the per-file content Y.Doc and reads from the timeline.
 			 */
 			async readContent(id: FileId): Promise<string | null> {
 				try {
-					const handle = await ws.documents.files.content.open(id);
+					const handle = await documents.open(id);
 					return handle.read();
 				} catch (err) {
 					console.error('Failed to read content:', err);
@@ -239,14 +251,14 @@ function createFsState() {
 			},
 
 			/**
-			 * Write file content via the documents manager.
+			 * Write file content as string.
 			 *
-			 * The documents manager automatically bumps `updatedAt` on the file row
-			 * when content changes. Toasts only on error.
+			 * Opens the per-file content Y.Doc and writes to the timeline.
+			 * The documents manager's `onUpdate` callback bumps `updatedAt` on the file row.
 			 */
 			async writeContent(id: FileId, data: string): Promise<void> {
 				try {
-					const handle = await ws.documents.files.content.open(id);
+					const handle = await documents.open(id);
 					handle.write(data);
 				} catch (err) {
 					toast.error(
@@ -269,3 +281,10 @@ function createFsState() {
 }
 
 export const fsState = createFsState();
+
+// Expose on window for dev console access
+// Usage: await fsState.sqliteIndex.search('hello')
+//        await fsState.sqliteIndex.client.execute('SELECT * FROM files')
+if (typeof window !== 'undefined') {
+	(window as unknown as Record<string, unknown>).fsState = fsState;
+}

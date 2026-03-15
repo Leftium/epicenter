@@ -1,35 +1,13 @@
 /**
- * Lifecycle protocol for providers and extensions.
+ * Extension lifecycle types.
  *
- * This module defines the shared lifecycle contract that all providers (doc-level)
- * and extensions (workspace-level) must satisfy. The protocol enables:
- *
- * - **Async initialization tracking**: `whenReady` lets UI render gates wait for readiness
- * - **Resource cleanup**: `dispose` ensures connections, observers, and handles are released
- *
- * ## Architecture
- *
- * ```
- * ┌─────────────────────────────────────────────────────────────────┐
- * │  Lifecycle (base protocol)                                      │
- * │    { whenReady, dispose }                                       │
- * └─────────────────────────────────────────────────────────────────┘
- *          │                                    │
- *          ▼                                    ▼
- * ┌──────────────────────────┐    ┌──────────────────────────────┐
- * │  Providers (doc-level)   │    │  Extensions (workspace-level) │
- * │  return Lifecycle & T    │    │  return flat { T, whenReady?, │
- * │  directly                │    │    dispose? }                  │
- * └──────────────────────────┘    └──────────────────────────────┘
- * ```
- *
- * ## Usage
+ * Defines the `Extension<T>` type (the resolved form all extensions take)
+ * and `defineExtension()` which normalizes raw factory returns into it.
  *
  * Factory functions are **always synchronous**. Async initialization is tracked
  * via the returned `whenReady` promise, not the factory itself.
  *
- * **Extensions** return a flat object with custom exports + optional lifecycle hooks:
- *
+ * @example
  * ```typescript
  * // Extension with exports and cleanup
  * const withCleanup: ExtensionFactory = ({ ydoc }) => {
@@ -37,19 +15,6 @@
  *   return {
  *     db,
  *     dispose: () => db.close(),
- *   };
- * };
- * ```
- *
- * **Providers** return `Lifecycle` (or `Lifecycle & T`) directly:
- *
- * ```typescript
- * // Provider with async initialization
- * const persistence: ProviderFactory = ({ ydoc }) => {
- *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
- *   return {
- *     whenReady: provider.whenReady,
- *     dispose: () => provider.dispose(),
  *   };
  * };
  * ```
@@ -62,78 +27,6 @@ import type * as Y from 'yjs';
  */
 export type MaybePromise<T> = T | Promise<T>;
 
-/**
- * The lifecycle protocol for providers and extensions.
- *
- * This is the base contract that all providers and extensions satisfy.
- * It defines two required lifecycle methods:
- *
- * - `whenReady`: A promise that resolves when initialization is complete
- * - `dispose`: A cleanup function called when the parent is disposed
- *
- * ## When to use each field
- *
- * | Field | Purpose | Example |
- * |-------|---------|---------|
- * | `whenReady` | Track async initialization | Database indexing, initial sync |
- * | `dispose` | Clean up resources | Close connections, unsubscribe observers |
- *
- * ## Framework guarantees
- *
- * - `dispose()` will be called even if `whenReady` rejects
- * - `dispose()` may be called while `whenReady` is still pending
- * - Multiple `dispose()` calls should be safe (idempotent)
- *
- * @example
- * ```typescript
- * // Lifecycle with async init and cleanup
- * const lifecycle: Lifecycle = {
- *   whenReady: database.initialize(),
- *   dispose: () => database.close(),
- * };
- *
- * // Lifecycle with no async init
- * const simpleLifecycle: Lifecycle = {
- *   whenReady: Promise.resolve(),
- *   dispose: () => observer.unsubscribe(),
- * };
- * ```
- */
-export type Lifecycle = {
-	/**
-	 * Resolves when initialization is complete.
-	 *
-	 * Use this as a render gate in UI frameworks:
-	 *
-	 * ```svelte
-	 * {#await client.whenReady}
-	 *   <Loading />
-	 * {:then}
-	 *   <App />
-	 * {/await}
-	 * ```
-	 *
-	 * Common initialization scenarios:
-	 * - Persistence providers: Initial data loaded from storage
-	 * - Sync providers: Initial server sync complete
-	 * - SQLite: Database ready and indexed
-	 */
-	whenReady: Promise<unknown>;
-
-	/**
-	 * Clean up resources.
-	 *
-	 * Called when the parent doc/client is disposed. Should:
-	 * - Stop observers and event listeners
-	 * - Close database connections
-	 * - Disconnect network providers
-	 * - Release file handles
-	 *
-	 * **Important**: This may be called while `whenReady` is still pending.
-	 * Implementations should handle graceful cancellation.
-	 */
-	dispose: () => MaybePromise<void>;
-};
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION — Flat resolved type with required lifecycle hooks

@@ -74,7 +74,6 @@ export { ExtensionError } from '../shared/errors.js';
 export type {
 	DocumentContext,
 	Extension,
-	Lifecycle,
 	MaybePromise,
 } from './lifecycle.js';
 

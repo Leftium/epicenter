@@ -40,7 +40,6 @@ export {
 export type {
 	DocumentContext,
 	Extension,
-	Lifecycle,
 	MaybePromise,
 } from './workspace/lifecycle';
 

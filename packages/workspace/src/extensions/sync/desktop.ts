@@ -2,7 +2,6 @@ import { Database } from 'bun:sqlite';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import type { Lifecycle } from '../../workspace/lifecycle';
 import type { ExtensionContext } from '../../workspace/types.js';
 
 /**
@@ -126,7 +125,7 @@ export const persistence = (
 };
 
 /**
- * Filesystem persistence factory that returns a `Lifecycle`.
+ * Filesystem persistence factory.
  *
  * Uses SQLite append-log for efficient incremental persistence.
  * Same pattern as the Cloudflare DO sync server.
@@ -149,8 +148,8 @@ export function filesystemPersistence({
 	filePath,
 }: {
 	filePath: string;
-}): (context: { ydoc: Y.Doc }) => Lifecycle {
-	return ({ ydoc }): Lifecycle => {
+}) {
+	return ({ ydoc }: { ydoc: Y.Doc }) => {
 		let db: Database | null = null;
 
 		const updateHandler = (update: Uint8Array) => {

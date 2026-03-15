@@ -1,28 +1,30 @@
 import * as Y from 'yjs';
-import type { ContentMode } from './entries.js';
+import type {
+	ContentMode,
+	RichTextEntry,
+	SheetEntry,
+	TextEntry,
+} from './entries.js';
 import { xmlFragmentToPlaintext } from './richtext.js';
 import { parseSheetFromCsv, serializeSheetToCsv } from './sheet.js';
 
-type TimelineEntry = Y.Map<unknown>;
+type TimelineYMap = Y.Map<unknown>;
 
 export type Timeline = {
 	/** Number of entries in the timeline. */
 	readonly length: number;
 	/** The most recent entry, or undefined if empty. O(1). */
-	readonly currentEntry: TimelineEntry | undefined;
+	readonly currentEntry: TimelineYMap | undefined;
 	/** Content mode of the current entry, or undefined if empty. */
 	readonly currentMode: ContentMode | undefined;
-	/** Append a new text entry. Returns typed content for editor binding. */
-	pushText(content: string): { content: Y.Text };
-	/** Append a new empty sheet entry. Returns typed columns/rows for spreadsheet binding. */
-	pushSheet(): { columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
-	/** Append a new empty richtext entry. Returns typed content/frontmatter for editor binding. */
-	pushRichtext(): { content: Y.XmlFragment; frontmatter: Y.Map<unknown> };
-	/** Append a sheet entry populated from a CSV string. Returns typed columns/rows. */
-	pushSheetFromCsv(csv: string): {
-		columns: Y.Map<Y.Map<string>>;
-		rows: Y.Map<Y.Map<string>>;
-	};
+	/** Append a new text entry. Returns all atomically-set fields. */
+	pushText(content: string): TextEntry;
+	/** Append a new empty sheet entry. Returns all atomically-set fields. */
+	pushSheet(): SheetEntry;
+	/** Append a new empty richtext entry. Returns all atomically-set fields. */
+	pushRichtext(): RichTextEntry;
+	/** Append a sheet entry populated from a CSV string. Returns all atomically-set fields. */
+	pushSheetFromCsv(csv: string): SheetEntry;
 	/**
 	 * Replace the current text content in-place, or push a new text entry
 	 * if the current mode is not text.
@@ -40,10 +42,7 @@ export type Timeline = {
 	 * Use this for snapshot restore or cross-doc content transfer where
 	 * formatting must survive the move between Y.Doc instances.
 	 */
-	pushRichtextFromFragment(source: Y.XmlFragment): {
-		content: Y.XmlFragment;
-		frontmatter: Y.Map<unknown>;
-	};
+	pushRichtextFromFragment(source: Y.XmlFragment): RichTextEntry;
 	/** Read the current entry as a string. Returns '' if empty. */
 	readAsString(): string;
 };
@@ -65,9 +64,9 @@ export type ValidatedEntry =
 	| { mode: 'empty' };
 
 export function createTimeline(ydoc: Y.Doc): Timeline {
-	const timeline = ydoc.getArray<TimelineEntry>('timeline');
+	const timeline = ydoc.getArray<TimelineYMap>('timeline');
 
-	function currentEntry(): TimelineEntry | undefined {
+	function currentEntry(): TimelineYMap | undefined {
 		if (timeline.length === 0) return undefined;
 		return timeline.get(timeline.length - 1);
 	}
@@ -75,40 +74,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	function currentMode(): ContentMode | undefined {
 		const entry = currentEntry();
 		return entry ? (entry.get('type') as ContentMode) : undefined;
-	}
-
-	/**
-	 * Create and append a text entry. Extracted so `replaceCurrentText`
-	 * can reuse this for the cross-mode fallback without `this` binding.
-	 */
-	function appendTextEntry(content: string): { content: Y.Text } {
-		const entry = new Y.Map();
-		entry.set('type', 'text');
-		const ytext = new Y.Text();
-		ytext.insert(0, content);
-		entry.set('content', ytext);
-		entry.set('createdAt', Date.now());
-		timeline.push([entry]);
-		return { content: ytext };
-	}
-
-	/**
-	 * Create and append a richtext entry. Extracted so `pushRichtextFromFragment`
-	 * can reuse the entry creation without duplicating the boilerplate.
-	 */
-	function appendRichtextEntry(): {
-		content: Y.XmlFragment;
-		frontmatter: Y.Map<unknown>;
-	} {
-		const entry = new Y.Map();
-		entry.set('type', 'richtext');
-		const content = new Y.XmlFragment();
-		const frontmatter = new Y.Map<unknown>();
-		entry.set('content', content);
-		entry.set('frontmatter', frontmatter);
-		entry.set('createdAt', Date.now());
-		timeline.push([entry]);
-		return { content, frontmatter };
 	}
 
 	return {
@@ -122,23 +87,45 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return currentMode();
 		},
 
-		pushText: appendTextEntry,
+		pushText(content: string): TextEntry {
+			const entry = new Y.Map();
+			entry.set('type', 'text');
+			const ytext = new Y.Text();
+			ytext.insert(0, content);
+			entry.set('content', ytext);
+			const createdAt = Date.now();
+			entry.set('createdAt', createdAt);
+			timeline.push([entry]);
+			return { type: 'text', content: ytext, createdAt };
+		},
 
-		pushSheet() {
+		pushSheet(): SheetEntry {
 			const entry = new Y.Map();
 			entry.set('type', 'sheet');
 			const columns = new Y.Map<Y.Map<string>>();
 			const rows = new Y.Map<Y.Map<string>>();
 			entry.set('columns', columns);
 			entry.set('rows', rows);
-			entry.set('createdAt', Date.now());
+			const createdAt = Date.now();
+			entry.set('createdAt', createdAt);
 			timeline.push([entry]);
-			return { columns, rows };
+			return { type: 'sheet', columns, rows, createdAt };
 		},
 
-		pushRichtext: appendRichtextEntry,
+		pushRichtext(): RichTextEntry {
+			const entry = new Y.Map();
+			entry.set('type', 'richtext');
+			const content = new Y.XmlFragment();
+			const frontmatter = new Y.Map<unknown>();
+			entry.set('content', content);
+			entry.set('frontmatter', frontmatter);
+			const createdAt = Date.now();
+			entry.set('createdAt', createdAt);
+			timeline.push([entry]);
+			return { type: 'richtext', content, frontmatter, createdAt };
+		},
 
-		pushSheetFromCsv(csv: string) {
+		pushSheetFromCsv(csv: string): SheetEntry {
 			const entry = new Y.Map();
 			entry.set('type', 'sheet');
 			const columns = new Y.Map<Y.Map<string>>();
@@ -146,9 +133,10 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			entry.set('columns', columns);
 			entry.set('rows', rows);
 			parseSheetFromCsv(csv, columns, rows);
-			entry.set('createdAt', Date.now());
+			const createdAt = Date.now();
+			entry.set('createdAt', createdAt);
 			timeline.push([entry]);
-			return { columns, rows };
+			return { type: 'sheet', columns, rows, createdAt };
 		},
 
 		replaceCurrentText(content: string) {
@@ -157,12 +145,12 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				ytext.delete(0, ytext.length);
 				ytext.insert(0, content);
 			} else {
-				appendTextEntry(content);
+				this.pushText(content);
 			}
 		},
 
-		pushRichtextFromFragment(source: Y.XmlFragment) {
-			const { content, frontmatter } = appendRichtextEntry();
+		pushRichtextFromFragment(source: Y.XmlFragment): RichTextEntry {
+			const result = this.pushRichtext();
 			const children = source
 				.toArray()
 				.filter(
@@ -170,8 +158,8 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 						c instanceof Y.XmlElement || c instanceof Y.XmlText,
 				)
 				.map((c) => c.clone());
-			content.insert(0, children);
-			return { content, frontmatter };
+			result.content.insert(0, children);
+			return result;
 		},
 
 		readAsString(): string {

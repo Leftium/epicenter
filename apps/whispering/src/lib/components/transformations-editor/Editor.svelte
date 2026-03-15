@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { workspaceTransformationRuns } from '$lib/state/workspace-transformation-runs.svelte';
-	import type { TransformationStep } from '$lib/state/workspace-transformation-steps.svelte';
+	import type { TransformationStepDraft } from '$lib/state/workspace-transformation-steps.svelte';
 	import type { Transformation } from '$lib/state/workspace-transformations.svelte';
 	import Configuration from './Configuration.svelte';
 	import Runs from './Runs.svelte';
@@ -12,7 +12,7 @@
 		steps = $bindable(),
 	}: {
 		transformation: Transformation;
-		steps: Omit<TransformationStep, '_v'>[];
+		steps: TransformationStepDraft[];
 	} = $props();
 
 	const runs = $derived(

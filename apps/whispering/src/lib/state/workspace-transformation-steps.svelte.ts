@@ -25,6 +25,14 @@ export type TransformationStep = ReturnType<
 	typeof workspace.tables.transformationSteps.getAllValid
 >[number];
 
+/**
+ * A transformation step without the workspace version tag (`_v`).
+ *
+ * Used in UI components and save utilities where the version is managed
+ * automatically by the workspace table layer.
+ */
+export type TransformationStepDraft = Omit<TransformationStep, '_v'>;
+
 function createWorkspaceTransformationSteps() {
 	const map = new SvelteMap<string, TransformationStep>();
 
@@ -80,7 +88,7 @@ function createWorkspaceTransformationSteps() {
 		 *
 		 * Accepts a step without `_v` (version tag is added automatically).
 		 */
-		set(step: Omit<TransformationStep, '_v'>) {
+		set(step: TransformationStepDraft) {
 			workspace.tables.transformationSteps.set({
 				...step,
 				_v: 1,
@@ -144,7 +152,7 @@ export const workspaceTransformationSteps =
  */
 export function generateDefaultStep(
 	context: Pick<TransformationStep, 'transformationId' | 'order'>,
-): Omit<TransformationStep, '_v'> {
+): TransformationStepDraft {
 	return {
 		id: crypto.randomUUID(),
 		transformationId: context.transformationId,

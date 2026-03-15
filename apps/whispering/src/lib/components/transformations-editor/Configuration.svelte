@@ -30,7 +30,7 @@
 	} from '$lib/constants/inference';
 	import {
 		generateDefaultStep,
-		type TransformationStep,
+		type TransformationStepDraft,
 	} from '$lib/state/workspace-transformation-steps.svelte';
 	import type { Transformation } from '$lib/state/workspace-transformations.svelte';
 
@@ -45,7 +45,7 @@
 		steps = $bindable(),
 	}: {
 		transformation: Transformation;
-		steps: Omit<TransformationStep, '_v'>[];
+		steps: TransformationStepDraft[];
 	} = $props();
 
 	/** Update a single field on a step by index. */

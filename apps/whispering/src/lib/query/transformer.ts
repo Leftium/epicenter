@@ -163,9 +163,7 @@ async function handleStep({
 }): Promise<Result<string, string>> {
 	switch (step.type) {
 		case 'find_replace': {
-			const findText = step.findText;
-			const replaceText = step.replaceText;
-			const useRegex = step.useRegex;
+			const { findText, replaceText, useRegex } = step;
 
 			if (useRegex) {
 				try {
@@ -180,17 +178,16 @@ async function handleStep({
 		}
 
 		case 'prompt_transform': {
-			const provider = step.inferenceProvider;
+			const { inferenceProvider, systemPromptTemplate, userPromptTemplate } = step;
 			const systemPrompt = interpolateTemplate(
-				asTemplateString(step.systemPromptTemplate),
-				{ input },
+				asTemplateString(systemPromptTemplate),
 			);
 			const userPrompt = interpolateTemplate(
-				asTemplateString(step.userPromptTemplate),
+				asTemplateString(userPromptTemplate),
 				{ input },
 			);
 
-			switch (provider) {
+			switch (inferenceProvider) {
 				case 'OpenAI': {
 					const { data: completionResponse, error: completionError } =
 						await services.completions.openai.complete({
@@ -302,7 +299,7 @@ async function handleStep({
 				}
 
 				default:
-					return Err(`Unsupported provider: ${provider}`);
+					return Err(`Unsupported provider: ${inferenceProvider}`);
 			}
 		}
 

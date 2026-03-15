@@ -195,4 +195,51 @@ describe('restoreFromSnapshot', () => {
 		expect(tl.readAsString()).toBe('original');
 		doc.destroy();
 	});
+
+	test('richtext snapshot: preserves formatting (bold, headings)', () => {
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.pushText('placeholder');
+
+		const binary = createSnapshotBinary((s) => {
+			const entry = s.pushRichtext();
+			const fragment = entry.get('content') as Y.XmlFragment;
+			// Build: <heading>Title</heading><paragraph>Hello <bold>world</bold></paragraph>
+			const heading = new Y.XmlElement('heading');
+			const headingText = new Y.XmlText();
+			headingText.insert(0, 'Title');
+			heading.insert(0, [headingText]);
+			const para = new Y.XmlElement('paragraph');
+			const plainText = new Y.XmlText();
+			plainText.insert(0, 'Hello ');
+			const boldText = new Y.XmlText();
+			boldText.insert(0, 'world', { bold: true });
+			para.insert(0, [plainText, boldText]);
+			fragment.insert(0, [heading, para]);
+		});
+		restoreFromSnapshot(doc, binary);
+
+		expect(tl.currentMode).toBe('richtext');
+		const entry = readEntry(tl.currentEntry);
+		if (entry.mode !== 'richtext') throw new Error('expected richtext');
+
+		// Verify structure: 2 children (heading + paragraph)
+		const children = entry.content.toArray();
+		expect(children.length).toBe(2);
+
+		// Verify heading preserved
+		const restoredHeading = children[0] as Y.XmlElement;
+		expect(restoredHeading.nodeName).toBe('heading');
+
+		// Verify paragraph with bold formatting preserved
+		const restoredPara = children[1] as Y.XmlElement;
+		expect(restoredPara.nodeName).toBe('paragraph');
+		const paraChildren = restoredPara.toArray();
+		expect(paraChildren.length).toBe(2);
+		const restoredBold = paraChildren[1] as Y.XmlText;
+		const delta = restoredBold.toDelta();
+		expect(delta).toEqual([{ insert: 'world', attributes: { bold: true } }]);
+
+		doc.destroy();
+	});
 });

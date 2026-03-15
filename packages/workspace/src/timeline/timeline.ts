@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import type { ContentMode } from './entries.js';
-import { populateFragmentFromText, xmlFragmentToPlaintext } from './richtext.js';
+import { xmlFragmentToPlaintext } from './richtext.js';
 import { parseSheetFromCsv, serializeSheetToCsv } from './sheet.js';
 
 type TimelineEntry = Y.Map<unknown>;
@@ -167,8 +167,8 @@ export function readEntry(entry: Y.Map<unknown> | undefined): ValidatedEntry {
  * snapshots replace in-place (if the live doc is already text) or push a new
  * entry; sheet and richtext always push new entries.
  *
- * Richtext is flattened to plaintext—formatting is not preserved. See
- * `populateFragmentFromText` for the conversion.
+ * Richtext content is deep-cloned via `Y.XmlFragment.clone()`—formatting
+ * (bold, italic, headings, links) is fully preserved.
  *
  * The caller is responsible for saving a safety snapshot before calling this.
  *
@@ -220,11 +220,14 @@ export function restoreFromSnapshot(
 				break;
 			}
 			case 'richtext': {
-				const plaintext = xmlFragmentToPlaintext(entry.content);
 				ydoc.transact(() => {
 					const rtEntry = liveTl.pushRichtext();
-					const fragment = rtEntry.get('content') as Y.XmlFragment;
-					populateFragmentFromText(fragment, plaintext);
+					const liveFragment = rtEntry.get('content') as Y.XmlFragment;
+					const children = entry.content
+						.toArray()
+						.filter((c) => c instanceof Y.XmlElement || c instanceof Y.XmlText)
+						.map((c) => c.clone());
+					liveFragment.insert(0, children);
 				});
 				break;
 			}

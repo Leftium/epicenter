@@ -191,8 +191,8 @@ If `Y.applyUpdateV2` throws (corrupted binary), the function should still destro
 
 3. **Should richtext restore preserve formatting or flatten to plaintext?**
    - The snapshot's `Y.XmlFragment` is a doc-backed type from the temp doc. Its content can't be transferred directly to the live doc's fragment (different Y.Doc instances).
-   - Flatten to plaintext, then `populateFragmentFromText` on the live doc's new fragment. Lossy but consistent.
-   - **Recommendation**: Flatten for now. Preserving formatting requires serializing the XML structure and replaying it, which is significantly more complex. Add it when richtext snapshots become a real use case.
+   - ~~Flatten to plaintext, then `populateFragmentFromText` on the live doc's new fragment. Lossy but consistent.~~
+   - **Resolved**: `Y.XmlElement.clone()` and `Y.XmlText.clone()` create deep, unattached copies that preserve formatting (bold, italic, headings, links). Clone each child from the snapshot's fragment and insert into the live fragment. No flattening needed.
 
 ## Success Criteria
 
@@ -201,7 +201,7 @@ If `Y.applyUpdateV2` throws (corrupted binary), the function should still destro
 - [x] `restoreFromSnapshot(handle, binary)` exists in `@epicenter/workspace`
 - [x] Text restore: content matches snapshot, timeline doesn't grow (same-mode in-place)
 - [x] Sheet restore: new sheet entry with correct columns/rows
-- [x] Richtext restore: new richtext entry populated from snapshot's plaintext
+- [x] Richtext restore: new richtext entry with formatting preserved via deep clone
 - [x] Empty snapshot: no-op, no crash
 - [x] Temp Y.Doc destroyed after restore (including on error)
 - [x] `bun run typecheck` passes in `apps/api` and `packages/workspace`
@@ -223,23 +223,23 @@ If `Y.applyUpdateV2` throws (corrupted binary), the function should still destro
 
 ### Summary
 
-Moved snapshot restore from the Durable Object to the client. Removed the broken `applySnapshot()` method and its `/apply` route from the API, then added a pure `restoreFromSnapshot(handle, binary)` function in `@epicenter/workspace` that reads a snapshot's timeline and writes matching content to the live doc via `DocumentHandle`. The function is mode-aware (text, sheet, richtext, empty) and uses try/finally to guarantee temp doc cleanup.
+Moved snapshot restore from the Durable Object to the client. Removed the broken `applySnapshot()` method and its `/apply` route from the API, then added a pure `restoreFromSnapshot(ydoc, binary)` function in `@epicenter/workspace` that reads a snapshot's timeline and writes matching content to the live Y.Doc. The function is mode-aware (text, sheet, richtext, empty), uses try/finally for temp doc cleanup, and preserves richtext formatting via `Y.XmlElement.clone()`.
 
 ### Deviations from Spec
 
 - **Phase 3 skipped**: No frontend code called the old `/apply` endpoint, so no UI wiring was needed.
-- **Richtext restore is lossy**: As recommended in the spec, richtext snapshots are flattened to plaintext before repopulating. Formatting preservation deferred to when richtext snapshots become a real use case.
+- **Signature changed**: `restoreFromSnapshot` takes `Y.Doc` instead of `DocumentHandle`—removes cross-layer dependency, function lives in `timeline.ts` instead of a separate file.
+- **Richtext is format-preserving**: Spec recommended plaintext flattening. After verifying Yjs source, `Y.XmlElement.clone()` deep-copies with formatting intact. Implemented clone approach instead of lossy flatten.
 
 ### Files Changed
 
 - `apps/api/src/document-room.ts` — removed `applySnapshot()` method (lines 82–110)
 - `apps/api/src/app.ts` — removed `POST .../snapshots/:id/apply` route (lines 607–621)
-- `packages/workspace/src/timeline/restore.ts` — new file, `restoreFromSnapshot` function
+- `packages/workspace/src/timeline/timeline.ts` — `restoreFromSnapshot` function (inlined, no separate file)
 - `packages/workspace/src/timeline/index.ts` — re-export `restoreFromSnapshot`
 - `packages/workspace/src/index.ts` — re-export `restoreFromSnapshot`
-- `packages/workspace/src/timeline/timeline.test.ts` — 5 new tests for restore
+- `packages/workspace/src/timeline/timeline.test.ts` — 6 tests for restore (including formatting preservation)
 
 ### Follow-up Work
 
-- Richtext formatting preservation when restoring richtext snapshots (serialize XML tree → replay on live doc)
 - Pre-migration snapshot handling UI (snapshots from before timeline migration are no-ops—consider surfacing this to users)

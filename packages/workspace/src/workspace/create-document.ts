@@ -119,15 +119,7 @@ function makeHandle(
 			return tl.readAsString();
 		},
 		write(text: string) {
-			if (tl.currentMode === 'text') {
-				const ytext = tl.currentEntry?.get('content') as Y.Text;
-				ydoc.transact(() => {
-					ytext.delete(0, ytext.length);
-					ytext.insert(0, text);
-				});
-			} else {
-				ydoc.transact(() => tl.pushText(text));
-			}
+			ydoc.transact(() => tl.replaceCurrentText(text));
 		},
 		asText() {
 			const validated = readEntry(tl.currentEntry);
@@ -135,17 +127,14 @@ function makeHandle(
 				case 'text':
 					return validated.content;
 				case 'empty':
-					ydoc.transact(() => tl.pushText(''));
-					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
+					return ydoc.transact(() => tl.pushText('')).content;
 				case 'richtext': {
 					const plaintext = xmlFragmentToPlaintext(validated.content);
-					ydoc.transact(() => tl.pushText(plaintext));
-					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
+					return ydoc.transact(() => tl.pushText(plaintext)).content;
 				}
 				case 'sheet': {
 					const csv = serializeSheetToCsv(validated.columns, validated.rows);
-					ydoc.transact(() => tl.pushText(csv));
-					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
+					return ydoc.transact(() => tl.pushText(csv)).content;
 				}
 			}
 		},
@@ -155,25 +144,22 @@ function makeHandle(
 				case 'richtext':
 					return validated.content;
 				case 'empty':
-					ydoc.transact(() => tl.pushRichtext());
-					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
+					return ydoc.transact(() => tl.pushRichtext()).content;
 				case 'text': {
 					const plaintext = validated.content.toString();
-					ydoc.transact(() => {
-						const rtEntry = tl.pushRichtext();
-						const fragment = rtEntry.get('content') as Y.XmlFragment;
-						populateFragmentFromText(fragment, plaintext);
-					});
-					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
+					return ydoc.transact(() => {
+						const { content } = tl.pushRichtext();
+						populateFragmentFromText(content, plaintext);
+						return { content };
+					}).content;
 				}
 				case 'sheet': {
 					const csv = serializeSheetToCsv(validated.columns, validated.rows);
-					ydoc.transact(() => {
-						const rtEntry = tl.pushRichtext();
-						const fragment = rtEntry.get('content') as Y.XmlFragment;
-						populateFragmentFromText(fragment, csv);
-					});
-					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
+					return ydoc.transact(() => {
+						const { content } = tl.pushRichtext();
+						populateFragmentFromText(content, csv);
+						return { content };
+					}).content;
 				}
 			}
 		},
@@ -183,19 +169,14 @@ function makeHandle(
 				case 'sheet':
 					return { columns: validated.columns, rows: validated.rows };
 				case 'empty':
-					ydoc.transact(() => tl.pushSheet());
-					return readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
+					return ydoc.transact(() => tl.pushSheet());
 				case 'text': {
 					const plaintext = validated.content.toString();
-					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
-					const entry = readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
-					return { columns: entry.columns, rows: entry.rows };
+					return ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
 				}
 				case 'richtext': {
 					const plaintext = xmlFragmentToPlaintext(validated.content);
-					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
-					const entry = readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
-					return { columns: entry.columns, rows: entry.rows };
+					return ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
 				}
 			}
 		},

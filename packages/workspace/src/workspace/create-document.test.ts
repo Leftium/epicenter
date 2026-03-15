@@ -794,8 +794,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const rtEntry = handle.timeline.pushRichtext();
-		const fragment = rtEntry.get('content') as Y.XmlFragment;
+		const { content: fragment } = handle.timeline.pushRichtext();
 		const p = new Y.XmlElement('paragraph');
 		const t = new Y.XmlText();
 		t.insert(0, 'Rich content');
@@ -906,8 +905,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const rtEntry = handle.timeline.pushRichtext();
-		const fragment = rtEntry.get('content') as Y.XmlFragment;
+		const { content: fragment } = handle.timeline.pushRichtext();
 		const p1 = new Y.XmlElement('paragraph');
 		const t1 = new Y.XmlText();
 		t1.insert(0, 'Name,Age');

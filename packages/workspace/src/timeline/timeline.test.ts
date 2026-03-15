@@ -20,15 +20,13 @@ function setup() {
 describe('createTimeline - sheet entries', () => {
 	test('pushSheet creates entry with type sheet', () => {
 		const tl = setup();
-		const entry = tl.pushSheet();
-		expect(entry.get('type')).toBe('sheet');
+		tl.pushSheet();
+		expect(tl.currentMode).toBe('sheet');
 	});
 
 	test('pushSheet creates empty columns and rows Y.Maps', () => {
 		const tl = setup();
-		const entry = tl.pushSheet();
-		const columns = entry.get('columns') as Y.Map<Y.Map<string>>;
-		const rows = entry.get('rows') as Y.Map<Y.Map<string>>;
+		const { columns, rows } = tl.pushSheet();
 		expect(columns).toBeInstanceOf(Y.Map);
 		expect(rows).toBeInstanceOf(Y.Map);
 		expect(columns.size).toBe(0);
@@ -202,8 +200,7 @@ describe('restoreFromSnapshot', () => {
 		tl.pushText('placeholder');
 
 		const binary = createSnapshotBinary((s) => {
-			const entry = s.pushRichtext();
-			const fragment = entry.get('content') as Y.XmlFragment;
+			const { content: fragment } = s.pushRichtext();
 			// Build: <heading>Title</heading><paragraph>Hello <bold>world</bold></paragraph>
 			const heading = new Y.XmlElement('heading');
 			const headingText = new Y.XmlText();

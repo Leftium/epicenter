@@ -132,20 +132,21 @@ describe('createTimeline - pushRichtext', () => {
 
 	test('pushRichtext creates entry with type richtext', () => {
 		const tl = setup();
-		const entry = tl.pushRichtext();
-		expect(entry.get('type')).toBe('richtext');
+		tl.pushRichtext();
+		expect(tl.currentMode).toBe('richtext');
 	});
 
 	test('pushRichtext creates XmlFragment and frontmatter', () => {
 		const tl = setup();
-		const entry = tl.pushRichtext();
-		expect(entry.get('content')).toBeInstanceOf(Y.XmlFragment);
-		expect(entry.get('frontmatter')).toBeInstanceOf(Y.Map);
+		const { content, frontmatter } = tl.pushRichtext();
+		expect(content).toBeInstanceOf(Y.XmlFragment);
+		expect(frontmatter).toBeInstanceOf(Y.Map);
 	});
 
 	test('pushRichtext sets createdAt', () => {
 		const tl = setup();
-		const entry = tl.pushRichtext();
+		tl.pushRichtext();
+		const entry = tl.currentEntry!;
 		expect(entry.get('createdAt')).toBeTypeOf('number');
 	});
 
@@ -157,8 +158,7 @@ describe('createTimeline - pushRichtext', () => {
 
 	test('readAsString extracts plaintext from richtext entry', () => {
 		const tl = setup();
-		const entry = tl.pushRichtext();
-		const fragment = entry.get('content') as Y.XmlFragment;
+		const { content: fragment } = tl.pushRichtext();
 
 		const p = new Y.XmlElement('paragraph');
 		const t = new Y.XmlText();

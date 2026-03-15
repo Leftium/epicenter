@@ -12,14 +12,38 @@ export type Timeline = {
 	readonly currentEntry: TimelineEntry | undefined;
 	/** Content mode of the current entry, or undefined if empty. */
 	readonly currentMode: ContentMode | undefined;
-	/** Append a new text entry. Returns the Y.Map. */
-	pushText(content: string): TimelineEntry;
-	/** Append a new empty sheet entry. Returns the Y.Map. */
-	pushSheet(): TimelineEntry;
-	/** Append a new empty richtext entry. Returns the Y.Map. */
-	pushRichtext(): TimelineEntry;
-	/** Append a sheet entry populated from a CSV string. Returns the Y.Map. */
-	pushSheetFromCsv(csv: string): TimelineEntry;
+	/** Append a new text entry. Returns typed content for editor binding. */
+	pushText(content: string): { content: Y.Text };
+	/** Append a new empty sheet entry. Returns typed columns/rows for spreadsheet binding. */
+	pushSheet(): { columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
+	/** Append a new empty richtext entry. Returns typed content/frontmatter for editor binding. */
+	pushRichtext(): { content: Y.XmlFragment; frontmatter: Y.Map<unknown> };
+	/** Append a sheet entry populated from a CSV string. Returns typed columns/rows. */
+	pushSheetFromCsv(csv: string): {
+		columns: Y.Map<Y.Map<string>>;
+		rows: Y.Map<Y.Map<string>>;
+	};
+	/**
+	 * Replace the current text content in-place, or push a new text entry
+	 * if the current mode is not text.
+	 *
+	 * This is the canonical "write text" operation that `DocumentHandle.write()`
+	 * delegates to. Callers are responsible for wrapping in `ydoc.transact()`
+	 * if batching is desired.
+	 */
+	replaceCurrentText(content: string): void;
+	/**
+	 * Append a new richtext entry whose content is deep-cloned from the
+	 * given source fragment. Formatting (bold, italic, headings, links) is
+	 * fully preserved via `Y.XmlElement.clone()`.
+	 *
+	 * Use this for snapshot restore or cross-doc content transfer where
+	 * formatting must survive the move between Y.Doc instances.
+	 */
+	pushRichtextFromFragment(source: Y.XmlFragment): {
+		content: Y.XmlFragment;
+		frontmatter: Y.Map<unknown>;
+	};
 	/** Read the current entry as a string. Returns '' if empty. */
 	readAsString(): string;
 };
@@ -53,6 +77,40 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		return entry ? (entry.get('type') as ContentMode) : undefined;
 	}
 
+	/**
+	 * Create and append a text entry. Extracted so `replaceCurrentText`
+	 * can reuse this for the cross-mode fallback without `this` binding.
+	 */
+	function appendTextEntry(content: string): { content: Y.Text } {
+		const entry = new Y.Map();
+		entry.set('type', 'text');
+		const ytext = new Y.Text();
+		ytext.insert(0, content);
+		entry.set('content', ytext);
+		entry.set('createdAt', Date.now());
+		timeline.push([entry]);
+		return { content: ytext };
+	}
+
+	/**
+	 * Create and append a richtext entry. Extracted so `pushRichtextFromFragment`
+	 * can reuse the entry creation without duplicating the boilerplate.
+	 */
+	function appendRichtextEntry(): {
+		content: Y.XmlFragment;
+		frontmatter: Y.Map<unknown>;
+	} {
+		const entry = new Y.Map();
+		entry.set('type', 'richtext');
+		const content = new Y.XmlFragment();
+		const frontmatter = new Y.Map<unknown>();
+		entry.set('content', content);
+		entry.set('frontmatter', frontmatter);
+		entry.set('createdAt', Date.now());
+		timeline.push([entry]);
+		return { content, frontmatter };
+	}
+
 	return {
 		get length() {
 			return timeline.length;
@@ -64,38 +122,23 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return currentMode();
 		},
 
-		pushText(content: string): TimelineEntry {
-			const entry = new Y.Map();
-			entry.set('type', 'text');
-			const ytext = new Y.Text();
-			ytext.insert(0, content);
-			entry.set('content', ytext);
-			entry.set('createdAt', Date.now());
-			timeline.push([entry]);
-			return entry;
-		},
+		pushText: appendTextEntry,
 
-		pushSheet(): TimelineEntry {
+		pushSheet() {
 			const entry = new Y.Map();
 			entry.set('type', 'sheet');
-			entry.set('columns', new Y.Map());
-			entry.set('rows', new Y.Map());
+			const columns = new Y.Map<Y.Map<string>>();
+			const rows = new Y.Map<Y.Map<string>>();
+			entry.set('columns', columns);
+			entry.set('rows', rows);
 			entry.set('createdAt', Date.now());
 			timeline.push([entry]);
-			return entry;
+			return { columns, rows };
 		},
 
-		pushRichtext(): TimelineEntry {
-			const entry = new Y.Map();
-			entry.set('type', 'richtext');
-			entry.set('content', new Y.XmlFragment());
-			entry.set('frontmatter', new Y.Map());
-			entry.set('createdAt', Date.now());
-			timeline.push([entry]);
-			return entry;
-		},
+		pushRichtext: appendRichtextEntry,
 
-		pushSheetFromCsv(csv: string): TimelineEntry {
+		pushSheetFromCsv(csv: string) {
 			const entry = new Y.Map();
 			entry.set('type', 'sheet');
 			const columns = new Y.Map<Y.Map<string>>();
@@ -105,7 +148,30 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			parseSheetFromCsv(csv, columns, rows);
 			entry.set('createdAt', Date.now());
 			timeline.push([entry]);
-			return entry;
+			return { columns, rows };
+		},
+
+		replaceCurrentText(content: string) {
+			if (currentMode() === 'text') {
+				const ytext = currentEntry()!.get('content') as Y.Text;
+				ytext.delete(0, ytext.length);
+				ytext.insert(0, content);
+			} else {
+				appendTextEntry(content);
+			}
+		},
+
+		pushRichtextFromFragment(source: Y.XmlFragment) {
+			const { content, frontmatter } = appendRichtextEntry();
+			const children = source
+				.toArray()
+				.filter(
+					(c): c is Y.XmlElement | Y.XmlText =>
+						c instanceof Y.XmlElement || c instanceof Y.XmlText,
+				)
+				.map((c) => c.clone());
+			content.insert(0, children);
+			return { content, frontmatter };
 		},
 
 		readAsString(): string {
@@ -203,15 +269,7 @@ export function restoreFromSnapshot(
 		switch (entry.mode) {
 			case 'text': {
 				const text = entry.content.toString();
-				if (liveTl.currentMode === 'text') {
-					const ytext = liveTl.currentEntry!.get('content') as Y.Text;
-					ydoc.transact(() => {
-						ytext.delete(0, ytext.length);
-						ytext.insert(0, text);
-					});
-				} else {
-					ydoc.transact(() => liveTl.pushText(text));
-				}
+				ydoc.transact(() => liveTl.replaceCurrentText(text));
 				break;
 			}
 			case 'sheet': {
@@ -220,15 +278,7 @@ export function restoreFromSnapshot(
 				break;
 			}
 			case 'richtext': {
-				ydoc.transact(() => {
-					const rtEntry = liveTl.pushRichtext();
-					const liveFragment = rtEntry.get('content') as Y.XmlFragment;
-					const children = entry.content
-						.toArray()
-						.filter((c) => c instanceof Y.XmlElement || c instanceof Y.XmlText)
-						.map((c) => c.clone());
-					liveFragment.insert(0, children);
-				});
+				ydoc.transact(() => liveTl.pushRichtextFromFragment(entry.content));
 				break;
 			}
 			case 'empty':

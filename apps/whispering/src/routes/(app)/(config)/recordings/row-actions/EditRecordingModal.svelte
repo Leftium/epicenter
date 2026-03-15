@@ -7,16 +7,13 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import EditIcon from '@lucide/svelte/icons/pencil';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import type { Recording } from '$lib/services/db';
+	import { workspaceRecordings, type Recording } from '$lib/state/workspace-recordings.svelte';
 	import { recordingActions } from '$lib/utils/recording-actions';
 
-	const updateRecording = createMutation(
-		() => rpc.db.recordings.update.options,
-	);
 
 	let { recording }: { recording: Recording } = $props();
 
@@ -201,32 +198,19 @@
 			<Button variant="outline" onclick={() => promptUserConfirmLeave()}>
 				Close
 			</Button>
-			<Button
-				onclick={() => {
-					updateRecording.mutate($state.snapshot(workingCopy), {
-						onSuccess: () => {
-							rpc.notify.success({
-								title: 'Updated recording!',
-								description: 'Your recording has been updated successfully.',
-							});
-							isDialogOpen = false;
-						},
-						onError: (error) => {
-							rpc.notify.error({
-								title: 'Failed to update recording!',
-								description: 'Your recording could not be updated.',
-								action: { type: 'more-details', error: error },
-							});
-						},
-					});
-				}}
-				disabled={updateRecording.isPending || !isWorkingCopyDirty}
-			>
-				{#if updateRecording.isPending}
-					<Spinner />
-				{/if}
-				Save
-			</Button>
+		<Button
+			onclick={() => {
+				workspaceRecordings.set($state.snapshot(workingCopy));
+				rpc.notify.success({
+					title: 'Updated recording!',
+					description: 'Your recording has been updated successfully.',
+				});
+				isDialogOpen = false;
+			}}
+			disabled={!isWorkingCopyDirty}
+		>
+			Save
+		</Button>
 		</Modal.Footer>
 	</Modal.Content>
 </Modal.Root>

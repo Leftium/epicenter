@@ -11,6 +11,7 @@
 	import { createMutation } from '@tanstack/svelte-query';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { rpc } from '$lib/query';
+	import { workspaceTransformations } from '$lib/state/workspace-transformations.svelte';
 	import type { Transformation } from '$lib/services/db';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
 
@@ -139,18 +140,8 @@
 						title: 'Delete transformation',
 						description: 'Are you sure? This action cannot be undone.',
 						confirm: { text: 'Delete', variant: 'destructive' },
-						onConfirm: async () => {
-							const { error } = await rpc.db.transformations.delete(
-								$state.snapshot(transformation),
-							);
-							if (error) {
-								rpc.notify.error({
-									title: 'Failed to delete transformation!',
-									description: 'Your transformation could not be deleted.',
-									action: { type: 'more-details', error },
-								});
-								throw error;
-							}
+						onConfirm: () => {
+							workspaceTransformations.delete(transformation.id);
 							isDialogOpen = false;
 							rpc.notify.success({
 								title: 'Deleted transformation!',

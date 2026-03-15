@@ -3,17 +3,12 @@
 	import * as Command from '@epicenter/ui/command';
 	import { Kbd } from '@epicenter/ui/kbd';
 	import LayersIcon from '@lucide/svelte/icons/layers';
-	import { createQuery } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { PLATFORM_TYPE } from '$lib/constants/platform';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/db';
+	import { workspaceTransformations, type Transformation } from '$lib/state/workspace-transformations.svelte';
 
-	const transformationsQuery = createQuery(
-		() => rpc.db.transformations.getAll.options,
-	);
-
-	const transformations = $derived(transformationsQuery.data ?? []);
+	const transformations = $derived(workspaceTransformations.sorted);
 
 	const isMac = PLATFORM_TYPE === 'macos';
 	const modifierKey = isMac ? '⌘' : 'Ctrl';

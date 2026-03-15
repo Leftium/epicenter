@@ -1,7 +1,7 @@
 # Query Layer Switch: DbService → Workspace Tables
 
 **Date**: 2026-03-15
-**Status**: Draft
+**Status**: Partially Implemented
 **Prerequisite**: [20260314T070000-database-to-workspace-migration.md](./20260314T070000-database-to-workspace-migration.md) (Implemented — data is in workspace tables)
 
 ## Overview
@@ -271,10 +271,14 @@ export const workspaceRecordings = createWorkspaceRecordings();
 ### Phase 5: Cleanup
 
 - [ ] **5.1** Remove recordings/transformations queries and mutations from `$lib/query/db.ts`
+  > Deferred — transformation create/update mutations are still in use (Editor uses old type). Recording queries (getAll, getLatest, getById) are no longer used in components. Can remove recording queries but must keep transformation queries for now.
 - [ ] **5.2** Remove `dbKeys.recordings.*` and `dbKeys.transformations.*` from query key registry
-- [ ] **5.3** Keep `db.recordings.getAudioPlaybackUrl` (audio blobs aren't in Yjs)
+  > Deferred — same reason as 5.1. Some query keys still referenced by transformation mutations and the transformer's invalidateQueries calls.
+- [x] **5.3** Keep `db.recordings.getAudioPlaybackUrl` (audio blobs aren't in Yjs)
 - [ ] **5.4** Update `$lib/query/README.md` to document the new architecture
-- [ ] **5.5** Update `$lib/state/README.md` to document the new state modules
+  > Deferred — the README documents the full query layer pattern. Updating it requires documenting the new workspace state pattern and when to use each. This is a writing task for after the transition completes.
+- [x] **5.5** Update `$lib/state/README.md` to document the new state modules
+  > Added documentation for all 4 new workspace state modules.
 
 ## Edge Cases
 
@@ -341,3 +345,24 @@ The old model had `transformation.steps[]` as a nested array. The workspace mode
 - `packages/workspace/src/workspace/table-helper.ts` — table API (set, get, getAll, observe, etc.)
 - `specs/20260314T070000-database-to-workspace-migration.md` — prerequisite (data is already in workspace tables)
 - `specs/20260312T170000-whispering-workspace-polish-and-migration.md` — parent spec
+
+## Review
+
+**Completed**: 2026-03-15
+
+### Summary
+
+Replaced TanStack Query + DbService read/write path with reactive SvelteMap state modules backed by Yjs workspace tables for recordings. The recordings data flow is now fully workspace-backed: components read from SvelteMap, writes go directly to workspace tables, Yjs observers keep the SvelteMap in sync. Transformations are partially migrated—reads and deletes use workspace state, but create/update still go through TanStack Query mutations because the Editor component uses the old dot-notation field schema.
+
+### Deviations from Spec
+
+- **Transformation step schema mismatch**: The old `TransformationStepV2` uses dot-notation field names (e.g., `'prompt_transform.inference.provider'`), while the workspace table uses flat field names (e.g., `inferenceProvider`). This means the Editor component can't directly write to workspace tables without a field-name mapping layer or a full refactor. Transformation create/update mutations remain on TanStack Query during this transition.
+- **Phase 5 partial**: Recording queries can be removed from db.ts, but transformation queries must stay. The query/README.md update was deferred since the architecture is still transitional.
+- **Phase 4 partial**: Transformation runs state module was created, but the full run lifecycle (create → addStep → completeStep → complete) remains on DbService due to its complex multi-step execution pattern.
+
+### Follow-up Work
+
+1. **Editor flat field refactor**: Migrate `Configuration.svelte` and `Test.svelte` from dot-notation step fields to flat workspace table fields. This unblocks transformation create/update migration.
+2. **Full db.ts cleanup**: Once all transformation mutations are on workspace, remove remaining query/mutation definitions from db.ts.
+3. **Transformation run lifecycle**: Refactor `runTransformation()` in transformer.ts to write run/step-run records to workspace tables instead of DbService.
+4. **TransformationPickerBody type alignment**: The `onSelect` callback passes workspace Transformation (no steps) to consumers. Consumers that need steps should get them from `workspaceTransformationSteps.getByTransformationId()`.

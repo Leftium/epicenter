@@ -142,9 +142,18 @@ function createAuthState() {
 	 * Fetch the session to extract the encryption key.
 	 *
 	 * Better Auth's signIn/signUp responses don't include customSession
-	 * fields—only getSession() returns them. Fire-and-forget after
-	 * successful sign-in so the encryption wiring can unlock immediately
-	 * instead of waiting for the next visibility-change or page reload.
+	 * fields—only getSession() returns them. This is called fire-and-forget
+	 * after successful sign-in/sign-up so the encryption wiring can unlock
+	 * immediately instead of waiting for the next visibility-change or page
+	 * reload.
+	 *
+	 * ### Timing gap
+	 *
+	 * Between the sign-in response and when this async call completes,
+	 * writes go through unencrypted (plaintext mode). This gap is typically
+	 * <100ms in practice. The plaintext→encrypted migration in `unlock()`
+	 * handles it transparently—plaintext entries written during the gap
+	 * remain readable alongside encrypted entries written after unlock.
 	 */
 	async function refreshEncryptionKey() {
 		const { data } = await client.getSession();

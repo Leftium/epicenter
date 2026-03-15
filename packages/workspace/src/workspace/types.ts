@@ -1288,14 +1288,22 @@ export type WorkspaceClient<
 	readonly mode: EncryptionMode;
 
 	/**
-	 * Lock the workspace — clears the encryption key across all stores.
+	 * Lock the workspace—clears the encryption key from memory.
+	 *
+	 * This is a soft lock (Bitwarden/1Password "lock" model). The key is
+	 * cleared but decrypted data stays in the in-memory cache and persisted
+	 * storage (IndexedDB, SQLite) is untouched.
 	 *
 	 * After locking:
 	 * - `set()` on any table throws to prevent plaintext overwriting ciphertext
-	 * - `get()` returns cached plaintext values
+	 * - `get()` still returns cached plaintext values from the decrypted cache
 	 * - Mode transitions to `'locked'`
 	 *
 	 * No-op if mode is `'plaintext'` (never had a key).
+	 *
+	 * For a hard wipe that clears both memory and persisted data, use
+	 * {@link signOut} instead—it calls `lock()`, then `clearData()` on
+	 * every extension, then `dispose()`.
 	 */
 	lock(): void;
 
@@ -1304,7 +1312,24 @@ export type WorkspaceClient<
 	 *
 	 * Decrypts all stores, retries quarantined entries, transitions to `'unlocked'`.
 	 * If any store fails to unlock, already-unlocked stores are rolled back to `'locked'`
-	 * and the error is rethrown — the workspace never ends up half-unlocked.
+	 * and the error is rethrown—the workspace never ends up half-unlocked.
+	 *
+	 * ### Plaintext→encrypted migration
+	 *
+	 * Existing plaintext entries remain plaintext in the Y.Array after unlock—they
+	 * are NOT re-encrypted in place. Only new writes after `unlock()` are encrypted.
+	 * Mixed plaintext/encrypted data is handled transparently: the observer uses
+	 * `isEncryptedBlob()` type discrimination to decide whether to decrypt or pass
+	 * through each value.
+	 *
+	 * To encrypt legacy plaintext data, the consumer must explicitly read each entry
+	 * and write it back (migration). There is no automatic bulk re-encryption.
+	 *
+	 * ### Wrong key handling
+	 *
+	 * If `unlock()` is called with the wrong key, values that fail decryption are
+	 * quarantined (cached as `undefined`). Calling `unlock()` again with the correct
+	 * key retries all quarantined entries.
 	 *
 	 * @param key - A 32-byte encryption key (e.g. from `deriveWorkspaceKey`)
 	 */

@@ -67,7 +67,7 @@
 	 * Uses accessor pattern for reactive updates.
 	 */
 	const audioPlaybackUrlQuery = createQuery(
-		() => rpc.db.recordings.getAudioPlaybackUrl(() => recording.id).options,
+		() => rpc.audio.getPlaybackUrl(() => recording.id).options,
 	);
 
 	const audioUrl = $derived(audioPlaybackUrlQuery.data);

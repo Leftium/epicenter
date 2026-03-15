@@ -1,6 +1,6 @@
 import { commands } from './actions';
 import { analytics } from './analytics';
-import { db } from './db';
+import { audio } from './audio';
 import { delivery } from './delivery';
 import { download } from './download';
 import { notify } from './notify';
@@ -21,7 +21,7 @@ export const rpc = {
 	analytics,
 	text,
 	commands,
-	db,
+	audio,
 	download,
 	recorder,
 	localShortcuts,

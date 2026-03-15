@@ -48,7 +48,7 @@
 	const latestRecording = $derived(workspaceRecordings.sorted[0]);
 
 	const audioPlaybackUrlQuery = createQuery(() => ({
-		...rpc.db.recordings.getAudioPlaybackUrl(() => latestRecording?.id ?? '')
+		...rpc.audio.getPlaybackUrl(() => latestRecording?.id ?? '')
 			.options,
 		enabled: !!latestRecording?.id,
 	}));

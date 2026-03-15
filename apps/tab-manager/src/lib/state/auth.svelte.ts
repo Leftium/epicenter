@@ -7,6 +7,7 @@
  * All actions return Result types — they never throw.
  */
 
+import type { CustomSessionFields } from '@epicenter/api/src/custom-session-fields';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
 import { untrack } from 'svelte';
@@ -92,23 +93,6 @@ type AuthPhase =
 	| { status: 'signed-in' }
 	| { status: 'signed-out'; error?: string };
 
-/**
- * Custom session fields returned by the API's `customSession` plugin.
- *
- * The server derives a per-user encryption key via HKDF and attaches it
- * to the getSession() response alongside the standard user/session data.
- * These fields appear at the top level of the response—signIn/signUp
- * responses don't include them.
- *
- * This type mirrors the server-side return shape (apps/api/src/app.ts)
- * without importing the server's auth type, since the API and extension
- * are separate build targets.
- */
-type CustomSessionFields = {
-	encryptionKey: string;
-	keyVersion: number;
-};
-
 function createAuthState() {
 	let phase = $state<AuthPhase>({ status: 'checking' });
 	let email = $state('');
@@ -142,23 +126,20 @@ function createAuthState() {
 	 * Fetch the session to extract the encryption key.
 	 *
 	 * Better Auth's signIn/signUp responses don't include customSession
-	 * fields—only getSession() returns them. This is called fire-and-forget
-	 * after successful sign-in/sign-up so the encryption wiring can unlock
-	 * immediately instead of waiting for the next visibility-change or page
-	 * reload.
+	 * fields—only getSession() returns them. Awaited after successful
+	 * sign-in so the encryption wiring unlocks before the caller's
+	 * post-sign-in code runs. No timing gap.
 	 *
-	 * ### Timing gap
-	 *
-	 * Between the sign-in response and when this async call completes,
-	 * writes go through unencrypted (plaintext mode). This gap is typically
-	 * <100ms in practice. The plaintext→encrypted migration in `unlock()`
-	 * handles it transparently—plaintext entries written during the gap
-	 * remain readable alongside encrypted entries written after unlock.
+	 * Network errors are swallowed via `.catch()` because getSession()
+	 * can throw on DNS/connectivity failures (better-fetch doesn't wrap
+	 * the raw `fetch()` call). Non-fatal—workspace stays in plaintext
+	 * mode until the next checkSession() on visibility change.
 	 */
 	async function refreshEncryptionKey() {
-		const { data } = await client.getSession();
-		if (data) {
-			const customData = data as typeof data & CustomSessionFields;
+		// .catch(→ null) swallows network errors; { data: null } covers HTTP errors
+		const result = await client.getSession().catch(() => null);
+		if (result?.data) {
+			const customData = result.data as typeof result.data & CustomSessionFields;
 			encryptionKey = customData.encryptionKey;
 		}
 	}
@@ -257,7 +238,7 @@ function createAuthState() {
 			} else {
 				phase = { status: 'signed-in' };
 				password = '';
-				void refreshEncryptionKey();
+				await refreshEncryptionKey();
 			}
 
 			return result;
@@ -290,7 +271,7 @@ function createAuthState() {
 			} else {
 				phase = { status: 'signed-in' };
 				password = '';
-				void refreshEncryptionKey();
+				await refreshEncryptionKey();
 			}
 
 			return result;
@@ -362,7 +343,7 @@ function createAuthState() {
 				};
 			} else {
 				phase = { status: 'signed-in' };
-				void refreshEncryptionKey();
+				await refreshEncryptionKey();
 			}
 
 			return result;

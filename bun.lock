@@ -205,6 +205,7 @@
         "yjs": "catalog:",
       },
       "devDependencies": {
+        "@epicenter/api": "workspace:*",
         "@standard-schema/spec": "catalog:",
         "@tailwindcss/vite": "catalog:",
         "@types/node": "catalog:",

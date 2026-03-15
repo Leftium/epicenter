@@ -206,16 +206,35 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		return { mode: 'sheet', columns, rows, createdAt };
 	}
 
+	/**
+	 * Replace text in-place if already text mode, otherwise push a new text entry.
+	 *
+	 * Shared by `write()` and `restoreFromSnapshot()` so that restoring text
+	 * content looks identical to a user paste—no unnecessary timeline growth
+	 * when the mode hasn't changed.
+	 */
 	function replaceCurrentText(content: string): void {
 		if (currentMode() === 'text') {
+			// Same mode: overwrite the existing Y.Text (select-all + paste equivalent).
+			// No new timeline entry—the observer does NOT fire.
 			const ytext = currentEntry()!.get('content') as Y.Text;
 			ytext.delete(0, ytext.length);
 			ytext.insert(0, content);
 		} else {
+			// Different mode (or empty): push a new text entry (mode change).
 			pushText(content);
 		}
 	}
 
+	/**
+	 * Push a new richtext entry whose content is deep-cloned from a source fragment.
+	 *
+	 * `Y.XmlElement.clone()` / `Y.XmlText.clone()` produce unattached copies that
+	 * preserve all formatting (bold, italic, headings, links). This is how richtext
+	 * content transfers between Y.Doc instances without flattening to plaintext.
+	 *
+	 * Used by `restoreFromSnapshot()` for richtext mode.
+	 */
 	function pushRichtextFromFragment(source: Y.XmlFragment): RichTextEntry {
 		const result = pushRichtext();
 		const children = source
@@ -330,32 +349,52 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		},
 
 		restoreFromSnapshot(snapshotBinary: Uint8Array): void {
+			// ── Step 1: Hydrate ──────────────────────────────────────────────
+			// Create a temporary Y.Doc and apply the snapshot binary to reconstruct
+			// the full document state at snapshot time.
 			const tempDoc = new Y.Doc({ gc: false });
 			try {
 				Y.applyUpdateV2(tempDoc, snapshotBinary);
 
+				// ── Step 2: Read ──────────────────────────────────────────────
+				// Extract the last timeline entry from the snapshot. This tells us
+				// what content mode (text/sheet/richtext/empty) the snapshot was in
+				// and gives access to the snapshot's CRDT content types.
 				const snapshotTl = createTimeline(tempDoc);
 				const entry = snapshotTl.currentEntry;
 
+				// ── Step 3: Write ──────────────────────────────────────────────
+				// Create new forward CRDT operations on the live doc that make
+				// visible content match the snapshot. Each mode extracts content
+				// from the temp doc's types and writes it into the live doc's
+				// timeline using the same helpers that write() and as*() use.
 				switch (entry.mode) {
 					case 'text': {
+						// Y.Text can't transfer between docs—extract the raw string.
+						// replaceCurrentText handles same-mode (in-place) vs cross-mode (push).
 						const text = entry.content.toString();
 						ydoc.transact(() => replaceCurrentText(text));
 						break;
 					}
 					case 'sheet': {
+						// Sheet structure (column IDs, fractional orders) can't be reused
+						// across docs. Round-trip through CSV to rebuild fresh Y.Maps.
 						const csv = serializeSheetToCsv(entry.columns, entry.rows);
 						ydoc.transact(() => pushSheetFromCsv(csv));
 						break;
 					}
 					case 'richtext': {
+						// Deep-clone preserves all formatting (bold, headings, links).
+						// Always pushes a new entry—no in-place for richtext.
 						ydoc.transact(() => pushRichtextFromFragment(entry.content));
 						break;
 					}
 					case 'empty':
+						// Snapshot had no timeline entries (e.g., pre-migration doc). No-op.
 						break;
 				}
 			} finally {
+				// Always destroy the temp doc, even if applyUpdateV2 threw on corrupted binary.
 				tempDoc.destroy();
 			}
 		},

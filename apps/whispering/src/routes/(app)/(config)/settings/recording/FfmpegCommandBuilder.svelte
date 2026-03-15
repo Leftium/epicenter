@@ -2,6 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as Select from '@epicenter/ui/select';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { createQuery } from '@tanstack/svelte-query';
@@ -20,7 +21,7 @@
 		formatDeviceForPlatform,
 		getFileExtensionFromFfmpegOptions,
 	} from '$lib/services/desktop/recorder/ffmpeg';
-	import { settings } from '$lib/state/settings.svelte';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
 
 	// Generate realistic recording ID for preview
 	const SAMPLE_RECORDING_ID = nanoid();
@@ -44,7 +45,7 @@
 	const selectedDeviceId = $derived(
 		// First, try to find the user's selected device
 		getDevicesQuery.data?.find(
-			(d) => d.id === settings.value['recording.ffmpeg.deviceId'],
+			(d) => d.id === deviceConfig.get('recording.ffmpeg.deviceId'),
 		)?.id ??
 			// Then fall back to the first available device
 			getDevicesQuery.data?.at(0)?.id ??
@@ -173,7 +174,7 @@
 	// Function to update the preview command
 	async function updatePreviewCommand() {
 		const outputFolder =
-			settings.value['recording.cpal.outputFolder'] ??
+			deviceConfig.get('recording.cpal.outputFolder') ??
 			(await PATHS.DB.RECORDINGS());
 		const ext = AUDIO_FORMATS[selected.format].extension;
 		const outputPath = await join(
@@ -233,8 +234,8 @@
 <div class="grid lg:grid-cols-[1fr,1fr] gap-4">
 	<!-- Left Panel: Settings -->
 	<div class="space-y-4">
-		<div class="flex items-center justify-between">
-			<h4 class="text-sm font-semibold">FFmpeg Settings</h4>
+		<SectionHeader.Root class="flex items-center justify-between">
+			<SectionHeader.Title level={4}>FFmpeg Settings</SectionHeader.Title>
 			<button
 				onclick={() => {
 					globalOptions = FFMPEG_DEFAULT_GLOBAL_OPTIONS;
@@ -245,17 +246,17 @@
 			>
 				Reset all
 			</button>
-		</div>
+		</SectionHeader.Root>
 
 		<!-- Output Options (Primary) -->
-		<div class="rounded-lg border p-4 space-y-3">
+		<Field.Set class="rounded-lg border p-4 gap-3">
 			<div class="flex items-center justify-between">
-				<h5 class="text-sm font-medium flex items-baseline gap-2">
+				<Field.Legend variant="label" class="mb-0 flex items-baseline gap-2">
 					<span class="text-primary">Output</span>
 					<span class="text-xs text-muted-foreground font-normal"
 						>Primary settings</span
 					>
-				</h5>
+				</Field.Legend>
 				{#if selected.format !== DEFAULT.format || selected.sampleRate !== DEFAULT.sampleRate || selected.bitrate !== DEFAULT.bitrate || selected.quality !== DEFAULT.quality || outputOptions !== FFMPEG_DEFAULT_OUTPUT_OPTIONS}
 					<Button
 						tooltip="Reset output settings"
@@ -271,12 +272,13 @@
 				{/if}
 			</div>
 
-			<p class="text-xs text-muted-foreground">
+			<Field.Description class="text-xs">
 				Choose based on your needs: file size, compatibility, or quality. Note:
 				Some formats may not play in the browser preview but will work for
 				transcription.
-			</p>
+			</Field.Description>
 
+			<Field.Group>
 			<!-- Flexible layout that adapts to number of controls -->
 			<div class="flex flex-col sm:flex-row gap-3">
 				<div class="flex-1">
@@ -383,7 +385,8 @@
 					</div>
 				{/if}
 			</div>
-		</div>
+			</Field.Group>
+		</Field.Set>
 
 		<!-- Advanced Options (Collapsible) -->
 		<details class="group">
@@ -394,7 +397,7 @@
 				<span class="text-xs text-muted-foreground">Raw FFmpeg parameters</span>
 			</summary>
 
-			<div class="mt-3 space-y-3 rounded-lg border p-4">
+			<Field.Group class="mt-3 gap-3 rounded-lg border p-4">
 				<!-- Global Options -->
 				<Field.Field>
 					<Field.Label for="ffmpeg-global">Global Options</Field.Label>
@@ -495,19 +498,19 @@
 						parameters.
 					</Field.Description>
 				</Field.Field>
-			</div>
+			</Field.Group>
 		</details>
 	</div>
 
 	<!-- Right Panel: Live Preview -->
 	<div class="flex flex-col h-full">
 		<div class="rounded-lg border bg-muted/30 flex-1 flex flex-col">
-			<div class="p-4 border-b bg-background/50">
-				<h5 class="text-sm font-medium">Command Preview</h5>
-				<p class="text-xs text-muted-foreground mt-0.5">
+			<SectionHeader.Root class="p-4 border-b bg-background/50">
+				<SectionHeader.Title level={5} class="font-medium">Command Preview</SectionHeader.Title>
+				<SectionHeader.Description class="text-xs">
 					Live updates as you modify settings
-				</p>
-			</div>
+				</SectionHeader.Description>
+			</SectionHeader.Root>
 
 			<div class="flex-1 p-4 overflow-auto">
 				<div

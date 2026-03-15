@@ -4,7 +4,8 @@
 	import Search from '@lucide/svelte/icons/search';
 	import { commands } from '$lib/commands';
 	import { rpc } from '$lib/query';
-	import { getDefaultSettings } from '$lib/settings';
+	import { deviceConfig, type DeviceConfigKey } from '$lib/state/device-config.svelte';
+	import workspace from '$lib/workspace';
 	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import GlobalKeyboardShortcutRecorder from './GlobalKeyboardShortcutRecorder.svelte';
 	import LocalKeyboardShortcutRecorder from './LocalKeyboardShortcutRecorder.svelte';
@@ -13,7 +14,16 @@
 
 	let searchQuery = $state('');
 
-	const defaultSettings = getDefaultSettings();
+	/** Look up the definition default for a shortcut key from the correct store. */
+	function getDefaultShortcut(commandId: string): string | null {
+		if (type === 'local') {
+			const defs = workspace.definitions.kv as Record<string, { defaultValue: unknown }>;
+			return (defs[`shortcut.${commandId}`]?.defaultValue as string | null) ?? null;
+		}
+		return deviceConfig.getDefault(
+			`shortcuts.global.${commandId}` as DeviceConfigKey,
+		);
+	}
 
 	const filteredCommands = $derived(
 		commands.filter((command) =>
@@ -56,8 +66,7 @@
 			</Table.Header>
 			<Table.Body>
 				{#each filteredCommands as command}
-					{@const defaultShortcut =
-						defaultSettings[`shortcuts.${type}.${command.id}`]}
+					{@const defaultShortcut = getDefaultShortcut(command.id)}
 					<Table.Row>
 						<Table.Cell class="font-medium">
 							<span class="block truncate pr-2">{command.title}</span>

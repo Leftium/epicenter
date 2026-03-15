@@ -1,12 +1,13 @@
 import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
+import { rpc } from '$lib/query';
 import { defineMutation } from '$lib/query/client';
 import { WhisperingErr } from '$lib/result';
 import { DbError } from '$lib/services/db';
-import { settings } from '$lib/state/settings.svelte';
+import { deviceConfig } from '$lib/state/device-config.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
-import { rpc } from '$lib/query';
 import { db } from './db';
 import { delivery } from './delivery';
 import { notify } from './notify';
@@ -53,7 +54,7 @@ const startManualRecording = defineMutation({
 		}
 		isRecordingOperationBusy = true;
 
-		await settings.switchRecordingMode('manual');
+		workspaceSettings.set('recording.mode', 'manual');
 
 		const toastId = nanoid();
 		notify.loading({
@@ -83,8 +84,8 @@ const startManualRecording = defineMutation({
 				break;
 			}
 			case 'fallback': {
-				const method = settings.value['recording.method'];
-				settings.updateKey(
+				const method = deviceConfig.get("recording.method");
+				deviceConfig.set(
 					`recording.${method}.deviceId`,
 					deviceAcquisitionOutcome.deviceId,
 				);
@@ -198,7 +199,7 @@ const stopManualRecording = defineMutation({
 const startVadRecording = defineMutation({
 	mutationKey: ['commands', 'startVadRecording'] as const,
 	mutationFn: async () => {
-		await settings.switchRecordingMode('vad');
+		workspaceSettings.set('recording.mode', 'vad');
 
 		const toastId = nanoid();
 		console.info('Starting voice activated capture');
@@ -257,8 +258,8 @@ const startVadRecording = defineMutation({
 				break;
 			}
 			case 'fallback': {
-				settings.updateKey(
-					'recording.navigator.deviceId',
+				deviceConfig.set(
+					"recording.navigator.deviceId",
 					deviceAcquisitionOutcome.deviceId,
 				);
 				switch (deviceAcquisitionOutcome.reason) {
@@ -421,7 +422,7 @@ export const commands = {
 	uploadRecordings: defineMutation({
 		mutationKey: ['recordings', 'uploadRecordings'] as const,
 		mutationFn: async ({ files }: { files: File[] }) => {
-			await settings.switchRecordingMode('upload');
+			workspaceSettings.set('recording.mode', 'upload');
 			// Partition files into valid and invalid in a single pass
 			const { valid: validFiles, invalid: invalidFiles } = files.reduce<{
 				valid: File[];
@@ -491,8 +492,9 @@ export const commands = {
 		mutationKey: ['commands', 'runTransformationOnClipboard'] as const,
 		mutationFn: async () => {
 			// Get selected transformation from settings
-			const transformationId =
-				settings.value['transformations.selectedTransformationId'];
+			const transformationId = workspaceSettings.get(
+				'transformation.selectedId',
+			);
 
 			if (!transformationId) {
 				return WhisperingErr({
@@ -518,7 +520,7 @@ export const commands = {
 			}
 
 			if (!transformation) {
-				settings.updateKey('transformations.selectedTransformationId', null);
+				workspaceSettings.set('transformation.selectedId', null);
 				return WhisperingErr({
 					title: '⚠️ Transformation not found',
 					description:
@@ -707,8 +709,7 @@ async function processRecordingPipeline({
 	}
 
 	// Determine if we need to chain to transformation
-	const transformationId =
-		settings.value['transformations.selectedTransformationId'];
+	const transformationId = workspaceSettings.get('transformation.selectedId');
 
 	// Check if transformation is valid if specified
 	if (!transformationId) return;
@@ -730,7 +731,7 @@ async function processRecordingPipeline({
 	}
 
 	if (transformationNoLongerExists) {
-		settings.updateKey('transformations.selectedTransformationId', null);
+		workspaceSettings.set('transformation.selectedId', null);
 		notify.warning({
 			title: '⚠️ No matching transformation found',
 			description:

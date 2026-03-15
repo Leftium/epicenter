@@ -6,7 +6,7 @@
 		arrayToShortcutString,
 		type CommandId,
 	} from '$lib/services/local-shortcut-manager';
-	import { settings } from '$lib/state/settings.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 	import { type PressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import { createKeyRecorder } from './create-key-recorder.svelte';
 	import KeyboardShortcutRecorder from './KeyboardShortcutRecorder.svelte';
@@ -24,7 +24,7 @@
 	} = $props();
 
 	const shortcutValue = $derived(
-		settings.value[`shortcuts.local.${command.id}`],
+		workspaceSettings.get(`shortcut.${command.id}`),
 	);
 
 	const keyRecorder = createKeyRecorder({
@@ -57,8 +57,8 @@
 				return;
 			}
 
-			settings.updateKey(
-				`shortcuts.local.${command.id}`,
+			workspaceSettings.set(
+				`shortcut.${command.id}`,
 				arrayToShortcutString(keyCombination),
 			);
 
@@ -79,7 +79,7 @@
 					action: { type: 'more-details', error: unregisterError },
 				});
 			}
-			settings.updateKey(`shortcuts.local.${command.id}`, null);
+			workspaceSettings.set(`shortcut.${command.id}`, null);
 
 			rpc.notify.success({
 				title: 'Local shortcut cleared',

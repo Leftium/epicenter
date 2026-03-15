@@ -14,14 +14,12 @@
 	import { toggleMode } from 'mode-watcher';
 	import { page } from '$app/state';
 	import { GithubIcon } from '$lib/components/icons';
-	import MigrationDialog, {
-		migrationDialog,
-	} from '$lib/components/MigrationDialog.svelte';
+	import MigrationDialog from '$lib/migration/MigrationDialog.svelte';
+	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 	import { notificationLog } from '$lib/components/NotificationLog.svelte';
 
 	const shouldShowMigrationButton = $derived(
-		window.__TAURI_INTERNALS__ &&
-			(import.meta.env.DEV || migrationDialog.hasIndexedDBData),
+		import.meta.env.DEV || migrationDialog.isPending,
 	);
 
 	const sidebar = useSidebar();

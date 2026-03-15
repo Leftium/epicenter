@@ -3,12 +3,23 @@ import type { WhisperingSoundNames } from '$lib/constants/sounds';
 import { defineMutation } from '$lib/query/client';
 import { services } from '$lib/services';
 import type { SoundError } from '$lib/services/sound';
-import { settings } from '$lib/state/settings.svelte';
+import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 
 const soundKeys = {
 	all: ['sound'] as const,
 	playSoundIfEnabled: ['sound', 'playSoundIfEnabled'] as const,
 } as const;
+
+const soundSettingKeyMap = {
+	'manual-start': 'sound.manualStart',
+	'manual-stop': 'sound.manualStop',
+	'manual-cancel': 'sound.manualCancel',
+	'vad-start': 'sound.vadStart',
+	'vad-capture': 'sound.vadCapture',
+	'vad-stop': 'sound.vadStop',
+	transcriptionComplete: 'sound.transcriptionComplete',
+	transformationComplete: 'sound.transformationComplete',
+} as const satisfies Record<WhisperingSoundNames, string>;
 
 export const sound = {
 	playSoundIfEnabled: defineMutation({
@@ -16,7 +27,7 @@ export const sound = {
 		mutationFn: async (
 			soundName: WhisperingSoundNames,
 		): Promise<Result<void, SoundError>> => {
-			if (!settings.value[`sound.playOn.${soundName}`]) {
+			if (!workspaceSettings.get(soundSettingKeyMap[soundName])) {
 				return Ok(undefined);
 			}
 			return await services.sound.playSound(soundName);

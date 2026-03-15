@@ -70,18 +70,18 @@ describe('createTimeline - sheet entries', () => {
 		expect(rows.size).toBe(2);
 	});
 
-	test('readAsString returns CSV for sheet entry', () => {
+	test('read returns CSV for sheet entry', () => {
 		const tl = setup();
 		const csv = 'Name,Age\nAlice,30\n';
 		tl.pushSheetFromCsv(csv);
-		expect(tl.readAsString()).toBe(csv);
+		expect(tl.read()).toBe(csv);
 	});
-	test('round-trip: pushSheetFromCsv → readAsString matches original', () => {
+	test('round-trip: pushSheetFromCsv → read matches original', () => {
 		const tl = setup();
 		const originalCsv =
 			'Product,Price,Stock\nWidget,9.99,100\nGadget,24.99,50\n';
 		tl.pushSheetFromCsv(originalCsv);
-		expect(tl.readAsString()).toBe(originalCsv);
+		expect(tl.read()).toBe(originalCsv);
 	});
 
 	test('switching text to sheet to text updates current mode and content', () => {
@@ -97,19 +97,19 @@ describe('createTimeline - sheet entries', () => {
 		tl.pushText('Third entry');
 		expect(tl.currentMode).toBe('text');
 		expect(tl.length).toBe(3);
-		expect(tl.readAsString()).toBe('Third entry');
+		expect(tl.read()).toBe('Third entry');
 	});
 
 	test('empty sheet returns empty string', () => {
 		const tl = setup();
 		tl.pushSheet();
-		expect(tl.readAsString()).toBe('');
+		expect(tl.read()).toBe('');
 	});
 
 	test('sheet with columns but no rows returns header only', () => {
 		const tl = setup();
 		tl.pushSheetFromCsv('A,B,C\n');
-		expect(tl.readAsString()).toBe('A,B,C\n');
+		expect(tl.read()).toBe('A,B,C\n');
 	});
 });
 
@@ -131,7 +131,7 @@ describe('restoreFromSnapshot', () => {
 
 		restoreFromSnapshot(doc, createSnapshotBinary((s) => s.pushText('restored content')));
 
-		expect(tl.readAsString()).toBe('restored content');
+		expect(tl.read()).toBe('restored content');
 		expect(tl.length).toBe(1);
 		expect(tl.currentMode).toBe('text');
 		doc.destroy();
@@ -145,7 +145,7 @@ describe('restoreFromSnapshot', () => {
 
 		restoreFromSnapshot(doc, createSnapshotBinary((s) => s.pushText('snapshot text')));
 
-		expect(tl.readAsString()).toBe('snapshot text');
+		expect(tl.read()).toBe('snapshot text');
 		expect(tl.currentMode).toBe('text');
 		expect(tl.length).toBe(2);
 		doc.destroy();
@@ -160,7 +160,7 @@ describe('restoreFromSnapshot', () => {
 		restoreFromSnapshot(doc, createSnapshotBinary((s) => s.pushSheetFromCsv(csv)));
 
 		expect(tl.currentMode).toBe('sheet');
-		expect(tl.readAsString()).toBe(csv);
+		expect(tl.read()).toBe(csv);
 
 		const entry = readEntry(tl.currentEntry);
 		expect(entry.mode).toBe('sheet');
@@ -178,7 +178,7 @@ describe('restoreFromSnapshot', () => {
 
 		restoreFromSnapshot(doc, createSnapshotBinary(() => {}));
 
-		expect(tl.readAsString()).toBe('should stay');
+		expect(tl.read()).toBe('should stay');
 		expect(tl.length).toBe(1);
 		doc.destroy();
 	});
@@ -190,7 +190,7 @@ describe('restoreFromSnapshot', () => {
 
 		expect(() => restoreFromSnapshot(doc, new Uint8Array([1, 2, 3]))).toThrow();
 
-		expect(tl.readAsString()).toBe('original');
+		expect(tl.read()).toBe('original');
 		doc.destroy();
 	});
 

@@ -54,8 +54,6 @@ export type Timeline = {
 
 	/** Read the current entry as a string. Returns '' if empty. */
 	read(): string;
-	/** Read the current entry as a string. Alias for `read()`. */
-	readAsString(): string;
 	/**
 	 * Replace text content, wrapped in a single transaction.
 	 * If current mode is text, replaces in-place. Otherwise pushes new text entry.
@@ -229,9 +227,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			}
 		},
 
-		readAsString(): string {
-			return this.read();
-		},
 
 		write(text: string) {
 			ydoc.transact(() => this.replaceCurrentText(text));

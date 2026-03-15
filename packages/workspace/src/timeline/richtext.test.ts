@@ -156,7 +156,7 @@ describe('createTimeline - pushRichtext', () => {
 		expect(tl.currentMode).toBe('richtext');
 	});
 
-	test('readAsString extracts plaintext from richtext entry', () => {
+	test('read extracts plaintext from richtext entry', () => {
 		const tl = setup();
 		const { content: fragment } = tl.pushRichtext();
 
@@ -166,12 +166,12 @@ describe('createTimeline - pushRichtext', () => {
 		p.insert(0, [t]);
 		fragment.insert(0, [p]);
 
-		expect(tl.readAsString()).toBe('Hello from richtext');
+		expect(tl.read()).toBe('Hello from richtext');
 	});
 
-	test('readAsString on empty richtext returns empty string', () => {
+	test('read on empty richtext returns empty string', () => {
 		const tl = setup();
 		tl.pushRichtext();
-		expect(tl.readAsString()).toBe('');
+		expect(tl.read()).toBe('');
 	});
 });

@@ -192,7 +192,7 @@ export function createYjsFileSystem(
 			const validated = handle.currentEntry;
 
 			let size: number;
-			if (validated.mode === 'sheet') {
+			if (validated.type === 'sheet') {
 				handle.batch(() => {
 					validated.columns.forEach((_, key) => {
 						validated.columns.delete(key);
@@ -223,7 +223,7 @@ export function createYjsFileSystem(
 			const handle = await contentDocuments.open(id);
 			const validated = handle.currentEntry;
 
-			if (validated.mode !== 'text') {
+			if (validated.type !== 'text') {
 				await this.writeFile(path, data);
 				return;
 			}

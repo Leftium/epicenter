@@ -777,7 +777,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		const text = handle.asText();
 		expect(text).toBeInstanceOf(Y.Text);
-		expect(handle.currentMode).toBe('text');
+		expect(handle.currentType).toBe('text');
 	});
 
 	test('asText on text entry returns existing Y.Text', async () => {
@@ -801,11 +801,11 @@ describe('handle.asText / asRichText / asSheet', () => {
 		p.insert(0, [t]);
 		fragment.insert(0, [p]);
 
-		expect(handle.currentMode).toBe('richtext');
+		expect(handle.currentType).toBe('richtext');
 
 		const text = handle.asText();
 		expect(text.toString()).toBe('Rich content');
-		expect(handle.currentMode).toBe('text');
+		expect(handle.currentType).toBe('text');
 		expect(handle.length).toBe(2);
 	});
 
@@ -815,11 +815,11 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		handle.write('Name,Age\nAlice,30\n');
 		handle.asSheet();
-		expect(handle.currentMode).toBe('sheet');
+		expect(handle.currentType).toBe('sheet');
 
 		const text = handle.asText();
 		expect(text.toString()).toBe('Name,Age\nAlice,30\n');
-		expect(handle.currentMode).toBe('text');
+		expect(handle.currentType).toBe('text');
 		expect(handle.length).toBe(3);
 	});
 
@@ -831,7 +831,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		const fragment = handle.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.currentMode).toBe('richtext');
+		expect(handle.currentType).toBe('richtext');
 	});
 
 	test('asRichText on richtext entry returns existing fragment', async () => {
@@ -851,7 +851,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		const fragment = handle.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.currentMode).toBe('richtext');
+		expect(handle.currentType).toBe('richtext');
 		expect(handle.length).toBe(2);
 		expect(handle.read()).toBe('Line 1\nLine 2');
 	});
@@ -864,7 +864,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		const fragment = handle.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.currentMode).toBe('richtext');
+		expect(handle.currentType).toBe('richtext');
 		expect(handle.length).toBe(3);
 	});
 
@@ -877,7 +877,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const sheet = handle.asSheet();
 		expect(sheet.columns).toBeInstanceOf(Y.Map);
 		expect(sheet.rows).toBeInstanceOf(Y.Map);
-		expect(handle.currentMode).toBe('sheet');
+		expect(handle.currentType).toBe('sheet');
 	});
 
 	test('asSheet on sheet entry returns existing binding', async () => {
@@ -900,7 +900,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const sheet = handle.asSheet();
 		expect(sheet.columns.size).toBe(2);
 		expect(sheet.rows.size).toBe(1);
-		expect(handle.currentMode).toBe('sheet');
+		expect(handle.currentType).toBe('sheet');
 		expect(handle.length).toBe(2);
 	});
 
@@ -921,7 +921,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		const sheet = handle.asSheet();
 		expect(sheet.columns.size).toBe(2);
-		expect(handle.currentMode).toBe('sheet');
+		expect(handle.currentType).toBe('sheet');
 		expect(handle.length).toBe(2);
 	});
 
@@ -931,9 +931,9 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		expect(handle.currentMode).toBeUndefined(); // empty
+		expect(handle.currentType).toBeUndefined(); // empty
 		handle.write('text');
-		expect(handle.currentMode).toBe('text');
+		expect(handle.currentType).toBe('text');
 	});
 
 	// ─── consecutive conversions ──────────────────────────────────────
@@ -943,19 +943,19 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const handle = await documents.open('f1');
 
 		handle.write('hello');
-		expect(handle.currentMode).toBe('text');
+		expect(handle.currentType).toBe('text');
 		expect(handle.length).toBe(1);
 
 		handle.asRichText();
-		expect(handle.currentMode).toBe('richtext');
+		expect(handle.currentType).toBe('richtext');
 		expect(handle.length).toBe(2);
 
 		handle.asSheet();
-		expect(handle.currentMode).toBe('sheet');
+		expect(handle.currentType).toBe('sheet');
 		expect(handle.length).toBe(3);
 
 		handle.asText();
-		expect(handle.currentMode).toBe('text');
+		expect(handle.currentType).toBe('text');
 		expect(handle.length).toBe(4);
 	});
 });

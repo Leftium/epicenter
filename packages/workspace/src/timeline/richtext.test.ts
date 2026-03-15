@@ -133,7 +133,7 @@ describe('createTimeline - asRichText', () => {
 	test('asRichText on empty timeline creates richtext entry', () => {
 		const tl = setup();
 		tl.asRichText();
-		expect(tl.currentMode).toBe('richtext');
+		expect(tl.currentType).toBe('richtext');
 	});
 
 	test('asRichText returns XmlFragment', () => {
@@ -146,7 +146,7 @@ describe('createTimeline - asRichText', () => {
 		const tl = setup();
 		tl.asRichText();
 		const entry = tl.currentEntry;
-		if (entry.mode === 'empty') throw new Error('expected richtext');
+		if (entry.type === 'empty') throw new Error('expected richtext');
 		expect(entry.createdAt).toBeTypeOf('number');
 	});
 

@@ -259,7 +259,7 @@ export type ClaimedDocumentColumns<
  * handle.asText();          // Y.Text for editor binding (converts if needed)
  * handle.asRichText();      // Y.XmlFragment for richtext binding (converts if needed)
  * handle.asSheet();         // Sheet columns/rows (converts if needed)
- * handle.currentMode;       // current content mode
+ * handle.currentType;       // current content type
  * handle.batch(() => {});   // wraps ydoc.transact
  * handle.batch(() => {});   // wraps ydoc.transact
  * ```

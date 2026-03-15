@@ -5,7 +5,7 @@ export {
 } from './sheet.js';
 export {
 	createTimeline,
-	type ContentMode,
+	type ContentType,
 	type RichTextEntry,
 	type SheetEntry,
 	type TextEntry,

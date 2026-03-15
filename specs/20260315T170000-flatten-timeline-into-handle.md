@@ -25,7 +25,7 @@ function makeHandle(ydoc, extensions): DocumentHandle {
     const tl = createTimeline(ydoc);
     return {
         ydoc,                                                // pass-through
-        get mode() { return tl.currentMode; },               // rename
+        get mode() { return tl.currentType; },               // rename
         read() { return tl.readAsString(); },                // rename
         write(text) { ydoc.transact(() => tl.replaceCurrentText(text)); },  // transact wrapper
         asText()  { /* switch + tl.pushText in transact */ },               // mode conversion
@@ -51,7 +51,7 @@ This creates problems:
 
 1. **The escape hatch is the loudest signal.** Consumers write `handle.timeline.pushRichtext()` and `handle.timeline.currentEntry` constantly. The filesystem package accesses `handle.timeline` in 6 of its 8 handle call sites. When the escape hatch is used more than the abstraction, the abstraction is wrong.
 
-2. **Two names for one thing.** `handle.mode` vs `tl.currentMode`. `handle.read()` vs `tl.readAsString()`. Consumers learn two APIs for the same data. New developers have to decide which to use.
+2. **Two names for one thing.** `handle.mode` vs `tl.currentType`. `handle.read()` vs `tl.readAsString()`. Consumers learn two APIs for the same data. New developers have to decide which to use.
 
 3. **Mode conversion is just timeline logic.** The `asText`/`asRichText`/`asSheet` methods read the current entry via `readEntry()` (already a timeline function), then push a new entry via timeline push methods, wrapped in `ydoc.transact()`. This is timeline behavior; it ended up on the handle by historical accident.
 
@@ -90,7 +90,7 @@ This is fine—`createTimeline` still works standalone. The flattening adds meth
 
 ### Getter Spreading Limitation
 
-Timeline's returned object uses `get length()`, `get currentEntry()`, `get currentMode()`. JavaScript's `{ ...obj }` evaluates getters (captures values) rather than copying the descriptors. So `{ ...timeline, exports }` would freeze the getter values.
+Timeline's returned object uses `get length()`, `get currentEntry()`, `get currentType()`. JavaScript's `{ ...obj }` evaluates getters (captures values) rather than copying the descriptors. So `{ ...timeline, exports }` would freeze the getter values.
 
 Two approaches:
 - `Object.assign(timeline, { exports })` — adds `exports` to the existing object, preserving getters on the target. Works because Timeline returns a fresh object per call.
@@ -117,7 +117,7 @@ Two approaches:
 ┌──────────────────────────────────────────────┐
 │  DocumentHandle                               │
 │  ├── ydoc: Y.Doc                              │
-│  ├── mode → tl.currentMode                    │  rename
+│  ├── mode → tl.currentType                    │  rename
 │  ├── read() → tl.readAsString()               │  rename
 │  ├── write() → transact(tl.replaceCurrentText)│  transact wrap
 │  ├── asText() → readEntry + tl.pushText       │  mode conversion
@@ -149,7 +149,7 @@ Two approaches:
 │  ├── ydoc: Y.Doc                              │
 │                                               │
 │  State (getters)                              │
-│  ├── length, currentEntry, currentMode        │
+│  ├── length, currentEntry, currentType        │
 │                                               │
 │  Low-level push (no transact, for batching)   │
 │  ├── pushText, pushSheet, pushRichtext        │
@@ -188,7 +188,7 @@ One line. Down from 80.
 - [ ] **1.1** Add `ydoc: Y.Doc` to `Timeline` type and `createTimeline` return
 - [ ] **1.2** Add `read()`, `write(text)`, `batch(fn)` to Timeline (transact-wrapped)
 - [ ] **1.3** Add `asText()`, `asRichText()`, `asSheet()` to Timeline (move mode conversion logic from `makeHandle`)
-- [ ] **1.4** Add `mode` getter (alias for `currentMode`—decide in Open Questions whether to keep both or pick one name)
+- [ ] **1.4** Add `mode` getter (alias for `currentType`—decide in Open Questions whether to keep both or pick one name)
 - [ ] **1.5** Update `Timeline` type definition with all new methods + JSDoc
 - [ ] **1.6** Update timeline barrel exports (`index.ts`) if needed
 
@@ -236,10 +236,10 @@ Timeline currently imports `xmlFragmentToPlaintext`, `serializeSheetToCsv` from 
 
 ## Open Questions
 
-1. **Should `mode` and `currentMode` coexist?**
-   - `currentMode` is the Timeline name (explicit). `mode` is the handle name (concise).
-   - Options: (a) keep both as aliases, (b) rename to just `mode` everywhere, (c) keep `currentMode` and drop `mode`
-   - **Recommendation**: Keep `currentMode` as the canonical name. It's more explicit and already used by `restoreFromSnapshot` and all timeline tests. Drop the `mode` alias—one name is better than two.
+1. **Should `mode` and `currentType` coexist?**
+   - `currentType` is the Timeline name (explicit). `mode` is the handle name (concise).
+   - Options: (a) keep both as aliases, (b) rename to just `mode` everywhere, (c) keep `currentType` and drop `mode`
+   - **Recommendation**: Keep `currentType` as the canonical name. It's more explicit and already used by `restoreFromSnapshot` and all timeline tests. Drop the `mode` alias—one name is better than two.
 
 2. **Should `read()` and `readAsString()` coexist?**
    - Same function, two names. `read()` is concise for consumers. `readAsString()` is explicit about what it does.
@@ -276,7 +276,7 @@ Timeline currently imports `xmlFragmentToPlaintext`, `serializeSheetToCsv` from 
 ## References
 
 - `packages/workspace/src/timeline/timeline.ts`—`createTimeline`, `readEntry`, `restoreFromSnapshot`. This file absorbs the mode conversion logic from `makeHandle`.
-- `packages/workspace/src/timeline/entries.ts`—`TextEntry`, `RichTextEntry`, `SheetEntry`, `ContentMode`. Return types for push methods.
+- `packages/workspace/src/timeline/entries.ts`—`TextEntry`, `RichTextEntry`, `SheetEntry`, `ContentType`. Return types for push methods.
 - `packages/workspace/src/workspace/create-document.ts`—`makeHandle` factory. Becomes a one-liner.
 - `packages/workspace/src/workspace/types.ts`—`DocumentHandle` type definition. Becomes `Timeline & { exports }`.
 - `packages/filesystem/src/file-system.ts`—Heaviest consumer of `handle.timeline` escape hatch. All 6 occurrences become direct access.

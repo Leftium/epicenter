@@ -11,56 +11,56 @@ type TimelineYMap = Y.Map<unknown>;
 // ── Entry types ──────────────────────────────────────────────────────────
 
 /**
- * Timeline entry shapes — a discriminated union on 'mode'.
+ * Timeline entry shapes — a discriminated union on 'type'.
  * These describe the extracted, typed form of what's stored in Y.Maps.
  * At runtime, entries are Y.Map instances; push functions construct them
  * and readEntry validates/extracts them into these shapes.
  */
 export type TextEntry = {
-	mode: 'text';
+	type: 'text';
 	content: Y.Text;
 	createdAt: number;
 };
 export type RichTextEntry = {
-	mode: 'richtext';
+	type: 'richtext';
 	content: Y.XmlFragment;
 	frontmatter: Y.Map<unknown>;
 	createdAt: number;
 };
 export type SheetEntry = {
-	mode: 'sheet';
+	type: 'sheet';
 	columns: Y.Map<Y.Map<string>>;
 	rows: Y.Map<Y.Map<string>>;
 	createdAt: number;
 };
 export type TimelineEntry = TextEntry | RichTextEntry | SheetEntry;
 
-/** Content modes supported by timeline entries. */
-export type ContentMode = TimelineEntry['mode'];
+/** Content types supported by timeline entries. */
+export type ContentType = TimelineEntry['type'];
 
 export type Timeline = {
 	/** The Y.Doc this timeline is bound to. */
 	readonly ydoc: Y.Doc;
 	/** Number of entries in the timeline. */
 	readonly length: number;
-	/** The current entry, validated and typed. Returns `{ mode: 'empty' }` if no entries. */
+	/** The current entry, validated and typed. Returns `{ type: 'empty' }` if no entries. */
 	readonly currentEntry: ValidatedEntry;
-	/** Content mode of the current entry, or undefined if empty. */
-	readonly currentMode: ContentMode | undefined;
+	/** Content type of the current entry, or undefined if empty. */
+	readonly currentType: ContentType | undefined;
 
 	/** Read the current entry as a string. Returns '' if empty. */
 	read(): string;
 	/**
 	 * Replace text content, wrapped in a single transaction.
-	 * If current mode is text, replaces in-place. Otherwise pushes new text entry.
+	 * If current type is text, replaces in-place. Otherwise pushes new text entry.
 	 */
 	write(text: string): void;
 
 	/**
 	 * Get current content as Y.Text for editor binding.
 	 *
-	 * If already text mode, returns the existing Y.Text. If the timeline is
-	 * empty, creates a new text entry. If the current entry is a different mode,
+	 * If already text type, returns the existing Y.Text. If the timeline is
+	 * empty, creates a new text entry. If the current entry is a different type,
 	 * converts the content and pushes a new text entry.
 	 *
 	 * All conversions always succeed. Richtext→text is lossy (strips formatting).
@@ -70,16 +70,16 @@ export type Timeline = {
 	/**
 	 * Get current content as Y.XmlFragment for richtext editor binding.
 	 *
-	 * If already richtext mode, returns the existing Y.XmlFragment. If empty,
-	 * creates a new richtext entry. If different mode, converts and pushes.
+	 * If already richtext type, returns the existing Y.XmlFragment. If empty,
+	 * creates a new richtext entry. If different type, converts and pushes.
 	 */
 	asRichText(): Y.XmlFragment;
 
 	/**
 	 * Get current content as sheet columns/rows for spreadsheet binding.
 	 *
-	 * If already sheet mode, returns existing columns and rows. If empty,
-	 * creates a new sheet entry. If different mode, converts (parsed as CSV).
+	 * If already sheet type, returns existing columns and rows. If empty,
+	 * creates a new sheet entry. If different type, converts (parsed as CSV).
 	 */
 	asSheet(): SheetBinding;
 
@@ -90,7 +90,7 @@ export type Timeline = {
 	 * Restore this document's content to match a past snapshot.
 	 *
 	 * Creates a temporary Y.Doc from the snapshot binary, reads its timeline
-	 * entry, and writes matching content. Mode-aware: text snapshots replace
+	 * entry, and writes matching content. Type-aware: text snapshots replace
 	 * in-place (if already text) or push a new entry; sheet and richtext
 	 * always push new entries.
 	 *
@@ -127,7 +127,7 @@ export type Timeline = {
 	 * ```typescript
 	 * const unsub = timeline.observe(() => {
 	 *   const entry = timeline.currentEntry;
-	 *   if (entry.mode === 'richtext') rebindEditor(entry.content);
+	 *   if (entry.type === 'richtext') rebindEditor(entry.content);
 	 * });
 	 * // later: unsub();
 	 * ```
@@ -135,7 +135,7 @@ export type Timeline = {
 	observe(callback: () => void): () => void;
 };
 
-export type ValidatedEntry = TimelineEntry | { mode: 'empty' };
+export type ValidatedEntry = TimelineEntry | { type: 'empty' };
 
 export function createTimeline(ydoc: Y.Doc): Timeline {
 	const timeline = ydoc.getArray<TimelineYMap>('timeline');
@@ -147,9 +147,9 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		return timeline.get(timeline.length - 1);
 	}
 
-	function currentMode(): ContentMode | undefined {
+	function currentType(): ContentType | undefined {
 		const entry = currentEntry();
-		return entry ? (entry.get('type') as ContentMode) : undefined;
+		return entry ? (entry.get('type') as ContentType) : undefined;
 	}
 
 	// ── Primitive push ops (closures, not on returned object) ─────────────
@@ -163,7 +163,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		const createdAt = Date.now();
 		entry.set('createdAt', createdAt);
 		timeline.push([entry]);
-		return { mode: 'text', content: ytext, createdAt };
+		return { type: 'text', content: ytext, createdAt };
 	}
 
 	function pushSheet(): SheetEntry {
@@ -176,7 +176,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		const createdAt = Date.now();
 		entry.set('createdAt', createdAt);
 		timeline.push([entry]);
-		return { mode: 'sheet', columns, rows, createdAt };
+		return { type: 'sheet', columns, rows, createdAt };
 	}
 
 	function pushRichtext(): RichTextEntry {
@@ -189,7 +189,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		const createdAt = Date.now();
 		entry.set('createdAt', createdAt);
 		timeline.push([entry]);
-		return { mode: 'richtext', content, frontmatter, createdAt };
+		return { type: 'richtext', content, frontmatter, createdAt };
 	}
 
 	function pushSheetFromCsv(csv: string): SheetEntry {
@@ -203,25 +203,25 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		const createdAt = Date.now();
 		entry.set('createdAt', createdAt);
 		timeline.push([entry]);
-		return { mode: 'sheet', columns, rows, createdAt };
+		return { type: 'sheet', columns, rows, createdAt };
 	}
 
 	/**
-	 * Replace text in-place if already text mode, otherwise push a new text entry.
+	 * Replace text in-place if already text type, otherwise push a new text entry.
 	 *
 	 * Shared by `write()` and `restoreFromSnapshot()` so that restoring text
 	 * content looks identical to a user paste—no unnecessary timeline growth
-	 * when the mode hasn't changed.
+	 * when the type hasn't changed.
 	 */
 	function replaceCurrentText(content: string): void {
-		if (currentMode() === 'text') {
+		if (currentType() === 'text') {
 			// Same mode: overwrite the existing Y.Text (select-all + paste equivalent).
 			// No new timeline entry—the observer does NOT fire.
 			const ytext = currentEntry()!.get('content') as Y.Text;
 			ytext.delete(0, ytext.length);
 			ytext.insert(0, content);
 		} else {
-			// Different mode (or empty): push a new text entry (mode change).
+			// Different type (or empty): push a new text entry (type change).
 			pushText(content);
 		}
 	}
@@ -233,7 +233,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	 * preserve all formatting (bold, italic, headings, links). This is how richtext
 	 * content transfers between Y.Doc instances without flattening to plaintext.
 	 *
-	 * Used by `restoreFromSnapshot()` for richtext mode.
+	 * Used by `restoreFromSnapshot()` for richtext type.
 	 */
 	function pushRichtextFromFragment(source: Y.XmlFragment): RichTextEntry {
 		const result = pushRichtext();
@@ -260,13 +260,13 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		get currentEntry(): ValidatedEntry {
 			return readEntry(currentEntry());
 		},
-		get currentMode() {
-			return currentMode();
+		get currentType() {
+			return currentType();
 		},
 
 		read(): string {
 			const validated = readEntry(currentEntry());
-			switch (validated.mode) {
+			switch (validated.type) {
 				case 'text':
 					return validated.content.toString();
 				case 'richtext':
@@ -284,7 +284,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 		asText(): Y.Text {
 			const validated = readEntry(currentEntry());
-			switch (validated.mode) {
+			switch (validated.type) {
 				case 'text':
 					return validated.content;
 				case 'empty':
@@ -302,7 +302,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 		asRichText(): Y.XmlFragment {
 			const validated = readEntry(currentEntry());
-			switch (validated.mode) {
+			switch (validated.type) {
 				case 'richtext':
 					return validated.content;
 				case 'empty':
@@ -328,7 +328,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 		asSheet(): SheetBinding {
 			const validated = readEntry(currentEntry());
-			switch (validated.mode) {
+			switch (validated.type) {
 				case 'sheet':
 					return { columns: validated.columns, rows: validated.rows };
 				case 'empty':
@@ -358,7 +358,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 				// ── Step 2: Read ──────────────────────────────────────────────
 				// Extract the last timeline entry from the snapshot. This tells us
-				// what content mode (text/sheet/richtext/empty) the snapshot was in
+				// what content type (text/sheet/richtext/empty) the snapshot was in
 				// and gives access to the snapshot's CRDT content types.
 				const snapshotTl = createTimeline(tempDoc);
 				const entry = snapshotTl.currentEntry;
@@ -368,7 +368,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				// visible content match the snapshot. Each mode extracts content
 				// from the temp doc's types and writes it into the live doc's
 				// timeline using the same helpers that write() and as*() use.
-				switch (entry.mode) {
+				switch (entry.type) {
 					case 'text': {
 						// Y.Text can't transfer between docs—extract the raw string.
 						// replaceCurrentText handles same-mode (in-place) vs cross-mode (push).
@@ -408,21 +408,21 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 }
 
 function readEntry(entry: Y.Map<unknown> | undefined): ValidatedEntry {
-	if (!entry) return { mode: 'empty' };
+	if (!entry) return { type: 'empty' };
 
 	const type = entry.get('type');
 	const createdAt = (entry.get('createdAt') as number) ?? 0;
 
 	if (type === 'text') {
 		const content = entry.get('content');
-		if (content instanceof Y.Text) return { mode: 'text', content, createdAt };
+		if (content instanceof Y.Text) return { type: 'text', content, createdAt };
 	}
 
 	if (type === 'richtext') {
 		const content = entry.get('content');
 		const frontmatter = entry.get('frontmatter');
 		if (content instanceof Y.XmlFragment && frontmatter instanceof Y.Map) {
-			return { mode: 'richtext', content, frontmatter, createdAt };
+			return { type: 'richtext', content, frontmatter, createdAt };
 		}
 	}
 
@@ -431,7 +431,7 @@ function readEntry(entry: Y.Map<unknown> | undefined): ValidatedEntry {
 		const rows = entry.get('rows');
 		if (columns instanceof Y.Map && rows instanceof Y.Map) {
 			return {
-				mode: 'sheet',
+				type: 'sheet',
 				columns: columns as Y.Map<Y.Map<string>>,
 				rows: rows as Y.Map<Y.Map<string>>,
 				createdAt,
@@ -439,5 +439,5 @@ function readEntry(entry: Y.Map<unknown> | undefined): ValidatedEntry {
 		}
 	}
 
-	return { mode: 'empty' };
+	return { type: 'empty' };
 }

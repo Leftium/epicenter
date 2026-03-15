@@ -1,6 +1,6 @@
 // Content (document layer)
 export {
-	type ContentMode,
+	type ContentType,
 	type SheetEntry,
 } from './content/index.js';
 

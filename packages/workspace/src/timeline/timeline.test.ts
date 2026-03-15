@@ -17,7 +17,7 @@ describe('createTimeline - sheet entries', () => {
 	test('asSheet on empty timeline creates sheet entry', () => {
 		const tl = setup();
 		tl.asSheet();
-		expect(tl.currentMode).toBe('sheet');
+	expect(tl.currentType).toBe('sheet');
 	});
 
 	test('asSheet on empty timeline creates empty columns and rows', () => {
@@ -73,14 +73,14 @@ describe('createTimeline - sheet entries', () => {
 	test('switching text to sheet to text updates current mode and content', () => {
 		const tl = setup();
 		tl.write('First entry');
-		expect(tl.currentMode).toBe('text');
+		expect(tl.currentType).toBe('text');
 		expect(tl.length).toBe(1);
 
 		tl.asSheet();
-		expect(tl.currentMode).toBe('sheet');
+		expect(tl.currentType).toBe('sheet');
 
 		tl.write('Third entry');
-		expect(tl.currentMode).toBe('text');
+		expect(tl.currentType).toBe('text');
 		expect(tl.read()).toBe('Third entry');
 	});
 
@@ -122,7 +122,7 @@ describe('restoreFromSnapshot', () => {
 
 		expect(tl.read()).toBe('restored content');
 		expect(tl.length).toBe(1);
-		expect(tl.currentMode).toBe('text');
+		expect(tl.currentType).toBe('text');
 		doc.destroy();
 	});
 
@@ -137,7 +137,7 @@ describe('restoreFromSnapshot', () => {
 		);
 
 		expect(tl.read()).toBe('snapshot text');
-		expect(tl.currentMode).toBe('text');
+		expect(tl.currentType).toBe('text');
 		expect(tl.length).toBe(lengthAfterSetup + 1);
 		doc.destroy();
 	});
@@ -155,12 +155,11 @@ describe('restoreFromSnapshot', () => {
 			}),
 		);
 
-		expect(tl.currentMode).toBe('sheet');
+		expect(tl.currentType).toBe('sheet');
 		expect(tl.read()).toBe(csv);
 
 		const entry = tl.currentEntry;
-		expect(entry.mode).toBe('sheet');
-		if (entry.mode === 'sheet') {
+		if (entry.type === 'sheet') {
 			expect(entry.columns.size).toBe(2);
 			expect(entry.rows.size).toBe(2);
 		}
@@ -212,9 +211,9 @@ describe('restoreFromSnapshot', () => {
 		});
 		tl.restoreFromSnapshot(binary);
 
-		expect(tl.currentMode).toBe('richtext');
+		expect(tl.currentType).toBe('richtext');
 		const entry = tl.currentEntry;
-		if (entry.mode !== 'richtext') throw new Error('expected richtext');
+		if (entry.type !== 'richtext') throw new Error('expected richtext');
 
 		// Verify structure: 2 children (heading + paragraph)
 		const children = entry.content.toArray();

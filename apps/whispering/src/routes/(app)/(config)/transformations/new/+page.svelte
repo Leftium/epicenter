@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { rpc } from '$lib/query';
-	import type { TransformationStepDraft } from '$lib/state/workspace-transformation-steps.svelte';
+	import type { TransformationStep } from '$lib/state/workspace-transformation-steps.svelte';
 	import { workspaceTransformationSteps } from '$lib/state/workspace-transformation-steps.svelte';
 	import { workspaceTransformations } from '$lib/state/workspace-transformations.svelte';
 	import workspace from '$lib/workspace';
@@ -21,7 +21,7 @@
 	}
 
 	let transformation = $state(generateDefaultTransformation());
-	let steps = $state<TransformationStepDraft[]>([]);
+	let steps = $state<Omit<TransformationStep, '_v'>[]>([]);
 </script>
 
 <Card.Root class="w-full max-w-4xl">

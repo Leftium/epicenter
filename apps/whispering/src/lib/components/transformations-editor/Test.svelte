@@ -8,7 +8,7 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { rpc } from '$lib/query';
-	import type { TransformationStepDraft } from '$lib/state/workspace-transformation-steps.svelte';
+	import type { TransformationStep } from '$lib/state/workspace-transformation-steps.svelte';
 	import type { Transformation } from '$lib/state/workspace-transformations.svelte';
 
 	const transformInput = createMutation(
@@ -20,7 +20,7 @@
 		steps,
 	}: {
 		transformation: Transformation;
-		steps: TransformationStepDraft[];
+		steps: Omit<TransformationStep, '_v'>[];
 	} = $props();
 
 	let input = $state('');

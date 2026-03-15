@@ -39,7 +39,7 @@ describe('createTimeline - sheet entries', () => {
 
 	test('asSheet from CSV text populates columns from header', () => {
 		const tl = setup();
-		tl.writeText('Name,Age\nAlice,30\n');
+		tl.write('Name,Age\nAlice,30\n');
 		const { columns } = tl.asSheet();
 		expect(columns.size).toBe(2);
 
@@ -50,14 +50,14 @@ describe('createTimeline - sheet entries', () => {
 
 	test('asSheet from CSV text populates rows from data', () => {
 		const tl = setup();
-		tl.writeText('Name,Age\nAlice,30\nBob,25\n');
+		tl.write('Name,Age\nAlice,30\nBob,25\n');
 		const { rows } = tl.asSheet();
 		expect(rows.size).toBe(2);
 	});
 
 	test('read returns CSV for sheet entry', () => {
 		const tl = setup();
-		tl.writeText('Name,Age\nAlice,30\n');
+		tl.write('Name,Age\nAlice,30\n');
 		tl.asSheet();
 		expect(tl.read()).toBe('Name,Age\nAlice,30\n');
 	});
@@ -66,23 +66,27 @@ describe('createTimeline - sheet entries', () => {
 		const tl = setup();
 		const originalCsv =
 			'Product,Price,Stock\nWidget,9.99,100\nGadget,24.99,50\n';
-		tl.writeText(originalCsv);
+		tl.write(originalCsv);
 		tl.asSheet();
 		expect(tl.read()).toBe(originalCsv);
 	});
 
-	test('switching text to sheet to text updates current mode and content', () => {
+	test('write preserves current mode (text → sheet stays sheet)', () => {
 		const tl = setup();
-		tl.writeText('First entry');
+		tl.write('First entry');
 		expect(tl.currentType).toBe('text');
 		expect(tl.length).toBe(1);
 
 		tl.asSheet();
 		expect(tl.currentType).toBe('sheet');
 
-		tl.writeText('Third entry');
+		tl.write('A,B\n1,2\n');
+		expect(tl.currentType).toBe('sheet'); // write preserves mode
+		expect(tl.read()).toBe('A,B\n1,2\n');
+
+		// To switch back to text, use asText() explicitly
+		tl.asText();
 		expect(tl.currentType).toBe('text');
-		expect(tl.read()).toBe('Third entry');
 	});
 
 	test('empty sheet returns empty string', () => {
@@ -93,7 +97,7 @@ describe('createTimeline - sheet entries', () => {
 
 	test('sheet with columns but no rows returns header only', () => {
 		const tl = setup();
-		tl.writeText('A,B,C\n');
+		tl.write('A,B,C\n');
 		tl.asSheet();
 		expect(tl.read()).toBe('A,B,C\n');
 	});
@@ -114,11 +118,11 @@ describe('restoreFromSnapshot', () => {
 	test('text → text (same mode): content matches, timeline length unchanged', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.writeText('original content');
+		tl.write('original content');
 		expect(tl.length).toBe(1);
 
 		tl.restoreFromSnapshot(
-			createSnapshotBinary((s) => s.writeText('restored content')),
+			createSnapshotBinary((s) => s.write('restored content')),
 		);
 
 		expect(tl.read()).toBe('restored content');
@@ -134,7 +138,7 @@ describe('restoreFromSnapshot', () => {
 		const lengthAfterSetup = tl.length;
 
 		tl.restoreFromSnapshot(
-			createSnapshotBinary((s) => s.writeText('snapshot text')),
+			createSnapshotBinary((s) => s.write('snapshot text')),
 		);
 
 		expect(tl.read()).toBe('snapshot text');
@@ -146,12 +150,12 @@ describe('restoreFromSnapshot', () => {
 	test('sheet snapshot: restores sheet entry with columns and rows', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.writeText('some text');
+		tl.write('some text');
 
 		const csv = 'Name,Age\nAlice,30\nBob,25\n';
 		tl.restoreFromSnapshot(
 			createSnapshotBinary((s) => {
-				s.writeText(csv);
+				s.write(csv);
 				s.asSheet();
 			}),
 		);
@@ -170,7 +174,7 @@ describe('restoreFromSnapshot', () => {
 	test('empty snapshot: no-op, no crash', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.writeText('should stay');
+		tl.write('should stay');
 
 		tl.restoreFromSnapshot(createSnapshotBinary(() => {}));
 
@@ -182,7 +186,7 @@ describe('restoreFromSnapshot', () => {
 	test('corrupted binary throws but does not corrupt live doc', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.writeText('original');
+		tl.write('original');
 
 		expect(() => tl.restoreFromSnapshot(new Uint8Array([1, 2, 3]))).toThrow();
 
@@ -193,7 +197,7 @@ describe('restoreFromSnapshot', () => {
 	test('richtext snapshot: preserves formatting (bold, headings)', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.writeText('placeholder');
+		tl.write('placeholder');
 
 		const binary = createSnapshotBinary((s) => {
 			const fragment = s.asRichText();
@@ -239,7 +243,7 @@ describe('restoreFromSnapshot', () => {
 	test('sheet snapshot: preserves column metadata (kind, width) via deep clone', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.writeText('placeholder');
+		tl.write('placeholder');
 
 		// Build a snapshot with custom column metadata that CSV round-trip would lose
 		const binary = createSnapshotBinary((s) => {
@@ -300,13 +304,13 @@ describe('restoreFromSnapshot', () => {
 	test('sheet → sheet (same type): pushes new entry (length increases)', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.writeText('A,B\n1,2\n');
+		tl.write('A,B\n1,2\n');
 		tl.asSheet();
 		const before = tl.length;
 
 		tl.restoreFromSnapshot(
 			createSnapshotBinary((s) => {
-				s.writeText('X,Y\n3,4\n');
+				s.write('X,Y\n3,4\n');
 				s.asSheet();
 			}),
 		);
@@ -342,17 +346,17 @@ describe('restoreFromSnapshot', () => {
 });
 
 describe('createTimeline - observe', () => {
-	test('fires when a new entry is pushed via writeText()', () => {
+	test('fires when a new entry is pushed via write()', () => {
 		const tl = setup();
 		let callCount = 0;
 		tl.observe(() => callCount++);
-		tl.writeText('hello');
+		tl.write('hello');
 		expect(callCount).toBe(1);
 	});
 
 	test('fires when mode conversion pushes a new entry', () => {
 		const tl = setup();
-		tl.writeText('initial text');
+		tl.write('initial text');
 		let callCount = 0;
 		tl.observe(() => callCount++);
 		tl.asRichText(); // converts text → richtext, pushes new entry
@@ -372,10 +376,10 @@ describe('createTimeline - observe', () => {
 		const tl = setup();
 		let callCount = 0;
 		const unsub = tl.observe(() => callCount++);
-		tl.writeText('first');
+		tl.write('first');
 		expect(callCount).toBe(1);
 		unsub();
-		tl.writeText('second');
+		tl.write('second');
 		expect(callCount).toBe(1);
 	});
 
@@ -389,34 +393,34 @@ describe('createTimeline - observe', () => {
 		expect(callCount).toBe(3);
 	});
 
-	test('does not fire when writeText replaces text in-place', () => {
+	test('does not fire when write replaces text in-place', () => {
 		const tl = setup();
-		tl.writeText('initial');
+		tl.write('initial');
 		let callCount = 0;
 		tl.observe(() => callCount++);
-		tl.writeText('replaced'); // replaces in-place, no new entry pushed
+		tl.write('replaced'); // replaces in-place, no new entry pushed
 		expect(callCount).toBe(0);
 	});
 
-	test('does not fire when writeSheet replaces sheet in-place', () => {
+	test('does not fire when write replaces sheet in-place', () => {
 		const tl = setup();
-		tl.writeSheet('A,B\n1,2\n');
+		tl.asSheet(); tl.write('A,B\n1,2\n');
 		let callCount = 0;
 		tl.observe(() => callCount++);
-		tl.writeSheet('C,D\n3,4\n'); // replaces in-place, no new entry pushed
+		tl.write('C,D\n3,4\n'); // replaces in-place, no new entry pushed
 		expect(callCount).toBe(0);
 	});
 
 	test('fires when restoreFromSnapshot pushes new sheet entry', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.writeText('original');
+		tl.write('original');
 		let callCount = 0;
 		tl.observe(() => callCount++);
 
 		tl.restoreFromSnapshot(
 			createSnapshotBinary((s) => {
-				s.writeText('A,B\n1,2\n');
+				s.write('A,B\n1,2\n');
 				s.asSheet();
 			}),
 		);
@@ -427,7 +431,7 @@ describe('createTimeline - observe', () => {
 	test('fires when restoreFromSnapshot pushes richtext entry', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.writeText('original');
+		tl.write('original');
 		let callCount = 0;
 		tl.observe(() => callCount++);
 
@@ -441,12 +445,12 @@ describe('createTimeline - observe', () => {
 	test('does NOT fire when restoreFromSnapshot replaces text in-place', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.writeText('original');
+		tl.write('original');
 		let callCount = 0;
 		tl.observe(() => callCount++);
 
 		tl.restoreFromSnapshot(
-			createSnapshotBinary((s) => s.writeText('restored')),
+			createSnapshotBinary((s) => s.write('restored')),
 		);
 		expect(callCount).toBe(0);
 		doc.destroy();
@@ -456,7 +460,7 @@ describe('createTimeline - observe', () => {
 describe('createTimeline - mode conversion content', () => {
 	test('asRichText from text preserves content as paragraphs', () => {
 		const tl = setup();
-		tl.writeText('Line 1\nLine 2');
+		tl.write('Line 1\nLine 2');
 		const fragment = tl.asRichText();
 		expect(xmlFragmentToPlaintext(fragment)).toBe('Line 1\nLine 2');
 	});
@@ -495,7 +499,7 @@ describe('createTimeline - mode conversion content', () => {
 describe('createTimeline - cross-mode conversions', () => {
 	test('asRichText from sheet converts via CSV plaintext', () => {
 		const tl = setup();
-		tl.writeText('Name,Age\nAlice,30\n');
+		tl.write('Name,Age\nAlice,30\n');
 		tl.asSheet();
 		const fragment = tl.asRichText();
 		expect(xmlFragmentToPlaintext(fragment)).toBe('Name,Age\nAlice,30\n');
@@ -521,56 +525,58 @@ describe('createTimeline - cross-mode conversions', () => {
 
 	test('asText from sheet returns CSV string', () => {
 		const tl = setup();
-		tl.writeText('A,B\n1,2\n');
+		tl.write('A,B\n1,2\n');
 		tl.asSheet();
 		const ytext = tl.asText();
 		expect(ytext.toString()).toBe('A,B\n1,2\n');
 	});
 });
 
-describe('createTimeline - writeSheet', () => {
-	test('writeSheet on empty timeline pushes new sheet entry', () => {
+describe('createTimeline - write (sheet mode)', () => {
+	test('write on sheet mode replaces sheet content', () => {
 		const tl = setup();
-		tl.writeSheet('Name,Age\nAlice,30\n');
+		tl.asSheet(); tl.write('Name,Age\nAlice,30\n');
 		expect(tl.currentType).toBe('sheet');
 		expect(tl.read()).toBe('Name,Age\nAlice,30\n');
 		expect(tl.length).toBe(1);
 	});
 
-	test('writeSheet on existing sheet replaces in-place (length unchanged)', () => {
+	test('write on existing sheet replaces in-place (length unchanged)', () => {
 		const tl = setup();
-		tl.writeSheet('A,B\n1,2\n');
+		tl.asSheet();
+		tl.write('A,B\n1,2\n');
 		expect(tl.length).toBe(1);
-		tl.writeSheet('X,Y\n3,4\n');
+		tl.write('X,Y\n3,4\n');
 		expect(tl.length).toBe(1);
 		expect(tl.read()).toBe('X,Y\n3,4\n');
 	});
 
-	test('writeSheet on text mode pushes new sheet entry', () => {
+	test('write on text mode stays in text mode', () => {
 		const tl = setup();
-		tl.writeText('some text');
+		tl.write('some text');
 		expect(tl.length).toBe(1);
-		tl.writeSheet('A,B\n1,2\n');
-		expect(tl.length).toBe(2);
-		expect(tl.currentType).toBe('sheet');
+		tl.write('A,B\n1,2\n');
+		expect(tl.length).toBe(1); // in-place, no new entry
+		expect(tl.currentType).toBe('text');
 		expect(tl.read()).toBe('A,B\n1,2\n');
 	});
 
-	test('observe does NOT fire when writeSheet replaces in-place', () => {
+	test('observe does NOT fire when write replaces sheet in-place', () => {
 		const tl = setup();
-		tl.writeSheet('A,B\n1,2\n');
+		tl.asSheet();
+		tl.write('A,B\n1,2\n');
 		let callCount = 0;
 		tl.observe(() => callCount++);
-		tl.writeSheet('X,Y\n3,4\n');
+		tl.write('X,Y\n3,4\n');
 		expect(callCount).toBe(0);
 	});
 
-	test('observe fires when writeSheet pushes new entry from different type', () => {
+	test('observe fires when asSheet converts from different type', () => {
 		const tl = setup();
-		tl.writeText('some text');
+		tl.write('some text');
 		let callCount = 0;
 		tl.observe(() => callCount++);
-		tl.writeSheet('A,B\n1,2\n');
+		tl.asSheet(); // pushes new sheet entry from text
 		expect(callCount).toBe(1);
 	});
 });
@@ -581,31 +587,31 @@ describe('createTimeline - batch', () => {
 		let callCount = 0;
 		tl.observe(() => callCount++);
 		tl.batch(() => {
-			tl.writeText('first');
+			tl.write('first');
 		});
 		expect(callCount).toBe(1);
 	});
 
-	test('writeText + in-place replace in same batch triggers observe once', () => {
+	test('write + in-place replace in same batch triggers observe once', () => {
 		const tl = setup();
 		let callCount = 0;
 		tl.observe(() => callCount++);
-		// First writeText pushes text entry, second replaces in-place.
+		// First write pushes text entry, second replaces in-place.
 		// Yjs collapses nested transactions—single observe callback.
 		tl.batch(() => {
-			tl.writeText('first');
-			tl.writeText('second');
+			tl.write('first');
+			tl.write('second');
 		});
 		expect(callCount).toBe(1);
 		expect(tl.read()).toBe('second');
 	});
 
-	test('batch does not affect read/writeText correctness', () => {
+	test('batch does not affect read/write correctness', () => {
 		const tl = setup();
 		tl.batch(() => {
-			tl.writeText('hello');
+			tl.write('hello');
 			expect(tl.read()).toBe('hello');
-			tl.writeText('world');
+			tl.write('world');
 			expect(tl.read()).toBe('world');
 		});
 		expect(tl.read()).toBe('world');

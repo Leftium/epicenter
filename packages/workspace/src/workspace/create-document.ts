@@ -35,7 +35,7 @@
  *
  * const handle = await contentDocuments.open(someRow);
  * const text = handle.read();
- * handle.writeText('new content');
+ * handle.write('new content');
  * ```
  *
  * @module

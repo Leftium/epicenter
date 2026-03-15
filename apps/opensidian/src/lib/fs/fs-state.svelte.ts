@@ -259,7 +259,7 @@ function createFsState() {
 			async writeContent(id: FileId, data: string): Promise<void> {
 				try {
 					const handle = await documents.open(id);
-					handle.writeText(data);
+					handle.write(data);
 				} catch (err) {
 					toast.error(
 						err instanceof Error ? err.message : 'Failed to save file',

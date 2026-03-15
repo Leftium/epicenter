@@ -255,7 +255,7 @@ export type ClaimedDocumentColumns<
  * ```typescript
  * const handle = await documents.open(id);
  * handle.read();            // read from timeline (always string)
- * handle.writeText('hello'); // write text to timeline (text mode)
+ * handle.write('hello');    // write to timeline (mode-aware)
  * handle.asText();          // Y.Text for editor binding (converts if needed)
  * handle.asRichText();      // Y.XmlFragment for richtext binding (converts if needed)
  * handle.asSheet();         // Sheet columns/rows (converts if needed)
@@ -281,11 +281,11 @@ export type DocumentHandle = Timeline & {
  * @example
  * ```typescript
  * const handle = await documents.open(row);
- * handle.writeText('hello');
+ * handle.write('hello');
  * // updatedAt on the row is bumped automatically
  *
  * const text = handle.read();
- * handle.writeText('new content');
+ * handle.write('new content');
  * await documents.close(row);
  * ```
  */

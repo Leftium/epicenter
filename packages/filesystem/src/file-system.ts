@@ -188,13 +188,7 @@ export function createYjsFileSystem(
 			const textData =
 				typeof data === 'string' ? data : new TextDecoder().decode(data);
 			const handle = await contentDocuments.open(id);
-			const validated = handle.currentEntry;
-
-			if (validated?.type === 'sheet') {
-				handle.writeSheet(textData);
-			} else {
-				handle.writeText(textData);
-			}
+			handle.write(textData);
 			const size = new TextEncoder().encode(textData).byteLength;
 			tree.touch(id, size);
 		},

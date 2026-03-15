@@ -109,7 +109,7 @@ describe('createDocuments', () => {
 			const { documents } = setup();
 
 			const handle = await documents.open('f1');
-			handle.writeText('hello world');
+			handle.write('hello world');
 			const text = handle.read();
 			expect(text).toBe('hello world');
 		});
@@ -118,8 +118,8 @@ describe('createDocuments', () => {
 			const { documents } = setup();
 
 			const handle = await documents.open('f1');
-			handle.writeText('first');
-			handle.writeText('second');
+			handle.write('first');
+			handle.write('second');
 			const text = handle.read();
 			expect(text).toBe('second');
 		});
@@ -136,7 +136,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.writeText('hello');
+			handle.write('hello');
 
 			// Give the update observer a tick
 			const result = tables.files.get('f1');
@@ -178,7 +178,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.writeText('hello');
+			handle.write('hello');
 
 			const result = tables.files.get('f1');
 			expect(result.status).toBe('valid');
@@ -209,7 +209,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.writeText('hello');
+			handle.write('hello');
 
 			const result = tables.files.get('f1');
 			expect(result.status).toBe('valid');
@@ -233,7 +233,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.writeText('hello');
+			handle.write('hello');
 
 			expect(capturedOrigin).toBe(DOCUMENTS_ORIGIN);
 		});
@@ -783,7 +783,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 	test('asText on text entry returns existing Y.Text', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.writeText('hello');
+		handle.write('hello');
 
 		const text = handle.asText();
 		expect(text.toString()).toBe('hello');
@@ -813,7 +813,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		handle.writeText('Name,Age\nAlice,30\n');
+		handle.write('Name,Age\nAlice,30\n');
 		handle.asSheet();
 		expect(handle.currentType).toBe('sheet');
 
@@ -847,7 +847,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 	test('asRichText on text entry converts to paragraphs', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.writeText('Line 1\nLine 2');
+		handle.write('Line 1\nLine 2');
 
 		const fragment = handle.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
@@ -859,7 +859,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 	test('asRichText on sheet entry converts CSV to paragraphs', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.writeText('A,B\n1,2\n');
+		handle.write('A,B\n1,2\n');
 		handle.asSheet();
 
 		const fragment = handle.asRichText();
@@ -883,7 +883,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 	test('asSheet on sheet entry returns existing binding', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.writeText('X,Y\n1,2\n');
+		handle.write('X,Y\n1,2\n');
 		handle.asSheet();
 
 		const sheet = handle.asSheet();
@@ -895,7 +895,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 	test('asSheet on text entry parses as CSV', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.writeText('Col1,Col2\nA,B\n');
+		handle.write('Col1,Col2\nA,B\n');
 
 		const sheet = handle.asSheet();
 		expect(sheet.columns.size).toBe(2);
@@ -932,7 +932,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const handle = await documents.open('f1');
 
 		expect(handle.currentType).toBeUndefined(); // empty
-		handle.writeText('text');
+		handle.write('text');
 		expect(handle.currentType).toBe('text');
 	});
 
@@ -942,7 +942,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		handle.writeText('hello');
+		handle.write('hello');
 		expect(handle.currentType).toBe('text');
 		expect(handle.length).toBe(1);
 

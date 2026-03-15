@@ -66,22 +66,17 @@ export type Timeline = {
 	 */
 	read(): string;
 	/**
-	 * Replace text content, wrapped in a single transaction.
+	 * Write string content to the current mode, wrapped in a single transaction.
 	 *
-	 * If current type is already text, replaces the Y.Text content in-place—no new
-	 * timeline entry is created and `observe()` does **not** fire. If the current
-	 * type is different (or empty), pushes a new text entry and `observe()` fires.
-	 */
-	writeText(text: string): void;
-	/**
-	 * Replace sheet content from CSV, wrapped in a single transaction.
+	 * Mode-aware: text replaces Y.Text in-place, sheet parses CSV and replaces
+	 * columns/rows in-place, richtext clears the fragment and repopulates from
+	 * plaintext. When the current type matches, no new timeline entry is created
+	 * and `observe()` does **not** fire. On empty timelines, pushes a new text entry.
 	 *
-	 * If current type is already sheet, clears and repopulates columns/rows
-	 * in-place—no new timeline entry is created and `observe()` does **not** fire.
-	 * If the current type is different (or empty), pushes a new sheet entry and
-	 * `observe()` fires.
+	 * To switch modes before writing, call `asText()`, `asSheet()`, or
+	 * `asRichText()` first.
 	 */
-	writeSheet(csv: string): void;
+	write(text: string): void;
 
 	/**
 	 * Get current content as Y.Text for editor binding.
@@ -141,8 +136,8 @@ export type Timeline = {
 	 * Watch for structural timeline changes—entries added or removed.
 	 *
 	 * Fires when the entry list changes (e.g., a new entry is pushed via
-	 * `writeText()`, `writeSheet()`, `asText()`, `asRichText()`, `asSheet()`, or `restoreFromSnapshot()`).
-	 * Does **not** fire when `writeText()` or `writeSheet()` replace content in-place (same type).
+	 * `write()`, `asText()`, `asRichText()`, `asSheet()`, or `restoreFromSnapshot()`).
+	 * Does **not** fire when `write()` replaces content in-place (same type).
 	 * Does NOT fire when content within an existing entry changes—edits to
 	 * Y.Text, Y.XmlFragment, or Y.Map are handled by those shared types directly.
 	 * Editors already bind to the CRDT handle and receive updates natively.
@@ -241,7 +236,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	/**
 	 * Replace text in-place if already text type, otherwise push a new text entry.
 	 *
-	 * Shared by `writeText()` and `restoreFromSnapshot()` so that restoring text
+	 * Shared by `write()` and `restoreFromSnapshot()` so that restoring text
 	 * content looks identical to a user paste—no unnecessary timeline growth
 	 * when the type hasn't changed.
 	 */
@@ -275,6 +270,23 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			parseSheetFromCsv(csv, columns, rows);
 		} else {
 			pushSheetFromCsv(csv);
+		}
+	}
+
+	/**
+	 * Replace richtext in-place if already richtext type, otherwise push a new text entry.
+	 *
+	 * Clears the XmlFragment and repopulates from plaintext—each line becomes
+	 * a `<paragraph>`. Mirrors `replaceCurrentText()` and `replaceCurrentSheet()`
+	 * for richtext mode.
+	 */
+	function replaceCurrentRichtext(text: string): void {
+		if (currentType() === 'richtext') {
+			const fragment = lastEntry()!.get('content') as Y.XmlFragment;
+			fragment.delete(0, fragment.length);
+			populateFragmentFromText(fragment, text);
+		} else {
+			pushText(text);
 		}
 	}
 
@@ -359,12 +371,13 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			}
 		},
 
-		writeText(text: string) {
-			ydoc.transact(() => replaceCurrentText(text));
-		},
-
-		writeSheet(csv: string) {
-			ydoc.transact(() => replaceCurrentSheet(csv));
+		write(text: string) {
+			ydoc.transact(() => {
+				const type = currentType();
+				if (type === 'sheet') replaceCurrentSheet(text);
+				else if (type === 'richtext') replaceCurrentRichtext(text);
+				else replaceCurrentText(text);
+			});
 		},
 
 		asText(): Y.Text {
@@ -452,7 +465,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				// Create new forward CRDT operations on the live doc that make
 				// visible content match the snapshot. Each type extracts content
 				// from the temp doc's types and writes it into the live doc's
-				// timeline using the same helpers that writeText() and as*() use.
+				// timeline using the same helpers that write() and as*() use.
 				switch (entry.type) {
 					case 'text': {
 						// Y.Text can't transfer between docs—extract the raw string.

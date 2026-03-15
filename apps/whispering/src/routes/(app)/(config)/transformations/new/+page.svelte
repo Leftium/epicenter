@@ -8,19 +8,9 @@
 		workspaceTransformationSteps,
 		type TransformationStep,
 	} from '$lib/state/workspace-transformation-steps.svelte';
-	import { workspaceTransformations } from '$lib/state/workspace-transformations.svelte';
+	import { generateDefaultTransformation, workspaceTransformations } from '$lib/state/workspace-transformations.svelte';
 	import workspace from '$lib/workspace';
 
-	function generateDefaultTransformation() {
-		const now = new Date().toISOString();
-		return {
-			id: crypto.randomUUID(),
-			title: '',
-			description: '',
-			createdAt: now,
-			updatedAt: now,
-		};
-	}
 
 	let transformation = $state(generateDefaultTransformation());
 	let steps = $state<TransformationStep[]>([]);

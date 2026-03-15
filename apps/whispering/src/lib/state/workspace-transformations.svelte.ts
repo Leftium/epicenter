@@ -78,14 +78,9 @@ function createWorkspaceTransformations() {
 
 		/**
 		 * Create or update a transformation. Writes to Yjs → observer updates SvelteMap.
-		 *
-		 * Accepts a transformation without `_v` (version tag is added automatically).
 		 */
-		set(transformation: Omit<Transformation, '_v'>) {
-			workspace.tables.transformations.set({
-				...transformation,
-				_v: 1,
-			} as Transformation);
+		set(transformation: Transformation) {
+			workspace.tables.transformations.set(transformation);
 		},
 
 		/**
@@ -110,3 +105,27 @@ function createWorkspaceTransformations() {
 }
 
 export const workspaceTransformations = createWorkspaceTransformations();
+
+/**
+ * Generate a default transformation with sensible defaults.
+ *
+ * Includes `_v` so the returned value is a full `Transformation` ready
+ * for workspace writes without any Omit gymnastics.
+ *
+ * @example
+ * ```typescript
+ * const t = generateDefaultTransformation();
+ * workspaceTransformations.set(t);
+ * ```
+ */
+export function generateDefaultTransformation(): Transformation {
+	const now = new Date().toISOString();
+	return {
+		id: crypto.randomUUID(),
+		title: '',
+		description: '',
+		createdAt: now,
+		updatedAt: now,
+		_v: 1,
+	};
+}

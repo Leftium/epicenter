@@ -53,6 +53,15 @@ function createWorkspaceRecordings() {
 		}
 	});
 
+	// Memoize sorted array with $derived so consumers get a stable reference.
+	// Without this, every access creates a new array → TanStack Table's $derived
+	// sees "new data" → updates internal $state → re-triggers $derived → infinite loop.
+	const sorted = $derived(
+		Array.from(map.values()).sort(
+			(a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+		),
+	);
+
 	return {
 		/**
 		 * All recordings as a reactive SvelteMap.
@@ -78,15 +87,12 @@ function createWorkspaceRecordings() {
 		/**
 		 * All recordings as a sorted array (newest first by timestamp).
 		 *
-		 * Recomputes on every access. For most tables (<1000 rows) this is
-		 * fast enough. Optimize with `$derived` only if profiling shows
-		 * sorting as a bottleneck.
+		 * Memoized via `$derived`—returns a stable reference until the
+		 * SvelteMap actually changes. This is critical for TanStack Table,
+		 * which uses reference equality to detect data changes.
 		 */
 		get sorted(): Recording[] {
-			return Array.from(map.values()).sort(
-				(a, b) =>
-					new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-			);
+			return sorted;
 		},
 
 		/**

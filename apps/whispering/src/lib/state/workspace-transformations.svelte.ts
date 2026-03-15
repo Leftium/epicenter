@@ -46,6 +46,11 @@ function createWorkspaceTransformations() {
 		}
 	});
 
+	// Memoize sorted array with $derived for referential stability.
+	const sorted = $derived(
+		Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title)),
+	);
+
 	return {
 		/**
 		 * All transformations as a reactive SvelteMap.
@@ -65,11 +70,10 @@ function createWorkspaceTransformations() {
 
 		/**
 		 * All transformations as a sorted array (alphabetical by title).
+		 * Memoized via `$derived`—stable reference until SvelteMap changes.
 		 */
 		get sorted(): Transformation[] {
-			return Array.from(map.values()).sort((a, b) =>
-				a.title.localeCompare(b.title),
-			);
+			return sorted;
 		},
 
 		/**

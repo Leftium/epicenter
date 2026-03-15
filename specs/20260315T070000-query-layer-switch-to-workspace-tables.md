@@ -234,9 +234,9 @@ export const workspaceRecordings = createWorkspaceRecordings();
 
 ### Phase 1: Reactive state modules for recordings and transformations
 
-- [ ] **1.1** Create `$lib/state/workspace-recordings.svelte.ts` — SvelteMap backed by `workspace.tables.recordings`, with `observe()` for live updates
-- [ ] **1.2** Create `$lib/state/workspace-transformations.svelte.ts` — same pattern for transformations
-- [ ] **1.3** Create `$lib/state/workspace-transformation-steps.svelte.ts` — same pattern, with helper to get steps by transformationId
+- [x] **1.1** Create `$lib/state/workspace-recordings.svelte.ts` — SvelteMap backed by `workspace.tables.recordings`, with `observe()` for live updates
+- [x] **1.2** Create `$lib/state/workspace-transformations.svelte.ts` — same pattern for transformations
+- [x] **1.3** Create `$lib/state/workspace-transformation-steps.svelte.ts` — same pattern, with helper to get steps by transformationId
 
 ### Phase 2: Switch component reads from TanStack Query to reactive state
 

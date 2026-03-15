@@ -1023,61 +1023,74 @@ Understanding how RPC fits into the bigger picture:
 Pure functions that do the actual work:
 
 ```typescript
-// services/db.ts
-export async function getAllRecordings(): Promise<
-	Result<Recording[], DbError>
-> {
-	try {
-		const recordings = await database.recordings.findMany();
-		return Ok(recordings);
-	} catch (error) {
-		return Err(new DbError('Failed to fetch recordings'));
-	}
+// services/db.ts — still used for audio blobs and run lifecycle
+export async function ensureAudioPlaybackUrl(
+	recordingId: string,
+): Promise<Result<string, DbError>> {
+	// ...
 }
 ```
 
-### 2. Query Layer (`/lib/query/`)
+### 2. Workspace State (`/lib/state/workspace-*.svelte.ts`)
 
-Wraps services with reactivity and caching:
+Reactive SvelteMap modules backed by Yjs CRDTs. These replaced TanStack Query for all domain data CRUD:
 
 ```typescript
-// query/recordings.ts
-export const recordings = {
-	getAllRecordings: defineQuery({
-		queryKey: ['recordings'],
-		queryFn: () => services.db.getAllRecordings(), // Calls the service
-	}),
+// Workspace state is the primary data layer for recordings, transformations, runs
+import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
+
+// Direct reactive access — no queries needed
+const recording = workspaceRecordings.get(id);
+const allRecordings = workspaceRecordings.sorted;
+```
+
+### 3. Query Layer (`/lib/query/`)
+
+Wraps services with reactivity and caching for things that don't fit in workspace state:
+
+```typescript
+// query/audio.ts — audio blobs are too large for Yjs CRDTs
+export const audio = {
+	getPlaybackUrl: (id: Accessor<string>) =>
+		defineQuery({
+			queryKey: audioKeys.playbackUrl(id()),
+			queryFn: () => services.db.recordings.ensureAudioPlaybackUrl(id()),
+		}),
 };
 ```
 
-### 3. RPC Namespace (`/lib/query/index.ts`)
+### 4. RPC Namespace (`/lib/query/index.ts`)
 
 Bundles everything for easy access:
 
 ```typescript
 // query/index.ts
 export const rpc = {
-	recordings, // Contains getAllRecordings and other recording operations
-	transcription, // Contains transcribe and other transcription operations
-	// ... all other feature modules
+	audio, // Audio blob access (too large for CRDTs)
+	transcription, // External API calls
+	transformer, // LLM completion orchestration
+	recorder, // Hardware state management
+	// ... other non-CRUD feature modules
 };
 ```
 
-### 4. Component Usage
+### 5. Component Usage
 
-Use RPC in your components:
+Use workspace state for data, RPC for everything else:
 
 ```svelte
 <script>
 	import { rpc } from '$lib/query';
+	import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
 
-	// Reactive usage
-	const recordingsQuery = createQuery(rpc.recordings.getAllRecordings.options);
+	// Domain data — workspace state (reactive, no queries needed)
+	const latestRecording = $derived(workspaceRecordings.sorted[0]);
 
-	// Imperative usage
-	async function deleteRecording(id) {
-		const { error } = await rpc.recordings.deleteRecording.execute(id);
-	}
+	// Audio blob — still needs TanStack Query
+	const audioUrl = createQuery(() => ({
+		...rpc.audio.getPlaybackUrl(() => latestRecording?.id ?? '').options,
+		enabled: !!latestRecording?.id,
+	}));
 </script>
 ```
 
@@ -1098,20 +1111,24 @@ This keeps everything organized and testable while giving you a unified way to a
 
 ## Query Layer vs State
 
+After migrating recordings, transformations, and transformation runs to Yjs workspace state modules (`$lib/state/workspace-*.svelte.ts`), the query layer's role has narrowed. Workspace state modules now handle all CRUD operations for domain data—TanStack Query is reserved for things that don't fit in CRDTs.
+
 The query layer follows the **stale-while-revalidate** pattern: data is cached and refreshed in the background. For **live reactive state** that must update immediately (like hardware state or user preferences), use `$lib/state/` instead.
 
 | Aspect             | `$lib/query/`                           | `$lib/state/`                                |
 | ------------------ | --------------------------------------- | --------------------------------------------- |
 | **Pattern**        | Stale-while-revalidate (TanStack Query) | Singleton reactive state                      |
-| **State Location** | TanStack Query cache                    | Module-level `$state` runes                   |
+| **State Location** | TanStack Query cache                    | Module-level `$state` runes / Yjs docs        |
 | **Updates**        | Cached with background refresh          | Immediate, live                               |
-| **Use Case**       | Data fetching, mutations, cached data   | Hardware state, user preferences, live status |
+| **Use Case**       | External APIs, hardware state, audio blob access | Domain data (CRUD), user preferences, live status |
 
-**Examples:**
+**What lives where:**
 
-- Recording state from API → Query layer (`rpc.recorder.getRecorderState`)
-- VAD hardware state (IDLE/LISTENING/SPEECH_DETECTED) → State (`vadRecorder.state`)
+- External APIs (transcription, LLM completions) → Query layer (`rpc.transcription.*`, `rpc.transformer.*`)
+- Hardware state (recorder, microphone devices) → Query layer (`rpc.recorder.*`)
+- Audio blob access (too large for Yjs CRDTs) → Query layer (`rpc.audio.getPlaybackUrl`)
+- Recordings, transformations, transformation runs → Workspace state (`workspaceRecordings`, `workspaceTransformations`, etc.)
 - User settings → State (`settings.value`)
-- Database recordings → Query layer (`rpc.db.recordings.getAll`)
+- VAD hardware state → State (`vadRecorder.state`)
 
 See `$lib/state/README.md` for the state documentation.

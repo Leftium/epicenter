@@ -1,6 +1,5 @@
 import {
 	type Documents,
-	parseSheetFromCsv,
 	type TableHelper,
 } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
@@ -191,22 +190,12 @@ export function createYjsFileSystem(
 			const handle = await contentDocuments.open(id);
 			const validated = handle.currentEntry;
 
-			let size: number;
 			if (validated.type === 'sheet') {
-				handle.batch(() => {
-					validated.columns.forEach((_, key) => {
-						validated.columns.delete(key);
-					});
-					validated.rows.forEach((_, key) => {
-						validated.rows.delete(key);
-					});
-					parseSheetFromCsv(textData, validated.columns, validated.rows);
-				});
-				size = new TextEncoder().encode(textData).byteLength;
+				handle.writeSheet(textData);
 			} else {
 				handle.write(textData);
-				size = new TextEncoder().encode(textData).byteLength;
 			}
+			const size = new TextEncoder().encode(textData).byteLength;
 			tree.touch(id, size);
 		},
 

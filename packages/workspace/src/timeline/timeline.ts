@@ -147,13 +147,13 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 	// ── State ─────────────────────────────────────────────────────────────
 
-	function currentEntry(): TimelineYMap | undefined {
+	function lastEntry(): TimelineYMap | undefined {
 		if (timeline.length === 0) return undefined;
 		return timeline.get(timeline.length - 1);
 	}
 
 	function currentType(): ContentType | undefined {
-		const entry = currentEntry();
+		const entry = lastEntry();
 		return entry ? (entry.get('type') as ContentType) : undefined;
 	}
 
@@ -222,7 +222,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		if (currentType() === 'text') {
 			// Same mode: overwrite the existing Y.Text (select-all + paste equivalent).
 			// No new timeline entry—the observer does NOT fire.
-			const ytext = currentEntry()!.get('content') as Y.Text;
+			const ytext = lastEntry()!.get('content') as Y.Text;
 			ytext.delete(0, ytext.length);
 			ytext.insert(0, content);
 		} else {
@@ -240,7 +240,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	 */
 	function replaceCurrentSheet(csv: string): void {
 		if (currentType() === 'sheet') {
-			const entry = currentEntry()!;
+			const entry = lastEntry()!;
 			const columns = entry.get('columns') as Y.Map<Y.Map<string>>;
 			const rows = entry.get('rows') as Y.Map<Y.Map<string>>;
 			columns.forEach((_, key) => columns.delete(key));
@@ -313,14 +313,14 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return timeline.length;
 		},
 		get currentEntry(): ValidatedEntry {
-			return readEntry(currentEntry());
+			return readEntry(lastEntry());
 		},
 		get currentType() {
 			return currentType();
 		},
 
 		read(): string {
-			const validated = readEntry(currentEntry());
+			const validated = readEntry(lastEntry());
 			switch (validated.type) {
 				case 'text':
 					return validated.content.toString();
@@ -342,7 +342,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		},
 
 		asText(): Y.Text {
-			const validated = readEntry(currentEntry());
+			const validated = readEntry(lastEntry());
 			switch (validated.type) {
 				case 'text':
 					return validated.content;
@@ -360,7 +360,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		},
 
 		asRichText(): Y.XmlFragment {
-			const validated = readEntry(currentEntry());
+			const validated = readEntry(lastEntry());
 			switch (validated.type) {
 				case 'richtext':
 					return validated.content;
@@ -386,7 +386,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		},
 
 		asSheet(): SheetBinding {
-			const validated = readEntry(currentEntry());
+			const validated = readEntry(lastEntry());
 			switch (validated.type) {
 				case 'sheet':
 					return { columns: validated.columns, rows: validated.rows };

@@ -8,6 +8,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { createTimeline } from './timeline.js';
+import { xmlFragmentToPlaintext } from './richtext.js';
 
 function setup() {
 	return createTimeline(new Y.Doc());
@@ -295,6 +296,49 @@ describe('restoreFromSnapshot', () => {
 
 		doc.destroy();
 	});
+
+	test('sheet → sheet (same type): pushes new entry (length increases)', () => {
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.write('A,B\n1,2\n');
+		tl.asSheet();
+		const before = tl.length;
+
+		tl.restoreFromSnapshot(
+			createSnapshotBinary((s) => {
+				s.write('X,Y\n3,4\n');
+				s.asSheet();
+			}),
+		);
+
+		expect(tl.currentType).toBe('sheet');
+		expect(tl.length).toBe(before + 1);
+		expect(tl.read()).toBe('X,Y\n3,4\n');
+		doc.destroy();
+	});
+
+	test('richtext → richtext (same type): pushes new entry (length increases)', () => {
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.asRichText();
+		const before = tl.length;
+
+		tl.restoreFromSnapshot(
+			createSnapshotBinary((s) => {
+				const fragment = s.asRichText();
+				const p = new Y.XmlElement('paragraph');
+				const t = new Y.XmlText();
+				t.insert(0, 'Restored richtext');
+				p.insert(0, [t]);
+				fragment.insert(0, [p]);
+			}),
+		);
+
+		expect(tl.currentType).toBe('richtext');
+		expect(tl.length).toBe(before + 1);
+		expect(tl.read()).toBe('Restored richtext');
+		doc.destroy();
+	});
 });
 
 describe('createTimeline - observe', () => {
@@ -352,5 +396,209 @@ describe('createTimeline - observe', () => {
 		tl.observe(() => callCount++);
 		tl.write('replaced'); // replaces in-place, no new entry pushed
 		expect(callCount).toBe(0);
+	});
+
+	test('fires when restoreFromSnapshot pushes new sheet entry', () => {
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.write('original');
+		let callCount = 0;
+		tl.observe(() => callCount++);
+
+		tl.restoreFromSnapshot(
+			createSnapshotBinary((s) => {
+				s.write('A,B\n1,2\n');
+				s.asSheet();
+			}),
+		);
+		expect(callCount).toBe(1);
+		doc.destroy();
+	});
+
+	test('fires when restoreFromSnapshot pushes richtext entry', () => {
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.write('original');
+		let callCount = 0;
+		tl.observe(() => callCount++);
+
+		tl.restoreFromSnapshot(
+			createSnapshotBinary((s) => s.asRichText()),
+		);
+		expect(callCount).toBe(1);
+		doc.destroy();
+	});
+
+	test('does NOT fire when restoreFromSnapshot replaces text in-place', () => {
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.write('original');
+		let callCount = 0;
+		tl.observe(() => callCount++);
+
+		tl.restoreFromSnapshot(
+			createSnapshotBinary((s) => s.write('restored')),
+		);
+		expect(callCount).toBe(0);
+		doc.destroy();
+	});
+});
+
+describe('createTimeline - mode conversion content', () => {
+	test('asRichText from text preserves content as paragraphs', () => {
+		const tl = setup();
+		tl.write('Line 1\nLine 2');
+		const fragment = tl.asRichText();
+		expect(xmlFragmentToPlaintext(fragment)).toBe('Line 1\nLine 2');
+	});
+
+	test('asText from richtext extracts plaintext', () => {
+		const tl = setup();
+		const fragment = tl.asRichText();
+		const p = new Y.XmlElement('paragraph');
+		const t = new Y.XmlText();
+		t.insert(0, 'Hello from richtext');
+		p.insert(0, [t]);
+		fragment.insert(0, [p]);
+
+		const ytext = tl.asText();
+		expect(ytext.toString()).toBe('Hello from richtext');
+	});
+
+	test('asText from richtext with multiple paragraphs joins with newlines', () => {
+		const tl = setup();
+		const fragment = tl.asRichText();
+		const p1 = new Y.XmlElement('paragraph');
+		const t1 = new Y.XmlText();
+		t1.insert(0, 'First');
+		p1.insert(0, [t1]);
+		const p2 = new Y.XmlElement('paragraph');
+		const t2 = new Y.XmlText();
+		t2.insert(0, 'Second');
+		p2.insert(0, [t2]);
+		fragment.insert(0, [p1, p2]);
+
+		const ytext = tl.asText();
+		expect(ytext.toString()).toBe('First\nSecond');
+	});
+});
+
+describe('createTimeline - cross-mode conversions', () => {
+	test('asRichText from sheet converts via CSV plaintext', () => {
+		const tl = setup();
+		tl.write('Name,Age\nAlice,30\n');
+		tl.asSheet();
+		const fragment = tl.asRichText();
+		expect(xmlFragmentToPlaintext(fragment)).toBe('Name,Age\nAlice,30\n');
+	});
+
+	test('asSheet from richtext converts via plaintext extraction', () => {
+		const tl = setup();
+		const fragment = tl.asRichText();
+		const p1 = new Y.XmlElement('paragraph');
+		const t1 = new Y.XmlText();
+		t1.insert(0, 'Name,Score');
+		p1.insert(0, [t1]);
+		const p2 = new Y.XmlElement('paragraph');
+		const t2 = new Y.XmlText();
+		t2.insert(0, 'Bob,42');
+		p2.insert(0, [t2]);
+		fragment.insert(0, [p1, p2]);
+
+		const { columns, rows } = tl.asSheet();
+		expect(columns.size).toBe(2);
+		expect(rows.size).toBe(1);
+	});
+
+	test('asText from sheet returns CSV string', () => {
+		const tl = setup();
+		tl.write('A,B\n1,2\n');
+		tl.asSheet();
+		const ytext = tl.asText();
+		expect(ytext.toString()).toBe('A,B\n1,2\n');
+	});
+});
+
+describe('createTimeline - writeSheet', () => {
+	test('writeSheet on empty timeline pushes new sheet entry', () => {
+		const tl = setup();
+		tl.writeSheet('Name,Age\nAlice,30\n');
+		expect(tl.currentType).toBe('sheet');
+		expect(tl.read()).toBe('Name,Age\nAlice,30\n');
+		expect(tl.length).toBe(1);
+	});
+
+	test('writeSheet on existing sheet replaces in-place (length unchanged)', () => {
+		const tl = setup();
+		tl.writeSheet('A,B\n1,2\n');
+		expect(tl.length).toBe(1);
+		tl.writeSheet('X,Y\n3,4\n');
+		expect(tl.length).toBe(1);
+		expect(tl.read()).toBe('X,Y\n3,4\n');
+	});
+
+	test('writeSheet on text mode pushes new sheet entry', () => {
+		const tl = setup();
+		tl.write('some text');
+		expect(tl.length).toBe(1);
+		tl.writeSheet('A,B\n1,2\n');
+		expect(tl.length).toBe(2);
+		expect(tl.currentType).toBe('sheet');
+		expect(tl.read()).toBe('A,B\n1,2\n');
+	});
+
+	test('observe does NOT fire when writeSheet replaces in-place', () => {
+		const tl = setup();
+		tl.writeSheet('A,B\n1,2\n');
+		let callCount = 0;
+		tl.observe(() => callCount++);
+		tl.writeSheet('X,Y\n3,4\n');
+		expect(callCount).toBe(0);
+	});
+
+	test('observe fires when writeSheet pushes new entry from different type', () => {
+		const tl = setup();
+		tl.write('some text');
+		let callCount = 0;
+		tl.observe(() => callCount++);
+		tl.writeSheet('A,B\n1,2\n');
+		expect(callCount).toBe(1);
+	});
+});
+
+describe('createTimeline - batch', () => {
+	test('mutations in batch trigger observe once per transaction', () => {
+		const tl = setup();
+		let callCount = 0;
+		tl.observe(() => callCount++);
+		tl.batch(() => {
+			tl.write('first');
+		});
+		expect(callCount).toBe(1);
+	});
+
+	test('write + in-place replace in same batch triggers observe once', () => {
+		const tl = setup();
+		let callCount = 0;
+		tl.observe(() => callCount++);
+		// First write pushes text entry, second replaces in-place.
+		// Yjs collapses nested transactions—single observe callback.
+		tl.batch(() => {
+			tl.write('first');
+			tl.write('second');
+		});
+		expect(callCount).toBe(1);
+		expect(tl.read()).toBe('second');
+	});
+
+	test('batch does not affect read/write correctness', () => {
+		const tl = setup();
+		tl.batch(() => {
+			tl.write('hello');
+			expect(tl.read()).toBe('hello');
+			tl.write('world');
+			expect(tl.read()).toBe('world');
+		});
+		expect(tl.read()).toBe('world');
 	});
 });

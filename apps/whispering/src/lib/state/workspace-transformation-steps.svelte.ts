@@ -126,3 +126,42 @@ function createWorkspaceTransformationSteps() {
 
 export const workspaceTransformationSteps =
 	createWorkspaceTransformationSteps();
+
+/**
+ * Generate a default transformation step with sensible defaults.
+ *
+ * Uses flat workspace field names. The `transformationId` and `order` are
+ * set by the caller (they depend on the parent transformation and insertion position).
+ *
+ * @example
+ * ```typescript
+ * const step = generateDefaultStep({
+ *   transformationId: transformation.id,
+ *   order: existingSteps.length,
+ * });
+ * workspaceTransformationSteps.set(step);
+ * ```
+ */
+export function generateDefaultStep(
+	context: Pick<TransformationStep, 'transformationId' | 'order'>,
+): Omit<TransformationStep, '_v'> {
+	return {
+		id: crypto.randomUUID(),
+		transformationId: context.transformationId,
+		order: context.order,
+		type: 'prompt_transform',
+		inferenceProvider: 'Google',
+		openaiModel: 'gpt-4o',
+		groqModel: 'llama-3.3-70b-versatile',
+		anthropicModel: 'claude-sonnet-4-0',
+		googleModel: 'gemini-2.5-flash',
+		openrouterModel: 'mistralai/mixtral-8x7b',
+		customModel: '',
+		customBaseUrl: '',
+		systemPromptTemplate: '',
+		userPromptTemplate: '',
+		findText: '',
+		replaceText: '',
+		useRegex: false,
+	};
+}

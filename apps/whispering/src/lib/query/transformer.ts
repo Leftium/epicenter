@@ -14,12 +14,13 @@ import {
 import { services } from '$lib/services';
 import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
 import type {
-	Transformation,
 	TransformationRunCompleted,
 	TransformationRunFailed,
 	TransformationRunRunning,
-	TransformationStep,
-} from '$lib/services/db';
+	} from '$lib/services/db';
+	import type { Transformation } from '$lib/state/workspace-transformations.svelte';
+import type { TransformationStep } from '$lib/state/workspace-transformation-steps.svelte';
+import { workspaceTransformationSteps } from '$lib/state/workspace-transformation-steps.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { dbKeys } from './db';
@@ -46,9 +47,11 @@ export const transformer = {
 		mutationFn: async ({
 			input,
 			transformation,
+			steps,
 		}: {
 			input: string;
 			transformation: Transformation;
+			steps: TransformationStep[];
 		}): Promise<WhisperingResult<string>> => {
 			const getTransformationOutput = async (): Promise<
 				Result<string, WhisperingError>
@@ -57,6 +60,7 @@ export const transformer = {
 					await runTransformation({
 						input,
 						transformation,
+						steps,
 						recordingId: null,
 					});
 
@@ -119,10 +123,13 @@ export const transformer = {
 				});
 			}
 
+			const steps = workspaceTransformationSteps.getByTransformationId(transformation.id);
+
 			const { data: transformationRun, error: transformationRunError } =
 				await runTransformation({
 					input: recording.transcribedText,
 					transformation,
+					steps,
 					recordingId,
 				});
 
@@ -156,9 +163,9 @@ async function handleStep({
 }): Promise<Result<string, string>> {
 	switch (step.type) {
 		case 'find_replace': {
-			const findText = step['find_replace.findText'];
-			const replaceText = step['find_replace.replaceText'];
-			const useRegex = step['find_replace.useRegex'];
+			const findText = step.findText;
+			const replaceText = step.replaceText;
+			const useRegex = step.useRegex;
 
 			if (useRegex) {
 				try {
@@ -173,13 +180,13 @@ async function handleStep({
 		}
 
 		case 'prompt_transform': {
-			const provider = step['prompt_transform.inference.provider'];
+			const provider = step.inferenceProvider;
 			const systemPrompt = interpolateTemplate(
-				asTemplateString(step['prompt_transform.systemPromptTemplate']),
+				asTemplateString(step.systemPromptTemplate),
 				{ input },
 			);
 			const userPrompt = interpolateTemplate(
-				asTemplateString(step['prompt_transform.userPromptTemplate']),
+				asTemplateString(step.userPromptTemplate),
 				{ input },
 			);
 
@@ -190,7 +197,7 @@ async function handleStep({
 						apiKey: deviceConfig.get("apiKeys.openai"),
 							systemPrompt,
 							userPrompt,
-							model: step['prompt_transform.inference.provider.OpenAI.model'],
+							model: step.openaiModel,
 						});
 
 					if (completionError) {
@@ -201,7 +208,7 @@ async function handleStep({
 				}
 
 				case 'Groq': {
-					const model = step['prompt_transform.inference.provider.Groq.model'];
+					const model = step.groqModel;
 					const { data: completionResponse, error: completionError } =
 						await services.completions.groq.complete({
 						apiKey: deviceConfig.get("apiKeys.groq"),
@@ -221,8 +228,7 @@ async function handleStep({
 					const { data: completionResponse, error: completionError } =
 						await services.completions.anthropic.complete({
 						apiKey: deviceConfig.get("apiKeys.anthropic"),
-							model:
-								step['prompt_transform.inference.provider.Anthropic.model'],
+							model: step.anthropicModel,
 							systemPrompt,
 							userPrompt,
 						});
@@ -238,7 +244,7 @@ async function handleStep({
 					const { data: completion, error: completionError } =
 						await services.completions.google.complete({
 						apiKey: deviceConfig.get("apiKeys.google"),
-							model: step['prompt_transform.inference.provider.Google.model'],
+							model: step.googleModel,
 							systemPrompt,
 							userPrompt,
 						});
@@ -254,8 +260,7 @@ async function handleStep({
 					const { data: completionResponse, error: completionError } =
 						await services.completions.openrouter.complete({
 						apiKey: deviceConfig.get("apiKeys.openrouter"),
-							model:
-								step['prompt_transform.inference.provider.OpenRouter.model'],
+							model: step.openrouterModel,
 							systemPrompt,
 							userPrompt,
 						});
@@ -268,13 +273,11 @@ async function handleStep({
 				}
 
 				case 'Custom': {
-					const model =
-						step['prompt_transform.inference.provider.Custom.model']?.trim();
+					const model = step.customModel?.trim();
 
 					// baseUrl is per-step because local LLM setups often have multiple endpoints
 					// (Ollama, LM Studio, llama.cpp) running on different ports
-					const stepBaseUrl =
-						step['prompt_transform.inference.provider.Custom.baseUrl']?.trim();
+					const stepBaseUrl = step.customBaseUrl?.trim();
 					// Fall back to global default from Settings → API Keys → Custom section
 					const defaultBaseUrl =
 						deviceConfig.get("completion.custom.baseUrl")?.trim();
@@ -311,10 +314,12 @@ async function handleStep({
 async function runTransformation({
 	input,
 	transformation,
+	steps,
 	recordingId,
 }: {
 	input: string;
 	transformation: Transformation;
+	steps: TransformationStep[];
 	recordingId: string | null;
 }): Promise<
 	Result<TransformationRunCompleted | TransformationRunFailed, TransformError>
@@ -325,7 +330,7 @@ async function runTransformation({
 		});
 	}
 
-	if (transformation.steps.length === 0) {
+	if (steps.length === 0) {
 		return TransformError.NoSteps({
 			message:
 				'No steps configured. Please add at least one transformation step',
@@ -353,7 +358,7 @@ async function runTransformation({
 
 	let currentInput = input;
 
-	for (const step of transformation.steps) {
+	for (const step of steps) {
 		const {
 			data: newTransformationStepRun,
 			error: addTransformationStepRunError,

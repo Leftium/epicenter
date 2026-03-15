@@ -255,9 +255,9 @@ export const workspaceRecordings = createWorkspaceRecordings();
 - [x] **3.3** Replace `db.recordings.delete.mutate()` with `workspaceRecordings.delete(id)` — add audio URL cleanup before delete
   > recording-actions.ts, recordings page, home page: sync delete + revokeAudioUrl
 - [x] **3.4** Same for transformation create/update/delete
-  > Deletes switched (transformations page bulk delete, TransformationRowActions). Create/update deferred — Editor component uses old dot-notation field names incompatible with workspace flat schema. Transformation create/update still goes through TanStack Query mutations during transition.
-- [ ] **3.5** Same for transformation step create/update/delete (these were previously nested in transformation objects — now they're their own table)
-  > Deferred — requires Editor component refactor to use flat field names and separate steps table. The old `TransformationStepV2` uses dot-notation keys (`'prompt_transform.inference.provider'`), workspace table uses flat keys (`inferenceProvider`). This is a follow-up spec.
+  > COMPLETED: Editor refactored to flat workspace field names. Create/update now use workspace.batch() for atomic writes.
+- [x] **3.5** Same for transformation step create/update/delete (these were previously nested in transformation objects — now they're their own table)
+  > COMPLETED: Configuration.svelte refactored from dot-notation to flat field names. Steps passed as separate `steps` prop. Editor, Test, Create, Edit all use workspace types and workspace.batch() for saves.
 
 ### Phase 4: Handle transformation runs (incremental)
 

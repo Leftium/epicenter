@@ -321,10 +321,6 @@ export function createWorkspace<
 					}
 				}
 			},
-			async teardown(): Promise<void> {
-				await client.clearLocalData();
-				await dispose();
-			},
 			[Symbol.asyncDispose]: dispose,
 		};
 

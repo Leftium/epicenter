@@ -1175,7 +1175,7 @@ export type { Extension } from './lifecycle.js';
 /**
  * Context passed to workspace extension factories.
  *
- * This is a `WorkspaceClient` minus `dispose`, `teardown`, and `[Symbol.asyncDispose]` —
+ * This is a `WorkspaceClient` minus `dispose`, `clearLocalData`, and `[Symbol.asyncDispose]` —
  * extension factories receive the full client surface but don't control
  * the workspace's lifecycle. They return their own lifecycle hooks instead.
  *
@@ -1204,7 +1204,7 @@ export type ExtensionContext<
 		TAwarenessDefinitions,
 		TExtensions
 	>,
-	'dispose' | 'clearLocalData' | 'teardown' | typeof Symbol.asyncDispose
+	'dispose' | 'clearLocalData' | typeof Symbol.asyncDispose
 >;
 
 /**
@@ -1301,9 +1301,8 @@ export type WorkspaceClient<
 	 *
 	 * No-op if mode is `'plaintext'` (never had a key).
 	 *
-	 * For a hard wipe that clears both memory and persisted data, use
- * {@link teardown} instead—it calls `lock()`, then `clearData()` on
-	 * every extension, then `dispose()`.
+ * For a hard wipe that clears persisted data without killing the client,
+	 * use {@link clearLocalData} instead.
 	 */
 	lock(): void;
 
@@ -1404,8 +1403,7 @@ export type WorkspaceClient<
 	 * Stops observers, closes database connections, disconnects sync providers.
 	 *
 	 * After calling, the client is unusable. For wiping data without killing
-	 * the client, use {@link clearLocalData}. For a full teardown (wipe + dispose),
-	 * use {@link teardown}.
+	 * the client, use {@link clearLocalData}.
 	 *
 	 * Safe to call multiple times (idempotent).
 	 */
@@ -1424,8 +1422,6 @@ export type WorkspaceClient<
 	 * 1. `lock()` — clear encryption key, block writes
 	 * 2. `clearData()` on every extension that supports it (LIFO order)
 	 *
-	 * For a full teardown (wipe + dispose + kill client), use {@link teardown}.
-	 *
 	 * @example
 	 * ```typescript
 	 * // In encryption wiring, on sign-out:
@@ -1436,17 +1432,6 @@ export type WorkspaceClient<
 	 */
 	clearLocalData(): Promise<void>;
 
-	/**
-	 * Hard teardown — wipe local data, then dispose. Client is dead after this.
-	 *
-	 * Equivalent to `clearLocalData()` followed by `dispose()`. Use for app
-	 * shutdown, tests, or explicit "delete everything" flows that will reload
-	 * the page.
-	 *
-	 * For sign-out flows where the client must survive, use
-	 * {@link clearLocalData} instead.
-	 */
-	teardown(): Promise<void>;
 
 	/** Async dispose support */
 	[Symbol.asyncDispose](): Promise<void>;

@@ -45,8 +45,8 @@ export type CommandPaletteItem = {
 	/**
 	 * Svelte component rendered as a 16×16 icon to the left of the label.
 	 *
-	 * Typically a Lucide icon import. Omit for auto-generated commands
-	 * (e.g. from `commandsFromActions`) where icons aren't available.
+	 * Typically a Lucide icon import. Omit when icons aren't available
+	 * (e.g. programmatically generated items).
 	 */
 	icon?: Component;
 	/**

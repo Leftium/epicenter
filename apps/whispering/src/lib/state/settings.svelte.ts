@@ -180,12 +180,12 @@ async function stopAllRecordingModesExcept(modeToKeep: RecordingMode) {
 		{
 			mode: 'manual' as const,
 			isActive: () => recorderState === 'RECORDING',
-			stop: () => rpc.commands.stopManualRecording(),
+			stop: () => rpc.actions.stopManualRecording(),
 		},
 		{
 			mode: 'vad' as const,
 			isActive: () => vadRecorder.state !== 'IDLE',
-			stop: () => rpc.commands.stopVadRecording(),
+			stop: () => rpc.actions.stopVadRecording(),
 		},
 	] satisfies {
 		mode: RecordingMode;

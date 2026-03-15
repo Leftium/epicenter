@@ -147,7 +147,7 @@
 						}
 
 						if (files.length > 0) {
-							await rpc.commands.uploadRecordings({ files });
+							await rpc.actions.uploadRecordings({ files });
 						}
 					},
 				);
@@ -281,7 +281,7 @@
 				maxFileSize={25 * MEGABYTE}
 				onUpload={(files) => {
 					if (files.length > 0) {
-						rpc.commands.uploadRecordings({ files });
+						rpc.actions.uploadRecordings({ files });
 					}
 				}}
 				onFileRejected={({ file, reason }) => {

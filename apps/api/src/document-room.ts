@@ -79,35 +79,6 @@ export class DocumentRoom extends BaseSyncRoom {
 		return Y.encodeStateAsUpdateV2(restoredDoc);
 	}
 
-	/**
-	 * Restore the document to a past snapshot's content.
-	 *
-	 * Reads the snapshot text, then replaces the current content with new CRDT
-	 * operations (delete + insert) inside a single transaction. This is an
-	 * append-only event in the timeline—the pre-restore content remains in the
-	 * struct store (gc: false) and can be recovered via the "Before restore"
-	 * safety snapshot.
-	 */
-	async applySnapshot(snapshotId: number): Promise<boolean> {
-		const [row] = this.ctx.storage.sql
-			.exec('SELECT snapshot FROM snapshots WHERE id = ?', snapshotId)
-			.toArray();
-		if (!row) return false;
-
-		const snap = Y.decodeSnapshot(new Uint8Array(row.snapshot as ArrayBuffer));
-		const restoredDoc = Y.createDocFromSnapshot(this.doc, snap);
-		const restoredText = restoredDoc.getText('content').toString();
-
-		await this.saveSnapshot('Before restore');
-
-		this.doc.transact(() => {
-			const content = this.doc.getText('content');
-			content.delete(0, content.length);
-			content.insert(0, restoredText);
-		});
-
-		return true;
-	}
 
 	/** Delete a snapshot by ID. Returns true if a row was removed. */
 	async deleteSnapshot(snapshotId: number): Promise<boolean> {

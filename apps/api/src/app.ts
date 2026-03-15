@@ -604,20 +604,5 @@ app.delete(
 	},
 );
 
-app.post(
-	'/documents/:document/snapshots/:id/apply',
-	describeRoute({
-		description: 'Restore document content from a past snapshot (delete + insert)',
-		tags: ['documents', 'snapshots'],
-	}),
-	sValidator('param', type({ document: 'string', id: 'string.numeric' })),
-	async (c) => {
-		const { stub } = getDocumentStub(c);
-		const { id } = c.req.valid('param');
-		const ok = await stub.applySnapshot(Number(id));
-		if (!ok) return c.json({ error: 'Snapshot not found' }, 404);
-		return c.body(null, 204);
-	},
-);
 
 export default app;

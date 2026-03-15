@@ -21,3 +21,4 @@ export {
 	populateFragmentFromText,
 	type SheetBinding,
 } from './richtext.js';
+export { restoreFromSnapshot } from './restore.js';

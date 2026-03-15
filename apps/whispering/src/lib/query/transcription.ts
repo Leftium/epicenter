@@ -191,6 +191,14 @@ export async function transcribeBlob(
 		}
 	}
 
+	// Diagnostic: log blob state to help debug 400 "Invalid file format" errors.
+	// If size is 0 or type is empty, the blob is the problem—not the extension.
+	console.debug('[Transcription] Blob diagnostics:', {
+		size: audioToTranscribe.size,
+		type: audioToTranscribe.type,
+		sizeKb: Math.round(audioToTranscribe.size / 1024),
+		service: selectedService,
+	});
 	const transcriptionResult: Result<string, WhisperingError> =
 		await (async () => {
 			const outputLanguage = getOutputLanguage();

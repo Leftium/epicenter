@@ -111,8 +111,8 @@
 			},
 		},
 		{
-			id: 'ID',
 			accessorKey: 'id',
+			meta: { label: 'ID' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, { column, headerText: 'ID' }),
 			cell: ({ getValue }) => {
@@ -126,8 +126,8 @@
 			},
 		},
 		{
-			id: 'Title',
 			accessorKey: 'title',
+			meta: { label: 'Title' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -135,8 +135,8 @@
 				}),
 		},
 		{
-			id: 'Subtitle',
 			accessorKey: 'subtitle',
+			meta: { label: 'Subtitle' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -144,8 +144,8 @@
 				}),
 		},
 		{
-			id: 'Timestamp',
 			accessorKey: 'timestamp',
+			meta: { label: 'Timestamp' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -154,8 +154,8 @@
 			cell: formattedCell(DATE_FORMAT),
 		},
 		{
-			id: 'Created At',
 			accessorKey: 'createdAt',
+			meta: { label: 'Created At' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -164,8 +164,8 @@
 			cell: formattedCell(DATE_FORMAT),
 		},
 		{
-			id: 'Updated At',
 			accessorKey: 'updatedAt',
+			meta: { label: 'Updated At' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -174,8 +174,8 @@
 			cell: formattedCell(DATE_FORMAT),
 		},
 		{
-			id: 'Transcript',
 			accessorKey: 'transcribedText',
+			meta: { label: 'Transcript' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -213,7 +213,8 @@
 			},
 		},
 		{
-			id: 'Latest Transformation Run Output',
+			id: 'latestTransformationRunOutput',
+			meta: { label: 'Latest Transformation Run Output' },
 			accessorFn: ({ id }) => id,
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
@@ -228,7 +229,8 @@
 			},
 		},
 		{
-			id: 'Audio',
+			id: 'audio',
+			meta: { label: 'Audio' },
 			accessorFn: ({ id }) => id,
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
@@ -241,7 +243,8 @@
 			},
 		},
 		{
-			id: 'Actions',
+			id: 'actions',
+			meta: { label: 'Actions' },
 			accessorFn: (recording) => recording,
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
@@ -266,11 +269,11 @@
 	let columnVisibility = createPersistedState({
 		key: 'whispering-recordings-data-table-column-visibility',
 		onParseError: (_error) => ({
-			ID: false,
-			Title: false,
-			Subtitle: false,
-			'Created At': false,
-			'Updated At': false,
+			id: false,
+			title: false,
+			subtitle: false,
+			createdAt: false,
+			updatedAt: false,
 		}),
 		schema: type('Record<string, boolean>'),
 	});
@@ -572,7 +575,7 @@
 								bind:checked={() => column.getIsVisible(),
 									(value) => column.toggleVisibility(!!value)}
 							>
-								{column.columnDef.id}
+							{(column.columnDef.meta as { label?: string })?.label ?? column.id}
 							</DropdownMenu.CheckboxItem>
 						{/each}
 					</DropdownMenu.Content>

@@ -1,17 +1,17 @@
 /**
- * Quick action registry for the command palette.
+ * Command palette items for the tab manager.
  *
- * Each action has a label, description, icon, and onSelect function.
- * Some actions open a confirmation dialog before executing—they manage
+ * Each item has a label, description, icon, and `onSelect` handler.
+ * Some items open a confirmation dialog before executing—they manage
  * this internally so the confirmation message can include runtime context
  * (e.g. "Found 5 duplicates across 3 URLs").
  *
  * @example
  * ```typescript
- * import { quickActions } from '$lib/quick-actions';
+ * import { items } from './items';
  *
- * for (const action of quickActions) {
- *   console.log(action.label, action.description);
+ * for (const item of items) {
+ *   console.log(item.label, item.description);
  * }
  * ```
  */
@@ -115,11 +115,11 @@ function getUniqueDomains(): Map<string, TabCompositeId[]> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * All registered quick actions for the command palette.
+ * All command palette items for the tab manager.
  *
- * Actions are ordered by expected frequency of use.
+ * Ordered by expected frequency of use.
  */
-export const quickActions: CommandPaletteItem[] = [
+export const items: CommandPaletteItem[] = [
 	{
 		id: 'dedup',
 		label: 'Remove Duplicates',

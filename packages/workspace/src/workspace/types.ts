@@ -210,6 +210,7 @@ export type DocumentExtensionRegistration = {
 		| (Record<string, unknown> & {
 				whenReady?: Promise<unknown>;
 				dispose?: () => MaybePromise<void>;
+				clearData?: () => MaybePromise<void>;
 		  })
 		| void;
 	tags: readonly string[];
@@ -1027,6 +1028,7 @@ export type WorkspaceClientBuilder<
 		) => TExports & {
 			whenReady?: Promise<unknown>;
 			dispose?: () => MaybePromise<void>;
+			clearData?: () => MaybePromise<void>;
 		},
 	): WorkspaceClientBuilder<
 		TId,
@@ -1034,8 +1036,8 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions &
-			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'dispose'>>>,
-		TDocExtensions & Record<TKey, Omit<TExports, 'whenReady' | 'dispose'>>
+			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>>,
+		TDocExtensions & Record<TKey, Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
 	>;
 
 	/**
@@ -1075,6 +1077,7 @@ export type WorkspaceClientBuilder<
 		) => TExports & {
 			whenReady?: Promise<unknown>;
 			dispose?: () => MaybePromise<void>;
+			clearData?: () => MaybePromise<void>;
 		},
 	): WorkspaceClientBuilder<
 		TId,
@@ -1082,7 +1085,7 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions &
-			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'dispose'>>>,
+			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>>,
 		TDocExtensions
 	>;
 
@@ -1119,6 +1122,7 @@ export type WorkspaceClientBuilder<
 			| (TDocExports & {
 					whenReady?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
+					clearData?: () => MaybePromise<void>;
 			  })
 			| void,
 		options?: { tags?: ExtractAllDocumentTags<TTableDefinitions>[] },
@@ -1128,7 +1132,7 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions,
-		TDocExtensions & Record<K, Omit<TDocExports, 'whenReady' | 'dispose'>>
+		TDocExtensions & Record<K, Omit<TDocExports, 'whenReady' | 'dispose' | 'clearData'>>
 	>;
 
 	/**
@@ -1171,7 +1175,7 @@ export type { Extension } from './lifecycle.js';
 /**
  * Context passed to workspace extension factories.
  *
- * This is a `WorkspaceClient` minus `dispose` and `[Symbol.asyncDispose]` —
+ * This is a `WorkspaceClient` minus `dispose`, `signOut`, and `[Symbol.asyncDispose]` —
  * extension factories receive the full client surface but don't control
  * the workspace's lifecycle. They return their own lifecycle hooks instead.
  *
@@ -1200,7 +1204,7 @@ export type ExtensionContext<
 		TAwarenessDefinitions,
 		TExtensions
 	>,
-	'dispose' | typeof Symbol.asyncDispose
+	'dispose' | 'signOut' | typeof Symbol.asyncDispose
 >;
 
 /**
@@ -1228,6 +1232,7 @@ export type ExtensionFactory<
 > = (context: ExtensionContext) => TExports & {
 	whenReady?: Promise<unknown>;
 	dispose?: () => MaybePromise<void>;
+	clearData?: () => MaybePromise<void>;
 };
 
 /** The workspace client returned by createWorkspace() */
@@ -1352,8 +1357,36 @@ export type WorkspaceClient<
 	/** Promise resolving when all extensions are ready */
 	whenReady: Promise<void>;
 
-	/** Cleanup all resources */
+	/** Cleanup all resources — data is preserved on disk */
 	dispose(): Promise<void>;
+
+	/**
+	 * Hard sign-out — lock encryption, wipe local data, then dispose.
+	 *
+	 * This is the "log out" operation (vs `dispose()` which is "close").
+	 * Follows the Bitwarden/1Password model:
+	 * - `lock()` = clear key, keep data (soft lock)
+	 * - `dispose()` = release resources, keep data (normal cleanup)
+	 * - `signOut()` = clear key + wipe data + release resources (hard logout)
+	 *
+	 * After calling `signOut()`, the client is unusable (same as `dispose()`).
+	 * Next sign-in should create a fresh workspace and re-sync from the server.
+	 *
+	 * Steps:
+	 * 1. `lock()` — clear encryption key, block writes
+	 * 2. `clearData()` on every extension that supports it (LIFO order)
+	 * 3. `dispose()` — release all resources
+	 *
+	 * @example
+	 * ```typescript
+	 * async function handleSignOut() {
+	 *   await authClient.signOut();
+	 *   await workspaceClient.signOut();
+	 *   // Client is now unusable — redirect to login
+	 * }
+	 * ```
+	 */
+	signOut(): Promise<void>;
 
 	/** Async dispose support */
 	[Symbol.asyncDispose](): Promise<void>;

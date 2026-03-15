@@ -188,6 +188,7 @@ export function createWorkspace<
 	 */
 	type BuilderState = {
 		extensionCleanups: (() => MaybePromise<void>)[];
+		clearDataCallbacks: (() => MaybePromise<void>)[];
 		whenReadyPromises: Promise<unknown>[];
 	};
 
@@ -309,6 +310,18 @@ export function createWorkspace<
 			},
 			whenReady,
 			dispose,
+			async signOut(): Promise<void> {
+				client.lock();
+				// LIFO clearData on extensions that support it
+				for (let i = state.clearDataCallbacks.length - 1; i >= 0; i--) {
+					try {
+						await state.clearDataCallbacks[i]?.();
+					} catch (err) {
+						console.error('Extension clearData error during sign-out:', err);
+					}
+				}
+				await dispose();
+			},
 			[Symbol.asyncDispose]: dispose,
 		};
 
@@ -331,6 +344,7 @@ export function createWorkspace<
 			) => TExports & {
 				whenReady?: Promise<unknown>;
 				dispose?: () => MaybePromise<void>;
+				clearData?: () => MaybePromise<void>;
 			},
 		) {
 			const {
@@ -362,6 +376,10 @@ export function createWorkspace<
 					} as TExtensions & Record<TKey, TExports>,
 					{
 						extensionCleanups: [...state.extensionCleanups, resolved.dispose],
+						clearDataCallbacks: [
+							...state.clearDataCallbacks,
+							...(resolved.clearData ? [resolved.clearData] : []),
+						],
 						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
 					},
 				);
@@ -391,6 +409,7 @@ export function createWorkspace<
 				) => TExports & {
 					whenReady?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
+					clearData?: () => MaybePromise<void>;
 				},
 			) {
 				// Register for document Y.Docs (fires lazily at documents.open() time)
@@ -420,6 +439,7 @@ export function createWorkspace<
 				) => TExports & {
 					whenReady?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
+					clearData?: () => MaybePromise<void>;
 				},
 			) {
 				return applyWorkspaceExtension(key, factory);
@@ -431,6 +451,7 @@ export function createWorkspace<
 					| (Record<string, unknown> & {
 							whenReady?: Promise<unknown>;
 							dispose?: () => MaybePromise<void>;
+							clearData?: () => MaybePromise<void>;
 					  })
 					| void,
 				options?: { tags?: string[] },
@@ -480,6 +501,7 @@ export function createWorkspace<
 
 	return buildClient({} as Record<string, never>, {
 		extensionCleanups: [],
+		clearDataCallbacks: [],
 		whenReadyPromises: [],
 	});
 }

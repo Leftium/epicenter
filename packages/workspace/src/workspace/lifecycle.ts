@@ -133,6 +133,20 @@ export type Lifecycle = {
 	 * Implementations should handle graceful cancellation.
 	 */
 	dispose: () => MaybePromise<void>;
+
+	/**
+	 * Wipe persisted data (optional).
+	 *
+	 * Only implemented by extensions that persist data (IndexedDB, SQLite, filesystem).
+	 * Called by `signOut()` before `dispose()` to wipe local state on explicit sign-out.
+	 *
+	 * Semantics:
+	 * - `dispose()` releases resources but **keeps data** (normal cleanup)
+	 * - `clearData()` **wipes data** but does not release resources (call `dispose()` after)
+	 *
+	 * Extensions without persistent state should omit this (leave `undefined`).
+	 */
+	clearData?: () => MaybePromise<void>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -172,6 +186,8 @@ export type Extension<
 	whenReady: Promise<void>;
 	/** Clean up resources. Always present (defaults to no-op). */
 	dispose: () => MaybePromise<void>;
+	/** Wipe persisted data. Only present on persistence extensions. */
+	clearData?: () => MaybePromise<void>;
 };
 
 /**
@@ -203,13 +219,15 @@ export function defineExtension<T extends Record<string, unknown>>(
 	input: T & {
 		whenReady?: Promise<unknown>;
 		dispose?: () => MaybePromise<void>;
+		clearData?: () => MaybePromise<void>;
 	},
-): Extension<Omit<T, 'whenReady' | 'dispose'>> {
+): Extension<Omit<T, 'whenReady' | 'dispose' | 'clearData'>> {
 	return {
 		...input,
 		whenReady: input.whenReady?.then(() => {}) ?? Promise.resolve(),
 		dispose: input.dispose ?? (() => {}),
-	} as Extension<Omit<T, 'whenReady' | 'dispose'>>;
+		clearData: input.clearData,
+	} as Extension<Omit<T, 'whenReady' | 'dispose' | 'clearData'>>;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

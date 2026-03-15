@@ -19,7 +19,7 @@
 		checkFfmpegRecordingMethodCompatibility,
 	} from '../_layout-utils/check-ffmpeg';
 	import { checkForUpdates } from '../_layout-utils/check-for-updates';
-	import { checkDatabaseMigration } from '../_layout-utils/check-database-migration';
+	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 	import {
 		resetGlobalShortcutsToDefaultIfDuplicates,
 		resetLocalShortcutsToDefaultIfDuplicates,
@@ -51,7 +51,7 @@
 		cleanupMicrophonePermission = registerMicrophonePermission();
 
 		// Platform-agnostic async checks
-		checkDatabaseMigration();
+		migrationDialog.check();
 
 		if (window.__TAURI_INTERNALS__) {
 			syncGlobalShortcutsWithSettings();

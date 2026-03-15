@@ -77,14 +77,9 @@ function createWorkspaceTransformationSteps() {
 
 		/**
 		 * Create or update a step. Writes to Yjs → observer updates SvelteMap.
-		 *
-		 * Accepts a step without `_v` (version tag is added automatically).
 		 */
-		set(step: Omit<TransformationStep, '_v'>) {
-			workspace.tables.transformationSteps.set({
-				...step,
-				_v: 1,
-			} as TransformationStep);
+		set(step: TransformationStep) {
+			workspace.tables.transformationSteps.set(step);
 		},
 
 		/**
@@ -144,7 +139,7 @@ export const workspaceTransformationSteps =
  */
 export function generateDefaultStep(
 	context: Pick<TransformationStep, 'transformationId' | 'order'>,
-): Omit<TransformationStep, '_v'> {
+): TransformationStep {
 	return {
 		id: crypto.randomUUID(),
 		transformationId: context.transformationId,
@@ -163,5 +158,6 @@ export function generateDefaultStep(
 		findText: '',
 		replaceText: '',
 		useRegex: false,
+		_v: 1,
 	};
 }

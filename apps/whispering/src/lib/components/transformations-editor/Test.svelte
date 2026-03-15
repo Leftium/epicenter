@@ -20,7 +20,7 @@
 		steps,
 	}: {
 		transformation: Transformation;
-		steps: Omit<TransformationStep, '_v'>[];
+		steps: TransformationStep[];
 	} = $props();
 
 	let input = $state('');

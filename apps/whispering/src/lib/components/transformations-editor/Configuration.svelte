@@ -45,7 +45,7 @@
 		steps = $bindable(),
 	}: {
 		transformation: Transformation;
-		steps: Omit<TransformationStep, '_v'>[];
+		steps: TransformationStep[];
 	} = $props();
 
 	/** Update a single field on a step by index. */

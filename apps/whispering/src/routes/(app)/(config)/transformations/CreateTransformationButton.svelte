@@ -6,8 +6,10 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { rpc } from '$lib/query';
-	import type { TransformationStep } from '$lib/state/workspace-transformation-steps.svelte';
-	import { workspaceTransformationSteps } from '$lib/state/workspace-transformation-steps.svelte';
+	import {
+		workspaceTransformationSteps,
+		type TransformationStep,
+	} from '$lib/state/workspace-transformation-steps.svelte';
 	import { workspaceTransformations } from '$lib/state/workspace-transformations.svelte';
 	import workspace from '$lib/workspace';
 
@@ -24,7 +26,7 @@
 
 	let isModalOpen = $state(false);
 	let transformation = $state(generateDefaultTransformation());
-	let steps = $state<Omit<TransformationStep, '_v'>[]>([]);
+	let steps = $state<TransformationStep[]>([]);
 
 	function promptUserConfirmLeave() {
 		confirmationDialog.open({

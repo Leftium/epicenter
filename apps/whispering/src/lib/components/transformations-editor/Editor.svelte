@@ -12,7 +12,7 @@
 		steps = $bindable(),
 	}: {
 		transformation: Transformation;
-		steps: Omit<TransformationStep, '_v'>[];
+		steps: TransformationStep[];
 	} = $props();
 
 	const runs = $derived(

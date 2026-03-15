@@ -144,7 +144,7 @@ export type Extension<
 	 * - `dispose()` releases resources but **keeps data** (normal cleanup)
 	 * - `clearData()` **wipes data** but does not release resources
 	 *
-	 * The framework calls `clearData()` then `dispose()` during `signOut()`.
+	 * The framework calls `clearData()` then `dispose()` during `teardown()`.
 	 * Extensions without persistent state should omit this (leave `undefined`).
 	 */
 	clearData?: () => MaybePromise<void>;

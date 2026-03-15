@@ -36,7 +36,7 @@ After:   { whenReady, dispose, clearData? }
 | Method | What it does |
 |---|---|
 | `dispose()` | LIFO dispose all extensions, destroy Y.Doc |
-| `signOut()` | `lock()` → `clearData()` on all extensions → `dispose()` |
+| `teardown()` | `lock()` → `clearData()` on all extensions → `dispose()` |
 | `[Symbol.asyncDispose]()` | Alias for `dispose()` |
 
 No `destroy` anywhere in the API vocabulary.
@@ -96,17 +96,17 @@ All changes are pure renames — no behavior changes.
 **Docs (only where referencing our API, not general prose):**
 - [ ] Docs referencing `destroy()` as our API method — update to `dispose()`
 
-### Wave 2: Add `clearData` to Lifecycle + `signOut()` to WorkspaceClient
+### Wave 2: Add `clearData` to Lifecycle + `teardown()` to WorkspaceClient
 
 - [ ] Add optional `clearData` to `Lifecycle` type in `lifecycle.ts`
 - [ ] Update `defineExtension()` to pass through `clearData` if present
 - [ ] Update `Extension<T>` type to include optional `clearData`
-- [ ] Add `signOut()` to `WorkspaceClient` in `create-workspace.ts`:
+- [ ] Add `teardown()` to `WorkspaceClient` in `create-workspace.ts`:
   - Calls `lock()`
   - Iterates extensions in LIFO order, calls `clearData()` on those that have it
   - Calls `dispose()` (existing LIFO cleanup)
-- [ ] Update `WorkspaceClient` type in `types.ts` to include `signOut()`
-- [ ] Add test for `signOut()` — verify mode is locked, clearData called, dispose called
+- [ ] Update `WorkspaceClient` type in `types.ts` to include `teardown()`
+- [ ] Add test for `teardown()` — verify mode is locked, clearData called, dispose called
 - [ ] Add `clearData` to desktop persistence (`desktop.ts`) — delete SQLite file
 
 ### Wave 3: Fix Auth Type Safety
@@ -117,7 +117,7 @@ All changes are pure renames — no behavior changes.
 ### Wave 4: Document Encryption Behaviors
 
 - [x] JSDoc on `unlock()` — plaintext entries stay plaintext, new writes encrypt, mixed data handled
-- [x] JSDoc on `lock()` — soft lock (Bitwarden model), key cleared, cache stays, for hard wipe use `signOut()`
+- [x] JSDoc on `lock()` — soft lock (Bitwarden model), key cleared, cache stays, for hard wipe use `teardown()`
 - [x] Inline comment on `refreshEncryptionKey()` — fire-and-forget gap
 
 ## Technical Details
@@ -151,10 +151,10 @@ export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
 }
 ```
 
-### `signOut()` Implementation
+### `teardown()` Implementation
 
 ```typescript
-async signOut() {
+async teardown() {
   this.lock();
   // LIFO clearData on extensions that support it
   for (let i = extensionEntries.length - 1; i >= 0; i--) {
@@ -172,6 +172,6 @@ Full list in Wave 1 checklist above.
 ## Deliberately Excluded
 
 - Re-encrypting legacy plaintext data on unlock — separate migration feature
-- KeyCache clearing in `signOut()` — interface not yet implemented
+- KeyCache clearing in `teardown()` — interface not yet implemented
 - Renaming `ydoc.destroy()` — that's Yjs's API, not ours
 - Docs that use "destroy" in general prose (not our API) — left as-is

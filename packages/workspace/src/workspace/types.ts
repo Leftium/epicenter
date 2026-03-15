@@ -1175,7 +1175,7 @@ export type { Extension } from './lifecycle.js';
 /**
  * Context passed to workspace extension factories.
  *
- * This is a `WorkspaceClient` minus `dispose`, `signOut`, and `[Symbol.asyncDispose]` —
+ * This is a `WorkspaceClient` minus `dispose`, `teardown`, and `[Symbol.asyncDispose]` —
  * extension factories receive the full client surface but don't control
  * the workspace's lifecycle. They return their own lifecycle hooks instead.
  *
@@ -1204,7 +1204,7 @@ export type ExtensionContext<
 		TAwarenessDefinitions,
 		TExtensions
 	>,
-	'dispose' | 'signOut' | typeof Symbol.asyncDispose
+	'dispose' | 'teardown' | typeof Symbol.asyncDispose
 >;
 
 /**
@@ -1302,7 +1302,7 @@ export type WorkspaceClient<
 	 * No-op if mode is `'plaintext'` (never had a key).
 	 *
 	 * For a hard wipe that clears both memory and persisted data, use
-	 * {@link signOut} instead—it calls `lock()`, then `clearData()` on
+ * {@link teardown} instead—it calls `lock()`, then `clearData()` on
 	 * every extension, then `dispose()`.
 	 */
 	lock(): void;
@@ -1403,23 +1403,23 @@ export type WorkspaceClient<
 	 * Calls `dispose()` on every extension in LIFO order (last registered, first disposed).
 	 * Stops observers, closes database connections, disconnects sync providers.
 	 *
-	 * After calling, the client is unusable. For sign-out (wipe data + dispose),
-	 * use {@link signOut} instead.
+	 * After calling, the client is unusable. For a hard wipe (data + dispose),
+	 * use {@link teardown} instead.
 	 *
 	 * Safe to call multiple times (idempotent).
 	 */
 	dispose(): Promise<void>;
 
 	/**
-	 * Hard sign-out — lock encryption, wipe local data, then dispose.
+	 * Hard teardown — lock encryption, wipe local data, then dispose.
 	 *
 	 * This is the "log out" operation (vs `dispose()` which is "close").
 	 * Follows the Bitwarden/1Password model:
 	 * - `lock()` = clear key, keep data (soft lock)
 	 * - `dispose()` = release resources, keep data (normal cleanup)
-	 * - `signOut()` = clear key + wipe data + release resources (hard logout)
+	 * - `teardown()` = clear key + wipe data + release resources (hard logout)
 	 *
-	 * After calling `signOut()`, the client is unusable (same as `dispose()`).
+	 * After calling `teardown()`, the client is unusable (same as `dispose()`).
 	 * Next sign-in should create a fresh workspace and re-sync from the server.
 	 *
 	 * Steps:
@@ -1431,12 +1431,12 @@ export type WorkspaceClient<
 	 * ```typescript
 	 * async function handleSignOut() {
 	 *   await authClient.signOut();
-	 *   await workspaceClient.signOut();
+	 *   await workspaceClient.teardown();
 	 *   // Client is now unusable — redirect to login
 	 * }
 	 * ```
 	 */
-	signOut(): Promise<void>;
+	teardown(): Promise<void>;
 
 	/** Async dispose support */
 	[Symbol.asyncDispose](): Promise<void>;

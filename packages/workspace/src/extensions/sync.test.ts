@@ -19,7 +19,7 @@ type SyncExtensionResult = {
 	provider: SyncProvider;
 	reconnect: () => void;
 	whenReady: Promise<unknown>;
-	destroy: () => void;
+	dispose: () => void;
 };
 
 type SyncExtensionFactoryClient = Parameters<
@@ -56,7 +56,7 @@ describe('createSyncExtension', () => {
 			// Same provider instance — reconnect delegates to disconnect/connect
 			expect(result.provider).toBe(provider);
 
-			result.destroy();
+			result.dispose();
 		});
 
 		test('reconnect sets provider to offline then allows reconnection', () => {
@@ -76,11 +76,11 @@ describe('createSyncExtension', () => {
 			// connect() then kicks off the supervisor loop
 			expect(result.provider).toBeDefined();
 
-			result.destroy();
+			result.dispose();
 		});
 
-		test('destroy sets provider to offline', () => {
-			const ydoc = new Y.Doc({ guid: 'test-doc-destroy' });
+		test('dispose sets provider to offline', () => {
+			const ydoc = new Y.Doc({ guid: 'test-doc-dispose' });
 
 			const factory = createSyncExtension({
 				url: (id: string) => `http://localhost:8080/rooms/${id}`,
@@ -91,7 +91,7 @@ describe('createSyncExtension', () => {
 			) as unknown as SyncExtensionResult;
 
 			const provider = result.provider;
-			result.destroy();
+			result.dispose();
 
 			expect(provider.status.phase).toBe('offline');
 		});
@@ -111,7 +111,7 @@ describe('createSyncExtension', () => {
 		expect(result.provider).toBeDefined();
 		expect(result.provider.status.phase).toBe('offline');
 
-		result.destroy();
+		result.dispose();
 	});
 
 	test('whenReady awaits client.whenReady before connecting', async () => {
@@ -152,6 +152,6 @@ describe('createSyncExtension', () => {
 
 		expect(order).toEqual(['client-ready', 'sync-ready']);
 
-		result.destroy();
+		result.dispose();
 	});
 });

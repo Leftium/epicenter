@@ -148,11 +148,11 @@ describe('defineWorkspace', () => {
 		void _statusType;
 	});
 
-	test('client.destroy() cleans up', async () => {
-		let destroyed = false;
+	test('client.dispose() cleans up', async () => {
+		let disposed = false;
 		const mockExtension = () => ({
-			destroy: async () => {
-				destroyed = true;
+			dispose: async () => {
+				disposed = true;
 			},
 		});
 
@@ -163,8 +163,8 @@ describe('defineWorkspace', () => {
 			},
 		}).withExtension('mock', mockExtension);
 
-		await client.destroy();
-		expect(destroyed).toBe(true);
+		await client.dispose();
+		expect(disposed).toBe(true);
 	});
 
 	test('workspace with empty tables and kv initializes base client APIs', () => {
@@ -382,29 +382,29 @@ describe('defineWorkspace', () => {
 		);
 	});
 
-	test('destroy runs in reverse order (LIFO)', async () => {
+	test('dispose runs in reverse order (LIFO)', async () => {
 		const order: string[] = [];
 
 		const client = createWorkspace({
-			id: 'destroy-order',
+			id: 'dispose-order',
 		})
 			.withExtension('a', () => ({
-				destroy: () => {
+				dispose: () => {
 					order.push('a');
 				},
 			}))
 			.withExtension('b', () => ({
-				destroy: () => {
+				dispose: () => {
 					order.push('b');
 				},
 			}))
 			.withExtension('c', () => ({
-				destroy: () => {
+				dispose: () => {
 					order.push('c');
 				},
 			}));
 
-		await client.destroy();
+		await client.dispose();
 		expect(order).toEqual(['c', 'b', 'a']);
 	});
 });

@@ -122,7 +122,7 @@ function createSavedTabState() {
 			 *
 			 * This avoids two problems with the naive sequential approach:
 			 * 1. **Popup teardown**: `browser.tabs.create()` shifts focus, which
-			 *    can cause Chrome to destroy the popup mid-loop — killing the
+			 *    can cause Chrome to dispose the popup mid-loop — killing the
 			 *    async context and leaving remaining tabs un-restored.
 			 * 2. **Observer spam**: Each individual `delete()` fires the Y.Doc
 			 *    observer, triggering a full `readAll()`. Wrapping in `transact()`

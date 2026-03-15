@@ -29,7 +29,9 @@ function setup() {
 	const tagsTable = defineTable(
 		type({ id: 'string', name: 'string', _v: '1' }),
 	);
-	const themeDef = defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' });
+	const themeDef = defineKv(type({ mode: "'light' | 'dark'" }), {
+		mode: 'light',
+	});
 
 	const definition = defineWorkspace({
 		id: 'test-workspace',
@@ -286,7 +288,7 @@ describe('createWorkspace', () => {
 				id: 'ext-await-test-1',
 				tables: { files: filesTable },
 			}).withExtension('myExt', () => {
-				return { someValue: 42, destroy: () => {} };
+				return { someValue: 42, dispose: () => {} };
 			});
 
 			expect(client.extensions.myExt.someValue).toBe(42);
@@ -305,12 +307,12 @@ describe('createWorkspace', () => {
 				.withExtension('first', () => {
 					return {
 						value: 'first',
-						destroy: () => {},
+						dispose: () => {},
 					};
 				})
 				.withExtension('second', ({ extensions }) => {
 					receivedFirstExtension = extensions.first.value === 'first';
-					return { destroy: () => {} };
+					return { dispose: () => {} };
 				});
 
 			expect(receivedFirstExtension).toBe(true);
@@ -334,14 +336,14 @@ describe('createWorkspace', () => {
 					return {
 						value: 'first',
 						whenReady: firstWhenReady,
-						destroy: () => {},
+						dispose: () => {},
 					};
 				})
 				.withExtension('second', () => {
 					return {
 						value: 'second',
 						whenReady: Promise.resolve(),
-						destroy: () => {},
+						dispose: () => {},
 					};
 				});
 
@@ -379,13 +381,13 @@ describe('createWorkspace', () => {
 				.withExtension('first', () => {
 					return {
 						whenReady: firstWhenReady,
-						destroy: () => {},
+						dispose: () => {},
 					};
 				})
 				.withExtension('second', () => {
 					return {
 						whenReady: secondWhenReady,
-						destroy: () => {},
+						dispose: () => {},
 					};
 				});
 
@@ -431,14 +433,14 @@ describe('createWorkspace', () => {
 			expect(client.extensions.bare.whenReady).toBeInstanceOf(Promise);
 		});
 
-		test('extensions.X.destroy is always a function even without explicit destroy', () => {
+		test('extensions.X.dispose is always a function even without explicit dispose', () => {
 			const client = createWorkspace({
-				id: 'ext-destroy-default',
+				id: 'ext-dispose-default',
 			}).withExtension('bare', () => {
 				return { tag: 'no-lifecycle' };
 			});
 
-			expect(typeof client.extensions.bare.destroy).toBe('function');
+			expect(typeof client.extensions.bare.dispose).toBe('function');
 		});
 
 		test('surgical await: extension B chains off extensions.A.whenReady', async () => {
@@ -532,7 +534,7 @@ describe('createWorkspace', () => {
 				tables: { files: filesTable },
 			}).withDocumentExtension('test', () => {
 				hookCalled = true;
-				return { destroy: () => {} };
+				return { dispose: () => {} };
 			});
 
 			await client.documents.files.content.open('f1');
@@ -572,7 +574,7 @@ describe('createWorkspace', () => {
 					'persistent-only',
 					() => {
 						hookCalls.push('persistent-only');
-						return { destroy: () => {} };
+						return { dispose: () => {} };
 					},
 					{ tags: ['persistent'] },
 				)
@@ -580,13 +582,13 @@ describe('createWorkspace', () => {
 					'ephemeral-only',
 					() => {
 						hookCalls.push('ephemeral-only');
-						return { destroy: () => {} };
+						return { dispose: () => {} };
 					},
 					{ tags: ['ephemeral'] },
 				)
 				.withDocumentExtension('universal', () => {
 					hookCalls.push('universal');
-					return { destroy: () => {} };
+					return { dispose: () => {} };
 				});
 
 			// Content doc has tags ['persistent', 'synced']
@@ -630,7 +632,7 @@ describe('createWorkspace', () => {
 				factoryCallCount++;
 				return {
 					tag: 'ext',
-					destroy: () => {},
+					dispose: () => {},
 				};
 			});
 
@@ -667,7 +669,7 @@ describe('createWorkspace', () => {
 				factoryCallCount++;
 				return {
 					tag: 'ws-only',
-					destroy: () => {},
+					dispose: () => {},
 				};
 			});
 
@@ -682,7 +684,7 @@ describe('createWorkspace', () => {
 			expect(factoryCallCount).toBe(1);
 		});
 
-		test('workspace destroy cascades to closeAll on bindings', async () => {
+		test('workspace dispose cascades to closeAll on bindings', async () => {
 			const filesTable = defineTable(
 				type({
 					id: 'string',
@@ -696,16 +698,16 @@ describe('createWorkspace', () => {
 			});
 
 			const client = createWorkspace({
-				id: 'doc-destroy-test',
+				id: 'doc-dispose-test',
 				tables: { files: filesTable },
 			});
 
 			const doc1 = await client.documents.files.content.open('f1');
 
-			await client.destroy();
+			await client.dispose();
 
-			// After destroy, open should create a new Y.Doc (since documents were destroyed)
-			// But we can't open after workspace destroy — just verify no error occurred
+			// After dispose, open should create a new Y.Doc (since documents were disposed)
+			// But we can't open after workspace dispose — just verify no error occurred
 			expect(doc1).toBeDefined();
 		});
 
@@ -786,7 +788,7 @@ describe('createWorkspace', () => {
 				() => {
 					if (shouldThrow) throw new Error(`${name} factory failed`);
 					return {
-						destroy: async () => {
+						dispose: async () => {
 							cleanupOrder.push(name);
 						},
 					};
@@ -804,11 +806,11 @@ describe('createWorkspace', () => {
 			expect(cleanupOrder).toEqual(['second', 'first']); // LIFO, skips 'third'
 		});
 
-		test('document extension destroy order is LIFO', async () => {
-			const destroyOrder: string[] = [];
+		test('document extension dispose order is LIFO', async () => {
+			const disposeOrder: string[] = [];
 			const factory = (name: string) => () => ({
-				destroy: async () => {
-					destroyOrder.push(name);
+				dispose: async () => {
+					disposeOrder.push(name);
 				},
 			});
 
@@ -837,7 +839,7 @@ describe('createWorkspace', () => {
 			await documents.open('doc-1');
 			await documents.close('doc-1');
 
-			expect(destroyOrder).toEqual(['third', 'second', 'first']); // LIFO
+			expect(disposeOrder).toEqual(['third', 'second', 'first']); // LIFO
 		});
 
 		test('whenReady rejection in workspace triggers cleanup', async () => {
@@ -849,13 +851,13 @@ describe('createWorkspace', () => {
 
 			const client = createWorkspace(def)
 				.withExtension('first', () => ({
-					destroy: async () => {
+					dispose: async () => {
 						cleanupCalled.add('first');
 					},
 				}))
 				.withExtension('second', () => ({
 					whenReady: whenReadyPromise,
-					destroy: async () => {
+					dispose: async () => {
 						cleanupCalled.add('second');
 					},
 				}));
@@ -899,7 +901,7 @@ describe('createWorkspace', () => {
 					{
 						key: 'first',
 						factory: () => ({
-							destroy: async () => {
+							dispose: async () => {
 								cleanupCalled.add('first');
 							},
 						}),
@@ -909,7 +911,7 @@ describe('createWorkspace', () => {
 						key: 'second',
 						factory: () => ({
 							whenReady: whenReadyPromise,
-							destroy: async () => {
+							dispose: async () => {
 								cleanupCalled.add('second');
 							},
 						}),
@@ -940,7 +942,9 @@ describe('createWorkspace', () => {
 describe('workspace encryption', () => {
 	function setupEncrypted() {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
-		const client = createWorkspace(defineWorkspace({ id: 'enc-test', tables: { posts } }));
+		const client = createWorkspace(
+			defineWorkspace({ id: 'enc-test', tables: { posts } }),
+		);
 		return { client, key: generateEncryptionKey() };
 	}
 

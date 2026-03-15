@@ -5,21 +5,21 @@
  * and extensions (workspace-level) must satisfy. The protocol enables:
  *
  * - **Async initialization tracking**: `whenReady` lets UI render gates wait for readiness
- * - **Resource cleanup**: `destroy` ensures connections, observers, and handles are released
+ * - **Resource cleanup**: `dispose` ensures connections, observers, and handles are released
  *
  * ## Architecture
  *
  * ```
  * ┌─────────────────────────────────────────────────────────────────┐
  * │  Lifecycle (base protocol)                                      │
- * │    { whenReady, destroy }                                       │
+ * │    { whenReady, dispose }                                       │
  * └─────────────────────────────────────────────────────────────────┘
  *          │                                    │
  *          ▼                                    ▼
  * ┌──────────────────────────┐    ┌──────────────────────────────┐
  * │  Providers (doc-level)   │    │  Extensions (workspace-level) │
  * │  return Lifecycle & T    │    │  return flat { T, whenReady?, │
- * │  directly                │    │    destroy? }                  │
+ * │  directly                │    │    dispose? }                  │
  * └──────────────────────────┘    └──────────────────────────────┘
  * ```
  *
@@ -36,7 +36,7 @@
  *   const db = new Database(':memory:');
  *   return {
  *     db,
- *     destroy: () => db.close(),
+ *     dispose: () => db.close(),
  *   };
  * };
  * ```
@@ -49,7 +49,7 @@
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return {
  *     whenReady: provider.whenReady,
- *     destroy: () => provider.destroy(),
+ *     dispose: () => provider.dispose(),
  *   };
  * };
  * ```
@@ -69,33 +69,33 @@ export type MaybePromise<T> = T | Promise<T>;
  * It defines two required lifecycle methods:
  *
  * - `whenReady`: A promise that resolves when initialization is complete
- * - `destroy`: A cleanup function called when the parent is destroyed
+ * - `dispose`: A cleanup function called when the parent is disposed
  *
  * ## When to use each field
  *
  * | Field | Purpose | Example |
  * |-------|---------|---------|
  * | `whenReady` | Track async initialization | Database indexing, initial sync |
- * | `destroy` | Clean up resources | Close connections, unsubscribe observers |
+ * | `dispose` | Clean up resources | Close connections, unsubscribe observers |
  *
  * ## Framework guarantees
  *
- * - `destroy()` will be called even if `whenReady` rejects
- * - `destroy()` may be called while `whenReady` is still pending
- * - Multiple `destroy()` calls should be safe (idempotent)
+ * - `dispose()` will be called even if `whenReady` rejects
+ * - `dispose()` may be called while `whenReady` is still pending
+ * - Multiple `dispose()` calls should be safe (idempotent)
  *
  * @example
  * ```typescript
  * // Lifecycle with async init and cleanup
  * const lifecycle: Lifecycle = {
  *   whenReady: database.initialize(),
- *   destroy: () => database.close(),
+ *   dispose: () => database.close(),
  * };
  *
  * // Lifecycle with no async init
  * const simpleLifecycle: Lifecycle = {
  *   whenReady: Promise.resolve(),
- *   destroy: () => observer.unsubscribe(),
+ *   dispose: () => observer.unsubscribe(),
  * };
  * ```
  */
@@ -123,7 +123,7 @@ export type Lifecycle = {
 	/**
 	 * Clean up resources.
 	 *
-	 * Called when the parent doc/client is destroyed. Should:
+	 * Called when the parent doc/client is disposed. Should:
 	 * - Stop observers and event listeners
 	 * - Close database connections
 	 * - Disconnect network providers
@@ -132,7 +132,7 @@ export type Lifecycle = {
 	 * **Important**: This may be called while `whenReady` is still pending.
 	 * Implementations should handle graceful cancellation.
 	 */
-	destroy: () => MaybePromise<void>;
+	dispose: () => MaybePromise<void>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -141,16 +141,16 @@ export type Lifecycle = {
 
 /**
  * The resolved form of an extension — a flat object with custom exports
- * alongside required `whenReady` and `destroy` lifecycle hooks.
+ * alongside required `whenReady` and `dispose` lifecycle hooks.
  *
  * Extension factories return a raw flat object with optional `whenReady` and
- * `destroy`. The framework normalizes defaults via `defineExtension()` so the
+ * `dispose`. The framework normalizes defaults via `defineExtension()` so the
  * stored form always has both lifecycle hooks present.
  *
- * `whenReady` and `destroy` are reserved property names — extension authors
+ * `whenReady` and `dispose` are reserved property names — extension authors
  * should not use them for custom exports.
  *
- * @typeParam T - Custom exports (everything except `whenReady` and `destroy`).
+ * @typeParam T - Custom exports (everything except `whenReady` and `dispose`).
  *   Defaults to `Record<string, never>` for lifecycle-only extensions.
  *
  * @example
@@ -171,7 +171,7 @@ export type Extension<
 	/** Resolves when initialization is complete. Always present (defaults to resolved). */
 	whenReady: Promise<void>;
 	/** Clean up resources. Always present (defaults to no-op). */
-	destroy: () => MaybePromise<void>;
+	dispose: () => MaybePromise<void>;
 };
 
 /**
@@ -179,15 +179,15 @@ export type Extension<
  *
  * Applies defaults:
  * - `whenReady` defaults to `Promise.resolve()` (instantly ready)
- * - `destroy` defaults to `() => {}` (no-op cleanup)
+ * - `dispose` defaults to `() => {}` (no-op cleanup)
  * - `whenReady` is coerced to `Promise<void>` via `.then(() => {})`
  *
  * Called by the framework inside `withExtension()` and the document extension
  * `open()` loop. Extension authors never import this — they return plain objects
  * and the framework normalizes.
  *
- * @param input - Raw extension return (custom exports + optional whenReady/destroy)
- * @returns Resolved extension with required whenReady and destroy
+ * @param input - Raw extension return (custom exports + optional whenReady/dispose)
+ * @returns Resolved extension with required whenReady and dispose
  *
  * @example
  * ```typescript
@@ -195,21 +195,21 @@ export type Extension<
  * const raw = factory(context);
  * const resolved = defineExtension(raw ?? {});
  * extensionMap[key] = resolved;
- * destroys.push(resolved.destroy);
+ * disposers.push(resolved.dispose);
  * whenReadyPromises.push(resolved.whenReady);
  * ```
  */
 export function defineExtension<T extends Record<string, unknown>>(
 	input: T & {
 		whenReady?: Promise<unknown>;
-		destroy?: () => MaybePromise<void>;
+		dispose?: () => MaybePromise<void>;
 	},
-): Extension<Omit<T, 'whenReady' | 'destroy'>> {
+): Extension<Omit<T, 'whenReady' | 'dispose'>> {
 	return {
 		...input,
 		whenReady: input.whenReady?.then(() => {}) ?? Promise.resolve(),
-		destroy: input.destroy ?? (() => {}),
-	} as Extension<Omit<T, 'whenReady' | 'destroy'>>;
+		dispose: input.dispose ?? (() => {}),
+	} as Extension<Omit<T, 'whenReady' | 'dispose'>>;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -231,7 +231,7 @@ export function defineExtension<T extends Record<string, unknown>>(
  * Extensions are optional because tag-filtered extensions may be skipped for certain
  * document types. Factories should guard access with optional chaining.
  *
- * Does NOT include `destroy` or `[Symbol.asyncDispose]` — factories return
+ * Does NOT include `dispose` or `[Symbol.asyncDispose]` — factories return
  * their own lifecycle hooks, they don't control the document's.
  *
  * @typeParam TDocExtensions - Accumulated document extension exports from prior

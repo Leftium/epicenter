@@ -38,16 +38,15 @@
 
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import { createAwareness } from './create-awareness.js';
-import { createDocuments } from './create-document.js';
-import { createKv } from './create-kv.js';
+import type { YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import {
 	createEncryptedYkvLww,
 	type YKeyValueLwwEncrypted,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { type YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import { createAwareness } from './create-awareness.js';
+import { createDocuments } from './create-document.js';
+import { createKv } from './create-kv.js';
 import { createTable } from './create-table.js';
-import { TableKey, KV_KEY } from './ydoc-keys.js';
 import {
 	type DocumentContext,
 	defineExtension,
@@ -68,12 +67,13 @@ import type {
 	WorkspaceClientWithActions,
 	WorkspaceDefinition,
 } from './types.js';
+import { KV_KEY, TableKey } from './ydoc-keys.js';
 
 /**
- * Run cleanups in LIFO order (last registered = first destroyed).
+ * Run cleanups in LIFO order (last registered = first disposed).
  * Continues on error and returns accumulated errors.
  */
-async function destroyLifo(
+async function disposeLifo(
 	cleanups: (() => MaybePromise<void>)[],
 ): Promise<unknown[]> {
 	const errors: unknown[] = [];
@@ -94,9 +94,7 @@ async function destroyLifo(
  * invoked before the throw propagates—async portions settle in the background.
  * Rejections are observed (logged) so they don't become unhandled.
  */
-function startDestroyLifo(
-	cleanups: (() => MaybePromise<void>)[],
-): void {
+function startDisposeLifo(cleanups: (() => MaybePromise<void>)[]): void {
 	for (let i = cleanups.length - 1; i >= 0; i--) {
 		try {
 			Promise.resolve(cleanups[i]?.()).catch((err) => {
@@ -158,14 +156,18 @@ export function createWorkspace<
 	const encryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
 
 	// Create table stores + helpers (one encrypted KV per table)
-	const tableHelpers: Record<string, import('./types.js').TableHelper<BaseRow>> = {};
+	const tableHelpers: Record<
+		string,
+		import('./types.js').TableHelper<BaseRow>
+	> = {};
 	for (const [name, definition] of Object.entries(tableDefs)) {
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 		const ykv = createEncryptedYkvLww(yarray, { key: options?.key });
 		encryptedStores.push(ykv);
 		tableHelpers[name] = createTable(ykv, definition);
 	}
-	const tables = tableHelpers as import('./types.js').TablesHelper<TTableDefinitions>;
+	const tables =
+		tableHelpers as import('./types.js').TablesHelper<TTableDefinitions>;
 
 	// Create KV store + helper (single shared encrypted KV)
 	const kvYarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
@@ -250,12 +252,12 @@ export function createWorkspace<
 		TAwarenessDefinitions,
 		TExtensions
 	> {
-		const destroy = async (): Promise<void> => {
+		const dispose = async (): Promise<void> => {
 			// Close all documents first (before extensions they depend on)
 			for (const cleanup of documentCleanups) {
 				await cleanup();
 			}
-			const errors = await destroyLifo(state.extensionCleanups);
+			const errors = await disposeLifo(state.extensionCleanups);
 			awareness.raw.destroy();
 			ydoc.destroy();
 
@@ -268,7 +270,7 @@ export function createWorkspace<
 			.then(() => {})
 			.catch(async (err) => {
 				// If any extension's whenReady rejects, clean up everything
-				await destroy().catch(() => {}); // idempotent
+				await dispose().catch(() => {}); // idempotent
 				throw err;
 			});
 
@@ -306,8 +308,8 @@ export function createWorkspace<
 				ydoc.transact(fn);
 			},
 			whenReady,
-			destroy,
-			[Symbol.asyncDispose]: destroy,
+			dispose,
+			[Symbol.asyncDispose]: dispose,
 		};
 
 		// Workspace extension logic — shared by withExtension and withWorkspaceExtension.
@@ -328,12 +330,12 @@ export function createWorkspace<
 				>,
 			) => TExports & {
 				whenReady?: Promise<unknown>;
-				destroy?: () => MaybePromise<void>;
+				dispose?: () => MaybePromise<void>;
 			},
 		) {
 			const {
-				destroy: _destroy,
-				[Symbol.asyncDispose]: _dispose,
+				dispose: _dispose,
+				[Symbol.asyncDispose]: _asyncDispose,
 				whenReady: _whenReady,
 				...clientContext
 			} = client;
@@ -359,12 +361,12 @@ export function createWorkspace<
 						[key]: resolved,
 					} as TExtensions & Record<TKey, TExports>,
 					{
-						extensionCleanups: [...state.extensionCleanups, resolved.destroy],
+						extensionCleanups: [...state.extensionCleanups, resolved.dispose],
 						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
 					},
 				);
 			} catch (err) {
-				startDestroyLifo(state.extensionCleanups);
+				startDisposeLifo(state.extensionCleanups);
 				throw err;
 			}
 		}
@@ -388,7 +390,7 @@ export function createWorkspace<
 					>,
 				) => TExports & {
 					whenReady?: Promise<unknown>;
-					destroy?: () => MaybePromise<void>;
+					dispose?: () => MaybePromise<void>;
 				},
 			) {
 				// Register for document Y.Docs (fires lazily at documents.open() time)
@@ -417,7 +419,7 @@ export function createWorkspace<
 					>,
 				) => TExports & {
 					whenReady?: Promise<unknown>;
-					destroy?: () => MaybePromise<void>;
+					dispose?: () => MaybePromise<void>;
 				},
 			) {
 				return applyWorkspaceExtension(key, factory);
@@ -428,7 +430,7 @@ export function createWorkspace<
 				factory: (context: DocumentContext) =>
 					| (Record<string, unknown> & {
 							whenReady?: Promise<unknown>;
-							destroy?: () => MaybePromise<void>;
+							dispose?: () => MaybePromise<void>;
 					  })
 					| void,
 				options?: { tags?: string[] },

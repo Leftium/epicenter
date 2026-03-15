@@ -66,7 +66,7 @@ const CONNECT_TIMEOUT_MS = 15_000;
  * Most consumers use `createSyncExtension` from `@epicenter/workspace/extensions/sync`
  * rather than this provider directly. The extension wraps this provider with
  * workspace lifecycle management (waiting for persistence before connecting,
- * auto-cleanup on destroy).
+ * auto-cleanup on dispose).
  *
  * @example Recommended: via workspace extension chain
  * ```typescript
@@ -464,7 +464,7 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 
 		onStatusChange: status.subscribe,
 
-		destroy() {
+		dispose() {
 			this.disconnect();
 			doc.off('updateV2', handleDocUpdate);
 			awareness.off('update', handleAwarenessUpdate);

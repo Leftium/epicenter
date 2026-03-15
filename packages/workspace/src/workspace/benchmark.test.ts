@@ -201,7 +201,7 @@ describe('createWorkspace benchmarks', () => {
 					...definition,
 					id: `bench-workspace-${i}`,
 				});
-				client.destroy();
+				client.dispose();
 			}
 		});
 

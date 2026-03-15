@@ -11,8 +11,8 @@
 import { unlinkSync } from 'node:fs';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { defineTable } from '../src/workspace/index.js';
 import { createTables } from '../src/workspace/create-tables.js';
+import { defineTable } from '../src/workspace/index.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Config — tweak these

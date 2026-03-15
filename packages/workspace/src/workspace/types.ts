@@ -10,11 +10,11 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
-import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
+import type { EncryptionMode } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type { ContentMode } from '../timeline/entries.js';
 import type { SheetBinding } from '../timeline/richtext.js';
 import type { Timeline } from '../timeline/timeline.js';
-import type { EncryptionMode } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
 
 // Re-export JSON types for consumers
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
@@ -209,7 +209,7 @@ export type DocumentExtensionRegistration = {
 	factory: (context: DocumentContext) =>
 		| (Record<string, unknown> & {
 				whenReady?: Promise<unknown>;
-				destroy?: () => MaybePromise<void>;
+				dispose?: () => MaybePromise<void>;
 		  })
 		| void;
 	tags: readonly string[];
@@ -380,7 +380,7 @@ export type Documents<TRow extends BaseRow> = {
 	close(input: TRow | string): Promise<void>;
 
 	/**
-	 * Close all open documents. Called automatically by workspace destroy().
+	 * Close all open documents. Called automatically by workspace dispose().
 	 */
 	closeAll(): Promise<void>;
 };
@@ -1026,7 +1026,7 @@ export type WorkspaceClientBuilder<
 			>,
 		) => TExports & {
 			whenReady?: Promise<unknown>;
-			destroy?: () => MaybePromise<void>;
+			dispose?: () => MaybePromise<void>;
 		},
 	): WorkspaceClientBuilder<
 		TId,
@@ -1034,8 +1034,8 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions &
-			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'destroy'>>>,
-		TDocExtensions & Record<TKey, Omit<TExports, 'whenReady' | 'destroy'>>
+			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'dispose'>>>,
+		TDocExtensions & Record<TKey, Omit<TExports, 'whenReady' | 'dispose'>>
 	>;
 
 	/**
@@ -1074,7 +1074,7 @@ export type WorkspaceClientBuilder<
 			>,
 		) => TExports & {
 			whenReady?: Promise<unknown>;
-			destroy?: () => MaybePromise<void>;
+			dispose?: () => MaybePromise<void>;
 		},
 	): WorkspaceClientBuilder<
 		TId,
@@ -1082,7 +1082,7 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions &
-			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'destroy'>>>,
+			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'dispose'>>>,
 		TDocExtensions
 	>;
 
@@ -1118,7 +1118,7 @@ export type WorkspaceClientBuilder<
 		factory: (context: DocumentContext<TDocExtensions>) =>
 			| (TDocExports & {
 					whenReady?: Promise<unknown>;
-					destroy?: () => MaybePromise<void>;
+					dispose?: () => MaybePromise<void>;
 			  })
 			| void,
 		options?: { tags?: ExtractAllDocumentTags<TTableDefinitions>[] },
@@ -1128,7 +1128,7 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions,
-		TDocExtensions & Record<K, Omit<TDocExports, 'whenReady' | 'destroy'>>
+		TDocExtensions & Record<K, Omit<TDocExports, 'whenReady' | 'dispose'>>
 	>;
 
 	/**
@@ -1171,7 +1171,7 @@ export type { Extension } from './lifecycle.js';
 /**
  * Context passed to workspace extension factories.
  *
- * This is a `WorkspaceClient` minus `destroy` and `[Symbol.asyncDispose]` —
+ * This is a `WorkspaceClient` minus `dispose` and `[Symbol.asyncDispose]` —
  * extension factories receive the full client surface but don't control
  * the workspace's lifecycle. They return their own lifecycle hooks instead.
  *
@@ -1200,13 +1200,13 @@ export type ExtensionContext<
 		TAwarenessDefinitions,
 		TExtensions
 	>,
-	'destroy' | typeof Symbol.asyncDispose
+	'dispose' | typeof Symbol.asyncDispose
 >;
 
 /**
  * Factory function that creates an extension.
  *
- * Returns a flat object with custom exports + optional `whenReady` and `destroy`.
+ * Returns a flat object with custom exports + optional `whenReady` and `dispose`.
  * The framework normalizes defaults via `defineExtension()`.
  *
  * @example Simple extension (works with any workspace)
@@ -1216,7 +1216,7 @@ export type ExtensionContext<
  *   return {
  *     provider,
  *     whenReady: provider.whenReady,
- *     destroy: () => provider.destroy(),
+ *     dispose: () => provider.dispose(),
  *   };
  * };
  * ```
@@ -1227,7 +1227,7 @@ export type ExtensionFactory<
 	TExports extends Record<string, unknown> = Record<string, unknown>,
 > = (context: ExtensionContext) => TExports & {
 	whenReady?: Promise<unknown>;
-	destroy?: () => MaybePromise<void>;
+	dispose?: () => MaybePromise<void>;
 };
 
 /** The workspace client returned by createWorkspace() */
@@ -1353,7 +1353,7 @@ export type WorkspaceClient<
 	whenReady: Promise<void>;
 
 	/** Cleanup all resources */
-	destroy(): Promise<void>;
+	dispose(): Promise<void>;
 
 	/** Async dispose support */
 	[Symbol.asyncDispose](): Promise<void>;

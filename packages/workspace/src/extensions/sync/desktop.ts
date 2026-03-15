@@ -78,7 +78,7 @@ function initPersistenceDb(filePath: string, ydoc: Y.Doc): Database {
  * 3. Replays stored updates to reconstruct Y.Doc state
  * 4. Compacts the log on startup (many rows → 1 row)
  * 5. Appends each incremental update as a new row
- * 6. Compacts again on destroy (clean shutdown)
+ * 6. Compacts again on dispose (clean shutdown)
  *
  * @example
  * ```typescript
@@ -115,7 +115,7 @@ export const persistence = (
 
 	return {
 		whenReady,
-		destroy() {
+		dispose() {
 			ydoc.off('updateV2', updateHandler);
 			if (db) {
 				compactUpdateLog(db, ydoc);
@@ -165,7 +165,7 @@ export function filesystemPersistence({
 
 		return {
 			whenReady,
-			destroy: () => {
+			dispose: () => {
 				ydoc.off('updateV2', updateHandler);
 				if (db) {
 					compactUpdateLog(db, ydoc);

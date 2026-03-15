@@ -62,7 +62,7 @@ export function broadcastChannelSync({ ydoc }: { ydoc: Y.Doc }) {
 	};
 
 	return {
-		destroy() {
+		dispose() {
 			ydoc.off('updateV2', handleUpdate);
 			channel.close();
 		},

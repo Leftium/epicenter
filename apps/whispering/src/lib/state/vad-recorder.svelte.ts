@@ -192,7 +192,7 @@ function createVadRecorder() {
 					}),
 			});
 
-			// Always clean up, even if destroy had an error
+			// Always clean up, even if dispose had an error
 			_maybeVad = null;
 			_state = 'IDLE';
 

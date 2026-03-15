@@ -149,8 +149,8 @@ export function createSyncExtension(
 				provider.connect();
 			},
 			whenReady,
-			destroy() {
-				provider.destroy();
+			dispose() {
+				provider.dispose();
 			},
 		};
 	};

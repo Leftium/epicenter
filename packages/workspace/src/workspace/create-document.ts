@@ -42,12 +42,12 @@
  */
 
 import * as Y from 'yjs';
-import { createTimeline, readEntry } from '../timeline/timeline.js';
-import { serializeSheetToCsv } from '../timeline/sheet.js';
 import {
-	xmlFragmentToPlaintext,
 	populateFragmentFromText,
+	xmlFragmentToPlaintext,
 } from '../timeline/richtext.js';
+import { serializeSheetToCsv } from '../timeline/sheet.js';
+import { createTimeline, readEntry } from '../timeline/timeline.js';
 import {
 	defineExtension,
 	type Extension,
@@ -83,7 +83,7 @@ export const DOCUMENTS_ORIGIN = Symbol('documents');
 
 /**
  * Internal entry for an open document.
- * Tracks the Y.Doc, resolved extensions (with required whenReady/destroy),
+ * Tracks the Y.Doc, resolved extensions (with required whenReady/dispose),
  * the updatedAt observer teardown, and the composite whenReady promise.
  */
 type DocEntry = {
@@ -136,16 +136,22 @@ function makeHandle(
 					return validated.content;
 				case 'empty':
 					ydoc.transact(() => tl.pushText(''));
-					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
+					return (
+						readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }
+					).content;
 				case 'richtext': {
 					const plaintext = xmlFragmentToPlaintext(validated.content);
 					ydoc.transact(() => tl.pushText(plaintext));
-					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
+					return (
+						readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }
+					).content;
 				}
 				case 'sheet': {
 					const csv = serializeSheetToCsv(validated.columns, validated.rows);
 					ydoc.transact(() => tl.pushText(csv));
-					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
+					return (
+						readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }
+					).content;
 				}
 			}
 		},
@@ -156,7 +162,12 @@ function makeHandle(
 					return validated.content;
 				case 'empty':
 					ydoc.transact(() => tl.pushRichtext());
-					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
+					return (
+						readEntry(tl.currentEntry) as {
+							mode: 'richtext';
+							content: Y.XmlFragment;
+						}
+					).content;
 				case 'text': {
 					const plaintext = validated.content.toString();
 					ydoc.transact(() => {
@@ -164,7 +175,12 @@ function makeHandle(
 						const fragment = rtEntry.get('content') as Y.XmlFragment;
 						populateFragmentFromText(fragment, plaintext);
 					});
-					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
+					return (
+						readEntry(tl.currentEntry) as {
+							mode: 'richtext';
+							content: Y.XmlFragment;
+						}
+					).content;
 				}
 				case 'sheet': {
 					const csv = serializeSheetToCsv(validated.columns, validated.rows);
@@ -173,7 +189,12 @@ function makeHandle(
 						const fragment = rtEntry.get('content') as Y.XmlFragment;
 						populateFragmentFromText(fragment, csv);
 					});
-					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
+					return (
+						readEntry(tl.currentEntry) as {
+							mode: 'richtext';
+							content: Y.XmlFragment;
+						}
+					).content;
 				}
 			}
 		},
@@ -184,17 +205,29 @@ function makeHandle(
 					return { columns: validated.columns, rows: validated.rows };
 				case 'empty':
 					ydoc.transact(() => tl.pushSheet());
-					return readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
+					return readEntry(tl.currentEntry) as {
+						mode: 'sheet';
+						columns: Y.Map<Y.Map<string>>;
+						rows: Y.Map<Y.Map<string>>;
+					};
 				case 'text': {
 					const plaintext = validated.content.toString();
 					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
-					const entry = readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
+					const entry = readEntry(tl.currentEntry) as {
+						mode: 'sheet';
+						columns: Y.Map<Y.Map<string>>;
+						rows: Y.Map<Y.Map<string>>;
+					};
 					return { columns: entry.columns, rows: entry.rows };
 				}
 				case 'richtext': {
 					const plaintext = xmlFragmentToPlaintext(validated.content);
 					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
-					const entry = readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
+					const entry = readEntry(tl.currentEntry) as {
+						mode: 'sheet';
+						columns: Y.Map<Y.Map<string>>;
+						rows: Y.Map<Y.Map<string>>;
+					};
 					return { columns: entry.columns, rows: entry.rows };
 				}
 			}
@@ -337,7 +370,7 @@ export function createDocuments<TRow extends BaseRow>(
 			// extensions' resolved form.
 			// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 			const resolvedExtensions: Record<string, Extension<any>> = {};
-			const destroys: (() => MaybePromise<void>)[] = [];
+			const disposers: (() => MaybePromise<void>)[] = [];
 			const whenReadyPromises: Promise<unknown>[] = [];
 
 			try {
@@ -356,15 +389,15 @@ export function createDocuments<TRow extends BaseRow>(
 
 					const resolved = defineExtension(raw);
 					resolvedExtensions[key] = resolved;
-					destroys.push(resolved.destroy);
+					disposers.push(resolved.dispose);
 					whenReadyPromises.push(resolved.whenReady);
 				}
 			} catch (err) {
 				// LIFO cleanup of accumulated extensions
 				const errors: unknown[] = [];
-				for (let i = destroys.length - 1; i >= 0; i--) {
+				for (let i = disposers.length - 1; i >= 0; i--) {
 					try {
-						const result = destroys[i]?.();
+						const result = disposers[i]?.();
 						if (result instanceof Promise) {
 							result.catch(() => {}); // Fire and forget in sync context
 						}
@@ -418,9 +451,9 @@ export function createDocuments<TRow extends BaseRow>(
 							.catch(async (err) => {
 								// If any provider's whenReady rejects, clean up everything (LIFO)
 								const errors: unknown[] = [];
-								for (let i = destroys.length - 1; i >= 0; i--) {
+								for (let i = disposers.length - 1; i >= 0; i--) {
 									try {
-										await destroys[i]?.();
+										await disposers[i]?.();
 									} catch (cleanupErr) {
 										errors.push(cleanupErr);
 									}
@@ -455,12 +488,12 @@ export function createDocuments<TRow extends BaseRow>(
 			openDocuments.delete(guid);
 			entry.unobserve();
 
-			// Destroy in LIFO order (reverse creation), continue on error
+			// Dispose in LIFO order (reverse creation), continue on error
 			const errors: unknown[] = [];
 			const extensions = Object.values(entry.extensions);
 			for (let i = extensions.length - 1; i >= 0; i--) {
 				try {
-					await extensions[i]?.destroy();
+					await extensions[i]?.dispose();
 				} catch (err) {
 					errors.push(err);
 				}
@@ -486,7 +519,7 @@ export function createDocuments<TRow extends BaseRow>(
 				const extensions = Object.values(entry.extensions);
 				for (let i = extensions.length - 1; i >= 0; i--) {
 					try {
-						await extensions[i]?.destroy();
+						await extensions[i]?.dispose();
 					} catch (err) {
 						errors.push(err);
 					}

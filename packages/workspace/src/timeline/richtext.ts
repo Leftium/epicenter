@@ -15,14 +15,6 @@
 import * as Y from 'yjs';
 
 /**
- * The result of reading a sheet—columns and rows Y.Maps.
- */
-export type SheetBinding = {
-	columns: Y.Map<Y.Map<string>>;
-	rows: Y.Map<Y.Map<string>>;
-};
-
-/**
  * Block-level element names that produce line breaks in plaintext extraction.
  * Based on Tiptap/ProseMirror defaults.
  */

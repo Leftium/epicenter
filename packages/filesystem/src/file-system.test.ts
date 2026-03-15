@@ -447,7 +447,7 @@ describe('sheet file support', () => {
 		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
 		handle.batch(() => {
-			handle.write('Name,Age\nAlice,30\n');
+			handle.writeText('Name,Age\nAlice,30\n');
 		handle.asSheet();
 		});
 		expect(await fs.readFile('/data.csv')).toBe('Name,Age\nAlice,30\n');
@@ -462,7 +462,7 @@ describe('sheet file support', () => {
 		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
 		handle.batch(() => {
-			handle.write('A,B\n1,2\n');
+			handle.writeText('A,B\n1,2\n');
 		handle.asSheet();
 		});
 		await fs.writeFile('/data.csv', 'X,Y\n3,4\n');

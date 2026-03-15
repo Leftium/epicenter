@@ -1,7 +1,6 @@
 import * as Y from 'yjs';
 import {
 	populateFragmentFromText,
-	type SheetBinding,
 	xmlFragmentToPlaintext,
 } from './richtext.js';
 import { parseSheetFromCsv, serializeSheetToCsv } from './sheet.js';
@@ -32,6 +31,12 @@ export type SheetEntry = {
 	columns: Y.Map<Y.Map<string>>;
 	rows: Y.Map<Y.Map<string>>;
 	createdAt: number;
+};
+
+/** The result of binding a sheet—columns and rows Y.Maps. */
+export type SheetBinding = {
+	columns: Y.Map<Y.Map<string>>;
+	rows: Y.Map<Y.Map<string>>;
 };
 export type TimelineEntry = TextEntry | RichTextEntry | SheetEntry;
 
@@ -67,7 +72,7 @@ export type Timeline = {
 	 * timeline entry is created and `observe()` does **not** fire. If the current
 	 * type is different (or empty), pushes a new text entry and `observe()` fires.
 	 */
-	write(text: string): void;
+	writeText(text: string): void;
 	/**
 	 * Replace sheet content from CSV, wrapped in a single transaction.
 	 *
@@ -136,9 +141,8 @@ export type Timeline = {
 	 * Watch for structural timeline changes—entries added or removed.
 	 *
 	 * Fires when the entry list changes (e.g., a new entry is pushed via
-	 * `asText()`, `asRichText()`, `asSheet()`, or `restoreFromSnapshot()`).
-	 * Also fires for `write()` and `writeSheet()` when they push a new entry
-	 * (type change), but **not** when they replace content in-place (same type).
+	 * `writeText()`, `writeSheet()`, `asText()`, `asRichText()`, `asSheet()`, or `restoreFromSnapshot()`).
+	 * Does **not** fire when `writeText()` or `writeSheet()` replace content in-place (same type).
 	 * Does NOT fire when content within an existing entry changes—edits to
 	 * Y.Text, Y.XmlFragment, or Y.Map are handled by those shared types directly.
 	 * Editors already bind to the CRDT handle and receive updates natively.
@@ -237,7 +241,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	/**
 	 * Replace text in-place if already text type, otherwise push a new text entry.
 	 *
-	 * Shared by `write()` and `restoreFromSnapshot()` so that restoring text
+	 * Shared by `writeText()` and `restoreFromSnapshot()` so that restoring text
 	 * content looks identical to a user paste—no unnecessary timeline growth
 	 * when the type hasn't changed.
 	 */
@@ -355,7 +359,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			}
 		},
 
-		write(text: string) {
+		writeText(text: string) {
 			ydoc.transact(() => replaceCurrentText(text));
 		},
 
@@ -448,7 +452,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				// Create new forward CRDT operations on the live doc that make
 				// visible content match the snapshot. Each type extracts content
 				// from the temp doc's types and writes it into the live doc's
-				// timeline using the same helpers that write() and as*() use.
+				// timeline using the same helpers that writeText() and as*() use.
 				switch (entry.type) {
 					case 'text': {
 						// Y.Text can't transfer between docs—extract the raw string.

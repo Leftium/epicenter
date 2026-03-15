@@ -193,7 +193,7 @@ export function createYjsFileSystem(
 			if (validated?.type === 'sheet') {
 				handle.writeSheet(textData);
 			} else {
-				handle.write(textData);
+				handle.writeText(textData);
 			}
 			const size = new TextEncoder().encode(textData).byteLength;
 			tree.touch(id, size);

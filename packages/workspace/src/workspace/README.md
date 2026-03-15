@@ -107,7 +107,7 @@ For detailed rationale on all of this, see [the guide](docs/articles/20260127T12
 
 Tables with `.withDocument()` create per-row Y.Docs for content. These Y.Docs use a **timeline model** (`Y.Array('timeline')` with nested typed entries) in `packages/workspace/src/timeline/`.
 
-The handle is the canonical interface: `handle.read()`/`handle.write()` for simple string I/O, `handle.asText()` for Y.Text editor binding, `handle.asRichText()` for Y.XmlFragment richtext binding, `handle.asSheet()` for spreadsheet binding, `handle.timeline` for advanced operations, and `handle.batch()` for batching mutations. The `as*()` methods automatically convert between content modes—all conversions are infallible.
+The handle is the canonical interface: `handle.read()`/`handle.writeText()` for simple string I/O, `handle.asText()` for Y.Text editor binding, `handle.asRichText()` for Y.XmlFragment richtext binding, `handle.asSheet()` for spreadsheet binding, `handle.timeline` for advanced operations, and `handle.batch()` for batching mutations. The `as*()` methods automatically convert between content modes—all conversions are infallible.
 
 See `specs/20260313T230000-promote-timeline-to-workspace.md` for the full design.
 

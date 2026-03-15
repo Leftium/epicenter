@@ -7,12 +7,10 @@ export {
 	createTimeline,
 	type ContentType,
 	type RichTextEntry,
+	type SheetBinding,
 	type SheetEntry,
 	type TextEntry,
 	type Timeline,
 	type TimelineEntry,
 	type ValidatedEntry,
 } from './timeline.js';
-export {
-	type SheetBinding,
-} from './richtext.js';

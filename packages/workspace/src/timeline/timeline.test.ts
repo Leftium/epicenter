@@ -398,6 +398,15 @@ describe('createTimeline - observe', () => {
 		expect(callCount).toBe(0);
 	});
 
+	test('does not fire when writeSheet replaces sheet in-place', () => {
+		const tl = setup();
+		tl.writeSheet('A,B\n1,2\n');
+		let callCount = 0;
+		tl.observe(() => callCount++);
+		tl.writeSheet('C,D\n3,4\n'); // replaces in-place, no new entry pushed
+		expect(callCount).toBe(0);
+	});
+
 	test('fires when restoreFromSnapshot pushes new sheet entry', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);

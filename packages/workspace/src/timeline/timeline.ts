@@ -43,21 +43,38 @@ export type Timeline = {
 	readonly ydoc: Y.Doc;
 	/** Number of entries in the timeline. */
 	readonly length: number;
-	/** The current entry, validated and typed. Returns `{ type: 'empty' }` if no entries. */
+	/**
+	 * The current (last) entry, validated and typed. Returns `null` if no entries exist.
+	 *
+	 * Recomputed on every access—each call parses the underlying Y.Map and
+	 * returns a fresh object. Do not rely on reference equality between calls.
+	 */
 	readonly currentEntry: ValidatedEntry;
 	/** Content type of the current entry, or undefined if empty. */
 	readonly currentType: ContentType | undefined;
 
-	/** Read the current entry as a string. Returns '' if empty. */
+	/**
+	 * Read the current entry as a plain string. Returns `''` if empty.
+	 *
+	 * Conversion is type-dependent: text returns as-is, richtext strips all
+	 * formatting (lossy), and sheet serializes to CSV.
+	 */
 	read(): string;
 	/**
 	 * Replace text content, wrapped in a single transaction.
-	 * If current type is text, replaces in-place. Otherwise pushes new text entry.
+	 *
+	 * If current type is already text, replaces the Y.Text content in-place—no new
+	 * timeline entry is created and `observe()` does **not** fire. If the current
+	 * type is different (or empty), pushes a new text entry and `observe()` fires.
 	 */
 	write(text: string): void;
 	/**
 	 * Replace sheet content from CSV, wrapped in a single transaction.
-	 * If current type is sheet, clears and repopulates in-place. Otherwise pushes new sheet entry.
+	 *
+	 * If current type is already sheet, clears and repopulates columns/rows
+	 * in-place—no new timeline entry is created and `observe()` does **not** fire.
+	 * If the current type is different (or empty), pushes a new sheet entry and
+	 * `observe()` fires.
 	 */
 	writeSheet(csv: string): void;
 
@@ -119,7 +136,9 @@ export type Timeline = {
 	 * Watch for structural timeline changes—entries added or removed.
 	 *
 	 * Fires when the entry list changes (e.g., a new entry is pushed via
-	 * `write()`, `writeSheet()`, `asText()`, `asRichText()`, `asSheet()`, or `restoreFromSnapshot()`).
+	 * `asText()`, `asRichText()`, `asSheet()`, or `restoreFromSnapshot()`).
+	 * Also fires for `write()` and `writeSheet()` when they push a new entry
+	 * (type change), but **not** when they replace content in-place (same type).
 	 * Does NOT fire when content within an existing entry changes—edits to
 	 * Y.Text, Y.XmlFragment, or Y.Map are handled by those shared types directly.
 	 * Editors already bind to the CRDT handle and receive updates natively.
@@ -132,7 +151,7 @@ export type Timeline = {
 	 * ```typescript
 	 * const unsub = timeline.observe(() => {
 	 *   const entry = timeline.currentEntry;
-	 *   if (entry.type === 'richtext') rebindEditor(entry.content);
+ *   if (entry?.type === 'richtext') rebindEditor(entry.content);
 	 * });
 	 * // later: unsub();
 	 * ```
@@ -140,7 +159,7 @@ export type Timeline = {
 	observe(callback: () => void): () => void;
 };
 
-export type ValidatedEntry = TimelineEntry | { type: 'empty' };
+export type ValidatedEntry = TimelineEntry | null;
 
 export function createTimeline(ydoc: Y.Doc): Timeline {
 	const timeline = ydoc.getArray<TimelineYMap>('timeline');
@@ -155,6 +174,10 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	function currentType(): ContentType | undefined {
 		const entry = lastEntry();
 		return entry ? (entry.get('type') as ContentType) : undefined;
+	}
+
+	function validated(): TimelineEntry | null {
+		return readEntry(lastEntry());
 	}
 
 	// ── Primitive push ops (closures, not on returned object) ─────────────
@@ -313,23 +336,22 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return timeline.length;
 		},
 		get currentEntry(): ValidatedEntry {
-			return readEntry(lastEntry());
+			return validated();
 		},
 		get currentType() {
 			return currentType();
 		},
 
 		read(): string {
-			const validated = readEntry(lastEntry());
-			switch (validated.type) {
+			const entry = validated();
+			if (!entry) return '';
+			switch (entry.type) {
 				case 'text':
-					return validated.content.toString();
+					return entry.content.toString();
 				case 'richtext':
-					return xmlFragmentToPlaintext(validated.content);
+					return xmlFragmentToPlaintext(entry.content);
 				case 'sheet':
-					return serializeSheetToCsv(validated.columns, validated.rows);
-				case 'empty':
-					return '';
+					return serializeSheetToCsv(entry.columns, entry.rows);
 			}
 		},
 
@@ -342,32 +364,30 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		},
 
 		asText(): Y.Text {
-			const validated = readEntry(lastEntry());
-			switch (validated.type) {
+			const entry = validated();
+			if (!entry) return ydoc.transact(() => pushText('')).content;
+			switch (entry.type) {
 				case 'text':
-					return validated.content;
-				case 'empty':
-					return ydoc.transact(() => pushText('')).content;
+					return entry.content;
 				case 'richtext': {
-					const plaintext = xmlFragmentToPlaintext(validated.content);
+					const plaintext = xmlFragmentToPlaintext(entry.content);
 					return ydoc.transact(() => pushText(plaintext)).content;
 				}
 				case 'sheet': {
-					const csv = serializeSheetToCsv(validated.columns, validated.rows);
+					const csv = serializeSheetToCsv(entry.columns, entry.rows);
 					return ydoc.transact(() => pushText(csv)).content;
 				}
 			}
 		},
 
 		asRichText(): Y.XmlFragment {
-			const validated = readEntry(lastEntry());
-			switch (validated.type) {
+			const entry = validated();
+			if (!entry) return ydoc.transact(() => pushRichtext()).content;
+			switch (entry.type) {
 				case 'richtext':
-					return validated.content;
-				case 'empty':
-					return ydoc.transact(() => pushRichtext()).content;
+					return entry.content;
 				case 'text': {
-					const plaintext = validated.content.toString();
+					const plaintext = entry.content.toString();
 					return ydoc.transact(() => {
 						const { content } = pushRichtext();
 						populateFragmentFromText(content, plaintext);
@@ -375,7 +395,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					}).content;
 				}
 				case 'sheet': {
-					const csv = serializeSheetToCsv(validated.columns, validated.rows);
+					const csv = serializeSheetToCsv(entry.columns, entry.rows);
 					return ydoc.transact(() => {
 						const { content } = pushRichtext();
 						populateFragmentFromText(content, csv);
@@ -386,18 +406,17 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		},
 
 		asSheet(): SheetBinding {
-			const validated = readEntry(lastEntry());
-			switch (validated.type) {
+			const entry = validated();
+			if (!entry) return ydoc.transact(() => pushSheet());
+			switch (entry.type) {
 				case 'sheet':
-					return { columns: validated.columns, rows: validated.rows };
-				case 'empty':
-					return ydoc.transact(() => pushSheet());
+					return { columns: entry.columns, rows: entry.rows };
 				case 'text': {
-					const plaintext = validated.content.toString();
+					const plaintext = entry.content.toString();
 					return ydoc.transact(() => pushSheetFromCsv(plaintext));
 				}
 				case 'richtext': {
-					const plaintext = xmlFragmentToPlaintext(validated.content);
+					const plaintext = xmlFragmentToPlaintext(entry.content);
 					return ydoc.transact(() => pushSheetFromCsv(plaintext));
 				}
 			}
@@ -417,14 +436,17 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 				// ── Step 2: Read ──────────────────────────────────────────────
 				// Extract the last timeline entry from the snapshot. This tells us
-				// what content type (text/sheet/richtext/empty) the snapshot was in
+				// what content type (text/sheet/richtext) the snapshot was in
 				// and gives access to the snapshot's CRDT content types.
 				const snapshotTl = createTimeline(tempDoc);
 				const entry = snapshotTl.currentEntry;
 
+				// Snapshot had no timeline entries (e.g., pre-migration doc). No-op.
+				if (!entry) return;
+
 				// ── Step 3: Write ──────────────────────────────────────────────
 				// Create new forward CRDT operations on the live doc that make
-				// visible content match the snapshot. Each mode extracts content
+				// visible content match the snapshot. Each type extracts content
 				// from the temp doc's types and writes it into the live doc's
 				// timeline using the same helpers that write() and as*() use.
 				switch (entry.type) {
@@ -449,9 +471,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 						ydoc.transact(() => pushRichtextFromFragment(entry.content));
 						break;
 					}
-					case 'empty':
-						// Snapshot had no timeline entries (e.g., pre-migration doc). No-op.
-						break;
 				}
 			} finally {
 				// Always destroy the temp doc, even if applyUpdateV2 threw on corrupted binary.
@@ -467,8 +486,8 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	};
 }
 
-function readEntry(entry: Y.Map<unknown> | undefined): ValidatedEntry {
-	if (!entry) return { type: 'empty' };
+function readEntry(entry: Y.Map<unknown> | undefined): TimelineEntry | null {
+	if (!entry) return null;
 
 	const type = entry.get('type');
 	const createdAt = (entry.get('createdAt') as number) ?? 0;
@@ -499,5 +518,5 @@ function readEntry(entry: Y.Map<unknown> | undefined): ValidatedEntry {
 		}
 	}
 
-	return { type: 'empty' };
+	return null;
 }

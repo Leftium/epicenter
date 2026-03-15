@@ -146,7 +146,7 @@ describe('createTimeline - asRichText', () => {
 		const tl = setup();
 		tl.asRichText();
 		const entry = tl.currentEntry;
-		if (entry.type === 'empty') throw new Error('expected richtext');
+		if (!entry) throw new Error('expected richtext');
 		expect(entry.createdAt).toBeTypeOf('number');
 	});
 

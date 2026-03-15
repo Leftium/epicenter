@@ -190,7 +190,7 @@ export function createYjsFileSystem(
 			const handle = await contentDocuments.open(id);
 			const validated = handle.currentEntry;
 
-			if (validated.type === 'sheet') {
+			if (validated?.type === 'sheet') {
 				handle.writeSheet(textData);
 			} else {
 				handle.write(textData);
@@ -212,7 +212,7 @@ export function createYjsFileSystem(
 			const handle = await contentDocuments.open(id);
 			const validated = handle.currentEntry;
 
-			if (validated.type !== 'text') {
+			if (validated?.type !== 'text') {
 				await this.writeFile(path, data);
 				return;
 			}

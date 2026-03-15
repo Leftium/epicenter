@@ -83,7 +83,7 @@ async function transcribeBlob(blob: Blob) {
 }
 ```
 
-**Workspace State** - After migrating to Yjs CRDTs, domain data (recordings, transformations, transformation runs) lives in reactive workspace state modules (`$lib/state/workspace-*.svelte.ts`). These use SvelteMap backed by Yjs documents for instant reactivity—no cache invalidation or optimistic updates needed.
+**Workspace State** - After migrating to Yjs CRDTs, domain data (recordings, transformations, transformation runs) lives in reactive workspace state modules (`$lib/state/*.svelte.ts`). These use SvelteMap backed by Yjs documents for instant reactivity—no cache invalidation or optimistic updates needed.
 
 The query layer's role has narrowed to things that don't fit in CRDTs:
 
@@ -94,10 +94,10 @@ The query layer's role has narrowed to things that don't fit in CRDTs:
 ```svelte
 <script>
   import { rpc } from '$lib/query';
-  import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
+  import { recordings } from '$lib/state/recordings.svelte';
 
   // Domain data — workspace state (reactive, no queries needed)
-  const latestRecording = $derived(workspaceRecordings.sorted[0]);
+  const latestRecording = $derived(recordings.sorted[0]);
 
   // Audio blob — still needs TanStack Query (too large for CRDTs)
   const audioUrl = createQuery(() => ({

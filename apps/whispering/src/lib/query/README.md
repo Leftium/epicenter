@@ -95,7 +95,7 @@ async function transcribeBlob(blob: Blob) {
 
 ## Workspace State & Reactivity
 
-> **Historical note**: Before the workspace migration, the query layer used TanStack Query's cache for optimistic UI via `queryClient.setQueryData(['recordings'], ...)`. Domain data (recordings, transformations, transformation runs) has since moved to Yjs-backed workspace state modules (`$lib/state/workspace-*.svelte.ts`), which provide instant reactivity without cache manipulation. The query layer now focuses on non-CRUD operations: audio blob access, external API calls, hardware state, and coordination logic.
+> **Historical note**: Before the workspace migration, the query layer used TanStack Query's cache for optimistic UI via `queryClient.setQueryData(['recordings'], ...)`. Domain data (recordings, transformations, transformation runs) has since moved to Yjs-backed workspace state modules (`$lib/state/*.svelte.ts`), which provide instant reactivity without cache manipulation. The query layer now focuses on non-CRUD operations: audio blob access, external API calls, hardware state, and coordination logic.
 
 ## Error Transformation Pattern
 
@@ -1024,11 +1024,11 @@ Reactive SvelteMap modules backed by Yjs CRDTs. These replaced TanStack Query fo
 
 ```typescript
 // Workspace state is the primary data layer for recordings, transformations, runs
-import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
+import { recordings } from '$lib/state/recordings.svelte';
 
 // Direct reactive access — no queries needed
-const recording = workspaceRecordings.get(id);
-const allRecordings = workspaceRecordings.sorted;
+const recording = recordings.get(id);
+const allRecordings = recordings.sorted;
 ```
 
 ### 3. Query Layer (`/lib/query/`)

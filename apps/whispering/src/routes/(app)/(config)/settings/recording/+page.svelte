@@ -17,7 +17,7 @@
 		type DeviceIdentifier,
 	} from '$lib/services/types';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import {
 		COMPRESSION_RECOMMENDED_MESSAGE,
 		hasNavigatorLocalTranscriptionIssue,
@@ -33,7 +33,7 @@
 	// Derived labels for select triggers
 	const recordingModeLabel = $derived(
 		RECORDING_MODE_OPTIONS.find(
-			(o) => o.value === workspaceSettings.get('recording.mode'),
+			(o) => o.value === settings.get('recording.mode'),
 		)?.label,
 	);
 
@@ -138,9 +138,9 @@
 			<Field.Label for="recording-mode">Recording Mode</Field.Label>
 			<Select.Root
 				type="single"
-				bind:value={() => workspaceSettings.get('recording.mode'),
+				bind:value={() => settings.get('recording.mode'),
 					(selected) => {
-						if (selected) workspaceSettings.set('recording.mode', selected);
+						if (selected) settings.set('recording.mode', selected);
 					}}
 			>
 				<Select.Trigger id="recording-mode" class="w-full">
@@ -160,7 +160,7 @@
 			</Field.Description>
 		</Field.Field>
 
-		{#if window.__TAURI_INTERNALS__ && workspaceSettings.get('recording.mode') === 'manual'}
+		{#if window.__TAURI_INTERNALS__ && settings.get('recording.mode') === 'manual'}
 			<Field.Field>
 				<Field.Label for="recording-method">Recording Method</Field.Label>
 				<Select.Root
@@ -258,7 +258,7 @@
 						The Browser API recording method produces compressed audio that
 						requires FFmpeg for local transcription with
 						{TRANSCRIPTION_SERVICE_ID_TO_LABEL[
-							workspaceSettings.get('transcription.service')
+							settings.get('transcription.service')
 						]}.
 						<div class="mt-3 space-y-3">
 							<div class="flex items-center gap-2">
@@ -287,7 +287,7 @@
 			{/if}
 		{/if}
 
-		{#if workspaceSettings.get('recording.mode') === 'manual'}
+		{#if settings.get('recording.mode') === 'manual'}
 			{@const method = deviceConfig.get('recording.method')}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
@@ -296,7 +296,7 @@
 					},
 					(selected) => setManualDeviceId(method, selected)}
 			/>
-		{:else if workspaceSettings.get('recording.mode') === 'vad'}
+		{:else if settings.get('recording.mode') === 'vad'}
 			{#if IS_LINUX}
 				<Alert.Root class="border-red-500/20 bg-red-500/5">
 					<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
@@ -342,7 +342,7 @@
 			/>
 		{/if}
 
-		{#if workspaceSettings.get('recording.mode') === 'manual' || workspaceSettings.get('recording.mode') === 'vad'}
+		{#if settings.get('recording.mode') === 'manual' || settings.get('recording.mode') === 'vad'}
 			{#if isUsingNavigatorMethod}
 				<!-- Browser method settings -->
 				<Field.Field>

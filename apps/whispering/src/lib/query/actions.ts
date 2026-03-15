@@ -5,11 +5,11 @@ import { defineMutation } from '$lib/query/client';
 import { WhisperingErr } from '$lib/result';
 import { DbError } from '$lib/services/db';
 import { services } from '$lib/services';
-import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
-import { workspaceTransformations } from '$lib/state/workspace-transformations.svelte';
+import { recordings } from '$lib/state/recordings.svelte';
+import { transformations } from '$lib/state/transformations.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
 import { delivery } from './delivery';
 import { notify } from './notify';
@@ -56,7 +56,7 @@ const startManualRecording = defineMutation({
 		}
 		isRecordingOperationBusy = true;
 
-		workspaceSettings.set('recording.mode', 'manual');
+		settings.set('recording.mode', 'manual');
 
 		const toastId = nanoid();
 		notify.loading({
@@ -201,7 +201,7 @@ const stopManualRecording = defineMutation({
 const startVadRecording = defineMutation({
 	mutationKey: ['commands', 'startVadRecording'] as const,
 	mutationFn: async () => {
-		workspaceSettings.set('recording.mode', 'vad');
+		settings.set('recording.mode', 'vad');
 
 		const toastId = nanoid();
 		console.info('Starting voice activated capture');
@@ -424,7 +424,7 @@ export const commands = {
 	uploadRecordings: defineMutation({
 		mutationKey: ['recordings', 'uploadRecordings'] as const,
 		mutationFn: async ({ files }: { files: File[] }) => {
-			workspaceSettings.set('recording.mode', 'upload');
+			settings.set('recording.mode', 'upload');
 			// Partition files into valid and invalid in a single pass
 			const { valid: validFiles, invalid: invalidFiles } = files.reduce<{
 				valid: File[];
@@ -494,7 +494,7 @@ export const commands = {
 		mutationKey: ['commands', 'runTransformationOnClipboard'] as const,
 		mutationFn: async () => {
 			// Get selected transformation from settings
-			const transformationId = workspaceSettings.get(
+			const transformationId = settings.get(
 				'transformation.selectedId',
 			);
 
@@ -511,10 +511,10 @@ export const commands = {
 			}
 
 			// Get the transformation from workspace state
-			const transformation = workspaceTransformations.get(transformationId);
+			const transformation = transformations.get(transformationId);
 
 			if (!transformation) {
-				workspaceSettings.set('transformation.selectedId', null);
+				settings.set('transformation.selectedId', null);
 				return WhisperingErr({
 					title: '⚠️ Transformation not found',
 					description:
@@ -631,7 +631,7 @@ async function processRecordingPipeline({
 	});
 
 	// Save metadata to workspace (instant) and audio blob to DbService (async)
-	workspaceRecordings.set(recording);
+	recordings.set(recording);
 	const saveAudioPromise = services.db.recordings.create({ recording, audio: blob });
 	const transcribePromise = transcribeBlob(blob);
 
@@ -641,7 +641,7 @@ async function processRecordingPipeline({
 
 	if (transcribeError) {
 		// Transcription failed - update status
-		workspaceRecordings.update(recording.id, { transcriptionStatus: 'FAILED' });
+		recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
 		if (transcribeError.name === 'WhisperingError') {
 			notify.error({ id: transcribeToastId, ...transcribeError });
 			return;
@@ -680,20 +680,20 @@ async function processRecordingPipeline({
 		description: completionDescription,
 	});
 
-	workspaceRecordings.update(recording.id, {
+	recordings.update(recording.id, {
 		transcribedText,
 		transcriptionStatus: 'DONE',
 	});
 
 	// Determine if we need to chain to transformation
-	const transformationId = workspaceSettings.get('transformation.selectedId');
+	const transformationId = settings.get('transformation.selectedId');
 
 	// Check if transformation is valid if specified
 	if (!transformationId) return;
-	const transformation = workspaceTransformations.get(transformationId);
+	const transformation = transformations.get(transformationId);
 
 	if (!transformation) {
-		workspaceSettings.set('transformation.selectedId', null);
+		settings.set('transformation.selectedId', null);
 		notify.warning({
 			title: '⚠️ No matching transformation found',
 			description:

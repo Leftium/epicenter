@@ -52,7 +52,7 @@
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import { workspaceRecordings, type Recording } from '$lib/state/workspace-recordings.svelte';
+	import { recordings, type Recording } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { recordingActions } from '$lib/utils/recording-actions';
 	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
@@ -191,7 +191,7 @@
 							confirm: { text: 'Delete', variant: 'destructive' },
 									onConfirm: () => {
 										services.db.recordings.revokeAudioUrl(row.original.id);
-										workspaceRecordings.delete(row.original.id);
+										recordings.delete(row.original.id);
 										rpc.notify.success({
 											title: 'Deleted recording!',
 											description: 'Your recording has been deleted.',
@@ -278,7 +278,7 @@
 	const table = createSvelteTable({
 		getRowId: (originalRow) => originalRow.id,
 		get data() {
-			return workspaceRecordings.sorted;
+			return recordings.sorted;
 		},
 		columns,
 		getCoreRowModel: getCoreRowModel(),
@@ -455,12 +455,12 @@
 						{#if transcribeRecordings.isPending}
 							<EllipsisIcon class="size-4" />
 						{:else if selectedRecordingRows.some(({ id }) => {
-							const currentRow = workspaceRecordings.get(id);
+							const currentRow = recordings.get(id);
 							return currentRow?.transcriptionStatus === 'TRANSCRIBING';
 						})}
 							<LoadingTranscriptionIcon class="size-4" />
 						{:else if selectedRecordingRows.some(({ id }) => {
-							const currentRow = workspaceRecordings.get(id);
+							const currentRow = recordings.get(id);
 							return currentRow?.transcriptionStatus === 'DONE';
 						})}
 							<RetryTranscriptionIcon class="size-4" />

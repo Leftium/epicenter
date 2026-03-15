@@ -31,8 +31,8 @@
 	import {
 		generateDefaultStep,
 		type TransformationStep,
-	} from '$lib/state/workspace-transformation-steps.svelte';
-	import type { Transformation } from '$lib/state/workspace-transformations.svelte';
+	} from '$lib/state/transformation-steps.svelte';
+	import type { Transformation } from '$lib/state/transformations.svelte';
 
 	// Derived labels for select triggers
 	const stepTypeLabel = (type: string) =>

@@ -11,7 +11,7 @@
 	import { onDestroy } from 'svelte';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import { workspaceRecordings, type Recording } from '$lib/state/workspace-recordings.svelte';
+	import { recordings, type Recording } from '$lib/state/recordings.svelte';
 	import { recordingActions } from '$lib/utils/recording-actions';
 
 
@@ -200,7 +200,7 @@
 			</Button>
 		<Button
 			onclick={() => {
-				workspaceRecordings.set($state.snapshot(workingCopy));
+				recordings.set($state.snapshot(workingCopy));
 				rpc.notify.success({
 					title: 'Updated recording!',
 					description: 'Your recording has been updated successfully.',

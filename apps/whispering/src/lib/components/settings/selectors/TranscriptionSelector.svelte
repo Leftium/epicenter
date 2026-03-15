@@ -20,14 +20,14 @@
 		isTranscriptionServiceConfigured,
 	} from '$lib/settings/transcription-validation';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 
 	let { class: className }: { class?: string } = $props();
 
 	const selectedService = $derived(getSelectedTranscriptionService());
 
 	function getSelectedServiceId() {
-		return workspaceSettings.get('transcription.service');
+		return settings.get('transcription.service');
 	}
 
 	function getSelectedModelNameOrUrl(service: TranscriptionService) {
@@ -35,15 +35,15 @@
 			case 'cloud': {
 				switch (service.id) {
 					case 'Groq':
-						return workspaceSettings.get('transcription.groq.model');
+						return settings.get('transcription.groq.model');
 					case 'OpenAI':
-						return workspaceSettings.get('transcription.openai.model');
+						return settings.get('transcription.openai.model');
 					case 'ElevenLabs':
-						return workspaceSettings.get('transcription.elevenlabs.model');
+						return settings.get('transcription.elevenlabs.model');
 					case 'Deepgram':
-						return workspaceSettings.get('transcription.deepgram.model');
+						return settings.get('transcription.deepgram.model');
 					case 'Mistral':
-						return workspaceSettings.get('transcription.mistral.model');
+						return settings.get('transcription.mistral.model');
 				}
 				break;
 			}
@@ -71,19 +71,19 @@
 	) {
 		switch (service.id) {
 			case 'Groq':
-				workspaceSettings.set('transcription.groq.model', modelName);
+				settings.set('transcription.groq.model', modelName);
 				return;
 			case 'OpenAI':
-				workspaceSettings.set('transcription.openai.model', modelName);
+				settings.set('transcription.openai.model', modelName);
 				return;
 			case 'ElevenLabs':
-				workspaceSettings.set('transcription.elevenlabs.model', modelName);
+				settings.set('transcription.elevenlabs.model', modelName);
 				return;
 			case 'Deepgram':
-				workspaceSettings.set('transcription.deepgram.model', modelName);
+				settings.set('transcription.deepgram.model', modelName);
 				return;
 			case 'Mistral':
-				workspaceSettings.set('transcription.mistral.model', modelName);
+				settings.set('transcription.mistral.model', modelName);
 				return;
 		}
 	}
@@ -191,7 +191,7 @@
 						<Command.Item
 							value={`${service.id} ${service.name} whisper cpp ggml local offline`}
 							onSelect={() => {
-								workspaceSettings.set('transcription.service', service.id);
+								settings.set('transcription.service', service.id);
 								combobox.closeAndFocusTrigger();
 							}}
 							class="flex items-center gap-2 px-2 py-2"
@@ -268,7 +268,7 @@
 								<Command.Item
 									value={`${service.id} ${service.name} ${model.name}`}
 									onSelect={() => {
-										workspaceSettings.set(
+										settings.set(
 											'transcription.service',
 											service.id,
 										);
@@ -307,7 +307,7 @@
 						<Command.Item
 							value={`${service.id} ${service.name} self-hosted server`}
 							onSelect={() => {
-								workspaceSettings.set('transcription.service', service.id);
+								settings.set('transcription.service', service.id);
 								combobox.closeAndFocusTrigger();
 							}}
 							class="flex items-center gap-2 px-2 py-2"

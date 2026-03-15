@@ -1,6 +1,6 @@
 <script lang="ts">
 	import TextPreviewDialog from '$lib/components/copyable/TextPreviewDialog.svelte';
-	import { workspaceTransformationRuns } from '$lib/state/workspace-transformation-runs.svelte';
+	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	let {
@@ -10,7 +10,7 @@
 	} = $props();
 
 	const latestRun = $derived(
-		workspaceTransformationRuns.getLatestByRecordingId(recordingId),
+		transformationRuns.getLatestByRecordingId(recordingId),
 	);
 
 	const id = $derived(

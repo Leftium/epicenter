@@ -4,13 +4,13 @@
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { rpc } from '$lib/query';
-	import { workspaceTransformations } from '$lib/state/workspace-transformations.svelte';
+	import { transformations } from '$lib/state/transformations.svelte';
 	import EditTransformationModal from './EditTransformationModal.svelte';
 
 	let { transformationId }: { transformationId: string } = $props();
 
 	const transformation = $derived(
-		workspaceTransformations.get(transformationId),
+		transformations.get(transformationId),
 	);
 </script>
 
@@ -29,7 +29,7 @@
 					description: 'Are you sure you want to delete this transformation?',
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
-						workspaceTransformations.delete(transformation.id);
+						transformations.delete(transformation.id);
 						rpc.notify.success({
 							title: 'Deleted transformation!',
 							description: 'Your transformation has been deleted successfully.',

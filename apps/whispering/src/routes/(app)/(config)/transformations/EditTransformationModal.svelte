@@ -9,12 +9,12 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { rpc } from '$lib/query';
-	import { workspaceTransformationSteps } from '$lib/state/workspace-transformation-steps.svelte';
+	import { transformationSteps } from '$lib/state/transformation-steps.svelte';
 	import {
 		saveTransformationWithSteps,
-		workspaceTransformations,
+		transformations,
 		type Transformation,
-	} from '$lib/state/workspace-transformations.svelte';
+	} from '$lib/state/transformations.svelte';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
 
 	let {
@@ -34,7 +34,7 @@
 	 * Working copy of the transformation steps. Resets when upstream data changes.
 	 */
 	let workingSteps = $derived(
-		workspaceTransformationSteps.getByTransformationId(transformation.id),
+		transformationSteps.getByTransformationId(transformation.id),
 	);
 
 	/**
@@ -58,7 +58,7 @@
 			confirm: { text: 'Leave' },
 			onConfirm: () => {
 				workingCopy = transformation;
-				workingSteps = workspaceTransformationSteps.getByTransformationId(
+				workingSteps = transformationSteps.getByTransformationId(
 					transformation.id,
 				);
 				isWorkingCopyDirty = false;
@@ -138,10 +138,10 @@
 						description: 'Are you sure? This action cannot be undone.',
 						confirm: { text: 'Delete', variant: 'destructive' },
 						onConfirm: () => {
-							workspaceTransformationSteps.deleteByTransformationId(
+							transformationSteps.deleteByTransformationId(
 								transformation.id,
 							);
-							workspaceTransformations.delete(transformation.id);
+							transformations.delete(transformation.id);
 							isDialogOpen = false;
 							rpc.notify.success({
 								title: 'Deleted transformation!',

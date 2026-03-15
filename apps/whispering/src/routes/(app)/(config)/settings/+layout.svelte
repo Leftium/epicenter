@@ -7,7 +7,7 @@
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { rpc } from '$lib/query';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import SidebarNav from './SidebarNav.svelte';
 
 	let { children } = $props();
@@ -79,7 +79,7 @@
 						'This will reset all settings to their default values. This action cannot be undone.',
 					confirm: { text: 'Reset Settings', variant: 'destructive' },
 					onConfirm: () => {
-						workspaceSettings.reset();
+						settings.reset();
 						deviceConfig.reset();
 						rpc.notify.success({
 							title: 'Settings reset',

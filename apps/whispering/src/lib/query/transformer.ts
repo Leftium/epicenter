@@ -18,10 +18,10 @@ import type {
 	TransformationRunRunning,
 	} from '$lib/services/db';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
-import type { TransformationStep } from '$lib/state/workspace-transformation-steps.svelte';
-import { workspaceTransformationSteps } from '$lib/state/workspace-transformation-steps.svelte';
-	import type { Transformation } from '$lib/state/workspace-transformations.svelte';
+import { recordings } from '$lib/state/recordings.svelte';
+import type { TransformationStep } from '$lib/state/transformation-steps.svelte';
+import { transformationSteps } from '$lib/state/transformation-steps.svelte';
+	import type { Transformation } from '$lib/state/transformations.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 
 /**
@@ -124,7 +124,7 @@ export const transformer = {
 				WhisperingError
 			>
 		> => {
-			const recording = workspaceRecordings.get(recordingId);
+			const recording = recordings.get(recordingId);
 			if (!recording) {
 				return WhisperingErr({
 					title: '⚠️ Recording not found',
@@ -132,7 +132,7 @@ export const transformer = {
 				});
 			}
 
-			const steps = workspaceTransformationSteps.getByTransformationId(transformation.id);
+			const steps = transformationSteps.getByTransformationId(transformation.id);
 
 			const { data: transformationRun, error: transformationRunError } =
 				await runTransformation({

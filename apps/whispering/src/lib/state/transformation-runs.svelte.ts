@@ -10,11 +10,11 @@
  *
  * @example
  * ```typescript
- * import { workspaceTransformationRuns } from '$lib/state/workspace-transformation-runs.svelte';
+ * import { transformationRuns } from '$lib/state/transformation-runs.svelte';
  *
  * // Get runs for a specific transformation or recording
- * const runs = workspaceTransformationRuns.getByTransformationId(transformationId);
- * const recordingRuns = workspaceTransformationRuns.getByRecordingId(recordingId);
+ * const runs = transformationRuns.getByTransformationId(transformationId);
+ * const recordingRuns = transformationRuns.getByRecordingId(recordingId);
  * ```
  */
 import { SvelteMap } from 'svelte/reactivity';
@@ -25,7 +25,7 @@ export type TransformationRun = ReturnType<
 	typeof workspace.tables.transformationRuns.getAllValid
 >[number];
 
-function createWorkspaceTransformationRuns() {
+function createTransformationRuns() {
 	const map = new SvelteMap<string, TransformationRun>();
 
 	// Initialize from current workspace state.
@@ -115,4 +115,4 @@ function createWorkspaceTransformationRuns() {
 	};
 }
 
-export const workspaceTransformationRuns = createWorkspaceTransformationRuns();
+export const transformationRuns = createTransformationRuns();

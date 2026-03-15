@@ -2,7 +2,7 @@ import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
 import { desktopRpc } from '$lib/query';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 export const COMPRESSION_RECOMMENDED_MESSAGE =
 	"Since you're using CPAL recording with cloud transcription, we recommend enabling audio compression to reduce file sizes and upload times.";
@@ -14,7 +14,7 @@ export const RECORDING_COMPATIBILITY_MESSAGE =
 	'Browser API recording produces compressed audio that requires FFmpeg for local transcription. Switch to CPAL recording, install FFmpeg, or use a cloud transcription service.';
 
 function isUsingLocalTranscription(): boolean {
-	const service = workspaceSettings.get('transcription.service');
+	const service = settings.get('transcription.service');
 	return (
 		service === 'whispercpp' ||
 		service === 'parakeet' ||
@@ -36,9 +36,9 @@ export function hasNavigatorLocalTranscriptionIssue({
 	const isUsingNavigator =
 		deviceConfig.get('recording.method') === 'navigator';
 	const isUsingLocalTranscription =
-		workspaceSettings.get('transcription.service') === 'whispercpp' ||
-		workspaceSettings.get('transcription.service') === 'parakeet' ||
-		workspaceSettings.get('transcription.service') === 'moonshine';
+		settings.get('transcription.service') === 'whispercpp' ||
+		settings.get('transcription.service') === 'parakeet' ||
+		settings.get('transcription.service') === 'moonshine';
 
 	return isUsingNavigator && isUsingLocalTranscription && !isFFmpegInstalled;
 }
@@ -51,7 +51,7 @@ export function isCompressionRecommended(): boolean {
 	return (
 		deviceConfig.get('recording.method') === 'cpal' &&
 		!isUsingLocalTranscription() &&
-		!workspaceSettings.get('transcription.compressionEnabled')
+		!settings.get('transcription.compressionEnabled')
 	);
 }
 

@@ -3,8 +3,8 @@ import { rpc } from '$lib/query';
 import { services } from '$lib/services';
 import {
 	type Recording,
-	workspaceRecordings,
-} from '$lib/state/workspace-recordings.svelte';
+	recordings,
+} from '$lib/state/recordings.svelte';
 
 /**
  * Recording management actions. These are UI-boundary functions that compose
@@ -54,7 +54,7 @@ export const recordingActions = {
 				// Clean up audio URLs before deleting to prevent memory leaks
 				for (const recording of arr) {
 					services.db.recordings.revokeAudioUrl(recording.id);
-					workspaceRecordings.delete(recording.id);
+					recordings.delete(recording.id);
 				}
 				rpc.notify.success({
 					title: `Deleted ${noun}!`,

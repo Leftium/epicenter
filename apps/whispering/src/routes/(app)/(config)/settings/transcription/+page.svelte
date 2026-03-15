@@ -27,7 +27,7 @@
 	import { PARAKEET_MODELS } from '$lib/services/transcription/local/parakeet';
 	import { WHISPER_MODELS } from '$lib/services/transcription/local/whispercpp';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { hasNavigatorLocalTranscriptionIssue } from '$routes/(app)/_layout-utils/check-ffmpeg';
 
@@ -38,7 +38,7 @@
 	 * Used to conditionally disable UI fields that aren't supported by the service.
 	 */
 	const currentServiceCapabilities = $derived(
-		TRANSCRIPTION[workspaceSettings.get('transcription.service')].capabilities,
+		TRANSCRIPTION[settings.get('transcription.service')].capabilities,
 	);
 
 	// Model options arrays — derived from the single TRANSCRIPTION record
@@ -75,38 +75,38 @@
 	// Selected labels for select triggers
 	const openaiModelLabel = $derived(
 		openaiModelItems.find(
-			(i) => i.value === workspaceSettings.get('transcription.openai.model'),
+			(i) => i.value === settings.get('transcription.openai.model'),
 		)?.label,
 	);
 
 	const groqModelLabel = $derived(
 		groqModelItems.find(
-			(i) => i.value === workspaceSettings.get('transcription.groq.model'),
+			(i) => i.value === settings.get('transcription.groq.model'),
 		)?.label,
 	);
 
 	const deepgramModelLabel = $derived(
 		deepgramModelItems.find(
-			(i) => i.value === workspaceSettings.get('transcription.deepgram.model'),
+			(i) => i.value === settings.get('transcription.deepgram.model'),
 		)?.label,
 	);
 
 	const mistralModelLabel = $derived(
 		mistralModelItems.find(
-			(i) => i.value === workspaceSettings.get('transcription.mistral.model'),
+			(i) => i.value === settings.get('transcription.mistral.model'),
 		)?.label,
 	);
 
 	const elevenlabsModelLabel = $derived(
 		elevenlabsModelItems.find(
 			(i) =>
-				i.value === workspaceSettings.get('transcription.elevenlabs.model'),
+				i.value === settings.get('transcription.elevenlabs.model'),
 		)?.label,
 	);
 
 	const outputLanguageLabel = $derived(
 		SUPPORTED_LANGUAGES_OPTIONS.find(
-			(i) => i.value === workspaceSettings.get('transcription.language'),
+			(i) => i.value === settings.get('transcription.language'),
 		)?.label,
 	);
 </script>
@@ -123,18 +123,18 @@
 		<TranscriptionServiceSelect
 			id="selected-transcription-service"
 			label="Transcription Service"
-			bind:selected={() => workspaceSettings.get('transcription.service'),
+			bind:selected={() => settings.get('transcription.service'),
 				(selected) =>
-					workspaceSettings.set('transcription.service', selected)}
+					settings.set('transcription.service', selected)}
 		/>
 
-		{#if workspaceSettings.get('transcription.service') === 'OpenAI'}
+		{#if settings.get('transcription.service') === 'OpenAI'}
 			<Field.Field>
 				<Field.Label for="openai-model">OpenAI Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => workspaceSettings.get('transcription.openai.model'),
-						(v) => workspaceSettings.set('transcription.openai.model', v)}
+					bind:value={() => settings.get('transcription.openai.model'),
+						(v) => settings.set('transcription.openai.model', v)}
 				>
 					<Select.Trigger id="openai-model" class="w-full">
 						{openaiModelLabel ?? 'Select a model'}
@@ -159,13 +159,13 @@
 				</Field.Description>
 			</Field.Field>
 			<OpenAiApiKeyInput />
-		{:else if workspaceSettings.get('transcription.service') === 'Groq'}
+		{:else if settings.get('transcription.service') === 'Groq'}
 			<Field.Field>
 				<Field.Label for="groq-model">Groq Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => workspaceSettings.get('transcription.groq.model'),
-						(v) => workspaceSettings.set('transcription.groq.model', v)}
+					bind:value={() => settings.get('transcription.groq.model'),
+						(v) => settings.set('transcription.groq.model', v)}
 				>
 					<Select.Trigger id="groq-model" class="w-full">
 						{groqModelLabel ?? 'Select a model'}
@@ -190,13 +190,13 @@
 				</Field.Description>
 			</Field.Field>
 			<GroqApiKeyInput />
-		{:else if workspaceSettings.get('transcription.service') === 'Deepgram'}
+		{:else if settings.get('transcription.service') === 'Deepgram'}
 			<Field.Field>
 				<Field.Label for="deepgram-model">Deepgram Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => workspaceSettings.get('transcription.deepgram.model'),
-						(v) => workspaceSettings.set('transcription.deepgram.model', v)}
+					bind:value={() => settings.get('transcription.deepgram.model'),
+						(v) => settings.set('transcription.deepgram.model', v)}
 				>
 					<Select.Trigger id="deepgram-model" class="w-full">
 						{deepgramModelLabel ?? 'Select a model'}
@@ -211,13 +211,13 @@
 				</Select.Root>
 			</Field.Field>
 			<DeepgramApiKeyInput />
-		{:else if workspaceSettings.get('transcription.service') === 'Mistral'}
+		{:else if settings.get('transcription.service') === 'Mistral'}
 			<Field.Field>
 				<Field.Label for="mistral-model">Mistral Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => workspaceSettings.get('transcription.mistral.model'),
-						(v) => workspaceSettings.set('transcription.mistral.model', v)}
+					bind:value={() => settings.get('transcription.mistral.model'),
+						(v) => settings.set('transcription.mistral.model', v)}
 				>
 					<Select.Trigger id="mistral-model" class="w-full">
 						{mistralModelLabel ?? 'Select a model'}
@@ -242,13 +242,13 @@
 				</Field.Description>
 			</Field.Field>
 			<MistralApiKeyInput />
-		{:else if workspaceSettings.get('transcription.service') === 'ElevenLabs'}
+		{:else if settings.get('transcription.service') === 'ElevenLabs'}
 			<Field.Field>
 				<Field.Label for="elevenlabs-model">ElevenLabs Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => workspaceSettings.get('transcription.elevenlabs.model'),
-						(v) => workspaceSettings.set('transcription.elevenlabs.model', v)}
+					bind:value={() => settings.get('transcription.elevenlabs.model'),
+						(v) => settings.set('transcription.elevenlabs.model', v)}
 				>
 					<Select.Trigger id="elevenlabs-model" class="w-full">
 						{elevenlabsModelLabel ?? 'Select a model'}
@@ -273,7 +273,7 @@
 				</Field.Description>
 			</Field.Field>
 			<ElevenLabsApiKeyInput />
-		{:else if workspaceSettings.get('transcription.service') === 'speaches'}
+		{:else if settings.get('transcription.service') === 'speaches'}
 			<div class="space-y-4">
 				<Card.Root>
 					<Card.Header>
@@ -428,7 +428,7 @@
 					</CopyButton>
 				</Field.Description>
 			</Field.Field>
-		{:else if workspaceSettings.get('transcription.service') === 'whispercpp'}
+		{:else if settings.get('transcription.service') === 'whispercpp'}
 			<div class="space-y-4">
 				<!-- Whisper Model Selector Component -->
 				{#if window.__TAURI_INTERNALS__}
@@ -520,7 +520,7 @@
 					{/if}
 				{/if}
 			</div>
-		{:else if workspaceSettings.get('transcription.service') === 'parakeet'}
+		{:else if settings.get('transcription.service') === 'parakeet'}
 			<div class="space-y-4">
 				<!-- Parakeet Model Selector Component -->
 				{#if window.__TAURI_INTERNALS__}
@@ -627,7 +627,7 @@
 					{/if}
 				{/if}
 			</div>
-		{:else if workspaceSettings.get('transcription.service') === 'moonshine'}
+		{:else if settings.get('transcription.service') === 'moonshine'}
 			<div class="space-y-4">
 				<!-- Moonshine Model Selector Component -->
 				{#if window.__TAURI_INTERNALS__}
@@ -765,8 +765,8 @@
 			<Field.Label for="output-language">Output Language</Field.Label>
 			<Select.Root
 				type="single"
-				bind:value={() => workspaceSettings.get('transcription.language'),
-					(v) => workspaceSettings.set('transcription.language', v)}
+				bind:value={() => settings.get('transcription.language'),
+					(v) => settings.set('transcription.language', v)}
 				disabled={!currentServiceCapabilities.supportsLanguage}
 			>
 				<Select.Trigger id="output-language" class="w-full">
@@ -780,7 +780,7 @@
 			</Select.Root>
 			{#if !currentServiceCapabilities.supportsLanguage}
 				<Field.Description>
-					{workspaceSettings.get('transcription.service') ===
+					{settings.get('transcription.service') ===
 					'moonshine'
 						? 'Moonshine is English-only'
 						: 'Parakeet automatically detects the language'}
@@ -799,9 +799,9 @@
 				placeholder="0"
 				autocomplete="off"
 				disabled={!currentServiceCapabilities.supportsTemperature}
-				bind:value={() => workspaceSettings.get('transcription.temperature'),
+				bind:value={() => settings.get('transcription.temperature'),
 					(value) =>
-						workspaceSettings.set('transcription.temperature', Number(value))}
+						settings.set('transcription.temperature', Number(value))}
 			/>
 			<Field.Description>
 				{currentServiceCapabilities.supportsTemperature
@@ -816,8 +816,8 @@
 				id="transcription-prompt"
 				placeholder="e.g., This is an academic lecture about quantum physics with technical terms like 'eigenvalue' and 'Schrödinger'"
 				disabled={!currentServiceCapabilities.supportsPrompt}
-				bind:value={() => workspaceSettings.get('transcription.prompt'),
-					(value) => workspaceSettings.set('transcription.prompt', value)}
+				bind:value={() => settings.get('transcription.prompt'),
+					(value) => settings.set('transcription.prompt', value)}
 			/>
 			<Field.Description>
 				{currentServiceCapabilities.supportsPrompt

@@ -7,7 +7,7 @@ type KvKey = keyof typeof KV_DEFINITIONS & string;
 
 type KvDefs = typeof KV_DEFINITIONS;
 
-function createWorkspaceSettings() {
+function createSettings() {
 	const map = new SvelteMap<string, unknown>();
 
 	// Initialize SvelteMap with current values for ALL KV keys.
@@ -63,4 +63,4 @@ function createWorkspaceSettings() {
 	};
 }
 
-export const workspaceSettings = createWorkspaceSettings();
+export const settings = createSettings();

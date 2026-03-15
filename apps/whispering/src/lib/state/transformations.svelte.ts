@@ -7,27 +7,27 @@
  *
  * @example
  * ```typescript
- * import { workspaceTransformations } from '$lib/state/workspace-transformations.svelte';
+ * import { transformations } from '$lib/state/transformations.svelte';
  *
  * // Read reactively
- * const transformation = workspaceTransformations.get(id);
- * const all = workspaceTransformations.sorted; // alphabetical by title
+ * const transformation = transformations.get(id);
+ * const all = transformations.sorted; // alphabetical by title
  *
  * // Write
- * workspaceTransformations.set(transformation);
- * workspaceTransformations.delete(id);
+ * transformations.set(transformation);
+ * transformations.delete(id);
  * ```
  */
 import { SvelteMap } from 'svelte/reactivity';
 import workspace from '$lib/workspace';
-import { workspaceTransformationSteps, type TransformationStep } from './workspace-transformation-steps.svelte';
+import { transformationSteps, type TransformationStep } from './transformation-steps.svelte';
 
 /** Transformation row type inferred from the workspace table schema. */
 export type Transformation = ReturnType<
 	typeof workspace.tables.transformations.getAllValid
 >[number];
 
-function createWorkspaceTransformations() {
+function createTransformations() {
 	const map = new SvelteMap<string, Transformation>();
 
 	// Initialize from current workspace state.
@@ -105,7 +105,7 @@ function createWorkspaceTransformations() {
 	};
 }
 
-export const workspaceTransformations = createWorkspaceTransformations();
+export const transformations = createTransformations();
 
 /**
  * Generate a default transformation with sensible defaults.
@@ -116,7 +116,7 @@ export const workspaceTransformations = createWorkspaceTransformations();
  * @example
  * ```typescript
  * const t = generateDefaultTransformation();
- * workspaceTransformations.set(t);
+ * transformations.set(t);
  * ```
  */
 export function generateDefaultTransformation(): Transformation {
@@ -153,13 +153,13 @@ export function saveTransformationWithSteps(
 	steps: TransformationStep[],
 ) {
 	workspace.batch(() => {
-		workspaceTransformations.set({
+		transformations.set({
 			...transformation,
 			updatedAt: new Date().toISOString(),
 		});
-		workspaceTransformationSteps.deleteByTransformationId(transformation.id);
+		transformationSteps.deleteByTransformationId(transformation.id);
 		for (const [order, step] of steps.entries()) {
-			workspaceTransformationSteps.set({
+			transformationSteps.set({
 				...step,
 				transformationId: transformation.id,
 				order,

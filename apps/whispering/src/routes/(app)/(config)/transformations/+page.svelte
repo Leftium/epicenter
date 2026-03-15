@@ -34,7 +34,7 @@
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
-	import { workspaceTransformations, type Transformation } from '$lib/state/workspace-transformations.svelte';
+	import { transformations, type Transformation } from '$lib/state/transformations.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import CreateTransformationButton from './CreateTransformationButton.svelte';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
@@ -122,7 +122,7 @@
 	const table = createSvelteTable({
 		getRowId: (originalRow) => originalRow.id,
 		get data() {
-			return workspaceTransformations.sorted;
+			return transformations.sorted;
 		},
 		columns,
 		getCoreRowModel: getCoreRowModel(),
@@ -223,7 +223,7 @@
 						confirm: { text: 'Delete', variant: 'destructive' },
 						onConfirm: () => {
 							for (const { original } of selectedTransformationRows) {
-								workspaceTransformations.delete(original.id);
+								transformations.delete(original.id);
 							}
 							rpc.notify.success({
 								title: 'Deleted transformations!',

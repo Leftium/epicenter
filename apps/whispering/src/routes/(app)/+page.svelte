@@ -38,14 +38,14 @@
 	import { desktopServices, services } from '$lib/services';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
-	import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
+	import { recordings } from '$lib/state/recordings.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	const getRecorderStateQuery = createQuery(
 		() => rpc.recorder.getRecorderState.options,
 	);
-	const latestRecording = $derived(workspaceRecordings.sorted[0]);
+	const latestRecording = $derived(recordings.sorted[0]);
 
 	const audioPlaybackUrlQuery = createQuery(() => ({
 		...rpc.audio.getPlaybackUrl(() => latestRecording?.id ?? '')
@@ -107,7 +107,7 @@
 
 				unlistenDragDrop = await getCurrentWebview().onDragDropEvent(
 					async (event) => {
-						if (workspaceSettings.get('recording.mode') !== 'upload') return;
+						if (settings.get('recording.mode') !== 'upload') return;
 						if (
 							event.payload.type !== 'drop' ||
 							event.payload.paths.length === 0
@@ -218,8 +218,8 @@
 			});
 		}
 
-		if (workspaceSettings.get('recording.mode') !== newMode) {
-			workspaceSettings.set('recording.mode', newMode);
+		if (settings.get('recording.mode') !== newMode) {
+			settings.set('recording.mode', newMode);
 			rpc.notify.success({
 				id: toastId,
 				title: '✅ Recording mode switched',
@@ -248,7 +248,7 @@
 
 	<ToggleGroup.Root
 		type="single"
-		bind:value={() => workspaceSettings.get('recording.mode'),
+		bind:value={() => settings.get('recording.mode'),
 			(mode) => {
 				if (!mode) return;
 				void switchRecordingMode(mode as RecordingMode);
@@ -266,7 +266,7 @@
 		{/each}
 	</ToggleGroup.Root>
 
-	{#if workspaceSettings.get('recording.mode') === 'manual'}
+	{#if settings.get('recording.mode') === 'manual'}
 		<!-- Container with relative positioning for the button and absolute selectors -->
 		<div class="relative">
 			<Button
@@ -306,7 +306,7 @@
 				</div>
 			{/if}
 		</div>
-	{:else if workspaceSettings.get('recording.mode') === 'vad'}
+	{:else if settings.get('recording.mode') === 'vad'}
 		<!-- Container with relative positioning for the button and absolute selectors -->
 		<div class="relative">
 			<Button
@@ -334,7 +334,7 @@
 				</div>
 			{/if}
 		</div>
-	{:else if workspaceSettings.get('recording.mode') === 'upload'}
+	{:else if settings.get('recording.mode') === 'upload'}
 		<div class="flex flex-col items-center gap-4 w-full">
 			<FileDropZone
 				accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
@@ -378,7 +378,7 @@
 						confirm: { text: 'Delete', variant: 'destructive' },
 						onConfirm: () => {
 							services.db.recordings.revokeAudioUrl(latestRecording.id);
-							workspaceRecordings.delete(latestRecording.id);
+							recordings.delete(latestRecording.id);
 							rpc.notify.success({
 								title: 'Deleted recording!',
 								description: 'Your recording has been deleted.',
@@ -401,12 +401,12 @@
 		</div>
 	{/if}
 
-	{#if workspaceSettings.get('ui.layoutMode') === 'nav-items'}
+	{#if settings.get('ui.layoutMode') === 'nav-items'}
 		<NavItems class="xs:flex -mb-2.5 -mt-1 hidden" />
 	{/if}
 
 	<div class="xs:flex hidden flex-col items-center gap-3">
-		{#if workspaceSettings.get('recording.mode') === 'manual'}
+		{#if settings.get('recording.mode') === 'manual'}
 			<p class="text-foreground/75 text-center text-sm">
 				Click the microphone or press
 				{' '}
@@ -416,7 +416,7 @@
 				>
 					<Kbd.Root
 						>{getShortcutDisplayLabel(
-							workspaceSettings.get('shortcut.toggleManualRecording'),
+							settings.get('shortcut.toggleManualRecording'),
 						)}</Kbd.Root
 					>
 				</Link>
@@ -441,7 +441,7 @@
 					to start recording anywhere.
 				</p>
 			{/if}
-		{:else if workspaceSettings.get('recording.mode') === 'vad'}
+		{:else if settings.get('recording.mode') === 'vad'}
 			<p class="text-foreground/75 text-center text-sm">
 				Click the microphone or press
 				{' '}
@@ -451,14 +451,14 @@
 				>
 					<Kbd.Root
 						>{getShortcutDisplayLabel(
-							workspaceSettings.get('shortcut.toggleVadRecording'),
+							settings.get('shortcut.toggleVadRecording'),
 						)}</Kbd.Root
 					>
 				</Link>
 				{' '}
 				to start a voice activated session.
 			</p>
-		{:else if workspaceSettings.get('recording.mode') === 'upload'}
+		{:else if settings.get('recording.mode') === 'upload'}
 			<p class="text-foreground/75 text-center text-sm">
 				Drag files here or click to browse.
 			</p>

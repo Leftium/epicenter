@@ -9,15 +9,15 @@
  *
  * @example
  * ```typescript
- * import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
+ * import { recordings } from '$lib/state/recordings.svelte';
  *
  * // Read reactively (re-renders on change)
- * const recording = workspaceRecordings.get(id);
- * const all = workspaceRecordings.sorted; // newest first
+ * const recording = recordings.get(id);
+ * const all = recordings.sorted; // newest first
  *
  * // Write (Yjs observer auto-updates SvelteMap → components re-render)
- * workspaceRecordings.set(recording);
- * workspaceRecordings.delete(id);
+ * recordings.set(recording);
+ * recordings.delete(id);
  * ```
  */
 import { SvelteMap } from 'svelte/reactivity';
@@ -28,7 +28,7 @@ export type Recording = ReturnType<
 	typeof workspace.tables.recordings.getAllValid
 >[number];
 
-function createWorkspaceRecordings() {
+function createRecordings() {
 	const map = new SvelteMap<string, Recording>();
 
 	// Initialize from current workspace state.
@@ -132,4 +132,4 @@ function createWorkspaceRecordings() {
 	};
 }
 
-export const workspaceRecordings = createWorkspaceRecordings();
+export const recordings = createRecordings();

@@ -8,8 +8,8 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { rpc } from '$lib/query';
-	import type { TransformationStep } from '$lib/state/workspace-transformation-steps.svelte';
-	import type { Transformation } from '$lib/state/workspace-transformations.svelte';
+	import type { TransformationStep } from '$lib/state/transformation-steps.svelte';
+	import type { Transformation } from '$lib/state/transformations.svelte';
 
 	const transformInput = createMutation(
 		() => rpc.transformer.transformInput.options,

@@ -14,8 +14,8 @@
 	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
 	import TextPreviewDialog from '$lib/components/copyable/TextPreviewDialog.svelte';
 	import { rpc } from '$lib/query';
-	import type { TransformationRun } from '$lib/state/workspace-transformation-runs.svelte';
-	import { workspaceTransformationRuns } from '$lib/state/workspace-transformation-runs.svelte';
+	import type { TransformationRun } from '$lib/state/transformation-runs.svelte';
+	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	let { runs }: { runs: TransformationRun[] } = $props();
@@ -54,7 +54,7 @@
 						confirm: { text: 'Delete All', variant: 'destructive' },
 						onConfirm: () => {
 							for (const run of runs) {
-								workspaceTransformationRuns.delete(run.id);
+						transformationRuns.delete(run.id);
 							}
 							rpc.notify.success({
 								title: `${runs.length} run${runs.length !== 1 ? 's' : ''} deleted successfully`,
@@ -114,7 +114,7 @@
 											description: `This will permanently delete the run from ${formatDate(run.startedAt)}. This action cannot be undone.`,
 											confirm: { text: 'Delete', variant: 'destructive' },
 										onConfirm: () => {
-											workspaceTransformationRuns.delete(run.id);
+						transformationRuns.delete(run.id);
 											rpc.notify.success({
 												title: 'Run deleted successfully',
 												description:

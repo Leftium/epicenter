@@ -6,9 +6,9 @@
 	import { onMount } from 'svelte';
 	import { PLATFORM_TYPE } from '$lib/constants/platform';
 	import { rpc } from '$lib/query';
-	import { workspaceTransformations, type Transformation } from '$lib/state/workspace-transformations.svelte';
+	import { transformations, type Transformation } from '$lib/state/transformations.svelte';
 
-	const transformations = $derived(workspaceTransformations.sorted);
+	const sortedTransformations = $derived(transformations.sorted);
 
 	const isMac = PLATFORM_TYPE === 'macos';
 	const modifierKey = isMac ? '⌘' : 'Ctrl';
@@ -55,8 +55,8 @@
 				e.preventDefault();
 				const index = e.key === '0' ? 9 : parseInt(e.key, 10) - 1; // 0 maps to 10th item
 
-				if (transformations[index]) {
-					onSelect(transformations[index]);
+				if (sortedTransformations[index]) {
+					onSelect(sortedTransformations[index]);
 				}
 			}
 		}
@@ -79,7 +79,7 @@
 	<Command.Input {placeholder} bind:ref={inputElement} />
 	<Command.Empty>No transformation found.</Command.Empty>
 	<Command.Group class="overflow-y-auto max-h-[400px]">
-		{#each transformations as transformation, index (transformation.id)}
+		{#each sortedTransformations as transformation, index (transformation.id)}
 			<Command.Item
 				value="${transformation.id} - ${transformation.title} - ${transformation.description}"
 				onSelect={() => onSelect(transformation)}

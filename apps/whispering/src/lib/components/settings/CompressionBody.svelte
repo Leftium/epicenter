@@ -15,7 +15,7 @@
 		FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 		FFMPEG_SMALLEST_COMPRESSION_OPTIONS,
 	} from '$lib/services/desktop/recorder/ffmpeg';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
 
 	// Compression preset definitions (UI only - not stored in settings)
@@ -55,7 +55,7 @@
 	 */
 	function isPresetActive(presetKey: CompressionPresetKey): boolean {
 		return (
-			workspaceSettings.get('transcription.compressionOptions') ===
+			settings.get('transcription.compressionOptions') ===
 			COMPRESSION_PRESETS[presetKey].options
 		);
 	}
@@ -77,9 +77,9 @@
 	<Field.Field orientation="horizontal">
 		<Checkbox
 			id="compression-enabled"
-			checked={workspaceSettings.get('transcription.compressionEnabled')}
+			checked={settings.get('transcription.compressionEnabled')}
 			onCheckedChange={(checked) =>
-				workspaceSettings.set(
+				settings.set(
 					'transcription.compressionEnabled',
 					checked === true,
 				)}
@@ -104,7 +104,7 @@
 		</Field.Content>
 	</Field.Field>
 
-	{#if workspaceSettings.get('transcription.compressionEnabled')}
+	{#if settings.get('transcription.compressionEnabled')}
 		<!-- Preset Selection Badges -->
 		<Field.Group>
 			<Field.Set>
@@ -124,7 +124,7 @@
 								: 'hover:bg-accent hover:text-accent-foreground',
 						)}
 						onclick={() =>
-							workspaceSettings.set(
+							settings.set(
 								'transcription.compressionOptions',
 								preset.options,
 							)}
@@ -145,23 +145,23 @@
 			<div class="flex gap-2">
 				<Input
 					id="compression-options"
-					value={workspaceSettings.get('transcription.compressionOptions')}
+					value={settings.get('transcription.compressionOptions')}
 					oninput={(e) =>
-						workspaceSettings.set(
+						settings.set(
 							'transcription.compressionOptions',
 							e.currentTarget.value,
 						)}
 					placeholder={FFMPEG_DEFAULT_COMPRESSION_OPTIONS}
 					class="flex-1"
 				/>
-				{#if workspaceSettings.get('transcription.compressionOptions') !== FFMPEG_DEFAULT_COMPRESSION_OPTIONS}
+				{#if settings.get('transcription.compressionOptions') !== FFMPEG_DEFAULT_COMPRESSION_OPTIONS}
 					<Button
 						tooltip="Reset to default"
 						variant="ghost"
 						size="icon"
 						class="h-9 w-9"
 						onclick={() => {
-							workspaceSettings.set(
+							settings.set(
 								'transcription.compressionOptions',
 								FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 							);
@@ -183,7 +183,7 @@
 			<p class="font-medium mb-1">Command Preview:</p>
 			<code class="bg-muted rounded px-2 py-1 text-xs break-all block">
 				ffmpeg -i input.wav
-				{workspaceSettings.get('transcription.compressionOptions')}
+				{settings.get('transcription.compressionOptions')}
 				output.opus
 			</code>
 		</div>

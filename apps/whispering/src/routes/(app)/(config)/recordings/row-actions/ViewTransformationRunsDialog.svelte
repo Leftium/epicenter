@@ -3,12 +3,12 @@
 	import * as Modal from '@epicenter/ui/modal';
 	import HistoryIcon from '@lucide/svelte/icons/history';
 	import { Runs } from '$lib/components/transformations-editor';
-	import { workspaceTransformationRuns } from '$lib/state/workspace-transformation-runs.svelte';
+	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 
 	let { recordingId }: { recordingId: string } = $props();
 
 	const runs = $derived(
-		workspaceTransformationRuns.getByRecordingId(recordingId),
+		transformationRuns.getByRecordingId(recordingId),
 	);
 
 	let isOpen = $state(false);

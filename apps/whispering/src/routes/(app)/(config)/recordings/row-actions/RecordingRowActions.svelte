@@ -16,8 +16,8 @@
 	import { rpc } from '$lib/query';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { recordingActions } from '$lib/utils/recording-actions';
-	import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
-	import { workspaceTransformationRuns } from '$lib/state/workspace-transformation-runs.svelte';
+	import { recordings } from '$lib/state/recordings.svelte';
+	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import EditRecordingModal from './EditRecordingModal.svelte';
 	import TransformationPicker from './TransformationPicker.svelte';
@@ -33,9 +33,9 @@
 
 	let { recordingId }: { recordingId: string } = $props();
 
-	const latestRun = $derived(workspaceTransformationRuns.getLatestByRecordingId(recordingId));
+	const latestRun = $derived(transformationRuns.getLatestByRecordingId(recordingId));
 
-	const recording = $derived(workspaceRecordings.get(recordingId));
+	const recording = $derived(recordings.get(recordingId));
 </script>
 
 <div class="flex items-center gap-1">

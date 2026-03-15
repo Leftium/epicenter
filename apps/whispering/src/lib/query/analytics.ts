@@ -2,7 +2,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 import { defineMutation } from '$lib/query/client';
 import { services } from '$lib/services';
 import type { Event } from '$lib/services/analytics/types';
-import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 const analyticsKeys = {
 	logEvent: ['analytics', 'logEvent'] as const,
@@ -20,7 +20,7 @@ export const analytics = {
 		mutationKey: analyticsKeys.logEvent,
 		mutationFn: async (event: Event): Promise<Result<void, never>> => {
 			// Check if analytics is enabled in settings
-			if (!workspaceSettings.get('analytics.enabled')) {
+			if (!settings.get('analytics.enabled')) {
 				// Analytics disabled, skip anonymous analytics
 				return Ok(undefined);
 			}

@@ -7,14 +7,14 @@
  *
  * @example
  * ```typescript
- * import { workspaceTransformationSteps } from '$lib/state/workspace-transformation-steps.svelte';
+ * import { transformationSteps } from '$lib/state/transformation-steps.svelte';
  *
  * // Get steps for a specific transformation, sorted by order
- * const steps = workspaceTransformationSteps.getByTransformationId(transformationId);
+ * const steps = transformationSteps.getByTransformationId(transformationId);
  *
  * // CRUD
- * workspaceTransformationSteps.set(step);
- * workspaceTransformationSteps.delete(stepId);
+ * transformationSteps.set(step);
+ * transformationSteps.delete(stepId);
  * ```
  */
 import { SvelteMap } from 'svelte/reactivity';
@@ -25,7 +25,7 @@ export type TransformationStep = ReturnType<
 	typeof workspace.tables.transformationSteps.getAllValid
 >[number];
 
-function createWorkspaceTransformationSteps() {
+function createTransformationSteps() {
 	const map = new SvelteMap<string, TransformationStep>();
 
 	// Initialize from current workspace state.
@@ -119,8 +119,7 @@ function createWorkspaceTransformationSteps() {
 	};
 }
 
-export const workspaceTransformationSteps =
-	createWorkspaceTransformationSteps();
+export const transformationSteps = createTransformationSteps();
 
 /**
  * Generate a default transformation step with sensible defaults.
@@ -134,7 +133,7 @@ export const workspaceTransformationSteps =
  *   transformationId: transformation.id,
  *   order: existingSteps.length,
  * });
- * workspaceTransformationSteps.set(step);
+ * transformationSteps.set(step);
  * ```
  */
 export function generateDefaultStep(

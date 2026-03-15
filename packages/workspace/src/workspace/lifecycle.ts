@@ -133,20 +133,6 @@ export type Lifecycle = {
 	 * Implementations should handle graceful cancellation.
 	 */
 	dispose: () => MaybePromise<void>;
-
-	/**
-	 * Wipe persisted data (optional).
-	 *
-	 * Only implemented by extensions that persist data (IndexedDB, SQLite, filesystem).
-	 * Called by `signOut()` before `dispose()` to wipe local state on explicit sign-out.
-	 *
-	 * Semantics:
-	 * - `dispose()` releases resources but **keeps data** (normal cleanup)
-	 * - `clearData()` **wipes data** but does not release resources (call `dispose()` after)
-	 *
-	 * Extensions without persistent state should omit this (leave `undefined`).
-	 */
-	clearData?: () => MaybePromise<void>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════

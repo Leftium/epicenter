@@ -165,9 +165,9 @@ describe('createEncryptedYkvLww', () => {
 			kv.set('x', '10');
 			kv.set('y', '20');
 
-			expect(kv.map.get('x')?.val).toBe('10');
-			expect(kv.map.get('y')?.val).toBe('20');
-			expect(kv.map.size).toBe(2);
+			expect(kv.get('x')).toBe('10');
+			expect(kv.get('y')).toBe('20');
+			expect(kv.cachedSize).toBe(2);
 		});
 	});
 
@@ -316,7 +316,7 @@ describe('createEncryptedYkvLww', () => {
 
 			kv.set('k', 'plain-view');
 
-			expect(kv.map.get('k')?.val).toBe('plain-view');
+			expect(kv.get('k')).toBe('plain-view');
 			expect(isEncryptedBlob(yarray.toArray()[0]?.val)).toBe(true);
 		});
 
@@ -337,7 +337,7 @@ describe('createEncryptedYkvLww', () => {
 			kv1.set('shared-key', 'from-doc1');
 			syncDocs(doc1, doc2);
 
-			expect(kv2.map.get('shared-key')?.val).toBe('from-doc1');
+			expect(kv2.get('shared-key')).toBe('from-doc1');
 			expect(kv2.get('shared-key')).toBe('from-doc1');
 		});
 	});
@@ -656,8 +656,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.get('corrupt')).toBeUndefined();
 			expect(kv.get('good-1')).toBe('value-1');
 			expect(kv.get('good-2')).toBe('value-2');
-			expect(kv.quarantine?.has('corrupt')).toBe(true);
-			expect(kv.quarantine?.size).toBe(1);
+			expect(kv.failedDecryptCount).toBe(1);
 		});
 
 		test('observation continues after decrypt failure', () => {
@@ -686,7 +685,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.get('good')).toBe('still-works');
 			expect(kv.get('new-good')).toBe('appears-after-failure');
 			expect(kv.get('corrupt')).toBeUndefined();
-			expect(kv.quarantine?.has('corrupt')).toBe(true);
+			expect(kv.failedDecryptCount).toBe(1);
 		});
 	});
 
@@ -745,7 +744,7 @@ describe('createEncryptedYkvLww', () => {
 			});
 
 			kv.unlock(key2);
-			expect(kv.quarantine?.size).toBe(2);
+			expect(kv.failedDecryptCount).toBe(2);
 
 			const deleteEvents = events.filter(
 				(event) => event.change.action === 'delete',
@@ -754,7 +753,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(deleteEvents.map((event) => event.key).sort()).toEqual(['a', 'b']);
 
 			kv.unlock(key1);
-			expect(kv.quarantine?.size).toBe(0);
+			expect(kv.failedDecryptCount).toBe(0);
 
 			const addEvents = events.filter((event) => event.change.action === 'add');
 			expect(addEvents.length).toBe(2);

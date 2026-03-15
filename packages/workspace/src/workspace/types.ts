@@ -1309,7 +1309,7 @@ export type WorkspaceClient<
 	/**
 	 * Unlock the workspace with an encryption key.
 	 *
-	 * Decrypts all stores, retries quarantined entries, transitions to `'unlocked'`.
+	 * Decrypts all stores, retries failed entries, transitions to `'unlocked'`.
 	 * If any store fails to unlock, already-unlocked stores are rolled back to `'locked'`
 	 * and the error is rethrown—the workspace never ends up half-unlocked.
 	 *
@@ -1327,8 +1327,8 @@ export type WorkspaceClient<
 	 * ### Wrong key handling
 	 *
 	 * If `unlock()` is called with the wrong key, values that fail decryption are
-	 * quarantined (cached as `undefined`). Calling `unlock()` again with the correct
-	 * key retries all quarantined entries.
+	 * skipped. `failedDecryptCount` reflects how many entries could not decrypt.
+	 * Calling `unlock()` again with the correct key retries all failed entries.
 	 *
 	 * @param key - A 32-byte encryption key (e.g. from `deriveWorkspaceKey`)
 	 */

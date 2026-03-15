@@ -23,8 +23,8 @@
  *         │                                                (inner handles pending)
  *         ▼  inner.observe fires
  *   ├── inner.map has encrypted entry
- *   ├── maybeDecrypt → plaintext (or quarantine on failure)
- *   ├── wrapper.map.set('tab-1', plaintext entry)       ← table-helpers read this
+ *   ├── maybeDecrypt → plaintext (or skip on failure)
+ *   ├── wrapper.map.set('tab-1', plaintext entry)       ← cachedEntries() exposes this
  *   └── change event forwarded with decrypted values
  *
  * get('tab-1')
@@ -82,10 +82,10 @@
  *
  * ## Error Containment
  *
- * The observer wraps `maybeDecrypt` with `trySync`. A failed decrypt quarantines
- * the entry (stored in `quarantine` map) and logs a warning instead of throwing.
- * This prevents one bad blob from crashing all observation. Quarantined entries
- * are retried on `unlock()` when the correct key arrives.
+ * The observer wraps `maybeDecrypt` with `trySync`. A failed decrypt skips
+ * the entry and logs a warning instead of throwing. This prevents one bad blob
+ * from crashing all observation. `failedDecryptCount` exposes the number of
+ * entries that failed to decrypt. Entries are retried on `unlock()`.
  *
  * ## Related Modules
  *
@@ -126,7 +126,7 @@ export type EncryptionMode = 'plaintext' | 'locked' | 'unlocked';
 
 /**
  * Return type of `createEncryptedYkvLww`. Same API surface as `YKeyValueLww<T>`
- * plus encryption-specific members (`mode`, `quarantine`, `lock`, `unlock`).
+ * plus encryption-specific members (`mode`, `failedDecryptCount`, `lock`, `unlock`).
  * All values exposed through this type are **plaintext**—encryption is fully
  * transparent to consumers.
  */
@@ -149,8 +149,8 @@ export type YKeyValueLwwEncrypted<T> = {
 
 	/**
 	 * Unlock the workspace with an encryption key. Rebuilds the decrypted map
-	 * from `inner.map`, retries quarantined entries, transitions to `unlocked`
-	 * mode, and fires synthetic change events for any values that changed.
+	 * from `inner.map`, transitions to `unlocked` mode, and fires synthetic
+	 * change events for any values that changed.
 	 *
 	 * @param key - A 32-byte encryption key (required)
 	 */
@@ -160,29 +160,20 @@ export type YKeyValueLwwEncrypted<T> = {
 	readonly mode: EncryptionMode;
 
 	/**
-	 * Entries that failed to decrypt. Stored as raw `EncryptedBlob | T` entries
-	 * from `inner.map`. Retried automatically on `unlock()` when the
-	 * correct key arrives. Exposed so table helpers can show a
-	 * "N entries failed to decrypt" warning.
+	 * Number of entries that failed to decrypt. Computed as
+	 * `inner.map.size - map.size`. Entries are retried on `unlock()`.
 	 */
-	readonly quarantine: ReadonlyMap<
-		string,
-		YKeyValueLwwEntry<EncryptedBlob | T>
-	>;
+	readonly failedDecryptCount: number;
 
 	/**
-	 * Decrypted in-memory index. Always contains **plaintext** values.
-	 *
-	 * This exists because `table-helper.ts` methods (`getAll()`, `filter()`,
-	 * `find()`, `count()`, `clear()`) read `ykv.map` directly—they don't call
-	 * `get()` per entry. If we exposed `inner.map`, table helpers would see
-	 * `EncryptedBlob` objects where they expect row data. Schema validation
-	 * would fail on every entry.
-	 *
-	 * Kept in sync by `inner.observe()`—the observer is the sole writer,
-	 * mirroring the same single-writer pattern that `YKeyValueLww` itself uses.
+	 * Iterate decrypted cache entries. Returns an iterator over `[key, entry]`
+	 * pairs from the internal plaintext map. Prevents external mutation
+	 * of the internal cache.
 	 */
-	readonly map: Map<string, YKeyValueLwwEntry<T>>;
+	cachedEntries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
+
+	/** Number of successfully decrypted entries in the cache. */
+	readonly cachedSize: number;
 
 	/** The underlying Y.Array. Contains **ciphertext** when a key is active. */
 	readonly yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>;
@@ -234,22 +225,14 @@ export function createEncryptedYkvLww<T>(
 	 * contains **plaintext** values. It mirrors `inner.map` but with decrypted
 	 * values. The `inner.observe()` handler is the sole writer.
 	 *
-	 * Why a separate map? `table-helper.ts` reads `ykv.map` directly for
-	 * `getAll()`, `filter()`, `find()`, `count()`. If we exposed `inner.map`,
-	 * those methods would see `EncryptedBlob` objects and schema validation
-	 * would fail. This map ensures table helpers see plaintext—zero changes
-	 * to table-helper.ts.
+	 * Table helpers access this via `cachedEntries()` and `cachedSize`.
+	 * Not exposed directly—prevents external mutation of the internal cache.
 	 */
 	const map = new Map<string, YKeyValueLwwEntry<T>>();
 
 	/** Registered change handlers. Receive decrypted change events. */
 	const changeHandlers = new Set<YKeyValueLwwChangeHandler<T>>();
 
-	/**
-	 * Entries that failed to decrypt. Stored as raw entries from `inner.map`.
-	 * Retried on `unlock()` when a new key arrives.
-	 */
-	const quarantine = new Map<string, YKeyValueLwwEntry<EncryptedBlob | T>>();
 
 	/**
 	 * The active encryption key. Seeded from `options.key` at creation,
@@ -292,9 +275,8 @@ export function createEncryptedYkvLww<T>(
 	};
 
 	/**
-	 * Attempt to decrypt an entry. On success, removes from quarantine and
-	 * returns the decrypted entry. On failure, quarantines the entry and
-	 * returns `undefined`.
+	 * Attempt to decrypt an entry. On success, returns the decrypted entry.
+	 * On failure, returns `undefined`.
 	 *
 	 * Used during initialization, observer processing, and `unlock()` rebuild.
 	 */
@@ -311,11 +293,9 @@ export function createEncryptedYkvLww<T>(
 		});
 
 		if (decryptError || decryptedVal === undefined) {
-			quarantine.set(key, entry);
 			return undefined;
 		}
 
-		quarantine.delete(key);
 		return { ...entry, val: decryptedVal };
 	};
 
@@ -345,7 +325,7 @@ export function createEncryptedYkvLww<T>(
 	/**
 	 * The heart of the wrapper. When `inner`'s observer fires (entry added,
 	 * updated, or deleted), we:
-	 * 1. Decrypt the new value (quarantine on failure)
+	 * 1. Decrypt the new value (skip on failure)
 	 * 2. Update `wrapper.map` with the plaintext
 	 * 3. Forward decrypted change events to registered handlers
 	 *
@@ -358,7 +338,6 @@ export function createEncryptedYkvLww<T>(
 		for (const [key, change] of changes) {
 			if (change.action === 'delete') {
 				map.delete(key);
-				quarantine.delete(key);
 				decryptedChanges.set(key, { action: 'delete' });
 			} else {
 				const entry = inner.map.get(key);
@@ -415,7 +394,7 @@ export function createEncryptedYkvLww<T>(
 
 		/**
 		 * Check if key exists with a decryptable value. Returns false for
-		 * quarantined entries (consistent with get() returning undefined).
+		 * entries that failed to decrypt (consistent with get() returning undefined).
 		 */
 		has(key) {
 			if (map.has(key)) return true;
@@ -427,7 +406,6 @@ export function createEncryptedYkvLww<T>(
 
 		delete(key) {
 			map.delete(key);
-			quarantine.delete(key);
 			inner.delete(key);
 		},
 
@@ -447,9 +425,6 @@ export function createEncryptedYkvLww<T>(
 				}
 			}
 
-			// Yield any wrapper.map entries not in inner (shouldn't happen, but safe)
-			for (const [key, entry] of map)
-				if (!yieldedKeys.has(key)) yield [key, entry];
 		},
 
 		observe(handler) {
@@ -471,8 +446,8 @@ export function createEncryptedYkvLww<T>(
 
 		/**
 		 * Unlock with a new encryption key. Rebuilds the decrypted map
-		 * from scratch, retries quarantined entries, and fires synthetic
-		 * change events for any values that changed.
+		 * from scratch and fires synthetic change events for any values
+		 * that changed.
 		 *
 		 * @param nextKey - A 32-byte encryption key
 		 */
@@ -483,7 +458,6 @@ export function createEncryptedYkvLww<T>(
 			mode = 'unlocked';
 
 			map.clear();
-			quarantine.clear();
 
 			for (const [key, entry] of inner.map) {
 				const decryptedEntry = tryDecryptEntry(key, entry);
@@ -529,10 +503,15 @@ export function createEncryptedYkvLww<T>(
 		get mode() {
 			return mode;
 		},
-		get quarantine() {
-			return quarantine;
+		get failedDecryptCount() {
+			return inner.map.size - map.size;
 		},
-		map,
+		*cachedEntries() {
+			yield* map.entries();
+		},
+		get cachedSize() {
+			return map.size;
+		},
 		yarray: inner.yarray,
 		doc: inner.doc,
 	};

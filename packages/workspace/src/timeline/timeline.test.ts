@@ -234,6 +234,67 @@ describe('restoreFromSnapshot', () => {
 
 		doc.destroy();
 	});
+
+	test('sheet snapshot: preserves column metadata (kind, width) via deep clone', () => {
+		const doc = new Y.Doc({ gc: false });
+		const tl = createTimeline(doc);
+		tl.write('placeholder');
+
+		// Build a snapshot with custom column metadata that CSV round-trip would lose
+		const binary = createSnapshotBinary((s) => {
+			const { columns, rows } = s.asSheet();
+
+			// Column A: kind='number', width='200'
+			const colA = new Y.Map<string>();
+			colA.set('name', 'Score');
+			colA.set('kind', 'number');
+			colA.set('width', '200');
+			colA.set('order', '0.5');
+			columns.set('col-a', colA);
+
+			// Column B: kind='date', width='180'
+			const colB = new Y.Map<string>();
+			colB.set('name', 'Created');
+			colB.set('kind', 'date');
+			colB.set('width', '180');
+			colB.set('order', '1.0');
+			columns.set('col-b', colB);
+
+			// One row referencing columns by ID
+			const row = new Y.Map<string>();
+			row.set('order', '0.5');
+			row.set('col-a', '95');
+			row.set('col-b', '2026-03-15');
+			rows.set('row-1', row);
+		});
+
+		tl.restoreFromSnapshot(binary);
+
+		const entry = tl.currentEntry;
+		if (entry.type !== 'sheet') throw new Error('expected sheet');
+
+		// Verify column metadata preserved (not hardcoded to 'text'/'120')
+		const cols = Array.from(entry.columns.values());
+		const scoreCol = cols.find((c) => c.get('name') === 'Score');
+		const dateCol = cols.find((c) => c.get('name') === 'Created');
+
+		expect(scoreCol).toBeDefined();
+		expect(scoreCol!.get('kind')).toBe('number');
+		expect(scoreCol!.get('width')).toBe('200');
+
+		expect(dateCol).toBeDefined();
+		expect(dateCol!.get('kind')).toBe('date');
+		expect(dateCol!.get('width')).toBe('180');
+
+		// Verify row cell references still work (keyed by original column IDs)
+		expect(entry.rows.size).toBe(1);
+		const restoredRow = entry.rows.get('row-1');
+		expect(restoredRow).toBeDefined();
+		expect(restoredRow!.get('col-a')).toBe('95');
+		expect(restoredRow!.get('col-b')).toBe('2026-03-15');
+
+		doc.destroy();
+	});
 });
 
 describe('createTimeline - observe', () => {

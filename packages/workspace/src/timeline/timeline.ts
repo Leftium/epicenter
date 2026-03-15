@@ -55,6 +55,11 @@ export type Timeline = {
 	 * If current type is text, replaces in-place. Otherwise pushes new text entry.
 	 */
 	write(text: string): void;
+	/**
+	 * Replace sheet content from CSV, wrapped in a single transaction.
+	 * If current type is sheet, clears and repopulates in-place. Otherwise pushes new sheet entry.
+	 */
+	writeSheet(csv: string): void;
 
 	/**
 	 * Get current content as Y.Text for editor binding.
@@ -114,7 +119,7 @@ export type Timeline = {
 	 * Watch for structural timeline changes—entries added or removed.
 	 *
 	 * Fires when the entry list changes (e.g., a new entry is pushed via
-	 * `write()`, `asText()`, `asRichText()`, `asSheet()`, or `restoreFromSnapshot()`).
+	 * `write()`, `writeSheet()`, `asText()`, `asRichText()`, `asSheet()`, or `restoreFromSnapshot()`).
 	 * Does NOT fire when content within an existing entry changes—edits to
 	 * Y.Text, Y.XmlFragment, or Y.Map are handled by those shared types directly.
 	 * Editors already bind to the CRDT handle and receive updates natively.
@@ -227,6 +232,26 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	}
 
 	/**
+	 * Replace sheet in-place if already sheet type, otherwise push a new sheet entry.
+	 *
+	 * Mirrors `replaceCurrentText()`: avoids unnecessary timeline growth
+	 * when the type hasn't changed. Clears existing columns/rows and
+	 * repopulates from CSV for in-place updates.
+	 */
+	function replaceCurrentSheet(csv: string): void {
+		if (currentType() === 'sheet') {
+			const entry = currentEntry()!;
+			const columns = entry.get('columns') as Y.Map<Y.Map<string>>;
+			const rows = entry.get('rows') as Y.Map<Y.Map<string>>;
+			columns.forEach((_, key) => columns.delete(key));
+			rows.forEach((_, key) => rows.delete(key));
+			parseSheetFromCsv(csv, columns, rows);
+		} else {
+			pushSheetFromCsv(csv);
+		}
+	}
+
+	/**
 	 * Push a new richtext entry whose content is deep-cloned from a source fragment.
 	 *
 	 * `Y.XmlElement.clone()` / `Y.XmlText.clone()` produce unattached copies that
@@ -246,6 +271,36 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			.map((c) => c.clone());
 		result.content.insert(0, children);
 		return result;
+	}
+
+	/**
+	 * Push a new sheet entry whose columns and rows are deep-cloned from a source sheet.
+	 *
+	 * `Y.Map.clone()` produces an unattached deep copy that preserves all column
+	 * metadata (name, kind, width, order) and all row data (cell values, order).
+	 * Column and row IDs are preserved so cell references (row cells keyed by
+	 * column ID) remain valid in the cloned entry.
+	 *
+	 * This avoids the lossy CSV round-trip used by `pushSheetFromCsv`, which
+	 * hardcodes column `kind` to `'text'` and `width` to `'120'`—dropping any
+	 * custom column configuration the snapshot had.
+	 *
+	 * Used by `restoreFromSnapshot()` for sheet type.
+	 */
+	function pushSheetFromSnapshot(
+		sourceColumns: Y.Map<Y.Map<string>>,
+		sourceRows: Y.Map<Y.Map<string>>,
+	): SheetEntry {
+		const entry = new Y.Map();
+		entry.set('type', 'sheet');
+		const columns = sourceColumns.clone();
+		const rows = sourceRows.clone();
+		entry.set('columns', columns);
+		entry.set('rows', rows);
+		const createdAt = Date.now();
+		entry.set('createdAt', createdAt);
+		timeline.push([entry]);
+		return { type: 'sheet', columns, rows, createdAt };
 	}
 
 	// ── Public API ────────────────────────────────────────────────────────
@@ -280,6 +335,10 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 		write(text: string) {
 			ydoc.transact(() => replaceCurrentText(text));
+		},
+
+		writeSheet(csv: string) {
+			ydoc.transact(() => replaceCurrentSheet(csv));
 		},
 
 		asText(): Y.Text {
@@ -377,10 +436,11 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 						break;
 					}
 					case 'sheet': {
-						// Sheet structure (column IDs, fractional orders) can't be reused
-						// across docs. Round-trip through CSV to rebuild fresh Y.Maps.
-						const csv = serializeSheetToCsv(entry.columns, entry.rows);
-						ydoc.transact(() => pushSheetFromCsv(csv));
+						// Deep-clone preserves all column metadata (kind, width, order, name)
+						// and row data. Always pushes a new entry.
+						ydoc.transact(() =>
+							pushSheetFromSnapshot(entry.columns, entry.rows),
+						);
 						break;
 					}
 					case 'richtext': {

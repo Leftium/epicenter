@@ -30,6 +30,7 @@
 
 	// Listen for navigation events from other windows
 	onMount(async () => {
+		if (!window.__TAURI_INTERNALS__) return;
 		unlistenNavigate = await listen<{ path: string }>(
 			'navigate-main-window',
 			(event) => {

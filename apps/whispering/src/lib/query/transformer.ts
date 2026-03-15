@@ -12,6 +12,7 @@ import {
 	type WhisperingResult,
 } from '$lib/result';
 import { services } from '$lib/services';
+import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
 import type {
 	Transformation,
 	TransformationRunCompleted,
@@ -110,14 +111,11 @@ export const transformer = {
 				WhisperingError
 			>
 		> => {
-			const { data: recording, error: getRecordingError } =
-				await services.db.recordings.getById(recordingId);
-			if (getRecordingError || !recording) {
+			const recording = workspaceRecordings.get(recordingId);
+			if (!recording) {
 				return WhisperingErr({
 					title: '⚠️ Recording not found',
-					description:
-						getRecordingError?.message ??
-						'Could not find the selected recording.',
+					description: 'Could not find the selected recording.',
 				});
 			}
 

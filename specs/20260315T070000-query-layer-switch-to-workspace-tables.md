@@ -261,9 +261,12 @@ export const workspaceRecordings = createWorkspaceRecordings();
 
 ### Phase 4: Handle transformation runs (incremental)
 
-- [ ] **4.1** Create `$lib/state/workspace-transformation-runs.svelte.ts` for new runs
+- [x] **4.1** Create `$lib/state/workspace-transformation-runs.svelte.ts` for new runs
+  > Created with getByTransformationId(), getByRecordingId(), getLatestByRecordingId() helpers
 - [ ] **4.2** Wire new transformation run creation to workspace tables
-- [ ] **4.3** Keep `db.runs.getByTransformationId` / `db.runs.getByRecordingId` as fallback for historical runs not in workspace tables
+  > Deferred — the run lifecycle (create → addStep → completeStep/failStep → complete) is deeply coupled to DbService. Requires refactoring `runTransformation()` in transformer.ts.
+- [x] **4.3** Keep `db.runs.getByTransformationId` / `db.runs.getByRecordingId` as fallback for historical runs not in workspace tables
+  > Kept. Also switched recording read in transformer.ts from DbService to workspaceRecordings.get().
 
 ### Phase 5: Cleanup
 

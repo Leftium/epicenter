@@ -1,10 +1,3 @@
-export type {
-	ContentMode,
-	RichTextEntry,
-	SheetEntry,
-	TextEntry,
-	TimelineEntry,
-} from './entries.js';
 export { computeMidpoint, generateInitialOrders } from '../shared/fractional-index.js';
 export {
 	parseSheetFromCsv,
@@ -12,7 +5,12 @@ export {
 } from './sheet.js';
 export {
 	createTimeline,
+	type ContentMode,
+	type RichTextEntry,
+	type SheetEntry,
+	type TextEntry,
 	type Timeline,
+	type TimelineEntry,
 	type ValidatedEntry,
 } from './timeline.js';
 export {

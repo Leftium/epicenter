@@ -1,10 +1,4 @@
 import * as Y from 'yjs';
-import type {
-	ContentMode,
-	RichTextEntry,
-	SheetEntry,
-	TextEntry,
-} from './entries.js';
 import {
 	populateFragmentFromText,
 	type SheetBinding,
@@ -13,6 +7,36 @@ import {
 import { parseSheetFromCsv, serializeSheetToCsv } from './sheet.js';
 
 type TimelineYMap = Y.Map<unknown>;
+
+// ── Entry types ──────────────────────────────────────────────────────────
+
+/**
+ * Timeline entry shapes — a discriminated union on 'mode'.
+ * These describe the extracted, typed form of what's stored in Y.Maps.
+ * At runtime, entries are Y.Map instances; push functions construct them
+ * and readEntry validates/extracts them into these shapes.
+ */
+export type TextEntry = {
+	mode: 'text';
+	content: Y.Text;
+	createdAt: number;
+};
+export type RichTextEntry = {
+	mode: 'richtext';
+	content: Y.XmlFragment;
+	frontmatter: Y.Map<unknown>;
+	createdAt: number;
+};
+export type SheetEntry = {
+	mode: 'sheet';
+	columns: Y.Map<Y.Map<string>>;
+	rows: Y.Map<Y.Map<string>>;
+	createdAt: number;
+};
+export type TimelineEntry = TextEntry | RichTextEntry | SheetEntry;
+
+/** Content modes supported by timeline entries. */
+export type ContentMode = TimelineEntry['mode'];
 
 export type Timeline = {
 	/** The Y.Doc this timeline is bound to. */
@@ -87,21 +111,7 @@ export type Timeline = {
 	restoreFromSnapshot(snapshotBinary: Uint8Array): void;
 };
 
-export type ValidatedEntry =
-	| { mode: 'text'; content: Y.Text; createdAt: number }
-	| {
-			mode: 'richtext';
-			content: Y.XmlFragment;
-			frontmatter: Y.Map<unknown>;
-			createdAt: number;
-	  }
-	| {
-			mode: 'sheet';
-			columns: Y.Map<Y.Map<string>>;
-			rows: Y.Map<Y.Map<string>>;
-			createdAt: number;
-	  }
-	| { mode: 'empty' };
+export type ValidatedEntry = TimelineEntry | { mode: 'empty' };
 
 export function createTimeline(ydoc: Y.Doc): Timeline {
 	const timeline = ydoc.getArray<TimelineYMap>('timeline');
@@ -129,7 +139,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		const createdAt = Date.now();
 		entry.set('createdAt', createdAt);
 		timeline.push([entry]);
-		return { type: 'text', content: ytext, createdAt };
+		return { mode: 'text', content: ytext, createdAt };
 	}
 
 	function pushSheet(): SheetEntry {
@@ -142,7 +152,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		const createdAt = Date.now();
 		entry.set('createdAt', createdAt);
 		timeline.push([entry]);
-		return { type: 'sheet', columns, rows, createdAt };
+		return { mode: 'sheet', columns, rows, createdAt };
 	}
 
 	function pushRichtext(): RichTextEntry {
@@ -155,7 +165,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		const createdAt = Date.now();
 		entry.set('createdAt', createdAt);
 		timeline.push([entry]);
-		return { type: 'richtext', content, frontmatter, createdAt };
+		return { mode: 'richtext', content, frontmatter, createdAt };
 	}
 
 	function pushSheetFromCsv(csv: string): SheetEntry {
@@ -169,7 +179,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		const createdAt = Date.now();
 		entry.set('createdAt', createdAt);
 		timeline.push([entry]);
-		return { type: 'sheet', columns, rows, createdAt };
+		return { mode: 'sheet', columns, rows, createdAt };
 	}
 
 	function replaceCurrentText(content: string): void {

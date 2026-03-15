@@ -7,10 +7,10 @@ import { rpc } from '$lib/query';
 import { defineMutation, queryClient } from '$lib/query/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { desktopServices, services } from '$lib/services';
-import type { Recording } from '$lib/services/db';
+import type { Recording } from '$lib/state/workspace-recordings.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
-import { db } from './db';
+import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
 import { notify } from './notify';
 
 const transcriptionKeys = {
@@ -51,61 +51,18 @@ export const transcription = {
 				});
 			}
 
-			const { error: setRecordingTranscribingError } =
-				await db.recordings.update({
-					...recording,
-					transcriptionStatus: 'TRANSCRIBING',
-				});
-			if (setRecordingTranscribingError) {
-				notify.warning({
-					title:
-						'⚠️ Unable to set recording transcription status to transcribing',
-					description: 'Continuing with the transcription process...',
-					action: {
-						type: 'more-details',
-						error: setRecordingTranscribingError,
-					},
-				});
-			}
+			workspaceRecordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
 			const { data: transcribedText, error: transcribeError } =
 				await transcribeBlob(audioBlob);
 			if (transcribeError) {
-				const { error: setRecordingTranscribingError } =
-					await db.recordings.update({
-						...recording,
-						transcriptionStatus: 'FAILED',
-					});
-				if (setRecordingTranscribingError) {
-					notify.warning({
-						title: '⚠️ Unable to update recording after transcription',
-						description:
-							"Transcription failed but unable to update recording's transcription status in database",
-						action: {
-							type: 'more-details',
-							error: setRecordingTranscribingError,
-						},
-					});
-				}
+				workspaceRecordings.update(recording.id, { transcriptionStatus: 'FAILED' });
 				return Err(transcribeError);
 			}
 
-			const { error: setRecordingTranscribedTextError } =
-				await db.recordings.update({
-					...recording,
-					transcribedText,
-					transcriptionStatus: 'DONE',
-				});
-			if (setRecordingTranscribedTextError) {
-				notify.warning({
-					title: '⚠️ Unable to update recording after transcription',
-					description:
-						"Transcription completed but unable to update recording's transcribed text and status in database",
-					action: {
-						type: 'more-details',
-						error: setRecordingTranscribedTextError,
-					},
-				});
-			}
+			workspaceRecordings.update(recording.id, {
+				transcribedText,
+				transcriptionStatus: 'DONE',
+			});
 			return Ok(transcribedText);
 		},
 	}),

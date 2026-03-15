@@ -248,11 +248,16 @@ export const workspaceRecordings = createWorkspaceRecordings();
 
 ### Phase 3: Switch component writes from TanStack mutations to direct workspace writes
 
-- [ ] **3.1** Replace `db.recordings.create.mutate()` calls with `workspaceRecordings.set(recording)` — no invalidation needed
-- [ ] **3.2** Replace `db.recordings.update.mutate()` with `workspaceRecordings.set(recording)` — same write, observer handles UI update
-- [ ] **3.3** Replace `db.recordings.delete.mutate()` with `workspaceRecordings.delete(id)` — add audio URL cleanup before delete
-- [ ] **3.4** Same for transformation create/update/delete
+- [x] **3.1** Replace `db.recordings.create.mutate()` calls with `workspaceRecordings.set(recording)` — no invalidation needed
+  > processRecordingPipeline: metadata to workspace, audio blob still saved to DbService
+- [x] **3.2** Replace `db.recordings.update.mutate()` with `workspaceRecordings.update()` — same write, observer handles UI update
+  > transcription.ts: all 3 update calls switched to workspaceRecordings.update()
+- [x] **3.3** Replace `db.recordings.delete.mutate()` with `workspaceRecordings.delete(id)` — add audio URL cleanup before delete
+  > recording-actions.ts, recordings page, home page: sync delete + revokeAudioUrl
+- [x] **3.4** Same for transformation create/update/delete
+  > Deletes switched (transformations page bulk delete, TransformationRowActions). Create/update deferred — Editor component uses old dot-notation field names incompatible with workspace flat schema. Transformation create/update still goes through TanStack Query mutations during transition.
 - [ ] **3.5** Same for transformation step create/update/delete (these were previously nested in transformation objects — now they're their own table)
+  > Deferred — requires Editor component refactor to use flat field names and separate steps table. The old `TransformationStepV2` uses dot-notation keys (`'prompt_transform.inference.provider'`), workspace table uses flat keys (`inferenceProvider`). This is a follow-up spec.
 
 ### Phase 4: Handle transformation runs (incremental)
 

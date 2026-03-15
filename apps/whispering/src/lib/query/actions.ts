@@ -4,11 +4,13 @@ import { rpc } from '$lib/query';
 import { defineMutation } from '$lib/query/client';
 import { WhisperingErr } from '$lib/result';
 import { DbError } from '$lib/services/db';
+import { services } from '$lib/services';
+import { workspaceRecordings } from '$lib/state/workspace-recordings.svelte';
+import { workspaceTransformations } from '$lib/state/workspace-transformations.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
-import { db } from './db';
 import { delivery } from './delivery';
 import { notify } from './notify';
 import { recorder } from './recorder';
@@ -508,16 +510,8 @@ export const commands = {
 				});
 			}
 
-			// Get the transformation
-			const { data: transformation, error: getTransformationError } =
-				await db.transformations.getById(() => transformationId).fetch();
-
-			if (getTransformationError) {
-				return WhisperingErr({
-					title: '❌ Failed to get transformation',
-					serviceError: getTransformationError,
-				});
-			}
+			// Get the transformation from workspace state
+			const transformation = workspaceTransformations.get(transformationId);
 
 			if (!transformation) {
 				workspaceSettings.set('transformation.selectedId', null);
@@ -636,8 +630,9 @@ async function processRecordingPipeline({
 		description: 'Your recording is being transcribed...',
 	});
 
-	// Start both operations in parallel
-	const savePromise = db.recordings.create({ recording, audio: blob });
+	// Save metadata to workspace (instant) and audio blob to DbService (async)
+	workspaceRecordings.set(recording);
+	const saveAudioPromise = services.db.recordings.create({ recording, audio: blob });
 	const transcribePromise = transcribeBlob(blob);
 
 	// Await transcription first (latency-critical path)
@@ -645,46 +640,37 @@ async function processRecordingPipeline({
 		await transcribePromise;
 
 	if (transcribeError) {
-		// Transcription failed - still check save for proper cleanup
-		const { error: saveError } = await savePromise;
-		if (!saveError) {
-			await db.recordings.update({
-				...recording,
-				transcriptionStatus: 'FAILED',
-			});
-		}
+		// Transcription failed - update status
+		workspaceRecordings.update(recording.id, { transcriptionStatus: 'FAILED' });
 		if (transcribeError.name === 'WhisperingError') {
 			notify.error({ id: transcribeToastId, ...transcribeError });
 			return;
 		}
 		notify.error({
 			id: transcribeToastId,
-			title: '❌ Failed to transcribe recording',
+			title: '\u274C Failed to transcribe recording',
 			description: 'Your recording could not be transcribed.',
 			action: { type: 'more-details', error: transcribeError },
 		});
 		return;
 	}
 
-	// Transcription succeeded - deliver text immediately (don't wait for save)
+	// Transcription succeeded - deliver text immediately
 	sound.playSoundIfEnabled('transcriptionComplete');
 	await delivery.deliverTranscriptionResult({
 		text: transcribedText,
 		toastId: transcribeToastId,
 	});
 
-	// Now check save result (best-effort)
-	const { error: saveError } = await savePromise;
-	if (saveError) {
+	// Check audio save result (best-effort)
+	const { error: saveAudioError } = await saveAudioPromise;
+	if (saveAudioError) {
 		notify.warning({
 			id: toastId,
-			title: '⚠️ Recording not saved',
-			description:
-				'Your text was delivered but the recording was not saved to history.',
-			action: { type: 'more-details', error: saveError },
+			title: '\u26A0\uFE0F Audio not saved',
+			description: 'Transcription delivered but audio blob was not saved.',
+			action: { type: 'more-details', error: saveAudioError },
 		});
-		// Can't update recording since it wasn't saved - skip transformation too
-		return;
 	}
 
 	// Save succeeded - show completion toast and update recording
@@ -694,43 +680,19 @@ async function processRecordingPipeline({
 		description: completionDescription,
 	});
 
-	const { error: updateError } = await db.recordings.update({
-		...recording,
+	workspaceRecordings.update(recording.id, {
 		transcribedText,
 		transcriptionStatus: 'DONE',
 	});
-
-	if (updateError) {
-		notify.warning({
-			title: '⚠️ Unable to save transcription',
-			description: "Transcription completed but couldn't save to database",
-			action: { type: 'more-details', error: updateError },
-		});
-	}
 
 	// Determine if we need to chain to transformation
 	const transformationId = workspaceSettings.get('transformation.selectedId');
 
 	// Check if transformation is valid if specified
 	if (!transformationId) return;
-	const { data: transformation, error: getTransformationError } =
-		await db.transformations.getById(() => transformationId).fetch();
+	const transformation = workspaceTransformations.get(transformationId);
 
-	const transformationNoLongerExists = !transformation;
-
-	if (getTransformationError) {
-		notify.error({
-			title: '❌ Failed to get transformation',
-			description: getTransformationError.message,
-			action: {
-				type: 'more-details',
-				error: getTransformationError,
-			},
-		});
-		return;
-	}
-
-	if (transformationNoLongerExists) {
+	if (!transformation) {
 		workspaceSettings.set('transformation.selectedId', null);
 		notify.warning({
 			title: '⚠️ No matching transformation found',

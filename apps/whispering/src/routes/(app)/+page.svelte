@@ -376,16 +376,9 @@
 						title: 'Delete recording',
 						description: 'Are you sure you want to delete this recording?',
 						confirm: { text: 'Delete', variant: 'destructive' },
-						onConfirm: async () => {
-							const { error } = await rpc.db.recordings.delete(latestRecording);
-							if (error) {
-								rpc.notify.error({
-									title: 'Failed to delete recording!',
-									description: 'Your recording could not be deleted.',
-									action: { type: 'more-details', error },
-								});
-								throw error;
-							}
+						onConfirm: () => {
+							services.db.recordings.revokeAudioUrl(latestRecording.id);
+							workspaceRecordings.delete(latestRecording.id);
 							rpc.notify.success({
 								title: 'Deleted recording!',
 								description: 'Your recording has been deleted.',

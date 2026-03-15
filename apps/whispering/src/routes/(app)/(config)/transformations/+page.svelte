@@ -221,17 +221,9 @@
 						description:
 							'Are you sure you want to delete these transformations?',
 						confirm: { text: 'Delete', variant: 'destructive' },
-						onConfirm: async () => {
-							const { error } = await rpc.db.transformations.delete(
-								selectedTransformationRows.map(({ original }) => original),
-							);
-							if (error) {
-								rpc.notify.error({
-									title: 'Failed to delete transformations!',
-									description: 'Your transformations could not be deleted.',
-									action: { type: 'more-details', error },
-								});
-								throw error;
+						onConfirm: () => {
+							for (const { original } of selectedTransformationRows) {
+								workspaceTransformations.delete(original.id);
 							}
 							rpc.notify.success({
 								title: 'Deleted transformations!',

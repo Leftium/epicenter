@@ -179,16 +179,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		if (timeline.length === 0) return undefined;
 		return timeline.get(timeline.length - 1);
 	}
-
-	function currentType(): ContentType | undefined {
-		const entry = lastEntry();
-		return entry ? (entry.get('type') as ContentType) : undefined;
-	}
-
-	function validated(): TimelineEntry | null {
-		return readEntry(lastEntry());
-	}
-
 	// ── Primitive push ops (closures, not on returned object) ─────────────
 
 	function pushText(content: string): TextEntry {
@@ -251,10 +241,11 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	 * when the type hasn't changed.
 	 */
 	function replaceCurrentText(content: string): void {
-		if (currentType() === 'text') {
+		const entry = lastEntry();
+		if (entry?.get('type') === 'text') {
 			// Same mode: overwrite the existing Y.Text (select-all + paste equivalent).
 			// No new timeline entry—the observer does NOT fire.
-			const ytext = lastEntry()!.get('content') as Y.Text;
+			const ytext = entry.get('content') as Y.Text;
 			ytext.delete(0, ytext.length);
 			ytext.insert(0, content);
 		} else {
@@ -325,14 +316,15 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return timeline.length;
 		},
 		get currentEntry(): TimelineEntry | null {
-			return validated();
+			return readEntry(lastEntry());
 		},
 		get currentType() {
-			return currentType();
+			const entry = lastEntry();
+			return entry ? (entry.get('type') as ContentType) : undefined;
 		},
 
 		read(): string {
-			const entry = validated();
+			const entry = this.currentEntry;
 			if (!entry) return '';
 			switch (entry.type) {
 				case 'text':
@@ -346,7 +338,8 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 		write(text: string) {
 			ydoc.transact(() => {
-				const type = currentType();
+				const type = this.currentType;
+				// Sheet: clear columns/rows and repopulate from CSV
 				if (type === 'sheet') {
 					const entry = lastEntry()!;
 					const columns = entry.get('columns') as Y.Map<Y.Map<string>>;
@@ -354,10 +347,12 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					columns.forEach((_, key) => columns.delete(key));
 					rows.forEach((_, key) => rows.delete(key));
 					parseSheetFromCsv(text, columns, rows);
+				// Richtext: clear fragment and repopulate as paragraphs
 				} else if (type === 'richtext') {
 					const fragment = lastEntry()!.get('content') as Y.XmlFragment;
 					fragment.delete(0, fragment.length);
 					populateFragmentFromText(fragment, text);
+				// Text (or empty): delegate to replaceCurrentText
 				} else {
 					replaceCurrentText(text);
 				}
@@ -366,7 +361,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 		appendText(text: string) {
 			ydoc.transact(() => {
-				const entry = validated();
+				const entry = this.currentEntry;
 				if (!entry) {
 					pushText(text);
 					return;
@@ -383,7 +378,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		},
 
 		asText(): Y.Text {
-			const entry = validated();
+			const entry = this.currentEntry;
 			if (!entry) return ydoc.transact(() => pushText('')).content;
 			switch (entry.type) {
 				case 'text':
@@ -400,7 +395,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		},
 
 		asRichText(): Y.XmlFragment {
-			const entry = validated();
+			const entry = this.currentEntry;
 			if (!entry) return ydoc.transact(() => pushRichtext()).content;
 			switch (entry.type) {
 				case 'richtext':
@@ -425,7 +420,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		},
 
 		asSheet(): SheetBinding {
-			const entry = validated();
+			const entry = this.currentEntry;
 			if (!entry) return ydoc.transact(() => pushSheet());
 			switch (entry.type) {
 				case 'sheet':

@@ -5,7 +5,7 @@
 
 ## Overview
 
-Rename two of the three `EncryptionMode` values: `'plaintext'` → `'unprotected'` and `'unlocked'` → `'active'`. Keep `'locked'` unchanged—it's universally understood and both vault and encryption metaphors agree on its meaning.
+Rename two of the three `EncryptionMode` values: `'plaintext'` → `'none'` and `'unlocked'` → `'active'`. Keep `'locked'` unchanged—it's universally understood and both vault and encryption metaphors agree on its meaning.
 
 ## Motivation
 
@@ -29,16 +29,16 @@ export type EncryptionMode = 'plaintext' | 'locked' | 'unlocked';
 ### Desired State
 
 ```typescript
-export type EncryptionMode = 'unprotected' | 'active' | 'locked';
+export type EncryptionMode = 'none' | 'active' | 'locked';
 ```
 
 | Change | New Name | Meaning | Old Name |
 |---|---|---|---|
-| Rename | `'unprotected'` | No encryption configured. Data stored as raw JSON. | `'plaintext'` |
+| Rename | `'none'` | No encryption configured. Data stored as raw JSON. | `'plaintext'` |
 | Rename | `'active'` | Key in memory. Writes encrypt, reads decrypt. | `'unlocked'` |
 | Keep | `'locked'` | Key cleared. Cache readable, writes throw. | `'locked'` |
 
-Reading `mode === 'active'` immediately communicates "encryption is active." `mode === 'unprotected'` communicates "no encryption at all." `mode === 'locked'` is universally understood—the workspace is locked, writes are blocked, re-authenticate to unlock.
+Reading `mode === 'active'` immediately communicates "encryption is active." `mode === 'none'` communicates "no encryption at all." `mode === 'locked'` is universally understood—the workspace is locked, writes are blocked, re-authenticate to unlock.
 
 ## Research Findings
 
@@ -61,7 +61,7 @@ Most encryption libraries don't have named modes—the caller either has the key
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| `'plaintext'` → | `'unprotected'` | Describes the security posture, not the data format. "Unprotected" is unambiguous—no encryption. |
+| `'plaintext'` → | `'none'` | Descriptive, not editorial. `encryptionMode: 'none'` reads like natural English—"What's the encryption mode? None." Follows standard patterns (`overflow: 'none'`, `display: 'none'`). Avoids the overloaded meaning of `'plaintext'` (both a mode and a data format) without being judgmental like `'unprotected'`. |
 | `'unlocked'` → | `'active'` | Reads naturally: "encryption is active." Removes the ambiguity where `'unlocked'` could mean "encryption is off." |
 | `'locked'` | Keep as-is | Universally understood. `lock()` → `'locked'` and `unlock()` → `'active'` read naturally. No rename needed. |
 | Scope | All occurrences in workspace package + consumers | Mechanical rename via ast-grep + manual JSDoc/comment updates |
@@ -95,12 +95,12 @@ Most encryption libraries don't have named modes—the caller either has the key
 ### ast-grep Strategy
 
 Mechanical renames that ast-grep can handle:
-- String literal: `'plaintext'` → `'unprotected'` (in encryption mode contexts only)
+- String literal: `'plaintext'` → `'none'` (in encryption mode contexts only)
 - String literal: `'unlocked'` → `'active'` (in encryption mode contexts only)
 
 **Note**: `'locked'` does NOT change — no search/replace needed.
 
-**Caution**: `'plaintext'` appears in non-mode contexts (crypto function parameters, test descriptions, JSDoc). ast-grep patterns must be scoped carefully—target `satisfies EncryptionMode`, `mode ===`, and the type definition. Manual pass for JSDoc and comments.
+**Caution**: `'plaintext'` appears in non-mode contexts (crypto function parameters, test descriptions, JSDoc). ast-grep patterns must be scoped carefully—target `satisfies EncryptionMode`, `mode ===`, and the type definition. Manual pass for JSDoc and comments. `'none'` is a common word, so replacements must be strictly scoped to encryption mode contexts.
 
 ## Edge Cases
 
@@ -119,14 +119,16 @@ Error messages containing `'locked'` do NOT need to change (e.g., "Workspace is 
    - `unlock()` → `'active'` reads naturally: "you unlock the workspace and encryption becomes active"
    - **Decision**: Keep `lock()`/`unlock()` as method names. They describe the ACTION; mode names describe the RESULTING STATE.
 
-2. **Is `'unprotected'` too alarming?**
-   - Alternatives: `'open'`, `'none'`, `'passthrough'`
-   - `'unprotected'` clearly communicates the security posture
-   - **Decision**: Keep `'unprotected'`. It's accurate. If you want no encryption, you should know that's what you're getting.
+2. **Why `'none'` over `'unprotected'`?**
+   - `'unprotected'` is editorial—it describes a security *judgment*, not a state. Good enum values describe what IS, not how to feel about it.
+   - `'unprotected'` is grammatically wrong for the type: "Encryption mode is unprotected" doesn't parse. `'none'` does: "Encryption mode is none."
+   - `'none'` follows established patterns: `overflow: 'none'`, `display: 'none'`, `pointerEvents: 'none'`. Developers parse it instantly.
+   - Alternatives considered: `'open'`, `'passthrough'`, `'disabled'`—all weaker than `'none'` for this context.
+   - **Decision**: Use `'none'`. Descriptive, idiomatic, zero ambiguity.
 
 ## Success Criteria
 
-- [ ] `EncryptionMode` type is `'unprotected' | 'active' | 'locked'`
+- [ ] `EncryptionMode` type is `'none' | 'active' | 'locked'`
 - [ ] All tests pass with new mode names
 - [ ] No string literal `'plaintext'` or `'unlocked'` used as mode values anywhere
 - [ ] `'locked'` remains unchanged throughout codebase

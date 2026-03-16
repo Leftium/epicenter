@@ -79,6 +79,17 @@ export type Timeline = {
 	write(text: string): void;
 
 	/**
+	 * Append text to the current entry's content, wrapped in a single transaction.
+	 *
+	 * If the current entry is text, inserts at the end of the existing Y.Text
+	 * without creating a new timeline entry. If the timeline is empty, creates
+	 * a new text entry with the content. If the current entry is a different type
+	 * (richtext/sheet), reads existing content as a string, concatenates, and
+	 * replaces as text.
+	 */
+	appendText(text: string): void;
+
+	/**
 	 * Get current content as Y.Text for editor binding.
 	 *
 	 * If already text type, returns the existing Y.Text. If the timeline is
@@ -377,6 +388,24 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				if (type === 'sheet') replaceCurrentSheet(text);
 				else if (type === 'richtext') replaceCurrentRichtext(text);
 				else replaceCurrentText(text);
+			});
+		},
+
+		appendText(text: string) {
+			ydoc.transact(() => {
+				const entry = validated();
+				if (!entry) {
+					pushText(text);
+					return;
+				}
+				if (entry.type === 'text') {
+					entry.content.insert(entry.content.length, text);
+				} else {
+					const existing = entry.type === 'richtext'
+						? xmlFragmentToPlaintext(entry.content)
+						: serializeSheetToCsv(entry.columns, entry.rows);
+					replaceCurrentText(existing + text);
+				}
 			});
 		},
 

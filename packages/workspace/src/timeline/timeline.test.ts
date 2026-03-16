@@ -617,3 +617,53 @@ describe('createTimeline - batch', () => {
 		expect(tl.read()).toBe('world');
 	});
 });
+
+describe('createTimeline - appendText', () => {
+	test('appendText on empty timeline creates text entry', () => {
+		const tl = setup();
+		tl.appendText('hello');
+		expect(tl.currentType).toBe('text');
+		expect(tl.read()).toBe('hello');
+		expect(tl.length).toBe(1);
+	});
+
+	test('appendText on existing text appends without new entry', () => {
+		const tl = setup();
+		tl.write('hello');
+		expect(tl.length).toBe(1);
+		tl.appendText(' world');
+		expect(tl.read()).toBe('hello world');
+		expect(tl.length).toBe(1);
+	});
+
+	test('appendText on richtext converts to text and appends', () => {
+		const tl = setup();
+		tl.asRichText();
+		tl.write('line one');
+		const before = tl.length;
+		tl.appendText(' appended');
+		expect(tl.read()).toContain('appended');
+		expect(tl.currentType).toBe('text');
+		expect(tl.length).toBe(before + 1);
+	});
+
+	test('appendText on sheet converts to text and appends', () => {
+		const tl = setup();
+		tl.asSheet();
+		tl.write('a,b\n1,2');
+		const before = tl.length;
+		tl.appendText('\nappended');
+		expect(tl.read()).toContain('appended');
+		expect(tl.currentType).toBe('text');
+		expect(tl.length).toBe(before + 1);
+	});
+
+	test('multiple appendText calls accumulate content', () => {
+		const tl = setup();
+		tl.appendText('a');
+		tl.appendText('b');
+		tl.appendText('c');
+		expect(tl.read()).toBe('abc');
+		expect(tl.length).toBe(1);
+	});
+});

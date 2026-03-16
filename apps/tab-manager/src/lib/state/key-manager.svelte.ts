@@ -1,11 +1,21 @@
 /**
- * Key manager — connects auth session to workspace lock/unlock.
+ * Svelte reactive adapter for the framework-agnostic key manager.
  *
- * Delegates the hard parts (HKDF derivation, race protection, mode guards)
- * to the framework-agnostic `createKeyManager()` factory. This file
- * is just the Svelte $effect glue.
+ * This file is the bridge between two independent systems:
  *
- * Call `initKeyManager()` once from an $effect.root context (e.g. App.svelte onMount).
+ * ```
+ * auth.svelte.ts          this file             @epicenter/workspace
+ * ┌──────────────┐    ┌────────────────┐    ┌───────────────────┐
+ * │ encryptionKey │───▶│ $effect watches │───▶│ createKeyManager   │
+ * │ status        │    │ auth state and  │    │ (HKDF, dedup,      │
+ * └──────────────┘    │ calls setKey/   │    │  race protection)  │
+ * │ lock/wipe       │    └───────────────────┘
+ * └────────────────┘
+ * ```
+ *
+ * Neither auth nor the workspace package imports the other—this adapter
+ * is the only coupling point. Kept as a separate module so auth stays
+ * a pure auth concern and createKeyManager stays framework-agnostic.
  */
 
 import { createKeyManager } from '@epicenter/workspace/shared/crypto';
@@ -15,14 +25,33 @@ import { authState } from './auth.svelte';
 const keyManager = createKeyManager(workspaceClient);
 
 /**
- * Initialize the key manager as a root effect.
+ * Start a Svelte `$effect.root` that synchronizes auth state to the
+ * workspace encryption lifecycle.
  *
- * Watches `authState.encryptionKey` and `authState.status` reactively.
- * When the key appears, connects. On sign-out, wipes local data. Otherwise, soft-locks.
+ * Creates an independent reactive scope (not tied to any component's
+ * initialization phase) that watches `authState.encryptionKey` and
+ * `authState.status`. When auth state changes:
+ * - **Key appears** → `setKey()` derives the HKDF workspace key and unlocks
+ * - **Signing out** → `wipe()` destroys local encrypted data
+ * - **Otherwise** → `lock()` soft-locks (data preserved, writes blocked)
  *
- * @returns Cleanup function (call from onMount cleanup)
+ * Uses `$effect.root` because this is called from `onMount`, which runs
+ * after the component's synchronous initialization phase—no implicit
+ * component owner exists at that point.
+ *
+ * @returns Cleanup function that tears down the reactive scope. Call from
+ *   `onMount`'s teardown to stop watching auth state on unmount.
+ *
+ * @example
+ * ```typescript
+ * // In App.svelte
+ * onMount(() => {
+ *   const cleanup = syncAuthToEncryption();
+ *   return () => cleanup();
+ * });
+ * ```
  */
-export function initKeyManager() {
+export function syncAuthToEncryption() {
 	return $effect.root(() => {
 		$effect(() => {
 			const key = authState.encryptionKey;

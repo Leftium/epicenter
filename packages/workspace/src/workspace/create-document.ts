@@ -92,16 +92,18 @@ type DocEntry = {
 /**
  * Create a handle from a pre-built timeline and its resolved extensions.
  *
- * The handle IS the timeline with `exports` stapled on.
+ * The handle IS the timeline with `extensions` and `timeline` (self-ref) stapled on.
  * `Object.assign` preserves Timeline's getters since it mutates
  * the target (the timeline object) rather than spreading.
  */
 function makeHandle(
+	id: string,
 	timeline: Timeline,
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Extension<any>>,
+	whenReady: Promise<void>,
 ): DocumentHandle {
-	return Object.assign(timeline, { exports: extensions });
+	return Object.assign(timeline, { id, timeline, extensions, whenReady });
 }
 
 /**
@@ -138,6 +140,16 @@ export type CreateDocumentsConfig<TRow extends BaseRow> = {
 	 * Default: close (free memory, preserve persisted data).
 	 */
 	onRowDeleted?: (documents: Documents<TRow>, guid: string) => void;
+	/**
+	 * Workspace awareness helper, passed through to dual-registered extension contexts.
+	 * Available at document scope so factories like sync can propagate cursor positions.
+	 */
+	awareness?: unknown;
+	/**
+	 * Workspace definitions, passed through to dual-registered extension contexts.
+	 * Available at document scope for schema introspection.
+	 */
+	definitions?: Record<string, unknown>;
 };
 
 /**
@@ -165,6 +177,8 @@ export function createDocuments<TRow extends BaseRow>(
 		documentExtensions = [],
 		documentTags = [],
 		onRowDeleted,
+		awareness,
+		definitions,
 	} = config;
 
 	const openDocuments = new Map<string, DocEntry>();
@@ -249,6 +263,9 @@ export function createDocuments<TRow extends BaseRow>(
 								? Promise.resolve()
 								: Promise.all(whenReadyPromises).then(() => {}),
 						extensions: { ...resolvedExtensions },
+						// Workspace fields for dual-registered extensions (SharedExtensionContext)
+						awareness,
+						definitions,
 					};
 					const raw = factory(ctx);
 					if (!raw) continue;
@@ -309,11 +326,15 @@ export function createDocuments<TRow extends BaseRow>(
 			const unobserve = () => contentYdoc.off('update', updateHandler);
 
 			// Cache entry SYNCHRONOUSLY before any promise resolution
+			const compositeWhenReady: Promise<void> =
+				whenReadyPromises.length === 0
+					? Promise.resolve()
+					: Promise.all(whenReadyPromises).then(() => {});
+			const handle = makeHandle(id, timeline, resolvedExtensions, compositeWhenReady);
 			const whenReady =
 				whenReadyPromises.length === 0
-					? Promise.resolve(makeHandle(timeline, resolvedExtensions))
-					: Promise.all(whenReadyPromises)
-							.then(() => makeHandle(timeline, resolvedExtensions))
+					? Promise.resolve(handle)
+					: compositeWhenReady.then(() => handle)
 							.catch(async (err) => {
 								// If any provider's whenReady rejects, clean up everything (LIFO)
 								const errors: unknown[] = [];

@@ -286,7 +286,7 @@ describe('createDocuments', () => {
 		});
 	});
 
-	describe('handle.exports', () => {
+	describe('handle.extensions', () => {
 		test('returns accumulated exports keyed by extension name', async () => {
 			const { documents } = setup({
 				documentExtensions: [
@@ -302,9 +302,9 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			expect(handle.exports).toBeDefined();
-			expect(handle.exports.persistence).toBeDefined();
-			expect(typeof handle.exports.persistence?.clearData).toBe('function');
+			expect(handle.extensions).toBeDefined();
+			expect(handle.extensions.persistence).toBeDefined();
+			expect(typeof handle.extensions.persistence?.clearData).toBe('function');
 		});
 
 		test('lifecycle-only extension is accessible with whenReady and destroy', async () => {
@@ -321,8 +321,8 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			expect(handle.exports).toBeDefined();
-			const ext = handle.exports['lifecycle-only'];
+			expect(handle.extensions).toBeDefined();
+			const ext = handle.extensions['lifecycle-only'];
 			expect(ext).toBeDefined();
 			expect(ext?.whenReady).toBeInstanceOf(Promise);
 			expect(typeof ext?.destroy).toBe('function');
@@ -350,8 +350,8 @@ describe('createDocuments', () => {
 			tables.files.set(row);
 
 			const handle = await documents.open(row);
-			expect(handle.exports).toBeDefined();
-			expect(typeof handle.exports.test?.helper).toBe('function');
+			expect(handle.extensions).toBeDefined();
+			expect(typeof handle.extensions.test?.helper).toBe('function');
 		});
 	});
 
@@ -724,7 +724,7 @@ describe('createDocuments', () => {
 			expect(firstExtensionSeen).toBe(true);
 		});
 
-		test('handle.exports includes flat exports from extensions', async () => {
+		test('handle.extensions includes flat exports from extensions', async () => {
 			const { documents } = setup({
 				documentExtensions: [
 					{
@@ -739,11 +739,11 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			expect(handle.exports).toBeDefined();
-			if (!handle.exports.test) {
-				throw new Error('Expected exports for test extension');
+			expect(handle.extensions).toBeDefined();
+			if (!handle.extensions.test) {
+				throw new Error('Expected extensions for test extension');
 			}
-			expect(typeof handle.exports.test.helper).toBe('function');
+			expect(typeof handle.extensions.test.helper).toBe('function');
 		});
 	});
 });

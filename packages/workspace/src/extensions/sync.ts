@@ -3,7 +3,7 @@ import {
 	type SyncProvider,
 	type SyncStatus,
 } from '@epicenter/sync-client';
-import type { ExtensionFactory } from '../workspace/types';
+import type { SharedExtensionFactory } from '../workspace/types';
 
 /**
  * Sync extension configuration.
@@ -103,7 +103,7 @@ export type SyncExtensionExports = {
 
 export function createSyncExtension(
 	config: SyncExtensionConfig,
-): ExtensionFactory<SyncExtensionExports> {
+): SharedExtensionFactory<SyncExtensionExports> {
 	return ({ ydoc, awareness, whenReady: priorReady }) => {
 		const workspaceId = ydoc.guid;
 
@@ -119,7 +119,7 @@ export function createSyncExtension(
 			getToken: config.getToken
 				? () => config.getToken!(workspaceId)
 				: undefined,
-			awareness: awareness.raw,
+			awareness: awareness?.raw,
 		});
 
 		// Wait for all prior extensions (persistence, etc.) then connect.

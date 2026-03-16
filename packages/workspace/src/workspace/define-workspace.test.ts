@@ -79,8 +79,8 @@ describe('defineWorkspace', () => {
 		// Mock extension with custom exports
 		const mockExtension = (_context: {
 			ydoc: Y.Doc;
-			tables: unknown;
-			kv: unknown;
+			tables?: unknown;
+			kv?: unknown;
 		}) => ({
 			customMethod: () => 'hello',
 		});

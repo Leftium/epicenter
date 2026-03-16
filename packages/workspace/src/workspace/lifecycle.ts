@@ -55,8 +55,6 @@
  * ```
  */
 
-import type * as Y from 'yjs';
-import type { Timeline } from '../timeline/timeline.js';
 
 /**
  * A value that may be synchronous or wrapped in a Promise.
@@ -212,99 +210,3 @@ export function defineExtension<T extends Record<string, unknown>>(
 		destroy: input.destroy ?? (() => {}),
 	} as Extension<Omit<T, 'whenReady' | 'destroy'>>;
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT CONTEXT — Passed to document extension factories
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Context passed to document extension factories registered via `withDocumentExtension()`.
- *
- * Follows the same "client-so-far" pattern as workspace-level `ExtensionContext`:
- * factories receive everything the document has at this point, minus lifecycle control.
- * The `timeline` provides the content abstraction (read/write/mode conversion),
- * while `ydoc` remains available as an escape hatch for binary-level operations
- * (persistence, sync).
- *
- * ```typescript
- * .withDocumentExtension('persistence', ({ ydoc }) => { ... })
- * .withDocumentExtension('sync', ({ id, ydoc, timeline, whenReady }) => { ... })
- * ```
- *
- * Extensions are optional because tag-filtered extensions may be skipped for certain
- * document types. Factories should guard access with optional chaining.
- *
- * Does NOT include `destroy` or `[Symbol.asyncDispose]` — factories return
- * their own lifecycle hooks, they don't control the document's.
- *
- * @typeParam TDocExtensions - Accumulated document extension exports from prior
- *   `.withDocumentExtension()` calls. Defaults to `Record<string, unknown>` so
- *   `DocumentExtensionRegistration` can store factories with the wide type.
- *
- * @example
- * ```typescript
- * .withDocumentExtension('sync', ({ id, ydoc, timeline, whenReady, extensions }) => {
- *   const path = `${id}/${ydoc.guid}.yjs`;
- *
- *   // Use timeline for content-aware operations
- *   const type = timeline.currentType; // 'text' | 'richtext' | 'sheet' | undefined
- *   timeline.observe(() => {
- *     // React to mode changes (e.g., text → richtext)
- *   });
- *
- *   // Access prior document extension exports + lifecycle directly
- *   await extensions.persistence?.whenReady;
- *   extensions.persistence?.clearData();
- *
- *   // Composite: await ALL prior doc extensions
- *   await whenReady;
- * })
- * ```
- */
-export type DocumentContext<
-	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = {
-	/** The workspace identifier. Matches ExtensionContext.id. */
-	id: string;
-	/** The content Y.Doc being created. */
-	/** The content Y.Doc being created. Escape hatch for binary-level operations. */
-	ydoc: Y.Doc;
-	/**
-	 * The content timeline—read, write, observe mode changes, bind editors.
-	 *
-	 * This is the same Timeline that becomes the `DocumentHandle` after all
-	 * extensions resolve. Created before extension factories run, so it's
-	 * always available.
-	 *
-	 * @example
-	 * ```typescript
-	 * .withDocumentExtension('indexer', ({ timeline }) => {
-	 *   const type = timeline.currentType;
-	 *   const text = timeline.read();
-	 *   timeline.observe(() => { reindex(timeline.read()); });
-	 * })
-	 * ```
-	 */
-	timeline: Timeline;
-	/** Composite whenReady of all PRIOR document extensions' results. */
-	whenReady: Promise<void>;
-	/**
-	 * Typed access to prior document extensions (resolved form with lifecycle hooks).
-	 *
-	 * Each entry is optional because tag-filtered extensions may be skipped.
-	 * Factories should guard access with optional chaining.
-	 *
-	 * @example
-	 * ```typescript
-	 * await extensions.persistence?.whenReady;
-	 * extensions.persistence?.clearData();
-	 * ```
-	 */
-	extensions: {
-		[K in keyof TDocExtensions]?: Extension<
-			TDocExtensions[K] extends Record<string, unknown>
-				? TDocExtensions[K]
-				: Record<string, never>
-		>;
-	};
-};

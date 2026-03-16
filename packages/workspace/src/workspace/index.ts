@@ -71,11 +71,11 @@ export {
 export { ExtensionError } from '../shared/errors.js';
 // Lifecycle protocol
 export type {
-	DocumentContext,
 	Extension,
 	Lifecycle,
 	MaybePromise,
-} from './lifecycle.js';
+	} from './lifecycle.js';
+export type { DocumentContext } from './types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
@@ -139,6 +139,7 @@ export type {
 	BaseRow,
 	DeleteResult,
 	// Document types
+	DocumentClient,
 	DocumentConfig,
 	DocumentHandle,
 	Documents,
@@ -146,6 +147,8 @@ export type {
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,
+	SharedExtensionContext,
+	SharedExtensionFactory,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,

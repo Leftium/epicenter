@@ -10,8 +10,8 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
-import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
 import type { Timeline } from '../timeline/timeline.js';
+import type { Extension, MaybePromise } from './lifecycle.js';
 
 // Re-export JSON types for consumers
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
@@ -244,30 +244,103 @@ export type ClaimedDocumentColumns<
 	TDocuments extends Record<string, DocumentConfig>,
 > = TDocuments[keyof TDocuments]['guid'];
 
+// ════════════════════════════════════════════════════════════════════════════
+// DOCUMENT CLIENT — The document's API surface (mirrors WorkspaceClient)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * The full API surface of an open content document.
+ *
+ * Mirrors `WorkspaceClient` for consistency: the document's core type that
+ * `DocumentContext` derives from via `Omit`. Extends `Timeline` so all
+ * content operations (read, write, mode conversion) are available directly.
+ *
+ * @typeParam TDocExtensions - Accumulated document extension exports
+ */
+export type DocumentClient<
+	TDocExtensions extends Record<string, unknown> = Record<string, never>,
+> = Timeline & {
+	/** The workspace identifier. */
+	id: string;
+	/**
+	 * Self-reference for destructuring convenience.
+	 *
+	 * The document client IS the timeline (via intersection). This property
+	 * allows factories to destructure `({ timeline })` and get the same object.
+	 */
+	timeline: Timeline;
+	/**
+	 * Accumulated document extension exports with lifecycle hooks.
+	 *
+	 * Each entry is optional because tag-filtered extensions may be skipped
+	 * for certain document types. Guard access with optional chaining.
+	 */
+	extensions: {
+		[K in keyof TDocExtensions]?: Extension<
+			TDocExtensions[K] extends Record<string, unknown>
+				? TDocExtensions[K]
+				: Record<string, unknown>
+		>;
+	};
+	/** Composite whenReady of all document extensions. */
+	whenReady: Promise<void>;
+	/** Cleanup all document extension resources. */
+	destroy(): Promise<void>;
+};
+
+/**
+ * Context passed to document extension factories registered via `withDocumentExtension()`.
+ *
+ * Picks the fields factories need from `DocumentClient` without inheriting the
+ * `Timeline` intersection. This preserves the HAS-A relationship (`ctx.timeline`)
+ * rather than IS-A (`ctx.read()`), matching how factories actually destructure:
+ *
+ * ```typescript
+ * .withDocumentExtension('persistence', ({ ydoc }) => { ... })
+ * .withDocumentExtension('sync', ({ id, ydoc, timeline, whenReady }) => { ... })
+ * ```
+ *
+ * Uses `Pick` instead of `Omit<DocumentClient, 'destroy'>` because `DocumentClient`
+ * extends `Timeline` (the handle IS a timeline), but factory contexts have `timeline`
+ * as a field (factories destructure `{ timeline }`, not `{ read, write }`).
+ *
+ * @typeParam TDocExtensions - Accumulated document extension exports from prior calls.
+ *   Defaults to `Record<string, unknown>` so `DocumentExtensionRegistration` can
+ *   store factories with the wide type.
+ */
+export type DocumentContext<
+	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
+> = Pick<
+	DocumentClient<TDocExtensions>,
+	'id' | 'ydoc' | 'timeline' | 'extensions' | 'whenReady'
+>;
+
 /**
  * A handle to an open content Y.Doc, returned by `documents.open()`.
  *
- * The handle IS the timeline—all push, read, write, and mode conversion
- * methods are available directly. The only addition over a bare `Timeline`
- * is `exports` for per-doc extension methods.
+ * Computed from `DocumentClient` minus lifecycle control. The handle IS the
+ * timeline—all read, write, and mode conversion methods are available directly.
+ * Extension exports are accessed via `handle.extensions`.
+ *
+ * When `TDocExtensions` is specified (after generic threading), extension access
+ * is fully typed. Without generics, extensions are accessible but untyped.
+ *
+ * @typeParam TDocExtensions - Accumulated document extension exports.
+ *   Defaults to `Record<string, unknown>` for untyped access.
  *
  * @example
  * ```typescript
  * const handle = await documents.open(id);
- * handle.read();            // read from timeline (always string)
- * handle.write('hello');    // write to timeline (mode-aware)
- * handle.asText();          // Y.Text for editor binding (converts if needed)
- * handle.asRichText();      // Y.XmlFragment for richtext binding (converts if needed)
- * handle.asSheet();         // Sheet columns/rows (converts if needed)
- * handle.currentType;       // current content type
- * handle.batch(() => {});   // wraps ydoc.transact
- * handle.batch(() => {});   // wraps ydoc.transact
+ * handle.read();                          // read from timeline (always string)
+ * handle.write('hello');                   // write to timeline (mode-aware)
+ * handle.asText();                         // Y.Text for editor binding
+ * handle.currentType;                      // current content type
+ * handle.extensions.persistence?.whenReady; // extension access
  * ```
  */
-export type DocumentHandle = Timeline & {
-	/** Per-doc extension exports. */
-	exports: Record<string, Record<string, unknown>>;
-};
+export type DocumentHandle<
+	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
+> = Omit<DocumentClient<TDocExtensions>, 'destroy'>;
 
 /**
  * Runtime manager for a table's associated content Y.Docs.
@@ -289,7 +362,7 @@ export type DocumentHandle = Timeline & {
  * await documents.close(row);
  * ```
  */
-export type Documents<TRow extends BaseRow> = {
+export type Documents<TRow extends BaseRow, TDocExtensions extends Record<string, unknown> = Record<string, unknown>> = {
 	/**
 	 * Open a content Y.Doc for a row.
 	 *
@@ -299,7 +372,7 @@ export type Documents<TRow extends BaseRow> = {
 	 *
 	 * @param input - A row (extracts GUID from the bound column) or a GUID string
 	 */
-	open(input: TRow | string): Promise<DocumentHandle>;
+	open(input: TRow | string): Promise<DocumentHandle<TDocExtensions>>;
 
 	/**
 	 * Close a document — free memory, disconnect providers.
@@ -333,12 +406,12 @@ export type HasDocuments<T> = T extends { documents: infer TDocuments }
  * Maps each doc name to a `Documents<TLatest>` where `TLatest` is the
  * table's latest row type (inferred from the `migrate` function's return type).
  */
-export type DocumentsOf<T> = T extends {
+export type DocumentsOf<T, TDocExtensions extends Record<string, unknown> = Record<string, unknown>> = T extends {
 	documents: infer TDocuments;
 	migrate: (...args: never[]) => infer TLatest;
 }
 	? TLatest extends BaseRow
-		? { [K in keyof TDocuments]: Documents<TLatest> }
+		? { [K in keyof TDocuments]: Documents<TLatest, TDocExtensions> }
 		: never
 	: never;
 
@@ -357,12 +430,12 @@ export type DocumentsOf<T> = T extends {
  * client.documents.tags // Property 'tags' does not exist
  * ```
  */
-export type DocumentsHelper<TTableDefinitions extends TableDefinitions> = {
+export type DocumentsHelper<TTableDefinitions extends TableDefinitions, TDocExtensions extends Record<string, unknown> = Record<string, unknown>> = {
 	[K in keyof TTableDefinitions as HasDocuments<
 		TTableDefinitions[K]
 	> extends true
 		? K
-		: never]: DocumentsOf<TTableDefinitions[K]>;
+		: never]: DocumentsOf<TTableDefinitions[K], TDocExtensions>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -875,12 +948,14 @@ export type WorkspaceClientWithActions<
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown>,
 	TActions extends Actions,
+	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = WorkspaceClient<
 	TId,
 	TTableDefs,
 	TKvDefs,
 	TAwarenessDefinitions,
-	TExtensions
+	TExtensions,
+	TDocExtensions
 > & {
 	actions: TActions;
 };
@@ -927,7 +1002,8 @@ export type WorkspaceClientBuilder<
 	TTableDefinitions,
 	TKvDefinitions,
 	TAwarenessDefinitions,
-	TExtensions
+	TExtensions,
+	TDocExtensions
 > & {
 	/**
 	 * Register an extension for BOTH the workspace Y.Doc AND all content document Y.Docs.
@@ -954,7 +1030,7 @@ export type WorkspaceClientBuilder<
 	withExtension<TKey extends string, TExports extends Record<string, unknown>>(
 		key: TKey,
 		factory: (
-			context: ExtensionContext<
+			context: SharedExtensionContext<
 				TId,
 				TTableDefinitions,
 				TKvDefinitions,
@@ -1085,7 +1161,8 @@ export type WorkspaceClientBuilder<
 				TTableDefinitions,
 				TKvDefinitions,
 				TAwarenessDefinitions,
-				TExtensions
+				TExtensions,
+				TDocExtensions
 			>,
 		) => TActions,
 	): WorkspaceClientWithActions<
@@ -1094,7 +1171,8 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions,
-		TActions
+		TActions,
+		TDocExtensions
 	>;
 };
 
@@ -1141,6 +1219,72 @@ export type ExtensionContext<
 >;
 
 /**
+ * Context passed to dual-scope extension factories registered via `withExtension()`.
+ *
+ * Contains all fields from both workspace and document scopes. Workspace-only
+ * fields are optional (undefined at document scope). Document-only fields are
+ * optional (undefined at workspace scope). The type system forces optional
+ * chaining (`?.`) for scope-specific access, preventing runtime crashes.
+ *
+ * For guaranteed access to workspace fields, use `withWorkspaceExtension()`.
+ * For guaranteed access to document fields, use `withDocumentExtension()`.
+ *
+ * ```typescript
+ * .withExtension('sync', ({ ydoc, awareness, whenReady }) => {
+ *   // awareness is AwarenessHelper | undefined — TypeScript forces ?.
+ *   const provider = createSyncProvider({ doc: ydoc, awareness: awareness?.raw });
+ * })
+ * ```
+ *
+ * @typeParam TId - Workspace identifier literal type
+ * @typeParam TTableDefinitions - Table schema definitions
+ * @typeParam TKvDefinitions - KV store definitions
+ * @typeParam TAwarenessDefinitions - Awareness field definitions
+ * @typeParam TExtensions - Accumulated extension exports from prior calls
+ */
+export type SharedExtensionContext<
+	TId extends string = string,
+	TTableDefinitions extends TableDefinitions = TableDefinitions,
+	TKvDefinitions extends KvDefinitions = KvDefinitions,
+	TAwarenessDefinitions extends AwarenessDefinitions = AwarenessDefinitions,
+	TExtensions extends Record<string, unknown> = Record<string, unknown>,
+> = {
+	// ═══ Always available (both scopes) ═══
+	/** Workspace identifier. */
+	id: TId;
+	/** The Y.Doc for this scope (workspace Y.Doc or content Y.Doc). */
+	ydoc: Y.Doc;
+	/** Composite whenReady of all PRIOR extensions in this scope. */
+	whenReady: Promise<void>;
+	/** Prior extension exports in this scope. */
+	extensions: TExtensions;
+
+	// ═══ Workspace scope only (undefined at document scope) ═══
+	/** Workspace definitions for introspection. Undefined at document scope. */
+	definitions?: {
+		tables: TTableDefinitions;
+		kv: TKvDefinitions;
+		awareness: TAwarenessDefinitions;
+	};
+	/** Typed table helpers. Undefined at document scope. */
+	tables?: TablesHelper<TTableDefinitions>;
+	/** Document managers. Undefined at document scope. */
+	documents?: DocumentsHelper<TTableDefinitions>;
+	/** Typed KV helper. Undefined at document scope. */
+	kv?: KvHelper<TKvDefinitions>;
+	/** Workspace awareness. Available at document scope when passed from workspace. */
+	awareness?: AwarenessHelper<TAwarenessDefinitions>;
+	/** Batch mutations into a single Y.js transaction. Undefined at document scope. */
+	batch?: (fn: () => void) => void;
+	/** Apply a binary Y.js update. Undefined at document scope. */
+	loadSnapshot?: (update: Uint8Array) => void;
+
+	// ═══ Document scope only (undefined at workspace scope) ═══
+	/** Content timeline. Undefined at workspace scope. */
+	timeline?: Timeline;
+};
+
+/**
  * Factory function that creates an extension.
  *
  * Returns a flat object with custom exports + optional `whenReady` and `destroy`.
@@ -1167,6 +1311,31 @@ export type ExtensionFactory<
 	destroy?: () => MaybePromise<void>;
 };
 
+/**
+ * Factory function that creates a dual-scope extension (workspace + document).
+ *
+ * Like `ExtensionFactory` but accepts `SharedExtensionContext` — workspace-specific
+ * fields are optional, so the factory must handle their absence. Use this for
+ * extensions registered via `withExtension()` that run in both scopes.
+ *
+ * @example Sync extension with optional awareness
+ * ```typescript
+ * const sync: SharedExtensionFactory<SyncExports> = ({ ydoc, awareness, whenReady }) => {
+ *   const provider = createSyncProvider({ doc: ydoc, awareness: awareness?.raw });
+ *   return { provider, whenReady, destroy: () => provider.destroy() };
+ * };
+ * ```
+ *
+ * @typeParam TExports - The consumer-facing exports object type
+ */
+// biome-ignore lint/suspicious/noExplicitAny: intentional variance-friendly type for factory storage
+export type SharedExtensionFactory<
+	TExports extends Record<string, unknown> = Record<string, unknown>,
+> = (context: SharedExtensionContext<any, any, any, any, any>) => TExports & {
+	whenReady?: Promise<unknown>;
+	destroy?: () => MaybePromise<void>;
+};
+
 /** The workspace client returned by createWorkspace() */
 export type WorkspaceClient<
 	TId extends string,
@@ -1174,6 +1343,7 @@ export type WorkspaceClient<
 	TKvDefinitions extends KvDefinitions,
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown>,
+	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = {
 	/** Workspace identifier */
 	id: TId;
@@ -1188,7 +1358,7 @@ export type WorkspaceClient<
 	/** Typed table helpers — pure CRUD, no document management */
 	tables: TablesHelper<TTableDefinitions>;
 	/** Document managers — only tables with `.withDocument()` appear here */
-	documents: DocumentsHelper<TTableDefinitions>;
+	documents: DocumentsHelper<TTableDefinitions, TDocExtensions>;
 	/** Typed KV helper */
 	kv: KvHelper<TKvDefinitions>;
 	/** Typed awareness helper — always present, like tables and kv */
@@ -1280,6 +1450,6 @@ export type WorkspaceClient<
  * it can't express "might or might not have actions."
  */
 // biome-ignore lint/suspicious/noExplicitAny: intentional variance-friendly type
-export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any, any> & {
+export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any, any, any> & {
 	actions?: Actions;
 };

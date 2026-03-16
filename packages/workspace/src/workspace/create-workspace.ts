@@ -43,7 +43,6 @@ import { createDocuments } from './create-document.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import {
-	type DocumentContext,
 	defineExtension,
 	type MaybePromise,
 } from './lifecycle.js';
@@ -51,11 +50,13 @@ import type {
 	AwarenessDefinitions,
 	BaseRow,
 	DocumentConfig,
+	DocumentContext,
 	DocumentExtensionRegistration,
 	Documents,
 	DocumentsHelper,
 	ExtensionContext,
 	KvDefinitions,
+	SharedExtensionContext,
 	TableDefinitions,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
@@ -201,6 +202,8 @@ export function createWorkspace<
 				ydoc,
 				documentExtensions: documentExtensionRegistrations,
 				documentTags: docTags,
+				awareness,
+				definitions,
 			});
 
 			tableDocumentsNamespace[docName] = documents;
@@ -343,7 +346,7 @@ export function createWorkspace<
 			>(
 				key: TKey,
 				factory: (
-					context: ExtensionContext<
+				context: SharedExtensionContext<
 						TId,
 						TTableDefinitions,
 						TKvDefinitions,
@@ -355,15 +358,23 @@ export function createWorkspace<
 					destroy?: () => MaybePromise<void>;
 				},
 			) {
-				// Register for document Y.Docs (fires lazily at documents.open() time)
+				// Register for document Y.Docs (fires lazily at documents.open() time).
+				// Cast is safe: SharedExtensionContext only uses optional types for workspace-specific
+				// fields (tables?, awareness?, etc.), so the factory handles their absence gracefully.
+				// At document scope, the context satisfies DocumentContext plus optional workspace fields.
 				documentExtensionRegistrations.push({
 					key,
 					factory:
 						factory as unknown as DocumentExtensionRegistration['factory'],
 					tags: [],
 				});
-				// Register for workspace Y.Doc (fires now, synchronously)
-				return applyWorkspaceExtension(key, factory);
+				// Register for workspace Y.Doc (fires now, synchronously).
+				// Cast is safe: at workspace scope, ExtensionContext provides all fields
+				// that SharedExtensionContext declares (optional fields are defined).
+				return applyWorkspaceExtension(
+					key,
+					factory as unknown as Parameters<typeof applyWorkspaceExtension>[1],
+				);
 			},
 
 			withWorkspaceExtension<

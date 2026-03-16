@@ -38,11 +38,11 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
-	DocumentContext,
 	Extension,
 	Lifecycle,
 	MaybePromise,
-} from './workspace/lifecycle';
+	} from './workspace/lifecycle';
+export type { DocumentContext } from './workspace/types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERROR TYPES
@@ -147,12 +147,15 @@ export type {
 	AwarenessState,
 	BaseRow,
 	DeleteResult,
+	DocumentClient,
 	DocumentConfig,
 	DocumentHandle,
 	Documents,
 	DocumentsHelper,
 	ExtensionContext,
 	ExtensionFactory,
+	SharedExtensionContext,
+	SharedExtensionFactory,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,

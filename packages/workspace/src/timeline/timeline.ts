@@ -292,18 +292,26 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		write(text: string) {
 			ydoc.transact(() => {
 				const entry = this.currentEntry;
-				// Sheet: clear columns/rows and repopulate from CSV
-				if (entry?.type === 'sheet') {
-					entry.columns.forEach((_, key) => entry.columns.delete(key));
-					entry.rows.forEach((_, key) => entry.rows.delete(key));
-					parseSheetFromCsv(text, entry);
-				// Richtext: clear fragment and repopulate as paragraphs
-				} else if (entry?.type === 'richtext') {
-					entry.content.delete(0, entry.content.length);
-					populateFragmentFromText(entry.content, text);
-				// Text (or empty): delegate to replaceCurrentText
-				} else {
-					replaceCurrentText(text, entry);
+				if (!entry) {
+					pushText(text);
+					return;
+				}
+				switch (entry.type) {
+					case 'sheet':
+						// Clear columns/rows and repopulate from CSV
+						entry.columns.forEach((_, key) => entry.columns.delete(key));
+						entry.rows.forEach((_, key) => entry.rows.delete(key));
+						parseSheetFromCsv(text, entry);
+						break;
+					case 'richtext':
+						// Clear fragment and repopulate as paragraphs
+						entry.content.delete(0, entry.content.length);
+						populateFragmentFromText(entry.content, text);
+						break;
+					case 'text':
+						// Overwrite existing Y.Text in-place (select-all + paste)
+						replaceCurrentText(text, entry);
+						break;
 				}
 			});
 		},
@@ -315,13 +323,16 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					pushText(text);
 					return;
 				}
-				if (entry.type === 'text') {
-					entry.content.insert(entry.content.length, text);
-				} else {
-					const existing = entry.type === 'richtext'
-						? xmlFragmentToPlaintext(entry.content)
-						: serializeSheetToCsv(entry);
-					replaceCurrentText(existing + text, entry);
+				switch (entry.type) {
+					case 'text':
+						entry.content.insert(entry.content.length, text);
+						break;
+					case 'richtext':
+						replaceCurrentText(xmlFragmentToPlaintext(entry.content) + text, entry);
+						break;
+					case 'sheet':
+						replaceCurrentText(serializeSheetToCsv(entry) + text, entry);
+						break;
 				}
 			});
 		},

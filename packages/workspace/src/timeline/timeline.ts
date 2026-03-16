@@ -168,11 +168,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 	// ── State ─────────────────────────────────────────────────────────────
 
-	function lastEntry(): TimelineYMap | undefined {
-		if (timeline.length === 0) return undefined;
-		return timeline.get(timeline.length - 1);
-	}
-
 	function readEntry(entry: Y.Map<unknown> | undefined): TimelineEntry | null {
 		if (!entry) return null;
 
@@ -253,14 +248,12 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	 * content looks identical to a user paste—no unnecessary timeline growth
 	 * when the type hasn't changed.
 	 */
-	function replaceCurrentText(content: string): void {
-		const entry = lastEntry();
-		if (entry?.get('type') === 'text') {
+	function replaceCurrentText(content: string, current: TimelineEntry | null): void {
+		if (current?.type === 'text') {
 			// Same mode: overwrite the existing Y.Text (select-all + paste equivalent).
 			// No new timeline entry—the observer does NOT fire.
-			const ytext = entry.get('content') as Y.Text;
-			ytext.delete(0, ytext.length);
-			ytext.insert(0, content);
+			current.content.delete(0, current.content.length);
+			current.content.insert(0, content);
 		} else {
 			// Different type (or empty): push a new text entry (type change).
 			pushText(content);
@@ -276,11 +269,11 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return timeline.length;
 		},
 		get currentEntry(): TimelineEntry | null {
-			return readEntry(lastEntry());
+			const last = timeline.length > 0 ? timeline.get(timeline.length - 1) : undefined;
+			return readEntry(last);
 		},
 		get currentType() {
-			const entry = lastEntry();
-			return entry ? (entry.get('type') as ContentType) : undefined;
+			return this.currentEntry?.type;
 		},
 
 		read(): string {
@@ -298,23 +291,19 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 		write(text: string) {
 			ydoc.transact(() => {
-				const entry = lastEntry();
-				const type = entry?.get('type') as ContentType | undefined;
+				const entry = this.currentEntry;
 				// Sheet: clear columns/rows and repopulate from CSV
-				if (type === 'sheet') {
-					const columns = entry!.get('columns') as Y.Map<Y.Map<string>>;
-					const rows = entry!.get('rows') as Y.Map<Y.Map<string>>;
-					columns.forEach((_, key) => columns.delete(key));
-					rows.forEach((_, key) => rows.delete(key));
-					parseSheetFromCsv(text, { columns, rows });
+				if (entry?.type === 'sheet') {
+					entry.columns.forEach((_, key) => entry.columns.delete(key));
+					entry.rows.forEach((_, key) => entry.rows.delete(key));
+					parseSheetFromCsv(text, entry);
 				// Richtext: clear fragment and repopulate as paragraphs
-				} else if (type === 'richtext') {
-					const fragment = entry!.get('content') as Y.XmlFragment;
-					fragment.delete(0, fragment.length);
-					populateFragmentFromText(fragment, text);
+				} else if (entry?.type === 'richtext') {
+					entry.content.delete(0, entry.content.length);
+					populateFragmentFromText(entry.content, text);
 				// Text (or empty): delegate to replaceCurrentText
 				} else {
-					replaceCurrentText(text);
+					replaceCurrentText(text, entry);
 				}
 			});
 		},
@@ -332,7 +321,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					const existing = entry.type === 'richtext'
 						? xmlFragmentToPlaintext(entry.content)
 						: serializeSheetToCsv(entry);
-					replaceCurrentText(existing + text);
+					replaceCurrentText(existing + text, entry);
 				}
 			});
 		},
@@ -436,7 +425,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 						// Y.Text can't transfer between docs—extract the raw string.
 						// replaceCurrentText handles same-mode (in-place) vs cross-mode (push).
 						const text = entry.content.toString();
-						ydoc.transact(() => replaceCurrentText(text));
+						ydoc.transact(() => replaceCurrentText(text, this.currentEntry));
 						break;
 					}
 					case 'sheet': {

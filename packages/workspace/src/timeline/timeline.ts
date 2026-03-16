@@ -218,21 +218,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		timeline.push([entry]);
 		return { type: 'richtext', content, frontmatter, createdAt };
 	}
-
-	function pushSheetFromCsv(csv: string): SheetEntry {
-		const entry = new Y.Map();
-		entry.set('type', 'sheet');
-		const columns = new Y.Map<Y.Map<string>>();
-		const rows = new Y.Map<Y.Map<string>>();
-		entry.set('columns', columns);
-		entry.set('rows', rows);
-		parseSheetFromCsv(csv, columns, rows);
-		const createdAt = Date.now();
-		entry.set('createdAt', createdAt);
-		timeline.push([entry]);
-		return { type: 'sheet', columns, rows, createdAt };
-	}
-
 	/**
 	 * Replace text in-place if already text type, otherwise push a new text entry.
 	 *
@@ -284,7 +269,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	 * Column and row IDs are preserved so cell references (row cells keyed by
 	 * column ID) remain valid in the cloned entry.
 	 *
-	 * This avoids the lossy CSV round-trip used by `pushSheetFromCsv`, which
+	 * This avoids the lossy CSV round-trip used by `parseSheetFromCsv`, which
 	 * hardcodes column `kind` to `'text'` and `width` to `'120'`—dropping any
 	 * custom column configuration the snapshot had.
 	 *
@@ -427,11 +412,19 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					return { columns: entry.columns, rows: entry.rows };
 				case 'text': {
 					const plaintext = entry.content.toString();
-					return ydoc.transact(() => pushSheetFromCsv(plaintext));
+					return ydoc.transact(() => {
+						const result = pushSheet();
+						parseSheetFromCsv(plaintext, result.columns, result.rows);
+						return result;
+					});
 				}
 				case 'richtext': {
 					const plaintext = xmlFragmentToPlaintext(entry.content);
-					return ydoc.transact(() => pushSheetFromCsv(plaintext));
+					return ydoc.transact(() => {
+						const result = pushSheet();
+						parseSheetFromCsv(plaintext, result.columns, result.rows);
+						return result;
+					});
 				}
 			}
 		},

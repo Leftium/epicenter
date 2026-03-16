@@ -42,7 +42,7 @@
  */
 
 import * as Y from 'yjs';
-import { createTimeline } from '../timeline/timeline.js';
+import { type Timeline, createTimeline } from '../timeline/timeline.js';
 import {
 	defineExtension,
 	type Extension,
@@ -90,18 +90,18 @@ type DocEntry = {
 };
 
 /**
- * Create a handle from a Y.Doc and its resolved extensions.
+ * Create a handle from a pre-built timeline and its resolved extensions.
  *
  * The handle IS the timeline with `exports` stapled on.
  * `Object.assign` preserves Timeline's getters since it mutates
- * the target (the fresh Timeline object) rather than spreading.
+ * the target (the timeline object) rather than spreading.
  */
 function makeHandle(
-	ydoc: Y.Doc,
+	timeline: Timeline,
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Extension<any>>,
 ): DocumentHandle {
-	return Object.assign(createTimeline(ydoc), { exports: extensions });
+	return Object.assign(timeline, { exports: extensions });
 }
 
 /**
@@ -218,6 +218,7 @@ export function createDocuments<TRow extends BaseRow>(
 			if (existing) return existing.whenReady;
 
 			const contentYdoc = new Y.Doc({ guid, gc: false });
+			const timeline = createTimeline(contentYdoc);
 
 			// Filter document extensions by tag matching:
 			// - No tags on extension → fire for all documents (universal)
@@ -242,6 +243,7 @@ export function createDocuments<TRow extends BaseRow>(
 					const ctx = {
 						id,
 						ydoc: contentYdoc,
+						timeline,
 						whenReady:
 							whenReadyPromises.length === 0
 								? Promise.resolve()
@@ -309,9 +311,9 @@ export function createDocuments<TRow extends BaseRow>(
 			// Cache entry SYNCHRONOUSLY before any promise resolution
 			const whenReady =
 				whenReadyPromises.length === 0
-					? Promise.resolve(makeHandle(contentYdoc, resolvedExtensions))
+					? Promise.resolve(makeHandle(timeline, resolvedExtensions))
 					: Promise.all(whenReadyPromises)
-							.then(() => makeHandle(contentYdoc, resolvedExtensions))
+							.then(() => makeHandle(timeline, resolvedExtensions))
 							.catch(async (err) => {
 								// If any provider's whenReady rejects, clean up everything (LIFO)
 								const errors: unknown[] = [];

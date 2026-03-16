@@ -159,32 +159,23 @@ export function createDocuments<TRow extends BaseRow>(
 	/**
 	 * Set up the table observer for row deletion cleanup.
 	 * Fires the `onRowDeleted` callback when a row is deleted.
+	 *
+	 * When guidKey is 'id' (common case), the document GUID is the row ID,
+	 * so a direct Map lookup finds it. When guidKey is a different column,
+	 * the row is already deleted so we can't reverse-map row ID → GUID.
+	 * The fallback check (openDocuments.has(deletedId)) only catches the
+	 * case where the GUID happens to equal the row ID.
 	 */
 	const unobserveTable = tableHelper.observe((changedIds) => {
-		for (const id of changedIds) {
-			const result = tableHelper.get(id);
+		for (const deletedId of changedIds) {
+			const result = tableHelper.get(deletedId);
 			if (result.status !== 'not_found') continue;
+			if (!openDocuments.has(deletedId)) continue;
 
-			// Row was deleted — find the matching open document by searching
-			// all open documents where the guid matches. For most tables, the
-			// guid IS the row id, but it could be a different column.
-			for (const [guid] of openDocuments) {
-				// Check if this guid corresponds to the deleted row.
-				// Since we can't reverse-map guid→rowId without scanning,
-				// we check if the deleted row ID matches any open doc's guid
-				// OR if the guid key IS 'id' (common case).
-				if (guid === id || guidKey === 'id') {
-					const targetGuid = guidKey === 'id' ? id : guid;
-					if (!openDocuments.has(targetGuid)) continue;
-
-					if (onRowDeleted) {
-						onRowDeleted(documents, targetGuid);
-					} else {
-						// Default: close (free memory, preserve data)
-						documents.close(targetGuid);
-					}
-					break;
-				}
+			if (onRowDeleted) {
+				onRowDeleted(documents, deletedId);
+			} else {
+				documents.close(deletedId);
 			}
 		}
 	});

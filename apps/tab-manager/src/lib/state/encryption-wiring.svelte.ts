@@ -8,7 +8,10 @@
  * Call `initEncryptionWiring()` once from an $effect.root context (e.g. App.svelte onMount).
  */
 
-import { createEncryptionWiring } from '@epicenter/workspace/shared/crypto';
+import {
+	base64ToBytes,
+	createEncryptionWiring,
+} from '@epicenter/workspace/shared/crypto';
 import { workspaceClient } from '$lib/workspace';
 import { authState } from './auth.svelte';
 
@@ -27,7 +30,7 @@ export function initEncryptionWiring() {
 		$effect(() => {
 			const key = authState.encryptionKey;
 			if (key) {
-				wiring.connect(key);
+				wiring.connect(base64ToBytes(key));
 			} else {
 				wiring.disconnect({ wipe: authState.status === 'signing-out' });
 			}

@@ -461,6 +461,5 @@ export {
 export {
 	createEncryptionWiring,
 	type EncryptionWiringClient,
-	type EncryptionWiringConfig,
 	type EncryptionWiring,
 } from './encryption-wiring';

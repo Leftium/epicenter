@@ -22,7 +22,7 @@ import {
 	createEncryptionWiring,
 	type EncryptionWiringClient,
 } from './encryption-wiring';
-import { bytesToBase64, generateEncryptionKey } from './index';
+import { generateEncryptionKey } from './index';
 import type { KeyCache } from './key-cache';
 
 // ============================================================================
@@ -102,13 +102,13 @@ function setupWithKeyCache() {
 		}),
 	};
 
-	const wiring = createEncryptionWiring(client, { keyCache });
+	const wiring = createEncryptionWiring(client, keyCache);
 
 	return { client, wiring, keyCache, store };
 }
 
-function makeKeyBase64(): string {
-	return bytesToBase64(generateEncryptionKey());
+function makeKey(): Uint8Array {
+	return generateEncryptionKey();
 }
 
 // ============================================================================
@@ -118,9 +118,8 @@ function makeKeyBase64(): string {
 describe('connect', () => {
 	test('calls deriveWorkspaceKey then unlock() with derived key', async () => {
 		const { client, wiring } = setup();
-		const keyBase64 = makeKeyBase64();
 
-		wiring.connect(keyBase64);
+		wiring.connect(makeKey());
 
 		// deriveWorkspaceKey is async — wait for microtask queue to flush
 		await new Promise((resolve) => setTimeout(resolve, 50));
@@ -134,10 +133,10 @@ describe('connect', () => {
 
 	test('duplicate key skip — same connect() twice calls unlock() once', async () => {
 		const { client, wiring } = setup();
-		const keyBase64 = makeKeyBase64();
+		const key = makeKey();
 
-		wiring.connect(keyBase64);
-		wiring.connect(keyBase64);
+		wiring.connect(key);
+		wiring.connect(key);
 
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -147,10 +146,10 @@ describe('connect', () => {
 	test('different keys each trigger unlock()', async () => {
 		const { client, wiring } = setup();
 
-		wiring.connect(makeKeyBase64());
+		wiring.connect(makeKey());
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
-		wiring.connect(makeKeyBase64());
+		wiring.connect(makeKey());
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
 		expect(client.unlock).toHaveBeenCalledTimes(2);
@@ -198,17 +197,17 @@ describe('disconnect', () => {
 		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
 	});
 
-	test('clears lastKeyBase64 so next connect() with same key is not skipped', async () => {
+	test('clears fingerprint so next connect() with same key is not skipped', async () => {
 		const { client, wiring } = setupWithMutableMode();
-		const keyBase64 = makeKeyBase64();
+		const key = makeKey();
 
-		wiring.connect(keyBase64);
+		wiring.connect(key);
 		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(client.unlock).toHaveBeenCalledTimes(1);
 
 		wiring.disconnect();
 
-		wiring.connect(keyBase64);
+		wiring.connect(key);
 		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(client.unlock).toHaveBeenCalledTimes(2);
 	});
@@ -222,7 +221,7 @@ describe('race protection', () => {
 	test('disconnect() during in-flight derivation cancels stale unlock()', async () => {
 		const { client, wiring } = setup({ mode: 'unlocked' });
 
-		wiring.connect(makeKeyBase64());
+		wiring.connect(makeKey());
 		// disconnect immediately — before HKDF resolves
 		wiring.disconnect();
 
@@ -238,10 +237,9 @@ describe('race protection', () => {
 		const { client, wiring } = setup();
 
 		// Fire three rapid connect() calls
-		wiring.connect(makeKeyBase64());
-		wiring.connect(makeKeyBase64());
-		const lastKey = makeKeyBase64();
-		wiring.connect(lastKey);
+		wiring.connect(makeKey());
+		wiring.connect(makeKey());
+		wiring.connect(makeKey());
 
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -292,7 +290,7 @@ describe('loadCachedKey', () => {
 	test('connect() caches key when userId and keyCache provided', async () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
-		wiring.connect(makeKeyBase64(), 'user-1');
+		wiring.connect(makeKey(), 'user-1');
 
 		expect(keyCache.set).toHaveBeenCalledTimes(1);
 	});
@@ -301,7 +299,7 @@ describe('loadCachedKey', () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
 		// Need to connect first so mode becomes unlocked
-		wiring.connect(makeKeyBase64(), 'user-1');
+		wiring.connect(makeKey(), 'user-1');
 
 		wiring.disconnect({ wipe: true });
 

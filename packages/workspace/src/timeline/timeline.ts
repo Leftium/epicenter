@@ -3,7 +3,11 @@ import {
 	populateFragmentFromText,
 	xmlFragmentToPlaintext,
 } from './richtext.js';
-import { type SheetBinding, parseSheetFromCsv, serializeSheetToCsv } from './sheet.js';
+import {
+	parseSheetFromCsv,
+	type SheetBinding,
+	serializeSheetToCsv,
+} from './sheet.js';
 
 type TimelineYMap = Y.Map<unknown>;
 
@@ -154,14 +158,13 @@ export type Timeline = {
 	 * ```typescript
 	 * const unsub = timeline.observe(() => {
 	 *   const entry = timeline.currentEntry;
- *   if (entry?.type === 'richtext') rebindEditor(entry.content);
+	 *   if (entry?.type === 'richtext') rebindEditor(entry.content);
 	 * });
 	 * // later: unsub();
 	 * ```
 	 */
 	observe(callback: () => void): () => void;
 };
-
 
 export function createTimeline(ydoc: Y.Doc): Timeline {
 	const timeline = ydoc.getArray<TimelineYMap>('timeline');
@@ -176,7 +179,8 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 		if (type === 'text') {
 			const content = entry.get('content');
-			if (content instanceof Y.Text) return { type: 'text', content, createdAt };
+			if (content instanceof Y.Text)
+				return { type: 'text', content, createdAt };
 		}
 
 		if (type === 'richtext') {
@@ -248,7 +252,10 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	 * content looks identical to a user paste—no unnecessary timeline growth
 	 * when the type hasn't changed.
 	 */
-	function replaceCurrentText(content: string, current: TimelineEntry | null): void {
+	function replaceCurrentText(
+		content: string,
+		current: TimelineEntry | null,
+	): void {
 		if (current?.type === 'text') {
 			// Same mode: overwrite the existing Y.Text (select-all + paste equivalent).
 			// No new timeline entry—the observer does NOT fire.
@@ -269,7 +276,8 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return timeline.length;
 		},
 		get currentEntry(): TimelineEntry | null {
-			const last = timeline.length > 0 ? timeline.get(timeline.length - 1) : undefined;
+			const last =
+				timeline.length > 0 ? timeline.get(timeline.length - 1) : undefined;
 			return readEntry(last);
 		},
 		get currentType() {
@@ -328,7 +336,10 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 						entry.content.insert(entry.content.length, text);
 						break;
 					case 'richtext':
-						replaceCurrentText(xmlFragmentToPlaintext(entry.content) + text, entry);
+						replaceCurrentText(
+							xmlFragmentToPlaintext(entry.content) + text,
+							entry,
+						);
 						break;
 					case 'sheet':
 						replaceCurrentText(serializeSheetToCsv(entry) + text, entry);

@@ -24,11 +24,7 @@ import { createMarkdownPersistenceExtension } from './markdown-persistence-exten
 
 console.log('Tab Manager Markdown Exporter starting...');
 
-const sync = createSyncExtension({
-	url: (id) => `ws://localhost:3913/workspaces/${id}`,
-		});
-
-			const client = createWorkspace(definition)
+const client = createWorkspace(definition)
 	.withWorkspaceExtension(
 		'persistence',
 		createMarkdownPersistenceExtension({
@@ -36,8 +32,12 @@ const sync = createSyncExtension({
 			debounceMs: 1000,
 		}),
 	)
-	.withWorkspaceExtension('sync', sync.workspace)
-	.withDocumentExtension('sync', sync.document);
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: (id) => `ws://localhost:3913/workspaces/${id}`,
+		}),
+	);
 
 await client.whenReady;
 console.log('✓ Connected to sync server at ws://localhost:3913');

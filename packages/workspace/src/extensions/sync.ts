@@ -3,12 +3,8 @@ import {
 	type SyncProvider,
 	type SyncStatus,
 } from '@epicenter/sync-client';
-import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
-import type {
-	DualScopeFactory,
-	ExtensionFactory,
-} from '../workspace/types';
+import type { DualScopeFactory } from '../workspace/types';
 
 /**
  * Sync extension configuration.
@@ -87,22 +83,34 @@ export type SyncExtensionExports = {
 };
 
 /**
- * Core sync factory—creates a provider for any Y.Doc with optional awareness.
+ * Creates a sync extension that connects after prior extensions are ready.
+ *
+ * Syncs any Y.Doc (workspace or content) via WebSocket. Register with
+ * `withExtension` to sync both the workspace Y.Doc and every content Y.Doc:
+ *
+ * ```typescript
+ * createWorkspace(definition)
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('broadcast', broadcastChannelSync)
+ *   .withExtension('sync', createSyncExtension({
+ *     url: (docId) => `http://localhost:3913/rooms/${docId}`,
+ *   }))
+ * ```
+ *
+ * The `url` callback receives the Y.Doc's GUID—the workspace ID at workspace
+ * scope, or the content doc's unique GUID at document scope. Each Y.Doc gets
+ * its own WebSocket connection to its own room on the sync server.
+ *
+ * Lifecycle:
+ * - Waits for prior extensions (`whenReady`) before connecting, so local state
+ *   is loaded first (accurate state vector for the initial sync handshake).
+ * - `whenReady` resolves when the connection is initiated. The UI renders from
+ *   local state immediately; connection status is reactive via `provider`.
  */
-function createSyncFactory(
+export function createSyncExtension(
 	config: SyncExtensionConfig,
-	awareness?: Awareness,
-) {
-	return ({
-		ydoc,
-		whenReady: priorReady,
-	}: {
-		ydoc: Y.Doc;
-		whenReady: Promise<void>;
-	}): SyncExtensionExports & {
-		whenReady: Promise<unknown>;
-		destroy: () => void;
-	} => {
+): DualScopeFactory<SyncExtensionExports> {
+	return ({ ydoc, whenReady: priorReady }) => {
 		const docId = ydoc.guid;
 		const resolvedBaseUrl = config.url(docId);
 		const wsUrl = resolvedBaseUrl
@@ -115,7 +123,6 @@ function createSyncFactory(
 			getToken: config.getToken
 				? () => config.getToken!(docId)
 				: undefined,
-			awareness,
 		});
 
 		// Wait for all prior extensions (persistence, etc.) then connect.
@@ -136,9 +143,7 @@ function createSyncFactory(
 			 * Force an immediate disconnect + reconnect.
 			 *
 			 * Call after auth state changes (sign-in/sign-out) so the WebSocket
-			 * reconnects with a fresh token from `getToken`. The supervisor loop
-			 * calls `getToken()` fresh on each connection attempt, so a simple
-			 * disconnect/connect cycle is sufficient.
+			 * reconnects with a fresh token from `getToken`.
 			 */
 			reconnect() {
 				provider.disconnect();
@@ -149,35 +154,5 @@ function createSyncFactory(
 				provider.destroy();
 			},
 		};
-	};
-}
-
-/**
- * Creates sync extension factories for both workspace and document scopes.
- *
- * Returns `.workspace` (syncs workspace Y.Doc with awareness for cursor positions)
- * and `.document` (syncs each content Y.Doc without awareness). Both share the same
- * URL and auth configuration.
- *
- * @example Register both scopes with shared config
- * ```typescript
- * const sync = createSyncExtension({ url: (id) => `http://localhost:3913/rooms/${id}` });
- *
- * createWorkspace(definition)
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withWorkspaceExtension('sync', sync.workspace)
- *   .withDocumentExtension('sync', sync.document)
- * ```
- */
-export function createSyncExtension(config: SyncExtensionConfig): {
-	/** Workspace sync factory—syncs workspace Y.Doc WITH awareness. */
-	workspace: ExtensionFactory<SyncExtensionExports>;
-	/** Document sync factory—syncs each content Y.Doc (no awareness). */
-	document: DualScopeFactory<SyncExtensionExports>;
-} {
-	return {
-		workspace: ({ awareness, ...rest }) =>
-			createSyncFactory(config, awareness.raw)(rest),
-		document: createSyncFactory(config),
 	};
 }

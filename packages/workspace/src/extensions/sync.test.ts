@@ -10,7 +10,6 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type { SyncProvider } from '@epicenter/sync-client';
-import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createSyncExtension } from './sync';
 
@@ -23,16 +22,15 @@ type SyncExtensionResult = {
 };
 
 type SyncExtensionFactoryClient = Parameters<
-	ReturnType<typeof createSyncExtension>['workspace']
+	ReturnType<typeof createSyncExtension>
 >[0];
 
 /** Create a minimal mock context for the sync extension factory. */
-function createMockClient(ydoc: Y.Doc) {
+function createMockContext(ydoc: Y.Doc): SyncExtensionFactoryClient {
 	return {
 		ydoc,
-		awareness: { raw: new Awareness(ydoc) },
 		whenReady: Promise.resolve(),
-	} as unknown as SyncExtensionFactoryClient; // Minimal mock — only properties the sync extension accesses are provided
+	};
 }
 
 describe('createSyncExtension', () => {
@@ -44,8 +42,8 @@ describe('createSyncExtension', () => {
 				url: (id: string) => `http://localhost:8080/rooms/${id}`,
 			});
 
-			const result = factory.workspace(
-				createMockClient(ydoc),
+			const result = factory(
+				createMockContext(ydoc),
 			) as unknown as SyncExtensionResult;
 
 			const provider = result.provider;
@@ -66,8 +64,8 @@ describe('createSyncExtension', () => {
 				url: (id: string) => `http://localhost:8080/rooms/${id}`,
 			});
 
-			const result = factory.workspace(
-				createMockClient(ydoc),
+			const result = factory(
+				createMockContext(ydoc),
 			) as unknown as SyncExtensionResult;
 
 			result.reconnect();
@@ -86,8 +84,8 @@ describe('createSyncExtension', () => {
 				url: (id: string) => `http://localhost:8080/rooms/${id}`,
 			});
 
-			const result = factory.workspace(
-				createMockClient(ydoc),
+			const result = factory(
+				createMockContext(ydoc),
 			) as unknown as SyncExtensionResult;
 
 			const provider = result.provider;
@@ -104,8 +102,8 @@ describe('createSyncExtension', () => {
 			url: (id) => `http://localhost:3913/custom/${id}/ws`,
 		});
 
-		const result = factory.workspace(
-			createMockClient(ydoc),
+		const result = factory(
+			createMockContext(ydoc),
 		) as unknown as SyncExtensionResult;
 
 		expect(result.provider).toBeDefined();
@@ -127,9 +125,8 @@ describe('createSyncExtension', () => {
 			url: (id: string) => `http://localhost:8080/rooms/${id}`,
 		});
 
-		const result = factory.workspace({
+		const result = factory({
 			ydoc,
-			awareness: { raw: new Awareness(ydoc) },
 			whenReady: clientWhenReady.then(() => {
 				order.push('client-ready');
 			}),

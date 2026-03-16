@@ -464,3 +464,5 @@ export {
 	type KeyManagerConfig,
 	type KeyManager,
 } from './key-manager';
+
+export { type KeyCache } from './key-cache';

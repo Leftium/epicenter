@@ -21,8 +21,9 @@
 import { createKeyManager } from '@epicenter/workspace/shared/crypto';
 import { workspaceClient } from '$lib/workspace';
 import { authState } from './auth.svelte';
+import { keyCache } from './key-cache';
 
-const keyManager = createKeyManager(workspaceClient);
+const keyManager = createKeyManager(workspaceClient, { keyCache });
 
 /**
  * Start a Svelte `$effect.root` that synchronizes auth state to the
@@ -53,6 +54,19 @@ const keyManager = createKeyManager(workspaceClient);
  */
 export function syncAuthToEncryption() {
 	return $effect.root(() => {
+		// Fast path: restore cached key before the auth roundtrip completes.
+		// Fires once when userId becomes available (storage loads), then the
+		// flag prevents re-running. If cache hits, setKey() -> HKDF -> unlock
+		// happens in ~1ms instead of waiting 50-200ms for checkSession().
+		let cacheRestoreAttempted = false;
+		$effect(() => {
+			const userId = authState.user?.id;
+			if (!userId || cacheRestoreAttempted) return;
+			cacheRestoreAttempted = true;
+			void keyManager.restoreKey(userId);
+		});
+
+		// Main path: react to auth state changes from checkSession() / sign-in / sign-out.
 		$effect(() => {
 			const key = authState.encryptionKey;
 			if (key) {

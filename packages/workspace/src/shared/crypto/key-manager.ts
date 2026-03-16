@@ -152,8 +152,11 @@ export function createKeyManager(
 	// Zone 3 — Private helpers
 	function deriveAndUnlock(userKey: Uint8Array, thisGeneration: number) {
 		void deriveWorkspaceKey(userKey, client.id).then((wsKey) => {
-			if (thisGeneration === generation) client.unlock(wsKey);
-		});
+				if (thisGeneration === generation) client.unlock(wsKey);
+			})
+			.catch((error) => {
+				console.error('[key-manager] Key derivation failed:', error);
+			});
 	}
 
 	// Zone 4 — Private helpers
@@ -162,24 +165,28 @@ export function createKeyManager(
 		lastKeyBase64 = undefined;
 	}
 
+	function setKeyInternal(userKeyBase64: string, userId?: string) {
+		if (userKeyBase64 === lastKeyBase64) return;
+		lastKeyBase64 = userKeyBase64;
+
+		const thisGeneration = ++generation;
+		const userKey = base64ToBytes(userKeyBase64);
+
+		deriveAndUnlock(userKey, thisGeneration);
+
+		if (keyCache && !userId) {
+			console.warn(
+				'[key-manager] keyCache configured but no userId provided—key not cached',
+			);
+		} else if (userId && keyCache) {
+			void keyCache.set(userId, userKeyBase64);
+		}
+	}
+
 	// Zone 5 — Public API
 	return {
 		setKey(userKeyBase64, userId) {
-			if (userKeyBase64 === lastKeyBase64) return;
-			lastKeyBase64 = userKeyBase64;
-
-			const thisGeneration = ++generation;
-			const userKey = base64ToBytes(userKeyBase64);
-
-			deriveAndUnlock(userKey, thisGeneration);
-
-			if (keyCache && !userId) {
-				console.warn(
-				'[key-manager] keyCache configured but no userId provided—key not cached',
-				);
-			} else if (userId && keyCache) {
-				void keyCache.set(userId, userKeyBase64);
-			}
+			setKeyInternal(userKeyBase64, userId);
 		},
 
 		lock() {
@@ -198,7 +205,7 @@ export function createKeyManager(
 			const cachedKeyBase64 = await keyCache.get(userId);
 			if (!cachedKeyBase64) return false;
 
-			this.setKey(cachedKeyBase64, userId);
+			setKeyInternal(cachedKeyBase64, userId);
 			return true;
 		},
 	};

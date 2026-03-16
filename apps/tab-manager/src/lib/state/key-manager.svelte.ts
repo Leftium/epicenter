@@ -1,37 +1,37 @@
 /**
- * Encryption wiring — connects auth session to workspace lock/unlock.
+ * Key manager — connects auth session to workspace lock/unlock.
  *
  * Delegates the hard parts (HKDF derivation, race protection, mode guards)
- * to the framework-agnostic `createEncryptionWiring()` factory. This file
+ * to the framework-agnostic `createKeyManager()` factory. This file
  * is just the Svelte $effect glue.
  *
- * Call `initEncryptionWiring()` once from an $effect.root context (e.g. App.svelte onMount).
+ * Call `initKeyManager()` once from an $effect.root context (e.g. App.svelte onMount).
  */
 
-import { createEncryptionWiring } from '@epicenter/workspace/shared/crypto';
+import { createKeyManager } from '@epicenter/workspace/shared/crypto';
 import { workspaceClient } from '$lib/workspace';
 import { authState } from './auth.svelte';
 
-const wiring = createEncryptionWiring(workspaceClient);
+const keyManager = createKeyManager(workspaceClient);
 
 /**
- * Initialize the encryption wiring as a root effect.
+ * Initialize the key manager as a root effect.
  *
  * Watches `authState.encryptionKey` and `authState.status` reactively.
  * When the key appears, connects. On sign-out, wipes local data. Otherwise, soft-locks.
  *
  * @returns Cleanup function (call from onMount cleanup)
  */
-export function initEncryptionWiring() {
+export function initKeyManager() {
 	return $effect.root(() => {
 		$effect(() => {
 			const key = authState.encryptionKey;
 			if (key) {
-				wiring.connect(key);
+				keyManager.setKey(key);
 			} else if (authState.status === 'signing-out') {
-				wiring.wipeLocalData();
+				keyManager.wipe();
 			} else {
-				wiring.lock();
+				keyManager.lock();
 			}
 		});
 	});

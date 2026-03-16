@@ -459,8 +459,8 @@ export {
 };
 
 export {
-	createEncryptionWiring,
-	type EncryptionWiringClient,
-	type EncryptionWiringConfig,
-	type EncryptionWiring,
-} from './encryption-wiring';
+	createKeyManager,
+	type KeyManagerTarget,
+	type KeyManagerConfig,
+	type KeyManager,
+} from './key-manager';

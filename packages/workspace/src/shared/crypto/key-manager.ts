@@ -1,5 +1,5 @@
 /**
- * Framework-agnostic encryption wiring factory.
+ * Framework-agnostic key manager factory.
  *
  * Bridges the async gap between auth sessions (which provide an encryption key)
  * and the workspace client (which needs a derived key to unlock). Handles
@@ -8,15 +8,15 @@
  *
  * @example
  * ```typescript
- * const wiring = createEncryptionWiring(workspaceClient);
+ * const keyManager = createKeyManager(workspaceClient);
  *
  * // Svelte adapter (~5 lines of $effect glue)
  * $effect(() => {
  *   const key = authState.encryptionKey;
  *   if (key) {
- *     wiring.connect(key);
+ *     keyManager.setKey(key);
  *   } else if (authState.status === 'signing-out') {
- *     wiring.wipeLocalData();
+ *     keyManager.wipe();
  *   } else {
  *     wiring.lock();
  *   }
@@ -30,12 +30,12 @@ import { base64ToBytes, deriveWorkspaceKey } from './index';
 import type { KeyCache } from './key-cache';
 
 /**
- * Minimal client surface the wiring needs to drive lock/unlock.
+ * Minimal client surface the key manager needs to drive lock/unlock.
  *
- * The wiring never reads mode—mode guarding is the client's responsibility.
- * This keeps the wiring focused on key lifecycle only.
+ * The key manager never reads mode—mode guarding is the client's responsibility.
+ * This keeps the key manager focused on key lifecycle only.
  */
-export type EncryptionWiringClient = {
+export type KeyManagerTarget = {
 	readonly id: string;
 	lock(): void;
 	unlock(key: Uint8Array): void;
@@ -43,32 +43,32 @@ export type EncryptionWiringClient = {
 };
 
 /**
- * Configuration for the encryption wiring factory.
+ * Configuration for the key manager factory.
  */
-export type EncryptionWiringConfig = {
+export type KeyManagerConfig = {
 	/** Optional key cache for instant unlock on page refresh. */
 	keyCache?: KeyCache;
 };
 
 /**
- * Imperative connect/lock/wipe API for encryption lifecycle management.
+ * Imperative setKey/lock/wipe API for encryption lifecycle management.
  *
  * The factory owns the hard parts—async HKDF bridging, duplicate key dedup,
  * and race protection. The consumer just pushes key presence/absence from
  * their framework's reactive system. Mode guarding is the client's job.
  */
-export type EncryptionWiring = {
+export type KeyManager = {
 	/**
 	 * Supply a user-level encryption key (base64-encoded).
 	 *
 	 * Decodes base64 → derives per-workspace key via HKDF → calls `unlock()`.
-	 * No-op if called with the same key as the previous `connect()`.
+ * No-op if called with the same key as the previous `setKey()`.
 	 * If a `keyCache` was provided, caches the base64 key under `userId`.
 	 *
 	 * @param userKeyBase64 - Base64-encoded user encryption key from the auth session
 	 * @param userId - Required when keyCache is configured. Identifies whose key to cache.
 	 */
-	connect(userKeyBase64: string, userId?: string): void;
+	setKey(userKeyBase64: string, userId?: string): void;
 
 	/**
 	 * Soft-lock the workspace.
@@ -79,7 +79,7 @@ export type EncryptionWiring = {
 	 *
 	 * Always calls through to `client.lock()`—the client decides whether
 	 * locking is meaningful in its current mode.
-	 * Cancels any in-flight HKDF derivation from a prior `connect()`.
+ * Cancels any in-flight HKDF derivation from a prior `setKey()`.
 	 */
 	lock(): void;
 
@@ -92,25 +92,25 @@ export type EncryptionWiring = {
 	 *
 	 * Always calls through to `client.clearLocalData()`—the client decides
 	 * whether wiping is meaningful in its current mode.
-	 * Cancels any in-flight HKDF derivation from a prior `connect()`.
+ * Cancels any in-flight HKDF derivation from a prior `setKey()`.
 	 * If a `keyCache` was provided, clears the cache.
 	 */
-	wipeLocalData(): void;
+	wipe(): void;
 
 	/**
 	 * Attempt to restore from a cached key.
 	 *
 	 * Reads from the `keyCache` for the given `userId`. If found, calls
-	 * `connect()` internally. Returns `true` if a cached key was found
-	 * and `connect()` was initiated.
+ * `setKey()` internally. Returns `true` if a cached key was found
+ * and `setKey()` was initiated.
 	 *
 	 * No-op if no `keyCache` was provided.
 	 */
-	loadCachedKey(userId: string): Promise<boolean>;
+	restoreKey(userId: string): Promise<boolean>;
 };
 
 /**
- * Create a framework-agnostic encryption wiring for a workspace client.
+ * Create a framework-agnostic key manager for a workspace client.
  *
  * Encapsulates the three hard parts of encryption lifecycle management:
  * 1. **Async-to-sync bridge** — `deriveWorkspaceKey` is async, `unlock()` is sync
@@ -118,30 +118,30 @@ export type EncryptionWiring = {
  * 3. **Race protection** — generation counter prevents stale HKDF results from landing
  *
  * Mode guarding (plaintext/locked/unlocked) is the client's responsibility,
- * not the wiring's. The wiring always calls through to `lock()` / `clearLocalData()`.
+ * not the key manager's. The key manager always calls through to `lock()` / `clearLocalData()`.
  *
  * @param client - Minimal workspace client surface (id, lock, unlock, clearLocalData)
  * @param config - Optional configuration (keyCache for instant unlock on page refresh)
- * @returns Imperative connect/lock/wipeLocalData/loadCachedKey API
+ * @returns Imperative setKey/lock/wipe/restoreKey API
  *
  * @example
  * ```typescript
- * const wiring = createEncryptionWiring(workspaceClient);
+ * const keyManager = createKeyManager(workspaceClient);
  *
  * // On auth key available:
- * wiring.connect(keyBase64);
+ * keyManager.setKey(keyBase64);
  *
  * // On sign-out:
- * wiring.wipeLocalData();
+ * keyManager.wipe();
  *
  * // On session expiry:
  * wiring.lock();
  * ```
  */
-export function createEncryptionWiring(
-	client: EncryptionWiringClient,
-	config?: EncryptionWiringConfig,
-): EncryptionWiring {
+export function createKeyManager(
+	client: KeyManagerTarget,
+	config?: KeyManagerConfig,
+): KeyManager {
 	// Zone 1 — Immutable state
 	const keyCache = config?.keyCache;
 
@@ -164,7 +164,7 @@ export function createEncryptionWiring(
 
 	// Zone 5 — Public API
 	return {
-		connect(userKeyBase64, userId) {
+		setKey(userKeyBase64, userId) {
 			if (userKeyBase64 === lastKeyBase64) return;
 			lastKeyBase64 = userKeyBase64;
 
@@ -175,7 +175,7 @@ export function createEncryptionWiring(
 
 			if (keyCache && !userId) {
 				console.warn(
-					'[encryption-wiring] keyCache configured but no userId provided—key not cached',
+				'[key-manager] keyCache configured but no userId provided—key not cached',
 				);
 			} else if (userId && keyCache) {
 				void keyCache.set(userId, userKeyBase64);
@@ -187,18 +187,18 @@ export function createEncryptionWiring(
 			client.lock();
 		},
 
-		wipeLocalData() {
+		wipe() {
 			invalidateKey();
 			void client.clearLocalData();
 			if (keyCache) void keyCache.clear();
 		},
 
-		async loadCachedKey(userId) {
+		async restoreKey(userId) {
 			if (!keyCache) return false;
 			const cachedKeyBase64 = await keyCache.get(userId);
 			if (!cachedKeyBase64) return false;
 
-			this.connect(cachedKeyBase64, userId);
+			this.setKey(cachedKeyBase64, userId);
 			return true;
 		},
 	};

@@ -248,9 +248,9 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	/**
 	 * Replace text in-place if already text type, otherwise push a new text entry.
 	 *
-	 * Shared by `write()` and `restoreFromSnapshot()` so that restoring text
-	 * content looks identical to a user paste—no unnecessary timeline growth
-	 * when the type hasn't changed.
+	 * Used by `restoreFromSnapshot()` where the live doc's type is unknown—
+	 * the branch is genuinely needed. Direct callers that know the type should
+	 * use `pushText()` or inline the Y.Text overwrite instead.
 	 */
 	function replaceCurrentText(
 		content: string,
@@ -322,7 +322,8 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 						break;
 					case 'text':
 						// Overwrite existing Y.Text in-place (select-all + paste)
-						replaceCurrentText(text, entry);
+						entry.content.delete(0, entry.content.length);
+						entry.content.insert(0, text);
 						break;
 				}
 			});
@@ -340,13 +341,12 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 						entry.content.insert(entry.content.length, text);
 						break;
 					case 'richtext':
-						replaceCurrentText(
-							xmlFragmentToPlaintext(entry.content) + text,
-							entry,
-						);
+						// Flatten richtext to string + append, push as new text entry
+						pushText(xmlFragmentToPlaintext(entry.content) + text);
 						break;
 					case 'sheet':
-						replaceCurrentText(serializeSheetToCsv(entry) + text, entry);
+						// Serialize sheet to CSV + append, push as new text entry
+						pushText(serializeSheetToCsv(entry) + text);
 						break;
 				}
 			});

@@ -36,7 +36,7 @@ function setupTables() {
 function setup(
 	overrides?: Pick<
 		CreateDocumentsConfig<typeof fileSchema.infer>,
-		'documentExtensions' | 'documentTags' | 'onRowDeleted'
+		'documentExtensions' | 'documentTags'
 	>,
 ) {
 	const { ydoc, tables } = setupTables();
@@ -373,7 +373,7 @@ describe('createDocuments', () => {
 	});
 
 	describe('row deletion', () => {
-		test('default onRowDeleted calls close', async () => {
+		test('deleting a row closes its open document', async () => {
 			const { tables, documents } = setup();
 			tables.files.set({
 				id: 'f1',
@@ -390,34 +390,7 @@ describe('createDocuments', () => {
 			expect(handle2.ydoc).not.toBe(handle1.ydoc);
 		});
 
-		test('custom onRowDeleted fires with the guid', async () => {
-			let deletedGuid = '';
-			const { tables } = setupTables();
-
-			const documents = createDocuments({
-				guidKey: 'id',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-				tableHelper: tables.files,
-				ydoc: new Y.Doc({ guid: 'test' }),
-				onRowDeleted: (_documents, guid) => {
-					deletedGuid = guid;
-				},
-			});
-
-			tables.files.set({
-				id: 'f1',
-				name: 'test.txt',
-				updatedAt: 0,
-				_v: 1,
-			});
-
-			await documents.open('f1');
-			tables.files.delete('f1');
-
-			expect(deletedGuid).toBe('f1');
-		});
 	});
-
 	describe('document extension hooks', () => {
 		test('hooks are called in order', async () => {
 			const order: number[] = [];

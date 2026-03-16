@@ -118,13 +118,6 @@ export type CreateDocumentsConfig<TRow extends BaseRow> = {
 	 * Used for tag matching against document extension registrations.
 	 */
 	documentTags?: readonly string[];
-
-	/**
-	 * Called when a row is deleted from the table.
-	 * Receives the GUID of the associated document.
-	 * Default: close (free memory, preserve persisted data).
-	 */
-	onRowDeleted?: (documents: Documents<TRow>, guid: string) => void;
 };
 
 /**
@@ -151,14 +144,13 @@ export function createDocuments<TRow extends BaseRow>(
 		ydoc: workspaceYdoc,
 		documentExtensions = [],
 		documentTags = [],
-		onRowDeleted,
 	} = config;
 
 	const openDocuments = new Map<string, DocEntry>();
 
 	/**
 	 * Set up the table observer for row deletion cleanup.
-	 * Fires the `onRowDeleted` callback when a row is deleted.
+	 * Closes the associated document when a row is deleted from the table.
 	 *
 	 * When guidKey is 'id' (common case), the document GUID is the row ID,
 	 * so a direct Map lookup finds it. When guidKey is a different column,
@@ -172,11 +164,7 @@ export function createDocuments<TRow extends BaseRow>(
 			if (result.status !== 'not_found') continue;
 			if (!openDocuments.has(deletedId)) continue;
 
-			if (onRowDeleted) {
-				onRowDeleted(documents, deletedId);
-			} else {
-				documents.close(deletedId);
-			}
+			documents.close(deletedId);
 		}
 	});
 

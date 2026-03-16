@@ -44,7 +44,9 @@ import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import {
 	defineExtension,
+	destroyLifo,
 	type MaybePromise,
+	startDestroyLifo,
 } from './lifecycle.js';
 import type {
 	AwarenessDefinitions,
@@ -64,44 +66,6 @@ import type {
 	WorkspaceDefinition,
 } from './types.js';
 
-/**
- * Run cleanups in LIFO order (last registered = first destroyed).
- * Continues on error and returns accumulated errors.
- */
-async function destroyLifo(
-	cleanups: (() => MaybePromise<void>)[],
-): Promise<unknown[]> {
-	const errors: unknown[] = [];
-	for (let i = cleanups.length - 1; i >= 0; i--) {
-		try {
-			await cleanups[i]?.();
-		} catch (err) {
-			errors.push(err);
-		}
-	}
-	return errors;
-}
-
-/**
- * Start all cleanups immediately in LIFO order without awaiting between them.
- *
- * Used in the sync builder error path where we can't await. Every cleanup is
- * invoked before the throw propagates—async portions settle in the background.
- * Rejections are observed (logged) so they don't become unhandled.
- */
-function startDestroyLifo(
-	cleanups: (() => MaybePromise<void>)[],
-): void {
-	for (let i = cleanups.length - 1; i >= 0; i--) {
-		try {
-			Promise.resolve(cleanups[i]?.()).catch((err) => {
-				console.error('Extension cleanup error during rollback:', err);
-			});
-		} catch (err) {
-			console.error('Extension cleanup error during rollback:', err);
-		}
-	}
-}
 
 /**
  * Create a workspace client with chainable extension support.

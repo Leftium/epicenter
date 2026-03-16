@@ -210,3 +210,55 @@ export function defineExtension<T extends Record<string, unknown>>(
 		destroy: input.destroy ?? (() => {}),
 	} as Extension<Omit<T, 'whenReady' | 'destroy'>>;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// LIFO CLEANUP — Shared teardown primitives for extensions and documents
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Run cleanups in LIFO order (last registered = first destroyed).
+ * Continues on error and returns accumulated errors.
+ *
+ * Used by both `createWorkspace()` and `createDocuments()` to tear down
+ * extensions in reverse creation order. Call sites handle the returned
+ * errors array in their own way (throw, log, or rethrow).
+ *
+ * @param cleanups - Array of cleanup functions to run in reverse order
+ * @returns Array of errors caught during cleanup (empty if all succeeded)
+ */
+export async function destroyLifo(
+	cleanups: (() => MaybePromise<void>)[],
+): Promise<unknown[]> {
+	const errors: unknown[] = [];
+	for (let i = cleanups.length - 1; i >= 0; i--) {
+		try {
+			await cleanups[i]?.();
+		} catch (err) {
+			errors.push(err);
+		}
+	}
+	return errors;
+}
+
+/**
+ * Start all cleanups immediately in LIFO order without awaiting between them.
+ *
+ * Used in the sync builder error path where we can't await. Every cleanup is
+ * invoked before the throw propagates—async portions settle in the background.
+ * Rejections are observed (logged) so they don't become unhandled.
+ *
+ * @param cleanups - Array of cleanup functions to invoke in reverse order
+ */
+export function startDestroyLifo(
+	cleanups: (() => MaybePromise<void>)[],
+): void {
+	for (let i = cleanups.length - 1; i >= 0; i--) {
+		try {
+			Promise.resolve(cleanups[i]?.()).catch((err) => {
+				console.error('Extension cleanup error during rollback:', err);
+			});
+		} catch (err) {
+			console.error('Extension cleanup error during rollback:', err);
+		}
+	}
+}

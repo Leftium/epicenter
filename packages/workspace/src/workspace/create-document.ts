@@ -45,8 +45,10 @@ import * as Y from 'yjs';
 import { type Timeline, createTimeline } from '../timeline/timeline.js';
 import {
 	defineExtension,
+	destroyLifo,
 	type Extension,
 	type MaybePromise,
+	startDestroyLifo,
 } from './lifecycle.js';
 import type {
 	BaseRow,
@@ -277,25 +279,7 @@ export function createDocuments<TRow extends BaseRow>(
 					whenReadyPromises.push(resolved.whenReady);
 				}
 			} catch (err) {
-				// LIFO cleanup of accumulated extensions
-				const errors: unknown[] = [];
-				for (let i = destroys.length - 1; i >= 0; i--) {
-					try {
-						const result = destroys[i]?.();
-						if (result instanceof Promise) {
-							result.catch(() => {}); // Fire and forget in sync context
-						}
-					} catch (cleanupErr) {
-						errors.push(cleanupErr);
-					}
-				}
-
-				if (errors.length > 0) {
-					console.error(
-						'Extension cleanup errors during factory failure:',
-						errors,
-					);
-				}
+				startDestroyLifo(destroys);
 
 				contentYdoc.destroy();
 				throw err;
@@ -337,23 +321,14 @@ export function createDocuments<TRow extends BaseRow>(
 					? Promise.resolve(handle)
 					: compositeWhenReady.then(() => handle)
 							.catch(async (err) => {
-								// If any provider's whenReady rejects, clean up everything (LIFO)
-								const errors: unknown[] = [];
-								for (let i = destroys.length - 1; i >= 0; i--) {
-									try {
-										await destroys[i]?.();
-									} catch (cleanupErr) {
-										errors.push(cleanupErr);
-									}
-								}
+							const errors = await destroyLifo(destroys);
+							unobserve();
+							contentYdoc.destroy();
+							openDocuments.delete(guid);
 
-								unobserve();
-								contentYdoc.destroy();
-								openDocuments.delete(guid);
-
-								if (errors.length > 0) {
-									console.error('Document extension cleanup errors:', errors);
-								}
+							if (errors.length > 0) {
+								console.error('Document extension cleanup errors:', errors);
+							}
 								throw err;
 							});
 
@@ -376,16 +351,9 @@ export function createDocuments<TRow extends BaseRow>(
 			openDocuments.delete(guid);
 			entry.unobserve();
 
-			// Destroy in LIFO order (reverse creation), continue on error
-			const errors: unknown[] = [];
-			const extensions = Object.values(entry.extensions);
-			for (let i = extensions.length - 1; i >= 0; i--) {
-				try {
-					await extensions[i]?.destroy();
-				} catch (err) {
-					errors.push(err);
-				}
-			}
+			const errors = await destroyLifo(
+				Object.values(entry.extensions).map((e) => e.destroy),
+			);
 
 			entry.ydoc.destroy();
 
@@ -403,15 +371,9 @@ export function createDocuments<TRow extends BaseRow>(
 			for (const [, entry] of entries) {
 				entry.unobserve();
 
-				const errors: unknown[] = [];
-				const extensions = Object.values(entry.extensions);
-				for (let i = extensions.length - 1; i >= 0; i--) {
-					try {
-						await extensions[i]?.destroy();
-					} catch (err) {
-						errors.push(err);
-					}
-				}
+				const errors = await destroyLifo(
+					Object.values(entry.extensions).map((e) => e.destroy),
+				);
 
 				entry.ydoc.destroy();
 

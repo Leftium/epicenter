@@ -351,10 +351,10 @@ The test file (`key-manager.test.ts`) calls `wiring.wipe()` (line 181, 194, 289)
 
 ### Phase 4: Fix consumer and JSDoc
 
-- [ ] **4.1** Update `key-manager.svelte.ts`: `keyManager.setKey(key)` → `keyManager.setKey(key, authState.user?.id)`
-- [ ] **4.2** Fix module-level `@example` in `key-manager.ts`: `wiring.lock()` → `keyManager.lock()`
-- [ ] **4.3** Fix inconsistent indentation on JSDoc lines 65, 82, 95, 104-105 in `key-manager.ts`
-- [ ] **4.4** Update `KeyManager` type JSDoc to reference `setKey()` consistently (verify no stale `connect()` references)
+- [x] **4.1** Update `key-manager.svelte.ts`: `keyManager.setKey(key)` → `keyManager.setKey(key, authState.user?.id)`
+- [x] **4.2** Fix module-level `@example` in `key-manager.ts`: `wiring.lock()` → `keyManager.lock()`
+- [x] **4.3** Fix inconsistent indentation on JSDoc lines 65, 82, 95, 104-105 in `key-manager.ts`
+- [x] **4.4** Update `KeyManager` type JSDoc to reference `setKey()` consistently (verify no stale `connect()` references)
 
 ### Phase 5: Verify across monorepo
 

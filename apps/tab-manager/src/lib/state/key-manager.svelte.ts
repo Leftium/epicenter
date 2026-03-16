@@ -27,7 +27,7 @@ export function initKeyManager() {
 		$effect(() => {
 			const key = authState.encryptionKey;
 			if (key) {
-				keyManager.setKey(key);
+				keyManager.setKey(key, authState.user?.id);
 			} else if (authState.status === 'signing-out') {
 				keyManager.wipe();
 			} else {

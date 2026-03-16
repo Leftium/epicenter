@@ -18,7 +18,7 @@
  *   } else if (authState.status === 'signing-out') {
  *     keyManager.wipe();
  *   } else {
- *     wiring.lock();
+ *     keyManager.lock();
  *   }
  * });
  * ```
@@ -62,7 +62,7 @@ export type KeyManager = {
 	 * Supply a user-level encryption key (base64-encoded).
 	 *
 	 * Decodes base64 → derives per-workspace key via HKDF → calls `unlock()`.
- * No-op if called with the same key as the previous `setKey()`.
+	 * No-op if called with the same key as the previous `setKey()`.
 	 * If a `keyCache` was provided, caches the base64 key under `userId`.
 	 *
 	 * @param userKeyBase64 - Base64-encoded user encryption key from the auth session
@@ -79,7 +79,7 @@ export type KeyManager = {
 	 *
 	 * Always calls through to `client.lock()`—the client decides whether
 	 * locking is meaningful in its current mode.
- * Cancels any in-flight HKDF derivation from a prior `setKey()`.
+	 * Cancels any in-flight HKDF derivation from a prior `setKey()`.
 	 */
 	lock(): void;
 
@@ -92,7 +92,7 @@ export type KeyManager = {
 	 *
 	 * Always calls through to `client.clearLocalData()`—the client decides
 	 * whether wiping is meaningful in its current mode.
- * Cancels any in-flight HKDF derivation from a prior `setKey()`.
+	 * Cancels any in-flight HKDF derivation from a prior `setKey()`.
 	 * If a `keyCache` was provided, clears the cache.
 	 */
 	wipe(): Promise<void>;
@@ -101,8 +101,8 @@ export type KeyManager = {
 	 * Attempt to restore from a cached key.
 	 *
 	 * Reads from the `keyCache` for the given `userId`. If found, calls
- * `setKey()` internally. Returns `true` if a cached key was found
- * and `setKey()` was initiated.
+	 * `setKey()` internally. Returns `true` if a cached key was found
+	 * and `setKey()` was initiated.
 	 *
 	 * No-op if no `keyCache` was provided.
 	 */
@@ -135,7 +135,7 @@ export type KeyManager = {
  * keyManager.wipe();
  *
  * // On session expiry:
- * wiring.lock();
+ * keyManager.lock();
  * ```
  */
 export function createKeyManager(

@@ -369,14 +369,19 @@ describe('defineWorkspace', () => {
 			tables: { posts: tableDef },
 		}).withExtension(
 			'inspector',
-			({ id, ydoc, tables, kv, extensions, whenReady }) => {
-				// All ExtensionContext fields should be present
+			(ctx) => {
+				const { id, ydoc, extensions, whenReady } = ctx;
+				// All shared fields should be present
 				expect(id).toBe('full-context-test');
 				expect(ydoc).toBeDefined();
-				expect(tables).toBeDefined();
-				expect(kv).toBeDefined();
 				expect(extensions).toBeDefined();
 				expect(whenReady).toBeInstanceOf(Promise);
+				// At workspace scope, scope-specific fields are guaranteed
+				expect(ctx.scope).toBe('workspace');
+				if (ctx.scope === 'workspace') {
+					expect(ctx.tables).toBeDefined();
+					expect(ctx.kv).toBeDefined();
+				}
 				return {};
 			},
 		);

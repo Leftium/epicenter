@@ -306,6 +306,7 @@ export function createWorkspace<
 			} = client;
 			const ctx = {
 				...clientContext,
+				scope: 'workspace' as const,
 				whenReady:
 					state.whenReadyPromises.length === 0
 						? Promise.resolve()

@@ -255,6 +255,7 @@ export function createDocuments<TRow extends BaseRow>(
 			try {
 				for (const { key, factory } of applicableExtensions) {
 					const ctx = {
+						scope: 'document' as const,
 						id,
 						ydoc: contentYdoc,
 						timeline,
@@ -263,7 +264,7 @@ export function createDocuments<TRow extends BaseRow>(
 								? Promise.resolve()
 								: Promise.all(whenReadyPromises).then(() => {}),
 						extensions: { ...resolvedExtensions },
-						// Workspace fields for dual-registered extensions (SharedExtensionContext)
+						// Workspace fields passed from closure for dual-registered extensions
 						awareness,
 						definitions,
 					};

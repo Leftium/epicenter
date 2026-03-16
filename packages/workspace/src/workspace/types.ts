@@ -1219,20 +1219,83 @@ export type ExtensionContext<
 >;
 
 /**
+ * Shared fields available in BOTH workspace and document scopes.
+ *
+ * Destructure these directly from the context — they're always present.
+ */
+type SharedExtensionContextBase<
+	TId extends string = string,
+	TExtensions extends Record<string, unknown> = Record<string, unknown>,
+> = {
+	/** Workspace identifier. */
+	id: TId;
+	/** The Y.Doc for this scope (workspace Y.Doc or content Y.Doc). */
+	ydoc: Y.Doc;
+	/** Composite whenReady of all PRIOR extensions in this scope. */
+	whenReady: Promise<void>;
+	/** Prior extension exports in this scope. */
+	extensions: TExtensions;
+};
+
+/**
+ * Workspace-scope fields. All guaranteed present when `scope === 'workspace'`.
+ */
+type WorkspaceScopeContext<
+	TTableDefinitions extends TableDefinitions = TableDefinitions,
+	TKvDefinitions extends KvDefinitions = KvDefinitions,
+	TAwarenessDefinitions extends AwarenessDefinitions = AwarenessDefinitions,
+> = {
+	scope: 'workspace';
+	/** Workspace definitions for introspection. */
+	definitions: {
+		tables: TTableDefinitions;
+		kv: TKvDefinitions;
+		awareness: TAwarenessDefinitions;
+	};
+	/** Typed table helpers. */
+	tables: TablesHelper<TTableDefinitions>;
+	/** Document managers. */
+	documents: DocumentsHelper<TTableDefinitions>;
+	/** Typed KV helper. */
+	kv: KvHelper<TKvDefinitions>;
+	/** Workspace awareness. */
+	awareness: AwarenessHelper<TAwarenessDefinitions>;
+	/** Batch mutations into a single Y.js transaction. */
+	batch: (fn: () => void) => void;
+	/** Apply a binary Y.js update. */
+	loadSnapshot: (update: Uint8Array) => void;
+};
+
+/**
+ * Document-scope fields. All guaranteed present when `scope === 'document'`.
+ */
+type DocumentScopeContext = {
+	scope: 'document';
+	/** Content timeline — read, write, observe mode changes, bind editors. */
+	timeline: Timeline;
+	/** Workspace awareness, passed from the workspace closure. */
+	awareness?: unknown;
+	/** Workspace definitions, passed from the workspace closure. */
+	definitions?: Record<string, unknown>;
+};
+
+/**
  * Context passed to dual-scope extension factories registered via `withExtension()`.
  *
- * Contains all fields from both workspace and document scopes. Workspace-only
- * fields are optional (undefined at document scope). Document-only fields are
- * optional (undefined at workspace scope). The type system forces optional
- * chaining (`?.`) for scope-specific access, preventing runtime crashes.
- *
- * For guaranteed access to workspace fields, use `withWorkspaceExtension()`.
- * For guaranteed access to document fields, use `withDocumentExtension()`.
+ * A discriminated union on `scope` — narrow with `if (ctx.scope === 'workspace')`
+ * to access workspace-specific fields with full type safety, or destructure shared
+ * fields (`id`, `ydoc`, `whenReady`, `extensions`) directly.
  *
  * ```typescript
- * .withExtension('sync', ({ ydoc, awareness, whenReady }) => {
- *   // awareness is AwarenessHelper | undefined — TypeScript forces ?.
- *   const provider = createSyncProvider({ doc: ydoc, awareness: awareness?.raw });
+ * // Most factories just use shared fields:
+ * .withExtension('persistence', ({ ydoc }) => { ... })
+ *
+ * // Scope-aware factories narrow via discriminant:
+ * .withExtension('sync', (ctx) => {
+ *   const { ydoc, whenReady } = ctx;  // shared — always available
+ *   if (ctx.scope === 'workspace') {
+ *     ctx.awareness.raw;  // guaranteed, no ?. needed
+ *   }
  * })
  * ```
  *
@@ -1248,41 +1311,10 @@ export type SharedExtensionContext<
 	TKvDefinitions extends KvDefinitions = KvDefinitions,
 	TAwarenessDefinitions extends AwarenessDefinitions = AwarenessDefinitions,
 	TExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = {
-	// ═══ Always available (both scopes) ═══
-	/** Workspace identifier. */
-	id: TId;
-	/** The Y.Doc for this scope (workspace Y.Doc or content Y.Doc). */
-	ydoc: Y.Doc;
-	/** Composite whenReady of all PRIOR extensions in this scope. */
-	whenReady: Promise<void>;
-	/** Prior extension exports in this scope. */
-	extensions: TExtensions;
-
-	// ═══ Workspace scope only (undefined at document scope) ═══
-	/** Workspace definitions for introspection. Undefined at document scope. */
-	definitions?: {
-		tables: TTableDefinitions;
-		kv: TKvDefinitions;
-		awareness: TAwarenessDefinitions;
-	};
-	/** Typed table helpers. Undefined at document scope. */
-	tables?: TablesHelper<TTableDefinitions>;
-	/** Document managers. Undefined at document scope. */
-	documents?: DocumentsHelper<TTableDefinitions>;
-	/** Typed KV helper. Undefined at document scope. */
-	kv?: KvHelper<TKvDefinitions>;
-	/** Workspace awareness. Available at document scope when passed from workspace. */
-	awareness?: AwarenessHelper<TAwarenessDefinitions>;
-	/** Batch mutations into a single Y.js transaction. Undefined at document scope. */
-	batch?: (fn: () => void) => void;
-	/** Apply a binary Y.js update. Undefined at document scope. */
-	loadSnapshot?: (update: Uint8Array) => void;
-
-	// ═══ Document scope only (undefined at workspace scope) ═══
-	/** Content timeline. Undefined at workspace scope. */
-	timeline?: Timeline;
-};
+> =
+	| (SharedExtensionContextBase<TId, TExtensions> &
+			WorkspaceScopeContext<TTableDefinitions, TKvDefinitions, TAwarenessDefinitions>)
+	| (SharedExtensionContextBase<TId, TExtensions> & DocumentScopeContext);
 
 /**
  * Factory function that creates an extension.

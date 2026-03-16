@@ -1,7 +1,7 @@
 # KeyCache Implementation for Chrome Extension
 
 **Date**: 2026-03-15
-**Status**: Draft
+**Status**: Implemented
 
 ## Overview
 
@@ -113,22 +113,22 @@ App startup
 
 ### Phase 1: Create the chrome.storage.session KeyCache
 
-- [ ] **1.1** Create `apps/tab-manager/src/lib/state/key-cache.ts` implementing `KeyCache` with `chrome.storage.session`
-- [ ] **1.2** Storage key format: `ek:{userId}` (matches the pattern in the KeyCache docs)
-- [ ] **1.3** `clear()` should only remove `ek:*` keys, not wipe all session storage
+- [x] **1.1** Create `apps/tab-manager/src/lib/state/key-cache.ts` implementing `KeyCache` with `chrome.storage.session`
+- [x] **1.2** Storage key format: `ek:{userId}` (matches the pattern in the KeyCache docs)
+- [x] **1.3** `clear()` should only remove `ek:*` keys, not wipe all session storage
 
 ### Phase 2: Wire cache writes
 
-- [ ] **2.1** In the `getSession()` wrapper or `refreshEncryptionKey()`, after setting `encryptionKey`, also write to the cache: `keyCache.set(userId, base64ToBytes(key))`
-- [ ] **2.2** In `authState.signOut()`, call `keyCache.clear()`
-- [ ] **2.3** Need `userId` — check if `authUser.current?.id` is available at cache-write time
+- [x] **2.1** Cache writes handled automatically by `createKeyManager` — `setKey(key, userId)` writes to cache when keyCache is configured
+- [x] **2.2** Cache clearing handled automatically by `keyManager.wipe()` which calls `keyCache.clear()`
+- [x] **2.3** userId passed from `authState.user?.id` in the reactive adapter
 
 ### Phase 3: Wire cache reads (startup fast path)
 
-- [ ] **3.1** On app startup (before or alongside `checkSession()`), attempt `keyCache.get(userId)`
-- [ ] **3.2** If cache hit, set `encryptionKey` immediately so the wiring unlocks
-- [ ] **3.3** `checkSession()` still runs — if the server returns a different key (rotation), the wiring re-locks and re-unlocks with the new key
-- [ ] **3.4** If cache hit but `checkSession()` returns 4xx (session expired), clear cache and lock
+- [x] **3.1** Separate `$effect` in `syncAuthToEncryption()` attempts `keyManager.restoreKey(userId)` when user loads from storage
+- [x] **3.2** Cache hit triggers `setKey()` internally which derives HKDF key and calls `unlock()`
+- [x] **3.3** Main `$effect` handles key rotation — if server returns different key, `setKey()` updates and re-unlocks
+- [x] **3.4** If `checkSession()` returns 4xx, auth adapter calls `lock()`; sign-out calls `wipe()` which clears cache
 
 ### Phase 4: Verify
 
@@ -196,3 +196,63 @@ App startup
 - `apps/tab-manager/src/lib/state/auth.svelte.ts` — Where encryption key is set
 - `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts` — Where unlock/lock is called
 - `apps/tab-manager/src/lib/workspace.ts` — Workspace singleton creation
+
+## Execution Notes
+
+**Execution order**: 4th (after Encryption Wiring Factory). Can run in parallel with Client Surface Audit.
+
+**Dependencies**: The Encryption Wiring Factory (spec `20260315T141700`) must be implemented first — it provides the `keyCache` config slot that this implementation plugs into.
+
+**Open question resolutions**:
+- Store base64 string (not raw bytes) — `chrome.storage.session` uses JSON serialization, base64 is natural
+- Write cache in auth state layer (closer to the key source), read in encryption wiring (closer to unlock)
+- Plain async utility, not a Svelte-reactive store — the cache is a side-channel, not a state source
+
+## Implementation Review
+
+### Spec Drift from Implementation
+
+The spec was written before `createKeyManager` existed. Key naming differences:
+
+| Spec Name | Actual Implementation |
+|---|---|
+| `createEncryptionWiring()` | `createKeyManager()` |
+| `connect(key, userId)` | `setKey(key, userId)` |
+| `disconnect({ wipe })` | `lock()` / `wipe()` |
+| `loadCachedKey(userId)` | `restoreKey(userId)` |
+| `KeyCache` stores `Uint8Array` | `KeyCache` stores base64 strings |
+
+### Files Changed
+
+1. **`apps/tab-manager/src/lib/state/key-cache.ts`** (new)
+   - `KeyCache` implementation using `browser.storage.session`
+   - Stores base64 strings natively (no Uint8Array conversion—interface is string-based)
+   - `clear()` filters for `ek:*` prefix before removing
+
+2. **`apps/tab-manager/src/lib/state/key-manager.svelte.ts`** (modified)
+   - Passes `{ keyCache }` to `createKeyManager()`
+   - Added separate `$effect` for cache fast-path restore
+   - `cacheRestoreAttempted` flag ensures restore runs exactly once
+
+### Key Architecture Decision
+
+Cache writes and clears are NOT in `auth.svelte.ts` (as the spec proposed). Instead, `createKeyManager` handles them internally:
+- `setKey(key, userId)` → writes to `keyCache.set(userId, key)` automatically
+- `wipe()` → calls `keyCache.clear()` automatically
+- `restoreKey(userId)` → reads `keyCache.get(userId)` and calls `setKey()` internally
+
+This keeps auth as a pure auth concern and avoids coupling it to the cache implementation.
+
+### Startup Flow
+
+```
+1. App mounts → syncAuthToEncryption() called
+2. Cache $effect fires: userId=undefined (storage loading) → no-op
+3. Storage loads → userId available → restoreKey(userId) → cache hit → setKey() → HKDF → unlock (instant)
+4. checkSession() returns → encryptionKey set → setKey() deduplicates (same key = no-op)
+5. If offline: step 4 fails, but step 3 already unlocked from cache
+```
+
+### Build Verification
+
+- `bun run build` in `apps/tab-manager`: **passes** (4.2s, 1.31 MB bundle)

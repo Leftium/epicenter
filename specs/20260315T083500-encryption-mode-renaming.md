@@ -5,7 +5,7 @@
 
 ## Overview
 
-Rename the `EncryptionMode` union from `'plaintext' | 'unlocked' | 'locked'` to `'unprotected' | 'active' | 'suspended'` for clarity. The current names use a vault metaphor that confuses developers who don't know the Bitwarden/1Password model.
+Rename two of the three `EncryptionMode` values: `'plaintext'` → `'unprotected'` and `'unlocked'` → `'active'`. Keep `'locked'` unchanged—it's universally understood and both vault and encryption metaphors agree on its meaning.
 
 ## Motivation
 
@@ -29,16 +29,16 @@ export type EncryptionMode = 'plaintext' | 'locked' | 'unlocked';
 ### Desired State
 
 ```typescript
-export type EncryptionMode = 'unprotected' | 'active' | 'suspended';
+export type EncryptionMode = 'unprotected' | 'active' | 'locked';
 ```
 
-| New Name | Meaning | Old Name |
-|---|---|---|
-| `'unprotected'` | No encryption configured. Data stored as raw JSON. | `'plaintext'` |
-| `'active'` | Key in memory. Writes encrypt, reads decrypt. | `'unlocked'` |
-| `'suspended'` | Key cleared. Cache readable, writes throw. | `'locked'` |
+| Change | New Name | Meaning | Old Name |
+|---|---|---|---|
+| Rename | `'unprotected'` | No encryption configured. Data stored as raw JSON. | `'plaintext'` |
+| Rename | `'active'` | Key in memory. Writes encrypt, reads decrypt. | `'unlocked'` |
+| Keep | `'locked'` | Key cleared. Cache readable, writes throw. | `'locked'` |
 
-Reading `mode === 'active'` immediately communicates "encryption is active." `mode === 'suspended'` communicates "encryption is paused/frozen." `mode === 'unprotected'` communicates "no encryption at all."
+Reading `mode === 'active'` immediately communicates "encryption is active." `mode === 'unprotected'` communicates "no encryption at all." `mode === 'locked'` is universally understood—the workspace is locked, writes are blocked, re-authenticate to unlock.
 
 ## Research Findings
 
@@ -62,8 +62,8 @@ Most encryption libraries don't have named modes—the caller either has the key
 | Decision | Choice | Rationale |
 |---|---|---|
 | `'plaintext'` → | `'unprotected'` | Describes the security posture, not the data format. "Unprotected" is unambiguous—no encryption. |
-| `'unlocked'` → | `'active'` | Reads naturally: "encryption is active." No vault metaphor needed. |
-| `'locked'` → | `'suspended'` | Key gone, capability frozen but not destroyed. "Suspended" communicates temporary pause. |
+| `'unlocked'` → | `'active'` | Reads naturally: "encryption is active." Removes the ambiguity where `'unlocked'` could mean "encryption is off." |
+| `'locked'` | Keep as-is | Universally understood. `lock()` → `'locked'` and `unlock()` → `'active'` read naturally. No rename needed. |
 | Scope | All occurrences in workspace package + consumers | Mechanical rename via ast-grep + manual JSDoc/comment updates |
 
 ## Implementation Plan
@@ -84,7 +84,7 @@ Most encryption libraries don't have named modes—the caller either has the key
 
 - [ ] **3.1** `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts` — `mode === 'unlocked'` → `mode === 'active'`
 - [ ] **3.2** Any other apps referencing `workspaceClient.mode` (search all apps/)
-- [ ] **3.3** Error messages containing "locked" (e.g., "Workspace is locked — sign in to write")
+- [ ] **3.3** Error messages or string literals containing `'unlocked'` or `'plaintext'` as mode references — update to new names. `'locked'` references do NOT change.
 
 ### Phase 4: Update documentation
 
@@ -97,7 +97,8 @@ Most encryption libraries don't have named modes—the caller either has the key
 Mechanical renames that ast-grep can handle:
 - String literal: `'plaintext'` → `'unprotected'` (in encryption mode contexts only)
 - String literal: `'unlocked'` → `'active'` (in encryption mode contexts only)
-- String literal: `'locked'` → `'suspended'` (in encryption mode contexts only)
+
+**Note**: `'locked'` does NOT change — no search/replace needed.
 
 **Caution**: `'plaintext'` appears in non-mode contexts (crypto function parameters, test descriptions, JSDoc). ast-grep patterns must be scoped carefully—target `satisfies EncryptionMode`, `mode ===`, and the type definition. Manual pass for JSDoc and comments.
 
@@ -109,30 +110,27 @@ Consumers outside the monorepo (if any) would break. Currently all consumers are
 
 ### Error messages containing old names
 
-`"Workspace is locked — sign in to write"` needs to become `"Workspace is suspended — sign in to write"` (or a clearer message). Review all `throw` statements in the encrypted KV.
+Error messages containing `'locked'` do NOT need to change (e.g., "Workspace is locked — sign in to write" stays as-is). Review error messages or logs that reference `'unlocked'` or `'plaintext'` as mode values and update them.
 
 ## Open Questions
 
 1. **Should `lock()` and `unlock()` methods also be renamed?**
-   - `lock()` → `suspend()`? `unlock()` → `activate()`?
-   - The methods do more than just change the mode—`unlock(key)` takes a key parameter, `lock()` zeroes it
-   - **Recommendation**: Keep `lock()`/`unlock()` as method names. They describe the ACTION (lock the vault, unlock with a key). The mode names describe the RESULTING STATE. Different concerns.
+   - Since `'locked'` stays as-is, `lock()` → `'locked'` is perfectly aligned
+   - `unlock()` → `'active'` reads naturally: "you unlock the workspace and encryption becomes active"
+   - **Decision**: Keep `lock()`/`unlock()` as method names. They describe the ACTION; mode names describe the RESULTING STATE.
 
-2. **Should the error message say "suspended" or something more user-friendly?**
-   - "Workspace is suspended" might confuse end users
-   - **Recommendation**: Error messages should be user-facing: "Sign in to edit" rather than exposing internal mode names
-
-3. **Is `'unprotected'` too alarming?**
+2. **Is `'unprotected'` too alarming?**
    - Alternatives: `'open'`, `'none'`, `'passthrough'`
    - `'unprotected'` clearly communicates the security posture
-   - **Recommendation**: Keep `'unprotected'`. It's accurate. If you want no encryption, you should know that's what you're getting.
+   - **Decision**: Keep `'unprotected'`. It's accurate. If you want no encryption, you should know that's what you're getting.
 
 ## Success Criteria
 
-- [ ] `EncryptionMode` type is `'unprotected' | 'active' | 'suspended'`
+- [ ] `EncryptionMode` type is `'unprotected' | 'active' | 'locked'`
 - [ ] All tests pass with new mode names
-- [ ] No string literal `'plaintext'`, `'unlocked'`, or `'locked'` used as mode values anywhere
-- [ ] JSDoc and error messages updated
+- [ ] No string literal `'plaintext'` or `'unlocked'` used as mode values anywhere
+- [ ] `'locked'` remains unchanged throughout codebase
+- [ ] JSDoc and error messages updated where they reference old names
 - [ ] TypeScript compilation succeeds across all packages and apps
 
 ## References

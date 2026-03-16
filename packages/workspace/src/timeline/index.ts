@@ -13,5 +13,4 @@ export {
 	type TextEntry,
 	type Timeline,
 	type TimelineEntry,
-	type ValidatedEntry,
 } from './timeline.js';

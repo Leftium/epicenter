@@ -81,7 +81,6 @@ export type {
 	SheetEntry,
 	TextEntry,
 	TimelineEntry,
-	ValidatedEntry,
 } from './timeline';
 export {
 	computeMidpoint,

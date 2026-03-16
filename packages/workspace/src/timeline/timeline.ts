@@ -54,7 +54,7 @@ export type Timeline = {
 	 * Recomputed on every access—each call parses the underlying Y.Map and
 	 * returns a fresh object. Do not rely on reference equality between calls.
 	 */
-	readonly currentEntry: ValidatedEntry;
+	readonly currentEntry: TimelineEntry | null;
 	/** Content type of the current entry, or undefined if empty. */
 	readonly currentType: ContentType | undefined;
 
@@ -169,7 +169,6 @@ export type Timeline = {
 	observe(callback: () => void): () => void;
 };
 
-export type ValidatedEntry = TimelineEntry | null;
 
 export function createTimeline(ydoc: Y.Doc): Timeline {
 	const timeline = ydoc.getArray<TimelineYMap>('timeline');
@@ -265,43 +264,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	}
 
 	/**
-	 * Replace sheet in-place if already sheet type, otherwise push a new sheet entry.
-	 *
-	 * Mirrors `replaceCurrentText()`: avoids unnecessary timeline growth
-	 * when the type hasn't changed. Clears existing columns/rows and
-	 * repopulates from CSV for in-place updates.
-	 */
-	function replaceCurrentSheet(csv: string): void {
-		if (currentType() === 'sheet') {
-			const entry = lastEntry()!;
-			const columns = entry.get('columns') as Y.Map<Y.Map<string>>;
-			const rows = entry.get('rows') as Y.Map<Y.Map<string>>;
-			columns.forEach((_, key) => columns.delete(key));
-			rows.forEach((_, key) => rows.delete(key));
-			parseSheetFromCsv(csv, columns, rows);
-		} else {
-			pushSheetFromCsv(csv);
-		}
-	}
-
-	/**
-	 * Replace richtext in-place if already richtext type, otherwise push a new text entry.
-	 *
-	 * Clears the XmlFragment and repopulates from plaintext—each line becomes
-	 * a `<paragraph>`. Mirrors `replaceCurrentText()` and `replaceCurrentSheet()`
-	 * for richtext mode.
-	 */
-	function replaceCurrentRichtext(text: string): void {
-		if (currentType() === 'richtext') {
-			const fragment = lastEntry()!.get('content') as Y.XmlFragment;
-			fragment.delete(0, fragment.length);
-			populateFragmentFromText(fragment, text);
-		} else {
-			pushText(text);
-		}
-	}
-
-	/**
 	 * Push a new richtext entry whose content is deep-cloned from a source fragment.
 	 *
 	 * `Y.XmlElement.clone()` / `Y.XmlText.clone()` produce unattached copies that
@@ -362,7 +324,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		get length() {
 			return timeline.length;
 		},
-		get currentEntry(): ValidatedEntry {
+		get currentEntry(): TimelineEntry | null {
 			return validated();
 		},
 		get currentType() {
@@ -385,9 +347,20 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		write(text: string) {
 			ydoc.transact(() => {
 				const type = currentType();
-				if (type === 'sheet') replaceCurrentSheet(text);
-				else if (type === 'richtext') replaceCurrentRichtext(text);
-				else replaceCurrentText(text);
+				if (type === 'sheet') {
+					const entry = lastEntry()!;
+					const columns = entry.get('columns') as Y.Map<Y.Map<string>>;
+					const rows = entry.get('rows') as Y.Map<Y.Map<string>>;
+					columns.forEach((_, key) => columns.delete(key));
+					rows.forEach((_, key) => rows.delete(key));
+					parseSheetFromCsv(text, columns, rows);
+				} else if (type === 'richtext') {
+					const fragment = lastEntry()!.get('content') as Y.XmlFragment;
+					fragment.delete(0, fragment.length);
+					populateFragmentFromText(fragment, text);
+				} else {
+					replaceCurrentText(text);
+				}
 			});
 		},
 

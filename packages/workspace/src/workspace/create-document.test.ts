@@ -229,7 +229,7 @@ describe('createDocuments', () => {
 
 			let capturedOrigin: unknown = null;
 			tables.files.observe((_changedIds, transaction) => {
-				capturedOrigin = (transaction as Y.Transaction).origin;
+				capturedOrigin = transaction.origin;
 			});
 
 			const handle = await documents.open('f1');

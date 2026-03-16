@@ -436,6 +436,12 @@ export type InferKvValue<T> =
  *
  * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
  */
+/** Transaction metadata exposed to table observe() callbacks. */
+export type TransactionMeta = {
+	/** The origin of this transaction. `null` for local writes, non-null for remote syncs. */
+	origin: unknown;
+};
+
 export type TableHelper<TRow extends BaseRow> = {
 	// ═══════════════════════════════════════════════════════════════════════
 	// PARSE
@@ -581,14 +587,15 @@ export type TableHelper<TRow extends BaseRow> = {
 	 * - `status === 'not_found'` → the row was deleted
 	 * - Otherwise → the row was added or updated
 	 *
-	 * Changes are batched per Y.Transaction.
-	 *
-	 * @param callback - Receives changed IDs and the Y.Transaction
-	 * @returns Unsubscribe function
-	 */
-	observe(
-		callback: (changedIds: Set<string>, transaction: unknown) => void,
-	): () => void;
+   * Changes are batched per Y.Transaction. The `transaction` object exposes
+   * `origin` for distinguishing local writes (`null`) from remote syncs.
+   *
+   * @param callback - Receives changed IDs and transaction metadata
+   * @returns Unsubscribe function
+   */
+  observe(
+    callback: (changedIds: Set<string>, transaction: TransactionMeta) => void,
+  ): () => void;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// METADATA

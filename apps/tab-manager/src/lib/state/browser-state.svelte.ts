@@ -33,7 +33,6 @@
  */
 
 import { SvelteMap } from 'svelte/reactivity';
-import type { Transaction } from 'yjs';
 import {
 	generateDefaultDeviceName,
 	getBrowserName,
@@ -459,8 +458,7 @@ function createBrowserState() {
 	// Only remote-origin changes (transaction.origin !== null) trigger Chrome
 	// API calls. Local writes (origin === null) are our own → skip.
 
-	const _unobserveTabs = tables.tabs.observe((changedIds, txn) => {
-		const transaction = txn as Transaction;
+	const _unobserveTabs = tables.tabs.observe((changedIds, transaction) => {
 		for (const id of changedIds) {
 			const result = tables.tabs.get(id);
 			switch (result.status) {
@@ -507,8 +505,7 @@ function createBrowserState() {
 		}
 	});
 
-	const _unobserveWindows = tables.windows.observe((changedIds, txn) => {
-		const transaction = txn as Transaction;
+	const _unobserveWindows = tables.windows.observe((changedIds, transaction) => {
 		for (const id of changedIds) {
 			const result = tables.windows.get(id);
 			switch (result.status) {
@@ -554,8 +551,7 @@ function createBrowserState() {
 	});
 
 	if (browser.tabGroups) {
-		const _unobserveTabGroups = tables.tabGroups.observe((changedIds, txn) => {
-			const transaction = txn as Transaction;
+		const _unobserveTabGroups = tables.tabGroups.observe((changedIds, transaction) => {
 			for (const id of changedIds) {
 				const result = tables.tabGroups.get(id);
 				if (result.status === 'not_found') {

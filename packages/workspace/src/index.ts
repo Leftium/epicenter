@@ -167,6 +167,7 @@ export type {
 	TableDefinition,
 	TableDefinitions,
 	TableHelper,
+	TransactionMeta,
 	TablesHelper,
 	UpdateResult,
 	ValidRowResult,

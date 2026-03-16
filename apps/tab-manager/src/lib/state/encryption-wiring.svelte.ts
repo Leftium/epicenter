@@ -18,7 +18,7 @@ const wiring = createEncryptionWiring(workspaceClient);
  * Initialize the encryption wiring as a root effect.
  *
  * Watches `authState.encryptionKey` and `authState.status` reactively.
- * When the key changes, calls `wiring.connect()` or `wiring.disconnect()`.
+ * When the key appears, connects. On sign-out, wipes local data. Otherwise, soft-locks.
  *
  * @returns Cleanup function (call from onMount cleanup)
  */
@@ -28,8 +28,10 @@ export function initEncryptionWiring() {
 			const key = authState.encryptionKey;
 			if (key) {
 				wiring.connect(key);
+			} else if (authState.status === 'signing-out') {
+				wiring.wipeLocalData();
 			} else {
-				wiring.disconnect({ wipe: authState.status === 'signing-out' });
+				wiring.lock();
 			}
 		});
 	});

@@ -456,27 +456,37 @@ function createAiChatState() {
 			},
 
 			/**
-			 * Respond to a tool approval request.
+			 * Approve a tool call that requires user confirmation.
 			 *
-			 * Called when the user clicks [Allow], [Always Allow], or [Deny]
-			 * on a destructive tool call in the chat. Delegates to ChatClient's
-			 * `addToolApprovalResponse`, which sends the response back to the
-			 * server to resume or cancel tool execution.
+			 * Called when the user clicks [Allow] or [Always Allow] on a
+			 * destructive tool call. Resumes server-side execution.
 			 *
 			 * @param approvalId - The `part.approval.id` from the ToolCallPart
-			 * @param approved - `true` to allow execution, `false` to deny
 			 *
 			 * @example
 			 * ```typescript
-			 * // User clicks "Allow"
-			 * handle.approveToolCall(part.approval.id, true);
-			 *
-			 * // User clicks "Deny"
-			 * handle.approveToolCall(part.approval.id, false);
+			 * handle.approveToolCall(part.approval.id);
 			 * ```
 			 */
-			approveToolCall(approvalId: string, approved: boolean) {
-				void client.addToolApprovalResponse({ id: approvalId, approved });
+			approveToolCall(approvalId: string) {
+				void client.addToolApprovalResponse({ id: approvalId, approved: true });
+			},
+
+			/**
+			 * Deny a tool call that requires user confirmation.
+			 *
+			 * Called when the user clicks [Deny] on a destructive tool call.
+			 * Cancels server-side execution.
+			 *
+			 * @param approvalId - The `part.approval.id` from the ToolCallPart
+			 *
+			 * @example
+			 * ```typescript
+			 * handle.denyToolCall(part.approval.id);
+			 * ```
+			 */
+			denyToolCall(approvalId: string) {
+				void client.addToolApprovalResponse({ id: approvalId, approved: false });
 			},
 
 			rename(title: string) {

@@ -3,14 +3,16 @@
  *
  * Verifies that `createEncryptionWiring()` correctly bridges the async HKDF
  * derivation gap between auth sessions and workspace lock/unlock. Tests the
- * four hard parts: async bridging, mode guards, duplicate key dedup, and
- * race protection via generation counter.
+ * three hard parts: async bridging, duplicate key dedup, and race protection
+ * via generation counter.
+ *
+ * The wiring always calls through to the client — mode guarding is the
+ * client's responsibility, not the wiring's.
  *
  * Key behaviors:
  * - connect() derives workspace key via HKDF then calls unlock()
- * - lock() calls client.lock() when mode is unlocked
- * - wipeLocalData() calls clearLocalData() + keyCache.clear()
- * - lock()/wipeLocalData() are no-ops when mode is not 'unlocked'
+ * - lock() always calls client.lock() (client handles mode guards)
+ * - wipeLocalData() always calls clearLocalData() + keyCache.clear()
  * - Duplicate connect() with same key is a no-op
  * - Race: lock() during in-flight derivation cancels stale unlock
  * - Race: rapid connect() calls — only latest key wins
@@ -30,14 +32,9 @@ import type { KeyCache } from './key-cache';
 // Setup
 // ============================================================================
 
-function setup(overrides?: { mode?: EncryptionMode }) {
-	const mode = overrides?.mode ?? 'plaintext';
-
+function setup() {
 	const client: EncryptionWiringClient = {
 		id: 'test-workspace',
-		get mode() {
-			return mode;
-		},
 		lock: mock(() => {}),
 		unlock: mock(() => {}),
 		clearLocalData: mock(() => Promise.resolve()),
@@ -53,9 +50,6 @@ function setupWithMutableMode() {
 
 	const client: EncryptionWiringClient = {
 		id: 'test-workspace',
-		get mode() {
-			return mode;
-		},
 		lock: mock(() => {
 			mode = 'locked';
 		}),
@@ -84,23 +78,11 @@ function setupWithKeyCache() {
 			store.clear();
 		}),
 	};
-
-	let mode: EncryptionMode = 'plaintext';
-
 	const client: EncryptionWiringClient = {
 		id: 'test-workspace',
-		get mode() {
-			return mode;
-		},
-		lock: mock(() => {
-			mode = 'locked';
-		}),
-		unlock: mock(((_key: Uint8Array) => {
-			mode = 'unlocked';
-		}) as (key: Uint8Array) => void),
-		clearLocalData: mock(async () => {
-			mode = 'locked';
-		}),
+		lock: mock(() => {}),
+		unlock: mock(() => {}),
+		clearLocalData: mock(() => Promise.resolve()),
 	};
 
 	const wiring = createEncryptionWiring(client, { keyCache });
@@ -163,30 +145,12 @@ describe('connect', () => {
 // ============================================================================
 
 describe('lock', () => {
-	test('calls client.lock() when mode is unlocked', () => {
-		const { client, wiring } = setup({ mode: 'unlocked' });
+	test('always calls client.lock()', () => {
+		const { client, wiring } = setup();
 
 		wiring.lock();
 
 		expect(client.lock).toHaveBeenCalledTimes(1);
-		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
-	});
-
-	test('no-op when mode is plaintext', () => {
-		const { client, wiring } = setup({ mode: 'plaintext' });
-
-		wiring.lock();
-
-		expect(client.lock).toHaveBeenCalledTimes(0);
-		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
-	});
-
-	test('no-op when mode is locked', () => {
-		const { client, wiring } = setup({ mode: 'locked' });
-
-		wiring.lock();
-
-		expect(client.lock).toHaveBeenCalledTimes(0);
 		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
 	});
 
@@ -211,29 +175,12 @@ describe('lock', () => {
 // ============================================================================
 
 describe('wipeLocalData', () => {
-	test('calls clearLocalData() when mode is unlocked', () => {
-		const { client, wiring } = setup({ mode: 'unlocked' });
+	test('always calls clearLocalData()', () => {
+		const { client, wiring } = setup();
 
 		wiring.wipeLocalData();
 
 		expect(client.clearLocalData).toHaveBeenCalledTimes(1);
-		expect(client.lock).toHaveBeenCalledTimes(0);
-	});
-
-	test('no-op for clearLocalData when mode is plaintext', () => {
-		const { client, wiring } = setup({ mode: 'plaintext' });
-
-		wiring.wipeLocalData();
-
-		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
-	});
-
-	test('no-op for clearLocalData when mode is locked', () => {
-		const { client, wiring } = setup({ mode: 'locked' });
-
-		wiring.wipeLocalData();
-
-		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
 	});
 
 	test('clears fingerprint so next connect() with same key is not skipped', async () => {
@@ -258,7 +205,7 @@ describe('wipeLocalData', () => {
 
 describe('race protection', () => {
 	test('lock() during in-flight derivation cancels stale unlock()', async () => {
-		const { client, wiring } = setup({ mode: 'unlocked' });
+		const { client, wiring } = setup();
 
 		wiring.connect(makeKey());
 		// lock immediately — before HKDF resolves
@@ -337,7 +284,6 @@ describe('loadCachedKey', () => {
 	test('wipeLocalData() clears keyCache', () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
-		// Need to connect first so mode becomes unlocked
 		wiring.connect(makeKey(), 'user-1');
 
 		wiring.wipeLocalData();

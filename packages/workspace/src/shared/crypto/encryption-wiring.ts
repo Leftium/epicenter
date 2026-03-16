@@ -26,19 +26,17 @@
  * @module
  */
 
-import type { EncryptionMode } from '../y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { base64ToBytes, deriveWorkspaceKey } from './index';
 import type { KeyCache } from './key-cache';
 
 /**
  * Minimal client surface the wiring needs to drive lock/unlock.
  *
- * Uses the current mode names (`'plaintext' | 'unlocked' | 'locked'`).
- * A later spec handles renaming.
+ * The wiring never reads mode—mode guarding is the client's responsibility.
+ * This keeps the wiring focused on key lifecycle only.
  */
 export type EncryptionWiringClient = {
 	readonly id: string;
-	readonly mode: EncryptionMode;
 	lock(): void;
 	unlock(key: Uint8Array): void;
 	clearLocalData(): Promise<void>;
@@ -56,8 +54,8 @@ export type EncryptionWiringConfig = {
  * Imperative connect/lock/wipe API for encryption lifecycle management.
  *
  * The factory owns the hard parts—async HKDF bridging, duplicate key dedup,
- * mode guard subtlety, and race protection. The consumer just pushes key
- * presence/absence from their framework's reactive system.
+ * and race protection. The consumer just pushes key presence/absence from
+ * their framework's reactive system. Mode guarding is the client's job.
  */
 export type EncryptionWiring = {
 	/**
@@ -79,7 +77,8 @@ export type EncryptionWiring = {
 	 * session expires or the encryption key is revoked—data stays on disk
 	 * for re-unlock later.
 	 *
-	 * Only acts when `mode === 'unlocked'`. No-op in plaintext/locked modes.
+	 * Always calls through to `client.lock()`—the client decides whether
+	 * locking is meaningful in its current mode.
 	 * Cancels any in-flight HKDF derivation from a prior `connect()`.
 	 */
 	lock(): void;
@@ -91,7 +90,8 @@ export type EncryptionWiring = {
 	 * IndexedDB/persistence, then clears the key cache. The workspace client
 	 * stays alive but is locked with no local data.
 	 *
-	 * Only acts when `mode === 'unlocked'`. No-op in plaintext/locked modes.
+	 * Always calls through to `client.clearLocalData()`—the client decides
+	 * whether wiping is meaningful in its current mode.
 	 * Cancels any in-flight HKDF derivation from a prior `connect()`.
 	 * If a `keyCache` was provided, clears the cache.
 	 */
@@ -112,13 +112,15 @@ export type EncryptionWiring = {
 /**
  * Create a framework-agnostic encryption wiring for a workspace client.
  *
- * Encapsulates the four hard parts of encryption lifecycle management:
+ * Encapsulates the three hard parts of encryption lifecycle management:
  * 1. **Async-to-sync bridge** — `deriveWorkspaceKey` is async, `unlock()` is sync
- * 2. **Three-way key-loss branch** — sign-out (wipe) vs session expiry (lock) vs never-had-key (no-op)
- * 3. **Mode guard subtlety** — only act when `mode === 'unlocked'`
- * 4. **Race protection** — generation counter prevents stale HKDF results from landing
+ * 2. **Duplicate key dedup** — same key twice is a no-op
+ * 3. **Race protection** — generation counter prevents stale HKDF results from landing
  *
- * @param client - Minimal workspace client surface (id, mode, lock, unlock, clearLocalData)
+ * Mode guarding (plaintext/locked/unlocked) is the client's responsibility,
+ * not the wiring's. The wiring always calls through to `lock()` / `clearLocalData()`.
+ *
+ * @param client - Minimal workspace client surface (id, lock, unlock, clearLocalData)
  * @param config - Optional configuration (keyCache for instant unlock on page refresh)
  * @returns Imperative connect/lock/wipeLocalData/loadCachedKey API
  *
@@ -148,9 +150,9 @@ export function createEncryptionWiring(
 	let lastKeyBase64: string | undefined;
 
 	// Zone 3 — Private helpers
-	function deriveAndUnlock(userKey: Uint8Array, gen: number) {
+	function deriveAndUnlock(userKey: Uint8Array, thisGeneration: number) {
 		void deriveWorkspaceKey(userKey, client.id).then((wsKey) => {
-			if (gen === generation) client.unlock(wsKey);
+			if (thisGeneration === generation) client.unlock(wsKey);
 		});
 	}
 
@@ -166,24 +168,28 @@ export function createEncryptionWiring(
 			if (userKeyBase64 === lastKeyBase64) return;
 			lastKeyBase64 = userKeyBase64;
 
-			const gen = ++generation;
+			const thisGeneration = ++generation;
 			const userKey = base64ToBytes(userKeyBase64);
 
-			deriveAndUnlock(userKey, gen);
+			deriveAndUnlock(userKey, thisGeneration);
 
-			if (userId && keyCache) {
+			if (keyCache && !userId) {
+				console.warn(
+					'[encryption-wiring] keyCache configured but no userId provided—key not cached',
+				);
+			} else if (userId && keyCache) {
 				void keyCache.set(userId, userKeyBase64);
 			}
 		},
 
 		lock() {
 			invalidateKey();
-			if (client.mode === 'unlocked') client.lock();
+			client.lock();
 		},
 
 		wipeLocalData() {
 			invalidateKey();
-			if (client.mode === 'unlocked') void client.clearLocalData();
+			void client.clearLocalData();
 			if (keyCache) void keyCache.clear();
 		},
 

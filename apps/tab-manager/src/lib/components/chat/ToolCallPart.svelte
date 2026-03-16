@@ -44,24 +44,24 @@
 			approval?.id &&
 			toolTrustState.shouldAutoApprove(part.name)
 		) {
-			aiChatState.active?.approveToolCall(approval.id, true);
+			aiChatState.active?.approveToolCall(approval.id);
 		}
 	});
 
 	function handleAllow() {
 		if (!approval?.id) return;
-		aiChatState.active?.approveToolCall(approval.id, true);
+		aiChatState.active?.approveToolCall(approval.id);
 	}
 
 	function handleAlwaysAllow() {
 		if (!approval?.id) return;
 		toolTrustState.set(part.name, 'always');
-		aiChatState.active?.approveToolCall(approval.id, true);
+		aiChatState.active?.approveToolCall(approval.id);
 	}
 
 	function handleDeny() {
 		if (!approval?.id) return;
-		aiChatState.active?.approveToolCall(approval.id, false);
+		aiChatState.active?.denyToolCall(approval.id);
 	}
 	const badgeVariant = $derived.by(() => {
 		if (isFailed) return 'status.failed';

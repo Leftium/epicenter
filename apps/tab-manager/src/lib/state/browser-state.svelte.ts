@@ -459,7 +459,7 @@ function createBrowserState() {
 	// Only remote-origin changes (transaction.origin !== null) trigger Chrome
 	// API calls. Local writes (origin === null) are our own → skip.
 
-	tables.tabs.observe((changedIds, txn) => {
+	const _unobserveTabs = tables.tabs.observe((changedIds, txn) => {
 		const transaction = txn as Transaction;
 		for (const id of changedIds) {
 			const result = tables.tabs.get(id);
@@ -507,7 +507,7 @@ function createBrowserState() {
 		}
 	});
 
-	tables.windows.observe((changedIds, txn) => {
+	const _unobserveWindows = tables.windows.observe((changedIds, txn) => {
 		const transaction = txn as Transaction;
 		for (const id of changedIds) {
 			const result = tables.windows.get(id);
@@ -554,7 +554,7 @@ function createBrowserState() {
 	});
 
 	if (browser.tabGroups) {
-		tables.tabGroups.observe((changedIds, txn) => {
+		const _unobserveTabGroups = tables.tabGroups.observe((changedIds, txn) => {
 			const transaction = txn as Transaction;
 			for (const id of changedIds) {
 				const result = tables.tabGroups.get(id);

@@ -258,6 +258,17 @@ export function createWorkspace<
 			batch(fn: () => void): void {
 				ydoc.transact(fn);
 			},
+			/**
+			 * Apply a binary Y.js update to the underlying document.
+			 *
+			 * Use this to hydrate the workspace from a persisted snapshot (e.g. a `.yjs`
+			 * file on disk) without exposing the raw Y.Doc to consumer code.
+			 *
+			 * @param update - A Uint8Array produced by `Y.encodeStateAsUpdate()` or equivalent
+			 */
+			loadSnapshot(update: Uint8Array): void {
+				Y.applyUpdate(ydoc, update);
+			},
 			whenReady,
 			destroy,
 			[Symbol.asyncDispose]: destroy,

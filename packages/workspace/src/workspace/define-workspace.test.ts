@@ -370,7 +370,7 @@ describe('defineWorkspace', () => {
 		}).withExtension(
 			'inspector',
 			({ ydoc, whenReady }) => {
-				// DualScopeContext only has ydoc + whenReady
+				// SharedExtensionContext only has ydoc + whenReady
 				expect(ydoc).toBeDefined();
 				expect(whenReady).toBeInstanceOf(Promise);
 				return {};

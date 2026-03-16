@@ -1030,7 +1030,7 @@ export type WorkspaceClientBuilder<
 	withExtension<TKey extends string, TExports extends Record<string, unknown>>(
 		key: TKey,
 		factory: (
-			context: DualScopeContext,
+			context: SharedExtensionContext,
 		) => TExports & {
 			whenReady?: Promise<unknown>;
 			destroy?: () => MaybePromise<void>;
@@ -1213,21 +1213,20 @@ export type ExtensionContext<
 >;
 
 /**
- * Minimal context available to dual-scope factories registered via `withExtension()`.
+ * The shared subset of `ExtensionContext` and `DocumentContext`—fields that
+ * exist in both workspace and document scopes.
  *
- * Intentionally small — only fields that exist in BOTH workspace and document scopes.
- * If a factory needs workspace-specific fields (tables, awareness, etc.), register it
- * with `withWorkspaceExtension()` instead. If it needs document-specific fields
- * (timeline), use `withDocumentExtension()`.
- *
- * `withExtension()` is sugar for calling both scoped methods with the same factory.
+ * Used by `withExtension()`, which registers the same factory for both scopes.
+ * If a factory needs workspace-specific fields (tables, awareness, etc.),
+ * use `withWorkspaceExtension()`. For document-specific fields (timeline),
+ * use `withDocumentExtension()`.
  *
  * ```typescript
  * // Persistence only needs ydoc — works for both scopes:
  * .withExtension('persistence', ({ ydoc }) => { ... })
  * ```
  */
-export type DualScopeContext = {
+export type SharedExtensionContext = {
 	/** The Y.Doc for this scope (workspace Y.Doc or content Y.Doc). */
 	ydoc: Y.Doc;
 	/** Composite whenReady of all PRIOR extensions in this scope. */
@@ -1261,29 +1260,6 @@ export type ExtensionFactory<
 	destroy?: () => MaybePromise<void>;
 };
 
-/**
- * Factory function for dual-scope extensions registered via `withExtension()`.
- *
- * Accepts only the minimal `DualScopeContext` (ydoc + whenReady). Factories that
- * need scope-specific fields should use `ExtensionFactory` (workspace) or register
- * via `withDocumentExtension()` (document) instead.
- *
- * @example Persistence extension (only needs ydoc):
- * ```typescript
- * const persistence: DualScopeFactory = ({ ydoc }) => {
- *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
- *   return { provider, whenReady: provider.whenReady, destroy: () => provider.destroy() };
- * };
- * ```
- *
- * @typeParam TExports - The consumer-facing exports object type
- */
-export type DualScopeFactory<
-	TExports extends Record<string, unknown> = Record<string, unknown>,
-> = (context: DualScopeContext) => TExports & {
-	whenReady?: Promise<unknown>;
-	destroy?: () => MaybePromise<void>;
-};
 
 /** The workspace client returned by createWorkspace() */
 export type WorkspaceClient<

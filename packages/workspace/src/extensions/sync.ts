@@ -3,8 +3,7 @@ import {
 	type SyncProvider,
 	type SyncStatus,
 } from '@epicenter/sync-client';
-import type * as Y from 'yjs';
-import type { DualScopeFactory } from '../workspace/types';
+import type { SharedExtensionContext } from '../workspace/types';
 
 /**
  * Sync extension configuration.
@@ -109,7 +108,10 @@ export type SyncExtensionExports = {
  */
 export function createSyncExtension(
 	config: SyncExtensionConfig,
-): DualScopeFactory<SyncExtensionExports> {
+): (context: SharedExtensionContext) => SyncExtensionExports & {
+	whenReady: Promise<unknown>;
+	destroy: () => void;
+} {
 	return ({ ydoc, whenReady: priorReady }) => {
 		const docId = ydoc.guid;
 		const resolvedBaseUrl = config.url(docId);

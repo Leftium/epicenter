@@ -312,7 +312,7 @@ export function createWorkspace<
 				},
 			) {
 				// Sugar: register for both scopes with the same factory.
-				// The factory only receives DualScopeContext (ydoc + whenReady),
+				// The factory only receives SharedExtensionContext (ydoc + whenReady),
 				// which is a structural subset of both ExtensionContext and DocumentContext.
 				documentExtensionRegistrations.push({
 					key,

@@ -3,12 +3,12 @@ export { populateFragmentFromMarkdown } from './richtext.js';
 export {
 	parseSheetFromCsv,
 	serializeSheetToCsv,
+	type SheetBinding,
 } from './sheet.js';
 export {
 	createTimeline,
 	type ContentType,
 	type RichTextEntry,
-	type SheetBinding,
 	type SheetEntry,
 	type TextEntry,
 	type Timeline,

@@ -3,7 +3,7 @@ import {
 	populateFragmentFromText,
 	xmlFragmentToPlaintext,
 } from './richtext.js';
-import { parseSheetFromCsv, serializeSheetToCsv } from './sheet.js';
+import { type SheetBinding, parseSheetFromCsv, serializeSheetToCsv } from './sheet.js';
 
 type TimelineYMap = Y.Map<unknown>;
 
@@ -33,11 +33,6 @@ export type SheetEntry = {
 	createdAt: number;
 };
 
-/** The result of binding a sheet—columns and rows Y.Maps. */
-export type SheetBinding = {
-	columns: Y.Map<Y.Map<string>>;
-	rows: Y.Map<Y.Map<string>>;
-};
 export type TimelineEntry = TextEntry | RichTextEntry | SheetEntry;
 
 /** Content types supported by timeline entries. */
@@ -317,7 +312,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				case 'richtext':
 					return xmlFragmentToPlaintext(entry.content);
 				case 'sheet':
-					return serializeSheetToCsv(entry.columns, entry.rows);
+					return serializeSheetToCsv(entry);
 			}
 		},
 
@@ -331,7 +326,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					const rows = entry.get('rows') as Y.Map<Y.Map<string>>;
 					columns.forEach((_, key) => columns.delete(key));
 					rows.forEach((_, key) => rows.delete(key));
-					parseSheetFromCsv(text, columns, rows);
+					parseSheetFromCsv(text, { columns, rows });
 				// Richtext: clear fragment and repopulate as paragraphs
 				} else if (type === 'richtext') {
 					const fragment = lastEntry()!.get('content') as Y.XmlFragment;
@@ -356,7 +351,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				} else {
 					const existing = entry.type === 'richtext'
 						? xmlFragmentToPlaintext(entry.content)
-						: serializeSheetToCsv(entry.columns, entry.rows);
+						: serializeSheetToCsv(entry);
 					replaceCurrentText(existing + text);
 				}
 			});
@@ -373,7 +368,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					return ydoc.transact(() => pushText(plaintext)).content;
 				}
 				case 'sheet': {
-					const csv = serializeSheetToCsv(entry.columns, entry.rows);
+					const csv = serializeSheetToCsv(entry);
 					return ydoc.transact(() => pushText(csv)).content;
 				}
 			}
@@ -394,7 +389,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					}).content;
 				}
 				case 'sheet': {
-					const csv = serializeSheetToCsv(entry.columns, entry.rows);
+					const csv = serializeSheetToCsv(entry);
 					return ydoc.transact(() => {
 						const { content } = pushRichtext();
 						populateFragmentFromText(content, csv);
@@ -414,7 +409,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					const plaintext = entry.content.toString();
 					return ydoc.transact(() => {
 						const result = pushSheet();
-						parseSheetFromCsv(plaintext, result.columns, result.rows);
+						parseSheetFromCsv(plaintext, result);
 						return result;
 					});
 				}
@@ -422,7 +417,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					const plaintext = xmlFragmentToPlaintext(entry.content);
 					return ydoc.transact(() => {
 						const result = pushSheet();
-						parseSheetFromCsv(plaintext, result.columns, result.rows);
+						parseSheetFromCsv(plaintext, result);
 						return result;
 					});
 				}

@@ -1,7 +1,7 @@
 # Refactor `create-document.ts` and Document Subsystem
 
 **Date**: 2026-03-16
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
 **Skills**: `typescript`, `factory-function-composition`, `control-flow`, `method-shorthand-jsdoc`, `testing`
 
@@ -143,10 +143,10 @@ This creates problems:
 
 ### Phase 4: Evaluate and report
 
-- [ ] **4.1** Research the import graph for the 10 document-related types in `types.ts`—use `lsp_find_references` on each
-- [ ] **4.2** Determine which types are internal-only vs re-exported for consumers
-- [ ] **4.3** Write recommendation in Review section: move, partially move, or leave with rationale
-- [ ] **4.4** Re-read `open()` method after all changes. If still >100 lines and the extension resolution loop (tag filtering + factory invocation + incremental context) is a self-contained concern, extract it as a private helper. Otherwise leave it and note why in Review.
+- [x] **4.1** Research the import graph for the 10 document-related types in `types.ts`—use `lsp_find_references` on each
+- [x] **4.2** Determine which types are internal-only vs re-exported for consumers
+- [x] **4.3** Write recommendation in Review section: move, partially move, or leave with rationale
+- [x] **4.4** Re-read `open()` method after all changes. If still >100 lines and the extension resolution loop (tag filtering + factory invocation + incremental context) is a self-contained concern, extract it as a private helper. Otherwise leave it and note why in Review.
 
 ## Edge Cases
 
@@ -182,15 +182,15 @@ These tails MUST remain different after extracting the shared loop. The shared `
 
 ## Success Criteria
 
-- [ ] All existing tests pass without modification: `bun test packages/workspace/src/workspace/create-document.test.ts`
-- [ ] All existing tests pass: `bun test packages/workspace/src/workspace/create-workspace.test.ts`
-- [ ] `lsp_diagnostics` clean on all changed files
-- [ ] No behavior changes—pure refactor, no API changes, no new exports
-- [ ] LIFO cleanup ceremony exists in exactly one location (`lifecycle.ts`), imported by both consumer files
-- [ ] `makeHandle` and `resolveGuid` no longer exist as named functions
-- [ ] Factory zones in `createDocuments` read top-to-bottom without private helpers between state and return
-- [ ] Review section documents findings on type co-location and `open()` complexity
-- [ ] One logical commit per phase
+- [x] All existing tests pass without modification: `bun test packages/workspace/src/workspace/create-document.test.ts`
+- [x] All existing tests pass: `bun test packages/workspace/src/workspace/create-workspace.test.ts`
+- [x] `lsp_diagnostics` clean on all changed files
+- [x] No behavior changes—pure refactor, no API changes, no new exports
+- [x] LIFO cleanup ceremony exists in exactly one location (`lifecycle.ts`), imported by both consumer files
+- [x] `makeHandle` and `resolveGuid` no longer exist as named functions
+- [x] Factory zones in `createDocuments` read top-to-bottom without private helpers between state and return
+- [x] Review section documents findings on type co-location and `open()` complexity
+- [x] One logical commit per phase
 
 ## References
 
@@ -204,4 +204,54 @@ These tails MUST remain different after extracting the shared loop. The shared `
 
 ## Review
 
-_To be filled after implementation: summary of changes, type co-location findings, `open()` complexity assessment, and suggestions for future work._
+**Completed**: 2026-03-16
+**Commits**: 3 (one per phase, Phase 2+3 combined)
+
+### Summary
+
+Extracted duplicated LIFO cleanup to `lifecycle.ts` as shared `destroyLifo()`/`startDestroyLifo()` primitives, inlined two trivial helpers (`makeHandle`, `resolveGuid`), and verified the factory body's zone ordering. The refactor reduced `create-document.ts` from 426 to 368 lines while eliminating 4 hand-rolled LIFO loops (3 in `create-document.ts` + the spec's original 3 miscount—there were actually 4, including the `whenReady` catch path).
+
+### Deviations from Spec
+
+- **4th LIFO instance discovered**: The spec research table listed 3 LIFO locations in `create-document.ts`, but there were 4. The async loop inside `open()`'s `whenReady` `.catch()` was also replaced with `destroyLifo()`.
+- **`makeHandle` had 1 call site, not 2**: An earlier refactor (pre-spec) consolidated the two call sites into one. The inline was simpler than anticipated.
+- **Phase 2+3 combined into one commit**: After inlining `resolveGuid` (which was the only private helper between state and return), zone ordering was already correct—no moves needed. Both phases touched only `create-document.ts` so they fit naturally in one commit.
+
+### Type Co-location Findings (Phase 4.1–4.3)
+
+**Recommendation: Leave document types in `types.ts`.** The import graph confirms they're tightly woven into the builder type chain.
+
+| Type | External Consumers | Verdict |
+|---|---|---|
+| `DocumentConfig` | define-table.ts (×6), create-workspace.ts (×2), index.ts (×2) | Heavy cross-file usage; moving creates backward deps |
+| `DocumentExtensionRegistration` | create-document.ts (×2), create-workspace.ts (×3) | Runtime-facing but small; not worth isolating |
+| `DocumentHandle` | create-document.ts (×4), index.ts (×2) | Could move to create-document.ts, but re-export from index.ts would still need types.ts path |
+| `Documents` | create-document.ts (×4), create-workspace.ts (×3), index.ts (×2) | Cross-file; can't isolate without both directions importing |
+| `HasDocuments` | types.ts only (DocumentsHelper helper) | Internal-only—must stay |
+| `DocumentsOf` | types.ts only (DocumentsHelper helper) | Internal-only—must stay |
+| `DocumentsHelper` | types.ts (×2), create-workspace.ts (×2), index.ts (×2) | Participates in WorkspaceClient type algebra |
+| `ExtractAllDocumentTags` | types.ts only (builder chain) | Internal-only—must stay |
+| `StringKeysOf` | define-table.ts (×2) | Builder chain utility; moving adds import for no benefit |
+| `ClaimedDocumentColumns` | define-table.ts (×3) | Builder chain utility; same reasoning |
+
+The core problem with extraction: `DocumentConfig` is heavily used by `define-table.ts` (the builder chain), which is upstream of `create-document.ts`. A `document-types.ts` would avoid circular deps, but the types that would go in it (`HasDocuments`, `DocumentsOf`, `ExtractAllDocumentTags`) are only used within `types.ts` itself. The consumer-facing types (`DocumentHandle`, `Documents`) are imported by multiple files. A split would scatter one coherent type family across two files for minimal gain.
+
+### `open()` Complexity Assessment (Phase 4.4)
+
+`open()` is ~118 lines post-refactor. Breakdown:
+
+| Section | Lines | Description |
+|---|---|---|
+| GUID + idempotency | 4 | Resolve input, check cache |
+| Y.Doc + timeline | 2 | Create content doc |
+| Tag filtering | 7 | Filter applicable extensions |
+| Extension factory loop | ~40 | Build context, call factories, error handling |
+| Update handler | ~24 | Attach onUpdate observer |
+| Handle + cache | ~34 | Build handle, create whenReady, cache entry |
+
+**Recommendation: Leave as-is.** The method reads linearly with clear comment-delimited sections. Extracting the extension factory loop would require returning a 3-value tuple (`{resolvedExtensions, destroys, whenReadyPromises}`), which adds abstraction without reducing cognitive load. If `open()` grows further, the extension resolution loop is the natural extraction point.
+
+### Follow-up Work
+
+- **`closeAll()` could call `close()` per-entry**: Currently duplicates the close logic inline for performance (avoids Map lookup per guid). If the close logic grows, consider refactoring to `close()` calls.
+- **types.ts size**: At 1487 lines, the file remains large. A future spec could evaluate splitting by concern (table types vs workspace types vs document types) if the file continues growing. The import graph analysis here provides the starting data for that decision.

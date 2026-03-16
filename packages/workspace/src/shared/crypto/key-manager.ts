@@ -95,7 +95,7 @@ export type KeyManager = {
  * Cancels any in-flight HKDF derivation from a prior `setKey()`.
 	 * If a `keyCache` was provided, clears the cache.
 	 */
-	wipe(): void;
+	wipe(): Promise<void>;
 
 	/**
 	 * Attempt to restore from a cached key.
@@ -194,9 +194,9 @@ export function createKeyManager(
 			client.lock();
 		},
 
-		wipe() {
+		async wipe() {
 			invalidateKey();
-			void client.clearLocalData();
+			await client.clearLocalData();
 			if (keyCache) void keyCache.clear();
 		},
 

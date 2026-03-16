@@ -342,11 +342,12 @@ The test file (`key-manager.test.ts`) calls `wiring.wipe()` (line 181, 194, 289)
 
 ### Phase 3: Make `wipe()` async
 
-- [ ] **3.1** Change `wipe()` return type from `void` to `Promise<void>` in the `KeyManager` type
-- [ ] **3.2** Add `async` to the method definition
-- [ ] **3.3** Update the method body: `await client.clearLocalData()` then `if (keyCache) void keyCache.clear()`
-- [ ] **3.4** Verify consumer still works with `void keyManager.wipe()` (no await needed)
-- [ ] **3.5** Verify: `bun test`, `lsp_diagnostics` clean
+- [x] **3.1** Change `wipe()` return type from `void` to `Promise<void>` in the `KeyManager` type
+- [x] **3.2** Add `async` to the method definition
+- [x] **3.3** Update the method body: `await client.clearLocalData()` then `if (keyCache) void keyCache.clear()`
+- [x] **3.4** Verify consumer still works with `void keyManager.wipe()` (no await needed)
+- [x] **3.5** Verify: `bun test`, `lsp_diagnostics` clean
+  > **Note**: Test "wipe() clears keyCache" needed `async`/`await` because `keyCache.clear()` now runs after the `await` yield point.
 
 ### Phase 4: Fix consumer and JSDoc
 

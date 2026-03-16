@@ -281,12 +281,12 @@ describe('restoreKey', () => {
 		expect(keyCache.set).toHaveBeenCalledTimes(1);
 	});
 
-	test('wipe() clears keyCache', () => {
+	test('wipe() clears keyCache', async () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
 		wiring.setKey(makeKey(), 'user-1');
 
-		wiring.wipe();
+		await wiring.wipe();
 
 		expect(keyCache.clear).toHaveBeenCalledTimes(1);
 	});

@@ -29,7 +29,7 @@ import type { ExtensionFactory } from '../workspace/types';
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
- *   .withExtension('sync', createSyncExtension({
+ *   .withWorkspaceExtension('sync', createSyncExtension({
  *     url: (id) => `http://localhost:3913/rooms/${id}`,
  *   }))
  * ```
@@ -39,7 +39,7 @@ import type { ExtensionFactory } from '../workspace/types';
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
- *   .withExtension('sync', createSyncExtension({
+ *   .withWorkspaceExtension('sync', createSyncExtension({
  *     url: (id) => `https://sync.epicenter.so/rooms/${id}`,
  *     getToken: async (workspaceId) => {
  *       const res = await fetch('/api/sync/token', {
@@ -84,7 +84,7 @@ export type SyncExtensionConfig = {
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
- *   .withExtension('sync', createSyncExtension({
+ *   .withWorkspaceExtension('sync', createSyncExtension({
  *     url: (id) => `http://localhost:3913/rooms/${id}`,
  *   }))
  * ```

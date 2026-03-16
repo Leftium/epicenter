@@ -47,26 +47,40 @@ For most apps, just call `createWorkspace(definition)` and you're done. It's syn
 
 ### Extensions
 
-When you need extensibility (persistence, sync, databases) without baking it into the core:
+Extensions add capabilities (persistence, sync, indexing) without baking them into the core. Three registration methods target different scopes:
 
 ```typescript
 const client = createWorkspace({
 	id: 'my-app',
 	tables: { posts },
-}).withExtension('persistence', ({ ydoc }) => {
-	const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
-	return {
-		provider,
-		whenReady: provider.whenSynced,
-		destroy: () => provider.destroy(),
-	};
-});
+})
+	// Dual-scope: registers for BOTH the workspace Y.Doc and every content Y.Doc.
+	// The factory only receives { ydoc, whenReady }—the minimal shared contract.
+	.withExtension('persistence', indexeddbPersistence)
+	.withExtension('broadcast', broadcastChannelSync)
 
-await client.whenReady;
-client.tables.posts.set({ id: '1', title: 'Hello' });
+	// Workspace-only: receives the full ExtensionContext (tables, kv, awareness, etc.)
+	.withWorkspaceExtension('sync', createSyncExtension({ url: '...' }))
+	.withWorkspaceExtension('sqliteIndex', createSqliteIndex())
+
+	// Document-only: receives DocumentContext (timeline, ydoc, id, whenReady, extensions)
+	.withDocumentExtension('indexer', docIndexer);
 ```
 
-Extensions receive `{ id, ydoc, tables, kv, documents, awareness, whenReady, extensions }` — all workspace resources at the top level. They return a flat object with custom properties alongside optional `whenReady` and `destroy` — the framework normalizes defaults internally.
+`withExtension` is sugar—it calls both `withWorkspaceExtension` and `withDocumentExtension` with the same factory. If a factory needs scope-specific fields (tables, awareness, timeline), register it with the scoped method instead.
+
+Each factory returns a flat object with custom exports alongside optional `whenReady` and `destroy`. The framework normalizes defaults internally.
+
+```typescript
+// What each scope receives:
+//
+// withExtension        → { ydoc, whenReady }  (DualScopeContext)
+// withWorkspaceExtension → { id, ydoc, tables, kv, awareness, documents,
+//                          definitions, extensions, whenReady, batch,
+//                          loadSnapshot }  (ExtensionContext)
+// withDocumentExtension  → { id, ydoc, timeline, extensions,
+//                          whenReady }  (DocumentContext)
+```
 
 ### Lower-Level APIs
 

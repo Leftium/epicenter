@@ -307,20 +307,41 @@ A factory registered via `withExtension` that requires `tables` (e.g., `createMa
 
 ### Summary
 
-Added `SharedExtensionContext` type for dual-scope extensions, `DocumentClient` type mirroring `WorkspaceClient`, and moved `DocumentContext` from `lifecycle.ts` to `types.ts`. The `withExtension` factory parameter now uses `SharedExtensionContext` where workspace-only fields are optional — TypeScript forces `?.` access, preventing runtime crashes at document scope. Workspace fields `awareness` and `definitions` are now passed to the document open loop.
+The original spec proposed `SharedExtensionContext` (a union type with optional workspace/document fields) to fix the unsafe `as unknown as` cast in `withExtension()`. Over three iterations, the design evolved past the spec's initial proposal into something simpler:
+
+1. **SharedExtensionContext was added** (discriminated union with `scope: 'workspace' | 'document'`), then **deleted entirely** when we realized `withExtension` was doing too much.
+2. **`withExtension` is now thin sugar** that calls both `withWorkspaceExtension` and `withDocumentExtension`. The factory receives `DualScopeContext` (`{ ydoc, whenReady }`).
+3. **Both `as unknown as` casts were removed.** No unsafe casts remain in the extension registration path.
+4. **`DocumentClient` was added** as the canonical document type. `DocumentHandle` and `DocumentContext` both derive from it.
+5. **`handle.exports` was renamed to `handle.extensions`** for consistency with the workspace pattern.
+6. **`TDocExtensions` threaded** through `Documents`, `DocumentsHelper`, `WorkspaceClient` for typed extension access on handles.
+
+### Final Type Architecture
+
+```
+ExtensionContext         = Omit<WorkspaceClient, 'destroy' | Symbol.asyncDispose>
+                           (workspace-only, used by withWorkspaceExtension)
+
+DocumentContext          = Pick<DocumentClient, 'id' | 'ydoc' | 'timeline' | 'extensions' | 'whenReady'>
+                           (document-only, used by withDocumentExtension)
+
+DualScopeContext         = { ydoc: Y.Doc; whenReady: Promise<void> }
+                           (both scopes, used by withExtension)
+
+DocumentClient           = Timeline & { id, timeline, extensions, whenReady, destroy }
+                           (canonical document type)
+
+DocumentHandle           = Omit<DocumentClient, 'destroy'>
+                           (what open() returns)
+```
 
 ### Deviations from Spec
 
-- **DocumentContext is NOT computed from DocumentClient via `Omit`**: The IS-A vs HAS-A tension makes this impractical. `DocumentClient` extends `Timeline` (the handle IS a timeline — `handle.read()` works directly). But `DocumentContext` has `timeline` as a FIELD (factories destructure `{ timeline }`). Making `DocumentContext = Omit<DocumentClient, 'destroy'>` would require the runtime context object to extend Timeline, which changes the construction pattern in `create-document.ts`. Kept `DocumentContext` as a manual type with the same shape.
-- **The `as unknown as` cast in `withExtension` remains syntactically** but is now semantically safe. Two casts exist:
-  1. `factory as unknown as DocumentExtensionRegistration['factory']` — safe because `SharedExtensionContext` factories only access optional workspace fields, handling `undefined` gracefully
-  2. `factory as unknown as Parameters<typeof applyWorkspaceExtension>[1]` — safe because workspace scope provides all `ExtensionContext` fields
-  Removing these entirely would require TypeScript to reason about generic parameter variance across scope boundaries, which is impractical.
-- **`createSyncExtension` uses structural typing** instead of the named `SharedExtensionContext` type for its parameter: `{ ydoc: Y.Doc; awareness?: { raw: Awareness }; whenReady: Promise<void> }`. Using the named type with default generics caused incompatibility with specific workspace types due to generic parameter variance.
-- **`createMarkdownPersistenceExtension` moved from `withExtension` to `withWorkspaceExtension`** in `apps/tab-manager-markdown/src/index.ts`. It fundamentally needs `tables` (non-optional), which is the correct registration method for workspace-only extensions.
+- **SharedExtensionContext does not exist.** The spec proposed a union type with optional workspace/document fields. After implementation and Oracle consultation, we determined that `withExtension` was a code smell—one factory serving two fundamentally different contexts. Replaced with `DualScopeContext` (tiny shared contract) + thin sugar.
+- **DocumentContext uses `Pick`, not `Omit`.** The IS-A vs HAS-A tension: `DocumentClient` extends `Timeline` (handle IS a timeline), but factories destructure `{ timeline }` as a field. `Pick` selects the fields factories need without inheriting Timeline methods.
+- **`createSyncExtension` uses `ExtensionFactory`, not `SharedExtensionFactory`.** Sync needs `awareness` (workspace-only). Registered via `withWorkspaceExtension`, not `withExtension`.
+- **No cross-scope field passing.** The spec proposed passing `awareness` and `definitions` from the workspace closure to document scope. This was removed when `withExtension` became thin sugar—dual-scope factories only see `{ ydoc, whenReady }`.
 
 ### Follow-up Work
 
-- Thread `TDocExtensions` generics through `Documents`, `DocumentsHelper`, and `WorkspaceClient` for typed document extension access on handles
-- Rename `DocumentHandle.exports` to `DocumentHandle.extensions` for consistency with the workspace pattern
-- Consider whether `DocumentContext` can be derived from `DocumentClient` if `createTimeline` returns an object that supports the self-referential `timeline` property
+None identified. The extension system is consistent and all types are exported.

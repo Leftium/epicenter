@@ -1,7 +1,7 @@
 # Key Manager API Refinements
 
 **Date**: 2026-03-16
-**Status**: Draft
+**Status**: Implemented
 **Builds on**: `specs/20260315T141700-encryption-wiring-factory.md` (implemented, then renamed to key-manager), `specs/20260315T083000-keycache-chrome-extension.md` (draft)
 
 ## Overview
@@ -358,23 +358,25 @@ The test file (`key-manager.test.ts`) calls `wiring.wipe()` (line 181, 194, 289)
 
 ### Phase 5: Verify across monorepo
 
-- [ ] **5.1** Run `bun run typecheck` across the monorepo
-- [ ] **5.2** Run `bun run build` in `apps/tab-manager`
-- [ ] **5.3** Grep for any remaining `this.setKey` or `this.connect` references in source files
-- [ ] **5.4** Verify no stale references to old names (`createEncryptionWiring`, `EncryptionWiring`, `wipeLocalData`, `loadCachedKey`) in source `.ts` files (specs are historical—don't update)
+- [x] **5.1** Run `bun run typecheck` across the monorepo
+  > **Note**: `@epicenter/landing` fails with a pre-existing `tinyexec` module resolution issue, unrelated to these changes.
+- [x] **5.2** Run `bun run build` in `apps/tab-manager`
+- [x] **5.3** Grep for any remaining `this.setKey` or `this.connect` references in source files
+- [x] **5.4** Verify no stale references to old names (`createEncryptionWiring`, `EncryptionWiring`, `wipeLocalData`, `loadCachedKey`) in source `.ts` files (specs are historical—don't update)
+  > **Note**: Fixed stale `// wipeLocalData()` comment in test file section header.
 
 ## Success Criteria
 
-- [ ] `restoreKey()` no longer uses `this`—calls private `setKeyInternal` via closure
-- [ ] `deriveAndUnlock` has a `.catch()` that logs errors visibly
-- [ ] `wipe()` returns `Promise<void>`, existing callers unchanged
-- [ ] Svelte consumer passes `userId` to `setKey()`
-- [ ] Module-level JSDoc example uses `keyManager.lock()` not `wiring.lock()`
-- [ ] No inconsistent indentation in method-level JSDoc
-- [ ] `bun test` passes in `packages/workspace`
-- [ ] `bun run typecheck` clean across monorepo
-- [ ] `bun run build` succeeds in `apps/tab-manager`
-- [ ] No remaining `this.setKey` or `this.connect` references in source files
+- [x] `restoreKey()` no longer uses `this`—calls private `setKeyInternal` via closure
+- [x] `deriveAndUnlock` has a `.catch()` that logs errors visibly
+- [x] `wipe()` returns `Promise<void>`, existing callers unchanged
+- [x] Svelte consumer passes `userId` to `setKey()`
+- [x] Module-level JSDoc example uses `keyManager.lock()` not `wiring.lock()`
+- [x] No inconsistent indentation in method-level JSDoc
+- [x] `bun test` passes in `packages/workspace`
+- [x] `bun run typecheck` clean across monorepo (except pre-existing `@epicenter/landing` issue)
+- [x] `bun run build` succeeds in `apps/tab-manager`
+- [x] No remaining `this.setKey` or `this.connect` references in source files
 
 ## References
 
@@ -385,3 +387,21 @@ The test file (`key-manager.test.ts`) calls `wiring.wipe()` (line 181, 194, 289)
 - `apps/tab-manager/src/lib/state/key-manager.svelte.ts` — Svelte consumer (add `userId`)
 - `specs/20260315T141700-encryption-wiring-factory.md` — Original factory spec (historical, don't update)
 - `specs/20260315T083000-keycache-chrome-extension.md` — KeyCache spec (references old names, historical)
+
+## Review
+
+**Completed**: 2026-03-16
+
+### Summary
+
+All four issues identified in the design review are fixed: the `this`-binding footgun is eliminated by extracting `setKeyInternal` as a closure-captured private helper, `wipe()` now returns `Promise<void>` for awaitable sign-out, `deriveAndUnlock` has a `.catch()` that surfaces HKDF failures visibly, and the Svelte consumer passes `userId` to enable key caching.
+
+### Deviations from Spec
+
+- The spec predicted existing `wipe()` tests would pass unchanged because `clearLocalData` is called synchronously. This was incorrect—`keyCache.clear()` runs after the `await` yield point, so the "wipe() clears keyCache" test needed `async`/`await`. Minimal fix, no behavioral change.
+- Fixed a stale `// wipeLocalData()` comment in the test file section header (not called out in the spec).
+
+### Follow-up Work
+
+- Implement `KeyCache` adapter for Chrome extension storage (`specs/20260315T083000-keycache-chrome-extension.md`)
+- Consider adding `delete(userId)` to `KeyCache` interface for multi-user device support

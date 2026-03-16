@@ -126,16 +126,20 @@ This creates problems:
 
 ### Phase 2: Inline trivial helpers
 
-- [ ] **2.1** Inline `makeHandle()`: replace 2 call sites with `Object.assign(timeline, { exports: resolvedExtensions }) as DocumentHandle`, delete the function and its JSDoc
-- [ ] **2.2** Inline `resolveGuid()`: replace 2 call sites with `const guid = typeof input === 'string' ? input : String(input[guidKey])`, delete the function and its JSDoc
-- [ ] **2.3** Remove the now-unused `DocEntry` comment about `resolveGuid` if any references remain
-- [ ] **2.4** Run tests
+- [x] **2.1** Inline `makeHandle()`: replace 2 call sites with `Object.assign(timeline, { exports: resolvedExtensions }) as DocumentHandle`, delete the function and its JSDoc
+  > **Note**: makeHandle had been consolidated to 1 call site (post-earlier refactor). Also removed unused `type Timeline` import.
+- [x] **2.2** Inline `resolveGuid()`: replace 2 call sites with `const guid = typeof input === 'string' ? input : String(input[guidKey])`, delete the function and its JSDoc
+- [x] **2.3** Remove the now-unused `DocEntry` comment about `resolveGuid` if any references remain
+  > **Note**: No stale references found—clean deletion.
+- [x] **2.4** Run tests
 
 ### Phase 3: Reorder factory zones
 
-- [ ] **3.1** After inlining, verify `createDocuments` body reads as: config destructuring → `openDocuments` Map → `unobserveTable` observer → return object. No private helpers between state and return.
-- [ ] **3.2** If `unobserveTable` is not adjacent to `openDocuments`, move it. Both are zone 2 (mutable state / initialization).
-- [ ] **3.3** Run tests
+- [x] **3.1** After inlining, verify `createDocuments` body reads as: config destructuring → `openDocuments` Map → `unobserveTable` observer → return object. No private helpers between state and return.
+  > **Note**: After deleting `resolveGuid` (which was sandwiched between `openDocuments` and `unobserveTable`), the zones read correctly without any moves needed.
+- [x] **3.2** If `unobserveTable` is not adjacent to `openDocuments`, move it. Both are zone 2 (mutable state / initialization).
+  > **Note**: Already adjacent after resolveGuid removal. No move needed.
+- [x] **3.3** Run tests
 
 ### Phase 4: Evaluate and report
 

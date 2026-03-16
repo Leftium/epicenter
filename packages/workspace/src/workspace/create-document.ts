@@ -42,7 +42,7 @@
  */
 
 import * as Y from 'yjs';
-import { type Timeline, createTimeline } from '../timeline/timeline.js';
+import { createTimeline } from '../timeline/timeline.js';
 import {
 	defineExtension,
 	destroyLifo,
@@ -90,23 +90,6 @@ type DocEntry = {
 	unobserve: () => void;
 	whenReady: Promise<DocumentHandle>;
 };
-
-/**
- * Create a handle from a pre-built timeline and its resolved extensions.
- *
- * The handle IS the timeline with `extensions` and `timeline` (self-ref) stapled on.
- * `Object.assign` preserves Timeline's getters since it mutates
- * the target (the timeline object) rather than spreading.
- */
-function makeHandle(
-	id: string,
-	timeline: Timeline,
-	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
-	extensions: Record<string, Extension<any>>,
-	whenReady: Promise<void>,
-): DocumentHandle {
-	return Object.assign(timeline, { id, timeline, extensions, whenReady });
-}
 
 /**
  * Configuration for `createDocuments()`.
@@ -186,14 +169,6 @@ export function createDocuments<TRow extends BaseRow>(
 	const openDocuments = new Map<string, DocEntry>();
 
 	/**
-	 * Extract the GUID from a row or use the string directly.
-	 */
-	function resolveGuid(input: TRow | string): string {
-		if (typeof input === 'string') return input;
-		return String(input[guidKey]);
-	}
-
-	/**
 	 * Set up the table observer for row deletion cleanup.
 	 * Fires the `onRowDeleted` callback when a row is deleted.
 	 */
@@ -228,7 +203,7 @@ export function createDocuments<TRow extends BaseRow>(
 
 	const documents: Documents<TRow> = {
 		async open(input: TRow | string): Promise<DocumentHandle> {
-			const guid = resolveGuid(input);
+			const guid = typeof input === 'string' ? input : String(input[guidKey]);
 
 			const existing = openDocuments.get(guid);
 			if (existing) return existing.whenReady;
@@ -315,7 +290,12 @@ export function createDocuments<TRow extends BaseRow>(
 				whenReadyPromises.length === 0
 					? Promise.resolve()
 					: Promise.all(whenReadyPromises).then(() => {});
-			const handle = makeHandle(id, timeline, resolvedExtensions, compositeWhenReady);
+			const handle = Object.assign(timeline, {
+				id,
+				timeline,
+				extensions: resolvedExtensions,
+				whenReady: compositeWhenReady,
+			}) as DocumentHandle;
 			const whenReady =
 				whenReadyPromises.length === 0
 					? Promise.resolve(handle)
@@ -342,7 +322,7 @@ export function createDocuments<TRow extends BaseRow>(
 		},
 
 		async close(input: TRow | string): Promise<void> {
-			const guid = resolveGuid(input);
+			const guid = typeof input === 'string' ? input : String(input[guidKey]);
 			const entry = openDocuments.get(guid);
 			if (!entry) return;
 

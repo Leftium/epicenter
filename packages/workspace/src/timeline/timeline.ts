@@ -174,6 +174,41 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		if (timeline.length === 0) return undefined;
 		return timeline.get(timeline.length - 1);
 	}
+
+	function readEntry(entry: Y.Map<unknown> | undefined): TimelineEntry | null {
+		if (!entry) return null;
+
+		const type = entry.get('type');
+		const createdAt = (entry.get('createdAt') as number) ?? 0;
+
+		if (type === 'text') {
+			const content = entry.get('content');
+			if (content instanceof Y.Text) return { type: 'text', content, createdAt };
+		}
+
+		if (type === 'richtext') {
+			const content = entry.get('content');
+			const frontmatter = entry.get('frontmatter');
+			if (content instanceof Y.XmlFragment && frontmatter instanceof Y.Map) {
+				return { type: 'richtext', content, frontmatter, createdAt };
+			}
+		}
+
+		if (type === 'sheet') {
+			const columns = entry.get('columns');
+			const rows = entry.get('rows');
+			if (columns instanceof Y.Map && rows instanceof Y.Map) {
+				return {
+					type: 'sheet',
+					columns: columns as Y.Map<Y.Map<string>>,
+					rows: rows as Y.Map<Y.Map<string>>,
+					createdAt,
+				};
+			}
+		}
+
+		return null;
+	}
 	// ── Primitive push ops (closures, not on returned object) ─────────────
 
 	function pushText(content: string): TextEntry {
@@ -451,39 +486,4 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return () => timeline.unobserve(handler);
 		},
 	};
-}
-
-function readEntry(entry: Y.Map<unknown> | undefined): TimelineEntry | null {
-	if (!entry) return null;
-
-	const type = entry.get('type');
-	const createdAt = (entry.get('createdAt') as number) ?? 0;
-
-	if (type === 'text') {
-		const content = entry.get('content');
-		if (content instanceof Y.Text) return { type: 'text', content, createdAt };
-	}
-
-	if (type === 'richtext') {
-		const content = entry.get('content');
-		const frontmatter = entry.get('frontmatter');
-		if (content instanceof Y.XmlFragment && frontmatter instanceof Y.Map) {
-			return { type: 'richtext', content, frontmatter, createdAt };
-		}
-	}
-
-	if (type === 'sheet') {
-		const columns = entry.get('columns');
-		const rows = entry.get('rows');
-		if (columns instanceof Y.Map && rows instanceof Y.Map) {
-			return {
-				type: 'sheet',
-				columns: columns as Y.Map<Y.Map<string>>,
-				rows: rows as Y.Map<Y.Map<string>>,
-				createdAt,
-			};
-		}
-	}
-
-	return null;
 }

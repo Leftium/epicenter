@@ -15,8 +15,10 @@
  *   const key = authState.encryptionKey;
  *   if (key) {
  *     wiring.connect(key);
+ *   } else if (authState.status === 'signing-out') {
+ *     wiring.wipeLocalData();
  *   } else {
- *     wiring.disconnect({ wipe: authState.status === 'signing-out' });
+ *     wiring.lock();
  *   }
  * });
  * ```
@@ -25,7 +27,7 @@
  */
 
 import type { EncryptionMode } from '../y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { base64ToBytes, bytesToBase64, deriveWorkspaceKey } from './index';
+import { base64ToBytes, deriveWorkspaceKey } from './index';
 import type { KeyCache } from './key-cache';
 
 /**
@@ -51,7 +53,7 @@ export type EncryptionWiringConfig = {
 };
 
 /**
- * Imperative connect/disconnect API for encryption lifecycle management.
+ * Imperative connect/lock/wipe API for encryption lifecycle management.
  *
  * The factory owns the hard parts—async HKDF bridging, duplicate key dedup,
  * mode guard subtlety, and race protection. The consumer just pushes key
@@ -63,7 +65,7 @@ export type EncryptionWiring = {
 	 *
 	 * Decodes base64 → derives per-workspace key via HKDF → calls `unlock()`.
 	 * No-op if called with the same key as the previous `connect()`.
-	 * If a `keyCache` was provided, caches the key bytes under `userId`.
+	 * If a `keyCache` was provided, caches the base64 key under `userId`.
 	 *
 	 * @param userKeyBase64 - Base64-encoded user encryption key from the auth session
 	 * @param userId - Required when keyCache is configured. Identifies whose key to cache.
@@ -71,16 +73,29 @@ export type EncryptionWiring = {
 	connect(userKeyBase64: string, userId?: string): void;
 
 	/**
-	 * Remove the encryption key.
+	 * Soft-lock the workspace.
 	 *
-	 * - `wipe: true` → `clearLocalData()` (sign-out: wipe IndexedDB, keep client alive)
-	 * - `wipe: false` (default) → `lock()` (soft lock: data preserved, writes blocked)
+	 * Preserves local data but blocks encrypted writes. Use when the auth
+	 * session expires or the encryption key is revoked—data stays on disk
+	 * for re-unlock later.
 	 *
 	 * Only acts when `mode === 'unlocked'`. No-op in plaintext/locked modes.
 	 * Cancels any in-flight HKDF derivation from a prior `connect()`.
-	 * If a `keyCache` was provided and `wipe` is true, clears the cache.
 	 */
-	disconnect(options?: { wipe?: boolean }): void;
+	lock(): void;
+
+	/**
+	 * Wipe local data and clear cached keys.
+	 *
+	 * Nuclear option for sign-out: calls `clearLocalData()` to nuke
+	 * IndexedDB/persistence, then clears the key cache. The workspace client
+	 * stays alive but is locked with no local data.
+	 *
+	 * Only acts when `mode === 'unlocked'`. No-op in plaintext/locked modes.
+	 * Cancels any in-flight HKDF derivation from a prior `connect()`.
+	 * If a `keyCache` was provided, clears the cache.
+	 */
+	wipeLocalData(): void;
 
 	/**
 	 * Attempt to restore from a cached key.
@@ -105,7 +120,7 @@ export type EncryptionWiring = {
  *
  * @param client - Minimal workspace client surface (id, mode, lock, unlock, clearLocalData)
  * @param config - Optional configuration (keyCache for instant unlock on page refresh)
- * @returns Imperative connect/disconnect/loadCachedKey API
+ * @returns Imperative connect/lock/wipeLocalData/loadCachedKey API
  *
  * @example
  * ```typescript
@@ -115,10 +130,10 @@ export type EncryptionWiring = {
  * wiring.connect(keyBase64);
  *
  * // On sign-out:
- * wiring.disconnect({ wipe: true });
+ * wiring.wipeLocalData();
  *
  * // On session expiry:
- * wiring.disconnect();
+ * wiring.lock();
  * ```
  */
 export function createEncryptionWiring(
@@ -139,7 +154,13 @@ export function createEncryptionWiring(
 		});
 	}
 
-	// Zone 4 — Public API
+	// Zone 4 — Private helpers
+	function invalidateKey() {
+		++generation;
+		lastKeyBase64 = undefined;
+	}
+
+	// Zone 5 — Public API
 	return {
 		connect(userKeyBase64, userId) {
 			if (userKeyBase64 === lastKeyBase64) return;
@@ -151,35 +172,27 @@ export function createEncryptionWiring(
 			deriveAndUnlock(userKey, gen);
 
 			if (userId && keyCache) {
-				void keyCache.set(userId, userKey);
+				void keyCache.set(userId, userKeyBase64);
 			}
 		},
 
-		disconnect({ wipe = false } = {}) {
-			++generation;
-			lastKeyBase64 = undefined;
+		lock() {
+			invalidateKey();
+			if (client.mode === 'unlocked') client.lock();
+		},
 
-			if (client.mode === 'unlocked') {
-				if (wipe) {
-					void client.clearLocalData();
-				} else {
-					client.lock();
-				}
-			}
-
-			if (wipe && keyCache) {
-				void keyCache.clear();
-			}
+		wipeLocalData() {
+			invalidateKey();
+			if (client.mode === 'unlocked') void client.clearLocalData();
+			if (keyCache) void keyCache.clear();
 		},
 
 		async loadCachedKey(userId) {
 			if (!keyCache) return false;
-			const cached = await keyCache.get(userId);
-			if (!cached) return false;
+			const cachedKeyBase64 = await keyCache.get(userId);
+			if (!cachedKeyBase64) return false;
 
-			// Convert bytes back to base64 for the connect() dedup check
-			const base64 = bytesToBase64(cached);
-			this.connect(base64, userId);
+			this.connect(cachedKeyBase64, userId);
 			return true;
 		},
 	};

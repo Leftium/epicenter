@@ -1,41 +1,47 @@
 /**
  * Platform-agnostic interface for caching encryption keys.
  *
- * The workspace layer doesn't care where the key lives—it only needs a
- * `Uint8Array` at construction time. But between app restarts and tab
- * refreshes, re-deriving the key from the server adds a network
- * roundtrip. Implementations of `KeyCache` store the key locally so
- * the workspace can decrypt immediately on launch.
+ * Stores the per-user encryption key as a base64 string—the same format
+ * the auth session provides and `connect()` accepts. This avoids any
+ * `Uint8Array ↔ base64` round-trips: the key enters as a string, caches
+ * as a string, and passes straight back to `connect()` on reload.
+ *
+ * Every concrete backend stores strings natively (`chrome.storage.session`
+ * serializes to JSON, `sessionStorage` is string-only), so the interface
+ * matches the storage reality.
  *
  * | Platform         | Implementation                                            |
  * |------------------|-----------------------------------------------------------|
  * | Tauri desktop    | `tauri-plugin-stronghold` — encrypted vault, memory zeroization |
  * | Browser          | `sessionStorage` — survives refresh, clears on tab close  |
+ * | Chrome extension | `chrome.storage.session` — survives popup/sidebar reopens  |
  * | Self-hosted      | No cache — user enters password each session              |
  *
  * @example
  * ```typescript
- * // Tauri implementation (pseudocode)
- * const tauriKeyCache: KeyCache = {
- *   async set(userId, key) {
- *     await stronghold.save(`encryption-key:${userId}`, key);
+ * // Chrome extension implementation
+ * const chromeKeyCache: KeyCache = {
+ *   async set(userId, keyBase64) {
+ *     await chrome.storage.session.set({ [`ek:${userId}`]: keyBase64 });
  *   },
  *   async get(userId) {
- *     return stronghold.read(`encryption-key:${userId}`);
+ *     const result = await chrome.storage.session.get(`ek:${userId}`);
+ *     return result[`ek:${userId}`];
  *   },
  *   async clear() {
- *     await stronghold.clearAll();
+ *     const all = await chrome.storage.session.get(null);
+ *     const ekKeys = Object.keys(all).filter((k) => k.startsWith('ek:'));
+ *     await chrome.storage.session.remove(ekKeys);
  *   },
  * };
  *
  * // Browser implementation
  * const browserKeyCache: KeyCache = {
- *   async set(userId, key) {
- *     sessionStorage.setItem(`ek:${userId}`, bytesToBase64(key));
+ *   async set(userId, keyBase64) {
+ *     sessionStorage.setItem(`ek:${userId}`, keyBase64);
  *   },
  *   async get(userId) {
- *     const stored = sessionStorage.getItem(`ek:${userId}`);
- *     return stored ? base64ToBytes(stored) : undefined;
+ *     return sessionStorage.getItem(`ek:${userId}`) ?? undefined;
  *   },
  *   async clear() {
  *     for (const key of Object.keys(sessionStorage)) {
@@ -51,16 +57,16 @@
  * Server (auth session)
  *   │  encryptionKey: base64 string
  *   ▼
- * KeyCache.set(userId, base64ToBytes(key))
- *   │  stored locally (platform-specific)
+ * KeyCache.set(userId, keyBase64)
+ *   │  stored locally as-is (no conversion needed)
  *   ▼
  * App startup (before auth roundtrip completes)
- *   │  KeyCache.get(userId) → Uint8Array (cached from last session)
- *   │  key available immediately
+ *   │  KeyCache.get(userId) → base64 string (cached from last session)
+ *   │  passed directly to wiring.connect(keyBase64)
  *   ▼
- * createEncryptedYkvLww(yarray, { key })
- *   │  encrypts/decrypts using the cached key
- *   │  no network roundtrip needed on refresh
+ * connect() → base64ToBytes → HKDF → unlock
+ *   │  base64 decoding happens once, at the crypto boundary
+ * ```
  *
  * Without a `KeyCache`, every page refresh requires a full auth roundtrip before
  * encrypted data can be read. With a cache, the workspace decrypts immediately
@@ -68,14 +74,14 @@
  *
  * ## Related Modules
  *
- * - {@link ./index.ts} — Encryption primitives (`base64ToBytes` for key decoding)
- * - {@link ../y-keyvalue/y-keyvalue-lww-encrypted.ts} — Encrypted wrapper that receives `key` at construction
+ * - {@link ./encryption-wiring.ts} — `connect()` accepts base64 strings, `loadCachedKey()` reads from this cache
+ * - {@link ./index.ts} — Encryption primitives (`base64ToBytes` for key decoding at the crypto boundary)
  */
 export type KeyCache = {
-	/** Store encryption key for this user. */
-	set(userId: string, key: Uint8Array): Promise<void>;
-	/** Retrieve cached key, or undefined if not cached. */
-	get(userId: string): Promise<Uint8Array | undefined>;
-	/** Clear all cached keys (logout or user switch). */
+	/** Store the base64-encoded encryption key for this user. */
+	set(userId: string, keyBase64: string): Promise<void>;
+	/** Retrieve the cached base64-encoded key, or undefined if not cached. */
+	get(userId: string): Promise<string | undefined>;
+	/** Clear all cached keys (sign-out or user switch). */
 	clear(): Promise<void>;
 };

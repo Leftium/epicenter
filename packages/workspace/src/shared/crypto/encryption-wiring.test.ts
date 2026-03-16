@@ -8,10 +8,11 @@
  *
  * Key behaviors:
  * - connect() derives workspace key via HKDF then calls unlock()
- * - disconnect() calls lock() or clearLocalData() based on wipe flag
- * - disconnect() is a no-op when mode is not 'unlocked'
+ * - lock() calls client.lock() when mode is unlocked
+ * - wipeLocalData() calls clearLocalData() + keyCache.clear()
+ * - lock()/wipeLocalData() are no-ops when mode is not 'unlocked'
  * - Duplicate connect() with same key is a no-op
- * - Race: disconnect() during in-flight derivation cancels stale unlock
+ * - Race: lock() during in-flight derivation cancels stale unlock
  * - Race: rapid connect() calls — only latest key wins
  * - loadCachedKey() reads from keyCache and calls connect()
  */
@@ -72,11 +73,11 @@ function setupWithMutableMode() {
 }
 
 function setupWithKeyCache() {
-	const store = new Map<string, Uint8Array>();
+	const store = new Map<string, string>();
 
 	const keyCache: KeyCache = {
-		set: mock(async (userId: string, key: Uint8Array) => {
-			store.set(userId, key);
+		set: mock(async (userId: string, keyBase64: string) => {
+			store.set(userId, keyBase64);
 		}),
 		get: mock(async (userId: string) => store.get(userId)),
 		clear: mock(async () => {
@@ -158,32 +159,23 @@ describe('connect', () => {
 });
 
 // ============================================================================
-// disconnect()
+// lock()
 // ============================================================================
 
-describe('disconnect', () => {
-	test('calls lock() when mode is unlocked', () => {
+describe('lock', () => {
+	test('calls client.lock() when mode is unlocked', () => {
 		const { client, wiring } = setup({ mode: 'unlocked' });
 
-		wiring.disconnect();
+		wiring.lock();
 
 		expect(client.lock).toHaveBeenCalledTimes(1);
 		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
 	});
 
-	test('calls clearLocalData() when wipe is true and mode is unlocked', () => {
-		const { client, wiring } = setup({ mode: 'unlocked' });
-
-		wiring.disconnect({ wipe: true });
-
-		expect(client.clearLocalData).toHaveBeenCalledTimes(1);
-		expect(client.lock).toHaveBeenCalledTimes(0);
-	});
-
 	test('no-op when mode is plaintext', () => {
 		const { client, wiring } = setup({ mode: 'plaintext' });
 
-		wiring.disconnect();
+		wiring.lock();
 
 		expect(client.lock).toHaveBeenCalledTimes(0);
 		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
@@ -192,7 +184,7 @@ describe('disconnect', () => {
 	test('no-op when mode is locked', () => {
 		const { client, wiring } = setup({ mode: 'locked' });
 
-		wiring.disconnect();
+		wiring.lock();
 
 		expect(client.lock).toHaveBeenCalledTimes(0);
 		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
@@ -206,7 +198,53 @@ describe('disconnect', () => {
 		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(client.unlock).toHaveBeenCalledTimes(1);
 
-		wiring.disconnect();
+		wiring.lock();
+
+		wiring.connect(key);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(client.unlock).toHaveBeenCalledTimes(2);
+	});
+});
+
+// ============================================================================
+// wipeLocalData()
+// ============================================================================
+
+describe('wipeLocalData', () => {
+	test('calls clearLocalData() when mode is unlocked', () => {
+		const { client, wiring } = setup({ mode: 'unlocked' });
+
+		wiring.wipeLocalData();
+
+		expect(client.clearLocalData).toHaveBeenCalledTimes(1);
+		expect(client.lock).toHaveBeenCalledTimes(0);
+	});
+
+	test('no-op for clearLocalData when mode is plaintext', () => {
+		const { client, wiring } = setup({ mode: 'plaintext' });
+
+		wiring.wipeLocalData();
+
+		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
+	});
+
+	test('no-op for clearLocalData when mode is locked', () => {
+		const { client, wiring } = setup({ mode: 'locked' });
+
+		wiring.wipeLocalData();
+
+		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
+	});
+
+	test('clears fingerprint so next connect() with same key is not skipped', async () => {
+		const { client, wiring } = setupWithMutableMode();
+		const key = makeKey();
+
+		wiring.connect(key);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(client.unlock).toHaveBeenCalledTimes(1);
+
+		wiring.wipeLocalData();
 
 		wiring.connect(key);
 		await new Promise((resolve) => setTimeout(resolve, 50));
@@ -219,18 +257,18 @@ describe('disconnect', () => {
 // ============================================================================
 
 describe('race protection', () => {
-	test('disconnect() during in-flight derivation cancels stale unlock()', async () => {
+	test('lock() during in-flight derivation cancels stale unlock()', async () => {
 		const { client, wiring } = setup({ mode: 'unlocked' });
 
 		wiring.connect(makeKey());
-		// disconnect immediately — before HKDF resolves
-		wiring.disconnect();
+		// lock immediately — before HKDF resolves
+		wiring.lock();
 
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
 		// unlock() should NOT have been called — the generation check prevents it
 		expect(client.unlock).toHaveBeenCalledTimes(0);
-		// lock() should have been called from disconnect()
+		// lock() should have been called
 		expect(client.lock).toHaveBeenCalledTimes(1);
 	});
 
@@ -274,9 +312,9 @@ describe('loadCachedKey', () => {
 	test('returns true and calls connect() when cached key exists', async () => {
 		const { client, wiring, store } = setupWithKeyCache();
 
-		// Pre-seed the cache
-		const userKey = generateEncryptionKey();
-		store.set('user-1', userKey);
+		// Pre-seed the cache with a base64 key
+		const keyBase64 = makeKey();
+		store.set('user-1', keyBase64);
 
 		const result = await wiring.loadCachedKey('user-1');
 
@@ -296,21 +334,21 @@ describe('loadCachedKey', () => {
 		expect(keyCache.set).toHaveBeenCalledTimes(1);
 	});
 
-	test('disconnect({ wipe: true }) clears keyCache', () => {
+	test('wipeLocalData() clears keyCache', () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
 		// Need to connect first so mode becomes unlocked
 		wiring.connect(makeKey(), 'user-1');
 
-		wiring.disconnect({ wipe: true });
+		wiring.wipeLocalData();
 
 		expect(keyCache.clear).toHaveBeenCalledTimes(1);
 	});
 
-	test('disconnect({ wipe: false }) does not clear keyCache', () => {
+	test('lock() does not clear keyCache', () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
-		wiring.disconnect();
+		wiring.lock();
 
 		expect(keyCache.clear).toHaveBeenCalledTimes(0);
 	});

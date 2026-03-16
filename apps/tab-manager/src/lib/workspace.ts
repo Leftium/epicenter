@@ -598,7 +598,7 @@ export const workspaceClient = createWorkspace(
 )
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('broadcast', broadcastChannelSync)
-	.withExtension(
+	.withWorkspaceExtension(
 		'sync',
 		createSyncExtension({
 			url: (workspaceId) => `${serverUrl.current}/workspaces/${workspaceId}`,

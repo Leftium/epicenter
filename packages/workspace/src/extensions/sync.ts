@@ -3,7 +3,7 @@ import {
 	type SyncProvider,
 	type SyncStatus,
 } from '@epicenter/sync-client';
-import type { SharedExtensionFactory } from '../workspace/types';
+import type { ExtensionFactory } from '../workspace/types';
 
 /**
  * Sync extension configuration.
@@ -103,9 +103,8 @@ export type SyncExtensionExports = {
 
 export function createSyncExtension(
 	config: SyncExtensionConfig,
-): SharedExtensionFactory<SyncExtensionExports> {
-	return (ctx) => {
-		const { ydoc, whenReady: priorReady } = ctx;
+): ExtensionFactory<SyncExtensionExports> {
+	return ({ ydoc, awareness, whenReady: priorReady }) => {
 		const workspaceId = ydoc.guid;
 
 		const resolvedBaseUrl = config.url(workspaceId);
@@ -113,18 +112,14 @@ export function createSyncExtension(
 			.replace(/^https:/, 'wss:')
 			.replace(/^http:/, 'ws:');
 
-		// Build provider — defer connection until prior extensions are ready.
-		// At workspace scope, awareness is guaranteed. At document scope, it's
-		// passed from the workspace closure (may be undefined).
-		const awareness =
-			ctx.scope === 'workspace' ? ctx.awareness.raw : undefined;
+		// Build provider — defer connection until prior extensions are ready
 		const provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
 			url: wsUrl,
 			getToken: config.getToken
 				? () => config.getToken!(workspaceId)
 				: undefined,
-			awareness,
+			awareness: awareness.raw,
 		});
 
 		// Wait for all prior extensions (persistence, etc.) then connect.

@@ -145,10 +145,10 @@ export type {
 	Documents,
 	DocumentsHelper,
 	// Extension types
+	DualScopeContext,
+	DualScopeFactory,
 	ExtensionContext,
 	ExtensionFactory,
-	SharedExtensionContext,
-	SharedExtensionFactory,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,

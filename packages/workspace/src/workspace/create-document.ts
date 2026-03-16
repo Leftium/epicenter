@@ -125,16 +125,6 @@ export type CreateDocumentsConfig<TRow extends BaseRow> = {
 	 * Default: close (free memory, preserve persisted data).
 	 */
 	onRowDeleted?: (documents: Documents<TRow>, guid: string) => void;
-	/**
-	 * Workspace awareness helper, passed through to dual-registered extension contexts.
-	 * Available at document scope so factories like sync can propagate cursor positions.
-	 */
-	awareness?: unknown;
-	/**
-	 * Workspace definitions, passed through to dual-registered extension contexts.
-	 * Available at document scope for schema introspection.
-	 */
-	definitions?: Record<string, unknown>;
 };
 
 /**
@@ -162,8 +152,6 @@ export function createDocuments<TRow extends BaseRow>(
 		documentExtensions = [],
 		documentTags = [],
 		onRowDeleted,
-		awareness,
-		definitions,
 	} = config;
 
 	const openDocuments = new Map<string, DocEntry>();
@@ -232,7 +220,6 @@ export function createDocuments<TRow extends BaseRow>(
 			try {
 				for (const { key, factory } of applicableExtensions) {
 					const ctx = {
-						scope: 'document' as const,
 						id,
 						ydoc: contentYdoc,
 						timeline,
@@ -241,9 +228,6 @@ export function createDocuments<TRow extends BaseRow>(
 								? Promise.resolve()
 								: Promise.all(whenReadyPromises).then(() => {}),
 						extensions: { ...resolvedExtensions },
-						// Workspace fields passed from closure for dual-registered extensions
-						awareness,
-						definitions,
 					};
 					const raw = factory(ctx);
 					if (!raw) continue;

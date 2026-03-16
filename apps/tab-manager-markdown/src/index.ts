@@ -32,7 +32,7 @@ const client = createWorkspace(definition)
 			debounceMs: 1000,
 		}),
 	)
-	.withExtension(
+	.withWorkspaceExtension(
 		'sync',
 		createSyncExtension({
 			url: (id) => `ws://localhost:3913/workspaces/${id}`,

@@ -58,7 +58,6 @@ import type {
 	DocumentsHelper,
 	ExtensionContext,
 	KvDefinitions,
-	SharedExtensionContext,
 	TableDefinitions,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
@@ -166,8 +165,6 @@ export function createWorkspace<
 				ydoc,
 				documentExtensions: documentExtensionRegistrations,
 				documentTags: docTags,
-				awareness,
-				definitions,
 			});
 
 			tableDocumentsNamespace[docName] = documents;
@@ -270,7 +267,6 @@ export function createWorkspace<
 			} = client;
 			const ctx = {
 				...clientContext,
-				scope: 'workspace' as const,
 				whenReady:
 					state.whenReadyPromises.length === 0
 						? Promise.resolve()
@@ -310,36 +306,20 @@ export function createWorkspace<
 				TExports extends Record<string, unknown>,
 			>(
 				key: TKey,
-				factory: (
-				context: SharedExtensionContext<
-						TId,
-						TTableDefinitions,
-						TKvDefinitions,
-						TAwarenessDefinitions,
-						TExtensions
-					>,
-				) => TExports & {
+				factory: (context: { ydoc: Y.Doc; whenReady: Promise<void> }) => TExports & {
 					whenReady?: Promise<unknown>;
 					destroy?: () => MaybePromise<void>;
 				},
 			) {
-				// Register for document Y.Docs (fires lazily at documents.open() time).
-				// Cast is safe: SharedExtensionContext only uses optional types for workspace-specific
-				// fields (tables?, awareness?, etc.), so the factory handles their absence gracefully.
-				// At document scope, the context satisfies DocumentContext plus optional workspace fields.
+				// Sugar: register for both scopes with the same factory.
+				// The factory only receives DualScopeContext (ydoc + whenReady),
+				// which is a structural subset of both ExtensionContext and DocumentContext.
 				documentExtensionRegistrations.push({
 					key,
-					factory:
-						factory as unknown as DocumentExtensionRegistration['factory'],
+					factory,
 					tags: [],
 				});
-				// Register for workspace Y.Doc (fires now, synchronously).
-				// Cast is safe: at workspace scope, ExtensionContext provides all fields
-				// that SharedExtensionContext declares (optional fields are defined).
-				return applyWorkspaceExtension(
-					key,
-					factory as unknown as Parameters<typeof applyWorkspaceExtension>[1],
-				);
+				return applyWorkspaceExtension(key, factory);
 			},
 
 			withWorkspaceExtension<

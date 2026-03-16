@@ -237,17 +237,17 @@ describe('defineWorkspace', () => {
 				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 		})
-			.withExtension('first', () => ({
+			.withWorkspaceExtension('first', () => ({
 				value: 42,
 				helper: () => 'from-first',
 			}))
-			.withExtension('second', ({ extensions }) => {
+			.withWorkspaceExtension('second', ({ extensions }) => {
 				// extensions.first is fully typed here — no casts needed
 				const doubled = extensions.first.value * 2;
 				const msg = extensions.first.helper();
 				return { doubled, msg };
 			})
-			.withExtension('third', ({ extensions }) => {
+			.withWorkspaceExtension('third', ({ extensions }) => {
 				// extensions.first AND extensions.second are both fully typed
 				const tripled = extensions.first.value * 3;
 				const fromSecond = extensions.second.doubled;
@@ -369,19 +369,10 @@ describe('defineWorkspace', () => {
 			tables: { posts: tableDef },
 		}).withExtension(
 			'inspector',
-			(ctx) => {
-				const { id, ydoc, extensions, whenReady } = ctx;
-				// All shared fields should be present
-				expect(id).toBe('full-context-test');
+			({ ydoc, whenReady }) => {
+				// DualScopeContext only has ydoc + whenReady
 				expect(ydoc).toBeDefined();
-				expect(extensions).toBeDefined();
 				expect(whenReady).toBeInstanceOf(Promise);
-				// At workspace scope, scope-specific fields are guaranteed
-				expect(ctx.scope).toBe('workspace');
-				if (ctx.scope === 'workspace') {
-					expect(ctx.tables).toBeDefined();
-					expect(ctx.kv).toBeDefined();
-				}
 				return {};
 			},
 		);

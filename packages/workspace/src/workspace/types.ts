@@ -1030,13 +1030,7 @@ export type WorkspaceClientBuilder<
 	withExtension<TKey extends string, TExports extends Record<string, unknown>>(
 		key: TKey,
 		factory: (
-			context: SharedExtensionContext<
-				TId,
-				TTableDefinitions,
-				TKvDefinitions,
-				TAwarenessDefinitions,
-				TExtensions
-			>,
+			context: DualScopeContext,
 		) => TExports & {
 			whenReady?: Promise<unknown>;
 			destroy?: () => MaybePromise<void>;
@@ -1219,102 +1213,26 @@ export type ExtensionContext<
 >;
 
 /**
- * Shared fields available in BOTH workspace and document scopes.
+ * Minimal context available to dual-scope factories registered via `withExtension()`.
  *
- * Destructure these directly from the context — they're always present.
+ * Intentionally small — only fields that exist in BOTH workspace and document scopes.
+ * If a factory needs workspace-specific fields (tables, awareness, etc.), register it
+ * with `withWorkspaceExtension()` instead. If it needs document-specific fields
+ * (timeline), use `withDocumentExtension()`.
+ *
+ * `withExtension()` is sugar for calling both scoped methods with the same factory.
+ *
+ * ```typescript
+ * // Persistence only needs ydoc — works for both scopes:
+ * .withExtension('persistence', ({ ydoc }) => { ... })
+ * ```
  */
-type SharedExtensionContextBase<
-	TId extends string = string,
-	TExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = {
-	/** Workspace identifier. */
-	id: TId;
+export type DualScopeContext = {
 	/** The Y.Doc for this scope (workspace Y.Doc or content Y.Doc). */
 	ydoc: Y.Doc;
 	/** Composite whenReady of all PRIOR extensions in this scope. */
 	whenReady: Promise<void>;
-	/** Prior extension exports in this scope. */
-	extensions: TExtensions;
 };
-
-/**
- * Workspace-scope fields. All guaranteed present when `scope === 'workspace'`.
- */
-type WorkspaceScopeContext<
-	TTableDefinitions extends TableDefinitions = TableDefinitions,
-	TKvDefinitions extends KvDefinitions = KvDefinitions,
-	TAwarenessDefinitions extends AwarenessDefinitions = AwarenessDefinitions,
-> = {
-	scope: 'workspace';
-	/** Workspace definitions for introspection. */
-	definitions: {
-		tables: TTableDefinitions;
-		kv: TKvDefinitions;
-		awareness: TAwarenessDefinitions;
-	};
-	/** Typed table helpers. */
-	tables: TablesHelper<TTableDefinitions>;
-	/** Document managers. */
-	documents: DocumentsHelper<TTableDefinitions>;
-	/** Typed KV helper. */
-	kv: KvHelper<TKvDefinitions>;
-	/** Workspace awareness. */
-	awareness: AwarenessHelper<TAwarenessDefinitions>;
-	/** Batch mutations into a single Y.js transaction. */
-	batch: (fn: () => void) => void;
-	/** Apply a binary Y.js update. */
-	loadSnapshot: (update: Uint8Array) => void;
-};
-
-/**
- * Document-scope fields. All guaranteed present when `scope === 'document'`.
- */
-type DocumentScopeContext = {
-	scope: 'document';
-	/** Content timeline — read, write, observe mode changes, bind editors. */
-	timeline: Timeline;
-	/** Workspace awareness, passed from the workspace closure. */
-	awareness?: unknown;
-	/** Workspace definitions, passed from the workspace closure. */
-	definitions?: Record<string, unknown>;
-};
-
-/**
- * Context passed to dual-scope extension factories registered via `withExtension()`.
- *
- * A discriminated union on `scope` — narrow with `if (ctx.scope === 'workspace')`
- * to access workspace-specific fields with full type safety, or destructure shared
- * fields (`id`, `ydoc`, `whenReady`, `extensions`) directly.
- *
- * ```typescript
- * // Most factories just use shared fields:
- * .withExtension('persistence', ({ ydoc }) => { ... })
- *
- * // Scope-aware factories narrow via discriminant:
- * .withExtension('sync', (ctx) => {
- *   const { ydoc, whenReady } = ctx;  // shared — always available
- *   if (ctx.scope === 'workspace') {
- *     ctx.awareness.raw;  // guaranteed, no ?. needed
- *   }
- * })
- * ```
- *
- * @typeParam TId - Workspace identifier literal type
- * @typeParam TTableDefinitions - Table schema definitions
- * @typeParam TKvDefinitions - KV store definitions
- * @typeParam TAwarenessDefinitions - Awareness field definitions
- * @typeParam TExtensions - Accumulated extension exports from prior calls
- */
-export type SharedExtensionContext<
-	TId extends string = string,
-	TTableDefinitions extends TableDefinitions = TableDefinitions,
-	TKvDefinitions extends KvDefinitions = KvDefinitions,
-	TAwarenessDefinitions extends AwarenessDefinitions = AwarenessDefinitions,
-	TExtensions extends Record<string, unknown> = Record<string, unknown>,
-> =
-	| (SharedExtensionContextBase<TId, TExtensions> &
-			WorkspaceScopeContext<TTableDefinitions, TKvDefinitions, TAwarenessDefinitions>)
-	| (SharedExtensionContextBase<TId, TExtensions> & DocumentScopeContext);
 
 /**
  * Factory function that creates an extension.
@@ -1344,26 +1262,25 @@ export type ExtensionFactory<
 };
 
 /**
- * Factory function that creates a dual-scope extension (workspace + document).
+ * Factory function for dual-scope extensions registered via `withExtension()`.
  *
- * Like `ExtensionFactory` but accepts `SharedExtensionContext` — workspace-specific
- * fields are optional, so the factory must handle their absence. Use this for
- * extensions registered via `withExtension()` that run in both scopes.
+ * Accepts only the minimal `DualScopeContext` (ydoc + whenReady). Factories that
+ * need scope-specific fields should use `ExtensionFactory` (workspace) or register
+ * via `withDocumentExtension()` (document) instead.
  *
- * @example Sync extension with optional awareness
+ * @example Persistence extension (only needs ydoc):
  * ```typescript
- * const sync: SharedExtensionFactory<SyncExports> = ({ ydoc, awareness, whenReady }) => {
- *   const provider = createSyncProvider({ doc: ydoc, awareness: awareness?.raw });
- *   return { provider, whenReady, destroy: () => provider.destroy() };
+ * const persistence: DualScopeFactory = ({ ydoc }) => {
+ *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
+ *   return { provider, whenReady: provider.whenReady, destroy: () => provider.destroy() };
  * };
  * ```
  *
  * @typeParam TExports - The consumer-facing exports object type
  */
-// biome-ignore lint/suspicious/noExplicitAny: intentional variance-friendly type for factory storage
-export type SharedExtensionFactory<
+export type DualScopeFactory<
 	TExports extends Record<string, unknown> = Record<string, unknown>,
-> = (context: SharedExtensionContext<any, any, any, any, any>) => TExports & {
+> = (context: DualScopeContext) => TExports & {
 	whenReady?: Promise<unknown>;
 	destroy?: () => MaybePromise<void>;
 };

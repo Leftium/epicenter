@@ -265,18 +265,18 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 
 		write(text: string) {
 			ydoc.transact(() => {
-				const type = this.currentType;
+				const entry = lastEntry();
+				const type = entry?.get('type') as ContentType | undefined;
 				// Sheet: clear columns/rows and repopulate from CSV
 				if (type === 'sheet') {
-					const entry = lastEntry()!;
-					const columns = entry.get('columns') as Y.Map<Y.Map<string>>;
-					const rows = entry.get('rows') as Y.Map<Y.Map<string>>;
+					const columns = entry!.get('columns') as Y.Map<Y.Map<string>>;
+					const rows = entry!.get('rows') as Y.Map<Y.Map<string>>;
 					columns.forEach((_, key) => columns.delete(key));
 					rows.forEach((_, key) => rows.delete(key));
 					parseSheetFromCsv(text, { columns, rows });
 				// Richtext: clear fragment and repopulate as paragraphs
 				} else if (type === 'richtext') {
-					const fragment = lastEntry()!.get('content') as Y.XmlFragment;
+					const fragment = entry!.get('content') as Y.XmlFragment;
 					fragment.delete(0, fragment.length);
 					populateFragmentFromText(fragment, text);
 				// Text (or empty): delegate to replaceCurrentText

@@ -87,8 +87,6 @@ export {
 	computeMidpoint,
 	createTimeline,
 	generateInitialOrders,
-	parseSheetFromCsv,
-	serializeSheetToCsv,
 	type Timeline,
 } from './timeline';
 // ════════════════════════════════════════════════════════════════════════════

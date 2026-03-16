@@ -22,7 +22,7 @@ import {
 	createEncryptionWiring,
 	type EncryptionWiringClient,
 } from './encryption-wiring';
-import { generateEncryptionKey } from './index';
+import { bytesToBase64, generateEncryptionKey } from './index';
 import type { KeyCache } from './key-cache';
 
 // ============================================================================
@@ -102,13 +102,14 @@ function setupWithKeyCache() {
 		}),
 	};
 
-	const wiring = createEncryptionWiring(client, keyCache);
+	const wiring = createEncryptionWiring(client, { keyCache });
 
 	return { client, wiring, keyCache, store };
 }
 
-function makeKey(): Uint8Array {
-	return generateEncryptionKey();
+/** Generate a random base64-encoded encryption key. */
+function makeKey(): string {
+	return bytesToBase64(generateEncryptionKey());
 }
 
 // ============================================================================

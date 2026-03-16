@@ -14,7 +14,7 @@
  * $effect(() => {
  *   const key = authState.encryptionKey;
  *   if (key) {
- *     wiring.connect(base64ToBytes(key));
+ *     wiring.connect(key);
  *   } else {
  *     wiring.disconnect({ wipe: authState.status === 'signing-out' });
  *   }
@@ -25,7 +25,7 @@
  */
 
 import type { EncryptionMode } from '../y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { bytesToBase64, deriveWorkspaceKey } from './index';
+import { base64ToBytes, bytesToBase64, deriveWorkspaceKey } from './index';
 import type { KeyCache } from './key-cache';
 
 /**
@@ -42,6 +42,13 @@ export type EncryptionWiringClient = {
 	clearLocalData(): Promise<void>;
 };
 
+/**
+ * Configuration for the encryption wiring factory.
+ */
+export type EncryptionWiringConfig = {
+	/** Optional key cache for instant unlock on page refresh. */
+	keyCache?: KeyCache;
+};
 
 /**
  * Imperative connect/disconnect API for encryption lifecycle management.
@@ -52,16 +59,16 @@ export type EncryptionWiringClient = {
  */
 export type EncryptionWiring = {
 	/**
-	 * Supply a user-level encryption key.
+	 * Supply a user-level encryption key (base64-encoded).
 	 *
-	 * Derives a per-workspace key via HKDF → calls `unlock()`.
+	 * Decodes base64 → derives per-workspace key via HKDF → calls `unlock()`.
 	 * No-op if called with the same key as the previous `connect()`.
 	 * If a `keyCache` was provided, caches the key bytes under `userId`.
 	 *
-	 * @param userKey - 32-byte user encryption key (decoded from auth session)
+	 * @param userKeyBase64 - Base64-encoded user encryption key from the auth session
 	 * @param userId - Required when keyCache is configured. Identifies whose key to cache.
 	 */
-	connect(userKey: Uint8Array, userId?: string): void;
+	connect(userKeyBase64: string, userId?: string): void;
 
 	/**
 	 * Remove the encryption key.
@@ -96,16 +103,16 @@ export type EncryptionWiring = {
  * 3. **Mode guard subtlety** — only act when `mode === 'unlocked'`
  * 4. **Race protection** — generation counter prevents stale HKDF results from landing
  *
-	 * @param client - Minimal workspace client surface (id, mode, lock, unlock, clearLocalData)
-	 * @param keyCache - Optional key cache for instant unlock on page refresh
-	 * @returns Imperative connect/disconnect/loadCachedKey API
+ * @param client - Minimal workspace client surface (id, mode, lock, unlock, clearLocalData)
+ * @param config - Optional configuration (keyCache for instant unlock on page refresh)
+ * @returns Imperative connect/disconnect/loadCachedKey API
  *
  * @example
  * ```typescript
  * const wiring = createEncryptionWiring(workspaceClient);
  *
  * // On auth key available:
- * wiring.connect(userKey);
+ * wiring.connect(keyBase64);
  *
  * // On sign-out:
  * wiring.disconnect({ wipe: true });
@@ -116,13 +123,14 @@ export type EncryptionWiring = {
  */
 export function createEncryptionWiring(
 	client: EncryptionWiringClient,
-	keyCache?: KeyCache,
+	config?: EncryptionWiringConfig,
 ): EncryptionWiring {
-	// Zone 1 — Mutable state
+	// Zone 1 — Immutable state
+	const keyCache = config?.keyCache;
 
 	// Zone 2 — Mutable state
 	let generation = 0;
-	let lastKeyFingerprint: string | undefined;
+	let lastKeyBase64: string | undefined;
 
 	// Zone 3 — Private helpers
 	function deriveAndUnlock(userKey: Uint8Array, gen: number) {
@@ -133,12 +141,12 @@ export function createEncryptionWiring(
 
 	// Zone 4 — Public API
 	return {
-		connect(userKey, userId) {
-			const fingerprint = bytesToBase64(userKey);
-			if (fingerprint === lastKeyFingerprint) return;
-			lastKeyFingerprint = fingerprint;
+		connect(userKeyBase64, userId) {
+			if (userKeyBase64 === lastKeyBase64) return;
+			lastKeyBase64 = userKeyBase64;
 
 			const gen = ++generation;
+			const userKey = base64ToBytes(userKeyBase64);
 
 			deriveAndUnlock(userKey, gen);
 
@@ -149,7 +157,7 @@ export function createEncryptionWiring(
 
 		disconnect({ wipe = false } = {}) {
 			++generation;
-			lastKeyFingerprint = undefined;
+			lastKeyBase64 = undefined;
 
 			if (client.mode === 'unlocked') {
 				if (wipe) {
@@ -169,7 +177,9 @@ export function createEncryptionWiring(
 			const cached = await keyCache.get(userId);
 			if (!cached) return false;
 
-			this.connect(cached, userId);
+			// Convert bytes back to base64 for the connect() dedup check
+			const base64 = bytesToBase64(cached);
+			this.connect(base64, userId);
 			return true;
 		},
 	};

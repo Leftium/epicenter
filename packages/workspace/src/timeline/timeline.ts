@@ -233,59 +233,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			pushText(content);
 		}
 	}
-
-	/**
-	 * Push a new richtext entry whose content is deep-cloned from a source fragment.
-	 *
-	 * `Y.XmlElement.clone()` / `Y.XmlText.clone()` produce unattached copies that
-	 * preserve all formatting (bold, italic, headings, links). This is how richtext
-	 * content transfers between Y.Doc instances without flattening to plaintext.
-	 *
-	 * Used by `restoreFromSnapshot()` for richtext type.
-	 */
-	function pushRichtextFromFragment(source: Y.XmlFragment): RichTextEntry {
-		const result = pushRichtext();
-		const children = source
-			.toArray()
-			.filter(
-				(c): c is Y.XmlElement | Y.XmlText =>
-					c instanceof Y.XmlElement || c instanceof Y.XmlText,
-			)
-			.map((c) => c.clone());
-		result.content.insert(0, children);
-		return result;
-	}
-
-	/**
-	 * Push a new sheet entry whose columns and rows are deep-cloned from a source sheet.
-	 *
-	 * `Y.Map.clone()` produces an unattached deep copy that preserves all column
-	 * metadata (name, kind, width, order) and all row data (cell values, order).
-	 * Column and row IDs are preserved so cell references (row cells keyed by
-	 * column ID) remain valid in the cloned entry.
-	 *
-	 * This avoids the lossy CSV round-trip used by `parseSheetFromCsv`, which
-	 * hardcodes column `kind` to `'text'` and `width` to `'120'`—dropping any
-	 * custom column configuration the snapshot had.
-	 *
-	 * Used by `restoreFromSnapshot()` for sheet type.
-	 */
-	function pushSheetFromSnapshot(
-		sourceColumns: Y.Map<Y.Map<string>>,
-		sourceRows: Y.Map<Y.Map<string>>,
-	): SheetEntry {
-		const entry = new Y.Map();
-		entry.set('type', 'sheet');
-		const columns = sourceColumns.clone();
-		const rows = sourceRows.clone();
-		entry.set('columns', columns);
-		entry.set('rows', rows);
-		const createdAt = Date.now();
-		entry.set('createdAt', createdAt);
-		timeline.push([entry]);
-		return { type: 'sheet', columns, rows, createdAt };
-	}
-
 	// ── Public API ────────────────────────────────────────────────────────
 
 	return {
@@ -460,17 +407,35 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 						break;
 					}
 					case 'sheet': {
-						// Deep-clone preserves all column metadata (kind, width, order, name)
-						// and row data. Always pushes a new entry.
-						ydoc.transact(() =>
-							pushSheetFromSnapshot(entry.columns, entry.rows),
-						);
+						// Deep-clone via Y.Map.clone() preserves all column metadata
+						// (kind, width, order, name) and row data. Avoids the lossy CSV
+						// round-trip which hardcodes kind='text' and width='120'.
+						ydoc.transact(() => {
+							const e = new Y.Map();
+							e.set('type', 'sheet');
+							const columns = entry.columns.clone();
+							const rows = entry.rows.clone();
+							e.set('columns', columns);
+							e.set('rows', rows);
+							e.set('createdAt', Date.now());
+							timeline.push([e]);
+						});
 						break;
 					}
 					case 'richtext': {
-						// Deep-clone preserves all formatting (bold, headings, links).
-						// Always pushes a new entry—no in-place for richtext.
-						ydoc.transact(() => pushRichtextFromFragment(entry.content));
+						// Deep-clone via Y.XmlElement.clone() / Y.XmlText.clone()
+						// preserves all formatting (bold, italic, headings, links).
+						ydoc.transact(() => {
+							const result = pushRichtext();
+							const children = entry.content
+								.toArray()
+								.filter(
+									(c): c is Y.XmlElement | Y.XmlText =>
+										c instanceof Y.XmlElement || c instanceof Y.XmlText,
+								)
+								.map((c) => c.clone());
+							result.content.insert(0, children);
+						});
 						break;
 					}
 				}

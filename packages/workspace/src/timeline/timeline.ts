@@ -307,8 +307,12 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				switch (entry.type) {
 					case 'sheet':
 						// Clear columns/rows and repopulate from CSV
-						entry.columns.forEach((_, key) => entry.columns.delete(key));
-						entry.rows.forEach((_, key) => entry.rows.delete(key));
+						entry.columns.forEach((_, key) => {
+							entry.columns.delete(key);
+						});
+						entry.rows.forEach((_, key) => {
+							entry.rows.delete(key);
+						});
 						parseSheetFromCsv(text, entry);
 						break;
 					case 'richtext':

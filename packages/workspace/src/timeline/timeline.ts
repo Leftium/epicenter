@@ -26,10 +26,8 @@ export type RichTextEntry = {
 	frontmatter: Y.Map<unknown>;
 	createdAt: number;
 };
-export type SheetEntry = {
+export type SheetEntry = SheetBinding & {
 	type: 'sheet';
-	columns: Y.Map<Y.Map<string>>;
-	rows: Y.Map<Y.Map<string>>;
 	createdAt: number;
 };
 

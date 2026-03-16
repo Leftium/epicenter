@@ -23,7 +23,7 @@ type SyncExtensionResult = {
 };
 
 type SyncExtensionFactoryClient = Parameters<
-	ReturnType<typeof createSyncExtension>
+	ReturnType<typeof createSyncExtension>['workspace']
 >[0];
 
 /** Create a minimal mock context for the sync extension factory. */
@@ -44,7 +44,7 @@ describe('createSyncExtension', () => {
 				url: (id: string) => `http://localhost:8080/rooms/${id}`,
 			});
 
-			const result = factory(
+			const result = factory.workspace(
 				createMockClient(ydoc),
 			) as unknown as SyncExtensionResult;
 
@@ -66,7 +66,7 @@ describe('createSyncExtension', () => {
 				url: (id: string) => `http://localhost:8080/rooms/${id}`,
 			});
 
-			const result = factory(
+			const result = factory.workspace(
 				createMockClient(ydoc),
 			) as unknown as SyncExtensionResult;
 
@@ -86,7 +86,7 @@ describe('createSyncExtension', () => {
 				url: (id: string) => `http://localhost:8080/rooms/${id}`,
 			});
 
-			const result = factory(
+			const result = factory.workspace(
 				createMockClient(ydoc),
 			) as unknown as SyncExtensionResult;
 
@@ -104,7 +104,7 @@ describe('createSyncExtension', () => {
 			url: (id) => `http://localhost:3913/custom/${id}/ws`,
 		});
 
-		const result = factory(
+		const result = factory.workspace(
 			createMockClient(ydoc),
 		) as unknown as SyncExtensionResult;
 
@@ -127,7 +127,7 @@ describe('createSyncExtension', () => {
 			url: (id: string) => `http://localhost:8080/rooms/${id}`,
 		});
 
-		const result = factory({
+		const result = factory.workspace({
 			ydoc,
 			awareness: { raw: new Awareness(ydoc) },
 			whenReady: clientWhenReady.then(() => {

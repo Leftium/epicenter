@@ -580,6 +580,11 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
  * sync handle local storage and cross-device sync. Actions are available at
  * `.actions` for AI tool derivation.
  */
+const sync = createSyncExtension({
+	url: (docId) => `${serverUrl.current}/workspaces/${docId}`,
+	getToken: async () => authState.token,
+});
+
 export const workspaceClient = createWorkspace(
 	defineWorkspace({
 		id: 'epicenter.tab-manager',
@@ -598,13 +603,8 @@ export const workspaceClient = createWorkspace(
 )
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('broadcast', broadcastChannelSync)
-	.withWorkspaceExtension(
-		'sync',
-		createSyncExtension({
-			url: (workspaceId) => `${serverUrl.current}/workspaces/${workspaceId}`,
-			getToken: async () => authState.token,
-		}),
-	)
+	.withWorkspaceExtension('sync', sync.workspace)
+	.withDocumentExtension('sync', sync.document)
 	.withActions(({ tables }) => ({
 		tabs: {
 			search: defineQuery({

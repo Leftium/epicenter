@@ -3,7 +3,12 @@ import {
 	type SyncProvider,
 	type SyncStatus,
 } from '@epicenter/sync-client';
-import type { ExtensionFactory } from '../workspace/types';
+import type { Awareness } from 'y-protocols/awareness';
+import type * as Y from 'yjs';
+import type {
+	DualScopeFactory,
+	ExtensionFactory,
+} from '../workspace/types';
 
 /**
  * Sync extension configuration.
@@ -12,83 +17,63 @@ import type { ExtensionFactory } from '../workspace/types';
  * - **Open**: Just `url` — no auth (localhost, Tailscale, LAN)
  * - **Authenticated**: `url` + `getToken` — dynamic token refresh
  *
- * The `url` callback returns an HTTP base URL. The sync provider derives the
- * WebSocket URL automatically (`https:` → `wss:`, `http:` → `ws:`).
+ * The `url` callback receives the Y.Doc's GUID (workspace GUID for workspace scope,
+ * content doc GUID for document scope). The sync provider derives the WebSocket URL
+ * automatically (`https:` → `wss:`, `http:` → `ws:`).
  *
  * Chain last in the extension chain. Persistence loads local state first,
  * BroadcastChannel handles instant cross-tab sync, then WebSocket connects
  * for cross-device sync. The sync extension waits for all prior extensions
  * via `context.whenReady` before connecting.
  *
- * @example Recommended: persistence + BroadcastChannel + WebSocket
+ * @example Recommended: persistence + BroadcastChannel + WebSocket (both scopes)
  * ```typescript
  * import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
  * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
  * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
  *
+ * const sync = createSyncExtension({
+ *   url: (docId) => `http://localhost:3913/rooms/${docId}`,
+ * });
+ *
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
- *   .withWorkspaceExtension('sync', createSyncExtension({
- *     url: (id) => `http://localhost:3913/rooms/${id}`,
- *   }))
+ *   .withWorkspaceExtension('sync', sync.workspace)  // syncs workspace Y.Doc with awareness
+ *   .withDocumentExtension('sync', sync.document)     // syncs each content Y.Doc
  * ```
  *
  * @example Authenticated mode (cloud)
  * ```typescript
- * createWorkspace(definition)
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('broadcast', broadcastChannelSync)
- *   .withWorkspaceExtension('sync', createSyncExtension({
- *     url: (id) => `https://sync.epicenter.so/rooms/${id}`,
- *     getToken: async (workspaceId) => {
- *       const res = await fetch('/api/sync/token', {
- *         method: 'POST',
- *         body: JSON.stringify({ workspaceId }),
- *       });
- *       return (await res.json()).token;
- *     },
- *   }))
+ * const sync = createSyncExtension({
+ *   url: (docId) => `https://sync.epicenter.so/rooms/${docId}`,
+ *   getToken: async (docId) => {
+ *     const res = await fetch('/api/sync/token', {
+ *       method: 'POST',
+ *       body: JSON.stringify({ docId }),
+ *     });
+ *     return (await res.json()).token;
+ *   },
+ * });
  * ```
  */
 export type SyncExtensionConfig = {
-	/** HTTP base URL for the room. The WebSocket URL is derived automatically. */
-	url: (workspaceId: string) => string;
+	/**
+	 * HTTP base URL for the room. Receives the Y.Doc's GUID.
+	 *
+	 * At workspace scope, this is the workspace ID. At document scope,
+	 * this is the content Y.Doc's GUID (unique per document).
+	 */
+	url: (docId: string) => string;
 
 	/**
 	 * Token fetcher for authenticated mode. Called on each connect/reconnect.
 	 * The same token is used for both WebSocket (`?token=` query param) and
 	 * HTTP snapshot (`Authorization: Bearer` header).
 	 */
-	getToken?: (workspaceId: string) => Promise<string | undefined>;
+	getToken?: (docId: string) => Promise<string | undefined>;
 };
 
-/**
- * Creates a sync extension that connects after prior extensions are ready.
- *
- * Uses WebSocket for cross-device real-time sync. For same-browser cross-tab
- * sync, use `broadcastChannelSync` — it provides sub-millisecond local sync
- * without a server round-trip.
- *
- * Lifecycle:
- * - **Waits for prior extensions**: `context.whenReady` resolves when all previously
- *   chained extensions (persistence, BroadcastChannel, etc.) are ready. The provider
- *   connects only after local state is loaded, ensuring an accurate state vector for
- *   the initial sync.
- * - **`whenReady`**: Resolves when the connection is initiated (after prior extensions).
- *   The UI renders from local state immediately — connection status is reactive via
- *   `provider`.
- *
- * @example Recommended: persistence + BroadcastChannel + WebSocket
- * ```typescript
- * createWorkspace(definition)
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('broadcast', broadcastChannelSync)
- *   .withWorkspaceExtension('sync', createSyncExtension({
- *     url: (id) => `http://localhost:3913/rooms/${id}`,
- *   }))
- * ```
- */
 /** Exports available on `client.extensions.sync` after registration. */
 export type SyncExtensionExports = {
 	/** Current connection status. Shorthand for `provider.status`. */
@@ -101,25 +86,36 @@ export type SyncExtensionExports = {
 	reconnect(): void;
 };
 
-export function createSyncExtension(
+/**
+ * Core sync factory—creates a provider for any Y.Doc with optional awareness.
+ */
+function createSyncFactory(
 	config: SyncExtensionConfig,
-): ExtensionFactory<SyncExtensionExports> {
-	return ({ ydoc, awareness, whenReady: priorReady }) => {
-		const workspaceId = ydoc.guid;
-
-		const resolvedBaseUrl = config.url(workspaceId);
+	awareness?: Awareness,
+) {
+	return ({
+		ydoc,
+		whenReady: priorReady,
+	}: {
+		ydoc: Y.Doc;
+		whenReady: Promise<void>;
+	}): SyncExtensionExports & {
+		whenReady: Promise<unknown>;
+		destroy: () => void;
+	} => {
+		const docId = ydoc.guid;
+		const resolvedBaseUrl = config.url(docId);
 		const wsUrl = resolvedBaseUrl
 			.replace(/^https:/, 'wss:')
 			.replace(/^http:/, 'ws:');
 
-		// Build provider — defer connection until prior extensions are ready
 		const provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
 			url: wsUrl,
 			getToken: config.getToken
-				? () => config.getToken!(workspaceId)
+				? () => config.getToken!(docId)
 				: undefined,
-			awareness: awareness.raw,
+			awareness,
 		});
 
 		// Wait for all prior extensions (persistence, etc.) then connect.
@@ -153,5 +149,35 @@ export function createSyncExtension(
 				provider.destroy();
 			},
 		};
+	};
+}
+
+/**
+ * Creates sync extension factories for both workspace and document scopes.
+ *
+ * Returns `.workspace` (syncs workspace Y.Doc with awareness for cursor positions)
+ * and `.document` (syncs each content Y.Doc without awareness). Both share the same
+ * URL and auth configuration.
+ *
+ * @example Register both scopes with shared config
+ * ```typescript
+ * const sync = createSyncExtension({ url: (id) => `http://localhost:3913/rooms/${id}` });
+ *
+ * createWorkspace(definition)
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withWorkspaceExtension('sync', sync.workspace)
+ *   .withDocumentExtension('sync', sync.document)
+ * ```
+ */
+export function createSyncExtension(config: SyncExtensionConfig): {
+	/** Workspace sync factory—syncs workspace Y.Doc WITH awareness. */
+	workspace: ExtensionFactory<SyncExtensionExports>;
+	/** Document sync factory—syncs each content Y.Doc (no awareness). */
+	document: DualScopeFactory<SyncExtensionExports>;
+} {
+	return {
+		workspace: ({ awareness, ...rest }) =>
+			createSyncFactory(config, awareness.raw)(rest),
+		document: createSyncFactory(config),
 	};
 }

@@ -8,7 +8,7 @@ import {
 import type { YKeyValueLwwEntry } from './y-keyvalue-lww';
 import {
 	createEncryptedYkvLww,
-	type EncryptionMode,
+	type EncryptionState,
 } from './y-keyvalue-lww-encrypted';
 
 type PlainChange<T> =
@@ -496,7 +496,7 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
-			expect(kv.mode).toBe('none' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('none' satisfies EncryptionState);
 		});
 
 		test('starts in active when key provided', () => {
@@ -506,7 +506,7 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
 
-			expect(kv.mode).toBe('active' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
 		});
 
 		test('none → active via unlock(key)', () => {
@@ -516,9 +516,9 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
-			expect(kv.mode).toBe('none' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('none' satisfies EncryptionState);
 			kv.unlock(key);
-			expect(kv.mode).toBe('active' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
 		});
 
 		test('active → locked via lock()', () => {
@@ -528,9 +528,9 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
 
-			expect(kv.mode).toBe('active' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
 			kv.lock();
-			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
 		});
 
 		test('locked → active via unlock(key)', () => {
@@ -540,11 +540,11 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
 
-			expect(kv.mode).toBe('active' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
 			kv.lock();
-			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
 			kv.unlock(key);
-			expect(kv.mode).toBe('active' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
 		});
 
 		test('none stays none on lock()', () => {
@@ -553,9 +553,9 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
-			expect(kv.mode).toBe('none' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('none' satisfies EncryptionState);
 			kv.lock();
-			expect(kv.mode).toBe('none' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('none' satisfies EncryptionState);
 		});
 	});
 
@@ -568,7 +568,7 @@ describe('createEncryptedYkvLww', () => {
 			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
 
 			kv.lock();
-			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
 			expect(() => kv.set('x', 'y')).toThrow(/locked/i);
 		});
 
@@ -585,7 +585,7 @@ describe('createEncryptedYkvLww', () => {
 			]);
 			kv.lock();
 
-			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
 			expect(kv.get('a')).toBe('alpha');
 			expect(kv.get('b')).toBe('beta');
 		});
@@ -601,7 +601,7 @@ describe('createEncryptedYkvLww', () => {
 			kv.set('y', '2');
 			kv.lock();
 
-			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
 			expect(kv.has('x')).toBe(true);
 			expect(kv.has('y')).toBe(true);
 		});
@@ -623,7 +623,7 @@ describe('createEncryptedYkvLww', () => {
 			for (const [entryKey, entry] of kv.entries())
 				values.set(entryKey, entry.val);
 
-			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
 			expect(values.get('first')).toBe('one');
 			expect(values.get('second')).toBe('two');
 		});
@@ -703,7 +703,7 @@ describe('createEncryptedYkvLww', () => {
 			kv.set('legacy-2', 'plain-b');
 			kv.unlock(key);
 
-			expect(kv.mode).toBe('active' satisfies EncryptionMode);
+			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
 			expect(kv.get('legacy-1')).toBe('plain-a');
 			expect(kv.get('legacy-2')).toBe('plain-b');
 		});

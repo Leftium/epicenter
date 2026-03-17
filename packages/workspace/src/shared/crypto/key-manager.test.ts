@@ -202,7 +202,7 @@ describe('restoreKeyFromCache', () => {
 	test('unlock() caches key when userId and keyCache provided', async () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
-		wiring.unlock(makeKey(), 'user-1');
+		await wiring.unlock(makeKey(), 'user-1');
 
 		expect(keyCache.set).toHaveBeenCalledTimes(1);
 	});

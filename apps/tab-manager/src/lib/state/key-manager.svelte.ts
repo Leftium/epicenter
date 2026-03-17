@@ -11,9 +11,8 @@
  * ```
  *
  * Auth receives the key manager directly via constructor injection.
- * `KeyManager`'s `Promise<T>` return types are assignable to `void`,
- * so auth can fire-and-forget async methods (wipe, restoreKeyFromCache)
- * without awaiting.
+ * Auth awaits `unlock()` and `wipe()` at call sites. Only
+ * `restoreKeyFromCache()` is fire-and-forget (cache fast path).
  *
  * @example
  * ```typescript

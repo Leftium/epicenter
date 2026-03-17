@@ -188,7 +188,7 @@ function createAuthState(encryption: KeyManager) {
 		// .catch(→ null) swallows network errors; { data: null } covers HTTP errors
 		const result = await getSession().catch(() => null);
 		if (result?.data?.encryptionKey) {
-			encryption.unlock(result.data.encryptionKey, result.data.user.id);
+			await encryption.unlock(result.data.encryptionKey, result.data.user.id);
 		}
 	}
 
@@ -372,7 +372,7 @@ function createAuthState(encryption: KeyManager) {
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
-			void encryption.wipe();
+			await encryption.wipe();
 			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
 			phase = { status: 'signed-out' };
@@ -419,7 +419,7 @@ function createAuthState(encryption: KeyManager) {
 
 				// 4xx → server explicitly rejected the token
 				await clearState();
-				void encryption.wipe();
+				await encryption.wipe();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
@@ -433,7 +433,7 @@ function createAuthState(encryption: KeyManager) {
 			const user = serializeDates(data.user);
 			await authUser.set(user);
 			if (data.encryptionKey) {
-				encryption.unlock(data.encryptionKey, data.user.id);
+				await encryption.unlock(data.encryptionKey, data.user.id);
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);

@@ -101,7 +101,7 @@ export type KeyManager = {
 	 * keyManager.unlock(session.encryptionKey, session.userId);
 	 * ```
 	 */
-	unlock(userKeyBase64: string, userId?: string): void;
+	unlock(userKeyBase64: string, userId?: string): Promise<void>;
 
 	/**
 	 * Wipe local data and clear cached keys.
@@ -151,9 +151,9 @@ export type KeyManager = {
  * Create a framework-agnostic key manager for a workspace client.
  *
  * Encapsulates the three hard parts of encryption lifecycle management:
- * 1. **Async-to-sync bridge**—`deriveWorkspaceKey` is async (SubtleCrypto HKDF),
- *    but the workspace client's `unlock()` is sync. The factory fires-and-forgets
- *    the derivation and delivers the result when ready.
+ * 1. **Async HKDF bridging**—`deriveWorkspaceKey` is async (SubtleCrypto HKDF).
+ *    The factory awaits the derivation and delivers the result, with race
+ *    protection ensuring only the latest call's result applies.
  * 2. **Duplicate key dedup**—calling `unlock()` with the same base64 key is a no-op,
  *    so reactive systems can call it on every tick without waste.
  * 3. **Race protection**—a generation counter ensures stale HKDF results from a
@@ -187,14 +187,13 @@ export function createKeyManager(
 	let lastKeyBase64: string | undefined;
 
 	// Zone 3 — Private helpers
-	function deriveAndUnlock(userKey: Uint8Array, thisGeneration: number) {
-		void deriveWorkspaceKey(userKey, client.id)
-			.then((wsKey) => {
-				if (thisGeneration === generation) client.unlock(wsKey);
-			})
-			.catch((error) => {
-				console.error('[key-manager] Key derivation failed:', error);
-			});
+	async function deriveAndUnlock(userKey: Uint8Array, thisGeneration: number) {
+		try {
+			const wsKey = await deriveWorkspaceKey(userKey, client.id);
+			if (thisGeneration === generation) client.unlock(wsKey);
+			} catch (error) {
+			console.error('[key-manager] Key derivation failed:', error);
+		}
 	}
 
 	// Zone 4 — Private helpers
@@ -203,34 +202,34 @@ export function createKeyManager(
 		lastKeyBase64 = undefined;
 	}
 
-	function unlockInternal(userKeyBase64: string, userId?: string) {
+	async function unlockInternal(userKeyBase64: string, userId?: string) {
 		if (userKeyBase64 === lastKeyBase64) return;
 		lastKeyBase64 = userKeyBase64;
 
 		const thisGeneration = ++generation;
 		const userKey = base64ToBytes(userKeyBase64);
 
-		deriveAndUnlock(userKey, thisGeneration);
+		await deriveAndUnlock(userKey, thisGeneration);
 
 		if (keyCache && !userId) {
 			console.warn(
 				'[key-manager] keyCache configured but no userId provided—key not cached',
 			);
 		} else if (userId && keyCache) {
-			void keyCache.set(userId, userKeyBase64);
+			await keyCache.set(userId, userKeyBase64);
 		}
 	}
 
 	// Zone 5 — Public API
 	return {
-		unlock(userKeyBase64, userId) {
-			unlockInternal(userKeyBase64, userId);
+		async unlock(userKeyBase64, userId) {
+			await unlockInternal(userKeyBase64, userId);
 		},
 
 		async wipe() {
 			invalidateKey();
 			await client.clearLocalData();
-			if (keyCache) void keyCache.clear();
+			if (keyCache) await keyCache.clear();
 		},
 
 		async restoreKeyFromCache(userId) {
@@ -238,7 +237,7 @@ export function createKeyManager(
 			const cachedKeyBase64 = await keyCache.get(userId);
 			if (!cachedKeyBase64) return false;
 
-			unlockInternal(cachedKeyBase64, userId);
+			await unlockInternal(cachedKeyBase64, userId);
 			return true;
 		},
 	};

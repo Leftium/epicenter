@@ -12,6 +12,15 @@ Follow [writing-voice](../writing-voice/SKILL.md) for tone.
 
 Documentation explains **why**, not **what**. Users can read code to see what it does. They need you to explain the reasoning.
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Write or update folder `README.md` files with architecture intent.
+- Add JSDoc to public APIs with usage context and examples.
+- Review docs/comments that currently restate code without rationale.
+- Add code comments for non-obvious decisions, constraints, or workarounds.
+
 ## Folder READMEs
 
 Primary job: explain **why** this folder exists and the mental model.

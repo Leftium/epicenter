@@ -8,6 +8,16 @@ metadata:
 
 # Test File Conventions
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Write or refactor `*.test.ts` files in this codebase.
+- Structure tests with `setup()` functions instead of mutable `beforeEach` setup.
+- Split large test files into focused behavior/type/scenario files.
+- Enforce behavior-based test naming and clear failure intent.
+- Add or review negative type tests using `@ts-expect-error`.
+
 ## File-Level Doc Comments
 
 Every `.test.ts` file MUST start with a JSDoc block explaining what is being tested and the key behaviors verified. This serves as documentation for the module's contract.

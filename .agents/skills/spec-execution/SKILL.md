@@ -10,6 +10,16 @@ metadata:
 
 When handed a specification document (a `specs/*.md` file), execute it methodically in waves. Each wave produces working code, an updated spec, and a commit. The goal is a clean git history where each commit represents a coherent unit of progress against the spec.
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Implement a `specs/*.md` plan end-to-end in structured waves.
+- Decide which spec tasks run in parallel vs sequentially.
+- Update spec checkboxes and implementation notes after each wave.
+- Commit code changes together with spec progress for every wave.
+- Finish execution by setting spec status and adding a review section.
+
 ## The Execution Loop
 
 ```

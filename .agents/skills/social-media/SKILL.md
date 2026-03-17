@@ -10,6 +10,16 @@ metadata:
 
 Follow [writing-voice](../writing-voice/SKILL.md) for tone.
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Draft LinkedIn, Twitter/X, or Reddit posts about product or technical updates.
+- Announce features without hashtags, hype language, or template sections.
+- Share implementation details developers actually care about.
+- Reshape AI-sounding copy into concise, platform-native writing.
+- Build short threads where each post carries a concrete standalone point.
+
 ## Platform-Specific Brevity
 
 - **LinkedIn**: 3-5 lines max. State the feature, drop the link, done.

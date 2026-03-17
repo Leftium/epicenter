@@ -10,6 +10,16 @@ metadata:
 
 **Always consult [better-auth.com/docs](https://better-auth.com/docs) for code examples and latest API.**
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Configure Better Auth server/client setup in TypeScript projects.
+- Wire environment variables, database adapters, and CLI migrations.
+- Set up sessions, cookie cache strategy, and security/rate-limit options.
+- Add and configure Better Auth plugins plus corresponding client plugins.
+- Troubleshoot common Better Auth model, schema, and storage pitfalls.
+
 ---
 
 ## Setup Workflow

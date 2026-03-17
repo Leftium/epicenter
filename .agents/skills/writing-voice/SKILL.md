@@ -10,6 +10,16 @@ metadata:
 
 **Core principle**: Write for the ear, not just the eyes. Prose should be suitable to read out loud.
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Write user-facing text like UI copy, tooltips, error messages, or prose.
+- Rewrite text that sounds corporate, stilted, or AI-generated.
+- Explain technical concepts with concrete mechanisms instead of abstract claims.
+- Match the user's tone and pacing in responses.
+- Draft product/open-source writing with honest trade-offs and specifics.
+
 ## The Test
 
 Read it out loud. If it:

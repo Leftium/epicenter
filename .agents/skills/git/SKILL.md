@@ -10,6 +10,16 @@ metadata:
 
 > **Related Skills**: See `incremental-commits` for breaking multi-file changes into atomic commits.
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Write commit messages that follow conventional commit rules.
+- Decide commit type/scope formatting and breaking-change notation.
+- Draft PR descriptions that open with WHAT then WHY.
+- Add required user-facing changelog entries for `feat:`/`fix:` PRs.
+- Review commit/PR text for anti-patterns like AI/tool attribution.
+
 ## Conventional Commits Format
 
 ```

@@ -6,6 +6,16 @@ metadata:
   version: '1.0'
 ---
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Configure Better Auth 2FA with `twoFactor()` and `twoFactorClient()`.
+- Implement TOTP apps, OTP delivery (email/SMS), and backup code recovery.
+- Handle `twoFactorRedirect` in credential sign-in flows.
+- Add trusted-device behavior and 2FA verification UX.
+- Tune 2FA security settings like rate limits, cookie age, and encrypted OTP storage.
+
 ## Setup
 
 1. Add `twoFactor()` plugin to server config with `issuer`

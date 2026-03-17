@@ -6,6 +6,16 @@ metadata:
   version: '1.0'
 ---
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Configure Better Auth organizations on server and client.
+- Build organization creation, active-org selection, and member lifecycle flows.
+- Implement invitations, team management, and multi-role assignments.
+- Define custom permissions with dynamic access control and role APIs.
+- Enforce ownership, deletion, and invitation security constraints.
+
 ## Setup
 
 1. Add `organization()` plugin to server config

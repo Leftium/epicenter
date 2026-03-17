@@ -8,6 +8,15 @@ metadata:
 
 # Drizzle ORM Guidelines
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Define Drizzle columns that use branded TypeScript string types.
+- Choose between `$type<T>()` and `customType` for column definitions.
+- Remove identity `toDriver`/`fromDriver` conversions that add runtime overhead.
+- Keep data serialized through the storage layer and parse at UI edges.
+
 ## Use $type<T>() for Branded Strings, Not customType
 
 When you need a column with a branded TypeScript type but no actual data transformation, use `$type<T>()` instead of `customType`.

@@ -9,6 +9,17 @@ metadata:
 # Yjs CRDT Patterns
 
 > **Related Skills**: See `workspace-api` for the workspace abstraction built on Yjs.
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Design collaborative data models with Y.Map, Y.Array, or Y.Text.
+- Handle conflict-prone updates with single-writer keys or nested maps.
+- Implement drag-and-drop reordering with fractional indexing.
+- Optimize Yjs storage for high-churn key-value workloads.
+- Review boundaries to prevent raw Yjs type leaks into consumer code.
+
 ## Core Concepts
 
 ### Shared Types

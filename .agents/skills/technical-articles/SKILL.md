@@ -10,6 +10,16 @@ metadata:
 
 All articles must follow [writing-voice](../writing-voice/SKILL.md) rules.
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Write technical articles in `docs/articles/` or blog-style engineering posts.
+- Turn headings and titles into arguments instead of neutral topic labels.
+- Structure prose, code, and visuals with deliberate rhythm and pacing.
+- Open with the core insight first instead of announcing the topic.
+- Edit drafts to remove AI tell patterns and keep writing concrete.
+
 ## Core Principles
 
 Title should BE the takeaway, not a topic. "Write Context to a File, Not a Prompt" not "Context Management in Agent Workflows".

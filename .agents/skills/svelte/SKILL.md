@@ -9,6 +9,17 @@ metadata:
 # Svelte Guidelines
 
 > **Related Skills**: See `query-layer` for TanStack Query integration. See `styling` for CSS and Tailwind conventions.
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Build Svelte 5 components that use TanStack Query mutations.
+- Replace nested ternary `$derived` mappings with `satisfies Record` lookups.
+- Decide between `createMutation` in `.svelte` and `.execute()` in `.ts`.
+- Follow shadcn-svelte import, composition, and component organization patterns.
+- Refactor one-off `handle*` wrappers into inline template actions.
+
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 
 When a `$derived` expression maps a finite union to output values, use a `satisfies Record` lookup. Never use nested ternaries. Never use `$derived.by()` with a switch just to map values.

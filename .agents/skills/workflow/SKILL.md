@@ -16,6 +16,16 @@ metadata:
 6. Make every task and code change you do as simple as possible. We want to avoid making any massive or complex changes. Every change should impact as little code as possible. Everything is about simplicity.
 7. Finally, add a review section to the .md file with a summary of the changes you made and any other relevant information.
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Start a non-trivial feature with a timestamped planning spec in `specs/`.
+- Build a checklist-driven implementation plan before writing code.
+- Get plan verification before execution begins.
+- Execute work in small, simple steps with high-level progress updates.
+- Close work by adding a review summary to the spec.
+
 # Spec Placement
 
 All specs live in the root `/specs/` directory. Do not create nested specs in `apps/` or `packages/`.

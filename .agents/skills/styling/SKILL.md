@@ -8,6 +8,15 @@ metadata:
 
 # Styling Guidelines
 
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Write Tailwind/CSS for UI components in this repo.
+- Decide whether a wrapper element is necessary or can be removed.
+- Style interactive disabled states using HTML `disabled` and Tailwind variants.
+- Replace JS click guards with semantic disabled behavior.
+
 ## Minimize Wrapper Elements
 
 Avoid creating unnecessary wrapper divs. If classes can be applied directly to an existing semantic element with the same outcome, prefer that approach.

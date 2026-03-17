@@ -19,7 +19,7 @@ import {
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
-import { encryptionAdapter } from './key-manager.svelte';
+import { keyManager } from './key-manager.svelte';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -485,7 +485,7 @@ function createAuthState(encryption: EncryptionAdapter) {
 	};
 }
 
-export const authState = createAuthState(encryptionAdapter);
+export const authState = createAuthState(keyManager);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

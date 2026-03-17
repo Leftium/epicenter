@@ -948,15 +948,15 @@ describe('workspace encryption', () => {
 		return { client, key: generateEncryptionKey() };
 	}
 
-	test('mode starts as plaintext when no key provided', () => {
+	test('mode starts as none when no key provided', () => {
 		const { client } = setupEncrypted();
-		expect(client.mode).toBe('plaintext');
+		expect(client.mode).toBe('none');
 	});
 
-	test('unlock transitions mode to unlocked', () => {
+	test('unlock transitions mode to active', () => {
 		const { client, key } = setupEncrypted();
 		client.unlock(key);
-		expect(client.mode).toBe('unlocked');
+		expect(client.mode).toBe('active');
 	});
 
 	test('lock after unlock transitions mode to locked', () => {
@@ -966,10 +966,10 @@ describe('workspace encryption', () => {
 		expect(client.mode).toBe('locked');
 	});
 
-	test('lock is a no-op in plaintext mode', () => {
+	test('lock is a no-op in none mode', () => {
 		const { client } = setupEncrypted();
 		client.lock();
-		expect(client.mode).toBe('plaintext');
+		expect(client.mode).toBe('none');
 	});
 
 	test('unlock enables encrypted writes that survive re-unlock', () => {
@@ -1019,6 +1019,6 @@ describe('workspace encryption', () => {
 			defineWorkspace({ id: 'key-test', tables: { posts } }),
 			{ key },
 		);
-		expect(client.mode).toBe('unlocked');
+		expect(client.mode).toBe('active');
 	});
 });

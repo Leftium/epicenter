@@ -490,72 +490,72 @@ describe('createEncryptedYkvLww', () => {
 	});
 
 	describe('Mode transitions', () => {
-		test('starts in plaintext when no key provided', () => {
+		test('starts in none when no key provided', () => {
 			const ydoc = new Y.Doc({ guid: 'mode-no-key-start' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
-			expect(kv.mode).toBe('plaintext' satisfies EncryptionMode);
+			expect(kv.mode).toBe('none' satisfies EncryptionMode);
 		});
 
-		test('starts in unlocked when key provided', () => {
+		test('starts in active when key provided', () => {
 			const key = generateEncryptionKey();
 			const ydoc = new Y.Doc({ guid: 'mode-key-start' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
 
-			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
+			expect(kv.mode).toBe('active' satisfies EncryptionMode);
 		});
 
-		test('plaintext → unlocked via unlock(key)', () => {
+		test('none → active via unlock(key)', () => {
 			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'mode-plain-to-unlocked' });
+			const ydoc = new Y.Doc({ guid: 'mode-none-to-active' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
-			expect(kv.mode).toBe('plaintext' satisfies EncryptionMode);
+			expect(kv.mode).toBe('none' satisfies EncryptionMode);
 			kv.unlock(key);
-			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
+			expect(kv.mode).toBe('active' satisfies EncryptionMode);
 		});
 
-		test('unlocked → locked via lock()', () => {
+		test('active → locked via lock()', () => {
 			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'mode-unlocked-to-locked' });
+			const ydoc = new Y.Doc({ guid: 'mode-active-to-locked' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
 
-			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
+			expect(kv.mode).toBe('active' satisfies EncryptionMode);
 			kv.lock();
 			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
 		});
 
-		test('locked → unlocked via unlock(key)', () => {
+		test('locked → active via unlock(key)', () => {
 			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'mode-locked-to-unlocked' });
+			const ydoc = new Y.Doc({ guid: 'mode-locked-to-active' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
 
-			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
+			expect(kv.mode).toBe('active' satisfies EncryptionMode);
 			kv.lock();
 			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
 			kv.unlock(key);
-			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
+			expect(kv.mode).toBe('active' satisfies EncryptionMode);
 		});
 
-		test('plaintext stays plaintext on lock()', () => {
-			const ydoc = new Y.Doc({ guid: 'mode-stays-plaintext' });
+		test('none stays none on lock()', () => {
+			const ydoc = new Y.Doc({ guid: 'mode-stays-none' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
-			expect(kv.mode).toBe('plaintext' satisfies EncryptionMode);
+			expect(kv.mode).toBe('none' satisfies EncryptionMode);
 			kv.lock();
-			expect(kv.mode).toBe('plaintext' satisfies EncryptionMode);
+			expect(kv.mode).toBe('none' satisfies EncryptionMode);
 		});
 	});
 
@@ -703,7 +703,7 @@ describe('createEncryptedYkvLww', () => {
 			kv.set('legacy-2', 'plain-b');
 			kv.unlock(key);
 
-			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
+			expect(kv.mode).toBe('active' satisfies EncryptionMode);
 			expect(kv.get('legacy-1')).toBe('plain-a');
 			expect(kv.get('legacy-2')).toBe('plain-b');
 		});

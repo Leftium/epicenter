@@ -44,7 +44,7 @@ import type { KeyCache } from './key-cache';
  * Minimal client surface the key manager needs to drive lock/unlock.
  *
  * Intentionally narrow—only the methods the key manager actually calls.
- * The key manager never reads mode (plaintext/locked/unlocked); mode
+	 * The key manager never reads mode (none/locked/active); mode
  * guarding is the client's responsibility. Any workspace client that
  * implements these members can be managed.
  */
@@ -77,7 +77,7 @@ export type KeyManagerConfig = {
  * and race protection. The consumer just pushes key presence/absence from
  * their framework's reactive system.
  *
- * Mode guarding (plaintext/locked/unlocked) is the client's job—the key
+	 * Mode guarding (none/locked/active) is the client's job—the key
  * manager always calls through regardless of mode.
  */
 export type KeyManager = {

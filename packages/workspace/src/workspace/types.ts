@@ -1279,8 +1279,8 @@ export type WorkspaceClient<
 	/**
 	 * Current encryption mode across all stores.
 	 *
-	 * - `'plaintext'` — no key ever set, reads/writes pass through unencrypted
-	 * - `'unlocked'` — key active, writes encrypt, reads decrypt
+	 * - `'none'` — no key ever set, reads/writes pass through unencrypted
+	 * - `'active'` — key active, writes encrypt, reads decrypt
 	 * - `'locked'` — key was active but cleared (sign-out), writes throw, reads return cached plaintext
 	 *
 	 * All stores are kept in sync — this reflects the workspace-wide state.
@@ -1299,7 +1299,7 @@ export type WorkspaceClient<
 	 * - `get()` still returns cached plaintext values from the decrypted cache
 	 * - Mode transitions to `'locked'`
 	 *
-	 * No-op if mode is `'plaintext'` (never had a key).
+	 * No-op if mode is `'none'` (never had a key).
 	 *
  * For a hard wipe that clears persisted data without killing the client,
 	 * use {@link clearLocalData} instead.
@@ -1309,7 +1309,7 @@ export type WorkspaceClient<
 	/**
 	 * Unlock the workspace with an encryption key.
 	 *
-	 * Decrypts all stores, retries failed entries, transitions to `'unlocked'`.
+	 * Decrypts all stores, retries failed entries, transitions to `'active'`.
 	 * If any store fails to unlock, already-unlocked stores are rolled back to `'locked'`
 	 * and the error is rethrown—the workspace never ends up half-unlocked.
 	 *

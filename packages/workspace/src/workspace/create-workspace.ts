@@ -286,8 +286,8 @@ export function createWorkspace<
 			// Each extension entry is the exports object stored by reference.
 			extensions,
 			get mode() {
-				// All stores are kept in sync — use first store's mode, or 'plaintext' if no stores.
-				return encryptedStores[0]?.mode ?? 'plaintext';
+				// All stores are kept in sync — use first store's mode, or 'none' if no stores.
+				return encryptedStores[0]?.mode ?? 'none';
 			},
 			lock() {
 				for (const store of encryptedStores) store.lock();

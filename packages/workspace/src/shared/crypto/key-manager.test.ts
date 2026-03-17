@@ -46,7 +46,7 @@ function setup() {
 }
 
 function setupWithMutableMode() {
-	let mode: EncryptionMode = 'plaintext';
+	let mode: EncryptionMode = 'none';
 
 	const client: KeyManagerTarget = {
 		id: 'test-workspace',
@@ -54,7 +54,7 @@ function setupWithMutableMode() {
 			mode = 'locked';
 		}),
 		unlock: mock(((_key: Uint8Array) => {
-			mode = 'unlocked';
+			mode = 'active';
 		}) as (key: Uint8Array) => void),
 		clearLocalData: mock(async () => {
 			mode = 'locked';

@@ -180,7 +180,7 @@ export type KeyManager = {
  * 3. **Race protection**—a generation counter ensures stale HKDF results from a
  *    previous `setKey()` call never land after a newer one.
  *
- * Mode guarding (plaintext/locked/unlocked) is the client's responsibility,
+ * Mode guarding (none/locked/active) is the client's responsibility,
  * not the key manager's. The key manager always calls through to `lock()`/`clearLocalData()`.
  *
  * @param client - Workspace client surface implementing lock, unlock, and clearLocalData

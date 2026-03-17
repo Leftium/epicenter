@@ -301,7 +301,7 @@ unlock(key: Uint8Array): void;
 
 #### 2.5d: Tests
 
-- [x] **2.5d** Tests: runtime unlock enables encrypted writes, re-lock preserves cached reads, set() throws while locked, construction-time key starts unlocked, lock no-op in none. 7 tests added.
+- [x] **2.5d** Tests: runtime unlock enables encrypted writes, re-lock preserves cached reads, set() throws while locked, construction-time key starts active, lock no-op in none. 7 tests added.
 
 #### Files changed
 - `packages/workspace/src/workspace/create-kv.ts` — extract `createKvHelper`

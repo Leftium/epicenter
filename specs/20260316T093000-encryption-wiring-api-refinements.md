@@ -297,7 +297,7 @@ Expected: Error propagates. Existing fire-and-forget callers using `void keyMana
 2. `base64ToBytes` returns garbage
 3. `deriveWorkspaceKey` throws inside the Web Crypto API
 4. `.catch()` fires, `console.error` prints the error
-5. Workspace stays in its previous mode (locked or plaintext)
+5. Workspace stays in its previous mode (locked or none)
 
 Expected: Error visible in console. Workspace safe—no state corruption.
 

@@ -195,7 +195,7 @@ When encryption first activates, existing data is none-mode. The encrypted wrapp
 - [ ] Each app subscribes to `$session` and calls `workspace.unlock(key)` or `workspace.lock()` on sign-in/out
 - [ ] New KV/table writes produce `EncryptedBlob` when signed in
 - [ ] Reads decrypt transparently (existing plaintext + new ciphertext coexist)
-- [ ] Sign-out transitions to `locked` mode; `set()` rejects writes (not plaintext passthrough)
+- [ ] Sign-out transitions to `locked` mode; `set()` rejects writes (not `none`-mode passthrough)
 - [ ] `unlock()` rebuilds decrypted map when key arrives after workspace creation
 - [ ] One corrupted blob does not poison the observation chain (error containment)
 - [ ] All tests pass, typecheck clean, each app builds

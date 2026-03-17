@@ -343,10 +343,10 @@ This handles wrong-key scenarios gracefully: `unlock(wrongKey)` quarantines entr
 4. `unlock(correctKey)` retries all quarantined entries → they decrypt and appear
 5. Synthetic change events fire for recovered entries
 
-### Plaintext-to-Encrypted Migration
+### None-to-Encrypted Migration
 
-1. Workspace used in plaintext mode, entries written
-2. `unlock(key)` called — mode transitions to `unlocked`
+1. Workspace used in `none` mode, entries written
+2. `unlock(key)` called — mode transitions to `active`
 3. Existing plaintext entries stay plaintext in Y.Array (NOT re-encrypted)
 4. New writes are encrypted
 5. Mixed mode handled transparently: `isEncryptedBlob()` discriminates per value
@@ -358,7 +358,7 @@ This handles wrong-key scenarios gracefully: `unlock(wrongKey)` quarantines entr
 2. Store 3 of 5 throws during unlock
 3. Stores 1–2 (already unlocked) are rolled back to `locked`
 4. Error is rethrown — workspace is in consistent `locked` state
-5. No store is left in `unlocked` while others are `locked`
+5. No store is left in `active` while others are `locked`
 
 ### Sign-Out During Active Writes
 
@@ -372,12 +372,12 @@ This handles wrong-key scenarios gracefully: `unlock(wrongKey)` quarantines entr
 
 1. App starts, IndexedDB has encrypted data from last session
 2. No cached key available (expired, cleared, or self-hosted without caching)
-3. Workspace stays in `plaintext` mode (never had a key *this session*)
+3. Workspace stays in `none` mode (never had a key *this session*)
 4. `get()` encounters `EncryptedBlob` values → can't decrypt → returns `undefined` / validation fails
 5. User signs in → key arrives → `unlock()` decrypts everything
-6. Quarantined entries (failed decryption attempts during plaintext mode) are retried
+6. Quarantined entries (failed decryption attempts during `none` mode) are retried
 
-**Correction**: Actually, in plaintext mode, the wrapper passes through values. `EncryptedBlob` values would be returned as-is to table helpers, which would fail schema validation (they expect objects, not `Uint8Array`). These show up as `{ status: 'invalid' }` results. On `unlock()`, the observer rebuilds the cache with decrypted values and fires synthetic change events.
+**Correction**: Actually, in `none` mode, the wrapper passes through values. `EncryptedBlob` values would be returned as-is to table helpers, which would fail schema validation (they expect objects, not `Uint8Array`). These show up as `{ status: 'invalid' }` results. On `unlock()`, the observer rebuilds the cache with decrypted values and fires synthetic change events.
 
 ### Extension clearData Failure
 
@@ -416,7 +416,7 @@ This handles wrong-key scenarios gracefully: `unlock(wrongKey)` quarantines entr
 
 ## Success Criteria
 
-- [x] Three-mode state machine: `plaintext` → `unlocked` ↔ `locked`
+- [x] Three-mode state machine: `none` → `active` ↔ `locked`
 - [x] `mode`, `lock()`, `unlock(key)`, `clearLocalData()` on `WorkspaceClient`
 - [x] Encryption transparent to table helpers — no signature changes
 - [x] Progressive enhancement — workspace works before key arrives

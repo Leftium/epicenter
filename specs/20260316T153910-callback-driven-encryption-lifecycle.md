@@ -58,7 +58,7 @@ This creates problems:
 2. **Boolean flag for one-shot semantics.** Svelte 5 has no "run once when a reactive value appears" primitive. The `cacheRestoreAttempted` flag is the canonical workaround, but it's an imperative escape hatch in a declarative system.
 3. **Effect timing race.** When `userId` appears, both effects re-run. The main effect calls `lock()` (no key yet), then the fast-path's async `restoreKey` resolves and unlocks. The workspace flashes through a locked state for ~1–5ms. Correct (generation counter ensures unlock wins), but unnecessarily subtle.
 4. **Growing effect complexity.** Each new concern (cache restore, external sign-in, future key rotation) requires another effect or another branch in an existing effect. The reactive graph becomes harder to reason about.
-5. **Stale state bug.** `encryptionKey` is stored as `$state` inside auth. If any code path forgets to clear it (the 4xx path in `checkSession()`), the reactive effect sees a truthy key and keeps the workspace unlocked with a stale derived key. Storing the key as state creates an entire class of bugs.
+5. **Stale state bug.** `encryptionKey` is stored as `$state` inside auth. If any code path forgets to clear it (the 4xx path in `checkSession()`), the reactive effect sees a truthy key and keeps the workspace in `active` mode with a stale derived key. Storing the key as state creates an entire class of bugs.
 
 ### Desired State
 
@@ -315,7 +315,7 @@ The existing `onExternalSignIn` callback in auth fires when token + user appear 
 
 ### `wipe()` After Session Expiry
 
-1. User is signed in, workspace is unlocked
+1. User is signed in, workspace is in `active` mode
 2. Session token expires server-side (after 7 days of inactivity)
 3. `checkSession()` runs on visibility change → server returns 4xx
 4. `checkSession()` calls `clearState()`, then `encryption?.wipe()`

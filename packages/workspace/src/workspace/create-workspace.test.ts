@@ -1012,7 +1012,7 @@ describe('workspace encryption', () => {
 		}
 	});
 
-	test('unlock with construction-time key starts as unlocked', () => {
+	test('unlock with construction-time key starts as active', () => {
 		const key = generateEncryptionKey();
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const client = createWorkspace(

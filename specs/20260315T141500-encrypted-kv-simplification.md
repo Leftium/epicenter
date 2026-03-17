@@ -230,7 +230,7 @@ Option: add a `cachedKeys()` method that yields only keys. Low priority — `cle
 ## Success Criteria
 
 - [ ] `quarantine` map removed — no references in source code
-- [ ] `failedDecryptCount` getter returns correct count in all modes (plaintext, unlocked, locked)
+- [ ] `failedDecryptCount` getter returns correct count in all modes (none, active, locked)
 - [ ] `ykv.map` property removed from `YKeyValueLwwEncrypted<T>` type
 - [ ] All 7 `create-table.ts` call sites use method-based access
 - [ ] All existing tests pass (rewritten where needed)

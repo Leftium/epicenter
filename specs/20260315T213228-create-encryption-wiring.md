@@ -56,7 +56,7 @@ This creates problems:
 
 2. **Framework coupling**: `$effect.root` + `$effect` makes this non-portable. Tests, Tauri commands, service workers, and non-Svelte consumers can't use it.
 
-3. **Copy-paste multiplication**: Every new Epicenter app (Whispering is next) must replicate the same subtle three-way branch logic, the same HKDF wiring, the same guard conditions. Getting any of them wrong either soft-locks a plaintext workspace or skips cleanup on sign-out.
+3. **Copy-paste multiplication**: Every new Epicenter app (Whispering is next) must replicate the same subtle three-way branch logic, the same HKDF wiring, the same guard conditions. Getting any of them wrong either soft-locks a `none`-mode workspace or skips cleanup on sign-out.
 
 4. **Opaque timing gap**: Between `authState.encryptionKey` becoming non-null and `unlock()` completing, the workspace is in its previous mode. Consumers have no way to know "key derivation is in progress"—they must guess.
 
@@ -122,13 +122,13 @@ authState.status ('checking' | 'signing-in' | 'signing-out' | 'signed-in' | 'sig
 │  key present?                                            │
 │    → base64ToBytes → deriveWorkspaceKey → unlock         │
 │                                                          │
-│  key null + mode unlocked + signing-out?                 │
+│  key null + mode active + signing-out?                  │
 │    → clearLocalData (wipe IndexedDB)                     │
 │                                                          │
-│  key null + mode unlocked + other?                       │
+│  key null + mode active + other?                        │
 │    → lock (soft, data preserved)                         │
 │                                                          │
-│  key null + mode NOT unlocked?                           │
+│  key null + mode NOT active?                            │
 │    → no-op (never had a key, or already locked)          │
 └─────────────────────────────────────────────────────────┘
      │
@@ -182,7 +182,7 @@ This avoids two failure modes:
 | Three-way null branch encoding | **Discriminated union in `EncryptionSourceSnapshot`** | `kind: 'no-key', reason: 'signed-out' \| 'session-lost'` makes the branch explicit in the type system. Cleaner than `isSigningOut: boolean` which doesn't capture "waiting for key." |
 | Race protection | **Monotonic operation version counter** | Each snapshot gets a version. Late async results (derive, clear) check version before applying. Stale results are silently dropped. |
 | Error handling | **`onError` callback, no throws** | Errors in derive or clearLocalData are reported via callback. Never throw out of the subscription loop—that would kill the wiring permanently. |
-| `waiting-for-key` behavior | **No-op** | During bootstrap (`checking`, `signing-in`), the wiring does nothing. This is correct—the workspace starts in `plaintext` mode and stays there until a key arrives. |
+| `waiting-for-key` behavior | **No-op** | During bootstrap (`checking`, `signing-in`), the wiring does nothing. This is correct—the workspace starts in `none` mode and stays there until a key arrives. |
 
 ## Architecture
 

@@ -363,15 +363,6 @@ Do NOT use when:
 - Files were renamed but stayed in the same directory
 - The move is incidental to the real change
 
-#### When to Use Diagrams
-
-- **Journey diagrams**: PR iterates on previous work or fixes a past decision
-- **Layer diagrams**: PR introduces or changes architecture with distinct levels
-- **Composition trees**: PR refactors how modules compose or delegate to each other
-- **File relocation trees**: PR moves files between directories as an architectural statement
-- **Comparison tables**: PR introduces alternatives or explains trade-offs
-- **Flow diagrams**: PR changes how data or control moves between components
-
 ASCII art characters to use: `┌ ┐ └ ┘ ─ │ ├ ┤ ┬ ┴ ┼ ▼ ▲ ◀ ▶ ──→ ←── ⚠️ ✅ ❌`
 
 #### Interleaving Prose and Visuals
@@ -435,33 +426,6 @@ The reader's eye should bounce between prose and visuals. Prose provides the "wh
 - Focus on the "why" and "what" of changes, not the "how it was created"
 - Include any breaking changes prominently
 - Link to relevant issues
-
-### Changelog Entries in PRs
-
-PRs with a `feat:` or `fix:` prefix MUST include a `## Changelog` section in the PR description. These entries get aggregated into GitHub Releases by `auto.release.yml`.
-
-Rules:
-
-- One line per user-visible change
-- Use imperative mood, written for end users (not developers)
-- Internal-only PRs (`chore:`, `refactor:`, `docs:`) should omit the section entirely
-- Entries are grouped in releases: `feat:` → "New", `fix:` → "Fixed", other with changelog → "Improved"
-
-**Good entry:**
-
-```
-## Changelog
-- Add Bun sidecar for local workspace sync
-```
-
-**Bad entry (developer-facing, not user-facing):**
-
-```
-## Changelog
-- refactor(services): flatten isomorphic/ to services root
-```
-
-When no `## Changelog` section is present, the PR is still released (gets a version bump) but excluded from the release body.
 
 ### Scanning GitHub Issues Before Writing a PR Description
 

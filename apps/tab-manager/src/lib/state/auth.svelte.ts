@@ -20,6 +20,7 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
 import { keyManager } from './key-manager.svelte';
+import type { KeyManager } from '@epicenter/workspace/shared/crypto';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -94,29 +95,7 @@ type AuthPhase =
 	| { status: 'signed-in' }
 	| { status: 'signed-out'; error?: string };
 
-/**
- * Narrow interface for the encryption key lifecycle.
- *
- * Auth extracts encryption keys from session responses but never stores
- * them—the key is transient, passed through to the adapter at call sites.
- * This eliminates the stale-state class of bugs by construction.
- *
- * The adapter maps auth lifecycle moments to concrete key manager commands:
- *
- * - `restoreKeyFromCache` — attempt instant unlock from a key cache (fires during
- *   `checkSession()` before the network call, after storage hydration)
- * - `setKey` — derive workspace key from a server-provided encryption key
- *   (fires on sign-in, sign-up, and successful session check)
- * - `wipe` — destroy local encrypted data and clear key cache (fires on
- *   sign-out and 4xx session rejection)
- */
-type EncryptionAdapter = {
-	restoreKeyFromCache(userId: string): void;
-	setKey(key: string, userId: string): void;
-	wipe(): void;
-};
-
-function createAuthState(encryption: EncryptionAdapter) {
+function createAuthState(encryption: KeyManager) {
 	// ─── State ───
 
 	let phase = $state<AuthPhase>({ status: 'checking' });
@@ -393,7 +372,7 @@ function createAuthState(encryption: EncryptionAdapter) {
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
-			encryption.wipe();
+			void encryption.wipe();
 			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
 			phase = { status: 'signed-out' };
@@ -416,7 +395,7 @@ function createAuthState(encryption: EncryptionAdapter) {
 
 			const userId = authUser.current?.id;
 			if (userId) {
-				encryption.restoreKeyFromCache(userId);
+				void encryption.restoreKeyFromCache(userId);
 			}
 
 			const token = authToken.current;
@@ -440,7 +419,7 @@ function createAuthState(encryption: EncryptionAdapter) {
 
 				// 4xx → server explicitly rejected the token
 				await clearState();
-				encryption.wipe();
+				void encryption.wipe();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}

@@ -11,9 +11,9 @@
  * ```
  *
  * Auth receives the key manager directly via constructor injection.
- * `KeyManager` structurally satisfies auth's `EncryptionAdapter` interface—
- * `Promise<T>` return types are assignable to `void`, and extra members
- * (`lock`) are ignored by structural typing. No adapter wrapper needed.
+ * `KeyManager`'s `Promise<T>` return types are assignable to `void`,
+ * so auth can fire-and-forget async methods (wipe, restoreKeyFromCache)
+ * without awaiting. Extra members (`lock`) are unused by auth.
  *
  * @example
  * ```typescript

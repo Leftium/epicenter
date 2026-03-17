@@ -5,10 +5,9 @@
  * - **Extract** functions: read from doc-backed Y types → return primitives
  * - **Populate** functions: write primitives → into doc-backed Y types
  *
- * The `as*()` methods on DocumentHandle compose these with timeline push
- * methods inside `ydoc.transact()`. This ensures all Y type creation
- * happens inside the transaction (user preference, no functional difference
- * but simpler mental model).
+ * The `as*()` methods on Timeline compose these with push ops inside
+ * `ydoc.transact()`. This ensures all Y type creation happens inside the
+ * transaction (user preference, no functional difference but simpler mental model).
  *
  * @module
  */

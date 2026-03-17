@@ -101,7 +101,29 @@ function createAuthState() {
 	let password = $state('');
 	let name = $state('');
 	let mode = $state<AuthMode>('sign-in');
-	let encryptionKey = $state<string | undefined>(undefined);
+	/**
+	 * Narrow interface for the encryption key lifecycle.
+	 *
+	 * Auth extracts encryption keys from session responses but never stores
+	 * them—the key is transient, passed through to the adapter at call sites.
+	 * This eliminates the stale-state class of bugs by construction.
+	 *
+	 * The adapter maps auth lifecycle moments to concrete key manager commands:
+	 *
+	 * - `restoreKey` — attempt instant unlock from a key cache (fires during
+	 *   `checkSession()` before the network call, after storage hydration)
+	 * - `setKey` — derive workspace key from a server-provided encryption key
+	 *   (fires on sign-in, sign-up, and successful session check)
+	 * - `wipe` — destroy local encrypted data and clear key cache (fires on
+	 *   sign-out and 4xx session rejection)
+	 */
+	type EncryptionAdapter = {
+		restoreKey(userId: string): void;
+		setKey(key: string, userId: string): void;
+		wipe(): void;
+	};
+
+	let encryption: EncryptionAdapter | undefined;
 
 	const client = $derived(
 		createAuthClient({
@@ -186,8 +208,8 @@ function createAuthState() {
 	async function refreshEncryptionKey() {
 		// .catch(→ null) swallows network errors; { data: null } covers HTTP errors
 		const result = await getSession().catch(() => null);
-		if (result?.data) {
-			encryptionKey = result.data.encryptionKey;
+		if (result?.data?.encryptionKey) {
+			encryption?.setKey(result.data.encryptionKey, result.data.user.id);
 		}
 	}
 
@@ -229,9 +251,6 @@ function createAuthState() {
 		},
 		get token() {
 			return authToken.current;
-		},
-		get encryptionKey() {
-			return encryptionKey;
 		},
 
 		/**
@@ -374,9 +393,9 @@ function createAuthState() {
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
+			encryption?.wipe();
 			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
-			encryptionKey = undefined;
 			phase = { status: 'signed-out' };
 			return Ok(undefined);
 		},
@@ -393,7 +412,12 @@ function createAuthState() {
 		 * rejection (4xx) clears state.
 		 */
 		async checkSession() {
-			await authToken.whenReady;
+			await Promise.all([authToken.whenReady, authUser.whenReady]);
+
+			const userId = authUser.current?.id;
+			if (userId) {
+				encryption?.restoreKey(userId);
+			}
 
 			const token = authToken.current;
 			if (!token) {
@@ -416,6 +440,7 @@ function createAuthState() {
 
 				// 4xx → server explicitly rejected the token
 				await clearState();
+				encryption?.wipe();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
@@ -428,7 +453,9 @@ function createAuthState() {
 
 			const user = serializeDates(data.user);
 			await authUser.set(user);
-			encryptionKey = data.encryptionKey;
+			if (data.encryptionKey) {
+				encryption?.setKey(data.encryptionKey, data.user.id);
+			}
 			phase = { status: 'signed-in' };
 			return Ok(user);
 		},
@@ -453,6 +480,52 @@ function createAuthState() {
 			externalSignInListeners.add(callback);
 			return () => {
 				externalSignInListeners.delete(callback);
+			};
+		},
+
+		/**
+		 * Register the encryption adapter that drives the workspace key manager.
+		 *
+		 * Auth owns the lifecycle events (sign-in, sign-out, session check) but
+		 * doesn't know about encryption internals. The adapter bridges that gap—
+		 * auth calls `encryption?.setKey()`, `encryption?.wipe()`, and
+		 * `encryption?.restoreKey()` at the right moments, and the adapter
+		 * translates those into key manager commands.
+		 *
+		 * Only one adapter can be registered at a time. There's exactly one
+		 * encryption consumer (the key manager), so a single slot replaces
+		 * what would otherwise be N-subscriber callback Sets. Calling this again
+		 * replaces the previous adapter.
+		 *
+		 * Called by `syncAuthToEncryption()` in `key-manager.svelte.ts` during
+		 * `onMount`. The returned cleanup function should be called on unmount
+		 * to prevent stale adapter references.
+		 *
+		 * @returns Unsubscribe function that clears the adapter slot. Call in
+		 *   `onMount` cleanup.
+		 *
+		 * @example
+		 * ```typescript
+		 * // In key-manager.svelte.ts
+		 * export function syncAuthToEncryption() {
+		 *   return authState.registerEncryption({
+		 *     restoreKey: (userId) => void keyManager.restoreKey(userId),
+		 *     setKey: (key, userId) => keyManager.setKey(key, userId),
+		 *     wipe: () => { keyManager.wipe(); },
+		 *   });
+		 * }
+		 *
+		 * // In App.svelte
+		 * onMount(() => {
+		 *   const cleanup = syncAuthToEncryption();
+		 *   return () => cleanup();
+		 * });
+		 * ```
+		 */
+		registerEncryption(adapter: EncryptionAdapter) {
+			encryption = adapter;
+			return () => {
+				encryption = undefined;
 			};
 		},
 	};

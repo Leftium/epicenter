@@ -1,38 +1,33 @@
 /**
- * Adapter-driven bridge between auth lifecycle and the workspace key manager.
- *
- * This file is the single coupling point between auth state and encryption:
+ * Encryption adapter bridging auth lifecycle to the workspace key manager.
  *
  * ```
  * auth.svelte.ts          this file             @epicenter/workspace
  * ┌──────────────┐    ┌────────────────┐    ┌───────────────────┐
- * │ lifecycle     │───▶│ registers       │───▶│ createKeyManager   │
- * │ adapter slot  │    │ adapter that    │    │ (HKDF, dedup,      │
- * └──────────────┘    │ maps to key     │    │  race protection)  │
- *                     │ manager methods │    └───────────────────┘
- *                     └────────────────┘
+ * │ createAuth    │───▶│ encryptionAda- │───▶│ createKeyManager   │
+ * │ State(adapter)│    │ pter (module-  │    │ (HKDF, dedup,      │
+ * └──────────────┘    │ scope export)  │    │  race protection)  │
+ *                     └────────────────┘    └───────────────────┘
  * ```
  *
- * Auth defines a narrow `EncryptionAdapter` interface and calls it at the
- * right moments (sign-in, sign-out, session check, cache restore). This
- * module injects the concrete adapter via `authState.registerEncryption()`.
+ * Auth calls the adapter's methods at the right lifecycle moments
+ * (sign-in, sign-out, session check, cache restore). This module
+ * provides the concrete adapter backed by the workspace key manager.
  *
- * No `$effect`, no reactive observation, no boolean flags—just a plain
- * function that wires imperative calls through to the key manager.
+ * No `$effect`, no reactive observation, no registration functions—
+ * just a plain object wired at module scope via constructor injection.
  */
 
 import { createKeyManager } from '@epicenter/workspace/shared/crypto';
 import { workspaceClient } from '$lib/workspace';
-import { authState } from './auth.svelte';
 import { keyCache } from './key-cache';
 
 const keyManager = createKeyManager(workspaceClient, { keyCache });
 
 /**
- * Wire auth lifecycle events to the workspace encryption key manager.
+ * Encryption adapter for auth lifecycle integration.
  *
- * Registers an `EncryptionAdapter` on `authState` that translates lifecycle
- * calls into key manager commands:
+ * Maps auth lifecycle moments to concrete key manager commands:
  *
  * - **`restoreKey(userId)`** → `keyManager.restoreKey(userId)` — attempts
  *   instant unlock from the chrome.storage.session cache before the auth
@@ -42,24 +37,21 @@ const keyManager = createKeyManager(workspaceClient, { keyCache });
  * - **`wipe()`** → `keyManager.wipe()` — destroys local encrypted data and
  *   clears the key cache.
  *
- * @returns Cleanup function that unregisters the adapter. Call from
- *   `onMount`'s teardown to prevent stale adapter references.
+ * Passed to `createAuthState()` at module scope in `auth.svelte.ts`.
+ * Auth calls these methods directly—no registration, no cleanup needed.
  *
  * @example
  * ```typescript
- * // In App.svelte
- * onMount(() => {
- *   const cleanup = syncAuthToEncryption();
- *   return () => cleanup();
- * });
+ * // In auth.svelte.ts
+ * import { encryptionAdapter } from './key-manager.svelte';
+ *
+ * export const authState = createAuthState(encryptionAdapter);
  * ```
  */
-export function syncAuthToEncryption() {
-	return authState.registerEncryption({
-		restoreKey: (userId) => void keyManager.restoreKey(userId),
-		setKey: (key, userId) => keyManager.setKey(key, userId),
-		wipe: () => {
-			keyManager.wipe();
-		},
-	});
-}
+export const encryptionAdapter = {
+	restoreKey: (userId: string) => void keyManager.restoreKey(userId),
+	setKey: (key: string, userId: string) => keyManager.setKey(key, userId),
+	wipe: () => {
+		keyManager.wipe();
+	},
+};

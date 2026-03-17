@@ -5,6 +5,7 @@ description: TypeScript code style, type co-location, naming conventions (includ
 
 # TypeScript Guidelines
 
+> **Related Skills**: See `arktype` for runtime type validation patterns. See `typebox` for TypeBox schema patterns. See `testing` for test file conventions.
 ## Core Rules
 
 - Always use `type` instead of `interface` in TypeScript.

@@ -5,6 +5,8 @@ description: Git commit and pull request guidelines using conventional commits. 
 
 # Git Commit and Pull Request Guidelines
 
+> **Related Skills**: See `incremental-commits` for breaking multi-file changes into atomic commits.
+
 ## Conventional Commits Format
 
 ```

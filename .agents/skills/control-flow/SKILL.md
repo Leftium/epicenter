@@ -7,6 +7,8 @@ description: Human-readable control flow patterns for early returns, guard claus
 
 When refactoring complex control flow, mirror natural human reasoning patterns:
 
+> **Related Skills**: See `refactoring` for systematic code audit methodology including branch collapsing and caller counting.
+
 1. **Ask the human question first**: "Can I use what I already have?" -> early return for happy path
 2. **Assess the situation**: "What's my current state and what do I need to do?" -> clear, mutually exclusive conditions
 3. **Take action**: "Get what I need" -> consolidated logic at the end

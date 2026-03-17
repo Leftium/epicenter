@@ -8,6 +8,7 @@ metadata:
 
 # defineErrors
 
+> **Related Skills**: See `error-handling` for trySync/tryAsync usage. See `services-layer` for service architecture and namespace exports.
 ## Import
 
 ```typescript

@@ -9,6 +9,8 @@ description: Test file conventions for setup functions, factory patterns, test o
 
 Every `.test.ts` file MUST start with a JSDoc block explaining what is being tested and the key behaviors verified. This serves as documentation for the module's contract.
 
+> **Related Skills**: See `services-layer` for the service patterns being tested. See `typescript` for type testing conventions.
+
 ### Structure
 
 ```typescript

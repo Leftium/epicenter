@@ -7,6 +7,8 @@ description: Break multi-file changes into atomic commits ordered by dependency.
 
 When a feature touches multiple files, implement in **waves**. Each wave is one logical concern, one commit. This creates a clean git history that tells a story.
 
+> **Related Skills**: See `git` for commit message conventions and PR guidelines.
+
 ## The Pattern
 
 ```

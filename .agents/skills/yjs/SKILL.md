@@ -8,6 +8,7 @@ metadata:
 
 # Yjs CRDT Patterns
 
+> **Related Skills**: See `workspace-api` for the workspace abstraction built on Yjs.
 ## Core Concepts
 
 ### Shared Types

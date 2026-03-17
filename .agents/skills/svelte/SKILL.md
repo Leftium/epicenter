@@ -5,6 +5,7 @@ description: Svelte 5 patterns including TanStack Query mutations, shadcn-svelte
 
 # Svelte Guidelines
 
+> **Related Skills**: See `query-layer` for TanStack Query integration. See `styling` for CSS and Tailwind conventions.
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 
 When a `$derived` expression maps a finite union to output values, use a `satisfies Record` lookup. Never use nested ternaries. Never use `$derived.by()` with a switch just to map values.

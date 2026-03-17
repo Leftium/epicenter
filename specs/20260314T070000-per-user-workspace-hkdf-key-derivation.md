@@ -291,7 +291,7 @@ The workspace client currently hides encrypted KV stores inside `createTables`/`
 ```typescript
 /** Current encryption mode across all stores. */
 readonly mode: EncryptionMode;
-/** Lock — clears key, writes throw, reads return cached plaintext. No-op if mode is 'plaintext'. */
+/** Lock — clears key, writes throw, reads return cached plaintext. No-op if mode is 'none'. */
 lock(): void;
 /** Unlock with encryption key — decrypts all stores, retries quarantine. Rolls back on partial failure. */
 unlock(key: Uint8Array): void;
@@ -301,7 +301,7 @@ unlock(key: Uint8Array): void;
 
 #### 2.5d: Tests
 
-- [x] **2.5d** Tests: runtime unlock enables encrypted writes, re-lock preserves cached reads, set() throws while locked, construction-time key starts unlocked, lock no-op in plaintext. 7 tests added.
+- [x] **2.5d** Tests: runtime unlock enables encrypted writes, re-lock preserves cached reads, set() throws while locked, construction-time key starts unlocked, lock no-op in none. 7 tests added.
 
 #### Files changed
 - `packages/workspace/src/workspace/create-kv.ts` — extract `createKvHelper`

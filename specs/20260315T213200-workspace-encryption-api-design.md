@@ -25,7 +25,7 @@ A local-first workspace must encrypt data at rest with per-user, per-workspace k
 The workspace package (`packages/workspace/`) implements encryption as a composition wrapper around the Yjs CRDT layer. The encryption surface area on `WorkspaceClient` consists of:
 
 ```typescript
-readonly mode: EncryptionMode        // 'plaintext' | 'unlocked' | 'locked'
+readonly mode: EncryptionMode        // 'none' | 'active' | 'locked'
 lock(): void                          // clear key, block writes
 unlock(key: Uint8Array): void         // provide key, decrypt stores
 clearLocalData(): Promise<void>       // lock + wipe persisted data
@@ -44,10 +44,10 @@ This spec documents *why* each of these exists by deriving them from first princ
 | Local storage encryption | SQLCipher (full DB encryption) | AES-256-CBC per vault item | XChaCha20-Poly1305 per CRDT value |
 | Offline access | Local DB always decryptable (key in secure enclave) | Vault cached locally, master key derived from password | Cached key in `KeyCache`, workspace decrypts immediately |
 | Sign-out behavior | Delete local DB | Clear vault + derived keys, keep account metadata | `clearLocalData()`: lock + wipe IndexedDB, keep singleton |
-| Progressive encryption | N/A (always encrypted) | N/A (vault requires master password) | Workspace works in plaintext, encrypts when key arrives |
+| Progressive encryption | N/A (always encrypted) | N/A (vault requires master password) | Workspace works in none mode, encrypts when key arrives |
 | Lock model | N/A | Lock clears master key, vault stays cached | `lock()` clears key, reads return cached plaintext |
 
-**Key finding**: Bitwarden's "lock vs sign-out" distinction maps directly to the three-mode state machine. Lock = clear key but keep cached data. Sign-out = clear everything. Plaintext mode (no key ever seen) is unique to this system's progressive enhancement requirement.
+**Key finding**: Bitwarden's "lock vs sign-out" distinction maps directly to the three-mode state machine. Lock = clear key but keep cached data. Sign-out = clear everything. None mode (no key ever seen) is unique to this system's progressive enhancement requirement.
 
 **Key finding**: Signal and Bitwarden both use HKDF with unversioned domain-separation info strings (per RFC 5869 §3.2). The info string is *not* a version identifier—if derivation changes, the blob format version handles migration. Vault Transit, AWS KMS, and libsodium follow the same convention.
 
@@ -73,14 +73,14 @@ Yjs `ContentAny` stores entry objects by **reference**. The inner CRDT (`YKeyVal
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Number of encryption modes | Three: `plaintext`, `unlocked`, `locked` | Two modes can't distinguish "never had a key" (allow writes) from "lost key" (block writes). Four+ modes add complexity without solving new problems |
-| Mode names | `plaintext`, `unlocked`, `locked` | Maps to Bitwarden/1Password mental model. "Plaintext" is explicit about the security posture. "Unencrypted" was rejected—too close to "error state" connotation |
+| Number of encryption modes | Three: `none`, `active`, `locked` | Two modes can't distinguish "never had a key" (allow writes) from "lost key" (block writes). Four+ modes add complexity without solving new problems |
+| Mode names | `none`, `active`, `locked` | Maps to Bitwarden/1Password mental model. "None" is explicit about the security posture. "Unencrypted" was rejected—too close to "error state" connotation |
 | Encryption boundary | Composition wrapper over CRDT (`createEncryptedYkvLww`) | Yjs reference equality constraint (see Research Findings). Fork would break `indexOf()` |
 | Cipher | XChaCha20-Poly1305 via `@noble/ciphers` | Synchronous (CRDT hot path), 2.3× faster than AES-256-GCM in pure JS, 24-byte nonce safe for random generation |
 | Key hierarchy | Two-level HKDF: user → workspace | Server derives once per session (not per workspace). Compromising one workspace key doesn't expose others |
 | Key caching | Platform-agnostic `KeyCache` interface, not built-in | Tauri needs encrypted vaults, browsers use `sessionStorage`, self-hosted may skip caching entirely |
 | Blob format | Self-describing binary: `[formatVersion, keyVersion, nonce(24), ciphertext, tag(16)]` | Inline key version enables rotation without re-encrypting all blobs. Format version enables future algorithm changes |
-| Mixed plaintext/encrypted data | Value-level discrimination via `isEncryptedBlob()` | No bulk re-encryption needed. Existing plaintext survives `unlock()`. Discrimination is reliable: user values are JS objects, never `Uint8Array` |
+| Mixed none-mode/encrypted data | Value-level discrimination via `isEncryptedBlob()` | No bulk re-encryption needed. Existing none-mode survives `unlock()`. Discrimination is reliable: user values are JS objects, never `Uint8Array` |
 | `clearLocalData` naming | Not `signOut()` or `dispose()` | Workspace doesn't know about auth. Singleton must survive. Name describes what it does (clears local data), not why (sign-out) |
 | Encryption wiring | Consumer-side pattern, not built-in | Depends on auth library (Better Auth), platform (Svelte reactivity), and app-specific sign-out semantics |
 | Unlock atomicity | Rollback on partial failure | If one store fails to unlock, already-unlocked stores re-lock. Workspace never ends up half-unlocked |
@@ -91,13 +91,13 @@ Yjs `ContentAny` stores entry objects by **reference**. The inner CRDT (`YKeyVal
 
 ```
                   ┌─────────────┐
-      (creation,  │  PLAINTEXT  │  no key ever seen
+      (creation,  │  NONE       │  no key ever seen
        no key)    │  rw plain   │  reads and writes pass through unencrypted
                   └──────┬──────┘
                          │ unlock(key)
                          ▼
                   ┌─────────────┐
-                  │  UNLOCKED   │  key active
+                  │  ACTIVE     │  key active
                   │  rw encrypt │◄── unlock(newKey) [re-sign-in]
                   └──────┬──────┘
                          │ lock()
@@ -115,15 +115,15 @@ Yjs `ContentAny` stores entry objects by **reference**. The inner CRDT (`YKeyVal
 
 **Forbidden transitions:**
 
-- `plaintext → locked` never happens. Locked means "was unlocked before." A workspace that never had a key stays plaintext through any lifecycle event.
-- `locked → plaintext` never happens. Once a key has been seen, the workspace permanently knows it should be encrypted.
+- `none → locked` never happens. Locked means "was active before." A workspace that never had a key stays none through any lifecycle event.
+- `locked → none` never happens. Once a key has been seen, the workspace permanently knows it should be encrypted.
 
 **Behavioral contract per mode:**
 
 | Mode | `set()` | `get()` | `observe()` |
 |---|---|---|---|
-| `plaintext` | Writes plaintext to CRDT | Reads plaintext from CRDT | Fires with plaintext values |
-| `unlocked` | Encrypts, writes `EncryptedBlob` to CRDT | Decrypts from cache (or on-the-fly fallback) | Decrypts, fires with plaintext values |
+| `none` | Writes plaintext to CRDT | Reads plaintext from CRDT | Fires with plaintext values |
+| `active` | Encrypts, writes `EncryptedBlob` to CRDT | Decrypts from cache (or on-the-fly fallback) | Decrypts, fires with plaintext values |
 | `locked` | **Throws** ("Workspace is locked—sign in to write") | Returns cached plaintext from last unlocked session | No new events (writes blocked, remote changes undecryptable) |
 
 ### Encryption Boundary in the Stack
@@ -172,7 +172,7 @@ ENCRYPTION_SECRETS="1:base64Secret"              ← Server environment variable
        ▼
   workspace.unlock(workspaceKey)
        │
-       │  All encrypted stores transition to 'unlocked'
+       │  All encrypted stores transition to 'active'
        │  New writes: JSON.stringify → XChaCha20-Poly1305 encrypt → EncryptedBlob
        │  Reads: EncryptedBlob → XChaCha20-Poly1305 decrypt → JSON.parse → plaintext
        ▼
@@ -208,7 +208,7 @@ createWorkspace(definition)
   │
   └── WorkspaceClient
         │
-        ├── get mode()  →  encryptedStores[0]?.mode ?? 'plaintext'
+        ├─ get mode()  →  encryptedStores[0]?.mode ?? 'none'
         │                   (all stores kept in sync)
         │
         ├── lock()      →  for (store of encryptedStores) store.lock()
@@ -230,7 +230,7 @@ STEP 1: App starts, no user
     .withExtension('persistence', indexeddbPersistence)
     .withExtension('sync', createSyncExtension({ ... }));
 
-  client.mode === 'plaintext'
+  client.mode === 'none'
   client.tables.posts.set(...)    ← writes plaintext (works immediately)
   client.tables.posts.get(...)    ← reads plaintext
 
@@ -241,11 +241,11 @@ STEP 2: User signs in, key arrives
   const wsKey = await deriveWorkspaceKey(userKey, client.id);
   client.unlock(wsKey);
 
-  client.mode === 'unlocked'
+  client.mode === 'active'
   client.tables.posts.set(...)    ← encrypts, stores EncryptedBlob
   client.tables.posts.get(...)    ← decrypts from cache (transparent)
 
-  // Old plaintext entries stay plaintext — mixed mode handled at value level
+  // Old none-mode entries stay plaintext — mixed mode handled at value level
   // Only new writes are encrypted
 
 STEP 3: Session expires (or tab backgrounded)
@@ -274,7 +274,7 @@ STEP 5: App restarts offline, cached key available
 
 STEP 6: New user signs in
 ──────────────────────────
-  // Same as step 2 — singleton workspace transitions back to 'unlocked'
+  // Same as step 2 — singleton workspace transitions back to 'active'
   // with the new user's key
 ```
 
@@ -297,7 +297,7 @@ export function initEncryptionWiring() {
         const userKey = base64ToBytes(keyBase64);
         void deriveWorkspaceKey(userKey, workspaceClient.id)
           .then((wsKey) => workspaceClient.unlock(wsKey));
-      } else if (workspaceClient.mode === 'unlocked') {
+      } else if (workspaceClient.mode === 'active') {
         if (status === 'signing-out') {
           // Sign-out → wipe persisted data, keep client alive
           void workspaceClient.clearLocalData();
@@ -433,7 +433,7 @@ This spec was derived from first principles and constraints before examining the
 
 | Derived Design Element | Current Implementation | File |
 |---|---|---|
-| Three-mode state machine | `EncryptionMode = 'plaintext' \| 'locked' \| 'unlocked'` | `y-keyvalue-lww-encrypted.ts:125` |
+| Three-mode state machine | `EncryptionMode = 'none' \| 'locked' \| 'active'` | `y-keyvalue-lww-encrypted.ts:125` |
 | Four methods on WorkspaceClient | `mode`, `lock()`, `unlock(key)`, `clearLocalData()` | `types.ts:1288–1433` |
 | Composition wrapper over CRDT | `createEncryptedYkvLww` wraps `YKeyValueLww` | `y-keyvalue-lww-encrypted.ts:220` |
 | Table helpers unaware of encryption | `createTable(ykv, def)` receives wrapper | `create-workspace.ts:167` |

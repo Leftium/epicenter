@@ -56,7 +56,7 @@ session.subscribe((s) => {
 });
 ```
 
-The key flows from the server session to `unlock()` via a subscription. Before auth completes, the workspace is in `plaintext` mode (fully functional, unencrypted). After sign-in, `unlock(key)` transitions to `unlocked` mode. The `key` constructor option is reserved for future KeyCache optimization (seeding from a cached key on page refresh) and is not needed for the initial wiring.
+The key flows from the server session to `unlock()` via a subscription. Before auth completes, the workspace is in `none` mode (fully functional, unencrypted). After sign-in, `unlock(key)` transitions to `active` mode. The `key` constructor option is reserved for future KeyCache optimization (seeding from a cached key on page refresh) and is not needed for the initial wiring.
 
 ## Architecture
 
@@ -76,9 +76,9 @@ Better Auth Server (customSession plugin)
 ┌─────────────────────────────────────────────────┐
 │  workspace.unlock(key) or workspace.lock()         │
 │                                                 │
-│  key arrives    → plaintext → unlocked          │
-│  key cleared    → unlocked  → locked            │
-│  key re-arrives → locked    → unlocked          │
+│  key arrives    → none → active          │
+│  key cleared    → active  → locked            │
+│  key re-arrives → locked    → active          │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -89,10 +89,10 @@ Better Auth Server (customSession plugin)
 | Key delivery | `unlock()` / `lock()` via `$session` subscription | `key` constructor option is static (set once). All runtime key transitions go through `unlock()` and `lock()`. No in-memory key store needed—the subscription calls these methods directly. |
 | Key format in memory | `Uint8Array` (decoded from base64 once) | Avoids repeated base64 decode on every `key` access. |
 | Auth client plugin | `customSessionClient()` from `better-auth/client/plugins` | Required to type `session.encryptionKey` on the client. Server already uses `customSession`. |
-| Loading gate | Not needed for initial wiring | Apps are local-first and work without auth. The workspace starts in `plaintext` mode and transitions to `unlocked` when auth completes. No loading gate required—the UI is fully functional in plaintext mode. For page refresh with mixed data, KeyCache (future) prevents partial-data flash. |
+| Loading gate | Not needed for initial wiring | Apps are local-first and work without auth. The workspace starts in `none` mode and transitions to `active` when auth completes. No loading gate required—the UI is fully functional in none mode. For page refresh with mixed data, KeyCache (future) prevents partial-data flash. |
 | No-auth apps | Unchanged | `fs-explorer` and `tab-manager-markdown` don't have auth, don't need encryption. |
 | One commit per app | Yes | Each app is independently deployable and testable. |
-| Encryption mode | Three explicit modes: `plaintext` \| `locked` \| `unlocked` | `key === undefined` currently means passthrough. For encrypted workspaces, no key should mean **locked/read-only**, not plaintext writes that can LWW-win over ciphertext. |
+| Encryption mode | Three explicit modes: `none` \| `locked` \| `active` | `key === undefined` currently means passthrough. For encrypted workspaces, no key should mean **locked/read-only**, not none-mode writes that can LWW-win over ciphertext. |
 | Per-workspace subkeys | Derive subkey: `HKDF(masterKey, workspaceId)` | Current `SHA-256(BETTER_AUTH_SECRET)` is deployment-wide. One compromised client can decrypt any workspace. Subkey derivation bounds blast radius to one workspace. |
 | AAD context binding | Pass `workspaceId + tableName + key` as AES-GCM AAD | Prevents ciphertext from one table being replayed into another. AES-GCM supports this natively at zero extra cost. |
 | Error containment | `trySync` around decrypt in observer; quarantine bad blobs | One corrupted blob currently throws inside the Y.Array observer and poisons the entire observation chain. Containment isolates failures. |
@@ -128,7 +128,7 @@ session.subscribe((s) => {
 
 These items address architectural gaps identified during review. They should land before real keys flow to real clients.
 
-- [x] **0.1** **Three explicit encryption modes** — Add a `mode: 'plaintext' | 'locked' | 'unlocked'` state to `createEncryptedKvLww`. When mode is `locked` (key was previously active but is now cleared), `set()` throws or no-ops instead of writing plaintext. Mode transitions: `plaintext` → `unlocked` (key arrives) → `locked` (key cleared / sign-out). Workspaces that have never seen a key stay in `plaintext` mode.
+- [x] **0.1** **Three explicit encryption modes** — Add a `mode: 'none' | 'locked' | 'active'` state to `createEncryptedKvLww`. When mode is `locked` (key was previously active but is now cleared), `set()` throws or no-ops instead of writing none-mode. Mode transitions: `none` → `active` (key arrives) → `locked` (key cleared / sign-out). Workspaces that have never seen a key stay in `none` mode.
 - [ ] **0.2** **Per-workspace subkey derivation** — In `apps/api/src/app.ts`, change `SHA-256(BETTER_AUTH_SECRET)` to `HKDF(SHA-256(BETTER_AUTH_SECRET), workspaceId)`. Client receives a workspace-scoped key. No change to the encryption primitives—just a different key per workspace.
 - [x] **0.3** **AAD context binding** — Update `encryptValue` and `decryptValue` to accept an optional `aad?: Uint8Array` parameter. The encrypted wrapper passes `encode(workspaceId + ':' + tableName + ':' + key)` as AAD. Ciphertext becomes position-bound.
 - [x] **0.4** **Error containment in observer** — Wrap `maybeDecrypt` calls in the `inner.observe()` handler with `trySync`. On failure, log the error and skip the entry (or mark it as `{ status: 'decrypt-failed' }`) instead of throwing. One bad blob should not poison the entire table.
@@ -153,7 +153,7 @@ For each auth-backed app:
 
 ### Workspace Created Before Auth Completes
 
-This is the common case—workspaces are created at module scope as side-effect-free exports. The workspace starts in `plaintext` mode (fully functional, no encryption). Users can read and write freely. Once auth completes, the `$session` subscription calls `unlock(key)`, transitioning to `unlocked` mode. New writes encrypt; old plaintext data stays readable via mixed-mode detection.
+This is the common case—workspaces are created at module scope as side-effect-free exports. The workspace starts in `none` mode (fully functional, no encryption). Users can read and write freely. Once auth completes, the `$session` subscription calls `unlock(key)`, transitioning to `active` mode. New writes encrypt; old none-mode data stays readable via mixed-mode detection.
 
 ### Session Refresh / Token Rotation
 
@@ -161,27 +161,27 @@ When Better Auth refreshes the session, `$session` emits a new value. The subscr
 
 ### Sign Out
 
-On sign-out, `$session` emits `null`. The subscription calls `lock()`. Mode transitions to `locked`—`set()` throws instead of falling through to plaintext. This prevents sign-out from accidentally downgrading previously encrypted data via LWW timestamp wins.
+On sign-out, `$session` emits `null`. The subscription calls `lock()`. Mode transitions to `locked`—`set()` throws instead of falling through to none-mode. This prevents sign-out from accidentally downgrading previously encrypted data via LWW timestamp wins.
 
-**UX in locked mode**: Apps are local-first—users were editing freely before sign-in and expect to keep working. But once encryption has activated, allowing plaintext writes is a security downgrade. The UI should:
+**UX in locked mode**: Apps are local-first—users were editing freely before sign-in and expect to keep working. But once encryption has activated, allowing none-mode writes is a security downgrade. The UI should:
 - Detect `workspace.mode === 'locked'`
 - Disable all editing controls (forms, inputs, buttons that trigger writes)
 - Show a clear message: "Sign in to continue editing"
 - Keep all data readable from the cached decrypted map
-- On re-sign-in, `unlock(key)` transitions back to `unlocked` and editing resumes
+- On re-sign-in, `unlock(key)` transitions back to `active` and editing resumes
 
 This matches how cloud apps handle expired auth in offline mode—read-only until credentials are restored.
 
-### Mixed Plaintext and Encrypted Data
+### Mixed None-Mode and Encrypted Data
 
-When encryption first activates, existing data is plaintext. The encrypted wrapper's `maybeDecrypt` function checks `isEncryptedBlob()` on every read. Plaintext values pass through. New writes encrypt. Over time, as entries are edited, they migrate from plaintext to encrypted. No explicit migration step needed for the initial rollout.
+When encryption first activates, existing data is none-mode. The encrypted wrapper's `maybeDecrypt` function checks `isEncryptedBlob()` on every read. None-mode values pass through. New writes encrypt. Over time, as entries are edited, they migrate from none-mode to encrypted. No explicit migration step needed for the initial rollout.
 
 ## Open Questions
 
 1. ~~**Should the key store live in `packages/workspace` or per-app?**~~ **RESOLVED.** No key store needed. The `$session` subscription calls `workspace.unlock()` or `workspace.lock()` directly. No intermediate abstraction.
 
 2. **Loading gate UX—what does the user see before auth completes?**
-   - Apps are local-first and work without auth. The workspace is fully functional in `plaintext` mode before sign-in. No loading gate needed.
+   - Apps are local-first and work without auth. The workspace is fully functional in `none` mode before sign-in. No loading gate needed.
    - **Caveat**: After sign-in + page refresh, encrypted entries are invisible until `unlock()` fires (~100-500ms). KeyCache (future) would eliminate this flash by seeding the key at construction via the `key` option. For the initial wiring, this brief partial-data flash is acceptable.
 
 3. **Tab-manager extension context—does `$session` work in service workers?**

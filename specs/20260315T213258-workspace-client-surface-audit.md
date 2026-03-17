@@ -55,7 +55,7 @@ export function initEncryptionWiring() {
         void deriveWorkspaceKey(userKey, workspaceClient.id).then((wsKey) => {
           workspaceClient.unlock(wsKey);        // ← only caller
         });
-      } else if (workspaceClient.mode === 'unlocked') {  // ← only reader
+      } else if (workspaceClient.mode === 'active') {  // ← only reader
         if (status === 'signing-out') {
           void workspaceClient.clearLocalData(); // ← only caller
         } else {
@@ -116,7 +116,7 @@ The `YKeyValueLwwEncrypted<T>` type has a `quarantine` member (entries that fail
 WorkspaceClient
   ├── tables: TablesHelper<T>  →  TableHelper<TRow>  →  CRUD methods
   ├── kv: KvHelper<T>          →  get/set/delete/observe
-  └── mode: EncryptionMode     →  'plaintext' | 'locked' | 'unlocked'
+  └─ mode: EncryptionMode     →  'none' | 'locked' | 'active'
                                    (only public encryption surface)
 
 Internal (not on WorkspaceClient):
@@ -241,7 +241,7 @@ If lock/unlock move to a wiring interface, `mode` lives on both: public as read-
 - Read-only signals intent: you can observe it but not change it
 
 **Cons:**
-- For plaintext-only workspaces, `mode` is always `'plaintext'`—noise if encryption is never used
+- For none-only workspaces, `mode` is always `'none'`—noise if encryption is never used
 
 #### Option B: Remove `mode` from public type, keep only on wiring interface
 
@@ -513,11 +513,11 @@ Sign-out:            lock() → clearData() on each extension (LIFO)
 
 ## Edge Cases
 
-### Plaintext workspace with no encryption
+### None-mode workspace with no encryption
 
-1. Workspace created without a key → `mode` is `'plaintext'`
+1. Workspace created without a key → `mode` is `'none'`
 2. Wiring layer never calls `lock()` or `unlock()`
-3. `lockAndClear()` calls `lock()` internally → no-op on plaintext stores, then runs `clearData()` callbacks normally
+3. `lockAndClear()` calls `lock()` internally → no-op on none-mode stores, then runs `clearData()` callbacks normally
 4. No behavioral change
 
 ### Extension that implements `clearData` but not `dispose`

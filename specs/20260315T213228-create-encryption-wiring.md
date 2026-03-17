@@ -27,7 +27,7 @@ export function initEncryptionWiring() {
         void deriveWorkspaceKey(userKey, workspaceClient.id).then((wsKey) => {
           workspaceClient.unlock(wsKey);
         });
-      } else if (workspaceClient.mode === 'unlocked') {
+      } else if (workspaceClient.mode === 'active') {
         if (status === 'signing-out') {
           void workspaceClient.clearLocalData();
         } else {
@@ -92,7 +92,7 @@ const wiring = createEncryptionWiring(workspaceClient, { source });
 |---|---|---|
 | `deriveWorkspaceKey()` | `packages/workspace/src/shared/crypto/index.ts` | HKDF-SHA256 via Web Crypto, async, `(userKey: Uint8Array, workspaceId: string) => Promise<Uint8Array>` |
 | `base64ToBytes()` | Same file | Sync base64 decode — transport concern, not crypto |
-| `EncryptionMode` | `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` | `'plaintext' \| 'locked' \| 'unlocked'` — the workspace mode state |
+| `EncryptionMode` | `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` | `'none' \| 'locked' \| 'active'` — the workspace mode state |
 | `WorkspaceClient.unlock()` | `packages/workspace/src/workspace/create-workspace.ts` | Sync — sets key on all encrypted stores, rolls back on failure |
 | `WorkspaceClient.lock()` | Same file | Sync — clears key, cached data stays |
 | `WorkspaceClient.clearLocalData()` | Same file | Async — calls `lock()` + extension `clearData` callbacks in LIFO order |
@@ -133,7 +133,7 @@ authState.status ('checking' | 'signing-in' | 'signing-out' | 'signed-in' | 'sig
 └─────────────────────────────────────────────────────────┘
      │
      ▼
-workspaceClient.mode changes: 'plaintext' → 'unlocked' → 'locked' → ...
+workspaceClient.mode changes: 'none' → 'active' → 'locked' → ...
 ```
 
 ### Auth State Transition Sequence (from `auth.svelte.ts`)
@@ -207,7 +207,7 @@ type EncryptionSource = {
 
 type EncryptionWiringClient = {
   readonly id: string;
-  readonly mode: 'plaintext' | 'locked' | 'unlocked';
+  readonly mode: 'none' | 'locked' | 'active';
   lock(): void;
   unlock(key: Uint8Array): void;
   clearLocalData(): Promise<void>;
@@ -264,7 +264,7 @@ function createEncryptionWiring(
                          ┌──────────────────────────────────────────────┐
   snapshot: no-key       │  NULL-KEY FLOW                               │
   (reason: session-lost) │                                              │
-  ──────────────────────►│  if client.mode === 'unlocked':              │
+  ──────────────────────►│  if client.mode === 'active':
                          │    client.lock()                             │
                          │  else: no-op                                 │
                          │  phase = 'idle'                              │
@@ -273,13 +273,13 @@ function createEncryptionWiring(
                          ┌──────────────────────────────────────────────┐
   snapshot: no-key       │  CLEAR FLOW                                  │
   (reason: signed-out)   │                                              │
-  ──────────────────────►│  if client.mode === 'unlocked':              │
+  ──────────────────────►│  if client.mode === 'active':
                          │    1. phase = 'clearing'                     │
                          │    2. version = ++counter                    │
                          │    3. await client.clearLocalData()          │
                          │    4. if version !== counter → already moved │
                          │    5. phase = 'idle'                         │
-                         │  else: no-op (already locked or plaintext)   │
+                         │  else: no-op (already locked or none)   │
                          └──────────────────────────────────────────────┘
 ```
 
@@ -413,13 +413,13 @@ Expected: Workspace is cleared. Old key never applied.
 
 Expected: New key wins. Clear result is stale and dropped.
 
-### Bootstrap: No Auth (Plaintext Workspace)
+### Bootstrap: No Auth (None Mode Workspace)
 
 1. App starts, no session → `waiting-for-key` snapshot
-2. Wiring does nothing, workspace stays in `plaintext` mode
+2. Wiring does nothing, workspace stays in `none` mode
 3. `whenReady` resolves immediately (no work to do)
 
-Expected: No-op. Plaintext workspaces are unaffected.
+Expected: No-op. None-mode workspaces are unaffected.
 
 ### Bootstrap: Cached Session
 
@@ -468,7 +468,7 @@ Expected: Works without changes. The `waiting-for-key` state is optional, not ma
 
 1. `no-key/signed-out` snapshot arrives
 2. `client.mode` is already `'locked'` (e.g., from a previous session expiry)
-3. Guard check: `mode !== 'unlocked'` → **no-op**
+3. Guard check: `mode !== 'active'` → **no-op**
 
 Expected: Don't clear data that's already locked. The data might be from a different session that should be preserved for re-login.
 
@@ -478,10 +478,10 @@ Expected: Don't clear data that's already locked. The data might be from a diffe
    - If consumers want to react to phase changes (e.g., show a spinner during `'deriving'`), a callback would be more ergonomic than polling
    - **Recommendation**: Start with a readable property. Add `onPhaseChange` callback if demand appears. YAGNI for now—the main consumer just needs `whenReady`.
 
-2. **Should `clearLocalData` guard check `mode === 'unlocked'` or `mode !== 'plaintext'`?**
-   - Current code checks `mode === 'unlocked'`. But what about `mode === 'locked'` + sign-out? Should that also clear?
+2. **Should `clearLocalData` guard check `mode === 'active'` or `mode !== 'none'`?**
+   - Current code checks `mode === 'active'`. But what about `mode === 'locked'` + sign-out? Should that also clear?
    - A user who was locked (session expired) and then explicitly signs out might expect their data to be wiped
-   - **Recommendation**: Keep `mode === 'unlocked'` guard for now. A locked workspace means the user might re-authenticate—clearing preemptively is destructive. If needed, the adapter can call `client.clearLocalData()` directly for the locked+sign-out case.
+   - **Recommendation**: Keep `mode === 'active'` guard for now. A locked workspace means the user might re-authenticate—clearing preemptively is destructive. If needed, the adapter can call `client.clearLocalData()` directly for the locked+sign-out case.
 
 3. **Should `whenReady` reject on derive error, or always resolve?**
    - Rejecting gives consumers an error signal for the initial boot

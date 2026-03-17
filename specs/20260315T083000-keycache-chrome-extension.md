@@ -17,7 +17,7 @@ On every page refresh or sidebar open, the encryption flow is:
 App mounts → checkSession() → HTTP GET /auth/get-session → encryptionKey arrives → unlock()
 ```
 
-Until `getSession()` completes (~50-200ms), the workspace is in `'plaintext'` mode. Encrypted IndexedDB data is unreadable. If the user is offline, `getSession()` fails and the workspace stays plaintext indefinitely—encrypted data is inaccessible until connectivity returns.
+Until `getSession()` completes (~50-200ms), the workspace is in `'none'` mode. Encrypted IndexedDB data is unreadable. If the user is offline, `getSession()` fails and the workspace stays in none mode indefinitely—encrypted data is inaccessible until connectivity returns.
 
 ### Problems
 

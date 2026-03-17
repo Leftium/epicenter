@@ -202,7 +202,7 @@ function createAuthState(encryption: EncryptionAdapter) {
 	 *
 	 * Network errors are swallowed via `.catch()` because getSession()
 	 * can throw on DNS/connectivity failures (better-fetch doesn't wrap
-	 * the raw `fetch()` call). Non-fatal—workspace stays in plaintext
+	 * the raw `fetch()` call). Non-fatal—workspace stays in `'none'`
 	 * mode until the next checkSession() on visibility change.
 	 */
 	async function refreshEncryptionKey() {

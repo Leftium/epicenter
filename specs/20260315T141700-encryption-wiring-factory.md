@@ -26,7 +26,7 @@ export function initEncryptionWiring() {
         void deriveWorkspaceKey(userKey, workspaceClient.id).then((wsKey) => {
           workspaceClient.unlock(wsKey);
         });
-      } else if (workspaceClient.mode === 'unlocked') {
+      } else if (workspaceClient.mode === 'active') {
         if (status === 'signing-out') {
           void workspaceClient.clearLocalData();
         } else {
@@ -43,7 +43,7 @@ This creates problems:
 1. **Framework coupling.** Uses Svelte 5's `$effect.root` + `$effect`, making it non-portable to non-Svelte consumers (Tauri commands, service workers, tests, future React apps).
 2. **Replication burden.** Whispering, epicenter, and any future encrypted app would copy-paste this file and adapt the auth state shape—the kind of duplication that drifts.
 3. **Timing gap.** The `void deriveWorkspaceKey(...).then(...)` is fire-and-forget. Between key arrival and HKDF completion, the workspace stays in its previous mode. No way for the UI to gate on "encryption is ready."
-4. **Subtle correctness.** The three-way branch on key loss (sign-out → clearLocalData, session expiry → lock, never-had-key → no-op) and the `mode === 'unlocked'` guard are easy to get wrong. One mistake either soft-locks a plaintext workspace or skips cleanup on sign-out.
+4. **Subtle correctness.** The three-way branch on key loss (sign-out → clearLocalData, session expiry → lock, never-had-key → no-op) and the `mode === 'active'` guard are easy to get wrong. One mistake either soft-locks a none-mode workspace or skips cleanup on sign-out.
 
 ### Desired State
 
@@ -74,7 +74,7 @@ The encryption wiring encodes four things that are genuinely tricky:
 |---|---|---|
 | Async-to-sync bridge | `deriveWorkspaceKey` is async (Web Crypto HKDF), but `unlock()` is sync. The workspace stays in its previous mode during derivation. | Fire-and-forget `void promise.then()`. No way to know when unlock completes. |
 | Three-way key-loss branch | When key goes null, must distinguish sign-out (clearLocalData) from session expiry (lock) from "never had a key" (no-op). | Reads both `authState.encryptionKey` AND `authState.status`, coupling auth semantics into wiring. |
-| Mode guard subtlety | The `mode === 'unlocked'` guard prevents locking a workspace that was never unlocked. Getting this wrong either soft-locks a plaintext workspace or skips cleanup. | Imperative check on `workspaceClient.mode` (NOT reactive—checked only when the effect fires). |
+| Mode guard subtlety | The `mode === 'active'` guard prevents locking a workspace that was never unlocked. Getting this wrong either soft-locks a none-mode workspace or skips cleanup. | Imperative check on `workspaceClient.mode` (NOT reactive—checked only when the effect fires). |
 | Race conditions | If `disconnect()` fires while HKDF is in-flight, the stale `unlock()` must not land. If key changes rapidly, only the latest derivation should win. | None. Current code has no race protection. |
 
 ### What The Decision Tree Actually Encodes
@@ -82,8 +82,8 @@ The encryption wiring encodes four things that are genuinely tricky:
 ```
 keyBase64 present?
 ├─ YES → base64ToBytes → deriveWorkspaceKey(userKey, wsId) → unlock(wsKey)
-└─ NO  → was workspace unlocked?
-     ├─ NO  → no-op (plaintext mode, never had a key)
+└─ NO  → was workspace active?
+     ├─ NO  → no-op (none mode, never had a key)
      └─ YES → is signing out?
           ├─ YES → clearLocalData() (wipe IndexedDB, keep client alive)
           └─ NO  → lock() (soft lock, data preserved)
@@ -96,8 +96,8 @@ keyBase64 present?
 | `deriveWorkspaceKey` | `@epicenter/workspace/shared/crypto` | `(userKey: Uint8Array, workspaceId: string) → Promise<Uint8Array>` |
 | `base64ToBytes` | `@epicenter/workspace/shared/crypto` | `(base64: string) → Uint8Array` |
 | `bytesToBase64` | `@epicenter/workspace/shared/crypto` | `(bytes: Uint8Array) → string` |
-| `client.mode` | `WorkspaceClient` | `EncryptionMode = 'plaintext' \| 'locked' \| 'unlocked'` |
-| `client.lock()` | `WorkspaceClient` | `void` — no-op if plaintext |
+| `client.mode` | `WorkspaceClient` | `EncryptionMode = 'none' \| 'locked' \| 'active'` |
+| `client.lock()` | `WorkspaceClient` | `void` — no-op if none |
 | `client.unlock(key)` | `WorkspaceClient` | `void` — rollback on failure |
 | `client.clearLocalData()` | `WorkspaceClient` | `Promise<void>` — lock + LIFO extension clear |
 | `client.id` | `WorkspaceClient` | `string` — workspace ID for HKDF info |
@@ -121,7 +121,7 @@ $effect in encryption-wiring.svelte.ts
       or workspaceClient.clearLocalData()
 ```
 
-**Important subtlety**: `workspaceClient.mode` is NOT a Svelte reactive signal. The `$effect` doesn't re-run when mode changes. It only re-runs when `authState.encryptionKey` or `authState.status` changes. The `mode === 'unlocked'` check is a guard read, not a subscription. This is correct—the wiring should only fire on *auth* changes, not on workspace state changes.
+**Important subtlety**: `workspaceClient.mode` is NOT a Svelte reactive signal. The `$effect` doesn't re-run when mode changes. It only re-runs when `authState.encryptionKey` or `authState.status` changes. The `mode === 'active'` check is a guard read, not a subscription. This is correct—the wiring should only fire on *auth* changes, not on workspace state changes.
 
 ### App Landscape
 
@@ -248,7 +248,7 @@ Should the factory expose readiness signals so the UI can gate on "encryption is
 | **(A)** No readiness signal | Factory is fire-and-forget. UI uses `client.whenReady` or ignores the gap. | Simple. Matches current behavior. The gap is ~1-5ms for HKDF. |
 | **(B)** `whenUnlocked` promise | `wiring.whenUnlocked: Promise<void>` resolves on first successful unlock. | UI can `{#await wiring.whenUnlocked}`. Formalizes the timing gap. Adds complexity. |
 
-**Decision**: Defer. The current timing gap is ~1-5ms (HKDF is fast on modern hardware). The workspace starts in plaintext mode and transitions to unlocked—UI is functional the entire time. The KeyCache spec (`specs/20260315T083000-keycache-chrome-extension.md`) addresses the real UX problem (flash on refresh) by seeding the key instantly from cache, bypassing the gap entirely.
+**Decision**: Defer. The current timing gap is ~1-5ms (HKDF is fast on modern hardware). The workspace starts in none mode and transitions to active—UI is functional the entire time. The KeyCache spec (`specs/20260315T083000-keycache-chrome-extension.md`) addresses the real UX problem (flash on refresh) by seeding the key instantly from cache, bypassing the gap entirely.
 
 If the gap becomes a real UX problem, the factory's internal `generation` counter makes it trivial to add `whenUnlocked` later without breaking the API.
 
@@ -295,7 +295,7 @@ Better Auth Server (customSession plugin)
 │                                                 │
 │  disconnect({ wipe })                           │
 │    → ++generation (cancel in-flight)            │
-│    → if mode === 'unlocked':                    │
+│    → if mode === 'active':
 │        wipe ? clearLocalData() : lock()         │
 │    → if wipe: keyCache?.clear()                 │
 │                                                 │
@@ -307,7 +307,7 @@ Better Auth Server (customSession plugin)
                      ▼
 ┌─────────────────────────────────────────────────┐
 │  WorkspaceClient                                │
-│    .mode     'plaintext' | 'locked' | 'unlocked'│
+│    .mode     'none' | 'locked' | 'active'│
 │    .unlock(key)   decrypt stores                │
 │    .lock()        clear key, block writes       │
 │    .clearLocalData()  lock + wipe extensions    │
@@ -326,7 +326,7 @@ type EncryptionWiringConfig = {
 
 type EncryptionWiringClient = {
   readonly id: string;
-  readonly mode: 'plaintext' | 'locked' | 'unlocked';
+  readonly mode: 'none' | 'locked' | 'active';
   unlock(key: Uint8Array): void;
   lock(): void;
   clearLocalData(): Promise<void>;
@@ -351,7 +351,7 @@ type EncryptionWiring = {
    * - `wipe: true` → `clearLocalData()` (sign-out: wipe IndexedDB, keep client alive)
    * - `wipe: false` (default) → `lock()` (soft lock: data preserved, writes blocked)
    *
-   * Only acts when `mode === 'unlocked'`. No-op in plaintext/locked modes.
+   * Only acts when `mode === 'active'`. No-op in none/locked modes.
    * Cancels any in-flight HKDF derivation from a prior `connect()`.
    * If `keyCache` was provided and `wipe` is true, clears the cache.
    */
@@ -416,7 +416,7 @@ function createEncryptionWiring(
       ++generation;           // Invalidate any in-flight derivation
       lastKeyBase64 = undefined;
 
-      if (client.mode === 'unlocked') {
+      if (client.mode === 'active') {
         if (wipe) {
           void client.clearLocalData();
         } else {
@@ -462,7 +462,7 @@ export function initEncryptionWiring() {
         void deriveWorkspaceKey(userKey, workspaceClient.id).then((wsKey) => {
           workspaceClient.unlock(wsKey);
         });
-      } else if (workspaceClient.mode === 'unlocked') {
+      } else if (workspaceClient.mode === 'active') {
         if (status === 'signing-out') {
           void workspaceClient.clearLocalData();
         } else {
@@ -574,9 +574,9 @@ Each `connect()` increments `generation`. Only the latest derivation's `gen` mat
 
 Tracked via `lastKeyBase64`. Second call is a no-op—avoids redundant `unlock()` rebuilds. `unlock()` rebuilds the entire decrypted map, so skipping is a meaningful optimization.
 
-### disconnect() when already locked/plaintext
+### disconnect() when already locked/none
 
-The `client.mode === 'unlocked'` guard prevents no-op `lock()` calls. `clearLocalData()` is also gated—no wipe if never unlocked. This matches the current behavior exactly.
+The `client.mode === 'active'` guard prevents no-op `lock()` calls. `clearLocalData()` is also gated—no wipe if never unlocked. This matches the current behavior exactly.
 
 ### Key rotation (server changes ENCRYPTION_SECRETS)
 
@@ -638,9 +638,9 @@ If error reporting is needed, the factory could accept an `onError` callback in 
 
 - [ ] **2.1** Write tests in `packages/workspace/src/shared/crypto/encryption-wiring.test.ts` covering:
   - `connect()` calls `deriveWorkspaceKey` then `unlock()` with derived key
-  - `disconnect()` calls `lock()` when mode is `'unlocked'`
-  - `disconnect({ wipe: true })` calls `clearLocalData()` when mode is `'unlocked'`
-  - `disconnect()` is a no-op when mode is `'plaintext'`
+  - `disconnect()` calls `lock()` when mode is `'active'`
+  - `disconnect({ wipe: true })` calls `clearLocalData()` when mode is `'active'`
+  - `disconnect()` is a no-op when mode is `'none'`
   - Duplicate key skip (same `connect()` twice → one `unlock()`)
   - Race protection: `disconnect()` during in-flight derivation → stale `unlock()` never fires
   - Race protection: rapid `connect()` calls → only latest key wins
@@ -680,7 +680,7 @@ If error reporting is needed, the factory could accept an `onError` callback in 
 - `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md` — HKDF key derivation design
 - `specs/20260313T180100-client-side-encryption-wiring.md` — original wiring plan (superseded, useful reference for edge cases)
 - `specs/20260315T083000-keycache-chrome-extension.md` — KeyCache integration plan
-- `specs/20260315T083500-encryption-mode-renaming.md` — mode naming may change (`'unlocked'` → `'active'`)
+- `specs/20260315T083500-encryption-mode-renaming.md` — mode naming updated (`'none'`, `'active'`, `'locked'`)
 
 ## Execution Notes
 
@@ -690,7 +690,7 @@ If error reporting is needed, the factory could accept an `onError` callback in 
 
 **Dependencies**: None for core factory. Tab-manager migration depends on this existing.
 
-**Note**: Use the CURRENT mode names (`'plaintext' | 'unlocked' | 'locked'`) during implementation. The mode renaming spec (`20260315T083500`) will update string literals mechanically later.
+**Note**: Use the NEW mode names (`'none' | 'active' | 'locked'`) during implementation. The mode renaming spec (`20260315T083500`) documents the change.
 
 **Open question resolutions**:
 - No `onError` callback — workspace self-heals via built-in rollback on retry

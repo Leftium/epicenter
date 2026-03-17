@@ -172,6 +172,9 @@ export function createYjsFileSystem(
 
 		async writeFile(path, data, _options?) {
 			const abs = posixResolve(cwd, path);
+			const textData =
+				typeof data === 'string' ? data : new TextDecoder().decode(data);
+			const size = new TextEncoder().encode(textData).byteLength;
 			let id = tree.lookupId(abs);
 
 			if (id) {
@@ -181,18 +184,12 @@ export function createYjsFileSystem(
 
 			if (!id) {
 				const { parentId, name } = tree.parsePath(abs);
-				const textData =
-					typeof data === 'string' ? data : new TextDecoder().decode(data);
-				const size = new TextEncoder().encode(textData).byteLength;
 				id = tree.create({ name, parentId, type: 'file', size });
 			}
 
-			const textData =
-				typeof data === 'string' ? data : new TextDecoder().decode(data);
 			const handle = await contentDocuments.open(id);
 			const validated = readEntry(handle.timeline.currentEntry);
 
-			let size: number;
 			if (validated.mode === 'sheet') {
 				handle.batch(() => {
 					validated.columns.forEach((_, key) => {
@@ -203,10 +200,8 @@ export function createYjsFileSystem(
 					});
 					parseSheetFromCsv(textData, validated.columns, validated.rows);
 				});
-				size = new TextEncoder().encode(textData).byteLength;
 			} else {
 				handle.write(textData);
-				size = new TextEncoder().encode(textData).byteLength;
 			}
 			tree.touch(id, size);
 		},

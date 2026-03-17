@@ -43,7 +43,7 @@ import type { KeyCache } from './key-cache';
  * Minimal client surface the key manager needs to drive unlock/wipe.
  *
  * Intentionally narrow—only the methods the key manager actually calls.
- * The key manager never reads mode (none/locked/active); mode
+ * The key manager never reads encryption state (none/locked/active); encryption state
  * guarding is the client's responsibility. Any workspace client that
  * implements these members can be managed.
  */
@@ -75,8 +75,8 @@ export type KeyManagerConfig = {
  * and race protection. The consumer just pushes key presence/absence from
  * their framework's reactive system.
  *
- * Mode guarding (none/locked/active) is the client's job—the key
- * manager always calls through regardless of mode.
+ * Encryption state guarding (none/locked/active) is the client's job—the key
+ * manager always calls through regardless of encryption state.
  */
 export type KeyManager = {
 	/**
@@ -159,7 +159,7 @@ export type KeyManager = {
  * 3. **Race protection**—a generation counter ensures stale HKDF results from a
  *    previous `unlock()` call never land after a newer one.
  *
- * Mode guarding (none/locked/active) is the client's responsibility,
+ * Encryption state guarding (none/locked/active) is the client's responsibility,
  * not the key manager's. The key manager always calls through to `clearLocalData()`.
  *
  * @param client - Workspace client surface implementing unlock and clearLocalData

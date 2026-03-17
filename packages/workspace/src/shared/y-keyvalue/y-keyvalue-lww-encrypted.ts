@@ -70,7 +70,7 @@
  *
  * The encryption key is managed through two methods: `unlock(key)` and `lock()`.
  * The optional `key` in options seeds the initial key (and therefore the initial
- * mode). After creation, all key transitions go through `unlock()` and `lock()`.
+ * encryption state). After creation, all key transitions go through `unlock()` and `lock()`.
  *
  * ## Pending State
  *
@@ -113,7 +113,7 @@ import {
 /**
  * Options for `createEncryptedYkvLww`.
  *
- * `key` seeds the initial encryption key and determines the starting mode
+ * `key` seeds the initial encryption key and determines the starting encryption state
  * (`none` if undefined, `active` if a key is provided). After creation,
  * all key transitions go through `unlock()` and `lock()`.
  */
@@ -121,12 +121,12 @@ type EncryptedKvLwwOptions = {
 	key?: Uint8Array;
 };
 
-/** The three encryption modes. See module JSDoc for the full state machine. */
-export type EncryptionMode = 'none' | 'locked' | 'active';
+/** The three encryption states. See module JSDoc for the full state machine. */
+export type EncryptionState = 'none' | 'locked' | 'active';
 
 /**
  * Return type of `createEncryptedYkvLww`. Same API surface as `YKeyValueLww<T>`
- * plus encryption-specific members (`mode`, `failedDecryptCount`, `lock`, `unlock`).
+ * plus encryption-specific members (`encryptionState`, `failedDecryptCount`, `lock`, `unlock`).
  * All values exposed through this type are **plaintext**—encryption is fully
  * transparent to consumers.
  */
@@ -140,24 +140,24 @@ export type YKeyValueLwwEncrypted<T> = {
 	unobserve(handler: YKeyValueLwwChangeHandler<T>): void;
 
 	/**
-	 * Lock the workspace. Clears the encryption key and transitions to `locked`
-	 * mode if the workspace was previously `active`. `set()` throws to prevent
+	 * Lock the workspace. Clears the encryption key and transitions to `'locked'`
+	 * encryption state if the workspace was previously `'active'`. `set()` throws to prevent
 	 * plaintext from overwriting ciphertext. `get()` returns cached plaintext.
-	 * No-op if mode is `none` (never had a key).
+	 * No-op if encryption state is `'none'` (never had a key).
 	 */
 	lock(): void;
 
 	/**
 	 * Unlock the workspace with an encryption key. Rebuilds the decrypted map
-	 * from `inner.map`, transitions to `active` mode, and fires synthetic
+	 * from `inner.map`, transitions to `'active'` encryption state, and fires synthetic
 	 * change events for any values that changed.
 	 *
 	 * @param key - A 32-byte encryption key (required)
 	 */
 	unlock(key: Uint8Array): void;
 
-	/** Current encryption mode. Derived from key presence history. */
-	readonly mode: EncryptionMode;
+	/** Current encryption state. Derived from key presence history. */
+	readonly encryptionState: EncryptionState;
 
 	/**
 	 * Number of entries that failed to decrypt. Computed as
@@ -188,22 +188,22 @@ export type YKeyValueLwwEncrypted<T> = {
  * `YKeyValueLww` remains the single source for conflict resolution; this wrapper
  * only transforms values at the boundary (`set` encrypts, observer/get decrypts).
  *
- * When no key is available (none mode), all operations pass through without
+ * When no key is available (`'none'` state), all operations pass through without
  * encryption—zero overhead, identical to a plain `YKeyValueLww<T>`.
  *
  * @example
  * ```typescript
  * // Start in plaintext, transition to encrypted when key arrives
  * const kv = createEncryptedYkvLww<TabData>(yarray);
- * kv.mode; // 'none'
+ * kv.encryptionState; // 'none'
  * kv.set('tab-1', { url: '...' }); // stored as plaintext
  *
  * kv.unlock(encryptionKey);
- * kv.mode; // 'active'
+ * kv.encryptionState; // 'active'
  * kv.set('tab-2', { url: '...' }); // stored as EncryptedBlob
  *
  * kv.lock();
- * kv.mode; // 'locked'
+ * kv.encryptionState; // 'locked'
  * kv.set('tab-3', ...); // throws: "Workspace is locked"
  * kv.get('tab-1'); // still returns cached plaintext
  * ```
@@ -241,12 +241,12 @@ export function createEncryptedYkvLww<T>(
 	let currentKey: Uint8Array | undefined = options?.key;
 
 	/**
-	 * Current encryption mode. Derived from key presence history:
+	 * Current encryption state. Derived from key presence history:
 	 * - `none`: No key has ever been seen (initial state when no key provided)
 	 * - `active`: A key is currently active
 	 * - `locked`: A key was active but has been cleared (sign-out)
 	 */
-	let mode: EncryptionMode = currentKey ? 'active' : 'none';
+	let encryptionState: EncryptionState = currentKey ? 'active' : 'none';
 
 	/**
 	 * Conditionally decrypt a value. Handles three cases:
@@ -361,10 +361,10 @@ export function createEncryptedYkvLww<T>(
 
 	return {
 		set(key, val) {
-			if (mode === 'locked')
+			if (encryptionState === 'locked')
 				throw new Error('Workspace is locked — sign in to write');
 
-			if (mode === 'none') {
+			if (encryptionState === 'none') {
 				inner.set(key, val);
 				return;
 			}
@@ -437,11 +437,11 @@ export function createEncryptedYkvLww<T>(
 		/**
 		 * Lock the workspace. Clears the encryption key and preserves
 		 * the existing decrypted cache. `set()` throws, `get()` returns
-		 * cached plaintext. No-op if mode is `none`.
+		 * cached plaintext. No-op if encryption state is `'none'`.
 		 */
 		lock() {
 			currentKey = undefined;
-			if (mode !== 'none') mode = 'locked';
+			if (encryptionState !== 'none') encryptionState = 'locked';
 		},
 
 		/**
@@ -455,7 +455,7 @@ export function createEncryptedYkvLww<T>(
 			currentKey = nextKey;
 
 			const oldMap = new Map(map);
-			mode = 'active';
+			encryptionState = 'active';
 
 			map.clear();
 
@@ -500,8 +500,8 @@ export function createEncryptedYkvLww<T>(
 			for (const handler of changeHandlers)
 				handler(syntheticChanges, syntheticTransaction);
 		},
-		get mode() {
-			return mode;
+		get encryptionState() {
+			return encryptionState;
 		},
 		get failedDecryptCount() {
 			return inner.map.size - map.size;

@@ -10,7 +10,7 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
-import type { EncryptionMode } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import type { EncryptionState } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type { ContentMode } from '../timeline/entries.js';
 import type { SheetBinding } from '../timeline/richtext.js';
 import type { Timeline } from '../timeline/timeline.js';
@@ -1277,7 +1277,7 @@ export type WorkspaceClient<
 	extensions: TExtensions;
 
 	/**
-	 * Current encryption mode across all stores.
+	 * Current encryption state across all stores.
 	 *
 	 * - `'none'` — no key ever set, reads/writes pass through unencrypted
 	 * - `'active'` — key active, writes encrypt, reads decrypt
@@ -1285,7 +1285,7 @@ export type WorkspaceClient<
 	 *
 	 * All stores are kept in sync — this reflects the workspace-wide state.
 	 */
-	readonly mode: EncryptionMode;
+	readonly encryptionState: EncryptionState;
 
 	/**
 	 * Lock the workspace—clears the encryption key from memory.
@@ -1297,9 +1297,9 @@ export type WorkspaceClient<
 	 * After locking:
 	 * - `set()` on any table throws to prevent plaintext overwriting ciphertext
 	 * - `get()` still returns cached plaintext values from the decrypted cache
-	 * - Mode transitions to `'locked'`
+	 * - Encryption state transitions to `'locked'`
 	 *
-	 * No-op if mode is `'none'` (never had a key).
+	 * No-op if encryption state is `'none'` (never had a key).
 	 *
  * For a hard wipe that clears persisted data without killing the client,
 	 * use {@link clearLocalData} instead.

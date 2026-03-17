@@ -103,7 +103,7 @@ type AuthPhase =
  *
  * The adapter maps auth lifecycle moments to concrete key manager commands:
  *
- * - `restoreKey` — attempt instant unlock from a key cache (fires during
+ * - `restoreKeyFromCache` — attempt instant unlock from a key cache (fires during
  *   `checkSession()` before the network call, after storage hydration)
  * - `setKey` — derive workspace key from a server-provided encryption key
  *   (fires on sign-in, sign-up, and successful session check)
@@ -111,7 +111,7 @@ type AuthPhase =
  *   sign-out and 4xx session rejection)
  */
 type EncryptionAdapter = {
-	restoreKey(userId: string): void;
+	restoreKeyFromCache(userId: string): void;
 	setKey(key: string, userId: string): void;
 	wipe(): void;
 };
@@ -416,7 +416,7 @@ function createAuthState(encryption: EncryptionAdapter) {
 
 			const userId = authUser.current?.id;
 			if (userId) {
-				encryption.restoreKey(userId);
+				encryption.restoreKeyFromCache(userId);
 			}
 
 			const token = authToken.current;

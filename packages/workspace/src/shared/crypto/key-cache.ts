@@ -74,7 +74,7 @@
  *
  * ## Related Modules
  *
- * - {@link ./key-manager.ts} — `setKey()` accepts base64 strings, `restoreKey()` reads from this cache
+ * - {@link ./key-manager.ts} — `setKey()` accepts base64 strings, `restoreKeyFromCache()` reads from this cache
  * - {@link ./index.ts} — Encryption primitives (`base64ToBytes` for key decoding at the crypto boundary)
  */
 export type KeyCache = {

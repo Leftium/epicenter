@@ -16,7 +16,7 @@
  * - Duplicate setKey() with same key is a no-op
  * - Race: lock() during in-flight derivation cancels stale unlock
  * - Race: rapid setKey() calls — only latest key wins
- * - restoreKey() reads from keyCache and calls setKey()
+ * - restoreKeyFromCache() reads from keyCache and calls setKey()
  */
 
 import { describe, expect, mock, test } from 'bun:test';
@@ -236,14 +236,14 @@ describe('race protection', () => {
 });
 
 // ============================================================================
-// restoreKey()
+// restoreKeyFromCache()
 // ============================================================================
 
-describe('restoreKey', () => {
+describe('restoreKeyFromCache', () => {
 	test('returns false when no keyCache configured', async () => {
 		const { wiring } = setup();
 
-		const result = await wiring.restoreKey('user-1');
+		const result = await wiring.restoreKeyFromCache('user-1');
 
 		expect(result).toBe(false);
 	});
@@ -251,7 +251,7 @@ describe('restoreKey', () => {
 	test('returns false when keyCache has no entry for userId', async () => {
 		const { wiring } = setupWithKeyCache();
 
-		const result = await wiring.restoreKey('nonexistent-user');
+		const result = await wiring.restoreKeyFromCache('nonexistent-user');
 
 		expect(result).toBe(false);
 	});
@@ -263,7 +263,7 @@ describe('restoreKey', () => {
 		const keyBase64 = makeKey();
 		store.set('user-1', keyBase64);
 
-		const result = await wiring.restoreKey('user-1');
+		const result = await wiring.restoreKeyFromCache('user-1');
 
 		expect(result).toBe(true);
 

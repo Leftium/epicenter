@@ -29,7 +29,7 @@ const keyManager = createKeyManager(workspaceClient, { keyCache });
  *
  * Maps auth lifecycle moments to concrete key manager commands:
  *
- * - **`restoreKey(userId)`** → `keyManager.restoreKey(userId)` — attempts
+ * - **`restoreKeyFromCache(userId)`** → `keyManager.restoreKeyFromCache(userId)` — attempts
  *   instant unlock from the chrome.storage.session cache before the auth
  *   network call completes.
  * - **`setKey(key, userId)`** → `keyManager.setKey(key, userId)` — derives
@@ -49,7 +49,7 @@ const keyManager = createKeyManager(workspaceClient, { keyCache });
  * ```
  */
 export const encryptionAdapter = {
-	restoreKey: (userId: string) => void keyManager.restoreKey(userId),
+	restoreKeyFromCache: (userId: string) => void keyManager.restoreKeyFromCache(userId),
 	setKey: (key: string, userId: string) => keyManager.setKey(key, userId),
 	wipe: () => {
 		keyManager.wipe();

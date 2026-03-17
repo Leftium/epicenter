@@ -158,14 +158,14 @@ export type KeyManager = {
 	 * @example
 	 * ```typescript
 	 * // On page load, try cache before hitting the server
-	 * const restored = await keyManager.restoreKey(userId);
+	 * const restored = await keyManager.restoreKeyFromCache(userId);
 	 * if (!restored) {
 	 *   // No cached key—need to fetch from auth session
 	 *   await authState.checkSession();
 	 * }
 	 * ```
 	 */
-	restoreKey(userId: string): Promise<boolean>;
+	restoreKeyFromCache(userId: string): Promise<boolean>;
 };
 
 /**
@@ -185,7 +185,7 @@ export type KeyManager = {
  *
  * @param client - Workspace client surface implementing lock, unlock, and clearLocalData
  * @param config - Optional key cache for instant unlock on page refresh
- * @returns Imperative `setKey`/`lock`/`wipe`/`restoreKey` API for framework adapters to call
+ * @returns Imperative `setKey`/`lock`/`wipe`/`restoreKeyFromCache` API for framework adapters to call
  *
  * @example
  * ```typescript
@@ -259,7 +259,7 @@ export function createKeyManager(
 			if (keyCache) void keyCache.clear();
 		},
 
-		async restoreKey(userId) {
+		async restoreKeyFromCache(userId) {
 			if (!keyCache) return false;
 			const cachedKeyBase64 = await keyCache.get(userId);
 			if (!cachedKeyBase64) return false;

@@ -2,9 +2,9 @@
  * Platform-agnostic interface for caching encryption keys.
  *
  * Stores the per-user encryption key as a base64 string—the same format
- * the auth session provides and `setKey()` accepts. This avoids any
+ * the auth session provides and `unlock()` accepts. This avoids any
  * `Uint8Array ↔ base64` round-trips: the key enters as a string, caches
- * as a string, and passes straight back to `setKey()` on reload.
+ * as a string, and passes straight back to `unlock()` on reload.
  *
  * Every concrete backend stores strings natively (`chrome.storage.session`
  * serializes to JSON, `sessionStorage` is string-only), so the interface
@@ -62,9 +62,9 @@
  *   ▼
  * App startup (before auth roundtrip completes)
  *   │  KeyCache.get(userId) → base64 string (cached from last session)
- *   │  passed directly to keyManager.setKey(keyBase64)
+ *   │  passed directly to keyManager.unlock(keyBase64)
  *   ▼
- * setKey() → base64ToBytes → HKDF → unlock
+ * unlock() → base64ToBytes → HKDF → unlock
  *   │  base64 decoding happens once, at the crypto boundary
  * ```
  *
@@ -74,7 +74,7 @@
  *
  * ## Related Modules
  *
- * - {@link ./key-manager.ts} — `setKey()` accepts base64 strings, `restoreKeyFromCache()` reads from this cache
+ * - {@link ./key-manager.ts} — `unlock()` accepts base64 strings, `restoreKeyFromCache()` reads from this cache
  * - {@link ./index.ts} — Encryption primitives (`base64ToBytes` for key decoding at the crypto boundary)
  */
 export type KeyCache = {

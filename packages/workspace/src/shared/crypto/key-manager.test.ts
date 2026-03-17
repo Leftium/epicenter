@@ -10,23 +10,17 @@
  * client's responsibility, not the key manager's.
  *
  * Key behaviors:
- * - setKey() derives workspace key via HKDF then calls unlock()
- * - lock() always calls client.lock() (client handles mode guards)
+ * - unlock() derives workspace key via HKDF then calls unlock()
  * - wipe() always calls clearLocalData() + keyCache.clear()
- * - Duplicate setKey() with same key is a no-op
- * - Race: lock() during in-flight derivation cancels stale unlock
- * - Race: rapid setKey() calls — only latest key wins
- * - restoreKeyFromCache() reads from keyCache and calls setKey()
+ * - Duplicate unlock() with same key is a no-op
+ * - Race: rapid unlock() calls — only latest key wins
+ * - restoreKeyFromCache() reads from keyCache and calls unlock()
  */
 
 import { describe, expect, mock, test } from 'bun:test';
-import type { EncryptionMode } from '../y-keyvalue/y-keyvalue-lww-encrypted';
-import {
-	createKeyManager,
-	type KeyManagerTarget,
-} from './key-manager';
 import { bytesToBase64, generateEncryptionKey } from './index';
 import type { KeyCache } from './key-cache';
+import { createKeyManager, type KeyManagerTarget } from './key-manager';
 
 // ============================================================================
 // Setup
@@ -35,7 +29,6 @@ import type { KeyCache } from './key-cache';
 function setup() {
 	const client: KeyManagerTarget = {
 		id: 'test-workspace',
-		lock: mock(() => {}),
 		unlock: mock(() => {}),
 		clearLocalData: mock(() => Promise.resolve()),
 	};
@@ -43,27 +36,6 @@ function setup() {
 	const wiring = createKeyManager(client);
 
 	return { client, wiring };
-}
-
-function setupWithMutableMode() {
-	let mode: EncryptionMode = 'none';
-
-	const client: KeyManagerTarget = {
-		id: 'test-workspace',
-		lock: mock(() => {
-			mode = 'locked';
-		}),
-		unlock: mock(((_key: Uint8Array) => {
-			mode = 'active';
-		}) as (key: Uint8Array) => void),
-		clearLocalData: mock(async () => {
-			mode = 'locked';
-		}),
-	};
-
-	const wiring = createKeyManager(client);
-
-	return { client, wiring, getMode: () => mode };
 }
 
 function setupWithKeyCache() {
@@ -80,7 +52,6 @@ function setupWithKeyCache() {
 	};
 	const client: KeyManagerTarget = {
 		id: 'test-workspace',
-		lock: mock(() => {}),
 		unlock: mock(() => {}),
 		clearLocalData: mock(() => Promise.resolve()),
 	};
@@ -96,14 +67,14 @@ function makeKey(): string {
 }
 
 // ============================================================================
-// setKey()
+// unlock()
 // ============================================================================
 
-describe('setKey', () => {
+describe('unlock', () => {
 	test('calls deriveWorkspaceKey then unlock() with derived key', async () => {
 		const { client, wiring } = setup();
 
-		wiring.setKey(makeKey());
+		wiring.unlock(makeKey());
 
 		// deriveWorkspaceKey is async — wait for microtask queue to flush
 		await new Promise((resolve) => setTimeout(resolve, 50));
@@ -115,12 +86,12 @@ describe('setKey', () => {
 		expect(unlockArg.length).toBe(32);
 	});
 
-	test('duplicate key skip — same setKey() twice calls unlock() once', async () => {
+	test('duplicate key skip — same unlock() twice calls unlock() once', async () => {
 		const { client, wiring } = setup();
 		const key = makeKey();
 
-		wiring.setKey(key);
-		wiring.setKey(key);
+		wiring.unlock(key);
+		wiring.unlock(key);
 
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -130,42 +101,12 @@ describe('setKey', () => {
 	test('different keys each trigger unlock()', async () => {
 		const { client, wiring } = setup();
 
-		wiring.setKey(makeKey());
+		wiring.unlock(makeKey());
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
-		wiring.setKey(makeKey());
+		wiring.unlock(makeKey());
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
-		expect(client.unlock).toHaveBeenCalledTimes(2);
-	});
-});
-
-// ============================================================================
-// lock()
-// ============================================================================
-
-describe('lock', () => {
-	test('always calls client.lock()', () => {
-		const { client, wiring } = setup();
-
-		wiring.lock();
-
-		expect(client.lock).toHaveBeenCalledTimes(1);
-		expect(client.clearLocalData).toHaveBeenCalledTimes(0);
-	});
-
-	test('clears fingerprint so next setKey() with same key is not skipped', async () => {
-		const { client, wiring } = setupWithMutableMode();
-		const key = makeKey();
-
-		wiring.setKey(key);
-		await new Promise((resolve) => setTimeout(resolve, 50));
-		expect(client.unlock).toHaveBeenCalledTimes(1);
-
-		wiring.lock();
-
-		wiring.setKey(key);
-		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(client.unlock).toHaveBeenCalledTimes(2);
 	});
 });
@@ -183,17 +124,17 @@ describe('wipe', () => {
 		expect(client.clearLocalData).toHaveBeenCalledTimes(1);
 	});
 
-	test('clears fingerprint so next setKey() with same key is not skipped', async () => {
-		const { client, wiring } = setupWithMutableMode();
+	test('clears fingerprint so next unlock() with same key is not skipped', async () => {
+		const { client, wiring } = setup();
 		const key = makeKey();
 
-		wiring.setKey(key);
+		wiring.unlock(key);
 		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(client.unlock).toHaveBeenCalledTimes(1);
 
 		wiring.wipe();
 
-		wiring.setKey(key);
+		wiring.unlock(key);
 		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(client.unlock).toHaveBeenCalledTimes(2);
 	});
@@ -204,32 +145,17 @@ describe('wipe', () => {
 // ============================================================================
 
 describe('race protection', () => {
-	test('lock() during in-flight derivation cancels stale unlock()', async () => {
+	test('rapid unlock() calls — only latest key wins', async () => {
 		const { client, wiring } = setup();
 
-		wiring.setKey(makeKey());
-		// lock immediately — before HKDF resolves
-		wiring.lock();
-
-		await new Promise((resolve) => setTimeout(resolve, 50));
-
-		// unlock() should NOT have been called — the generation check prevents it
-		expect(client.unlock).toHaveBeenCalledTimes(0);
-		// lock() should have been called
-		expect(client.lock).toHaveBeenCalledTimes(1);
-	});
-
-	test('rapid setKey() calls — only latest key wins', async () => {
-		const { client, wiring } = setup();
-
-		// Fire three rapid setKey() calls
-		wiring.setKey(makeKey());
-		wiring.setKey(makeKey());
-		wiring.setKey(makeKey());
+		// Fire three rapid unlock() calls
+		wiring.unlock(makeKey());
+		wiring.unlock(makeKey());
+		wiring.unlock(makeKey());
 
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
-		// Only the last setKey() should result in unlock()
+		// Only the last unlock() should result in unlock()
 		// (first two are superseded by generation counter)
 		expect(client.unlock).toHaveBeenCalledTimes(1);
 	});
@@ -256,7 +182,7 @@ describe('restoreKeyFromCache', () => {
 		expect(result).toBe(false);
 	});
 
-	test('returns true and calls setKey() when cached key exists', async () => {
+	test('returns true and calls unlock() when cached key exists', async () => {
 		const { client, wiring, store } = setupWithKeyCache();
 
 		// Pre-seed the cache with a base64 key
@@ -273,10 +199,10 @@ describe('restoreKeyFromCache', () => {
 		expect(client.unlock).toHaveBeenCalledTimes(1);
 	});
 
-	test('setKey() caches key when userId and keyCache provided', async () => {
+	test('unlock() caches key when userId and keyCache provided', async () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
-		wiring.setKey(makeKey(), 'user-1');
+		wiring.unlock(makeKey(), 'user-1');
 
 		expect(keyCache.set).toHaveBeenCalledTimes(1);
 	});
@@ -284,18 +210,10 @@ describe('restoreKeyFromCache', () => {
 	test('wipe() clears keyCache', async () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
-		wiring.setKey(makeKey(), 'user-1');
+		wiring.unlock(makeKey(), 'user-1');
 
 		await wiring.wipe();
 
 		expect(keyCache.clear).toHaveBeenCalledTimes(1);
-	});
-
-	test('lock() does not clear keyCache', () => {
-		const { wiring, keyCache } = setupWithKeyCache();
-
-		wiring.lock();
-
-		expect(keyCache.clear).toHaveBeenCalledTimes(0);
 	});
 });

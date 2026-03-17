@@ -8,7 +8,7 @@
  *
  * This factory is deliberately framework-agnostic. Each app provides a thin
  * reactive adapter (Svelte `$effect`, React `useEffect`, etc.) that watches
- * its auth state and calls the imperative `setKey`/`lock`/`wipe` API:
+ * its auth state and calls the imperative `unlock`/`wipe` API:
  *
  * ```
  * ┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
@@ -27,9 +27,8 @@
  * $effect.root(() => {
  *   $effect(() => {
  *     const key = authState.encryptionKey;
- *     if (key) keyManager.setKey(key);
+ *     if (key) keyManager.unlock(key);
  *     else if (authState.status === 'signing-out') keyManager.wipe();
- *     else keyManager.lock();
  *   });
  * });
  * ```
@@ -41,16 +40,15 @@ import { base64ToBytes, deriveWorkspaceKey } from './index';
 import type { KeyCache } from './key-cache';
 
 /**
- * Minimal client surface the key manager needs to drive lock/unlock.
+ * Minimal client surface the key manager needs to drive unlock/wipe.
  *
  * Intentionally narrow—only the methods the key manager actually calls.
-	 * The key manager never reads mode (none/locked/active); mode
+ * The key manager never reads mode (none/locked/active); mode
  * guarding is the client's responsibility. Any workspace client that
  * implements these members can be managed.
  */
 export type KeyManagerTarget = {
 	readonly id: string;
-	lock(): void;
 	unlock(key: Uint8Array): void;
 	clearLocalData(): Promise<void>;
 };
@@ -71,21 +69,21 @@ export type KeyManagerConfig = {
 };
 
 /**
- * Imperative setKey/lock/wipe API for encryption lifecycle management.
+ * Imperative unlock/wipe API for encryption lifecycle management.
  *
  * The factory owns the hard parts—async HKDF bridging, duplicate key dedup,
  * and race protection. The consumer just pushes key presence/absence from
  * their framework's reactive system.
  *
-	 * Mode guarding (none/locked/active) is the client's job—the key
+ * Mode guarding (none/locked/active) is the client's job—the key
  * manager always calls through regardless of mode.
  */
 export type KeyManager = {
 	/**
-	 * Supply a user-level encryption key (base64-encoded).
+	 * Unlock using a user-level encryption key (base64-encoded).
 	 *
 	 * Decodes base64 → derives per-workspace key via HKDF → calls `unlock()`.
-	 * No-op if called with the same key as the previous `setKey()`, so reactive
+	 * No-op if called with the same key as the previous `unlock()`, so reactive
 	 * systems can call this on every tick without triggering redundant derivations.
 	 *
 	 * If a `keyCache` was provided, caches the base64 key under `userId`
@@ -97,32 +95,13 @@ export type KeyManager = {
 	 * @example
 	 * ```typescript
 	 * // Auth key available—derive workspace key and unlock
-	 * keyManager.setKey(session.encryptionKey);
+	 * keyManager.unlock(session.encryptionKey);
 	 *
 	 * // With key caching for instant unlock on page refresh
-	 * keyManager.setKey(session.encryptionKey, session.userId);
+	 * keyManager.unlock(session.encryptionKey, session.userId);
 	 * ```
 	 */
-	setKey(userKeyBase64: string, userId?: string): void;
-
-	/**
-	 * Soft-lock the workspace.
-	 *
-	 * Preserves local data but blocks encrypted writes. Use when the auth
-	 * session expires or the encryption key is revoked—data stays on disk
-	 * for re-unlock later.
-	 *
-	 * Cancels any in-flight HKDF derivation from a prior `setKey()`.
-	 * Always calls through to `client.lock()`—the client decides whether
-	 * locking is meaningful in its current mode.
-	 *
-	 * @example
-	 * ```typescript
-	 * // Session expired but user might re-authenticate—keep data intact
-	 * keyManager.lock();
-	 * ```
-	 */
-	lock(): void;
+	unlock(userKeyBase64: string, userId?: string): void;
 
 	/**
 	 * Wipe local data and clear cached keys.
@@ -131,7 +110,7 @@ export type KeyManager = {
 	 * IndexedDB/persistence, then clears the key cache. The workspace client
 	 * stays alive but is locked with no local data.
 	 *
-	 * Cancels any in-flight HKDF derivation from a prior `setKey()`.
+	 * Cancels any in-flight HKDF derivation from a prior `unlock()`.
 	 * Always calls through to `client.clearLocalData()`—the client decides
 	 * whether wiping is meaningful in its current mode.
 	 *
@@ -147,7 +126,7 @@ export type KeyManager = {
 	 * Attempt to restore from a cached key.
 	 *
 	 * Reads from the `keyCache` for the given `userId`. If found, calls
-	 * `setKey()` internally—triggering HKDF derivation and unlock without
+	 * `unlock()` internally—triggering HKDF derivation and unlock without
 	 * a network round-trip. Returns `true` if a cached key was found.
 	 *
 	 * Use on page load to skip the "locked" state when the key is still
@@ -175,25 +154,24 @@ export type KeyManager = {
  * 1. **Async-to-sync bridge**—`deriveWorkspaceKey` is async (SubtleCrypto HKDF),
  *    but the workspace client's `unlock()` is sync. The factory fires-and-forgets
  *    the derivation and delivers the result when ready.
- * 2. **Duplicate key dedup**—calling `setKey()` with the same base64 key is a no-op,
+ * 2. **Duplicate key dedup**—calling `unlock()` with the same base64 key is a no-op,
  *    so reactive systems can call it on every tick without waste.
  * 3. **Race protection**—a generation counter ensures stale HKDF results from a
- *    previous `setKey()` call never land after a newer one.
+ *    previous `unlock()` call never land after a newer one.
  *
  * Mode guarding (none/locked/active) is the client's responsibility,
- * not the key manager's. The key manager always calls through to `lock()`/`clearLocalData()`.
+ * not the key manager's. The key manager always calls through to `clearLocalData()`.
  *
- * @param client - Workspace client surface implementing lock, unlock, and clearLocalData
+ * @param client - Workspace client surface implementing unlock and clearLocalData
  * @param config - Optional key cache for instant unlock on page refresh
- * @returns Imperative `setKey`/`lock`/`wipe`/`restoreKeyFromCache` API for framework adapters to call
+ * @returns Imperative `unlock`/`wipe`/`restoreKeyFromCache` API for framework adapters to call
  *
  * @example
  * ```typescript
  * const keyManager = createKeyManager(workspaceClient);
  *
  * // Driven by your framework's reactive system:
- * keyManager.setKey(keyBase64);   // auth key available → derive + unlock
- * keyManager.lock();              // session expired → soft-lock
+ * keyManager.unlock(keyBase64);   // auth key available → derive + unlock
  * await keyManager.wipe();        // sign-out → destroy local data
  * ```
  */
@@ -210,7 +188,8 @@ export function createKeyManager(
 
 	// Zone 3 — Private helpers
 	function deriveAndUnlock(userKey: Uint8Array, thisGeneration: number) {
-		void deriveWorkspaceKey(userKey, client.id).then((wsKey) => {
+		void deriveWorkspaceKey(userKey, client.id)
+			.then((wsKey) => {
 				if (thisGeneration === generation) client.unlock(wsKey);
 			})
 			.catch((error) => {
@@ -224,7 +203,7 @@ export function createKeyManager(
 		lastKeyBase64 = undefined;
 	}
 
-	function setKeyInternal(userKeyBase64: string, userId?: string) {
+	function unlockInternal(userKeyBase64: string, userId?: string) {
 		if (userKeyBase64 === lastKeyBase64) return;
 		lastKeyBase64 = userKeyBase64;
 
@@ -244,13 +223,8 @@ export function createKeyManager(
 
 	// Zone 5 — Public API
 	return {
-		setKey(userKeyBase64, userId) {
-			setKeyInternal(userKeyBase64, userId);
-		},
-
-		lock() {
-			invalidateKey();
-			client.lock();
+		unlock(userKeyBase64, userId) {
+			unlockInternal(userKeyBase64, userId);
 		},
 
 		async wipe() {
@@ -264,7 +238,7 @@ export function createKeyManager(
 			const cachedKeyBase64 = await keyCache.get(userId);
 			if (!cachedKeyBase64) return false;
 
-			setKeyInternal(cachedKeyBase64, userId);
+			unlockInternal(cachedKeyBase64, userId);
 			return true;
 		},
 	};

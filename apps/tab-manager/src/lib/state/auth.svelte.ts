@@ -8,6 +8,7 @@
  */
 
 import type { CustomSessionFields } from '@epicenter/api/src/custom-session-fields';
+import type { KeyManager } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
 import { untrack } from 'svelte';
@@ -17,10 +18,9 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
+import { keyManager } from './key-manager.svelte';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
-import { keyManager } from './key-manager.svelte';
-import type { KeyManager } from '@epicenter/workspace/shared/crypto';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -188,7 +188,7 @@ function createAuthState(encryption: KeyManager) {
 		// .catch(→ null) swallows network errors; { data: null } covers HTTP errors
 		const result = await getSession().catch(() => null);
 		if (result?.data?.encryptionKey) {
-			encryption.setKey(result.data.encryptionKey, result.data.user.id);
+			encryption.unlock(result.data.encryptionKey, result.data.user.id);
 		}
 	}
 
@@ -433,7 +433,7 @@ function createAuthState(encryption: KeyManager) {
 			const user = serializeDates(data.user);
 			await authUser.set(user);
 			if (data.encryptionKey) {
-				encryption.setKey(data.encryptionKey, data.user.id);
+				encryption.unlock(data.encryptionKey, data.user.id);
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);

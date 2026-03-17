@@ -315,18 +315,12 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					pushText(text);
 					return;
 				}
-				switch (entry.type) {
-					case 'text':
-						entry.content.insert(entry.content.length, text);
-						break;
-					case 'richtext':
-						// Flatten richtext to string + append, push as new text entry
-						pushText(xmlFragmentToPlaintext(entry.content) + text);
-						break;
-					case 'sheet':
-						// Serialize sheet to CSV + append, push as new text entry
-						pushText(serializeSheetToCsv(entry) + text);
-						break;
+				if (entry.type === 'text') {
+					// Append directly to existing Y.Text—no new entry, no mode change
+					entry.content.insert(entry.content.length, text);
+				} else {
+					// Flatten current content (richtext or sheet) + append as new text entry
+					pushText(this.read() + text);
 				}
 			});
 		},

@@ -8,7 +8,7 @@
  */
 
 import type { CustomSessionFields } from '@epicenter/api/src/custom-session-fields';
-import type { KeyManager } from '@epicenter/workspace/shared/crypto';
+import { createKeyManager, type KeyManager } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
 import { untrack } from 'svelte';
@@ -18,9 +18,10 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { keyManager } from './key-manager.svelte';
+import { keyCache } from './key-cache';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
+import { workspaceClient } from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -464,6 +465,7 @@ function createAuthState(encryption: KeyManager) {
 	};
 }
 
+const keyManager = createKeyManager(workspaceClient, { keyCache });
 export const authState = createAuthState(keyManager);
 
 // ─────────────────────────────────────────────────────────────────────────────

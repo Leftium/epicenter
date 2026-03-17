@@ -1,6 +1,9 @@
 ---
 name: honesty
 description: Behavioral guideline for providing brutally honest feedback. Use always - this skill defines core interaction expectations for code review and technical discussions.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Honesty

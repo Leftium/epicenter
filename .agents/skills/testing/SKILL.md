@@ -1,6 +1,9 @@
 ---
 name: testing
 description: Test file conventions for setup functions, factory patterns, test organization, type testing, and naming. Use when writing or modifying *.test.ts files, creating test setup functions, or reviewing test structure.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Test File Conventions

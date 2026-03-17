@@ -1,6 +1,9 @@
 ---
 name: specification-writing
 description: Write technical specifications that give agents enough context to implement features while leaving room for autonomous research and decision-making. Use when planning features, documenting architecture decisions, or creating implementation guides.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Specification Writing

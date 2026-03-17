@@ -1,6 +1,9 @@
 ---
 name: tauri
 description: Tauri path handling, cross-platform file operations, and API usage. Use when working with file paths in Tauri frontend code, accessing filesystem APIs, or handling platform differences in desktop apps.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Tauri Path Handling

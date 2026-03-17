@@ -1,6 +1,9 @@
 ---
 name: technical-articles
 description: Writing technical articles and blog posts. Use when creating articles in docs/articles/ or blog content explaining patterns, techniques, or lessons learned.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Technical Articles

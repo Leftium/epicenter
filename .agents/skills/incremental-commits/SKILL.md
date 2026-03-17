@@ -1,6 +1,9 @@
 ---
 name: incremental-commits
 description: Break multi-file changes into atomic commits ordered by dependency. Use for refactors, breaking API changes, or features touching 3+ files.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Incremental Commits

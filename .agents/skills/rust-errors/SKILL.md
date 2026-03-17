@@ -1,6 +1,9 @@
 ---
 name: rust-errors
 description: Rust to TypeScript error handling patterns for Tauri apps. Use when defining Rust errors that will be passed to TypeScript, handling Tauri command errors, or creating discriminated union error types.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Rust to TypeScript Error Handling

@@ -1,6 +1,9 @@
 ---
 name: social-media
 description: Social media post guidelines for LinkedIn, Reddit, and Twitter/X. Use when drafting posts, announcements, or sharing technical content on social platforms.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Social Media Post Guidelines

@@ -1,6 +1,9 @@
 ---
 name: writing-voice
 description: Voice and tone rules for all written content—prose, UI text, tooltips, error messages. Use when writing any user-facing text.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Writing Voice

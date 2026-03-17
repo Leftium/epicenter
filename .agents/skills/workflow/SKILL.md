@@ -1,6 +1,9 @@
 ---
 name: workflow
 description: Standard workflow for implementing features with specs and planning documents. Use when starting a new feature, planning implementation, or working on any non-trivial task.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Standard Workflow

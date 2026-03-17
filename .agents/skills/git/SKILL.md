@@ -1,6 +1,9 @@
 ---
 name: git
 description: Git commit and pull request guidelines using conventional commits. Use when creating commits, writing commit messages, creating PRs, or reviewing PR descriptions.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Git Commit and Pull Request Guidelines

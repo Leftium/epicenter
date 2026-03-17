@@ -1,6 +1,9 @@
 ---
 name: github-issues
 description: GitHub issue comment guidelines for community interaction. Use when responding to GitHub issues, bug reports, feature requests, or any GitHub discussion.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # GitHub Issue & PR Comment Guidelines

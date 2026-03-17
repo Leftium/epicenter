@@ -1,6 +1,9 @@
 ---
 name: svelte
 description: Svelte 5 patterns including TanStack Query mutations, shadcn-svelte components, and component composition. Use when writing Svelte components, using TanStack Query, or working with shadcn-svelte UI.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Svelte Guidelines

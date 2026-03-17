@@ -1,6 +1,9 @@
 ---
 name: monorepo
 description: Monorepo script commands and conventions for this codebase. Use when running builds, tests, formatting, linting, or type checking.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Script Commands

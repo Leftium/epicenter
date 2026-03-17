@@ -1,6 +1,9 @@
 ---
 name: styling
 description: CSS and Tailwind styling guidelines. Use when writing styles, creating UI components, reviewing CSS/Tailwind code, or deciding on wrapper element structure.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Styling Guidelines

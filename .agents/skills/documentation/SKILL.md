@@ -1,6 +1,9 @@
 ---
 name: documentation
 description: In-code documentation, folder READMEs, and code comments. Use when writing README.md files, JSDoc comments, or explaining code organization.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Documentation

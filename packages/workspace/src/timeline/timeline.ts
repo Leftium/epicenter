@@ -245,27 +245,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		timeline.push([entry]);
 		return { type: 'richtext', content, frontmatter, createdAt };
 	}
-	/**
-	 * Replace text in-place if already text type, otherwise push a new text entry.
-	 *
-	 * Used by `restoreFromSnapshot()` where the live doc's type is unknown—
-	 * the branch is genuinely needed. Direct callers that know the type should
-	 * use `pushText()` or inline the Y.Text overwrite instead.
-	 */
-	function replaceCurrentText(
-		content: string,
-		current: TimelineEntry | null,
-	): void {
-		if (current?.type === 'text') {
-			// Same mode: overwrite the existing Y.Text (select-all + paste equivalent).
-			// No new timeline entry—the observer does NOT fire.
-			current.content.delete(0, current.content.length);
-			current.content.insert(0, content);
-		} else {
-			// Different type (or empty): push a new text entry (type change).
-			pushText(content);
-		}
-	}
 	// ── Public API ────────────────────────────────────────────────────────
 
 	return {
@@ -355,68 +334,35 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		asText(): Y.Text {
 			const entry = this.currentEntry;
 			if (!entry) return ydoc.transact(() => pushText('')).content;
-			switch (entry.type) {
-				case 'text':
-					return entry.content;
-				case 'richtext': {
-					const plaintext = xmlFragmentToPlaintext(entry.content);
-					return ydoc.transact(() => pushText(plaintext)).content;
-				}
-				case 'sheet': {
-					const csv = serializeSheetToCsv(entry);
-					return ydoc.transact(() => pushText(csv)).content;
-				}
-			}
+			if (entry.type === 'text') return entry.content;
+			// Convert from richtext or sheet → read as string, push as text
+			return ydoc.transact(() => pushText(this.read())).content;
 		},
 
 		asRichText(): Y.XmlFragment {
 			const entry = this.currentEntry;
 			if (!entry) return ydoc.transact(() => pushRichtext()).content;
-			switch (entry.type) {
-				case 'richtext':
-					return entry.content;
-				case 'text': {
-					const plaintext = entry.content.toString();
-					return ydoc.transact(() => {
-						const { content } = pushRichtext();
-						populateFragmentFromText(content, plaintext);
-						return { content };
-					}).content;
-				}
-				case 'sheet': {
-					const csv = serializeSheetToCsv(entry);
-					return ydoc.transact(() => {
-						const { content } = pushRichtext();
-						populateFragmentFromText(content, csv);
-						return { content };
-					}).content;
-				}
-			}
+			if (entry.type === 'richtext') return entry.content;
+			// Convert from text or sheet → read as string, push as richtext
+			const plaintext = this.read();
+			return ydoc.transact(() => {
+				const { content } = pushRichtext();
+				populateFragmentFromText(content, plaintext);
+				return { content };
+			}).content;
 		},
 
 		asSheet(): SheetBinding {
 			const entry = this.currentEntry;
 			if (!entry) return ydoc.transact(() => pushSheet());
-			switch (entry.type) {
-				case 'sheet':
-					return { columns: entry.columns, rows: entry.rows };
-				case 'text': {
-					const plaintext = entry.content.toString();
-					return ydoc.transact(() => {
-						const result = pushSheet();
-						parseSheetFromCsv(plaintext, result);
-						return result;
-					});
-				}
-				case 'richtext': {
-					const plaintext = xmlFragmentToPlaintext(entry.content);
-					return ydoc.transact(() => {
-						const result = pushSheet();
-						parseSheetFromCsv(plaintext, result);
-						return result;
-					});
-				}
-			}
+			if (entry.type === 'sheet') return { columns: entry.columns, rows: entry.rows };
+			// Convert from text or richtext → read as string, push as sheet
+			const plaintext = this.read();
+			return ydoc.transact(() => {
+				const result = pushSheet();
+				parseSheetFromCsv(plaintext, result);
+				return result;
+			});
 		},
 
 		batch(fn: () => void) {
@@ -449,9 +395,17 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				switch (entry.type) {
 					case 'text': {
 						// Y.Text can't transfer between docs—extract the raw string.
-						// replaceCurrentText handles same-mode (in-place) vs cross-mode (push).
+						// If live doc is text, overwrite in-place; otherwise push new entry.
 						const text = entry.content.toString();
-						ydoc.transact(() => replaceCurrentText(text, this.currentEntry));
+						const current = this.currentEntry;
+						ydoc.transact(() => {
+							if (current?.type === 'text') {
+								current.content.delete(0, current.content.length);
+								current.content.insert(0, text);
+							} else {
+								pushText(text);
+							}
+						});
 						break;
 					}
 					case 'sheet': {

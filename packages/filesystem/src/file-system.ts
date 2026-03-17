@@ -211,7 +211,7 @@ export function createYjsFileSystem(
 			const text =
 				typeof data === 'string' ? data : new TextDecoder().decode(data);
 			const id = tree.lookupId(abs);
-			if (!id) return this.writeFile(abs, data, _options);
+			if (!id) return this.writeFile(path, data, _options);
 
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
@@ -220,7 +220,7 @@ export function createYjsFileSystem(
 			const validated = readEntry(handle.timeline.currentEntry);
 
 			if (validated.mode !== 'text') {
-				await this.writeFile(path, data);
+				await this.writeFile(path, data, _options);
 				return;
 			}
 

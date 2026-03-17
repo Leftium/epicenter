@@ -631,7 +631,7 @@ export type TableHelper<TRow extends BaseRow> = {
 	/**
 	 * Watch for row changes.
 	 *
-	 * The callback receives a `Set<string>` of row IDs that changed. To
+	 * The callback receives a `ReadonlySet<TRow['id']>` of row IDs that changed. To
 	 * determine what happened, call `table.get(id)`:
 	 * - `status === 'not_found'` → the row was deleted
 	 * - Otherwise → the row was added or updated
@@ -642,7 +642,7 @@ export type TableHelper<TRow extends BaseRow> = {
 	 * @returns Unsubscribe function
 	 */
 	observe(
-		callback: (changedIds: Set<string>, transaction: unknown) => void,
+		callback: (changedIds: ReadonlySet<TRow['id']>, transaction: unknown) => void,
 	): () => void;
 
 	// ═══════════════════════════════════════════════════════════════════════

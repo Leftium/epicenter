@@ -252,8 +252,9 @@ export type ClaimedDocumentColumns<
  * The full API surface of an open content document.
  *
  * Mirrors `WorkspaceClient` for consistency: the document's core type that
- * `DocumentContext` derives from via `Omit`. Extends `Timeline` so all
- * content operations (read, write, mode conversion) are available directly.
+ * `DocumentContext` derives from via `Pick` and `DocumentHandle` derives from
+ * via `Omit`. Extends `Timeline` so all content operations (read, write, mode
+ * conversion) are available directly.
  *
  * @typeParam TDocExtensions - Accumulated document extension exports
  */
@@ -1226,12 +1227,10 @@ export type ExtensionContext<
  * .withExtension('persistence', ({ ydoc }) => { ... })
  * ```
  */
-export type SharedExtensionContext = {
-	/** The Y.Doc for this scope (workspace Y.Doc or content Y.Doc). */
-	ydoc: Y.Doc;
-	/** Composite whenReady of all PRIOR extensions in this scope. */
-	whenReady: Promise<void>;
-};
+export type SharedExtensionContext = Pick<
+	ExtensionContext,
+	'ydoc' | 'whenReady'
+>;
 
 /**
  * Factory function that creates an extension.

@@ -469,7 +469,7 @@ function createBrowserState() {
 					void (async () => {
 						if (transaction.origin === null) return;
 						if (!deviceId) return;
-						const parsed = parseTabId(id as TabCompositeId);
+						const parsed = parseTabId(id);
 						if (!parsed || parsed.deviceId !== deviceId) return;
 
 						try {
@@ -516,7 +516,7 @@ function createBrowserState() {
 					void (async () => {
 						if (transaction.origin === null) return;
 						if (!deviceId) return;
-						const parsed = parseWindowId(id as WindowCompositeId);
+						const parsed = parseWindowId(id);
 						if (!parsed || parsed.deviceId !== deviceId) return;
 
 						try {
@@ -562,7 +562,7 @@ function createBrowserState() {
 					void (async () => {
 						if (transaction.origin === null) return;
 						if (!deviceId) return;
-						const parsed = parseGroupId(id as GroupCompositeId);
+						const parsed = parseGroupId(id);
 						if (!parsed || parsed.deviceId !== deviceId) return;
 
 						try {

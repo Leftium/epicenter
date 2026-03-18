@@ -167,13 +167,13 @@ export function createTableHelper<
 		// ═══════════════════════════════════════════════════════════════════════
 
 		observe(
-			callback: (changedIds: Set<string>, transaction: unknown) => void,
+			callback: (changedIds: ReadonlySet<TRow['id']>, transaction: unknown) => void,
 		): () => void {
 			const handler = (
 				changes: Map<string, YKeyValueLwwChange<unknown>>,
 				transaction: Y.Transaction,
 			) => {
-				callback(new Set(changes.keys()), transaction);
+				callback(new Set(changes.keys()) as ReadonlySet<TRow['id']>, transaction);
 			};
 
 			ykv.observe(handler);

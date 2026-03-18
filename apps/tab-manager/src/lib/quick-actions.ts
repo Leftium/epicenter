@@ -81,7 +81,7 @@ const dedupAction: QuickAction = {
 		);
 
 		const toClose = [...dupes.values()].flatMap((group) =>
-			group.slice(1).map((t) => t.id as TabCompositeId),
+			group.slice(1).map((t) => t.id),
 		);
 
 		confirmationDialog.open({
@@ -113,7 +113,7 @@ const groupByDomainAction: QuickAction = {
 			.filter(([, tabs]) => tabs.length >= 2)
 			.map(([domain, tabs]) => {
 				const nativeIds = compositeToNativeIds(
-					tabs.map((t) => t.id as TabCompositeId),
+					tabs.map((t) => t.id),
 				);
 				return nativeIds.length >= 2 ? { domain, nativeIds } : null;
 			})

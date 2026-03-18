@@ -1396,8 +1396,7 @@ export type WorkspaceClient<
 	 * Calls `dispose()` on every extension in LIFO order (last registered, first disposed).
 	 * Stops observers, closes database connections, disconnects sync providers.
 	 *
-	 * After calling, the client is unusable. To wipe data AND rebuild,
-	 * use your app's `workspace.reset()` wrapper instead.
+	 * After calling, the client is unusable.
 	 *
 	 * Safe to call multiple times (idempotent).
 	 */
@@ -1408,9 +1407,8 @@ export type WorkspaceClient<
 	 *
 	 * Wipe all persisted data without tearing down the client.
 	 *
-	 * Called internally by `workspace.reset()` before dispose + rebuild.
-	 * App code should use `workspace.reset()` (or the equivalent wrapper)
-	 * rather than calling this directly.
+	 * Called during sign-out to wipe persisted local state (IndexedDB)
+	 * without tearing down the client.
 	 *
 	 * Extension authors: this invokes your `clearData()` callback in LIFO order.
 	 */

@@ -9,5 +9,5 @@ export {
 	type WorkspaceResolution,
 } from './config/resolve-config';
 export { createAuthApi, type AuthApi } from './auth/api';
-export { cacheDir, resolveEpicenterHome, workspacesDir } from './paths';
+export { cacheDir, resolveEpicenterHome, workspacesDir } from './util/paths';
 export { loadConfig, type LoadConfigResult } from './config/load-config';

@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type ParseInputOptions, parseJsonInput } from './parse-input.js';
+import { type ParseInputOptions, parseJsonInput } from '../src/util/parse-input.js';
 
 describe('parseJsonInput', () => {
 	let tempDir: string;

@@ -2,7 +2,7 @@ import { mkdir, readdir, readlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { AnyWorkspaceClient, ProjectDir } from '@epicenter/workspace';
 import { loadClientFromPath } from './load-config';
-import { workspacesDir } from '../paths';
+import { workspacesDir } from '../util/paths';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EXPORTED TYPES

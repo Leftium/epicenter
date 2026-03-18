@@ -9,8 +9,8 @@
 
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import type { Argv, CommandModule } from 'yargs';
-import { formatYargsOptions, output, outputError } from '../format-output';
-import { parseJsonInput, readStdinSync } from '../parse-input';
+import { formatYargsOptions, output, outputError } from '../util/format-output';
+import { parseJsonInput, readStdinSync } from '../util/parse-input';
 import {
 	type OpenWorkspaceOptions,
 	withWorkspace,

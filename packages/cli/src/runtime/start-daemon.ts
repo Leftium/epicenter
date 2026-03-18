@@ -21,7 +21,7 @@ import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
 import { loadConfig } from '../config/load-config';
 import { resolveServer, resolveToken } from '../auth/store';
-import { resolveEpicenterHome } from '../paths';
+import { resolveEpicenterHome } from '../util/paths';
 
 export type StartDaemonOptions = {
 	/** Directory containing epicenter.config.ts. Defaults to cwd. */

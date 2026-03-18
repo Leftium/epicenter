@@ -8,6 +8,6 @@ export {
 	resolveWorkspace,
 	type WorkspaceResolution,
 } from './discovery';
-export { createHttpClient, type HttpClient } from './http-client';
+export { createAuthApi, type AuthApi } from './auth/api';
 export { cacheDir, resolveEpicenterHome, workspacesDir } from './paths';
 export { loadConfig, type LoadConfigResult } from './config/load-config';

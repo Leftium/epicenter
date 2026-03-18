@@ -596,40 +596,27 @@ function createAiChatState() {
 		(conversations[0]?.id ?? '') as ConversationId,
 	);
 
-	// ── Observers ────────────────────────────────────────────────────
+	// ── Observers ────────────────────────────────────────────────────────────
 
-	$effect.root(() => {
-		$effect(() => {
-			const c = workspace;
-
-			// Destroy all existing clients + handles
-			for (const [id] of clients) destroyConversation(id);
-
-			// Re-read from new client
-			conversations = readAllConversations();
-
-			// Re-register observers
-			c.tables.conversations.observe(() => {
-				conversations = readAllConversations();
-				reconcileHandles();
-			});
-			c.tables.chatMessages.observe(() => {
-				refreshFromDoc(activeConversationId);
-			});
-
-			// Re-initialize after persistence loads
-			void c.whenReady.then(() => {
-				conversations = readAllConversations();
-				reconcileHandles();
-				const newId = ensureDefaultConversation();
-				if (conversations.length > 0) {
-					activeConversationId = newId ?? conversations[0].id;
-				}
-			});
-
-			reconcileHandles();
-		});
+	workspace.tables.conversations.observe(() => {
+		conversations = readAllConversations();
+		reconcileHandles();
 	});
+	workspace.tables.chatMessages.observe(() => {
+		refreshFromDoc(activeConversationId);
+	});
+
+	// Initialize after persistence loads
+	void workspace.whenReady.then(() => {
+		conversations = readAllConversations();
+		reconcileHandles();
+		const newId = ensureDefaultConversation();
+		if (conversations.length > 0) {
+			activeConversationId = newId ?? conversations[0].id;
+		}
+	});
+
+	reconcileHandles();
 
 	// ── Conversation CRUD ────────────────────────────────────────────
 

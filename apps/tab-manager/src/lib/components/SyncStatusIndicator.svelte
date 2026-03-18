@@ -18,13 +18,9 @@
 	function createSyncStatus() {
 		let current = $state<SyncStatus>('offline' as SyncStatus);
 
-		$effect.root(() => {
-			$effect(() => {
-				current = workspace.extensions.sync.status;
-				workspace.extensions.sync.onStatusChange((status) => {
-					current = status;
-				});
-			});
+		current = workspace.extensions.sync.status;
+		workspace.extensions.sync.onStatusChange((status) => {
+			current = status;
 		});
 
 		return {

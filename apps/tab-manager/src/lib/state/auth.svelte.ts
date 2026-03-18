@@ -9,8 +9,8 @@
 
 import type { CustomSessionFields } from '@epicenter/api/src/custom-session-fields';
 import {
-	createKeyManager,
-	type KeyManager,
+	base64ToBytes,
+	deriveWorkspaceKey,
 } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
@@ -99,7 +99,7 @@ type AuthPhase =
 	| { status: 'signed-in' }
 	| { status: 'signed-out'; error?: string };
 
-function createAuthState(encryption: KeyManager) {
+function createAuthState() {
 	// ─── State ───
 
 	let phase = $state<AuthPhase>({ status: 'checking' });
@@ -125,7 +125,46 @@ function createAuthState(encryption: KeyManager) {
 		}),
 	);
 
-	const externalSignInListeners = new Set<() => void>();
+	// ─── Inlined key management (replaces createKeyManager) ───
+
+	let lastKeyBase64: string | undefined;
+	let keyGeneration = 0;
+
+	async function activateSession(userKeyBase64: string, userId: string) {
+		if (userKeyBase64 === lastKeyBase64) return; // dedup
+		lastKeyBase64 = userKeyBase64;
+		const thisGeneration = ++keyGeneration;
+		const userKey = base64ToBytes(userKeyBase64);
+		const wsKey = await deriveWorkspaceKey(userKey, workspace.current.id);
+		if (thisGeneration !== keyGeneration) return; // stale
+		await workspace.wipeAndReset({ key: wsKey });
+		await keyCache.set(userId, userKeyBase64);
+	}
+
+	async function restoreSession(userKeyBase64: string, userId: string) {
+		if (userKeyBase64 === lastKeyBase64) return; // dedup
+		lastKeyBase64 = userKeyBase64;
+		const thisGeneration = ++keyGeneration;
+		const userKey = base64ToBytes(userKeyBase64);
+		const wsKey = await deriveWorkspaceKey(userKey, workspace.current.id);
+		if (thisGeneration !== keyGeneration) return; // stale
+		await workspace.reset({ key: wsKey }); // preserves IndexedDB cache
+		await keyCache.set(userId, userKeyBase64);
+	}
+
+	async function deactivateSession() {
+		++keyGeneration;
+		lastKeyBase64 = undefined;
+		await workspace.wipeAndReset();
+		await keyCache.clear();
+	}
+
+	async function restoreFromCache(userId: string): Promise<boolean> {
+		const cached = await keyCache.get(userId);
+		if (!cached) return false;
+		await restoreSession(cached, userId);
+		return true;
+	}
 
 	// ─── Effects ───
 
@@ -146,8 +185,9 @@ function createAuthState(encryption: KeyManager) {
 				phase.status === 'signed-out'
 			) {
 				phase = { status: 'signed-in' };
+				const userId = authUser.current.id;
 				untrack(() => {
-					for (const fn of externalSignInListeners) fn();
+					void restoreFromCache(userId);
 				});
 			}
 		});
@@ -176,23 +216,17 @@ function createAuthState(encryption: KeyManager) {
 	}
 
 	/**
-	 * Fetch the session to extract the encryption key.
+	 * Fetch the session to extract the encryption key, then rebuild workspace.
 	 *
 	 * Better Auth's signIn/signUp responses don't include customSession
 	 * fields—only getSession() returns them. Awaited after successful
-	 * sign-in so the encryption wiring activates before the caller's
+	 * sign-in so the workspace rebuilds with encryption before the caller's
 	 * post-sign-in code runs. No timing gap.
-	 *
-	 * Network errors are swallowed via `.catch()` because getSession()
-	 * can throw on DNS/connectivity failures (better-fetch doesn't wrap
-	 * the raw `fetch()` call). Non-fatal—workspace stays in `'none'`
-	 * mode until the next checkSession() on visibility change.
 	 */
 	async function refreshEncryptionKey() {
-		// .catch(→ null) swallows network errors; { data: null } covers HTTP errors
 		const result = await getSession().catch(() => null);
 		if (result?.data?.encryptionKey) {
-			await encryption.activateEncryption(result.data.encryptionKey, result.data.user.id);
+			await activateSession(result.data.encryptionKey, result.data.user.id);
 		}
 	}
 
@@ -376,8 +410,7 @@ function createAuthState(encryption: KeyManager) {
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
-			await encryption.clearKeys();
-			await workspace.reset();
+			await deactivateSession();
 			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
 			phase = { status: 'signed-out' };
@@ -400,7 +433,7 @@ function createAuthState(encryption: KeyManager) {
 
 			const userId = authUser.current?.id;
 			if (userId) {
-				void encryption.restoreKeyFromCache(userId);
+				void restoreFromCache(userId);
 			}
 
 			const token = authToken.current;
@@ -424,8 +457,7 @@ function createAuthState(encryption: KeyManager) {
 
 				// 4xx → server explicitly rejected the token
 				await clearState();
-				await encryption.clearKeys();
-				await workspace.reset();
+				await deactivateSession();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
@@ -439,48 +471,16 @@ function createAuthState(encryption: KeyManager) {
 			const user = serializeDates(data.user);
 			await authUser.set(user);
 			if (data.encryptionKey) {
-				await encryption.activateEncryption(data.encryptionKey, data.user.id);
+				await restoreSession(data.encryptionKey, data.user.id);
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);
 		},
 
-		/**
-		 * Subscribe to external sign-in events (e.g. sign-in from another extension context).
-		 *
-		 * When the auth token and user appear while this context is signed-out,
-		 * the callback fires. Useful for triggering side effects like reconnecting
-		 * sync without coupling those concerns to the auth module.
-		 *
-		 * @returns Unsubscribe function. Call in `onMount` cleanup.
-		 *
-		 * @example
-		 * ```typescript
-		 * onMount(() => {
-		 *     return authState.onExternalSignIn(() => workspace.current.extensions.sync.reconnect());
-		 * });
-		 * ```
-		 */
-		onExternalSignIn(callback: () => void) {
-			externalSignInListeners.add(callback);
-			return () => {
-				externalSignInListeners.delete(callback);
-			};
-		},
 	};
 }
 
-const keyManagerTarget = {
-	get id() {
-		return workspace.current.id;
-	},
-	activateEncryption(key: Uint8Array) {
-		workspace.current.activateEncryption(key);
-	},
-};
-
-const keyManager = createKeyManager(keyManagerTarget, { keyCache });
-export const authState = createAuthState(keyManager);
+export const authState = createAuthState();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

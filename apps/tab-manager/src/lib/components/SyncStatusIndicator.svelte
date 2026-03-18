@@ -126,11 +126,10 @@
 						variant="ghost"
 						size="sm"
 						class="flex-1"
-						onclick={async () => {
-							await authState.signOut();
-							workspace.current.extensions.sync.reconnect();
-							popoverOpen = false;
-						}}
+					onclick={async () => {
+						await authState.signOut();
+						popoverOpen = false;
+					}}
 					>
 						<LogOutIcon class="size-3.5" />
 						Sign out

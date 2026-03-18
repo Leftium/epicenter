@@ -15,15 +15,12 @@
 	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
-	import { workspace } from '$lib/workspace';
 
-	// Auth initialization — check cached session on mount, react to external token changes
+	// Auth initialization — check cached session on mount
 	onMount(() => {
 		authState.checkSession();
-		const unsubExternalSignIn = authState.onExternalSignIn(() =>
-			workspace.current.extensions.sync.reconnect(),
-		);
-
+		// External sign-in handled by $effect in auth.svelte.ts
+		// Sync reconnect handled by workspace rebuild
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&
@@ -33,10 +30,7 @@
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () => {
-			document.removeEventListener('visibilitychange', onVisibilityChange);
-			unsubExternalSignIn();
-		};
+		return () => document.removeEventListener('visibilitychange', onVisibilityChange);
 	});
 
 	let searchInputRef = $state<HTMLInputElement | null>(null);

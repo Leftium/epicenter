@@ -39,7 +39,6 @@ export function ConsentPage({
 				</>
 			)}
 
-			<input type="hidden" id="scope" value={scope ?? ''} />
 
 			<div id="msg" class="msg hidden" />
 

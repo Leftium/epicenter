@@ -13,7 +13,7 @@ export const CONSENT_SCRIPT = raw(`<script>
 	const approveBtn = document.getElementById('approve');
 	const denyBtn = document.getElementById('deny');
 	const msg = document.getElementById('msg');
-	const scope = document.getElementById('scope').value;
+	const scope = new URLSearchParams(window.location.search).get('scope') || '';
 
 	const getOAuthQuery = () => {
 		const params = new URLSearchParams(window.location.search);

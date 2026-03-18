@@ -950,13 +950,13 @@ describe('workspace encryption', () => {
 
 	test('mode starts as none when no key provided', () => {
 		const { client } = setupEncrypted();
-		expect(client.encryptionState).toBe('none');
+		expect(client.isEncrypted).toBe(false);
 	});
 
 	test('unlock transitions mode to active', () => {
 		const { client, key } = setupEncrypted();
 		client.unlock(key);
-		expect(client.encryptionState).toBe('active');
+		expect(client.isEncrypted).toBe(true);
 	});
 
 	test('unlock enables encrypted writes that survive re-unlock', () => {
@@ -981,6 +981,6 @@ describe('workspace encryption', () => {
 			defineWorkspace({ id: 'key-test', tables: { posts } }),
 			{ key },
 		);
-		expect(client.encryptionState).toBe('active');
+		expect(client.isEncrypted).toBe(true);
 	});
 });

@@ -120,8 +120,6 @@ export { createUnionSchema } from './schema-union.js';
 // Types
 // ════════════════════════════════════════════════════════════════════════════
 
-// Re-export EncryptionState for consumers that need to check workspace.encryptionState
-export type { EncryptionState } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 export type {
 	// Any-typed client (for duck-typing in CLI/server)
 	AnyWorkspaceClient,

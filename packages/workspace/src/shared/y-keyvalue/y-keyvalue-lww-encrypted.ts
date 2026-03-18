@@ -32,29 +32,26 @@
  *   └── inner.get() → decrypt on the fly                ← transaction gap fallback
  * ```
  *
- * ## Two-State State Machine
+ * ## Encryption Lifecycle
+ *
+ * Encryption is governed by key presence (`currentKey`). There is no separate
+ * state variable—`isEncrypted` is derived directly from `currentKey !== undefined`.
  *
  * ```
- *                     ┌─────────────┐
- *         (creation,  │    NONE     │  (no key ever seen)
- *          no key)    │  rw plain   │
- *                     └──────┬──────┘
- *                            │ unlock(key)
- *                            ▼
- *                     ┌─────────────┐
- *                     │  ACTIVE     │  (key active)
- *                     │  rw encrypt │◄── unlock(newKey)
- *                     └─────────────┘
+ *   No key (creation)          Key provided (unlock)
+ *   ┌──────────────────┐       ┌──────────────────┐
+ *   │  isEncrypted: false │──────▶│  isEncrypted: true  │◄── unlock(newKey)
+ *   │  rw plaintext      │       │  rw encrypted      │
+ *   └──────────────────┘       └──────────────────┘
  * ```
  *
- * - **none**: No key ever seen. Reads and writes pass through unencrypted.
- * - **active**: Key active. `set()` encrypts, observer decrypts.
+ * - **No key**: Reads and writes pass through unencrypted.
+ * - **Key present**: `set()` encrypts, observer decrypts.
  *
  * ## Key Management
  *
  * The encryption key is managed through `unlock(key)`.
- * The optional `key` in options seeds the initial key (and therefore the initial
- * encryption state). After creation, all key transitions go through `unlock()`.
+ * The optional `key` in options seeds the initial key. After creation,
  *
  * ## Pending State
  *
@@ -97,20 +94,18 @@ import {
 /**
  * Options for `createEncryptedYkvLww`.
  *
- * `key` seeds the initial encryption key and determines the starting encryption state
- * (`none` if undefined, `active` if a key is provided). After creation,
- * all key transitions go through `unlock()`.
+ * `key` seeds the initial encryption key. If provided, `isEncrypted` starts
+ * as `true` and all writes are encrypted immediately. If omitted, the store
+ * starts unencrypted. After creation, all key transitions go through `unlock()`.
  */
 type EncryptedKvLwwOptions = {
 	key?: Uint8Array;
 };
 
-/** The two encryption states. See module JSDoc for the full state machine. */
-export type EncryptionState = 'none' | 'active';
 
 /**
  * Return type of `createEncryptedYkvLww`. Same API surface as `YKeyValueLww<T>`
- * plus encryption-specific members (`encryptionState`, `failedDecryptCount`, `unlock`).
+ * plus encryption-specific members (`isEncrypted`, `failedDecryptCount`, `unlock`).
  * All values exposed through this type are **plaintext**—encryption is fully
  * transparent to consumers.
  */
@@ -125,15 +120,15 @@ export type YKeyValueLwwEncrypted<T> = {
 
 	/**
 	 * Unlock the workspace with an encryption key. Rebuilds the decrypted map
-	 * from `inner.map`, transitions to `'active'` encryption state, and fires synthetic
+	 * from `inner.map`, transitions to encrypted state, and fires synthetic
 	 * change events for any values that changed.
 	 *
 	 * @param key - A 32-byte encryption key (required)
 	 */
 	unlock(key: Uint8Array): void;
 
-	/** Current encryption state. Derived from key presence history. */
-	readonly encryptionState: EncryptionState;
+	/** Whether encryption is currently active. Derived from key presence. */
+	readonly isEncrypted: boolean;
 
 	/**
 	 * Number of entries that failed to decrypt. Computed as
@@ -164,18 +159,18 @@ export type YKeyValueLwwEncrypted<T> = {
  * `YKeyValueLww` remains the single source for conflict resolution; this wrapper
  * only transforms values at the boundary (`set` encrypts, observer/get decrypts).
  *
- * When no key is available (`'none'` state), all operations pass through without
+ * When no key is available, all operations pass through without
  * encryption—zero overhead, identical to a plain `YKeyValueLww<T>`.
  *
  * @example
  * ```typescript
  * // Start in plaintext, transition to encrypted when key arrives
  * const kv = createEncryptedYkvLww<TabData>(yarray);
- * kv.encryptionState; // 'none'
+ * kv.isEncrypted; // false
  * kv.set('tab-1', { url: '...' }); // stored as plaintext
  *
  * kv.unlock(encryptionKey);
- * kv.encryptionState; // 'active'
+ * kv.isEncrypted; // true
  * kv.set('tab-2', { url: '...' }); // stored as EncryptedBlob
  * ```
  */
@@ -210,12 +205,6 @@ export function createEncryptedYkvLww<T>(
 	 */
 	let currentKey: Uint8Array | undefined = options?.key;
 
-	/**
-	 * Current encryption state. Derived from key presence history:
-	 * - `none`: No key has ever been seen (initial state when no key provided)
-	 * - `active`: A key is currently active
-	 */
-	let encryptionState: EncryptionState = currentKey ? 'active' : 'none';
 
 	/**
 	 * Conditionally decrypt a value. Handles three cases:
@@ -330,15 +319,10 @@ export function createEncryptedYkvLww<T>(
 
 	return {
 		set(key, val) {
-			if (encryptionState === 'none') {
+			if (!currentKey) {
 				inner.set(key, val);
 				return;
 			}
-
-			if (!currentKey)
-				throw new Error(
-					'Encryption key missing in active state — this is a bug',
-				);
 			inner.set(key, encryptValue(JSON.stringify(val), currentKey));
 		},
 
@@ -412,7 +396,6 @@ export function createEncryptedYkvLww<T>(
 			currentKey = nextKey;
 
 			const oldMap = new Map(map);
-			encryptionState = 'active';
 
 			map.clear();
 
@@ -462,8 +445,8 @@ export function createEncryptedYkvLww<T>(
 			for (const handler of changeHandlers)
 				handler(syntheticChanges, syntheticTransaction);
 		},
-		get encryptionState() {
-			return encryptionState;
+		get isEncrypted() {
+			return currentKey !== undefined;
 		},
 		get failedDecryptCount() {
 			return inner.map.size - map.size;

@@ -6,10 +6,7 @@ import {
 	isEncryptedBlob,
 } from '../crypto';
 import type { YKeyValueLwwEntry } from './y-keyvalue-lww';
-import {
-	createEncryptedYkvLww,
-	type EncryptionState,
-} from './y-keyvalue-lww-encrypted';
+import { createEncryptedYkvLww } from './y-keyvalue-lww-encrypted';
 
 type PlainChange<T> =
 	| { action: 'add'; newValue: T }
@@ -521,7 +518,7 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
-			expect(kv.encryptionState).toBe('none' satisfies EncryptionState);
+			expect(kv.isEncrypted).toBe(false);
 		});
 
 		test('starts in active when key provided', () => {
@@ -531,7 +528,7 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
 
-			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
+			expect(kv.isEncrypted).toBe(true);
 		});
 
 		test('none → active via unlock(key)', () => {
@@ -541,9 +538,9 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
-			expect(kv.encryptionState).toBe('none' satisfies EncryptionState);
+			expect(kv.isEncrypted).toBe(false);
 			kv.unlock(key);
-			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
+			expect(kv.isEncrypted).toBe(true);
 		});
 	});
 
@@ -621,7 +618,7 @@ describe('createEncryptedYkvLww', () => {
 			kv.set('pt-2', 'plain-b');
 			kv.unlock(key);
 
-			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
+			expect(kv.isEncrypted).toBe(true);
 			expect(kv.get('pt-1')).toBe('plain-a');
 			expect(kv.get('pt-2')).toBe('plain-b');
 		});

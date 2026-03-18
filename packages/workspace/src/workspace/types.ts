@@ -10,7 +10,6 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
-import type { EncryptionState } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type { ContentMode } from '../timeline/entries.js';
 import type { SheetBinding } from '../timeline/richtext.js';
 import type { Timeline } from '../timeline/timeline.js';
@@ -1281,19 +1280,19 @@ export type WorkspaceClient<
 	extensions: TExtensions;
 
 	/**
-	 * Current encryption state across all stores.
+	 * Whether encryption is currently active across all stores.
 	 *
-	 * - `'none'` — no key ever set, reads/writes pass through unencrypted
-	 * - `'active'` — key active, writes encrypt, reads decrypt
+	 * - `false` — no key ever set, reads/writes pass through unencrypted
+	 * - `true` — key active, writes encrypt, reads decrypt
 	 *
 	 * All stores are kept in sync — this reflects the workspace-wide state.
 	 */
-	readonly encryptionState: EncryptionState;
+	readonly isEncrypted: boolean;
 
 	/**
 	 * Unlock the workspace with an encryption key.
 	 *
-	 * Decrypts all stores, retries failed entries, transitions to `'active'`, and
+	 * Decrypts all stores, retries failed entries, enables encryption, and
 	 * encrypts any existing plaintext entries in-place.
 	 *
 	 * ### Plaintext→encrypted migration

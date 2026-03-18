@@ -193,18 +193,18 @@ async function restoreFromCache(userId: string): Promise<boolean> {
 
 ## Todo
 
-- [ ] Revert commits `d74406229` and `a556cb98c` (the `$effect` + `.svelte.ts` changes)
-- [ ] Add `deactivateEncryption()` to `y-keyvalue-lww-encrypted.ts` return object + type
-- [ ] Add `deactivateEncryption()` + `clearAllData()` to `create-workspace.ts` client object
-- [ ] Add `deactivateEncryption()` + `clearAllData()` to `WorkspaceClient` type in `types.ts`
-- [ ] Remove `reset()` from `workspace.ts`, make `client` a `const`
-- [ ] Update `auth.svelte.ts` — replace `workspace.reset()` with `deactivateSession()`, add `activateSession()` / `restoreFromCache()`
-- [ ] Update `AuthForm.svelte` — remove `reconnect()` call
-- [ ] Update `App.svelte` — remove `onExternalSignIn` callback + `reconnect()`
-- [ ] Add tests for `deactivateEncryption()` in `y-keyvalue-lww-encrypted.test.ts`
-- [ ] Add test for `clearAllData()` in `create-workspace.test.ts`
-- [ ] Run `bun test` in `packages/workspace`
-- [ ] Run `bun run typecheck` across the monorepo
+- [x] Revert commits `d74406229` and `a556cb98c` (the `$effect` + `.svelte.ts` changes)
+- [x] Add `deactivateEncryption()` to `y-keyvalue-lww-encrypted.ts` return object + type
+- [x] Add `deactivateEncryption()` + `clearAllData()` to `create-workspace.ts` client object
+- [x] Add `deactivateEncryption()` + `clearAllData()` to `WorkspaceClient` type in `types.ts`
+- [x] Remove `reset()` from `workspace.ts`, make `client` a `const`
+- [x] Update `auth.svelte.ts` — replace `workspace.reset()` with `deactivateSession()`, add `activateSession()` / `restoreFromCache()`
+- [x] Update `AuthForm.svelte` — remove `reconnect()` call
+- [x] Update `App.svelte` — remove `onExternalSignIn` callback + `reconnect()`
+- [x] Add tests for `deactivateEncryption()` in `y-keyvalue-lww-encrypted.test.ts`
+- [x] Add test for `clearAllData()` in `create-workspace.test.ts` — 4 tests (removes all rows, fires observers, clears encrypted data, write after clear)
+- [x] Run `bun test` in `packages/workspace` — 497 pass, 0 fail
+- [x] Run `bun run typecheck` across the monorepo — all errors pre-existing (packages/ui `#/` imports, workspace `NumberKeysOf`)
 
 ## Constraints
 
@@ -215,3 +215,36 @@ async function restoreFromCache(userId: string): Promise<boolean> {
 - Follow existing patterns in packages/workspace for new methods
 - `activateEncryption()` stays — it's the sign-in mechanism
 - The synthetic `undefined as unknown as Y.Transaction` in `activateEncryption()` is accepted (only fires on rare plaintext→encrypted transitions, all consumers ignore the transaction)
+
+## Review
+
+**Date**: 2026-03-18
+**Status**: 11/12 items complete
+
+### Completed
+**Status**: 12/12 items complete
+All lifecycle changes shipped across multiple commits:
+
+- `e20b21154` — revert: undo second $effect re-application — stable client approach
+- `dd3d7d743` — feat(workspace): add deactivateEncryption() and clearAllData() to workspace client
+- `439424456` — refactor(tab-manager): remove reset(), make workspace client const
+- `c8c00be94` — refactor(tab-manager): replace workspace.reset() with clear-in-place lifecycle
+- `331a6c755` — refactor(tab-manager): export workspace client directly, remove .current wrapper
+- `4251ca18c` — refactor(tab-manager): remove workspace.current indirection across consumers
+- `aa8002bf2` — chore(tab-manager): update stale comment in App.svelte
+- `2380be1ae` — docs(tab-manager): fix stale JSDoc referencing workspace rebuild
+- `259d4d614` — docs(workspace): fix stale JSDoc referencing workspace.reset()
+
+Dead `$effect.root`/`$effect` wrappers confirmed removed from all three consumer files:
+- `SyncStatusIndicator.svelte` — plain init-time calls
+- `browser-state.svelte.ts` — plain Yjs observers
+- `chat-state.svelte.ts` — plain Yjs observers + `whenReady`
+
+### Remaining
+
+None — all items complete.
+
+### Verification
+
+- `bun test` in packages/workspace: **497 pass, 0 fail** (4 new clearAllData tests)
+- `bun run typecheck` in apps/tab-manager: **87 errors, all pre-existing** (packages/ui `#/` import resolution, workspace `NumberKeysOf` type, one `as SyncStatus` cast)

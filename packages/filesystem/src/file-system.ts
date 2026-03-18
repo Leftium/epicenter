@@ -170,6 +170,9 @@ export function createYjsFileSystem(
 
 		async writeFile(path, data, _options?) {
 			const abs = posixResolve(cwd, path);
+			const textData =
+				typeof data === 'string' ? data : new TextDecoder().decode(data);
+			const size = new TextEncoder().encode(textData).byteLength;
 			let id = tree.lookupId(abs);
 
 			if (id) {
@@ -179,17 +182,11 @@ export function createYjsFileSystem(
 
 			if (!id) {
 				const { parentId, name } = tree.parsePath(abs);
-				const textData =
-					typeof data === 'string' ? data : new TextDecoder().decode(data);
-				const size = new TextEncoder().encode(textData).byteLength;
 				id = tree.create({ name, parentId, type: 'file', size });
 			}
 
-			const textData =
-				typeof data === 'string' ? data : new TextDecoder().decode(data);
 			const handle = await contentDocuments.open(id);
 			handle.write(textData);
-			const size = new TextEncoder().encode(textData).byteLength;
 			tree.touch(id, size);
 		},
 
@@ -198,7 +195,7 @@ export function createYjsFileSystem(
 			const text =
 				typeof data === 'string' ? data : new TextDecoder().decode(data);
 			const id = tree.lookupId(abs);
-			if (!id) return this.writeFile(abs, data, _options);
+			if (!id) return this.writeFile(path, data, _options);
 
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);

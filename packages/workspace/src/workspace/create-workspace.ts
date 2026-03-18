@@ -493,6 +493,12 @@ export function createWorkspace<
 			},
 
 			withEncryption(config?: EncryptionConfig) {
+				// Private closure state — inaccessible from outside.
+				// lastUserKey: enables byte-level dedup (same key → skip HKDF).
+				// keyGeneration: monotonic counter for race protection. Each call to
+				//   activateEncryption or deactivateEncryption increments it. When HKDF
+				//   resolves, the generation is compared — if it changed, a newer call
+				//   superseded this one and the stale result is discarded.
 				let lastUserKey: Uint8Array | undefined;
 				let keyGeneration = 0;
 
@@ -505,15 +511,24 @@ export function createWorkspace<
 				});
 
 				Object.assign(client, {
+					// Activation pipeline:
+					//   1. Byte-level dedup (same key bytes → early return, no work)
+					//   2. ++generation (race protection)
+					//   3. HKDF: deriveWorkspaceKey(userKey, workspaceId) → derived key
+					//   4. Stale check (generation changed during HKDF → discard)
+					//   5. Apply derived key to all encrypted stores
+					//
+					// Why the generation counter matters: HKDF is async. If the user signs
+					// out and back in during derivation, a slow HKDF from the old key could
+					// resolve after the new key is already active. The generation check at
+					// step 4 catches this — the stale result is silently discarded.
 					async activateEncryption(userKey: Uint8Array) {
-						// Byte-level dedup — skip if same key as last time
 						if (lastUserKey && bytesEqual(lastUserKey, userKey)) return;
 						lastUserKey = userKey;
 
 						const thisGen = ++keyGeneration;
 						try {
 							const wsKey = await deriveWorkspaceKey(userKey, id);
-							// Stale check — a newer call superseded this one
 							if (thisGen !== keyGeneration) return;
 							workspaceKey = wsKey;
 							for (const store of encryptedStores) {
@@ -523,14 +538,25 @@ export function createWorkspace<
 							console.error('[workspace] Key derivation failed:', error);
 						}
 					},
+					// Deactivation pipeline:
+					//   1. ++generation (invalidates any in-flight HKDF from activateEncryption)
+					//   2. Clear lastUserKey and workspaceKey
+					//   3. Deactivate all stores (switch back to plaintext mode)
+					//   4. Wipe persisted data via clearData callbacks (LIFO order)
+					//   5. Call onDeactivate hook (e.g. keyCache.clear())
+					//
+					// Step 1 is critical: if activateEncryption is mid-HKDF when deactivate
+					// is called, the generation bump ensures the in-flight derivation's
+					// result is discarded when it resolves. Without this, the sequence
+					// activate → deactivate could end with encryption re-enabled by the
+					// stale HKDF completing after deactivation.
 					async deactivateEncryption() {
-						++keyGeneration; // invalidate in-flight HKDF
+						++keyGeneration;
 						lastUserKey = undefined;
 						workspaceKey = undefined;
 						for (const store of encryptedStores) {
 							store.deactivateEncryption();
 						}
-						// Wipe persisted data (IndexedDB) — LIFO order
 						for (let i = state.clearDataCallbacks.length - 1; i >= 0; i--) {
 							try {
 								await state.clearDataCallbacks[i]?.();

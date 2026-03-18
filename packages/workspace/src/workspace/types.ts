@@ -1004,6 +1004,27 @@ export type EncryptionConfig = {
  * These methods are NOT present on the base `WorkspaceClient` — only when
  * `.withEncryption()` is called. This prevents non-encryption consumers
  * (Whispering, CLI) from seeing encryption methods on the type.
+ *
+ * Typical lifecycle in a Chrome extension:
+ *
+ * ```typescript
+ * // Build (once, at module scope)
+ * const workspace = createWorkspace(definition)
+ *   .withEncryption({ onDeactivate: () => keyCache.clear() })
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', createSyncExtension({ ... }));
+ *
+ * // Sign-in: activate + cache the key for sidebar reopens
+ * await workspace.activateEncryption(base64ToBytes(session.encryptionKey));
+ * await keyCache.set(userId, session.encryptionKey);
+ *
+ * // Sidebar reopen: restore from cache (no server roundtrip)
+ * const cached = await keyCache.get(userId);
+ * if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+ *
+ * // Sign-out: deactivate (→ clear stores → wipe IndexedDB → keyCache.clear())
+ * await workspace.deactivateEncryption();
+ * ```
  */
 export type EncryptionMethods = {
 	/** Whether encryption is currently active (a key has been derived and applied). */
@@ -1011,9 +1032,11 @@ export type EncryptionMethods = {
 	/**
 	 * Activate encryption with a user-level key.
 	 *
-	 * Performs byte-level dedup (same key → no-op), derives a per-workspace key
-	 * via HKDF, applies race protection via generation counter, then activates
-	 * encryption across all stores.
+	 * Pipeline: dedup (same bytes → skip) → HKDF derivation → race check → apply to stores.
+	 *
+	 * The derivation is async (HKDF via `crypto.subtle`). A generation counter protects
+	 * against races: if the user signs out mid-derivation, the stale result is discarded
+	 * when it resolves because `deactivateEncryption` bumped the counter.
 	 *
 	 * @param userKey - Raw user key bytes (from `base64ToBytes(session.encryptionKey)`)
 	 */
@@ -1021,8 +1044,10 @@ export type EncryptionMethods = {
 	/**
 	 * Deactivate encryption and wipe persisted data.
 	 *
-	 * Invalidates in-flight HKDF derivations, clears all store encryption,
-	 * wipes IndexedDB via clearData callbacks (LIFO), then calls `onDeactivate` hook.
+	 * Pipeline: invalidate in-flight HKDF → clear stores → wipe IndexedDB (LIFO) → onDeactivate hook.
+	 *
+	 * Safe to call even if encryption was never activated — the full pipeline runs
+	 * regardless (stores and callbacks are no-ops when already deactivated).
 	 */
 	deactivateEncryption(): Promise<void>;
 };

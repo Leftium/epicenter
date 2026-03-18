@@ -76,6 +76,15 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 	 */
 	let writesInFlight = 0;
 
+	/**
+	 * External change watchers — notified when chrome.storage changes
+	 * from another extension context (NOT from our own writes).
+	 *
+	 * Inherits the same `writesInFlight` suppression as the internal
+	 * `item.watch` — only genuinely external mutations fire callbacks.
+	 */
+	const externalWatchers = new Set<(newValue: T) => void>();
+
 	// Async init — load persisted value from chrome.storage.
 	// Exposes a promise so consumers can await readiness before reading.
 	const whenReady = item.getValue().then((persisted) => {
@@ -87,6 +96,7 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 	item.watch((newValue) => {
 		if (writesInFlight > 0) return;
 		value = validate(newValue) ?? fallback;
+		for (const watcher of externalWatchers) watcher(value);
 	});
 
 	/** Persist a value and track the in-flight write. */
@@ -134,5 +144,29 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 		 * fallback value would cause incorrect behavior (e.g. auth token checks).
 		 */
 		whenReady,
+
+		/**
+		 * Watch for external changes from other extension contexts.
+		 *
+		 * Only fires when chrome.storage is mutated externally (e.g. sign-out
+		 * in a popup reflects in the sidebar). Writes from this context are
+		 * suppressed—use reactive `$effect` or `$derived` over `.current`
+		 * when you need to react to local changes.
+		 *
+		 * The callback receives the validated value (or fallback if invalid).
+		 *
+		 * @returns Unsubscribe function
+		 *
+		 * @example
+		 * ```typescript
+		 * const unsub = authToken.watch((token) => {
+		 *   if (!token) deactivateEncryption();
+		 * });
+		 * ```
+		 */
+		watch(callback: (value: T) => void): () => void {
+			externalWatchers.add(callback);
+			return () => { externalWatchers.delete(callback); };
+		},
 	};
 }

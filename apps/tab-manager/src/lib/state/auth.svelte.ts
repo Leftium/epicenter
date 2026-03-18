@@ -11,7 +11,6 @@ import type { CustomSessionFields } from '@epicenter/api/src/custom-session-fiel
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
-import { untrack } from 'svelte';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -122,36 +121,27 @@ function createAuthState() {
 		}),
 	);
 
+	// ─── Cross-context sync ───
+	// When another extension context clears the token (e.g. sign-out in popup),
+	// deactivate encryption and transition to signed-out.
+	authToken.watch((token) => {
+		if (!token && phase.status === 'signed-in') {
+			void authUser.set(undefined);
+			void workspace.deactivateEncryption();
+			phase = { status: 'signed-out' };
+		}
+	});
 
-	// ─── Effects ───
-
-	$effect.root(() => {
-		// Token cleared externally (e.g. sign-out in another extension context).
-		$effect(() => {
-			if (!authToken.current && phase.status === 'signed-in') {
-				void authUser.set(undefined);
-				void workspace.deactivateEncryption();
-				phase = { status: 'signed-out' };
-			}
-		});
-
-		// Token + user set externally (e.g. sign-in in another extension context).
-		$effect(() => {
-			if (
-				authToken.current &&
-				authUser.current &&
-				phase.status === 'signed-out'
-			) {
-				phase = { status: 'signed-in' };
-				const userId = authUser.current.id;
-				untrack(() => {
-					void (async () => {
-						const cached = await keyCache.get(userId);
-						if (cached) await workspace.activateEncryption(base64ToBytes(cached));
-					})();
-				});
-			}
-		});
+	// When another extension context signs in (sets token + user),
+	// restore encryption from the session cache.
+	authUser.watch((user) => {
+		if (authToken.current && user && phase.status === 'signed-out') {
+			phase = { status: 'signed-in' };
+			void (async () => {
+				const cached = await keyCache.get(user.id);
+				if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+			})();
+		}
 	});
 
 	// ─── Helpers (private) ───

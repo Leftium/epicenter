@@ -9,6 +9,7 @@
 import { ConsentPage } from './consent-page';
 import { DevicePage } from './device-page';
 import { AuthLayout } from './layout';
+import { SignedInPage } from './signed-in-page';
 import { SignInPage } from './sign-in-page';
 
 export function renderSignInPage() {
@@ -37,6 +38,20 @@ export function renderDevicePage({ userCode }: { userCode?: string }) {
 	return (
 		<AuthLayout title="Authorize Device — Epicenter">
 			<DevicePage userCode={userCode} />
+		</AuthLayout>
+	);
+}
+
+export function renderSignedInPage({
+	displayName,
+	email,
+}: {
+	displayName: string;
+	email: string;
+}) {
+	return (
+		<AuthLayout title="Signed in — Epicenter">
+			<SignedInPage displayName={displayName} email={email} />
 		</AuthLayout>
 	);
 }

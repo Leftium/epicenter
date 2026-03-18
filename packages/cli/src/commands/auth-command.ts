@@ -103,6 +103,7 @@ function buildLoginCommand(home: string) {
 			const displayName = response.user.name ?? response.user.email;
 			console.log(`\u2713 Logged in as ${displayName} (${response.user.email})`);
 		},
+	};
 }
 
 function buildLogoutCommand(home: string) {
@@ -136,6 +137,7 @@ function buildLogoutCommand(home: string) {
 			await clearSession(home, session.server);
 			console.log('\u2713 Logged out.');
 		},
+	};
 }
 
 function buildStatusCommand(home: string) {
@@ -175,6 +177,7 @@ function buildStatusCommand(home: string) {
 				console.warn('Warning: Could not verify session with remote server.');
 			}
 		},
+	};
 }
 
 /**

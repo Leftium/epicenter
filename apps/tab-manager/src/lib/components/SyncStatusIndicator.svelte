@@ -16,7 +16,7 @@
 	import { workspace } from '$lib/workspace';
 
 	function createSyncStatus() {
-		let current = $state<SyncStatus>('offline' as SyncStatus);
+		let current = $state<SyncStatus>({ phase: 'offline' });
 
 		$effect.root(() => {
 			$effect(() => {

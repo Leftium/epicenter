@@ -49,11 +49,15 @@ function createBookmarkState() {
 	 * Same rationale as saved-tab-state: the observer doesn't tell us what
 	 * changed, so a full re-read is the simplest correct approach.
 	 */
-	let bookmarks = $state<Bookmark[]>(readAll());
+	let bookmarks = $state<Bookmark[]>([]);
 
-	// Re-read on every Y.Doc change.
-	workspace.current.tables.bookmarks.observe(() => {
-		bookmarks = readAll();
+	$effect.root(() => {
+		$effect(() => {
+			bookmarks = readAll();
+			workspace.current.tables.bookmarks.observe(() => {
+				bookmarks = readAll();
+			});
+		});
 	});
 
 	return {

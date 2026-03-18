@@ -7,7 +7,7 @@ export {
 	discoverWorkspaces,
 	resolveWorkspace,
 	type WorkspaceResolution,
-} from './discovery';
+} from './config/resolve-config';
 export { createAuthApi, type AuthApi } from './auth/api';
 export { cacheDir, resolveEpicenterHome, workspacesDir } from './paths';
 export { loadConfig, type LoadConfigResult } from './config/load-config';

@@ -1,8 +1,8 @@
 import { mkdir, readdir, readlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { AnyWorkspaceClient, ProjectDir } from '@epicenter/workspace';
-import { loadClientFromPath } from './config/load-config';
-import { workspacesDir } from './paths';
+import { loadClientFromPath } from './load-config';
+import { workspacesDir } from '../paths';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EXPORTED TYPES
@@ -207,5 +207,3 @@ export async function discoverWorkspaces(home: string): Promise<{
 	return { clients, sources, discovered };
 }
 
-// Re-export from unified config loader for backward compatibility.
-export { loadClientFromPath } from './config/load-config';

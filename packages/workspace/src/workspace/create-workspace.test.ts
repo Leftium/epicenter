@@ -944,7 +944,7 @@ describe('workspace encryption', () => {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const client = createWorkspace(
 			defineWorkspace({ id: 'enc-test', tables: { posts } }),
-		);
+		).withEncryption();
 		return { client, key: generateEncryptionKey() };
 	}
 
@@ -953,19 +953,19 @@ describe('workspace encryption', () => {
 		expect(client.isEncrypted).toBe(false);
 	});
 
-	test('activateEncryption transitions mode to encrypted', () => {
+	test('activateEncryption transitions mode to encrypted', async () => {
 		const { client, key } = setupEncrypted();
-		client.activateEncryption(key);
+		await client.activateEncryption(key);
 		expect(client.isEncrypted).toBe(true);
 	});
 
-	test('activateEncryption enables encrypted writes that survive re-activation', () => {
+	test('activateEncryption enables encrypted writes that survive re-activation', async () => {
 		const { client, key } = setupEncrypted();
-		client.activateEncryption(key);
+		await client.activateEncryption(key);
 		client.tables.posts.set({ id: '1', title: 'Secret', _v: 1 });
 
-		// Re-activate with same key — data survives
-		client.activateEncryption(key);
+		// Re-activate with same key — dedup skips HKDF, data survives
+		await client.activateEncryption(key);
 
 		const result = client.tables.posts.get('1');
 		expect(result.status).toBe('valid');
@@ -974,14 +974,14 @@ describe('workspace encryption', () => {
 		}
 	});
 
-	test('activateEncryption with construction-time key starts as encrypted', () => {
+	test('activateEncryption with construction-time key starts stores as encrypted', () => {
 		const key = generateEncryptionKey();
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const client = createWorkspace(
 			defineWorkspace({ id: 'key-test', tables: { posts } }),
 			{ key },
-		);
+		).withEncryption();
+		// Construction-time key sets workspaceKey directly, so isEncrypted is true
 		expect(client.isEncrypted).toBe(true);
 	});
 });
-

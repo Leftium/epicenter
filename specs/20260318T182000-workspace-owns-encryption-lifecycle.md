@@ -350,7 +350,7 @@ Specifically:
 - [x] Add `EncryptionConfig` and `EncryptionMethods` types to types.ts
 - [x] Remove `activateEncryption`, `deactivateEncryption`, `isEncrypted` from base `WorkspaceClient` type
 - [x] Add `withEncryption(config)` to `WorkspaceClientBuilder` type—returns builder with encryption methods
-- [ ] Implement `.withEncryption()` in create-workspace.ts—dedup, generation counter, HKDF, onDeactivate hook
+- [x] Implement `.withEncryption()` in create-workspace.ts—dedup, generation counter, HKDF, onDeactivate hook
 - [x] Update `ExtensionContext` so extensions see encryption methods when configured
   > **Note**: No explicit change needed—`ExtensionContext` is `Omit<WorkspaceClient, ...>`, so removing encryption from `WorkspaceClient` automatically removes it. Encryption methods appear when the builder type is intersected with `EncryptionMethods`.
 - [ ] Update workspace.ts (tab-manager)—add `.withEncryption({ onDeactivate })` to builder chain

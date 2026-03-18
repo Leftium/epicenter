@@ -38,6 +38,7 @@
 
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
+import { deriveWorkspaceKey } from '../shared/crypto/index.js';
 import type { YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import {
 	createEncryptedYkvLww,
@@ -59,6 +60,8 @@ import type {
 	DocumentExtensionRegistration,
 	Documents,
 	DocumentsHelper,
+	EncryptionConfig,
+	EncryptionMethods,
 	ExtensionContext,
 	KvDefinitions,
 	TableDefinitions,
@@ -104,6 +107,13 @@ function startDisposeLifo(cleanups: (() => MaybePromise<void>)[]): void {
 			console.error('Extension cleanup error during rollback:', err);
 		}
 	}
+}
+
+/** Byte-level comparison for Uint8Array dedup. */
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
 }
 
 /**
@@ -287,29 +297,6 @@ export function createWorkspace<
 			awareness,
 			// Each extension entry is the exports object stored by reference.
 			extensions,
-			get isEncrypted() {
-				return workspaceKey !== undefined;
-			},
-			activateEncryption(key: Uint8Array) {
-				workspaceKey = key;
-				for (const store of encryptedStores) {
-					store.activateEncryption(key);
-				}
-			},
-			async deactivateEncryption() {
-				workspaceKey = undefined;
-				for (const store of encryptedStores) {
-					store.deactivateEncryption();
-				}
-				// Wipe persisted data (IndexedDB) — LIFO order
-				for (let i = state.clearDataCallbacks.length - 1; i >= 0; i--) {
-					try {
-						await state.clearDataCallbacks[i]?.();
-					} catch (err) {
-						console.error('Extension clearData error:', err);
-					}
-				}
-			},
 			batch(fn: () => void): void {
 				ydoc.transact(fn);
 			},
@@ -455,6 +442,67 @@ export function createWorkspace<
 					tags: options?.tags ?? [],
 				});
 				return buildClient(extensions, state);
+			},
+
+			withEncryption(config?: EncryptionConfig) {
+				let lastUserKey: Uint8Array | undefined;
+				let keyGeneration = 0;
+
+				Object.defineProperty(client, 'isEncrypted', {
+					get() {
+						return workspaceKey !== undefined;
+					},
+					enumerable: true,
+					configurable: true,
+				});
+
+				Object.assign(client, {
+					async activateEncryption(userKey: Uint8Array) {
+						// Byte-level dedup — skip if same key as last time
+						if (lastUserKey && bytesEqual(lastUserKey, userKey)) return;
+						lastUserKey = userKey;
+
+						const thisGen = ++keyGeneration;
+						try {
+							const wsKey = await deriveWorkspaceKey(userKey, id);
+							// Stale check — a newer call superseded this one
+							if (thisGen !== keyGeneration) return;
+							workspaceKey = wsKey;
+							for (const store of encryptedStores) {
+								store.activateEncryption(wsKey);
+							}
+						} catch (error) {
+							console.error('[workspace] Key derivation failed:', error);
+						}
+					},
+					async deactivateEncryption() {
+						++keyGeneration; // invalidate in-flight HKDF
+						lastUserKey = undefined;
+						workspaceKey = undefined;
+						for (const store of encryptedStores) {
+							store.deactivateEncryption();
+						}
+						// Wipe persisted data (IndexedDB) — LIFO order
+						for (let i = state.clearDataCallbacks.length - 1; i >= 0; i--) {
+							try {
+								await state.clearDataCallbacks[i]?.();
+							} catch (err) {
+								console.error('Extension clearData error:', err);
+							}
+						}
+						await config?.onDeactivate?.();
+					},
+				});
+
+				return builder as unknown as WorkspaceClientBuilder<
+					TId,
+						TTableDefinitions,
+						TKvDefinitions,
+						TAwarenessDefinitions,
+						TExtensions,
+						Record<string, never>
+					> &
+						EncryptionMethods;
 			},
 
 			withActions<TActions extends Actions>(

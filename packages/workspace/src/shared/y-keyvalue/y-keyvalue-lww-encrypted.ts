@@ -35,12 +35,12 @@
  * ## Encryption Lifecycle
  *
  * Encryption is governed by key presence (`currentKey`). There is no separate
- * state variable—`isEncrypted` is derived directly from `currentKey !== undefined`.
+ * state variable—encryption state is derived internally from `currentKey !== undefined`.
  *
  * ```
  *   No key (creation)          Key provided (unlock)
  *   ┌──────────────────┐       ┌──────────────────┐
- *   │  isEncrypted: false │──────▶│  isEncrypted: true  │◄── unlock(newKey)
+ *   │  key: undefined    │──────▶│  key: present       │◄── unlock(newKey)
  *   │  rw plaintext      │       │  rw encrypted      │
  *   └──────────────────┘       └──────────────────┘
  * ```
@@ -94,9 +94,9 @@ import {
 /**
  * Options for `createEncryptedYkvLww`.
  *
- * `key` seeds the initial encryption key. If provided, `isEncrypted` starts
- * as `true` and all writes are encrypted immediately. If omitted, the store
- * starts unencrypted. After creation, all key transitions go through `unlock()`.
+ * `key` seeds the initial encryption key. If provided, all writes are encrypted
+ * immediately. If omitted, the store starts unencrypted. After creation, all key
+ * transitions go through `unlock()`.
  */
 type EncryptedKvLwwOptions = {
 	key?: Uint8Array;
@@ -105,7 +105,7 @@ type EncryptedKvLwwOptions = {
 
 /**
  * Return type of `createEncryptedYkvLww`. Same API surface as `YKeyValueLww<T>`
- * plus encryption-specific members (`isEncrypted`, `failedDecryptCount`, `unlock`).
+ * plus encryption-specific members (`failedDecryptCount`, `unlock`).
  * All values exposed through this type are **plaintext**—encryption is fully
  * transparent to consumers.
  */
@@ -126,10 +126,6 @@ export type YKeyValueLwwEncrypted<T> = {
 	 * @param key - A 32-byte encryption key (required)
 	 */
 	unlock(key: Uint8Array): void;
-
-	/** Whether encryption is currently active. Derived from key presence. */
-	readonly isEncrypted: boolean;
-
 	/**
 	 * Number of entries that failed to decrypt. Computed as
 	 * `inner.map.size - map.size`. Entries are retried on `unlock()`.
@@ -166,11 +162,9 @@ export type YKeyValueLwwEncrypted<T> = {
  * ```typescript
  * // Start in plaintext, transition to encrypted when key arrives
  * const kv = createEncryptedYkvLww<TabData>(yarray);
- * kv.isEncrypted; // false
  * kv.set('tab-1', { url: '...' }); // stored as plaintext
  *
  * kv.unlock(encryptionKey);
- * kv.isEncrypted; // true
  * kv.set('tab-2', { url: '...' }); // stored as EncryptedBlob
  * ```
  */
@@ -444,9 +438,6 @@ export function createEncryptedYkvLww<T>(
 			const syntheticTransaction = undefined as unknown as Y.Transaction;
 			for (const handler of changeHandlers)
 				handler(syntheticChanges, syntheticTransaction);
-		},
-		get isEncrypted() {
-			return currentKey !== undefined;
 		},
 		get failedDecryptCount() {
 			return inner.map.size - map.size;

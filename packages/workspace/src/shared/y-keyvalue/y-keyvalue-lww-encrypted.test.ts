@@ -512,23 +512,27 @@ describe('createEncryptedYkvLww', () => {
 	});
 
 	describe('Mode transitions', () => {
-		test('starts in none when no key provided', () => {
+		test('starts unencrypted when no key provided', () => {
 			const ydoc = new Y.Doc({ guid: 'mode-no-key-start' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
-			expect(kv.isEncrypted).toBe(false);
+			kv.set('a', 'hello');
+			const raw = yarray.toArray().find((e) => e.key === 'a');
+			expect(isEncryptedBlob(raw?.val)).toBe(false);
 		});
 
-		test('starts in active when key provided', () => {
+		test('starts encrypted when key provided', () => {
 			const key = generateEncryptionKey();
 			const ydoc = new Y.Doc({ guid: 'mode-key-start' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
 
-			expect(kv.isEncrypted).toBe(true);
+			kv.set('a', 'hello');
+			const raw = yarray.toArray().find((e) => e.key === 'a');
+			expect(isEncryptedBlob(raw?.val)).toBe(true);
 		});
 
 		test('none → active via unlock(key)', () => {
@@ -538,9 +542,15 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
-			expect(kv.isEncrypted).toBe(false);
+			kv.set('before', 'plaintext');
+			const rawBefore = yarray.toArray().find((e) => e.key === 'before');
+			expect(isEncryptedBlob(rawBefore?.val)).toBe(false);
+
 			kv.unlock(key);
-			expect(kv.isEncrypted).toBe(true);
+
+			kv.set('after', 'encrypted');
+			const rawAfter = yarray.toArray().find((e) => e.key === 'after');
+			expect(isEncryptedBlob(rawAfter?.val)).toBe(true);
 		});
 	});
 
@@ -618,7 +628,6 @@ describe('createEncryptedYkvLww', () => {
 			kv.set('pt-2', 'plain-b');
 			kv.unlock(key);
 
-			expect(kv.isEncrypted).toBe(true);
 			expect(kv.get('pt-1')).toBe('plain-a');
 			expect(kv.get('pt-2')).toBe('plain-b');
 		});

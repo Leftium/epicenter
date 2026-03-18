@@ -154,8 +154,7 @@ export function createWorkspace<
 	// The workspace owns all encrypted KV stores so it can coordinate
 	// unlock across tables and KV simultaneously.
 	const encryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
-	// Workspace-level encryption key — isEncrypted derives from this,
-	// not from peeking at any individual store's internal state.
+	/** Whether a key has been provided — the single source of truth for encryption state. */
 	let workspaceKey: Uint8Array | undefined = options?.key;
 
 	// Create table stores + helpers (one encrypted KV per table)

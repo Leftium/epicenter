@@ -20,7 +20,7 @@
 	onMount(() => {
 		authState.checkSession();
 		// External sign-in handled by $effect in auth.svelte.ts
-		// Sync reconnect handled by workspace rebuild
+		// Sync naturally handles auth token changes (stable client, no rebuild needed)
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&

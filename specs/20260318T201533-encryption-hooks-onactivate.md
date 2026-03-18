@@ -1,6 +1,6 @@
 # Add `onActivate` hook to `.withEncryption()` — eliminate split cache responsibility
 
-Status: **Ready**
+Status: **In Progress**
 
 ## How We Got Here
 
@@ -83,11 +83,11 @@ The hook fires after HKDF derivation succeeds AND the stores are activated — n
 
 ## Todo
 
-- [ ] Simplify `KeyCache` interface: `set(userId, b64)`/`get(userId)` → `save(b64)`/`load()` (keep `clear()` as-is)
-- [ ] Update `key-cache.ts` JSDoc: remove userId references, update examples and "How It Fits" diagram
-- [ ] Add `onActivate` to `EncryptionConfig` type in `types.ts`
-- [ ] Update `EncryptionConfig` JSDoc: remove "only one hook" phrasing, document symmetric hooks
-- [ ] Update `EncryptionMethods` JSDoc: note that `onActivate` fires after successful activation (not on dedup skip)
+- [x] Simplify `KeyCache` interface: `set(userId, b64)`/`get(userId)` → `save(b64)`/`load()` (keep `clear()` as-is)
+- [x] Update `key-cache.ts` JSDoc: remove userId references, update examples and "How It Fits" diagram
+- [x] Add `onActivate` to `EncryptionConfig` type in `types.ts`
+- [x] Update `EncryptionConfig` JSDoc: remove "only one hook" phrasing, document symmetric hooks
+- [x] Update `EncryptionMethods` JSDoc: note that `onActivate` fires after successful activation (not on dedup skip)
 - [ ] Call `onActivate` in `withEncryption()` implementation in `create-workspace.ts` — after HKDF + store activation, before return
 - [ ] Update `withEncryption` inline comments: add onActivate to activation pipeline
 - [ ] Update module-level JSDoc encryption flow diagram in `create-workspace.ts`

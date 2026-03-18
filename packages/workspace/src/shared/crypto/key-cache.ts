@@ -1,7 +1,7 @@
 /**
  * Platform-agnostic interface for caching encryption keys.
  *
- * Stores the per-user encryption key as a base64 string—the same format
+ * Stores the encryption key as a base64 string—the same format
  * the auth session provides and `activateEncryption()` accepts. This avoids any
  * `Uint8Array ↔ base64` round-trips: the key enters as a string, caches
  * as a string, and passes straight back to `activateEncryption()` on reload.
@@ -21,32 +21,28 @@
  * ```typescript
  * // Chrome extension implementation
  * const chromeKeyCache: KeyCache = {
- *   async set(userId, keyBase64) {
- *     await chrome.storage.session.set({ [`ek:${userId}`]: keyBase64 });
+ *   async save(keyBase64) {
+ *     await chrome.storage.session.set({ ek: keyBase64 });
  *   },
- *   async get(userId) {
- *     const result = await chrome.storage.session.get(`ek:${userId}`);
- *     return result[`ek:${userId}`];
+ *   async load() {
+ *     const result = await chrome.storage.session.get('ek');
+ *     return result.ek;
  *   },
  *   async clear() {
- *     const all = await chrome.storage.session.get(null);
- *     const ekKeys = Object.keys(all).filter((k) => k.startsWith('ek:'));
- *     await chrome.storage.session.remove(ekKeys);
+ *     await chrome.storage.session.remove('ek');
  *   },
  * };
  *
  * // Browser implementation
  * const browserKeyCache: KeyCache = {
- *   async set(userId, keyBase64) {
- *     sessionStorage.setItem(`ek:${userId}`, keyBase64);
+ *   async save(keyBase64) {
+ *     sessionStorage.setItem('ek', keyBase64);
  *   },
- *   async get(userId) {
- *     return sessionStorage.getItem(`ek:${userId}`) ?? undefined;
+ *   async load() {
+ *     return sessionStorage.getItem('ek') ?? undefined;
  *   },
  *   async clear() {
- *     for (const key of Object.keys(sessionStorage)) {
- *       if (key.startsWith('ek:')) sessionStorage.removeItem(key);
- *     }
+ *     sessionStorage.removeItem('ek');
  *   },
  * };
  * ```
@@ -57,11 +53,11 @@
  * Server (auth session)
  *   │  encryptionKey: base64 string
  *   ▼
- * KeyCache.set(userId, keyBase64)
+ * KeyCache.save(keyBase64)
  *   │  stored locally as-is (no conversion needed)
  *   ▼
  * App startup (before auth roundtrip completes)
- *   │  KeyCache.get(userId) → base64 string (cached from last session)
+ *   │  KeyCache.load() → base64 string (cached from last session)
  *   │  passed directly to keyManager.activateEncryption(keyBase64)
  *   ▼
  * activateEncryption() → base64ToBytes → HKDF → activateEncryption
@@ -78,10 +74,10 @@
  * - {@link ./index.ts} — Encryption primitives (`base64ToBytes` for key decoding at the crypto boundary)
  */
 export type KeyCache = {
-	/** Store the base64-encoded encryption key for this user. */
-	set(userId: string, keyBase64: string): Promise<void>;
-	/** Retrieve the cached base64-encoded key, or undefined if not cached. */
-	get(userId: string): Promise<string | undefined>;
+	/** Save the base64-encoded encryption key. */
+	save(keyBase64: string): Promise<void>;
+	/** Load the cached base64-encoded key, or undefined if not cached. */
+	load(): Promise<string | undefined>;
 	/** Clear all cached keys (sign-out or user switch). */
 	clear(): Promise<void>;
 };

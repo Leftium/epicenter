@@ -980,10 +980,29 @@ export type WorkspaceClientWithActions<
 /**
  * Configuration for `.withEncryption()`.
  *
- * Only one hook: `onDeactivate`. Asymmetric risk—missing cache-clear leaks
- * keys (security bug), missing cache-set just costs a server roundtrip.
+ * Symmetric hooks for the two encryption transitions:
+ * - `onActivate` — fires after HKDF derivation succeeds and stores are activated
+ * - `onDeactivate` — fires after stores are cleared and IndexedDB is wiped
  */
 export type EncryptionConfig = {
+	/**
+	 * Called after `activateEncryption()` successfully derives the workspace key
+	 * and activates all encrypted stores. Does NOT fire on dedup skip (same key
+	 * passed twice) or when a stale derivation is discarded.
+	 *
+	 * Use for caching the user key so sidebar reopens don't need a server roundtrip.
+	 *
+	 * @param userKey - The raw user key bytes passed to `activateEncryption()`
+	 *
+	 * @example
+	 * ```typescript
+	 * createWorkspace(definition).withEncryption({
+	 *   onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
+	 *   onDeactivate: () => keyCache.clear(),
+	 * })
+	 * ```
+	 */
+	onActivate?: (userKey: Uint8Array) => MaybePromise<void>;
 	/**
 	 * Called after `deactivateEncryption()` completes store cleanup and IndexedDB wipe.
 	 * Use for platform-specific cleanup like clearing key caches.
@@ -1010,16 +1029,18 @@ export type EncryptionConfig = {
  * ```typescript
  * // Build (once, at module scope)
  * const workspace = createWorkspace(definition)
- *   .withEncryption({ onDeactivate: () => keyCache.clear() })
+ *   .withEncryption({
+ *     onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
+ *     onDeactivate: () => keyCache.clear(),
+ *   })
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createSyncExtension({ ... }));
  *
- * // Sign-in: activate + cache the key for sidebar reopens
+ * // Sign-in: just activate — onActivate caches the key automatically
  * await workspace.activateEncryption(base64ToBytes(session.encryptionKey));
- * await keyCache.set(userId, session.encryptionKey);
  *
  * // Sidebar reopen: restore from cache (no server roundtrip)
- * const cached = await keyCache.get(userId);
+ * const cached = await keyCache.load();
  * if (cached) await workspace.activateEncryption(base64ToBytes(cached));
  *
  * // Sign-out: deactivate (→ clear stores → wipe IndexedDB → keyCache.clear())
@@ -1032,7 +1053,7 @@ export type EncryptionMethods = {
 	/**
 	 * Activate encryption with a user-level key.
 	 *
-	 * Pipeline: dedup (same bytes → skip) → HKDF derivation → race check → apply to stores.
+	 * Pipeline: dedup (same bytes → skip) → HKDF derivation → race check → apply to stores → onActivate hook.
 	 *
 	 * The derivation is async (HKDF via `crypto.subtle`). A generation counter protects
 	 * against races: if the user signs out mid-derivation, the stale result is discarded

@@ -20,15 +20,19 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
 import { loadConfig } from '../config/load-config';
+import { resolveServer, resolveToken } from '../auth/store';
+import { resolveEpicenterHome } from '../paths';
 
 export type StartDaemonOptions = {
 	/** Directory containing epicenter.config.ts. Defaults to cwd. */
 	dir?: string;
-	/** Sync server URL. Defaults to EPICENTER_SERVER_URL env or ws://localhost:3913. */
+	/** Sync server URL. Resolved from: flag → env → stored session → ws://localhost:3913. */
 	serverUrl?: string;
+	/** Epicenter home directory (for auth store). Defaults to $EPICENTER_HOME or ~/.epicenter. */
+	home?: string;
 	/**
 	 * Token resolver. Called on each WebSocket connect/reconnect.
-	 * Defaults to EPICENTER_TOKEN env var → stored session → undefined.
+	 * Defaults to: EPICENTER_TOKEN env → stored session → undefined.
 	 */
 	getToken?: () => Promise<string | undefined>;
 };
@@ -39,27 +43,24 @@ export type StartDaemonOptions = {
  * Returns a cleanup function and the list of active clients.
  * The daemon stays alive until the returned `shutdown()` is called
  * or the process receives SIGINT/SIGTERM.
- *
- * @example
- * ```typescript
- * const { shutdown } = await startDaemon({ dir: './my-project' });
- * // Process stays alive...
- * // SIGINT → shutdown() called automatically
- * ```
  */
 export async function startDaemon(options: StartDaemonOptions = {}) {
 	const targetDir = options.dir ?? process.cwd();
+	const home = options.home ?? resolveEpicenterHome();
+
+	// Resolve server: flag → env → stored session → default
 	const serverUrl =
 		options.serverUrl ??
 		process.env.EPICENTER_SERVER_URL ??
+		(await resolveServer(home)) ??
 		'ws://localhost:3913';
 
 	const { configDir, definitions, clients } = await loadConfig(targetDir);
 
-	// Default token resolver: env var only (unified auth store integration comes later)
+	// Token resolver: custom → env → stored session for this server
 	const getToken =
 		options.getToken ??
-		(() => Promise.resolve(process.env.EPICENTER_TOKEN ?? undefined));
+		(() => resolveToken(home, serverUrl));
 
 	// ─── Wire extensions for raw definitions ───────────────────────────────
 

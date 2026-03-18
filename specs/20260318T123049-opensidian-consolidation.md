@@ -102,26 +102,42 @@ All imports updated to use `$lib/state/`, `$lib/utils/`, and new component paths
 
 ## Task List
 
-- [ ] 1a. Add dialog state (zone 2) + getters to fs-state.svelte.ts
-- [ ] 1b. Add dialog open actions (openCreate, openRename, openDelete) to fs-state.svelte.ts
-- [ ] 1c. Refactor CreateDialog.svelte to read state from fsState
-- [ ] 1d. Refactor RenameDialog.svelte to read state from fsState
-- [ ] 1e. Refactor DeleteConfirmation.svelte to read state from fsState
-- [ ] 1f. Move dialog instances to AppShell.svelte
-- [ ] 1g. Strip dialog code from FileTreeItem.svelte
-- [ ] 1h. Strip dialog code from Toolbar.svelte
-- [ ] 2a. Add withToast helper to fs-state.svelte.ts
-- [ ] 2b. Refactor 6 actions to use withToast
-- [ ] 3a. Add walkTree method to fs-state.svelte.ts
-- [ ] 3b. Refactor FileTree.svelte visibleIds to use walkTree
-- [ ] 3c. Refactor CommandPalette.svelte allFiles to use walkTree
-- [ ] 4a. Move fs-state.svelte.ts to state/ and file-icons.ts to utils/
-- [ ] 4b. Create tree/, editor/, dialogs/ directories and move components
-- [ ] 4c. Update all imports across all files
-- [ ] 5a. Add idToPath reverse map + getPathById to path-index.ts
-- [ ] 5b. Update fsState to use O(1) path lookups
-- [ ] Final: Run diagnostics and verify build
+- [x] 1a. Add dialog state (zone 2) + getters to fs-state.svelte.ts
+- [x] 1b. Add dialog open actions (openCreate, openRename, openDelete) to fs-state.svelte.ts
+- [x] 1c. Refactor CreateDialog.svelte to read state from fsState
+- [x] 1d. Refactor RenameDialog.svelte to read state from fsState
+- [x] 1e. Refactor DeleteConfirmation.svelte to read state from fsState
+- [x] 1f. Move dialog instances to AppShell.svelte
+- [x] 1g. Strip dialog code from FileTreeItem.svelte
+- [x] 1h. Strip dialog code from Toolbar.svelte
+- [x] 2a. Add withErrorToast helper to fs-state.svelte.ts
+- [x] 2b. Refactor 5 actions to use withErrorToast (readContent kept as-is)
+- [x] 3a. Add walkTree method to fs-state.svelte.ts
+- [x] 3b. Refactor FileTree.svelte visibleIds to use walkTree
+- [x] 3c. Refactor CommandPalette.svelte allFiles to use walkTree
+- [x] 4a. Move fs-state.svelte.ts to state/ and file-icons.ts to utils/
+- [x] 4b. Create tree/, editor/, dialogs/ directories and move components
+- [x] 4c. Update all imports across all files
+- [x] 5a. Add idToPath reverse map + getPathById to path-index.ts
+- [x] 5b. Update fsState to use O(1) path lookups
+- [x] Final: Build verified (vite build passes)
 
 ## Review
 
-_(To be filled after implementation)_
+### Changes Made
+
+**5 commits, 14 files changed:**
+
+1. `docs(opensidian)`: Spec plan + file renames (git mv)
+2. `refactor(opensidian)`: Core state—dialog state in zone 2, `withErrorToast` helper in zone 3, `walkTree<T>` generic method, O(1) `getPathById` in path-index.ts
+3. `refactor(opensidian)`: Dialog consolidation—3 dialogs read from fsState singleton (no props), rendered once in AppShell. FileTreeItem dropped from 101 to 85 lines, Toolbar from 155 to 134 lines
+4. `refactor(opensidian)`: walkTree usage—FileTree.visibleIds 15 to 4 lines, CommandPalette.allFiles 20 to 8 lines
+5. `refactor(opensidian)`: Import path updates for reorganized structure
+
+### Net Impact
+
+- **Eliminated**: 7 duplicate state vars, 7 duplicate helper fns, 6 duplicate dialog instances (300+ per-node instances to 3 total)
+- **Reduced**: 5 identical try/catch/toast blocks to 1 `withErrorToast` helper
+- **Reduced**: 2 independent 15-20 line tree traversals to reuse of `walkTree<T>`
+- **Improved**: O(n) path lookups to O(1) via `idToPath` reverse map in FileSystemIndex
+- **Organized**: Flat 13-component directory to grouped by concern (tree/, editor/, dialogs/)

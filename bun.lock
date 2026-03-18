@@ -360,6 +360,7 @@
         "yjs": "catalog:",
       },
       "devDependencies": {
+        "@epicenter/api": "workspace:*",
         "@types/yargs": "catalog:",
         "arktype": "catalog:",
         "typescript": "catalog:",

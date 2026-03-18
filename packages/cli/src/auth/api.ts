@@ -23,15 +23,21 @@ const CLIENT_ID = 'epicenter-runner';
 
 // ─── Response types ──────────────────────────────────────────────────────────
 
+/** Derived from Better Auth's `$Infer` — always matches the actual API response. */
+import type { Session, SessionUser } from '@epicenter/api/types';
+
+export type { Session, SessionUser } from '@epicenter/api/types';
+
+/**
+ * Response from `/auth/sign-in/email` with the bearer plugin active.
+ *
+ * The `token` field is added by the `bearer()` plugin and isn't
+ * reflected in Better Auth's `$Infer` types, so this is partially hand-written.
+ */
 export type SignInResponse = {
 	token: string;
 	expiresAt: string;
-	user: { id: string; email: string; name?: string };
-};
-
-export type SessionResponse = {
-	user: { id: string; email: string; name?: string };
-	session: { expiresAt: string };
+	user: SessionUser;
 };
 
 export type DeviceCodeResponse = {
@@ -126,7 +132,7 @@ export function createAuthApi(serverUrl: string, token?: string) {
 		 * Returns user profile and session expiry.
 		 */
 		getSession() {
-			return request<SessionResponse>('GET', '/auth/get-session');
+			return request<Session>('GET', '/auth/get-session');
 		},
 
 		// ── Device code flow (RFC 8628) ────────────────────────────────────

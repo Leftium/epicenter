@@ -111,7 +111,7 @@ for (const [columnName, value] of Object.entries(rowData)) {
 
 ```typescript
 const rowArray = tableMap.get(partialRow.id);
-if (!rowArray) return { status: 'not_found_locally' };
+if (!rowArray) return { status: 'not_found' };
 
 const rowKV = new YKeyValue(rowArray);
 for (const [columnName, value] of Object.entries(partialRow)) {
@@ -137,7 +137,7 @@ for (const [key, entry] of rowKV.map.entries()) {
 **`delete(id)`**:
 
 ```typescript
-if (!tableMap.has(id)) return { status: 'not_found_locally' };
+if (!tableMap.has(id)) return { status: 'not_found' };
 tableMap.delete(id);
 return { status: 'deleted' };
 ```

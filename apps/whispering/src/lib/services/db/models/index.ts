@@ -1,14 +1,6 @@
 // Recordings
-export type {
-	Recording,
-	RecordingStoredInIndexedDB,
-	RecordingsDbSchemaV1,
-	RecordingsDbSchemaV2,
-	RecordingsDbSchemaV3,
-	RecordingsDbSchemaV4,
-	RecordingsDbSchemaV5,
-	SerializedAudio,
-} from './recordings';
+export type { Recording } from './recordings';
+
 // Transformation Runs
 export {
 	TransformationRun,
@@ -20,18 +12,11 @@ export {
 	TransformationStepRunFailed,
 	TransformationStepRunRunning,
 } from './transformation-runs';
-// Transformation Steps
-export type {
-	TransformationStepV1,
-	TransformationStepV2,
-} from './transformation-steps';
-export {
-	generateDefaultTransformationStep,
-	TransformationStep,
-} from './transformation-steps';
-// Transformations
+
+// Transformation Steps (V1/V2 are internal — consumed only by web/dexie-database.ts)
+export { generateDefaultTransformationStep, TransformationStep } from './transformation-steps';
+export type { TransformationStepV1, TransformationStepV2 } from './transformation-steps';
+
+// Transformations (V1/V2 are internal — consumed only by web/dexie-database.ts)
+export { generateDefaultTransformation, Transformation } from './transformations';
 export type { TransformationV1, TransformationV2 } from './transformations';
-export {
-	generateDefaultTransformation,
-	Transformation,
-} from './transformations';

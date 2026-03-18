@@ -108,6 +108,7 @@ export { defineWorkspace } from './workspace/define-workspace';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { createWorkspace } from './workspace/create-workspace';
+export { DOCUMENTS_ORIGIN } from './workspace/create-document';
 
 // ════════════════════════════════════════════════════════════════════════════
 // LOWER-LEVEL APIs (Bring Your Own Y.Doc)
@@ -145,7 +146,6 @@ export type {
 	AwarenessHelper,
 	AwarenessState,
 	BaseRow,
-	DeleteResult,
 	DocumentClient,
 	DocumentConfig,
 	DocumentHandle,

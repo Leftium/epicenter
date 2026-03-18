@@ -1,19 +1,19 @@
 import { createQuery } from '@tanstack/svelte-query';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { rpc } from '$lib/query';
-import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 
 export function syncWindowAlwaysOnTopWithRecorderState() {
 	const getRecorderStateQuery = createQuery(() => ({
 		...rpc.recorder.getRecorderState.options,
-		enabled: settings.value['recording.mode'] === 'manual',
+		enabled: workspaceSettings.get('recording.mode') === 'manual',
 	}));
 
 	$effect(() => {
 		const setAlwaysOnTop = (value: boolean) =>
 			getCurrentWindow().setAlwaysOnTop(value);
-		switch (settings.value['system.alwaysOnTop']) {
+		switch (workspaceSettings.get('ui.alwaysOnTop')) {
 			case 'Always':
 				setAlwaysOnTop(true);
 				break;

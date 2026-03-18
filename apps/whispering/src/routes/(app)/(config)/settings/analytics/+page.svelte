@@ -2,17 +2,18 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Card from '@epicenter/ui/card';
 	import { Label } from '@epicenter/ui/label';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Switch } from '@epicenter/ui/switch';
 	import { rpc } from '$lib/query';
-	import { settings } from '$lib/state/settings.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 </script>
 
 <div class="space-y-8">
 	<!-- Page Header -->
-	<div class="space-y-2">
+	<SectionHeader.Root>
 		<div class="flex items-center gap-3">
-			<h3 class="text-xl font-semibold tracking-tight">Analytics</h3>
-			{#if settings.value['analytics.enabled']}
+			<SectionHeader.Title level={3} class="text-xl tracking-tight">Analytics</SectionHeader.Title>
+			{#if workspaceSettings.get('analytics.enabled')}
 				<Badge
 					variant="outline"
 					class="text-xs text-green-700 dark:text-green-400 border-green-200 dark:border-green-400/30"
@@ -28,11 +29,11 @@
 				</Badge>
 			{/if}
 		</div>
-		<p class="text-sm text-muted-foreground max-w-2xl">
+		<SectionHeader.Description class="max-w-2xl">
 			Help us understand which features are used most. We use anonymized event
 			logging to improve Whispering.
-		</p>
-	</div>
+		</SectionHeader.Description>
+	</SectionHeader.Root>
 
 	<!-- Main Toggle Section -->
 	<Card.Root class="transition-colors duration-200">
@@ -52,9 +53,9 @@
 				</div>
 				<Switch
 					id="analytics-toggle"
-					bind:checked={() => settings.value['analytics.enabled'],
+					bind:checked={() => workspaceSettings.get('analytics.enabled'),
 						(checked) => {
-							settings.updateKey('analytics.enabled', checked);
+							workspaceSettings.set('analytics.enabled', checked);
 
 							// Log the change (will only send if analytics is now enabled)
 							if (checked) {
@@ -189,7 +190,7 @@
 
 	<!-- Status Footer -->
 	<div class="flex items-center gap-2 text-xs">
-		{#if settings.value['analytics.enabled']}
+		{#if workspaceSettings.get('analytics.enabled')}
 			<div class="flex items-center gap-2 text-green-700 dark:text-green-400">
 				<div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
 				<span class="font-medium">Analytics active</span>

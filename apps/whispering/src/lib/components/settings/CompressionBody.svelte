@@ -15,7 +15,7 @@
 		FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 		FFMPEG_SMALLEST_COMPRESSION_OPTIONS,
 	} from '$lib/services/desktop/recorder/ffmpeg';
-	import { settings } from '$lib/state/settings.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
 
 	// Compression preset definitions (UI only - not stored in settings)
@@ -55,7 +55,7 @@
 	 */
 	function isPresetActive(presetKey: CompressionPresetKey): boolean {
 		return (
-			settings.value['transcription.compressionOptions'] ===
+			workspaceSettings.get('transcription.compressionOptions') ===
 			COMPRESSION_PRESETS[presetKey].options
 		);
 	}
@@ -72,14 +72,14 @@
 	const showRecommendedBadge = $derived(isCompressionRecommended());
 </script>
 
-<div class="space-y-4">
+<Field.Group>
 	<!-- Enable/Disable Toggle -->
 	<Field.Field orientation="horizontal">
 		<Checkbox
 			id="compression-enabled"
-			checked={settings.value['transcription.compressionEnabled']}
+			checked={workspaceSettings.get('transcription.compressionEnabled')}
 			onCheckedChange={(checked) =>
-				settings.updateKey(
+				workspaceSettings.set(
 					'transcription.compressionEnabled',
 					checked === true,
 				)}
@@ -104,10 +104,11 @@
 		</Field.Content>
 	</Field.Field>
 
-	{#if settings.value['transcription.compressionEnabled']}
+	{#if workspaceSettings.get('transcription.compressionEnabled')}
 		<!-- Preset Selection Badges -->
-		<div class="space-y-3">
-			<p class="text-base font-medium">Compression Presets</p>
+		<Field.Group>
+			<Field.Set>
+				<Field.Legend variant="label">Compression Presets</Field.Legend>
 			<div class="flex flex-wrap gap-2">
 				{#each Object.entries(COMPRESSION_PRESETS) as [ presetKey, preset ]}
 					<Button
@@ -123,7 +124,7 @@
 								: 'hover:bg-accent hover:text-accent-foreground',
 						)}
 						onclick={() =>
-							settings.updateKey(
+							workspaceSettings.set(
 								'transcription.compressionOptions',
 								preset.options,
 							)}
@@ -133,10 +134,10 @@
 					</Button>
 				{/each}
 			</div>
-			<p class="text-muted-foreground text-xs">
-				Choose a preset or customize FFmpeg options below
-			</p>
-		</div>
+				<Field.Description>
+					Choose a preset or customize FFmpeg options below
+				</Field.Description>
+			</Field.Set>
 
 		<!-- Custom Options Input -->
 		<Field.Field>
@@ -144,23 +145,23 @@
 			<div class="flex gap-2">
 				<Input
 					id="compression-options"
-					value={settings.value['transcription.compressionOptions']}
+					value={workspaceSettings.get('transcription.compressionOptions')}
 					oninput={(e) =>
-						settings.updateKey(
+						workspaceSettings.set(
 							'transcription.compressionOptions',
 							e.currentTarget.value,
 						)}
 					placeholder={FFMPEG_DEFAULT_COMPRESSION_OPTIONS}
 					class="flex-1"
 				/>
-				{#if settings.value['transcription.compressionOptions'] !== FFMPEG_DEFAULT_COMPRESSION_OPTIONS}
+				{#if workspaceSettings.get('transcription.compressionOptions') !== FFMPEG_DEFAULT_COMPRESSION_OPTIONS}
 					<Button
 						tooltip="Reset to default"
 						variant="ghost"
 						size="icon"
 						class="h-9 w-9"
 						onclick={() => {
-							settings.updateKey(
+							workspaceSettings.set(
 								'transcription.compressionOptions',
 								FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 							);
@@ -175,12 +176,14 @@
 				during transcription.
 			</Field.Description>
 		</Field.Field>
+		</Field.Group>
 
 		<!-- Command Preview -->
 		<div class="text-xs text-muted-foreground">
 			<p class="font-medium mb-1">Command Preview:</p>
 			<code class="bg-muted rounded px-2 py-1 text-xs break-all block">
-				ffmpeg -i input.wav {settings.value['transcription.compressionOptions']}
+				ffmpeg -i input.wav
+				{workspaceSettings.get('transcription.compressionOptions')}
 				output.opus
 			</code>
 		</div>
@@ -200,4 +203,4 @@
 			</Alert.Description>
 		</Alert.Root>
 	{/if}
-</div>
+</Field.Group>

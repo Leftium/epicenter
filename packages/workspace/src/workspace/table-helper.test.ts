@@ -359,21 +359,21 @@ describe('createTableHelper', () => {
 			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
-			const result = helper.delete('1');
+			helper.delete('1');
 
-			expect(result.status).toBe('deleted');
 			expect(helper.has('1')).toBe(false);
 		});
 
-		test('delete returns not_found_locally for missing row', () => {
+		test('delete is a no-op for missing row', () => {
 			const { ykv } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
 			const helper = createTableHelper(ykv, definition);
 
-			const result = helper.delete('nonexistent');
-			expect(result.status).toBe('not_found_locally');
+			// Should not throw
+			helper.delete('nonexistent');
+			expect(helper.has('nonexistent')).toBe(false);
 		});
 
 		test('transact deletes multiple rows atomically', () => {

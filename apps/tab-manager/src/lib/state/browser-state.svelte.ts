@@ -243,7 +243,136 @@ function createBrowserState() {
 		});
 	}
 
-	const whenReady = seedFromBrowser();
+	let whenReadyPromise = $state<Promise<void>>(Promise.resolve());
+
+	$effect.root(() => {
+		$effect(() => {
+			const c = workspace.current; // track dependency
+
+			// Clear stale state from previous client
+			windowStates.clear();
+			deviceId = null;
+
+			// Re-seed from browser + re-register Y.Doc observers
+			whenReadyPromise = seedFromBrowser();
+
+			c.tables.tabs.observe((changedIds, txn) => {
+				const transaction = txn as Transaction;
+				for (const id of changedIds) {
+					const result = c.tables.tabs.get(id);
+					switch (result.status) {
+						case 'not_found':
+							void (async () => {
+								if (transaction.origin === null) return;
+								if (!deviceId) return;
+								const parsed = parseTabId(id as TabCompositeId);
+								if (!parsed || parsed.deviceId !== deviceId) return;
+								try {
+									await browser.tabs.remove(parsed.tabId);
+								} catch {
+									// Tab may already be closed
+								}
+							})();
+							break;
+						case 'valid': {
+							const row = result.row;
+							void (async () => {
+								if (transaction.origin === null) return;
+								if (!deviceId) return;
+								if (row.deviceId !== deviceId) return;
+								if (!row.url) return;
+								if (recentlyAddedTabIds.has(row.tabId)) return;
+								try {
+									await browser.tabs.get(row.tabId);
+									return; // Tab already exists
+								} catch {
+									// Tab doesn't exist — create it
+								}
+								try {
+									await browser.tabs.create({ url: row.url });
+								} catch {
+									// Failed to create tab
+								}
+							})();
+							break;
+						}
+					}
+				}
+			});
+
+			c.tables.windows.observe((changedIds, txn) => {
+				const transaction = txn as Transaction;
+				for (const id of changedIds) {
+					const result = c.tables.windows.get(id);
+					switch (result.status) {
+						case 'not_found':
+							void (async () => {
+								if (transaction.origin === null) return;
+								if (!deviceId) return;
+								const parsed = parseWindowId(id as WindowCompositeId);
+								if (!parsed || parsed.deviceId !== deviceId) return;
+								try {
+									await browser.windows.remove(parsed.windowId);
+								} catch {
+									// Window may already be closed
+								}
+							})();
+							break;
+						case 'valid': {
+							const row = result.row;
+							void (async () => {
+								if (transaction.origin === null) return;
+								if (!deviceId) return;
+								if (row.deviceId !== deviceId) return;
+								try {
+									await browser.windows.get(row.windowId);
+									return; // Window exists
+								} catch {
+									// Window doesn't exist — create it
+								}
+								try {
+									await browser.windows.create({});
+								} catch {
+									// Failed to create window
+								}
+							})();
+							break;
+						}
+					}
+				}
+			});
+
+			if (browser.tabGroups) {
+				c.tables.tabGroups.observe((changedIds, txn) => {
+					const transaction = txn as Transaction;
+					for (const id of changedIds) {
+						const result = c.tables.tabGroups.get(id);
+						if (result.status === 'not_found') {
+							void (async () => {
+								if (transaction.origin === null) return;
+								if (!deviceId) return;
+								const parsed = parseGroupId(id as GroupCompositeId);
+								if (!parsed || parsed.deviceId !== deviceId) return;
+								try {
+									const groupTabs = await browser.tabs.query({
+										groupId: parsed.groupId,
+									});
+									const tabIds = groupTabs.flatMap((tab) =>
+										tab.id !== undefined ? [tab.id] : [],
+									);
+									await Promise.allSettled(
+										tabIds.map((tid) => browser.tabs.ungroup(tid)),
+									);
+								} catch {
+									// Failed to ungroup tabs
+								}
+							})();
+						}
+					}
+				});
+			}
+		});
+	});
 
 	// ── Tab Event Listeners ───────────────────────────────────────────────
 
@@ -470,138 +599,6 @@ function createBrowserState() {
 		});
 	}
 
-	authState.onExternalSignIn(() => seedFromBrowser());
-
-	// ── Y.Doc Observers — handle remote changes ─────────────────────────
-	// These fire when another device modifies the Y.Doc via WebSocket sync.
-	// Only remote-origin changes (transaction.origin !== null) trigger Chrome
-	// API calls. Local writes (origin === null) are our own → skip.
-
-	workspace.current.tables.tabs.observe((changedIds, txn) => {
-		const transaction = txn as Transaction;
-		for (const id of changedIds) {
-			const result = workspace.current.tables.tabs.get(id);
-			switch (result.status) {
-				case 'not_found':
-					// Tab deleted remotely → remove from browser
-					void (async () => {
-						if (transaction.origin === null) return;
-						if (!deviceId) return;
-						const parsed = parseTabId(id as TabCompositeId);
-						if (!parsed || parsed.deviceId !== deviceId) return;
-
-						try {
-							await browser.tabs.remove(parsed.tabId);
-						} catch {
-							// Tab may already be closed
-						}
-					})();
-					break;
-				case 'valid': {
-					const row = result.row;
-					void (async () => {
-						if (transaction.origin === null) return;
-						if (!deviceId) return;
-						if (row.deviceId !== deviceId) return;
-						if (!row.url) return;
-						if (recentlyAddedTabIds.has(row.tabId)) return;
-
-						try {
-							await browser.tabs.get(row.tabId);
-							return; // Tab already exists
-						} catch {
-							// Tab doesn't exist — create it
-						}
-
-						try {
-							await browser.tabs.create({ url: row.url });
-						} catch {
-							// Failed to create tab
-						}
-					})();
-					break;
-				}
-			}
-		}
-	});
-
-	workspace.current.tables.windows.observe((changedIds, txn) => {
-		const transaction = txn as Transaction;
-		for (const id of changedIds) {
-			const result = workspace.current.tables.windows.get(id);
-			switch (result.status) {
-				case 'not_found':
-					void (async () => {
-						if (transaction.origin === null) return;
-						if (!deviceId) return;
-						const parsed = parseWindowId(id as WindowCompositeId);
-						if (!parsed || parsed.deviceId !== deviceId) return;
-
-						try {
-							await browser.windows.remove(parsed.windowId);
-						} catch {
-							// Window may already be closed
-						}
-					})();
-					break;
-				case 'valid': {
-					const row = result.row;
-					void (async () => {
-						if (transaction.origin === null) return;
-						if (!deviceId) return;
-						if (row.deviceId !== deviceId) return;
-
-						// Check if this window already exists — skip updates, only create new
-						try {
-							await browser.windows.get(row.windowId);
-							return; // Window exists, this is an update not a create
-						} catch {
-							// Window doesn't exist — create it
-						}
-
-						try {
-							await browser.windows.create({});
-						} catch {
-							// Failed to create window
-						}
-					})();
-					break;
-				}
-			}
-		}
-	});
-
-	if (browser.tabGroups) {
-		workspace.current.tables.tabGroups.observe((changedIds, txn) => {
-			const transaction = txn as Transaction;
-			for (const id of changedIds) {
-				const result = workspace.current.tables.tabGroups.get(id);
-				if (result.status === 'not_found') {
-					void (async () => {
-						if (transaction.origin === null) return;
-						if (!deviceId) return;
-						const parsed = parseGroupId(id as GroupCompositeId);
-						if (!parsed || parsed.deviceId !== deviceId) return;
-
-						try {
-							const groupTabs = await browser.tabs.query({
-								groupId: parsed.groupId,
-							});
-							const tabIds = groupTabs.flatMap((tab) =>
-								tab.id !== undefined ? [tab.id] : [],
-							);
-							await Promise.allSettled(
-								tabIds.map((tid) => browser.tabs.ungroup(tid)),
-							);
-						} catch {
-							// Failed to ungroup tabs
-						}
-					})();
-				}
-			}
-		});
-	}
-
 	return {
 		/**
 		 * Resolves after the initial browser state seed completes.
@@ -618,7 +615,9 @@ function createBrowserState() {
 		 * {/await}
 		 * ```
 		 */
-		whenReady,
+		get whenReady() {
+			return whenReadyPromise;
+		},
 
 		/** All browser windows. */
 		get windows() {

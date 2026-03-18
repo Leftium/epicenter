@@ -16,10 +16,15 @@
 	import { workspace } from '$lib/workspace';
 
 	function createSyncStatus() {
-		let current = $state<SyncStatus>(workspace.current.extensions.sync.status);
+		let current = $state<SyncStatus>('offline' as SyncStatus);
 
-		workspace.current.extensions.sync.onStatusChange((status) => {
-			current = status;
+		$effect.root(() => {
+			$effect(() => {
+				current = workspace.current.extensions.sync.status;
+				workspace.current.extensions.sync.onStatusChange((status) => {
+					current = status;
+				});
+			});
 		});
 
 		return {

@@ -392,7 +392,12 @@ app.get('/sign-in', (c) => c.html(renderSignInPage()));
 app.get(
 	'/consent',
 	sValidator('query', type({ 'consent_code?': 'string', 'client_id?': 'string', 'scope?': 'string' })),
-	(c) => {
+	async (c) => {
+		const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
+		if (!session) {
+			const consentUrl = '/consent' + new URL(c.req.url).search;
+			return c.redirect(`/sign-in?callbackURL=${encodeURIComponent(consentUrl)}`);
+		}
 		const { consent_code: consentCode, client_id: clientId, scope } = c.req.valid('query');
 		return c.html(renderConsentPage({ consentCode, clientId, scope }));
 	},
@@ -400,8 +405,15 @@ app.get(
 app.get(
 	'/device',
 	sValidator('query', type({ 'user_code?': 'string' })),
-	(c) => {
+	async (c) => {
 		const { user_code: userCode } = c.req.valid('query');
+		const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
+		if (!session) {
+			const callbackURL = userCode
+				? `/device?user_code=${encodeURIComponent(userCode)}`
+				: '/device';
+			return c.redirect(`/sign-in?callbackURL=${encodeURIComponent(callbackURL)}`);
+		}
 		return c.html(renderDevicePage({ userCode }));
 	},
 );

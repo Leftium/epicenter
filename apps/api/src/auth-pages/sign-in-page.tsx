@@ -110,12 +110,19 @@ const SIGN_IN_SCRIPT = raw(`<script>
 			}
 
 			// If Better Auth returned a redirect (OAuth flow continuation),
-			// navigate there. Otherwise reload for a normal sign-in.
+			// navigate there. For non-OAuth sign-ins, honor callbackURL if
+			// present (e.g. redirected here from /device), otherwise reload.
 			var data = await res.json().catch(function() { return {}; });
 			if (data.url) {
 				window.location.href = data.url;
 			} else {
-				window.location.reload();
+				var params = new URLSearchParams(window.location.search);
+				var callbackURL = params.get('callbackURL');
+				if (callbackURL && callbackURL.startsWith('/')) {
+					window.location.href = callbackURL;
+				} else {
+					window.location.reload();
+				}
 			}
 		} catch (err) {
 			showError('Network error. Check your connection and try again.');

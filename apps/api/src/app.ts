@@ -21,7 +21,11 @@ import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
-import { devicePage } from './device-page';
+import {
+ 	renderConsentPage,
+	renderDevicePage,
+	renderSignInPage,
+} from './auth-pages';
 
 export { DocumentRoom } from './document-room';
 // Re-export so wrangler types generates DurableObjectNamespace<WorkspaceRoom|DocumentRoom>
@@ -383,11 +387,24 @@ app.get(
 	(c) => c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
-// Device authorization verification page (RFC 8628)
-app.get('/device', (c) => {
-	const userCode = c.req.query('user_code');
-	return c.html(devicePage(userCode));
-});
+// Auth pages — server-rendered Hono JSX
+app.get('/sign-in', (c) => c.html(renderSignInPage()));
+app.get(
+	'/consent',
+	sValidator('query', type({ 'consent_code?': 'string', 'client_id?': 'string', 'scope?': 'string' })),
+	(c) => {
+		const { consent_code: consentCode, client_id: clientId, scope } = c.req.valid('query');
+		return c.html(renderConsentPage({ consentCode, clientId, scope }));
+	},
+);
+app.get(
+	'/device',
+	sValidator('query', type({ 'user_code?': 'string' })),
+	(c) => {
+		const { user_code: userCode } = c.req.valid('query');
+		return c.html(renderDevicePage({ userCode }));
+	},
+);
 
 // Auth
 app.on(

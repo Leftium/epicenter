@@ -1312,6 +1312,23 @@ export type WorkspaceClient<
 	activateEncryption(key: Uint8Array): void;
 
 	/**
+	 * Deactivate encryption. Clears the key across all stores.
+	 *
+	 * After this call, `isEncrypted` returns `false` and new writes are plaintext.
+	 * Typically called after `clearAllData()` during sign-out.
+	 */
+	deactivateEncryption(): void;
+
+	/**
+	 * Delete all entries from all encrypted stores in a single Y.js transaction.
+	 *
+	 * Observers fire delete events for every entry. The Y.Doc itself is preserved—
+	 * only row data is removed. Typically called before `deactivateEncryption()`
+	 * during sign-out.
+	 */
+	clearAllData(): void;
+
+	/**
 	 * Execute multiple operations atomically in a single Y.js transaction.
 	 *
 	 * Groups all table and KV mutations inside the callback into one transaction.

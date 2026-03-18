@@ -686,4 +686,68 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.get('b')).toBe('beta');
 		});
 	});
+
+	describe('deactivateEncryption', () => {
+		test('clears key so new writes are plaintext', () => {
+			const key = generateEncryptionKey();
+			const ydoc = new Y.Doc({ guid: 'deactivate-plaintext-writes' });
+			const yarray =
+				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
+			const kv = createEncryptedYkvLww<string>(yarray, { key });
+
+			kv.set('enc', 'secret');
+			expect(isEncryptedBlob(yarray.toArray().find((e) => e.key === 'enc')?.val)).toBe(true);
+
+			kv.deactivateEncryption();
+
+			kv.set('plain', 'visible');
+			const plainEntry = yarray.toArray().find((e) => e.key === 'plain');
+			expect(isEncryptedBlob(plainEntry?.val)).toBe(false);
+			expect(plainEntry?.val).toBe('visible');
+		});
+
+		test('clears decrypted cache', () => {
+			const key = generateEncryptionKey();
+			const ydoc = new Y.Doc({ guid: 'deactivate-clears-cache' });
+			const yarray =
+				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
+			const kv = createEncryptedYkvLww<string>(yarray, { key });
+
+			kv.set('a', 'alpha');
+			kv.set('b', 'beta');
+			expect(kv.cachedSize).toBe(2);
+
+			kv.deactivateEncryption();
+			expect(kv.cachedSize).toBe(0);
+		});
+
+		test('encrypted entries unreadable after deactivation', () => {
+			const key = generateEncryptionKey();
+			const ydoc = new Y.Doc({ guid: 'deactivate-unreadable' });
+			const yarray =
+				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
+			const kv = createEncryptedYkvLww<string>(yarray, { key });
+
+			kv.set('secret', 'hidden');
+			kv.deactivateEncryption();
+
+			// Encrypted blob still in yarray but can't be decrypted without key
+			expect(kv.get('secret')).toBeUndefined();
+		});
+
+		test('reactivation restores access to encrypted entries', () => {
+			const key = generateEncryptionKey();
+			const ydoc = new Y.Doc({ guid: 'deactivate-reactivate' });
+			const yarray =
+				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
+			const kv = createEncryptedYkvLww<string>(yarray, { key });
+
+			kv.set('secret', 'hidden');
+			kv.deactivateEncryption();
+			expect(kv.get('secret')).toBeUndefined();
+
+			kv.activateEncryption(key);
+			expect(kv.get('secret')).toBe('hidden');
+		});
+	});
 });

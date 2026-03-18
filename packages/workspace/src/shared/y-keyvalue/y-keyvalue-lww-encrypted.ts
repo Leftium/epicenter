@@ -126,6 +126,13 @@ export type YKeyValueLwwEncrypted<T> = {
 	 * @param key - A 32-byte encryption key (required)
 	 */
 	activateEncryption(key: Uint8Array): void;
+
+	/**
+	 * Deactivate encryption. Clears the key and the decrypted cache.
+	 * After this call, new writes are plaintext and encrypted entries
+	 * are no longer readable until `activateEncryption()` is called again.
+	 */
+	deactivateEncryption(): void;
 	/**
 	 * Number of entries that failed to decrypt. Computed as
 	 * `inner.map.size - map.size`. Entries are retried on `activateEncryption()`.
@@ -434,6 +441,11 @@ export function createEncryptedYkvLww<T>(
 			const syntheticTransaction = undefined as unknown as Y.Transaction;
 			for (const handler of changeHandlers)
 				handler(syntheticChanges, syntheticTransaction);
+		},
+
+		deactivateEncryption() {
+			currentKey = undefined;
+			map.clear();
 		},
 		get failedDecryptCount() {
 			return inner.map.size - map.size;

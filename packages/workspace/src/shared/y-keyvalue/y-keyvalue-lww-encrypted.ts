@@ -50,8 +50,9 @@
  *
  * ## Key Management
  *
- * The encryption key is managed through `unlock(key)`.
- * The optional `key` in options seeds the initial key. After creation,
+ * The encryption key is managed through `unlock(key)`. The optional `key`
+ * in options seeds the initial key at construction time. After creation,
+ * all key transitions go through `unlock()`.
  *
  * ## Pending State
  *
@@ -356,12 +357,9 @@ export function createEncryptedYkvLww<T>(
 		},
 
 		*entries() {
-			const yieldedKeys = new Set<string>();
-
 			// Yield from inner.entries() (includes pending values during transaction gap),
 			// decrypting on the fly. Prefer wrapper.map cache when available.
 			for (const [key, entry] of inner.entries()) {
-				yieldedKeys.add(key);
 				const cached = map.get(key);
 				if (cached) {
 					yield [key, cached];

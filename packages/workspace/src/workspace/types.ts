@@ -1316,6 +1316,20 @@ export type WorkspaceClient<
 	 * Clears the encryption key across all stores, then wipes persisted
 	 * data (IndexedDB) via each extension's `clearData()` callback in LIFO order.
 	 * After this call, `isEncrypted` returns `false` and new writes are plaintext.
+	 *
+	 * ### Intentional asymmetry with `activateEncryption`
+	 *
+	 * This is a **one-way sign-out operation**, not a reversible pause:
+	 *
+	 * - `activateEncryption(key)` is **sync** — sets the key and decrypts stores.
+	 *   It does NOT load from IndexedDB (persistence loads at startup via `whenReady`).
+	 * - `deactivateEncryption()` is **async** — clears the key, clears store caches,
+	 *   then `await`s IndexedDB deletion. Leaving encrypted ciphertext on disk after
+	 *   the key is gone would be a data leak.
+	 *
+	 * If you call `deactivateEncryption()` then `activateEncryption(key)` in the
+	 * same session, in-memory Y.Doc state survives but IndexedDB is empty until
+	 * new writes flow through persistence.
 	 */
 	deactivateEncryption(): Promise<void>;
 

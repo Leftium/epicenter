@@ -88,9 +88,9 @@ The hook fires after HKDF derivation succeeds AND the stores are activated — n
 - [x] Add `onActivate` to `EncryptionConfig` type in `types.ts`
 - [x] Update `EncryptionConfig` JSDoc: remove "only one hook" phrasing, document symmetric hooks
 - [x] Update `EncryptionMethods` JSDoc: note that `onActivate` fires after successful activation (not on dedup skip)
-- [ ] Call `onActivate` in `withEncryption()` implementation in `create-workspace.ts` — after HKDF + store activation, before return
-- [ ] Update `withEncryption` inline comments: add onActivate to activation pipeline
-- [ ] Update module-level JSDoc encryption flow diagram in `create-workspace.ts`
+- [x] Call `onActivate` in `withEncryption()` implementation in `create-workspace.ts` — after HKDF + store activation, before return
+- [x] Update `withEncryption` inline comments: add onActivate to activation pipeline
+- [x] Update module-level JSDoc encryption flow diagram in `create-workspace.ts`
 - [ ] Update `apps/tab-manager/src/lib/state/key-cache.ts`: remove userId from `set`/`get`, rename to `save`/`load`, simplify storage key to just `'ek'`
 - [ ] Update `apps/tab-manager/src/lib/workspace.ts`: add `onActivate` to `.withEncryption()` config
 - [ ] Update `apps/tab-manager/src/lib/state/auth.svelte.ts`: delete `activateAndCacheKey`, remove all `keyCache.set`/`keyCache.get` calls, simplify restore-from-cache to use `keyCache.load()`

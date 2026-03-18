@@ -26,6 +26,7 @@
  *   → await deriveWorkspaceKey(userKey, workspaceId)  // HKDF
  *   → stale check (generation changed? discard)
  *   → apply derived key to all encrypted stores
+ *   → await onActivate hook (e.g. cache user key)
  *
  * deactivateEncryption()
  *   → ++generation (invalidate in-flight HKDF)
@@ -47,7 +48,10 @@
  *
  * // With encryption + extensions
  * const client = createWorkspace({ id: 'my-app', tables: { posts } })
- *   .withEncryption({ onDeactivate: () => keyCache.clear() })
+ *   .withEncryption({
+ *     onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
+ *     onDeactivate: () => keyCache.clear(),
+ *   })
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createSyncExtension({ ... }));
  *
@@ -517,6 +521,7 @@ export function createWorkspace<
 					//   3. HKDF: deriveWorkspaceKey(userKey, workspaceId) → derived key
 					//   4. Stale check (generation changed during HKDF → discard)
 					//   5. Apply derived key to all encrypted stores
+					//   6. onActivate hook (e.g. cache the user key for sidebar reopens)
 					//
 					// Why the generation counter matters: HKDF is async. If the user signs
 					// out and back in during derivation, a slow HKDF from the old key could
@@ -534,6 +539,7 @@ export function createWorkspace<
 							for (const store of encryptedStores) {
 								store.activateEncryption(wsKey);
 							}
+							await config?.onActivate?.(userKey);
 						} catch (error) {
 							console.error('[workspace] Key derivation failed:', error);
 						}

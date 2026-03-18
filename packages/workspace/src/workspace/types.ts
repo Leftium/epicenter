@@ -974,6 +974,56 @@ export type WorkspaceClientWithActions<
  *   }));
  * ```
  */
+
+/**
+ * Configuration for `.withEncryption()`.
+ *
+ * Only one hook: `onDeactivate`. Asymmetric risk—missing cache-clear leaks
+ * keys (security bug), missing cache-set just costs a server roundtrip.
+ */
+export type EncryptionConfig = {
+	/**
+	 * Called after `deactivateEncryption()` completes store cleanup and IndexedDB wipe.
+	 * Use for platform-specific cleanup like clearing key caches.
+	 *
+	 * @example
+	 * ```typescript
+	 * createWorkspace(definition).withEncryption({
+	 *   onDeactivate: () => keyCache.clear(),
+	 * })
+	 * ```
+	 */
+	onDeactivate?: () => MaybePromise<void>;
+};
+
+/**
+ * Encryption methods added to the workspace client by `.withEncryption()`.
+ *
+ * These methods are NOT present on the base `WorkspaceClient` — only when
+ * `.withEncryption()` is called. This prevents non-encryption consumers
+ * (Whispering, CLI) from seeing encryption methods on the type.
+ */
+export type EncryptionMethods = {
+	/** Whether encryption is currently active (a key has been derived and applied). */
+	readonly isEncrypted: boolean;
+	/**
+	 * Activate encryption with a user-level key.
+	 *
+	 * Performs byte-level dedup (same key → no-op), derives a per-workspace key
+	 * via HKDF, applies race protection via generation counter, then activates
+	 * encryption across all stores.
+	 *
+	 * @param userKey - Raw user key bytes (from `base64ToBytes(session.encryptionKey)`)
+	 */
+	activateEncryption(userKey: Uint8Array): Promise<void>;
+	/**
+	 * Deactivate encryption and wipe persisted data.
+	 *
+	 * Invalidates in-flight HKDF derivations, clears all store encryption,
+	 * wipes IndexedDB via clearData callbacks (LIFO), then calls `onDeactivate` hook.
+	 */
+	deactivateEncryption(): Promise<void>;
+};
 export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
@@ -1139,6 +1189,40 @@ export type WorkspaceClientBuilder<
 	>;
 
 	/**
+	 * Configure encryption for this workspace.
+	 *
+	 * Adds `activateEncryption`, `deactivateEncryption`, and `isEncrypted` to the
+	 * client. Without this call, those methods don't exist on the type—preventing
+	 * accidental use in non-encryption workspaces (Whispering, CLI).
+	 *
+	 * Batteries-included: handles HKDF derivation, byte-level dedup, race protection
+	 * via generation counter, and `onDeactivate` hook for platform-specific cleanup.
+	 *
+	 * Can be chained in any order with `.withExtension()`:
+	 *
+	 * @example
+	 * ```typescript
+	 * const workspace = createWorkspace(definition)
+	 *   .withEncryption({ onDeactivate: () => keyCache.clear() })
+	 *   .withExtension('persistence', indexeddbPersistence)
+	 *   .withExtension('sync', createSyncExtension({ ... }));
+	 *
+	 * await workspace.activateEncryption(userKeyBytes);
+	 * ```
+	 */
+	withEncryption(
+		config?: EncryptionConfig,
+	): WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions,
+		TDocExtensions
+	> &
+		EncryptionMethods;
+
+	/**
 	 * Attach actions to the workspace client. Terminal — no more chaining after this.
 	 *
 	 * Actions use a single map (not chaining) because they don't build on each other
@@ -1278,60 +1362,6 @@ export type WorkspaceClient<
 	 * Use `client.whenReady` to wait for all extensions to initialize.
 	 */
 	extensions: TExtensions;
-
-	/**
-	 * Whether encryption is currently active across all stores.
-	 *
-	 * - `false` — no key ever set, reads/writes pass through unencrypted
-	 * - `true` — encryption active, writes encrypt, reads decrypt
-	 *
-	 * All stores are kept in sync — this reflects the workspace-wide state.
-	 */
-	readonly isEncrypted: boolean;
-
-	/**
-	 * Activate encryption for the workspace with an encryption key.
-	 *
-	 * Decrypts all stores, retries failed entries, enables encryption, and
-	 * encrypts any existing plaintext entries in-place.
-	 *
-	 * ### Plaintext→encrypted migration
-	 *
-	 * Existing plaintext entries are encrypted in-place during `activateEncryption()`, so
-	 * legacy plaintext data is migrated automatically as soon as a key is provided.
-	 *
-	 * ### Wrong key handling
-	 *
-	 * If `activateEncryption()` is called with the wrong key, values that fail decryption are
-	 * skipped. `failedDecryptCount` reflects how many entries could not decrypt.
-	 * Calling `activateEncryption()` again with the correct key retries all failed entries.
-	 *
-	 * @param key - A 32-byte encryption key (e.g. from `deriveWorkspaceKey`)
-	 */
-	activateEncryption(key: Uint8Array): void;
-
-	/**
-	 * Deactivate encryption and wipe all persisted local data.
-	 *
-	 * Clears the encryption key across all stores, then wipes persisted
-	 * data (IndexedDB) via each extension's `clearData()` callback in LIFO order.
-	 * After this call, `isEncrypted` returns `false` and new writes are plaintext.
-	 *
-	 * ### Intentional asymmetry with `activateEncryption`
-	 *
-	 * This is a **one-way sign-out operation**, not a reversible pause:
-	 *
-	 * - `activateEncryption(key)` is **sync** — sets the key and decrypts stores.
-	 *   It does NOT load from IndexedDB (persistence loads at startup via `whenReady`).
-	 * - `deactivateEncryption()` is **async** — clears the key, clears store caches,
-	 *   then `await`s IndexedDB deletion. Leaving encrypted ciphertext on disk after
-	 *   the key is gone would be a data leak.
-	 *
-	 * If you call `deactivateEncryption()` then `activateEncryption(key)` in the
-	 * same session, in-memory Y.Doc state survives but IndexedDB is empty until
-	 * new writes flow through persistence.
-	 */
-	deactivateEncryption(): Promise<void>;
 
 	/**
 	 * Execute multiple operations atomically in a single Y.js transaction.

@@ -1178,8 +1178,7 @@ export type { Extension } from './lifecycle.js';
 /**
  * Context passed to workspace extension factories.
  *
- * This is a `WorkspaceClient` minus lifecycle methods (`dispose`, `clearLocalData`,
- * `[Symbol.asyncDispose]`)—extension factories receive the full client surface
+	 * This is a `WorkspaceClient` minus lifecycle methods (`dispose`,
  * extension factories receive the full client surface but don't control
  * the workspace's lifecycle. They return their own lifecycle hooks instead.
  *
@@ -1208,7 +1207,7 @@ export type ExtensionContext<
 		TAwarenessDefinitions,
 		TExtensions
 	>,
-	'dispose' | 'clearLocalData' | typeof Symbol.asyncDispose
+	'dispose' | typeof Symbol.asyncDispose
 >;
 
 /**
@@ -1312,12 +1311,13 @@ export type WorkspaceClient<
 	activateEncryption(key: Uint8Array): void;
 
 	/**
-	 * Deactivate encryption. Clears the key across all stores.
+	 * Deactivate encryption and wipe all persisted local data.
 	 *
+	 * Clears the encryption key across all stores, then wipes persisted
+	 * data (IndexedDB) via each extension's `clearData()` callback in LIFO order.
 	 * After this call, `isEncrypted` returns `false` and new writes are plaintext.
-	 * Typically called before `clearLocalData()` during sign-out.
 	 */
-	deactivateEncryption(): void;
+	deactivateEncryption(): Promise<void>;
 
 	/**
 	 * Execute multiple operations atomically in a single Y.js transaction.
@@ -1393,17 +1393,6 @@ export type WorkspaceClient<
 	 */
 	dispose(): Promise<void>;
 
-	/**
-	 * @internal
-	 *
-	 * Wipe all persisted data without tearing down the client.
-	 *
-	 * Called during sign-out to wipe persisted local state (IndexedDB)
-	 * without tearing down the client.
-	 *
-	 * Extension authors: this invokes your `clearData()` callback in LIFO order.
-	 */
-	clearLocalData(): Promise<void>;
 
 	/** Async dispose support */
 	[Symbol.asyncDispose](): Promise<void>;

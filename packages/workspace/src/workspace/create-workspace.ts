@@ -296,19 +296,12 @@ export function createWorkspace<
 					store.activateEncryption(key);
 				}
 			},
-			deactivateEncryption() {
+			async deactivateEncryption() {
 				workspaceKey = undefined;
 				for (const store of encryptedStores) {
 					store.deactivateEncryption();
 				}
-			},
-			batch(fn: () => void): void {
-				ydoc.transact(fn);
-			},
-			whenReady,
-			dispose,
-			async clearLocalData(): Promise<void> {
-				// LIFO clearData on extensions that support it
+				// Wipe persisted data (IndexedDB) — LIFO order
 				for (let i = state.clearDataCallbacks.length - 1; i >= 0; i--) {
 					try {
 						await state.clearDataCallbacks[i]?.();
@@ -317,6 +310,11 @@ export function createWorkspace<
 					}
 				}
 			},
+			batch(fn: () => void): void {
+				ydoc.transact(fn);
+			},
+			whenReady,
+			dispose,
 			[Symbol.asyncDispose]: dispose,
 		};
 

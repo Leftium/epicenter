@@ -146,8 +146,7 @@ function createAuthState() {
 	async function deactivateSession() {
 		++keyGeneration;
 		lastKeyBase64 = undefined;
-		workspace.deactivateEncryption();
-		await workspace.clearLocalData();
+		await workspace.deactivateEncryption();
 		await keyCache.clear();
 	}
 

@@ -654,20 +654,20 @@ export type TableHelper<TRow extends BaseRow> = {
 	/**
 	 * Watch for row changes.
 	 *
-	 * The callback receives a `Set<string>` of row IDs that changed. To
+	 * The callback receives a `ReadonlySet<TRow['id']>` of row IDs that changed. To
 	 * determine what happened, call `table.get(id)`:
 	 * - `status === 'not_found'` → the row was deleted
 	 * - Otherwise → the row was added or updated
 	 *
-   * Changes are batched per Y.Transaction. The `transaction` object exposes
-   * `origin` for distinguishing local writes (`null`) from remote syncs.
-   *
-   * @param callback - Receives changed IDs and transaction metadata
-   * @returns Unsubscribe function
-   */
-  observe(
-    callback: (changedIds: Set<string>, transaction: TransactionMeta) => void,
-  ): () => void;
+	 * Changes are batched per Y.Transaction. The `transaction` object exposes
+	 * `origin` for distinguishing local writes (`null`) from remote syncs.
+	 *
+	 * @param callback - Receives changed IDs and transaction metadata
+	 * @returns Unsubscribe function
+	 */
+	observe(
+		callback: (changedIds: ReadonlySet<TRow['id']>, transaction: TransactionMeta) => void,
+	): () => void;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// METADATA

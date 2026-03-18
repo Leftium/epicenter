@@ -210,11 +210,11 @@ function createAuthState() {
 	}
 
 	/**
-	 * Fetch the session to extract the encryption key, then rebuild workspace.
+	 * Fetch the session to extract the encryption key, then activate encryption.
 	 *
 	 * Better Auth's signIn/signUp responses don't include customSession
 	 * fields—only getSession() returns them. Awaited after successful
-	 * sign-in so the workspace rebuilds with encryption before the caller's
+	 * sign-in so encryption activates before the caller's
 	 * post-sign-in code runs. No timing gap.
 	 */
 	async function refreshEncryptionKey() {

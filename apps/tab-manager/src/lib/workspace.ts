@@ -26,6 +26,7 @@ import {
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import { bytesToBase64 } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -620,6 +621,7 @@ export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
 function buildWorkspaceClient() {
 	return createWorkspace(definition)
 		.withEncryption({
+			onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
 			onDeactivate: () => keyCache.clear(),
 		})
 		.withExtension('persistence', indexeddbPersistence)

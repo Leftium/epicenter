@@ -91,10 +91,10 @@ The hook fires after HKDF derivation succeeds AND the stores are activated — n
 - [x] Call `onActivate` in `withEncryption()` implementation in `create-workspace.ts` — after HKDF + store activation, before return
 - [x] Update `withEncryption` inline comments: add onActivate to activation pipeline
 - [x] Update module-level JSDoc encryption flow diagram in `create-workspace.ts`
-- [ ] Update `apps/tab-manager/src/lib/state/key-cache.ts`: remove userId from `set`/`get`, rename to `save`/`load`, simplify storage key to just `'ek'`
-- [ ] Update `apps/tab-manager/src/lib/workspace.ts`: add `onActivate` to `.withEncryption()` config
-- [ ] Update `apps/tab-manager/src/lib/state/auth.svelte.ts`: delete `activateAndCacheKey`, remove all `keyCache.set`/`keyCache.get` calls, simplify restore-from-cache to use `keyCache.load()`
-- [ ] Remove `import { keyCache }` from `auth.svelte.ts` (no longer needed there)
+- [x] Update `apps/tab-manager/src/lib/state/key-cache.ts`: remove userId from `set`/`get`, rename to `save`/`load`, simplify storage key to just `'ek'`
+- [x] Update `apps/tab-manager/src/lib/workspace.ts`: add `onActivate` to `.withEncryption()` config
+- [x] Update `apps/tab-manager/src/lib/state/auth.svelte.ts`: delete `activateAndCacheKey`, remove all `keyCache.set`/`keyCache.get` calls, simplify restore-from-cache to use `keyCache.load()`
+- [x] Keep `import { keyCache }` in `auth.svelte.ts` — still needed for `keyCache.load()` reads
 - [ ] Add test: `onActivate` fires after successful activation with the userKey
 - [ ] Add test: `onActivate` does NOT fire on dedup skip (same key twice)
 - [ ] Add test: `onActivate` does NOT fire when HKDF fails

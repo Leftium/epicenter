@@ -138,7 +138,7 @@ function createAuthState() {
 		if (authToken.current && user && phase.status === 'signed-out') {
 			phase = { status: 'signed-in' };
 			void (async () => {
-				const cached = await keyCache.get(user.id);
+				const cached = await keyCache.load();
 				if (cached) await workspace.activateEncryption(base64ToBytes(cached));
 			})();
 		}
@@ -167,18 +167,6 @@ function createAuthState() {
 	}
 
 	/**
-	 * Activate workspace encryption and cache the key for sidebar reopens.
-	 *
-	 * Centralizes the activate + cache pair so every activation path
-	 * is guaranteed to update the cache. Forgetting `keyCache.set`
-	 * silently breaks restore-from-cache on next sidebar open.
-	 */
-	async function activateAndCacheKey(encryptionKey: string, userId: string) {
-		await workspace.activateEncryption(base64ToBytes(encryptionKey));
-		await keyCache.set(userId, encryptionKey);
-	}
-
-	/**
 	 * Fetch the session to extract the encryption key, then activate encryption.
 	 *
 	 * Better Auth's signIn/signUp responses don't include customSession
@@ -189,7 +177,7 @@ function createAuthState() {
 	async function refreshEncryptionKey() {
 		const result = await getSession().catch(() => null);
 		if (result?.data?.encryptionKey) {
-			await activateAndCacheKey(result.data.encryptionKey, result.data.user.id);
+			await workspace.activateEncryption(base64ToBytes(result.data.encryptionKey));
 		}
 	}
 
@@ -397,7 +385,7 @@ function createAuthState() {
 			const userId = authUser.current?.id;
 			if (userId) {
 				void (async () => {
-					const cached = await keyCache.get(userId);
+				const cached = await keyCache.load();
 					if (cached) await workspace.activateEncryption(base64ToBytes(cached));
 				})();
 			}
@@ -438,7 +426,7 @@ function createAuthState() {
 			const user = serializeDates(data.user);
 			await authUser.set(user);
 			if (data.encryptionKey) {
-				await activateAndCacheKey(data.encryptionKey, data.user.id);
+				await workspace.activateEncryption(base64ToBytes(data.encryptionKey));
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);

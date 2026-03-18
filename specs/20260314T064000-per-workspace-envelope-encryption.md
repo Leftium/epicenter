@@ -146,7 +146,7 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 
 4. Client receives DEK
    ├── workspaceKeyCache.set('ws-1', base64ToBytes(dek))
-   └── wrapper.unlock(dek)  ← from hardening spec
+   └── wrapper.activateEncryption(dek)  ← from hardening spec
 
 5. First encrypted write
    └── kv.set('tab-1', data) → encryptValue(json, dek, aad) → inner CRDT
@@ -164,7 +164,7 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 ### Phase 2: Client Key Cache
 
 - [ ] **2.1** Create `WorkspaceKeyCache` interface: `set(workspaceId, key)`, `getSync(workspaceId)`, `clear()`. In-memory implementation (Map). Replaces per-user `KeyCache` for the encryption use case.
-- [ ] **2.2** Create `fetchWorkspaceKey(workspaceId)` async helper that calls the endpoint, decodes the DEK, stores in cache, and calls `wrapper.unlock(key)`.
+- [ ] **2.2** Create `fetchWorkspaceKey(workspaceId)` async helper that calls the endpoint, decodes the DEK, stores in cache, and calls `wrapper.activateEncryption(key)`.
 
 ### Phase 3: Per-App Wiring
 
@@ -176,7 +176,7 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 ### Phase 4: Key Rotation Support
 
 - [ ] **4.1** Add `rewrapWorkspaceKeys({ db, fromVersion, toVersion, limit })` — batch re-wrap DEKs when KEK version changes. Background-safe (idempotent, limit-based).
-- [ ] **4.2** Support a small keyring of active + retired KEK versions. Unwrap tries current version, falls back to `kek_version` from the row.
+- [ ] **4.2** Support a small keyring of encrypted + retired KEK versions. Unwrap tries current version, falls back to `kek_version` from the row.
 
 ### Phase 5: Workspace Sharing (Future)
 
@@ -259,7 +259,7 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 - `apps/api/src/app.ts` — current `deriveKeyFromSecret` and `customSession` (to be replaced)
 - `packages/workspace/src/shared/crypto/index.ts` — encryption primitives (unchanged)
 - `packages/workspace/src/shared/crypto/key-cache.ts` — `KeyCache` interface (to be extended/replaced with `WorkspaceKeyCache`)
-- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` — `lock()` and `unlock()` from hardening spec
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` — `lock()` and `activateEncryption()` from hardening spec
 - `specs/20260314T063000-encryption-wrapper-hardening.md` — prerequisite (mode system, AAD, error containment)
 - `specs/20260313T180100-client-side-encryption-wiring.md` — original wiring plan (Phases 1-3 still apply for per-app integration)
 - NIST SP 800-38D — AES-GCM nonce uniqueness requirements

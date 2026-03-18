@@ -2,7 +2,7 @@
  * Key Manager Factory Tests
  *
  * Verifies that `createKeyManager()` correctly bridges the async HKDF
- * derivation gap between auth sessions and workspace lock/unlock. Tests the
+ * derivation gap between auth sessions and workspace encryption activation. Tests the
  * three hard parts: async bridging, duplicate key dedup, and race protection
  * via generation counter.
  *
@@ -10,11 +10,11 @@
  * client's responsibility, not the key manager's.
  *
  * Key behaviors:
- * - unlock() derives workspace key via HKDF then calls unlock()
- * - clearKeys() clears keyCache and unlock dedup fingerprint
- * - Duplicate unlock() with same key is a no-op
- * - Race: rapid unlock() calls — only latest key wins
- * - restoreKeyFromCache() reads from keyCache and calls unlock()
+ * - activateEncryption() derives workspace key via HKDF then calls activateEncryption()
+ * - clearKeys() clears keyCache and activateEncryption dedup fingerprint
+ * - Duplicate activateEncryption() with same key is a no-op
+ * - Race: rapid activateEncryption() calls — only latest key wins
+ * - restoreKeyFromCache() reads from keyCache and calls activateEncryption()
  */
 
 import { describe, expect, mock, test } from 'bun:test';
@@ -29,7 +29,7 @@ import { createKeyManager, type KeyManagerTarget } from './key-manager';
 function setup() {
 	const client: KeyManagerTarget = {
 		id: 'test-workspace',
-		unlock: mock(() => {}),
+		activateEncryption: mock(() => {}),
 	};
 
 	const wiring = createKeyManager(client);
@@ -51,7 +51,7 @@ function setupWithKeyCache() {
 	};
 	const client: KeyManagerTarget = {
 		id: 'test-workspace',
-		unlock: mock(() => {}),
+		activateEncryption: mock(() => {}),
 	};
 
 	const wiring = createKeyManager(client, { keyCache });
@@ -65,47 +65,47 @@ function makeKey(): string {
 }
 
 // ============================================================================
-// unlock()
+// activateEncryption()
 // ============================================================================
 
-describe('unlock', () => {
-	test('calls deriveWorkspaceKey then unlock() with derived key', async () => {
+describe('activateEncryption', () => {
+	test('calls deriveWorkspaceKey then activateEncryption() with derived key', async () => {
 		const { client, wiring } = setup();
 
-		wiring.unlock(makeKey());
+		wiring.activateEncryption(makeKey());
 
 		// deriveWorkspaceKey is async — wait for microtask queue to flush
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
-		expect(client.unlock).toHaveBeenCalledTimes(1);
-		const unlockArg = (client.unlock as ReturnType<typeof mock>).mock
+		expect(client.activateEncryption).toHaveBeenCalledTimes(1);
+		const unlockArg = (client.activateEncryption as ReturnType<typeof mock>).mock
 			.calls[0]![0] as Uint8Array;
 		expect(unlockArg).toBeInstanceOf(Uint8Array);
 		expect(unlockArg.length).toBe(32);
 	});
 
-	test('duplicate key skip — same unlock() twice calls unlock() once', async () => {
+	test('duplicate key skip — same activateEncryption() twice calls activateEncryption() once', async () => {
 		const { client, wiring } = setup();
 		const key = makeKey();
 
-		wiring.unlock(key);
-		wiring.unlock(key);
+		wiring.activateEncryption(key);
+		wiring.activateEncryption(key);
 
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
-		expect(client.unlock).toHaveBeenCalledTimes(1);
+		expect(client.activateEncryption).toHaveBeenCalledTimes(1);
 	});
 
-	test('different keys each trigger unlock()', async () => {
+	test('different keys each trigger activateEncryption()', async () => {
 		const { client, wiring } = setup();
 
-		wiring.unlock(makeKey());
+		wiring.activateEncryption(makeKey());
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
-		wiring.unlock(makeKey());
+		wiring.activateEncryption(makeKey());
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
-		expect(client.unlock).toHaveBeenCalledTimes(2);
+		expect(client.activateEncryption).toHaveBeenCalledTimes(2);
 	});
 });
 
@@ -114,19 +114,19 @@ describe('unlock', () => {
 // ============================================================================
 
 describe('clearKeys', () => {
-	test('clears fingerprint so next unlock() with same key is not skipped', async () => {
+	test('clears fingerprint so next activateEncryption() with same key is not skipped', async () => {
 		const { client, wiring } = setup();
 		const key = makeKey();
 
-		wiring.unlock(key);
+		wiring.activateEncryption(key);
 		await new Promise((resolve) => setTimeout(resolve, 50));
-		expect(client.unlock).toHaveBeenCalledTimes(1);
+		expect(client.activateEncryption).toHaveBeenCalledTimes(1);
 
 		wiring.clearKeys();
 
-		wiring.unlock(key);
+		wiring.activateEncryption(key);
 		await new Promise((resolve) => setTimeout(resolve, 50));
-		expect(client.unlock).toHaveBeenCalledTimes(2);
+		expect(client.activateEncryption).toHaveBeenCalledTimes(2);
 	});
 });
 
@@ -135,19 +135,19 @@ describe('clearKeys', () => {
 // ============================================================================
 
 describe('race protection', () => {
-	test('rapid unlock() calls — only latest key wins', async () => {
+	test('rapid activateEncryption() calls — only latest key wins', async () => {
 		const { client, wiring } = setup();
 
-		// Fire three rapid unlock() calls
-		wiring.unlock(makeKey());
-		wiring.unlock(makeKey());
-		wiring.unlock(makeKey());
+		// Fire three rapid activateEncryption() calls
+		wiring.activateEncryption(makeKey());
+		wiring.activateEncryption(makeKey());
+		wiring.activateEncryption(makeKey());
 
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
-		// Only the last unlock() should result in unlock()
+		// Only the last activateEncryption() should result in activateEncryption()
 		// (first two are superseded by generation counter)
-		expect(client.unlock).toHaveBeenCalledTimes(1);
+		expect(client.activateEncryption).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -172,7 +172,7 @@ describe('restoreKeyFromCache', () => {
 		expect(result).toBe(false);
 	});
 
-	test('returns true and calls unlock() when cached key exists', async () => {
+	test('returns true and calls activateEncryption() when cached key exists', async () => {
 		const { client, wiring, store } = setupWithKeyCache();
 
 		// Pre-seed the cache with a base64 key
@@ -186,13 +186,13 @@ describe('restoreKeyFromCache', () => {
 		// Wait for HKDF derivation
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
-		expect(client.unlock).toHaveBeenCalledTimes(1);
+		expect(client.activateEncryption).toHaveBeenCalledTimes(1);
 	});
 
-	test('unlock() caches key when userId and keyCache provided', async () => {
+	test('activateEncryption() caches key when userId and keyCache provided', async () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
-		await wiring.unlock(makeKey(), 'user-1');
+		await wiring.activateEncryption(makeKey(), 'user-1');
 
 		expect(keyCache.set).toHaveBeenCalledTimes(1);
 	});
@@ -200,7 +200,7 @@ describe('restoreKeyFromCache', () => {
 	test('clearKeys() clears keyCache', async () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
-		wiring.unlock(makeKey(), 'user-1');
+		wiring.activateEncryption(makeKey(), 'user-1');
 
 		await wiring.clearKeys();
 

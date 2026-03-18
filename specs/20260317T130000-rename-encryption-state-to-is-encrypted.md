@@ -2,9 +2,9 @@
 
 ## Problem
 
-After eliminating locked mode, `EncryptionState` is a union of exactly two values: `'none' | 'active'`. This is a boolean in disguise—every usage site checks `=== 'active'` or `=== 'none'`, which is just `true`/`false`.
+After eliminating locked mode, `EncryptionState` is a union of exactly two values: `'plaintext' | 'encrypted'`. This is a boolean in disguise—every usage site checks `=== 'encrypted'` or `=== 'plaintext'`, which is just `true`/`false`.
 
-The internal state variable `encryptionState` also duplicates the key's presence. After locked mode removal, `encryptionState === 'active'` is always equivalent to `currentKey !== undefined`. The variable is redundant.
+The internal state variable `encryptionState` also duplicates the key's presence. After locked mode removal, `encryptionState === 'encrypted'` is always equivalent to `currentKey !== undefined`. The variable is redundant.
 
 ## Decision
 
@@ -17,17 +17,17 @@ The internal state variable `encryptionState` also duplicates the key's presence
 
 ```typescript
 // Type
-export type EncryptionState = 'none' | 'active';
+export type EncryptionState = 'plaintext' | 'encrypted';
 
 // Internal variable
-let encryptionState: EncryptionState = currentKey ? 'active' : 'none';
+let encryptionState: EncryptionState = currentKey ? 'encrypted' : 'plaintext';
 
 // Getter
 get encryptionState() { return encryptionState; }
 
 // Usage
-if (encryptionState === 'none') { /* plaintext path */ }
-workspace.current.encryptionState === 'active'
+if (encryptionState === 'plaintext') { /* plaintext path */ }
+workspace.current.encryptionState === 'encrypted'
 ```
 
 ### After
@@ -54,8 +54,8 @@ Note: internally, `set()` checks `!currentKey` directly (not `!isEncrypted`) sin
 - [x] In `y-keyvalue-lww-encrypted.ts`:
   - Remove the `EncryptionState` type export (line ~109)
   - Remove the `let encryptionState` variable (line ~218)
-  - Remove the `encryptionState = 'active'` assignment in `unlock()` (line ~415)
-  - Change `set()` from `if (encryptionState === 'none')` to `if (!currentKey)` (line ~333)
+  - Remove the `encryptionState = 'encrypted'` assignment in `activateEncryption()` (line ~415)
+  - Change `set()` from `if (encryptionState === 'plaintext')` to `if (!currentKey)` (line ~333)
   - Change the getter from `get encryptionState() { return encryptionState; }` to `get isEncrypted() { return currentKey !== undefined; }` (line ~465)
   - Update the `YKeyValueLwwEncrypted` type: `readonly encryptionState: EncryptionState` → `readonly isEncrypted: boolean` (line ~136)
   - Update JSDoc references to `encryptionState`
@@ -64,16 +64,16 @@ Note: internally, `set()` checks `!currentKey` directly (not `!isEncrypted`) sin
   - Change `readonly encryptionState: EncryptionState` → `readonly isEncrypted: boolean` on `WorkspaceClient` type (line ~1291)
 - [x] In `create-workspace.ts`:
   - Change `get encryptionState()` → `get isEncrypted()` (line ~288)
-  - Change `encryptedStores[0]?.encryptionState ?? 'none'` → `encryptedStores[0]?.isEncrypted ?? false` (line ~290)
+  - Change `encryptedStores[0]?.encryptionState ?? 'plaintext'` → `encryptedStores[0]?.isEncrypted ?? false` (line ~290)
 - [x] In `index.ts`:
   - Remove the `EncryptionState` re-export and its comment (lines ~123-124)
 - [x] Update tests in `y-keyvalue-lww-encrypted.test.ts`:
   - Remove `type EncryptionState` import
-  - Change `expect(kv.encryptionState).toBe('none' satisfies EncryptionState)` → `expect(kv.isEncrypted).toBe(false)`
-  - Change `expect(kv.encryptionState).toBe('active' satisfies EncryptionState)` → `expect(kv.isEncrypted).toBe(true)`
+  - Change `expect(kv.encryptionState).toBe('plaintext' satisfies EncryptionState)` → `expect(kv.isEncrypted).toBe(false)`
+  - Change `expect(kv.encryptionState).toBe('encrypted' satisfies EncryptionState)` → `expect(kv.isEncrypted).toBe(true)`
 - [x] Update tests in `create-workspace.test.ts`:
-  - Change `expect(client.encryptionState).toBe('none')` → `expect(client.isEncrypted).toBe(false)`
-  - Change `expect(client.encryptionState).toBe('active')` → `expect(client.isEncrypted).toBe(true)`
+  - Change `expect(client.encryptionState).toBe('plaintext')` → `expect(client.isEncrypted).toBe(false)`
+  - Change `expect(client.encryptionState).toBe('encrypted')` → `expect(client.isEncrypted).toBe(true)`
 
 ### apps/ — Consumer updates
 
@@ -96,9 +96,9 @@ Pure rename + simplification, no behavioral changes.
 
 | File | What changed |
 |---|---|
-| `y-keyvalue-lww-encrypted.ts` | Deleted `EncryptionState` type and `let encryptionState` variable. Getter now derives `isEncrypted` from `currentKey !== undefined`. `set()` guard changed to `!currentKey`. Removed redundant `encryptionState = 'active'` in `unlock()`. |
+| `y-keyvalue-lww-encrypted.ts` | Deleted `EncryptionState` type and `let encryptionState` variable. Getter now derives `isEncrypted` from `currentKey !== undefined`. `set()` guard changed to `!currentKey`. Removed redundant `encryptionState = 'encrypted'` in `activateEncryption()`. |
 | `types.ts` | Removed `EncryptionState` import. `readonly encryptionState: EncryptionState` → `readonly isEncrypted: boolean` on `WorkspaceClient`. |
-| `create-workspace.ts` | `get encryptionState()` → `get isEncrypted()`, fallback `'none'` → `false`. |
+| `create-workspace.ts` | `get encryptionState()` → `get isEncrypted()`, fallback `'plaintext'` → `false`. |
 | `index.ts` | Removed `EncryptionState` re-export and comment. |
 | `y-keyvalue-lww-encrypted.test.ts` | Removed `EncryptionState` import, 5 assertion sites updated to boolean checks. |
 | `create-workspace.test.ts` | 3 assertion sites updated to boolean checks. |

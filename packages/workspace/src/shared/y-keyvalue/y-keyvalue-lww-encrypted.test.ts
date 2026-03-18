@@ -420,7 +420,7 @@ describe('createEncryptedYkvLww', () => {
 	});
 
 	describe('Key becomes available mid-session', () => {
-		test('passthrough then encrypted via unlock', () => {
+		test('passthrough then encrypted via activateEncryption', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
@@ -430,7 +430,7 @@ describe('createEncryptedYkvLww', () => {
 			kv.set('old-2', 'beta');
 
 			const key = generateEncryptionKey();
-			kv.unlock(key);
+			kv.activateEncryption(key);
 			kv.set('new-1', 'encrypted-c');
 
 			expect(kv.get('old-1')).toBe('alpha');
@@ -447,8 +447,8 @@ describe('createEncryptedYkvLww', () => {
 			expect(isEncryptedBlob(newer?.val)).toBe(true);
 		});
 
-		test('unlock encrypts existing plaintext entries in-place', () => {
-			const ydoc = new Y.Doc({ guid: 'encrypt-plaintext-on-unlock' });
+		test('activateEncryption encrypts existing plaintext entries in-place', () => {
+			const ydoc = new Y.Doc({ guid: 'encrypt-plaintext-on-activate' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
@@ -460,7 +460,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(isEncryptedBlob(yarray.toArray()[1]?.val)).toBe(false);
 
 			const key = generateEncryptionKey();
-			kv.unlock(key);
+			kv.activateEncryption(key);
 
 			const entries = yarray.toArray();
 			const pt1 = entries.find((entry) => entry.key === 'pt-1');
@@ -535,9 +535,9 @@ describe('createEncryptedYkvLww', () => {
 			expect(isEncryptedBlob(raw?.val)).toBe(true);
 		});
 
-		test('none → active via unlock(key)', () => {
+		test('plaintext → encrypted via activateEncryption(key)', () => {
 			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'mode-none-to-active' });
+			const ydoc = new Y.Doc({ guid: 'mode-plaintext-to-encrypted' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
@@ -546,7 +546,7 @@ describe('createEncryptedYkvLww', () => {
 			const rawBefore = yarray.toArray().find((e) => e.key === 'before');
 			expect(isEncryptedBlob(rawBefore?.val)).toBe(false);
 
-			kv.unlock(key);
+			kv.activateEncryption(key);
 
 			kv.set('after', 'encrypted');
 			const rawAfter = yarray.toArray().find((e) => e.key === 'after');
@@ -614,8 +614,8 @@ describe('createEncryptedYkvLww', () => {
 		});
 	});
 
-	describe('Key transition (unlock)', () => {
-		test('plaintext entries remain accessible after unlock', () => {
+	describe('Key transition (activateEncryption)', () => {
+		test('plaintext entries remain accessible after activateEncryption', () => {
 			const key = generateEncryptionKey();
 			const ydoc = new Y.Doc({
 				guid: 'key-transition-plaintext-stays-readable',
@@ -626,13 +626,13 @@ describe('createEncryptedYkvLww', () => {
 
 			kv.set('pt-1', 'plain-a');
 			kv.set('pt-2', 'plain-b');
-			kv.unlock(key);
+			kv.activateEncryption(key);
 
 			expect(kv.get('pt-1')).toBe('plain-a');
 			expect(kv.get('pt-2')).toBe('plain-b');
 		});
 
-		test('new writes after unlock encrypt', () => {
+		test('new writes after activateEncryption encrypt', () => {
 			const key = generateEncryptionKey();
 			const ydoc = new Y.Doc({ guid: 'key-transition-new-writes-encrypt' });
 			const yarray =
@@ -640,7 +640,7 @@ describe('createEncryptedYkvLww', () => {
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
 			kv.set('before', 'plaintext-before-key');
-			kv.unlock(key);
+			kv.activateEncryption(key);
 			kv.set('after', 'encrypted-after-key');
 
 			const afterEntry = yarray
@@ -650,7 +650,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(isEncryptedBlob(afterEntry?.val)).toBe(true);
 		});
 
-		test('unlock rebuilds map and fires synthetic events', () => {
+		test('activateEncryption rebuilds map and fires synthetic events', () => {
 			const key1 = generateEncryptionKey();
 			const key2 = generateEncryptionKey();
 			const ydoc = new Y.Doc({ guid: 'key-transition-synthetic-events' });
@@ -667,7 +667,7 @@ describe('createEncryptedYkvLww', () => {
 					events.push({ key: entryKey, change });
 			});
 
-			kv.unlock(key2);
+			kv.activateEncryption(key2);
 			expect(kv.failedDecryptCount).toBe(2);
 
 			const deleteEvents = events.filter(
@@ -676,7 +676,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(deleteEvents.length).toBe(2);
 			expect(deleteEvents.map((event) => event.key).sort()).toEqual(['a', 'b']);
 
-			kv.unlock(key1);
+			kv.activateEncryption(key1);
 			expect(kv.failedDecryptCount).toBe(0);
 
 			const addEvents = events.filter((event) => event.change.action === 'add');

@@ -56,9 +56,9 @@ This creates problems:
 
 1. **Reactive indirection.** Auth already knows when the encryption key changes—it sets `encryptionKey` inside `signIn()`, `signUp()`, `checkSession()`. The effect is a secondary observer re-deriving information auth had at the call site.
 2. **Boolean flag for one-shot semantics.** Svelte 5 has no "run once when a reactive value appears" primitive. The `cacheRestoreAttempted` flag is the canonical workaround, but it's an imperative escape hatch in a declarative system.
-3. **Effect timing race.** When `userId` appears, both effects re-run. The main effect calls `lock()` (no key yet), then the fast-path's async `restoreKey` resolves and unlocks. The workspace flashes through a locked state for ~1–5ms. Correct (generation counter ensures unlock wins), but unnecessarily subtle.
+3. **Effect timing race.** When `userId` appears, both effects re-run. The main effect calls `lock()` (no key yet), then the fast-path's async `restoreKey` resolves and activates encryption. The workspace flashes through a locked state for ~1–5ms. Correct (generation counter ensures activateEncryption wins), but unnecessarily subtle.
 4. **Growing effect complexity.** Each new concern (cache restore, external sign-in, future key rotation) requires another effect or another branch in an existing effect. The reactive graph becomes harder to reason about.
-5. **Stale state bug.** `encryptionKey` is stored as `$state` inside auth. If any code path forgets to clear it (the 4xx path in `checkSession()`), the reactive effect sees a truthy key and keeps the workspace in `active` mode with a stale derived key. Storing the key as state creates an entire class of bugs.
+5. **Stale state bug.** `encryptionKey` is stored as `$state` inside auth. If any code path forgets to clear it (the 4xx path in `checkSession()`), the reactive effect sees a truthy key and keeps the workspace in `encrypted` mode with a stale derived key. Storing the key as state creates an entire class of bugs.
 
 ### Desired State
 
@@ -167,7 +167,7 @@ async checkSession() {
 }
 ```
 
-Auth doesn't import the key manager. The coupling is through the adapter interface. Fires exactly once (`checkSession` runs once at mount), at exactly the right time (after storage hydration, before network), and handles offline correctly (`restoreKey` fires, network fails, workspace unlocks from cache).
+Auth doesn't import the key manager. The coupling is through the adapter interface. Fires exactly once (`checkSession` runs once at mount), at exactly the right time (after storage hydration, before network), and handles offline correctly (`restoreKey` fires, network fails, workspace activates encryption from cache).
 
 ### Better Auth Session Behavior
 
@@ -278,7 +278,7 @@ Auth calls adapter → Adapter calls key manager. Two hops, no reactive indirect
 - [ ] **2.2** `bun run build` in `apps/tab-manager`
 - [ ] **2.3** Manual test: sign in → sidebar close → sidebar reopen → verify instant decrypt from cache
 - [ ] **2.4** Manual test: sign out → verify data wiped
-- [ ] **2.5** Manual test: offline → sidebar reopen → verify unlock from cache
+- [ ] **2.5** Manual test: offline → sidebar reopen → verify activateEncryption from cache
 
 ## Edge Cases
 
@@ -288,7 +288,7 @@ Auth calls adapter → Adapter calls key manager. Two hops, no reactive indirect
 2. `authState.checkSession()` also runs from `onMount`
 3. `checkSession()` awaits `Promise.all([authToken.whenReady, authUser.whenReady])`
 4. After hydration, if userId is truthy, calls `encryption?.restoreKey(userId)`
-5. If cache hits, `setKey()` → HKDF → unlock happens in ~1ms
+5. If cache hits, `setKey()` → HKDF → activateEncryption happens in ~1ms
 
 The `Promise.all` ensures the userId is available before attempting cache restore. No boolean flags needed.
 
@@ -315,7 +315,7 @@ The existing `onExternalSignIn` callback in auth fires when token + user appear 
 
 ### `wipe()` After Session Expiry
 
-1. User is signed in, workspace is in `active` mode
+1. User is signed in, workspace is in `encrypted` mode
 2. Session token expires server-side (after 7 days of inactivity)
 3. `checkSession()` runs on visibility change → server returns 4xx
 4. `checkSession()` calls `clearState()`, then `encryption?.wipe()`
@@ -364,7 +364,7 @@ All resolved:
 - [ ] Cache fast-path works: sidebar close → reopen → instant decrypt from cache
 - [ ] Sign-out wipes data (manual test)
 - [ ] Session expiry (4xx) wipes data and locks (manual test or mock)
-- [ ] Offline: sidebar reopen → unlock from cache via adapter `restoreKey`
+- [ ] Offline: sidebar reopen → activateEncryption from cache via adapter `restoreKey`
 - [ ] `bun run typecheck` in `apps/tab-manager`
 - [ ] `bun run build` succeeds in `apps/tab-manager`
 

@@ -31,7 +31,7 @@ ykv.map.size                                   // count
 
 This creates problems:
 
-1. **Quarantine adds a third map for minimal value.** `unlock()` already does a full `map.clear()` + rebuild from `inner.map` (lines 485–492). Every entry is re-decrypted regardless of quarantine state. The quarantine map's only functional contribution is the exposed `ReadonlyMap` so consumers can show "N entries failed to decrypt"—but that count is computable as `inner.map.size - map.size` without a dedicated map.
+1. **Quarantine adds a third map for minimal value.** `activateEncryption()` already does a full `map.clear()` + rebuild from `inner.map` (lines 485–492). Every entry is re-decrypted regardless of quarantine state. The quarantine map's only functional contribution is the exposed `ReadonlyMap` so consumers can show "N entries failed to decrypt"—but that count is computable as `inner.map.size - map.size` without a dedicated map.
 
 2. **Raw `map` property leaks the internal cache.** `YKeyValueLwwEncrypted<T>` exposes `readonly map: Map<string, YKeyValueLwwEntry<T>>`. TypeScript's `readonly` prevents reassignment but not mutation—any consumer with a type assertion can call `.set()` or `.clear()` on the wrapper's internal cache. A method returning an iterator is safer.
 
@@ -54,7 +54,7 @@ kv.cachedSize            // → 5
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Kill quarantine map entirely | Yes | `unlock()` already rebuilds from scratch. Quarantine adds 15 lines of set/delete/clear bookkeeping across 5 call sites for one scenario (wrong-key → correct-key without page reload). |
+| Kill quarantine map entirely | Yes | `activateEncryption()` already rebuilds from scratch. Quarantine adds 15 lines of set/delete/clear bookkeeping across 5 call sites for one scenario (wrong-key → correct-key without page reload). |
 | Replace with `failedDecryptCount` getter | Computed `inner.map.size - map.size` | Zero storage, always accurate, covers the UI warning use case. |
 | Expose iteration via method | `cachedEntries()` returning `IterableIterator` | Prevents external mutation of internal map. Matches how `entries()` already works. |
 | Expose size via getter | `cachedSize` returning `number` | Read-only by design. No `.size` on a raw map. |
@@ -122,7 +122,7 @@ kv.cachedSize            // → 5
 - [x] **1.2** In `tryDecryptEntry` (lines 301–320): remove `quarantine.set(key, entry)` and `quarantine.delete(key)`. The function already returns `undefined` on failure—callers already handle this.
 - [x] **1.3** In observer callback (lines 355–381): remove `quarantine.delete(key)` on delete action (line 361)
 - [x] **1.4** In `delete()` (lines 428–432): remove `quarantine.delete(key)` (line 430)
-- [x] **1.5** In `unlock()` (lines 479–528): remove `quarantine.clear()` (line 486)
+- [x] **1.5** In `activateEncryption()` (lines 479–528): remove `quarantine.clear()` (line 486)
 - [x] **1.6** Replace `quarantine` property in return object with `failedDecryptCount` getter:
   ```typescript
   get failedDecryptCount() {
@@ -169,13 +169,13 @@ kv.cachedSize            // → 5
 
 ### Wrong key → correct key without page reload
 
-1. User signs in → `unlock(wrongKey)` → entries fail to decrypt
+1. User signs in → `activateEncryption(wrongKey)` → entries fail to decrypt
 2. `failedDecryptCount` returns `inner.map.size - map.size` (shows N failed)
-3. User signs in with correct key → `unlock(correctKey)`
-4. `unlock()` does `map.clear()` + full rebuild from `inner.map` — entries decrypt successfully
+3. User signs in with correct key → `activateEncryption(correctKey)`
+4. `activateEncryption()` does `map.clear()` + full rebuild from `inner.map` — entries decrypt successfully
 5. `failedDecryptCount` returns 0
 
-No quarantine map needed. The full rebuild in `unlock()` handles retry implicitly.
+No quarantine map needed. The full rebuild in `activateEncryption()` handles retry implicitly.
 
 ### Corrupted blob during observation
 
@@ -224,13 +224,13 @@ Option: add a `cachedKeys()` method that yields only keys. Low priority — `cle
 4. **Test assertions on quarantine behavior — rewrite or remove?**
    - Tests like `expect(kv.quarantine?.has('corrupt')).toBe(true)` need updating
    - Could replace with `expect(kv.failedDecryptCount).toBe(1)` — less granular but sufficient
-   - The "unlock rebuilds map and fires synthetic events" test (line 730) specifically tests quarantine→retry. This test still works because `failedDecryptCount` reflects the same state.
+   - The "activateEncryption rebuilds map and fires synthetic events" test (line 730) specifically tests quarantine→retry. This test still works because `failedDecryptCount` reflects the same state.
    - **Recommendation**: Rewrite to use `failedDecryptCount`. The specific key-level quarantine checks are testing implementation, not behavior.
 
 ## Success Criteria
 
 - [ ] `quarantine` map removed — no references in source code
-- [ ] `failedDecryptCount` getter returns correct count in all modes (none, active, locked)
+- [ ] `failedDecryptCount` getter returns correct count in all modes (plaintext, encrypted, locked)
 - [ ] `ykv.map` property removed from `YKeyValueLwwEncrypted<T>` type
 - [ ] All 7 `create-table.ts` call sites use method-based access
 - [ ] All existing tests pass (rewritten where needed)
@@ -271,7 +271,7 @@ Removed the quarantine map and replaced it with a computed `failedDecryptCount` 
 
 ### Deviations from Spec
 
-- Also updated `types.ts` JSDoc for `WorkspaceClient.unlock()` which referenced quarantine — not in the spec but necessary for consistency.
+- Also updated `types.ts` JSDoc for `WorkspaceClient.activateEncryption()` which referenced quarantine — not in the spec but necessary for consistency.
 - Kept `wrapper.map` references in internal JSDoc comments (variable is still called `map` internally) — only public API references were updated to `cachedEntries()`.
 
 ### Follow-up Work

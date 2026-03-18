@@ -936,7 +936,7 @@ describe('createWorkspace', () => {
 });
 
 // ============================================================================
-// Workspace Encryption (unlock / mode)
+// Workspace Encryption (activateEncryption / mode)
 // ============================================================================
 
 describe('workspace encryption', () => {
@@ -948,24 +948,24 @@ describe('workspace encryption', () => {
 		return { client, key: generateEncryptionKey() };
 	}
 
-	test('mode starts as none when no key provided', () => {
+	test('mode starts as plaintext when no key provided', () => {
 		const { client } = setupEncrypted();
 		expect(client.isEncrypted).toBe(false);
 	});
 
-	test('unlock transitions mode to active', () => {
+	test('activateEncryption transitions mode to encrypted', () => {
 		const { client, key } = setupEncrypted();
-		client.unlock(key);
+		client.activateEncryption(key);
 		expect(client.isEncrypted).toBe(true);
 	});
 
-	test('unlock enables encrypted writes that survive re-unlock', () => {
+	test('activateEncryption enables encrypted writes that survive re-activation', () => {
 		const { client, key } = setupEncrypted();
-		client.unlock(key);
+		client.activateEncryption(key);
 		client.tables.posts.set({ id: '1', title: 'Secret', _v: 1 });
 
-		// Re-unlock with same key — data survives
-		client.unlock(key);
+		// Re-activate with same key — data survives
+		client.activateEncryption(key);
 
 		const result = client.tables.posts.get('1');
 		expect(result.status).toBe('valid');
@@ -974,7 +974,7 @@ describe('workspace encryption', () => {
 		}
 	});
 
-	test('unlock with construction-time key starts as active', () => {
+	test('activateEncryption with construction-time key starts as encrypted', () => {
 		const key = generateEncryptionKey();
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const client = createWorkspace(

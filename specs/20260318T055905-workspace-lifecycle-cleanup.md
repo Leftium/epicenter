@@ -10,7 +10,7 @@ After eliminating locked mode, the sign-out lifecycle has two issues:
 
 1. **Key manager reaches into workspace data.** `keyManager.wipe()` calls `client.clearLocalData()` — a workspace concern that doesn't belong in the key manager. The key manager should only manage keys.
 
-2. **Browser-state listeners keep firing after sign-out.** Chrome event listeners (`tabs.onCreated`, `tabs.onUpdated`, etc.) write tab data into the new empty workspace as plaintext before the user signs back in. Functionally correct (encrypt-on-unlock handles it) but leaves a window of plaintext data in IndexedDB.
+2. **Browser-state listeners keep firing after sign-out.** Chrome event listeners (`tabs.onCreated`, `tabs.onUpdated`, etc.) write tab data into the new empty workspace as plaintext before the user signs back in. Functionally correct (encrypt-on-activateEncryption handles it) but leaves a window of plaintext data in IndexedDB.
 
 ## Changes
 
@@ -23,11 +23,11 @@ After eliminating locked mode, the sign-out lifecycle has two issues:
 async reset() {
     await client.clearLocalData();  // wipe IndexedDB persistence
     await client.dispose();         // tear down sync, Y.Doc
-    client = buildWorkspaceClient(); // fresh instance in 'none' mode
+    client = buildWorkspaceClient(); // fresh instance in 'plaintext' mode
 }
 ```
 
-After reset, the new workspace is a clean slate — empty tables, no encryption, no sync connection. Signing in triggers `unlock()` which sets up encryption.
+After reset, the new workspace is a clean slate — empty tables, no encryption, no sync connection. Signing in triggers `activateEncryption()` which sets up encryption.
 
 **`keyManager.wipe()` → `keyManager.clearKeys()`:**
 
@@ -48,14 +48,14 @@ Rename because the method no longer "wipes" workspace data. It only clears key s
 // BEFORE:
 type KeyManagerTarget = {
     readonly id: string;
-    unlock(key: Uint8Array): void;
+    activateEncryption(key: Uint8Array): void;
     clearLocalData(): Promise<void>;  // ← remove
 };
 
 // AFTER:
 type KeyManagerTarget = {
     readonly id: string;
-    unlock(key: Uint8Array): void;
+    activateEncryption(key: Uint8Array): void;
 };
 ```
 
@@ -65,14 +65,14 @@ type KeyManagerTarget = {
 // BEFORE:
 const keyManagerTarget = {
     get id() { return workspace.current.id; },
-    unlock(key) { workspace.current.unlock(key); },
+    activateEncryption(key) { workspace.current.activateEncryption(key); },
     async clearLocalData() { await workspace.current.clearLocalData(); },  // ← remove
 };
 
 // AFTER:
 const keyManagerTarget = {
     get id() { return workspace.current.id; },
-    unlock(key) { workspace.current.unlock(key); },
+    activateEncryption(key) { workspace.current.activateEncryption(key); },
 };
 ```
 

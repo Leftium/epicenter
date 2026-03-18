@@ -116,7 +116,7 @@ All changes are pure renames — no behavior changes.
 
 ### Wave 4: Document Encryption Behaviors
 
-- [x] JSDoc on `unlock()` — plaintext entries stay plaintext, new writes encrypt, mixed data handled
+- [x] JSDoc on `activateEncryption()` — plaintext entries stay plaintext, new writes encrypt, mixed data handled
 - [x] JSDoc on `lock()` — soft lock (Bitwarden model), key cleared, cache stays, for hard wipe use `clearLocalData()`
 - [x] Inline comment on `refreshEncryptionKey()` — fire-and-forget gap
 
@@ -171,7 +171,7 @@ Full list in Wave 1 checklist above.
 
 ## Deliberately Excluded
 
-- Re-encrypting legacy plaintext data on unlock — separate migration feature
+- Re-encrypting legacy plaintext data on activateEncryption — separate migration feature
 - KeyCache clearing in `clearLocalData()` — interface not yet implemented
 - Renaming `ydoc.destroy()` — that's Yjs's API, not ours
 - Docs that use "destroy" in general prose (not our API) — left as-is

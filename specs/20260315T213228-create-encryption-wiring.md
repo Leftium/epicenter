@@ -12,7 +12,7 @@ Extract a framework-agnostic `createEncryptionWiring()` factory from the tab-man
 
 ### Current State
 
-The tab-manager has a 58-line `encryption-wiring.svelte.ts` that wires auth state to workspace lock/unlock:
+The tab-manager has a 58-line `encryption-wiring.svelte.ts` that wires auth state to workspace lock/activateEncryption:
 
 ```typescript
 // apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts
@@ -25,9 +25,9 @@ export function initEncryptionWiring() {
       if (keyBase64) {
         const userKey = base64ToBytes(keyBase64);
         void deriveWorkspaceKey(userKey, workspaceClient.id).then((wsKey) => {
-          workspaceClient.unlock(wsKey);
+          workspaceClient.activateEncryption(wsKey);
         });
-      } else if (workspaceClient.mode === 'active') {
+      } else if (workspaceClient.mode === 'encrypted') {
         if (status === 'signing-out') {
           void workspaceClient.clearLocalData();
         } else {
@@ -52,13 +52,13 @@ onMount(() => {
 
 This creates problems:
 
-1. **Stale async derive race**: `deriveWorkspaceKey()` is async (HKDF via Web Crypto). Nothing prevents a slow derivation from completing after auth has moved on. If a user signs out while HKDF is still running, the stale `.then()` calls `unlock()` after `clearLocalData()` already ran—corrupting state.
+1. **Stale async derive race**: `deriveWorkspaceKey()` is async (HKDF via Web Crypto). Nothing prevents a slow derivation from completing after auth has moved on. If a user signs out while HKDF is still running, the stale `.then()` calls `activateEncryption()` after `clearLocalData()` already ran—corrupting state.
 
 2. **Framework coupling**: `$effect.root` + `$effect` makes this non-portable. Tests, Tauri commands, service workers, and non-Svelte consumers can't use it.
 
-3. **Copy-paste multiplication**: Every new Epicenter app (Whispering is next) must replicate the same subtle three-way branch logic, the same HKDF wiring, the same guard conditions. Getting any of them wrong either soft-locks a `none`-mode workspace or skips cleanup on sign-out.
+3. **Copy-paste multiplication**: Every new Epicenter app (Whispering is next) must replicate the same subtle three-way branch logic, the same HKDF wiring, the same guard conditions. Getting any of them wrong either soft-locks a `plaintext`-mode workspace or skips cleanup on sign-out.
 
-4. **Opaque timing gap**: Between `authState.encryptionKey` becoming non-null and `unlock()` completing, the workspace is in its previous mode. Consumers have no way to know "key derivation is in progress"—they must guess.
+4. **Opaque timing gap**: Between `authState.encryptionKey` becoming non-null and `activateEncryption()` completing, the workspace is in its previous mode. Consumers have no way to know "key derivation is in progress"—they must guess.
 
 5. **Implicit auth semantics in wiring**: The three-way branch requires reading `authState.status` to distinguish sign-out from session expiry from "never had a key." This couples auth-domain knowledge into what should be pure workspace orchestration.
 
@@ -92,8 +92,8 @@ const wiring = createEncryptionWiring(workspaceClient, { source });
 |---|---|---|
 | `deriveWorkspaceKey()` | `packages/workspace/src/shared/crypto/index.ts` | HKDF-SHA256 via Web Crypto, async, `(userKey: Uint8Array, workspaceId: string) => Promise<Uint8Array>` |
 | `base64ToBytes()` | Same file | Sync base64 decode — transport concern, not crypto |
-| `EncryptionMode` | `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` | `'none' \| 'locked' \| 'active'` — the workspace mode state |
-| `WorkspaceClient.unlock()` | `packages/workspace/src/workspace/create-workspace.ts` | Sync — sets key on all encrypted stores, rolls back on failure |
+| `EncryptionMode` | `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` | `'plaintext' \| 'locked' \| 'encrypted'` — the workspace mode state |
+| `WorkspaceClient.activateEncryption()` | `packages/workspace/src/workspace/create-workspace.ts` | Sync — sets key on all encrypted stores, rolls back on failure |
 | `WorkspaceClient.lock()` | Same file | Sync — clears key, cached data stays |
 | `WorkspaceClient.clearLocalData()` | Same file | Async — calls `lock()` + extension `clearData` callbacks in LIFO order |
 | `authState` | `apps/tab-manager/src/lib/state/auth.svelte.ts` | Svelte 5 reactive singleton with `encryptionKey: string \| undefined` and `status: AuthPhase['status']` |
@@ -120,20 +120,20 @@ authState.status ('checking' | 'signing-in' | 'signing-out' | 'signed-in' | 'sig
 │  Three-way branch:                                       │
 │                                                          │
 │  key present?                                            │
-│    → base64ToBytes → deriveWorkspaceKey → unlock         │
+│    → base64ToBytes → deriveWorkspaceKey → activateEncryption         │
 │                                                          │
-│  key null + mode active + signing-out?                  │
+│  key null + mode encrypted + signing-out?                  │
 │    → clearLocalData (wipe IndexedDB)                     │
 │                                                          │
-│  key null + mode active + other?                        │
+│  key null + mode encrypted + other?                        │
 │    → lock (soft, data preserved)                         │
 │                                                          │
-│  key null + mode NOT active?                            │
+│  key null + mode NOT encrypted?                            │
 │    → no-op (never had a key, or already locked)          │
 └─────────────────────────────────────────────────────────┘
      │
      ▼
-workspaceClient.mode changes: 'none' → 'active' → 'locked' → ...
+workspaceClient.mode changes: 'plaintext' → 'encrypted' → 'locked' → ...
 ```
 
 ### Auth State Transition Sequence (from `auth.svelte.ts`)
@@ -177,12 +177,12 @@ This avoids two failure modes:
 | Input contract | **`EncryptionSource` with `getSnapshot + subscribe`** | Avoids startup race (pure subscribe) and polling (pure getter). Matches `useSyncExternalStore` pattern. Framework-agnostic. |
 | Key format accepted | **`Uint8Array` (user key bytes)** | Transport encoding (base64) is adapter responsibility. Factory gets raw bytes. Supports password-derived keys, hardware keys, server-provided keys without change. |
 | Own `deriveWorkspaceKey` or take pre-derived? | **Own it, with optional override** | 90% case is HKDF. Default to `deriveWorkspaceKey` from `@epicenter/workspace/shared/crypto`. Accept `deriveKey` option for password-based or hardware key sources. |
-| Timing gap handling | **Expose `phase` property** (`'idle' \| 'deriving' \| 'clearing'`) | Consumers can gate UI on `phase !== 'deriving'`. More useful than a one-shot `whenUnlocked` promise—works across multiple lock/unlock cycles. |
-| `whenReady` semantics | **Resolves when first snapshot fully settles** | Matches extension `whenReady` convention. For `waiting-for-key`, resolves immediately (no work to do). For `user-key`, resolves after first derive + unlock. |
+| Timing gap handling | **Expose `phase` property** (`'idle' \| 'deriving' \| 'clearing'`) | Consumers can gate UI on `phase !== 'deriving'`. More useful than a one-shot `whenUnlocked` promise—works across multiple lock/activateEncryption cycles. |
+| `whenReady` semantics | **Resolves when first snapshot fully settles** | Matches extension `whenReady` convention. For `waiting-for-key`, resolves immediately (no work to do). For `user-key`, resolves after first derive + activateEncryption. |
 | Three-way null branch encoding | **Discriminated union in `EncryptionSourceSnapshot`** | `kind: 'no-key', reason: 'signed-out' \| 'session-lost'` makes the branch explicit in the type system. Cleaner than `isSigningOut: boolean` which doesn't capture "waiting for key." |
 | Race protection | **Monotonic operation version counter** | Each snapshot gets a version. Late async results (derive, clear) check version before applying. Stale results are silently dropped. |
 | Error handling | **`onError` callback, no throws** | Errors in derive or clearLocalData are reported via callback. Never throw out of the subscription loop—that would kill the wiring permanently. |
-| `waiting-for-key` behavior | **No-op** | During bootstrap (`checking`, `signing-in`), the wiring does nothing. This is correct—the workspace starts in `none` mode and stays there until a key arrives. |
+| `waiting-for-key` behavior | **No-op** | During bootstrap (`checking`, `signing-in`), the wiring does nothing. This is correct—the workspace starts in `plaintext` mode and stays there until a key arrives. |
 
 ## Architecture
 
@@ -207,9 +207,9 @@ type EncryptionSource = {
 
 type EncryptionWiringClient = {
   readonly id: string;
-  readonly mode: 'none' | 'locked' | 'active';
+  readonly mode: 'plaintext' | 'locked' | 'encrypted';
   lock(): void;
-  unlock(key: Uint8Array): void;
+  activateEncryption(key: Uint8Array): void;
   clearLocalData(): Promise<void>;
 };
 
@@ -257,14 +257,14 @@ function createEncryptionWiring(
                          │  2. version = ++counter                      │
                          │  3. wsKey = await deriveKey(userKey, id)     │
                          │  4. if version !== counter → DROP (stale)    │
-                         │  5. client.unlock(wsKey)                     │
+                         │  5. client.activateEncryption(wsKey)                     │
                          │  6. phase = 'idle'                           │
                          └──────────────────────────────────────────────┘
 
                          ┌──────────────────────────────────────────────┐
   snapshot: no-key       │  NULL-KEY FLOW                               │
   (reason: session-lost) │                                              │
-  ──────────────────────►│  if client.mode === 'active':
+  ──────────────────────►│  if client.mode === 'encrypted':
                          │    client.lock()                             │
                          │  else: no-op                                 │
                          │  phase = 'idle'                              │
@@ -273,13 +273,13 @@ function createEncryptionWiring(
                          ┌──────────────────────────────────────────────┐
   snapshot: no-key       │  CLEAR FLOW                                  │
   (reason: signed-out)   │                                              │
-  ──────────────────────►│  if client.mode === 'active':
+  ──────────────────────►│  if client.mode === 'encrypted':
                          │    1. phase = 'clearing'                     │
                          │    2. version = ++counter                    │
                          │    3. await client.clearLocalData()          │
                          │    4. if version !== counter → already moved │
                          │    5. phase = 'idle'                         │
-                         │  else: no-op (already locked or none)   │
+                         │  else: no-op (already locked or plaintext)   │
                          └──────────────────────────────────────────────┘
 ```
 
@@ -300,7 +300,7 @@ Time ─────────────────────────
   │                                 │  → phase = 'idle' ✓
 ```
 
-Without the version counter, the stale derive would call `unlock()` after `clearLocalData()` had already wiped the workspace—silently re-unlocking with the old key.
+Without the version counter, the stale derive would call `activateEncryption()` after `clearLocalData()` had already wiped the workspace—silently re-unlocking with the old key.
 
 ### Svelte Adapter Pattern
 
@@ -316,7 +316,7 @@ import { authState } from './auth.svelte';
  * Initialize the encryption wiring as a root effect.
  *
  * Maps `authState` reactive signals into the framework-agnostic
- * `EncryptionSource` contract, then delegates all lock/unlock/clear
+ * `EncryptionSource` contract, then delegates all lock/activateEncryption/clear
  * logic to `createEncryptionWiring()`.
  *
  * @returns Cleanup function (call from onMount cleanup)
@@ -386,7 +386,7 @@ apps/tab-manager/src/lib/state/
 
 - [ ] **2.1** Rewrite `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts` to the thin Svelte adapter pattern
 - [ ] **2.2** Verify `App.svelte` consumption doesn't change (same `initEncryptionWiring()` → cleanup pattern)
-- [ ] **2.3** Manual test: sign in → workspace unlocks, sign out → clearLocalData, session expiry → lock
+- [ ] **2.3** Manual test: sign in → workspace activates encryption, sign out → clearLocalData, session expiry → lock
 
 ### Phase 3: Documentation
 
@@ -409,14 +409,14 @@ Expected: Workspace is cleared. Old key never applied.
 1. User signs out → `no-key/signed-out` → `clearLocalData()` starts (v=1)
 2. User signs in quickly → `user-key` → `deriveKey()` starts (v=2)
 3. `clearLocalData()` resolves → version check: `1 !== 2` → **dropped** (phase already moved on)
-4. `deriveKey()` resolves → version check: `2 === 2` → `unlock()` → phase = idle
+4. `deriveKey()` resolves → version check: `2 === 2` → `activateEncryption()` → phase = idle
 
 Expected: New key wins. Clear result is stale and dropped.
 
 ### Bootstrap: No Auth (None Mode Workspace)
 
 1. App starts, no session → `waiting-for-key` snapshot
-2. Wiring does nothing, workspace stays in `none` mode
+2. Wiring does nothing, workspace stays in `plaintext` mode
 3. `whenReady` resolves immediately (no work to do)
 
 Expected: No-op. None-mode workspaces are unaffected.
@@ -427,7 +427,7 @@ Expected: No-op. None-mode workspaces are unaffected.
 2. Session validated → `user-key` snapshot
 3. Normal derive flow
 
-Expected: Wiring waits for auth to settle, then unlocks.
+Expected: Wiring waits for auth to settle, then activates encryption.
 
 ### Key Derivation Failure
 
@@ -460,7 +460,7 @@ Expected: Idempotent.
 
 1. If a future key-cache provides a `Uint8Array` synchronously at startup, the source can return `user-key` from `getSnapshot()` on the first call
 2. The factory processes it immediately—no "waiting" phase needed
-3. `whenReady` resolves after the derive + unlock completes
+3. `whenReady` resolves after the derive + activateEncryption completes
 
 Expected: Works without changes. The `waiting-for-key` state is optional, not mandatory.
 
@@ -468,7 +468,7 @@ Expected: Works without changes. The `waiting-for-key` state is optional, not ma
 
 1. `no-key/signed-out` snapshot arrives
 2. `client.mode` is already `'locked'` (e.g., from a previous session expiry)
-3. Guard check: `mode !== 'active'` → **no-op**
+3. Guard check: `mode !== 'encrypted'` → **no-op**
 
 Expected: Don't clear data that's already locked. The data might be from a different session that should be preserved for re-login.
 
@@ -478,10 +478,10 @@ Expected: Don't clear data that's already locked. The data might be from a diffe
    - If consumers want to react to phase changes (e.g., show a spinner during `'deriving'`), a callback would be more ergonomic than polling
    - **Recommendation**: Start with a readable property. Add `onPhaseChange` callback if demand appears. YAGNI for now—the main consumer just needs `whenReady`.
 
-2. **Should `clearLocalData` guard check `mode === 'active'` or `mode !== 'none'`?**
-   - Current code checks `mode === 'active'`. But what about `mode === 'locked'` + sign-out? Should that also clear?
+2. **Should `clearLocalData` guard check `mode === 'encrypted'` or `mode !== 'plaintext'`?**
+   - Current code checks `mode === 'encrypted'`. But what about `mode === 'locked'` + sign-out? Should that also clear?
    - A user who was locked (session expired) and then explicitly signs out might expect their data to be wiped
-   - **Recommendation**: Keep `mode === 'active'` guard for now. A locked workspace means the user might re-authenticate—clearing preemptively is destructive. If needed, the adapter can call `client.clearLocalData()` directly for the locked+sign-out case.
+   - **Recommendation**: Keep `mode === 'encrypted'` guard for now. A locked workspace means the user might re-authenticate—clearing preemptively is destructive. If needed, the adapter can call `client.clearLocalData()` directly for the locked+sign-out case.
 
 3. **Should `whenReady` reject on derive error, or always resolve?**
    - Rejecting gives consumers an error signal for the initial boot
@@ -502,7 +502,7 @@ Expected: Don't clear data that's already locked. The data might be from a diffe
 - [ ] `createEncryptionWiring()` exists in `@epicenter/workspace` with full JSDoc
 - [ ] Unit tests pass for all edge cases listed above (especially stale derive race and rapid key rotation)
 - [ ] Tab-manager's `encryption-wiring.svelte.ts` is rewritten to the thin adapter pattern (~20–30 lines)
-- [ ] Tab-manager behavior is identical: sign in → unlock, sign out → clear, session expiry → lock
+- [ ] Tab-manager behavior is identical: sign in → activateEncryption, sign out → clear, session expiry → lock
 - [ ] No Svelte imports in the core factory
 - [ ] `phase` property exposes derivation state
 - [ ] `whenReady` resolves on first snapshot settlement
@@ -513,7 +513,7 @@ Expected: Don't clear data that's already locked. The data might be from a diffe
 ## References
 
 - `packages/workspace/src/shared/crypto/index.ts` — `deriveWorkspaceKey`, `base64ToBytes` definitions
-- `packages/workspace/src/workspace/create-workspace.ts` — `unlock()`, `lock()`, `clearLocalData()` implementations, extension chain pattern
+- `packages/workspace/src/workspace/create-workspace.ts` — `activateEncryption()`, `lock()`, `clearLocalData()` implementations, extension chain pattern
 - `packages/workspace/src/workspace/types.ts` — `WorkspaceClient`, `EncryptionMode`, `ExtensionContext` types
 - `packages/workspace/src/workspace/lifecycle.ts` — `defineExtension()`, `MaybePromise` patterns
 - `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts` — `EncryptionMode` type definition

@@ -371,7 +371,7 @@ async function deriveSalt(
  * ```typescript
  * const userKey = base64ToBytes(session.encryptionKey);
  * const wsKey = await deriveWorkspaceKey(userKey, 'tab-manager');
- * workspace.unlock(wsKey);
+ * workspace.activateEncryption(wsKey);
  * ```
  */
 async function deriveWorkspaceKey(

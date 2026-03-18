@@ -14,21 +14,21 @@ Implement a `KeyCache` backend for the Chrome extension using `chrome.storage.se
 On every page refresh or sidebar open, the encryption flow is:
 
 ```
-App mounts → checkSession() → HTTP GET /auth/get-session → encryptionKey arrives → unlock()
+App mounts → checkSession() → HTTP GET /auth/get-session → encryptionKey arrives → activateEncryption()
 ```
 
-Until `getSession()` completes (~50-200ms), the workspace is in `'none'` mode. Encrypted IndexedDB data is unreadable. If the user is offline, `getSession()` fails and the workspace stays in none mode indefinitely—encrypted data is inaccessible until connectivity returns.
+Until `getSession()` completes (~50-200ms), the workspace is in `'plaintext'` mode. Encrypted IndexedDB data is unreadable. If the user is offline, `getSession()` fails and the workspace stays in plaintext mode indefinitely—encrypted data is inaccessible until connectivity returns.
 
 ### Problems
 
 1. **Offline users can't read their own data.** Encrypted entries in IndexedDB require the key, which only comes from the server. No network = no key = no decryption.
-2. **Visible flash on refresh.** The UI renders with empty/loading state while waiting for the key. Tables appear empty, then populate once unlock fires.
+2. **Visible flash on refresh.** The UI renders with empty/loading state while waiting for the key. Tables appear empty, then populate once activateEncryption fires.
 3. **Unnecessary server load.** Every sidebar open, popup, and page refresh hits `/auth/get-session` just to re-derive the same key.
 
 ### Desired State
 
 ```
-App mounts → KeyCache.get(userId) → key found → unlock() immediately
+App mounts → KeyCache.get(userId) → key found → activateEncryption() immediately
                                   → background: getSession() refreshes key silently
 ```
 
@@ -72,7 +72,7 @@ Two paths set `encryptionKey` in `auth.svelte.ts`:
 1. `refreshEncryptionKey()` — called after signIn/signUp/signInWithGoogle. Gets key from `getSession()`.
 2. `checkSession()` — called on app startup. Gets key from `getSession()`.
 
-Both paths call the `getSession()` wrapper which returns typed `CustomSessionFields`. The `encryptionKey` is a base64 string. The encryption wiring then decodes it, derives a per-workspace key via HKDF, and calls `unlock()`.
+Both paths call the `getSession()` wrapper which returns typed `CustomSessionFields`. The `encryptionKey` is a base64 string. The encryption wiring then decodes it, derives a per-workspace key via HKDF, and calls `activateEncryption()`.
 
 ## Design Decisions
 
@@ -82,7 +82,7 @@ Both paths call the `getSession()` wrapper which returns typed `CustomSessionFie
 | Cache granularity | Per-user base64 string | Cache the raw base64 `encryptionKey` from the session, not the derived per-workspace key. The workspace key derivation (HKDF) is fast (~1ms) and caching the user key means it works across workspace ID changes. |
 | Cache location | New file in `apps/tab-manager/src/lib/state/` | This is app-specific glue, not a workspace package concern. The KeyCache interface lives in the workspace package; the implementation lives in the app. |
 | When to write | After every successful `getSession()` that returns a key | Ensures the cache has the latest key version after key rotation. |
-| When to read | On app startup, before `checkSession()` | If cache hit, set `encryptionKey` immediately so the wiring unlocks. Then `checkSession()` refreshes it in the background. |
+| When to read | On app startup, before `checkSession()` | If cache hit, set `encryptionKey` immediately so the wiring activates encryption. Then `checkSession()` refreshes it in the background. |
 | When to clear | On `authState.signOut()` | User signed out = key should not persist. |
 | KeyCache as required? | Optional | Apps without encryption (or that don't care about offline) skip it. |
 
@@ -94,7 +94,7 @@ App startup
   ├─ keyCache.get(userId) ────────── cache hit? ─── yes ──→ encryptionKey = cached
   │                                       │                        │
   │                                       no                       ▼
-  │                                       │                 wiring: unlock()
+  │                                       │                 wiring: activateEncryption()
   │                                       ▼                 (instant, no network)
   │                                  encryptionKey = undefined
   │
@@ -102,7 +102,7 @@ App startup
   │                                       │
   │                                       ├─ keyCache.set(userId, key)  ← update cache
   │                                       ▼
-  │                                  wiring: unlock() (or re-lock if key changed)
+  │                                  wiring: activateEncryption() (or re-lock if key changed)
   │
   Sign-out
   │
@@ -126,8 +126,8 @@ App startup
 ### Phase 3: Wire cache reads (startup fast path)
 
 - [x] **3.1** Separate `$effect` in `syncAuthToEncryption()` attempts `keyManager.restoreKey(userId)` when user loads from storage
-- [x] **3.2** Cache hit triggers `setKey()` internally which derives HKDF key and calls `unlock()`
-- [x] **3.3** Main `$effect` handles key rotation — if server returns different key, `setKey()` updates and re-unlocks
+- [x] **3.2** Cache hit triggers `setKey()` internally which derives HKDF key and calls `activateEncryption()`
+- [x] **3.3** Main `$effect` handles key rotation — if server returns different key, `setKey()` updates and re-activates encryption
 - [x] **3.4** If `checkSession()` returns 4xx, auth adapter calls `lock()`; sign-out calls `wipe()` which clears cache
 
 ### Phase 4: Verify
@@ -135,7 +135,7 @@ App startup
 - [ ] **4.1** Test: refresh sidebar with cached key — workspace decrypts instantly
 - [ ] **4.2** Test: go offline, refresh — workspace still decrypts from cache
 - [ ] **4.3** Test: sign out — cache cleared, next open requires sign-in
-- [ ] **4.4** Test: key rotation — server returns new key, cache updated, workspace re-unlocks
+- [ ] **4.4** Test: key rotation — server returns new key, cache updated, workspace re-activates encryption
 
 ## Edge Cases
 
@@ -150,7 +150,7 @@ App startup
 
 1. App starts, loads cached key (old version)
 2. `checkSession()` returns new key
-3. `encryptionKey` updates, wiring re-locks then re-unlocks with new key
+3. `encryptionKey` updates, wiring re-locks then re-activates encryption with new key
 4. Cache updated with new key
 5. Old encrypted entries: server would need to re-encrypt (out of scope)
 
@@ -175,7 +175,7 @@ App startup
 2. **Should the cache write happen inside `getSession()` wrapper or in the encryption wiring?**
    - Wiring has `workspaceClient.id` for per-workspace caching if we ever need it
    - `getSession()` wrapper is closer to the data source
-   - **Recommendation**: Write in auth state (closer to the key), read in encryption wiring (closer to unlock). Defer to implementer.
+   - **Recommendation**: Write in auth state (closer to the key), read in encryption wiring (closer to activateEncryption). Defer to implementer.
 
 3. **Should this be a Svelte-reactive store or a plain async utility?**
    - The encryption wiring already watches `authState.encryptionKey` reactively
@@ -194,7 +194,7 @@ App startup
 
 - `packages/workspace/src/shared/crypto/key-cache.ts` — The interface to implement
 - `apps/tab-manager/src/lib/state/auth.svelte.ts` — Where encryption key is set
-- `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts` — Where unlock/lock is called
+- `apps/tab-manager/src/lib/state/encryption-wiring.svelte.ts` — Where activateEncryption/lock is called
 - `apps/tab-manager/src/lib/workspace.ts` — Workspace singleton creation
 
 ## Execution Notes
@@ -205,7 +205,7 @@ App startup
 
 **Open question resolutions**:
 - Store base64 string (not raw bytes) — `chrome.storage.session` uses JSON serialization, base64 is natural
-- Write cache in auth state layer (closer to the key source), read in encryption wiring (closer to unlock)
+- Write cache in auth state layer (closer to the key source), read in encryption wiring (closer to activateEncryption)
 - Plain async utility, not a Svelte-reactive store — the cache is a side-channel, not a state source
 
 ## Implementation Review
@@ -248,7 +248,7 @@ This keeps auth as a pure auth concern and avoids coupling it to the cache imple
 ```
 1. App mounts → syncAuthToEncryption() called
 2. Cache $effect fires: userId=undefined (storage loading) → no-op
-3. Storage loads → userId available → restoreKey(userId) → cache hit → setKey() → HKDF → unlock (instant)
+3. Storage loads → userId available → restoreKey(userId) → cache hit → setKey() → HKDF → activateEncryption (instant)
 4. checkSession() returns → encryptionKey set → setKey() deduplicates (same key = no-op)
 5. If offline: step 4 fails, but step 3 already unlocked from cache
 ```

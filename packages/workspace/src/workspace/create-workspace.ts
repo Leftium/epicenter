@@ -152,7 +152,7 @@ export function createWorkspace<
 
 	// ── Encrypted stores ─────────────────────────────────────────────────
 	// The workspace owns all encrypted KV stores so it can coordinate
-	// unlock across tables and KV simultaneously.
+	// activateEncryption across tables and KV simultaneously.
 	const encryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
 	/** Whether a key has been provided — the single source of truth for encryption state. */
 	let workspaceKey: Uint8Array | undefined = options?.key;
@@ -290,10 +290,10 @@ export function createWorkspace<
 			get isEncrypted() {
 				return workspaceKey !== undefined;
 			},
-			unlock(key: Uint8Array) {
+			activateEncryption(key: Uint8Array) {
 				workspaceKey = key;
 				for (const store of encryptedStores) {
-					store.unlock(key);
+					store.activateEncryption(key);
 				}
 			},
 			batch(fn: () => void): void {

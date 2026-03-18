@@ -38,9 +38,9 @@
  * state variable—encryption state is derived internally from `currentKey !== undefined`.
  *
  * ```
- *   No key (creation)          Key provided (unlock)
+ *   Key provided (activateEncryption)
  *   ┌──────────────────┐       ┌──────────────────┐
- *   │  key: undefined    │──────▶│  key: present       │◄── unlock(newKey)
+ *   │  key: present       │◄── activateEncryption(newKey)
  *   │  rw plaintext      │       │  rw encrypted      │
  *   └──────────────────┘       └──────────────────┘
  * ```
@@ -50,9 +50,9 @@
  *
  * ## Key Management
  *
- * The encryption key is managed through `unlock(key)`. The optional `key`
+ * The encryption key is managed through `activateEncryption(key)`. The optional `key`
  * in options seeds the initial key at construction time. After creation,
- * all key transitions go through `unlock()`.
+ * all key transitions go through `activateEncryption()`.
  *
  * ## Pending State
  *
@@ -67,7 +67,7 @@
  * The observer wraps `maybeDecrypt` with `trySync`. A failed decrypt skips
  * the entry and logs a warning instead of throwing. This prevents one bad blob
  * from crashing all observation. `failedDecryptCount` exposes the number of
- * entries that failed to decrypt. Entries are retried on `unlock()`.
+ * entries that failed to decrypt. Entries are retried on `activateEncryption()`.
  *
  * ## Related Modules
  *
@@ -97,16 +97,15 @@ import {
  *
  * `key` seeds the initial encryption key. If provided, all writes are encrypted
  * immediately. If omitted, the store starts unencrypted. After creation, all key
- * transitions go through `unlock()`.
+ * transitions go through `activateEncryption()`.
  */
 type EncryptedKvLwwOptions = {
 	key?: Uint8Array;
 };
 
-
 /**
  * Return type of `createEncryptedYkvLww`. Same API surface as `YKeyValueLww<T>`
- * plus encryption-specific members (`failedDecryptCount`, `unlock`).
+ * plus encryption-specific members (`failedDecryptCount`, `activateEncryption`).
  * All values exposed through this type are **plaintext**—encryption is fully
  * transparent to consumers.
  */
@@ -126,10 +125,10 @@ export type YKeyValueLwwEncrypted<T> = {
 	 *
 	 * @param key - A 32-byte encryption key (required)
 	 */
-	unlock(key: Uint8Array): void;
+	activateEncryption(key: Uint8Array): void;
 	/**
 	 * Number of entries that failed to decrypt. Computed as
-	 * `inner.map.size - map.size`. Entries are retried on `unlock()`.
+	 * `inner.map.size - map.size`. Entries are retried on `activateEncryption()`.
 	 */
 	readonly failedDecryptCount: number;
 
@@ -165,7 +164,7 @@ export type YKeyValueLwwEncrypted<T> = {
  * const kv = createEncryptedYkvLww<TabData>(yarray);
  * kv.set('tab-1', { url: '...' }); // stored as plaintext
  *
- * kv.unlock(encryptionKey);
+ * kv.activateEncryption(encryptionKey);
  * kv.set('tab-2', { url: '...' }); // stored as EncryptedBlob
  * ```
  */
@@ -196,10 +195,9 @@ export function createEncryptedYkvLww<T>(
 
 	/**
 	 * The active encryption key. Seeded from `options.key` at creation,
-	 * then updated exclusively via `unlock()`.
+	 * then updated exclusively via `activateEncryption()`.
 	 */
 	let currentKey: Uint8Array | undefined = options?.key;
-
 
 	/**
 	 * Conditionally decrypt a value. Handles three cases:
@@ -214,7 +212,7 @@ export function createEncryptedYkvLww<T>(
 	};
 
 	/**
-	 * Compare two decrypted values for equality. Used by `unlock()` to
+	 * Compare two decrypted values for equality. Used by `activateEncryption()` to
 	 * determine whether an entry's decrypted value actually changed (to avoid
 	 * emitting no-op 'update' events). Falls back to JSON.stringify comparison
 	 * when Object.is fails (handles deep object equality).
@@ -231,7 +229,7 @@ export function createEncryptedYkvLww<T>(
 	 * Attempt to decrypt an entry. On success, returns the decrypted entry.
 	 * On failure, returns `undefined`.
 	 *
-	 * Used during initialization, observer processing, and `unlock()` rebuild.
+	 * Used during initialization, observer processing, and `activateEncryption()` rebuild.
 	 */
 	const tryDecryptEntry = (
 		key: string,
@@ -378,13 +376,13 @@ export function createEncryptedYkvLww<T>(
 		},
 
 		/**
-		 * Unlock with a new encryption key. Rebuilds the decrypted map
+		 * Activate encryption with a new encryption key. Rebuilds the decrypted map
 		 * from scratch and fires synthetic change events for any values
 		 * that changed.
 		 *
 		 * @param nextKey - A 32-byte encryption key
 		 */
-		unlock(nextKey) {
+		activateEncryption(nextKey) {
 			currentKey = nextKey;
 
 			const oldMap = new Map(map);
@@ -431,7 +429,7 @@ export function createEncryptedYkvLww<T>(
 
 			if (syntheticChanges.size === 0) return;
 
-			// Synthetic events have no real Y.Transaction — unlock is not a Yjs operation.
+			// Synthetic events have no real Y.Transaction — activateEncryption is not a Yjs operation.
 			// Handlers that only read the changes map (all current consumers) are unaffected.
 			const syntheticTransaction = undefined as unknown as Y.Transaction;
 			for (const handler of changeHandlers)

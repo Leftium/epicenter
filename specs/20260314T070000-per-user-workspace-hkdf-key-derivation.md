@@ -46,7 +46,7 @@ customSession(async ({ user, session }) => {
 // Client: derives per-workspace key locally, no fetch needed
 const userKey = base64ToBytes(session.encryptionKey);
 const wsKey = await hkdfDerive(userKey, `workspace:${workspaceId}`);
-workspace.unlock(wsKey);
+workspace.activateEncryption(wsKey);
 ```
 
 ## How HKDF Works (At a Glance)
@@ -168,7 +168,7 @@ WORKSPACE_KEY_SECRET (env var, one string — the only thing stored)
                                ▼
 ┌────────────────────────────────────────────────────────────────┐
 │  Per-workspace key (32 bytes)                                  │
-│  workspace.unlock(wsKey)                                       │
+│  workspace.activateEncryption(wsKey)                                       │
 │  encryptValue/decryptValue use this key + AAD                  │
 └────────────────────────────────────────────────────────────────┘
 ```
@@ -183,7 +183,7 @@ WORKSPACE_KEY_SECRET (env var, one string — the only thing stored)
    ├── userKey = base64ToBytes(session.encryptionKey)
    └── For each open workspace:
        ├── wsKey = HKDF(userKey, "workspace:{wsId}")
-       └── workspace.unlock(wsKey)
+       └── workspace.activateEncryption(wsKey)
 
 3. First encrypted write
    └── kv.set('tab-1', data) → encryptValue(json, wsKey, aad) → inner CRDT
@@ -216,7 +216,7 @@ Everything is private. Every room gets a user-specific workspace key.
 
 **Client changes:**
 - Add `deriveWorkspaceKey(userKey, workspaceId)` helper using Web Crypto HKDF
-- `$session` subscription passes workspace-specific key to `workspace.unlock(wsKey)`
+- `$session` subscription passes workspace-specific key to `workspace.activateEncryption(wsKey)`
 - No new endpoint, no fetch, no cache
 
 ### Phase 2: Shared Room Keys (When Sharing Ships)
@@ -263,7 +263,7 @@ Replace shared room HKDF with actual random DEKs + wrapped copies, only for shar
 
 ### Phase 2.5: Workspace-Level Encryption API
 
-The workspace client currently hides encrypted KV stores inside `createTables`/`createKv` — no way to call `lock()`/`unlock(key)` at runtime. This phase surfaces encryption as a workspace-level concern so apps can react to session key arrival/departure.
+The workspace client currently hides encrypted KV stores inside `createTables`/`createKv` — no way to call `lock()`/`activateEncryption(key)` at runtime. This phase surfaces encryption as a workspace-level concern so apps can react to session key arrival/departure.
 
 **Design principle**: The workspace owns encryption state. Tables and KV are storage layers that delegate to encrypted stores the workspace created and retained.
 
@@ -281,8 +281,8 @@ The workspace client currently hides encrypted KV stores inside `createTables`/`
 1. Loop over table definitions: create `Y.Array` → `createEncryptedKvLww` → `createTableHelper` (already exists)
 2. Create KV: `Y.Array` → `createEncryptedKvLww` → `createKvHelper` (from 2.5a)
 3. Collect all encrypted stores in a private array
-4. Build `lock()`, `unlock(key)`, `mode` getter from the array
-5. `unlock` has rollback: if any store throws, re-lock already-unlocked stores and rethrow
+4. Build `lock()`, `activateEncryption(key)`, `mode` getter from the array
+5. `activateEncryption` has rollback: if any store throws, re-lock already-unlocked stores and rethrow
 
 - [x] **2.5b** Refactor `createWorkspace` to create and retain all encrypted stores. Replace `createTables()`/`createKv()` calls with direct store creation + helper construction.
 
@@ -291,22 +291,22 @@ The workspace client currently hides encrypted KV stores inside `createTables`/`
 ```typescript
 /** Current encryption mode across all stores. */
 readonly mode: EncryptionMode;
-/** Lock — clears key, writes throw, reads return cached plaintext. No-op if mode is 'none'. */
+/** Lock — clears key, writes throw, reads return cached plaintext. No-op if mode is 'plaintext'. */
 lock(): void;
 /** Unlock with encryption key — decrypts all stores, retries quarantine. Rolls back on partial failure. */
-unlock(key: Uint8Array): void;
+activateEncryption(key: Uint8Array): void;
 ```
 
-- [x] **2.5c** Add `lock()`, `unlock(key)`, `readonly mode` to `WorkspaceClient` in `types.ts`. Re-export `EncryptionMode` from the workspace barrel.
+- [x] **2.5c** Add `lock()`, `activateEncryption(key)`, `readonly mode` to `WorkspaceClient` in `types.ts`. Re-export `EncryptionMode` from the workspace barrel.
 
 #### 2.5d: Tests
 
-- [x] **2.5d** Tests: runtime unlock enables encrypted writes, re-lock preserves cached reads, set() throws while locked, construction-time key starts active, lock no-op in none. 7 tests added.
+- [x] **2.5d** Tests: runtime activateEncryption enables encrypted writes, re-lock preserves cached reads, set() throws while locked, construction-time key starts encrypted, lock no-op in plaintext. 7 tests added.
 
 #### Files changed
 - `packages/workspace/src/workspace/create-kv.ts` — extract `createKvHelper`
-- `packages/workspace/src/workspace/create-workspace.ts` — own stores, expose lock/unlock/mode
-- `packages/workspace/src/workspace/types.ts` — add lock/unlock/mode to WorkspaceClient
+- `packages/workspace/src/workspace/create-workspace.ts` — own stores, expose lock/activateEncryption/mode
+- `packages/workspace/src/workspace/types.ts` — add lock/activateEncryption/mode to WorkspaceClient
 - `packages/workspace/src/workspace/create-workspace.test.ts` — new tests
 - `create-tables.ts` — **no changes** (standalone API stays as-is)
 
@@ -314,7 +314,7 @@ unlock(key: Uint8Array): void;
 
 - [x] ~~**3.1** **epicenter**~~ — Skipped (apps/epicenter/src doesn't exist)
 - [x] ~~**3.2** **whispering**~~ — Skipped (no auth infrastructure yet)
-- [x] **3.3** **tab-manager** — Added `encryptionKey` to `authState` (extracted from `getSession()` response), created `encryption-wiring.svelte.ts` module with `$effect` that derives workspace key and calls `unlock()`/`lock()`, wired into `App.svelte` onMount. Added `./shared/crypto` export to workspace package.json.
+- [x] **3.3** **tab-manager** — Added `encryptionKey` to `authState` (extracted from `getSession()` response), created `encryption-wiring.svelte.ts` module with `$effect` that derives workspace key and calls `activateEncryption()`/`lock()`, wired into `App.svelte` onMount. Added `./shared/crypto` export to workspace package.json.
 
 ### Phase 4: Verify
 
@@ -335,7 +335,7 @@ unlock(key: Uint8Array): void;
 
 1. Session arrives with per-user `encryptionKey`
 2. Client calls `deriveWorkspaceKey(userKey, workspaceId)` → deterministic per-workspace key
-3. `workspace.unlock(wsKey)` — workspace decrypts
+3. `workspace.activateEncryption(wsKey)` — workspace decrypts
 4. Same derivation tomorrow produces the same workspace key (same inputs)
 
 ### Secret rotation
@@ -363,7 +363,7 @@ Not planned. If `BETTER_AUTH_SECRET` is ever rotated (breach scenario), all deri
 1. User opens `epicenter.whispering` and `epicenter.tab-manager`
 2. Both derive from the same user key: `HKDF(userKey, "workspace:whispering")` and `HKDF(userKey, "workspace:tab-manager")`
 3. Different workspace IDs → different derived keys
-4. Each workspace's `unlock()` receives its own key
+4. Each workspace's `activateEncryption()` receives its own key
 
 ## What This Replaces
 
@@ -410,15 +410,15 @@ This spec supersedes `specs/20260314T064000-per-workspace-envelope-encryption.md
 
 Implemented two-level HKDF key derivation: server derives per-user keys from `BETTER_AUTH_SECRET` + userId, client derives per-workspace keys locally from the user key + workspaceId. Both use Web Crypto HKDF-SHA256.
 
-The biggest design deviation was Phase 2.5 — the spec assumed `workspace.unlock()` existed, but the workspace client didn't expose encryption controls. We added a workspace-level `lock()`/`unlock(key)`/`mode` API by refactoring `createWorkspace` to own all encrypted KV stores directly. This required extracting `createKvHelper` from `create-kv.ts` and moving store creation from `createTables`/`createKv` into `createWorkspace`.
+The biggest design deviation was Phase 2.5 — the spec assumed `workspace.activateEncryption()` existed, but the workspace client didn't expose encryption controls. We added a workspace-level `lock()`/`activateEncryption(key)`/`mode` API by refactoring `createWorkspace` to own all encrypted KV stores directly. This required extracting `createKvHelper` from `create-kv.ts` and moving store creation from `createTables`/`createKv` into `createWorkspace`.
 
 ### Deviations from Spec
 
 - **No `WORKSPACE_KEY_SECRET`** — spec called for a separate env var; we use `BETTER_AUTH_SECRET` directly (per user request)
-- **Phase 2.5 added** — workspace-level encryption API (`lock`/`unlock`/`mode`) didn't exist and was needed for Phase 3
+- **Phase 2.5 added** — workspace-level encryption API (`lock`/`activateEncryption`/`mode`) didn't exist and was needed for Phase 3
 - **epicenter and whispering skipped** — epicenter doesn't exist, whispering has no auth
-- **`createWorkspace` refactored** — no longer delegates to `createTables`/`createKv`; owns encrypted stores directly for lock/unlock coordination
-- **`unlock()` has rollback** — Oracle-recommended: if any store fails to unlock, already-unlocked stores are re-locked
+- **`createWorkspace` refactored** — no longer delegates to `createTables`/`createKv`; owns encrypted stores directly for lock/activateEncryption coordination
+- **`activateEncryption()` has rollback** — Oracle-recommended: if any store fails to activateEncryption, already-unlocked stores are re-locked
 
 ### Follow-up Work
 

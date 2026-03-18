@@ -22,14 +22,14 @@
 
 - [ ] Add `let workspaceKey: Uint8Array | undefined = options?.key;` alongside `encryptedStores`
 - [ ] Change `get isEncrypted()` from `encryptedStores[0]?.isEncrypted ?? false` to `workspaceKey !== undefined`
-- [ ] Update `unlock()` to set `workspaceKey = key` before calling store unlocks
+- [ ] Update `activateEncryption()` to set `workspaceKey = key` before calling store activates encryption
 
 ### 3. `y-keyvalue-lww-encrypted.test.ts` — Replace self-report with behavior assertions
 
-- [ ] "starts in none when no key provided" (line 521): write value, assert raw yarray entry is NOT `isEncryptedBlob`
-- [ ] "starts in active when key provided" (line 531): write value, assert raw yarray entry IS `isEncryptedBlob`
-- [ ] "none → active via unlock(key)" (lines 541-543): write before unlock → plaintext raw, unlock, write after → encrypted raw
-- [ ] "plaintext stays readable after unlock" (line 621): remove `kv.isEncrypted` assertion (surrounding assertions already verify behavior)
+- [ ] "starts in plaintext when no key provided" (line 521): write value, assert raw yarray entry is NOT `isEncryptedBlob`
+- [ ] "starts in encrypted when key provided" (line 531): write value, assert raw yarray entry IS `isEncryptedBlob`
+- [ ] "plaintext → encrypted via activateEncryption(key)" (lines 541-543): write before activateEncryption → plaintext raw, activateEncryption, write after → encrypted raw
+- [ ] "plaintext stays readable after activateEncryption" (line 621): remove `kv.isEncrypted` assertion (surrounding assertions already verify behavior)
 
 ### 4. `key-manager.ts` — JSDoc only
 

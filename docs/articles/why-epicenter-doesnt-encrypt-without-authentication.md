@@ -10,7 +10,7 @@ We considered this. It's not worth it.
 
 The value of encryption comes from who holds the key—not from the act of encrypting. Epicenter's key hierarchy ties encryption to your identity: the server derives a per-user key via HKDF from a secret only it knows, the client derives a per-workspace key from that, and XChaCha20-Poly1305 does the rest. When you sign out, the key is wiped. Nobody—not even someone with full disk access—can read the data without your credentials. That's meaningful protection.
 
-A random local key has none of these properties. It exists in the same JavaScript heap as the data it protects. Any attacker who can read IndexedDB through the browser's developer tools, a malicious extension, or a forensic disk image can also read the key from memory or from wherever you stored it. The encryption algorithm is unbreakable from ciphertext alone, but the key is right there next to the ciphertext.
+A random local key has plaintext of these properties. It exists in the same JavaScript heap as the data it protects. Any attacker who can read IndexedDB through the browser's developer tools, a malicious extension, or a forensic disk image can also read the key from memory or from wherever you stored it. The encryption algorithm is unbreakable from ciphertext alone, but the key is right there next to the ciphertext.
 
 ```
 User-derived key (signed in):
@@ -40,9 +40,9 @@ The residual threat is forensic analysis of an unlocked machine's raw disk, bypa
 
 ## The complexity cost is real
 
-Adding a local key means two key sources: the random one for unauthenticated state and the user-derived one for authenticated state. The `createEncryptedYkvLww` wrapper would need to handle the transition—decrypt everything with the local key, re-encrypt with the user-derived key, fire synthetic change events for any values that changed. That transition already exists as `unlock()`, but using it for key migration introduces new concerns.
+Adding a local key means two key sources: the random one for unauthenticated state and the user-derived one for authenticated state. The `createEncryptedYkvLww` wrapper would need to handle the transition—decrypt everything with the local key, re-encrypt with the user-derived key, fire synthetic change events for any values that changed. That transition already exists as `activateEncryption()`, but using it for key migration introduces new concerns.
 
-What happens if the user signs in while a write is in progress? The re-encryption loop iterates every entry in the CRDT, calling `encryptValue` on each one. A concurrent `set()` could write with the old key after re-encryption has already started. The generation counter in the key manager handles this for the normal unlock flow, but adding a second key source doubles the state space for race conditions.
+What happens if the user signs in while a write is in progress? The re-encryption loop iterates every entry in the CRDT, calling `encryptValue` on each one. A concurrent `set()` could write with the old key after re-encryption has already started. The generation counter in the key manager handles this for the normal activateEncryption flow, but adding a second key source doubles the state space for race conditions.
 
 The key manager would also need to know about both key types. Currently it has a single responsibility: bridge the async gap between the auth session and the workspace client. Adding local key generation, storage, and migration turns a focused component into a key lifecycle orchestrator.
 
@@ -51,11 +51,11 @@ The key manager would also need to know about both key types. Currently it has a
 | No encryption (current unauthenticated state) | Nothing | Everything | None |
 | Random local key in sessionStorage | Passive disk forensics (partial) | JS execution access, tab close destroys key | High—two key sources, migration, race conditions |
 | Random local key in IndexedDB | Nothing (key adjacent to data) | Everything | High—same complexity, zero security gain |
-| User-derived key (current authenticated state) | Database breach, storage compromise, disk forensics | Memory scraping on active client | Already implemented |
+| User-derived key (current authenticated state) | Database breach, storage compromise, disk forensics | Memory scraping on encrypted client | Already implemented |
 
 ## The design is honest about what it does
 
-Epicenter's `createEncryptedYkvLww` starts as a zero-overhead passthrough when no key is present. Reads and writes go straight through to the underlying `YKeyValueLww` without touching any crypto code. When the user authenticates and `unlock()` delivers a real key, the wrapper encrypts all existing entries in place and transitions to encrypted mode. Every subsequent write is ciphertext in the CRDT, ciphertext in IndexedDB, ciphertext on the sync server.
+Epicenter's `createEncryptedYkvLww` starts as a zero-overhead passthrough when no key is present. Reads and writes go straight through to the underlying `YKeyValueLww` without touching any crypto code. When the user authenticates and `activateEncryption()` delivers a real key, the wrapper encrypts all existing entries in place and transitions to encrypted mode. Every subsequent write is ciphertext in the CRDT, ciphertext in IndexedDB, ciphertext on the sync server.
 
 This design doesn't pretend to protect data it can't protect. Before authentication, there's no key with any security property worth having. After authentication, the key is derived from a server secret that the attacker doesn't have access to. The transition is sharp: plaintext, then real encryption. No middle ground that costs complexity and delivers nothing.
 

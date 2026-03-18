@@ -180,7 +180,7 @@ function createAuthState(encryption: KeyManager) {
 	 *
 	 * Better Auth's signIn/signUp responses don't include customSession
 	 * fields—only getSession() returns them. Awaited after successful
-	 * sign-in so the encryption wiring unlocks before the caller's
+	 * sign-in so the encryption wiring activates before the caller's
 	 * post-sign-in code runs. No timing gap.
 	 *
 	 * Network errors are swallowed via `.catch()` because getSession()
@@ -192,7 +192,7 @@ function createAuthState(encryption: KeyManager) {
 		// .catch(→ null) swallows network errors; { data: null } covers HTTP errors
 		const result = await getSession().catch(() => null);
 		if (result?.data?.encryptionKey) {
-			await encryption.unlock(result.data.encryptionKey, result.data.user.id);
+			await encryption.activateEncryption(result.data.encryptionKey, result.data.user.id);
 		}
 	}
 
@@ -439,7 +439,7 @@ function createAuthState(encryption: KeyManager) {
 			const user = serializeDates(data.user);
 			await authUser.set(user);
 			if (data.encryptionKey) {
-				await encryption.unlock(data.encryptionKey, data.user.id);
+				await encryption.activateEncryption(data.encryptionKey, data.user.id);
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);
@@ -474,8 +474,8 @@ const keyManagerTarget = {
 	get id() {
 		return workspace.current.id;
 	},
-	unlock(key: Uint8Array) {
-		workspace.current.unlock(key);
+	activateEncryption(key: Uint8Array) {
+		workspace.current.activateEncryption(key);
 	},
 };
 

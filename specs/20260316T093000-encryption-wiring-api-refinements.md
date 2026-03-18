@@ -20,7 +20,7 @@ The factory was implemented per `specs/20260315T141700-encryption-wiring-factory
 | `EncryptionWiring` | `KeyManager` | — |
 | `EncryptionWiringClient` | `KeyManagerTarget` | "Target" communicates the thing the manager acts on |
 | `EncryptionWiringConfig` | `KeyManagerConfig` | — |
-| `connect(keyBase64, userId?)` | `setKey(keyBase64, userId?)` | "Set key" directly describes what you're doing—supplying a key. Better than "connect" (networking metaphor) and better than "unlock" (implies synchronous completion, but HKDF derivation is async) |
+| `connect(keyBase64, userId?)` | `setKey(keyBase64, userId?)` | "Set key" directly describes what you're doing—supplying a key. Better than "connect" (networking metaphor) and better than `activateEncryption` (implies synchronous completion, but HKDF derivation is async) |
 | `wipeLocalData()` | `wipe()` | Shorter, same meaning. The "local data" was redundant—all data the manager touches is local |
 | `loadCachedKey(userId)` | `restoreKey(userId)` | "Restore" communicates intent (resume from cache), matches `setKey` vocabulary |
 | `lock()` | `lock()` | Unchanged—already correct |
@@ -67,7 +67,7 @@ The names are good. But a close read of the implementation surfaces four issues 
 
 ### Non-Problems (Things That Are Correct)
 
-The rename from `connect` → `setKey` resolved the naming issue identified in the initial design review. `setKey` is more accurate than `unlock` would have been: the method supplies a key and initiates async derivation—the unlock is a side effect that happens later. `setKey`/`lock` is a complementary pair (one provides the key, the other removes it) rather than a symmetric one, and that's honest about what each method does.
+The rename from `connect` → `setKey` resolved the naming issue identified in the initial design review. `setKey` is more accurate than `activateEncryption` would have been: the method supplies a key and initiates async derivation—the encryption activation is a side effect that happens later. `setKey`/`lock` is a complementary pair (one provides the key, the other removes it) rather than a symmetric one, and that's honest about what each method does.
 
 The `wipe()` name is clean and sufficient. `restoreKey` communicates intent well. `KeyManagerTarget` is a better name than `EncryptionWiringClient` for the narrow client interface.
 
@@ -248,7 +248,7 @@ Callers that don't care still call `void keyManager.wipe()`—zero breaking chan
 function deriveAndUnlock(userKey: Uint8Array, thisGeneration: number) {
   void deriveWorkspaceKey(userKey, client.id)
     .then((wsKey) => {
-      if (thisGeneration === generation) client.unlock(wsKey);
+      if (thisGeneration === generation) client.activateEncryption(wsKey);
     })
     .catch((error) => {
       // Derivation failures are programming errors (invalid key data).
@@ -297,7 +297,7 @@ Expected: Error propagates. Existing fire-and-forget callers using `void keyMana
 2. `base64ToBytes` returns garbage
 3. `deriveWorkspaceKey` throws inside the Web Crypto API
 4. `.catch()` fires, `console.error` prints the error
-5. Workspace stays in its previous mode (locked or none)
+5. Workspace stays in its previous mode (locked or plaintext)
 
 Expected: Error visible in console. Workspace safe—no state corruption.
 

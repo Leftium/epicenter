@@ -85,14 +85,12 @@ function createViewState() {
 		});
 	});
 
-	/** Human-readable name for the current view (sidebar + NoteList header). */
+	/** Human-readable name for the current folder (used as NoteList title). */
 	const folderName = $derived(
-		isRecentlyDeletedView
-			? 'Recently Deleted'
-			: selectedFolderId
-				? (foldersState.folders.find((f) => f.id === selectedFolderId)?.name ??
+		selectedFolderId
+			? (foldersState.folders.find((f) => f.id === selectedFolderId)?.name ??
 					'Notes')
-				: 'All Notes',
+			: 'All Notes',
 	);
 
 	/** The currently selected note (can be active or deleted). */

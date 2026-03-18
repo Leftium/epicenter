@@ -70,8 +70,12 @@
 	const flatNoteIds = $derived(
 		groupedNotes.flatMap((g) => g.entries.map((n) => n.id)),
 	);
+</script>
 
-	function handleKeydown(e: KeyboardEvent) {
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="flex h-full flex-col"
+	onkeydown={(e) => {
 		if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
 		if (flatNoteIds.length === 0) return;
 		e.preventDefault();
@@ -89,11 +93,9 @@
 				currentIndex > 0 ? currentIndex - 1 : flatNoteIds.length - 1;
 			viewState.selectNote(flatNoteIds[prevIndex]!);
 		}
-	}
-</script>
-
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="flex h-full flex-col" onkeydown={handleKeydown} tabindex="-1">
+	}}
+	tabindex="-1"
+>
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<div class="flex items-center gap-2">
 			<h2 class="text-sm font-semibold">{title}</h2>

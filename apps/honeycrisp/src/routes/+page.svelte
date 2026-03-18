@@ -41,10 +41,10 @@
 			currentDocHandle = null;
 		};
 	});
+</script>
 
-	// ─── Keyboard Shortcuts ──────────────────────────────────────────────────
-
-	function handleKeydown(e: KeyboardEvent) {
+<svelte:window
+	onkeydown={(e) => {
 		const meta = e.metaKey || e.ctrlKey;
 		if (!meta) return;
 
@@ -61,10 +61,8 @@
 			e.preventDefault();
 			notesState.createNote();
 		}
-	}
-</script>
-
-<svelte:window onkeydown={handleKeydown} />
+	}}
+/>
 
 <SidebarProvider>
 	<HoneycripSidebar />

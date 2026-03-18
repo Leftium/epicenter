@@ -163,12 +163,16 @@ Only use `.execute()` in Svelte files when:
 2. You're performing a one-off operation
 3. You need fine-grained control over async flow
 
-## No `handle*` Functions - Always Inline
+## Single-Use Functions: Inline or Document
 
-Never create functions prefixed with `handle` in the script tag. If the function is used only once and the logic isn't deeply nested, inline it directly in the template:
+If a function is defined in the script tag and used only once in the template, inline it at the call site. This applies to event handlers, callbacks, and any other single-use logic.
+
+### Why Inline?
+
+Single-use extracted functions add indirection — the reader jumps between the function definition and the template to understand what happens on click/keydown/etc. Inlining keeps cause and effect together at the point where the action happens.
 
 ```svelte
-<!-- BAD: Unnecessary wrapper function -->
+<!-- BAD: Extracted single-use function with no JSDoc or semantic value -->
 <script>
 	function handleShare() {
 		share.mutate({ id });
@@ -182,12 +186,57 @@ Never create functions prefixed with `handle` in the script tag. If the function
 <Button onclick={handleShare}>Share</Button>
 <Item onclick={() => handleSelectItem(item.id)} />
 
-<!-- GOOD: Inline the logic directly -->
+<!-- GOOD: Inlined at the call site -->
 <Button onclick={() => share.mutate({ id })}>Share</Button>
 <Item onclick={() => goto(`/items/${item.id}`)} />
 ```
 
-This keeps related logic co-located with the UI element that triggers it, making the code easier to follow.
+This also applies to longer handlers. If the logic is linear (guard clauses + branches, not deeply nested), inline it even if it's 10–15 lines:
+
+```svelte
+<!-- GOOD: Inlined keyboard shortcut handler -->
+<svelte:window onkeydown={(e) => {
+	const meta = e.metaKey || e.ctrlKey;
+	if (!meta) return;
+	if (e.key === 'k') {
+		e.preventDefault();
+		commandPaletteOpen = !commandPaletteOpen;
+		return;
+	}
+	if (e.key === 'n') {
+		e.preventDefault();
+		notesState.createNote();
+	}
+}} />
+```
+
+### The Exception: JSDoc + Semantic Name
+
+Keep a single-use function extracted **only** when both conditions are met:
+
+1. It has **JSDoc** explaining why it exists as a named unit.
+2. The name provides a **clear semantic meaning** that makes the template more readable than the inlined version would be.
+
+```svelte
+<script lang="ts">
+	/**
+	 * Navigate the note list with arrow keys, wrapping at boundaries.
+	 * Operates on the flattened display-order ID list to respect date grouping.
+	 */
+	function navigateWithArrowKeys(e: KeyboardEvent) {
+		// 15 lines of keyboard navigation logic...
+	}
+</script>
+
+<!-- The semantic name communicates intent better than inlined logic would -->
+<div onkeydown={navigateWithArrowKeys} tabindex="-1">
+```
+
+Without JSDoc and a meaningful name, extract it anyway — the indirection isn't earning its keep.
+
+### Multi-Use Functions
+
+Functions used **2 or more times** should always stay extracted — this rule only applies to single-use functions.
 
 # Styling
 

@@ -72,21 +72,6 @@
 					: '',
 	);
 
-	function toggleHeading(value: string) {
-		const levels: Record<string, number> = { h1: 1, h2: 2, h3: 3 };
-		const level = levels[value];
-		if (level) editor?.chain().focus().toggleHeading({ level }).run();
-	}
-
-	function toggleListType(value: string) {
-		const commands: Record<string, () => void> = {
-			bullet: () => editor?.chain().focus().toggleBulletList().run(),
-			ordered: () => editor?.chain().focus().toggleOrderedList().run(),
-			task: () => editor?.chain().focus().toggleTaskList().run(),
-		};
-		commands[value]?.();
-	}
-
 	$effect(() => {
 		if (!element) return;
 
@@ -184,7 +169,11 @@
 				type="single"
 				size="sm"
 				value={activeHeading}
-				onValueChange={toggleHeading}
+				onValueChange={(value) => {
+					const levels: Record<string, number> = { h1: 1, h2: 2, h3: 3 };
+					const level = levels[value];
+					if (level) editor?.chain().focus().toggleHeading({ level }).run();
+				}}
 			>
 				{@render groupItem('h1', Heading1Icon, 'Heading 1')}
 				{@render groupItem('h2', Heading2Icon, 'Heading 2')}
@@ -197,7 +186,14 @@
 				type="single"
 				size="sm"
 				value={activeListType}
-				onValueChange={toggleListType}
+				onValueChange={(value) => {
+					const commands: Record<string, () => void> = {
+						bullet: () => editor?.chain().focus().toggleBulletList().run(),
+						ordered: () => editor?.chain().focus().toggleOrderedList().run(),
+						task: () => editor?.chain().focus().toggleTaskList().run(),
+					};
+					commands[value]?.();
+				}}
 			>
 				{@render groupItem('bullet', ListIcon, 'Bullet List')}
 				{@render groupItem('ordered', ListOrderedIcon, 'Ordered List')}

@@ -16,20 +16,10 @@
 	let isEditing = $state(false);
 	let editingName = $state('');
 
-	function startRename() {
-		isEditing = true;
-		editingName = folder.name;
-	}
-
 	function commitRename() {
 		if (editingName.trim()) {
 			foldersState.renameFolder(folder.id, editingName.trim());
 		}
-		isEditing = false;
-		editingName = '';
-	}
-
-	function cancelRename() {
 		isEditing = false;
 		editingName = '';
 	}
@@ -47,8 +37,11 @@
 				class="flex-1 rounded border bg-background px-1 py-0.5 text-sm outline-none focus:ring-1 focus:ring-ring"
 				bind:value={editingName}
 				onkeydown={(e) => {
-					if (e.key === 'Enter') commitRename();
-					if (e.key === 'Escape') cancelRename();
+				if (e.key === 'Enter') commitRename();
+				if (e.key === 'Escape') {
+					isEditing = false;
+					editingName = '';
+				}
 				}}
 				onblur={commitRename}
 				autofocus
@@ -79,7 +72,12 @@
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content align="start" side="right" class="w-40">
-				<DropdownMenu.Item onclick={startRename}>
+			<DropdownMenu.Item
+				onclick={() => {
+					isEditing = true;
+					editingName = folder.name;
+				}}
+			>
 					<PencilIcon class="mr-2 size-4" />
 					Rename
 				</DropdownMenu.Item>

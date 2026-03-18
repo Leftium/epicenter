@@ -1,7 +1,7 @@
 import yargs from 'yargs';
 import { buildAuthCommand } from './commands/auth-command';
 import { buildDataCommand } from './commands/data-command';
-import { buildHubCommand } from './commands/hub-command';
+import { buildStartCommand } from './commands/start-command';
 import { buildWorkspaceCommand } from './commands/workspace-command';
 import { resolveEpicenterHome } from './paths';
 
@@ -17,8 +17,8 @@ export function createCLI() {
 
 			const cli = yargs()
 				.scriptName('epicenter')
+				.command(buildStartCommand())
 				.command(buildWorkspaceCommand(home))
-				.command(buildHubCommand(home))
 				.command(buildAuthCommand(home))
 				.command(buildDataCommand(serverUrl))
 				.demandCommand(1)

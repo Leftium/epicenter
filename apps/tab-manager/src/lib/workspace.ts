@@ -1061,35 +1061,19 @@ function buildWorkspaceClient() {
 }
 
 /**
- * Swappable workspace container.
+ * Stable workspace singleton.
  *
- * The workspace client owns a Y.Doc, sync connections, IndexedDB persistence,
- * and broadcast channel—all stateful resources tied to a single session.
- * On sign-out we need to tear everything down and start fresh, but consumers
- * (browser-state, chat-state, tool-trust, etc.) are module-level singletons
- * that can't be re-imported.
- *
- * The getter solves this: `workspace.current` closes over a mutable `let`
- * that `reset()` can reassign. Every consumer reading `workspace.current`
- * at call time (event handlers, action callbacks, Y.Doc observers) gets the
- * latest client automatically—no re-initialization, no stale references.
- *
- * `reset()` is self-contained: it clears local persisted data (`clearLocalData()`),
- * disposes runtime resources (`dispose()`), and rebuilds a fresh client instance.
- * Callers do not need to separately wipe IndexedDB before resetting.
+ * The client is created once and never replaced. Encryption and data
+ * are toggled in-place via `activateEncryption()`, `deactivateEncryption()`,
+ * and `clearAllData()`. Observers stay alive because the Y.Doc never changes.
+ * Actions stay valid because the client never changes.
  */
 function createWorkspaceState() {
-	/** Mutable slot—reassigned by `reset()`, read via the `current` getter. */
-	let client = buildWorkspaceClient();
+	const client = buildWorkspaceClient();
 
 	return {
 		get current() {
 			return client;
-		},
-		async reset() {
-			await client.clearLocalData();
-			await client.dispose();
-			client = buildWorkspaceClient();
 		},
 	};
 }

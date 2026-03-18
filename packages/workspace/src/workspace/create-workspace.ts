@@ -152,7 +152,7 @@ export function createWorkspace<
 
 	// ── Encrypted stores ─────────────────────────────────────────────────
 	// The workspace owns all encrypted KV stores so it can coordinate
-	// lock/unlock across tables and KV simultaneously.
+	// unlock across tables and KV simultaneously.
 	const encryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
 
 	// Create table stores + helpers (one encrypted KV per table)
@@ -289,20 +289,9 @@ export function createWorkspace<
 				// All stores are kept in sync — use first store's encryption state, or 'none' if no stores.
 				return encryptedStores[0]?.encryptionState ?? 'none';
 			},
-			lock() {
-				for (const store of encryptedStores) store.lock();
-			},
 			unlock(key: Uint8Array) {
-				const unlocked: YKeyValueLwwEncrypted<unknown>[] = [];
-				try {
-					for (const store of encryptedStores) {
-						store.unlock(key);
-						unlocked.push(store);
-					}
-				} catch (err) {
-					// Rollback: re-lock stores that were already unlocked
-					for (const store of unlocked) store.lock();
-					throw err;
+				for (const store of encryptedStores) {
+					store.unlock(key);
 				}
 			},
 			batch(fn: () => void): void {
@@ -311,7 +300,6 @@ export function createWorkspace<
 			whenReady,
 			dispose,
 			async clearLocalData(): Promise<void> {
-				client.lock();
 				// LIFO clearData on extensions that support it
 				for (let i = state.clearDataCallbacks.length - 1; i >= 0; i--) {
 					try {

@@ -31,7 +31,7 @@ const KEY_PREFIX = 'ek:';
  * import { keyCache } from '$lib/state/key-cache';
  * import { createKeyManager } from '@epicenter/workspace/shared/crypto';
  *
- * const keyManager = createKeyManager(workspaceClient, { keyCache });
+ * const keyManager = createKeyManager(workspace.current, { keyCache });
  * ```
  */
 export const keyCache: KeyCache = {

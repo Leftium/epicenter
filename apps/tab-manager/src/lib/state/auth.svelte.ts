@@ -8,7 +8,10 @@
  */
 
 import type { CustomSessionFields } from '@epicenter/api/src/custom-session-fields';
-import { createKeyManager, type KeyManager } from '@epicenter/workspace/shared/crypto';
+import {
+	createKeyManager,
+	type KeyManager,
+} from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
 import { untrack } from 'svelte';
@@ -18,10 +21,10 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
+import { workspace } from '$lib/workspace';
 import { keyCache } from './key-cache';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
-import { workspaceClient } from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -374,6 +377,7 @@ function createAuthState(encryption: KeyManager) {
 		async signOut() {
 			phase = { status: 'signing-out' };
 			await encryption.wipe();
+			await workspace.reset();
 			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
 			phase = { status: 'signed-out' };
@@ -452,7 +456,7 @@ function createAuthState(encryption: KeyManager) {
 		 * @example
 		 * ```typescript
 		 * onMount(() => {
-		 *     return authState.onExternalSignIn(() => workspaceClient.extensions.sync.reconnect());
+		 *     return authState.onExternalSignIn(() => workspace.current.extensions.sync.reconnect());
 		 * });
 		 * ```
 		 */
@@ -465,7 +469,19 @@ function createAuthState(encryption: KeyManager) {
 	};
 }
 
-const keyManager = createKeyManager(workspaceClient, { keyCache });
+const keyManagerTarget = {
+	get id() {
+		return workspace.current.id;
+	},
+	unlock(key: Uint8Array) {
+		workspace.current.unlock(key);
+	},
+	async clearLocalData() {
+		await workspace.current.clearLocalData();
+	},
+};
+
+const keyManager = createKeyManager(keyManagerTarget, { keyCache });
 export const authState = createAuthState(keyManager);
 
 // ─────────────────────────────────────────────────────────────────────────────

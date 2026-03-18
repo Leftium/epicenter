@@ -936,7 +936,7 @@ describe('createWorkspace', () => {
 });
 
 // ============================================================================
-// Workspace Encryption (lock / unlock / mode)
+// Workspace Encryption (unlock / mode)
 // ============================================================================
 
 describe('workspace encryption', () => {
@@ -959,56 +959,18 @@ describe('workspace encryption', () => {
 		expect(client.encryptionState).toBe('active');
 	});
 
-	test('lock after unlock transitions mode to locked', () => {
-		const { client, key } = setupEncrypted();
-		client.unlock(key);
-		client.lock();
-		expect(client.encryptionState).toBe('locked');
-	});
-
-	test('lock is a no-op in none mode', () => {
-		const { client } = setupEncrypted();
-		client.lock();
-		expect(client.encryptionState).toBe('none');
-	});
-
 	test('unlock enables encrypted writes that survive re-unlock', () => {
 		const { client, key } = setupEncrypted();
 		client.unlock(key);
 		client.tables.posts.set({ id: '1', title: 'Secret', _v: 1 });
 
-		// Lock then re-unlock with same key — data survives
-		client.lock();
+		// Re-unlock with same key — data survives
 		client.unlock(key);
 
 		const result = client.tables.posts.get('1');
 		expect(result.status).toBe('valid');
 		if (result.status === 'valid') {
 			expect(result.row.title).toBe('Secret');
-		}
-	});
-
-	test('set() throws while locked', () => {
-		const { client, key } = setupEncrypted();
-		client.unlock(key);
-		client.tables.posts.set({ id: '1', title: 'Secret', _v: 1 });
-		client.lock();
-
-		expect(() =>
-			client.tables.posts.set({ id: '2', title: 'Should fail', _v: 1 }),
-		).toThrow();
-	});
-
-	test('get() returns cached plaintext while locked', () => {
-		const { client, key } = setupEncrypted();
-		client.unlock(key);
-		client.tables.posts.set({ id: '1', title: 'Cached', _v: 1 });
-		client.lock();
-
-		const result = client.tables.posts.get('1');
-		expect(result.status).toBe('valid');
-		if (result.status === 'valid') {
-			expect(result.row.title).toBe('Cached');
 		}
 	});
 

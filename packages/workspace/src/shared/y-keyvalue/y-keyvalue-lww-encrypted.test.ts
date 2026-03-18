@@ -268,10 +268,10 @@ describe('createEncryptedYkvLww', () => {
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 
-			yarray.push([{ key: 'legacy', val: 'legacy-plaintext', ts: 1000 }]);
+			yarray.push([{ key: 'plaintext', val: 'plaintext-value', ts: 1000 }]);
 
 			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
-			expect(kv.get('legacy')).toBe('legacy-plaintext');
+			expect(kv.get('plaintext')).toBe('plaintext-value');
 		});
 
 		test('reads encrypted entries correctly', () => {
@@ -429,15 +429,15 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray);
 
-			kv.set('old-1', 'legacy-a');
-			kv.set('old-2', 'legacy-b');
+			kv.set('old-1', 'alpha');
+			kv.set('old-2', 'beta');
 
 			const key = generateEncryptionKey();
 			kv.unlock(key);
 			kv.set('new-1', 'encrypted-c');
 
-			expect(kv.get('old-1')).toBe('legacy-a');
-			expect(kv.get('old-2')).toBe('legacy-b');
+			expect(kv.get('old-1')).toBe('alpha');
+			expect(kv.get('old-2')).toBe('beta');
 			expect(kv.get('new-1')).toBe('encrypted-c');
 
 			const entries = yarray.toArray();
@@ -445,9 +445,34 @@ describe('createEncryptedYkvLww', () => {
 			const old2 = entries.find((entry) => entry.key === 'old-2');
 			const newer = entries.find((entry) => entry.key === 'new-1');
 
-			expect(old1?.val).toBe('legacy-a');
-			expect(old2?.val).toBe('legacy-b');
+			expect(isEncryptedBlob(old1?.val)).toBe(true);
+			expect(isEncryptedBlob(old2?.val)).toBe(true);
 			expect(isEncryptedBlob(newer?.val)).toBe(true);
+		});
+
+		test('unlock encrypts existing plaintext entries in-place', () => {
+			const ydoc = new Y.Doc({ guid: 'encrypt-plaintext-on-unlock' });
+			const yarray =
+				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
+			const kv = createEncryptedYkvLww<string>(yarray, {});
+
+			kv.set('pt-1', 'plain-a');
+			kv.set('pt-2', 'plain-b');
+
+			expect(isEncryptedBlob(yarray.toArray()[0]?.val)).toBe(false);
+			expect(isEncryptedBlob(yarray.toArray()[1]?.val)).toBe(false);
+
+			const key = generateEncryptionKey();
+			kv.unlock(key);
+
+			const entries = yarray.toArray();
+			const pt1 = entries.find((entry) => entry.key === 'pt-1');
+			const pt2 = entries.find((entry) => entry.key === 'pt-2');
+
+			expect(kv.get('pt-1')).toBe('plain-a');
+			expect(kv.get('pt-2')).toBe('plain-b');
+			expect(isEncryptedBlob(pt1?.val)).toBe(true);
+			expect(isEncryptedBlob(pt2?.val)).toBe(true);
 		});
 	});
 
@@ -520,113 +545,6 @@ describe('createEncryptedYkvLww', () => {
 			kv.unlock(key);
 			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
 		});
-
-		test('active → locked via lock()', () => {
-			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'mode-active-to-locked' });
-			const yarray =
-				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
-
-			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
-			kv.lock();
-			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
-		});
-
-		test('locked → active via unlock(key)', () => {
-			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'mode-locked-to-active' });
-			const yarray =
-				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
-
-			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
-			kv.lock();
-			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
-			kv.unlock(key);
-			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
-		});
-
-		test('none stays none on lock()', () => {
-			const ydoc = new Y.Doc({ guid: 'mode-stays-none' });
-			const yarray =
-				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedYkvLww<string>(yarray, {});
-
-			expect(kv.encryptionState).toBe('none' satisfies EncryptionState);
-			kv.lock();
-			expect(kv.encryptionState).toBe('none' satisfies EncryptionState);
-		});
-	});
-
-	describe('Locked mode', () => {
-		test('set() throws in locked mode', () => {
-			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'locked-set-throws' });
-			const yarray =
-				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
-
-			kv.lock();
-			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
-			expect(() => kv.set('x', 'y')).toThrow(/locked/i);
-		});
-
-		test('get() returns cached values in locked mode', () => {
-			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'locked-get-cached' });
-			const yarray =
-				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
-
-			yarray.push([
-				{ key: 'a', val: 'alpha', ts: Date.now() },
-				{ key: 'b', val: 'beta', ts: Date.now() + 1 },
-			]);
-			kv.lock();
-
-			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
-			expect(kv.get('a')).toBe('alpha');
-			expect(kv.get('b')).toBe('beta');
-		});
-
-		test('has() returns true for cached values in locked mode', () => {
-			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'locked-has-cached' });
-			const yarray =
-				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
-
-			kv.set('x', '1');
-			kv.set('y', '2');
-			kv.lock();
-
-			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
-			expect(kv.has('x')).toBe(true);
-			expect(kv.has('y')).toBe(true);
-		});
-
-		test('entries() still yields cached values in locked mode', () => {
-			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'locked-entries-cached' });
-			const yarray =
-				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
-
-			yarray.push([
-				{ key: 'first', val: 'one', ts: Date.now() },
-				{ key: 'second', val: 'two', ts: Date.now() + 1 },
-			]);
-			kv.lock();
-
-			const values = new Map<string, string>();
-			for (const [entryKey, entry] of kv.entries())
-				values.set(entryKey, entry.val);
-
-			expect(kv.encryptionState).toBe('locked' satisfies EncryptionState);
-			expect(values.get('first')).toBe('one');
-			expect(values.get('second')).toBe('two');
-		});
 	});
 
 	describe('Error containment', () => {
@@ -689,7 +607,7 @@ describe('createEncryptedYkvLww', () => {
 		});
 	});
 
-	describe('Key transition (lock/unlock)', () => {
+	describe('Key transition (unlock)', () => {
 		test('plaintext entries remain accessible after unlock', () => {
 			const key = generateEncryptionKey();
 			const ydoc = new Y.Doc({
@@ -699,13 +617,13 @@ describe('createEncryptedYkvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedYkvLww<string>(yarray, {});
 
-			kv.set('legacy-1', 'plain-a');
-			kv.set('legacy-2', 'plain-b');
+			kv.set('pt-1', 'plain-a');
+			kv.set('pt-2', 'plain-b');
 			kv.unlock(key);
 
 			expect(kv.encryptionState).toBe('active' satisfies EncryptionState);
-			expect(kv.get('legacy-1')).toBe('plain-a');
-			expect(kv.get('legacy-2')).toBe('plain-b');
+			expect(kv.get('pt-1')).toBe('plain-a');
+			expect(kv.get('pt-2')).toBe('plain-b');
 		});
 
 		test('new writes after unlock encrypt', () => {

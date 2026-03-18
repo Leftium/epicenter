@@ -32,7 +32,7 @@
  *   └── inner.get() → decrypt on the fly                ← transaction gap fallback
  * ```
  *
- * ## Three-Mode State Machine
+ * ## Two-State State Machine
  *
  * ```
  *                     ┌─────────────┐
@@ -44,33 +44,17 @@
  *                     ┌─────────────┐
  *                     │  ACTIVE     │  (key active)
  *                     │  rw encrypt │◄── unlock(newKey)
- *                     └──────┬──────┘
- *                            │ lock()
- *                            ▼
- *                     ┌─────────────┐
- *                     │   LOCKED    │  (key was active, now cleared)
- *                     │  r-only     │
- *                     └──────┬──────┘
- *                            │ unlock(key)
- *                            ▼
- *                     ┌─────────────┐
- *                     │  ACTIVE     │  (re-sign-in)
  *                     └─────────────┘
  * ```
  *
  * - **none**: No key ever seen. Reads and writes pass through unencrypted.
  * - **active**: Key active. `set()` encrypts, observer decrypts.
- * - **locked**: Key was active but cleared (sign-out). `set()` throws to prevent
- *   plaintext overwriting ciphertext. `get()` returns cached plaintext values.
- *
- * `none` → `locked` never happens. `locked` means "was active before."
- * A workspace that never had a key stays `none` through sign-out.
  *
  * ## Key Management
  *
- * The encryption key is managed through two methods: `unlock(key)` and `lock()`.
+ * The encryption key is managed through `unlock(key)`.
  * The optional `key` in options seeds the initial key (and therefore the initial
- * encryption state). After creation, all key transitions go through `unlock()` and `lock()`.
+ * encryption state). After creation, all key transitions go through `unlock()`.
  *
  * ## Pending State
  *
@@ -115,18 +99,18 @@ import {
  *
  * `key` seeds the initial encryption key and determines the starting encryption state
  * (`none` if undefined, `active` if a key is provided). After creation,
- * all key transitions go through `unlock()` and `lock()`.
+ * all key transitions go through `unlock()`.
  */
 type EncryptedKvLwwOptions = {
 	key?: Uint8Array;
 };
 
-/** The three encryption states. See module JSDoc for the full state machine. */
-export type EncryptionState = 'none' | 'locked' | 'active';
+/** The two encryption states. See module JSDoc for the full state machine. */
+export type EncryptionState = 'none' | 'active';
 
 /**
  * Return type of `createEncryptedYkvLww`. Same API surface as `YKeyValueLww<T>`
- * plus encryption-specific members (`encryptionState`, `failedDecryptCount`, `lock`, `unlock`).
+ * plus encryption-specific members (`encryptionState`, `failedDecryptCount`, `unlock`).
  * All values exposed through this type are **plaintext**—encryption is fully
  * transparent to consumers.
  */
@@ -138,14 +122,6 @@ export type YKeyValueLwwEncrypted<T> = {
 	entries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
 	observe(handler: YKeyValueLwwChangeHandler<T>): void;
 	unobserve(handler: YKeyValueLwwChangeHandler<T>): void;
-
-	/**
-	 * Lock the workspace. Clears the encryption key and transitions to `'locked'`
-	 * encryption state if the workspace was previously `'active'`. `set()` throws to prevent
-	 * plaintext from overwriting ciphertext. `get()` returns cached plaintext.
-	 * No-op if encryption state is `'none'` (never had a key).
-	 */
-	lock(): void;
 
 	/**
 	 * Unlock the workspace with an encryption key. Rebuilds the decrypted map
@@ -201,11 +177,6 @@ export type YKeyValueLwwEncrypted<T> = {
  * kv.unlock(encryptionKey);
  * kv.encryptionState; // 'active'
  * kv.set('tab-2', { url: '...' }); // stored as EncryptedBlob
- *
- * kv.lock();
- * kv.encryptionState; // 'locked'
- * kv.set('tab-3', ...); // throws: "Workspace is locked"
- * kv.get('tab-1'); // still returns cached plaintext
  * ```
  */
 export function createEncryptedYkvLww<T>(
@@ -233,10 +204,9 @@ export function createEncryptedYkvLww<T>(
 	/** Registered change handlers. Receive decrypted change events. */
 	const changeHandlers = new Set<YKeyValueLwwChangeHandler<T>>();
 
-
 	/**
 	 * The active encryption key. Seeded from `options.key` at creation,
-	 * then updated exclusively via `lock()` and `unlock()`.
+	 * then updated exclusively via `unlock()`.
 	 */
 	let currentKey: Uint8Array | undefined = options?.key;
 
@@ -244,7 +214,6 @@ export function createEncryptedYkvLww<T>(
 	 * Current encryption state. Derived from key presence history:
 	 * - `none`: No key has ever been seen (initial state when no key provided)
 	 * - `active`: A key is currently active
-	 * - `locked`: A key was active but has been cleared (sign-out)
 	 */
 	let encryptionState: EncryptionState = currentKey ? 'active' : 'none';
 
@@ -361,16 +330,15 @@ export function createEncryptedYkvLww<T>(
 
 	return {
 		set(key, val) {
-			if (encryptionState === 'locked')
-				throw new Error('Workspace is locked — sign in to write');
-
 			if (encryptionState === 'none') {
 				inner.set(key, val);
 				return;
 			}
 
 			if (!currentKey)
-				throw new Error('Workspace is locked — sign in to write');
+				throw new Error(
+					'Encryption key missing in active state — this is a bug',
+				);
 			inner.set(key, encryptValue(JSON.stringify(val), currentKey));
 		},
 
@@ -424,7 +392,6 @@ export function createEncryptedYkvLww<T>(
 					if (val !== undefined) yield [key, { ...entry, val }];
 				}
 			}
-
 		},
 
 		observe(handler) {
@@ -432,16 +399,6 @@ export function createEncryptedYkvLww<T>(
 		},
 		unobserve(handler) {
 			changeHandlers.delete(handler);
-		},
-
-		/**
-		 * Lock the workspace. Clears the encryption key and preserves
-		 * the existing decrypted cache. `set()` throws, `get()` returns
-		 * cached plaintext. No-op if encryption state is `'none'`.
-		 */
-		lock() {
-			currentKey = undefined;
-			if (encryptionState !== 'none') encryptionState = 'locked';
 		},
 
 		/**
@@ -463,6 +420,11 @@ export function createEncryptedYkvLww<T>(
 				const decryptedEntry = tryDecryptEntry(key, entry);
 				if (!decryptedEntry) continue;
 				map.set(key, decryptedEntry);
+			}
+
+			for (const [entryKey, entry] of inner.map) {
+				if (isEncryptedBlob(entry.val)) continue;
+				inner.set(entryKey, encryptValue(JSON.stringify(entry.val), nextKey));
 			}
 
 			// Compute synthetic change events by diffing old vs new map
@@ -494,7 +456,7 @@ export function createEncryptedYkvLww<T>(
 
 			if (syntheticChanges.size === 0) return;
 
-			// Synthetic events have no real Y.Transaction — lock/unlock are not Yjs operations.
+			// Synthetic events have no real Y.Transaction — unlock is not a Yjs operation.
 			// Handlers that only read the changes map (all current consumers) are unaffected.
 			const syntheticTransaction = undefined as unknown as Y.Transaction;
 			for (const handler of changeHandlers)

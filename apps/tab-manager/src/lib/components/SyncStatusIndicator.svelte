@@ -13,12 +13,12 @@
 	 */
 
 	import type { SyncStatus } from '@epicenter/sync-client';
-	import { workspaceClient } from '$lib/workspace';
+	import { workspace } from '$lib/workspace';
 
 	function createSyncStatus() {
-		let current = $state<SyncStatus>(workspaceClient.extensions.sync.status);
+		let current = $state<SyncStatus>(workspace.current.extensions.sync.status);
 
-		workspaceClient.extensions.sync.onStatusChange((status) => {
+		workspace.current.extensions.sync.onStatusChange((status) => {
 			current = status;
 		});
 
@@ -111,7 +111,7 @@
 							variant="outline"
 							size="sm"
 							class="flex-1"
-						onclick={() => workspaceClient.extensions.sync.reconnect()}
+							onclick={() => workspace.current.extensions.sync.reconnect()}
 						>
 							<RefreshCwIcon class="size-3.5" />
 							Reconnect
@@ -123,7 +123,7 @@
 						class="flex-1"
 						onclick={async () => {
 							await authState.signOut();
-							workspaceClient.extensions.sync.reconnect();
+							workspace.current.extensions.sync.reconnect();
 							popoverOpen = false;
 						}}
 					>

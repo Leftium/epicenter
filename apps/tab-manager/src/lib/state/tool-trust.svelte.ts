@@ -12,7 +12,7 @@
  */
 
 import { SvelteMap } from 'svelte/reactivity';
-import { type ToolTrust, workspaceClient } from '$lib/workspace';
+import { type ToolTrust, workspace } from '$lib/workspace';
 
 /**
  * Trust level for a mutation tool.
@@ -29,7 +29,7 @@ export type TrustLevel = ToolTrust['trust'];
 function createToolTrustState() {
 	/** Build the trust map from the workspace table. */
 	function readAllTrust(): Map<string, TrustLevel> {
-		const entries = workspaceClient.tables.toolTrust.getAllValid();
+		const entries = workspace.current.tables.toolTrust.getAllValid();
 		return new Map(entries.map((row) => [row.id, row.trust]));
 	}
 
@@ -37,7 +37,7 @@ function createToolTrustState() {
 	const trustMap = new SvelteMap<string, TrustLevel>(readAllTrust());
 
 	// Keep reactive state in sync with Y.Doc changes (local + remote)
-	workspaceClient.tables.toolTrust.observe(() => {
+	workspace.current.tables.toolTrust.observe(() => {
 		const fresh = readAllTrust();
 		// Clear and repopulate to trigger Svelte reactivity
 		trustMap.clear();
@@ -79,7 +79,7 @@ function createToolTrustState() {
 		 * ```
 		 */
 		set(name: string, level: TrustLevel): void {
-			workspaceClient.tables.toolTrust.set({
+			workspace.current.tables.toolTrust.set({
 				id: name,
 				trust: level,
 				_v: 1,

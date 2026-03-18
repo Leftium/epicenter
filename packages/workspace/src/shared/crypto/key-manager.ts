@@ -43,7 +43,7 @@ import type { KeyCache } from './key-cache';
  * Minimal client surface the key manager needs to drive unlock/wipe.
  *
  * Intentionally narrow—only the methods the key manager actually calls.
- * The key manager never reads encryption state (none/locked/active); encryption state
+ * The key manager never reads encryption state (none/active); encryption state
  * guarding is the client's responsibility. Any workspace client that
  * implements these members can be managed.
  */
@@ -75,7 +75,7 @@ export type KeyManagerConfig = {
  * and race protection. The consumer just pushes key presence/absence from
  * their framework's reactive system.
  *
- * Encryption state guarding (none/locked/active) is the client's job—the key
+ * Encryption state guarding (none/active) is the client's job—the key
  * manager always calls through regardless of encryption state.
  */
 export type KeyManager = {
@@ -107,8 +107,8 @@ export type KeyManager = {
 	 * Wipe local data and clear cached keys.
 	 *
 	 * Nuclear option for sign-out: calls `clearLocalData()` to destroy
-	 * IndexedDB/persistence, then clears the key cache. The workspace client
-	 * stays alive but is locked with no local data.
+ * IndexedDB/persistence, then clears the key cache. The workspace client
+ * stays alive with no local data.
 	 *
 	 * Cancels any in-flight HKDF derivation from a prior `unlock()`.
 	 * Always calls through to `client.clearLocalData()`—the client decides
@@ -129,7 +129,7 @@ export type KeyManager = {
 	 * `unlock()` internally—triggering HKDF derivation and unlock without
 	 * a network round-trip. Returns `true` if a cached key was found.
 	 *
-	 * Use on page load to skip the "locked" state when the key is still
+ * Use on page load to skip the server roundtrip when the key is still
 	 * in the cache from a previous session.
 	 *
 	 * No-op if no `keyCache` was provided to the factory.
@@ -159,7 +159,7 @@ export type KeyManager = {
  * 3. **Race protection**—a generation counter ensures stale HKDF results from a
  *    previous `unlock()` call never land after a newer one.
  *
- * Encryption state guarding (none/locked/active) is the client's responsibility,
+ * Encryption state guarding (none/active) is the client's responsibility,
  * not the key manager's. The key manager always calls through to `clearLocalData()`.
  *
  * @param client - Workspace client surface implementing unlock and clearLocalData

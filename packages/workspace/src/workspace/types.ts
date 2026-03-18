@@ -86,8 +86,6 @@ export type RowResult<TRow> = ValidRowResult<TRow> | InvalidRowResult;
  */
 export type GetResult<TRow> = RowResult<TRow> | NotFoundResult;
 
-
-
 /** Result of updating a single row */
 export type UpdateResult<TRow> =
 	| { status: 'updated'; row: TRow }
@@ -1034,8 +1032,12 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions &
-			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>>,
-		TDocExtensions & Record<TKey, Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
+			Record<
+				TKey,
+				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
+			>,
+		TDocExtensions &
+			Record<TKey, Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
 	>;
 
 	/**
@@ -1083,7 +1085,10 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions &
-			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>>,
+			Record<
+				TKey,
+				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
+			>,
 		TDocExtensions
 	>;
 
@@ -1130,7 +1135,8 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions,
-		TDocExtensions & Record<K, Omit<TDocExports, 'whenReady' | 'dispose' | 'clearData'>>
+		TDocExtensions &
+			Record<K, Omit<TDocExports, 'whenReady' | 'dispose' | 'clearData'>>
 	>;
 
 	/**
@@ -1279,48 +1285,21 @@ export type WorkspaceClient<
 	 *
 	 * - `'none'` — no key ever set, reads/writes pass through unencrypted
 	 * - `'active'` — key active, writes encrypt, reads decrypt
-	 * - `'locked'` — key was active but cleared (sign-out), writes throw, reads return cached plaintext
 	 *
 	 * All stores are kept in sync — this reflects the workspace-wide state.
 	 */
 	readonly encryptionState: EncryptionState;
 
 	/**
-	 * Lock the workspace—clears the encryption key from memory.
-	 *
-	 * This is a soft lock (Bitwarden/1Password "lock" model). The key is
-	 * cleared but decrypted data stays in the in-memory cache and persisted
-	 * storage (IndexedDB, SQLite) is untouched.
-	 *
-	 * After locking:
-	 * - `set()` on any table throws to prevent plaintext overwriting ciphertext
-	 * - `get()` still returns cached plaintext values from the decrypted cache
-	 * - Encryption state transitions to `'locked'`
-	 *
-	 * No-op if encryption state is `'none'` (never had a key).
-	 *
- * For a hard wipe that clears persisted data without killing the client,
-	 * use {@link clearLocalData} instead.
-	 */
-	lock(): void;
-
-	/**
 	 * Unlock the workspace with an encryption key.
 	 *
-	 * Decrypts all stores, retries failed entries, transitions to `'active'`.
-	 * If any store fails to unlock, already-unlocked stores are rolled back to `'locked'`
-	 * and the error is rethrown—the workspace never ends up half-unlocked.
+	 * Decrypts all stores, retries failed entries, transitions to `'active'`, and
+	 * encrypts any existing plaintext entries in-place.
 	 *
 	 * ### Plaintext→encrypted migration
 	 *
-	 * Existing plaintext entries remain plaintext in the Y.Array after unlock—they
-	 * are NOT re-encrypted in place. Only new writes after `unlock()` are encrypted.
-	 * Mixed plaintext/encrypted data is handled transparently: the observer uses
-	 * `isEncryptedBlob()` type discrimination to decide whether to decrypt or pass
-	 * through each value.
-	 *
-	 * To encrypt legacy plaintext data, the consumer must explicitly read each entry
-	 * and write it back (migration). There is no automatic bulk re-encryption.
+	 * Existing plaintext entries are encrypted in-place during `unlock()`, so
+	 * legacy plaintext data is migrated automatically as soon as a key is provided.
 	 *
 	 * ### Wrong key handling
 	 *
@@ -1408,17 +1387,15 @@ export type WorkspaceClient<
 	dispose(): Promise<void>;
 
 	/**
-	 * Wipe all persisted data and lock encryption. Client stays alive.
+	 * Wipe all persisted data. Client stays alive.
 	 *
 	 * This is the sign-out operation for singleton workspace clients that
 	 * can't be disposed and recreated. Wipes IndexedDB (and any other
-	 * extension persistence) so no data remains on disk, then locks to
-	 * block writes. The client remains reusable—next sign-in can call
+	 * extension persistence) so no data remains on disk. The client remains reusable—next sign-in can call
 	 * `unlock()` and the workspace re-syncs from the server.
 	 *
 	 * Steps:
-	 * 1. `lock()` — clear encryption key, block writes
-	 * 2. `clearData()` on every extension that supports it (LIFO order)
+	 * 1. `clearData()` on every extension that supports it (LIFO order)
 	 *
 	 * @example
 	 * ```typescript
@@ -1429,7 +1406,6 @@ export type WorkspaceClient<
 	 * ```
 	 */
 	clearLocalData(): Promise<void>;
-
 
 	/** Async dispose support */
 	[Symbol.asyncDispose](): Promise<void>;

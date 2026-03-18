@@ -73,7 +73,9 @@ test('get returns defaultValue for invalid stored data', () => {
 
 test('observeAll fires for set changes with correct key and value', () => {
 	const ydoc = new Y.Doc();
-	const kv = createKv(ydoc, {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const ykv = createEncryptedYkvLww(yarray, {});
+	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -86,6 +88,7 @@ test('observeAll fires for set changes with correct key and value', () => {
 
 	expect(changes).toHaveLength(1);
 	const firstChange = changes[0];
+	if (!firstChange) throw new Error('Expected first change map');
 	expect(firstChange.has('theme')).toBe(true);
 	const themeChange = firstChange.get('theme');
 	expect(themeChange.type).toBe('set');
@@ -96,7 +99,9 @@ test('observeAll fires for set changes with correct key and value', () => {
 
 test('observeAll fires for delete changes', () => {
 	const ydoc = new Y.Doc();
-	const kv = createKv(ydoc, {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const ykv = createEncryptedYkvLww(yarray, {});
+	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -111,6 +116,7 @@ test('observeAll fires for delete changes', () => {
 
 	expect(changes).toHaveLength(1);
 	const firstChange = changes[0];
+	if (!firstChange) throw new Error('Expected first change map');
 	expect(firstChange.has('theme')).toBe(true);
 	const themeChange = firstChange.get('theme');
 	expect(themeChange.type).toBe('delete');
@@ -120,7 +126,9 @@ test('observeAll fires for delete changes', () => {
 
 test('observeAll batches multiple changes in a single callback', () => {
 	const ydoc = new Y.Doc();
-	const kv = createKv(ydoc, {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const ykv = createEncryptedYkvLww(yarray, {});
+	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 		fontSize: defineKv(type('number'), 14),
 	});
@@ -139,6 +147,7 @@ test('observeAll batches multiple changes in a single callback', () => {
 	// Should fire once with both changes
 	expect(changes).toHaveLength(1);
 	const firstChange = changes[0];
+	if (!firstChange) throw new Error('Expected first change map');
 	expect(firstChange.size).toBe(2);
 	expect(firstChange.has('theme')).toBe(true);
 	expect(firstChange.has('fontSize')).toBe(true);
@@ -156,7 +165,9 @@ test('observeAll batches multiple changes in a single callback', () => {
 
 test('observeAll skips invalid values', () => {
 	const ydoc = new Y.Doc();
-	const kv = createKv(ydoc, {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const ykv = createEncryptedYkvLww(yarray, {});
+	const kv = createKv(ykv, {
 		count: defineKv(type('number'), 0),
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
@@ -167,7 +178,6 @@ test('observeAll skips invalid values', () => {
 	});
 
 	// Write garbage directly to the Y.Array (simulating corruption)
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
 	ydoc.transact(() => {
 		yarray.push([{ key: 'count', val: 'not-a-number', ts: Date.now() }]);
 		// Also set a valid value to trigger the observer
@@ -177,6 +187,7 @@ test('observeAll skips invalid values', () => {
 	// observeAll should only include the valid theme change, not the invalid count
 	expect(changes).toHaveLength(1);
 	const firstChange = changes[0];
+	if (!firstChange) throw new Error('Expected first change map');
 	expect(firstChange.has('count')).toBe(false);
 	expect(firstChange.has('theme')).toBe(true);
 
@@ -185,7 +196,9 @@ test('observeAll skips invalid values', () => {
 
 test('observeAll skips unknown keys', () => {
 	const ydoc = new Y.Doc();
-	const kv = createKv(ydoc, {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const ykv = createEncryptedYkvLww(yarray, {});
+	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -195,7 +208,6 @@ test('observeAll skips unknown keys', () => {
 	});
 
 	// Write directly to Y.Array with a key not in definitions
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
 	ydoc.transact(() => {
 		yarray.push([{ key: 'unknownKey', val: 'some-value', ts: Date.now() }]);
 		// Also set a valid value to trigger the observer
@@ -205,6 +217,7 @@ test('observeAll skips unknown keys', () => {
 	// observeAll should only include the valid theme change, not the unknown key
 	expect(changes).toHaveLength(1);
 	const firstChange = changes[0];
+	if (!firstChange) throw new Error('Expected first change map');
 	expect(firstChange.has('unknownKey')).toBe(false);
 	expect(firstChange.has('theme')).toBe(true);
 
@@ -213,7 +226,9 @@ test('observeAll skips unknown keys', () => {
 
 test('observeAll returns an unsubscribe function that works', () => {
 	const ydoc = new Y.Doc();
-	const kv = createKv(ydoc, {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const ykv = createEncryptedYkvLww(yarray, {});
+	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 

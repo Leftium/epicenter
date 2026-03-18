@@ -1,5 +1,5 @@
 /**
- * `epicenter auth` — manage authentication with Epicenter servers.
+ * `epicenter auth` \u2014 manage authentication with Epicenter servers.
  *
  * Supports two auth flows:
  * - Password login: interactive email/password prompt (default for TTY)
@@ -9,6 +9,7 @@
  */
 
 import type { Argv, CommandModule } from 'yargs';
+import { createAuthApi } from '../auth/api';
 import { loginWithDeviceCode } from '../auth/device-flow';
 import {
 	clearSession,
@@ -16,20 +17,6 @@ import {
 	loadSession,
 	saveSession,
 } from '../auth/store';
-import { createHttpClient } from '../http-client';
-
-/** Response from the email sign-in endpoint. */
-type SignInResponse = {
-	token: string;
-	expiresAt: string;
-	user: { id: string; email: string; name?: string };
-};
-
-/** Response from Better Auth's /auth/get-session endpoint. */
-type SessionResponse = {
-	session: { id: string; expiresAt: string; token: string; userId: string };
-	user: { id: string; email: string; name?: string };
-};
 
 async function readLine(prompt: string, silent = false): Promise<string> {
 	const readline = await import('node:readline');
@@ -95,14 +82,11 @@ function buildLoginCommand(home: string) {
 			const email = await readLine('Email: ');
 			const password = await readLine('Password: ', true);
 
-			const client = createHttpClient(serverUrl);
+			const api = createAuthApi(serverUrl);
 
-			let response: SignInResponse;
+			let response;
 			try {
-				response = await client.post<SignInResponse>(
-					'/auth/sign-in/email',
-					{ email, password },
-				);
+				response = await api.signInWithEmail(email, password);
 			} catch (err) {
 				console.error(`Login failed: ${(err as Error).message}`);
 				process.exit(1);
@@ -119,7 +103,6 @@ function buildLoginCommand(home: string) {
 			const displayName = response.user.name ?? response.user.email;
 			console.log(`\u2713 Logged in as ${displayName} (${response.user.email})`);
 		},
-	};
 }
 
 function buildLogoutCommand(home: string) {
@@ -144,8 +127,8 @@ function buildLogoutCommand(home: string) {
 
 			// Best-effort remote sign-out
 			try {
-				const client = createHttpClient(session.server, session.accessToken);
-				await client.post('/auth/sign-out');
+				const api = createAuthApi(session.server, session.accessToken);
+				await api.signOut();
 			} catch {
 				// Remote may be unreachable
 			}
@@ -153,7 +136,6 @@ function buildLogoutCommand(home: string) {
 			await clearSession(home, session.server);
 			console.log('\u2713 Logged out.');
 		},
-	};
 }
 
 function buildStatusCommand(home: string) {
@@ -175,10 +157,10 @@ function buildStatusCommand(home: string) {
 				return;
 			}
 
-			const client = createHttpClient(session.server, session.accessToken);
+			const api = createAuthApi(session.server, session.accessToken);
 
 			try {
-				const remote = await client.get<SessionResponse>('/auth/get-session');
+				const remote = await api.getSession();
 				const displayName = remote.user.name ?? remote.user.email;
 				console.log(`Logged in as: ${displayName} (${remote.user.email})`);
 				console.log(`Server:       ${session.server}`);
@@ -193,7 +175,6 @@ function buildStatusCommand(home: string) {
 				console.warn('Warning: Could not verify session with remote server.');
 			}
 		},
-	};
 }
 
 /**

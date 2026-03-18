@@ -39,7 +39,7 @@
  *     sessionStorage.setItem('ek', keyBase64);
  *   },
  *   async load() {
- *     return sessionStorage.getItem('ek') ?? undefined;
+ *     return sessionStorage.getItem('ek');
  *   },
  *   async clear() {
  *     sessionStorage.removeItem('ek');
@@ -57,7 +57,7 @@
  *   │  stored locally as-is (no conversion needed)
  *   ▼
  * App startup (before auth roundtrip completes)
- *   │  KeyCache.load() → base64 string (cached from last session)
+ *   │  KeyCache.load() → base64 string | null (cached from last session)
  *   │  passed directly to keyManager.activateEncryption(keyBase64)
  *   ▼
  * activateEncryption() → base64ToBytes → HKDF → activateEncryption
@@ -76,8 +76,8 @@
 export type KeyCache = {
 	/** Save the base64-encoded encryption key. */
 	save(keyBase64: string): Promise<void>;
-	/** Load the cached base64-encoded key, or undefined if not cached. */
-	load(): Promise<string | undefined>;
+	/** Load the cached base64-encoded key, or null if not cached. */
+	load(): Promise<string | null>;
 	/** Clear all cached keys (sign-out or user switch). */
 	clear(): Promise<void>;
 };

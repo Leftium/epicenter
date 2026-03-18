@@ -1,40 +1,45 @@
 /**
- * Chrome extension `KeyCache` backed by `chrome.storage.session`.
+ * Chrome extension `KeyCache` backed by WXT storage (`session:` area).
  *
  * Caches the base64-encoded encryption key so the workspace can
  * decrypt immediately on sidebar/popup reopen without a server roundtrip.
  *
- * `chrome.storage.session` is ideal for this because:
+ * Uses WXT's `storage.defineItem` with the `session:` area, which wraps
+ * `chrome.storage.session` with type-safe access, consistent with how
+ * `device-id.ts` and `storage-state.svelte.ts` use WXT storage elsewhere.
+ *
+ * Session storage is ideal for this because:
  * - Persists across popup/sidebar opens within a browser session
  * - Auto-clears when the browser closes (no stale keys)
  * - Async JSON-backed API (base64 strings store natively, no conversion)
  *
- * Storage key: `'epicenter:encryption-key'` — single key, not per-user. Only one
- * user is active at a time, and `deactivateEncryption()` clears the cache on
- * every sign-out, so per-user scoping would add complexity for no benefit.
+ * Storage key: `'session:epicenter:encryption-key'` — single key, not per-user.
+ * Only one user is active at a time, and `deactivateEncryption()` clears the
+ * cache on every sign-out, so per-user scoping would add complexity for no benefit.
  *
  * @see {@link @epicenter/workspace/shared/crypto/key-cache} — The interface this implements
  */
 
 import type { KeyCache } from '@epicenter/workspace/shared/crypto/key-cache';
+import { storage } from '@wxt-dev/storage';
 
 /**
- * Session storage key for the cached encryption key.
+ * WXT storage item for the cached encryption key.
  *
- * Prefixed with `epicenter:` to avoid collisions with other extensions or
- * libraries sharing `chrome.storage.session`. A single key (not per-user)
- * because `deactivateEncryption()` always clears the cache on sign-out—there's
- * only ever one active user's key stored at a time.
+ * Uses the `session:` area to match `chrome.storage.session` semantics—persists
+ * across popup/sidebar reopens but clears when the browser closes.
  */
-const STORAGE_KEY = 'epicenter:encryption-key';
+const encryptionKeyItem = storage.defineItem<string | null>(
+	'session:epicenter:encryption-key',
+	{ fallback: null },
+);
 
 /**
- * `KeyCache` implementation using `chrome.storage.session`.
+ * `KeyCache` implementation using WXT storage (`session:` area).
  *
- * Stores and retrieves the base64-encoded encryption key under a single
- * storage key (`epicenter:encryption-key`). The `clear()` method only removes
- * that key—it does not wipe unrelated session storage entries that other parts
- * of the extension might use.
+ * Stores and retrieves the base64-encoded encryption key via WXT's typed
+ * storage API. The `clear()` method only removes that key—it does not wipe
+ * unrelated session storage entries that other parts of the extension might use.
  *
  * @example
  * ```typescript
@@ -49,15 +54,14 @@ const STORAGE_KEY = 'epicenter:encryption-key';
  */
 export const keyCache: KeyCache = {
 	async save(keyBase64) {
-		await browser.storage.session.set({ [STORAGE_KEY]: keyBase64 });
+		await encryptionKeyItem.setValue(keyBase64);
 	},
 
 	async load() {
-		const result = await browser.storage.session.get(STORAGE_KEY);
-		return result[STORAGE_KEY] as string | undefined;
+		return await encryptionKeyItem.getValue();
 	},
 
 	async clear() {
-		await browser.storage.session.remove(STORAGE_KEY);
+		await encryptionKeyItem.removeValue();
 	},
 };

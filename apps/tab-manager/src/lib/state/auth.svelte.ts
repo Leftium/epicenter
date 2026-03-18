@@ -8,10 +8,7 @@
  */
 
 import type { CustomSessionFields } from '@epicenter/api/src/custom-session-fields';
-import {
-	base64ToBytes,
-	deriveWorkspaceKey,
-} from '@epicenter/workspace/shared/crypto';
+import { createKeyManager } from '@epicenter/workspace/shared/crypto/key-manager';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
 import { untrack } from 'svelte';
@@ -125,38 +122,9 @@ function createAuthState() {
 		}),
 	);
 
-	// ─── Inlined key management (replaces createKeyManager) ───
+	// Key management via createKeyManager (dedup, race protection, HKDF derivation, caching)
 
-	let lastKeyBase64: string | undefined;
-	let keyGeneration = 0;
-
-	/** Sign-in: derive workspace key, activate encryption. */
-	async function activateSession(userKeyBase64: string, userId: string) {
-		if (userKeyBase64 === lastKeyBase64) return;
-		lastKeyBase64 = userKeyBase64;
-		const thisGeneration = ++keyGeneration;
-		const userKey = base64ToBytes(userKeyBase64);
-		const wsKey = await deriveWorkspaceKey(userKey, workspace.id);
-		if (thisGeneration !== keyGeneration) return;
-		workspace.activateEncryption(wsKey);
-		await keyCache.set(userId, userKeyBase64);
-	}
-
-	/** Sign-out: deactivate encryption, wipe local persistence, clear key cache. */
-	async function deactivateSession() {
-		++keyGeneration;
-		lastKeyBase64 = undefined;
-		await workspace.deactivateEncryption();
-		await keyCache.clear();
-	}
-
-	/** Boot: restore key from cache without wiping data. */
-	async function restoreFromCache(userId: string): Promise<boolean> {
-		const cached = await keyCache.get(userId);
-		if (!cached) return false;
-		await activateSession(cached, userId);
-		return true;
-	}
+	const keyManager = createKeyManager(workspace, { keyCache });
 
 	// ─── Effects ───
 
@@ -179,7 +147,7 @@ function createAuthState() {
 				phase = { status: 'signed-in' };
 				const userId = authUser.current.id;
 				untrack(() => {
-					void restoreFromCache(userId);
+					void keyManager.restoreKeyFromCache(userId);
 				});
 			}
 		});
@@ -218,7 +186,7 @@ function createAuthState() {
 	async function refreshEncryptionKey() {
 		const result = await getSession().catch(() => null);
 		if (result?.data?.encryptionKey) {
-			await activateSession(result.data.encryptionKey, result.data.user.id);
+			await keyManager.activateEncryption(result.data.encryptionKey, result.data.user.id);
 		}
 	}
 
@@ -402,7 +370,8 @@ function createAuthState() {
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
-			await deactivateSession();
+			await keyManager.clearKeys();
+			await workspace.deactivateEncryption();
 			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
 			phase = { status: 'signed-out' };
@@ -425,7 +394,7 @@ function createAuthState() {
 
 			const userId = authUser.current?.id;
 			if (userId) {
-				void restoreFromCache(userId);
+				void keyManager.restoreKeyFromCache(userId);
 			}
 
 			const token = authToken.current;
@@ -449,7 +418,8 @@ function createAuthState() {
 
 				// 4xx → server explicitly rejected the token
 				await clearState();
-				await deactivateSession();
+				await keyManager.clearKeys();
+				await workspace.deactivateEncryption();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
@@ -463,7 +433,7 @@ function createAuthState() {
 			const user = serializeDates(data.user);
 			await authUser.set(user);
 			if (data.encryptionKey) {
-				await activateSession(data.encryptionKey, data.user.id);
+				await keyManager.activateEncryption(data.encryptionKey, data.user.id);
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);

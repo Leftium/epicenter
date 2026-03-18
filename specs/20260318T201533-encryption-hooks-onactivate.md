@@ -95,10 +95,10 @@ The hook fires after HKDF derivation succeeds AND the stores are activated — n
 - [x] Update `apps/tab-manager/src/lib/workspace.ts`: add `onActivate` to `.withEncryption()` config
 - [x] Update `apps/tab-manager/src/lib/state/auth.svelte.ts`: delete `activateAndCacheKey`, remove all `keyCache.set`/`keyCache.get` calls, simplify restore-from-cache to use `keyCache.load()`
 - [x] Keep `import { keyCache }` in `auth.svelte.ts` — still needed for `keyCache.load()` reads
-- [ ] Add test: `onActivate` fires after successful activation with the userKey
-- [ ] Add test: `onActivate` does NOT fire on dedup skip (same key twice)
-- [ ] Add test: `onActivate` does NOT fire when HKDF fails
-- [ ] Add test: `onActivate` does NOT fire when activation is superseded by race (stale generation)
+- [x] Add test: `onActivate` fires after successful activation with the userKey
+- [x] Add test: `onActivate` does NOT fire on dedup skip (same key twice)
+- [x] Add test: `onActivate` does NOT fire when HKDF fails
+- [x] Add test: `onActivate` does NOT fire when activation is superseded by race (stale generation)
 - [ ] Run `bun test packages/workspace/` — all pass
 - [ ] Run `bun run typecheck` in `apps/tab-manager/` — only pre-existing errors
 

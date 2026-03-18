@@ -10,7 +10,7 @@
  * - Document-bound tables expose `documents`, while non-bound tables do not.
  */
 
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, mock, spyOn, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import { generateEncryptionKey } from '../shared/crypto/index.js';
@@ -1079,7 +1079,9 @@ describe('.withEncryption() lifecycle', () => {
 			const { client } = setupLifecycle();
 
 			// Start activation (HKDF is in-flight)
-			const activatePromise = client.activateEncryption(generateEncryptionKey());
+			const activatePromise = client.activateEncryption(
+				generateEncryptionKey(),
+			);
 			// Immediately deactivate before HKDF completes
 			await client.deactivateEncryption();
 
@@ -1088,6 +1090,67 @@ describe('.withEncryption() lifecycle', () => {
 
 			// Generation counter should have prevented the stale key from applying
 			expect(client.isEncrypted).toBe(false);
+		});
+	});
+
+	describe('onActivate hook', () => {
+		function setupOnActivate() {
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+			);
+			const onActivate = mock(() => Promise.resolve());
+			const onDeactivate = mock(() => Promise.resolve());
+			const client = createWorkspace(
+				defineWorkspace({ id: 'onactivate-test', tables: { posts } }),
+			).withEncryption({ onActivate, onDeactivate });
+			return { client, onActivate, onDeactivate };
+		}
+
+		test('fires after successful activation with the userKey', async () => {
+			const { client, onActivate } = setupOnActivate();
+			const key = generateEncryptionKey();
+
+			await client.activateEncryption(key);
+
+			expect(onActivate).toHaveBeenCalledTimes(1);
+			expect(onActivate).toHaveBeenCalledWith(key);
+		});
+
+		test('does NOT fire on dedup skip (same key twice)', async () => {
+			const { client, onActivate } = setupOnActivate();
+			const key = generateEncryptionKey();
+
+			await client.activateEncryption(key);
+			await client.activateEncryption(key);
+
+			expect(onActivate).toHaveBeenCalledTimes(1);
+		});
+
+		test('does NOT fire when HKDF fails', async () => {
+			const { client, onActivate } = setupOnActivate();
+			const key = generateEncryptionKey();
+			const importKeySpy = spyOn(
+				crypto.subtle,
+				'importKey',
+			).mockRejectedValueOnce(new Error('forced hkdf importKey failure'));
+
+			await client.activateEncryption(key);
+
+			importKeySpy.mockRestore();
+			expect(onActivate).toHaveBeenCalledTimes(0);
+			expect(client.isEncrypted).toBe(false);
+		});
+
+		test('does NOT fire when activation is superseded by race (stale generation)', async () => {
+			const { client, onActivate } = setupOnActivate();
+
+			const activatePromise = client.activateEncryption(
+				generateEncryptionKey(),
+			);
+			await client.deactivateEncryption();
+			await activatePromise;
+
+			expect(onActivate).toHaveBeenCalledTimes(0);
 		});
 	});
 });

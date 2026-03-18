@@ -98,6 +98,8 @@ export { defineWorkspace } from './define-workspace.js';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { createWorkspace } from './create-workspace.js';
+// Document origin sentinel (for filtering auto-bumps in table observers)
+export { DOCUMENTS_ORIGIN } from './create-document.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Lower-Level APIs (Bring Your Own Y.Doc)

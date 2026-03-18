@@ -1,26 +1,42 @@
 /**
- * Lifecycle protocol for providers and extensions.
+ * Lifecycle primitives for workspace and document extensions.
  *
- * This module defines the shared lifecycle contract that all providers (doc-level)
- * and extensions (workspace-level) must satisfy. The protocol enables:
+ * This module defines:
  *
- * - **Async initialization tracking**: `whenReady` lets UI render gates wait for readiness
- * - **Resource cleanup**: `destroy` ensures connections, observers, and handles are released
+ * - **`Lifecycle`** — The base `{ whenReady, destroy }` contract all extensions satisfy
+ * - **`Extension<T>`** — Resolved form: custom exports + required lifecycle hooks
+ * - **`defineExtension()`** — Normalizes raw factory returns into `Extension<T>`
+ * - **`destroyLifo()` / `startDestroyLifo()`** — LIFO teardown for ordered cleanup
  *
  * ## Architecture
+ *
+ * Extensions are registered at two scopes—workspace and document—with a shared
+ * subset for dual-scope registration:
  *
  * ```
  * ┌─────────────────────────────────────────────────────────────────┐
  * │  Lifecycle (base protocol)                                      │
  * │    { whenReady, destroy }                                       │
  * └─────────────────────────────────────────────────────────────────┘
+ *          │
+ *          ▼
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │  Extension<T> (resolved form)                                   │
+ * │    T & { whenReady: Promise<void>, destroy: () => void }        │
+ * └─────────────────────────────────────────────────────────────────┘
  *          │                                    │
  *          ▼                                    ▼
  * ┌──────────────────────────┐    ┌──────────────────────────────┐
- * │  Providers (doc-level)   │    │  Extensions (workspace-level) │
- * │  return Lifecycle & T    │    │  return flat { T, whenReady?, │
- * │  directly                │    │    destroy? }                  │
+ * │  Workspace extensions    │    │  Document extensions          │
+ * │  ExtensionContext         │    │  DocumentContext              │
+ * │  (tables, kv, awareness) │    │  (timeline, ydoc)             │
  * └──────────────────────────┘    └──────────────────────────────┘
+ *          │                                    │
+ *          └────────────┬─────────────────────┘
+ *                       ▼
+ *          SharedExtensionContext
+ *          { ydoc, whenReady }
+ *          (used by withExtension)
  * ```
  *
  * ## Usage
@@ -28,29 +44,21 @@
  * Factory functions are **always synchronous**. Async initialization is tracked
  * via the returned `whenReady` promise, not the factory itself.
  *
- * **Extensions** return a flat object with custom exports + optional lifecycle hooks:
- *
  * ```typescript
  * // Extension with exports and cleanup
- * const withCleanup: ExtensionFactory = ({ ydoc }) => {
- *   const db = new Database(':memory:');
- *   return {
- *     db,
- *     destroy: () => db.close(),
- *   };
- * };
- * ```
- *
- * **Providers** return `Lifecycle` (or `Lifecycle & T`) directly:
- *
- * ```typescript
- * // Provider with async initialization
- * const persistence: ProviderFactory = ({ ydoc }) => {
+ * const persistence: ExtensionFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return {
+ *     provider,
  *     whenReady: provider.whenReady,
  *     destroy: () => provider.destroy(),
  *   };
+ * };
+ *
+ * // Lifecycle-only extension (no custom exports)
+ * const broadcast = ({ ydoc }) => {
+ *   const channel = new BroadcastChannel(ydoc.guid);
+ *   return { destroy: () => channel.close() };
  * };
  * ```
  */

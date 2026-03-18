@@ -358,8 +358,8 @@ Specifically:
 - [x] Delete key-manager.ts, key-manager.test.ts, remove re-exports from crypto/index.ts
 - [x] Migrate dedup/race/generation/hook tests to create-workspace.test.ts
 - [x] Update key-cache.ts JSDoc
-- [ ] Run `bun test` in packages/workspace
-- [ ] Run typecheck across monorepo
+- [x] Run `bun test` in packages/workspace (490 pass, 0 fail)
+- [x] Run typecheck across monorepo (only pre-existing packages/ui `#/` import errors)
 
 ## Constraints
 
@@ -376,3 +376,22 @@ Specifically:
 - Key rotation (keyVersion infrastructure exists in blob format but no rotation logic—separate concern)
 - Server-side decryption changes (server already derives keys independently via `ENCRYPTION_SECRETS`)
 - Sync extension encryption awareness (sync is and should remain encryption-transparent)
+
+## Review
+
+**Completed**: 2026-03-18
+**Branch**: opencode/shiny-meadow
+
+### Summary
+
+Moved encryption lifecycle management from the standalone `KeyManager` factory into the workspace client via a `.withEncryption()` builder method. The workspace now owns dedup (byte-level comparison), race protection (generation counter), HKDF derivation, and the `onDeactivate` hook—all previously split across KeyManager and auth.svelte.ts. Two real bugs in auth.svelte.ts (leaked encryption state on token-cleared `$effect` and `!data` branch in `checkSession`) are fixed for free because every sign-out path now calls a single `workspace.deactivateEncryption()`.
+
+### Deviations from Spec
+
+- **`TEncryption` type parameter**: Added a 7th generic parameter to `WorkspaceClientBuilder` and 8th to `WorkspaceClientWithActions` to thread encryption methods through `.withActions()`. The spec described `withEncryption` returning `Builder & EncryptionMethods`, but that intersection is lost when `.withActions()` returns `WorkspaceClientWithActions`. The type parameter approach preserves the intersection through the entire builder chain.
+- **`Object.defineProperty` for `isEncrypted`**: The spec suggested `Object.assign(client, { get isEncrypted() {...} })` but `Object.assign` evaluates getters at copy time rather than preserving them. Used `Object.defineProperty` for the getter and `Object.assign` for the methods.
+- **`key-cache.ts` import path**: Updated from `@epicenter/workspace/shared/crypto` to `@epicenter/workspace/shared/crypto/key-cache` since the `KeyCache` re-export was removed from crypto/index.ts. Added corresponding package.json export entry.
+
+### Follow-up Work
+
+- None identified—the spec's scope is fully implemented.

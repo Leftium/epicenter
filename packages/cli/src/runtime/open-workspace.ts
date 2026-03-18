@@ -115,3 +115,29 @@ export async function openWorkspaceFromDisk(
 		destroy: () => client.destroy(),
 	};
 }
+
+/**
+ * Run an operation against a workspace, handling the full open/use/destroy lifecycle.
+ *
+ * Opens the workspace from disk, passes the client to the callback,
+ * then destroys the client (flushes persistence) regardless of success or failure.
+ *
+ * @example
+ * ```typescript
+ * const notes = await withWorkspace({ dir: '.' }, (client) => {
+ *   return client.tables.notes.getAllValid();
+ * });
+ * ```
+ */
+export async function withWorkspace<T>(
+	options: OpenWorkspaceOptions,
+	fn: (client: AnyWorkspaceClient) => T | Promise<T>,
+): Promise<T> {
+	const { client, destroy } = await openWorkspaceFromDisk(options);
+	try {
+		const result = await fn(client);
+		return result;
+	} finally {
+		await destroy();
+	}
+}

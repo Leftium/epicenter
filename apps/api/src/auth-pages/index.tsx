@@ -20,21 +20,15 @@ export function renderSignInPage() {
 }
 
 export function renderConsentPage({
-	consentCode,
 	clientId,
 	scope,
 }: {
-	consentCode?: string;
 	clientId?: string;
 	scope?: string;
 }) {
 	return (
 		<AuthLayout title="Authorize — Epicenter">
-			<ConsentPage
-				consentCode={consentCode}
-				clientId={clientId}
-				scope={scope}
-			/>
+			<ConsentPage clientId={clientId} scope={scope} />
 		</AuthLayout>
 	);
 }

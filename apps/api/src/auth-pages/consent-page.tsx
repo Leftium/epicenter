@@ -82,16 +82,13 @@ const CONSENT_SCRIPT = raw(`<script>
  * the requested scopes, and approve/deny buttons.
  *
  * Query params (set by Better Auth):
- * - `consent_code` — identifies the authorization request
  * - `client_id` — the requesting application
  * - `scope` — space-separated list of requested scopes
  */
 export function ConsentPage({
-	consentCode,
 	clientId,
 	scope,
 }: {
-	consentCode?: string;
 	clientId?: string;
 	scope?: string;
 }) {
@@ -116,7 +113,6 @@ export function ConsentPage({
 				</>
 			)}
 
-			<input type="hidden" id="consent-code" value={consentCode ?? ''} />
 			<input type="hidden" id="scope" value={scope ?? ''} />
 
 			<div id="msg" class="msg hidden" />

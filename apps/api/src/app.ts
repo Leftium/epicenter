@@ -391,15 +391,15 @@ app.get(
 app.get('/sign-in', (c) => c.html(renderSignInPage()));
 app.get(
 	'/consent',
-	sValidator('query', type({ 'consent_code?': 'string', 'client_id?': 'string', 'scope?': 'string' })),
+	sValidator('query', type({ 'client_id?': 'string', 'scope?': 'string' })),
 	async (c) => {
 		const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
 		if (!session) {
 			const consentUrl = '/consent' + new URL(c.req.url).search;
 			return c.redirect(`/sign-in?callbackURL=${encodeURIComponent(consentUrl)}`);
 		}
-		const { consent_code: consentCode, client_id: clientId, scope } = c.req.valid('query');
-		return c.html(renderConsentPage({ consentCode, clientId, scope }));
+		const { client_id: clientId, scope } = c.req.valid('query');
+		return c.html(renderConsentPage({ clientId, scope }));
 	},
 );
 app.get(

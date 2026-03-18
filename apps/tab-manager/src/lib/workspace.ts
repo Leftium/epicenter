@@ -87,7 +87,7 @@ export const SavedTabId = type('string').as<SavedTabId>();
  *
  * @example
  * ```typescript
- * workspace.current.tables.savedTabs.set({
+ * workspace.tables.savedTabs.set({
  *   id: generateSavedTabId(),
  *   url: tab.url,
  *   title: tab.title || 'Untitled',
@@ -113,7 +113,7 @@ export const BookmarkId = type('string').as<BookmarkId>();
  *
  * @example
  * ```typescript
- * workspace.current.tables.bookmarks.set({
+ * workspace.tables.bookmarks.set({
  *   id: generateBookmarkId(),
  *   url: tab.url,
  *   title: tab.title || 'Untitled',
@@ -140,7 +140,7 @@ export const ConversationId = type('string').as<ConversationId>();
  * @example
  * ```typescript
  * const id = generateConversationId();
- * workspace.current.tables.conversations.set({
+ * workspace.tables.conversations.set({
  *   id,
  *   title: 'New Chat',
  *   provider: DEFAULT_PROVIDER,
@@ -170,7 +170,7 @@ export const ChatMessageId = type('string').as<ChatMessageId>();
  * @example
  * ```typescript
  * const userMessageId = generateChatMessageId();
- * workspace.current.tables.chatMessages.set({
+ * workspace.tables.chatMessages.set({
  *   id: userMessageId,
  *   conversationId,
  *   role: 'user',
@@ -592,9 +592,9 @@ const definition = defineWorkspace<
 // Workspace Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const workspace = createWorkspaceState();
+export const workspace = buildWorkspaceClient();
 
-export const workspaceTools = actionsToClientTools(workspace.current.actions);
+export const workspaceTools = actionsToClientTools(workspace.actions);
 export const workspaceDefinitions = toToolDefinitions(workspaceTools);
 
 export type WorkspaceTools = typeof workspaceTools;
@@ -607,7 +607,7 @@ export type WorkspaceActionName = WorkspaceTools[number]['name'];
  * deriving names from underscore-separated tool names.
  */
 export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
-	[...iterateActions(workspace.current.actions)]
+	[...iterateActions(workspace.actions)]
 		.filter(([action]) => action.title !== undefined)
 		.map(([action, path]) => [path.join('_'), action.title!]),
 );
@@ -1060,23 +1060,6 @@ function buildWorkspaceClient() {
 		}));
 }
 
-/**
- * Stable workspace singleton.
- *
- * The client is created once and never replaced. Encryption and data
- * are toggled in-place via `activateEncryption()`, `deactivateEncryption()`,
- * and `clearAllData()`. Observers stay alive because the Y.Doc never changes.
- * Actions stay valid because the client never changes.
- */
-function createWorkspaceState() {
-	const client = buildWorkspaceClient();
-
-	return {
-		get current() {
-			return client;
-		},
-	};
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal Helpers

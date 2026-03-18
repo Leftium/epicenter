@@ -425,6 +425,7 @@ function createAuthState(encryption: KeyManager) {
 				// 4xx → server explicitly rejected the token
 				await clearState();
 				await encryption.wipe();
+				await workspace.reset();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}

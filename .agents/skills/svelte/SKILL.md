@@ -385,3 +385,150 @@ When building interactive components (especially with dialogs/modals), create se
 - When you find yourself passing callbacks just to update parent state
 
 The key insight: It's perfectly fine to instantiate multiple dialogs (one per row) rather than managing a single shared dialog with complex state. Modern frameworks handle this efficiently, and the code clarity is worth it.
+
+# Prop-First Data Derivation
+
+When a component receives a prop that already carries the information needed for a decision, derive from the prop. Never reach into global state for data the component already has.
+
+```svelte
+<!-- BAD: Reading global state for info the prop already carries -->
+<script lang="ts">
+	import { viewState } from '$lib/state';
+	let { note }: { note: Note } = $props();
+
+	// viewState.isRecentlyDeletedView is redundant — note.deletedAt has the answer
+	const showRestoreActions = $derived(viewState.isRecentlyDeletedView);
+</script>
+
+<!-- GOOD: Derive from the prop itself -->
+<script lang="ts">
+	let { note }: { note: Note } = $props();
+
+	// The note knows its own state — no global state needed
+	const isDeleted = $derived(note.deletedAt !== undefined);
+</script>
+```
+
+### Why This Matters
+
+- **Self-describing**: The component works correctly regardless of which view rendered it.
+- **Fewer imports**: Dropping a global state import reduces coupling.
+- **Testable**: Pass a note with `deletedAt` set and the component behaves correctly — no need to mock view state.
+
+### The Rule
+
+If the data needed for a decision is already on a prop (directly or derivable), **always** derive from the prop. Global state is for information the component genuinely doesn't have.
+
+# View-Mode Branching Limit
+
+If a component checks the same boolean flag (like `isRecentlyDeletedView`, `isEditing`, `isCompact`) in **3 or more template locations**, the component is likely serving two purposes and should be considered for extraction.
+
+```svelte
+<!-- SMELL: Same flag checked 3+ times -->
+<script lang="ts">
+	const notes = $derived(
+		isRecentlyDeletedView ? deletedNotes : filteredNotes,  // branch 1
+	);
+</script>
+
+{#if !isRecentlyDeletedView}  <!-- branch 2 -->
+	<div>sort controls...</div>
+{/if}
+
+{#if isRecentlyDeletedView}  <!-- branch 3 -->
+	No deleted notes
+{:else}
+	No notes yet
+{/if}
+```
+
+### The Fix: Push Branching Up to the Parent
+
+Move the view-mode decision to the parent. The child component takes the varying data as props:
+
+```svelte
+<!-- Parent: one branch point, explicit data flow -->
+{#if viewState.isRecentlyDeletedView}
+	<NoteList
+		notes={notesState.deletedNotes}
+		title="Recently Deleted"
+		showControls={false}
+		emptyMessage="No deleted notes"
+	/>
+{:else}
+	<NoteList
+		notes={viewState.filteredNotes}
+		title={viewState.folderName}
+	/>
+{/if}
+```
+
+The child becomes dumb — it renders what it's told, with zero awareness of view modes. This keeps the branching in **one place** instead of scattered across the component tree.
+
+### The Threshold
+
+- **1–2 checks**: Acceptable — simple conditional rendering.
+- **3+ checks on the same flag**: The component is likely two views in one. Consider pushing the varying data up as props.
+
+# Data-Driven Repetitive Markup
+
+When **3 or more sequential sibling elements** follow an identical pattern with only data varying, consider extracting the data into an array and using `{#each}` or a `{#snippet}`.
+
+```svelte
+<!-- BAD: Copy-paste ×3 with only value/label changing -->
+<DropdownMenu.Item onclick={() => setSortBy('dateEdited')}>
+	{#if sortBy === 'dateEdited'}<CheckIcon class="mr-2 size-4" />{/if}
+	Date Edited
+</DropdownMenu.Item>
+<DropdownMenu.Item onclick={() => setSortBy('dateCreated')}>
+	{#if sortBy === 'dateCreated'}<CheckIcon class="mr-2 size-4" />{/if}
+	Date Created
+</DropdownMenu.Item>
+<DropdownMenu.Item onclick={() => setSortBy('title')}>
+	{#if sortBy === 'title'}<CheckIcon class="mr-2 size-4" />{/if}
+	Title
+</DropdownMenu.Item>
+
+<!-- GOOD: Data-driven with {#each} -->
+<script lang="ts">
+	const sortOptions = [
+		{ value: 'dateEdited' as const, label: 'Date Edited' },
+		{ value: 'dateCreated' as const, label: 'Date Created' },
+		{ value: 'title' as const, label: 'Title' },
+	];
+</script>
+
+{#each sortOptions as option}
+	<DropdownMenu.Item onclick={() => setSortBy(option.value)}>
+		{#if sortBy === option.value}
+			<CheckIcon class="mr-2 size-4" />
+		{:else}
+			<span class="mr-2 size-4"></span>
+		{/if}
+		{option.label}
+	</DropdownMenu.Item>
+{/each}
+```
+
+For more complex repeated patterns (e.g., toolbar buttons with tooltips), use `{#snippet}` to define the shared structure once:
+
+```svelte
+{#snippet toggleButton(pressed: boolean, onToggle: () => void, icon: typeof BoldIcon, label: string)}
+	<Tooltip.Root>
+		<Tooltip.Trigger>
+			<Toggle size="sm" {pressed} onPressedChange={onToggle}>
+				<svelte:component this={icon} class="size-4" />
+			</Toggle>
+		</Tooltip.Trigger>
+		<Tooltip.Content>{label}</Tooltip.Content>
+	</Tooltip.Root>
+{/snippet}
+
+{@render toggleButton(activeFormats.bold, () => editor?.chain().focus().toggleBold().run(), BoldIcon, 'Bold (⌘B)')}
+{@render toggleButton(activeFormats.italic, () => editor?.chain().focus().toggleItalic().run(), ItalicIcon, 'Italic (⌘I)')}
+```
+
+### When NOT to Extract
+
+- **2 or fewer** repetitions — extraction adds indirection without meaningful savings.
+- **Structurally similar but semantically different** — if the elements serve different purposes and might diverge, keep them separate.

@@ -8,13 +8,22 @@
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import { foldersState, notesState, viewState } from '$lib/state';
+	import { foldersState, notesState } from '$lib/state';
 	import { parseDateTime } from '$lib/utils/date';
 	import type { Note } from '$lib/workspace';
 
-	let { note }: { note: Note } = $props();
+	let {
+		note,
+		isSelected,
+		onSelect,
+	}: {
+		note: Note;
+		isSelected: boolean;
+		onSelect: () => void;
+	} = $props();
 
-	const isSelected = $derived(note.id === viewState.selectedNoteId);
+	/** Derive deleted status from the note itself — no need to check view mode. */
+	const isDeleted = $derived(note.deletedAt !== undefined);
 
 	let confirmingPermanentDelete = $state(false);
 </script>
@@ -27,7 +36,7 @@
 			class="group relative flex cursor-pointer flex-col gap-0.5 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-accent/30 {isSelected
 				? 'bg-accent'
 				: ''}"
-			onclick={() => viewState.selectNote(note.id)}
+			onclick={onSelect}
 		>
 			<div class="flex items-start justify-between gap-2">
 				<span class="font-medium line-clamp-1">
@@ -44,7 +53,7 @@
 				{note.preview || 'No content'}
 			</p>
 
-			{#if viewState.isRecentlyDeletedView}
+			{#if isDeleted}
 				<div
 					class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover:flex {isSelected
 						? 'flex'
@@ -107,7 +116,7 @@
 	</ContextMenu.Trigger>
 
 	<ContextMenu.Content class="w-48">
-		{#if viewState.isRecentlyDeletedView}
+		{#if isDeleted}
 			<ContextMenu.Item onclick={() => notesState.restoreNote(note.id)}>
 				<ArchiveRestoreIcon class="mr-2 size-4" />
 				Restore

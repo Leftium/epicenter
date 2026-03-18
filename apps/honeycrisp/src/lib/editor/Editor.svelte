@@ -52,6 +52,41 @@
 		blockquote: false,
 	});
 
+	const activeHeading = $derived(
+		activeFormats.heading1
+			? 'h1'
+			: activeFormats.heading2
+				? 'h2'
+				: activeFormats.heading3
+					? 'h3'
+					: '',
+	);
+
+	const activeListType = $derived(
+		activeFormats.bulletList
+			? 'bullet'
+			: activeFormats.orderedList
+				? 'ordered'
+				: activeFormats.taskList
+					? 'task'
+					: '',
+	);
+
+	function toggleHeading(value: string) {
+		const levels: Record<string, number> = { h1: 1, h2: 2, h3: 3 };
+		const level = levels[value];
+		if (level) editor?.chain().focus().toggleHeading({ level }).run();
+	}
+
+	function toggleListType(value: string) {
+		const commands: Record<string, () => void> = {
+			bullet: () => editor?.chain().focus().toggleBulletList().run(),
+			ordered: () => editor?.chain().focus().toggleOrderedList().run(),
+			task: () => editor?.chain().focus().toggleTaskList().run(),
+		};
+		commands[value]?.();
+	}
+
 	$effect(() => {
 		if (!element) return;
 
@@ -113,94 +148,47 @@
 	});
 </script>
 
+{#snippet toggleButton(pressed: boolean, onToggle: () => void, icon: typeof BoldIcon, label: string)}
+	<Tooltip.Root>
+		<Tooltip.Trigger>
+			<Toggle size="sm" {pressed} onPressedChange={onToggle}>
+				<svelte:component this={icon} class="size-4" />
+			</Toggle>
+		</Tooltip.Trigger>
+		<Tooltip.Content>{label}</Tooltip.Content>
+	</Tooltip.Root>
+{/snippet}
+
+{#snippet groupItem(value: string, icon: typeof BoldIcon, label: string)}
+	<Tooltip.Root>
+		<Tooltip.Trigger>
+			<ToggleGroup.Item {value}>
+				<svelte:component this={icon} class="size-4" />
+			</ToggleGroup.Item>
+		</Tooltip.Trigger>
+		<Tooltip.Content>{label}</Tooltip.Content>
+	</Tooltip.Root>
+{/snippet}
+
 <div class="flex h-full flex-col">
 	{#if editor}
 		<div class="flex items-center gap-1 border-b p-2">
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<Toggle
-						size="sm"
-						pressed={activeFormats.bold}
-						onPressedChange={() => editor?.chain().focus().toggleBold().run()}
-					>
-						<BoldIcon class="size-4" />
-					</Toggle>
-				</Tooltip.Trigger>
-				<Tooltip.Content>Bold (⌘B)</Tooltip.Content>
-			</Tooltip.Root>
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<Toggle
-						size="sm"
-						pressed={activeFormats.italic}
-						onPressedChange={() => editor?.chain().focus().toggleItalic().run()}
-					>
-						<ItalicIcon class="size-4" />
-					</Toggle>
-				</Tooltip.Trigger>
-				<Tooltip.Content>Italic (⌘I)</Tooltip.Content>
-			</Tooltip.Root>
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<Toggle
-						size="sm"
-						pressed={activeFormats.underline}
-						onPressedChange={() => editor?.chain().focus().toggleUnderline().run()}
-					>
-						<UnderlineIcon class="size-4" />
-					</Toggle>
-				</Tooltip.Trigger>
-				<Tooltip.Content>Underline (⌘U)</Tooltip.Content>
-			</Tooltip.Root>
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<Toggle
-						size="sm"
-						pressed={activeFormats.strike}
-						onPressedChange={() => editor?.chain().focus().toggleStrike().run()}
-					>
-						<StrikethroughIcon class="size-4" />
-					</Toggle>
-				</Tooltip.Trigger>
-				<Tooltip.Content>Strikethrough (⌘⇧S)</Tooltip.Content>
-			</Tooltip.Root>
+			{@render toggleButton(activeFormats.bold, () => editor?.chain().focus().toggleBold().run(), BoldIcon, 'Bold (⌘B)')}
+			{@render toggleButton(activeFormats.italic, () => editor?.chain().focus().toggleItalic().run(), ItalicIcon, 'Italic (⌘I)')}
+			{@render toggleButton(activeFormats.underline, () => editor?.chain().focus().toggleUnderline().run(), UnderlineIcon, 'Underline (⌘U)')}
+			{@render toggleButton(activeFormats.strike, () => editor?.chain().focus().toggleStrike().run(), StrikethroughIcon, 'Strikethrough (⌘⇧S)')}
 
 			<Separator orientation="vertical" class="mx-1 h-6" />
 
 			<ToggleGroup.Root
 				type="single"
 				size="sm"
-				value={activeFormats.heading1 ? 'h1' : activeFormats.heading2 ? 'h2' : activeFormats.heading3 ? 'h3' : ''}
-				onValueChange={(v) => {
-					if (v === 'h1') editor?.chain().focus().toggleHeading({ level: 1 }).run();
-					else if (v === 'h2') editor?.chain().focus().toggleHeading({ level: 2 }).run();
-					else if (v === 'h3') editor?.chain().focus().toggleHeading({ level: 3 }).run();
-				}}
+				value={activeHeading}
+				onValueChange={toggleHeading}
 			>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<ToggleGroup.Item value="h1"
-							><Heading1Icon class="size-4" /></ToggleGroup.Item
-						>
-					</Tooltip.Trigger>
-					<Tooltip.Content>Heading 1</Tooltip.Content>
-				</Tooltip.Root>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<ToggleGroup.Item value="h2"
-							><Heading2Icon class="size-4" /></ToggleGroup.Item
-						>
-					</Tooltip.Trigger>
-					<Tooltip.Content>Heading 2</Tooltip.Content>
-				</Tooltip.Root>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<ToggleGroup.Item value="h3"
-							><Heading3Icon class="size-4" /></ToggleGroup.Item
-						>
-					</Tooltip.Trigger>
-					<Tooltip.Content>Heading 3</Tooltip.Content>
-				</Tooltip.Root>
+				{@render groupItem('h1', Heading1Icon, 'Heading 1')}
+				{@render groupItem('h2', Heading2Icon, 'Heading 2')}
+				{@render groupItem('h3', Heading3Icon, 'Heading 3')}
 			</ToggleGroup.Root>
 
 			<Separator orientation="vertical" class="mx-1 h-6" />
@@ -208,59 +196,17 @@
 			<ToggleGroup.Root
 				type="single"
 				size="sm"
-				value={activeFormats.bulletList
-					? 'bullet'
-					: activeFormats.orderedList
-						? 'ordered'
-						: activeFormats.taskList
-							? 'task'
-							: ''}
-				onValueChange={(v) => {
-					if (v === 'bullet') editor?.chain().focus().toggleBulletList().run();
-					else if (v === 'ordered') editor?.chain().focus().toggleOrderedList().run();
-					else if (v === 'task') editor?.chain().focus().toggleTaskList().run();
-				}}
+				value={activeListType}
+				onValueChange={toggleListType}
 			>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<ToggleGroup.Item value="bullet"
-							><ListIcon class="size-4" /></ToggleGroup.Item
-						>
-					</Tooltip.Trigger>
-					<Tooltip.Content>Bullet List</Tooltip.Content>
-				</Tooltip.Root>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<ToggleGroup.Item value="ordered"
-							><ListOrderedIcon class="size-4" /></ToggleGroup.Item
-						>
-					</Tooltip.Trigger>
-					<Tooltip.Content>Ordered List</Tooltip.Content>
-				</Tooltip.Root>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<ToggleGroup.Item value="task"
-							><ListChecksIcon class="size-4" /></ToggleGroup.Item
-						>
-					</Tooltip.Trigger>
-					<Tooltip.Content>Checklist</Tooltip.Content>
-				</Tooltip.Root>
+				{@render groupItem('bullet', ListIcon, 'Bullet List')}
+				{@render groupItem('ordered', ListOrderedIcon, 'Ordered List')}
+				{@render groupItem('task', ListChecksIcon, 'Checklist')}
 			</ToggleGroup.Root>
 
 			<Separator orientation="vertical" class="mx-1 h-6" />
 
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<Toggle
-						size="sm"
-						pressed={activeFormats.blockquote}
-						onPressedChange={() => editor?.chain().focus().toggleBlockquote().run()}
-					>
-						<QuoteIcon class="size-4" />
-					</Toggle>
-				</Tooltip.Trigger>
-				<Tooltip.Content>Blockquote (⌘⇧B)</Tooltip.Content>
-			</Tooltip.Root>
+			{@render toggleButton(activeFormats.blockquote, () => editor?.chain().focus().toggleBlockquote().run(), QuoteIcon, 'Blockquote (⌘⇧B)')}
 		</div>
 	{/if}
 	<div bind:this={element} class="flex-1 overflow-y-auto p-8"></div>

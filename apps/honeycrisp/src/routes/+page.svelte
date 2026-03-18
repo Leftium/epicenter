@@ -72,7 +72,19 @@
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">
 			<Resizable.Pane defaultSize={35} minSize={20}>
-				<NoteList />
+				{#if viewState.isRecentlyDeletedView}
+					<NoteList
+						notes={notesState.deletedNotes}
+						title="Recently Deleted"
+						showControls={false}
+						emptyMessage="No deleted notes"
+					/>
+				{:else}
+					<NoteList
+						notes={viewState.filteredNotes}
+						title={viewState.folderName}
+					/>
+				{/if}
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">

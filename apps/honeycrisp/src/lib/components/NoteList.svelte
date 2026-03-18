@@ -10,12 +10,23 @@
 	import { getDateLabel } from '$lib/utils/date';
 	import type { Note } from '$lib/workspace';
 
-	/** Notes to display — filtered active notes or deleted notes depending on view. */
-	const notes = $derived(
-		viewState.isRecentlyDeletedView
-			? notesState.deletedNotes
-			: viewState.filteredNotes,
-	);
+	let {
+		notes,
+		title,
+		showControls = true,
+		emptyMessage = 'No notes yet. Click + to create one.',
+	}: {
+		notes: Note[];
+		title: string;
+		showControls?: boolean;
+		emptyMessage?: string;
+	} = $props();
+
+	const sortOptions = [
+		{ value: 'dateEdited' as const, label: 'Date Edited' },
+		{ value: 'dateCreated' as const, label: 'Date Created' },
+		{ value: 'title' as const, label: 'Title' },
+	];
 
 	const groupedNotes = $derived.by(() => {
 		const pinned = notes
@@ -85,10 +96,10 @@
 <div class="flex h-full flex-col" onkeydown={handleKeydown} tabindex="-1">
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<div class="flex items-center gap-2">
-			<h2 class="text-sm font-semibold">{viewState.folderName}</h2>
+			<h2 class="text-sm font-semibold">{title}</h2>
 			<span class="text-xs text-muted-foreground">{notes.length}</span>
 		</div>
-		{#if !viewState.isRecentlyDeletedView}
+		{#if showControls}
 			<div class="flex items-center gap-1">
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
@@ -99,34 +110,18 @@
 						{/snippet}
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="end" class="w-44">
-						<DropdownMenu.Item
-							onclick={() => viewState.setSortBy('dateEdited')}
-						>
-							{#if viewState.sortBy === 'dateEdited'}
-								<CheckIcon class="mr-2 size-4" />
-							{:else}
-								<span class="mr-2 size-4"></span>
-							{/if}
-							Date Edited
-						</DropdownMenu.Item>
-						<DropdownMenu.Item
-							onclick={() => viewState.setSortBy('dateCreated')}
-						>
-							{#if viewState.sortBy === 'dateCreated'}
-								<CheckIcon class="mr-2 size-4" />
-							{:else}
-								<span class="mr-2 size-4"></span>
-							{/if}
-							Date Created
-						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={() => viewState.setSortBy('title')}>
-							{#if viewState.sortBy === 'title'}
-								<CheckIcon class="mr-2 size-4" />
-							{:else}
-								<span class="mr-2 size-4"></span>
-							{/if}
-							Title
-						</DropdownMenu.Item>
+						{#each sortOptions as option}
+							<DropdownMenu.Item
+								onclick={() => viewState.setSortBy(option.value)}
+							>
+								{#if viewState.sortBy === option.value}
+									<CheckIcon class="mr-2 size-4" />
+								{:else}
+									<span class="mr-2 size-4"></span>
+								{/if}
+								{option.label}
+							</DropdownMenu.Item>
+						{/each}
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 				<Button
@@ -146,13 +141,7 @@
 			<div
 				class="flex h-full items-center justify-center p-8 text-center text-muted-foreground"
 			>
-				<p class="text-sm">
-					{#if viewState.isRecentlyDeletedView}
-						No deleted notes
-					{:else}
-						No notes yet. Click + to create one.
-					{/if}
-				</p>
+				<p class="text-sm">{emptyMessage}</p>
 			</div>
 		{:else}
 			<div class="flex flex-col gap-4 p-2">
@@ -162,7 +151,11 @@
 							{group.label}
 						</h3>
 						{#each group.entries as note (note.id)}
-							<NoteCard {note} />
+							<NoteCard
+								{note}
+								isSelected={note.id === viewState.selectedNoteId}
+								onSelect={() => viewState.selectNote(note.id)}
+							/>
 						{/each}
 					</div>
 				{/each}

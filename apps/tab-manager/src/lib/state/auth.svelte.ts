@@ -167,6 +167,18 @@ function createAuthState() {
 	}
 
 	/**
+	 * Activate workspace encryption and cache the key for sidebar reopens.
+	 *
+	 * Centralizes the activate + cache pair so every activation path
+	 * is guaranteed to update the cache. Forgetting `keyCache.set`
+	 * silently breaks restore-from-cache on next sidebar open.
+	 */
+	async function activateAndCacheKey(encryptionKey: string, userId: string) {
+		await workspace.activateEncryption(base64ToBytes(encryptionKey));
+		await keyCache.set(userId, encryptionKey);
+	}
+
+	/**
 	 * Fetch the session to extract the encryption key, then activate encryption.
 	 *
 	 * Better Auth's signIn/signUp responses don't include customSession
@@ -177,8 +189,7 @@ function createAuthState() {
 	async function refreshEncryptionKey() {
 		const result = await getSession().catch(() => null);
 		if (result?.data?.encryptionKey) {
-			await workspace.activateEncryption(base64ToBytes(result.data.encryptionKey));
-			await keyCache.set(result.data.user.id, result.data.encryptionKey);
+			await activateAndCacheKey(result.data.encryptionKey, result.data.user.id);
 		}
 	}
 
@@ -427,8 +438,7 @@ function createAuthState() {
 			const user = serializeDates(data.user);
 			await authUser.set(user);
 			if (data.encryptionKey) {
-				await workspace.activateEncryption(base64ToBytes(data.encryptionKey));
-				await keyCache.set(data.user.id, data.encryptionKey);
+				await activateAndCacheKey(data.encryptionKey, data.user.id);
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);

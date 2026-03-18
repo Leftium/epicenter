@@ -29,7 +29,7 @@ export type TrustLevel = ToolTrust['trust'];
 function createToolTrustState() {
 	/** Build the trust map from the workspace table. */
 	function readAllTrust(): Map<string, TrustLevel> {
-		const entries = workspace.current.tables.toolTrust.getAllValid();
+		const entries = workspace.tables.toolTrust.getAllValid();
 		return new Map(entries.map((row) => [row.id, row.trust]));
 	}
 
@@ -37,7 +37,7 @@ function createToolTrustState() {
 	const trustMap = new SvelteMap<string, TrustLevel>(readAllTrust());
 
 	// Keep reactive state in sync with Y.Doc changes (local + remote)
-	workspace.current.tables.toolTrust.observe(() => {
+	workspace.tables.toolTrust.observe(() => {
 		const fresh = readAllTrust();
 		// Clear and repopulate to trigger Svelte reactivity
 		trustMap.clear();
@@ -79,7 +79,7 @@ function createToolTrustState() {
 		 * ```
 		 */
 		set(name: string, level: TrustLevel): void {
-			workspace.current.tables.toolTrust.set({
+			workspace.tables.toolTrust.set({
 				id: name,
 				trust: level,
 				_v: 1,

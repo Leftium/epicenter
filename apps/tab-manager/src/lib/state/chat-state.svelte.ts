@@ -93,7 +93,7 @@ function createAiChatState() {
 
 	/** Read all conversations sorted by most recently updated first. */
 	const readAllConversations = (): Conversation[] =>
-		workspace.current.tables.conversations
+		workspace.tables.conversations
 			.getAllValid()
 			.sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -109,7 +109,7 @@ function createAiChatState() {
 		if (conversations.length > 0) return undefined;
 		const id = generateConversationId();
 		const now = Date.now();
-		workspace.current.tables.conversations.set({
+		workspace.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: DEFAULT_PROVIDER,
@@ -129,7 +129,7 @@ function createAiChatState() {
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		workspace.current.tables.conversations.update(conversationId, {
+		workspace.tables.conversations.update(conversationId, {
 			...patch,
 			updatedAt: Date.now(),
 		});
@@ -137,7 +137,7 @@ function createAiChatState() {
 
 	/** Load persisted messages for a conversation from Y.Doc. */
 	function loadMessages(conversationId: ConversationId) {
-		return workspace.current.tables.chatMessages
+		return workspace.tables.chatMessages
 			.filter((m) => m.conversationId === conversationId)
 			.sort((a, b) => a.createdAt - b.createdAt)
 			.map(toUiMessage);
@@ -302,7 +302,7 @@ function createAiChatState() {
 				);
 			},
 			onFinish: (message) => {
-				workspace.current.tables.chatMessages.set({
+				workspace.tables.chatMessages.set({
 					id: message.id as string as ChatMessageId,
 					conversationId,
 					role: 'assistant',
@@ -423,7 +423,7 @@ function createAiChatState() {
 			// ── Derived convenience ──
 
 			get lastMessagePreview() {
-				const msgs = workspace.current.tables.chatMessages
+				const msgs = workspace.tables.chatMessages
 					.filter((m) => m.conversationId === conversationId)
 					.sort((a, b) => b.createdAt - a.createdAt);
 				const last = msgs[0];
@@ -456,7 +456,7 @@ function createAiChatState() {
 					id: userMessageId,
 				});
 
-				workspace.current.tables.chatMessages.set({
+				workspace.tables.chatMessages.set({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
@@ -478,7 +478,7 @@ function createAiChatState() {
 				const msgs = messageStore.get(conversationId) ?? [];
 				const lastMessage = msgs.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					workspace.current.tables.chatMessages.delete(
+					workspace.tables.chatMessages.delete(
 						lastMessage.id as string as ChatMessageId,
 					);
 				}
@@ -600,7 +600,7 @@ function createAiChatState() {
 
 	$effect.root(() => {
 		$effect(() => {
-			const c = workspace.current; // track dependency
+			const c = workspace;
 
 			// Destroy all existing clients + handles
 			for (const [id] of clients) destroyConversation(id);
@@ -643,7 +643,7 @@ function createAiChatState() {
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 
-		workspace.current.tables.conversations.set({
+		workspace.tables.conversations.set({
 			id,
 			title: opts?.title ?? 'New Chat',
 			parentId: opts?.parentId,
@@ -668,18 +668,18 @@ function createAiChatState() {
 	function deleteConversation(conversationId: ConversationId) {
 		destroyConversation(conversationId);
 
-		const msgs = workspace.current.tables.chatMessages
+		const msgs = workspace.tables.chatMessages
 			.getAllValid()
 			.filter((m) => m.conversationId === conversationId);
-		workspace.current.batch(() => {
+		workspace.batch(() => {
 			for (const m of msgs) {
-				workspace.current.tables.chatMessages.delete(m.id);
+				workspace.tables.chatMessages.delete(m.id);
 			}
-			workspace.current.tables.conversations.delete(conversationId);
+			workspace.tables.conversations.delete(conversationId);
 		});
 
 		if (activeConversationId === conversationId) {
-			const remaining = workspace.current.tables.conversations
+			const remaining = workspace.tables.conversations
 				.getAllValid()
 				.sort((a, b) => b.updatedAt - a.updatedAt);
 			const first = remaining[0];

@@ -38,7 +38,7 @@ import {
 function createBookmarkState() {
 	/** Read all valid bookmarks, most recently created first. */
 	const readAll = () =>
-		workspace.current.tables.bookmarks
+		workspace.tables.bookmarks
 			.getAllValid()
 			.sort((a, b) => b.createdAt - a.createdAt);
 
@@ -52,7 +52,7 @@ function createBookmarkState() {
 	let bookmarks = $state<Bookmark[]>(readAll());
 
 	// Re-read on every Y.Doc change.
-	workspace.current.tables.bookmarks.observe(() => {
+	workspace.tables.bookmarks.observe(() => {
 		bookmarks = readAll();
 	});
 
@@ -80,7 +80,7 @@ function createBookmarkState() {
 			async add(tab: Tab) {
 				if (!tab.url) return;
 				const deviceId = await getDeviceId();
-				workspace.current.tables.bookmarks.set({
+				workspace.tables.bookmarks.set({
 					id: generateBookmarkId(),
 					url: tab.url,
 					title: tab.title || 'Untitled',
@@ -103,24 +103,24 @@ function createBookmarkState() {
 
 			/** Delete a bookmark. */
 			remove(id: BookmarkId) {
-				workspace.current.tables.bookmarks.delete(id);
+				workspace.tables.bookmarks.delete(id);
 			},
 
 			/** Delete all bookmarks. Wrapped in a Y.Doc transaction. */
 			removeAll() {
-				const all = workspace.current.tables.bookmarks.getAllValid();
+				const all = workspace.tables.bookmarks.getAllValid();
 				if (!all.length) return;
 
-				workspace.current.batch(() => {
+				workspace.batch(() => {
 					for (const bookmark of all) {
-						workspace.current.tables.bookmarks.delete(bookmark.id);
+						workspace.tables.bookmarks.delete(bookmark.id);
 					}
 				});
 			},
 
 			/** Update a bookmark's metadata in Y.Doc. */
 			update(bookmark: Bookmark) {
-				workspace.current.tables.bookmarks.set(bookmark);
+				workspace.tables.bookmarks.set(bookmark);
 			},
 		},
 	};

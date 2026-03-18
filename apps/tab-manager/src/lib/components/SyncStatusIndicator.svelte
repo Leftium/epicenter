@@ -20,8 +20,8 @@
 
 		$effect.root(() => {
 			$effect(() => {
-				current = workspace.current.extensions.sync.status;
-				workspace.current.extensions.sync.onStatusChange((status) => {
+				current = workspace.extensions.sync.status;
+				workspace.extensions.sync.onStatusChange((status) => {
 					current = status;
 				});
 			});
@@ -116,7 +116,7 @@
 							variant="outline"
 							size="sm"
 							class="flex-1"
-							onclick={() => workspace.current.extensions.sync.reconnect()}
+							onclick={() => workspace.extensions.sync.reconnect()}
 						>
 							<RefreshCwIcon class="size-3.5" />
 							Reconnect

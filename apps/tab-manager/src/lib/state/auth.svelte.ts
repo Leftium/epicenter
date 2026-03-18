@@ -136,9 +136,9 @@ function createAuthState() {
 		lastKeyBase64 = userKeyBase64;
 		const thisGeneration = ++keyGeneration;
 		const userKey = base64ToBytes(userKeyBase64);
-		const wsKey = await deriveWorkspaceKey(userKey, workspace.current.id);
+		const wsKey = await deriveWorkspaceKey(userKey, workspace.id);
 		if (thisGeneration !== keyGeneration) return;
-		workspace.current.activateEncryption(wsKey);
+		workspace.activateEncryption(wsKey);
 		await keyCache.set(userId, userKeyBase64);
 	}
 
@@ -146,9 +146,9 @@ function createAuthState() {
 	async function deactivateSession() {
 		++keyGeneration;
 		lastKeyBase64 = undefined;
-		workspace.current.clearAllData();
-		workspace.current.deactivateEncryption();
-		await workspace.current.clearLocalData();
+		workspace.clearAllData();
+		workspace.deactivateEncryption();
+		await workspace.clearLocalData();
 		await keyCache.clear();
 	}
 

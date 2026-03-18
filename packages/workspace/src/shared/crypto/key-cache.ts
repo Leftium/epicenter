@@ -26,7 +26,7 @@
  *   },
  *   async load() {
  *     const result = await chrome.storage.session.get('ek');
- *     return result.ek;
+ *     return result.ek ?? null;
  *   },
  *   async clear() {
  *     await chrome.storage.session.remove('ek');

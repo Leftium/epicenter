@@ -353,8 +353,8 @@ Specifically:
 - [x] Implement `.withEncryption()` in create-workspace.ts—dedup, generation counter, HKDF, onDeactivate hook
 - [x] Update `ExtensionContext` so extensions see encryption methods when configured
   > **Note**: No explicit change needed—`ExtensionContext` is `Omit<WorkspaceClient, ...>`, so removing encryption from `WorkspaceClient` automatically removes it. Encryption methods appear when the builder type is intersected with `EncryptionMethods`.
-- [ ] Update workspace.ts (tab-manager)—add `.withEncryption({ onDeactivate })` to builder chain
-- [ ] Update auth.svelte.ts—remove createKeyManager, use workspace directly, fix two leaked sign-out paths
+- [x] Update workspace.ts (tab-manager)—add `.withEncryption({ onDeactivate })` to builder chain
+- [x] Update auth.svelte.ts—remove createKeyManager, use workspace directly, fix two leaked sign-out paths
 - [ ] Delete key-manager.ts, key-manager.test.ts, remove re-exports from crypto/index.ts
 - [ ] Migrate dedup/race/generation/hook tests to create-workspace.test.ts
 - [ ] Update key-cache.ts JSDoc

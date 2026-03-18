@@ -8,7 +8,7 @@
  */
 
 import type { CustomSessionFields } from '@epicenter/api/src/custom-session-fields';
-import { createKeyManager } from '@epicenter/workspace/shared/crypto/key-manager';
+import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
 import { untrack } from 'svelte';
@@ -122,9 +122,6 @@ function createAuthState() {
 		}),
 	);
 
-	// Key management via createKeyManager (dedup, race protection, HKDF derivation, caching)
-
-	const keyManager = createKeyManager(workspace, { keyCache });
 
 	// ─── Effects ───
 
@@ -133,6 +130,7 @@ function createAuthState() {
 		$effect(() => {
 			if (!authToken.current && phase.status === 'signed-in') {
 				void authUser.set(undefined);
+				void workspace.deactivateEncryption();
 				phase = { status: 'signed-out' };
 			}
 		});
@@ -147,7 +145,10 @@ function createAuthState() {
 				phase = { status: 'signed-in' };
 				const userId = authUser.current.id;
 				untrack(() => {
-					void keyManager.restoreKeyFromCache(userId);
+					void (async () => {
+						const cached = await keyCache.get(userId);
+						if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+					})();
 				});
 			}
 		});
@@ -186,7 +187,8 @@ function createAuthState() {
 	async function refreshEncryptionKey() {
 		const result = await getSession().catch(() => null);
 		if (result?.data?.encryptionKey) {
-			await keyManager.activateEncryption(result.data.encryptionKey, result.data.user.id);
+			await workspace.activateEncryption(base64ToBytes(result.data.encryptionKey));
+			await keyCache.set(result.data.user.id, result.data.encryptionKey);
 		}
 	}
 
@@ -370,7 +372,6 @@ function createAuthState() {
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
-			await keyManager.clearKeys();
 			await workspace.deactivateEncryption();
 			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
@@ -394,7 +395,10 @@ function createAuthState() {
 
 			const userId = authUser.current?.id;
 			if (userId) {
-				void keyManager.restoreKeyFromCache(userId);
+				void (async () => {
+					const cached = await keyCache.get(userId);
+					if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+				})();
 			}
 
 			const token = authToken.current;
@@ -418,7 +422,6 @@ function createAuthState() {
 
 				// 4xx → server explicitly rejected the token
 				await clearState();
-				await keyManager.clearKeys();
 				await workspace.deactivateEncryption();
 				phase = { status: 'signed-out' };
 				return Ok(null);
@@ -426,6 +429,7 @@ function createAuthState() {
 
 			if (!data) {
 				await clearState();
+				await workspace.deactivateEncryption();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
@@ -433,7 +437,8 @@ function createAuthState() {
 			const user = serializeDates(data.user);
 			await authUser.set(user);
 			if (data.encryptionKey) {
-				await keyManager.activateEncryption(data.encryptionKey, data.user.id);
+				await workspace.activateEncryption(base64ToBytes(data.encryptionKey));
+				await keyCache.set(data.user.id, data.encryptionKey);
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);

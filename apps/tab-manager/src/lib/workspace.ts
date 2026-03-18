@@ -34,6 +34,7 @@ import { Ok, tryAsync, trySync } from 'wellcrafted/result';
 import { getDeviceId } from '$lib/device/device-id';
 import { authState } from '$lib/state/auth.svelte';
 import { serverUrl } from '$lib/state/settings.svelte';
+import { keyCache } from '$lib/state/key-cache';
 import { findDuplicateGroups, groupTabsByDomain } from '$lib/utils/tab-helpers';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -618,6 +619,9 @@ export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
 
 function buildWorkspaceClient() {
 	return createWorkspace(definition)
+		.withEncryption({
+			onDeactivate: () => keyCache.clear(),
+		})
 		.withExtension('persistence', indexeddbPersistence)
 		.withExtension('broadcast', broadcastChannelSync)
 		.withExtension(

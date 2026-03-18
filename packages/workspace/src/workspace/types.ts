@@ -934,13 +934,15 @@ export type WorkspaceClientWithActions<
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown>,
 	TActions extends Actions,
+	TExtra = {},
 > = WorkspaceClient<
 	TId,
 	TTableDefs,
 	TKvDefs,
 	TAwarenessDefinitions,
 	TExtensions
-> & {
+> &
+	TExtra & {
 	actions: TActions;
 };
 
@@ -1031,13 +1033,15 @@ export type WorkspaceClientBuilder<
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown> = Record<string, never>,
 	TDocExtensions extends Record<string, unknown> = Record<string, never>,
+	TEncryption = {},
 > = WorkspaceClient<
 	TId,
 	TTableDefinitions,
 	TKvDefinitions,
 	TAwarenessDefinitions,
 	TExtensions
-> & {
+> &
+	TEncryption & {
 	/**
 	 * Register an extension for BOTH the workspace Y.Doc AND all content document Y.Docs.
 	 *
@@ -1086,7 +1090,8 @@ export type WorkspaceClientBuilder<
 				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
 			>,
 		TDocExtensions &
-			Record<TKey, Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
+			Record<TKey, Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>,
+		TEncryption
 	>;
 
 	/**
@@ -1138,7 +1143,8 @@ export type WorkspaceClientBuilder<
 				TKey,
 				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
 			>,
-		TDocExtensions
+		TDocExtensions,
+		TEncryption
 	>;
 
 	/**
@@ -1185,7 +1191,8 @@ export type WorkspaceClientBuilder<
 		TAwarenessDefinitions,
 		TExtensions,
 		TDocExtensions &
-			Record<K, Omit<TDocExports, 'whenReady' | 'dispose' | 'clearData'>>
+			Record<K, Omit<TDocExports, 'whenReady' | 'dispose' | 'clearData'>>,
+		TEncryption
 	>;
 
 	/**
@@ -1218,9 +1225,9 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions,
-		TDocExtensions
-	> &
-		EncryptionMethods;
+		TDocExtensions,
+		EncryptionMethods
+	>;
 
 	/**
 	 * Attach actions to the workspace client. Terminal — no more chaining after this.
@@ -1248,7 +1255,8 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions,
-		TActions
+		TActions,
+		TEncryption
 	>;
 };
 

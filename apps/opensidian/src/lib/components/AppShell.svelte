@@ -1,10 +1,13 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
-	import ContentPanel from './ContentPanel.svelte';
-	import FileTree from './FileTree.svelte';
-	import Toolbar from './Toolbar.svelte';
 	import CommandPalette from './CommandPalette.svelte';
+	import ContentPanel from './editor/ContentPanel.svelte';
+	import CreateDialog from './dialogs/CreateDialog.svelte';
+	import DeleteConfirmation from './dialogs/DeleteConfirmation.svelte';
+	import FileTree from './tree/FileTree.svelte';
+	import RenameDialog from './dialogs/RenameDialog.svelte';
+	import Toolbar from './Toolbar.svelte';
 </script>
 
 <div class="flex h-screen flex-col">
@@ -20,3 +23,7 @@
 	</Resizable.PaneGroup>
 	<CommandPalette />
 </div>
+
+<CreateDialog />
+<RenameDialog />
+<DeleteConfirmation />

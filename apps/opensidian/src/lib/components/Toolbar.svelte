@@ -3,35 +3,7 @@
 	import { Separator } from '@epicenter/ui/separator';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { toast } from 'svelte-sonner';
-	import { fsState } from '$lib/fs/fs-state.svelte';
-	import CreateDialog from './CreateDialog.svelte';
-	import DeleteConfirmation from './DeleteConfirmation.svelte';
-	import RenameDialog from './RenameDialog.svelte';
-
-	let createDialogOpen = $state(false);
-	let createDialogMode = $state<'file' | 'folder'>('file');
-	let deleteDialogOpen = $state(false);
-	let renameDialogOpen = $state(false);
-
-	function openCreateFile() {
-		createDialogMode = 'file';
-		createDialogOpen = true;
-	}
-
-	function openCreateFolder() {
-		createDialogMode = 'folder';
-		createDialogOpen = true;
-	}
-
-	function openRename() {
-		if (!fsState.activeFileId) return;
-		renameDialogOpen = true;
-	}
-
-	function openDelete() {
-		if (!fsState.activeFileId) return;
-		deleteDialogOpen = true;
-	}
+	import { fsState } from '$lib/state/fs-state.svelte';
 
 	let seeding = $state(false);
 
@@ -79,7 +51,12 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				{#snippet child({ props })}
-					<Button {...props} variant="ghost" size="sm" onclick={openCreateFile}>
+					<Button
+						{...props}
+						variant="ghost"
+						size="sm"
+						onclick={() => fsState.actions.openCreate('file')}
+					>
 						New File
 					</Button>
 				{/snippet}
@@ -89,7 +66,12 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				{#snippet child({ props })}
-					<Button {...props} variant="ghost" size="sm" onclick={openCreateFolder}>
+					<Button
+						{...props}
+						variant="ghost"
+						size="sm"
+						onclick={() => fsState.actions.openCreate('folder')}
+					>
 						New Folder
 					</Button>
 				{/snippet}
@@ -104,7 +86,7 @@
 						{...props}
 						variant="ghost"
 						size="sm"
-						onclick={openRename}
+						onclick={() => fsState.actions.openRename()}
 						disabled={!fsState.activeFileId}
 					>
 						Rename
@@ -120,7 +102,7 @@
 						{...props}
 						variant="ghost"
 						size="sm"
-						onclick={openDelete}
+						onclick={() => fsState.actions.openDelete()}
 						disabled={!fsState.activeFileId}
 					>
 						Delete
@@ -149,7 +131,3 @@
 		</div>
 	</div>
 </Tooltip.Provider>
-
-<CreateDialog bind:open={createDialogOpen} mode={createDialogMode} />
-<RenameDialog bind:open={renameDialogOpen} />
-<DeleteConfirmation bind:open={deleteDialogOpen} />

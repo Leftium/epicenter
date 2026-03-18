@@ -2,12 +2,9 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as TreeView from '@epicenter/ui/tree-view';
-	import { getFileIcon } from '$lib/fs/file-icons';
-	import { fsState } from '$lib/fs/fs-state.svelte';
-	import CreateDialog from './CreateDialog.svelte';
-	import DeleteConfirmation from './DeleteConfirmation.svelte';
+	import { getFileIcon } from '$lib/utils/file-icons';
+	import { fsState } from '$lib/state/fs-state.svelte';
 	import FileTreeItem from './FileTreeItem.svelte';
-	import RenameDialog from './RenameDialog.svelte';
 
 	let { id }: { id: FileId } = $props();
 
@@ -17,27 +14,6 @@
 	const isSelected = $derived(fsState.activeFileId === id);
 	const children = $derived(isFolder ? fsState.getChildIds(id) : []);
 	const isFocused = $derived(fsState.focusedId === id);
-
-	let createDialogOpen = $state(false);
-	let createDialogMode = $state<'file' | 'folder'>('file');
-	let renameDialogOpen = $state(false);
-	let deleteDialogOpen = $state(false);
-
-	function selectAndOpenCreate(mode: 'file' | 'folder') {
-		fsState.actions.selectFile(id);
-		createDialogMode = mode;
-		createDialogOpen = true;
-	}
-
-	function selectAndOpenRename() {
-		fsState.actions.selectFile(id);
-		renameDialogOpen = true;
-	}
-
-	function selectAndOpenDelete() {
-		fsState.actions.selectFile(id);
-		deleteDialogOpen = true;
-	}
 </script>
 
 {#if row}
@@ -63,7 +39,7 @@
 					<TreeView.File
 						{...props}
 						name={row.name}
-						id={id}
+						{id}
 						class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 							? 'bg-accent text-accent-foreground'
 							: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
@@ -80,22 +56,29 @@
 		</ContextMenu.Trigger>
 		<ContextMenu.Content>
 			{#if isFolder}
-				<ContextMenu.Item onclick={() => selectAndOpenCreate('file')}>
+				<ContextMenu.Item
+					onclick={() => { fsState.actions.selectFile(id); fsState.actions.openCreate('file'); }}
+				>
 					New File
 				</ContextMenu.Item>
-				<ContextMenu.Item onclick={() => selectAndOpenCreate('folder')}>
+				<ContextMenu.Item
+					onclick={() => { fsState.actions.selectFile(id); fsState.actions.openCreate('folder'); }}
+				>
 					New Folder
 				</ContextMenu.Item>
 				<ContextMenu.Separator />
 			{/if}
-			<ContextMenu.Item onclick={selectAndOpenRename}>Rename</ContextMenu.Item>
-			<ContextMenu.Item class="text-destructive" onclick={selectAndOpenDelete}>
+			<ContextMenu.Item
+				onclick={() => { fsState.actions.selectFile(id); fsState.actions.openRename(); }}
+			>
+				Rename
+			</ContextMenu.Item>
+			<ContextMenu.Item
+				class="text-destructive"
+				onclick={() => { fsState.actions.selectFile(id); fsState.actions.openDelete(); }}
+			>
 				Delete
 			</ContextMenu.Item>
 		</ContextMenu.Content>
 	</ContextMenu.Root>
-
-	<CreateDialog bind:open={createDialogOpen} mode={createDialogMode} />
-	<RenameDialog bind:open={renameDialogOpen} />
-	<DeleteConfirmation bind:open={deleteDialogOpen} />
 {/if}

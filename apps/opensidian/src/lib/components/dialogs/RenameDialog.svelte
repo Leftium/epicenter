@@ -3,18 +3,13 @@
 	import * as Dialog from '@epicenter/ui/dialog';
 	import { Field, FieldLabel } from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
-	import { fsState } from '$lib/fs/fs-state.svelte';
+	import { fsState } from '$lib/state/fs-state.svelte';
 
-	type Props = {
-		open: boolean;
-	};
-
-	let { open = $bindable(false) }: Props = $props();
 	let name = $state('');
 
 	// Pre-fill with current name when dialog opens
 	$effect(() => {
-		if (open && fsState.selectedNode) {
+		if (fsState.renameDialogOpen && fsState.selectedNode) {
 			name = fsState.selectedNode.name;
 		}
 	});
@@ -24,16 +19,18 @@
 		if (!name.trim() || !fsState.activeFileId) return;
 
 		await fsState.actions.rename(fsState.activeFileId, name.trim());
-		open = false;
+		fsState.actions.closeRename();
 	}
 
 	function handleOpenChange(isOpen: boolean) {
-		open = isOpen;
-		if (!isOpen) name = '';
+		if (!isOpen) {
+			fsState.actions.closeRename();
+			name = '';
+		}
 	}
 </script>
 
-<Dialog.Root {open} onOpenChange={handleOpenChange}>
+<Dialog.Root open={fsState.renameDialogOpen} onOpenChange={handleOpenChange}>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>Rename</Dialog.Title>
@@ -42,15 +39,14 @@
 		<form onsubmit={handleSubmit}>
 			<Field>
 				<FieldLabel>Name</FieldLabel>
-				<Input
-					type="text"
-					placeholder="new-name"
-					bind:value={name}
-					autofocus
-				/>
+				<Input type="text" placeholder="new-name" bind:value={name} autofocus />
 			</Field>
 			<Dialog.Footer class="mt-4">
-				<Button variant="outline" type="button" onclick={() => (open = false)}>
+				<Button
+					variant="outline"
+					type="button"
+					onclick={() => fsState.actions.closeRename()}
+				>
 					Cancel
 				</Button>
 				<Button type="submit" disabled={!name.trim()}>Rename</Button>

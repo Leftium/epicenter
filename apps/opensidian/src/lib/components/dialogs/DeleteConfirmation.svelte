@@ -1,13 +1,7 @@
 <script lang="ts">
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button } from '@epicenter/ui/button';
-	import { fsState } from '$lib/fs/fs-state.svelte';
-
-	type Props = {
-		open: boolean;
-	};
-
-	let { open = $bindable(false) }: Props = $props();
+	import { fsState } from '$lib/state/fs-state.svelte';
 
 	const nodeName = $derived(fsState.selectedNode?.name ?? 'this item');
 	const nodeType = $derived(fsState.selectedNode?.type ?? 'file');
@@ -15,11 +9,18 @@
 	async function handleDelete() {
 		if (!fsState.activeFileId) return;
 		await fsState.actions.deleteFile(fsState.activeFileId);
-		open = false;
+		fsState.actions.closeDelete();
+	}
+
+	function handleOpenChange(isOpen: boolean) {
+		if (!isOpen) fsState.actions.closeDelete();
 	}
 </script>
 
-<AlertDialog.Root bind:open>
+<AlertDialog.Root
+	open={fsState.deleteDialogOpen}
+	onOpenChange={handleOpenChange}
+>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
 			<AlertDialog.Title>Delete {nodeName}?</AlertDialog.Title>

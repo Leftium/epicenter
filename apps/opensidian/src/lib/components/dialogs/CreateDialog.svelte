@@ -3,17 +3,13 @@
 	import * as Dialog from '@epicenter/ui/dialog';
 	import { Field, FieldLabel } from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
-	import { fsState } from '$lib/fs/fs-state.svelte';
+	import { fsState } from '$lib/state/fs-state.svelte';
 
-	type Props = {
-		open: boolean;
-		mode: 'file' | 'folder';
-	};
-
-	let { open = $bindable(false), mode }: Props = $props();
 	let name = $state('');
 
-	const title = $derived(mode === 'file' ? 'New File' : 'New Folder');
+	const title = $derived(
+		fsState.createDialogMode === 'file' ? 'New File' : 'New Folder',
+	);
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
@@ -22,28 +18,30 @@
 		const parentId =
 			fsState.selectedNode?.type === 'folder' ? fsState.activeFileId : null;
 
-		if (mode === 'file') {
+		if (fsState.createDialogMode === 'file') {
 			await fsState.actions.createFile(parentId, name.trim());
 		} else {
 			await fsState.actions.createFolder(parentId, name.trim());
 		}
 
 		name = '';
-		open = false;
+		fsState.actions.closeCreate();
 	}
 
 	function handleOpenChange(isOpen: boolean) {
-		open = isOpen;
-		if (!isOpen) name = '';
+		if (!isOpen) {
+			fsState.actions.closeCreate();
+			name = '';
+		}
 	}
 </script>
 
-<Dialog.Root {open} onOpenChange={handleOpenChange}>
+<Dialog.Root open={fsState.createDialogOpen} onOpenChange={handleOpenChange}>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>{title}</Dialog.Title>
 			<Dialog.Description>
-				Enter a name for the new {mode}.
+				Enter a name for the new {fsState.createDialogMode}.
 			</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={handleSubmit}>
@@ -51,13 +49,17 @@
 				<FieldLabel>Name</FieldLabel>
 				<Input
 					type="text"
-					placeholder={mode === 'file' ? 'filename.txt' : 'folder-name'}
+					placeholder={fsState.createDialogMode === 'file' ? 'filename.txt' : 'folder-name'}
 					bind:value={name}
 					autofocus
 				/>
 			</Field>
 			<Dialog.Footer class="mt-4">
-				<Button variant="outline" type="button" onclick={() => (open = false)}>
+				<Button
+					variant="outline"
+					type="button"
+					onclick={() => fsState.actions.closeCreate()}
+				>
 					Cancel
 				</Button>
 				<Button type="submit" disabled={!name.trim()}>Create</Button>

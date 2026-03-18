@@ -70,7 +70,7 @@
  *
  * ## Related Modules
  *
- * - {@link ./key-manager.ts} — `activateEncryption()` accepts base64 strings, `restoreKeyFromCache()` reads from this cache
+ * - {@link ../workspace/create-workspace.ts} — `withEncryption()` calls `onActivate` / `onDeactivate` hooks that close over this cache
  * - {@link ./index.ts} — Encryption primitives (`base64ToBytes` for key decoding at the crypto boundary)
  */
 export type KeyCache = {

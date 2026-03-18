@@ -1256,7 +1256,10 @@ export type WorkspaceClientBuilder<
 	 * @example
 	 * ```typescript
 	 * const workspace = createWorkspace(definition)
-	 *   .withEncryption({ onDeactivate: () => keyCache.clear() })
+	 *   .withEncryption({
+	 *     onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
+	 *     onDeactivate: () => keyCache.clear(),
+	 *   })
 	 *   .withExtension('persistence', indexeddbPersistence)
 	 *   .withExtension('sync', createSyncExtension({ ... }));
 	 *

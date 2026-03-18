@@ -142,11 +142,10 @@ function createAuthState() {
 		await keyCache.set(userId, userKeyBase64);
 	}
 
-	/** Sign-out: wipe all data, deactivate encryption, clear IndexedDB. */
+	/** Sign-out: deactivate encryption, wipe local persistence, clear key cache. */
 	async function deactivateSession() {
 		++keyGeneration;
 		lastKeyBase64 = undefined;
-		workspace.clearAllData();
 		workspace.deactivateEncryption();
 		await workspace.clearLocalData();
 		await keyCache.clear();

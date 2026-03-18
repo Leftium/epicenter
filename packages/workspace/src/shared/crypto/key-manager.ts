@@ -108,7 +108,7 @@ export type KeyManager = {
 	 * Cancels any in-flight HKDF derivation from a prior `activateEncryption()` and clears
 	 * any cached user key so the next activateEncryption must derive again.
 	 *
-	 * Does NOT touch workspace data—use `clearAllData()` + `deactivateEncryption()` for that.
+	 * Does NOT touch workspace data—use `deactivateEncryption()` + `clearLocalData()` for that.
 	 *
 	 * @example
 	 * ```typescript

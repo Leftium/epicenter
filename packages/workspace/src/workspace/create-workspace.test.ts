@@ -984,3 +984,4 @@ describe('workspace encryption', () => {
 		expect(client.isEncrypted).toBe(true);
 	});
 });
+

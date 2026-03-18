@@ -302,15 +302,6 @@ export function createWorkspace<
 					store.deactivateEncryption();
 				}
 			},
-			clearAllData() {
-				ydoc.transact(() => {
-					for (const store of encryptedStores) {
-						for (const [key] of store.entries()) {
-							store.delete(key);
-						}
-					}
-				});
-			},
 			batch(fn: () => void): void {
 				ydoc.transact(fn);
 			},

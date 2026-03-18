@@ -1178,7 +1178,8 @@ export type { Extension } from './lifecycle.js';
 /**
  * Context passed to workspace extension factories.
  *
- * This is a `WorkspaceClient` minus `dispose`, `clearLocalData`, and `[Symbol.asyncDispose]` —
+ * This is a `WorkspaceClient` minus lifecycle methods (`dispose`, `clearLocalData`,
+ * `[Symbol.asyncDispose]`)—extension factories receive the full client surface
  * extension factories receive the full client surface but don't control
  * the workspace's lifecycle. They return their own lifecycle hooks instead.
  *
@@ -1283,32 +1284,32 @@ export type WorkspaceClient<
 	 * Whether encryption is currently active across all stores.
 	 *
 	 * - `false` — no key ever set, reads/writes pass through unencrypted
-	 * - `true` — key active, writes encrypt, reads decrypt
+	 * - `true` — encryption active, writes encrypt, reads decrypt
 	 *
 	 * All stores are kept in sync — this reflects the workspace-wide state.
 	 */
 	readonly isEncrypted: boolean;
 
 	/**
-	 * Unlock the workspace with an encryption key.
+	 * Activate encryption for the workspace with an encryption key.
 	 *
 	 * Decrypts all stores, retries failed entries, enables encryption, and
 	 * encrypts any existing plaintext entries in-place.
 	 *
 	 * ### Plaintext→encrypted migration
 	 *
-	 * Existing plaintext entries are encrypted in-place during `unlock()`, so
+	 * Existing plaintext entries are encrypted in-place during `activateEncryption()`, so
 	 * legacy plaintext data is migrated automatically as soon as a key is provided.
 	 *
 	 * ### Wrong key handling
 	 *
-	 * If `unlock()` is called with the wrong key, values that fail decryption are
+	 * If `activateEncryption()` is called with the wrong key, values that fail decryption are
 	 * skipped. `failedDecryptCount` reflects how many entries could not decrypt.
-	 * Calling `unlock()` again with the correct key retries all failed entries.
+	 * Calling `activateEncryption()` again with the correct key retries all failed entries.
 	 *
 	 * @param key - A 32-byte encryption key (e.g. from `deriveWorkspaceKey`)
 	 */
-	unlock(key: Uint8Array): void;
+	activateEncryption(key: Uint8Array): void;
 
 	/**
 	 * Execute multiple operations atomically in a single Y.js transaction.
@@ -1378,37 +1379,23 @@ export type WorkspaceClient<
 	 * Calls `dispose()` on every extension in LIFO order (last registered, first disposed).
 	 * Stops observers, closes database connections, disconnects sync providers.
 	 *
-	 * After calling, the client is unusable. For wiping data without killing
-	 * the client, use {@link clearLocalData}. In apps that wrap the client
-	 * with a reset helper (for example tab-manager), that reset helper may call
-	 * both `clearLocalData()` and `dispose()` internally.
+	 * After calling, the client is unusable. To wipe data AND rebuild,
+	 * use your app's `workspace.reset()` wrapper instead.
 	 *
 	 * Safe to call multiple times (idempotent).
 	 */
 	dispose(): Promise<void>;
 
 	/**
-	 * Wipe all persisted data. Client stays alive.
+	 * @internal
 	 *
-	 * This is the sign-out operation for singleton workspace clients that
-	 * can't be disposed and recreated. Wipes IndexedDB (and any other
-	 * extension persistence) so no data remains on disk. The client remains reusable—next sign-in can call
-	 * `unlock()` and the workspace re-syncs from the server.
+	 * Wipe all persisted data without tearing down the client.
 	 *
-	 * In tab-manager, `workspace.reset()` already calls this internally before
-	 * dispose/rebuild. Call `clearLocalData()` directly when you are using the
-	 * raw workspace client and need wipe-without-dispose semantics.
+	 * Called internally by `workspace.reset()` before dispose + rebuild.
+	 * App code should use `workspace.reset()` (or the equivalent wrapper)
+	 * rather than calling this directly.
 	 *
-	 * Steps:
-	 * 1. `clearData()` on every extension that supports it (LIFO order)
-	 *
-	 * @example
-	 * ```typescript
-	 * // In encryption wiring, on sign-out:
-	 * if (authState.status === 'signing-out') {
-	 *   await workspaceClient.clearLocalData();
-	 * }
-	 * ```
+	 * Extension authors: this invokes your `clearData()` callback in LIFO order.
 	 */
 	clearLocalData(): Promise<void>;
 

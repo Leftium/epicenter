@@ -34,23 +34,16 @@ function createToolTrustState() {
 	}
 
 	/** Internal reactive map — hidden from consumers. */
-	const trustMap = new SvelteMap<string, TrustLevel>();
+	const trustMap = new SvelteMap<string, TrustLevel>(readAllTrust());
 
-	$effect.root(() => {
-		$effect(() => {
-			const fresh = readAllTrust();
-			trustMap.clear();
-			for (const [key, value] of fresh) {
-				trustMap.set(key, value);
-			}
-			workspace.current.tables.toolTrust.observe(() => {
-				const updated = readAllTrust();
-				trustMap.clear();
-				for (const [key, value] of updated) {
-					trustMap.set(key, value);
-				}
-			});
-		});
+	// Keep reactive state in sync with Y.Doc changes (local + remote)
+	workspace.current.tables.toolTrust.observe(() => {
+		const fresh = readAllTrust();
+		// Clear and repopulate to trigger Svelte reactivity
+		trustMap.clear();
+		for (const [key, value] of fresh) {
+			trustMap.set(key, value);
+		}
 	});
 
 	return {

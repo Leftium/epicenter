@@ -55,15 +55,12 @@ function createSavedTabState() {
 	 * only *that* something changed, so a full re-read is the simplest correct
 	 * approach. The list is small enough that this is never a perf concern.
 	 */
-	let tabs = $state<SavedTab[]>([]);
+	let tabs = $state<SavedTab[]>(readAll());
 
-	$effect.root(() => {
-		$effect(() => {
-			tabs = readAll();
-			workspace.current.tables.savedTabs.observe(() => {
-				tabs = readAll();
-			});
-		});
+	// Re-read on every Y.Doc change — observer fires when persistence
+	// loads and on any subsequent remote/local modification.
+	workspace.current.tables.savedTabs.observe(() => {
+		tabs = readAll();
 	});
 
 	return {

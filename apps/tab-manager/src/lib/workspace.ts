@@ -594,8 +594,8 @@ const definition = defineWorkspace<
 
 export const workspace = createWorkspaceState();
 
-export const workspaceTools = $derived(actionsToClientTools(workspace.current.actions));
-export const workspaceDefinitions = $derived(toToolDefinitions(workspaceTools));
+export const workspaceTools = actionsToClientTools(workspace.current.actions);
+export const workspaceDefinitions = toToolDefinitions(workspaceTools);
 
 export type WorkspaceTools = typeof workspaceTools;
 export type WorkspaceActionName = WorkspaceTools[number]['name'];
@@ -606,20 +606,19 @@ export type WorkspaceActionName = WorkspaceTools[number]['name'];
  * Used by `ToolCallPart.svelte` to display action titles instead of
  * deriving names from underscore-separated tool names.
  */
-export const workspaceToolTitles: Record<string, string> = $derived(
-	Object.fromEntries(
-		[...iterateActions(workspace.current.actions)]
-			.filter(([action]) => action.title !== undefined)
-			.map(([action, path]) => [path.join('_'), action.title!]),
-	),
+export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
+	[...iterateActions(workspace.current.actions)]
+		.filter(([action]) => action.title !== undefined)
+		.map(([action, path]) => [path.join('_'), action.title!]),
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Implementation (hoisted — function declarations below are available above)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildWorkspaceClient(options?: { key?: Uint8Array }) {
-	return createWorkspace(definition, options)
+function buildWorkspaceClient() {
+	return createWorkspace(definition)
+		.withExtension('persistence', indexeddbPersistence)
 		.withExtension('broadcast', broadcastChannelSync)
 		.withExtension(
 			'sync',
@@ -1068,32 +1067,29 @@ function buildWorkspaceClient(options?: { key?: Uint8Array }) {
  * and broadcast channel—all stateful resources tied to a single session.
  * On sign-out we need to tear everything down and start fresh, but consumers
  * (browser-state, chat-state, tool-trust, etc.) are module-level singletons
- * that can’t be re-imported.
+ * that can't be re-imported.
  *
- * The `client` is a `$state` value. When `reset()` or `wipeAndReset()`
- * reassign it, any `$effect` reading `workspace.current` automatically
- * re-runs—re-registering observers on the new client.
+ * The getter solves this: `workspace.current` closes over a mutable `let`
+ * that `reset()` can reassign. Every consumer reading `workspace.current`
+ * at call time (event handlers, action callbacks, Y.Doc observers) gets the
+ * latest client automatically—no re-initialization, no stale references.
  *
- * Two lifecycle methods:
- * - `reset({ key? })` — dispose + rebuild. IndexedDB cache preserved.
- * - `wipeAndReset({ key? })` — clearLocalData + dispose + rebuild.
+ * `reset()` is self-contained: it clears local persisted data (`clearLocalData()`),
+ * disposes runtime resources (`dispose()`), and rebuilds a fresh client instance.
+ * Callers do not need to separately wipe IndexedDB before resetting.
  */
 function createWorkspaceState() {
 	/** Mutable slot—reassigned by `reset()`, read via the `current` getter. */
-	let client = $state(buildWorkspaceClient());
+	let client = buildWorkspaceClient();
 
 	return {
 		get current() {
 			return client;
 		},
-		async reset(options?: { key?: Uint8Array }) {
-			await client.dispose();
-			client = buildWorkspaceClient(options);
-		},
-		async wipeAndReset(options?: { key?: Uint8Array }) {
+		async reset() {
 			await client.clearLocalData();
 			await client.dispose();
-			client = buildWorkspaceClient(options);
+			client = buildWorkspaceClient();
 		},
 	};
 }

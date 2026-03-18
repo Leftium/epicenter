@@ -12,7 +12,6 @@
 		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"customConditions": ["browser"],
 		"paths": {
-			"$lib/workspace": ["./src/lib/workspace.svelte.ts"],
 			"$lib/*": ["./src/lib/*"]
 		}
 	},

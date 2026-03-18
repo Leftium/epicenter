@@ -4,16 +4,21 @@ import { raw } from 'hono/html';
  * Client-side script for the OAuth consent page.
  *
  * Sends the user's consent decision (approve/deny) to the Better Auth
- * consent endpoint. On success, follows the redirect to complete the
- * OAuth flow. On error, displays a message.
+ * consent endpoint with `oauth_query` (signed URL params from the
+ * authorize redirect). On success, navigates to the redirect URL
+ * returned by Better Auth to complete the OAuth flow.
  */
 const CONSENT_SCRIPT = raw(`<script>
 (function() {
 	var approveBtn = document.getElementById('approve');
 	var denyBtn = document.getElementById('deny');
 	var msg = document.getElementById('msg');
-	var consentCode = document.getElementById('consent-code').value;
 	var scope = document.getElementById('scope').value;
+
+	function getOAuthQuery() {
+		var params = new URLSearchParams(window.location.search);
+		return params.has('sig') ? params.toString() : undefined;
+	}
 
 	function show(text, type) {
 		msg.textContent = text;
@@ -34,11 +39,10 @@ const CONSENT_SCRIPT = raw(`<script>
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				redirect: 'follow',
 				body: JSON.stringify({
 					accept: accept,
 					scope: scope || undefined,
-					consent_code: consentCode || undefined,
+					oauth_query: getOAuthQuery(),
 				}),
 			});
 
@@ -49,12 +53,11 @@ const CONSENT_SCRIPT = raw(`<script>
 				return;
 			}
 
-			// Better Auth returns a redirect to the client's redirect_uri.
-			// If fetch followed it, we're at the final URL. If the response
-			// contains a redirectTo, navigate there.
+			// Better Auth returns { redirect: true, url: "..." } for fetch
+			// requests instead of a 302 redirect (see handleRedirect).
 			var data = await res.json().catch(function() { return {}; });
-			if (data.redirectTo) {
-				window.location.href = data.redirectTo;
+			if (data.url) {
+				window.location.href = data.url;
 			} else if (res.redirected) {
 				window.location.href = res.url;
 			} else {

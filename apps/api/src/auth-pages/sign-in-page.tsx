@@ -16,8 +16,9 @@ const GOOGLE_ICON =
  * Client-side script for the sign-in/sign-up page.
  *
  * Handles form submission via `fetch`, mode toggling between sign-in and
- * sign-up, and error display. On success, reloads the page so Better Auth
- * can detect the session and continue the OAuth flow automatically.
+ * sign-up, and error display. Includes `oauth_query` (signed URL params)
+ * in requests so Better Auth's after-hook can continue the OAuth flow.
+ * On success, navigates to the returned redirect URL or reloads as fallback.
  */
 const SIGN_IN_SCRIPT = raw(`<script>
 (function() {
@@ -34,6 +35,13 @@ const SIGN_IN_SCRIPT = raw(`<script>
 	var msg = document.getElementById('msg');
 
 	var isSignUp = false;
+
+	// Replicate what oauthProviderClient does: parse the signed OAuth
+	// query params from the URL so Better Auth can continue the flow.
+	function getOAuthQuery() {
+		var params = new URLSearchParams(window.location.search);
+		return params.has('sig') ? params.toString() : undefined;
+	}
 
 	function showError(text) {
 		msg.textContent = text;
@@ -83,6 +91,8 @@ const SIGN_IN_SCRIPT = raw(`<script>
 		var endpoint = isSignUp ? '/auth/sign-up/email' : '/auth/sign-in/email';
 		var body = { email: emailInput.value, password: passwordInput.value };
 		if (isSignUp && nameInput) body.name = nameInput.value;
+		var oauthQuery = getOAuthQuery();
+		if (oauthQuery) body.oauth_query = oauthQuery;
 
 		try {
 			var res = await fetch(endpoint, {
@@ -99,20 +109,52 @@ const SIGN_IN_SCRIPT = raw(`<script>
 				return;
 			}
 
-			// Session created. Reload so Better Auth continues the OAuth flow.
-			window.location.reload();
+			// If Better Auth returned a redirect (OAuth flow continuation),
+			// navigate there. Otherwise reload for a normal sign-in.
+			var data = await res.json().catch(function() { return {}; });
+			if (data.url) {
+				window.location.href = data.url;
+			} else {
+				window.location.reload();
+			}
 		} catch (err) {
 			showError('Network error. Check your connection and try again.');
 			setLoading(false);
 		}
 	});
 
-	googleBtn.addEventListener('click', function() {
-		// Redirect to Better Auth's social sign-in endpoint.
-		// callbackURL = current page so Better Auth returns here after Google auth,
-		// detects the session, and continues the OAuth flow.
-		var callbackUrl = encodeURIComponent(window.location.href);
-		window.location.href = '/auth/sign-in/social?provider=google&callbackURL=' + callbackUrl;
+	googleBtn.addEventListener('click', async function() {
+		clearError();
+		setLoading(true);
+
+		try {
+			var body = {
+				provider: 'google',
+				callbackURL: window.location.href,
+			};
+			var oauthQuery = getOAuthQuery();
+			if (oauthQuery) body.oauth_query = oauthQuery;
+
+			var res = await fetch('/auth/sign-in/social', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify(body),
+			});
+
+			var data = await res.json().catch(function() { return {}; });
+			if (data.url) {
+				window.location.href = data.url;
+			} else if (res.redirected) {
+				window.location.href = res.url;
+			} else {
+				showError(data.message || data.error || 'Failed to start Google sign-in.');
+				setLoading(false);
+			}
+		} catch (err) {
+			showError('Network error. Check your connection and try again.');
+			setLoading(false);
+		}
 	});
 })();
 </script>`);
@@ -122,8 +164,8 @@ const SIGN_IN_SCRIPT = raw(`<script>
  *
  * Better Auth redirects here when a user needs to authenticate. The page
  * renders a form with email/password fields and a Google OAuth button.
- * After successful auth, the page reloads and Better Auth automatically
- * continues the OAuth authorization flow.
+ * After successful auth, Better Auth returns a redirect URL to continue
+ * the OAuth flow. For non-OAuth sign-ins, the page reloads.
  */
 export function SignInPage() {
 	return (

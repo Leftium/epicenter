@@ -29,13 +29,11 @@ import {
 	encodeSyncStep2,
 	encodeSyncUpdate,
 	MESSAGE_TYPE,
-	SYNC_MESSAGE_TYPE,
 } from '@epicenter/sync';
 import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import {
 	applyMessage,
-	type Connection,
 	computeInitialMessages,
 	type RoomContext,
 	registerConnection,
@@ -284,7 +282,7 @@ describe('applyMessage — SYNC', () => {
 
 describe('applyMessage — AWARENESS', () => {
 	test('awareness update returns broadcast and persistAttachment effects', () => {
-		const { room, connection, awareness } = setup();
+		const { room, connection } = setup();
 
 		// Create a separate awareness to generate an update
 		const clientDoc = new Y.Doc();
@@ -473,7 +471,7 @@ describe('teardownConnection', () => {
 
 describe('multi-client broadcast', () => {
 	test('update from client A reaches client B via updateV2 handler', () => {
-		const { doc, room, ws1, connection1, ws2 } = setupTwoClients();
+		const { room, ws1, connection1, ws2 } = setupTwoClients();
 
 		// Clear initial messages from ws2.sent
 		const ws2SentBefore = ws2.sent.length;
@@ -505,7 +503,7 @@ describe('multi-client broadcast', () => {
 	});
 
 	test('awareness broadcast reaches other clients', () => {
-		const { room, ws1, connection1, ws2, connection2, awareness } =
+		const { room, connection1, awareness } =
 			setupTwoClients();
 
 		// Client A sends awareness update
@@ -541,7 +539,6 @@ describe('full handshake convergence', () => {
 	test('server content syncs to client via SyncStep1 → SyncStep2 exchange', () => {
 		// Server has content
 		const {
-			doc: serverDoc,
 			room,
 			connection,
 			initialMessages,

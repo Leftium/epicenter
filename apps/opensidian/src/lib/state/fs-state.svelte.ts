@@ -24,7 +24,7 @@ import { toast } from 'svelte-sonner';
  * @example
  * ```svelte
  * <script>
- *   import { fsState } from '$lib/fs/fs-state.svelte';
+ *   import { fsState } from '$lib/state/fs-state.svelte';
  *   const children = $derived(fsState.rootChildIds);
  * </script>
  * ```
@@ -33,7 +33,8 @@ function createFsState() {
 	const ws = createWorkspace({
 		id: 'opensidian',
 		tables: { files: filesTable },
-	}).withExtension('persistence', indexeddbPersistence)
+	})
+		.withExtension('persistence', indexeddbPersistence)
 		.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 	const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
 	const documents = ws.documents.files.content;
@@ -44,6 +45,12 @@ function createFsState() {
 	let openFileIds = $state<FileId[]>([]);
 	const expandedIds = new SvelteSet<FileId>();
 	let focusedId = $state<FileId | null>(null);
+
+	// ── Dialog state ──────────────────────────────────────────────────
+	let createDialogOpen = $state(false);
+	let createDialogMode = $state<'file' | 'folder'>('file');
+	let renameDialogOpen = $state(false);
+	let deleteDialogOpen = $state(false);
 
 	// ── rAF-coalesced observer ────────────────────────────────────────
 	let pendingBump = false;
@@ -75,16 +82,32 @@ function createFsState() {
 
 	/**
 	 * Path string for the active file (e.g. "/docs/api.md"), or null.
-	 * Computed by searching the index's path map.
+	 * Uses the index's O(1) reverse lookup.
 	 */
 	const selectedPath = $derived.by(() => {
 		void version;
 		if (!activeFileId) return null;
-		for (const p of fs.index.allPaths()) {
-			if (fs.index.getIdByPath(p) === activeFileId) return p;
-		}
-		return null;
+		return fs.index.getPathById(activeFileId) ?? null;
 	});
+
+	// ── Private helpers ───────────────────────────────────────────────
+
+	/**
+	 * Wrap an async operation with error toast handling.
+	 * The callback contains all logic including success toasts.
+	 * On error, shows the error's own message or the fallback.
+	 */
+	async function withErrorToast(
+		fn: () => Promise<void>,
+		fallbackMessage: string,
+	) {
+		try {
+			await fn();
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : fallbackMessage);
+			console.error(err);
+		}
+	}
 
 	const state = {
 		// ── Read-only getters ───────────────────────────────────────
@@ -108,6 +131,20 @@ function createFsState() {
 		},
 		get focusedId() {
 			return focusedId;
+		},
+
+		// ── Dialog state getters ────────────────────────────────────
+		get createDialogOpen() {
+			return createDialogOpen;
+		},
+		get createDialogMode() {
+			return createDialogMode;
+		},
+		get renameDialogOpen() {
+			return renameDialogOpen;
+		},
+		get deleteDialogOpen() {
+			return deleteDialogOpen;
 		},
 
 		expandedIds,
@@ -135,15 +172,56 @@ function createFsState() {
 		},
 
 		/**
-		 * Find the path for a file ID by searching the index.
+		 * Find the path for a file ID using O(1) reverse index lookup.
 		 * Returns null if not found (deleted/trashed).
 		 */
 		getPathForId(id: FileId): string | null {
 			void version;
-			for (const p of fs.index.allPaths()) {
-				if (fs.index.getIdByPath(p) === id) return p;
+			return fs.index.getPathById(id) ?? null;
+		},
+
+		/**
+		 * Walk the file tree recursively, calling `visitor` for each node.
+		 *
+		 * The visitor receives a file ID and its row, and returns an object:
+		 * - `collect`: if present, the value is added to the result array
+		 * - `descend`: if true, recurse into children (only meaningful for folders)
+		 *
+		 * Must be called in a reactive context to track `version`.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Collect all visible IDs (respecting folder expansion)
+		 * const visibleIds = fsState.walkTree((id, row) => ({
+		 *   collect: id,
+		 *   descend: row.type === 'folder' && fsState.expandedIds.has(id),
+		 * }));
+		 *
+		 * // Collect only files with metadata
+		 * const allFiles = fsState.walkTree((id, row) => {
+		 *   if (row.type === 'file') return { collect: { id, name: row.name }, descend: false };
+		 *   return { descend: true };
+		 * });
+		 * ```
+		 */
+		walkTree<T>(
+			visitor: (id: FileId, row: FileRow) => { collect?: T; descend: boolean },
+			parentId: FileId | null = null,
+		): T[] {
+			void version;
+			const results: T[] = [];
+			function walk(pid: FileId | null) {
+				for (const childId of fs.index.getChildIds(pid)) {
+					const result = ws.tables.files.get(childId);
+					if (result.status !== 'valid' || result.row.trashedAt !== null)
+						continue;
+					const { collect, descend } = visitor(childId, result.row);
+					if (collect !== undefined) results.push(collect);
+					if (descend) walk(childId);
+				}
 			}
-			return null;
+			walk(parentId);
+			return results;
 		},
 
 		actions: {
@@ -170,8 +248,37 @@ function createFsState() {
 				focusedId = id;
 			},
 
+			// ── Dialog actions ────────────────────────────────────────
+
+			openCreate(mode: 'file' | 'folder') {
+				createDialogMode = mode;
+				createDialogOpen = true;
+			},
+
+			closeCreate() {
+				createDialogOpen = false;
+			},
+
+			openRename() {
+				renameDialogOpen = true;
+			},
+
+			closeRename() {
+				renameDialogOpen = false;
+			},
+
+			openDelete() {
+				deleteDialogOpen = true;
+			},
+
+			closeDelete() {
+				deleteDialogOpen = false;
+			},
+
+			// ── File operations ───────────────────────────────────────
+
 			async createFile(parentId: FileId | null, name: string) {
-				try {
+				await withErrorToast(async () => {
 					const parentPath = parentId
 						? (state.getPathForId(parentId) ?? '/')
 						: '/';
@@ -179,16 +286,11 @@ function createFsState() {
 						parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
 					await fs.writeFile(path, '');
 					toast.success(`Created ${path}`);
-				} catch (err) {
-					toast.error(
-						err instanceof Error ? err.message : 'Failed to create file',
-					);
-					console.error(err);
-				}
+				}, 'Failed to create file');
 			},
 
 			async createFolder(parentId: FileId | null, name: string) {
-				try {
+				await withErrorToast(async () => {
 					const parentPath = parentId
 						? (state.getPathForId(parentId) ?? '/')
 						: '/';
@@ -197,30 +299,22 @@ function createFsState() {
 					await fs.mkdir(path);
 					if (parentId) expandedIds.add(parentId);
 					toast.success(`Created ${path}/`);
-				} catch (err) {
-					toast.error(
-						err instanceof Error ? err.message : 'Failed to create folder',
-					);
-					console.error(err);
-				}
+				}, 'Failed to create folder');
 			},
 
 			async deleteFile(id: FileId) {
-				try {
+				await withErrorToast(async () => {
 					const path = state.getPathForId(id);
 					if (!path) return;
 					await fs.rm(path, { recursive: true });
 					if (activeFileId === id) activeFileId = null;
 					openFileIds = openFileIds.filter((f) => f !== id);
 					toast.success(`Deleted ${path}`);
-				} catch (err) {
-					toast.error(err instanceof Error ? err.message : 'Failed to delete');
-					console.error(err);
-				}
+				}, 'Failed to delete');
 			},
 
 			async rename(id: FileId, newName: string) {
-				try {
+				await withErrorToast(async () => {
 					const oldPath = state.getPathForId(id);
 					if (!oldPath) return;
 					const parentPath =
@@ -229,10 +323,7 @@ function createFsState() {
 						parentPath === '/' ? `/${newName}` : `${parentPath}/${newName}`;
 					await fs.mv(oldPath, newPath);
 					toast.success(`Renamed to ${newName}`);
-				} catch (err) {
-					toast.error(err instanceof Error ? err.message : 'Failed to rename');
-					console.error(err);
-				}
+				}, 'Failed to rename');
 			},
 
 			/**
@@ -257,15 +348,10 @@ function createFsState() {
 			 * The documents manager's `onUpdate` callback bumps `updatedAt` on the file row.
 			 */
 			async writeContent(id: FileId, data: string): Promise<void> {
-				try {
+				await withErrorToast(async () => {
 					const handle = await documents.open(id);
 					handle.write(data);
-				} catch (err) {
-					toast.error(
-						err instanceof Error ? err.message : 'Failed to save file',
-					);
-					console.error(err);
-				}
+				}, 'Failed to save file');
 			},
 		},
 

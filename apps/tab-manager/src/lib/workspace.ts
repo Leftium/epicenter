@@ -1074,9 +1074,9 @@ function buildWorkspaceClient() {
  * at call time (event handlers, action callbacks, Y.Doc observers) gets the
  * latest client automatically—no re-initialization, no stale references.
  *
- * `reset()` calls `dispose()` (not `clearLocalData()`) because data wiping
- * is the caller's responsibility (e.g. `keyManager.wipe()` clears IndexedDB
- * and the key cache before `reset()` builds a fresh instance).
+ * `reset()` is self-contained: it clears local persisted data (`clearLocalData()`),
+ * disposes runtime resources (`dispose()`), and rebuilds a fresh client instance.
+ * Callers do not need to separately wipe IndexedDB before resetting.
  */
 function createWorkspaceState() {
 	/** Mutable slot—reassigned by `reset()`, read via the `current` getter. */
@@ -1087,6 +1087,7 @@ function createWorkspaceState() {
 			return client;
 		},
 		async reset() {
+			await client.clearLocalData();
 			await client.dispose();
 			client = buildWorkspaceClient();
 		},

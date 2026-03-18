@@ -376,7 +376,7 @@ function createAuthState(encryption: KeyManager) {
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
-			await encryption.wipe();
+			await encryption.clearKeys();
 			await workspace.reset();
 			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
@@ -424,7 +424,7 @@ function createAuthState(encryption: KeyManager) {
 
 				// 4xx → server explicitly rejected the token
 				await clearState();
-				await encryption.wipe();
+				await encryption.clearKeys();
 				await workspace.reset();
 				phase = { status: 'signed-out' };
 				return Ok(null);
@@ -476,9 +476,6 @@ const keyManagerTarget = {
 	},
 	unlock(key: Uint8Array) {
 		workspace.current.unlock(key);
-	},
-	async clearLocalData() {
-		await workspace.current.clearLocalData();
 	},
 };
 

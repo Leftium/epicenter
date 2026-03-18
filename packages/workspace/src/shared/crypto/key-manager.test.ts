@@ -11,7 +11,7 @@
  *
  * Key behaviors:
  * - unlock() derives workspace key via HKDF then calls unlock()
- * - wipe() always calls clearLocalData() + keyCache.clear()
+ * - clearKeys() clears keyCache and unlock dedup fingerprint
  * - Duplicate unlock() with same key is a no-op
  * - Race: rapid unlock() calls — only latest key wins
  * - restoreKeyFromCache() reads from keyCache and calls unlock()
@@ -30,7 +30,6 @@ function setup() {
 	const client: KeyManagerTarget = {
 		id: 'test-workspace',
 		unlock: mock(() => {}),
-		clearLocalData: mock(() => Promise.resolve()),
 	};
 
 	const wiring = createKeyManager(client);
@@ -53,7 +52,6 @@ function setupWithKeyCache() {
 	const client: KeyManagerTarget = {
 		id: 'test-workspace',
 		unlock: mock(() => {}),
-		clearLocalData: mock(() => Promise.resolve()),
 	};
 
 	const wiring = createKeyManager(client, { keyCache });
@@ -112,18 +110,10 @@ describe('unlock', () => {
 });
 
 // ============================================================================
-// wipe()
+// clearKeys()
 // ============================================================================
 
-describe('wipe', () => {
-	test('always calls clearLocalData()', () => {
-		const { client, wiring } = setup();
-
-		wiring.wipe();
-
-		expect(client.clearLocalData).toHaveBeenCalledTimes(1);
-	});
-
+describe('clearKeys', () => {
 	test('clears fingerprint so next unlock() with same key is not skipped', async () => {
 		const { client, wiring } = setup();
 		const key = makeKey();
@@ -132,7 +122,7 @@ describe('wipe', () => {
 		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(client.unlock).toHaveBeenCalledTimes(1);
 
-		wiring.wipe();
+		wiring.clearKeys();
 
 		wiring.unlock(key);
 		await new Promise((resolve) => setTimeout(resolve, 50));
@@ -207,12 +197,12 @@ describe('restoreKeyFromCache', () => {
 		expect(keyCache.set).toHaveBeenCalledTimes(1);
 	});
 
-	test('wipe() clears keyCache', async () => {
+	test('clearKeys() clears keyCache', async () => {
 		const { wiring, keyCache } = setupWithKeyCache();
 
 		wiring.unlock(makeKey(), 'user-1');
 
-		await wiring.wipe();
+		await wiring.clearKeys();
 
 		expect(keyCache.clear).toHaveBeenCalledTimes(1);
 	});

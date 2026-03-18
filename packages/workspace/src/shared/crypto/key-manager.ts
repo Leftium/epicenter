@@ -8,7 +8,7 @@
  *
  * This factory is deliberately framework-agnostic. Each app provides a thin
  * reactive adapter (Svelte `$effect`, React `useEffect`, etc.) that watches
- * its auth state and calls the imperative `unlock`/`wipe` API:
+ * its auth state and calls the imperative `unlock`/`clearKeys` API:
  *
  * ```
  * ┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
@@ -28,7 +28,7 @@
  *   $effect(() => {
  *     const key = authState.encryptionKey;
  *     if (key) keyManager.unlock(key);
- *     else if (authState.status === 'signing-out') keyManager.wipe();
+ *     else if (authState.status === 'signing-out') keyManager.clearKeys();
  *   });
  * });
  * ```
@@ -40,7 +40,7 @@ import { base64ToBytes, deriveWorkspaceKey } from './index';
 import type { KeyCache } from './key-cache';
 
 /**
- * Minimal client surface the key manager needs to drive unlock/wipe.
+ * Minimal client surface the key manager needs to drive unlock.
  *
  * Intentionally narrow—only the methods the key manager actually calls.
  * The key manager never reads `isEncrypted`; encryption state
@@ -50,7 +50,6 @@ import type { KeyCache } from './key-cache';
 export type KeyManagerTarget = {
 	readonly id: string;
 	unlock(key: Uint8Array): void;
-	clearLocalData(): Promise<void>;
 };
 
 /**
@@ -69,14 +68,14 @@ export type KeyManagerConfig = {
 };
 
 /**
- * Imperative unlock/wipe API for encryption lifecycle management.
+ * Imperative unlock/clearKeys API for encryption lifecycle management.
  *
  * The factory owns the hard parts—async HKDF bridging, duplicate key dedup,
  * and race protection. The consumer just pushes key presence/absence from
  * their framework's reactive system.
  *
  * Encryption state guarding (`isEncrypted`) is the client's job—the key
- * manager always calls through regardless of current encryption state.
+ * manager just derives/unlocks keys and manages key-cache state.
  */
 export type KeyManager = {
 	/**
@@ -104,23 +103,20 @@ export type KeyManager = {
 	unlock(userKeyBase64: string, userId?: string): Promise<void>;
 
 	/**
-	 * Wipe local data and clear cached keys.
+	 * Forget the current encryption key and clear the key cache.
 	 *
-	 * Nuclear option for sign-out: calls `clearLocalData()` to destroy
- * IndexedDB/persistence, then clears the key cache. The workspace client
- * stays alive with no local data.
+	 * Cancels any in-flight HKDF derivation from a prior `unlock()` and clears
+	 * any cached user key so the next unlock must derive again.
 	 *
-	 * Cancels any in-flight HKDF derivation from a prior `unlock()`.
-	 * Always calls through to `client.clearLocalData()`—the client decides
-	 * whether wiping is meaningful in its current mode.
+	 * Does NOT touch workspace data—use `workspace.reset()` for that.
 	 *
 	 * @example
 	 * ```typescript
-	 * // User explicitly signed out—destroy all local encrypted data
-	 * await keyManager.wipe();
+	 * // User explicitly signed out—forget keys and force re-derivation
+	 * await keyManager.clearKeys();
 	 * ```
 	 */
-	wipe(): Promise<void>;
+	clearKeys(): Promise<void>;
 
 	/**
 	 * Attempt to restore from a cached key.
@@ -129,7 +125,7 @@ export type KeyManager = {
 	 * `unlock()` internally—triggering HKDF derivation and unlock without
 	 * a network round-trip. Returns `true` if a cached key was found.
 	 *
- * Use on page load to skip the server roundtrip when the key is still
+	 * Use on page load to skip the server roundtrip when the key is still
 	 * in the cache from a previous session.
 	 *
 	 * No-op if no `keyCache` was provided to the factory.
@@ -160,11 +156,11 @@ export type KeyManager = {
  *    previous `unlock()` call never land after a newer one.
  *
  * Encryption state guarding (`isEncrypted`) is the client's responsibility,
- * not the key manager's. The key manager always calls through to `clearLocalData()`.
+ * not the key manager's.
  *
- * @param client - Workspace client surface implementing unlock and clearLocalData
+ * @param client - Workspace client surface implementing unlock
  * @param config - Optional key cache for instant unlock on page refresh
- * @returns Imperative `unlock`/`wipe`/`restoreKeyFromCache` API for framework adapters to call
+ * @returns Imperative `unlock`/`clearKeys`/`restoreKeyFromCache` API for framework adapters to call
  *
  * @example
  * ```typescript
@@ -172,7 +168,7 @@ export type KeyManager = {
  *
  * // Driven by your framework's reactive system:
  * keyManager.unlock(keyBase64);   // auth key available → derive + unlock
- * await keyManager.wipe();        // sign-out → destroy local data
+ * await keyManager.clearKeys();   // sign-out → forget in-memory/cached keys
  * ```
  */
 export function createKeyManager(
@@ -191,7 +187,7 @@ export function createKeyManager(
 		try {
 			const wsKey = await deriveWorkspaceKey(userKey, client.id);
 			if (thisGeneration === generation) client.unlock(wsKey);
-			} catch (error) {
+		} catch (error) {
 			console.error('[key-manager] Key derivation failed:', error);
 		}
 	}
@@ -226,9 +222,8 @@ export function createKeyManager(
 			await unlockInternal(userKeyBase64, userId);
 		},
 
-		async wipe() {
+		async clearKeys() {
 			invalidateKey();
-			await client.clearLocalData();
 			if (keyCache) await keyCache.clear();
 		},
 

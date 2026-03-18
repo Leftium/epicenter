@@ -39,6 +39,7 @@ import {
 	getBrowserName,
 	getDeviceId,
 } from '$lib/device/device-id';
+import { authState } from '$lib/state/auth.svelte';
 import { tabGroupToRow, tabToRow, windowToRow } from '$lib/sync/row-converters';
 import {
 	createGroupCompositeId,
@@ -113,7 +114,7 @@ function createBrowserState() {
 	// sync. This runs a full diff against the existing Y.Doc rows to clean up
 	// stale entries from previous sessions.
 
-	const whenReady = (async () => {
+	async function seedFromBrowser() {
 		// Parallelize independent async operations
 		const [browserWindows, id] = await Promise.all([
 			browser.windows.getAll({ populate: true }),
@@ -240,12 +241,15 @@ function createBrowserState() {
 			windows: workspace.current.tables.windows.getAllValid().length,
 			tabGroups: workspace.current.tables.tabGroups.getAllValid().length,
 		});
-	})();
+	}
+
+	const whenReady = seedFromBrowser();
 
 	// ── Tab Event Listeners ───────────────────────────────────────────────
 
 	// onCreated: Full Tab object provided
 	browser.tabs.onCreated.addListener((tab) => {
+		if (authState.status !== 'signed-in') return;
 		if (!deviceId) return;
 		const row = tabToRow(deviceId, tab);
 		if (!row) return;
@@ -266,6 +270,7 @@ function createBrowserState() {
 	// onRemoved handler will delete the entire WindowState (and all its tabs
 	// with it), so per-tab cleanup is unnecessary.
 	browser.tabs.onRemoved.addListener((tabId, removeInfo) => {
+		if (authState.status !== 'signed-in') return;
 		if (!deviceId) return;
 		if (removeInfo.isWindowClosing) return;
 		const compositeId = createWindowCompositeId(deviceId, removeInfo.windowId);
@@ -277,6 +282,7 @@ function createBrowserState() {
 
 	// onUpdated: Full Tab in 3rd arg — route to correct window
 	browser.tabs.onUpdated.addListener((_tabId, _changeInfo, tab) => {
+		if (authState.status !== 'signed-in') return;
 		if (!deviceId) return;
 		const row = tabToRow(deviceId, tab);
 		if (!row) return;
@@ -290,6 +296,7 @@ function createBrowserState() {
 
 	// onMoved: Re-query tab to get updated index
 	browser.tabs.onMoved.addListener(async (tabId) => {
+		if (authState.status !== 'signed-in') return;
 		if (!deviceId) return;
 		try {
 			const tab = await browser.tabs.get(tabId);
@@ -311,6 +318,7 @@ function createBrowserState() {
 	// coupled structure — a 50-tab window with 5 other windows only iterates 50
 	// tabs, not 300.
 	browser.tabs.onActivated.addListener((activeInfo) => {
+		if (authState.status !== 'signed-in') return;
 		if (!deviceId) return;
 		const compositeId = createWindowCompositeId(deviceId, activeInfo.windowId);
 		const state = windowStates.get(compositeId);
@@ -344,6 +352,7 @@ function createBrowserState() {
 	// because the side panel doesn't render mid-event-dispatch.
 
 	browser.tabs.onAttached.addListener(async (tabId) => {
+		if (authState.status !== 'signed-in') return;
 		if (!deviceId) return;
 		try {
 			const tab = await browser.tabs.get(tabId);
@@ -361,6 +370,7 @@ function createBrowserState() {
 	});
 
 	browser.tabs.onDetached.addListener((tabId, detachInfo) => {
+		if (authState.status !== 'signed-in') return;
 		if (!deviceId) return;
 		const compositeId = createWindowCompositeId(
 			deviceId,
@@ -375,6 +385,7 @@ function createBrowserState() {
 
 	// onCreated: Full Window object provided
 	browser.windows.onCreated.addListener((window) => {
+		if (authState.status !== 'signed-in') return;
 		if (!deviceId) return;
 		const row = windowToRow(deviceId, window);
 		if (!row) return;
@@ -387,6 +398,7 @@ function createBrowserState() {
 	// onRemoved: Deleting the WindowState entry removes the window AND all its
 	// tabs in one operation — no orphan cleanup needed.
 	browser.windows.onRemoved.addListener((windowId) => {
+		if (authState.status !== 'signed-in') return;
 		if (!deviceId) return;
 		const currentDeviceId = deviceId; // Capture narrowed value for closure
 		const compositeId = createWindowCompositeId(currentDeviceId, windowId);
@@ -412,6 +424,7 @@ function createBrowserState() {
 	// not wrapped in $state. Calling `.set()` on the outer SvelteMap bumps its
 	// version signal, which notifies the `windows` getter's consumers.
 	browser.windows.onFocusChanged.addListener((windowId) => {
+		if (authState.status !== 'signed-in') return;
 		if (!deviceId) return;
 
 		for (const [id, state] of windowStates) {
@@ -438,21 +451,26 @@ function createBrowserState() {
 
 	if (browser.tabGroups) {
 		browser.tabGroups.onCreated.addListener((group) => {
+			if (authState.status !== 'signed-in') return;
 			if (!deviceId) return;
 			workspace.current.tables.tabGroups.set(tabGroupToRow(deviceId, group));
 		});
 
 		browser.tabGroups.onRemoved.addListener((group) => {
+			if (authState.status !== 'signed-in') return;
 			if (!deviceId) return;
 			const compositeId = createGroupCompositeId(deviceId, group.id);
 			if (compositeId) workspace.current.tables.tabGroups.delete(compositeId);
 		});
 
 		browser.tabGroups.onUpdated.addListener((group) => {
+			if (authState.status !== 'signed-in') return;
 			if (!deviceId) return;
 			workspace.current.tables.tabGroups.set(tabGroupToRow(deviceId, group));
 		});
 	}
+
+	authState.onExternalSignIn(() => seedFromBrowser());
 
 	// ── Y.Doc Observers — handle remote changes ─────────────────────────
 	// These fire when another device modifies the Y.Doc via WebSocket sync.

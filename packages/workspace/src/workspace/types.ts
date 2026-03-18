@@ -1379,7 +1379,9 @@ export type WorkspaceClient<
 	 * Stops observers, closes database connections, disconnects sync providers.
 	 *
 	 * After calling, the client is unusable. For wiping data without killing
-	 * the client, use {@link clearLocalData}.
+	 * the client, use {@link clearLocalData}. In apps that wrap the client
+	 * with a reset helper (for example tab-manager), that reset helper may call
+	 * both `clearLocalData()` and `dispose()` internally.
 	 *
 	 * Safe to call multiple times (idempotent).
 	 */
@@ -1392,6 +1394,10 @@ export type WorkspaceClient<
 	 * can't be disposed and recreated. Wipes IndexedDB (and any other
 	 * extension persistence) so no data remains on disk. The client remains reusable—next sign-in can call
 	 * `unlock()` and the workspace re-syncs from the server.
+	 *
+	 * In tab-manager, `workspace.reset()` already calls this internally before
+	 * dispose/rebuild. Call `clearLocalData()` directly when you are using the
+	 * raw workspace client and need wipe-without-dispose semantics.
 	 *
 	 * Steps:
 	 * 1. `clearData()` on every extension that supports it (LIFO order)

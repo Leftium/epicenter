@@ -1,5 +1,5 @@
 /**
- * createWorkspace() - Instantiate a workspace client.
+ * createWorkspace() — Instantiate a workspace client.
  *
  * Returns a client that IS usable directly AND has `.withExtension()` for chaining.
  *
@@ -12,6 +12,28 @@
  * Actions use a single `.withActions(factory)` because they don't build on each other,
  * are always defined by the app author, and benefit from being declared in one place.
  *
+ * ## Encryption lifecycle
+ *
+ * `.withEncryption(config?)` opts the client into encryption. Without it, encryption
+ * methods (`activateEncryption`, `deactivateEncryption`, `isEncrypted`) don't exist
+ * on the type — Whispering and CLI never see them.
+ *
+ * When configured, the full activation pipeline is:
+ * ```
+ * activateEncryption(userKey)
+ *   → byte-level dedup (same key? skip)
+ *   → ++generation (race protection)
+ *   → await deriveWorkspaceKey(userKey, workspaceId)  // HKDF
+ *   → stale check (generation changed? discard)
+ *   → apply derived key to all encrypted stores
+ *
+ * deactivateEncryption()
+ *   → ++generation (invalidate in-flight HKDF)
+ *   → clear key + deactivate all stores
+ *   → wipe persisted data (clearData callbacks, LIFO)
+ *   → await onDeactivate hook (e.g. clear key cache)
+ * ```
+ *
  * @example
  * ```typescript
  * // Direct use (no extensions)
@@ -22,6 +44,12 @@
  * const client = createWorkspace({ id: 'my-app', tables: { posts } })
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', ySweetSync({ auth: directAuth('...') }));
+ *
+ * // With encryption + extensions
+ * const client = createWorkspace({ id: 'my-app', tables: { posts } })
+ *   .withEncryption({ onDeactivate: () => keyCache.clear() })
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', createSyncExtension({ ... }));
  *
  * // With actions (terminal)
  * const client = createWorkspace({ id: 'my-app', tables: { posts } })
@@ -195,8 +223,15 @@ export function createWorkspace<
 
 	/**
 	 * Immutable builder state passed through the builder chain.
+	 *
 	 * Each `withExtension` creates new arrays instead of mutating shared state,
-	 * which fixes builder branching isolation.
+	 * which fixes builder branching isolation (two branches from the same base
+	 * builder get independent extension sets).
+	 *
+	 * Three arrays track three distinct lifecycle moments:
+	 * - `extensionCleanups` — `dispose()` shutdown: close connections, stop observers (irreversible)
+	 * - `clearDataCallbacks` — `deactivateEncryption()` data wipe: delete IndexedDB (reversible, repeatable)
+	 * - `whenReadyPromises` — construction: composite `whenReady` waits for all extensions to init
 	 */
 	type BuilderState = {
 		extensionCleanups: (() => MaybePromise<void>)[];
@@ -255,6 +290,15 @@ export function createWorkspace<
 	const typedDocuments =
 		documentsNamespace as unknown as DocumentsHelper<TTableDefinitions>;
 
+	/**
+	 * Build a workspace client with the given extensions and lifecycle state.
+	 *
+	 * Called once at the bottom of `createWorkspace` (empty state), then once per
+	 * `withExtension`/`withWorkspaceExtension` call (accumulated state). Each call
+	 * returns a fresh builder object — the client object itself is shared across all
+	 * builders (same `ydoc`, `tables`, `kv`), but the builder methods and extensions
+	 * map are new.
+	 */
 	function buildClient<TExtensions extends Record<string, unknown>>(
 		extensions: TExtensions,
 		state: BuilderState,
@@ -305,9 +349,13 @@ export function createWorkspace<
 			[Symbol.asyncDispose]: dispose,
 		};
 
-		// Workspace extension logic — shared by withExtension and withWorkspaceExtension.
-		// Extracted to avoid duplication; both methods apply the factory to the workspace
-		// Y.Doc, the only difference is whether withExtension also registers for documents.
+		/**
+		 * Apply an extension factory to the workspace Y.Doc.
+		 *
+		 * Shared by `withExtension` and `withWorkspaceExtension` — the only
+		 * difference is whether `withExtension` also registers the factory for
+		 * document Y.Docs (fired lazily at `documents.open()` time).
+		 */
 		function applyWorkspaceExtension<
 			TKey extends string,
 			TExports extends Record<string, unknown>,
@@ -496,13 +544,13 @@ export function createWorkspace<
 
 				return builder as unknown as WorkspaceClientBuilder<
 					TId,
-						TTableDefinitions,
-						TKvDefinitions,
-						TAwarenessDefinitions,
-						TExtensions,
-						Record<string, never>
-					> &
-						EncryptionMethods;
+					TTableDefinitions,
+					TKvDefinitions,
+					TAwarenessDefinitions,
+					TExtensions,
+					Record<string, never>,
+					EncryptionMethods
+				>;
 			},
 
 			withActions<TActions extends Actions>(
@@ -520,7 +568,7 @@ export function createWorkspace<
 				return {
 					...client,
 					actions,
-				} as WorkspaceClientWithActions<
+				} as unknown as WorkspaceClientWithActions<
 					TId,
 					TTableDefinitions,
 					TKvDefinitions,

@@ -130,39 +130,33 @@ function createAuthState() {
 	let lastKeyBase64: string | undefined;
 	let keyGeneration = 0;
 
+	/** Sign-in: derive workspace key, activate encryption. */
 	async function activateSession(userKeyBase64: string, userId: string) {
-		if (userKeyBase64 === lastKeyBase64) return; // dedup
+		if (userKeyBase64 === lastKeyBase64) return;
 		lastKeyBase64 = userKeyBase64;
 		const thisGeneration = ++keyGeneration;
 		const userKey = base64ToBytes(userKeyBase64);
 		const wsKey = await deriveWorkspaceKey(userKey, workspace.current.id);
-		if (thisGeneration !== keyGeneration) return; // stale
-		await workspace.wipeAndReset({ key: wsKey });
+		if (thisGeneration !== keyGeneration) return;
+		workspace.current.activateEncryption(wsKey);
 		await keyCache.set(userId, userKeyBase64);
 	}
 
-	async function restoreSession(userKeyBase64: string, userId: string) {
-		if (userKeyBase64 === lastKeyBase64) return; // dedup
-		lastKeyBase64 = userKeyBase64;
-		const thisGeneration = ++keyGeneration;
-		const userKey = base64ToBytes(userKeyBase64);
-		const wsKey = await deriveWorkspaceKey(userKey, workspace.current.id);
-		if (thisGeneration !== keyGeneration) return; // stale
-		await workspace.reset({ key: wsKey }); // preserves IndexedDB cache
-		await keyCache.set(userId, userKeyBase64);
-	}
-
+	/** Sign-out: wipe all data, deactivate encryption, clear IndexedDB. */
 	async function deactivateSession() {
 		++keyGeneration;
 		lastKeyBase64 = undefined;
-		await workspace.wipeAndReset();
+		workspace.current.clearAllData();
+		workspace.current.deactivateEncryption();
+		await workspace.current.clearLocalData();
 		await keyCache.clear();
 	}
 
+	/** Boot: restore key from cache without wiping data. */
 	async function restoreFromCache(userId: string): Promise<boolean> {
 		const cached = await keyCache.get(userId);
 		if (!cached) return false;
-		await restoreSession(cached, userId);
+		await activateSession(cached, userId);
 		return true;
 	}
 
@@ -471,7 +465,7 @@ function createAuthState() {
 			const user = serializeDates(data.user);
 			await authUser.set(user);
 			if (data.encryptionKey) {
-				await restoreSession(data.encryptionKey, data.user.id);
+				await activateSession(data.encryptionKey, data.user.id);
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);

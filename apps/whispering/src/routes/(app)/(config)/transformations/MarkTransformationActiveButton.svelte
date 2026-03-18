@@ -3,7 +3,7 @@
 	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
 	import CircleIcon from '@lucide/svelte/icons/circle';
 	import type { Transformation } from '$lib/services/db';
-	import { settings } from '$lib/state/settings.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 
 	let {
 		transformation,
@@ -16,8 +16,7 @@
 	} = $props();
 
 	const isTransformationActive = $derived(
-		settings.value['transformations.selectedTransformationId'] ===
-			transformation.id,
+		workspaceSettings.get('transformation.selectedId') === transformation.id,
 	);
 
 	const displayText = $derived(
@@ -34,12 +33,9 @@
 	class={className}
 	onclick={() => {
 		if (isTransformationActive) {
-			settings.updateKey('transformations.selectedTransformationId', null);
+			workspaceSettings.set('transformation.selectedId', null);
 		} else {
-			settings.updateKey(
-				'transformations.selectedTransformationId',
-				transformation.id,
-			);
+			workspaceSettings.set('transformation.selectedId', transformation.id);
 		}
 	}}
 >

@@ -5,9 +5,13 @@
 	import { goto } from '$app/navigation';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import { settings } from '$lib/state/settings.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { migrateOldSettings } from '$lib/migration/migrate-settings';
 	import AppLayout from './_components/AppLayout.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
+
+	// Migrate old monolithic settings blob to per-key stores (one-time, idempotent)
+	migrateOldSettings();
 
 	let { children } = $props();
 
@@ -26,6 +30,7 @@
 
 	// Listen for navigation events from other windows
 	onMount(async () => {
+		if (!window.__TAURI_INTERNALS__) return;
 		unlistenNavigate = await listen<{ path: string }>(
 			'navigate-main-window',
 			(event) => {
@@ -40,7 +45,7 @@
 </script>
 
 <Sidebar.Provider bind:open={sidebarOpen}>
-	{#if settings.value['ui.layoutMode'] === 'sidebar'}
+	{#if workspaceSettings.get('ui.layoutMode') === 'sidebar'}
 		<VerticalNav />
 	{/if}
 	<Sidebar.Inset> <AppLayout> {@render children()} </AppLayout> </Sidebar.Inset>

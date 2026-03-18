@@ -70,3 +70,166 @@ test('get returns defaultValue for invalid stored data', () => {
 
 	expect(kv.get('count')).toBe(0);
 });
+
+test('observeAll fires for set changes with correct key and value', () => {
+	const ydoc = new Y.Doc();
+	const kv = createKv(ydoc, {
+		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
+	});
+
+	const changes: Array<Map<string, any>> = [];
+	const unsubscribe = kv.observeAll((changeMap) => {
+		changes.push(new Map(changeMap));
+	});
+
+	kv.set('theme', { mode: 'dark' });
+
+	expect(changes).toHaveLength(1);
+	const firstChange = changes[0];
+	expect(firstChange.has('theme')).toBe(true);
+	const themeChange = firstChange.get('theme');
+	expect(themeChange.type).toBe('set');
+	expect(themeChange.value).toEqual({ mode: 'dark' });
+
+	unsubscribe();
+});
+
+test('observeAll fires for delete changes', () => {
+	const ydoc = new Y.Doc();
+	const kv = createKv(ydoc, {
+		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
+	});
+
+	kv.set('theme', { mode: 'dark' });
+
+	const changes: Array<Map<string, any>> = [];
+	const unsubscribe = kv.observeAll((changeMap) => {
+		changes.push(new Map(changeMap));
+	});
+
+	kv.delete('theme');
+
+	expect(changes).toHaveLength(1);
+	const firstChange = changes[0];
+	expect(firstChange.has('theme')).toBe(true);
+	const themeChange = firstChange.get('theme');
+	expect(themeChange.type).toBe('delete');
+
+	unsubscribe();
+});
+
+test('observeAll batches multiple changes in a single callback', () => {
+	const ydoc = new Y.Doc();
+	const kv = createKv(ydoc, {
+		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
+		fontSize: defineKv(type('number'), 14),
+	});
+
+	const changes: Array<Map<string, any>> = [];
+	const unsubscribe = kv.observeAll((changeMap) => {
+		changes.push(new Map(changeMap));
+	});
+
+	// Set two keys in a single transaction
+	ydoc.transact(() => {
+		kv.set('theme', { mode: 'dark' });
+		kv.set('fontSize', 16);
+	});
+
+	// Should fire once with both changes
+	expect(changes).toHaveLength(1);
+	const firstChange = changes[0];
+	expect(firstChange.size).toBe(2);
+	expect(firstChange.has('theme')).toBe(true);
+	expect(firstChange.has('fontSize')).toBe(true);
+
+	const themeChange = firstChange.get('theme');
+	expect(themeChange.type).toBe('set');
+	expect(themeChange.value).toEqual({ mode: 'dark' });
+
+	const fontSizeChange = firstChange.get('fontSize');
+	expect(fontSizeChange.type).toBe('set');
+	expect(fontSizeChange.value).toBe(16);
+
+	unsubscribe();
+});
+
+test('observeAll skips invalid values', () => {
+	const ydoc = new Y.Doc();
+	const kv = createKv(ydoc, {
+		count: defineKv(type('number'), 0),
+		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
+	});
+
+	const changes: Array<Map<string, any>> = [];
+	const unsubscribe = kv.observeAll((changeMap) => {
+		changes.push(new Map(changeMap));
+	});
+
+	// Write garbage directly to the Y.Array (simulating corruption)
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
+	ydoc.transact(() => {
+		yarray.push([{ key: 'count', val: 'not-a-number', ts: Date.now() }]);
+		// Also set a valid value to trigger the observer
+		kv.set('theme', { mode: 'dark' });
+	});
+
+	// observeAll should only include the valid theme change, not the invalid count
+	expect(changes).toHaveLength(1);
+	const firstChange = changes[0];
+	expect(firstChange.has('count')).toBe(false);
+	expect(firstChange.has('theme')).toBe(true);
+
+	unsubscribe();
+});
+
+test('observeAll skips unknown keys', () => {
+	const ydoc = new Y.Doc();
+	const kv = createKv(ydoc, {
+		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
+	});
+
+	const changes: Array<Map<string, any>> = [];
+	const unsubscribe = kv.observeAll((changeMap) => {
+		changes.push(new Map(changeMap));
+	});
+
+	// Write directly to Y.Array with a key not in definitions
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
+	ydoc.transact(() => {
+		yarray.push([{ key: 'unknownKey', val: 'some-value', ts: Date.now() }]);
+		// Also set a valid value to trigger the observer
+		kv.set('theme', { mode: 'dark' });
+	});
+
+	// observeAll should only include the valid theme change, not the unknown key
+	expect(changes).toHaveLength(1);
+	const firstChange = changes[0];
+	expect(firstChange.has('unknownKey')).toBe(false);
+	expect(firstChange.has('theme')).toBe(true);
+
+	unsubscribe();
+});
+
+test('observeAll returns an unsubscribe function that works', () => {
+	const ydoc = new Y.Doc();
+	const kv = createKv(ydoc, {
+		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
+	});
+
+	const changes: Array<Map<string, any>> = [];
+	const unsubscribe = kv.observeAll((changeMap) => {
+		changes.push(new Map(changeMap));
+	});
+
+	// First change should be observed
+	kv.set('theme', { mode: 'dark' });
+	expect(changes).toHaveLength(1);
+
+	// Unsubscribe
+	unsubscribe();
+
+	// Second change should not be observed
+	kv.set('theme', { mode: 'light' });
+	expect(changes).toHaveLength(1);
+});

@@ -45,7 +45,6 @@ export type ActionDescriptor = {
 	type: 'query' | 'mutation';
 	title?: string;
 	description?: string;
-	destructive?: boolean;
 	input?: TSchema;
 };
 
@@ -124,9 +123,6 @@ export function describeWorkspace(
 				...(action.title !== undefined && { title: action.title }),
 				...(action.description !== undefined && {
 					description: action.description,
-				}),
-				...(action.destructive !== undefined && {
-					destructive: action.destructive,
 				}),
 				...(action.input !== undefined && { input: action.input }),
 			});

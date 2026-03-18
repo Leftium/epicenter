@@ -27,7 +27,7 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  *
  * The returned object satisfies the `IFileSystem` interface from `just-bash`,
  * which allows this virtual filesystem to be used as a drop-in backend for
- * shell emulation — while also exposing extra members (`content`, `index`,
+ * shell emulation — while also exposing extra members (`index`,
  * `lookupId`, `dispose`) that aren't part of `IFileSystem`.
  *
  * **No symlinks** — `symlink`, `link`, and `readlink` always throw ENOSYS.
@@ -48,80 +48,6 @@ export function createYjsFileSystem(
 	const tree = new FileTree(filesTable);
 
 	return FileSystem({
-		/**
-		 * Content I/O for direct reads/writes by UI layers.
-		 *
-		 * Opens the per-file content Y.Doc via `contentDocuments.open()` and
-		 * delegates to the handle's timeline-backed methods.
-		 * The `write` method handles sheet mode switching automatically.
-		 *
-		 * @example
-		 * ```typescript
-		 * const text = await fs.content.read(fileId);
-		 * await fs.content.write(fileId, 'hello');
-		 * ```
-		 */
-		content: {
-			/**
-			 * Read file content as a string.
-			 *
-			 * Opens the file's content Y.Doc and reads from the timeline.
-			 * Returns text content, or sheet CSV for sheet-mode files.
-			 */
-			async read(fileId: FileId): Promise<string> {
-				const handle = await contentDocuments.open(fileId);
-				return handle.read();
-			},
-
-			/**
-			 * Write text data to a file, handling sheet mode switching.
-			 *
-			 * If the file is in sheet mode, clears existing columns/rows and
-			 * re-parses from the CSV string. Otherwise delegates to
-			 * `handle.write()` which replaces the timeline text entry.
-			 *
-			 * @returns The byte size of the written data.
-			 */
-			async write(fileId: FileId, data: string): Promise<number> {
-				const handle = await contentDocuments.open(fileId);
-				const validated = readEntry(handle.timeline.currentEntry);
-
-				if (validated.mode === 'sheet') {
-					handle.batch(() => {
-						validated.columns.forEach((_, key) => {
-							validated.columns.delete(key);
-						});
-						validated.rows.forEach((_, key) => {
-							validated.rows.delete(key);
-						});
-						parseSheetFromCsv(data, validated.columns, validated.rows);
-					});
-				} else {
-					handle.write(data);
-				}
-				return new TextEncoder().encode(data).byteLength;
-			},
-
-			/**
-			 * Append text to a file's existing content.
-			 *
-			 * Only works for text-mode files—inserts at the end of the Y.Text.
-			 * Returns the new total byte size, or `null` if the current mode
-			 * doesn't support append (caller should fall back to `write`).
-			 */
-			async append(fileId: FileId, data: string): Promise<number | null> {
-				const handle = await contentDocuments.open(fileId);
-				const validated = readEntry(handle.timeline.currentEntry);
-
-				if (validated.mode !== 'text') return null;
-
-				handle.batch(() => validated.content.insert(validated.content.length, data));
-
-				// Re-read after mutation
-				return new TextEncoder().encode(validated.content.toString()).byteLength;
-			},
-		},
-
 		/** Reactive file-system indexes for path lookups and parent-child queries. */
 		get index(): FileTree['index'] {
 			return tree.index;
@@ -263,7 +189,25 @@ export function createYjsFileSystem(
 
 			const textData =
 				typeof data === 'string' ? data : new TextDecoder().decode(data);
-			const size = await this.content.write(id, textData);
+			const handle = await contentDocuments.open(id);
+			const validated = readEntry(handle.timeline.currentEntry);
+
+			let size: number;
+			if (validated.mode === 'sheet') {
+				handle.batch(() => {
+					validated.columns.forEach((_, key) => {
+						validated.columns.delete(key);
+					});
+					validated.rows.forEach((_, key) => {
+						validated.rows.delete(key);
+					});
+					parseSheetFromCsv(textData, validated.columns, validated.rows);
+				});
+				size = new TextEncoder().encode(textData).byteLength;
+			} else {
+				handle.write(textData);
+				size = new TextEncoder().encode(textData).byteLength;
+			}
 			tree.touch(id, size);
 		},
 
@@ -277,11 +221,16 @@ export function createYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
-			const newSize = await this.content.append(id, text);
-			if (newSize === null) {
+			const handle = await contentDocuments.open(id);
+			const validated = readEntry(handle.timeline.currentEntry);
+
+			if (validated.mode !== 'text') {
 				await this.writeFile(path, data);
 				return;
 			}
+
+			handle.batch(() => validated.content.insert(validated.content.length, text));
+			const newSize = new TextEncoder().encode(validated.content.toString()).byteLength;
 			tree.touch(id, newSize);
 		},
 

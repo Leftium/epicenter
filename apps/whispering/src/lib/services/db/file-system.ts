@@ -313,11 +313,11 @@ export function createFileSystemDb(): DbService {
 								const { data: recordings, error } = await this.getAll();
 								if (error) throw error;
 
-								const maxCount = Number.parseInt(maxRecordingCount, 10);
-								if (recordings.length <= maxCount) return;
+								if (recordings.length <= maxRecordingCount) return;
+
 
 								// Delete oldest recordings (already sorted newest first)
-								const toDelete = recordings.slice(maxCount);
+								const toDelete = recordings.slice(maxRecordingCount);
 								await this.delete(toDelete);
 							},
 							catch: (error) => DbError.MutationFailed({ cause: error }),

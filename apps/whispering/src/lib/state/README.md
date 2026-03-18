@@ -14,18 +14,35 @@ Singleton reactive state that stays in sync with the application. Unlike the que
 
 ## Current State Modules
 
-### `settings.svelte.ts`
+### `workspace-settings.svelte.ts`
 
-Persistent user settings using `createPersistedState`. Automatically syncs to localStorage and provides reactive access to all app configuration.
+Synced workspace settings backed by Yjs KV. Settings here roam across devices via CRDT sync. Uses a SvelteMap for per-key reactivity.
 
 ```typescript
-import { settings } from '$lib/state/settings.svelte';
+import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 
-// Read settings reactively
-const mode = settings.value['recording.mode'];
+// Read settings reactively (re-renders on change)
+const mode = workspaceSettings.get('recording.mode');
 
-// Update settings
-settings.set('recording.mode', 'vad');
+// Update settings (writes to Yjs KV → syncs to other devices)
+workspaceSettings.set('recording.mode', 'vad');
+```
+
+### `device-config.svelte.ts`
+
+Device-bound configuration backed by per-key localStorage. Secrets, hardware IDs, filesystem paths, and global OS shortcuts that should never sync across devices. Uses a SvelteMap for per-key reactivity with cross-tab sync via storage events.
+
+```typescript
+import { deviceConfig } from '$lib/state/device-config.svelte';
+
+// Read config reactively
+const apiKey = deviceConfig.get('apiKeys.openai');
+
+// Update config (writes to localStorage per-key)
+deviceConfig.set('apiKeys.openai', 'sk-...');
+
+// Get definition default (for "Default: X" placeholders)
+const defaultShortcut = deviceConfig.getDefault('shortcuts.global.toggleManualRecording');
 ```
 
 ### `vad-recorder.svelte.ts`
@@ -46,9 +63,6 @@ await vadRecorder.startActiveListening({
   onSpeechEnd: (blob) => processAudio(blob),
 });
 await vadRecorder.stopActiveListening();
-
-// Device enumeration (uses TanStack Query for caching)
-const devices = createQuery(() => vadRecorder.enumerateDevices.options);
 ```
 
 ## Why VAD Lives Here
@@ -59,12 +73,6 @@ The VAD recorder doesn't fit the query layer pattern because:
 2. **Singleton nature**: Only one VAD instance can exist at a time
 3. **Resource management**: Requires explicit cleanup (`stopActiveListening`) rather than cache invalidation
 4. **Hardware lifecycle**: Tied to microphone access, not data fetching
-
-Compare this to the query layer which:
-- Caches data and refreshes in the background
-- Manages multiple query/mutation instances
-- Doesn't track hardware state
-- Uses TanStack Query's lifecycle management
 
 ## Adding New State Modules
 

@@ -18,8 +18,8 @@
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
 	import { rpc } from '$lib/query';
-	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	const getRecorderStateQuery = createQuery(
@@ -44,7 +44,7 @@
 
 	<div class="flex items-center gap-1.5">
 		<div class="flex items-center gap-1.5">
-			{#if settings.value['recording.mode'] === 'manual'}
+			{#if workspaceSettings.get('recording.mode') === 'manual'}
 				{#if getRecorderStateQuery.data === 'RECORDING'}
 					<Button
 						tooltip="Cancel recording"
@@ -86,7 +86,7 @@
 						<RecordingModeSelector class="rounded-l-none" />
 					</div>
 				{/if}
-			{:else if settings.value['recording.mode'] === 'vad'}
+			{:else if workspaceSettings.get('recording.mode') === 'vad'}
 				{#if vadRecorder.state === 'IDLE'}
 					<VadDeviceSelector />
 					<CompressionSelector />
@@ -118,12 +118,12 @@
 						{VAD_STATE_TO_ICON[vadRecorder.state]}
 					</Button>
 				{/if}
-			{:else if settings.value['recording.mode'] === 'upload'}
+			{:else if workspaceSettings.get('recording.mode') === 'upload'}
 				<CompressionSelector />
 				<TranscriptionSelector />
 				<TransformationSelector />
 				<RecordingModeSelector />
-			{:else if settings.value['recording.mode'] === 'live'}
+			{:else if workspaceSettings.get('recording.mode') === 'live'}
 				<ManualDeviceSelector />
 				<CompressionSelector />
 				<TranscriptionSelector />
@@ -146,7 +146,7 @@
 				</div>
 			{/if}
 		</div>
-		{#if settings.value['ui.layoutMode'] === 'nav-items'}
+		{#if workspaceSettings.get('ui.layoutMode') === 'nav-items'}
 			<NavItems class="-mr-4" collapsed={isMobile.current} />
 		{/if}
 	</div>

@@ -1,10 +1,10 @@
 import { Ok } from 'wellcrafted/result';
 import { WHISPERING_RECORDINGS_PATHNAME } from '$lib/constants/app';
+import { rpc } from '$lib/query';
 import { defineMutation } from '$lib/query/client';
 import type { WhisperingError } from '$lib/result';
 import type { TextError } from '$lib/services/text';
-import { settings } from '$lib/state/settings.svelte';
-import { rpc } from '$lib/query';
+import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 
 export const delivery = {
 	/**
@@ -148,7 +148,7 @@ export const delivery = {
 			// Main delivery flow - operations are independent
 
 			// Check if user wants to copy to clipboard
-			if (settings.value['transcription.copyToClipboardOnSuccess']) {
+			if (workspaceSettings.get('output.transcription.clipboard')) {
 				const { error: copyError } = await rpc.text.copyToClipboard({
 					text,
 				});
@@ -160,14 +160,14 @@ export const delivery = {
 			}
 
 			// Check if user wants to write to cursor (independent of copy)
-			if (settings.value['transcription.writeToCursorOnSuccess']) {
+			if (workspaceSettings.get('output.transcription.cursor')) {
 				const { error: writeError } = await rpc.text.writeToCursor({
 					text,
 				});
 				if (!writeError) {
 					written = true;
 					// Optionally simulate Enter keystroke after successful write
-					if (settings.value['transcription.simulateEnterAfterOutput']) {
+					if (workspaceSettings.get('output.transcription.enter')) {
 						const { error: enterError } =
 							await rpc.text.simulateEnterKeystroke();
 						if (enterError) {
@@ -331,7 +331,7 @@ export const delivery = {
 			// Main delivery flow - operations are independent
 
 			// Check if user wants to copy to clipboard
-			if (settings.value['transformation.copyToClipboardOnSuccess']) {
+			if (workspaceSettings.get('output.transformation.clipboard')) {
 				const { error: copyError } = await rpc.text.copyToClipboard({
 					text,
 				});
@@ -343,14 +343,14 @@ export const delivery = {
 			}
 
 			// Check if user wants to write to cursor (independent of copy)
-			if (settings.value['transformation.writeToCursorOnSuccess']) {
+			if (workspaceSettings.get('output.transformation.cursor')) {
 				const { error: writeError } = await rpc.text.writeToCursor({
 					text,
 				});
 				if (!writeError) {
 					written = true;
 					// Optionally simulate Enter keystroke after successful write
-					if (settings.value['transformation.simulateEnterAfterOutput']) {
+					if (workspaceSettings.get('output.transformation.enter')) {
 						const { error: enterError } =
 							await rpc.text.simulateEnterKeystroke();
 						if (enterError) {

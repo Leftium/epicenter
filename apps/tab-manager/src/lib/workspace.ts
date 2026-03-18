@@ -33,6 +33,7 @@ import { Ok, tryAsync, trySync } from 'wellcrafted/result';
 import { getDeviceId } from '$lib/device/device-id';
 import { authState } from '$lib/state/auth.svelte';
 import { serverUrl } from '$lib/state/settings.svelte';
+import { findDuplicateGroups, groupTabsByDomain } from '$lib/utils/tab-helpers';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chrome API Sentinel Constants
@@ -581,7 +582,7 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
  */
 export const workspaceClient = createWorkspace(
 	defineWorkspace({
-		id: 'tab-manager',
+		id: 'epicenter.tab-manager',
 		tables: {
 			devices: devicesTable,
 			tabs: tabsTable,
@@ -670,7 +671,6 @@ export const workspaceClient = createWorkspace(
 			close: defineMutation({
 				title: 'Close Tabs',
 				description: 'Close one or more tabs by their composite IDs.',
-				destructive: true,
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
 				}),
@@ -853,6 +853,97 @@ export const workspaceClient = createWorkspace(
 					);
 					return {
 						reloadedCount: results.filter((r) => r.status === 'fulfilled').length,
+					};
+				},
+			}),
+
+			findDuplicates: defineQuery({
+				title: 'Find Duplicate Tabs',
+				description:
+					'Find tabs with the same normalized URL. Returns groups of duplicates across the current device.',
+				input: Type.Object({}),
+				handler: async () => {
+					const deviceId = await getDeviceId();
+					const deviceTabs = tables.tabs.filter(
+						(tab) => tab.deviceId === deviceId,
+					);
+					const groups = findDuplicateGroups(deviceTabs);
+					return {
+						duplicates: [...groups].map(([url, tabs]) => ({
+							url,
+							tabs: tabs.map((t) => ({
+								id: t.id,
+								title: t.title ?? '(untitled)',
+							})),
+						})),
+					};
+				},
+			}),
+
+			dedup: defineMutation({
+				title: 'Remove Duplicate Tabs',
+				description:
+					'Close duplicate tabs, keeping the first occurrence of each URL. Only affects tabs on the current device.',
+				input: Type.Object({}),
+				handler: async () => {
+					const deviceId = await getDeviceId();
+					const deviceTabs = tables.tabs.filter(
+						(tab) => tab.deviceId === deviceId,
+					);
+					const groups = findDuplicateGroups(deviceTabs);
+					const toClose = [...groups.values()].flatMap((group) =>
+						group.slice(1).map((t) => t.id),
+					);
+					if (toClose.length === 0) return { closedCount: 0 };
+					const nativeIds = toNativeIds(toClose, deviceId);
+					await tryAsync({
+						try: () => browser.tabs.remove(nativeIds),
+						catch: () => Ok(undefined),
+					});
+					return { closedCount: nativeIds.length };
+				},
+			}),
+
+			groupByDomain: defineMutation({
+				title: 'Group Tabs by Domain',
+				description:
+					'Create Chrome tab groups based on website domain for domains with 2+ tabs. Only affects tabs on the current device.',
+				input: Type.Object({}),
+				handler: async () => {
+					const deviceId = await getDeviceId();
+					const deviceTabs = tables.tabs.filter(
+						(tab) => tab.deviceId === deviceId,
+					);
+					const domains = groupTabsByDomain(deviceTabs);
+
+					const groupOps = [...domains.entries()]
+						.filter(([, tabs]) => tabs.length >= 2)
+						.map(([domain, tabs]) => {
+							const nativeIds = toNativeIds(
+								tabs.map((t) => t.id),
+								deviceId,
+							);
+							return nativeIds.length >= 2
+								? { domain, nativeIds }
+								: null;
+						})
+						.filter((op) => op !== null);
+
+					const results = await Promise.allSettled(
+						groupOps.map(async ({ domain, nativeIds }) => {
+							const groupId = await browser.tabs.group({
+								tabIds: nativeIds as [number, ...number[]],
+							});
+							await browser.tabGroups.update(groupId, {
+								title: domain,
+							});
+						}),
+					);
+
+					return {
+						groupedCount: results.filter(
+							(r) => r.status === 'fulfilled',
+						).length,
 					};
 				},
 			}),

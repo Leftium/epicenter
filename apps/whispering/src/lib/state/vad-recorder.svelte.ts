@@ -9,7 +9,8 @@ import {
 	enumerateDevices,
 	getRecordingStream,
 } from '$lib/services/device-stream';
-import { settings } from '$lib/state/settings.svelte';
+import { asDeviceIdentifier } from '$lib/services/types';
+import { deviceConfig } from '$lib/state/device-config.svelte';
 
 /**
  * Creates a Voice Activity Detection (VAD) recorder with reactive state.
@@ -84,7 +85,10 @@ function createVadRecorder() {
 			console.log('Starting VAD recording');
 
 			// Get device ID from settings
-			const deviceId = settings.value['recording.navigator.deviceId'];
+			const configuredDeviceId = deviceConfig.get('recording.navigator.deviceId');
+			const deviceId = configuredDeviceId
+				? asDeviceIdentifier(configuredDeviceId)
+				: null;
 
 			// Get validated stream with device fallback
 			const { data: streamResult, error: streamError } =

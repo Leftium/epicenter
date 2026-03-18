@@ -6,6 +6,7 @@
 	import { Checkbox } from '@epicenter/ui/checkbox';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Input } from '@epicenter/ui/input';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import * as Table from '@epicenter/ui/table';
@@ -195,12 +196,17 @@
 <svelte:head> <title>All Transformations</title> </svelte:head>
 
 <main class="flex w-full flex-1 flex-col gap-2 px-4 py-4 sm:px-8 mx-auto">
-	<h1 class="scroll-m-20 text-4xl font-bold tracking-tight lg:text-5xl">
-		Transformations
-	</h1>
-	<p class="text-muted-foreground">
-		Your text transformations, stored locally in IndexedDB.
-	</p>
+	<SectionHeader.Root>
+		<SectionHeader.Title
+			level={1}
+			class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
+		>
+			Transformations
+		</SectionHeader.Title>
+		<SectionHeader.Description>
+			Your text transformations, stored locally in IndexedDB.
+		</SectionHeader.Description>
+	</SectionHeader.Root>
 
 	<div class="flex items-center justify-between gap-2 w-full">
 		<Input

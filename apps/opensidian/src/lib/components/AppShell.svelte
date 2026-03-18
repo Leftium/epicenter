@@ -4,6 +4,7 @@
 	import ContentPanel from './ContentPanel.svelte';
 	import FileTree from './FileTree.svelte';
 	import Toolbar from './Toolbar.svelte';
+	import CommandPalette from './CommandPalette.svelte';
 </script>
 
 <div class="flex h-screen flex-col">
@@ -17,4 +18,5 @@
 		<Resizable.Handle withHandle />
 		<Resizable.Pane defaultSize={75}> <ContentPanel /> </Resizable.Pane>
 	</Resizable.PaneGroup>
+	<CommandPalette />
 </div>

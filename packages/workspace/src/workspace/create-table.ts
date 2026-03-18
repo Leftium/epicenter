@@ -11,7 +11,6 @@ import type * as Y from 'yjs';
 import type { YKeyValueLwwChange } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import type { YKeyValueLwwEncrypted } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type {
-	DeleteResult,
 	GetResult,
 	InferTableRow,
 	InvalidRowResult,
@@ -157,12 +156,8 @@ export function createTable<
 		// DELETE
 		// ═══════════════════════════════════════════════════════════════════════
 
-		delete(id: string): DeleteResult {
-			if (!ykv.has(id)) {
-				return { status: 'not_found_locally' };
-			}
+		delete(id: string): void {
 			ykv.delete(id);
-			return { status: 'deleted' };
 		},
 
 		clear(): void {

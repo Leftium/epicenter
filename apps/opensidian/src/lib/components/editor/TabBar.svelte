@@ -2,7 +2,7 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { X } from 'lucide-svelte';
-	import { fsState } from '$lib/fs/fs-state.svelte';
+	import { fsState } from '$lib/state/fs-state.svelte';
 
 	const hasOpenFiles = $derived(fsState.openFileIds.length > 0);
 

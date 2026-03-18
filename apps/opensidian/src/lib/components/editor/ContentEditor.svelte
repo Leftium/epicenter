@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
 	import type { DocumentHandle } from '@epicenter/workspace';
-	import { fsState } from '$lib/fs/fs-state.svelte';
+	import { fsState } from '$lib/state/fs-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { fileId }: {

@@ -15,7 +15,7 @@
  * @see {@link @epicenter/workspace/shared/crypto/key-cache} — The interface this implements
  */
 
-import type { KeyCache } from '@epicenter/workspace/shared/crypto';
+import type { KeyCache } from '@epicenter/workspace/shared/crypto/key-cache';
 
 const KEY_PREFIX = 'ek:';
 
@@ -29,9 +29,11 @@ const KEY_PREFIX = 'ek:';
  * @example
  * ```typescript
  * import { keyCache } from '$lib/state/key-cache';
- * import { createKeyManager } from '@epicenter/workspace/shared/crypto';
  *
- * const keyManager = createKeyManager(workspace, { keyCache });
+ * // Used as the onDeactivate hook for workspace encryption
+ * createWorkspace(definition).withEncryption({
+ *   onDeactivate: () => keyCache.clear(),
+ * });
  * ```
  */
 export const keyCache: KeyCache = {

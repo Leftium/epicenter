@@ -355,9 +355,9 @@ Specifically:
   > **Note**: No explicit change needed—`ExtensionContext` is `Omit<WorkspaceClient, ...>`, so removing encryption from `WorkspaceClient` automatically removes it. Encryption methods appear when the builder type is intersected with `EncryptionMethods`.
 - [x] Update workspace.ts (tab-manager)—add `.withEncryption({ onDeactivate })` to builder chain
 - [x] Update auth.svelte.ts—remove createKeyManager, use workspace directly, fix two leaked sign-out paths
-- [ ] Delete key-manager.ts, key-manager.test.ts, remove re-exports from crypto/index.ts
-- [ ] Migrate dedup/race/generation/hook tests to create-workspace.test.ts
-- [ ] Update key-cache.ts JSDoc
+- [x] Delete key-manager.ts, key-manager.test.ts, remove re-exports from crypto/index.ts
+- [x] Migrate dedup/race/generation/hook tests to create-workspace.test.ts
+- [x] Update key-cache.ts JSDoc
 - [ ] Run `bun test` in packages/workspace
 - [ ] Run typecheck across monorepo
 

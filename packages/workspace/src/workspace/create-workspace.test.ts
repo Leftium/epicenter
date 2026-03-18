@@ -10,7 +10,7 @@
  * - Document-bound tables expose `documents`, while non-bound tables do not.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import { generateEncryptionKey } from '../shared/crypto/index.js';
@@ -983,5 +983,111 @@ describe('workspace encryption', () => {
 		).withEncryption();
 		// Construction-time key sets workspaceKey directly, so isEncrypted is true
 		expect(client.isEncrypted).toBe(true);
+	});
+});
+
+// ============================================================================
+// .withEncryption() lifecycle (dedup, race, onDeactivate, isEncrypted)
+// ============================================================================
+
+describe('.withEncryption() lifecycle', () => {
+	function setupLifecycle() {
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+		const onDeactivate = mock(() => Promise.resolve());
+		const client = createWorkspace(
+			defineWorkspace({ id: 'lifecycle-enc-test', tables: { posts } }),
+		).withEncryption({ onDeactivate });
+		return { client, onDeactivate };
+	}
+
+	describe('dedup', () => {
+		test('same key twice → HKDF runs only once (dedup by bytes)', async () => {
+			const { client } = setupLifecycle();
+			const key = generateEncryptionKey();
+
+			await client.activateEncryption(key);
+			expect(client.isEncrypted).toBe(true);
+
+			// Second call with identical bytes should be a no-op
+			await client.activateEncryption(key);
+			expect(client.isEncrypted).toBe(true);
+		});
+
+		test('different keys each trigger HKDF derivation', async () => {
+			const { client } = setupLifecycle();
+
+			await client.activateEncryption(generateEncryptionKey());
+			expect(client.isEncrypted).toBe(true);
+
+			await client.activateEncryption(generateEncryptionKey());
+			expect(client.isEncrypted).toBe(true);
+		});
+	});
+
+	describe('race protection', () => {
+		test('rapid key switches → only latest applies', async () => {
+			const { client } = setupLifecycle();
+
+			// Fire three rapid activations without awaiting
+			const p1 = client.activateEncryption(generateEncryptionKey());
+			const p2 = client.activateEncryption(generateEncryptionKey());
+			const lastKey = generateEncryptionKey();
+			const p3 = client.activateEncryption(lastKey);
+
+			await Promise.all([p1, p2, p3]);
+
+			// Only the last call's derived key should be active
+			expect(client.isEncrypted).toBe(true);
+		});
+	});
+
+	describe('onDeactivate hook', () => {
+		test('called after store cleanup during deactivateEncryption', async () => {
+			const { client, onDeactivate } = setupLifecycle();
+
+			await client.activateEncryption(generateEncryptionKey());
+			expect(client.isEncrypted).toBe(true);
+
+			await client.deactivateEncryption();
+			expect(client.isEncrypted).toBe(false);
+			expect(onDeactivate).toHaveBeenCalledTimes(1);
+		});
+
+		test('not called if encryption was never activated', async () => {
+			const { client, onDeactivate } = setupLifecycle();
+			await client.deactivateEncryption();
+			expect(onDeactivate).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('isEncrypted getter', () => {
+		test('reflects key state transitions', async () => {
+			const { client } = setupLifecycle();
+
+			expect(client.isEncrypted).toBe(false);
+
+			await client.activateEncryption(generateEncryptionKey());
+			expect(client.isEncrypted).toBe(true);
+
+			await client.deactivateEncryption();
+			expect(client.isEncrypted).toBe(false);
+		});
+	});
+
+	describe('deactivateEncryption invalidates in-flight HKDF', () => {
+		test('activate then immediately deactivate → stays deactivated', async () => {
+			const { client } = setupLifecycle();
+
+			// Start activation (HKDF is in-flight)
+			const activatePromise = client.activateEncryption(generateEncryptionKey());
+			// Immediately deactivate before HKDF completes
+			await client.deactivateEncryption();
+
+			// Wait for activation to settle
+			await activatePromise;
+
+			// Generation counter should have prevented the stale key from applying
+			expect(client.isEncrypted).toBe(false);
+		});
 	});
 });

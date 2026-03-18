@@ -9,22 +9,32 @@
  * - Auto-clears when the browser closes (no stale keys)
  * - Async JSON-backed API (base64 strings store natively, no conversion)
  *
- * Storage key: `'ek'` — single key, one active encryption key per workspace.
+ * Storage key: `'epicenter:encryption-key'` — single key, not per-user. Only one
+ * user is active at a time, and `deactivateEncryption()` clears the cache on
+ * every sign-out, so per-user scoping would add complexity for no benefit.
  *
  * @see {@link @epicenter/workspace/shared/crypto/key-cache} — The interface this implements
  */
 
 import type { KeyCache } from '@epicenter/workspace/shared/crypto/key-cache';
 
-const STORAGE_KEY = 'ek';
+/**
+ * Session storage key for the cached encryption key.
+ *
+ * Prefixed with `epicenter:` to avoid collisions with other extensions or
+ * libraries sharing `chrome.storage.session`. A single key (not per-user)
+ * because `deactivateEncryption()` always clears the cache on sign-out—there's
+ * only ever one active user's key stored at a time.
+ */
+const STORAGE_KEY = 'epicenter:encryption-key';
 
 /**
  * `KeyCache` implementation using `chrome.storage.session`.
  *
  * Stores and retrieves the base64-encoded encryption key under a single
- * storage key. The `clear()` method only removes the `ek` key—it does not
- * wipe unrelated session storage entries that other parts of the extension
- * might use.
+ * storage key (`epicenter:encryption-key`). The `clear()` method only removes
+ * that key—it does not wipe unrelated session storage entries that other parts
+ * of the extension might use.
  *
  * @example
  * ```typescript

@@ -1,42 +1,27 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
 	import * as Command from '@epicenter/ui/command';
-	import { getFileIcon } from '$lib/fs/file-icons';
-	import { fsState } from '$lib/fs/fs-state.svelte';
+	import { getFileIcon } from '$lib/utils/file-icons';
+	import { fsState } from '$lib/state/fs-state.svelte';
 
 	let open = $state(false);
 	let searchQuery = $state('');
 	let debouncedQuery = $state('');
-
 
 	// ── Collect all files recursively (only when palette is open) ────
 	type FileEntry = { id: FileId; name: string; parentDir: string };
 
 	const allFiles = $derived.by((): FileEntry[] => {
 		if (!open) return [];
-		void fsState.version;
-
-		const files: FileEntry[] = [];
-		function collect(parentId: FileId | null) {
-			for (const childId of fsState.getChildIds(parentId)) {
-				const row = fsState.getRow(childId);
-				if (!row) continue;
-				if (row.type === 'file') {
-					const fullPath = fsState.getPathForId(childId) ?? '';
-					const lastSlash = fullPath.lastIndexOf('/');
-					const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
-					files.push({
-						id: childId,
-						name: row.name,
-						parentDir,
-					});
-				} else if (row.type === 'folder') {
-					collect(childId);
-				}
+		return fsState.walkTree<FileEntry>((id, row) => {
+			if (row.type === 'file') {
+				const fullPath = fsState.getPathForId(id) ?? '';
+				const lastSlash = fullPath.lastIndexOf('/');
+				const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
+				return { collect: { id, name: row.name, parentDir }, descend: false };
 			}
-		}
-		collect(null);
-		return files;
+			return { descend: true };
+		});
 	});
 
 	// ── Debounce search input at 150ms ───────────────────────────────

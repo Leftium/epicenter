@@ -46,9 +46,130 @@ function resolveTable(client: AnyWorkspaceClient, name: string) {
 	return table;
 }
 
-// ─── Command builder ───────────────────────────────────────────────────────
+// ─── Input parsing helper ─────────────────────────────────────────────────
 
-export function buildDataCommand(_serverUrl: string) {
+/** Parse a value from argv positional, --file, or stdin. Returns undefined on error. */
+function resolveInputValue(argv: any): unknown {
+	const stdinContent = readStdinSync();
+	const valueStr = argv.value as string | undefined;
+
+	if (
+		valueStr &&
+		!valueStr.startsWith('{') &&
+		!valueStr.startsWith('[') &&
+		!valueStr.startsWith('"') &&
+		!valueStr.startsWith('@')
+	) {
+		return valueStr;
+	}
+
+	const result = parseJsonInput({
+		positional: valueStr,
+		file: argv.file,
+		hasStdin: stdinContent !== undefined,
+		stdinContent,
+	});
+
+	if (result.error) {
+		outputError(result.error.message);
+		process.exitCode = 1;
+		return undefined;
+	}
+
+	return result.data;
+}
+
+// ─── KV subcommand (nested) ───────────────────────────────────────────────
+
+function buildKvSubcommand() {
+	return {
+		command: 'kv <action>',
+		describe: 'Manage key-value store',
+		builder: (yargs: Argv) =>
+			yargs
+				.command({
+					command: 'get <key>',
+					describe: 'Get a value by key',
+					builder: (y: Argv) =>
+						y
+							.positional('key', {
+								type: 'string',
+								demandOption: true,
+							})
+							.options(formatYargsOptions()),
+					handler: async (argv: any) => {
+						await runDataCommand(
+							{ dir: argv.dir, workspaceId: argv.workspace },
+							(client) => client.kv.get(argv.key),
+							argv.format,
+						);
+					},
+				} as unknown as CommandModule)
+				.command({
+					command: 'set <key> [value]',
+					describe: 'Set a value by key',
+					builder: (y: Argv) =>
+						y
+							.positional('key', {
+								type: 'string',
+								demandOption: true,
+							})
+							.positional('value', {
+								type: 'string',
+								description: 'JSON value or @file',
+							})
+							.option('file', {
+								type: 'string',
+								description: 'Read value from file',
+							})
+							.options(formatYargsOptions()),
+					handler: async (argv: any) => {
+						const parsed = resolveInputValue(argv);
+						if (parsed === undefined) return;
+						await runDataCommand(
+							{ dir: argv.dir, workspaceId: argv.workspace },
+							(client) => {
+								client.kv.set(argv.key, parsed);
+								return {
+									status: 'set',
+									key: argv.key,
+									value: parsed,
+								};
+							},
+							argv.format,
+						);
+					},
+				} as unknown as CommandModule)
+				.command({
+					command: 'delete <key>',
+					aliases: ['reset'],
+					describe: 'Delete a value by key (reset to default)',
+					builder: (y: Argv) =>
+						y
+							.positional('key', {
+								type: 'string',
+								demandOption: true,
+							})
+							.options(formatYargsOptions()),
+					handler: async (argv: any) => {
+						await runDataCommand(
+							{ dir: argv.dir, workspaceId: argv.workspace },
+							(client) => {
+								client.kv.delete(argv.key);
+								return { status: 'deleted', key: argv.key };
+							},
+							argv.format,
+						);
+					},
+				} as unknown as CommandModule)
+				.demandCommand(1, 'Specify an action: get, set, delete'),
+		handler: () => {},
+	};
+}
+
+// ─── Exported command builder ─────────────────────────────────────────────
+
+export function buildDataCommand() {
 	return {
 		command: 'data',
 		describe: 'Interact with workspace data (tables, KV)',
@@ -177,117 +298,3 @@ export function buildDataCommand(_serverUrl: string) {
 	};
 }
 
-// ─── KV subcommand (nested) ───────────────────────────────────────────────
-
-function buildKvSubcommand() {
-	return {
-		command: 'kv <action>',
-		describe: 'Manage key-value store',
-		builder: (yargs: Argv) =>
-			yargs
-				.command({
-					command: 'get <key>',
-					describe: 'Get a value by key',
-					builder: (y: Argv) =>
-						y
-							.positional('key', {
-								type: 'string',
-								demandOption: true,
-							})
-							.options(formatYargsOptions()),
-					handler: async (argv: any) => {
-						await runDataCommand(
-							{ dir: argv.dir, workspaceId: argv.workspace },
-							(client) => client.kv.get(argv.key),
-							argv.format,
-						);
-					},
-				} as unknown as CommandModule)
-				.command({
-					command: 'set <key> [value]',
-					describe: 'Set a value by key',
-					builder: (y: Argv) =>
-						y
-							.positional('key', {
-								type: 'string',
-								demandOption: true,
-							})
-							.positional('value', {
-								type: 'string',
-								description: 'JSON value or @file',
-							})
-							.option('file', {
-								type: 'string',
-								description: 'Read value from file',
-							})
-							.options(formatYargsOptions()),
-					handler: async (argv: any) => {
-						const parsed = resolveInputValue(argv);
-						if (parsed === undefined) return;
-						await runDataCommand(
-							{ dir: argv.dir, workspaceId: argv.workspace },
-							(client) => {
-								client.kv.set(argv.key, parsed);
-								return {
-									status: 'set',
-									key: argv.key,
-									value: parsed,
-								};
-							},
-							argv.format,
-						);
-					},
-				} as unknown as CommandModule)
-				.command({
-					command: 'delete <key>',
-					aliases: ['reset'],
-					describe: 'Delete a value by key (reset to default)',
-					builder: (y: Argv) =>
-						y
-							.positional('key', {
-								type: 'string',
-								demandOption: true,
-							})
-							.options(formatYargsOptions()),
-					handler: async (argv: any) => {
-						await runDataCommand(
-							{ dir: argv.dir, workspaceId: argv.workspace },
-							(client) => {
-								client.kv.delete(argv.key);
-								return { status: 'deleted', key: argv.key };
-							},
-							argv.format,
-						);
-					},
-				} as unknown as CommandModule)
-				.demandCommand(1, 'Specify an action: get, set, delete'),
-		handler: () => {},
-	};
-}
-
-// ─── Input parsing helper ─────────────────────────────────────────────────
-
-/** Parse a value from argv positional, --file, or stdin. Returns undefined on error. */
-function resolveInputValue(argv: any): unknown {
-	const stdinContent = readStdinSync();
-	const valueStr = argv.value as string | undefined;
-
-							if (valueStr && !valueStr.startsWith('{') && !valueStr.startsWith('[') && !valueStr.startsWith('"') && !valueStr.startsWith('@')) {
-		return valueStr;
-	}
-
-	const result = parseJsonInput({
-		positional: valueStr,
-		file: argv.file,
-		hasStdin: stdinContent !== undefined,
-		stdinContent,
-	});
-
-	if (result.error) {
-		outputError(result.error.message);
-		process.exitCode = 1;
-		return undefined;
-	}
-
-	return result.data;
-}

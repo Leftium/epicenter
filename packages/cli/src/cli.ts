@@ -13,14 +13,13 @@ export function createCLI() {
 	return {
 		run: async (argv: string[]) => {
 			const home = resolveEpicenterHome();
-			const serverUrl = `http://localhost:3913`;
 
 			const cli = yargs()
 				.scriptName('epicenter')
 				.command(buildStartCommand())
 				.command(buildWorkspaceCommand(home))
 				.command(buildAuthCommand(home))
-				.command(buildDataCommand(serverUrl))
+				.command(buildDataCommand())
 				.demandCommand(1)
 				.strict()
 				.help();

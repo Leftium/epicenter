@@ -16,6 +16,7 @@ import type {
 	RowResult,
 	TableDefinition,
 	TableHelper,
+	TransactionMeta,
 	UpdateResult,
 } from './types.js';
 
@@ -167,7 +168,7 @@ export function createTableHelper<
 		// ═══════════════════════════════════════════════════════════════════════
 
 		observe(
-			callback: (changedIds: ReadonlySet<TRow['id']>, transaction: unknown) => void,
+			callback: (changedIds: ReadonlySet<TRow['id']>, transaction: TransactionMeta) => void,
 		): () => void {
 			const handler = (
 				changes: Map<string, YKeyValueLwwChange<unknown>>,

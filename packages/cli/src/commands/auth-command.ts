@@ -25,11 +25,10 @@ type SignInResponse = {
 	user: { id: string; email: string; name?: string };
 };
 
-/** Response from the get-session endpoint. */
+/** Response from Better Auth's /auth/get-session endpoint. */
 type SessionResponse = {
+	session: { id: string; expiresAt: string; token: string; userId: string };
 	user: { id: string; email: string; name?: string };
-	expiresAt: string;
-	valid: boolean;
 };
 
 async function readLine(prompt: string, silent = false): Promise<string> {
@@ -183,9 +182,9 @@ function buildStatusCommand(home: string) {
 				const displayName = remote.user.name ?? remote.user.email;
 				console.log(`Logged in as: ${displayName} (${remote.user.email})`);
 				console.log(`Server:       ${session.server}`);
-				console.log(`Session:      ${remote.valid ? 'valid' : 'invalid'}`);
-				if (remote.expiresAt) {
-					console.log(`Expires at:   ${new Date(remote.expiresAt).toLocaleString()}`);
+				console.log(`Session:      valid`);
+				if (remote.session.expiresAt) {
+					console.log(`Expires at:   ${new Date(remote.session.expiresAt).toLocaleString()}`);
 				}
 			} catch {
 				const displayName = session.user?.name ?? session.user?.email ?? '(unknown)';

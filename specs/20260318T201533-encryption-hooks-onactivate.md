@@ -1,6 +1,6 @@
 # Add `onActivate` hook to `.withEncryption()` — eliminate split cache responsibility
 
-Status: **In Progress**
+Status: **Implemented**
 
 ## How We Got Here
 
@@ -99,8 +99,8 @@ The hook fires after HKDF derivation succeeds AND the stores are activated — n
 - [x] Add test: `onActivate` does NOT fire on dedup skip (same key twice)
 - [x] Add test: `onActivate` does NOT fire when HKDF fails
 - [x] Add test: `onActivate` does NOT fire when activation is superseded by race (stale generation)
-- [ ] Run `bun test packages/workspace/` — all pass
-- [ ] Run `bun run typecheck` in `apps/tab-manager/` — only pre-existing errors
+- [x] Run `bun test packages/workspace/` — 494 pass, 0 fail
+- [x] Run `bun run typecheck` in `apps/tab-manager/` — only pre-existing errors (87 errors, all in `packages/ui` path aliases)
 
 ## Constraints
 
@@ -118,3 +118,27 @@ The hook fires after HKDF derivation succeeds AND the stores are activated — n
 - `restoreFromCache()` method on the workspace (consumer owns restore timing)
 - Auto-restore at workspace construction time (workspace doesn't know about UI lifecycle)
 - Changing `activateEncryption` signature (stays `Uint8Array`)
+
+## Review
+
+**Completed**: 2026-03-18
+
+### Summary
+
+Added symmetric `onActivate`/`onDeactivate` hooks to `.withEncryption()`. The workspace now owns both transitions—cache writes happen automatically via `onActivate` after successful HKDF derivation + store activation. The `KeyCache` interface was simplified to drop userId scoping (`save`/`load`/`clear` instead of `set(userId)`/`get(userId)`/`clear`). The tab-manager's `activateAndCacheKey` helper was deleted entirely—all cache writes flow through the hook.
+
+### Deviations from Spec
+
+- Spec item "Remove `import { keyCache }` from `auth.svelte.ts`" was changed to "Keep"—`keyCache.load()` is still called in auth for restore-from-cache reads, so the import stays.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `packages/workspace/src/shared/crypto/key-cache.ts` | `set/get` → `save/load`, drop userId |
+| `packages/workspace/src/workspace/types.ts` | Add `onActivate` to `EncryptionConfig`, update JSDoc |
+| `packages/workspace/src/workspace/create-workspace.ts` | Call `onActivate` after store activation, update pipeline docs |
+| `packages/workspace/src/workspace/create-workspace.test.ts` | 4 new tests for onActivate behavior |
+| `apps/tab-manager/src/lib/state/key-cache.ts` | Implement simplified `save/load/clear` with `'ek'` key |
+| `apps/tab-manager/src/lib/workspace.ts` | Add `onActivate` hook + `bytesToBase64` import |
+| `apps/tab-manager/src/lib/state/auth.svelte.ts` | Delete `activateAndCacheKey`, simplify cache reads |

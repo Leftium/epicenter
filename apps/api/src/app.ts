@@ -388,7 +388,22 @@ app.get(
 );
 
 // Auth pages — server-rendered Hono JSX
-app.get('/sign-in', (c) => c.html(renderSignInPage()));
+app.get('/sign-in', async (c) => {
+	const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
+	if (session) {
+		const url = new URL(c.req.url);
+		// OAuth re-entry: signed params present → continue the authorize flow
+		if (url.searchParams.has('sig')) {
+			return c.redirect('/auth/oauth2/authorize' + url.search);
+		}
+		// Post-signin redirect (e.g. from /device or /consent)
+		const callbackURL = url.searchParams.get('callbackURL');
+		if (callbackURL && callbackURL.startsWith('/')) {
+			return c.redirect(callbackURL);
+		}
+	}
+	return c.html(renderSignInPage());
+});
 app.get(
 	'/consent',
 	sValidator('query', type({ 'client_id?': 'string', 'scope?': 'string' })),

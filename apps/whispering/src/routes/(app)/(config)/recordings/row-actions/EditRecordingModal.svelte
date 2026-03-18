@@ -17,6 +17,17 @@
 
 	let { recording }: { recording: Recording } = $props();
 
+	/**
+	 * Capture the recording ID at setup time for use in cleanup.
+	 *
+	 * Reactive props ($props) can become undefined during Svelte's teardown
+	 * when the parent's data source is deleted (e.g. deleting a recording
+	 * causes the table row—and this component—to unmount). If onDestroy
+	 * reads the prop directly, it may see undefined and throw. Capturing
+	 * the ID here sidesteps the reactive teardown race entirely.
+	 */
+	const recordingIdForCleanup = recording.id;
+
 	let isDialogOpen = $state(false);
 
 	/**
@@ -93,7 +104,7 @@
 	}
 
 	onDestroy(() => {
-		services.db.recordings.revokeAudioUrl(recording.id);
+		services.db.recordings.revokeAudioUrl(recordingIdForCleanup);
 	});
 </script>
 

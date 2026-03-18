@@ -14,21 +14,26 @@
 	import QuoteIcon from '@lucide/svelte/icons/quote';
 	import StrikethroughIcon from '@lucide/svelte/icons/strikethrough';
 	import UnderlineIcon from '@lucide/svelte/icons/underline';
-	import { Editor, Extension } from '@tiptap/core';
+	import { Editor } from '@tiptap/core';
 	import Placeholder from '@tiptap/extension-placeholder';
 	import TaskItem from '@tiptap/extension-task-item';
 	import TaskList from '@tiptap/extension-task-list';
 	import Underline from '@tiptap/extension-underline';
 	import StarterKit from '@tiptap/starter-kit';
-	import { ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
 	import type * as Y from 'yjs';
+	import { createYjsExtension } from './extensions';
+	import { extractTitleAndPreview } from './utils';
 
 	let {
 		yxmlfragment,
 		onContentChange,
 	}: {
 		yxmlfragment: Y.XmlFragment;
-		onContentChange?: (content: { title: string; preview: string; wordCount: number }) => void;
+		onContentChange?: (content: {
+			title: string;
+			preview: string;
+			wordCount: number;
+		}) => void;
 	} = $props();
 
 	let element: HTMLDivElement | undefined = $state();
@@ -46,37 +51,6 @@
 		taskList: false,
 		blockquote: false,
 	});
-
-	/**
-	 * Create a Tiptap extension that wraps y-prosemirror plugins for Yjs collaboration.
-	 *
-	 * Uses ySyncPlugin for binding ProseMirror state to Y.XmlFragment, and yUndoPlugin for
-	 * collaborative undo/redo that respects per-client origins.
-	 */
-	function createYjsExtension(xmlFragment: Y.XmlFragment) {
-		return Extension.create({
-			name: 'yjs-collaboration',
-			addProseMirrorPlugins() {
-				return [ySyncPlugin(xmlFragment), yUndoPlugin()];
-			},
-		});
-	}
-
-	function extractTitleAndPreview(ed: Editor): {
-		title: string;
-		preview: string;
-		wordCount: number;
-	} {
-		const text = ed.getText();
-		const firstNewline = text.indexOf('\n');
-		const firstLine = firstNewline === -1 ? text : text.slice(0, firstNewline);
-		const trimmed = text.trim();
-		return {
-			title: firstLine.slice(0, 80).trim(),
-			preview: text.slice(0, 100).trim(),
-			wordCount: trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length,
-		};
-	}
 
 	$effect(() => {
 		if (!element) return;

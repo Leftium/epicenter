@@ -4,12 +4,12 @@
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import type * as Y from 'yjs';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
-	import HoneycripEditor from '$lib/components/Editor.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
-	import { notesState } from '$lib/state/notes.svelte';
+	import HoneycripEditor from '$lib/editor/Editor.svelte';
+	import { foldersState, notesState, viewState } from '$lib/state';
 	import workspaceClient from '$lib/workspace';
-	
+
 	let commandPaletteOpen = $state(false);
 
 	// ─── Document Handle ────────────────────────────────────────────────────
@@ -18,7 +18,7 @@
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 
 	$effect(() => {
-		const noteId = notesState.selectedNoteId;
+		const noteId = viewState.selectedNoteId;
 		if (!noteId) {
 			currentYXmlFragment = null;
 			currentDocHandle = null;
@@ -56,7 +56,7 @@
 
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
-			notesState.createFolder();
+			foldersState.createFolder();
 		} else if (e.key === 'n') {
 			e.preventDefault();
 			notesState.createNote();
@@ -76,14 +76,14 @@
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if notesState.selectedNote && currentYXmlFragment}
-					{#key notesState.selectedNoteId}
+				{#if viewState.selectedNote && currentYXmlFragment}
+					{#key viewState.selectedNoteId}
 						<HoneycripEditor
 							yxmlfragment={currentYXmlFragment}
 							onContentChange={(change) => notesState.updateNoteContent(change)}
 						/>
 					{/key}
-				{:else if notesState.selectedNote}
+				{:else if viewState.selectedNote}
 					<div class="flex h-full items-center justify-center">
 						<p class="text-muted-foreground">Loading editor…</p>
 					</div>

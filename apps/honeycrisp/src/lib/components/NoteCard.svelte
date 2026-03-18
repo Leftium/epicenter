@@ -8,13 +8,13 @@
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import type { Note } from '$lib/workspace';
-	import { notesState } from '$lib/state/notes.svelte';
+	import { foldersState, notesState, viewState } from '$lib/state';
 	import { parseDateTime } from '$lib/utils/date';
+	import type { Note } from '$lib/workspace';
 
 	let { note }: { note: Note } = $props();
 
-	const isSelected = $derived(note.id === notesState.selectedNoteId);
+	const isSelected = $derived(note.id === viewState.selectedNoteId);
 
 	let confirmingPermanentDelete = $state(false);
 </script>
@@ -27,7 +27,7 @@
 			class="group relative flex cursor-pointer flex-col gap-0.5 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-accent/30 {isSelected
 				? 'bg-accent'
 				: ''}"
-			onclick={() => notesState.selectNote(note.id)}
+			onclick={() => viewState.selectNote(note.id)}
 		>
 			<div class="flex items-start justify-between gap-2">
 				<span class="font-medium line-clamp-1">
@@ -44,7 +44,7 @@
 				{note.preview || 'No content'}
 			</p>
 
-			{#if notesState.isRecentlyDeletedView}
+			{#if viewState.isRecentlyDeletedView}
 				<div
 					class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover:flex {isSelected
 						? 'flex'
@@ -107,7 +107,7 @@
 	</ContextMenu.Trigger>
 
 	<ContextMenu.Content class="w-48">
-		{#if notesState.isRecentlyDeletedView}
+		{#if viewState.isRecentlyDeletedView}
 			<ContextMenu.Item onclick={() => notesState.restoreNote(note.id)}>
 				<ArchiveRestoreIcon class="mr-2 size-4" />
 				Restore
@@ -141,7 +141,7 @@
 						Unfiled
 					</ContextMenu.Item>
 					<ContextMenu.Separator />
-					{#each notesState.folders as folder (folder.id)}
+					{#each foldersState.folders as folder (folder.id)}
 						<ContextMenu.Item
 							onclick={() => notesState.moveNoteToFolder(note.id, folder.id)}
 						>

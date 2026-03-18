@@ -9,8 +9,8 @@
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import { foldersState, notesState, viewState } from '$lib/state';
 	import type { Folder, FolderId } from '$lib/workspace';
-	import { notesState } from '$lib/state/notes.svelte';
 
 	let editingFolderId = $state<FolderId | null>(null);
 	let editingName = $state('');
@@ -23,7 +23,7 @@
 
 	function commitRename() {
 		if (editingFolderId && editingName.trim()) {
-			notesState.renameFolder(editingFolderId, editingName.trim());
+			foldersState.renameFolder(editingFolderId, editingName.trim());
 		}
 		editingFolderId = null;
 		editingName = '';
@@ -36,7 +36,7 @@
 
 	function confirmDelete() {
 		if (deletingFolderId) {
-			notesState.deleteFolder(deletingFolderId);
+			foldersState.deleteFolder(deletingFolderId);
 		}
 		deletingFolderId = null;
 	}
@@ -51,8 +51,8 @@
 		<div class="px-2 pb-1">
 			<Sidebar.Input
 				placeholder="Search notes…"
-				value={notesState.searchQuery}
-				oninput={(e) => notesState.setSearchQuery(e.currentTarget.value)}
+				value={viewState.searchQuery}
+				oninput={(e) => viewState.setSearchQuery(e.currentTarget.value)}
 			/>
 		</div>
 	</Sidebar.Header>
@@ -63,8 +63,8 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={notesState.selectedFolderId === null && !notesState.isRecentlyDeletedView}
-							onclick={() => notesState.selectFolder(null)}
+							isActive={viewState.selectedFolderId === null && !viewState.isRecentlyDeletedView}
+							onclick={() => viewState.selectFolder(null)}
 						>
 							<FileTextIcon class="size-4" />
 							<span>All Notes</span>
@@ -75,8 +75,8 @@
 					</Sidebar.MenuItem>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={notesState.isRecentlyDeletedView && notesState.selectedFolderId === null}
-							onclick={() => notesState.selectRecentlyDeleted()}
+							isActive={viewState.isRecentlyDeletedView && viewState.selectedFolderId === null}
+							onclick={() => viewState.selectRecentlyDeleted()}
 						>
 							<TrashIcon class="size-4" />
 							<span>Recently Deleted</span>
@@ -98,7 +98,7 @@
 				</Collapsible.Trigger>
 				<Sidebar.GroupAction
 					title="New Folder"
-					onclick={() => notesState.createFolder()}
+					onclick={() => foldersState.createFolder()}
 				>
 					<PlusIcon />
 					<span class="sr-only">New Folder</span>
@@ -106,7 +106,7 @@
 				<Collapsible.Content>
 					<Sidebar.GroupContent>
 						<Sidebar.Menu>
-							{#each notesState.folders as folder (folder.id)}
+							{#each foldersState.folders as folder (folder.id)}
 								<Sidebar.MenuItem>
 									{#if editingFolderId === folder.id}
 										<div class="flex items-center gap-2 px-2 py-1">
@@ -124,8 +124,8 @@
 										</div>
 									{:else}
 										<Sidebar.MenuButton
-											isActive={notesState.selectedFolderId === folder.id}
-											onclick={() => notesState.selectFolder(folder.id)}
+											isActive={viewState.selectedFolderId === folder.id}
+											onclick={() => viewState.selectFolder(folder.id)}
 										>
 											{#if folder.icon}
 												<span class="text-base leading-none"

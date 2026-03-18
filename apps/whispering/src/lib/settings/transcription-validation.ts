@@ -2,7 +2,8 @@ import {
 	TRANSCRIPTION_SERVICES,
 	type TranscriptionService,
 } from '$lib/services/transcription/registry';
-import { settings } from '$lib/state/settings.svelte';
+import { deviceConfig } from '$lib/state/device-config.svelte';
+import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 
 /**
  * Gets the currently selected transcription service.
@@ -13,8 +14,7 @@ import { settings } from '$lib/state/settings.svelte';
 export function getSelectedTranscriptionService():
 	| TranscriptionService
 	| undefined {
-	const selectedServiceId =
-		settings.value['transcription.selectedTranscriptionService'];
+	const selectedServiceId = workspaceSettings.get('transcription.service');
 	return TRANSCRIPTION_SERVICES.find((s) => s.id === selectedServiceId);
 }
 
@@ -30,16 +30,28 @@ export function isTranscriptionServiceConfigured(
 ): boolean {
 	switch (service.location) {
 		case 'cloud': {
-			const apiKey = settings.value[service.apiKeyField];
-			return apiKey !== '';
+			const apiKeyByService = {
+				Groq: 'apiKeys.groq',
+				OpenAI: 'apiKeys.openai',
+				ElevenLabs: 'apiKeys.elevenlabs',
+				Deepgram: 'apiKeys.deepgram',
+				Mistral: 'apiKeys.mistral',
+			} as const;
+
+			return deviceConfig.get(apiKeyByService[service.id]) !== "";
 		}
 		case 'self-hosted': {
-			const url = settings.value[service.serverUrlField];
+			const url = deviceConfig.get("transcription.speaches.baseUrl");
 			return url !== '';
 		}
 		case 'local': {
-			const modelPath = settings.value[service.modelPathField];
-			return modelPath !== '';
+			const modelPathByService = {
+				whispercpp: 'transcription.whispercpp.modelPath',
+				parakeet: 'transcription.parakeet.modelPath',
+				moonshine: 'transcription.moonshine.modelPath',
+			} as const;
+
+			return deviceConfig.get(modelPathByService[service.id]) !== "";
 		}
 		default: {
 			return true;

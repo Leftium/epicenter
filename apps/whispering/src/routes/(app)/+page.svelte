@@ -10,11 +10,13 @@
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
+	import { nanoid } from 'nanoid/non-secure';
 	import { onDestroy, onMount } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { Err, tryAsync } from 'wellcrafted/result';
+	import { Err, partitionResults, tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import NavItems from '$lib/components/NavItems.svelte';
@@ -28,13 +30,15 @@
 	import {
 		RECORDER_STATE_TO_ICON,
 		RECORDING_MODE_OPTIONS,
+		type RecordingMode,
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/constants/keyboard';
 	import { rpc } from '$lib/query';
 	import { desktopServices, services } from '$lib/services';
-	import { settings } from '$lib/state/settings.svelte';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	const getRecorderStateQuery = createQuery(
@@ -106,7 +110,7 @@
 
 				unlistenDragDrop = await getCurrentWebview().onDragDropEvent(
 					async (event) => {
-						if (settings.value['recording.mode'] !== 'upload') return;
+						if (workspaceSettings.get('recording.mode') !== 'upload') return;
 						if (
 							event.payload.type !== 'drop' ||
 							event.payload.paths.length === 0
@@ -132,7 +136,7 @@
 							return;
 						}
 
-						await settings.switchRecordingMode('upload');
+						await switchRecordingMode('upload');
 
 						// Convert file paths to File objects using the fs service
 						const { data: files, error } =
@@ -169,6 +173,63 @@
 			services.db.recordings.revokeAudioUrl(latestRecording.id);
 		}
 	});
+
+	async function stopAllRecordingModesExcept(modeToKeep: RecordingMode) {
+		const { data: recorderState } = await rpc.recorder.getRecorderState.fetch();
+
+		const recordingModes = [
+			{
+				mode: 'manual' as const,
+				isActive: () => recorderState === 'RECORDING',
+				stop: () => rpc.actions.stopManualRecording(),
+			},
+			{
+				mode: 'vad' as const,
+				isActive: () => vadRecorder.state !== 'IDLE',
+				stop: () => rpc.actions.stopVadRecording(),
+			},
+		] satisfies {
+			mode: RecordingMode;
+			isActive: () => boolean;
+			stop: () => Promise<unknown>;
+		}[];
+
+		const modesToStop = recordingModes.filter(
+			(recordingMode) =>
+				recordingMode.mode !== modeToKeep && recordingMode.isActive(),
+		);
+
+		const stopPromises = modesToStop.map(
+			async (recordingMode) => await recordingMode.stop(),
+		);
+
+		const results = await Promise.all(stopPromises);
+		return partitionResults(results);
+	}
+
+	async function switchRecordingMode(newMode: RecordingMode) {
+		const toastId = nanoid();
+		const { errs } = await stopAllRecordingModesExcept(newMode);
+
+		if (errs.length > 0) {
+			console.error('Failed to stop active recordings:', errs);
+			rpc.notify.warning({
+				id: toastId,
+				title: '⚠️ Recording may still be active',
+				description:
+					'Previous recording could not be stopped automatically. Please stop it manually.',
+			});
+		}
+
+		if (workspaceSettings.get('recording.mode') !== newMode) {
+			workspaceSettings.set('recording.mode', newMode);
+			rpc.notify.success({
+				id: toastId,
+				title: '✅ Recording mode switched',
+				description: `Switched to ${newMode} recording mode`,
+			});
+		}
+	}
 </script>
 
 <svelte:head> <title>Whispering</title> </svelte:head>
@@ -176,21 +237,24 @@
 <div
 	class="flex flex-1 flex-col items-center justify-center gap-4 w-full max-w-md mx-auto px-4"
 >
-	<div class="xs:flex hidden flex-col items-center gap-4">
-		<h1 class="scroll-m-20 text-4xl font-bold tracking-tight lg:text-5xl">
+	<SectionHeader.Root class="xs:flex hidden flex-col items-center gap-4">
+		<SectionHeader.Title
+			level={1}
+			class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
+		>
 			Whispering
-		</h1>
-		<p class="text-muted-foreground text-center">
+		</SectionHeader.Title>
+		<SectionHeader.Description class="text-center">
 			Press shortcut → speak → get text. Free and open source ❤️
-		</p>
-	</div>
+		</SectionHeader.Description>
+	</SectionHeader.Root>
 
 	<ToggleGroup.Root
 		type="single"
-		bind:value={() => settings.value['recording.mode'],
+		bind:value={() => workspaceSettings.get('recording.mode'),
 			(mode) => {
 				if (!mode) return;
-				settings.switchRecordingMode(mode);
+				void switchRecordingMode(mode as RecordingMode);
 			}}
 		class="w-full"
 	>
@@ -205,7 +269,7 @@
 		{/each}
 	</ToggleGroup.Root>
 
-	{#if settings.value['recording.mode'] === 'manual'}
+	{#if workspaceSettings.get('recording.mode') === 'manual'}
 		<!-- Container with relative positioning for the button and absolute selectors -->
 		<div class="relative">
 			<Button
@@ -245,7 +309,7 @@
 				</div>
 			{/if}
 		</div>
-	{:else if settings.value['recording.mode'] === 'vad'}
+	{:else if workspaceSettings.get('recording.mode') === 'vad'}
 		<!-- Container with relative positioning for the button and absolute selectors -->
 		<div class="relative">
 			<Button
@@ -273,15 +337,15 @@
 				</div>
 			{/if}
 		</div>
-	{:else if settings.value['recording.mode'] === 'upload'}
+	{:else if workspaceSettings.get('recording.mode') === 'upload'}
 		<div class="flex flex-col items-center gap-4 w-full">
 			<FileDropZone
 				accept="{ACCEPT_AUDIO}, {ACCEPT_VIDEO}"
 				maxFiles={10}
 				maxFileSize={25 * MEGABYTE}
-				onUpload={(files) => {
+				onUpload={async (files) => {
 					if (files.length > 0) {
-						rpc.actions.uploadRecordings({ files });
+					await rpc.actions.uploadRecordings({ files });
 					}
 				}}
 				onFileRejected={({ file, reason }) => {
@@ -347,12 +411,12 @@
 		</div>
 	{/if}
 
-	{#if settings.value['ui.layoutMode'] === 'nav-items'}
+	{#if workspaceSettings.get('ui.layoutMode') === 'nav-items'}
 		<NavItems class="xs:flex -mb-2.5 -mt-1 hidden" />
 	{/if}
 
 	<div class="xs:flex hidden flex-col items-center gap-3">
-		{#if settings.value['recording.mode'] === 'manual'}
+		{#if workspaceSettings.get('recording.mode') === 'manual'}
 			<p class="text-foreground/75 text-center text-sm">
 				Click the microphone or press
 				{' '}
@@ -362,7 +426,7 @@
 				>
 					<Kbd.Root
 						>{getShortcutDisplayLabel(
-							settings.value['shortcuts.local.toggleManualRecording'],
+							workspaceSettings.get('shortcut.toggleManualRecording'),
 						)}</Kbd.Root
 					>
 				</Link>
@@ -379,7 +443,7 @@
 					>
 						<Kbd.Root
 							>{getShortcutDisplayLabel(
-								settings.value['shortcuts.global.toggleManualRecording'],
+						deviceConfig.get('shortcuts.global.toggleManualRecording'),
 							)}</Kbd.Root
 						>
 					</Link>
@@ -387,7 +451,7 @@
 					to start recording anywhere.
 				</p>
 			{/if}
-		{:else if settings.value['recording.mode'] === 'vad'}
+		{:else if workspaceSettings.get('recording.mode') === 'vad'}
 			<p class="text-foreground/75 text-center text-sm">
 				Click the microphone or press
 				{' '}
@@ -397,14 +461,14 @@
 				>
 					<Kbd.Root
 						>{getShortcutDisplayLabel(
-							settings.value['shortcuts.local.toggleVadRecording'],
+							workspaceSettings.get('shortcut.toggleVadRecording'),
 						)}</Kbd.Root
 					>
 				</Link>
 				{' '}
 				to start a voice activated session.
 			</p>
-		{:else if settings.value['recording.mode'] === 'upload'}
+		{:else if workspaceSettings.get('recording.mode') === 'upload'}
 			<p class="text-foreground/75 text-center text-sm">
 				Drag files here or click to browse.
 			</p>
@@ -418,7 +482,7 @@
 					>
 						<Kbd.Root
 							>{getShortcutDisplayLabel(
-								settings.value['shortcuts.global.toggleManualRecording'],
+						deviceConfig.get('shortcuts.global.toggleManualRecording'),
 							)}</Kbd.Root
 						>
 					</Link>

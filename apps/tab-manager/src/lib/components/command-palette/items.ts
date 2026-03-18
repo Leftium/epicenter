@@ -26,7 +26,7 @@ import GroupIcon from '@lucide/svelte/icons/group';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { browserState } from '$lib/state/browser-state.svelte';
 import { savedTabState } from '$lib/state/saved-tab-state.svelte';
-import { getDomain } from '$lib/utils/format';
+import { findDuplicateGroups, groupTabsByDomain } from '$lib/utils/tab-helpers';
 import type { TabCompositeId } from '$lib/workspace';
 import { parseTabId } from '$lib/workspace';
 
@@ -45,69 +45,10 @@ function compositeToNativeIds(compositeIds: TabCompositeId[]): number[] {
 }
 
 /**
- * Normalize a URL for duplicate comparison.
- *
- * Strips trailing slash, query params, and hash to treat
- * `https://github.com/foo` and `https://github.com/foo?ref=bar#readme`
- * as the same page.
- */
-function normalizeUrl(url: string): string {
-	try {
-		const parsed = new URL(url);
-		return parsed.origin + parsed.pathname.replace(/\/$/, '');
-	} catch {
-		return url;
-	}
-}
-
-/**
- * Find groups of tabs with the same normalized URL.
- *
- * Returns only groups with 2+ tabs (actual duplicates).
- * Within each group, tabs are ordered by their original array position.
- */
-function findDuplicates(): Map<
-	string,
-	{ tabId: TabCompositeId; title: string }[]
-> {
-	const byUrl = new Map<string, { tabId: TabCompositeId; title: string }[]>();
-
-	for (const window of browserState.windows) {
-		for (const tab of browserState.tabsByWindow(window.id)) {
-			if (!tab.url) continue;
-			const normalized = normalizeUrl(tab.url);
-			const group = byUrl.get(normalized) ?? [];
-			group.push({ tabId: tab.id, title: tab.title ?? 'Untitled' });
-			byUrl.set(normalized, group);
-		}
-	}
-
-	return new Map([...byUrl].filter(([, group]) => group.length > 1));
-}
-
-/**
  * Get all tabs across all windows as a flat array.
  */
 function getAllTabs() {
 	return browserState.windows.flatMap((w) => browserState.tabsByWindow(w.id));
-}
-
-/**
- * Get unique domains from all open tabs.
- */
-function getUniqueDomains(): Map<string, TabCompositeId[]> {
-	const byDomain = new Map<string, TabCompositeId[]>();
-
-	for (const tab of getAllTabs()) {
-		if (!tab.url) continue;
-		const domain = getDomain(tab.url);
-		if (!domain) continue;
-		const ids = byDomain.get(domain) ?? [];
-		ids.push(tab.id);
-		byDomain.set(domain, ids);
-	}
-
-	return byDomain;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,7 +69,7 @@ export const items: CommandPaletteItem[] = [
 		keywords: ['dedup', 'duplicate', 'remove', 'close', 'clean'],
 		group: 'Quick Actions',
 		onSelect() {
-			const dupes = findDuplicates();
+			const dupes = findDuplicateGroups(getAllTabs());
 			if (dupes.size === 0) return;
 
 			const totalDuplicates = [...dupes.values()].reduce(
@@ -137,7 +78,7 @@ export const items: CommandPaletteItem[] = [
 			);
 
 			const toClose = [...dupes.values()].flatMap((group) =>
-				group.slice(1).map((t) => t.tabId),
+				group.slice(1).map((t) => t.id),
 			);
 
 			confirmationDialog.open({
@@ -162,12 +103,15 @@ export const items: CommandPaletteItem[] = [
 		keywords: ['group', 'domain', 'organize', 'categorize'],
 		group: 'Quick Actions',
 		async onSelect() {
-			const domains = getUniqueDomains();
+			const allTabs = getAllTabs();
+			const domains = groupTabsByDomain(allTabs);
 
 			const groupOps = [...domains.entries()]
-				.filter(([, tabIds]) => tabIds.length >= 2)
-				.map(([domain, tabIds]) => {
-					const nativeIds = compositeToNativeIds(tabIds);
+				.filter(([, tabs]) => tabs.length >= 2)
+				.map(([domain, tabs]) => {
+					const nativeIds = compositeToNativeIds(
+						tabs.map((t) => t.id),
+					);
 					return nativeIds.length >= 2 ? { domain, nativeIds } : null;
 				})
 				.filter((op) => op !== null);
@@ -217,19 +161,19 @@ export const items: CommandPaletteItem[] = [
 		keywords: ['close', 'domain', 'website', 'remove'],
 		group: 'Quick Actions',
 		onSelect() {
-			const domains = getUniqueDomains();
+			const domains = groupTabsByDomain(getAllTabs());
 			if (domains.size === 0) return;
 
 			let topDomain = '';
 			let topCount = 0;
-			for (const [domain, ids] of domains) {
-				if (ids.length > topCount) {
+			for (const [domain, tabs] of domains) {
+				if (tabs.length > topCount) {
 					topDomain = domain;
-					topCount = ids.length;
+					topCount = tabs.length;
 				}
 			}
 
-			const tabIds = domains.get(topDomain) ?? [];
+			const tabIds = (domains.get(topDomain) ?? []).map((t) => t.id);
 
 			confirmationDialog.open({
 				title: `Close ${topDomain} Tabs`,

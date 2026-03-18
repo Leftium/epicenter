@@ -1,7 +1,7 @@
 # Progressive Tool Trust & Approval Cleanup
 
 **Date**: 2026-03-12
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
 
 ## Overview
@@ -245,10 +245,9 @@ Server checks needsApproval on tool definition
 
 - [x] **5.1** `bun typecheck` passes (pre-existing failures only: `NumberKeysOf` in define-table.ts, `#/utils.js` in UI package)
 - [x] **5.2** `bun test` passes — tool-bridge (4/4), describe-workspace (9/9)
-- [ ] **5.3** Manual test: destructive tool in chat shows approval UI
-- [ ] **5.4** Manual test: "Always Allow" persists across conversations
-- [ ] **5.5** Manual test: non-destructive tools auto-execute without approval
-
+- [x] **5.3** Manual test: destructive tool in chat shows approval UI
+- [x] **5.4** Manual test: "Always Allow" persists across conversations
+- [x] **5.5** Manual test: non-destructive tools auto-execute without approval
 ## Edge Cases
 
 ### Trust state and new destructive actions
@@ -300,13 +299,12 @@ Server checks needsApproval on tool definition
 
 ## Success Criteria
 
-- [ ] `requireApprovalForMutations` is fully removed from the codebase
-- [ ] `needsApproval` is only set on tools with `destructive: true`
-- [ ] Destructive tool calls in chat show inline approval UI (or auto-approve if trusted)
-- [ ] Non-destructive tool calls execute immediately without any approval gate
-- [ ] "Always Allow" persists across conversations and page reloads
-- [ ] All existing tests pass with no regressions
-
+- [x] `requireApprovalForMutations` is fully removed from the codebase
+- [x] `needsApproval` is only set on tools with `destructive: true`
+- [x] Destructive tool calls in chat show inline approval UI (or auto-approve if trusted)
+- [x] Non-destructive tool calls execute immediately without any approval gate
+- [x] "Always Allow" persists across conversations and page reloads
+- [x] All existing tests pass with no regressions
 ## References
 
 - `packages/ai/src/tool-bridge.ts` — `actionsToClientTools`, `toToolDefinitions`, `needsApproval` logic

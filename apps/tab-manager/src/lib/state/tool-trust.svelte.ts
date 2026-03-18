@@ -1,12 +1,12 @@
 /**
  * Reactive tool trust state backed by the workspace's toolTrust table.
  *
- * Destructive AI tools start as 'ask' (show approval UI in chat).
+ * Mutation tools start as 'ask' (show approval UI in chat).
  * When a user clicks "Always Allow", the tool is set to 'always'
  * and future invocations auto-approve without prompting.
  *
  * Trust state syncs across devices via the workspace's Y.Doc CRDT.
- * Non-destructive tools never consult this module—they auto-execute always.
+ * Query tools never consult this module—they auto-execute always.
  *
  * @module
  */
@@ -15,7 +15,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import { type ToolTrust, workspaceClient } from '$lib/workspace';
 
 /**
- * Trust level for a destructive tool.
+ * Trust level for a mutation tool.
  *
  * - `'ask'` — show inline approval UI ([Allow] / [Always Allow] / [Deny])
  * - `'always'` — auto-approve immediately, show subtle indicator
@@ -51,7 +51,7 @@ function createToolTrustState() {
 		 * Get the trust level for a tool.
 		 *
 		 * Returns `'ask'` for tools not in the trust table (the safe default).
-		 * Non-destructive tools should not call this—they auto-execute always.
+		 * Query tools should not call this—they auto-execute always.
 		 *
 		 * @example
 		 * ```typescript
@@ -102,6 +102,25 @@ function createToolTrustState() {
 		 */
 		shouldAutoApprove(name: string): boolean {
 			return (trustMap.get(name) ?? 'ask') === 'always';
+		},
+
+		/**
+		 * All trust entries as a reactive map.
+		 *
+		 * Returns the internal `SvelteMap` directly. Consumers get live
+		 * updates when trust changes (local or remote via Y.Doc sync).
+		 * Filter for `'always'` entries to show only explicitly trusted tools.
+		 *
+		 * @example
+		 * ```typescript
+		 * const trusted = $derived(
+		 *   [...toolTrustState.entries()]
+		 *     .filter(([, level]) => level === 'always'),
+		 * );
+		 * ```
+		 */
+		entries(): SvelteMap<string, TrustLevel> {
+			return trustMap;
 		},
 	};
 }

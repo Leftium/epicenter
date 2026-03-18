@@ -11,15 +11,15 @@
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
 	import {
 		checkCompressionRecommendation,
 		checkFfmpegRecordingMethodCompatibility,
 	} from '../_layout-utils/check-ffmpeg';
 	import { checkForUpdates } from '../_layout-utils/check-for-updates';
-	import { checkIndexedDBMigration } from '../_layout-utils/check-indexeddb-migration';
+	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 	import {
 		resetGlobalShortcutsToDefaultIfDuplicates,
 		resetLocalShortcutsToDefaultIfDuplicates,
@@ -50,17 +50,18 @@
 		cleanupAccessibilityPermission = registerAccessibilityPermission();
 		cleanupMicrophonePermission = registerMicrophonePermission();
 
+		// Platform-agnostic async checks
+		migrationDialog.check();
+
 		if (window.__TAURI_INTERNALS__) {
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();
 
-			// Async operations - fire and forget, don't block UI rendering
-			// These show toasts/notifications on completion, no need to await
+			// Desktop-only async operations - fire and forget
 			Promise.allSettled([
 				checkFfmpegRecordingMethodCompatibility(),
 				checkCompressionRecommendation(),
 				checkForUpdates(),
-				checkIndexedDBMigration(),
 			]);
 		} else {
 			// Browser extension context - notify that the Whispering tab is ready
@@ -82,9 +83,8 @@
 		getRecorderStateQuery.data;
 		vadRecorder.state; // Reactive VAD state access
 		services.db.recordings.cleanupExpired({
-			recordingRetentionStrategy:
-				settings.value['database.recordingRetentionStrategy'],
-			maxRecordingCount: settings.value['database.maxRecordingCount'],
+			recordingRetentionStrategy: workspaceSettings.get('retention.strategy'),
+			maxRecordingCount: workspaceSettings.get('retention.maxCount'),
 		});
 	});
 

@@ -137,7 +137,6 @@ export type {
 	AwarenessState,
 	// Base row type
 	BaseRow,
-	DeleteResult,
 	// Document types
 	DocumentConfig,
 	DocumentHandle,

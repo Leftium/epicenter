@@ -1,7 +1,7 @@
 # Whispering Workspace: Polish & Migration Completion
 
 **Date**: 2026-03-12
-**Status**: Draft
+**Status**: In Progress (Waves 1–3 complete, Wave 4 deferred)
 **Builds on**: [20260302T140000-whispering-sync-strategy.md](./20260302T140000-whispering-sync-strategy.md)
 
 ## Overview
@@ -10,7 +10,7 @@ The Whispering workspace definition (`apps/whispering/src/lib/workspace.ts`) is 
 
 Two goals:
 1. **Polish** — fix design issues in the workspace definition
-2. **Complete remaining waves** — settings split, migration, sync wiring
+2. **Complete remaining waves** — settings separation, migration, sync wiring
 
 ### Architecture: Where Data Lives Today vs After Migration
 
@@ -69,24 +69,30 @@ Wave 1 ✅  Polish workspace.ts
   │         missing entries, type audit, JSDoc
   │
   ▼
-Wave 2     Settings split
-  │         Split settings.ts into synced (workspace KV) + local (localStorage).
-  │         Consumers see one merged interface — no app code changes.
+Wave 2     Settings separation
+  │         Two separate .svelte.ts files instead of merged interface.
+  │         workspace-settings.svelte.ts for synced prefs (workspace KV),
+  │         device-config.svelte.ts for hardware/platform (localStorage).
   │
-  │         ┌─────────────────────────────────────┐
-  │         │ settings.value['transcription.mode'] │  ← same API
-  │         └───────────┬─────────────┬───────────┘
-  │                     │             │
-  │              ┌──────┴──────┐ ┌────┴──────┐
-  │              │ Workspace   │ │ local-    │
-  │              │ KV (synced) │ │ Storage   │
-  │              └─────────────┘ └───────────┘
+  │         ┌─────────────────────────────┐  ┌──────────────────────────┐
+  │         │ workspace-settings.svelte.ts │  │ device-config.svelte.ts  │
+  │         │ reads workspace KV (synced)  │  │ reads localStorage       │
+  │         │ ~42 user preferences        │  │ ~36 device-bound keys    │
+  │         └─────────────────────────────┘  └──────────────────────────┘
+  │
+  │         API keys start in device-config (secrets).
+  │         Move to workspace KV once encryption lands.
   │
   ▼
 Wave 3     Migration
-  │         One-time: old storage ──► workspace tables + BlobStore.
-  │         Runs in Y.Doc.transact(). Validates, normalizes embedded
-  │         arrays, auto-fails stale 'running' statuses.
+  │         Dialog-driven, user-initiated. 3-state machine in localStorage.
+  │         Old data copied into workspace — never deleted automatically.
+  │
+  │         localStorage['whispering:migration']:
+  │           (absent) ──► probe for old data ──► 'pending' or 'cleaned'
+  │           'pending' ──► show dialog ──► user clicks Migrate ──► 'completed'
+  │           'completed' ──► old data still on disk, offer cleanup in settings
+  │           'cleaned' ──► terminal, skip all probes
   │
   │         ┌─────────────┐     ┌──────────────────┐
   │         │ Old Dexie /  │────►│ workspace tables │
@@ -208,8 +214,9 @@ Wave 4     Sync wiring (deferred — needs Better Auth + server-remote)
 ║  │  ├── createdAt: string                                                             │  ║
 ║  │  ├── updatedAt: string                                                             │  ║
 ║  │  ├── transcribedText: string                                                       │  ║
-║  │  └── transcriptionStatus: UNPROCESSED|TRANSCRIBING|DONE|FAILED                     │  ║
-║  │       ⚠ NO audio blob — stored out-of-band (blob store / FS)                      │  ║
+║  │  ├── transcriptionStatus: UNPROCESSED|TRANSCRIBING|DONE|FAILED                     │  ║
+║  │  ├── transcriptionError: string              ← empty when not FAILED               │  ║
+║  │  │    ⚠ NO audio blob — stored out-of-band (blob store / FS)                      │  ║
 ║  │                                                                                    │  ║
 ║  │  transformations  (_v: 1)                   ◄── NORMALIZED (no nested steps)        │  ║
 ║  │  ├── id: string                                                                    │  ║
@@ -237,28 +244,28 @@ Wave 4     Sync wiring (deferred — needs Better Auth + server-remote)
 ║  │  ├── replaceText: string                                                           │  ║
 ║  │  └── useRegex: boolean                                                             │  ║
 ║  │                                                                                    │  ║
-║  │  transformationRuns  (_v: 1)                ◄── NORMALIZED (no nested stepRuns)     │  ║
+║  │  transformationRuns  (_v: 1)                ◄── DISCRIMINATED UNION on status       │  ║
 ║  │  ├── id: string                                                                    │  ║
 ║  │  ├── transformationId: string                                                      │  ║
 ║  │  ├── recordingId: string | null                                                    │  ║
-║  │  ├── status: running | completed | failed                                          │  ║
 ║  │  ├── input: string                                                                 │  ║
-║  │  ├── output: string | null                                                         │  ║
-║  │  ├── error: string | null                                                          │  ║
 ║  │  ├── startedAt: string                                                             │  ║
-║  │  └── completedAt: string | null                                                    │  ║
+║  │  ├── completedAt: string | null                                                    │  ║
+║  │  ├── status: 'running'                       ─┐                                    │  ║
+║  │  ├── status: 'completed', output: string      │ discriminated union                │  ║
+║  │  └── status: 'failed',    error: string      ─┘                                    │  ║
 ║  │                                                                                    │  ║
-║  │  transformationStepRuns  (_v: 1)            ◄── NEW: broken out from nested array  │  ║
+║  │  transformationStepRuns  (_v: 1)            ◄── DISCRIMINATED UNION on status       │  ║
 ║  │  ├── id: string                                                                    │  ║
 ║  │  ├── transformationRunId: string            ← FK to transformationRuns.id          │  ║
 ║  │  ├── stepId: string                         ← FK to transformationSteps.id         │  ║
 ║  │  ├── order: number                                                                 │  ║
-║  │  ├── status: running | completed | failed                                          │  ║
 ║  │  ├── input: string                                                                 │  ║
-║  │  ├── output: string | null                                                         │  ║
-║  │  ├── error: string | null                                                          │  ║
 ║  │  ├── startedAt: string                                                             │  ║
-║  │  └── completedAt: string | null                                                    │  ║
+║  │  ├── completedAt: string | null                                                    │  ║
+║  │  ├── status: 'running'                       ─┐                                    │  ║
+║  │  ├── status: 'completed', output: string      │ discriminated union                │  ║
+║  │  └── status: 'failed',    error: string      ─┘                                    │  ║
 ║  │                                                                                    │  ║
 ║  └────────────────────────────────────────────────────────────────────────────────────┘  ║
 ║                                                                                          ║
@@ -275,12 +282,12 @@ Wave 4     Sync wiring (deferred — needs Better Auth + server-remote)
 ║  │  └── sound.transformationComplete                                                  │  ║
 ║  │                                                                                    │  ║
 ║  │  output (6 keys)                             boolean toggles                       │  ║
-║  │  ├── transcription.copyToClipboard                                                 │  ║
-║  │  ├── transcription.writeToCursor                                                   │  ║
-║  │  ├── transcription.simulateEnter                                                   │  ║
-║  │  ├── transformation.copyToClipboard                                                │  ║
-║  │  ├── transformation.writeToCursor                                                  │  ║
-║  │  └── transformation.simulateEnter                                                  │  ║
+║  │  ├── output.transcription.clipboard                                                │  ║
+║  │  ├── output.transcription.cursor                                                   │  ║
+║  │  ├── output.transcription.enter                                                    │  ║
+║  │  ├── output.transformation.clipboard                                               │  ║
+║  │  ├── output.transformation.cursor                                                  │  ║
+║  │  └── output.transformation.enter                                                   │  ║
 ║  │                                                                                    │  ║
 ║  │  ui (2 keys)                                                                       │  ║
 ║  │  ├── ui.alwaysOnTop: enum                                                          │  ║
@@ -293,7 +300,7 @@ Wave 4     Sync wiring (deferred — needs Better Auth + server-remote)
 ║  │  recording (1 key)                                                                 │  ║
 ║  │  └── recording.mode: enum                                                          │  ║
 ║  │                                                                                    │  ║
-║  │  transcription (6 keys)                                                            │  ║
+║  │  transcription (11 keys)                                                          │  ║
 ║  │  ├── transcription.service: selected service ID                                    │  ║
 ║  │  ├── transcription.openai.model: string                                            │  ║
 ║  │  ├── transcription.groq.model: string                                              │  ║
@@ -306,11 +313,9 @@ Wave 4     Sync wiring (deferred — needs Better Auth + server-remote)
 ║  │  ├── transcription.compressionEnabled: boolean                                     │  ║
 ║  │  └── transcription.compressionOptions: string                                      │  ║
 ║  │                                                                                    │  ║
-║  │  transformation (1 key)                                                            │  ║
-║  │  └── transformation.selectedId: string | null                                      │  ║
-║  │                                                                                    │  ║
-║  │  analytics (1 key)                                                                 │  ║
-║  │  └── analytics.enabled: boolean                                                    │  ║
+║  │  transformation (2 keys)                                                          │  ║
+║  │  ├── transformation.selectedId: string | null    ← FK to transformations table       │  ║
+║  │  └── transformation.openrouterModel: string      ← merged from completion.*          │  ║
 ║  │                                                                                    │  ║
 ║  │  shortcuts (10 keys)                                                               │  ║
 ║  │  ├── shortcut.toggleManualRecording                                                │  ║
@@ -511,42 +516,149 @@ Verify these are correctly EXCLUDED (they are — just confirming):
   - `retention.maxCount` (`number.integer >= 1`) and `transcription.temperature` (`0 <= number <= 1`) intentionally differ from settings.ts string types — workspace uses semantically correct types
 - [x] **1.5** Add JSDoc comments to every table and KV group explaining the design
 
-### Wave 2: Settings Split
+### Wave 2: Settings Separation
 
-This is about separating the settings system into two sources:
-- **Synced settings** (workspace KV) — preferences that roam across devices
-- **Local-only settings** (existing localStorage) — secrets, hardware-bound, device-specific
+Two separate reactive state files instead of a single merged interface. The split reflects a real architectural boundary: user preferences (synced) vs device configuration (local).
 
-- [ ] **2.1** Create `SYNCED_KEYS` and `LOCAL_KEYS` partition in settings.ts
-- [ ] **2.2** Update `settings.svelte.ts` to:
-  - Read synced keys from workspace KV (reactive via Yjs observation)
-  - Read local keys from existing localStorage (`createPersistedState`)
-  - Merge both into the same `settings.value` interface — consumers don't change
-  - Write synced keys to workspace KV
-  - Write local keys to localStorage
-- [ ] **2.3** Handle defaults: synced settings need defaults in workspace KV, local settings keep their arktype defaults
+**Why two files instead of one merged interface:**
+- Simpler implementation — no dual-source merging logic
+- Clear boundary — consumers know whether a setting syncs or not
+- Encryption applies cleanly to just the workspace side later
+- Most consumers use one category or the other, not both simultaneously
+
+**`workspace-settings.svelte.ts`** — reads/writes workspace KV (synced across devices):
+- ~42 keys: sound toggles, output behavior, UI prefs, recording mode, transcription service + per-service models, language/prompt/temperature, compression, retention policy, in-app shortcuts, selected transformation, completion model, analytics
+
+**`device-config.svelte.ts`** — reads/writes localStorage (device-bound):
+- ~36 keys: API keys (secrets), API endpoint overrides, hardware device IDs, recording method, cpal/ffmpeg/navigator config, filesystem model paths, self-hosted server URLs, global OS shortcuts
+
+**Future**: Once encryption lands, API keys (~8) and endpoint overrides (~2) move from device-config to workspace KV. The device-config shrinks to genuinely hardware/OS-bound keys only.
+
+- [x] **2.1** Create `workspace-settings.svelte.ts`
+  - Import workspace client, read synced keys from workspace KV
+  - Reactive via Yjs observation (workspace KV changes trigger UI updates)
+  - Write synced keys back to workspace KV
+  - Handle defaults: workspace KV entries need initial values on first creation
+- [x] **2.2** Create `device-config.svelte.ts`
+  - Read device-bound keys from localStorage (`createPersistedState`)
+  - Keep arktype defaults from existing settings.ts schema
+  - Write device-bound keys to localStorage
+- [x] **2.3** Update consumers to import from the correct file
+  - Most settings UI pages are already grouped by category, so imports should be straightforward
+  - Transcription service code: reads API key from device-config + model from workspace-settings
+  - Recording code: reads device ID from device-config + mode from workspace-settings
+- [x] **2.4** Deprecate old unified `settings.svelte.ts` once all consumers are migrated
+  > **Note**: Singleton deleted entirely — zero importers remained. The monolithic Settings arktype schema (settings.ts) was also deleted after inlining service param types.
 
 ### Wave 3: Migration
 
-One-time leave-in-place migration from old storage to workspace tables.
+Dialog-driven, user-initiated migration from old storage to workspace. Old data is never deleted automatically — the user must explicitly choose to clean it up.
 
-- [ ] **3.1** Create migration module at `apps/whispering/src/lib/services/migration/`
+#### Migration State Machine
+
+Single localStorage key with three possible persisted values:
+
+```
+localStorage['whispering:migration']
+
+  (absent)        fresh install OR pre-migration user
+       │
+       │  app mounts → probe for old data (Dexie DB, old localStorage keys)
+       │  old data found → set 'pending'
+       │  no old data   → set 'cleaned' (skip future probes)
+       ▼
+  'pending'       old data detected, show migration dialog on mount
+       │
+       │  user clicks "Migrate Now" → run migration
+       │  success → set 'completed'
+       │  failure → stays 'pending' (user can retry)
+       ▼
+  'completed'     migrated, old data still on disk
+       │           show "Clean up old data" option in settings
+       │
+       │  user clicks "Remove old data" in settings
+       ▼
+  'cleaned'       terminal state, skip all probes on future boots
+```
+
+**Why three states:**
+- `(absent)` → `'pending'`/`'cleaned'`: Avoids probing for old data on every boot forever. First probe determines which path.
+- `'pending'`: Caches the "old data exists" result. After a failed migration, no re-probe needed.
+- `'completed'`: Migration done but old data preserved as backup. User can verify things work before cleaning up.
+- `'cleaned'`: Terminal. No more probes, no more UI, done.
+
+**Transient UI states** (in dialog component, not persisted):
+- `idle` — dialog shown, waiting for user action
+- `migrating` — spinner, migration in progress
+- `failed` — error message + retry button
+- `done` — summary with counts
+
+If the app crashes mid-migration, persisted state is still `'pending'` — user retries on next launch.
+
+#### Migration Dialog UX
+
+```
+┌──────────────────────────────────────────────┐
+│  Upgrade Your Data                           │
+│                                              │
+│  We found recordings and settings from an    │
+│  older version. Migrate them to the new      │
+│  workspace format for sync support.          │
+│                                              │
+│  Your existing data won't be touched — this  │
+│  copies everything into the new format.      │
+│                                              │
+│              [ Migrate Now ]                 │
+│              [ Skip for Now ]                │
+└──────────────────────────────────────────────┘
+        │                    │
+        ▼                    └── close dialog, stays 'pending',
+   show spinner                  re-shown next mount
+        │
+   ┌────┴────┐
+   │ success │──► summary: "Migrated 47 recordings, 3 transformations"
+   └─────────┘   state → 'completed'
+   ┌────┴────┐
+   │ failed  │──► error message + [ Retry ] button
+   └─────────┘   state stays 'pending'
+```
+
+After migration completes, in settings:
+
+```
+┌──────────────────────────────────────────────┐
+│  Migration complete. Old data still on disk. │
+│  [ Remove old data ]                         │
+└──────────────────────────────────────────────┘
+```
+
+#### Migration Tasks
+
+- [x] **3.1** Create migration module at `apps/whispering/src/lib/services/migration/`
+  > **Note**: Implemented via the settings-data-migration spec. Reads old `whispering-settings` blob, maps keys, writes to workspace KV and per-key device localStorage.
   - Read existing data via desktop dual-read facade (desktop) or Dexie (web)
   - Validate with failure collection (not silent drops)
   - Auto-fail any runs/step-runs with `status: 'running'`
   - Write to workspace tables in a single `Y.Doc.transact()` call
-  - Normalize `Transformation.steps[]` → `transformationSteps` rows
-  - Normalize `TransformationRun.stepRuns[]` → `transformationStepRuns` rows
+  - Normalize `Transformation.steps[]` → `transformationSteps` rows with FK + order
+  - Normalize `TransformationRun.stepRuns[]` → `transformationStepRuns` rows with FK + order
+  - Map old settings keys → workspace KV (e.g. `sound.playOn.manual-start` → `sound.manualStart`)
   - Web: move `serializedAudio` from Dexie into standalone BlobStore
-  - Extract synced settings from flat settings into workspace KV
-  - Set `localStorage['whispering:migration-complete']` flag
+  - Update `localStorage['whispering:migration']` to `'completed'`
 - [ ] **3.2** Create `BlobStore` interface + implementations
   - `createFileSystemBlobStore(basePath)` for desktop
   - `createIndexedDbBlobStore(dbName)` for web
-- [ ] **3.3** Migration dialog UI
-  - Check migration flag on app startup
-  - "Migrate Now" dialog
-  - Summary dialog with counts
+- [ ] **3.3** Migration dialog component
+  - On mount: check `localStorage['whispering:migration']`
+  - `(absent)`: probe for old data → set `'pending'` or `'cleaned'`
+  - `'pending'`: show migration dialog
+  - `'completed'`: don't show dialog (cleanup option lives in settings)
+  - `'cleaned'`: skip entirely
+  - Handle transient states: idle → migrating → done/failed
+  - Show summary counts on success (recordings, transformations, settings migrated)
+- [ ] **3.4** Cleanup UI in settings page
+  - When state is `'completed'`: show "Remove old data" button
+  - On click: delete old Dexie DB + old localStorage keys → set `'cleaned'`
 
 ### Wave 4: Sync UI + Wiring (future — not in this PR)
 
@@ -636,55 +748,48 @@ const transformationSteps = defineTable(type({
 
 **Choice**: Keep the new shorter names (`sound.manualStart` not `sound.playOn.manual-start`). The migration handles the mapping. Cleaner namespace is worth a one-time translation.
 
-### Decision 4: Discriminated Unions for `transformationRuns` and `transformationStepRuns` ✅ Confirmed
+### Decision 4: Two Separate Settings Files ✅ Confirmed
 
-**Choice**: Use arktype discriminated unions on `status` for run tables. `output` exists only on `completed` runs, `error` exists only on `failed` runs. Shared fields live in a PascalCase base type, composed via `.merge(type.or(...))` where `.merge()` distributes the base across each union branch.
+**Choice**: `workspace-settings.svelte.ts` + `device-config.svelte.ts` instead of a single merged `settings.svelte.ts`.
 
-**Rationale (contrast with Decision 1)**:
+**Rationale**:
 
-Decision 1 chose flat rows for `transformationSteps` because steps switch types bidirectionally—toggling between `prompt_transform` and `find_replace` must preserve the inactive variant's data. That argument does not apply to runs:
+1. **Real architectural boundary.** User preferences (synced) and device configuration (hardware/OS-bound) are fundamentally different things. Two files make this explicit.
 
-1. **One-way state transitions.** Runs move `running → completed` or `running → failed`. They never transition back. There is no inactive variant's data to preserve across states.
+2. **Simpler implementation.** No dual-source merging, no "which source does this key come from?" logic. Each file owns its storage backend completely.
 
-2. **Eliminates impossible states.** The flat approach allows `{ status: 'running', output: 'some value', error: 'some error' }` which is nonsensical. The discriminated union makes this unrepresentable—`output` physically does not exist on a running or failed run.
+3. **Encryption readiness.** When encryption lands, API keys move from device-config to workspace KV. The workspace-settings file is already wired to workspace KV — it's just adding keys. No architectural change needed.
 
-3. **Type narrowing eliminates null checks.** With flat rows, consumer code must null-check `output` and `error` even after verifying `status`. With discriminated unions, `status === 'completed'` narrows the type so `output` is `string` (not `string | null`), removing defensive checks in `transformer.ts` and similar consumers.
+4. **Consumer clarity.** `import { workspaceSettings } from './workspace-settings.svelte'` tells you this setting syncs. `import { deviceConfig } from './device-config.svelte'` tells you it doesn't. No guessing.
 
-4. **`table.set()` row replacement is safe here.** The Decision 1 concern about `table.set()` losing data on type switches is irrelevant for runs—there is no data to lose on a one-way state transition. Writing `{ status: 'completed', output: '...' }` replaces the `{ status: 'running' }` row cleanly.
+**What goes where:**
 
-**Pattern**: `Base.merge(type.or(...))`
+| `workspace-settings.svelte.ts` (~42 keys) | `device-config.svelte.ts` (~36 keys) |
+|---|---|
+| Sound toggles (8) | API keys (8) — secrets, move to workspace once encrypted |
+| Output behavior (6) | API endpoint overrides (2) |
+| UI prefs (2) | Hardware device IDs (3) |
+| Retention policy (2) | Recording method + cpal/ffmpeg/navigator config (6) |
+| Recording mode (1) | Filesystem model paths (4) |
+| Transcription service + models (11) | Self-hosted server URLs (3) |
+| Transformation selection (1) | Global OS shortcuts (10) |
+| Completion model (1) | |
+| Analytics (1) | |
+| In-app shortcuts (10) | |
 
-```typescript
-const TransformationRunBase = type({
-  id: 'string',
-  transformationId: 'string',
-  recordingId: 'string | null',
-  input: 'string',
-  startedAt: 'string',
-  completedAt: 'string | null',
-  _v: '1',
-});
+### Decision 5: Migration State Machine ✅ Confirmed
 
-const transformationRuns = defineTable(
-  TransformationRunBase.merge(
-    type.or(
-      { status: "'running'" },
-      { status: "'completed'", output: 'string' },
-      { status: "'failed'", error: 'string' },
-    ),
-  ),
-);
-```
+**Choice**: 3-state machine in `localStorage['whispering:migration']` — `'pending'` / `'completed'` / `'cleaned'`.
 
-The `.merge()` distributes over the union—each branch gets all base fields merged in. Arktype auto-detects `status` as the discriminant because each branch has a distinct literal value. Same pattern applies to `transformationStepRuns` with `TransformationStepRunBase`.
+**Rationale**:
 
-**Why `completedAt` stays in the base (not discriminated)**: While `completedAt` is null during `running` and set during `completed`/`failed`, it appears in both terminal states identically. Discriminating it would add two near-identical branches (`completed` and `failed` both have `completedAt: 'string'`) for no type-safety benefit. Keeping it as `'string | null'` in the base is simpler.
+1. **Minimal states.** Three persisted values cover every lifecycle phase. Transient states (migrating, failed) live only in the dialog component — no need to persist them.
 
-**Alternatives considered**:
+2. **Crash-safe.** If the app crashes mid-migration, state is still `'pending'`. User retries on next launch. No partial state to recover from.
 
-- **Flat rows (same as Decision 1)**: Simpler schema definition, but allows impossible states and forces null checks after status narrowing. The simplicity argument is weaker here because the union has only 3 branches (not the 7+ provider models in transformationSteps).
+3. **No auto-delete.** Old data stays until the user explicitly removes it. Migration copies data; it never moves or destroys.
 
-- **Consumer-side mapping**: Keep workspace schemas flat, map to discriminated unions in the service/query layer. Adds an unnecessary translation layer when the workspace schema itself can express the constraint directly.
+4. **Boot-time efficiency.** `'cleaned'` is a terminal state that skips all probes. Without it, the app would check for old Dexie DB existence on every boot forever.
 
 ## Key Reference: Workspace API Behavior
 

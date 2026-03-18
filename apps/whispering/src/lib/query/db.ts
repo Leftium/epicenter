@@ -7,7 +7,7 @@ import type {
 	Transformation,
 	TransformationRun,
 } from '$lib/services/db';
-import { settings } from '$lib/state/settings.svelte';
+import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 
 /**
  * Consolidated query keys that mirror the database service structure
@@ -273,12 +273,10 @@ export const db = {
 				// Check if any deleted transformation was selected
 				if (
 					transformationsArray.some(
-						(t) =>
-							t.id ===
-							settings.value['transformations.selectedTransformationId'],
+						(t) => t.id === workspaceSettings.get('transformation.selectedId'),
 					)
 				) {
-					settings.updateKey('transformations.selectedTransformationId', null);
+					workspaceSettings.set('transformation.selectedId', null);
 				}
 
 				return Ok(undefined);

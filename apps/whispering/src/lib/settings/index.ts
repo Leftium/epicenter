@@ -1,2 +1,2 @@
-export * from './settings';
+export * from './transcription-validation';
 export * from './transcription-validation';

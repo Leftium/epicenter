@@ -9,6 +9,7 @@
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
 	import * as Modal from '@epicenter/ui/modal';
@@ -110,8 +111,8 @@
 			},
 		},
 		{
-			id: 'ID',
 			accessorKey: 'id',
+			meta: { label: 'ID' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, { column, headerText: 'ID' }),
 			cell: ({ getValue }) => {
@@ -125,8 +126,8 @@
 			},
 		},
 		{
-			id: 'Title',
 			accessorKey: 'title',
+			meta: { label: 'Title' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -134,8 +135,8 @@
 				}),
 		},
 		{
-			id: 'Subtitle',
 			accessorKey: 'subtitle',
+			meta: { label: 'Subtitle' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -143,8 +144,8 @@
 				}),
 		},
 		{
-			id: 'Timestamp',
 			accessorKey: 'timestamp',
+			meta: { label: 'Timestamp' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -153,8 +154,8 @@
 			cell: formattedCell(DATE_FORMAT),
 		},
 		{
-			id: 'Created At',
 			accessorKey: 'createdAt',
+			meta: { label: 'Created At' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -163,8 +164,8 @@
 			cell: formattedCell(DATE_FORMAT),
 		},
 		{
-			id: 'Updated At',
 			accessorKey: 'updatedAt',
+			meta: { label: 'Updated At' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -173,8 +174,8 @@
 			cell: formattedCell(DATE_FORMAT),
 		},
 		{
-			id: 'Transcript',
 			accessorKey: 'transcribedText',
+			meta: { label: 'Transcript' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
@@ -212,7 +213,8 @@
 			},
 		},
 		{
-			id: 'Latest Transformation Run Output',
+			id: 'latestTransformationRunOutput',
+			meta: { label: 'Latest Transformation Run Output' },
 			accessorFn: ({ id }) => id,
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
@@ -227,7 +229,8 @@
 			},
 		},
 		{
-			id: 'Audio',
+			id: 'audio',
+			meta: { label: 'Audio' },
 			accessorFn: ({ id }) => id,
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
@@ -240,7 +243,8 @@
 			},
 		},
 		{
-			id: 'Actions',
+			id: 'actions',
+			meta: { label: 'Actions' },
 			accessorFn: (recording) => recording,
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
@@ -265,11 +269,11 @@
 	let columnVisibility = createPersistedState({
 		key: 'whispering-recordings-data-table-column-visibility',
 		onParseError: (_error) => ({
-			ID: false,
-			Title: false,
-			Subtitle: false,
-			'Created At': false,
-			'Updated At': false,
+			id: false,
+			title: false,
+			subtitle: false,
+			createdAt: false,
+			updatedAt: false,
 		}),
 		schema: type('Record<string, boolean>'),
 	});
@@ -384,13 +388,18 @@
 <svelte:head> <title>All Recordings</title> </svelte:head>
 
 <main class="flex w-full flex-1 flex-col gap-2 px-4 py-4 sm:px-8 mx-auto">
-	<h1 class="scroll-m-20 text-4xl font-bold tracking-tight lg:text-5xl">
-		Recordings
-	</h1>
-	<p class="text-muted-foreground">
-		Your latest recordings and transcriptions, stored locally
-		{window.__TAURI_INTERNALS__ ? 'on your file system' : 'in IndexedDB'}.
-	</p>
+	<SectionHeader.Root>
+		<SectionHeader.Title
+			level={1}
+			class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
+		>
+			Recordings
+		</SectionHeader.Title>
+		<SectionHeader.Description>
+			Your latest recordings and transcriptions, stored locally
+			{window.__TAURI_INTERNALS__ ? 'on your file system' : 'in IndexedDB'}.
+		</SectionHeader.Description>
+	</SectionHeader.Root>
 	<Card class="flex flex-col gap-4 p-6">
 		<div class="flex flex-col md:flex-row items-center justify-between gap-2">
 			<Input
@@ -566,7 +575,7 @@
 								bind:checked={() => column.getIsVisible(),
 									(value) => column.toggleVisibility(!!value)}
 							>
-								{column.columnDef.id}
+							{(column.columnDef.meta as { label?: string })?.label ?? column.id}
 							</DropdownMenu.CheckboxItem>
 						{/each}
 					</DropdownMenu.Content>

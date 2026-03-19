@@ -30,43 +30,61 @@
 import { SvelteMap } from 'svelte/reactivity';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Types
+// Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Plain browser window—derived directly from Chrome's `windows.Window`.
- *
- * No composite IDs, no device scoping, no Y.Doc version field.
- * Just what the UI needs from the Chrome API.
- */
-export type BrowserWindow = {
-	windowId: number;
-	focused: boolean;
-	incognito: boolean;
-	type: string;
-};
+/** Chrome assigns -1 to tabs that aren't real browser tabs (e.g. devtools). */
+const TAB_ID_NONE = -1;
 
 /**
- * Plain browser tab—derived directly from Chrome's `tabs.Tab`.
+ * Convert a Chrome window to a plain object the UI can render.
  *
- * No composite IDs, no device scoping, no Y.Doc version field.
- * Just what the UI needs from the Chrome API.
+ * Returns `null` if the window has no ID (e.g. sessions API).
+ * The return shape IS the `BrowserWindow` type—derived via `ReturnType`
+ * so the converter is the single source of truth.
  */
-export type BrowserTab = {
-	tabId: number;
-	windowId: number;
-	index: number;
-	title: string;
-	url: string;
-	favIconUrl: string;
-	active: boolean;
-	pinned: boolean;
-	audible: boolean;
-	mutedInfo: { muted: boolean };
-	groupId: number;
-	openerTabId?: number;
-	status: string;
-};
+function toBrowserWindow(win: Browser.windows.Window) {
+	if (win.id === undefined) return null;
+	return {
+		windowId: win.id,
+		focused: win.focused,
+		incognito: win.incognito,
+		type: win.type ?? 'normal',
+	};
+}
+
+/**
+ * Convert a Chrome tab to a plain object the UI can render.
+ *
+ * Returns `null` if the tab has no usable ID—either `undefined`
+ * (foreign tabs from the sessions API) or `-1` (`TAB_ID_NONE`).
+ * The return shape IS the `BrowserTab` type—derived via `ReturnType`
+ * so the converter is the single source of truth.
+ */
+function toBrowserTab(tab: Browser.tabs.Tab) {
+	if (tab.id === undefined || tab.id === TAB_ID_NONE) return null;
+	return {
+		tabId: tab.id,
+		windowId: tab.windowId,
+		index: tab.index,
+		title: tab.title ?? '',
+		url: tab.url ?? '',
+		favIconUrl: tab.favIconUrl ?? '',
+		active: tab.active,
+		pinned: tab.pinned,
+		audible: tab.audible ?? false,
+		mutedInfo: { muted: tab.mutedInfo?.muted ?? false },
+		groupId: tab.groupId,
+		openerTabId: tab.openerTabId,
+		status: tab.status ?? 'complete',
+	};
+}
+
+/** Plain browser window—derived from {@link toBrowserWindow}'s return shape. */
+export type BrowserWindow = NonNullable<ReturnType<typeof toBrowserWindow>>;
+
+/** Plain browser tab—derived from {@link toBrowserTab}'s return shape. */
+export type BrowserTab = NonNullable<ReturnType<typeof toBrowserTab>>;
 
 /**
  * A window and all the tabs it owns, stored together.
@@ -84,44 +102,6 @@ type WindowState = {
 	window: BrowserWindow;
 	tabs: SvelteMap<number, BrowserTab>;
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Chrome assigns -1 to tabs that aren't real browser tabs (e.g. devtools). */
-const TAB_ID_NONE = -1;
-
-/** Convert a Chrome window to a plain {@link BrowserWindow}. Returns `null` if no ID. */
-function toBrowserWindow(win: Browser.windows.Window): BrowserWindow | null {
-	if (win.id === undefined) return null;
-	return {
-		windowId: win.id,
-		focused: win.focused,
-		incognito: win.incognito,
-		type: win.type ?? 'normal',
-	};
-}
-
-/** Convert a Chrome tab to a plain {@link BrowserTab}. Returns `null` if no usable ID. */
-function toBrowserTab(tab: Browser.tabs.Tab): BrowserTab | null {
-	if (tab.id === undefined || tab.id === TAB_ID_NONE) return null;
-	return {
-		tabId: tab.id,
-		windowId: tab.windowId,
-		index: tab.index,
-		title: tab.title ?? '',
-		url: tab.url ?? '',
-		favIconUrl: tab.favIconUrl ?? '',
-		active: tab.active,
-		pinned: tab.pinned,
-		audible: tab.audible ?? false,
-		mutedInfo: { muted: tab.mutedInfo?.muted ?? false },
-		groupId: tab.groupId ?? -1,
-		openerTabId: tab.openerTabId,
-		status: tab.status ?? 'complete',
-	};
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State Factory

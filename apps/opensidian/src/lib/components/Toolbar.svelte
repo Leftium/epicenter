@@ -2,6 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { Separator } from '@epicenter/ui/separator';
 	import * as Tooltip from '@epicenter/ui/tooltip';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import { toast } from 'svelte-sonner';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 	import DeleteConfirmation from './DeleteConfirmation.svelte';
@@ -57,7 +58,7 @@
 						{...props}
 						variant="ghost"
 						size="sm"
-						onclick={() => fsState.actions.startCreate('file')}
+						onclick={() => fsState.startCreate('file')}
 					>
 						New File
 					</Button>
@@ -72,7 +73,7 @@
 						{...props}
 						variant="ghost"
 						size="sm"
-						onclick={() => fsState.actions.startCreate('folder')}
+						onclick={() => fsState.startCreate('folder')}
 					>
 						New Folder
 					</Button>
@@ -89,7 +90,7 @@
 						variant="ghost"
 						size="sm"
 						onclick={() => {
-							if (fsState.activeFileId) fsState.actions.startRename(fsState.activeFileId);
+							if (fsState.activeFileId) fsState.startRename(fsState.activeFileId);
 						}}
 						disabled={!fsState.activeFileId}
 					>
@@ -128,7 +129,7 @@
 							onclick={loadSampleData}
 							disabled={seeding}
 						>
-							{seeding ? 'Loading…' : 'Load Sample Data'}
+							{#if seeding}<Spinner class="size-3.5" />{:else}Load Sample Data{/if}
 						</Button>
 					{/snippet}
 				</Tooltip.Trigger>

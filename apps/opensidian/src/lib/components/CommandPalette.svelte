@@ -83,7 +83,7 @@
 			description: file.parentDir || undefined,
 			icon: getFileIcon(file.name),
 			group: 'Files',
-			onSelect: () => fsState.actions.selectFile(file.id),
+			onSelect: () => fsState.selectFile(file.id),
 		})),
 	);
 </script>

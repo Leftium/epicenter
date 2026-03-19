@@ -16,7 +16,8 @@
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
 		"postinstall": "wxt prepare"
 	},
-	"dependencies": {
+"dependencies": {
+		"@epicenter/svelte": "workspace:*",
 		"@epicenter/ai": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/sync-client": "workspace:*",

@@ -1,10 +1,13 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
-	let { fileId }: {
+	let {
+		fileId,
+	}: {
 		fileId: FileId;
 	} = $props();
 
@@ -24,7 +27,7 @@
 {#if handle}
 	<CodeMirrorEditor ytext={handle.asText()} />
 {:else}
-	<div class="flex h-full items-center justify-center text-sm text-muted-foreground">
-		Loading...
+	<div class="flex h-full items-center justify-center">
+		<Spinner class="size-5 text-muted-foreground" />
 	</div>
 {/if}

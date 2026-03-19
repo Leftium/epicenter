@@ -3,6 +3,7 @@
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import { dateTimeStringNow, generateId } from '@epicenter/workspace';
+	import { fromKv, fromTable } from '@epicenter/svelte';
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import TableIcon from '@lucide/svelte/icons/table-2';
 	import type * as Y from 'yjs';
@@ -14,9 +15,10 @@
 
 	// ─── Reactive State ────────────────────────────────────────────────────────────
 
-	let entries = $state<Entry[]>([]);
-	let selectedEntryId = $state<EntryId | null>(null);
-	let viewMode = $state<'table' | 'timeline'>('table');
+	const entries = fromTable(workspaceClient.tables.entries);
+	const entriesArray = $derived(entries.values().toArray());
+	const selectedEntryId = fromKv(workspaceClient.kv, 'selectedEntryId');
+	const viewMode = fromKv(workspaceClient.kv, 'viewMode');
 	let currentYText = $state<Y.Text | null>(null);
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 
@@ -26,48 +28,15 @@
 	let activeTagFilter = $state<string | null>(null);
 	let searchQuery = $state('');
 
-	// ─── Workspace Observation ───────────────────────────────────────────────────
-
-	$effect(() => {
-		entries = workspaceClient.tables.entries.getAllValid();
-
-		const kvEntryId = workspaceClient.kv.get('selectedEntryId');
-		selectedEntryId = kvEntryId.status === 'valid' ? kvEntryId.value : null;
-
-		const kvViewMode = workspaceClient.kv.get('viewMode');
-		viewMode = kvViewMode.status === 'valid' ? kvViewMode.value : 'table';
-
-		const unsubEntries = workspaceClient.tables.entries.observe(() => {
-			entries = workspaceClient.tables.entries.getAllValid();
-		});
-
-		const unsubSelectedEntry = workspaceClient.kv.observe(
-			'selectedEntryId',
-			(change) => {
-				selectedEntryId = change.type === 'set' ? change.value : null;
-			},
-		);
-
-		const unsubViewMode = workspaceClient.kv.observe('viewMode', (change) => {
-			viewMode = change.type === 'set' ? change.value : 'table';
-		});
-
-		return () => {
-			unsubEntries();
-			unsubSelectedEntry();
-			unsubViewMode();
-		};
-	});
-
 	// ─── Derived State ───────────────────────────────────────────────────────────
 
 	const selectedEntry = $derived(
-		entries.find((e) => e.id === selectedEntryId) ?? null,
+		selectedEntryId.current ? entries.get(selectedEntryId.current) ?? null : null,
 	);
 
 	/** Entries filtered by sidebar type/tag filters. */
 	const filteredEntries = $derived.by(() => {
-		let result = entries;
+		let result = entriesArray;
 		const typeFilter = activeTypeFilter;
 		const tagFilter = activeTagFilter;
 		if (typeFilter) {
@@ -81,7 +50,7 @@
 
 	// ─── Actions ─────────────────────────────────────────────────────────────────
 
-	function createEntry() {
+function createEntry() {
 		const id = generateId() as unknown as EntryId;
 		workspaceClient.tables.entries.set({
 			id,
@@ -91,38 +60,21 @@
 			updatedAt: dateTimeStringNow(),
 			_v: 2,
 		});
-		workspaceClient.kv.set('selectedEntryId', id);
+		selectedEntryId.current = id;
 	}
 
 	function toggleViewMode() {
-		const next = viewMode === 'table' ? 'timeline' : 'table';
-		workspaceClient.kv.set('viewMode', next);
+		const next = viewMode.current === 'table' ? 'timeline' : 'table';
+		viewMode.current = next;
 	}
 
 	// ─── Keyboard Shortcuts ───────────────────────────────────────────────────────
 
-	function handleKeydown(event: KeyboardEvent) {
-		const isInputFocused =
-			event.target instanceof HTMLInputElement ||
-			event.target instanceof HTMLTextAreaElement ||
-			(event.target instanceof HTMLElement && event.target.isContentEditable);
-
-		if (event.key === 'n' && event.metaKey) {
-			event.preventDefault();
-			createEntry();
-			return;
-		}
-
-		if (event.key === 'Escape' && !isInputFocused && selectedEntryId) {
-			event.preventDefault();
-			workspaceClient.kv.set('selectedEntryId', null);
-		}
-	}
 
 	// ─── Document Handle (Y.Text) ────────────────────────────────────────────────
 
 	$effect(() => {
-		const entryId = selectedEntryId;
+		const entryId = selectedEntryId.current;
 		if (!entryId) {
 			currentYText = null;
 			currentDocHandle = null;
@@ -147,35 +99,60 @@
 	});
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={(event) => {
+	const isInputFocused =
+		event.target instanceof HTMLInputElement ||
+		event.target instanceof HTMLTextAreaElement ||
+		(event.target instanceof HTMLElement && event.target.isContentEditable);
+
+	if (event.key === 'n' && event.metaKey) {
+		event.preventDefault();
+		const id = generateId() as unknown as EntryId;
+		workspaceClient.tables.entries.set({
+			id,
+			title: '',
+			preview: '',
+			createdAt: dateTimeStringNow(),
+			updatedAt: dateTimeStringNow(),
+			_v: 2,
+		});
+		selectedEntryId.current = id;
+		return;
+	}
+
+	if (event.key === 'Escape' && !isInputFocused && selectedEntryId.current) {
+		event.preventDefault();
+		selectedEntryId.current = null;
+	}
+}} />
 
 <SidebarProvider>
 	<FujiSidebar
-		{entries}
+		entries={entriesArray}
 		{activeTypeFilter}
 		{activeTagFilter}
 		{searchQuery}
 		onFilterByType={(type) => (activeTypeFilter = type)}
 		onFilterByTag={(tag) => (activeTagFilter = tag)}
 		onSearchChange={(query) => (searchQuery = query)}
-		onSelectEntry={(id) => workspaceClient.kv.set('selectedEntryId', id)}
+		onSelectEntry={(id) => (selectedEntryId.current = id)}
 	/>
 
 	<main class="flex h-screen flex-1 flex-col overflow-hidden">
 		{#if selectedEntry && currentYText}
-			{#key selectedEntryId}
+			{#key selectedEntryId.current}
 				<EntryEditor
 					entry={selectedEntry}
 					ytext={currentYText}
 					onUpdateEntry={(updates) => {
-						if (!selectedEntryId) return;
-						workspaceClient.tables.entries.update(selectedEntryId, updates);
+						if (!selectedEntryId.current) return;
+						workspaceClient.tables.entries.update(selectedEntryId.current, updates);
 					}}
 					onPreviewChange={(preview) => {
-						if (!selectedEntryId) return;
-						workspaceClient.tables.entries.update(selectedEntryId, { preview });
+						if (!selectedEntryId.current) return;
+						workspaceClient.tables.entries.update(selectedEntryId.current, { preview });
 					}}
-					onBack={() => workspaceClient.kv.set('selectedEntryId', null)}
+					onBack={() => (selectedEntryId.current = null)}
 				/>
 			{/key}
 		{:else if selectedEntry}
@@ -190,9 +167,9 @@
 					size="icon"
 					class="size-7"
 					onclick={toggleViewMode}
-					title={viewMode === 'table' ? 'Switch to timeline' : 'Switch to table'}
+					title={viewMode.current === 'table' ? 'Switch to timeline' : 'Switch to table'}
 				>
-					{#if viewMode === 'table'}
+					{#if viewMode.current === 'table'}
 						<ClockIcon class="size-4" />
 					{:else}
 						<TableIcon class="size-4" />
@@ -200,19 +177,19 @@
 				</Button>
 			</div>
 
-			{#if viewMode === 'table'}
+			{#if viewMode.current === 'table'}
 				<EntriesTable
 					entries={filteredEntries}
 					globalFilter={searchQuery}
-					{selectedEntryId}
-					onSelectEntry={(id) => workspaceClient.kv.set('selectedEntryId', id)}
+					selectedEntryId={selectedEntryId.current}
+					onSelectEntry={(id) => (selectedEntryId.current = id)}
 					onAddEntry={createEntry}
 				/>
 			{:else}
 				<EntryTimeline
 					entries={filteredEntries}
-					{selectedEntryId}
-					onSelectEntry={(id) => workspaceClient.kv.set('selectedEntryId', id)}
+					selectedEntryId={selectedEntryId.current}
+					onSelectEntry={(id) => (selectedEntryId.current = id)}
 					onAddEntry={createEntry}
 				/>
 			{/if}

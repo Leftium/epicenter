@@ -48,21 +48,6 @@
 		}
 	});
 
-	function handleAllow() {
-		if (!approval?.id) return;
-		aiChatState.active?.approveToolCall(approval.id);
-	}
-
-	function handleAlwaysAllow() {
-		if (!approval?.id) return;
-		toolTrustState.set(part.name, 'always');
-		aiChatState.active?.approveToolCall(approval.id);
-	}
-
-	function handleDeny() {
-		if (!approval?.id) return;
-		aiChatState.active?.denyToolCall(approval.id);
-	}
 	const badgeVariant = $derived.by(() => {
 		if (isFailed) return 'status.failed';
 		if (isRunning) return 'status.running';
@@ -94,15 +79,15 @@
 
 	{#if isApprovalRequested && !toolTrustState.shouldAutoApprove(part.name)}
 		<div class="flex items-center gap-1.5 pl-[1.125rem]">
-			<Button variant="outline" size="sm" onclick={handleAllow}> Allow </Button>
-			<Button variant="outline" size="sm" onclick={handleAlwaysAllow}>
+			<Button variant="outline" size="sm" onclick={() => { if (!approval?.id) return; aiChatState.active?.approveToolCall(approval.id, true); }}> Allow </Button>
+			<Button variant="outline" size="sm" onclick={() => { if (!approval?.id) return; toolTrustState.set(part.name, 'always'); aiChatState.active?.approveToolCall(approval.id, true); }}>
 				Always Allow
 			</Button>
 			<Button
 				variant="ghost"
 				size="sm"
 				class="text-muted-foreground"
-				onclick={handleDeny}
+				onclick={() => { if (!approval?.id) return; aiChatState.active?.approveToolCall(approval.id, false); }}
 			>
 				Deny
 			</Button>

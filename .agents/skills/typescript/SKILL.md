@@ -203,6 +203,23 @@ When the record is used once, inline it. When it's shared or has 5+ entries, ext
 
 See `docs/articles/record-lookup-over-nested-ternaries.md` for rationale.
 
+## Iterator Helpers Over Spread
+
+TS 5.9+ with `lib: ["ESNext"]` includes TC39 Iterator Helpers (Stage 4). `MapIterator`, `SetIterator`, and `ArrayIterator` all extend `IteratorObject`, which provides `.filter()`, `.map()`, `.find()`, `.toArray()`, `.some()`, `.every()`, `.reduce()`, `.take()`, `.drop()`, `.flatMap()`, and `.forEach()`.
+
+**Prefer `.toArray()` over `[...spread]`** for materializing iterators:
+
+```typescript
+// Bad
+const all = [...map.values()];
+const active = [...map.values()].filter((n) => !n.deleted);
+
+// Good
+const all = map.values().toArray();
+const active = map.values().filter((n) => !n.deleted).toArray();
+```
+
+`.sort()` is not on `IteratorObject` (requires random access). Materialize first: `map.values().toArray().sort(fn)`.
 # Type Co-location Principles
 
 ## Never Use Generic Type Buckets

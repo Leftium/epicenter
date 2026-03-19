@@ -1,5 +1,5 @@
 {
-	"name": "@epicenter/svelte-utils",
+	"name": "@epicenter/svelte",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
@@ -8,7 +8,8 @@
 		".": "./src/index.ts",
 		"./createPersistedState": "./src/createPersistedState.svelte.ts"
 	},
-	"dependencies": {
+"dependencies": {
+		"@epicenter/workspace": "workspace:*",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {

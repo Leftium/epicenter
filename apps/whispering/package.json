@@ -20,6 +20,7 @@
 	"license": "AGPL-3.0",
 	"devDependencies": {
 		"@epicenter/ui": "workspace:*",
+		"bun-types": "catalog:",
 		"@lucide/svelte": "catalog:",
 		"@sveltejs/adapter-static": "catalog:",
 		"@sveltejs/kit": "catalog:",
@@ -45,7 +46,7 @@
 		"@aptabase/tauri": "^0.4.1",
 		"@aptabase/web": "^0.4.3",
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/svelte-utils": "workspace:*",
+		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@google/generative-ai": "^0.24.1",
 		"@mistralai/mistralai": "^1.9.18",

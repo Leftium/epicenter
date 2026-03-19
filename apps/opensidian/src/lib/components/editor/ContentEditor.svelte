@@ -2,6 +2,7 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import { fsState } from '$lib/state/fs-state.svelte';
+	import { documents } from '$lib/state/workspace';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { fileId }: {
@@ -13,7 +14,7 @@
 	$effect(() => {
 		const id = fileId;
 		handle = null;
-		fsState.documents.open(id).then((h) => {
+		documents.open(id).then((h) => {
 			// Guard against race condition -- if file changed while loading, ignore
 			if (fsState.activeFileId !== id) return;
 			handle = h;

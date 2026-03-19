@@ -4,13 +4,13 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { toast } from 'svelte-sonner';
 	import { fsState } from '$lib/state/fs-state.svelte';
+	import { fs } from '$lib/state/workspace';
 
 	let seeding = $state(false);
 
 	async function loadSampleData() {
 		seeding = true;
 		try {
-			const { fs } = fsState;
 			await fs.mkdir('/docs');
 			await fs.mkdir('/src');
 			await fs.mkdir('/src/utils');

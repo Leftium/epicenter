@@ -1,14 +1,7 @@
-import {
-	createSqliteIndex,
-	createYjsFileSystem,
-	type FileId,
-	type FileRow,
-	filesTable,
-} from '@epicenter/filesystem';
-import { createWorkspace } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import { type FileId, type FileRow } from '@epicenter/filesystem';
 import { SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
+import { documents, filesDb, fs } from './workspace';
 
 /**
  * Reactive filesystem state singleton.
@@ -30,14 +23,6 @@ import { toast } from 'svelte-sonner';
  * ```
  */
 function createFsState() {
-	const ws = createWorkspace({
-		id: 'opensidian',
-		tables: { files: filesTable },
-	})
-		.withExtension('persistence', indexeddbPersistence)
-		.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
-	const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
-	const documents = ws.documents.files.content;
 
 	// ── Reactive state ────────────────────────────────────────────────
 	let version = $state(0);
@@ -54,7 +39,7 @@ function createFsState() {
 
 	// ── rAF-coalesced observer ────────────────────────────────────────
 	let pendingBump = false;
-	const unobserve = ws.tables.files.observe(() => {
+	const unobserve = filesDb.observe(() => {
 		if (!pendingBump) {
 			pendingBump = true;
 			requestAnimationFrame(() => {
@@ -76,7 +61,7 @@ function createFsState() {
 	const selectedNode = $derived.by(() => {
 		void version;
 		if (!activeFileId) return null;
-		const result = ws.tables.files.get(activeFileId);
+		const result = filesDb.get(activeFileId);
 		return result.status === 'valid' ? result.row : null;
 	});
 
@@ -148,9 +133,6 @@ function createFsState() {
 		},
 
 		expandedIds,
-		fs,
-		documents,
-		sqliteIndex: ws.extensions.sqliteIndex,
 
 		/**
 		 * Get child FileIds of a folder. Reads from FileSystemIndex.
@@ -167,7 +149,7 @@ function createFsState() {
 		 */
 		getRow(id: FileId): FileRow | null {
 			void version;
-			const result = ws.tables.files.get(id);
+			const result = filesDb.get(id);
 			return result.status === 'valid' ? result.row : null;
 		},
 
@@ -212,7 +194,7 @@ function createFsState() {
 			const results: T[] = [];
 			function walk(pid: FileId | null) {
 				for (const childId of fs.index.getChildIds(pid)) {
-					const result = ws.tables.files.get(childId);
+					const result = filesDb.get(childId);
 					if (result.status !== 'valid' || result.row.trashedAt !== null)
 						continue;
 					const { collect, descend } = visitor(childId, result.row);
@@ -369,8 +351,8 @@ function createFsState() {
 export const fsState = createFsState();
 
 // Expose on window for dev console access
-// Usage: await fsState.sqliteIndex.search('hello')
-//        await fsState.sqliteIndex.client.execute('SELECT * FROM files')
+// Usage: fsState.actions.createFile(null, 'test.md')
+//        Workspace infra available via: window.workspace (see workspace.ts)
 if (typeof window !== 'undefined') {
 	(window as unknown as Record<string, unknown>).fsState = fsState;
 }

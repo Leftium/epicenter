@@ -12,6 +12,8 @@ const MAX_DEPTH = 50;
 export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
 	/** "/docs/api.md" → FileId */
 	const pathToId = new Map<string, FileId>();
+	/** FileId → "/docs/api.md" (reverse lookup) */
+	const idToPath = new Map<FileId, string>();
 	/** parentId (null = root) → [childId, ...] */
 	const childrenOf = new Map<FileId | null, FileId[]>();
 
@@ -30,6 +32,7 @@ export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
 	 */
 	function rebuild() {
 		pathToId.clear();
+		idToPath.clear();
 		childrenOf.clear();
 
 		const rows = filesTable.getAllValid();
@@ -49,7 +52,7 @@ export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
 		fixOrphans(filesTable, activeRows, childrenOf);
 
 		// Build path indexes with disambiguation
-		buildPaths(filesTable, childrenOf, pathToId);
+		buildPaths(filesTable, childrenOf, pathToId, idToPath);
 	}
 
 	return {
@@ -72,6 +75,10 @@ export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
 		/** Get child IDs of a parent (null = root). Returns [] if none. */
 		getChildIds(parentId: FileId | null): FileId[] {
 			return childrenOf.get(parentId) ?? [];
+		},
+		/** O(1) reverse lookup: FileId → path string, or undefined if not indexed. */
+		getPathById(id: FileId): string | undefined {
+			return idToPath.get(id);
 		},
 		/** Stop observing the files table. */
 		dispose: unobserve,
@@ -110,6 +117,7 @@ function buildPaths(
 	filesTable: TableHelper<FileRow>,
 	childrenOf: Map<FileId | null, FileId[]>,
 	pathToId: Map<string, FileId>,
+	idToPath: Map<FileId, string>,
 ) {
 	// Compute display names per parent (handles CRDT duplicate names)
 	const allDisplayNames = new Map<string, string>();
@@ -135,6 +143,7 @@ function buildPaths(
 		const path = computePath(row.id, filesTable, allDisplayNames);
 		if (path) {
 			pathToId.set(path, row.id);
+			idToPath.set(row.id, path);
 		}
 	}
 }

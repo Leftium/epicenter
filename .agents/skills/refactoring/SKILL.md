@@ -1,6 +1,6 @@
 ---
 name: refactoring
-description: Systematic code audit and refactoring methodology—caller counting, type safety boundaries, inlining single-use extractions, collapsing duplicate branches, and surgical commits. Use when cleaning up code, auditing for code smells, refactoring modules, or reviewing internal function structure.
+description: Systematic code audit and refactoring methodology—caller counting, type safety boundaries, inlining single-use extractions, keeping trivial duplications inline over premature extraction, collapsing duplicate branches, and surgical commits. Use when cleaning up code, auditing for code smells, refactoring modules, or reviewing internal function structure.
 metadata:
   author: epicenter
   version: '1.0'
@@ -154,6 +154,63 @@ function pushSheetFromCsv(csv: string): SheetEntry {
 parseSheetFromCsv(csv, result);
 ```
 
+## Prefer Inline for Trivial Duplications
+
+When a duplicated block is 1–3 lines and appears 2–3 times within the same file, keeping it inline is usually more readable than extracting a helper. The helper adds a name to learn, a definition to jump to, and an abstraction boundary to reason about—all of which cost more than the duplication saves.
+
+**The readability test:** Does a reader need to leave the callsite to understand what's happening? If the inline code is self-explanatory, extraction hurts more than it helps.
+
+```typescript
+// Two adjacent functions with identical 2-line path construction.
+// A buildChildPath() helper saves zero cognitive load—readers
+// understand the inline version instantly.
+
+// GOOD: Keep inline. The repetition is obvious and local.
+async createFile(parentId: FileId | null, name: string) {
+	const parentPath = parentId ? (this.getPath(parentId) ?? '/') : '/';
+	const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
+	await fs.writeFile(path, '');
+}
+
+async createFolder(parentId: FileId | null, name: string) {
+	const parentPath = parentId ? (this.getPath(parentId) ?? '/') : '/';
+	const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
+	await fs.mkdir(path);
+}
+
+// BAD: Extracted for 2 callers in the same file.
+// Reader now has to find buildChildPath() to understand either function.
+function buildChildPath(parentId: FileId | null, name: string): string {
+	const parentPath = parentId ? (this.getPath(parentId) ?? '/') : '/';
+	return parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
+}
+```
+
+Same principle in templates—a class string used twice is easier to scan inline than to chase to a `$derived` variable:
+
+```svelte
+<!-- GOOD: Both usages visible at a glance while scanning the template -->
+<TreeView.Folder
+	class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent
+		{isHighlighted ? 'bg-accent text-accent-foreground' : ''}"
+/>
+<!-- ...later in the same template... -->
+<TreeView.File
+	class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent
+		{isHighlighted ? 'bg-accent text-accent-foreground' : ''}"
+/>
+
+<!-- BAD: Extracted to a variable—reader leaves the template to understand styling -->
+<TreeView.Folder class={itemClass} />
+```
+
+### When extraction IS worth it
+
+- The block is 5+ lines (the abstraction pays for itself)
+- It appears 4+ times (pattern, not coincidence)
+- The callers are in different files (no local context to rely on)
+- The logic is non-obvious and the function name documents intent
+
 ## Inline Known-Behavior Calls
 
     When a "smart" function branches internally but every caller already knows which branch it takes:
@@ -238,7 +295,7 @@ c4f8ddc  refactor: move SheetBinding to sheet.ts, accept as single param
 
 ## Anti-Patterns
 
-- **Premature extraction**: Extracting a function used once that doesn't add clarity over inline code
+- **Premature extraction**: Extracting a 1–3 line block used 2–3 times into a named helper. The indirection costs more than the duplication. See "Prefer Inline for Trivial Duplications" above.
 - **Abstracting away differences**: Three push constructors with different fields share boilerplate, but a `pushEntry(type, fields: Record<string, unknown>)` helper loses all type safety. The duplication communicates structure.
 - **Type-erasing helpers**: Any helper that accepts `unknown` or `Record<string, any>` to "reduce duplication"
 - **Refactoring while fixing bugs**: Fix the bug minimally first, refactor in a separate commit

@@ -99,24 +99,37 @@ export const BASE_AUTH_CONFIG = {
 };
 
 /**
- * A single versioned encryption secret parsed from the ENCRYPTION_SECRETS env var.
- * `version` is a positive integer identifying the key generation; `secret` is the
- * raw key material (typically base64-encoded, generated via `openssl rand -base64 32`).
+ * Validated shape of a single keyring entry.
+ *
+ * `version` is a positive integer identifying the key generation; `secret` is
+ * the raw key material (typically base64-encoded via `openssl rand -base64 32`).
  */
 const EncryptionEntry = type({ version: 'number.integer > 0', secret: 'string' });
 
 /**
- * Parse and validate the ENCRYPTION_SECRETS env var into a sorted keyring.
+ * Parse a single `"version:secret"` string into a validated `EncryptionEntry`.
  *
- * Input format: `"2:base64Secret2,1:base64Secret1"` (comma-separated, version-prefixed).
+ * Finds the first colon—everything before it is the version, everything after
+ * is the secret (which may itself contain colons). Uses `ctx.error()` for
+ * arktype-native error reporting when the colon delimiter is missing.
+ */
+const EncryptionEntryParser = type('string').pipe((entry, ctx) => {
+	const i = entry.indexOf(':');
+	if (i === -1) return ctx.error('must be "version:secret"');
+	return { version: Number(entry.slice(0, i)), secret: entry.slice(i + 1) };
+}).to(EncryptionEntry);
+
+/**
+ * Parse and validate the full ENCRYPTION_SECRETS env var into a sorted keyring.
+ *
+ * Input format: `"2:base64Secret2,1:base64Secret1"` (comma-separated entries).
  * Output: a non-empty array of `{ version, secret }` sorted by version descending
  * (highest version first—the current key for new encryptions).
  *
- * `.pipe.try()` splits and parses the raw string, catching thrown errors as
- * `ArkErrors`; `.to()` validates each entry against `EncryptionEntry` and
- * guarantees at least one element via the non-empty tuple type.
- * `.assert()` throws a `TraversalError` at module load if the env var is
- * missing or malformed—the worker won’t serve requests until the config is fixed.
+ * `.pipe.try()` catches any `TraversalError` thrown by `EncryptionEntryParser.assert()`
+ * and wraps it as `ArkErrors`. The non-empty tuple `.to()` guarantees `keyring[0]`
+ * is always defined. `.assert()` at module load throws a `TraversalError` if the
+ * env var is missing or malformed—the worker won’t serve requests until fixed.
  *
  * @example
  * ```
@@ -129,15 +142,7 @@ const EncryptionKeyring = type('string')
 	.pipe.try((s) =>
 		s
 			.split(',')
-			.map((entry) => {
-				const i = entry.indexOf(':');
-				if (i === -1) {
-					throw new Error(
-						`Invalid ENCRYPTION_SECRETS entry: each must be "version:secret" (got "${entry}")`,
-					);
-				}
-				return { version: Number(entry.slice(0, i)), secret: entry.slice(i + 1) };
-			})
+			.map((e) => EncryptionEntryParser.assert(e))
 			.sort((a, b) => b.version - a.version),
 	)
 	.to([EncryptionEntry, '...', EncryptionEntry.array()]);

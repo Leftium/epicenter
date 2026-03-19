@@ -8,12 +8,12 @@
 
 	async function handleDelete() {
 		if (!fsState.activeFileId) return;
-		await fsState.actions.deleteFile(fsState.activeFileId);
-		fsState.actions.closeDelete();
+		await fsState.deleteFile(fsState.activeFileId);
+		fsState.closeDelete();
 	}
 
 	function handleOpenChange(isOpen: boolean) {
-		if (!isOpen) fsState.actions.closeDelete();
+		if (!isOpen) fsState.closeDelete();
 	}
 </script>
 

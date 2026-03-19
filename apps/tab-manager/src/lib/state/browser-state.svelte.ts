@@ -317,22 +317,24 @@ function createBrowserState() {
 		const state = windowStates.get(compositeId);
 		if (!state) return;
 
-		// Deactivate previous active tab(s) in this window only
-		for (const [tabId, tab] of state.tabs) {
-			if (tab.active) {
-				const updated = { ...tab, active: false };
-				state.tabs.set(tabId, updated);
+		workspaceClient.batch(() => {
+			// Deactivate previous active tab(s) in this window only
+			for (const [tabId, tab] of state.tabs) {
+				if (tab.active) {
+					const updated = { ...tab, active: false };
+					state.tabs.set(tabId, updated);
+					tables.tabs.set(updated);
+				}
+			}
+
+			// Activate the new tab
+			const tab = state.tabs.get(activeInfo.tabId);
+			if (tab) {
+				const updated = { ...tab, active: true };
+				state.tabs.set(activeInfo.tabId, updated);
 				tables.tabs.set(updated);
 			}
-		}
-
-		// Activate the new tab
-		const tab = state.tabs.get(activeInfo.tabId);
-		if (tab) {
-			const updated = { ...tab, active: true };
-			state.tabs.set(activeInfo.tabId, updated);
-			tables.tabs.set(updated);
-		}
+		});
 	});
 
 	// ── Attach / Detach ──────────────────────────────────────────────────
@@ -413,24 +415,26 @@ function createBrowserState() {
 	browser.windows.onFocusChanged.addListener((windowId) => {
 		if (!deviceId) return;
 
-		for (const [id, state] of windowStates) {
-			if (state.window.focused) {
-				const updated = { ...state.window, focused: false };
-				windowStates.set(id, { ...state, window: updated });
-				tables.windows.set(updated);
+		workspaceClient.batch(() => {
+			for (const [id, state] of windowStates) {
+				if (state.window.focused) {
+					const updated = { ...state.window, focused: false };
+					windowStates.set(id, { ...state, window: updated });
+					tables.windows.set(updated);
+				}
 			}
-		}
 
-		// WINDOW_ID_NONE means all windows lost focus (e.g. user clicked desktop)
-		if (windowId !== browser.windows.WINDOW_ID_NONE) {
-			const compositeId = createWindowCompositeId(deviceId, windowId);
-			const state = windowStates.get(compositeId);
-			if (state) {
-				const updated = { ...state.window, focused: true };
-				windowStates.set(compositeId, { ...state, window: updated });
-				tables.windows.set(updated);
+			// WINDOW_ID_NONE means all windows lost focus (e.g. user clicked desktop)
+			if (windowId !== browser.windows.WINDOW_ID_NONE) {
+				const compositeId = createWindowCompositeId(deviceId, windowId);
+				const state = windowStates.get(compositeId);
+				if (state) {
+					const updated = { ...state.window, focused: true };
+					windowStates.set(compositeId, { ...state, window: updated });
+					tables.windows.set(updated);
+				}
 			}
-		}
+		});
 	});
 
 	// ── Tab Group Event Listeners (Chrome only) ──────────────────────────
@@ -620,57 +624,52 @@ function createBrowserState() {
 		},
 
 		/**
-		 * Browser API calls that trigger state changes indirectly.
+		 * Close a tab. Browser onRemoved event updates state.
 		 *
-		 * None of these mutate `windowStates` directly — they call the browser
-		 * API, which fires an event (e.g. `onRemoved`, `onUpdated`), and the
-		 * event listener above handles the state update. This keeps mutation
-		 * in one place (the listeners) and makes actions safe to call from
-		 * any component without worrying about state consistency.
+		 * None of these methods mutate `windowStates` directly \u2014 they call the
+		 * browser API, which fires an event (e.g. `onRemoved`, `onUpdated`),
+		 * and the event listener above handles the state update.
 		 */
-		actions: {
-			/** Close a tab. Browser onRemoved event updates state. */
-			async close(tabId: number) {
-				await browser.tabs.remove(tabId);
-			},
+		async close(tabId: number) {
+			await browser.tabs.remove(tabId);
+		},
 
-			/** Activate a tab and focus its window. */
-			async activate(tabId: number) {
-				const tab = await browser.tabs.update(tabId, { active: true });
-				if (tab?.windowId) {
-					await browser.windows.update(tab.windowId, { focused: true });
-				}
-			},
+		/** Activate a tab and focus its window. */
+		async activate(tabId: number) {
+			const tab = await browser.tabs.update(tabId, { active: true });
+			if (tab?.windowId) {
+				await browser.windows.update(tab.windowId, { focused: true });
+			}
+		},
 
-			/** Pin a tab. */
-			async pin(tabId: number) {
-				await browser.tabs.update(tabId, { pinned: true });
-			},
+		/** Pin a tab. */
+		async pin(tabId: number) {
+			await browser.tabs.update(tabId, { pinned: true });
+		},
 
-			/** Unpin a tab. */
-			async unpin(tabId: number) {
-				await browser.tabs.update(tabId, { pinned: false });
-			},
+		/** Unpin a tab. */
+		async unpin(tabId: number) {
+			await browser.tabs.update(tabId, { pinned: false });
+		},
 
-			/** Mute a tab. */
-			async mute(tabId: number) {
-				await browser.tabs.update(tabId, { muted: true });
-			},
+		/** Mute a tab. */
+		async mute(tabId: number) {
+			await browser.tabs.update(tabId, { muted: true });
+		},
 
-			/** Unmute a tab. */
-			async unmute(tabId: number) {
-				await browser.tabs.update(tabId, { muted: false });
-			},
+		/** Unmute a tab. */
+		async unmute(tabId: number) {
+			await browser.tabs.update(tabId, { muted: false });
+		},
 
-			/** Reload a tab. */
-			async reload(tabId: number) {
-				await browser.tabs.reload(tabId);
-			},
+		/** Reload a tab. */
+		async reload(tabId: number) {
+			await browser.tabs.reload(tabId);
+		},
 
-			/** Duplicate a tab. */
-			async duplicate(tabId: number) {
-				await browser.tabs.duplicate(tabId);
-			},
+		/** Duplicate a tab. */
+		async duplicate(tabId: number) {
+			await browser.tabs.duplicate(tabId);
 		},
 	};
 }

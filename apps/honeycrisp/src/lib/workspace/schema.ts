@@ -1,26 +1,22 @@
 /**
- * Workspace — schema and client for Honeycrisp notes.
+ * Workspace schema — branded IDs, table definitions, and workspace definition.
  *
  * Honeycrisp is an Apple Notes clone with three-column layout: sidebar folders,
  * note list, and rich-text editor. Folders organize notes; notes have Y.Text
  * bodies for collaborative editing via Tiptap + y-prosemirror.
  *
  * Contains branded NoteId/FolderId types, folders and notes table definitions
- * with DateTimeString timestamps, KV settings, and the workspace client with
- * IndexedDB persistence.
+ * with DateTimeString timestamps, KV settings, and the workspace definition.
  */
 
 import {
-	createWorkspace,
 	DateTimeString,
 	dateTimeStringNow,
 	defineKv,
 	defineTable,
 	defineWorkspace,
-	generateId,
 	type InferTableRow,
 } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -123,19 +119,10 @@ export const honeycrisp = defineWorkspace({
 	kv: {
 		selectedFolderId: defineKv(FolderId.or(type('null')), null),
 		selectedNoteId: defineKv(NoteId.or(type('null')), null),
-		sortBy: defineKv(type("'dateEdited' | 'dateCreated' | 'title'"), 'dateEdited'),
+		sortBy: defineKv(
+			type("'dateEdited' | 'dateCreated' | 'title'"),
+			'dateEdited',
+		),
 		sidebarCollapsed: defineKv(type('boolean'), false),
 	},
 });
-
-/**
- * Honeycrisp workspace client — single Y.Doc instance with IndexedDB persistence.
- *
- * Access tables via `workspaceClient.tables.folders` / `workspaceClient.tables.notes`
- * and KV settings via `workspaceClient.kv`. The client is ready when
- * `workspaceClient.whenReady` resolves.
- */
-export default createWorkspace(honeycrisp).withExtension(
-	'persistence',
-	indexeddbPersistence,
-);

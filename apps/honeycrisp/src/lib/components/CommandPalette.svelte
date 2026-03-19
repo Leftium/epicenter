@@ -4,7 +4,7 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { notesState } from '$lib/state/notes.svelte';
+	import { foldersState, notesState, viewState } from '$lib/state';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
 </script>
@@ -17,17 +17,17 @@
 		<Command.Group heading="Folders">
 			<Command.Item
 				onSelect={() => {
-					notesState.selectFolder(null);
+					viewState.selectFolder(null);
 					open = false;
 				}}
 			>
 				<FileTextIcon class="mr-2 size-4" />
 				All Notes
 			</Command.Item>
-			{#each notesState.folders as folder (folder.id)}
+			{#each foldersState.folders as folder (folder.id)}
 				<Command.Item
 					onSelect={() => {
-						notesState.selectFolder(folder.id);
+						viewState.selectFolder(folder.id);
 						open = false;
 					}}
 				>
@@ -47,7 +47,7 @@
 			{#each notesState.notes as note (note.id)}
 				<Command.Item
 					onSelect={() => {
-					notesState.selectNote(note.id);
+					viewState.selectNote(note.id);
 						open = false;
 					}}
 				>
@@ -78,7 +78,7 @@
 			</Command.Item>
 			<Command.Item
 				onSelect={() => {
-				notesState.createFolder();
+				foldersState.createFolder();
 					open = false;
 				}}
 			>

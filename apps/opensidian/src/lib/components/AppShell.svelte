@@ -3,10 +3,8 @@
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import CommandPalette from './CommandPalette.svelte';
 	import ContentPanel from './editor/ContentPanel.svelte';
-	import CreateDialog from './dialogs/CreateDialog.svelte';
 	import DeleteConfirmation from './dialogs/DeleteConfirmation.svelte';
 	import FileTree from './tree/FileTree.svelte';
-	import RenameDialog from './dialogs/RenameDialog.svelte';
 	import Toolbar from './Toolbar.svelte';
 </script>
 
@@ -24,6 +22,4 @@
 	<CommandPalette />
 </div>
 
-<CreateDialog />
-<RenameDialog />
 <DeleteConfirmation />

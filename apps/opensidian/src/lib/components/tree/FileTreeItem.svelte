@@ -2,9 +2,10 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as TreeView from '@epicenter/ui/tree-view';
-	import { getFileIcon } from '$lib/utils/file-icons';
 	import { fsState } from '$lib/state/fs-state.svelte';
+	import { getFileIcon } from '$lib/utils/file-icons';
 	import FileTreeItem from './FileTreeItem.svelte';
+	import InlineNameInput from './InlineNameInput.svelte';
 
 	let { id }: { id: FileId } = $props();
 
@@ -14,18 +15,34 @@
 	const isSelected = $derived(fsState.activeFileId === id);
 	const children = $derived(isFolder ? fsState.getChildIds(id) : []);
 	const isFocused = $derived(fsState.focusedId === id);
+	const isRenaming = $derived(fsState.renamingId === id);
+	const showInlineCreate = $derived(fsState.inlineCreate?.parentId === id);
 </script>
 
 {#if row}
 	<ContextMenu.Root>
 		<ContextMenu.Trigger>
 			{#snippet child({ props })}
-				{#if isFolder}
+				{#if isFolder && isRenaming}
+					<div
+						{...props}
+						role="treeitem"
+						aria-expanded={isExpanded}
+						class="w-full"
+					>
+						<InlineNameInput
+							defaultValue={row.name}
+							icon="folder"
+							onConfirm={fsState.confirmRename}
+							onCancel={fsState.cancelRename}
+						/>
+					</div>
+				{:else if isFolder}
 					<div {...props} role="treeitem" aria-expanded={isExpanded}>
 						<TreeView.Folder
 							name={row.name}
 							open={isExpanded}
-							onOpenChange={() => fsState.actions.toggleExpand(id)}
+							onOpenChange={() => fsState.toggleExpand(id)}
 							class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 								? 'bg-accent text-accent-foreground'
 								: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
@@ -33,7 +50,23 @@
 							{#each children as childId (childId)}
 								<FileTreeItem id={childId} />
 							{/each}
+							{#if showInlineCreate}
+								<InlineNameInput
+									icon={fsState.inlineCreate?.type ?? 'file'}
+									onConfirm={fsState.confirmCreate}
+									onCancel={fsState.cancelCreate}
+								/>
+							{/if}
 						</TreeView.Folder>
+					</div>
+				{:else if isRenaming}
+					<div {...props} role="treeitem" class="w-full">
+						<InlineNameInput
+							defaultValue={row.name}
+							icon="file"
+							onConfirm={fsState.confirmRename}
+							onCancel={fsState.cancelRename}
+						/>
 					</div>
 				{:else}
 					<TreeView.File
@@ -43,7 +76,7 @@
 						class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 							? 'bg-accent text-accent-foreground'
 							: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
-						onclick={() => fsState.actions.selectFile(id)}
+						onclick={() => fsState.selectFile(id)}
 						role="treeitem"
 					>
 						{#snippet icon()}
@@ -57,27 +90,40 @@
 		<ContextMenu.Content>
 			{#if isFolder}
 				<ContextMenu.Item
-					onclick={() => { fsState.actions.selectFile(id); fsState.actions.openCreate('file'); }}
+					onclick={() => {
+					fsState.focus(id);
+					fsState.expandedIds.add(id);
+					fsState.startCreate('file');
+				}}
 				>
 					New File
+					<ContextMenu.Shortcut>N</ContextMenu.Shortcut>
 				</ContextMenu.Item>
 				<ContextMenu.Item
-					onclick={() => { fsState.actions.selectFile(id); fsState.actions.openCreate('folder'); }}
+					onclick={() => {
+					fsState.focus(id);
+					fsState.expandedIds.add(id);
+					fsState.startCreate('folder');
+				}}
 				>
 					New Folder
+					<ContextMenu.Shortcut>⇧N</ContextMenu.Shortcut>
 				</ContextMenu.Item>
 				<ContextMenu.Separator />
 			{/if}
-			<ContextMenu.Item
-				onclick={() => { fsState.actions.selectFile(id); fsState.actions.openRename(); }}
-			>
+			<ContextMenu.Item onclick={() => fsState.startRename(id)}>
 				Rename
+				<ContextMenu.Shortcut>F2</ContextMenu.Shortcut>
 			</ContextMenu.Item>
 			<ContextMenu.Item
 				class="text-destructive"
-				onclick={() => { fsState.actions.selectFile(id); fsState.actions.openDelete(); }}
+				onclick={() => {
+					fsState.selectFile(id);
+					fsState.openDelete();
+				}}
 			>
 				Delete
+				<ContextMenu.Shortcut>⌫</ContextMenu.Shortcut>
 			</ContextMenu.Item>
 		</ContextMenu.Content>
 	</ContextMenu.Root>

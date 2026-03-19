@@ -36,7 +36,7 @@
 		<button
 			type="button"
 			{...props}
-			onclick={() => browserState.actions.activate(tabId)}
+			onclick={() => browserState.activate(tabId)}
 		>
 			<Item.Media> <TabFavicon src={tab.favIconUrl} /> </Item.Media>
 
@@ -83,9 +83,9 @@
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
 						if (tab.pinned) {
-							browserState.actions.unpin(tabId);
+							browserState.unpin(tabId);
 						} else {
-							browserState.actions.pin(tabId);
+							browserState.pin(tabId);
 						}
 					}}
 				>
@@ -104,9 +104,9 @@
 						onclick={(e: MouseEvent) => {
 							e.stopPropagation();
 							if (tab.mutedInfo?.muted) {
-								browserState.actions.unmute(tabId);
+								browserState.unmute(tabId);
 							} else {
-								browserState.actions.mute(tabId);
+								browserState.mute(tabId);
 							}
 						}}
 					>
@@ -124,7 +124,7 @@
 					tooltip="Reload"
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						browserState.actions.reload(tabId);
+						browserState.reload(tabId);
 					}}
 				>
 					<RefreshCwIcon />
@@ -136,7 +136,7 @@
 					tooltip="Duplicate"
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						browserState.actions.duplicate(tabId);
+						browserState.duplicate(tabId);
 					}}
 				>
 					<CopyIcon />
@@ -148,7 +148,7 @@
 					tooltip="Save for later"
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						savedTabState.actions.save(tab);
+						savedTabState.save(tab);
 					}}
 				>
 					<ArchiveIcon />
@@ -160,7 +160,7 @@
 					tooltip="Bookmark"
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						bookmarkState.actions.add(tab);
+						bookmarkState.add(tab);
 					}}
 				>
 					<StarIcon />
@@ -173,7 +173,7 @@
 					tooltip="Close"
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						browserState.actions.close(tabId);
+						browserState.close(tabId);
 					}}
 				>
 					<XIcon />

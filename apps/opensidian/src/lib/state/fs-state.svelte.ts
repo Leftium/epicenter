@@ -1,4 +1,4 @@
-import { type FileId, type FileRow } from '@epicenter/filesystem';
+import type { FileId, FileRow } from '@epicenter/filesystem';
 import { SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
 import { fs, ws } from '$lib/workspace';
@@ -23,7 +23,6 @@ import { fs, ws } from '$lib/workspace';
  * ```
  */
 function createFsState() {
-
 	// ── Reactive state ────────────────────────────────────────────────
 	let version = $state(0);
 	let activeFileId = $state<FileId | null>(null);
@@ -31,10 +30,14 @@ function createFsState() {
 	const expandedIds = new SvelteSet<FileId>();
 	let focusedId = $state<FileId | null>(null);
 
-	// ── Dialog state ──────────────────────────────────────────────────
-	let createDialogOpen = $state(false);
-	let createDialogMode = $state<'file' | 'folder'>('file');
-	let renameDialogOpen = $state(false);
+	// ── Inline editing state ──────────────────────────────────────────
+	let inlineCreate = $state<{
+		parentId: FileId | null;
+		type: 'file' | 'folder';
+	} | null>(null);
+	let renamingId = $state<FileId | null>(null);
+
+	// ── Delete dialog state ───────────────────────────────────────────
 	let deleteDialogOpen = $state(false);
 
 	// ── rAF-coalesced observer ────────────────────────────────────────
@@ -117,16 +120,11 @@ function createFsState() {
 		get focusedId() {
 			return focusedId;
 		},
-
-		// ── Dialog state getters ────────────────────────────────────
-		get createDialogOpen() {
-			return createDialogOpen;
+		get inlineCreate() {
+			return inlineCreate;
 		},
-		get createDialogMode() {
-			return createDialogMode;
-		},
-		get renameDialogOpen() {
-			return renameDialogOpen;
+		get renamingId() {
+			return renamingId;
 		},
 		get deleteDialogOpen() {
 			return deleteDialogOpen;
@@ -206,135 +204,170 @@ function createFsState() {
 			return results;
 		},
 
-		actions: {
-			selectFile(id: FileId) {
-				activeFileId = id;
-				if (!openFileIds.includes(id)) {
-					openFileIds = [...openFileIds, id];
-				}
-			},
+		// ── Inline editing ───────────────────────────────────────────
 
-			closeFile(id: FileId) {
+		/**
+		 * Begin inline creation. Shows an input in the tree at the target location.
+		 * If a folder is focused, creates inside it. If a file is focused, creates as sibling.
+		 * If nothing is focused, creates at root.
+		 */
+		startCreate(type: 'file' | 'folder') {
+			renamingId = null;
+			const focused = focusedId ?? activeFileId;
+			if (!focused) {
+				inlineCreate = { parentId: null, type };
+				return;
+			}
+			const row = state.getRow(focused);
+			if (row?.type === 'folder') {
+				expandedIds.add(focused);
+				inlineCreate = { parentId: focused, type };
+			} else if (row?.parentId) {
+				inlineCreate = { parentId: row.parentId, type };
+			} else {
+				inlineCreate = { parentId: null, type };
+			}
+		},
+
+		cancelCreate() {
+			inlineCreate = null;
+		},
+
+		async confirmCreate(name: string) {
+			if (!name.trim() || !inlineCreate) return;
+			const { parentId, type } = inlineCreate;
+			inlineCreate = null;
+			if (type === 'file') {
+				await state.createFile(parentId, name.trim());
+			} else {
+				await state.createFolder(parentId, name.trim());
+			}
+		},
+
+		startRename(id: FileId) {
+			inlineCreate = null;
+			renamingId = id;
+		},
+
+		cancelRename() {
+			renamingId = null;
+		},
+
+		async confirmRename(newName: string) {
+			if (!newName.trim() || !renamingId) return;
+			const id = renamingId;
+			renamingId = null;
+			await state.rename(id, newName.trim());
+		},
+
+		// ── Delete dialog ────────────────────────────────────────────
+
+		openDelete() {
+			deleteDialogOpen = true;
+		},
+
+		closeDelete() {
+			deleteDialogOpen = false;
+		},
+
+		// ── Actions ──────────────────────────────────────────────────
+
+		selectFile(id: FileId) {
+			activeFileId = id;
+			if (!openFileIds.includes(id)) {
+				openFileIds = [...openFileIds, id];
+			}
+		},
+
+		closeFile(id: FileId) {
+			openFileIds = openFileIds.filter((f) => f !== id);
+			if (activeFileId === id) {
+				activeFileId = openFileIds.at(-1) ?? null;
+			}
+		},
+
+		toggleExpand(id: FileId) {
+			if (expandedIds.has(id)) expandedIds.delete(id);
+			else expandedIds.add(id);
+		},
+
+		focus(id: FileId | null) {
+			focusedId = id;
+		},
+
+		async createFile(parentId: FileId | null, name: string) {
+			await withErrorToast(async () => {
+				const parentPath = parentId
+					? (state.getPathForId(parentId) ?? '/')
+					: '/';
+				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
+				await fs.writeFile(path, '');
+				toast.success(`Created ${path}`);
+			}, 'Failed to create file');
+		},
+
+		async createFolder(parentId: FileId | null, name: string) {
+			await withErrorToast(async () => {
+				const parentPath = parentId
+					? (state.getPathForId(parentId) ?? '/')
+					: '/';
+				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
+				await fs.mkdir(path);
+				if (parentId) expandedIds.add(parentId);
+				toast.success(`Created ${path}/`);
+			}, 'Failed to create folder');
+		},
+
+		async deleteFile(id: FileId) {
+			await withErrorToast(async () => {
+				const path = state.getPathForId(id);
+				if (!path) return;
+				await fs.rm(path, { recursive: true });
+				if (activeFileId === id) activeFileId = null;
 				openFileIds = openFileIds.filter((f) => f !== id);
-				if (activeFileId === id) {
-					activeFileId = openFileIds.at(-1) ?? null;
-				}
-			},
+				toast.success(`Deleted ${path}`);
+			}, 'Failed to delete');
+		},
 
-			toggleExpand(id: FileId) {
-				if (expandedIds.has(id)) expandedIds.delete(id);
-				else expandedIds.add(id);
-			},
+		async rename(id: FileId, newName: string) {
+			await withErrorToast(async () => {
+				const oldPath = state.getPathForId(id);
+				if (!oldPath) return;
+				const parentPath =
+					oldPath.substring(0, oldPath.lastIndexOf('/')) || '/';
+				const newPath =
+					parentPath === '/' ? `/${newName}` : `${parentPath}/${newName}`;
+				await fs.mv(oldPath, newPath);
+				toast.success(`Renamed to ${newName}`);
+			}, 'Failed to rename');
+		},
 
-			focus(id: FileId | null) {
-				focusedId = id;
-			},
+		/**
+		 * Read file content as string.
+		 *
+		 * Opens the per-file content Y.Doc and reads from the timeline.
+		 */
+		async readContent(id: FileId): Promise<string | null> {
+			try {
+				const handle = await ws.documents.files.content.open(id);
+				return handle.read();
+			} catch (err) {
+				console.error('Failed to read content:', err);
+				return null;
+			}
+		},
 
-			// ── Dialog actions ────────────────────────────────────────
-
-			openCreate(mode: 'file' | 'folder') {
-				createDialogMode = mode;
-				createDialogOpen = true;
-			},
-
-			closeCreate() {
-				createDialogOpen = false;
-			},
-
-			openRename() {
-				renameDialogOpen = true;
-			},
-
-			closeRename() {
-				renameDialogOpen = false;
-			},
-
-			openDelete() {
-				deleteDialogOpen = true;
-			},
-
-			closeDelete() {
-				deleteDialogOpen = false;
-			},
-
-			// ── File operations ───────────────────────────────────────
-
-			async createFile(parentId: FileId | null, name: string) {
-				await withErrorToast(async () => {
-					const parentPath = parentId
-						? (state.getPathForId(parentId) ?? '/')
-						: '/';
-					const path =
-						parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-					await fs.writeFile(path, '');
-					toast.success(`Created ${path}`);
-				}, 'Failed to create file');
-			},
-
-			async createFolder(parentId: FileId | null, name: string) {
-				await withErrorToast(async () => {
-					const parentPath = parentId
-						? (state.getPathForId(parentId) ?? '/')
-						: '/';
-					const path =
-						parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-					await fs.mkdir(path);
-					if (parentId) expandedIds.add(parentId);
-					toast.success(`Created ${path}/`);
-				}, 'Failed to create folder');
-			},
-
-			async deleteFile(id: FileId) {
-				await withErrorToast(async () => {
-					const path = state.getPathForId(id);
-					if (!path) return;
-					await fs.rm(path, { recursive: true });
-					if (activeFileId === id) activeFileId = null;
-					openFileIds = openFileIds.filter((f) => f !== id);
-					toast.success(`Deleted ${path}`);
-				}, 'Failed to delete');
-			},
-
-			async rename(id: FileId, newName: string) {
-				await withErrorToast(async () => {
-					const oldPath = state.getPathForId(id);
-					if (!oldPath) return;
-					const parentPath =
-						oldPath.substring(0, oldPath.lastIndexOf('/')) || '/';
-					const newPath =
-						parentPath === '/' ? `/${newName}` : `${parentPath}/${newName}`;
-					await fs.mv(oldPath, newPath);
-					toast.success(`Renamed to ${newName}`);
-				}, 'Failed to rename');
-			},
-
-			/**
-			 * Read file content as string.
-			 *
-			 * Opens the per-file content Y.Doc and reads from the timeline.
-			 */
-			async readContent(id: FileId): Promise<string | null> {
-				try {
-					const handle = await ws.documents.files.content.open(id);
-					return handle.read();
-				} catch (err) {
-					console.error('Failed to read content:', err);
-					return null;
-				}
-			},
-
-			/**
-			 * Write file content as string.
-			 *
-			 * Opens the per-file content Y.Doc and writes to the timeline.
-			 * The documents manager's `onUpdate` callback bumps `updatedAt` on the file row.
-			 */
-			async writeContent(id: FileId, data: string): Promise<void> {
-				await withErrorToast(async () => {
-					const handle = await ws.documents.files.content.open(id);
-					handle.write(data);
-				}, 'Failed to save file');
-			},
+		/**
+		 * Write file content as string.
+		 *
+		 * Opens the per-file content Y.Doc and writes to the timeline.
+		 * The documents manager's `onUpdate` callback bumps `updatedAt` on the file row.
+		 */
+		async writeContent(id: FileId, data: string): Promise<void> {
+			await withErrorToast(async () => {
+				const handle = await ws.documents.files.content.open(id);
+				handle.write(data);
+			}, 'Failed to save file');
 		},
 
 		/** Cleanup — call from +layout.svelte onDestroy if needed. */

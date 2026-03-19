@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { Separator } from '@epicenter/ui/separator';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { toast } from 'svelte-sonner';
 	import { fsState } from '$lib/state/fs-state.svelte';
@@ -20,7 +21,7 @@
 			);
 			await fs.writeFile(
 				'/docs/api.md',
-				'# API Reference\n\n## YjsFileSystem\n\nThe main filesystem class.\n\n### Methods\n\n- `writeFile(path, content)` — Create or overwrite a file\n- `mkdir(path)` — Create a directory\n- `rm(path, opts)` — Remove a file or directory\n- `mv(from, to)` — Move or rename\n',
+				'# API Reference\n\n## YjsFileSystem\n\nThe main filesystem class.\n\n### Methods\n\n- `writeFile(path, content)` \u2014 Create or overwrite a file\n- `mkdir(path)` \u2014 Create a directory\n- `rm(path, opts)` \u2014 Remove a file or directory\n- `mv(from, to)` \u2014 Move or rename\n',
 			);
 			await fs.writeFile(
 				'/docs/guide.md',
@@ -55,7 +56,7 @@
 						{...props}
 						variant="ghost"
 						size="sm"
-						onclick={() => fsState.actions.openCreate('file')}
+						onclick={() => fsState.startCreate('file')}
 					>
 						New File
 					</Button>
@@ -70,7 +71,7 @@
 						{...props}
 						variant="ghost"
 						size="sm"
-						onclick={() => fsState.actions.openCreate('folder')}
+						onclick={() => fsState.startCreate('folder')}
 					>
 						New Folder
 					</Button>
@@ -86,7 +87,9 @@
 						{...props}
 						variant="ghost"
 						size="sm"
-						onclick={() => fsState.actions.openRename()}
+						onclick={() => {
+							if (fsState.activeFileId) fsState.startRename(fsState.activeFileId);
+						}}
 						disabled={!fsState.activeFileId}
 					>
 						Rename
@@ -102,7 +105,9 @@
 						{...props}
 						variant="ghost"
 						size="sm"
-						onclick={() => fsState.actions.openDelete()}
+						onclick={() => {
+							if (fsState.activeFileId) fsState.openDelete();
+						}}
 						disabled={!fsState.activeFileId}
 					>
 						Delete
@@ -122,7 +127,11 @@
 							onclick={loadSampleData}
 							disabled={seeding}
 						>
-							{seeding ? 'Loading…' : 'Load Sample Data'}
+							{#if seeding}
+								<Spinner class="size-3.5" />
+							{:else}
+								Load Sample Data
+							{/if}
 						</Button>
 					{/snippet}
 				</Tooltip.Trigger>

@@ -33,7 +33,14 @@
 		}
 	});
 
+	/**
+	 * Guard against false blur events (e.g. context menu focus restoration).
+	 * Defers to the next frame so transient focus shifts settle first.
+	 */
+	let blurConfirmed = false;
 	function confirm() {
+		if (blurConfirmed) return;
+		blurConfirmed = true;
 		if (value.trim()) {
 			onConfirm(value.trim());
 		} else {
@@ -62,6 +69,12 @@
 			}
 			e.stopPropagation();
 		}}
-		onblur={confirm}
+		onblur={() => {
+			requestAnimationFrame(() => {
+				if (inputEl && document.activeElement !== inputEl) {
+					confirm();
+				}
+			});
+		}}
 	>
 </div>

@@ -17,10 +17,16 @@
 	const isFocused = $derived(fsState.focusedId === id);
 	const isRenaming = $derived(fsState.renamingId === id);
 	const showInlineCreate = $derived(fsState.inlineCreate?.parentId === id);
+	const isContextTarget = $derived(fsState.contextMenuTargetId === id);
+
+	/** Whether this item should show the highlight background. */
+	const isHighlighted = $derived(isSelected || isContextTarget);
 </script>
 
 {#if row}
-	<ContextMenu.Root>
+	<ContextMenu.Root
+		onOpenChange={(open) => fsState.setContextMenuTarget(open ? id : null)}
+	>
 		<ContextMenu.Trigger>
 			{#snippet child({ props })}
 				{#if isFolder && isRenaming}
@@ -43,7 +49,7 @@
 							name={row.name}
 							open={isExpanded}
 							onOpenChange={() => fsState.toggleExpand(id)}
-							class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
+							class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isHighlighted
 								? 'bg-accent text-accent-foreground'
 								: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
 						>
@@ -73,7 +79,7 @@
 						{...props}
 						name={row.name}
 						{id}
-						class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
+						class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isHighlighted
 							? 'bg-accent text-accent-foreground'
 							: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
 						onclick={() => fsState.selectFile(id)}
@@ -87,24 +93,30 @@
 				{/if}
 			{/snippet}
 		</ContextMenu.Trigger>
-		<ContextMenu.Content>
+		<ContextMenu.Content
+			onCloseAutoFocus={(e) => {
+				if (fsState.inlineCreate || fsState.renamingId) {
+					e.preventDefault();
+				}
+			}}
+		>
 			{#if isFolder}
 				<ContextMenu.Item
 					onclick={() => {
-					fsState.focus(id);
-					fsState.expandedIds.add(id);
-					fsState.startCreate('file');
-				}}
+						fsState.focus(id);
+						fsState.expandedIds.add(id);
+						fsState.startCreate('file');
+					}}
 				>
 					New File
 					<ContextMenu.Shortcut>N</ContextMenu.Shortcut>
 				</ContextMenu.Item>
 				<ContextMenu.Item
 					onclick={() => {
-					fsState.focus(id);
-					fsState.expandedIds.add(id);
-					fsState.startCreate('folder');
-				}}
+						fsState.focus(id);
+						fsState.expandedIds.add(id);
+						fsState.startCreate('folder');
+					}}
 				>
 					New Folder
 					<ContextMenu.Shortcut>⇧N</ContextMenu.Shortcut>

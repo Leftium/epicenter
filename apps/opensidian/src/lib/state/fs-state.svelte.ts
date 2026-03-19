@@ -4,6 +4,18 @@ import { toast } from 'svelte-sonner';
 import { fs, ws } from '$lib/workspace';
 
 /**
+ * Interaction mode discriminated union.
+ *
+ * Only one interaction can be active at a time. Setting any mode
+ * implicitly cancels the previous one—impossible states are unrepresentable.
+ */
+type InteractionMode =
+	| { type: 'idle' }
+	| { type: 'renaming'; targetId: FileId }
+	| { type: 'creating'; parentId: FileId | null; fileType: 'file' | 'folder' }
+	| { type: 'confirming-delete' };
+
+/**
  * Reactive filesystem state singleton.
  *
  * Follows the tab-manager pattern: factory function creates all state,
@@ -30,15 +42,15 @@ function createFsState() {
 	const expandedIds = new SvelteSet<FileId>();
 	let focusedId = $state<FileId | null>(null);
 
-	// ── Inline editing state ──────────────────────────────────────────
-	let inlineCreate = $state<{
-		parentId: FileId | null;
-		type: 'file' | 'folder';
-	} | null>(null);
-	let renamingId = $state<FileId | null>(null);
+	// ── Interaction mode ─────────────────────────────────────────────
+	// Replaces the old independent renamingId / inlineCreate / deleteDialogOpen
+	// states. A single discriminated union prevents conflicting modes.
+	let interactionMode = $state<InteractionMode>({ type: 'idle' });
 
-	// ── Delete dialog state ───────────────────────────────────────────
-	let deleteDialogOpen = $state(false);
+	// ── Context menu hover persistence ───────────────────────────────
+	// Tracks which tree item's context menu is currently open so the
+	// item stays visually highlighted while the mouse is on the menu.
+	let contextMenuTargetId = $state<FileId | null>(null);
 
 	// ── rAF-coalesced observer ────────────────────────────────────────
 	let pendingBump = false;
@@ -77,6 +89,24 @@ function createFsState() {
 		if (!activeFileId) return null;
 		return fs.index.getPathById(activeFileId) ?? null;
 	});
+
+	// ── Derived from interaction mode ────────────────────────────────
+	// These maintain the same shape the components already read, so
+	// FileTreeItem / FileTree / DeleteConfirmation don't need changes.
+
+	const renamingId = $derived(
+		interactionMode.type === 'renaming' ? interactionMode.targetId : null,
+	);
+
+	const inlineCreate = $derived(
+		interactionMode.type === 'creating'
+			? { parentId: interactionMode.parentId, type: interactionMode.fileType }
+			: null,
+	);
+
+	const deleteDialogOpen = $derived(
+		interactionMode.type === 'confirming-delete',
+	);
 
 	// ── Private helpers ───────────────────────────────────────────────
 
@@ -128,6 +158,9 @@ function createFsState() {
 		},
 		get deleteDialogOpen() {
 			return deleteDialogOpen;
+		},
+		get contextMenuTargetId() {
+			return contextMenuTargetId;
 		},
 
 		expandedIds,
@@ -211,33 +244,36 @@ function createFsState() {
 		 * If a folder is focused, creates inside it. If a file is focused, creates as sibling.
 		 * If nothing is focused, creates at root.
 		 */
-		startCreate(type: 'file' | 'folder') {
-			renamingId = null;
+		startCreate(fileType: 'file' | 'folder') {
 			const focused = focusedId ?? activeFileId;
 			if (!focused) {
-				inlineCreate = { parentId: null, type };
+				interactionMode = { type: 'creating', parentId: null, fileType };
 				return;
 			}
 			const row = state.getRow(focused);
 			if (row?.type === 'folder') {
 				expandedIds.add(focused);
-				inlineCreate = { parentId: focused, type };
+				interactionMode = { type: 'creating', parentId: focused, fileType };
 			} else if (row?.parentId) {
-				inlineCreate = { parentId: row.parentId, type };
+				interactionMode = {
+					type: 'creating',
+					parentId: row.parentId,
+					fileType,
+				};
 			} else {
-				inlineCreate = { parentId: null, type };
+				interactionMode = { type: 'creating', parentId: null, fileType };
 			}
 		},
 
 		cancelCreate() {
-			inlineCreate = null;
+			interactionMode = { type: 'idle' };
 		},
 
 		async confirmCreate(name: string) {
-			if (!name.trim() || !inlineCreate) return;
-			const { parentId, type } = inlineCreate;
-			inlineCreate = null;
-			if (type === 'file') {
+			if (!name.trim() || interactionMode.type !== 'creating') return;
+			const { parentId, fileType } = interactionMode;
+			interactionMode = { type: 'idle' };
+			if (fileType === 'file') {
 				await state.createFile(parentId, name.trim());
 			} else {
 				await state.createFolder(parentId, name.trim());
@@ -245,29 +281,34 @@ function createFsState() {
 		},
 
 		startRename(id: FileId) {
-			inlineCreate = null;
-			renamingId = id;
+			interactionMode = { type: 'renaming', targetId: id };
 		},
 
 		cancelRename() {
-			renamingId = null;
+			interactionMode = { type: 'idle' };
 		},
 
 		async confirmRename(newName: string) {
-			if (!newName.trim() || !renamingId) return;
-			const id = renamingId;
-			renamingId = null;
+			if (!newName.trim() || interactionMode.type !== 'renaming') return;
+			const id = interactionMode.targetId;
+			interactionMode = { type: 'idle' };
 			await state.rename(id, newName.trim());
 		},
 
 		// ── Delete dialog ────────────────────────────────────────────
 
 		openDelete() {
-			deleteDialogOpen = true;
+			interactionMode = { type: 'confirming-delete' };
 		},
 
 		closeDelete() {
-			deleteDialogOpen = false;
+			interactionMode = { type: 'idle' };
+		},
+
+		// ── Context menu ─────────────────────────────────────────────
+
+		setContextMenuTarget(id: FileId | null) {
+			contextMenuTargetId = id;
 		},
 
 		// ── Actions ──────────────────────────────────────────────────

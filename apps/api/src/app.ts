@@ -178,6 +178,14 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 /** Creates a Better Auth instance using an already-connected Drizzle instance. */
 function createAuth(db: Db, env: Env['Bindings']) {
+	const keyring = parseEncryptionSecrets(env.ENCRYPTION_SECRETS);
+	const current = keyring[0];
+	if (!current) {
+		throw new Error(
+			'ENCRYPTION_SECRETS is empty\u2014at least one entry is required',
+		);
+	}
+
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg' }),
@@ -193,11 +201,6 @@ function createAuth(db: Db, env: Env['Bindings']) {
 			bearer(),
 			jwt(),
 			customSession(async ({ user, session }) => {
-				const keyring = parseEncryptionSecrets(env.ENCRYPTION_SECRETS);
-				const current = keyring[0];
-				if (!current) {
-					throw new Error('ENCRYPTION_SECRETS is empty\u2014at least one entry is required');
-				}
 				const encryptionKey = await deriveUserKey(current.secret, user.id);
 				return {
 					user,
@@ -318,7 +321,9 @@ const factory = createFactory<Env>({
 				//    `waitUntil()` to keep it alive. `drain()` settles every queued
 				//    promise via `Promise.allSettled`, then `.then()` closes the pg
 				//    connection — guaranteeing the client outlives all its queries.
-				c.executionCtx.waitUntil(afterResponse.drain().then(() => client.end()));
+				c.executionCtx.waitUntil(
+					afterResponse.drain().then(() => client.end()),
+				);
 			}
 		});
 
@@ -697,6 +702,5 @@ app.delete(
 		return c.body(null, 204);
 	},
 );
-
 
 export default app;

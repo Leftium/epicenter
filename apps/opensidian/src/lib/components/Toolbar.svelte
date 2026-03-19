@@ -1,19 +1,17 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { Separator } from '@epicenter/ui/separator';
-	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { toast } from 'svelte-sonner';
-	import { fsState } from '$lib/fs/fs-state.svelte';
-	import DeleteConfirmation from './DeleteConfirmation.svelte';
+	import { fsState } from '$lib/state/fs-state.svelte';
+	import { fs } from '$lib/workspace';
 
-	let deleteDialogOpen = $state(false);
 	let seeding = $state(false);
 
 	async function loadSampleData() {
 		seeding = true;
 		try {
-			const { fs } = fsState;
 			await fs.mkdir('/docs');
 			await fs.mkdir('/src');
 			await fs.mkdir('/src/utils');
@@ -108,7 +106,7 @@
 						variant="ghost"
 						size="sm"
 						onclick={() => {
-							if (fsState.activeFileId) deleteDialogOpen = true;
+							if (fsState.activeFileId) fsState.openDelete();
 						}}
 						disabled={!fsState.activeFileId}
 					>
@@ -129,7 +127,11 @@
 							onclick={loadSampleData}
 							disabled={seeding}
 						>
-							{#if seeding}<Spinner class="size-3.5" />{:else}Load Sample Data{/if}
+							{#if seeding}
+								<Spinner class="size-3.5" />
+							{:else}
+								Load Sample Data
+							{/if}
 						</Button>
 					{/snippet}
 				</Tooltip.Trigger>
@@ -138,5 +140,3 @@
 		</div>
 	</div>
 </Tooltip.Provider>
-
-<DeleteConfirmation bind:open={deleteDialogOpen} />

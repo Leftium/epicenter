@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { fsState } from '$lib/fs/fs-state.svelte';
+	import { fsState } from '$lib/state/fs-state.svelte';
 	import ContentEditor from './ContentEditor.svelte';
 	import PathBreadcrumb from './PathBreadcrumb.svelte';
 	import TabBar from './TabBar.svelte';

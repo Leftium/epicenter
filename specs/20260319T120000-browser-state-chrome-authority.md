@@ -201,17 +201,17 @@ Currently browser-state.svelte.ts registers the device in `tables.devices` durin
 
 ## Migration Checklist
 
-- [ ] Rewrite `browser-state.svelte.ts` — Chrome-only, SvelteMap-only, ~200 lines
-- [ ] Define `BrowserWindow` and `BrowserTab` types locally in browser-state (plain objects from Chrome data)
-- [ ] Remove Y.Doc table definitions (`tabsTable`, `windowsTable`, `tabGroupsTable`) from `workspace.ts`
-- [ ] Remove composite ID helpers and branded types from `workspace.ts`
-- [ ] Remove or delete `row-converters.ts`
-- [ ] Move device registration out of browser-state into a shared init path
-- [ ] Update `unified-view-state.svelte.ts` for any field name changes
-- [ ] Update `UnifiedTabList.svelte` for any field name changes
-- [ ] Update `TabItem.svelte` for any field name changes
-- [ ] Update `command-palette/items.ts` for any field name changes
-- [ ] Verify the `{#await browserState.whenReady}` gate still works (it should — whenReady is still a promise)
+- [x] Rewrite `browser-state.svelte.ts` — Chrome-only, SvelteMap-only, ~200 lines
+- [x] Define `BrowserWindow` and `BrowserTab` types locally in browser-state (plain objects from Chrome data)
+- [x] Remove Y.Doc table definitions (`tabsTable`, `windowsTable`, `tabGroupsTable`) from `workspace.ts`
+- [x] Remove composite ID helpers and branded types from `workspace.ts`
+- [x] Remove or delete `row-converters.ts`
+- [x] Move device registration out of browser-state into a shared init path
+- [x] Update `unified-view-state.svelte.ts` for any field name changes
+- [x] Update `UnifiedTabList.svelte` for any field name changes
+- [x] Update `TabItem.svelte` for any field name changes
+- [x] Update `command-palette/items.ts` for any field name changes
+- [x] Verify the `{#await browserState.whenReady}` gate still works (it should — whenReady is still a promise)
 - [ ] Run the extension in Chrome and verify: tabs render, events update UI, actions work
 - [ ] Verify saved tabs and bookmarks still sync cross-device (unaffected by this change)
 
@@ -225,4 +225,31 @@ Currently browser-state.svelte.ts registers the device in `tables.devices` durin
 
 ## Review
 
-_(To be filled after implementation)_
+**Status**: Implemented
+**Commits**: `c526f4e` (main rewrite), `16c7fce` (cleanup)
+
+### Summary
+
+Removed all Y.Doc/CRDT usage for live browser tabs and windows. Chrome is now the sole authority for ephemeral browser data. The side panel seeds from `browser.windows.getAll({ populate: true })`, receives surgical updates via browser event listeners, and writes only to SvelteMap. No dual-writes, no observers, no echo detection.
+
+### Line counts
+
+| File | Before | After | Delta |
+|---|---|---|---|
+| `browser-state.svelte.ts` | 690 | 406 | −284 |
+| `workspace.ts` | 1058 | 587 | −471 |
+| `row-converters.ts` | 117 | deleted | −117 |
+| Consumers (7 files) | — | — | ~+30 net |
+| **Total** | — | — | **−842 net** |
+
+### Deviations from spec
+
+1. **`saved-tab-state.svelte.ts` and `bookmark-state.svelte.ts` required type-only changes.** Both imported `type Tab` from workspace, which was removed. Changed to `type BrowserTab` from browser-state. No logic changes—just the import and method parameter type.
+2. **Workspace actions were not addressed in the spec.** 7 query actions that read from removed Y.Doc tables were removed (`tabs.search`, `tabs.list`, `tabs.findDuplicates`, `tabs.dedup`, `tabs.groupByDomain`, `windows.list`, `domains.count`). 8 mutation actions were simplified to accept native Chrome tab IDs instead of composite string IDs.
+3. **`tab-helpers.ts` `TabLike` type updated.** Changed `id: string` to `tabId: number` since the only remaining consumer passes `BrowserTab[]`.
+4. **Existing bug fixed in `command-palette/items.ts`.** `savedTabState.actions.save(tab)` → `savedTabState.save(tab)` (`.actions` property doesn't exist).
+
+### Follow-up work
+
+- **AI tab queries are gone.** The AI chat can no longer search/list/count tabs via Y.Doc. To restore this, query actions would need to read from `browserState` (reactive SvelteMap) instead of Y.Doc tables. This requires either importing browserState into workspace.ts or defining actions outside the workspace.
+- **Stale IndexedDB data.** Old Y.Doc still has `tabs`, `windows`, `tabGroups` entries in IndexedDB. Harmless but wastes storage. A cleanup migration could remove them.

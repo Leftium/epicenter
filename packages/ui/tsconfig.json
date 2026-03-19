@@ -1,5 +1,5 @@
 {
-	"extends": ["../../tsconfig.base.json"],
+	"extends": ["../../tsconfig.base.dom.json"],
 	"compilerOptions": {
 		"allowJs": true,
 		"resolveJsonModule": true,
@@ -11,7 +11,6 @@
 		"composite": true,
 		"declarationMap": true,
 
-		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"rootDir": "src",
 		"paths": {
 			"#/*": ["./src/*"]

@@ -2,7 +2,6 @@ import { Database } from 'bun:sqlite';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import type { Lifecycle } from '../../workspace/lifecycle';
 
 /**
  * Configuration for the persistence extension.

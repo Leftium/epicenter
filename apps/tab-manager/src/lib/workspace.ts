@@ -580,7 +580,7 @@ const tables = {
 	toolTrust: toolTrustTable,
 };
 
-const definition = defineWorkspace<
+export const definition = defineWorkspace<
 	'epicenter.tab-manager',
 	typeof tables,
 	KvDefinitions

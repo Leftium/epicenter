@@ -236,11 +236,11 @@ function createBrowserState() {
 		deviceId = id;
 
 		console.log('[SidePanel] Seeded browser state + Y.Doc:', {
-			tabs: tables.tabs.getAllValid().length,
-			windows: tables.windows.getAllValid().length,
-			tabGroups: tables.tabGroups.getAllValid().length,
+			tabs: workspace.tables.tabs.getAllValid().length,
+			windows: workspace.tables.windows.getAllValid().length,
+			tabGroups: workspace.tables.tabGroups.getAllValid().length,
 		});
-	})();
+	}
 
 	// ── Tab Event Listeners ───────────────────────────────────────────────
 

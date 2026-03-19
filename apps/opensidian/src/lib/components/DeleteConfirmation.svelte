@@ -29,7 +29,7 @@
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-			<Button variant="destructive" onclick={async () => { if (!fsState.activeFileId) return; await fsState.actions.deleteFile(fsState.activeFileId); open = false; }}>Delete</Button>
+			<Button variant="destructive" onclick={async () => { if (!fsState.activeFileId) return; await fsState.deleteFile(fsState.activeFileId); open = false; }}>Delete</Button>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>

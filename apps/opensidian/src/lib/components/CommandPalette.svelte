@@ -92,7 +92,7 @@
 		<Command.Empty>No files found.</Command.Empty>
 		<Command.Group heading="Files">
 			{#each filteredFiles as file (file.id)}
-				<Command.Item value={file.id} onSelect={() => { fsState.actions.selectFile(file.id); open = false; }}>
+				<Command.Item value={file.id} onSelect={() => { fsState.selectFile(file.id); open = false; }}>
 					{@const Icon = getFileIcon(file.name)}
 					<Icon class="h-4 w-4 shrink-0 text-muted-foreground" />
 					<span>{file.name}</span>

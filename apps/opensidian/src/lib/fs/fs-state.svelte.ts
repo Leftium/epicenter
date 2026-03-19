@@ -33,7 +33,8 @@ function createFsState() {
 	const ws = createWorkspace({
 		id: 'opensidian',
 		tables: { files: filesTable },
-	}).withExtension('persistence', indexeddbPersistence)
+	})
+		.withExtension('persistence', indexeddbPersistence)
 		.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 	const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
 	const documents = ws.documents.files.content;
@@ -146,127 +147,121 @@ function createFsState() {
 			return null;
 		},
 
-		actions: {
-			selectFile(id: FileId) {
-				activeFileId = id;
-				if (!openFileIds.includes(id)) {
-					openFileIds = [...openFileIds, id];
-				}
-			},
+		selectFile(id: FileId) {
+			activeFileId = id;
+			if (!openFileIds.includes(id)) {
+				openFileIds = [...openFileIds, id];
+			}
+		},
 
-			closeFile(id: FileId) {
+		closeFile(id: FileId) {
+			openFileIds = openFileIds.filter((f) => f !== id);
+			if (activeFileId === id) {
+				activeFileId = openFileIds.at(-1) ?? null;
+			}
+		},
+
+		toggleExpand(id: FileId) {
+			if (expandedIds.has(id)) expandedIds.delete(id);
+			else expandedIds.add(id);
+		},
+
+		focus(id: FileId | null) {
+			focusedId = id;
+		},
+
+		async createFile(parentId: FileId | null, name: string) {
+			try {
+				const parentPath = parentId
+					? (state.getPathForId(parentId) ?? '/')
+					: '/';
+				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
+				await fs.writeFile(path, '');
+				toast.success(`Created ${path}`);
+			} catch (err) {
+				toast.error(
+					err instanceof Error ? err.message : 'Failed to create file',
+				);
+				console.error(err);
+			}
+		},
+
+		async createFolder(parentId: FileId | null, name: string) {
+			try {
+				const parentPath = parentId
+					? (state.getPathForId(parentId) ?? '/')
+					: '/';
+				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
+				await fs.mkdir(path);
+				if (parentId) expandedIds.add(parentId);
+				toast.success(`Created ${path}/`);
+			} catch (err) {
+				toast.error(
+					err instanceof Error ? err.message : 'Failed to create folder',
+				);
+				console.error(err);
+			}
+		},
+
+		async deleteFile(id: FileId) {
+			try {
+				const path = state.getPathForId(id);
+				if (!path) return;
+				await fs.rm(path, { recursive: true });
+				if (activeFileId === id) activeFileId = null;
 				openFileIds = openFileIds.filter((f) => f !== id);
-				if (activeFileId === id) {
-					activeFileId = openFileIds.at(-1) ?? null;
-				}
-			},
+				toast.success(`Deleted ${path}`);
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : 'Failed to delete');
+				console.error(err);
+			}
+		},
 
-			toggleExpand(id: FileId) {
-				if (expandedIds.has(id)) expandedIds.delete(id);
-				else expandedIds.add(id);
-			},
+		async rename(id: FileId, newName: string) {
+			try {
+				const oldPath = state.getPathForId(id);
+				if (!oldPath) return;
+				const parentPath =
+					oldPath.substring(0, oldPath.lastIndexOf('/')) || '/';
+				const newPath =
+					parentPath === '/' ? `/${newName}` : `${parentPath}/${newName}`;
+				await fs.mv(oldPath, newPath);
+				toast.success(`Renamed to ${newName}`);
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : 'Failed to rename');
+				console.error(err);
+			}
+		},
 
-			focus(id: FileId | null) {
-				focusedId = id;
-			},
+		/**
+		 * Read file content as string.
+		 *
+		 * Opens the per-file content Y.Doc and reads from the timeline.
+		 */
+		async readContent(id: FileId): Promise<string | null> {
+			try {
+				const handle = await documents.open(id);
+				return handle.read();
+			} catch (err) {
+				console.error('Failed to read content:', err);
+				return null;
+			}
+		},
 
-			async createFile(parentId: FileId | null, name: string) {
-				try {
-					const parentPath = parentId
-						? (state.getPathForId(parentId) ?? '/')
-						: '/';
-					const path =
-						parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-					await fs.writeFile(path, '');
-					toast.success(`Created ${path}`);
-				} catch (err) {
-					toast.error(
-						err instanceof Error ? err.message : 'Failed to create file',
-					);
-					console.error(err);
-				}
-			},
-
-			async createFolder(parentId: FileId | null, name: string) {
-				try {
-					const parentPath = parentId
-						? (state.getPathForId(parentId) ?? '/')
-						: '/';
-					const path =
-						parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-					await fs.mkdir(path);
-					if (parentId) expandedIds.add(parentId);
-					toast.success(`Created ${path}/`);
-				} catch (err) {
-					toast.error(
-						err instanceof Error ? err.message : 'Failed to create folder',
-					);
-					console.error(err);
-				}
-			},
-
-			async deleteFile(id: FileId) {
-				try {
-					const path = state.getPathForId(id);
-					if (!path) return;
-					await fs.rm(path, { recursive: true });
-					if (activeFileId === id) activeFileId = null;
-					openFileIds = openFileIds.filter((f) => f !== id);
-					toast.success(`Deleted ${path}`);
-				} catch (err) {
-					toast.error(err instanceof Error ? err.message : 'Failed to delete');
-					console.error(err);
-				}
-			},
-
-			async rename(id: FileId, newName: string) {
-				try {
-					const oldPath = state.getPathForId(id);
-					if (!oldPath) return;
-					const parentPath =
-						oldPath.substring(0, oldPath.lastIndexOf('/')) || '/';
-					const newPath =
-						parentPath === '/' ? `/${newName}` : `${parentPath}/${newName}`;
-					await fs.mv(oldPath, newPath);
-					toast.success(`Renamed to ${newName}`);
-				} catch (err) {
-					toast.error(err instanceof Error ? err.message : 'Failed to rename');
-					console.error(err);
-				}
-			},
-
-			/**
-			 * Read file content as string.
-			 *
-			 * Opens the per-file content Y.Doc and reads from the timeline.
-			 */
-			async readContent(id: FileId): Promise<string | null> {
-				try {
-					const handle = await documents.open(id);
-					return handle.read();
-				} catch (err) {
-					console.error('Failed to read content:', err);
-					return null;
-				}
-			},
-
-			/**
-			 * Write file content as string.
-			 *
-			 * Opens the per-file content Y.Doc and writes to the timeline.
-			 * The documents manager's `onUpdate` callback bumps `updatedAt` on the file row.
-			 */
-			async writeContent(id: FileId, data: string): Promise<void> {
-				try {
-					const handle = await documents.open(id);
-					handle.write(data);
-				} catch (err) {
-					toast.error(
-						err instanceof Error ? err.message : 'Failed to save file',
-					);
-					console.error(err);
-				}
-			},
+		/**
+		 * Write file content as string.
+		 *
+		 * Opens the per-file content Y.Doc and writes to the timeline.
+		 * The documents manager's `onUpdate` callback bumps `updatedAt` on the file row.
+		 */
+		async writeContent(id: FileId, data: string): Promise<void> {
+			try {
+				const handle = await documents.open(id);
+				handle.write(data);
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : 'Failed to save file');
+				console.error(err);
+			}
 		},
 
 		/** Cleanup — call from +layout.svelte onDestroy if needed. */

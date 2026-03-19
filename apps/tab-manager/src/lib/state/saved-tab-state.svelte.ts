@@ -25,14 +25,14 @@
  *   <SavedTabItem {tab} />
  * {/each}
  *
- * <button onclick={() => savedTabState.actions.restoreAll()}>
+ * <button onclick={() => savedTabState.restoreAll()}>
  *   Restore all
  * </button>
  * ```
  */
 
-import { getDeviceId } from '$lib/device/device-id';
 import { fromTable } from '@epicenter/svelte';
+import { getDeviceId } from '$lib/device/device-id';
 import {
 	generateSavedTabId,
 	type SavedTab,
@@ -45,7 +45,12 @@ function createSavedTabState() {
 	const tabsMap = fromTable(workspaceClient.tables.savedTabs);
 
 	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
-	const tabs = $derived(tabsMap.values().toArray().sort((a, b) => b.savedAt - a.savedAt));
+	const tabs = $derived(
+		tabsMap
+			.values()
+			.toArray()
+			.sort((a, b) => b.savedAt - a.savedAt),
+	);
 
 	return {
 		get tabs() {
@@ -53,114 +58,103 @@ function createSavedTabState() {
 		},
 
 		/**
-		 * Actions that mutate saved tab state.
+		 * Save a tab — snapshot its metadata to Y.Doc and close the
+		 * browser tab. The tab can be restored later on any synced device.
 		 *
-		 * All mutations go through the Y.Doc table, which fires the observer,
-		 * which re-reads the full list into `tabs`. This keeps the mutation path
-		 * unidirectional — components call actions, actions write to Y.Doc,
-		 * Y.Doc observer updates the reactive array. No direct `tabs` mutation
-		 * outside the observer.
+		 * Silently no-ops for tabs without a URL (e.g. `chrome://` pages
+		 * that can't be re-opened via `browser.tabs.create`).
 		 */
-		actions: {
-			/**
-			 * Save a tab — snapshot its metadata to Y.Doc and close the
-			 * browser tab. The tab can be restored later on any synced device.
-			 *
-			 * Silently no-ops for tabs without a URL (e.g. `chrome://` pages
-			 * that can't be re-opened via `browser.tabs.create`).
-			 */
-			async save(tab: Tab) {
-				if (!tab.url) return;
-				const deviceId = await getDeviceId();
-				workspaceClient.tables.savedTabs.set({
-					id: generateSavedTabId(),
-					url: tab.url,
-					title: tab.title || 'Untitled',
-					favIconUrl: tab.favIconUrl,
-					pinned: tab.pinned,
-					sourceDeviceId: deviceId,
-					savedAt: Date.now(),
-					_v: 1,
-				});
-				await browser.tabs.remove(tab.tabId);
-			},
+		async save(tab: Tab) {
+			if (!tab.url) return;
+			const deviceId = await getDeviceId();
+			workspaceClient.tables.savedTabs.set({
+				id: generateSavedTabId(),
+				url: tab.url,
+				title: tab.title || 'Untitled',
+				favIconUrl: tab.favIconUrl,
+				pinned: tab.pinned,
+				sourceDeviceId: deviceId,
+				savedAt: Date.now(),
+				_v: 1,
+			});
+			await browser.tabs.remove(tab.tabId);
+		},
 
-			/**
-			 * Restore a saved tab — re-open it in the browser and remove
-			 * the record from Y.Doc. Preserves the tab's pinned state.
-			 */
-			async restore(savedTab: SavedTab) {
-				await browser.tabs.create({
-					url: savedTab.url,
-					pinned: savedTab.pinned,
-				});
-				workspaceClient.tables.savedTabs.delete(savedTab.id);
-			},
+		/**
+		 * Restore a saved tab — re-open it in the browser and remove
+		 * the record from Y.Doc. Preserves the tab's pinned state.
+		 */
+		async restore(savedTab: SavedTab) {
+			await browser.tabs.create({
+				url: savedTab.url,
+				pinned: savedTab.pinned,
+			});
+			workspaceClient.tables.savedTabs.delete(savedTab.id);
+		},
 
-			/**
-			 * Restore all saved tabs at once.
-			 *
-			 * Fires all `browser.tabs.create()` calls in parallel (no sequential
-			 * awaiting) and batch-deletes from Y.Doc in a single transaction.
-			 *
-			 * This avoids two problems with the naive sequential approach:
-			 * 1. **Popup teardown**: `browser.tabs.create()` shifts focus, which
-			 *    can cause Chrome to destroy the popup mid-loop — killing the
-			 *    async context and leaving remaining tabs un-restored.
-			 * 2. **Observer spam**: Each individual `delete()` fires the Y.Doc
-			 *    observer, triggering a full `readAll()`. Wrapping in `transact()`
-			 *    collapses N observer callbacks into one.
-			 */
-			async restoreAll() {
-				const all = tabsMap.values().toArray();
-				if (!all.length) return;
+		/**
+		 * Restore all saved tabs at once.
+		 *
+		 * Fires all `browser.tabs.create()` calls in parallel (no sequential
+		 * awaiting) and batch-deletes from Y.Doc in a single transaction.
+		 *
+		 * This avoids two problems with the naive sequential approach:
+		 * 1. **Popup teardown**: `browser.tabs.create()` shifts focus, which
+		 *    can cause Chrome to destroy the popup mid-loop — killing the
+		 *    async context and leaving remaining tabs un-restored.
+		 * 2. **Observer spam**: Each individual `delete()` fires the Y.Doc
+		 *    observer, triggering a full `readAll()`. Wrapping in `transact()`
+		 *    collapses N observer callbacks into one.
+		 */
+		async restoreAll() {
+			const all = tabsMap.values().toArray();
+			if (!all.length) return;
 
-				// Fire all tab creations without awaiting each one individually.
-				// browser.tabs.create() sends IPC to the browser process immediately —
-				// the tabs will be created even if the popup is torn down afterward.
-				const createPromises = all.map((tab) =>
-					browser.tabs.create({ url: tab.url, pinned: tab.pinned }),
-				);
+			// Fire all tab creations without awaiting each one individually.
+			// browser.tabs.create() sends IPC to the browser process immediately —
+			// the tabs will be created even if the popup is torn down afterward.
+			const createPromises = all.map((tab) =>
+				browser.tabs.create({ url: tab.url, pinned: tab.pinned }),
+			);
 
-				// Batch-delete from Y.Doc in a single transaction so the observer
-				// fires exactly once (not N times).
-				workspaceClient.batch(() => {
-					for (const tab of all) {
-						workspaceClient.tables.savedTabs.delete(tab.id);
-					}
-				});
+			// Batch-delete from Y.Doc in a single transaction so the observer
+			// fires exactly once (not N times).
+			workspaceClient.batch(() => {
+				for (const tab of all) {
+					workspaceClient.tables.savedTabs.delete(tab.id);
+				}
+			});
 
-				// Best-effort await — popup may die before this resolves, which is
-				// fine because the browser process is already creating the tabs.
-				await Promise.allSettled(createPromises);
-			},
+			// Best-effort await — popup may die before this resolves, which is
+			// fine because the browser process is already creating the tabs.
+			await Promise.allSettled(createPromises);
+		},
 
-			/** Delete a saved tab without restoring it. */
-			remove(id: SavedTabId) {
-				workspaceClient.tables.savedTabs.delete(id);
-			},
+		/** Delete a saved tab without restoring it. */
+		remove(id: SavedTabId) {
+			workspaceClient.tables.savedTabs.delete(id);
+		},
 
-			/**
-			 * Delete all saved tabs without restoring them.
-			 *
-			 * Wrapped in a Y.Doc transaction so the observer fires once
-			 * (not N times for N tabs).
-			 */
-			removeAll() {
-				const all = tabsMap.values().toArray();
-				if (!all.length) return;
+		/**
+		 * Delete all saved tabs without restoring them.
+		 *
+		 * Wrapped in a Y.Doc transaction so the observer fires once
+		 * (not N times for N tabs).
+		 */
+		removeAll() {
+			const all = tabsMap.values().toArray();
+			if (!all.length) return;
 
-				workspaceClient.batch(() => {
-					for (const tab of all) {
-						workspaceClient.tables.savedTabs.delete(tab.id);
-					}
-				});
-			},
+			workspaceClient.batch(() => {
+				for (const tab of all) {
+					workspaceClient.tables.savedTabs.delete(tab.id);
+				}
+			});
+		},
 
-			/** Update a saved tab's metadata in Y.Doc. */
-			update(savedTab: SavedTab) {
-				workspaceClient.tables.savedTabs.set(savedTab);
-			},
+		/** Update a saved tab's metadata in Y.Doc. */
+		update(savedTab: SavedTab) {
+			workspaceClient.tables.savedTabs.set(savedTab);
 		},
 	};
 }

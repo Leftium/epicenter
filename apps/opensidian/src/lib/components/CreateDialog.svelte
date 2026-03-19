@@ -25,7 +25,7 @@
 				Enter a name for the new {mode}.
 			</Dialog.Description>
 		</Dialog.Header>
-		<form onsubmit={async (e) => { e.preventDefault(); if (!name.trim()) return; const parentId = fsState.selectedNode?.type === 'folder' ? fsState.activeFileId : null; if (mode === 'file') { await fsState.actions.createFile(parentId, name.trim()); } else { await fsState.actions.createFolder(parentId, name.trim()); } name = ''; open = false; }}>
+		<form onsubmit={async (e) => { e.preventDefault(); if (!name.trim()) return; const parentId = fsState.selectedNode?.type === 'folder' ? fsState.activeFileId : null; if (mode === 'file') { await fsState.createFile(parentId, name.trim()); } else { await fsState.createFolder(parentId, name.trim()); } name = ''; open = false; }}>
 			<Field>
 				<FieldLabel>Name</FieldLabel>
 				<Input

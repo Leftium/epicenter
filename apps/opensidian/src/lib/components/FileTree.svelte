@@ -37,21 +37,21 @@
 			case 'ArrowDown': {
 				e.preventDefault();
 				if (currentIndex === -1) {
-					fsState.actions.focus(visibleIds[0] ?? null);
+					fsState.focus(visibleIds[0] ?? null);
 				} else {
 					const next =
 						visibleIds[Math.min(currentIndex + 1, visibleIds.length - 1)];
-					fsState.actions.focus(next ?? null);
+					fsState.focus(next ?? null);
 				}
 				break;
 			}
 			case 'ArrowUp': {
 				e.preventDefault();
 				if (currentIndex === -1) {
-					fsState.actions.focus(visibleIds[0] ?? null);
+					fsState.focus(visibleIds[0] ?? null);
 				} else {
 					const prev = visibleIds[Math.max(currentIndex - 1, 0)];
-					fsState.actions.focus(prev ?? null);
+					fsState.focus(prev ?? null);
 				}
 				break;
 			}
@@ -61,10 +61,10 @@
 				const row = fsState.getRow(current);
 				if (row?.type !== 'folder') break;
 				if (!fsState.expandedIds.has(current)) {
-					fsState.actions.toggleExpand(current);
+					fsState.toggleExpand(current);
 				} else {
 					const children = fsState.getChildIds(current);
-					if (children.length > 0) fsState.actions.focus(children[0]!);
+					if (children.length > 0) fsState.focus(children[0]!);
 				}
 				break;
 			}
@@ -73,9 +73,9 @@
 				if (!current) break;
 				const row = fsState.getRow(current);
 				if (row?.type === 'folder' && fsState.expandedIds.has(current)) {
-					fsState.actions.toggleExpand(current);
+					fsState.toggleExpand(current);
 				} else if (row?.parentId) {
-					fsState.actions.focus(row.parentId);
+					fsState.focus(row.parentId);
 				}
 				break;
 			}
@@ -85,20 +85,20 @@
 				if (!current) break;
 				const row = fsState.getRow(current);
 				if (row?.type === 'file') {
-					fsState.actions.selectFile(current);
+					fsState.selectFile(current);
 				} else if (row?.type === 'folder') {
-					fsState.actions.toggleExpand(current);
+					fsState.toggleExpand(current);
 				}
 				break;
 			}
 			case 'Home': {
 				e.preventDefault();
-				fsState.actions.focus(visibleIds[0] ?? null);
+				fsState.focus(visibleIds[0] ?? null);
 				break;
 			}
 			case 'End': {
 				e.preventDefault();
-				fsState.actions.focus(visibleIds.at(-1) ?? null);
+				fsState.focus(visibleIds.at(-1) ?? null);
 				break;
 			}
 			default:

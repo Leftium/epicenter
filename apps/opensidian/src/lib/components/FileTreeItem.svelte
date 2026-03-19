@@ -24,18 +24,18 @@
 	let deleteDialogOpen = $state(false);
 
 	function selectAndOpenCreate(mode: 'file' | 'folder') {
-		fsState.actions.selectFile(id);
+		fsState.selectFile(id);
 		createDialogMode = mode;
 		createDialogOpen = true;
 	}
 
 	function selectAndOpenRename() {
-		fsState.actions.selectFile(id);
+		fsState.selectFile(id);
 		renameDialogOpen = true;
 	}
 
 	function selectAndOpenDelete() {
-		fsState.actions.selectFile(id);
+		fsState.selectFile(id);
 		deleteDialogOpen = true;
 	}
 </script>
@@ -49,7 +49,7 @@
 						<TreeView.Folder
 							name={row.name}
 							open={isExpanded}
-							onOpenChange={() => fsState.actions.toggleExpand(id)}
+							onOpenChange={() => fsState.toggleExpand(id)}
 							class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 								? 'bg-accent text-accent-foreground'
 								: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
@@ -67,7 +67,7 @@
 						class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 							? 'bg-accent text-accent-foreground'
 							: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
-						onclick={() => fsState.actions.selectFile(id)}
+						onclick={() => fsState.selectFile(id)}
 						role="treeitem"
 					>
 						{#snippet icon()}

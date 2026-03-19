@@ -95,7 +95,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Restore All"
-								onclick={() => savedTabState.actions.restoreAll()}
+								onclick={() => savedTabState.restoreAll()}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -104,7 +104,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete All"
-								onclick={() => savedTabState.actions.removeAll()}
+								onclick={() => savedTabState.removeAll()}
 							>
 								<Trash2Icon />
 							</Button>
@@ -171,7 +171,7 @@
 								size="icon-xs"
 								tooltip="Restore"
 								onclick={() =>
-									savedTabState.actions.restore(tab)}
+									savedTabState.restore(tab)}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -181,7 +181,7 @@
 								class="text-destructive"
 								tooltip="Delete"
 								onclick={() =>
-									savedTabState.actions.remove(tab.id)}
+									savedTabState.remove(tab.id)}
 							>
 								<Trash2Icon />
 							</Button>
@@ -216,7 +216,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Open"
-								onclick={() => bookmarkState.actions.open(bookmark)}
+								onclick={() => bookmarkState.open(bookmark)}
 							>
 								<ExternalLinkIcon />
 							</Button>
@@ -225,7 +225,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-								onclick={() => bookmarkState.actions.remove(bookmark.id)}
+								onclick={() => bookmarkState.remove(bookmark.id)}
 							>
 								<Trash2Icon />
 							</Button>

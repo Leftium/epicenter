@@ -27,7 +27,7 @@
 			<Dialog.Title>Rename</Dialog.Title>
 			<Dialog.Description>Enter a new name.</Dialog.Description>
 		</Dialog.Header>
-		<form onsubmit={async (e) => { e.preventDefault(); if (!name.trim() || !fsState.activeFileId) return; await fsState.actions.rename(fsState.activeFileId, name.trim()); open = false; }}>
+		<form onsubmit={async (e) => { e.preventDefault(); if (!name.trim() || !fsState.activeFileId) return; await fsState.rename(fsState.activeFileId, name.trim()); open = false; }}>
 			<Field>
 				<FieldLabel>Name</FieldLabel>
 				<Input

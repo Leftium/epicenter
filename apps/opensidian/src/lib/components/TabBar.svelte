@@ -11,7 +11,7 @@
 {#if hasOpenFiles}
 	<Tabs.Root
 		value={fsState.activeFileId ?? ''}
-		onValueChange={(value) => fsState.actions.selectFile(value as FileId)}
+		onValueChange={(value) => fsState.selectFile(value as FileId)}
 		class="w-full"
 	>
 		<Tabs.List
@@ -23,13 +23,13 @@
 					<Tabs.Trigger
 						value={fileId}
 						class="relative flex-none rounded-none border-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-none"
-					onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); fsState.actions.closeFile(fileId); } }}
+					onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); fsState.closeFile(fileId); } }}
 					>
 						<span class="mr-4">{row.name}</span>
 						<button
 							type="button"
 							class="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm p-0.5 opacity-50 hover:opacity-100 hover:bg-accent"
-					onclick={(e) => { e.stopPropagation(); e.preventDefault(); fsState.actions.closeFile(fileId); }}
+					onclick={(e) => { e.stopPropagation(); e.preventDefault(); fsState.closeFile(fileId); }}
 							aria-label="Close {row.name}"
 						>
 							<X class="h-3 w-3" />

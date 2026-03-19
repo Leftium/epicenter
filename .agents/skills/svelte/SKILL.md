@@ -120,6 +120,44 @@ For component props expecting `T[]`, derive in the script block — never materi
 </script>
 <FujiSidebar entries={entriesArray} />
 ```
+
+# Reactive State Module Conventions
+
+State modules use a factory function that returns a flat object with getters and methods, exported as a singleton.
+
+```typescript
+function createBookmarkState() {
+	const bookmarksMap = fromTable(workspaceClient.tables.bookmarks);
+	const bookmarks = $derived(bookmarksMap.values().toArray());
+
+	return {
+		get bookmarks() { return bookmarks; },
+		async add(tab: Tab) { /* ... */ },
+		remove(id: BookmarkId) { /* ... */ },
+	};
+}
+
+export const bookmarkState = createBookmarkState();
+```
+
+## Naming
+
+| Concern | Convention | Example |
+|---|---|---|
+| **Export name** | `xState` for domain state; descriptive noun for utilities | `bookmarkState`, `notesState`, `deviceConfig`, `vadRecorder` |
+| **Factory function** | `createX()` matching the export name | `createBookmarkState()` |
+| **File name** | Domain name, optionally with `-state` suffix | `bookmark-state.svelte.ts`, `auth.svelte.ts` |
+
+Use the `State` suffix when the export name would collide with a key property (`bookmarkState.bookmarks`, not `bookmarks.bookmarks`).
+
+## Accessor Patterns
+
+| Data Shape | Accessor | Example |
+|---|---|---|
+| **Collection** | Named getter | `bookmarkState.bookmarks`, `notesState.notes` |
+| **Single reactive value** | `.current` (Svelte 5 convention) | `selectedFolderId.current`, `serverUrl.current` |
+| **Keyed lookup** | `.get(key)` | `toolTrustState.get(name)`, `deviceConfig.get(key)` |
+
 # Mutation Pattern Preference
 
 ## In Svelte Files (.svelte)

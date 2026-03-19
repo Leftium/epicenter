@@ -26,28 +26,6 @@
 	let isSubmitting = $state(false);
 	let submitted = $state(false);
 
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
-		isSubmitting = true;
-
-		try {
-			const formData = new FormData();
-			formData.append('email', email);
-			interests.forEach((interest) => formData.append('interests', interest));
-			if (otherInterest) {
-				formData.append('otherInterest', otherInterest);
-			}
-
-			// TODO: Implement form submission
-			// Simulating submission for now
-			await new Promise((resolve) => setTimeout(resolve, 1000));
-			submitted = true;
-		} catch (error) {
-			console.error('Error submitting form:', error);
-		} finally {
-			isSubmitting = false;
-		}
-	}
 
 	function toggleInterest(
 		optionId: string,
@@ -71,7 +49,28 @@
 		</p>
 	</div>
 {:else}
-	<form onsubmit={handleSubmit} class={cn('space-y-6', className)}>
+	<form onsubmit={async (e) => {
+		e.preventDefault();
+		isSubmitting = true;
+
+		try {
+			const formData = new FormData();
+			formData.append('email', email);
+			interests.forEach((interest) => formData.append('interests', interest));
+			if (otherInterest) {
+				formData.append('otherInterest', otherInterest);
+			}
+
+			// TODO: Implement form submission
+			// Simulating submission for now
+			await new Promise((resolve) => setTimeout(resolve, 1000));
+			submitted = true;
+		} catch (error) {
+			console.error('Error submitting form:', error);
+		} finally {
+			isSubmitting = false;
+		}
+	}} class={cn('space-y-6', className)}
 		<div>
 			<Label for="email">Email</Label>
 			<Input

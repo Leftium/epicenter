@@ -81,7 +81,7 @@
 
 	// ─── Actions ─────────────────────────────────────────────────────────────────
 
-	function createEntry() {
+function createEntry() {
 		const id = generateId() as unknown as EntryId;
 		workspaceClient.tables.entries.set({
 			id,
@@ -101,23 +101,6 @@
 
 	// ─── Keyboard Shortcuts ───────────────────────────────────────────────────────
 
-	function handleKeydown(event: KeyboardEvent) {
-		const isInputFocused =
-			event.target instanceof HTMLInputElement ||
-			event.target instanceof HTMLTextAreaElement ||
-			(event.target instanceof HTMLElement && event.target.isContentEditable);
-
-		if (event.key === 'n' && event.metaKey) {
-			event.preventDefault();
-			createEntry();
-			return;
-		}
-
-		if (event.key === 'Escape' && !isInputFocused && selectedEntryId) {
-			event.preventDefault();
-			workspaceClient.kv.set('selectedEntryId', null);
-		}
-	}
 
 	// ─── Document Handle (Y.Text) ────────────────────────────────────────────────
 
@@ -147,7 +130,32 @@
 	});
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={(event) => {
+	const isInputFocused =
+		event.target instanceof HTMLInputElement ||
+		event.target instanceof HTMLTextAreaElement ||
+		(event.target instanceof HTMLElement && event.target.isContentEditable);
+
+	if (event.key === 'n' && event.metaKey) {
+		event.preventDefault();
+		const id = generateId() as unknown as EntryId;
+		workspaceClient.tables.entries.set({
+			id,
+			title: '',
+			preview: '',
+			createdAt: dateTimeStringNow(),
+			updatedAt: dateTimeStringNow(),
+			_v: 2,
+		});
+		workspaceClient.kv.set('selectedEntryId', id);
+		return;
+	}
+
+	if (event.key === 'Escape' && !isInputFocused && selectedEntryId) {
+		event.preventDefault();
+		workspaceClient.kv.set('selectedEntryId', null);
+	}
+}} />
 
 <SidebarProvider>
 	<FujiSidebar

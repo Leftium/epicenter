@@ -15,30 +15,9 @@
 
 	const title = $derived(mode === 'file' ? 'New File' : 'New Folder');
 
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
-		if (!name.trim()) return;
-
-		const parentId =
-			fsState.selectedNode?.type === 'folder' ? fsState.activeFileId : null;
-
-		if (mode === 'file') {
-			await fsState.actions.createFile(parentId, name.trim());
-		} else {
-			await fsState.actions.createFolder(parentId, name.trim());
-		}
-
-		name = '';
-		open = false;
-	}
-
-	function handleOpenChange(isOpen: boolean) {
-		open = isOpen;
-		if (!isOpen) name = '';
-	}
 </script>
 
-<Dialog.Root {open} onOpenChange={handleOpenChange}>
+<Dialog.Root {open} onOpenChange={(isOpen) => { open = isOpen; if (!isOpen) name = ''; }}>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>{title}</Dialog.Title>
@@ -46,7 +25,7 @@
 				Enter a name for the new {mode}.
 			</Dialog.Description>
 		</Dialog.Header>
-		<form onsubmit={handleSubmit}>
+		<form onsubmit={async (e) => { e.preventDefault(); if (!name.trim()) return; const parentId = fsState.selectedNode?.type === 'folder' ? fsState.activeFileId : null; if (mode === 'file') { await fsState.actions.createFile(parentId, name.trim()); } else { await fsState.actions.createFolder(parentId, name.trim()); } name = ''; open = false; }}>
 			<Field>
 				<FieldLabel>Name</FieldLabel>
 				<Input

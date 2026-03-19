@@ -19,27 +19,15 @@
 		}
 	});
 
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
-		if (!name.trim() || !fsState.activeFileId) return;
-
-		await fsState.actions.rename(fsState.activeFileId, name.trim());
-		open = false;
-	}
-
-	function handleOpenChange(isOpen: boolean) {
-		open = isOpen;
-		if (!isOpen) name = '';
-	}
 </script>
 
-<Dialog.Root {open} onOpenChange={handleOpenChange}>
+<Dialog.Root {open} onOpenChange={(isOpen) => { open = isOpen; if (!isOpen) name = ''; }}>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>Rename</Dialog.Title>
 			<Dialog.Description>Enter a new name.</Dialog.Description>
 		</Dialog.Header>
-		<form onsubmit={handleSubmit}>
+		<form onsubmit={async (e) => { e.preventDefault(); if (!name.trim() || !fsState.activeFileId) return; await fsState.actions.rename(fsState.activeFileId, name.trim()); open = false; }}>
 			<Field>
 				<FieldLabel>Name</FieldLabel>
 				<Input

@@ -12,11 +12,6 @@
 	const nodeName = $derived(fsState.selectedNode?.name ?? 'this item');
 	const nodeType = $derived(fsState.selectedNode?.type ?? 'file');
 
-	async function handleDelete() {
-		if (!fsState.activeFileId) return;
-		await fsState.actions.deleteFile(fsState.activeFileId);
-		open = false;
-	}
 </script>
 
 <AlertDialog.Root bind:open>
@@ -34,7 +29,7 @@
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-			<Button variant="destructive" onclick={handleDelete}>Delete</Button>
+			<Button variant="destructive" onclick={async () => { if (!fsState.activeFileId) return; await fsState.actions.deleteFile(fsState.activeFileId); open = false; }}>Delete</Button>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>

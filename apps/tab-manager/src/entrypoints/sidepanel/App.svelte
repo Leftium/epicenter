@@ -39,26 +39,9 @@
 		};
 	});
 
-	let searchInputRef = $state<HTMLInputElement | null>(null);
+let searchInputRef = $state<HTMLInputElement | null>(null);
 	let commandPaletteOpen = $state(false);
 	let aiDrawerOpen = $state(false);
-	function handleSearchKeydown(e: KeyboardEvent) {
-		// "/" in empty input opens command palette
-		if (e.key === '/' && unifiedViewState.searchQuery === '') {
-			e.preventDefault();
-			commandPaletteOpen = true;
-		}
-		// "@" in empty input opens AI drawer (Phase 4)
-		if (e.key === '@' && unifiedViewState.searchQuery === '') {
-			e.preventDefault();
-			aiDrawerOpen = true;
-		}
-		// Escape clears search
-		if (e.key === 'Escape') {
-			unifiedViewState.searchQuery = '';
-			searchInputRef?.blur();
-		}
-	}
 </script>
 
 <Tooltip.Provider>
@@ -78,7 +61,23 @@
 						type="search"
 						placeholder="Search tabs..."
 						bind:value={unifiedViewState.searchQuery}
-						onkeydown={handleSearchKeydown}
+						onkeydown={(e) => {
+					// "/" in empty input opens command palette
+					if (e.key === '/' && unifiedViewState.searchQuery === '') {
+						e.preventDefault();
+						commandPaletteOpen = true;
+					}
+					// "@" in empty input opens AI drawer (Phase 4)
+					if (e.key === '@' && unifiedViewState.searchQuery === '') {
+						e.preventDefault();
+						aiDrawerOpen = true;
+					}
+					// Escape clears search
+					if (e.key === 'Escape') {
+						unifiedViewState.searchQuery = '';
+						searchInputRef?.blur();
+					}
+				}}
 						class="h-8 pl-8 pr-8 text-sm [&::-webkit-search-cancel-button]:hidden"
 					/>
 					{#if unifiedViewState.searchQuery}

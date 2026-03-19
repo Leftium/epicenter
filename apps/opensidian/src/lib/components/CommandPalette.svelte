@@ -77,21 +77,9 @@
 		return [...startsWith, ...includes].slice(0, 50);
 	});
 
-	// ── Handlers ─────────────────────────────────────────────────────
-	function handleSelect(id: FileId) {
-		fsState.actions.selectFile(id);
-		open = false;
-	}
-
-	function handleKeydown(e: KeyboardEvent) {
-		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-			e.preventDefault();
-			open = !open;
-		}
-	}
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); open = !open; } }} />
 
 <Command.Dialog
 	bind:open
@@ -104,7 +92,7 @@
 		<Command.Empty>No files found.</Command.Empty>
 		<Command.Group heading="Files">
 			{#each filteredFiles as file (file.id)}
-				<Command.Item value={file.id} onSelect={() => handleSelect(file.id)}>
+				<Command.Item value={file.id} onSelect={() => { fsState.actions.selectFile(file.id); open = false; }}>
 					{@const Icon = getFileIcon(file.name)}
 					<Icon class="h-4 w-4 shrink-0 text-muted-foreground" />
 					<span>{file.name}</span>

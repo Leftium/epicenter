@@ -26,7 +26,10 @@
 		return ids;
 	});
 
-	function handleKeydown(e: KeyboardEvent) {
+	/**
+	 * Navigate the file tree with keyboard shortcuts. Handles arrow keys for movement, Enter/Space for selection, and Home/End for jumping to boundaries. Operates on the visible (expansion-aware) ID list.
+	 */
+	function navigateFileTree(e: KeyboardEvent) {
 		const current = fsState.focusedId;
 		const currentIndex = current ? visibleIds.indexOf(current) : -1;
 
@@ -115,7 +118,7 @@
 	</Empty.Root>
 {:else}
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-	<TreeView.Root tabindex={0} onkeydown={handleKeydown}>
+	<TreeView.Root tabindex={0} onkeydown={navigateFileTree}>
 		{#each fsState.rootChildIds as childId (childId)}
 			<FileTreeItem id={childId} />
 		{/each}

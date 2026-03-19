@@ -980,6 +980,10 @@ export type WorkspaceClientWithActions<
 /**
  * Configuration for `.withEncryption()`.
  *
+ * The encryption model uses a two-stage key hierarchy:
+ * 1. **User key** (your input) — a 32-byte root key from any source (server HKDF, PBKDF2 password, cache)
+ * 2. **Workspace key** (derived internally) — `HKDF(userKey, "workspace:{id}")` ensures per-workspace isolation
+ *
  * Symmetric hooks for the two encryption transitions:
  * - `onActivate` — fires after HKDF derivation succeeds and stores are activated
  * - `onDeactivate` — fires after stores are cleared and IndexedDB is wiped
@@ -1051,15 +1055,51 @@ export type EncryptionMethods = {
 	/** Whether encryption is currently active (a key has been derived and applied). */
 	readonly isEncrypted: boolean;
 	/**
-	 * Activate encryption with a user-level key.
+	 * Activate encryption with a root user key.
 	 *
-	 * Pipeline: dedup (same bytes → skip) → HKDF derivation → race check → apply to stores → onActivate hook.
+	 * This accepts a **root/user-level key**, not a final workspace content key.
+	 * The workspace internally derives a per-workspace key via HKDF-SHA256:
+	 *
+	 * ```
+	 * userKey (your input)
+	 *   \u2192 HKDF(userKey, "workspace:{id}") \u2192 workspaceKey (used for encryption)
+	 *   \u2192 XChaCha20-Poly1305(plaintext, workspaceKey) \u2192 ciphertext
+	 * ```
+	 *
+	 * This two-stage model is intentional:
+	 * - The same user key produces **independent** per-workspace keys
+	 * - Compromising one workspace key reveals nothing about other workspaces
+	 * - HKDF is deterministic and storage-free\u2014no key database needed
+	 *
+	 * The user key can come from any source\u2014the workspace doesn't care:
+	 * - **Cloud**: `base64ToBytes(session.encryptionKey)` (server-derived via HKDF)
+	 * - **Self-hosted**: `deriveKeyFromPassword(password, salt)` (PBKDF2, 600k iterations)
+	 * - **Cache restore**: `base64ToBytes(await keyCache.load())` (previously cached key)
+	 *
+	 * Pipeline: dedup (same bytes \u2192 skip) \u2192 HKDF derivation \u2192 race check \u2192 apply to stores \u2192 onActivate hook.
 	 *
 	 * The derivation is async (HKDF via `crypto.subtle`). A generation counter protects
 	 * against races: if the user signs out mid-derivation, the stale result is discarded
 	 * when it resolves because `deactivateEncryption` bumped the counter.
 	 *
-	 * @param userKey - Raw user key bytes (from `base64ToBytes(session.encryptionKey)`)
+	 * @param userKey - Raw user key bytes (32-byte Uint8Array). NOT a workspace-specific key\u2014
+	 *   the workspace derives that internally. Pass `base64ToBytes(session.encryptionKey)` for
+	 *   cloud mode or `deriveKeyFromPassword(password, salt)` for password mode.
+	 *
+	 * @example
+	 * ```typescript
+	 * // Cloud: server-derived key from session
+	 * await workspace.activateEncryption(base64ToBytes(session.encryptionKey));
+	 *
+	 * // Self-hosted: password-derived key (PBKDF2 \u2192 user key \u2192 internal HKDF \u2192 workspace key)
+	 * const salt = await deriveSalt(userId, workspaceId);
+	 * const userKey = await deriveKeyFromPassword(password, salt);
+	 * await workspace.activateEncryption(userKey);
+	 *
+	 * // Cache restore: previously cached user key
+	 * const cached = await keyCache.load();
+	 * if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+	 * ```
 	 */
 	activateEncryption(userKey: Uint8Array): Promise<void>;
 	/**

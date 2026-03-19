@@ -276,18 +276,34 @@ function isEncryptedBlob(value: unknown): value is EncryptedBlob {
  * Derive a 256-bit encryption key from a password using PBKDF2.
  *
  * Uses 600,000 iterations of PBKDF2-SHA256 to derive a key from a password
- * and salt. This is suitable for user-provided passwords and provides
- * resistance against brute-force attacks.
+ * and salt. This is the first stage of the self-hosted encryption flow:
+ *
+ * ```
+ * Password (user input, low entropy)
+ *   → PBKDF2(password, salt, 600k iterations) → userKey (32 bytes, high entropy)
+ *   → workspace.activateEncryption(userKey)
+ *     → HKDF(userKey, "workspace:{id}") → workspaceKey (per-workspace isolation)
+ *       → XChaCha20-Poly1305(plaintext, workspaceKey) → ciphertext
+ * ```
+ *
+ * **Why two stages?** PBKDF2 and HKDF serve different roles:
+ * - **PBKDF2** strengthens weak human input (slow, 600k iterations, brute-force resistant)
+ * - **HKDF** splits one strong key into independent per-workspace keys (fast, <1ms, deterministic)
+ *
+ * PBKDF2 runs once per session (~500ms). HKDF runs once per workspace (<1ms each).
+ * Without HKDF, all workspaces would share the same key—compromising one would
+ * compromise all. Without PBKDF2, the password would be trivially brute-forceable.
  *
  * @param password - The user's password
- * @param salt - A 16-byte Uint8Array salt (typically derived from userId + workspaceId)
- * @returns A promise that resolves to a 32-byte Uint8Array encryption key
+ * @param salt - A 16-byte Uint8Array salt (typically from `deriveSalt(userId, workspaceId)`)
+ * @returns A promise that resolves to a 32-byte Uint8Array user key
  *
  * @example
  * ```typescript
- * const salt = await deriveSalt('user123', 'workspace456');
- * const key = await deriveKeyFromPassword('myPassword', salt);
- * const encrypted = encryptValue('data', key);
+ * // Self-hosted password flow:
+ * const salt = await deriveSalt(userId, workspaceId);
+ * const userKey = await deriveKeyFromPassword(password, salt);
+ * await workspace.activateEncryption(userKey); // internally derives per-workspace key via HKDF
  * ```
  */
 async function deriveKeyFromPassword(
@@ -349,11 +365,18 @@ async function deriveSalt(
 /**
  * Derive a per-workspace 256-bit encryption key from a user key via HKDF-SHA256.
  *
- * Second level of a two-level HKDF hierarchy:
- * 1. Server: `HKDF(SHA-256(secret), "user:{userId}")` → per-user key (in session)
- * 2. Client: `HKDF(userKey, "workspace:{workspaceId}")` → per-workspace key (this function)
+ * This is the second level of a two-level key hierarchy:
+ * 1. **User key** (input)—from any source (server HKDF, PBKDF2 password, cache)
+ * 2. **Workspace key** (output)—`HKDF(userKey, "workspace:{workspaceId}")`
  *
- * Deterministic — same inputs always produce the same key. No storage needed.
+ * The separation ensures each workspace gets an independent key even from the same
+ * user key. Compromising one workspace key reveals nothing about other workspaces.
+ *
+ * **Batteries-included in `.withEncryption()`**: You typically don't call this directly.
+ * `workspace.activateEncryption(userKey)` calls it internally. This function is exported
+ * for testing and for consumers that need manual key derivation outside the workspace builder.
+ *
+ * Deterministic—same inputs always produce the same key. No storage needed.
  * Uses Web Crypto `deriveBits` which is available in browser, Cloudflare Workers,
  * and Tauri WebView.
  *
@@ -363,15 +386,19 @@ async function deriveSalt(
  * the info string. Vault Transit, Signal Protocol, libsodium, and AWS KMS
  * all use unversioned derivation context strings.
  *
- * @param userKey - A 32-byte Uint8Array user key from the session's encryptionKey
+ * @param userKey - A 32-byte Uint8Array user key (root key, NOT a workspace-specific key)
  * @param workspaceId - The workspace identifier (e.g. "tab-manager")
  * @returns A promise that resolves to a 32-byte Uint8Array per-workspace encryption key
  *
  * @example
  * ```typescript
+ * // Typically called internally by workspace.activateEncryption(userKey):
+ * //   const wsKey = await deriveWorkspaceKey(userKey, workspaceId);
+ * //   store.activateEncryption(wsKey);
+ *
+ * // Direct usage (testing or manual key management):
  * const userKey = base64ToBytes(session.encryptionKey);
  * const wsKey = await deriveWorkspaceKey(userKey, 'tab-manager');
- * workspace.activateEncryption(wsKey);
  * ```
  */
 async function deriveWorkspaceKey(

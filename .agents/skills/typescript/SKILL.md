@@ -82,6 +82,44 @@ description: TypeScript code style, type co-location, naming conventions (includ
   ```
 - **Prefer factory functions over classes**: Use `function createX() { return { ... } }` instead of `class X { ... }`. Closures provide structural privacy—everything above the return statement is private by position, everything inside it is the public API. Classes mix `private`/`protected`/public members in arbitrary order, forcing you to scan every member and check its modifier. See `docs/articles/closures-are-better-privacy-than-keywords.md` for rationale.
 
+## Boolean Naming: `is`/`has`/`can` Prefix
+
+Boolean properties, variables, and parameters MUST use a predicate prefix that reads as a yes/no question:
+
+- `is` — state or identity: `isEncrypted`, `isLoading`, `isVisible`, `isActive`
+- `has` — possession or presence: `hasToken`, `hasChildren`, `hasError`
+- `can` — capability or permission: `canWrite`, `canDelete`, `canUndo`
+
+```typescript
+// Good — reads as a question
+type Config = {
+	isEncrypted: boolean;
+	isReadOnly: boolean;
+	hasCustomTheme: boolean;
+	canExport: boolean;
+};
+
+get isEncrypted() { return currentKey !== undefined; }
+const isVisible = element.offsetParent !== null;
+if (hasToken) { ... }
+
+// Bad — ambiguous, doesn't read as yes/no
+type Config = {
+	encrypted: boolean;    // adjective without 'is'
+	readOnly: boolean;     // could be a noun
+	state: boolean;        // what state?
+	mode: boolean;         // what mode?
+};
+```
+
+This applies to:
+- Object/type properties (`isActive: boolean`)
+- Getter methods (`get isEncrypted()`)
+- Local variables (`const isValid = ...`)
+- Function parameters (`function toggle(isEnabled: boolean)`)
+- Function return values when the function is a predicate (`function isExpired(): boolean`)
+
+Exception: Match upstream library types exactly (e.g., `tab.pinned`, `window.focused` from APIs where the type is externally defined).
 
 ## Switch Over If/Else for Value Comparison
 

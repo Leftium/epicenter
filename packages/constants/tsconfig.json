@@ -1,11 +1,8 @@
 {
 	"extends": ["../../tsconfig.base.lib.json"],
 	"compilerOptions": {
-		"allowJs": true,
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
-		"outDir": "dist",
-		"composite": true
 	},
 	"include": ["src/**/*"],
 	"exclude": ["node_modules", "dist"]

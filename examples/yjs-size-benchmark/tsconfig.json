@@ -2,7 +2,6 @@
 	"extends": "../../tsconfig.base.dom.json",
 	"compilerOptions": {
 		"useDefineForClassFields": true,
-		"allowImportingTsExtensions": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true
 	},

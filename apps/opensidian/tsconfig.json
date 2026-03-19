@@ -1,7 +1,6 @@
 {
 	"extends": ["../../tsconfig.base.dom.json", "./.svelte-kit/tsconfig.json"],
 	"compilerOptions": {
-		"allowJs": true,
 		"checkJs": true,
 		"types": ["bun-types"]
 	}

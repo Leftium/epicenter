@@ -2,8 +2,6 @@
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
 		"module": "Preserve",
-		"allowJs": true,
-		"allowImportingTsExtensions": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noPropertyAccessFromIndexSignature": false

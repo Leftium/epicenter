@@ -10,6 +10,10 @@
 		"moduleResolution": "bundler",
 		"resolvePackageJsonExports": true,
 		"resolveJsonModule": true,
+		"allowImportingTsExtensions": true,
+
+		// JavaScript Support
+		"allowJs": true,
 
 		// Emit
 		"noEmit": true,

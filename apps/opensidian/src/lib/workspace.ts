@@ -14,7 +14,7 @@ import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
  * fs-state.svelte.ts (for reactive wrappers) and components
  * that need direct infra access (Toolbar, ContentEditor).
  */
-const ws = createWorkspace({
+export const ws = createWorkspace({
 	id: 'opensidian',
 	tables: { files: filesTable },
 })
@@ -26,18 +26,3 @@ export const fs = createYjsFileSystem(
 	ws.tables.files,
 	ws.documents.files.content,
 );
-
-/** Per-file content document manager for opening/reading/writing file content. */
-export const documents = ws.documents.files.content;
-
-/**
- * Files table helper (`TableHelper<FileRow>`).
- *
- * Used for `.get()`, `.observe()`, and `.getAllValid()` on file rows.
- * Named `filesDb` to avoid collision with the `fs` filesystem export.
- */
-export const filesDb = ws.tables.files;
-
-/** SQLite full-text search index for file content. */
-export const sqliteIndex = ws.extensions.sqliteIndex;
-

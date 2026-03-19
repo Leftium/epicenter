@@ -123,9 +123,11 @@ For component props expecting `T[]`, derive in the script block — never materi
 
 ### Why `$derived`, Not a Plain Getter
 
-A getter that reads from a `SvelteMap` is also reactive—Svelte tracks the `SvelteMap` read. But a getter recomputes on every access, while `$derived` computes once and caches until dependencies change. Multiple reads in the same render cycle (template, count badge, child component) hit the cache instead of re-sorting.
+Put reactive computations in `$derived`, not inside public getters.
 
-Always put the computation in `$derived`. The getter is a pass-through, not a computation site.
+A getter may still be reactive if it reads reactive state, but it recomputes on every access. `$derived` computes reactively and caches until dependencies change.
+
+Use `$derived` for the computation. Use the getter only as a pass-through to expose that derived value.
 
 See `docs/articles/derived-vs-getter-caching-matters.md` for rationale.
 

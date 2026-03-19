@@ -74,21 +74,18 @@ Reserve `$derived.by()` for multi-statement logic where you genuinely need a fun
 
 See `docs/articles/record-lookup-over-nested-ternaries.md` for rationale.
 
-# SvelteMap to Array: Always Cache with `$derived`
+# Reactive Table State Pattern
 
-When exposing `SvelteMap` contents as arrays (from `fromTable`, `fromKv`, or raw `SvelteMap`), always wrap the conversion in `$derived`. Never spread inside a plain getter—it re-creates the array on every access, even if the map hasn't changed.
-
-`$derived` caches the result and only recomputes when the map actually changes (pull-based reactivity).
+When a factory function exposes workspace table data via `fromTable`, follow this three-layer convention:
 
 ```typescript
-// Bad: creates a new array on EVERY getter access
-get folders() {
-	return [...foldersMap.values()];
-}
+// 1. Map — reactive source (private, suffixed with Map)
+const foldersMap = fromTable(workspaceClient.tables.folders);
 
-// Good: cached — only recomputes when foldersMap changes
+// 2. Derived array — cached materialization (private, no suffix)
 const folders = $derived(foldersMap.values().toArray());
-// ...
+
+// 3. Getter — public API (matches the derived name)
 return {
 	get folders() {
 		return folders;
@@ -96,56 +93,26 @@ return {
 };
 ```
 
-## Use Iterator Helpers, Not Spread
+Naming: `{name}Map` (private source) → `{name}` (cached derived) → `get {name}()` (public getter).
 
-TypeScript 5.9+ with `lib: ["ESNext"]` includes **TC39 Iterator Helpers** (Stage 4, shipped in all modern runtimes). `MapIterator` extends `IteratorObject`, which has `.filter()`, `.map()`, `.find()`, `.toArray()`, `.some()`, `.every()`, `.reduce()`, `.take()`, `.drop()`, `.flatMap()`, and `.forEach()` built in.
+### With Sort or Filter
 
-**Always prefer `.toArray()` over `[...spread]`** for materializing iterators. Use `.filter()` and `.find()` directly on the iterator when possible—they're lazy and avoid intermediate array allocations.
-
-```typescript
-// Bad: spread to materialize
-const all = [...map.values()];
-const active = [...map.values()].filter((n) => !n.deleted);
-
-// Good: iterator helpers
-const all = map.values().toArray();
-const active = map.values().filter((n) => !n.deleted).toArray();
-```
-
-**`.sort()` is the exception**—it requires random access and is not on `IteratorObject`. Materialize first:
-
-```typescript
-// sort needs an array, so toArray() first
-const sorted = $derived(map.values().toArray().sort((a, b) => b.date - a.date));
-```
-
-With chained operations (filter, sort), the entire pipeline is cached via `$derived`:
+Chain operations inside `$derived` — the entire pipeline is cached:
 
 ```typescript
 const tabs = $derived(tabsMap.values().toArray().sort((a, b) => b.savedAt - a.savedAt));
-const activeNotes = $derived(allNotes.filter((n) => n.deletedAt === undefined));
+const notes = $derived(allNotes.filter((n) => n.deletedAt === undefined));
 ```
 
-## When `.values()` Alone Suffices
+See the `typescript` skill for iterator helpers (`.toArray()`, `.filter()`, `.find()` on `IteratorObject`).
 
-`map.values()` returns a `MapIterator`—an `IteratorObject` with `.filter()`, `.find()`, `.toArray()` etc. No materialization needed for:
+### Template Props
 
-| Need | Pattern |
-|---|---|
-| Just iterating in `{#each}` | `{#each map.values() as item}` or `{#each map as [id, item] (id)}` |
-| Finding a single item | `map.values().find(v => v.id === id)` |
-| Checking existence | `map.values().some(v => v.active)` |
-| Chaining filter + toArray | `map.values().filter(fn).toArray()` |
-| Sorting (needs array) | `map.values().toArray().sort(fn)` |
-| One-time snapshot in action | `map.values().toArray()` |
-
-## Template Props
-
-For component props expecting `T[]`, derive once in the script block—never materialize in the template:
+For component props expecting `T[]`, derive in the script block — never materialize in the template:
 
 ```svelte
 <!-- Bad: re-creates array on every render -->
-<FujiSidebar entries={[...entries.values()]} />
+<FujiSidebar entries={entries.values().toArray()} />
 
 <!-- Good: cached via $derived -->
 <script>

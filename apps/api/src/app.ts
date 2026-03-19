@@ -1,3 +1,4 @@
+import { env } from 'cloudflare:workers';
 import {
 	oauthProvider,
 	oauthProviderAuthServerMetadata,
@@ -98,40 +99,57 @@ export const BASE_AUTH_CONFIG = {
 };
 
 /**
- * Parse the ENCRYPTION_SECRETS env var into a sorted keyring.
+ * A single versioned encryption secret parsed from the ENCRYPTION_SECRETS env var.
+ * `version` is a positive integer identifying the key generation; `secret` is the
+ * raw key material (typically base64-encoded, generated via `openssl rand -base64 32`).
+ */
+const EncryptionEntry = type({ version: 'number.integer > 0', secret: 'string' });
+
+/**
+ * Parse and validate the ENCRYPTION_SECRETS env var into a sorted keyring.
  *
- * Format: "2:base64Secret2,1:base64Secret1" (comma-separated, version-prefixed).
- * First entry after sorting = current version for new encryptions.
+ * Input format: `"2:base64Secret2,1:base64Secret1"` (comma-separated, version-prefixed).
+ * Output: a non-empty array of `{ version, secret }` sorted by version descending
+ * (highest version first—the current key for new encryptions).
+ *
+ * The `.pipe()` step splits and parses the raw string; `.to()` validates each entry
+ * against `EncryptionEntry` and guarantees at least one element via the tuple type.
+ * `.assert()` throws at module load time if the env var is missing or malformed—
+ * the worker won’t serve requests until the config is fixed.
  *
  * @example
  * ```
- * parseEncryptionSecrets("1:mySecret")
- * // → [{ version: 1, secret: "mySecret" }]
- *
- * parseEncryptionSecrets("2:newSecret,1:oldSecret")
- * // → [{ version: 2, secret: "newSecret" }, { version: 1, secret: "oldSecret" }]
+ * // ENCRYPTION_SECRETS="2:newSecret,1:oldSecret"
+ * keyring[0] // { version: 2, secret: "newSecret" }  (current key)
+ * keyring[1] // { version: 1, secret: "oldSecret" }  (for decrypting old blobs)
  * ```
  */
-function parseEncryptionSecrets(
-	envValue: string,
-): Array<{ version: number; secret: string }> {
-	const entries = envValue.split(',').map((entry) => {
-		const colonIndex = entry.indexOf(':');
-		if (colonIndex === -1) {
-			throw new Error(
-				`Invalid ENCRYPTION_SECRETS format: each entry must be "version:secret" (got "${entry}")`,
-			);
-		}
-		const version = Number(entry.slice(0, colonIndex));
-		if (!Number.isInteger(version) || version < 1) {
-			throw new Error(
-				`Invalid ENCRYPTION_SECRETS version: must be a positive integer (got "${entry.slice(0, colonIndex)}")`,
-			);
-		}
-		return { version, secret: entry.slice(colonIndex + 1) };
-	});
-	return entries.sort((a, b) => b.version - a.version);
-}
+const EncryptionKeyring = type('string')
+	.pipe((s) =>
+		s
+			.split(',')
+			.map((entry) => {
+				const i = entry.indexOf(':');
+				if (i === -1) {
+					throw new Error(
+						`Invalid ENCRYPTION_SECRETS entry: each must be "version:secret" (got "${entry}")`,
+					);
+				}
+				return { version: Number(entry.slice(0, i)), secret: entry.slice(i + 1) };
+			})
+			.sort((a, b) => b.version - a.version),
+	)
+	.to([EncryptionEntry, '...', EncryptionEntry.array()]);
+
+/**
+ * Module-scope keyring—parsed once when the worker loads.
+ *
+ * `cloudflare:workers` exposes `env` at module scope. Parsing here means a
+ * malformed ENCRYPTION_SECRETS prevents the worker from loading at all (no
+ * requests served) rather than failing on the first auth check.
+ */
+const keyring = EncryptionKeyring.assert(env.ENCRYPTION_SECRETS);
+const currentKey = keyring[0];
 
 /**
  * Derive a per-user 32-byte encryption key via two-step HKDF-SHA256.
@@ -177,15 +195,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /** Creates a Better Auth instance using an already-connected Drizzle instance. */
-function createAuth(db: Db, env: Env['Bindings']) {
-	const keyring = parseEncryptionSecrets(env.ENCRYPTION_SECRETS);
-	const current = keyring[0];
-	if (!current) {
-		throw new Error(
-			'ENCRYPTION_SECRETS is empty\u2014at least one entry is required',
-		);
-	}
-
+function createAuth(db: Db) {
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg' }),
@@ -201,12 +211,12 @@ function createAuth(db: Db, env: Env['Bindings']) {
 			bearer(),
 			jwt(),
 			customSession(async ({ user, session }) => {
-				const encryptionKey = await deriveUserKey(current.secret, user.id);
+				const encryptionKey = await deriveUserKey(currentKey.secret, user.id);
 				return {
 					user,
 					session,
 					encryptionKey: bytesToBase64(encryptionKey),
-					keyVersion: current.version,
+					keyVersion: currentKey.version,
 				};
 			}),
 			oauthProvider({
@@ -329,7 +339,7 @@ const factory = createFactory<Env>({
 
 		// Layer 2: Auth — pure, reads db from context.
 		app.use('*', async (c, next) => {
-			c.set('auth', createAuth(c.var.db, c.env));
+			c.set('auth', createAuth(c.var.db));
 			await next();
 		});
 	},

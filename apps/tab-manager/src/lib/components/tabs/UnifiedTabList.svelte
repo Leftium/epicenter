@@ -50,9 +50,9 @@
 				case 'section-header':
 					return `section-${item.section}`;
 				case 'window-header':
-					return `window-${item.window.id}`;
+					return `window-${item.window.windowId}`;
 				case 'tab':
-					return `tab-${item.tab.id}`;
+					return `tab-${item.tab.tabId}`;
 				case 'saved-tab':
 					return `saved-${item.savedTab.id}`;
 				case 'bookmark':
@@ -112,17 +112,17 @@
 					{/if}
 				</div>
 			{:else if item.kind === 'window-header'}
-				{@const windowTabs = browserState.tabsByWindow(item.window.id)}
+				{@const windowTabs = browserState.tabsByWindow(item.window.windowId)}
 				{@const activeTab = windowTabs.find((t) => t.active)}
 				{@const firstTab = windowTabs.at(0)}
 				{@const isExpanded =
 					unifiedViewState.isFiltering ||
-					unifiedViewState.isWindowExpanded(item.window.id)}
+					unifiedViewState.isWindowExpanded(item.window.windowId)}
 				<button
 					type="button"
 					onclick={() => {
 						if (!unifiedViewState.isFiltering) {
-							unifiedViewState.toggleWindow(item.window.id);
+						unifiedViewState.toggleWindow(item.window.windowId);
 						}
 					}}
 					class="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 border-b bg-muted/50 px-4 py-2 text-sm text-muted-foreground backdrop-blur transition hover:bg-muted/80"

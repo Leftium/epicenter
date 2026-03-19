@@ -16,10 +16,10 @@
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import { getDomain } from '$lib/utils/format';
-	import type { Tab } from '$lib/workspace';
+	import type { BrowserTab } from '$lib/state/browser-state.svelte';
 	import TabFavicon from './TabFavicon.svelte';
 
-	let { tab }: { tab: Tab } = $props();
+	let { tab }: { tab: BrowserTab } = $props();
 
 	const tabId = $derived(tab.tabId);
 	const domain = $derived(tab.url ? getDomain(tab.url) : '');

@@ -12,8 +12,8 @@
  * // QuickAction consumer — feeds browserState tabs
  * const dupes = findDuplicateGroups(getAllTabs());
  *
- * // Workspace action consumer — feeds Y.Doc tabs
- * const dupes = findDuplicateGroups(tables.tabs.getAllValid());
+ * // Command palette consumer — feeds browserState tabs
+ * const dupes = findDuplicateGroups(getAllTabs());
  * ```
  */
 
@@ -53,7 +53,7 @@ export function normalizeUrl(url: string): string {
  * Generic so both browserState tabs and Y.Doc table rows can satisfy it.
  */
 type TabLike = {
-	id: string;
+	tabId: number;
 	url?: string | undefined;
 	title?: string | undefined;
 };

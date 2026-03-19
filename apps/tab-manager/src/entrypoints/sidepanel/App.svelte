@@ -18,7 +18,7 @@
 	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
-	import { workspaceClient } from '$lib/workspace';
+	import { registerDevice, workspaceClient } from '$lib/workspace';
 
 	// Auth initialization — check cached session on mount, react to external token changes
 	onMount(() => {
@@ -26,6 +26,9 @@
 		const unsubExternalSignIn = authState.onExternalSignIn(() =>
 			workspaceClient.extensions.sync.reconnect(),
 		);
+
+		// Register device in Y.Doc for saved tabs / bookmarks attribution
+		void workspaceClient.whenReady.then(() => registerDevice());
 
 		const onVisibilityChange = () => {
 			if (

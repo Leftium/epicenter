@@ -28,11 +28,11 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { getDeviceId } from '$lib/device/device-id';
-import {
+import type { BrowserTab } from '$lib/state/browser-state.svelte';
+	import {
 	type Bookmark,
 	type BookmarkId,
 	generateBookmarkId,
-	type Tab,
 	workspaceClient,
 } from '$lib/workspace';
 
@@ -60,7 +60,7 @@ function createBookmarkState() {
 		 *
 		 * Silently no-ops for tabs without a URL.
 		 */
-		async add(tab: Tab) {
+		async add(tab: BrowserTab) {
 			if (!tab.url) return;
 			const deviceId = await getDeviceId();
 			workspaceClient.tables.bookmarks.set({

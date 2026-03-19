@@ -121,12 +121,12 @@
 		</header>
 		<!-- Gate on browser state seed so child components can read data synchronously -->
 		{#await browserState.whenReady}
-			<div class="flex-1 flex items-center justify-center">
-				<div class="flex flex-col items-center gap-3">
+			<Empty.Root class="flex-1">
+				<Empty.Media>
 					<Spinner class="size-5 text-muted-foreground" />
-					<p class="text-sm text-muted-foreground">Loading tabs…</p>
-				</div>
-			</div>
+				</Empty.Media>
+				<Empty.Title>Loading tabs…</Empty.Title>
+			</Empty.Root>
 		{:then _}
 			<div class="flex-1 min-h-0"><UnifiedTabList /></div>
 		{:catch}

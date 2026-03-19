@@ -74,6 +74,7 @@ type WindowState = {
 	tabs: SvelteMap<number, Tab>;
 };
 
+
 function createBrowserState() {
 	/**
 	 * Single source of truth for all browser windows and tabs.
@@ -177,6 +178,7 @@ function createBrowserState() {
 		const allBrowserGroups = browser.tabGroups
 			? await browser.tabGroups.query({})
 			: [];
+		const groupRows = allBrowserGroups.map((g) => tabGroupToRow(id, g));
 		const groupIdSet = new Set(allBrowserGroups.map((g) => g.id));
 		const existingYDocGroups = tables.tabGroups.getAllValid();
 
@@ -215,8 +217,8 @@ function createBrowserState() {
 			}
 
 			// Tab groups (Chrome only)
-			for (const group of allBrowserGroups) {
-				tables.tabGroups.set(tabGroupToRow(id, group));
+			for (const group of groupRows) {
+				tables.tabGroups.set(group);
 			}
 			for (const existing of existingYDocGroups) {
 				if (existing.deviceId !== id) continue;
@@ -461,18 +463,23 @@ function createBrowserState() {
 	// These fire when another device modifies the Y.Doc via WebSocket sync.
 	// Only remote-origin changes (transaction.origin !== null) trigger Chrome
 	// API calls. Local writes (origin === null) are our own → skip.
+	//
+	// Guards are hoisted to the callback level since transaction.origin and
+	// deviceId are consistent across all changed IDs in a single observer firing.
 
 	const _unobserveTabs = tables.tabs.observe((changedIds, transaction) => {
+		if (transaction.origin === null) return;
+		if (!deviceId) return;
+		const device = deviceId; // Capture narrowed value for async closures
+
 		for (const id of changedIds) {
 			const result = tables.tabs.get(id);
 			switch (result.status) {
 				case 'not_found':
 					// Tab deleted remotely → remove from browser
 					void (async () => {
-						if (transaction.origin === null) return;
-						if (!deviceId) return;
 						const parsed = parseTabId(id);
-						if (!parsed || parsed.deviceId !== deviceId) return;
+						if (!parsed || parsed.deviceId !== device) return;
 
 						try {
 							await browser.tabs.remove(parsed.tabId);
@@ -484,9 +491,7 @@ function createBrowserState() {
 				case 'valid': {
 					const row = result.row;
 					void (async () => {
-						if (transaction.origin === null) return;
-						if (!deviceId) return;
-						if (row.deviceId !== deviceId) return;
+						if (row.deviceId !== device) return;
 						if (!row.url) return;
 						if (recentlyAddedTabIds.has(row.tabId)) return;
 
@@ -509,79 +514,85 @@ function createBrowserState() {
 		}
 	});
 
-	const _unobserveWindows = tables.windows.observe((changedIds, transaction) => {
-		for (const id of changedIds) {
-			const result = tables.windows.get(id);
-			switch (result.status) {
-				case 'not_found':
-					void (async () => {
-						if (transaction.origin === null) return;
-						if (!deviceId) return;
-						const parsed = parseWindowId(id);
-						if (!parsed || parsed.deviceId !== deviceId) return;
+	const _unobserveWindows = tables.windows.observe(
+		(changedIds, transaction) => {
+			if (transaction.origin === null) return;
+			if (!deviceId) return;
+			const device = deviceId;
 
-						try {
-							await browser.windows.remove(parsed.windowId);
-						} catch {
-							// Window may already be closed
-						}
-					})();
-					break;
-				case 'valid': {
-					const row = result.row;
-					void (async () => {
-						if (transaction.origin === null) return;
-						if (!deviceId) return;
-						if (row.deviceId !== deviceId) return;
+			for (const id of changedIds) {
+				const result = tables.windows.get(id);
+				switch (result.status) {
+					case 'not_found':
+						void (async () => {
+							const parsed = parseWindowId(id);
+							if (!parsed || parsed.deviceId !== device) return;
 
-						// Check if this window already exists — skip updates, only create new
-						try {
-							await browser.windows.get(row.windowId);
-							return; // Window exists, this is an update not a create
-						} catch {
-							// Window doesn't exist — create it
-						}
+							try {
+								await browser.windows.remove(parsed.windowId);
+							} catch {
+								// Window may already be closed
+							}
+						})();
+						break;
+					case 'valid': {
+						const row = result.row;
+						void (async () => {
+							if (row.deviceId !== device) return;
 
-						try {
-							await browser.windows.create({});
-						} catch {
-							// Failed to create window
-						}
-					})();
-					break;
+							// Check if this window already exists — skip updates, only create new
+							try {
+								await browser.windows.get(row.windowId);
+								return; // Window exists, this is an update not a create
+							} catch {
+								// Window doesn't exist — create it
+							}
+
+							try {
+								await browser.windows.create({});
+							} catch {
+								// Failed to create window
+							}
+						})();
+						break;
+					}
 				}
 			}
-		}
-	});
+		},
+	);
 
 	if (browser.tabGroups) {
-		const _unobserveTabGroups = tables.tabGroups.observe((changedIds, transaction) => {
-			for (const id of changedIds) {
-				const result = tables.tabGroups.get(id);
-				if (result.status === 'not_found') {
-					void (async () => {
-						if (transaction.origin === null) return;
-						if (!deviceId) return;
-						const parsed = parseGroupId(id);
-						if (!parsed || parsed.deviceId !== deviceId) return;
+		const _unobserveTabGroups = tables.tabGroups.observe(
+			(changedIds, transaction) => {
+				if (transaction.origin === null) return;
+				if (!deviceId) return;
+				const device = deviceId;
 
-						try {
-							const groupTabs = await browser.tabs.query({
-								groupId: parsed.groupId,
-							});
-							const tabIds = groupTabs.flatMap((tab) =>
-								tab.id !== undefined ? [tab.id] : [],
-							);
-							await Promise.allSettled(
-								tabIds.map((tid) => browser.tabs.ungroup(tid)),
-							);
-						} catch {
-							// Failed to ungroup tabs
-						}
-					})();
+				for (const id of changedIds) {
+					const result = tables.tabGroups.get(id);
+					if (result.status === 'not_found') {
+						void (async () => {
+							const parsed = parseGroupId(id);
+							if (!parsed || parsed.deviceId !== device) return;
+
+							try {
+								const groupTabs = await browser.tabs.query({
+									groupId: parsed.groupId,
+								});
+								const tabIds = groupTabs.flatMap((tab) =>
+									tab.id !== undefined ? [tab.id] : [],
+								);
+								await Promise.allSettled(
+									tabIds.map((tid) => browser.tabs.ungroup(tid)),
+								);
+							} catch {
+								// Failed to ungroup tabs
+							}
+						})();
+					}
 				}
-			}
-		});
+			},
+		);
 	}
 
 	return {
@@ -594,9 +605,11 @@ function createBrowserState() {
 		 * @example
 		 * ```svelte
 		 * {#await browserState.whenReady}
-		 *   <LoadingSpinner />
+		 *   <Spinner />
 		 * {:then}
 		 *   <UnifiedTabList />
+		 * {:catch}
+		 *   <ErrorState />
 		 * {/await}
 		 * ```
 		 */
@@ -626,7 +639,7 @@ function createBrowserState() {
 		/**
 		 * Close a tab. Browser onRemoved event updates state.
 		 *
-		 * None of these methods mutate `windowStates` directly \u2014 they call the
+		 * None of these methods mutate `windowStates` directly — they call the
 		 * browser API, which fires an event (e.g. `onRemoved`, `onUpdated`),
 		 * and the event listener above handles the state update.
 		 */

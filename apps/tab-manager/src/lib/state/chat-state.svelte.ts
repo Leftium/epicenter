@@ -598,11 +598,11 @@ function createAiChatState() {
 
 	// ── Observers ────────────────────────────────────────────────────────────
 
-	workspace.tables.conversations.observe(() => {
+	const _unobserveConversations = workspace.tables.conversations.observe(() => {
 		conversations = readAllConversations();
 		reconcileHandles();
 	});
-	workspace.tables.chatMessages.observe(() => {
+	const _unobserveChatMessages = workspace.tables.chatMessages.observe(() => {
 		refreshFromDoc(activeConversationId);
 	});
 

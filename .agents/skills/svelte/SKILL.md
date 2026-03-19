@@ -1,6 +1,9 @@
 ---
 name: svelte
 description: Svelte 5 patterns including TanStack Query mutations, shadcn-svelte components, and component composition. Use when writing Svelte components, using TanStack Query, or working with shadcn-svelte UI.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Svelte Guidelines
@@ -9,6 +12,18 @@ description: Svelte 5 patterns including TanStack Query mutations, shadcn-svelte
 - [Svelte](https://github.com/sveltejs/svelte) — Svelte 5 framework with runes and fine-grained reactivity
 - [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte) — Port of shadcn/ui for Svelte with Bits UI primitives
 - [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras) — Additional components for shadcn-svelte
+
+> **Related Skills**: See `query-layer` for TanStack Query integration. See `styling` for CSS and Tailwind conventions.
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Build Svelte 5 components that use TanStack Query mutations.
+- Replace nested ternary `$derived` mappings with `satisfies Record` lookups.
+- Decide between `createMutation` in `.svelte` and `.execute()` in `.ts`.
+- Follow shadcn-svelte import, composition, and component organization patterns.
+- Refactor one-off `handle*` wrappers into inline template actions.
 
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 

@@ -1,6 +1,9 @@
 ---
 name: styling
 description: CSS and Tailwind styling guidelines. Use when writing styles, creating UI components, reviewing CSS/Tailwind code, or deciding on wrapper element structure.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # Styling Guidelines
@@ -10,6 +13,15 @@ description: CSS and Tailwind styling guidelines. Use when writing styles, creat
 - [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte) — Port of shadcn/ui for Svelte with Bits UI primitives
 - [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras) — Additional components for shadcn-svelte
 - [Svelte](https://github.com/sveltejs/svelte) — Svelte 5 framework
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Write Tailwind/CSS for UI components in this repo.
+- Decide whether a wrapper element is necessary or can be removed.
+- Style interactive disabled states using HTML `disabled` and Tailwind variants.
+- Replace JS click guards with semantic disabled behavior.
 
 ## Minimize Wrapper Elements
 

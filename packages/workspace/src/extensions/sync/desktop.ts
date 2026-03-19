@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import type { ExtensionContext } from '../../workspace/types.js';
+import type { Lifecycle } from '../../workspace/lifecycle';
 
 /**
  * Configuration for the persistence extension.
@@ -89,13 +89,13 @@ function initPersistenceDb(filePath: string, ydoc: Y.Doc): Database {
  * const epicenterDir = join(projectDir, '.epicenter');
  *
  * const workspace = createWorkspace({ id: 'blog', tables: {...} })
- *   .withExtension('persistence', (ctx) => persistence(ctx, {
+ *   .withWorkspaceExtension('persistence', (ctx) => persistence(ctx, {
  *     filePath: join(epicenterDir, 'persistence', `${ctx.id}.db`),
  *   }));
  * ```
  */
 export const persistence = (
-	{ ydoc }: ExtensionContext,
+	{ ydoc }: { ydoc: Y.Doc },
 	{ filePath }: PersistenceConfig,
 ) => {
 	let db: Database | null = null;
@@ -139,7 +139,7 @@ export const persistence = (
  *   .withExtension('persistence', filesystemPersistence({
  *     filePath: join(epicenterDir, 'persistence', `workspace.db`),
  *   }))
- *   .withExtension('sync', createSyncExtension({
+ *   .withWorkspaceExtension('sync', createSyncExtension({
  *     url: 'ws://localhost:3913/rooms/{id}',
  *   }))
  * ```

@@ -52,7 +52,7 @@ function createBookmarkState() {
 	let bookmarks = $state<Bookmark[]>(readAll());
 
 	// Re-read on every Y.Doc change.
-	workspace.tables.bookmarks.observe(() => {
+	const _unobserveBookmarks = workspace.tables.bookmarks.observe(() => {
 		bookmarks = readAll();
 	});
 

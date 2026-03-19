@@ -1,18 +1,14 @@
 /**
- * Pure tab-analysis helpers shared by QuickActions and workspace actions.
+ * Pure tab-analysis helpers shared by the command palette.
  *
  * These functions take a tab array and return analysis results—no dependency
- * on `browserState`, `tables`, or any other reactive/CRDT data source.
+ * on `browserState` or any other reactive data source.
  * Consumers provide their own tab arrays from whatever source they use.
  *
  * @example
  * ```typescript
  * import { findDuplicateGroups, groupTabsByDomain } from '$lib/utils/tab-helpers';
  *
- * // QuickAction consumer — feeds browserState tabs
- * const dupes = findDuplicateGroups(getAllTabs());
- *
- * // Command palette consumer — feeds browserState tabs
  * const dupes = findDuplicateGroups(getAllTabs());
  * ```
  */
@@ -48,9 +44,10 @@ export function normalizeUrl(url: string): string {
 }
 
 /**
- * A tab-like object with the minimum fields needed for duplicate detection.
+ * Minimum fields needed for tab analysis helpers.
  *
- * Generic so both browserState tabs and Y.Doc table rows can satisfy it.
+ * Kept generic so tests can pass plain objects without importing
+ * the full `BrowserTab` type from browser-state.
  */
 type TabLike = {
 	tabId: number;
@@ -68,13 +65,13 @@ type TabLike = {
  * @example
  * ```typescript
  * const tabs = [
- *   { id: 'a', url: 'https://github.com/foo', title: 'Foo' },
- *   { id: 'b', url: 'https://github.com/foo?ref=bar', title: 'Foo' },
- *   { id: 'c', url: 'https://example.com', title: 'Example' },
+ *   { tabId: 1, url: 'https://github.com/foo', title: 'Foo' },
+ *   { tabId: 2, url: 'https://github.com/foo?ref=bar', title: 'Foo' },
+ *   { tabId: 3, url: 'https://example.com', title: 'Example' },
  * ];
  *
  * const dupes = findDuplicateGroups(tabs);
- * // Map { 'https://github.com/foo' => [tab-a, tab-b] }
+ * // Map { 'https://github.com/foo' => [tab-1, tab-2] }
  * ```
  */
 export function findDuplicateGroups<T extends TabLike>(
@@ -103,13 +100,13 @@ export function findDuplicateGroups<T extends TabLike>(
  * @example
  * ```typescript
  * const tabs = [
- *   { id: 'a', url: 'https://github.com/foo' },
- *   { id: 'b', url: 'https://github.com/bar' },
- *   { id: 'c', url: 'https://youtube.com/watch?v=1' },
+ *   { tabId: 1, url: 'https://github.com/foo' },
+ *   { tabId: 2, url: 'https://github.com/bar' },
+ *   { tabId: 3, url: 'https://youtube.com/watch?v=1' },
  * ];
  *
  * const domains = groupTabsByDomain(tabs);
- * // Map { 'github.com' => [tab-a, tab-b], 'youtube.com' => [tab-c] }
+ * // Map { 'github.com' => [tab-1, tab-2], 'youtube.com' => [tab-3] }
  * ```
  */
 export function groupTabsByDomain<T extends TabLike>(

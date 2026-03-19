@@ -304,6 +304,10 @@ function createBrowserState() {
 		}
 	});
 
+
+	/** All browser windows. Cached via `$derived` so consumers don't trigger recomputation. */
+	const windows = $derived(windowStates.values().toArray().map((s) => s.window));
+
 	return {
 		/**
 		 * Resolves after the initial browser state seed completes.
@@ -326,10 +330,7 @@ function createBrowserState() {
 
 		/** All browser windows. */
 		get windows() {
-			return windowStates
-				.values()
-				.toArray()
-				.map((s) => s.window);
+			return windows;
 		},
 
 		/**

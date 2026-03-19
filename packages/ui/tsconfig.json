@@ -2,11 +2,7 @@
 	"extends": ["../../tsconfig.base.dom.json"],
 	"compilerOptions": {
 		"allowJs": true,
-		"resolveJsonModule": true,
-
 		"outDir": "dist",
-		"sourceMap": true,
-
 		"declaration": true,
 		"composite": true,
 		"declarationMap": true,

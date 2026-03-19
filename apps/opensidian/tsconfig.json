@@ -3,8 +3,6 @@
 	"compilerOptions": {
 		"allowJs": true,
 		"checkJs": true,
-		"resolveJsonModule": true,
-		"sourceMap": true,
 		"types": ["bun-types"]
 	}
 }

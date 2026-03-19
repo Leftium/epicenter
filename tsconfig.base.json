@@ -9,9 +9,11 @@
 		"module": "ESNext",
 		"moduleResolution": "bundler",
 		"resolvePackageJsonExports": true,
+		"resolveJsonModule": true,
 
 		// Emit
 		"noEmit": true,
+		"sourceMap": true,
 
 		// Interop
 		"isolatedModules": true,

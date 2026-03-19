@@ -3,9 +3,7 @@
 	"compilerOptions": {
 		"module": "Preserve",
 		"allowJs": true,
-		"resolveJsonModule": true,
 		"allowImportingTsExtensions": true,
-		"sourceMap": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noPropertyAccessFromIndexSignature": false

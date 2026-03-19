@@ -3,7 +3,6 @@
 	"compilerOptions": {
 		"useDefineForClassFields": true,
 		"allowImportingTsExtensions": true,
-		"resolveJsonModule": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true
 	},

@@ -48,8 +48,6 @@ function toBrowserWindow(win: Browser.windows.Window) {
 	return {
 		windowId: win.id,
 		focused: win.focused,
-		incognito: win.incognito,
-		type: win.type ?? 'normal',
 	};
 }
 
@@ -74,9 +72,6 @@ function toBrowserTab(tab: Browser.tabs.Tab) {
 		pinned: tab.pinned,
 		audible: tab.audible ?? false,
 		mutedInfo: { muted: tab.mutedInfo?.muted ?? false },
-		groupId: tab.groupId,
-		openerTabId: tab.openerTabId,
-		status: tab.status ?? 'complete',
 	};
 }
 

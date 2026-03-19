@@ -13,7 +13,6 @@
  * ```
  */
 
-import { Ok, trySync } from 'wellcrafted/result';
 import { getDomain } from '$lib/utils/format';
 
 /**
@@ -32,15 +31,13 @@ import { getDomain } from '$lib/utils/format';
  * // 'https://example.com'
  * ```
  */
-export function normalizeUrl(url: string): string {
-	const { data } = trySync({
-		try: () => {
-			const parsed = new URL(url);
-			return parsed.origin + parsed.pathname.replace(/\/$/, '');
-		},
-		catch: () => Ok(url),
-	});
-	return data;
+function normalizeUrl(url: string): string {
+	try {
+		const parsed = new URL(url);
+		return parsed.origin + parsed.pathname.replace(/\/$/, '');
+	} catch {
+		return url;
+	}
 }
 
 /**

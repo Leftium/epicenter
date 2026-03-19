@@ -112,10 +112,11 @@ const EncryptionEntry = type({ version: 'number.integer > 0', secret: 'string' }
  * Output: a non-empty array of `{ version, secret }` sorted by version descending
  * (highest version first—the current key for new encryptions).
  *
- * The `.pipe()` step splits and parses the raw string; `.to()` validates each entry
- * against `EncryptionEntry` and guarantees at least one element via the tuple type.
- * `.assert()` throws at module load time if the env var is missing or malformed—
- * the worker won’t serve requests until the config is fixed.
+ * `.pipe.try()` splits and parses the raw string, catching thrown errors as
+ * `ArkErrors`; `.to()` validates each entry against `EncryptionEntry` and
+ * guarantees at least one element via the non-empty tuple type.
+ * `.assert()` throws a `TraversalError` at module load if the env var is
+ * missing or malformed—the worker won’t serve requests until the config is fixed.
  *
  * @example
  * ```
@@ -125,7 +126,7 @@ const EncryptionEntry = type({ version: 'number.integer > 0', secret: 'string' }
  * ```
  */
 const EncryptionKeyring = type('string')
-	.pipe((s) =>
+	.pipe.try((s) =>
 		s
 			.split(',')
 			.map((entry) => {

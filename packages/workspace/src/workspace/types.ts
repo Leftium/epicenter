@@ -1143,7 +1143,7 @@ export type WorkspaceClientBuilder<
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown> = Record<string, never>,
 	TDocExtensions extends Record<string, unknown> = Record<string, never>,
-	TEncryption = {},
+	TEncryption = Record<string, never>,
 > = WorkspaceClient<
 	TId,
 	TTableDefinitions,

@@ -113,7 +113,7 @@ type TableDefinitionWithDocBuilder<
 			StringKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
 			ClaimedDocumentColumns<TDocuments>
 		>,
-		TUpdatedAt extends Exclude<
+		_TUpdatedAt extends Exclude<
 			NumberKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
 			ClaimedDocumentColumns<TDocuments>
 		>,
@@ -156,7 +156,7 @@ type TableDefinitionWithDocBuilder<
  */
 export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 	schema: TSchema,
-): TableDefinitionWithDocBuilder<[TSchema], {}>;
+): TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>;
 
 /**
  * Creates a table definition for multiple schema versions with migrations.

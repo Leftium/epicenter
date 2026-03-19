@@ -32,9 +32,9 @@
  */
 
 import type * as Y from 'yjs';
-import {
-	type YKeyValueLwwEntry,
-	} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import type {
+	YKeyValueLwwEntry,
+} from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { createTable } from './create-table.js';
 import type {

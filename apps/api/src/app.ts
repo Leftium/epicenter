@@ -194,7 +194,10 @@ function createAuth(db: Db, env: Env['Bindings']) {
 			jwt(),
 			customSession(async ({ user, session }) => {
 				const keyring = parseEncryptionSecrets(env.ENCRYPTION_SECRETS);
-				const current = keyring[0]!;
+				const current = keyring[0];
+				if (!current) {
+					throw new Error('ENCRYPTION_SECRETS is empty\u2014at least one entry is required');
+				}
 				const encryptionKey = await deriveUserKey(current.secret, user.id);
 				return {
 					user,

@@ -12,6 +12,7 @@
 	},
 	"devDependencies": {
 		"@epicenter/ui": "workspace:*",
+		"bun-types": "catalog:",
 		"@lucide/svelte": "catalog:",
 		"@sveltejs/adapter-static": "catalog:",
 		"@sveltejs/kit": "catalog:",

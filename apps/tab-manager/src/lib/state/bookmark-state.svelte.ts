@@ -27,6 +27,7 @@
  */
 
 import { getDeviceId } from '$lib/device/device-id';
+import { fromTable } from '@epicenter/svelte';
 import {
 	type Bookmark,
 	type BookmarkId,
@@ -36,28 +37,12 @@ import {
 } from '$lib/workspace';
 
 function createBookmarkState() {
-	/** Read all valid bookmarks, most recently created first. */
-	const readAll = () =>
-		workspaceClient.tables.bookmarks
-			.getAllValid()
-			.sort((a, b) => b.createdAt - a.createdAt);
+	const bookmarksMap = fromTable(workspaceClient.tables.bookmarks);
 
-	/**
-	 * The full sorted list of bookmarks.
-	 *
-	 * Wholesale-replaced on every Y.Doc change rather than surgically mutated.
-	 * Same rationale as saved-tab-state: the observer doesn't tell us what
-	 * changed, so a full re-read is the simplest correct approach.
-	 */
-	let bookmarks = $state<Bookmark[]>(readAll());
-
-	// Re-read on every Y.Doc change.
-	const _unobserveBookmarks = workspaceClient.tables.bookmarks.observe(() => {
-		bookmarks = readAll();
-	});
+	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
+	const bookmarks = $derived([...bookmarksMap.values()].sort((a, b) => b.createdAt - a.createdAt));
 
 	return {
-		/** All bookmarks, sorted by most recently created first. */
 		get bookmarks() {
 			return bookmarks;
 		},
@@ -108,7 +93,7 @@ function createBookmarkState() {
 
 			/** Delete all bookmarks. Wrapped in a Y.Doc transaction. */
 			removeAll() {
-				const all = workspaceClient.tables.bookmarks.getAllValid();
+				const all = [...bookmarksMap.values()];
 				if (!all.length) return;
 
 				workspaceClient.batch(() => {

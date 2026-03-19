@@ -22,6 +22,7 @@
  */
 
 import { dateTimeStringNow, generateId } from '@epicenter/workspace';
+import { fromTable } from '@epicenter/svelte';
 import workspaceClient, {
 	type FolderId,
 	type Note,
@@ -32,16 +33,10 @@ import { foldersState } from './folders.svelte';
 function createNotesState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
-	/** Read all valid notes (including deleted), used as initial seed + observer refresh. */
-	const readNotes = () => workspaceClient.tables.notes.getAllValid();
+	const allNotesMap = fromTable(workspaceClient.tables.notes);
 
-	let allNotes = $state<Note[]>(readNotes());
-
-	// ─── Workspace Observers ─────────────────────────────────────────────
-
-	const _unobserveNotes = workspaceClient.tables.notes.observe(() => {
-		allNotes = readNotes();
-	});
+	/** All valid notes (including deleted). Cached — only recomputes when table changes. */
+	const allNotes = $derived([...allNotesMap.values()]);
 
 	// ─── Derived State ───────────────────────────────────────────────────
 
@@ -146,7 +141,7 @@ function createNotesState() {
 		 * ```
 		 */
 		restoreNote(noteId: NoteId) {
-			const note = allNotes.find((n) => n.id === noteId);
+			const note = allNotesMap.get(noteId);
 			if (!note) return;
 			const folderExists = note.folderId
 				? foldersState.folders.some((f) => f.id === note.folderId)
@@ -189,7 +184,7 @@ function createNotesState() {
 		 * ```
 		 */
 		pinNote(noteId: NoteId) {
-			const note = allNotes.find((n) => n.id === noteId);
+			const note = allNotesMap.get(noteId);
 			if (!note) return;
 			workspaceClient.tables.notes.update(noteId, {
 				pinned: !note.pinned,

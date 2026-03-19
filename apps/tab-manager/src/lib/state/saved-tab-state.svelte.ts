@@ -32,6 +32,7 @@
  */
 
 import { getDeviceId } from '$lib/device/device-id';
+import { fromTable } from '@epicenter/svelte';
 import {
 	generateSavedTabId,
 	type SavedTab,
@@ -41,30 +42,12 @@ import {
 } from '$lib/workspace';
 
 function createSavedTabState() {
-	/** Read all valid saved tabs, most recently saved first. */
-	const readAll = () =>
-		workspaceClient.tables.savedTabs
-			.getAllValid()
-			.sort((a, b) => b.savedAt - a.savedAt);
+	const tabsMap = fromTable(workspaceClient.tables.savedTabs);
 
-	/**
-	 * The full sorted list of saved tabs.
-	 *
-	 * Wholesale-replaced on every Y.Doc change rather than surgically mutated.
-	 * This is intentional — the Y.Doc observer doesn't tell us *what* changed,
-	 * only *that* something changed, so a full re-read is the simplest correct
-	 * approach. The list is small enough that this is never a perf concern.
-	 */
-	let tabs = $state<SavedTab[]>(readAll());
-
-	// Re-read on every Y.Doc change — observer fires when persistence
-	// loads and on any subsequent remote/local modification.
-	const _unobserveSavedTabs = workspaceClient.tables.savedTabs.observe(() => {
-		tabs = readAll();
-	});
+	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
+	const tabs = $derived([...tabsMap.values()].sort((a, b) => b.savedAt - a.savedAt));
 
 	return {
-		/** All saved tabs, sorted by most recently saved first. */
 		get tabs() {
 			return tabs;
 		},
@@ -129,7 +112,7 @@ function createSavedTabState() {
 			 *    collapses N observer callbacks into one.
 			 */
 			async restoreAll() {
-				const all = workspaceClient.tables.savedTabs.getAllValid();
+				const all = [...tabsMap.values()];
 				if (!all.length) return;
 
 				// Fire all tab creations without awaiting each one individually.
@@ -164,7 +147,7 @@ function createSavedTabState() {
 			 * (not N times for N tabs).
 			 */
 			removeAll() {
-				const all = workspaceClient.tables.savedTabs.getAllValid();
+				const all = [...tabsMap.values()];
 				if (!all.length) return;
 
 				workspaceClient.batch(() => {

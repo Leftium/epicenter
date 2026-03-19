@@ -23,52 +23,27 @@
  */
 
 import workspaceClient, { type FolderId, type NoteId } from '$lib/workspace';
+import { fromKv } from '@epicenter/svelte';
 import { foldersState } from './folders.svelte';
 import { notesState } from './notes.svelte';
 
 function createViewState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
-	let selectedFolderId = $state<FolderId | null>(
-		workspaceClient.kv.get('selectedFolderId'),
-	);
-	let selectedNoteId = $state<NoteId | null>(
-		workspaceClient.kv.get('selectedNoteId'),
-	);
-	let sortBy = $state<'dateEdited' | 'dateCreated' | 'title'>(
-		workspaceClient.kv.get('sortBy'),
-	);
+	const selectedFolderId = fromKv(workspaceClient.kv, 'selectedFolderId');
+	const selectedNoteId = fromKv(workspaceClient.kv, 'selectedNoteId');
+	const sortBy = fromKv(workspaceClient.kv, 'sortBy');
 	let searchQuery = $state('');
 	let isRecentlyDeletedView = $state(false);
-
-	// ─── Workspace Observers ─────────────────────────────────────────────
-
-	const _unobserveSelectedFolder = workspaceClient.kv.observe(
-		'selectedFolderId',
-		(change) => {
-			selectedFolderId = change.type === 'set' ? change.value : null;
-		},
-	);
-
-	const _unobserveSelectedNote = workspaceClient.kv.observe(
-		'selectedNoteId',
-		(change) => {
-			selectedNoteId = change.type === 'set' ? change.value : null;
-		},
-	);
-
-	const _unobserveSortBy = workspaceClient.kv.observe('sortBy', (change) => {
-		sortBy = change.type === 'set' ? change.value : 'dateEdited';
-	});
 
 	// ─── Derived State ───────────────────────────────────────────────────
 
 	/** Notes filtered by selected folder and search query. */
 	const filteredNotes = $derived.by(() => {
 		let result =
-			selectedFolderId === null
+			selectedFolderId.current === null
 				? notesState.notes
-				: notesState.notes.filter((n) => n.folderId === selectedFolderId);
+				: notesState.notes.filter((n) => n.folderId === selectedFolderId.current);
 		if (searchQuery.trim()) {
 			const q = searchQuery.trim().toLowerCase();
 			result = result.filter(
@@ -78,8 +53,8 @@ function createViewState() {
 			);
 		}
 		return [...result].sort((a, b) => {
-			if (sortBy === 'title') return a.title.localeCompare(b.title);
-			if (sortBy === 'dateCreated')
+			if (sortBy.current === 'title') return a.title.localeCompare(b.title);
+			if (sortBy.current === 'dateCreated')
 				return b.createdAt.localeCompare(a.createdAt);
 			return b.updatedAt.localeCompare(a.updatedAt);
 		});
@@ -87,25 +62,25 @@ function createViewState() {
 
 	/** Human-readable name for the current folder (used as NoteList title). */
 	const folderName = $derived(
-		selectedFolderId
-			? (foldersState.folders.find((f) => f.id === selectedFolderId)?.name ??
+		selectedFolderId.current
+			? (foldersState.folders.find((f) => f.id === selectedFolderId.current)?.name ??
 					'Notes')
 			: 'All Notes',
 	);
 
 	/** The currently selected note (can be active or deleted). */
 	const selectedNote = $derived(
-		notesState.allNotes.find((n) => n.id === selectedNoteId) ?? null,
+		notesState.allNotes.find((n) => n.id === selectedNoteId.current) ?? null,
 	);
 
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
 		get selectedFolderId() {
-			return selectedFolderId;
+			return selectedFolderId.current;
 		},
 		get selectedNoteId() {
-			return selectedNoteId;
+			return selectedNoteId.current;
 		},
 		get selectedNote() {
 			return selectedNote;
@@ -114,7 +89,7 @@ function createViewState() {
 			return searchQuery;
 		},
 		get sortBy() {
-			return sortBy;
+			return sortBy.current;
 		},
 		get isRecentlyDeletedView() {
 			return isRecentlyDeletedView;
@@ -143,8 +118,8 @@ function createViewState() {
 		 */
 		selectFolder(folderId: FolderId | null) {
 			isRecentlyDeletedView = false;
-			workspaceClient.kv.set('selectedFolderId', folderId);
-			workspaceClient.kv.set('selectedNoteId', null);
+			selectedFolderId.current = folderId;
+			selectedNoteId.current = null;
 		},
 
 		/**
@@ -160,8 +135,8 @@ function createViewState() {
 		 */
 		selectRecentlyDeleted() {
 			isRecentlyDeletedView = true;
-			workspaceClient.kv.set('selectedFolderId', null);
-			workspaceClient.kv.set('selectedNoteId', null);
+			selectedFolderId.current = null;
+			selectedNoteId.current = null;
 		},
 
 		/**
@@ -173,7 +148,7 @@ function createViewState() {
 		 * ```
 		 */
 		selectNote(noteId: NoteId) {
-			workspaceClient.kv.set('selectedNoteId', noteId);
+			selectedNoteId.current = noteId;
 		},
 
 		/**
@@ -189,7 +164,7 @@ function createViewState() {
 		 * ```
 		 */
 		setSortBy(value: 'dateEdited' | 'dateCreated' | 'title') {
-			workspaceClient.kv.set('sortBy', value);
+			sortBy.current = value;
 		},
 
 		/**

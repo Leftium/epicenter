@@ -25,7 +25,8 @@
 		"typescript": "catalog:",
 		"vite": "catalog:"
 	},
-	"dependencies": {
+"dependencies": {
+		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
 		"@tanstack/svelte-query-devtools": "catalog:",

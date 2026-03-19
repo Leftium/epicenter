@@ -22,21 +22,15 @@
  */
 
 import { generateId } from '@epicenter/workspace';
+import { fromTable } from '@epicenter/svelte';
 import workspaceClient, { type Folder, type FolderId } from '$lib/workspace';
 
 function createFoldersState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
-	/** Read all valid folders, used as initial seed + observer refresh. */
-	const readFolders = () => workspaceClient.tables.folders.getAllValid();
+	const foldersMap = fromTable(workspaceClient.tables.folders);
 
-	let folders = $state<Folder[]>(readFolders());
-
-	// ─── Workspace Observers ─────────────────────────────────────────────
-
-	const _unobserveFolders = workspaceClient.tables.folders.observe(() => {
-		folders = readFolders();
-	});
+	const folders = $derived([...foldersMap.values()]);
 
 	// ─── Public API ──────────────────────────────────────────────────────
 
@@ -62,7 +56,7 @@ function createFoldersState() {
 			workspaceClient.tables.folders.set({
 				id,
 				name: 'New Folder',
-				sortOrder: folders.length,
+				sortOrder: foldersMap.size,
 				_v: 1,
 			});
 		},

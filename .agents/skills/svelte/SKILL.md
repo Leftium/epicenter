@@ -1,6 +1,6 @@
 ---
 name: svelte
-description: Svelte 5 patterns including TanStack Query mutations, shadcn-svelte components, and component composition. Use when writing Svelte components, using TanStack Query, or working with shadcn-svelte UI.
+description: Svelte 5 patterns including TanStack Query mutations, SvelteMap reactive state, shadcn-svelte components, and component composition. Use when writing Svelte components, using TanStack Query, working with SvelteMap/fromTable/fromKv, or working with shadcn-svelte UI.
 metadata:
   author: epicenter
   version: '1.0'
@@ -19,6 +19,7 @@ Use this pattern when you need to:
 - Decide between `createMutation` in `.svelte` and `.execute()` in `.ts`.
 - Follow shadcn-svelte import, composition, and component organization patterns.
 - Refactor one-off `handle*` wrappers into inline template actions.
+- Convert SvelteMap data to arrays for derived state or component props.
 
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 
@@ -73,6 +74,61 @@ Reserve `$derived.by()` for multi-statement logic where you genuinely need a fun
 
 See `docs/articles/record-lookup-over-nested-ternaries.md` for rationale.
 
+# SvelteMap to Array: Always Cache with `$derived`
+
+When exposing `SvelteMap` contents as arrays (from `fromTable`, `fromKv`, or raw `SvelteMap`), always wrap the conversion in `$derived`. Never spread inside a plain getter — it re-creates the array on every access, even if the map hasn't changed.
+
+`$derived` caches the result and only recomputes when the map actually changes (pull-based reactivity).
+
+```typescript
+// Bad: creates a new array on EVERY getter access
+get folders() {
+	return [...foldersMap.values()];
+}
+
+// Good: cached — only recomputes when foldersMap changes
+const folders = $derived([...foldersMap.values()]);
+// ...
+return {
+	get folders() {
+		return folders;
+	},
+};
+```
+
+With chained operations (filter, sort), the entire pipeline is cached:
+
+```typescript
+// Good: sort + filter cached together
+const tabs = $derived([...tabsMap.values()].sort((a, b) => b.savedAt - a.savedAt));
+const activeNotes = $derived(allNotes.filter((n) => n.deletedAt === undefined));
+```
+
+## When `.values()` Alone Suffices
+
+`map.values()` returns a `MapIterator` — single-use, no `.filter()`, `.find()`, `.sort()`, `.length`. Use the spread only when you need array methods:
+
+| Need | Pattern |
+|---|---|
+| Just iterating in `{#each}` | `{#each map.values() as item}` or `{#each map as [id, item] (id)}` — no spread needed |
+| Chaining array methods | `$derived([...map.values()].filter(...))` — spread required |
+| Exposing from factory getter | `$derived([...map.values()])` — consumers expect `T[]` with array methods |
+| One-time snapshot in action | `const all = [...map.values()];` — necessary, not wasteful |
+
+## Template Props
+
+For component props expecting `T[]`, derive once in the script block — never spread in the template:
+
+```svelte
+<!-- Bad: re-creates array on every render -->
+<FujiSidebar entries={[...entries.values()]} />
+
+<!-- Good: cached via $derived -->
+<script>
+	const entriesArray = $derived([...entries.values()]);
+</script>
+<FujiSidebar entries={entriesArray} />
+```
 # Mutation Pattern Preference
 
 ## In Svelte Files (.svelte)

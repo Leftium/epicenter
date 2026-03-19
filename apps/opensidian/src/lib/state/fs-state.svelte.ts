@@ -1,7 +1,7 @@
 import { type FileId, type FileRow } from '@epicenter/filesystem';
 import { SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
-import { documents, filesDb, fs } from './workspace';
+import { documents, filesDb, fs } from '$lib/workspace';
 
 /**
  * Reactive filesystem state singleton.
@@ -349,10 +349,3 @@ function createFsState() {
 }
 
 export const fsState = createFsState();
-
-// Expose on window for dev console access
-// Usage: fsState.actions.createFile(null, 'test.md')
-//        Workspace infra available via: window.workspace (see workspace.ts)
-if (typeof window !== 'undefined') {
-	(window as unknown as Record<string, unknown>).fsState = fsState;
-}

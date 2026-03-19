@@ -2,7 +2,7 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import { fsState } from '$lib/state/fs-state.svelte';
-	import { documents } from '$lib/state/workspace';
+	import { documents } from '$lib/workspace';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { fileId }: {

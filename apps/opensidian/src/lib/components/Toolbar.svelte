@@ -4,7 +4,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { toast } from 'svelte-sonner';
 	import { fsState } from '$lib/state/fs-state.svelte';
-	import { fs } from '$lib/state/workspace';
+	import { fs } from '$lib/workspace';
 
 	let seeding = $state(false);
 

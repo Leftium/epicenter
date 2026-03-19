@@ -41,11 +41,3 @@ export const filesDb = ws.tables.files;
 /** SQLite full-text search index for file content. */
 export const sqliteIndex = ws.extensions.sqliteIndex;
 
-if (typeof window !== 'undefined') {
-	(window as unknown as Record<string, unknown>).workspace = {
-		fs,
-		documents,
-		filesDb,
-		sqliteIndex,
-	};
-}

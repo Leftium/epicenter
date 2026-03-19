@@ -2,7 +2,6 @@ import { Database } from 'bun:sqlite';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import type { Lifecycle } from '../../workspace/lifecycle';
 
 /**
  * Configuration for the persistence extension.
@@ -77,7 +76,7 @@ function initPersistenceDb(filePath: string, ydoc: Y.Doc): Database {
  * 3. Replays stored updates to reconstruct Y.Doc state
  * 4. Compacts the log on startup (many rows → 1 row)
  * 5. Appends each incremental update as a new row
- * 6. Compacts again on destroy (clean shutdown)
+ * 6. Compacts again on dispose (clean shutdown)
  *
  * @example
  * ```typescript
@@ -114,7 +113,7 @@ export const persistence = (
 
 	return {
 		whenReady,
-		destroy() {
+		dispose() {
 			ydoc.off('updateV2', updateHandler);
 			if (db) {
 				compactUpdateLog(db, ydoc);
@@ -125,7 +124,7 @@ export const persistence = (
 };
 
 /**
- * Filesystem persistence factory that returns a `Lifecycle`.
+ * Filesystem persistence factory.
  *
  * Uses SQLite append-log for efficient incremental persistence.
  * Same pattern as the Cloudflare DO sync server.
@@ -148,8 +147,8 @@ export function filesystemPersistence({
 	filePath,
 }: {
 	filePath: string;
-}): (context: { ydoc: Y.Doc }) => Lifecycle {
-	return ({ ydoc }): Lifecycle => {
+}) {
+	return ({ ydoc }: { ydoc: Y.Doc }) => {
 		let db: Database | null = null;
 
 		const updateHandler = (update: Uint8Array) => {
@@ -164,7 +163,7 @@ export function filesystemPersistence({
 
 		return {
 			whenReady,
-			destroy: () => {
+			dispose: () => {
 				ydoc.off('updateV2', updateHandler);
 				if (db) {
 					compactUpdateLog(db, ydoc);

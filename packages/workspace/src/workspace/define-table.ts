@@ -2,10 +2,12 @@
  * defineTable() for creating versioned table definitions.
  *
  * All table schemas must include `_v: number` as a discriminant field.
+ * The underscore prefix signals framework metadata—see `BaseRow` in
+ * `types.ts` for the full rationale.
+ *
  * Use shorthand for single-version tables, variadic args for multiple versions with migrations.
  *
  * Optionally chain `.withDocument()` to declare named document configs on the table.
- *
  * @example
  * ```typescript
  * import { defineTable } from '@epicenter/workspace';
@@ -111,7 +113,7 @@ type TableDefinitionWithDocBuilder<
 			StringKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
 			ClaimedDocumentColumns<TDocuments>
 		>,
-		TUpdatedAt extends Exclude<
+		_TUpdatedAt extends Exclude<
 			NumberKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
 			ClaimedDocumentColumns<TDocuments>
 		>,
@@ -154,7 +156,7 @@ type TableDefinitionWithDocBuilder<
  */
 export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 	schema: TSchema,
-): TableDefinitionWithDocBuilder<[TSchema], {}>;
+): TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>;
 
 /**
  * Creates a table definition for multiple schema versions with migrations.

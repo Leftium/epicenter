@@ -7,10 +7,9 @@
  * persistent user data — a tab saved on your laptop appears on your
  * desktop automatically.
  *
- * Uses a plain `$state` array (not `SvelteMap`) because the access pattern is
- * always "render the full sorted list." There's no keyed lookup, no partial
- * mutation — the Y.Doc observer wholesale-replaces the array on every change,
- * which is the simplest reactive model for a list that's always read in full.
+ * Backed by a `fromTable()` binding that provides granular per-row reactivity
+ * via `SvelteMap`. The public API exposes a `$derived` sorted array since the
+ * access pattern is always "render the full sorted list."
  *
  * Reactivity: The Y.Doc observer fires on persistence load AND on any
  * remote/local modification, so the UI stays in sync without polling.
@@ -33,16 +32,16 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { getDeviceId } from '$lib/device/device-id';
-import type { BrowserTab } from '$lib/state/browser-state.svelte';
-	import {
+import {
 	generateSavedTabId,
 	type SavedTab,
 	type SavedTabId,
-	workspaceClient,
+	type Tab,
+	workspace,
 } from '$lib/workspace';
 
 function createSavedTabState() {
-	const tabsMap = fromTable(workspaceClient.tables.savedTabs);
+	const tabsMap = fromTable(workspace.tables.savedTabs);
 
 	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
 	const tabs = $derived(
@@ -64,10 +63,10 @@ function createSavedTabState() {
 		 * Silently no-ops for tabs without a URL (e.g. `chrome://` pages
 		 * that can't be re-opened via `browser.tabs.create`).
 		 */
-		async save(tab: BrowserTab) {
+		async save(tab: Tab) {
 			if (!tab.url) return;
 			const deviceId = await getDeviceId();
-			workspaceClient.tables.savedTabs.set({
+			workspace.tables.savedTabs.set({
 				id: generateSavedTabId(),
 				url: tab.url,
 				title: tab.title || 'Untitled',
@@ -89,7 +88,7 @@ function createSavedTabState() {
 				url: savedTab.url,
 				pinned: savedTab.pinned,
 			});
-			workspaceClient.tables.savedTabs.delete(savedTab.id);
+			workspace.tables.savedTabs.delete(savedTab.id);
 		},
 
 		/**
@@ -100,7 +99,7 @@ function createSavedTabState() {
 		 *
 		 * This avoids two problems with the naive sequential approach:
 		 * 1. **Popup teardown**: `browser.tabs.create()` shifts focus, which
-		 *    can cause Chrome to destroy the popup mid-loop — killing the
+		 *    can cause Chrome to dispose the popup mid-loop — killing the
 		 *    async context and leaving remaining tabs un-restored.
 		 * 2. **Observer spam**: Each individual `delete()` fires the Y.Doc
 		 *    observer, triggering a full `readAll()`. Wrapping in `transact()`
@@ -119,9 +118,9 @@ function createSavedTabState() {
 
 			// Batch-delete from Y.Doc in a single transaction so the observer
 			// fires exactly once (not N times).
-			workspaceClient.batch(() => {
+			workspace.batch(() => {
 				for (const tab of all) {
-					workspaceClient.tables.savedTabs.delete(tab.id);
+					workspace.tables.savedTabs.delete(tab.id);
 				}
 			});
 
@@ -132,7 +131,7 @@ function createSavedTabState() {
 
 		/** Delete a saved tab without restoring it. */
 		remove(id: SavedTabId) {
-			workspaceClient.tables.savedTabs.delete(id);
+			workspace.tables.savedTabs.delete(id);
 		},
 
 		/**
@@ -145,16 +144,16 @@ function createSavedTabState() {
 			const all = tabsMap.values().toArray();
 			if (!all.length) return;
 
-			workspaceClient.batch(() => {
+			workspace.batch(() => {
 				for (const tab of all) {
-					workspaceClient.tables.savedTabs.delete(tab.id);
+					workspace.tables.savedTabs.delete(tab.id);
 				}
 			});
 		},
 
 		/** Update a saved tab's metadata in Y.Doc. */
 		update(savedTab: SavedTab) {
-			workspaceClient.tables.savedTabs.set(savedTab);
+			workspace.tables.savedTabs.set(savedTab);
 		},
 	};
 }

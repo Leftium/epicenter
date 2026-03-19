@@ -40,7 +40,7 @@ export type SyncProviderConfig = {
 	 */
 	getToken?: () => Promise<string | undefined>;
 
-	/** External awareness instance. If provided, destroy() will NOT remove its states. Defaults to `new Awareness(doc)`. */
+	/** External awareness instance. If provided, dispose() will NOT remove its states. Defaults to `new Awareness(doc)`. */
 	awareness?: Awareness;
 };
 
@@ -117,7 +117,7 @@ export type SyncProvider = {
 
 	/**
 	 * Clean up everything — disconnect, remove listeners, release resources.
-	 * After calling destroy(), the provider is unusable.
+	 * After calling dispose(), the provider is unusable.
 	 */
-	destroy(): void;
+	dispose(): void;
 };

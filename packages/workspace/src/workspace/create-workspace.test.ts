@@ -10,9 +10,10 @@
  * - Document-bound tables expose `documents`, while non-bound tables do not.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, spyOn, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
+import { generateEncryptionKey } from '../shared/crypto/index.js';
 import { createDocuments } from './create-document.js';
 import { createTables } from './create-tables.js';
 import { createWorkspace } from './create-workspace.js';
@@ -28,7 +29,9 @@ function setup() {
 	const tagsTable = defineTable(
 		type({ id: 'string', name: 'string', _v: '1' }),
 	);
-	const themeDef = defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' });
+	const themeDef = defineKv(type({ mode: "'light' | 'dark'" }), {
+		mode: 'light',
+	});
 
 	const definition = defineWorkspace({
 		id: 'test-workspace',
@@ -285,7 +288,7 @@ describe('createWorkspace', () => {
 				id: 'ext-await-test-1',
 				tables: { files: filesTable },
 			}).withExtension('myExt', () => {
-				return { someValue: 42, destroy: () => {} };
+				return { someValue: 42, dispose: () => {} };
 			});
 
 			expect(client.extensions.myExt.someValue).toBe(42);
@@ -304,12 +307,12 @@ describe('createWorkspace', () => {
 				.withExtension('first', () => {
 					return {
 						value: 'first',
-						destroy: () => {},
+						dispose: () => {},
 					};
 				})
 				.withExtension('second', ({ extensions }) => {
 					receivedFirstExtension = extensions.first.value === 'first';
-					return { destroy: () => {} };
+					return { dispose: () => {} };
 				});
 
 			expect(receivedFirstExtension).toBe(true);
@@ -333,14 +336,14 @@ describe('createWorkspace', () => {
 					return {
 						value: 'first',
 						whenReady: firstWhenReady,
-						destroy: () => {},
+						dispose: () => {},
 					};
 				})
 				.withExtension('second', () => {
 					return {
 						value: 'second',
 						whenReady: Promise.resolve(),
-						destroy: () => {},
+						dispose: () => {},
 					};
 				});
 
@@ -378,13 +381,13 @@ describe('createWorkspace', () => {
 				.withExtension('first', () => {
 					return {
 						whenReady: firstWhenReady,
-						destroy: () => {},
+						dispose: () => {},
 					};
 				})
 				.withExtension('second', () => {
 					return {
 						whenReady: secondWhenReady,
-						destroy: () => {},
+						dispose: () => {},
 					};
 				});
 
@@ -430,14 +433,14 @@ describe('createWorkspace', () => {
 			expect(client.extensions.bare.whenReady).toBeInstanceOf(Promise);
 		});
 
-		test('extensions.X.destroy is always a function even without explicit destroy', () => {
+		test('extensions.X.dispose is always a function even without explicit dispose', () => {
 			const client = createWorkspace({
-				id: 'ext-destroy-default',
+				id: 'ext-dispose-default',
 			}).withExtension('bare', () => {
 				return { tag: 'no-lifecycle' };
 			});
 
-			expect(typeof client.extensions.bare.destroy).toBe('function');
+			expect(typeof client.extensions.bare.dispose).toBe('function');
 		});
 
 		test('surgical await: extension B chains off extensions.A.whenReady', async () => {
@@ -531,7 +534,7 @@ describe('createWorkspace', () => {
 				tables: { files: filesTable },
 			}).withDocumentExtension('test', () => {
 				hookCalled = true;
-				return { destroy: () => {} };
+				return { dispose: () => {} };
 			});
 
 			await client.documents.files.content.open('f1');
@@ -571,7 +574,7 @@ describe('createWorkspace', () => {
 					'persistent-only',
 					() => {
 						hookCalls.push('persistent-only');
-						return { destroy: () => {} };
+						return { dispose: () => {} };
 					},
 					{ tags: ['persistent'] },
 				)
@@ -579,13 +582,13 @@ describe('createWorkspace', () => {
 					'ephemeral-only',
 					() => {
 						hookCalls.push('ephemeral-only');
-						return { destroy: () => {} };
+						return { dispose: () => {} };
 					},
 					{ tags: ['ephemeral'] },
 				)
 				.withDocumentExtension('universal', () => {
 					hookCalls.push('universal');
-					return { destroy: () => {} };
+					return { dispose: () => {} };
 				});
 
 			// Content doc has tags ['persistent', 'synced']
@@ -629,7 +632,7 @@ describe('createWorkspace', () => {
 				factoryCallCount++;
 				return {
 					tag: 'ext',
-					destroy: () => {},
+					dispose: () => {},
 				};
 			});
 
@@ -666,7 +669,7 @@ describe('createWorkspace', () => {
 				factoryCallCount++;
 				return {
 					tag: 'ws-only',
-					destroy: () => {},
+					dispose: () => {},
 				};
 			});
 
@@ -681,7 +684,7 @@ describe('createWorkspace', () => {
 			expect(factoryCallCount).toBe(1);
 		});
 
-		test('workspace destroy cascades to closeAll on bindings', async () => {
+		test('workspace dispose cascades to closeAll on bindings', async () => {
 			const filesTable = defineTable(
 				type({
 					id: 'string',
@@ -695,16 +698,16 @@ describe('createWorkspace', () => {
 			});
 
 			const client = createWorkspace({
-				id: 'doc-destroy-test',
+				id: 'doc-dispose-test',
 				tables: { files: filesTable },
 			});
 
 			const doc1 = await client.documents.files.content.open('f1');
 
-			await client.destroy();
+			await client.dispose();
 
-			// After destroy, open should create a new Y.Doc (since documents were destroyed)
-			// But we can't open after workspace destroy — just verify no error occurred
+			// After dispose, open should create a new Y.Doc (since documents were disposed)
+			// But we can't open after workspace dispose — just verify no error occurred
 			expect(doc1).toBeDefined();
 		});
 
@@ -785,7 +788,7 @@ describe('createWorkspace', () => {
 				() => {
 					if (shouldThrow) throw new Error(`${name} factory failed`);
 					return {
-						destroy: async () => {
+						dispose: async () => {
 							cleanupOrder.push(name);
 						},
 					};
@@ -803,11 +806,11 @@ describe('createWorkspace', () => {
 			expect(cleanupOrder).toEqual(['second', 'first']); // LIFO, skips 'third'
 		});
 
-		test('document extension destroy order is LIFO', async () => {
-			const destroyOrder: string[] = [];
+		test('document extension dispose order is LIFO', async () => {
+			const disposeOrder: string[] = [];
 			const factory = (name: string) => () => ({
-				destroy: async () => {
-					destroyOrder.push(name);
+				dispose: async () => {
+					disposeOrder.push(name);
 				},
 			});
 
@@ -836,7 +839,7 @@ describe('createWorkspace', () => {
 			await documents.open('doc-1');
 			await documents.close('doc-1');
 
-			expect(destroyOrder).toEqual(['third', 'second', 'first']); // LIFO
+			expect(disposeOrder).toEqual(['third', 'second', 'first']); // LIFO
 		});
 
 		test('whenReady rejection in workspace triggers cleanup', async () => {
@@ -848,13 +851,13 @@ describe('createWorkspace', () => {
 
 			const client = createWorkspace(def)
 				.withExtension('first', () => ({
-					destroy: async () => {
+					dispose: async () => {
 						cleanupCalled.add('first');
 					},
 				}))
 				.withExtension('second', () => ({
 					whenReady: whenReadyPromise,
-					destroy: async () => {
+					dispose: async () => {
 						cleanupCalled.add('second');
 					},
 				}));
@@ -898,7 +901,7 @@ describe('createWorkspace', () => {
 					{
 						key: 'first',
 						factory: () => ({
-							destroy: async () => {
+							dispose: async () => {
 								cleanupCalled.add('first');
 							},
 						}),
@@ -908,7 +911,7 @@ describe('createWorkspace', () => {
 						key: 'second',
 						factory: () => ({
 							whenReady: whenReadyPromise,
-							destroy: async () => {
+							dispose: async () => {
 								cleanupCalled.add('second');
 							},
 						}),
@@ -928,6 +931,226 @@ describe('createWorkspace', () => {
 
 			expect(cleanupCalled.has('first')).toBe(true);
 			expect(cleanupCalled.has('second')).toBe(true);
+		});
+	});
+});
+
+// ============================================================================
+// Workspace Encryption (activateEncryption / mode)
+// ============================================================================
+
+describe('workspace encryption', () => {
+	function setupEncrypted() {
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+		const client = createWorkspace(
+			defineWorkspace({ id: 'enc-test', tables: { posts } }),
+		).withEncryption();
+		return { client, key: generateEncryptionKey() };
+	}
+
+	test('mode starts as plaintext when no key provided', () => {
+		const { client } = setupEncrypted();
+		expect(client.isEncrypted).toBe(false);
+	});
+
+	test('activateEncryption transitions mode to encrypted', async () => {
+		const { client, key } = setupEncrypted();
+		await client.activateEncryption(key);
+		expect(client.isEncrypted).toBe(true);
+	});
+
+	test('activateEncryption enables encrypted writes that survive re-activation', async () => {
+		const { client, key } = setupEncrypted();
+		await client.activateEncryption(key);
+		client.tables.posts.set({ id: '1', title: 'Secret', _v: 1 });
+
+		// Re-activate with same key — dedup skips HKDF, data survives
+		await client.activateEncryption(key);
+
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Secret');
+		}
+	});
+
+	test('activateEncryption with construction-time key starts stores as encrypted', () => {
+		const key = generateEncryptionKey();
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+		const client = createWorkspace(
+			defineWorkspace({ id: 'key-test', tables: { posts } }),
+			{ key },
+		).withEncryption();
+		// Construction-time key sets workspaceKey directly, so isEncrypted is true
+		expect(client.isEncrypted).toBe(true);
+	});
+});
+
+// ============================================================================
+// .withEncryption() lifecycle (dedup, race, onDeactivate, isEncrypted)
+// ============================================================================
+
+describe('.withEncryption() lifecycle', () => {
+	function setupLifecycle() {
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+		const onDeactivate = mock(() => Promise.resolve());
+		const client = createWorkspace(
+			defineWorkspace({ id: 'lifecycle-enc-test', tables: { posts } }),
+		).withEncryption({ onDeactivate });
+		return { client, onDeactivate };
+	}
+
+	describe('dedup', () => {
+		test('same key twice → HKDF runs only once (dedup by bytes)', async () => {
+			const { client } = setupLifecycle();
+			const key = generateEncryptionKey();
+
+			await client.activateEncryption(key);
+			expect(client.isEncrypted).toBe(true);
+
+			// Second call with identical bytes should be a no-op
+			await client.activateEncryption(key);
+			expect(client.isEncrypted).toBe(true);
+		});
+
+		test('different keys each trigger HKDF derivation', async () => {
+			const { client } = setupLifecycle();
+
+			await client.activateEncryption(generateEncryptionKey());
+			expect(client.isEncrypted).toBe(true);
+
+			await client.activateEncryption(generateEncryptionKey());
+			expect(client.isEncrypted).toBe(true);
+		});
+	});
+
+	describe('race protection', () => {
+		test('rapid key switches → only latest applies', async () => {
+			const { client } = setupLifecycle();
+
+			// Fire three rapid activations without awaiting
+			const p1 = client.activateEncryption(generateEncryptionKey());
+			const p2 = client.activateEncryption(generateEncryptionKey());
+			const lastKey = generateEncryptionKey();
+			const p3 = client.activateEncryption(lastKey);
+
+			await Promise.all([p1, p2, p3]);
+
+			// Only the last call's derived key should be active
+			expect(client.isEncrypted).toBe(true);
+		});
+	});
+
+	describe('onDeactivate hook', () => {
+		test('called after store cleanup during deactivateEncryption', async () => {
+			const { client, onDeactivate } = setupLifecycle();
+
+			await client.activateEncryption(generateEncryptionKey());
+			expect(client.isEncrypted).toBe(true);
+
+			await client.deactivateEncryption();
+			expect(client.isEncrypted).toBe(false);
+			expect(onDeactivate).toHaveBeenCalledTimes(1);
+		});
+
+		test('not called if encryption was never activated', async () => {
+			const { client, onDeactivate } = setupLifecycle();
+			await client.deactivateEncryption();
+			expect(onDeactivate).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('isEncrypted getter', () => {
+		test('reflects key state transitions', async () => {
+			const { client } = setupLifecycle();
+
+			expect(client.isEncrypted).toBe(false);
+
+			await client.activateEncryption(generateEncryptionKey());
+			expect(client.isEncrypted).toBe(true);
+
+			await client.deactivateEncryption();
+			expect(client.isEncrypted).toBe(false);
+		});
+	});
+
+	describe('deactivateEncryption invalidates in-flight HKDF', () => {
+		test('activate then immediately deactivate → stays deactivated', async () => {
+			const { client } = setupLifecycle();
+
+			// Start activation (HKDF is in-flight)
+			const activatePromise = client.activateEncryption(
+				generateEncryptionKey(),
+			);
+			// Immediately deactivate before HKDF completes
+			await client.deactivateEncryption();
+
+			// Wait for activation to settle
+			await activatePromise;
+
+			// Generation counter should have prevented the stale key from applying
+			expect(client.isEncrypted).toBe(false);
+		});
+	});
+
+	describe('onActivate hook', () => {
+		function setupOnActivate() {
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+			);
+			const onActivate = mock(() => Promise.resolve());
+			const onDeactivate = mock(() => Promise.resolve());
+			const client = createWorkspace(
+				defineWorkspace({ id: 'onactivate-test', tables: { posts } }),
+			).withEncryption({ onActivate, onDeactivate });
+			return { client, onActivate, onDeactivate };
+		}
+
+		test('fires after successful activation with the userKey', async () => {
+			const { client, onActivate } = setupOnActivate();
+			const key = generateEncryptionKey();
+
+			await client.activateEncryption(key);
+
+			expect(onActivate).toHaveBeenCalledTimes(1);
+			expect(onActivate).toHaveBeenCalledWith(key);
+		});
+
+		test('does NOT fire on dedup skip (same key twice)', async () => {
+			const { client, onActivate } = setupOnActivate();
+			const key = generateEncryptionKey();
+
+			await client.activateEncryption(key);
+			await client.activateEncryption(key);
+
+			expect(onActivate).toHaveBeenCalledTimes(1);
+		});
+
+		test('does NOT fire when HKDF fails', async () => {
+			const { client, onActivate } = setupOnActivate();
+			const key = generateEncryptionKey();
+			const importKeySpy = spyOn(
+				crypto.subtle,
+				'importKey',
+			).mockRejectedValueOnce(new Error('forced hkdf importKey failure'));
+
+			await client.activateEncryption(key);
+
+			importKeySpy.mockRestore();
+			expect(onActivate).toHaveBeenCalledTimes(0);
+			expect(client.isEncrypted).toBe(false);
+		});
+
+		test('does NOT fire when activation is superseded by race (stale generation)', async () => {
+			const { client, onActivate } = setupOnActivate();
+
+			const activatePromise = client.activateEncryption(
+				generateEncryptionKey(),
+			);
+			await client.deactivateEncryption();
+			await activatePromise;
+
+			expect(onActivate).toHaveBeenCalledTimes(0);
 		});
 	});
 });

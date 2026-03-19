@@ -18,18 +18,12 @@
 	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
-	import { registerDevice, workspaceClient } from '$lib/workspace';
 
-	// Auth initialization — check cached session on mount, react to external token changes
+	// Auth initialization — check cached session on mount
 	onMount(() => {
 		authState.checkSession();
-		const unsubExternalSignIn = authState.onExternalSignIn(() =>
-			workspaceClient.extensions.sync.reconnect(),
-		);
-
-		// Register device in Y.Doc for saved tabs / bookmarks attribution
-		void workspaceClient.whenReady.then(() => registerDevice());
-
+		// External sign-in handled by $effect in auth.svelte.ts
+		// Sync naturally handles auth token changes (stable client, no rebuild needed)
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&
@@ -39,10 +33,7 @@
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () => {
-			document.removeEventListener('visibilitychange', onVisibilityChange);
-			unsubExternalSignIn();
-		};
+		return () => document.removeEventListener('visibilitychange', onVisibilityChange);
 	});
 
 	let searchInputRef = $state<HTMLInputElement | null>(null);
@@ -124,12 +115,12 @@
 		</header>
 		<!-- Gate on browser state seed so child components can read data synchronously -->
 		{#await browserState.whenReady}
-			<Empty.Root class="flex-1">
-				<Empty.Media>
+			<div class="flex-1 flex items-center justify-center">
+				<div class="flex flex-col items-center gap-3">
 					<Spinner class="size-5 text-muted-foreground" />
-				</Empty.Media>
-				<Empty.Title>Loading tabs…</Empty.Title>
-			</Empty.Root>
+					<p class="text-sm text-muted-foreground">Loading tabs…</p>
+				</div>
+			</div>
 		{:then _}
 			<div class="flex-1 min-h-0"><UnifiedTabList /></div>
 		{:catch}

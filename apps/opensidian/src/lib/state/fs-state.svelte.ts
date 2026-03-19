@@ -1,14 +1,19 @@
-import {
-	createSqliteIndex,
-	createYjsFileSystem,
-	type FileId,
-	type FileRow,
-	filesTable,
-} from '@epicenter/filesystem';
-import { createWorkspace } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import type { FileId, FileRow } from '@epicenter/filesystem';
 import { SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
+import { fs, ws } from '$lib/workspace';
+
+/**
+ * Interaction mode discriminated union.
+ *
+ * Only one interaction can be active at a time. Setting any mode
+ * implicitly cancels the previous one—impossible states are unrepresentable.
+ */
+type InteractionMode =
+	| { type: 'idle' }
+	| { type: 'renaming'; targetId: FileId }
+	| { type: 'creating'; parentId: FileId | null; fileType: 'file' | 'folder' }
+	| { type: 'confirming-delete' };
 
 /**
  * Reactive filesystem state singleton.
@@ -24,21 +29,12 @@ import { toast } from 'svelte-sonner';
  * @example
  * ```svelte
  * <script>
- *   import { fsState } from '$lib/fs/fs-state.svelte';
+ *   import { fsState } from '$lib/state/fs-state.svelte';
  *   const children = $derived(fsState.rootChildIds);
  * </script>
  * ```
  */
 function createFsState() {
-	const ws = createWorkspace({
-		id: 'opensidian',
-		tables: { files: filesTable },
-	})
-		.withExtension('persistence', indexeddbPersistence)
-		.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
-	const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
-	const documents = ws.documents.files.content;
-
 	// ── Reactive state ────────────────────────────────────────────────
 	let version = $state(0);
 	let activeFileId = $state<FileId | null>(null);
@@ -46,12 +42,15 @@ function createFsState() {
 	const expandedIds = new SvelteSet<FileId>();
 	let focusedId = $state<FileId | null>(null);
 
-	// ── Inline editing state ──────────────────────────────────────────
-	let inlineCreate = $state<{
-		parentId: FileId | null;
-		type: 'file' | 'folder';
-	} | null>(null);
-	let renamingId = $state<FileId | null>(null);
+	// ── Interaction mode ─────────────────────────────────────────────
+	// Replaces the old independent renamingId / inlineCreate / deleteDialogOpen
+	// states. A single discriminated union prevents conflicting modes.
+	let interactionMode = $state<InteractionMode>({ type: 'idle' });
+
+	// ── Context menu hover persistence ───────────────────────────────
+	// Tracks which tree item's context menu is currently open so the
+	// item stays visually highlighted while the mouse is on the menu.
+	let contextMenuTargetId = $state<FileId | null>(null);
 
 	// ── rAF-coalesced observer ────────────────────────────────────────
 	let pendingBump = false;
@@ -83,16 +82,50 @@ function createFsState() {
 
 	/**
 	 * Path string for the active file (e.g. "/docs/api.md"), or null.
-	 * Computed by searching the index's path map.
+	 * Uses the index's O(1) reverse lookup.
 	 */
 	const selectedPath = $derived.by(() => {
 		void version;
 		if (!activeFileId) return null;
-		for (const p of fs.index.allPaths()) {
-			if (fs.index.getIdByPath(p) === activeFileId) return p;
-		}
-		return null;
+		return fs.index.getPathById(activeFileId) ?? null;
 	});
+
+	// ── Derived from interaction mode ────────────────────────────────
+	// Stable public API over the internal union. Components read these
+	// without coupling to InteractionMode's shape.
+
+	const renamingId = $derived(
+		interactionMode.type === 'renaming' ? interactionMode.targetId : null,
+	);
+
+	const inlineCreate = $derived(
+		interactionMode.type === 'creating'
+			? { parentId: interactionMode.parentId, type: interactionMode.fileType }
+			: null,
+	);
+
+	const deleteDialogOpen = $derived(
+		interactionMode.type === 'confirming-delete',
+	);
+
+	// ── Private helpers ───────────────────────────────────────────────
+
+	/**
+	 * Wrap an async operation with error toast handling.
+	 * The callback contains all logic including success toasts.
+	 * On error, shows the error's own message or the fallback.
+	 */
+	async function withErrorToast(
+		fn: () => Promise<void>,
+		fallbackMessage: string,
+	) {
+		try {
+			await fn();
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : fallbackMessage);
+			console.error(err);
+		}
+	}
 
 	const state = {
 		// ── Read-only getters ───────────────────────────────────────
@@ -123,11 +156,14 @@ function createFsState() {
 		get renamingId() {
 			return renamingId;
 		},
+		get deleteDialogOpen() {
+			return deleteDialogOpen;
+		},
+		get contextMenuTargetId() {
+			return contextMenuTargetId;
+		},
 
 		expandedIds,
-		fs,
-		documents,
-		sqliteIndex: ws.extensions.sqliteIndex,
 
 		/**
 		 * Get child FileIds of a folder. Reads from FileSystemIndex.
@@ -149,15 +185,56 @@ function createFsState() {
 		},
 
 		/**
-		 * Find the path for a file ID by searching the index.
+		 * Find the path for a file ID using O(1) reverse index lookup.
 		 * Returns null if not found (deleted/trashed).
 		 */
 		getPathForId(id: FileId): string | null {
 			void version;
-			for (const p of fs.index.allPaths()) {
-				if (fs.index.getIdByPath(p) === id) return p;
+			return fs.index.getPathById(id) ?? null;
+		},
+
+		/**
+		 * Walk the file tree recursively, calling `visitor` for each node.
+		 *
+		 * The visitor receives a file ID and its row, and returns an object:
+		 * - `collect`: if present, the value is added to the result array
+		 * - `descend`: if true, recurse into children (only meaningful for folders)
+		 *
+		 * Must be called in a reactive context to track `version`.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Collect all visible IDs (respecting folder expansion)
+		 * const visibleIds = fsState.walkTree((id, row) => ({
+		 *   collect: id,
+		 *   descend: row.type === 'folder' && fsState.expandedIds.has(id),
+		 * }));
+		 *
+		 * // Collect only files with metadata
+		 * const allFiles = fsState.walkTree((id, row) => {
+		 *   if (row.type === 'file') return { collect: { id, name: row.name }, descend: false };
+		 *   return { descend: true };
+		 * });
+		 * ```
+		 */
+		walkTree<T>(
+			visitor: (id: FileId, row: FileRow) => { collect?: T; descend: boolean },
+			parentId: FileId | null = null,
+		): T[] {
+			void version;
+			const results: T[] = [];
+			function walk(pid: FileId | null) {
+				for (const childId of fs.index.getChildIds(pid)) {
+					const result = ws.tables.files.get(childId);
+					if (result.status !== 'valid' || result.row.trashedAt !== null)
+						continue;
+					const { collect, descend } = visitor(childId, result.row);
+					if (collect !== undefined) results.push(collect);
+					if (descend) walk(childId);
+				}
 			}
-			return null;
+			walk(parentId);
+			return results;
 		},
 
 		// ── Inline editing ───────────────────────────────────────────
@@ -167,33 +244,36 @@ function createFsState() {
 		 * If a folder is focused, creates inside it. If a file is focused, creates as sibling.
 		 * If nothing is focused, creates at root.
 		 */
-		startCreate(type: 'file' | 'folder') {
-			renamingId = null;
+		startCreate(fileType: 'file' | 'folder') {
 			const focused = focusedId ?? activeFileId;
 			if (!focused) {
-				inlineCreate = { parentId: null, type };
+				interactionMode = { type: 'creating', parentId: null, fileType };
 				return;
 			}
 			const row = state.getRow(focused);
 			if (row?.type === 'folder') {
 				expandedIds.add(focused);
-				inlineCreate = { parentId: focused, type };
+				interactionMode = { type: 'creating', parentId: focused, fileType };
 			} else if (row?.parentId) {
-				inlineCreate = { parentId: row.parentId, type };
+				interactionMode = {
+					type: 'creating',
+					parentId: row.parentId,
+					fileType,
+				};
 			} else {
-				inlineCreate = { parentId: null, type };
+				interactionMode = { type: 'creating', parentId: null, fileType };
 			}
 		},
 
 		cancelCreate() {
-			inlineCreate = null;
+			interactionMode = { type: 'idle' };
 		},
 
 		async confirmCreate(name: string) {
-			if (!name.trim() || !inlineCreate) return;
-			const { parentId, type } = inlineCreate;
-			inlineCreate = null;
-			if (type === 'file') {
+			if (!name.trim() || interactionMode.type !== 'creating') return;
+			const { parentId, fileType } = interactionMode;
+			interactionMode = { type: 'idle' };
+			if (fileType === 'file') {
 				await state.createFile(parentId, name.trim());
 			} else {
 				await state.createFolder(parentId, name.trim());
@@ -201,19 +281,34 @@ function createFsState() {
 		},
 
 		startRename(id: FileId) {
-			inlineCreate = null;
-			renamingId = id;
+			interactionMode = { type: 'renaming', targetId: id };
 		},
 
 		cancelRename() {
-			renamingId = null;
+			interactionMode = { type: 'idle' };
 		},
 
 		async confirmRename(newName: string) {
-			if (!newName.trim() || !renamingId) return;
-			const id = renamingId;
-			renamingId = null;
+			if (!newName.trim() || interactionMode.type !== 'renaming') return;
+			const id = interactionMode.targetId;
+			interactionMode = { type: 'idle' };
 			await state.rename(id, newName.trim());
+		},
+
+		// ── Delete dialog ────────────────────────────────────────────
+
+		openDelete() {
+			interactionMode = { type: 'confirming-delete' };
+		},
+
+		closeDelete() {
+			interactionMode = { type: 'idle' };
+		},
+
+		// ── Context menu ─────────────────────────────────────────────
+
+		setContextMenuTarget(id: FileId | null) {
+			contextMenuTargetId = id;
 		},
 
 		// ── Actions ──────────────────────────────────────────────────
@@ -242,23 +337,18 @@ function createFsState() {
 		},
 
 		async createFile(parentId: FileId | null, name: string) {
-			try {
+			await withErrorToast(async () => {
 				const parentPath = parentId
 					? (state.getPathForId(parentId) ?? '/')
 					: '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
 				await fs.writeFile(path, '');
 				toast.success(`Created ${path}`);
-			} catch (err) {
-				toast.error(
-					err instanceof Error ? err.message : 'Failed to create file',
-				);
-				console.error(err);
-			}
+			}, 'Failed to create file');
 		},
 
 		async createFolder(parentId: FileId | null, name: string) {
-			try {
+			await withErrorToast(async () => {
 				const parentPath = parentId
 					? (state.getPathForId(parentId) ?? '/')
 					: '/';
@@ -266,30 +356,22 @@ function createFsState() {
 				await fs.mkdir(path);
 				if (parentId) expandedIds.add(parentId);
 				toast.success(`Created ${path}/`);
-			} catch (err) {
-				toast.error(
-					err instanceof Error ? err.message : 'Failed to create folder',
-				);
-				console.error(err);
-			}
+			}, 'Failed to create folder');
 		},
 
 		async deleteFile(id: FileId) {
-			try {
+			await withErrorToast(async () => {
 				const path = state.getPathForId(id);
 				if (!path) return;
 				await fs.rm(path, { recursive: true });
 				if (activeFileId === id) activeFileId = null;
 				openFileIds = openFileIds.filter((f) => f !== id);
 				toast.success(`Deleted ${path}`);
-			} catch (err) {
-				toast.error(err instanceof Error ? err.message : 'Failed to delete');
-				console.error(err);
-			}
+			}, 'Failed to delete');
 		},
 
 		async rename(id: FileId, newName: string) {
-			try {
+			await withErrorToast(async () => {
 				const oldPath = state.getPathForId(id);
 				if (!oldPath) return;
 				const parentPath =
@@ -298,10 +380,7 @@ function createFsState() {
 					parentPath === '/' ? `/${newName}` : `${parentPath}/${newName}`;
 				await fs.mv(oldPath, newPath);
 				toast.success(`Renamed to ${newName}`);
-			} catch (err) {
-				toast.error(err instanceof Error ? err.message : 'Failed to rename');
-				console.error(err);
-			}
+			}, 'Failed to rename');
 		},
 
 		/**
@@ -311,7 +390,7 @@ function createFsState() {
 		 */
 		async readContent(id: FileId): Promise<string | null> {
 			try {
-				const handle = await documents.open(id);
+				const handle = await ws.documents.files.content.open(id);
 				return handle.read();
 			} catch (err) {
 				console.error('Failed to read content:', err);
@@ -326,20 +405,17 @@ function createFsState() {
 		 * The documents manager's `onUpdate` callback bumps `updatedAt` on the file row.
 		 */
 		async writeContent(id: FileId, data: string): Promise<void> {
-			try {
-				const handle = await documents.open(id);
+			await withErrorToast(async () => {
+				const handle = await ws.documents.files.content.open(id);
 				handle.write(data);
-			} catch (err) {
-				toast.error(err instanceof Error ? err.message : 'Failed to save file');
-				console.error(err);
-			}
+			}, 'Failed to save file');
 		},
 
 		/** Cleanup — call from +layout.svelte onDestroy if needed. */
-		async destroy() {
+		async dispose() {
 			unobserve();
-			fs.index.destroy();
-			await fs.destroy();
+			fs.index.dispose();
+			fs.dispose();
 		},
 	};
 
@@ -347,10 +423,3 @@ function createFsState() {
 }
 
 export const fsState = createFsState();
-
-// Expose on window for dev console access
-// Usage: await fsState.sqliteIndex.search('hello')
-//        await fsState.sqliteIndex.client.execute('SELECT * FROM files')
-if (typeof window !== 'undefined') {
-	(window as unknown as Record<string, unknown>).fsState = fsState;
-}

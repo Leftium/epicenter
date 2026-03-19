@@ -44,7 +44,7 @@
 			approval?.id &&
 			toolTrustState.shouldAutoApprove(part.name)
 		) {
-			aiChatState.active?.approveToolCall(approval.id, true);
+			aiChatState.active?.approveToolCall(approval.id);
 		}
 	});
 

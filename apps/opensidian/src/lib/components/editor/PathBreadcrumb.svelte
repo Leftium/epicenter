@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Breadcrumb from '@epicenter/ui/breadcrumb';
-	import { fsState } from '$lib/fs/fs-state.svelte';
+	import { fsState } from '$lib/state/fs-state.svelte';
 
 	const pathSegments = $derived.by(() => {
 		const path = fsState.selectedPath;

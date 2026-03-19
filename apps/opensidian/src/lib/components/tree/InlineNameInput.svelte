@@ -33,7 +33,14 @@
 		}
 	});
 
+	/**
+	 * Idempotency guard — prevents double-fire when Enter keydown and
+	 * blur both call confirm().
+	 */
+	let confirmed = false;
 	function confirm() {
+		if (confirmed) return;
+		confirmed = true;
 		if (value.trim()) {
 			onConfirm(value.trim());
 		} else {
@@ -62,6 +69,16 @@
 			}
 			e.stopPropagation();
 		}}
-		onblur={confirm}
+		onblur={() => {
+			// Defer to next frame so transient focus shifts settle. Without
+			// this, context menu close restores focus to the trigger element,
+			// which blurs the input and cancels it before the user can type.
+			// Works together with onCloseAutoFocus in FileTreeItem.
+			requestAnimationFrame(() => {
+				if (inputEl && document.activeElement !== inputEl) {
+					confirm();
+				}
+			});
+		}}
 	>
 </div>

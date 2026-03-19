@@ -8,6 +8,12 @@ metadata:
 
 # Styling Guidelines
 
+## Reference Repositories
+
+- [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte) — Port of shadcn/ui for Svelte with Bits UI primitives
+- [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras) — Additional components for shadcn-svelte
+- [Svelte](https://github.com/sveltejs/svelte) — Svelte 5 framework
+
 ## When to Apply This Skill
 
 Use this pattern when you need to:

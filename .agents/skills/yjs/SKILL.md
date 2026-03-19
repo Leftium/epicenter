@@ -7,6 +7,9 @@ metadata:
 ---
 
 # Yjs CRDT Patterns
+## Reference Repositories
+
+- [Yjs](https://github.com/yjs/yjs) — CRDT framework for shared editing and offline-first data
 
 > **Related Skills**: See `workspace-api` for the workspace abstraction built on Yjs.
 

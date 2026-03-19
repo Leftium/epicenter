@@ -142,7 +142,7 @@ describe('createSyncProvider', () => {
 
 		expect(provider.status.phase).toBe('offline');
 
-		provider.destroy();
+		provider.dispose();
 	});
 
 	test('connect() transitions to connecting', async () => {
@@ -158,7 +158,7 @@ describe('createSyncProvider', () => {
 		expect(provider.status.phase).toBe('connecting');
 		expect(MockWebSocket.lastCreated).not.toBeNull();
 
-		provider.destroy();
+		provider.dispose();
 	});
 
 	test('connect() starts the supervisor loop', async () => {
@@ -175,7 +175,7 @@ describe('createSyncProvider', () => {
 
 		expect(provider.status.phase).toBe('connecting');
 
-		provider.destroy();
+		provider.dispose();
 	});
 
 	test('status transitions: connecting → connected', async () => {
@@ -207,7 +207,7 @@ describe('createSyncProvider', () => {
 		expect(provider.status.phase).toBe('connected');
 		expect(statuses.map((s) => s.phase)).toContain('connected');
 
-		provider.destroy();
+		provider.dispose();
 	});
 
 	test('disconnect() sets status to offline synchronously', async () => {
@@ -233,7 +233,7 @@ describe('createSyncProvider', () => {
 
 		// Clean up the close event
 		await tick();
-		provider.destroy();
+		provider.dispose();
 	});
 
 	test('disconnect() during connecting cancels the loop', async () => {
@@ -254,7 +254,7 @@ describe('createSyncProvider', () => {
 		await tick(50);
 		expect(provider.status.phase).toBe('offline');
 
-		provider.destroy();
+		provider.dispose();
 	});
 
 	test('onStatusChange listener fires on transitions', async () => {
@@ -281,7 +281,7 @@ describe('createSyncProvider', () => {
 		const phases = statuses.map((s) => s.phase);
 		expect(phases).toEqual(['connecting', 'connected']);
 
-		provider.destroy();
+		provider.dispose();
 	});
 
 	test('onStatusChange unsubscribe stops notifications', async () => {
@@ -311,10 +311,10 @@ describe('createSyncProvider', () => {
 		const phases = statuses.map((s) => s.phase);
 		expect(phases).toEqual(['connecting']);
 
-		provider.destroy();
+		provider.dispose();
 	});
 
-	test('destroy() sets status to offline and cleans up', async () => {
+	test('dispose() sets status to offline and cleans up', async () => {
 		const doc = createDoc();
 		const statuses: SyncStatus[] = [];
 
@@ -336,15 +336,15 @@ describe('createSyncProvider', () => {
 
 		expect(provider.status.phase).toBe('connected');
 
-		provider.destroy();
+		provider.dispose();
 		expect(provider.status.phase).toBe('offline');
 
-		// After destroy, status listener should not fire
-		// (listeners are cleared in destroy)
+		// After dispose, status listener should not fire
+		// (listeners are cleared in dispose)
 		statuses.length = 0;
 
 		await tick(50);
-		provider.destroy();
+		provider.dispose();
 	});
 
 	test('multiple connect() calls are idempotent', async () => {
@@ -366,7 +366,7 @@ describe('createSyncProvider', () => {
 		// Same WebSocket instance — no new one was created
 		expect(MockWebSocket.lastCreated).toBe(firstWs);
 
-		provider.destroy();
+		provider.dispose();
 	});
 
 	test('reconnection after socket close', async () => {
@@ -404,7 +404,7 @@ describe('createSyncProvider', () => {
 		const ws2 = getLastWebSocket();
 		expect(ws2).not.toBe(ws1);
 
-		provider.destroy();
+		provider.dispose();
 	});
 
 	test('getToken result is passed as query param', async () => {
@@ -426,6 +426,6 @@ describe('createSyncProvider', () => {
 		// into the Sec-WebSocket-Protocol header which proxies may log
 		expect(ws.protocols).toBeUndefined();
 
-		provider.destroy();
+		provider.dispose();
 	});
 });

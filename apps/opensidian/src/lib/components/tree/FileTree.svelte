@@ -2,32 +2,19 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as TreeView from '@epicenter/ui/tree-view';
-	import { fsState } from '$lib/fs/fs-state.svelte';
-	import DeleteConfirmation from './DeleteConfirmation.svelte';
+	import { fsState } from '$lib/state/fs-state.svelte';
 	import FileTreeItem from './FileTreeItem.svelte';
 	import InlineNameInput from './InlineNameInput.svelte';
-
-	let deleteDialogOpen = $state(false);
 
 	/**
 	 * Flat list of visible item IDs in visual order.
 	 * Respects folder expansion state—collapsed folders hide their descendants.
 	 */
 	const visibleIds = $derived.by(() => {
-		void fsState.version;
-		const ids: FileId[] = [];
-		function walk(parentId: FileId | null) {
-			for (const childId of fsState.getChildIds(parentId)) {
-				const row = fsState.getRow(childId);
-				if (!row) continue;
-				ids.push(childId);
-				if (row.type === 'folder' && fsState.expandedIds.has(childId)) {
-					walk(childId);
-				}
-			}
-		}
-		walk(null);
-		return ids;
+		return fsState.walkTree<FileId>((id, row) => ({
+			collect: id,
+			descend: row.type === 'folder' && fsState.expandedIds.has(id),
+		}));
 	});
 
 	/** Whether an inline create/rename is active (suppresses tree keyboard shortcuts). */
@@ -128,7 +115,7 @@
 				if (!current) break;
 				// Select the focused item so DeleteConfirmation reads the right target
 				fsState.selectFile(current);
-				deleteDialogOpen = true;
+				fsState.openDelete();
 				break;
 			}
 			default:
@@ -161,5 +148,3 @@
 		{/if}
 	</TreeView.Root>
 {/if}
-
-<DeleteConfirmation bind:open={deleteDialogOpen} />

@@ -110,7 +110,7 @@ export function createSyncExtension(
 	config: SyncExtensionConfig,
 ): (context: SharedExtensionContext) => SyncExtensionExports & {
 	whenReady: Promise<unknown>;
-	destroy: () => void;
+	dispose: () => void;
 } {
 	return ({ ydoc, whenReady: priorReady }) => {
 		const docId = ydoc.guid;
@@ -152,8 +152,8 @@ export function createSyncExtension(
 				provider.connect();
 			},
 			whenReady,
-			destroy() {
-				provider.destroy();
+			dispose() {
+				provider.dispose();
 			},
 		};
 	};

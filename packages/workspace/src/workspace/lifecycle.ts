@@ -3,43 +3,44 @@
  *
  * This module defines:
  *
- * - **`Lifecycle`** — The base `{ whenReady, destroy }` contract all extensions satisfy
  * - **`Extension<T>`** — Resolved form: custom exports + required lifecycle hooks
  * - **`defineExtension()`** — Normalizes raw factory returns into `Extension<T>`
- * - **`destroyLifo()` / `startDestroyLifo()`** — LIFO teardown for ordered cleanup
+ * - **`disposeLifo()` / `startDisposeLifo()`** — LIFO teardown for ordered cleanup
  *
- * ## Architecture
+ * Extension factories are **always synchronous**. Async initialization is tracked
+ * via the returned `whenReady` promise, not the factory itself. This keeps
+ * construction deterministic while allowing I/O during startup.
  *
  * Extensions are registered at two scopes—workspace and document—with a shared
  * subset for dual-scope registration:
  *
  * ```
  * ┌─────────────────────────────────────────────────────────────────┐
- * │  Lifecycle (base protocol)                                      │
- * │    { whenReady, destroy }                                       │
- * └─────────────────────────────────────────────────────────────────┘
- *          │
- *          ▼
- * ┌─────────────────────────────────────────────────────────────────┐
  * │  Extension<T> (resolved form)                                   │
- * │    T & { whenReady: Promise<void>, destroy: () => void }        │
+ * │    T & { whenReady: Promise<void>, dispose: () => void }        │
  * └─────────────────────────────────────────────────────────────────┘
- *          │                                    │
- *          ▼                                    ▼
+ * │                                    │
+ * ▼                                    ▼
  * ┌──────────────────────────┐    ┌──────────────────────────────┐
  * │  Workspace extensions    │    │  Document extensions          │
  * │  ExtensionContext         │    │  DocumentContext              │
  * │  (tables, kv, awareness) │    │  (timeline, ydoc)             │
  * └──────────────────────────┘    └──────────────────────────────┘
- *          │                                    │
- *          └────────────┬─────────────────────┘
+ * │                                    │
+ * └────────────┬─────────────────────┘
  *                       ▼
  *          SharedExtensionContext
  *          { ydoc, whenReady }
  *          (used by withExtension)
  * ```
  *
- * ## Usage
+ * ## Three Lifecycle Hooks
+ *
+ * | Hook | Purpose | Default |
+ * |------|---------|---------|
+ * | `whenReady` | Track async initialization (render gates, sequencing) | `Promise.resolve()` |
+ * | `dispose` | Release resources on shutdown (connections, observers) | No-op `() => {}` |
+ * | `clearData` | Wipe persisted data on sign-out (IndexedDB, SQLite) | `undefined` (omit if no persistence) |
  *
  * Factory functions are **always synchronous**. Async initialization is tracked
  * via the returned `whenReady` promise, not the factory itself.
@@ -50,15 +51,15 @@
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return {
  *     provider,
- *     whenReady: provider.whenReady,
- *     destroy: () => provider.destroy(),
+ *     whenReady: provider.whenSynced,
+ *     dispose: () => provider.destroy(),
  *   };
  * };
  *
  * // Lifecycle-only extension (no custom exports)
  * const broadcast = ({ ydoc }) => {
  *   const channel = new BroadcastChannel(ydoc.guid);
- *   return { destroy: () => channel.close() };
+ *   return { dispose: () => channel.close() };
  * };
  * ```
  */
@@ -69,95 +70,30 @@
  */
 export type MaybePromise<T> = T | Promise<T>;
 
-/**
- * The lifecycle protocol for providers and extensions.
- *
- * This is the base contract that all providers and extensions satisfy.
- * It defines two required lifecycle methods:
- *
- * - `whenReady`: A promise that resolves when initialization is complete
- * - `destroy`: A cleanup function called when the parent is destroyed
- *
- * ## When to use each field
- *
- * | Field | Purpose | Example |
- * |-------|---------|---------|
- * | `whenReady` | Track async initialization | Database indexing, initial sync |
- * | `destroy` | Clean up resources | Close connections, unsubscribe observers |
- *
- * ## Framework guarantees
- *
- * - `destroy()` will be called even if `whenReady` rejects
- * - `destroy()` may be called while `whenReady` is still pending
- * - Multiple `destroy()` calls should be safe (idempotent)
- *
- * @example
- * ```typescript
- * // Lifecycle with async init and cleanup
- * const lifecycle: Lifecycle = {
- *   whenReady: database.initialize(),
- *   destroy: () => database.close(),
- * };
- *
- * // Lifecycle with no async init
- * const simpleLifecycle: Lifecycle = {
- *   whenReady: Promise.resolve(),
- *   destroy: () => observer.unsubscribe(),
- * };
- * ```
- */
-export type Lifecycle = {
-	/**
-	 * Resolves when initialization is complete.
-	 *
-	 * Use this as a render gate in UI frameworks:
-	 *
-	 * ```svelte
-	 * {#await client.whenReady}
-	 *   <Loading />
-	 * {:then}
-	 *   <App />
-	 * {/await}
-	 * ```
-	 *
-	 * Common initialization scenarios:
-	 * - Persistence providers: Initial data loaded from storage
-	 * - Sync providers: Initial server sync complete
-	 * - SQLite: Database ready and indexed
-	 */
-	whenReady: Promise<unknown>;
-
-	/**
-	 * Clean up resources.
-	 *
-	 * Called when the parent doc/client is destroyed. Should:
-	 * - Stop observers and event listeners
-	 * - Close database connections
-	 * - Disconnect network providers
-	 * - Release file handles
-	 *
-	 * **Important**: This may be called while `whenReady` is still pending.
-	 * Implementations should handle graceful cancellation.
-	 */
-	destroy: () => MaybePromise<void>;
-};
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION — Flat resolved type with required lifecycle hooks
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * The resolved form of an extension — a flat object with custom exports
- * alongside required `whenReady` and `destroy` lifecycle hooks.
+ * The resolved form of an extension—a flat object with custom exports
+ * alongside required `whenReady` and `dispose` lifecycle hooks.
  *
  * Extension factories return a raw flat object with optional `whenReady` and
- * `destroy`. The framework normalizes defaults via `defineExtension()` so the
+ * `dispose`. The framework normalizes defaults via `defineExtension()` so the
  * stored form always has both lifecycle hooks present.
  *
- * `whenReady` and `destroy` are reserved property names — extension authors
- * should not use them for custom exports.
+ * `whenReady`, `dispose`, and `clearData` are reserved property names—extension
+ * authors should not use them for custom exports.
  *
- * @typeParam T - Custom exports (everything except `whenReady` and `destroy`).
+ * ## Framework Guarantees
+ *
+ * - `dispose()` will be called even if `whenReady` rejects
+ * - `dispose()` may be called while `whenReady` is still pending
+ * - Multiple `dispose()` calls should be safe (idempotent)
+ * - `clearData()` is called before `dispose()` during sign-out (never alone)
+ *
+ * @typeParam T - Custom exports (everything except `whenReady`, `dispose`, `clearData`).
  *   Defaults to `Record<string, never>` for lifecycle-only extensions.
  *
  * @example
@@ -175,10 +111,54 @@ export type Lifecycle = {
 export type Extension<
 	T extends Record<string, unknown> = Record<string, never>,
 > = T & {
-	/** Resolves when initialization is complete. Always present (defaults to resolved). */
+	/**
+	 * Resolves when initialization is complete. Always present (defaults to resolved).
+	 *
+	 * Use this as a render gate in UI frameworks or to sequence extensions
+	 * that depend on prior initialization (e.g., sync waits for persistence).
+	 *
+	 * Common initialization scenarios:
+	 * - **Persistence**: Initial data loaded from IndexedDB or filesystem
+	 * - **Sync**: First server round-trip complete, doc state merged
+	 * - **SQLite**: Database opened, tables created, initial sync from Y.Doc done
+	 *
+	 * @example
+	 * ```svelte
+	 * {#await client.whenReady}
+	 *   <Loading />
+	 * {:then}
+	 *   <App />
+	 * {/await}
+	 * ```
+	 */
 	whenReady: Promise<void>;
-	/** Clean up resources. Always present (defaults to no-op). */
-	destroy: () => MaybePromise<void>;
+	/**
+	 * Clean up resources. Always present (defaults to no-op).
+	 *
+	 * Called when the parent workspace or document is disposed. Should:
+	 * - Stop observers and event listeners
+	 * - Close database connections
+	 * - Disconnect network providers (WebSocket, WebRTC)
+	 * - Release file handles
+	 *
+	 * **Important**: This may be called while `whenReady` is still pending.
+	 * Implementations should handle graceful cancellation—don't assume
+	 * initialization finished.
+	 *
+	 * Must be idempotent—the framework may call it more than once.
+	 */
+	dispose: () => MaybePromise<void>;
+	/**
+	 * Wipe persisted data on sign-out. Only present on persistence extensions.
+	 *
+	 * Semantics vs `dispose()`:
+	 * - `dispose()` releases resources but **keeps data** (normal cleanup)
+	 * - `clearData()` **wipes data** but does not release resources
+	 *
+	 * The framework calls `clearData()` during `deactivateEncryption()` in LIFO order.
+	 * Extensions without persistent state should omit this (leave `undefined`).
+	 */
+	clearData?: () => MaybePromise<void>;
 };
 
 /**
@@ -186,15 +166,15 @@ export type Extension<
  *
  * Applies defaults:
  * - `whenReady` defaults to `Promise.resolve()` (instantly ready)
- * - `destroy` defaults to `() => {}` (no-op cleanup)
+ * - `dispose` defaults to `() => {}` (no-op cleanup)
  * - `whenReady` is coerced to `Promise<void>` via `.then(() => {})`
  *
  * Called by the framework inside `withExtension()` and the document extension
  * `open()` loop. Extension authors never import this — they return plain objects
  * and the framework normalizes.
  *
- * @param input - Raw extension return (custom exports + optional whenReady/destroy)
- * @returns Resolved extension with required whenReady and destroy
+ * @param input - Raw extension return (custom exports + optional whenReady/dispose)
+ * @returns Resolved extension with required whenReady and dispose
  *
  * @example
  * ```typescript
@@ -202,21 +182,23 @@ export type Extension<
  * const raw = factory(context);
  * const resolved = defineExtension(raw ?? {});
  * extensionMap[key] = resolved;
- * destroys.push(resolved.destroy);
+ * disposers.push(resolved.dispose);
  * whenReadyPromises.push(resolved.whenReady);
  * ```
  */
 export function defineExtension<T extends Record<string, unknown>>(
 	input: T & {
 		whenReady?: Promise<unknown>;
-		destroy?: () => MaybePromise<void>;
+		dispose?: () => MaybePromise<void>;
+		clearData?: () => MaybePromise<void>;
 	},
-): Extension<Omit<T, 'whenReady' | 'destroy'>> {
+): Extension<Omit<T, 'whenReady' | 'dispose' | 'clearData'>> {
 	return {
 		...input,
 		whenReady: input.whenReady?.then(() => {}) ?? Promise.resolve(),
-		destroy: input.destroy ?? (() => {}),
-	} as Extension<Omit<T, 'whenReady' | 'destroy'>>;
+		dispose: input.dispose ?? (() => {}),
+		clearData: input.clearData,
+	} as Extension<Omit<T, 'whenReady' | 'dispose' | 'clearData'>>;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -231,10 +213,11 @@ export function defineExtension<T extends Record<string, unknown>>(
  * extensions in reverse creation order. Call sites handle the returned
  * errors array in their own way (throw, log, or rethrow).
  *
+ *
  * @param cleanups - Array of cleanup functions to run in reverse order
  * @returns Array of errors caught during cleanup (empty if all succeeded)
  */
-export async function destroyLifo(
+export async function disposeLifo(
 	cleanups: (() => MaybePromise<void>)[],
 ): Promise<unknown[]> {
 	const errors: unknown[] = [];
@@ -257,7 +240,7 @@ export async function destroyLifo(
  *
  * @param cleanups - Array of cleanup functions to invoke in reverse order
  */
-export function startDestroyLifo(
+export function startDisposeLifo(
 	cleanups: (() => MaybePromise<void>)[],
 ): void {
 	for (let i = cleanups.length - 1; i >= 0; i--) {

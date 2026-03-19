@@ -45,10 +45,10 @@ import * as Y from 'yjs';
 import { createTimeline } from '../timeline/timeline.js';
 import {
 	defineExtension,
-	destroyLifo,
+	disposeLifo,
 	type Extension,
 	type MaybePromise,
-	startDestroyLifo,
+	startDisposeLifo,
 } from './lifecycle.js';
 import type {
 	BaseRow,
@@ -80,7 +80,7 @@ export const DOCUMENTS_ORIGIN = Symbol('documents');
 
 /**
  * Internal entry for an open document.
- * Tracks the Y.Doc, resolved extensions (with required whenReady/destroy),
+ * Tracks the Y.Doc, resolved extensions (with required whenReady/dispose),
  * the updatedAt observer teardown, and the composite whenReady promise.
  */
 type DocEntry = {
@@ -193,7 +193,7 @@ export function createDocuments<TRow extends BaseRow>(
 			// extensions' resolved form.
 			// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 			const resolvedExtensions: Record<string, Extension<any>> = {};
-			const destroys: (() => MaybePromise<void>)[] = [];
+			const disposers: (() => MaybePromise<void>)[] = [];
 			const whenReadyPromises: Promise<unknown>[] = [];
 
 			try {
@@ -213,11 +213,11 @@ export function createDocuments<TRow extends BaseRow>(
 
 					const resolved = defineExtension(raw);
 					resolvedExtensions[key] = resolved;
-					destroys.push(resolved.destroy);
+					disposers.push(resolved.dispose);
 					whenReadyPromises.push(resolved.whenReady);
 				}
 			} catch (err) {
-				startDestroyLifo(destroys);
+				startDisposeLifo(disposers);
 
 				contentYdoc.destroy();
 				throw err;
@@ -264,7 +264,7 @@ export function createDocuments<TRow extends BaseRow>(
 					? Promise.resolve(handle)
 					: compositeWhenReady.then(() => handle)
 							.catch(async (err) => {
-							const errors = await destroyLifo(destroys);
+							const errors = await disposeLifo(disposers);
 							unobserve();
 							contentYdoc.destroy();
 							openDocuments.delete(guid);
@@ -294,8 +294,8 @@ export function createDocuments<TRow extends BaseRow>(
 			openDocuments.delete(guid);
 			entry.unobserve();
 
-			const errors = await destroyLifo(
-				Object.values(entry.extensions).map((e) => e.destroy),
+			const errors = await disposeLifo(
+				Object.values(entry.extensions).map((e) => e.dispose),
 			);
 
 			entry.ydoc.destroy();
@@ -314,8 +314,8 @@ export function createDocuments<TRow extends BaseRow>(
 			for (const [, entry] of entries) {
 				entry.unobserve();
 
-				const errors = await destroyLifo(
-					Object.values(entry.extensions).map((e) => e.destroy),
+				const errors = await disposeLifo(
+					Object.values(entry.extensions).map((e) => e.dispose),
 				);
 
 				entry.ydoc.destroy();

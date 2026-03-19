@@ -1,16 +1,18 @@
 /**
- * createTables() - Lower-level API for binding table definitions to an existing Y.Doc.
+ * createTables() - Internal convenience for binding table definitions to an existing Y.Doc.
+ *
+ * Not part of the public API. Used by tests that need lightweight table setup
+ * without full createWorkspace ceremony. createWorkspace inlines this logic
+ * directly so it can retain store references for encryption coordination.
  *
  * @example
  * ```typescript
  * import * as Y from 'yjs';
- * import { createTables, defineTable } from '@epicenter/workspace';
+ * import { defineTable } from '@epicenter/workspace';
+ * import { createTables } from './create-tables.js';
  * import { type } from 'arktype';
  *
- * // Shorthand for single version
  * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
- *
- * // Variadic for multiple versions with migration
  * const posts = defineTable(
  *   type({ id: 'string', title: 'string', _v: '1' }),
  *   type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
@@ -30,11 +32,11 @@
  */
 
 import type * as Y from 'yjs';
-import {
-	YKeyValueLww,
-	type YKeyValueLwwEntry,
+import type {
+	YKeyValueLwwEntry,
 } from '../shared/y-keyvalue/y-keyvalue-lww.js';
-import { createTableHelper } from './table-helper.js';
+import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import { createTable } from './create-table.js';
 import type {
 	BaseRow,
 	InferTableRow,
@@ -58,15 +60,16 @@ import { TableKey } from './ydoc-keys.js';
 export function createTables<TTableDefinitions extends TableDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TTableDefinitions,
+	options?: { key?: Uint8Array },
 ): TablesHelper<TTableDefinitions> {
 	const helpers: Record<string, TableHelper<BaseRow>> = {};
 
 	for (const [name, definition] of Object.entries(definitions)) {
-		// Each table gets its own Y.Array for isolation
+		// Each table gets its own encrypted KV store (passthrough when no key)
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
-		const ykv = new YKeyValueLww(yarray);
+		const ykv = createEncryptedYkvLww(yarray, { key: options?.key });
 
-		helpers[name] = createTableHelper(ykv, definition);
+		helpers[name] = createTable(ykv, definition);
 	}
 
 	return helpers as TablesHelper<TTableDefinitions>;

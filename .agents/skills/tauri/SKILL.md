@@ -7,6 +7,9 @@ metadata:
 ---
 
 # Tauri Path Handling
+## Reference Repositories
+
+- [Tauri](https://github.com/tauri-apps/tauri) — Desktop app framework with Rust backend and web frontend
 
 ## When to Apply This Skill
 

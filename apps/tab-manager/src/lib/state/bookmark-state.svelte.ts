@@ -6,9 +6,9 @@
  * bookmarks persist indefinitely—opening a bookmarked URL does NOT delete
  * the record.
  *
- * Uses a plain `$state` array (not `SvelteMap`) because the access pattern is
- * always "render the full sorted list." The Y.Doc observer wholesale-replaces
- * the array on every change, identical to {@link savedTabState}.
+ * Backed by a `fromTable()` binding that provides granular per-row reactivity
+ * via `SvelteMap`. The public API exposes a `$derived` sorted array since the
+ * access pattern is always "render the full sorted list."
  *
  * @example
  * ```svelte
@@ -28,16 +28,16 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { getDeviceId } from '$lib/device/device-id';
-import type { BrowserTab } from '$lib/state/browser-state.svelte';
-	import {
+import {
 	type Bookmark,
 	type BookmarkId,
 	generateBookmarkId,
-	workspaceClient,
+	type Tab,
+	workspace,
 } from '$lib/workspace';
 
 function createBookmarkState() {
-	const bookmarksMap = fromTable(workspaceClient.tables.bookmarks);
+	const bookmarksMap = fromTable(workspace.tables.bookmarks);
 
 	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
 	const bookmarks = $derived(
@@ -60,10 +60,10 @@ function createBookmarkState() {
 		 *
 		 * Silently no-ops for tabs without a URL.
 		 */
-		async add(tab: BrowserTab) {
+		async add(tab: Tab) {
 			if (!tab.url) return;
 			const deviceId = await getDeviceId();
-			workspaceClient.tables.bookmarks.set({
+			workspace.tables.bookmarks.set({
 				id: generateBookmarkId(),
 				url: tab.url,
 				title: tab.title || 'Untitled',
@@ -86,7 +86,7 @@ function createBookmarkState() {
 
 		/** Delete a bookmark. */
 		remove(id: BookmarkId) {
-			workspaceClient.tables.bookmarks.delete(id);
+			workspace.tables.bookmarks.delete(id);
 		},
 
 		/** Delete all bookmarks. Wrapped in a Y.Doc transaction. */
@@ -94,16 +94,16 @@ function createBookmarkState() {
 			const all = bookmarksMap.values().toArray();
 			if (!all.length) return;
 
-			workspaceClient.batch(() => {
+			workspace.batch(() => {
 				for (const bookmark of all) {
-					workspaceClient.tables.bookmarks.delete(bookmark.id);
+					workspace.tables.bookmarks.delete(bookmark.id);
 				}
 			});
 		},
 
 		/** Update a bookmark's metadata in Y.Doc. */
 		update(bookmark: Bookmark) {
-			workspaceClient.tables.bookmarks.set(bookmark);
+			workspace.tables.bookmarks.set(bookmark);
 		},
 	};
 }

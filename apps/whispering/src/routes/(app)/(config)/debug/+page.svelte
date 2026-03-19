@@ -64,7 +64,7 @@
 		sizeDelta: number;
 	};
 
-	function createStressTest(onComplete: () => void) {
+	function createStressTest() {
 		const LOREM =
 			'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.';
 
@@ -93,7 +93,6 @@
 				sizeAfter,
 				sizeDelta: sizeAfter - sizeBefore,
 			};
-			onComplete();
 		}
 
 		return {
@@ -162,7 +161,7 @@
 	// ── Instance ──────────────────────────────────────────────────────────────
 
 	const metrics = createMetrics();
-	const stressTest = createStressTest(() => metrics.refresh());
+	const stressTest = createStressTest();
 
 	const selectedCountLabel = $derived(
 		countOptions.find((o) => o.value === stressTest.selectedCount)?.label,
@@ -304,11 +303,11 @@
 
 				<!-- Actions -->
 				<div class="flex gap-2">
-					<Button onclick={() => stressTest.generate()}>
+					<Button onclick={() => { stressTest.generate(); metrics.refresh(); }}>
 						<FlaskConicalIcon class="mr-1.5 h-3.5 w-3.5" />
 						Generate
 					</Button>
-					<Button variant="destructive" onclick={() => stressTest.deleteAll()}>
+					<Button variant="destructive" onclick={() => { stressTest.deleteAll(); metrics.refresh(); }}>
 						<TrashIcon class="mr-1.5 h-3.5 w-3.5" />
 						Delete All Recordings
 					</Button>

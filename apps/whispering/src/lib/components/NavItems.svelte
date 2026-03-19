@@ -2,7 +2,6 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import { cn } from '@epicenter/ui/utils';
-	import BugIcon from '@lucide/svelte/icons/bug';
 	import Database from '@lucide/svelte/icons/database';
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import ListIcon from '@lucide/svelte/icons/list';
@@ -185,16 +184,6 @@
 					{/snippet}
 				</MigrationDialog>
 			{/if}
-			{#if import.meta.env.DEV}
-				<DropdownMenu.Item>
-					{#snippet child({ props })}
-						<a href="/debug" class="flex items-center gap-2" {...props}>
-							<BugIcon class="size-4" aria-hidden="true" />
-							<span>Debug Storage</span>
-						</a>
-					{/snippet}
-				</DropdownMenu.Item>
-			{/if}
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 {:else}
@@ -259,11 +248,6 @@
 					</Button>
 				{/snippet}
 			</MigrationDialog>
-		{/if}
-		{#if import.meta.env.DEV}
-			<Button tooltip="Debug Storage" href="/debug" variant="ghost" size="icon">
-				<BugIcon class="size-4" aria-hidden="true" />
-			</Button>
 		{/if}
 	</nav>
 {/if}

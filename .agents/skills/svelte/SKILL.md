@@ -121,6 +121,14 @@ For component props expecting `T[]`, derive in the script block — never materi
 <FujiSidebar entries={entriesArray} />
 ```
 
+### Why `$derived`, Not a Plain Getter
+
+A getter that reads from a `SvelteMap` is also reactive—Svelte tracks the `SvelteMap` read. But a getter recomputes on every access, while `$derived` computes once and caches until dependencies change. Multiple reads in the same render cycle (template, count badge, child component) hit the cache instead of re-sorting.
+
+Always put the computation in `$derived`. The getter is a pass-through, not a computation site.
+
+See `docs/articles/derived-vs-getter-caching-matters.md` for rationale.
+
 # Reactive State Module Conventions
 
 State modules use a factory function that returns a flat object with getters and methods, exported as a singleton.

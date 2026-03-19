@@ -30,7 +30,7 @@ function createFoldersState() {
 
 	const foldersMap = fromTable(workspaceClient.tables.folders);
 
-	const folders = $derived([...foldersMap.values()]);
+	const folders = $derived(foldersMap.values().toArray());
 
 	// ─── Public API ──────────────────────────────────────────────────────
 

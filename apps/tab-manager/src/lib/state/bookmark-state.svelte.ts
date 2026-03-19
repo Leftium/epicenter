@@ -40,7 +40,7 @@ function createBookmarkState() {
 	const bookmarksMap = fromTable(workspaceClient.tables.bookmarks);
 
 	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
-	const bookmarks = $derived([...bookmarksMap.values()].sort((a, b) => b.createdAt - a.createdAt));
+	const bookmarks = $derived(bookmarksMap.values().toArray().sort((a, b) => b.createdAt - a.createdAt));
 
 	return {
 		get bookmarks() {
@@ -93,7 +93,7 @@ function createBookmarkState() {
 
 			/** Delete all bookmarks. Wrapped in a Y.Doc transaction. */
 			removeAll() {
-				const all = [...bookmarksMap.values()];
+				const all = bookmarksMap.values().toArray();
 				if (!all.length) return;
 
 				workspaceClient.batch(() => {

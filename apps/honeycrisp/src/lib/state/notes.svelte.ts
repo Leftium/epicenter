@@ -36,7 +36,7 @@ function createNotesState() {
 	const allNotesMap = fromTable(workspaceClient.tables.notes);
 
 	/** All valid notes (including deleted). Cached — only recomputes when table changes. */
-	const allNotes = $derived([...allNotesMap.values()]);
+	const allNotes = $derived(allNotesMap.values().toArray());
 
 	// ─── Derived State ───────────────────────────────────────────────────
 

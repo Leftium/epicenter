@@ -45,7 +45,7 @@ function createSavedTabState() {
 	const tabsMap = fromTable(workspaceClient.tables.savedTabs);
 
 	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
-	const tabs = $derived([...tabsMap.values()].sort((a, b) => b.savedAt - a.savedAt));
+	const tabs = $derived(tabsMap.values().toArray().sort((a, b) => b.savedAt - a.savedAt));
 
 	return {
 		get tabs() {
@@ -112,7 +112,7 @@ function createSavedTabState() {
 			 *    collapses N observer callbacks into one.
 			 */
 			async restoreAll() {
-				const all = [...tabsMap.values()];
+				const all = tabsMap.values().toArray();
 				if (!all.length) return;
 
 				// Fire all tab creations without awaiting each one individually.
@@ -147,7 +147,7 @@ function createSavedTabState() {
 			 * (not N times for N tabs).
 			 */
 			removeAll() {
-				const all = [...tabsMap.values()];
+				const all = tabsMap.values().toArray();
 				if (!all.length) return;
 
 				workspaceClient.batch(() => {

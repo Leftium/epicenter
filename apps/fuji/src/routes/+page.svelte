@@ -16,7 +16,7 @@
 	// ─── Reactive State ────────────────────────────────────────────────────────────
 
 	const entries = fromTable(workspaceClient.tables.entries);
-	const entriesArray = $derived([...entries.values()]);
+	const entriesArray = $derived(entries.values().toArray());
 	const selectedEntryId = fromKv(workspaceClient.kv, 'selectedEntryId');
 	const viewMode = fromKv(workspaceClient.kv, 'viewMode');
 	let currentYText = $state<Y.Text | null>(null);

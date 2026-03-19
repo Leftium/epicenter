@@ -1,12 +1,10 @@
 {
-	"extends": ["../../tsconfig.base.dom.json"],
+	"extends": ["../../tsconfig.base.lib.json"],
 	"compilerOptions": {
+		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"allowJs": true,
 		"outDir": "dist",
-		"declaration": true,
 		"composite": true,
-		"declarationMap": true,
-
 		"rootDir": "src",
 		"paths": {
 			"#/*": ["./src/*"]

@@ -91,8 +91,8 @@ function createFsState() {
 	});
 
 	// ── Derived from interaction mode ────────────────────────────────
-	// These maintain the same shape the components already read, so
-	// FileTreeItem / FileTree / DeleteConfirmation don't need changes.
+	// Stable public API over the internal union. Components read these
+	// without coupling to InteractionMode's shape.
 
 	const renamingId = $derived(
 		interactionMode.type === 'renaming' ? interactionMode.targetId : null,

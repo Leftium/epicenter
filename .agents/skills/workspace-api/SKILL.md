@@ -8,6 +8,10 @@ metadata:
 
 # Workspace API
 
+## Reference Repositories
+
+- [Yjs](https://github.com/yjs/yjs) — CRDT framework (foundation of workspace data layer)
+
 Type-safe schema definitions for tables and KV stores.
 
 > **Related Skills**: See `yjs` for Yjs CRDT patterns and shared types. See `svelte` for reactive wrappers (`fromTable`, `fromKv`).

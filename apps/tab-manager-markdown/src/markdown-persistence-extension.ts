@@ -7,8 +7,8 @@
  *
  * Follows the Extension lifecycle contract:
  *
- * - `destroy`: Removes observer, clears timers, flushes pending writes
- * - `exports.flush`: Force-write any pending changes without destroying
+ * - `dispose`: Removes observer, clears timers, flushes pending writes
+ * - `exports.flush`: Force-write any pending changes without disposing
  *
  * Chain before sync so the observer is in place before data arrives:
  *
@@ -113,7 +113,7 @@ export function createMarkdownPersistenceExtension({
 
 		return {
 			flush,
-			async destroy() {
+			async dispose() {
 				ydoc.off('update', scheduleExport);
 				await flush();
 			},

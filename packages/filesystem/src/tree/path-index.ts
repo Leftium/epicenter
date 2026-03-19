@@ -81,7 +81,7 @@ export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
 			return idToPath.get(id);
 		},
 		/** Stop observing the files table. */
-		destroy: unobserve,
+		dispose: unobserve,
 	};
 }
 

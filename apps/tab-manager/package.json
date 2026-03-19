@@ -45,6 +45,7 @@
 	},
 	"devDependencies": {
 		"@standard-schema/spec": "catalog:",
+		"@epicenter/api": "workspace:*",
 		"@tailwindcss/vite": "catalog:",
 		"@types/node": "catalog:",
 		"@wxt-dev/module-svelte": "^2.0.3",

@@ -1,14 +1,15 @@
 /**
- * TableHelper implementation for versioned table operations.
+ * Creates a TableHelper for a single table bound to a YKeyValue store.
  *
- * Provides CRUD operations with validation and migration on read.
+ * Provides CRUD operations with schema validation and migration on read.
+ * This is the primary building block for table construction, used by
+ * createWorkspace (which creates the store for encryption coordination)
+ * and by tests.
  */
 
 import type * as Y from 'yjs';
-import type {
-	YKeyValueLww,
-	YKeyValueLwwChange,
-} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import type { YKeyValueLwwChange } from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import type { YKeyValueLwwEncrypted } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type {
 	GetResult,
 	InferTableRow,
@@ -22,12 +23,16 @@ import type {
 
 /**
  * Creates a TableHelper for a single table bound to a YKeyValue store.
+ *
+ * @param ykv - The backing YKeyValue store (encrypted or passthrough)
+ * @param definition - The table definition with schema and migration
+ * @returns TableHelper with type-safe CRUD, query, and observation methods
  */
-export function createTableHelper<
+export function createTable<
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
 	TTableDefinition extends TableDefinition<any>,
 >(
-	ykv: YKeyValueLww<unknown>,
+	ykv: YKeyValueLwwEncrypted<unknown>,
 	definition: TTableDefinition,
 ): TableHelper<InferTableRow<TTableDefinition>> {
 	type TRow = InferTableRow<TTableDefinition>;
@@ -94,7 +99,7 @@ export function createTableHelper<
 
 		getAll(): RowResult<TRow>[] {
 			const results: RowResult<TRow>[] = [];
-			for (const [key, entry] of ykv.map) {
+			for (const [key, entry] of ykv.cachedEntries()) {
 				const result = parseRow(key, entry.val);
 				results.push(result);
 			}
@@ -103,7 +108,7 @@ export function createTableHelper<
 
 		getAllValid(): TRow[] {
 			const rows: TRow[] = [];
-			for (const [key, entry] of ykv.map) {
+			for (const [key, entry] of ykv.cachedEntries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'valid') {
 					rows.push(result.row);
@@ -114,7 +119,7 @@ export function createTableHelper<
 
 		getAllInvalid(): InvalidRowResult[] {
 			const invalid: InvalidRowResult[] = [];
-			for (const [key, entry] of ykv.map) {
+			for (const [key, entry] of ykv.cachedEntries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'invalid') {
 					invalid.push(result);
@@ -129,7 +134,7 @@ export function createTableHelper<
 
 		filter(predicate: (row: TRow) => boolean): TRow[] {
 			const rows: TRow[] = [];
-			for (const [key, entry] of ykv.map) {
+			for (const [key, entry] of ykv.cachedEntries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'valid' && predicate(result.row)) {
 					rows.push(result.row);
@@ -139,7 +144,7 @@ export function createTableHelper<
 		},
 
 		find(predicate: (row: TRow) => boolean): TRow | undefined {
-			for (const [key, entry] of ykv.map) {
+			for (const [key, entry] of ykv.cachedEntries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'valid' && predicate(result.row)) {
 					return result.row;
@@ -157,7 +162,7 @@ export function createTableHelper<
 		},
 
 		clear(): void {
-			const keys = Array.from(ykv.map.keys());
+			const keys = Array.from(ykv.cachedEntries()).map(([k]) => k);
 			for (const key of keys) {
 				ykv.delete(key);
 			}
@@ -186,7 +191,7 @@ export function createTableHelper<
 		// ═══════════════════════════════════════════════════════════════════════
 
 		count(): number {
-			return ykv.map.size;
+			return ykv.cachedSize;
 		},
 
 		has(id: string): boolean {

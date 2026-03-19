@@ -192,7 +192,7 @@ export class FileTree {
 	// LIFECYCLE
 	// ═══════════════════════════════════════════════════════════════════════
 
-	destroy(): void {
-		this.index.destroy();
+	dispose(): void {
+		this.index.dispose();
 	}
 }

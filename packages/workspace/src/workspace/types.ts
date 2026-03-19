@@ -26,6 +26,18 @@ export type { JsonObject, JsonValue } from 'wellcrafted/json';
  * - `id`: Unique identifier for row lookup and identity
  * - `_v`: Schema version number for tracking which version this row conforms to
  *
+ * ### Why `_v` instead of `v`
+ *
+ * The underscore prefix signals "framework metadata, not user data" (same convention
+ * as `_id` in MongoDB or `__typename` in GraphQL). Users intuitively avoid
+ * underscore-prefixed fields for business data, which prevents accidental collisions
+ * with framework internals.
+ *
+ * Historically, this also avoided collision with the old `EncryptedBlob.v` field.
+ * That rationale no longer applies—`EncryptedBlob` is now a branded bare `Uint8Array`
+ * detected via `instanceof Uint8Array && value[0] === 1`—but the underscore convention
+ * remains good practice for framework metadata regardless.
+ *
  * Intersected with `JsonObject` to ensure all field values are JSON-serializable.
  * This guarantees data stored in Yjs can be safely serialized/deserialized.
  *
@@ -70,8 +82,6 @@ export type RowResult<TRow> = ValidRowResult<TRow> | InvalidRowResult;
  * Includes not_found since the row may not exist.
  */
 export type GetResult<TRow> = RowResult<TRow> | NotFoundResult;
-
-
 
 /** Result of updating a single row */
 export type UpdateResult<TRow> =
@@ -191,7 +201,8 @@ export type DocumentExtensionRegistration = {
 	factory: (context: DocumentContext) =>
 		| (Record<string, unknown> & {
 				whenReady?: Promise<unknown>;
-				destroy?: () => MaybePromise<void>;
+				dispose?: () => MaybePromise<void>;
+				clearData?: () => MaybePromise<void>;
 		  })
 		| void;
 	tags: readonly string[];
@@ -283,7 +294,7 @@ export type DocumentClient<
 	/** Composite whenReady of all document extensions. */
 	whenReady: Promise<void>;
 	/** Cleanup all document extension resources. */
-	destroy(): Promise<void>;
+	dispose(): Promise<void>;
 };
 
 /**
@@ -298,7 +309,7 @@ export type DocumentClient<
  * .withDocumentExtension('sync', ({ id, ydoc, timeline, whenReady }) => { ... })
  * ```
  *
- * Uses `Pick` instead of `Omit<DocumentClient, 'destroy'>` because `DocumentClient`
+ * Uses `Pick` instead of `Omit<DocumentClient, 'dispose'>` because `DocumentClient`
  * extends `Timeline` (the handle IS a timeline), but factory contexts have `timeline`
  * as a field (factories destructure `{ timeline }`, not `{ read, write }`).
  *
@@ -338,7 +349,7 @@ export type DocumentContext<
  */
 export type DocumentHandle<
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = Omit<DocumentClient<TDocExtensions>, 'destroy'>;
+> = Omit<DocumentClient<TDocExtensions>, 'dispose'>;
 
 /**
  * Runtime manager for a table's associated content Y.Docs.
@@ -381,7 +392,7 @@ export type Documents<TRow extends BaseRow, TDocExtensions extends Record<string
 	close(input: TRow | string): Promise<void>;
 
 	/**
-	 * Close all open documents. Called automatically by workspace destroy().
+	 * Close all open documents. Called automatically by workspace dispose().
 	 */
 	closeAll(): Promise<void>;
 };
@@ -989,6 +1000,142 @@ export type WorkspaceClientWithActions<
  *   }));
  * ```
  */
+
+/**
+ * Configuration for `.withEncryption()`.
+ *
+ * The encryption model uses a two-stage key hierarchy:
+ * 1. **User key** (your input) — a 32-byte root key from any source (server HKDF, PBKDF2 password, cache)
+ * 2. **Workspace key** (derived internally) — `HKDF(userKey, "workspace:{id}")` ensures per-workspace isolation
+ *
+ * Symmetric hooks for the two encryption transitions:
+ * - `onActivate` — fires after HKDF derivation succeeds and stores are activated
+ * - `onDeactivate` — fires after stores are cleared and IndexedDB is wiped
+ */
+export type EncryptionConfig = {
+	/**
+	 * Called after `activateEncryption()` successfully derives the workspace key
+	 * and activates all encrypted stores. Does NOT fire on dedup skip (same key
+	 * passed twice) or when a stale derivation is discarded.
+	 *
+	 * Use for caching the user key so sidebar reopens don't need a server roundtrip.
+	 *
+	 * @param userKey - The raw user key bytes passed to `activateEncryption()`
+	 *
+	 * @example
+	 * ```typescript
+	 * createWorkspace(definition).withEncryption({
+	 *   onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
+	 *   onDeactivate: () => keyCache.clear(),
+	 * })
+	 * ```
+	 */
+	onActivate?: (userKey: Uint8Array) => MaybePromise<void>;
+	/**
+	 * Called after `deactivateEncryption()` completes store cleanup and IndexedDB wipe.
+	 * Use for platform-specific cleanup like clearing key caches.
+	 *
+	 * @example
+	 * ```typescript
+	 * createWorkspace(definition).withEncryption({
+	 *   onDeactivate: () => keyCache.clear(),
+	 * })
+	 * ```
+	 */
+	onDeactivate?: () => MaybePromise<void>;
+};
+
+/**
+ * Encryption methods added to the workspace client by `.withEncryption()`.
+ *
+ * These methods are NOT present on the base `WorkspaceClient` — only when
+ * `.withEncryption()` is called. This prevents non-encryption consumers
+ * (Whispering, CLI) from seeing encryption methods on the type.
+ *
+ * Typical lifecycle in a Chrome extension:
+ *
+ * ```typescript
+ * // Build (once, at module scope)
+ * const workspace = createWorkspace(definition)
+ *   .withEncryption({
+ *     onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
+ *     onDeactivate: () => keyCache.clear(),
+ *   })
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', createSyncExtension({ ... }));
+ *
+ * // Sign-in: just activate — onActivate caches the key automatically
+ * await workspace.activateEncryption(base64ToBytes(session.encryptionKey));
+ *
+ * // Sidebar reopen: restore from cache (no server roundtrip)
+ * const cached = await keyCache.load();
+ * if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+ *
+ * // Sign-out: deactivate (→ clear stores → wipe IndexedDB → keyCache.clear())
+ * await workspace.deactivateEncryption();
+ * ```
+ */
+export type EncryptionMethods = {
+	/** Whether encryption is currently active (a key has been derived and applied). */
+	readonly isEncrypted: boolean;
+	/**
+	 * Activate encryption with a root user key.
+	 *
+	 * This accepts a **root/user-level key**, not a final workspace content key.
+	 * The workspace internally derives a per-workspace key via HKDF-SHA256:
+	 *
+	 * ```
+	 * userKey (your input)
+	 *   \u2192 HKDF(userKey, "workspace:{id}") \u2192 workspaceKey (used for encryption)
+	 *   \u2192 XChaCha20-Poly1305(plaintext, workspaceKey) \u2192 ciphertext
+	 * ```
+	 *
+	 * This two-stage model is intentional:
+	 * - The same user key produces **independent** per-workspace keys
+	 * - Compromising one workspace key reveals nothing about other workspaces
+	 * - HKDF is deterministic and storage-free\u2014no key database needed
+	 *
+	 * The user key can come from any source\u2014the workspace doesn't care:
+	 * - **Cloud**: `base64ToBytes(session.encryptionKey)` (server-derived via HKDF)
+	 * - **Self-hosted**: `deriveKeyFromPassword(password, salt)` (PBKDF2, 600k iterations)
+	 * - **Cache restore**: `base64ToBytes(await keyCache.load())` (previously cached key)
+	 *
+	 * Pipeline: dedup (same bytes \u2192 skip) \u2192 HKDF derivation \u2192 race check \u2192 apply to stores \u2192 onActivate hook.
+	 *
+	 * The derivation is async (HKDF via `crypto.subtle`). A generation counter protects
+	 * against races: if the user signs out mid-derivation, the stale result is discarded
+	 * when it resolves because `deactivateEncryption` bumped the counter.
+	 *
+	 * @param userKey - Raw user key bytes (32-byte Uint8Array). NOT a workspace-specific key\u2014
+	 *   the workspace derives that internally. Pass `base64ToBytes(session.encryptionKey)` for
+	 *   cloud mode or `deriveKeyFromPassword(password, salt)` for password mode.
+	 *
+	 * @example
+	 * ```typescript
+	 * // Cloud: server-derived key from session
+	 * await workspace.activateEncryption(base64ToBytes(session.encryptionKey));
+	 *
+	 * // Self-hosted: password-derived key (PBKDF2 \u2192 user key \u2192 internal HKDF \u2192 workspace key)
+	 * const salt = await deriveSalt(userId, workspaceId);
+	 * const userKey = await deriveKeyFromPassword(password, salt);
+	 * await workspace.activateEncryption(userKey);
+	 *
+	 * // Cache restore: previously cached user key
+	 * const cached = await keyCache.load();
+	 * if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+	 * ```
+	 */
+	activateEncryption(userKey: Uint8Array): Promise<void>;
+	/**
+	 * Deactivate encryption and wipe persisted data.
+	 *
+	 * Pipeline: invalidate in-flight HKDF → clear stores → wipe IndexedDB (LIFO) → onDeactivate hook.
+	 *
+	 * Safe to call even if encryption was never activated — the full pipeline runs
+	 * regardless (stores and callbacks are no-ops when already deactivated).
+	 */
+	deactivateEncryption(): Promise<void>;
+};
 export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
@@ -996,6 +1143,7 @@ export type WorkspaceClientBuilder<
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown> = Record<string, never>,
 	TDocExtensions extends Record<string, unknown> = Record<string, never>,
+	TEncryption = Record<string, never>,
 > = WorkspaceClient<
 	TId,
 	TTableDefinitions,
@@ -1032,7 +1180,8 @@ export type WorkspaceClientBuilder<
 			context: SharedExtensionContext,
 		) => TExports & {
 			whenReady?: Promise<unknown>;
-			destroy?: () => MaybePromise<void>;
+			dispose?: () => MaybePromise<void>;
+			clearData?: () => MaybePromise<void>;
 		},
 	): WorkspaceClientBuilder<
 		TId,
@@ -1040,8 +1189,13 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions &
-			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'destroy'>>>,
-		TDocExtensions & Record<TKey, Omit<TExports, 'whenReady' | 'destroy'>>
+			Record<
+				TKey,
+				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
+			>,
+		TDocExtensions &
+			Record<TKey, Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>,
+		TEncryption
 	>;
 
 	/**
@@ -1080,7 +1234,8 @@ export type WorkspaceClientBuilder<
 			>,
 		) => TExports & {
 			whenReady?: Promise<unknown>;
-			destroy?: () => MaybePromise<void>;
+			dispose?: () => MaybePromise<void>;
+			clearData?: () => MaybePromise<void>;
 		},
 	): WorkspaceClientBuilder<
 		TId,
@@ -1088,8 +1243,12 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions &
-			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'destroy'>>>,
-		TDocExtensions
+			Record<
+				TKey,
+				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
+			>,
+		TDocExtensions,
+		TEncryption
 	>;
 
 	/**
@@ -1124,7 +1283,8 @@ export type WorkspaceClientBuilder<
 		factory: (context: DocumentContext<TDocExtensions>) =>
 			| (TDocExports & {
 					whenReady?: Promise<unknown>;
-					destroy?: () => MaybePromise<void>;
+					dispose?: () => MaybePromise<void>;
+					clearData?: () => MaybePromise<void>;
 			  })
 			| void,
 		options?: { tags?: ExtractAllDocumentTags<TTableDefinitions>[] },
@@ -1134,7 +1294,46 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions,
-		TDocExtensions & Record<K, Omit<TDocExports, 'whenReady' | 'destroy'>>
+		TDocExtensions &
+			Record<K, Omit<TDocExports, 'whenReady' | 'dispose' | 'clearData'>>,
+		TEncryption
+	>;
+
+	/**
+	 * Configure encryption for this workspace.
+	 *
+	 * Adds `activateEncryption`, `deactivateEncryption`, and `isEncrypted` to the
+	 * client. Without this call, those methods don't exist on the type—preventing
+	 * accidental use in non-encryption workspaces (Whispering, CLI).
+	 *
+	 * Batteries-included: handles HKDF derivation, byte-level dedup, race protection
+	 * via generation counter, and `onDeactivate` hook for platform-specific cleanup.
+	 *
+	 * Can be chained in any order with `.withExtension()`:
+	 *
+	 * @example
+	 * ```typescript
+	 * const workspace = createWorkspace(definition)
+	 *   .withEncryption({
+	 *     onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
+	 *     onDeactivate: () => keyCache.clear(),
+	 *   })
+	 *   .withExtension('persistence', indexeddbPersistence)
+	 *   .withExtension('sync', createSyncExtension({ ... }));
+	 *
+	 * await workspace.activateEncryption(userKeyBytes);
+	 * ```
+	 */
+	withEncryption(
+		config?: EncryptionConfig,
+	): WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions,
+		TDocExtensions,
+		EncryptionMethods
 	>;
 
 	/**
@@ -1179,7 +1378,7 @@ export type { Extension } from './lifecycle.js';
 /**
  * Context passed to workspace extension factories.
  *
- * This is a `WorkspaceClient` minus `destroy` and `[Symbol.asyncDispose]` —
+	 * This is a `WorkspaceClient` minus lifecycle methods (`dispose`,
  * extension factories receive the full client surface but don't control
  * the workspace's lifecycle. They return their own lifecycle hooks instead.
  *
@@ -1208,7 +1407,7 @@ export type ExtensionContext<
 		TAwarenessDefinitions,
 		TExtensions
 	>,
-	'destroy' | typeof Symbol.asyncDispose
+	'dispose' | typeof Symbol.asyncDispose
 >;
 
 /**
@@ -1233,7 +1432,7 @@ export type SharedExtensionContext = Pick<
 /**
  * Factory function that creates an extension.
  *
- * Returns a flat object with custom exports + optional `whenReady` and `destroy`.
+ * Returns a flat object with custom exports + optional `whenReady` and `dispose`.
  * The framework normalizes defaults via `defineExtension()`.
  *
  * @example Simple extension (works with any workspace)
@@ -1243,7 +1442,7 @@ export type SharedExtensionContext = Pick<
  *   return {
  *     provider,
  *     whenReady: provider.whenReady,
- *     destroy: () => provider.destroy(),
+ *     dispose: () => provider.dispose(),
  *   };
  * };
  * ```
@@ -1254,7 +1453,8 @@ export type ExtensionFactory<
 	TExports extends Record<string, unknown> = Record<string, unknown>,
 > = (context: ExtensionContext) => TExports & {
 	whenReady?: Promise<unknown>;
-	destroy?: () => MaybePromise<void>;
+	dispose?: () => MaybePromise<void>;
+	clearData?: () => MaybePromise<void>;
 };
 
 
@@ -1354,11 +1554,36 @@ export type WorkspaceClient<
 	loadSnapshot(update: Uint8Array): void;
 
 
-	/** Promise resolving when all extensions are ready */
+	/**
+	 * Resolves when all extensions have finished initializing.
+	 *
+	 * This is a composite promise—it resolves when every extension's individual
+	 * `whenReady` has resolved. Use it as a render gate in UI frameworks to
+	 * avoid showing the app before data is loaded.
+	 *
+	 * @example
+	 * ```svelte
+	 * {#await client.whenReady}
+	 *   <Loading />
+	 * {:then}
+	 *   <App />
+	 * {/await}
+	 * ```
+	 */
 	whenReady: Promise<void>;
 
-	/** Cleanup all resources */
-	destroy(): Promise<void>;
+	/**
+	 * Release all resources—data is preserved on disk.
+	 *
+	 * Calls `dispose()` on every extension in LIFO order (last registered, first disposed).
+	 * Stops observers, closes database connections, disconnects sync providers.
+	 *
+	 * After calling, the client is unusable.
+	 *
+	 * Safe to call multiple times (idempotent).
+	 */
+	dispose(): Promise<void>;
+
 
 	/** Async dispose support */
 	[Symbol.asyncDispose](): Promise<void>;

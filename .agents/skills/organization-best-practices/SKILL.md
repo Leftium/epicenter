@@ -18,6 +18,10 @@ Use this pattern when you need to:
 
 ## Setup
 
+## Reference Repositories
+
+- [Better Auth](https://github.com/better-auth/better-auth) — TypeScript authentication framework with plugins
+
 1. Add `organization()` plugin to server config
 2. Add `organizationClient()` plugin to client config
 3. Run `npx @better-auth/cli migrate`

@@ -38,6 +38,6 @@ export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
 		clearData: () => idb.clearData(),
 		// y-indexeddb's whenSynced = "data loaded from IndexedDB"
 		whenReady: idb.whenSynced,
-		destroy: () => idb.destroy(),
+		dispose: () => idb.destroy(),
 	};
 }

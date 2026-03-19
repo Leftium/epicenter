@@ -8,6 +8,10 @@ metadata:
 
 # Better Auth Integration Guide
 
+## Reference Repositories
+
+- [Better Auth](https://github.com/better-auth/better-auth) — TypeScript authentication framework with plugins
+
 **Always consult [better-auth.com/docs](https://better-auth.com/docs) for code examples and latest API.**
 
 ## When to Apply This Skill

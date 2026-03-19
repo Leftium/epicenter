@@ -26,7 +26,7 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  * The returned object satisfies the `IFileSystem` interface from `just-bash`,
  * which allows this virtual filesystem to be used as a drop-in backend for
  * shell emulation — while also exposing extra members (`index`,
- * `lookupId`, `destroy`) that aren't part of `IFileSystem`.
+ * `lookupId`, `dispose`) that aren't part of `IFileSystem`.
  *
  * **No symlinks** — `symlink`, `link`, and `readlink` always throw ENOSYS.
  * **Soft deletes** — `rm` sets `trashedAt` rather than destroying rows.
@@ -74,10 +74,10 @@ export function createYjsFileSystem(
 		 * Tear down reactive indexes.
 		 *
 		 * Content doc cleanup is handled by the workspace's documents manager
-		 * destroy cascade — no need to call `destroyAll()` here.
+		 * dispose cascade — no need to call `disposeAll()` here.
 		 */
-		destroy() {
-			tree.destroy();
+		dispose() {
+			tree.dispose();
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════

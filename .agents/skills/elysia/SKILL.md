@@ -7,6 +7,10 @@ metadata:
 ---
 
 # Elysia.js Patterns (v1.2+)
+## Reference Repositories
+
+- [Hono](https://github.com/honojs/hono) — Ultrafast web framework for Cloudflare Workers
+- [Cloudflare Docs](https://github.com/cloudflare/cloudflare-docs) — Cloudflare Workers, Durable Objects, KV documentation
 
 ## When to Apply This Skill
 

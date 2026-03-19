@@ -4,7 +4,8 @@
  * A composable, type-safe API for defining and creating workspaces
  * with versioned tables and KV stores.
  *
- * Tables use `_v: number` as a discriminant field for versioning and migration.
+ * Tables use `_v: number` as a discriminant field for versioning and migration
+ * (underscore signals framework metadata—see `BaseRow` for rationale).
  * KV stores use `defineKv(schema, defaultValue)` with validate-or-default semantics.
  *
  * @example
@@ -47,7 +48,7 @@
  *   .withExtension('persistence', persistence);
  *
  * // Cleanup
- * await client.destroy();
+ * await client.dispose();
  * ```
  *
  * @packageDocumentation
@@ -72,7 +73,6 @@ export { ExtensionError } from '../shared/errors.js';
 // Lifecycle protocol
 export type {
 	Extension,
-	Lifecycle,
 	MaybePromise,
 	} from './lifecycle.js';
 export type { DocumentContext } from './types.js';
@@ -100,14 +100,6 @@ export { defineWorkspace } from './define-workspace.js';
 export { createWorkspace } from './create-workspace.js';
 // Document origin sentinel (for filtering auto-bumps in table observers)
 export { DOCUMENTS_ORIGIN } from './create-document.js';
-
-// ════════════════════════════════════════════════════════════════════════════
-// Lower-Level APIs (Bring Your Own Y.Doc)
-// ════════════════════════════════════════════════════════════════════════════
-
-export { createAwareness } from './create-awareness.js';
-export { createKv } from './create-kv.js';
-export { createTables } from './create-tables.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Introspection

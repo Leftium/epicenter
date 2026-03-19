@@ -18,6 +18,10 @@ Use this pattern when you need to:
 
 ## Quick Start
 
+## Reference Repositories
+
+- [Better Auth](https://github.com/better-auth/better-auth) — TypeScript authentication framework with plugins
+
 1. Enable email/password: `emailAndPassword: { enabled: true }`
 2. Configure `emailVerification.sendVerificationEmail`
 3. Add `sendResetPassword` for password reset flows

@@ -38,6 +38,7 @@ import {
 	getBrowserName,
 	getDeviceId,
 } from '$lib/device/device-id';
+import { authState } from '$lib/state/auth.svelte';
 import { tabGroupToRow, tabToRow, windowToRow } from '$lib/sync/row-converters';
 import {
 	createGroupCompositeId,
@@ -52,10 +53,8 @@ import {
 	type TabCompositeId,
 	type Window,
 	type WindowCompositeId,
-	workspaceClient,
+	workspace,
 } from '$lib/workspace';
-
-const { tables } = workspaceClient;
 
 /**
  * A window and all the tabs it owns, stored together.
@@ -114,7 +113,7 @@ function createBrowserState() {
 	// sync. This runs a full diff against the existing Y.Doc rows to clean up
 	// stale entries from previous sessions.
 
-	const whenReady = (async () => {
+	async function seedFromBrowser() {
 		// Parallelize independent async operations
 		const [browserWindows, id] = await Promise.all([
 			browser.windows.getAll({ populate: true }),
@@ -141,13 +140,13 @@ function createBrowserState() {
 		// ── Seed Y.Doc (refetchAll equivalent) ──────────────────────────
 		// Wait for persistence to load before writing, so we don't get
 		// overwritten when IndexedDB state is applied.
-		await workspaceClient.whenReady;
+		await workspace.whenReady;
 
 		// Register device
-		const existingDevice = tables.devices.get(id);
+		const existingDevice = workspace.tables.devices.get(id);
 		const existingName =
 			existingDevice.status === 'valid' ? existingDevice.row.name : null;
-		tables.devices.set({
+		workspace.tables.devices.set({
 			id,
 			name: existingName ?? (await generateDefaultDeviceName()),
 			lastSeen: new Date().toISOString(),
@@ -161,7 +160,7 @@ function createBrowserState() {
 			return row ? [row] : [];
 		});
 		const windowIdSet = new Set(windowRows.map((r) => r.windowId));
-		const existingYDocWindows = tables.windows.getAllValid();
+		const existingYDocWindows = workspace.tables.windows.getAllValid();
 
 		// Reuse already-fetched tab data for Y.Doc seed (flatten from populated windows)
 		const tabRows = browserWindows.flatMap((win) =>
@@ -171,62 +170,62 @@ function createBrowserState() {
 			}),
 		);
 		const tabIdSet = new Set(tabRows.map((r) => r.tabId));
-		const existingYDocTabs = tables.tabs.getAllValid();
+		const existingYDocTabs = workspace.tables.tabs.getAllValid();
 
 		// Fetch tab groups (Chrome only) — no cached data available
 		const allBrowserGroups = browser.tabGroups
 			? await browser.tabGroups.query({})
 			: [];
 		const groupIdSet = new Set(allBrowserGroups.map((g) => g.id));
-		const existingYDocGroups = tables.tabGroups.getAllValid();
+		const existingYDocGroups = workspace.tables.tabGroups.getAllValid();
 
 		// Single batch for all Y.Doc seed writes
-		workspaceClient.batch(() => {
+		workspace.batch(() => {
 			// Windows
 			for (const row of windowRows) {
-				tables.windows.set(row);
+				workspace.tables.windows.set(row);
 			}
 			for (const existing of existingYDocWindows) {
 				if (existing.deviceId !== id) continue;
 				if (!windowIdSet.has(existing.windowId)) {
-					tables.windows.delete(existing.id);
+					workspace.tables.windows.delete(existing.id);
 					continue;
 				}
 				const expectedId = createWindowCompositeId(id, existing.windowId);
 				if (existing.id !== expectedId) {
-					tables.windows.delete(existing.id);
+					workspace.tables.windows.delete(existing.id);
 				}
 			}
 
 			// Tabs
 			for (const row of tabRows) {
-				tables.tabs.set(row);
+				workspace.tables.tabs.set(row);
 			}
 			for (const existing of existingYDocTabs) {
 				if (existing.deviceId !== id) continue;
 				if (!tabIdSet.has(existing.tabId)) {
-					tables.tabs.delete(existing.id);
+					workspace.tables.tabs.delete(existing.id);
 					continue;
 				}
 				const expectedId = createTabCompositeId(id, existing.tabId);
 				if (existing.id !== expectedId) {
-					tables.tabs.delete(existing.id);
+					workspace.tables.tabs.delete(existing.id);
 				}
 			}
 
 			// Tab groups (Chrome only)
 			for (const group of allBrowserGroups) {
-				tables.tabGroups.set(tabGroupToRow(id, group));
+				workspace.tables.tabGroups.set(tabGroupToRow(id, group));
 			}
 			for (const existing of existingYDocGroups) {
 				if (existing.deviceId !== id) continue;
 				if (!groupIdSet.has(existing.groupId)) {
-					tables.tabGroups.delete(existing.id);
+					workspace.tables.tabGroups.delete(existing.id);
 					continue;
 				}
 				const expectedId = createGroupCompositeId(id, existing.groupId);
 				if (existing.id !== expectedId) {
-					tables.tabGroups.delete(existing.id);
+					workspace.tables.tabGroups.delete(existing.id);
 				}
 			}
 		});
@@ -237,11 +236,11 @@ function createBrowserState() {
 		deviceId = id;
 
 		console.log('[SidePanel] Seeded browser state + Y.Doc:', {
-			tabs: tables.tabs.getAllValid().length,
-			windows: tables.windows.getAllValid().length,
-			tabGroups: tables.tabGroups.getAllValid().length,
+			tabs: workspace.tables.tabs.getAllValid().length,
+			windows: workspace.tables.windows.getAllValid().length,
+			tabGroups: workspace.tables.tabGroups.getAllValid().length,
 		});
-	})();
+	}
 
 	// ── Tab Event Listeners ───────────────────────────────────────────────
 
@@ -255,7 +254,7 @@ function createBrowserState() {
 		state.tabs.set(row.tabId, row);
 
 		// Y.Doc write
-		tables.tabs.set(row);
+		workspace.tables.tabs.set(row);
 
 		// Track to detect echoes in Y.Doc observer
 		recentlyAddedTabIds.add(row.tabId);
@@ -273,7 +272,7 @@ function createBrowserState() {
 		windowStates.get(compositeId)?.tabs.delete(tabId);
 
 		// Y.Doc write
-		tables.tabs.delete(createTabCompositeId(deviceId, tabId));
+		workspace.tables.tabs.delete(createTabCompositeId(deviceId, tabId));
 	});
 
 	// onUpdated: Full Tab in 3rd arg — route to correct window
@@ -286,7 +285,7 @@ function createBrowserState() {
 		state.tabs.set(row.tabId, row);
 
 		// Y.Doc write
-		tables.tabs.set(row);
+		workspace.tables.tabs.set(row);
 	});
 
 	// onMoved: Re-query tab to get updated index
@@ -301,7 +300,7 @@ function createBrowserState() {
 			state.tabs.set(row.tabId, row);
 
 			// Y.Doc write
-			tables.tabs.set(row);
+			workspace.tables.tabs.set(row);
 		} catch {
 			// Tab may have been closed during move
 		}
@@ -317,13 +316,13 @@ function createBrowserState() {
 		const state = windowStates.get(compositeId);
 		if (!state) return;
 
-		workspaceClient.batch(() => {
+		workspace.batch(() => {
 			// Deactivate previous active tab(s) in this window only
 			for (const [tabId, tab] of state.tabs) {
 				if (tab.active) {
 					const updated = { ...tab, active: false };
 					state.tabs.set(tabId, updated);
-					tables.tabs.set(updated);
+					workspace.tables.tabs.set(updated);
 				}
 			}
 
@@ -332,7 +331,7 @@ function createBrowserState() {
 			if (tab) {
 				const updated = { ...tab, active: true };
 				state.tabs.set(activeInfo.tabId, updated);
-				tables.tabs.set(updated);
+				workspace.tables.tabs.set(updated);
 			}
 		});
 	});
@@ -357,7 +356,7 @@ function createBrowserState() {
 			state.tabs.set(row.tabId, row);
 
 			// Y.Doc write
-			tables.tabs.set(row);
+			workspace.tables.tabs.set(row);
 		} catch {
 			// Tab may have been closed
 		}
@@ -384,7 +383,7 @@ function createBrowserState() {
 		windowStates.set(row.id, { window: row, tabs: new SvelteMap() });
 
 		// Y.Doc write
-		tables.windows.set(row);
+		workspace.tables.windows.set(row);
 	});
 
 	// onRemoved: Deleting the WindowState entry removes the window AND all its
@@ -397,11 +396,11 @@ function createBrowserState() {
 		// Delete tabs belonging to this window from Y.Doc before removing from SvelteMap
 		const state = windowStates.get(compositeId);
 		if (state) {
-			workspaceClient.batch(() => {
+			workspace.batch(() => {
 				for (const [tabId] of state.tabs) {
-					tables.tabs.delete(createTabCompositeId(currentDeviceId, tabId));
+					workspace.tables.tabs.delete(createTabCompositeId(currentDeviceId, tabId));
 				}
-				tables.windows.delete(compositeId);
+				workspace.tables.windows.delete(compositeId);
 			});
 		}
 
@@ -415,12 +414,12 @@ function createBrowserState() {
 	browser.windows.onFocusChanged.addListener((windowId) => {
 		if (!deviceId) return;
 
-		workspaceClient.batch(() => {
+		workspace.batch(() => {
 			for (const [id, state] of windowStates) {
 				if (state.window.focused) {
 					const updated = { ...state.window, focused: false };
 					windowStates.set(id, { ...state, window: updated });
-					tables.windows.set(updated);
+					workspace.tables.windows.set(updated);
 				}
 			}
 
@@ -431,7 +430,7 @@ function createBrowserState() {
 				if (state) {
 					const updated = { ...state.window, focused: true };
 					windowStates.set(compositeId, { ...state, window: updated });
-					tables.windows.set(updated);
+					workspace.tables.windows.set(updated);
 				}
 			}
 		});
@@ -442,7 +441,7 @@ function createBrowserState() {
 	if (browser.tabGroups) {
 		browser.tabGroups.onCreated.addListener((group) => {
 			if (!deviceId) return;
-			tables.tabGroups.set(tabGroupToRow(deviceId, group));
+			workspace.tables.tabGroups.set(tabGroupToRow(deviceId, group));
 		});
 
 		browser.tabGroups.onRemoved.addListener((group) => {
@@ -453,27 +452,25 @@ function createBrowserState() {
 
 		browser.tabGroups.onUpdated.addListener((group) => {
 			if (!deviceId) return;
-			tables.tabGroups.set(tabGroupToRow(deviceId, group));
+			workspace.tables.tabGroups.set(tabGroupToRow(deviceId, group));
 		});
 	}
 
-	// ── Y.Doc Observers — handle remote changes ─────────────────────────
-	// These fire when another device modifies the Y.Doc via WebSocket sync.
-	// Only remote-origin changes (transaction.origin !== null) trigger Chrome
-	// API calls. Local writes (origin === null) are our own → skip.
+	let whenReadyPromise = $state<Promise<void>>(Promise.resolve());
 
-	const _unobserveTabs = tables.tabs.observe((changedIds, transaction) => {
+	// ── Seed + Y.Doc observers ────────────────────────────────────────
+	whenReadyPromise = seedFromBrowser();
+
+	const _unobserveTabs = workspace.tables.tabs.observe((changedIds, transaction) => {
 		for (const id of changedIds) {
-			const result = tables.tabs.get(id);
+			const result = workspace.tables.tabs.get(id);
 			switch (result.status) {
 				case 'not_found':
-					// Tab deleted remotely → remove from browser
 					void (async () => {
 						if (transaction.origin === null) return;
 						if (!deviceId) return;
 						const parsed = parseTabId(id);
 						if (!parsed || parsed.deviceId !== deviceId) return;
-
 						try {
 							await browser.tabs.remove(parsed.tabId);
 						} catch {
@@ -489,14 +486,12 @@ function createBrowserState() {
 						if (row.deviceId !== deviceId) return;
 						if (!row.url) return;
 						if (recentlyAddedTabIds.has(row.tabId)) return;
-
 						try {
 							await browser.tabs.get(row.tabId);
 							return; // Tab already exists
 						} catch {
 							// Tab doesn't exist — create it
 						}
-
 						try {
 							await browser.tabs.create({ url: row.url });
 						} catch {
@@ -509,9 +504,9 @@ function createBrowserState() {
 		}
 	});
 
-	const _unobserveWindows = tables.windows.observe((changedIds, transaction) => {
+	const _unobserveWindows = workspace.tables.windows.observe((changedIds, transaction) => {
 		for (const id of changedIds) {
-			const result = tables.windows.get(id);
+			const result = workspace.tables.windows.get(id);
 			switch (result.status) {
 				case 'not_found':
 					void (async () => {
@@ -519,7 +514,6 @@ function createBrowserState() {
 						if (!deviceId) return;
 						const parsed = parseWindowId(id);
 						if (!parsed || parsed.deviceId !== deviceId) return;
-
 						try {
 							await browser.windows.remove(parsed.windowId);
 						} catch {
@@ -533,15 +527,12 @@ function createBrowserState() {
 						if (transaction.origin === null) return;
 						if (!deviceId) return;
 						if (row.deviceId !== deviceId) return;
-
-						// Check if this window already exists — skip updates, only create new
 						try {
 							await browser.windows.get(row.windowId);
-							return; // Window exists, this is an update not a create
+							return; // Window exists
 						} catch {
 							// Window doesn't exist — create it
 						}
-
 						try {
 							await browser.windows.create({});
 						} catch {
@@ -555,16 +546,15 @@ function createBrowserState() {
 	});
 
 	if (browser.tabGroups) {
-		const _unobserveTabGroups = tables.tabGroups.observe((changedIds, transaction) => {
+		const _unobserveTabGroups = workspace.tables.tabGroups.observe((changedIds, transaction) => {
 			for (const id of changedIds) {
-				const result = tables.tabGroups.get(id);
+				const result = workspace.tables.tabGroups.get(id);
 				if (result.status === 'not_found') {
 					void (async () => {
 						if (transaction.origin === null) return;
 						if (!deviceId) return;
 						const parsed = parseGroupId(id);
 						if (!parsed || parsed.deviceId !== deviceId) return;
-
 						try {
 							const groupTabs = await browser.tabs.query({
 								groupId: parsed.groupId,
@@ -584,6 +574,231 @@ function createBrowserState() {
 		});
 	}
 
+	// ── Tab Event Listeners ───────────────────────────────────────────────
+
+	// onCreated: Full Tab object provided
+	browser.tabs.onCreated.addListener((tab) => {
+		if (authState.status !== 'signed-in') return;
+		if (!deviceId) return;
+		const row = tabToRow(deviceId, tab);
+		if (!row) return;
+		const state = windowStates.get(row.windowId);
+		if (!state) return;
+		state.tabs.set(row.tabId, row);
+
+		// Y.Doc write
+		workspace.tables.tabs.set(row);
+
+		// Track to detect echoes in Y.Doc observer
+		recentlyAddedTabIds.add(row.tabId);
+		setTimeout(() => recentlyAddedTabIds.delete(row.tabId), 5000);
+	});
+
+	// onRemoved: Use removeInfo.windowId for a direct window lookup instead
+	// of scanning all tabs. When isWindowClosing is true, the window's
+	// onRemoved handler will delete the entire WindowState (and all its tabs
+	// with it), so per-tab cleanup is unnecessary.
+	browser.tabs.onRemoved.addListener((tabId, removeInfo) => {
+		if (authState.status !== 'signed-in') return;
+		if (!deviceId) return;
+		if (removeInfo.isWindowClosing) return;
+		const compositeId = createWindowCompositeId(deviceId, removeInfo.windowId);
+		windowStates.get(compositeId)?.tabs.delete(tabId);
+
+		// Y.Doc write
+		workspace.tables.tabs.delete(createTabCompositeId(deviceId, tabId));
+	});
+
+	// onUpdated: Full Tab in 3rd arg — route to correct window
+	browser.tabs.onUpdated.addListener((_tabId, _changeInfo, tab) => {
+		if (authState.status !== 'signed-in') return;
+		if (!deviceId) return;
+		const row = tabToRow(deviceId, tab);
+		if (!row) return;
+		const state = windowStates.get(row.windowId);
+		if (!state) return;
+		state.tabs.set(row.tabId, row);
+
+		// Y.Doc write
+		workspace.tables.tabs.set(row);
+	});
+
+	// onMoved: Re-query tab to get updated index
+	browser.tabs.onMoved.addListener(async (tabId) => {
+		if (authState.status !== 'signed-in') return;
+		if (!deviceId) return;
+		try {
+			const tab = await browser.tabs.get(tabId);
+			const row = tabToRow(deviceId, tab);
+			if (!row) return;
+			const state = windowStates.get(row.windowId);
+			if (!state) return;
+			state.tabs.set(row.tabId, row);
+
+			// Y.Doc write
+			workspace.tables.tabs.set(row);
+		} catch {
+			// Tab may have been closed during move
+		}
+	});
+
+	// onActivated: Only scans the affected window's tabs (not all tabs across
+	// all windows) to flip the active flag. This is the main perf win of the
+	// coupled structure — a 50-tab window with 5 other windows only iterates 50
+	// tabs, not 300.
+	browser.tabs.onActivated.addListener((activeInfo) => {
+		if (authState.status !== 'signed-in') return;
+		if (!deviceId) return;
+		const compositeId = createWindowCompositeId(deviceId, activeInfo.windowId);
+		const state = windowStates.get(compositeId);
+		if (!state) return;
+
+		// Deactivate previous active tab(s) in this window only
+		for (const [tabId, tab] of state.tabs) {
+			if (tab.active) {
+				const updated = { ...tab, active: false };
+				state.tabs.set(tabId, updated);
+				workspace.tables.tabs.set(updated);
+			}
+		}
+
+		// Activate the new tab
+		const tab = state.tabs.get(activeInfo.tabId);
+		if (tab) {
+			const updated = { ...tab, active: true };
+			state.tabs.set(activeInfo.tabId, updated);
+			workspace.tables.tabs.set(updated);
+		}
+	});
+
+	// ── Attach / Detach ──────────────────────────────────────────────────
+	// Moving a tab between windows fires two events in order:
+	//   1. onDetached (old window) — we remove the tab from the old window's map
+	//   2. onAttached (new window) — we re-query the tab and add it to the new
+	//      window's map (re-query is needed to get the updated windowId + index)
+	//
+	// Between detach and attach, the tab exists in neither window. This is fine
+	// because the side panel doesn't render mid-event-dispatch.
+
+	browser.tabs.onAttached.addListener(async (tabId) => {
+		if (authState.status !== 'signed-in') return;
+		if (!deviceId) return;
+		try {
+			const tab = await browser.tabs.get(tabId);
+			const row = tabToRow(deviceId, tab);
+			if (!row) return;
+			const state = windowStates.get(row.windowId);
+			if (!state) return;
+			state.tabs.set(row.tabId, row);
+
+			// Y.Doc write
+			workspace.tables.tabs.set(row);
+		} catch {
+			// Tab may have been closed
+		}
+	});
+
+	browser.tabs.onDetached.addListener((tabId, detachInfo) => {
+		if (authState.status !== 'signed-in') return;
+		if (!deviceId) return;
+		const compositeId = createWindowCompositeId(
+			deviceId,
+			detachInfo.oldWindowId,
+		);
+		windowStates.get(compositeId)?.tabs.delete(tabId);
+
+		// Y.Doc: tab will be updated by onAttached with new windowId
+	});
+
+	// ── Window Event Listeners ────────────────────────────────────────────
+
+	// onCreated: Full Window object provided
+	browser.windows.onCreated.addListener((window) => {
+		if (authState.status !== 'signed-in') return;
+		if (!deviceId) return;
+		const row = windowToRow(deviceId, window);
+		if (!row) return;
+		windowStates.set(row.id, { window: row, tabs: new SvelteMap() });
+
+		// Y.Doc write
+		workspace.tables.windows.set(row);
+	});
+
+	// onRemoved: Deleting the WindowState entry removes the window AND all its
+	// tabs in one operation — no orphan cleanup needed.
+	browser.windows.onRemoved.addListener((windowId) => {
+		if (authState.status !== 'signed-in') return;
+		if (!deviceId) return;
+		const currentDeviceId = deviceId; // Capture narrowed value for closure
+		const compositeId = createWindowCompositeId(currentDeviceId, windowId);
+
+		// Delete tabs belonging to this window from Y.Doc before removing from SvelteMap
+		const state = windowStates.get(compositeId);
+		if (state) {
+			workspace.batch(() => {
+				for (const [tabId] of state.tabs) {
+					workspace.tables.tabs.delete(
+						createTabCompositeId(currentDeviceId, tabId),
+					);
+				}
+				workspace.tables.windows.delete(compositeId);
+			});
+		}
+
+		windowStates.delete(compositeId);
+	});
+
+	// onFocusChanged: We call `windowStates.set()` (not just mutate the
+	// window object in place) because the `window` property is a plain object,
+	// not wrapped in $state. Calling `.set()` on the outer SvelteMap bumps its
+	// version signal, which notifies the `windows` getter's consumers.
+	browser.windows.onFocusChanged.addListener((windowId) => {
+		if (authState.status !== 'signed-in') return;
+		if (!deviceId) return;
+
+		for (const [id, state] of windowStates) {
+			if (state.window.focused) {
+				const updated = { ...state.window, focused: false };
+				windowStates.set(id, { ...state, window: updated });
+				workspace.tables.windows.set(updated);
+			}
+		}
+
+		// WINDOW_ID_NONE means all windows lost focus (e.g. user clicked desktop)
+		if (windowId !== browser.windows.WINDOW_ID_NONE) {
+			const compositeId = createWindowCompositeId(deviceId, windowId);
+			const state = windowStates.get(compositeId);
+			if (state) {
+				const updated = { ...state.window, focused: true };
+				windowStates.set(compositeId, { ...state, window: updated });
+				workspace.tables.windows.set(updated);
+			}
+		}
+	});
+
+	// ── Tab Group Event Listeners (Chrome only) ──────────────────────────
+
+	if (browser.tabGroups) {
+		browser.tabGroups.onCreated.addListener((group) => {
+			if (authState.status !== 'signed-in') return;
+			if (!deviceId) return;
+			workspace.tables.tabGroups.set(tabGroupToRow(deviceId, group));
+		});
+
+		browser.tabGroups.onRemoved.addListener((group) => {
+			if (authState.status !== 'signed-in') return;
+			if (!deviceId) return;
+			const compositeId = createGroupCompositeId(deviceId, group.id);
+			if (compositeId) workspace.tables.tabGroups.delete(compositeId);
+		});
+
+		browser.tabGroups.onUpdated.addListener((group) => {
+			if (authState.status !== 'signed-in') return;
+			if (!deviceId) return;
+			workspace.tables.tabGroups.set(tabGroupToRow(deviceId, group));
+		});
+	}
+
 	return {
 		/**
 		 * Resolves after the initial browser state seed completes.
@@ -600,7 +815,9 @@ function createBrowserState() {
 		 * {/await}
 		 * ```
 		 */
-		whenReady,
+		get whenReady() {
+			return whenReadyPromise;
+		},
 
 		/** All browser windows. */
 		get windows() {

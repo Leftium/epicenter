@@ -13,7 +13,7 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { SvelteMap } from 'svelte/reactivity';
-import { type ToolTrust, workspaceClient } from '$lib/workspace';
+import { type ToolTrust, workspace } from '$lib/workspace';
 
 /**
  * Trust level for a mutation tool.
@@ -28,7 +28,7 @@ export type TrustLevel = ToolTrust['trust'];
 // ─────────────────────────────────────────────────────────────────────────────
 
 function createToolTrustState() {
-	const trustMap = fromTable(workspaceClient.tables.toolTrust);
+	const trustMap = fromTable(workspace.tables.toolTrust);
 
 	return {
 		/**
@@ -45,7 +45,7 @@ function createToolTrustState() {
 		 * ```
 		 */
 		get(name: string): TrustLevel {
-			return (trustMap.get(name)?.trust) ?? 'ask';
+			return trustMap.get(name)?.trust ?? 'ask';
 		},
 
 		/**
@@ -63,7 +63,7 @@ function createToolTrustState() {
 		 * ```
 		 */
 		set(name: string, level: TrustLevel): void {
-			workspaceClient.tables.toolTrust.set({
+			workspace.tables.toolTrust.set({
 				id: name,
 				trust: level,
 				_v: 1,
@@ -85,7 +85,7 @@ function createToolTrustState() {
 		 * ```
 		 */
 		shouldAutoApprove(name: string): boolean {
-			return ((trustMap.get(name)?.trust) ?? 'ask') === 'always';
+			return (trustMap.get(name)?.trust ?? 'ask') === 'always';
 		},
 
 		/**

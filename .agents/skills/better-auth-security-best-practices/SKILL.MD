@@ -6,6 +6,10 @@ metadata:
   version: '1.0'
 ---
 
+## Reference Repositories
+
+- [Better Auth](https://github.com/better-auth/better-auth) — TypeScript authentication framework with plugins
+
 ## Secret Management
 
 ### Configuring the Secret

@@ -294,7 +294,7 @@ describe('createDocuments', () => {
 						key: 'persistence',
 						factory: () => ({
 							clearData: () => {},
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},
@@ -307,13 +307,13 @@ describe('createDocuments', () => {
 			expect(typeof handle.extensions.persistence?.clearData).toBe('function');
 		});
 
-		test('lifecycle-only extension is accessible with whenReady and destroy', async () => {
+		test('lifecycle-only extension is accessible with whenReady and dispose', async () => {
 			const { documents } = setup({
 				documentExtensions: [
 					{
 						key: 'lifecycle-only',
 						factory: () => ({
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},
@@ -325,7 +325,7 @@ describe('createDocuments', () => {
 			const ext = handle.extensions['lifecycle-only'];
 			expect(ext).toBeDefined();
 			expect(ext?.whenReady).toBeInstanceOf(Promise);
-			expect(typeof ext?.destroy).toBe('function');
+			expect(typeof ext?.dispose).toBe('function');
 		});
 
 		test('accepts a row object', async () => {
@@ -401,7 +401,7 @@ describe('createDocuments', () => {
 						key: 'first',
 						factory: () => {
 							order.push(1);
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -409,7 +409,7 @@ describe('createDocuments', () => {
 						key: 'second',
 						factory: () => {
 							order.push(2);
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -417,7 +417,7 @@ describe('createDocuments', () => {
 						key: 'third',
 						factory: () => {
 							order.push(3);
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -437,7 +437,7 @@ describe('createDocuments', () => {
 						key: 'first',
 						factory: () => ({
 							whenReady: Promise.resolve(),
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},
@@ -445,7 +445,7 @@ describe('createDocuments', () => {
 						key: 'second',
 						factory: ({ whenReady }) => {
 							secondReceivedWhenReady = whenReady instanceof Promise;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -473,7 +473,7 @@ describe('createDocuments', () => {
 						key: 'normal-hook',
 						factory: () => {
 							hooksCalled++;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -500,7 +500,7 @@ describe('createDocuments', () => {
 						key: 'universal',
 						factory: () => {
 							called = true;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [], // universal — no tags
 					},
@@ -520,7 +520,7 @@ describe('createDocuments', () => {
 						key: 'sync-ext',
 						factory: () => {
 							called = true;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: ['synced'],
 					},
@@ -540,7 +540,7 @@ describe('createDocuments', () => {
 						key: 'ephemeral-ext',
 						factory: () => {
 							called = true;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: ['ephemeral'],
 					},
@@ -560,7 +560,7 @@ describe('createDocuments', () => {
 						key: 'tagged',
 						factory: () => {
 							calls.push('tagged');
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: ['persistent'],
 					},
@@ -568,7 +568,7 @@ describe('createDocuments', () => {
 						key: 'universal',
 						factory: () => {
 							calls.push('universal');
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -590,7 +590,7 @@ describe('createDocuments', () => {
 						key: 'first',
 						factory: () => ({
 							someValue: 42,
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},
@@ -598,7 +598,7 @@ describe('createDocuments', () => {
 						key: 'second',
 						factory: (context) => {
 							capturedFirstExtension = context.extensions.first;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -623,7 +623,7 @@ describe('createDocuments', () => {
 						key: 'tagged',
 						factory: () => ({
 							label: 'tagged',
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: ['persistent'],
 					},
@@ -632,7 +632,7 @@ describe('createDocuments', () => {
 						factory: (context) => {
 							taggedPresentForPersistentDoc =
 								context.extensions.tagged !== undefined;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -648,7 +648,7 @@ describe('createDocuments', () => {
 						key: 'tagged',
 						factory: () => ({
 							label: 'tagged',
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: ['persistent'],
 					},
@@ -657,7 +657,7 @@ describe('createDocuments', () => {
 						factory: (context) => {
 							taggedPresentForEphemeralDoc =
 								context.extensions.tagged !== undefined;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -678,7 +678,7 @@ describe('createDocuments', () => {
 					{
 						key: 'first',
 						factory: () => ({
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},
@@ -686,7 +686,7 @@ describe('createDocuments', () => {
 						key: 'second',
 						factory: (context) => {
 							firstExtensionSeen = context.extensions.first !== undefined;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -704,7 +704,7 @@ describe('createDocuments', () => {
 						key: 'test',
 						factory: () => ({
 							helper: () => 42,
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},

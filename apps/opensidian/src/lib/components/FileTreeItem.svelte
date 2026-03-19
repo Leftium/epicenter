@@ -31,8 +31,8 @@
 						<InlineNameInput
 							defaultValue={row.name}
 							icon="folder"
-							onConfirm={fsState.actions.confirmRename}
-							onCancel={fsState.actions.cancelRename}
+							onConfirm={fsState.confirmRename}
+							onCancel={fsState.cancelRename}
 						/>
 					</div>
 				{:else if isFolder}
@@ -40,7 +40,7 @@
 						<TreeView.Folder
 							name={row.name}
 							open={isExpanded}
-							onOpenChange={() => fsState.actions.toggleExpand(id)}
+							onOpenChange={() => fsState.toggleExpand(id)}
 							class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 								? 'bg-accent text-accent-foreground'
 								: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
@@ -51,8 +51,8 @@
 							{#if showInlineCreate}
 								<InlineNameInput
 									icon={fsState.inlineCreate?.type ?? 'file'}
-									onConfirm={fsState.actions.confirmCreate}
-									onCancel={fsState.actions.cancelCreate}
+									onConfirm={fsState.confirmCreate}
+									onCancel={fsState.cancelCreate}
 								/>
 							{/if}
 						</TreeView.Folder>
@@ -62,8 +62,8 @@
 						<InlineNameInput
 							defaultValue={row.name}
 							icon="file"
-						onConfirm={fsState.actions.confirmRename}
-						onCancel={fsState.actions.cancelRename}
+						onConfirm={fsState.confirmRename}
+						onCancel={fsState.cancelRename}
 						/>
 					</div>
 				{:else}
@@ -74,7 +74,7 @@
 						class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 							? 'bg-accent text-accent-foreground'
 							: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
-						onclick={() => fsState.actions.selectFile(id)}
+						onclick={() => fsState.selectFile(id)}
 						role="treeitem"
 					>
 						{#snippet icon()}
@@ -88,31 +88,31 @@
 		<ContextMenu.Content>
 			{#if isFolder}
 				<ContextMenu.Item onclick={() => {
-					fsState.actions.focus(id);
+					fsState.focus(id);
 					fsState.expandedIds.add(id);
-					fsState.actions.startCreate('file');
+					fsState.startCreate('file');
 				}}>
 					New File
 					<ContextMenu.Shortcut>N</ContextMenu.Shortcut>
 				</ContextMenu.Item>
 				<ContextMenu.Item onclick={() => {
-					fsState.actions.focus(id);
+					fsState.focus(id);
 					fsState.expandedIds.add(id);
-					fsState.actions.startCreate('folder');
+					fsState.startCreate('folder');
 				}}>
 					New Folder
 					<ContextMenu.Shortcut>⇧N</ContextMenu.Shortcut>
 				</ContextMenu.Item>
 				<ContextMenu.Separator />
 			{/if}
-			<ContextMenu.Item onclick={() => fsState.actions.startRename(id)}>
+			<ContextMenu.Item onclick={() => fsState.startRename(id)}>
 				Rename
 				<ContextMenu.Shortcut>F2</ContextMenu.Shortcut>
 			</ContextMenu.Item>
 			<ContextMenu.Item
 				class="text-destructive"
 				onclick={() => {
-					fsState.actions.selectFile(id);
+					fsState.selectFile(id);
 					deleteDialogOpen = true;
 				}}
 			>

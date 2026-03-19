@@ -624,57 +624,52 @@ function createBrowserState() {
 		},
 
 		/**
-		 * Browser API calls that trigger state changes indirectly.
+		 * Close a tab. Browser onRemoved event updates state.
 		 *
-		 * None of these mutate `windowStates` directly — they call the browser
-		 * API, which fires an event (e.g. `onRemoved`, `onUpdated`), and the
-		 * event listener above handles the state update. This keeps mutation
-		 * in one place (the listeners) and makes actions safe to call from
-		 * any component without worrying about state consistency.
+		 * None of these methods mutate `windowStates` directly \u2014 they call the
+		 * browser API, which fires an event (e.g. `onRemoved`, `onUpdated`),
+		 * and the event listener above handles the state update.
 		 */
-		actions: {
-			/** Close a tab. Browser onRemoved event updates state. */
-			async close(tabId: number) {
-				await browser.tabs.remove(tabId);
-			},
+		async close(tabId: number) {
+			await browser.tabs.remove(tabId);
+		},
 
-			/** Activate a tab and focus its window. */
-			async activate(tabId: number) {
-				const tab = await browser.tabs.update(tabId, { active: true });
-				if (tab?.windowId) {
-					await browser.windows.update(tab.windowId, { focused: true });
-				}
-			},
+		/** Activate a tab and focus its window. */
+		async activate(tabId: number) {
+			const tab = await browser.tabs.update(tabId, { active: true });
+			if (tab?.windowId) {
+				await browser.windows.update(tab.windowId, { focused: true });
+			}
+		},
 
-			/** Pin a tab. */
-			async pin(tabId: number) {
-				await browser.tabs.update(tabId, { pinned: true });
-			},
+		/** Pin a tab. */
+		async pin(tabId: number) {
+			await browser.tabs.update(tabId, { pinned: true });
+		},
 
-			/** Unpin a tab. */
-			async unpin(tabId: number) {
-				await browser.tabs.update(tabId, { pinned: false });
-			},
+		/** Unpin a tab. */
+		async unpin(tabId: number) {
+			await browser.tabs.update(tabId, { pinned: false });
+		},
 
-			/** Mute a tab. */
-			async mute(tabId: number) {
-				await browser.tabs.update(tabId, { muted: true });
-			},
+		/** Mute a tab. */
+		async mute(tabId: number) {
+			await browser.tabs.update(tabId, { muted: true });
+		},
 
-			/** Unmute a tab. */
-			async unmute(tabId: number) {
-				await browser.tabs.update(tabId, { muted: false });
-			},
+		/** Unmute a tab. */
+		async unmute(tabId: number) {
+			await browser.tabs.update(tabId, { muted: false });
+		},
 
-			/** Reload a tab. */
-			async reload(tabId: number) {
-				await browser.tabs.reload(tabId);
-			},
+		/** Reload a tab. */
+		async reload(tabId: number) {
+			await browser.tabs.reload(tabId);
+		},
 
-			/** Duplicate a tab. */
-			async duplicate(tabId: number) {
-				await browser.tabs.duplicate(tabId);
-			},
+		/** Duplicate a tab. */
+		async duplicate(tabId: number) {
+			await browser.tabs.duplicate(tabId);
 		},
 	};
 }

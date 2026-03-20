@@ -4,7 +4,7 @@
 
 	let {
 		defaultValue = '',
-		icon = 'file' as 'file' | 'folder',
+		icon = 'file',
 		onConfirm,
 		onCancel,
 	}: {

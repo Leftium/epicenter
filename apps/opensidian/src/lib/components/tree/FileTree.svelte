@@ -60,7 +60,7 @@
 					fsState.toggleExpand(current);
 				} else {
 					const children = fsState.getChildIds(current);
-					if (children.length > 0) fsState.focus(children[0]!);
+					if (children.length > 0) fsState.focus(children[0] ?? null);
 				}
 				break;
 			}

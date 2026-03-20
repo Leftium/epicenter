@@ -13,7 +13,7 @@ import { createFactory } from 'hono/factory';
 import { defineErrors } from 'wellcrafted/error';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
-import { getModelCredits } from './model-costs';
+import { MODEL_CREDITS } from './model-costs';
 
 const chatOptions = type({
 	'systemPrompts?': 'string[] | undefined',
@@ -61,7 +61,7 @@ export const aiChatHandlers = factory.createHandlers(
 		// ---------------------------------------------------------------
 		// Credit check
 		// ---------------------------------------------------------------
-		const credits = getModelCredits(data.model);
+		const credits = MODEL_CREDITS[data.model];
 		if (credits === undefined) {
 			return c.json(AiChatError.UnknownModel({ model: data.model }), 400);
 		}
@@ -72,6 +72,7 @@ export const aiChatHandlers = factory.createHandlers(
 			featureId: 'ai_usage',
 			requiredBalance: credits,
 			sendEvent: true,
+			withPreview: true,
 			properties: { model: data.model, provider: data.provider },
 		});
 

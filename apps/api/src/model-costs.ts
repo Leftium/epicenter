@@ -9,7 +9,7 @@
  * This effectively blocks unsupported or prohibitively expensive models
  * (e.g., o1-pro at $150/$600 per M tokens).
  */
-const MODEL_CREDITS: Record<string, number> = {
+export const MODEL_CREDITS: Record<string, number> = {
 	// ── OpenAI: Nano/Mini (1 credit) ─────────────────────────────
 	'gpt-5-nano': 1, // $0.05/$0.40
 	'gpt-4.1-nano': 1, // $0.10/$0.40
@@ -82,19 +82,3 @@ const MODEL_CREDITS: Record<string, number> = {
 	'claude-opus-4-1': 30, // $15/$75
 	'claude-opus-4-5': 30, // $15/$75
 };
-
-/**
- * Get the credit cost for an AI model.
- *
- * Returns `undefined` for unknown or blocked models (e.g., o1-pro).
- * Caller should return 400 for undefined results.
- *
- * @example
- * ```typescript
- * const credits = getModelCredits('claude-sonnet-4'); // 5
- * const blocked = getModelCredits('o1-pro');           // undefined
- * ```
- */
-export function getModelCredits(model: string): number | undefined {
-	return MODEL_CREDITS[model];
-}

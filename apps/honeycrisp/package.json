@@ -24,11 +24,14 @@
 		"svelte-sonner": "catalog:",
 		"tailwindcss": "catalog:",
 		"typescript": "catalog:",
-		"vite": "catalog:"
+		"vite": "catalog:",
+		"@standard-schema/spec": "catalog:"
 	},
 	"dependencies": {
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
+		"@epicenter/constants": "workspace:*",
+		"@epicenter/sync-client": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
 		"@tanstack/svelte-query-devtools": "catalog:",
 		"@tiptap/core": "^2.12.0",
@@ -38,6 +41,7 @@
 		"@tiptap/extension-underline": "^2.12.0",
 		"@tiptap/starter-kit": "^2.12.0",
 		"arktype": "catalog:",
+		"better-auth": "catalog:",
 		"bits-ui": "catalog:",
 		"date-fns": "catalog:",
 		"nanoid": "catalog:",

@@ -92,7 +92,9 @@
       "name": "@epicenter/honeycrisp",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
+        "@epicenter/sync-client": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
         "@tanstack/svelte-query-devtools": "catalog:",
@@ -103,6 +105,7 @@
         "@tiptap/extension-underline": "^2.12.0",
         "@tiptap/starter-kit": "^2.12.0",
         "arktype": "catalog:",
+        "better-auth": "catalog:",
         "bits-ui": "catalog:",
         "date-fns": "catalog:",
         "nanoid": "catalog:",
@@ -116,6 +119,7 @@
       "devDependencies": {
         "@epicenter/ui": "workspace:*",
         "@lucide/svelte": "catalog:",
+        "@standard-schema/spec": "catalog:",
         "@sveltejs/adapter-static": "catalog:",
         "@sveltejs/kit": "catalog:",
         "@sveltejs/vite-plugin-svelte": "catalog:",

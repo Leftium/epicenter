@@ -26,7 +26,7 @@
 		"typescript": "catalog:",
 		"vite": "catalog:"
 	},
-"dependencies": {
+	"dependencies": {
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
@@ -46,5 +46,6 @@
 		"wellcrafted": "catalog:",
 		"y-prosemirror": "^1.3.7",
 		"yjs": "catalog:"
-	}
+	},
+	"license": "MIT"
 }

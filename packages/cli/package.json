@@ -17,5 +17,6 @@
 	"devDependencies": {
 		"@types/yargs": "catalog:",
 		"typescript": "catalog:"
-	}
+	},
+	"license": "MIT"
 }

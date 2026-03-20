@@ -27,5 +27,6 @@
 		"@lucide/astro": "^0.536.0",
 		"@tailwindcss/typography": "catalog:",
 		"typescript": "catalog:"
-	}
+	},
+	"license": "MIT"
 }

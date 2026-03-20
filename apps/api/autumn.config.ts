@@ -1,43 +1,25 @@
 import { feature, item, plan } from 'atmn';
 
 // ---------------------------------------------------------------------------
-// Metered features — one per model tier
+// Single metered feature for all AI usage — cost varies per model at runtime
 // ---------------------------------------------------------------------------
 
-export const aiFast = feature({
-	id: 'ai_fast',
-	name: 'AI (Fast)',
-	type: 'metered',
-	consumable: true,
-});
-
-export const aiStandard = feature({
-	id: 'ai_standard',
-	name: 'AI (Standard)',
-	type: 'metered',
-	consumable: true,
-});
-
-export const aiPremium = feature({
-	id: 'ai_premium',
-	name: 'AI (Premium)',
+export const aiUsage = feature({
+	id: 'ai_usage',
+	name: 'AI Usage',
 	type: 'metered',
 	consumable: true,
 });
 
 // ---------------------------------------------------------------------------
-// Credit system — single pool, different costs per model tier
+// Credit system — 1:1 mapping, actual cost determined at runtime
 // ---------------------------------------------------------------------------
 
 export const aiCredits = feature({
 	id: 'ai_credits',
 	name: 'AI Credits',
 	type: 'credit_system',
-	creditSchema: [
-		{ meteredFeatureId: aiFast.id, creditCost: 1 },
-		{ meteredFeatureId: aiStandard.id, creditCost: 3 },
-		{ meteredFeatureId: aiPremium.id, creditCost: 10 },
-	],
+	creditSchema: [{ meteredFeatureId: aiUsage.id, creditCost: 1 }],
 });
 
 // ---------------------------------------------------------------------------

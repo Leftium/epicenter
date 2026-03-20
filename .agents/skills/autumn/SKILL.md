@@ -3,7 +3,7 @@ name: autumn
 description: Integrate Autumn billing—define features/plans in autumn.config.ts, use autumn-js SDK for credit checks/tracking, manage the atmn CLI for push/pull. Use when working on billing, pricing, credits, plan gating, or metered usage.
 metadata:
   author: epicenter
-  version: '1.1'
+  version: '1.2'
 ---
 
 # Autumn Billing Integration Guide
@@ -66,17 +66,52 @@ feature({ id: 'ai-fast', ... })
 **Credit systems** require linked `metered` features with `consumable: true`. Each linked feature has a `creditCost` defining how many credits one unit consumes.
 
 ```typescript
+export const aiUsage = feature({
+  id: 'ai_usage',
+  name: 'AI Usage',
+  type: 'metered',
+  consumable: true,
+});
+
 export const aiCredits = feature({
   id: 'ai_credits',
   name: 'AI Credits',
   type: 'credit_system',
   creditSchema: [
-    { meteredFeatureId: 'ai_fast', creditCost: 1 },
-    { meteredFeatureId: 'ai_standard', creditCost: 3 },
-    { meteredFeatureId: 'ai_premium', creditCost: 10 },
+    { meteredFeatureId: 'ai_usage', creditCost: 1 },
   ],
 });
 ```
+
+### Proportional Billing
+
+Instead of multiple metered features with fixed `creditCost` per tier, use a **single metered feature** with `creditCost: 1` and vary the `requiredBalance` at runtime.
+
+This gives per-model cost precision without cluttering the Autumn dashboard with dozens of features.
+
+**How it works**: Autumn's `check()` with `sendEvent: true` uses `requiredBalance` as the deduction amount. With `creditCost: 1`, passing `requiredBalance: 5` deducts exactly 5 credits from the pool.
+
+```typescript
+// Runtime cost table (in model-costs.ts, not autumn.config.ts)
+const MODEL_CREDITS: Record<string, number> = {
+  'gpt-4o-mini': 1,      // cheap model = 1 credit
+  'claude-sonnet-4': 5,  // mid-range = 5 credits
+  'claude-opus-4': 30,   // expensive = 30 credits
+};
+
+// Dynamic deduction
+const credits = MODEL_CREDITS[model];
+await autumn.check({
+  customerId,
+  featureId: 'ai_usage',      // single feature for all models
+  requiredBalance: credits,    // varies per model
+  sendEvent: true,
+});
+```
+
+**Refund on error**: Use `track({ featureId: 'ai_usage', value: -credits })` to refund the exact amount.
+
+**Blocking expensive models**: Omit them from `MODEL_CREDITS`. Unknown models → `getModelCredits()` returns `undefined` → 400.
 
 ---
 
@@ -153,11 +188,12 @@ await autumn.customers.getOrCreate({
 ### Credit Check
 
 ```typescript
+const credits = getModelCredits(data.model);
 const { allowed, balance } = await autumn.check({
   customerId: userId,
-  featureId: 'ai_standard',  // The metered feature ID, not the credit system ID
-  requiredBalance: 1,
-  sendEvent: true,            // Atomically deduct on allow
+  featureId: 'ai_usage',
+  requiredBalance: credits,
+  sendEvent: true,
   properties: { model, provider },
 });
 
@@ -166,17 +202,15 @@ if (!allowed) {
 }
 ```
 
-**`featureId`** is the metered feature ID (e.g., `ai_standard`), not the credit system ID. Autumn resolves the credit cost through the `creditSchema` mapping.
-
-**`sendEvent: true`** atomically deducts credits when `allowed: true`. No separate `track()` call needed for the happy path.
+**featureId** is always 'ai_usage'. The credit cost varies per model via the dynamic requiredBalance.
 
 ### Refund on Error
 
 ```typescript
 await autumn.track({
   customerId: userId,
-  featureId: 'ai_standard',
-  value: -1,  // Negative value = refund
+  featureId: 'ai_usage',
+  value: -credits,  // Negative value = refund
 });
 ```
 
@@ -260,13 +294,13 @@ app.use('/ai/*', async (c, next) => {
 ### Credit Gate in Handler
 
 ```typescript
-const modelTier = getModelTier(data.model);
-if (!modelTier) return c.json(error, 400);
+const credits = getModelCredits(data.model);
+if (!credits) return c.json(error, 400);
 
 const { allowed, balance } = await autumn.check({
   customerId: c.var.user.id,
-  featureId: modelTier,
-  requiredBalance: 1,
+  featureId: 'ai_usage',
+  requiredBalance: credits,
   sendEvent: true,
 });
 
@@ -287,13 +321,13 @@ if (!allowed) return c.json(error, 402);
 ## Common Gotchas
 
 1. **`getOrCreate` must be awaited** — Fire-and-forget will cause `check()` to fail with "customer not found."
-2. **`featureId` in `check()` is the metered feature**, not the credit system. Autumn resolves credit cost via `creditSchema`.
+2. **`featureId` in `check()` is always 'ai_usage'** — The credit cost varies per model via dynamic `requiredBalance`, not featureId.
 3. **`reset.interval` and `price.interval` are mutually exclusive** — not `reset` and `price` themselves. A `PlanItemWithReset` CAN have a `price`, but that price cannot have an `interval`. For paid plans, `price.interval` handles both billing and balance reset.
 4. **`sendEvent: true` deducts atomically** — Don't call `track()` separately for the happy path. Only use `track({ value: -1 })` for refunds.
 5. **All IDs are snake_case** — Autumn's pricing agent convention. Don't use kebab-case.
 6. **`autoEnable` triggers on customer creation** — Not on first `check()`. Ensure the middleware calls `getOrCreate` before checking.
 7. **Multiple keys per environment** — Autumn supports multiple active secret keys for rotation. Generate new key → update secrets → revoke old key.
-8. **Feature IDs are ecosystem-scoped** — Use `ai_fast`/`ai_standard`/`ai_premium` (model tiers), not `ai_chat_fast` (tied to a single feature). Any AI feature in the ecosystem deducts from the same credit pool.
+8. **Use proportional billing** — One metered feature (`ai_usage`) with `creditCost: 1` and dynamic `requiredBalance` per model. Per-model costs live in model-costs.ts, not autumn.config.ts. This avoids cluttering the dashboard with dozens of features.
 
 ---
 
@@ -303,7 +337,7 @@ if (!allowed) return c.json(error, 402);
 |------|---------|
 | `apps/api/autumn.config.ts` | Feature, credit system, and plan definitions |
 | `apps/api/src/autumn.ts` | `createAutumn(env)` factory for per-request SDK client |
-| `apps/api/src/model-classes.ts` | Model string → credit tier (feature ID) mapping |
+| `apps/api/src/model-costs.ts` | Model string → proportional credit cost mapping |
 | `apps/api/src/ai-chat.ts` | Credit check + refund logic for AI chat handler |
 | `apps/api/src/app.ts` | Middleware wiring (ensureAutumnCustomer) |
 

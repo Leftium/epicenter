@@ -557,6 +557,16 @@ Not in the original spec. Added during implementation as a third tier in `group:
 #### 6. BYOK (Bring Your Own Key) deferred
 The spec mentioned BYOK bypass. Not implemented—the request schema doesn't support user-provided API keys yet. When added, the credit check should be skipped entirely for BYOK requests.
 
+#### 7. Proportional billing replaces tier-based credit system
+The spec defined 3 metered features (`ai_chat_fast`, `ai_chat_smart`, `ai_chat_premium`) with fixed `creditCost` values (1, 3, 10) mapped to model tiers. **Replaced with proportional billing**: a single `ai_usage` metered feature with `creditCost: 1`, where the `requiredBalance` passed to `autumn.check()` varies per model at runtime.
+
+Rationale:
+- Per-model cost precision (50+ models mapped individually vs 3 buckets)
+- Protects margins on expensive models (o3-pro costs $20/$80 per M tokens; o1-pro blocked entirely at $150/$600)
+- Follows T3 Chat's evolution from tier-based to proportional usage-based billing
+- Simpler Autumn config (2 features instead of 5)
+- Cost table lives in `model-costs.ts` where it's trivially updatable without re-pushing Autumn config
+
 ### Files Actually Created/Modified
 
 | File | Action | Notes |
@@ -566,7 +576,7 @@ The spec mentioned BYOK bypass. Not implemented—the request schema doesn't sup
 | `apps/api/wrangler.jsonc` | Modified | Added `AUTUMN_SECRET_KEY` to secrets |
 | `apps/api/worker-configuration.d.ts` | Regenerated | Includes `AUTUMN_SECRET_KEY` binding |
 | `apps/api/src/autumn.ts` | **Created** | `createAutumn(env)` factory |
-| `apps/api/src/model-classes.ts` | **Created** | Model → credit class mapping (snake_case IDs) |
+| `apps/api/src/model-costs.ts` | **Created** (replaces `model-classes.ts`) | Per-model proportional credit cost mapping |
 | `apps/api/src/ai-chat.ts` | Modified | Credit check, `UnknownModel`/`InsufficientCredits` errors, refund on error |
 | `apps/api/src/app.ts` | Modified | Inline `ensureAutumnCustomer` middleware after `authGuard` for `/ai/*` |
 | `.agents/skills/autumn/SKILL.md` | **Created** | Autumn integration skill with best practices |
@@ -578,4 +588,4 @@ The spec mentioned BYOK bypass. Not implemented—the request schema doesn't sup
 2. **Login**: `bunx atmn login`
 3. **Push config**: `bunx atmn push` to sync features/plans to Autumn dashboard
 4. **Smoke test**: Follow the manual test steps in Step 9 above
-5. **Monitor o3 costs**: Premium tier (10 credits) may not cover worst-case o3 reasoning costs. Consider bumping to 20 credits if usage data shows losses.
+5. **Verify model cost accuracy**: Cross-reference `model-costs.ts` credit assignments with actual API costs after initial usage data is available. Adjust credits where margins are too thin.

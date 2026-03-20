@@ -134,8 +134,7 @@
 		</Empty.Header>
 	</Empty.Root>
 {:else}
-	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-	<TreeView.Root tabindex={0} onkeydown={handleKeydown}>
+	<TreeView.Root tabindex={0} aria-label="File explorer" onkeydown={handleKeydown}>
 		{#each fsState.rootChildIds as childId (childId)}
 			<FileTreeItem id={childId} />
 		{/each}

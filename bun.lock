@@ -119,7 +119,6 @@
       "devDependencies": {
         "@epicenter/ui": "workspace:*",
         "@lucide/svelte": "catalog:",
-        "@standard-schema/spec": "catalog:",
         "@sveltejs/adapter-static": "catalog:",
         "@sveltejs/kit": "catalog:",
         "@sveltejs/vite-plugin-svelte": "catalog:",
@@ -176,7 +175,6 @@
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
-        "@standard-schema/spec": "catalog:",
         "@sveltejs/adapter-auto": "catalog:",
         "@sveltejs/kit": "catalog:",
         "@sveltejs/vite-plugin-svelte": "catalog:",

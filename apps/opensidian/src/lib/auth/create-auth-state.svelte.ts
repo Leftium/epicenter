@@ -1,33 +1,94 @@
 /**
- * Auth state factory—shared logic for all Epicenter client apps.
+ * Auth state factory for Epicenter client apps.
  *
  * Owns the phase machine, Better Auth client, session validation, and
- * token refresh. Platform-specific behavior (storage, OAuth flow, workspace
- * integration) is injected via {@link AuthStateConfig}.
+ * token refresh. Creates its own persisted storage internally—no adapter
+ * layer. Each app passes a `storagePrefix` and workspace callbacks.
  *
- * Actions take explicit parameters—form state lives in the component,
- * not in the auth singleton.
+ * Actions take explicit parameters—form state lives in the component.
  *
  * @example
  * ```typescript
- * const authState = createAuthState({
+ * export const authState = createAuthState({
  *   baseURL: 'https://api.epicenter.so',
- *   tokenStorage: localStorageAdapter({ key: 'authToken', ... }),
- *   userStorage: localStorageAdapter({ key: 'authUser', ... }),
- *   onSignedIn: (key) => workspace.activateEncryption(key),
- *   onSignedOut: () => workspace.deactivateEncryption(),
+ *   storagePrefix: 'honeycrisp',
+ *   onSignedIn: (key) => { workspace.activateEncryption(key); workspace.sync.reconnect(); },
+ *   onSignedOut: () => { workspace.deactivateEncryption(); workspace.sync.reconnect(); },
  * });
  * ```
  */
 
+import { createPersistedState } from '@epicenter/svelte/createPersistedState';
+import { type } from 'arktype';
+import { createAuthClient } from 'better-auth/client';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Ok, tryAsync } from 'wellcrafted/result';
+
+// ─── Types (inlined—only used by this factory) ──────────────────────────────
+
 /** Custom fields from the server's customSession plugin. */
 type CustomSessionFields = { encryptionKey: string; keyVersion: number };
 
-import { createAuthClient } from 'better-auth/client';
-import { Ok, tryAsync } from 'wellcrafted/result';
-import { AuthError, type AuthPhase, type AuthStateConfig } from './types';
+const AuthUser = type({
+	id: 'string',
+	createdAt: 'string',
+	updatedAt: 'string',
+	email: 'string',
+	emailVerified: 'boolean',
+	name: 'string',
+	'image?': 'string | null | undefined',
+});
 
-/** Convert all `Date` properties in an object to ISO strings. */
+export type AuthUser = typeof AuthUser.infer;
+
+export type AuthPhase =
+	| { status: 'checking' }
+	| { status: 'signing-in' }
+	| { status: 'signing-out' }
+	| { status: 'signed-in' }
+	| { status: 'signed-out'; error?: string };
+
+const AuthError = defineErrors({
+	SignInFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Sign-in failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	SignUpFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Sign-up failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	GoogleSignInFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Google sign-in failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+type AuthError = InferErrors<typeof AuthError>;
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+
+export type AuthStateConfig = {
+	/** Base URL for the Better Auth API (e.g. `https://api.epicenter.so`). */
+	baseURL: string;
+	/** Prefix for localStorage keys (e.g. `'honeycrisp'` → `'honeycrisp:authToken'`). */
+	storagePrefix: string;
+	/**
+	 * Override for Google sign-in. Web apps leave undefined to use Better Auth's
+	 * built-in redirect flow. Chrome extensions pass a function that uses
+	 * `chrome.identity.launchWebAuthFlow`.
+	 */
+	signInWithGoogle?: () => Promise<AuthUser>;
+	/** Called after successful sign-in with the encryption key from the session. */
+	onSignedIn?: (encryptionKey?: string) => Promise<void>;
+	/** Called after sign-out. */
+	onSignedOut?: () => Promise<void>;
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 function serializeDates<T extends Record<string, unknown>>(obj: T) {
 	return Object.fromEntries(
 		Object.entries(obj).map(([key, value]) => [
@@ -37,18 +98,22 @@ function serializeDates<T extends Record<string, unknown>>(obj: T) {
 	) as { [K in keyof T]: T[K] extends Date ? string : T[K] };
 }
 
-/**
- * Create an auth state instance with injected platform adapters.
- *
- * The returned object is a Svelte 5 reactive singleton—`status`, `user`,
- * and `token` are live `$derived`-compatible getters. Actions (`signIn`,
- * `signUp`, `signInWithGoogle`, `signOut`, `checkSession`) are async
- * methods that return `Result` types and never throw.
- */
-export function createAuthState(config: AuthStateConfig) {
-	const { baseURL, tokenStorage, userStorage } = config;
+// ─── Factory ─────────────────────────────────────────────────────────────────
 
-	// ─── Reactive State ───
+export function createAuthState(config: AuthStateConfig) {
+	const { baseURL, storagePrefix } = config;
+
+	// Storage—created internally, no adapter indirection
+	const tokenState = createPersistedState({
+		key: `${storagePrefix}:authToken`,
+		schema: type('string').or('undefined'),
+		onParseError: () => undefined,
+	});
+	const userState = createPersistedState({
+		key: `${storagePrefix}:authUser`,
+		schema: AuthUser.or('undefined'),
+		onParseError: () => undefined,
+	});
 
 	let phase = $state<AuthPhase>({ status: 'checking' });
 
@@ -58,21 +123,17 @@ export function createAuthState(config: AuthStateConfig) {
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',
-				token: () => tokenStorage.get(),
+				token: () => tokenState.value,
 			},
 			onSuccess: ({ response }) => {
 				const newToken = response.headers.get('set-auth-token');
-				if (newToken) void tokenStorage.set(newToken);
+				if (newToken) tokenState.value = newToken;
 			},
 		},
 	});
 
 	// ─── Private Helpers ───
 
-	/**
-	 * Typed wrapper around `client.getSession()` that includes custom
-	 * session fields (encryptionKey, keyVersion).
-	 */
 	async function getSession() {
 		const { data, error } = await client.getSession();
 		const customData = data
@@ -81,17 +142,15 @@ export function createAuthState(config: AuthStateConfig) {
 		return { data: customData, error };
 	}
 
-	async function clearState() {
-		await Promise.all([
-			tokenStorage.set(undefined),
-			userStorage.set(undefined),
-		]);
+	function clearState() {
+		tokenState.value = undefined;
+		userState.value = undefined;
 	}
 
 	/**
-	 * Fetch the session to extract the encryption key, then notify the
-	 * app via `onSignedIn`. Better Auth's signIn/signUp responses don't
-	 * include customSession fields—only getSession() returns them.
+	 * Fetch the session to get the encryption key, then notify the app.
+	 * signIn/signUp responses don't include customSession fields—only
+	 * getSession() returns them.
 	 */
 	async function refreshEncryptionKeyAndNotify() {
 		const result = await getSession().catch(() => null);
@@ -101,31 +160,22 @@ export function createAuthState(config: AuthStateConfig) {
 	// ─── Public API ───
 
 	return {
-		/** Current auth phase status. */
 		get status() {
 			return phase.status;
 		},
 
-		/** Error message from the last failed sign-in attempt, if any. */
 		get signInError(): string | undefined {
 			return phase.status === 'signed-out' ? phase.error : undefined;
 		},
 
-		/** The cached authenticated user, or undefined if signed out. */
 		get user() {
-			return userStorage.get();
+			return userState.value;
 		},
 
-		/** The current auth token, or undefined if signed out. */
 		get token() {
-			return tokenStorage.get();
+			return tokenState.value;
 		},
 
-		/**
-		 * Sign in with email and password.
-		 *
-		 * Takes explicit credentials—form state lives in the component.
-		 */
 		async signIn(credentials: { email: string; password: string }) {
 			phase = { status: 'signing-in' };
 
@@ -136,7 +186,7 @@ export function createAuthState(config: AuthStateConfig) {
 					if (authError)
 						throw new Error(authError.message ?? authError.statusText);
 					const user = serializeDates(data.user);
-					await userStorage.set(user);
+					userState.value = user;
 					return user;
 				},
 				catch: (cause) => AuthError.SignInFailed({ cause }),
@@ -152,11 +202,6 @@ export function createAuthState(config: AuthStateConfig) {
 			return result;
 		},
 
-		/**
-		 * Sign up with email, password, and name.
-		 *
-		 * Takes explicit credentials—form state lives in the component.
-		 */
 		async signUp(credentials: {
 			email: string;
 			password: string;
@@ -171,7 +216,7 @@ export function createAuthState(config: AuthStateConfig) {
 					if (authError)
 						throw new Error(authError.message ?? authError.statusText);
 					const user = serializeDates(data.user);
-					await userStorage.set(user);
+					userState.value = user;
 					return user;
 				},
 				catch: (cause) => AuthError.SignUpFailed({ cause }),
@@ -187,22 +232,14 @@ export function createAuthState(config: AuthStateConfig) {
 			return result;
 		},
 
-		/**
-		 * Sign in with Google.
-		 *
-		 * Web apps use Better Auth's built-in redirect flow. Chrome extensions
-		 * can override this via `config.signInWithGoogle` to use
-		 * `chrome.identity.launchWebAuthFlow`.
-		 */
 		async signInWithGoogle() {
 			phase = { status: 'signing-in' };
 
 			if (config.signInWithGoogle) {
-				// Platform override (e.g. chrome.identity)
 				const result = await tryAsync({
 					try: async () => {
 						const user = await config.signInWithGoogle!();
-						await userStorage.set(user);
+						userState.value = user;
 						return user;
 					},
 					catch: (cause) => {
@@ -234,8 +271,6 @@ export function createAuthState(config: AuthStateConfig) {
 			const result = await tryAsync({
 				try: async () => {
 					await client.signIn.social({ provider: 'google' });
-					// Redirect-based—the page will navigate away.
-					// If we reach here, something went wrong.
 					throw new Error('Expected redirect');
 				},
 				catch: (cause) => AuthError.GoogleSignInFailed({ cause }),
@@ -248,12 +283,11 @@ export function createAuthState(config: AuthStateConfig) {
 			return result;
 		},
 
-		/** Sign out—server-side invalidation + clear local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
 			await config.onSignedOut?.();
 			await client.signOut().catch(() => {});
-			await clearState().catch(() => {});
+			clearState();
 			phase = { status: 'signed-out' };
 			return Ok(undefined);
 		},
@@ -266,9 +300,7 @@ export function createAuthState(config: AuthStateConfig) {
 		 * aren't logged out. Only an explicit auth rejection (4xx) clears state.
 		 */
 		async checkSession() {
-			await Promise.all([tokenStorage.whenReady, userStorage.whenReady]);
-
-			const token = tokenStorage.get();
+			const token = tokenState.value;
 			if (!token) {
 				phase = { status: 'signed-out' };
 				return Ok(null);
@@ -281,28 +313,26 @@ export function createAuthState(config: AuthStateConfig) {
 					sessionError.status && sessionError.status < 500;
 
 				if (!isAuthRejection) {
-					// Network error or 5xx—trust cached user
-					const cached = userStorage.get();
+					const cached = userState.value;
 					phase = cached ? { status: 'signed-in' } : { status: 'signed-out' };
 					return Ok(cached ?? null);
 				}
 
-				// 4xx—server explicitly rejected the token
-				await clearState();
+				clearState();
 				await config.onSignedOut?.();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
 
 			if (!data) {
-				await clearState();
+				clearState();
 				await config.onSignedOut?.();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
 
 			const user = serializeDates(data.user);
-			await userStorage.set(user);
+			userState.value = user;
 			if (data.encryptionKey) {
 				await config.onSignedIn?.(data.encryptionKey);
 			}

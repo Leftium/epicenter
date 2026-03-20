@@ -88,7 +88,8 @@
 		"typecheck": "turbo run typecheck",
 		"bump-version": "bun run scripts/bump-version.ts",
 		"clean": "bun run scripts/clean.ts",
-		"nuke": "bun run scripts/clean.ts --nuke"
+		"nuke": "bun run scripts/clean.ts --nuke",
+		"sync-skills": "bun run scripts/sync-skills.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.8",

@@ -18,6 +18,7 @@ import { createFactory } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
+import { createAutumn } from './autumn';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 
@@ -407,6 +408,17 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 	await next();
 });
 app.use('/ai/*', authGuard);
+// Ensure authenticated AI users exist as Autumn customers (blocking—must
+// complete before downstream check() calls, which require the customer to exist).
+app.use('/ai/*', async (c, next) => {
+	const autumn = createAutumn(c.env);
+	await autumn.customers.getOrCreate({
+		customerId: c.var.user.id,
+		name: c.var.user.name ?? undefined,
+		email: c.var.user.email ?? undefined,
+	});
+	await next();
+});
 app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
 

@@ -1,3 +1,10 @@
+import type { ANTHROPIC_MODELS } from '@tanstack/ai-anthropic';
+import type { OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
+
+type SupportedModel =
+	| (typeof OPENAI_CHAT_MODELS)[number]
+	| (typeof ANTHROPIC_MODELS)[number];
+
 /**
  * Per-model credit costs for proportional AI billing.
  *
@@ -9,7 +16,7 @@
  * This effectively blocks unsupported or prohibitively expensive models
  * (e.g., o1-pro at $150/$600 per M tokens).
  */
-export const MODEL_CREDITS: Record<string, number> = {
+export const MODEL_CREDITS: Partial<Record<SupportedModel, number>> = {
 	// ── OpenAI: Nano/Mini (1 credit) ─────────────────────────────
 	'gpt-5-nano': 1, // $0.05/$0.40
 	'gpt-4.1-nano': 1, // $0.10/$0.40

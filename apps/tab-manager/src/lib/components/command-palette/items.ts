@@ -16,8 +16,8 @@
  * ```
  */
 
-import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 import type { CommandPaletteItem } from '@epicenter/ui/command-palette';
+import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 import ArchiveIcon from '@lucide/svelte/icons/archive';
 import ArrowDownAZIcon from '@lucide/svelte/icons/arrow-down-a-z';
 import CopyMinusIcon from '@lucide/svelte/icons/copy-minus';
@@ -27,28 +27,18 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import { browserState } from '$lib/state/browser-state.svelte';
 import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 import { findDuplicateGroups, groupTabsByDomain } from '$lib/utils/tab-helpers';
-import type { TabCompositeId } from '$lib/workspace';
-import { parseTabId } from '$lib/workspace';
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Batch-resolve composite tab IDs to native Chrome tab IDs.
- */
-function compositeToNativeIds(compositeIds: TabCompositeId[]): number[] {
-	return compositeIds
-		.map((id) => parseTabId(id)?.tabId)
-		.filter((id) => id !== undefined);
-}
-
-/**
  * Get all tabs across all windows as a flat array.
  */
 function getAllTabs() {
-	return browserState.windows.flatMap((w) => browserState.tabsByWindow(w.id));
+	return browserState.windows.flatMap((w) =>
+		browserState.tabsByWindow(w.id),
+	);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,9 +76,8 @@ export const items: CommandPaletteItem[] = [
 				description: `Found ${totalDuplicates} duplicate tab${totalDuplicates === 1 ? '' : 's'} across ${dupes.size} URL${dupes.size === 1 ? '' : 's'}. Close them?`,
 				confirm: { text: 'Close Duplicates', variant: 'destructive' },
 				async onConfirm() {
-					const nativeIds = compositeToNativeIds(toClose);
 					await tryAsync({
-						try: () => browser.tabs.remove(nativeIds),
+						try: () => browser.tabs.remove(toClose),
 						catch: () => Ok(undefined),
 					});
 				},
@@ -109,9 +98,7 @@ export const items: CommandPaletteItem[] = [
 			const groupOps = [...domains.entries()]
 				.filter(([, tabs]) => tabs.length >= 2)
 				.map(([domain, tabs]) => {
-					const nativeIds = compositeToNativeIds(
-						tabs.map((t) => t.id),
-					);
+					const nativeIds = tabs.map((t) => t.id);
 					return nativeIds.length >= 2 ? { domain, nativeIds } : null;
 				})
 				.filter((op) => op !== null);
@@ -136,17 +123,13 @@ export const items: CommandPaletteItem[] = [
 		async onSelect() {
 			for (const window of browserState.windows) {
 				const tabs = browserState.tabsByWindow(window.id);
-				const sorted = [...tabs].sort((a, b) =>
-					(a.title ?? '').localeCompare(b.title ?? ''),
-				);
+				const sorted = [...tabs].sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
 
 				for (let i = 0; i < sorted.length; i++) {
 					const tab = sorted[i];
 					if (!tab) continue;
-					const parsed = parseTabId(tab.id);
-					if (!parsed) continue;
 					await tryAsync({
-						try: () => browser.tabs.move(parsed.tabId, { index: i }),
+						try: () => browser.tabs.move(tab.id, { index: i }),
 						catch: () => Ok(undefined),
 					});
 				}
@@ -180,9 +163,8 @@ export const items: CommandPaletteItem[] = [
 				description: `Close ${topCount} tab${topCount === 1 ? '' : 's'} from ${topDomain}?`,
 				confirm: { text: 'Close Tabs', variant: 'destructive' },
 				async onConfirm() {
-					const nativeIds = compositeToNativeIds(tabIds);
 					await tryAsync({
-						try: () => browser.tabs.remove(nativeIds),
+						try: () => browser.tabs.remove(tabIds),
 						catch: () => Ok(undefined),
 					});
 				},
@@ -207,7 +189,7 @@ export const items: CommandPaletteItem[] = [
 				async onConfirm() {
 					const tabsWithUrls = allTabs.filter((tab) => tab.url);
 					await Promise.allSettled(
-						tabsWithUrls.map((tab) => savedTabState.actions.save(tab)),
+						tabsWithUrls.map((tab) => savedTabState.save(tab)),
 					);
 				},
 			});

@@ -18,10 +18,12 @@
 	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
+	import { registerDevice } from '$lib/workspace';
 
 	// Auth initialization — check cached session on mount
 	onMount(() => {
 		authState.checkSession();
+		void registerDevice();
 		// External sign-in handled by $effect in auth.svelte.ts
 		// Sync naturally handles auth token changes (stable client, no rebuild needed)
 		const onVisibilityChange = () => {

@@ -16,5 +16,6 @@
 		"@types/bun": "catalog:",
 		"typescript": "catalog:"
 	},
-	"module": "src/index.ts"
+	"module": "src/index.ts",
+	"license": "MIT"
 }

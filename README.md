@@ -199,7 +199,7 @@ Contributors coordinate and share ideas in our Discord community.
 
 ## License
 
-[AGPL-3.0](LICENSE). Build on it. Fork it. Make it yours. Please contribute if you can.
+Most packages are [MIT](licenses/LICENSE-MIT). The sync server is [AGPL-3.0](licenses/LICENSE-AGPL-3.0). See [LICENSE](LICENSE) for details. Build on it. Fork it. Make it yours.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, migrations, and data access (CRUD + observation). Use when defining workspace schemas, reading/writing table data, observing changes, or writing migration functions.
+description: Workspace API patterns for defineTable, defineKv, versioning, migrations, and data access (CRUD + observation). Use when the user mentions workspace, defineTable, defineKv, createWorkspace, or when defining schemas, reading/writing table data, observing changes, or writing migrations.
 metadata:
   author: epicenter
   version: '4.0'

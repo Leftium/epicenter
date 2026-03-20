@@ -1,6 +1,6 @@
 ---
 name: styling
-description: CSS and Tailwind styling guidelines. Use when writing styles, creating UI components, reviewing CSS/Tailwind code, or deciding on wrapper element structure.
+description: CSS and Tailwind styling guidelines for this codebase. Use when the user says "style this", "fix the CSS", "add classes", or when writing Tailwind utilities, using cn(), creating UI components, reviewing CSS code, or deciding on wrapper element structure.
 metadata:
   author: epicenter
   version: '1.0'

@@ -80,7 +80,7 @@ export async function migrateOldSettings(): Promise<void> {
 	if (readyError) return;
 
 	// ── Migrate workspace keys ───────────────────────────────────────────────────
-	// Batch into a single Yjs transaction so workspaceSettings.observeAll
+	// Batch into a single Yjs transaction so settings.observeAll
 	// fires once with all changes, not 43 individual updates.
 
 	workspace.batch(() => {

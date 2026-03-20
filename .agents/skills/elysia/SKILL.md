@@ -1,6 +1,6 @@
 ---
 name: elysia
-description: Elysia.js server patterns for error handling, status responses, and plugin composition. Use when writing Elysia route handlers, returning HTTP errors, creating plugins, or working with Eden Treaty type safety.
+description: Elysia.js server patterns for error handling, status responses, and plugin composition. Use when the user mentions Elysia, Eden Treaty, or when writing API route handlers, returning HTTP errors, creating server plugins, or working with type-safe API clients.
 metadata:
   author: epicenter
   version: '1.0'

@@ -33,6 +33,7 @@
 					<div
 						{...props}
 						role="treeitem"
+						aria-selected={isSelected}
 						aria-expanded={isExpanded}
 						class="w-full"
 					>
@@ -44,7 +45,7 @@
 						/>
 					</div>
 				{:else if isFolder}
-					<div {...props} role="treeitem" aria-expanded={isExpanded}>
+					<div {...props} role="treeitem" aria-selected={isSelected} aria-expanded={isExpanded}>
 						<TreeView.Folder
 							name={row.name}
 							open={isExpanded}
@@ -66,7 +67,7 @@
 						</TreeView.Folder>
 					</div>
 				{:else if isRenaming}
-					<div {...props} role="treeitem" class="w-full">
+					<div {...props} role="treeitem" aria-selected={isSelected} class="w-full">
 						<InlineNameInput
 							defaultValue={row.name}
 							icon="file"
@@ -83,11 +84,12 @@
 							? 'bg-accent text-accent-foreground'
 							: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
 						onclick={() => fsState.selectFile(id)}
+						aria-selected={isSelected}
 						role="treeitem"
 					>
 						{#snippet icon()}
 							{@const Icon = getFileIcon(row.name)}
-							<Icon class="h-4 w-4 shrink-0 text-muted-foreground" />
+							<Icon aria-hidden="true" class="h-4 w-4 shrink-0 text-muted-foreground" />
 						{/snippet}
 					</TreeView.File>
 				{/if}

@@ -5,7 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { migrateOldSettings } from '$lib/migration/migrate-settings';
 	import AppLayout from './_components/AppLayout.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
@@ -45,7 +45,7 @@
 </script>
 
 <Sidebar.Provider bind:open={sidebarOpen}>
-	{#if workspaceSettings.get('ui.layoutMode') === 'sidebar'}
+	{#if settings.get('ui.layoutMode') === 'sidebar'}
 		<VerticalNav />
 	{/if}
 	<Sidebar.Inset> <AppLayout> {@render children()} </AppLayout> </Sidebar.Inset>

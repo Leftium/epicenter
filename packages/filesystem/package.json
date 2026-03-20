@@ -6,7 +6,7 @@
 	"exports": {
 		".": "./src/index.ts"
 	},
-	"license": "AGPL-3.0",
+	"license": "MIT",
 	"scripts": {
 		"typecheck": "tsc --noEmit"
 	},

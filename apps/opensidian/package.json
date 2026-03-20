@@ -19,6 +19,8 @@
 		"@epicenter/filesystem": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
+		"just-bash": "^2.9.7",
+		"shiki": "^3.7.0",
 		"@sveltejs/adapter-auto": "catalog:",
 		"@sveltejs/kit": "catalog:",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
@@ -34,5 +36,6 @@
 		"y-codemirror.next": "^0.3.5",
 		"y-indexeddb": "catalog:",
 		"yjs": "catalog:"
-	}
+	},
+	"license": "MIT"
 }

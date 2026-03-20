@@ -246,13 +246,11 @@ curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.19"
 - **Issues**: Check existing issues or create a new one
 - **Documentation**: Each app has its own README with specific details
 
-## Licensing and CLA
+## Licensing
 
-Epicenter is licensed under [AGPL-3.0](LICENSE). All contributions are made under this license.
+Epicenter uses split licensing. Most packages and apps are MIT—contribute freely, no strings attached. The sync server (`apps/api`) and sync protocol (`packages/sync`) are AGPL-3.0. Contributions to either layer are welcome under their respective licenses.
 
-We require a one-time [Contributor License Agreement](CLA.md) (CLA) for all contributions. The CLA is a license grant—not a copyright assignment. You keep full copyright on your code. It gives the project the right to distribute your contribution under additional license terms, which is how we offer commercial licenses for the sync server.
-
-When you open your first PR, the CLA bot will comment with instructions. Just reply with the signing phrase and you're set—it takes about ten seconds.
+See [HOW_TO_MONETIZE.md](HOW_TO_MONETIZE.md) for the full reasoning behind the split.
 
 ## Philosophy
 

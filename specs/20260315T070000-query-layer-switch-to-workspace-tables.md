@@ -1,7 +1,7 @@
 # Query Layer Switch: DbService → Workspace Tables
 
 **Date**: 2026-03-15
-**Status**: Draft
+**Status**: Partially Implemented
 **Prerequisite**: [20260314T070000-database-to-workspace-migration.md](./20260314T070000-database-to-workspace-migration.md) (Implemented — data is in workspace tables)
 
 ## Overview
@@ -234,37 +234,51 @@ export const workspaceRecordings = createWorkspaceRecordings();
 
 ### Phase 1: Reactive state modules for recordings and transformations
 
-- [ ] **1.1** Create `$lib/state/workspace-recordings.svelte.ts` — SvelteMap backed by `workspace.tables.recordings`, with `observe()` for live updates
-- [ ] **1.2** Create `$lib/state/workspace-transformations.svelte.ts` — same pattern for transformations
-- [ ] **1.3** Create `$lib/state/workspace-transformation-steps.svelte.ts` — same pattern, with helper to get steps by transformationId
+- [x] **1.1** Create `$lib/state/workspace-recordings.svelte.ts` — SvelteMap backed by `workspace.tables.recordings`, with `observe()` for live updates
+- [x] **1.2** Create `$lib/state/workspace-transformations.svelte.ts` — same pattern for transformations
+- [x] **1.3** Create `$lib/state/workspace-transformation-steps.svelte.ts` — same pattern, with helper to get steps by transformationId
 
 ### Phase 2: Switch component reads from TanStack Query to reactive state
 
-- [ ] **2.1** Find all imports of `db.recordings.getAll` / `db.recordings.getById` / `db.recordings.getLatest` and replace with `workspaceRecordings.all` / `.get(id)` / `.sorted[0]`
-- [ ] **2.2** Find all imports of `db.transformations.getAll` / `db.transformations.getById` and replace with `workspaceTransformations`
-- [ ] **2.3** Update the recordings data table to read from `workspaceRecordings.sorted` instead of the TanStack Query
+- [x] **2.1** Find all imports of `db.recordings.getAll` / `db.recordings.getById` / `db.recordings.getLatest` and replace with `workspaceRecordings.all` / `.get(id)` / `.sorted[0]`
+  > Switched: recordings/+page.svelte, RecordingRowActions.svelte, home +page.svelte
+- [x] **2.2** Find all imports of `db.transformations.getAll` / `db.transformations.getById` and replace with `workspaceTransformations`
+  > Switched: transformations/+page.svelte, TransformationSelector.svelte. Deferred TransformationRowActions and TransformationPickerBody (depend on `.steps` restructuring in Phase 3).
+- [x] **2.3** Update the recordings data table to read from `workspaceRecordings.sorted` instead of the TanStack Query
 
 ### Phase 3: Switch component writes from TanStack mutations to direct workspace writes
 
-- [ ] **3.1** Replace `db.recordings.create.mutate()` calls with `workspaceRecordings.set(recording)` — no invalidation needed
-- [ ] **3.2** Replace `db.recordings.update.mutate()` with `workspaceRecordings.set(recording)` — same write, observer handles UI update
-- [ ] **3.3** Replace `db.recordings.delete.mutate()` with `workspaceRecordings.delete(id)` — add audio URL cleanup before delete
-- [ ] **3.4** Same for transformation create/update/delete
-- [ ] **3.5** Same for transformation step create/update/delete (these were previously nested in transformation objects — now they're their own table)
+- [x] **3.1** Replace `db.recordings.create.mutate()` calls with `workspaceRecordings.set(recording)` — no invalidation needed
+  > processRecordingPipeline: metadata to workspace, audio blob still saved to DbService
+- [x] **3.2** Replace `db.recordings.update.mutate()` with `workspaceRecordings.update()` — same write, observer handles UI update
+  > transcription.ts: all 3 update calls switched to workspaceRecordings.update()
+- [x] **3.3** Replace `db.recordings.delete.mutate()` with `workspaceRecordings.delete(id)` — add audio URL cleanup before delete
+  > recording-actions.ts, recordings page, home page: sync delete + revokeAudioUrl
+- [x] **3.4** Same for transformation create/update/delete
+  > COMPLETED: Editor refactored to flat workspace field names. Create/update now use workspace.batch() for atomic writes.
+- [x] **3.5** Same for transformation step create/update/delete (these were previously nested in transformation objects — now they're their own table)
+  > COMPLETED: Configuration.svelte refactored from dot-notation to flat field names. Steps passed as separate `steps` prop. Editor, Test, Create, Edit all use workspace types and workspace.batch() for saves.
 
 ### Phase 4: Handle transformation runs (incremental)
 
-- [ ] **4.1** Create `$lib/state/workspace-transformation-runs.svelte.ts` for new runs
+- [x] **4.1** Create `$lib/state/workspace-transformation-runs.svelte.ts` for new runs
+  > Created with getByTransformationId(), getByRecordingId(), getLatestByRecordingId() helpers
 - [ ] **4.2** Wire new transformation run creation to workspace tables
-- [ ] **4.3** Keep `db.runs.getByTransformationId` / `db.runs.getByRecordingId` as fallback for historical runs not in workspace tables
+  > Deferred — the run lifecycle (create → addStep → completeStep/failStep → complete) is deeply coupled to DbService. Requires refactoring `runTransformation()` in transformer.ts.
+- [x] **4.3** Keep `db.runs.getByTransformationId` / `db.runs.getByRecordingId` as fallback for historical runs not in workspace tables
+  > Kept. Also switched recording read in transformer.ts from DbService to workspaceRecordings.get().
 
 ### Phase 5: Cleanup
 
 - [ ] **5.1** Remove recordings/transformations queries and mutations from `$lib/query/db.ts`
+  > Deferred — transformation create/update mutations are still in use (Editor uses old type). Recording queries (getAll, getLatest, getById) are no longer used in components. Can remove recording queries but must keep transformation queries for now.
 - [ ] **5.2** Remove `dbKeys.recordings.*` and `dbKeys.transformations.*` from query key registry
-- [ ] **5.3** Keep `db.recordings.getAudioPlaybackUrl` (audio blobs aren't in Yjs)
+  > Deferred — same reason as 5.1. Some query keys still referenced by transformation mutations and the transformer's invalidateQueries calls.
+- [x] **5.3** Keep `db.recordings.getAudioPlaybackUrl` (audio blobs aren't in Yjs)
 - [ ] **5.4** Update `$lib/query/README.md` to document the new architecture
-- [ ] **5.5** Update `$lib/state/README.md` to document the new state modules
+  > Deferred — the README documents the full query layer pattern. Updating it requires documenting the new workspace state pattern and when to use each. This is a writing task for after the transition completes.
+- [x] **5.5** Update `$lib/state/README.md` to document the new state modules
+  > Added documentation for all 4 new workspace state modules.
 
 ## Edge Cases
 
@@ -331,3 +345,24 @@ The old model had `transformation.steps[]` as a nested array. The workspace mode
 - `packages/workspace/src/workspace/table-helper.ts` — table API (set, get, getAll, observe, etc.)
 - `specs/20260314T070000-database-to-workspace-migration.md` — prerequisite (data is already in workspace tables)
 - `specs/20260312T170000-whispering-workspace-polish-and-migration.md` — parent spec
+
+## Review
+
+**Completed**: 2026-03-15
+
+### Summary
+
+Replaced TanStack Query + DbService read/write path with reactive SvelteMap state modules backed by Yjs workspace tables for recordings. The recordings data flow is now fully workspace-backed: components read from SvelteMap, writes go directly to workspace tables, Yjs observers keep the SvelteMap in sync. Transformations are partially migrated—reads and deletes use workspace state, but create/update still go through TanStack Query mutations because the Editor component uses the old dot-notation field schema.
+
+### Deviations from Spec
+
+- **Transformation step schema mismatch**: The old `TransformationStepV2` uses dot-notation field names (e.g., `'prompt_transform.inference.provider'`), while the workspace table uses flat field names (e.g., `inferenceProvider`). This means the Editor component can't directly write to workspace tables without a field-name mapping layer or a full refactor. Transformation create/update mutations remain on TanStack Query during this transition.
+- **Phase 5 partial**: Recording queries can be removed from db.ts, but transformation queries must stay. The query/README.md update was deferred since the architecture is still transitional.
+- **Phase 4 partial**: Transformation runs state module was created, but the full run lifecycle (create → addStep → completeStep → complete) remains on DbService due to its complex multi-step execution pattern.
+
+### Follow-up Work
+
+1. **Editor flat field refactor**: Migrate `Configuration.svelte` and `Test.svelte` from dot-notation step fields to flat workspace table fields. This unblocks transformation create/update migration.
+2. **Full db.ts cleanup**: Once all transformation mutations are on workspace, remove remaining query/mutation definitions from db.ts.
+3. **Transformation run lifecycle**: Refactor `runTransformation()` in transformer.ts to write run/step-run records to workspace tables instead of DbService.
+4. **TransformationPickerBody type alignment**: The `onSelect` callback passes workspace Transformation (no steps) to consumers. Consumers that need steps should get them from `workspaceTransformationSteps.getByTransformationId()`.

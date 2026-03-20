@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
 	import * as Tabs from '@epicenter/ui/tabs';
+	import { Button } from '@epicenter/ui/button';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { fsState } from '$lib/state/fs-state.svelte';
 
@@ -25,14 +26,15 @@
 						onauxclick={(e) => { if (e.button === 1) { e.preventDefault(); fsState.closeFile(fileId); } }}
 					>
 						<span class="mr-4">{row.name}</span>
-						<button
-							type="button"
-							class="absolute right-1 top-1/2 -translate-y-1/2 rounded-sm p-0.5 opacity-50 hover:opacity-100 hover:bg-accent"
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							class="absolute right-1 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"
 							onclick={(e) => { e.stopPropagation(); e.preventDefault(); fsState.closeFile(fileId); }}
 							aria-label="Close {row.name}"
 						>
-							<XIcon class="h-3 w-3" />
-						</button>
+							<XIcon aria-hidden="true" class="size-3" />
+						</Button>
 					</Tabs.Trigger>
 				{/if}
 			{/each}

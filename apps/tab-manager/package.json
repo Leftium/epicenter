@@ -16,7 +16,7 @@
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
 		"postinstall": "wxt prepare"
 	},
-"dependencies": {
+	"dependencies": {
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/ai": "workspace:*",
 		"@epicenter/constants": "workspace:*",
@@ -55,5 +55,6 @@
 		"typescript": "catalog:",
 		"vite": "catalog:",
 		"wxt": "^0.20.8"
-	}
+	},
+	"license": "MIT"
 }

@@ -4,7 +4,7 @@ import { rpc } from '$lib/query';
 import { defineMutation } from '$lib/query/client';
 import type { WhisperingError } from '$lib/result';
 import type { TextError } from '$lib/services/text';
-import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 export const delivery = {
 	/**
@@ -148,7 +148,7 @@ export const delivery = {
 			// Main delivery flow - operations are independent
 
 			// Check if user wants to copy to clipboard
-			if (workspaceSettings.get('output.transcription.clipboard')) {
+			if (settings.get('output.transcription.clipboard')) {
 				const { error: copyError } = await rpc.text.copyToClipboard({
 					text,
 				});
@@ -160,14 +160,14 @@ export const delivery = {
 			}
 
 			// Check if user wants to write to cursor (independent of copy)
-			if (workspaceSettings.get('output.transcription.cursor')) {
+			if (settings.get('output.transcription.cursor')) {
 				const { error: writeError } = await rpc.text.writeToCursor({
 					text,
 				});
 				if (!writeError) {
 					written = true;
 					// Optionally simulate Enter keystroke after successful write
-					if (workspaceSettings.get('output.transcription.enter')) {
+					if (settings.get('output.transcription.enter')) {
 						const { error: enterError } =
 							await rpc.text.simulateEnterKeystroke();
 						if (enterError) {
@@ -331,7 +331,7 @@ export const delivery = {
 			// Main delivery flow - operations are independent
 
 			// Check if user wants to copy to clipboard
-			if (workspaceSettings.get('output.transformation.clipboard')) {
+			if (settings.get('output.transformation.clipboard')) {
 				const { error: copyError } = await rpc.text.copyToClipboard({
 					text,
 				});
@@ -343,14 +343,14 @@ export const delivery = {
 			}
 
 			// Check if user wants to write to cursor (independent of copy)
-			if (workspaceSettings.get('output.transformation.cursor')) {
+			if (settings.get('output.transformation.cursor')) {
 				const { error: writeError } = await rpc.text.writeToCursor({
 					text,
 				});
 				if (!writeError) {
 					written = true;
 					// Optionally simulate Enter keystroke after successful write
-					if (workspaceSettings.get('output.transformation.enter')) {
+					if (settings.get('output.transformation.enter')) {
 						const { error: enterError } =
 							await rpc.text.simulateEnterKeystroke();
 						if (enterError) {

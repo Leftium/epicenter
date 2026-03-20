@@ -11,7 +11,7 @@
 		type RecordingMode,
 	} from '$lib/constants/audio';
 	import { rpc } from '$lib/query';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 
 	let { class: className }: { class?: string } = $props();
 
@@ -27,7 +27,7 @@
 
 	const currentMode = $derived(
 		availableModes.find(
-			(mode) => mode.value === workspaceSettings.get('recording.mode'),
+			(mode) => mode.value === settings.get('recording.mode'),
 		),
 	);
 </script>
@@ -56,11 +56,11 @@
 				<Command.Group>
 					{#each availableModes as mode (mode.value)}
 						{@const isSelected =
-							workspaceSettings.get('recording.mode') === mode.value}
+							settings.get('recording.mode') === mode.value}
 						<Command.Item
 							value={mode.value}
 							onSelect={async () => {
-								workspaceSettings.set(
+								settings.set(
 									'recording.mode',
 									mode.value as RecordingMode,
 								);

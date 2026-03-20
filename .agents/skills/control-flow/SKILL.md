@@ -1,6 +1,6 @@
 ---
 name: control-flow
-description: Human-readable control flow patterns for early returns, guard clauses, and linearizing nested logic. Use when refactoring nested conditionals, replacing try-catch with linear flow, or restructuring decision logic.
+description: Human-readable control flow patterns for early returns, guard clauses, and linearizing nested logic. Use when the user says "simplify this", "flatten these conditions", "too many nested ifs", or when refactoring nested conditionals, replacing try-catch with linear flow, or restructuring decision logic.
 metadata:
   author: epicenter
   version: '1.0'

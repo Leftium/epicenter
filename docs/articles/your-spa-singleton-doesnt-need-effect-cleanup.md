@@ -116,7 +116,7 @@ function createWorkspaceSettings() {
   };
 }
 
-export const workspaceSettings = createWorkspaceSettings();
+export const settings = createSettings();
 ```
 
 `observeAll` returns an unsubscribe function. We throw it away. The observer feeds the SvelteMap, the SvelteMap feeds components, and the whole chain lives exactly as long as the app does. The three patterns—`item.watch()`, `window.addEventListener`, and `kv.observeAll`—are structurally identical: subscribe once, never unsubscribe, let process exit handle teardown.

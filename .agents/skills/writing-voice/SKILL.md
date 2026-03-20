@@ -1,6 +1,6 @@
 ---
 name: writing-voice
-description: Voice and tone rules for all written content—prose, UI text, tooltips, error messages. Use when writing any user-facing text.
+description: Voice and tone rules for all written content—prose, UI text, tooltips, error messages. Use when the user says "fix the tone", "rewrite this", "sounds like AI", "sounds corporate", or when writing any user-facing text, landing pages, product copy, or open-source documentation.
 metadata:
   author: epicenter
   version: '1.0'

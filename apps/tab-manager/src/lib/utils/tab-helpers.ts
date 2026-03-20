@@ -47,7 +47,7 @@ function normalizeUrl(url: string): string {
  * the full `BrowserTab` type from browser-state.
  */
 type TabLike = {
-	tabId: number;
+	id: number;
 	url?: string | undefined;
 	title?: string | undefined;
 };

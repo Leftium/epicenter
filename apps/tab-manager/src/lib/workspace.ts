@@ -32,7 +32,11 @@ import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 import { Ok, tryAsync, trySync } from 'wellcrafted/result';
-import { getDeviceId } from '$lib/device/device-id';
+import {
+	generateDefaultDeviceName,
+	getBrowserName,
+	getDeviceId,
+} from '$lib/device/device-id';
 import { authState } from '$lib/state/auth.svelte';
 import { serverUrl } from '$lib/state/settings.svelte';
 import { keyCache } from '$lib/state/key-cache';
@@ -613,6 +617,27 @@ export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
 		.filter(([action]) => action.title !== undefined)
 		.map(([action, path]) => [path.join('_'), action.title!]),
 );
+
+/**
+ * Register this browser installation as a device in the workspace.
+ *
+ * Upserts the device row—preserves existing name if present, otherwise
+ * generates a default. Called once from App.svelte after workspace is ready.
+ */
+export async function registerDevice(): Promise<void> {
+	await workspace.whenReady;
+	const id = await getDeviceId();
+	const existing = workspace.tables.devices.get(id);
+	const existingName =
+		existing.status === 'valid' ? existing.row.name : null;
+	workspace.tables.devices.set({
+		id,
+		name: existingName ?? (await generateDefaultDeviceName()),
+		lastSeen: new Date().toISOString(),
+		browser: getBrowserName(),
+		_v: 1,
+	});
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Implementation (hoisted — function declarations below are available above)

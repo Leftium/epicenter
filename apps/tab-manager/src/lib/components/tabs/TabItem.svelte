@@ -21,7 +21,7 @@
 
 	let { tab }: { tab: BrowserTab } = $props();
 
-	const tabId = $derived(tab.tabId);
+	const tabId = $derived(tab.id);
 	const domain = $derived(tab.url ? getDomain(tab.url) : '');
 </script>
 

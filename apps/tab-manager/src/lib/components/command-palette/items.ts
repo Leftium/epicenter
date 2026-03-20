@@ -37,7 +37,7 @@ import { findDuplicateGroups, groupTabsByDomain } from '$lib/utils/tab-helpers';
  */
 function getAllTabs() {
 	return browserState.windows.flatMap((w) =>
-		browserState.tabsByWindow(w.windowId),
+		browserState.tabsByWindow(w.id),
 	);
 }
 
@@ -68,7 +68,7 @@ export const items: CommandPaletteItem[] = [
 			);
 
 			const toClose = [...dupes.values()].flatMap((group) =>
-				group.slice(1).map((t) => t.tabId),
+			group.slice(1).map((t) => t.id),
 			);
 
 			confirmationDialog.open({
@@ -98,7 +98,7 @@ export const items: CommandPaletteItem[] = [
 			const groupOps = [...domains.entries()]
 				.filter(([, tabs]) => tabs.length >= 2)
 				.map(([domain, tabs]) => {
-					const nativeIds = tabs.map((t) => t.tabId);
+				const nativeIds = tabs.map((t) => t.id);
 					return nativeIds.length >= 2 ? { domain, nativeIds } : null;
 				})
 				.filter((op) => op !== null);
@@ -122,14 +122,14 @@ export const items: CommandPaletteItem[] = [
 		group: 'Quick Actions',
 		async onSelect() {
 			for (const window of browserState.windows) {
-				const tabs = browserState.tabsByWindow(window.windowId);
-				const sorted = [...tabs].sort((a, b) => a.title.localeCompare(b.title));
+				const tabs = browserState.tabsByWindow(window.id);
+				const sorted = [...tabs].sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
 
 				for (let i = 0; i < sorted.length; i++) {
 					const tab = sorted[i];
 					if (!tab) continue;
 					await tryAsync({
-						try: () => browser.tabs.move(tab.tabId, { index: i }),
+						try: () => browser.tabs.move(tab.id, { index: i }),
 						catch: () => Ok(undefined),
 					});
 				}
@@ -156,7 +156,7 @@ export const items: CommandPaletteItem[] = [
 				}
 			}
 
-			const tabIds = (domains.get(topDomain) ?? []).map((t) => t.tabId);
+			const tabIds = (domains.get(topDomain) ?? []).map((t) => t.id);
 
 			confirmationDialog.open({
 				title: `Close ${topDomain} Tabs`,

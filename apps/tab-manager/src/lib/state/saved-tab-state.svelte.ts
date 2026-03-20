@@ -36,9 +36,9 @@ import {
 	generateSavedTabId,
 	type SavedTab,
 	type SavedTabId,
-	type Tab,
 	workspace,
-} from '$lib/workspace';
+	} from '$lib/workspace';
+import type { BrowserTab } from '$lib/state/browser-state.svelte';
 
 function createSavedTabState() {
 	const tabsMap = fromTable(workspace.tables.savedTabs);
@@ -63,7 +63,7 @@ function createSavedTabState() {
 		 * Silently no-ops for tabs without a URL (e.g. `chrome://` pages
 		 * that can't be re-opened via `browser.tabs.create`).
 		 */
-		async save(tab: Tab) {
+	async save(tab: BrowserTab) {
 			if (!tab.url) return;
 			const deviceId = await getDeviceId();
 			workspace.tables.savedTabs.set({
@@ -76,7 +76,7 @@ function createSavedTabState() {
 				savedAt: Date.now(),
 				_v: 1,
 			});
-			await browser.tabs.remove(tab.tabId);
+			await browser.tabs.remove(tab.id);
 		},
 
 		/**

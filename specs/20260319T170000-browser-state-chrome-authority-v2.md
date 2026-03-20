@@ -176,13 +176,22 @@ With Chrome's types, `tab.title` is `string | undefined`. The sort in the "Sort 
   > row-converters, echo detection, authState.status checks, duplicate event handlers.
   > Added BrowserTab/BrowserWindow intersection types and narrowing guards.
 - [ ] Clean up `workspace.ts` (remove browser tables, composite IDs, broken queries)
-- [ ] Delete `row-converters.ts`
-- [ ] Update `unified-view-state.svelte.ts`
-- [ ] Update `UnifiedTabList.svelte`
-- [ ] Update `TabItem.svelte`
-- [ ] Update `command-palette/items.ts`
-- [ ] Update `saved-tab-state.svelte.ts` (type only)
-- [ ] Update `bookmark-state.svelte.ts` (type only)
-- [ ] Update `tab-helpers.ts`
-- [ ] Update `App.svelte` (device registration)
+- [x] Delete `row-converters.ts`
+  > Already deleted (previous attempt cleaned up by merge).
+- [x] Update `unified-view-state.svelte.ts`
+  > `.windowId` → `.id` on all BrowserWindow property accesses.
+- [x] Update `UnifiedTabList.svelte`
+  > `.windowId` → `.id`, `.tabId` → `.id` in getKey and template.
+- [x] Update `TabItem.svelte`
+  > `tab.tabId` → `tab.id` in derived.
+- [x] Update `command-palette/items.ts`
+  > `.tabId` → `.id`, `.windowId` → `.id`, added `(a.title ?? '').localeCompare(b.title ?? '')`.
+- [x] Update `saved-tab-state.svelte.ts` (type only)
+  > `Tab` → `BrowserTab` from browser-state, `.tabId` → `.id`.
+- [x] Update `bookmark-state.svelte.ts` (type only)
+  > `Tab` → `BrowserTab` from browser-state.
+- [x] Update `tab-helpers.ts`
+  > `TabLike.tabId` → `TabLike.id`.
+- [x] Update `App.svelte` (device registration)
+  > Added `registerDevice()` call in onMount. Function added to workspace.ts.
 - [ ] Verify diagnostics clean

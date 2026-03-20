@@ -69,7 +69,7 @@ function createUnifiedViewState() {
 	// Runs exactly once—after this, the user controls expansion via toggleWindow.
 	void browserState.whenReady.then(() => {
 		for (const w of browserState.windows) {
-			if (w.focused) expandedWindows.add(w.windowId);
+			if (w.focused) expandedWindows.add(w.id);
 		}
 	});
 
@@ -103,7 +103,7 @@ function createUnifiedViewState() {
 
 		// ── Open Tabs section ──
 		const totalTabs = browserState.windows.reduce(
-			(sum, w) => sum + browserState.tabsByWindow(w.windowId).length,
+			(sum, w) => sum + browserState.tabsByWindow(w.id).length,
 			0,
 		);
 
@@ -112,7 +112,7 @@ function createUnifiedViewState() {
 			const openTabsItems: FlatItem[] = [];
 
 			for (const window of browserState.windows) {
-				const windowTabs = browserState.tabsByWindow(window.windowId);
+				const windowTabs = browserState.tabsByWindow(window.id);
 				const matching = windowTabs.filter((tab) =>
 					matchesFilter(tab.title, tab.url),
 				);
@@ -144,8 +144,8 @@ function createUnifiedViewState() {
 			if (expandedSections.has('open-tabs')) {
 				for (const window of browserState.windows) {
 					items.push({ kind: 'window-header', window });
-					if (expandedWindows.has(window.windowId)) {
-						for (const tab of browserState.tabsByWindow(window.windowId)) {
+					if (expandedWindows.has(window.id)) {
+						for (const tab of browserState.tabsByWindow(window.id)) {
 							items.push({ kind: 'tab', tab });
 						}
 					}

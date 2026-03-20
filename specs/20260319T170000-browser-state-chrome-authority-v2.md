@@ -1,6 +1,6 @@
 # Browser State: Chrome as Sole Authority (v2)
 
-**Status**: In Progress
+**Status**: Implemented
 **Supersedes**: `20260319T120000-browser-state-chrome-authority.md` (reverted by merge)
 
 ## Motivation
@@ -175,7 +175,12 @@ With Chrome's types, `tab.title` is `string | undefined`. The sort in the "Sort 
   > Rewrote from 894 → 361 lines. Removed all Y.Doc writes, observers, composite IDs,
   > row-converters, echo detection, authState.status checks, duplicate event handlers.
   > Added BrowserTab/BrowserWindow intersection types and narrowing guards.
-- [ ] Clean up `workspace.ts` (remove browser tables, composite IDs, broken queries)
+- [x] Clean up `workspace.ts` (remove browser tables, composite IDs, broken queries)
+  > Removed tabsTable, windowsTable, tabGroupsTable, composite ID types/functions,
+  > tab group color type, sentinel constants, internal helpers (nativeTabId, toNativeIds),
+  > broken query actions (tabs.search, tabs.list, tabs.findDuplicates, tabs.dedup,
+  > tabs.groupByDomain, windows.list, domains.count). Updated mutation actions to accept
+  > native number IDs. Added registerDevice(). 1123 → 600 lines.
 - [x] Delete `row-converters.ts`
   > Already deleted (previous attempt cleaned up by merge).
 - [x] Update `unified-view-state.svelte.ts`
@@ -194,4 +199,40 @@ With Chrome's types, `tab.title` is `string | undefined`. The sort in the "Sort 
   > `TabLike.tabId` → `TabLike.id`.
 - [x] Update `App.svelte` (device registration)
   > Added `registerDevice()` call in onMount. Function added to workspace.ts.
-- [ ] Verify diagnostics clean
+- [x] Verify diagnostics clean
+  > All consumer files clean. Only pre-existing WXT worktree LSP errors
+  > (unresolved `browser` global / module resolution) remain.
+
+## Review
+
+**Completed**: 2026-03-19
+
+### Summary
+
+Removed all Y.Doc/CRDT dual-write logic for live browser tabs, making Chrome the
+sole authority for ephemeral tab/window state. The workspace now only stores
+persistent user data (saved tabs, bookmarks, chat, tool trust, devices).
+
+### Line Count Impact
+
+| File | Before | After | Delta |
+|---|---|---|---|
+| `browser-state.svelte.ts` | 894 | 361 | -533 |
+| `workspace.ts` | 1098 | 600 | -498 |
+| `row-converters.ts` | (deleted in prior merge) | -- | -- |
+| **Total** | **~2000** | **~960** | **~-1040** |
+
+### Deviations from Spec
+
+- Target for browser-state was ~200 lines; actual is 361 due to preserving
+  detailed JSDoc comments and the full set of action methods.
+- `row-converters.ts` was already deleted before this implementation (prior merge).
+- `registerDevice()` was added to workspace.ts in Wave 2 (consumer updates)
+  rather than Wave 3 (workspace cleanup) since App.svelte needed to import it.
+
+### Follow-up Work
+
+- Query actions for tabs (search, list, findDuplicates, dedup, groupByDomain)
+  and windows (list) were removed since they read from deleted Y.Doc tables.
+  If AI chat needs tab data, these should be reimplemented to read from
+  `browserState` (SvelteMap) instead of Y.Doc tables.

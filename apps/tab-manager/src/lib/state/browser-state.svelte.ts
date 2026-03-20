@@ -27,30 +27,53 @@
  */
 
 import { SvelteMap } from 'svelte/reactivity';
+import type { Brand } from 'wellcrafted/brand';
 
 const TAB_ID_NONE = -1;
 
-/** Chrome tab with a guaranteed numeric `id`. */
-export type BrowserTab = Browser.tabs.Tab & { id: number };
+// ── Branded ID Types ─────────────────────────────────────────────────
 
-/** Chrome window with a guaranteed numeric `id`. */
-export type BrowserWindow = Browser.windows.Window & { id: number };
+/** Branded tab ID—guaranteed valid (not undefined, not TAB_ID_NONE). */
+type TabId = number & Brand<'TabId'>;
+
+/** Brand a raw tab ID, rejecting undefined and TAB_ID_NONE. */
+function TabId(raw: number | undefined): TabId | null {
+	if (raw == null || raw === TAB_ID_NONE) return null;
+	return raw as TabId;
+}
+
+/** Branded window ID—guaranteed valid (not undefined). */
+type WindowId = number & Brand<'WindowId'>;
+
+/** Brand a raw window ID, rejecting undefined. */
+function WindowId(raw: number | undefined): WindowId | null {
+	if (raw == null) return null;
+	return raw as WindowId;
+}
+
+// ── Narrowed Chrome Types ────────────────────────────────────────────
+
+/** Chrome tab with a guaranteed branded {@link TabId}. */
+export type BrowserTab = Browser.tabs.Tab & { id: TabId };
 
 /**
- * Narrow a Chrome tab to {@link BrowserTab}, returning null if `id` is missing.
+ * Narrow a Chrome tab to {@link BrowserTab}, returning null if `id`
+ * is missing or reserved.
  *
- * No object creation—just a type guard that asserts `id` is defined.
+ * No object creation—validates the ID via {@link TabId} and asserts
+ * the object type. This is the sole ingestion boundary for Chrome tabs.
  */
-function narrowTab(tab: Browser.tabs.Tab): BrowserTab | null {
-	if (tab.id == null || tab.id === TAB_ID_NONE) return null;
+function BrowserTab(tab: Browser.tabs.Tab): BrowserTab | null {
+	if (TabId(tab.id) == null) return null;
 	return tab as BrowserTab;
 }
 
-/**
- * Narrow a Chrome window to {@link BrowserWindow}, returning null if `id` is missing.
- */
-function narrowWindow(win: Browser.windows.Window): BrowserWindow | null {
-	if (win.id == null) return null;
+/** Chrome window with a guaranteed branded {@link WindowId}. */
+export type BrowserWindow = Browser.windows.Window & { id: WindowId };
+
+/** Narrow a Chrome window to {@link BrowserWindow}, returning null if `id` is missing. */
+function BrowserWindow(win: Browser.windows.Window): BrowserWindow | null {
+	if (WindowId(win.id) == null) return null;
 	return win as BrowserWindow;
 }
 
@@ -98,13 +121,13 @@ function createBrowserState() {
 		const browserWindows = await browser.windows.getAll({ populate: true });
 
 		for (const win of browserWindows) {
-			const bw = narrowWindow(win);
+			const bw = BrowserWindow(win);
 			if (!bw) continue;
 
 			const tabsMap = new SvelteMap<number, BrowserTab>();
 			if (win.tabs) {
 				for (const tab of win.tabs) {
-					const bt = narrowTab(tab);
+					const bt = BrowserTab(tab);
 					if (bt) tabsMap.set(bt.id, bt);
 				}
 			}
@@ -120,7 +143,7 @@ function createBrowserState() {
 	// onCreated: Full Tab object provided
 	browser.tabs.onCreated.addListener((tab) => {
 		if (!seeded) return;
-		const bt = narrowTab(tab);
+		const bt = BrowserTab(tab);
 		if (!bt) return;
 		windowStates.get(bt.windowId)?.tabs.set(bt.id, bt);
 	});
@@ -138,7 +161,7 @@ function createBrowserState() {
 	// onUpdated: Full Tab in 3rd arg—route to correct window
 	browser.tabs.onUpdated.addListener((_tabId, _changeInfo, tab) => {
 		if (!seeded) return;
-		const bt = narrowTab(tab);
+		const bt = BrowserTab(tab);
 		if (!bt) return;
 		windowStates.get(bt.windowId)?.tabs.set(bt.id, bt);
 	});
@@ -148,7 +171,7 @@ function createBrowserState() {
 		if (!seeded) return;
 		try {
 			const tab = await browser.tabs.get(tabId);
-			const bt = narrowTab(tab);
+			const bt = BrowserTab(tab);
 			if (!bt) return;
 			windowStates.get(bt.windowId)?.tabs.set(bt.id, bt);
 		} catch {
@@ -195,7 +218,7 @@ function createBrowserState() {
 		if (!seeded) return;
 		try {
 			const tab = await browser.tabs.get(tabId);
-			const bt = narrowTab(tab);
+			const bt = BrowserTab(tab);
 			if (!bt) return;
 			windowStates.get(bt.windowId)?.tabs.set(bt.id, bt);
 		} catch {
@@ -213,7 +236,7 @@ function createBrowserState() {
 	// onCreated: Full Window object provided
 	browser.windows.onCreated.addListener((win) => {
 		if (!seeded) return;
-		const bw = narrowWindow(win);
+		const bw = BrowserWindow(win);
 		if (!bw) return;
 		windowStates.set(bw.id, { window: bw, tabs: new SvelteMap() });
 	});

@@ -122,7 +122,7 @@
 					type="button"
 					onclick={() => {
 						if (!unifiedViewState.isFiltering) {
-							unifiedViewState.toggleWindow(item.window.id);
+						unifiedViewState.toggleWindow(item.window.id);
 						}
 					}}
 					class="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 border-b bg-muted/50 px-4 py-2 text-sm text-muted-foreground backdrop-blur transition hover:bg-muted/80"

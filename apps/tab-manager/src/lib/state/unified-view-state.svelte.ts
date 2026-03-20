@@ -28,13 +28,8 @@ import { SvelteSet } from 'svelte/reactivity';
 import { bookmarkState } from '$lib/state/bookmark-state.svelte';
 import { browserState } from '$lib/state/browser-state.svelte';
 import { savedTabState } from '$lib/state/saved-tab-state.svelte';
-import type {
-	Bookmark,
-	SavedTab,
-	Tab,
-	Window,
-	WindowCompositeId,
-} from '$lib/workspace';
+import type { BrowserTab, BrowserWindow } from '$lib/state/browser-state.svelte';
+import type { Bookmark, SavedTab } from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -44,8 +39,8 @@ export type SectionId = 'open-tabs' | 'saved' | 'bookmarks';
 
 export type FlatItem =
 	| { kind: 'section-header'; section: SectionId; label: string; count: number }
-	| { kind: 'window-header'; window: Window }
-	| { kind: 'tab'; tab: Tab }
+	| { kind: 'window-header'; window: BrowserWindow }
+	| { kind: 'tab'; tab: BrowserTab }
 	| { kind: 'saved-tab'; savedTab: SavedTab }
 	| { kind: 'bookmark'; bookmark: Bookmark };
 
@@ -68,7 +63,7 @@ function createUnifiedViewState() {
 	 * {@link browserState.whenReady} resolves. The focused window is seeded
 	 * once browser data is available (see `whenReady.then` below).
 	 */
-	const expandedWindows = new SvelteSet<WindowCompositeId>();
+	const expandedWindows = new SvelteSet<number>();
 
 	// Seed focused window(s) once browser data is available.
 	// Runs exactly once—after this, the user controls expansion via toggleWindow.
@@ -259,7 +254,7 @@ function createUnifiedViewState() {
 		},
 
 		/** Toggle a window's expanded state. */
-		toggleWindow(windowId: WindowCompositeId) {
+		toggleWindow(windowId: number) {
 			if (expandedWindows.has(windowId)) {
 				expandedWindows.delete(windowId);
 			} else {
@@ -268,7 +263,7 @@ function createUnifiedViewState() {
 		},
 
 		/** Check if a window is expanded. */
-		isWindowExpanded(windowId: WindowCompositeId): boolean {
+		isWindowExpanded(windowId: number): boolean {
 			return expandedWindows.has(windowId);
 		},
 	};

@@ -1,5 +1,5 @@
 # Commercially relevant code — requires @braden-w review
-# These paths contain the sync server and protocol (dual-licensed commercially).
+# These paths contain the sync server and protocol (AGPL-3.0).
 
 /apps/api/              @braden-w
 /packages/sync/         @braden-w

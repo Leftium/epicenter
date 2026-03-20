@@ -1,17 +1,20 @@
 <script lang="ts">
 	import * as Accordion from '@epicenter/ui/accordion';
+	import { Alert, AlertDescription, AlertTitle } from '@epicenter/ui/alert';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import { Separator } from '@epicenter/ui/separator';
 	import {
+		ArrowDown,
 		ArrowLeft,
-		ChevronRight,
+		ArrowRight,
 		Database,
 		FileText,
 		GitBranch,
 		HardDrive,
+		Info,
 	} from '@lucide/svelte';
 	import { codeToHtml } from 'shiki';
 
@@ -173,17 +176,33 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 			data survives page refreshes. A SQLite index (running in-browser via WASM)
 			materializes the file tree for fast parent/child lookups.
 		</p>
-		<Card.Root class="mt-6">
-			<Card.Content class="p-0">
-				<pre
-					class="text-muted-foreground overflow-x-auto p-6 font-mono text-sm leading-relaxed"
-				>Your edits  &rarr;  Y.Doc (CRDT)  &rarr;  IndexedDB (persistence)
-                       &darr;
-                 SQLite Index (fast queries)
-                       &darr;
-                 File Tree + Search</pre>
-			</Card.Content>
-		</Card.Root>
+
+		<!-- Visual data flow -->
+		<div class="mt-6 flex flex-col items-center gap-3">
+			<!-- Row 1: Edits → Y.Doc → IndexedDB -->
+			<div class="flex items-center gap-3">
+				<Badge variant="outline" class="px-3 py-1.5">Your edits</Badge>
+				<ArrowRight class="text-muted-foreground size-4 shrink-0" />
+				<Badge variant="default" class="px-3 py-1.5">Y.Doc (CRDT)</Badge>
+				<ArrowRight class="text-muted-foreground size-4 shrink-0" />
+				<Badge variant="outline" class="px-3 py-1.5">IndexedDB</Badge>
+			</div>
+
+			<ArrowDown class="text-muted-foreground size-4" />
+
+			<!-- Row 2: SQLite Index -->
+			<Badge variant="secondary" class="px-3 py-1.5"
+				>SQLite Index (fast queries)</Badge
+			>
+
+			<ArrowDown class="text-muted-foreground size-4" />
+
+			<!-- Row 3: File Tree + Search -->
+			<div class="flex items-center gap-3">
+				<Badge variant="outline" class="px-3 py-1.5">File Tree</Badge>
+				<Badge variant="outline" class="px-3 py-1.5">Search</Badge>
+			</div>
+		</div>
 	</section>
 
 	<Separator class="my-10" />
@@ -198,8 +217,26 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 			>:
 		</p>
 		<Card.Root class="mt-6 overflow-hidden">
-			<Card.Content class="relative p-0">
-				<div class="overflow-x-auto p-6 text-sm leading-relaxed">
+			<!-- File header bar -->
+			<Card.Header class="border-b px-4 py-2">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-2">
+						<FileText class="text-muted-foreground size-3.5" />
+						<span class="font-mono text-sm">workspace.ts</span>
+					</div>
+					<div class="flex items-center gap-2">
+						<Badge variant="secondary" class="text-xs">TypeScript</Badge>
+						<CopyButton
+							text={workspaceCode}
+							variant="ghost"
+							size="icon-xs"
+							class="opacity-60 hover:opacity-100"
+						/>
+					</div>
+				</div>
+			</Card.Header>
+			<Card.Content class="p-0">
+				<div class="overflow-x-auto p-4 text-sm leading-relaxed">
 					{#if highlightedCode}
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 						{@html highlightedCode}
@@ -207,12 +244,6 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 						<pre class="font-mono"><code>{workspaceCode}</code></pre>
 					{/if}
 				</div>
-				<CopyButton
-					text={workspaceCode}
-					variant="ghost"
-					size="icon-sm"
-					class="absolute top-3 right-3 opacity-60 hover:opacity-100"
-				/>
 			</Card.Content>
 		</Card.Root>
 		<p class="text-muted-foreground mt-4 leading-relaxed">
@@ -251,12 +282,10 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 							<capability.icon class="text-muted-foreground size-4" />
 							<Card.Title class="text-base">{capability.title}</Card.Title>
 						</div>
-					</Card.Header>
-					<Card.Content>
-						<p class="text-muted-foreground text-sm leading-relaxed">
+						<Card.Description class="leading-relaxed">
 							{capability.description}
-						</p>
-					</Card.Content>
+						</Card.Description>
+					</Card.Header>
 				</Card.Root>
 			{/each}
 		</div>
@@ -267,16 +296,20 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 	<!-- What's next -->
 	<section>
 		<h2 class="text-2xl font-semibold tracking-tight">What's next</h2>
-		<ul class="text-muted-foreground mt-4 space-y-2 text-sm leading-relaxed">
-			{#each roadmap as item}
-				<li class="flex items-start gap-2">
-					<ChevronRight
-						class="text-muted-foreground/50 mt-0.5 size-3.5 shrink-0"
-					/>
-					{item}
-				</li>
-			{/each}
-		</ul>
+		<Alert class="mt-4">
+			<Info class="size-4" />
+			<AlertTitle>Roadmap</AlertTitle>
+			<AlertDescription>
+				<ul class="mt-2 space-y-1.5 text-sm leading-relaxed">
+					{#each roadmap as item}
+						<li class="flex items-start gap-2">
+							<span class="text-muted-foreground/50 select-none">&bull;</span>
+							{item}
+						</li>
+					{/each}
+				</ul>
+			</AlertDescription>
+		</Alert>
 	</section>
 
 	<Separator class="my-10" />

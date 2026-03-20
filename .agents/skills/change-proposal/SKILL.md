@@ -1,6 +1,6 @@
 ---
 name: change-proposal
-description: Present proposed code changes visually before implementing. Use when multiple approaches exist, when changes span multiple files, or when architecture shifts. Enforces before/after diffs, ASCII diagrams, and comparison tables before any code is written.
+description: Present proposed code changes visually before implementing. Use when the user says "show me options", "compare approaches", "what should we do", or when multiple approaches exist, changes span multiple files, or architecture decisions need before/after comparison.
 ---
 
 # Change Proposal

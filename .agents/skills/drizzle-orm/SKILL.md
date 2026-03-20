@@ -1,6 +1,6 @@
 ---
 name: drizzle-orm
-description: Drizzle ORM patterns for type branding and custom types. Use when working with Drizzle column definitions, branded types, or custom type conversions.
+description: Drizzle ORM patterns for type branding, custom types, and SQLite column definitions. Use when the user mentions Drizzle, drizzle-orm, or when working with database schemas, branded column types, or custom type conversions in Drizzle.
 metadata:
   author: epicenter
   version: '1.0'

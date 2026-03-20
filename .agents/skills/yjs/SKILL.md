@@ -1,6 +1,6 @@
 ---
 name: yjs
-description: Yjs CRDT patterns, shared types, conflict resolution, and meta data structures. Use when building collaborative apps with Yjs, handling Y.Map/Y.Array/Y.Text, implementing drag-and-drop reordering, or optimizing document storage.
+description: Yjs CRDT patterns, shared types (Y.Map, Y.Array, Y.Text), conflict resolution, and document storage. Use when the user mentions Yjs, Y.Doc, CRDTs, collaborative editing, or when handling shared types, implementing real-time sync, or optimizing document storage.
 metadata:
   author: epicenter
   version: '1.0'

@@ -3,7 +3,7 @@ import type { WhisperingSoundNames } from '$lib/constants/sounds';
 import { defineMutation } from '$lib/query/client';
 import { services } from '$lib/services';
 import type { SoundError } from '$lib/services/sound';
-import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 const soundKeys = {
 	all: ['sound'] as const,
@@ -27,7 +27,7 @@ export const sound = {
 		mutationFn: async (
 			soundName: WhisperingSoundNames,
 		): Promise<Result<void, SoundError>> => {
-			if (!workspaceSettings.get(soundSettingKeyMap[soundName])) {
+			if (!settings.get(soundSettingKeyMap[soundName])) {
 				return Ok(undefined);
 			}
 			return await services.sound.playSound(soundName);

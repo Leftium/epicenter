@@ -2,8 +2,8 @@
 	import { Button } from '@epicenter/ui/button';
 	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
 	import CircleIcon from '@lucide/svelte/icons/circle';
-	import type { Transformation } from '$lib/services/db';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import type { Transformation } from '$lib/state/transformations.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 
 	let {
 		transformation,
@@ -16,7 +16,7 @@
 	} = $props();
 
 	const isTransformationActive = $derived(
-		workspaceSettings.get('transformation.selectedId') === transformation.id,
+		settings.get('transformation.selectedId') === transformation.id,
 	);
 
 	const displayText = $derived(
@@ -33,9 +33,9 @@
 	class={className}
 	onclick={() => {
 		if (isTransformationActive) {
-			workspaceSettings.set('transformation.selectedId', null);
+			settings.set('transformation.selectedId', null);
 		} else {
-			workspaceSettings.set('transformation.selectedId', transformation.id);
+			settings.set('transformation.selectedId', transformation.id);
 		}
 	}}
 >

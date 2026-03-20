@@ -6,12 +6,12 @@ Components directly bound to reactive settings state. Each component encapsulate
 
 Components here import from one or both stores depending on where the setting lives:
 
-- **`workspaceSettings`** — synced settings (Yjs KV). Sound toggles, output behavior, transcription service, UI prefs.
+- **`settings`** — synced settings (Yjs KV). Sound toggles, output behavior, transcription service, UI prefs.
 - **`deviceConfig`** — device-bound config (per-key localStorage). API keys, hardware IDs, model paths, global shortcuts.
 
 ```svelte
 <script lang="ts">
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 </script>
 ```
@@ -20,7 +20,7 @@ Components here import from one or both stores depending on where the setting li
 
 Components in this directory:
 
-- Import and use `workspaceSettings` and/or `deviceConfig` from `$lib/state/`
+- Import and use `settings` and/or `deviceConfig` from `$lib/state/`
 - Either take **no props** or only take **minimal configuration props** (like `mode` or `settingKey`) to determine which setting to bind to
 - Update settings directly using `.set(key, value)` methods
 - Are self-contained and can be used globally throughout the application
@@ -87,7 +87,8 @@ settings/
 
    ```svelte
    <Input
-   	bind:value={() => deviceConfig.get('apiKeys.openai'),
+	bind:value={() => settings.get('apiKeys.openai'),
+		(value) => settings.set('apiKeys.openai', value)}
    		(value) => deviceConfig.set('apiKeys.openai', value)}
    />
    ```

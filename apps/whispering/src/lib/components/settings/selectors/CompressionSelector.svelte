@@ -8,7 +8,7 @@
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import { goto } from '$app/navigation';
 	import { CompressionBody } from '$lib/components/settings';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
 
 	let { class: className }: { class?: string } = $props();
@@ -20,7 +20,7 @@
 
 	// Visual state for the button icon
 	const isCompressionEnabled = $derived(
-		workspaceSettings.get('transcription.compressionEnabled'),
+		settings.get('transcription.compressionEnabled'),
 	);
 </script>
 

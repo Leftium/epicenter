@@ -5,7 +5,7 @@
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Switch } from '@epicenter/ui/switch';
 	import { rpc } from '$lib/query';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 </script>
 
 <div class="space-y-8">
@@ -13,7 +13,7 @@
 	<SectionHeader.Root>
 		<div class="flex items-center gap-3">
 			<SectionHeader.Title level={3} class="text-xl tracking-tight">Analytics</SectionHeader.Title>
-			{#if workspaceSettings.get('analytics.enabled')}
+			{#if settings.get('analytics.enabled')}
 				<Badge
 					variant="outline"
 					class="text-xs text-green-700 dark:text-green-400 border-green-200 dark:border-green-400/30"
@@ -53,9 +53,9 @@
 				</div>
 				<Switch
 					id="analytics-toggle"
-					bind:checked={() => workspaceSettings.get('analytics.enabled'),
+					bind:checked={() => settings.get('analytics.enabled'),
 						(checked) => {
-							workspaceSettings.set('analytics.enabled', checked);
+							settings.set('analytics.enabled', checked);
 
 							// Log the change (will only send if analytics is now enabled)
 							if (checked) {
@@ -190,7 +190,7 @@
 
 	<!-- Status Footer -->
 	<div class="flex items-center gap-2 text-xs">
-		{#if workspaceSettings.get('analytics.enabled')}
+		{#if settings.get('analytics.enabled')}
 			<div class="flex items-center gap-2 text-green-700 dark:text-green-400">
 				<div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
 				<span class="font-medium">Analytics active</span>

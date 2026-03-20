@@ -9,7 +9,7 @@
 		LAYOUT_MODE_OPTIONS,
 	} from '$lib/constants/ui';
 	import { desktopRpc, rpc } from '$lib/query';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 
 	const retentionItems = [
 		{ value: 'keep-forever', label: 'Keep All Recordings' },
@@ -27,19 +27,19 @@
 
 	const retentionLabel = $derived(
 		retentionItems.find(
-			(i) => i.value === workspaceSettings.get('retention.strategy'),
+			(i) => i.value === settings.get('retention.strategy'),
 		)?.label,
 	);
 
 	const maxRecordingLabel = $derived(
 		maxRecordingItems.find(
-			(i) => i.value === workspaceSettings.get('retention.maxCount'),
+			(i) => i.value === settings.get('retention.maxCount'),
 		)?.label,
 	);
 
 	const alwaysOnTopLabel = $derived(
 		ALWAYS_ON_TOP_MODE_OPTIONS.find(
-			(i) => i.value === workspaceSettings.get('ui.alwaysOnTop'),
+			(i) => i.value === settings.get('ui.alwaysOnTop'),
 		)?.label,
 	);
 
@@ -72,8 +72,8 @@
 				<Field.Field orientation="horizontal">
 					<Switch
 						id="transcription.copyToClipboardOnSuccess"
-						bind:checked={() => workspaceSettings.get('output.transcription.clipboard'),
-							(v) => workspaceSettings.set('output.transcription.clipboard', v)}
+						bind:checked={() => settings.get('output.transcription.clipboard'),
+							(v) => settings.set('output.transcription.clipboard', v)}
 					/>
 					<Field.Label for="transcription.copyToClipboardOnSuccess">
 						Copy transcript to clipboard
@@ -83,20 +83,20 @@
 				<Field.Field orientation="horizontal">
 					<Switch
 						id="transcription.writeToCursorOnSuccess"
-						bind:checked={() => workspaceSettings.get('output.transcription.cursor'),
-							(v) => workspaceSettings.set('output.transcription.cursor', v)}
+						bind:checked={() => settings.get('output.transcription.cursor'),
+							(v) => settings.set('output.transcription.cursor', v)}
 					/>
 					<Field.Label for="transcription.writeToCursorOnSuccess">
 						Paste transcript at cursor
 					</Field.Label>
 				</Field.Field>
 
-				{#if window.__TAURI_INTERNALS__ && workspaceSettings.get('output.transcription.cursor')}
+				{#if window.__TAURI_INTERNALS__ && settings.get('output.transcription.cursor')}
 					<Field.Field orientation="horizontal">
 						<Switch
 							id="transcription.simulateEnterAfterOutput"
-							bind:checked={() => workspaceSettings.get('output.transcription.enter'),
-								(v) => workspaceSettings.set('output.transcription.enter', v)}
+							bind:checked={() => settings.get('output.transcription.enter'),
+								(v) => settings.set('output.transcription.enter', v)}
 						/>
 						<Field.Label for="transcription.simulateEnterAfterOutput">
 							Press Enter after pasting transcript
@@ -117,8 +117,8 @@
 				<Field.Field orientation="horizontal">
 					<Switch
 						id="transformation.copyToClipboardOnSuccess"
-						bind:checked={() => workspaceSettings.get('output.transformation.clipboard'),
-							(v) => workspaceSettings.set('output.transformation.clipboard', v)}
+						bind:checked={() => settings.get('output.transformation.clipboard'),
+							(v) => settings.set('output.transformation.clipboard', v)}
 					/>
 					<Field.Label for="transformation.copyToClipboardOnSuccess">
 						Copy transformed text to clipboard
@@ -128,20 +128,20 @@
 				<Field.Field orientation="horizontal">
 					<Switch
 						id="transformation.writeToCursorOnSuccess"
-						bind:checked={() => workspaceSettings.get('output.transformation.cursor'),
-							(v) => workspaceSettings.set('output.transformation.cursor', v)}
+						bind:checked={() => settings.get('output.transformation.cursor'),
+							(v) => settings.set('output.transformation.cursor', v)}
 					/>
 					<Field.Label for="transformation.writeToCursorOnSuccess">
 						Paste transformed text at cursor
 					</Field.Label>
 				</Field.Field>
 
-				{#if window.__TAURI_INTERNALS__ && workspaceSettings.get('output.transformation.cursor')}
+				{#if window.__TAURI_INTERNALS__ && settings.get('output.transformation.cursor')}
 					<Field.Field orientation="horizontal">
 						<Switch
 							id="transformation.simulateEnterAfterOutput"
-							bind:checked={() => workspaceSettings.get('output.transformation.enter'),
-								(v) => workspaceSettings.set('output.transformation.enter', v)}
+							bind:checked={() => settings.get('output.transformation.enter'),
+								(v) => settings.set('output.transformation.enter', v)}
 						/>
 						<Field.Label for="transformation.simulateEnterAfterOutput">
 							Press Enter after pasting transformed text
@@ -159,8 +159,8 @@
 			>
 			<Select.Root
 				type="single"
-				bind:value={() => workspaceSettings.get('retention.strategy'),
-					(v) => workspaceSettings.set('retention.strategy', v)}
+				bind:value={() => settings.get('retention.strategy'),
+					(v) => settings.set('retention.strategy', v)}
 			>
 				<Select.Trigger id="recording-retention-strategy" class="w-full">
 					{retentionLabel ?? 'Select retention strategy'}
@@ -173,13 +173,13 @@
 			</Select.Root>
 		</Field.Field>
 
-		{#if workspaceSettings.get('retention.strategy') === 'limit-count'}
+		{#if settings.get('retention.strategy') === 'limit-count'}
 			<Field.Field>
 				<Field.Label for="max-recording-count">Maximum Recordings</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => String(workspaceSettings.get('retention.maxCount')),
-						(v) => workspaceSettings.set('retention.maxCount', Number(v))}
+					bind:value={() => String(settings.get('retention.maxCount')),
+						(v) => settings.set('retention.maxCount', Number(v))}
 				>
 					<Select.Trigger id="max-recording-count" class="w-full">
 						{maxRecordingLabel ?? 'Select maximum recordings'}
@@ -224,8 +224,8 @@
 				<Field.Label for="always-on-top">Always On Top</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => workspaceSettings.get('ui.alwaysOnTop'),
-					(v) => workspaceSettings.set('ui.alwaysOnTop', v)}
+					bind:value={() => settings.get('ui.alwaysOnTop'),
+					(v) => settings.set('ui.alwaysOnTop', v)}
 				>
 					<Select.Trigger id="always-on-top" class="w-full">
 						{alwaysOnTopLabel ?? 'Select always on top mode'}
@@ -245,8 +245,8 @@
 			<Field.Legend variant="label">Navigation Layout</Field.Legend>
 			<Field.Description>Choose how you navigate the app.</Field.Description>
 			<RadioGroup.Root
-				bind:value={() => workspaceSettings.get('ui.layoutMode'),
-				(v) => workspaceSettings.set('ui.layoutMode', v)}
+				bind:value={() => settings.get('ui.layoutMode'),
+				(v) => settings.set('ui.layoutMode', v)}
 			>
 				{#each LAYOUT_MODE_OPTIONS as option (option.value)}
 					<Field.Label for="layout-{option.value}">

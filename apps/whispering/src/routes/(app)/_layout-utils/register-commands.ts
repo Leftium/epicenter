@@ -8,7 +8,7 @@ import {
 	shortcutStringToArray,
 } from '$lib/services/local-shortcut-manager';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */
 const DEFAULT_LOCAL_SHORTCUTS: Record<string, string | null> = {
@@ -80,7 +80,7 @@ export async function syncLocalShortcutsWithSettings() {
 	const results = await Promise.all(
 		commands
 			.map((command) => {
-				const keyCombination = workspaceSettings.get(
+				const keyCombination = settings.get(
 					getLocalShortcutKey(command.id),
 				);
 				if (!keyCombination) {
@@ -146,7 +146,7 @@ export function resetLocalShortcutsToDefaultIfDuplicates(): boolean {
 
 	// Check for duplicates
 	for (const command of commands) {
-		const shortcut = workspaceSettings.get(getLocalShortcutKey(command.id));
+		const shortcut = settings.get(getLocalShortcutKey(command.id));
 		if (shortcut) {
 			if (localShortcuts.has(String(shortcut))) {
 				// If duplicates found, reset all local shortcuts to defaults
@@ -208,7 +208,7 @@ export function resetGlobalShortcutsToDefaultIfDuplicates(): boolean {
  */
 export function resetLocalShortcuts() {
 	for (const command of commands) {
-		workspaceSettings.set(
+		settings.set(
 			getLocalShortcutKey(command.id),
 			DEFAULT_LOCAL_SHORTCUTS[command.id] ?? null,
 		);

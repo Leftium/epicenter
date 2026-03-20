@@ -9,18 +9,13 @@
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import WandIcon from '@lucide/svelte/icons/wand';
-	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/db';
-	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { transformations, type Transformation } from '$lib/state/transformations.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
-	const transformationsQuery = createQuery(
-		() => rpc.db.transformations.getAll.options,
-	);
-
-	const transformations = $derived(transformationsQuery.data ?? []);
+	const sortedTransformations = $derived(transformations.sorted);
 
 	let {
 		class: className,
@@ -29,8 +24,8 @@
 	} = $props();
 
 	const selectedTransformation = $derived(
-		transformations.find(
-			(t) => t.id === workspaceSettings.get('transformation.selectedId'),
+		sortedTransformations.find(
+			(t) => t.id === settings.get('transformation.selectedId'),
 		),
 	);
 
@@ -81,16 +76,16 @@
 			<Command.Input placeholder="Select transcription post-processing..." />
 			<Command.Empty>No transformation found.</Command.Empty>
 			<Command.Group class="overflow-y-auto max-h-[400px]">
-				{#each transformations as transformation (transformation.id)}
+				{#each sortedTransformations as transformation (transformation.id)}
 					{@const isSelectedTransformation =
-						workspaceSettings.get('transformation.selectedId') ===
+						settings.get('transformation.selectedId') ===
 						transformation.id}
 					<Command.Item
 						value="${transformation.id} - ${transformation.title} - ${transformation.description}"
 						onSelect={() => {
-							workspaceSettings.set(
+							settings.set(
 								'transformation.selectedId',
-								workspaceSettings.get('transformation.selectedId') ===
+								settings.get('transformation.selectedId') ===
 									transformation.id
 									? null
 									: transformation.id,

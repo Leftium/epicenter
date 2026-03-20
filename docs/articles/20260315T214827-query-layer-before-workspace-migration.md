@@ -1,3 +1,11 @@
+# The Query Layer That Did Everything
+
+> **Historical snapshot**: This is the query layer README from before the workspace migration moved domain data (recordings, transformations, runs) to Yjs-backed workspace state modules. At this point, TanStack Query managed all CRUD operations—the query layer co-located service calls, runtime settings injection, and cache manipulation in one place. The architecture has since evolved: workspace state handles domain CRUD, and the query layer focuses on audio blob access, external API calls, hardware state, and coordination logic. See `apps/whispering/src/lib/query/README.md` for the current version.
+
+The key architectural insight worth preserving: the query layer co-locates three things in one place—the service call, runtime settings injection based on reactive variables, and cache manipulation (also reactive). This creates a layer that bridges reactivity with services in an intuitive way, and gives developers a consistent place to put this logic. Whether the cache lives in TanStack Query or Yjs, the co-location principle still holds.
+
+---
+
 # Query Layer
 
 The query layer is the reactive bridge between your UI components and the isolated service layer. It adds caching, reactivity, and state management on top of pure service functions.
@@ -27,16 +35,18 @@ Every operation in the query layer provides **two interfaces** to match how you 
 	import { rpc } from '$lib/query';
 
 	// Reactive in components - wrap .options in accessor function
-	const recorderState = createQuery(() => rpc.recorder.getRecorderState.options);
-	// Syncs: recorderState.isPending, recorderState.data, recorderState.error automatically
+	const recordings = createQuery(() => rpc.recordings.getAllRecordings.options);
+	// Syncs: recordings.isPending, recordings.data, recordings.error, recordings.isStale automatically
 </script>
 
-{#if recorderState.isPending}
-	<div class="spinner">Loading recorder state...</div>
-{:else if recorderState.error}
-	<div class="error">Error: {recorderState.error.message}</div>
-{:else if recorderState.data}
-	<RecorderIndicator state={recorderState.data} />
+{#if recordings.isPending}
+	<div class="spinner">Loading recordings...</div>
+{:else if recordings.error}
+	<div class="error">Error: {recordings.error.message}</div>
+{:else if recordings.data}
+	{#each recordings.data as recording}
+		<RecordingCard {recording} />
+	{/each}
 {/if}
 ```
 
@@ -54,7 +64,7 @@ Examples:
 ```typescript
 // Imperative in actions - lightweight and fast
 const { data, error } =
-	await rpc.text.copyToClipboard.execute({ text });
+	await rpc.recordings.deleteRecording.execute(recordingId);
 // No observers, no subscriptions, just the result
 ```
 
@@ -93,9 +103,29 @@ async function transcribeBlob(blob: Blob) {
 }
 ```
 
-## Workspace State & Reactivity
+## Optimistic Updates
 
-> **Historical note**: Before the workspace migration, the query layer used TanStack Query's cache for optimistic UI via `queryClient.setQueryData(['recordings'], ...)`. Domain data (recordings, transformations, transformation runs) has since moved to Yjs-backed workspace state modules (`$lib/state/*.svelte.ts`), which provide instant reactivity without cache manipulation. The query layer now focuses on non-CRUD operations: audio blob access, external API calls, hardware state, and coordination logic.
+The query layer uses the TanStack Query client to manipulate the cache for optimistic UI. By updating the cache, reactivity automatically kicks in and the UI reflects these changes, giving you instant optimistic updates:
+
+```typescript
+// From recordings mutations
+createRecording: defineMutation({
+	mutationFn: async (recording: Recording) => {
+		const { data, error } = await services.db.createRecording(recording);
+		if (error) return Err(error);
+
+		// Optimistically update cache - UI updates instantly
+		queryClient.setQueryData(['recordings'], (oldData) => {
+			if (!oldData) return [recording];
+			return [...oldData, recording];
+		});
+
+		return Ok(data);
+	},
+});
+```
+
+The query layer co-locates three key things in one place: (1) the service call, (2) runtime settings injection based on reactive variables, and (3) cache manipulation (also reactive). This creates a layer that bridges reactivity with services in an intuitive way, and gives developers a consistent place to put this logic—now developers know that all cache manipulation lives in the query folder.
 
 ## Error Transformation Pattern
 
@@ -277,7 +307,7 @@ Unlike server-side rendered applications where the query client lifecycle is man
 
 - Direct Query Client Access: We can call `queryClient.fetchQuery()` and `queryClient.getMutationCache().build()` directly
 - Imperative Control: No need to go through reactive hooks for one-time operations
-- Performance Benefits\*\*: We can build mutations using direct execution rather than creating unnecessary subscribers
+- Performance Benefits: We can build mutations using direct execution rather than creating unnecessary subscribers
 - Flexible Interfaces: Both reactive (`.options`) and imperative (`.execute()`, `.fetch()`) patterns work seamlessly
 
 This enables our unique dual interface pattern where every query and mutation provides both reactive and imperative APIs.
@@ -290,9 +320,9 @@ This enables our unique dual interface pattern where every query and mutation pr
 import { rpc } from '$lib/query';
 
 // Everything you can do in the app is available through rpc.*
-rpc.audio.getPlaybackUrl;
+rpc.recordings.getAllRecordings;
 rpc.transcription.transcribeRecording;
-rpc.text.copyToClipboard;
+rpc.clipboard.copyToClipboard;
 // ... and much more
 ```
 
@@ -339,7 +369,7 @@ When you call `createMutation()`, you're creating a _mutation observer_ that sub
 
 ```typescript
 // ❌ createMutation() approach - Creates subscriber
-const mutation = createMutation(rpc.recorder.startRecording.options);
+const mutation = createMutation(rpc.recordings.createRecording.options);
 // This creates a mutation observer that:
 // - Subscribes to state changes
 // - Triggers component re-renders
@@ -347,22 +377,19 @@ const mutation = createMutation(rpc.recorder.startRecording.options);
 // - Adds memory overhead
 
 // Then you call it with callbacks:
-mutation.mutate(
-	{ toastId },
-	{
-		onSuccess: () => {
-			/* ... */
-		},
-		onError: (error) => {
-			/* ... */
-		},
+mutation.mutate(recording, {
+	onSuccess: () => {
+		/* ... */
 	},
-);
+	onError: (error) => {
+		/* ... */
+	},
+});
 ```
 
 ```typescript
 // ✅ .execute() approach - Direct execution
-const { data, error } = await rpc.recorder.startRecording.execute({ toastId });
+const { data, error } = await rpc.recordings.createRecording.execute(recording);
 // This directly:
 // - Executes the mutation immediately
 // - Returns a simple Result<T, E>
@@ -393,9 +420,9 @@ Instead of importing individual queries from different files:
 
 ```typescript
 // ❌ Without RPC (scattered imports)
-import { getPlaybackUrl } from '$lib/query/audio';
+import { getAllRecordings } from '$lib/query/recordings';
 import { transcribeRecording } from '$lib/query/transcription';
-import { copyToClipboard } from '$lib/query/text';
+import { copyToClipboard } from '$lib/query/clipboard';
 ```
 
 You get everything through one clean namespace:
@@ -405,9 +432,9 @@ You get everything through one clean namespace:
 import { rpc } from '$lib/query';
 
 // Now you have intellisense for everything!
-rpc.audio.getPlaybackUrl;
+rpc.recordings.getAllRecordings;
 rpc.transcription.transcribeRecording;
-rpc.text.copyToClipboard;
+rpc.clipboard.copyToClipboard;
 ```
 
 RPC provides:
@@ -448,10 +475,10 @@ RPC provides:
 
 	// These queries automatically update when data changes
 	const recorderState = createQuery(
-		rpc.recorder.getRecorderState.options,
+		rpc.manualRecorder.getRecorderState.options,
 	);
-	const devices = createQuery(
-		rpc.recorder.enumerateDevices.options,
+	const latestRecording = createQuery(
+		rpc.recordings.getLatestRecording.options,
 	);
 </script>
 
@@ -459,20 +486,18 @@ RPC provides:
 	<RecordingIndicator />
 {/if}
 
-{#if $devices.data}
-	{#each $devices.data as device}
-		<DeviceOption {device} />
-	{/each}
+{#if $latestRecording.data}
+	<RecordingCard recording={$latestRecording.data} />
 {/if}
 ```
 
 ### 2. Imperative Mutations with Error Handling
 
 ```typescript
-// From: /lib/query/delivery.ts
+// From: /lib/deliverTextToUser.ts
 // ✅ Direct execution - no reactive overhead
 async function copyToClipboard(text: string) {
-	const { error } = await rpc.text.copyToClipboard.execute({ text });
+	const { error } = await rpc.clipboard.copyToClipboard.execute({ text });
 
 	if (error) {
 		// Using the notify API to show both toast and OS notification
@@ -485,53 +510,46 @@ async function copyToClipboard(text: string) {
 }
 
 // ❌ Alternative with createMutation (unnecessary overhead)
-// const copyMutation = createMutation(() => rpc.text.copyToClipboard.options);
+// const copyMutation = createMutation(() => rpc.clipboard.copyToClipboard.options);
 // copyMutation.mutate({ text }); // Creates observer, manages state we don't need
 ```
 
 ### 3. Sequential Operations - The .execute() Sweet Spot
 
 ```typescript
-// From: /lib/query/actions.ts
+// From: /lib/commands.ts
 // ✅ Perfect use case for .execute() - sequential workflow without UI reactivity
-async function processRecordingPipeline({ blob, toastId }: { blob: Blob; toastId: string }) {
-	// Step 1: Transcribe the audio blob
-	const { data: transcribedText, error: transcribeError } =
-		await rpc.transcription.transcribeRecording.execute(recording);
+async function stopAndTranscribe() {
+	// Step 1: Stop recording
+	const { data: blob, error } = await rpc.manualRecorder.stopRecording.execute({
+		toastId,
+	});
 
-	if (transcribeError) {
-		notify.error.execute({ id: toastId, ...transcribeError });
+	if (error) {
+		toast.error({ title: 'Failed to stop recording' });
 		return;
 	}
 
 	// Step 2: Play sound effect (fire-and-forget)
-	rpc.sound.playSoundIfEnabled.execute('transcriptionComplete');
+	rpc.sound.playSoundIfEnabled.execute('manual-stop');
 
-	// Step 3: Deliver transcription to user (clipboard + cursor)
-	await rpc.delivery.deliverTranscriptionResult.execute({
-		text: transcribedText,
-		toastId,
-	});
-
-	// Step 4: Optionally run transformation
-	const { data: transformationRun, error: transformError } =
-		await rpc.transformer.transformRecording.execute({
-			recordingId: recording.id,
-			transformation,
+	// Step 3: Create recording in database
+	const { data: recording, error: createError } =
+		await rpc.recordings.createRecording.execute({
+			blob,
+			timestamp: new Date(),
+			transcriptionStatus: 'PENDING',
 		});
 
-	if (transformError) return;
+	if (createError) return;
 
-	// Step 5: Deliver transformation result
-	await rpc.delivery.deliverTransformationResult.execute({
-		text: transformationRun.output,
-		toastId,
-	});
+	// Step 4: Transcribe the recording
+	await rpc.transcription.transcribeRecording.execute(recording);
 }
 
 // ❌ With createMutation (overkill for workflows)
-// const transcribeMutation = createMutation(() => rpc.transcription.transcribeRecording.options);
-// const deliverMutation = createMutation(() => rpc.delivery.deliverTranscriptionResult.options);
+// const stopMutation = createMutation(() => rpc.manualRecorder.stopRecording.options);
+// const createMutation = createMutation(() => rpc.recordings.createRecording.options);
 // Multiple observers created, state managed unnecessarily
 ```
 
@@ -548,9 +566,15 @@ const devices = createQuery(rpc.recorder.enumerateDevices.options);
 ```typescript
 // From: /routes/+layout/alwaysOnTop.svelte.ts
 const recorderStateQuery = createQuery(() => ({
-	...rpc.recorder.getRecorderState.options,
+	...rpc.manualRecorder.getRecorderState.options,
 	// Only enable this query when in manual recording mode
 	enabled: settings.value['recording.mode'] === 'manual',
+}));
+
+const vadStateQuery = createQuery(() => ({
+	...rpc.vadRecorder.getVadState.options,
+	// Only enable when using voice activity detection
+	enabled: settings.value['recording.mode'] === 'vad',
 }));
 ```
 
@@ -572,8 +596,8 @@ if (rpc.transcription.isCurrentlyTranscribing()) {
 	const transcribeRecordings = createMutation(
 		rpc.transcription.transcribeRecordings.options,
 	);
-	const downloadRecording = createMutation(
-		rpc.download.downloadRecording.options,
+	const deleteRecordings = createMutation(
+		rpc.recordings.deleteRecordings.options,
 	);
 
 	async function handleBulkAction(
@@ -581,13 +605,13 @@ if (rpc.transcription.isCurrentlyTranscribing()) {
 		recordings: Recording[],
 	) {
 		if (action === 'transcribe') {
-			transcribeRecordings.mutate(recordings, {
+			transcribeRecordings.mutate(selectedIds, {
 				onSuccess: ({ oks, errs }) => {
 					if (errs.length === 0) {
 						toast.success(`Transcribed ${oks.length} recordings!`);
 					} else {
 						toast.warning(
-							`Transcribed ${oks.length} of ${recordings.length} recordings`,
+							`Transcribed ${oks.length} of ${selectedIds.length} recordings`,
 						);
 					}
 				},
@@ -597,19 +621,17 @@ if (rpc.transcription.isCurrentlyTranscribing()) {
 					});
 				},
 			});
-		} else if (action === 'download') {
-			for (const recording of recordings) {
-				downloadRecording.mutate(recording, {
-					onSuccess: () => {
-						toast.success(`Downloaded recording ${recording.id}`);
-					},
-					onError: (error) => {
-						toast.error('Failed to download recording', {
-							description: error.message,
-						});
-					},
-				});
-			}
+		} else if (action === 'delete') {
+			deleteRecordings.mutate(selectedIds, {
+				onSuccess: () => {
+					toast.success('Deleted recordings!');
+				},
+				onError: (error) => {
+					toast.error('Failed to delete recordings', {
+						description: error.message,
+					});
+				},
+			});
 		}
 	}
 </script>
@@ -624,27 +646,29 @@ The easiest way to understand the query layer is to see it in action:
 	import { createQuery } from '@tanstack/svelte-query';
 	import { rpc } from '$lib/query';
 
-	// This automatically subscribes to recorder state changes
-	const recorderState = createQuery(() => rpc.recorder.getRecorderState.options);
+	// This automatically subscribes to all recordings
+	const recordingsQuery = createQuery(rpc.recordings.getAllRecordings.options);
 </script>
 
-{#if recorderState.isPending}
-	<p>Loading...</p>
-{:else if recorderState.error}
-	<p>Error: {recorderState.error.message}</p>
-{:else if recorderState.data}
-	<RecorderIndicator state={recorderState.data} />
+{#if recordingsQuery.isPending}
+	<p>Loading recordings...</p>
+{:else if recordingsQuery.error}
+	<p>Error: {recordingsQuery.error.message}</p>
+{:else if recordingsQuery.data}
+	{#each recordingsQuery.data as recording}
+		<RecordingCard {recording} />
+	{/each}
 {/if}
 ```
 
 Or imperatively in an event handler:
 
 ```typescript
-async function handleCopy(text: string) {
-	const { error } = await rpc.text.copyToClipboard.execute({ text });
+async function handleDelete(id: string) {
+	const { error } = await rpc.recordings.deleteRecording.execute(id);
 	if (error) {
 		notify.error.execute({
-			title: 'Failed to copy',
+			title: 'Failed to delete',
 			description: error.message,
 		});
 	}
@@ -687,26 +711,29 @@ const { data, error } = await userQuery.fetch();
 **`defineMutation`** - For data modifications:
 
 ```typescript
-const startRecording = defineMutation({
-	mutationKey: ['recorder', 'startRecording'],
-	mutationFn: async ({ toastId }: { toastId: string }) => {
-		const { data, error } = await recorderService().startRecording(params, {
-			sendStatus: (options) => notify.loading({ id: toastId, ...options }),
-		});
-		if (error) return WhisperingErr({ title: '❌ Failed to start recording', serviceError: error });
-		return Ok(data);
+const createRecording = defineMutation({
+	mutationKey: ['recordings', 'create'],
+	mutationFn: async (recording) => {
+		const result = await services.db.createRecording(recording);
+		if (result.error) return Err(result.error);
+
+		// Update cache on success
+		queryClient.setQueryData(['recordings'], (old) => [
+			...(old || []),
+			recording,
+		]);
+		return Ok(result.data);
 	},
-	onSettled: invalidateRecorderState,
 });
 
 // ✅ Reactive interface - creates mutation observer
-const mutation = createMutation(() => startRecording.options);
+const mutation = createMutation(() => createRecording.options);
 // - Subscribes to mutation state (isPending, isError, etc.)
 // - Triggers component re-renders on state changes
 // - Useful for loading states and error displays
 
 // ✅ Imperative interface - direct execution
-const { error } = await startRecording.execute({ toastId });
+const { error } = await createRecording.execute(recording);
 // - Uses queryClient.getMutationCache().build() directly
 // - Returns simple Result<T, E>
 // - No reactive state management
@@ -718,15 +745,10 @@ const { error } = await startRecording.execute({ toastId });
 ### 1. Basic Query Definition
 
 ```typescript
-export const recorder = {
-	getRecorderState: defineQuery({
-		queryKey: recorderKeys.recorderState,
-		queryFn: async () => {
-			const { data, error } = await recorderService().getRecorderState();
-			if (error) return WhisperingErr({ title: '❌ Failed to get recorder state', serviceError: error });
-			return Ok(data);
-		},
-		initialData: 'IDLE' as WhisperingRecordingState,
+export const recordings = {
+	getAllRecordings: defineQuery({
+		queryKey: ['recordings'],
+		queryFn: () => services.db.getAllRecordings(),
 	}),
 };
 ```
@@ -734,43 +756,28 @@ export const recorder = {
 ### 2. Parameterized Queries
 
 ```typescript
-getPlaybackUrl: (id: Accessor<string>) =>
+getRecordingById: (id: Accessor<string>) =>
   defineQuery({
-    queryKey: audioKeys.playbackUrl(id()), // Dynamic key based on ID
-    queryFn: () => services.db.recordings.ensureAudioPlaybackUrl(id()),
+    queryKey: ['recordings', id()], // Dynamic key based on ID
+    queryFn: () => services.db.getRecordingById(id()),
   }),
 ```
 
-### 3. Mutations with Error Handling
+### 3. Mutations with Cache Updates
 
 ```typescript
-transcribeRecording: defineMutation({
-  mutationKey: transcriptionKeys.isTranscribing,
+createRecording: defineMutation({
+  mutationKey: ['recordings', 'create'],
   mutationFn: async (recording: Recording) => {
-    const { data: audioBlob, error: getAudioBlobError } =
-      await services.db.recordings.getAudioBlob(recording.id);
+    const result = await services.db.createRecording(recording);
+    if (result.error) return Err(result.error);
 
-    if (getAudioBlobError) {
-      return WhisperingErr({
-        title: '⚠️ Failed to fetch audio',
-        description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
-      });
-    }
+    // Optimistically update cache
+    queryClient.setQueryData(['recordings'], (old) =>
+      [...(old || []), recording]
+    );
 
-    recordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
-    const { data: transcribedText, error: transcribeError } =
-      await transcribeBlob(audioBlob);
-
-    if (transcribeError) {
-      recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
-      return Err(transcribeError);
-    }
-
-    recordings.update(recording.id, {
-      transcribedText,
-      transcriptionStatus: 'DONE',
-    });
-    return Ok(transcribedText);
+    return Ok(result.data);
   },
 }),
 ```
@@ -791,33 +798,25 @@ function transcribeBlob(blob: Blob) {
 ### 5. Multi-Step Operations
 
 ```typescript
-transformInput: defineMutation({
-  mutationFn: async ({ input, transformation, steps }) => {
-    // Step 1: Run transformation pipeline
-    const { data: transformationRun, error: transformationRunError } =
-      await runTransformation({ input, transformation, steps, recordingId: null });
+transcribeRecording: defineMutation({
+  mutationFn: async (recording) => {
+    // Step 1: Update status
+    await recordings.updateRecording.execute({
+      ...recording,
+      transcriptionStatus: 'TRANSCRIBING',
+    });
 
-    if (transformationRunError)
-      return WhisperingErr({ title: '⚠️ Transformation failed', serviceError: transformationRunError });
+    // Step 2: Perform transcription
+    const { data, error } = await transcribeBlob(recording.blob);
 
-    // Step 2: Check result
-    if (transformationRun.status === 'failed') {
-      return WhisperingErr({
-        title: '⚠️ Transformation failed',
-        description: transformationRun.error,
-        action: { type: 'more-details', error: transformationRun.error },
-      });
-    }
+    // Step 3: Update with results
+    await recordings.updateRecording.execute({
+      ...recording,
+      transcribedText: data,
+      transcriptionStatus: error ? 'FAILED' : 'DONE',
+    });
 
-    // Step 3: Return output
-    if (!transformationRun.output) {
-      return WhisperingErr({
-        title: '⚠️ Transformation produced no output',
-        description: 'The transformation completed but produced no output.',
-      });
-    }
-
-    return Ok(transformationRun.output);
+    return error ? Err(error) : Ok(data);
   },
 }),
 ```
@@ -831,28 +830,30 @@ transformInput: defineMutation({
 	import { createQuery } from '@tanstack/svelte-query';
 	import { rpc } from '$lib/query';
 
-	// This automatically subscribes to recorder state updates
-	const recorderState = createQuery(() => rpc.recorder.getRecorderState.options);
+	// This automatically subscribes to updates
+	const recordings = createQuery(() => rpc.recordings.getAllRecordings.options);
 </script>
 
-{#if recorderState.isPending}
+{#if recordings.isPending}
 	<p>Loading...</p>
-{:else if recorderState.error}
-	<p>Error: {recorderState.error.message}</p>
+{:else if recordings.error}
+	<p>Error: {recordings.error.message}</p>
 {:else}
-	<RecorderIndicator state={recorderState.data} />
+	{#each recordings.data as recording}
+		<RecordingCard {recording} />
+	{/each}
 {/if}
 ```
 
 ### Imperative Usage (For Actions)
 
 ```typescript
-async function handleDownload(recording: Recording) {
-	const { error } = await rpc.download.downloadRecording.execute(recording);
+async function handleDelete(recording: Recording) {
+	const { error } = await rpc.recordings.deleteRecording.execute(recording);
 
 	if (error) {
 		toast.error({
-			title: 'Failed to download',
+			title: 'Failed to delete',
 			description: error.message,
 		});
 	}
@@ -863,7 +864,7 @@ async function handleDownload(recording: Recording) {
 
 - `_utils.ts` - Core factory functions
 - `index.ts` - Query client setup and unified `rpc` export
-- Feature-specific files (e.g., `transcription.ts`, `recorder.ts`, `transformer.ts`)
+- Feature-specific files (e.g., `recordings.ts`, `transcription.ts`)
 
 Each feature file typically exports an object with:
 
@@ -904,8 +905,9 @@ Actions are UI-boundary mutations invoked from anywhere: command registry (`/lib
    - Use `.execute()` in `.ts` files and when you don't need pending state
    - Use `createMutation()` when you need reactive state for UI feedback
 5. Keep queries simple - Complex logic belongs in services or orchestration mutations
-6. Use proper query keys - Hierarchical and consistent
-7. Leverage direct client access - Our static architecture enables powerful patterns unavailable in SSR apps
+6. Update cache optimistically - Better UX for mutations
+7. Use proper query keys - Hierarchical and consistent
+8. Leverage direct client access - Our static architecture enables powerful patterns unavailable in SSR apps
 
 ## Quick Reference: Common RPC Patterns
 
@@ -913,11 +915,11 @@ Actions are UI-boundary mutations invoked from anywhere: command registry (`/lib
 
 ```typescript
 // In component
-const recorderState = createQuery(rpc.recorder.getRecorderState.options);
+const recordingsQuery = createQuery(rpc.recordings.getAllRecordings.options);
 
 // In template
-{#if recorderState.isPending}Loading...{/if}
-{#if recorderState.data}<RecorderIndicator state={recorderState.data} />{/if}
+{#if recordingsQuery.isPending}Loading...{/if}
+{#if recordingsQuery.data}{recordingsQuery.data}{/if}
 ```
 
 ### Query with Parameters
@@ -925,8 +927,8 @@ const recorderState = createQuery(rpc.recorder.getRecorderState.options);
 ```typescript
 // Define with accessor
 const recordingId = () => '123';
-const audioUrl = createQuery(
-	rpc.audio.getPlaybackUrl(recordingId).options,
+const recordingQuery = createQuery(
+	rpc.recordings.getRecordingById(recordingId).options,
 );
 ```
 
@@ -934,14 +936,14 @@ const audioUrl = createQuery(
 
 ```typescript
 // Create mutation with just .options (no parentheses!)
-const downloadMutation = createMutation(
-	rpc.download.downloadRecording.options,
+const deleteRecordingMutation = createMutation(
+	rpc.recordings.deleteRecording.options,
 );
 
 // Trigger mutation with callbacks as second argument
-downloadMutation.mutate(recording, {
+deleteRecordingMutation.mutate(recordingId, {
 	onSuccess: () => {
-		toast.success('Recording downloaded');
+		toast.success('Recording deleted');
 		// Navigate away, close modal, etc.
 	},
 	onError: (error) => {
@@ -954,13 +956,13 @@ downloadMutation.mutate(recording, {
 
 ```typescript
 // ✅ Queries - uses queryClient.fetchQuery() directly
-const { data, error } = await rpc.recorder.getRecorderState.fetch();
+const { data, error } = await rpc.recordings.getAllRecordings.fetch();
 // - Returns cached data if fresh
 // - No reactive subscription
 // - Perfect for prefetching or one-time fetches
 
 // ✅ Mutations - uses queryClient.getMutationCache().build() directly
-const { data, error } = await rpc.text.copyToClipboard.execute({ text });
+const { data, error } = await rpc.recordings.createRecording.execute(recording);
 // - Direct execution without mutation observer
 // - No reactive state management overhead
 // - Ideal for event handlers and workflows
@@ -969,7 +971,7 @@ const { data, error } = await rpc.text.copyToClipboard.execute({ text });
 ### Error Handling Pattern
 
 ```typescript
-const { data, error } = await rpc.text.copyToClipboard.execute({ text });
+const { data, error } = await rpc.clipboard.copyToClipboard.execute({ text });
 if (error) {
 	toast.error({
 		title: 'Failed to copy',
@@ -983,10 +985,29 @@ if (error) {
 ### Conditional Queries
 
 ```typescript
-const recorderStateQuery = createQuery(() => ({
-	...rpc.recorder.getRecorderState.options,
-	enabled: settings.value['recording.mode'] === 'manual',
+const vadStateQuery = createQuery(() => ({
+	...rpc.vadRecorder.getVadState.options,
+	enabled: settings.value['recording.mode'] === 'vad',
 }));
+```
+
+### Cache Updates in Mutations
+
+```typescript
+defineMutation({
+	mutationFn: async (recording) => {
+		const result = await services.db.createRecording(recording);
+		if (result.error) return Err(result.error);
+
+		// Update cache
+		queryClient.setQueryData(['recordings'], (old) => [
+			...(old || []),
+			recording,
+		]);
+
+		return Ok(result.data);
+	},
+});
 ```
 
 ### Settings-Dependent Operations
@@ -1000,122 +1021,3 @@ function transcribeBlob(blob: Blob) {
 	});
 }
 ```
-
-## The Three Layers Explained
-
-Understanding how RPC fits into the bigger picture:
-
-### 1. Services Layer (`/lib/services/`)
-
-Pure functions that do the actual work:
-
-```typescript
-// services/db.ts — still used for audio blobs and run lifecycle
-export async function ensureAudioPlaybackUrl(
-	recordingId: string,
-): Promise<Result<string, DbError>> {
-	// ...
-}
-```
-
-### 2. Workspace State (`/lib/state/workspace-*.svelte.ts`)
-
-Reactive SvelteMap modules backed by Yjs CRDTs. These replaced TanStack Query for all domain data CRUD:
-
-```typescript
-// Workspace state is the primary data layer for recordings, transformations, runs
-import { recordings } from '$lib/state/recordings.svelte';
-
-// Direct reactive access — no queries needed
-const recording = recordings.get(id);
-const allRecordings = recordings.sorted;
-```
-
-### 3. Query Layer (`/lib/query/`)
-
-Wraps services with reactivity and caching for things that don't fit in workspace state:
-
-```typescript
-// query/audio.ts — audio blobs are too large for Yjs CRDTs
-export const audio = {
-	getPlaybackUrl: (id: Accessor<string>) =>
-		defineQuery({
-			queryKey: audioKeys.playbackUrl(id()),
-			queryFn: () => services.db.recordings.ensureAudioPlaybackUrl(id()),
-		}),
-};
-```
-
-### 4. RPC Namespace (`/lib/query/index.ts`)
-
-Bundles everything for easy access:
-
-```typescript
-// query/index.ts
-export const rpc = {
-	audio, // Audio blob access (too large for CRDTs)
-	transcription, // External API calls
-	transformer, // LLM completion orchestration
-	recorder, // Hardware state management
-	// ... other non-CRUD feature modules
-};
-```
-
-### 5. Component Usage
-
-Use workspace state for data, RPC for everything else:
-
-```svelte
-<script>
-	import { rpc } from '$lib/query';
-	import { recordings } from '$lib/state/recordings.svelte';
-
-	// Domain data — workspace state (reactive, no queries needed)
-	const latestRecording = $derived(recordings.sorted[0]);
-
-	// Audio blob — still needs TanStack Query
-	const audioUrl = createQuery(() => ({
-		...rpc.audio.getPlaybackUrl(() => latestRecording?.id ?? '').options,
-		enabled: !!latestRecording?.id,
-	}));
-</script>
-```
-
-## Adding New Features
-
-When you need to add new functionality:
-
-1. **Create a service** in `/services` with pure business logic
-2. **Create a query wrapper** in `/query` that adds:
-   - TanStack Query integration
-   - Cache management
-   - Settings reactivity
-   - Error handling
-3. **Export from RPC** in `index.ts` so it's available globally
-4. **Use in components** via either reactive or imperative patterns
-
-This keeps everything organized and testable while giving you a unified way to access all app functionality.
-
-## Query Layer vs State
-
-After migrating recordings, transformations, and transformation runs to Yjs workspace state modules (`$lib/state/*.svelte.ts`), the query layer's role has narrowed. Workspace state modules now handle all CRUD operations for domain data—TanStack Query is reserved for things that don't fit in CRDTs.
-
-The query layer follows the **stale-while-revalidate** pattern: data is cached and refreshed in the background. For **live reactive state** that must update immediately (like hardware state or user preferences), use `$lib/state/` instead.
-
-| Aspect             | `$lib/query/`                           | `$lib/state/`                                |
-| ------------------ | --------------------------------------- | --------------------------------------------- |
-| **Pattern**        | Stale-while-revalidate (TanStack Query) | Singleton reactive state                      |
-| **State Location** | TanStack Query cache                    | Module-level `$state` runes / Yjs docs        |
-| **Updates**        | Cached with background refresh          | Immediate, live                               |
-| **Use Case**       | External APIs, hardware state, audio blob access | Domain data (CRUD), user preferences, live status |
-
-**What lives where:**
-
-- External APIs (transcription, LLM completions) → Query layer (`rpc.transcription.*`, `rpc.transformer.*`)
-- Hardware state (recorder, microphone devices) → Query layer (`rpc.recorder.*`)
-- Audio blob access (too large for Yjs CRDTs) → Query layer (`rpc.audio.getPlaybackUrl`)
-- Recordings, transformations, transformation runs → Workspace state (`recordings`, `transformations`, etc.)
-- User settings → State (`settings.value`)
-- VAD hardware state → State (`vadRecorder.state`)
-
-See `$lib/state/README.md` for the state documentation.

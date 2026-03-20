@@ -59,7 +59,7 @@ function createWorkspaceSettings() {
   };
 }
 
-export const workspaceSettings = createWorkspaceSettings();
+export const settings = createSettings();
 ```
 
 `observeAll` returns an unsubscribe function. We discard it. The observer feeds the SvelteMap, the SvelteMap feeds components, and every layer lives for the entire app session.

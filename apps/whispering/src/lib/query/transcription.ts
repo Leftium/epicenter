@@ -7,10 +7,10 @@ import { rpc } from '$lib/query';
 import { defineMutation, queryClient } from '$lib/query/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { desktopServices, services } from '$lib/services';
-import type { Recording } from '$lib/services/db';
+import type { Recording } from '$lib/state/recordings.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
-import { db } from './db';
+import { settings } from '$lib/state/settings.svelte';
+import { recordings } from '$lib/state/recordings.svelte';
 import { notify } from './notify';
 
 const transcriptionKeys = {
@@ -18,7 +18,7 @@ const transcriptionKeys = {
 } as const;
 
 function getOutputLanguage(): SupportedLanguage {
-	const language = workspaceSettings.get('transcription.language');
+	const language = settings.get('transcription.language');
 	for (const supportedLanguage of SUPPORTED_LANGUAGES) {
 		if (supportedLanguage === language) {
 			return supportedLanguage;
@@ -51,61 +51,18 @@ export const transcription = {
 				});
 			}
 
-			const { error: setRecordingTranscribingError } =
-				await db.recordings.update({
-					...recording,
-					transcriptionStatus: 'TRANSCRIBING',
-				});
-			if (setRecordingTranscribingError) {
-				notify.warning({
-					title:
-						'⚠️ Unable to set recording transcription status to transcribing',
-					description: 'Continuing with the transcription process...',
-					action: {
-						type: 'more-details',
-						error: setRecordingTranscribingError,
-					},
-				});
-			}
+			recordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
 			const { data: transcribedText, error: transcribeError } =
 				await transcribeBlob(audioBlob);
 			if (transcribeError) {
-				const { error: setRecordingTranscribingError } =
-					await db.recordings.update({
-						...recording,
-						transcriptionStatus: 'FAILED',
-					});
-				if (setRecordingTranscribingError) {
-					notify.warning({
-						title: '⚠️ Unable to update recording after transcription',
-						description:
-							"Transcription failed but unable to update recording's transcription status in database",
-						action: {
-							type: 'more-details',
-							error: setRecordingTranscribingError,
-						},
-					});
-				}
+				recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
 				return Err(transcribeError);
 			}
 
-			const { error: setRecordingTranscribedTextError } =
-				await db.recordings.update({
-					...recording,
-					transcribedText,
-					transcriptionStatus: 'DONE',
-				});
-			if (setRecordingTranscribedTextError) {
-				notify.warning({
-					title: '⚠️ Unable to update recording after transcription',
-					description:
-						"Transcription completed but unable to update recording's transcribed text and status in database",
-					action: {
-						type: 'more-details',
-						error: setRecordingTranscribedTextError,
-					},
-				});
-			}
+			recordings.update(recording.id, {
+				transcribedText,
+				transcriptionStatus: 'DONE',
+			});
 			return Ok(transcribedText);
 		},
 	}),
@@ -142,7 +99,7 @@ export const transcription = {
 export async function transcribeBlob(
 	blob: Blob,
 ): Promise<Result<string, WhisperingError>> {
-	const selectedService = workspaceSettings.get('transcription.service');
+	const selectedService = settings.get('transcription.service');
 
 	// Log transcription request
 	const startTime = Date.now();
@@ -153,11 +110,11 @@ export async function transcribeBlob(
 
 	// Compress audio if enabled, else pass through original blob
 	let audioToTranscribe = blob;
-	if (workspaceSettings.get('transcription.compressionEnabled')) {
+	if (settings.get('transcription.compressionEnabled')) {
 		const { data: compressedBlob, error: compressionError } =
 			await desktopServices.ffmpeg.compressAudioBlob(
 				blob,
-				workspaceSettings.get('transcription.compressionOptions'),
+				settings.get('transcription.compressionOptions'),
 			);
 
 		if (compressionError) {
@@ -202,9 +159,9 @@ export async function transcribeBlob(
 	const transcriptionResult: Result<string, WhisperingError> =
 		await (async () => {
 			const outputLanguage = getOutputLanguage();
-			const prompt = workspaceSettings.get('transcription.prompt');
+			const prompt = settings.get('transcription.prompt');
 			const temperature = String(
-				workspaceSettings.get('transcription.temperature'),
+				settings.get('transcription.temperature'),
 			);
 
 			switch (selectedService) {
@@ -216,7 +173,7 @@ export async function transcribeBlob(
 							prompt,
 							temperature,
 						apiKey: deviceConfig.get("apiKeys.openai"),
-							modelName: workspaceSettings.get('transcription.openai.model'),
+							modelName: settings.get('transcription.openai.model'),
 						baseURL: deviceConfig.get("apiEndpoints.openai") || undefined,
 						},
 					);
@@ -228,7 +185,7 @@ export async function transcribeBlob(
 							prompt,
 							temperature,
 						apiKey: deviceConfig.get("apiKeys.groq"),
-							modelName: workspaceSettings.get('transcription.groq.model'),
+							modelName: settings.get('transcription.groq.model'),
 						baseURL: deviceConfig.get("apiEndpoints.groq") || undefined,
 						},
 					);
@@ -251,7 +208,7 @@ export async function transcribeBlob(
 							prompt,
 							temperature,
 						apiKey: deviceConfig.get("apiKeys.elevenlabs"),
-							modelName: workspaceSettings.get(
+							modelName: settings.get(
 								'transcription.elevenlabs.model',
 							),
 						},
@@ -264,7 +221,7 @@ export async function transcribeBlob(
 							prompt,
 							temperature,
 						apiKey: deviceConfig.get("apiKeys.deepgram"),
-							modelName: workspaceSettings.get('transcription.deepgram.model'),
+							modelName: settings.get('transcription.deepgram.model'),
 						},
 					);
 				case 'Mistral':
@@ -275,7 +232,7 @@ export async function transcribeBlob(
 							prompt,
 							temperature,
 						apiKey: deviceConfig.get("apiKeys.mistral"),
-							modelName: workspaceSettings.get('transcription.mistral.model'),
+							modelName: settings.get('transcription.mistral.model'),
 						},
 					);
 				case 'whispercpp': {

@@ -9,23 +9,73 @@ Singleton reactive state that stays in sync with the application. Unlike the que
 | **Pattern** | Singleton reactive state | Stale-while-revalidate (TanStack Query) |
 | **State Location** | Module-level `$state` runes | TanStack Query cache |
 | **Updates** | Immediate, live | Cached with background refresh |
-| **Use Case** | Hardware state, user preferences, live status | Data fetching, mutations, cached data |
+| **Use Case** | Hardware state, user preferences, live status, workspace table data | Data fetching, mutations, external API calls |
 | **Lifecycle** | Application lifetime | Managed by TanStack Query |
 
 ## Current State Modules
 
-### `workspace-settings.svelte.ts`
+### `settings.svelte.ts`
 
 Synced workspace settings backed by Yjs KV. Settings here roam across devices via CRDT sync. Uses a SvelteMap for per-key reactivity.
 
 ```typescript
-import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 // Read settings reactively (re-renders on change)
-const mode = workspaceSettings.get('recording.mode');
+const mode = settings.get('recording.mode');
 
 // Update settings (writes to Yjs KV → syncs to other devices)
-workspaceSettings.set('recording.mode', 'vad');
+settings.set('recording.mode', 'vad');
+```
+
+### `recordings.svelte.ts`
+
+Recording metadata backed by Yjs workspace table. SvelteMap provides per-key reactivity—updating one recording doesn't re-render the entire list. Audio blobs are NOT stored here (too large for CRDTs); use `DbService.recordings.getAudioBlob()` for audio access.
+
+```typescript
+import { recordings } from '$lib/state/recordings.svelte';
+
+// Read recordings reactively
+const recording = recordings.get(id);
+const sorted = recordings.sorted; // newest first
+
+// Write (Yjs observer auto-updates SvelteMap)
+recordings.set(recording);
+recordings.update(id, { transcriptionStatus: 'DONE' });
+recordings.delete(id);
+```
+
+### `transformations.svelte.ts`
+
+Transformation metadata backed by Yjs workspace table. Steps are stored in a separate table (`transformation-steps.svelte.ts`), not embedded in the transformation.
+
+```typescript
+import { transformations } from '$lib/state/transformations.svelte';
+
+const transformation = transformations.get(id);
+const sorted = transformations.sorted; // alphabetical
+```
+
+### `transformation-steps.svelte.ts`
+
+Transformation steps backed by Yjs workspace table. Steps have a `transformationId` FK and `order` field.
+
+```typescript
+import { transformationSteps } from '$lib/state/transformation-steps.svelte';
+
+// Get steps for a transformation, sorted by order
+const steps = transformationSteps.getByTransformationId(transformationId);
+```
+
+### `transformation-runs.svelte.ts`
+
+Transformation run execution records backed by Yjs workspace table.
+
+```typescript
+import { transformationRuns } from '$lib/state/transformation-runs.svelte';
+
+const runs = transformationRuns.getByRecordingId(recordingId);
+const latest = transformationRuns.getLatestByRecordingId(recordingId);
 ```
 
 ### `device-config.svelte.ts`

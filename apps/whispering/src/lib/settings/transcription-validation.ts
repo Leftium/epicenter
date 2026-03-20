@@ -3,7 +3,7 @@ import {
 	type TranscriptionService,
 } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 /**
  * Gets the currently selected transcription service.
@@ -14,7 +14,7 @@ import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 export function getSelectedTranscriptionService():
 	| TranscriptionService
 	| undefined {
-	const selectedServiceId = workspaceSettings.get('transcription.service');
+	const selectedServiceId = settings.get('transcription.service');
 	return TRANSCRIPTION_SERVICES.find((s) => s.id === selectedServiceId);
 }
 

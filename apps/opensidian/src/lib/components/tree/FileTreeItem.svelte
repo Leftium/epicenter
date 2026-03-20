@@ -87,7 +87,7 @@
 					>
 						{#snippet icon()}
 							{@const Icon = getFileIcon(row.name)}
-							<Icon class="h-4 w-4 shrink-0 text-muted-foreground" />
+							<Icon aria-hidden="true" class="h-4 w-4 shrink-0 text-muted-foreground" />
 						{/snippet}
 					</TreeView.File>
 				{/if}

@@ -148,7 +148,7 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 		href="/"
 		class="text-muted-foreground mb-8 gap-1.5"
 	>
-		<ArrowLeft class="size-3.5" />
+		<ArrowLeft aria-hidden="true" class="size-3.5" />
 		Back to editor
 	</Button>
 
@@ -182,20 +182,20 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 			<!-- Row 1: Edits → Y.Doc → IndexedDB -->
 			<div class="flex items-center gap-3">
 				<Badge variant="outline" class="px-3 py-1.5">Your edits</Badge>
-				<ArrowRight class="text-muted-foreground size-4 shrink-0" />
+				<ArrowRight aria-hidden="true" class="text-muted-foreground size-4 shrink-0" />
 				<Badge variant="default" class="px-3 py-1.5">Y.Doc (CRDT)</Badge>
-				<ArrowRight class="text-muted-foreground size-4 shrink-0" />
+				<ArrowRight aria-hidden="true" class="text-muted-foreground size-4 shrink-0" />
 				<Badge variant="outline" class="px-3 py-1.5">IndexedDB</Badge>
 			</div>
 
-			<ArrowDown class="text-muted-foreground size-4" />
+			<ArrowDown aria-hidden="true" class="text-muted-foreground size-4" />
 
 			<!-- Row 2: SQLite Index -->
 			<Badge variant="secondary" class="px-3 py-1.5"
 				>SQLite Index (fast queries)</Badge
 			>
 
-			<ArrowDown class="text-muted-foreground size-4" />
+			<ArrowDown aria-hidden="true" class="text-muted-foreground size-4" />
 
 			<!-- Row 3: File Tree + Search -->
 			<div class="flex items-center gap-3">
@@ -221,7 +221,7 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 			<Card.Header class="border-b px-4 py-2">
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2">
-						<FileText class="text-muted-foreground size-3.5" />
+						<FileText aria-hidden="true" class="text-muted-foreground size-3.5" />
 						<span class="font-mono text-sm">workspace.ts</span>
 					</div>
 					<div class="flex items-center gap-2">
@@ -279,7 +279,7 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 				<Card.Root>
 					<Card.Header>
 						<div class="flex items-center gap-2">
-							<capability.icon class="text-muted-foreground size-4" />
+							<capability.icon aria-hidden="true" class="text-muted-foreground size-4" />
 							<Card.Title class="text-base">{capability.title}</Card.Title>
 						</div>
 						<Card.Description class="leading-relaxed">
@@ -297,7 +297,7 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 	<section>
 		<h2 class="text-2xl font-semibold tracking-tight">What's next</h2>
 		<Alert class="mt-4">
-			<Info class="size-4" />
+			<Info aria-hidden="true" class="size-4" />
 			<AlertTitle>Roadmap</AlertTitle>
 			<AlertDescription>
 				<ul class="mt-2 space-y-1.5 text-sm leading-relaxed">

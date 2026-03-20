@@ -34,7 +34,7 @@
 	<div class="flex items-center justify-between px-3 py-1">
 		<span class="text-xs font-medium text-muted-foreground">Terminal</span>
 		<Button variant="ghost" size="icon-xs" onclick={() => terminalState.hide()}>
-			<X class="size-3" />
+			<X aria-hidden="true" class="size-3" />
 		</Button>
 	</div>
 	<Separator />

@@ -33,7 +33,7 @@
 							onclick={(e) => { e.stopPropagation(); e.preventDefault(); fsState.closeFile(fileId); }}
 							aria-label="Close {row.name}"
 						>
-							<XIcon class="size-3" />
+							<XIcon aria-hidden="true" class="size-3" />
 						</Button>
 					</Tabs.Trigger>
 				{/if}

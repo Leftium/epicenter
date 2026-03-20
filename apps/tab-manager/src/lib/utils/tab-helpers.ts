@@ -62,9 +62,9 @@ type TabLike = {
  * @example
  * ```typescript
  * const tabs = [
- *   { tabId: 1, url: 'https://github.com/foo', title: 'Foo' },
- *   { tabId: 2, url: 'https://github.com/foo?ref=bar', title: 'Foo' },
- *   { tabId: 3, url: 'https://example.com', title: 'Example' },
+ *   { id: 1, url: 'https://github.com/foo', title: 'Foo' },
+ *   { id: 2, url: 'https://github.com/foo?ref=bar', title: 'Foo' },
+ *   { id: 3, url: 'https://example.com', title: 'Example' },
  * ];
  *
  * const dupes = findDuplicateGroups(tabs);
@@ -97,9 +97,9 @@ export function findDuplicateGroups<T extends TabLike>(
  * @example
  * ```typescript
  * const tabs = [
- *   { tabId: 1, url: 'https://github.com/foo' },
- *   { tabId: 2, url: 'https://github.com/bar' },
- *   { tabId: 3, url: 'https://youtube.com/watch?v=1' },
+ *   { id: 1, url: 'https://github.com/foo' },
+ *   { id: 2, url: 'https://github.com/bar' },
+ *   { id: 3, url: 'https://youtube.com/watch?v=1' },
  * ];
  *
  * const domains = groupTabsByDomain(tabs);

@@ -33,7 +33,7 @@ import {
 	type BookmarkId,
 	generateBookmarkId,
 	workspace,
-	} from '$lib/workspace';
+} from '$lib/workspace';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 
 function createBookmarkState() {
@@ -60,7 +60,7 @@ function createBookmarkState() {
 		 *
 		 * Silently no-ops for tabs without a URL.
 		 */
-	async add(tab: BrowserTab) {
+		async add(tab: BrowserTab) {
 			if (!tab.url) return;
 			const deviceId = await getDeviceId();
 			workspace.tables.bookmarks.set({

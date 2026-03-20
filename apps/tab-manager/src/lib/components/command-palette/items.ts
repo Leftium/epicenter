@@ -68,7 +68,7 @@ export const items: CommandPaletteItem[] = [
 			);
 
 			const toClose = [...dupes.values()].flatMap((group) =>
-			group.slice(1).map((t) => t.id),
+				group.slice(1).map((t) => t.id),
 			);
 
 			confirmationDialog.open({
@@ -98,7 +98,7 @@ export const items: CommandPaletteItem[] = [
 			const groupOps = [...domains.entries()]
 				.filter(([, tabs]) => tabs.length >= 2)
 				.map(([domain, tabs]) => {
-				const nativeIds = tabs.map((t) => t.id);
+					const nativeIds = tabs.map((t) => t.id);
 					return nativeIds.length >= 2 ? { domain, nativeIds } : null;
 				})
 				.filter((op) => op !== null);

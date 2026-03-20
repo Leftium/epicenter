@@ -250,7 +250,7 @@ curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.19"
 
 Epicenter uses split licensing. Most packages and apps are MIT—contribute freely, no strings attached. The sync server (`apps/api`) and sync protocol (`packages/sync`) are AGPL-3.0. Contributions to either layer are welcome under their respective licenses.
 
-See [HOW_TO_MONETIZE.md](HOW_TO_MONETIZE.md) for the full reasoning behind the split.
+See [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAINABILITY.md) for the full reasoning behind the split.
 
 ## Philosophy
 

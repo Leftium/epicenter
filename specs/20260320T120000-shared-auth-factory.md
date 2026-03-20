@@ -1,7 +1,7 @@
 # Shared Auth Factory for Honeycrisp, Opensidian, and Tab Manager
 
 **Date**: 2026-03-20
-**Status**: Draft
+**Status**: In Progress (Phase 1+2 complete, Phase 3 deferred)
 **Author**: AI-assisted
 
 ## Overview
@@ -183,24 +183,24 @@ No gates, no paywalls.
 
 ### Phase 1: Shared Auth Factory + Honeycrisp Integration
 
-- [ ] **1.1** Create `apps/honeycrisp/src/lib/auth/types.ts` — `AuthStorageAdapter` type, `AuthUser` schema, `AuthPhase` type, `AuthError` definitions
-- [ ] **1.2** Create `apps/honeycrisp/src/lib/auth/local-storage-adapter.svelte.ts` — implements `AuthStorageAdapter` using `createPersistedState` from `@epicenter/svelte`
-- [ ] **1.3** Create `apps/honeycrisp/src/lib/auth/create-auth-state.svelte.ts` — the factory: accepts config with adapters, returns auth state API. Phase machine, Better Auth client, session validation, token refresh—all the shared logic from tab-manager but with explicit parameters and injected storage
-- [ ] **1.4** Create `apps/honeycrisp/src/lib/auth/index.ts` — instantiate `createAuthState` with honeycrisp-specific config (localStorage adapter, workspace callbacks)
-- [ ] **1.5** Add `better-auth` dependency to honeycrisp `package.json`
-- [ ] **1.6** Update honeycrisp workspace client (`workspace/client.ts`) to include sync extension with `getToken: async () => authState.token`
-- [ ] **1.7** Create `apps/honeycrisp/src/lib/components/AuthForm.svelte` — login/signup form with local form state, calls `authState.signIn({email, password})` etc. Uses `@epicenter/ui` Field/Input/Button
-- [ ] **1.8** Create `apps/honeycrisp/src/lib/components/AccountPopover.svelte` — cloud/sync status indicator with sign-in trigger and sign-out button (inspired by tab-manager's `SyncStatusIndicator`)
-- [ ] **1.9** Wire `AccountPopover` into honeycrisp's layout or sidebar
+- [x] **1.1** Create `apps/honeycrisp/src/lib/auth/types.ts` — `AuthStorageAdapter` type, `AuthUser` schema, `AuthPhase` type, `AuthError` definitions
+- [x] **1.2** Create `apps/honeycrisp/src/lib/auth/local-storage-adapter.svelte.ts` — implements `AuthStorageAdapter` using `createPersistedState` from `@epicenter/svelte`
+- [x] **1.3** Create `apps/honeycrisp/src/lib/auth/create-auth-state.svelte.ts` — the factory: accepts config with adapters, returns auth state API. Phase machine, Better Auth client, session validation, token refresh—all the shared logic from tab-manager but with explicit parameters and injected storage
+- [x] **1.4** Create `apps/honeycrisp/src/lib/auth/index.ts` — instantiate `createAuthState` with honeycrisp-specific config (localStorage adapter, workspace callbacks)
+- [x] **1.5** Add `better-auth` dependency to honeycrisp `package.json`
+- [x] **1.6** Update honeycrisp workspace client (`workspace/client.ts`) to include sync extension with `getToken: async () => authState.token`
+- [x] **1.7** Create `apps/honeycrisp/src/lib/components/AuthForm.svelte` — login/signup form with local form state, calls `authState.signIn({email, password})` etc. Uses `@epicenter/ui` Field/Input/Button
+- [x] **1.8** Create `apps/honeycrisp/src/lib/components/AccountPopover.svelte` — cloud/sync status indicator with sign-in trigger and sign-out button (inspired by tab-manager's `SyncStatusIndicator`)
+- [x] **1.9** Wire `AccountPopover` into honeycrisp's layout or sidebar
 - [ ] **1.10** Test: app works without signing in (local-only), sign in activates sync
 
 ### Phase 2: Opensidian Integration
 
-- [ ] **2.1** Copy auth files from honeycrisp to opensidian (types, adapter, factory, index) — adjust workspace callbacks for opensidian's workspace instance
-- [ ] **2.2** Add `better-auth`, `wellcrafted`, `@epicenter/svelte` dependencies to opensidian `package.json`
-- [ ] **2.3** Update opensidian workspace (`workspace.ts`) to include sync extension
-- [ ] **2.4** Create opensidian `AuthForm.svelte` and `AccountPopover.svelte`
-- [ ] **2.5** Wire into opensidian's `AppShell` or toolbar
+- [x] **2.1** Copy auth files from honeycrisp to opensidian (types, adapter, factory, index) — adjust workspace callbacks for opensidian's workspace instance
+- [x] **2.2** Add `better-auth`, `wellcrafted`, `@epicenter/svelte` dependencies to opensidian `package.json`
+- [x] **2.3** Update opensidian workspace (`workspace.ts`) to include sync extension
+- [x] **2.4** Create opensidian `AuthForm.svelte` and `AccountPopover.svelte`
+- [x] **2.5** Wire into opensidian's `AppShell` or toolbar
 - [ ] **2.6** Test: same flow as honeycrisp
 
 ### Phase 3: Tab-Manager Migration (deferred)
@@ -283,3 +283,29 @@ Solution: Lazy references. The sync extension's `getToken` is a function that re
 - `packages/workspace/src/extensions/sync.ts` — sync extension factory
 - `packages/sync-client/src/provider.ts` — sync provider with token handling
 - `apps/api/src/app.ts` — Better Auth server config + trusted origins
+
+## Review
+
+### Wave 1: Honeycrisp Auth (commit `2c8e30a`)
+
+Created the `createAuthState` factory with dependency injection for platform-specific behavior. Key design decisions that emerged during implementation:
+
+- **Circular dependency solved with lazy imports**: The workspace client needs `authState.token` for sync, and the auth singleton needs workspace for encryption callbacks. Resolved by using `await import('$lib/auth')` in the sync extension's `getToken` callback---only runs at connection time, not module load.
+- **TypeScript builder chain inference**: The workspace builder's `withEncryption({})` adds `EncryptionMethods` to the type, but TypeScript couldn't resolve the intersection through the chained default export. Worked around with runtime `'activateEncryption' in workspace` checks and narrow casts---not `as any`.
+- **CustomSessionFields inlined**: The `@epicenter/api` package isn't a workspace dependency (it's a deployable app), so the `CustomSessionFields` type was inlined in the factory rather than importing across app boundaries.
+- **Pre-existing tsconfig fix**: Honeycrisp's `tsconfig.json` was missing closing braces---fixed incidentally.
+
+Files created: `auth/types.ts`, `auth/local-storage-adapter.svelte.ts`, `auth/create-auth-state.svelte.ts`, `auth/index.ts`, `components/AuthForm.svelte`, `components/AccountPopover.svelte`. Modified: `workspace/client.ts`, `components/Sidebar.svelte`, `routes/+page.svelte`, `package.json`.
+
+### Wave 2: Opensidian Auth (commit `36285f7`)
+
+Identical auth files (types, adapter, factory) copied to opensidian. Only the wiring (`auth/index.ts`) differs:
+- Uses `ws` (named export) instead of `workspace` (default export)
+- Storage keys prefixed `opensidian:` instead of `honeycrisp:`
+- AccountPopover wired into Toolbar instead of Sidebar
+
+### What's Left
+
+- **Phase 3 (tab-manager migration)**: Deferred. Would create chrome-storage and chrome-identity adapters for the existing extension, then refactor `auth.svelte.ts` to use the shared factory. No user-facing changes.
+- **Manual testing**: Both apps need runtime verification---sign in, confirm sync activates, sign out, confirm local data persists.
+- **Shared package extraction**: Once a third app needs auth, extract the factory to `@epicenter/svelte` or a new `@epicenter/auth` package.

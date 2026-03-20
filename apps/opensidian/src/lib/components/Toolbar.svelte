@@ -116,7 +116,8 @@
 			</Tooltip.Trigger>
 			<Tooltip.Content>Delete selected item</Tooltip.Content>
 		</Tooltip.Root>
-		<div class="ml-auto">
+		<div class="ml-auto flex items-center gap-1">
+			<Button variant="ghost" size="sm" href="/about">About</Button>
 			<Tooltip.Root>
 				<Tooltip.Trigger>
 					{#snippet child({ props })}

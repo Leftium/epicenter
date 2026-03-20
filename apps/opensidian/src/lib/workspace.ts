@@ -3,6 +3,7 @@ import {
 	createYjsFileSystem,
 	filesTable,
 } from '@epicenter/filesystem';
+import { Bash } from 'just-bash';
 import { createWorkspace } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 
@@ -26,3 +27,19 @@ export const fs = createYjsFileSystem(
 	ws.tables.files,
 	ws.documents.files.content,
 );
+
+/**
+ * Shell emulator backed by the Yjs virtual filesystem.
+ *
+ * Executes `just-bash` commands against the same `fs` used by the UI,
+ * so files created via `echo "x" > /foo.md` are immediately visible
+ * in the file tree. Shell state (env, cwd) resets between `exec()` calls.
+ *
+ * @example
+ * ```typescript
+ * const result = await bash.exec('echo "hello" > /greeting.md');
+ * const cat = await bash.exec('cat /greeting.md');
+ * console.log(cat.stdout); // "hello\n"
+ * ```
+ */
+export const bash = new Bash({ fs, cwd: '/' });

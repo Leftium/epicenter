@@ -4,7 +4,7 @@
 
 	let {
 		defaultValue = '',
-		icon = 'file' as 'file' | 'folder',
+		icon = 'file',
 		onConfirm,
 		onCancel,
 	}: {
@@ -51,13 +51,14 @@
 
 <div class="flex items-center gap-1 px-2 py-0.5">
 	{#if icon === 'folder'}
-		<FolderIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
+		<FolderIcon aria-hidden="true" class="h-4 w-4 shrink-0 text-muted-foreground" />
 	{:else}
-		<FileIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
+		<FileIcon aria-hidden="true" class="h-4 w-4 shrink-0 text-muted-foreground" />
 	{/if}
 	<input
 		bind:this={inputEl}
 		bind:value
+		aria-label={defaultValue ? `Rename ${icon}` : `New ${icon} name`}
 		class="h-6 w-full rounded-sm border border-ring bg-background px-1 text-sm outline-none"
 		onkeydown={(e) => {
 			if (e.key === 'Enter') {

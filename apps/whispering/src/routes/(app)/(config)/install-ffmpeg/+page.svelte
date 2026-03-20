@@ -7,6 +7,7 @@
 	import { Link } from '@epicenter/ui/link';
 	import { Snippet } from '@epicenter/ui/snippet';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import { Separator } from '@epicenter/ui/separator';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
@@ -143,7 +144,8 @@
 									</p>
 								</div>
 
-								<div class="border-t pt-4">
+								<Separator class="my-4" />
+								<div>
 									<p class="text-sm font-medium mb-2">Verify Installation</p>
 									<p class="text-sm text-muted-foreground mb-2">
 										After installation, verify FFmpeg is working:
@@ -321,7 +323,8 @@
 								</div>
 
 								<!-- Troubleshooting Section -->
-								<div class="space-y-6 border-t pt-8">
+								<Separator class="mt-2 mb-8" />
+								<div class="space-y-6">
 									<h3 class="text-lg font-semibold">Troubleshooting</h3>
 
 									<div class="space-y-5">
@@ -364,7 +367,8 @@
 											>
 												🔧 Advanced Troubleshooting
 											</summary>
-											<div class="px-5 pb-5 space-y-4 border-t bg-muted/5 pt-4">
+											<Separator />
+											<div class="px-5 pb-5 space-y-4 bg-muted/5 pt-4">
 												<ul
 													class="space-y-3 ml-4 list-disc text-sm text-muted-foreground"
 												>
@@ -411,7 +415,8 @@
 									</div>
 								</div>
 
-								<div class="border-t pt-4">
+								<Separator class="my-4" />
+								<div>
 									<p class="text-sm font-medium mb-2">Verify Installation</p>
 									<p class="text-sm text-muted-foreground mb-2">
 										After installation, verify FFmpeg is working by running this

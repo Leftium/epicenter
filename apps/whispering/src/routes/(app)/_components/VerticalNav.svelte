@@ -168,20 +168,21 @@
 			<!-- Database Migration (desktop only, when data exists) -->
 			{#if shouldShowMigrationButton}
 				<Sidebar.MenuItem>
-					<MigrationDialog>
-						{#snippet trigger({ props })}
-							<button
-								{...props}
-								class="group/menu-button relative flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0"
-							>
-								<Database />
-								<span>Database Migration</span>
-								<span
-									class="absolute right-2 top-2 size-2 rounded-full bg-warning before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-warning/50 before:animate-ping"
-								></span>
-							</button>
+					<Sidebar.MenuButton class="relative">
+						{#snippet child({ props })}
+							<MigrationDialog>
+								{#snippet trigger({ props: dialogProps })}
+									<button {...props} {...dialogProps}>
+										<Database />
+										<span>Database Migration</span>
+										<span
+											class="absolute right-2 top-2 size-2 rounded-full bg-warning before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-warning/50 before:animate-ping"
+										></span>
+									</button>
+								{/snippet}
+							</MigrationDialog>
 						{/snippet}
-					</MigrationDialog>
+					</Sidebar.MenuButton>
 				</Sidebar.MenuItem>
 			{/if}
 

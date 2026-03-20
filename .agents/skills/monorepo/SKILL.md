@@ -1,6 +1,6 @@
 ---
 name: monorepo
-description: Monorepo script commands and conventions for this codebase. Use when running builds, tests, formatting, linting, or type checking.
+description: Monorepo script commands and conventions for this codebase. Use when the user says "how do I run", "bun run", "build this", "run tests", "typecheck", or when running builds, tests, formatting, linting, or type checking across packages.
 metadata:
   author: epicenter
   version: '1.0'

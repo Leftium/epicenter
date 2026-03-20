@@ -1,12 +1,13 @@
 ---
 name: svelte
-description: Svelte 5 patterns including TanStack Query mutations, SvelteMap reactive state, shadcn-svelte components, and component composition. Use when writing Svelte components, using TanStack Query, working with SvelteMap/fromTable/fromKv, or working with shadcn-svelte UI.
+description: Svelte 5 patterns including runes ($state, $derived, $props), TanStack Query, SvelteMap reactive state, shadcn-svelte components, and component composition. Use when the user mentions .svelte files, Svelte components, or when using TanStack Query, fromTable/fromKv, or shadcn-svelte UI.
 metadata:
   author: epicenter
-  version: '1.0'
+  version: '2.0'
 ---
 
 # Svelte Guidelines
+
 ## Reference Repositories
 
 - [Svelte](https://github.com/sveltejs/svelte) — Svelte 5 framework with runes and fine-grained reactivity
@@ -25,6 +26,18 @@ Use this pattern when you need to:
 - Follow shadcn-svelte import, composition, and component organization patterns.
 - Refactor one-off `handle*` wrappers into inline template actions.
 - Convert SvelteMap data to arrays for derived state or component props.
+
+## References
+
+Load these on demand based on what you're working on:
+
+- If working with **TanStack Query mutations** (`createMutation`, `.execute()`, `onSuccess`/`onError`), read [references/tanstack-query-mutations.md](references/tanstack-query-mutations.md)
+- If working with **shadcn-svelte components** (imports, composition, styling, customization), read [references/shadcn-patterns.md](references/shadcn-patterns.md)
+- If working with **reactive state modules** (`fromTable`, `fromKv`, `$derived` arrays, state factories), read [references/reactive-state-pattern.md](references/reactive-state-pattern.md)
+- If working with **component architecture** (props, inlining handlers, self-contained components, view-mode branching, data-driven markup), read [references/component-patterns.md](references/component-patterns.md)
+- If working with **loading or empty states** (`Spinner`, `Empty.*`, `{#await}` blocks), read [references/loading-empty-states.md](references/loading-empty-states.md)
+
+---
 
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 
@@ -718,116 +731,6 @@ When a component receives a prop that already carries the information needed for
 
 If the data needed for a decision is already on a prop (directly or derivable), **always** derive from the prop. Global state is for information the component genuinely doesn't have.
 
-# View-Mode Branching Limit
+# Styling
 
-If a component checks the same boolean flag (like `isRecentlyDeletedView`, `isEditing`, `isCompact`) in **3 or more template locations**, the component is likely serving two purposes and should be considered for extraction.
-
-```svelte
-<!-- SMELL: Same flag checked 3+ times -->
-<script lang="ts">
-	const notes = $derived(
-		isRecentlyDeletedView ? deletedNotes : filteredNotes,  // branch 1
-	);
-</script>
-
-{#if !isRecentlyDeletedView}  <!-- branch 2 -->
-	<div>sort controls...</div>
-{/if}
-
-{#if isRecentlyDeletedView}  <!-- branch 3 -->
-	No deleted notes
-{:else}
-	No notes yet
-{/if}
-```
-
-### The Fix: Push Branching Up to the Parent
-
-Move the view-mode decision to the parent. The child component takes the varying data as props:
-
-```svelte
-<!-- Parent: one branch point, explicit data flow -->
-{#if viewState.isRecentlyDeletedView}
-	<NoteList
-		notes={notesState.deletedNotes}
-		title="Recently Deleted"
-		showControls={false}
-		emptyMessage="No deleted notes"
-	/>
-{:else}
-	<NoteList
-		notes={viewState.filteredNotes}
-		title={viewState.folderName}
-	/>
-{/if}
-```
-
-The child becomes dumb — it renders what it's told, with zero awareness of view modes. This keeps the branching in **one place** instead of scattered across the component tree.
-
-### The Threshold
-
-- **1–2 checks**: Acceptable — simple conditional rendering.
-- **3+ checks on the same flag**: The component is likely two views in one. Consider pushing the varying data up as props.
-
-# Data-Driven Repetitive Markup
-
-When **3 or more sequential sibling elements** follow an identical pattern with only data varying, consider extracting the data into an array and using `{#each}` or a `{#snippet}`.
-
-```svelte
-<!-- BAD: Copy-paste ×3 with only value/label changing -->
-<DropdownMenu.Item onclick={() => setSortBy('dateEdited')}>
-	{#if sortBy === 'dateEdited'}<CheckIcon class="mr-2 size-4" />{/if}
-	Date Edited
-</DropdownMenu.Item>
-<DropdownMenu.Item onclick={() => setSortBy('dateCreated')}>
-	{#if sortBy === 'dateCreated'}<CheckIcon class="mr-2 size-4" />{/if}
-	Date Created
-</DropdownMenu.Item>
-<DropdownMenu.Item onclick={() => setSortBy('title')}>
-	{#if sortBy === 'title'}<CheckIcon class="mr-2 size-4" />{/if}
-	Title
-</DropdownMenu.Item>
-
-<!-- GOOD: Data-driven with {#each} -->
-<script lang="ts">
-	const sortOptions = [
-		{ value: 'dateEdited' as const, label: 'Date Edited' },
-		{ value: 'dateCreated' as const, label: 'Date Created' },
-		{ value: 'title' as const, label: 'Title' },
-	];
-</script>
-
-{#each sortOptions as option}
-	<DropdownMenu.Item onclick={() => setSortBy(option.value)}>
-		{#if sortBy === option.value}
-			<CheckIcon class="mr-2 size-4" />
-		{:else}
-			<span class="mr-2 size-4"></span>
-		{/if}
-		{option.label}
-	</DropdownMenu.Item>
-{/each}
-```
-
-For more complex repeated patterns (e.g., toolbar buttons with tooltips), use `{#snippet}` to define the shared structure once:
-
-```svelte
-{#snippet toggleButton(pressed: boolean, onToggle: () => void, icon: typeof BoldIcon, label: string)}
-	<Tooltip.Root>
-		<Tooltip.Trigger>
-			<Toggle size="sm" {pressed} onPressedChange={onToggle}>
-				<svelte:component this={icon} class="size-4" />
-			</Toggle>
-		</Tooltip.Trigger>
-		<Tooltip.Content>{label}</Tooltip.Content>
-	</Tooltip.Root>
-{/snippet}
-
-{@render toggleButton(activeFormats.bold, () => editor?.chain().focus().toggleBold().run(), BoldIcon, 'Bold (⌘B)')}
-{@render toggleButton(activeFormats.italic, () => editor?.chain().focus().toggleItalic().run(), ItalicIcon, 'Italic (⌘I)')}
-```
-
-### When NOT to Extract
-
-- **2 or fewer** repetitions — extraction adds indirection without meaningful savings.
-- **Structurally similar but semantically different** — if the elements serve different purposes and might diverge, keep them separate.
+For general CSS and Tailwind guidelines, see the `styling` skill.

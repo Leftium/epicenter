@@ -60,7 +60,7 @@
 					fsState.toggleExpand(current);
 				} else {
 					const children = fsState.getChildIds(current);
-					if (children.length > 0) fsState.focus(children[0]!);
+					if (children.length > 0) fsState.focus(children[0] ?? null);
 				}
 				break;
 			}
@@ -134,8 +134,7 @@
 		</Empty.Header>
 	</Empty.Root>
 {:else}
-	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-	<TreeView.Root tabindex={0} onkeydown={handleKeydown}>
+	<TreeView.Root tabindex={0} aria-label="File explorer" onkeydown={handleKeydown}>
 		{#each fsState.rootChildIds as childId (childId)}
 			<FileTreeItem id={childId} />
 		{/each}

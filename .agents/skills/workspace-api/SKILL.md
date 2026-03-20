@@ -1,9 +1,9 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, migrations, and data access (CRUD + observation). Use when defining workspace schemas, reading/writing table data, observing changes, or writing migration functions.
+description: Workspace API patterns for defineTable, defineKv, versioning, migrations, and data access (CRUD + observation). Use when the user mentions workspace, defineTable, defineKv, createWorkspace, or when defining schemas, reading/writing table data, observing changes, or writing migrations.
 metadata:
   author: epicenter
-  version: '4.0'
+  version: '5.0'
 ---
 
 # Workspace API
@@ -124,112 +124,12 @@ const newId = generateConversationId();  // Good
 // const newId = generateId() as string as ConversationId;  // Bad
 ```
 
-### Rules
-
-1. **Every table gets its own ID type**: `DeviceId`, `SavedTabId`, `ConversationId`, `ChatMessageId`, etc.
-2. **Foreign keys use the referenced table's ID type**: `chatMessages.conversationId` uses `ConversationId`, not `'string'`
-3. **Optional FKs use `.or('undefined')`**: `'parentId?': ConversationId.or('undefined')`
-4. **Composite IDs are also branded**: `TabCompositeId`, `WindowCompositeId`, `GroupCompositeId`
-5. **Use generator functions**: When IDs are generated at runtime, use a `generate*` factory: `generateConversationId()`. Never scatter double-casts across call sites.
-6. **Functions accept branded types**: `function switchConversation(id: ConversationId)` not `(id: string)`
-
-### Why Not Plain `'string'`
-
-```typescript
-// BAD: Nothing prevents mixing conversation IDs with message IDs
-function deleteConversation(id: string) { ... }
-deleteConversation(message.id);  // Compiles! Silent bug.
-
-// GOOD: Compiler catches the mistake
-function deleteConversation(id: ConversationId) { ... }
-deleteConversation(message.id);  // Error: ChatMessageId is not ConversationId
-```
-
-### Reference Implementation
-
-See `apps/tab-manager/src/lib/workspace.ts` for the canonical example with 7 branded ID types and 4 generator functions.
-See `packages/filesystem/src/ids.ts` for the reference factory pattern (`generateRowId`, `generateColumnId`, `generateFileId`).
-See `specs/20260312T180000-branded-id-convention.md` for the full inventory and migration plan.
-
 ## Workspace File Structure
 
 A workspace file has two layers:
 
 1. **Table definitions with co-located types** — `defineTable(schema)` as standalone consts, each immediately followed by `export type = InferTableRow<typeof table>`
 2. **`createWorkspace(defineWorkspace({...}))` call** — composes pre-built tables into the client
-
-### Pattern
-
-```typescript
-import {
-	createWorkspace,
-	defineTable,
-	defineWorkspace,
-	type InferTableRow,
-} from '@epicenter/workspace';
-
-// ─── Tables (each followed by its type export) ──────────────────────────
-
-const usersTable = defineTable(
-	type({
-		id: UserId,
-		email: 'string',
-		_v: '1',
-	}),
-);
-export type User = InferTableRow<typeof usersTable>;
-
-const postsTable = defineTable(
-	type({
-		id: PostId,
-		authorId: UserId,
-		title: 'string',
-		_v: '1',
-	}),
-);
-export type Post = InferTableRow<typeof postsTable>;
-
-// ─── Workspace client ───────────────────────────────────────────────────
-
-export const workspaceClient = createWorkspace(
-	defineWorkspace({
-		id: 'my-workspace',
-		tables: {
-			users: usersTable,
-			posts: postsTable,
-		},
-	}),
-);
-```
-
-### Why This Structure
-
-- **Co-located types**: Each `export type` sits right below its `defineTable` — easy to verify 1:1 correspondence, easy to remove both together.
-- **Error co-location**: If you forget `_v` or `id`, the error shows on the `defineTable()` call right next to the schema — not buried inside `defineWorkspace`.
-- **Schema-agnostic inference**: `InferTableRow` works with any Standard Schema (arktype, zod, etc.) and handles migrations correctly (always infers the latest version's type).
-- **Fast type inference**: `InferTableRow<typeof usersTable>` resolves against a standalone const. Avoids the expensive `InferTableRow<NonNullable<(typeof definition)['tables']>['key']>` chain that forces TS to resolve the entire `defineWorkspace` return type.
-- **No intermediate `definition` const**: `defineWorkspace({...})` is inlined directly into `createWorkspace()` since it's only used once.
-
-### Anti-Pattern: Inline Tables + Deep Indirection
-
-```typescript
-// BAD: Tables inline in defineWorkspace, types derived through deep indirection
-const definition = defineWorkspace({
-	tables: {
-		users: defineTable(type({ id: 'string', email: 'string', _v: '1' })),
-	},
-});
-type Tables = NonNullable<(typeof definition)['tables']>;
-export type User = InferTableRow<Tables['users']>;
-
-// GOOD: Extract table, co-locate type, inline defineWorkspace
-const usersTable = defineTable(type({ id: UserId, email: 'string', _v: '1' }));
-export type User = InferTableRow<typeof usersTable>;
-
-export const workspaceClient = createWorkspace(
-	defineWorkspace({ tables: { users: usersTable } }),
-);
-```
 
 ## The `_v` Convention
 
@@ -240,155 +140,15 @@ export const workspaceClient = createWorkspace(
 - In migration returns: `_v: 2` (TypeScript narrows automatically, `as const` is unnecessary)
 - Convention: `_v` goes last in the object (`{ id, ...fields, _v: '1' }`)
 
-## Table Migration Function Rules
-
-1. Input type is a union of all version outputs
-2. Return type is the latest version output
-3. Use `switch (row._v)` for discrimination (tables always have `_v`)
-4. Final case returns `row` as-is (already latest)
-5. Always migrate directly to latest (not incrementally through each version)
-
-## Table Anti-Patterns
-
-### Incremental migration (v1 -> v2 -> v3)
-
-```typescript
-// BAD: Chains through each version
-.migrate((row) => {
-  let current = row;
-  if (current._v === 1) current = { ...current, views: 0, _v: 2 };
-  if (current._v === 2) current = { ...current, tags: [], _v: 3 };
-  return current;
-})
-
-// GOOD: Migrate directly to latest
-.migrate((row) => {
-  switch (row._v) {
-    case 1: return { ...row, views: 0, tags: [], _v: 3 };
-    case 2: return { ...row, tags: [], _v: 3 };
-    case 3: return row;
-  }
-})
-```
-
-### Note: `as const` is unnecessary
-
-TypeScript contextually narrows `_v: 2` to the literal type based on the return type constraint. Both of these work:
-
-```typescript
-return { ...row, views: 0, _v: 2 }; // Works — contextual narrowing
-return { ...row, views: 0, _v: 2 as const }; // Also works — redundant
-```
-
-## Reading & Observing Data
-
-### Table CRUD
-
-```typescript
-table.get(id)          // { status: 'valid', row } | { status: 'not_found' } | { status: 'invalid' }
-table.getAllValid()     // T[] — all rows that pass schema validation
-table.set(row)         // upsert full row (replaces entire row)
-table.update(id, partial) // merge partial fields into existing row
-table.delete(id)       // remove row
-table.has(id)          // boolean
-table.count()          // number
-```
-
-### KV CRUD
-
-```typescript
-kv.get('key')          // returns value (or default from defineKv)
-kv.set('key', value)   // set value
-```
-
-### Observation
-
-Tables and KV stores support change observation for reactive updates:
-
-```typescript
-// Table — callback receives changed row IDs per Y.Transaction
-const unsub = tables.posts.observe((changedIds) => {
-	for (const id of changedIds) {
-		const result = tables.posts.get(id);
-		// ...
-	}
-});
-
-// KV — per-key observation
-const unsub = kv.observe('theme', (change) => {
-	if (change.type === 'set') { /* change.value */ }
-	if (change.type === 'delete') { /* fell back to default */ }
-});
-```
-
-**In Svelte apps**, prefer `fromTable`/`fromKv` from `@epicenter/svelte` instead of raw observers. See the `svelte` skill for the reactive table state pattern.
-
-## Document Content (Per-Row Y.Docs)
-
-Tables with `.withDocument()` create a content Y.Doc per row. Content is stored using a **timeline model**: a `Y.Array('timeline')` inside the Y.Doc, where each entry is a typed `Y.Map` supporting text, richtext, and sheet modes.
-
-### Reading and Writing Content
-
-Use `handle.read()`/`handle.write()` on the document handle:
-
-```typescript
-const handle = await documents.open(fileId);
-
-// Read content (timeline-backed)
-const text = handle.read();
-
-// Write content (timeline-backed)
-handle.write('hello');
-
-// Editor binding — Y.Text (converts from other modes if needed)
-const ytext = handle.asText();
-
-// Richtext editor binding — Y.XmlFragment (converts if needed)
-const fragment = handle.asRichText();
-
-// Spreadsheet binding — SheetBinding (converts if needed)
-const { columns, rows } = handle.asSheet();
-
-// Current content mode
-handle.mode; // 'text' | 'richtext' | 'sheet' | undefined
-
-// Advanced timeline operations
-const tl = handle.timeline;
-```
-
-For filesystem operations, `fs.content.read(fileId)` and `fs.content.write(fileId, data)` open the handle and delegate to these methods internally.
-
-### Batching Mutations
-
-Use `handle.batch()` to group multiple mutations into a single Yjs transaction:
-
-```typescript
-handle.batch(() => {
-  handle.write('hello');
-  // ...other mutations
-});
-```
-
-**Do NOT call `handle.ydoc.transact()` directly.** Use `handle.batch()` instead.
-
-### Anti-Patterns
-
-**Do not access `handle.ydoc` for content operations:**
-
-```typescript
-// ❌ BAD: bypasses timeline abstraction
-const ytext = handle.ydoc.getText('content');
-handle.ydoc.transact(() => { ... });
-
-// ✅ GOOD: use handle methods
-const ytext = handle.asText();
-const fragment = handle.asRichText();
-handle.batch(() => { ... });
-```
-
-`handle.ydoc` is an **escape hatch** for document extensions (persistence, sync providers) and tests. App code should never need it.
-
 ## References
+
+Load these on demand based on what you're working on:
+
+- If working with **table migrations** (migration function rules, direct-to-latest strategy, migration anti-patterns, `as const` note), read [references/table-migrations.md](references/table-migrations.md)
+- If working with **table/KV CRUD or observation** (`get`, `set`, `update`, `observe`, Svelte observer guidance), read [references/table-kv-crud-observation.md](references/table-kv-crud-observation.md)
+- If working with **document content APIs** (`withDocument`, `handle.read/write`, mode bindings, `handle.batch`, `handle.ydoc` anti-pattern), read [references/document-content.md](references/document-content.md)
+
+Code references:
 
 - `packages/workspace/src/workspace/define-table.ts`
 - `packages/workspace/src/workspace/define-kv.ts`

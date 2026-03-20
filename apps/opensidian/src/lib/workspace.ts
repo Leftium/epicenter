@@ -1,11 +1,15 @@
+import { createApps } from '@epicenter/constants/apps';
 import {
 	createSqliteIndex,
 	createYjsFileSystem,
 	filesTable,
 } from '@epicenter/filesystem';
-import { Bash } from 'just-bash';
 import { createWorkspace } from '@epicenter/workspace';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import { Bash } from 'just-bash';
+
+const API_URL = createApps('production').API.URL;
 
 /**
  * Opensidian workspace infrastructure.
@@ -19,7 +23,18 @@ export const ws = createWorkspace({
 	id: 'opensidian',
 	tables: { files: filesTable },
 })
+	.withEncryption({})
 	.withExtension('persistence', indexeddbPersistence)
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: (workspaceId) => `${API_URL}/workspaces/${workspaceId}`,
+			getToken: async () => {
+				const { authState } = await import('$lib/auth');
+				return authState.token;
+			},
+		}),
+	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 
 /** Yjs-backed virtual filesystem with path-based operations. */

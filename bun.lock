@@ -158,6 +158,14 @@
     "apps/opensidian": {
       "name": "opensidian",
       "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/constants": "workspace:*",
+        "@epicenter/svelte": "workspace:*",
+        "@epicenter/sync-client": "workspace:*",
+        "arktype": "catalog:",
+        "better-auth": "catalog:",
+        "wellcrafted": "catalog:",
+      },
       "devDependencies": {
         "@codemirror/commands": "^6.10.3",
         "@codemirror/lang-markdown": "^6.5.0",
@@ -168,6 +176,7 @@
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
+        "@standard-schema/spec": "catalog:",
         "@sveltejs/adapter-auto": "catalog:",
         "@sveltejs/kit": "catalog:",
         "@sveltejs/vite-plugin-svelte": "catalog:",

@@ -5,21 +5,21 @@ import { feature, item, plan } from 'atmn';
 // ---------------------------------------------------------------------------
 
 export const aiChatFast = feature({
-	id: 'ai-chat-fast',
+	id: 'ai_chat_fast',
 	name: 'AI Chat (Fast)',
 	type: 'metered',
 	consumable: true,
 });
 
 export const aiChatSmart = feature({
-	id: 'ai-chat-smart',
+	id: 'ai_chat_smart',
 	name: 'AI Chat (Smart)',
 	type: 'metered',
 	consumable: true,
 });
 
 export const aiChatPremium = feature({
-	id: 'ai-chat-premium',
+	id: 'ai_chat_premium',
 	name: 'AI Chat (Premium)',
 	type: 'metered',
 	consumable: true,
@@ -30,7 +30,7 @@ export const aiChatPremium = feature({
 // ---------------------------------------------------------------------------
 
 export const aiCredits = feature({
-	id: 'ai-credits',
+	id: 'ai_credits',
 	name: 'AI Credits',
 	type: 'credit_system',
 	creditSchema: [
@@ -79,9 +79,29 @@ export const pro = plan({
 	],
 });
 
+/** Max — $100/month, 15000 credits + usage-based overage at $0.50/100 credits. */
+export const max = plan({
+	id: 'max',
+	name: 'Max',
+	group: 'main',
+	price: { amount: 100, interval: 'month' },
+	items: [
+		item({
+			featureId: aiCredits.id,
+			included: 15000,
+			price: {
+				amount: 0.5,
+				billingUnits: 100,
+				billingMethod: 'usage_based',
+				interval: 'month',
+			},
+		}),
+	],
+});
+
 /** One-time credit top-up add-on. 500 credits for $5. */
 export const creditTopUp = plan({
-	id: 'credit-top-up',
+	id: 'credit_top_up',
 	name: 'Credit Top-Up',
 	addOn: true,
 	items: [

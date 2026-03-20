@@ -1,4 +1,5 @@
 <script lang="ts">
+	import * as Empty from '@epicenter/ui/empty';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import ContentEditor from './ContentEditor.svelte';
 	import PathBreadcrumb from './PathBreadcrumb.svelte';
@@ -12,11 +13,12 @@
 		<div class="flex items-center border-b px-4 py-2"><PathBreadcrumb /></div>
 
 		{#if fsState.selectedNode.type === 'folder'}
-			<div
-				class="flex flex-1 items-center justify-center text-sm text-muted-foreground"
-			>
-				Select a file to view its contents
-			</div>
+			<Empty.Root class="flex-1 border-0">
+				<Empty.Header>
+					<Empty.Title>Folder selected</Empty.Title>
+					<Empty.Description>Select a file to view its contents</Empty.Description>
+				</Empty.Header>
+			</Empty.Root>
 		{:else}
 			<div class="flex-1 overflow-hidden">
 				{#key fsState.activeFileId}
@@ -25,15 +27,11 @@
 			</div>
 		{/if}
 	{:else}
-		<div
-			class="flex h-full items-center justify-center text-sm text-muted-foreground"
-		>
-			<div class="text-center">
-				<p>No file selected</p>
-				<p class="mt-1 text-xs">
-					Click a file in the tree to view its contents
-				</p>
-			</div>
-		</div>
+		<Empty.Root class="h-full border-0">
+			<Empty.Header>
+				<Empty.Title>No file selected</Empty.Title>
+				<Empty.Description>Click a file in the tree to view its contents</Empty.Description>
+			</Empty.Header>
+		</Empty.Root>
 	{/if}
 </div>

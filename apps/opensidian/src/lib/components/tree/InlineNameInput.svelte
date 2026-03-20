@@ -58,6 +58,7 @@
 	<input
 		bind:this={inputEl}
 		bind:value
+		aria-label={defaultValue ? `Rename ${icon}` : `New ${icon} name`}
 		class="h-6 w-full rounded-sm border border-ring bg-background px-1 text-sm outline-none"
 		onkeydown={(e) => {
 			if (e.key === 'Enter') {

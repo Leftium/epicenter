@@ -50,7 +50,10 @@ import {
 	PROVIDER_MODELS,
 	type Provider,
 } from '$lib/ai/providers';
-import { buildDeviceConstraints, TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
+import {
+	buildDeviceConstraints,
+	TAB_MANAGER_SYSTEM_PROMPT,
+} from '$lib/ai/system-prompt';
 import { toUiMessage } from '$lib/ai/ui-message';
 import { getDeviceId } from '$lib/device/device-id';
 import { remoteServerUrl } from '$lib/state/settings.svelte';
@@ -60,7 +63,7 @@ import {
 	type ConversationId,
 	generateChatMessageId,
 	generateConversationId,
-	workspaceClient,
+	workspace,
 	workspaceDefinitions,
 	workspaceTools,
 } from '$lib/workspace';
@@ -90,7 +93,7 @@ function createAiChatState() {
 
 	/** Read all conversations sorted by most recently updated first. */
 	const readAllConversations = (): Conversation[] =>
-		workspaceClient.tables.conversations
+		workspace.tables.conversations
 			.getAllValid()
 			.sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -106,7 +109,7 @@ function createAiChatState() {
 		if (conversations.length > 0) return undefined;
 		const id = generateConversationId();
 		const now = Date.now();
-		workspaceClient.tables.conversations.set({
+		workspace.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: DEFAULT_PROVIDER,
@@ -126,7 +129,7 @@ function createAiChatState() {
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		workspaceClient.tables.conversations.update(conversationId, {
+		workspace.tables.conversations.update(conversationId, {
 			...patch,
 			updatedAt: Date.now(),
 		});
@@ -134,7 +137,7 @@ function createAiChatState() {
 
 	/** Load persisted messages for a conversation from Y.Doc. */
 	function loadMessages(conversationId: ConversationId) {
-		return workspaceClient.tables.chatMessages
+		return workspace.tables.chatMessages
 			.filter((m) => m.conversationId === conversationId)
 			.sort((a, b) => a.createdAt - b.createdAt)
 			.map(toUiMessage);
@@ -157,7 +160,10 @@ function createAiChatState() {
 	/** Per-conversation ChatClient instances. Plain Map — not read in templates. */
 	const clients = new Map<ConversationId, ChatClient>();
 	/** Per-conversation timeout IDs for stuck 'submitted' status recovery. */
-	const submittedTimers = new Map<ConversationId, ReturnType<typeof setTimeout>>();
+	const submittedTimers = new Map<
+		ConversationId,
+		ReturnType<typeof setTimeout>
+	>();
 
 	/** Seconds to wait for the server to begin streaming before timing out. */
 	const SUBMITTED_TIMEOUT_MS = 60_000;
@@ -223,17 +229,33 @@ function createAiChatState() {
 				);
 			},
 			onLoadingChange: (isLoading) => {
-				console.log('[ai-chat] loading:', isLoading, 'conversation:', conversationId);
+				console.log(
+					'[ai-chat] loading:',
+					isLoading,
+					'conversation:',
+					conversationId,
+				);
 				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, isLoading });
 			},
 			onErrorChange: (error) => {
-				if (error) console.warn('[ai-chat] error:', error.message, 'conversation:', conversationId);
+				if (error)
+					console.warn(
+						'[ai-chat] error:',
+						error.message,
+						'conversation:',
+						conversationId,
+					);
 				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, error });
 			},
 			onStatusChange: (status) => {
-				console.log('[ai-chat] status:', status, 'conversation:', conversationId);
+				console.log(
+					'[ai-chat] status:',
+					status,
+					'conversation:',
+					conversationId,
+				);
 				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, status });
 
@@ -249,15 +271,22 @@ function createAiChatState() {
 				if (status === 'submitted') {
 					const timer = setTimeout(() => {
 						submittedTimers.delete(conversationId);
-						const latest = (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).status;
+						const latest = (
+							streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE
+						).status;
 						if (latest !== 'submitted') return;
 
-						console.warn('[ai-chat] timeout: no response within 60 s, stopping', conversationId);
+						console.warn(
+							'[ai-chat] timeout: no response within 60 s, stopping',
+							conversationId,
+						);
 						const c = clients.get(conversationId);
 						if (c) c.stop();
 						streamStore.set(conversationId, {
 							isLoading: false,
-							error: new Error('Request timed out. The AI did not respond within 60 seconds.'),
+							error: new Error(
+								'Request timed out. The AI did not respond within 60 seconds.',
+							),
 							status: 'error',
 						});
 					}, SUBMITTED_TIMEOUT_MS);
@@ -265,10 +294,15 @@ function createAiChatState() {
 				}
 			},
 			onError: (error) => {
-				console.error('[ai-chat] stream error:', error.message, 'conversation:', conversationId);
+				console.error(
+					'[ai-chat] stream error:',
+					error.message,
+					'conversation:',
+					conversationId,
+				);
 			},
 			onFinish: (message) => {
-				workspaceClient.tables.chatMessages.set({
+				workspace.tables.chatMessages.set({
 					id: message.id as string as ChatMessageId,
 					conversationId,
 					role: 'assistant',
@@ -389,7 +423,7 @@ function createAiChatState() {
 			// ── Derived convenience ──
 
 			get lastMessagePreview() {
-				const msgs = workspaceClient.tables.chatMessages
+				const msgs = workspace.tables.chatMessages
 					.filter((m) => m.conversationId === conversationId)
 					.sort((a, b) => b.createdAt - a.createdAt);
 				const last = msgs[0];
@@ -422,7 +456,7 @@ function createAiChatState() {
 					id: userMessageId,
 				});
 
-				workspaceClient.tables.chatMessages.set({
+				workspace.tables.chatMessages.set({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
@@ -444,7 +478,7 @@ function createAiChatState() {
 				const msgs = messageStore.get(conversationId) ?? [];
 				const lastMessage = msgs.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					workspaceClient.tables.chatMessages.delete(
+					workspace.tables.chatMessages.delete(
 						lastMessage.id as string as ChatMessageId,
 					);
 				}
@@ -456,27 +490,40 @@ function createAiChatState() {
 			},
 
 			/**
-			 * Respond to a tool approval request.
+			 * Approve a tool call that requires user confirmation.
 			 *
-			 * Called when the user clicks [Allow], [Always Allow], or [Deny]
-			 * on a mutation tool call in the chat. Delegates to ChatClient's
-			 * `addToolApprovalResponse`, which sends the response back to the
-			 * server to resume or cancel tool execution.
+			 * Called when the user clicks [Allow] or [Always Allow] on a
+			 * destructive tool call. Resumes server-side execution.
 			 *
 			 * @param approvalId - The `part.approval.id` from the ToolCallPart
-			 * @param approved - `true` to allow execution, `false` to deny
 			 *
 			 * @example
 			 * ```typescript
-			 * // User clicks "Allow"
-			 * handle.approveToolCall(part.approval.id, true);
-			 *
-			 * // User clicks "Deny"
-			 * handle.approveToolCall(part.approval.id, false);
+			 * handle.approveToolCall(part.approval.id);
 			 * ```
 			 */
-			approveToolCall(approvalId: string, approved: boolean) {
-				void client.addToolApprovalResponse({ id: approvalId, approved });
+			approveToolCall(approvalId: string) {
+				void client.addToolApprovalResponse({ id: approvalId, approved: true });
+			},
+
+			/**
+			 * Deny a tool call that requires user confirmation.
+			 *
+			 * Called when the user clicks [Deny] on a destructive tool call.
+			 * Cancels server-side execution.
+			 *
+			 * @param approvalId - The `part.approval.id` from the ToolCallPart
+			 *
+			 * @example
+			 * ```typescript
+			 * handle.denyToolCall(part.approval.id);
+			 * ```
+			 */
+			denyToolCall(approvalId: string) {
+				void client.addToolApprovalResponse({
+					id: approvalId,
+					approved: false,
+				});
 			},
 
 			rename(title: string) {
@@ -549,16 +596,18 @@ function createAiChatState() {
 		(conversations[0]?.id ?? '') as ConversationId,
 	);
 
-	// ── Observers ────────────────────────────────────────────────────
+	// ── Observers ────────────────────────────────────────────────────────────
 
-	workspaceClient.tables.conversations.observe(() => {
+	const _unobserveConversations = workspace.tables.conversations.observe(() => {
 		conversations = readAllConversations();
 		reconcileHandles();
 	});
+	const _unobserveChatMessages = workspace.tables.chatMessages.observe(() => {
+		refreshFromDoc(activeConversationId);
+	});
 
-	reconcileHandles();
-
-	void workspaceClient.whenReady.then(() => {
+	// Initialize after persistence loads
+	void workspace.whenReady.then(() => {
 		conversations = readAllConversations();
 		reconcileHandles();
 		const newId = ensureDefaultConversation();
@@ -567,9 +616,7 @@ function createAiChatState() {
 		}
 	});
 
-	workspaceClient.tables.chatMessages.observe(() => {
-		refreshFromDoc(activeConversationId);
-	});
+	reconcileHandles();
 
 	// ── Conversation CRUD ────────────────────────────────────────────
 
@@ -583,7 +630,7 @@ function createAiChatState() {
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 
-		workspaceClient.tables.conversations.set({
+		workspace.tables.conversations.set({
 			id,
 			title: opts?.title ?? 'New Chat',
 			parentId: opts?.parentId,
@@ -608,18 +655,18 @@ function createAiChatState() {
 	function deleteConversation(conversationId: ConversationId) {
 		destroyConversation(conversationId);
 
-		const msgs = workspaceClient.tables.chatMessages
+		const msgs = workspace.tables.chatMessages
 			.getAllValid()
 			.filter((m) => m.conversationId === conversationId);
-		workspaceClient.batch(() => {
+		workspace.batch(() => {
 			for (const m of msgs) {
-				workspaceClient.tables.chatMessages.delete(m.id);
+				workspace.tables.chatMessages.delete(m.id);
 			}
-			workspaceClient.tables.conversations.delete(conversationId);
+			workspace.tables.conversations.delete(conversationId);
 		});
 
 		if (activeConversationId === conversationId) {
-			const remaining = workspaceClient.tables.conversations
+			const remaining = workspace.tables.conversations
 				.getAllValid()
 				.sort((a, b) => b.updatedAt - a.updatedAt);
 			const first = remaining[0];

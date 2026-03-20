@@ -92,6 +92,26 @@ Epicenter is an ecosystem of open-source, local-first apps. Our eventual goal is
 
 Our vision is to build a personal workspace where you own your data, choose your models, and replace siloed apps with open, interoperable alternatives. All while preserving authenticity and being free and open source.
 
+## Encryption
+
+Epicenter encrypts data inside the CRDT structure before it ever leaves the application. We use AES-256-GCM via @noble/ciphers to wrap individual values, ensuring that every downstream layer—IndexedDB, sync servers, SQLite databases, and cloud backups—only ever handles ciphertext.
+
+```text
+App Code -> [Encrypt] -> Y.Doc -> IndexedDB / Sync Server / Backups (Ciphertext)
+```
+
+The server holds the key. It can decrypt your data. We chose this trade-off because genuine zero-knowledge encryption breaks the features people actually use: server-side search, AI processing, and simple password recovery. PGP has spent decades proving that manual key management is a UX dead end that even technical users avoid.
+
+This is defense in depth. A database dump or a compromised storage bucket yields nothing but noise without the application secret. It reduces the blast radius of a breach while keeping the app fast and functional.
+
+If you don't trust the server, self-host. When you run the server on your own infrastructure, server-managed encryption *is* zero-knowledge. The key derives from your own environment variables or password, and the server never sends it to us. Same code, same primitives, different trust boundary.
+
+**Further reading:**
+
+- [Why E2E Encryption Keeps Failing](docs/articles/why-e2e-encryption-keeps-failing.md)—PGP, Signal, and the structural problem
+- [Let the Server Handle Encryption](docs/articles/let-the-server-handle-encryption.md)—the pragmatic alternative
+- [If You Don't Trust the Server, Become the Server](docs/articles/if-you-dont-trust-the-server-become-the-server.md)—self-hosting as the clean answer
+
 ## Quick Start
 
 ### Install Epicenter Whispering

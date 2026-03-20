@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, and migrations. Use when defining workspace schemas, adding versions to existing tables, or writing migration functions.
+description: Workspace API patterns for defineTable, defineKv, versioning, migrations, and data access (CRUD + observation). Use when defining workspace schemas, reading/writing table data, observing changes, or writing migration functions.
 metadata:
   author: epicenter
   version: '4.0'
@@ -8,13 +8,20 @@ metadata:
 
 # Workspace API
 
+## Reference Repositories
+
+- [Yjs](https://github.com/yjs/yjs) — CRDT framework (foundation of workspace data layer)
+
 Type-safe schema definitions for tables and KV stores.
+
+> **Related Skills**: See `yjs` for Yjs CRDT patterns and shared types. See `svelte` for reactive wrappers (`fromTable`, `fromKv`).
 
 ## When to Apply This Skill
 
 - Defining a new table or KV store with `defineTable()` or `defineKv()`
 - Adding a new version to an existing table definition
 - Writing table migration functions
+- Reading, writing, or observing table/KV data
 
 ## Tables
 
@@ -272,6 +279,49 @@ TypeScript contextually narrows `_v: 2` to the literal type based on the return 
 return { ...row, views: 0, _v: 2 }; // Works — contextual narrowing
 return { ...row, views: 0, _v: 2 as const }; // Also works — redundant
 ```
+
+## Reading & Observing Data
+
+### Table CRUD
+
+```typescript
+table.get(id)          // { status: 'valid', row } | { status: 'not_found' } | { status: 'invalid' }
+table.getAllValid()     // T[] — all rows that pass schema validation
+table.set(row)         // upsert full row (replaces entire row)
+table.update(id, partial) // merge partial fields into existing row
+table.delete(id)       // remove row
+table.has(id)          // boolean
+table.count()          // number
+```
+
+### KV CRUD
+
+```typescript
+kv.get('key')          // returns value (or default from defineKv)
+kv.set('key', value)   // set value
+```
+
+### Observation
+
+Tables and KV stores support change observation for reactive updates:
+
+```typescript
+// Table — callback receives changed row IDs per Y.Transaction
+const unsub = tables.posts.observe((changedIds) => {
+	for (const id of changedIds) {
+		const result = tables.posts.get(id);
+		// ...
+	}
+});
+
+// KV — per-key observation
+const unsub = kv.observe('theme', (change) => {
+	if (change.type === 'set') { /* change.value */ }
+	if (change.type === 'delete') { /* fell back to default */ }
+});
+```
+
+**In Svelte apps**, prefer `fromTable`/`fromKv` from `@epicenter/svelte` instead of raw observers. See the `svelte` skill for the reactive table state pattern.
 
 ## Document Content (Per-Row Y.Docs)
 

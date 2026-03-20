@@ -90,8 +90,8 @@ export type YKeyValueLwwEntry<T> = { key: string; val: T; ts: number };
 
 export type YKeyValueLwwChange<T> =
 	| { action: 'add'; newValue: T }
-	| { action: 'update'; oldValue: T; newValue: T }
-	| { action: 'delete'; oldValue: T };
+	| { action: 'update'; newValue: T }
+	| { action: 'delete' };
 
 export type YKeyValueLwwChangeHandler<T> = (
 	changes: Map<string, YKeyValueLwwChange<T>>,
@@ -292,7 +292,7 @@ export class YKeyValueLww<T> {
 						// Reference equality: only process if this is the entry we have cached
 						if (this.map.get(entry.key) === entry) {
 							this.map.delete(entry.key);
-							changes.set(entry.key, { action: 'delete', oldValue: entry.val });
+							changes.set(entry.key, { action: 'delete' });
 						}
 					});
 			});
@@ -331,7 +331,6 @@ export class YKeyValueLww<T> {
 						// Was deleted in same transaction, now re-added
 						changes.set(newEntry.key, {
 							action: 'update',
-							oldValue: deleteEvent.oldValue,
 							newValue: newEntry.val,
 						});
 					} else {
@@ -350,7 +349,6 @@ export class YKeyValueLww<T> {
 						// New entry wins: delete old from array
 						changes.set(newEntry.key, {
 							action: 'update',
-							oldValue: existing.val,
 							newValue: newEntry.val,
 						});
 
@@ -373,7 +371,6 @@ export class YKeyValueLww<T> {
 							// New is rightmost, it wins
 							changes.set(newEntry.key, {
 								action: 'update',
-								oldValue: existing.val,
 								newValue: newEntry.val,
 							});
 							if (oldIndex !== -1) indicesToDelete.push(oldIndex);

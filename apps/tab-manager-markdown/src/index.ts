@@ -25,7 +25,7 @@ import { createMarkdownPersistenceExtension } from './markdown-persistence-exten
 console.log('Tab Manager Markdown Exporter starting...');
 
 const client = createWorkspace(definition)
-	.withExtension(
+	.withWorkspaceExtension(
 		'persistence',
 		createMarkdownPersistenceExtension({
 			outputDir: './markdown/devices',
@@ -47,11 +47,11 @@ console.log('✓ Exporting to ./markdown/devices/');
 console.log('');
 console.log('Press Ctrl+C to stop');
 
-// Graceful shutdown — extensions destroy in reverse order:
+// Graceful shutdown — extensions dispose in reverse order:
 // sync disconnects first, then persistence flushes pending writes.
 process.on('SIGINT', async () => {
 	console.log('\n\nShutting down...');
-	await client.destroy();
+	await client.dispose();
 	console.log('✓ Graceful shutdown complete');
 	process.exit(0);
 });

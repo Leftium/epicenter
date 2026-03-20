@@ -10,10 +10,8 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
-import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
-import type { ContentMode } from '../timeline/entries.js';
-import type { SheetBinding } from '../timeline/richtext.js';
 import type { Timeline } from '../timeline/timeline.js';
+import type { Extension, MaybePromise } from './lifecycle.js';
 
 // Re-export JSON types for consumers
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
@@ -27,6 +25,18 @@ export type { JsonObject, JsonValue } from 'wellcrafted/json';
  *
  * - `id`: Unique identifier for row lookup and identity
  * - `_v`: Schema version number for tracking which version this row conforms to
+ *
+ * ### Why `_v` instead of `v`
+ *
+ * The underscore prefix signals "framework metadata, not user data" (same convention
+ * as `_id` in MongoDB or `__typename` in GraphQL). Users intuitively avoid
+ * underscore-prefixed fields for business data, which prevents accidental collisions
+ * with framework internals.
+ *
+ * Historically, this also avoided collision with the old `EncryptedBlob.v` field.
+ * That rationale no longer applies—`EncryptedBlob` is now a branded bare `Uint8Array`
+ * detected via `instanceof Uint8Array && value[0] === 1`—but the underscore convention
+ * remains good practice for framework metadata regardless.
  *
  * Intersected with `JsonObject` to ensure all field values are JSON-serializable.
  * This guarantees data stored in Yjs can be safely serialized/deserialized.
@@ -72,8 +82,6 @@ export type RowResult<TRow> = ValidRowResult<TRow> | InvalidRowResult;
  * Includes not_found since the row may not exist.
  */
 export type GetResult<TRow> = RowResult<TRow> | NotFoundResult;
-
-
 
 /** Result of updating a single row */
 export type UpdateResult<TRow> =
@@ -193,7 +201,8 @@ export type DocumentExtensionRegistration = {
 	factory: (context: DocumentContext) =>
 		| (Record<string, unknown> & {
 				whenReady?: Promise<unknown>;
-				destroy?: () => MaybePromise<void>;
+				dispose?: () => MaybePromise<void>;
+				clearData?: () => MaybePromise<void>;
 		  })
 		| void;
 	tags: readonly string[];
@@ -243,85 +252,104 @@ export type ClaimedDocumentColumns<
 	TDocuments extends Record<string, DocumentConfig>,
 > = TDocuments[keyof TDocuments]['guid'];
 
+// ════════════════════════════════════════════════════════════════════════════
+// DOCUMENT CLIENT — The document's API surface (mirrors WorkspaceClient)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * The full API surface of an open content document.
+ *
+ * Mirrors `WorkspaceClient` for consistency: the document's core type that
+ * `DocumentContext` derives from via `Pick` and `DocumentHandle` derives from
+ * via `Omit`. Extends `Timeline` so all content operations (read, write, mode
+ * conversion) are available directly.
+ *
+ * @typeParam TDocExtensions - Accumulated document extension exports
+ */
+export type DocumentClient<
+	TDocExtensions extends Record<string, unknown> = Record<string, never>,
+> = Timeline & {
+	/** The workspace identifier. */
+	id: string;
+	/**
+	 * Self-reference for destructuring convenience.
+	 *
+	 * The document client IS the timeline (via intersection). This property
+	 * allows factories to destructure `({ timeline })` and get the same object.
+	 */
+	timeline: Timeline;
+	/**
+	 * Accumulated document extension exports with lifecycle hooks.
+	 *
+	 * Each entry is optional because tag-filtered extensions may be skipped
+	 * for certain document types. Guard access with optional chaining.
+	 */
+	extensions: {
+		[K in keyof TDocExtensions]?: Extension<
+			TDocExtensions[K] extends Record<string, unknown>
+				? TDocExtensions[K]
+				: Record<string, unknown>
+		>;
+	};
+	/** Composite whenReady of all document extensions. */
+	whenReady: Promise<void>;
+	/** Cleanup all document extension resources. */
+	dispose(): Promise<void>;
+};
+
+/**
+ * Context passed to document extension factories registered via `withDocumentExtension()`.
+ *
+ * Picks the fields factories need from `DocumentClient` without inheriting the
+ * `Timeline` intersection. This preserves the HAS-A relationship (`ctx.timeline`)
+ * rather than IS-A (`ctx.read()`), matching how factories actually destructure:
+ *
+ * ```typescript
+ * .withDocumentExtension('persistence', ({ ydoc }) => { ... })
+ * .withDocumentExtension('sync', ({ id, ydoc, timeline, whenReady }) => { ... })
+ * ```
+ *
+ * Uses `Pick` instead of `Omit<DocumentClient, 'dispose'>` because `DocumentClient`
+ * extends `Timeline` (the handle IS a timeline), but factory contexts have `timeline`
+ * as a field (factories destructure `{ timeline }`, not `{ read, write }`).
+ *
+ * @typeParam TDocExtensions - Accumulated document extension exports from prior calls.
+ *   Defaults to `Record<string, unknown>` so `DocumentExtensionRegistration` can
+ *   store factories with the wide type.
+ */
+export type DocumentContext<
+	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
+> = Pick<
+	DocumentClient<TDocExtensions>,
+	'id' | 'ydoc' | 'timeline' | 'extensions' | 'whenReady'
+>;
+
 /**
  * A handle to an open content Y.Doc, returned by `documents.open()`.
  *
- * All operations are scoped to this specific document. Timeline-backed
- * read/write methods are exposed directly on the handle.
+ * Computed from `DocumentClient` minus lifecycle control. The handle IS the
+ * timeline—all read, write, and mode conversion methods are available directly.
+ * Extension exports are accessed via `handle.extensions`.
+ *
+ * When `TDocExtensions` is specified (after generic threading), extension access
+ * is fully typed. Without generics, extensions are accessible but untyped.
+ *
+ * @typeParam TDocExtensions - Accumulated document extension exports.
+ *   Defaults to `Record<string, unknown>` for untyped access.
  *
  * @example
  * ```typescript
  * const handle = await documents.open(id);
- * handle.read();            // read from timeline (always string)
- * handle.write('hello');    // write to timeline (always text mode)
- * handle.asText();          // Y.Text for editor binding (converts if needed)
- * handle.asRichText();      // Y.XmlFragment for richtext binding (converts if needed)
- * handle.asSheet();         // Sheet columns/rows (converts if needed)
- * handle.mode;              // current content mode
- * handle.timeline;          // escape hatch for advanced ops
+ * handle.read();                          // read from timeline (always string)
+ * handle.write('hello');                   // write to timeline (mode-aware)
+ * handle.asText();                         // Y.Text for editor binding
+ * handle.currentType;                      // current content type
+ * handle.extensions.persistence?.whenReady; // extension access
  * ```
  */
-export type DocumentHandle = {
-	ydoc: Y.Doc;
-
-	/** Current content mode, or undefined if timeline is empty. */
-	readonly mode: ContentMode | undefined;
-
-	/** Read current content as string. Always succeeds. Text/richtext/sheet all flatten. */
-	read(): string;
-
-	/** Replace text content. If current mode is text, replaces in-place. Otherwise pushes new text entry. */
-	write(text: string): void;
-
-	/**
-	 * Get current content as Y.Text for editor binding.
-	 *
-	 * If already text mode, returns the existing Y.Text. If the timeline is
-	 * empty, creates a new text entry. If the current entry is a different mode,
-	 * converts the content and pushes a new text entry.
-	 *
-	 * All conversions always succeed—no content type can fail to convert to
-	 * another. Richtext→text is lossy (strips formatting).
-	 *
-	 * ```
-	 * DocumentHandle
-	 * ├── mode              → 'text' | 'richtext' | 'sheet' | undefined
-	 * ├── read()            → string           (always works, flattens any mode)
-	 * ├── write(text)       → void             (always works, text mode)
-	 * ├── asText()          → Y.Text           (converts if needed, editor binding)
-	 * ├── asRichText()      → Y.XmlFragment    (converts if needed, Tiptap binding)
-	 * ├── asSheet()         → SheetBinding     (converts if needed, spreadsheet)
-	 * ├── timeline          → Timeline         (escape hatch for advanced ops)
-	 * ├── batch(fn)         → void             (wraps ydoc.transact)
-	 * ├── ydoc              → Y.Doc            (escape hatch)
-	 * └── exports           → Record           (extension exports)
-	 * ```
-	 */
-	asText(): Y.Text;
-
-	/**
-	 * Get current content as Y.XmlFragment for richtext editor binding.
-	 *
-	 * If already richtext mode, returns the existing Y.XmlFragment. If empty,
-	 * creates a new richtext entry. If different mode, converts and pushes.
-	 */
-	asRichText(): Y.XmlFragment;
-
-	/**
-	 * Get current content as sheet columns/rows for spreadsheet binding.
-	 *
-	 * If already sheet mode, returns existing columns and rows. If empty,
-	 * creates a new sheet entry. If different mode, converts (parsed as CSV).
-	 */
-	asSheet(): SheetBinding;
-
-	/** Direct access to the timeline for advanced operations. */
-	timeline: Timeline;
-	/** Batch mutations into a single Yjs transaction. */
-	batch(fn: () => void): void;
-	/** Per-doc extension exports. */
-	exports: Record<string, Record<string, unknown>>;
-};
+export type DocumentHandle<
+	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
+> = Omit<DocumentClient<TDocExtensions>, 'dispose'>;
 
 /**
  * Runtime manager for a table's associated content Y.Docs.
@@ -343,7 +371,7 @@ export type DocumentHandle = {
  * await documents.close(row);
  * ```
  */
-export type Documents<TRow extends BaseRow> = {
+export type Documents<TRow extends BaseRow, TDocExtensions extends Record<string, unknown> = Record<string, unknown>> = {
 	/**
 	 * Open a content Y.Doc for a row.
 	 *
@@ -353,7 +381,7 @@ export type Documents<TRow extends BaseRow> = {
 	 *
 	 * @param input - A row (extracts GUID from the bound column) or a GUID string
 	 */
-	open(input: TRow | string): Promise<DocumentHandle>;
+	open(input: TRow | string): Promise<DocumentHandle<TDocExtensions>>;
 
 	/**
 	 * Close a document — free memory, disconnect providers.
@@ -364,7 +392,7 @@ export type Documents<TRow extends BaseRow> = {
 	close(input: TRow | string): Promise<void>;
 
 	/**
-	 * Close all open documents. Called automatically by workspace destroy().
+	 * Close all open documents. Called automatically by workspace dispose().
 	 */
 	closeAll(): Promise<void>;
 };
@@ -387,12 +415,12 @@ export type HasDocuments<T> = T extends { documents: infer TDocuments }
  * Maps each doc name to a `Documents<TLatest>` where `TLatest` is the
  * table's latest row type (inferred from the `migrate` function's return type).
  */
-export type DocumentsOf<T> = T extends {
+export type DocumentsOf<T, TDocExtensions extends Record<string, unknown> = Record<string, unknown>> = T extends {
 	documents: infer TDocuments;
 	migrate: (...args: never[]) => infer TLatest;
 }
 	? TLatest extends BaseRow
-		? { [K in keyof TDocuments]: Documents<TLatest> }
+		? { [K in keyof TDocuments]: Documents<TLatest, TDocExtensions> }
 		: never
 	: never;
 
@@ -411,12 +439,12 @@ export type DocumentsOf<T> = T extends {
  * client.documents.tags // Property 'tags' does not exist
  * ```
  */
-export type DocumentsHelper<TTableDefinitions extends TableDefinitions> = {
+export type DocumentsHelper<TTableDefinitions extends TableDefinitions, TDocExtensions extends Record<string, unknown> = Record<string, unknown>> = {
 	[K in keyof TTableDefinitions as HasDocuments<
 		TTableDefinitions[K]
 	> extends true
 		? K
-		: never]: DocumentsOf<TTableDefinitions[K]>;
+		: never]: DocumentsOf<TTableDefinitions[K], TDocExtensions>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -490,6 +518,12 @@ export type InferKvValue<T> =
  *
  * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
  */
+/** Transaction metadata exposed to table observe() callbacks. */
+export type TransactionMeta = {
+	/** The origin of this transaction. `null` for local writes, non-null for remote syncs. */
+	origin: unknown;
+};
+
 export type TableHelper<TRow extends BaseRow> = {
 	// ═══════════════════════════════════════════════════════════════════════
 	// PARSE
@@ -631,18 +665,19 @@ export type TableHelper<TRow extends BaseRow> = {
 	/**
 	 * Watch for row changes.
 	 *
-	 * The callback receives a `Set<string>` of row IDs that changed. To
+	 * The callback receives a `ReadonlySet<TRow['id']>` of row IDs that changed. To
 	 * determine what happened, call `table.get(id)`:
 	 * - `status === 'not_found'` → the row was deleted
 	 * - Otherwise → the row was added or updated
 	 *
-	 * Changes are batched per Y.Transaction.
+	 * Changes are batched per Y.Transaction. The `transaction` object exposes
+	 * `origin` for distinguishing local writes (`null`) from remote syncs.
 	 *
-	 * @param callback - Receives changed IDs and the Y.Transaction
+	 * @param callback - Receives changed IDs and transaction metadata
 	 * @returns Unsubscribe function
 	 */
 	observe(
-		callback: (changedIds: Set<string>, transaction: unknown) => void,
+		callback: (changedIds: ReadonlySet<TRow['id']>, transaction: TransactionMeta) => void,
 	): () => void;
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -923,12 +958,14 @@ export type WorkspaceClientWithActions<
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown>,
 	TActions extends Actions,
+	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = WorkspaceClient<
 	TId,
 	TTableDefs,
 	TKvDefs,
 	TAwarenessDefinitions,
-	TExtensions
+	TExtensions,
+	TDocExtensions
 > & {
 	actions: TActions;
 };
@@ -963,6 +1000,142 @@ export type WorkspaceClientWithActions<
  *   }));
  * ```
  */
+
+/**
+ * Configuration for `.withEncryption()`.
+ *
+ * The encryption model uses a two-stage key hierarchy:
+ * 1. **User key** (your input) — a 32-byte root key from any source (server HKDF, PBKDF2 password, cache)
+ * 2. **Workspace key** (derived internally) — `HKDF(userKey, "workspace:{id}")` ensures per-workspace isolation
+ *
+ * Symmetric hooks for the two encryption transitions:
+ * - `onActivate` — fires after HKDF derivation succeeds and stores are activated
+ * - `onDeactivate` — fires after stores are cleared and IndexedDB is wiped
+ */
+export type EncryptionConfig = {
+	/**
+	 * Called after `activateEncryption()` successfully derives the workspace key
+	 * and activates all encrypted stores. Does NOT fire on dedup skip (same key
+	 * passed twice) or when a stale derivation is discarded.
+	 *
+	 * Use for caching the user key so sidebar reopens don't need a server roundtrip.
+	 *
+	 * @param userKey - The raw user key bytes passed to `activateEncryption()`
+	 *
+	 * @example
+	 * ```typescript
+	 * createWorkspace(definition).withEncryption({
+	 *   onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
+	 *   onDeactivate: () => keyCache.clear(),
+	 * })
+	 * ```
+	 */
+	onActivate?: (userKey: Uint8Array) => MaybePromise<void>;
+	/**
+	 * Called after `deactivateEncryption()` completes store cleanup and IndexedDB wipe.
+	 * Use for platform-specific cleanup like clearing key caches.
+	 *
+	 * @example
+	 * ```typescript
+	 * createWorkspace(definition).withEncryption({
+	 *   onDeactivate: () => keyCache.clear(),
+	 * })
+	 * ```
+	 */
+	onDeactivate?: () => MaybePromise<void>;
+};
+
+/**
+ * Encryption methods added to the workspace client by `.withEncryption()`.
+ *
+ * These methods are NOT present on the base `WorkspaceClient` — only when
+ * `.withEncryption()` is called. This prevents non-encryption consumers
+ * (Whispering, CLI) from seeing encryption methods on the type.
+ *
+ * Typical lifecycle in a Chrome extension:
+ *
+ * ```typescript
+ * // Build (once, at module scope)
+ * const workspace = createWorkspace(definition)
+ *   .withEncryption({
+ *     onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
+ *     onDeactivate: () => keyCache.clear(),
+ *   })
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', createSyncExtension({ ... }));
+ *
+ * // Sign-in: just activate — onActivate caches the key automatically
+ * await workspace.activateEncryption(base64ToBytes(session.encryptionKey));
+ *
+ * // Sidebar reopen: restore from cache (no server roundtrip)
+ * const cached = await keyCache.load();
+ * if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+ *
+ * // Sign-out: deactivate (→ clear stores → wipe IndexedDB → keyCache.clear())
+ * await workspace.deactivateEncryption();
+ * ```
+ */
+export type EncryptionMethods = {
+	/** Whether encryption is currently active (a key has been derived and applied). */
+	readonly isEncrypted: boolean;
+	/**
+	 * Activate encryption with a root user key.
+	 *
+	 * This accepts a **root/user-level key**, not a final workspace content key.
+	 * The workspace internally derives a per-workspace key via HKDF-SHA256:
+	 *
+	 * ```
+	 * userKey (your input)
+	 *   \u2192 HKDF(userKey, "workspace:{id}") \u2192 workspaceKey (used for encryption)
+	 *   \u2192 XChaCha20-Poly1305(plaintext, workspaceKey) \u2192 ciphertext
+	 * ```
+	 *
+	 * This two-stage model is intentional:
+	 * - The same user key produces **independent** per-workspace keys
+	 * - Compromising one workspace key reveals nothing about other workspaces
+	 * - HKDF is deterministic and storage-free\u2014no key database needed
+	 *
+	 * The user key can come from any source\u2014the workspace doesn't care:
+	 * - **Cloud**: `base64ToBytes(session.encryptionKey)` (server-derived via HKDF)
+	 * - **Self-hosted**: `deriveKeyFromPassword(password, salt)` (PBKDF2, 600k iterations)
+	 * - **Cache restore**: `base64ToBytes(await keyCache.load())` (previously cached key)
+	 *
+	 * Pipeline: dedup (same bytes \u2192 skip) \u2192 HKDF derivation \u2192 race check \u2192 apply to stores \u2192 onActivate hook.
+	 *
+	 * The derivation is async (HKDF via `crypto.subtle`). A generation counter protects
+	 * against races: if the user signs out mid-derivation, the stale result is discarded
+	 * when it resolves because `deactivateEncryption` bumped the counter.
+	 *
+	 * @param userKey - Raw user key bytes (32-byte Uint8Array). NOT a workspace-specific key\u2014
+	 *   the workspace derives that internally. Pass `base64ToBytes(session.encryptionKey)` for
+	 *   cloud mode or `deriveKeyFromPassword(password, salt)` for password mode.
+	 *
+	 * @example
+	 * ```typescript
+	 * // Cloud: server-derived key from session
+	 * await workspace.activateEncryption(base64ToBytes(session.encryptionKey));
+	 *
+	 * // Self-hosted: password-derived key (PBKDF2 \u2192 user key \u2192 internal HKDF \u2192 workspace key)
+	 * const salt = await deriveSalt(userId, workspaceId);
+	 * const userKey = await deriveKeyFromPassword(password, salt);
+	 * await workspace.activateEncryption(userKey);
+	 *
+	 * // Cache restore: previously cached user key
+	 * const cached = await keyCache.load();
+	 * if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+	 * ```
+	 */
+	activateEncryption(userKey: Uint8Array): Promise<void>;
+	/**
+	 * Deactivate encryption and wipe persisted data.
+	 *
+	 * Pipeline: invalidate in-flight HKDF → clear stores → wipe IndexedDB (LIFO) → onDeactivate hook.
+	 *
+	 * Safe to call even if encryption was never activated — the full pipeline runs
+	 * regardless (stores and callbacks are no-ops when already deactivated).
+	 */
+	deactivateEncryption(): Promise<void>;
+};
 export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
@@ -970,12 +1143,14 @@ export type WorkspaceClientBuilder<
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown> = Record<string, never>,
 	TDocExtensions extends Record<string, unknown> = Record<string, never>,
+	TEncryption = Record<string, never>,
 > = WorkspaceClient<
 	TId,
 	TTableDefinitions,
 	TKvDefinitions,
 	TAwarenessDefinitions,
-	TExtensions
+	TExtensions,
+	TDocExtensions
 > & {
 	/**
 	 * Register an extension for BOTH the workspace Y.Doc AND all content document Y.Docs.
@@ -1002,16 +1177,11 @@ export type WorkspaceClientBuilder<
 	withExtension<TKey extends string, TExports extends Record<string, unknown>>(
 		key: TKey,
 		factory: (
-			context: ExtensionContext<
-				TId,
-				TTableDefinitions,
-				TKvDefinitions,
-				TAwarenessDefinitions,
-				TExtensions
-			>,
+			context: SharedExtensionContext,
 		) => TExports & {
 			whenReady?: Promise<unknown>;
-			destroy?: () => MaybePromise<void>;
+			dispose?: () => MaybePromise<void>;
+			clearData?: () => MaybePromise<void>;
 		},
 	): WorkspaceClientBuilder<
 		TId,
@@ -1019,8 +1189,13 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions &
-			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'destroy'>>>,
-		TDocExtensions & Record<TKey, Omit<TExports, 'whenReady' | 'destroy'>>
+			Record<
+				TKey,
+				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
+			>,
+		TDocExtensions &
+			Record<TKey, Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>,
+		TEncryption
 	>;
 
 	/**
@@ -1059,7 +1234,8 @@ export type WorkspaceClientBuilder<
 			>,
 		) => TExports & {
 			whenReady?: Promise<unknown>;
-			destroy?: () => MaybePromise<void>;
+			dispose?: () => MaybePromise<void>;
+			clearData?: () => MaybePromise<void>;
 		},
 	): WorkspaceClientBuilder<
 		TId,
@@ -1067,8 +1243,12 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions &
-			Record<TKey, Extension<Omit<TExports, 'whenReady' | 'destroy'>>>,
-		TDocExtensions
+			Record<
+				TKey,
+				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
+			>,
+		TDocExtensions,
+		TEncryption
 	>;
 
 	/**
@@ -1103,7 +1283,8 @@ export type WorkspaceClientBuilder<
 		factory: (context: DocumentContext<TDocExtensions>) =>
 			| (TDocExports & {
 					whenReady?: Promise<unknown>;
-					destroy?: () => MaybePromise<void>;
+					dispose?: () => MaybePromise<void>;
+					clearData?: () => MaybePromise<void>;
 			  })
 			| void,
 		options?: { tags?: ExtractAllDocumentTags<TTableDefinitions>[] },
@@ -1113,7 +1294,46 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions,
-		TDocExtensions & Record<K, Omit<TDocExports, 'whenReady' | 'destroy'>>
+		TDocExtensions &
+			Record<K, Omit<TDocExports, 'whenReady' | 'dispose' | 'clearData'>>,
+		TEncryption
+	>;
+
+	/**
+	 * Configure encryption for this workspace.
+	 *
+	 * Adds `activateEncryption`, `deactivateEncryption`, and `isEncrypted` to the
+	 * client. Without this call, those methods don't exist on the type—preventing
+	 * accidental use in non-encryption workspaces (Whispering, CLI).
+	 *
+	 * Batteries-included: handles HKDF derivation, byte-level dedup, race protection
+	 * via generation counter, and `onDeactivate` hook for platform-specific cleanup.
+	 *
+	 * Can be chained in any order with `.withExtension()`:
+	 *
+	 * @example
+	 * ```typescript
+	 * const workspace = createWorkspace(definition)
+	 *   .withEncryption({
+	 *     onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
+	 *     onDeactivate: () => keyCache.clear(),
+	 *   })
+	 *   .withExtension('persistence', indexeddbPersistence)
+	 *   .withExtension('sync', createSyncExtension({ ... }));
+	 *
+	 * await workspace.activateEncryption(userKeyBytes);
+	 * ```
+	 */
+	withEncryption(
+		config?: EncryptionConfig,
+	): WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions,
+		TDocExtensions,
+		EncryptionMethods
 	>;
 
 	/**
@@ -1133,7 +1353,8 @@ export type WorkspaceClientBuilder<
 				TTableDefinitions,
 				TKvDefinitions,
 				TAwarenessDefinitions,
-				TExtensions
+				TExtensions,
+				TDocExtensions
 			>,
 		) => TActions,
 	): WorkspaceClientWithActions<
@@ -1142,7 +1363,8 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions,
-		TActions
+		TActions,
+		TDocExtensions
 	>;
 };
 
@@ -1156,7 +1378,7 @@ export type { Extension } from './lifecycle.js';
 /**
  * Context passed to workspace extension factories.
  *
- * This is a `WorkspaceClient` minus `destroy` and `[Symbol.asyncDispose]` —
+	 * This is a `WorkspaceClient` minus lifecycle methods (`dispose`,
  * extension factories receive the full client surface but don't control
  * the workspace's lifecycle. They return their own lifecycle hooks instead.
  *
@@ -1185,13 +1407,32 @@ export type ExtensionContext<
 		TAwarenessDefinitions,
 		TExtensions
 	>,
-	'destroy' | typeof Symbol.asyncDispose
+	'dispose' | typeof Symbol.asyncDispose
+>;
+
+/**
+ * The shared subset of `ExtensionContext` and `DocumentContext`—fields that
+ * exist in both workspace and document scopes.
+ *
+ * Used by `withExtension()`, which registers the same factory for both scopes.
+ * If a factory needs workspace-specific fields (tables, awareness, etc.),
+ * use `withWorkspaceExtension()`. For document-specific fields (timeline),
+ * use `withDocumentExtension()`.
+ *
+ * ```typescript
+ * // Persistence only needs ydoc — works for both scopes:
+ * .withExtension('persistence', ({ ydoc }) => { ... })
+ * ```
+ */
+export type SharedExtensionContext = Pick<
+	ExtensionContext,
+	'ydoc' | 'whenReady'
 >;
 
 /**
  * Factory function that creates an extension.
  *
- * Returns a flat object with custom exports + optional `whenReady` and `destroy`.
+ * Returns a flat object with custom exports + optional `whenReady` and `dispose`.
  * The framework normalizes defaults via `defineExtension()`.
  *
  * @example Simple extension (works with any workspace)
@@ -1201,7 +1442,7 @@ export type ExtensionContext<
  *   return {
  *     provider,
  *     whenReady: provider.whenReady,
- *     destroy: () => provider.destroy(),
+ *     dispose: () => provider.dispose(),
  *   };
  * };
  * ```
@@ -1212,8 +1453,10 @@ export type ExtensionFactory<
 	TExports extends Record<string, unknown> = Record<string, unknown>,
 > = (context: ExtensionContext) => TExports & {
 	whenReady?: Promise<unknown>;
-	destroy?: () => MaybePromise<void>;
+	dispose?: () => MaybePromise<void>;
+	clearData?: () => MaybePromise<void>;
 };
+
 
 /** The workspace client returned by createWorkspace() */
 export type WorkspaceClient<
@@ -1222,6 +1465,7 @@ export type WorkspaceClient<
 	TKvDefinitions extends KvDefinitions,
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown>,
+	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = {
 	/** Workspace identifier */
 	id: TId;
@@ -1236,7 +1480,7 @@ export type WorkspaceClient<
 	/** Typed table helpers — pure CRUD, no document management */
 	tables: TablesHelper<TTableDefinitions>;
 	/** Document managers — only tables with `.withDocument()` appear here */
-	documents: DocumentsHelper<TTableDefinitions>;
+	documents: DocumentsHelper<TTableDefinitions, TDocExtensions>;
 	/** Typed KV helper */
 	kv: KvHelper<TKvDefinitions>;
 	/** Typed awareness helper — always present, like tables and kv */
@@ -1299,12 +1543,47 @@ export type WorkspaceClient<
 	 *
 	 */
 	batch(fn: () => void): void;
+	/**
+	 * Apply a binary Y.js update to the underlying document.
+	 *
+	 * Use this to hydrate the workspace from a persisted snapshot (e.g. a `.yjs`
+	 * file on disk) without exposing the raw Y.Doc to consumer code.
+	 *
+	 * @param update - A Uint8Array produced by `Y.encodeStateAsUpdate()` or equivalent
+	 */
+	loadSnapshot(update: Uint8Array): void;
 
-	/** Promise resolving when all extensions are ready */
+
+	/**
+	 * Resolves when all extensions have finished initializing.
+	 *
+	 * This is a composite promise—it resolves when every extension's individual
+	 * `whenReady` has resolved. Use it as a render gate in UI frameworks to
+	 * avoid showing the app before data is loaded.
+	 *
+	 * @example
+	 * ```svelte
+	 * {#await client.whenReady}
+	 *   <Loading />
+	 * {:then}
+	 *   <App />
+	 * {/await}
+	 * ```
+	 */
 	whenReady: Promise<void>;
 
-	/** Cleanup all resources */
-	destroy(): Promise<void>;
+	/**
+	 * Release all resources—data is preserved on disk.
+	 *
+	 * Calls `dispose()` on every extension in LIFO order (last registered, first disposed).
+	 * Stops observers, closes database connections, disconnects sync providers.
+	 *
+	 * After calling, the client is unusable.
+	 *
+	 * Safe to call multiple times (idempotent).
+	 */
+	dispose(): Promise<void>;
+
 
 	/** Async dispose support */
 	[Symbol.asyncDispose](): Promise<void>;
@@ -1318,6 +1597,6 @@ export type WorkspaceClient<
  * it can't express "might or might not have actions."
  */
 // biome-ignore lint/suspicious/noExplicitAny: intentional variance-friendly type
-export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any, any> & {
+export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any, any, any> & {
 	actions?: Actions;
 };

@@ -1,10 +1,14 @@
 ---
 name: typescript
 description: TypeScript code style, type co-location, naming conventions (including acronym casing), test organization, and arktype patterns. Use when writing TypeScript code, defining types, naming variables/functions, organizing tests, or working with arktype schemas.
+metadata:
+  author: epicenter
+  version: '1.0'
 ---
 
 # TypeScript Guidelines
 
+> **Related Skills**: See `arktype` for runtime type validation patterns. See `typebox` for TypeBox schema patterns. See `testing` for test file conventions.
 ## Core Rules
 
 - Always use `type` instead of `interface` in TypeScript.
@@ -82,6 +86,44 @@ description: TypeScript code style, type co-location, naming conventions (includ
   ```
 - **Prefer factory functions over classes**: Use `function createX() { return { ... } }` instead of `class X { ... }`. Closures provide structural privacy—everything above the return statement is private by position, everything inside it is the public API. Classes mix `private`/`protected`/public members in arbitrary order, forcing you to scan every member and check its modifier. See `docs/articles/closures-are-better-privacy-than-keywords.md` for rationale.
 
+## Boolean Naming: `is`/`has`/`can` Prefix
+
+Boolean properties, variables, and parameters MUST use a predicate prefix that reads as a yes/no question:
+
+- `is` — state or identity: `isEncrypted`, `isLoading`, `isVisible`, `isActive`
+- `has` — possession or presence: `hasToken`, `hasChildren`, `hasError`
+- `can` — capability or permission: `canWrite`, `canDelete`, `canUndo`
+
+```typescript
+// Good — reads as a question
+type Config = {
+	isEncrypted: boolean;
+	isReadOnly: boolean;
+	hasCustomTheme: boolean;
+	canExport: boolean;
+};
+
+get isEncrypted() { return currentKey !== undefined; }
+const isVisible = element.offsetParent !== null;
+if (hasToken) { ... }
+
+// Bad — ambiguous, doesn't read as yes/no
+type Config = {
+	encrypted: boolean;    // adjective without 'is'
+	readOnly: boolean;     // could be a noun
+	state: boolean;        // what state?
+	mode: boolean;         // what mode?
+};
+```
+
+This applies to:
+- Object/type properties (`isActive: boolean`)
+- Getter methods (`get isEncrypted()`)
+- Local variables (`const isValid = ...`)
+- Function parameters (`function toggle(isEnabled: boolean)`)
+- Function return values when the function is a predicate (`function isExpired(): boolean`)
+
+Exception: Match upstream library types exactly (e.g., `tab.pinned`, `window.focused` from APIs where the type is externally defined).
 
 ## Switch Over If/Else for Value Comparison
 
@@ -161,6 +203,23 @@ When the record is used once, inline it. When it's shared or has 5+ entries, ext
 
 See `docs/articles/record-lookup-over-nested-ternaries.md` for rationale.
 
+## Iterator Helpers Over Spread
+
+TS 5.9+ with `lib: ["ESNext"]` includes TC39 Iterator Helpers (Stage 4). `MapIterator`, `SetIterator`, and `ArrayIterator` all extend `IteratorObject`, which provides `.filter()`, `.map()`, `.find()`, `.toArray()`, `.some()`, `.every()`, `.reduce()`, `.take()`, `.drop()`, `.flatMap()`, and `.forEach()`.
+
+**Prefer `.toArray()` over `[...spread]`** for materializing iterators:
+
+```typescript
+// Bad
+const all = [...map.values()];
+const active = [...map.values()].filter((n) => !n.deleted);
+
+// Good
+const all = map.values().toArray();
+const active = map.values().filter((n) => !n.deleted).toArray();
+```
+
+`.sort()` is not on `IteratorObject` (requires random access). Materialize first: `map.values().toArray().sort(fn)`.
 # Type Co-location Principles
 
 ## Never Use Generic Type Buckets

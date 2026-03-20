@@ -8,7 +8,13 @@ metadata:
 
 # Query Layer Patterns
 
+## Reference Repositories
+
+- [TanStack Query](https://github.com/tanstack/query) — Async state management for data fetching
+
 The query layer is the reactive bridge between UI components and the service layer. It wraps pure service functions with caching, reactivity, and state management using TanStack Query and WellCrafted factories.
+
+> **Related Skills**: See `services-layer` for the service layer these queries consume. See `svelte` for Svelte-specific TanStack Query patterns.
 
 ## When to Apply This Skill
 

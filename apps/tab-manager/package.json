@@ -16,7 +16,8 @@
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
 		"postinstall": "wxt prepare"
 	},
-	"dependencies": {
+"dependencies": {
+		"@epicenter/svelte": "workspace:*",
 		"@epicenter/ai": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/sync-client": "workspace:*",
@@ -44,6 +45,7 @@
 	},
 	"devDependencies": {
 		"@standard-schema/spec": "catalog:",
+		"@epicenter/api": "workspace:*",
 		"@tailwindcss/vite": "catalog:",
 		"@types/node": "catalog:",
 		"@wxt-dev/module-svelte": "^2.0.3",

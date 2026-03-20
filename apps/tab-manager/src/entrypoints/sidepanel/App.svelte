@@ -1,29 +1,31 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import { onMount } from 'svelte';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
-	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import { CommandPalette } from '$lib/components/command-palette';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
-	import { workspaceClient } from '$lib/workspace';
+	import { registerDevice } from '$lib/workspace';
 
-	// Auth initialization — check cached session on mount, react to external token changes
+	// Auth initialization — check cached session on mount
 	onMount(() => {
 		authState.checkSession();
-		const unsubExternalSignIn = authState.onExternalSignIn(() =>
-			workspaceClient.extensions.sync.reconnect(),
-		);
-
+		void registerDevice();
+		// External sign-in handled by $effect in auth.svelte.ts
+		// Sync naturally handles auth token changes (stable client, no rebuild needed)
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&
@@ -33,32 +35,12 @@
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () => {
-			document.removeEventListener('visibilitychange', onVisibilityChange);
-			unsubExternalSignIn();
-		};
+		return () => document.removeEventListener('visibilitychange', onVisibilityChange);
 	});
 
 	let searchInputRef = $state<HTMLInputElement | null>(null);
 	let commandPaletteOpen = $state(false);
 	let aiDrawerOpen = $state(false);
-	function handleSearchKeydown(e: KeyboardEvent) {
-		// "/" in empty input opens command palette
-		if (e.key === '/' && unifiedViewState.searchQuery === '') {
-			e.preventDefault();
-			commandPaletteOpen = true;
-		}
-		// "@" in empty input opens AI drawer (Phase 4)
-		if (e.key === '@' && unifiedViewState.searchQuery === '') {
-			e.preventDefault();
-			aiDrawerOpen = true;
-		}
-		// Escape clears search
-		if (e.key === 'Escape') {
-			unifiedViewState.searchQuery = '';
-			searchInputRef?.blur();
-		}
-	}
 </script>
 
 <Tooltip.Provider>
@@ -78,7 +60,23 @@
 						type="search"
 						placeholder="Search tabs..."
 						bind:value={unifiedViewState.searchQuery}
-						onkeydown={handleSearchKeydown}
+						onkeydown={(e) => {
+					// "/" in empty input opens command palette
+					if (e.key === '/' && unifiedViewState.searchQuery === '') {
+						e.preventDefault();
+						commandPaletteOpen = true;
+					}
+					// "@" in empty input opens AI drawer (Phase 4)
+					if (e.key === '@' && unifiedViewState.searchQuery === '') {
+						e.preventDefault();
+						aiDrawerOpen = true;
+					}
+					// Escape clears search
+					if (e.key === 'Escape') {
+						unifiedViewState.searchQuery = '';
+						searchInputRef?.blur();
+					}
+				}}
 						class="h-8 pl-8 pr-8 text-sm [&::-webkit-search-cancel-button]:hidden"
 					/>
 					{#if unifiedViewState.searchQuery}
@@ -120,10 +118,24 @@
 		<!-- Gate on browser state seed so child components can read data synchronously -->
 		{#await browserState.whenReady}
 			<div class="flex-1 flex items-center justify-center">
-				<p class="text-sm text-muted-foreground">Loading tabs…</p>
+				<div class="flex flex-col items-center gap-3">
+					<Spinner class="size-5 text-muted-foreground" />
+					<p class="text-sm text-muted-foreground">Loading tabs…</p>
+				</div>
 			</div>
 		{:then _}
 			<div class="flex-1 min-h-0"><UnifiedTabList /></div>
+		{:catch}
+			<Empty.Root class="flex-1">
+				<Empty.Media>
+					<TriangleAlertIcon class="size-8 text-muted-foreground" />
+				</Empty.Media>
+				<Empty.Title>Failed to load tabs</Empty.Title>
+				<Empty.Description>
+					Something went wrong loading browser state. Try reopening the side
+					panel.
+				</Empty.Description>
+			</Empty.Root>
 		{/await}
 	</main>
 </Tooltip.Provider>

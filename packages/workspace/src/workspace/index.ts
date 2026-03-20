@@ -4,7 +4,8 @@
  * A composable, type-safe API for defining and creating workspaces
  * with versioned tables and KV stores.
  *
- * Tables use `_v: number` as a discriminant field for versioning and migration.
+ * Tables use `_v: number` as a discriminant field for versioning and migration
+ * (underscore signals framework metadata—see `BaseRow` for rationale).
  * KV stores use `defineKv(schema, defaultValue)` with validate-or-default semantics.
  *
  * @example
@@ -47,7 +48,7 @@
  *   .withExtension('persistence', persistence);
  *
  * // Cleanup
- * await client.destroy();
+ * await client.dispose();
  * ```
  *
  * @packageDocumentation
@@ -71,11 +72,10 @@ export {
 export { ExtensionError } from '../shared/errors.js';
 // Lifecycle protocol
 export type {
-	DocumentContext,
 	Extension,
-	Lifecycle,
 	MaybePromise,
-} from './lifecycle.js';
+	} from './lifecycle.js';
+export type { DocumentContext } from './types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
@@ -98,14 +98,8 @@ export { defineWorkspace } from './define-workspace.js';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { createWorkspace } from './create-workspace.js';
-
-// ════════════════════════════════════════════════════════════════════════════
-// Lower-Level APIs (Bring Your Own Y.Doc)
-// ════════════════════════════════════════════════════════════════════════════
-
-export { createAwareness } from './create-awareness.js';
-export { createKv } from './create-kv.js';
-export { createTables } from './create-tables.js';
+// Document origin sentinel (for filtering auto-bumps in table observers)
+export { DOCUMENTS_ORIGIN } from './create-document.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Introspection
@@ -138,6 +132,7 @@ export type {
 	// Base row type
 	BaseRow,
 	// Document types
+	DocumentClient,
 	DocumentConfig,
 	DocumentHandle,
 	Documents,
@@ -145,6 +140,7 @@ export type {
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,
+	SharedExtensionContext,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,
@@ -166,6 +162,7 @@ export type {
 	TableDefinitions,
 	// Helper types
 	TableHelper,
+	TransactionMeta,
 	TablesHelper,
 	UpdateResult,
 	// Result types - building blocks

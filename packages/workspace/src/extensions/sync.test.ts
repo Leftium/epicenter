@@ -10,7 +10,6 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type { SyncProvider } from '@epicenter/sync-client';
-import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createSyncExtension } from './sync';
 
@@ -19,7 +18,7 @@ type SyncExtensionResult = {
 	provider: SyncProvider;
 	reconnect: () => void;
 	whenReady: Promise<unknown>;
-	destroy: () => void;
+	dispose: () => void;
 };
 
 type SyncExtensionFactoryClient = Parameters<
@@ -27,12 +26,11 @@ type SyncExtensionFactoryClient = Parameters<
 >[0];
 
 /** Create a minimal mock context for the sync extension factory. */
-function createMockClient(ydoc: Y.Doc) {
+function createMockContext(ydoc: Y.Doc): SyncExtensionFactoryClient {
 	return {
 		ydoc,
-		awareness: { raw: new Awareness(ydoc) },
 		whenReady: Promise.resolve(),
-	} as unknown as SyncExtensionFactoryClient; // Minimal mock — only properties the sync extension accesses are provided
+	};
 }
 
 describe('createSyncExtension', () => {
@@ -45,7 +43,7 @@ describe('createSyncExtension', () => {
 			});
 
 			const result = factory(
-				createMockClient(ydoc),
+				createMockContext(ydoc),
 			) as unknown as SyncExtensionResult;
 
 			const provider = result.provider;
@@ -56,7 +54,7 @@ describe('createSyncExtension', () => {
 			// Same provider instance — reconnect delegates to disconnect/connect
 			expect(result.provider).toBe(provider);
 
-			result.destroy();
+			result.dispose();
 		});
 
 		test('reconnect sets provider to offline then allows reconnection', () => {
@@ -67,7 +65,7 @@ describe('createSyncExtension', () => {
 			});
 
 			const result = factory(
-				createMockClient(ydoc),
+				createMockContext(ydoc),
 			) as unknown as SyncExtensionResult;
 
 			result.reconnect();
@@ -76,22 +74,22 @@ describe('createSyncExtension', () => {
 			// connect() then kicks off the supervisor loop
 			expect(result.provider).toBeDefined();
 
-			result.destroy();
+			result.dispose();
 		});
 
-		test('destroy sets provider to offline', () => {
-			const ydoc = new Y.Doc({ guid: 'test-doc-destroy' });
+		test('dispose sets provider to offline', () => {
+			const ydoc = new Y.Doc({ guid: 'test-doc-dispose' });
 
 			const factory = createSyncExtension({
 				url: (id: string) => `http://localhost:8080/rooms/${id}`,
 			});
 
 			const result = factory(
-				createMockClient(ydoc),
+				createMockContext(ydoc),
 			) as unknown as SyncExtensionResult;
 
 			const provider = result.provider;
-			result.destroy();
+			result.dispose();
 
 			expect(provider.status.phase).toBe('offline');
 		});
@@ -105,13 +103,13 @@ describe('createSyncExtension', () => {
 		});
 
 		const result = factory(
-			createMockClient(ydoc),
+			createMockContext(ydoc),
 		) as unknown as SyncExtensionResult;
 
 		expect(result.provider).toBeDefined();
 		expect(result.provider.status.phase).toBe('offline');
 
-		result.destroy();
+		result.dispose();
 	});
 
 	test('whenReady awaits client.whenReady before connecting', async () => {
@@ -129,7 +127,6 @@ describe('createSyncExtension', () => {
 
 		const result = factory({
 			ydoc,
-			awareness: { raw: new Awareness(ydoc) },
 			whenReady: clientWhenReady.then(() => {
 				order.push('client-ready');
 			}),
@@ -152,6 +149,6 @@ describe('createSyncExtension', () => {
 
 		expect(order).toEqual(['client-ready', 'sync-ready']);
 
-		result.destroy();
+		result.dispose();
 	});
 });

@@ -7,15 +7,18 @@
  * All actions return Result types — they never throw.
  */
 
+import type { CustomSessionFields } from '@epicenter/api/src/custom-session-fields';
+import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
-import { untrack } from 'svelte';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
+import { workspace } from '$lib/workspace';
+import { keyCache } from './key-cache';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
 
@@ -93,6 +96,8 @@ type AuthPhase =
 	| { status: 'signed-out'; error?: string };
 
 function createAuthState() {
+	// ─── State ───
+
 	let phase = $state<AuthPhase>({ status: 'checking' });
 	let email = $state('');
 	let password = $state('');
@@ -116,36 +121,67 @@ function createAuthState() {
 		}),
 	);
 
+	// ─── Cross-context sync ───
+	// When another extension context clears the token (e.g. sign-out in popup),
+	// deactivate encryption and transition to signed-out.
+	authToken.watch((token) => {
+		if (!token && phase.status === 'signed-in') {
+			void authUser.set(undefined);
+			void workspace.deactivateEncryption();
+			phase = { status: 'signed-out' };
+		}
+	});
+
+	// When another extension context signs in (sets token + user),
+	// restore encryption from the session cache.
+	authUser.watch((user) => {
+		if (authToken.current && user && phase.status === 'signed-out') {
+			phase = { status: 'signed-in' };
+			void (async () => {
+				const cached = await keyCache.load();
+				if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+			})();
+		}
+	});
+
+	// ─── Helpers (private) ───
+
+	/**
+	 * Typed wrapper around `client.getSession()` that includes custom session fields.
+	 *
+	 * Better Auth's client doesn't know about customSession fields without
+	 * `customSessionClient<typeof auth>()` (which requires the server type).
+	 * This wrapper centralizes the single type assertion so callers get
+	 * typed access to `encryptionKey` and `keyVersion` without casting.
+	 */
+	async function getSession() {
+		const { data, error } = await client.getSession();
+		const customData = data
+			? (data as typeof data & CustomSessionFields)
+			: null;
+		return { data: customData, error };
+	}
+
 	async function clearState() {
 		await Promise.all([authToken.set(undefined), authUser.set(undefined)]);
 	}
 
-	// Listeners notified when an *external* context signs in (e.g. another sidepanel).
-	const externalSignInListeners = new Set<() => void>();
+	/**
+	 * Fetch the session to extract the encryption key, then activate encryption.
+	 *
+	 * Better Auth's signIn/signUp responses don't include customSession
+	 * fields—only getSession() returns them. Awaited after successful
+	 * sign-in so encryption activates before the caller's
+	 * post-sign-in code runs. No timing gap.
+	 */
+	async function refreshEncryptionKey() {
+		const result = await getSession().catch(() => null);
+		if (result?.data?.encryptionKey) {
+			await workspace.activateEncryption(base64ToBytes(result.data.encryptionKey));
+		}
+	}
 
-	$effect.root(() => {
-		// Token cleared externally (e.g. sign-out in another extension context).
-		$effect(() => {
-			if (!authToken.current && phase.status === 'signed-in') {
-				void authUser.set(undefined);
-				phase = { status: 'signed-out' };
-			}
-		});
-
-		// Token + user set externally (e.g. sign-in in another extension context).
-		$effect(() => {
-			if (
-				authToken.current &&
-				authUser.current &&
-				phase.status === 'signed-out'
-			) {
-				phase = { status: 'signed-in' };
-				untrack(() => {
-					for (const fn of externalSignInListeners) fn();
-				});
-			}
-		});
-	});
+	// ─── Public API ───
 
 	return {
 		get status() {
@@ -211,6 +247,7 @@ function createAuthState() {
 			} else {
 				phase = { status: 'signed-in' };
 				password = '';
+				await refreshEncryptionKey();
 			}
 
 			return result;
@@ -243,6 +280,7 @@ function createAuthState() {
 			} else {
 				phase = { status: 'signed-in' };
 				password = '';
+				await refreshEncryptionKey();
 			}
 
 			return result;
@@ -314,6 +352,7 @@ function createAuthState() {
 				};
 			} else {
 				phase = { status: 'signed-in' };
+				await refreshEncryptionKey();
 			}
 
 			return result;
@@ -322,6 +361,7 @@ function createAuthState() {
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
+			await workspace.deactivateEncryption();
 			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
 			phase = { status: 'signed-out' };
@@ -340,7 +380,15 @@ function createAuthState() {
 		 * rejection (4xx) clears state.
 		 */
 		async checkSession() {
-			await authToken.whenReady;
+			await Promise.all([authToken.whenReady, authUser.whenReady]);
+
+			const userId = authUser.current?.id;
+			if (userId) {
+				void (async () => {
+				const cached = await keyCache.load();
+					if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+				})();
+			}
 
 			const token = authToken.current;
 			if (!token) {
@@ -348,7 +396,7 @@ function createAuthState() {
 				return Ok(null);
 			}
 
-			const { data, error: sessionError } = await client.getSession();
+			const { data, error: sessionError } = await getSession();
 
 			if (sessionError) {
 				const isAuthRejection =
@@ -363,44 +411,27 @@ function createAuthState() {
 
 				// 4xx → server explicitly rejected the token
 				await clearState();
+				await workspace.deactivateEncryption();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
 
 			if (!data) {
 				await clearState();
+				await workspace.deactivateEncryption();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
 
 			const user = serializeDates(data.user);
 			await authUser.set(user);
+			if (data.encryptionKey) {
+				await workspace.activateEncryption(base64ToBytes(data.encryptionKey));
+			}
 			phase = { status: 'signed-in' };
 			return Ok(user);
 		},
 
-		/**
-		 * Subscribe to external sign-in events (e.g. sign-in from another extension context).
-		 *
-		 * When the auth token and user appear while this context is signed-out,
-		 * the callback fires. Useful for triggering side effects like reconnecting
-		 * sync without coupling those concerns to the auth module.
-		 *
-		 * @returns Unsubscribe function. Call in `onMount` cleanup.
-		 *
-		 * @example
-		 * ```typescript
-		 * onMount(() => {
-		 *     return authState.onExternalSignIn(() => workspaceClient.extensions.sync.reconnect());
-		 * });
-		 * ```
-		 */
-		onExternalSignIn(callback: () => void) {
-			externalSignInListeners.add(callback);
-			return () => {
-				externalSignInListeners.delete(callback);
-			};
-		},
 	};
 }
 

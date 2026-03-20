@@ -1,6 +1,6 @@
 // Content (document layer)
 export {
-	type ContentMode,
+	type ContentType,
 	type SheetEntry,
 } from './content/index.js';
 
@@ -14,11 +14,9 @@ export { createYjsFileSystem, type YjsFileSystem } from './file-system.js';
 export {
 	markdownSchema,
 	parseFrontmatter,
-	parseSheetFromCsv,
 	reorderColumn,
 	reorderRow,
 	serializeMarkdownWithFrontmatter,
-	serializeSheetToCsv,
 	serializeXmlFragmentToMarkdown,
 	updateYMapFromRecord,
 	updateYXmlFragmentFromString,
@@ -44,3 +42,16 @@ export {
 	FileTree,
 	validateName,
 } from './tree/index.js';
+
+// Extensions
+export {
+	createSqliteIndex,
+	type SearchResult,
+	type SqliteIndex,
+	type SqliteIndexOptions,
+} from './extensions/sqlite-index/index.js';
+export {
+	generateDDL,
+	generateCreateIndexSQL,
+	generateCreateTableSQL,
+} from './extensions/sqlite-index/ddl.js';

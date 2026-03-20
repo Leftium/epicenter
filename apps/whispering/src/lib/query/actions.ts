@@ -327,7 +327,7 @@ const stopVadRecording = defineMutation({
 	},
 });
 
-export const commands = {
+export const actions = {
 	startManualRecording,
 	stopManualRecording,
 	startVadRecording,

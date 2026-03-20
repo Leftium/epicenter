@@ -12,6 +12,8 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
+import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import type { YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import { createWorkspace } from './create-workspace.js';
@@ -199,7 +201,7 @@ describe('createWorkspace benchmarks', () => {
 					...definition,
 					id: `bench-workspace-${i}`,
 				});
-				client.destroy();
+				client.dispose();
 			}
 		});
 
@@ -371,7 +373,9 @@ describe('table benchmarks', () => {
 describe('KV benchmarks', () => {
 	test('repeated set on same key (10,000 times)', () => {
 		const ydoc = new Y.Doc();
-		const kv = createKv(ydoc, {
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
+		const ykv = createEncryptedYkvLww(yarray, {});
+		const kv = createKv(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 
@@ -390,7 +394,9 @@ describe('KV benchmarks', () => {
 
 	test('set + get alternating (10,000 cycles)', () => {
 		const ydoc = new Y.Doc();
-		const kv = createKv(ydoc, {
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
+		const ykv = createEncryptedYkvLww(yarray, {});
+		const kv = createKv(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 
@@ -407,7 +413,9 @@ describe('KV benchmarks', () => {
 
 	test('set + delete cycle (1,000 times)', () => {
 		const ydoc = new Y.Doc();
-		const kv = createKv(ydoc, {
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
+		const ykv = createEncryptedYkvLww(yarray, {});
+		const kv = createKv(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 

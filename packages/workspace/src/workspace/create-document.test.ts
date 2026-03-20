@@ -36,7 +36,7 @@ function setupTables() {
 function setup(
 	overrides?: Pick<
 		CreateDocumentsConfig<typeof fileSchema.infer>,
-		'documentExtensions' | 'documentTags' | 'onRowDeleted'
+		'documentExtensions' | 'documentTags'
 	>,
 ) {
 	const { ydoc, tables } = setupTables();
@@ -229,7 +229,7 @@ describe('createDocuments', () => {
 
 			let capturedOrigin: unknown = null;
 			tables.files.observe((_changedIds, transaction) => {
-				capturedOrigin = (transaction as Y.Transaction).origin;
+				capturedOrigin = transaction.origin;
 			});
 
 			const handle = await documents.open('f1');
@@ -286,7 +286,7 @@ describe('createDocuments', () => {
 		});
 	});
 
-	describe('handle.exports', () => {
+	describe('handle.extensions', () => {
 		test('returns accumulated exports keyed by extension name', async () => {
 			const { documents } = setup({
 				documentExtensions: [
@@ -294,7 +294,7 @@ describe('createDocuments', () => {
 						key: 'persistence',
 						factory: () => ({
 							clearData: () => {},
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},
@@ -302,18 +302,18 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			expect(handle.exports).toBeDefined();
-			expect(handle.exports.persistence).toBeDefined();
-			expect(typeof handle.exports.persistence?.clearData).toBe('function');
+			expect(handle.extensions).toBeDefined();
+			expect(handle.extensions.persistence).toBeDefined();
+			expect(typeof handle.extensions.persistence?.clearData).toBe('function');
 		});
 
-		test('lifecycle-only extension is accessible with whenReady and destroy', async () => {
+		test('lifecycle-only extension is accessible with whenReady and dispose', async () => {
 			const { documents } = setup({
 				documentExtensions: [
 					{
 						key: 'lifecycle-only',
 						factory: () => ({
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},
@@ -321,11 +321,11 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			expect(handle.exports).toBeDefined();
-			const ext = handle.exports['lifecycle-only'];
+			expect(handle.extensions).toBeDefined();
+			const ext = handle.extensions['lifecycle-only'];
 			expect(ext).toBeDefined();
 			expect(ext?.whenReady).toBeInstanceOf(Promise);
-			expect(typeof ext?.destroy).toBe('function');
+			expect(typeof ext?.dispose).toBe('function');
 		});
 
 		test('accepts a row object', async () => {
@@ -350,8 +350,8 @@ describe('createDocuments', () => {
 			tables.files.set(row);
 
 			const handle = await documents.open(row);
-			expect(handle.exports).toBeDefined();
-			expect(typeof handle.exports.test?.helper).toBe('function');
+			expect(handle.extensions).toBeDefined();
+			expect(typeof handle.extensions.test?.helper).toBe('function');
 		});
 	});
 
@@ -373,7 +373,7 @@ describe('createDocuments', () => {
 	});
 
 	describe('row deletion', () => {
-		test('default onRowDeleted calls close', async () => {
+		test('deleting a row closes its open document', async () => {
 			const { tables, documents } = setup();
 			tables.files.set({
 				id: 'f1',
@@ -390,34 +390,7 @@ describe('createDocuments', () => {
 			expect(handle2.ydoc).not.toBe(handle1.ydoc);
 		});
 
-		test('custom onRowDeleted fires with the guid', async () => {
-			let deletedGuid = '';
-			const { tables } = setupTables();
-
-			const documents = createDocuments({
-				guidKey: 'id',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-				tableHelper: tables.files,
-				ydoc: new Y.Doc({ guid: 'test' }),
-				onRowDeleted: (_documents, guid) => {
-					deletedGuid = guid;
-				},
-			});
-
-			tables.files.set({
-				id: 'f1',
-				name: 'test.txt',
-				updatedAt: 0,
-				_v: 1,
-			});
-
-			await documents.open('f1');
-			tables.files.delete('f1');
-
-			expect(deletedGuid).toBe('f1');
-		});
 	});
-
 	describe('document extension hooks', () => {
 		test('hooks are called in order', async () => {
 			const order: number[] = [];
@@ -428,7 +401,7 @@ describe('createDocuments', () => {
 						key: 'first',
 						factory: () => {
 							order.push(1);
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -436,7 +409,7 @@ describe('createDocuments', () => {
 						key: 'second',
 						factory: () => {
 							order.push(2);
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -444,7 +417,7 @@ describe('createDocuments', () => {
 						key: 'third',
 						factory: () => {
 							order.push(3);
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -464,7 +437,7 @@ describe('createDocuments', () => {
 						key: 'first',
 						factory: () => ({
 							whenReady: Promise.resolve(),
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},
@@ -472,7 +445,7 @@ describe('createDocuments', () => {
 						key: 'second',
 						factory: ({ whenReady }) => {
 							secondReceivedWhenReady = whenReady instanceof Promise;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -500,7 +473,7 @@ describe('createDocuments', () => {
 						key: 'normal-hook',
 						factory: () => {
 							hooksCalled++;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -527,7 +500,7 @@ describe('createDocuments', () => {
 						key: 'universal',
 						factory: () => {
 							called = true;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [], // universal — no tags
 					},
@@ -547,7 +520,7 @@ describe('createDocuments', () => {
 						key: 'sync-ext',
 						factory: () => {
 							called = true;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: ['synced'],
 					},
@@ -567,7 +540,7 @@ describe('createDocuments', () => {
 						key: 'ephemeral-ext',
 						factory: () => {
 							called = true;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: ['ephemeral'],
 					},
@@ -587,7 +560,7 @@ describe('createDocuments', () => {
 						key: 'tagged',
 						factory: () => {
 							calls.push('tagged');
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: ['persistent'],
 					},
@@ -595,7 +568,7 @@ describe('createDocuments', () => {
 						key: 'universal',
 						factory: () => {
 							calls.push('universal');
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -617,7 +590,7 @@ describe('createDocuments', () => {
 						key: 'first',
 						factory: () => ({
 							someValue: 42,
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},
@@ -625,7 +598,7 @@ describe('createDocuments', () => {
 						key: 'second',
 						factory: (context) => {
 							capturedFirstExtension = context.extensions.first;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -650,7 +623,7 @@ describe('createDocuments', () => {
 						key: 'tagged',
 						factory: () => ({
 							label: 'tagged',
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: ['persistent'],
 					},
@@ -659,7 +632,7 @@ describe('createDocuments', () => {
 						factory: (context) => {
 							taggedPresentForPersistentDoc =
 								context.extensions.tagged !== undefined;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -675,7 +648,7 @@ describe('createDocuments', () => {
 						key: 'tagged',
 						factory: () => ({
 							label: 'tagged',
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: ['persistent'],
 					},
@@ -684,7 +657,7 @@ describe('createDocuments', () => {
 						factory: (context) => {
 							taggedPresentForEphemeralDoc =
 								context.extensions.tagged !== undefined;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -705,7 +678,7 @@ describe('createDocuments', () => {
 					{
 						key: 'first',
 						factory: () => ({
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},
@@ -713,7 +686,7 @@ describe('createDocuments', () => {
 						key: 'second',
 						factory: (context) => {
 							firstExtensionSeen = context.extensions.first !== undefined;
-							return { destroy: () => {} };
+							return { dispose: () => {} };
 						},
 						tags: [],
 					},
@@ -724,14 +697,14 @@ describe('createDocuments', () => {
 			expect(firstExtensionSeen).toBe(true);
 		});
 
-		test('handle.exports includes flat exports from extensions', async () => {
+		test('handle.extensions includes flat exports from extensions', async () => {
 			const { documents } = setup({
 				documentExtensions: [
 					{
 						key: 'test',
 						factory: () => ({
 							helper: () => 42,
-							destroy: () => {},
+							dispose: () => {},
 						}),
 						tags: [],
 					},
@@ -739,11 +712,11 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			expect(handle.exports).toBeDefined();
-			if (!handle.exports.test) {
-				throw new Error('Expected exports for test extension');
+			expect(handle.extensions).toBeDefined();
+			if (!handle.extensions.test) {
+				throw new Error('Expected extensions for test extension');
 			}
-			expect(typeof handle.exports.test.helper).toBe('function');
+			expect(typeof handle.extensions.test.helper).toBe('function');
 		});
 	});
 });
@@ -777,7 +750,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		const text = handle.asText();
 		expect(text).toBeInstanceOf(Y.Text);
-		expect(handle.mode).toBe('text');
+		expect(handle.currentType).toBe('text');
 	});
 
 	test('asText on text entry returns existing Y.Text', async () => {
@@ -787,40 +760,40 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		const text = handle.asText();
 		expect(text.toString()).toBe('hello');
-		expect(handle.timeline.length).toBe(1);
+		expect(handle.length).toBe(1);
 	});
 
 	test('asText on richtext entry converts (lossy)', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const rtEntry = handle.timeline.pushRichtext();
-		const fragment = rtEntry.get('content') as Y.XmlFragment;
+		const fragment = handle.asRichText();
 		const p = new Y.XmlElement('paragraph');
 		const t = new Y.XmlText();
 		t.insert(0, 'Rich content');
 		p.insert(0, [t]);
 		fragment.insert(0, [p]);
 
-		expect(handle.mode).toBe('richtext');
+		expect(handle.currentType).toBe('richtext');
 
 		const text = handle.asText();
 		expect(text.toString()).toBe('Rich content');
-		expect(handle.mode).toBe('text');
-		expect(handle.timeline.length).toBe(2);
+		expect(handle.currentType).toBe('text');
+		expect(handle.length).toBe(2);
 	});
 
 	test('asText on sheet entry converts to CSV', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		handle.timeline.pushSheetFromCsv('Name,Age\nAlice,30\n');
-		expect(handle.mode).toBe('sheet');
+		handle.write('Name,Age\nAlice,30\n');
+		handle.asSheet();
+		expect(handle.currentType).toBe('sheet');
 
 		const text = handle.asText();
 		expect(text.toString()).toBe('Name,Age\nAlice,30\n');
-		expect(handle.mode).toBe('text');
-		expect(handle.timeline.length).toBe(2);
+		expect(handle.currentType).toBe('text');
+		expect(handle.length).toBe(3);
 	});
 
 	// ─── asRichText ────────────────────────────────────────────────────
@@ -831,17 +804,17 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		const fragment = handle.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.mode).toBe('richtext');
+		expect(handle.currentType).toBe('richtext');
 	});
 
 	test('asRichText on richtext entry returns existing fragment', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.timeline.pushRichtext();
+		handle.asRichText();
 
 		const fragment = handle.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.timeline.length).toBe(1);
+		expect(handle.length).toBe(1);
 	});
 
 	test('asRichText on text entry converts to paragraphs', async () => {
@@ -851,20 +824,21 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		const fragment = handle.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.mode).toBe('richtext');
-		expect(handle.timeline.length).toBe(2);
+		expect(handle.currentType).toBe('richtext');
+		expect(handle.length).toBe(2);
 		expect(handle.read()).toBe('Line 1\nLine 2');
 	});
 
 	test('asRichText on sheet entry converts CSV to paragraphs', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.timeline.pushSheetFromCsv('A,B\n1,2\n');
+		handle.write('A,B\n1,2\n');
+		handle.asSheet();
 
 		const fragment = handle.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.mode).toBe('richtext');
-		expect(handle.timeline.length).toBe(2);
+		expect(handle.currentType).toBe('richtext');
+		expect(handle.length).toBe(3);
 	});
 
 	// ─── asSheet ──────────────────────────────────────────────────────
@@ -876,18 +850,19 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const sheet = handle.asSheet();
 		expect(sheet.columns).toBeInstanceOf(Y.Map);
 		expect(sheet.rows).toBeInstanceOf(Y.Map);
-		expect(handle.mode).toBe('sheet');
+		expect(handle.currentType).toBe('sheet');
 	});
 
 	test('asSheet on sheet entry returns existing binding', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.timeline.pushSheetFromCsv('X,Y\n1,2\n');
+		handle.write('X,Y\n1,2\n');
+		handle.asSheet();
 
 		const sheet = handle.asSheet();
 		expect(sheet.columns.size).toBe(2);
 		expect(sheet.rows.size).toBe(1);
-		expect(handle.timeline.length).toBe(1);
+		expect(handle.length).toBe(2);
 	});
 
 	test('asSheet on text entry parses as CSV', async () => {
@@ -898,16 +873,15 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const sheet = handle.asSheet();
 		expect(sheet.columns.size).toBe(2);
 		expect(sheet.rows.size).toBe(1);
-		expect(handle.mode).toBe('sheet');
-		expect(handle.timeline.length).toBe(2);
+		expect(handle.currentType).toBe('sheet');
+		expect(handle.length).toBe(2);
 	});
 
 	test('asSheet on richtext entry extracts text then parses CSV', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const rtEntry = handle.timeline.pushRichtext();
-		const fragment = rtEntry.get('content') as Y.XmlFragment;
+		const fragment = handle.asRichText();
 		const p1 = new Y.XmlElement('paragraph');
 		const t1 = new Y.XmlText();
 		t1.insert(0, 'Name,Age');
@@ -920,8 +894,8 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		const sheet = handle.asSheet();
 		expect(sheet.columns.size).toBe(2);
-		expect(handle.mode).toBe('sheet');
-		expect(handle.timeline.length).toBe(2);
+		expect(handle.currentType).toBe('sheet');
+		expect(handle.length).toBe(2);
 	});
 
 	// ─── mode getter ──────────────────────────────────────────────────
@@ -930,9 +904,9 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		expect(handle.mode).toBeUndefined(); // empty
+		expect(handle.currentType).toBeUndefined(); // empty
 		handle.write('text');
-		expect(handle.mode).toBe('text');
+		expect(handle.currentType).toBe('text');
 	});
 
 	// ─── consecutive conversions ──────────────────────────────────────
@@ -942,19 +916,19 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const handle = await documents.open('f1');
 
 		handle.write('hello');
-		expect(handle.mode).toBe('text');
-		expect(handle.timeline.length).toBe(1);
+		expect(handle.currentType).toBe('text');
+		expect(handle.length).toBe(1);
 
 		handle.asRichText();
-		expect(handle.mode).toBe('richtext');
-		expect(handle.timeline.length).toBe(2);
+		expect(handle.currentType).toBe('richtext');
+		expect(handle.length).toBe(2);
 
 		handle.asSheet();
-		expect(handle.mode).toBe('sheet');
-		expect(handle.timeline.length).toBe(3);
+		expect(handle.currentType).toBe('sheet');
+		expect(handle.length).toBe(3);
 
 		handle.asText();
-		expect(handle.mode).toBe('text');
-		expect(handle.timeline.length).toBe(4);
+		expect(handle.currentType).toBe('text');
+		expect(handle.length).toBe(4);
 	});
 });

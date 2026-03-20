@@ -11,8 +11,9 @@
  * @module
  */
 
+import { fromTable } from '@epicenter/svelte';
 import { SvelteMap } from 'svelte/reactivity';
-import { type ToolTrust, workspaceClient } from '$lib/workspace';
+import { type ToolTrust, workspace } from '$lib/workspace';
 
 /**
  * Trust level for a mutation tool.
@@ -27,24 +28,7 @@ export type TrustLevel = ToolTrust['trust'];
 // ─────────────────────────────────────────────────────────────────────────────
 
 function createToolTrustState() {
-	/** Build the trust map from the workspace table. */
-	function readAllTrust(): Map<string, TrustLevel> {
-		const entries = workspaceClient.tables.toolTrust.getAllValid();
-		return new Map(entries.map((row) => [row.id, row.trust]));
-	}
-
-	/** Internal reactive map — hidden from consumers. */
-	const trustMap = new SvelteMap<string, TrustLevel>(readAllTrust());
-
-	// Keep reactive state in sync with Y.Doc changes (local + remote)
-	workspaceClient.tables.toolTrust.observe(() => {
-		const fresh = readAllTrust();
-		// Clear and repopulate to trigger Svelte reactivity
-		trustMap.clear();
-		for (const [key, value] of fresh) {
-			trustMap.set(key, value);
-		}
-	});
+	const trustMap = fromTable(workspace.tables.toolTrust);
 
 	return {
 		/**
@@ -61,7 +45,7 @@ function createToolTrustState() {
 		 * ```
 		 */
 		get(name: string): TrustLevel {
-			return trustMap.get(name) ?? 'ask';
+			return trustMap.get(name)?.trust ?? 'ask';
 		},
 
 		/**
@@ -79,7 +63,7 @@ function createToolTrustState() {
 		 * ```
 		 */
 		set(name: string, level: TrustLevel): void {
-			workspaceClient.tables.toolTrust.set({
+			workspace.tables.toolTrust.set({
 				id: name,
 				trust: level,
 				_v: 1,
@@ -101,7 +85,7 @@ function createToolTrustState() {
 		 * ```
 		 */
 		shouldAutoApprove(name: string): boolean {
-			return (trustMap.get(name) ?? 'ask') === 'always';
+			return (trustMap.get(name)?.trust ?? 'ask') === 'always';
 		},
 
 		/**
@@ -120,7 +104,7 @@ function createToolTrustState() {
 		 * ```
 		 */
 		entries(): SvelteMap<string, TrustLevel> {
-			return trustMap;
+			return new SvelteMap([...trustMap].map(([k, v]) => [k, v.trust]));
 		},
 	};
 }

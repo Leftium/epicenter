@@ -1,0 +1,485 @@
+import { describe, expect, test } from 'bun:test';
+import * as Y from 'yjs';
+import type { YKeyValueLwwEntry } from '../y-keyvalue/y-keyvalue-lww';
+import { createEncryptedYkvLww } from '../y-keyvalue/y-keyvalue-lww-encrypted';
+import {
+	base64ToBytes,
+	bytesToBase64,
+	decryptValue,
+	deriveKeyFromPassword,
+	deriveSalt,
+	deriveWorkspaceKey,
+	type EncryptedBlob,
+	encryptValue,
+	generateEncryptionKey,
+	getKeyVersion,
+	isEncryptedBlob,
+} from './index';
+
+describe('generateEncryptionKey', () => {
+	test('returns 32-byte Uint8Array', () => {
+		const key = generateEncryptionKey();
+		expect(key).toBeInstanceOf(Uint8Array);
+		expect(key.length).toBe(32);
+	});
+
+	test('two generated keys are different', () => {
+		const key1 = generateEncryptionKey();
+		const key2 = generateEncryptionKey();
+		expect(key1).not.toEqual(key2);
+	});
+});
+
+describe('encryptValue / decryptValue', () => {
+	test('round-trip: encrypt then decrypt returns original string', () => {
+		const key = generateEncryptionKey();
+		const plaintext = 'Hello, World!';
+		const encrypted = encryptValue(plaintext, key);
+		const decrypted = decryptValue(encrypted, key);
+		expect(decrypted).toBe(plaintext);
+	});
+
+	test('round-trip with empty string', () => {
+		const key = generateEncryptionKey();
+		const plaintext = '';
+		const encrypted = encryptValue(plaintext, key);
+		const decrypted = decryptValue(encrypted, key);
+		expect(decrypted).toBe(plaintext);
+	});
+
+	test('round-trip with unicode characters', () => {
+		const key = generateEncryptionKey();
+		const plaintext = '你好世界 🌍 مرحبا بالعالم';
+		const encrypted = encryptValue(plaintext, key);
+		const decrypted = decryptValue(encrypted, key);
+		expect(decrypted).toBe(plaintext);
+	});
+
+	test('round-trip with JSON string', () => {
+		const key = generateEncryptionKey();
+		const plaintext = JSON.stringify({ id: '123', name: 'Test', active: true });
+		const encrypted = encryptValue(plaintext, key);
+		const decrypted = decryptValue(encrypted, key);
+		expect(decrypted).toBe(plaintext);
+	});
+
+	test('round-trip with long string', () => {
+		const key = generateEncryptionKey();
+		const plaintext = 'a'.repeat(10000);
+		const encrypted = encryptValue(plaintext, key);
+		const decrypted = decryptValue(encrypted, key);
+		expect(decrypted).toBe(plaintext);
+	});
+
+	test('each encrypt produces different ciphertext (unique nonce per call)', () => {
+		const key = generateEncryptionKey();
+		const plaintext = 'Same plaintext';
+		const encrypted1 = encryptValue(plaintext, key);
+		const encrypted2 = encryptValue(plaintext, key);
+
+		// Different nonces should produce different ciphertexts
+		expect(encrypted1).not.toEqual(encrypted2);
+
+		// But both should decrypt to the same plaintext
+		expect(decryptValue(encrypted1, key)).toBe(plaintext);
+		expect(decryptValue(encrypted2, key)).toBe(plaintext);
+	});
+
+	test('encrypted blob is a bare Uint8Array with correct header', () => {
+		const key = generateEncryptionKey();
+		const encrypted = encryptValue('test', key);
+
+		expect(encrypted).toBeInstanceOf(Uint8Array);
+		expect(encrypted[0]).toBe(1); // format version
+		expect(encrypted[1]).toBe(1); // key version (default)
+		// formatVer(1) + keyVer(1) + nonce(24) + ciphertext + tag(16)
+		expect(encrypted.length).toBeGreaterThanOrEqual(2 + 24 + 16);
+		expect(getKeyVersion(encrypted)).toBe(1);
+	});
+
+	test('custom keyVersion is embedded at byte 1', () => {
+		const key = generateEncryptionKey();
+		const encrypted = encryptValue('test', key, undefined, 7);
+
+		expect(encrypted[1]).toBe(7);
+		expect(getKeyVersion(encrypted)).toBe(7);
+	});
+
+	test('invalid key (16-byte instead of 32) throws', () => {
+		const invalidKey = new Uint8Array(16); // Wrong size
+		const plaintext = 'test';
+
+		expect(() => {
+			encryptValue(plaintext, invalidKey);
+		}).toThrow();
+	});
+
+	test('tampered ciphertext throws', () => {
+		const key = generateEncryptionKey();
+		const encrypted = encryptValue('test', key);
+
+		// Copy and reverse the ciphertext portion
+		const tampered = new Uint8Array(encrypted);
+		for (let i = 26; i < tampered.length; i++) {
+			tampered[i] = tampered[i]! ^ 0xff;
+		}
+
+		expect(() => {
+			decryptValue(tampered as EncryptedBlob, key);
+		}).toThrow();
+	});
+
+	test('tampered nonce throws', () => {
+		const key = generateEncryptionKey();
+		const encrypted = encryptValue('test', key);
+
+		// Copy and flip the first nonce byte (byte 2)
+		const tampered = new Uint8Array(encrypted);
+		tampered[2] = tampered[2]! ^ 0xff;
+
+		expect(() => {
+			decryptValue(tampered as EncryptedBlob, key);
+		}).toThrow();
+	});
+
+	test('round-trip with AAD: encrypt and decrypt with same AAD succeeds', () => {
+		const key = generateEncryptionKey();
+		const plaintext = 'Hello, World!';
+		const aad = new TextEncoder().encode('workspace:123|user:456');
+
+		const encrypted = encryptValue(plaintext, key, aad);
+		const decrypted = decryptValue(encrypted, key, aad);
+
+		expect(decrypted).toBe(plaintext);
+	});
+
+	test('mismatched AAD throws', () => {
+		const key = generateEncryptionKey();
+		const plaintext = 'Hello, World!';
+		const encryptionAad = new TextEncoder().encode('workspace:123|user:456');
+		const decryptionAad = new TextEncoder().encode('workspace:123|user:789');
+
+		const encrypted = encryptValue(plaintext, key, encryptionAad);
+
+		expect(() => {
+			decryptValue(encrypted, key, decryptionAad);
+		}).toThrow();
+	});
+
+	test('encrypt with AAD, decrypt without AAD throws', () => {
+		const key = generateEncryptionKey();
+		const plaintext = 'Hello, World!';
+		const aad = new TextEncoder().encode('workspace:123|user:456');
+
+		const encrypted = encryptValue(plaintext, key, aad);
+
+		expect(() => {
+			decryptValue(encrypted, key);
+		}).toThrow();
+	});
+
+	test('encrypt without AAD, decrypt with AAD throws', () => {
+		const key = generateEncryptionKey();
+		const plaintext = 'Hello, World!';
+		const aad = new TextEncoder().encode('workspace:123|user:456');
+
+		const encrypted = encryptValue(plaintext, key);
+
+		expect(() => {
+			decryptValue(encrypted, key, aad);
+		}).toThrow();
+	});
+});
+
+describe('isEncryptedBlob', () => {
+	test('returns true for valid EncryptedBlob', () => {
+		const key = generateEncryptionKey();
+		const blob = encryptValue('test', key);
+		expect(isEncryptedBlob(blob)).toBe(true);
+	});
+
+	test('returns false for null', () => {
+		expect(isEncryptedBlob(null)).toBe(false);
+	});
+
+	test('returns false for undefined', () => {
+		expect(isEncryptedBlob(undefined)).toBe(false);
+	});
+
+	test('returns false for string', () => {
+		expect(isEncryptedBlob('not a blob')).toBe(false);
+	});
+
+	test('returns false for number', () => {
+		expect(isEncryptedBlob(42)).toBe(false);
+	});
+
+	test('returns false for plain object', () => {
+		expect(isEncryptedBlob({})).toBe(false);
+	});
+
+	test('returns true for Uint8Array with format version 1 at byte 0', () => {
+		expect(isEncryptedBlob(new Uint8Array([1]))).toBe(true);
+		expect(isEncryptedBlob(new Uint8Array([1, 0, 0, 0]))).toBe(true);
+		expect(isEncryptedBlob(new Uint8Array(42).fill(0).map((_, i) => (i === 0 ? 1 : 0)))).toBe(true);
+	});
+
+	test('returns false for Uint8Array with byte 0 !== 1', () => {
+		expect(isEncryptedBlob(new Uint8Array([0]))).toBe(false);
+		expect(isEncryptedBlob(new Uint8Array([2]))).toBe(false);
+		expect(isEncryptedBlob(new Uint8Array([255]))).toBe(false);
+	});
+
+	test('returns false for empty Uint8Array', () => {
+		expect(isEncryptedBlob(new Uint8Array([]))).toBe(false);
+	});
+
+	test('returns false for old object format { v: 1, ct: Uint8Array }', () => {
+		// The old wrapper format is no longer recognized
+		expect(isEncryptedBlob({ v: 1, ct: new Uint8Array(42) })).toBe(false);
+	});
+
+	test('returns false for regular arrays and objects with extra keys', () => {
+		expect(isEncryptedBlob([1, 2, 3])).toBe(false);
+		expect(isEncryptedBlob({ id: '1', _v: 1, data: 'test' })).toBe(false);
+	});
+});
+
+describe('deriveKeyFromPassword', () => {
+	test('same password + salt produces same key', async () => {
+		const password = 'myPassword123';
+		const salt = new Uint8Array(16);
+		salt.fill(42);
+
+		const key1 = await deriveKeyFromPassword(password, salt);
+		const key2 = await deriveKeyFromPassword(password, salt);
+
+		expect(key1).toEqual(key2);
+	});
+
+	test('different passwords produce different keys', async () => {
+		const salt = new Uint8Array(16);
+		salt.fill(42);
+
+		const key1 = await deriveKeyFromPassword('password1', salt);
+		const key2 = await deriveKeyFromPassword('password2', salt);
+
+		expect(key1).not.toEqual(key2);
+	});
+
+	test('different salts produce different keys', async () => {
+		const password = 'myPassword123';
+		const salt1 = new Uint8Array(16);
+		salt1.fill(42);
+		const salt2 = new Uint8Array(16);
+		salt2.fill(99);
+
+		const key1 = await deriveKeyFromPassword(password, salt1);
+		const key2 = await deriveKeyFromPassword(password, salt2);
+
+		expect(key1).not.toEqual(key2);
+	});
+
+	test('returns 32-byte Uint8Array', async () => {
+		const password = 'test';
+		const salt = new Uint8Array(16);
+		const key = await deriveKeyFromPassword(password, salt);
+
+		expect(key).toBeInstanceOf(Uint8Array);
+		expect(key.length).toBe(32);
+	});
+});
+
+describe('deriveSalt', () => {
+	test('deterministic: same userId + workspaceId = same salt', async () => {
+		const userId = 'user123';
+		const workspaceId = 'workspace456';
+
+		const salt1 = await deriveSalt(userId, workspaceId);
+		const salt2 = await deriveSalt(userId, workspaceId);
+
+		expect(salt1).toEqual(salt2);
+	});
+
+	test('different userId = different salt', async () => {
+		const workspaceId = 'workspace456';
+
+		const salt1 = await deriveSalt('user1', workspaceId);
+		const salt2 = await deriveSalt('user2', workspaceId);
+
+		expect(salt1).not.toEqual(salt2);
+	});
+
+	test('different workspaceId = different salt', async () => {
+		const userId = 'user123';
+
+		const salt1 = await deriveSalt(userId, 'workspace1');
+		const salt2 = await deriveSalt(userId, 'workspace2');
+
+		expect(salt1).not.toEqual(salt2);
+	});
+
+	test('returns 16-byte Uint8Array', async () => {
+		const salt = await deriveSalt('user123', 'workspace456');
+
+		expect(salt).toBeInstanceOf(Uint8Array);
+		expect(salt.length).toBe(16);
+	});
+});
+
+describe('base64 helpers', () => {
+	test('round-trip: bytesToBase64 then base64ToBytes returns original', () => {
+		const original = new Uint8Array([1, 2, 3, 255, 0, 127, 128]);
+		const base64 = bytesToBase64(original);
+		const decoded = base64ToBytes(base64);
+
+		expect(decoded).toEqual(original);
+	});
+
+	test('handles empty Uint8Array', () => {
+		const original = new Uint8Array([]);
+		const base64 = bytesToBase64(original);
+		const decoded = base64ToBytes(base64);
+
+		expect(decoded).toEqual(original);
+		expect(decoded.length).toBe(0);
+	});
+
+	test('handles byte value 0', () => {
+		const original = new Uint8Array([0, 0, 0]);
+		const base64 = bytesToBase64(original);
+		const decoded = base64ToBytes(base64);
+
+		expect(decoded).toEqual(original);
+	});
+
+	test('handles byte value 255', () => {
+		const original = new Uint8Array([255, 255, 255]);
+		const base64 = bytesToBase64(original);
+		const decoded = base64ToBytes(base64);
+
+		expect(decoded).toEqual(original);
+	});
+
+	test('handles all byte values 0-255', () => {
+		const original = new Uint8Array(256);
+		for (let i = 0; i < 256; i++) {
+			original[i] = i;
+		}
+
+		const base64 = bytesToBase64(original);
+		const decoded = base64ToBytes(base64);
+
+		expect(decoded).toEqual(original);
+	});
+
+	test('bytesToBase64 produces valid base64 string', () => {
+		const bytes = new Uint8Array([72, 101, 108, 108, 111]); // "Hello"
+		const base64 = bytesToBase64(bytes);
+
+		// Valid base64 should only contain alphanumeric, +, /, and = for padding
+		expect(/^[A-Za-z0-9+/]*={0,2}$/.test(base64)).toBe(true);
+	});
+
+	test('base64ToBytes handles standard base64 strings', () => {
+		const base64 = 'SGVsbG8gV29ybGQ='; // "Hello World"
+		const decoded = base64ToBytes(base64);
+		const text = new TextDecoder().decode(decoded);
+
+		expect(text).toBe('Hello World');
+	});
+});
+
+describe('binary storage overhead', () => {
+	test('binary ct produces smaller Y.Doc than base64 string ct', () => {
+		const key = generateEncryptionKey();
+		const testValues = [
+			'short',
+			'a'.repeat(100),
+			'a'.repeat(500),
+			JSON.stringify({ id: '123', name: 'Test User', active: true }),
+		];
+
+		// Create Y.Doc with binary blobs (current format)
+		const binaryDoc = new Y.Doc({ guid: 'bench-binary' });
+		const binaryArray =
+			binaryDoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
+		const binaryKv = createEncryptedYkvLww<string>(binaryArray, { key });
+
+		for (const [i, val] of testValues.entries()) {
+			binaryKv.set(`key-${i}`, val);
+		}
+
+		// Create Y.Doc with base64 string blobs (simulated old format)
+		const base64Doc = new Y.Doc({ guid: 'bench-base64' });
+		const base64Array =
+			base64Doc.getArray<YKeyValueLwwEntry<string>>('data');
+
+		// Extract binary entries and convert to base64 string representation
+		const binaryEntries = binaryArray.toArray();
+		const base64Entries: YKeyValueLwwEntry<string>[] =
+			binaryEntries.map((entry) => {
+				const val = entry.val;
+				if (isEncryptedBlob(val)) {
+					return {
+						...entry,
+						val: bytesToBase64(val),
+					};
+				}
+				return entry as YKeyValueLwwEntry<string>;
+			});
+		base64Array.push(base64Entries);
+		base64Array.push(base64Entries);
+
+		const base64Size = Y.encodeStateAsUpdate(base64Doc).byteLength;
+		const binarySize = Y.encodeStateAsUpdate(binaryDoc).byteLength;
+
+		// Binary should be smaller than base64
+		expect(binarySize).toBeLessThan(base64Size);
+
+		const savings = ((1 - binarySize / base64Size) * 100).toFixed(1);
+		console.log(
+			`base64 size: ${base64Size} bytes, binary size: ${binarySize} bytes, savings: ${savings}%`,
+		);
+	});
+});
+
+describe('deriveWorkspaceKey', () => {
+	test('same inputs produce same key (deterministic)', async () => {
+		const userKey = generateEncryptionKey();
+		const workspaceId = 'tab-manager';
+
+		const key1 = await deriveWorkspaceKey(userKey, workspaceId);
+		const key2 = await deriveWorkspaceKey(userKey, workspaceId);
+
+		expect(key1).toEqual(key2);
+	});
+
+	test('different userKeys produce different workspace keys', async () => {
+		const userKey1 = generateEncryptionKey();
+		const userKey2 = generateEncryptionKey();
+		const workspaceId = 'tab-manager';
+
+		const key1 = await deriveWorkspaceKey(userKey1, workspaceId);
+		const key2 = await deriveWorkspaceKey(userKey2, workspaceId);
+
+		expect(key1).not.toEqual(key2);
+	});
+
+	test('different workspaceIds produce different keys', async () => {
+		const userKey = generateEncryptionKey();
+
+		const key1 = await deriveWorkspaceKey(userKey, 'tab-manager');
+		const key2 = await deriveWorkspaceKey(userKey, 'whispering');
+
+		expect(key1).not.toEqual(key2);
+	});
+
+	test('output is 32 bytes', async () => {
+		const userKey = generateEncryptionKey();
+		const key = await deriveWorkspaceKey(userKey, 'tab-manager');
+
+		expect(key).toBeInstanceOf(Uint8Array);
+		expect(key.length).toBe(32);
+	});
+});

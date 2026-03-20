@@ -7,6 +7,20 @@ metadata:
 ---
 
 # Elysia.js Patterns (v1.2+)
+## Reference Repositories
+
+- [Hono](https://github.com/honojs/hono) — Ultrafast web framework for Cloudflare Workers
+- [Cloudflare Docs](https://github.com/cloudflare/cloudflare-docs) — Cloudflare Workers, Durable Objects, KV documentation
+
+## When to Apply This Skill
+
+Use this pattern when you need to:
+
+- Write or refactor Elysia handlers to use `status()` responses.
+- Define per-status response schemas for Eden Treaty type safety.
+- Migrate handlers away from `set.status` plus error-object returns.
+- Compose Elysia plugins/guards for shared auth and route behavior.
+- Choose between `return status(...)` and `throw status(...)` by control-flow context.
 
 ## The `status()` Helper (ALWAYS use this)
 

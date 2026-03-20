@@ -38,11 +38,10 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
-	DocumentContext,
 	Extension,
-	Lifecycle,
 	MaybePromise,
-} from './workspace/lifecycle';
+	} from './workspace/lifecycle';
+export type { DocumentContext } from './workspace/types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERROR TYPES
@@ -75,23 +74,17 @@ export { DateTimeString, dateTimeStringNow } from './shared/datetime-string';
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
-	ContentMode,
+	ContentType,
 	RichTextEntry,
 	SheetBinding,
 	SheetEntry,
 	TextEntry,
 	TimelineEntry,
-	ValidatedEntry,
 } from './timeline';
 export {
 	computeMidpoint,
 	createTimeline,
 	generateInitialOrders,
-	parseSheetFromCsv,
-	populateFragmentFromText,
-	readEntry,
-	serializeSheetToCsv,
-	xmlFragmentToPlaintext,
 	type Timeline,
 } from './timeline';
 // ════════════════════════════════════════════════════════════════════════════
@@ -114,14 +107,7 @@ export { defineWorkspace } from './workspace/define-workspace';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { createWorkspace } from './workspace/create-workspace';
-
-// ════════════════════════════════════════════════════════════════════════════
-// LOWER-LEVEL APIs (Bring Your Own Y.Doc)
-// ════════════════════════════════════════════════════════════════════════════
-
-export { createAwareness } from './workspace/create-awareness';
-export { createKv } from './workspace/create-kv';
-export { createTables } from './workspace/create-tables';
+export { DOCUMENTS_ORIGIN } from './workspace/create-document';
 
 // ════════════════════════════════════════════════════════════════════════════
 // INTROSPECTION
@@ -151,12 +137,14 @@ export type {
 	AwarenessHelper,
 	AwarenessState,
 	BaseRow,
+	DocumentClient,
 	DocumentConfig,
 	DocumentHandle,
 	Documents,
 	DocumentsHelper,
 	ExtensionContext,
 	ExtensionFactory,
+	SharedExtensionContext,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,
@@ -171,6 +159,7 @@ export type {
 	TableDefinition,
 	TableDefinitions,
 	TableHelper,
+	TransactionMeta,
 	TablesHelper,
 	UpdateResult,
 	ValidRowResult,

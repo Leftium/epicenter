@@ -1,32 +1,32 @@
 import { feature, item, plan } from 'atmn';
 
 // ---------------------------------------------------------------------------
-// Metered features — one per model class
+// Metered features — one per model tier
 // ---------------------------------------------------------------------------
 
-export const aiChatFast = feature({
-	id: 'ai_chat_fast',
-	name: 'AI Chat (Fast)',
+export const aiFast = feature({
+	id: 'ai_fast',
+	name: 'AI (Fast)',
 	type: 'metered',
 	consumable: true,
 });
 
-export const aiChatSmart = feature({
-	id: 'ai_chat_smart',
-	name: 'AI Chat (Smart)',
+export const aiStandard = feature({
+	id: 'ai_standard',
+	name: 'AI (Standard)',
 	type: 'metered',
 	consumable: true,
 });
 
-export const aiChatPremium = feature({
-	id: 'ai_chat_premium',
-	name: 'AI Chat (Premium)',
+export const aiPremium = feature({
+	id: 'ai_premium',
+	name: 'AI (Premium)',
 	type: 'metered',
 	consumable: true,
 });
 
 // ---------------------------------------------------------------------------
-// Credit system — single pool, different costs per model class
+// Credit system — single pool, different costs per model tier
 // ---------------------------------------------------------------------------
 
 export const aiCredits = feature({
@@ -34,9 +34,9 @@ export const aiCredits = feature({
 	name: 'AI Credits',
 	type: 'credit_system',
 	creditSchema: [
-		{ meteredFeatureId: aiChatFast.id, creditCost: 1 },
-		{ meteredFeatureId: aiChatSmart.id, creditCost: 3 },
-		{ meteredFeatureId: aiChatPremium.id, creditCost: 10 },
+		{ meteredFeatureId: aiFast.id, creditCost: 1 },
+		{ meteredFeatureId: aiStandard.id, creditCost: 3 },
+		{ meteredFeatureId: aiPremium.id, creditCost: 10 },
 	],
 });
 
@@ -111,6 +111,7 @@ export const creditTopUp = plan({
 				amount: 5,
 				billingUnits: 500,
 				billingMethod: 'prepaid',
+				interval: 'month',
 			},
 		}),
 	],

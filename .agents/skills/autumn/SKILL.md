@@ -3,7 +3,7 @@ name: autumn
 description: Integrate Autumn billing—define features/plans in autumn.config.ts, use autumn-js SDK for credit checks/tracking, manage the atmn CLI for push/pull. Use when working on billing, pricing, credits, plan gating, or metered usage.
 metadata:
   author: epicenter
-  version: '1.0'
+  version: '1.1'
 ---
 
 # Autumn Billing Integration Guide
@@ -32,15 +32,24 @@ Use this when you need to:
 
 **All IDs use `snake_case`.** This is Autumn's explicit convention.
 
+Feature IDs should be **descriptive** (not abstract tier numbers) and **ecosystem-scoped** (not tied to a single app feature like "chat"). The metered features represent model cost tiers that any AI feature can consume.
+
 ```typescript
-// CORRECT
-feature({ id: 'ai_chat_fast', ... })
+// CORRECT — descriptive, ecosystem-scoped
+feature({ id: 'ai_fast', ... })
+feature({ id: 'ai_standard', ... })
+feature({ id: 'ai_premium', ... })
 plan({ id: 'pro', ... })
 plan({ id: 'credit_top_up', ... })
 
-// WRONG — don't use kebab-case
-feature({ id: 'ai-chat-fast', ... })
-plan({ id: 'credit-top-up', ... })
+// WRONG — tied to a single feature ("chat")
+feature({ id: 'ai_chat_fast', ... })
+
+// WRONG — abstract tier numbers (Autumn convention prefers descriptive)
+feature({ id: 'ai_tier_1', ... })
+
+// WRONG — kebab-case
+feature({ id: 'ai-fast', ... })
 ```
 
 ---
@@ -49,7 +58,7 @@ plan({ id: 'credit-top-up', ... })
 
 | Type | `consumable` | Use Case | Example |
 |------|-------------|----------|---------|
-| `metered` | `true` | Usage that resets periodically (messages, API calls) | AI chat messages |
+| `metered` | `true` | Usage that resets periodically (messages, API calls) | AI model invocations |
 | `metered` | `false` | Persistent allocation (seats, storage) | Team seats |
 | `credit_system` | — | Pool that maps to metered features via `creditSchema` | AI credits |
 | `boolean` | — | Feature flag on/off | Advanced analytics |
@@ -62,9 +71,9 @@ export const aiCredits = feature({
   name: 'AI Credits',
   type: 'credit_system',
   creditSchema: [
-    { meteredFeatureId: 'ai_chat_fast', creditCost: 1 },
-    { meteredFeatureId: 'ai_chat_smart', creditCost: 3 },
-    { meteredFeatureId: 'ai_chat_premium', creditCost: 10 },
+    { meteredFeatureId: 'ai_fast', creditCost: 1 },
+    { meteredFeatureId: 'ai_standard', creditCost: 3 },
+    { meteredFeatureId: 'ai_premium', creditCost: 10 },
   ],
 });
 ```
@@ -88,25 +97,32 @@ Plans with `addOn: true` **stack** on top of any plan. No group conflict.
 
 Plans with `autoEnable: true` are auto-assigned when a customer is created via `customers.getOrCreate()`. Use for free tiers. Only allowed on plans with no `price`.
 
-### Plan items: `reset` vs `price` (mutually exclusive)
+### Plan items: `reset.interval` vs `price.interval`
 
-A `PlanItem` can have `reset` OR `price`, never both:
+The **intervals** are mutually exclusive, not `reset` and `price` themselves. A `PlanItem` is one of three variants:
 
-- **`PlanItemWithReset`**: Included allowance that resets on an interval (e.g., 50 credits/month free). No pricing—just a free allocation.
-- **`PlanItemWithPrice`**: Usage-based pricing with its own billing cycle. `price.interval` encodes the reset cadence. Use for overage billing.
-- **`PlanItemNoReset`**: No reset, no price. For boolean features or continuous-use features.
+**`PlanItemWithReset`** — Has `reset.interval`. If `price` is also present, it CANNOT have `price.interval`. Use for free allocations that reset periodically, optionally with one-time overage pricing.
+
+**`PlanItemWithPriceInterval`** — Has `price.interval`. CANNOT have `reset`. The `price.interval` determines BOTH the billing cycle AND when the `included` balance resets for consumable features. Use for paid plans with usage-based overage.
+
+**`PlanItemNoReset`** — No `reset`. Use for continuous-use features like seats, or boolean features.
 
 ```typescript
 // Free plan — reset only, no price
+// `reset.interval` controls when the 50 included credits refresh
 item({ featureId: aiCredits.id, included: 50, reset: { interval: 'month' } })
 
-// Paid plan — price encodes the billing cycle (no separate reset)
+// Paid plan — price.interval handles both billing AND reset
+// The 2000 included credits reset monthly via `price.interval: 'month'`
+// Overage beyond 2000 billed at $1/100 credits
 item({
   featureId: aiCredits.id,
   included: 2000,
   price: { amount: 1, billingUnits: 100, billingMethod: 'usage_based', interval: 'month' },
 })
 ```
+
+**Key insight**: For paid plans, `included` + `price.interval` implies monthly reset. The `included` field's Zod description: "Balance resets to this each interval for consumable features." You do NOT need a separate `reset` field on paid plan items.
 
 ---
 
@@ -139,9 +155,9 @@ await autumn.customers.getOrCreate({
 ```typescript
 const { allowed, balance } = await autumn.check({
   customerId: userId,
-  featureId: 'ai_chat_smart',  // The metered feature ID, not the credit system ID
+  featureId: 'ai_standard',  // The metered feature ID, not the credit system ID
   requiredBalance: 1,
-  sendEvent: true,              // Atomically deduct on allow
+  sendEvent: true,            // Atomically deduct on allow
   properties: { model, provider },
 });
 
@@ -150,7 +166,7 @@ if (!allowed) {
 }
 ```
 
-**`featureId`** is the metered feature ID (e.g., `ai_chat_smart`), not the credit system ID. Autumn resolves the credit cost through the `creditSchema` mapping.
+**`featureId`** is the metered feature ID (e.g., `ai_standard`), not the credit system ID. Autumn resolves the credit cost through the `creditSchema` mapping.
 
 **`sendEvent: true`** atomically deducts credits when `allowed: true`. No separate `track()` call needed for the happy path.
 
@@ -159,7 +175,7 @@ if (!allowed) {
 ```typescript
 await autumn.track({
   customerId: userId,
-  featureId: 'ai_chat_smart',
+  featureId: 'ai_standard',
   value: -1,  // Negative value = refund
 });
 ```
@@ -244,12 +260,12 @@ app.use('/ai/*', async (c, next) => {
 ### Credit Gate in Handler
 
 ```typescript
-const modelClass = getModelClass(data.model);
-if (!modelClass) return c.json(error, 400);
+const modelTier = getModelTier(data.model);
+if (!modelTier) return c.json(error, 400);
 
 const { allowed, balance } = await autumn.check({
   customerId: c.var.user.id,
-  featureId: modelClass,
+  featureId: modelTier,
   requiredBalance: 1,
   sendEvent: true,
 });
@@ -272,11 +288,12 @@ if (!allowed) return c.json(error, 402);
 
 1. **`getOrCreate` must be awaited** — Fire-and-forget will cause `check()` to fail with "customer not found."
 2. **`featureId` in `check()` is the metered feature**, not the credit system. Autumn resolves credit cost via `creditSchema`.
-3. **`reset` and `price` are mutually exclusive** on plan items. Use `price.interval` to encode billing cycle on paid items.
+3. **`reset.interval` and `price.interval` are mutually exclusive** — not `reset` and `price` themselves. A `PlanItemWithReset` CAN have a `price`, but that price cannot have an `interval`. For paid plans, `price.interval` handles both billing and balance reset.
 4. **`sendEvent: true` deducts atomically** — Don't call `track()` separately for the happy path. Only use `track({ value: -1 })` for refunds.
-5. **Plan IDs are snake_case** — Autumn's pricing agent convention. Don't use kebab-case.
+5. **All IDs are snake_case** — Autumn's pricing agent convention. Don't use kebab-case.
 6. **`autoEnable` triggers on customer creation** — Not on first `check()`. Ensure the middleware calls `getOrCreate` before checking.
 7. **Multiple keys per environment** — Autumn supports multiple active secret keys for rotation. Generate new key → update secrets → revoke old key.
+8. **Feature IDs are ecosystem-scoped** — Use `ai_fast`/`ai_standard`/`ai_premium` (model tiers), not `ai_chat_fast` (tied to a single feature). Any AI feature in the ecosystem deducts from the same credit pool.
 
 ---
 
@@ -286,7 +303,7 @@ if (!allowed) return c.json(error, 402);
 |------|---------|
 | `apps/api/autumn.config.ts` | Feature, credit system, and plan definitions |
 | `apps/api/src/autumn.ts` | `createAutumn(env)` factory for per-request SDK client |
-| `apps/api/src/model-classes.ts` | Model string → credit class (feature ID) mapping |
+| `apps/api/src/model-classes.ts` | Model string → credit tier (feature ID) mapping |
 | `apps/api/src/ai-chat.ts` | Credit check + refund logic for AI chat handler |
 | `apps/api/src/app.ts` | Middleware wiring (ensureAutumnCustomer) |
 

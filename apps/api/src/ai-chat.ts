@@ -13,7 +13,7 @@ import { createFactory } from 'hono/factory';
 import { defineErrors } from 'wellcrafted/error';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
-import { getModelClass } from './model-classes';
+import { getModelTier } from './model-classes';
 
 const chatOptions = type({
 	'systemPrompts?': 'string[] | undefined',
@@ -61,15 +61,15 @@ export const aiChatHandlers = factory.createHandlers(
 		// ---------------------------------------------------------------
 		// Credit check
 		// ---------------------------------------------------------------
-		const modelClass = getModelClass(data.model);
-		if (!modelClass) {
+		const modelTier = getModelTier(data.model);
+		if (!modelTier) {
 			return c.json(AiChatError.UnknownModel({ model: data.model }), 400);
 		}
 
 		const autumn = createAutumn(c.env);
 		const { allowed, balance } = await autumn.check({
 			customerId: c.var.user.id,
-			featureId: modelClass,
+			featureId: modelTier,
 			requiredBalance: 1,
 			sendEvent: true,
 			properties: { model: data.model, provider: data.provider },
@@ -116,7 +116,7 @@ export const aiChatHandlers = factory.createHandlers(
 			c.var.afterResponse.push(
 				autumn.track({
 					customerId: c.var.user.id,
-					featureId: modelClass,
+					featureId: modelTier,
 					value: -1,
 				}),
 			);

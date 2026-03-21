@@ -18,23 +18,29 @@ import { getDomain } from '$lib/utils/format';
 /**
  * Normalize a URL for duplicate comparison.
  *
- * Strips trailing slash, query params, and hash to treat
- * `https://github.com/foo` and `https://github.com/foo?ref=bar#readme`
- * as the same page.
+ * Strips the fragment (client-side anchor) and trailing slash, and sorts
+ * query parameters so identical param sets in different order still match.
+ * Query parameters are preserved—`?v=A` and `?v=B` are different pages.
  *
  * @example
  * ```typescript
  * normalizeUrl('https://github.com/foo?ref=bar#readme')
- * // 'https://github.com/foo'
+ * // 'https://github.com/foo?ref=bar'
  *
  * normalizeUrl('https://example.com/')
  * // 'https://example.com'
+ *
+ * normalizeUrl('https://example.com/page?b=2&a=1')
+ * // 'https://example.com/page?a=1&b=2'
  * ```
  */
 function normalizeUrl(url: string): string {
 	try {
 		const parsed = new URL(url);
-		return parsed.origin + parsed.pathname.replace(/\/$/, '');
+		parsed.hash = '';
+		parsed.pathname = parsed.pathname.replace(/\/$/, '');
+		parsed.searchParams.sort();
+		return parsed.toString();
 	} catch {
 		return url;
 	}

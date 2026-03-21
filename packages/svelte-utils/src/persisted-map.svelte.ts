@@ -5,26 +5,25 @@ import { PersistedError } from './persisted-state.svelte.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type PersistedMapDefinition<S extends StandardSchemaV1> = {
-	schema: S;
-	defaultValue: NoInfer<StandardSchemaV1.InferOutput<S>>;
+type PersistedMapDefinition<TSchema extends StandardSchemaV1> = {
+	schema: TSchema;
+	defaultValue: NoInfer<StandardSchemaV1.InferOutput<TSchema>>;
 };
 
-/** Infer the output value type from a definition. */
-type InferDefinitionValue<D> =
-	D extends PersistedMapDefinition<infer S>
-		? StandardSchemaV1.InferOutput<S>
+type InferDefinitionValue<TDef> =
+	TDef extends PersistedMapDefinition<infer TSchema>
+		? StandardSchemaV1.InferOutput<TSchema>
 		: never;
 
 type PersistedMapOptions<
-	D extends Record<string, PersistedMapDefinition<StandardSchemaV1>>,
+	TDefs extends Record<string, PersistedMapDefinition<StandardSchemaV1>>,
 > = {
 	/** Prefix for all storage keys. e.g., `'whispering.device.'` → `'whispering.device.apiKeys.openai'`. */
 	prefix: string;
 	/** Per-key schema and default value definitions. */
-	definitions: D;
+	definitions: TDefs;
 	/**
-	 * The Web Storage instance to use (e.g., `localStorage`, `sessionStorage`).
+	 * The Web Storage instance to use.
 	 * @default window.localStorage
 	 */
 	storage?: Storage;
@@ -44,26 +43,28 @@ type PersistedMapOptions<
 	onUpdateError?: (key: string, error: unknown) => void;
 };
 
-// ── Exported type (for consumers that need explicit annotations) ─────────────
-
 /**
- * The return type of `createPersistedMap`. Exported for consumers that need
+ * Return type of `createPersistedMap`. Exported for consumers that need
  * an explicit type annotation (e.g., to break circular dependency inference).
- *
- * Most consumers should just use `createPersistedMap(...)` and let TypeScript infer.
  */
 export type PersistedMap<
-	D extends Record<string, PersistedMapDefinition<StandardSchemaV1>>,
+	TDefs extends Record<string, PersistedMapDefinition<StandardSchemaV1>>,
 > = {
-	get<K extends string & keyof D>(key: K): InferDefinitionValue<D[K]>;
-	set<K extends string & keyof D>(
-		key: K,
-		value: InferDefinitionValue<D[K]>,
+	get<TKey extends string & keyof TDefs>(
+		key: TKey,
+	): InferDefinitionValue<TDefs[TKey]>;
+	set<TKey extends string & keyof TDefs>(
+		key: TKey,
+		value: InferDefinitionValue<TDefs[TKey]>,
 	): void;
-	getDefault<K extends string & keyof D>(key: K): InferDefinitionValue<D[K]>;
+	getDefault<TKey extends string & keyof TDefs>(
+		key: TKey,
+	): InferDefinitionValue<TDefs[TKey]>;
 	reset(): void;
 	update(
-		partial: Partial<{ [K in string & keyof D]: InferDefinitionValue<D[K]> }>,
+		partial: Partial<{
+			[TKey in string & keyof TDefs]: InferDefinitionValue<TDefs[TKey]>;
+		}>,
 	): void;
 };
 
@@ -82,9 +83,9 @@ export type PersistedMap<
  * };
  * ```
  */
-export function defineEntry<S extends StandardSchemaV1>(
-	schema: S,
-	defaultValue: NoInfer<StandardSchemaV1.InferOutput<S>>,
+export function defineEntry<TSchema extends StandardSchemaV1>(
+	schema: TSchema,
+	defaultValue: NoInfer<StandardSchemaV1.InferOutput<TSchema>>,
 ) {
 	return { schema, defaultValue };
 }
@@ -119,38 +120,29 @@ export function defineEntry<S extends StandardSchemaV1>(
  * ```
  */
 export function createPersistedMap<
-	D extends Record<string, PersistedMapDefinition<StandardSchemaV1>>,
->(options: PersistedMapOptions<D>) {
-	const {
-		prefix,
-		definitions,
-		storage: storageApi = window.localStorage,
-		syncTabs = true,
-		onError,
-		onUpdateError,
-	} = options;
+	TDefs extends Record<string, PersistedMapDefinition<StandardSchemaV1>>,
+>({
+	prefix,
+	definitions,
+	storage: storageApi = window.localStorage,
+	syncTabs = true,
+	onError,
+	onUpdateError,
+}: PersistedMapOptions<TDefs>) {
+	const definitionKeys = Object.keys(definitions) as (string & keyof TDefs)[];
 
-	const definitionKeys = Object.keys(definitions) as (string & keyof D)[];
-
-	function storageKey(key: string): string {
+	function storageKey(key: string) {
 		return `${prefix}${key}`;
 	}
 
-	function isDefinitionKey(key: string): key is string & keyof D {
+	function isDefinitionKey(key: string): key is string & keyof TDefs {
 		return key in definitions;
 	}
 
-	/**
-	 * Parse a raw JSON string from storage against a key's schema.
-	 * Returns the definition's default value on any failure.
-	 */
-	function parseRawValue(
-		key: string & keyof D,
-		raw: string | null,
-	): InferDefinitionValue<D[typeof key]> {
+	function parseRawValue(key: string & keyof TDefs, raw: string | null) {
 		const def = definitions[key]!;
 		if (raw === null)
-			return def.defaultValue as InferDefinitionValue<D[typeof key]>;
+			return def.defaultValue as InferDefinitionValue<TDefs[typeof key]>;
 
 		const { data: parsed, error: jsonError } = trySync({
 			try: () => JSON.parse(raw) as unknown,
@@ -158,7 +150,7 @@ export function createPersistedMap<
 		});
 		if (jsonError) {
 			onError?.(key, jsonError);
-			return def.defaultValue as InferDefinitionValue<D[typeof key]>;
+			return def.defaultValue as InferDefinitionValue<TDefs[typeof key]>;
 		}
 
 		const result = def.schema['~standard'].validate(parsed);
@@ -176,7 +168,7 @@ export function createPersistedMap<
 					],
 				}).error,
 			);
-			return def.defaultValue as InferDefinitionValue<D[typeof key]>;
+			return def.defaultValue as InferDefinitionValue<TDefs[typeof key]>;
 		}
 
 		if (result.issues) {
@@ -188,13 +180,13 @@ export function createPersistedMap<
 					issues: result.issues,
 				}).error,
 			);
-			return def.defaultValue as InferDefinitionValue<D[typeof key]>;
+			return def.defaultValue as InferDefinitionValue<TDefs[typeof key]>;
 		}
 
-		return result.value as InferDefinitionValue<D[typeof key]>;
+		return result.value as InferDefinitionValue<TDefs[typeof key]>;
 	}
 
-	function readKey(key: string & keyof D): InferDefinitionValue<D[typeof key]> {
+	function readKey(key: string & keyof TDefs) {
 		return parseRawValue(key, storageApi.getItem(storageKey(key)));
 	}
 
@@ -222,14 +214,14 @@ export function createPersistedMap<
 	});
 
 	return {
-		get<K extends string & keyof D>(key: K): InferDefinitionValue<D[K]> {
-			return map.get(key) as InferDefinitionValue<D[K]>;
+		get<TKey extends string & keyof TDefs>(key: TKey) {
+			return map.get(key) as InferDefinitionValue<TDefs[TKey]>;
 		},
 
-		set<K extends string & keyof D>(
-			key: K,
-			value: InferDefinitionValue<D[K]>,
-		): void {
+		set<TKey extends string & keyof TDefs>(
+			key: TKey,
+			value: InferDefinitionValue<TDefs[TKey]>,
+		) {
 			try {
 				storageApi.setItem(storageKey(key), JSON.stringify(value));
 			} catch (error) {
@@ -239,27 +231,33 @@ export function createPersistedMap<
 		},
 
 		update(
-			updates: Partial<{ [K in string & keyof D]: InferDefinitionValue<D[K]> }>,
-		): void {
+			updates: Partial<{
+				[TKey in string & keyof TDefs]: InferDefinitionValue<TDefs[TKey]>;
+			}>,
+		) {
 			for (const [key, value] of Object.entries(updates)) {
 				this.set(
-					key as string & keyof D,
-					value as InferDefinitionValue<D[string & keyof D]>,
+					key as string & keyof TDefs,
+					value as InferDefinitionValue<TDefs[string & keyof TDefs]>,
 				);
 			}
 		},
 
-		reset(): void {
+		reset() {
 			for (const key of definitionKeys) {
 				this.set(
 					key,
-					definitions[key]!.defaultValue as InferDefinitionValue<D[typeof key]>,
+					definitions[key]!.defaultValue as InferDefinitionValue<
+						TDefs[typeof key]
+					>,
 				);
 			}
 		},
 
-		getDefault<K extends string & keyof D>(key: K): InferDefinitionValue<D[K]> {
-			return definitions[key]!.defaultValue as InferDefinitionValue<D[K]>;
+		getDefault<TKey extends string & keyof TDefs>(key: TKey) {
+			return definitions[key]!.defaultValue as InferDefinitionValue<
+				TDefs[TKey]
+			>;
 		},
 	};
 }

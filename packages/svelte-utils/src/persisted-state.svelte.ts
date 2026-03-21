@@ -42,24 +42,23 @@ export type PersistedError = InferErrors<typeof PersistedError>;
 
 // ── createPersistedState ─────────────────────────────────────────────────────
 
-type PersistedStateOptions<S extends StandardSchemaV1> = {
+type PersistedStateOptions<TSchema extends StandardSchemaV1> = {
 	/** The localStorage (or sessionStorage) key. */
 	key: string;
 	/** Schema used to validate values read from storage. */
-	schema: S;
+	schema: TSchema;
 	/**
 	 * Fallback value used when storage is empty or validation fails.
 	 * Also used as the initial value on first visit.
 	 */
-	defaultValue: NoInfer<StandardSchemaV1.InferOutput<S>>;
+	defaultValue: NoInfer<StandardSchemaV1.InferOutput<TSchema>>;
 	/**
-	 * The Web Storage instance to use (e.g., `localStorage`, `sessionStorage`).
+	 * The Web Storage instance to use.
 	 * @default window.localStorage
 	 */
 	storage?: Storage;
 	/**
 	 * Whether to sync state across tabs via the `storage` event.
-	 * Only applies to `'local'` storage (sessionStorage is per-tab by definition).
 	 * @default true
 	 */
 	syncTabs?: boolean;
@@ -96,21 +95,16 @@ type PersistedStateOptions<S extends StandardSchemaV1> = {
  * theme.current = 'light'; // persists to localStorage
  * ```
  */
-export function createPersistedState<S extends StandardSchemaV1>(
-	options: PersistedStateOptions<S>,
-) {
-	const {
-		key,
-		schema,
-		defaultValue,
-		storage: storageApi = window.localStorage,
-		syncTabs = true,
-		onError,
-		onUpdateError,
-	} = options;
-
-	/** Parse a raw JSON string from storage against the schema. */
-	function parseRawValue(raw: string | null): StandardSchemaV1.InferOutput<S> {
+export function createPersistedState<TSchema extends StandardSchemaV1>({
+	key,
+	schema,
+	defaultValue,
+	storage: storageApi = window.localStorage,
+	syncTabs = true,
+	onError,
+	onUpdateError,
+}: PersistedStateOptions<TSchema>) {
+	function parseRawValue(raw: string | null) {
 		if (raw === null) return defaultValue;
 
 		const { data: parsed, error: jsonError } = trySync({
@@ -150,14 +144,13 @@ export function createPersistedState<S extends StandardSchemaV1>(
 			return defaultValue;
 		}
 
-		return result.value as StandardSchemaV1.InferOutput<S>;
+		return result.value as StandardSchemaV1.InferOutput<TSchema>;
 	}
 
-	function readFromStorage(): StandardSchemaV1.InferOutput<S> {
+	function readFromStorage() {
 		return parseRawValue(storageApi.getItem(key));
 	}
 
-	// Initialize from storage
 	let value = $state(readFromStorage());
 
 	// Cross-tab sync: `storage` event fires when ANOTHER tab writes to localStorage.
@@ -170,7 +163,6 @@ export function createPersistedState<S extends StandardSchemaV1>(
 	}
 
 	// Same-tab sync: catches DevTools edits and writes from other libraries.
-	// The `storage` event only fires for OTHER tabs, so focus re-reads cover the gap.
 	window.addEventListener('focus', () => {
 		value = readFromStorage();
 	});
@@ -179,7 +171,7 @@ export function createPersistedState<S extends StandardSchemaV1>(
 		get current() {
 			return value;
 		},
-		set current(newValue: StandardSchemaV1.InferOutput<S>) {
+		set current(newValue: StandardSchemaV1.InferOutput<TSchema>) {
 			value = newValue;
 			try {
 				storageApi.setItem(key, JSON.stringify(newValue));

@@ -19,14 +19,14 @@ import { createFactory } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
-import { MAX_PAYLOAD_BYTES } from './constants';
-import * as schema from './db/schema';
 import {
- 	renderConsentPage,
+	renderConsentPage,
 	renderDevicePage,
 	renderSignedInPage,
 	renderSignInPage,
 } from './auth-pages';
+import { MAX_PAYLOAD_BYTES } from './constants';
+import * as schema from './db/schema';
 
 export { DocumentRoom } from './document-room';
 // Re-export so wrangler types generates DurableObjectNamespace<WorkspaceRoom|DocumentRoom>
@@ -390,21 +390,25 @@ app.get(
 
 // Auth pages — server-rendered Hono JSX
 app.get('/sign-in', async (c) => {
-	const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
+	const session = await c.var.auth.api.getSession({
+		headers: c.req.raw.headers,
+	});
 	if (session) {
 		const url = new URL(c.req.url);
 		// OAuth re-entry: signed params present → continue the authorize flow
 		if (url.searchParams.has('sig')) {
-			return c.redirect('/auth/oauth2/authorize' + url.search);
+			return c.redirect(`/auth/oauth2/authorize${url.search}`);
 		}
 		// Post-signin redirect (e.g. from /device or /consent)
 		const callbackURL = url.searchParams.get('callbackURL');
-		if (callbackURL && callbackURL.startsWith('/')) {
+		if (callbackURL?.startsWith('/')) {
 			return c.redirect(callbackURL);
 		}
 		// Already signed in, no redirect needed — show signed-in confirmation
 		const displayName = session.user.name ?? session.user.email;
-		return c.html(renderSignedInPage({ displayName, email: session.user.email }));
+		return c.html(
+			renderSignedInPage({ displayName, email: session.user.email }),
+		);
 	}
 	return c.html(renderSignInPage());
 });
@@ -412,10 +416,14 @@ app.get(
 	'/consent',
 	sValidator('query', type({ 'client_id?': 'string', 'scope?': 'string' })),
 	async (c) => {
-		const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
+		const session = await c.var.auth.api.getSession({
+			headers: c.req.raw.headers,
+		});
 		if (!session) {
-			const consentUrl = '/consent' + new URL(c.req.url).search;
-			return c.redirect(`/sign-in?callbackURL=${encodeURIComponent(consentUrl)}`);
+			const consentUrl = `/consent${new URL(c.req.url).search}`;
+			return c.redirect(
+				`/sign-in?callbackURL=${encodeURIComponent(consentUrl)}`,
+			);
 		}
 		const { client_id: clientId, scope } = c.req.valid('query');
 		return c.html(renderConsentPage({ clientId, scope }));
@@ -426,12 +434,16 @@ app.get(
 	sValidator('query', type({ 'user_code?': 'string' })),
 	async (c) => {
 		const { user_code: userCode } = c.req.valid('query');
-		const session = await c.var.auth.api.getSession({ headers: c.req.raw.headers });
+		const session = await c.var.auth.api.getSession({
+			headers: c.req.raw.headers,
+		});
 		if (!session) {
 			const callbackURL = userCode
 				? `/device?user_code=${encodeURIComponent(userCode)}`
 				: '/device';
-			return c.redirect(`/sign-in?callbackURL=${encodeURIComponent(callbackURL)}`);
+			return c.redirect(
+				`/sign-in?callbackURL=${encodeURIComponent(callbackURL)}`,
+			);
 		}
 		return c.html(renderDevicePage({ userCode }));
 	},

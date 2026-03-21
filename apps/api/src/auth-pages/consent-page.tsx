@@ -30,7 +30,7 @@ export function ConsentPage({
 
 			{scopes.length > 0 && (
 				<>
-					<label>Requested permissions</label>
+					<p>Requested permissions</p>
 					<ul class="scope-list">
 						{scopes.map((s) => (
 							<li>{s}</li>
@@ -38,7 +38,6 @@ export function ConsentPage({
 					</ul>
 				</>
 			)}
-
 
 			<div id="msg" class="msg hidden" />
 

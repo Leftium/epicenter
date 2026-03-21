@@ -38,6 +38,7 @@
 		"@tanstack/ai-gemini": "catalog:",
 		"@tanstack/ai-grok": "catalog:",
 		"arktype": "catalog:",
+		"autumn-js": "^1.0.7",
 		"better-auth": "catalog:",
 		"drizzle-orm": "catalog:",
 		"hono": "catalog:",
@@ -51,6 +52,7 @@
 	"devDependencies": {
 		"@types/bun": "catalog:",
 		"@types/pg": "^8.18.0",
+		"atmn": "^1.1.5",
 		"dotenv": "^17.3.1",
 		"drizzle-kit": "catalog:",
 		"jsonc-parser": "^3.3.1",

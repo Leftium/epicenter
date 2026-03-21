@@ -1,10 +1,10 @@
 {
 	"extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "hono/jsx",
-    "types": ["@types/bun", "./worker-configuration.d.ts"]
-  },
+	"compilerOptions": {
+		"noEmit": true,
+		"jsx": "react-jsx",
+		"jsxImportSource": "hono/jsx",
+		"types": ["@types/bun", "./worker-configuration.d.ts"]
+	},
 	"include": ["src", "env.d.ts"]
 }

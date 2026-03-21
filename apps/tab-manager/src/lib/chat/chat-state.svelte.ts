@@ -371,6 +371,21 @@ function createAiChatState() {
 				return status;
 			},
 
+			/**
+			 * Whether the last error was a 402 (credits exhausted).
+			 * UI should show an upgrade prompt when true.
+			 *
+			 * TanStack AI's `fetchServerSentEvents` discards the response body on
+			 * non-2xx responses and throws `Error('HTTP error! status: 402 ...')`.
+			 * We match on the status code since it's the only signal available.
+			 * 402 is only returned by the `InsufficientCredits` path in ai-chat.ts.
+			 */
+			get isCreditsExhausted() {
+				const err = (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).error;
+				if (!err) return false;
+				return err.message.includes('status: 402');
+			},
+
 			// ── Ephemeral UI state (own $state) ──
 
 			get inputValue() {
@@ -676,6 +691,11 @@ function createAiChatState() {
 
 		modelsForProvider(providerName: string): readonly string[] {
 			return PROVIDER_MODELS[providerName as Provider] ?? [];
+		},
+
+		/** URL to the billing page for credit upgrades. */
+		get billingUrl() {
+			return `${remoteServerUrl.current}/billing`;
 		},
 	};
 }

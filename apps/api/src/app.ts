@@ -6,6 +6,7 @@ import {
 } from '@better-auth/oauth-provider';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
+import { autumn } from 'autumn-js/better-auth';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { customSession } from 'better-auth/plugins';
@@ -25,6 +26,8 @@ import {
 	renderSignedInPage,
 	renderSignInPage,
 } from './auth-pages';
+import { createAutumn } from './autumn';
+import { billing } from './billing';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 
@@ -213,7 +216,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /** Creates a Better Auth instance using an already-connected Drizzle instance. */
-function createAuth(db: Db, env: Env['Bindings']) {
+function createAuth({ db, env }: { db: Db; env: Env['Bindings'] }) {
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg' }),
@@ -274,6 +277,7 @@ function createAuth(db: Db, env: Env['Bindings']) {
 					},
 				],
 			}),
+			autumn({ secretKey: env.AUTUMN_SECRET_KEY, customerScope: 'user' }),
 		],
 		session: {
 			expiresIn: 60 * 60 * 24 * 7,
@@ -370,7 +374,7 @@ const factory = createFactory<Env>({
 
 		// Layer 2: Auth — pure, reads db from context.
 		app.use('*', async (c, next) => {
-			c.set('auth', createAuth(c.var.db, c.env));
+			c.set('auth', createAuth({ db: c.var.db, env: c.env }));
 			await next();
 		});
 	},
@@ -493,8 +497,24 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 	await next();
 });
 app.use('/ai/*', authGuard);
+// Ensure authenticated AI users exist as Autumn customers (blocking—must
+// complete before downstream check() calls, which require the customer to exist).
+app.use('/ai/*', async (c, next) => {
+	const autumn = createAutumn(c.env);
+	await autumn.customers.getOrCreate({
+		customerId: c.var.user.id,
+		name: c.var.user.name ?? undefined,
+		email: c.var.user.email ?? undefined,
+	});
+	await next();
+});
 app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
+app.use('/billing', authGuard);
+app.use('/billing/*', authGuard);
+
+// Billing — server-rendered Hono JSX billing page
+app.route('/billing', billing);
 
 // AI chat
 app.post(

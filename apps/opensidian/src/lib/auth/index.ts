@@ -10,9 +10,10 @@ import { tokenStore } from './token-store';
 
 export const authState = createAuthState({
 	baseURL: API_URL,
+	storagePrefix: 'opensidian',
 	tokenStore,
 	async onSignedIn(encryptionKey) {
-		if (encryptionKey) await ws.activateEncryption(base64ToBytes(encryptionKey));
+		await ws.activateEncryption(base64ToBytes(encryptionKey));
 		ws.extensions.sync.reconnect();
 	},
 	async onSignedOut() {

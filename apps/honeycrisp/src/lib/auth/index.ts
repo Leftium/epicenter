@@ -11,9 +11,10 @@ import { tokenStore } from './token-store';
 
 export const authState = createAuthState({
 	baseURL: API_URL,
+	storagePrefix: 'honeycrisp',
 	tokenStore,
 	async onSignedIn(encryptionKey) {
-		if (encryptionKey) await workspace.activateEncryption(base64ToBytes(encryptionKey));
+		await workspace.activateEncryption(base64ToBytes(encryptionKey));
 		workspace.extensions.sync.reconnect();
 	},
 	async onSignedOut() {

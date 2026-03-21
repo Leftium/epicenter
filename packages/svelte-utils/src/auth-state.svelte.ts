@@ -78,14 +78,12 @@ type AuthError = InferErrors<typeof AuthError>;
 export type TokenStore = {
 	get(): string | undefined;
 	set(value: string | undefined): void;
-	prefix: string;
 };
 
 /** Create a token store backed by raw localStorage. */
 export function createTokenStore(storagePrefix: string): TokenStore {
 	const key = `${storagePrefix}:authToken`;
 	return {
-		prefix: storagePrefix,
 		get() {
 			return localStorage.getItem(key) ?? undefined;
 		},
@@ -104,11 +102,8 @@ export function createTokenStore(storagePrefix: string): TokenStore {
 export type AuthStateConfig = {
 	/** Base URL for the Better Auth API (e.g. `https://api.epicenter.so`). */
 	baseURL: string;
-	/**
-	 * Prefix for localStorage keys (e.g. `'honeycrisp'` → `'honeycrisp:authUser'`).
-	 * Defaults to `tokenStore.prefix` when omitted.
-	 */
-	storagePrefix?: string;
+	/** Prefix for localStorage keys (e.g. `'honeycrisp'` → `'honeycrisp:authUser'`). */
+	storagePrefix: string;
 	/** Token store for reading/writing the auth token. */
 	tokenStore: TokenStore;
 	/**
@@ -118,7 +113,7 @@ export type AuthStateConfig = {
 	 */
 	signInWithGoogle?: () => Promise<AuthUser>;
 	/** Called after successful sign-in with the encryption key from the session. */
-	onSignedIn?: (encryptionKey?: string) => Promise<void>;
+	onSignedIn?: (encryptionKey: string) => Promise<void>;
 	/** Called after sign-out. */
 	onSignedOut?: () => Promise<void>;
 };
@@ -135,8 +130,7 @@ function serializeDates<T extends Record<string, unknown>>(obj: T) {
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createAuthState(config: AuthStateConfig) {
-	const { baseURL, tokenStore } = config;
-	const storagePrefix = config.storagePrefix ?? tokenStore.prefix;
+	const { baseURL, storagePrefix, tokenStore } = config;
 
 	// User state needs reactivity (displayed in UI) + schema validation
 	const userState = createPersistedState({

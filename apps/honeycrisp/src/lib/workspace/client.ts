@@ -15,20 +15,6 @@ import { honeycrisp } from './schema';
 
 const API_URL = createApps('production').API.URL;
 
-/**
- * Mutable token provider set by the auth module after initialization.
- * The sync extension calls this lazily at connection time, not at
- * construction time, so the auth module has time to set it up.
- */
-let tokenProvider: (() => string | undefined) | undefined;
-
-/** Called by the auth module to wire the token provider. */
-export function setTokenProvider(fn: () => string | undefined) {
-	tokenProvider = fn;
-}
-
-// Assign to const so TypeScript resolves the full builder type
-// (including EncryptionMethods from .withEncryption).
 const workspace = createWorkspace(honeycrisp)
 	.withEncryption({})
 	.withExtension('persistence', indexeddbPersistence)
@@ -36,7 +22,8 @@ const workspace = createWorkspace(honeycrisp)
 		'sync',
 		createSyncExtension({
 			url: (workspaceId) => `${API_URL}/workspaces/${workspaceId}`,
-			getToken: async () => tokenProvider?.(),
+			getToken: async () =>
+				localStorage.getItem('honeycrisp:authToken') ?? undefined,
 		}),
 	);
 

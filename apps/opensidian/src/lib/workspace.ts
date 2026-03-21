@@ -11,16 +11,6 @@ import { Bash } from 'just-bash';
 
 const API_URL = createApps('production').API.URL;
 
-/**
- * Mutable token provider set by the auth module after initialization.
- * Called lazily at connection time, not at construction time.
- */
-let tokenProvider: (() => string | undefined) | undefined;
-
-/** Called by the auth module to wire the token provider. */
-export function setTokenProvider(fn: () => string | undefined) {
-	tokenProvider = fn;
-}
 
 /**
  * Opensidian workspace infrastructure.
@@ -40,7 +30,8 @@ export const ws = createWorkspace({
 		'sync',
 		createSyncExtension({
 			url: (workspaceId) => `${API_URL}/workspaces/${workspaceId}`,
-			getToken: async () => tokenProvider?.(),
+			getToken: async () =>
+ 				localStorage.getItem('opensidian:authToken') ?? undefined,
 		}),
 	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());

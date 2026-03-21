@@ -18,7 +18,7 @@
  * ```
  */
 
-import { createPersistedState } from '@epicenter/svelte/createPersistedState';
+import { createPersistedState } from '@epicenter/svelte/persisted-state';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
 import {
@@ -107,12 +107,12 @@ export function createAuthState(config: AuthStateConfig) {
 	const tokenState = createPersistedState({
 		key: `${storagePrefix}:authToken`,
 		schema: type('string').or('undefined'),
-		onParseError: () => undefined,
+		defaultValue: undefined,
 	});
 	const userState = createPersistedState({
 		key: `${storagePrefix}:authUser`,
 		schema: AuthUser.or('undefined'),
-		onParseError: () => undefined,
+		defaultValue: undefined,
 	});
 
 	let phase = $state<AuthPhase>({ status: 'checking' });
@@ -123,11 +123,11 @@ export function createAuthState(config: AuthStateConfig) {
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',
-				token: () => tokenState.value,
+				token: () => tokenState.current,
 			},
 			onSuccess: ({ response }) => {
 				const newToken = response.headers.get('set-auth-token');
-				if (newToken) tokenState.value = newToken;
+				if (newToken) tokenState.current = newToken;
 			},
 		},
 	});
@@ -143,8 +143,8 @@ export function createAuthState(config: AuthStateConfig) {
 	}
 
 	function clearState() {
-		tokenState.value = undefined;
-		userState.value = undefined;
+		tokenState.current = undefined;
+		userState.current = undefined;
 	}
 
 	/**
@@ -169,11 +169,11 @@ export function createAuthState(config: AuthStateConfig) {
 		},
 
 		get user() {
-			return userState.value;
+			return userState.current;
 		},
 
 		get token() {
-			return tokenState.value;
+			return tokenState.current;
 		},
 
 		async signIn(credentials: { email: string; password: string }) {
@@ -186,7 +186,7 @@ export function createAuthState(config: AuthStateConfig) {
 					if (authError)
 						throw new Error(authError.message ?? authError.statusText);
 					const user = serializeDates(data.user);
-					userState.value = user;
+					userState.current = user;
 					return user;
 				},
 				catch: (cause) => AuthError.SignInFailed({ cause }),
@@ -216,7 +216,7 @@ export function createAuthState(config: AuthStateConfig) {
 					if (authError)
 						throw new Error(authError.message ?? authError.statusText);
 					const user = serializeDates(data.user);
-					userState.value = user;
+					userState.current = user;
 					return user;
 				},
 				catch: (cause) => AuthError.SignUpFailed({ cause }),
@@ -239,7 +239,7 @@ export function createAuthState(config: AuthStateConfig) {
 				const result = await tryAsync({
 					try: async () => {
 						const user = await config.signInWithGoogle!();
-						userState.value = user;
+						userState.current = user;
 						return user;
 					},
 					catch: (cause) => {
@@ -300,7 +300,7 @@ export function createAuthState(config: AuthStateConfig) {
 		 * aren't logged out. Only an explicit auth rejection (4xx) clears state.
 		 */
 		async checkSession() {
-			const token = tokenState.value;
+			const token = tokenState.current;
 			if (!token) {
 				phase = { status: 'signed-out' };
 				return Ok(null);
@@ -313,7 +313,7 @@ export function createAuthState(config: AuthStateConfig) {
 					sessionError.status && sessionError.status < 500;
 
 				if (!isAuthRejection) {
-					const cached = userState.value;
+					const cached = userState.current;
 					phase = cached ? { status: 'signed-in' } : { status: 'signed-out' };
 					return Ok(cached ?? null);
 				}
@@ -332,7 +332,7 @@ export function createAuthState(config: AuthStateConfig) {
 			}
 
 			const user = serializeDates(data.user);
-			userState.value = user;
+			userState.current = user;
 			if (data.encryptionKey) {
 				await config.onSignedIn?.(data.encryptionKey);
 			}

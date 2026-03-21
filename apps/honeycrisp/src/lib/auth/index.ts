@@ -1,6 +1,6 @@
 import { createApps } from '@epicenter/constants/apps';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
-import workspace, { setTokenProvider } from '$lib/workspace/client';
+import workspace from '$lib/workspace/client';
 import { createAuthState } from './create-auth-state.svelte';
 
 const API_URL = createApps('production').API.URL;
@@ -26,5 +26,3 @@ export const authState = createAuthState({
 		workspace.extensions.sync.reconnect();
 	},
 });
-
-setTokenProvider(() => authState.token);

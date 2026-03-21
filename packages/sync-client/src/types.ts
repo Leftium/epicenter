@@ -32,8 +32,25 @@ export type SyncProviderConfig = {
 	/** The Y.Doc to sync. */
 	doc: Y.Doc;
 
-	/** WebSocket URL for the sync room (ws: or wss:). */
-	url: string;
+	/**
+	 * WebSocket URL for the sync room, or a function that returns one.
+	 *
+	 * - **Static string**: Fixed URL, evaluated once. Use for known endpoints.
+	 * - **Function**: Called fresh on each connection attempt. Use when the URL
+	 *   may change at runtime (e.g. loaded from async storage) or isn't available
+	 *   at provider creation time.
+	 *
+	 * @example Static URL
+	 * ```typescript
+	 * url: 'ws://localhost:3913/rooms/blog'
+	 * ```
+	 *
+	 * @example Dynamic URL (re-evaluated on each connection attempt)
+	 * ```typescript
+	 * url: () => `wss://${getServerHost()}/rooms/blog`
+	 * ```
+	 */
+	url: string | (() => string);
 
 	/**
 	 * Dynamic token fetcher for authenticated mode. Called on each connect/reconnect.

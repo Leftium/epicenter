@@ -114,14 +114,12 @@ export function createSyncExtension(
 } {
 	return ({ ydoc, whenReady: priorReady }) => {
 		const docId = ydoc.guid;
-		const resolvedBaseUrl = config.url(docId);
-		const wsUrl = resolvedBaseUrl
-			.replace(/^https:/, 'wss:')
-			.replace(/^http:/, 'ws:');
-
 		const provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
-			url: wsUrl,
+			url: () => {
+				const base = config.url(docId);
+				return base.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+			},
 			getToken: config.getToken
 				? () => config.getToken!(docId)
 				: undefined,

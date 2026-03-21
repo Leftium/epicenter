@@ -20,6 +20,7 @@
       "dependencies": {
         "@better-auth/drizzle-adapter": "catalog:",
         "@better-auth/oauth-provider": "catalog:",
+        "@epicenter/constants": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "@tanstack/ai": "catalog:",
@@ -32,7 +33,6 @@
         "hono-openapi": "catalog:",
         "lib0": "catalog:",
         "pg": "^8.20.0",
-        "postgres": "^3.4.8",
         "wellcrafted": "catalog:",
         "y-protocols": "catalog:",
         "yjs": "catalog:",
@@ -199,6 +199,18 @@
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20250803.0",
         "wrangler": "catalog:",
+      },
+    },
+    "apps/runner": {
+      "name": "@epicenter/runner",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/workspace": "workspace:*",
+        "yjs": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "apps/tab-manager": {
@@ -795,6 +807,8 @@
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
+
+    "@epicenter/runner": ["@epicenter/runner@workspace:apps/runner"],
 
     "@epicenter/svelte": ["@epicenter/svelte@workspace:packages/svelte-utils"],
 

@@ -6,10 +6,11 @@ import {
 } from '@better-auth/oauth-provider';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
-import { betterAuth } from 'better-auth';
+import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { customSession } from 'better-auth/plugins';
 import { bearer } from 'better-auth/plugins/bearer';
+import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
 import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
@@ -20,6 +21,7 @@ import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
+import { devicePage } from './device-page';
 
 export { DocumentRoom } from './document-room';
 // Re-export so wrangler types generates DurableObjectNamespace<WorkspaceRoom|DocumentRoom>
@@ -96,7 +98,7 @@ export const BASE_AUTH_CONFIG = {
 			trustedProviders: ['google', 'email-password'],
 		},
 	},
-};
+} satisfies BetterAuthOptions;
 
 /**
  * Validated shape of a single keyring entry.
@@ -104,7 +106,10 @@ export const BASE_AUTH_CONFIG = {
  * `version` is a positive integer identifying the key generation; `secret` is
  * the raw key material (typically base64-encoded via `openssl rand -base64 32`).
  */
-const EncryptionEntry = type({ version: 'number.integer > 0', secret: 'string' });
+const EncryptionEntry = type({
+	version: 'number.integer > 0',
+	secret: 'string',
+});
 
 /**
  * Parse a single `"version:secret"` string into a validated `EncryptionEntry`.
@@ -113,11 +118,13 @@ const EncryptionEntry = type({ version: 'number.integer > 0', secret: 'string' }
  * is the secret (which may itself contain colons). Uses `ctx.error()` for
  * arktype-native error reporting when the colon delimiter is missing.
  */
-const EncryptionEntryParser = type('string').pipe((entry, ctx) => {
-	const i = entry.indexOf(':');
-	if (i === -1) return ctx.error('must be "version:secret"');
-	return { version: Number(entry.slice(0, i)), secret: entry.slice(i + 1) };
-}).to(EncryptionEntry);
+const EncryptionEntryParser = type('string')
+	.pipe((entry, ctx) => {
+		const i = entry.indexOf(':');
+		if (i === -1) return ctx.error('must be "version:secret"');
+		return { version: Number(entry.slice(0, i)), secret: entry.slice(i + 1) };
+	})
+	.to(EncryptionEntry);
 
 /**
  * Parse and validate the full ENCRYPTION_SECRETS env var into a sorted keyring.
@@ -201,7 +208,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /** Creates a Better Auth instance using an already-connected Drizzle instance. */
-function createAuth(db: Db) {
+function createAuth(db: Db, env: Env['Bindings']) {
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg' }),
@@ -225,6 +232,11 @@ function createAuth(db: Db) {
 					keyVersion: currentKey.version,
 				};
 			}),
+			deviceAuthorization({
+				verificationUri: '/device',
+				expiresIn: '10m',
+				interval: '5s',
+			}),
 			oauthProvider({
 				loginPage: '/sign-in',
 				consentPage: '/consent',
@@ -244,6 +256,14 @@ function createAuth(db: Db) {
 						name: 'Epicenter Mobile',
 						type: 'native',
 						redirectUrls: ['epicenter://auth/callback'],
+						skipConsent: true,
+						metadata: {},
+					},
+					{
+						clientId: 'epicenter-runner',
+						name: 'Epicenter Runner',
+						type: 'native',
+						redirectUrls: [],
 						skipConsent: true,
 						metadata: {},
 					},
@@ -345,7 +365,7 @@ const factory = createFactory<Env>({
 
 		// Layer 2: Auth — pure, reads db from context.
 		app.use('*', async (c, next) => {
-			c.set('auth', createAuth(c.var.db));
+			c.set('auth', createAuth(c.var.db, c.env));
 			await next();
 		});
 	},
@@ -362,6 +382,12 @@ app.get(
 	}),
 	(c) => c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
 );
+
+// Device authorization verification page (RFC 8628)
+app.get('/device', (c) => {
+	const userCode = c.req.query('user_code');
+	return c.html(devicePage(userCode));
+});
 
 // Auth
 app.on(

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { csrf } from 'hono/csrf';
+import { Err, tryAsync } from 'wellcrafted/result';
 import { aiCredits, creditTopUp, free, max, pro } from '../autumn.config';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
@@ -16,24 +17,26 @@ billing.use(csrf());
 /** Main plan IDs in display order—derived from autumn.config.ts, not hand-maintained. */
 const MAIN_PLAN_IDS = [free.id, pro.id, max.id] as const;
 
-/** Format a plan's price for display. */
-function formatPrice(price: { amount: number; interval: string } | null): string {
+function formatPrice(
+	price: { amount: number; interval: string } | null,
+): string {
 	if (!price || price.amount === 0) return '$0';
 	return `$${price.amount}/${price.interval}`;
 }
 
-/** Format a plan item's credit info for display. */
 function formatCredits(item: { included: number } | undefined): string {
 	if (!item) return 'No credits';
 	return `${item.included.toLocaleString()} credits/mo`;
 }
 
-/** Format overage pricing for display. */
-function formatOverage(item: { price: { amount?: number; billingUnits: number } | null } | undefined): string {
+function formatOverage(
+	item: { price: { amount?: number; billingUnits: number } | null } | undefined,
+): string {
 	if (!item?.price?.amount) return 'No overage';
 	return `$${item.price.amount} per ${item.price.billingUnits} extra`;
 }
 
+/** Format a unix timestamp (seconds) to a human-readable date. */
 function formatDate(timestamp: number | null | undefined): string {
 	if (!timestamp) return '—';
 	return new Date(timestamp * 1000).toLocaleDateString('en-US', {
@@ -43,12 +46,30 @@ function formatDate(timestamp: number | null | undefined): string {
 	});
 }
 
-const FLASH_MESSAGES: Record<string, { type: 'success' | 'error'; message: string }> = {
+const FLASH_MESSAGES: Record<
+	string,
+	{ type: 'success' | 'error'; message: string }
+> = {
 	upgraded: { type: 'success', message: 'Plan upgraded successfully.' },
-	canceled: { type: 'success', message: 'Subscription will cancel at the end of this billing cycle.' },
-	uncanceled: { type: 'success', message: 'Cancellation reversed\u2014your plan stays active.' },
+	canceled: {
+		type: 'success',
+		message: 'Subscription will cancel at the end of this billing cycle.',
+	},
+	uncanceled: {
+		type: 'success',
+		message: 'Cancellation reversed\u2014your plan stays active.',
+	},
 	topped_up: { type: 'success', message: 'Credits added to your account.' },
 };
+
+/** Parse planId from a form body, redirect on missing. */
+async function parsePlanId(c: {
+	req: { parseBody: () => Promise<Record<string, unknown>> };
+}) {
+	const body = await c.req.parseBody();
+	const planId = body['planId'];
+	return typeof planId === 'string' ? planId : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -73,7 +94,10 @@ function Layout({
 				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 				<title>{title ? `${title} — Epicenter` : 'Billing — Epicenter'}</title>
 				{redirectAfter && (
-					<meta http-equiv="refresh" content={`${redirectAfter[0]};url=${redirectAfter[1]}`} />
+					<meta
+						http-equiv="refresh"
+						content={`${redirectAfter[0]};url=${redirectAfter[1]}`}
+					/>
 				)}
 				<script src="https://cdn.tailwindcss.com"></script>
 				<style>{`
@@ -148,25 +172,36 @@ function CreditBalance({
 	);
 }
 
+type PlanCardPlan = {
+	id: string;
+	name: string;
+	price: { amount: number; interval: string } | null;
+	items: Array<{
+		included: number;
+		price: { amount?: number; billingUnits: number } | null;
+	}>;
+};
+
 function PlanCard({
 	plan,
 	isCurrent,
 	eligibility,
 }: {
-	plan: { id: string; name: string; price: { amount: number; interval: string } | null; items: Array<{ included: number; price: { amount?: number; billingUnits: number } | null }> };
+	plan: PlanCardPlan;
 	isCurrent: boolean;
 	eligibility: string | undefined;
 }) {
 	const creditItem = plan.items[0];
+
 	const buttonLabel = isCurrent
 		? 'Current plan'
-		: eligibility === 'upgrade'
-			? `Upgrade to ${plan.name}`
-			: eligibility === 'downgrade'
-				? `Downgrade to ${plan.name}`
-				: eligibility === 'activate'
-					? `Subscribe to ${plan.name}`
-					: `Switch to ${plan.name}`;
+		: ((
+				{
+					upgrade: `Upgrade to ${plan.name}`,
+					downgrade: `Downgrade to ${plan.name}`,
+					activate: `Subscribe to ${plan.name}`,
+				} as Record<string, string>
+			)[eligibility ?? ''] ?? `Switch to ${plan.name}`);
 
 	return (
 		<div
@@ -233,7 +268,9 @@ function SubscriptionSection({
 						<div>
 							<p class="text-rose-300 text-sm">
 								Cancels on{' '}
-								{formatDate(subscription.expiresAt ?? subscription.currentPeriodEnd)}
+								{formatDate(
+									subscription.expiresAt ?? subscription.currentPeriodEnd,
+								)}
 							</p>
 							<p class="text-zinc-500 text-xs mt-0.5">
 								You'll lose access to paid features after this date.
@@ -253,8 +290,7 @@ function SubscriptionSection({
 					<div class="flex items-center justify-between">
 						<div>
 							<p class="text-sm">
-								{subscription.plan?.name ?? subscription.planId}{' '}
-								plan\u2014active
+								{subscription.plan?.name ?? subscription.planId} plan—active
 							</p>
 							{subscription.currentPeriodEnd && (
 								<p class="text-zinc-500 text-xs mt-0.5">
@@ -296,88 +332,22 @@ billing.get('/', async (c) => {
 			? FLASH_MESSAGES[flashKey]
 			: undefined;
 
-	try {
-		const [customer, plansResult] = await Promise.all([
-			autumn.customers.getOrCreate({
-				customerId: userId,
-				name: c.var.user.name ?? undefined,
-				email: c.var.user.email ?? undefined,
-				expand: ['subscriptions.plan', 'balances.feature'],
-			}),
-			autumn.plans.list({ customerId: userId }),
-		]);
+	const { data, error } = await tryAsync({
+		try: () =>
+			Promise.all([
+				autumn.customers.getOrCreate({
+					customerId: userId,
+					name: c.var.user.name ?? undefined,
+					email: c.var.user.email ?? undefined,
+					expand: ['subscriptions.plan', 'balances.feature'],
+				}),
+				autumn.plans.list({ customerId: userId }),
+			]),
+		catch: (e) => Err(e instanceof Error ? e : new Error(String(e))),
+	});
 
-		// Extract credit balance—SDK returns camelCase types
-		const creditBalance = customer.balances[aiCredits.id];
-		const currentBalance = creditBalance?.remaining ?? 0;
-		const resetsAt = creditBalance?.nextResetAt
-			? formatDate(creditBalance.nextResetAt)
-			: null;
-
-		// Extract current subscription (non-addon = main plan)
-		const mainSub = customer.subscriptions.find((s) => !s.addOn) ?? null;
-		const currentPlanId = mainSub?.planId ?? 'free';	
-
-		// Map plan eligibility from Autumn plans.list response
-		const eligibilityMap = new Map<string, string>();
-		for (const plan of plansResult.list) {
-			if (plan.customerEligibility) {
-				eligibilityMap.set(plan.id, plan.customerEligibility.attachAction);
-			}
-		}
-
-		// Filter to main plans (non-addon), ordered by MAIN_PLAN_IDS
-		const planMap = new Map(plansResult.list.map((p) => [p.id, p]));
-		const mainPlans = MAIN_PLAN_IDS.map((id) => planMap.get(id)).filter((p) => p !== undefined);
-
-		// Determine included credits based on current plan
-		const includedCredits = creditBalance?.granted ?? 50;
-
-		return c.html(
-			<Layout flash={flash}>
-				<CreditBalance
-					balance={currentBalance}
-					included={includedCredits}
-					resetsAt={resetsAt}
-				/>
-
-				{/* Plan comparison */}
-				<section class="mb-10">
-					<h2 class="text-lg font-medium mb-3">Plans</h2>
-					<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-						{mainPlans.map((plan) => (
-							<PlanCard
-								plan={plan}
-								isCurrent={currentPlanId === plan.id}
-								eligibility={eligibilityMap.get(plan.id)}
-							/>
-						))}
-					</div>
-				</section>
-
-				<SubscriptionSection subscription={mainSub} />
-
-				{/* Top-up and portal */}
-				<section class="flex flex-wrap gap-3">
-					<form method="post" action="/billing/top-up">
-						<button
-							type="submit"
-							class="py-2.5 px-5 rounded-lg text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors"
-						>
-							Buy 500 credits — $5
-						</button>
-					</form>
-					<a
-						href="/billing/portal"
-						class="inline-flex items-center py-2.5 px-5 rounded-lg text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors"
-					>
-						Manage billing
-					</a>
-				</section>
-			</Layout>,
-		);
-	} catch (err) {
-		console.error('Billing dashboard error:', err);
+	if (error) {
+		console.error('Billing dashboard error:', error);
 		return c.html(
 			<Layout
 				flash={{
@@ -391,114 +361,187 @@ billing.get('/', async (c) => {
 			</Layout>,
 		);
 	}
+
+	const [customer, plansResult] = data;
+
+	// Extract credit balance—SDK returns camelCase types
+	const creditBalance = customer.balances[aiCredits.id];
+	const currentBalance = creditBalance?.remaining ?? 0;
+	const resetsAt = creditBalance?.nextResetAt
+		? formatDate(creditBalance.nextResetAt)
+		: null;
+
+	// Extract current subscription (non-addon = main plan)
+	const mainSub = customer.subscriptions.find((s) => !s.addOn) ?? null;
+	const currentPlanId = mainSub?.planId ?? 'free';
+
+	// Map plan eligibility from Autumn plans.list response
+	const eligibilityMap = new Map<string, string>();
+	for (const plan of plansResult.list) {
+		if (plan.customerEligibility) {
+			eligibilityMap.set(plan.id, plan.customerEligibility.attachAction);
+		}
+	}
+
+	// Filter to main plans (non-addon), ordered by MAIN_PLAN_IDS
+	const planMap = new Map(plansResult.list.map((p) => [p.id, p]));
+	const mainPlans = MAIN_PLAN_IDS.map((id) => planMap.get(id)).filter(
+		(p) => p !== undefined,
+	);
+
+	const includedCredits = creditBalance?.granted ?? 50;
+
+	return c.html(
+		<Layout flash={flash}>
+			<CreditBalance
+				balance={currentBalance}
+				included={includedCredits}
+				resetsAt={resetsAt}
+			/>
+
+			<section class="mb-10">
+				<h2 class="text-lg font-medium mb-3">Plans</h2>
+				<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+					{mainPlans.map((plan) => (
+						<PlanCard
+							plan={plan}
+							isCurrent={currentPlanId === plan.id}
+							eligibility={eligibilityMap.get(plan.id)}
+						/>
+					))}
+				</div>
+			</section>
+
+			<SubscriptionSection subscription={mainSub} />
+
+			<section class="flex flex-wrap gap-3">
+				<form method="post" action="/billing/top-up">
+					<button
+						type="submit"
+						class="py-2.5 px-5 rounded-lg text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors"
+					>
+						Buy 500 credits — $5
+					</button>
+				</form>
+				<a
+					href="/billing/portal"
+					class="inline-flex items-center py-2.5 px-5 rounded-lg text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors"
+				>
+					Manage billing
+				</a>
+			</section>
+		</Layout>,
+	);
 });
 
 /** POST /billing/upgrade — Attach a plan */
 billing.post('/upgrade', async (c) => {
-	try {
-		const body = await c.req.parseBody();
-		const planId = body['planId'];
-		if (typeof planId !== 'string') {
-			return c.redirect('/billing?error=Missing+plan+ID');
-		}
+	const planId = await parsePlanId(c);
+	if (!planId) return c.redirect('/billing?error=Missing+plan+ID');
 
-		const autumn = createAutumn(c.env);
-		const result = await autumn.billing.attach({
-			customerId: c.var.user.id,
-			planId,
-			successUrl: new URL('/billing/success', c.req.url).toString(),
-		});
+	const { data: result, error } = await tryAsync({
+		try: () =>
+			createAutumn(c.env).billing.attach({
+				customerId: c.var.user.id,
+				planId,
+				successUrl: new URL('/billing/success', c.req.url).toString(),
+			}),
+		catch: (e) => Err(e instanceof Error ? e : new Error(String(e))),
+	});
 
-		if (result.paymentUrl) {
-			return c.redirect(result.paymentUrl);
-		}
-		return c.redirect('/billing?upgraded=true');
-	} catch (err) {
-		console.error('Upgrade error:', err);
+	if (error) {
+		console.error('Upgrade error:', error);
 		return c.redirect('/billing?error=Upgrade+failed.+Please+try+again.');
 	}
+
+	if (result.paymentUrl) return c.redirect(result.paymentUrl);
+	return c.redirect('/billing?upgraded=true');
 });
 
 /** POST /billing/cancel — Cancel subscription at end of cycle */
 billing.post('/cancel', async (c) => {
-	try {
-		const body = await c.req.parseBody();
-		const planId = body['planId'];
-		if (typeof planId !== 'string') {
-			return c.redirect('/billing?error=Missing+plan+ID');
-		}
+	const planId = await parsePlanId(c);
+	if (!planId) return c.redirect('/billing?error=Missing+plan+ID');
 
-		const autumn = createAutumn(c.env);
-		await autumn.billing.update({
-			customerId: c.var.user.id,
-			planId,
-			cancelAction: 'cancel_end_of_cycle',
-		});
+	const { error } = await tryAsync({
+		try: () =>
+			createAutumn(c.env).billing.update({
+				customerId: c.var.user.id,
+				planId,
+				cancelAction: 'cancel_end_of_cycle',
+			}),
+		catch: (e) => Err(e instanceof Error ? e : new Error(String(e))),
+	});
 
-		return c.redirect('/billing?canceled=true');
-	} catch (err) {
-		console.error('Cancel error:', err);
+	if (error) {
+		console.error('Cancel error:', error);
 		return c.redirect('/billing?error=Cancellation+failed.+Please+try+again.');
 	}
+
+	return c.redirect('/billing?canceled=true');
 });
 
 /** POST /billing/uncancel — Reverse pending cancellation */
 billing.post('/uncancel', async (c) => {
-	try {
-		const body = await c.req.parseBody();
-		const planId = body['planId'];
-		if (typeof planId !== 'string') {
-			return c.redirect('/billing?error=Missing+plan+ID');
-		}
+	const planId = await parsePlanId(c);
+	if (!planId) return c.redirect('/billing?error=Missing+plan+ID');
 
-		const autumn = createAutumn(c.env);
-		await autumn.billing.update({
-			customerId: c.var.user.id,
-			planId,
-			cancelAction: 'uncancel',
-		});
+	const { error } = await tryAsync({
+		try: () =>
+			createAutumn(c.env).billing.update({
+				customerId: c.var.user.id,
+				planId,
+				cancelAction: 'uncancel',
+			}),
+		catch: (e) => Err(e instanceof Error ? e : new Error(String(e))),
+	});
 
-		return c.redirect('/billing?uncanceled=true');
-	} catch (err) {
-		console.error('Uncancel error:', err);
+	if (error) {
+		console.error('Uncancel error:', error);
 		return c.redirect('/billing?error=Failed+to+reverse+cancellation.');
 	}
+
+	return c.redirect('/billing?uncanceled=true');
 });
 
 /** GET /billing/portal — Redirect to Stripe customer portal */
 billing.get('/portal', async (c) => {
-	try {
-		const autumn = createAutumn(c.env);
-		const result = await autumn.billing.openCustomerPortal({
-			customerId: c.var.user.id,
-			returnUrl: new URL('/billing', c.req.url).toString(),
-		});
+	const { data: result, error } = await tryAsync({
+		try: () =>
+			createAutumn(c.env).billing.openCustomerPortal({
+				customerId: c.var.user.id,
+				returnUrl: new URL('/billing', c.req.url).toString(),
+			}),
+		catch: (e) => Err(e instanceof Error ? e : new Error(String(e))),
+	});
 
-		return c.redirect(result.url);
-	} catch (err) {
-		console.error('Portal error:', err);
+	if (error) {
+		console.error('Portal error:', error);
 		return c.redirect('/billing?error=Could+not+open+billing+portal.');
 	}
+
+	return c.redirect(result.url);
 });
 
 /** POST /billing/top-up — Purchase credit top-up */
 billing.post('/top-up', async (c) => {
-	try {
-		const autumn = createAutumn(c.env);
-		const result = await autumn.billing.attach({
-			customerId: c.var.user.id,
-			planId: creditTopUp.id,
-			successUrl: new URL('/billing/success', c.req.url).toString(),
-		});
+	const { data: result, error } = await tryAsync({
+		try: () =>
+			createAutumn(c.env).billing.attach({
+				customerId: c.var.user.id,
+				planId: creditTopUp.id,
+				successUrl: new URL('/billing/success', c.req.url).toString(),
+			}),
+		catch: (e) => Err(e instanceof Error ? e : new Error(String(e))),
+	});
 
-		if (result.paymentUrl) {
-			return c.redirect(result.paymentUrl);
-		}
-		return c.redirect('/billing?topped_up=true');
-	} catch (err) {
-		console.error('Top-up error:', err);
+	if (error) {
+		console.error('Top-up error:', error);
 		return c.redirect('/billing?error=Top-up+failed.+Please+try+again.');
 	}
+
+	if (result.paymentUrl) return c.redirect(result.paymentUrl);
+	return c.redirect('/billing?topped_up=true');
 });
 
 /** GET /billing/success — Post-checkout landing */

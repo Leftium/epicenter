@@ -98,6 +98,12 @@ function serializeDates<T extends Record<string, unknown>>(obj: T) {
 	) as { [K in keyof T]: T[K] extends Date ? string : T[K] };
 }
 
+/** Read the auth token directly from localStorage. No auth state import needed. */
+export function createTokenReader(storagePrefix: string) {
+	const key = `${storagePrefix}:authToken`;
+	return async () => localStorage.getItem(key) ?? undefined;
+}
+
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createAuthState(config: AuthStateConfig) {

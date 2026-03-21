@@ -100,6 +100,9 @@ export function defineEntry<TSchema extends StandardSchemaV1>(
  * Shares a single `storage` event listener and a single `focus` listener
  * for all keys, regardless of how many definitions exist.
  *
+ * **Singleton assumption:** Event listeners (`storage`, `focus`) are never removed.
+ * Call once at module scope—not inside components or reactive blocks.
+ *
  * @example
  * ```ts
  * import { createPersistedMap, defineEntry } from '@epicenter/svelte';
@@ -129,6 +132,7 @@ export function createPersistedMap<
 	onError,
 	onUpdateError,
 }: PersistedMapOptions<TDefs>) {
+	// Object.keys() returns string[] by design; safe here because we define the object ourselves.
 	const definitionKeys = Object.keys(definitions) as (string & keyof TDefs)[];
 
 	function storageKey(key: string) {
@@ -140,6 +144,12 @@ export function createPersistedMap<
 	}
 
 	function parseRawValue(key: string & keyof TDefs, raw: string | null) {
+		// All `as InferDefinitionValue<...>` casts in this function exist because TS cannot prove
+		// that `definitions[key].defaultValue` or `result.value` matches the return type. The
+		// inference chain crosses a `NoInfer` wrapper and conditional type extraction that TS
+		// can't resolve when `key` is a union (`string & keyof TDefs`). Structurally correct—we
+		// control the data flow from schema → validate → return.
+		// `!`: key is constrained to `keyof TDefs`, so the lookup always exists.
 		const def = definitions[key]!;
 		if (raw === null)
 			return def.defaultValue as InferDefinitionValue<TDefs[typeof key]>;
@@ -190,13 +200,15 @@ export function createPersistedMap<
 		return parseRawValue(key, storageApi.getItem(storageKey(key)));
 	}
 
-	// Initialize SvelteMap from per-key storage reads.
+	// Typed as `unknown` because a single map holds heterogeneous values for all key types.
+	// Per-key type safety is recovered via the cast in get().
 	const map = new SvelteMap<string, unknown>();
 	for (const key of definitionKeys) {
 		map.set(key, readKey(key));
 	}
 
 	// Cross-tab sync: ONE listener for all keys, filtered by prefix.
+	// Listeners are never removed—this function assumes singleton/module-scope usage.
 	if (syncTabs) {
 		window.addEventListener('storage', (e) => {
 			if (!e.key?.startsWith(prefix)) return;
@@ -215,6 +227,7 @@ export function createPersistedMap<
 
 	return {
 		get<TKey extends string & keyof TDefs>(key: TKey) {
+			// SvelteMap values are `unknown` (heterogeneous map); cast recovers the per-key type.
 			return map.get(key) as InferDefinitionValue<TDefs[TKey]>;
 		},
 
@@ -235,6 +248,7 @@ export function createPersistedMap<
 				[TKey in string & keyof TDefs]: InferDefinitionValue<TDefs[TKey]>;
 			}>,
 		) {
+			// Object.entries() returns [string, unknown][], losing the key–value type relationship.
 			for (const [key, value] of Object.entries(updates)) {
 				this.set(
 					key as string & keyof TDefs,
@@ -245,6 +259,7 @@ export function createPersistedMap<
 
 		reset() {
 			for (const key of definitionKeys) {
+				// `!`: key is from definitionKeys (keyof TDefs), so the lookup always exists.
 				this.set(
 					key,
 					definitions[key]!.defaultValue as InferDefinitionValue<
@@ -255,6 +270,7 @@ export function createPersistedMap<
 		},
 
 		getDefault<TKey extends string & keyof TDefs>(key: TKey) {
+			// `!`: key is TKey extends keyof TDefs, so the lookup always exists.
 			return definitions[key]!.defaultValue as InferDefinitionValue<
 				TDefs[TKey]
 			>;

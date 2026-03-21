@@ -8,6 +8,7 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Bash } from 'just-bash';
+import { createTokenReader } from '$lib/auth/create-auth-state.svelte';
 
 const API_URL = createApps('production').API.URL;
 
@@ -30,8 +31,7 @@ export const ws = createWorkspace({
 		'sync',
 		createSyncExtension({
 			url: (workspaceId) => `${API_URL}/workspaces/${workspaceId}`,
-			getToken: async () =>
- 				localStorage.getItem('opensidian:authToken') ?? undefined,
+			getToken: createTokenReader('opensidian'),
 		}),
 	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());

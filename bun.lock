@@ -412,6 +412,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/workspace": "workspace:*",
+        "arktype": "catalog:",
+        "better-auth": "catalog:",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {

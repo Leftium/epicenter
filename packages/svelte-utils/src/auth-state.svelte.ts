@@ -18,7 +18,7 @@
  * ```
  */
 
-import { createPersistedState } from '@epicenter/svelte/persisted-state';
+import { createPersistedState } from './persisted-state.svelte';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
 import {

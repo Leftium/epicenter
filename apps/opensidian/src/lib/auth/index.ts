@@ -1,7 +1,7 @@
 import { createApps } from '@epicenter/constants/apps';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { ws } from '$lib/workspace';
-import { createAuthState, createTokenStore } from './create-auth-state.svelte';
+import { createAuthState, createTokenStore } from '@epicenter/svelte/auth-state';
 
 const API_URL = createApps('production').API.URL;
 

@@ -8,7 +8,7 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Bash } from 'just-bash';
-import { createTokenStore } from '$lib/auth/create-auth-state.svelte';
+import { createTokenStore } from '@epicenter/svelte/auth-state';
 
 const API_URL = createApps('production').API.URL;
 const tokenStore = createTokenStore('opensidian');

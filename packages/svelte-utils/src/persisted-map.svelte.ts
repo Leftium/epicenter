@@ -6,12 +6,7 @@ import { PersistedError } from './persisted-state.svelte.js';
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type PersistedMapDefinition<S extends StandardSchemaV1> = {
-	/** Schema used to validate values read from storage for this key. */
 	schema: S;
-	/**
-	 * Fallback value used when storage is empty or validation fails.
-	 * Also used by `reset()` and `getDefault()`.
-	 */
 	defaultValue: NoInfer<StandardSchemaV1.InferOutput<S>>;
 };
 
@@ -35,7 +30,6 @@ type PersistedMapOptions<
 	storage?: Storage;
 	/**
 	 * Whether to sync state across tabs via the `storage` event.
-	 * Only applies to `'local'` storage.
 	 * @default true
 	 */
 	syncTabs?: boolean;
@@ -50,9 +44,15 @@ type PersistedMapOptions<
 	onUpdateError?: (key: string, error: unknown) => void;
 };
 
-// ── Return type ──────────────────────────────────────────────────────────────
+// ── Exported type (for consumers that need explicit annotations) ─────────────
 
-export type PersistedMapInstance<
+/**
+ * The return type of `createPersistedMap`. Exported for consumers that need
+ * an explicit type annotation (e.g., to break circular dependency inference).
+ *
+ * Most consumers should just use `createPersistedMap(...)` and let TypeScript infer.
+ */
+export type PersistedMap<
 	D extends Record<string, PersistedMapDefinition<StandardSchemaV1>>,
 > = {
 	get<K extends string & keyof D>(key: K): InferDefinitionValue<D[K]>;
@@ -67,6 +67,28 @@ export type PersistedMapInstance<
 	): void;
 };
 
+// ── defineEntry ──────────────────────────────────────────────────────────────
+
+/**
+ * Type helper for defining a persisted map entry with schema and default value.
+ * Ensures the `defaultValue` type is inferred from the schema, not the other way around.
+ *
+ * @example
+ * ```ts
+ * const DEFINITIONS = {
+ *   'theme': defineEntry(type("'light' | 'dark'"), 'dark'),
+ *   'fontSize': defineEntry(type('number'), 14),
+ *   'deviceId': defineEntry(type('string | null'), null),
+ * };
+ * ```
+ */
+export function defineEntry<S extends StandardSchemaV1>(
+	schema: S,
+	defaultValue: NoInfer<StandardSchemaV1.InferOutput<S>>,
+) {
+	return { schema, defaultValue };
+}
+
 // ── createPersistedMap ───────────────────────────────────────────────────────
 
 /**
@@ -79,14 +101,14 @@ export type PersistedMapInstance<
  *
  * @example
  * ```ts
- * import { createPersistedMap } from '@epicenter/svelte';
+ * import { createPersistedMap, defineEntry } from '@epicenter/svelte';
  * import { type } from 'arktype';
  *
  * const config = createPersistedMap({
  *   prefix: 'myapp.config.',
  *   definitions: {
- *     'theme': { schema: type("'light' | 'dark'"), defaultValue: 'dark' },
- *     'fontSize': { schema: type('number'), defaultValue: 14 },
+ *     'theme': defineEntry(type("'light' | 'dark'"), 'dark'),
+ *     'fontSize': defineEntry(type('number'), 14),
  *   },
  * });
  *
@@ -98,7 +120,7 @@ export type PersistedMapInstance<
  */
 export function createPersistedMap<
 	D extends Record<string, PersistedMapDefinition<StandardSchemaV1>>,
->(options: PersistedMapOptions<D>): PersistedMapInstance<D> {
+>(options: PersistedMapOptions<D>) {
 	const {
 		prefix,
 		definitions,
@@ -199,21 +221,11 @@ export function createPersistedMap<
 		}
 	});
 
-	const instance = {
-		/**
-		 * Get a config value. Returns the current value from the reactive SvelteMap.
-		 * Components reading this will re-render when this specific key changes
-		 * (not when other keys change).
-		 */
+	return {
 		get<K extends string & keyof D>(key: K): InferDefinitionValue<D[K]> {
 			return map.get(key) as InferDefinitionValue<D[K]>;
 		},
 
-		/**
-		 * Set a config value. Writes to storage and updates the SvelteMap immediately.
-		 * The storage write is best-effort — if it fails, the in-memory SvelteMap
-		 * still updates so the UI stays responsive.
-		 */
 		set<K extends string & keyof D>(
 			key: K,
 			value: InferDefinitionValue<D[K]>,
@@ -226,42 +238,28 @@ export function createPersistedMap<
 			map.set(key, value);
 		},
 
-		/**
-		 * Update multiple config keys at once. Calls `set()` for each key.
-		 * Not atomic — partial writes are fine for device config.
-		 */
 		update(
 			updates: Partial<{ [K in string & keyof D]: InferDefinitionValue<D[K]> }>,
 		): void {
 			for (const [key, value] of Object.entries(updates)) {
-				instance.set(
+				this.set(
 					key as string & keyof D,
 					value as InferDefinitionValue<D[string & keyof D]>,
 				);
 			}
 		},
 
-		/**
-		 * Reset all config keys to their definition defaults.
-		 * Writes each default value to storage.
-		 */
 		reset(): void {
 			for (const key of definitionKeys) {
-				instance.set(
+				this.set(
 					key,
 					definitions[key]!.defaultValue as InferDefinitionValue<D[typeof key]>,
 				);
 			}
 		},
 
-		/**
-		 * Get the definition's default value for a key.
-		 * Useful for showing "Default: X" placeholders in settings UI.
-		 */
 		getDefault<K extends string & keyof D>(key: K): InferDefinitionValue<D[K]> {
 			return definitions[key]!.defaultValue as InferDefinitionValue<D[K]>;
 		},
-	} satisfies PersistedMapInstance<D>;
-
-	return instance;
+	};
 }

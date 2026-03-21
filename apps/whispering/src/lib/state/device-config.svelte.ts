@@ -1,6 +1,7 @@
 import {
 	createPersistedMap,
-	type PersistedMapInstance,
+	defineEntry,
+	type PersistedMap,
 } from '@epicenter/svelte';
 import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
@@ -24,131 +25,107 @@ import {
  */
 const DEVICE_DEFINITIONS = {
 	// ── API keys (secrets, never synced) ──────────────────────────────
-	'apiKeys.openai': { schema: type('string'), defaultValue: '' },
-	'apiKeys.anthropic': { schema: type('string'), defaultValue: '' },
-	'apiKeys.groq': { schema: type('string'), defaultValue: '' },
-	'apiKeys.google': { schema: type('string'), defaultValue: '' },
-	'apiKeys.deepgram': { schema: type('string'), defaultValue: '' },
-	'apiKeys.elevenlabs': { schema: type('string'), defaultValue: '' },
-	'apiKeys.mistral': { schema: type('string'), defaultValue: '' },
-	'apiKeys.openrouter': { schema: type('string'), defaultValue: '' },
-	'apiKeys.custom': { schema: type('string'), defaultValue: '' },
+	'apiKeys.openai': defineEntry(type('string'), ''),
+	'apiKeys.anthropic': defineEntry(type('string'), ''),
+	'apiKeys.groq': defineEntry(type('string'), ''),
+	'apiKeys.google': defineEntry(type('string'), ''),
+	'apiKeys.deepgram': defineEntry(type('string'), ''),
+	'apiKeys.elevenlabs': defineEntry(type('string'), ''),
+	'apiKeys.mistral': defineEntry(type('string'), ''),
+	'apiKeys.openrouter': defineEntry(type('string'), ''),
+	'apiKeys.custom': defineEntry(type('string'), ''),
 
 	// ── API endpoint overrides ────────────────────────────────────────
-	'apiEndpoints.openai': { schema: type('string'), defaultValue: '' },
-	'apiEndpoints.groq': { schema: type('string'), defaultValue: '' },
+	'apiEndpoints.openai': defineEntry(type('string'), ''),
+	'apiEndpoints.groq': defineEntry(type('string'), ''),
 
 	// ── Recording hardware ────────────────────────────────────────────
-	'recording.method': {
-		schema: type("'cpal' | 'navigator' | 'ffmpeg'"),
-		defaultValue: 'cpal' as const,
-	},
-	'recording.cpal.deviceId': {
-		schema: type('string | null'),
-		defaultValue: null,
-	},
-	'recording.navigator.deviceId': {
-		schema: type('string | null'),
-		defaultValue: null,
-	},
-	'recording.ffmpeg.deviceId': {
-		schema: type('string | null'),
-		defaultValue: null,
-	},
-	'recording.navigator.bitrateKbps': {
-		schema: type.enumerated(...BITRATES_KBPS),
-		defaultValue: DEFAULT_BITRATE_KBPS,
-	},
-	'recording.cpal.outputFolder': {
-		schema: type('string | null'),
-		defaultValue: null,
-	},
-	'recording.cpal.sampleRate': {
-		schema: type("'16000' | '44100' | '48000'"),
-		defaultValue: '16000' as const,
-	},
-	'recording.ffmpeg.globalOptions': {
-		schema: type('string'),
-		defaultValue: FFMPEG_DEFAULT_GLOBAL_OPTIONS,
-	},
-	'recording.ffmpeg.inputOptions': {
-		schema: type('string'),
-		defaultValue: FFMPEG_DEFAULT_INPUT_OPTIONS,
-	},
-	'recording.ffmpeg.outputOptions': {
-		schema: type('string'),
-		defaultValue: FFMPEG_DEFAULT_OUTPUT_OPTIONS,
-	},
+	'recording.method': defineEntry(
+		type("'cpal' | 'navigator' | 'ffmpeg'"),
+		'cpal',
+	),
+	'recording.cpal.deviceId': defineEntry(type('string | null'), null),
+	'recording.navigator.deviceId': defineEntry(type('string | null'), null),
+	'recording.ffmpeg.deviceId': defineEntry(type('string | null'), null),
+	'recording.navigator.bitrateKbps': defineEntry(
+		type.enumerated(...BITRATES_KBPS),
+		DEFAULT_BITRATE_KBPS,
+	),
+	'recording.cpal.outputFolder': defineEntry(type('string | null'), null),
+	'recording.cpal.sampleRate': defineEntry(
+		type("'16000' | '44100' | '48000'"),
+		'16000',
+	),
+	'recording.ffmpeg.globalOptions': defineEntry(
+		type('string'),
+		FFMPEG_DEFAULT_GLOBAL_OPTIONS,
+	),
+	'recording.ffmpeg.inputOptions': defineEntry(
+		type('string'),
+		FFMPEG_DEFAULT_INPUT_OPTIONS,
+	),
+	'recording.ffmpeg.outputOptions': defineEntry(
+		type('string'),
+		FFMPEG_DEFAULT_OUTPUT_OPTIONS,
+	),
 
 	// ── Local model paths ─────────────────────────────────────────────
-	'transcription.speaches.baseUrl': {
-		schema: type('string'),
-		defaultValue: 'http://localhost:8000',
-	},
-	'transcription.speaches.modelId': {
-		schema: type('string'),
-		defaultValue: 'Systran/faster-distil-whisper-small.en',
-	},
-	'transcription.whispercpp.modelPath': {
-		schema: type('string'),
-		defaultValue: '',
-	},
-	'transcription.parakeet.modelPath': {
-		schema: type('string'),
-		defaultValue: '',
-	},
-	'transcription.moonshine.modelPath': {
-		schema: type('string'),
-		defaultValue: '',
-	},
+	'transcription.speaches.baseUrl': defineEntry(
+		type('string'),
+		'http://localhost:8000',
+	),
+	'transcription.speaches.modelId': defineEntry(
+		type('string'),
+		'Systran/faster-distil-whisper-small.en',
+	),
+	'transcription.whispercpp.modelPath': defineEntry(type('string'), ''),
+	'transcription.parakeet.modelPath': defineEntry(type('string'), ''),
+	'transcription.moonshine.modelPath': defineEntry(type('string'), ''),
 
 	// ── Self-hosted server URLs ───────────────────────────────────────
-	'completion.custom.baseUrl': {
-		schema: type('string'),
-		defaultValue: 'http://localhost:11434/v1',
-	},
+	'completion.custom.baseUrl': defineEntry(
+		type('string'),
+		'http://localhost:11434/v1',
+	),
 
 	// ── Global OS shortcuts (device-specific, never synced) ───────────
-	'shortcuts.global.toggleManualRecording': {
-		schema: type('string | null'),
-		defaultValue: `${CommandOrControl}+Shift+;` as string | null,
-	},
-	'shortcuts.global.startManualRecording': {
-		schema: type('string | null'),
-		defaultValue: null as string | null,
-	},
-	'shortcuts.global.stopManualRecording': {
-		schema: type('string | null'),
-		defaultValue: null as string | null,
-	},
-	'shortcuts.global.cancelManualRecording': {
-		schema: type('string | null'),
-		defaultValue: `${CommandOrControl}+Shift+'` as string | null,
-	},
-	'shortcuts.global.toggleVadRecording': {
-		schema: type('string | null'),
-		defaultValue: null as string | null,
-	},
-	'shortcuts.global.startVadRecording': {
-		schema: type('string | null'),
-		defaultValue: null as string | null,
-	},
-	'shortcuts.global.stopVadRecording': {
-		schema: type('string | null'),
-		defaultValue: null as string | null,
-	},
-	'shortcuts.global.pushToTalk': {
-		schema: type('string | null'),
-		defaultValue: `${CommandOrAlt}+Shift+D` as string | null,
-	},
-	'shortcuts.global.openTransformationPicker': {
-		schema: type('string | null'),
-		defaultValue: `${CommandOrControl}+Shift+X` as string | null,
-	},
-	'shortcuts.global.runTransformationOnClipboard': {
-		schema: type('string | null'),
-		defaultValue: `${CommandOrControl}+Shift+R` as string | null,
-	},
+	'shortcuts.global.toggleManualRecording': defineEntry(
+		type('string | null'),
+		`${CommandOrControl}+Shift+;` as string | null,
+	),
+	'shortcuts.global.startManualRecording': defineEntry(
+		type('string | null'),
+		null,
+	),
+	'shortcuts.global.stopManualRecording': defineEntry(
+		type('string | null'),
+		null,
+	),
+	'shortcuts.global.cancelManualRecording': defineEntry(
+		type('string | null'),
+		`${CommandOrControl}+Shift+'` as string | null,
+	),
+	'shortcuts.global.toggleVadRecording': defineEntry(
+		type('string | null'),
+		null,
+	),
+	'shortcuts.global.startVadRecording': defineEntry(
+		type('string | null'),
+		null,
+	),
+	'shortcuts.global.stopVadRecording': defineEntry(type('string | null'), null),
+	'shortcuts.global.pushToTalk': defineEntry(
+		type('string | null'),
+		`${CommandOrAlt}+Shift+D` as string | null,
+	),
+	'shortcuts.global.openTransformationPicker': defineEntry(
+		type('string | null'),
+		`${CommandOrControl}+Shift+X` as string | null,
+	),
+	'shortcuts.global.runTransformationOnClipboard': defineEntry(
+		type('string | null'),
+		`${CommandOrControl}+Shift+R` as string | null,
+	),
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -162,7 +139,7 @@ export type InferDeviceValue<K extends DeviceConfigKey> =
 
 // ── Singleton ────────────────────────────────────────────────────────────────
 
-export const deviceConfig: PersistedMapInstance<typeof DEVICE_DEFINITIONS> =
+export const deviceConfig: PersistedMap<typeof DEVICE_DEFINITIONS> =
 	createPersistedMap({
 		prefix: 'whispering.device.',
 		definitions: DEVICE_DEFINITIONS,

@@ -3,14 +3,27 @@
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import type * as Y from 'yjs';
+	import { onMount } from 'svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
 	import workspaceClient from '$lib/workspace';
+	import { authState } from '$lib/auth';
 
 	let commandPaletteOpen = $state(false);
+
+	onMount(() => {
+		authState.checkSession();
+		const onVisibilityChange = () => {
+			if (document.visibilityState === 'visible' && authState.status === 'signed-in') {
+				authState.checkSession();
+			}
+		};
+		document.addEventListener('visibilitychange', onVisibilityChange);
+		return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+	});
 
 	// ─── Document Handle ────────────────────────────────────────────────────
 

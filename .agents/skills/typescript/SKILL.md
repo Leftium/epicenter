@@ -106,6 +106,54 @@ Load these on demand based on what you're working on:
   }
   ```
 - **Prefer factory functions over classes**: Use `function createX() { return { ... } }` instead of `class X { ... }`. Closures provide structural privacy—everything above the return statement is private by position, everything inside it is the public API. Classes mix `private`/`protected`/public members in arbitrary order, forcing you to scan every member and check its modifier. See `docs/articles/closures-are-better-privacy-than-keywords.md` for rationale.
+- **Generic type parameters use `T` prefix + descriptive name**: Never use single letters like `S`, `D`, `K`. Always prefix with `T` and use the full name:
+
+  ```typescript
+  // Good — descriptive with T prefix
+  function validate<TSchema extends StandardSchemaV1>(schema: TSchema) { ... }
+  type MapOptions<TDefs extends Record<string, Definition>> = { ... };
+  function get<TKey extends string & keyof TDefs>(key: TKey) { ... }
+
+  // Bad — single letters
+  function validate<S extends StandardSchemaV1>(schema: S) { ... }
+  type MapOptions<D extends Record<string, Definition>> = { ... };
+  function get<K extends string & keyof D>(key: K) { ... }
+  ```
+
+- **Destructure options in function signature, not the first line of the body**:
+
+  ```typescript
+  // Good — destructure in the signature
+  export function createThing<T>({
+  	name,
+  	value,
+  	onError,
+  }: ThingOptions<T>) {
+  	// function body starts here
+  }
+
+  // Bad — intermediate `options` parameter, destructured on first line
+  export function createThing<T>(options: ThingOptions<T>) {
+  	const { name, value, onError } = options;
+  	// ...
+  }
+  ```
+
+- **Don't annotate return types the compiler can infer**: Let TypeScript infer return types on inner/private functions. Only annotate return types on exported public API functions when the inferred type is too complex or when you need to break circular inference.
+
+  ```typescript
+  // Good — inner functions let TS infer
+  function parseValue(raw: string | null) {
+  	if (raw === null) return defaultValue;
+  	return JSON.parse(raw);
+  }
+
+  // Bad — unnecessary return type annotation
+  function parseValue(raw: string | null): SomeType {
+  	if (raw === null) return defaultValue;
+  	return JSON.parse(raw);
+  }
+  ```
 
 ## Boolean Naming: `is`/`has`/`can` Prefix
 

@@ -4,6 +4,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { toast } from 'svelte-sonner';
+	import AccountPopover from '$lib/components/AccountPopover.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import { fs } from '$lib/workspace';
 
@@ -118,6 +119,7 @@
 		</Tooltip.Root>
 		<div class="ml-auto flex items-center gap-1">
 			<Button variant="ghost" size="sm" href="/about">About</Button>
+			<AccountPopover />
 			<Tooltip.Root>
 				<Tooltip.Trigger>
 					{#snippet child({ props })}

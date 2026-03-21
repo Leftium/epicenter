@@ -10,6 +10,14 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
+	"dependencies": {
+		"@epicenter/constants": "workspace:*",
+		"@epicenter/svelte": "workspace:*",
+		"@epicenter/sync-client": "workspace:*",
+		"arktype": "catalog:",
+		"better-auth": "catalog:",
+		"wellcrafted": "catalog:"
+	},
 	"devDependencies": {
 		"@codemirror/commands": "^6.10.3",
 		"@codemirror/lang-markdown": "^6.5.0",

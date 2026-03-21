@@ -1,18 +1,20 @@
 /**
  * Reactive AI chat state with multi-conversation support.
  *
- * Architecture: centralized SvelteMap stores + thin handle projections.
+ * Architecture: self-contained ConversationHandles with own `$state`.
  *
- * Five stores hold all state, each owning one concern:
- * - `messageStore`    — per-conversation UIMessage arrays (reactive)
- * - `streamStore`     — per-conversation loading/error/status (reactive)
- * - `drafts`          — per-conversation input drafts (reactive)
- * - `dismissedErrors` — per-conversation dismissed errors (reactive)
- * - `clients`         — per-conversation ChatClient instances (non-reactive)
+ * Each ConversationHandle owns its ChatClient instance and reactive state
+ * (`$state` for messages, status, error, drafts). Callbacks on the ChatClient
+ * drive `$state` reassignment — the same pattern TanStack AI's `createChat`
+ * uses internally.
  *
- * `ConversationHandle` is a thin projection that reads from these stores
- * and dispatches actions. It owns no `$state` — all reactivity flows
- * through the centralized stores.
+ * Why ChatClient directly instead of `createChat` from `@tanstack/ai-svelte`?
+ * TanStack AI's StreamProcessor mutates tool-call parts (`state`, `approval`,
+ * `output`) in-place AFTER `onMessagesChange` returns. `createChat` sets
+ * `messages = newMessages` internally, but the in-place mutations bypass
+ * Svelte 5's proxy — `$derived(part.state === 'approval-requested')` never
+ * fires. Direct ChatClient access lets us shallow-clone in `onMessagesChange`
+ * and re-clone on status transitions to break reference identity.
  *
  * Background streaming is free: each conversation has its own ChatClient.
  * Switching away from a streaming conversation doesn't stop it.
@@ -20,7 +22,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { aiChatState } from '$lib/state/chat-state.svelte';
+ *   import { aiChatState } from '$lib/chat/chat-state.svelte';
  * </script>
  *
  * {#each aiChatState.conversations as conv (conv.id)}
@@ -49,12 +51,12 @@ import {
 	DEFAULT_PROVIDER,
 	PROVIDER_MODELS,
 	type Provider,
-} from '$lib/ai/providers';
+} from '$lib/chat/providers';
 import {
 	buildDeviceConstraints,
 	TAB_MANAGER_SYSTEM_PROMPT,
-} from '$lib/ai/system-prompt';
-import { toUiMessage } from '$lib/ai/ui-message';
+} from '$lib/chat/system-prompt';
+import { toUiMessage } from '$lib/chat/ui-message';
 import { getDeviceId } from '$lib/device/device-id';
 import { remoteServerUrl } from '$lib/state/settings.svelte';
 import {
@@ -69,20 +71,30 @@ import {
 } from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Types
+// Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-type StreamState = {
-	isLoading: boolean;
-	error: Error | undefined;
-	status: ChatClientState;
-};
+/** Milliseconds to wait for the server to begin streaming before timing out. */
+const SUBMITTED_TIMEOUT_MS = 60_000;
 
-const DEFAULT_STREAM_STATE: StreamState = {
-	isLoading: false,
-	error: undefined,
-	status: 'ready',
-};
+/**
+ * Clone messages that contain tool-call parts to break reference identity.
+ *
+ * TanStack AI's StreamProcessor mutates tool-call parts (`state`, `approval`,
+ * `output`) in-place after `onMessagesChange` returns. Svelte 5's `$state`
+ * proxy can't detect these mutations since they bypass the proxy. Cloning
+ * creates new objects that Svelte wraps in fresh proxies.
+ *
+ * Only assistant messages with tool-call parts need cloning — user messages
+ * and text-only assistant messages are passed through unchanged.
+ */
+const cloneMessages = (msgs: UIMessage[]) =>
+	msgs.map((m) => {
+		if (m.role !== 'assistant') return m;
+		const hasToolCall = m.parts.some((p) => p.type === 'tool-call');
+		if (!hasToolCall) return m;
+		return { ...m, parts: m.parts.map((p) => (p.type === 'tool-call' ? { ...p } : p)) };
+	});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State Factory
@@ -143,30 +155,7 @@ function createAiChatState() {
 			.map(toUiMessage);
 	}
 
-	// ── Centralized Stores ───────────────────────────────────────────
-
-	/** Per-conversation message arrays — written by ChatClient callbacks. */
-	const messageStore = new SvelteMap<ConversationId, UIMessage[]>();
-
-	/** Per-conversation stream state — loading, error, status. */
-	const streamStore = new SvelteMap<ConversationId, StreamState>();
-
-	/** Per-conversation input drafts — preserved across switches. */
-	const drafts = new SvelteMap<ConversationId, string>();
-
-	/** Per-conversation dismissed error messages. */
-	const dismissedErrors = new SvelteMap<ConversationId, string | null>();
-
-	/** Per-conversation ChatClient instances. Plain Map — not read in templates. */
-	const clients = new Map<ConversationId, ChatClient>();
-	/** Per-conversation timeout IDs for stuck 'submitted' status recovery. */
-	const submittedTimers = new Map<
-		ConversationId,
-		ReturnType<typeof setTimeout>
-	>();
-
-	/** Seconds to wait for the server to begin streaming before timing out. */
-	const SUBMITTED_TIMEOUT_MS = 60_000;
+	// ── Handle Registry ──────────────────────────────────────────────
 
 	/** Per-conversation handle projections (reactive — read in templates). */
 	const handles = new SvelteMap<
@@ -174,22 +163,39 @@ function createAiChatState() {
 		ReturnType<typeof createConversationHandle>
 	>();
 
-	// ── ChatClient Factory ───────────────────────────────────────────
+	// ── Conversation Handle Factory ──────────────────────────────────
 
 	/**
-	 * Create a ChatClient for a conversation and wire its callbacks
-	 * to the centralized stores.
+	 * Create a self-contained reactive handle for a single conversation.
 	 *
-	 * The connection callback reads provider/model at request time
-	 * (not creation time) so changes take effect on the next send.
+	 * Owns its own `$state` for messages, status, error, and ephemeral UI
+	 * state. Creates and owns a ChatClient whose callbacks drive the `$state`.
+	 *
+	 * Messages are shallow-cloned in `onMessagesChange` and re-cloned on
+	 * status transitions. This breaks reference identity so Svelte 5 detects
+	 * in-place mutations by TanStack AI's StreamProcessor (tool-call `state`,
+	 * `approval`, `output` are set after the callback returns).
+	 *
+	 * The baked-in `conversationId` means getters and actions always target
+	 * the correct conversation, even from async callbacks.
 	 */
-	function createClient(conversationId: ConversationId): ChatClient {
-		const initialMessages = loadMessages(conversationId);
-		messageStore.set(conversationId, initialMessages);
-		streamStore.set(conversationId, { ...DEFAULT_STREAM_STATE });
+	function createConversationHandle(conversationId: ConversationId) {
+		// ── Own reactive state ──
+		const initialMsgs = loadMessages(conversationId);
+		let messages = $state<UIMessage[]>(initialMsgs);
+		let status = $state<ChatClientState>('ready');
+		let isLoading = $state(false);
+		let error = $state<Error | undefined>(undefined);
+		let inputValue = $state('');
+		let dismissedError = $state<string | null>(null);
+
+		/** Timeout ID for stuck 'submitted' status recovery. */
+		let submittedTimer: ReturnType<typeof setTimeout> | undefined;
+
+		// ── ChatClient (owned by this handle) ──
 
 		const client = new ChatClient({
-			initialMessages,
+			initialMessages: initialMsgs,
 			tools: workspaceTools,
 			connection: fetchServerSentEvents(
 				() => `${remoteServerUrl.current}/ai/chat`,
@@ -218,85 +224,61 @@ function createAiChatState() {
 			onMessagesChange: (msgs) => {
 				// Shallow-clone every message and part to break reference identity.
 				// TanStack AI's StreamProcessor mutates tool-call parts in place
-				// (output, state, approval) but creates new objects for text parts.
-				// SvelteMap stores raw values without deep proxying, so Svelte 5's
-				// fine-grained reactivity can't detect in-place mutations on parts.
-				// Fresh references ensure keyed {#each} blocks propagate changes
-				// to $derived() in child components (isRunning, isApprovalRequested).
-				messageStore.set(
-					conversationId,
-					msgs.map((m) => ({ ...m, parts: m.parts.map((p) => ({ ...p })) })),
-				);
+				// (output, state, approval) but Svelte 5's $state proxy can't
+				// detect mutations that bypass the proxy. Fresh references ensure
+				// $derived() in child components (isRunning, isApprovalRequested)
+				// re-evaluate correctly.
+				messages = cloneMessages(msgs);
+				// Re-clone on the next microtask to capture deferred in-place
+				// mutations (e.g. needsApproval set after this callback returns).
+				queueMicrotask(() => {
+					messages = cloneMessages(msgs);
+				});
 			},
-			onLoadingChange: (isLoading) => {
-				console.log(
-					'[ai-chat] loading:',
-					isLoading,
-					'conversation:',
-					conversationId,
-				);
-				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
-				streamStore.set(conversationId, { ...current, isLoading });
+			onLoadingChange: (loading) => {
+				isLoading = loading;
 			},
-			onErrorChange: (error) => {
-				if (error)
-					console.warn(
-						'[ai-chat] error:',
-						error.message,
-						'conversation:',
-						conversationId,
-					);
-				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
-				streamStore.set(conversationId, { ...current, error });
+			onErrorChange: (err) => {
+				error = err;
 			},
-			onStatusChange: (status) => {
-				console.log(
-					'[ai-chat] status:',
-					status,
-					'conversation:',
-					conversationId,
-				);
-				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
-				streamStore.set(conversationId, { ...current, status });
+			onStatusChange: (newStatus) => {
+				status = newStatus;
 
-				// Clear any existing submitted-timeout when status changes.
-				const existingTimer = submittedTimers.get(conversationId);
-				if (existingTimer) {
-					clearTimeout(existingTimer);
-					submittedTimers.delete(conversationId);
+				// Force re-clone messages on every status change. Status transitions
+				// are lifecycle boundaries — by this point, all part mutations for
+				// the current phase are finalized.
+				messages = cloneMessages(client.getMessages());
+
+				// Clear any existing submitted timeout when status changes.
+				if (submittedTimer) {
+					clearTimeout(submittedTimer);
+					submittedTimer = undefined;
 				}
 
 				// Start a timeout when entering 'submitted' — if the server
 				// never begins streaming, auto-stop and surface an error.
-				if (status === 'submitted') {
-					const timer = setTimeout(() => {
-						submittedTimers.delete(conversationId);
-						const latest = (
-							streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE
-						).status;
-						if (latest !== 'submitted') return;
+				if (newStatus === 'submitted') {
+					submittedTimer = setTimeout(() => {
+						submittedTimer = undefined;
+						if (status !== 'submitted') return;
 
 						console.warn(
 							'[ai-chat] timeout: no response within 60 s, stopping',
 							conversationId,
 						);
-						const c = clients.get(conversationId);
-						if (c) c.stop();
-						streamStore.set(conversationId, {
-							isLoading: false,
-							error: new Error(
-								'Request timed out. The AI did not respond within 60 seconds.',
-							),
-							status: 'error',
-						});
+						client.stop();
+						error = new Error(
+							'Request timed out. The AI did not respond within 60 seconds.',
+						);
+						status = 'error';
+						isLoading = false;
 					}, SUBMITTED_TIMEOUT_MS);
-					submittedTimers.set(conversationId, timer);
 				}
 			},
-			onError: (error) => {
+			onError: (err) => {
 				console.error(
 					'[ai-chat] stream error:',
-					error.message,
+					err.message,
 					'conversation:',
 					conversationId,
 				);
@@ -314,21 +296,7 @@ function createAiChatState() {
 			},
 		});
 
-		clients.set(conversationId, client);
-		return client;
-	}
-
-	// ── Conversation Handle Factory ──────────────────────────────────
-
-	/**
-	 * Create a thin reactive projection for a single conversation.
-	 *
-	 * Reads from centralized stores — owns no `$state`. The baked-in
-	 * `conversationId` means getters and actions always target the
-	 * correct conversation, even from async callbacks.
-	 */
-	function createConversationHandle(conversationId: ConversationId) {
-		const client = createClient(conversationId);
+		// ── Derived metadata (from Y.Doc-backed conversations array) ──
 
 		const metadata = $derived(
 			conversations.find((c) => c.id === conversationId),
@@ -385,39 +353,38 @@ function createAiChatState() {
 				return metadata?.sourceMessageId;
 			},
 
-			// ── Chat state (centralized stores) ──
+			// ── Chat state (own $state) ──
 
 			get messages() {
-				return messageStore.get(conversationId) ?? [];
+				return messages;
 			},
 
 			get isLoading() {
-				return (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE)
-					.isLoading;
+				return isLoading;
 			},
 
 			get error() {
-				return (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).error;
+				return error;
 			},
 
 			get status() {
-				return (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).status;
+				return status;
 			},
 
-			// ── Ephemeral UI state (centralized stores) ──
+			// ── Ephemeral UI state (own $state) ──
 
 			get inputValue() {
-				return drafts.get(conversationId) ?? '';
+				return inputValue;
 			},
 			set inputValue(value: string) {
-				drafts.set(conversationId, value);
+				inputValue = value;
 			},
 
 			get dismissedError() {
-				return dismissedErrors.get(conversationId) ?? null;
+				return dismissedError;
 			},
 			set dismissedError(value: string | null) {
-				dismissedErrors.set(conversationId, value);
+				dismissedError = value;
 			},
 
 			// ── Derived convenience ──
@@ -475,8 +442,7 @@ function createAiChatState() {
 			},
 
 			reload() {
-				const msgs = messageStore.get(conversationId) ?? [];
-				const lastMessage = msgs.at(-1);
+				const lastMessage = messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
 					workspace.tables.chatMessages.delete(
 						lastMessage.id as string as ChatMessageId,
@@ -493,7 +459,7 @@ function createAiChatState() {
 			 * Approve a tool call that requires user confirmation.
 			 *
 			 * Called when the user clicks [Allow] or [Always Allow] on a
-			 * destructive tool call. Resumes server-side execution.
+			 * mutation tool call. Resumes server-side execution.
 			 *
 			 * @param approvalId - The `part.approval.id` from the ToolCallPart
 			 *
@@ -509,7 +475,7 @@ function createAiChatState() {
 			/**
 			 * Deny a tool call that requires user confirmation.
 			 *
-			 * Called when the user clicks [Deny] on a destructive tool call.
+			 * Called when the user clicks [Deny] on a mutation tool call.
 			 * Cancels server-side execution.
 			 *
 			 * @param approvalId - The `part.approval.id` from the ToolCallPart
@@ -520,10 +486,7 @@ function createAiChatState() {
 			 * ```
 			 */
 			denyToolCall(approvalId: string) {
-				void client.addToolApprovalResponse({
-					id: approvalId,
-					approved: false,
-				});
+				void client.addToolApprovalResponse({ id: approvalId, approved: false });
 			},
 
 			rename(title: string) {
@@ -533,19 +496,36 @@ function createAiChatState() {
 			delete() {
 				deleteConversation(conversationId);
 			},
+
+			// ── Internal (used by lifecycle functions, not by components) ──
+
+			/** Stop client and clear timers. Called by destroyConversation. */
+			destroy() {
+				if (submittedTimer) clearTimeout(submittedTimer);
+				client.stop();
+			},
+
+			/**
+			 * Refresh messages from Y.Doc into the ChatClient.
+			 *
+			 * Skips if the conversation is currently streaming (the in-progress
+			 * assistant message isn't in Y.Doc yet). A single call to
+			 * `setMessagesManually` is sufficient — it triggers `onMessagesChange`
+			 * which updates the `$state` automatically via cloning.
+			 */
+			refreshFromDoc() {
+				if (isLoading) return;
+				const msgs = loadMessages(conversationId);
+				client.setMessagesManually(msgs);
+			},
 		};
 	}
 
 	// ── Lifecycle ────────────────────────────────────────────────────
 
-	/** Stop client and remove all store entries for a conversation. */
+	/** Stop client and remove the handle for a conversation. */
 	function destroyConversation(id: ConversationId) {
-		clients.get(id)?.stop();
-		clients.delete(id);
-		messageStore.delete(id);
-		streamStore.delete(id);
-		drafts.delete(id);
-		dismissedErrors.delete(id);
+		handles.get(id)?.destroy();
 		handles.delete(id);
 	}
 
@@ -572,24 +552,6 @@ function createAiChatState() {
 		}
 	}
 
-	/**
-	 * Refresh an idle conversation's messages from Y.Doc.
-	 *
-	 * Skips if the conversation is currently streaming (the in-progress
-	 * assistant message isn't in Y.Doc yet).
-	 */
-	function refreshFromDoc(conversationId: ConversationId) {
-		const stream = streamStore.get(conversationId);
-		if (stream?.isLoading) return;
-
-		const client = clients.get(conversationId);
-		if (!client) return;
-
-		const msgs = loadMessages(conversationId);
-		messageStore.set(conversationId, msgs);
-		client.setMessagesManually(msgs);
-	}
-
 	// ── Active Conversation ──────────────────────────────────────────
 
 	let activeConversationId = $state<ConversationId>(
@@ -603,7 +565,7 @@ function createAiChatState() {
 		reconcileHandles();
 	});
 	const _unobserveChatMessages = workspace.tables.chatMessages.observe(() => {
-		refreshFromDoc(activeConversationId);
+		handles.get(activeConversationId)?.refreshFromDoc();
 	});
 
 	// Initialize after persistence loads
@@ -649,7 +611,7 @@ function createAiChatState() {
 
 	function switchConversation(conversationId: ConversationId) {
 		activeConversationId = conversationId;
-		refreshFromDoc(conversationId);
+		handles.get(conversationId)?.refreshFromDoc();
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
@@ -723,9 +685,9 @@ export const aiChatState = createAiChatState();
 /**
  * A reactive handle for a single conversation.
  *
- * Thin projection over centralized stores — reads messages, stream state,
- * and ephemeral UI state from SvelteMap stores. Actions dispatch to the
- * conversation's ChatClient directly.
+ * Self-contained — owns its own `$state` for messages, status, error,
+ * and ephemeral UI state. Driven by ChatClient callbacks with shallow-cloning
+ * to ensure Svelte 5 detects in-place part mutations by the StreamProcessor.
  */
 export type ConversationHandle = NonNullable<
 	ReturnType<(typeof aiChatState)['get']>

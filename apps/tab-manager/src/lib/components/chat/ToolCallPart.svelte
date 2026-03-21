@@ -6,15 +6,18 @@
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import { aiChatState } from '$lib/state/chat-state.svelte';
 	import { toolTrustState } from '$lib/state/tool-trust.svelte';
 	import { type WorkspaceTools, workspaceToolTitles } from '$lib/workspace';
 	import CollapsibleSection from '../CollapsibleSection.svelte';
 
 	let {
 		part,
+		onApproveToolCall,
+		onDenyToolCall,
 	}: {
 		part: TanStackToolCallPart<WorkspaceTools>;
+		onApproveToolCall: (approvalId: string) => void;
+		onDenyToolCall: (approvalId: string) => void;
 	} = $props();
 
 	const isRunning = $derived(part.output == null);
@@ -27,16 +30,8 @@
 		workspaceToolTitles[part.name] ??
 			part.name.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()),
 	);
-	const isApprovalRequested = $derived(
-		(part as { state?: string }).state === 'approval-requested',
-	);
-	const approval = $derived(
-		(
-			part as {
-				approval?: { id: string; needsApproval: boolean; approved?: boolean };
-			}
-		).approval,
-	);
+	const isApprovalRequested = $derived(part.state === 'approval-requested');
+	const approval = $derived(part.approval);
 
 	$effect(() => {
 		if (
@@ -44,10 +39,25 @@
 			approval?.id &&
 			toolTrustState.shouldAutoApprove(part.name)
 		) {
-			aiChatState.active?.approveToolCall(approval.id);
+			onApproveToolCall(approval.id);
 		}
 	});
 
+	function handleAllow() {
+		if (!approval?.id) return;
+		onApproveToolCall(approval.id);
+	}
+
+	function handleAlwaysAllow() {
+		if (!approval?.id) return;
+		toolTrustState.set(part.name, 'always');
+		onApproveToolCall(approval.id);
+	}
+
+	function handleDeny() {
+		if (!approval?.id) return;
+		onDenyToolCall(approval.id);
+	}
 	const badgeVariant = $derived.by(() => {
 		if (isFailed) return 'status.failed';
 		if (isRunning) return 'status.running';
@@ -79,15 +89,15 @@
 
 	{#if isApprovalRequested && !toolTrustState.shouldAutoApprove(part.name)}
 		<div class="flex items-center gap-1.5 pl-[1.125rem]">
-			<Button variant="outline" size="sm" onclick={() => { if (!approval?.id) return; aiChatState.active?.approveToolCall(approval.id, true); }}> Allow </Button>
-			<Button variant="outline" size="sm" onclick={() => { if (!approval?.id) return; toolTrustState.set(part.name, 'always'); aiChatState.active?.approveToolCall(approval.id, true); }}>
+			<Button variant="outline" size="sm" onclick={handleAllow}> Allow </Button>
+			<Button variant="outline" size="sm" onclick={handleAlwaysAllow}>
 				Always Allow
 			</Button>
 			<Button
 				variant="ghost"
 				size="sm"
 				class="text-muted-foreground"
-				onclick={() => { if (!approval?.id) return; aiChatState.active?.approveToolCall(approval.id, false); }}
+				onclick={handleDeny}
 			>
 				Deny
 			</Button>

@@ -35,6 +35,8 @@
 		"@tanstack/ai": "catalog:",
 		"@tanstack/ai-anthropic": "catalog:",
 		"@tanstack/ai-openai": "catalog:",
+		"@tanstack/ai-gemini": "catalog:",
+		"@tanstack/ai-grok": "catalog:",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
 		"drizzle-orm": "catalog:",

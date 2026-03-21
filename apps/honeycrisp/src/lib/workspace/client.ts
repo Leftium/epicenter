@@ -12,10 +12,10 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { honeycrisp } from './schema';
-import { createTokenReader } from '$lib/auth/create-auth-state.svelte';
+import { createTokenStore } from '$lib/auth/create-auth-state.svelte';
 
 const API_URL = createApps('production').API.URL;
-
+const tokenStore = createTokenStore('honeycrisp');
 const workspace = createWorkspace(honeycrisp)
 	.withEncryption({})
 	.withExtension('persistence', indexeddbPersistence)
@@ -23,7 +23,7 @@ const workspace = createWorkspace(honeycrisp)
 		'sync',
 		createSyncExtension({
 			url: (workspaceId) => `${API_URL}/workspaces/${workspaceId}`,
-			getToken: createTokenReader('honeycrisp'),
+			getToken: async () => tokenStore.get(),
 		}),
 	);
 

@@ -1,13 +1,16 @@
 import { createApps } from '@epicenter/constants/apps';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { ws } from '$lib/workspace';
-import { createAuthState } from './create-auth-state.svelte';
+import { createAuthState, createTokenStore } from './create-auth-state.svelte';
 
 const API_URL = createApps('production').API.URL;
+
+const tokenStore = createTokenStore('opensidian');
 
 export const authState = createAuthState({
 	baseURL: API_URL,
 	storagePrefix: 'opensidian',
+	tokenStore,
 	async onSignedIn(encryptionKey) {
 		// Runtime check: workspace package type bug—EncryptionMethods not
 		// surfaced on WorkspaceClient base type. Methods exist at runtime.

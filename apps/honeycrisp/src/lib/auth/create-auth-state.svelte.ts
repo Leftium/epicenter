@@ -68,13 +68,44 @@ const AuthError = defineErrors({
 });
 type AuthError = InferErrors<typeof AuthError>;
 
+// ─── Token Store ─────────────────────────────────────────────────────────────
+
+/**
+ * Raw localStorage get/set for the auth token. No JSON serialization,
+ * no Svelte reactivity—the token is infrastructure, never displayed.
+ * Used by both the auth factory (read/write) and the sync extension (read).
+ */
+export type TokenStore = {
+	get(): string | undefined;
+	set(value: string | undefined): void;
+};
+
+/** Create a token store backed by raw localStorage. */
+export function createTokenStore(storagePrefix: string): TokenStore {
+	const key = `${storagePrefix}:authToken`;
+	return {
+		get() {
+			return localStorage.getItem(key) ?? undefined;
+		},
+		set(value) {
+			if (value === undefined) {
+				localStorage.removeItem(key);
+			} else {
+				localStorage.setItem(key, value);
+			}
+		},
+	};
+}
+
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export type AuthStateConfig = {
 	/** Base URL for the Better Auth API (e.g. `https://api.epicenter.so`). */
 	baseURL: string;
-	/** Prefix for localStorage keys (e.g. `'honeycrisp'` → `'honeycrisp:authToken'`). */
+	/** Prefix for localStorage keys (e.g. `'honeycrisp'` → `'honeycrisp:authUser'`). */
 	storagePrefix: string;
+	/** Token store for reading/writing the auth token. */
+	tokenStore: TokenStore;
 	/**
 	 * Override for Google sign-in. Web apps leave undefined to use Better Auth's
 	 * built-in redirect flow. Chrome extensions pass a function that uses
@@ -87,8 +118,6 @@ export type AuthStateConfig = {
 	onSignedOut?: () => Promise<void>;
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 function serializeDates<T extends Record<string, unknown>>(obj: T) {
 	return Object.fromEntries(
 		Object.entries(obj).map(([key, value]) => [
@@ -98,23 +127,12 @@ function serializeDates<T extends Record<string, unknown>>(obj: T) {
 	) as { [K in keyof T]: T[K] extends Date ? string : T[K] };
 }
 
-/** Read the auth token directly from localStorage. No auth state import needed. */
-export function createTokenReader(storagePrefix: string) {
-	const key = `${storagePrefix}:authToken`;
-	return async () => localStorage.getItem(key) ?? undefined;
-}
-
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createAuthState(config: AuthStateConfig) {
-	const { baseURL, storagePrefix } = config;
+	const { baseURL, storagePrefix, tokenStore } = config;
 
-	// Storage—created internally, no adapter indirection
-	const tokenState = createPersistedState({
-		key: `${storagePrefix}:authToken`,
-		schema: type('string').or('undefined'),
-		defaultValue: undefined,
-	});
+	// User state needs reactivity (displayed in UI) + schema validation
 	const userState = createPersistedState({
 		key: `${storagePrefix}:authUser`,
 		schema: AuthUser.or('undefined'),
@@ -129,11 +147,11 @@ export function createAuthState(config: AuthStateConfig) {
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',
-				token: () => tokenState.current,
+				token: () => tokenStore.get(),
 			},
 			onSuccess: ({ response }) => {
 				const newToken = response.headers.get('set-auth-token');
-				if (newToken) tokenState.current = newToken;
+				if (newToken) tokenStore.set(newToken);
 			},
 		},
 	});
@@ -149,7 +167,7 @@ export function createAuthState(config: AuthStateConfig) {
 	}
 
 	function clearState() {
-		tokenState.current = undefined;
+		tokenStore.set(undefined);
 		userState.current = undefined;
 	}
 
@@ -179,7 +197,7 @@ export function createAuthState(config: AuthStateConfig) {
 		},
 
 		get token() {
-			return tokenState.current;
+			return tokenStore.get();
 		},
 
 		async signIn(credentials: { email: string; password: string }) {
@@ -306,7 +324,7 @@ export function createAuthState(config: AuthStateConfig) {
 		 * aren't logged out. Only an explicit auth rejection (4xx) clears state.
 		 */
 		async checkSession() {
-			const token = tokenState.current;
+			const token = tokenStore.get();
 			if (!token) {
 				phase = { status: 'signed-out' };
 				return Ok(null);

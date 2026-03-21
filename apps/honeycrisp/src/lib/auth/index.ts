@@ -1,13 +1,16 @@
 import { createApps } from '@epicenter/constants/apps';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import workspace from '$lib/workspace/client';
-import { createAuthState } from './create-auth-state.svelte';
+import { createAuthState, createTokenStore } from './create-auth-state.svelte';
 
 const API_URL = createApps('production').API.URL;
+
+const tokenStore = createTokenStore('honeycrisp');
 
 export const authState = createAuthState({
 	baseURL: API_URL,
 	storagePrefix: 'honeycrisp',
+	tokenStore,
 	async onSignedIn(encryptionKey) {
 		// Runtime check: WorkspaceClientBuilder<..., EncryptionMethods> doesn't
 		// expose encryption methods on the base WorkspaceClient type (workspace

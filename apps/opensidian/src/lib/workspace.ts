@@ -8,10 +8,9 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Bash } from 'just-bash';
-import { createTokenStore } from '@epicenter/svelte/auth-state';
+import { tokenStore } from '$lib/auth/token-store';
 
 const API_URL = createApps('production').API.URL;
-const tokenStore = createTokenStore('opensidian');
 
 /**
  * Opensidian workspace infrastructure.

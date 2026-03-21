@@ -8,14 +8,14 @@
  */
 
 import { createApps } from '@epicenter/constants/apps';
+import { tokenStore } from '$lib/auth/token-store';
 import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { honeycrisp } from './schema';
-import { createTokenStore } from '@epicenter/svelte/auth-state';
 
 const API_URL = createApps('production').API.URL;
-const tokenStore = createTokenStore('honeycrisp');
+
 const workspace = createWorkspace(honeycrisp)
 	.withEncryption({})
 	.withExtension('persistence', indexeddbPersistence)

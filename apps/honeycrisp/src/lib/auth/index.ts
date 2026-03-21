@@ -1,20 +1,18 @@
 import { createApps } from '@epicenter/constants/apps';
+import { createAuthState } from '@epicenter/svelte/auth-state';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import workspace from '$lib/workspace/client';
-import { createAuthState, createTokenStore } from '@epicenter/svelte/auth-state';
 
 const API_URL = createApps('production').API.URL;
 
-const tokenStore = createTokenStore('honeycrisp');
+export { tokenStore } from './token-store';
+import { tokenStore } from './token-store';
 
 export const authState = createAuthState({
 	baseURL: API_URL,
 	storagePrefix: 'honeycrisp',
 	tokenStore,
 	async onSignedIn(encryptionKey) {
-		// Runtime check: WorkspaceClientBuilder<..., EncryptionMethods> doesn't
-		// expose encryption methods on the base WorkspaceClient type (workspace
-		// package type bug). The methods exist at runtime after .withEncryption().
 		if (encryptionKey && 'activateEncryption' in workspace) {
 			const ws = workspace as { activateEncryption(k: Uint8Array): Promise<void> };
 			await ws.activateEncryption(base64ToBytes(encryptionKey));

@@ -160,16 +160,75 @@ export function createAuthApi(serverUrl: string, token?: string) {
 		/**
 		 * Poll the token endpoint with a previously-issued device code.
 		 *
-		 * Returns either a successful token response or an error object.
-		 * The caller should handle `authorization_pending` and `slow_down`
-		 * errors by retrying after the appropriate interval.
+		 * This endpoint cannot use the generic `request()` helper above.
+		 * RFC 8628 device authorization uses 400 responses with structured JSON
+		 * error payloads like `authorization_pending` and `slow_down` as normal
+		 * polling control flow, not as fatal transport errors. Better Auth exposes
+		 * those polling states directly, so the CLI needs the raw error body in
+		 * order to retry, back off, or stop on terminal states like
+		 * `expired_token` and `access_denied`.
+		 *
+		 * Returns either a successful token response or an error object. The caller
+		 * should handle `authorization_pending` and `slow_down` by retrying after
+		 * the appropriate interval instead of treating them like thrown failures.
+		 *
+		 * @example
+		 * ```typescript
+		 * const tokenData = await api.pollDeviceToken(deviceCode);
+		 *
+		 * if ('access_token' in tokenData) {
+		 * 	return tokenData.access_token;
+		 * }
+		 *
+		 * if (tokenData.error === 'authorization_pending') {
+		 * 	await Bun.sleep(interval);
+		 * }
+		 * ```
 		 */
-		pollDeviceToken(deviceCode: string) {
-			return request<DeviceTokenResponse>('POST', '/auth/device/token', {
+		async pollDeviceToken(deviceCode: string) {
+			const body = {
 				grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
 				device_code: deviceCode,
 				client_id: CLIENT_ID,
+			};
+
+			const res = await fetch(`${serverUrl}/auth/device/token`, {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify(body),
 			});
+
+			const text = await res.text();
+			let response: DeviceTokenResponse | undefined;
+
+			if (text) {
+				try {
+					response = JSON.parse(text) as DeviceTokenResponse;
+				} catch {
+					throw new Error(
+						`POST /auth/device/token: invalid JSON response: ${text.slice(0, 200)}`,
+					);
+				}
+			}
+
+			if (res.ok && response) {
+				return response;
+			}
+
+			if (
+				res.status === 400 &&
+				response &&
+				'error' in response &&
+				typeof response.error === 'string'
+			) {
+				return response;
+			}
+
+			throw new Error(
+				`POST /auth/device/token failed (${res.status}): ${text.slice(0, 200)}`,
+			);
 		},
 	};
 }

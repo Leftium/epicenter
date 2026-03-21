@@ -2,6 +2,8 @@
 
 A unified workspace architecture built on YJS for real-time collaboration with optional persistence and query layers.
 
+> For connecting to the hosted Epicenter hub at `https://api.epicenter.so`, see [Consuming the Epicenter API](/docs/guides/consuming-epicenter-api.md).
+
 ## Core Philosophy
 
 **YJS Document as Source of Truth**
@@ -103,15 +105,14 @@ Yjs supports multiple providers simultaneously. Phone can connect to desktop, la
 ### How It All Fits Together
 
 1. **Define workspace** with `defineWorkspace({ id, tables, kv })`
-2. **Create client builder** with `createClient(workspace.id)`
-3. **Chain definition** with `.withDefinition(workspace)`
-4. **Attach extensions** with `.withExtension('persistence', setupPersistence).withExtension('sqlite', sqliteProvider)`
-5. **Y.Doc created** with workspace ID + epoch as GUID
-6. **Extensions initialize** in parallel (persistence, SQLite, markdown, sync)
-7. **Tables API** wraps Y.Doc with type-safe CRUD
-8. **Server** exposes REST/MCP/WebSocket endpoints for actions and tables
-9. **Multi-device sync** via y-websocket to any number of nodes
-10. **CRDTs ensure** eventual consistency across all clients
+2. **Create workspace** with `createWorkspace(workspace)`
+3. **Attach extensions** with `.withExtension('persistence', setupPersistence).withExtension('sqlite', sqliteProvider)`
+4. **Y.Doc created** with workspace ID + epoch as GUID
+5. **Extensions initialize** in parallel (persistence, SQLite, markdown, sync)
+6. **Tables API** wraps Y.Doc with type-safe CRUD
+7. **Server** exposes REST/MCP/WebSocket endpoints for actions and tables
+8. **Multi-device sync** via y-websocket to any number of nodes
+9. **CRDTs ensure** eventual consistency across all clients
 
 The architecture is **local-first**: everything works offline, syncs opportunistically, and your data lives in plain files (`.yjs`, SQLite, markdown) that you fully control.
 
@@ -139,13 +140,8 @@ bun add @epicenter/workspace
 ```typescript
 import {
 	defineWorkspace,
-	createClient,
-	id,
-	text,
-	integer,
-	boolean,
-	date,
-	select,
+	defineTable,
+	createWorkspace,
 	sqliteProvider,
 	markdownProvider,
 } from '@epicenter/workspace';
@@ -153,27 +149,27 @@ import { setupPersistence } from '@epicenter/workspace/providers';
 import { type } from 'arktype';
 
 // 1. Define your workspace
+const postsTable = defineTable(
+	type({
+		id: 'string',
+		title: 'string',
+		'content?': 'string | undefined',
+		category: "'tech' | 'personal'",
+		published: 'boolean',
+		views: 'number',
+		'publishedAt?': 'string | undefined',
+		_v: '1',
+	}),
+);
+
 const blogWorkspace = defineWorkspace({
 	id: 'blog',
-
-	tables: {
-		posts: {
-			id: id(),
-			title: text(),
-			content: text({ nullable: true }),
-			category: select({ options: ['tech', 'personal'] }),
-			published: boolean({ default: false }),
-			views: integer({ default: 0 }),
-			publishedAt: date({ nullable: true }),
-		},
-	},
-
+	tables: { posts: postsTable },
 	kv: {},
 });
 
 // 2. Initialize the workspace client
-const client = createClient(blogWorkspace.id)
-	.withDefinition(blogWorkspace)
+const client = createWorkspace(blogWorkspace)
 	.withExtension('persistence', setupPersistence)
 	.withExtension('sqlite', (c) => sqliteProvider(c))
 	.withExtension('markdown', (c) => markdownProvider(c));
@@ -284,8 +280,7 @@ tables.get('posts').delete({ id: '1' })
 Extensions add capabilities to your workspace, such as persistence, sync, and materializers (SQLite, markdown). They are attached to the client during initialization:
 
 ```typescript
-const client = createClient(definition.id)
-	.withDefinition(definition)
+const client = createWorkspace(definition)
 	.withExtension('persistence', setupPersistence) // YJS persistence
 	.withExtension('sqlite', (c) => sqliteProvider(c)) // SQL queries via Drizzle ORM
 	.withExtension('markdown', (c) => markdownProvider(c)); // File-based persistence
@@ -312,8 +307,7 @@ const queryPosts = defineQuery({
 Extension factory functions receive a context object with `{ id, ydoc, tables, kv, extensions }` (the "client-so-far") and can return exports. Each factory receives typed access to all previously added extensions. For example, sync extensions:
 
 ```typescript
-const client = createClient(definition.id)
-	.withDefinition(definition)
+const client = createWorkspace(definition)
 	.withExtension('persistence', setupPersistence)
 	.withExtension('sqlite', (c) => sqliteProvider(c))
 	.withExtension(
@@ -713,10 +707,9 @@ The SQLite extension provides SQL query capabilities via Drizzle ORM.
 **Setup:**
 
 ```typescript
-import { createClient, sqliteProvider } from '@epicenter/workspace';
+import { createWorkspace, sqliteProvider } from '@epicenter/workspace';
 
-const client = createClient(definition.id)
-	.withDefinition(definition)
+const client = createWorkspace(definition)
 	.withExtension('sqlite', (c) => sqliteProvider(c));
 ```
 
@@ -789,10 +782,9 @@ The markdown extension persists data as human-readable markdown files.
 **Setup:**
 
 ```typescript
-import { createClient, markdownProvider } from '@epicenter/workspace';
+import { createWorkspace, markdownProvider } from '@epicenter/workspace';
 
-const client = createClient(definition.id)
-	.withDefinition(definition)
+const client = createWorkspace(definition)
 	.withExtension('markdown', (c) =>
 		markdownProvider(c, {
 			directory: './data', // Optional: workspace-level directory
@@ -887,11 +879,10 @@ The sync extension enables real-time Y.Doc synchronization using the y-websocket
 **Setup:**
 
 ````typescript
-import { createClient } from '@epicenter/workspace';
+import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 
-const client = createClient(definition.id)
-	.withDefinition(definition)
+const client = createWorkspace(definition)
 	.withExtension(
 		'sync',
 		createSyncExtension({
@@ -956,8 +947,7 @@ export const SYNC_NODES = {
 
 ```typescript
 // Phone connects to ALL available sync nodes
-const client = createClient(definition.id)
-	.withDefinition(definition)
+const client = createWorkspace(definition)
 	.withExtension(
 		'syncDesktop',
 		createSyncExtension({ url: SYNC_NODES.desktop }),
@@ -970,8 +960,7 @@ const client = createClient(definition.id)
 
 ```typescript
 // Desktop server connects to OTHER servers (not itself!)
-const client = createClient(definition.id)
-	.withDefinition(definition)
+const client = createWorkspace(definition)
 	.withExtension(
 		'syncToLaptop',
 		createSyncExtension({ url: SYNC_NODES.laptop }),
@@ -1231,14 +1220,13 @@ providers: {
 
 Providers run in parallel during initialization. Providers that return exports make those exports available in the `providers` object passed to handlers.
 
-### Create Client
+### Create Workspace
 
 Create a workspace client using the builder pattern:
 
 ```typescript
-// Create a client with extensions
-const blogClient = createClient(blogWorkspace.id)
-	.withDefinition(blogWorkspace)
+// Create a workspace with extensions
+const blogClient = createWorkspace(blogWorkspace)
 	.withExtension('sqlite', sqliteProvider);
 
 // Direct table access
@@ -1249,8 +1237,7 @@ await blogClient.destroy();
 
 // Or use with `await using` for automatic cleanup
 {
-	await using client = createClient(blogWorkspace.id)
-		.withDefinition(blogWorkspace)
+	await using client = createWorkspace(blogWorkspace)
 		.withExtension('sqlite', sqliteProvider);
 
 	client.tables.get('posts').upsert({ id: '1', title: 'Hello' });
@@ -1389,8 +1376,7 @@ Create a client directly for standalone scripts. Use `await using` for automatic
 ```typescript
 // Script or migration
 {
-	await using client = createClient(blogWorkspace.id)
-		.withDefinition(blogWorkspace)
+	await using client = createWorkspace(blogWorkspace)
 		.withExtension('sqlite', sqliteProvider);
 
 	client.tables.get('posts').upsert({ id: '1', title: 'Hello' });
@@ -1405,10 +1391,9 @@ Create a client directly for standalone scripts. Use `await using` for automatic
 The server is a wrapper around the client that maps REST, MCP, and WebSocket Sync endpoints to workspace actions and tables.
 
 ```typescript
-import { createClient, createServer } from '@epicenter/workspace';
+import { createWorkspace, createServer } from '@epicenter/workspace';
 
-const client = createClient(blogWorkspace.id)
-  .withDefinition(blogWorkspace)
+const client = createWorkspace(blogWorkspace)
   .withExtension('sqlite', sqliteProvider);
 
 // Expose the client and custom actions via HTTP
@@ -1454,9 +1439,8 @@ const blogWorkspace = defineWorkspace({
 ### Client Creation
 
 ```typescript
-// Create client with extensions
-const client = createClient(blogWorkspace.id)
-	.withDefinition(blogWorkspace)
+// Create workspace with extensions
+const client = createWorkspace(blogWorkspace)
 	.withExtension('sqlite', sqliteProvider);
 
 // Use tables directly
@@ -1766,15 +1750,13 @@ Workspace actions are exposed via REST endpoints under the `/workspaces` prefix:
 ### Setup
 
 ```typescript
-import { createClient, createServer } from '@epicenter/workspace';
+import { createWorkspace, createServer } from '@epicenter/workspace';
 
-// Create clients with extensions
-const blogClient = createClient(blogWorkspace.id)
-	.withDefinition(blogWorkspace)
+// Create workspaces with extensions
+const blogClient = createWorkspace(blogWorkspace)
 	.withExtension('sqlite', sqliteProvider);
 
-const authClient = createClient(authWorkspace.id)
-	.withDefinition(authWorkspace)
+const authClient = createWorkspace(authWorkspace)
 	.withExtension('sqlite', sqliteProvider);
 
 // Create and start server

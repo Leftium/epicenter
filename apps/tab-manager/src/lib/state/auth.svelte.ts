@@ -122,25 +122,39 @@ function createAuthState() {
 	);
 
 	// ─── Cross-context sync ───
-	// When another extension context clears the token (e.g. sign-out in popup),
-	// deactivate encryption and transition to signed-out.
+	//
+	// Chrome extensions have multiple JS contexts (popup, sidebar, background).
+	// Storage watchers fire synchronously when another context writes to
+	// chrome.storage, so async work MUST be fire-and-forget (.then/.catch
+	// chains, not awaited). The phase transition happens synchronously;
+	// encryption lifecycle runs in the background.
+
+	// Sign-out in another context: token cleared → deactivate encryption.
+	// Errors are logged (not swallowed) because deactivation failure means
+	// the workspace stays encrypted with a stale key—a data-integrity concern.
 	authToken.watch((token) => {
 		if (!token && phase.status === 'signed-in') {
-			void authUser.set(undefined);
-			void workspace.deactivateEncryption();
+			authUser.set(undefined).catch(() => {});
+			workspace
+				.deactivateEncryption()
+				.catch((e) => console.error('[auth] Deactivation failed:', e));
 			phase = { status: 'signed-out' };
 		}
 	});
 
-	// When another extension context signs in (sets token + user),
-	// restore encryption from the session cache.
+	// Sign-in in another context: user set → restore encryption from cache.
+	// Uses .then/.catch instead of a void IIFE for readability. The server
+	// will supersede this cached key via checkSession() or the next sign-in
+	// flow—activateEncryption's byte-level dedup makes the double-call a no-op.
 	authUser.watch((user) => {
 		if (authToken.current && user && phase.status === 'signed-out') {
 			phase = { status: 'signed-in' };
-			void (async () => {
-				const cached = await keyCache.load();
-				if (cached) await workspace.activateEncryption(base64ToBytes(cached));
-			})();
+			keyCache
+				.load()
+				.then((cached) => {
+					if (cached) return workspace.activateEncryption(base64ToBytes(cached));
+				})
+				.catch((e) => console.error('[auth] Cache restore failed:', e));
 		}
 	});
 
@@ -378,16 +392,21 @@ function createAuthState() {
 		 * Unreachable server (network error or 5xx) trusts the cached user
 		 * so offline/degraded users aren't logged out. Only an explicit auth
 		 * rejection (4xx) clears state.
+		 *
+		 * Encryption restore from cache is awaited inline (not fire-and-forget)
+		 * because this is an async method—no need for background work. The ~2ms
+		 * for cache read + HKDF derivation is negligible against the ~100ms+
+		 * getSession() network call. The server response supersedes the cached
+		 * key; activateEncryption's byte-level dedup skips re-derivation when
+		 * the key hasn't changed.
 		 */
 		async checkSession() {
 			await Promise.all([authToken.whenReady, authUser.whenReady]);
-
+		
 			const userId = authUser.current?.id;
 			if (userId) {
-				void (async () => {
 				const cached = await keyCache.load();
-					if (cached) await workspace.activateEncryption(base64ToBytes(cached));
-				})();
+				if (cached) await workspace.activateEncryption(base64ToBytes(cached));
 			}
 
 			const token = authToken.current;

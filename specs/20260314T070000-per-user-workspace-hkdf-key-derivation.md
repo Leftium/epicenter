@@ -2,14 +2,14 @@
 
 **Date**: 2026-03-14
 **Status**: Implemented
-**Revision**: Simplified — two-level HKDF with user key in session, no separate endpoint
+**Revision**: Simplified — two-level HKDF with user key in session, no separate endpoint. Updated 2026-03-20 to reflect `ENCRYPTION_SECRETS` keyring.
 **Replaces**: `specs/20260314T064000-per-workspace-envelope-encryption.md`
 **Depends on**: `specs/20260314T063000-encryption-wrapper-hardening.md` (mode system, AAD, error containment)
 **Builds on**: `specs/20260313T180100-client-side-encryption-wiring.md` (key delivery to apps)
 
 ## Overview
 
-Replace the deployment-wide encryption key (`SHA-256(BETTER_AUTH_SECRET)`) with per-user-per-workspace keys derived via two-level HKDF. The server derives a per-user key and sends it in the session. The client derives per-workspace keys locally. No new endpoints, no new database tables, no key storage—keys are deterministically derived from a server secret.
+Replace the deployment-wide encryption key (`SHA-256(BETTER_AUTH_SECRET)`) with per-user-per-workspace keys derived via two-level HKDF. The server derives a per-user key and sends it in the session. The client derives per-workspace keys locally. No new endpoints, no new database tables, no key storage—keys are deterministically derived from a server secret. The actual implementation uses an `ENCRYPTION_SECRETS` env var with versioned keyring entries (`version:secret` pairs) to support key rotation without re-encrypting existing data.
 
 ## Motivation
 
@@ -34,18 +34,26 @@ This creates three problems:
 2. **No tenant isolation.** A single XSS or session leak exposes every user's data, not just the affected user's.
 3. **Auth-encryption coupling.** Rotating `BETTER_AUTH_SECRET` (for auth purposes) simultaneously changes the encryption key, requiring re-encryption of all data.
 
-### Desired State
+### Desired State (matches current implementation)
 
 ```typescript
-// Server: per-user key via HKDF, delivered in session (same wiring as today)
+// Server: per-user key via HKDF, delivered in session
+// ENCRYPTION_SECRETS="2:newSecret,1:oldSecret" (versioned keyring)
+const keyring = parseKeyring(env.ENCRYPTION_SECRETS); // sorted by version desc
+const currentKey = keyring[0]; // highest version = current key
+
 customSession(async ({ user, session }) => {
-  const userKey = await deriveUserKey(env.WORKSPACE_KEY_SECRET, user.id);
-  return { user, session, encryptionKey: bytesToBase64(userKey) };
+  const userKey = await deriveUserKey(currentKey.secret, user.id);
+  return {
+    user, session,
+    encryptionKey: bytesToBase64(userKey),
+    keyVersion: currentKey.version,
+  };
 }),
 
 // Client: derives per-workspace key locally, no fetch needed
 const userKey = base64ToBytes(session.encryptionKey);
-const wsKey = await hkdfDerive(userKey, `workspace:${workspaceId}`);
+const wsKey = await deriveWorkspaceKey(userKey, workspaceId);
 workspace.activateEncryption(wsKey);
 ```
 
@@ -132,9 +140,9 @@ This is acceptable because:
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Key derivation (server) | `HKDF(SHA-256(BETTER_AUTH_SECRET), "user:{userId}")` | Per-user key. Deterministic, no storage. |
+| Key derivation (server) | `HKDF(SHA-256(secret), "user:{userId}")` where `secret` comes from `ENCRYPTION_SECRETS` keyring | Per-user key. Deterministic, no storage. Keyring supports rotation. |
 | Key derivation (client) | `HKDF(userKey, "workspace:{wsId}")` | Per-workspace key derived locally. No network call needed. |
-| ~~Separate secret~~ | Uses `BETTER_AUTH_SECRET` directly | Originally proposed as `WORKSPACE_KEY_SECRET` to decouple auth rotation from encryption. Dropped because: (1) auth secret rotation is a breach scenario requiring full data reset anyway, (2) the HKDF info label already domain-separates encryption from auth, and (3) one fewer env var to manage. |
+| ~~Separate secret~~ | Uses `ENCRYPTION_SECRETS` env var (versioned keyring) | Originally proposed as `WORKSPACE_KEY_SECRET`, then `BETTER_AUTH_SECRET`. Final implementation uses a dedicated `ENCRYPTION_SECRETS` env var with `version:secret` entries (e.g. `2:newSecret,1:oldSecret`). This decouples auth rotation from encryption and supports key rotation via version numbers. |
 | Key delivery | `customSession` plugin (same as today) | User key travels in the session response. No new endpoint. Identical wiring pattern. |
 | Client-side HKDF | Web Crypto `crypto.subtle.deriveBits` | Available in all targets: browser, Cloudflare Workers, Tauri (WebView). |
 | Sharing strategy | Deferred to Phase 2 | Per-user keys don't support shared CRDTs. When sharing ships, shared rooms get workspace-level keys. |
@@ -148,7 +156,7 @@ This is acceptable because:
 ### Key Hierarchy
 
 ```
-WORKSPACE_KEY_SECRET (env var, one string — the only thing stored)
+ENCRYPTION_SECRETS env var ("2:newSecret,1:oldSecret")
        │
        │  SHA-256(secret) → root key material (32 bytes)
        │  (stays on server, never sent to client)

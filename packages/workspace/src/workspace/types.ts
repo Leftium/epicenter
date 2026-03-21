@@ -959,6 +959,7 @@ export type WorkspaceClientWithActions<
 	TExtensions extends Record<string, unknown>,
 	TActions extends Actions,
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
+	TEncryption = Record<string, never>,
 > = WorkspaceClient<
 	TId,
 	TTableDefs,
@@ -966,7 +967,8 @@ export type WorkspaceClientWithActions<
 	TAwarenessDefinitions,
 	TExtensions,
 	TDocExtensions
-> & {
+> &
+	TEncryption & {
 	actions: TActions;
 };
 
@@ -1364,7 +1366,8 @@ export type WorkspaceClientBuilder<
 		TAwarenessDefinitions,
 		TExtensions,
 		TActions,
-		TDocExtensions
+		TDocExtensions,
+		TEncryption
 	>;
 };
 

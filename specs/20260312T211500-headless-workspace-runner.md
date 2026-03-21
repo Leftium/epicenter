@@ -1,7 +1,9 @@
+> **Status: Superseded** by `20260313T063000-workspace-architecture-decisions.md`. The headless runner concept is subsumed into the Bun app server, which loads all workspaces in one process.
+
 # Headless Workspace Runner
 
 **Date**: 2026-03-12
-**Status**: Draft
+**Status**: Superseded
 
 ## Overview
 

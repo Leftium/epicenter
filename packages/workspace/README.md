@@ -1,8 +1,75 @@
 # Epicenter: YJS-First Collaborative Workspace System
 
-A unified workspace architecture built on YJS for real-time collaboration with optional persistence and query layers.
+The hard problem with local-first apps is synchronization. If each device has its own SQLite file, how do you keep them in sync? If each device has its own markdown folder, same question.
 
-> For connecting to the hosted Epicenter hub at `https://api.epicenter.so`, see [Consuming the Epicenter API](/docs/guides/consuming-epicenter-api.md).
+This package uses Yjs CRDTs as the single source of truth, then materializes that data *down* to SQLite (for fast SQL reads) and markdown (for human-readable files). Yjs handles the sync; SQLite and markdown handle the reads. Define a schema, get CRDT-backed tables, attach providers for the read formats you want, and add multi-device sync when you're ready.
+
+## Quick Start
+
+```bash
+bun add @epicenter/workspace
+```
+
+```typescript
+import {
+	defineWorkspace,
+	createClient,
+	id,
+	text,
+	integer,
+	boolean,
+	date,
+	select,
+	sqliteProvider,
+	markdownProvider,
+} from '@epicenter/workspace';
+import { setupPersistence } from '@epicenter/workspace/providers';
+
+// 1. Define your workspace
+const blogWorkspace = defineWorkspace({
+	id: 'blog',
+
+	tables: {
+		posts: {
+			id: id(),
+			title: text(),
+			content: text({ nullable: true }),
+			category: select({ options: ['tech', 'personal'] }),
+			published: boolean({ default: false }),
+			views: integer({ default: 0 }),
+			publishedAt: date({ nullable: true }),
+		},
+	},
+
+	kv: {},
+});
+
+// 2. Initialize the workspace client
+const client = createClient(blogWorkspace.id)
+	.withDefinition(blogWorkspace)
+	.withExtension('persistence', setupPersistence)
+	.withExtension('sqlite', (c) => sqliteProvider(c))
+	.withExtension('markdown', (c) => markdownProvider(c));
+
+// 3. Write data — SQLite and markdown update automatically
+client.tables.get('posts').upsert({
+	id: generateId(),
+	title: 'Hello World',
+	content: null,
+	category: 'tech',
+	published: false,
+	views: 0,
+	publishedAt: null,
+});
+
+// 4. Read via table operations or SQL
+const allPosts = client.tables.get('posts').getAll();
+const { posts } = client.extensions.sqlite;
+const published = await posts.select().where(eq(posts.published, true));
+
+// 5. Cleanup when done
+await client.destroy();
+```
 
 ## Core Philosophy
 
@@ -126,108 +193,6 @@ Epicenter uses stable, shared workspace IDs so multiple apps can collaborate on 
 - **Usage**: The workspace ID is used for routing, persistence paths, Y.Doc IDs, and sharing
 
 When two apps declare the same workspace ID, they intentionally point to the same shared workspace and data.
-
-## Quick Start
-
-### Installation
-
-```bash
-bun add @epicenter/workspace
-```
-
-### Basic Example
-
-```typescript
-import {
-	defineWorkspace,
-	defineTable,
-	createWorkspace,
-	sqliteProvider,
-	markdownProvider,
-} from '@epicenter/workspace';
-import { setupPersistence } from '@epicenter/workspace/providers';
-import { type } from 'arktype';
-
-// 1. Define your workspace
-const postsTable = defineTable(
-	type({
-		id: 'string',
-		title: 'string',
-		'content?': 'string | undefined',
-		category: "'tech' | 'personal'",
-		published: 'boolean',
-		views: 'number',
-		'publishedAt?': 'string | undefined',
-		_v: '1',
-	}),
-);
-
-const blogWorkspace = defineWorkspace({
-	id: 'blog',
-	tables: { posts: postsTable },
-	kv: {},
-});
-
-// 2. Initialize the workspace client
-const client = createWorkspace(blogWorkspace)
-	.withExtension('persistence', setupPersistence)
-	.withExtension('sqlite', (c) => sqliteProvider(c))
-	.withExtension('markdown', (c) => markdownProvider(c));
-
-// 3. Define actions (exposed via REST/MCP)
-const blogActions = {
-	createPost: defineMutation({
-		input: type({
-			title: 'string',
-			'category?': '"tech" | "personal"',
-		}),
-		handler: async ({ title, category }) => {
-			const id = generateId();
-			client.tables.get('posts').upsert({
-				id,
-				title,
-				content: null,
-				category: category ?? 'tech',
-				published: false,
-				views: 0,
-				publishedAt: null,
-			});
-
-			return Ok({ id });
-		},
-	}),
-
-	getPublishedPosts: defineQuery({
-		handler: async () => {
-			// Query the SQLite extension with Drizzle
-			const { posts } = client.extensions.sqlite;
-			return await posts
-				.select()
-				.where(eq(posts.published, true))
-				.orderBy(desc(posts.publishedAt));
-		},
-	}),
-};
-
-// 4. Use the actions or tables directly
-const result = await blogActions.createPost.handler({ title: 'Hello World' });
-if (result.error) {
-	console.error('Failed to create post:', result.error);
-} else {
-	console.log('Created post:', result.data.id);
-}
-
-// 5. Query via table operations
-const allPosts = client.tables.get('posts').getAll();
-console.log('All posts:', allPosts);
-
-// 6. Query published posts (uses SQLite extension)
-const published = await blogActions.getPublishedPosts.handler();
-console.log('Published:', published);
-
-// 7. Cleanup when done
-await client.destroy();
-```
 
 ## Core Concepts
 

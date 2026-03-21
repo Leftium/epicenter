@@ -33,6 +33,22 @@ function sessionsPath(home: string): string {
 }
 
 /**
+ * Canonicalize a server URL for use as a session store key.
+ *
+ * WebSocket and HTTP URLs pointing at the same host should resolve to the
+ * same session. This normalizes protocol, trailing slashes, and casing so
+ * that `wss://API.epicenter.so/`, `https://api.epicenter.so`, and
+ * `https://api.epicenter.so/` all map to the same key.
+ */
+function normalizeServerUrl(url: string): string {
+	return url
+		.replace(/^wss:/, 'https:')
+		.replace(/^ws:/, 'http:')
+		.replace(/\/+$/, '')
+		.toLowerCase();
+}
+
+/**
  * Load all stored sessions from disk.
  *
  * Returns an empty record if the file doesn't exist or is corrupt.
@@ -64,7 +80,7 @@ export async function saveSession(
 	session: AuthSession,
 ): Promise<void> {
 	const store = await readStore(home);
-	store[session.server] = session;
+	store[normalizeServerUrl(session.server)] = session;
 	await writeStore(home, store);
 }
 
@@ -78,7 +94,7 @@ export async function loadSession(
 	server: string,
 ): Promise<AuthSession | null> {
 	const store = await readStore(home);
-	return store[server] ?? null;
+	return store[normalizeServerUrl(server)] ?? null;
 }
 
 /**
@@ -108,7 +124,7 @@ export async function clearSession(
 	server: string,
 ): Promise<void> {
 	const store = await readStore(home);
-	delete store[server];
+	delete store[normalizeServerUrl(server)];
 	await writeStore(home, store);
 }
 

@@ -290,3 +290,27 @@ export const deviceConfig = new PersistedMap({
 1. Should `PersistedMap` support `storage: 'session'`? Current `deviceConfig` only uses localStorage. Session storage for a map of config seems unusual.
 2. Should we add `connect()`/`disconnect()` methods (like runed)? Not needed today, but nice for pausing persistence during bulk operations.
 3. Should `PersistedState` support deep reactivity via Proxy (like runed) or only reassignment? Runed proxies objects for `state.current.nested = 'x'` to auto-persist. Simpler to skip this in v1 and require `state.current = { ...state.current, nested: 'x' }`.
+
+## Review
+
+### Changes made
+
+**New files:**
+- `packages/svelte-utils/src/PersistedState.svelte.ts` (214 lines) — class with `.current` accessor, `$state` internally, `StandardSchemaV1` validation, cross-tab + focus sync, `defineErrors`-based error types
+- `packages/svelte-utils/src/PersistedMap.svelte.ts` (286 lines) — class with `SvelteMap` internally, shared event listeners, typed `.get()`/`.set()`/`.reset()`/`.getDefault()`/`.update()`
+
+**Modified files:**
+- `packages/svelte-utils/src/index.ts` — barrel exports for `PersistedState`, `PersistedMap`, `PersistedError`
+- `packages/svelte-utils/package.json` — updated exports map, removed old `createPersistedState` entry
+- `apps/whispering/src/lib/services/desktop/recorder/ffmpeg.ts` — migrated from `createPersistedState` to `PersistedState`, `.value` → `.current` (9 usages)
+- `apps/whispering/src/lib/state/device-config.svelte.ts` — 326 → 174 lines, all infrastructure replaced by `PersistedMap`
+
+**Deleted files:**
+- `packages/svelte-utils/src/createPersistedState.svelte.ts` (189 lines)
+
+### Notes
+
+- Hit a circular type inference issue: `device-config → rpc → query modules → device-config`. The old factory function pattern let TypeScript infer the return type lazily, but the class constructor needed the type upfront. Fixed with explicit type annotation: `export const deviceConfig: PersistedMap<typeof DEVICE_DEFINITIONS>`.
+- `PersistedError` is shared between both utilities (exported from `PersistedState.svelte.ts`, re-exported via barrel). Two variants: `JsonParseFailed` and `SchemaValidationFailed`.
+- Pre-existing type errors in `@epicenter/workspace` (`mdast` module, `NumberKeysOf`) are unrelated to this change.
+- Open questions (session storage, connect/disconnect, deep proxy) deferred to v2.

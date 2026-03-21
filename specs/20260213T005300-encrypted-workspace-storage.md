@@ -1,8 +1,27 @@
 # Encrypted Workspace Storage
 
 **Date**: 2026-02-13
-**Status**: Draft (API key portions superseded, key source simplified 2026-03-12, crypto library changed to @noble/ciphers)
+**Status**: Archived — every major decision in this spec has been superseded by later specs (see redirects below)
 **Supersedes**: `20260213T030000-encrypted-api-key-vault.md` (original was overengineered; see Analysis section)
+
+## Where to look instead
+
+This spec was the starting point for encrypted workspace storage. Every significant design decision evolved through subsequent specs. Here's what replaced what:
+
+| This spec's topic | Current spec | What changed |
+|---|---|---|
+| Encryption library (Web Crypto async) | `20260312T120000-y-keyvalue-lww-encrypted.md` | Switched to `@noble/ciphers` XChaCha20-Poly1305 (synchronous) to preserve `set() → void` API |
+| Blob format (`{ v: 1, alg, iv, ct }`) | `20260314T230000-bare-uint8array-encrypted-blob.md` | Bare `Uint8Array` with binary header: `[formatVersion][keyVersion][24-byte nonce][ciphertext+tag]` |
+| Key derivation (deployment-wide SHA-256) | `20260314T070000-per-user-workspace-hkdf-key-derivation.md` | Two-level HKDF: server derives per-user key, client derives per-workspace key |
+| Key source (`BETTER_AUTH_SECRET`) | `20260314T070000-per-user-workspace-hkdf-key-derivation.md` | `ENCRYPTION_SECRETS` env var with versioned keyring for rotation support |
+| API key encryption | `20260223T102844-remove-key-store-simplify-api-key-resolution.md` | API key storage removed entirely—keys come from env vars or per-request headers |
+| Encryption mode system | `20260314T063000-encryption-wrapper-hardening.md` | Mode state machine, error containment, key transition |
+
+The overall concept—value-level encryption where the CRDT structure remains mergeable but values are opaque ciphertext—is still the architecture. The implementation details below are all stale.
+
+---
+
+## Historical notes (preserved for context)
 
 > **Note (2026-02-22)**: The API key encryption portions of this spec were superseded by `20260222T195800-server-side-api-key-management.md`, which itself has been superseded by `20260223T102844-remove-key-store-simplify-api-key-resolution.md`. Server-side API key storage has been removed entirely — API keys now come from env vars (operator keys) or per-request headers (user BYOK). The broader value-level workspace encryption described here (for transcriptions, notes, chat histories) remains valid and is a separate concern from API key storage.
 
@@ -11,7 +30,6 @@
 > **Note (2026-03-13)**: The `alg` and `iv` fields were later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct }`—the version field is the sole contract for algorithm and encoding. The `ct` field contains `base64(nonce(12) || ciphertext || tag(16))`. See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
 > **Note (2026-03-14)**: The key derivation approach has evolved from deployment-wide `SHA-256(BETTER_AUTH_SECRET)` to per-user-per-workspace HKDF derivation with a separate `WORKSPACE_KEY_SECRET`. Blast radius reduced from "all users, all apps" to "one user, one app." Full envelope encryption deferred. See `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md`.
 > **Note (2026-03-14)**: The `{ v: 1, ct }` object wrapper has been replaced with a bare `Uint8Array` with self-describing binary header. See `specs/20260314T230000-bare-uint8array-encrypted-blob.md`.
-
 ## Overview
 
 Optional value-level encryption for all workspace data stored in Yjs. When enabled, every value written to tables and KV is encrypted with AES-256-GCM before entering the Y.Doc. The CRDT structure remains intact (Y-Sweet can still merge), but the content is opaque.

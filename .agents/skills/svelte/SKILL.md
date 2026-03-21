@@ -186,6 +186,38 @@ Use the `State` suffix when the export name would collide with a key property (`
 | **Single reactive value** | `.current` (Svelte 5 convention) | `selectedFolderId.current`, `serverUrl.current` |
 | **Keyed lookup** | `.get(key)` | `toolTrustState.get(name)`, `deviceConfig.get(key)` |
 
+The `.current` convention comes from [runed](https://github.com/svecosystem/runed) (the standard Svelte 5 utility library). All 34+ runed utilities use `.current`. Never use `.value` (Vue convention).
+
+## Persisted State Utilities
+
+For localStorage/sessionStorage persistence, use `createPersistedState` (single value) or `createPersistedMap` (typed multi-key config) from `@epicenter/svelte`.
+
+```typescript
+// Single value — .current accessor
+import { createPersistedState } from '@epicenter/svelte';
+const theme = createPersistedState({
+	key: 'app-theme',
+	schema: type("'light' | 'dark'"),
+	defaultValue: 'dark',
+});
+theme.current; // read
+theme.current = 'light'; // write + persist
+
+// Multi-key config — .get()/.set() with SvelteMap (per-key reactivity)
+import { createPersistedMap, defineEntry } from '@epicenter/svelte';
+const config = createPersistedMap({
+	prefix: 'myapp.config.',
+	definitions: {
+		'theme': defineEntry(type("'light' | 'dark'"), 'dark'),
+		'fontSize': defineEntry(type('number'), 14),
+	},
+});
+config.get('theme'); // typed read
+config.set('theme', 'light'); // typed write + persist
+```
+
+Both accept `storage?: Storage` (defaults to `window.localStorage`) for dependency injection.
+
 # Mutation Pattern Preference
 
 ## In Svelte Files (.svelte)

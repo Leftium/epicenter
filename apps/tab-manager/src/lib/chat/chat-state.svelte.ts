@@ -85,6 +85,12 @@ const SUBMITTED_TIMEOUT_MS = 60_000;
  * proxy can't detect these mutations since they bypass the proxy. Cloning
  * creates new objects that Svelte wraps in fresh proxies.
  *
+ * The `approval` nested object is deep-cloned because `updateToolCallApproval()`
+ * (in TanStack AI's message-updaters) mutates the part in-place while returning
+ * a new message array. The shallow `{ ...p }` copies the `approval` reference,
+ * but Svelte 5's proxy may cache the old reference identity and skip re-render.
+ * Deep-cloning `approval` ensures each clone is a fully independent object.
+ *
  * Only assistant messages with tool-call parts need cloning — user messages
  * and text-only assistant messages are passed through unchanged.
  */
@@ -93,7 +99,17 @@ const cloneMessages = (msgs: UIMessage[]) =>
 		if (m.role !== 'assistant') return m;
 		const hasToolCall = m.parts.some((p) => p.type === 'tool-call');
 		if (!hasToolCall) return m;
-		return { ...m, parts: m.parts.map((p) => (p.type === 'tool-call' ? { ...p } : p)) };
+		return {
+			...m,
+			parts: m.parts.map((p) => {
+				if (p.type !== 'tool-call') return p;
+				const clone = { ...p };
+				if (clone.approval) {
+					clone.approval = { ...clone.approval };
+				}
+				return clone;
+			}),
+		};
 	});
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,6 +244,22 @@ function createAiChatState() {
 				// detect mutations that bypass the proxy. Fresh references ensure
 				// $derived() in child components (isRunning, isApprovalRequested)
 				// re-evaluate correctly.
+				if (import.meta.env.DEV) {
+					for (const m of msgs) {
+						for (const p of m.parts) {
+							if (
+								p.type === 'tool-call' &&
+								p.state === 'approval-requested'
+							) {
+								console.log('[ai-chat] approval-requested part:', {
+									name: p.name,
+									state: p.state,
+									approval: p.approval,
+								});
+							}
+						}
+					}
+				}
 				messages = cloneMessages(msgs);
 				// Re-clone on the next microtask to capture deferred in-place
 				// mutations (e.g. needsApproval set after this callback returns).
@@ -381,9 +413,8 @@ function createAiChatState() {
 			 * 402 is only returned by the `InsufficientCredits` path in ai-chat.ts.
 			 */
 			get isCreditsExhausted() {
-				const err = (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).error;
-				if (!err) return false;
-				return err.message.includes('status: 402');
+				if (!error) return false;
+				return error.message.includes('status: 402');
 			},
 
 			// ── Ephemeral UI state (own $state) ──

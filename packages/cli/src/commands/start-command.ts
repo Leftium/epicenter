@@ -23,7 +23,7 @@ export function buildStartCommand(): CommandModule {
 				.option('server', {
 					type: 'string' as const,
 					describe:
-						'Sync server URL (default: EPICENTER_SERVER_URL env or ws://localhost:3913)',
+						'Server URL (default: EPICENTER_SERVER_URL env or http://localhost:3913)',
 				}),
 		handler: async (argv) => {
 			try {

@@ -15,6 +15,7 @@ import {
 	clearSession,
 	loadDefaultSession,
 	loadSession,
+	normalizeServerUrl,
 	saveSession,
 } from '../auth/store';
 
@@ -70,7 +71,7 @@ function buildLoginCommand(home: string) {
 					default: false,
 				}),
 		handler: async (argv: any) => {
-			const serverUrl = argv.server;
+			const serverUrl = normalizeServerUrl(argv.server);
 
 			// Device code flow: explicit --device or non-interactive stdin
 			if (argv.device || !process.stdin.isTTY) {

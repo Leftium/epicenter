@@ -14,7 +14,7 @@ import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 export type AuthSession = {
-	/** The server this session authenticates against. */
+	/** Canonical server URL (always `https://` or `http://`, lowercased, no trailing slash). */
 	server: string;
 	/** Bearer token for API/WebSocket auth. */
 	accessToken: string;
@@ -33,19 +33,49 @@ function sessionsPath(home: string): string {
 }
 
 /**
- * Canonicalize a server URL for use as a session store key.
+ * Canonicalize a server URL to its HTTPS form.
  *
- * WebSocket and HTTP URLs pointing at the same host should resolve to the
- * same session. This normalizes protocol, trailing slashes, and casing so
- * that `wss://API.epicenter.so/`, `https://api.epicenter.so`, and
- * `https://api.epicenter.so/` all map to the same key.
+ * The canonical form is always `https://` (or `http://` for plaintext),
+ * lowercased, with no trailing slash. This is the form used as the session
+ * store key and for HTTP API calls.
+ *
+ * - `wss://API.epicenter.so/` → `https://api.epicenter.so`
+ * - `ws://localhost:3913` → `http://localhost:3913`
+ * - `https://api.epicenter.so/` → `https://api.epicenter.so`
+ *
+ * @example
+ * ```typescript
+ * normalizeServerUrl('wss://api.epicenter.so/');
+ * // → 'https://api.epicenter.so'
+ * ```
  */
-function normalizeServerUrl(url: string): string {
+export function normalizeServerUrl(url: string): string {
 	return url
 		.replace(/^wss:/, 'https:')
 		.replace(/^ws:/, 'http:')
 		.replace(/\/+$/, '')
 		.toLowerCase();
+}
+
+/**
+ * Convert a canonical server URL to its WebSocket equivalent.
+ *
+ * Intended for sync/WebSocket consumers that need `wss://` or `ws://`
+ * from the canonical HTTPS form.
+ *
+ * - `https://api.epicenter.so` → `wss://api.epicenter.so`
+ * - `http://localhost:3913` → `ws://localhost:3913`
+ *
+ * @example
+ * ```typescript
+ * toWebSocketUrl('https://api.epicenter.so');
+ * // → 'wss://api.epicenter.so'
+ * ```
+ */
+export function toWebSocketUrl(url: string): string {
+	return url
+		.replace(/^https:/, 'wss:')
+		.replace(/^http:/, 'ws:');
 }
 
 /**
@@ -73,14 +103,16 @@ async function writeStore(home: string, store: SessionStore): Promise<void> {
 /**
  * Save a session for a server.
  *
- * Overwrites any existing session for the same server URL.
+ * The server URL is canonicalized before storage so that `wss://host`,
+ * `https://host`, and `https://host/` all map to the same entry.
  */
 export async function saveSession(
 	home: string,
 	session: AuthSession,
 ): Promise<void> {
 	const store = await readStore(home);
-	store[normalizeServerUrl(session.server)] = session;
+	const canonicalServer = normalizeServerUrl(session.server);
+	store[canonicalServer] = { ...session, server: canonicalServer };
 	await writeStore(home, store);
 }
 

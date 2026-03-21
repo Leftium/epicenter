@@ -20,13 +20,13 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
 import { loadConfig } from '../config/load-config';
-import { resolveServer, resolveToken } from '../auth/store';
+import { normalizeServerUrl, resolveServer, resolveToken, toWebSocketUrl } from '../auth/store';
 import { resolveEpicenterHome } from '../util/paths';
 
 export type StartDaemonOptions = {
 	/** Directory containing epicenter.config.ts. Defaults to cwd. */
 	dir?: string;
-	/** Sync server URL. Resolved from: flag → env → stored session → ws://localhost:3913. */
+	/** Server URL (any protocol accepted — normalized to HTTPS internally). */
 	serverUrl?: string;
 	/** Epicenter home directory (for auth store). Defaults to $EPICENTER_HOME or ~/.epicenter. */
 	home?: string;
@@ -48,12 +48,13 @@ export async function startDaemon(options: StartDaemonOptions = {}) {
 	const targetDir = options.dir ?? process.cwd();
 	const home = options.home ?? resolveEpicenterHome();
 
-	// Resolve server: flag → env → stored session → default
-	const serverUrl =
+	// Resolve server: flag → env → stored session → default (always canonical HTTPS form)
+	const serverUrl = normalizeServerUrl(
 		options.serverUrl ??
-		process.env.EPICENTER_SERVER_URL ??
-		(await resolveServer(home)) ??
-		'ws://localhost:3913';
+			process.env.EPICENTER_SERVER_URL ??
+			(await resolveServer(home)) ??
+			'http://localhost:3913',
+	);
 
 	const { configDir, definitions, clients } = await loadConfig(targetDir);
 
@@ -82,7 +83,7 @@ export async function startDaemon(options: StartDaemonOptions = {}) {
 			.withExtension(
 				'sync',
 				createSyncExtension({
-					url: (id) => `${serverUrl}/workspaces/${id}`,
+					url: (id) => `${toWebSocketUrl(serverUrl)}/workspaces/${id}`,
 					getToken: () => getToken(),
 				}),
 			);

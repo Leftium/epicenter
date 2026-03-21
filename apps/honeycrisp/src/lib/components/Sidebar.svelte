@@ -6,13 +6,17 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import FolderMenuItem from '$lib/components/FolderMenuItem.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
+	import AccountPopover from '$lib/components/AccountPopover.svelte';
 </script>
 
 <Sidebar.Root>
 	<Sidebar.Header>
 		<div class="flex items-center justify-between px-2 py-1">
 			<span class="text-sm font-semibold">Honeycrisp</span>
-			<Sidebar.Trigger />
+			<div class="flex items-center gap-1">
+				<AccountPopover />
+				<Sidebar.Trigger />
+			</div>
 		</div>
 		<div class="px-2 pb-1">
 			<Sidebar.Input

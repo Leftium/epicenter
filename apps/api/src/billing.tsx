@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { csrf } from 'hono/csrf';
+import { aiCredits, creditTopUp, free, max, pro } from '../autumn.config';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
 
@@ -12,8 +13,8 @@ billing.use(csrf());
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Plan IDs to display, in order. Filters out add-ons and archived plans. */
-const MAIN_PLAN_IDS = ['free', 'pro', 'max'] as const;
+/** Main plan IDs in display order—derived from autumn.config.ts, not hand-maintained. */
+const MAIN_PLAN_IDS = [free.id, pro.id, max.id] as const;
 
 /** Format a plan's price for display. */
 function formatPrice(price: { amount: number; interval: string } | null): string {
@@ -41,6 +42,13 @@ function formatDate(timestamp: number | null | undefined): string {
 		year: 'numeric',
 	});
 }
+
+const FLASH_MESSAGES: Record<string, { type: 'success' | 'error'; message: string }> = {
+	upgraded: { type: 'success', message: 'Plan upgraded successfully.' },
+	canceled: { type: 'success', message: 'Subscription will cancel at the end of this billing cycle.' },
+	uncanceled: { type: 'success', message: 'Cancellation reversed\u2014your plan stays active.' },
+	topped_up: { type: 'success', message: 'Credits added to your account.' },
+};
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -281,12 +289,6 @@ billing.get('/', async (c) => {
 
 	// Flash messages from query params
 	const q = c.req.query();
-	const FLASH_MESSAGES: Record<string, { type: 'success' | 'error'; message: string }> = {
-		upgraded: { type: 'success', message: 'Plan upgraded successfully.' },
-		canceled: { type: 'success', message: 'Subscription will cancel at the end of this billing cycle.' },
-		uncanceled: { type: 'success', message: 'Cancellation reversed\u2014your plan stays active.' },
-		topped_up: { type: 'success', message: 'Credits added to your account.' },
-	};
 	const flashKey = Object.keys(q).find((k) => k in FLASH_MESSAGES);
 	const flash = q['error']
 		? { type: 'error' as const, message: decodeURIComponent(q['error']!) }
@@ -306,7 +308,7 @@ billing.get('/', async (c) => {
 		]);
 
 		// Extract credit balance—SDK returns camelCase types
-		const creditBalance = customer.balances['ai_credits'];
+		const creditBalance = customer.balances[aiCredits.id];
 		const currentBalance = creditBalance?.remaining ?? 0;
 		const resetsAt = creditBalance?.nextResetAt
 			? formatDate(creditBalance.nextResetAt)
@@ -485,7 +487,7 @@ billing.post('/top-up', async (c) => {
 		const autumn = createAutumn(c.env);
 		const result = await autumn.billing.attach({
 			customerId: c.var.user.id,
-			planId: 'credit_top_up',
+			planId: creditTopUp.id,
 			successUrl: new URL('/billing/success', c.req.url).toString(),
 		});
 

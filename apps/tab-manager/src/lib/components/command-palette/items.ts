@@ -59,7 +59,8 @@ export const items: CommandPaletteItem[] = [
 		keywords: ['dedup', 'duplicate', 'remove', 'close', 'clean'],
 		group: 'Quick Actions',
 		onSelect() {
-			const dupes = findDuplicateGroups(getAllTabs());
+			const allTabs = getAllTabs();
+			const dupes = findDuplicateGroups(allTabs);
 			if (dupes.size === 0) return;
 
 			const totalDuplicates = [...dupes.values()].reduce(
@@ -71,10 +72,16 @@ export const items: CommandPaletteItem[] = [
 				group.slice(1).map((t) => t.id),
 			);
 
+			const pct = Math.round((toClose.length / allTabs.length) * 100);
+			const dangerousRatio = pct > 25;
+
 			confirmationDialog.open({
 				title: 'Remove Duplicate Tabs',
-				description: `Found ${totalDuplicates} duplicate tab${totalDuplicates === 1 ? '' : 's'} across ${dupes.size} URL${dupes.size === 1 ? '' : 's'}. Close them?`,
+				description: `Found ${totalDuplicates} duplicate tab${totalDuplicates === 1 ? '' : 's'} out of ${allTabs.length} total across ${dupes.size} URL${dupes.size === 1 ? '' : 's'}. Close them?`,
 				confirm: { text: 'Close Duplicates', variant: 'destructive' },
+				...(dangerousRatio && {
+					input: { confirmationText: String(totalDuplicates) },
+				}),
 				async onConfirm() {
 					await tryAsync({
 						try: () => browser.tabs.remove(toClose),

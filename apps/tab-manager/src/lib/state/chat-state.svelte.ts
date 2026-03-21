@@ -404,6 +404,20 @@ function createAiChatState() {
 				return (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).status;
 			},
 
+			/**
+			 * Whether the last error was a 402 (credits exhausted).
+			 * UI should show an upgrade prompt when true.
+			 *
+			 * Matches on the server's structured error code (`InsufficientCredits`)
+			 * from the JSON response body, not the human-readable message.
+			 * The code is a stable identifier defined in `apps/api/src/ai-chat.ts`.
+			 */
+			get isCreditsExhausted() {
+				const err = (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).error;
+				if (!err) return false;
+				return err.message.includes('InsufficientCredits');
+			},
+
 			// ── Ephemeral UI state (centralized stores) ──
 
 			get inputValue() {
@@ -714,6 +728,11 @@ function createAiChatState() {
 
 		modelsForProvider(providerName: string): readonly string[] {
 			return PROVIDER_MODELS[providerName as Provider] ?? [];
+		},
+
+		/** URL to the billing page for credit upgrades. */
+		get billingUrl() {
+			return `${remoteServerUrl.current}/billing`;
 		},
 	};
 }

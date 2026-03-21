@@ -408,14 +408,15 @@ function createAiChatState() {
 			 * Whether the last error was a 402 (credits exhausted).
 			 * UI should show an upgrade prompt when true.
 			 *
-			 * Matches on the server's structured error code (`InsufficientCredits`)
-			 * from the JSON response body, not the human-readable message.
-			 * The code is a stable identifier defined in `apps/api/src/ai-chat.ts`.
+			 * TanStack AI's `fetchServerSentEvents` discards the response body on
+			 * non-2xx responses and throws `Error('HTTP error! status: 402 ...')`.
+			 * We match on the status code since it's the only signal available.
+			 * 402 is only returned by the `InsufficientCredits` path in ai-chat.ts.
 			 */
 			get isCreditsExhausted() {
 				const err = (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).error;
 				if (!err) return false;
-				return err.message.includes('InsufficientCredits');
+				return err.message.includes('status: 402');
 			},
 
 			// ── Ephemeral UI state (centralized stores) ──

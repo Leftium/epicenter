@@ -12,33 +12,26 @@ billing.use(csrf());
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Plan IDs to display, in order. Filters out add-ons and archived plans. */
+const MAIN_PLAN_IDS = ['free', 'pro', 'max'] as const;
 
-/** Plan metadata for display—mirrors autumn.config.ts. */
-const PLAN_META: Record<
-	string,
-	{ name: string; price: string; credits: string; overage: string }
-> = {
-	free: {
-		name: 'Free',
-		price: '$0',
-		credits: '50 credits/mo',
-		overage: 'No overage',
-	},
-	pro: {
-		name: 'Pro',
-		price: '$20/mo',
-		credits: '2,000 credits/mo',
-		overage: '$1 per 100 extra',
-	},
-	max: {
-		name: 'Max',
-		price: '$100/mo',
-		credits: '15,000 credits/mo',
-		overage: '$0.50 per 100 extra',
-	},
-};
+/** Format a plan's price for display. */
+function formatPrice(price: { amount: number; interval: string } | null): string {
+	if (!price || price.amount === 0) return '$0';
+	return `$${price.amount}/${price.interval}`;
+}
 
-const PLAN_ORDER = ['free', 'pro', 'max'] as const;
+/** Format a plan item's credit info for display. */
+function formatCredits(item: { included: number } | undefined): string {
+	if (!item) return 'No credits';
+	return `${item.included.toLocaleString()} credits/mo`;
+}
+
+/** Format overage pricing for display. */
+function formatOverage(item: { price: { amount?: number; billingUnits: number } | null } | undefined): string {
+	if (!item?.price?.amount) return 'No overage';
+	return `$${item.price.amount} per ${item.price.billingUnits} extra`;
+}
 
 function formatDate(timestamp: number | null | undefined): string {
 	if (!timestamp) return '—';
@@ -148,25 +141,24 @@ function CreditBalance({
 }
 
 function PlanCard({
-	planId,
-	meta,
+	plan,
 	isCurrent,
 	eligibility,
 }: {
-	planId: string;
-	meta: (typeof PLAN_META)[string];
+	plan: { id: string; name: string; price: { amount: number; interval: string } | null; items: Array<{ included: number; price: { amount?: number; billingUnits: number } | null }> };
 	isCurrent: boolean;
 	eligibility: string | undefined;
 }) {
+	const creditItem = plan.items[0];
 	const buttonLabel = isCurrent
 		? 'Current plan'
 		: eligibility === 'upgrade'
-			? `Upgrade to ${meta.name}`
+			? `Upgrade to ${plan.name}`
 			: eligibility === 'downgrade'
-				? `Downgrade to ${meta.name}`
+				? `Downgrade to ${plan.name}`
 				: eligibility === 'activate'
-					? `Subscribe to ${meta.name}`
-					: `Switch to ${meta.name}`;
+					? `Subscribe to ${plan.name}`
+					: `Switch to ${plan.name}`;
 
 	return (
 		<div
@@ -176,10 +168,10 @@ function PlanCard({
 					: 'border-zinc-800 bg-zinc-900'
 			}`}
 		>
-			<h3 class="text-lg font-semibold">{meta.name}</h3>
-			<p class="text-2xl font-bold mt-1">{meta.price}</p>
-			<p class="text-zinc-400 text-sm mt-1">{meta.credits}</p>
-			<p class="text-zinc-500 text-xs mt-0.5">{meta.overage}</p>
+			<h3 class="text-lg font-semibold">{plan.name}</h3>
+			<p class="text-2xl font-bold mt-1">{formatPrice(plan.price)}</p>
+			<p class="text-zinc-400 text-sm mt-1">{formatCredits(creditItem)}</p>
+			<p class="text-zinc-500 text-xs mt-0.5">{formatOverage(creditItem)}</p>
 			<div class="mt-auto pt-4">
 				{isCurrent ? (
 					<button
@@ -190,7 +182,7 @@ function PlanCard({
 					</button>
 				) : (
 					<form method="post" action="/billing/upgrade">
-						<input type="hidden" name="planId" value={planId} />
+						<input type="hidden" name="planId" value={plan.id} />
 						<button
 							type="submit"
 							class={`w-full py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
@@ -213,6 +205,7 @@ function SubscriptionSection({
 }: {
 	subscription: {
 		planId: string;
+		plan?: { name: string };
 		status: string;
 		canceledAt: number | null;
 		expiresAt: number | null;
@@ -252,7 +245,7 @@ function SubscriptionSection({
 					<div class="flex items-center justify-between">
 						<div>
 							<p class="text-sm">
-								{PLAN_META[subscription.planId]?.name ?? subscription.planId}{' '}
+								{subscription.plan?.name ?? subscription.planId}{' '}
 								plan\u2014active
 							</p>
 							{subscription.currentPeriodEnd && (
@@ -331,6 +324,10 @@ billing.get('/', async (c) => {
 			}
 		}
 
+		// Filter to main plans (non-addon), ordered by MAIN_PLAN_IDS
+		const planMap = new Map(plansResult.list.map((p) => [p.id, p]));
+		const mainPlans = MAIN_PLAN_IDS.map((id) => planMap.get(id)).filter((p) => p !== undefined);
+
 		// Determine included credits based on current plan
 		const includedCredits = creditBalance?.granted ?? 50;
 
@@ -346,17 +343,13 @@ billing.get('/', async (c) => {
 				<section class="mb-10">
 					<h2 class="text-lg font-medium mb-3">Plans</h2>
 					<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-						{PLAN_ORDER.map((planId) => {
-							const meta = PLAN_META[planId]!;
-							return (
-								<PlanCard
-									planId={planId}
-									meta={meta}
-									isCurrent={currentPlanId === planId}
-									eligibility={eligibilityMap.get(planId)}
-								/>
-							);
-						})}
+						{mainPlans.map((plan) => (
+							<PlanCard
+								plan={plan}
+								isCurrent={currentPlanId === plan.id}
+								eligibility={eligibilityMap.get(plan.id)}
+							/>
+						))}
 					</div>
 				</section>
 

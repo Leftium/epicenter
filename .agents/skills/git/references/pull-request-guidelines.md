@@ -6,25 +6,42 @@ Read when writing or reviewing PR descriptions, especially for API changes, stru
 
 ## Pull Request Guidelines
 
-### WHAT First, Then WHY
+### Narrative Over Structure
 
-Every PR description MUST open with a crisp one-sentence summary of WHAT changed, then immediately explain WHY. The WHAT grounds the reader; the WHY gives them the motivation.
+A PR description is not a changelog. The reader already has the Commits tab and the Files Changed tab—they can see exactly what code moved where. Your job is to provide what those tabs can't: motivation, context, and design decisions.
 
-**Good PR opening**:
+Open with WHY. What problem existed? What was painful? What forced this change? Then weave WHAT you did into the narrative naturally. The reader should feel like they're being told a story by a colleague, not reading a ticket.
 
-> Redesigns the `createTaggedError` builder: flat `.withFields()` API replaces nested `.withContext()`/`.withCause()`, `.withMessage()` is optional and seals the message.
->
-> Analysis of 321 error call sites revealed every error is always all-or-nothing on message ownership. The old API allowed overriding `.withMessage()` at the call site, which masked design problems rather than solving them.
+**Good PR opening** (motivation first, then what):
 
-**Bad opening** (why without what):
+> Honeycrisp and opensidian both need auth—sign-in, sign-up, sign-out, session management, encryption key handling—and the logic is identical between them. Rather than duplicating it, this extracts a shared `createAuthState` factory into `@epicenter/svelte/auth-state` that both apps consume with app-specific callbacks.
+
+**Good PR opening** (terse variant for API redesigns):
+
+> Analysis of 321 error call sites revealed every error is always all-or-nothing on message ownership—the old `.withContext()`/`.withCause()` nesting added flexibility nobody used. This redesigns the `createTaggedError` builder with a flat `.withFields()` API where `.withMessage()` is optional and seals the message.
+
+Both weave motivation into the change description. The reader understands WHY before the details land.
+
+**Bad opening** (only why, no grounding):
 
 > Users were getting logged out mid-upload on large files. The session refresh only triggered on navigation, not during background activity like uploads.
 
-**Bad opening** (what without why):
+This tells you the problem but not what the PR actually does. The reader has to guess.
+
+**Bad opening** (only what, no motivation):
 
 > This PR adds a keepalive call to the upload handler and updates the session refresh logic.
 
-The reader should understand WHAT changed before they understand WHY — but they need both.
+This tells you what changed but not why anyone should care. The reader has to dig through code to understand the purpose.
+
+**Bad opening** (changelog disguised as prose):
+
+> ## Summary
+> - Added shared auth factory to `@epicenter/svelte/auth-state`
+> - Fixed workspace type bug where `TEncryption` was phantom
+> - Removed runtime type checks
+
+A bulleted list the reader could reconstruct from `git log --oneline`. Tells you nothing about motivation.
 
 ### Code Examples Are Mandatory for API Changes
 
@@ -252,62 +269,74 @@ Each visual (code snippet, ASCII diagram, before/after block) should be preceded
 
 ### Pull Request Body Format
 
-#### Simple PRs (single-purpose changes)
+#### Default: Continuous Prose
 
-Use clean paragraph format:
+Every PR—simple or complex—uses continuous prose as the default format. Write paragraphs that flow naturally, interleaved with code snippets and diagrams where they add clarity. No section headers, no numbered steps, no bullet-point changelogs.
 
-**First Paragraph**: Explain what the change does and what problem it solves.
+The rhythm is: context paragraph → code/diagram → explanation paragraph → code/diagram → ...
 
-**Subsequent Paragraphs**: Explain how the implementation works.
+For a small fix, two paragraphs suffice. For a large feature, you'll write more paragraphs with more visuals—but the FORMAT stays the same. The difference is length, not structure.
 
-**Example**:
+**Example (simple fix)**:
+
+````
+Drawers with long content overflow without scrolling, which makes it impossible to reach content below the fold on mobile.
+
+Wrapping `{@render children?.()}` in a `<div class="flex-1 overflow-y-auto">` container fixes this. `flex-1` takes remaining space after the drag handle; `overflow-y-auto` enables scrolling when needed.
+````
+
+**Example (multi-concern feature)**:
+
+````
+Honeycrisp and opensidian both need auth—sign-in, sign-up, sign-out, session
+management, encryption key handling—and the logic is identical between them.
+Rather than duplicating it, this extracts a shared `createAuthState` factory
+into `@epicenter/svelte/auth-state` that both apps consume with app-specific
+callbacks.
+
+The factory handles the Better Auth client, token management via a `TokenStore`
+abstraction, and a phase state machine. Each app wires its own workspace side
+effects through `onSignedIn`/`onSignedOut` callbacks:
+
+```typescript
+export const authState = createAuthState({
+    baseURL: API_URL,
+    storagePrefix: 'honeycrisp',
+    tokenStore,
+    async onSignedIn(encryptionKey) {
+        await workspace.activateEncryption(base64ToBytes(encryptionKey));
+        workspace.extensions.sync.reconnect();
+    },
+});
+```
+
+A separate `TokenStore` lives in its own file so that the workspace sync
+extension can read the token without importing auth—breaking what would
+otherwise be a circular dependency.
 
 ```
-This change enables proper vertical scrolling for drawer components when content exceeds the available drawer height. Previously, drawers with long content could overflow without proper scrolling behavior, making it difficult for users to access all content and resulting in poor mobile UX.
-
-To accomplish this, I wrapped the `{@render children?.()}` in a `<div class="flex-1 overflow-y-auto">` container. The `flex-1` class ensures the content area takes up all remaining space after the fixed drag handle at the top, while `overflow-y-auto` enables vertical scrolling when the content height exceeds the available space.
+token-store.ts           (standalone)
+    ▲          ▲
+    │          │
+auth/index.ts  workspace/client.ts
 ```
 
-#### Architectural PRs (API changes, structural refactors)
+This PR also fixes a workspace type bug where `TEncryption` was tracked as
+a phantom generic parameter but never intersected into the builder type...
+````
 
-For PRs that change APIs, storage structures, or architectural patterns, use this section order:
+Notice: no `## Summary`, no bullet lists, no section headers. Just paragraphs that explain the motivation and weave in code/diagrams where they help.
 
-1. **Opening sentence**: A single crisp sentence summarizing WHAT changed — what was added, removed, or redesigned. This grounds the reader before the motivation.
+#### When to Use Section Headers
 
-2. **Why paragraph**: WHY this change exists. What problem does analysis reveal? What was the old design masking? End with a **one-sentence decision summary** if applicable: "We chose X over Y because Z."
+Almost never. The two exceptions:
 
-3. **Change bullets**: A short bullet list of the specific changes — new APIs, removed patterns, behavioral differences. Bullets complement the prose here; they don't replace it.
+- **`### Why X?` headings** for genuinely distinct design decisions that need their own justification. Write as direct statements, not hedged observations. Example: `### Why a flat API instead of nested builders?`. Keep it rare—one or two per large PR, not one per change.
+- **Future work / deferred items** at the end of a long PR, when there are concrete follow-ups worth calling out. A short paragraph or a few lines is fine—this is the one place a brief list is acceptable.
 
-4. **API Migration**: Before/after code examples showing the new usage. Mandatory for any API change.
+#### Code Examples and Diagrams
 
-5. **Storage/Data Structure**: ASCII diagrams showing before/after layouts for any structural changes.
-
-6. **Technical Details**: Extension points, type definitions, configuration formats — with code examples.
-
-7. **"Why X?" sections**: Use a named `### Why X?` heading for each significant design decision that needs justification. Write as direct statements, not hedged observations.
-
-8. **Future Work**: What could be re-added later, what's intentionally deferred.
-
-9. **(Optional) Changes Summary / Test Plan**: If included, keep minimal and put at the very end. Most PRs don't need one.
-
-**Key principles**:
-
-- **Visual-first**: Each section should lead with code or ASCII diagrams; prose explains the visuals
-- Code snippets and ASCII art are the most scannable — feature them prominently
-- Rationale is prose-only (no visual needed); it explains the thinking
-- Skip the "Changes" section entirely, or make it minimal at the end
-
-**When to use Architectural format**:
-
-- Public API shape changes (exports, signatures, config formats)
-- Persistent data format changes (storage layout, migrations)
-- Cross-package contract changes
-- New subsystem or major refactor
-
-**When to use Simple format**:
-
-- Localized fix/feature with no consumer migration
-- Behavior-preserving internal refactor
+Code examples are mandatory for any PR that introduces or modifies APIs. Diagrams are strongly encouraged for any PR that changes how modules compose. Both are interspersed into the prose—not collected under their own section header.
 
 #### Voice and Tone
 
@@ -340,17 +369,16 @@ Still TODO:
 This doubles down on Svelte's philosophy of writing less, more intuitive code while setting us up for the fine-grained reactivity improvements planned for v6.
 ````
 
-#### What to Avoid
+#### What to Avoid (HARD RULES)
 
-- **Listing files changed**: Never enumerate which files were modified. GitHub's "Files changed" tab already shows this; the PR description should explain WHY, not WHAT files
-- **"Changes" sections at the top**: If you need a changes summary, put it at the very end and keep it minimal. Most PRs don't need one.
-- **Test plans**: Skip unless specifically requested. Tests should be in the code, not described in prose.
-- **Section headers like "## Summary" or "## Changes Made"**
-- Bullet points or structured lists as a substitute for explanatory prose (bullets for the change list are fine)
-- Marketing language or excessive formatting
-- Corporate language: "This PR enhances our solution by leveraging..."
-- Marketing speak: "game-changing", "revolutionary", "seamless"
-- Clichés like "first principles"
-- Dramatic hyperbole: "feels like an eternity", "pain point", "excruciating" — stick to facts ("saves 150ms") not drama
+These are the most common failure modes. If you catch yourself doing any of these, stop and rewrite.
+
+- **ANY section header at the top**: No `## Summary`, `## Changes`, `## Overview`, `## What Changed`. The description IS the summary—just start writing prose.
+- **Bullet-point changelogs**: A bulleted list of what changed is redundant with the Commits tab. The reader needs motivation and context, not a list they can already see.
+- **Listing files changed**: GitHub's Files Changed tab exists. Never enumerate file paths.
+- **Opening with WHAT instead of WHY**: "This PR adds X, Y, Z" is a changelog. "X and Y both need Z, and the logic is identical" is a narrative.
+- **Structured formats for simple PRs**: Numbered steps, labeled sections, and templated formats signal that you're filling out a form instead of thinking about your reader.
+- Marketing language, corporate speak, clichés, or dramatic hyperbole
+- Test plans (unless specifically requested)
 - Over-explaining simple changes
 - Apologetic tone for reasonable decisions

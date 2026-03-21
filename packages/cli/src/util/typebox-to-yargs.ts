@@ -15,21 +15,21 @@ type FieldSchema = TSchema & {
 };
 
 /**
- * Convert JSON Schema to yargs options record.
+ * Convert a TypeBox object schema to a yargs options record.
  *
- * Takes a JSON Schema object and returns a record of yargs option configurations.
- * Uses a permissive approach: if a schema type can't be cleanly mapped to yargs,
- * the option is still created without a type constraint, letting action validation
- * handle strict checking.
+ * Takes a TypeBox `Type.Object(...)` schema and returns a record of yargs option
+ * configurations. Uses a permissive approach: if a schema type can't be cleanly
+ * mapped to yargs, the option is still created without a type constraint, letting
+ * action validation handle strict checking.
  *
  * @example
  * ```typescript
  * const schema = Type.Object({ title: Type.String(), count: Type.Optional(Type.Number()) });
- * const options = jsonSchemaToYargsOptions(schema);
+ * const options = typeboxToYargsOptions(schema);
  * // { title: { type: 'string', demandOption: true }, count: { type: 'number', demandOption: false } }
  * ```
  */
-export function jsonSchemaToYargsOptions(
+export function typeboxToYargsOptions(
 	schema: TSchema,
 ): Record<string, Options> {
 	if (!Type.IsObject(schema)) return {};
@@ -38,7 +38,7 @@ export function jsonSchemaToYargsOptions(
 	const options: Record<string, Options> = {};
 
 	for (const [key, fieldSchema] of Object.entries(schema.properties)) {
-		options[key] = fieldSchemaToYargsOption(
+		options[key] = fieldToYargsOption(
 			fieldSchema as FieldSchema,
 			required.has(key),
 		);
@@ -47,7 +47,7 @@ export function jsonSchemaToYargsOptions(
 	return options;
 }
 
-function fieldSchemaToYargsOption(
+function fieldToYargsOption(
 	schema: FieldSchema,
 	isRequired: boolean,
 ): Options {

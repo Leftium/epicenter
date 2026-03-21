@@ -4,6 +4,10 @@
 	"type": "module",
 	"main": "./src/app.ts",
 	"types": "./src/app.ts",
+	"exports": {
+		".": "./src/app.ts",
+		"./types": "./src/auth-types.ts"
+	},
 	"license": "AGPL-3.0",
 	"scripts": {
 		"test": "bun test",

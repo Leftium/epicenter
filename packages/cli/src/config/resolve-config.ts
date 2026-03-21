@@ -1,7 +1,8 @@
 import { mkdir, readdir, readlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { AnyWorkspaceClient, ProjectDir } from '@epicenter/workspace';
-import { workspacesDir } from './paths';
+import { loadClientFromPath } from './load-config';
+import { workspacesDir } from '../util/paths';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EXPORTED TYPES
@@ -206,53 +207,3 @@ export async function discoverWorkspaces(home: string): Promise<{
 	return { clients, sources, discovered };
 }
 
-export async function loadClientFromPath(
-	configPath: string,
-): Promise<AnyWorkspaceClient> {
-	const module = await import(Bun.pathToFileURL(configPath).href);
-
-	// New convention: export default createWorkspaceClient({...})
-	if (module.default !== undefined) {
-		const client = module.default;
-		if (isWorkspaceClient(client)) {
-			return client;
-		}
-		throw new Error(
-			`Default export in ${CONFIG_FILENAME} is not a WorkspaceClient.\n` +
-				`Expected: export default createWorkspaceClient({...})\n` +
-				`Got: ${typeof client}`,
-		);
-	}
-
-	// Fallback: support old convention of named exports (for migration)
-	const exports = Object.entries(module);
-	const clients = exports.filter(([, value]) => isWorkspaceClient(value));
-
-	if (clients.length === 0) {
-		throw new Error(
-			`No WorkspaceClient found in ${CONFIG_FILENAME}.\n` +
-				`Expected: export default createWorkspaceClient({...})`,
-		);
-	}
-
-	if (clients.length > 1) {
-		const names = clients.map(([name]) => name).join(', ');
-		throw new Error(
-			`Multiple WorkspaceClient exports found: ${names}\n` +
-				`Epicenter supports one workspace per config. Use: export default createWorkspaceClient({...})`,
-		);
-	}
-
-	return clients[0]?.[1] as AnyWorkspaceClient;
-}
-
-function isWorkspaceClient(value: unknown): value is AnyWorkspaceClient {
-	return (
-		typeof value === 'object' &&
-		value !== null &&
-		'id' in value &&
-		'tables' in value &&
-		'definitions' in value &&
-		typeof (value as Record<string, unknown>).id === 'string'
-	);
-}

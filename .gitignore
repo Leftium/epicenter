@@ -42,6 +42,8 @@ yarn-error.log*
 .wxt
 .output
 
+# Wrangler (Cloudflare Workers local state)
+.wrangler
 .conductor/
 
 # Reddit exports (personal data)

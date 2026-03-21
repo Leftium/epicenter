@@ -1,9 +1,9 @@
 import yargs from 'yargs';
 import { buildAuthCommand } from './commands/auth-command';
 import { buildDataCommand } from './commands/data-command';
-import { buildHubCommand } from './commands/hub-command';
+import { buildStartCommand } from './commands/start-command';
 import { buildWorkspaceCommand } from './commands/workspace-command';
-import { resolveEpicenterHome } from './paths';
+import { resolveEpicenterHome } from './util/paths';
 
 /**
  * Create the Epicenter CLI instance.
@@ -13,14 +13,13 @@ export function createCLI() {
 	return {
 		run: async (argv: string[]) => {
 			const home = resolveEpicenterHome();
-			const serverUrl = `http://localhost:3913`;
 
 			const cli = yargs()
 				.scriptName('epicenter')
+				.command(buildStartCommand())
 				.command(buildWorkspaceCommand(home))
-				.command(buildHubCommand(home))
 				.command(buildAuthCommand(home))
-				.command(buildDataCommand(serverUrl))
+				.command(buildDataCommand())
 				.demandCommand(1)
 				.strict()
 				.help();

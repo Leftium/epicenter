@@ -1,21 +1,22 @@
-// packages/cli/src/commands/auth-command.ts
+/**
+ * `epicenter auth` \u2014 manage authentication with Epicenter servers.
+ *
+ * Supports two auth flows:
+ * - Password login: interactive email/password prompt (default for TTY)
+ * - Device code: RFC 8628 flow for headless/CI environments (`--device`)
+ *
+ * All sessions stored in the unified auth store at `$EPICENTER_HOME/auth/sessions.json`.
+ */
+
 import type { Argv, CommandModule } from 'yargs';
-import { clearAuth, loadAuth, saveAuth } from '../auth-store';
-import { createHttpClient } from '../http-client';
-
-/** Response from the email sign-in endpoint. */
-interface SignInResponse {
-	token: string;
-	expiresAt: string;
-	user: { id: string; email: string; name?: string };
-}
-
-/** Response from the get-session endpoint used to verify auth status. */
-interface SessionResponse {
-	user: { id: string; email: string; name?: string };
-	expiresAt: string;
-	valid: boolean;
-}
+import { createAuthApi } from '../auth/api';
+import { loginWithDeviceCode } from '../auth/device-flow';
+import {
+	clearSession,
+	loadDefaultSession,
+	loadSession,
+	saveSession,
+} from '../auth/store';
 
 async function readLine(prompt: string, silent = false): Promise<string> {
 	const readline = await import('node:readline');
@@ -54,54 +55,53 @@ async function readLine(prompt: string, silent = false): Promise<string> {
 function buildLoginCommand(home: string) {
 	return {
 		command: 'login',
-		describe: 'Log in to a remote Epicenter server',
+		describe: 'Log in to an Epicenter server',
 		builder: (yargs: Argv) =>
-			yargs.option('remote', {
-				type: 'string',
-				description:
-					'Remote server URL (e.g. https://my-epicenter.example.com)',
-			}),
-		handler: async (argv: { remote?: string }) => {
-			let remoteUrl = argv.remote;
+			yargs
+				.option('server', {
+					type: 'string',
+					description: 'Server URL (e.g. https://api.epicenter.so)',
+					demandOption: true,
+				})
+				.option('device', {
+					type: 'boolean',
+					description:
+						'Use device code flow (headless/CI-friendly, opens browser)',
+					default: false,
+				}),
+		handler: async (argv: any) => {
+			const serverUrl = argv.server;
 
-			if (!remoteUrl) {
-				const stored = await loadAuth(home);
-				if (stored?.remoteUrl) {
-					remoteUrl = stored.remoteUrl;
-				} else {
-					console.error(
-						'No remote URL provided and no stored remote URL found.\n' +
-							'Provide one with: epicenter auth login --remote <url>',
-					);
-					process.exit(1);
-				}
+			// Device code flow: explicit --device or non-interactive stdin
+			if (argv.device || !process.stdin.isTTY) {
+				await loginWithDeviceCode(serverUrl, home);
+				return;
 			}
 
+			// Password flow
 			const email = await readLine('Email: ');
 			const password = await readLine('Password: ', true);
 
-			const client = createHttpClient(remoteUrl);
+			const api = createAuthApi(serverUrl);
 
-			let response: SignInResponse;
+			let response;
 			try {
-				response = await client.post<SignInResponse>(
-					'/api/auth/sign-in/email',
-					{ email, password },
-				);
+				response = await api.signInWithEmail(email, password);
 			} catch (err) {
 				console.error(`Login failed: ${(err as Error).message}`);
 				process.exit(1);
 			}
 
-			await saveAuth(home, {
-				remoteUrl,
-				token: response.token,
-				expiresAt: response.expiresAt,
+			await saveSession(home, {
+				server: serverUrl,
+				accessToken: response.token,
+				createdAt: Date.now(),
+				expiresIn: 60 * 60 * 24 * 7,
 				user: response.user,
 			});
 
 			const displayName = response.user.name ?? response.user.email;
-			console.log(`Logged in as ${displayName} (${response.user.email})`);
+			console.log(`\u2713 Logged in as ${displayName} (${response.user.email})`);
 		},
 	};
 }
@@ -109,24 +109,33 @@ function buildLoginCommand(home: string) {
 function buildLogoutCommand(home: string) {
 	return {
 		command: 'logout',
-		describe: 'Log out from the remote Epicenter server',
-		builder: (yargs: Argv) => yargs,
-		handler: async () => {
-			const auth = await loadAuth(home);
-			if (!auth) {
-				console.log('You are not logged in.');
+		describe: 'Log out from an Epicenter server',
+		builder: (yargs: Argv) =>
+			yargs.option('server', {
+				type: 'string',
+				description:
+					'Server URL to log out from (default: most recent session)',
+			}),
+		handler: async (argv: any) => {
+			const session = argv.server
+				? await loadSession(home, argv.server)
+				: await loadDefaultSession(home);
+
+			if (!session) {
+				console.log('No active session.');
 				return;
 			}
 
+			// Best-effort remote sign-out
 			try {
-				const client = createHttpClient(auth.remoteUrl, auth.token);
-				await client.post('/api/auth/sign-out');
+				const api = createAuthApi(session.server, session.accessToken);
+				await api.signOut();
 			} catch {
-				// Remote may be unreachable; proceed with local logout anyway
+				// Remote may be unreachable
 			}
 
-			await clearAuth(home);
-			console.log('Logged out successfully.');
+			await clearSession(home, session.server);
+			console.log('\u2713 Logged out.');
 		},
 	};
 }
@@ -135,61 +144,54 @@ function buildStatusCommand(home: string) {
 	return {
 		command: 'status',
 		describe: 'Show current authentication status',
-		builder: (yargs: Argv) => yargs,
-		handler: async () => {
-			const auth = await loadAuth(home);
-			if (!auth) {
+		builder: (yargs: Argv) =>
+			yargs.option('server', {
+				type: 'string',
+				description: 'Server URL to check (default: most recent session)',
+			}),
+		handler: async (argv: any) => {
+			const session = argv.server
+				? await loadSession(home, argv.server)
+				: await loadDefaultSession(home);
+
+			if (!session) {
 				console.log('Not logged in.');
 				return;
 			}
 
-			const client = createHttpClient(auth.remoteUrl, auth.token);
+			const api = createAuthApi(session.server, session.accessToken);
 
 			try {
-				const session = await client.get<SessionResponse>(
-					'/api/auth/get-session',
-				);
-				const displayName = session.user.name ?? session.user.email;
-				console.log(`Logged in as: ${displayName} (${session.user.email})`);
-				console.log(`Remote:       ${auth.remoteUrl}`);
-				console.log(`Session:      ${session.valid ? 'valid' : 'invalid'}`);
-				if (session.expiresAt) {
-					console.log(
-						`Expires at:   ${new Date(session.expiresAt).toLocaleString()}`,
-					);
+				const remote = await api.getSession();
+				const displayName = remote.user.name ?? remote.user.email;
+				console.log(`Logged in as: ${displayName} (${remote.user.email})`);
+				console.log(`Server:       ${session.server}`);
+				console.log(`Session:      valid`);
+				if (remote.session.expiresAt) {
+					console.log(`Expires at:   ${new Date(remote.session.expiresAt).toLocaleString()}`);
 				}
 			} catch {
-				// Token may be expired or remote unreachable — show stored info with a warning
-				const displayName = auth.user?.name ?? auth.user?.email ?? '(unknown)';
-				console.log(
-					`Logged in as: ${displayName}${auth.user?.email ? ` (${auth.user.email})` : ''} [stored]`,
-				);
-				console.log(`Remote:       ${auth.remoteUrl}`);
-				console.log(
-					`Expires at:   ${auth.expiresAt ? new Date(auth.expiresAt).toLocaleString() : '(unknown)'}`,
-				);
-				console.warn(
-					'Warning: Could not verify session with remote server. Token may be expired or server unreachable.',
-				);
+				const displayName = session.user?.name ?? session.user?.email ?? '(unknown)';
+				console.log(`Logged in as: ${displayName} [stored]`);
+				console.log(`Server:       ${session.server}`);
+				console.warn('Warning: Could not verify session with remote server.');
 			}
 		},
 	};
 }
 
 /**
- * Build the top-level `auth` command group for managing authentication with a remote server.
- * @param home - Path to the Epicenter home directory (used for credential storage).
- * @returns A yargs CommandModule with login, logout, and status subcommands.
+ * Build the `auth` command group.
  */
 export function buildAuthCommand(home: string): CommandModule {
 	return {
 		command: 'auth <subcommand>',
-		describe: 'Manage authentication with a remote Epicenter server',
+		describe: 'Manage authentication with Epicenter servers',
 		builder: (yargs: Argv) =>
 			yargs
-				.command(buildLoginCommand(home) as CommandModule)
-				.command(buildLogoutCommand(home) as CommandModule)
-				.command(buildStatusCommand(home) as CommandModule)
+			.command(buildLoginCommand(home) as unknown as CommandModule)
+			.command(buildLogoutCommand(home) as unknown as CommandModule)
+			.command(buildStatusCommand(home) as unknown as CommandModule)
 				.demandCommand(1, 'Specify a subcommand: login, logout, or status'),
 		handler: () => {},
 	};

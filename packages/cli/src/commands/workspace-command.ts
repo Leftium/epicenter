@@ -19,10 +19,10 @@ import {
 	resolveWantedItems,
 } from 'jsrepo';
 import type { Argv, CommandModule } from 'yargs';
-import type { DiscoveredWorkspace } from '../discovery';
-import { loadClientFromPath } from '../discovery';
-import { formatYargsOptions, output, outputError } from '../format-output';
-import { workspacesDir } from '../paths';
+import { loadClientFromPath } from '../config/load-config';
+import type { DiscoveredWorkspace } from '../config/resolve-config';
+import { formatYargsOptions, output, outputError } from '../util/format-output';
+import { workspacesDir } from '../util/paths';
 
 /**
  * Build the `workspace` command group with subcommands for managing local workspaces.

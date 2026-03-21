@@ -7,10 +7,11 @@ import {
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { autumn } from 'autumn-js/better-auth';
-import { betterAuth } from 'better-auth';
+import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { customSession } from 'better-auth/plugins';
 import { bearer } from 'better-auth/plugins/bearer';
+import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
 import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
@@ -19,6 +20,12 @@ import { createFactory } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
+import {
+	renderConsentPage,
+	renderDevicePage,
+	renderSignedInPage,
+	renderSignInPage,
+} from './auth-pages';
 import { createAutumn } from './autumn';
 import { billing } from './billing';
 import { MAX_PAYLOAD_BYTES } from './constants';
@@ -99,7 +106,7 @@ export const BASE_AUTH_CONFIG = {
 			trustedProviders: ['google', 'email-password'],
 		},
 	},
-};
+} satisfies BetterAuthOptions;
 
 /**
  * Validated shape of a single keyring entry.
@@ -107,7 +114,10 @@ export const BASE_AUTH_CONFIG = {
  * `version` is a positive integer identifying the key generation; `secret` is
  * the raw key material (typically base64-encoded via `openssl rand -base64 32`).
  */
-const EncryptionEntry = type({ version: 'number.integer > 0', secret: 'string' });
+const EncryptionEntry = type({
+	version: 'number.integer > 0',
+	secret: 'string',
+});
 
 /**
  * Parse a single `"version:secret"` string into a validated `EncryptionEntry`.
@@ -116,11 +126,13 @@ const EncryptionEntry = type({ version: 'number.integer > 0', secret: 'string' }
  * is the secret (which may itself contain colons). Uses `ctx.error()` for
  * arktype-native error reporting when the colon delimiter is missing.
  */
-const EncryptionEntryParser = type('string').pipe((entry, ctx) => {
-	const i = entry.indexOf(':');
-	if (i === -1) return ctx.error('must be "version:secret"');
-	return { version: Number(entry.slice(0, i)), secret: entry.slice(i + 1) };
-}).to(EncryptionEntry);
+const EncryptionEntryParser = type('string')
+	.pipe((entry, ctx) => {
+		const i = entry.indexOf(':');
+		if (i === -1) return ctx.error('must be "version:secret"');
+		return { version: Number(entry.slice(0, i)), secret: entry.slice(i + 1) };
+	})
+	.to(EncryptionEntry);
 
 /**
  * Parse and validate the full ENCRYPTION_SECRETS env var into a sorted keyring.
@@ -204,7 +216,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /** Creates a Better Auth instance using an already-connected Drizzle instance. */
-function createAuth({ db, autumnSecretKey }: { db: Db; autumnSecretKey: string }) {
+function createAuth({ db, env }: { db: Db; env: Env['Bindings'] }) {
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg' }),
@@ -228,6 +240,11 @@ function createAuth({ db, autumnSecretKey }: { db: Db; autumnSecretKey: string }
 					keyVersion: currentKey.version,
 				};
 			}),
+			deviceAuthorization({
+				verificationUri: '/device',
+				expiresIn: '10m',
+				interval: '5s',
+			}),
 			oauthProvider({
 				loginPage: '/sign-in',
 				consentPage: '/consent',
@@ -250,9 +267,17 @@ function createAuth({ db, autumnSecretKey }: { db: Db; autumnSecretKey: string }
 						skipConsent: true,
 						metadata: {},
 					},
+					{
+						clientId: 'epicenter-runner',
+						name: 'Epicenter Runner',
+						type: 'native',
+						redirectUrls: [],
+						skipConsent: true,
+						metadata: {},
+					},
 				],
 			}),
-			autumn({ secretKey: autumnSecretKey, customerScope: 'user' }),
+			autumn({ secretKey: env.AUTUMN_SECRET_KEY, customerScope: 'user' }),
 		],
 		session: {
 			expiresIn: 60 * 60 * 24 * 7,
@@ -349,7 +374,7 @@ const factory = createFactory<Env>({
 
 		// Layer 2: Auth — pure, reads db from context.
 		app.use('*', async (c, next) => {
-			c.set('auth', createAuth({ db: c.var.db, autumnSecretKey: c.env.AUTUMN_SECRET_KEY }));
+			c.set('auth', createAuth({ db: c.var.db, env: c.env }));
 			await next();
 		});
 	},
@@ -365,6 +390,67 @@ app.get(
 		tags: ['health'],
 	}),
 	(c) => c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
+);
+
+// Auth pages — server-rendered Hono JSX
+app.get('/sign-in', async (c) => {
+	const session = await c.var.auth.api.getSession({
+		headers: c.req.raw.headers,
+	});
+	if (session) {
+		const url = new URL(c.req.url);
+		// OAuth re-entry: signed params present → continue the authorize flow
+		if (url.searchParams.has('sig')) {
+			return c.redirect(`/auth/oauth2/authorize${url.search}`);
+		}
+		// Post-signin redirect (e.g. from /device or /consent)
+		const callbackURL = url.searchParams.get('callbackURL');
+		if (callbackURL?.startsWith('/')) {
+			return c.redirect(callbackURL);
+		}
+		// Already signed in, no redirect needed — show signed-in confirmation
+		const displayName = session.user.name ?? session.user.email;
+		return c.html(
+			renderSignedInPage({ displayName, email: session.user.email }),
+		);
+	}
+	return c.html(renderSignInPage());
+});
+app.get(
+	'/consent',
+	sValidator('query', type({ 'client_id?': 'string', 'scope?': 'string' })),
+	async (c) => {
+		const session = await c.var.auth.api.getSession({
+			headers: c.req.raw.headers,
+		});
+		if (!session) {
+			const consentUrl = `/consent${new URL(c.req.url).search}`;
+			return c.redirect(
+				`/sign-in?callbackURL=${encodeURIComponent(consentUrl)}`,
+			);
+		}
+		const { client_id: clientId, scope } = c.req.valid('query');
+		return c.html(renderConsentPage({ clientId, scope }));
+	},
+);
+app.get(
+	'/device',
+	sValidator('query', type({ 'user_code?': 'string' })),
+	async (c) => {
+		const { user_code: userCode } = c.req.valid('query');
+		const session = await c.var.auth.api.getSession({
+			headers: c.req.raw.headers,
+		});
+		if (!session) {
+			const callbackURL = userCode
+				? `/device?user_code=${encodeURIComponent(userCode)}`
+				: '/device';
+			return c.redirect(
+				`/sign-in?callbackURL=${encodeURIComponent(callbackURL)}`,
+			);
+		}
+		return c.html(renderDevicePage({ userCode }));
+	},
 );
 
 // Auth

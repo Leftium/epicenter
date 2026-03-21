@@ -27,7 +27,7 @@ const WranglerConfig = type('string')
 	});
 
 const jsoncString = readFileSync(
-	fileURLToPath(new URL('../wrangler.jsonc', import.meta.url)),
+	fileURLToPath(new URL('./wrangler.jsonc', import.meta.url)),
 	'utf-8',
 );
 

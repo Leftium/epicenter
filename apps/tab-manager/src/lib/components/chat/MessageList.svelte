@@ -11,27 +11,41 @@
 		messages,
 		status,
 		onReload,
+		onApproveToolCall,
+		onDenyToolCall,
 	}: {
 		messages: UIMessage[];
 		status: 'ready' | 'submitted' | 'streaming' | 'error';
 		onReload: () => void;
+		onApproveToolCall: (approvalId: string) => void;
+		onDenyToolCall: (approvalId: string) => void;
 	} = $props();
 
 	/**
 	 * Show loading dots when waiting for assistant content.
 	 *
-	 * Covers the gap between 'submitted' (request sent) and first visible
-	 * assistant token. Without this, dots flash away when status transitions
-	 * to 'streaming' before any text is actually rendered.
+	 * Covers three gaps:
+	 * 1. 'submitted' → first assistant token (initial request)
+	 * 2. 'streaming' before any assistant message appears
+	 * 3. Tool completed → continuation stream starts (last part is tool-result
+	 *    and status is 'ready', meaning the continuation hasn't fired yet)
 	 */
+	const isAwaitingContinuation = $derived(
+		status === 'ready' &&
+			messages.at(-1)?.role === 'assistant' &&
+			messages.at(-1)?.parts.at(-1)?.type === 'tool-result',
+	);
 	const showLoadingDots = $derived(
 		status === 'submitted' ||
-			(status === 'streaming' && messages.at(-1)?.role !== 'assistant'),
+			(status === 'streaming' && messages.at(-1)?.role !== 'assistant') ||
+			isAwaitingContinuation,
 	);
 
 	/** Show regenerate button when idle and last message is from assistant. */
 	const showRegenerate = $derived(
-		status === 'ready' && messages.at(-1)?.role === 'assistant',
+		status === 'ready' &&
+			messages.at(-1)?.role === 'assistant' &&
+			!isAwaitingContinuation,
 	);
 </script>
 
@@ -48,7 +62,7 @@
 		{#each messages as message (message.id)}
 			<Chat.Bubble variant={message.role === 'user' ? 'sent' : 'received'}>
 				<Chat.BubbleMessage>
-					<MessageParts parts={message.parts} />
+					<MessageParts parts={message.parts} {onApproveToolCall} {onDenyToolCall} />
 				</Chat.BubbleMessage>
 			</Chat.Bubble>
 		{/each}

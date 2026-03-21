@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { aiChatState } from '$lib/state/chat-state.svelte';
+	import { aiChatState } from '$lib/chat/chat-state.svelte';
 	import ChatErrorBanner from './ChatErrorBanner.svelte';
 	import ChatInput from './ChatInput.svelte';
 	import ConversationPicker from './ConversationPicker.svelte';
@@ -21,6 +21,8 @@
 			messages={active?.messages ?? []}
 			status={active?.status ?? 'ready'}
 			onReload={() => active?.reload()}
+			onApproveToolCall={(id) => active?.approveToolCall(id)}
+			onDenyToolCall={(id) => active?.denyToolCall(id)}
 		/>
 	</div>
 

@@ -5,7 +5,7 @@
  * commands via command groups (workspace, local, remote, auth, data).
  */
 import { describe, expect, test } from 'bun:test';
-import { createCLI } from './cli';
+import { createCLI } from '../src/cli';
 
 describe('createCLI', () => {
 	test('returns an object with a run method', () => {

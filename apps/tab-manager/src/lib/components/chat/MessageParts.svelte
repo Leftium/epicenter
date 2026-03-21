@@ -12,8 +12,12 @@
 
 	let {
 		parts,
+		onApproveToolCall,
+		onDenyToolCall,
 	}: {
 		parts: MessagePart[];
+		onApproveToolCall: (approvalId: string) => void;
+		onDenyToolCall: (approvalId: string) => void;
 	} = $props();
 </script>
 
@@ -21,13 +25,13 @@
 	<div class="py-1 text-xs text-muted-foreground italic">{label}</div>
 {/snippet}
 
-{#each parts as part, i (i)}
+{#each parts as part, i (`${part.type}-${i}`)}
 	{#if part.type === 'text'}
 		<div class="prose prose-sm">
 			{@html marked.parse(part.content, { breaks: true, gfm: true })}
 		</div>
 	{:else if part.type === 'tool-call'}
-		<ToolCallPart part={part as TanStackToolCallPart<WorkspaceTools>} />
+		<ToolCallPart part={part as TanStackToolCallPart<WorkspaceTools>} {onApproveToolCall} {onDenyToolCall} />
 	{:else if part.type === 'tool-result'}
 		<ToolResultPart part={part as ToolResultPartType} />
 	{:else if part.type === 'thinking'}

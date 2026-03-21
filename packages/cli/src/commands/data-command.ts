@@ -1,118 +1,119 @@
-import type { Argv } from 'yargs';
+/**
+ * `epicenter data` — interact with workspace data directly from disk.
+ *
+ * Reads/writes workspace data via the Y.Doc persistence layer (SQLite).
+ * No local server required — operates directly on persisted state.
+ *
+ * All handlers share the same open/use/destroy lifecycle via `withWorkspace`.
+ */
+
+import type { AnyWorkspaceClient } from '@epicenter/workspace';
+import type { Argv, CommandModule } from 'yargs';
+import { formatYargsOptions, output, outputError } from '../util/format-output';
+import { parseJsonInput, readStdinSync } from '../util/parse-input';
 import {
-	type FormatOptions,
-	formatYargsOptions,
-	output,
-	outputError,
-} from '../format-output';
-import { assertServerRunning, createHttpClient } from '../http-client';
-import { parseJsonInput, readStdinSync } from '../parse-input';
+	type OpenWorkspaceOptions,
+	withWorkspace,
+} from '../runtime/open-workspace';
+
+// ─── Factory: shared lifecycle for every data command ───────────────────────────
 
 /**
- * Build the top-level `data` command group for interacting with workspace data.
- * Provides subcommands for tables, key-value store, and actions.
- * @param serverUrl - Base URL of the Epicenter server to connect to.
- * @returns A yargs command definition with tables, kv, action, and table-row subcommands.
+ * Wraps a data operation with the standard CLI lifecycle:
+ * open workspace → run operation → output result → destroy.
+ *
+ * Every handler in this file calls this instead of manually managing
+ * openWorkspaceFromDisk/try/catch/destroy.
  */
-export function buildDataCommand(serverUrl: string) {
-	return {
-		command: 'data <workspace>',
-		describe: 'Interact with workspace data (tables, KV, actions)',
-		builder: (yargs: Argv) => {
-			const y = yargs.positional('workspace', {
-				type: 'string',
-				demandOption: true,
-				description: 'Workspace ID',
-			}) as Argv;
-			return y
-				.command(buildTablesSubcommand(serverUrl))
-				.command(buildKvSubcommand(serverUrl))
-				.command(buildActionSubcommand(serverUrl))
-				.command(buildTableSubcommand(serverUrl))
-				.demandCommand(
-					1,
-					'Specify a subcommand: tables, kv, action, or a table name',
-				);
-		},
-		handler: () => {},
-	};
+async function runDataCommand<T>(
+	opts: OpenWorkspaceOptions,
+	fn: (client: AnyWorkspaceClient) => T | Promise<T>,
+	format?: 'json' | 'jsonl',
+): Promise<void> {
+	try {
+		const result = await withWorkspace(opts, fn);
+		output(result, { format });
+	} catch (err) {
+		outputError(err instanceof Error ? err.message : String(err));
+		process.exitCode = 1;
+	}
 }
 
-type FormatArgv = { format?: FormatOptions['format'] };
-type WorkspaceArgv = { workspace: string } & FormatArgv;
-
-// ---------------------------------------------------------------------------
-// tables — list table names
-// ---------------------------------------------------------------------------
-
-function buildTablesSubcommand(serverUrl: string) {
-	return {
-		command: 'tables',
-		describe: 'List all table names',
-		builder: (yargs: Argv) => yargs.options(formatYargsOptions()),
-		handler: async (argv: WorkspaceArgv) => {
-			await assertServerRunning(serverUrl);
-			const client = createHttpClient(serverUrl);
-			const workspaceId = argv.workspace;
-
-			try {
-				const data = await client.get<string[]>(
-					`/workspaces/${workspaceId}/tables`,
-				);
-				output(data, { format: argv.format });
-			} catch (err) {
-				outputError(String(err));
-				process.exitCode = 1;
-			}
-		},
-	};
+/** Resolve a table by name, or throw a clear error. */
+function resolveTable(client: AnyWorkspaceClient, name: string) {
+	const table = client.tables[name];
+	if (!table) throw new Error(`Table "${name}" not found`);
+	return table;
 }
 
-// ---------------------------------------------------------------------------
-// kv — key-value store operations
-// ---------------------------------------------------------------------------
+// ─── Input parsing helper ─────────────────────────────────────────────────
 
-function buildKvSubcommand(serverUrl: string) {
+/** Parse a value from argv positional, --file, or stdin. Returns undefined on error. */
+function resolveInputValue(argv: any): unknown {
+	const stdinContent = readStdinSync();
+	const valueStr = argv.value as string | undefined;
+
+	if (
+		valueStr &&
+		!valueStr.startsWith('{') &&
+		!valueStr.startsWith('[') &&
+		!valueStr.startsWith('"') &&
+		!valueStr.startsWith('@')
+	) {
+		return valueStr;
+	}
+
+	const result = parseJsonInput({
+		positional: valueStr,
+		file: argv.file,
+		hasStdin: stdinContent !== undefined,
+		stdinContent,
+	});
+
+	if (result.error) {
+		outputError(result.error.message);
+		process.exitCode = 1;
+		return undefined;
+	}
+
+	return result.data;
+}
+
+// ─── KV subcommand (nested) ───────────────────────────────────────────────
+
+function buildKvSubcommand() {
 	return {
 		command: 'kv <action>',
 		describe: 'Manage key-value store',
-		builder: (yargs: Argv) => {
-			return yargs
+		builder: (yargs: Argv) =>
+			yargs
 				.command({
 					command: 'get <key>',
 					describe: 'Get a value by key',
 					builder: (y: Argv) =>
 						y
-							.positional('key', { type: 'string', demandOption: true })
+							.positional('key', {
+								type: 'string',
+								demandOption: true,
+							})
 							.options(formatYargsOptions()),
-					handler: async (argv: WorkspaceArgv & { key: string }) => {
-						await assertServerRunning(serverUrl);
-						const client = createHttpClient(serverUrl);
-						const workspaceId = argv.workspace;
-						const key = argv.key;
-
-						try {
-							const data = await client.get(
-								`/workspaces/${workspaceId}/kv/${key}`,
-							);
-							output(data, { format: argv.format });
-						} catch (err) {
-							const msg = String(err);
-							if (msg.includes('404')) {
-								outputError(`Key not found: ${key}`);
-							} else {
-								outputError(msg);
-							}
-							process.exitCode = 1;
-						}
+					handler: async (argv: any) => {
+						await runDataCommand(
+							{ dir: argv.dir, workspaceId: argv.workspace },
+							(client) => client.kv.get(argv.key),
+							argv.format,
+						);
 					},
-				})
+				} as unknown as CommandModule)
 				.command({
 					command: 'set <key> [value]',
 					describe: 'Set a value by key',
 					builder: (y: Argv) =>
 						y
-							.positional('key', { type: 'string', demandOption: true })
+							.positional('key', {
+								type: 'string',
+								demandOption: true,
+							})
 							.positional('value', {
 								type: 'string',
 								description: 'JSON value or @file',
@@ -122,391 +123,178 @@ function buildKvSubcommand(serverUrl: string) {
 								description: 'Read value from file',
 							})
 							.options(formatYargsOptions()),
-					handler: async (
-						argv: WorkspaceArgv & {
-							key: string;
-							value?: string;
-							file?: string;
-						},
-					) => {
-						await assertServerRunning(serverUrl);
-						const client = createHttpClient(serverUrl);
-						const workspaceId = argv.workspace;
-						const key = argv.key;
-						const stdinContent = readStdinSync();
-						const valueStr = argv.value;
-
-						let value: unknown;
-						if (
-							valueStr &&
-							!valueStr.startsWith('{') &&
-							!valueStr.startsWith('[') &&
-							!valueStr.startsWith('"') &&
-							!valueStr.startsWith('@')
-						) {
-							value = valueStr;
-						} else {
-							const result = parseJsonInput({
-								positional: valueStr,
-								file: argv.file,
-								hasStdin: stdinContent !== undefined,
-								stdinContent,
-							});
-
-							if (result.error) {
-								outputError(result.error.message);
-								process.exitCode = 1;
-								return;
-							}
-							value = result.data;
-						}
-
-						try {
-							await client.put(`/workspaces/${workspaceId}/kv/${key}`, value);
-							output({ status: 'set', key, value }, { format: argv.format });
-						} catch (err) {
-							outputError(String(err));
-							process.exitCode = 1;
-						}
+					handler: async (argv: any) => {
+						const parsed = resolveInputValue(argv);
+						if (parsed === undefined) return;
+						await runDataCommand(
+							{ dir: argv.dir, workspaceId: argv.workspace },
+							(client) => {
+								client.kv.set(argv.key, parsed);
+								return {
+									status: 'set',
+									key: argv.key,
+									value: parsed,
+								};
+							},
+							argv.format,
+						);
 					},
-				})
+				} as unknown as CommandModule)
 				.command({
 					command: 'delete <key>',
 					aliases: ['reset'],
-					describe: 'Delete a value by key (reset to undefined)',
+					describe: 'Delete a value by key (reset to default)',
 					builder: (y: Argv) =>
 						y
-							.positional('key', { type: 'string', demandOption: true })
+							.positional('key', {
+								type: 'string',
+								demandOption: true,
+							})
 							.options(formatYargsOptions()),
-					handler: async (argv: WorkspaceArgv & { key: string }) => {
-						await assertServerRunning(serverUrl);
-						const client = createHttpClient(serverUrl);
-						const workspaceId = argv.workspace;
-						const key = argv.key;
-
-						try {
-							await client.delete(`/workspaces/${workspaceId}/kv/${key}`);
-							output({ status: 'deleted', key }, { format: argv.format });
-						} catch (err) {
-							outputError(String(err));
-							process.exitCode = 1;
-						}
+					handler: async (argv: any) => {
+						await runDataCommand(
+							{ dir: argv.dir, workspaceId: argv.workspace },
+							(client) => {
+								client.kv.delete(argv.key);
+								return { status: 'deleted', key: argv.key };
+							},
+							argv.format,
+						);
 					},
-				})
-				.demandCommand(1, 'Specify an action: get, set, delete');
-		},
+				} as unknown as CommandModule)
+				.demandCommand(1, 'Specify an action: get, set, delete'),
 		handler: () => {},
 	};
 }
 
-// ---------------------------------------------------------------------------
-// action — run workspace actions (GET or POST)
-// ---------------------------------------------------------------------------
+// ─── Exported command builder ─────────────────────────────────────────────
 
-function buildActionSubcommand(serverUrl: string) {
+export function buildDataCommand() {
 	return {
-		command: 'action <path> [json]',
-		describe: 'Run an action (query or mutation)',
+		command: 'data',
+		describe: 'Interact with workspace data (tables, KV)',
 		builder: (yargs: Argv) =>
 			yargs
-				.positional('path', {
+				.strict(false)
+				.option('dir', {
 					type: 'string',
-					demandOption: true,
-					description: 'Action path in dot notation (e.g., posts.getAll)',
+					default: '.',
+					alias: 'C',
+					description: 'Directory containing epicenter.config.ts',
 				})
-				.positional('json', {
+				.option('workspace', {
 					type: 'string',
-					description: 'JSON input or @file (triggers mutation)',
-				})
-				.option('file', {
-					type: 'string',
-					description: 'Read input from file',
-				})
-				.option('mutation', {
-					type: 'boolean',
-					description: 'Force mutation (POST) even without input',
-					default: false,
-				}),
-		handler: async (
-			argv: WorkspaceArgv & {
-				path: string;
-				json?: string;
-				file?: string;
-				mutation?: boolean;
-			},
-		) => {
-			await assertServerRunning(serverUrl);
-			const client = createHttpClient(serverUrl);
-			const workspaceId = argv.workspace;
-			// Convert dot-notation to slash path: auth.login → auth/login
-			const actionPath = argv.path.replace(/\./g, '/');
-			const stdinContent = readStdinSync();
-			const hasInput =
-				argv.json !== undefined ||
-				argv.file !== undefined ||
-				stdinContent !== undefined;
-
-			const url = `/workspaces/${workspaceId}/actions/${actionPath}`;
-
-			try {
-				if (hasInput || argv.mutation) {
-					let body: unknown;
-					if (hasInput) {
-						const result = parseJsonInput({
-							positional: argv.json,
-							file: argv.file,
-							hasStdin: stdinContent !== undefined,
-							stdinContent,
-						});
-						if (result.error) {
-							outputError(result.error.message);
-							process.exitCode = 1;
-							return;
-						}
-						body = result.data;
-					}
-					const data = await client.post(url, body);
-					output(data);
-				} else {
-					const data = await client.get(url);
-					output(data);
-				}
-			} catch (err) {
-				outputError(String(err));
-				process.exitCode = 1;
-			}
-		},
-	};
-}
-
-// ---------------------------------------------------------------------------
-// <table> — table row operations (list, get, set, update, delete)
-// ---------------------------------------------------------------------------
-
-function buildTableSubcommand(serverUrl: string) {
-	return {
-		command: '<table> <action>',
-		describe: 'Manage rows in a table',
-		builder: (yargs: Argv) => {
-			return yargs
-				.positional('table', {
-					type: 'string',
-					demandOption: true,
-					description: 'Table name',
+					alias: 'w',
+					description: 'Workspace ID (required if config has multiple workspaces)',
 				})
 				.command({
-					command: 'list',
-					describe: 'List all valid rows',
+					command: 'tables',
+					describe: 'List all table names',
 					builder: (y: Argv) => y.options(formatYargsOptions()),
-					handler: async (argv: WorkspaceArgv & { table: string }) => {
-						await assertServerRunning(serverUrl);
-						const client = createHttpClient(serverUrl);
-						const workspaceId = argv.workspace;
-						const tableName = argv.table;
-
-						try {
-							const data = await client.get(
-								`/workspaces/${workspaceId}/tables/${tableName}`,
-							);
-							output(data, { format: argv.format });
-						} catch (err) {
-							outputError(String(err));
-							process.exitCode = 1;
-						}
+					handler: async (argv: any) => {
+						await runDataCommand(
+							{ dir: argv.dir, workspaceId: argv.workspace },
+							(client) => Object.keys(client.definitions.tables),
+							argv.format,
+						);
 					},
-				})
+				} as unknown as CommandModule)
+				.command(buildKvSubcommand())
 				.command({
-					command: 'get <id>',
-					describe: 'Get a row by ID',
+					command: 'list <table>',
+					describe: 'List all valid rows in a table',
 					builder: (y: Argv) =>
 						y
-							.positional('id', { type: 'string', demandOption: true })
-							.options(formatYargsOptions()),
-					handler: async (
-						argv: WorkspaceArgv & { table: string; id: string },
-					) => {
-						await assertServerRunning(serverUrl);
-						const client = createHttpClient(serverUrl);
-						const workspaceId = argv.workspace;
-						const tableName = argv.table;
-						const id = argv.id;
-
-						try {
-							const data = await client.get(
-								`/workspaces/${workspaceId}/tables/${tableName}/${id}`,
-							);
-							output(data, { format: argv.format });
-						} catch (err) {
-							const msg = String(err);
-							if (msg.includes('404')) {
-								outputError(`Row not found: ${id}`);
-							} else {
-								outputError(msg);
-							}
-							process.exitCode = 1;
-						}
-					},
-				})
-				.command({
-					command: 'set <id> [json]',
-					describe: 'Create or replace a row by ID',
-					builder: (y: Argv) =>
-						y
-							.positional('id', { type: 'string', demandOption: true })
-							.positional('json', {
+							.positional('table', {
 								type: 'string',
-								description: 'JSON row data or @file',
-							})
-							.option('file', {
-								type: 'string',
-								description: 'Read from file',
+								demandOption: true,
 							})
 							.options(formatYargsOptions()),
-					handler: async (
-						argv: WorkspaceArgv & {
-							table: string;
-							id: string;
-							json?: string;
-							file?: string;
-						},
-					) => {
-						await assertServerRunning(serverUrl);
-						const client = createHttpClient(serverUrl);
-						const workspaceId = argv.workspace;
-						const tableName = argv.table;
-						const id = argv.id;
-						const stdinContent = readStdinSync();
-
-						const result = parseJsonInput({
-							positional: argv.json,
-							file: argv.file,
-							hasStdin: stdinContent !== undefined,
-							stdinContent,
-						});
-
-						if (result.error) {
-							outputError(result.error.message);
-							process.exitCode = 1;
-							return;
-						}
-
-						try {
-							const data = await client.put(
-								`/workspaces/${workspaceId}/tables/${tableName}/${id}`,
-								result.data,
-							);
-							output(data, { format: argv.format });
-						} catch (err) {
-							outputError(String(err));
-							process.exitCode = 1;
-						}
+					handler: async (argv: any) => {
+						await runDataCommand(
+							{ dir: argv.dir, workspaceId: argv.workspace },
+							(client) => resolveTable(client, argv.table).getAllValid(),
+							argv.format,
+						);
 					},
-				})
+				} as unknown as CommandModule)
 				.command({
-					command: 'update <id>',
-					describe:
-						'Partial update a row using flags (e.g., --title "New Title")',
+					command: 'get <table> <id>',
+					describe: 'Get a row by ID from a table',
 					builder: (y: Argv) =>
 						y
-							.positional('id', { type: 'string', demandOption: true })
-							.options(formatYargsOptions())
-							.strict(false),
-					handler: async (
-						argv: WorkspaceArgv & {
-							table: string;
-							id: string;
-							[key: string]: unknown;
-						},
-					) => {
-						await assertServerRunning(serverUrl);
-						const client = createHttpClient(serverUrl);
-						const workspaceId = argv.workspace;
-						const tableName = argv.table;
-						const id = argv.id;
-
-						const reservedKeys = new Set([
-							'_',
-							'$0',
-							'id',
-							'table',
-							'workspace',
-							'format',
-							'help',
-							'version',
-						]);
-						const partial: Record<string, unknown> = {};
-
-						for (const [key, value] of Object.entries(argv)) {
-							if (!reservedKeys.has(key) && !key.includes('-')) {
-								if (
-									typeof value === 'string' &&
-									(value.startsWith('{') || value.startsWith('['))
-								) {
-									try {
-										partial[key] = JSON.parse(value);
-									} catch {
-										partial[key] = value;
-									}
-								} else {
-									partial[key] = value;
-								}
-							}
-						}
-
-						if (Object.keys(partial).length === 0) {
-							outputError(
-								'No fields to update. Use flags like --title "New Title"',
-							);
-							process.exitCode = 1;
-							return;
-						}
-
-						try {
-							const data = await client.patch(
-								`/workspaces/${workspaceId}/tables/${tableName}/${id}`,
-								partial,
-							);
-							output(data, { format: argv.format });
-						} catch (err) {
-							const msg = String(err);
-							if (msg.includes('404')) {
-								outputError(`Row not found: ${id}`);
-							} else {
-								outputError(msg);
-							}
-							process.exitCode = 1;
-						}
-					},
-				})
-				.command({
-					command: 'delete <id>',
-					describe: 'Delete a row by ID',
-					builder: (y: Argv) =>
-						y
-							.positional('id', { type: 'string', demandOption: true })
+							.positional('table', {
+								type: 'string',
+								demandOption: true,
+							})
+							.positional('id', {
+								type: 'string',
+								demandOption: true,
+							})
 							.options(formatYargsOptions()),
-					handler: async (
-						argv: WorkspaceArgv & { table: string; id: string },
-					) => {
-						await assertServerRunning(serverUrl);
-						const client = createHttpClient(serverUrl);
-						const workspaceId = argv.workspace;
-						const tableName = argv.table;
-						const id = argv.id;
-
-						try {
-							const data = await client.delete(
-								`/workspaces/${workspaceId}/tables/${tableName}/${id}`,
-							);
-							output(data, { format: argv.format });
-						} catch (err) {
-							outputError(String(err));
-							process.exitCode = 1;
-						}
+					handler: async (argv: any) => {
+						await runDataCommand(
+							{ dir: argv.dir, workspaceId: argv.workspace },
+							(client) => {
+								const result = resolveTable(client, argv.table).get(argv.id);
+								if (result.status !== 'valid')
+									throw new Error(`Row not found: ${argv.id}`);
+								return result.row;
+							},
+							argv.format,
+						);
 					},
-				})
-				.demandCommand(1, 'Specify an action: list, get, set, update, delete');
-		},
+				} as unknown as CommandModule)
+				.command({
+					command: 'count <table>',
+					describe: 'Count valid rows in a table',
+					builder: (y: Argv) =>
+						y
+							.positional('table', {
+								type: 'string',
+								demandOption: true,
+							})
+							.options(formatYargsOptions()),
+					handler: async (argv: any) => {
+						await runDataCommand(
+							{ dir: argv.dir, workspaceId: argv.workspace },
+							(client) => ({
+								count: resolveTable(client, argv.table).getAllValid().length,
+							}),
+							argv.format,
+						);
+					},
+				} as unknown as CommandModule)
+				.command({
+					command: 'delete <table> <id>',
+					describe: 'Delete a row by ID from a table',
+					builder: (y: Argv) =>
+						y
+							.positional('table', {
+								type: 'string',
+								demandOption: true,
+							})
+							.positional('id', {
+								type: 'string',
+								demandOption: true,
+							})
+							.options(formatYargsOptions()),
+					handler: async (argv: any) => {
+						await runDataCommand(
+							{ dir: argv.dir, workspaceId: argv.workspace },
+							(client) => {
+								resolveTable(client, argv.table).delete(argv.id);
+								return { status: 'deleted', id: argv.id };
+							},
+							argv.format,
+						);
+					},
+				} as unknown as CommandModule)
+				.demandCommand(
+					1,
+					'Specify a subcommand: tables, kv, list, get, count, delete',
+				),
 		handler: () => {},
 	};
 }
+

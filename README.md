@@ -7,21 +7,6 @@
   <p align="center">Own your data. Use any model you want. Free and open source ❤️</p>
 </p>
 
-> **📢 Repository Update:** Whispering has become **Epicenter**! The original repository moved [here](https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering). Everything else remains the same—same tools, same philosophy, same team.
->
-> <details>
-> <summary> Full details...
-> </summary>
->
-> - Whispering's evolution beyond transcription required changes to the repository's structure and branding.
-> - Everything else remains the same—same tools, same philosophy, same team.
-> - The original app lives on as [_Epicenter Whispering_](https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering), keeping a tight focus on transcription.
-> - This makes room for standalone apps with complementary, but non-transcription-related features (like [_Epicenter Assistant_](https://github.com/EpicenterHQ/epicenter/tree/main/apps/sh)).
-> - The new [root](https://github.com/EpicenterHQ/epicenter/) of the Epicenter repository contains common files supporting all the apps in the ecosystem.
-> - Note: the old URL [github.com/braden-w/whispering](https://github.com/braden-w/whispering) is now just a thin placeholder redirecting to this rebranded repository.
->
-> </details>
-
 <p align="center">
   <!-- GitHub Stars Badge -->
   <a href="https://github.com/EpicenterHQ/epicenter" target="_blank">
@@ -31,7 +16,7 @@
   <img src="https://img.shields.io/github/v/release/EpicenterHQ/epicenter?style=flat-square&label=Latest%20Version&color=brightgreen" />
   <!-- License Badge -->
   <a href="LICENSE" target="_blank">
-    <img alt="AGPL-3.0 License" src="https://img.shields.io/github/license/EpicenterHQ/epicenter.svg?style=flat-square" />
+    <img alt="License" src="https://img.shields.io/github/license/EpicenterHQ/epicenter.svg?style=flat-square" />
   </a>
   <!-- Discord Badge -->
   <a href="https://go.epicenter.so/discord" target="_blank">
@@ -50,141 +35,138 @@
 </p>
 
 <p align="center">
-  <a href="#current-tools">Tools</a> •
+  <a href="#apps">Apps</a> •
+  <a href="#for-developers">For Developers</a> •
   <a href="#where-were-headed">Vision</a> •
-  <a href="#join-us">Contributing</a> •
-  <a href="https://go.epicenter.so/discord">Discord</a> •
+  <a href="#contributing">Contributing</a> •
+  <a href="https://go.epicenter.so/discord">Discord</a>
 </p>
 
 ---
 
 ## What is Epicenter?
 
-Epicenter is an ecosystem of open-source, local-first apps. Our eventual goal is to store all of your data—notes, transcripts, chat histories—in a single folder of plain text and SQLite. Every tool we build shares this memory. It's open, tweakable, and yours. Grep it, open it in Obsidian, host it wherever you like. The choice is yours.
+Epicenter is an ecosystem of open-source, local-first apps. Our goal is to store all of your data—notes, transcripts, chat histories—in a single folder of plain text and SQLite. Every tool we build shares this memory. It's open, tweakable, and yours. Grep it, open it in Obsidian, host it wherever you'd like.
 
-### The Vision (how the ecosystem will work):
+The library that powers this, [`@epicenter/workspace`](packages/workspace), is something other developers can build on too. Define a schema, get CRDT-powered tables that materialize down to SQLite files and markdown, with multi-device sync handled for you.
 
-- Long-time Epicenter Whispering users may have configured numerous LLM API keys, transformations, and even local models.
-- When the Epicenter Assistant is started for the very first time, all these API keys, transformations and local models seamlessly work.
-- Epicenter Assistant may even access Whispering transcription history to provide personalized results out of the box.
-- Of course, this works the other way, too: Whispering can take advantage of your Epicenter Assistant history to optimize transcriptions and transformations!
-- In a siloed ecosystem, this requires much more effort, or may not even be possible.
-
-## Current Tools
+## Apps
 
 <table>
   <tr>
     <td align="center" width="50%">
-      <h3>🎙️ <a href="https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering">Epicenter Whispering</a></h3>
-      <p>Press shortcut → speak → get text. Desktop transcription that cuts out the middleman. Bring your own API key.</p>
-      <p><strong>→ <a href="https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering">View source code</a></strong></p>
+      <h3><a href="apps/whispering">Whispering</a></h3>
+      <p>Press shortcut, speak, get text. Desktop transcription that cuts out the middleman. Bring your own API key or run locally with Whisper C++.</p>
+      <p><strong><a href="apps/whispering">Source</a></strong> · <strong><a href="apps/whispering#install-whispering">Install</a></strong></p>
     </td>
     <td align="center" width="50%">
-      <h3>🤖 <a href="https://github.com/EpicenterHQ/epicenter/tree/main/apps/sh">Epicenter Assistant</a></h3>
-      <p><em>Currently being rebuilt.</em></p>
-      <p>A local-first assistant you can chat with. It lives in your folder, becoming the access point to everything you've ever written, thought, or built.</p>
-      <p><strong>→ Track rebuild progress on the <a href="https://github.com/EpicenterHQ/epicenter/tree/rebuild-assistant">rebuild-assistant branch</a></strong></p>
+      <h3><a href="apps/tab-manager">Tab Manager</a></h3>
+      <p>Chrome extension for saving tabs as bookmarks and building a read-later list, all stored in the shared workspace.</p>
+      <p><strong><a href="apps/tab-manager">Source</a></strong></p>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <h3><a href="apps/api">Epicenter API</a></h3>
+      <p>The hub server. Handles authentication, real-time sync via Durable Objects, and AI inference. Everything that needs a single authority across devices.</p>
+      <p><strong><a href="apps/api">Source</a></strong></p>
+    </td>
+    <td align="center" width="50%">
+      <h3>More coming</h3>
+      <p>The workspace library makes it straightforward to add new apps that share the same data. Notes, assistants, and other tools are in various stages of development.</p>
     </td>
   </tr>
 </table>
 
-## Where We're Headed
+## For Developers
 
-Our vision is to build a personal workspace where you own your data, choose your models, and replace siloed apps with open, interoperable alternatives. All while preserving authenticity and being free and open source.
+The hard problem with local-first apps is synchronization. If each device has its own SQLite file, how do you keep them in sync? If each device has its own markdown folder, same question. We ended up using Yjs CRDTs as the single source of truth, then materializing that data *down* to SQLite (for fast SQL reads) and markdown (for human-readable files). Yjs handles the sync; SQLite and markdown handle the reads.
 
-## Encryption
+The [`@epicenter/workspace`](packages/workspace) package wraps this into a single API. Define a schema, get CRDT-backed tables, attach providers to materialize to SQLite or markdown, and add sync when you're ready.
 
-Epicenter encrypts data inside the CRDT structure before it ever leaves the application. We use AES-256-GCM via @noble/ciphers to wrap individual values, ensuring that every downstream layer—IndexedDB, sync servers, SQLite databases, and cloud backups—only ever handles ciphertext.
+```typescript
+import { defineWorkspace, createClient, id, text, boolean, select } from '@epicenter/workspace';
 
-```text
-App Code -> [Encrypt] -> Y.Doc -> IndexedDB / Sync Server / Backups (Ciphertext)
+const workspace = defineWorkspace({
+  id: 'blog',
+  tables: {
+    posts: {
+      id: id(),
+      title: text(),
+      published: boolean({ default: false }),
+      category: select({ options: ['tech', 'personal'] }),
+    },
+  },
+  kv: {},
+});
+
+const client = createClient(workspace.id)
+  .withDefinition(workspace)
+  .withExtension('persistence', setupPersistence)
+  .withExtension('sqlite', (c) => sqliteProvider(c));
+
+// Write to the Y.Doc — SQLite updates automatically
+client.tables.get('posts').upsert({ id: '1', title: 'Hello', published: false, category: 'tech' });
 ```
 
-The server holds the key. It can decrypt your data. We chose this trade-off because genuine zero-knowledge encryption breaks the features people actually use: server-side search, AI processing, and simple password recovery. PGP has spent decades proving that manual key management is a UX dead end that even technical users avoid.
+Each user gets their own database. Schema definitions are plain JSON, so they work with MCP and OpenAPI out of the box. Write to Yjs and SQLite updates; edit a markdown file and the CRDT merges it in.
 
-This is defense in depth. A database dump or a compromised storage bucket yields nothing but noise without the application secret. It reduces the blast radius of a breach while keeping the app fast and functional.
+**[Read the full workspace docs →](packages/workspace/README.md)**
 
-If you don't trust the server, self-host. When you run the server on your own infrastructure, server-managed encryption *is* zero-knowledge. The key derives from your own environment variables or password, and the server never sends it to us. Same code, same primitives, different trust boundary.
+## Where We're Headed
 
-**Further reading:**
+The goal is a personal workspace where every app you use shares the same memory, your data stays on your machine, and you choose your own models. Epicenter Cloud will provide hosted sync infrastructure for people who don't want to run their own server—the same model as Supabase selling hosted Postgres or Liveblocks selling hosted collaboration. Enterprise features (team management, SSO, admin dashboards) will live in a separate proprietary layer.
 
-- [Why E2E Encryption Keeps Failing](docs/articles/why-e2e-encryption-keeps-failing.md)—PGP, Signal, and the structural problem
-- [Let the Server Handle Encryption](docs/articles/let-the-server-handle-encryption.md)—the pragmatic alternative
-- [If You Don't Trust the Server, Become the Server](docs/articles/if-you-dont-trust-the-server-become-the-server.md)—self-hosting as the clean answer
+Self-hosting is and will remain a first-class option. The sync server is open source under AGPL, and when you run it on your own infrastructure, you control the encryption keys and trust boundary.
 
 ## Quick Start
 
-### Install Epicenter Whispering
-
-Our first app in the ecosystem. Choose your installation method:
-
-**macOS (Homebrew)**
+### Install Whispering
 
 ```bash
 brew install --cask whispering
 ```
 
-**macOS, Windows, Linux (Direct Download)**
+Or download directly from [GitHub Releases](https://github.com/EpicenterHQ/epicenter/releases/latest) for macOS (.dmg), Windows (.msi), or Linux (.AppImage, .deb, .rpm).
 
-Download the installer for your platform from [GitHub Releases](https://github.com/EpicenterHQ/epicenter/releases/latest):
-
-- macOS: `.dmg` (Apple Silicon or Intel)
-- Windows: `.msi` or `.exe`
-- Linux: `.AppImage`, `.deb`, or `.rpm`
-
-**→ [Full installation guide and setup instructions](https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering#install-whispering)**
+**[Full installation guide →](apps/whispering#install-whispering)**
 
 ### Build from Source
 
-For developers or contributors:
-
 ```bash
-# Prerequisites:
-# - Install Bun from https://bun.sh (run bun upgrade if there's issues)
-# - Install Rust and Cargo from https://www.rust-lang.org/tools/install (brew install rustup)
-
+# Prerequisites: Bun (https://bun.sh) and Rust (https://rustup.rs)
 git clone https://github.com/EpicenterHQ/epicenter.git
 cd epicenter
-bun install  # Will prompt to upgrade if your Bun version is too old
+bun install
 cd apps/whispering
 bun dev
 ```
 
-> Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) for fork and PR instructions.
-
 ### Troubleshooting
 
-If you encounter issues after switching branches or pulling changes (like "render_fn is not a function" errors), run from the repo root:
+If things break after switching branches or pulling changes:
 
 ```bash
 bun clean    # Clears caches and node_modules
 bun install  # Reinstall dependencies
 ```
 
-For a complete reset including Rust build artifacts (~10GB, takes longer to rebuild):
+For a full reset including Rust build artifacts (~10GB, takes longer to rebuild):
 
 ```bash
 bun nuke     # Clears everything including Rust target
 bun install
 ```
 
-Note: You rarely need `bun nuke` since Cargo handles incremental Rust builds well. Use `bun clean` first; reserve `bun nuke` for when things are truly broken.
+You rarely need `bun nuke`—Cargo handles incremental builds well. Use `bun clean` first.
 
-## Join Us
+## Contributing
 
-## Discord Community
+We're looking for contributors who are passionate about open source, local-first software, or just want to build with Svelte and TypeScript.
 
-If you think like a generalist, build like a hacker, and value tools that respect your mind—you'll fit right in.
+**[Read the Contributing Guide →](CONTRIBUTING.md)**
 
-**→ [Join our Discord](https://go.epicenter.so/discord)**
-
-### We're looking for contributors
-
-If you're passionate about open source, local-first software, or are just a cracked Svelte/TypeScript developer—we'd love to build with you.
-
-**→ [Read our Contributing Guide](CONTRIBUTING.md) to get started**
-
-Contributors coordinate and share ideas in our Discord community.
+Contributors coordinate in our [Discord](https://go.epicenter.so/discord).
 
 ## Tech Stack
 
@@ -193,13 +175,16 @@ Contributors coordinate and share ideas in our Discord community.
   <img alt="Tauri" src="https://img.shields.io/badge/-Tauri-blue?style=flat-square&logo=tauri&logoColor=white" />
   <img alt="TypeScript" src="https://img.shields.io/badge/-TypeScript-blue?style=flat-square&logo=typescript&logoColor=white" />
   <img alt="Rust" src="https://img.shields.io/badge/-Rust-orange?style=flat-square&logo=rust&logoColor=white" />
-  <img alt="TanStack Query" src="https://img.shields.io/badge/-TanStack%20Query-red?style=flat-square&logo=react-query&logoColor=white" />
+  <img alt="Yjs" src="https://img.shields.io/badge/-Yjs-green?style=flat-square" />
+  <img alt="Cloudflare Workers" src="https://img.shields.io/badge/-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" />
   <img alt="Tailwind CSS" src="https://img.shields.io/badge/-Tailwind%20CSS-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white" />
 </p>
 
 ## License
 
-Most packages are [MIT](licenses/LICENSE-MIT). The sync server is [AGPL-3.0](licenses/LICENSE-AGPL-3.0). See [LICENSE](LICENSE) for details. Build on it. Fork it. Make it yours.
+Most packages and all apps are [MIT](licenses/LICENSE-MIT)—use them however you want, no strings attached. The sync server (`apps/api`) and sync protocol (`packages/sync`) are [AGPL-3.0](licenses/LICENSE-AGPL-3.0), which means anyone hosting a modified version shares their changes. This follows the same pattern as Yjs (MIT core, AGPL y-redis), Liveblocks (Apache clients, AGPL server), and Bitwarden (GPL clients, AGPL server).
+
+See [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAINABILITY.md) for the full reasoning behind the split.
 
 ---
 
@@ -208,5 +193,5 @@ Most packages are [MIT](licenses/LICENSE-MIT). The sync server is [AGPL-3.0](lic
 </p>
 
 <p align="center">
-  <sub>Built with ❤️ for data ownership, local-first, and open-source</sub>
+  <sub>Own your data · Local-first · Open source</sub>
 </p>

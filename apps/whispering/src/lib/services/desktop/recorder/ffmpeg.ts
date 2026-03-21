@@ -203,19 +203,19 @@ export const FFMPEG_DEFAULT_DEVICE_IDENTIFIER = asDeviceIdentifier(
 const sessionState = createPersistedState({
 	key: 'whispering-ffmpeg-recording-session',
 	schema: FfmpegSession,
-	onParseError: () => null,
+	defaultValue: null,
 });
 
 // Helper to get current Child instance lazily from PID
 // Returns null if no session is active
 const getCurrentChild = (): Child | null => {
-	const session = sessionState.value;
+	const session = sessionState.current;
 	return session ? new Child(session.pid) : null;
 };
 
 // Helper to clear session and kill any running process
 const clearSession = async (): Promise<void> => {
-	const session = sessionState.value;
+	const session = sessionState.current;
 	if (!session) return;
 
 	// Try to kill the process if it exists
@@ -234,11 +234,11 @@ const clearSession = async (): Promise<void> => {
 	});
 
 	// Clear the session state
-	sessionState.value = null;
+	sessionState.current = null;
 };
 
 // Clear any orphaned process on initialization
-if (sessionState.value) {
+if (sessionState.current) {
 	console.log('Found orphaned FFmpeg session, cleaning up...');
 	clearSession();
 }
@@ -275,7 +275,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 	getRecorderState: async (): Promise<
 		Result<WhisperingRecordingState, RecorderError>
 	> => {
-		return Ok(sessionState.value ? 'RECORDING' : 'IDLE');
+		return Ok(sessionState.current ? 'RECORDING' : 'IDLE');
 	},
 
 	enumerateDevices,
@@ -382,7 +382,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 		}
 
 		// Store the PID and session info for recovery after refresh
-		sessionState.value = {
+		sessionState.current = {
 			pid: process.pid,
 			outputPath,
 		};
@@ -399,7 +399,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 		sendStatus,
 	}): Promise<Result<Blob, RecorderError>> => {
 		const child = getCurrentChild();
-		const session = sessionState.value;
+		const session = sessionState.current;
 		if (!child || !session) {
 			return RecorderError.NotRecording({
 				message: 'No active recording to stop',
@@ -442,7 +442,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 		const outputPath = session.outputPath;
 
 		// Clear the session
-		sessionState.value = null;
+		sessionState.current = null;
 
 		// Poll for file stabilization
 		const MAX_WAIT_TIME = 3000; // 3 seconds max
@@ -507,7 +507,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 	cancelRecording: async ({
 		sendStatus,
 	}): Promise<Result<CancelRecordingResult, RecorderError>> => {
-		const session = sessionState.value;
+		const session = sessionState.current;
 		if (!session) {
 			return Ok({ status: 'no-recording' });
 		}

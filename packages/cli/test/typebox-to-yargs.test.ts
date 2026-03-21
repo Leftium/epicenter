@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import Type from 'typebox';
-import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
+import { typeboxToYargsOptions } from '../src/util/typebox-to-yargs';
 
-describe('jsonSchemaToYargsOptions', () => {
+describe('typeboxToYargsOptions', () => {
 	describe('type mapping', () => {
 		test('string field', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ title: Type.String() }),
 			);
 			expect(options.title).toMatchObject({
@@ -15,7 +15,7 @@ describe('jsonSchemaToYargsOptions', () => {
 		});
 
 		test('number field', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ count: Type.Number() }),
 			);
 			expect(options.count).toMatchObject({
@@ -25,14 +25,14 @@ describe('jsonSchemaToYargsOptions', () => {
 		});
 
 		test('integer maps to number', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ count: Type.Integer() }),
 			);
 			expect(options.count?.type).toBe('number');
 		});
 
 		test('boolean field', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ published: Type.Boolean() }),
 			);
 			expect(options.published).toMatchObject({
@@ -42,14 +42,14 @@ describe('jsonSchemaToYargsOptions', () => {
 		});
 
 		test('array field', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ tags: Type.Array(Type.String()) }),
 			);
 			expect(options.tags?.type).toBe('array');
 		});
 
 		test('optional field is not required', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ title: Type.Optional(Type.String()) }),
 			);
 			expect(options.title).toMatchObject({
@@ -59,7 +59,7 @@ describe('jsonSchemaToYargsOptions', () => {
 		});
 
 		test('nested object field has no yargs type', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ metadata: Type.Object({ nested: Type.String() }) }),
 			);
 			expect(options.metadata?.type).toBeUndefined();
@@ -69,7 +69,7 @@ describe('jsonSchemaToYargsOptions', () => {
 
 	describe('choices extraction', () => {
 		test('string literal union becomes choices', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({
 					status: Type.Union([
 						Type.Literal('draft'),
@@ -85,7 +85,7 @@ describe('jsonSchemaToYargsOptions', () => {
 		});
 
 		test('nullable literal union skips null variant', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({
 					status: Type.Union([
 						Type.Literal('active'),
@@ -98,7 +98,7 @@ describe('jsonSchemaToYargsOptions', () => {
 		});
 
 		test('single literal becomes single-element choices', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ mode: Type.Literal('readonly') }),
 			);
 			expect(options.mode).toMatchObject({
@@ -112,7 +112,7 @@ describe('jsonSchemaToYargsOptions', () => {
 				Draft = 'draft',
 				Published = 'published',
 			}
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ status: Type.Enum(Status) }),
 			);
 			expect(options.status?.choices).toEqual(['draft', 'published']);
@@ -125,7 +125,7 @@ describe('jsonSchemaToYargsOptions', () => {
 				Medium = 1,
 				High = 2,
 			}
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ priority: Type.Enum(Priority) }),
 			);
 			expect(options.priority?.choices).toEqual([0, 1, 2]);
@@ -133,7 +133,7 @@ describe('jsonSchemaToYargsOptions', () => {
 		});
 
 		test('union with non-literal variants has no choices', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({
 					value: Type.Union([Type.String(), Type.Number()]),
 				}),
@@ -144,21 +144,21 @@ describe('jsonSchemaToYargsOptions', () => {
 
 	describe('metadata propagation', () => {
 		test('passes through description', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ title: Type.String({ description: 'The page title' }) }),
 			);
 			expect(options.title?.description).toBe('The page title');
 		});
 
 		test('description is undefined when not provided', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ title: Type.String() }),
 			);
 			expect(options.title?.description).toBeUndefined();
 		});
 
 		test('passes through default value', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({ count: Type.Optional(Type.Number({ default: 10 })) }),
 			);
 			expect(options.count?.default).toBe(10);
@@ -168,15 +168,15 @@ describe('jsonSchemaToYargsOptions', () => {
 
 	describe('edge cases', () => {
 		test('non-object schema returns empty options', () => {
-			expect(jsonSchemaToYargsOptions({ type: 'string' })).toEqual({});
+			expect(typeboxToYargsOptions({ type: 'string' })).toEqual({});
 		});
 
 		test('empty object schema returns empty options', () => {
-			expect(jsonSchemaToYargsOptions(Type.Object({}))).toEqual({});
+			expect(typeboxToYargsOptions(Type.Object({}))).toEqual({});
 		});
 
 		test('mixed required and optional fields', () => {
-			const options = jsonSchemaToYargsOptions(
+			const options = typeboxToYargsOptions(
 				Type.Object({
 					title: Type.String(),
 					count: Type.Number(),

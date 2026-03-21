@@ -6,6 +6,7 @@ import workspace from '$lib/workspace/client';
 const API_URL = createApps('production').API.URL;
 
 export { tokenStore } from './token-store';
+
 import { tokenStore } from './token-store';
 
 export const authState = createAuthState({
@@ -13,17 +14,11 @@ export const authState = createAuthState({
 	storagePrefix: 'honeycrisp',
 	tokenStore,
 	async onSignedIn(encryptionKey) {
-		if (encryptionKey && 'activateEncryption' in workspace) {
-			const ws = workspace as { activateEncryption(k: Uint8Array): Promise<void> };
-			await ws.activateEncryption(base64ToBytes(encryptionKey));
-		}
+		await workspace.activateEncryption(base64ToBytes(encryptionKey));
 		workspace.extensions.sync.reconnect();
 	},
 	async onSignedOut() {
-		if ('deactivateEncryption' in workspace) {
-			const ws = workspace as { deactivateEncryption(): Promise<void> };
-			await ws.deactivateEncryption();
-		}
+		await workspace.deactivateEncryption();
 		workspace.extensions.sync.reconnect();
 	},
 });

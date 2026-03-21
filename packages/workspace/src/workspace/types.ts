@@ -1151,7 +1151,7 @@ export type WorkspaceClientBuilder<
 	TAwarenessDefinitions,
 	TExtensions,
 	TDocExtensions
-> & {
+> & TEncryption & {
 	/**
 	 * Register an extension for BOTH the workspace Y.Doc AND all content document Y.Docs.
 	 *

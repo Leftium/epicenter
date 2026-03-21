@@ -113,7 +113,7 @@ export type AuthStateConfig = {
 	 */
 	signInWithGoogle?: () => Promise<AuthUser>;
 	/** Called after successful sign-in with the encryption key from the session. */
-	onSignedIn?: (encryptionKey?: string) => Promise<void>;
+	onSignedIn?: (encryptionKey: string) => Promise<void>;
 	/** Called after sign-out. */
 	onSignedOut?: () => Promise<void>;
 };
@@ -178,7 +178,9 @@ export function createAuthState(config: AuthStateConfig) {
 	 */
 	async function refreshEncryptionKeyAndNotify() {
 		const result = await getSession().catch(() => null);
-		await config.onSignedIn?.(result?.data?.encryptionKey);
+		if (result?.data?.encryptionKey) {
+			await config.onSignedIn?.(result.data.encryptionKey);
+		}
 	}
 
 	// ─── Public API ───

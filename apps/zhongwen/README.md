@@ -6,9 +6,9 @@ Bilingual Chinese-English chat app for learning Mandarin. Users ask questions in
 
 **Chat streaming**: Each conversation gets a `ChatClient` (from `@tanstack/ai-client`) that streams SSE responses from `${APP_URLS.API}/ai/chat`. Provider, model, and system prompt are sent as request body data. The server uses TanStack AI's `chat()` with the requested provider adapter. Messages come back as `UIMessage` objects with `TextPart`s.
 
-**Markdown + pinyin**: Assistant messages are parsed with `marked` (GFM, breaks enabled) into HTML, then `annotateHtml()` in `src/lib/pinyin/annotate.ts` walks text nodes (splitting on HTML tags via regex) and wraps CJK runs with `<ruby>` pinyin tags using `pinyin-pro`. The result is rendered via `{@html}` inside `<div class="prose prose-sm">`. A `segmentText()` utility is also exported for non-HTML contexts.
+**Markdown + pinyin**: Assistant messages are parsed with `marked` (GFM, breaks enabled) into HTML, then `annotateHtml()` in `src/lib/pinyin/annotate.ts` walks text nodes (splitting on HTML tags via regex) and wraps CJK runs with `<ruby>` pinyin tags using `pinyin-pro`. Output is sanitized with DOMPurify (allowing ruby/rt/rp), memoized via `$derived` in `AssistantMessagePart.svelte`, and rendered via `{@html}` inside `<div class="prose prose-sm">`.
 
-**State management**: `createChatState()` in `src/lib/chat/chat-state.svelte.ts` is a Svelte 5 factory using `$state`/`$derived` and `SvelteMap`. Each conversation gets a "handle" wrapping its `ChatClient` with reactive getters for messages, status, isLoading, error, and inputValue. The singleton `chatState` export is the app's central state.
+**State management**: `createChatState()` in `src/lib/chat/chat-state.svelte.ts` is a Svelte 5 factory using `$state`/`$derived` and `SvelteMap`. Each conversation gets a "handle" wrapping its `ChatClient` with reactive getters for messages, isLoading, error, and inputValue. A `$derived` `metadata` reference eliminates repeated array lookups. The singleton `chatState` export is the app's central state.
 
 **Auth**: Google OAuth via Better Auth. Token stored in localStorage via `createTokenStore('zhongwen')`, passed as Bearer header to the API.
 
@@ -29,11 +29,12 @@ src/
       providers.ts         # Provider/model config from TanStack AI packages
       system-prompt.ts     # AI instructions (mix languages, no pinyin, simplified only)
     components/
-      ChatMessage.svelte   # Renders UIMessage; markdown + pinyin for assistant, plain for user
-      ChatInput.svelte     # Textarea + send button, Enter to submit
-      ConversationList.svelte # Sidebar conversation list with create/switch
+      ChatMessage.svelte       # Renders UIMessage; delegates assistant parts to AssistantMessagePart
+      AssistantMessagePart.svelte # Markdown parse + pinyin annotate + DOMPurify, memoized via $derived
+      ChatInput.svelte         # Textarea + send button, Enter to submit
+      ConversationList.svelte  # Sidebar conversation list with create/switch
     pinyin/
-      annotate.ts          # segmentText() + annotateHtml(): CJK detection and ruby annotation
+      annotate.ts              # annotateHtml(): CJK detection and ruby annotation in HTML strings
 ```
 
 ## Key decisions

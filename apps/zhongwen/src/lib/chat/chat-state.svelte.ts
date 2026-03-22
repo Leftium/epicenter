@@ -7,7 +7,6 @@
 
 import {
 	ChatClient,
-	type ChatClientState,
 	fetchServerSentEvents,
 	type UIMessage,
 } from '@tanstack/ai-client';
@@ -62,7 +61,6 @@ function createChatState() {
 
 	function createConversationHandle(conversationId: ConversationId) {
 		let messages = $state<UIMessage[]>([]);
-		let status = $state<ChatClientState>('ready');
 		let isLoading = $state(false);
 		let error = $state<Error | undefined>(undefined);
 		let inputValue = $state('');
@@ -97,8 +95,7 @@ function createChatState() {
 			onErrorChange: (err) => {
 				error = err;
 			},
-			onStatusChange: (newStatus) => {
-				status = newStatus;
+			onStatusChange: () => {
 				messages = [...client.getMessages()];
 			},
 			onFinish: () => {
@@ -141,10 +138,6 @@ function createChatState() {
 
 			get error() {
 				return error;
-			},
-
-			get status() {
-				return status;
 			},
 
 			get inputValue() {

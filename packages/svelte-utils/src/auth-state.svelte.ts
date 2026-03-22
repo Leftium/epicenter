@@ -80,6 +80,23 @@ export type TokenStore = {
 	set(value: string | undefined): void;
 };
 
+/**
+ * Wraps `globalThis.fetch` to inject `Authorization: Bearer <token>` on every
+ * request. Pass as `fetchClient` to TanStack AI's `fetchServerSentEvents` so
+ * auth is handled in one place instead of per-call headers.
+ */
+export function createAuthFetch(getToken: () => string | undefined): typeof fetch {
+	return (input, init) => {
+		const token = getToken();
+		if (token) {
+			const headers = new Headers(init?.headers);
+			headers.set('Authorization', `Bearer ${token}`);
+			return fetch(input, { ...init, headers });
+		}
+		return fetch(input, init);
+	};
+}
+
 /** Create a token store backed by raw localStorage. */
 export function createTokenStore(storagePrefix: string): TokenStore {
 	const key = `${storagePrefix}:authToken`;
@@ -296,7 +313,10 @@ export function createAuthState(config: AuthStateConfig) {
 			// Default: Better Auth redirect flow for web apps
 			const result = await tryAsync({
 				try: async () => {
-					await client.signIn.social({ provider: 'google' });
+					await client.signIn.social({
+						provider: 'google',
+						callbackURL: window.location.origin,
+					});
 					throw new Error('Expected redirect');
 				},
 				catch: (cause) => AuthError.GoogleSignInFailed({ cause }),

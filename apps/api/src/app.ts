@@ -329,7 +329,7 @@ const factory = createFactory<Env>({
 		const devOrigins = new Set(Object.values(APPS).map((a) => `http://localhost:${a.port}`));
 		app.use('*', async (c, next) => {
 			if (c.req.header('upgrade') === 'websocket') return next();
-			const isDev = new URL(c.req.url).hostname === 'localhost';
+			const isDev = new URL(c.req.url).origin !== APPS.API.url;
 			return cors({
 				origin: (origin) => {
 					if (!origin) return origin;

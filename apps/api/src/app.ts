@@ -18,7 +18,7 @@ import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import pg from 'pg';
-import { createApps } from '@epicenter/constants/apps';
+import { APPS } from '@epicenter/constants/apps';
 import { aiChatHandlers } from './ai-chat';
 import {
 	renderConsentPage,
@@ -324,9 +324,9 @@ function createAuth({ db, env, baseURL }: { db: Db; env: Env['Bindings']; baseUR
 const factory = createFactory<Env>({
 	initApp: (app) => {
 		// CORS — skip WebSocket upgrades (101 response headers are immutable).
-		// Allowed origins derived from createApps so adding an app automatically allows it.
-		const prodOrigins = new Set(Object.values(createApps('production')).map((a) => a.URL));
-		const devOrigins = new Set(Object.values(createApps('development')).map((a) => a.URL));
+		// Allowed origins derived from APPS so adding an app automatically allows it.
+		const prodOrigins = new Set(Object.values(APPS).map((a) => a.url));
+		const devOrigins = new Set(Object.values(APPS).map((a) => `http://localhost:${a.port}`));
 		app.use('*', async (c, next) => {
 			if (c.req.header('upgrade') === 'websocket') return next();
 			const isDev = new URL(c.req.url).hostname === 'localhost';

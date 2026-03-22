@@ -18,7 +18,7 @@
  */
 
 import { fileURLToPath } from 'node:url';
-import { createApps } from '@epicenter/constants/apps';
+import { APPS } from '@epicenter/constants/apps';
 import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -45,7 +45,7 @@ export const auth = betterAuth({
 	 * affect schema generation—it only prevents `oauthProvider` from crashing on
 	 * `new URL('')` during plugin init. The runtime config derives baseURL from the request.
 	 */
-	baseURL: createApps('development').API.URL,
+	baseURL: `http://localhost:${APPS.API.port}`,
 	database: drizzleAdapter(db, { provider: 'pg' }),
 	secret: env.BETTER_AUTH_SECRET,
 });

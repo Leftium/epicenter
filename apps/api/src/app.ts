@@ -6,7 +6,6 @@ import {
 } from '@better-auth/oauth-provider';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
-import { autumn } from 'autumn-js/better-auth';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { customSession } from 'better-auth/plugins';
@@ -277,7 +276,6 @@ function createAuth({ db, env }: { db: Db; env: Env['Bindings'] }) {
 					},
 				],
 			}),
-			autumn({ secretKey: env.AUTUMN_SECRET_KEY, customerScope: 'user' }),
 		],
 		session: {
 			expiresIn: 60 * 60 * 24 * 7,

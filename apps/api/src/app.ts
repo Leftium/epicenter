@@ -288,12 +288,7 @@ function createAuth({ db, env, baseURL }: { db: Db; env: Env['Bindings']; baseUR
 				strategy: 'jwe',
 			},
 		},
-		advanced: {
-			crossSubDomainCookies: {
-				enabled: true,
-				domain: 'epicenter.so',
-			},
-		},
+		advanced: {},
 		trustedOrigins: (request) => {
 			const origins = [
 				'tauri://localhost',
@@ -374,8 +369,15 @@ const factory = createFactory<Env>({
 		});
 
 		// Layer 2: Auth — pure, reads db from context.
+		// Wrangler dev uses the custom domain from routes config as the Host header,
+		// producing http://api.epicenter.so (no TLS). Detect this and use localhost.
 		app.use('*', async (c, next) => {
-			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL: new URL(c.req.url).origin }));
+			const origin = new URL(c.req.url).origin;
+			const baseURL =
+				origin === `http://${new URL(APPS.API.url).host}`
+					? `http://localhost:${APPS.API.port}`
+					: origin;
+			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));
 			await next();
 		});
 	},

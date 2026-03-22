@@ -6,9 +6,10 @@
 	type Props = {
 		content: string;
 		showPinyin: boolean;
+		isStreaming?: boolean;
 	};
 
-	let { content, showPinyin }: Props = $props();
+	let { content, showPinyin, isStreaming = false }: Props = $props();
 
 	const PURIFY_CONFIG = {
 		ADD_TAGS: ['ruby', 'rt', 'rp'],
@@ -16,7 +17,7 @@
 
 	const html = $derived.by(() => {
 		const raw = marked.parse(content, { breaks: true, gfm: true }) as string;
-		const annotated = showPinyin ? annotateHtml(raw) : raw;
+		const annotated = showPinyin && !isStreaming ? annotateHtml(raw) : raw;
 		return DOMPurify.sanitize(annotated, PURIFY_CONFIG);
 	});
 </script>

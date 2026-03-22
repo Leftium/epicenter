@@ -6,9 +6,10 @@
 	type Props = {
 		message: UIMessage;
 		showPinyin: boolean;
+		isStreaming?: boolean;
 	};
 
-	let { message, showPinyin }: Props = $props();
+	let { message, showPinyin, isStreaming = false }: Props = $props();
 
 	const isUser = $derived(message.role === 'user');
 </script>
@@ -20,7 +21,7 @@
 				{#if isUser}
 					{part.content}
 				{:else}
-					<AssistantMessagePart content={part.content} {showPinyin} />
+					<AssistantMessagePart content={part.content} {showPinyin} {isStreaming} />
 				{/if}
 			{/if}
 		{/each}

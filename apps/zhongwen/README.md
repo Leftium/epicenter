@@ -6,7 +6,7 @@ Bilingual Chinese-English chat app for learning Mandarin. Users ask questions in
 
 **Chat streaming**: Each conversation gets a `ChatClient` (from `@tanstack/ai-client`) that streams SSE responses from `${APP_URLS.API}/ai/chat`. Provider, model, and system prompt are sent as request body data. The server uses TanStack AI's `chat()` with the requested provider adapter. Messages come back as `UIMessage` objects with `TextPart`s.
 
-**Pinyin annotation**: `segmentText()` in `src/lib/pinyin/annotate.ts` splits mixed text into `text` and `chinese` segments using CJK Unicode ranges, then calls `pinyin-pro` for per-character pinyin arrays. `PinyinText.svelte` renders Chinese segments as `<ruby>` tags with a show/hide toggle.
+**Markdown + pinyin**: Assistant messages are parsed with `marked` (GFM, breaks enabled) into HTML, then `annotateHtml()` in `src/lib/pinyin/annotate.ts` walks text nodes (splitting on HTML tags via regex) and wraps CJK runs with `<ruby>` pinyin tags using `pinyin-pro`. The result is rendered via `{@html}` inside `<div class="prose prose-sm">`. A `segmentText()` utility is also exported for non-HTML contexts.
 
 **State management**: `createChatState()` in `src/lib/chat/chat-state.svelte.ts` is a Svelte 5 factory using `$state`/`$derived` and `SvelteMap`. Each conversation gets a "handle" wrapping its `ChatClient` with reactive getters for messages, status, isLoading, error, and inputValue. The singleton `chatState` export is the app's central state.
 
@@ -29,12 +29,11 @@ src/
       providers.ts         # Provider/model config from TanStack AI packages
       system-prompt.ts     # AI instructions (mix languages, no pinyin, simplified only)
     components/
-      ChatMessage.svelte   # Renders UIMessage; assistant messages use PinyinText
+      ChatMessage.svelte   # Renders UIMessage; markdown + pinyin for assistant, plain for user
       ChatInput.svelte     # Textarea + send button, Enter to submit
       ConversationList.svelte # Sidebar conversation list with create/switch
-      PinyinText.svelte    # Segments text and renders <ruby> tags for Chinese
     pinyin/
-      annotate.ts          # segmentText(): splits mixed text, returns per-char pinyin
+      annotate.ts          # segmentText() + annotateHtml(): CJK detection and ruby annotation
 ```
 
 ## Key decisions

@@ -19,6 +19,7 @@
 		"@tanstack/ai-grok": "catalog:",
 		"@tanstack/ai-openai": "catalog:",
 		"better-auth": "catalog:",
+		"marked": "^17.0.5",
 		"pinyin-pro": "^3.28.0",
 		"svelte-sonner": "catalog:",
 		"wellcrafted": "catalog:"

@@ -12,6 +12,10 @@ export const APPS = {
 	API: { port: 8787, url: 'https://api.epicenter.so' },
 	SH: { port: 5173, url: 'https://epicenter.sh' },
 	AUDIO: { port: 1420, url: 'https://whispering.epicenter.so' },
+	FUJI: { port: 5174, url: 'https://fuji.epicenter.so' },
+	HONEYCRISP: { port: 5175, url: 'https://honeycrisp.epicenter.so' },
+	OPENSIDIAN: { port: 5176, url: 'https://opensidian.epicenter.so' },
+	ZHONGWEN: { port: 8888, url: 'https://zhongwen.epicenter.so' },
 } as const;
 
 export type AppId = keyof typeof APPS;

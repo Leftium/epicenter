@@ -15,7 +15,6 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { SvelteMap } from 'svelte/reactivity';
 import { tokenStore } from '$lib/auth';
 import {
-	AVAILABLE_PROVIDERS,
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,
 	PROVIDER_MODELS,
@@ -68,25 +67,26 @@ function createChatState() {
 		let error = $state<Error | undefined>(undefined);
 		let inputValue = $state('');
 
+		const metadata = $derived(
+			conversations.find((c) => c.id === conversationId),
+		);
+
 		const client = new ChatClient({
 			connection: fetchServerSentEvents(
 				() => `${APP_URLS.API}/ai/chat`,
-				() => {
-					const conv = conversations.find((c) => c.id === conversationId);
-					return {
-						credentials: 'include',
-						headers: {
-							Authorization: `Bearer ${tokenStore.get()}`,
+				() => ({
+					credentials: 'include',
+					headers: {
+						Authorization: `Bearer ${tokenStore.get()}`,
+					},
+					body: {
+						data: {
+							provider: metadata?.provider ?? DEFAULT_PROVIDER,
+							model: metadata?.model ?? DEFAULT_MODEL,
+							systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
 						},
-						body: {
-							data: {
-								provider: conv?.provider ?? DEFAULT_PROVIDER,
-								model: conv?.model ?? DEFAULT_MODEL,
-								systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
-							},
-						},
-					};
-				},
+					},
+				}),
 			),
 			onMessagesChange: (msgs) => {
 				messages = [...msgs];
@@ -102,16 +102,9 @@ function createChatState() {
 				messages = [...client.getMessages()];
 			},
 			onFinish: () => {
-				const conv = conversations.find((c) => c.id === conversationId);
-				if (conv) {
-					conv.updatedAt = Date.now();
-				}
+				if (metadata) metadata.updatedAt = Date.now();
 			},
 		});
-
-		const metadata = $derived(
-			conversations.find((c) => c.id === conversationId),
-		);
 
 		return {
 			get id() {
@@ -126,19 +119,16 @@ function createChatState() {
 				return metadata?.provider ?? DEFAULT_PROVIDER;
 			},
 			set provider(value: string) {
-				const conv = conversations.find((c) => c.id === conversationId);
-				if (!conv) return;
-				if (!(value in PROVIDER_MODELS)) return;
-				conv.provider = value;
-				conv.model = PROVIDER_MODELS[value as Provider][0] ?? DEFAULT_MODEL;
+				if (!metadata || !(value in PROVIDER_MODELS)) return;
+				metadata.provider = value;
+				metadata.model = PROVIDER_MODELS[value as Provider][0] ?? DEFAULT_MODEL;
 			},
 
 			get model() {
 				return metadata?.model ?? DEFAULT_MODEL;
 			},
 			set model(value: string) {
-				const conv = conversations.find((c) => c.id === conversationId);
-				if (conv) conv.model = value;
+				if (metadata) metadata.model = value;
 			},
 
 			get messages() {
@@ -166,13 +156,9 @@ function createChatState() {
 
 			sendMessage(content: string) {
 				if (!content.trim()) return;
-				const id = generateMessageId();
-
-				void client.sendMessage({ content, id });
-
-				const conv = conversations.find((c) => c.id === conversationId);
-				if (conv && conv.title === 'New Chat') {
-					conv.title = content.trim().slice(0, 50);
+				void client.sendMessage({ content, id: generateMessageId() });
+				if (metadata && metadata.title === 'New Chat') {
+					metadata.title = content.trim().slice(0, 50);
 				}
 			},
 
@@ -185,8 +171,7 @@ function createChatState() {
 			},
 
 			rename(title: string) {
-				const conv = conversations.find((c) => c.id === conversationId);
-				if (conv) conv.title = title;
+				if (metadata) metadata.title = title;
 			},
 
 			destroy() {
@@ -196,23 +181,6 @@ function createChatState() {
 	}
 
 	// ── Lifecycle ──
-
-	function reconcileHandles() {
-		const currentIds = new Set(conversations.map((c) => c.id));
-
-		for (const id of handles.keys()) {
-			if (!currentIds.has(id)) {
-				handles.get(id)?.destroy();
-				handles.delete(id);
-			}
-		}
-
-		for (const conv of conversations) {
-			if (!handles.has(conv.id)) {
-				handles.set(conv.id, createConversationHandle(conv.id));
-			}
-		}
-	}
 
 	function createConversation(): ConversationId {
 		const id = generateId();
@@ -231,14 +199,15 @@ function createChatState() {
 			...conversations,
 		];
 
-		reconcileHandles();
+		handles.set(id, createConversationHandle(id));
 		activeConversationId = id;
 		return id;
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
+		handles.get(conversationId)?.destroy();
+		handles.delete(conversationId);
 		conversations = conversations.filter((c) => c.id !== conversationId);
-		reconcileHandles();
 
 		if (activeConversationId === conversationId) {
 			const first = conversations[0];
@@ -277,14 +246,6 @@ function createChatState() {
 		},
 
 		deleteConversation,
-
-		get availableProviders() {
-			return AVAILABLE_PROVIDERS;
-		},
-
-		modelsForProvider(providerName: string): readonly string[] {
-			return PROVIDER_MODELS[providerName as Provider] ?? [];
-		},
 	};
 }
 

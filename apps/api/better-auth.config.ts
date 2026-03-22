@@ -43,7 +43,7 @@ export const auth = betterAuth({
 	/**
 	 * The CLI always runs locally, so we hardcode the dev URL. The value doesn't
 	 * affect schema generation—it only prevents `oauthProvider` from crashing on
-	 * `new URL('')` during plugin init. The runtime config uses `env.BASE_URL` instead.
+	 * `new URL('')` during plugin init. The runtime config derives baseURL from the request.
 	 */
 	baseURL: createApps('development').API.URL,
 	database: drizzleAdapter(db, { provider: 'pg' }),

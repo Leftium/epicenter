@@ -40,6 +40,8 @@
 					variant={showPinyin ? 'default' : 'outline'}
 					size="sm"
 					onclick={() => (showPinyin = !showPinyin)}
+					aria-pressed={showPinyin}
+					aria-label="Toggle pinyin annotations"
 				>
 					{showPinyin ? 'Hide Pinyin' : 'Show Pinyin'}
 				</Button>

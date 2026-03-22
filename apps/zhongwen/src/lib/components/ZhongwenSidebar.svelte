@@ -12,6 +12,7 @@
 					size="lg"
 					onclick={() => chatState.createConversation()}
 					tooltipContent="New conversation"
+					aria-label="New conversation"
 				>
 					<MessageSquarePlusIcon class="size-4" />
 					<span>New Conversation</span>

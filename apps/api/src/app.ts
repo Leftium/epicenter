@@ -296,9 +296,8 @@ function createAuth({ db, env, baseURL }: { db: Db; env: Env['Bindings']; baseUR
 		},
 		trustedOrigins: (request) => {
 			const origins = [
-				'https://*.epicenter.so',
-				'https://epicenter.so',
 				'tauri://localhost',
+				...Object.values(APPS).flatMap((a) => [a.url, `http://localhost:${a.port}`]),
 			];
 			const origin = request?.headers.get('origin');
 			if (origin?.startsWith('chrome-extension://')) {
@@ -325,18 +324,17 @@ const factory = createFactory<Env>({
 	initApp: (app) => {
 		// CORS — skip WebSocket upgrades (101 response headers are immutable).
 		// Allowed origins derived from APPS so adding an app automatically allows it.
-		const prodOrigins = new Set(Object.values(APPS).map((a) => a.url));
-		const devOrigins = new Set(Object.values(APPS).map((a) => `http://localhost:${a.port}`));
+		const allowedOrigins = new Set([
+			'tauri://localhost',
+			...Object.values(APPS).flatMap((a) => [a.url, `http://localhost:${a.port}`]),
+		]);
 		app.use('*', async (c, next) => {
 			if (c.req.header('upgrade') === 'websocket') return next();
-			const isDev = new URL(c.req.url).origin !== APPS.API.url;
 			return cors({
 				origin: (origin) => {
 					if (!origin) return origin;
-					if (prodOrigins.has(origin)) return origin;
-					if (origin === 'https://epicenter.so') return origin;
-					if (origin === 'tauri://localhost') return origin;
-					if (isDev && devOrigins.has(origin)) return origin;
+					if (allowedOrigins.has(origin)) return origin;
+					if (origin.startsWith('chrome-extension://')) return origin;
 					return undefined;
 				},
 				credentials: true,

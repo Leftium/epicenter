@@ -197,7 +197,7 @@ function createChatState() {
 
 	// ── Lifecycle ──
 
-	$effect(() => {
+	function reconcileHandles() {
 		const currentIds = new Set(conversations.map((c) => c.id));
 
 		for (const id of handles.keys()) {
@@ -212,7 +212,7 @@ function createChatState() {
 				handles.set(conv.id, createConversationHandle(conv.id));
 			}
 		}
-	});
+	}
 
 	function createConversation(): ConversationId {
 		const id = generateId();
@@ -231,12 +231,14 @@ function createChatState() {
 			...conversations,
 		];
 
+		reconcileHandles();
 		activeConversationId = id;
 		return id;
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
 		conversations = conversations.filter((c) => c.id !== conversationId);
+		reconcileHandles();
 
 		if (activeConversationId === conversationId) {
 			const first = conversations[0];

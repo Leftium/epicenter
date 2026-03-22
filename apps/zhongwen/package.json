@@ -1,0 +1,39 @@
+{
+	"name": "@epicenter/zhongwen",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"scripts": {
+		"dev": "bun --bun vite dev",
+		"build": "bun --bun vite build",
+		"preview": "bun --bun vite preview",
+		"typecheck": "svelte-check"
+	},
+	"dependencies": {
+		"@epicenter/constants": "workspace:*",
+		"@epicenter/svelte": "workspace:*",
+		"@epicenter/ui": "workspace:*",
+		"@tanstack/ai-anthropic": "catalog:",
+		"@tanstack/ai-client": "^0.6.0",
+		"@tanstack/ai-gemini": "catalog:",
+		"@tanstack/ai-grok": "catalog:",
+		"@tanstack/ai-openai": "catalog:",
+		"better-auth": "catalog:",
+		"pinyin-pro": "^3.28.0",
+		"svelte-sonner": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-auto": "catalog:",
+		"@sveltejs/kit": "catalog:",
+		"@sveltejs/vite-plugin-svelte": "catalog:",
+		"@tailwindcss/vite": "catalog:",
+		"@types/node": "catalog:",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
+		"tailwindcss": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:"
+	},
+	"license": "MIT"
+}

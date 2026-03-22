@@ -10,7 +10,7 @@
 	let { handle }: Props = $props();
 
 	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter' && !e.shiftKey) {
+		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
 			e.preventDefault();
 			submit();
 		}
@@ -31,11 +31,15 @@
 	<Textarea
 		placeholder="Ask something in English..."
 		class="min-h-[44px] max-h-[120px] resize-none"
+		aria-label="Message input"
 		bind:value={handle.inputValue}
 		onkeydown={handleKeydown}
 		disabled={handle.isLoading}
 	/>
-	<Button type="submit" disabled={handle.isLoading || !handle.inputValue.trim()}>
-		{handle.isLoading ? 'Sending...' : 'Send'}
-	</Button>
+	{#if handle.isLoading}
+		<Button type="button" variant="outline" onclick={() => handle.stop()}>Stop</Button>
+	{:else}
+		<Button type="submit" disabled={!handle.inputValue.trim()}>Send</Button>
+	{/if}
 </form>
+<p class="px-4 pb-2 text-xs text-muted-foreground">Enter to send, Shift+Enter for new line</p>

@@ -12,7 +12,7 @@ import {
 } from '@tanstack/ai-client';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { SvelteMap } from 'svelte/reactivity';
-import { tokenStore } from '$lib/auth';
+import { authState } from '$lib/auth';
 import {
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,
@@ -73,10 +73,7 @@ function createChatState() {
 			connection: fetchServerSentEvents(
 				() => `${APP_URLS.API}/ai/chat`,
 				() => ({
-					credentials: 'include',
-					headers: {
-						Authorization: `Bearer ${tokenStore.get()}`,
-					},
+					fetchClient: authState.fetch,
 					body: {
 						data: {
 							provider: metadata?.provider ?? DEFAULT_PROVIDER,

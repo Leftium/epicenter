@@ -1,7 +1,6 @@
 <script lang="ts">
 	import * as Chat from '@epicenter/ui/chat';
-	import { marked } from 'marked';
-	import { annotateHtml } from '$lib/pinyin/annotate';
+	import AssistantMessagePart from './AssistantMessagePart.svelte';
 	import type { UIMessage } from '@tanstack/ai-client';
 
 	type Props = {
@@ -21,13 +20,7 @@
 				{#if isUser}
 					{part.content}
 				{:else}
-					<div class="prose prose-sm">
-						{#if showPinyin}
-							{@html annotateHtml(marked.parse(part.content, { breaks: true, gfm: true }) as string)}
-						{:else}
-							{@html marked.parse(part.content, { breaks: true, gfm: true })}
-						{/if}
-					</div>
+					<AssistantMessagePart content={part.content} {showPinyin} />
 				{/if}
 			{/if}
 		{/each}

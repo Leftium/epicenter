@@ -12,7 +12,7 @@
 	</div>
 
 	<nav class="flex-1 overflow-y-auto p-2">
-		{#each chatState.conversations as conv (conv.id)}
+		{#each chatState.conversationHandles as conv (conv.id)}
 			<button
 				class="w-full rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent {conv.id === chatState.activeConversationId ? 'bg-accent font-medium' : ''}"
 				onclick={() => chatState.switchTo(conv.id)}

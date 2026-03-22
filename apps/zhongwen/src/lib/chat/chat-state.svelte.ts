@@ -128,9 +128,9 @@ function createChatState() {
 			set provider(value: string) {
 				const conv = conversations.find((c) => c.id === conversationId);
 				if (!conv) return;
-				const models = PROVIDER_MODELS[value as Provider];
+				if (!(value in PROVIDER_MODELS)) return;
 				conv.provider = value;
-				conv.model = models?.[0] ?? DEFAULT_MODEL;
+				conv.model = PROVIDER_MODELS[value as Provider][0] ?? DEFAULT_MODEL;
 			},
 
 			get model() {
@@ -197,7 +197,7 @@ function createChatState() {
 
 	// ── Lifecycle ──
 
-	function reconcileHandles() {
+	$effect(() => {
 		const currentIds = new Set(conversations.map((c) => c.id));
 
 		for (const id of handles.keys()) {
@@ -212,7 +212,7 @@ function createChatState() {
 				handles.set(conv.id, createConversationHandle(conv.id));
 			}
 		}
-	}
+	});
 
 	function createConversation(): ConversationId {
 		const id = generateId();
@@ -231,15 +231,11 @@ function createChatState() {
 			...conversations,
 		];
 
-		reconcileHandles();
 		activeConversationId = id;
 		return id;
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
-		handles.get(conversationId)?.destroy();
-		handles.delete(conversationId);
-
 		conversations = conversations.filter((c) => c.id !== conversationId);
 
 		if (activeConversationId === conversationId) {
@@ -262,7 +258,7 @@ function createChatState() {
 			return handles.get(activeConversationId);
 		},
 
-		get conversations() {
+		get conversationHandles() {
 			return conversations
 				.map((c) => handles.get(c.id))
 				.filter((h) => h !== undefined);

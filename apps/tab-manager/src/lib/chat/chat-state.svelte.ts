@@ -45,6 +45,7 @@ import {
 } from '@tanstack/ai-client';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
+import { createAuthFetch } from '@epicenter/svelte/auth-state';
 import {
 	AVAILABLE_PROVIDERS,
 	DEFAULT_MODEL,
@@ -58,6 +59,7 @@ import {
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
 import { getDeviceId } from '$lib/device/device-id';
+import { authState } from '$lib/state/auth.svelte';
 import { remoteServerUrl } from '$lib/state/settings.svelte';
 import {
 	type ChatMessageId,
@@ -73,6 +75,8 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
+
+const authFetch = createAuthFetch(() => authState.token);
 
 /** Milliseconds to wait for the server to begin streaming before timing out. */
 const SUBMITTED_TIMEOUT_MS = 60_000;
@@ -219,7 +223,7 @@ function createAiChatState() {
 					const conv = conversations.find((c) => c.id === conversationId);
 					const deviceId = await getDeviceId();
 					return {
-						credentials: 'include',
+						fetchClient: authFetch,
 						body: {
 							data: {
 								provider: conv?.provider ?? DEFAULT_PROVIDER,

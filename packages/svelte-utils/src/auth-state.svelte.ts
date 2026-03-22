@@ -80,23 +80,6 @@ export type TokenStore = {
 	set(value: string | undefined): void;
 };
 
-/**
- * Wraps `globalThis.fetch` to inject `Authorization: Bearer <token>` on every
- * request. Pass as `fetchClient` to TanStack AI's `fetchServerSentEvents` so
- * auth is handled in one place instead of per-call headers.
- */
-export function createAuthFetch(getToken: () => string | undefined): typeof fetch {
-	return (input, init) => {
-		const token = getToken();
-		if (token) {
-			const headers = new Headers(init?.headers);
-			headers.set('Authorization', `Bearer ${token}`);
-			return fetch(input, { ...init, headers });
-		}
-		return fetch(input, init);
-	};
-}
-
 /** Create a token store backed by raw localStorage. */
 export function createTokenStore(storagePrefix: string): TokenStore {
 	const key = `${storagePrefix}:authToken`;
@@ -202,6 +185,20 @@ export function createAuthState(config: AuthStateConfig) {
 
 	// ─── Public API ───
 
+	/**
+	 * Wraps `globalThis.fetch` to inject `Authorization: Bearer <token>` on
+	 * every request. Reads the token lazily at call time.
+	 */
+	const authFetch: typeof fetch = (input, init) => {
+		const token = tokenStore.get();
+		if (token) {
+			const headers = new Headers(init?.headers);
+			headers.set('Authorization', `Bearer ${token}`);
+			return fetch(input, { ...init, headers });
+		}
+		return fetch(input, init);
+	};
+
 	return {
 		get status() {
 			return phase.status;
@@ -218,6 +215,8 @@ export function createAuthState(config: AuthStateConfig) {
 		get token() {
 			return tokenStore.get();
 		},
+
+		fetch: authFetch,
 
 		async signIn(credentials: { email: string; password: string }) {
 			phase = { status: 'signing-in' };

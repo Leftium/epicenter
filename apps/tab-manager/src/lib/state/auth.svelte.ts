@@ -195,6 +195,20 @@ function createAuthState() {
 		}
 	}
 
+	/**
+	 * Wraps `globalThis.fetch` to inject `Authorization: Bearer <token>` on
+	 * every request. Reads the token lazily at call time.
+	 */
+	const authFetch: typeof fetch = (input, init) => {
+		const token = authToken.current;
+		if (token) {
+			const headers = new Headers(init?.headers);
+			headers.set('Authorization', `Bearer ${token}`);
+			return fetch(input, { ...init, headers });
+		}
+		return fetch(input, init);
+	};
+
 	// ─── Public API ───
 
 	return {
@@ -204,6 +218,8 @@ function createAuthState() {
 		get signInError(): string | undefined {
 			return phase.status === 'signed-out' ? phase.error : undefined;
 		},
+
+		fetch: authFetch,
 		get email() {
 			return email;
 		},

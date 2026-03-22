@@ -19,4 +19,4 @@ export const PROVIDER_MODELS = {
 export type Provider = keyof typeof PROVIDER_MODELS;
 
 export const DEFAULT_PROVIDER: Provider = 'openai';
-export const DEFAULT_MODEL = PROVIDER_MODELS[DEFAULT_PROVIDER][0];
+export const DEFAULT_MODEL = 'gpt-5-nano' as const;

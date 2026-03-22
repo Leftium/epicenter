@@ -20,4 +20,3 @@ export type Provider = keyof typeof PROVIDER_MODELS;
 
 export const DEFAULT_PROVIDER: Provider = 'openai';
 export const DEFAULT_MODEL = PROVIDER_MODELS[DEFAULT_PROVIDER][0];
-export const AVAILABLE_PROVIDERS = Object.keys(PROVIDER_MODELS) as Provider[];

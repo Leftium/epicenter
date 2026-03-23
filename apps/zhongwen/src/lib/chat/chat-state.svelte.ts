@@ -88,9 +88,6 @@ function createChatState() {
 		ReturnType<typeof createConversationHandle>
 	>();
 
-	/** Internal lifecycle — refresh syncs workspace messages into the TanStack chat instance. */
-	const refreshFns = new Map<ConversationId, () => void>();
-
 	// ── Conversation Handle Factory ──
 
 	function createConversationHandle(conversationId: ConversationId) {
@@ -136,12 +133,11 @@ function createChatState() {
 			},
 		});
 
-		refreshFns.set(conversationId, () => {
-			if (chat.isLoading) return;
-			chat.setMessages(loadMessages(conversationId));
-		});
-
 		return {
+			syncMessages() {
+				if (chat.isLoading) return;
+				chat.setMessages(loadMessages(conversationId));
+			},
 			get id() {
 				return conversationId;
 			},
@@ -232,7 +228,6 @@ function createChatState() {
 
 	function destroyConversation(id: ConversationId) {
 		handles.get(id)?.stop();
-		refreshFns.delete(id);
 		handles.delete(id);
 	}
 
@@ -259,7 +254,7 @@ function createChatState() {
 		reconcileHandles();
 	});
 	workspace.tables.chatMessages.observe(() => {
-		refreshFns.get(activeConversationId)?.();
+		handles.get(activeConversationId)?.syncMessages();
 	});
 
 	// Initialize after persistence loads
@@ -293,7 +288,7 @@ function createChatState() {
 
 	function switchConversation(conversationId: ConversationId) {
 		activeConversationId = conversationId;
-		refreshFns.get(conversationId)?.();
+		handles.get(conversationId)?.syncMessages();
 	}
 
 	function deleteConversation(conversationId: ConversationId) {

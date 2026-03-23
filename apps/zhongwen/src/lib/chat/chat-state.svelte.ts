@@ -6,11 +6,7 @@
  * no encryption, no WebSocket sync.
  */
 
-import {
-	createChat,
-	fetchServerSentEvents,
-	type UIMessage,
-} from '@tanstack/ai-svelte';
+import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
@@ -165,10 +161,6 @@ function createChatState() {
 				return chat.messages;
 			},
 
-			get status() {
-				return chat.status;
-			},
-
 			get isLoading() {
 				return chat.isLoading;
 			},
@@ -221,14 +213,6 @@ function createChatState() {
 
 			stop() {
 				chat.stop();
-			},
-
-			rename(title: string) {
-				updateConversation(conversationId, { title });
-			},
-
-			delete() {
-				deleteConversation(conversationId);
 			},
 
 			destroy() {

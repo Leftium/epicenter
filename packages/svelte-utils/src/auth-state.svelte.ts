@@ -186,17 +186,18 @@ export function createAuthState(config: AuthStateConfig) {
 	// ─── Public API ───
 
 	/**
-	 * Wraps `globalThis.fetch` to inject `Authorization: Bearer <token>` on
-	 * every request. Reads the token lazily at call time.
+	 * Wraps `globalThis.fetch` with auth credentials.
+	 *
+	 * Mirrors Better Auth's internal `$fetch` behavior: always sends
+	 * `credentials: 'include'` (session cookie) and adds the Bearer
+	 * token when available. This ensures requests authenticate via
+	 * cookie even before the token is stored (e.g. after OAuth redirect).
 	 */
 	const authFetch: typeof fetch = (input, init) => {
+		const headers = new Headers(init?.headers);
 		const token = tokenStore.get();
-		if (token) {
-			const headers = new Headers(init?.headers);
-			headers.set('Authorization', `Bearer ${token}`);
-			return fetch(input, { ...init, headers });
-		}
-		return fetch(input, init);
+		if (token) headers.set('Authorization', `Bearer ${token}`);
+		return fetch(input, { ...init, headers, credentials: 'include' });
 	};
 
 	return {
@@ -345,12 +346,6 @@ export function createAuthState(config: AuthStateConfig) {
 		 * aren't logged out. Only an explicit auth rejection (4xx) clears state.
 		 */
 		async checkSession() {
-			const token = tokenStore.get();
-			if (!token) {
-				phase = { status: 'signed-out' };
-				return Ok(null);
-			}
-
 			const { data, error: sessionError } = await getSession();
 
 			if (sessionError) {

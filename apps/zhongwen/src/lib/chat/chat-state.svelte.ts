@@ -330,10 +330,11 @@ function createChatState() {
 
 	// ── Public API ──
 
+	// Safe to assert: reconcileHandles() runs synchronously in the
+	// conversations observer, so every conversation ID has a handle
+	// before any $derived re-evaluates.
 	const conversationList = $derived(
-		conversations
-			.map((c) => handles.get(c.id))
-			.filter((h) => h !== undefined),
+		conversations.map((c) => handles.get(c.id)!),
 	);
 
 	return {

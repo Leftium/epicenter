@@ -28,6 +28,8 @@ import {
 	generateConversationId,
 } from '$lib/workspace/schema';
 
+const asChatMessageId = (id: string) => id as ChatMessageId;
+
 // ─── State Factory ───────────────────────────────────────────────────────────
 
 function createChatState() {
@@ -123,7 +125,7 @@ function createChatState() {
 			},
 			onFinish: (message) => {
 				workspace.tables.chatMessages.set({
-					id: message.id as string as ChatMessageId,
+					id: asChatMessageId(message.id),
 					conversationId,
 					role: 'assistant',
 					parts: message.parts as JsonValue[],
@@ -216,7 +218,7 @@ function createChatState() {
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
 					workspace.tables.chatMessages.delete(
-						lastMessage.id as string as ChatMessageId,
+						asChatMessageId(lastMessage.id),
 					);
 				}
 				void chat.reload();

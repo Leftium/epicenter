@@ -25,7 +25,7 @@
 				{#if isUser}
 					{part.content}
 				{:else}
-					<AssistantMessagePart content={part.content} {showPinyin} {isStreaming} />
+					<AssistantMessagePart content={part.content} {showPinyin} />
 				{/if}
 			{/if}
 		{/each}

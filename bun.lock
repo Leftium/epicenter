@@ -5,8 +5,6 @@
     "": {
       "name": "epicenter",
       "dependencies": {
-        "dompurify": "^3.3.3",
-        "tab-manager": "^1.0.11",
         "tinyexec": "^1.0.4",
       },
       "devDependencies": {
@@ -348,12 +346,14 @@
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
         "@tanstack/ai-anthropic": "catalog:",
         "@tanstack/ai-client": "^0.7.2",
         "@tanstack/ai-gemini": "catalog:",
         "@tanstack/ai-grok": "catalog:",
         "@tanstack/ai-openai": "catalog:",
+        "arktype": "catalog:",
         "dompurify": "^3.3.3",
         "marked": "^17.0.5",
         "pinyin-pro": "^3.28.0",
@@ -593,6 +593,9 @@
         "yjs": "catalog:",
       },
     },
+  },
+  "patchedDependencies": {
+    "@tanstack/ai@0.8.1": "patches/@tanstack%2Fai@0.8.1.patch",
   },
   "catalog": {
     "@better-auth/drizzle-adapter": "^1.5.3",
@@ -2282,8 +2285,6 @@
 
     "jose": ["jose@6.2.2", "", {}, "sha512-d7kPDd34KO/YnzaDOlikGpOurfF0ByC2sEV4cANCtdqLlTfBlw2p14O/5d/zv40gJPbIQxfES3nSx1/oYNyuZQ=="],
 
-    "jquery": ["jquery@2.2.4", "", {}, "sha512-lBHj60ezci2u1v2FqnZIraShGgEXq35qCzMv4lITyHGppTnA13rwR0MgwyNJh9TnDs3aXUvd1xjAotfraMHX/Q=="],
-
     "js-base64": ["js-base64@3.7.8", "", {}, "sha512-hNngCeKxIUQiEUN3GPJOkz4wF/YvdUdbNL9hsBcMQTkKzboD7T/q3OYOuuPZLUE6dBxSGpwhk5mwuDud7JVAow=="],
 
     "js-tokens": ["js-tokens@9.0.1", "", {}, "sha512-mxa9E9ITFOt0ban3j6L5MpjwegGz6lBQmM1IJkWeBZGcMxto50+eWdjC/52xDbS2vy0k7vIMK0Fe2wfL9OQSpQ=="],
@@ -3037,8 +3038,6 @@
     "svgo": ["svgo@4.0.1", "", { "dependencies": { "commander": "^11.1.0", "css-select": "^5.1.0", "css-tree": "^3.0.1", "css-what": "^6.1.0", "csso": "^5.0.5", "picocolors": "^1.1.1", "sax": "^1.5.0" }, "bin": "./bin/svgo.js" }, "sha512-XDpWUOPC6FEibaLzjfe0ucaV0YrOjYotGJO1WpF0Zd+n6ZGEQUsSugaoLq9QkEZtAfQIxT42UChcssDVPP3+/w=="],
 
     "system-architecture": ["system-architecture@0.1.0", "", {}, "sha512-ulAk51I9UVUyJgxlv9M6lFot2WP3e7t8Kz9+IS6D4rVba1tR9kON+Ey69f+1R4Q8cd45Lod6a4IcJIxnzGc/zA=="],
-
-    "tab-manager": ["tab-manager@1.0.11", "", { "dependencies": { "jquery": "^2.1.4" } }, "sha512-RQt1AG35dQ7Zn+Foxsr1jp9j2+7fhjlnvUONDEPvD9qb/J3uV1EKeZ1SfzIagLZImKfouINr7H4eriu62OHrNQ=="],
 
     "tabbable": ["tabbable@6.4.0", "", {}, "sha512-05PUHKSNE8ou2dwIxTngl4EzcnsCDZGJ/iCLtDflR/SHB/ny14rXc+qU5P4mG9JkusiV7EivzY9Mhm55AzAvCg=="],
 

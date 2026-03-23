@@ -3,16 +3,15 @@
  *
  * Owns the phase machine, Better Auth client, session validation, and
  * token refresh. Creates its own persisted storage internally—no adapter
- * layer. Each app passes a `tokenStore` and workspace callbacks.
+ * layer. Each app passes a `storagePrefix` and workspace callbacks.
  *
  * Actions take explicit parameters—form state lives in the component.
  *
  * @example
  * ```typescript
- * const tokenStore = createTokenStore('honeycrisp');
  * export const authState = createAuthState({
  *   baseURL: 'https://api.epicenter.so',
- *   tokenStore,
+ *   storagePrefix: 'honeycrisp',
  *   onSignedIn: (key) => { workspace.activateEncryption(key); workspace.sync.reconnect(); },
  *   onSignedOut: () => { workspace.deactivateEncryption(); workspace.sync.reconnect(); },
  * });
@@ -64,44 +63,13 @@ const AuthError = defineErrors({
 	}),
 });
 
-// ─── Token Store ─────────────────────────────────────────────────────────────
-
-/**
- * Raw localStorage get/set for the auth token. No JSON serialization,
- * no Svelte reactivity—the token is infrastructure, never displayed.
- * Used by both the auth factory (read/write) and the sync extension (read).
- */
-export type TokenStore = {
-	prefix: string;
-	get(): string | undefined;
-	set(value: string | undefined): void;
-};
-
-/** Create a token store backed by raw localStorage. */
-export function createTokenStore(storagePrefix: string): TokenStore {
-	const key = `${storagePrefix}:authToken`;
-	return {
-		prefix: storagePrefix,
-		get() {
-			return localStorage.getItem(key) ?? undefined;
-		},
-		set(value) {
-			if (value === undefined) {
-				localStorage.removeItem(key);
-			} else {
-				localStorage.setItem(key, value);
-			}
-		},
-	};
-}
-
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export type AuthStateConfig = {
 	/** Base URL for the Better Auth API (e.g. `https://api.epicenter.so`). */
 	baseURL: string;
-	/** Token store for reading/writing the auth token. Prefix is derived from here. */
-	tokenStore: TokenStore;
+	/** Prefix for localStorage keys (e.g. `'honeycrisp'` → `'honeycrisp:authToken'`, `'honeycrisp:authUser'`). */
+	storagePrefix: string;
 	/**
 	 * Override for Google sign-in. Web apps leave undefined to use Better Auth's
 	 * built-in redirect flow. Chrome extensions pass a function that uses
@@ -126,11 +94,12 @@ function serializeDates<T extends Record<string, unknown>>(obj: T) {
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createAuthState(config: AuthStateConfig) {
-	const { baseURL, tokenStore } = config;
+	const { baseURL, storagePrefix } = config;
+	const tokenKey = `${storagePrefix}:authToken`;
 
 	// User state needs reactivity (displayed in UI) + schema validation
 	const userState = createPersistedState({
-		key: `${tokenStore.prefix}:authUser`,
+		key: `${storagePrefix}:authUser`,
 		schema: AuthUser.or('undefined'),
 		defaultValue: undefined,
 	});
@@ -143,11 +112,11 @@ export function createAuthState(config: AuthStateConfig) {
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',
-				token: () => tokenStore.get(),
+				token: () => localStorage.getItem(tokenKey),
 			},
 			onSuccess: ({ response }) => {
 				const newToken = response.headers.get('set-auth-token');
-				if (newToken) tokenStore.set(newToken);
+				if (newToken) localStorage.setItem(tokenKey, newToken);
 			},
 		},
 	});
@@ -163,7 +132,7 @@ export function createAuthState(config: AuthStateConfig) {
 	}
 
 	function clearState() {
-		tokenStore.set(undefined);
+		localStorage.removeItem(tokenKey);
 		userState.current = undefined;
 	}
 
@@ -191,7 +160,7 @@ export function createAuthState(config: AuthStateConfig) {
 	 */
 	const authFetch: typeof fetch = (input, init) => {
 		const headers = new Headers(init?.headers);
-		const token = tokenStore.get();
+		const token = localStorage.getItem(tokenKey);
 		if (token) headers.set('Authorization', `Bearer ${token}`);
 		return fetch(input, { ...init, headers, credentials: 'include' });
 	};
@@ -210,7 +179,7 @@ export function createAuthState(config: AuthStateConfig) {
 		},
 
 		get token() {
-			return tokenStore.get();
+			return localStorage.getItem(tokenKey);
 		},
 
 		fetch: authFetch,

@@ -1,12 +1,7 @@
 import { APP_URLS } from '@epicenter/constants/vite';
-import {
-	createAuthState,
-	createTokenStore,
-} from '@epicenter/svelte/auth-state';
-
-export const tokenStore = createTokenStore('zhongwen');
+import { createAuthState } from '@epicenter/svelte/auth-state';
 
 export const authState = createAuthState({
 	baseURL: APP_URLS.API,
-	tokenStore,
+	storagePrefix: 'zhongwen',
 });

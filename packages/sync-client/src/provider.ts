@@ -235,7 +235,7 @@ export function createSyncProvider({
 			status.set({ phase: 'connecting', attempt, lastError });
 
 			// --- Token acquisition (fresh each iteration) ---
-			let token: string | undefined;
+			let token: string | null = null;
 			if (getToken) {
 				try {
 					token = await getToken();

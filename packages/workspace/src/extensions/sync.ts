@@ -66,7 +66,7 @@ export type SyncExtensionConfig = {
 	 * The same token is used for both WebSocket (`?token=` query param) and
 	 * HTTP snapshot (`Authorization: Bearer` header).
 	 */
-	getToken?: (docId: string) => Promise<string | undefined>;
+	getToken?: (docId: string) => Promise<string | null>;
 };
 
 /** Exports available on `client.extensions.sync` after registration. */

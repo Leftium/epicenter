@@ -8,7 +8,6 @@
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
-import { tokenStore } from '$lib/auth/token-store';
 import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
@@ -21,7 +20,7 @@ const workspace = createWorkspace(honeycrisp)
 		'sync',
 		createSyncExtension({
 			url: (workspaceId) => `${APP_URLS.API}/workspaces/${workspaceId}`,
-			getToken: async () => tokenStore.get(),
+			getToken: async () => localStorage.getItem('honeycrisp:authToken'),
 		}),
 	);
 

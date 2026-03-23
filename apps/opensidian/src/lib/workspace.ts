@@ -8,7 +8,6 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Bash } from 'just-bash';
-import { tokenStore } from '$lib/auth/token-store';
 
 /**
  * Opensidian workspace infrastructure.
@@ -28,7 +27,7 @@ export const ws = createWorkspace({
 		'sync',
 		createSyncExtension({
 			url: (workspaceId) => `${APP_URLS.API}/workspaces/${workspaceId}`,
-			getToken: async () => tokenStore.get(),
+			getToken: async () => localStorage.getItem('opensidian:authToken'),
 		}),
 	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());

@@ -8,6 +8,7 @@
 
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
+import { fromTable } from '@epicenter/svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
 import { authState } from '$lib/auth';
@@ -35,13 +36,10 @@ const asChatMessageId = (id: string) => id as ChatMessageId;
 function createChatState() {
 	// ── Conversation List (Y.Doc-backed) ──
 
-	let conversationsVersion = $state(0);
-	const conversations = $derived.by(() => {
-		conversationsVersion; // subscribe to observer-driven changes
-		return workspace.tables.conversations
-			.getAllValid()
-			.sort((a, b) => b.updatedAt - a.updatedAt);
-	});
+	const conversationsMap = fromTable(workspace.tables.conversations);
+	const conversations = $derived(
+		conversationsMap.values().toArray().sort((a, b) => b.updatedAt - a.updatedAt),
+	);
 
 	/** Returns the ID to activate — either the first existing conversation or a newly created default. */
 	function ensureDefaultConversation(): ConversationId {
@@ -98,9 +96,7 @@ function createChatState() {
 	function createConversationHandle(conversationId: ConversationId) {
 		let inputValue = $state('');
 
-		const metadata = $derived(
-			conversations.find((c) => c.id === conversationId),
-		);
+		const metadata = $derived(conversationsMap.get(conversationId));
 
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
@@ -241,25 +237,25 @@ function createChatState() {
 	}
 
 	function reconcileHandles() {
-		const currentIds = new Set(conversations.map((c) => c.id));
-
 		for (const id of handles.keys()) {
-			if (!currentIds.has(id)) {
+			if (!conversationsMap.has(id)) {
 				destroyConversation(id);
 			}
 		}
 
-		for (const conv of conversations) {
-			if (!handles.has(conv.id)) {
-				handles.set(conv.id, createConversationHandle(conv.id));
+		for (const id of conversationsMap.keys()) {
+			const convId = id as ConversationId;
+			if (!handles.has(convId)) {
+				handles.set(convId, createConversationHandle(convId));
 			}
 		}
 	}
 
 	// ── Observers ──
 
+	// fromTable owns the reactive data; this observer only handles
+	// imperative handle lifecycle (creating/destroying chat instances).
 	workspace.tables.conversations.observe(() => {
-		conversationsVersion++;
 		reconcileHandles();
 	});
 	workspace.tables.chatMessages.observe(() => {
@@ -268,7 +264,6 @@ function createChatState() {
 
 	// Initialize after persistence loads
 	void workspace.whenReady.then(() => {
-		conversationsVersion++;
 		reconcileHandles();
 		activeConversationId = ensureDefaultConversation();
 	});

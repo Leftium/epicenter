@@ -7,11 +7,10 @@
  */
 
 import {
-	ChatClient,
+	createChat,
 	fetchServerSentEvents,
-	type ChatClientState,
 	type UIMessage,
-} from '@tanstack/ai-client';
+} from '@tanstack/ai-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
@@ -34,8 +33,6 @@ import {
 } from '$lib/workspace/schema';
 
 // ─── State Factory ───────────────────────────────────────────────────────────
-
-const SUBMITTED_TIMEOUT_MS = 60_000;
 
 function createChatState() {
 	// ── Conversation List (Y.Doc-backed) ──
@@ -95,20 +92,14 @@ function createChatState() {
 	// ── Conversation Handle Factory ──
 
 	function createConversationHandle(conversationId: ConversationId) {
-		const initialMsgs = loadMessages(conversationId);
-		let messages = $state<UIMessage[]>(initialMsgs);
-		let status = $state<ChatClientState>('ready');
-		let isLoading = $state(false);
-		let error = $state<Error | undefined>(undefined);
 		let inputValue = $state('');
-		let submittedTimer: ReturnType<typeof setTimeout> | undefined;
 
 		const metadata = $derived(
 			conversations.find((c) => c.id === conversationId),
 		);
 
-		const client = new ChatClient({
-			initialMessages: initialMsgs,
+		const chat = createChat({
+			initialMessages: loadMessages(conversationId),
 			connection: fetchServerSentEvents(
 				() => `${APP_URLS.API}/ai/chat`,
 				() => ({
@@ -122,41 +113,6 @@ function createChatState() {
 					},
 				}),
 			),
-			onMessagesChange: (msgs) => {
-				messages = [...msgs];
-			},
-			onLoadingChange: (loading) => {
-				isLoading = loading;
-			},
-			onErrorChange: (err) => {
-				error = err;
-			},
-			onStatusChange: (newStatus) => {
-				status = newStatus;
-				messages = [...client.getMessages()];
-
-				if (submittedTimer) {
-					clearTimeout(submittedTimer);
-					submittedTimer = undefined;
-				}
-
-				if (newStatus === 'submitted') {
-					submittedTimer = setTimeout(() => {
-						submittedTimer = undefined;
-						if (status !== 'submitted') return;
-						console.warn(
-							'[zhongwen] timeout: no response within 60s',
-							conversationId,
-						);
-						client.stop();
-						error = new Error(
-							'Request timed out. The AI did not respond within 60 seconds.',
-						);
-						status = 'error';
-						isLoading = false;
-					}, SUBMITTED_TIMEOUT_MS);
-				}
-			},
 			onError: (err) => {
 				console.error(
 					'[zhongwen] stream error:',
@@ -206,19 +162,19 @@ function createChatState() {
 			},
 
 			get messages() {
-				return messages;
+				return chat.messages;
 			},
 
 			get status() {
-				return status;
+				return chat.status;
 			},
 
 			get isLoading() {
-				return isLoading;
+				return chat.isLoading;
 			},
 
 			get error() {
-				return error;
+				return chat.error;
 			},
 
 			get inputValue() {
@@ -234,7 +190,7 @@ function createChatState() {
 
 				// Send to client FIRST so isLoading=true before the
 				// observer fires refreshFromDoc (which skips when loading).
-				void client.sendMessage({ content, id: userMessageId });
+				void chat.sendMessage({ content, id: userMessageId });
 
 				workspace.tables.chatMessages.set({
 					id: userMessageId,
@@ -254,17 +210,17 @@ function createChatState() {
 			},
 
 			reload() {
-				const lastMessage = messages.at(-1);
+				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
 					workspace.tables.chatMessages.delete(
 						lastMessage.id as string as ChatMessageId,
 					);
 				}
-				void client.reload();
+				void chat.reload();
 			},
 
 			stop() {
-				client.stop();
+				chat.stop();
 			},
 
 			rename(title: string) {
@@ -276,14 +232,12 @@ function createChatState() {
 			},
 
 			destroy() {
-				if (submittedTimer) clearTimeout(submittedTimer);
-				client.stop();
+				chat.stop();
 			},
 
 			refreshFromDoc() {
-				if (isLoading) return;
-				const msgs = loadMessages(conversationId);
-				client.setMessagesManually(msgs);
+				if (chat.isLoading) return;
+				chat.setMessages(loadMessages(conversationId));
 			},
 		};
 	}

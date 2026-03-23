@@ -291,7 +291,6 @@ function createAuth({ db, env, baseURL }: { db: Db; env: Env['Bindings']; baseUR
 		advanced: {},
 		trustedOrigins: (request) => {
 			const origins = [
-				'https://*.epicenter.so',
 				'tauri://localhost',
 				...Object.values(APPS).flatMap((a) => [a.url, `http://localhost:${a.port}`]),
 			];

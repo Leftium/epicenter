@@ -6,9 +6,9 @@
 	import { fromKv } from '@epicenter/svelte';
 	import { authState } from '$lib/auth';
 	import { chatState } from '$lib/chat/chat-state.svelte';
-	import { PROVIDER_MODELS, type Provider } from '$lib/chat/providers';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ChatInput from '$lib/components/ChatInput.svelte';
+	import ModelPicker from '$lib/components/ModelPicker.svelte';
 	import ZhongwenSidebar from '$lib/components/ZhongwenSidebar.svelte';
 	import { workspace } from '$lib/workspace/client';
 
@@ -32,9 +32,7 @@
 				<Sidebar.Trigger />
 				<h1 class="text-lg font-semibold">中文 Zhongwen</h1>
 				{#if handle}
-					<span class="text-sm text-muted-foreground">
-						{handle.provider} / {handle.model}
-					</span>
+					<ModelPicker {handle} />
 				{/if}
 			</div>
 

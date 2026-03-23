@@ -28,11 +28,7 @@
  * ```
  */
 
-import {
-	createChat,
-	fetchServerSentEvents,
-	type UIMessage,
-} from '@tanstack/ai-svelte';
+import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
 import {

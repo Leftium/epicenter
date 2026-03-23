@@ -124,6 +124,10 @@ function createAiChatState() {
 		ReturnType<typeof createConversationHandle>
 	>();
 
+	/** Internal lifecycle closures — not exposed on ConversationHandle. */
+	const destroyFns = new Map<ConversationId, () => void>();
+	const refreshFns = new Map<ConversationId, () => void>();
+
 	// ── Conversation Handle Factory ──────────────────────────────────
 
 	/**
@@ -187,6 +191,13 @@ function createAiChatState() {
 				});
 				updateConversation(conversationId, {});
 			},
+		});
+
+		// Register internal lifecycle closures
+		destroyFns.set(conversationId, () => chat.stop());
+		refreshFns.set(conversationId, () => {
+			if (chat.isLoading) return;
+			chat.setMessages(loadMessages(conversationId));
 		});
 
 		return {
@@ -365,17 +376,6 @@ function createAiChatState() {
 			delete() {
 				deleteConversation(conversationId);
 			},
-
-			// ── Internal (used by lifecycle functions, not by components) ──
-
-			destroy() {
-				chat.stop();
-			},
-
-			refreshFromDoc() {
-				if (chat.isLoading) return;
-				chat.setMessages(loadMessages(conversationId));
-			},
 		};
 	}
 
@@ -383,7 +383,9 @@ function createAiChatState() {
 
 	/** Stop client and remove the handle for a conversation. */
 	function destroyConversation(id: ConversationId) {
-		handles.get(id)?.destroy();
+		destroyFns.get(id)?.();
+		destroyFns.delete(id);
+		refreshFns.delete(id);
 		handles.delete(id);
 	}
 
@@ -421,7 +423,7 @@ function createAiChatState() {
 		reconcileHandles();
 	});
 	const _unobserveChatMessages = workspace.tables.chatMessages.observe(() => {
-		handles.get(activeConversationId)?.refreshFromDoc();
+		refreshFns.get(activeConversationId)?.();
 	});
 
 	// Initialize after persistence loads
@@ -467,7 +469,7 @@ function createAiChatState() {
 
 	function switchConversation(conversationId: ConversationId) {
 		activeConversationId = conversationId;
-		handles.get(conversationId)?.refreshFromDoc();
+		refreshFns.get(conversationId)?.();
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
@@ -498,18 +500,22 @@ function createAiChatState() {
 
 	// ── Public API ────────────────────────────────────────────────────
 
+	const conversationList = $derived(
+		conversations
+			.map((c) => handles.get(c.id))
+			.filter(
+				(h): h is ReturnType<typeof createConversationHandle> =>
+					h !== undefined,
+			),
+	);
+
 	return {
 		get active() {
 			return handles.get(activeConversationId);
 		},
 
 		get conversations() {
-			return conversations
-				.map((c) => handles.get(c.id))
-				.filter(
-					(h): h is ReturnType<typeof createConversationHandle> =>
-						h !== undefined,
-				);
+			return conversationList;
 		},
 
 		get(id: ConversationId) {

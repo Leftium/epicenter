@@ -129,7 +129,9 @@ function createChatState() {
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
 					_v: 1,
 				});
-				updateConversation(conversationId, {});
+				workspace.tables.conversations.update(conversationId, {
+					updatedAt: Date.now(),
+				});
 			},
 		});
 

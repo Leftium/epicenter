@@ -2,7 +2,7 @@
  * Reactive AI chat state for Zhongwen.
  *
  * Simplified from tab-manager's chat-state — no Y.Doc, no tool calls.
- * Conversations are in-memory with messages persisted to localStorage.
+ * Conversations are in-memory only (persistence via workspace API is planned).
  */
 
 import {
@@ -47,42 +47,9 @@ function generateMessageId(): string {
 	return `msg_${Date.now()}_${++idCounter}`;
 }
 
-// ─── Persistence ────────────────────────────────────────────────────────────
-
-const STORAGE_KEY_CONVERSATIONS = 'zhongwen:conversations';
-const STORAGE_KEY_MESSAGES = (id: ConversationId) => `zhongwen:messages:${id}`;
-
-function loadConversations(): Conversation[] {
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY_CONVERSATIONS);
-		return raw ? JSON.parse(raw) : [];
-	} catch {
-		return [];
-	}
-}
-
-function saveConversations(convs: Conversation[]) {
-	localStorage.setItem(STORAGE_KEY_CONVERSATIONS, JSON.stringify(convs));
-}
-
-function loadMessages(id: ConversationId): UIMessage[] {
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY_MESSAGES(id));
-		return raw ? JSON.parse(raw) : [];
-	} catch {
-		return [];
-	}
-}
-
-function saveMessages(id: ConversationId, msgs: UIMessage[]) {
-	localStorage.setItem(STORAGE_KEY_MESSAGES(id), JSON.stringify(msgs));
-}
-
-function removeMessages(id: ConversationId) {
-	localStorage.removeItem(STORAGE_KEY_MESSAGES(id));
-}
-
 // ─── State Factory ───────────────────────────────────────────────────────────
+
+const SUBMITTED_TIMEOUT_MS = 60_000;
 
 function createChatState() {
 	let conversations = $state<Conversation[]>([]);
@@ -95,11 +62,8 @@ function createChatState() {
 
 	// ── Conversation Handle Factory ──
 
-	const SUBMITTED_TIMEOUT_MS = 60_000;
-
 	function createConversationHandle(conversationId: ConversationId) {
-		const initialMsgs = loadMessages(conversationId);
-		let messages = $state<UIMessage[]>(initialMsgs);
+		let messages = $state<UIMessage[]>([]);
 		let status = $state<ChatClientState>('ready');
 		let isLoading = $state(false);
 		let error = $state<Error | undefined>(undefined);
@@ -111,7 +75,6 @@ function createChatState() {
 		);
 
 		const client = new ChatClient({
-			initialMessages: initialMsgs,
 			connection: fetchServerSentEvents(
 				() => `${APP_URLS.API}/ai/chat`,
 				() => ({
@@ -133,9 +96,6 @@ function createChatState() {
 			},
 			onErrorChange: (err) => {
 				error = err;
-				if (err && /401|unauthorized/i.test(err.message)) {
-					authState.checkSession();
-				}
 			},
 			onStatusChange: (newStatus) => {
 				status = newStatus;
@@ -163,8 +123,6 @@ function createChatState() {
 			},
 			onFinish: () => {
 				if (metadata) metadata.updatedAt = Date.now();
-				saveMessages(conversationId, client.getMessages());
-				saveConversations(conversations);
 			},
 		});
 
@@ -221,7 +179,6 @@ function createChatState() {
 				void client.sendMessage({ content, id: generateMessageId() });
 				if (metadata && metadata.title === 'New Chat') {
 					metadata.title = content.trim().slice(0, 50);
-					saveConversations(conversations);
 				}
 			},
 
@@ -234,10 +191,7 @@ function createChatState() {
 			},
 
 			rename(title: string) {
-				if (metadata) {
-					metadata.title = title;
-					saveConversations(conversations);
-				}
+				if (metadata) metadata.title = title;
 			},
 
 			destroy() {
@@ -268,14 +222,12 @@ function createChatState() {
 
 		handles.set(id, createConversationHandle(id));
 		activeConversationId = id;
-		saveConversations(conversations);
 		return id;
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
 		handles.get(conversationId)?.destroy();
 		handles.delete(conversationId);
-		removeMessages(conversationId);
 		conversations = conversations.filter((c) => c.id !== conversationId);
 
 		if (activeConversationId === conversationId) {
@@ -286,32 +238,10 @@ function createChatState() {
 				createConversation();
 			}
 		}
-		saveConversations(conversations);
 	}
 
-	function clearAll() {
-		for (const conv of conversations) {
-			handles.get(conv.id)?.destroy();
-			removeMessages(conv.id);
-		}
-		handles.clear();
-		conversations = [];
-		localStorage.removeItem(STORAGE_KEY_CONVERSATIONS);
-		createConversation();
-	}
-
-	// ── Initialize ──
-	// Restore persisted conversations, or create one fresh
-	const restored = loadConversations();
-	if (restored.length > 0) {
-		conversations = restored;
-		for (const conv of restored) {
-			handles.set(conv.id, createConversationHandle(conv.id));
-		}
-		activeConversationId = restored[0]!.id;
-	} else {
-		createConversation();
-	}
+	// Initialize with one conversation
+	createConversation();
 
 	// ── Public API ──
 
@@ -337,7 +267,6 @@ function createChatState() {
 		},
 
 		deleteConversation,
-		clearAll,
 	};
 }
 

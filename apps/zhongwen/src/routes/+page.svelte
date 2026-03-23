@@ -60,7 +60,11 @@
 		</header>
 
 		<!-- Messages -->
-		{#if authState.status !== 'signed-in'}
+		{#if authState.status === 'checking' || authState.status === 'signing-in'}
+			<div class="flex flex-1 items-center justify-center">
+				<p class="text-muted-foreground">Loading…</p>
+			</div>
+		{:else if authState.status !== 'signed-in'}
 			<div class="flex flex-1 items-center justify-center">
 				<div class="text-center text-muted-foreground">
 					<p class="mb-4">Sign in to start chatting</p>

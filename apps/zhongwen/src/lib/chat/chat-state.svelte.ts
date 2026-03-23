@@ -8,6 +8,7 @@
 import {
 	ChatClient,
 	fetchServerSentEvents,
+	type ChatClientState,
 	type UIMessage,
 } from '@tanstack/ai-client';
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -59,11 +60,15 @@ function createChatState() {
 
 	// ── Conversation Handle Factory ──
 
+	const SUBMITTED_TIMEOUT_MS = 60_000;
+
 	function createConversationHandle(conversationId: ConversationId) {
 		let messages = $state<UIMessage[]>([]);
+		let status = $state<ChatClientState>('ready');
 		let isLoading = $state(false);
 		let error = $state<Error | undefined>(undefined);
 		let inputValue = $state('');
+		let submittedTimer: ReturnType<typeof setTimeout> | undefined;
 
 		const metadata = $derived(
 			conversations.find((c) => c.id === conversationId),
@@ -91,9 +96,33 @@ function createChatState() {
 			},
 			onErrorChange: (err) => {
 				error = err;
+				if (err && /401|unauthorized/i.test(err.message)) {
+					authState.checkSession();
+				}
 			},
-			onStatusChange: () => {
+			onStatusChange: (newStatus) => {
+				status = newStatus;
 				messages = [...client.getMessages()];
+
+				if (submittedTimer) {
+					clearTimeout(submittedTimer);
+					submittedTimer = undefined;
+				}
+
+				if (newStatus === 'submitted') {
+					submittedTimer = setTimeout(() => {
+						submittedTimer = undefined;
+						if (status !== 'submitted') return;
+						console.warn('[zhongwen] timeout: no response within 60s', conversationId);
+						client.stop();
+						error = new Error('Request timed out. The AI did not respond within 60 seconds.');
+						status = 'error';
+						isLoading = false;
+					}, SUBMITTED_TIMEOUT_MS);
+				}
+			},
+			onError: (err) => {
+				console.error('[zhongwen] stream error:', err.message, 'conversation:', conversationId);
 			},
 			onFinish: () => {
 				if (metadata) metadata.updatedAt = Date.now();
@@ -127,6 +156,10 @@ function createChatState() {
 
 			get messages() {
 				return messages;
+			},
+
+			get status() {
+				return status;
 			},
 
 			get isLoading() {
@@ -165,6 +198,7 @@ function createChatState() {
 			},
 
 			destroy() {
+				if (submittedTimer) clearTimeout(submittedTimer);
 				client.stop();
 			},
 		};

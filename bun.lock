@@ -348,6 +348,7 @@
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
+        "@tanstack/ai": "catalog:",
         "@tanstack/ai-anthropic": "catalog:",
         "@tanstack/ai-client": "^0.7.2",
         "@tanstack/ai-gemini": "catalog:",
@@ -358,6 +359,7 @@
         "marked": "^17.0.5",
         "pinyin-pro": "^3.28.0",
         "svelte-sonner": "catalog:",
+        "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@sveltejs/adapter-static": "catalog:",

@@ -1,8 +1,9 @@
 /**
- * Reactive AI chat state for Zhongwen.
+ * Reactive AI chat state for Zhongwen with workspace persistence.
  *
- * Simplified from tab-manager's chat-state — no Y.Doc, no tool calls.
- * Conversations are in-memory only (persistence via workspace API is planned).
+ * Conversations and messages persist to IndexedDB via the workspace API.
+ * Modeled after tab-manager's chat-state but simplified — no tool calls,
+ * no encryption, no WebSocket sync.
  */
 
 import {
@@ -13,6 +14,7 @@ import {
 } from '@tanstack/ai-client';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { SvelteMap } from 'svelte/reactivity';
+import type { JsonValue } from 'wellcrafted/json';
 import { authState } from '$lib/auth';
 import {
 	DEFAULT_MODEL,
@@ -21,38 +23,68 @@ import {
 	type Provider,
 } from '$lib/chat/providers';
 import { ZHONGWEN_SYSTEM_PROMPT } from '$lib/chat/system-prompt';
-
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type ConversationId = string & { __brand: 'ConversationId' };
-
-type Conversation = {
-	id: ConversationId;
-	title: string;
-	provider: string;
-	model: string;
-	createdAt: number;
-	updatedAt: number;
-};
-
-// ─── ID Generation ───────────────────────────────────────────────────────────
-
-let idCounter = 0;
-function generateId(): ConversationId {
-	return `conv_${Date.now()}_${++idCounter}` as ConversationId;
-}
-
-function generateMessageId(): string {
-	return `msg_${Date.now()}_${++idCounter}`;
-}
+import { toUiMessage } from '$lib/chat/ui-message';
+import { workspace } from '$lib/workspace/client';
+import {
+	type ChatMessageId,
+	type Conversation,
+	type ConversationId,
+	generateChatMessageId,
+	generateConversationId,
+} from '$lib/workspace/schema';
 
 // ─── State Factory ───────────────────────────────────────────────────────────
 
 const SUBMITTED_TIMEOUT_MS = 60_000;
 
 function createChatState() {
-	let conversations = $state<Conversation[]>([]);
+	// ── Conversation List (Y.Doc-backed) ──
+
+	const readAllConversations = (): Conversation[] =>
+		workspace.tables.conversations
+			.getAllValid()
+			.sort((a, b) => b.updatedAt - a.updatedAt);
+
+	let conversations = $state<Conversation[]>(readAllConversations());
+
+	function ensureDefaultConversation(): ConversationId | undefined {
+		if (conversations.length > 0) return undefined;
+		const id = generateConversationId();
+		const now = Date.now();
+		workspace.tables.conversations.set({
+			id,
+			title: 'New Chat',
+			provider: DEFAULT_PROVIDER,
+			model: DEFAULT_MODEL,
+			createdAt: now,
+			updatedAt: now,
+			_v: 1,
+		});
+		conversations = readAllConversations();
+		return id;
+	}
+
+	// ── Helpers ──
+
+	function updateConversation(
+		conversationId: ConversationId,
+		patch: Partial<Omit<Conversation, 'id'>>,
+	) {
+		workspace.tables.conversations.update(conversationId, {
+			...patch,
+			updatedAt: Date.now(),
+		});
+	}
+
+	function loadMessages(conversationId: ConversationId) {
+		return workspace.tables.chatMessages
+			.filter((m) => m.conversationId === conversationId)
+			.sort((a, b) => a.createdAt - b.createdAt)
+			.map(toUiMessage);
+	}
+
+	// ── Handle Registry ──
+
 	let activeConversationId = $state<ConversationId>('' as ConversationId);
 
 	const handles = new SvelteMap<
@@ -63,7 +95,8 @@ function createChatState() {
 	// ── Conversation Handle Factory ──
 
 	function createConversationHandle(conversationId: ConversationId) {
-		let messages = $state<UIMessage[]>([]);
+		const initialMsgs = loadMessages(conversationId);
+		let messages = $state<UIMessage[]>(initialMsgs);
 		let status = $state<ChatClientState>('ready');
 		let isLoading = $state(false);
 		let error = $state<Error | undefined>(undefined);
@@ -75,6 +108,7 @@ function createChatState() {
 		);
 
 		const client = new ChatClient({
+			initialMessages: initialMsgs,
 			connection: fetchServerSentEvents(
 				() => `${APP_URLS.API}/ai/chat`,
 				() => ({
@@ -110,19 +144,37 @@ function createChatState() {
 					submittedTimer = setTimeout(() => {
 						submittedTimer = undefined;
 						if (status !== 'submitted') return;
-						console.warn('[zhongwen] timeout: no response within 60s', conversationId);
+						console.warn(
+							'[zhongwen] timeout: no response within 60s',
+							conversationId,
+						);
 						client.stop();
-						error = new Error('Request timed out. The AI did not respond within 60 seconds.');
+						error = new Error(
+							'Request timed out. The AI did not respond within 60 seconds.',
+						);
 						status = 'error';
 						isLoading = false;
 					}, SUBMITTED_TIMEOUT_MS);
 				}
 			},
 			onError: (err) => {
-				console.error('[zhongwen] stream error:', err.message, 'conversation:', conversationId);
+				console.error(
+					'[zhongwen] stream error:',
+					err.message,
+					'conversation:',
+					conversationId,
+				);
 			},
-			onFinish: () => {
-				if (metadata) metadata.updatedAt = Date.now();
+			onFinish: (message) => {
+				workspace.tables.chatMessages.set({
+					id: message.id as string as ChatMessageId,
+					conversationId,
+					role: 'assistant',
+					parts: message.parts as JsonValue[],
+					createdAt: message.createdAt?.getTime() ?? Date.now(),
+					_v: 1,
+				});
+				updateConversation(conversationId, {});
 			},
 		});
 
@@ -139,16 +191,18 @@ function createChatState() {
 				return metadata?.provider ?? DEFAULT_PROVIDER;
 			},
 			set provider(value: string) {
-				if (!metadata || !(value in PROVIDER_MODELS)) return;
-				metadata.provider = value;
-				metadata.model = PROVIDER_MODELS[value as Provider][0] ?? DEFAULT_MODEL;
+				const models = PROVIDER_MODELS[value as Provider];
+				updateConversation(conversationId, {
+					provider: value,
+					model: models?.[0] ?? DEFAULT_MODEL,
+				});
 			},
 
 			get model() {
 				return metadata?.model ?? DEFAULT_MODEL;
 			},
 			set model(value: string) {
-				if (metadata) metadata.model = value;
+				updateConversation(conversationId, { model: value });
 			},
 
 			get messages() {
@@ -176,13 +230,39 @@ function createChatState() {
 
 			sendMessage(content: string) {
 				if (!content.trim()) return;
-				void client.sendMessage({ content, id: generateMessageId() });
-				if (metadata && metadata.title === 'New Chat') {
-					metadata.title = content.trim().slice(0, 50);
-				}
+				const userMessageId = generateChatMessageId();
+
+				// Send to client FIRST so isLoading=true before the
+				// observer fires refreshFromDoc (which skips when loading).
+				void client.sendMessage({ content, id: userMessageId });
+
+				workspace.tables.chatMessages.set({
+					id: userMessageId,
+					conversationId,
+					role: 'user',
+					parts: [{ type: 'text', content }],
+					createdAt: Date.now(),
+					_v: 1,
+				});
+
+				const conv = conversations.find(
+					(c) => c.id === conversationId,
+				);
+				updateConversation(conversationId, {
+					title:
+						conv?.title === 'New Chat'
+							? content.trim().slice(0, 50)
+							: conv?.title,
+				});
 			},
 
 			reload() {
+				const lastMessage = messages.at(-1);
+				if (lastMessage?.role === 'assistant') {
+					workspace.tables.chatMessages.delete(
+						lastMessage.id as string as ChatMessageId,
+					);
+				}
 				void client.reload();
 			},
 
@@ -191,57 +271,123 @@ function createChatState() {
 			},
 
 			rename(title: string) {
-				if (metadata) metadata.title = title;
+				updateConversation(conversationId, { title });
+			},
+
+			delete() {
+				deleteConversation(conversationId);
 			},
 
 			destroy() {
 				if (submittedTimer) clearTimeout(submittedTimer);
 				client.stop();
 			},
+
+			refreshFromDoc() {
+				if (isLoading) return;
+				const msgs = loadMessages(conversationId);
+				client.setMessagesManually(msgs);
+			},
 		};
 	}
 
 	// ── Lifecycle ──
 
+	function destroyConversation(id: ConversationId) {
+		handles.get(id)?.destroy();
+		handles.delete(id);
+	}
+
+	function reconcileHandles() {
+		const currentIds = new Set(conversations.map((c) => c.id));
+
+		for (const id of handles.keys()) {
+			if (!currentIds.has(id)) {
+				destroyConversation(id);
+			}
+		}
+
+		for (const conv of conversations) {
+			if (!handles.has(conv.id)) {
+				handles.set(conv.id, createConversationHandle(conv.id));
+			}
+		}
+	}
+
+	// ── Observers ──
+
+	workspace.tables.conversations.observe(() => {
+		conversations = readAllConversations();
+		reconcileHandles();
+	});
+	workspace.tables.chatMessages.observe(() => {
+		handles.get(activeConversationId)?.refreshFromDoc();
+	});
+
+	// Initialize after persistence loads
+	void workspace.whenReady.then(() => {
+		conversations = readAllConversations();
+		reconcileHandles();
+		const newId = ensureDefaultConversation();
+		const first = conversations[0];
+		if (first) {
+			activeConversationId = newId ?? first.id;
+		}
+	});
+
+	reconcileHandles();
+
+	// ── Conversation CRUD ──
+
 	function createConversation(): ConversationId {
-		const id = generateId();
+		const id = generateConversationId();
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 
-		conversations = [
-			{
-				id,
-				title: 'New Chat',
-				provider: current?.provider ?? DEFAULT_PROVIDER,
-				model: current?.model ?? DEFAULT_MODEL,
-				createdAt: now,
-				updatedAt: now,
-			},
-			...conversations,
-		];
+		workspace.tables.conversations.set({
+			id,
+			title: 'New Chat',
+			provider: current?.provider ?? DEFAULT_PROVIDER,
+			model: current?.model ?? DEFAULT_MODEL,
+			createdAt: now,
+			updatedAt: now,
+			_v: 1,
+		});
 
-		handles.set(id, createConversationHandle(id));
-		activeConversationId = id;
+		switchConversation(id);
 		return id;
 	}
 
+	function switchConversation(conversationId: ConversationId) {
+		activeConversationId = conversationId;
+		handles.get(conversationId)?.refreshFromDoc();
+	}
+
 	function deleteConversation(conversationId: ConversationId) {
-		handles.get(conversationId)?.destroy();
-		handles.delete(conversationId);
-		conversations = conversations.filter((c) => c.id !== conversationId);
+		destroyConversation(conversationId);
+
+		const msgs = workspace.tables.chatMessages
+			.getAllValid()
+			.filter((m) => m.conversationId === conversationId);
+		workspace.batch(() => {
+			for (const m of msgs) {
+				workspace.tables.chatMessages.delete(m.id);
+			}
+			workspace.tables.conversations.delete(conversationId);
+		});
 
 		if (activeConversationId === conversationId) {
-			const first = conversations[0];
+			const remaining = workspace.tables.conversations
+				.getAllValid()
+				.sort((a, b) => b.updatedAt - a.updatedAt);
+			const first = remaining[0];
 			if (first) {
-				activeConversationId = first.id;
+				switchConversation(first.id);
 			} else {
 				createConversation();
 			}
 		}
 	}
-
-	// Initialize with one conversation
-	createConversation();
 
 	// ── Public API ──
 
@@ -263,7 +409,7 @@ function createChatState() {
 		createConversation,
 
 		switchTo(conversationId: ConversationId) {
-			activeConversationId = conversationId;
+			switchConversation(conversationId);
 		},
 
 		deleteConversation,

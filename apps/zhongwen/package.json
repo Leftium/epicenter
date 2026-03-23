@@ -15,6 +15,8 @@
 		"@epicenter/ui": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"arktype": "catalog:",
+		"wellcrafted": "catalog:",
+		"@tanstack/ai": "catalog:",
 		"@tanstack/ai-anthropic": "catalog:",
 		"@tanstack/ai-client": "^0.7.2",
 		"@tanstack/ai-gemini": "catalog:",

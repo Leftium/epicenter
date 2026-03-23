@@ -124,8 +124,7 @@ function serializeDates<T extends Record<string, unknown>>(obj: T) {
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
-export function createAuthState(config: AuthStateConfig) {
-	const { baseURL, storagePrefix, tokenStore } = config;
+export function createAuthState({ baseURL, storagePrefix, tokenStore }: AuthStateConfig) {
 
 	// User state needs reactivity (displayed in UI) + schema validation
 	const userState = createPersistedState({

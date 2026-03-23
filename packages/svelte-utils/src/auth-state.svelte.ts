@@ -159,21 +159,6 @@ export function createAuthState(config: AuthStateConfig) {
 
 	// ─── Public API ───
 
-	/**
-	 * Wraps `globalThis.fetch` with auth credentials.
-	 *
-	 * Mirrors Better Auth's internal `$fetch` behavior: always sends
-	 * `credentials: 'include'` (session cookie) and adds the Bearer
-	 * token when available. This ensures requests authenticate via
-	 * cookie even before the token is stored (e.g. after OAuth redirect).
-	 */
-	const authFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> = (input, init) => {
-		const headers = new Headers(init?.headers);
-		const token = localStorage.getItem(tokenKey);
-		if (token) headers.set('Authorization', `Bearer ${token}`);
-		return fetch(input, { ...init, headers, credentials: 'include' });
-	};
-
 	return {
 		get status() {
 			return phase.status;
@@ -191,7 +176,25 @@ export function createAuthState(config: AuthStateConfig) {
 			return localStorage.getItem(tokenKey);
 		},
 
-		fetch: authFetch,
+		/**
+		 * Wraps `globalThis.fetch` with auth credentials.
+		 *
+		 * Mirrors Better Auth's internal `$fetch` behavior: always sends
+		 * `credentials: 'include'` (session cookie) and adds the Bearer
+		 * token when available. This ensures requests authenticate via
+		 * cookie even before the token is stored (e.g. after OAuth redirect).
+		 *
+		 * Cast to `typeof fetch` so consumers like `@tanstack/ai-client`
+		 * (which type `fetchClient` as `typeof globalThis.fetch`) accept it.
+		 * Bun's `fetch` includes a static `preconnect` property that plain
+		 * functions can't satisfy—see oven-sh/bun#23741.
+		 */
+		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
+			const headers = new Headers(init?.headers);
+			const token = localStorage.getItem(tokenKey);
+			if (token) headers.set('Authorization', `Bearer ${token}`);
+			return fetch(input, { ...init, headers, credentials: 'include' });
+		}) as typeof fetch,
 
 		async signIn(credentials: { email: string; password: string }) {
 			phase = { status: 'signing-in' };

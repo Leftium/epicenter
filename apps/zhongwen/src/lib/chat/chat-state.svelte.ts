@@ -33,12 +33,13 @@ import {
 function createChatState() {
 	// ── Conversation List (Y.Doc-backed) ──
 
-	const readAllConversations = (): Conversation[] =>
-		workspace.tables.conversations
+	let conversationsVersion = $state(0);
+	const conversations = $derived.by(() => {
+		conversationsVersion; // subscribe to observer-driven changes
+		return workspace.tables.conversations
 			.getAllValid()
 			.sort((a, b) => b.updatedAt - a.updatedAt);
-
-	let conversations = $state<Conversation[]>(readAllConversations());
+	});
 
 	function ensureDefaultConversation(): ConversationId | undefined {
 		if (conversations.length > 0) return undefined;
@@ -53,7 +54,7 @@ function createChatState() {
 			updatedAt: now,
 			_v: 1,
 		});
-		conversations = readAllConversations();
+		conversationsVersion++;
 		return id;
 	}
 
@@ -254,7 +255,7 @@ function createChatState() {
 	// ── Observers ──
 
 	workspace.tables.conversations.observe(() => {
-		conversations = readAllConversations();
+		conversationsVersion++;
 		reconcileHandles();
 	});
 	workspace.tables.chatMessages.observe(() => {
@@ -263,7 +264,7 @@ function createChatState() {
 
 	// Initialize after persistence loads
 	void workspace.whenReady.then(() => {
-		conversations = readAllConversations();
+		conversationsVersion++;
 		reconcileHandles();
 		const newId = ensureDefaultConversation();
 		const first = conversations[0];

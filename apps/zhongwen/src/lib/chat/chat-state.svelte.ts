@@ -310,12 +310,7 @@ function createChatState() {
 		});
 
 		if (activeConversationId === conversationId) {
-			const first = conversations[0];
-			if (first) {
-				switchConversation(first.id);
-			} else {
-				createConversation();
-			}
+			switchConversation(ensureDefaultConversation());
 		}
 	}
 

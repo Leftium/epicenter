@@ -245,14 +245,11 @@ function createChatState() {
 					_v: 1,
 				});
 
-				const conv = conversations.find(
-					(c) => c.id === conversationId,
-				);
 				updateConversation(conversationId, {
 					title:
-						conv?.title === 'New Chat'
+						metadata?.title === 'New Chat'
 							? content.trim().slice(0, 50)
-							: conv?.title,
+							: metadata?.title,
 				});
 			},
 
@@ -377,10 +374,9 @@ function createChatState() {
 		});
 
 		if (activeConversationId === conversationId) {
-			const remaining = workspace.tables.conversations
+			const first = workspace.tables.conversations
 				.getAllValid()
-				.sort((a, b) => b.updatedAt - a.updatedAt);
-			const first = remaining[0];
+				.sort((a, b) => b.updatedAt - a.updatedAt)[0];
 			if (first) {
 				switchConversation(first.id);
 			} else {
@@ -408,9 +404,7 @@ function createChatState() {
 
 		createConversation,
 
-		switchTo(conversationId: ConversationId) {
-			switchConversation(conversationId);
-		},
+		switchTo: switchConversation,
 
 		deleteConversation,
 	};

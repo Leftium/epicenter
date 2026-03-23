@@ -10,7 +10,6 @@ import {
 	generateId,
 	type Id,
 	type InferTableRow,
-	type KvDefinitions,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
@@ -63,17 +62,11 @@ export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 // Workspace Definition
 // ─────────────────────────────────────────────────────────────────────────────
 
-const tables = {
-	conversations: conversationsTable,
-	chatMessages: chatMessagesTable,
-};
-
-export const definition = defineWorkspace<
-	'epicenter.zhongwen',
-	typeof tables,
-	KvDefinitions
->({
-	id: 'epicenter.zhongwen',
-	tables,
+export const definition = defineWorkspace({
+	id: 'epicenter.zhongwen' as const,
+	tables: {
+		conversations: conversationsTable,
+		chatMessages: chatMessagesTable,
+	},
 	kv: {},
 });

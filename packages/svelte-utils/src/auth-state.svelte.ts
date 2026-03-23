@@ -42,7 +42,6 @@ const AuthUser = type({
 export type AuthUser = typeof AuthUser.infer;
 
 export type AuthPhase =
-	| { status: 'checking' }
 	| { status: 'signing-in' }
 	| { status: 'signing-out' }
 	| { status: 'signed-in' }
@@ -112,7 +111,9 @@ export function createAuthState(config: AuthStateConfig) {
 		defaultValue: undefined,
 	});
 
-	let phase = $state<AuthPhase>({ status: 'checking' });
+	let phase = $state<AuthPhase>(
+		userState.current ? { status: 'signed-in' } : { status: 'signed-out' },
+	);
 
 	const client = createAuthClient({
 		baseURL,

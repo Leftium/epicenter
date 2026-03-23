@@ -60,9 +60,9 @@
 		</header>
 
 		<!-- Messages -->
-		{#if authState.status === 'checking' || authState.status === 'signing-in'}
+		{#if authState.status === 'signing-in'}
 			<div class="flex flex-1 items-center justify-center">
-				<p class="text-muted-foreground">Loading…</p>
+				<p class="text-muted-foreground">Signing in…</p>
 			</div>
 		{:else if authState.status !== 'signed-in'}
 			<div class="flex flex-1 items-center justify-center">

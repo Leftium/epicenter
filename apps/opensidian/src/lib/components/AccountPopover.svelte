@@ -10,7 +10,7 @@
 
 	const isSignedIn = $derived(authState.status === 'signed-in');
 	const isChecking = $derived(
-		authState.status === 'signing-in' || authState.status === 'checking',
+		authState.status === 'signing-in',
 	);
 
 	let popoverOpen = $state(false);

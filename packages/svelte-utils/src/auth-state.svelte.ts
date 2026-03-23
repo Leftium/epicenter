@@ -341,7 +341,16 @@ export function createAuthState(config: AuthStateConfig) {
 		 * aren't logged out. Only an explicit auth rejection (4xx) clears state.
 		 */
 		async checkSession() {
-			const { data, error: sessionError } = await getSession();
+			const result = await getSession().catch(() => null);
+
+			// Network failure (fetch threw) — trust cache or sign out
+			if (!result) {
+				const cached = userState.current;
+				phase = cached ? { status: 'signed-in' } : { status: 'signed-out' };
+				return Ok(cached ?? null);
+			}
+
+			const { data, error: sessionError } = result;
 
 			if (sessionError) {
 				const isAuthRejection =

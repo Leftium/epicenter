@@ -43,8 +43,11 @@ function createChatState() {
 			.sort((a, b) => b.updatedAt - a.updatedAt);
 	});
 
-	function ensureDefaultConversation(): ConversationId | undefined {
-		if (conversations.length > 0) return undefined;
+	/** Returns the ID to activate — either the first existing conversation or a newly created default. */
+	function ensureDefaultConversation(): ConversationId {
+		const first = conversations[0];
+		if (first) return first.id;
+
 		const id = generateConversationId();
 		const now = Date.now();
 		workspace.tables.conversations.set({
@@ -268,11 +271,7 @@ function createChatState() {
 	void workspace.whenReady.then(() => {
 		conversationsVersion++;
 		reconcileHandles();
-		const newId = ensureDefaultConversation();
-		const first = conversations[0];
-		if (first) {
-			activeConversationId = newId ?? first.id;
-		}
+		activeConversationId = ensureDefaultConversation();
 	});
 
 	reconcileHandles();

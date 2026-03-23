@@ -177,17 +177,17 @@ export function createAuthState(config: AuthStateConfig) {
 		},
 
 		/**
-		 * Wraps `globalThis.fetch` with auth credentials.
+		 * Auth-aware fetch for passing to libraries that accept a custom
+		 * `fetch` function—primarily `@tanstack/ai-client`'s
+		 * `fetchServerSentEvents` as the `fetchClient` option.
 		 *
-		 * Mirrors Better Auth's internal `$fetch` behavior: always sends
-		 * `credentials: 'include'` (session cookie) and adds the Bearer
-		 * token when available. This ensures requests authenticate via
-		 * cookie even before the token is stored (e.g. after OAuth redirect).
+		 * Injects `Authorization: Bearer <token>` and `credentials: 'include'`
+		 * (session cookie) so requests authenticate via both mechanisms.
 		 *
-		 * Cast to `typeof fetch` so consumers like `@tanstack/ai-client`
-		 * (which type `fetchClient` as `typeof globalThis.fetch`) accept it.
-		 * Bun's `fetch` includes a static `preconnect` property that plain
-		 * functions can't satisfy—see oven-sh/bun#23741.
+		 * Cast to `typeof fetch` because `@tanstack/ai-client` types
+		 * `fetchClient` as `typeof globalThis.fetch`, which in Bun includes
+		 * a static `preconnect` property that plain functions can't
+		 * satisfy (oven-sh/bun#23741).
 		 */
 		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
 			const headers = new Headers(init?.headers);

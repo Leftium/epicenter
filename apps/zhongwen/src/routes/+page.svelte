@@ -71,8 +71,14 @@
 						<p>Ask a question in English and get a response in Chinese and English.</p>
 					</div>
 				{:else}
-					{#each handle.messages as message (message.id)}
-						<ChatMessage {message} {showPinyin} isStreaming={handle.isLoading} />
+					{#each handle.messages as message, i (message.id)}
+						<ChatMessage
+							{message}
+							{showPinyin}
+							isStreaming={handle.isLoading}
+							isLast={i === handle.messages.length - 1}
+							onRegenerate={() => handle.reload()}
+						/>
 					{/each}
 				{/if}
 

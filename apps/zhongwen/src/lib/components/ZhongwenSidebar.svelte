@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { MessageSquarePlusIcon, MessageSquareTextIcon } from '@lucide/svelte';
+	import { MessageSquarePlusIcon, MessageSquareTextIcon, TrashIcon } from '@lucide/svelte';
 	import { chatState } from '$lib/chat/chat-state.svelte';
 </script>
 
@@ -36,6 +36,13 @@
 								<MessageSquareTextIcon class="size-4" />
 								<span>{conv.title}</span>
 							</Sidebar.MenuButton>
+							<Sidebar.MenuAction
+								showOnHover
+								aria-label="Delete conversation"
+								onclick={() => chatState.deleteConversation(conv.id)}
+							>
+								<TrashIcon class="size-3.5" />
+							</Sidebar.MenuAction>
 						</Sidebar.MenuItem>
 					{/each}
 				</Sidebar.Menu>

@@ -101,5 +101,8 @@
 	},
 	"dependencies": {
 		"tinyexec": "^1.0.4"
+	},
+	"patchedDependencies": {
+		"@tanstack/ai@0.8.1": "patches/@tanstack%2Fai@0.8.1.patch"
 	}
 }

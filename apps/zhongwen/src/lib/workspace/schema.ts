@@ -5,6 +5,7 @@
  */
 
 import {
+	defineKv,
 	defineTable,
 	defineWorkspace,
 	generateId,
@@ -68,5 +69,7 @@ export const definition = defineWorkspace({
 		conversations: conversationsTable,
 		chatMessages: chatMessagesTable,
 	},
-	kv: {},
+	kv: {
+		showPinyin: defineKv(type('boolean'), true),
+	},
 });

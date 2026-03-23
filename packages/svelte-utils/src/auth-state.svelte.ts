@@ -68,7 +68,15 @@ const AuthError = defineErrors({
 export type AuthStateConfig = {
 	/** Base URL for the Better Auth API (e.g. `https://api.epicenter.so`). */
 	baseURL: string;
-	/** Prefix for localStorage keys (e.g. `'honeycrisp'` → `'honeycrisp:authToken'`, `'honeycrisp:authUser'`). */
+	/**
+	 * Prefix for localStorage keys. Used to namespace two keys:
+	 * - `${storagePrefix}:authToken` — Bearer token (raw string, no JSON)
+	 * - `${storagePrefix}:authUser` — cached user object (JSON + schema-validated)
+	 *
+	 * The token key is also read directly by the sync extension's `getToken`
+	 * callback (e.g. `localStorage.getItem('honeycrisp:authToken')`), so
+	 * changing this prefix requires updating the workspace config too.
+	 */
 	storagePrefix: string;
 	/**
 	 * Override for Google sign-in. Web apps leave undefined to use Better Auth's
@@ -112,7 +120,8 @@ export function createAuthState(config: AuthStateConfig) {
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',
-				token: () => localStorage.getItem(tokenKey),
+				// localStorage.getItem returns null, but Better Auth expects undefined
+			token: () => localStorage.getItem(tokenKey) ?? undefined,
 			},
 			onSuccess: ({ response }) => {
 				const newToken = response.headers.get('set-auth-token');
@@ -158,7 +167,7 @@ export function createAuthState(config: AuthStateConfig) {
 	 * token when available. This ensures requests authenticate via
 	 * cookie even before the token is stored (e.g. after OAuth redirect).
 	 */
-	const authFetch: typeof fetch = (input, init) => {
+	const authFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> = (input, init) => {
 		const headers = new Headers(init?.headers);
 		const token = localStorage.getItem(tokenKey);
 		if (token) headers.set('Authorization', `Bearer ${token}`);

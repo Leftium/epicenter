@@ -3,13 +3,16 @@
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { Button } from '@epicenter/ui/button';
+	import { fromKv } from '@epicenter/svelte';
 	import { authState } from '$lib/auth';
 	import { chatState } from '$lib/chat/chat-state.svelte';
+	import { PROVIDER_MODELS, type Provider } from '$lib/chat/providers';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ChatInput from '$lib/components/ChatInput.svelte';
 	import ZhongwenSidebar from '$lib/components/ZhongwenSidebar.svelte';
+	import { workspace } from '$lib/workspace/client';
 
-	let showPinyin = $state(true);
+	const showPinyin = fromKv(workspace.kv, 'showPinyin');
 	let dismissedError = $state(false);
 
 	const handle = $derived(chatState.active);
@@ -37,13 +40,13 @@
 
 			<div class="flex items-center gap-2">
 				<Button
-					variant={showPinyin ? 'default' : 'outline'}
+					variant={showPinyin.current ? 'default' : 'outline'}
 					size="sm"
-					onclick={() => (showPinyin = !showPinyin)}
-					aria-pressed={showPinyin}
+					onclick={() => (showPinyin.current = !showPinyin.current)}
+					aria-pressed={showPinyin.current}
 					aria-label="Toggle pinyin annotations"
 				>
-					{showPinyin ? 'Hide Pinyin' : 'Show Pinyin'}
+					{showPinyin.current ? 'Hide Pinyin' : 'Show Pinyin'}
 				</Button>
 
 				{#if authState.status === 'signed-in'}
@@ -74,7 +77,7 @@
 					{#each handle.messages as message, i (message.id)}
 						<ChatMessage
 							{message}
-							{showPinyin}
+							showPinyin={showPinyin.current}
 							isStreaming={handle.isLoading}
 							isLast={i === handle.messages.length - 1}
 							onRegenerate={() => handle.reload()}

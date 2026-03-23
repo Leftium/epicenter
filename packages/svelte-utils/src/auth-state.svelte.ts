@@ -21,11 +21,7 @@
 import { createPersistedState } from './persisted-state.svelte';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 
 // ─── Types (inlined—only used by this factory) ──────────────────────────────
@@ -66,7 +62,6 @@ const AuthError = defineErrors({
 		cause,
 	}),
 });
-type AuthError = InferErrors<typeof AuthError>;
 
 // ─── Token Store ─────────────────────────────────────────────────────────────
 

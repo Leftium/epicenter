@@ -8,7 +8,6 @@ import { tokenStore } from './token-store';
 
 export const authState = createAuthState({
 	baseURL: APP_URLS.API,
-	storagePrefix: 'opensidian',
 	tokenStore,
 	async onSignedIn(encryptionKey) {
 		await ws.activateEncryption(base64ToBytes(encryptionKey));

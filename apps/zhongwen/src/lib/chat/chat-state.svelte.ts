@@ -85,8 +85,7 @@ function createChatState() {
 		ReturnType<typeof createConversationHandle>
 	>();
 
-	/** Internal lifecycle closures — not exposed on ConversationHandle. */
-	const destroyFns = new Map<ConversationId, () => void>();
+	/** Internal lifecycle — refresh syncs workspace messages into the TanStack chat instance. */
 	const refreshFns = new Map<ConversationId, () => void>();
 
 	// ── Conversation Handle Factory ──
@@ -134,8 +133,6 @@ function createChatState() {
 			},
 		});
 
-		// Register internal lifecycle closures
-		destroyFns.set(conversationId, () => chat.stop());
 		refreshFns.set(conversationId, () => {
 			if (chat.isLoading) return;
 			chat.setMessages(loadMessages(conversationId));
@@ -231,8 +228,7 @@ function createChatState() {
 	// ── Lifecycle ──
 
 	function destroyConversation(id: ConversationId) {
-		destroyFns.get(id)?.();
-		destroyFns.delete(id);
+		handles.get(id)?.stop();
 		refreshFns.delete(id);
 		handles.delete(id);
 	}

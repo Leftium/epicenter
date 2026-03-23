@@ -9,7 +9,6 @@ import { tokenStore } from './token-store';
 
 export const authState = createAuthState({
 	baseURL: APP_URLS.API,
-	storagePrefix: 'honeycrisp',
 	tokenStore,
 	async onSignedIn(encryptionKey) {
 		await workspace.activateEncryption(base64ToBytes(encryptionKey));

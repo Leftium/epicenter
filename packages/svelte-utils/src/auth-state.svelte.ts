@@ -3,15 +3,16 @@
  *
  * Owns the phase machine, Better Auth client, session validation, and
  * token refresh. Creates its own persisted storage internally—no adapter
- * layer. Each app passes a `storagePrefix` and workspace callbacks.
+ * layer. Each app passes a `tokenStore` and workspace callbacks.
  *
  * Actions take explicit parameters—form state lives in the component.
  *
  * @example
  * ```typescript
+ * const tokenStore = createTokenStore('honeycrisp');
  * export const authState = createAuthState({
  *   baseURL: 'https://api.epicenter.so',
- *   storagePrefix: 'honeycrisp',
+ *   tokenStore,
  *   onSignedIn: (key) => { workspace.activateEncryption(key); workspace.sync.reconnect(); },
  *   onSignedOut: () => { workspace.deactivateEncryption(); workspace.sync.reconnect(); },
  * });
@@ -71,6 +72,7 @@ const AuthError = defineErrors({
  * Used by both the auth factory (read/write) and the sync extension (read).
  */
 export type TokenStore = {
+	prefix: string;
 	get(): string | undefined;
 	set(value: string | undefined): void;
 };
@@ -79,6 +81,7 @@ export type TokenStore = {
 export function createTokenStore(storagePrefix: string): TokenStore {
 	const key = `${storagePrefix}:authToken`;
 	return {
+		prefix: storagePrefix,
 		get() {
 			return localStorage.getItem(key) ?? undefined;
 		},
@@ -97,9 +100,7 @@ export function createTokenStore(storagePrefix: string): TokenStore {
 export type AuthStateConfig = {
 	/** Base URL for the Better Auth API (e.g. `https://api.epicenter.so`). */
 	baseURL: string;
-	/** Prefix for localStorage keys (e.g. `'honeycrisp'` → `'honeycrisp:authUser'`). */
-	storagePrefix: string;
-	/** Token store for reading/writing the auth token. */
+	/** Token store for reading/writing the auth token. Prefix is derived from here. */
 	tokenStore: TokenStore;
 	/**
 	 * Override for Google sign-in. Web apps leave undefined to use Better Auth's
@@ -124,11 +125,12 @@ function serializeDates<T extends Record<string, unknown>>(obj: T) {
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
-export function createAuthState({ baseURL, storagePrefix, tokenStore }: AuthStateConfig) {
+export function createAuthState(config: AuthStateConfig) {
+	const { baseURL, tokenStore } = config;
 
 	// User state needs reactivity (displayed in UI) + schema validation
 	const userState = createPersistedState({
-		key: `${storagePrefix}:authUser`,
+		key: `${tokenStore.prefix}:authUser`,
 		schema: AuthUser.or('undefined'),
 		defaultValue: undefined,
 	});

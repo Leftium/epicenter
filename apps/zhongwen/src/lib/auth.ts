@@ -8,6 +8,5 @@ export const tokenStore = createTokenStore('zhongwen');
 
 export const authState = createAuthState({
 	baseURL: APP_URLS.API,
-	storagePrefix: 'zhongwen',
 	tokenStore,
 });

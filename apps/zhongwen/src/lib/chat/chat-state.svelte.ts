@@ -59,7 +59,6 @@ function createChatState() {
 			updatedAt: now,
 			_v: 1,
 		});
-		conversationsVersion++;
 		return id;
 	}
 
@@ -316,9 +315,7 @@ function createChatState() {
 		});
 
 		if (activeConversationId === conversationId) {
-			const first = workspace.tables.conversations
-				.getAllValid()
-				.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+			const first = conversations[0];
 			if (first) {
 				switchConversation(first.id);
 			} else {

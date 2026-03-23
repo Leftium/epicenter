@@ -85,6 +85,10 @@ function createChatState() {
 		ReturnType<typeof createConversationHandle>
 	>();
 
+	/** Internal lifecycle closures — not exposed on ConversationHandle. */
+	const destroyFns = new Map<ConversationId, () => void>();
+	const refreshFns = new Map<ConversationId, () => void>();
+
 	// ── Conversation Handle Factory ──
 
 	function createConversationHandle(conversationId: ConversationId) {
@@ -128,6 +132,13 @@ function createChatState() {
 				});
 				updateConversation(conversationId, {});
 			},
+		});
+
+		// Register internal lifecycle closures
+		destroyFns.set(conversationId, () => chat.stop());
+		refreshFns.set(conversationId, () => {
+			if (chat.isLoading) return;
+			chat.setMessages(loadMessages(conversationId));
 		});
 
 		return {
@@ -214,22 +225,15 @@ function createChatState() {
 			stop() {
 				chat.stop();
 			},
-
-			destroy() {
-				chat.stop();
-			},
-
-			refreshFromDoc() {
-				if (chat.isLoading) return;
-				chat.setMessages(loadMessages(conversationId));
-			},
 		};
 	}
 
 	// ── Lifecycle ──
 
 	function destroyConversation(id: ConversationId) {
-		handles.get(id)?.destroy();
+		destroyFns.get(id)?.();
+		destroyFns.delete(id);
+		refreshFns.delete(id);
 		handles.delete(id);
 	}
 
@@ -256,7 +260,7 @@ function createChatState() {
 		reconcileHandles();
 	});
 	workspace.tables.chatMessages.observe(() => {
-		handles.get(activeConversationId)?.refreshFromDoc();
+		refreshFns.get(activeConversationId)?.();
 	});
 
 	// Initialize after persistence loads
@@ -295,7 +299,7 @@ function createChatState() {
 
 	function switchConversation(conversationId: ConversationId) {
 		activeConversationId = conversationId;
-		handles.get(conversationId)?.refreshFromDoc();
+		refreshFns.get(conversationId)?.();
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
@@ -325,15 +329,19 @@ function createChatState() {
 
 	// ── Public API ──
 
+	const conversationList = $derived(
+		conversations
+			.map((c) => handles.get(c.id))
+			.filter((h) => h !== undefined),
+	);
+
 	return {
 		get active() {
 			return handles.get(activeConversationId);
 		},
 
 		get conversationHandles() {
-			return conversations
-				.map((c) => handles.get(c.id))
-				.filter((h) => h !== undefined);
+			return conversationList;
 		},
 
 		get activeConversationId() {

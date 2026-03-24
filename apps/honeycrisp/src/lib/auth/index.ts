@@ -13,10 +13,8 @@ export const authState = createAuthState({
 	strategies: { signInWithGoogle: googleRedirect },
 	async onSignedIn(encryptionKey) {
 		await workspace.activateEncryption(base64ToBytes(encryptionKey));
-		workspace.extensions.sync.reconnect();
 	},
 	async onSignedOut() {
 		await workspace.deactivateEncryption();
-		workspace.extensions.sync.reconnect();
 	},
 });

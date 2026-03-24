@@ -8,14 +8,14 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Bash } from 'just-bash';
+import { authState } from '$lib/auth';
 
 /**
  * Opensidian workspace infrastructure.
  *
- * Pure TypeScript---no Svelte runes. Creates the Yjs workspace,
- * filesystem abstraction, and extensions. Imported by both
- * fs-state.svelte.ts (for reactive wrappers) and components
- * that need direct infra access (Toolbar, ContentEditor).
+ * Creates the Yjs workspace, filesystem abstraction, and extensions.
+ * Imported by both fs-state.svelte.ts (for reactive wrappers) and
+ * components that need direct infra access (Toolbar, ContentEditor).
  */
 export const ws = createWorkspace({
 	id: 'opensidian',
@@ -27,7 +27,16 @@ export const ws = createWorkspace({
 		'sync',
 		createSyncExtension({
 			url: (workspaceId) => `${APP_URLS.API}/workspaces/${workspaceId}`,
-			getToken: async () => localStorage.getItem('opensidian:authToken'),
+			getToken: async () => authState.token,
+			onTokenChange: (reconnect) => {
+				let prev = authState.token;
+				return $effect.root(() => {
+					$effect(() => {
+						const token = authState.token;
+						if (token !== prev) { prev = token; reconnect(); }
+					});
+				});
+			},
 		}),
 	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());

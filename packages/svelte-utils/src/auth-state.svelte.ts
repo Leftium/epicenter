@@ -183,7 +183,8 @@ export function createLocalStorage(prefix: string): AuthStateConfig['storage'] {
 	const tokenKey = `${prefix}:authToken`;
 	const userState = createPersistedState({
 		key: `${prefix}:authUser`,
-		schema: AuthUser,
+		schema: AuthUser.or('undefined'),
+		defaultValue: undefined,
 	});
 	return {
 		token: {

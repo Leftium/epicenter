@@ -288,6 +288,20 @@ function createAuth({ db, env, baseURL }: { db: Db; env: Env['Bindings']; baseUR
 				strategy: 'jwe',
 			},
 		},
+		databaseHooks: {
+			user: {
+				create: {
+					after: async (user) => {
+						const autumn = createAutumn(env);
+						await autumn.customers.getOrCreate({
+							customerId: user.id,
+							name: user.name,
+							email: user.email,
+						});
+					},
+				},
+			},
+		},
 		advanced: {},
 		trustedOrigins: (request) => {
 			const origins = [
@@ -500,17 +514,6 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 	await next();
 });
 app.use('/ai/*', authGuard);
-// Ensure authenticated AI users exist as Autumn customers (blocking—must
-// complete before downstream check() calls, which require the customer to exist).
-app.use('/ai/*', async (c, next) => {
-	const autumn = createAutumn(c.env);
-	await autumn.customers.getOrCreate({
-		customerId: c.var.user.id,
-		name: c.var.user.name ?? undefined,
-		email: c.var.user.email ?? undefined,
-	});
-	await next();
-});
 app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
 app.use('/billing', authGuard);

@@ -1,487 +1,130 @@
 /**
- * Auth state singleton for the tab manager extension.
+ * Auth state wrapper for tab manager extension.
  *
- * Co-locates all auth-related reactive state (session, form fields, loading)
- * and actions (signIn, signUp, signInWithGoogle, signOut, checkSession) in a single module.
- *
- * All actions return Result types — they never throw.
+ * Wraps the shared `createAuthState` factory with extension-specific storage
+ * (chrome.storage via createStorageState) and cross-context synchronization.
  */
 
-import type { CustomSessionFields } from '@epicenter/api/src/custom-session-fields';
+import { createAuthState, type AuthUser } from '@epicenter/svelte/auth-state';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
-import { type } from 'arktype';
-import { createAuthClient } from 'better-auth/client';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
-import { Ok, tryAsync } from 'wellcrafted/result';
 import { workspace } from '$lib/workspace';
 import { keyCache } from './key-cache';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
+import { type } from 'arktype';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Public Google OAuth client ID (not a secret). */
-const GOOGLE_CLIENT_ID =
-	'702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Schemas
-// ─────────────────────────────────────────────────────────────────────────────
-
-const AuthUser = type({
+const AuthUserSchema = type({
 	id: 'string',
-	createdAt: 'string.date.iso',
-	updatedAt: 'string.date.iso',
+	createdAt: 'string',
+	updatedAt: 'string',
 	email: 'string',
 	emailVerified: 'boolean',
 	name: 'string',
 	'image?': 'string | null | undefined',
 });
 
-type AuthUser = typeof AuthUser.infer;
+// Public Google OAuth client ID
+const GOOGLE_CLIENT_ID =
+	'702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Errors
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const AuthError = defineErrors({
-	SignInFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Sign-in failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	SignUpFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Sign-up failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	GoogleSignInFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Google sign-in failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-export type AuthError = InferErrors<typeof AuthError>;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Persisted State (cross-context via chrome.storage)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Reactive auth token. Read via `authToken.current`. */
+// Reactive auth token and user from chrome.storage
 const authToken = createStorageState('local:authToken', {
 	fallback: undefined,
 	schema: type('string').or('undefined'),
 });
 
-/** Reactive auth user. Read via `authUser.current`. */
 const authUser = createStorageState('local:authUser', {
 	fallback: undefined,
-	schema: AuthUser.or('undefined'),
+	schema: AuthUserSchema.or('undefined'),
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Singleton
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Extract Google OAuth id_token via chrome.identity API and exchange for session.
+ * Returns the authenticated AuthUser or throws.
+ */
+async function googleSignIn(): Promise<AuthUser> {
+	const redirectUri = browser.identity.getRedirectURL();
+	const nonce = crypto.randomUUID();
+	const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+	authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+	authUrl.searchParams.set('redirect_uri', redirectUri);
+	authUrl.searchParams.set('response_type', 'id_token');
+	authUrl.searchParams.set('scope', 'openid email profile');
+	authUrl.searchParams.set('nonce', nonce);
 
-type AuthMode = 'sign-in' | 'sign-up';
+	const responseUrl = await browser.identity.launchWebAuthFlow({
+		url: authUrl.toString(),
+		interactive: true,
+	});
 
-type AuthPhase =
-	| { status: 'checking' }
-	| { status: 'signing-in' }
-	| { status: 'signing-out' }
-	| { status: 'signed-in' }
-	| { status: 'signed-out'; error?: string };
+	if (!responseUrl) throw new Error('No response from Google');
 
-function createAuthState() {
-	// ─── State ───
+	const fragment = new URL(responseUrl).hash.substring(1);
+	const params = new URLSearchParams(fragment);
+	const idToken = params.get('id_token');
+	if (!idToken) throw new Error('No id_token in response');
 
-	let phase = $state<AuthPhase>({ status: 'checking' });
-	let email = $state('');
-	let password = $state('');
-	let name = $state('');
-	let mode = $state<AuthMode>('sign-in');
-
-	const client = $derived(
-		createAuthClient({
-			baseURL: remoteServerUrl.current,
-			basePath: '/auth',
-			fetchOptions: {
-				auth: {
-					type: 'Bearer',
-					token: () => authToken.current,
-				},
-				onSuccess: ({ response }) => {
-					const newToken = response.headers.get('set-auth-token');
-					if (newToken) void authToken.set(newToken);
-				},
-			},
+	const response = await fetch(`${remoteServerUrl.current}/auth/sign-in/social`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			provider: 'google',
+			idToken: { token: idToken, nonce },
 		}),
-	);
-
-	// ─── Cross-context sync ───
-	//
-	// Chrome extensions have multiple JS contexts (popup, sidebar, background).
-	// Storage watchers fire synchronously when another context writes to
-	// chrome.storage, so async work MUST be fire-and-forget (.then/.catch
-	// chains, not awaited). The phase transition happens synchronously;
-	// encryption lifecycle runs in the background.
-
-	// Sign-out in another context: token cleared → deactivate encryption.
-	// Errors are logged (not swallowed) because deactivation failure means
-	// the workspace stays encrypted with a stale key—a data-integrity concern.
-	authToken.watch((token) => {
-		if (!token && phase.status === 'signed-in') {
-			authUser.set(undefined).catch(() => {});
-			workspace
-				.deactivateEncryption()
-				.catch((e) => console.error('[auth] Deactivation failed:', e));
-			phase = { status: 'signed-out' };
-		}
+		credentials: 'include',
 	});
 
-	// Sign-in in another context: user set → restore encryption from cache.
-	// Uses .then/.catch instead of a void IIFE for readability. The server
-	// will supersede this cached key via checkSession() or the next sign-in
-	// flow—activateEncryption's byte-level dedup makes the double-call a no-op.
-	authUser.watch((user) => {
-		if (authToken.current && user && phase.status === 'signed-out') {
-			phase = { status: 'signed-in' };
-			keyCache
-				.load()
-				.then((cached) => {
-					if (cached) return workspace.activateEncryption(base64ToBytes(cached));
-				})
-				.catch((e) => console.error('[auth] Cache restore failed:', e));
-		}
-	});
-
-	// ─── Helpers (private) ───
-
-	/**
-	 * Typed wrapper around `client.getSession()` that includes custom session fields.
-	 *
-	 * Better Auth's client doesn't know about customSession fields without
-	 * `customSessionClient<typeof auth>()` (which requires the server type).
-	 * This wrapper centralizes the single type assertion so callers get
-	 * typed access to `encryptionKey` and `keyVersion` without casting.
-	 */
-	async function getSession() {
-		const { data, error } = await client.getSession();
-		const customData = data
-			? (data as typeof data & CustomSessionFields)
-			: null;
-		return { data: customData, error };
+	if (!response.ok) {
+		const error = await response.json().catch(() => ({}));
+		throw new Error(error.message ?? response.statusText);
 	}
 
-	async function clearState() {
-		await Promise.all([authToken.set(undefined), authUser.set(undefined)]);
-	}
+	const data = await response.json();
+	if (!data?.user) throw new Error('Unexpected response from server');
 
-	/**
-	 * Fetch the session to extract the encryption key, then activate encryption.
-	 *
-	 * Better Auth's signIn/signUp responses don't include customSession
-	 * fields—only getSession() returns them. Awaited after successful
-	 * sign-in so encryption activates before the caller's
-	 * post-sign-in code runs. No timing gap.
-	 */
-	async function refreshEncryptionKey() {
-		const result = await getSession().catch(() => null);
-		if (result?.data?.encryptionKey) {
-			await workspace.activateEncryption(base64ToBytes(result.data.encryptionKey));
-		}
-	}
+	// Extract auth token from response header
+	const newToken = response.headers.get('set-auth-token');
+	if (newToken) authToken.current = newToken;
 
-	/**
-	 * Wraps `globalThis.fetch` to inject `Authorization: Bearer <token>` on
-	 * every request. Reads the token lazily at call time.
-	 */
-	const authFetch: typeof fetch = (input, init) => {
-		const token = authToken.current;
-		if (token) {
-			const headers = new Headers(init?.headers);
-			headers.set('Authorization', `Bearer ${token}`);
-			return fetch(input, { ...init, headers });
-		}
-		return fetch(input, init);
-	};
-
-	// ─── Public API ───
-
-	return {
-		get status() {
-			return phase.status;
-		},
-		get signInError(): string | undefined {
-			return phase.status === 'signed-out' ? phase.error : undefined;
-		},
-
-		fetch: authFetch,
-		get email() {
-			return email;
-		},
-		set email(value: string) {
-			email = value;
-		},
-		get password() {
-			return password;
-		},
-		set password(value: string) {
-			password = value;
-		},
-		get name() {
-			return name;
-		},
-		set name(value: string) {
-			name = value;
-		},
-		get mode() {
-			return mode;
-		},
-		set mode(value: AuthMode) {
-			mode = value;
-		},
-		get user() {
-			return authUser.current;
-		},
-		get token() {
-			return authToken.current;
-		},
-
-		/**
-		 * Sign in with the current email and password form state.
-		 */
-		async signIn() {
-			phase = { status: 'signing-in' };
-
-			const result = await tryAsync({
-				try: async () => {
-					const { data, error: authError } = await client.signIn.email({
-						email,
-						password,
-					});
-					if (authError)
-						throw new Error(authError.message ?? authError.statusText);
-					const user = serializeDates(data.user);
-					await authUser.set(user);
-					return user;
-				},
-				catch: (cause) => AuthError.SignInFailed({ cause }),
-			});
-
-			if (result.error) {
-				phase = { status: 'signed-out', error: result.error.message };
-			} else {
-				phase = { status: 'signed-in' };
-				password = '';
-				await refreshEncryptionKey();
-			}
-
-			return result;
-		},
-
-		/**
-		 * Sign up with email, password, and name.
-		 */
-		async signUp() {
-			phase = { status: 'signing-in' };
-
-			const result = await tryAsync({
-				try: async () => {
-					const { data, error: authError } = await client.signUp.email({
-						email,
-						password,
-						name,
-					});
-					if (authError)
-						throw new Error(authError.message ?? authError.statusText);
-					const user = serializeDates(data.user);
-					await authUser.set(user);
-					return user;
-				},
-				catch: (cause) => AuthError.SignUpFailed({ cause }),
-			});
-
-			if (result.error) {
-				phase = { status: 'signed-out', error: result.error.message };
-			} else {
-				phase = { status: 'signed-in' };
-				password = '';
-				await refreshEncryptionKey();
-			}
-
-			return result;
-		},
-
-		/**
-		 * Sign in with Google via chrome.identity.launchWebAuthFlow.
-		 *
-		 * Opens Google OAuth consent popup, extracts the id_token from the
-		 * redirect URL fragment, and sends it to Better Auth.
-		 */
-		async signInWithGoogle() {
-			phase = { status: 'signing-in' };
-
-			const result = await tryAsync({
-				try: async () => {
-					const redirectUri = browser.identity.getRedirectURL();
-					const nonce = crypto.randomUUID();
-					const authUrl = new URL(
-						'https://accounts.google.com/o/oauth2/v2/auth',
-					);
-					authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
-					authUrl.searchParams.set('redirect_uri', redirectUri);
-					authUrl.searchParams.set('response_type', 'id_token');
-					authUrl.searchParams.set('scope', 'openid email profile');
-					authUrl.searchParams.set('nonce', nonce);
-
-					const responseUrl = await browser.identity.launchWebAuthFlow({
-						url: authUrl.toString(),
-						interactive: true,
-					});
-
-					if (!responseUrl) throw new Error('No response from Google');
-
-					const fragment = new URL(responseUrl).hash.substring(1);
-					const params = new URLSearchParams(fragment);
-					const idToken = params.get('id_token');
-					if (!idToken) throw new Error('No id_token in response');
-
-					const { data, error: authError } = await client.signIn.social({
-						provider: 'google',
-						idToken: { token: idToken, nonce },
-					});
-					if (authError)
-						throw new Error(authError.message ?? authError.statusText);
-					if (!data || !('user' in data))
-						throw new Error('Unexpected response from server');
-					const user = serializeDates(data.user);
-					await authUser.set(user);
-					return user;
-				},
-				catch: (cause) => {
-					// User closed the popup — not an error worth displaying
-					const message = cause instanceof Error ? cause.message : '';
-					if (message.includes('canceled') || message.includes('cancelled')) {
-						return AuthError.GoogleSignInFailed({
-							cause: new Error('Cancelled'),
-						});
-					}
-					return AuthError.GoogleSignInFailed({ cause });
-				},
-			});
-
-			if (result.error) {
-				const isCancelled = result.error.message.includes('Cancelled');
-				phase = {
-					status: 'signed-out',
-					error: isCancelled ? undefined : result.error.message,
-				};
-			} else {
-				phase = { status: 'signed-in' };
-				await refreshEncryptionKey();
-			}
-
-			return result;
-		},
-
-		/** Sign out — server-side invalidation + clear local state. */
-		async signOut() {
-			phase = { status: 'signing-out' };
-			await workspace.deactivateEncryption();
-			await client.signOut().catch(() => {});
-			await clearState().catch(() => {});
-			phase = { status: 'signed-out' };
-			return Ok(undefined);
-		},
-
-		/**
-		 * Validate the stored session against the server.
-		 *
-		 * Waits for chrome.storage to load before reading the token so that
-		 * fresh sidebar contexts (new windows) don't race past a still-undefined
-		 * fallback value.
-		 *
-		 * Unreachable server (network error or 5xx) trusts the cached user
-		 * so offline/degraded users aren't logged out. Only an explicit auth
-		 * rejection (4xx) clears state.
-		 *
-		 * Encryption restore from cache is awaited inline (not fire-and-forget)
-		 * because this is an async method—no need for background work. The ~2ms
-		 * for cache read + HKDF derivation is negligible against the ~100ms+
-		 * getSession() network call. The server response supersedes the cached
-		 * key; activateEncryption's byte-level dedup skips re-derivation when
-		 * the key hasn't changed.
-		 */
-		async checkSession() {
-			await Promise.all([authToken.whenReady, authUser.whenReady]);
-		
-			const userId = authUser.current?.id;
-			if (userId) {
-				const cached = await keyCache.load();
-				if (cached) await workspace.activateEncryption(base64ToBytes(cached));
-			}
-
-			const token = authToken.current;
-			if (!token) {
-				phase = { status: 'signed-out' };
-				return Ok(null);
-			}
-
-			const { data, error: sessionError } = await getSession();
-
-			if (sessionError) {
-				const isAuthRejection =
-					sessionError.status && sessionError.status < 500;
-
-				if (!isAuthRejection) {
-					// Network error or 5xx → trust cached user
-					const cached = authUser.current;
-					phase = cached ? { status: 'signed-in' } : { status: 'signed-out' };
-					return Ok(cached);
-				}
-
-				// 4xx → server explicitly rejected the token
-				await clearState();
-				await workspace.deactivateEncryption();
-				phase = { status: 'signed-out' };
-				return Ok(null);
-			}
-
-			if (!data) {
-				await clearState();
-				await workspace.deactivateEncryption();
-				phase = { status: 'signed-out' };
-				return Ok(null);
-			}
-
-			const user = serializeDates(data.user);
-			await authUser.set(user);
-			if (data.encryptionKey) {
-				await workspace.activateEncryption(base64ToBytes(data.encryptionKey));
-			}
-			phase = { status: 'signed-in' };
-			return Ok(user);
-		},
-
-	};
+	return data.user;
 }
 
-export const authState = createAuthState();
+// Shared auth factory with extension-specific config
+export const authState = createAuthState({
+	baseURL: () => remoteServerUrl.current,
+	storage: { token: authToken, user: authUser },
+	whenReady: Promise.all([authToken.whenReady, authUser.whenReady]),
+	async onCheckSessionStart() {
+		const userId = authUser.current?.id;
+		if (userId) {
+			const cached = await keyCache.load();
+			if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+		}
+	},
+	signInWithGoogle: googleSignIn,
+	async onSignedIn(encryptionKey) {
+		await workspace.activateEncryption(base64ToBytes(encryptionKey));
+	},
+	async onSignedOut() {
+		await workspace.deactivateEncryption();
+	},
+	async onExternalSignIn() {
+		const cached = await keyCache.load();
+		if (cached) await workspace.activateEncryption(base64ToBytes(cached));
+	},
+});
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// Cross-context watchers for chrome.storage changes from other extension contexts
+// Token cleared externally → sign out
+authToken.watch((token) => {
+	if (!token && authState.status === 'signed-in') {
+		authState.handleExternalSignOut();
+	}
+});
 
-/** Convert all `Date` properties in an object to ISO strings. */
-function serializeDates<T extends Record<string, unknown>>(obj: T) {
-	return Object.fromEntries(
-		Object.entries(obj).map(([key, value]) => [
-			key,
-			value instanceof Date ? value.toISOString() : value,
-		]),
-	) as { [K in keyof T]: T[K] extends Date ? string : T[K] };
-}
+// User set externally → sign in and restore encryption from cache
+authUser.watch((user) => {
+	if (user && authToken.current && authState.status === 'signed-out') {
+		authState.handleExternalSignIn();
+	}
+});

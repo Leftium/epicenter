@@ -6,14 +6,23 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { authState } from '$lib/state/auth.svelte';
 
-	const isSignUp = $derived(authState.mode === 'sign-up');
+	let email = $state('');
+	let password = $state('');
+	let name = $state('');
+	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
+
+	const isSignUp = $derived(mode === 'sign-up');
 	const isBusy = $derived(authState.status === 'signing-in');
 </script>
 
 <form
 	onsubmit={async (e) => {
 		e.preventDefault();
-		isSignUp ? await authState.signUp() : await authState.signIn();
+		if (isSignUp) {
+			await authState.signUp({ email, password, name });
+		} else {
+			await authState.signIn({ email, password });
+		}
 	}}
 	class="w-full max-w-xs"
 >
@@ -69,7 +78,7 @@
 						id="name"
 						type="text"
 						placeholder="Name"
-						bind:value={authState.name}
+						bind:value={name}
 						required
 						autocomplete="name"
 					/>
@@ -81,7 +90,7 @@
 					id="email"
 					type="email"
 					placeholder="Email"
-					bind:value={authState.email}
+					bind:value={email}
 					required
 					autocomplete="email"
 				/>
@@ -92,7 +101,7 @@
 					id="password"
 					type="password"
 					placeholder="Password"
-					bind:value={authState.password}
+					bind:value={password}
 					required
 					autocomplete={isSignUp ? 'new-password' : 'current-password'}
 				/>
@@ -114,7 +123,7 @@
 				<button
 					type="button"
 					class="text-foreground underline underline-offset-4 hover:text-foreground/80"
-					onclick={() => (authState.mode = 'sign-in')}
+					onclick={() => (mode = 'sign-in')}
 				>
 					Sign in
 				</button>
@@ -123,7 +132,7 @@
 				<button
 					type="button"
 					class="text-foreground underline underline-offset-4 hover:text-foreground/80"
-					onclick={() => (authState.mode = 'sign-up')}
+					onclick={() => (mode = 'sign-up')}
 				>
 					Sign up
 				</button>

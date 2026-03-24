@@ -2,7 +2,8 @@
  * Auth state factory for Epicenter client apps.
  *
  * Owns the phase machine, Better Auth client, session validation, and
- * token refresh. Accepts pluggable storage and custom sign-in strategies.
+ * token refresh. Accepts pluggable storage, custom sign-in strategies,
+ * and an optional encryption lifecycle object.
  *
  * Built-in methods: `signIn` (email/password), `signUp`, `signOut`, `checkSession`.
  * Custom strategies (e.g. Google OAuth) are passed via `strategies` config—
@@ -15,8 +16,10 @@
  *   baseURL: APP_URLS.API,
  *   storage: createLocalStorage('honeycrisp'),
  *   strategies: { signInWithGoogle: googleRedirect },
- *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
- *   onSignedOut: () => workspace.deactivateEncryption(),
+ *   encryption: {
+ *     activate: (key) => workspace.activateEncryption(base64ToBytes(key)),
+ *     deactivate: () => workspace.deactivateEncryption(),
+ *   },
  * });
  * ```
  *
@@ -24,11 +27,13 @@
  * ```typescript
  * export const authState = createAuthState({
  *   baseURL: () => remoteServerUrl.current,
- *   storage: { token: authToken, user: authUser },
+ *   storage: { token: authToken, user: authUser, whenReady: ... },
  *   strategies: { signInWithGoogle: chromeGoogleStrategy },
- *   whenReady: Promise.all([authToken.whenReady, authUser.whenReady]),
- *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
- *   onSignedOut: () => workspace.deactivateEncryption(),
+ *   encryption: {
+ *     activate: (key) => workspace.activateEncryption(base64ToBytes(key)),
+ *     deactivate: () => workspace.deactivateEncryption(),
+ *     restoreFromCache: () => restoreEncryptionFromCache(),
+ *   },
  * });
  * ```
  */
@@ -36,6 +41,7 @@
 import { createPersistedState } from './persisted-state.svelte';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
+import type { User as BetterAuthUser } from 'better-auth';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 
@@ -49,8 +55,6 @@ import { Ok, tryAsync } from 'wellcrafted/result';
  *
  * Duplicated from `@epicenter/api/src/custom-session-fields` as a plain
  * type so this package has zero server-side imports.
- *
- * @see {@link refreshEncryptionKeyAndNotify} — fetches these after sign-in
  */
 type CustomSessionFields = { encryptionKey: string; keyVersion: number };
 
@@ -84,12 +88,6 @@ export type AuthUser = typeof AuthUser.infer;
  *                                │
  *                                └──► signed-in
  * ```
- *
- * - `checking` — initial state while `whenReady` / `checkSession` resolve
- * - `signing-in` — credentials submitted, waiting for server response
- * - `signing-out` — sign-out in progress (encryption deactivation + server call)
- * - `signed-in` — active session with cached user
- * - `signed-out` — no session; optional `error` from the last failed sign-in
  */
 export type AuthPhase =
 	| { status: 'checking' }
@@ -99,41 +97,18 @@ export type AuthPhase =
 	| { status: 'signed-out'; error?: string };
 
 /**
- * A custom sign-in strategy. Receives the Better Auth client (for token
- * handling via `onSuccess`) and returns the raw response containing a `user`.
- * The factory handles: phase transitions, `serializeDates`, storage writes,
- * encryption key refresh, cancelled-popup detection, and error wrapping.
+ * A custom sign-in strategy. Receives the Better Auth client and returns
+ * the raw response containing a `user`. The factory handles everything
+ * else: phase transitions, date serialization, storage writes, encryption
+ * key refresh, cancelled-popup detection, and error wrapping.
  *
- * Throw on failure—the factory catches and wraps with `AuthError.StrategyFailed`.
- * Errors containing 'canceled'/'cancelled' are treated as silent (no UI error).
- *
- * @example Google OAuth via chrome.identity
- * ```typescript
- * const chromeGoogle: Strategy = async (client) => {
- *   const { token, nonce } = await chromeIdentityFlow();
- *   const { data, error } = await client.signIn.social({
- *     provider: 'google',
- *     idToken: { token, nonce },
- *   });
- *   if (error) throw new Error(error.message ?? error.statusText);
- *   if (!data || !('user' in data)) throw new Error('Unexpected response');
- *   return data;
- * };
- * ```
+ * Throw on failure. Errors containing 'canceled'/'cancelled' are silent.
  */
 export type Strategy = (
 	client: ReturnType<typeof createAuthClient>,
-) => Promise<{ user: Record<string, unknown> }>;
+) => Promise<{ user: BetterAuthUser }>;
 
 const AuthError = defineErrors({
-	SignInFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Sign-in failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	SignUpFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Sign-up failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 	StrategyFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Sign-in failed: ${extractErrorMessage(cause)}`,
 		cause,
@@ -147,79 +122,59 @@ export type AuthStateConfig<
 > = {
 	/**
 	 * Base URL for the Better Auth API (e.g. `https://api.epicenter.so`).
-	 * Pass a getter function for reactive URLs that change at runtime—
-	 * the Better Auth client re-creates via `$derived` when the value changes.
+	 * Pass a getter function for reactive URLs that change at runtime.
 	 */
 	baseURL: string | (() => string);
 
 	/**
 	 * Pluggable storage for the auth token and cached user, following the
-	 * Svelte `.current` reactive value convention (same as `$state`, `MediaQuery`,
-	 * `createPersistedState`, `createStorageState`).
+	 * Svelte `.current` reactive value convention.
 	 *
 	 * Web apps: use `createLocalStorage('prefix')`.
 	 * Extensions: pass `createStorageState` instances directly.
 	 *
-	 * @see {@link createLocalStorage} — convenience helper for localStorage
+	 * Optional `whenReady` promise for async storage (e.g. chrome.storage)—
+	 * `checkSession` awaits it before reading values.
 	 */
 	storage: {
 		token: { current: string | null };
 		user: { current: AuthUser | null };
+		whenReady?: Promise<void>;
 	};
 
 	/**
 	 * Custom sign-in strategies. Each entry becomes a zero-arg method on
-	 * the returned auth state, wrapped with the phase machine, error handling,
-	 * user serialization, and encryption key refresh.
+	 * the returned auth state, wrapped with the phase machine.
 	 *
 	 * @example
 	 * ```typescript
-	 * strategies: {
-	 *   signInWithGoogle: googleRedirect,
-	 *   signInWithApple: appleStrategy,
-	 * }
-	 * // → authState.signInWithGoogle(), authState.signInWithApple()
+	 * strategies: { signInWithGoogle: googleRedirect }
+	 * // → authState.signInWithGoogle()
 	 * ```
 	 */
 	strategies?: TStrategies;
 
 	/**
-	 * Called after successful sign-in/session validation with the encryption
-	 * key from the server's `customSession` plugin. The key is a base64-encoded
-	 * HKDF-derived per-user key—consumers typically call
-	 * `workspace.activateEncryption(base64ToBytes(key))`.
+	 * Encryption lifecycle. The factory calls these at the right times:
 	 *
-	 * Fires on: `signIn`, `signUp`, custom strategies, `checkSession` (when valid).
+	 * - `activate(key)` — after sign-in, sign-up, strategy success, or
+	 *   successful session validation (with server-provided key)
+	 * - `deactivate()` — on sign-out (explicit or server-rejected)
+	 * - `restoreFromCache()` — at startup before the server roundtrip
+	 *   and on external sign-in (where no server key is available).
+	 *   Optional—omit for apps without a local key cache.
 	 */
-	onSignedIn?: (encryptionKey: string) => Promise<void>;
-
-	/** Called on sign-out (explicit or server-rejected session). */
-	onSignedOut?: () => Promise<void>;
+	encryption?: {
+		activate: (encryptionKey: string) => Promise<void>;
+		deactivate: () => Promise<void>;
+		restoreFromCache?: () => Promise<void>;
+	};
 
 	/**
-	 * Called when another context signs in (e.g. extension popup signs in,
-	 * sidebar detects it via `chrome.storage` watcher). Unlike `onSignedIn`,
-	 * there's no encryption key from the server—the consumer typically
-	 * restores from a local key cache instead.
+	 * Called when another extension context signs in. Fires `encryption.restoreFromCache`
+	 * by default. Override for custom behavior beyond encryption restoration.
 	 */
 	onExternalSignIn?: () => Promise<void>;
-
-	/**
-	 * Promise that resolves when async storage has loaded its initial values.
-	 * `checkSession` awaits this before reading `storage.token.current` so it
-	 * doesn't see a stale fallback.
-	 *
-	 * Omit for synchronous storage (localStorage reads on construction).
-	 */
-	whenReady?: Promise<void>;
-
-	/**
-	 * Called at the start of `checkSession`, after `whenReady` resolves but
-	 * before the server roundtrip. Used by the tab manager to restore
-	 * encryption from a local key cache for instant startup—the cached key
-	 * is later superseded by the server's authoritative key.
-	 */
-	onCheckSessionStart?: () => Promise<void>;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -250,8 +205,6 @@ export function createLocalStorage(
 /**
  * Google sign-in strategy for web apps using Better Auth's redirect flow.
  * Navigates to Google's consent screen—the page never returns from this call.
- * After the user consents, Google redirects back and Better Auth handles
- * the callback automatically.
  */
 export const googleRedirect: Strategy = async (client) => {
 	await client.signIn.social({
@@ -261,13 +214,17 @@ export const googleRedirect: Strategy = async (client) => {
 	throw new Error('Expected redirect');
 };
 
-function serializeDates<T extends Record<string, unknown>>(obj: T) {
-	return Object.fromEntries(
-		Object.entries(obj).map(([key, value]) => [
-			key,
-			value instanceof Date ? value.toISOString() : value,
-		]),
-	) as { [K in keyof T]: T[K] extends Date ? string : T[K] };
+/** Convert Better Auth's Date fields to ISO strings for JSON-safe storage. */
+function toAuthUser(raw: BetterAuthUser): AuthUser {
+	return {
+		id: raw.id,
+		createdAt: raw.createdAt.toISOString(),
+		updatedAt: raw.updatedAt.toISOString(),
+		email: raw.email,
+		emailVerified: raw.emailVerified,
+		name: raw.name,
+		image: raw.image,
+	};
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
@@ -278,18 +235,15 @@ function serializeDates<T extends Record<string, unknown>>(obj: T) {
  * Manages the full auth lifecycle: phase machine, Better Auth client,
  * session validation with offline tolerance, token refresh (via the
  * server's `bearer()` plugin `set-auth-token` header), and encryption
- * lifecycle callbacks.
+ * lifecycle.
  *
  * The returned object is a Svelte 5 reactive singleton—`status`, `user`,
  * `token`, and `signInError` are reactive getters backed by `$state`.
- *
- * @param config - App-specific configuration (storage, callbacks, strategies)
- * @returns Reactive auth state with built-in methods plus one method per strategy
  */
 export function createAuthState<
 	TStrategies extends Record<string, Strategy> = {},
 >(config: AuthStateConfig<TStrategies>) {
-	const { storage } = config;
+	const { storage, encryption } = config;
 	const resolveBaseURL =
 		typeof config.baseURL === 'function'
 			? config.baseURL
@@ -301,11 +255,8 @@ export function createAuthState<
 
 	/**
 	 * Better Auth client, re-created via `$derived` when `baseURL` changes.
-	 *
-	 * Injects `Authorization: Bearer <token>` on every request via
-	 * `fetchOptions.auth`. Captures rotated tokens from the server's
-	 * `bearer()` plugin via the `set-auth-token` response header in
-	 * `onSuccess`—this is Better Auth's built-in token refresh mechanism.
+	 * Injects Bearer token on every request and captures rotated tokens
+	 * from the server's `bearer()` plugin via `set-auth-token`.
 	 */
 	const client = $derived(
 		createAuthClient({
@@ -328,13 +279,8 @@ export function createAuthState<
 
 	/**
 	 * Typed wrapper around `client.getSession()` that includes custom session
-	 * fields (`encryptionKey`, `keyVersion`).
-	 *
-	 * Better Auth's client doesn't know about `customSession` fields without
-	 * the `customSessionClient<typeof auth>()` plugin—which would pull in
-	 * all server-side dependencies. This wrapper centralizes the single type
-	 * assertion so callers get typed access without the import cost.
-	 *
+	 * fields (`encryptionKey`, `keyVersion`) via type assertion—avoids importing
+	 * `customSessionClient<typeof auth>()` which would pull in server deps.
 	 * @internal
 	 */
 	async function getSession() {
@@ -352,24 +298,24 @@ export function createAuthState<
 	}
 
 	/**
-	 * Fetch the session to get the encryption key, then notify the app.
+	 * Fetch session to get the encryption key, then activate encryption.
 	 * signIn/signUp responses don't include customSession fields—only
 	 * getSession() returns them.
+	 * @internal
 	 */
-	async function refreshEncryptionKeyAndNotify() {
+	async function activateEncryptionFromServer() {
+		if (!encryption) return;
 		const result = await getSession().catch(() => null);
 		if (result?.data?.encryptionKey) {
-			await config.onSignedIn?.(result.data.encryptionKey);
+			await encryption.activate(result.data.encryptionKey);
 		}
 	}
 
 	/**
 	 * Execute a sign-in strategy with the full phase machine lifecycle.
-	 *
-	 * Handles: phase transitions, `tryAsync` error wrapping, date serialization,
-	 * user storage writes, encryption key refresh, and cancelled-popup detection
-	 * (errors containing 'canceled'/'cancelled' produce no UI error).
-	 *
+	 * Handles: phase transitions, error wrapping, date serialization,
+	 * user storage writes, encryption activation, and cancelled-popup
+	 * detection (errors containing 'canceled'/'cancelled' are silent).
 	 * @internal
 	 */
 	async function executeStrategy(fn: Strategy) {
@@ -378,7 +324,7 @@ export function createAuthState<
 		const result = await tryAsync({
 			try: async () => {
 				const data = await fn(client);
-				const user = serializeDates(data.user);
+				const user = toAuthUser(data.user);
 				storage.user.current = user;
 				return user;
 			},
@@ -404,7 +350,7 @@ export function createAuthState<
 			};
 		} else {
 			phase = { status: 'signed-in' };
-			await refreshEncryptionKeyAndNotify();
+			await activateEncryptionFromServer();
 		}
 
 		return result;
@@ -440,68 +386,34 @@ export function createAuthState<
 			return fetch(input, { ...init, headers, credentials: 'include' });
 		}) as typeof fetch,
 
-		/** Sign in with email/password. Returns `Ok(AuthUser)` or `Err(SignInFailed)`. */
-		async signIn(credentials: { email: string; password: string }) {
-			phase = { status: 'signing-in' };
-
-			const result = await tryAsync({
-				try: async () => {
-					const { data, error: authError } =
-						await client.signIn.email(credentials);
-					if (authError)
-						throw new Error(authError.message ?? authError.statusText);
-					const user = serializeDates(data.user);
-					storage.user.current = user;
-					return user;
-				},
-				catch: (cause) => AuthError.SignInFailed({ cause }),
+		/** Sign in with email/password. */
+		signIn(credentials: { email: string; password: string }) {
+			return executeStrategy(async (client) => {
+				const { data, error } = await client.signIn.email(credentials);
+				if (error)
+					throw new Error(error.message ?? error.statusText);
+				return data;
 			});
-
-			if (result.error) {
-				phase = { status: 'signed-out', error: result.error.message };
-			} else {
-				phase = { status: 'signed-in' };
-				await refreshEncryptionKeyAndNotify();
-			}
-
-			return result;
 		},
 
-		/** Create account with email/password/name. Returns `Ok(AuthUser)` or `Err(SignUpFailed)`. */
-		async signUp(credentials: {
+		/** Create account with email/password/name. */
+		signUp(credentials: {
 			email: string;
 			password: string;
 			name: string;
 		}) {
-			phase = { status: 'signing-in' };
-
-			const result = await tryAsync({
-				try: async () => {
-					const { data, error: authError } =
-						await client.signUp.email(credentials);
-					if (authError)
-						throw new Error(authError.message ?? authError.statusText);
-					const user = serializeDates(data.user);
-					storage.user.current = user;
-					return user;
-				},
-				catch: (cause) => AuthError.SignUpFailed({ cause }),
+			return executeStrategy(async (client) => {
+				const { data, error } = await client.signUp.email(credentials);
+				if (error)
+					throw new Error(error.message ?? error.statusText);
+				return data;
 			});
-
-			if (result.error) {
-				phase = { status: 'signed-out', error: result.error.message };
-			} else {
-				phase = { status: 'signed-in' };
-				await refreshEncryptionKeyAndNotify();
-			}
-
-			return result;
 		},
 
 		/** Sign out—deactivates encryption, invalidates server session, clears local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
-			await config.onSignedOut?.();
+			await encryption?.deactivate();
 			await client.signOut().catch(() => {});
 			clearState();
 			phase = { status: 'signed-out' };
@@ -516,8 +428,12 @@ export function createAuthState<
 		 * aren't logged out. Only an explicit auth rejection (4xx) clears state.
 		 */
 		async checkSession() {
-			if (config.whenReady) await config.whenReady;
-			if (config.onCheckSessionStart) await config.onCheckSessionStart();
+			if (storage.whenReady) await storage.whenReady;
+
+			// Restore encryption from cache for instant startup
+			if (encryption?.restoreFromCache && storage.user.current) {
+				await encryption.restoreFromCache();
+			}
 
 			const token = storage.token.current;
 			if (!token) {
@@ -540,47 +456,48 @@ export function createAuthState<
 				}
 
 				clearState();
-				await config.onSignedOut?.();
+				await encryption?.deactivate();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
 
 			if (!data) {
 				clearState();
-				await config.onSignedOut?.();
+				await encryption?.deactivate();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
 
-			const user = serializeDates(data.user);
+			const user = toAuthUser(data.user);
 			storage.user.current = user;
 			if (data.encryptionKey) {
-				await config.onSignedIn?.(data.encryptionKey);
+				await encryption?.activate(data.encryptionKey);
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);
 		},
 
 		/**
-		 * Transition to signed-out due to an external storage change (e.g.
-		 * another extension context cleared the auth token). Clears local
-		 * state and fires `onSignedOut`.
+		 * Transition to signed-out due to an external storage change
+		 * (e.g. another extension context cleared the auth token).
 		 */
 		handleExternalSignOut() {
 			clearState();
-			config.onSignedOut?.();
+			encryption?.deactivate();
 			phase = { status: 'signed-out' };
 		},
 
 		/**
-		 * Transition to signed-in due to an external storage change (e.g.
-		 * another extension context signed in and wrote the user to chrome.storage).
-		 * Fires `onExternalSignIn` so the consumer can restore encryption
-		 * from a local key cache (no server key available on this path).
+		 * Transition to signed-in due to an external storage change
+		 * (e.g. another extension context signed in).
 		 */
 		handleExternalSignIn() {
 			phase = { status: 'signed-in' };
-			config.onExternalSignIn?.();
+			if (config.onExternalSignIn) {
+				config.onExternalSignIn();
+			} else {
+				encryption?.restoreFromCache?.();
+			}
 		},
 	};
 

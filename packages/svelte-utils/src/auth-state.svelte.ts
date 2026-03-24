@@ -29,7 +29,7 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 /** Custom fields from the server's customSession plugin. */
 type CustomSessionFields = { encryptionKey: string; keyVersion: number };
 
-const AuthUser = type({
+export const AuthUser = type({
 	id: 'string',
 	createdAt: 'string',
 	updatedAt: 'string',
@@ -73,8 +73,8 @@ export type AuthStateConfig = {
 		token: { current: string | undefined };
 		user: { current: AuthUser | undefined };
 	};
-	/** Override for Google sign-in (e.g. chrome.identity flow). */
-	signInWithGoogle?: () => Promise<AuthUser>;
+	/** Acquire a Google id_token (e.g. via chrome.identity). Factory calls Better Auth. */
+	getGoogleIdToken?: () => Promise<{ token: string; nonce: string }>;
 	/** Called after successful sign-in with the encryption key from the session. */
 	onSignedIn?: (encryptionKey: string) => Promise<void>;
 	/** Called after sign-out. */
@@ -97,8 +97,7 @@ export function createLocalStorage(prefix: string): AuthStateConfig['storage'] {
 	const tokenKey = `${prefix}:authToken`;
 	const userState = createPersistedState({
 		key: `${prefix}:authUser`,
-		schema: AuthUser.or('undefined'),
-		defaultValue: undefined,
+		schema: AuthUser,
 	});
 	return {
 		token: {
@@ -270,10 +269,20 @@ export function createAuthState(config: AuthStateConfig) {
 		async signInWithGoogle() {
 			phase = { status: 'signing-in' };
 
-			if (config.signInWithGoogle) {
+			if (config.getGoogleIdToken) {
 				const result = await tryAsync({
 					try: async () => {
-						const user = await config.signInWithGoogle!();
+						const idToken = await config.getGoogleIdToken!();
+						const { data, error: authError } =
+							await client.signIn.social({
+								provider: 'google',
+								idToken,
+							});
+						if (authError)
+							throw new Error(authError.message ?? authError.statusText);
+						if (!data || !('user' in data))
+							throw new Error('Unexpected response from server');
+						const user = serializeDates(data.user);
 						storage.user.current = user;
 						return user;
 					},

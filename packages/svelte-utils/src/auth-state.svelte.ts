@@ -24,11 +24,29 @@ import { createAuthClient } from 'better-auth/client';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 
-// ─── Types (inlined—only used by this factory) ──────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-/** Custom fields from the server's customSession plugin. */
+/**
+ * Custom fields added to `getSession()` responses by the server's
+ * `customSession` plugin. Not present in `signIn`/`signUp` responses—
+ * callers must do a separate `getSession()` after login to retrieve
+ * the encryption key.
+ *
+ * Duplicated from `@epicenter/api/src/custom-session-fields` as a plain
+ * type so this package has zero server-side imports.
+ *
+ * @see {@link refreshEncryptionKeyAndNotify} — fetches these after sign-in
+ */
 type CustomSessionFields = { encryptionKey: string; keyVersion: number };
 
+/**
+ * Runtime schema and TypeScript type for the cached auth user.
+ *
+ * Exported as both a value (arktype validator used by storage adapters)
+ * and a type (inferred from the schema). Storage adapters like
+ * `createLocalStorage` and `createStorageState` use the runtime schema
+ * for validation; the rest of the codebase uses the type.
+ */
 export const AuthUser = type({
 	id: 'string',
 	createdAt: 'string',
@@ -41,6 +59,23 @@ export const AuthUser = type({
 
 export type AuthUser = typeof AuthUser.infer;
 
+/**
+ * Discriminated union for the auth state machine.
+ *
+ * ```
+ * checking ──► signed-in ──► signing-out ──► signed-out
+ *    │                                           │
+ *    └──────► signed-out ──► signing-in ─────────┘
+ *                                │
+ *                                └──► signed-in
+ * ```
+ *
+ * - `checking` — initial state while `whenReady` / `checkSession` resolve
+ * - `signing-in` — credentials submitted, waiting for server response
+ * - `signing-out` — sign-out in progress (encryption deactivation + server call)
+ * - `signed-in` — active session with cached user
+ * - `signed-out` — no session; optional `error` from the last failed sign-in
+ */
 export type AuthPhase =
 	| { status: 'checking' }
 	| { status: 'signing-in' }
@@ -66,24 +101,75 @@ const AuthError = defineErrors({
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export type AuthStateConfig = {
-	/** Base URL for the Better Auth API. Static string or reactive getter. */
+	/**
+	 * Base URL for the Better Auth API (e.g. `https://api.epicenter.so`).
+	 * Pass a getter function for reactive URLs that change at runtime—
+	 * the Better Auth client re-creates via `$derived` when the value changes.
+	 */
 	baseURL: string | (() => string);
-	/** Pluggable storage using the Svelte `.current` reactive value convention. */
+
+	/**
+	 * Pluggable storage for the auth token and cached user, following the
+	 * Svelte `.current` reactive value convention (same as `$state`, `MediaQuery`,
+	 * `createPersistedState`, `createStorageState`).
+	 *
+	 * Web apps: use `createLocalStorage('prefix')`.
+	 * Extensions: pass `createStorageState` instances directly.
+	 *
+	 * @see {@link createLocalStorage} — convenience helper for localStorage
+	 */
 	storage: {
 		token: { current: string | undefined };
 		user: { current: AuthUser | undefined };
 	};
-	/** Acquire a Google id_token (e.g. via chrome.identity). Factory calls Better Auth. */
+
+	/**
+	 * Platform-specific Google id_token acquisition. The factory handles the
+	 * Better Auth `client.signIn.social()` call, token capture via `onSuccess`,
+	 * and user serialization—the consumer only provides the raw credentials.
+	 *
+	 * Omit for web apps (factory uses Better Auth's redirect flow instead).
+	 *
+	 * @returns Google id_token and nonce for Better Auth's `signIn.social({ idToken })` call
+	 */
 	getGoogleIdToken?: () => Promise<{ token: string; nonce: string }>;
-	/** Called after successful sign-in with the encryption key from the session. */
+
+	/**
+	 * Called after successful sign-in/session validation with the encryption
+	 * key from the server's `customSession` plugin. The key is a base64-encoded
+	 * HKDF-derived per-user key—consumers typically call
+	 * `workspace.activateEncryption(base64ToBytes(key))`.
+	 *
+	 * Fires on: `signIn`, `signUp`, `signInWithGoogle`, `checkSession` (when valid).
+	 */
 	onSignedIn?: (encryptionKey: string) => Promise<void>;
-	/** Called after sign-out. */
+
+	/** Called on sign-out (explicit or server-rejected session). */
 	onSignedOut?: () => Promise<void>;
-	/** Called on external sign-in (e.g. another extension context). */
+
+	/**
+	 * Called when another context signs in (e.g. extension popup signs in,
+	 * sidebar detects it via `chrome.storage` watcher). Unlike `onSignedIn`,
+	 * there's no encryption key from the server—the consumer typically
+	 * restores from a local key cache instead.
+	 */
 	onExternalSignIn?: () => Promise<void>;
-	/** Resolves when async storage is ready. Omit for sync storage. */
+
+	/**
+	 * Promise that resolves when async storage has loaded its initial values.
+	 * `checkSession` awaits this before reading `storage.token.current` so it
+	 * doesn't see a stale fallback.
+	 *
+	 * Omit for synchronous storage (localStorage reads on construction).
+	 */
 	whenReady?: Promise<void>;
-	/** Called at top of checkSession after whenReady, before the server call. */
+
+	/**
+	 * Called at the start of `checkSession`, after `whenReady` resolves but
+	 * before the server roundtrip. Used by the tab manager to restore
+	 * encryption from a local key cache for instant startup—the cached key
+	 * is later superseded by the server's authoritative key.
+	 */
 	onCheckSessionStart?: () => Promise<void>;
 };
 
@@ -125,6 +211,43 @@ function serializeDates<T extends Record<string, unknown>>(obj: T) {
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
+/**
+ * Create an auth state singleton for an Epicenter app.
+ *
+ * Manages the full auth lifecycle: phase machine, Better Auth client,
+ * session validation with offline tolerance, token refresh (via the
+ * server's `bearer()` plugin `set-auth-token` header), and encryption
+ * lifecycle callbacks.
+ *
+ * The returned object is a Svelte 5 reactive singleton—`status`, `user`,
+ * `token`, and `signInError` are reactive getters backed by `$state`.
+ *
+ * @param config - App-specific configuration (storage, callbacks, base URL)
+ * @returns Reactive auth state with `signIn`, `signUp`, `signInWithGoogle`,
+ *          `signOut`, `checkSession`, and external sign-in/out handlers
+ *
+ * @example Web app (honeycrisp)
+ * ```typescript
+ * export const authState = createAuthState({
+ *   baseURL: APP_URLS.API,
+ *   storage: createLocalStorage('honeycrisp'),
+ *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
+ *   onSignedOut: () => workspace.deactivateEncryption(),
+ * });
+ * ```
+ *
+ * @example Chrome extension (tab-manager)
+ * ```typescript
+ * export const authState = createAuthState({
+ *   baseURL: () => remoteServerUrl.current,
+ *   storage: { token: authToken, user: authUser },
+ *   whenReady: Promise.all([authToken.whenReady, authUser.whenReady]),
+ *   getGoogleIdToken: () => chromeIdentityFlow(),
+ *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
+ *   onSignedOut: () => workspace.deactivateEncryption(),
+ * });
+ * ```
+ */
 export function createAuthState(config: AuthStateConfig) {
 	const { storage } = config;
 	const resolveBaseURL =
@@ -136,6 +259,14 @@ export function createAuthState(config: AuthStateConfig) {
 		storage.user.current ? { status: 'signed-in' } : { status: 'checking' },
 	);
 
+	/**
+	 * Better Auth client, re-created via `$derived` when `baseURL` changes.
+	 *
+	 * Injects `Authorization: Bearer <token>` on every request via
+	 * `fetchOptions.auth`. Captures rotated tokens from the server's
+	 * `bearer()` plugin via the `set-auth-token` response header in
+	 * `onSuccess`—this is Better Auth's built-in token refresh mechanism.
+	 */
 	const client = $derived(
 		createAuthClient({
 			baseURL: resolveBaseURL(),
@@ -155,6 +286,17 @@ export function createAuthState(config: AuthStateConfig) {
 
 	// ─── Private Helpers ───
 
+	/**
+	 * Typed wrapper around `client.getSession()` that includes custom session
+	 * fields (`encryptionKey`, `keyVersion`).
+	 *
+	 * Better Auth's client doesn't know about `customSession` fields without
+	 * the `customSessionClient<typeof auth>()` plugin—which would pull in
+	 * all server-side dependencies. This wrapper centralizes the single type
+	 * assertion so callers get typed access without the import cost.
+	 *
+	 * @internal
+	 */
 	async function getSession() {
 		const { data, error } = await client.getSession();
 		const customData = data
@@ -163,6 +305,7 @@ export function createAuthState(config: AuthStateConfig) {
 		return { data: customData, error };
 	}
 
+	/** @internal */
 	function clearState() {
 		storage.token.current = undefined;
 		storage.user.current = undefined;
@@ -210,6 +353,7 @@ export function createAuthState(config: AuthStateConfig) {
 			return fetch(input, { ...init, headers, credentials: 'include' });
 		}) as typeof fetch,
 
+		/** Sign in with email/password. Returns `Ok(AuthUser)` or `Err(SignInFailed)`. */
 		async signIn(credentials: { email: string; password: string }) {
 			phase = { status: 'signing-in' };
 
@@ -236,6 +380,7 @@ export function createAuthState(config: AuthStateConfig) {
 			return result;
 		},
 
+		/** Create account with email/password/name. Returns `Ok(AuthUser)` or `Err(SignUpFailed)`. */
 		async signUp(credentials: {
 			email: string;
 			password: string;
@@ -266,6 +411,18 @@ export function createAuthState(config: AuthStateConfig) {
 			return result;
 		},
 
+		/**
+		 * Sign in with Google. Two paths:
+		 *
+		 * 1. **Extension** (`getGoogleIdToken` provided): calls the config function
+		 *    to get a Google `id_token` via `chrome.identity`, then exchanges it
+		 *    through `client.signIn.social({ idToken })`. Token capture and user
+		 *    serialization happen inside the factory.
+		 *
+		 * 2. **Web app** (no override): calls `client.signIn.social({ provider: 'google' })`
+		 *    which triggers a full-page redirect to Google. The method never resolves
+		 *    normally—Better Auth handles the redirect callback.
+		 */
 		async signInWithGoogle() {
 			phase = { status: 'signing-in' };
 
@@ -330,6 +487,7 @@ export function createAuthState(config: AuthStateConfig) {
 			return result;
 		},
 
+		/** Sign out—deactivates encryption, invalidates server session, clears local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
 			await config.onSignedOut?.();
@@ -390,12 +548,30 @@ export function createAuthState(config: AuthStateConfig) {
 			return Ok(user);
 		},
 
+		/**
+		 * Transition to signed-out due to an external storage change (e.g.
+		 * another extension context cleared the auth token). Clears local
+		 * state and fires `onSignedOut`.
+		 *
+		 * Consumers wire this to storage watchers outside the factory:
+		 * ```typescript
+		 * authToken.watch((token) => {
+		 *   if (!token && authState.status === 'signed-in') authState.handleExternalSignOut();
+		 * });
+		 * ```
+		 */
 		handleExternalSignOut() {
 			clearState();
 			config.onSignedOut?.();
 			phase = { status: 'signed-out' };
 		},
 
+		/**
+		 * Transition to signed-in due to an external storage change (e.g.
+		 * another extension context signed in and wrote the user to chrome.storage).
+		 * Fires `onExternalSignIn` so the consumer can restore encryption
+		 * from a local key cache (no server key available on this path).
+		 */
 		handleExternalSignIn() {
 			phase = { status: 'signed-in' };
 			config.onExternalSignIn?.();

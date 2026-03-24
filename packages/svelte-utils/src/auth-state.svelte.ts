@@ -41,7 +41,7 @@
 import { createPersistedState } from './persisted-state.svelte';
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
-import type { User as BetterAuthUser } from 'better-auth';
+import type { User } from 'better-auth';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 
@@ -66,7 +66,7 @@ type CustomSessionFields = { encryptionKey: string; keyVersion: number };
  * `createLocalStorage` and `createStorageState` use the runtime schema
  * for validation; the rest of the codebase uses the type.
  */
-export const AuthUser = type({
+export const StoredUser = type({
 	id: 'string',
 	createdAt: 'string',
 	updatedAt: 'string',
@@ -76,7 +76,7 @@ export const AuthUser = type({
 	'image?': 'string | null | undefined',
 });
 
-export type AuthUser = typeof AuthUser.infer;
+export type StoredUser = typeof StoredUser.infer;
 
 /**
  * Discriminated union for the auth state machine.
@@ -106,7 +106,7 @@ export type AuthPhase =
  */
 export type Strategy = (
 	client: ReturnType<typeof createAuthClient>,
-) => Promise<{ user: BetterAuthUser }>;
+) => Promise<{ user: User }>;
 
 const AuthError = defineErrors({
 	StrategyFailed: ({ cause }: { cause: unknown }) => ({
@@ -138,7 +138,7 @@ export type AuthStateConfig<
 	 */
 	storage: {
 		token: { current: string | null };
-		user: { current: AuthUser | null };
+		user: { current: StoredUser | null };
 		whenReady?: Promise<void>;
 	};
 
@@ -196,7 +196,7 @@ export function createLocalStorage(
 		}),
 		user: createPersistedState({
 			key: `${prefix}:authUser`,
-			schema: AuthUser.or('null'),
+			schema: StoredUser.or('null'),
 			defaultValue: null,
 		}),
 	};
@@ -215,7 +215,7 @@ export const googleRedirect: Strategy = async (client) => {
 };
 
 /** Convert Better Auth's Date fields to ISO strings for JSON-safe storage. */
-function toAuthUser(raw: BetterAuthUser): AuthUser {
+function toStoredUser(raw: User): StoredUser {
 	return {
 		id: raw.id,
 		createdAt: raw.createdAt.toISOString(),
@@ -324,7 +324,7 @@ export function createAuthState<
 		const result = await tryAsync({
 			try: async () => {
 				const data = await fn(client);
-				const user = toAuthUser(data.user);
+				const user = toStoredUser(data.user);
 				storage.user.current = user;
 				return user;
 			},
@@ -468,7 +468,7 @@ export function createAuthState<
 				return Ok(null);
 			}
 
-			const user = toAuthUser(data.user);
+			const user = toStoredUser(data.user);
 			storage.user.current = user;
 			if (data.encryptionKey) {
 				await encryption?.activate(data.encryptionKey);

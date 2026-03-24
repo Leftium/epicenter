@@ -21,7 +21,7 @@
 
 import {
 	createAuthState,
-	AuthUser,
+	StoredUser,
 	type Strategy,
 } from '@epicenter/svelte/auth-state';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
@@ -40,10 +40,10 @@ const authToken = createStorageState('local:authToken', {
 	schema: type('string').or('null'),
 });
 
-/** Cached user in `chrome.storage.local`. Validated against `AuthUser` schema. */
+/** Cached user in `chrome.storage.local`. Validated against `StoredUser` schema. */
 const authUser = createStorageState('local:authUser', {
 	fallback: null,
-	schema: AuthUser.or('null'),
+	schema: StoredUser.or('null'),
 });
 
 /**
@@ -98,20 +98,16 @@ const chromeGoogleStrategy: Strategy = async (client) => {
 
 export const authState = createAuthState({
 	baseURL: () => remoteServerUrl.current,
-	storage: { token: authToken, user: authUser },
+	storage: {
+		token: authToken,
+		user: authUser,
+		whenReady: Promise.all([authToken.whenReady, authUser.whenReady]),
+	},
 	strategies: { signInWithGoogle: chromeGoogleStrategy },
-	whenReady: Promise.all([authToken.whenReady, authUser.whenReady]),
-	async onCheckSessionStart() {
-		if (authUser.current?.id) await restoreEncryptionFromCache();
-	},
-	async onSignedIn(encryptionKey) {
-		await workspace.activateEncryption(base64ToBytes(encryptionKey));
-	},
-	async onSignedOut() {
-		await workspace.deactivateEncryption();
-	},
-	async onExternalSignIn() {
-		await restoreEncryptionFromCache();
+	encryption: {
+		activate: (key) => workspace.activateEncryption(base64ToBytes(key)),
+		deactivate: () => workspace.deactivateEncryption(),
+		restoreFromCache: restoreEncryptionFromCache,
 	},
 });
 

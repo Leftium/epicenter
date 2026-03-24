@@ -2,8 +2,8 @@
  * Auth state factory for Epicenter client apps.
  *
  * Owns the phase machine, Better Auth client, session validation, and
- * token refresh. Creates its own persisted storage internally—no adapter
- * layer. Each app passes a `storagePrefix` and workspace callbacks.
+ * token refresh. Accepts pluggable storage so both localStorage (web apps)
+ * and chrome.storage (extensions) work through the same factory.
  *
  * Actions take explicit parameters—form state lives in the component.
  *
@@ -11,9 +11,9 @@
  * ```typescript
  * export const authState = createAuthState({
  *   baseURL: 'https://api.epicenter.so',
- *   storagePrefix: 'honeycrisp',
- *   onSignedIn: (key) => { workspace.activateEncryption(key); workspace.sync.reconnect(); },
- *   onSignedOut: () => { workspace.deactivateEncryption(); workspace.sync.reconnect(); },
+ *   storage: createLocalStorage('honeycrisp'),
+ *   onSignedIn: (key) => { workspace.activateEncryption(key); },
+ *   onSignedOut: () => { workspace.deactivateEncryption(); },
  * });
  * ```
  */
@@ -42,6 +42,7 @@ const AuthUser = type({
 export type AuthUser = typeof AuthUser.infer;
 
 export type AuthPhase =
+	| { status: 'checking' }
 	| { status: 'signing-in' }
 	| { status: 'signing-out' }
 	| { status: 'signed-in' }
@@ -65,29 +66,54 @@ const AuthError = defineErrors({
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export type AuthStateConfig = {
-	/** Base URL for the Better Auth API (e.g. `https://api.epicenter.so`). */
-	baseURL: string;
-	/**
-	 * Prefix for localStorage keys. Used to namespace two keys:
-	 * - `${storagePrefix}:authToken` — Bearer token (raw string, no JSON)
-	 * - `${storagePrefix}:authUser` — cached user object (JSON + schema-validated)
-	 *
-	 * The token key is also read directly by the sync extension's `getToken`
-	 * callback (e.g. `localStorage.getItem('honeycrisp:authToken')`), so
-	 * changing this prefix requires updating the workspace config too.
-	 */
-	storagePrefix: string;
-	/**
-	 * Override for Google sign-in. Web apps leave undefined to use Better Auth's
-	 * built-in redirect flow. Chrome extensions pass a function that uses
-	 * `chrome.identity.launchWebAuthFlow`.
-	 */
+	/** Base URL for the Better Auth API. Static string or reactive getter. */
+	baseURL: string | (() => string);
+	/** Pluggable storage using the Svelte `.current` reactive value convention. */
+	storage: {
+		token: { current: string | undefined };
+		user: { current: AuthUser | undefined };
+	};
+	/** Override for Google sign-in (e.g. chrome.identity flow). */
 	signInWithGoogle?: () => Promise<AuthUser>;
 	/** Called after successful sign-in with the encryption key from the session. */
 	onSignedIn?: (encryptionKey: string) => Promise<void>;
 	/** Called after sign-out. */
 	onSignedOut?: () => Promise<void>;
+	/** Called on external sign-in (e.g. another extension context). */
+	onExternalSignIn?: () => Promise<void>;
+	/** Resolves when async storage is ready. Omit for sync storage. */
+	whenReady?: Promise<void>;
+	/** Called at top of checkSession after whenReady, before the server call. */
+	onCheckSessionStart?: () => Promise<void>;
 };
+
+/**
+ * Create a localStorage-backed storage object for use with `createAuthState`.
+ *
+ * Web apps use this helper. Extensions pass their own storage objects
+ * (e.g. `createStorageState` from `@wxt-dev/storage`).
+ */
+export function createLocalStorage(prefix: string): AuthStateConfig['storage'] {
+	const tokenKey = `${prefix}:authToken`;
+	const userState = createPersistedState({
+		key: `${prefix}:authUser`,
+		schema: AuthUser.or('undefined'),
+		defaultValue: undefined,
+	});
+	return {
+		token: {
+			get current() {
+				return localStorage.getItem(tokenKey) ?? undefined;
+			},
+			set current(v: string | undefined) {
+				v === undefined
+					? localStorage.removeItem(tokenKey)
+					: localStorage.setItem(tokenKey, v);
+			},
+		},
+		user: userState,
+	};
+}
 
 function serializeDates<T extends Record<string, unknown>>(obj: T) {
 	return Object.fromEntries(
@@ -101,35 +127,32 @@ function serializeDates<T extends Record<string, unknown>>(obj: T) {
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createAuthState(config: AuthStateConfig) {
-	const { baseURL, storagePrefix } = config;
-	const tokenKey = `${storagePrefix}:authToken`;
-
-	// User state needs reactivity (displayed in UI) + schema validation
-	const userState = createPersistedState({
-		key: `${storagePrefix}:authUser`,
-		schema: AuthUser.or('undefined'),
-		defaultValue: undefined,
-	});
+	const { storage } = config;
+	const resolveBaseURL =
+		typeof config.baseURL === 'function'
+			? config.baseURL
+			: () => config.baseURL as string;
 
 	let phase = $state<AuthPhase>(
-		userState.current ? { status: 'signed-in' } : { status: 'signed-out' },
+		storage.user.current ? { status: 'signed-in' } : { status: 'checking' },
 	);
 
-	const client = createAuthClient({
-		baseURL,
-		basePath: '/auth',
-		fetchOptions: {
-			auth: {
-				type: 'Bearer',
-				// localStorage.getItem returns null, but Better Auth expects undefined
-			token: () => localStorage.getItem(tokenKey) ?? undefined,
+	const client = $derived(
+		createAuthClient({
+			baseURL: resolveBaseURL(),
+			basePath: '/auth',
+			fetchOptions: {
+				auth: {
+					type: 'Bearer',
+					token: () => storage.token.current,
+				},
+				onSuccess: ({ response }) => {
+					const newToken = response.headers.get('set-auth-token');
+					if (newToken) storage.token.current = newToken;
+				},
 			},
-			onSuccess: ({ response }) => {
-				const newToken = response.headers.get('set-auth-token');
-				if (newToken) localStorage.setItem(tokenKey, newToken);
-			},
-		},
-	});
+		}),
+	);
 
 	// ─── Private Helpers ───
 
@@ -142,8 +165,8 @@ export function createAuthState(config: AuthStateConfig) {
 	}
 
 	function clearState() {
-		localStorage.removeItem(tokenKey);
-		userState.current = undefined;
+		storage.token.current = undefined;
+		storage.user.current = undefined;
 	}
 
 	/**
@@ -170,29 +193,20 @@ export function createAuthState(config: AuthStateConfig) {
 		},
 
 		get user() {
-			return userState.current;
+			return storage.user.current;
 		},
 
 		get token() {
-			return localStorage.getItem(tokenKey);
+			return storage.token.current;
 		},
 
 		/**
-		 * Auth-aware fetch for passing to libraries that accept a custom
-		 * `fetch` function—primarily `@tanstack/ai-client`'s
-		 * `fetchServerSentEvents` as the `fetchClient` option.
-		 *
-		 * Injects `Authorization: Bearer <token>` and `credentials: 'include'`
-		 * (session cookie) so requests authenticate via both mechanisms.
-		 *
-		 * Cast to `typeof fetch` because `@tanstack/ai-client` types
-		 * `fetchClient` as `typeof globalThis.fetch`, which in Bun includes
-		 * a static `preconnect` property that plain functions can't
-		 * satisfy (oven-sh/bun#23741).
+		 * Auth-aware fetch that injects `Authorization: Bearer <token>`.
+		 * Used by libraries that accept a custom `fetch` (e.g. `@tanstack/ai-client`).
 		 */
 		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
 			const headers = new Headers(init?.headers);
-			const token = localStorage.getItem(tokenKey);
+			const token = storage.token.current;
 			if (token) headers.set('Authorization', `Bearer ${token}`);
 			return fetch(input, { ...init, headers, credentials: 'include' });
 		}) as typeof fetch,
@@ -207,7 +221,7 @@ export function createAuthState(config: AuthStateConfig) {
 					if (authError)
 						throw new Error(authError.message ?? authError.statusText);
 					const user = serializeDates(data.user);
-					userState.current = user;
+					storage.user.current = user;
 					return user;
 				},
 				catch: (cause) => AuthError.SignInFailed({ cause }),
@@ -237,7 +251,7 @@ export function createAuthState(config: AuthStateConfig) {
 					if (authError)
 						throw new Error(authError.message ?? authError.statusText);
 					const user = serializeDates(data.user);
-					userState.current = user;
+					storage.user.current = user;
 					return user;
 				},
 				catch: (cause) => AuthError.SignUpFailed({ cause }),
@@ -260,7 +274,7 @@ export function createAuthState(config: AuthStateConfig) {
 				const result = await tryAsync({
 					try: async () => {
 						const user = await config.signInWithGoogle!();
-						userState.current = user;
+						storage.user.current = user;
 						return user;
 					},
 					catch: (cause) => {
@@ -324,6 +338,15 @@ export function createAuthState(config: AuthStateConfig) {
 		 * aren't logged out. Only an explicit auth rejection (4xx) clears state.
 		 */
 		async checkSession() {
+			if (config.whenReady) await config.whenReady;
+			if (config.onCheckSessionStart) await config.onCheckSessionStart();
+
+			const token = storage.token.current;
+			if (!token) {
+				phase = { status: 'signed-out' };
+				return Ok(null);
+			}
+
 			const { data, error: sessionError } = await getSession();
 
 			if (sessionError) {
@@ -331,7 +354,7 @@ export function createAuthState(config: AuthStateConfig) {
 					sessionError.status && sessionError.status < 500;
 
 				if (!isAuthRejection) {
-					const cached = userState.current;
+					const cached = storage.user.current;
 					phase = cached ? { status: 'signed-in' } : { status: 'signed-out' };
 					return Ok(cached ?? null);
 				}
@@ -350,12 +373,23 @@ export function createAuthState(config: AuthStateConfig) {
 			}
 
 			const user = serializeDates(data.user);
-			userState.current = user;
+			storage.user.current = user;
 			if (data.encryptionKey) {
 				await config.onSignedIn?.(data.encryptionKey);
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);
+		},
+
+		handleExternalSignOut() {
+			clearState();
+			config.onSignedOut?.();
+			phase = { status: 'signed-out' };
+		},
+
+		handleExternalSignIn() {
+			phase = { status: 'signed-in' };
+			config.onExternalSignIn?.();
 		},
 	};
 }

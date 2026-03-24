@@ -19,7 +19,11 @@
  * @see {@link ./key-cache} — session-scoped encryption key cache
  */
 
-import { createAuthState, AuthUser } from '@epicenter/svelte/auth-state';
+import {
+	createAuthState,
+	AuthUser,
+	type Strategy,
+} from '@epicenter/svelte/auth-state';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { workspace } from '$lib/workspace';
 import { keyCache } from './key-cache';
@@ -32,14 +36,14 @@ const GOOGLE_CLIENT_ID =
 
 /** Bearer token in `chrome.storage.local`. Read synchronously via `$state`. */
 const authToken = createStorageState('local:authToken', {
-	fallback: undefined,
-	schema: type('string').or('undefined'),
+	fallback: null,
+	schema: type('string').or('null'),
 });
 
 /** Cached user in `chrome.storage.local`. Validated against `AuthUser` schema. */
 const authUser = createStorageState('local:authUser', {
-	fallback: undefined,
-	schema: AuthUser.or('undefined'),
+	fallback: null,
+	schema: AuthUser.or('null'),
 });
 
 /**
@@ -54,36 +58,51 @@ async function restoreEncryptionFromCache() {
 	if (cached) await workspace.activateEncryption(base64ToBytes(cached));
 }
 
+/**
+ * Google sign-in via `chrome.identity.launchWebAuthFlow`. Acquires a Google
+ * `id_token` and exchanges it through the Better Auth client's
+ * `signIn.social({ idToken })` — token capture happens automatically via
+ * the client's `onSuccess` hook.
+ */
+const chromeGoogleStrategy: Strategy = async (client) => {
+	const redirectUri = browser.identity.getRedirectURL();
+	const nonce = crypto.randomUUID();
+	const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+	authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+	authUrl.searchParams.set('redirect_uri', redirectUri);
+	authUrl.searchParams.set('response_type', 'id_token');
+	authUrl.searchParams.set('scope', 'openid email profile');
+	authUrl.searchParams.set('nonce', nonce);
+
+	const responseUrl = await browser.identity.launchWebAuthFlow({
+		url: authUrl.toString(),
+		interactive: true,
+	});
+
+	if (!responseUrl) throw new Error('No response from Google');
+
+	const fragment = new URL(responseUrl).hash.substring(1);
+	const params = new URLSearchParams(fragment);
+	const token = params.get('id_token');
+	if (!token) throw new Error('No id_token in response');
+
+	const { data, error } = await client.signIn.social({
+		provider: 'google',
+		idToken: { token, nonce },
+	});
+	if (error) throw new Error(error.message ?? error.statusText);
+	if (!data || !('user' in data))
+		throw new Error('Unexpected response from server');
+	return data;
+};
+
 export const authState = createAuthState({
 	baseURL: () => remoteServerUrl.current,
 	storage: { token: authToken, user: authUser },
+	strategies: { signInWithGoogle: chromeGoogleStrategy },
 	whenReady: Promise.all([authToken.whenReady, authUser.whenReady]),
 	async onCheckSessionStart() {
 		if (authUser.current?.id) await restoreEncryptionFromCache();
-	},
-	async getGoogleIdToken() {
-		const redirectUri = browser.identity.getRedirectURL();
-		const nonce = crypto.randomUUID();
-		const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-		authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
-		authUrl.searchParams.set('redirect_uri', redirectUri);
-		authUrl.searchParams.set('response_type', 'id_token');
-		authUrl.searchParams.set('scope', 'openid email profile');
-		authUrl.searchParams.set('nonce', nonce);
-
-		const responseUrl = await browser.identity.launchWebAuthFlow({
-			url: authUrl.toString(),
-			interactive: true,
-		});
-
-		if (!responseUrl) throw new Error('No response from Google');
-
-		const fragment = new URL(responseUrl).hash.substring(1);
-		const params = new URLSearchParams(fragment);
-		const token = params.get('id_token');
-		if (!token) throw new Error('No id_token in response');
-
-		return { token, nonce };
 	},
 	async onSignedIn(encryptionKey) {
 		await workspace.activateEncryption(base64ToBytes(encryptionKey));

@@ -2,18 +2,33 @@
  * Auth state factory for Epicenter client apps.
  *
  * Owns the phase machine, Better Auth client, session validation, and
- * token refresh. Accepts pluggable storage so both localStorage (web apps)
- * and chrome.storage (extensions) work through the same factory.
+ * token refresh. Accepts pluggable storage and custom sign-in strategies.
  *
- * Actions take explicit parameters—form state lives in the component.
+ * Built-in methods: `signIn` (email/password), `signUp`, `signOut`, `checkSession`.
+ * Custom strategies (e.g. Google OAuth) are passed via `strategies` config—
+ * the factory wraps each one with the phase machine, error handling, user
+ * serialization, and encryption key refresh.
  *
- * @example
+ * @example Web app
  * ```typescript
  * export const authState = createAuthState({
- *   baseURL: 'https://api.epicenter.so',
+ *   baseURL: APP_URLS.API,
  *   storage: createLocalStorage('honeycrisp'),
- *   onSignedIn: (key) => { workspace.activateEncryption(key); },
- *   onSignedOut: () => { workspace.deactivateEncryption(); },
+ *   strategies: { signInWithGoogle: googleRedirect },
+ *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
+ *   onSignedOut: () => workspace.deactivateEncryption(),
+ * });
+ * ```
+ *
+ * @example Chrome extension
+ * ```typescript
+ * export const authState = createAuthState({
+ *   baseURL: () => remoteServerUrl.current,
+ *   storage: { token: authToken, user: authUser },
+ *   strategies: { signInWithGoogle: chromeGoogleStrategy },
+ *   whenReady: Promise.all([authToken.whenReady, authUser.whenReady]),
+ *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
+ *   onSignedOut: () => workspace.deactivateEncryption(),
  * });
  * ```
  */
@@ -83,6 +98,33 @@ export type AuthPhase =
 	| { status: 'signed-in' }
 	| { status: 'signed-out'; error?: string };
 
+/**
+ * A custom sign-in strategy. Receives the Better Auth client (for token
+ * handling via `onSuccess`) and returns the raw response containing a `user`.
+ * The factory handles: phase transitions, `serializeDates`, storage writes,
+ * encryption key refresh, cancelled-popup detection, and error wrapping.
+ *
+ * Throw on failure—the factory catches and wraps with `AuthError.StrategyFailed`.
+ * Errors containing 'canceled'/'cancelled' are treated as silent (no UI error).
+ *
+ * @example Google OAuth via chrome.identity
+ * ```typescript
+ * const chromeGoogle: Strategy = async (client) => {
+ *   const { token, nonce } = await chromeIdentityFlow();
+ *   const { data, error } = await client.signIn.social({
+ *     provider: 'google',
+ *     idToken: { token, nonce },
+ *   });
+ *   if (error) throw new Error(error.message ?? error.statusText);
+ *   if (!data || !('user' in data)) throw new Error('Unexpected response');
+ *   return data;
+ * };
+ * ```
+ */
+export type Strategy = (
+	client: ReturnType<typeof createAuthClient>,
+) => Promise<{ user: Record<string, unknown> }>;
+
 const AuthError = defineErrors({
 	SignInFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Sign-in failed: ${extractErrorMessage(cause)}`,
@@ -92,15 +134,17 @@ const AuthError = defineErrors({
 		message: `Sign-up failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	GoogleSignInFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Google sign-in failed: ${extractErrorMessage(cause)}`,
+	StrategyFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Sign-in failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-export type AuthStateConfig = {
+export type AuthStateConfig<
+	TStrategies extends Record<string, Strategy> = {},
+> = {
 	/**
 	 * Base URL for the Better Auth API (e.g. `https://api.epicenter.so`).
 	 * Pass a getter function for reactive URLs that change at runtime—
@@ -119,20 +163,25 @@ export type AuthStateConfig = {
 	 * @see {@link createLocalStorage} — convenience helper for localStorage
 	 */
 	storage: {
-		token: { current: string | undefined };
-		user: { current: AuthUser | undefined };
+		token: { current: string | null };
+		user: { current: AuthUser | null };
 	};
 
 	/**
-	 * Platform-specific Google id_token acquisition. The factory handles the
-	 * Better Auth `client.signIn.social()` call, token capture via `onSuccess`,
-	 * and user serialization—the consumer only provides the raw credentials.
+	 * Custom sign-in strategies. Each entry becomes a zero-arg method on
+	 * the returned auth state, wrapped with the phase machine, error handling,
+	 * user serialization, and encryption key refresh.
 	 *
-	 * Omit for web apps (factory uses Better Auth's redirect flow instead).
-	 *
-	 * @returns Google id_token and nonce for Better Auth's `signIn.social({ idToken })` call
+	 * @example
+	 * ```typescript
+	 * strategies: {
+	 *   signInWithGoogle: googleRedirect,
+	 *   signInWithApple: appleStrategy,
+	 * }
+	 * // → authState.signInWithGoogle(), authState.signInWithApple()
+	 * ```
 	 */
-	getGoogleIdToken?: () => Promise<{ token: string; nonce: string }>;
+	strategies?: TStrategies;
 
 	/**
 	 * Called after successful sign-in/session validation with the encryption
@@ -140,7 +189,7 @@ export type AuthStateConfig = {
 	 * HKDF-derived per-user key—consumers typically call
 	 * `workspace.activateEncryption(base64ToBytes(key))`.
 	 *
-	 * Fires on: `signIn`, `signUp`, `signInWithGoogle`, `checkSession` (when valid).
+	 * Fires on: `signIn`, `signUp`, custom strategies, `checkSession` (when valid).
 	 */
 	onSignedIn?: (encryptionKey: string) => Promise<void>;
 
@@ -173,33 +222,44 @@ export type AuthStateConfig = {
 	onCheckSessionStart?: () => Promise<void>;
 };
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 /**
  * Create a localStorage-backed storage object for use with `createAuthState`.
  *
  * Web apps use this helper. Extensions pass their own storage objects
  * (e.g. `createStorageState` from `@wxt-dev/storage`).
  */
-export function createLocalStorage(prefix: string): AuthStateConfig['storage'] {
-	const tokenKey = `${prefix}:authToken`;
-	const userState = createPersistedState({
-		key: `${prefix}:authUser`,
-		schema: AuthUser.or('undefined'),
-		defaultValue: undefined,
-	});
+export function createLocalStorage(
+	prefix: string,
+): AuthStateConfig['storage'] {
 	return {
-		token: {
-			get current() {
-				return localStorage.getItem(tokenKey) ?? undefined;
-			},
-			set current(v: string | undefined) {
-				v === undefined
-					? localStorage.removeItem(tokenKey)
-					: localStorage.setItem(tokenKey, v);
-			},
-		},
-		user: userState,
+		token: createPersistedState({
+			key: `${prefix}:authToken`,
+			schema: type('string').or('null'),
+			defaultValue: null,
+		}),
+		user: createPersistedState({
+			key: `${prefix}:authUser`,
+			schema: AuthUser.or('null'),
+			defaultValue: null,
+		}),
 	};
 }
+
+/**
+ * Google sign-in strategy for web apps using Better Auth's redirect flow.
+ * Navigates to Google's consent screen—the page never returns from this call.
+ * After the user consents, Google redirects back and Better Auth handles
+ * the callback automatically.
+ */
+export const googleRedirect: Strategy = async (client) => {
+	await client.signIn.social({
+		provider: 'google',
+		callbackURL: window.location.origin,
+	});
+	throw new Error('Expected redirect');
+};
 
 function serializeDates<T extends Record<string, unknown>>(obj: T) {
 	return Object.fromEntries(
@@ -223,33 +283,12 @@ function serializeDates<T extends Record<string, unknown>>(obj: T) {
  * The returned object is a Svelte 5 reactive singleton—`status`, `user`,
  * `token`, and `signInError` are reactive getters backed by `$state`.
  *
- * @param config - App-specific configuration (storage, callbacks, base URL)
- * @returns Reactive auth state with `signIn`, `signUp`, `signInWithGoogle`,
- *          `signOut`, `checkSession`, and external sign-in/out handlers
- *
- * @example Web app (honeycrisp)
- * ```typescript
- * export const authState = createAuthState({
- *   baseURL: APP_URLS.API,
- *   storage: createLocalStorage('honeycrisp'),
- *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
- *   onSignedOut: () => workspace.deactivateEncryption(),
- * });
- * ```
- *
- * @example Chrome extension (tab-manager)
- * ```typescript
- * export const authState = createAuthState({
- *   baseURL: () => remoteServerUrl.current,
- *   storage: { token: authToken, user: authUser },
- *   whenReady: Promise.all([authToken.whenReady, authUser.whenReady]),
- *   getGoogleIdToken: () => chromeIdentityFlow(),
- *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
- *   onSignedOut: () => workspace.deactivateEncryption(),
- * });
- * ```
+ * @param config - App-specific configuration (storage, callbacks, strategies)
+ * @returns Reactive auth state with built-in methods plus one method per strategy
  */
-export function createAuthState(config: AuthStateConfig) {
+export function createAuthState<
+	TStrategies extends Record<string, Strategy> = {},
+>(config: AuthStateConfig<TStrategies>) {
 	const { storage } = config;
 	const resolveBaseURL =
 		typeof config.baseURL === 'function'
@@ -275,7 +314,7 @@ export function createAuthState(config: AuthStateConfig) {
 			fetchOptions: {
 				auth: {
 					type: 'Bearer',
-					token: () => storage.token.current,
+					token: () => storage.token.current ?? undefined,
 				},
 				onSuccess: ({ response }) => {
 					const newToken = response.headers.get('set-auth-token');
@@ -308,8 +347,8 @@ export function createAuthState(config: AuthStateConfig) {
 
 	/** @internal */
 	function clearState() {
-		storage.token.current = undefined;
-		storage.user.current = undefined;
+		storage.token.current = null;
+		storage.user.current = null;
 	}
 
 	/**
@@ -324,9 +363,56 @@ export function createAuthState(config: AuthStateConfig) {
 		}
 	}
 
+	/**
+	 * Execute a sign-in strategy with the full phase machine lifecycle.
+	 *
+	 * Handles: phase transitions, `tryAsync` error wrapping, date serialization,
+	 * user storage writes, encryption key refresh, and cancelled-popup detection
+	 * (errors containing 'canceled'/'cancelled' produce no UI error).
+	 *
+	 * @internal
+	 */
+	async function executeStrategy(fn: Strategy) {
+		phase = { status: 'signing-in' };
+
+		const result = await tryAsync({
+			try: async () => {
+				const data = await fn(client);
+				const user = serializeDates(data.user);
+				storage.user.current = user;
+				return user;
+			},
+			catch: (cause) => {
+				const message = cause instanceof Error ? cause.message : '';
+				if (
+					message.includes('canceled') ||
+					message.includes('cancelled')
+				) {
+					return AuthError.StrategyFailed({
+						cause: new Error('Cancelled'),
+					});
+				}
+				return AuthError.StrategyFailed({ cause });
+			},
+		});
+
+		if (result.error) {
+			const isCancelled = result.error.message.includes('Cancelled');
+			phase = {
+				status: 'signed-out',
+				error: isCancelled ? undefined : result.error.message,
+			};
+		} else {
+			phase = { status: 'signed-in' };
+			await refreshEncryptionKeyAndNotify();
+		}
+
+		return result;
+	}
+
 	// ─── Public API ───
 
-	return {
+	const base = {
 		get status() {
 			return phase.status;
 		},
@@ -412,82 +498,6 @@ export function createAuthState(config: AuthStateConfig) {
 			return result;
 		},
 
-		/**
-		 * Sign in with Google. Two paths:
-		 *
-		 * 1. **Extension** (`getGoogleIdToken` provided): calls the config function
-		 *    to get a Google `id_token` via `chrome.identity`, then exchanges it
-		 *    through `client.signIn.social({ idToken })`. Token capture and user
-		 *    serialization happen inside the factory.
-		 *
-		 * 2. **Web app** (no override): calls `client.signIn.social({ provider: 'google' })`
-		 *    which triggers a full-page redirect to Google. The method never resolves
-		 *    normally—Better Auth handles the redirect callback.
-		 */
-		async signInWithGoogle() {
-			phase = { status: 'signing-in' };
-
-			if (config.getGoogleIdToken) {
-				const result = await tryAsync({
-					try: async () => {
-						const idToken = await config.getGoogleIdToken!();
-						const { data, error: authError } =
-							await client.signIn.social({
-								provider: 'google',
-								idToken,
-							});
-						if (authError)
-							throw new Error(authError.message ?? authError.statusText);
-						if (!data || !('user' in data))
-							throw new Error('Unexpected response from server');
-						const user = serializeDates(data.user);
-						storage.user.current = user;
-						return user;
-					},
-					catch: (cause) => {
-						const message = cause instanceof Error ? cause.message : '';
-						if (message.includes('canceled') || message.includes('cancelled')) {
-							return AuthError.GoogleSignInFailed({
-								cause: new Error('Cancelled'),
-							});
-						}
-						return AuthError.GoogleSignInFailed({ cause });
-					},
-				});
-
-				if (result.error) {
-					const isCancelled = result.error.message.includes('Cancelled');
-					phase = {
-						status: 'signed-out',
-						error: isCancelled ? undefined : result.error.message,
-					};
-				} else {
-					phase = { status: 'signed-in' };
-					await refreshEncryptionKeyAndNotify();
-				}
-
-				return result;
-			}
-
-			// Default: Better Auth redirect flow for web apps
-			const result = await tryAsync({
-				try: async () => {
-					await client.signIn.social({
-						provider: 'google',
-						callbackURL: window.location.origin,
-					});
-					throw new Error('Expected redirect');
-				},
-				catch: (cause) => AuthError.GoogleSignInFailed({ cause }),
-			});
-
-			if (result.error) {
-				phase = { status: 'signed-out', error: result.error.message };
-			}
-
-			return result;
-		},
-
 		/** Sign out—deactivates encryption, invalidates server session, clears local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
@@ -523,7 +533,9 @@ export function createAuthState(config: AuthStateConfig) {
 
 				if (!isAuthRejection) {
 					const cached = storage.user.current;
-					phase = cached ? { status: 'signed-in' } : { status: 'signed-out' };
+					phase = cached
+						? { status: 'signed-in' }
+						: { status: 'signed-out' };
 					return Ok(cached ?? null);
 				}
 
@@ -553,13 +565,6 @@ export function createAuthState(config: AuthStateConfig) {
 		 * Transition to signed-out due to an external storage change (e.g.
 		 * another extension context cleared the auth token). Clears local
 		 * state and fires `onSignedOut`.
-		 *
-		 * Consumers wire this to storage watchers outside the factory:
-		 * ```typescript
-		 * authToken.watch((token) => {
-		 *   if (!token && authState.status === 'signed-in') authState.handleExternalSignOut();
-		 * });
-		 * ```
 		 */
 		handleExternalSignOut() {
 			clearState();
@@ -577,5 +582,16 @@ export function createAuthState(config: AuthStateConfig) {
 			phase = { status: 'signed-in' };
 			config.onExternalSignIn?.();
 		},
+	};
+
+	const strategyMethods = Object.fromEntries(
+		Object.entries(config.strategies ?? {}).map(([name, fn]) => [
+			name,
+			() => executeStrategy(fn),
+		]),
+	);
+
+	return Object.assign(base, strategyMethods) as typeof base & {
+		[K in keyof TStrategies]: () => ReturnType<typeof executeStrategy>;
 	};
 }

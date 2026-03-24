@@ -2,8 +2,7 @@
  * Auth state factory for Epicenter client apps.
  *
  * Owns the phase machine, Better Auth client, session validation, and
- * token refresh. Accepts pluggable storage, custom sign-in strategies,
- * and an optional encryption lifecycle object.
+ * token refresh. Accepts pluggable storage and custom sign-in strategies.
  *
  * Built-in methods: `signIn` (email/password), `signUp`, `signOut`, `checkSession`.
  * Custom strategies (e.g. Google OAuth) are passed via `strategies` config—
@@ -16,10 +15,8 @@
  *   baseURL: APP_URLS.API,
  *   storage: createLocalStorage('honeycrisp'),
  *   strategies: { signInWithGoogle: googleRedirect },
- *   encryption: {
- *     activate: (key) => workspace.activateEncryption(base64ToBytes(key)),
- *     deactivate: () => workspace.deactivateEncryption(),
- *   },
+ *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
+ *   onSignedOut: () => workspace.deactivateEncryption(),
  * });
  * ```
  *
@@ -29,11 +26,8 @@
  *   baseURL: () => remoteServerUrl.current,
  *   storage: { token: authToken, user: authUser, whenReady: ... },
  *   strategies: { signInWithGoogle: chromeGoogleStrategy },
- *   encryption: {
- *     activate: (key) => workspace.activateEncryption(base64ToBytes(key)),
- *     deactivate: () => workspace.deactivateEncryption(),
- *     restoreFromCache: () => restoreEncryptionFromCache(),
- *   },
+ *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
+ *   onSignedOut: () => workspace.deactivateEncryption(),
  * });
  * ```
  */
@@ -155,26 +149,30 @@ export type AuthStateConfig<
 	strategies?: TStrategies;
 
 	/**
-	 * Encryption lifecycle. The factory calls these at the right times:
+	 * Called after successful sign-in/session validation with the encryption
+	 * key from the server's `customSession` plugin.
 	 *
-	 * - `activate(key)` — after sign-in, sign-up, strategy success, or
-	 *   successful session validation (with server-provided key)
-	 * - `deactivate()` — on sign-out (explicit or server-rejected)
-	 * - `restoreFromCache()` — at startup before the server roundtrip
-	 *   and on external sign-in (where no server key is available).
-	 *   Optional—omit for apps without a local key cache.
+	 * Fires on: `signIn`, `signUp`, custom strategies, `checkSession` (when valid).
 	 */
-	encryption?: {
-		activate: (encryptionKey: string) => Promise<void>;
-		deactivate: () => Promise<void>;
-		restoreFromCache?: () => Promise<void>;
-	};
+	onSignedIn?: (encryptionKey: string) => Promise<void>;
+
+	/** Called on sign-out (explicit or server-rejected session). */
+	onSignedOut?: () => Promise<void>;
 
 	/**
-	 * Called when another extension context signs in. Fires `encryption.restoreFromCache`
-	 * by default. Override for custom behavior beyond encryption restoration.
+	 * Called when another extension context signs in (e.g. popup signs in,
+	 * sidebar detects it via `chrome.storage` watcher). Unlike `onSignedIn`,
+	 * there's no encryption key from the server—the consumer typically
+	 * restores from a local key cache instead.
 	 */
 	onExternalSignIn?: () => Promise<void>;
+
+	/**
+	 * Called at the start of `checkSession`, after `whenReady` resolves but
+	 * before the server roundtrip. Used by the tab manager to restore
+	 * encryption from a local key cache for instant startup.
+	 */
+	onCheckSessionStart?: () => Promise<void>;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -243,7 +241,7 @@ function toStoredUser(raw: User): StoredUser {
 export function createAuthState<
 	TStrategies extends Record<string, Strategy> = {},
 >(config: AuthStateConfig<TStrategies>) {
-	const { storage, encryption } = config;
+	const { storage } = config;
 	const resolveBaseURL =
 		typeof config.baseURL === 'function'
 			? config.baseURL
@@ -298,16 +296,15 @@ export function createAuthState<
 	}
 
 	/**
-	 * Fetch session to get the encryption key, then activate encryption.
+	 * Fetch session to get the encryption key, then notify the app.
 	 * signIn/signUp responses don't include customSession fields—only
 	 * getSession() returns them.
 	 * @internal
 	 */
-	async function activateEncryptionFromServer() {
-		if (!encryption) return;
+	async function refreshEncryptionKeyAndNotify() {
 		const result = await getSession().catch(() => null);
 		if (result?.data?.encryptionKey) {
-			await encryption.activate(result.data.encryptionKey);
+			await config.onSignedIn?.(result.data.encryptionKey);
 		}
 	}
 
@@ -350,7 +347,7 @@ export function createAuthState<
 			};
 		} else {
 			phase = { status: 'signed-in' };
-			await activateEncryptionFromServer();
+			await refreshEncryptionKeyAndNotify();
 		}
 
 		return result;
@@ -413,7 +410,7 @@ export function createAuthState<
 		/** Sign out—deactivates encryption, invalidates server session, clears local state. */
 		async signOut() {
 			phase = { status: 'signing-out' };
-			await encryption?.deactivate();
+			await config.onSignedOut?.();
 			await client.signOut().catch(() => {});
 			clearState();
 			phase = { status: 'signed-out' };
@@ -429,11 +426,7 @@ export function createAuthState<
 		 */
 		async checkSession() {
 			if (storage.whenReady) await storage.whenReady;
-
-			// Restore encryption from cache for instant startup
-			if (encryption?.restoreFromCache && storage.user.current) {
-				await encryption.restoreFromCache();
-			}
+			if (config.onCheckSessionStart) await config.onCheckSessionStart();
 
 			const token = storage.token.current;
 			if (!token) {
@@ -456,14 +449,14 @@ export function createAuthState<
 				}
 
 				clearState();
-				await encryption?.deactivate();
+				await config.onSignedOut?.();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
 
 			if (!data) {
 				clearState();
-				await encryption?.deactivate();
+				await config.onSignedOut?.();
 				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
@@ -471,7 +464,7 @@ export function createAuthState<
 			const user = toStoredUser(data.user);
 			storage.user.current = user;
 			if (data.encryptionKey) {
-				await encryption?.activate(data.encryptionKey);
+				await config.onSignedIn?.(data.encryptionKey);
 			}
 			phase = { status: 'signed-in' };
 			return Ok(user);
@@ -483,7 +476,7 @@ export function createAuthState<
 		 */
 		handleExternalSignOut() {
 			clearState();
-			encryption?.deactivate();
+			config.onSignedOut?.();
 			phase = { status: 'signed-out' };
 		},
 
@@ -493,11 +486,7 @@ export function createAuthState<
 		 */
 		handleExternalSignIn() {
 			phase = { status: 'signed-in' };
-			if (config.onExternalSignIn) {
-				config.onExternalSignIn();
-			} else {
-				encryption?.restoreFromCache?.();
-			}
+			config.onExternalSignIn?.();
 		},
 	};
 

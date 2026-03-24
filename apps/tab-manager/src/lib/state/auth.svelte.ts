@@ -104,10 +104,17 @@ export const authState = createAuthState({
 		whenReady: Promise.all([authToken.whenReady, authUser.whenReady]),
 	},
 	strategies: { signInWithGoogle: chromeGoogleStrategy },
-	encryption: {
-		activate: (key) => workspace.activateEncryption(base64ToBytes(key)),
-		deactivate: () => workspace.deactivateEncryption(),
-		restoreFromCache: restoreEncryptionFromCache,
+	async onCheckSessionStart() {
+		if (authUser.current?.id) await restoreEncryptionFromCache();
+	},
+	async onSignedIn(encryptionKey) {
+		await workspace.activateEncryption(base64ToBytes(encryptionKey));
+	},
+	async onSignedOut() {
+		await workspace.deactivateEncryption();
+	},
+	async onExternalSignIn() {
+		await restoreEncryptionFromCache();
 	},
 });
 

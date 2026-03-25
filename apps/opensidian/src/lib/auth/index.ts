@@ -1,9 +1,15 @@
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createWorkspaceAuth } from '@epicenter/svelte/auth-state';
+import {
+	createLocalAuthStore,
+	createWebAuthClient,
+	createWorkspaceAuth,
+} from '@epicenter/svelte/auth-state';
 import { ws } from '$lib/workspace';
 
 export const authState = createWorkspaceAuth({
-	baseURL: APP_URLS.API,
-	storageKey: 'opensidian',
+	client: createWebAuthClient({
+		baseURL: APP_URLS.API,
+	}),
+	store: createLocalAuthStore('opensidian'),
 	workspace: ws,
 });

@@ -7,7 +7,7 @@
 
 ## Overview
 
-Simplify `packages/svelte-utils/src/auth-state.svelte.ts` so the public API matches the real product shape: normal browser SPAs are the default path, encrypted workspace apps are the second default path, and the Chrome extension is the one injected/custom path. Remove the current framework-ish layering, especially `createAuthController`, and replace it with constructors whose names and call sites match how apps actually use auth in this repo.
+Simplify `packages/svelte-utils/src/auth-state.svelte.ts` so the public API matches the real product shape: the top-level split should be domain-based (`createAuth` vs `createWorkspaceAuth`), while environment differences should be injected through concrete seams such as auth client and auth store. Remove the current framework-ish layering, especially `createAuthController`, and replace it with constructors whose names and call sites match how apps actually use auth in this repo.
 
 ## Motivation
 
@@ -94,44 +94,42 @@ function createAuthController(
 
 This creates a few problems:
 
-1. **The public API still reflects implementation layering instead of product usage**: most apps do not think in terms of `authApi + sessionStore + auth state constructor`; they just want "create auth for this app."
+1. **The public API still reflects implementation layering instead of product usage**: most apps do not think in terms of `authApi + sessionStore + auth state constructor`; they think in terms of "plain auth" vs "workspace-coupled auth."
 2. **`createAuthController` is a smell**: it owns nearly all behavior, while the public constructors are thin wrappers around it. That usually means the code is organized around an internal engine rather than real domain concepts.
-3. **The common SPA path is still too verbose**: the web apps all spell out the same setup in three steps even though their implementation is nearly identical.
-4. **The extension is the real outlier, but the API treats every environment as equally abstract**: that is backwards. The default case should be tiny; the odd case can be more explicit.
+3. **The real seams are narrower than the current API suggests**: the main differences we know today are session persistence and auth initiation flow, not the overall auth lifecycle.
+4. **Tauri may introduce more platform-specific restore details later**: the abstraction should leave room for that without forcing a platform-specific constructor explosion up front.
 5. **Some shapes are still awkward**: `AuthSession = { session, encryptionKey }` adds a nested `session.session.user` shape, and `authApi` is a reasonable name but still more architectural than product-facing.
 
 ### Desired State
 
-The public API should make the default case obvious:
+The public API should make the domain split obvious:
 
 ```typescript
-// generic SPA auth
 export const auth = createAuth({
-	baseURL: APP_URLS.API,
-	storageKey: 'zhongwen',
+	client: createWebAuthClient({ baseURL: APP_URLS.API }),
+	store: createLocalAuthStore('zhongwen'),
 });
 ```
 
 ```typescript
-// encrypted workspace SPA auth
 export const auth = createWorkspaceAuth({
-	baseURL: APP_URLS.API,
-	storageKey: 'honeycrisp',
+	client: createWebAuthClient({ baseURL: APP_URLS.API }),
+	store: createLocalAuthStore('honeycrisp'),
 	workspace,
 });
 ```
 
-The extension should be the explicit injected path:
+Environment differences should be injected through the same two seams:
 
 ```typescript
-export const auth = createWorkspaceAuthWith({
-	client: createCustomAuthClient({
+export const auth = createWorkspaceAuth({
+	client: createExtensionAuthClient({
 		baseURL: () => remoteServerUrl.current,
 		signInWithGoogle: async (client) => {
 			// extension-specific OAuth flow
 		},
 	}),
-	store: createCustomAuthStore({
+	store: createChromeAuthStore({
 		token: authToken,
 		user: authUser,
 		ready: Promise.all([authToken.whenReady, authUser.whenReady]),
@@ -144,11 +142,24 @@ export const auth = createWorkspaceAuthWith({
 });
 ```
 
-The default constructors should own the boring setup. The injected constructors should exist for the extension and any future outlier, but should not dominate the public surface.
+If Tauri needs extra behavior, that should still fit into the same model:
+
+```typescript
+export const auth = createWorkspaceAuth({
+	client: createTauriAuthClient({ baseURL: APP_URLS.API }),
+	store: createTauriAuthStore('opensidian'),
+	workspace,
+	restoreUserKey: async () => {
+		// only if Tauri needs platform-specific restore semantics
+	},
+});
+```
+
+The public API should stay domain-based. Platform differences should live in the injected implementations, not in parallel top-level constructors.
 
 ## Research Findings
 
-### Almost all real consumers are SPAs
+### The main environment differences are client and store behavior
 
 Current in-repo consumers:
 
@@ -159,9 +170,14 @@ Current in-repo consumers:
 | `apps/opensidian` | Yes | localStorage | normal SPA / web redirect |
 | `apps/tab-manager` | Yes | `chrome.storage` wrappers | extension-specific OAuth |
 
-**Key finding**: three of the four real consumers follow the same normal browser pattern.
+**Key finding**: the real differences today are mostly:
 
-**Implication**: the public API should optimize for the SPA path and make the extension the explicit custom path.
+- how session state is persisted and synchronized
+- how Google sign-in is initiated
+
+The rest of the auth lifecycle is largely shared.
+
+**Implication**: the top-level constructors should stay domain-based, while environment differences are injected through client/store implementations.
 
 ### Workspace auth is a real domain concept
 
@@ -203,48 +219,35 @@ function createAuthController(...) {
 
 Even after simplification, two seams remain useful:
 
-| Seam | Why it exists | Default case | Extension case |
+| Seam | Why it exists | Web / SPA case | Extension case | Possible Tauri case |
 | --- | --- | --- | --- |
-| auth client | Web redirect vs extension OAuth popup | Better Auth redirect client | Better Auth client + custom Google flow |
-| auth store | localStorage vs `chrome.storage` wrappers | simple storage key | reactive cell adapter with subscribe |
+| auth client | Web redirect vs extension OAuth popup | Better Auth redirect client | Better Auth client + custom Google flow | Better Auth client + native/deep-link flow if needed |
+| auth store | localStorage vs `chrome.storage` wrappers | simple storage key | reactive cell adapter with subscribe | native/secure storage if needed |
+| optional restore hook | some environments can restore decrypt state before server validation | often unnecessary | used for cached user key restore | may be needed if native storage/bootstrap differs |
 
-**Key finding**: dependency injection is still useful, but only for these two seams.
+**Key finding**: dependency injection is still useful, primarily for client and store. A restore hook remains a valid optional seam for workspace auth if a platform needs it.
 
-**Implication**: expose tiny default constructors for SPAs and narrow injected constructors for outliers.
+**Implication**: keep the public API focused on `createAuth` and `createWorkspaceAuth`, and inject environment-specific behavior through those narrower seams.
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
-| Default generic auth name | `createAuth` | Short, obvious, and appropriate when browser SPA is the default environment |
-| Default workspace auth name | `createWorkspaceAuth` | Keeps the meaningful domain distinction that signed-in implies decrypted workspace access |
-| Escape hatch names | `createAuthWith` and `createWorkspaceAuthWith` | Makes the injected/custom path explicit without vague names like `custom` or clunky names like `web` |
-| Internal Better Auth helper name | `createBetterAuthClient` or `createDefaultAuthClient` | "client" is more concrete than `authApi`; this helper is implementation detail, not the public mental model |
-| Internal store helper names | `createLocalAuthStore` and `createCellAuthStore` | Narrow, concrete, and closer to what they actually do |
+| Top-level generic auth name | `createAuth` | Short, obvious, and describes the domain concept directly |
+| Top-level workspace auth name | `createWorkspaceAuth` | Keeps the meaningful distinction that signed-in implies decrypted workspace access |
+| Public platform split | Do not add platform-specific top-level constructors | Platform mostly changes infrastructure, not auth domain semantics |
+| Better Auth helper names | `createWebAuthClient`, `createExtensionAuthClient`, `createTauriAuthClient` | Makes platform-specific auth initiation explicit at the helper layer |
+| Store helper names | `createLocalAuthStore`, `createChromeAuthStore`, `createTauriAuthStore` | Makes persistence/sync differences explicit at the helper layer |
 | Central internal helper | Remove `createAuthController` | Inline logic into public constructors or extract only small focused helpers |
 | Auth result shape | Flatten to `{ user, token, encryptionKey? }` | Avoid nested `session.session.user` shape |
-| Default SPA configuration | `baseURL` + `storageKey` | That is all the normal apps actually need |
-| Extension configuration | `client` + `store` injected through `*With` constructors | Keeps the odd path explicit and contained |
+| Public constructor inputs | `client` + `store`, plus `workspace` / `restoreUserKey?` for workspace auth | Keeps domain API stable while letting platforms vary underneath |
 
 ## Proposed API
 
 ### Public API
 
 ```typescript
-type CreateAuthOptions = {
-	baseURL: string | (() => string);
-	storageKey: string;
-};
-
-export function createAuth(options: CreateAuthOptions) { ... }
-
-export function createWorkspaceAuth(
-	options: CreateAuthOptions & {
-		workspace: WorkspaceHandle;
-	},
-) { ... }
-
-export function createAuthWith({
+export function createAuth({
 	client,
 	store,
 }: {
@@ -252,7 +255,7 @@ export function createAuthWith({
 	store: AuthStore;
 }) { ... }
 
-export function createWorkspaceAuthWith({
+export function createWorkspaceAuth({
 	client,
 	store,
 	workspace,
@@ -296,33 +299,33 @@ type AuthResult = {
 The target architecture should read like this:
 
 ```text
-Default path
-────────────
 createAuth
-  ├── createBetterAuthClient(baseURL)
-  ├── createLocalAuthStore(storageKey)
-  └── returns auth state
-
-createWorkspaceAuth
-  ├── createBetterAuthClient(baseURL)
-  ├── createLocalAuthStore(storageKey)
-  ├── workspace dependency
-  └── returns workspace-aware auth state
-
-
-Injected path
-─────────────
-createAuthWith
   ├── injected client
   ├── injected store
   └── returns auth state
 
-createWorkspaceAuthWith
+createWorkspaceAuth
   ├── injected client
   ├── injected store
   ├── workspace dependency
   ├── optional restoreUserKey
   └── returns workspace-aware auth state
+```
+
+Platform helpers feed those constructors:
+
+```text
+Web / SPA
+  createWebAuthClient
+  createLocalAuthStore
+
+Browser extension
+  createExtensionAuthClient
+  createChromeAuthStore
+
+Tauri
+  createTauriAuthClient
+  createTauriAuthStore
 ```
 
 And the internal flow should be much flatter than today:
@@ -375,28 +378,31 @@ checkSession
 - [x] **1.1** Replace `AuthSession = { session, encryptionKey }` with a flat `AuthResult` shape.
 - [x] **1.2** Replace `authApi` naming in internal types/helpers with `client` or `authClient`.
 - [x] **1.3** Remove `createAuthController` and inline its behavior into the real constructors, extracting only small helper functions where necessary.
+  > **Note**: The implementation keeps only narrow Better Auth adaptation helpers. The public constructors now own their own session and workspace lifecycle instead of delegating to another generic controller.
 - [x] **1.4** Keep or improve the current JSDoc while flattening the architecture. Public constructors should explain when to use them, not just what they return.
 
-### Phase 2: Create the default SPA constructors
+### Phase 2: Reshape the public constructors
 
-- [x] **2.1** Add `createAuth({ baseURL, storageKey })`.
-- [x] **2.2** Add `createWorkspaceAuth({ baseURL, storageKey, workspace })`.
-- [x] **2.3** Move the localStorage + Better Auth web redirect defaults inside those constructors.
-- [x] **2.4** Ensure the default SPA call sites become one small constructor call each.
+- [x] **2.1** Change the top-level public API to `createAuth({ client, store })`.
+- [x] **2.2** Change the workspace-aware public API to `createWorkspaceAuth({ client, store, workspace, restoreUserKey? })`.
+- [x] **2.3** Keep the domain split at the top level; do not add platform-specific top-level constructors.
+- [x] **2.4** Ensure the public JSDoc explains the domain split clearly.
 
-### Phase 3: Create the injected constructors
+### Phase 3: Add platform helpers
 
-- [x] **3.1** Add `createAuthWith({ client, store })`.
-- [x] **3.2** Add `createWorkspaceAuthWith({ client, store, workspace, restoreUserKey? })`.
-- [x] **3.3** Keep the extension on the injected workspace path.
-- [x] **3.4** Rename helper constructors to concrete names like `createLocalAuthStore` and `createCellAuthStore` if they remain exported.
+- [x] **3.1** Add or rename client helpers to concrete platform names like `createWebAuthClient`, `createExtensionAuthClient`, and, if justified, `createTauriAuthClient`.
+  > **Note**: Only the web and extension helpers were added. Tauri helpers were left out because no current call site needs them yet.
+- [x] **3.2** Add or rename store helpers to concrete platform names like `createLocalAuthStore`, `createChromeAuthStore`, and, if justified, `createTauriAuthStore`.
+  > **Note**: Only local and Chrome storage helpers were added for the same reason.
+- [x] **3.3** Keep the extension on the same top-level `createWorkspaceAuth()` path by swapping implementations, not by introducing a separate platform-level constructor.
+- [x] **3.4** Keep `restoreUserKey` as an optional workspace-only seam for platforms that can restore decrypt state before server validation.
 
 ### Phase 4: Migrate apps
 
 - [x] **4.1** Migrate Zhongwen to `createAuth`.
 - [x] **4.2** Migrate Honeycrisp and Opensidian to `createWorkspaceAuth`.
-- [x] **4.3** Migrate tab-manager to `createWorkspaceAuthWith`.
-- [x] **4.4** Delete or rename obsolete exports so the old names do not remain as parallel APIs.
+- [x] **4.3** Migrate tab-manager to `createWorkspaceAuth` with extension-specific client/store helpers.
+- [x] **4.4** Delete or rename obsolete exports so the old architecture-first names do not remain as parallel APIs.
 
 ### Phase 5: Verification and cleanup
 
@@ -432,26 +438,26 @@ checkSession
 
 ## Open Questions
 
-1. **Should `createAuthWith` / `createWorkspaceAuthWith` be public long-term or implementation-only?**
-   - Options: (a) public official API, (b) public but undocumented escape hatch, (c) internal only with an extension-specific local helper
-   - **Recommendation**: keep them public for now because the extension genuinely needs them, then reevaluate once the design settles.
+1. **How many platform helpers should we add up front?**
+   - Options: (a) only web + extension helpers now, (b) add Tauri helper names now as placeholders, (c) keep only generic helper names until Tauri is real
+   - **Recommendation**: add only the helpers justified by current code, but structure the API so Tauri can slot in later without changing the top-level constructors.
 
-2. **Should `createLocalAuthStore` and `createCellAuthStore` remain exported?**
+2. **Should `createLocalAuthStore` and platform-specific store helpers remain exported?**
    - Options: (a) export both, (b) export only the cell adapter, (c) hide both behind the higher-level constructors
-   - **Recommendation**: default to keeping only the cell adapter exported if the default constructors fully absorb localStorage setup.
+   - **Recommendation**: export the helpers that correspond to real platform seams; avoid exporting generic wrappers that just restate the same abstraction.
 
-3. **Should the extension continue to build its client inline, or get a small local helper like `createExtensionAuthClient()`?**
-   - **Recommendation**: probably add a small local helper inside `apps/tab-manager/src/lib/state/auth.svelte.ts` or nearby if the inline client setup starts to feel noisy.
+3. **Should Tauri get a restore hook immediately?**
+   - **Recommendation**: no. Keep `restoreUserKey` optional and only use it if a concrete Tauri auth/storage flow requires it.
 
 ## Success Criteria
 
-- [x] Default SPA auth call sites become a single constructor call each.
-- [x] Workspace SPA auth call sites become a single constructor call each.
-- [x] The extension remains fully supported through an explicit injected path.
+- [x] All auth call sites use the same top-level constructors: `createAuth` or `createWorkspaceAuth`.
+- [x] Platform differences are expressed through injected client/store helpers instead of platform-specific top-level constructors.
+- [x] The extension remains fully supported through extension-specific client/store implementations.
 - [x] `createAuthController` no longer exists.
 - [x] `AuthResult` is flat; there is no `session.session.user` nesting.
 - [x] Public naming reflects product usage instead of implementation layers.
-- [x] Public JSDoc explains when to use `createAuth`, `createWorkspaceAuth`, `createAuthWith`, and `createWorkspaceAuthWith`.
+- [x] Public JSDoc explains when to use `createAuth` vs `createWorkspaceAuth`, and what the client/store seams represent.
 - [x] Formatting and the narrowest useful verification pass complete, with unrelated repo blockers documented if present.
 
 ## References
@@ -465,3 +471,38 @@ checkSession
 - `apps/tab-manager/src/lib/workspace/client.svelte.ts`
 - `packages/workspace/src/workspace/create-workspace.ts`
 - `packages/workspace/src/workspace/types.ts`
+
+## Review
+
+**Completed**: 2026-03-25
+**Branch**: `feat/sync-auto-reconnect`
+
+### Summary
+
+The shared auth module now exposes only the domain-level constructors `createAuth()` and `createWorkspaceAuth()`. Platform differences moved into injected `client` and `store` seams, with concrete helpers for web (`createWebAuthClient`, `createLocalAuthStore`) and the extension (`createExtensionAuthClient`, `createChromeAuthStore`).
+
+The old architecture-first exports were removed instead of being kept as parallel aliases. `createAuthController` is gone, the flat `AuthResult` shape remains the only auth result shape, and the workspace-aware constructor still owns destructive sign-out through `workspace.deactivateEncryption()`.
+
+### Deviations from Spec
+
+- Tauri-specific helper names were not added. The current codebase only justified web and extension helpers, and adding placeholder Tauri exports now would have expanded the public API without a real consumer.
+
+### Verification Notes
+
+- `bun x biome check --write --linter-enabled=false packages/svelte-utils/src/auth-state.svelte.ts apps/zhongwen/src/lib/auth.ts apps/honeycrisp/src/lib/auth/index.ts apps/opensidian/src/lib/auth/index.ts apps/tab-manager/src/lib/state/auth.svelte.ts`
+- `bun x biome check --write --linter-enabled=false specs/20260325T230903-auth-surface-simplification.md` (ignored by current Biome config; no files processed)
+- `bun run --filter @epicenter/svelte typecheck`
+- `bun run --filter @epicenter/zhongwen typecheck`
+- `bun run --filter @epicenter/honeycrisp typecheck`
+- `bun run --filter @epicenter/tab-manager typecheck`
+- `bun run --filter opensidian check`
+
+Those type-check runs all fail for unrelated pre-existing issues outside this auth refactor. The recurring blockers were:
+
+- `packages/workspace/src/workspace/define-table.ts`: missing `NumberKeysOf`
+- `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`: generic `Ok(undefined)` and `null` typing failures
+- `packages/ui/src/**`: widespread unresolved `#/...` import aliases and related typing fallout
+- `packages/sync-client/src/provider.ts`: `string | null` passed where `string | undefined` is expected
+- existing app-local errors in Honeycrisp, Opensidian, and tab-manager unrelated to auth surface changes
+
+No verification failure pointed at the touched auth module or the migrated auth call sites.

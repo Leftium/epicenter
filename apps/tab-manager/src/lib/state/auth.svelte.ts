@@ -1,19 +1,19 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Uses the injected `createWorkspaceAuthWith` path because the extension
- * needs custom Google OAuth (popup via `chrome.identity`) and custom
- * storage (`chrome.storage.local` via reactive cells).
+ * Uses `createWorkspaceAuth()` with extension-specific client and store
+ * seams because the extension needs custom Google OAuth
+ * (`chrome.identity`) and custom storage (`chrome.storage.local`).
  *
- * @see {@link @epicenter/svelte/auth-state!createWorkspaceAuthWith} — injected constructor
+ * @see {@link @epicenter/svelte/auth-state!createWorkspaceAuth} — workspace auth constructor
  * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
  * @see {@link ./key-cache} — session-scoped encryption key cache
  */
 
 import {
-	createBetterAuthClient,
-	createCellAuthStore,
-	createWorkspaceAuthWith,
+	createChromeAuthStore,
+	createExtensionAuthClient,
+	createWorkspaceAuth,
 	StoredUser,
 } from '@epicenter/svelte/auth-state';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
@@ -38,7 +38,7 @@ const authUser = createStorageState('local:authUser', {
 	schema: StoredUser.or('null'),
 });
 
-const client = createBetterAuthClient({
+const client = createExtensionAuthClient({
 	baseURL: () => remoteServerUrl.current,
 	signInWithGoogle: async (betterAuthClient) => {
 		const redirectUri = browser.identity.getRedirectURL();
@@ -73,13 +73,13 @@ const client = createBetterAuthClient({
 	},
 });
 
-const store = createCellAuthStore({
+const store = createChromeAuthStore({
 	token: authToken,
 	user: authUser,
 	ready: Promise.all([authToken.whenReady, authUser.whenReady]),
 });
 
-export const authState = createWorkspaceAuthWith({
+export const authState = createWorkspaceAuth({
 	client,
 	store,
 	workspace,

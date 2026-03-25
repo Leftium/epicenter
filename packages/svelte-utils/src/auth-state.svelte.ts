@@ -15,6 +15,7 @@
  * - {@link createChromeAuthStore} adapts reactive extension storage cells.
  */
 
+import type { WorkspaceEncryptionHandle } from '@epicenter/workspace';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import type { User } from 'better-auth';
@@ -120,19 +121,6 @@ export type AuthStore = {
 	subscribe?(
 		listener: (snapshot: SessionSnapshot) => void,
 	): (() => void) | undefined;
-};
-
-/**
- * Minimal workspace encryption boundary that auth coordinates.
- *
- * Auth decides when the workspace should restore, activate, or tear down
- * encryption. The workspace owns the cache format, key decoding, HKDF, and
- * persisted-data wipe behind this seam.
- */
-type WorkspaceHandle = {
-	activateEncryption: (userKey: Uint8Array) => Promise<void>;
-	restoreEncryption: () => Promise<boolean>;
-	deactivateEncryption: () => Promise<void>;
 };
 
 type ReactiveCell<T> = {
@@ -608,7 +596,7 @@ export function createWorkspaceAuth({
 }: {
 	client: AuthClient;
 	store: AuthStore;
-	workspace: WorkspaceHandle;
+	workspace: WorkspaceEncryptionHandle;
 }) {
 	let pendingAction = $state<PendingAction>(
 		store.read().user ? null : 'checking',
@@ -619,17 +607,6 @@ export function createWorkspaceAuth({
 	function getStatus(): AuthStatus {
 		if (pendingAction) return pendingAction;
 		return store.read().user ? 'signed-in' : 'signed-out';
-	}
-
-	/**
-	 * Ask the workspace to restore its own cached encryption state.
-	 *
-	 * Auth intentionally does not read the key cache directly. It only decides
-	 * whether startup restore should run for the current session snapshot.
-	 */
-	async function restoreCachedWorkspace(snapshot: SessionSnapshot) {
-		if (!snapshot.user) return;
-		await workspace.restoreEncryption();
 	}
 
 	async function writeAuthenticatedSession(result: AuthResult) {
@@ -680,7 +657,9 @@ export function createWorkspaceAuth({
 		}
 
 		lastError = undefined;
-		void restoreCachedWorkspace(snapshot);
+		if (snapshot.user) {
+			void workspace.restoreEncryption();
+		}
 	});
 
 	return {
@@ -782,7 +761,9 @@ export function createWorkspaceAuth({
 			pendingAction = 'checking';
 
 			const snapshot = store.read();
-			await restoreCachedWorkspace(snapshot);
+			if (snapshot.user) {
+				await workspace.restoreEncryption();
+			}
 
 			try {
 				const result = await client.getSession(snapshot.token);

@@ -1188,6 +1188,17 @@ export type EncryptionMethods = {
 	 */
 	deactivateEncryption(): Promise<void>;
 };
+
+/**
+ * Narrow workspace encryption surface for consumers that coordinate auth.
+ *
+ * This keeps auth-layer packages coupled to the encryption lifecycle they need
+ * without depending on the full workspace client shape.
+ */
+export type WorkspaceEncryptionHandle = Pick<
+	EncryptionMethods,
+	'activateEncryption' | 'restoreEncryption' | 'deactivateEncryption'
+>;
 export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,

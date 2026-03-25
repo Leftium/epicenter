@@ -1,8 +1,8 @@
 /**
  * Start the sync daemon — the core of `epicenter start [dir]`.
  *
- * Extracted from `apps/runner/src/index.ts` into a callable function so the
- * CLI's yargs command can invoke it without manual argv parsing.
+ * Exposed as a callable runtime so the CLI command can invoke it without
+ * manual argv parsing.
  *
  * Lifecycle:
  * 1. Load `epicenter.config.ts` from the target directory

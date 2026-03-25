@@ -1,8 +1,8 @@
 /**
  * Unified workspace config loader.
  *
- * Merges the config loading logic from `apps/runner/src/load-config.ts` and
- * `packages/cli/src/discovery.ts` into one function with one set of rules:
+ * Merges the old runner config loader and the CLI workspace resolution logic
+ * into one function with one set of rules:
  *
  * 1. If a valid `default` export exists, use only that (single workspace).
  * 2. Otherwise, collect all valid named exports (multi-workspace).
@@ -12,8 +12,8 @@
  * 4. Duplicate ID detection.
  *
  * This replaces both:
- * - `apps/runner/src/load-config.ts` (which skipped `default` exports)
- * - `packages/cli/src/discovery.ts#loadClientFromPath` (which only returned clients)
+ * - the old runner config loader (which skipped `default` exports)
+ * - the old CLI `loadClientFromPath` implementation (which only returned clients)
  *
  * @example
  * ```typescript
@@ -119,8 +119,8 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
  * Load a single workspace client from a config path.
  *
  * Used by CLI commands that need a `WorkspaceClient` (e.g. workspace export).
- * If the export is a raw definition, it returns the definition as-is since
- * callers may need to wire their own extensions.
+ * If the export is a raw definition, this throws because callers expect a
+ * fully wired client instance.
  *
  * Preserves backward compatibility with the old `loadClientFromPath` API.
  */

@@ -1,12 +1,17 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
-	createAuthState,
-	createLocalStorage,
-	googleRedirect,
+	createLocalSessionStore,
+	createSessionAuthState,
+	createWebAuthApi,
 } from '@epicenter/svelte/auth-state';
 
-export const authState = createAuthState({
+const authApi = createWebAuthApi({
 	baseURL: APP_URLS.API,
-	storage: createLocalStorage('zhongwen'),
-	strategies: { signInWithGoogle: googleRedirect },
+});
+
+const sessionStore = createLocalSessionStore('zhongwen');
+
+export const authState = createSessionAuthState({
+	authApi,
+	sessionStore,
 });

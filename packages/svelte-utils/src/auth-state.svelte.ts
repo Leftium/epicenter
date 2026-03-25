@@ -1,64 +1,47 @@
 /**
- * Auth state factory for Epicenter client apps.
+ * Layered auth primitives for Epicenter Svelte apps.
  *
- * Owns the phase machine, Better Auth client, session validation, and
- * token refresh. Accepts pluggable storage and custom sign-in strategies.
+ * The public API is split into three layers:
  *
- * Built-in methods: `signIn` (email/password), `signUp`, `signOut`, `checkSession`.
- * Custom strategies (e.g. Google OAuth) are passed via `strategies` config—
- * the factory wraps each one with the phase machine, error handling, user
- * serialization, and encryption key refresh.
+ * - `SessionStore` — persistence and optional cross-context sync
+ * - `AuthApi` — Better Auth I/O and provider-specific login flows
+ * - auth state controllers:
+ *   - `createSessionAuthState()` for generic auth-only apps like Zhongwen
+ *   - `createWorkspaceAuthState()` for encrypted workspace apps where
+ *     signed-in means the workspace must be decrypted and usable
  *
- * @example Web app
- * ```typescript
- * export const authState = createAuthState({
- *   baseURL: APP_URLS.API,
- *   storage: createLocalStorage('honeycrisp'),
- *   strategies: { signInWithGoogle: googleRedirect },
- *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
- *   onSignedOut: () => workspace.deactivateEncryption(),
- * });
- * ```
+ * This module keeps the public DI surface intentionally small:
  *
- * @example Chrome extension
- * ```typescript
- * export const authState = createAuthState({
- *   baseURL: () => remoteServerUrl.current,
- *   storage: { token: authToken, user: authUser, whenReady: ... },
- *   strategies: { signInWithGoogle: chromeGoogleStrategy },
- *   onSignedIn: (key) => workspace.activateEncryption(base64ToBytes(key)),
- *   onSignedOut: () => workspace.deactivateEncryption(),
- * });
- * ```
+ * - `authApi` answers "how do auth requests happen in this environment?"
+ * - `sessionStore` answers "how is auth state persisted and synchronized?"
+ *
+ * Workspace auth adds one more dependency: a workspace that can activate and
+ * deactivate encryption.
  */
 
-import { createPersistedState } from './persisted-state.svelte';
+import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
-import { createAuthClient } from 'better-auth/client';
 import type { User } from 'better-auth';
-import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-import { Ok, tryAsync } from 'wellcrafted/result';
+import { createAuthClient } from 'better-auth/client';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { createPersistedState } from './persisted-state.svelte';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Shared types ───────────────────────────────────────────────────────────
 
 /**
- * Custom fields added to `getSession()` responses by the server's
- * `customSession` plugin. Not present in `signIn`/`signUp` responses—
- * callers must do a separate `getSession()` after login to retrieve
- * the encryption key.
- *
- * Duplicated from `@epicenter/api/src/custom-session-fields` as a plain
- * type so this package has zero server-side imports.
+ * Custom session fields added by the server's Better Auth `customSession`
+ * plugin. Workspace apps use the server-provided encryption key to decrypt
+ * local data after sign-in or session restore.
  */
-type CustomSessionFields = { encryptionKey: string; keyVersion: number };
+type CustomSessionFields = {
+	encryptionKey: string;
+};
 
 /**
  * Runtime schema and TypeScript type for the cached auth user.
  *
- * Exported as both a value (arktype validator used by storage adapters)
- * and a type (inferred from the schema). Storage adapters like
- * `createLocalStorage` and `createStorageState` use the runtime schema
- * for validation; the rest of the codebase uses the type.
+ * The store layer validates persisted users with this schema before exposing
+ * them to the rest of the app.
  */
 export const StoredUser = type({
 	id: 'string',
@@ -72,147 +55,377 @@ export const StoredUser = type({
 
 export type StoredUser = typeof StoredUser.infer;
 
-/**
- * Discriminated union for the auth state machine.
- *
- * ```
- * checking ──► signed-in ──► signing-out ──► signed-out
- *    │                                           │
- *    └──────► signed-out ──► signing-in ─────────┘
- *                                │
- *                                └──► signed-in
- * ```
- */
-export type AuthPhase =
-	| { status: 'checking' }
-	| { status: 'signing-in' }
-	| { status: 'signing-out' }
-	| { status: 'signed-in' }
-	| { status: 'signed-out'; error?: string };
+export type AuthStatus =
+	| 'checking'
+	| 'signing-in'
+	| 'signing-out'
+	| 'signed-in'
+	| 'signed-out';
 
 /**
- * A custom sign-in strategy. Receives the Better Auth client and returns
- * the raw response containing a `user`. The factory handles everything
- * else: phase transitions, date serialization, storage writes, encryption
- * key refresh, cancelled-popup detection, and error wrapping.
+ * Persisted session snapshot used by `SessionStore`.
  *
- * Throw on failure. Errors containing 'canceled'/'cancelled' are silent.
+ * The token is optional at the product level. Cookie-backed flows such as
+ * Zhongwen's OAuth redirect may have a valid server session before a bearer
+ * token has been rehydrated locally.
  */
-export type Strategy = (
-	client: ReturnType<typeof createAuthClient>,
-) => Promise<{ user: User }>;
-
-const AuthError = defineErrors({
-	StrategyFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Sign-in failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-
-// ─── Config ──────────────────────────────────────────────────────────────────
-
-export type AuthStateConfig<
-	TStrategies extends Record<string, Strategy> = {},
-> = {
-	/**
-	 * Base URL for the Better Auth API (e.g. `https://api.epicenter.so`).
-	 * Pass a getter function for reactive URLs that change at runtime.
-	 */
-	baseURL: string | (() => string);
-
-	/**
-	 * Pluggable storage for the auth token and cached user, following the
-	 * Svelte `.current` reactive value convention.
-	 *
-	 * Web apps: use `createLocalStorage('prefix')`.
-	 * Extensions: pass `createStorageState` instances directly.
-	 *
-	 * Optional `whenReady` promise for async storage (e.g. chrome.storage)—
-	 * `checkSession` awaits it before reading values.
-	 */
-	storage: {
-		token: { current: string | null };
-		user: { current: StoredUser | null };
-		whenReady?: Promise<void>;
-	};
-
-	/**
-	 * Custom sign-in strategies. Each entry becomes a zero-arg method on
-	 * the returned auth state, wrapped with the phase machine.
-	 *
-	 * @example
-	 * ```typescript
-	 * strategies: { signInWithGoogle: googleRedirect }
-	 * // → authState.signInWithGoogle()
-	 * ```
-	 */
-	strategies?: TStrategies;
-
-	/**
-	 * Called after successful sign-in/session validation with the encryption
-	 * key from the server's `customSession` plugin.
-	 *
-	 * Fires on: `signIn`, `signUp`, custom strategies, `checkSession` (when valid).
-	 */
-	onSignedIn?: (encryptionKey: string) => Promise<void>;
-
-	/** Called on sign-out (explicit or server-rejected session). */
-	onSignedOut?: () => Promise<void>;
-
-	/**
-	 * Called when another extension context signs in (e.g. popup signs in,
-	 * sidebar detects it via `chrome.storage` watcher). Unlike `onSignedIn`,
-	 * there's no encryption key from the server—the consumer typically
-	 * restores from a local key cache instead.
-	 */
-	onExternalSignIn?: () => Promise<void>;
-
-	/**
-	 * Called at the start of `checkSession`, after `whenReady` resolves but
-	 * before the server roundtrip. Used by the tab manager to restore
-	 * encryption from a local key cache for instant startup.
-	 */
-	onCheckSessionStart?: () => Promise<void>;
+export type SessionSnapshot = {
+	token: string | null;
+	user: StoredUser | null;
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+/**
+ * Minimal persistence boundary for auth state.
+ *
+ * The auth controller reads and writes complete session snapshots through this
+ * interface instead of mutating raw reactive cells directly. Stores may also
+ * expose `subscribe()` for cross-context sync such as `chrome.storage`.
+ */
+export type SessionStore = {
+	ready: Promise<void>;
+	read: () => SessionSnapshot;
+	write: (snapshot: SessionSnapshot) => void | Promise<void>;
+	clear: () => void | Promise<void>;
+	subscribe?: (
+		listener: (snapshot: SessionSnapshot) => void,
+	) => (() => void) | undefined;
+};
+
+type AuthSession = {
+	session: SessionSnapshot;
+	encryptionKey?: string | null;
+};
+
+type TransportError = Error & {
+	status?: number;
+};
+
+type BetterAuthClient = ReturnType<typeof createAuthClient>;
+
+type EmailSignInCredentials = {
+	email: string;
+	password: string;
+};
+
+type EmailSignUpCredentials = {
+	email: string;
+	password: string;
+	name: string;
+};
 
 /**
- * Create a localStorage-backed storage object for use with `createAuthState`.
+ * Auth API boundary between the auth controller and Better Auth.
  *
- * Web apps use this helper. Extensions pass their own storage objects
- * (e.g. `createStorageState` from `@wxt-dev/storage`).
+ * The only environment-specific questions this module needs answered are:
+ *
+ * - how auth requests happen in this environment
+ * - how auth state is persisted in this environment
+ *
+ * `AuthApi` answers the first question. It normalizes Better Auth responses
+ * into a stable `SessionSnapshot` plus optional encryption key. The controller
+ * owns persistence and phase transitions; the auth API only
+ * performs auth I/O.
  */
-export function createLocalStorage(
-	prefix: string,
-): AuthStateConfig['storage'] {
+export type AuthApi = {
+	signIn: (credentials: EmailSignInCredentials) => Promise<AuthSession>;
+	signUp: (credentials: EmailSignUpCredentials) => Promise<AuthSession>;
+	signInWithGoogle: () => Promise<AuthSession>;
+	signOut: (input: { token: string | null }) => Promise<void>;
+	getSession: (input: { token: string | null }) => Promise<AuthSession | null>;
+};
+
+type WorkspaceHandle = {
+	activateEncryption: (userKey: Uint8Array) => Promise<void>;
+	deactivateEncryption: () => Promise<void>;
+};
+
+type ReactiveCell<T> = {
+	current: T;
+	set?: (value: T) => Promise<void>;
+	watch?: (callback: (value: T) => void) => (() => void) | undefined;
+	whenReady?: Promise<void>;
+};
+
+type SessionAuthStateConfig = {
+	authApi: AuthApi;
+	sessionStore: SessionStore;
+};
+
+type WorkspaceAuthStateConfig = SessionAuthStateConfig & {
+	workspace: WorkspaceHandle;
+	restoreUserKey?: () => Promise<Uint8Array | null>;
+};
+
+type InternalLifecycle = {
+	beforeCheckSession?: (snapshot: SessionSnapshot) => Promise<void>;
+	onAuthenticated?: (session: AuthSession) => Promise<void>;
+	onSignedOut?: () => Promise<void>;
+	onExternalSignedIn?: (snapshot: SessionSnapshot) => Promise<void>;
+};
+
+class AuthFlowInterrupt extends Error {
+	kind: 'redirect';
+
+	constructor(kind: 'redirect') {
+		super('Redirect started');
+		this.kind = kind;
+	}
+}
+
+// ─── Session stores ─────────────────────────────────────────────────────────
+
+/**
+ * LocalStorage-backed session store for web apps.
+ *
+ * This is the generic replacement for `createLocalStorage()`. It persists the
+ * token and cached user in localStorage and exposes them as a `SessionStore`
+ * snapshot rather than as raw reactive cells.
+ *
+ * @example
+ * ```typescript
+ * const sessionStore = createLocalSessionStore('zhongwen');
+ *
+ * const authState = createSessionAuthState({
+ *   authApi,
+ *   sessionStore,
+ * });
+ * ```
+ */
+export function createLocalSessionStore(prefix: string): SessionStore {
+	const tokenState = createPersistedState({
+		key: `${prefix}:authToken`,
+		schema: type('string').or('null'),
+		defaultValue: null,
+	});
+	const userState = createPersistedState({
+		key: `${prefix}:authUser`,
+		schema: StoredUser.or('null'),
+		defaultValue: null,
+	});
+
 	return {
-		token: createPersistedState({
-			key: `${prefix}:authToken`,
-			schema: type('string').or('null'),
-			defaultValue: null,
+		ready: Promise.resolve(),
+		read: () => ({
+			token: tokenState.current,
+			user: userState.current,
 		}),
-		user: createPersistedState({
-			key: `${prefix}:authUser`,
-			schema: StoredUser.or('null'),
-			defaultValue: null,
-		}),
+		write(snapshot) {
+			tokenState.current = snapshot.token;
+			userState.current = snapshot.user;
+		},
+		clear() {
+			tokenState.current = null;
+			userState.current = null;
+		},
 	};
 }
 
 /**
- * Google sign-in strategy for web apps using Better Auth's redirect flow.
- * Navigates to Google's consent screen—the page never returns from this call.
+ * Adapter from reactive token/user cells to `SessionStore`.
+ *
+ * This is primarily for extension code that already uses storage wrappers like
+ * `createStorageState()`. The auth layer gets a proper store boundary while the
+ * app can keep its existing reactive storage implementation.
+ *
+ * If the cells expose `watch()`, the returned store forwards those changes
+ * through `subscribe()` so the auth controller can react to sign-in/sign-out
+ * from other extension contexts.
  */
-export const googleRedirect: Strategy = async (client) => {
-	await client.signIn.social({
-		provider: 'google',
-		callbackURL: window.location.origin,
-	});
-	throw new Error('Expected redirect');
-};
+export function createReactiveSessionStore({
+	token,
+	user,
+	ready,
+}: {
+	token: ReactiveCell<string | null>;
+	user: ReactiveCell<StoredUser | null>;
+	ready?: Promise<void>;
+}): SessionStore {
+	const resolvedReady = (ready ??
+		Promise.all([token.whenReady, user.whenReady].filter(Boolean)).then(
+			() => undefined,
+		)) as Promise<void>;
 
-/** Convert Better Auth's Date fields to ISO strings for JSON-safe storage. */
+	async function writeCell<T>(cell: ReactiveCell<T>, value: T) {
+		if (cell.set) {
+			await cell.set(value);
+			return;
+		}
+		cell.current = value;
+	}
+
+	return {
+		ready: resolvedReady,
+		read: () => ({
+			token: token.current,
+			user: user.current,
+		}),
+		async write(snapshot) {
+			await writeCell(token, snapshot.token);
+			await writeCell(user, snapshot.user);
+		},
+		async clear() {
+			await writeCell(token, null);
+			await writeCell(user, null);
+		},
+		subscribe(listener) {
+			const notify = () => {
+				listener({
+					token: token.current,
+					user: user.current,
+				});
+			};
+			const unsubscribeToken = token.watch?.(() => {
+				notify();
+			});
+			const unsubscribeUser = user.watch?.(() => {
+				notify();
+			});
+			return () => {
+				unsubscribeToken?.();
+				unsubscribeUser?.();
+			};
+		},
+	};
+}
+
+// ─── Better Auth authApi ───────────────────────────────────────────────────
+
+/**
+ * Create the web `AuthApi` for standard browser apps.
+ *
+ * Google sign-in uses Better Auth's redirect flow. After the redirect starts,
+ * the browser navigates away and the page never returns to the original call
+ * site; the auth controller treats that as an interrupt rather than a failure.
+ */
+export function createWebAuthApi({
+	baseURL,
+}: {
+	baseURL: string | (() => string);
+}): AuthApi {
+	return createAuthApi({
+		baseURL,
+		signInWithGoogle: async (client) => {
+			await client.signIn.social({
+				provider: 'google',
+				callbackURL: window.location.origin,
+			});
+			throw new AuthFlowInterrupt('redirect');
+		},
+	});
+}
+
+/**
+ * Create an auth API backed by Better Auth.
+ *
+ * Most apps should use `createWebAuthApi()`. This lower-level constructor
+ * exists for environments like the Chrome extension where Google sign-in
+ * must be initiated differently.
+ */
+export function createAuthApi({
+	baseURL,
+	signInWithGoogle,
+}: {
+	baseURL: string | (() => string);
+	signInWithGoogle: (client: BetterAuthClient) => Promise<{ user: User }>;
+}): AuthApi {
+	const resolveBaseURL =
+		typeof baseURL === 'function' ? baseURL : () => baseURL;
+
+	function createClient(token: string | null) {
+		let nextToken: string | null | undefined;
+
+		const client = createAuthClient({
+			baseURL: resolveBaseURL(),
+			basePath: '/auth',
+			fetchOptions: {
+				auth: {
+					type: 'Bearer',
+					token: () => token ?? undefined,
+				},
+				onSuccess: ({ response }) => {
+					const issuedToken = response.headers.get('set-auth-token');
+					if (issuedToken) nextToken = issuedToken;
+				},
+			},
+		});
+
+		return {
+			client,
+			getIssuedToken: () => nextToken,
+		};
+	}
+
+	return {
+		async signIn(credentials) {
+			const { client, getIssuedToken } = createClient(null);
+			const { data, error } = await client.signIn.email(credentials);
+			if (error) throw toTransportError(error);
+			return toAuthSession(data, getIssuedToken());
+		},
+
+		async signUp(credentials) {
+			const { client, getIssuedToken } = createClient(null);
+			const { data, error } = await client.signUp.email(credentials);
+			if (error) throw toTransportError(error);
+			return toAuthSession(data, getIssuedToken());
+		},
+
+		async signInWithGoogle() {
+			const { client, getIssuedToken } = createClient(null);
+			const data = await signInWithGoogle(client);
+			return toAuthSession(data, getIssuedToken());
+		},
+
+		async signOut({ token }) {
+			const { client } = createClient(token);
+			const { error } = await client.signOut();
+			if (error) throw toTransportError(error);
+		},
+
+		async getSession({ token }) {
+			const { client, getIssuedToken } = createClient(token);
+			const { data, error } = await client.getSession();
+			if (error) throw toTransportError(error);
+			if (!data) return null;
+
+			const customData = data as typeof data & Partial<CustomSessionFields>;
+			return {
+				session: {
+					user: toStoredUser(customData.user),
+					token: getIssuedToken() ?? token,
+				},
+				encryptionKey: customData.encryptionKey ?? null,
+			};
+		},
+	};
+}
+
+function toAuthSession(
+	data: { user: User } & Partial<CustomSessionFields>,
+	token: string | null | undefined,
+): AuthSession {
+	return {
+		session: {
+			user: toStoredUser(data.user),
+			token: token ?? null,
+		},
+		encryptionKey: data.encryptionKey ?? null,
+	};
+}
+
+function toTransportError(error: unknown): TransportError {
+	const next = new Error(extractErrorMessage(error)) as TransportError;
+	if (
+		typeof error === 'object' &&
+		error !== null &&
+		'status' in error &&
+		typeof error.status === 'number'
+	) {
+		next.status = error.status;
+	}
+	return next;
+}
+
 function toStoredUser(raw: User): StoredUser {
 	return {
 		id: raw.id,
@@ -225,279 +438,272 @@ function toStoredUser(raw: User): StoredUser {
 	};
 }
 
-// ─── Factory ─────────────────────────────────────────────────────────────────
+function isCancelledError(cause: unknown) {
+	const message = cause instanceof Error ? cause.message : '';
+	return message.includes('canceled') || message.includes('cancelled');
+}
+
+function isRedirectInterrupt(cause: unknown) {
+	return cause instanceof AuthFlowInterrupt && cause.kind === 'redirect';
+}
+
+// ─── Auth state controllers ─────────────────────────────────────────────────
 
 /**
- * Create an auth state singleton for an Epicenter app.
+ * Generic auth state for apps that only care about session state.
  *
- * Manages the full auth lifecycle: phase machine, Better Auth client,
- * session validation with offline tolerance, token refresh (via the
- * server's `bearer()` plugin `set-auth-token` header), and encryption
- * lifecycle.
+ * This is the new base controller. It owns the phase machine, auth-aware
+ * fetch, session validation policy, and persistence orchestration. It does not
+ * know anything about workspaces or encryption.
  *
- * The returned object is a Svelte 5 reactive singleton—`status`, `user`,
- * `token`, and `signInError` are reactive getters backed by `$state`.
+ * Use this for apps like Zhongwen.
  */
-export function createAuthState<
-	TStrategies extends Record<string, Strategy> = {},
->(config: AuthStateConfig<TStrategies>) {
-	const { storage } = config;
-	const resolveBaseURL =
-		typeof config.baseURL === 'function'
-			? config.baseURL
-			: () => config.baseURL as string;
+export function createSessionAuthState({
+	authApi,
+	sessionStore,
+}: SessionAuthStateConfig) {
+	return createAuthController({ authApi, sessionStore }, {});
+}
 
-	let phase = $state<AuthPhase>(
-		storage.user.current ? { status: 'signed-in' } : { status: 'checking' },
-	);
-
-	/**
-	 * Better Auth client, re-created via `$derived` when `baseURL` changes.
-	 * Injects Bearer token on every request and captures rotated tokens
-	 * from the server's `bearer()` plugin via `set-auth-token`.
-	 */
-	const client = $derived(
-		createAuthClient({
-			baseURL: resolveBaseURL(),
-			basePath: '/auth',
-			fetchOptions: {
-				auth: {
-					type: 'Bearer',
-					token: () => storage.token.current ?? undefined,
-				},
-				onSuccess: ({ response }) => {
-					const newToken = response.headers.get('set-auth-token');
-					if (newToken) storage.token.current = newToken;
-				},
-			},
-		}),
-	);
-
-	// ─── Private Helpers ───
-
-	/**
-	 * Typed wrapper around `client.getSession()` that includes custom session
-	 * fields (`encryptionKey`, `keyVersion`) via type assertion—avoids importing
-	 * `customSessionClient<typeof auth>()` which would pull in server deps.
-	 * @internal
-	 */
-	async function getSession() {
-		const { data, error } = await client.getSession();
-		const customData = data
-			? (data as typeof data & CustomSessionFields)
-			: null;
-		return { data: customData, error };
-	}
-
-	/** @internal */
-	function clearState() {
-		storage.token.current = null;
-		storage.user.current = null;
-	}
-
-	/**
-	 * Fetch session to get the encryption key, then notify the app.
-	 * signIn/signUp responses don't include customSession fields—only
-	 * getSession() returns them.
-	 * @internal
-	 */
-	async function refreshEncryptionKeyAndNotify() {
-		const result = await getSession().catch(() => null);
-		if (result?.data?.encryptionKey) {
-			await config.onSignedIn?.(result.data.encryptionKey);
-		}
-	}
-
-	/**
-	 * Execute a sign-in strategy with the full phase machine lifecycle.
-	 * Handles: phase transitions, error wrapping, date serialization,
-	 * user storage writes, encryption activation, and cancelled-popup
-	 * detection (errors containing 'canceled'/'cancelled' are silent).
-	 * @internal
-	 */
-	async function executeStrategy(fn: Strategy) {
-		phase = { status: 'signing-in' };
-
-		const result = await tryAsync({
-			try: async () => {
-				const data = await fn(client);
-				const user = toStoredUser(data.user);
-				storage.user.current = user;
-				return user;
-			},
-			catch: (cause) => {
-				const message = cause instanceof Error ? cause.message : '';
-				if (
-					message.includes('canceled') ||
-					message.includes('cancelled')
-				) {
-					return AuthError.StrategyFailed({
-						cause: new Error('Cancelled'),
-					});
+/**
+ * Auth state for encrypted workspace apps.
+ *
+ * This wraps the generic session controller with the product invariant that a
+ * signed-in user must have an active decrypted workspace. `checkSession()`
+ * restores a cached user key before the server roundtrip when available, then
+ * replaces it with the authoritative server key from `getSession()`.
+ */
+export function createWorkspaceAuthState({
+	authApi,
+	sessionStore,
+	workspace,
+	restoreUserKey,
+}: WorkspaceAuthStateConfig) {
+	return createAuthController(
+		{ authApi, sessionStore },
+		{
+			async beforeCheckSession(snapshot) {
+				if (!snapshot.user || !restoreUserKey) return;
+				const cachedKey = await restoreUserKey();
+				if (cachedKey) {
+					await workspace.activateEncryption(cachedKey);
 				}
-				return AuthError.StrategyFailed({ cause });
 			},
-		});
+			async onAuthenticated(session) {
+				if (!session.encryptionKey) return;
+				await workspace.activateEncryption(
+					base64ToBytes(session.encryptionKey),
+				);
+			},
+			async onSignedOut() {
+				await workspace.deactivateEncryption();
+			},
+			async onExternalSignedIn(snapshot) {
+				if (!snapshot.user || !restoreUserKey) return;
+				const cachedKey = await restoreUserKey();
+				if (cachedKey) {
+					await workspace.activateEncryption(cachedKey);
+				}
+			},
+		},
+	);
+}
 
-		if (result.error) {
-			const isCancelled = result.error.message.includes('Cancelled');
-			phase = {
-				status: 'signed-out',
-				error: isCancelled ? undefined : result.error.message,
-			};
-		} else {
-			phase = { status: 'signed-in' };
-			await refreshEncryptionKeyAndNotify();
-		}
+function createAuthController(
+	{ authApi, sessionStore }: SessionAuthStateConfig,
+	lifecycle: InternalLifecycle,
+) {
+	let pendingAction = $state<'checking' | 'signing-in' | 'signing-out' | null>(
+		sessionStore.read().user ? null : 'checking',
+	);
+	let lastError = $state<string | undefined>(undefined);
+	let hasExternalSession = $state(Boolean(sessionStore.read().user));
 
-		return result;
+	function getStatus(): AuthStatus {
+		if (pendingAction) return pendingAction;
+		return sessionStore.read().user ? 'signed-in' : 'signed-out';
 	}
 
-	// ─── Public API ───
+	async function writeAuthenticatedSession(session: AuthSession) {
+		await sessionStore.write(session.session);
+		await lifecycle.onAuthenticated?.(session);
+		lastError = undefined;
+	}
 
-	const base = {
+	async function clearSession() {
+		await sessionStore.clear();
+		await lifecycle.onSignedOut?.();
+	}
+
+	async function authenticate(
+		run: () => Promise<AuthSession>,
+		errorPrefix: string,
+	) {
+		pendingAction = 'signing-in';
+
+		try {
+			const session = await run();
+			await writeAuthenticatedSession(session);
+			pendingAction = null;
+			return;
+		} catch (cause) {
+			if (isRedirectInterrupt(cause)) {
+				pendingAction = null;
+				return;
+			}
+			lastError = isCancelledError(cause)
+				? undefined
+				: `${errorPrefix}: ${extractErrorMessage(cause)}`;
+			pendingAction = null;
+		}
+	}
+
+	sessionStore.subscribe?.((snapshot) => {
+		const isSignedIn = Boolean(snapshot.user);
+		if (isSignedIn === hasExternalSession) return;
+		hasExternalSession = isSignedIn;
+
+		if (!isSignedIn) {
+			void lifecycle.onSignedOut?.();
+			pendingAction = null;
+			return;
+		}
+
+		pendingAction = null;
+		void lifecycle.onExternalSignedIn?.(snapshot);
+	});
+
+	return {
 		get status() {
-			return phase.status;
+			return getStatus();
 		},
 
-		get signInError(): string | undefined {
-			return phase.status === 'signed-out' ? phase.error : undefined;
+		get signInError() {
+			return getStatus() === 'signed-out' ? lastError : undefined;
 		},
 
 		get user() {
-			return storage.user.current;
+			return sessionStore.read().user;
 		},
 
 		get token() {
-			return storage.token.current;
+			return sessionStore.read().token;
 		},
 
 		/**
-		 * Auth-aware fetch that injects `Authorization: Bearer <token>`.
-		 * Used by libraries that accept a custom `fetch` (e.g. `@tanstack/ai-client`).
+		 * Auth-aware fetch wrapper.
+		 *
+		 * It always sends `credentials: 'include'` so cookie-backed auth flows
+		 * continue to work, and it adds `Authorization: Bearer <token>` when the
+		 * current session store has a token.
 		 */
 		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
 			const headers = new Headers(init?.headers);
-			const token = storage.token.current;
-			if (token) headers.set('Authorization', `Bearer ${token}`);
-			return fetch(input, { ...init, headers, credentials: 'include' });
+			const token = sessionStore.read().token;
+			if (token) {
+				headers.set('Authorization', `Bearer ${token}`);
+			}
+			return fetch(input, {
+				...init,
+				headers,
+				credentials: 'include',
+			});
 		}) as typeof fetch,
 
-		/** Sign in with email/password. */
-		signIn(credentials: { email: string; password: string }) {
-			return executeStrategy(async (client) => {
-				const { data, error } = await client.signIn.email(credentials);
-				if (error)
-					throw new Error(error.message ?? error.statusText);
-				return data;
-			});
-		},
-
-		/** Create account with email/password/name. */
-		signUp(credentials: {
-			email: string;
-			password: string;
-			name: string;
-		}) {
-			return executeStrategy(async (client) => {
-				const { data, error } = await client.signUp.email(credentials);
-				if (error)
-					throw new Error(error.message ?? error.statusText);
-				return data;
-			});
-		},
-
-		/** Sign out—deactivates encryption, invalidates server session, clears local state. */
-		async signOut() {
-			phase = { status: 'signing-out' };
-			await config.onSignedOut?.();
-			await client.signOut().catch(() => {});
-			clearState();
-			phase = { status: 'signed-out' };
-			return Ok(undefined);
+		/**
+		 * Sign in with email/password.
+		 *
+		 * On success the session store is updated, `checkSession()` semantics are
+		 * preserved, and workspace auth wrappers activate encryption automatically.
+		 */
+		async signIn(credentials: EmailSignInCredentials) {
+			await authenticate(() => authApi.signIn(credentials), 'Sign-in failed');
 		},
 
 		/**
-		 * Validate the stored session against the server.
+		 * Create an account with email/password/name.
 		 *
-		 * Call on app mount and on visibility change. Unreachable server
-		 * (network error / 5xx) trusts the cached user so offline users
-		 * aren't logged out. Only an explicit auth rejection (4xx) clears state.
+		 * The auth controller treats sign-up as another session-producing auth
+		 * action. The same persistence, error, and workspace rules apply.
+		 */
+		async signUp(credentials: EmailSignUpCredentials) {
+			await authenticate(() => authApi.signUp(credentials), 'Sign-up failed');
+		},
+
+		/**
+		 * Start the Google sign-in flow through the configured auth API.
+		 *
+		 * Web auth APIs typically redirect the page; extension auth APIs complete
+		 * in-place and return a session result.
+		 */
+		async signInWithGoogle() {
+			await authenticate(
+				() => authApi.signInWithGoogle(),
+				'Google sign-in failed',
+			);
+		},
+
+		/**
+		 * Sign out locally and on the server.
+		 *
+		 * The local session is always cleared, even if the server sign-out call
+		 * fails. Workspace auth wrappers also deactivate encryption here.
+		 */
+		async signOut() {
+			pendingAction = 'signing-out';
+			try {
+				await authApi.signOut({ token: sessionStore.read().token });
+			} catch {}
+			await clearSession();
+			pendingAction = null;
+		},
+
+		/**
+		 * Validate the current session against the server.
+		 *
+		 * The controller deliberately does not require a local bearer token before
+		 * making this request. Cookie-backed flows may have a valid server session
+		 * even when the local token is missing or stale.
+		 *
+		 * Unreachable server responses keep cached session state so offline users
+		 * are not logged out. Explicit auth rejections clear the store.
 		 */
 		async checkSession() {
-			if (storage.whenReady) await storage.whenReady;
-			if (config.onCheckSessionStart) await config.onCheckSessionStart();
+			await sessionStore.ready;
+			pendingAction = 'checking';
 
-			const token = storage.token.current;
-			if (!token) {
-				phase = { status: 'signed-out' };
-				return Ok(null);
-			}
+			const snapshot = sessionStore.read();
+			await lifecycle.beforeCheckSession?.(snapshot);
 
-			const { data, error: sessionError } = await getSession();
+			try {
+				const session = await authApi.getSession({
+					token: snapshot.token,
+				});
 
-			if (sessionError) {
-				const isAuthRejection =
-					sessionError.status && sessionError.status < 500;
-
-				if (!isAuthRejection) {
-					const cached = storage.user.current;
-					phase = cached
-						? { status: 'signed-in' }
-						: { status: 'signed-out' };
-					return Ok(cached ?? null);
+				if (!session) {
+					await clearSession();
+					pendingAction = null;
+					return null;
 				}
 
-				clearState();
-				await config.onSignedOut?.();
-				phase = { status: 'signed-out' };
-				return Ok(null);
+				await writeAuthenticatedSession(session);
+				pendingAction = null;
+				return session.session.user;
+			} catch (cause) {
+				const error = toTransportError(cause);
+				const isAuthRejection =
+					error.status !== undefined && error.status < 500;
+
+				if (isAuthRejection) {
+					await clearSession();
+					pendingAction = null;
+					return null;
+				}
+
+				const cachedUser = sessionStore.read().user;
+				pendingAction = null;
+				return cachedUser;
 			}
-
-			if (!data) {
-				clearState();
-				await config.onSignedOut?.();
-				phase = { status: 'signed-out' };
-				return Ok(null);
-			}
-
-			const user = toStoredUser(data.user);
-			storage.user.current = user;
-			if (data.encryptionKey) {
-				await config.onSignedIn?.(data.encryptionKey);
-			}
-			phase = { status: 'signed-in' };
-			return Ok(user);
 		},
-
-		/**
-		 * Transition to signed-out due to an external storage change
-		 * (e.g. another extension context cleared the auth token).
-		 */
-		handleExternalSignOut() {
-			clearState();
-			config.onSignedOut?.();
-			phase = { status: 'signed-out' };
-		},
-
-		/**
-		 * Transition to signed-in due to an external storage change
-		 * (e.g. another extension context signed in).
-		 */
-		handleExternalSignIn() {
-			phase = { status: 'signed-in' };
-			config.onExternalSignIn?.();
-		},
-	};
-
-	const strategyMethods = Object.fromEntries(
-		Object.entries(config.strategies ?? {}).map(([name, fn]) => [
-			name,
-			() => executeStrategy(fn),
-		]),
-	);
-
-	return Object.assign(base, strategyMethods) as typeof base & {
-		[K in keyof TStrategies]: () => ReturnType<typeof executeStrategy>;
 	};
 }

@@ -1,20 +1,19 @@
 import { APP_URLS } from '@epicenter/constants/vite';
-import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
-import { ws } from '$lib/workspace';
 import {
-	createAuthState,
-	createLocalStorage,
-	googleRedirect,
+	createLocalSessionStore,
+	createWebAuthApi,
+	createWorkspaceAuthState,
 } from '@epicenter/svelte/auth-state';
+import { ws } from '$lib/workspace';
 
-export const authState = createAuthState({
+const authApi = createWebAuthApi({
 	baseURL: APP_URLS.API,
-	storage: createLocalStorage('opensidian'),
-	strategies: { signInWithGoogle: googleRedirect },
-	async onSignedIn(encryptionKey) {
-		await ws.activateEncryption(base64ToBytes(encryptionKey));
-	},
-	async onSignedOut() {
-		await ws.deactivateEncryption();
-	},
+});
+
+const sessionStore = createLocalSessionStore('opensidian');
+
+export const authState = createWorkspaceAuthState({
+	authApi,
+	sessionStore,
+	workspace: ws,
 });

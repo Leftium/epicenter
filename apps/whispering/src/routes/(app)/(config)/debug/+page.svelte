@@ -7,6 +7,9 @@
 	import FlaskConicalIcon from '@lucide/svelte/icons/flask-conical';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import TrashIcon from '@lucide/svelte/icons/trash';
+	import { nanoid } from 'nanoid/non-secure';
+	import { extractErrorMessage } from 'wellcrafted/error';
+	import { Ok, tryAsync, trySync } from 'wellcrafted/result';
 	import * as Y from 'yjs';
 	import workspace from '$lib/workspace';
 
@@ -77,6 +80,11 @@
 		let selectedCount = $state('100');
 		let selectedContentLength = $state<keyof typeof loremByLength>('short');
 		let lastResult = $state<StressTestResult | null>(null);
+		let lastError = $state<string | null>(null);
+
+		function setError(error: unknown, fallback: string) {
+			lastError = extractErrorMessage(error) || fallback;
+		}
 
 		function measure(label: string, count: number, operation: () => void) {
 			const sizeBefore = Y.encodeStateAsUpdate(workspace.ydoc).byteLength;
@@ -111,33 +119,78 @@
 			get lastResult() {
 				return lastResult;
 			},
+			get lastError() {
+				return lastError;
+			},
 			generate() {
 				const count = Number(selectedCount);
 				const content =
 					loremByLength[selectedContentLength] ?? loremByLength.short;
-				measure('Generated', count, () => {
-					workspace.ydoc.transact(() => {
-						for (let i = 0; i < count; i++) {
-							const now = new Date().toISOString();
-							workspace.tables.recordings.set({
-								id: crypto.randomUUID(),
-								title: `Test Recording #${i + 1}`,
-								subtitle: 'Generated for stress testing',
-								timestamp: now,
-								createdAt: now,
-								updatedAt: now,
-								transcribedText: content,
-								transcriptionStatus: 'DONE',
-								_v: 1,
-							});
-						}
+				lastError = null;
+				trySync({
+					try: () => {
+					measure('Generated', count, () => {
+						workspace.ydoc.transact(() => {
+							for (let i = 0; i < count; i++) {
+								const now = new Date().toISOString();
+								workspace.tables.recordings.set({
+									id: nanoid(),
+									title: `Test Recording #${i + 1}`,
+									subtitle: 'Generated for stress testing',
+									timestamp: now,
+									createdAt: now,
+									updatedAt: now,
+									transcribedText: content,
+									transcriptionStatus: 'DONE',
+									_v: 1,
+								});
+							}
+						});
 					});
+					},
+					catch: (error) => {
+						setError(error, 'Unknown generate error');
+						return Ok(undefined);
+					},
 				});
 			},
 			deleteAll() {
+				lastError = null;
 				if (!confirm('Delete ALL recordings? This cannot be undone.')) return;
-				const count = workspace.tables.recordings.count();
-				measure('Deleted', count, () => workspace.tables.recordings.clear());
+				trySync({
+					try: () => {
+					const count = workspace.tables.recordings.count();
+					measure('Deleted', count, () => workspace.tables.recordings.clear());
+					},
+					catch: (error) => {
+						setError(error, 'Unknown delete error');
+						return Ok(undefined);
+					},
+				});
+			},
+			async generateAndRefresh() {
+				await tryAsync({
+					try: async () => {
+						this.generate();
+						metrics.refresh();
+					},
+					catch: (error) => {
+						setError(error, 'Unknown generate error');
+						return Ok(undefined);
+					},
+				});
+			},
+			async deleteAllAndRefresh() {
+				await tryAsync({
+					try: async () => {
+						this.deleteAll();
+						metrics.refresh();
+					},
+					catch: (error) => {
+						setError(error, 'Unknown delete error');
+						return Ok(undefined);
+					},
+				});
 			},
 		};
 	}
@@ -303,15 +356,24 @@
 
 				<!-- Actions -->
 				<div class="flex gap-2">
-					<Button onclick={() => { stressTest.generate(); metrics.refresh(); }}>
+					<Button onclick={() => stressTest.generateAndRefresh()}>
 						<FlaskConicalIcon class="mr-1.5 h-3.5 w-3.5" />
 						Generate
 					</Button>
-					<Button variant="destructive" onclick={() => { stressTest.deleteAll(); metrics.refresh(); }}>
+					<Button
+						variant="destructive"
+						onclick={() => stressTest.deleteAllAndRefresh()}
+					>
 						<TrashIcon class="mr-1.5 h-3.5 w-3.5" />
 						Delete All Recordings
 					</Button>
 				</div>
+
+				{#if stressTest.lastError}
+					<div class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+						{stressTest.lastError}
+					</div>
+				{/if}
 
 				<!-- Results -->
 				{#if stressTest.lastResult}

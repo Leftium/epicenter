@@ -18,6 +18,7 @@
  * transformations.delete(id);
  * ```
  */
+import { nanoid } from 'nanoid/non-secure';
 import { SvelteMap } from 'svelte/reactivity';
 import workspace from '$lib/workspace';
 import { transformationSteps, type TransformationStep } from './transformation-steps.svelte';
@@ -122,7 +123,7 @@ export const transformations = createTransformations();
 export function generateDefaultTransformation(): Transformation {
 	const now = new Date().toISOString();
 	return {
-		id: crypto.randomUUID(),
+		id: nanoid(),
 		title: '',
 		description: '',
 		createdAt: now,

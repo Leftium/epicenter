@@ -17,6 +17,7 @@
  * transformationSteps.delete(stepId);
  * ```
  */
+import { nanoid } from 'nanoid/non-secure';
 import { SvelteMap } from 'svelte/reactivity';
 import workspace from '$lib/workspace';
 
@@ -140,7 +141,7 @@ export function generateDefaultStep(
 	context: Pick<TransformationStep, 'transformationId' | 'order'>,
 ): TransformationStep {
 	return {
-		id: crypto.randomUUID(),
+		id: nanoid(),
 		transformationId: context.transformationId,
 		order: context.order,
 		type: 'prompt_transform',

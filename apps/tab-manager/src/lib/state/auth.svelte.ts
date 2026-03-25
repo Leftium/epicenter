@@ -16,10 +16,8 @@ import {
 	createWorkspaceAuth,
 	StoredUser,
 } from '@epicenter/svelte/auth-state';
-import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import { workspace } from '$lib/workspace';
-import { keyCache } from './key-cache';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
 
@@ -76,15 +74,13 @@ const client = createExtensionAuthClient({
 const store = createChromeAuthStore({
 	token: authToken,
 	user: authUser,
-	ready: Promise.all([authToken.whenReady, authUser.whenReady]),
+	ready: Promise.all([authToken.whenReady, authUser.whenReady]).then(
+		() => undefined,
+	),
 });
 
 export const authState = createWorkspaceAuth({
 	client,
 	store,
 	workspace,
-	restoreUserKey: async () => {
-		const cached = await keyCache.load();
-		return cached ? base64ToBytes(cached) : null;
-	},
 });

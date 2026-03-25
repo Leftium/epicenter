@@ -45,11 +45,7 @@ const encryptionKeyItem = storage.defineItem<string | null>(
  * ```typescript
  * import { keyCache } from '$lib/state/key-cache';
  *
- * // Used as hooks for workspace encryption
- * createWorkspace(definition).withEncryption({
- *   onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
- *   onDeactivate: () => keyCache.clear(),
- * });
+ * createWorkspace(definition).withEncryption({ keyCache });
  * ```
  */
 export const keyCache: KeyCache = {

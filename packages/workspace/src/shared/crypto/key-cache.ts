@@ -1,10 +1,11 @@
 /**
  * Platform-agnostic interface for caching encryption keys.
  *
- * Stores the encryption key as a base64 string—the same format
- * the auth session provides and `activateEncryption()` accepts. This avoids any
- * `Uint8Array ↔ base64` round-trips: the key enters as a string, caches
- * as a string, and passes straight back to `activateEncryption()` on reload.
+ * Stores the encryption key as a base64 string—the same format the auth
+ * session provides and the workspace cache boundary restores. This keeps
+ * the cache representation simple: the key enters as a string, caches as a
+ * string, and only decodes to bytes once the workspace calls
+ * `restoreEncryption()`.
  *
  * Every concrete backend stores strings natively (`chrome.storage.session`
  * serializes to JSON, `sessionStorage` is string-only), so the interface
@@ -58,9 +59,9 @@
  *   ▼
  * App startup (before auth roundtrip completes)
  *   │  KeyCache.load() → base64 string | null (cached from last session)
- *   │  passed directly to keyManager.activateEncryption(keyBase64)
+ *   │  consumed by workspace.restoreEncryption()
  *   ▼
- * activateEncryption() → base64ToBytes → HKDF → activateEncryption
+ * restoreEncryption() → base64ToBytes → activateEncryption() → HKDF
  *   │  base64 decoding happens once, at the crypto boundary
  * ```
  *
@@ -70,7 +71,7 @@
  *
  * ## Related Modules
  *
- * - {@link ../workspace/create-workspace.ts} — `withEncryption()` calls `onActivate` / `onDeactivate` hooks that close over this cache
+ * - {@link ../workspace/create-workspace.ts} — `withEncryption({ keyCache })` owns save, restore, and clear
  * - {@link ./index.ts} — Encryption primitives (`base64ToBytes` for key decoding at the crypto boundary)
  */
 export type KeyCache = {

@@ -19,7 +19,6 @@ import {
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
-import { bytesToBase64 } from '@epicenter/workspace/shared/crypto';
 import Type from 'typebox';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import {
@@ -82,10 +81,7 @@ export async function registerDevice(): Promise<void> {
 
 function buildWorkspaceClient() {
 	return createWorkspace(definition)
-		.withEncryption({
-			onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
-			onDeactivate: () => keyCache.clear(),
-		})
+		.withEncryption({ keyCache })
 		.withExtension('persistence', indexeddbPersistence)
 		.withExtension('broadcast', broadcastChannelSync)
 		.withExtension(

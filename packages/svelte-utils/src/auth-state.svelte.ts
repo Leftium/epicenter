@@ -122,8 +122,16 @@ export type AuthStore = {
 	): (() => void) | undefined;
 };
 
+/**
+ * Minimal workspace encryption boundary that auth coordinates.
+ *
+ * Auth decides when the workspace should restore, activate, or tear down
+ * encryption. The workspace owns the cache format, key decoding, HKDF, and
+ * persisted-data wipe behind this seam.
+ */
 type WorkspaceHandle = {
 	activateEncryption: (userKey: Uint8Array) => Promise<void>;
+	restoreEncryption: () => Promise<boolean>;
 	deactivateEncryption: () => Promise<void>;
 };
 
@@ -597,12 +605,10 @@ export function createWorkspaceAuth({
 	client,
 	store,
 	workspace,
-	restoreUserKey,
 }: {
 	client: AuthClient;
 	store: AuthStore;
 	workspace: WorkspaceHandle;
-	restoreUserKey?: () => Promise<Uint8Array | null>;
 }) {
 	let pendingAction = $state<PendingAction>(
 		store.read().user ? null : 'checking',
@@ -615,12 +621,15 @@ export function createWorkspaceAuth({
 		return store.read().user ? 'signed-in' : 'signed-out';
 	}
 
+	/**
+	 * Ask the workspace to restore its own cached encryption state.
+	 *
+	 * Auth intentionally does not read the key cache directly. It only decides
+	 * whether startup restore should run for the current session snapshot.
+	 */
 	async function restoreCachedWorkspace(snapshot: SessionSnapshot) {
-		if (!snapshot.user || !restoreUserKey) return;
-		const cachedKey = await restoreUserKey();
-		if (cachedKey) {
-			await workspace.activateEncryption(cachedKey);
-		}
+		if (!snapshot.user) return;
+		await workspace.restoreEncryption();
 	}
 
 	async function writeAuthenticatedSession(result: AuthResult) {

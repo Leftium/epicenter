@@ -13,7 +13,11 @@
 import { describe, expect, mock, spyOn, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { generateEncryptionKey } from '../shared/crypto/index.js';
+import type { KeyCache } from '../shared/crypto/key-cache.js';
+import {
+	bytesToBase64,
+	generateEncryptionKey,
+} from '../shared/crypto/index.js';
 import { createDocuments } from './create-document.js';
 import { createTables } from './create-tables.js';
 import { createWorkspace } from './create-workspace.js';
@@ -1151,6 +1155,108 @@ describe('.withEncryption() lifecycle', () => {
 			await activatePromise;
 
 			expect(onActivate).toHaveBeenCalledTimes(0);
+		});
+	});
+
+	describe('keyCache integration', () => {
+		function setupWithKeyCache(cachedKeyBase64: string | null = null) {
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+			);
+			let cachedValue = cachedKeyBase64;
+			const keyCache: KeyCache = {
+				save: mock(async (keyBase64: string) => {
+					cachedValue = keyBase64;
+				}),
+				load: mock(async () => cachedValue),
+				clear: mock(async () => {
+					cachedValue = null;
+				}),
+			};
+			const client = createWorkspace(
+				defineWorkspace({ id: 'key-cache-test', tables: { posts } }),
+			).withEncryption({ keyCache });
+
+			return {
+				client,
+				keyCache,
+				readCachedValue: () => cachedValue,
+			};
+		}
+
+		test('activateEncryption saves the user key through keyCache', async () => {
+			const { client, keyCache, readCachedValue } = setupWithKeyCache();
+			const userKey = generateEncryptionKey();
+
+			await client.activateEncryption(userKey);
+
+			expect(keyCache.save).toHaveBeenCalledTimes(1);
+			expect(keyCache.save).toHaveBeenCalledWith(bytesToBase64(userKey));
+			expect(readCachedValue()).toBe(bytesToBase64(userKey));
+		});
+
+		test('restoreEncryption returns false when no keyCache is configured', async () => {
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+			);
+			const client = createWorkspace(
+				defineWorkspace({ id: 'no-cache-test', tables: { posts } }),
+			).withEncryption({});
+
+			const restored = await client.restoreEncryption();
+
+			expect(restored).toBe(false);
+			expect(client.isEncrypted).toBe(false);
+		});
+
+		test('restoreEncryption returns false when keyCache is empty', async () => {
+			const { client, keyCache } = setupWithKeyCache();
+
+			const restored = await client.restoreEncryption();
+
+			expect(restored).toBe(false);
+			expect(client.isEncrypted).toBe(false);
+			expect(keyCache.load).toHaveBeenCalledTimes(1);
+			expect(keyCache.save).toHaveBeenCalledTimes(0);
+		});
+
+		test('restoreEncryption loads the cached key and activates encryption', async () => {
+			const userKey = generateEncryptionKey();
+			const { client, keyCache } = setupWithKeyCache(bytesToBase64(userKey));
+
+			const restored = await client.restoreEncryption();
+
+			expect(restored).toBe(true);
+			expect(client.isEncrypted).toBe(true);
+			expect(keyCache.load).toHaveBeenCalledTimes(1);
+			expect(keyCache.save).toHaveBeenCalledTimes(1);
+			expect(keyCache.save).toHaveBeenCalledWith(bytesToBase64(userKey));
+		});
+
+		test('restoreEncryption clears corrupt cache entries and stays deactivated', async () => {
+			const { client, keyCache, readCachedValue } =
+				setupWithKeyCache('%%%not-base64%%%');
+
+			const restored = await client.restoreEncryption();
+
+			expect(restored).toBe(false);
+			expect(client.isEncrypted).toBe(false);
+			expect(keyCache.clear).toHaveBeenCalledTimes(1);
+			expect(readCachedValue()).toBe(null);
+		});
+
+		test('deactivateEncryption clears keyCache during activate/deactivate races', async () => {
+			const { client, keyCache, readCachedValue } = setupWithKeyCache();
+
+			const activatePromise = client.activateEncryption(
+				generateEncryptionKey(),
+			);
+			await client.deactivateEncryption();
+			await activatePromise;
+
+			expect(client.isEncrypted).toBe(false);
+			expect(keyCache.clear).toHaveBeenCalledTimes(1);
+			expect(readCachedValue()).toBe(null);
 		});
 	});
 });

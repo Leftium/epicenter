@@ -1,22 +1,26 @@
 /**
- * Layered auth primitives for Epicenter Svelte apps.
+ * Auth primitives for Epicenter Svelte apps.
  *
- * The public API is split into three layers:
+ * Four public constructors cover all current use cases:
  *
- * - `SessionStore` — persistence and optional cross-context sync
- * - `AuthApi` — Better Auth I/O and provider-specific login flows
- * - auth state controllers:
- *   - `createSessionAuthState()` for generic auth-only apps like Zhongwen
- *   - `createWorkspaceAuthState()` for encrypted workspace apps where
- *     signed-in means the workspace must be decrypted and usable
+ * - {@link createAuth} — default SPA auth with localStorage and Better Auth
+ *   web redirect. Use this for apps like Zhongwen that only need session state.
  *
- * This module keeps the public DI surface intentionally small:
+ * - {@link createWorkspaceAuth} — default SPA auth with encrypted workspace
+ *   lifecycle. Use this for apps like Honeycrisp and Opensidian where
+ *   signed-in implies a decrypted workspace.
  *
- * - `authApi` answers "how do auth requests happen in this environment?"
- * - `sessionStore` answers "how is auth state persisted and synchronized?"
+ * - {@link createAuthWith} — custom auth with an injected client and store.
+ *   Use this when the default localStorage or Better Auth redirect setup
+ *   does not fit your environment.
  *
- * Workspace auth adds one more dependency: a workspace that can activate and
- * deactivate encryption.
+ * - {@link createWorkspaceAuthWith} — custom auth with injected client,
+ *   store, and workspace lifecycle. Use this for environments like Chrome
+ *   extensions that need custom OAuth flows, custom storage backends, and
+ *   encrypted workspace teardown.
+ *
+ * Most apps should use `createAuth` or `createWorkspaceAuth`. The `*With`
+ * variants exist for the Chrome extension and any future outlier.
  */
 
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
@@ -63,7 +67,7 @@ export type AuthStatus =
 	| 'signed-out';
 
 /**
- * Persisted session snapshot used by `SessionStore`.
+ * Persisted session snapshot.
  *
  * The token is optional at the product level. Cookie-backed flows such as
  * Zhongwen's OAuth redirect may have a valid server session before a bearer
@@ -75,32 +79,16 @@ export type SessionSnapshot = {
 };
 
 /**
- * Minimal persistence boundary for auth state.
+ * Flat auth result from client operations.
  *
- * The auth controller reads and writes complete session snapshots through this
- * interface instead of mutating raw reactive cells directly. Stores may also
- * expose `subscribe()` for cross-context sync such as `chrome.storage`.
+ * `user` and `token` are always present; `encryptionKey` is only set by
+ * workspace-aware servers that include it in the custom session response.
  */
-export type SessionStore = {
-	ready: Promise<void>;
-	read: () => SessionSnapshot;
-	write: (snapshot: SessionSnapshot) => void | Promise<void>;
-	clear: () => void | Promise<void>;
-	subscribe?: (
-		listener: (snapshot: SessionSnapshot) => void,
-	) => (() => void) | undefined;
-};
-
-type AuthSession = {
-	session: SessionSnapshot;
+export type AuthResult = {
+	user: StoredUser;
+	token: string | null;
 	encryptionKey?: string | null;
 };
-
-type TransportError = Error & {
-	status?: number;
-};
-
-type BetterAuthClient = ReturnType<typeof createAuthClient>;
 
 type EmailSignInCredentials = {
 	email: string;
@@ -114,24 +102,34 @@ type EmailSignUpCredentials = {
 };
 
 /**
- * Auth API boundary between the auth controller and Better Auth.
+ * Auth client boundary.
  *
- * The only environment-specific questions this module needs answered are:
- *
- * - how auth requests happen in this environment
- * - how auth state is persisted in this environment
- *
- * `AuthApi` answers the first question. It normalizes Better Auth responses
- * into a stable `SessionSnapshot` plus optional encryption key. The controller
- * owns persistence and phase transitions; the auth API only
- * performs auth I/O.
+ * Normalizes auth I/O into flat {@link AuthResult} values. The auth state
+ * constructors own persistence and phase transitions; the client only
+ * performs network requests.
  */
-export type AuthApi = {
-	signIn: (credentials: EmailSignInCredentials) => Promise<AuthSession>;
-	signUp: (credentials: EmailSignUpCredentials) => Promise<AuthSession>;
-	signInWithGoogle: () => Promise<AuthSession>;
-	signOut: (input: { token: string | null }) => Promise<void>;
-	getSession: (input: { token: string | null }) => Promise<AuthSession | null>;
+export type AuthClient = {
+	signIn(credentials: EmailSignInCredentials): Promise<AuthResult>;
+	signUp(credentials: EmailSignUpCredentials): Promise<AuthResult>;
+	signInWithGoogle(): Promise<AuthResult>;
+	signOut(token: string | null): Promise<void>;
+	getSession(token: string | null): Promise<AuthResult | null>;
+};
+
+/**
+ * Auth store boundary.
+ *
+ * Reads and writes complete session snapshots. Stores may expose
+ * `subscribe()` for cross-context sync such as `chrome.storage`.
+ */
+export type AuthStore = {
+	ready: Promise<void>;
+	read(): SessionSnapshot;
+	write(snapshot: SessionSnapshot): void | Promise<void>;
+	clear(): void | Promise<void>;
+	subscribe?(
+		listener: (snapshot: SessionSnapshot) => void,
+	): (() => void) | undefined;
 };
 
 type WorkspaceHandle = {
@@ -146,22 +144,11 @@ type ReactiveCell<T> = {
 	whenReady?: Promise<void>;
 };
 
-type SessionAuthStateConfig = {
-	authApi: AuthApi;
-	sessionStore: SessionStore;
+type TransportError = Error & {
+	status?: number;
 };
 
-type WorkspaceAuthStateConfig = SessionAuthStateConfig & {
-	workspace: WorkspaceHandle;
-	restoreUserKey?: () => Promise<Uint8Array | null>;
-};
-
-type InternalLifecycle = {
-	beforeCheckSession?: (snapshot: SessionSnapshot) => Promise<void>;
-	onAuthenticated?: (session: AuthSession) => Promise<void>;
-	onSignedOut?: () => Promise<void>;
-	onExternalSignedIn?: (snapshot: SessionSnapshot) => Promise<void>;
-};
+type BetterAuthInternalClient = ReturnType<typeof createAuthClient>;
 
 class AuthFlowInterrupt extends Error {
 	kind: 'redirect';
@@ -172,26 +159,9 @@ class AuthFlowInterrupt extends Error {
 	}
 }
 
-// ─── Session stores ─────────────────────────────────────────────────────────
+// ─── Auth stores ────────────────────────────────────────────────────────────
 
-/**
- * LocalStorage-backed session store for web apps.
- *
- * This is the generic replacement for `createLocalStorage()`. It persists the
- * token and cached user in localStorage and exposes them as a `SessionStore`
- * snapshot rather than as raw reactive cells.
- *
- * @example
- * ```typescript
- * const sessionStore = createLocalSessionStore('zhongwen');
- *
- * const authState = createSessionAuthState({
- *   authApi,
- *   sessionStore,
- * });
- * ```
- */
-export function createLocalSessionStore(prefix: string): SessionStore {
+function createLocalAuthStore(prefix: string): AuthStore {
 	const tokenState = createPersistedState({
 		key: `${prefix}:authToken`,
 		schema: type('string').or('null'),
@@ -221,17 +191,14 @@ export function createLocalSessionStore(prefix: string): SessionStore {
 }
 
 /**
- * Adapter from reactive token/user cells to `SessionStore`.
+ * Adapter from reactive token/user cells to {@link AuthStore}.
  *
- * This is primarily for extension code that already uses storage wrappers like
- * `createStorageState()`. The auth layer gets a proper store boundary while the
- * app can keep its existing reactive storage implementation.
- *
- * If the cells expose `watch()`, the returned store forwards those changes
- * through `subscribe()` so the auth controller can react to sign-in/sign-out
- * from other extension contexts.
+ * Use this for environments like Chrome extensions that already have reactive
+ * storage wrappers (e.g. `createStorageState()`). If the cells expose
+ * `watch()`, the returned store forwards changes through `subscribe()` so
+ * the auth state can react to sign-in/sign-out from other extension contexts.
  */
-export function createReactiveSessionStore({
+export function createCellAuthStore({
 	token,
 	user,
 	ready,
@@ -239,7 +206,7 @@ export function createReactiveSessionStore({
 	token: ReactiveCell<string | null>;
 	user: ReactiveCell<StoredUser | null>;
 	ready?: Promise<void>;
-}): SessionStore {
+}): AuthStore {
 	const resolvedReady = (ready ??
 		Promise.all([token.whenReady, user.whenReady].filter(Boolean)).then(
 			() => undefined,
@@ -288,21 +255,10 @@ export function createReactiveSessionStore({
 	};
 }
 
-// ─── Better Auth authApi ───────────────────────────────────────────────────
+// ─── Better Auth client ─────────────────────────────────────────────────────
 
-/**
- * Create the web `AuthApi` for standard browser apps.
- *
- * Google sign-in uses Better Auth's redirect flow. After the redirect starts,
- * the browser navigates away and the page never returns to the original call
- * site; the auth controller treats that as an interrupt rather than a failure.
- */
-export function createWebAuthApi({
-	baseURL,
-}: {
-	baseURL: string | (() => string);
-}): AuthApi {
-	return createAuthApi({
+function createWebAuthClient(baseURL: string | (() => string)): AuthClient {
+	return createBetterAuthClient({
 		baseURL,
 		signInWithGoogle: async (client) => {
 			await client.signIn.social({
@@ -315,23 +271,26 @@ export function createWebAuthApi({
 }
 
 /**
- * Create an auth API backed by Better Auth.
+ * Create an {@link AuthClient} backed by Better Auth.
  *
- * Most apps should use `createWebAuthApi()`. This lower-level constructor
- * exists for environments like the Chrome extension where Google sign-in
- * must be initiated differently.
+ * Most apps should use {@link createAuth} or {@link createWorkspaceAuth},
+ * which build this client internally. This lower-level constructor exists
+ * for environments like the Chrome extension where Google sign-in uses a
+ * popup flow instead of a redirect.
  */
-export function createAuthApi({
+export function createBetterAuthClient({
 	baseURL,
 	signInWithGoogle,
 }: {
 	baseURL: string | (() => string);
-	signInWithGoogle: (client: BetterAuthClient) => Promise<{ user: User }>;
-}): AuthApi {
+	signInWithGoogle: (
+		client: BetterAuthInternalClient,
+	) => Promise<{ user: User }>;
+}): AuthClient {
 	const resolveBaseURL =
 		typeof baseURL === 'function' ? baseURL : () => baseURL;
 
-	function createClient(token: string | null) {
+	function buildClient(token: string | null) {
 		let nextToken: string | null | undefined;
 
 		const client = createAuthClient({
@@ -357,58 +316,54 @@ export function createAuthApi({
 
 	return {
 		async signIn(credentials) {
-			const { client, getIssuedToken } = createClient(null);
+			const { client, getIssuedToken } = buildClient(null);
 			const { data, error } = await client.signIn.email(credentials);
 			if (error) throw toTransportError(error);
-			return toAuthSession(data, getIssuedToken());
+			return toAuthResult(data, getIssuedToken());
 		},
 
 		async signUp(credentials) {
-			const { client, getIssuedToken } = createClient(null);
+			const { client, getIssuedToken } = buildClient(null);
 			const { data, error } = await client.signUp.email(credentials);
 			if (error) throw toTransportError(error);
-			return toAuthSession(data, getIssuedToken());
+			return toAuthResult(data, getIssuedToken());
 		},
 
 		async signInWithGoogle() {
-			const { client, getIssuedToken } = createClient(null);
+			const { client, getIssuedToken } = buildClient(null);
 			const data = await signInWithGoogle(client);
-			return toAuthSession(data, getIssuedToken());
+			return toAuthResult(data, getIssuedToken());
 		},
 
-		async signOut({ token }) {
-			const { client } = createClient(token);
+		async signOut(token) {
+			const { client } = buildClient(token);
 			const { error } = await client.signOut();
 			if (error) throw toTransportError(error);
 		},
 
-		async getSession({ token }) {
-			const { client, getIssuedToken } = createClient(token);
+		async getSession(token) {
+			const { client, getIssuedToken } = buildClient(token);
 			const { data, error } = await client.getSession();
 			if (error) throw toTransportError(error);
 			if (!data) return null;
 
 			const customData = data as typeof data & Partial<CustomSessionFields>;
 			return {
-				session: {
-					user: toStoredUser(customData.user),
-					token: getIssuedToken() ?? token,
-				},
+				user: toStoredUser(customData.user),
+				token: getIssuedToken() ?? token,
 				encryptionKey: customData.encryptionKey ?? null,
 			};
 		},
 	};
 }
 
-function toAuthSession(
+function toAuthResult(
 	data: { user: User } & Partial<CustomSessionFields>,
 	token: string | null | undefined,
-): AuthSession {
+): AuthResult {
 	return {
-		session: {
-			user: toStoredUser(data.user),
-			token: token ?? null,
-		},
+		user: toStoredUser(data.user),
+		token: token ?? null,
 		encryptionKey: data.encryptionKey ?? null,
 	};
 }
@@ -447,103 +402,202 @@ function isRedirectInterrupt(cause: unknown) {
 	return cause instanceof AuthFlowInterrupt && cause.kind === 'redirect';
 }
 
-// ─── Auth state controllers ─────────────────────────────────────────────────
+// ─── Public constructors ────────────────────────────────────────────────────
+
+type CreateAuthOptions = {
+	baseURL: string | (() => string);
+	storageKey: string;
+};
 
 /**
- * Generic auth state for apps that only care about session state.
+ * Default SPA auth with localStorage and Better Auth web redirect.
  *
- * This is the new base controller. It owns the phase machine, auth-aware
- * fetch, session validation policy, and persistence orchestration. It does not
- * know anything about workspaces or encryption.
+ * This is the simplest entry point. It creates a Better Auth client that uses
+ * Google redirect sign-in and a localStorage-backed session store. Use this
+ * for apps that only need session state without workspace decryption.
  *
- * Use this for apps like Zhongwen.
+ * @example
+ * ```typescript
+ * import { createAuth } from '@epicenter/svelte/auth-state';
+ *
+ * export const auth = createAuth({
+ *   baseURL: 'https://api.example.com',
+ *   storageKey: 'myapp',
+ * });
+ * ```
  */
-export function createSessionAuthState({
-	authApi,
-	sessionStore,
-}: SessionAuthStateConfig) {
-	return createAuthController({ authApi, sessionStore }, {});
+export function createAuth({ baseURL, storageKey }: CreateAuthOptions) {
+	return createAuthWith({
+		client: createWebAuthClient(baseURL),
+		store: createLocalAuthStore(storageKey),
+	});
 }
 
 /**
- * Auth state for encrypted workspace apps.
+ * Default SPA auth with encrypted workspace lifecycle.
  *
- * This wraps the generic session controller with the product invariant that a
- * signed-in user must have an active decrypted workspace. `checkSession()`
- * restores a cached user key before the server roundtrip when available, then
- * replaces it with the authoritative server key from `getSession()`.
+ * Like {@link createAuth}, this creates a Better Auth client and localStorage
+ * store internally. It additionally ties the auth lifecycle to a workspace:
+ * signing in activates encryption, signing out deactivates it.
+ *
+ * Use this for apps where signed-in means the workspace must be decrypted
+ * and usable.
+ *
+ * @example
+ * ```typescript
+ * import { createWorkspaceAuth } from '@epicenter/svelte/auth-state';
+ *
+ * export const auth = createWorkspaceAuth({
+ *   baseURL: 'https://api.example.com',
+ *   storageKey: 'myapp',
+ *   workspace,
+ * });
+ * ```
  */
-export function createWorkspaceAuthState({
-	authApi,
-	sessionStore,
+export function createWorkspaceAuth({
+	baseURL,
+	storageKey,
+	workspace,
+}: CreateAuthOptions & { workspace: WorkspaceHandle }) {
+	return createWorkspaceAuthWith({
+		client: createWebAuthClient(baseURL),
+		store: createLocalAuthStore(storageKey),
+		workspace,
+	});
+}
+
+/**
+ * Custom auth with an injected client and store.
+ *
+ * Use this when the default localStorage or Better Auth redirect setup does
+ * not fit your environment. You provide the {@link AuthClient} and
+ * {@link AuthStore} implementations; this constructor builds the reactive
+ * auth state machine on top of them.
+ *
+ * @example
+ * ```typescript
+ * import { createAuthWith, createBetterAuthClient, createCellAuthStore } from '@epicenter/svelte/auth-state';
+ *
+ * export const auth = createAuthWith({
+ *   client: createBetterAuthClient({ baseURL, signInWithGoogle: customFlow }),
+ *   store: createCellAuthStore({ token: myTokenCell, user: myUserCell }),
+ * });
+ * ```
+ */
+export function createAuthWith({
+	client,
+	store,
+}: {
+	client: AuthClient;
+	store: AuthStore;
+}) {
+	return buildAuthState(client, store, {});
+}
+
+/**
+ * Custom auth with injected client, store, and workspace lifecycle.
+ *
+ * Like {@link createAuthWith}, but ties the auth lifecycle to a workspace.
+ * Signing in activates encryption, signing out deactivates it. An optional
+ * `restoreUserKey` callback lets `checkSession()` restore a cached encryption
+ * key before the server roundtrip so the workspace is usable immediately.
+ *
+ * Use this for environments like Chrome extensions that need custom OAuth
+ * flows, custom storage backends, and encrypted workspace teardown.
+ *
+ * @example
+ * ```typescript
+ * import { createWorkspaceAuthWith, createBetterAuthClient, createCellAuthStore } from '@epicenter/svelte/auth-state';
+ *
+ * export const auth = createWorkspaceAuthWith({
+ *   client: createBetterAuthClient({ baseURL, signInWithGoogle: customFlow }),
+ *   store: createCellAuthStore({ token: myTokenCell, user: myUserCell }),
+ *   workspace,
+ *   restoreUserKey: async () => loadCachedKey(),
+ * });
+ * ```
+ */
+export function createWorkspaceAuthWith({
+	client,
+	store,
 	workspace,
 	restoreUserKey,
-}: WorkspaceAuthStateConfig) {
-	return createAuthController(
-		{ authApi, sessionStore },
-		{
-			async beforeCheckSession(snapshot) {
-				if (!snapshot.user || !restoreUserKey) return;
-				const cachedKey = await restoreUserKey();
-				if (cachedKey) {
-					await workspace.activateEncryption(cachedKey);
-				}
-			},
-			async onAuthenticated(session) {
-				if (!session.encryptionKey) return;
-				await workspace.activateEncryption(
-					base64ToBytes(session.encryptionKey),
-				);
-			},
-			async onSignedOut() {
-				await workspace.deactivateEncryption();
-			},
-			async onExternalSignedIn(snapshot) {
-				if (!snapshot.user || !restoreUserKey) return;
-				const cachedKey = await restoreUserKey();
-				if (cachedKey) {
-					await workspace.activateEncryption(cachedKey);
-				}
-			},
+}: {
+	client: AuthClient;
+	store: AuthStore;
+	workspace: WorkspaceHandle;
+	restoreUserKey?: () => Promise<Uint8Array | null>;
+}) {
+	return buildAuthState(client, store, {
+		async beforeCheckSession(snapshot) {
+			if (!snapshot.user || !restoreUserKey) return;
+			const cachedKey = await restoreUserKey();
+			if (cachedKey) {
+				await workspace.activateEncryption(cachedKey);
+			}
 		},
-	);
+		async onAuthenticated(result) {
+			if (!result.encryptionKey) return;
+			await workspace.activateEncryption(base64ToBytes(result.encryptionKey));
+		},
+		async onSignedOut() {
+			await workspace.deactivateEncryption();
+		},
+		async onExternalSignedIn(snapshot) {
+			if (!snapshot.user || !restoreUserKey) return;
+			const cachedKey = await restoreUserKey();
+			if (cachedKey) {
+				await workspace.activateEncryption(cachedKey);
+			}
+		},
+	});
 }
 
-function createAuthController(
-	{ authApi, sessionStore }: SessionAuthStateConfig,
-	lifecycle: InternalLifecycle,
+// ─── Internal state machine ─────────────────────────────────────────────────
+
+type AuthLifecycle = {
+	beforeCheckSession?: (snapshot: SessionSnapshot) => Promise<void>;
+	onAuthenticated?: (result: AuthResult) => Promise<void>;
+	onSignedOut?: () => Promise<void>;
+	onExternalSignedIn?: (snapshot: SessionSnapshot) => Promise<void>;
+};
+
+function buildAuthState(
+	client: AuthClient,
+	store: AuthStore,
+	lifecycle: AuthLifecycle,
 ) {
 	let pendingAction = $state<'checking' | 'signing-in' | 'signing-out' | null>(
-		sessionStore.read().user ? null : 'checking',
+		store.read().user ? null : 'checking',
 	);
 	let lastError = $state<string | undefined>(undefined);
-	let hasExternalSession = $state(Boolean(sessionStore.read().user));
+	let hasExternalSession = $state(Boolean(store.read().user));
 
 	function getStatus(): AuthStatus {
 		if (pendingAction) return pendingAction;
-		return sessionStore.read().user ? 'signed-in' : 'signed-out';
+		return store.read().user ? 'signed-in' : 'signed-out';
 	}
 
-	async function writeAuthenticatedSession(session: AuthSession) {
-		await sessionStore.write(session.session);
-		await lifecycle.onAuthenticated?.(session);
+	async function writeAuthenticatedResult(result: AuthResult) {
+		await store.write({ user: result.user, token: result.token });
+		await lifecycle.onAuthenticated?.(result);
 		lastError = undefined;
 	}
 
 	async function clearSession() {
-		await sessionStore.clear();
+		await store.clear();
 		await lifecycle.onSignedOut?.();
 	}
 
 	async function authenticate(
-		run: () => Promise<AuthSession>,
+		run: () => Promise<AuthResult>,
 		errorPrefix: string,
 	) {
 		pendingAction = 'signing-in';
 
 		try {
-			const session = await run();
-			await writeAuthenticatedSession(session);
+			const result = await run();
+			await writeAuthenticatedResult(result);
 			pendingAction = null;
 			return;
 		} catch (cause) {
@@ -558,7 +612,7 @@ function createAuthController(
 		}
 	}
 
-	sessionStore.subscribe?.((snapshot) => {
+	store.subscribe?.((snapshot) => {
 		const isSignedIn = Boolean(snapshot.user);
 		if (isSignedIn === hasExternalSession) return;
 		hasExternalSession = isSignedIn;
@@ -583,23 +637,23 @@ function createAuthController(
 		},
 
 		get user() {
-			return sessionStore.read().user;
+			return store.read().user;
 		},
 
 		get token() {
-			return sessionStore.read().token;
+			return store.read().token;
 		},
 
 		/**
 		 * Auth-aware fetch wrapper.
 		 *
-		 * It always sends `credentials: 'include'` so cookie-backed auth flows
-		 * continue to work, and it adds `Authorization: Bearer <token>` when the
-		 * current session store has a token.
+		 * Sends `credentials: 'include'` so cookie-backed auth flows continue
+		 * to work, and adds `Authorization: Bearer <token>` when the store has
+		 * a token.
 		 */
 		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
 			const headers = new Headers(init?.headers);
-			const token = sessionStore.read().token;
+			const token = store.read().token;
 			if (token) {
 				headers.set('Authorization', `Bearer ${token}`);
 			}
@@ -611,34 +665,34 @@ function createAuthController(
 		}) as typeof fetch,
 
 		/**
-		 * Sign in with email/password.
+		 * Sign in with email and password.
 		 *
-		 * On success the session store is updated, `checkSession()` semantics are
-		 * preserved, and workspace auth wrappers activate encryption automatically.
+		 * On success the store is updated and workspace auth activates
+		 * encryption automatically.
 		 */
 		async signIn(credentials: EmailSignInCredentials) {
-			await authenticate(() => authApi.signIn(credentials), 'Sign-in failed');
+			await authenticate(() => client.signIn(credentials), 'Sign-in failed');
 		},
 
 		/**
-		 * Create an account with email/password/name.
+		 * Create an account with email, password, and name.
 		 *
-		 * The auth controller treats sign-up as another session-producing auth
-		 * action. The same persistence, error, and workspace rules apply.
+		 * Treated as a session-producing auth action with the same persistence,
+		 * error, and workspace rules as sign-in.
 		 */
 		async signUp(credentials: EmailSignUpCredentials) {
-			await authenticate(() => authApi.signUp(credentials), 'Sign-up failed');
+			await authenticate(() => client.signUp(credentials), 'Sign-up failed');
 		},
 
 		/**
-		 * Start the Google sign-in flow through the configured auth API.
+		 * Start the Google sign-in flow.
 		 *
-		 * Web auth APIs typically redirect the page; extension auth APIs complete
-		 * in-place and return a session result.
+		 * Web clients redirect the page; extension clients complete in-place
+		 * and return a session result.
 		 */
 		async signInWithGoogle() {
 			await authenticate(
-				() => authApi.signInWithGoogle(),
+				() => client.signInWithGoogle(),
 				'Google sign-in failed',
 			);
 		},
@@ -646,13 +700,13 @@ function createAuthController(
 		/**
 		 * Sign out locally and on the server.
 		 *
-		 * The local session is always cleared, even if the server sign-out call
-		 * fails. Workspace auth wrappers also deactivate encryption here.
+		 * The local session is always cleared even if the server call fails.
+		 * Workspace auth also deactivates encryption.
 		 */
 		async signOut() {
 			pendingAction = 'signing-out';
 			try {
-				await authApi.signOut({ token: sessionStore.read().token });
+				await client.signOut(store.read().token);
 			} catch {}
 			await clearSession();
 			pendingAction = null;
@@ -661,34 +715,31 @@ function createAuthController(
 		/**
 		 * Validate the current session against the server.
 		 *
-		 * The controller deliberately does not require a local bearer token before
-		 * making this request. Cookie-backed flows may have a valid server session
-		 * even when the local token is missing or stale.
+		 * Does not require a local bearer token—cookie-backed flows may have
+		 * a valid server session even when the local token is missing.
 		 *
-		 * Unreachable server responses keep cached session state so offline users
-		 * are not logged out. Explicit auth rejections clear the store.
+		 * Unreachable server responses keep cached state so offline users are
+		 * not logged out. Explicit auth rejections (4xx) clear the store.
 		 */
 		async checkSession() {
-			await sessionStore.ready;
+			await store.ready;
 			pendingAction = 'checking';
 
-			const snapshot = sessionStore.read();
+			const snapshot = store.read();
 			await lifecycle.beforeCheckSession?.(snapshot);
 
 			try {
-				const session = await authApi.getSession({
-					token: snapshot.token,
-				});
+				const result = await client.getSession(snapshot.token);
 
-				if (!session) {
+				if (!result) {
 					await clearSession();
 					pendingAction = null;
 					return null;
 				}
 
-				await writeAuthenticatedSession(session);
+				await writeAuthenticatedResult(result);
 				pendingAction = null;
-				return session.session.user;
+				return result.user;
 			} catch (cause) {
 				const error = toTransportError(cause);
 				const isAuthRejection =
@@ -700,7 +751,7 @@ function createAuthController(
 					return null;
 				}
 
-				const cachedUser = sessionStore.read().user;
+				const cachedUser = store.read().user;
 				pendingAction = null;
 				return cachedUser;
 			}

@@ -1,26 +1,19 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Thin wrapper around the shared workspace auth factory, providing:
+ * Uses the injected `createWorkspaceAuthWith` path because the extension
+ * needs custom Google OAuth (popup via `chrome.identity`) and custom
+ * storage (`chrome.storage.local` via reactive cells).
  *
- * - **chrome.storage** — `createStorageState` for token and user, with
- *   async init (`whenReady`) and cross-context change detection (`.watch`)
- * - **Google OAuth auth API** — extension-specific Better Auth auth API
- *   built on `chrome.identity.launchWebAuthFlow`
- * - **Workspace auth** — signed-in means the workspace is decrypted, and
- *   sign-out tears it back down
- * - **Cross-context sync** — `createReactiveSessionStore()` forwards
- *   `chrome.storage` changes into the shared auth controller
- *
- * @see {@link @epicenter/svelte/auth-state!createWorkspaceAuthState} — shared factory
+ * @see {@link @epicenter/svelte/auth-state!createWorkspaceAuthWith} — injected constructor
  * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
  * @see {@link ./key-cache} — session-scoped encryption key cache
  */
 
 import {
-	createAuthApi,
-	createReactiveSessionStore,
-	createWorkspaceAuthState,
+	createBetterAuthClient,
+	createCellAuthStore,
+	createWorkspaceAuthWith,
 	StoredUser,
 } from '@epicenter/svelte/auth-state';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
@@ -45,9 +38,9 @@ const authUser = createStorageState('local:authUser', {
 	schema: StoredUser.or('null'),
 });
 
-const authApi = createAuthApi({
+const client = createBetterAuthClient({
 	baseURL: () => remoteServerUrl.current,
-	signInWithGoogle: async (client) => {
+	signInWithGoogle: async (betterAuthClient) => {
 		const redirectUri = browser.identity.getRedirectURL();
 		const nonce = crypto.randomUUID();
 		const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -68,7 +61,7 @@ const authApi = createAuthApi({
 		const idToken = params.get('id_token');
 		if (!idToken) throw new Error('No id_token in response');
 
-		const { data, error } = await client.signIn.social({
+		const { data, error } = await betterAuthClient.signIn.social({
 			provider: 'google',
 			idToken: { token: idToken, nonce },
 		});
@@ -80,15 +73,15 @@ const authApi = createAuthApi({
 	},
 });
 
-const sessionStore = createReactiveSessionStore({
+const store = createCellAuthStore({
 	token: authToken,
 	user: authUser,
 	ready: Promise.all([authToken.whenReady, authUser.whenReady]),
 });
 
-export const authState = createWorkspaceAuthState({
-	authApi,
-	sessionStore,
+export const authState = createWorkspaceAuthWith({
+	client,
+	store,
 	workspace,
 	restoreUserKey: async () => {
 		const cached = await keyCache.load();

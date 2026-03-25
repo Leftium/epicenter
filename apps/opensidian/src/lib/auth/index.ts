@@ -1,19 +1,9 @@
 import { APP_URLS } from '@epicenter/constants/vite';
-import {
-	createLocalSessionStore,
-	createWebAuthApi,
-	createWorkspaceAuthState,
-} from '@epicenter/svelte/auth-state';
+import { createWorkspaceAuth } from '@epicenter/svelte/auth-state';
 import { ws } from '$lib/workspace';
 
-const authApi = createWebAuthApi({
+export const authState = createWorkspaceAuth({
 	baseURL: APP_URLS.API,
-});
-
-const sessionStore = createLocalSessionStore('opensidian');
-
-export const authState = createWorkspaceAuthState({
-	authApi,
-	sessionStore,
+	storageKey: 'opensidian',
 	workspace: ws,
 });

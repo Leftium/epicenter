@@ -111,7 +111,7 @@ export async function startDaemon(options: StartDaemonOptions = {}) {
 
 	async function shutdown() {
 		console.log('\nShutting down...');
-		await Promise.all(allClients.map((c) => c.destroy()));
+		await Promise.all(allClients.map((c) => c.dispose()));
 		console.log('✓ Graceful shutdown complete');
 	}
 

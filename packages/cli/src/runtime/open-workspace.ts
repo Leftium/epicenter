@@ -35,7 +35,7 @@ export type OpenWorkspaceResult = {
 	/** Config directory path. */
 	configDir: string;
 	/** Gracefully close the workspace (flush persistence). */
-	destroy: () => Promise<void>;
+	dispose: () => Promise<void>;
 };
 
 /**
@@ -112,7 +112,7 @@ export async function openWorkspaceFromDisk(
 	return {
 		client,
 		configDir,
-		destroy: () => client.destroy(),
+		dispose: () => client.dispose(),
 	};
 }
 
@@ -133,11 +133,11 @@ export async function withWorkspace<T>(
 	options: OpenWorkspaceOptions,
 	fn: (client: AnyWorkspaceClient) => T | Promise<T>,
 ): Promise<T> {
-	const { client, destroy } = await openWorkspaceFromDisk(options);
+	const { client, dispose } = await openWorkspaceFromDisk(options);
 	try {
 		const result = await fn(client);
 		return result;
 	} finally {
-		await destroy();
+		await dispose();
 	}
 }

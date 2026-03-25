@@ -1164,8 +1164,13 @@ describe('.withEncryption() lifecycle', () => {
 				type({ id: 'string', title: 'string', _v: '1' }),
 			);
 			let cachedValue = cachedKeyBase64;
+			let shouldFailNextSave = false;
 			const keyCache: KeyCache = {
 				save: mock(async (keyBase64: string) => {
+					if (shouldFailNextSave) {
+						shouldFailNextSave = false;
+						throw new Error('forced key cache save failure');
+					}
 					cachedValue = keyBase64;
 				}),
 				load: mock(async () => cachedValue),
@@ -1180,6 +1185,9 @@ describe('.withEncryption() lifecycle', () => {
 			return {
 				client,
 				keyCache,
+				failNextSave() {
+					shouldFailNextSave = true;
+				},
 				readCachedValue: () => cachedValue,
 			};
 		}
@@ -1192,6 +1200,20 @@ describe('.withEncryption() lifecycle', () => {
 
 			expect(keyCache.save).toHaveBeenCalledTimes(1);
 			expect(keyCache.save).toHaveBeenCalledWith(bytesToBase64(userKey));
+			expect(readCachedValue()).toBe(bytesToBase64(userKey));
+		});
+
+		test('activateEncryption retries the same key after keyCache.save fails', async () => {
+			const { client, keyCache, failNextSave, readCachedValue } =
+				setupWithKeyCache();
+			const userKey = generateEncryptionKey();
+
+			failNextSave();
+			await client.activateEncryption(userKey);
+			await client.activateEncryption(userKey);
+
+			expect(client.isEncrypted).toBe(true);
+			expect(keyCache.save).toHaveBeenCalledTimes(2);
 			expect(readCachedValue()).toBe(bytesToBase64(userKey));
 		});
 

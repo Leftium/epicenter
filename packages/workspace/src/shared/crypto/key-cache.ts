@@ -7,30 +7,37 @@
  * string, and only decodes to bytes once the workspace calls
  * `restoreEncryption()`.
  *
- * Every concrete backend stores strings natively (`chrome.storage.session`
- * serializes to JSON, `sessionStorage` is string-only), so the interface
- * matches the storage reality.
+ * Every concrete backend stores strings natively. WXT storage wraps
+ * `chrome.storage.session` for the extension, `sessionStorage` is string-only
+ * in the browser, and Stronghold persists opaque values on desktop. The
+ * interface matches that storage reality.
  *
  * | Platform         | Implementation                                            |
  * |------------------|-----------------------------------------------------------|
  * | Tauri desktop    | `tauri-plugin-stronghold` — encrypted vault, memory zeroization |
  * | Browser          | `sessionStorage` — survives refresh, clears on tab close  |
- * | Chrome extension | `chrome.storage.session` — survives popup/sidebar reopens  |
+ * | Chrome extension | WXT storage (`session:` area over `chrome.storage.session`) — survives popup/sidebar reopens |
  * | Self-hosted      | No cache — user enters password each session              |
  *
  * @example
  * ```typescript
- * // Chrome extension implementation
- * const chromeKeyCache: KeyCache = {
+ * import { storage } from '@wxt-dev/storage';
+ *
+ * // Chrome extension implementation via WXT
+ * const encryptionKeyItem = storage.defineItem<string | null>(
+ *   'session:epicenter:encryption-key',
+ *   { fallback: null },
+ * );
+ *
+ * const extensionKeyCache: KeyCache = {
  *   async save(keyBase64) {
- *     await chrome.storage.session.set({ ek: keyBase64 });
+ *     await encryptionKeyItem.setValue(keyBase64);
  *   },
  *   async load() {
- *     const result = await chrome.storage.session.get('ek');
- *     return result.ek ?? null;
+ *     return await encryptionKeyItem.getValue();
  *   },
  *   async clear() {
- *     await chrome.storage.session.remove('ek');
+ *     await encryptionKeyItem.removeValue();
  *   },
  * };
  *
@@ -75,10 +82,27 @@
  * - {@link ./index.ts} — Encryption primitives (`base64ToBytes` for key decoding at the crypto boundary)
  */
 export type KeyCache = {
-	/** Save the base64-encoded encryption key. */
+	/**
+	 * Persist the latest base64-encoded encryption key.
+	 *
+	 * Called after the workspace receives or refreshes a valid key from the auth
+	 * session. Implementations usually store one value and overwrite any older
+	 * cached key.
+	 */
 	save(keyBase64: string): Promise<void>;
-	/** Load the cached base64-encoded key, or null if not cached. */
+	/**
+	 * Load the cached base64-encoded key during startup.
+	 *
+	 * `createWorkspace().withEncryption({ keyCache })` calls this before the auth
+	 * roundtrip completes so encrypted data can unlock immediately. Return `null`
+	 * to opt out and force the workspace to wait for the server session.
+	 */
 	load(): Promise<string | null>;
-	/** Clear all cached keys (sign-out or user switch). */
+	/**
+	 * Remove the cached key on sign-out or account switch.
+	 *
+	 * This should clear only the encryption-key entry owned by the cache, not
+	 * unrelated storage used by the host app.
+	 */
 	clear(): Promise<void>;
 };

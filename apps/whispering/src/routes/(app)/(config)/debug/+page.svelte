@@ -8,10 +8,30 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import { nanoid } from 'nanoid/non-secure';
-	import { extractErrorMessage } from 'wellcrafted/error';
-	import { Ok, tryAsync, trySync } from 'wellcrafted/result';
+	import {
+		defineErrors,
+		extractErrorMessage,
+		type InferErrors,
+	} from 'wellcrafted/error';
+	import { tryAsync, trySync } from 'wellcrafted/result';
 	import * as Y from 'yjs';
 	import workspace from '$lib/workspace';
+
+	const DebugStressTestError = defineErrors({
+		GenerateFailed: ({ cause }: { cause: unknown }) => ({
+			message: `Failed to generate test recordings: ${extractErrorMessage(cause)}`,
+			cause,
+		}),
+		DeleteFailed: ({ cause }: { cause: unknown }) => ({
+			message: `Failed to delete test recordings: ${extractErrorMessage(cause)}`,
+			cause,
+		}),
+		RefreshFailed: ({ cause }: { cause: unknown }) => ({
+			message: `Failed to refresh debug metrics: ${extractErrorMessage(cause)}`,
+			cause,
+		}),
+	});
+	type DebugStressTestError = InferErrors<typeof DebugStressTestError>;
 
 	// ── Metrics ────────────────────────────────────────────────────────────────
 
@@ -80,11 +100,7 @@
 		let selectedCount = $state('100');
 		let selectedContentLength = $state<keyof typeof loremByLength>('short');
 		let lastResult = $state<StressTestResult | null>(null);
-		let lastError = $state<string | null>(null);
-
-		function setError(error: unknown, fallback: string) {
-			lastError = extractErrorMessage(error) || fallback;
-		}
+		let lastError = $state<DebugStressTestError | null>(null);
 
 		function measure(label: string, count: number, operation: () => void) {
 			const sizeBefore = Y.encodeStateAsUpdate(workspace.ydoc).byteLength;
@@ -127,70 +143,71 @@
 				const content =
 					loremByLength[selectedContentLength] ?? loremByLength.short;
 				lastError = null;
-				trySync({
+				const { error } = trySync({
 					try: () => {
-					measure('Generated', count, () => {
-						workspace.ydoc.transact(() => {
-							for (let i = 0; i < count; i++) {
-								const now = new Date().toISOString();
-								workspace.tables.recordings.set({
-									id: nanoid(),
-									title: `Test Recording #${i + 1}`,
-									subtitle: 'Generated for stress testing',
-									timestamp: now,
-									createdAt: now,
-									updatedAt: now,
-									transcribedText: content,
-									transcriptionStatus: 'DONE',
-									_v: 1,
-								});
-							}
+						measure('Generated', count, () => {
+							workspace.ydoc.transact(() => {
+								for (let i = 0; i < count; i++) {
+									const now = new Date().toISOString();
+									workspace.tables.recordings.set({
+										id: nanoid(),
+										title: `Test Recording #${i + 1}`,
+										subtitle: 'Generated for stress testing',
+										timestamp: now,
+										createdAt: now,
+										updatedAt: now,
+										transcribedText: content,
+										transcriptionStatus: 'DONE',
+										_v: 1,
+									});
+								}
+							});
 						});
-					});
 					},
-					catch: (error) => {
-						setError(error, 'Unknown generate error');
-						return Ok(undefined);
-					},
+					catch: (cause) => DebugStressTestError.GenerateFailed({ cause }),
 				});
+				if (error) {
+					lastError = error;
+					return false;
+				}
+				return true;
 			},
 			deleteAll() {
 				lastError = null;
-				if (!confirm('Delete ALL recordings? This cannot be undone.')) return;
-				trySync({
+				if (!confirm('Delete ALL recordings? This cannot be undone.'))
+					return false;
+				const { error } = trySync({
 					try: () => {
-					const count = workspace.tables.recordings.count();
-					measure('Deleted', count, () => workspace.tables.recordings.clear());
+						const count = workspace.tables.recordings.count();
+						measure('Deleted', count, () => workspace.tables.recordings.clear());
 					},
-					catch: (error) => {
-						setError(error, 'Unknown delete error');
-						return Ok(undefined);
-					},
+					catch: (cause) => DebugStressTestError.DeleteFailed({ cause }),
 				});
+				if (error) {
+					lastError = error;
+					return false;
+				}
+				return true;
 			},
 			async generateAndRefresh() {
-				await tryAsync({
+				if (!this.generate()) return;
+				const { error } = await tryAsync({
 					try: async () => {
-						this.generate();
 						metrics.refresh();
 					},
-					catch: (error) => {
-						setError(error, 'Unknown generate error');
-						return Ok(undefined);
-					},
+					catch: (cause) => DebugStressTestError.RefreshFailed({ cause }),
 				});
+				if (error) lastError = error;
 			},
 			async deleteAllAndRefresh() {
-				await tryAsync({
+				if (!this.deleteAll()) return;
+				const { error } = await tryAsync({
 					try: async () => {
-						this.deleteAll();
 						metrics.refresh();
 					},
-					catch: (error) => {
-						setError(error, 'Unknown delete error');
-						return Ok(undefined);
-					},
+					catch: (cause) => DebugStressTestError.RefreshFailed({ cause }),
 				});
+				if (error) lastError = error;
 			},
 		};
 	}
@@ -371,7 +388,7 @@
 
 				{#if stressTest.lastError}
 					<div class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-						{stressTest.lastError}
+						{stressTest.lastError.message}
 					</div>
 				{/if}
 

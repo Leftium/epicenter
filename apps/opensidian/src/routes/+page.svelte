@@ -3,7 +3,7 @@
 	import { authState } from '$lib/auth';
 	import AppShell from '$lib/components/AppShell.svelte';
 
-	const appReady = authState.bootstrap();
+	const appReady = authState.whenReady;
 
 	onMount(() => {
 		void authState.refreshSession();

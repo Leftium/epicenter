@@ -21,7 +21,7 @@ export const StoredUser = type({
 
 export type StoredUser = typeof StoredUser.infer;
 
-export type WorkspaceAuthStatus =
+export type AuthStatus =
 	| 'bootstrapping'
 	| 'checking'
 	| 'signing-in'
@@ -29,20 +29,21 @@ export type WorkspaceAuthStatus =
 	| 'signed-in'
 	| 'signed-out';
 
-export type WorkspaceAuthState = {
-	status: WorkspaceAuthStatus;
+export type AuthState = {
+	status: AuthStatus;
 	user: StoredUser | null;
 	token: string | null;
 	signInError?: string;
 };
 
-export type WorkspaceAuth = {
-	readonly state: WorkspaceAuthState;
-	readonly status: WorkspaceAuthStatus;
+export type Auth = {
+	readonly whenReady: Promise<StoredUser | null>;
+	readonly state: AuthState;
+	readonly status: AuthStatus;
 	readonly user: StoredUser | null;
 	readonly token: string | null;
 	readonly signInError?: string;
-	subscribe(listener: (state: WorkspaceAuthState) => void): () => void;
+	subscribe(listener: (state: AuthState) => void): () => void;
 	bootstrap(): Promise<StoredUser | null>;
 	refreshSession(): Promise<StoredUser | null>;
 	signIn(credentials: { email: string; password: string }): Promise<void>;
@@ -56,13 +57,29 @@ export type WorkspaceAuth = {
 	fetch: typeof fetch;
 };
 
+export type WorkspaceAuthStatus = AuthStatus;
+export type WorkspaceAuthState = AuthState;
+export type WorkspaceAuth = Auth;
+
+export type SessionField<T> = {
+	current: T;
+	set?: (value: T) => Promise<void>;
+	watch?: (callback: (value: T) => void) => (() => void) | undefined;
+	whenReady?: Promise<void>;
+};
+
+type WorkspaceSessionHandle = {
+	clearLocalData(): Promise<void>;
+	encryption: WorkspaceEncryption | WorkspaceEncryptionWithCache;
+};
+
 function hasTryUnlock(
 	encryption: WorkspaceEncryption | WorkspaceEncryptionWithCache,
 ): encryption is WorkspaceEncryptionWithCache {
 	return 'tryUnlock' in encryption;
 }
 
-export function createWorkspaceAuth({
+export function createAuth({
 	baseURL,
 	token,
 	user,
@@ -70,41 +87,26 @@ export function createWorkspaceAuth({
 	signInWithGoogle,
 }: {
 	baseURL: string | (() => string);
-	token: {
-		current: string | null;
-		set?: (value: string | null) => Promise<void>;
-		watch?: (callback: (value: string | null) => void) => (() => void) | undefined;
-		whenReady?: Promise<void>;
-	};
-	user: {
-		current: StoredUser | null;
-		set?: (value: StoredUser | null) => Promise<void>;
-		watch?: (
-			callback: (value: StoredUser | null) => void,
-		) => (() => void) | undefined;
-		whenReady?: Promise<void>;
-	};
-	workspace: {
-		clearLocalData(): Promise<void>;
-		encryption?: WorkspaceEncryption | WorkspaceEncryptionWithCache;
-	};
+	token: SessionField<string | null>;
+	user: SessionField<StoredUser | null>;
+	workspace: WorkspaceSessionHandle;
 	signInWithGoogle?: (
 		client: ReturnType<typeof createAuthClient>,
 	) => Promise<{ user: User } & { encryptionKey?: string | null }>;
-}): WorkspaceAuth {
+}): Auth {
 	const resolveBaseUrl =
 		typeof baseURL === 'function' ? baseURL : () => baseURL;
 
-	let pendingAction = $state<
-		Exclude<WorkspaceAuthStatus, 'signed-in' | 'signed-out'> | null
-	>('bootstrapping');
+	let pendingAction = $state<Exclude<AuthStatus, 'signed-in' | 'signed-out'> | null>(
+		'bootstrapping',
+	);
 	let lastError = $state<string | undefined>(undefined);
 	let hasExternalSession = $state(Boolean(user.current));
 	let isApplyingLocalSessionChange = false;
 	let bootstrapPromise: Promise<StoredUser | null> | null = null;
-	let lastPublishedState: WorkspaceAuthState | null = null;
+	let lastPublishedState: AuthState | null = null;
 
-	const listeners = new Set<(state: WorkspaceAuthState) => void>();
+	const listeners = new Set<(state: AuthState) => void>();
 
 	function buildClient(authToken: string | null) {
 		let issuedToken: string | null | undefined;
@@ -147,12 +149,12 @@ export function createWorkspaceAuth({
 		await writeField(user, next.user);
 	}
 
-	function getStatus(): WorkspaceAuthStatus {
+	function getStatus(): AuthStatus {
 		if (pendingAction) return pendingAction;
 		return user.current ? 'signed-in' : 'signed-out';
 	}
 
-	function getState(): WorkspaceAuthState {
+	function getState(): AuthState {
 		const status = getStatus();
 		return {
 			status,
@@ -180,7 +182,7 @@ export function createWorkspaceAuth({
 	}
 
 	function setPendingAction(
-		next: Exclude<WorkspaceAuthStatus, 'signed-in' | 'signed-out'> | null,
+		next: Exclude<AuthStatus, 'signed-in' | 'signed-out'> | null,
 	) {
 		if (pendingAction === next) return;
 		pendingAction = next;
@@ -205,7 +207,6 @@ export function createWorkspaceAuth({
 	}
 
 	async function unlockWorkspace(userKeyBase64: string | null | undefined) {
-		if (!workspace.encryption) return null;
 		if (!userKeyBase64) {
 			return new Error('Authenticated session is missing userKeyBase64');
 		}
@@ -272,11 +273,7 @@ export function createWorkspaceAuth({
 			bootstrapPromise = (async () => {
 				await Promise.all([token.whenReady, user.whenReady].filter(Boolean));
 
-				if (
-					user.current &&
-					workspace.encryption &&
-					hasTryUnlock(workspace.encryption)
-				) {
+				if (user.current && hasTryUnlock(workspace.encryption)) {
 					await workspace.encryption.tryUnlock();
 					setLastError(undefined);
 				}
@@ -352,12 +349,7 @@ export function createWorkspaceAuth({
 				try: () => workspace.clearLocalData(),
 				catch: () => Ok(undefined),
 			});
-		} else if (
-			isSignedIn &&
-			!wasSignedIn &&
-			workspace.encryption &&
-			hasTryUnlock(workspace.encryption)
-		) {
+		} else if (isSignedIn && !wasSignedIn && hasTryUnlock(workspace.encryption)) {
 			const encryption = workspace.encryption;
 			setLastError(undefined);
 			void tryAsync({
@@ -373,6 +365,10 @@ export function createWorkspaceAuth({
 	user.watch?.(handleExternalSessionChange);
 
 	return {
+		get whenReady() {
+			return bootstrap();
+		},
+
 		get state() {
 			return getState();
 		},
@@ -490,6 +486,8 @@ export function createWorkspaceAuth({
 		},
 	};
 }
+
+export const createWorkspaceAuth = createAuth;
 
 function toStoredUser(user: User): StoredUser {
 	return {

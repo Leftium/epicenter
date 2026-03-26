@@ -20,7 +20,7 @@
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
 	import { registerDevice } from '$lib/workspace';
 
-	const appReady = authState.bootstrap();
+	const appReady = authState.whenReady;
 
 	onMount(() => {
 		void authState.refreshSession();

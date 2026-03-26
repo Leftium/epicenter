@@ -1,6 +1,6 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
-import { createWorkspaceAuth, StoredUser } from '@epicenter/svelte/auth';
+import { createAuth, StoredUser } from '@epicenter/svelte/auth';
 import { type } from 'arktype';
 import workspace from '$lib/workspace';
 
@@ -16,7 +16,7 @@ const user = createPersistedState({
 	defaultValue: null,
 });
 
-export const authState = createWorkspaceAuth({
+export const authState = createAuth({
 	baseURL: APP_URLS.API,
 	token,
 	user,

@@ -1,16 +1,16 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Uses the shared opinionated workspace auth controller with the extension's
+ * Uses the shared opinionated auth controller with the extension's
  * two real seams: custom Google OAuth (`chrome.identity`) and chrome-backed
  * session persistence.
  *
- * @see {@link @epicenter/svelte/auth!createWorkspaceAuth} — workspace auth constructor
+ * @see {@link @epicenter/svelte/auth!createAuth} — auth constructor
  * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
  * @see {@link ./key-cache} — session-scoped user-key cache
  */
 
-import { createWorkspaceAuth, StoredUser } from '@epicenter/svelte/auth';
+import { createAuth, StoredUser } from '@epicenter/svelte/auth';
 import { type } from 'arktype';
 import { workspace } from '$lib/workspace';
 import { remoteServerUrl } from './settings.svelte';
@@ -31,7 +31,7 @@ const authUser = createStorageState('local:authUser', {
 	schema: StoredUser.or('null'),
 });
 
-export const authState = createWorkspaceAuth({
+export const authState = createAuth({
 	baseURL: () => remoteServerUrl.current,
 	token: authToken,
 	user: authUser,

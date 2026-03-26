@@ -16,7 +16,7 @@
 	let dismissedError = $state(false);
 
 	const handle = $derived(chatState.active);
-	const appReady = authState.bootstrap();
+	const appReady = authState.whenReady;
 
 	onMount(() => {
 		void authState.refreshSession();

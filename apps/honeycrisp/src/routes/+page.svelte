@@ -13,7 +13,7 @@
 	import { authState } from '$lib/auth';
 
 	let commandPaletteOpen = $state(false);
-	const appReady = authState.bootstrap();
+	const appReady = authState.whenReady;
 
 	onMount(() => {
 		void authState.refreshSession();

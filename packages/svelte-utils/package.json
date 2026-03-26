@@ -8,7 +8,7 @@
 		".": "./src/index.ts",
 		"./persisted-state": "./src/persisted-state.svelte.ts",
 		"./persisted-map": "./src/persisted-map.svelte.ts",
-		"./auth-state": "./src/auth-state.svelte.ts"
+		"./auth": "./src/auth.svelte.ts"
 	},
 	"dependencies": {
 		"@epicenter/workspace": "workspace:*",

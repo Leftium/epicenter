@@ -3,14 +3,16 @@
 	import { authState } from '$lib/auth';
 	import AppShell from '$lib/components/AppShell.svelte';
 
+	const appReady = authState.bootstrap();
+
 	onMount(() => {
-		authState.checkSession();
+		void authState.refreshSession();
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&
 				authState.status === 'signed-in'
 			) {
-				authState.checkSession();
+				void authState.refreshSession();
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
@@ -19,4 +21,10 @@
 	});
 </script>
 
-<AppShell />
+{#await appReady}
+	<div class="flex h-screen items-center justify-center">
+		<p class="text-sm text-muted-foreground">Loading workspace…</p>
+	</div>
+{:then _}
+	<AppShell />
+{/await}

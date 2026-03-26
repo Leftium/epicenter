@@ -13,12 +13,13 @@
 	import { authState } from '$lib/auth';
 
 	let commandPaletteOpen = $state(false);
+	const appReady = authState.bootstrap();
 
 	onMount(() => {
-		authState.checkSession();
+		void authState.refreshSession();
 		const onVisibilityChange = () => {
 			if (document.visibilityState === 'visible' && authState.status === 'signed-in') {
-				authState.checkSession();
+				void authState.refreshSession();
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
@@ -39,7 +40,7 @@
 		}
 
 		let cancelled = false;
-		workspaceClient.documents.notes.body.open(noteId).then((handle) => {
+		workspaceClient.documents.notes.body.open(noteId).then((handle: DocumentHandle) => {
 			if (cancelled) return;
 			currentDocHandle = handle;
 			currentYXmlFragment = handle.asRichText();
@@ -77,50 +78,56 @@
 	}}
 />
 
-<SidebarProvider>
-	<HoneycripSidebar />
+{#await appReady}
+	<div class="flex h-screen items-center justify-center">
+		<p class="text-sm text-muted-foreground">Loading workspace…</p>
+	</div>
+{:then _}
+	<SidebarProvider>
+		<HoneycripSidebar />
 
-	<main class="flex h-screen flex-1 overflow-hidden">
-		<Resizable.PaneGroup direction="horizontal">
-			<Resizable.Pane defaultSize={35} minSize={20}>
-				{#if viewState.isRecentlyDeletedView}
-					<NoteList
-						notes={notesState.deletedNotes}
-						title="Recently Deleted"
-						showControls={false}
-						emptyMessage="No deleted notes"
-					/>
-				{:else}
-					<NoteList
-						notes={viewState.filteredNotes}
-						title={viewState.folderName}
-					/>
-				{/if}
-			</Resizable.Pane>
-			<Resizable.Handle />
-			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if viewState.selectedNote && currentYXmlFragment}
-					{#key viewState.selectedNoteId}
-						<HoneycripEditor
-							yxmlfragment={currentYXmlFragment}
-							onContentChange={(change) => notesState.updateNoteContent(change)}
+		<main class="flex h-screen flex-1 overflow-hidden">
+			<Resizable.PaneGroup direction="horizontal">
+				<Resizable.Pane defaultSize={35} minSize={20}>
+					{#if viewState.isRecentlyDeletedView}
+						<NoteList
+							notes={notesState.deletedNotes}
+							title="Recently Deleted"
+							showControls={false}
+							emptyMessage="No deleted notes"
 						/>
-					{/key}
-				{:else if viewState.selectedNote}
-					<div class="flex h-full items-center justify-center">
-						<p class="text-muted-foreground">Loading editor…</p>
-					</div>
-				{:else}
-					<div class="flex h-full flex-col items-center justify-center gap-2">
-						<p class="text-muted-foreground">No note selected</p>
-						<p class="text-sm text-muted-foreground/60">
-							Choose a note from the list or press ⌘N to create one
-						</p>
-					</div>
-				{/if}
-			</Resizable.Pane>
-		</Resizable.PaneGroup>
-	</main>
-</SidebarProvider>
+					{:else}
+						<NoteList
+							notes={viewState.filteredNotes}
+							title={viewState.folderName}
+						/>
+					{/if}
+				</Resizable.Pane>
+				<Resizable.Handle />
+				<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
+					{#if viewState.selectedNote && currentYXmlFragment}
+						{#key viewState.selectedNoteId}
+							<HoneycripEditor
+								yxmlfragment={currentYXmlFragment}
+								onContentChange={(change) => notesState.updateNoteContent(change)}
+							/>
+						{/key}
+					{:else if viewState.selectedNote}
+						<div class="flex h-full items-center justify-center">
+							<p class="text-muted-foreground">Loading editor…</p>
+						</div>
+					{:else}
+						<div class="flex h-full flex-col items-center justify-center gap-2">
+							<p class="text-muted-foreground">No note selected</p>
+							<p class="text-sm text-muted-foreground/60">
+								Choose a note from the list or press ⌘N to create one
+							</p>
+						</div>
+					{/if}
+				</Resizable.Pane>
+			</Resizable.PaneGroup>
+		</main>
+	</SidebarProvider>
 
-<CommandPalette bind:open={commandPaletteOpen} />
+	<CommandPalette bind:open={commandPaletteOpen} />
+{/await}

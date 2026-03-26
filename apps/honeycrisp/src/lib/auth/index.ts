@@ -1,15 +1,12 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
-	createLocalAuthStore,
-	createWebAuthClient,
+	createLocalSessionStore,
 	createWorkspaceAuth,
-} from '@epicenter/svelte/auth-state';
+} from '@epicenter/svelte/auth';
 import workspace from '$lib/workspace';
 
 export const authState = createWorkspaceAuth({
-	client: createWebAuthClient({
-		baseURL: APP_URLS.API,
-	}),
-	store: createLocalAuthStore('honeycrisp'),
-	workspace,
+	baseURL: APP_URLS.API,
+	store: createLocalSessionStore('honeycrisp'),
+	encryption: workspace.encryption,
 });

@@ -1,23 +1,22 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Uses `createWorkspaceAuth()` with extension-specific client and store
- * seams because the extension needs custom Google OAuth
- * (`chrome.identity`) and custom storage (`chrome.storage.local`).
+ * Uses the shared opinionated workspace auth controller with the extension's
+ * two real seams: custom Google OAuth (`chrome.identity`) and chrome-backed
+ * session persistence.
  *
- * @see {@link @epicenter/svelte/auth-state!createWorkspaceAuth} — workspace auth constructor
+ * @see {@link @epicenter/svelte/auth!createWorkspaceAuth} — workspace auth constructor
  * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
- * @see {@link ./key-cache} — session-scoped encryption key cache
+ * @see {@link ./key-cache} — session-scoped user-key cache
  */
 
 import {
-	createChromeAuthStore,
-	createExtensionAuthClient,
+	createChromeSessionStore,
 	createWorkspaceAuth,
 	StoredUser,
-} from '@epicenter/svelte/auth-state';
+} from '@epicenter/svelte/auth';
 import { type } from 'arktype';
-import { workspace } from '$lib/workspace';
+import { workspaceEncryption } from '$lib/workspace';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
 
@@ -36,8 +35,18 @@ const authUser = createStorageState('local:authUser', {
 	schema: StoredUser.or('null'),
 });
 
-const client = createExtensionAuthClient({
+const store = createChromeSessionStore({
+	token: authToken,
+	user: authUser,
+	ready: Promise.all([authToken.whenReady, authUser.whenReady]).then(
+		() => undefined,
+	),
+});
+
+export const authState = createWorkspaceAuth({
 	baseURL: () => remoteServerUrl.current,
+	store,
+	encryption: workspaceEncryption,
 	signInWithGoogle: async (betterAuthClient) => {
 		const redirectUri = browser.identity.getRedirectURL();
 		const nonce = crypto.randomUUID();
@@ -69,18 +78,4 @@ const client = createExtensionAuthClient({
 		}
 		return data;
 	},
-});
-
-const store = createChromeAuthStore({
-	token: authToken,
-	user: authUser,
-	ready: Promise.all([authToken.whenReady, authUser.whenReady]).then(
-		() => undefined,
-	),
-});
-
-export const authState = createWorkspaceAuth({
-	client,
-	store,
-	workspace,
 });

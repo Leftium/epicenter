@@ -16,7 +16,7 @@ import {
 	StoredUser,
 } from '@epicenter/svelte/auth';
 import { type } from 'arktype';
-import { workspaceEncryption } from '$lib/workspace';
+import { workspace } from '$lib/workspace';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
 
@@ -46,7 +46,7 @@ const store = createChromeSessionStore({
 export const authState = createWorkspaceAuth({
 	baseURL: () => remoteServerUrl.current,
 	store,
-	encryption: workspaceEncryption,
+	workspace,
 	signInWithGoogle: async (betterAuthClient) => {
 		const redirectUri = browser.identity.getRedirectURL();
 		const nonce = crypto.randomUUID();

@@ -8,5 +8,5 @@ import workspace from '$lib/workspace';
 export const authState = createWorkspaceAuth({
 	baseURL: APP_URLS.API,
 	store: createLocalSessionStore('honeycrisp'),
-	encryption: workspace.encryption,
+	workspace,
 });

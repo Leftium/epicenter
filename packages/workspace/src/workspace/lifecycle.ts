@@ -64,12 +64,10 @@
  * ```
  */
 
-
 /**
  * A value that may be synchronous or wrapped in a Promise.
  */
 export type MaybePromise<T> = T | Promise<T>;
-
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION — Flat resolved type with required lifecycle hooks
@@ -155,7 +153,7 @@ export type Extension<
 	 * - `dispose()` releases resources but **keeps data** (normal cleanup)
 	 * - `clearData()` **wipes data** but does not release resources
 	 *
-	 * The framework calls `clearData()` during `workspace.encryption.deactivate()`
+	 * The framework calls `clearData()` during `workspace.clearLocalData()`
 	 * in LIFO order.
 	 * Extensions without persistent state should omit this (leave `undefined`).
 	 */
@@ -241,9 +239,7 @@ export async function disposeLifo(
  *
  * @param cleanups - Array of cleanup functions to invoke in reverse order
  */
-export function startDisposeLifo(
-	cleanups: (() => MaybePromise<void>)[],
-): void {
+export function startDisposeLifo(cleanups: (() => MaybePromise<void>)[]): void {
 	for (let i = cleanups.length - 1; i >= 0; i--) {
 		try {
 			Promise.resolve(cleanups[i]?.()).catch((err) => {

@@ -2,7 +2,7 @@
  * Chrome extension `UserKeyCache` backed by WXT storage (`session:` area).
  *
  * Caches the base64-encoded encryption key so the workspace can
- * decrypt immediately on sidebar/popup reopen without a server roundtrip.
+ * unlock immediately on sidebar/popup reopen without a server roundtrip.
  *
  * Uses WXT's `storage.defineItem` with the `session:` area, which wraps
  * `chrome.storage.session` with type-safe access, consistent with how
@@ -14,7 +14,7 @@
  * - Async JSON-backed API (base64 strings store natively, no conversion)
  *
  * Storage key: `'session:epicenter:encryption-key'` — single key, not per-user.
- * Only one user is active at a time, and `workspace.encryption.deactivate()`
+ * Only one user is active at a time, and `workspace.clearLocalData()`
  * clears the
  * cache on every sign-out, so per-user scoping would add complexity for no benefit.
  *

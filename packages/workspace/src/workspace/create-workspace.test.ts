@@ -950,11 +950,11 @@ describe('createWorkspace', () => {
 });
 
 // ============================================================================
-// Workspace Encryption (`workspace.encryption` / mode)
+// Workspace Unlock (`workspace.encryption` / locked vs unlocked)
 // ============================================================================
 
-describe('workspace encryption', () => {
-	function setupEncrypted() {
+describe('workspace unlock', () => {
+	function setupUnlockedWorkspace() {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const client = createWorkspace(
 			defineWorkspace({ id: 'enc-test', tables: { posts } }),
@@ -962,24 +962,23 @@ describe('workspace encryption', () => {
 		return { client, key: generateEncryptionKey() };
 	}
 
-	test('mode starts as plaintext when no key provided', () => {
-		const { client } = setupEncrypted();
-		expect(client.encryption.isEncrypted).toBe(false);
+	test('runtime starts locked when no key was provided', () => {
+		const { client } = setupUnlockedWorkspace();
+		expect(client.encryption.isUnlocked).toBe(false);
 	});
 
-	test('encryption.activate transitions mode to encrypted', async () => {
-		const { client, key } = setupEncrypted();
-		await client.encryption.activate(key);
-		expect(client.encryption.isEncrypted).toBe(true);
+	test('encryption.unlock transitions runtime to unlocked', async () => {
+		const { client, key } = setupUnlockedWorkspace();
+		await client.encryption.unlock(key);
+		expect(client.encryption.isUnlocked).toBe(true);
 	});
 
-	test('encryption.activate enables encrypted writes that survive re-activation', async () => {
-		const { client, key } = setupEncrypted();
-		await client.encryption.activate(key);
+	test('encryption.unlock preserves encrypted writes when the same key is reused', async () => {
+		const { client, key } = setupUnlockedWorkspace();
+		await client.encryption.unlock(key);
 		client.tables.posts.set({ id: '1', title: 'Secret', _v: 1 });
 
-		// Re-activate with same key — dedup skips HKDF, data survives
-		await client.encryption.activate(key);
+		await client.encryption.unlock(key);
 
 		const result = client.tables.posts.get('1');
 		expect(result.status).toBe('valid');
@@ -988,20 +987,20 @@ describe('workspace encryption', () => {
 		}
 	});
 
-	test('construction-time key starts stores as encrypted', () => {
+	test('construction-time key starts stores unlocked', () => {
 		const key = generateEncryptionKey();
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const client = createWorkspace(
 			defineWorkspace({ id: 'key-test', tables: { posts } }),
 			{ key },
 		).withEncryption();
-		// Construction-time key sets workspaceKey directly, so isEncrypted is true
-		expect(client.encryption.isEncrypted).toBe(true);
+
+		expect(client.encryption.isUnlocked).toBe(true);
 	});
 });
 
 // ============================================================================
-// .withEncryption() lifecycle (dedup, race, cache restore, isEncrypted)
+// .withEncryption() lifecycle (dedup, race, cache unlock, isUnlocked)
 // ============================================================================
 
 describe('.withEncryption() lifecycle', () => {
@@ -1013,134 +1012,115 @@ describe('.withEncryption() lifecycle', () => {
 		return { client };
 	}
 
+	function setupWithUserKeyCache(cachedKeyBase64: string | null = null) {
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+		let cachedValue = cachedKeyBase64;
+		let shouldFailNextSave = false;
+		const userKeyCache: UserKeyCache = {
+			save: mock(async (keyBase64: string) => {
+				if (shouldFailNextSave) {
+					shouldFailNextSave = false;
+					throw new Error('forced user key cache save failure');
+				}
+				cachedValue = keyBase64;
+			}),
+			load: mock(async () => cachedValue),
+			clear: mock(async () => {
+				cachedValue = null;
+			}),
+		};
+		const client = createWorkspace(
+			defineWorkspace({ id: 'key-cache-test', tables: { posts } }),
+		).withEncryption({ userKeyCache });
+
+		return {
+			client,
+			userKeyCache,
+			failNextSave() {
+				shouldFailNextSave = true;
+			},
+			readCachedValue: () => cachedValue,
+		};
+	}
+
 	describe('dedup', () => {
-		test('same key twice → HKDF runs only once (dedup by bytes)', async () => {
+		test('same key twice keeps the runtime unlocked', async () => {
 			const { client } = setupLifecycle();
 			const key = generateEncryptionKey();
 
-			await client.encryption.activate(key);
-			expect(client.encryption.isEncrypted).toBe(true);
+			await client.encryption.unlock(key);
+			expect(client.encryption.isUnlocked).toBe(true);
 
-			// Second call with identical bytes should be a no-op
-			await client.encryption.activate(key);
-			expect(client.encryption.isEncrypted).toBe(true);
+			await client.encryption.unlock(key);
+			expect(client.encryption.isUnlocked).toBe(true);
 		});
 
-		test('different keys each trigger HKDF derivation', async () => {
+		test('different keys each keep the runtime unlocked', async () => {
 			const { client } = setupLifecycle();
 
-			await client.encryption.activate(generateEncryptionKey());
-			expect(client.encryption.isEncrypted).toBe(true);
+			await client.encryption.unlock(generateEncryptionKey());
+			expect(client.encryption.isUnlocked).toBe(true);
 
-			await client.encryption.activate(generateEncryptionKey());
-			expect(client.encryption.isEncrypted).toBe(true);
+			await client.encryption.unlock(generateEncryptionKey());
+			expect(client.encryption.isUnlocked).toBe(true);
 		});
 	});
 
 	describe('runtime key switches', () => {
-		test('rapid key switches → only latest applies', async () => {
+		test('rapid unlocks leave the runtime unlocked with the latest key', async () => {
 			const { client } = setupLifecycle();
 
-			// Fire three rapid activations without awaiting
-			const p1 = client.encryption.activate(generateEncryptionKey());
-			const p2 = client.encryption.activate(generateEncryptionKey());
-			const lastKey = generateEncryptionKey();
-			const p3 = client.encryption.activate(lastKey);
+			const p1 = client.encryption.unlock(generateEncryptionKey());
+			const p2 = client.encryption.unlock(generateEncryptionKey());
+			const p3 = client.encryption.unlock(generateEncryptionKey());
 
 			await Promise.all([p1, p2, p3]);
 
-			// Only the last call's derived key should be active
-			expect(client.encryption.isEncrypted).toBe(true);
+			expect(client.encryption.isUnlocked).toBe(true);
 		});
 	});
 
-	describe('isEncrypted getter', () => {
-		test('reflects key state transitions', async () => {
+	describe('isUnlocked getter', () => {
+		test('reflects lock state transitions', async () => {
 			const { client } = setupLifecycle();
 
-			expect(client.encryption.isEncrypted).toBe(false);
+			expect(client.encryption.isUnlocked).toBe(false);
 
-			await client.encryption.activate(generateEncryptionKey());
-			expect(client.encryption.isEncrypted).toBe(true);
+			await client.encryption.unlock(generateEncryptionKey());
+			expect(client.encryption.isUnlocked).toBe(true);
 
-			await client.encryption.deactivate();
-			expect(client.encryption.isEncrypted).toBe(false);
-		});
-	});
-
-	describe('runtime transitions', () => {
-		test('activate sets runtime encryption before the returned promise settles', async () => {
-			const { client } = setupLifecycle();
-			const userKey = generateEncryptionKey();
-
-			const activatePromise = client.encryption.activate(userKey);
-
-			expect(client.encryption.isEncrypted).toBe(true);
-			await activatePromise;
-			expect(client.encryption.isEncrypted).toBe(true);
+			client.encryption.lock();
+			expect(client.encryption.isUnlocked).toBe(false);
 		});
 	});
 
 	describe('userKeyCache integration', () => {
-		function setupWithUserKeyCache(cachedKeyBase64: string | null = null) {
-			const posts = defineTable(
-				type({ id: 'string', title: 'string', _v: '1' }),
-			);
-			let cachedValue = cachedKeyBase64;
-			let shouldFailNextSave = false;
-			const userKeyCache: UserKeyCache = {
-				save: mock(async (keyBase64: string) => {
-					if (shouldFailNextSave) {
-						shouldFailNextSave = false;
-						throw new Error('forced user key cache save failure');
-					}
-					cachedValue = keyBase64;
-				}),
-				load: mock(async () => cachedValue),
-				clear: mock(async () => {
-					cachedValue = null;
-				}),
-			};
-			const client = createWorkspace(
-				defineWorkspace({ id: 'key-cache-test', tables: { posts } }),
-			).withEncryption({ userKeyCache });
-
-			return {
-				client,
-				userKeyCache,
-				failNextSave() {
-					shouldFailNextSave = true;
-				},
-				readCachedValue: () => cachedValue,
-			};
-		}
-
-		test('encryption.activate saves the user key through userKeyCache', async () => {
+		test('encryption.unlock saves the user key through userKeyCache', async () => {
 			const { client, userKeyCache, readCachedValue } = setupWithUserKeyCache();
 			const userKey = generateEncryptionKey();
 
-			await client.encryption.activate(userKey);
+			await client.encryption.unlock(userKey);
 
 			expect(userKeyCache.save).toHaveBeenCalledTimes(1);
 			expect(userKeyCache.save).toHaveBeenCalledWith(bytesToBase64(userKey));
 			expect(readCachedValue()).toBe(bytesToBase64(userKey));
 		});
 
-		test('encryption.activate retries the same key after userKeyCache.save fails', async () => {
+		test('encryption.unlock retries the same key after userKeyCache.save fails', async () => {
 			const { client, userKeyCache, failNextSave, readCachedValue } =
 				setupWithUserKeyCache();
 			const userKey = generateEncryptionKey();
 
 			failNextSave();
-			await client.encryption.activate(userKey);
-			await client.encryption.activate(userKey);
+			await client.encryption.unlock(userKey);
+			await client.encryption.unlock(userKey);
 
-			expect(client.encryption.isEncrypted).toBe(true);
+			expect(client.encryption.isUnlocked).toBe(true);
 			expect(userKeyCache.save).toHaveBeenCalledTimes(2);
 			expect(readCachedValue()).toBe(bytesToBase64(userKey));
 		});
 
-		test('encryption.activate updates runtime state before userKeyCache.save settles', async () => {
+		test('encryption.unlock updates runtime state before userKeyCache.save settles', async () => {
 			const posts = defineTable(
 				type({ id: 'string', title: 'string', _v: '1' }),
 			);
@@ -1161,70 +1141,56 @@ describe('.withEncryption() lifecycle', () => {
 			).withEncryption({ userKeyCache });
 			const userKey = generateEncryptionKey();
 
-			const activatePromise = client.encryption.activate(userKey);
+			const unlockPromise = client.encryption.unlock(userKey);
 
-			expect(client.encryption.isEncrypted).toBe(true);
+			expect(client.encryption.isUnlocked).toBe(true);
 			expect(cachedValue).toBe(null);
 
 			saveDeferred.resolve();
-			await activatePromise;
+			await unlockPromise;
 
 			expect(cachedValue ?? '').toBe(bytesToBase64(userKey));
 		});
 
-		test('restoreEncryptionFromCache returns false when no userKeyCache is configured', async () => {
-			const posts = defineTable(
-				type({ id: 'string', title: 'string', _v: '1' }),
-			);
-			const client = createWorkspace(
-				defineWorkspace({ id: 'no-cache-test', tables: { posts } }),
-			).withEncryption({});
-
-			const restored = await client.encryption.restoreEncryptionFromCache();
-
-			expect(restored).toBe(false);
-			expect(client.encryption.isEncrypted).toBe(false);
-		});
-
-		test('restoreEncryptionFromCache returns false when userKeyCache is empty', async () => {
+		test('tryUnlock returns false when userKeyCache is empty', async () => {
 			const { client, userKeyCache } = setupWithUserKeyCache();
 
-			const restored = await client.encryption.restoreEncryptionFromCache();
+			const restored = await client.encryption.tryUnlock();
 
 			expect(restored).toBe(false);
-			expect(client.encryption.isEncrypted).toBe(false);
+			expect(client.encryption.isUnlocked).toBe(false);
 			expect(userKeyCache.load).toHaveBeenCalledTimes(1);
 			expect(userKeyCache.save).toHaveBeenCalledTimes(0);
 		});
 
-		test('restoreEncryptionFromCache loads the cached key and activates encryption', async () => {
+		test('tryUnlock loads the cached key and unlocks the runtime', async () => {
 			const userKey = generateEncryptionKey();
 			const { client, userKeyCache } = setupWithUserKeyCache(
 				bytesToBase64(userKey),
 			);
 
-			const restored = await client.encryption.restoreEncryptionFromCache();
+			const restored = await client.encryption.tryUnlock();
 
 			expect(restored).toBe(true);
-			expect(client.encryption.isEncrypted).toBe(true);
+			expect(client.encryption.isUnlocked).toBe(true);
 			expect(userKeyCache.load).toHaveBeenCalledTimes(1);
 			expect(userKeyCache.save).toHaveBeenCalledTimes(1);
 			expect(userKeyCache.save).toHaveBeenCalledWith(bytesToBase64(userKey));
 		});
 
-		test('restoreEncryptionFromCache clears corrupt cache entries and stays deactivated', async () => {
+		test('tryUnlock clears corrupt cache entries and stays locked', async () => {
 			const { client, userKeyCache, readCachedValue } =
 				setupWithUserKeyCache('%%%not-base64%%%');
 
-			const restored = await client.encryption.restoreEncryptionFromCache();
+			const restored = await client.encryption.tryUnlock();
 
 			expect(restored).toBe(false);
-			expect(client.encryption.isEncrypted).toBe(false);
+			expect(client.encryption.isUnlocked).toBe(false);
 			expect(userKeyCache.clear).toHaveBeenCalledTimes(1);
 			expect(readCachedValue()).toBe(null);
 		});
 
-		test('rapid key switches persist the latest key after earlier saves settle', async () => {
+		test('rapid unlocks persist the latest key after earlier saves settle', async () => {
 			const posts = defineTable(
 				type({ id: 'string', title: 'string', _v: '1' }),
 			);
@@ -1250,19 +1216,19 @@ describe('.withEncryption() lifecycle', () => {
 			const firstKey = generateEncryptionKey();
 			const secondKey = generateEncryptionKey();
 
-			const firstActivation = client.encryption.activate(firstKey);
-			const secondActivation = client.encryption.activate(secondKey);
+			const firstUnlock = client.encryption.unlock(firstKey);
+			const secondUnlock = client.encryption.unlock(secondKey);
 
-			expect(client.encryption.isEncrypted).toBe(true);
+			expect(client.encryption.isUnlocked).toBe(true);
 
 			firstSaveDeferred.resolve();
-			await Promise.all([firstActivation, secondActivation]);
+			await Promise.all([firstUnlock, secondUnlock]);
 
 			expect(userKeyCache.save).toHaveBeenCalledTimes(2);
 			expect(cachedValue ?? '').toBe(bytesToBase64(secondKey));
 		});
 
-		test('encryption.deactivate clears userKeyCache after an in-flight save finishes', async () => {
+		test('clearLocalData clears userKeyCache after an in-flight save finishes', async () => {
 			const posts = defineTable(
 				type({ id: 'string', title: 'string', _v: '1' }),
 			);
@@ -1283,23 +1249,76 @@ describe('.withEncryption() lifecycle', () => {
 				}),
 			};
 			const client = createWorkspace(
-				defineWorkspace({ id: 'deactivate-race-cache-test', tables: { posts } }),
+				defineWorkspace({
+					id: 'clear-local-data-race-test',
+					tables: { posts },
+				}),
 			).withEncryption({ userKeyCache });
 			const userKey = generateEncryptionKey();
 
-			const activatePromise = client.encryption.activate(userKey);
-			expect(client.encryption.isEncrypted).toBe(true);
+			const unlockPromise = client.encryption.unlock(userKey);
+			expect(client.encryption.isUnlocked).toBe(true);
 
-			const deactivatePromise = client.encryption.deactivate();
-			expect(client.encryption.isEncrypted).toBe(false);
+			const clearPromise = client.clearLocalData();
+			expect(client.encryption.isUnlocked).toBe(false);
 
 			saveDeferred.resolve();
-			await Promise.all([activatePromise, deactivatePromise]);
+			await Promise.all([unlockPromise, clearPromise]);
 
-			expect(client.encryption.isEncrypted).toBe(false);
+			expect(client.encryption.isUnlocked).toBe(false);
 			expect(userKeyCache.clear).toHaveBeenCalledTimes(1);
 			expect(cachedValue).toBe(null);
 			expect(events).toEqual(['save:start', 'save:end', 'clear']);
+		});
+
+		test('clearLocalData locks first and then runs persistence cleanup', async () => {
+			const userKeyCache: UserKeyCache = {
+				save: mock(async () => {}),
+				load: mock(async () => null),
+				clear: mock(async () => {}),
+			};
+			const events: string[] = [];
+			const client = createWorkspace(
+				defineWorkspace({ id: 'clear-order-test' }),
+			)
+				.withEncryption({ userKeyCache })
+				.withExtension('persistence', () => ({
+					clearData: () => {
+						events.push(client.encryption.isUnlocked ? 'unlocked' : 'locked');
+					},
+				}));
+
+			await client.encryption.unlock(generateEncryptionKey());
+			await client.clearLocalData();
+
+			expect(events).toEqual(['locked']);
+			expect(client.encryption.isUnlocked).toBe(false);
+		});
+
+		test('tryUnlock only exists when userKeyCache is configured in the type', async () => {
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+			);
+			const withoutCache = createWorkspace(
+				defineWorkspace({ id: 'type-test-no-cache', tables: { posts } }),
+			).withEncryption();
+			const withCache = createWorkspace(
+				defineWorkspace({ id: 'type-test-cache', tables: { posts } }),
+			).withEncryption({
+				userKeyCache: {
+					save: async () => {},
+					load: async () => null,
+					clear: async () => {},
+				},
+			});
+
+			if (false) {
+				// @ts-expect-error tryUnlock only exists when userKeyCache is configured
+				void withoutCache.encryption.tryUnlock();
+			}
+
+			expect(typeof withCache.encryption.tryUnlock).toBe('function');
+			expect(await withCache.encryption.tryUnlock()).toBe(false);
 		});
 	});
 });

@@ -2,10 +2,10 @@
  * Platform-agnostic interface for caching user encryption keys.
  *
  * Stores the user key as a base64 string—the same format the auth session
- * provides and the workspace encryption boundary restores. This keeps the
+ * provides and the workspace unlock boundary restores. This keeps the
  * cache representation simple: the key enters as a string, caches as a
  * string, and only decodes to bytes once the workspace calls
- * `restoreEncryptionFromCache()`.
+ * `tryUnlock()`.
  *
  * Every concrete backend stores strings natively. WXT storage wraps
  * `chrome.storage.session` for the extension, `sessionStorage` is string-only
@@ -30,14 +30,14 @@
  *   ▼
  * App startup (before auth roundtrip completes)
  *   │  UserKeyCache.load() → base64 string | null (cached from last session)
- *   │  consumed by workspace.encryption.restoreEncryptionFromCache()
+ *   │  consumed by workspace.encryption.tryUnlock()
  *   ▼
- * restoreEncryptionFromCache() → base64ToBytes → activate() → HKDF
+ * tryUnlock() → base64ToBytes → unlock() → HKDF
  *   │  base64 decoding happens once, at the crypto boundary
  * ```
  *
  * Without a `UserKeyCache`, every page refresh requires a full auth roundtrip
- * before encrypted data can be read. With a cache, the workspace decrypts
+ * before encrypted data can be read. With a cache, the workspace unlocks
  * immediately on launch using the cached key, then refreshes it silently when
  * the session loads.
  */

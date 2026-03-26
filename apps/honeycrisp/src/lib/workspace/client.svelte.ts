@@ -15,7 +15,7 @@ import { authState } from '$lib/auth';
 import { honeycrisp } from './schema';
 
 const workspace = createWorkspace(honeycrisp)
-	.withEncryption({})
+	.withEncryption()
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',
@@ -27,7 +27,10 @@ const workspace = createWorkspace(honeycrisp)
 				return $effect.root(() => {
 					$effect(() => {
 						const token = authState.token;
-						if (token !== prev) { prev = token; reconnect(); }
+						if (token !== prev) {
+							prev = token;
+							reconnect();
+						}
 					});
 				});
 			},

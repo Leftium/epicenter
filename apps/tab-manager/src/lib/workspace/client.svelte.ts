@@ -14,7 +14,6 @@ import {
 	createWorkspace,
 	defineMutation,
 	defineQuery,
-	type WorkspaceEncryptionController,
 	iterateActions,
 } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
@@ -37,8 +36,6 @@ import { definition, generateSavedTabId } from './schema';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const workspace = buildWorkspaceClient();
-export const workspaceEncryption: WorkspaceEncryptionController =
-	workspace.encryption;
 
 export const workspaceTools = actionsToClientTools(workspace.actions);
 export const workspaceDefinitions = toToolDefinitions(workspaceTools);

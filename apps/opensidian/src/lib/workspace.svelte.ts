@@ -21,7 +21,7 @@ export const ws = createWorkspace({
 	id: 'opensidian',
 	tables: { files: filesTable },
 })
-	.withEncryption({})
+	.withEncryption()
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',
@@ -33,7 +33,10 @@ export const ws = createWorkspace({
 				return $effect.root(() => {
 					$effect(() => {
 						const token = authState.token;
-						if (token !== prev) { prev = token; reconnect(); }
+						if (token !== prev) {
+							prev = token;
+							reconnect();
+						}
 					});
 				});
 			},

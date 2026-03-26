@@ -284,7 +284,7 @@ function isEncryptedBlob(value: unknown): value is EncryptedBlob {
  * ```
  * Password (user input, low entropy)
  *   → PBKDF2(password, salt, 600k iterations) → userKey (32 bytes, high entropy)
- *   → workspace.encryption.activate(userKey)
+ *   → workspace.encryption.unlock(userKey)
  *     → HKDF(userKey, "workspace:{id}") → workspaceKey (per-workspace isolation)
  *       → XChaCha20-Poly1305(plaintext, workspaceKey) → ciphertext
  * ```
@@ -306,7 +306,7 @@ function isEncryptedBlob(value: unknown): value is EncryptedBlob {
  * // Self-hosted password flow:
  * const salt = await deriveSalt(userId, workspaceId);
  * const userKey = await deriveKeyFromPassword(password, salt);
- * await workspace.encryption.activate(userKey); // internally derives per-workspace key via HKDF
+ * await workspace.encryption.unlock(userKey); // internally derives per-workspace key via HKDF
  * ```
  */
 async function deriveKeyFromPassword(
@@ -376,7 +376,7 @@ async function deriveSalt(
  * user key. Compromising one workspace key reveals nothing about other workspaces.
  *
  * **Batteries-included in `.withEncryption()`**: You typically don't call this directly.
- * `workspace.encryption.activate(userKey)` calls it internally. This function is exported
+ * `workspace.encryption.unlock(userKey)` calls it internally. This function is exported
  * for testing and for consumers that need manual key derivation outside the workspace builder.
  *
  * Deterministic—same inputs always produce the same key. No storage needed.
@@ -395,7 +395,7 @@ async function deriveSalt(
  *
  * @example
  * ```typescript
- * // Typically called internally by workspace.encryption.activate(userKey):
+ * // Typically called internally by workspace.encryption.unlock(userKey):
  * //   const wsKey = deriveWorkspaceKey(userKey, workspaceId);
  * //   store.activateEncryption(wsKey);
  *

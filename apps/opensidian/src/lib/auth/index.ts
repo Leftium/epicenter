@@ -8,5 +8,5 @@ import { ws } from '$lib/workspace';
 export const authState = createWorkspaceAuth({
 	baseURL: APP_URLS.API,
 	store: createLocalSessionStore('opensidian'),
-	encryption: ws.encryption,
+	workspace: ws,
 });

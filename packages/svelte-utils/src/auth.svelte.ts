@@ -1,4 +1,7 @@
-import type { WorkspaceEncryptionController } from '@epicenter/workspace';
+import type {
+	WorkspaceEncryptionController,
+	WorkspaceEncryptionControllerWithCache,
+} from '@epicenter/workspace';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import type { User } from 'better-auth';
@@ -118,6 +121,13 @@ type BetterAuthClient = {
 	getSession(token: string | null): Promise<AuthResult | null>;
 };
 
+type WorkspaceHandle = {
+	encryption:
+		| WorkspaceEncryptionController
+		| WorkspaceEncryptionControllerWithCache;
+	clearLocalData(): Promise<void>;
+};
+
 class AuthFlowInterrupt extends Error {
 	kind: 'redirect';
 
@@ -125,6 +135,12 @@ class AuthFlowInterrupt extends Error {
 		super('Redirect started');
 		this.kind = kind;
 	}
+}
+
+function hasTryUnlock(
+	encryption: WorkspaceHandle['encryption'],
+): encryption is WorkspaceEncryptionControllerWithCache {
+	return 'tryUnlock' in encryption;
 }
 
 export function createLocalSessionStore(prefix: string): SessionStore {
@@ -216,12 +232,12 @@ export function createChromeSessionStore({
 export function createWorkspaceAuth({
 	baseURL,
 	store,
-	encryption,
+	workspace,
 	signInWithGoogle,
 }: {
 	baseURL: string | (() => string);
 	store: SessionStore;
-	encryption: WorkspaceEncryptionController;
+	workspace: WorkspaceHandle;
 	signInWithGoogle?: (
 		client: BetterAuthInternalClient,
 	) => Promise<{ user: User } & Partial<CustomSessionFields>>;
@@ -310,7 +326,9 @@ export function createWorkspaceAuth({
 	}
 
 	async function writeAuthenticatedSession(result: AuthResult) {
-		await encryption.activate(base64ToBytes(requireUserKeyBase64(result)));
+		await workspace.encryption.unlock(
+			base64ToBytes(requireUserKeyBase64(result)),
+		);
 		await applyLocalSessionChange(async () => {
 			await store.write({ user: result.user, token: result.token });
 		});
@@ -318,7 +336,7 @@ export function createWorkspaceAuth({
 	}
 
 	async function clearSession() {
-		await encryption.deactivate();
+		await workspace.clearLocalData();
 		await applyLocalSessionChange(async () => {
 			await store.clear();
 		});
@@ -359,8 +377,8 @@ export function createWorkspaceAuth({
 		await store.ready;
 
 		const snapshot = store.read();
-		if (snapshot.user) {
-			await encryption.restoreEncryptionFromCache();
+		if (snapshot.user && hasTryUnlock(workspace.encryption)) {
+			await workspace.encryption.tryUnlock();
 			setLastError(undefined);
 		}
 
@@ -387,8 +405,7 @@ export function createWorkspaceAuth({
 		});
 
 		if (error) {
-			const isAuthRejection =
-				error.status !== undefined && error.status < 500;
+			const isAuthRejection = error.status !== undefined && error.status < 500;
 			if (isAuthRejection) {
 				await clearSession();
 				setPendingAction(null);
@@ -429,10 +446,14 @@ export function createWorkspaceAuth({
 
 		if (!isSignedIn && wasSignedIn) {
 			setLastError(undefined);
-			void encryption.deactivate();
-		} else if (isSignedIn && !wasSignedIn) {
+			void workspace.clearLocalData();
+		} else if (
+			isSignedIn &&
+			!wasSignedIn &&
+			hasTryUnlock(workspace.encryption)
+		) {
 			setLastError(undefined);
-			void encryption.restoreEncryptionFromCache();
+			void workspace.encryption.tryUnlock();
 		}
 
 		notify();

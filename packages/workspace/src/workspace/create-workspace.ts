@@ -12,27 +12,30 @@
  * Actions use a single `.withActions(factory)` because they don't build on each other,
  * are always defined by the app author, and benefit from being declared in one place.
  *
- * ## Encryption lifecycle
+ * ## Unlock lifecycle
  *
  * `.withEncryption(config?)` opts the client into encryption. Without it,
  * `workspace.encryption` does not exist on the type.
  *
- * When configured, the full activation pipeline is:
+ * When configured, the full unlock pipeline is:
  * ```
- * workspace.encryption.activate(userKey)
- *   → byte-level dedup (same runtime key + persisted cache? skip)
+ * workspace.encryption.unlock(userKey)
+ *   → byte-level dedup against the active runtime key
  *   → deriveWorkspaceKey(userKey, workspaceId)  // sync HKDF
  *   → apply derived key to all encrypted stores
- *   → set runtime encryption state immediately
+ *   → set runtime unlock state immediately
  *   → await userKeyCache.save(bytesToBase64(userKey)) if configured
  *
- * workspace.encryption.restoreEncryptionFromCache()
+ * workspace.encryption.tryUnlock()
  *   → userKeyCache.load() if configured
  *   → base64ToBytes(cachedUserKey)
- *   → workspace.encryption.activate(userKey)
+ *   → workspace.encryption.unlock(userKey)
  *
- * workspace.encryption.deactivate()
+ * workspace.encryption.lock()
  *   → clear key + deactivate all stores
+ *
+ * workspace.clearLocalData()
+ *   → workspace.encryption.lock()
  *   → wipe persisted data (clearData callbacks, LIFO)
  *   → await userKeyCache.clear() if configured
  * ```
@@ -105,10 +108,10 @@ import type {
 	WorkspaceClientBuilder,
 	WorkspaceClientWithActions,
 	WorkspaceEncryptionController,
+	WorkspaceEncryptionControllerWithCache,
 	WorkspaceDefinition,
 } from './types.js';
 import { KV_KEY, TableKey } from './ydoc-keys.js';
-
 
 /** Byte-level comparison for Uint8Array dedup. */
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -201,13 +204,21 @@ export function createWorkspace<
 	 *
 	 * Three arrays track three distinct lifecycle moments:
 	 * - `extensionCleanups` — `dispose()` shutdown: close connections, stop observers (irreversible)
-	 * - `clearDataCallbacks` — `workspace.encryption.deactivate()` data wipe: delete IndexedDB (reversible, repeatable)
+	 * - `clearDataCallbacks` — `workspace.clearLocalData()` data wipe: delete IndexedDB (reversible, repeatable)
 	 * - `whenReadyPromises` — construction: composite `whenReady` waits for all extensions to init
 	 */
 	type BuilderState = {
 		extensionCleanups: (() => MaybePromise<void>)[];
 		clearDataCallbacks: (() => MaybePromise<void>)[];
 		whenReadyPromises: Promise<unknown>[];
+	};
+
+	type EncryptionRuntime = {
+		controller:
+			| WorkspaceEncryptionController
+			| WorkspaceEncryptionControllerWithCache;
+		lock: () => void;
+		clearCache: () => Promise<void>;
 	};
 
 	// Accumulated document extension registrations (in chain order).
@@ -273,6 +284,7 @@ export function createWorkspace<
 	function buildClient<TExtensions extends Record<string, unknown>>(
 		extensions: TExtensions,
 		state: BuilderState,
+		encryptionRuntime?: EncryptionRuntime,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
@@ -326,10 +338,27 @@ export function createWorkspace<
 			loadSnapshot(update: Uint8Array): void {
 				Y.applyUpdate(ydoc, update);
 			},
+			async clearLocalData(): Promise<void> {
+				encryptionRuntime?.lock();
+				for (let i = state.clearDataCallbacks.length - 1; i >= 0; i--) {
+					try {
+						await state.clearDataCallbacks[i]?.();
+					} catch (err) {
+						console.error('Extension clearData error:', err);
+					}
+				}
+				await encryptionRuntime?.clearCache();
+			},
 			whenReady,
 			dispose,
 			[Symbol.asyncDispose]: dispose,
 		};
+
+		if (encryptionRuntime) {
+			Object.assign(client, {
+				encryption: encryptionRuntime.controller,
+			});
+		}
 
 		/**
 		 * Apply an extension factory to the workspace Y.Doc.
@@ -375,7 +404,7 @@ export function createWorkspace<
 				const raw = factory(ctx);
 
 				// Void return means "not installed" — skip registration
-				if (!raw) return buildClient(extensions, state);
+				if (!raw) return buildClient(extensions, state, encryptionRuntime);
 
 				const resolved = defineExtension(raw);
 
@@ -392,6 +421,7 @@ export function createWorkspace<
 						],
 						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
 					},
+					encryptionRuntime,
 				);
 			} catch (err) {
 				startDisposeLifo(state.extensionCleanups);
@@ -408,7 +438,10 @@ export function createWorkspace<
 				TExports extends Record<string, unknown>,
 			>(
 				key: TKey,
-				factory: (context: { ydoc: Y.Doc; whenReady: Promise<void> }) => TExports & {
+				factory: (context: {
+					ydoc: Y.Doc;
+					whenReady: Promise<void>;
+				}) => TExports & {
 					whenReady?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
 					clearData?: () => MaybePromise<void>;
@@ -463,52 +496,55 @@ export function createWorkspace<
 					factory,
 					tags: options?.tags ?? [],
 				});
-				return buildClient(extensions, state);
+				return buildClient(extensions, state, encryptionRuntime);
 			},
 
 			withEncryption(config?: EncryptionConfig) {
-				function createEncryptionController(): WorkspaceEncryptionController {
-					// Private closure state — inaccessible from outside.
-					// activeUserKey tracks the runtime root key currently applied to stores.
-					// persistedUserKey tracks which root key has successfully crossed the
-					// async cache boundary. Splitting them keeps runtime unlock synchronous
-					// while same-key save failures still retry honestly.
-					let activeUserKey: Uint8Array | undefined;
-					let persistedUserKey: Uint8Array | undefined;
-					let pendingPersistedUserKey: Uint8Array | undefined;
-					let persistenceVersion = 0;
-					let persistenceQueue = Promise.resolve();
-					let workspaceKey: Uint8Array | undefined = options?.key;
+				let activeUserKey: Uint8Array | undefined;
+				let isActiveUserKeyCached = config?.userKeyCache === undefined;
+				let workspaceKey: Uint8Array | undefined = options?.key;
+				let cacheQueue = Promise.resolve();
 
-					const runSerializedPersistence = async (
-						task: () => Promise<void>,
-					): Promise<void> => {
-						const next = persistenceQueue.catch(() => {}).then(task);
-						persistenceQueue = next.catch(() => {});
-						return await next;
-					};
+				const runSerializedCacheTask = async (
+					task: () => Promise<void>,
+				): Promise<void> => {
+					const next = cacheQueue.catch(() => {}).then(task);
+					cacheQueue = next.catch(() => {});
+					return await next;
+				};
 
-					// Activation pipeline:
-					//   1. Skip only when the same runtime key is already active AND the
-					//      cache already reflects that key (or no cache exists)
-					//   2. HKDF: deriveWorkspaceKey(userKey, workspaceId) → derived key
-					//   3. Apply the derived key to all encrypted stores synchronously
-					//   4. Update runtime encryption state synchronously
-					//   5. Serialize cache persistence so save/clear ordering matches the
-					//      latest activation or deactivation request
-					const activate = async (userKey: Uint8Array) => {
-						const hasPersistedKey =
-							config?.userKeyCache === undefined ||
-							(persistedUserKey !== undefined &&
-								bytesEqual(persistedUserKey, userKey));
-						if (
-							activeUserKey !== undefined &&
-							bytesEqual(activeUserKey, userKey) &&
-							hasPersistedKey
-						) {
-							return;
-						}
+				const lock = () => {
+					activeUserKey = undefined;
+					isActiveUserKeyCached = config?.userKeyCache === undefined;
+					workspaceKey = undefined;
+					for (const store of encryptedStores) {
+						store.deactivateEncryption();
+					}
+				};
 
+				const persistUnlockedUserKey = async (userKey: Uint8Array) => {
+					if (!config?.userKeyCache) return;
+
+					try {
+						await runSerializedCacheTask(async () => {
+							await config.userKeyCache.save(bytesToBase64(userKey));
+							if (
+								activeUserKey !== undefined &&
+								bytesEqual(activeUserKey, userKey)
+							) {
+								isActiveUserKeyCached = true;
+							}
+						});
+					} catch (error) {
+						console.error('[workspace] User key cache save failed:', error);
+					}
+				};
+
+				const unlock = async (userKey: Uint8Array) => {
+					const isSameUserKey =
+						activeUserKey !== undefined && bytesEqual(activeUserKey, userKey);
+
+					if (!isSameUserKey) {
 						try {
 							const nextWorkspaceKey = deriveWorkspaceKey(userKey, id);
 							for (const store of encryptedStores) {
@@ -516,124 +552,83 @@ export function createWorkspace<
 							}
 							workspaceKey = nextWorkspaceKey;
 							activeUserKey = userKey;
+							isActiveUserKeyCached = config?.userKeyCache === undefined;
 						} catch (error) {
-							console.error('[workspace] Encryption activation failed:', error);
+							console.error('[workspace] Workspace unlock failed:', error);
 							return;
 						}
+					}
 
-						if (!config?.userKeyCache) {
-							persistedUserKey = userKey;
-							pendingPersistedUserKey = undefined;
-							return;
+					if (config?.userKeyCache && !isActiveUserKeyCached) {
+						await persistUnlockedUserKey(userKey);
+					}
+				};
+
+				const clearCache = async () => {
+					if (!config?.userKeyCache) return;
+					await runSerializedCacheTask(async () => {
+						await config.userKeyCache.clear();
+					});
+				};
+
+				const baseController: WorkspaceEncryptionController = {
+					get isUnlocked() {
+						return workspaceKey !== undefined;
+					},
+					unlock,
+					lock,
+				};
+
+				const encryptionRuntime = config?.userKeyCache
+					? {
+							controller: {
+								get isUnlocked() {
+									return workspaceKey !== undefined;
+								},
+								unlock,
+								lock,
+								async tryUnlock() {
+									if (workspaceKey !== undefined) return true;
+
+									const cachedUserKey = await config.userKeyCache.load();
+									if (!cachedUserKey) return false;
+
+									try {
+										await unlock(base64ToBytes(cachedUserKey));
+										return workspaceKey !== undefined;
+									} catch (error) {
+										console.error(
+											'[workspace] Cached key unlock failed:',
+											error,
+										);
+										await clearCache();
+										return false;
+									}
+								},
+							} satisfies WorkspaceEncryptionControllerWithCache,
+							lock,
+							clearCache,
 						}
+					: {
+							controller: baseController,
+							lock,
+							clearCache,
+						};
 
-						if (
-							pendingPersistedUserKey !== undefined &&
-							bytesEqual(pendingPersistedUserKey, userKey)
-						) {
-							return await persistenceQueue;
-						}
-
-						const persistenceToken = ++persistenceVersion;
-						pendingPersistedUserKey = userKey;
-						try {
-							await runSerializedPersistence(async () => {
-								await config.userKeyCache?.save(bytesToBase64(userKey));
-								if (
-									persistenceToken === persistenceVersion &&
-									activeUserKey !== undefined &&
-									bytesEqual(activeUserKey, userKey)
-								) {
-									persistedUserKey = userKey;
-								}
-							});
-						} catch (error) {
-							console.error('[workspace] User key cache save failed:', error);
-						} finally {
-							if (
-								pendingPersistedUserKey !== undefined &&
-								bytesEqual(pendingPersistedUserKey, userKey)
-							) {
-								pendingPersistedUserKey = undefined;
-							}
-						}
-					};
-
-					// Restore pipeline:
-					//   1. Return false when no userKeyCache exists
-					//   2. Load cached base64 user key
-					//   3. Return false when nothing is cached
-					//   4. Decode the cached user key
-					//   5. Re-enter activate so restore shares the same runtime and cache
-					//      ordering behavior as normal sign-in
-					//
-					// Corrupt cache entries are cleared so startup does not keep retrying
-					// the same bad value on every reload.
-					const restoreEncryptionFromCache = async () => {
-						if (workspaceKey !== undefined) return true;
-						if (!config?.userKeyCache) return false;
-
-						const cachedUserKey = await config.userKeyCache.load();
-						if (!cachedUserKey) return false;
-
-						try {
-							await activate(base64ToBytes(cachedUserKey));
-							return workspaceKey !== undefined;
-						} catch (error) {
-							console.error('[workspace] Cached key restore failed:', error);
-							await config.userKeyCache.clear();
-							return false;
-						}
-					};
-
-					// Deactivation pipeline:
-					//   1. Clear runtime key state synchronously
-					//   2. Deactivate all stores synchronously
-					//   3. Wipe persisted data via clearData callbacks (LIFO order)
-					//   4. Serialize userKeyCache.clear() after any in-flight saves so the
-					//      final cache state matches the latest lifecycle transition
-					const deactivate = async () => {
-						++persistenceVersion;
-						activeUserKey = undefined;
-						persistedUserKey = undefined;
-						pendingPersistedUserKey = undefined;
-						workspaceKey = undefined;
-						for (const store of encryptedStores) {
-							store.deactivateEncryption();
-						}
-						for (let i = state.clearDataCallbacks.length - 1; i >= 0; i--) {
-							try {
-								await state.clearDataCallbacks[i]?.();
-							} catch (err) {
-								console.error('Extension clearData error:', err);
-							}
-						}
-						await runSerializedPersistence(async () => {
-							await config?.userKeyCache?.clear();
-						});
-					};
-
-					return {
-						get isEncrypted() {
-							return workspaceKey !== undefined;
-						},
-						activate,
-						restoreEncryptionFromCache,
-						deactivate,
-					};
-				}
-
-				const encryption = createEncryptionController();
-				Object.assign(client, { encryption });
-
-				return builder as unknown as WorkspaceClientBuilder<
+				return buildClient(
+					extensions,
+					state,
+					encryptionRuntime,
+				) as unknown as WorkspaceClientBuilder<
 					TId,
 					TTableDefinitions,
 					TKvDefinitions,
 					TAwarenessDefinitions,
 					TExtensions,
 					Record<string, never>,
-					{ encryption: WorkspaceEncryptionController }
+					{
+						encryption: typeof encryptionRuntime.controller;
+					}
 				>;
 			},
 

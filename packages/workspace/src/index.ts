@@ -40,7 +40,7 @@ export {
 export type {
 	Extension,
 	MaybePromise,
-	} from './workspace/lifecycle';
+} from './workspace/lifecycle';
 export type { DocumentContext } from './workspace/types';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -167,6 +167,7 @@ export type {
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceEncryptionController,
+	WorkspaceEncryptionControllerWithCache,
 	WorkspaceClientWithActions,
 	WorkspaceDefinition,
 } from './workspace/types';

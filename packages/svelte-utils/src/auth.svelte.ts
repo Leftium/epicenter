@@ -43,6 +43,7 @@ export type Auth = {
 	readonly user: StoredUser | null;
 	readonly token: string | null;
 	readonly signInError?: string;
+	onTokenChange(listener: (token: string | null) => void): () => void;
 	refreshSession(): Promise<StoredUser | null>;
 	signIn(credentials: { email: string; password: string }): Promise<void>;
 	signUp(credentials: {
@@ -98,6 +99,17 @@ export function createAuth({
 	let hasExternalSession = $state(Boolean(user.get()));
 	let isApplyingLocalSessionChange = false;
 	let bootstrapPromise: Promise<StoredUser | null> | null = null;
+	let lastPublishedToken = token.get();
+	const tokenListeners = new Set<(token: string | null) => void>();
+
+	function notifyTokenChange() {
+		const nextToken = token.get();
+		if (nextToken === lastPublishedToken) return;
+		lastPublishedToken = nextToken;
+		for (const listener of tokenListeners) {
+			listener(nextToken);
+		}
+	}
 
 	function buildClient(authToken: string | null) {
 		let issuedToken: string | null | undefined;
@@ -121,18 +133,6 @@ export function createAuth({
 			client,
 			getIssuedToken: () => issuedToken ?? authToken ?? null,
 		};
-	}
-
-	async function writeField<T>(
-		field: { get(): T; set(value: T): void | Promise<void> },
-		value: T,
-	) {
-		await field.set(value);
-	}
-
-	async function writeSession(next: { user: StoredUser | null; token: string | null }) {
-		await writeField(token, next.token);
-		await writeField(user, next.user);
 	}
 
 	function getStatus(): AuthStatus {
@@ -169,16 +169,8 @@ export function createAuth({
 		} finally {
 			isApplyingLocalSessionChange = false;
 			hasExternalSession = Boolean(user.get());
+			notifyTokenChange();
 		}
-	}
-
-	async function unlockWorkspace(userKeyBase64: string | null | undefined) {
-		if (!userKeyBase64) {
-			return new Error('Authenticated session is missing userKeyBase64');
-		}
-
-		await workspace.encryption.unlock(base64ToBytes(userKeyBase64));
-		return null;
 	}
 
 	async function writeAuthenticatedSession(next: {
@@ -186,19 +178,26 @@ export function createAuth({
 		token: string | null;
 		userKeyBase64: string | null;
 	}) {
-		const unlockError = await unlockWorkspace(next.userKeyBase64);
-		if (unlockError) return unlockError;
+		if (!next.userKeyBase64) {
+			return new Error('Authenticated session is missing userKeyBase64');
+		}
 
-		await applyLocalSessionChange(() =>
-			writeSession({ user: next.user, token: next.token }),
-		);
+		await workspace.encryption.unlock(base64ToBytes(next.userKeyBase64));
+
+		await applyLocalSessionChange(async () => {
+			await token.set(next.token);
+			await user.set(next.user);
+		});
 		setLastError(undefined);
 		return null;
 	}
 
 	async function clearSession() {
 		await workspace.clearLocalData();
-		await applyLocalSessionChange(() => writeSession({ user: null, token: null }));
+		await applyLocalSessionChange(async () => {
+			await token.set(null);
+			await user.set(null);
+		});
 		setLastError(undefined);
 	}
 
@@ -227,7 +226,12 @@ export function createAuth({
 			}
 		} catch (error) {
 			setLastError(
-				isCancelledError(error) ? undefined : extractErrorMessage(error),
+				(error instanceof Error
+					? error.message.includes('canceled') ||
+						error.message.includes('cancelled')
+					: false)
+					? undefined
+					: extractErrorMessage(error),
 			);
 		}
 
@@ -261,7 +265,13 @@ export function createAuth({
 			const { data, error } = await client.getSession();
 
 			if (error) {
-				const status = getErrorStatus(error);
+				const status =
+					typeof error === 'object' &&
+					error !== null &&
+					'status' in error &&
+					typeof error.status === 'number'
+						? error.status
+						: undefined;
 				if (status !== undefined && status < 500) {
 					await clearSession();
 					setPendingAction(null);
@@ -324,6 +334,7 @@ export function createAuth({
 			});
 		}
 
+		notifyTokenChange();
 	};
 
 	token.watch?.(handleExternalSessionChange);
@@ -352,6 +363,13 @@ export function createAuth({
 
 		get signInError() {
 			return getState().signInError;
+		},
+
+		onTokenChange(listener) {
+			tokenListeners.add(listener);
+			return () => {
+				tokenListeners.delete(listener);
+			};
 		},
 
 		refreshSession,
@@ -454,22 +472,4 @@ function toStoredUser(user: User): StoredUser {
 		name: user.name,
 		image: user.image,
 	};
-}
-
-function getErrorStatus(error: unknown) {
-	if (
-		typeof error === 'object' &&
-		error !== null &&
-		'status' in error &&
-		typeof error.status === 'number'
-	) {
-		return error.status;
-	}
-
-	return undefined;
-}
-
-function isCancelledError(cause: unknown) {
-	const message = cause instanceof Error ? cause.message : '';
-	return message.includes('canceled') || message.includes('cancelled');
 }

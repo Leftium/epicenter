@@ -8,7 +8,6 @@ import type { User } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
-import { createPersistedState } from './persisted-state.svelte';
 
 type CustomSessionFields = {
 	encryptionKey: string;
@@ -130,24 +129,6 @@ function hasTryUnlock(
 	encryption: WorkspaceAuthHandle['encryption'],
 ): encryption is WorkspaceEncryptionWithCache {
 	return 'tryUnlock' in encryption;
-}
-
-export function createLocalSessionFields(prefix: string) {
-	const token = createPersistedState({
-		key: `${prefix}:authToken`,
-		schema: type('string').or('null'),
-		defaultValue: null,
-	});
-	const user = createPersistedState({
-		key: `${prefix}:authUser`,
-		schema: StoredUser.or('null'),
-		defaultValue: null,
-	});
-
-	return {
-		token,
-		user,
-	};
 }
 
 export function createWorkspaceAuth({

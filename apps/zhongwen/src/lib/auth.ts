@@ -1,8 +1,10 @@
+import { createPersistedState } from '@epicenter/svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
-	createLocalSessionFields,
 	type StoredUser,
+	StoredUser as StoredUserSchema,
 } from '@epicenter/svelte/auth';
+import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
 import { extractErrorMessage } from 'wellcrafted/error';
 
@@ -21,6 +23,11 @@ type SessionAuthState = {
 	signInError?: string;
 };
 
+type SessionFieldState<T> = {
+	current: T;
+	whenReady?: Promise<void>;
+};
+
 type PendingAction =
 	| 'bootstrapping'
 	| 'checking'
@@ -37,7 +44,17 @@ class AuthFlowInterrupt extends Error {
 	}
 }
 
-const { token, user } = createLocalSessionFields('zhongwen');
+const token: SessionFieldState<string | null> = createPersistedState({
+	key: 'zhongwen:authToken',
+	schema: type('string').or('null'),
+	defaultValue: null,
+});
+
+const user: SessionFieldState<StoredUser | null> = createPersistedState({
+	key: 'zhongwen:authUser',
+	schema: StoredUserSchema.or('null'),
+	defaultValue: null,
+});
 
 function createAuth() {
 	let pendingAction = $state<PendingAction>('bootstrapping');

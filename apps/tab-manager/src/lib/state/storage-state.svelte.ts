@@ -114,11 +114,6 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 	};
 
 	return {
-		/** Current reactive value. Reading via a method fits async-backed adapters. */
-		get(): T {
-			return value;
-		},
-
 		/** Current reactive value. Starts as `fallback`, updates once loaded. */
 		get current(): T {
 			return value;

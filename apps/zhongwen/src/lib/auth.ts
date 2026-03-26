@@ -1,6 +1,10 @@
 import { createPersistedState } from '@epicenter/svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createAuth, StoredUser } from '@epicenter/svelte/auth';
+import {
+	createAuth,
+	type SessionField,
+	StoredUser,
+} from '@epicenter/svelte/auth';
 import { type } from 'arktype';
 import { workspace } from '$lib/workspace/client';
 
@@ -16,9 +20,23 @@ const user = createPersistedState({
 	defaultValue: null,
 });
 
+const tokenField: SessionField<string | null> = {
+	get: () => token.current,
+	set: (value) => {
+		token.current = value;
+	},
+};
+
+const userField: SessionField<StoredUser | null> = {
+	get: () => user.current,
+	set: (value) => {
+		user.current = value;
+	},
+};
+
 export const authState = createAuth({
 	baseURL: APP_URLS.API,
-	token,
-	user,
+	token: tokenField,
+	user: userField,
 	workspace,
 });

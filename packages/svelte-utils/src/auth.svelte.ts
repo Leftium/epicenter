@@ -6,8 +6,13 @@ import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import type { User } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
-import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
+import { createPersistedState } from './persisted-state.svelte';
 
 type CustomSessionFields = {
 	encryptionKey: string;
@@ -17,7 +22,63 @@ const WorkspaceAuthError = defineErrors({
 	MissingUserKeyBase64: () => ({
 		message: 'Authenticated session is missing userKeyBase64',
 	}),
+	SignInFailed: ({
+		status,
+		cause,
+	}: {
+		status?: number;
+		cause: unknown;
+	}) => ({
+		message: `Sign-in failed: ${extractErrorMessage(cause)}`,
+		status,
+		cause,
+	}),
+	SignUpFailed: ({
+		status,
+		cause,
+	}: {
+		status?: number;
+		cause: unknown;
+	}) => ({
+		message: `Sign-up failed: ${extractErrorMessage(cause)}`,
+		status,
+		cause,
+	}),
+	GoogleSignInFailed: ({
+		status,
+		cause,
+	}: {
+		status?: number;
+		cause: unknown;
+	}) => ({
+		message: `Google sign-in failed: ${extractErrorMessage(cause)}`,
+		status,
+		cause,
+	}),
+	SignOutFailed: ({
+		status,
+		cause,
+	}: {
+		status?: number;
+		cause: unknown;
+	}) => ({
+		message: `Sign-out failed: ${extractErrorMessage(cause)}`,
+		status,
+		cause,
+	}),
+	SessionLookupFailed: ({
+		status,
+		cause,
+	}: {
+		status?: number;
+		cause: unknown;
+	}) => ({
+		message: `Failed to refresh session: ${extractErrorMessage(cause)}`,
+		status,
+		cause,
+	}),
 });
+type WorkspaceAuthError = InferErrors<typeof WorkspaceAuthError>;
 
 export const StoredUser = type({
 	id: 'string',
@@ -83,6 +144,15 @@ type AuthResult = {
 	userKeyBase64?: string | null;
 };
 
+type AuthFlowResult =
+	| {
+			kind: 'authenticated';
+			session: AuthResult;
+	  }
+	| {
+			kind: 'redirecting';
+	  };
+
 type SessionFieldState<T> = {
 	current: T;
 	set?: (value: T) => Promise<void>;
@@ -97,38 +167,43 @@ type PendingAction =
 	| 'signing-out'
 	| null;
 
-type TransportError = Error & {
-	status?: number;
-};
-
 type BetterAuthInternalClient = ReturnType<typeof createAuthClient>;
 
 type BetterAuthClient = {
-	signIn(credentials: EmailSignInCredentials): Promise<AuthResult>;
-	signUp(credentials: EmailSignUpCredentials): Promise<AuthResult>;
-	signInWithGoogle(): Promise<AuthResult>;
+	signIn(credentials: EmailSignInCredentials): Promise<AuthFlowResult>;
+	signUp(credentials: EmailSignUpCredentials): Promise<AuthFlowResult>;
+	signInWithGoogle(): Promise<AuthFlowResult>;
 	signOut(token: string | null): Promise<void>;
 	getSession(token: string | null): Promise<AuthResult | null>;
 };
 
-type WorkspaceAuthHandle = {
+type WorkspaceAuthWorkspace = {
 	encryption: WorkspaceEncryption | WorkspaceEncryptionWithCache;
 	clearLocalData(): Promise<void>;
 };
 
-class AuthFlowInterrupt extends Error {
-	kind: 'redirect';
+type WorkspaceSessionController = {
+	unlock(userKeyBase64: string): Promise<void>;
+	tryUnlock(): Promise<boolean>;
+	clearLocalData(): Promise<void>;
+};
 
-	constructor(kind: 'redirect') {
-		super('Redirect started');
-		this.kind = kind;
-	}
-}
+export function createLocalSessionFields(prefix: string) {
+	const token = createPersistedState({
+		key: `${prefix}:authToken`,
+		schema: type('string').or('null'),
+		defaultValue: null,
+	});
+	const user = createPersistedState({
+		key: `${prefix}:authUser`,
+		schema: StoredUser.or('null'),
+		defaultValue: null,
+	});
 
-function hasTryUnlock(
-	encryption: WorkspaceAuthHandle['encryption'],
-): encryption is WorkspaceEncryptionWithCache {
-	return 'tryUnlock' in encryption;
+	return {
+		token,
+		user,
+	};
 }
 
 export function createWorkspaceAuth({
@@ -141,11 +216,12 @@ export function createWorkspaceAuth({
 	baseURL: string | (() => string);
 	token: SessionFieldState<string | null>;
 	user: SessionFieldState<StoredUser | null>;
-	workspace: WorkspaceAuthHandle;
+	workspace: WorkspaceAuthWorkspace;
 	signInWithGoogle?: (
 		client: BetterAuthInternalClient,
 	) => Promise<{ user: User } & Partial<CustomSessionFields>>;
 }): WorkspaceAuth {
+	const workspaceSession = createWorkspaceSessionController(workspace);
 	const client = createBetterAuthClient({
 		baseURL,
 		signInWithGoogle,
@@ -159,13 +235,6 @@ export function createWorkspaceAuth({
 	let lastPublishedState: WorkspaceAuthState | null = null;
 
 	const listeners = new Set<(state: WorkspaceAuthState) => void>();
-
-	function readSession() {
-		return {
-			token: token.current,
-			user: user.current,
-		};
-	}
 
 	async function writeField<T>(field: SessionFieldState<T>, value: T) {
 		if (field.set) {
@@ -183,23 +252,18 @@ export function createWorkspaceAuth({
 		await writeField(user, next.user);
 	}
 
-	async function clearStoredSession() {
-		await writeField(token, null);
-		await writeField(user, null);
-	}
-
 	function getStatus(): WorkspaceAuthStatus {
 		if (pendingAction) return pendingAction;
 		return user.current ? 'signed-in' : 'signed-out';
 	}
 
 	function getState(): WorkspaceAuthState {
-		const snapshot = readSession();
+		const status = getStatus();
 		return {
-			status: getStatus(),
-			user: snapshot.user,
-			token: snapshot.token,
-			signInError: getStatus() === 'signed-out' ? lastError : undefined,
+			status,
+			user: user.current,
+			token: token.current,
+			signInError: status === 'signed-out' ? lastError : undefined,
 		};
 	}
 
@@ -254,48 +318,50 @@ export function createWorkspaceAuth({
 			return WorkspaceAuthError.MissingUserKeyBase64();
 		}
 
-		await workspace.encryption.unlock(base64ToBytes(result.userKeyBase64));
-		await applyLocalSessionChange(async () => {
-			await writeSession({ user: result.user, token: result.token });
-		});
+		await workspaceSession.unlock(result.userKeyBase64);
+		await applyLocalSessionChange(() =>
+			writeSession({ user: result.user, token: result.token }),
+		);
 		setLastError(undefined);
 		return Ok(undefined);
 	}
 
 	async function clearSession() {
-		await workspace.clearLocalData();
-		await applyLocalSessionChange(async () => {
-			await clearStoredSession();
-		});
+		await workspaceSession.clearLocalData();
+		await applyLocalSessionChange(() =>
+			writeSession({ user: null, token: null }),
+		);
 		setLastError(undefined);
 	}
 
-	async function authenticate(
-		run: () => Promise<AuthResult>,
-		errorPrefix: string,
-	) {
+	async function authenticate(run: () => Promise<AuthFlowResult>) {
 		setPendingAction('signing-in');
 
-		const { error } = await tryAsync({
-			try: async () => {
-				const result = await run();
-				const { error: writeError } = await writeAuthenticatedSession(result);
-				if (writeError) return Err(writeError);
-			},
+		const { data: result, error } = await tryAsync({
+			try: () => run(),
 			catch: (error) => Err(error),
 		});
 
 		if (error) {
-			if (isRedirectInterrupt(error)) {
-				setPendingAction(null);
-				return;
-			}
-
 			setLastError(
-				isCancelledError(error)
-					? undefined
-					: `${errorPrefix}: ${extractErrorMessage(error)}`,
+				isCancelledError(error) ? undefined : extractErrorMessage(error),
 			);
+			setPendingAction(null);
+			return;
+		}
+
+		if (!result || result.kind === 'redirecting') {
+			setPendingAction(null);
+			return;
+		}
+
+		const { error: writeError } = await writeAuthenticatedSession(
+			result.session,
+		);
+		if (writeError) {
+			setLastError(writeError.message);
+			setPendingAction(null);
+			return;
 		}
 
 		setPendingAction(null);
@@ -306,14 +372,14 @@ export function createWorkspaceAuth({
 			bootstrapPromise = (async () => {
 				await Promise.all([token.whenReady, user.whenReady].filter(Boolean));
 
-				const snapshot = readSession();
-				if (snapshot.user && hasTryUnlock(workspace.encryption)) {
-					await workspace.encryption.tryUnlock();
+				const currentUser = user.current;
+				if (currentUser) {
+					await workspaceSession.tryUnlock();
 					setLastError(undefined);
 				}
 
 				setPendingAction(null);
-				return snapshot.user;
+				return currentUser;
 			})();
 		}
 
@@ -324,15 +390,18 @@ export function createWorkspaceAuth({
 		await bootstrap();
 		setPendingAction('checking');
 
-		const snapshot = readSession();
+		const currentToken = token.current;
 		const { data: result, error } = await tryAsync({
-			try: () => client.getSession(snapshot.token),
-			catch: (error) => Err(toTransportError(error)),
+			try: () => client.getSession(currentToken),
+			catch: (error) =>
+				WorkspaceAuthError.SessionLookupFailed({
+					status: getErrorStatus(error),
+					cause: error,
+				}),
 		});
 
 		if (error) {
-			const isAuthRejection = error.status !== undefined && error.status < 500;
-			if (isAuthRejection) {
+			if (isAuthRejection(error)) {
 				await clearSession();
 				setPendingAction(null);
 				return null;
@@ -356,6 +425,7 @@ export function createWorkspaceAuth({
 			setPendingAction(null);
 			return null;
 		}
+
 		setPendingAction(null);
 		return result.user;
 	}
@@ -371,25 +441,23 @@ export function createWorkspaceAuth({
 
 		if (!isSignedIn && wasSignedIn) {
 			setLastError(undefined);
-			void workspace.clearLocalData();
-		} else if (
-			isSignedIn &&
-			!wasSignedIn &&
-			hasTryUnlock(workspace.encryption)
-		) {
+			void tryAsync({
+				try: () => workspaceSession.clearLocalData(),
+				catch: () => Ok(undefined),
+			});
+		} else if (isSignedIn && !wasSignedIn) {
 			setLastError(undefined);
-			void workspace.encryption.tryUnlock();
+			void tryAsync({
+				try: () => workspaceSession.tryUnlock(),
+				catch: () => Ok(false),
+			});
 		}
 
 		notify();
 	};
 
-	token.watch?.(() => {
-		handleExternalSessionChange();
-	});
-	user.watch?.(() => {
-		handleExternalSessionChange();
-	});
+	token.watch?.(handleExternalSessionChange);
+	user.watch?.(handleExternalSessionChange);
 
 	return {
 		get state() {
@@ -437,25 +505,26 @@ export function createWorkspaceAuth({
 		}) as typeof fetch,
 
 		async signIn(credentials) {
-			await authenticate(() => client.signIn(credentials), 'Sign-in failed');
+			await authenticate(() => client.signIn(credentials));
 		},
 
 		async signUp(credentials) {
-			await authenticate(() => client.signUp(credentials), 'Sign-up failed');
+			await authenticate(() => client.signUp(credentials));
 		},
 
 		async signInWithGoogle() {
-			await authenticate(
-				() => client.signInWithGoogle(),
-				'Google sign-in failed',
-			);
+			await authenticate(() => client.signInWithGoogle());
 		},
 
 		async signOut() {
 			setPendingAction('signing-out');
 			await tryAsync({
 				try: () => client.signOut(token.current),
-				catch: () => Ok(undefined),
+				catch: (error) =>
+					WorkspaceAuthError.SignOutFailed({
+						status: getErrorStatus(error),
+						cause: error,
+					}),
 			});
 			await clearSession();
 			setPendingAction(null);
@@ -499,53 +568,126 @@ function createBetterAuthClient({
 		};
 	}
 
-	async function runGoogleSignIn(client: BetterAuthInternalClient) {
+	async function runGoogleSignIn(
+		client: BetterAuthInternalClient,
+	): Promise<
+		| {
+				kind: 'completed';
+				data: { user: User } & Partial<CustomSessionFields>;
+		  }
+		| {
+				kind: 'redirecting';
+		  }
+	> {
 		if (signInWithGoogle) {
-			return await signInWithGoogle(client);
+			return {
+				kind: 'completed',
+				data: await signInWithGoogle(client),
+			};
 		}
 
 		await client.signIn.social({
 			provider: 'google',
 			callbackURL: window.location.origin,
 		});
-		throw new AuthFlowInterrupt('redirect');
+		return { kind: 'redirecting' };
 	}
 
 	return {
 		async signIn(credentials) {
 			const { client, getIssuedToken } = buildClient(null);
 			const { data, error } = await client.signIn.email(credentials);
-			if (error) throw toTransportError(error);
-			return toAuthResult(data, getIssuedToken());
+			if (error) {
+				throw WorkspaceAuthError.SignInFailed({
+					status: getErrorStatus(error),
+					cause: error,
+				});
+			}
+
+			return {
+				kind: 'authenticated',
+				session: toAuthResult(data, getIssuedToken()),
+			};
 		},
 
 		async signUp(credentials) {
 			const { client, getIssuedToken } = buildClient(null);
 			const { data, error } = await client.signUp.email(credentials);
-			if (error) throw toTransportError(error);
-			return toAuthResult(data, getIssuedToken());
+			if (error) {
+				throw WorkspaceAuthError.SignUpFailed({
+					status: getErrorStatus(error),
+					cause: error,
+				});
+			}
+
+			return {
+				kind: 'authenticated',
+				session: toAuthResult(data, getIssuedToken()),
+			};
 		},
 
 		async signInWithGoogle() {
 			const { client, getIssuedToken } = buildClient(null);
-			const data = await runGoogleSignIn(client);
-			return toAuthResult(data, getIssuedToken());
+
+			const { data, error } = await tryAsync({
+				try: () => runGoogleSignIn(client),
+				catch: (error) =>
+					WorkspaceAuthError.GoogleSignInFailed({
+						status: getErrorStatus(error),
+						cause: error,
+					}),
+			});
+			if (error) throw error;
+			if (data.kind === 'redirecting') return data;
+
+			return {
+				kind: 'authenticated',
+				session: toAuthResult(data.data, getIssuedToken()),
+			};
 		},
 
 		async signOut(token) {
 			const { client } = buildClient(token);
 			const { error } = await client.signOut();
-			if (error) throw toTransportError(error);
+			if (error) {
+				throw WorkspaceAuthError.SignOutFailed({
+					status: getErrorStatus(error),
+					cause: error,
+				});
+			}
 		},
 
 		async getSession(token) {
 			const { client, getIssuedToken } = buildClient(token);
 			const { data, error } = await client.getSession();
-			if (error) throw toTransportError(error);
+			if (error) {
+				throw WorkspaceAuthError.SessionLookupFailed({
+					status: getErrorStatus(error),
+					cause: error,
+				});
+			}
 			if (!data) return null;
 
 			const customData = data as typeof data & Partial<CustomSessionFields>;
 			return toAuthResult(customData, getIssuedToken() ?? token);
+		},
+	};
+}
+
+function createWorkspaceSessionController(
+	workspace: WorkspaceAuthWorkspace,
+): WorkspaceSessionController {
+	const { encryption } = workspace;
+	const tryUnlock =
+		'tryUnlock' in encryption ? () => encryption.tryUnlock() : async () => false;
+
+	return {
+		unlock(userKeyBase64) {
+			return encryption.unlock(base64ToBytes(userKeyBase64));
+		},
+		tryUnlock,
+		clearLocalData() {
+			return workspace.clearLocalData();
 		},
 	};
 }
@@ -573,24 +715,24 @@ function toStoredUser(raw: User): StoredUser {
 	};
 }
 
-function toTransportError(error: unknown): TransportError {
-	const next = new Error(extractErrorMessage(error)) as TransportError;
+function getErrorStatus(error: WorkspaceAuthError | unknown) {
 	if (
 		typeof error === 'object' &&
 		error !== null &&
 		'status' in error &&
 		typeof error.status === 'number'
 	) {
-		next.status = error.status;
+		return error.status;
 	}
-	return next;
+	return undefined;
+}
+
+function isAuthRejection(error: WorkspaceAuthError) {
+	const status = getErrorStatus(error);
+	return status !== undefined && status < 500;
 }
 
 function isCancelledError(cause: unknown) {
 	const message = cause instanceof Error ? cause.message : '';
 	return message.includes('canceled') || message.includes('cancelled');
-}
-
-function isRedirectInterrupt(cause: unknown) {
-	return cause instanceof AuthFlowInterrupt && cause.kind === 'redirect';
 }

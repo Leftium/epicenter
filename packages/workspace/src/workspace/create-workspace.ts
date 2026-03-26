@@ -14,32 +14,27 @@
  *
  * ## Encryption lifecycle
  *
- * `.withEncryption(config?)` opts the client into encryption. Without it, encryption
- * methods (`activateEncryption`, `restoreEncryption`, `deactivateEncryption`,
- * `isEncrypted`) don't exist on the type — Whispering and CLI never see them.
+ * `.withEncryption(config?)` opts the client into encryption. Without it,
+ * `workspace.encryption` does not exist on the type.
  *
  * When configured, the full activation pipeline is:
  * ```
- * activateEncryption(userKey)
- *   → byte-level dedup (same key? skip)
- *   → ++generation (race protection)
- *   → await deriveWorkspaceKey(userKey, workspaceId)  // HKDF
- *   → stale check (generation changed? discard)
+ * workspace.encryption.activate(userKey)
+ *   → byte-level dedup (same runtime key + persisted cache? skip)
+ *   → deriveWorkspaceKey(userKey, workspaceId)  // sync HKDF
  *   → apply derived key to all encrypted stores
- *   → await keyCache.save(bytesToBase64(userKey)) if configured
- *   → await onActivate hook
+ *   → set runtime encryption state immediately
+ *   → await userKeyCache.save(bytesToBase64(userKey)) if configured
  *
- * restoreEncryption()
- *   → keyCache.load() if configured
+ * workspace.encryption.restoreEncryptionFromCache()
+ *   → userKeyCache.load() if configured
  *   → base64ToBytes(cachedUserKey)
- *   → activateEncryption(userKey)
+ *   → workspace.encryption.activate(userKey)
  *
- * deactivateEncryption()
- *   → ++generation (invalidate in-flight HKDF)
+ * workspace.encryption.deactivate()
  *   → clear key + deactivate all stores
  *   → wipe persisted data (clearData callbacks, LIFO)
- *   → await keyCache.clear() if configured
- *   → await onDeactivate hook
+ *   → await userKeyCache.clear() if configured
  * ```
  *
  * @example
@@ -55,7 +50,7 @@
  *
  * // With encryption + extensions
  * const client = createWorkspace({ id: 'my-app', tables: { posts } })
- *   .withEncryption({ keyCache })
+ *   .withEncryption({ userKeyCache })
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createSyncExtension({ ... }));
  *
@@ -103,13 +98,13 @@ import type {
 	Documents,
 	DocumentsHelper,
 	EncryptionConfig,
-	EncryptionMethods,
 	ExtensionContext,
 	KvDefinitions,
 	TableDefinitions,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceClientWithActions,
+	WorkspaceEncryptionController,
 	WorkspaceDefinition,
 } from './types.js';
 import { KV_KEY, TableKey } from './ydoc-keys.js';
@@ -121,13 +116,6 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
 	return true;
 }
-
-type EncryptionController = Pick<
-	EncryptionMethods,
-	'activateEncryption' | 'restoreEncryption' | 'deactivateEncryption'
-> & {
-	isEncrypted(): boolean;
-};
 
 /**
  * Create a workspace client with chainable extension support.
@@ -213,7 +201,7 @@ export function createWorkspace<
 	 *
 	 * Three arrays track three distinct lifecycle moments:
 	 * - `extensionCleanups` — `dispose()` shutdown: close connections, stop observers (irreversible)
-	 * - `clearDataCallbacks` — `deactivateEncryption()` data wipe: delete IndexedDB (reversible, repeatable)
+	 * - `clearDataCallbacks` — `workspace.encryption.deactivate()` data wipe: delete IndexedDB (reversible, repeatable)
 	 * - `whenReadyPromises` — construction: composite `whenReady` waits for all extensions to init
 	 */
 	type BuilderState = {
@@ -479,123 +467,136 @@ export function createWorkspace<
 			},
 
 			withEncryption(config?: EncryptionConfig) {
-				function createEncryptionController(): EncryptionController {
+				function createEncryptionController(): WorkspaceEncryptionController {
 					// Private closure state — inaccessible from outside.
-					// lastUserKey: enables byte-level dedup once the full post-activation
-					//   pipeline succeeds.
-					// keyGeneration: monotonic counter for race protection. Each call to
-					//   activateEncryption or deactivateEncryption increments it. When HKDF
-					//   resolves, the generation is compared — if it changed, a newer call
-					//   superseded this one and the stale result is discarded.
-					let lastUserKey: Uint8Array | undefined;
-					let keyGeneration = 0;
+					// activeUserKey tracks the runtime root key currently applied to stores.
+					// persistedUserKey tracks which root key has successfully crossed the
+					// async cache boundary. Splitting them keeps runtime unlock synchronous
+					// while same-key save failures still retry honestly.
+					let activeUserKey: Uint8Array | undefined;
+					let persistedUserKey: Uint8Array | undefined;
+					let pendingPersistedUserKey: Uint8Array | undefined;
+					let persistenceVersion = 0;
+					let persistenceQueue = Promise.resolve();
 					let workspaceKey: Uint8Array | undefined = options?.key;
 
+					const runSerializedPersistence = async (
+						task: () => Promise<void>,
+					): Promise<void> => {
+						const next = persistenceQueue.catch(() => {}).then(task);
+						persistenceQueue = next.catch(() => {});
+						return await next;
+					};
+
 					// Activation pipeline:
-					//   1. Byte-level dedup (same key bytes → early return, no work)
-					//   2. ++generation (race protection)
-					//   3. HKDF: deriveWorkspaceKey(userKey, workspaceId) → derived key
-					//   4. Stale check (generation changed during HKDF → discard)
-					//   5. Apply derived key to all encrypted stores
-					//   6. Save the user key to keyCache (if configured)
-					//   7. onActivate hook
-					//
-					// Why the generation counter matters: HKDF is async. If the user signs
-					// out and back in during derivation, a slow HKDF from the old key could
-					// resolve after the new key is already active. The generation check at
-					// step 4 catches this — the stale result is silently discarded.
-					const activateEncryption = async (userKey: Uint8Array) => {
-						if (lastUserKey && bytesEqual(lastUserKey, userKey)) return;
-
-						const thisGen = ++keyGeneration;
-						let nextWorkspaceKey: Uint8Array;
-
-						try {
-							nextWorkspaceKey = await deriveWorkspaceKey(userKey, id);
-						} catch (error) {
-							console.error('[workspace] Key derivation failed:', error);
+					//   1. Skip only when the same runtime key is already active AND the
+					//      cache already reflects that key (or no cache exists)
+					//   2. HKDF: deriveWorkspaceKey(userKey, workspaceId) → derived key
+					//   3. Apply the derived key to all encrypted stores synchronously
+					//   4. Update runtime encryption state synchronously
+					//   5. Serialize cache persistence so save/clear ordering matches the
+					//      latest activation or deactivation request
+					const activate = async (userKey: Uint8Array) => {
+						const hasPersistedKey =
+							config?.userKeyCache === undefined ||
+							(persistedUserKey !== undefined &&
+								bytesEqual(persistedUserKey, userKey));
+						if (
+							activeUserKey !== undefined &&
+							bytesEqual(activeUserKey, userKey) &&
+							hasPersistedKey
+						) {
 							return;
 						}
 
-						if (thisGen !== keyGeneration) return;
-
 						try {
+							const nextWorkspaceKey = deriveWorkspaceKey(userKey, id);
 							for (const store of encryptedStores) {
 								store.activateEncryption(nextWorkspaceKey);
 							}
+							workspaceKey = nextWorkspaceKey;
+							activeUserKey = userKey;
 						} catch (error) {
-							console.error(
-								'[workspace] Store encryption activation failed:',
-								error,
-							);
+							console.error('[workspace] Encryption activation failed:', error);
 							return;
 						}
 
-						workspaceKey = nextWorkspaceKey;
-
-						let hasCompletedPostActivate = true;
-
-						try {
-							await config?.keyCache?.save(bytesToBase64(userKey));
-						} catch (error) {
-							hasCompletedPostActivate = false;
-							console.error('[workspace] Key cache save failed:', error);
+						if (!config?.userKeyCache) {
+							persistedUserKey = userKey;
+							pendingPersistedUserKey = undefined;
+							return;
 						}
 
-						try {
-							await config?.onActivate?.(userKey);
-						} catch (error) {
-							hasCompletedPostActivate = false;
-							console.error('[workspace] onActivate hook failed:', error);
+						if (
+							pendingPersistedUserKey !== undefined &&
+							bytesEqual(pendingPersistedUserKey, userKey)
+						) {
+							return await persistenceQueue;
 						}
 
-						if (hasCompletedPostActivate) {
-							lastUserKey = userKey;
+						const persistenceToken = ++persistenceVersion;
+						pendingPersistedUserKey = userKey;
+						try {
+							await runSerializedPersistence(async () => {
+								await config.userKeyCache?.save(bytesToBase64(userKey));
+								if (
+									persistenceToken === persistenceVersion &&
+									activeUserKey !== undefined &&
+									bytesEqual(activeUserKey, userKey)
+								) {
+									persistedUserKey = userKey;
+								}
+							});
+						} catch (error) {
+							console.error('[workspace] User key cache save failed:', error);
+						} finally {
+							if (
+								pendingPersistedUserKey !== undefined &&
+								bytesEqual(pendingPersistedUserKey, userKey)
+							) {
+								pendingPersistedUserKey = undefined;
+							}
 						}
 					};
 
 					// Restore pipeline:
-					//   1. Return false when no keyCache exists
+					//   1. Return false when no userKeyCache exists
 					//   2. Load cached base64 user key
 					//   3. Return false when nothing is cached
 					//   4. Decode the cached user key
-					//   5. Re-enter activateEncryption so restore shares the same
-					//      dedup, HKDF, and hook behavior as normal sign-in
+					//   5. Re-enter activate so restore shares the same runtime and cache
+					//      ordering behavior as normal sign-in
 					//
 					// Corrupt cache entries are cleared so startup does not keep retrying
 					// the same bad value on every reload.
-					const restoreEncryption = async () => {
-						if (!config?.keyCache) return false;
+					const restoreEncryptionFromCache = async () => {
+						if (workspaceKey !== undefined) return true;
+						if (!config?.userKeyCache) return false;
 
-						const cachedUserKey = await config.keyCache.load();
+						const cachedUserKey = await config.userKeyCache.load();
 						if (!cachedUserKey) return false;
 
 						try {
-							await activateEncryption(base64ToBytes(cachedUserKey));
+							await activate(base64ToBytes(cachedUserKey));
 							return workspaceKey !== undefined;
 						} catch (error) {
 							console.error('[workspace] Cached key restore failed:', error);
-							await config.keyCache.clear();
+							await config.userKeyCache.clear();
 							return false;
 						}
 					};
 
 					// Deactivation pipeline:
-					//   1. ++generation (invalidates any in-flight HKDF from activateEncryption)
-					//   2. Clear lastUserKey and workspaceKey
-					//   3. Deactivate all stores (switch back to plaintext mode)
-					//   4. Wipe persisted data via clearData callbacks (LIFO order)
-					//   5. Clear keyCache (if configured)
-					//   6. Call onDeactivate hook
-					//
-					// Step 1 is critical: if activateEncryption is mid-HKDF when deactivate
-					// is called, the generation bump ensures the in-flight derivation's
-					// result is discarded when it resolves. Without this, the sequence
-					// activate → deactivate could end with encryption re-enabled by the
-					// stale HKDF completing after deactivation.
-					const deactivateEncryption = async () => {
-						++keyGeneration;
-						lastUserKey = undefined;
+					//   1. Clear runtime key state synchronously
+					//   2. Deactivate all stores synchronously
+					//   3. Wipe persisted data via clearData callbacks (LIFO order)
+					//   4. Serialize userKeyCache.clear() after any in-flight saves so the
+					//      final cache state matches the latest lifecycle transition
+					const deactivate = async () => {
+						++persistenceVersion;
+						activeUserKey = undefined;
+						persistedUserKey = undefined;
+						pendingPersistedUserKey = undefined;
 						workspaceKey = undefined;
 						for (const store of encryptedStores) {
 							store.deactivateEncryption();
@@ -607,35 +608,23 @@ export function createWorkspace<
 								console.error('Extension clearData error:', err);
 							}
 						}
-						await config?.keyCache?.clear();
-						await config?.onDeactivate?.();
+						await runSerializedPersistence(async () => {
+							await config?.userKeyCache?.clear();
+						});
 					};
 
 					return {
-						isEncrypted() {
+						get isEncrypted() {
 							return workspaceKey !== undefined;
 						},
-						activateEncryption,
-						restoreEncryption,
-						deactivateEncryption,
+						activate,
+						restoreEncryptionFromCache,
+						deactivate,
 					};
 				}
 
 				const encryption = createEncryptionController();
-
-				Object.defineProperty(client, 'isEncrypted', {
-					get() {
-						return encryption.isEncrypted();
-					},
-					enumerable: true,
-					configurable: true,
-				});
-
-				Object.assign(client, {
-					activateEncryption: encryption.activateEncryption,
-					restoreEncryption: encryption.restoreEncryption,
-					deactivateEncryption: encryption.deactivateEncryption,
-				});
+				Object.assign(client, { encryption });
 
 				return builder as unknown as WorkspaceClientBuilder<
 					TId,
@@ -644,7 +633,7 @@ export function createWorkspace<
 					TAwarenessDefinitions,
 					TExtensions,
 					Record<string, never>,
-					EncryptionMethods
+					{ encryption: WorkspaceEncryptionController }
 				>;
 			},
 

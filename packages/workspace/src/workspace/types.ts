@@ -9,7 +9,7 @@ import type { JsonObject } from 'wellcrafted/json';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { KeyCache } from '../shared/crypto/key-cache.js';
+import type { UserKeyCache } from './user-key-cache.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { Timeline } from '../timeline/timeline.js';
 import type { Extension, MaybePromise } from './lifecycle.js';
@@ -1011,25 +1011,19 @@ export type WorkspaceClientWithActions<
  * 1. **User key** (your input) — a 32-byte root key from any source (server HKDF, PBKDF2 password, cache)
  * 2. **Workspace key** (derived internally) — `HKDF(userKey, "workspace:{id}")` ensures per-workspace isolation
  *
- * `keyCache` owns the cached user-key lifecycle:
+ * `userKeyCache` owns the cached user-key lifecycle:
  * - `save` after successful activation
  * - `load` during startup restore
  * - `clear` after deactivation
- *
- * Hooks remain available for side effects that sit next to encryption
- * without owning the cached-key boundary.
- *
- * Symmetric hooks for the two encryption transitions:
- * - `onActivate` — fires after HKDF derivation succeeds and stores are activated
- * - `onDeactivate` — fires after stores are cleared and IndexedDB is wiped
  */
 export type EncryptionConfig = {
 	/**
 	 * Optional cache for the raw user key as a base64 string.
 	 *
 	 * This is the local-first startup seam: the workspace saves the user key
-	 * after activation, restores it on the next launch via `restoreEncryption()`,
-	 * and clears it during `deactivateEncryption()`.
+	 * after activation, restores it on the next launch via
+	 * `encryption.restoreEncryptionFromCache()`, and clears it during
+	 * `encryption.deactivate()`.
 	 *
 	 * The cached value is the root user key, not the derived per-workspace key.
 	 * That keeps the cache format stable across workspace ids while the runtime
@@ -1038,80 +1032,42 @@ export type EncryptionConfig = {
 	 * @example
 	 * ```typescript
 	 * createWorkspace(definition).withEncryption({
-	 *   keyCache,
+	 *   userKeyCache,
 	 * })
 	 * ```
 	 */
-	keyCache?: KeyCache;
-	/**
-	 * Called after `activateEncryption()` successfully derives the workspace key
-	 * and activates all encrypted stores. Runs after the built-in `keyCache.save()`
-	 * step when a cache is configured. Does NOT fire on dedup skip (same key passed
-	 * twice) or when a stale derivation is discarded.
-	 *
-	 * Use this for adjacent side effects. The cached-key lifecycle itself now lives
-	 * under `keyCache`.
-	 *
-	 * @param userKey - The raw user key bytes passed to `activateEncryption()`
-	 *
-	 * @example
-	 * ```typescript
-	 * createWorkspace(definition).withEncryption({
-	 *   keyCache,
-	 *   onActivate: (userKey) => analytics.track('workspace-unlocked', {
-	 *     userKeyLength: userKey.length,
-	 *   }),
-	 * })
-	 * ```
-	 */
-	onActivate?: (userKey: Uint8Array) => MaybePromise<void>;
-	/**
-	 * Called after `deactivateEncryption()` completes store cleanup, IndexedDB wipe,
-	 * and built-in `keyCache.clear()` handling.
-	 *
-	 * Use for platform-specific cleanup that sits next to encryption teardown
-	 * without owning the cached-key boundary itself.
-	 *
-	 * @example
-	 * ```typescript
-	 * createWorkspace(definition).withEncryption({
-	 *   keyCache,
-	 *   onDeactivate: () => auditLog('workspace-locked'),
-	 * })
-	 * ```
-	 */
-	onDeactivate?: () => MaybePromise<void>;
+	userKeyCache?: UserKeyCache;
 };
 
 /**
- * Encryption methods added to the workspace client by `.withEncryption()`.
+ * Encryption controller added to the workspace client by `.withEncryption()`.
  *
- * These methods are NOT present on the base `WorkspaceClient` — only when
+ * This controller is NOT present on the base `WorkspaceClient` — only when
  * `.withEncryption()` is called. This prevents non-encryption consumers
- * (Whispering, CLI) from seeing encryption methods on the type.
+ * (Whispering, CLI) from seeing encryption APIs on the type.
  *
  * Typical lifecycle in a Chrome extension:
  *
  * ```typescript
  * // Build (once, at module scope)
  * const workspace = createWorkspace(definition)
- *   .withEncryption({ keyCache })
+ *   .withEncryption({ userKeyCache })
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createSyncExtension({ ... }));
  *
  * // Sign-in: just activate — the workspace caches the user key automatically
- * await workspace.activateEncryption(base64ToBytes(session.encryptionKey));
+ * await workspace.encryption.activate(base64ToBytes(session.userKeyBase64));
  *
  * // Sidebar reopen: restore from cache (no server roundtrip)
- * await workspace.restoreEncryption();
+ * await workspace.encryption.restoreEncryptionFromCache();
  *
- * // Sign-out: deactivate (→ clear stores → wipe IndexedDB → keyCache.clear())
- * await workspace.deactivateEncryption();
+ * // Sign-out: deactivate (→ clear stores → wipe IndexedDB → userKeyCache.clear())
+ * await workspace.encryption.deactivate();
  * ```
  */
-export type EncryptionMethods = {
+export type WorkspaceEncryptionController = {
 	/** Whether encryption is currently active (a key has been derived and applied). */
-	readonly isEncrypted: boolean;
+	isEncrypted: boolean;
 	/**
 	 * Activate encryption with a root user key.
 	 *
@@ -1130,35 +1086,38 @@ export type EncryptionMethods = {
 	 * - HKDF is deterministic and storage-free\u2014no key database needed
 	 *
 	 * The user key can come from any source\u2014the workspace doesn't care:
-	 * - **Cloud**: `base64ToBytes(session.encryptionKey)` (server-derived via HKDF)
+	 * - **Cloud**: `base64ToBytes(session.userKeyBase64)` (server-derived via HKDF)
 	 * - **Self-hosted**: `deriveKeyFromPassword(password, salt)` (PBKDF2, 600k iterations)
-	 * - **Cache restore**: `restoreEncryption()` (previously cached key)
+	 * - **Cache restore**: `restoreEncryptionFromCache()` (previously cached key)
 	 *
-	 * Pipeline: dedup (same bytes \u2192 skip) \u2192 HKDF derivation \u2192 race check \u2192 apply to stores \u2192 keyCache.save \u2192 onActivate hook.
+	 * Pipeline: dedup (same runtime key + persisted cache \u2192 skip)
+	 * \u2192 synchronous HKDF derivation
+	 * \u2192 synchronous store activation
+	 * \u2192 awaited userKeyCache.save.
 	 *
-	 * The derivation is async (HKDF via `crypto.subtle`). A generation counter protects
-	 * against races: if the user signs out mid-derivation, the stale result is discarded
-	 * when it resolves because `deactivateEncryption` bumped the counter.
+	 * The runtime unlock step is synchronous now: `activate()` derives the workspace
+	 * key and applies it to encrypted stores before awaiting cache persistence.
+	 * The method stays async publicly because cache writes still need awaiting.
 	 *
 	 * @param userKey - Raw user key bytes (32-byte Uint8Array). NOT a workspace-specific key\u2014
-	 *   the workspace derives that internally. Pass `base64ToBytes(session.encryptionKey)` for
+	 *   the workspace derives that internally. Pass `base64ToBytes(session.userKeyBase64)` for
 	 *   cloud mode or `deriveKeyFromPassword(password, salt)` for password mode.
 	 *
 	 * @example
 	 * ```typescript
 	 * // Cloud: server-derived key from session
-	 * await workspace.activateEncryption(base64ToBytes(session.encryptionKey));
+	 * await workspace.encryption.activate(base64ToBytes(session.userKeyBase64));
 	 *
 	 * // Self-hosted: password-derived key (PBKDF2 \u2192 user key \u2192 internal HKDF \u2192 workspace key)
 	 * const salt = await deriveSalt(userId, workspaceId);
 	 * const userKey = await deriveKeyFromPassword(password, salt);
-	 * await workspace.activateEncryption(userKey);
+	 * await workspace.encryption.activate(userKey);
 	 *
 	 * // Cache restore: previously cached user key
-	 * await workspace.restoreEncryption();
+	 * await workspace.encryption.restoreEncryptionFromCache();
 	 * ```
 	 */
-	activateEncryption(userKey: Uint8Array): Promise<void>;
+	activate(userKey: Uint8Array): Promise<void>;
 	/**
 	 * Restore encryption from a configured key cache.
 	 *
@@ -1166,39 +1125,29 @@ export type EncryptionMethods = {
 	 * read the cache directly, decode base64, or feed raw bytes back into the
 	 * activation path themselves.
 	 *
-	 * Returns `false` when no `keyCache` is configured or when the cache is empty.
+	 * Returns `false` when no `userKeyCache` is configured or when the cache is empty.
 	 * Returns `true` when a cached key was loaded and activation completed.
 	 *
 	 * @example
 	 * ```typescript
-	 * const restored = await workspace.restoreEncryption();
+	 * const restored = await workspace.encryption.restoreEncryptionFromCache();
 	 * if (restored) {
 	 *   console.log('Workspace unlocked before the auth roundtrip finished');
 	 * }
 	 * ```
 	 */
-	restoreEncryption(): Promise<boolean>;
+	restoreEncryptionFromCache(): Promise<boolean>;
 	/**
 	 * Deactivate encryption and wipe persisted data.
 	 *
-	 * Pipeline: invalidate in-flight HKDF → clear stores → wipe IndexedDB (LIFO) → keyCache.clear → onDeactivate hook.
+	 * Pipeline: clear runtime key state → clear stores → wipe IndexedDB (LIFO) →
+	 * await userKeyCache.clear.
 	 *
 	 * Safe to call even if encryption was never activated — the full pipeline runs
 	 * regardless (stores and callbacks are no-ops when already deactivated).
 	 */
-	deactivateEncryption(): Promise<void>;
+	deactivate(): Promise<void>;
 };
-
-/**
- * Narrow workspace encryption surface for consumers that coordinate auth.
- *
- * This keeps auth-layer packages coupled to the encryption lifecycle they need
- * without depending on the full workspace client shape.
- */
-export type WorkspaceEncryptionHandle = Pick<
-	EncryptionMethods,
-	'activateEncryption' | 'restoreEncryption' | 'deactivateEncryption'
->;
 export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
@@ -1365,24 +1314,25 @@ export type WorkspaceClientBuilder<
 	/**
 	 * Configure encryption for this workspace.
 	 *
-	 * Adds `activateEncryption`, `restoreEncryption`, `deactivateEncryption`, and
-	 * `isEncrypted` to the client. Without this call, those methods don't exist on
-	 * the type—preventing accidental use in non-encryption workspaces (Whispering, CLI).
+	 * Adds `workspace.encryption` to the client. Without this call, that namespace
+	 * doesn't exist on the type—preventing accidental use in non-encryption
+	 * workspaces (Whispering, CLI).
 	 *
-	 * Batteries-included: handles HKDF derivation, byte-level dedup, race protection
-	 * via generation counter, and the full cached-key lifecycle when `keyCache` is provided.
+	 * Batteries-included: handles synchronous HKDF derivation, runtime activation,
+	 * serialized cache save/clear ordering, and the full cached-key lifecycle when
+	 * `userKeyCache` is provided.
 	 *
 	 * Can be chained in any order with `.withExtension()`:
 	 *
 	 * @example
 	 * ```typescript
 	 * const workspace = createWorkspace(definition)
-	 *   .withEncryption({ keyCache })
+	 *   .withEncryption({ userKeyCache })
 	 *   .withExtension('persistence', indexeddbPersistence)
 	 *   .withExtension('sync', createSyncExtension({ ... }));
 	 *
-	 * await workspace.activateEncryption(userKeyBytes);
-	 * await workspace.restoreEncryption();
+	 * await workspace.encryption.activate(userKeyBytes);
+	 * await workspace.encryption.restoreEncryptionFromCache();
 	 * ```
 	 */
 	withEncryption(
@@ -1394,7 +1344,7 @@ export type WorkspaceClientBuilder<
 		TAwarenessDefinitions,
 		TExtensions,
 		TDocExtensions,
-		EncryptionMethods
+		{ encryption: WorkspaceEncryptionController }
 	>;
 
 	/**

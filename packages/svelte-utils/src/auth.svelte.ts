@@ -56,8 +56,8 @@ export type Auth = {
 };
 
 export type SessionField<T> = {
-	current: T;
-	set?: (value: T) => Promise<void>;
+	get(): T;
+	set(value: T): void | Promise<void>;
 	watch?: (callback: (value: T) => void) => (() => void) | undefined;
 	whenReady?: Promise<void>;
 };
@@ -95,7 +95,7 @@ export function createAuth({
 		'bootstrapping',
 	);
 	let lastError = $state<string | undefined>(undefined);
-	let hasExternalSession = $state(Boolean(user.current));
+	let hasExternalSession = $state(Boolean(user.get()));
 	let isApplyingLocalSessionChange = false;
 	let bootstrapPromise: Promise<StoredUser | null> | null = null;
 
@@ -124,15 +124,10 @@ export function createAuth({
 	}
 
 	async function writeField<T>(
-		field: { current: T; set?: (value: T) => Promise<void> },
+		field: { get(): T; set(value: T): void | Promise<void> },
 		value: T,
 	) {
-		if (field.set) {
-			await field.set(value);
-			return;
-		}
-
-		field.current = value;
+		await field.set(value);
 	}
 
 	async function writeSession(next: { user: StoredUser | null; token: string | null }) {
@@ -142,15 +137,15 @@ export function createAuth({
 
 	function getStatus(): AuthStatus {
 		if (pendingAction) return pendingAction;
-		return user.current ? 'signed-in' : 'signed-out';
+		return user.get() ? 'signed-in' : 'signed-out';
 	}
 
 	function getState(): AuthState {
 		const status = getStatus();
 		return {
 			status,
-			user: user.current,
-			token: token.current,
+			user: user.get(),
+			token: token.get(),
 			signInError: status === 'signed-out' ? lastError : undefined,
 		};
 	}
@@ -173,7 +168,7 @@ export function createAuth({
 			await run();
 		} finally {
 			isApplyingLocalSessionChange = false;
-			hasExternalSession = Boolean(user.current);
+			hasExternalSession = Boolean(user.get());
 		}
 	}
 
@@ -244,13 +239,13 @@ export function createAuth({
 			bootstrapPromise = (async () => {
 				await Promise.all([token.whenReady, user.whenReady].filter(Boolean));
 
-				if (user.current && hasTryUnlock(workspace.encryption)) {
+				if (user.get() && hasTryUnlock(workspace.encryption)) {
 					await workspace.encryption.tryUnlock();
 					setLastError(undefined);
 				}
 
 				setPendingAction(null);
-				return user.current;
+				return user.get();
 			})();
 		}
 
@@ -262,7 +257,7 @@ export function createAuth({
 		setPendingAction('checking');
 
 		try {
-			const { client, getIssuedToken } = buildClient(token.current);
+			const { client, getIssuedToken } = buildClient(token.get());
 			const { data, error } = await client.getSession();
 
 			if (error) {
@@ -274,7 +269,7 @@ export function createAuth({
 				}
 
 				setPendingAction(null);
-				return user.current;
+				return user.get();
 			}
 
 			if (!data) {
@@ -298,18 +293,18 @@ export function createAuth({
 			}
 		} catch {
 			setPendingAction(null);
-			return user.current;
+			return user.get();
 		}
 
 		setPendingAction(null);
-		return user.current;
+		return user.get();
 	}
 
 	const handleExternalSessionChange = () => {
 		if (isApplyingLocalSessionChange) return;
 
 		const wasSignedIn = hasExternalSession;
-		const isSignedIn = Boolean(user.current);
+		const isSignedIn = Boolean(user.get());
 		hasExternalSession = isSignedIn;
 
 		setPendingAction(null);
@@ -348,11 +343,11 @@ export function createAuth({
 		},
 
 		get user() {
-			return user.current;
+			return user.get();
 		},
 
 		get token() {
-			return token.current;
+			return token.get();
 		},
 
 		get signInError() {
@@ -363,8 +358,9 @@ export function createAuth({
 
 		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
 			const headers = new Headers(init?.headers);
-			if (token.current) {
-				headers.set('Authorization', `Bearer ${token.current}`);
+			const authToken = token.get();
+			if (authToken) {
+				headers.set('Authorization', `Bearer ${authToken}`);
 			}
 
 			return fetch(input, {
@@ -435,7 +431,7 @@ export function createAuth({
 			setPendingAction('signing-out');
 
 			try {
-				const { client } = buildClient(token.current);
+				const { client } = buildClient(token.get());
 				const { error } = await client.signOut();
 				if (error) {
 					throw new Error(`Sign-out failed: ${extractErrorMessage(error)}`);

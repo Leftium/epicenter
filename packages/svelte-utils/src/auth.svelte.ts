@@ -272,16 +272,12 @@ export function createWorkspaceAuth({
 		return store.read().user ? 'signed-in' : 'signed-out';
 	}
 
-	function getSignInError() {
-		return getStatus() === 'signed-out' ? lastError : undefined;
-	}
-
 	function getState(): WorkspaceAuthState {
 		return {
 			status: getStatus(),
 			user: store.read().user,
 			token: store.read().token,
-			signInError: getSignInError(),
+			signInError: getStatus() === 'signed-out' ? lastError : undefined,
 		};
 	}
 
@@ -331,19 +327,12 @@ export function createWorkspaceAuth({
 		}
 	}
 
-	function getUserKeyBytes(result: AuthResult) {
+	async function writeAuthenticatedSession(result: AuthResult) {
 		if (!result.userKeyBase64) {
 			return WorkspaceAuthError.MissingUserKeyBase64();
 		}
 
-		return Ok(base64ToBytes(result.userKeyBase64));
-	}
-
-	async function writeAuthenticatedSession(result: AuthResult) {
-		const { data: userKey, error } = getUserKeyBytes(result);
-		if (error) return Err(error);
-
-		await workspace.encryption.unlock(userKey);
+		await workspace.encryption.unlock(base64ToBytes(result.userKeyBase64));
 		await applyLocalSessionChange(async () => {
 			await store.write({ user: result.user, token: result.token });
 		});
@@ -390,22 +379,20 @@ export function createWorkspaceAuth({
 		setPendingAction(null);
 	}
 
-	async function runBootstrap() {
-		await store.ready;
-
-		const snapshot = store.read();
-		if (snapshot.user && hasTryUnlock(workspace.encryption)) {
-			await workspace.encryption.tryUnlock();
-			setLastError(undefined);
-		}
-
-		setPendingAction(null);
-		return snapshot.user;
-	}
-
 	async function bootstrap() {
 		if (!bootstrapPromise) {
-			bootstrapPromise = runBootstrap();
+			bootstrapPromise = (async () => {
+				await store.ready;
+
+				const snapshot = store.read();
+				if (snapshot.user && hasTryUnlock(workspace.encryption)) {
+					await workspace.encryption.tryUnlock();
+					setLastError(undefined);
+				}
+
+				setPendingAction(null);
+				return snapshot.user;
+			})();
 		}
 
 		return await bootstrapPromise;
@@ -493,7 +480,7 @@ export function createWorkspaceAuth({
 		},
 
 		get signInError() {
-			return getSignInError();
+			return getState().signInError;
 		},
 
 		subscribe(listener) {
@@ -629,11 +616,7 @@ function createBetterAuthClient({
 			if (!data) return null;
 
 			const customData = data as typeof data & Partial<CustomSessionFields>;
-			return {
-				user: toStoredUser(customData.user),
-				token: getIssuedToken() ?? token,
-				userKeyBase64: customData.encryptionKey ?? null,
-			};
+			return toAuthResult(customData, getIssuedToken() ?? token);
 		},
 	};
 }

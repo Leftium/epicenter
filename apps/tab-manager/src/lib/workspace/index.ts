@@ -3,10 +3,11 @@ export {
 	type WorkspaceActionName,
 	type WorkspaceTools,
 	workspace,
+	workspaceEncryption,
 	workspaceDefinitions,
 	workspaceTools,
 	workspaceToolTitles,
-} from './client';
+} from './client.svelte';
 export {
 	type Bookmark,
 	BookmarkId,

@@ -1012,18 +1012,17 @@ export type WorkspaceClientWithActions<
  * 2. **Workspace key** (derived internally) — `HKDF(userKey, "workspace:{id}")` ensures per-workspace isolation
  *
  * `userKeyCache` owns the cached user-key lifecycle:
- * - `save` after successful activation
- * - `load` during startup restore
- * - `clear` after deactivation
+ * - `save` after successful unlock
+ * - `load` during startup unlock
+ * - `clear` during `workspace.clearLocalData()`
  */
 export type EncryptionConfig = {
 	/**
 	 * Optional cache for the raw user key as a base64 string.
 	 *
 	 * This is the local-first startup seam: the workspace saves the user key
-	 * after activation, restores it on the next launch via
-	 * `encryption.restoreEncryptionFromCache()`, and clears it during
-	 * `encryption.deactivate()`.
+	 * after `encryption.unlock()`, restores it on the next launch via
+	 * `encryption.tryUnlock()`, and clears it during `workspace.clearLocalData()`.
 	 *
 	 * The cached value is the root user key, not the derived per-workspace key.
 	 * That keeps the cache format stable across workspace ids while the runtime
@@ -1036,118 +1035,71 @@ export type EncryptionConfig = {
 	 * })
 	 * ```
 	 */
-	userKeyCache?: UserKeyCache;
+	userKeyCache: UserKeyCache;
 };
 
 /**
- * Encryption controller added to the workspace client by `.withEncryption()`.
+ * Unlock controller added to the workspace client by `.withEncryption()`.
  *
  * This controller is NOT present on the base `WorkspaceClient` — only when
  * `.withEncryption()` is called. This prevents non-encryption consumers
- * (Whispering, CLI) from seeing encryption APIs on the type.
+ * (Whispering, CLI) from seeing unlock APIs on the type.
  *
  * Typical lifecycle in a Chrome extension:
  *
  * ```typescript
- * // Build (once, at module scope)
  * const workspace = createWorkspace(definition)
  *   .withEncryption({ userKeyCache })
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createSyncExtension({ ... }));
  *
- * // Sign-in: just activate — the workspace caches the user key automatically
- * await workspace.encryption.activate(base64ToBytes(session.userKeyBase64));
- *
- * // Sidebar reopen: restore from cache (no server roundtrip)
- * await workspace.encryption.restoreEncryptionFromCache();
- *
- * // Sign-out: deactivate (→ clear stores → wipe IndexedDB → userKeyCache.clear())
- * await workspace.encryption.deactivate();
+ * await workspace.encryption.tryUnlock();
+ * await workspace.encryption.unlock(base64ToBytes(session.userKeyBase64));
+ * workspace.encryption.lock();
+ * await workspace.clearLocalData();
  * ```
  */
 export type WorkspaceEncryptionController = {
-	/** Whether encryption is currently active (a key has been derived and applied). */
-	isEncrypted: boolean;
+	/** Whether the runtime is currently unlocked. */
+	isUnlocked: boolean;
 	/**
-	 * Activate encryption with a root user key.
+	 * Unlock the workspace with a root user key.
 	 *
-	 * This accepts a **root/user-level key**, not a final workspace content key.
-	 * The workspace internally derives a per-workspace key via HKDF-SHA256:
-	 *
-	 * ```
-	 * userKey (your input)
-	 *   \u2192 HKDF(userKey, "workspace:{id}") \u2192 workspaceKey (used for encryption)
-	 *   \u2192 XChaCha20-Poly1305(plaintext, workspaceKey) \u2192 ciphertext
-	 * ```
-	 *
-	 * This two-stage model is intentional:
-	 * - The same user key produces **independent** per-workspace keys
-	 * - Compromising one workspace key reveals nothing about other workspaces
-	 * - HKDF is deterministic and storage-free\u2014no key database needed
-	 *
-	 * The user key can come from any source\u2014the workspace doesn't care:
-	 * - **Cloud**: `base64ToBytes(session.userKeyBase64)` (server-derived via HKDF)
-	 * - **Self-hosted**: `deriveKeyFromPassword(password, salt)` (PBKDF2, 600k iterations)
-	 * - **Cache restore**: `restoreEncryptionFromCache()` (previously cached key)
-	 *
-	 * Pipeline: dedup (same runtime key + persisted cache \u2192 skip)
-	 * \u2192 synchronous HKDF derivation
-	 * \u2192 synchronous store activation
-	 * \u2192 awaited userKeyCache.save.
-	 *
-	 * The runtime unlock step is synchronous now: `activate()` derives the workspace
-	 * key and applies it to encrypted stores before awaiting cache persistence.
-	 * The method stays async publicly because cache writes still need awaiting.
-	 *
-	 * @param userKey - Raw user key bytes (32-byte Uint8Array). NOT a workspace-specific key\u2014
-	 *   the workspace derives that internally. Pass `base64ToBytes(session.userKeyBase64)` for
-	 *   cloud mode or `deriveKeyFromPassword(password, salt)` for password mode.
-	 *
-	 * @example
-	 * ```typescript
-	 * // Cloud: server-derived key from session
-	 * await workspace.encryption.activate(base64ToBytes(session.userKeyBase64));
-	 *
-	 * // Self-hosted: password-derived key (PBKDF2 \u2192 user key \u2192 internal HKDF \u2192 workspace key)
-	 * const salt = await deriveSalt(userId, workspaceId);
-	 * const userKey = await deriveKeyFromPassword(password, salt);
-	 * await workspace.encryption.activate(userKey);
-	 *
-	 * // Cache restore: previously cached user key
-	 * await workspace.encryption.restoreEncryptionFromCache();
-	 * ```
+	 * This accepts a root user key, not a final workspace content key. The
+	 * workspace derives a per-workspace key via HKDF-SHA256, applies it to
+	 * encrypted stores synchronously, then persists the user key if a cache is
+	 * configured.
 	 */
-	activate(userKey: Uint8Array): Promise<void>;
+	unlock(userKey: Uint8Array): Promise<void>;
 	/**
-	 * Restore encryption from a configured key cache.
+	 * Lock the runtime.
 	 *
-	 * This keeps cache ownership inside the workspace boundary: callers do not
-	 * read the cache directly, decode base64, or feed raw bytes back into the
-	 * activation path themselves.
-	 *
-	 * Returns `false` when no `userKeyCache` is configured or when the cache is empty.
-	 * Returns `true` when a cached key was loaded and activation completed.
-	 *
-	 * @example
-	 * ```typescript
-	 * const restored = await workspace.encryption.restoreEncryptionFromCache();
-	 * if (restored) {
-	 *   console.log('Workspace unlocked before the auth roundtrip finished');
-	 * }
-	 * ```
+	 * Clears only in-memory key state and deactivates encrypted stores. It does
+	 * not wipe extension persistence or clear the cached user key. Use
+	 * `workspace.clearLocalData()` for sign-out.
 	 */
-	restoreEncryptionFromCache(): Promise<boolean>;
-	/**
-	 * Deactivate encryption and wipe persisted data.
-	 *
-	 * Pipeline: clear runtime key state → clear stores → wipe IndexedDB (LIFO) →
-	 * await userKeyCache.clear.
-	 *
-	 * Safe to call even if encryption was never activated — the full pipeline runs
-	 * regardless (stores and callbacks are no-ops when already deactivated).
-	 */
-	deactivate(): Promise<void>;
+	lock(): void;
 };
+
+/**
+ * Unlock controller when `.withEncryption({ userKeyCache })` is configured.
+ */
+export type WorkspaceEncryptionControllerWithCache =
+	WorkspaceEncryptionController & {
+		/**
+		 * Try to unlock from the configured key cache.
+		 *
+		 * Returns `false` when the cache is empty or invalid. Returns `true` when
+		 * a cached key was loaded and the workspace is now unlocked.
+		 */
+		tryUnlock(): Promise<boolean>;
+	};
+
+export type WorkspaceEncryptionControllerFor<
+	TConfig extends EncryptionConfig | undefined,
+> = TConfig extends EncryptionConfig
+	? WorkspaceEncryptionControllerWithCache
+	: WorkspaceEncryptionController;
 export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
@@ -1318,7 +1270,7 @@ export type WorkspaceClientBuilder<
 	 * doesn't exist on the type—preventing accidental use in non-encryption
 	 * workspaces (Whispering, CLI).
 	 *
-	 * Batteries-included: handles synchronous HKDF derivation, runtime activation,
+	 * Batteries-included: handles synchronous HKDF derivation, runtime unlock,
 	 * serialized cache save/clear ordering, and the full cached-key lifecycle when
 	 * `userKeyCache` is provided.
 	 *
@@ -1331,12 +1283,12 @@ export type WorkspaceClientBuilder<
 	 *   .withExtension('persistence', indexeddbPersistence)
 	 *   .withExtension('sync', createSyncExtension({ ... }));
 	 *
-	 * await workspace.encryption.activate(userKeyBytes);
-	 * await workspace.encryption.restoreEncryptionFromCache();
+	 * await workspace.encryption.unlock(userKeyBytes);
+	 * await workspace.encryption.tryUnlock();
 	 * ```
 	 */
-	withEncryption(
-		config?: EncryptionConfig,
+	withEncryption<TConfig extends EncryptionConfig | undefined = undefined>(
+		config?: TConfig,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
@@ -1344,7 +1296,7 @@ export type WorkspaceClientBuilder<
 		TAwarenessDefinitions,
 		TExtensions,
 		TDocExtensions,
-		{ encryption: WorkspaceEncryptionController }
+		{ encryption: WorkspaceEncryptionControllerFor<TConfig> }
 	>;
 
 	/**
@@ -1564,6 +1516,15 @@ export type WorkspaceClient<
 	 * @param update - A Uint8Array produced by `Y.encodeStateAsUpdate()` or equivalent
 	 */
 	loadSnapshot(update: Uint8Array): void;
+
+	/**
+	 * Wipe local workspace data.
+	 *
+	 * This is the sign-out primitive for local persistence. It locks the runtime
+	 * first, then calls extension `clearData()` hooks in LIFO order, then clears
+	 * the configured `userKeyCache` if encryption was set up with one.
+	 */
+	clearLocalData(): Promise<void>;
 
 
 	/**

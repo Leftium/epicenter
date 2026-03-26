@@ -1,5 +1,5 @@
 /**
- * Chrome extension `KeyCache` backed by WXT storage (`session:` area).
+ * Chrome extension `UserKeyCache` backed by WXT storage (`session:` area).
  *
  * Caches the base64-encoded encryption key so the workspace can
  * decrypt immediately on sidebar/popup reopen without a server roundtrip.
@@ -14,13 +14,14 @@
  * - Async JSON-backed API (base64 strings store natively, no conversion)
  *
  * Storage key: `'session:epicenter:encryption-key'` — single key, not per-user.
- * Only one user is active at a time, and `deactivateEncryption()` clears the
+ * Only one user is active at a time, and `workspace.encryption.deactivate()`
+ * clears the
  * cache on every sign-out, so per-user scoping would add complexity for no benefit.
  *
- * @see {@link @epicenter/workspace/shared/crypto/key-cache} — The interface this implements
+ * @see {@link @epicenter/workspace!UserKeyCache} — The interface this implements
  */
 
-import type { KeyCache } from '@epicenter/workspace/shared/crypto/key-cache';
+import type { UserKeyCache } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
 
 /**
@@ -35,7 +36,7 @@ const encryptionKeyItem = storage.defineItem<string | null>(
 );
 
 /**
- * `KeyCache` implementation using WXT storage (`session:` area).
+ * `UserKeyCache` implementation using WXT storage (`session:` area).
  *
  * Stores and retrieves the base64-encoded encryption key via WXT's typed
  * storage API. The `clear()` method only removes that key—it does not wipe
@@ -43,12 +44,12 @@ const encryptionKeyItem = storage.defineItem<string | null>(
  *
  * @example
  * ```typescript
- * import { keyCache } from '$lib/state/key-cache';
+ * import { userKeyCache } from '$lib/state/key-cache';
  *
- * createWorkspace(definition).withEncryption({ keyCache });
+ * createWorkspace(definition).withEncryption({ userKeyCache });
  * ```
  */
-export const keyCache: KeyCache = {
+export const userKeyCache: UserKeyCache = {
 	async save(keyBase64) {
 		await encryptionKeyItem.setValue(keyBase64);
 	},

@@ -14,6 +14,7 @@ import {
 	createWorkspace,
 	defineMutation,
 	defineQuery,
+	type WorkspaceEncryptionController,
 	iterateActions,
 } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
@@ -27,7 +28,7 @@ import {
 	getDeviceId,
 } from '$lib/device/device-id';
 import { authState } from '$lib/state/auth.svelte';
-import { keyCache } from '$lib/state/key-cache';
+import { userKeyCache } from '$lib/state/key-cache';
 import { serverUrl } from '$lib/state/settings.svelte';
 import { definition, generateSavedTabId } from './schema';
 
@@ -36,6 +37,8 @@ import { definition, generateSavedTabId } from './schema';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const workspace = buildWorkspaceClient();
+export const workspaceEncryption: WorkspaceEncryptionController =
+	workspace.encryption;
 
 export const workspaceTools = actionsToClientTools(workspace.actions);
 export const workspaceDefinitions = toToolDefinitions(workspaceTools);
@@ -81,7 +84,7 @@ export async function registerDevice(): Promise<void> {
 
 function buildWorkspaceClient() {
 	return createWorkspace(definition)
-		.withEncryption({ keyCache })
+		.withEncryption({ userKeyCache })
 		.withExtension('persistence', indexeddbPersistence)
 		.withExtension('broadcast', broadcastChannelSync)
 		.withExtension(

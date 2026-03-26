@@ -108,6 +108,7 @@ export { defineWorkspace } from './workspace/define-workspace';
 
 export { createWorkspace } from './workspace/create-workspace';
 export { DOCUMENTS_ORIGIN } from './workspace/create-document';
+export type { UserKeyCache } from './workspace/user-key-cache';
 
 // ════════════════════════════════════════════════════════════════════════════
 // INTROSPECTION
@@ -165,7 +166,7 @@ export type {
 	ValidRowResult,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
-	WorkspaceEncryptionHandle,
+	WorkspaceEncryptionController,
 	WorkspaceClientWithActions,
 	WorkspaceDefinition,
 } from './workspace/types';

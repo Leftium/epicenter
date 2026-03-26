@@ -11,7 +11,7 @@
  */
 
 import {
-	createChromeSessionStore,
+	createSessionStore,
 	createWorkspaceAuth,
 	StoredUser,
 } from '@epicenter/svelte/auth';
@@ -35,12 +35,9 @@ const authUser = createStorageState('local:authUser', {
 	schema: StoredUser.or('null'),
 });
 
-const store = createChromeSessionStore({
+const store = createSessionStore({
 	token: authToken,
 	user: authUser,
-	ready: Promise.all([authToken.whenReady, authUser.whenReady]).then(
-		() => undefined,
-	),
 });
 
 export const authState = createWorkspaceAuth({

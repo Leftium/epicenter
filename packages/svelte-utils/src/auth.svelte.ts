@@ -6,11 +6,7 @@ import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import type { User } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { createPersistedState } from './persisted-state.svelte';
 
@@ -23,7 +19,6 @@ const WorkspaceAuthError = defineErrors({
 		message: 'Authenticated session is missing userKeyBase64',
 	}),
 });
-type WorkspaceAuthError = InferErrors<typeof WorkspaceAuthError>;
 
 export const StoredUser = type({
 	id: 'string',
@@ -43,7 +38,7 @@ export type SessionSnapshot = {
 };
 
 export type SessionStore = {
-	ready: Promise<void>;
+	ready?: Promise<void>;
 	read(): SessionSnapshot;
 	write(snapshot: SessionSnapshot): void | Promise<void>;
 	clear(): void | Promise<void>;
@@ -164,36 +159,22 @@ export function createLocalSessionStore(prefix: string): SessionStore {
 		defaultValue: null,
 	});
 
-	return {
-		ready: Promise.resolve(),
-		read: () => ({
-			token: tokenState.current,
-			user: userState.current,
-		}),
-		write(snapshot) {
-			tokenState.current = snapshot.token;
-			userState.current = snapshot.user;
-		},
-		clear() {
-			tokenState.current = null;
-			userState.current = null;
-		},
-	};
+	return createSessionStore({
+		token: tokenState,
+		user: userState,
+	});
 }
 
-export function createChromeSessionStore({
+export function createSessionStore({
 	token,
 	user,
-	ready,
 }: {
 	token: ReactiveCell<string | null>;
 	user: ReactiveCell<StoredUser | null>;
-	ready?: Promise<void>;
 }): SessionStore {
-	const resolvedReady = (ready ??
-		Promise.all([token.whenReady, user.whenReady].filter(Boolean)).then(
-			() => undefined,
-		)) as Promise<void>;
+	const resolvedReady = Promise.all(
+		[token.whenReady, user.whenReady].filter(Boolean),
+	).then(() => undefined);
 
 	async function writeCell<T>(cell: ReactiveCell<T>, value: T) {
 		if (cell.set) {
@@ -236,6 +217,13 @@ export function createChromeSessionStore({
 			};
 		},
 	};
+}
+
+export function createChromeSessionStore(options: {
+	token: ReactiveCell<string | null>;
+	user: ReactiveCell<StoredUser | null>;
+}): SessionStore {
+	return createSessionStore(options);
 }
 
 export function createWorkspaceAuth({

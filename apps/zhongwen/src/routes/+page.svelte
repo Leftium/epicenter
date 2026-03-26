@@ -16,14 +16,13 @@
 	let dismissedError = $state(false);
 
 	const handle = $derived(chatState.active);
-	const appReady = authState.whenReady;
 
 	onMount(() => {
 		void authState.refreshSession();
 	});
 </script>
 
-{#await appReady}
+{#await authState.whenReady}
 	<div class="flex h-dvh items-center justify-center">
 		<p class="text-sm text-muted-foreground">Loading session…</p>
 	</div>

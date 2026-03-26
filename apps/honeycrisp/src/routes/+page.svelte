@@ -13,7 +13,6 @@
 	import { authState } from '$lib/auth';
 
 	let commandPaletteOpen = $state(false);
-	const appReady = authState.whenReady;
 
 	onMount(() => {
 		void authState.refreshSession();
@@ -78,7 +77,7 @@
 	}}
 />
 
-{#await appReady}
+{#await authState.whenReady}
 	<div class="flex h-screen items-center justify-center">
 		<p class="text-sm text-muted-foreground">Loading workspace…</p>
 	</div>

@@ -20,8 +20,6 @@
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
 	import { registerDevice } from '$lib/workspace';
 
-	const appReady = authState.whenReady;
-
 	onMount(() => {
 		void authState.refreshSession();
 		void registerDevice();
@@ -43,7 +41,7 @@
 </script>
 
 <Tooltip.Provider>
-	{#await appReady}
+	{#await authState.whenReady}
 		<div class="flex h-full items-center justify-center">
 			<div class="flex flex-col items-center gap-3">
 				<Spinner class="size-5 text-muted-foreground" />

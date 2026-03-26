@@ -3,8 +3,6 @@
 	import { authState } from '$lib/auth';
 	import AppShell from '$lib/components/AppShell.svelte';
 
-	const appReady = authState.whenReady;
-
 	onMount(() => {
 		void authState.refreshSession();
 		const onVisibilityChange = () => {
@@ -21,7 +19,7 @@
 	});
 </script>
 
-{#await appReady}
+{#await authState.whenReady}
 	<div class="flex h-screen items-center justify-center">
 		<p class="text-sm text-muted-foreground">Loading workspace…</p>
 	</div>

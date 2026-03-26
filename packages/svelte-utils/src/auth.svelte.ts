@@ -32,21 +32,6 @@ export const StoredUser = type({
 
 export type StoredUser = typeof StoredUser.infer;
 
-export type SessionSnapshot = {
-	token: string | null;
-	user: StoredUser | null;
-};
-
-export type SessionStore = {
-	ready?: Promise<void>;
-	read(): SessionSnapshot;
-	write(snapshot: SessionSnapshot): void | Promise<void>;
-	clear(): void | Promise<void>;
-	subscribe?(
-		listener: (snapshot: SessionSnapshot) => void,
-	): (() => void) | undefined;
-};
-
 export type WorkspaceAuthStatus =
 	| 'bootstrapping'
 	| 'checking'
@@ -99,7 +84,7 @@ type AuthResult = {
 	userKeyBase64?: string | null;
 };
 
-type ReactiveCell<T> = {
+type SessionFieldState<T> = {
 	current: T;
 	set?: (value: T) => Promise<void>;
 	watch?: (callback: (value: T) => void) => (() => void) | undefined;
@@ -147,93 +132,34 @@ function hasTryUnlock(
 	return 'tryUnlock' in encryption;
 }
 
-export function createLocalSessionStore(prefix: string): SessionStore {
-	const tokenState = createPersistedState({
+export function createLocalSessionFields(prefix: string) {
+	const token = createPersistedState({
 		key: `${prefix}:authToken`,
 		schema: type('string').or('null'),
 		defaultValue: null,
 	});
-	const userState = createPersistedState({
+	const user = createPersistedState({
 		key: `${prefix}:authUser`,
 		schema: StoredUser.or('null'),
 		defaultValue: null,
 	});
 
-	return createSessionStore({
-		token: tokenState,
-		user: userState,
-	});
-}
-
-export function createSessionStore({
-	token,
-	user,
-}: {
-	token: ReactiveCell<string | null>;
-	user: ReactiveCell<StoredUser | null>;
-}): SessionStore {
-	const resolvedReady = Promise.all(
-		[token.whenReady, user.whenReady].filter(Boolean),
-	).then(() => undefined);
-
-	async function writeCell<T>(cell: ReactiveCell<T>, value: T) {
-		if (cell.set) {
-			await cell.set(value);
-			return;
-		}
-		cell.current = value;
-	}
-
 	return {
-		ready: resolvedReady,
-		read: () => ({
-			token: token.current,
-			user: user.current,
-		}),
-		async write(snapshot) {
-			await writeCell(token, snapshot.token);
-			await writeCell(user, snapshot.user);
-		},
-		async clear() {
-			await writeCell(token, null);
-			await writeCell(user, null);
-		},
-		subscribe(listener) {
-			const notify = () => {
-				listener({
-					token: token.current,
-					user: user.current,
-				});
-			};
-			const unsubscribeToken = token.watch?.(() => {
-				notify();
-			});
-			const unsubscribeUser = user.watch?.(() => {
-				notify();
-			});
-			return () => {
-				unsubscribeToken?.();
-				unsubscribeUser?.();
-			};
-		},
+		token,
+		user,
 	};
-}
-
-export function createChromeSessionStore(options: {
-	token: ReactiveCell<string | null>;
-	user: ReactiveCell<StoredUser | null>;
-}): SessionStore {
-	return createSessionStore(options);
 }
 
 export function createWorkspaceAuth({
 	baseURL,
-	store,
+	token,
+	user,
 	workspace,
 	signInWithGoogle,
 }: {
 	baseURL: string | (() => string);
-	store: SessionStore;
+	token: SessionFieldState<string | null>;
+	user: SessionFieldState<StoredUser | null>;
 	workspace: WorkspaceAuthHandle;
 	signInWithGoogle?: (
 		client: BetterAuthInternalClient,
@@ -246,23 +172,52 @@ export function createWorkspaceAuth({
 
 	let pendingAction = $state<PendingAction>('bootstrapping');
 	let lastError = $state<string | undefined>(undefined);
-	let hasExternalSession = $state(Boolean(store.read().user));
+	let hasExternalSession = $state(Boolean(user.current));
 	let isApplyingLocalSessionChange = false;
 	let bootstrapPromise: Promise<StoredUser | null> | null = null;
 	let lastPublishedState: WorkspaceAuthState | null = null;
 
 	const listeners = new Set<(state: WorkspaceAuthState) => void>();
 
+	function readSession() {
+		return {
+			token: token.current,
+			user: user.current,
+		};
+	}
+
+	async function writeField<T>(field: SessionFieldState<T>, value: T) {
+		if (field.set) {
+			await field.set(value);
+			return;
+		}
+		field.current = value;
+	}
+
+	async function writeSession(next: {
+		token: string | null;
+		user: StoredUser | null;
+	}) {
+		await writeField(token, next.token);
+		await writeField(user, next.user);
+	}
+
+	async function clearStoredSession() {
+		await writeField(token, null);
+		await writeField(user, null);
+	}
+
 	function getStatus(): WorkspaceAuthStatus {
 		if (pendingAction) return pendingAction;
-		return store.read().user ? 'signed-in' : 'signed-out';
+		return user.current ? 'signed-in' : 'signed-out';
 	}
 
 	function getState(): WorkspaceAuthState {
+		const snapshot = readSession();
 		return {
 			status: getStatus(),
-			user: store.read().user,
-			token: store.read().token,
+			user: snapshot.user,
+			token: snapshot.token,
 			signInError: getStatus() === 'signed-out' ? lastError : undefined,
 		};
 	}
@@ -308,7 +263,7 @@ export function createWorkspaceAuth({
 			await run();
 		} finally {
 			isApplyingLocalSessionChange = false;
-			hasExternalSession = Boolean(store.read().user);
+			hasExternalSession = Boolean(user.current);
 			notify();
 		}
 	}
@@ -320,7 +275,7 @@ export function createWorkspaceAuth({
 
 		await workspace.encryption.unlock(base64ToBytes(result.userKeyBase64));
 		await applyLocalSessionChange(async () => {
-			await store.write({ user: result.user, token: result.token });
+			await writeSession({ user: result.user, token: result.token });
 		});
 		setLastError(undefined);
 		return Ok(undefined);
@@ -329,7 +284,7 @@ export function createWorkspaceAuth({
 	async function clearSession() {
 		await workspace.clearLocalData();
 		await applyLocalSessionChange(async () => {
-			await store.clear();
+			await clearStoredSession();
 		});
 		setLastError(undefined);
 	}
@@ -368,9 +323,9 @@ export function createWorkspaceAuth({
 	async function bootstrap() {
 		if (!bootstrapPromise) {
 			bootstrapPromise = (async () => {
-				await store.ready;
+				await Promise.all([token.whenReady, user.whenReady].filter(Boolean));
 
-				const snapshot = store.read();
+				const snapshot = readSession();
 				if (snapshot.user && hasTryUnlock(workspace.encryption)) {
 					await workspace.encryption.tryUnlock();
 					setLastError(undefined);
@@ -388,7 +343,7 @@ export function createWorkspaceAuth({
 		await bootstrap();
 		setPendingAction('checking');
 
-		const snapshot = store.read();
+		const snapshot = readSession();
 		const { data: result, error } = await tryAsync({
 			try: () => client.getSession(snapshot.token),
 			catch: (error) => Err(toTransportError(error)),
@@ -402,7 +357,7 @@ export function createWorkspaceAuth({
 				return null;
 			}
 
-			const cachedUser = store.read().user;
+			const cachedUser = user.current;
 			setPendingAction(null);
 			return cachedUser;
 		}
@@ -424,11 +379,11 @@ export function createWorkspaceAuth({
 		return result.user;
 	}
 
-	store.subscribe?.((snapshot) => {
+	const handleExternalSessionChange = () => {
 		if (isApplyingLocalSessionChange) return;
 
 		const wasSignedIn = hasExternalSession;
-		const isSignedIn = Boolean(snapshot.user);
+		const isSignedIn = Boolean(user.current);
 		hasExternalSession = isSignedIn;
 
 		setPendingAction(null);
@@ -446,6 +401,13 @@ export function createWorkspaceAuth({
 		}
 
 		notify();
+	};
+
+	token.watch?.(() => {
+		handleExternalSessionChange();
+	});
+	user.watch?.(() => {
+		handleExternalSessionChange();
 	});
 
 	return {
@@ -458,11 +420,11 @@ export function createWorkspaceAuth({
 		},
 
 		get user() {
-			return store.read().user;
+			return user.current;
 		},
 
 		get token() {
-			return store.read().token;
+			return token.current;
 		},
 
 		get signInError() {
@@ -482,9 +444,9 @@ export function createWorkspaceAuth({
 
 		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
 			const headers = new Headers(init?.headers);
-			const token = store.read().token;
-			if (token) {
-				headers.set('Authorization', `Bearer ${token}`);
+			const authToken = token.current;
+			if (authToken) {
+				headers.set('Authorization', `Bearer ${authToken}`);
 			}
 			return fetch(input, {
 				...init,
@@ -511,7 +473,7 @@ export function createWorkspaceAuth({
 		async signOut() {
 			setPendingAction('signing-out');
 			await tryAsync({
-				try: () => client.signOut(store.read().token),
+				try: () => client.signOut(token.current),
 				catch: () => Ok(undefined),
 			});
 			await clearSession();

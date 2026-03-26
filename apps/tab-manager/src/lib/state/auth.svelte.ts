@@ -10,11 +10,7 @@
  * @see {@link ./key-cache} — session-scoped user-key cache
  */
 
-import {
-	createSessionStore,
-	createWorkspaceAuth,
-	StoredUser,
-} from '@epicenter/svelte/auth';
+import { createWorkspaceAuth, StoredUser } from '@epicenter/svelte/auth';
 import { type } from 'arktype';
 import { workspace } from '$lib/workspace';
 import { remoteServerUrl } from './settings.svelte';
@@ -35,14 +31,10 @@ const authUser = createStorageState('local:authUser', {
 	schema: StoredUser.or('null'),
 });
 
-const store = createSessionStore({
-	token: authToken,
-	user: authUser,
-});
-
 export const authState = createWorkspaceAuth({
 	baseURL: () => remoteServerUrl.current,
-	store,
+	token: authToken,
+	user: authUser,
 	workspace,
 	signInWithGoogle: async (betterAuthClient) => {
 		const redirectUri = browser.identity.getRedirectURL();

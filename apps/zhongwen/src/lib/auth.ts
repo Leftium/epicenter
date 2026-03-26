@@ -1,6 +1,6 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
-	createLocalSessionStore,
+	createLocalSessionFields,
 	type StoredUser,
 } from '@epicenter/svelte/auth';
 import { createAuthClient } from 'better-auth/client';
@@ -37,7 +37,7 @@ class AuthFlowInterrupt extends Error {
 	}
 }
 
-const store = createLocalSessionStore('zhongwen');
+const { token, user } = createLocalSessionFields('zhongwen');
 
 function createAuth() {
 	let pendingAction = $state<PendingAction>('bootstrapping');
@@ -73,14 +73,14 @@ function createAuth() {
 
 	function getStatus(): AuthStatus {
 		if (pendingAction) return pendingAction;
-		return store.read().user ? 'signed-in' : 'signed-out';
+		return user.current ? 'signed-in' : 'signed-out';
 	}
 
 	function getState(): SessionAuthState {
 		return {
 			status: getStatus(),
-			user: store.read().user,
-			token: store.read().token,
+			user: user.current,
+			token: token.current,
 			signInError: getStatus() === 'signed-out' ? lastError : undefined,
 		};
 	}
@@ -115,14 +115,16 @@ function createAuth() {
 		notify();
 	}
 
-	async function writeSession(user: StoredUser, token: string | null) {
-		await store.write({ user, token });
+	async function writeSession(nextUser: StoredUser, nextToken: string | null) {
+		user.current = nextUser;
+		token.current = nextToken;
 		setLastError(undefined);
 		notify();
 	}
 
 	async function clearSession() {
-		await store.clear();
+		user.current = null;
+		token.current = null;
 		setLastError(undefined);
 		notify();
 	}
@@ -130,9 +132,9 @@ function createAuth() {
 	async function bootstrap() {
 		if (!bootstrapPromise) {
 			bootstrapPromise = (async () => {
-				await store.ready;
+				await Promise.all([token.whenReady, user.whenReady].filter(Boolean));
 				setPendingAction(null);
-				return store.read().user;
+				return user.current;
 			})();
 		}
 
@@ -144,19 +146,23 @@ function createAuth() {
 		setPendingAction('checking');
 
 		try {
-			const snapshot = store.read();
+			const snapshot = {
+				token: token.current,
+				user: user.current,
+			};
 			const { client, getIssuedToken } = buildClient(snapshot.token);
 			const { data, error } = await client.getSession();
 
 			if (error) {
-				const status = typeof error.status === 'number' ? error.status : undefined;
+				const status =
+					typeof error.status === 'number' ? error.status : undefined;
 				if (status !== undefined && status < 500) {
 					await clearSession();
 					setPendingAction(null);
 					return null;
 				}
 
-				const cachedUser = store.read().user;
+				const cachedUser = user.current;
 				setPendingAction(null);
 				return cachedUser;
 			}
@@ -167,12 +173,12 @@ function createAuth() {
 				return null;
 			}
 
-			const user = toStoredUser(data.user);
-			await writeSession(user, getIssuedToken() ?? snapshot.token);
+			const nextUser = toStoredUser(data.user);
+			await writeSession(nextUser, getIssuedToken() ?? snapshot.token);
 			setPendingAction(null);
-			return user;
+			return nextUser;
 		} catch {
-			const cachedUser = store.read().user;
+			const cachedUser = user.current;
 			setPendingAction(null);
 			return cachedUser;
 		}
@@ -188,11 +194,11 @@ function createAuth() {
 		},
 
 		get user() {
-			return store.read().user;
+			return user.current;
 		},
 
 		get token() {
-			return store.read().token;
+			return token.current;
 		},
 
 		get signInError() {
@@ -212,9 +218,9 @@ function createAuth() {
 
 		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
 			const headers = new Headers(init?.headers);
-			const token = store.read().token;
-			if (token) {
-				headers.set('Authorization', `Bearer ${token}`);
+			const authToken = token.current;
+			if (authToken) {
+				headers.set('Authorization', `Bearer ${authToken}`);
 			}
 			return fetch(input, {
 				...init,
@@ -246,7 +252,7 @@ function createAuth() {
 			setPendingAction('signing-out');
 
 			try {
-				const { client } = buildClient(store.read().token);
+				const { client } = buildClient(token.current);
 				await client.signOut();
 			} catch {}
 

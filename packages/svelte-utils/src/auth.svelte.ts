@@ -6,13 +6,24 @@ import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
 import type { User } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
-import { extractErrorMessage } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok, Err, tryAsync } from 'wellcrafted/result';
 import { createPersistedState } from './persisted-state.svelte';
 
 type CustomSessionFields = {
 	encryptionKey: string;
 };
+
+const WorkspaceAuthError = defineErrors({
+	MissingUserKeyBase64: () => ({
+		message: 'Authenticated session is missing userKeyBase64',
+	}),
+});
+type WorkspaceAuthError = InferErrors<typeof WorkspaceAuthError>;
 
 export const StoredUser = type({
 	id: 'string',
@@ -320,19 +331,24 @@ export function createWorkspaceAuth({
 		}
 	}
 
-	function requireUserKeyBase64(result: AuthResult) {
-		if (result.userKeyBase64) return result.userKeyBase64;
-		throw new Error('Workspace auth requires userKeyBase64');
+	function getUserKeyBytes(result: AuthResult) {
+		if (!result.userKeyBase64) {
+			return WorkspaceAuthError.MissingUserKeyBase64();
+		}
+
+		return Ok(base64ToBytes(result.userKeyBase64));
 	}
 
 	async function writeAuthenticatedSession(result: AuthResult) {
-		await workspace.encryption.unlock(
-			base64ToBytes(requireUserKeyBase64(result)),
-		);
+		const { data: userKey, error } = getUserKeyBytes(result);
+		if (error) return Err(error);
+
+		await workspace.encryption.unlock(userKey);
 		await applyLocalSessionChange(async () => {
 			await store.write({ user: result.user, token: result.token });
 		});
 		setLastError(undefined);
+		return Ok(undefined);
 	}
 
 	async function clearSession() {
@@ -352,7 +368,8 @@ export function createWorkspaceAuth({
 		const { error } = await tryAsync({
 			try: async () => {
 				const result = await run();
-				await writeAuthenticatedSession(result);
+				const { error: writeError } = await writeAuthenticatedSession(result);
+				if (writeError) return Err(writeError);
 			},
 			catch: (error) => Err(error),
 		});
@@ -423,14 +440,13 @@ export function createWorkspaceAuth({
 			return null;
 		}
 
-		if (!result.userKeyBase64) {
+		const { error: writeError } = await writeAuthenticatedSession(result);
+		if (writeError) {
 			await clearSession();
-			setLastError('Session refresh failed: missing userKeyBase64');
+			setLastError(`Session refresh failed: ${writeError.message}`);
 			setPendingAction(null);
 			return null;
 		}
-
-		await writeAuthenticatedSession(result);
 		setPendingAction(null);
 		return result.user;
 	}

@@ -76,17 +76,9 @@ export type SyncExtensionConfig = {
 	 * disconnect the current WebSocket and start a new connection with
 	 * a fresh token from `getToken`.
 	 *
-	 * @example Svelte reactive token watcher
+	 * @example Auth subscription
 	 * ```typescript
-	 * onTokenChange: (reconnect) => {
-	 *   let prev = authState.token;
-	 *   return $effect.root(() => {
-	 *     $effect(() => {
-	 *       const token = authState.token;
-	 *       if (token !== prev) { prev = token; reconnect(); }
-	 *     });
-	 *   });
-	 * }
+	 * onTokenChange: authState.onTokenChange
 	 * ```
 	 */
 	onTokenChange?: (reconnect: () => void) => () => void;

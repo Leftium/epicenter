@@ -25,6 +25,7 @@ const tokenField: SessionField<string | null> = {
 	set: (value) => {
 		token.current = value;
 	},
+	watch: token.watch,
 };
 
 const userField: SessionField<StoredUser | null> = {
@@ -32,6 +33,7 @@ const userField: SessionField<StoredUser | null> = {
 	set: (value) => {
 		user.current = value;
 	},
+	watch: user.watch,
 };
 
 export const authState = createAuth({

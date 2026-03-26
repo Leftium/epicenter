@@ -22,18 +22,7 @@ const workspace = createWorkspace(honeycrisp)
 		createSyncExtension({
 			url: (workspaceId) => `${APP_URLS.API}/workspaces/${workspaceId}`,
 			getToken: async () => authState.token,
-			onTokenChange: (reconnect) => {
-				let prev = authState.token;
-				return $effect.root(() => {
-					$effect(() => {
-						const token = authState.token;
-						if (token !== prev) {
-							prev = token;
-							reconnect();
-						}
-					});
-				});
-			},
+			onTokenChange: authState.onTokenChange,
 		}),
 	);
 

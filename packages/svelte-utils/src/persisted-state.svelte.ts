@@ -152,19 +152,30 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 	}
 
 	let value = $state(readFromStorage());
+	const listeners = new Set<
+		(value: StandardSchemaV1.InferOutput<TSchema>) => void
+	>();
+
+	function setValue(nextValue: StandardSchemaV1.InferOutput<TSchema>) {
+		if (Object.is(value, nextValue)) return;
+		value = nextValue;
+		for (const listener of listeners) {
+			listener(nextValue);
+		}
+	}
 
 	// Cross-tab sync: `storage` event fires when ANOTHER tab writes to localStorage.
 	// sessionStorage doesn't fire cross-tab events, so enabling this is harmless.
 	if (syncTabs) {
 		window.addEventListener('storage', (e) => {
 			if (e.key !== key) return;
-			value = parseRawValue(e.newValue);
+			setValue(parseRawValue(e.newValue));
 		});
 	}
 
 	// Same-tab sync: catches DevTools edits and writes from other libraries.
 	window.addEventListener('focus', () => {
-		value = readFromStorage();
+		setValue(readFromStorage());
 	});
 
 	return {
@@ -172,12 +183,18 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 			return value;
 		},
 		set current(newValue: StandardSchemaV1.InferOutput<TSchema>) {
-			value = newValue;
+			setValue(newValue);
 			try {
 				storageApi.setItem(key, JSON.stringify(newValue));
 			} catch (error) {
 				onUpdateError?.(error);
 			}
+		},
+		watch(listener: (value: StandardSchemaV1.InferOutput<TSchema>) => void) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
 		},
 	};
 }

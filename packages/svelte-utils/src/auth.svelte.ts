@@ -1,6 +1,6 @@
 import type {
-	WorkspaceEncryptionController,
-	WorkspaceEncryptionControllerWithCache,
+	WorkspaceEncryption,
+	WorkspaceEncryptionWithCache,
 } from '@epicenter/workspace';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { type } from 'arktype';
@@ -11,7 +11,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, Err, tryAsync } from 'wellcrafted/result';
+import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { createPersistedState } from './persisted-state.svelte';
 
 type CustomSessionFields = {
@@ -132,10 +132,8 @@ type BetterAuthClient = {
 	getSession(token: string | null): Promise<AuthResult | null>;
 };
 
-type WorkspaceHandle = {
-	encryption:
-		| WorkspaceEncryptionController
-		| WorkspaceEncryptionControllerWithCache;
+type WorkspaceAuthHandle = {
+	encryption: WorkspaceEncryption | WorkspaceEncryptionWithCache;
 	clearLocalData(): Promise<void>;
 };
 
@@ -149,8 +147,8 @@ class AuthFlowInterrupt extends Error {
 }
 
 function hasTryUnlock(
-	encryption: WorkspaceHandle['encryption'],
-): encryption is WorkspaceEncryptionControllerWithCache {
+	encryption: WorkspaceAuthHandle['encryption'],
+): encryption is WorkspaceEncryptionWithCache {
 	return 'tryUnlock' in encryption;
 }
 
@@ -248,7 +246,7 @@ export function createWorkspaceAuth({
 }: {
 	baseURL: string | (() => string);
 	store: SessionStore;
-	workspace: WorkspaceHandle;
+	workspace: WorkspaceAuthHandle;
 	signInWithGoogle?: (
 		client: BetterAuthInternalClient,
 	) => Promise<{ user: User } & Partial<CustomSessionFields>>;

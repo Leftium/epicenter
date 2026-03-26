@@ -166,8 +166,8 @@ export type {
 	ValidRowResult,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
-	WorkspaceEncryptionController,
-	WorkspaceEncryptionControllerWithCache,
+	WorkspaceEncryption,
+	WorkspaceEncryptionWithCache,
 	WorkspaceClientWithActions,
 	WorkspaceDefinition,
 } from './workspace/types';

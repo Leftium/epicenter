@@ -203,7 +203,7 @@ export type DocumentExtensionRegistration = {
 		| (Record<string, unknown> & {
 				whenReady?: Promise<unknown>;
 				dispose?: () => MaybePromise<void>;
-				clearData?: () => MaybePromise<void>;
+				clearLocalData?: () => MaybePromise<void>;
 		  })
 		| void;
 	tags: readonly string[];
@@ -1051,9 +1051,9 @@ export type EncryptionConfig = {
 };
 
 /**
- * Unlock controller added to the workspace client by `.withEncryption()`.
+ * Unlock API added to the workspace client by `.withEncryption()`.
  *
- * This controller is NOT present on the base `WorkspaceClient` — only when
+ * This API is NOT present on the base `WorkspaceClient` — only when
  * `.withEncryption()` is called. This prevents non-encryption consumers
  * (Whispering, CLI) from seeing unlock APIs on the type.
  *
@@ -1071,7 +1071,7 @@ export type EncryptionConfig = {
  * await workspace.clearLocalData();
  * ```
  */
-export type WorkspaceEncryptionController = {
+export type WorkspaceEncryption = {
 	/** Whether the runtime is currently unlocked. */
 	isUnlocked: boolean;
 	/**
@@ -1094,24 +1094,23 @@ export type WorkspaceEncryptionController = {
 };
 
 /**
- * Unlock controller when `.withEncryption({ userKeyCache })` is configured.
+ * Unlock API when `.withEncryption({ userKeyCache })` is configured.
  */
-export type WorkspaceEncryptionControllerWithCache =
-	WorkspaceEncryptionController & {
-		/**
-		 * Try to unlock from the configured key cache.
-		 *
-		 * Returns `false` when the cache is empty or invalid. Returns `true` when
-		 * a cached key was loaded and the workspace is now unlocked.
-		 */
-		tryUnlock(): Promise<boolean>;
-	};
+export type WorkspaceEncryptionWithCache = WorkspaceEncryption & {
+	/**
+	 * Try to unlock from the configured key cache.
+	 *
+	 * Returns `false` when the cache is empty or invalid. Returns `true` when
+	 * a cached key was loaded and the workspace is now unlocked.
+	 */
+	tryUnlock(): Promise<boolean>;
+};
 
-export type WorkspaceEncryptionControllerFor<
+export type WorkspaceEncryptionFor<
 	TConfig extends EncryptionConfig | undefined,
 > = TConfig extends EncryptionConfig
-	? WorkspaceEncryptionControllerWithCache
-	: WorkspaceEncryptionController;
+	? WorkspaceEncryptionWithCache
+	: WorkspaceEncryption;
 export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
@@ -1159,7 +1158,7 @@ export type WorkspaceClientBuilder<
 			factory: (context: SharedExtensionContext) => TExports & {
 				whenReady?: Promise<unknown>;
 				dispose?: () => MaybePromise<void>;
-				clearData?: () => MaybePromise<void>;
+				clearLocalData?: () => MaybePromise<void>;
 			},
 		): WorkspaceClientBuilder<
 			TId,
@@ -1169,10 +1168,15 @@ export type WorkspaceClientBuilder<
 			TExtensions &
 				Record<
 					TKey,
-					Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
+					Extension<
+						Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>
+					>
 				>,
 			TDocExtensions &
-				Record<TKey, Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>,
+				Record<
+					TKey,
+					Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>
+				>,
 			TEncryption
 		>;
 
@@ -1213,7 +1217,7 @@ export type WorkspaceClientBuilder<
 			) => TExports & {
 				whenReady?: Promise<unknown>;
 				dispose?: () => MaybePromise<void>;
-				clearData?: () => MaybePromise<void>;
+				clearLocalData?: () => MaybePromise<void>;
 			},
 		): WorkspaceClientBuilder<
 			TId,
@@ -1223,7 +1227,9 @@ export type WorkspaceClientBuilder<
 			TExtensions &
 				Record<
 					TKey,
-					Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearData'>>
+					Extension<
+						Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>
+					>
 				>,
 			TDocExtensions,
 			TEncryption
@@ -1262,7 +1268,7 @@ export type WorkspaceClientBuilder<
 				| (TDocExports & {
 						whenReady?: Promise<unknown>;
 						dispose?: () => MaybePromise<void>;
-						clearData?: () => MaybePromise<void>;
+						clearLocalData?: () => MaybePromise<void>;
 				  })
 				| void,
 			options?: { tags?: ExtractAllDocumentTags<TTableDefinitions>[] },
@@ -1273,7 +1279,10 @@ export type WorkspaceClientBuilder<
 			TAwarenessDefinitions,
 			TExtensions,
 			TDocExtensions &
-				Record<K, Omit<TDocExports, 'whenReady' | 'dispose' | 'clearData'>>,
+				Record<
+					K,
+					Omit<TDocExports, 'whenReady' | 'dispose' | 'clearLocalData'>
+				>,
 			TEncryption
 		>;
 
@@ -1310,8 +1319,8 @@ export type WorkspaceClientBuilder<
 			TAwarenessDefinitions,
 			TExtensions,
 			TDocExtensions,
-			{ encryption: WorkspaceEncryptionControllerFor<TConfig> }
-		>;
+		{ encryption: WorkspaceEncryptionFor<TConfig> }
+	>;
 
 		/**
 		 * Attach actions to the workspace client. Terminal — no more chaining after this.
@@ -1432,7 +1441,7 @@ export type ExtensionFactory<
 > = (context: ExtensionContext) => TExports & {
 	whenReady?: Promise<unknown>;
 	dispose?: () => MaybePromise<void>;
-	clearData?: () => MaybePromise<void>;
+	clearLocalData?: () => MaybePromise<void>;
 };
 
 /** The workspace client returned by createWorkspace() */
@@ -1469,7 +1478,7 @@ export type WorkspaceClient<
 	 * Access exports directly — no wrapper:
 	 *
 	 * ```typescript
-	 * client.extensions.persistence.clearData();
+	 * client.extensions.persistence.clearLocalData();
 	 * client.extensions.sqlite.db.query('SELECT ...');
 	 * ```
 	 *
@@ -1534,7 +1543,7 @@ export type WorkspaceClient<
 	 * Wipe local workspace data.
 	 *
 	 * This is the sign-out primitive for local persistence. It locks the runtime
-	 * first, then calls extension `clearData()` hooks in LIFO order, then clears
+	 * first, then calls extension `clearLocalData()` hooks in LIFO order, then clears
 	 * the configured `userKeyCache` if encryption was set up with one.
 	 */
 	clearLocalData(): Promise<void>;

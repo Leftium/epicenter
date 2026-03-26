@@ -36,7 +36,7 @@
  *
  * workspace.clearLocalData()
  *   → workspace.encryption.lock()
- *   → wipe persisted data (clearData callbacks, LIFO)
+ *   → wipe persisted data (clearLocalData callbacks, LIFO)
  *   → await userKeyCache.clear() if configured
  * ```
  *
@@ -107,8 +107,8 @@ import type {
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceClientWithActions,
-	WorkspaceEncryptionController,
-	WorkspaceEncryptionControllerWithCache,
+	WorkspaceEncryption,
+	WorkspaceEncryptionWithCache,
 	WorkspaceDefinition,
 } from './types.js';
 import { KV_KEY, TableKey } from './ydoc-keys.js';
@@ -204,19 +204,17 @@ export function createWorkspace<
 	 *
 	 * Three arrays track three distinct lifecycle moments:
 	 * - `extensionCleanups` — `dispose()` shutdown: close connections, stop observers (irreversible)
-	 * - `clearDataCallbacks` — `workspace.clearLocalData()` data wipe: delete IndexedDB (reversible, repeatable)
+	 * - `clearLocalDataCallbacks` — `workspace.clearLocalData()` data wipe: delete IndexedDB (reversible, repeatable)
 	 * - `whenReadyPromises` — construction: composite `whenReady` waits for all extensions to init
 	 */
 	type BuilderState = {
 		extensionCleanups: (() => MaybePromise<void>)[];
-		clearDataCallbacks: (() => MaybePromise<void>)[];
+		clearLocalDataCallbacks: (() => MaybePromise<void>)[];
 		whenReadyPromises: Promise<unknown>[];
 	};
 
 	type EncryptionRuntime = {
-		controller:
-			| WorkspaceEncryptionController
-			| WorkspaceEncryptionControllerWithCache;
+		encryption: WorkspaceEncryption | WorkspaceEncryptionWithCache;
 		lock: () => void;
 		clearCache: () => Promise<void>;
 	};
@@ -340,11 +338,11 @@ export function createWorkspace<
 			},
 			async clearLocalData(): Promise<void> {
 				encryptionRuntime?.lock();
-				for (let i = state.clearDataCallbacks.length - 1; i >= 0; i--) {
+				for (let i = state.clearLocalDataCallbacks.length - 1; i >= 0; i--) {
 					try {
-						await state.clearDataCallbacks[i]?.();
+						await state.clearLocalDataCallbacks[i]?.();
 					} catch (err) {
-						console.error('Extension clearData error:', err);
+						console.error('Extension clearLocalData error:', err);
 					}
 				}
 				await encryptionRuntime?.clearCache();
@@ -356,7 +354,7 @@ export function createWorkspace<
 
 		if (encryptionRuntime) {
 			Object.assign(client, {
-				encryption: encryptionRuntime.controller,
+				encryption: encryptionRuntime.encryption,
 			});
 		}
 
@@ -383,7 +381,7 @@ export function createWorkspace<
 			) => TExports & {
 				whenReady?: Promise<unknown>;
 				dispose?: () => MaybePromise<void>;
-				clearData?: () => MaybePromise<void>;
+				clearLocalData?: () => MaybePromise<void>;
 			},
 		) {
 			const {
@@ -415,9 +413,9 @@ export function createWorkspace<
 					} as TExtensions & Record<TKey, TExports>,
 					{
 						extensionCleanups: [...state.extensionCleanups, resolved.dispose],
-						clearDataCallbacks: [
-							...state.clearDataCallbacks,
-							...(resolved.clearData ? [resolved.clearData] : []),
+						clearLocalDataCallbacks: [
+							...state.clearLocalDataCallbacks,
+							...(resolved.clearLocalData ? [resolved.clearLocalData] : []),
 						],
 						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
 					},
@@ -444,7 +442,7 @@ export function createWorkspace<
 				}) => TExports & {
 					whenReady?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
-					clearData?: () => MaybePromise<void>;
+					clearLocalData?: () => MaybePromise<void>;
 				},
 			) {
 				// Sugar: register for both scopes with the same factory.
@@ -474,7 +472,7 @@ export function createWorkspace<
 				) => TExports & {
 					whenReady?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
-					clearData?: () => MaybePromise<void>;
+					clearLocalData?: () => MaybePromise<void>;
 				},
 			) {
 				return applyWorkspaceExtension(key, factory);
@@ -486,7 +484,7 @@ export function createWorkspace<
 					| (Record<string, unknown> & {
 							whenReady?: Promise<unknown>;
 							dispose?: () => MaybePromise<void>;
-							clearData?: () => MaybePromise<void>;
+							clearLocalData?: () => MaybePromise<void>;
 					  })
 					| void,
 				options?: { tags?: string[] },
@@ -571,7 +569,7 @@ export function createWorkspace<
 					});
 				};
 
-				const baseController: WorkspaceEncryptionController = {
+				const baseEncryption: WorkspaceEncryption = {
 					get isUnlocked() {
 						return workspaceKey !== undefined;
 					},
@@ -581,7 +579,7 @@ export function createWorkspace<
 
 				const encryptionRuntime = config?.userKeyCache
 					? {
-							controller: {
+							encryption: {
 								get isUnlocked() {
 									return workspaceKey !== undefined;
 								},
@@ -605,12 +603,12 @@ export function createWorkspace<
 										return false;
 									}
 								},
-							} satisfies WorkspaceEncryptionControllerWithCache,
+							} satisfies WorkspaceEncryptionWithCache,
 							lock,
 							clearCache,
 						}
 					: {
-							controller: baseController,
+							encryption: baseEncryption,
 							lock,
 							clearCache,
 						};
@@ -627,7 +625,7 @@ export function createWorkspace<
 					TExtensions,
 					Record<string, never>,
 					{
-						encryption: typeof encryptionRuntime.controller;
+						encryption: typeof encryptionRuntime.encryption;
 					}
 				>;
 			},
@@ -669,7 +667,7 @@ export function createWorkspace<
 
 	return buildClient({} as Record<string, never>, {
 		extensionCleanups: [],
-		clearDataCallbacks: [],
+		clearLocalDataCallbacks: [],
 		whenReadyPromises: [],
 	});
 }

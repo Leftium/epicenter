@@ -1283,7 +1283,7 @@ describe('.withEncryption() lifecycle', () => {
 			)
 				.withEncryption({ userKeyCache })
 				.withExtension('persistence', () => ({
-					clearData: () => {
+					clearLocalData: () => {
 						events.push(client.encryption.isUnlocked ? 'unlocked' : 'locked');
 					},
 				}));

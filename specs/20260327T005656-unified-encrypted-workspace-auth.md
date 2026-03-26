@@ -205,7 +205,7 @@ Call refreshSession() to validate the token and apply the latest user + encrypti
 
 - [x] **1.1** Rename the shared public constructor to `createAuth(...)` and keep the workspace requirement.
 - [x] **1.2** Add `whenReady` to the returned auth object and switch the internal bootstrap promise to back that property.
-- [ ] **1.3** Remove the unused manual subscription API if no implementation dependency remains after the refactor.
+- [x] **1.3** Remove the unused manual subscription API if no implementation dependency remains after the refactor.
 - [x] **1.4** Keep the session-field seam minimal: `current`, optional `set`, optional `whenReady`, optional `watch`.
 
 ### Phase 2: Zhongwen migration
@@ -277,17 +277,19 @@ Expected outcome: keep the existing watch-based behavior in tab-manager.
 
 ## Review
 
-Implemented the first pass of the unified encrypted-workspace auth rollout.
+Implemented two cleanup passes of the unified encrypted-workspace auth rollout.
 
 What changed:
 
 - Added `createAuth(...)` as the main shared constructor in `packages/svelte-utils/src/auth.svelte.ts`.
 - Added `whenReady` to the auth return shape while keeping `bootstrap()` as a compatibility alias for now.
-- Kept `createWorkspaceAuth` as a compatibility export that points at `createAuth`.
 - Migrated Honeycrisp, Opensidian, Zhongwen, and tab-manager to import `createAuth(...)`.
 - Updated route-level render gates to read `authState.whenReady`.
 - Switched Zhongwen's workspace to `.withEncryption({ userKeyCache })`.
 - Added a Zhongwen browser `userKeyCache` implementation backed by `sessionStorage`.
+- Removed the unused manual `subscribe()` path from shared auth.
+- Removed the `createWorkspaceAuth` compatibility alias and the old `WorkspaceAuth*` compatibility types.
+- Removed the `bootstrap()` compatibility method after migrating the route-level callsites.
 
 Verification notes:
 
@@ -297,6 +299,4 @@ Verification notes:
 
 Remaining follow-up:
 
-- Remove the unused `subscribe()` path once we are ready to do a second cleanup pass.
-- Drop the `createWorkspaceAuth` compatibility alias after the app imports have baked and the public name is settled.
 - Do a runtime sign-out sanity pass to confirm `workspace.clearLocalData()` still behaves as expected in Zhongwen.

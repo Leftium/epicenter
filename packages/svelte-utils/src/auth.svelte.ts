@@ -43,8 +43,6 @@ export type Auth = {
 	readonly user: StoredUser | null;
 	readonly token: string | null;
 	readonly signInError?: string;
-	subscribe(listener: (state: AuthState) => void): () => void;
-	bootstrap(): Promise<StoredUser | null>;
 	refreshSession(): Promise<StoredUser | null>;
 	signIn(credentials: { email: string; password: string }): Promise<void>;
 	signUp(credentials: {
@@ -56,10 +54,6 @@ export type Auth = {
 	signOut(): Promise<void>;
 	fetch: typeof fetch;
 };
-
-export type WorkspaceAuthStatus = AuthStatus;
-export type WorkspaceAuthState = AuthState;
-export type WorkspaceAuth = Auth;
 
 export type SessionField<T> = {
 	current: T;
@@ -104,9 +98,6 @@ export function createAuth({
 	let hasExternalSession = $state(Boolean(user.current));
 	let isApplyingLocalSessionChange = false;
 	let bootstrapPromise: Promise<StoredUser | null> | null = null;
-	let lastPublishedState: AuthState | null = null;
-
-	const listeners = new Set<(state: AuthState) => void>();
 
 	function buildClient(authToken: string | null) {
 		let issuedToken: string | null | undefined;
@@ -164,35 +155,16 @@ export function createAuth({
 		};
 	}
 
-	function notify() {
-		const nextState = getState();
-		if (
-			lastPublishedState?.status === nextState.status &&
-			lastPublishedState?.user === nextState.user &&
-			lastPublishedState?.token === nextState.token &&
-			lastPublishedState?.signInError === nextState.signInError
-		) {
-			return;
-		}
-
-		lastPublishedState = nextState;
-		for (const listener of listeners) {
-			listener(nextState);
-		}
-	}
-
 	function setPendingAction(
 		next: Exclude<AuthStatus, 'signed-in' | 'signed-out'> | null,
 	) {
 		if (pendingAction === next) return;
 		pendingAction = next;
-		notify();
 	}
 
 	function setLastError(next: string | undefined) {
 		if (lastError === next) return;
 		lastError = next;
-		notify();
 	}
 
 	async function applyLocalSessionChange(run: () => void | Promise<void>) {
@@ -202,7 +174,6 @@ export function createAuth({
 		} finally {
 			isApplyingLocalSessionChange = false;
 			hasExternalSession = Boolean(user.current);
-			notify();
 		}
 	}
 
@@ -268,7 +239,7 @@ export function createAuth({
 		setPendingAction(null);
 	}
 
-	async function bootstrap() {
+	async function waitUntilReady() {
 		if (!bootstrapPromise) {
 			bootstrapPromise = (async () => {
 				await Promise.all([token.whenReady, user.whenReady].filter(Boolean));
@@ -287,7 +258,7 @@ export function createAuth({
 	}
 
 	async function refreshSession() {
-		await bootstrap();
+		await waitUntilReady();
 		setPendingAction('checking');
 
 		try {
@@ -358,7 +329,6 @@ export function createAuth({
 			});
 		}
 
-		notify();
 	};
 
 	token.watch?.(handleExternalSessionChange);
@@ -366,7 +336,7 @@ export function createAuth({
 
 	return {
 		get whenReady() {
-			return bootstrap();
+			return waitUntilReady();
 		},
 
 		get state() {
@@ -389,15 +359,6 @@ export function createAuth({
 			return getState().signInError;
 		},
 
-		subscribe(listener) {
-			listeners.add(listener);
-			listener(getState());
-			return () => {
-				listeners.delete(listener);
-			};
-		},
-
-		bootstrap,
 		refreshSession,
 
 		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -486,8 +447,6 @@ export function createAuth({
 		},
 	};
 }
-
-export const createWorkspaceAuth = createAuth;
 
 function toStoredUser(user: User): StoredUser {
 	return {

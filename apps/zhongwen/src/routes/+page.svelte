@@ -4,7 +4,7 @@
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { onMount } from 'svelte';
-	import { authState, signInWithGoogle } from '$lib/auth';
+	import { authState } from '$lib/auth';
 	import { chatState } from '$lib/chat/chat-state.svelte';
 	import ChatInput from '$lib/components/ChatInput.svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
@@ -57,7 +57,7 @@
 							>{authState.user?.name}</span
 						>
 					{:else if authState.session.status === 'anonymous'}
-						<Button size="sm" onclick={() => signInWithGoogle()}>
+						<Button size="sm" onclick={() => authState.signInWithGoogle()}>
 							Sign In
 						</Button>
 					{/if}
@@ -73,7 +73,7 @@
 				<div class="flex flex-1 items-center justify-center">
 					<div class="text-center text-muted-foreground">
 						<p class="mb-4">Sign in to start chatting</p>
-						<Button onclick={() => signInWithGoogle()}
+						<Button onclick={() => authState.signInWithGoogle()}
 							>Sign in with Google</Button
 						>
 					</div>

@@ -84,6 +84,11 @@ async function signInWithGoogleViaChromeIdentity() {
 export const authState = createAuthSession({
 	storage: authSession,
 	resolveSession,
+	commands: {
+		signIn: (input) => signInWithPassword({ baseURL: authBaseURL, input }),
+		signUp: (input) => signUpWithPassword({ baseURL: authBaseURL, input }),
+		signInWithGoogle: signInWithGoogleViaChromeIdentity,
+	},
 	signOutRemote: (current) => signOutRemote({ baseURL: authBaseURL, current }),
 	onSessionCommitted: async ({ previous, current, reason, userKeyBase64 }) => {
 		if (current.status === 'authenticated') {
@@ -108,31 +113,3 @@ export const authState = createAuthSession({
 		}
 	},
 });
-
-export function signIn(input: { email: string; password: string }) {
-	return authState.runAuthCommand(
-		'sign-in',
-		() => signInWithPassword({ baseURL: authBaseURL, input }),
-		{ requireAuthenticatedSession: true },
-	);
-}
-
-export function signUp(input: {
-	email: string;
-	password: string;
-	name: string;
-}) {
-	return authState.runAuthCommand(
-		'sign-up',
-		() => signUpWithPassword({ baseURL: authBaseURL, input }),
-		{ requireAuthenticatedSession: true },
-	);
-}
-
-export function signInWithGoogle() {
-	return authState.runAuthCommand(
-		'google-sign-in',
-		signInWithGoogleViaChromeIdentity,
-		{ requireAuthenticatedSession: true },
-	);
-}

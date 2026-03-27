@@ -25,6 +25,21 @@ const resolveSession = createSessionResolver({
 export const authState = createAuthSession({
 	storage: session,
 	resolveSession,
+	commands: {
+		signIn: (input) => signInWithPassword({ baseURL: APP_URLS.API, input }),
+		signUp: (input) => signUpWithPassword({ baseURL: APP_URLS.API, input }),
+		signInWithGoogle: async () => {
+			const { client } = createBetterAuthClientSession({
+				baseURL: APP_URLS.API,
+				authToken: null,
+			});
+			await client.signIn.social({
+				provider: 'google',
+				callbackURL: window.location.origin,
+			});
+			return { status: 'redirect-started' };
+		},
+	},
 	signOutRemote: (current) => signOutRemote({ baseURL: APP_URLS.API, current }),
 	onSessionCommitted: async ({ previous, current, reason, userKeyBase64 }) => {
 		if (current.status === 'authenticated') {
@@ -49,44 +64,3 @@ export const authState = createAuthSession({
 		}
 	},
 });
-
-export function signIn(input: { email: string; password: string }) {
-	return authState.runAuthCommand(
-		'sign-in',
-		() => signInWithPassword({ baseURL: APP_URLS.API, input }),
-		{ requireAuthenticatedSession: true },
-	);
-}
-
-export function signUp(input: {
-	email: string;
-	password: string;
-	name: string;
-}) {
-	return authState.runAuthCommand(
-		'sign-up',
-		() => signUpWithPassword({ baseURL: APP_URLS.API, input }),
-		{ requireAuthenticatedSession: true },
-	);
-}
-
-export function signInWithGoogle() {
-	return authState.runAuthCommand(
-		'google-sign-in',
-		async () => {
-			const { client } = createBetterAuthClientSession({
-				baseURL: APP_URLS.API,
-				authToken: null,
-			});
-			await client.signIn.social({
-				provider: 'google',
-				callbackURL: window.location.origin,
-			});
-			return { status: 'redirect-started' };
-		},
-		{
-			allowRedirectStart: true,
-			requireAuthenticatedSession: true,
-		},
-	);
-}

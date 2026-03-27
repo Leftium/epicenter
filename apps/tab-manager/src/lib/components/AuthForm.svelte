@@ -4,12 +4,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import {
-		authState,
-		signIn,
-		signInWithGoogle,
-		signUp,
-	} from '$lib/state/auth.svelte';
+	import { authState } from '$lib/state/auth.svelte';
 
 	let email = $state('');
 	let password = $state('');
@@ -26,8 +21,8 @@
 		e.preventDefault();
 		submitError = null;
 		const { error } = isSignUp
-			? await signUp({ email, password, name })
-			: await signIn({ email, password });
+			? await authState.signUp({ email, password, name })
+			: await authState.signIn({ email, password });
 		if (error) submitError = error.message;
 	}}
 	class="w-full max-w-xs"
@@ -53,7 +48,7 @@
 			disabled={isBusy}
 			onclick={async () => {
 				submitError = null;
-				const { error } = await signInWithGoogle();
+				const { error } = await authState.signInWithGoogle();
 				if (error) submitError = error.message;
 			}}
 		>

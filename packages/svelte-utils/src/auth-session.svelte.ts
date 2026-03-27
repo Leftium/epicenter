@@ -55,10 +55,6 @@ export const AuthCommandError = defineErrors({
 });
 export type AuthCommandError = InferErrors<typeof AuthCommandError>;
 export type AuthCommandResult = Result<void, AuthCommandError>;
-export type RunAuthCommandOptions = {
-	allowRedirectStart?: boolean;
-	requireAuthenticatedSession?: boolean;
-};
 
 export type AuthSessionCommitReason =
 	| 'bootstrap'
@@ -79,6 +75,18 @@ export type AuthSessionCommit = {
 export type CreateAuthSessionOptions = {
 	storage: AuthSessionStorage;
 	resolveSession: ResolveSession;
+	commands?: {
+		signIn?: (input: {
+			email: string;
+			password: string;
+		}) => Promise<SessionResolution>;
+		signUp?: (input: {
+			email: string;
+			password: string;
+			name: string;
+		}) => Promise<SessionResolution>;
+		signInWithGoogle?: () => Promise<GoogleSignInResult>;
+	};
 	signOutRemote?: (current: AuthSession) => Promise<void>;
 	onSessionCommitted?: (args: AuthSessionCommit) => void | Promise<void>;
 };
@@ -92,11 +100,16 @@ export type AuthSessionStore = {
 	readonly token: string | null;
 
 	refresh(): Promise<void>;
-	runAuthCommand(
-		command: ExplicitAuthCommand,
-		run: () => Promise<SessionResolution | GoogleSignInResult>,
-		options?: RunAuthCommandOptions,
-	): Promise<AuthCommandResult>;
+	signIn(input: {
+		email: string;
+		password: string;
+	}): Promise<AuthCommandResult>;
+	signUp(input: {
+		email: string;
+		password: string;
+		name: string;
+	}): Promise<AuthCommandResult>;
+	signInWithGoogle(): Promise<AuthCommandResult>;
 	signOut(): Promise<void>;
 
 	onSessionChange(listener: (session: AuthSession) => void): () => void;
@@ -108,6 +121,7 @@ export type AuthSessionStore = {
 export function createAuthSession({
 	storage,
 	resolveSession,
+	commands,
 	signOutRemote,
 	onSessionCommitted,
 }: CreateAuthSessionOptions): AuthSessionStore {
@@ -266,7 +280,10 @@ export function createAuthSession({
 		{
 			allowRedirectStart = false,
 			requireAuthenticatedSession = false,
-		}: RunAuthCommandOptions = {},
+		}: {
+			allowRedirectStart?: boolean;
+			requireAuthenticatedSession?: boolean;
+		} = {},
 	): Promise<AuthCommandResult> {
 		await bootstrap();
 		setOperation({ status: 'signing-in' });
@@ -398,8 +415,44 @@ export function createAuthSession({
 			setOperation({ status: 'idle' });
 		},
 
-		runAuthCommand(command, run, options) {
-			return runSigningInCommand(command, run, options);
+		signIn(input) {
+			const signIn = commands?.signIn;
+			if (!signIn) {
+				return AuthCommandError.SignInFailed({
+					cause: new Error('Sign-in is not configured.'),
+				});
+			}
+
+			return runSigningInCommand('sign-in', () => signIn(input), {
+				requireAuthenticatedSession: true,
+			});
+		},
+
+		signUp(input) {
+			const signUp = commands?.signUp;
+			if (!signUp) {
+				return AuthCommandError.SignUpFailed({
+					cause: new Error('Sign-up is not configured.'),
+				});
+			}
+
+			return runSigningInCommand('sign-up', () => signUp(input), {
+				requireAuthenticatedSession: true,
+			});
+		},
+
+		signInWithGoogle() {
+			const signInWithGoogle = commands?.signInWithGoogle;
+			if (!signInWithGoogle) {
+				return AuthCommandError.GoogleSignInFailed({
+					cause: new Error('Google sign-in is not configured.'),
+				});
+			}
+
+			return runSigningInCommand('google-sign-in', () => signInWithGoogle(), {
+				allowRedirectStart: true,
+				requireAuthenticatedSession: true,
+			});
 		},
 
 		async signOut() {

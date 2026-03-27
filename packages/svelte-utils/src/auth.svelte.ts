@@ -6,7 +6,6 @@ export {
 	type AuthSessionStore,
 	type CreateAuthSessionOptions,
 	createAuthSession,
-	type RunAuthCommandOptions,
 } from './auth-session.svelte.js';
 export {
 	type BetterAuthTransportClient,

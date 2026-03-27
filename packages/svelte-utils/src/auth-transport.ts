@@ -32,7 +32,7 @@ export function createBetterAuthClientSession({
 	let issuedToken: string | null | undefined;
 
 	const client = createAuthClient({
-		baseURL: resolveBaseURL(baseURL),
+		baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
 		basePath: '/auth',
 		fetchOptions: {
 			auth: {
@@ -49,7 +49,15 @@ export function createBetterAuthClientSession({
 	return {
 		client,
 		getIssuedToken: (payload?: unknown) =>
-			issuedToken ?? readAuthToken(payload) ?? authToken ?? null,
+			issuedToken ??
+			(typeof payload === 'object' &&
+			payload !== null &&
+			'token' in payload &&
+			typeof payload.token === 'string'
+				? payload.token
+				: null) ??
+			authToken ??
+			null,
 	};
 }
 
@@ -67,7 +75,14 @@ export async function resolveSessionWithToken({
 	const { data, error } = await client.getSession();
 
 	if (error) {
-		const status = getErrorStatus(error);
+		const status =
+			typeof error === 'object' &&
+			error !== null &&
+			'status' in error &&
+			typeof error.status === 'number'
+				? error.status
+				: undefined;
+
 		return status !== undefined && status < 500
 			? { status: 'anonymous' }
 			: { status: 'unchanged' };
@@ -84,7 +99,12 @@ export async function resolveSessionWithToken({
 		status: 'authenticated',
 		token,
 		user: toStoredUser(data.user),
-		userKeyBase64: readUserKeyBase64(data),
+		userKeyBase64:
+			typeof data === 'object' && data !== null && 'encryptionKey' in data
+				? typeof data.encryptionKey === 'string'
+					? data.encryptionKey
+					: null
+				: undefined,
 	};
 }
 
@@ -183,56 +203,20 @@ export async function startGoogleSignInRedirect({
 	});
 }
 
-function getErrorStatus(error: unknown): number | undefined {
-	if (
-		typeof error === 'object' &&
-		error !== null &&
-		'status' in error &&
-		typeof error.status === 'number'
-	) {
-		return error.status;
-	}
-
-	return undefined;
-}
-
-function readAuthToken(value: unknown): string | null {
-	if (
-		typeof value === 'object' &&
-		value !== null &&
-		'token' in value &&
-		typeof value.token === 'string'
-	) {
-		return value.token;
-	}
-
-	return null;
-}
-
-function readUserKeyBase64(value: unknown): string | null | undefined {
-	if (typeof value === 'object' && value !== null && 'encryptionKey' in value) {
-		return typeof value.encryptionKey === 'string' ? value.encryptionKey : null;
-	}
-
-	return undefined;
-}
-
 function toStoredUser(user: User): StoredUser {
 	return {
 		id: user.id,
-		createdAt: toISOString(user.createdAt),
-		updatedAt: toISOString(user.updatedAt),
+		createdAt:
+			user.createdAt instanceof Date
+				? user.createdAt.toISOString()
+				: user.createdAt,
+		updatedAt:
+			user.updatedAt instanceof Date
+				? user.updatedAt.toISOString()
+				: user.updatedAt,
 		email: user.email,
 		emailVerified: user.emailVerified,
 		name: user.name,
 		image: user.image,
 	};
-}
-
-function toISOString(value: Date | string): string {
-	return value instanceof Date ? value.toISOString() : value;
-}
-
-function resolveBaseURL(baseURL: BaseURL): string {
-	return typeof baseURL === 'function' ? baseURL() : baseURL;
 }

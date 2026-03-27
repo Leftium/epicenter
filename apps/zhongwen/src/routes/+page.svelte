@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fromKv } from '@epicenter/svelte';
+	import { createWorkspaceFirstBoot } from '@epicenter/svelte/auth';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Sidebar from '@epicenter/ui/sidebar';
@@ -11,7 +12,11 @@
 	import ModelPicker from '$lib/components/ModelPicker.svelte';
 	import ZhongwenSidebar from '$lib/components/ZhongwenSidebar.svelte';
 	import { workspace } from '$lib/workspace/client';
-	import { workspaceBoot } from '$lib/workspace-boot';
+
+	const workspaceBoot = createWorkspaceFirstBoot({
+		workspace,
+		auth: authState,
+	});
 
 	const showPinyin = fromKv(workspace.kv, 'showPinyin');
 	let dismissedError = $state(false);

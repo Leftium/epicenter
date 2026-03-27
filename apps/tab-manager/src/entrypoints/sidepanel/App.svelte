@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createWorkspaceFirstBoot } from '@epicenter/svelte/auth';
 	import { Button } from '@epicenter/ui/button';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
@@ -18,8 +19,12 @@
 	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
-	import { workspaceBoot } from '$lib/state/workspace-boot.svelte';
-	import { registerDevice } from '$lib/workspace';
+	import { registerDevice, workspace } from '$lib/workspace';
+
+	const workspaceBoot = createWorkspaceFirstBoot({
+		workspace,
+		auth: authState,
+	});
 
 	onMount(() => {
 		void workspaceBoot.start();

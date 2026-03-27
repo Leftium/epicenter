@@ -93,7 +93,6 @@ export type CreateAuthSessionOptions = {
 	resolveSession: ResolveSession;
 	commands?: AuthCommandHandlers;
 	signOutRemote?: (current: AuthSession) => Promise<void>;
-	onSessionCommitted?: (args: AuthSessionCommit) => void | Promise<void>;
 };
 
 export type AuthSessionStore = {
@@ -129,7 +128,6 @@ export function createAuthSession({
 	resolveSession,
 	commands,
 	signOutRemote,
-	onSessionCommitted,
 }: CreateAuthSessionOptions): AuthSessionStore {
 	let publishedSession = $state<AuthSession>(storage.current);
 	let operation = $state<AuthOperation>({ status: 'bootstrapping' });
@@ -181,7 +179,7 @@ export function createAuthSession({
 			return;
 		}
 
-		if (!onSessionCommitted && sessionCommitListeners.size === 0) {
+		if (sessionCommitListeners.size === 0) {
 			return;
 		}
 
@@ -191,8 +189,6 @@ export function createAuthSession({
 			reason,
 			userKeyBase64,
 		} satisfies AuthSessionCommit;
-
-		await onSessionCommitted?.(commit);
 
 		for (const listener of sessionCommitListeners) {
 			await listener(commit);

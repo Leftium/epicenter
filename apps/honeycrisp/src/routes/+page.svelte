@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createWorkspaceFirstBoot } from '@epicenter/svelte/auth';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
@@ -11,7 +12,11 @@
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
 	import workspaceClient from '$lib/workspace';
-	import { workspaceBoot } from '$lib/workspace-boot';
+
+	const workspaceBoot = createWorkspaceFirstBoot({
+		workspace: workspaceClient,
+		auth: authState,
+	});
 
 	let commandPaletteOpen = $state(false);
 

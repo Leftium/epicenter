@@ -1,8 +1,14 @@
 <script lang="ts">
+	import { createWorkspaceFirstBoot } from '@epicenter/svelte/auth';
 	import { onMount } from 'svelte';
 	import { authState } from '$lib/auth';
 	import AppShell from '$lib/components/AppShell.svelte';
-	import { workspaceBoot } from '$lib/workspace-boot';
+	import { ws } from '$lib/workspace.svelte';
+
+	const workspaceBoot = createWorkspaceFirstBoot({
+		workspace: ws,
+		auth: authState,
+	});
 
 	onMount(() => {
 		void workspaceBoot.start();

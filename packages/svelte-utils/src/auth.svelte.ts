@@ -57,9 +57,9 @@ export type Auth = {
 };
 
 export type SessionField<T> = {
-	get(): T;
+	readonly current: T;
 	set(value: T): void | Promise<void>;
-	watch?: (callback: (value: T) => void) => (() => void) | undefined;
+	watch(callback: (value: T) => void): (() => void) | undefined;
 	whenReady?: Promise<void>;
 };
 
@@ -96,14 +96,14 @@ export function createAuth({
 		'bootstrapping',
 	);
 	let lastError = $state<string | undefined>(undefined);
-	let hasExternalSession = $state(Boolean(user.get()));
+	let hasExternalSession = $state(Boolean(user.current));
 	let isApplyingLocalSessionChange = false;
 	let bootstrapPromise: Promise<StoredUser | null> | null = null;
-	let lastPublishedToken = token.get();
+	let lastPublishedToken = token.current;
 	const tokenListeners = new Set<(token: string | null) => void>();
 
 	function notifyTokenChange() {
-		const nextToken = token.get();
+		const nextToken = token.current;
 		if (nextToken === lastPublishedToken) return;
 		lastPublishedToken = nextToken;
 		for (const listener of tokenListeners) {
@@ -137,15 +137,15 @@ export function createAuth({
 
 	function getStatus(): AuthStatus {
 		if (pendingAction) return pendingAction;
-		return user.get() ? 'signed-in' : 'signed-out';
+		return user.current ? 'signed-in' : 'signed-out';
 	}
 
 	function getState(): AuthState {
 		const status = getStatus();
 		return {
 			status,
-			user: user.get(),
-			token: token.get(),
+			user: user.current,
+			token: token.current,
 			signInError: status === 'signed-out' ? lastError : undefined,
 		};
 	}
@@ -168,7 +168,7 @@ export function createAuth({
 			await run();
 		} finally {
 			isApplyingLocalSessionChange = false;
-			hasExternalSession = Boolean(user.get());
+			hasExternalSession = Boolean(user.current);
 			notifyTokenChange();
 		}
 	}
@@ -243,13 +243,13 @@ export function createAuth({
 			bootstrapPromise = (async () => {
 				await Promise.all([token.whenReady, user.whenReady].filter(Boolean));
 
-				if (user.get() && hasTryUnlock(workspace.encryption)) {
+				if (user.current && hasTryUnlock(workspace.encryption)) {
 					await workspace.encryption.tryUnlock();
 					setLastError(undefined);
 				}
 
 				setPendingAction(null);
-				return user.get();
+				return user.current;
 			})();
 		}
 
@@ -261,7 +261,7 @@ export function createAuth({
 		setPendingAction('checking');
 
 		try {
-			const { client, getIssuedToken } = buildClient(token.get());
+			const { client, getIssuedToken } = buildClient(token.current);
 			const { data, error } = await client.getSession();
 
 			if (error) {
@@ -279,7 +279,7 @@ export function createAuth({
 				}
 
 				setPendingAction(null);
-				return user.get();
+				return user.current;
 			}
 
 			if (!data) {
@@ -303,18 +303,18 @@ export function createAuth({
 			}
 		} catch {
 			setPendingAction(null);
-			return user.get();
+			return user.current;
 		}
 
 		setPendingAction(null);
-		return user.get();
+		return user.current;
 	}
 
 	const handleExternalSessionChange = () => {
 		if (isApplyingLocalSessionChange) return;
 
 		const wasSignedIn = hasExternalSession;
-		const isSignedIn = Boolean(user.get());
+		const isSignedIn = Boolean(user.current);
 		hasExternalSession = isSignedIn;
 
 		setPendingAction(null);
@@ -337,8 +337,8 @@ export function createAuth({
 		notifyTokenChange();
 	};
 
-	token.watch?.(handleExternalSessionChange);
-	user.watch?.(handleExternalSessionChange);
+	token.watch(handleExternalSessionChange);
+	user.watch(handleExternalSessionChange);
 
 	return {
 		get whenReady() {
@@ -354,11 +354,11 @@ export function createAuth({
 		},
 
 		get user() {
-			return user.get();
+			return user.current;
 		},
 
 		get token() {
-			return token.get();
+			return token.current;
 		},
 
 		get signInError() {
@@ -376,7 +376,7 @@ export function createAuth({
 
 		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
 			const headers = new Headers(init?.headers);
-			const authToken = token.get();
+			const authToken = token.current;
 			if (authToken) {
 				headers.set('Authorization', `Bearer ${authToken}`);
 			}
@@ -449,7 +449,7 @@ export function createAuth({
 			setPendingAction('signing-out');
 
 			try {
-				const { client } = buildClient(token.get());
+				const { client } = buildClient(token.current);
 				const { error } = await client.signOut();
 				if (error) {
 					throw new Error(`Sign-out failed: ${extractErrorMessage(error)}`);

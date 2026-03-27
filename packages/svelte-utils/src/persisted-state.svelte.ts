@@ -190,6 +190,9 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 				onUpdateError?.(error);
 			}
 		},
+		set(newValue: StandardSchemaV1.InferOutput<TSchema>) {
+			this.current = newValue;
+		},
 		watch(listener: (value: StandardSchemaV1.InferOutput<TSchema>) => void) {
 			listeners.add(listener);
 			return () => {

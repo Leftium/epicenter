@@ -12,7 +12,6 @@
 
 import {
 	createAuth,
-	type SessionField,
 	StoredUser,
 } from '@epicenter/svelte/auth';
 import { type } from 'arktype';
@@ -35,24 +34,10 @@ const authUser = createStorageState('local:authUser', {
 	schema: StoredUser.or('null'),
 });
 
-const tokenField: SessionField<string | null> = {
-	get: () => authToken.current,
-	set: (value) => authToken.set(value),
-	whenReady: authToken.whenReady,
-	watch: authToken.watch,
-};
-
-const userField: SessionField<StoredUser | null> = {
-	get: () => authUser.current,
-	set: (value) => authUser.set(value),
-	whenReady: authUser.whenReady,
-	watch: authUser.watch,
-};
-
 export const authState = createAuth({
 	baseURL: () => remoteServerUrl.current,
-	token: tokenField,
-	user: userField,
+	token: authToken,
+	user: authUser,
 	workspace,
 	signInWithGoogle: async (betterAuthClient) => {
 		const redirectUri = browser.identity.getRedirectURL();

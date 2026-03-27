@@ -20,200 +20,170 @@ export type ResolveSession = (
 	current: AuthSession,
 ) => Promise<SessionResolution>;
 
-export type BetterAuthTransportClient = ReturnType<typeof createAuthClient>;
+export type AuthTransport = ReturnType<typeof createAuthTransport>;
 
-export function createBetterAuthClientSession({
+export function createAuthTransport({
 	baseURL,
-	authToken,
 }: {
 	baseURL: BaseURL;
-	authToken: string | null;
 }) {
-	let issuedToken: string | null | undefined;
+	function createClientSession(authToken: string | null) {
+		let issuedToken: string | null | undefined;
 
-	const client = createAuthClient({
-		baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
-		basePath: '/auth',
-		fetchOptions: {
-			auth: {
-				type: 'Bearer',
-				token: () => authToken ?? undefined,
+		const client = createAuthClient({
+			baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
+			basePath: '/auth',
+			fetchOptions: {
+				auth: {
+					type: 'Bearer',
+					token: () => authToken ?? undefined,
+				},
+				onSuccess: ({ response }) => {
+					const nextToken = response.headers.get('set-auth-token');
+					if (nextToken) issuedToken = nextToken;
+				},
 			},
-			onSuccess: ({ response }) => {
-				const nextToken = response.headers.get('set-auth-token');
-				if (nextToken) issuedToken = nextToken;
-			},
-		},
-	});
-
-	return {
-		client,
-		getIssuedToken: (payload?: unknown) =>
-			issuedToken ??
-			(typeof payload === 'object' &&
-			payload !== null &&
-			'token' in payload &&
-			typeof payload.token === 'string'
-				? payload.token
-				: null) ??
-			authToken ??
-			null,
-	};
-}
-
-export async function resolveSessionWithToken({
-	baseURL,
-	authToken,
-}: {
-	baseURL: BaseURL;
-	authToken: string | null;
-}): Promise<SessionResolution> {
-	const { client, getIssuedToken } = createBetterAuthClientSession({
-		baseURL,
-		authToken,
-	});
-	const { data, error } = await client.getSession();
-
-	if (error) {
-		const status =
-			typeof error === 'object' &&
-			error !== null &&
-			'status' in error &&
-			typeof error.status === 'number'
-				? error.status
-				: undefined;
-
-		return status !== undefined && status < 500
-			? { status: 'anonymous' }
-			: { status: 'unchanged' };
-	}
-
-	if (!data) return { status: 'anonymous' };
-
-	const token = getIssuedToken(data);
-	if (!token) {
-		throw new Error('Authenticated session is missing bearer token');
-	}
-
-	return {
-		status: 'authenticated',
-		token,
-		user: toStoredUser(data.user),
-		userKeyBase64:
-			typeof data === 'object' && data !== null && 'encryptionKey' in data
-				? typeof data.encryptionKey === 'string'
-					? data.encryptionKey
-					: null
-				: undefined,
-	};
-}
-
-export function createSessionResolver({
-	baseURL,
-}: {
-	baseURL: BaseURL;
-}): ResolveSession {
-	return (current) =>
-		resolveSessionWithToken({
-			baseURL,
-			authToken: current.status === 'authenticated' ? current.token : null,
 		});
-}
 
-export async function signInWithPassword({
-	baseURL,
-	input,
-}: {
-	baseURL: BaseURL;
-	input: { email: string; password: string };
-}): Promise<SessionResolution> {
-	const { client, getIssuedToken } = createBetterAuthClientSession({
-		baseURL,
-		authToken: null,
-	});
-	const { data, error } = await client.signIn.email(input);
-	if (error) {
-		throw error;
+		return {
+			client,
+			getIssuedToken: (payload?: unknown) =>
+				issuedToken ??
+				(typeof payload === 'object' &&
+				payload !== null &&
+				'token' in payload &&
+				typeof payload.token === 'string'
+					? payload.token
+					: null) ??
+				authToken ??
+				null,
+		};
 	}
 
-	return await resolveSessionWithToken({
-		baseURL,
-		authToken: getIssuedToken(data),
-	});
-}
+	async function resolveSessionWithToken(
+		authToken: string | null,
+	): Promise<SessionResolution> {
+		const { client, getIssuedToken } = createClientSession(authToken);
+		const { data, error } = await client.getSession();
 
-export async function signUpWithPassword({
-	baseURL,
-	input,
-}: {
-	baseURL: BaseURL;
-	input: {
-		email: string;
-		password: string;
-		name: string;
+		if (error) {
+			const status =
+				typeof error === 'object' &&
+				error !== null &&
+				'status' in error &&
+				typeof error.status === 'number'
+					? error.status
+					: undefined;
+
+			return status !== undefined && status < 500
+				? { status: 'anonymous' }
+				: { status: 'unchanged' };
+		}
+
+		if (!data) return { status: 'anonymous' };
+
+		const token = getIssuedToken(data);
+		if (!token) {
+			throw new Error('Authenticated session is missing bearer token');
+		}
+
+		return {
+			status: 'authenticated',
+			token,
+			user: toStoredUser(data.user),
+			userKeyBase64:
+				typeof data === 'object' && data !== null && 'encryptionKey' in data
+					? typeof data.encryptionKey === 'string'
+						? data.encryptionKey
+						: null
+					: undefined,
+		};
+	}
+
+	return {
+		resolveSession(current: AuthSession): Promise<SessionResolution> {
+			return resolveSessionWithToken(
+				current.status === 'authenticated' ? current.token : null,
+			);
+		},
+
+		async signInWithPassword(input: {
+			email: string;
+			password: string;
+		}): Promise<SessionResolution> {
+			const { client, getIssuedToken } = createClientSession(null);
+			const { data, error } = await client.signIn.email(input);
+			if (error) {
+				throw error;
+			}
+
+			return await resolveSessionWithToken(getIssuedToken(data));
+		},
+
+		async signUpWithPassword(input: {
+			email: string;
+			password: string;
+			name: string;
+		}): Promise<SessionResolution> {
+			const { client, getIssuedToken } = createClientSession(null);
+			const { data, error } = await client.signUp.email(input);
+			if (error) {
+				throw error;
+			}
+
+			return await resolveSessionWithToken(getIssuedToken(data));
+		},
+
+		async signOutRemote(current: AuthSession): Promise<void> {
+			const { client } = createClientSession(
+				current.status === 'authenticated' ? current.token : null,
+			);
+			const { error } = await client.signOut();
+			if (error) {
+				throw error;
+			}
+		},
+
+		async startGoogleSignInRedirect({
+			callbackURL,
+		}: {
+			callbackURL: string;
+		}): Promise<void> {
+			const { client } = createClientSession(null);
+
+			await client.signIn.social({
+				provider: 'google',
+				callbackURL,
+			});
+		},
+
+		async signInWithGoogleIdToken({
+			idToken,
+			nonce,
+		}: {
+			idToken: string;
+			nonce: string;
+		}): Promise<SessionResolution> {
+			const { client, getIssuedToken } = createClientSession(null);
+			const { data, error } = await client.signIn.social({
+				provider: 'google',
+				idToken: { token: idToken, nonce },
+			});
+			if (error) throw new Error(error.message ?? error.statusText);
+			if (!data || !('user' in data)) {
+				throw new Error('Unexpected response from server');
+			}
+
+			return await resolveSessionWithToken(getIssuedToken(data));
+		},
 	};
-}): Promise<SessionResolution> {
-	const { client, getIssuedToken } = createBetterAuthClientSession({
-		baseURL,
-		authToken: null,
-	});
-	const { data, error } = await client.signUp.email(input);
-	if (error) {
-		throw error;
-	}
-
-	return await resolveSessionWithToken({
-		baseURL,
-		authToken: getIssuedToken(data),
-	});
-}
-
-export async function signOutRemote({
-	baseURL,
-	current,
-}: {
-	baseURL: BaseURL;
-	current: AuthSession;
-}): Promise<void> {
-	const { client } = createBetterAuthClientSession({
-		baseURL,
-		authToken: current.status === 'authenticated' ? current.token : null,
-	});
-	const { error } = await client.signOut();
-	if (error) {
-		throw error;
-	}
-}
-
-export async function startGoogleSignInRedirect({
-	baseURL,
-	callbackURL,
-}: {
-	baseURL: BaseURL;
-	callbackURL: string;
-}): Promise<void> {
-	const { client } = createBetterAuthClientSession({
-		baseURL,
-		authToken: null,
-	});
-
-	await client.signIn.social({
-		provider: 'google',
-		callbackURL,
-	});
 }
 
 function toStoredUser(user: User): StoredUser {
 	return {
 		id: user.id,
-		createdAt:
-			user.createdAt instanceof Date
-				? user.createdAt.toISOString()
-				: user.createdAt,
-		updatedAt:
-			user.updatedAt instanceof Date
-				? user.updatedAt.toISOString()
-				: user.updatedAt,
+		createdAt: user.createdAt.toISOString(),
+		updatedAt: user.updatedAt.toISOString(),
 		email: user.email,
 		emailVerified: user.emailVerified,
 		name: user.name,

@@ -12,13 +12,8 @@
 
 import {
 	AuthSession,
+	createAuthTransport,
 	createAuthSession,
-	createBetterAuthClientSession,
-	createSessionResolver,
-	resolveSessionWithToken,
-	signInWithPassword,
-	signOutRemote,
-	signUpWithPassword,
 } from '@epicenter/svelte/auth';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
@@ -34,16 +29,11 @@ const authSession = createStorageState('local:authSession', {
 
 const authBaseURL = () => remoteServerUrl.current;
 
-const resolveSession = createSessionResolver({
+const authTransport = createAuthTransport({
 	baseURL: authBaseURL,
 });
 
 async function signInWithGoogleViaChromeIdentity() {
-	const { client, getIssuedToken } = createBetterAuthClientSession({
-		baseURL: authBaseURL,
-		authToken: null,
-	});
-
 	const redirectUri = browser.identity.getRedirectURL();
 	const nonce = crypto.randomUUID();
 	const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -64,28 +54,19 @@ async function signInWithGoogleViaChromeIdentity() {
 	const idToken = params.get('id_token');
 	if (!idToken) throw new Error('No id_token in response');
 
-	const { data, error } = await client.signIn.social({
-		provider: 'google',
-		idToken: { token: idToken, nonce },
-	});
-	if (error) throw new Error(error.message ?? error.statusText);
-	if (!data || !('user' in data)) {
-		throw new Error('Unexpected response from server');
-	}
-
-	return await resolveSessionWithToken({
-		baseURL: authBaseURL,
-		authToken: getIssuedToken(data),
+	return await authTransport.signInWithGoogleIdToken({
+		idToken,
+		nonce,
 	});
 }
 
 export const authState = createAuthSession({
 	storage: authSession,
-	resolveSession,
+	resolveSession: authTransport.resolveSession,
 	commands: {
-		signIn: (input) => signInWithPassword({ baseURL: authBaseURL, input }),
-		signUp: (input) => signUpWithPassword({ baseURL: authBaseURL, input }),
+		signIn: authTransport.signInWithPassword,
+		signUp: authTransport.signUpWithPassword,
 		signInWithGoogle: signInWithGoogleViaChromeIdentity,
 	},
-	signOutRemote: (current) => signOutRemote({ baseURL: authBaseURL, current }),
+	signOutRemote: authTransport.signOutRemote,
 });

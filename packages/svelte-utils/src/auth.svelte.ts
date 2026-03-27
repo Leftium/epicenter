@@ -7,17 +7,11 @@ export {
 	createAuthSession,
 } from './auth-session.svelte.js';
 export {
-	type BetterAuthTransportClient,
-	createBetterAuthClientSession,
-	createSessionResolver,
+	type AuthTransport,
+	createAuthTransport,
 	type RemoteAuthResult,
 	type ResolveSession,
-	resolveSessionWithToken,
 	type SessionResolution,
-	startGoogleSignInRedirect,
-	signInWithPassword,
-	signOutRemote,
-	signUpWithPassword,
 } from './auth-transport.js';
 export {
 	type AuthOperation,

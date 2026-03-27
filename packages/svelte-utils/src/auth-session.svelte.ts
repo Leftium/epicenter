@@ -16,7 +16,7 @@ import type {
 	StoredUser,
 } from './auth-types.js';
 
-type ExplicitAuthCommand = 'sign-in' | 'sign-up' | 'google-sign-in';
+type AuthCommandReason = 'sign-in' | 'sign-up' | 'google-sign-in';
 
 export const AuthCommandError = defineErrors({
 	InvalidCredentials: () => ({
@@ -37,24 +37,37 @@ export const AuthCommandError = defineErrors({
 		message: `Failed to sign in with Google: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	SessionHydrationFailed: ({ command }: { command: ExplicitAuthCommand }) => ({
-		message: `${describeCommand(command)} completed, but the authenticated session could not be loaded.`,
-		command,
+	SessionHydrationFailed: ({ reason }: { reason: AuthCommandReason }) => ({
+		message: `${describeCommand(reason)} completed, but the authenticated session could not be loaded.`,
+		reason,
 	}),
 	SessionCommitFailed: ({
-		command,
+		reason,
 		cause,
 	}: {
-		command: ExplicitAuthCommand;
+		reason: AuthCommandReason;
 		cause: unknown;
 	}) => ({
-		message: `${describeCommand(command)} succeeded, but app session setup failed: ${extractErrorMessage(cause)}`,
-		command,
+		message: `${describeCommand(reason)} succeeded, but app session setup failed: ${extractErrorMessage(cause)}`,
+		reason,
 		cause,
 	}),
 });
 export type AuthCommandError = InferErrors<typeof AuthCommandError>;
 export type AuthCommandResult = Result<void, AuthCommandError>;
+
+export type AuthCommandHandlers = {
+	signIn?: (input: {
+		email: string;
+		password: string;
+	}) => Promise<SessionResolution>;
+	signUp?: (input: {
+		email: string;
+		password: string;
+		name: string;
+	}) => Promise<SessionResolution>;
+	signInWithGoogle?: () => Promise<GoogleSignInResult>;
+};
 
 export type AuthSessionCommitReason =
 	| 'bootstrap'
@@ -75,18 +88,7 @@ export type AuthSessionCommit = {
 export type CreateAuthSessionOptions = {
 	storage: AuthSessionStorage;
 	resolveSession: ResolveSession;
-	commands?: {
-		signIn?: (input: {
-			email: string;
-			password: string;
-		}) => Promise<SessionResolution>;
-		signUp?: (input: {
-			email: string;
-			password: string;
-			name: string;
-		}) => Promise<SessionResolution>;
-		signInWithGoogle?: () => Promise<GoogleSignInResult>;
-	};
+	commands?: AuthCommandHandlers;
 	signOutRemote?: (current: AuthSession) => Promise<void>;
 	onSessionCommitted?: (args: AuthSessionCommit) => void | Promise<void>;
 };
@@ -125,9 +127,9 @@ export function createAuthSession({
 	signOutRemote,
 	onSessionCommitted,
 }: CreateAuthSessionOptions): AuthSessionStore {
-	let observedSession = $state<AuthSession>(storage.current);
+	let publishedSession = $state<AuthSession>(storage.current);
 	let operation = $state<AuthOperation>({ status: 'bootstrapping' });
-	let bootstrapPromise: Promise<void> | null = null;
+	let initializationPromise: Promise<void> | null = null;
 	let isApplyingLocalSessionChange = false;
 	let lastPublishedToken = getToken(storage.current);
 
@@ -139,10 +141,10 @@ export function createAuthSession({
 		operation = next;
 	}
 
-	async function adoptSession(
+	async function publishSession(
 		next: AuthSession,
 		{
-			previous = observedSession,
+			previous = publishedSession,
 			reason,
 			runEffects = false,
 			userKeyBase64,
@@ -154,7 +156,7 @@ export function createAuthSession({
 		},
 	) {
 		const changed = !areSessionsEqual(previous, next);
-		observedSession = next;
+		publishedSession = next;
 
 		if (changed) {
 			for (const listener of sessionListeners) {
@@ -182,7 +184,7 @@ export function createAuthSession({
 		});
 	}
 
-	async function commitSession(
+	async function persistAndPublishSession(
 		next: AuthSession,
 		{
 			reason,
@@ -194,7 +196,7 @@ export function createAuthSession({
 			userKeyBase64?: string | null;
 		},
 	) {
-		const previous = observedSession;
+		const previous = publishedSession;
 		const changed = !areSessionsEqual(previous, next);
 
 		if (changed) {
@@ -206,7 +208,7 @@ export function createAuthSession({
 			}
 		}
 
-		await adoptSession(next, {
+		await publishSession(next, {
 			previous,
 			reason,
 			runEffects,
@@ -214,7 +216,7 @@ export function createAuthSession({
 		});
 	}
 
-	async function applyRemoteResult(
+	async function applyResolvedSession(
 		result: SessionResolution,
 		reason: Exclude<AuthSessionCommitReason, 'external-change'>,
 	) {
@@ -222,10 +224,10 @@ export function createAuthSession({
 			case 'unchanged':
 				return;
 			case 'anonymous':
-				await commitSession({ status: 'anonymous' }, { reason });
+				await persistAndPublishSession({ status: 'anonymous' }, { reason });
 				return;
 			case 'authenticated':
-				await commitSession(
+				await persistAndPublishSession(
 					{
 						status: 'authenticated',
 						token: result.token,
@@ -241,14 +243,14 @@ export function createAuthSession({
 		}
 	}
 
-	async function bootstrap() {
-		if (!bootstrapPromise) {
-			bootstrapPromise = (async () => {
+	async function initializeSession() {
+		if (!initializationPromise) {
+			initializationPromise = (async () => {
 				await Promise.all([storage.whenReady].filter(Boolean));
 
 				const hydratedSession = storage.current;
 				try {
-					await adoptSession(hydratedSession, {
+					await publishSession(hydratedSession, {
 						reason: 'bootstrap',
 						runEffects: hydratedSession.status === 'authenticated',
 					});
@@ -258,7 +260,7 @@ export function createAuthSession({
 
 				if (hydratedSession.status === 'authenticated') {
 					try {
-						await applyRemoteResult(
+						await applyResolvedSession(
 							await resolveSession(hydratedSession),
 							'bootstrap',
 						);
@@ -271,86 +273,35 @@ export function createAuthSession({
 			})();
 		}
 
-		return await bootstrapPromise;
+		return await initializationPromise;
 	}
 
-	async function runSigningInCommand(
-		command: ExplicitAuthCommand,
-		run: () => Promise<SessionResolution | GoogleSignInResult>,
+	async function completeAuthCommand(
+		result: SessionResolution | GoogleSignInResult,
 		{
+			reason,
 			allowRedirectStart = false,
-			requireAuthenticatedSession = false,
 		}: {
+			reason: AuthCommandReason;
 			allowRedirectStart?: boolean;
-			requireAuthenticatedSession?: boolean;
-		} = {},
+		},
 	): Promise<AuthCommandResult> {
-		await bootstrap();
-		setOperation({ status: 'signing-in' });
-
-		let result: SessionResolution | GoogleSignInResult;
-		try {
-			result = await run();
-		} catch (error) {
-			setOperation({ status: 'idle' });
-
-			if (command === 'google-sign-in' && error instanceof Error) {
-				const message = error.message.toLowerCase();
-				if (message.includes('canceled') || message.includes('cancelled')) {
-					return AuthCommandError.GoogleSignInCancelled();
-				}
-			}
-
-			if (command === 'sign-in') {
-				const status =
-					typeof error === 'object' && error !== null && 'status' in error
-						? (error as { status?: unknown }).status
-						: undefined;
-				if (status === 401 || status === 403) {
-					return AuthCommandError.InvalidCredentials();
-				}
-
-				const message = extractErrorMessage(error).toLowerCase();
-				if (
-					message.includes('invalid email or password') ||
-					message.includes('invalid credentials') ||
-					message.includes('invalid password')
-				) {
-					return AuthCommandError.InvalidCredentials();
-				}
-			}
-
-			switch (command) {
-				case 'sign-in':
-					return AuthCommandError.SignInFailed({ cause: error });
-				case 'sign-up':
-					return AuthCommandError.SignUpFailed({ cause: error });
-				case 'google-sign-in':
-					return AuthCommandError.GoogleSignInFailed({ cause: error });
-			}
-		}
-
 		if (allowRedirectStart && result.status === 'redirect-started') {
 			setOperation({ status: 'idle' });
 			return Ok(undefined);
 		}
 
-		if (requireAuthenticatedSession && result.status !== 'authenticated') {
+		if (result.status !== 'authenticated') {
 			setOperation({ status: 'idle' });
-			return AuthCommandError.SessionHydrationFailed({ command });
+			return AuthCommandError.SessionHydrationFailed({ reason });
 		}
 
 		try {
-			if (result.status === 'redirect-started') {
-				setOperation({ status: 'idle' });
-				return Ok(undefined);
-			}
-
-			await applyRemoteResult(result, command);
+			await applyResolvedSession(result, reason);
 		} catch (error) {
 			setOperation({ status: 'idle' });
 			return AuthCommandError.SessionCommitFailed({
-				command,
+				reason,
 				cause: error,
 			});
 		}
@@ -361,10 +312,10 @@ export function createAuthSession({
 
 	storage.watch((next) => {
 		if (isApplyingLocalSessionChange) return;
-		if (areSessionsEqual(observedSession, next)) return;
+		if (areSessionsEqual(publishedSession, next)) return;
 
 		setOperation({ status: 'idle' });
-		void adoptSession(next, {
+		void publishSession(next, {
 			reason: 'external-change',
 			runEffects: true,
 		}).catch((error) => {
@@ -374,7 +325,7 @@ export function createAuthSession({
 
 	return {
 		get whenReady() {
-			return bootstrap();
+			return initializeSession();
 		},
 
 		get session() {
@@ -400,11 +351,11 @@ export function createAuthSession({
 		},
 
 		async refresh() {
-			await bootstrap();
+			await initializeSession();
 			setOperation({ status: 'refreshing' });
 
 			try {
-				await applyRemoteResult(
+				await applyResolvedSession(
 					await resolveSession(storage.current),
 					'refresh',
 				);
@@ -423,9 +374,20 @@ export function createAuthSession({
 				});
 			}
 
-			return runSigningInCommand('sign-in', () => signIn(input), {
-				requireAuthenticatedSession: true,
-			});
+			return (async () => {
+				await initializeSession();
+				setOperation({ status: 'signing-in' });
+
+				let result: SessionResolution;
+				try {
+					result = await signIn(input);
+				} catch (error) {
+					setOperation({ status: 'idle' });
+					return mapSignInFailure(error);
+				}
+
+				return await completeAuthCommand(result, { reason: 'sign-in' });
+			})();
 		},
 
 		signUp(input) {
@@ -436,9 +398,20 @@ export function createAuthSession({
 				});
 			}
 
-			return runSigningInCommand('sign-up', () => signUp(input), {
-				requireAuthenticatedSession: true,
-			});
+			return (async () => {
+				await initializeSession();
+				setOperation({ status: 'signing-in' });
+
+				let result: SessionResolution;
+				try {
+					result = await signUp(input);
+				} catch (error) {
+					setOperation({ status: 'idle' });
+					return AuthCommandError.SignUpFailed({ cause: error });
+				}
+
+				return await completeAuthCommand(result, { reason: 'sign-up' });
+			})();
 		},
 
 		signInWithGoogle() {
@@ -449,14 +422,27 @@ export function createAuthSession({
 				});
 			}
 
-			return runSigningInCommand('google-sign-in', () => signInWithGoogle(), {
-				allowRedirectStart: true,
-				requireAuthenticatedSession: true,
-			});
+			return (async () => {
+				await initializeSession();
+				setOperation({ status: 'signing-in' });
+
+				let result: GoogleSignInResult;
+				try {
+					result = await signInWithGoogle();
+				} catch (error) {
+					setOperation({ status: 'idle' });
+					return mapGoogleSignInFailure(error);
+				}
+
+				return await completeAuthCommand(result, {
+					reason: 'google-sign-in',
+					allowRedirectStart: true,
+				});
+			})();
 		},
 
 		async signOut() {
-			await bootstrap();
+			await initializeSession();
 			setOperation({ status: 'signing-out' });
 
 			try {
@@ -464,7 +450,7 @@ export function createAuthSession({
 			} catch {}
 
 			try {
-				await commitSession(
+				await persistAndPublishSession(
 					{ status: 'anonymous' },
 					{ reason: 'sign-out', runEffects: true },
 				);
@@ -526,8 +512,8 @@ function getToken(session: AuthSession): string | null {
 	return session.status === 'authenticated' ? session.token : null;
 }
 
-function describeCommand(command: ExplicitAuthCommand): string {
-	switch (command) {
+function describeCommand(reason: AuthCommandReason): string {
+	switch (reason) {
 		case 'sign-in':
 			return 'Sign-in';
 		case 'sign-up':
@@ -535,6 +521,46 @@ function describeCommand(command: ExplicitAuthCommand): string {
 		case 'google-sign-in':
 			return 'Google sign-in';
 	}
+}
+
+function mapSignInFailure(error: unknown): AuthCommandError {
+	if (isInvalidCredentialsError(error)) {
+		return AuthCommandError.InvalidCredentials();
+	}
+
+	return AuthCommandError.SignInFailed({ cause: error });
+}
+
+function mapGoogleSignInFailure(error: unknown): AuthCommandError {
+	if (isCancelledGoogleSignIn(error)) {
+		return AuthCommandError.GoogleSignInCancelled();
+	}
+
+	return AuthCommandError.GoogleSignInFailed({ cause: error });
+}
+
+function isCancelledGoogleSignIn(error: unknown): boolean {
+	if (!(error instanceof Error)) return false;
+
+	const message = error.message.toLowerCase();
+	return message.includes('canceled') || message.includes('cancelled');
+}
+
+function isInvalidCredentialsError(error: unknown): boolean {
+	const status =
+		typeof error === 'object' && error !== null && 'status' in error
+			? (error as { status?: unknown }).status
+			: undefined;
+	if (status === 401 || status === 403) {
+		return true;
+	}
+
+	const message = extractErrorMessage(error).toLowerCase();
+	return (
+		message.includes('invalid email or password') ||
+		message.includes('invalid credentials') ||
+		message.includes('invalid password')
+	);
 }
 
 function reportBackgroundAuthError(

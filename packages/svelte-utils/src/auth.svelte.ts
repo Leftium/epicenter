@@ -1,5 +1,4 @@
 import type {
-	WorkspaceEncryption,
 	WorkspaceEncryptionWithCache,
 } from '@epicenter/workspace';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
@@ -65,14 +64,8 @@ export type SessionField<T> = {
 
 type WorkspaceSessionHandle = {
 	clearLocalData(): Promise<void>;
-	encryption: WorkspaceEncryption | WorkspaceEncryptionWithCache;
+	encryption: WorkspaceEncryptionWithCache;
 };
-
-function hasTryUnlock(
-	encryption: WorkspaceEncryption | WorkspaceEncryptionWithCache,
-): encryption is WorkspaceEncryptionWithCache {
-	return 'tryUnlock' in encryption;
-}
 
 export function createAuth({
 	baseURL,
@@ -243,7 +236,7 @@ export function createAuth({
 			bootstrapPromise = (async () => {
 				await Promise.all([token.whenReady, user.whenReady].filter(Boolean));
 
-				if (user.current && hasTryUnlock(workspace.encryption)) {
+				if (user.current) {
 					await workspace.encryption.tryUnlock();
 					setLastError(undefined);
 				}
@@ -325,11 +318,10 @@ export function createAuth({
 				try: () => workspace.clearLocalData(),
 				catch: () => Ok(undefined),
 			});
-		} else if (isSignedIn && !wasSignedIn && hasTryUnlock(workspace.encryption)) {
-			const encryption = workspace.encryption;
+		} else if (isSignedIn && !wasSignedIn) {
 			setLastError(undefined);
 			void tryAsync({
-				try: () => encryption.tryUnlock(),
+				try: () => workspace.encryption.tryUnlock(),
 				catch: () => Ok(false),
 			});
 		}

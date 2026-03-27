@@ -12,10 +12,11 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { authState } from '$lib/auth';
+import { userKeyCache } from './user-key-cache';
 import { honeycrisp } from './schema';
 
 const workspace = createWorkspace(honeycrisp)
-	.withEncryption()
+	.withEncryption({ userKeyCache })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',

@@ -4,7 +4,7 @@
  * IndexedDB persistence + BroadcastChannel sync with cached startup unlock.
  */
 
-import { createWorkspaceAuthBoundary } from '@epicenter/svelte/auth';
+import { createWorkspaceAuth } from '@epicenter/svelte/auth';
 import { createWorkspace } from '@epicenter/workspace';
 import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
@@ -17,7 +17,7 @@ export const workspace = createWorkspace(definition)
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('broadcast', broadcastChannelSync);
 
-export const workspaceAuth = createWorkspaceAuthBoundary({
+export const workspaceAuth = createWorkspaceAuth({
 	workspace,
 	auth: authState,
 });

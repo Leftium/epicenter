@@ -1,5 +1,5 @@
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createWorkspaceAuthBoundary } from '@epicenter/svelte/auth';
+import { createWorkspaceAuth } from '@epicenter/svelte/auth';
 import {
 	createSqliteIndex,
 	createYjsFileSystem,
@@ -37,7 +37,7 @@ export const ws = createWorkspace({
 	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 
-export const workspaceAuth = createWorkspaceAuthBoundary({
+export const workspaceAuth = createWorkspaceAuth({
 	workspace: ws,
 	auth: authState,
 	reconnect: () => ws.extensions.sync.reconnect(),

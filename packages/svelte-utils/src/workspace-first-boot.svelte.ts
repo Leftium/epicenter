@@ -17,11 +17,9 @@ type WorkspaceAuthResult =
 	| AuthCommandResult
 	| GoogleAuthCommandResult;
 
-export type WorkspaceAuthBoundary = ReturnType<
-	typeof createWorkspaceAuthBoundary
->;
+export type WorkspaceAuth = ReturnType<typeof createWorkspaceAuth>;
 
-export type CreateWorkspaceAuthBoundaryOptions = {
+export type CreateWorkspaceAuthOptions = {
 	workspace: WorkspaceBootWorkspace;
 	auth: Pick<
 		AuthClient,
@@ -36,11 +34,11 @@ function isRedirectStartedResult(
 	return 'status' in result && result.status === 'redirect-started';
 }
 
-export function createWorkspaceAuthBoundary({
+export function createWorkspaceAuth({
 	workspace,
 	auth,
 	reconnect,
-}: CreateWorkspaceAuthBoundaryOptions) {
+}: CreateWorkspaceAuthOptions) {
 	async function applyAuthResult(result: WorkspaceAuthResult): Promise<void> {
 		if (isRedirectStartedResult(result)) {
 			return;
@@ -62,19 +60,32 @@ export function createWorkspaceAuthBoundary({
 		}
 	}
 
+	async function startAppBoot(refresh: () => Promise<AuthRefreshResult>) {
+		await Promise.all([workspace.bootFromCache(), refresh()]);
+	}
+
 	return {
+		/**
+		 * Sign in with email and password and adopt any returned workspace key.
+		 */
 		async signIn(input: Parameters<AuthClient['signIn']>[0]) {
 			const result = await auth.signIn(input);
 			await applyAuthResult(result);
 			return result;
 		},
 
+		/**
+		 * Create an account and adopt any returned workspace key.
+		 */
 		async signUp(input: Parameters<AuthClient['signUp']>[0]) {
 			const result = await auth.signUp(input);
 			await applyAuthResult(result);
 			return result;
 		},
 
+		/**
+		 * Start the Google sign-in flow and adopt the workspace key after success.
+		 */
 		async signInWithGoogle() {
 			const result = await auth.signInWithGoogle();
 			await applyAuthResult(result);
@@ -104,16 +115,6 @@ export function createWorkspaceAuthBoundary({
 		},
 
 		/**
-		 * Run local workspace boot and auth refresh in parallel on app mount.
-		 *
-		 * This keeps the app immediately usable from cached local state while auth
-		 * revalidates in the background.
-		 */
-		async startAppBoot(): Promise<void> {
-			await Promise.all([workspace.bootFromCache(), this.refresh()]);
-		},
-
-		/**
 		 * Install the app boot lifecycle into the current Svelte component.
 		 *
 		 * This starts background boot work on mount and refreshes auth whenever the
@@ -123,7 +124,7 @@ export function createWorkspaceAuthBoundary({
 			const boundary = this;
 
 			onMount(() => {
-				void boundary.startAppBoot();
+				void startAppBoot(() => boundary.refresh());
 
 				const onVisibilityChange = () => {
 					if (

@@ -5,21 +5,10 @@ import type {
 	GoogleAuthCommandResult,
 } from './auth-session.svelte.js';
 import type { AuthSession } from './auth-types.js';
-import { createWorkspaceAuthBoundary } from './workspace-first-boot.svelte.js';
+import { createWorkspaceAuth } from './workspace-first-boot.svelte.js';
 
-describe('createWorkspaceAuthBoundary.startAppBoot', () => {
-	test('boots into unlocked mode from the cached key without waiting on auth', async () => {
-		const workspace = createFakeWorkspace({ bootFromCacheResult: 'unlocked' });
-		const auth = createFakeAuth();
-		const workspaceAuth = createWorkspaceAuthBoundary({ workspace, auth });
-
-		await workspaceAuth.startAppBoot();
-
-		expect(workspace.bootFromCacheCalls).toBe(1);
-		expect(workspace.unlockWithKeyCalls).toEqual([]);
-	});
-
-	test('refresh adopts plaintext local data and unlocks with the fetched key', async () => {
+describe('createWorkspaceAuth.refresh', () => {
+	test('adopts plaintext local data and unlocks with the fetched key', async () => {
 		const workspace = createFakeWorkspace({ bootFromCacheResult: 'plaintext' });
 		const auth = createFakeAuth({
 			refreshResult: {
@@ -28,7 +17,7 @@ describe('createWorkspaceAuthBoundary.startAppBoot', () => {
 			},
 		});
 		let reconnectCalls = 0;
-		const workspaceAuth = createWorkspaceAuthBoundary({
+		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
 			reconnect: () => {
@@ -36,20 +25,20 @@ describe('createWorkspaceAuthBoundary.startAppBoot', () => {
 			},
 		});
 
-		await workspaceAuth.startAppBoot();
+		await workspaceAuth.refresh();
 
 		expect(workspace.unlockWithKeyCalls).toEqual(['AQIDBA==']);
 		expect(reconnectCalls).toBe(1);
 	});
 
-	test('refresh to anonymous reconnects when boot started from a persisted authenticated session', async () => {
+	test('reconnects when refresh downgrades an authenticated session to anonymous', async () => {
 		const workspace = createFakeWorkspace({ bootFromCacheResult: 'unlocked' });
 		const auth = createFakeAuth({
 			initialSession: authenticatedSession(),
 			refreshResult: { session: { status: 'anonymous' } },
 		});
 		let reconnectCalls = 0;
-		const workspaceAuth = createWorkspaceAuthBoundary({
+		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
 			reconnect: () => {
@@ -57,13 +46,13 @@ describe('createWorkspaceAuthBoundary.startAppBoot', () => {
 			},
 		});
 
-		await workspaceAuth.startAppBoot();
+		await workspaceAuth.refresh();
 
 		expect(reconnectCalls).toBe(1);
 	});
 });
 
-describe('createWorkspaceAuthBoundary.signIn', () => {
+describe('createWorkspaceAuth.signIn', () => {
 	test('returns auth failures without changing workspace state', async () => {
 		const workspace = createFakeWorkspace({ bootFromCacheResult: 'plaintext' });
 		const auth = createFakeAuth({
@@ -73,7 +62,7 @@ describe('createWorkspaceAuthBoundary.signIn', () => {
 			},
 		});
 		let reconnectCalls = 0;
-		const workspaceAuth = createWorkspaceAuthBoundary({
+		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
 			reconnect: () => {
@@ -98,11 +87,11 @@ describe('createWorkspaceAuthBoundary.signIn', () => {
 	});
 });
 
-describe('createWorkspaceAuthBoundary.signInWithGoogle', () => {
+describe('createWorkspaceAuth.signInWithGoogle', () => {
 	test('ignores redirect-started results', async () => {
 		const workspace = createFakeWorkspace({ bootFromCacheResult: 'plaintext' });
 		let reconnectCalls = 0;
-		const workspaceAuth = createWorkspaceAuthBoundary({
+		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth: createFakeAuth({
 				signInWithGoogleResult: { status: 'redirect-started' },
@@ -120,34 +109,12 @@ describe('createWorkspaceAuthBoundary.signInWithGoogle', () => {
 	});
 });
 
-describe('createWorkspaceAuthBoundary.refresh', () => {
-	test('reconnects when refresh downgrades an authenticated session to anonymous', async () => {
-		const workspace = createFakeWorkspace({ bootFromCacheResult: 'unlocked' });
-		const auth = createFakeAuth({
-			initialSession: authenticatedSession(),
-			refreshResult: { session: { status: 'anonymous' } },
-		});
-		let reconnectCalls = 0;
-		const workspaceAuth = createWorkspaceAuthBoundary({
-			workspace,
-			auth,
-			reconnect: () => {
-				reconnectCalls += 1;
-			},
-		});
-
-		await workspaceAuth.refresh();
-
-		expect(reconnectCalls).toBe(1);
-	});
-});
-
-describe('createWorkspaceAuthBoundary.signOut', () => {
+describe('createWorkspaceAuth.signOut', () => {
 	test('sign-out performs a full local wipe and reconnects sync', async () => {
 		const workspace = createFakeWorkspace({ bootFromCacheResult: 'unlocked' });
 		const auth = createFakeAuth();
 		let reconnectCalls = 0;
-		const workspaceAuth = createWorkspaceAuthBoundary({
+		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
 			reconnect: () => {

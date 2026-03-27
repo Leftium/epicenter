@@ -8,7 +8,7 @@
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createWorkspaceAuthBoundary } from '@epicenter/svelte/auth';
+import { createWorkspaceAuth } from '@epicenter/svelte/auth';
 import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
@@ -30,7 +30,7 @@ const workspace = createWorkspace(honeycrisp)
 		}),
 	);
 
-export const workspaceAuth = createWorkspaceAuthBoundary({
+export const workspaceAuth = createWorkspaceAuth({
 	workspace,
 	auth: authState,
 	reconnect: () => workspace.extensions.sync.reconnect(),

@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type {
-	AuthClient,
-	AuthRefreshResult,
-	GoogleAuthCommandResult,
-} from './auth-session.svelte.js';
+import type { AuthClient, AuthRefreshResult } from './auth-session.svelte.js';
 import type { AuthSession } from './auth-types.js';
 import { createWorkspaceAuth } from './workspace-auth.svelte.js';
 
@@ -88,14 +84,18 @@ describe('createWorkspaceAuth.signIn', () => {
 });
 
 describe('createWorkspaceAuth.signInWithGoogle', () => {
-	test('ignores redirect-started results', async () => {
+	test('adopts workspace key from a completed Google sign-in', async () => {
 		const workspace = createFakeWorkspace({ bootFromCacheResult: 'plaintext' });
+		const auth = createFakeAuth({
+			signInWithGoogleResult: {
+				session: authenticatedSession(),
+				workspaceKeyBase64: 'AQIDBA==',
+			},
+		});
 		let reconnectCalls = 0;
 		const workspaceAuth = createWorkspaceAuth({
 			workspace,
-			auth: createFakeAuth({
-				signInWithGoogleResult: { status: 'redirect-started' },
-			}),
+			auth,
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
@@ -103,9 +103,13 @@ describe('createWorkspaceAuth.signInWithGoogle', () => {
 
 		const result = await workspaceAuth.signInWithGoogle();
 
-		expect(result).toEqual({ status: 'redirect-started' });
-		expect(workspace.unlockWithKeyCalls).toEqual([]);
-		expect(reconnectCalls).toBe(0);
+		expect(result).toEqual({
+			session: authenticatedSession(),
+			workspaceKeyBase64: 'AQIDBA==',
+		});
+		expect(auth.signInWithGoogleCalls).toBe(1);
+		expect(workspace.unlockWithKeyCalls).toEqual(['AQIDBA==']);
+		expect(reconnectCalls).toBe(1);
 	});
 });
 
@@ -135,13 +139,13 @@ function createFakeAuth({
 	refreshResult = { session: initialSession } as AuthRefreshResult,
 	signInResult = { session: initialSession },
 	signUpResult = { session: initialSession },
-	signInWithGoogleResult = { session: initialSession } as GoogleAuthCommandResult,
+	signInWithGoogleResult = { session: initialSession },
 }: {
 	initialSession?: AuthSession;
 	refreshResult?: AuthRefreshResult;
 	signInResult?: Awaited<ReturnType<AuthClient['signIn']>>;
 	signUpResult?: Awaited<ReturnType<AuthClient['signUp']>>;
-	signInWithGoogleResult?: GoogleAuthCommandResult;
+	signInWithGoogleResult?: Awaited<ReturnType<AuthClient['signInWithGoogle']>>;
 } = {}): AuthClient & {
 	signInCalls: number;
 	signUpCalls: number;
@@ -178,7 +182,7 @@ function createFakeAuth({
 			if ('session' in signUpResult) session = signUpResult.session;
 			return signUpResult;
 		},
-		async signInWithGoogle(): Promise<GoogleAuthCommandResult> {
+		async signInWithGoogle() {
 			signInWithGoogleCalls += 1;
 			if ('session' in signInWithGoogleResult) {
 				session = signInWithGoogleResult.session;

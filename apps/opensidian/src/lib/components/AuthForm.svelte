@@ -4,7 +4,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { authState } from '$lib/auth';
+	import { authState, startGoogleSignIn } from '$lib/auth';
 	import { workspaceAuth } from '$lib/workspace.svelte';
 
 	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
@@ -49,8 +49,12 @@
 			disabled={isBusy}
 			onclick={async () => {
 				submitError = null;
-				const result = await workspaceAuth.signInWithGoogle();
-				if ('error' in result) submitError = result.error.message;
+				try {
+					await startGoogleSignIn();
+				} catch (error) {
+					submitError =
+						error instanceof Error ? error.message : 'Failed to sign in with Google.';
+				}
 			}}
 		>
 			<svg class="size-4" viewBox="0 0 24 24" aria-hidden="true">

@@ -3,11 +3,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type {
-	GoogleSignInResult,
-	ResolveSession,
-	SessionResolution,
-} from './auth-transport.js';
+import type { ResolveSession, SessionResolution } from './auth-transport.js';
 import type { AuthOperation, AuthSession, AuthSessionStorage } from './auth-types.js';
 
 type AuthCommandReason = 'sign-in' | 'sign-up' | 'google-sign-in';
@@ -61,10 +57,6 @@ export type AuthCommandResult =
 			error: AuthCommandError;
 	  };
 
-export type GoogleAuthCommandResult =
-	| AuthCommandResult
-	| { status: 'redirect-started' };
-
 export type AuthCommandHandlers = {
 	signIn?: (input: {
 		email: string;
@@ -75,7 +67,7 @@ export type AuthCommandHandlers = {
 		password: string;
 		name: string;
 	}) => Promise<SessionResolution>;
-	signInWithGoogle?: () => Promise<GoogleSignInResult>;
+	signInWithGoogle?: () => Promise<SessionResolution>;
 };
 
 export type CreateAuthSessionOptions = {
@@ -100,7 +92,7 @@ export type AuthClient = {
 		password: string;
 		name: string;
 	}): Promise<AuthCommandResult>;
-	signInWithGoogle(): Promise<GoogleAuthCommandResult>;
+	signInWithGoogle(): Promise<AuthCommandResult>;
 	signOut(): Promise<void>;
 
 	fetch: typeof fetch;
@@ -293,26 +285,15 @@ export function createAuthSession({
 				await initializeSession();
 				setOperation({ status: 'signing-in' });
 
-				let result: GoogleSignInResult;
 				try {
-					result = await signInWithGoogle();
+					return await completeAuthCommand(await signInWithGoogle(), {
+						reason: 'google-sign-in',
+					});
 				} catch (error) {
-					setOperation({ status: 'idle' });
 					return {
 						session: storage.current,
 						error: mapGoogleSignInFailure(error),
 					};
-				}
-
-				if (result.status === 'redirect-started') {
-					setOperation({ status: 'idle' });
-					return result;
-				}
-
-				try {
-					return await completeAuthCommand(result, {
-						reason: 'google-sign-in',
-					});
 				} finally {
 					setOperation({ status: 'idle' });
 				}

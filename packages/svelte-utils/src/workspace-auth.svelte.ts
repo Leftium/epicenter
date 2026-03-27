@@ -3,7 +3,6 @@ import type {
 	AuthClient,
 	AuthCommandResult,
 	AuthRefreshResult,
-	GoogleAuthCommandResult,
 } from './auth-session.svelte.js';
 
 type WorkspaceBootWorkspace = {
@@ -12,10 +11,7 @@ type WorkspaceBootWorkspace = {
 	clearLocalData(): Promise<void>;
 };
 
-type WorkspaceAuthResult =
-	| AuthRefreshResult
-	| AuthCommandResult
-	| GoogleAuthCommandResult;
+type WorkspaceAuthResult = AuthRefreshResult | AuthCommandResult;
 
 export type WorkspaceAuth = ReturnType<typeof createWorkspaceAuth>;
 
@@ -28,22 +24,12 @@ export type CreateWorkspaceAuthOptions = {
 	reconnect?: () => void;
 };
 
-function isRedirectStartedResult(
-	result: WorkspaceAuthResult,
-): result is { status: 'redirect-started' } {
-	return 'status' in result && result.status === 'redirect-started';
-}
-
 export function createWorkspaceAuth({
 	workspace,
 	auth,
 	reconnect,
 }: CreateWorkspaceAuthOptions) {
 	async function applyAuthResult(result: WorkspaceAuthResult): Promise<void> {
-		if (isRedirectStartedResult(result)) {
-			return;
-		}
-
 		if ('error' in result) {
 			return;
 		}
@@ -64,32 +50,34 @@ export function createWorkspaceAuth({
 		await Promise.all([workspace.bootFromCache(), refresh()]);
 	}
 
+	async function runAuthCommand(
+		command: Promise<AuthCommandResult>,
+	): Promise<AuthCommandResult> {
+		const result = await command;
+		await applyAuthResult(result);
+		return result;
+	}
+
 	return {
 		/**
 		 * Sign in with email and password and adopt any returned workspace key.
 		 */
 		async signIn(input: Parameters<AuthClient['signIn']>[0]) {
-			const result = await auth.signIn(input);
-			await applyAuthResult(result);
-			return result;
+			return await runAuthCommand(auth.signIn(input));
 		},
 
 		/**
 		 * Create an account and adopt any returned workspace key.
 		 */
 		async signUp(input: Parameters<AuthClient['signUp']>[0]) {
-			const result = await auth.signUp(input);
-			await applyAuthResult(result);
-			return result;
+			return await runAuthCommand(auth.signUp(input));
 		},
 
 		/**
-		 * Start the Google sign-in flow and adopt the workspace key after success.
+		 * Complete Google sign-in for platforms that return a session inline.
 		 */
 		async signInWithGoogle() {
-			const result = await auth.signInWithGoogle();
-			await applyAuthResult(result);
-			return result;
+			return await runAuthCommand(auth.signInWithGoogle());
 		},
 
 		/**

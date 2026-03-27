@@ -3,8 +3,8 @@ import { createPersistedState } from '@epicenter/svelte';
 import {
 	AuthSession,
 	createAuthSession,
-	createBetterAuthClientSession,
 	createSessionResolver,
+	startGoogleSignInRedirect,
 	signInWithPassword,
 	signOutRemote,
 	signUpWithPassword,
@@ -20,23 +20,19 @@ const resolveSession = createSessionResolver({
 	baseURL: APP_URLS.API,
 });
 
+export function startGoogleSignIn(): Promise<void> {
+	return startGoogleSignInRedirect({
+		baseURL: APP_URLS.API,
+		callbackURL: window.location.origin,
+	});
+}
+
 export const authState = createAuthSession({
 	storage: session,
 	resolveSession,
 	commands: {
 		signIn: (input) => signInWithPassword({ baseURL: APP_URLS.API, input }),
 		signUp: (input) => signUpWithPassword({ baseURL: APP_URLS.API, input }),
-		signInWithGoogle: async () => {
-			const { client } = createBetterAuthClientSession({
-				baseURL: APP_URLS.API,
-				authToken: null,
-			});
-			await client.signIn.social({
-				provider: 'google',
-				callbackURL: window.location.origin,
-			});
-			return { status: 'redirect-started' };
-		},
 	},
 	signOutRemote: (current) => signOutRemote({ baseURL: APP_URLS.API, current }),
 });

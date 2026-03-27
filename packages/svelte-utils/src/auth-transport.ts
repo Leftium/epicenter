@@ -16,10 +16,6 @@ export type SessionResolution =
 
 export type RemoteAuthResult = SessionResolution;
 
-export type GoogleSignInResult =
-	| SessionResolution
-	| { status: 'redirect-started' };
-
 export type ResolveSession = (
 	current: AuthSession,
 ) => Promise<SessionResolution>;
@@ -167,6 +163,24 @@ export async function signOutRemote({
 	if (error) {
 		throw error;
 	}
+}
+
+export async function startGoogleSignInRedirect({
+	baseURL,
+	callbackURL,
+}: {
+	baseURL: BaseURL;
+	callbackURL: string;
+}): Promise<void> {
+	const { client } = createBetterAuthClientSession({
+		baseURL,
+		authToken: null,
+	});
+
+	await client.signIn.social({
+		provider: 'google',
+		callbackURL,
+	});
 }
 
 function getErrorStatus(error: unknown): number | undefined {

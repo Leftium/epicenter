@@ -12,31 +12,26 @@ export type RemoteAuthResult =
 	| { status: 'anonymous' }
 	| { status: 'unchanged' };
 
+export type AuthCommandRemoteResult =
+	| RemoteAuthResult
+	| { status: 'session-hydration-failed' };
+
 export type AuthTransport = {
 	getSession(current: AuthSession): Promise<RemoteAuthResult>;
-	signIn(input: { email: string; password: string }): Promise<RemoteAuthResult>;
+	signIn(input: {
+		email: string;
+		password: string;
+	}): Promise<AuthCommandRemoteResult>;
 	signUp(input: {
 		email: string;
 		password: string;
 		name: string;
-	}): Promise<RemoteAuthResult>;
-	signInWithGoogle(): Promise<RemoteAuthResult>;
+	}): Promise<AuthCommandRemoteResult>;
+	signInWithGoogle(): Promise<AuthCommandRemoteResult>;
 	signOut(current: AuthSession): Promise<void>;
 };
 
 export type BetterAuthTransportClient = ReturnType<typeof createAuthClient>;
-
-export class AuthenticatedSessionLoadError extends Error {
-	readonly operation: 'sign-in' | 'sign-up' | 'google-sign-in';
-
-	constructor(operation: 'sign-in' | 'sign-up' | 'google-sign-in') {
-		super(
-			`${operation} completed but the authenticated session could not be loaded`,
-		);
-		this.name = 'AuthenticatedSessionLoadError';
-		this.operation = operation;
-	}
-}
 
 export function createAuthTransport({
 	baseURL,
@@ -103,11 +98,10 @@ export function createAuthTransport({
 
 	async function resolveAuthenticatedSession(
 		authToken: string | null,
-		operation: 'sign-in' | 'sign-up' | 'google-sign-in',
-	): Promise<RemoteAuthResult> {
+	): Promise<AuthCommandRemoteResult> {
 		const result = await resolveSession(authToken);
 		if (result.status !== 'authenticated') {
-			throw new AuthenticatedSessionLoadError(operation);
+			return { status: 'session-hydration-failed' };
 		}
 
 		return result;
@@ -127,7 +121,7 @@ export function createAuthTransport({
 				throw error;
 			}
 
-			return await resolveAuthenticatedSession(getIssuedToken(data), 'sign-in');
+			return await resolveAuthenticatedSession(getIssuedToken(data));
 		},
 
 		async signUp(input) {
@@ -137,7 +131,7 @@ export function createAuthTransport({
 				throw error;
 			}
 
-			return await resolveAuthenticatedSession(getIssuedToken(data), 'sign-up');
+			return await resolveAuthenticatedSession(getIssuedToken(data));
 		},
 
 		async signInWithGoogle() {
@@ -147,7 +141,7 @@ export function createAuthTransport({
 				await signInWithGoogle(client);
 				const token = getIssuedToken();
 				if (!token) return { status: 'unchanged' };
-				return await resolveAuthenticatedSession(token, 'google-sign-in');
+				return await resolveAuthenticatedSession(token);
 			}
 
 			await client.signIn.social({

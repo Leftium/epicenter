@@ -12,7 +12,7 @@ Replace the current shared auth singleton with a smaller session-centered archit
 
 ### Current State
 
-Today the shared auth helper lives in `packages/svelte-utils/src/auth.svelte.ts` and owns transport, persisted session state, UI activity, token notifications, and workspace lifecycle side effects.
+Today the shared auth helper lives in `packages/svelte-utils/src/auth.svelte.ts` and owns transport, persisted session state, UI operation state, token notifications, and workspace lifecycle side effects.
 
 The current public shape is roughly:
 
@@ -57,7 +57,7 @@ The shared module currently:
 This creates problems:
 
 1. **Too many responsibilities in one module.** The shared auth helper owns transport, persistence, state transitions, and workspace side effects.
-2. **Identity state and activity state are conflated.** `status` currently mixes who the user is with what operation is in flight.
+2. **Identity state and operation state are conflated.** `status` currently mixes who the user is with what operation is in flight.
 3. **Workspace is a hard dependency of auth.** The auth core cannot exist without a workspace handle, even for apps that may not want workspace behavior.
 4. **Cross-context behavior is harder to reason about than it should be.** The module manages storage writes, storage listeners, token notifications, and workspace effects together.
 5. **Better Auth integration details leak upward.** Client construction, bearer token handling, and custom-session response parsing live in the main auth state module.
@@ -101,7 +101,7 @@ type AuthSession =
   | { status: 'anonymous' }
   | { status: 'authenticated'; token: string; user: StoredUser };
 
-type AuthActivity =
+type AuthOperation =
   | { status: 'idle' }
   | { status: 'bootstrapping' }
   | { status: 'refreshing' }
@@ -119,7 +119,7 @@ The current module already has a manageable number of auth states. The real comp
 - persisted session storage
 - token change publication
 - workspace unlock and wipe policy
-- UI-facing activity and error state
+- UI-facing operation and error state
 
 **Key finding**: The main smell is not that auth lacks a formal state machine library. The main smell is that the current module is a control-flow bottleneck for unrelated concerns.
 
@@ -173,7 +173,7 @@ That is not the dominant complexity today.
 | Decision | Choice | Rationale |
 | --- | --- | --- |
 | Primary auth truth | `AuthSession` union with `anonymous` and `authenticated` variants | Encodes the real invariant directly |
-| Activity modeling | Separate `AuthActivity` union | Keeps identity and in-flight work distinct |
+| Operation modeling | Separate `AuthOperation` union | Keeps identity and in-flight work distinct |
 | Transport boundary | Dedicated `createAuthTransport()` | Keeps Better Auth wiring out of the state module |
 | Workspace coupling | Dependency injection via `onSessionCommitted` with commit metadata | Keeps auth core small while still carrying auth-adjacent facts like `reason` and `userKeyBase64` to app-owned workspace effects |
 | Token notifications | Keep `onTokenChange()` on the auth session store | Sync clients depend on this seam today |
@@ -201,7 +201,7 @@ The recommended architecture is:
 │ createAuthSession(...)                                       │
 │                                                              │
 │  - owns AuthSession                                          │
-│  - owns AuthActivity                                         │
+│  - owns AuthOperation                                        │
 │  - exposes commands                                          │
 │  - exposes projections                                       │
 │  - publishes session/token change events                     │
@@ -238,7 +238,7 @@ auth-transport.ts
 
 auth-session.svelte.ts
 ├── session snapshot
-├── activity
+├── operation
 ├── commands
 ├── projections
 └── notifications
@@ -253,7 +253,7 @@ app wiring
 STEP 1: Bootstrap
 ────────────────────
 1. Auth session store awaits persisted session storage readiness
-2. If persisted session is anonymous, activity becomes idle
+2. If persisted session is anonymous, operation becomes idle
 3. If persisted session is authenticated, auth store optionally refreshes or
    validates the server session
 4. Store commits the resulting session snapshot once
@@ -261,32 +261,32 @@ STEP 1: Bootstrap
 
 STEP 2: Explicit Sign-In / Sign-Up
 ───────────────────────────────────
-1. Auth session store sets activity to signing-in
+1. Auth session store sets operation to signing-in
 2. Transport performs remote Better Auth call
 3. Transport returns a remote session payload
 4. Auth session store converts payload to `AuthSession`
 5. Auth session store commits the new session snapshot once
 6. Injected side effects react to the transition
-7. Activity becomes idle
+7. Operation becomes idle
 
 STEP 3: Refresh
 ────────────────────
-1. Auth session store sets activity to refreshing
+1. Auth session store sets operation to refreshing
 2. Transport performs `getSession`
 3. Store maps response to:
    - authenticated session
    - anonymous session
    - no change on transient failure
 4. Store commits at most one snapshot
-5. Activity becomes idle
+5. Operation becomes idle
 
 STEP 4: Sign-Out
 ────────────────────
-1. Auth session store sets activity to signing-out
+1. Auth session store sets operation to signing-out
 2. Transport calls remote sign-out
 3. Store commits `{ status: 'anonymous' }`
 4. Injected side effects react to the transition
-5. Activity becomes idle
+5. Operation becomes idle
 ```
 
 ## Proposed Public API
@@ -298,7 +298,7 @@ export type AuthSession =
   | { status: 'anonymous' }
   | { status: 'authenticated'; token: string; user: StoredUser };
 
-export type AuthActivity =
+export type AuthOperation =
   | { status: 'idle' }
   | { status: 'bootstrapping' }
   | { status: 'refreshing' }
@@ -354,7 +354,7 @@ export type CreateAuthSessionOptions = {
 export type AuthSessionStore = {
   readonly whenReady: Promise<void>;
   readonly session: AuthSession;
-  readonly activity: AuthActivity;
+  readonly operation: AuthOperation;
   readonly isAuthenticated: boolean;
   readonly user: StoredUser | null;
   readonly token: string | null;
@@ -445,7 +445,7 @@ apps/zhongwen/src/lib/auth.ts
 ### Phase 1: Introduce the new auth primitives
 
 - [x] **1.1** Create shared `AuthSession` schema and types in a dedicated auth types module
-- [x] **1.2** Introduce `AuthActivity` as a separate union from `AuthSession`
+- [x] **1.2** Introduce `AuthOperation` as a separate union from `AuthSession`
 - [x] **1.3** Define `AuthTransport` and `RemoteAuthResult` contracts
 - [x] **1.4** Move Better Auth client construction and header parsing into `createAuthTransport()`
 
@@ -454,7 +454,7 @@ apps/zhongwen/src/lib/auth.ts
 - [x] **2.1** Create `createAuthSession()` in a new `.svelte.ts` file
 - [x] **2.2** Make persisted `AuthSession` the only auth source of truth
 - [x] **2.3** Add `onSessionChange()` and `onTokenChange()` notifications
-- [x] **2.4** Separate `activity` from `session`
+- [x] **2.4** Separate `operation` from `session`
 - [x] **2.5** Preserve convenience projections: `user`, `token`, `isAuthenticated`, `fetch`
 
 ### Phase 3: Inject app-specific side effects
@@ -511,7 +511,7 @@ apps/zhongwen/src/lib/auth.ts
 2. User cancels or closes the auth window
 3. Transport returns an error or no-change result
 4. Store keeps current session snapshot
-5. Activity returns to idle without clearing session
+5. Operation returns to idle without clearing session
 
 ### `onSessionCommitted` Failure
 
@@ -541,7 +541,7 @@ Recommendation: do not roll back the committed auth session. Session state and w
 
 ### Summary
 
-The auth core is now split into dedicated auth types, a Better Auth transport module, and a session-centered Svelte store. All app entrypoints now compose transport plus injected workspace side effects locally, and all runtime callers were migrated to the new `session` / `activity` / `lastError` API instead of going through a compatibility shim.
+The auth core is now split into dedicated auth types, a Better Auth transport module, and a session-centered Svelte store. All app entrypoints now compose transport plus injected workspace side effects locally, and all runtime callers were migrated to the new `session` / `operation` / `lastError` API instead of going through a compatibility shim.
 
 ### Deviations from Spec
 
@@ -568,7 +568,7 @@ The auth core is now split into dedicated auth types, a Better Auth transport mo
 - [ ] Auth core no longer imports or depends on workspace
 - [ ] Better Auth client setup lives outside the auth session store
 - [ ] Persisted `AuthSession` is the only auth source of truth
-- [ ] Identity state and activity state are modeled separately
+- [ ] Identity state and operation state are modeled separately
 - [ ] Apps inject workspace side effects instead of auth owning them directly
 - [ ] Existing sync clients still work through `onTokenChange()`
 - [ ] Tab Manager preserves its custom Google sign-in flow

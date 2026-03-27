@@ -13,7 +13,7 @@ export {
 } from './auth-session.svelte.js';
 export {
 	AuthSession,
-	type AuthActivity,
+	type AuthOperation,
 	type AuthSession as AuthSessionSnapshot,
 	type AuthSessionStorage,
 	PersistedSession,

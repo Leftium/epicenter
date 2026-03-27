@@ -1,7 +1,7 @@
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { AuthTransport, RemoteAuthResult } from './auth-transport.js';
 import type {
-	AuthActivity,
+	AuthOperation,
 	AuthSession,
 	AuthSessionStorage,
 	StoredUser,
@@ -34,7 +34,7 @@ export type CreateAuthSessionOptions = {
 export type AuthSessionStore = {
 	readonly whenReady: Promise<void>;
 	readonly session: AuthSession;
-	readonly activity: AuthActivity;
+	readonly operation: AuthOperation;
 	readonly isAuthenticated: boolean;
 	readonly user: StoredUser | null;
 	readonly token: string | null;
@@ -62,7 +62,7 @@ export function createAuthSession({
 	onSessionCommitted,
 }: CreateAuthSessionOptions): AuthSessionStore {
 	let observedSession = $state<AuthSession>(storage.current);
-	let activity = $state<AuthActivity>({ status: 'bootstrapping' });
+	let operation = $state<AuthOperation>({ status: 'bootstrapping' });
 	let lastError = $state<string | undefined>(undefined);
 	let bootstrapPromise: Promise<void> | null = null;
 	let isApplyingLocalSessionChange = false;
@@ -71,9 +71,9 @@ export function createAuthSession({
 	const sessionListeners = new Set<(session: AuthSession) => void>();
 	const tokenListeners = new Set<(token: string | null) => void>();
 
-	function setActivity(next: AuthActivity) {
-		if (activity.status === next.status) return;
-		activity = next;
+	function setOperation(next: AuthOperation) {
+		if (operation.status === next.status) return;
+		operation = next;
 	}
 
 	function setLastError(next: string | undefined) {
@@ -216,7 +216,7 @@ export function createAuthSession({
 					} catch {}
 				}
 
-				setActivity({ status: 'idle' });
+				setOperation({ status: 'idle' });
 			})();
 		}
 
@@ -225,13 +225,13 @@ export function createAuthSession({
 
 	async function refresh() {
 		await bootstrap();
-		setActivity({ status: 'refreshing' });
+		setOperation({ status: 'refreshing' });
 
 		try {
 			await applyRemoteResult(await transport.getSession(storage.current), 'refresh');
 		} catch {}
 
-		setActivity({ status: 'idle' });
+		setOperation({ status: 'idle' });
 	}
 
 	async function runSigningInCommand(
@@ -239,7 +239,7 @@ export function createAuthSession({
 		run: () => Promise<RemoteAuthResult>,
 	) {
 		await bootstrap();
-		setActivity({ status: 'signing-in' });
+		setOperation({ status: 'signing-in' });
 
 		try {
 			await applyRemoteResult(await run(), reason);
@@ -251,14 +251,14 @@ export function createAuthSession({
 			);
 		}
 
-		setActivity({ status: 'idle' });
+		setOperation({ status: 'idle' });
 	}
 
 	storage.watch((next) => {
 		if (isApplyingLocalSessionChange) return;
 		if (areSessionsEqual(observedSession, next)) return;
 
-		setActivity({ status: 'idle' });
+		setOperation({ status: 'idle' });
 		setLastError(undefined);
 		void adoptSession(next, {
 			reason: 'external-change',
@@ -275,8 +275,8 @@ export function createAuthSession({
 			return storage.current;
 		},
 
-		get activity() {
-			return activity;
+		get operation() {
+			return operation;
 		},
 
 		get isAuthenticated() {
@@ -315,7 +315,7 @@ export function createAuthSession({
 
 		async signOut() {
 			await bootstrap();
-			setActivity({ status: 'signing-out' });
+			setOperation({ status: 'signing-out' });
 
 			try {
 				await transport.signOut(storage.current);
@@ -330,7 +330,7 @@ export function createAuthSession({
 				setLastError(extractErrorMessage(error));
 			}
 
-			setActivity({ status: 'idle' });
+			setOperation({ status: 'idle' });
 		},
 
 		onSessionChange(listener) {

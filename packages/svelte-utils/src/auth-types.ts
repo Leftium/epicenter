@@ -25,7 +25,7 @@ export type AuthSession = typeof AuthSession.infer;
 export const PersistedSession = AuthSession;
 export type PersistedSession = AuthSession;
 
-export type AuthActivity =
+export type AuthOperation =
 	| { status: 'idle' }
 	| { status: 'bootstrapping' }
 	| { status: 'refreshing' }

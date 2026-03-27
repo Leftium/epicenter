@@ -12,7 +12,7 @@
 	let name = $state('');
 
 	const isSignUp = $derived(mode === 'sign-up');
-	const isBusy = $derived(authState.activity.status === 'signing-in');
+	const isBusy = $derived(authState.operation.status === 'signing-in');
 </script>
 
 <form

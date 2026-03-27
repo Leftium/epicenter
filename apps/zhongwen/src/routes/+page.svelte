@@ -63,7 +63,7 @@
 			</header>
 
 			<!-- Messages -->
-			{#if authState.activity.status === 'signing-in'}
+			{#if authState.operation.status === 'signing-in'}
 				<div class="flex flex-1 items-center justify-center">
 					<p class="text-muted-foreground">Signing in…</p>
 				</div>

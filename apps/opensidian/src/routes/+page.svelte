@@ -2,9 +2,10 @@
 	import { onMount } from 'svelte';
 	import { authState } from '$lib/auth';
 	import AppShell from '$lib/components/AppShell.svelte';
+	import { workspaceBoot } from '$lib/workspace-boot';
 
 	onMount(() => {
-		void authState.refresh();
+		void workspaceBoot.start();
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&
@@ -19,10 +20,4 @@
 	});
 </script>
 
-{#await authState.whenReady}
-	<div class="flex h-screen items-center justify-center">
-		<p class="text-sm text-muted-foreground">Loading workspace…</p>
-	</div>
-{:then _}
-	<AppShell />
-{/await}
+<AppShell />

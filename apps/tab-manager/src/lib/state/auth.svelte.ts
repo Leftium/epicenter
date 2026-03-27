@@ -20,8 +20,6 @@ import {
 	signOutRemote,
 	signUpWithPassword,
 } from '@epicenter/svelte/auth';
-import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
-import { workspace } from '$lib/workspace';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
 
@@ -90,26 +88,4 @@ export const authState = createAuthSession({
 		signInWithGoogle: signInWithGoogleViaChromeIdentity,
 	},
 	signOutRemote: (current) => signOutRemote({ baseURL: authBaseURL, current }),
-	onSessionCommitted: async ({ previous, current, reason, userKeyBase64 }) => {
-		if (current.status === 'authenticated') {
-			if (userKeyBase64) {
-				await workspace.encryption.unlock(base64ToBytes(userKeyBase64));
-				return;
-			}
-
-			if (
-				reason === 'bootstrap' ||
-				reason === 'external-change' ||
-				previous.status !== 'authenticated'
-			) {
-				await workspace.encryption.tryUnlock();
-			}
-
-			return;
-		}
-
-		if (previous.status === 'authenticated') {
-			await workspace.clearLocalData();
-		}
-	},
 });

@@ -9,8 +9,6 @@ import {
 	signOutRemote,
 	signUpWithPassword,
 } from '@epicenter/svelte/auth';
-import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
-import { ws } from '$lib/workspace';
 
 const session = createPersistedState({
 	key: 'opensidian:authSession',
@@ -41,26 +39,4 @@ export const authState = createAuthSession({
 		},
 	},
 	signOutRemote: (current) => signOutRemote({ baseURL: APP_URLS.API, current }),
-	onSessionCommitted: async ({ previous, current, reason, userKeyBase64 }) => {
-		if (current.status === 'authenticated') {
-			if (userKeyBase64) {
-				await ws.encryption.unlock(base64ToBytes(userKeyBase64));
-				return;
-			}
-
-			if (
-				reason === 'bootstrap' ||
-				reason === 'external-change' ||
-				previous.status !== 'authenticated'
-			) {
-				await ws.encryption.tryUnlock();
-			}
-
-			return;
-		}
-
-		if (previous.status === 'authenticated') {
-			await ws.clearLocalData();
-		}
-	},
 });

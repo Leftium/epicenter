@@ -2,6 +2,7 @@ export {
 	AuthCommandError,
 	type AuthCommandResult,
 	type AuthSessionCommit,
+	type AuthSessionCommitListener,
 	type AuthSessionCommitReason,
 	type AuthSessionStore,
 	type CreateAuthSessionOptions,
@@ -29,3 +30,9 @@ export {
 	type PersistedSession as PersistedSessionSnapshot,
 	StoredUser,
 } from './auth-types.js';
+export {
+	createWorkspaceFirstBoot,
+	type NetworkMode,
+	type WorkspaceFirstBootState,
+	type WorkspaceMode,
+} from './workspace-first-boot.svelte.js';

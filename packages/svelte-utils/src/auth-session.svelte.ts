@@ -84,6 +84,9 @@ export type AuthSessionCommit = {
 	reason: AuthSessionCommitReason;
 	userKeyBase64?: string | null;
 };
+export type AuthSessionCommitListener = (
+	commit: AuthSessionCommit,
+) => void | Promise<void>;
 
 export type CreateAuthSessionOptions = {
 	storage: AuthSessionStorage;
@@ -115,6 +118,7 @@ export type AuthSessionStore = {
 	signOut(): Promise<void>;
 
 	onSessionChange(listener: (session: AuthSession) => void): () => void;
+	onSessionCommit(listener: AuthSessionCommitListener): () => void;
 	onTokenChange(listener: (token: string | null) => void): () => void;
 
 	fetch: typeof fetch;
@@ -134,6 +138,7 @@ export function createAuthSession({
 	let lastPublishedToken = getToken(storage.current);
 
 	const sessionListeners = new Set<(session: AuthSession) => void>();
+	const sessionCommitListeners = new Set<AuthSessionCommitListener>();
 	const tokenListeners = new Set<(token: string | null) => void>();
 
 	function setOperation(next: AuthOperation) {
@@ -172,16 +177,26 @@ export function createAuthSession({
 			}
 		}
 
-		if (!onSessionCommitted || (!changed && !runEffects)) {
+		if (!changed && !runEffects) {
 			return;
 		}
 
-		await onSessionCommitted({
+		if (!onSessionCommitted && sessionCommitListeners.size === 0) {
+			return;
+		}
+
+		const commit = {
 			previous,
 			current: next,
 			reason,
 			userKeyBase64,
-		});
+		} satisfies AuthSessionCommit;
+
+		await onSessionCommitted?.(commit);
+
+		for (const listener of sessionCommitListeners) {
+			await listener(commit);
+		}
 	}
 
 	async function persistAndPublishSession(
@@ -465,6 +480,13 @@ export function createAuthSession({
 			sessionListeners.add(listener);
 			return () => {
 				sessionListeners.delete(listener);
+			};
+		},
+
+		onSessionCommit(listener) {
+			sessionCommitListeners.add(listener);
+			return () => {
+				sessionCommitListeners.delete(listener);
 			};
 		},
 

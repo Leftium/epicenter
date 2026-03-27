@@ -4,13 +4,13 @@
 	import AppShell from '$lib/components/AppShell.svelte';
 
 	onMount(() => {
-		void authState.refreshSession();
+		void authState.refresh();
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&
-				authState.status === 'signed-in'
+				authState.session.status === 'authenticated'
 			) {
-				void authState.refreshSession();
+				void authState.refresh();
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);

@@ -18,7 +18,7 @@
 	const handle = $derived(chatState.active);
 
 	onMount(() => {
-		void authState.refreshSession();
+		void authState.refresh();
 	});
 </script>
 
@@ -52,9 +52,9 @@
 						{showPinyin.current ? 'Hide Pinyin' : 'Show Pinyin'}
 					</Button>
 
-					{#if authState.status === 'signed-in'}
+					{#if authState.session.status === 'authenticated'}
 						<span class="text-sm text-muted-foreground">{authState.user?.name}</span>
-					{:else if authState.status === 'signed-out'}
+					{:else if authState.session.status === 'anonymous'}
 						<Button size="sm" onclick={() => authState.signInWithGoogle()}>
 							Sign In
 						</Button>
@@ -63,11 +63,11 @@
 			</header>
 
 			<!-- Messages -->
-			{#if authState.status === 'signing-in'}
+			{#if authState.activity.status === 'signing-in'}
 				<div class="flex flex-1 items-center justify-center">
 					<p class="text-muted-foreground">Signing in…</p>
 				</div>
-			{:else if authState.status !== 'signed-in'}
+			{:else if authState.session.status !== 'authenticated'}
 				<div class="flex flex-1 items-center justify-center">
 					<div class="text-center text-muted-foreground">
 						<p class="mb-4">Sign in to start chatting</p>

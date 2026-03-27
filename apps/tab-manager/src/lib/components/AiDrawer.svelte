@@ -20,7 +20,7 @@
 				Chat with AI about your tabs
 			</Drawer.Description>
 		</Drawer.Header>
-		{#if authState.status === 'signed-in'}
+		{#if authState.session.status === 'authenticated'}
 			<div class="h-[clamp(300px,50vh,600px)] px-4 pb-4"><AiChat /></div>
 		{:else}
 			<div

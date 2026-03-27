@@ -15,10 +15,13 @@
 	let commandPaletteOpen = $state(false);
 
 	onMount(() => {
-		void authState.refreshSession();
+		void authState.refresh();
 		const onVisibilityChange = () => {
-			if (document.visibilityState === 'visible' && authState.status === 'signed-in') {
-				void authState.refreshSession();
+			if (
+				document.visibilityState === 'visible' &&
+				authState.session.status === 'authenticated'
+			) {
+				void authState.refresh();
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);

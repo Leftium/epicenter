@@ -60,7 +60,7 @@
 	import AuthForm from '$lib/components/AuthForm.svelte';
 	import { authState } from '$lib/state/auth.svelte';
 
-	const isSignedIn = $derived(authState.status === 'signed-in');
+	const isSignedIn = $derived(authState.session.status === 'authenticated');
 	const tooltip = $derived(getTooltip(syncStatus.current, isSignedIn));
 
 	let popoverOpen = $state(false);

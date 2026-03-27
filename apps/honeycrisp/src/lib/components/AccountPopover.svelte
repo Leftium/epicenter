@@ -8,9 +8,9 @@
 	import { authState } from '$lib/auth';
 	import AuthForm from '$lib/components/AuthForm.svelte';
 
-	const isSignedIn = $derived(authState.status === 'signed-in');
+	const isSignedIn = $derived(authState.session.status === 'authenticated');
 	const isChecking = $derived(
-		authState.status === 'signing-in',
+		authState.activity.status === 'signing-in',
 	);
 
 	let popoverOpen = $state(false);

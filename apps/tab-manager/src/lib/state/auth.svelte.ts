@@ -1,19 +1,21 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Uses the shared opinionated auth controller with the extension's
+ * Uses the shared auth transport + session store primitives with the extension's
  * two real seams: custom Google OAuth (`chrome.identity`) and chrome-backed
  * session persistence.
  *
- * @see {@link @epicenter/svelte/auth!createAuth} — auth constructor
+ * @see {@link @epicenter/svelte/auth!createAuthSession} — session store
  * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
  * @see {@link ./key-cache} — session-scoped user-key cache
  */
 
 import {
-	createAuth,
-	PersistedSession,
+	AuthSession,
+	createAuthSession,
+	createAuthTransport,
 } from '@epicenter/svelte/auth';
+import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { workspace } from '$lib/workspace';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
@@ -24,13 +26,11 @@ const GOOGLE_CLIENT_ID =
 /** Persisted auth snapshot in `chrome.storage.local`. */
 const authSession = createStorageState('local:authSession', {
 	fallback: { status: 'anonymous' },
-	schema: PersistedSession,
+	schema: AuthSession,
 });
 
-export const authState = createAuth({
+const transport = createAuthTransport({
 	baseURL: () => remoteServerUrl.current,
-	session: authSession,
-	workspace,
 	signInWithGoogle: async (betterAuthClient) => {
 		const redirectUri = browser.identity.getRedirectURL();
 		const nonce = crypto.randomUUID();
@@ -61,5 +61,37 @@ export const authState = createAuth({
 			throw new Error('Unexpected response from server');
 		}
 		return data;
+	},
+});
+
+export const authState = createAuthSession({
+	storage: authSession,
+	transport,
+	onSessionCommitted: async ({
+		previous,
+		current,
+		reason,
+		userKeyBase64,
+	}) => {
+		if (current.status === 'authenticated') {
+			if (userKeyBase64) {
+				await workspace.encryption.unlock(base64ToBytes(userKeyBase64));
+				return;
+			}
+
+			if (
+				reason === 'bootstrap' ||
+				reason === 'external-change' ||
+				previous.status !== 'authenticated'
+			) {
+				await workspace.encryption.tryUnlock();
+			}
+
+			return;
+		}
+
+		if (previous.status === 'authenticated') {
+			await workspace.clearLocalData();
+		}
 	},
 });

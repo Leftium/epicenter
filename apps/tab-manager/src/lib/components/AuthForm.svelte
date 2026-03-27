@@ -12,7 +12,7 @@
 	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
 
 	const isSignUp = $derived(mode === 'sign-up');
-	const isBusy = $derived(authState.status === 'signing-in');
+	const isBusy = $derived(authState.activity.status === 'signing-in');
 </script>
 
 <form
@@ -34,9 +34,9 @@
 				: 'Sign in to sync your tabs across devices.'}
 		</Field.Description>
 
-		{#if authState.signInError}
+		{#if authState.lastError}
 			<Alert.Root variant="destructive">
-				<Alert.Description>{authState.signInError}</Alert.Description>
+				<Alert.Description>{authState.lastError}</Alert.Description>
 			</Alert.Root>
 		{/if}
 

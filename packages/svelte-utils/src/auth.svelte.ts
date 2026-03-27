@@ -30,8 +30,7 @@ export {
 	StoredUser,
 } from './auth-types.js';
 export {
-	applyAuthResultToWorkspace,
-	refreshAppAuth,
-	signOutWorkspaceSession,
-	startAppBoot,
+	createWorkspaceAuthBoundary,
+	type CreateWorkspaceAuthBoundaryOptions,
+	type WorkspaceAuthBoundary,
 } from './workspace-first-boot.svelte.js';

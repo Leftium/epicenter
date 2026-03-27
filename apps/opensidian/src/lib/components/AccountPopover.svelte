@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { signOutWorkspaceSession } from '@epicenter/svelte/auth';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Popover from '@epicenter/ui/popover';
 	import Cloud from '@lucide/svelte/icons/cloud';
@@ -8,7 +7,7 @@
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import { authState } from '$lib/auth';
 	import AuthForm from '$lib/components/AuthForm.svelte';
-	import { ws } from '$lib/workspace.svelte';
+	import { workspaceAuth } from '$lib/workspace.svelte';
 
 	const isSignedIn = $derived(authState.session.status === 'authenticated');
 	const isChecking = $derived(
@@ -47,11 +46,7 @@
 						size="sm"
 						class="w-full"
 						onclick={async () => {
-							await signOutWorkspaceSession({
-								auth: authState,
-								workspace: ws,
-								reconnect: () => ws.extensions.sync.reconnect(),
-							});
+							await workspaceAuth.signOut();
 							popoverOpen = false;
 						}}
 					>

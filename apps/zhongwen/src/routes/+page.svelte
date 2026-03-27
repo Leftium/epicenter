@@ -1,9 +1,5 @@
 <script lang="ts">
 	import { fromKv } from '@epicenter/svelte';
-	import {
-		applyAuthResultToWorkspace,
-		startAppBoot,
-	} from '@epicenter/svelte/auth';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Sidebar from '@epicenter/ui/sidebar';
@@ -14,7 +10,7 @@
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ModelPicker from '$lib/components/ModelPicker.svelte';
 	import ZhongwenSidebar from '$lib/components/ZhongwenSidebar.svelte';
-	import { workspace } from '$lib/workspace/client';
+	import { workspace, workspaceAuth } from '$lib/workspace/client';
 
 	const showPinyin = fromKv(workspace.kv, 'showPinyin');
 	let dismissedError = $state(false);
@@ -25,17 +21,11 @@
 	);
 
 	onMount(() => {
-		void startAppBoot({
-			workspace,
-			auth: authState,
-		});
+		void workspaceAuth.startAppBoot();
 	});
 
 	async function signInWithGoogle() {
-		await applyAuthResultToWorkspace({
-			workspace,
-			result: await authState.signInWithGoogle(),
-		});
+		await workspaceAuth.applyAuthResult(await authState.signInWithGoogle());
 	}
 </script>
 

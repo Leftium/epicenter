@@ -1,24 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import type {
 	AuthClient,
-	AuthCommandResult,
 	AuthRefreshResult,
 	GoogleAuthCommandResult,
 } from './auth-session.svelte.js';
 import type { AuthSession } from './auth-types.js';
-import {
-	applyAuthResultToWorkspace,
-	refreshAppAuth,
-	signOutWorkspaceSession,
-	startAppBoot,
-} from './workspace-first-boot.svelte.js';
+import { createWorkspaceAuthBoundary } from './workspace-first-boot.svelte.js';
 
-describe('startAppBoot', () => {
+describe('createWorkspaceAuthBoundary.startAppBoot', () => {
 	test('boots into unlocked mode from the cached key without waiting on auth', async () => {
 		const workspace = createFakeWorkspace({ bootFromCacheResult: 'unlocked' });
 		const auth = createFakeAuth();
+		const workspaceAuth = createWorkspaceAuthBoundary({ workspace, auth });
 
-		await startAppBoot({ workspace, auth });
+		await workspaceAuth.startAppBoot();
 
 		expect(workspace.bootFromCacheCalls).toBe(1);
 		expect(workspace.unlockWithKeyCalls).toEqual([]);
@@ -33,14 +28,15 @@ describe('startAppBoot', () => {
 			},
 		});
 		let reconnectCalls = 0;
-
-		await startAppBoot({
+		const workspaceAuth = createWorkspaceAuthBoundary({
 			workspace,
 			auth,
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
 		});
+
+		await workspaceAuth.startAppBoot();
 
 		expect(workspace.unlockWithKeyCalls).toEqual(['AQIDBA==']);
 		expect(reconnectCalls).toBe(1);
@@ -53,8 +49,7 @@ describe('startAppBoot', () => {
 			refreshResult: { session: { status: 'anonymous' } },
 		});
 		let reconnectCalls = 0;
-
-		await startAppBoot({
+		const workspaceAuth = createWorkspaceAuthBoundary({
 			workspace,
 			auth,
 			reconnect: () => {
@@ -62,39 +57,36 @@ describe('startAppBoot', () => {
 			},
 		});
 
+		await workspaceAuth.startAppBoot();
+
 		expect(reconnectCalls).toBe(1);
 	});
 });
 
-describe('applyAuthResultToWorkspace', () => {
+describe('createWorkspaceAuthBoundary.applyAuthResult', () => {
 	test('ignores failed command results and redirect starts', async () => {
 		const workspace = createFakeWorkspace({ bootFromCacheResult: 'plaintext' });
 		let reconnectCalls = 0;
+		const workspaceAuth = createWorkspaceAuthBoundary({
+			workspace,
+			auth: createFakeAuth(),
+			reconnect: () => {
+				reconnectCalls += 1;
+			},
+		});
 
-		await applyAuthResultToWorkspace({
-			workspace,
-			result: {
-				session: { status: 'anonymous' },
-				error: { message: 'boom' } as never,
-			},
-			reconnect: () => {
-				reconnectCalls += 1;
-			},
+		await workspaceAuth.applyAuthResult({
+			session: { status: 'anonymous' },
+			error: { message: 'boom' } as never,
 		});
-		await applyAuthResultToWorkspace({
-			workspace,
-			result: { status: 'redirect-started' },
-			reconnect: () => {
-				reconnectCalls += 1;
-			},
-		});
+		await workspaceAuth.applyAuthResult({ status: 'redirect-started' });
 
 		expect(workspace.unlockWithKeyCalls).toEqual([]);
 		expect(reconnectCalls).toBe(0);
 	});
 });
 
-describe('refreshAppAuth', () => {
+describe('createWorkspaceAuthBoundary.refresh', () => {
 	test('reconnects when refresh downgrades an authenticated session to anonymous', async () => {
 		const workspace = createFakeWorkspace({ bootFromCacheResult: 'unlocked' });
 		const auth = createFakeAuth({
@@ -102,32 +94,34 @@ describe('refreshAppAuth', () => {
 			refreshResult: { session: { status: 'anonymous' } },
 		});
 		let reconnectCalls = 0;
-
-		await refreshAppAuth({
+		const workspaceAuth = createWorkspaceAuthBoundary({
 			workspace,
 			auth,
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
 		});
+
+		await workspaceAuth.refresh();
 
 		expect(reconnectCalls).toBe(1);
 	});
 });
 
-describe('signOutWorkspaceSession', () => {
+describe('createWorkspaceAuthBoundary.signOut', () => {
 	test('sign-out performs a full local wipe and reconnects sync', async () => {
 		const workspace = createFakeWorkspace({ bootFromCacheResult: 'unlocked' });
 		const auth = createFakeAuth();
 		let reconnectCalls = 0;
-
-		await signOutWorkspaceSession({
+		const workspaceAuth = createWorkspaceAuthBoundary({
 			workspace,
 			auth,
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
 		});
+
+		await workspaceAuth.signOut();
 
 		expect(auth.signOutCalls).toBe(1);
 		expect(workspace.clearLocalDataCalls).toBe(1);

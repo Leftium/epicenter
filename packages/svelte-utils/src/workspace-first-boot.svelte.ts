@@ -16,97 +16,94 @@ type WorkspaceAuthResult =
 	| AuthCommandResult
 	| GoogleAuthCommandResult;
 
+export type WorkspaceAuthBoundary = ReturnType<
+	typeof createWorkspaceAuthBoundary
+>;
+
+export type CreateWorkspaceAuthBoundaryOptions = {
+	workspace: WorkspaceBootWorkspace;
+	auth: Pick<AuthClient, 'refresh' | 'session' | 'signOut'>;
+	reconnect?: () => void;
+};
+
 function isRedirectStartedResult(
 	result: WorkspaceAuthResult,
 ): result is { status: 'redirect-started' } {
 	return 'status' in result && result.status === 'redirect-started';
 }
 
-export async function applyAuthResultToWorkspace({
-	workspace,
-	result,
-	reconnect,
-}: {
-	workspace: Pick<WorkspaceBootWorkspace, 'unlockWithKey'>;
-	result: WorkspaceAuthResult;
-	reconnect?: () => void;
-}): Promise<void> {
-	if (isRedirectStartedResult(result)) {
-		return;
-	}
-
-	if ('error' in result) {
-		return;
-	}
-
-	if (
-		result.session.status === 'authenticated' &&
-		result.workspaceKeyBase64
-	) {
-		await workspace.unlockWithKey(result.workspaceKeyBase64);
-	}
-
-	if (result.session.status === 'authenticated') {
-		reconnect?.();
-	}
-}
-
-export async function refreshAppAuth({
+export function createWorkspaceAuthBoundary({
 	workspace,
 	auth,
 	reconnect,
-}: {
-	workspace: Pick<WorkspaceBootWorkspace, 'unlockWithKey'>;
-	auth: Pick<AuthClient, 'refresh' | 'session'>;
-	reconnect?: () => void;
-}): Promise<AuthRefreshResult> {
-	const shouldReconnectAfterRefresh = auth.session.status === 'authenticated';
-	const refreshResult = await auth.refresh();
+}: CreateWorkspaceAuthBoundaryOptions) {
+	return {
+		/**
+		 * Apply a successful auth command or refresh result to the local workspace.
+		 *
+		 * Authenticated results unlock the workspace when a key blob is present and
+		 * trigger sync reconnects after login completes.
+		 */
+		async applyAuthResult(result: WorkspaceAuthResult): Promise<void> {
+			if (isRedirectStartedResult(result)) {
+				return;
+			}
 
-	if (
-		shouldReconnectAfterRefresh &&
-		refreshResult.session.status === 'anonymous'
-	) {
-		reconnect?.();
-	}
+			if ('error' in result) {
+				return;
+			}
 
-	await applyAuthResultToWorkspace({
-		workspace,
-		result: refreshResult,
-		reconnect:
-			shouldReconnectAfterRefresh || refreshResult.session.status === 'authenticated'
-				? reconnect
-				: undefined,
-	});
+			if (
+				result.session.status === 'authenticated' &&
+				result.workspaceKeyBase64
+			) {
+				await workspace.unlockWithKey(result.workspaceKeyBase64);
+			}
 
-	return refreshResult;
-}
+			if (result.session.status === 'authenticated') {
+				reconnect?.();
+			}
+		},
 
-export async function startAppBoot({
-	workspace,
-	auth,
-	reconnect,
-}: {
-	workspace: WorkspaceBootWorkspace;
-	auth: Pick<AuthClient, 'refresh' | 'session'>;
-	reconnect?: () => void;
-}): Promise<void> {
-	await Promise.all([
-		workspace.bootFromCache(),
-		refreshAppAuth({ workspace, auth, reconnect }),
-	]);
-}
+		/**
+		 * Refresh auth in the background and reconcile the workspace with the result.
+		 *
+		 * If a previously authenticated session refreshes to anonymous, this also
+		 * reconnects sync so transport state can downgrade cleanly.
+		 */
+		async refresh(): Promise<AuthRefreshResult> {
+			const shouldReconnectAfterRefresh =
+				auth.session.status === 'authenticated';
+			const refreshResult = await auth.refresh();
 
-export async function signOutWorkspaceSession({
-	workspace,
-	auth,
-	reconnect,
-}: {
-	workspace: Pick<WorkspaceBootWorkspace, 'clearLocalData'>;
-	auth: Pick<AuthClient, 'signOut'>;
-	reconnect?: () => void;
-}): Promise<void> {
-	await auth.signOut();
-	await workspace.clearLocalData();
-	reconnect?.();
+			if (
+				shouldReconnectAfterRefresh &&
+				refreshResult.session.status === 'anonymous'
+			) {
+				reconnect?.();
+			}
+
+			await this.applyAuthResult(refreshResult);
+			return refreshResult;
+		},
+
+		/**
+		 * Run local workspace boot and auth refresh in parallel on app mount.
+		 *
+		 * This keeps the app immediately usable from cached local state while auth
+		 * revalidates in the background.
+		 */
+		async startAppBoot(): Promise<void> {
+			await Promise.all([workspace.bootFromCache(), this.refresh()]);
+		},
+
+		/**
+		 * Sign out of the remote session and wipe authenticated local workspace data.
+		 */
+		async signOut(): Promise<void> {
+			await auth.signOut();
+			await workspace.clearLocalData();
+			reconnect?.();
+		},
+	};
 }

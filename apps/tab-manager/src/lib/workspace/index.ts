@@ -3,6 +3,7 @@ export {
 	type WorkspaceActionName,
 	type WorkspaceTools,
 	workspace,
+	workspaceAuth,
 	workspaceDefinitions,
 	workspaceTools,
 	workspaceToolTitles,

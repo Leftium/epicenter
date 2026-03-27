@@ -10,6 +10,7 @@
  */
 
 import { actionsToClientTools, toToolDefinitions } from '@epicenter/ai';
+import { createWorkspaceAuthBoundary } from '@epicenter/svelte/auth';
 import {
 	createWorkspace,
 	defineMutation,
@@ -36,6 +37,11 @@ import { definition, generateSavedTabId } from './schema';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const workspace = buildWorkspaceClient();
+export const workspaceAuth = createWorkspaceAuthBoundary({
+	workspace,
+	auth: authState,
+	reconnect: () => workspace.extensions.sync.reconnect(),
+});
 
 export const workspaceTools = actionsToClientTools(workspace.actions);
 export const workspaceDefinitions = toToolDefinitions(workspaceTools);

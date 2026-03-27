@@ -1,4 +1,5 @@
 import { APP_URLS } from '@epicenter/constants/vite';
+import { createWorkspaceAuthBoundary } from '@epicenter/svelte/auth';
 import {
 	createSqliteIndex,
 	createYjsFileSystem,
@@ -35,6 +36,12 @@ export const ws = createWorkspace({
 		}),
 	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
+
+export const workspaceAuth = createWorkspaceAuthBoundary({
+	workspace: ws,
+	auth: authState,
+	reconnect: () => ws.extensions.sync.reconnect(),
+});
 
 /** Yjs-backed virtual filesystem with path-based operations. */
 export const fs = createYjsFileSystem(

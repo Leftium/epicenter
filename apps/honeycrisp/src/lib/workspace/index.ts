@@ -1,4 +1,5 @@
-export { default } from './client';
+export { default } from './client.svelte';
+export { workspaceAuth } from './client.svelte';
 export {
 	type Folder,
 	FolderId,

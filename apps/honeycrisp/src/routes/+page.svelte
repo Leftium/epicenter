@@ -1,8 +1,4 @@
 <script lang="ts">
-	import {
-		refreshAppAuth,
-		startAppBoot,
-	} from '@epicenter/svelte/auth';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
@@ -14,26 +10,18 @@
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
-	import workspaceClient from '$lib/workspace';
+	import workspaceClient, { workspaceAuth } from '$lib/workspace';
 
 	let commandPaletteOpen = $state(false);
 
 	onMount(() => {
-		void startAppBoot({
-			workspace: workspaceClient,
-			auth: authState,
-			reconnect: () => workspaceClient.extensions.sync.reconnect(),
-		});
+		void workspaceAuth.startAppBoot();
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&
 				authState.session.status === 'authenticated'
 			) {
-				void refreshAppAuth({
-					workspace: workspaceClient,
-					auth: authState,
-					reconnect: () => workspaceClient.extensions.sync.reconnect(),
-				});
+				void workspaceAuth.refresh();
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);

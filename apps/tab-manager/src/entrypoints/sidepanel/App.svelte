@@ -1,8 +1,4 @@
 <script lang="ts">
-	import {
-		refreshAppAuth,
-		startAppBoot,
-	} from '@epicenter/svelte/auth';
 	import { Button } from '@epicenter/ui/button';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
@@ -22,25 +18,17 @@
 	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
-	import { registerDevice, workspace } from '$lib/workspace';
+	import { registerDevice, workspaceAuth } from '$lib/workspace';
 
 	onMount(() => {
-		void startAppBoot({
-			workspace,
-			auth: authState,
-			reconnect: () => workspace.extensions.sync.reconnect(),
-		});
+		void workspaceAuth.startAppBoot();
 		void registerDevice();
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&
 				authState.session.status === 'authenticated'
 			) {
-				void refreshAppAuth({
-					workspace,
-					auth: authState,
-					reconnect: () => workspace.extensions.sync.reconnect(),
-				});
+				void workspaceAuth.refresh();
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);

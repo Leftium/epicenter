@@ -1,12 +1,11 @@
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
-	import { applyAuthResultToWorkspace } from '@epicenter/svelte/auth';
 	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { authState } from '$lib/auth';
-	import workspace from '$lib/workspace';
+	import { workspaceAuth } from '$lib/workspace';
 
 	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
 	let email = $state('');
@@ -25,11 +24,7 @@
 		const result = isSignUp
 			? await authState.signUp({ email, password, name })
 			: await authState.signIn({ email, password });
-		await applyAuthResultToWorkspace({
-			workspace,
-			result,
-			reconnect: () => workspace.extensions.sync.reconnect(),
-		});
+		await workspaceAuth.applyAuthResult(result);
 		if ('error' in result) submitError = result.error.message;
 	}}
 	class="w-full max-w-xs"
@@ -56,11 +51,7 @@
 			onclick={async () => {
 				submitError = null;
 				const result = await authState.signInWithGoogle();
-				await applyAuthResultToWorkspace({
-					workspace,
-					result,
-					reconnect: () => workspace.extensions.sync.reconnect(),
-				});
+				await workspaceAuth.applyAuthResult(result);
 				if ('error' in result) submitError = result.error.message;
 			}}
 		>

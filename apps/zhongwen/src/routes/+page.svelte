@@ -22,7 +22,7 @@
 	workspaceAuth.mount();
 
 	async function signInWithGoogle() {
-		await workspaceAuth.applyAuthResult(await authState.signInWithGoogle());
+		await workspaceAuth.signInWithGoogle();
 	}
 </script>
 

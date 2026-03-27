@@ -63,24 +63,58 @@ describe('createWorkspaceAuthBoundary.startAppBoot', () => {
 	});
 });
 
-describe('createWorkspaceAuthBoundary.applyAuthResult', () => {
-	test('ignores failed command results and redirect starts', async () => {
+describe('createWorkspaceAuthBoundary.signIn', () => {
+	test('returns auth failures without changing workspace state', async () => {
 		const workspace = createFakeWorkspace({ bootFromCacheResult: 'plaintext' });
+		const auth = createFakeAuth({
+			signInResult: {
+				session: { status: 'anonymous' },
+				error: { message: 'boom' } as never,
+			},
+		});
 		let reconnectCalls = 0;
 		const workspaceAuth = createWorkspaceAuthBoundary({
 			workspace,
-			auth: createFakeAuth(),
+			auth,
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
 		});
 
-		await workspaceAuth.applyAuthResult({
-			session: { status: 'anonymous' },
-			error: { message: 'boom' } as never,
+		const result = await workspaceAuth.signIn({
+			email: 'braden@example.com',
+			password: 'secret',
 		});
-		await workspaceAuth.applyAuthResult({ status: 'redirect-started' });
 
+		if (!('error' in result)) {
+			throw new Error('Expected sign-in failure result');
+		}
+
+		expect(result.session).toEqual({ status: 'anonymous' });
+		expect(result.error.message).toBe('boom');
+		expect(auth.signInCalls).toBe(1);
+		expect(workspace.unlockWithKeyCalls).toEqual([]);
+		expect(reconnectCalls).toBe(0);
+	});
+});
+
+describe('createWorkspaceAuthBoundary.signInWithGoogle', () => {
+	test('ignores redirect-started results', async () => {
+		const workspace = createFakeWorkspace({ bootFromCacheResult: 'plaintext' });
+		let reconnectCalls = 0;
+		const workspaceAuth = createWorkspaceAuthBoundary({
+			workspace,
+			auth: createFakeAuth({
+				signInWithGoogleResult: { status: 'redirect-started' },
+			}),
+			reconnect: () => {
+				reconnectCalls += 1;
+			},
+		});
+
+		const result = await workspaceAuth.signInWithGoogle();
+
+		expect(result).toEqual({ status: 'redirect-started' });
 		expect(workspace.unlockWithKeyCalls).toEqual([]);
 		expect(reconnectCalls).toBe(0);
 	});
@@ -132,13 +166,25 @@ describe('createWorkspaceAuthBoundary.signOut', () => {
 function createFakeAuth({
 	initialSession = { status: 'anonymous' } as AuthSession,
 	refreshResult = { session: initialSession } as AuthRefreshResult,
+	signInResult = { session: initialSession },
+	signUpResult = { session: initialSession },
+	signInWithGoogleResult = { session: initialSession } as GoogleAuthCommandResult,
 }: {
 	initialSession?: AuthSession;
 	refreshResult?: AuthRefreshResult;
+	signInResult?: Awaited<ReturnType<AuthClient['signIn']>>;
+	signUpResult?: Awaited<ReturnType<AuthClient['signUp']>>;
+	signInWithGoogleResult?: GoogleAuthCommandResult;
 } = {}): AuthClient & {
+	signInCalls: number;
+	signUpCalls: number;
+	signInWithGoogleCalls: number;
 	signOutCalls: number;
 } {
 	let session = initialSession;
+	let signInCalls = 0;
+	let signUpCalls = 0;
+	let signInWithGoogleCalls = 0;
 	let signOutCalls = 0;
 
 	return {
@@ -156,19 +202,36 @@ function createFakeAuth({
 			return refreshResult;
 		},
 		async signIn() {
-			throw new Error('not implemented');
+			signInCalls += 1;
+			if ('session' in signInResult) session = signInResult.session;
+			return signInResult;
 		},
 		async signUp() {
-			throw new Error('not implemented');
+			signUpCalls += 1;
+			if ('session' in signUpResult) session = signUpResult.session;
+			return signUpResult;
 		},
 		async signInWithGoogle(): Promise<GoogleAuthCommandResult> {
-			throw new Error('not implemented');
+			signInWithGoogleCalls += 1;
+			if ('session' in signInWithGoogleResult) {
+				session = signInWithGoogleResult.session;
+			}
+			return signInWithGoogleResult;
 		},
 		async signOut() {
 			signOutCalls += 1;
 			session = { status: 'anonymous' };
 		},
 		fetch: fetch,
+		get signInCalls() {
+			return signInCalls;
+		},
+		get signUpCalls() {
+			return signUpCalls;
+		},
+		get signInWithGoogleCalls() {
+			return signInWithGoogleCalls;
+		},
 		get signOutCalls() {
 			return signOutCalls;
 		},

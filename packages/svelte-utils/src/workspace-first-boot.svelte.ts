@@ -23,7 +23,10 @@ export type WorkspaceAuthBoundary = ReturnType<
 
 export type CreateWorkspaceAuthBoundaryOptions = {
 	workspace: WorkspaceBootWorkspace;
-	auth: Pick<AuthClient, 'refresh' | 'session' | 'signOut'>;
+	auth: Pick<
+		AuthClient,
+		'refresh' | 'session' | 'signIn' | 'signUp' | 'signInWithGoogle' | 'signOut'
+	>;
 	reconnect?: () => void;
 };
 
@@ -38,32 +41,44 @@ export function createWorkspaceAuthBoundary({
 	auth,
 	reconnect,
 }: CreateWorkspaceAuthBoundaryOptions) {
+	async function applyAuthResult(result: WorkspaceAuthResult): Promise<void> {
+		if (isRedirectStartedResult(result)) {
+			return;
+		}
+
+		if ('error' in result) {
+			return;
+		}
+
+		if (
+			result.session.status === 'authenticated' &&
+			result.workspaceKeyBase64
+		) {
+			await workspace.unlockWithKey(result.workspaceKeyBase64);
+		}
+
+		if (result.session.status === 'authenticated') {
+			reconnect?.();
+		}
+	}
+
 	return {
-		/**
-		 * Apply a successful auth command or refresh result to the local workspace.
-		 *
-		 * Authenticated results unlock the workspace when a key blob is present and
-		 * trigger sync reconnects after login completes.
-		 */
-		async applyAuthResult(result: WorkspaceAuthResult): Promise<void> {
-			if (isRedirectStartedResult(result)) {
-				return;
-			}
+		async signIn(input: Parameters<AuthClient['signIn']>[0]) {
+			const result = await auth.signIn(input);
+			await applyAuthResult(result);
+			return result;
+		},
 
-			if ('error' in result) {
-				return;
-			}
+		async signUp(input: Parameters<AuthClient['signUp']>[0]) {
+			const result = await auth.signUp(input);
+			await applyAuthResult(result);
+			return result;
+		},
 
-			if (
-				result.session.status === 'authenticated' &&
-				result.workspaceKeyBase64
-			) {
-				await workspace.unlockWithKey(result.workspaceKeyBase64);
-			}
-
-			if (result.session.status === 'authenticated') {
-				reconnect?.();
-			}
+		async signInWithGoogle() {
+			const result = await auth.signInWithGoogle();
+			await applyAuthResult(result);
+			return result;
 		},
 
 		/**
@@ -84,7 +99,7 @@ export function createWorkspaceAuthBoundary({
 				reconnect?.();
 			}
 
-			await this.applyAuthResult(refreshResult);
+			await applyAuthResult(refreshResult);
 			return refreshResult;
 		},
 

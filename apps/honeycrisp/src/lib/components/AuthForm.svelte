@@ -22,9 +22,8 @@
 		e.preventDefault();
 		submitError = null;
 		const result = isSignUp
-			? await authState.signUp({ email, password, name })
-			: await authState.signIn({ email, password });
-		await workspaceAuth.applyAuthResult(result);
+			? await workspaceAuth.signUp({ email, password, name })
+			: await workspaceAuth.signIn({ email, password });
 		if ('error' in result) submitError = result.error.message;
 	}}
 	class="w-full max-w-xs"
@@ -50,8 +49,7 @@
 			disabled={isBusy}
 			onclick={async () => {
 				submitError = null;
-				const result = await authState.signInWithGoogle();
-				await workspaceAuth.applyAuthResult(result);
+				const result = await workspaceAuth.signInWithGoogle();
 				if ('error' in result) submitError = result.error.message;
 			}}
 		>

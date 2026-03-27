@@ -1,6 +1,5 @@
 import type { User } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
-import { extractErrorMessage } from 'wellcrafted/error';
 import type { AuthSession, StoredUser } from './auth-types.js';
 
 export type RemoteAuthResult =
@@ -26,6 +25,18 @@ export type AuthTransport = {
 };
 
 export type BetterAuthTransportClient = ReturnType<typeof createAuthClient>;
+
+export class AuthenticatedSessionLoadError extends Error {
+	readonly operation: 'sign-in' | 'sign-up' | 'google-sign-in';
+
+	constructor(operation: 'sign-in' | 'sign-up' | 'google-sign-in') {
+		super(
+			`${operation} completed but the authenticated session could not be loaded`,
+		);
+		this.name = 'AuthenticatedSessionLoadError';
+		this.operation = operation;
+	}
+}
 
 export function createAuthTransport({
 	baseURL,
@@ -92,13 +103,11 @@ export function createAuthTransport({
 
 	async function resolveAuthenticatedSession(
 		authToken: string | null,
-		reason: 'sign-in' | 'sign-up' | 'google-sign-in',
+		operation: 'sign-in' | 'sign-up' | 'google-sign-in',
 	): Promise<RemoteAuthResult> {
 		const result = await resolveSession(authToken);
 		if (result.status !== 'authenticated') {
-			throw new Error(
-				`${reason} completed but the authenticated session could not be loaded`,
-			);
+			throw new AuthenticatedSessionLoadError(operation);
 		}
 
 		return result;
@@ -115,7 +124,7 @@ export function createAuthTransport({
 			const { client, getIssuedToken } = buildClient(null);
 			const { data, error } = await client.signIn.email(input);
 			if (error) {
-				throw new Error(`Sign-in failed: ${extractErrorMessage(error)}`);
+				throw error;
 			}
 
 			return await resolveAuthenticatedSession(getIssuedToken(data), 'sign-in');
@@ -125,7 +134,7 @@ export function createAuthTransport({
 			const { client, getIssuedToken } = buildClient(null);
 			const { data, error } = await client.signUp.email(input);
 			if (error) {
-				throw new Error(`Sign-up failed: ${extractErrorMessage(error)}`);
+				throw error;
 			}
 
 			return await resolveAuthenticatedSession(getIssuedToken(data), 'sign-up');
@@ -154,7 +163,7 @@ export function createAuthTransport({
 			);
 			const { error } = await client.signOut();
 			if (error) {
-				throw new Error(`Sign-out failed: ${extractErrorMessage(error)}`);
+				throw error;
 			}
 		},
 	};

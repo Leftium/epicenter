@@ -179,7 +179,7 @@ That is not the dominant complexity today.
 | Token notifications | Keep `onTokenChange()` on the auth session store | Sync clients depend on this seam today |
 | Convenience accessors | Keep `user`, `token`, and `isAuthenticated` as projections | Ergonomic reads without creating parallel state roots |
 | Authorized fetch | Keep `fetch` on the auth session store for now | Minimizes migration cost; can be split later if still awkward |
-| Error modeling | One shared auth error channel, renamed to `lastError` or similar | Keeps the core simple; form-local errors can be revisited later |
+| Error modeling | Explicit command-local `Result<void, AuthCommandError>` returns for sign-in flows | Keeps forms specific without turning the session store into a shared UI error bucket |
 | Compatibility strategy | Clean break to `createAuthSession` / `createAuthTransport` with caller migration | Keeps the public surface honest and avoids re-hiding the old god-object behind a compatibility shim |
 | State machine library | Do not introduce XState in this redesign | Ownership boundaries are the primary problem today |
 
@@ -358,12 +358,11 @@ export type AuthSessionStore = {
   readonly isAuthenticated: boolean;
   readonly user: StoredUser | null;
   readonly token: string | null;
-  readonly lastError?: string;
 
   refresh(): Promise<void>;
-  signIn(input: { email: string; password: string }): Promise<void>;
-  signUp(input: { email: string; password: string; name: string }): Promise<void>;
-  signInWithGoogle(): Promise<void>;
+  signIn(input: { email: string; password: string }): Promise<Result<void, AuthCommandError>>;
+  signUp(input: { email: string; password: string; name: string }): Promise<Result<void, AuthCommandError>>;
+  signInWithGoogle(): Promise<Result<void, AuthCommandError>>;
   signOut(): Promise<void>;
 
   onSessionChange(listener: (session: AuthSession) => void): () => void;
@@ -371,6 +370,15 @@ export type AuthSessionStore = {
 
   fetch: typeof fetch;
 };
+```
+
+Example call site:
+
+```typescript
+const { error } = await auth.signIn({ email, password });
+if (error) {
+  formError = error.message;
+}
 ```
 
 > **Implementation note**: email/password and custom Google sign-in now hydrate the
@@ -518,7 +526,7 @@ apps/zhongwen/src/lib/auth.ts
 1. Store commits a valid next auth session
 2. Injected side effect throws while unlocking or clearing workspace
 3. Auth session state remains committed
-4. Error handling policy decides whether to surface the failure in `lastError`
+4. Error handling policy decides whether to surface the failure to the explicit caller, log it as a background auth error, or route it to app-specific UI
 
 Recommendation: do not roll back the committed auth session. Session state and workspace state are separate concerns; the side effect failure should be reported, not undone via compensating auth writes.
 
@@ -532,8 +540,9 @@ Recommendation: do not roll back the committed auth session. Session state and w
    - Options: (a) keep `createAuth` as an alias, (b) rename to `createAuthSession` immediately, (c) export both during migration
    - **Implemented**: renamed immediately and updated callers in the same change
 
-3. **Should `lastError` remain shared global auth state?**
-   - Options: (a) keep one shared field, (b) move all errors to caller-local form state, (c) keep transport/session errors shared but not form validation errors
+3. **How should auth form errors be modeled?**
+   - Options: (a) keep one shared field, (b) move command errors to caller-local form state, (c) keep transport/session errors shared but not form validation errors
+   - **Implemented**: explicit command-local `Result` returns for sign-in flows, with forms owning their displayed error state
 
 ## Review
 
@@ -541,19 +550,19 @@ Recommendation: do not roll back the committed auth session. Session state and w
 
 ### Summary
 
-The auth core is now split into dedicated auth types, a Better Auth transport module, and a session-centered Svelte store. All app entrypoints now compose transport plus injected workspace side effects locally, and all runtime callers were migrated to the new `session` / `operation` / `lastError` API instead of going through a compatibility shim.
+The auth core is now split into dedicated auth types, a Better Auth transport module, and a session-centered Svelte store. All app entrypoints now compose transport plus injected workspace side effects locally, and runtime callers now read `session` / `operation` directly while explicit auth commands return typed `Result`s for form-specific failures.
 
 ### Deviations from Spec
 
 - `onSessionCommitted` carries `reason` and optional `userKeyBase64` so app-owned workspace effects can unlock with the actual remote encryption key when available.
 - The implementation intentionally made a clean caller-breaking rename instead of keeping `createAuth` as an alias.
 - Email/password and custom Google sign-in hydrate the canonical authenticated snapshot through `getSession()` after sign-in so the store can obtain the server-provided encryption key.
+- Shared `lastError` auth UI state was replaced with typed command results so forms render only the failures from the command they just ran.
 
 ### Verification Notes
 
 - Targeted auth caller migration was checked after implementation.
 - Full repo typecheck is still blocked by unrelated preexisting failures in `apps/fuji`, `packages/workspace`, and several app-local UI path-resolution/type issues outside this auth redesign.
-   - **Recommendation**: choose (c); keep real auth/session errors shared, but do not expand shared form-state responsibilities
 
 4. **Should XState be introduced after this split?**
    - Options: (a) no, stay with explicit Svelte state, (b) yes immediately after the split, (c) defer until MFA / passkey / polling flows exist

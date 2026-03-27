@@ -1,11 +1,64 @@
-import { extractErrorMessage } from 'wellcrafted/error';
-import type { AuthTransport, RemoteAuthResult } from './auth-transport.js';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Err, Ok, type Result } from 'wellcrafted/result';
+import {
+	AuthenticatedSessionLoadError,
+	type AuthTransport,
+	type RemoteAuthResult,
+} from './auth-transport.js';
 import type {
 	AuthOperation,
 	AuthSession,
 	AuthSessionStorage,
 	StoredUser,
 } from './auth-types.js';
+
+type ExplicitAuthCommand = 'sign-in' | 'sign-up' | 'google-sign-in';
+
+export const AuthCommandError = defineErrors({
+	InvalidCredentials: () => ({
+		message: 'Invalid email or password.',
+	}),
+	SignInFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to sign in: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	SignUpFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to create account: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	GoogleSignInCancelled: () => ({
+		message: 'Google sign-in was cancelled.',
+	}),
+	GoogleSignInFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to sign in with Google: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	SessionHydrationFailed: ({
+		command,
+	}: {
+		command: ExplicitAuthCommand;
+	}) => ({
+		message: `${describeCommand(command)} completed, but the authenticated session could not be loaded.`,
+		command,
+	}),
+	SessionCommitFailed: ({
+		command,
+		cause,
+	}: {
+		command: ExplicitAuthCommand;
+		cause: unknown;
+	}) => ({
+		message: `${describeCommand(command)} succeeded, but app session setup failed: ${extractErrorMessage(cause)}`,
+		command,
+		cause,
+	}),
+});
+export type AuthCommandError = InferErrors<typeof AuthCommandError>;
+export type AuthCommandResult = Result<void, AuthCommandError>;
 
 export type AuthSessionCommitReason =
 	| 'bootstrap'
@@ -38,16 +91,18 @@ export type AuthSessionStore = {
 	readonly isAuthenticated: boolean;
 	readonly user: StoredUser | null;
 	readonly token: string | null;
-	readonly lastError?: string;
 
 	refresh(): Promise<void>;
-	signIn(input: { email: string; password: string }): Promise<void>;
+	signIn(input: {
+		email: string;
+		password: string;
+	}): Promise<AuthCommandResult>;
 	signUp(input: {
 		email: string;
 		password: string;
 		name: string;
-	}): Promise<void>;
-	signInWithGoogle(): Promise<void>;
+	}): Promise<AuthCommandResult>;
+	signInWithGoogle(): Promise<AuthCommandResult>;
 	signOut(): Promise<void>;
 
 	onSessionChange(listener: (session: AuthSession) => void): () => void;
@@ -63,7 +118,6 @@ export function createAuthSession({
 }: CreateAuthSessionOptions): AuthSessionStore {
 	let observedSession = $state<AuthSession>(storage.current);
 	let operation = $state<AuthOperation>({ status: 'bootstrapping' });
-	let lastError = $state<string | undefined>(undefined);
 	let bootstrapPromise: Promise<void> | null = null;
 	let isApplyingLocalSessionChange = false;
 	let lastPublishedToken = getToken(storage.current);
@@ -74,11 +128,6 @@ export function createAuthSession({
 	function setOperation(next: AuthOperation) {
 		if (operation.status === next.status) return;
 		operation = next;
-	}
-
-	function setLastError(next: string | undefined) {
-		if (lastError === next) return;
-		lastError = next;
 	}
 
 	function notifySessionChange(next: AuthSession) {
@@ -98,12 +147,7 @@ export function createAuthSession({
 
 	async function runSessionCommitted(args: AuthSessionCommit) {
 		if (!onSessionCommitted) return;
-
-		try {
-			await onSessionCommitted(args);
-		} catch (error) {
-			setLastError(extractErrorMessage(error));
-		}
+		await onSessionCommitted(args);
 	}
 
 	async function adoptSession(
@@ -124,7 +168,6 @@ export function createAuthSession({
 		observedSession = next;
 
 		if (changed) {
-			setLastError(undefined);
 			notifySessionChange(next);
 			notifyTokenChange(next);
 		}
@@ -181,20 +224,24 @@ export function createAuthSession({
 		};
 	}
 
-	async function applyRemoteResult(
-		result: RemoteAuthResult,
-		reason: Exclude<AuthSessionCommitReason, 'external-change'>,
-	) {
-		const next = toSession(result);
-		if (!next) return;
+async function applyRemoteResult(
+	result: RemoteAuthResult,
+	reason: Exclude<AuthSessionCommitReason, 'external-change'>,
+) {
+	const next = toSession(result);
+	if (!next) return;
 
+	try {
 		await commitSession(next, {
 			reason,
 			runEffects: result.status === 'authenticated',
 			userKeyBase64:
 				result.status === 'authenticated' ? result.userKeyBase64 : undefined,
 		});
+	} catch (error) {
+		throw new AuthSessionCommitError(error);
 	}
+}
 
 	async function bootstrap() {
 		if (!bootstrapPromise) {
@@ -202,10 +249,14 @@ export function createAuthSession({
 				await Promise.all([storage.whenReady].filter(Boolean));
 
 				const hydratedSession = storage.current;
-				await adoptSession(hydratedSession, {
-					reason: 'bootstrap',
-					runEffects: hydratedSession.status === 'authenticated',
-				});
+				try {
+					await adoptSession(hydratedSession, {
+						reason: 'bootstrap',
+						runEffects: hydratedSession.status === 'authenticated',
+					});
+				} catch (error) {
+					reportBackgroundAuthError('bootstrap', error);
+				}
 
 				if (hydratedSession.status === 'authenticated') {
 					try {
@@ -213,7 +264,9 @@ export function createAuthSession({
 							await transport.getSession(hydratedSession),
 							'bootstrap',
 						);
-					} catch {}
+					} catch (error) {
+						reportBackgroundAuthError('bootstrap', error);
+					}
 				}
 
 				setOperation({ status: 'idle' });
@@ -229,29 +282,29 @@ export function createAuthSession({
 
 		try {
 			await applyRemoteResult(await transport.getSession(storage.current), 'refresh');
-		} catch {}
+		} catch (error) {
+			reportBackgroundAuthError('refresh', error);
+		}
 
 		setOperation({ status: 'idle' });
 	}
 
 	async function runSigningInCommand(
-		reason: 'sign-in' | 'sign-up' | 'google-sign-in',
+		command: ExplicitAuthCommand,
 		run: () => Promise<RemoteAuthResult>,
-	) {
+	): Promise<AuthCommandResult> {
 		await bootstrap();
 		setOperation({ status: 'signing-in' });
 
 		try {
-			await applyRemoteResult(await run(), reason);
+			await applyRemoteResult(await run(), command);
 		} catch (error) {
-			setLastError(
-				shouldSuppressAuthError(error)
-					? undefined
-					: extractErrorMessage(error),
-			);
+			setOperation({ status: 'idle' });
+			return Err(toAuthCommandError(command, error));
 		}
 
 		setOperation({ status: 'idle' });
+		return Ok(undefined);
 	}
 
 	storage.watch((next) => {
@@ -259,10 +312,11 @@ export function createAuthSession({
 		if (areSessionsEqual(observedSession, next)) return;
 
 		setOperation({ status: 'idle' });
-		setLastError(undefined);
 		void adoptSession(next, {
 			reason: 'external-change',
 			runEffects: true,
+		}).catch((error) => {
+			reportBackgroundAuthError('external-change', error);
 		});
 	});
 
@@ -291,10 +345,6 @@ export function createAuthSession({
 
 		get token() {
 			return getToken(storage.current);
-		},
-
-		get lastError() {
-			return lastError;
 		},
 
 		refresh,
@@ -327,7 +377,7 @@ export function createAuthSession({
 					{ reason: 'sign-out', runEffects: true },
 				);
 			} catch (error) {
-				setLastError(extractErrorMessage(error));
+				reportBackgroundAuthError('sign-out', error);
 			}
 
 			setOperation({ status: 'idle' });
@@ -388,4 +438,80 @@ function shouldSuppressAuthError(error: unknown): boolean {
 	if (!(error instanceof Error)) return false;
 	const message = error.message.toLowerCase();
 	return message.includes('canceled') || message.includes('cancelled');
+}
+
+function toAuthCommandError(
+	command: ExplicitAuthCommand,
+	error: unknown,
+): AuthCommandError {
+	if (error instanceof AuthenticatedSessionLoadError) {
+		return AuthCommandError.SessionHydrationFailed({ command });
+	}
+
+	if (error instanceof AuthSessionCommitError) {
+		return AuthCommandError.SessionCommitFailed({
+			command,
+			cause: error.cause,
+		});
+	}
+
+	if (command === 'google-sign-in' && shouldSuppressAuthError(error)) {
+		return AuthCommandError.GoogleSignInCancelled();
+	}
+
+	if (command === 'sign-in' && isInvalidCredentialsError(error)) {
+		return AuthCommandError.InvalidCredentials();
+	}
+
+	switch (command) {
+		case 'sign-in':
+			return AuthCommandError.SignInFailed({ cause: error });
+		case 'sign-up':
+			return AuthCommandError.SignUpFailed({ cause: error });
+		case 'google-sign-in':
+			return AuthCommandError.GoogleSignInFailed({ cause: error });
+	}
+}
+
+function isInvalidCredentialsError(error: unknown): boolean {
+	if (
+		typeof error === 'object' &&
+		error !== null &&
+		'status' in error &&
+		(error.status === 401 || error.status === 403)
+	) {
+		return true;
+	}
+
+	const message = extractErrorMessage(error).toLowerCase();
+	return (
+		message.includes('invalid email or password') ||
+		message.includes('invalid credentials') ||
+		message.includes('invalid password')
+	);
+}
+
+function describeCommand(command: ExplicitAuthCommand): string {
+	switch (command) {
+		case 'sign-in':
+			return 'Sign-in';
+		case 'sign-up':
+			return 'Sign-up';
+		case 'google-sign-in':
+			return 'Google sign-in';
+	}
+}
+
+function reportBackgroundAuthError(phase: AuthSessionCommitReason, error: unknown) {
+	console.error(`[auth] ${phase} failed:`, error);
+}
+
+class AuthSessionCommitError extends Error {
+	override readonly cause: unknown;
+
+	constructor(cause: unknown) {
+		super('Auth session commit failed', { cause });
+		this.name = 'AuthSessionCommitError';
+		this.cause = cause;
+	}
 }

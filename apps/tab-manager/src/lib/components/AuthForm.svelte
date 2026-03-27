@@ -10,6 +10,7 @@
 	let password = $state('');
 	let name = $state('');
 	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
+	let submitError = $state<string | null>(null);
 
 	const isSignUp = $derived(mode === 'sign-up');
 	const isBusy = $derived(authState.operation.status === 'signing-in');
@@ -18,11 +19,11 @@
 <form
 	onsubmit={async (e) => {
 		e.preventDefault();
-		if (isSignUp) {
-			await authState.signUp({ email, password, name });
-		} else {
-			await authState.signIn({ email, password });
-		}
+		submitError = null;
+		const { error } = isSignUp
+			? await authState.signUp({ email, password, name })
+			: await authState.signIn({ email, password });
+		if (error) submitError = error.message;
 	}}
 	class="w-full max-w-xs"
 >
@@ -34,9 +35,9 @@
 				: 'Sign in to sync your tabs across devices.'}
 		</Field.Description>
 
-		{#if authState.lastError}
+		{#if submitError}
 			<Alert.Root variant="destructive">
-				<Alert.Description>{authState.lastError}</Alert.Description>
+				<Alert.Description>{submitError}</Alert.Description>
 			</Alert.Root>
 		{/if}
 
@@ -45,7 +46,11 @@
 			variant="outline"
 			class="w-full"
 			disabled={isBusy}
-			onclick={() => authState.signInWithGoogle()}
+			onclick={async () => {
+				submitError = null;
+				const { error } = await authState.signInWithGoogle();
+				if (error) submitError = error.message;
+			}}
 		>
 			<svg class="size-4" viewBox="0 0 24 24" aria-hidden="true">
 				<path
@@ -123,7 +128,10 @@
 				<button
 					type="button"
 					class="text-foreground underline underline-offset-4 hover:text-foreground/80"
-					onclick={() => (mode = 'sign-in')}
+					onclick={() => {
+						mode = 'sign-in';
+						submitError = null;
+					}}
 				>
 					Sign in
 				</button>
@@ -132,7 +140,10 @@
 				<button
 					type="button"
 					class="text-foreground underline underline-offset-4 hover:text-foreground/80"
-					onclick={() => (mode = 'sign-up')}
+					onclick={() => {
+						mode = 'sign-up';
+						submitError = null;
+					}}
 				>
 					Sign up
 				</button>

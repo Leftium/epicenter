@@ -5,7 +5,9 @@ export {
 	type RemoteAuthResult,
 } from './auth-transport.js';
 export {
+	AuthCommandError,
 	createAuthSession,
+	type AuthCommandResult,
 	type AuthSessionCommit,
 	type AuthSessionCommitReason,
 	type AuthSessionStore,

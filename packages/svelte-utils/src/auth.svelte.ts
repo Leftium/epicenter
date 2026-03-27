@@ -33,4 +33,4 @@ export {
 	createWorkspaceAuth,
 	type CreateWorkspaceAuthOptions,
 	type WorkspaceAuth,
-} from './workspace-first-boot.svelte.js';
+} from './workspace-auth.svelte.js';

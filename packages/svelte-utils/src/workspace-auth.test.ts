@@ -5,7 +5,7 @@ import type {
 	GoogleAuthCommandResult,
 } from './auth-session.svelte.js';
 import type { AuthSession } from './auth-types.js';
-import { createWorkspaceAuth } from './workspace-first-boot.svelte.js';
+import { createWorkspaceAuth } from './workspace-auth.svelte.js';
 
 describe('createWorkspaceAuth.refresh', () => {
 	test('adopts plaintext local data and unlocks with the fetched key', async () => {

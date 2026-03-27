@@ -12,9 +12,8 @@
 
 import {
 	createAuth,
-	StoredUser,
+	PersistedSession,
 } from '@epicenter/svelte/auth';
-import { type } from 'arktype';
 import { workspace } from '$lib/workspace';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
@@ -22,22 +21,15 @@ import { createStorageState } from './storage-state.svelte';
 const GOOGLE_CLIENT_ID =
 	'702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
 
-/** Bearer token in `chrome.storage.local`. Read synchronously via `$state`. */
-const authToken = createStorageState('local:authToken', {
-	fallback: null,
-	schema: type('string').or('null'),
-});
-
-/** Cached user in `chrome.storage.local`. Validated against `StoredUser` schema. */
-const authUser = createStorageState('local:authUser', {
-	fallback: null,
-	schema: StoredUser.or('null'),
+/** Persisted auth snapshot in `chrome.storage.local`. */
+const authSession = createStorageState('local:authSession', {
+	fallback: { status: 'anonymous' },
+	schema: PersistedSession,
 });
 
 export const authState = createAuth({
 	baseURL: () => remoteServerUrl.current,
-	token: authToken,
-	user: authUser,
+	session: authSession,
 	workspace,
 	signInWithGoogle: async (betterAuthClient) => {
 		const redirectUri = browser.identity.getRedirectURL();

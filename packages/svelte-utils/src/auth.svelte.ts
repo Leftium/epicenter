@@ -20,6 +20,16 @@ export const StoredUser = type({
 
 export type StoredUser = typeof StoredUser.infer;
 
+export const PersistedSession = type({
+	status: "'anonymous'",
+}).or({
+	status: "'authenticated'",
+	token: 'string',
+	user: StoredUser,
+});
+
+export type PersistedSession = typeof PersistedSession.infer;
+
 export type AuthStatus =
 	| 'bootstrapping'
 	| 'checking'
@@ -69,14 +79,12 @@ type WorkspaceSessionHandle = {
 
 export function createAuth({
 	baseURL,
-	token,
-	user,
+	session,
 	workspace,
 	signInWithGoogle,
 }: {
 	baseURL: string | (() => string);
-	token: SessionField<string | null>;
-	user: SessionField<StoredUser | null>;
+	session: SessionField<PersistedSession>;
 	workspace: WorkspaceSessionHandle;
 	signInWithGoogle?: (
 		client: ReturnType<typeof createAuthClient>,
@@ -89,14 +97,16 @@ export function createAuth({
 		'bootstrapping',
 	);
 	let lastError = $state<string | undefined>(undefined);
-	let hasExternalSession = $state(Boolean(user.current));
+	let hasExternalSession = $state(session.current.status === 'authenticated');
 	let isApplyingLocalSessionChange = false;
 	let bootstrapPromise: Promise<StoredUser | null> | null = null;
-	let lastPublishedToken = token.current;
+	let lastPublishedToken =
+		session.current.status === 'authenticated' ? session.current.token : null;
 	const tokenListeners = new Set<(token: string | null) => void>();
 
 	function notifyTokenChange() {
-		const nextToken = token.current;
+		const nextToken =
+			session.current.status === 'authenticated' ? session.current.token : null;
 		if (nextToken === lastPublishedToken) return;
 		lastPublishedToken = nextToken;
 		for (const listener of tokenListeners) {
@@ -130,15 +140,21 @@ export function createAuth({
 
 	function getStatus(): AuthStatus {
 		if (pendingAction) return pendingAction;
-		return user.current ? 'signed-in' : 'signed-out';
+		return session.current.status === 'authenticated'
+			? 'signed-in'
+			: 'signed-out';
 	}
 
 	function getState(): AuthState {
 		const status = getStatus();
+		const currentSession = session.current;
 		return {
 			status,
-			user: user.current,
-			token: token.current,
+			user: currentSession.status === 'authenticated' ? currentSession.user : null,
+			token:
+				currentSession.status === 'authenticated'
+					? currentSession.token
+					: null,
 			signInError: status === 'signed-out' ? lastError : undefined,
 		};
 	}
@@ -161,7 +177,7 @@ export function createAuth({
 			await run();
 		} finally {
 			isApplyingLocalSessionChange = false;
-			hasExternalSession = Boolean(user.current);
+			hasExternalSession = session.current.status === 'authenticated';
 			notifyTokenChange();
 		}
 	}
@@ -171,6 +187,11 @@ export function createAuth({
 		token: string | null;
 		userKeyBase64: string | null;
 	}) {
+		if (!next.token) {
+			return new Error('Authenticated session is missing bearer token');
+		}
+		const token = next.token;
+
 		if (!next.userKeyBase64) {
 			return new Error('Authenticated session is missing userKeyBase64');
 		}
@@ -178,8 +199,11 @@ export function createAuth({
 		await workspace.encryption.unlock(base64ToBytes(next.userKeyBase64));
 
 		await applyLocalSessionChange(async () => {
-			await token.set(next.token);
-			await user.set(next.user);
+			await session.set({
+				status: 'authenticated',
+				token,
+				user: next.user,
+			});
 		});
 		setLastError(undefined);
 		return null;
@@ -188,8 +212,7 @@ export function createAuth({
 	async function clearSession() {
 		await workspace.clearLocalData();
 		await applyLocalSessionChange(async () => {
-			await token.set(null);
-			await user.set(null);
+			await session.set({ status: 'anonymous' });
 		});
 		setLastError(undefined);
 	}
@@ -234,15 +257,17 @@ export function createAuth({
 	async function waitUntilReady() {
 		if (!bootstrapPromise) {
 			bootstrapPromise = (async () => {
-				await Promise.all([token.whenReady, user.whenReady].filter(Boolean));
+				await Promise.all([session.whenReady].filter(Boolean));
 
-				if (user.current) {
+				if (session.current.status === 'authenticated') {
 					await workspace.encryption.tryUnlock();
 					setLastError(undefined);
 				}
 
 				setPendingAction(null);
-				return user.current;
+				return session.current.status === 'authenticated'
+					? session.current.user
+					: null;
 			})();
 		}
 
@@ -254,7 +279,11 @@ export function createAuth({
 		setPendingAction('checking');
 
 		try {
-			const { client, getIssuedToken } = buildClient(token.current);
+			const { client, getIssuedToken } = buildClient(
+				session.current.status === 'authenticated'
+					? session.current.token
+					: null,
+			);
 			const { data, error } = await client.getSession();
 
 			if (error) {
@@ -272,7 +301,9 @@ export function createAuth({
 				}
 
 				setPendingAction(null);
-				return user.current;
+				return session.current.status === 'authenticated'
+					? session.current.user
+					: null;
 			}
 
 			if (!data) {
@@ -296,18 +327,22 @@ export function createAuth({
 			}
 		} catch {
 			setPendingAction(null);
-			return user.current;
+			return session.current.status === 'authenticated'
+				? session.current.user
+				: null;
 		}
 
 		setPendingAction(null);
-		return user.current;
+		return session.current.status === 'authenticated'
+			? session.current.user
+			: null;
 	}
 
 	const handleExternalSessionChange = () => {
 		if (isApplyingLocalSessionChange) return;
 
 		const wasSignedIn = hasExternalSession;
-		const isSignedIn = Boolean(user.current);
+		const isSignedIn = session.current.status === 'authenticated';
 		hasExternalSession = isSignedIn;
 
 		setPendingAction(null);
@@ -329,8 +364,7 @@ export function createAuth({
 		notifyTokenChange();
 	};
 
-	token.watch(handleExternalSessionChange);
-	user.watch(handleExternalSessionChange);
+	session.watch(handleExternalSessionChange);
 
 	return {
 		get whenReady() {
@@ -346,11 +380,15 @@ export function createAuth({
 		},
 
 		get user() {
-			return user.current;
+			return session.current.status === 'authenticated'
+				? session.current.user
+				: null;
 		},
 
 		get token() {
-			return token.current;
+			return session.current.status === 'authenticated'
+				? session.current.token
+				: null;
 		},
 
 		get signInError() {
@@ -368,7 +406,10 @@ export function createAuth({
 
 		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
 			const headers = new Headers(init?.headers);
-			const authToken = token.current;
+			const authToken =
+				session.current.status === 'authenticated'
+					? session.current.token
+					: null;
 			if (authToken) {
 				headers.set('Authorization', `Bearer ${authToken}`);
 			}
@@ -441,7 +482,11 @@ export function createAuth({
 			setPendingAction('signing-out');
 
 			try {
-				const { client } = buildClient(token.current);
+				const { client } = buildClient(
+					session.current.status === 'authenticated'
+						? session.current.token
+						: null,
+				);
 				const { error } = await client.signOut();
 				if (error) {
 					throw new Error(`Sign-out failed: ${extractErrorMessage(error)}`);

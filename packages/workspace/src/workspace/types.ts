@@ -1106,6 +1106,41 @@ export type WorkspaceEncryptionWithCache = WorkspaceEncryption & {
 	tryUnlock(): Promise<boolean>;
 };
 
+export type WorkspaceBootState = 'plaintext' | 'unlocked';
+
+/**
+ * Product-level unlock helpers exposed when `.withEncryption()` is configured.
+ */
+export type WorkspaceKeyAccess = {
+	/**
+	 * Unlock the workspace from a base64-encoded user key.
+	 *
+	 * This is a convenience wrapper for app-layer auth flows that fetch the
+	 * user key as a string payload.
+	 */
+	unlockWithKey(userKeyBase64: string): Promise<void>;
+};
+
+/**
+ * Product-level startup helpers exposed when `.withEncryption({ userKeyCache })`
+ * is configured.
+ */
+export type WorkspaceKeyAccessWithCache = WorkspaceKeyAccess & {
+	/**
+	 * Boot the workspace from the cached user key when available.
+	 *
+	 * Returns `'unlocked'` when the cached key restored successfully, otherwise
+	 * `'plaintext'`.
+	 */
+	bootFromCache(): Promise<WorkspaceBootState>;
+};
+
+export type WorkspaceKeyAccessFor<
+	TConfig extends EncryptionConfig | undefined,
+> = TConfig extends EncryptionConfig
+	? WorkspaceKeyAccessWithCache
+	: WorkspaceKeyAccess;
+
 export type WorkspaceEncryptionFor<
 	TConfig extends EncryptionConfig | undefined,
 > = TConfig extends EncryptionConfig
@@ -1319,7 +1354,9 @@ export type WorkspaceClientBuilder<
 			TAwarenessDefinitions,
 			TExtensions,
 			TDocExtensions,
-		{ encryption: WorkspaceEncryptionFor<TConfig> }
+		{
+			encryption: WorkspaceEncryptionFor<TConfig>;
+		} & WorkspaceKeyAccessFor<TConfig>
 	>;
 
 		/**

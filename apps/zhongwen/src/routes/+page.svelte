@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { fromKv } from '@epicenter/svelte';
-	import { installWorkspaceFirstBoot } from '@epicenter/svelte/auth';
+	import {
+		applyAuthResultToWorkspace,
+		startAppBoot,
+	} from '@epicenter/svelte/auth';
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Sidebar from '@epicenter/ui/sidebar';
@@ -17,13 +20,23 @@
 	let dismissedError = $state(false);
 
 	const handle = $derived(chatState.active);
+	const currentUser = $derived(
+		authState.session.status === 'authenticated' ? authState.session.user : null,
+	);
 
 	onMount(() => {
-		return installWorkspaceFirstBoot({
+		void startAppBoot({
 			workspace,
 			auth: authState,
 		});
 	});
+
+	async function signInWithGoogle() {
+		await applyAuthResultToWorkspace({
+			workspace,
+			result: await authState.signInWithGoogle(),
+		});
+	}
 </script>
 
 <Sidebar.Provider>
@@ -53,10 +66,10 @@
 
 				{#if authState.session.status === 'authenticated'}
 					<span class="text-sm text-muted-foreground"
-						>{authState.user?.name}</span
+						>{currentUser?.name}</span
 					>
 				{:else if authState.session.status === 'anonymous'}
-					<Button size="sm" onclick={() => authState.signInWithGoogle()}>
+					<Button size="sm" onclick={signInWithGoogle}>
 						Sign In
 					</Button>
 				{/if}
@@ -72,7 +85,7 @@
 			<div class="flex flex-1 items-center justify-center">
 				<div class="text-center text-muted-foreground">
 					<p class="mb-4">Sign in to start chatting</p>
-					<Button onclick={() => authState.signInWithGoogle()}
+					<Button onclick={signInWithGoogle}
 						>Sign in with Google</Button
 					>
 				</div>

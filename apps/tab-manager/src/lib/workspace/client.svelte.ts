@@ -88,8 +88,10 @@ function buildWorkspaceClient() {
 			'sync',
 			createSyncExtension({
 				url: (workspaceId) => `${serverUrl.current}/workspaces/${workspaceId}`,
-				getToken: async () => authState.token,
-				onTokenChange: authState.onTokenChange,
+				getToken: async () =>
+					authState.session.status === 'authenticated'
+						? authState.session.token
+						: null,
 			}),
 		)
 		.withActions(({ tables }) => ({

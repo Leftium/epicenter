@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { installWorkspaceFirstBoot } from '@epicenter/svelte/auth';
+	import {
+		refreshAppAuth,
+		startAppBoot,
+	} from '@epicenter/svelte/auth';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
@@ -16,23 +19,26 @@
 	let commandPaletteOpen = $state(false);
 
 	onMount(() => {
-		const cleanupWorkspaceBoot = installWorkspaceFirstBoot({
+		void startAppBoot({
 			workspace: workspaceClient,
 			auth: authState,
+			reconnect: () => workspaceClient.extensions.sync.reconnect(),
 		});
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&
 				authState.session.status === 'authenticated'
 			) {
-				void authState.refresh();
+				void refreshAppAuth({
+					workspace: workspaceClient,
+					auth: authState,
+					reconnect: () => workspaceClient.extensions.sync.reconnect(),
+				});
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () => {
-			cleanupWorkspaceBoot();
+		return () =>
 			document.removeEventListener('visibilitychange', onVisibilityChange);
-		};
 	});
 
 	// ─── Document Handle ────────────────────────────────────────────────────

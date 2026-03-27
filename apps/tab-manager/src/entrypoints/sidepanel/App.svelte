@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { installWorkspaceFirstBoot } from '@epicenter/svelte/auth';
+	import {
+		refreshAppAuth,
+		startAppBoot,
+	} from '@epicenter/svelte/auth';
 	import { Button } from '@epicenter/ui/button';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
@@ -22,9 +25,10 @@
 	import { registerDevice, workspace } from '$lib/workspace';
 
 	onMount(() => {
-		const cleanupWorkspaceBoot = installWorkspaceFirstBoot({
+		void startAppBoot({
 			workspace,
 			auth: authState,
+			reconnect: () => workspace.extensions.sync.reconnect(),
 		});
 		void registerDevice();
 		const onVisibilityChange = () => {
@@ -32,14 +36,16 @@
 				document.visibilityState === 'visible' &&
 				authState.session.status === 'authenticated'
 			) {
-				void authState.refresh();
+				void refreshAppAuth({
+					workspace,
+					auth: authState,
+					reconnect: () => workspace.extensions.sync.reconnect(),
+				});
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () => {
-			cleanupWorkspaceBoot();
+		return () =>
 			document.removeEventListener('visibilitychange', onVisibilityChange);
-		};
 	});
 
 	let searchInputRef = $state<HTMLInputElement | null>(null);

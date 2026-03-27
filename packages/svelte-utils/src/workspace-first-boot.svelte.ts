@@ -1,65 +1,112 @@
-import type { WorkspaceEncryptionWithCache } from '@epicenter/workspace';
-import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import type {
-	AuthSessionCommit,
-	AuthSessionStore,
+	AuthClient,
+	AuthCommandResult,
+	AuthRefreshResult,
+	GoogleAuthCommandResult,
 } from './auth-session.svelte.js';
 
-type WorkspaceFirstBootWorkspace = {
-	whenReady: Promise<void>;
+type WorkspaceBootWorkspace = {
+	bootFromCache(): Promise<'plaintext' | 'unlocked'>;
+	unlockWithKey(userKeyBase64: string): Promise<void>;
 	clearLocalData(): Promise<void>;
-	encryption: WorkspaceEncryptionWithCache;
 };
 
-type WorkspaceFirstBootAuth = AuthSessionStore & {
-	onSessionCommit(
-		listener: (commit: AuthSessionCommit) => void | Promise<void>,
-	): () => void;
-};
+type WorkspaceAuthResult =
+	| AuthRefreshResult
+	| AuthCommandResult
+	| GoogleAuthCommandResult;
 
-export function installWorkspaceFirstBoot({
+function isRedirectStartedResult(
+	result: WorkspaceAuthResult,
+): result is { status: 'redirect-started' } {
+	return 'status' in result && result.status === 'redirect-started';
+}
+
+export async function applyAuthResultToWorkspace({
+	workspace,
+	result,
+	reconnect,
+}: {
+	workspace: Pick<WorkspaceBootWorkspace, 'unlockWithKey'>;
+	result: WorkspaceAuthResult;
+	reconnect?: () => void;
+}): Promise<void> {
+	if (isRedirectStartedResult(result)) {
+		return;
+	}
+
+	if ('error' in result) {
+		return;
+	}
+
+	if (
+		result.session.status === 'authenticated' &&
+		result.workspaceKeyBase64
+	) {
+		await workspace.unlockWithKey(result.workspaceKeyBase64);
+	}
+
+	if (result.session.status === 'authenticated') {
+		reconnect?.();
+	}
+}
+
+export async function refreshAppAuth({
 	workspace,
 	auth,
+	reconnect,
 }: {
-	workspace: WorkspaceFirstBootWorkspace;
-	auth: WorkspaceFirstBootAuth;
-}): () => void {
-	const handleCommit = async (commit: AuthSessionCommit) => {
-		if (commit.current.status === 'authenticated') {
-			if (commit.userKeyBase64) {
-				await workspace.whenReady;
-				await workspace.encryption.unlock(base64ToBytes(commit.userKeyBase64));
-			}
-			return;
-		}
+	workspace: Pick<WorkspaceBootWorkspace, 'unlockWithKey'>;
+	auth: Pick<AuthClient, 'refresh' | 'session'>;
+	reconnect?: () => void;
+}): Promise<AuthRefreshResult> {
+	const shouldReconnectAfterRefresh = auth.session.status === 'authenticated';
+	const refreshResult = await auth.refresh();
 
-		if (
-			commit.previous.status === 'authenticated' &&
-			commit.reason === 'sign-out'
-		) {
-			await workspace.clearLocalData();
-		}
-	};
+	if (
+		shouldReconnectAfterRefresh &&
+		refreshResult.session.status === 'anonymous'
+	) {
+		reconnect?.();
+	}
 
-	const unsubscribe = auth.onSessionCommit((commit) =>
-		handleCommit(commit).catch((error) => {
-			console.error(
-				'[workspace-first-boot] Session commit handling failed:',
-				error,
-			);
-		}),
-	);
+	await applyAuthResultToWorkspace({
+		workspace,
+		result: refreshResult,
+		reconnect:
+			shouldReconnectAfterRefresh || refreshResult.session.status === 'authenticated'
+				? reconnect
+				: undefined,
+	});
 
-	void Promise.all([
-		workspace.whenReady
-			.then(() => workspace.encryption.tryUnlock())
-			.catch((error) => {
-				console.error('[workspace-first-boot] Workspace boot failed:', error);
-			}),
-		auth.refresh().catch((error) => {
-			console.error('[workspace-first-boot] Network auth refresh failed:', error);
-		}),
+	return refreshResult;
+}
+
+export async function startAppBoot({
+	workspace,
+	auth,
+	reconnect,
+}: {
+	workspace: WorkspaceBootWorkspace;
+	auth: Pick<AuthClient, 'refresh' | 'session'>;
+	reconnect?: () => void;
+}): Promise<void> {
+	await Promise.all([
+		workspace.bootFromCache(),
+		refreshAppAuth({ workspace, auth, reconnect }),
 	]);
+}
 
-	return unsubscribe;
+export async function signOutWorkspaceSession({
+	workspace,
+	auth,
+	reconnect,
+}: {
+	workspace: Pick<WorkspaceBootWorkspace, 'clearLocalData'>;
+	auth: Pick<AuthClient, 'signOut'>;
+	reconnect?: () => void;
+}): Promise<void> {
+	await auth.signOut();
+	await workspace.clearLocalData();
+	reconnect?.();
 }

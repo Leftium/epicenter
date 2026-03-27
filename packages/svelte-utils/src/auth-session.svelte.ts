@@ -3,18 +3,12 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
 import type {
 	GoogleSignInResult,
 	ResolveSession,
 	SessionResolution,
 } from './auth-transport.js';
-import type {
-	AuthOperation,
-	AuthSession,
-	AuthSessionStorage,
-	StoredUser,
-} from './auth-types.js';
+import type { AuthOperation, AuthSession, AuthSessionStorage } from './auth-types.js';
 
 type AuthCommandReason = 'sign-in' | 'sign-up' | 'google-sign-in';
 
@@ -54,7 +48,22 @@ export const AuthCommandError = defineErrors({
 	}),
 });
 export type AuthCommandError = InferErrors<typeof AuthCommandError>;
-export type AuthCommandResult = Result<void, AuthCommandError>;
+
+export type AuthRefreshResult = {
+	session: AuthSession;
+	workspaceKeyBase64?: string | null;
+};
+
+export type AuthCommandResult =
+	| AuthRefreshResult
+	| {
+			session: AuthSession;
+			error: AuthCommandError;
+	  };
+
+export type GoogleAuthCommandResult =
+	| AuthCommandResult
+	| { status: 'redirect-started' };
 
 export type AuthCommandHandlers = {
 	signIn?: (input: {
@@ -69,25 +78,6 @@ export type AuthCommandHandlers = {
 	signInWithGoogle?: () => Promise<GoogleSignInResult>;
 };
 
-export type AuthSessionCommitReason =
-	| 'bootstrap'
-	| 'refresh'
-	| 'sign-in'
-	| 'sign-up'
-	| 'google-sign-in'
-	| 'sign-out'
-	| 'external-change';
-
-export type AuthSessionCommit = {
-	previous: AuthSession;
-	current: AuthSession;
-	reason: AuthSessionCommitReason;
-	userKeyBase64?: string | null;
-};
-export type AuthSessionCommitListener = (
-	commit: AuthSessionCommit,
-) => void | Promise<void>;
-
 export type CreateAuthSessionOptions = {
 	storage: AuthSessionStorage;
 	resolveSession: ResolveSession;
@@ -95,15 +85,12 @@ export type CreateAuthSessionOptions = {
 	signOutRemote?: (current: AuthSession) => Promise<void>;
 };
 
-export type AuthSessionStore = {
-	readonly whenReady: Promise<void>;
+export type AuthClient = {
 	readonly session: AuthSession;
 	readonly operation: AuthOperation;
-	readonly isAuthenticated: boolean;
-	readonly user: StoredUser | null;
-	readonly token: string | null;
+	readonly isRefreshing: boolean;
 
-	refresh(): Promise<void>;
+	refresh(): Promise<AuthRefreshResult>;
 	signIn(input: {
 		email: string;
 		password: string;
@@ -113,12 +100,8 @@ export type AuthSessionStore = {
 		password: string;
 		name: string;
 	}): Promise<AuthCommandResult>;
-	signInWithGoogle(): Promise<AuthCommandResult>;
+	signInWithGoogle(): Promise<GoogleAuthCommandResult>;
 	signOut(): Promise<void>;
-
-	onSessionChange(listener: (session: AuthSession) => void): () => void;
-	onSessionCommit(listener: AuthSessionCommitListener): () => void;
-	onTokenChange(listener: (token: string | null) => void): () => void;
 
 	fetch: typeof fetch;
 };
@@ -128,129 +111,39 @@ export function createAuthSession({
 	resolveSession,
 	commands,
 	signOutRemote,
-}: CreateAuthSessionOptions): AuthSessionStore {
-	let publishedSession = $state<AuthSession>(storage.current);
+}: CreateAuthSessionOptions): AuthClient {
 	let operation = $state<AuthOperation>({ status: 'bootstrapping' });
 	let initializationPromise: Promise<void> | null = null;
-	let isApplyingLocalSessionChange = false;
-	let lastPublishedToken = getToken(storage.current);
-
-	const sessionListeners = new Set<(session: AuthSession) => void>();
-	const sessionCommitListeners = new Set<AuthSessionCommitListener>();
-	const tokenListeners = new Set<(token: string | null) => void>();
 
 	function setOperation(next: AuthOperation) {
 		if (operation.status === next.status) return;
 		operation = next;
 	}
 
-	async function publishSession(
-		next: AuthSession,
-		{
-			previous = publishedSession,
-			reason,
-			runEffects = false,
-			userKeyBase64,
-		}: {
-			previous?: AuthSession;
-			reason: AuthSessionCommitReason;
-			runEffects?: boolean;
-			userKeyBase64?: string | null;
-		},
-	) {
-		const changed = !areSessionsEqual(previous, next);
-		publishedSession = next;
-
-		if (changed) {
-			for (const listener of sessionListeners) {
-				listener(next);
-			}
-
-			const nextToken = getToken(next);
-			if (nextToken !== lastPublishedToken) {
-				lastPublishedToken = nextToken;
-				for (const listener of tokenListeners) {
-					listener(nextToken);
-				}
-			}
-		}
-
-		if (!changed && !runEffects) {
-			return;
-		}
-
-		if (sessionCommitListeners.size === 0) {
-			return;
-		}
-
-		const commit = {
-			previous,
-			current: next,
-			reason,
-			userKeyBase64,
-		} satisfies AuthSessionCommit;
-
-		for (const listener of sessionCommitListeners) {
-			await listener(commit);
-		}
-	}
-
-	async function persistAndPublishSession(
-		next: AuthSession,
-		{
-			reason,
-			runEffects = false,
-			userKeyBase64,
-		}: {
-			reason: AuthSessionCommitReason;
-			runEffects?: boolean;
-			userKeyBase64?: string | null;
-		},
-	) {
-		const previous = publishedSession;
-		const changed = !areSessionsEqual(previous, next);
-
-		if (changed) {
-			isApplyingLocalSessionChange = true;
-			try {
-				await storage.set(next);
-			} finally {
-				isApplyingLocalSessionChange = false;
-			}
-		}
-
-		await publishSession(next, {
-			previous,
-			reason,
-			runEffects,
-			userKeyBase64,
-		});
+	async function persistSession(next: AuthSession) {
+		if (areSessionsEqual(storage.current, next)) return;
+		await storage.set(next);
 	}
 
 	async function applyResolvedSession(
 		result: SessionResolution,
-		reason: Exclude<AuthSessionCommitReason, 'external-change'>,
-	) {
+	): Promise<AuthRefreshResult> {
 		switch (result.status) {
 			case 'unchanged':
-				return;
+				return { session: storage.current };
 			case 'anonymous':
-				await persistAndPublishSession({ status: 'anonymous' }, { reason });
-				return;
+				await persistSession({ status: 'anonymous' });
+				return { session: storage.current };
 			case 'authenticated':
-				await persistAndPublishSession(
-					{
-						status: 'authenticated',
-						token: result.token,
-						user: result.user,
-					},
-					{
-						reason,
-						runEffects: true,
-						userKeyBase64: result.userKeyBase64,
-					},
-				);
-				return;
+				await persistSession({
+					status: 'authenticated',
+					token: result.token,
+					user: result.user,
+				});
+				return {
+					session: storage.current,
+					workspaceKeyBase64: result.userKeyBase64,
+				};
 		}
 	}
 
@@ -258,28 +151,6 @@ export function createAuthSession({
 		if (!initializationPromise) {
 			initializationPromise = (async () => {
 				await Promise.all([storage.whenReady].filter(Boolean));
-
-				const hydratedSession = storage.current;
-				try {
-					await publishSession(hydratedSession, {
-						reason: 'bootstrap',
-						runEffects: hydratedSession.status === 'authenticated',
-					});
-				} catch (error) {
-					reportBackgroundAuthError('bootstrap', error);
-				}
-
-				if (hydratedSession.status === 'authenticated') {
-					try {
-						await applyResolvedSession(
-							await resolveSession(hydratedSession),
-							'bootstrap',
-						);
-					} catch (error) {
-						reportBackgroundAuthError('bootstrap', error);
-					}
-				}
-
 				setOperation({ status: 'idle' });
 			})();
 		}
@@ -288,57 +159,36 @@ export function createAuthSession({
 	}
 
 	async function completeAuthCommand(
-		result: SessionResolution | GoogleSignInResult,
+		result: SessionResolution,
 		{
 			reason,
-			allowRedirectStart = false,
 		}: {
 			reason: AuthCommandReason;
-			allowRedirectStart?: boolean;
 		},
 	): Promise<AuthCommandResult> {
-		if (allowRedirectStart && result.status === 'redirect-started') {
-			setOperation({ status: 'idle' });
-			return Ok(undefined);
-		}
-
 		if (result.status !== 'authenticated') {
-			setOperation({ status: 'idle' });
-			return AuthCommandError.SessionHydrationFailed({ reason });
+			return {
+				session: storage.current,
+				error: AuthCommandError.SessionHydrationFailed({ reason }).error,
+			};
 		}
 
 		try {
-			await applyResolvedSession(result, reason);
+			return await applyResolvedSession(result);
 		} catch (error) {
-			setOperation({ status: 'idle' });
-			return AuthCommandError.SessionCommitFailed({
-				reason,
-				cause: error,
-			});
+			return {
+				session: storage.current,
+				error: AuthCommandError.SessionCommitFailed({
+					reason,
+					cause: error,
+				}).error,
+			};
 		}
-
-		setOperation({ status: 'idle' });
-		return Ok(undefined);
 	}
 
-	storage.watch((next) => {
-		if (isApplyingLocalSessionChange) return;
-		if (areSessionsEqual(publishedSession, next)) return;
-
-		setOperation({ status: 'idle' });
-		void publishSession(next, {
-			reason: 'external-change',
-			runEffects: true,
-		}).catch((error) => {
-			reportBackgroundAuthError('external-change', error);
-		});
-	});
+	void initializeSession();
 
 	return {
-		get whenReady() {
-			return initializeSession();
-		},
-
 		get session() {
 			return storage.current;
 		},
@@ -347,18 +197,11 @@ export function createAuthSession({
 			return operation;
 		},
 
-		get isAuthenticated() {
-			return storage.current.status === 'authenticated';
-		},
-
-		get user() {
-			return storage.current.status === 'authenticated'
-				? storage.current.user
-				: null;
-		},
-
-		get token() {
-			return getToken(storage.current);
+		get isRefreshing() {
+			return (
+				operation.status === 'bootstrapping' ||
+				operation.status === 'refreshing'
+			);
 		},
 
 		async refresh() {
@@ -366,22 +209,23 @@ export function createAuthSession({
 			setOperation({ status: 'refreshing' });
 
 			try {
-				await applyResolvedSession(
-					await resolveSession(storage.current),
-					'refresh',
-				);
+				return await applyResolvedSession(await resolveSession(storage.current));
 			} catch (error) {
 				reportBackgroundAuthError('refresh', error);
+				return { session: storage.current };
+			} finally {
+				setOperation({ status: 'idle' });
 			}
-
-			setOperation({ status: 'idle' });
 		},
 
 		signIn(input) {
 			const signIn = commands?.signIn;
 			if (!signIn) {
-				return AuthCommandError.SignInFailed({
-					cause: new Error('Sign-in is not configured.'),
+				return Promise.resolve({
+					session: storage.current,
+					error: AuthCommandError.SignInFailed({
+						cause: new Error('Sign-in is not configured.'),
+					}).error,
 				});
 			}
 
@@ -389,23 +233,29 @@ export function createAuthSession({
 				await initializeSession();
 				setOperation({ status: 'signing-in' });
 
-				let result: SessionResolution;
 				try {
-					result = await signIn(input);
+					return await completeAuthCommand(await signIn(input), {
+						reason: 'sign-in',
+					});
 				} catch (error) {
+					return {
+						session: storage.current,
+						error: mapSignInFailure(error),
+					};
+				} finally {
 					setOperation({ status: 'idle' });
-					return mapSignInFailure(error);
 				}
-
-				return await completeAuthCommand(result, { reason: 'sign-in' });
 			})();
 		},
 
 		signUp(input) {
 			const signUp = commands?.signUp;
 			if (!signUp) {
-				return AuthCommandError.SignUpFailed({
-					cause: new Error('Sign-up is not configured.'),
+				return Promise.resolve({
+					session: storage.current,
+					error: AuthCommandError.SignUpFailed({
+						cause: new Error('Sign-up is not configured.'),
+					}).error,
 				});
 			}
 
@@ -413,23 +263,29 @@ export function createAuthSession({
 				await initializeSession();
 				setOperation({ status: 'signing-in' });
 
-				let result: SessionResolution;
 				try {
-					result = await signUp(input);
+					return await completeAuthCommand(await signUp(input), {
+						reason: 'sign-up',
+					});
 				} catch (error) {
+					return {
+						session: storage.current,
+						error: AuthCommandError.SignUpFailed({ cause: error }).error,
+					};
+				} finally {
 					setOperation({ status: 'idle' });
-					return AuthCommandError.SignUpFailed({ cause: error });
 				}
-
-				return await completeAuthCommand(result, { reason: 'sign-up' });
 			})();
 		},
 
 		signInWithGoogle() {
 			const signInWithGoogle = commands?.signInWithGoogle;
 			if (!signInWithGoogle) {
-				return AuthCommandError.GoogleSignInFailed({
-					cause: new Error('Google sign-in is not configured.'),
+				return Promise.resolve({
+					session: storage.current,
+					error: AuthCommandError.GoogleSignInFailed({
+						cause: new Error('Google sign-in is not configured.'),
+					}).error,
 				});
 			}
 
@@ -442,13 +298,24 @@ export function createAuthSession({
 					result = await signInWithGoogle();
 				} catch (error) {
 					setOperation({ status: 'idle' });
-					return mapGoogleSignInFailure(error);
+					return {
+						session: storage.current,
+						error: mapGoogleSignInFailure(error),
+					};
 				}
 
-				return await completeAuthCommand(result, {
-					reason: 'google-sign-in',
-					allowRedirectStart: true,
-				});
+				if (result.status === 'redirect-started') {
+					setOperation({ status: 'idle' });
+					return result;
+				}
+
+				try {
+					return await completeAuthCommand(result, {
+						reason: 'google-sign-in',
+					});
+				} finally {
+					setOperation({ status: 'idle' });
+				}
 			})();
 		},
 
@@ -461,36 +328,12 @@ export function createAuthSession({
 			} catch {}
 
 			try {
-				await persistAndPublishSession(
-					{ status: 'anonymous' },
-					{ reason: 'sign-out', runEffects: true },
-				);
+				await persistSession({ status: 'anonymous' });
 			} catch (error) {
 				reportBackgroundAuthError('sign-out', error);
+			} finally {
+				setOperation({ status: 'idle' });
 			}
-
-			setOperation({ status: 'idle' });
-		},
-
-		onSessionChange(listener) {
-			sessionListeners.add(listener);
-			return () => {
-				sessionListeners.delete(listener);
-			};
-		},
-
-		onSessionCommit(listener) {
-			sessionCommitListeners.add(listener);
-			return () => {
-				sessionCommitListeners.delete(listener);
-			};
-		},
-
-		onTokenChange(listener) {
-			tokenListeners.add(listener);
-			return () => {
-				tokenListeners.delete(listener);
-			};
 		},
 
 		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -543,18 +386,18 @@ function describeCommand(reason: AuthCommandReason): string {
 
 function mapSignInFailure(error: unknown): AuthCommandError {
 	if (isInvalidCredentialsError(error)) {
-		return AuthCommandError.InvalidCredentials();
+		return AuthCommandError.InvalidCredentials().error;
 	}
 
-	return AuthCommandError.SignInFailed({ cause: error });
+	return AuthCommandError.SignInFailed({ cause: error }).error;
 }
 
 function mapGoogleSignInFailure(error: unknown): AuthCommandError {
 	if (isCancelledGoogleSignIn(error)) {
-		return AuthCommandError.GoogleSignInCancelled();
+		return AuthCommandError.GoogleSignInCancelled().error;
 	}
 
-	return AuthCommandError.GoogleSignInFailed({ cause: error });
+	return AuthCommandError.GoogleSignInFailed({ cause: error }).error;
 }
 
 function isCancelledGoogleSignIn(error: unknown): boolean {
@@ -581,9 +424,6 @@ function isInvalidCredentialsError(error: unknown): boolean {
 	);
 }
 
-function reportBackgroundAuthError(
-	phase: AuthSessionCommitReason,
-	error: unknown,
-) {
+function reportBackgroundAuthError(phase: 'refresh' | 'sign-out', error: unknown) {
 	console.error(`[auth] ${phase} failed:`, error);
 }

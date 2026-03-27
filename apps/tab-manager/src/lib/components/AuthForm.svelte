@@ -1,10 +1,12 @@
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
+	import { applyAuthResultToWorkspace } from '@epicenter/svelte/auth';
 	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { authState } from '$lib/state/auth.svelte';
+	import { workspace } from '$lib/workspace';
 
 	let email = $state('');
 	let password = $state('');
@@ -20,10 +22,15 @@
 	onsubmit={async (e) => {
 		e.preventDefault();
 		submitError = null;
-		const { error } = isSignUp
+		const result = isSignUp
 			? await authState.signUp({ email, password, name })
 			: await authState.signIn({ email, password });
-		if (error) submitError = error.message;
+		await applyAuthResultToWorkspace({
+			workspace,
+			result,
+			reconnect: () => workspace.extensions.sync.reconnect(),
+		});
+		if ('error' in result) submitError = result.error.message;
 	}}
 	class="w-full max-w-xs"
 >
@@ -48,8 +55,13 @@
 			disabled={isBusy}
 			onclick={async () => {
 				submitError = null;
-				const { error } = await authState.signInWithGoogle();
-				if (error) submitError = error.message;
+				const result = await authState.signInWithGoogle();
+				await applyAuthResultToWorkspace({
+					workspace,
+					result,
+					reconnect: () => workspace.extensions.sync.reconnect(),
+				});
+				if ('error' in result) submitError = result.error.message;
 			}}
 		>
 			<svg class="size-4" viewBox="0 0 24 24" aria-hidden="true">

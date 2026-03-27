@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { signOutWorkspaceSession } from '@epicenter/svelte/auth';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Popover from '@epicenter/ui/popover';
 	import Cloud from '@lucide/svelte/icons/cloud';
@@ -7,10 +8,14 @@
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import { authState } from '$lib/auth';
 	import AuthForm from '$lib/components/AuthForm.svelte';
+	import workspace from '$lib/workspace';
 
 	const isSignedIn = $derived(authState.session.status === 'authenticated');
 	const isChecking = $derived(
 		authState.operation.status === 'signing-in',
+	);
+	const currentUser = $derived(
+		authState.session.status === 'authenticated' ? authState.session.user : null,
 	);
 
 	let popoverOpen = $state(false);
@@ -33,8 +38,8 @@
 		{#if isSignedIn}
 			<div class="p-4 space-y-3">
 				<div class="space-y-1">
-					<p class="text-sm font-medium">{authState.user?.name}</p>
-					<p class="text-xs text-muted-foreground">{authState.user?.email}</p>
+					<p class="text-sm font-medium">{currentUser?.name}</p>
+					<p class="text-xs text-muted-foreground">{currentUser?.email}</p>
 				</div>
 				<div class="border-t pt-3">
 					<Button
@@ -42,7 +47,11 @@
 						size="sm"
 						class="w-full"
 						onclick={async () => {
-							await authState.signOut();
+							await signOutWorkspaceSession({
+								auth: authState,
+								workspace,
+								reconnect: () => workspace.extensions.sync.reconnect(),
+							});
 							popoverOpen = false;
 						}}
 					>

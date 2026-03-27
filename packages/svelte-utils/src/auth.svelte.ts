@@ -1,10 +1,9 @@
 export {
 	AuthCommandError,
+	type AuthClient,
 	type AuthCommandResult,
-	type AuthSessionCommit,
-	type AuthSessionCommitListener,
-	type AuthSessionCommitReason,
-	type AuthSessionStore,
+	type AuthRefreshResult,
+	type GoogleAuthCommandResult,
 	type CreateAuthSessionOptions,
 	createAuthSession,
 } from './auth-session.svelte.js';
@@ -31,5 +30,8 @@ export {
 	StoredUser,
 } from './auth-types.js';
 export {
-	installWorkspaceFirstBoot,
+	applyAuthResultToWorkspace,
+	refreshAppAuth,
+	signOutWorkspaceSession,
+	startAppBoot,
 } from './workspace-first-boot.svelte.js';

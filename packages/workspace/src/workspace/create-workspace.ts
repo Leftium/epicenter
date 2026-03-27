@@ -353,8 +353,27 @@ export function createWorkspace<
 		};
 
 		if (encryptionRuntime) {
+			const encryptionWithCache =
+				'tryUnlock' in encryptionRuntime.encryption
+					? encryptionRuntime.encryption
+					: null;
+
 			Object.assign(client, {
 				encryption: encryptionRuntime.encryption,
+				async unlockWithKey(userKeyBase64: string) {
+					await whenReady;
+					await encryptionRuntime.encryption.unlock(base64ToBytes(userKeyBase64));
+				},
+				...(encryptionWithCache
+					? {
+							async bootFromCache() {
+								await whenReady;
+								return (await encryptionWithCache.tryUnlock())
+									? 'unlocked'
+									: 'plaintext';
+							},
+						}
+					: {}),
 			});
 		}
 

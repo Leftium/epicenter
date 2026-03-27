@@ -1,11 +1,13 @@
-import { createPersistedState } from '@epicenter/svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
+import { createPersistedState } from '@epicenter/svelte';
 import {
 	AuthSession,
 	createAuthSession,
-	createAuthTransport,
+	createBetterAuthClientSession,
+	createSessionResolver,
+	signOutRemote,
 } from '@epicenter/svelte/auth';
+import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { workspace } from '$lib/workspace/client';
 
 const session = createPersistedState({
@@ -14,19 +16,15 @@ const session = createPersistedState({
 	defaultValue: { status: 'anonymous' },
 });
 
-const transport = createAuthTransport({
+const resolveSession = createSessionResolver({
 	baseURL: APP_URLS.API,
 });
 
 export const authState = createAuthSession({
 	storage: session,
-	transport,
-	onSessionCommitted: async ({
-		previous,
-		current,
-		reason,
-		userKeyBase64,
-	}) => {
+	resolveSession,
+	signOutRemote: (current) => signOutRemote({ baseURL: APP_URLS.API, current }),
+	onSessionCommitted: async ({ previous, current, reason, userKeyBase64 }) => {
 		if (current.status === 'authenticated') {
 			if (userKeyBase64) {
 				await workspace.encryption.unlock(base64ToBytes(userKeyBase64));
@@ -49,3 +47,24 @@ export const authState = createAuthSession({
 		}
 	},
 });
+
+export function signInWithGoogle() {
+	return authState.runAuthCommand(
+		'google-sign-in',
+		async () => {
+			const { client } = createBetterAuthClientSession({
+				baseURL: APP_URLS.API,
+				authToken: null,
+			});
+			await client.signIn.social({
+				provider: 'google',
+				callbackURL: window.location.origin,
+			});
+			return { status: 'redirect-started' };
+		},
+		{
+			allowRedirectStart: true,
+			requireAuthenticatedSession: true,
+		},
+	);
+}

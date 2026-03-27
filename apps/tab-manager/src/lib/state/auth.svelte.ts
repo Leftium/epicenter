@@ -13,7 +13,12 @@
 import {
 	AuthSession,
 	createAuthSession,
-	createAuthTransport,
+	createBetterAuthClientSession,
+	createSessionResolver,
+	resolveSessionWithToken,
+	signInWithPassword,
+	signOutRemote,
+	signUpWithPassword,
 } from '@epicenter/svelte/auth';
 import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { workspace } from '$lib/workspace';
@@ -29,50 +34,58 @@ const authSession = createStorageState('local:authSession', {
 	schema: AuthSession,
 });
 
-const transport = createAuthTransport({
-	baseURL: () => remoteServerUrl.current,
-	signInWithGoogle: async (betterAuthClient) => {
-		const redirectUri = browser.identity.getRedirectURL();
-		const nonce = crypto.randomUUID();
-		const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-		authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
-		authUrl.searchParams.set('redirect_uri', redirectUri);
-		authUrl.searchParams.set('response_type', 'id_token');
-		authUrl.searchParams.set('scope', 'openid email profile');
-		authUrl.searchParams.set('nonce', nonce);
+const authBaseURL = () => remoteServerUrl.current;
 
-		const responseUrl = await browser.identity.launchWebAuthFlow({
-			url: authUrl.toString(),
-			interactive: true,
-		});
-		if (!responseUrl) throw new Error('No response from Google');
-
-		const fragment = new URL(responseUrl).hash.substring(1);
-		const params = new URLSearchParams(fragment);
-		const idToken = params.get('id_token');
-		if (!idToken) throw new Error('No id_token in response');
-
-		const { data, error } = await betterAuthClient.signIn.social({
-			provider: 'google',
-			idToken: { token: idToken, nonce },
-		});
-		if (error) throw new Error(error.message ?? error.statusText);
-		if (!data || !('user' in data)) {
-			throw new Error('Unexpected response from server');
-		}
-		return data;
-	},
+const resolveSession = createSessionResolver({
+	baseURL: authBaseURL,
 });
+
+async function signInWithGoogleViaChromeIdentity() {
+	const { client, getIssuedToken } = createBetterAuthClientSession({
+		baseURL: authBaseURL,
+		authToken: null,
+	});
+
+	const redirectUri = browser.identity.getRedirectURL();
+	const nonce = crypto.randomUUID();
+	const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+	authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+	authUrl.searchParams.set('redirect_uri', redirectUri);
+	authUrl.searchParams.set('response_type', 'id_token');
+	authUrl.searchParams.set('scope', 'openid email profile');
+	authUrl.searchParams.set('nonce', nonce);
+
+	const responseUrl = await browser.identity.launchWebAuthFlow({
+		url: authUrl.toString(),
+		interactive: true,
+	});
+	if (!responseUrl) throw new Error('No response from Google');
+
+	const fragment = new URL(responseUrl).hash.substring(1);
+	const params = new URLSearchParams(fragment);
+	const idToken = params.get('id_token');
+	if (!idToken) throw new Error('No id_token in response');
+
+	const { data, error } = await client.signIn.social({
+		provider: 'google',
+		idToken: { token: idToken, nonce },
+	});
+	if (error) throw new Error(error.message ?? error.statusText);
+	if (!data || !('user' in data)) {
+		throw new Error('Unexpected response from server');
+	}
+
+	return await resolveSessionWithToken({
+		baseURL: authBaseURL,
+		authToken: getIssuedToken(data),
+	});
+}
 
 export const authState = createAuthSession({
 	storage: authSession,
-	transport,
-	onSessionCommitted: async ({
-		previous,
-		current,
-		reason,
-		userKeyBase64,
-	}) => {
+	resolveSession,
+	signOutRemote: (current) => signOutRemote({ baseURL: authBaseURL, current }),
+	onSessionCommitted: async ({ previous, current, reason, userKeyBase64 }) => {
 		if (current.status === 'authenticated') {
 			if (userKeyBase64) {
 				await workspace.encryption.unlock(base64ToBytes(userKeyBase64));
@@ -95,3 +108,31 @@ export const authState = createAuthSession({
 		}
 	},
 });
+
+export function signIn(input: { email: string; password: string }) {
+	return authState.runAuthCommand(
+		'sign-in',
+		() => signInWithPassword({ baseURL: authBaseURL, input }),
+		{ requireAuthenticatedSession: true },
+	);
+}
+
+export function signUp(input: {
+	email: string;
+	password: string;
+	name: string;
+}) {
+	return authState.runAuthCommand(
+		'sign-up',
+		() => signUpWithPassword({ baseURL: authBaseURL, input }),
+		{ requireAuthenticatedSession: true },
+	);
+}
+
+export function signInWithGoogle() {
+	return authState.runAuthCommand(
+		'google-sign-in',
+		signInWithGoogleViaChromeIdentity,
+		{ requireAuthenticatedSession: true },
+	);
+}

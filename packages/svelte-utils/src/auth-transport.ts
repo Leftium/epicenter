@@ -2,7 +2,9 @@ import type { User } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
 import type { AuthSession, StoredUser } from './auth-types.js';
 
-export type RemoteAuthResult =
+type BaseURL = string | (() => string);
+
+export type SessionResolution =
 	| {
 			status: 'authenticated';
 			token: string;
@@ -12,155 +14,159 @@ export type RemoteAuthResult =
 	| { status: 'anonymous' }
 	| { status: 'unchanged' };
 
-export type AuthCommandRemoteResult =
-	| RemoteAuthResult
-	| { status: 'session-hydration-failed' };
+export type RemoteAuthResult = SessionResolution;
 
-export type AuthTransport = {
-	getSession(current: AuthSession): Promise<RemoteAuthResult>;
-	signIn(input: {
-		email: string;
-		password: string;
-	}): Promise<AuthCommandRemoteResult>;
-	signUp(input: {
-		email: string;
-		password: string;
-		name: string;
-	}): Promise<AuthCommandRemoteResult>;
-	signInWithGoogle(): Promise<AuthCommandRemoteResult>;
-	signOut(current: AuthSession): Promise<void>;
-};
+export type GoogleSignInResult =
+	| SessionResolution
+	| { status: 'redirect-started' };
+
+export type ResolveSession = (
+	current: AuthSession,
+) => Promise<SessionResolution>;
 
 export type BetterAuthTransportClient = ReturnType<typeof createAuthClient>;
 
-export function createAuthTransport({
+export function createBetterAuthClientSession({
 	baseURL,
-	signInWithGoogle,
+	authToken,
 }: {
-	baseURL: string | (() => string);
-	signInWithGoogle?: (
-		client: BetterAuthTransportClient,
-	) => Promise<unknown>;
-}): AuthTransport {
-	const resolveBaseUrl =
-		typeof baseURL === 'function' ? baseURL : () => baseURL;
+	baseURL: BaseURL;
+	authToken: string | null;
+}) {
+	let issuedToken: string | null | undefined;
 
-	function buildClient(authToken: string | null) {
-		let issuedToken: string | null | undefined;
-
-		const client = createAuthClient({
-			baseURL: resolveBaseUrl(),
-			basePath: '/auth',
-			fetchOptions: {
-				auth: {
-					type: 'Bearer',
-					token: () => authToken ?? undefined,
-				},
-				onSuccess: ({ response }) => {
-					const nextToken = response.headers.get('set-auth-token');
-					if (nextToken) issuedToken = nextToken;
-				},
+	const client = createAuthClient({
+		baseURL: resolveBaseURL(baseURL),
+		basePath: '/auth',
+		fetchOptions: {
+			auth: {
+				type: 'Bearer',
+				token: () => authToken ?? undefined,
 			},
-		});
+			onSuccess: ({ response }) => {
+				const nextToken = response.headers.get('set-auth-token');
+				if (nextToken) issuedToken = nextToken;
+			},
+		},
+	});
 
-		return {
-			client,
-			getIssuedToken: (payload?: unknown) =>
-				issuedToken ?? readAuthToken(payload) ?? authToken ?? null,
-		};
+	return {
+		client,
+		getIssuedToken: (payload?: unknown) =>
+			issuedToken ?? readAuthToken(payload) ?? authToken ?? null,
+	};
+}
+
+export async function resolveSessionWithToken({
+	baseURL,
+	authToken,
+}: {
+	baseURL: BaseURL;
+	authToken: string | null;
+}): Promise<SessionResolution> {
+	const { client, getIssuedToken } = createBetterAuthClientSession({
+		baseURL,
+		authToken,
+	});
+	const { data, error } = await client.getSession();
+
+	if (error) {
+		const status = getErrorStatus(error);
+		return status !== undefined && status < 500
+			? { status: 'anonymous' }
+			: { status: 'unchanged' };
 	}
 
-	async function resolveSession(authToken: string | null): Promise<RemoteAuthResult> {
-		const { client, getIssuedToken } = buildClient(authToken);
-		const { data, error } = await client.getSession();
+	if (!data) return { status: 'anonymous' };
 
-		if (error) {
-			const status = getErrorStatus(error);
-			return status !== undefined && status < 500
-				? { status: 'anonymous' }
-				: { status: 'unchanged' };
-		}
-
-		if (!data) return { status: 'anonymous' };
-
-		const token = getIssuedToken(data);
-		if (!token) {
-			throw new Error('Authenticated session is missing bearer token');
-		}
-
-		return {
-			status: 'authenticated',
-			token,
-			user: toStoredUser(data.user),
-			userKeyBase64: readUserKeyBase64(data),
-		};
-	}
-
-	async function resolveAuthenticatedSession(
-		authToken: string | null,
-	): Promise<AuthCommandRemoteResult> {
-		const result = await resolveSession(authToken);
-		if (result.status !== 'authenticated') {
-			return { status: 'session-hydration-failed' };
-		}
-
-		return result;
+	const token = getIssuedToken(data);
+	if (!token) {
+		throw new Error('Authenticated session is missing bearer token');
 	}
 
 	return {
-		getSession(current) {
-			return resolveSession(
-				current.status === 'authenticated' ? current.token : null,
-			);
-		},
-
-		async signIn(input) {
-			const { client, getIssuedToken } = buildClient(null);
-			const { data, error } = await client.signIn.email(input);
-			if (error) {
-				throw error;
-			}
-
-			return await resolveAuthenticatedSession(getIssuedToken(data));
-		},
-
-		async signUp(input) {
-			const { client, getIssuedToken } = buildClient(null);
-			const { data, error } = await client.signUp.email(input);
-			if (error) {
-				throw error;
-			}
-
-			return await resolveAuthenticatedSession(getIssuedToken(data));
-		},
-
-		async signInWithGoogle() {
-			const { client, getIssuedToken } = buildClient(null);
-
-			if (signInWithGoogle) {
-				await signInWithGoogle(client);
-				const token = getIssuedToken();
-				if (!token) return { status: 'unchanged' };
-				return await resolveAuthenticatedSession(token);
-			}
-
-			await client.signIn.social({
-				provider: 'google',
-				callbackURL: window.location.origin,
-			});
-			return { status: 'unchanged' };
-		},
-
-		async signOut(current) {
-			const { client } = buildClient(
-				current.status === 'authenticated' ? current.token : null,
-			);
-			const { error } = await client.signOut();
-			if (error) {
-				throw error;
-			}
-		},
+		status: 'authenticated',
+		token,
+		user: toStoredUser(data.user),
+		userKeyBase64: readUserKeyBase64(data),
 	};
+}
+
+export function createSessionResolver({
+	baseURL,
+}: {
+	baseURL: BaseURL;
+}): ResolveSession {
+	return (current) =>
+		resolveSessionWithToken({
+			baseURL,
+			authToken: current.status === 'authenticated' ? current.token : null,
+		});
+}
+
+export async function signInWithPassword({
+	baseURL,
+	input,
+}: {
+	baseURL: BaseURL;
+	input: { email: string; password: string };
+}): Promise<SessionResolution> {
+	const { client, getIssuedToken } = createBetterAuthClientSession({
+		baseURL,
+		authToken: null,
+	});
+	const { data, error } = await client.signIn.email(input);
+	if (error) {
+		throw error;
+	}
+
+	return await resolveSessionWithToken({
+		baseURL,
+		authToken: getIssuedToken(data),
+	});
+}
+
+export async function signUpWithPassword({
+	baseURL,
+	input,
+}: {
+	baseURL: BaseURL;
+	input: {
+		email: string;
+		password: string;
+		name: string;
+	};
+}): Promise<SessionResolution> {
+	const { client, getIssuedToken } = createBetterAuthClientSession({
+		baseURL,
+		authToken: null,
+	});
+	const { data, error } = await client.signUp.email(input);
+	if (error) {
+		throw error;
+	}
+
+	return await resolveSessionWithToken({
+		baseURL,
+		authToken: getIssuedToken(data),
+	});
+}
+
+export async function signOutRemote({
+	baseURL,
+	current,
+}: {
+	baseURL: BaseURL;
+	current: AuthSession;
+}): Promise<void> {
+	const { client } = createBetterAuthClientSession({
+		baseURL,
+		authToken: current.status === 'authenticated' ? current.token : null,
+	});
+	const { error } = await client.signOut();
+	if (error) {
+		throw error;
+	}
 }
 
 function getErrorStatus(error: unknown): number | undefined {
@@ -190,14 +196,8 @@ function readAuthToken(value: unknown): string | null {
 }
 
 function readUserKeyBase64(value: unknown): string | null | undefined {
-	if (
-		typeof value === 'object' &&
-		value !== null &&
-		'encryptionKey' in value
-	) {
-		return typeof value.encryptionKey === 'string'
-			? value.encryptionKey
-			: null;
+	if (typeof value === 'object' && value !== null && 'encryptionKey' in value) {
+		return typeof value.encryptionKey === 'string' ? value.encryptionKey : null;
 	}
 
 	return undefined;
@@ -217,4 +217,8 @@ function toStoredUser(user: User): StoredUser {
 
 function toISOString(value: Date | string): string {
 	return value instanceof Date ? value.toISOString() : value;
+}
+
+function resolveBaseURL(baseURL: BaseURL): string {
+	return typeof baseURL === 'function' ? baseURL() : baseURL;
 }

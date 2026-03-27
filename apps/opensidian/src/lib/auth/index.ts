@@ -1,11 +1,15 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
-import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import {
 	AuthSession,
 	createAuthSession,
-	createAuthTransport,
+	createBetterAuthClientSession,
+	createSessionResolver,
+	signInWithPassword,
+	signOutRemote,
+	signUpWithPassword,
 } from '@epicenter/svelte/auth';
+import { base64ToBytes } from '@epicenter/workspace/shared/crypto';
 import { ws } from '$lib/workspace';
 
 const session = createPersistedState({
@@ -14,19 +18,15 @@ const session = createPersistedState({
 	defaultValue: { status: 'anonymous' },
 });
 
-const transport = createAuthTransport({
+const resolveSession = createSessionResolver({
 	baseURL: APP_URLS.API,
 });
 
 export const authState = createAuthSession({
 	storage: session,
-	transport,
-	onSessionCommitted: async ({
-		previous,
-		current,
-		reason,
-		userKeyBase64,
-	}) => {
+	resolveSession,
+	signOutRemote: (current) => signOutRemote({ baseURL: APP_URLS.API, current }),
+	onSessionCommitted: async ({ previous, current, reason, userKeyBase64 }) => {
 		if (current.status === 'authenticated') {
 			if (userKeyBase64) {
 				await ws.encryption.unlock(base64ToBytes(userKeyBase64));
@@ -49,3 +49,44 @@ export const authState = createAuthSession({
 		}
 	},
 });
+
+export function signIn(input: { email: string; password: string }) {
+	return authState.runAuthCommand(
+		'sign-in',
+		() => signInWithPassword({ baseURL: APP_URLS.API, input }),
+		{ requireAuthenticatedSession: true },
+	);
+}
+
+export function signUp(input: {
+	email: string;
+	password: string;
+	name: string;
+}) {
+	return authState.runAuthCommand(
+		'sign-up',
+		() => signUpWithPassword({ baseURL: APP_URLS.API, input }),
+		{ requireAuthenticatedSession: true },
+	);
+}
+
+export function signInWithGoogle() {
+	return authState.runAuthCommand(
+		'google-sign-in',
+		async () => {
+			const { client } = createBetterAuthClientSession({
+				baseURL: APP_URLS.API,
+				authToken: null,
+			});
+			await client.signIn.social({
+				provider: 'google',
+				callbackURL: window.location.origin,
+			});
+			return { status: 'redirect-started' };
+		},
+		{
+			allowRedirectStart: true,
+			requireAuthenticatedSession: true,
+		},
+	);
+}

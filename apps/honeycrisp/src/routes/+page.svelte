@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createWorkspaceFirstBoot } from '@epicenter/svelte/auth';
+	import { installWorkspaceFirstBoot } from '@epicenter/svelte/auth';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
@@ -13,15 +13,13 @@
 	import { foldersState, notesState, viewState } from '$lib/state';
 	import workspaceClient from '$lib/workspace';
 
-	const workspaceBoot = createWorkspaceFirstBoot({
-		workspace: workspaceClient,
-		auth: authState,
-	});
-
 	let commandPaletteOpen = $state(false);
 
 	onMount(() => {
-		void workspaceBoot.start();
+		const cleanupWorkspaceBoot = installWorkspaceFirstBoot({
+			workspace: workspaceClient,
+			auth: authState,
+		});
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&
@@ -31,8 +29,10 @@
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () =>
+		return () => {
+			cleanupWorkspaceBoot();
 			document.removeEventListener('visibilitychange', onVisibilityChange);
+		};
 	});
 
 	// ─── Document Handle ────────────────────────────────────────────────────

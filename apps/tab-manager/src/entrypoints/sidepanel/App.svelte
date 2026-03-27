@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createWorkspaceFirstBoot } from '@epicenter/svelte/auth';
+	import { installWorkspaceFirstBoot } from '@epicenter/svelte/auth';
 	import { Button } from '@epicenter/ui/button';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
@@ -21,13 +21,11 @@
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
 	import { registerDevice, workspace } from '$lib/workspace';
 
-	const workspaceBoot = createWorkspaceFirstBoot({
-		workspace,
-		auth: authState,
-	});
-
 	onMount(() => {
-		void workspaceBoot.start();
+		const cleanupWorkspaceBoot = installWorkspaceFirstBoot({
+			workspace,
+			auth: authState,
+		});
 		void registerDevice();
 		const onVisibilityChange = () => {
 			if (
@@ -38,8 +36,10 @@
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () =>
+		return () => {
+			cleanupWorkspaceBoot();
 			document.removeEventListener('visibilitychange', onVisibilityChange);
+		};
 	});
 
 	let searchInputRef = $state<HTMLInputElement | null>(null);

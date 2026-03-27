@@ -5,32 +5,34 @@ import type {
 	AuthSessionStore,
 } from './auth-session.svelte.js';
 import type { AuthSession } from './auth-types.js';
-import { createWorkspaceFirstBoot } from './workspace-first-boot.svelte.js';
+import { installWorkspaceFirstBoot } from './workspace-first-boot.svelte.js';
 
 type FakeAuth = AuthSessionStore & {
 	emit(commit: AuthSessionCommit): Promise<void>;
 };
 
-describe('createWorkspaceFirstBoot', () => {
+describe('installWorkspaceFirstBoot', () => {
 	test('boots into unlocked mode from the cached key without waiting on auth', async () => {
 		const workspace = createFakeWorkspace({ tryUnlockResult: true });
 		const auth = createFakeAuth();
-		const boot = createWorkspaceFirstBoot({ workspace, auth });
+		const cleanup = installWorkspaceFirstBoot({ workspace, auth });
 
-		await boot.start();
+		await Promise.resolve();
+		await Promise.resolve();
 
 		expect(workspace.tryUnlockCalls).toBe(1);
-		expect(boot.workspace.mode).toBe('unlocked');
-		expect(boot.network.mode).toBe('anonymous');
+		expect(workspace.isUnlocked).toBe(true);
+		cleanup();
 	});
 
 	test('login adopts plaintext local data and unlocks with the fetched key', async () => {
 		const workspace = createFakeWorkspace({ tryUnlockResult: false });
 		const auth = createFakeAuth();
-		const boot = createWorkspaceFirstBoot({ workspace, auth });
+		const cleanup = installWorkspaceFirstBoot({ workspace, auth });
 		const userKey = new Uint8Array([1, 2, 3, 4]);
 
-		await boot.start();
+		await Promise.resolve();
+		await Promise.resolve();
 		await auth.emit({
 			previous: { status: 'anonymous' },
 			current: {
@@ -44,8 +46,8 @@ describe('createWorkspaceFirstBoot', () => {
 
 		expect(workspace.clearLocalDataCalls).toBe(0);
 		expect(workspace.unlockCalls).toEqual([[1, 2, 3, 4]]);
-		expect(boot.workspace.mode).toBe('unlocked');
-		expect(boot.network.mode).toBe('authenticated');
+		expect(workspace.isUnlocked).toBe(true);
+		cleanup();
 	});
 
 	test('sign-out performs a full local wipe and returns to plaintext mode', async () => {
@@ -57,9 +59,10 @@ describe('createWorkspaceFirstBoot', () => {
 				user: createUser(),
 			},
 		});
-		const boot = createWorkspaceFirstBoot({ workspace, auth });
+		const cleanup = installWorkspaceFirstBoot({ workspace, auth });
 
-		await boot.start();
+		await Promise.resolve();
+		await Promise.resolve();
 		await auth.emit({
 			previous: {
 				status: 'authenticated',
@@ -71,8 +74,28 @@ describe('createWorkspaceFirstBoot', () => {
 		});
 
 		expect(workspace.clearLocalDataCalls).toBe(1);
-		expect(boot.workspace.mode).toBe('plaintext');
-		expect(boot.network.mode).toBe('anonymous');
+		expect(workspace.isUnlocked).toBe(false);
+		cleanup();
+	});
+
+	test('cleanup unsubscribes from later auth commits', async () => {
+		const workspace = createFakeWorkspace({ tryUnlockResult: false });
+		const auth = createFakeAuth();
+		const cleanup = installWorkspaceFirstBoot({ workspace, auth });
+
+		cleanup();
+		await auth.emit({
+			previous: { status: 'anonymous' },
+			current: {
+				status: 'authenticated',
+				token: 'token-1',
+				user: createUser(),
+			},
+			reason: 'sign-in',
+			userKeyBase64: bytesToBase64(new Uint8Array([9, 9, 9, 9])),
+		});
+
+		expect(workspace.unlockCalls).toEqual([]);
 	});
 });
 
@@ -175,6 +198,9 @@ function createFakeWorkspace({
 		},
 		get unlockCalls() {
 			return unlockCalls;
+		},
+		get isUnlocked() {
+			return isUnlocked;
 		},
 		get clearLocalDataCalls() {
 			return clearLocalDataCalls;

@@ -31,8 +31,5 @@ export {
 	StoredUser,
 } from './auth-types.js';
 export {
-	createWorkspaceFirstBoot,
-	type NetworkMode,
-	type WorkspaceFirstBootState,
-	type WorkspaceMode,
+	installWorkspaceFirstBoot,
 } from './workspace-first-boot.svelte.js';

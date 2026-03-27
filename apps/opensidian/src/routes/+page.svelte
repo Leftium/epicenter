@@ -1,17 +1,15 @@
 <script lang="ts">
-	import { createWorkspaceFirstBoot } from '@epicenter/svelte/auth';
+	import { installWorkspaceFirstBoot } from '@epicenter/svelte/auth';
 	import { onMount } from 'svelte';
 	import { authState } from '$lib/auth';
 	import AppShell from '$lib/components/AppShell.svelte';
 	import { ws } from '$lib/workspace.svelte';
 
-	const workspaceBoot = createWorkspaceFirstBoot({
-		workspace: ws,
-		auth: authState,
-	});
-
 	onMount(() => {
-		void workspaceBoot.start();
+		const cleanupWorkspaceBoot = installWorkspaceFirstBoot({
+			workspace: ws,
+			auth: authState,
+		});
 		const onVisibilityChange = () => {
 			if (
 				document.visibilityState === 'visible' &&
@@ -21,8 +19,10 @@
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () =>
+		return () => {
+			cleanupWorkspaceBoot();
 			document.removeEventListener('visibilitychange', onVisibilityChange);
+		};
 	});
 </script>
 

@@ -14,14 +14,14 @@
 	import QuoteIcon from '@lucide/svelte/icons/quote';
 	import StrikethroughIcon from '@lucide/svelte/icons/strikethrough';
 	import UnderlineIcon from '@lucide/svelte/icons/underline';
-	import { Editor } from '@tiptap/core';
+	import { Editor, Extension } from '@tiptap/core';
 	import Placeholder from '@tiptap/extension-placeholder';
 	import TaskItem from '@tiptap/extension-task-item';
 	import TaskList from '@tiptap/extension-task-list';
 	import Underline from '@tiptap/extension-underline';
 	import StarterKit from '@tiptap/starter-kit';
+	import { ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
 	import type * as Y from 'yjs';
-	import { createYjsExtension } from './extensions';
 	import { extractTitleAndPreview } from './utils';
 
 	let {
@@ -75,8 +75,6 @@
 	$effect(() => {
 		if (!element) return;
 
-		const yjsExtension = createYjsExtension(yxmlfragment);
-
 		const ed = new Editor({
 			element,
 			extensions: [
@@ -90,7 +88,12 @@
 				TaskList,
 				TaskItem.configure({ nested: true }),
 				Underline,
-				yjsExtension,
+				Extension.create({
+					name: 'yjs-collaboration',
+					addProseMirrorPlugins() {
+						return [ySyncPlugin(yxmlfragment), yUndoPlugin()];
+					},
+				}),
 			],
 			editorProps: {
 				attributes: {

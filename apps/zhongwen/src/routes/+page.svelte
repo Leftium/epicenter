@@ -3,7 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { authState, startGoogleSignIn } from '$lib/auth';
+	import { authState, authTransport } from '$lib/auth';
 	import { chatState } from '$lib/chat/chat-state.svelte';
 	import ChatInput from '$lib/components/ChatInput.svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
@@ -22,7 +22,9 @@
 	workspaceAuth.mount();
 
 	async function signInWithGoogle() {
-		await startGoogleSignIn();
+		await authTransport.startGoogleSignInRedirect({
+			callbackURL: window.location.origin,
+		});
 	}
 </script>
 

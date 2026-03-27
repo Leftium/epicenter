@@ -12,15 +12,9 @@ const session = createPersistedState({
 	defaultValue: { status: 'anonymous' },
 });
 
-const authTransport = createAuthTransport({
+export const authTransport = createAuthTransport({
 	baseURL: APP_URLS.API,
 });
-
-export function startGoogleSignIn(): Promise<void> {
-	return authTransport.startGoogleSignInRedirect({
-		callbackURL: window.location.origin,
-	});
-}
 
 export const authState = createAuthSession({
 	storage: session,

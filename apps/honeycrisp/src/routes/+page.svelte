@@ -2,9 +2,7 @@
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
-	import { onMount } from 'svelte';
 	import type * as Y from 'yjs';
-	import { authState } from '$lib/auth';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
@@ -14,20 +12,7 @@
 
 	let commandPaletteOpen = $state(false);
 
-	onMount(() => {
-		void workspaceAuth.startAppBoot();
-		const onVisibilityChange = () => {
-			if (
-				document.visibilityState === 'visible' &&
-				authState.session.status === 'authenticated'
-			) {
-				void workspaceAuth.refresh();
-			}
-		};
-		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () =>
-			document.removeEventListener('visibilitychange', onVisibilityChange);
-	});
+	workspaceAuth.mount();
 
 	// ─── Document Handle ────────────────────────────────────────────────────
 

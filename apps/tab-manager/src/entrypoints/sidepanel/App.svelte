@@ -15,25 +15,13 @@
 	import { CommandPalette } from '$lib/components/command-palette';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
-	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
 	import { registerDevice, workspaceAuth } from '$lib/workspace';
 
+	workspaceAuth.mount();
 	onMount(() => {
-		void workspaceAuth.startAppBoot();
 		void registerDevice();
-		const onVisibilityChange = () => {
-			if (
-				document.visibilityState === 'visible' &&
-				authState.session.status === 'authenticated'
-			) {
-				void workspaceAuth.refresh();
-			}
-		};
-		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () =>
-			document.removeEventListener('visibilitychange', onVisibilityChange);
 	});
 
 	let searchInputRef = $state<HTMLInputElement | null>(null);

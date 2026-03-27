@@ -1,3 +1,4 @@
+import { onMount } from 'svelte';
 import type {
 	AuthClient,
 	AuthCommandResult,
@@ -95,6 +96,33 @@ export function createWorkspaceAuthBoundary({
 		 */
 		async startAppBoot(): Promise<void> {
 			await Promise.all([workspace.bootFromCache(), this.refresh()]);
+		},
+
+		/**
+		 * Install the app boot lifecycle into the current Svelte component.
+		 *
+		 * This starts background boot work on mount and refreshes auth whenever the
+		 * document becomes visible again while the user is signed in.
+		 */
+		mount(): void {
+			const boundary = this;
+
+			onMount(() => {
+				void boundary.startAppBoot();
+
+				const onVisibilityChange = () => {
+					if (
+						document.visibilityState === 'visible' &&
+						auth.session.status === 'authenticated'
+					) {
+						void boundary.refresh();
+					}
+				};
+
+				document.addEventListener('visibilitychange', onVisibilityChange);
+				return () =>
+					document.removeEventListener('visibilitychange', onVisibilityChange);
+			});
 		},
 
 		/**

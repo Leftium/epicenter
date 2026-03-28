@@ -11,7 +11,7 @@ import { createAutumn } from '../autumn';
 import type * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
 import type { SessionResponse } from './contracts';
-import { currentKeyVersion, deriveWorkspaceKey } from './encryption';
+import { deriveWorkspaceKey } from './encryption';
 
 type Db = NodePgDatabase<typeof schema>;
 

@@ -106,15 +106,6 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /**
- * Current encryption key version—embed in session metadata so clients detect stale caches.
- *
- * Synchronous constant, no crypto overhead. Used by `customSession()` so every
- * `getSession()` call carries version metadata.
- */
-export { currentKeyVersion };
-
-
-/**
  * Derive and return the per-user encryption key.
  *
  * Called by `customSession()` on every `/auth/get-session` response.

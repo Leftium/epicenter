@@ -18,8 +18,9 @@ import type {
 /**
  * Canonical `/auth/get-session` response for Epicenter clients.
  *
- * Extends Better Auth's base `{ user, session }` with `keyVersion` so clients
- * can detect stale encryption key caches without fetching key material.
+ * Extends Better Auth's base `{ user, session }` with `keyVersion` and
+ * `userKeyBase64` so clients can unlock their workspace directly from the
+ * session—no separate key-fetch endpoint needed.
  *
  * Import from `@epicenter/api/types` rather than hand-writing the response.
  */

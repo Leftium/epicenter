@@ -4,6 +4,14 @@
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import type * as Y from 'yjs';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import NoteList from '$lib/components/NoteList.svelte';
+	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
+	import HoneycripEditor from '$lib/editor/Editor.svelte';
+	import { foldersState, notesState, viewState } from '$lib/state';
+	import workspaceClient from '$lib/workspace';
+
+	let commandPaletteOpen = $state(false);
+
 	// ─── Document Handle ────────────────────────────────────────────────────
 
 	let currentYXmlFragment = $state<Y.XmlFragment | null>(null);

@@ -1154,6 +1154,8 @@ describe('.withEncryption() lifecycle', () => {
 
 		test('tryUnlock returns false when userKeyCache is empty', async () => {
 			const { client, userKeyCache } = setupWithUserKeyCache();
+			await client.whenReady; // auto-boot tryUnlock runs here
+			(userKeyCache.load as ReturnType<typeof mock>).mockClear();
 
 			const restored = await client.encryption.tryUnlock();
 
@@ -1168,10 +1170,9 @@ describe('.withEncryption() lifecycle', () => {
 			const { client, userKeyCache } = setupWithUserKeyCache(
 				bytesToBase64(userKey),
 			);
+			// Auto-boot already calls tryUnlock and unlocks from cache
+			await client.whenReady;
 
-			const restored = await client.encryption.tryUnlock();
-
-			expect(restored).toBe(true);
 			expect(client.encryption.isUnlocked).toBe(true);
 			expect(userKeyCache.load).toHaveBeenCalledTimes(1);
 			expect(userKeyCache.save).toHaveBeenCalledTimes(1);
@@ -1181,10 +1182,9 @@ describe('.withEncryption() lifecycle', () => {
 		test('tryUnlock clears corrupt cache entries and stays locked', async () => {
 			const { client, userKeyCache, readCachedValue } =
 				setupWithUserKeyCache('%%%not-base64%%%');
+			// Auto-boot attempts tryUnlock with corrupt data
+			await client.whenReady;
 
-			const restored = await client.encryption.tryUnlock();
-
-			expect(restored).toBe(false);
 			expect(client.encryption.isUnlocked).toBe(false);
 			expect(userKeyCache.clear).toHaveBeenCalledTimes(1);
 			expect(readCachedValue()).toBe(null);

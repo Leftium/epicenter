@@ -304,7 +304,7 @@ export function createWorkspace<
 			}
 		};
 
-		let whenReady = Promise.all(state.whenReadyPromises)
+		const whenReady = Promise.all(state.whenReadyPromises)
 			.then(() => {})
 			.catch(async (err) => {
 				// If any extension's whenReady rejects, clean up everything
@@ -353,19 +353,6 @@ export function createWorkspace<
 		};
 
 		if (encryptionRuntime) {
-			const encryptionWithCache =
-				'tryUnlock' in encryptionRuntime.encryption
-					? encryptionRuntime.encryption
-					: null;
-
-			// Auto-boot: attempt unlock from cached key after all extensions
-			// are ready. Apps never need to call bootFromCache() manually.
-			if (encryptionWithCache) {
-				whenReady = whenReady.then(async () => {
-					await encryptionWithCache.tryUnlock();
-				});
-			}
-
 			Object.assign(client, {
 				encryption: encryptionRuntime.encryption,
 				async unlockWithKey(userKeyBase64: string) {
@@ -594,36 +581,46 @@ export function createWorkspace<
 					lock,
 				};
 
-				const encryptionRuntime = config?.userKeyCache
-					? {
-							encryption: {
-								get isUnlocked() {
+				const encryptionRuntime: EncryptionRuntime = config?.userKeyCache
+					? (() => {
+							async function tryUnlock() {
+								if (workspaceKey !== undefined) return true;
+
+								const cachedUserKey = await config.userKeyCache.load();
+								if (!cachedUserKey) return false;
+
+								try {
+									await unlock(base64ToBytes(cachedUserKey));
 									return workspaceKey !== undefined;
-								},
-								unlock,
-								lock,
-								async tryUnlock() {
-									if (workspaceKey !== undefined) return true;
+								} catch (error) {
+									console.error(
+										'[workspace] Cached key unlock failed:',
+										error,
+									);
+									await clearCache();
+									return false;
+								}
+							}
 
-									const cachedUserKey = await config.userKeyCache.load();
-									if (!cachedUserKey) return false;
+							// Auto-boot: tryUnlock runs after all current extensions are ready.
+							// Pushed into whenReadyPromises so whenReady includes it.
+							state.whenReadyPromises.push(
+								Promise.all(state.whenReadyPromises).then(() => tryUnlock()),
+							);
 
-									try {
-										await unlock(base64ToBytes(cachedUserKey));
+							return {
+								encryption: {
+									get isUnlocked() {
 										return workspaceKey !== undefined;
-									} catch (error) {
-										console.error(
-											'[workspace] Cached key unlock failed:',
-											error,
-										);
-										await clearCache();
-										return false;
-									}
-								},
-							} satisfies WorkspaceEncryptionWithCache,
-							lock,
-							clearCache,
-						}
+									},
+									unlock,
+									lock,
+									tryUnlock,
+								} satisfies WorkspaceEncryptionWithCache,
+								lock,
+								clearCache,
+							};
+						})()
 					: {
 							encryption: baseEncryption,
 							lock,

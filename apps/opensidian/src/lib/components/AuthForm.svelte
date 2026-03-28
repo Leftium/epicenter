@@ -4,7 +4,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { authState, authTransport } from '$lib/auth';
+	import { authState } from '$lib/auth';
 	import { workspaceAuth } from '$lib/workspace.svelte';
 
 	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
@@ -50,7 +50,7 @@
 			onclick={async () => {
 				submitError = null;
 				try {
-					await authTransport.startGoogleSignInRedirect({
+					await authState.startGoogleSignInRedirect({
 						callbackURL: window.location.origin,
 					});
 				} catch (error) {

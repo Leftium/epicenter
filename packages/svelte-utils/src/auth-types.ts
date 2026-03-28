@@ -3,7 +3,7 @@ import { type } from 'arktype';
 /**
  * Durable user snapshot stored inside an authenticated local session.
  *
- * The auth transport normalizes Better Auth's `Date` values to ISO strings so
+ * The auth layer normalizes Better Auth's `Date` values to ISO strings so
  * session persistence stays JSON-friendly across browser storage backends.
  */
 export const StoredUser = type({
@@ -42,18 +42,6 @@ export type AuthOperation =
 	| { status: 'signing-in' }
 	| { status: 'signing-out' };
 
-/**
- * Minimal session persistence adapter used by `createAuthSession()`.
- *
- * Implementations own storage details such as `localStorage`, chrome storage,
- * or any reactive wrapper. The auth layer only depends on the current value,
- * a setter, and an optional readiness gate.
- */
-export type AuthSessionStorage = {
-	readonly current: AuthSession;
-	set(value: AuthSession): void | Promise<void>;
-	whenReady?: Promise<void>;
-};
 
 /** Extract a numeric HTTP status code from an untyped error object. */
 export function readStatusCode(error: unknown): number | undefined {

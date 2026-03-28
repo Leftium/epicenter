@@ -136,6 +136,7 @@ export type AuthClient = {
 	}): Promise<AuthCommandResult>;
 	signInWithGoogle(): Promise<AuthCommandResult>;
 	signOut(): Promise<void>;
+	startGoogleSignInRedirect(options: { callbackURL: string }): Promise<void>;
 
 	fetch: AuthFetch;
 	fetchWorkspaceKey(): Promise<WorkspaceKeyResponse>;
@@ -475,6 +476,10 @@ export function createAuth({
 					setOperation({ status: 'idle' });
 				}
 			}
+		},
+
+		async startGoogleSignInRedirect({ callbackURL }: { callbackURL: string }) {
+			await client.signIn.social({ provider: 'google', callbackURL });
 		},
 
 		fetch: authFetch,

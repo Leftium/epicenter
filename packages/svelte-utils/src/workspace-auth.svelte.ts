@@ -12,9 +12,6 @@ type WorkspaceBootWorkspace = {
 };
 
 type WorkspaceAuthResult = AuthRefreshResult | AuthCommandResult;
-
-export type WorkspaceAuth = ReturnType<typeof createWorkspaceAuth>;
-
 /**
  * Inputs needed to reconcile auth state with a workspace during app boot.
  *

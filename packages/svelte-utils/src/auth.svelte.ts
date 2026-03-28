@@ -7,7 +7,6 @@ export {
 	createAuthSession,
 } from './auth-session.svelte.js';
 export {
-	type AuthTransport,
 	createAuthTransport,
 	type ResolveSession,
 	type SessionResolution,
@@ -21,5 +20,4 @@ export {
 export {
 	createWorkspaceAuth,
 	type CreateWorkspaceAuthOptions,
-	type WorkspaceAuth,
 } from './workspace-auth.svelte.js';

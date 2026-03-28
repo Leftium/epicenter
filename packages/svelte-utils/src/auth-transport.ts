@@ -1,7 +1,7 @@
 import type { User } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
 import { customSessionClient } from 'better-auth/client/plugins';
-import type { EpicenterCustomSessionClientBridge } from './auth-custom-session-client-bridge.js';
+import type { EpicenterAuthPluginShape } from './auth-client.js';
 import type { AuthSession, StoredUser } from './auth-types.js';
 
 type BaseURL = string | (() => string);
@@ -79,7 +79,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		const client = createAuthClient({
 			baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
 			basePath: '/auth',
-			plugins: [customSessionClient<EpicenterCustomSessionClientBridge>()],
+			plugins: [customSessionClient<EpicenterAuthPluginShape>()],
 			fetchOptions: {
 				auth: {
 					type: 'Bearer',

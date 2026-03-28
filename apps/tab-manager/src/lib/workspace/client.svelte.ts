@@ -41,9 +41,7 @@ import { definition, generateSavedTabId } from './schema';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const workspace = buildWorkspaceClient();
-
-
-export const authState = createAuth({
+export const auth = createAuth({
 	baseURL: authBaseURL,
 	session: authSession,
 	signInWithGoogle: getGoogleCredentials,
@@ -111,8 +109,8 @@ function buildWorkspaceClient() {
 			createSyncExtension({
 				url: (workspaceId) => `${serverUrl.current}/workspaces/${workspaceId}`,
 				getToken: async () =>
-					authState.session.status === 'authenticated'
-						? authState.session.token
+					auth.session.status === 'authenticated'
+						? auth.session.token
 						: null,
 			}),
 		)

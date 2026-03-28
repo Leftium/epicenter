@@ -2,10 +2,10 @@
  * Auth state for the tab manager Chrome extension.
  *
  * Exports the persisted session and Google credentials helper. The actual
- * `authState` (createAuth) lives in the workspace client where
+ * `auth` (createAuth) lives in the workspace client where
  * `onSessionChange` can wire workspace unlock and sync reconnect.
  *
- * @see {@link ../workspace/client.svelte} — authState with onSessionChange
+ * @see {@link ../workspace/client.svelte} — auth with onSessionChange
  * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
  */
 

@@ -4,7 +4,7 @@
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import AiChat from '$lib/components/chat/AiChat.svelte';
 	import TrustSettings from '$lib/components/chat/TrustSettings.svelte';
-	import { authState } from '$lib/workspace';
+	import { auth } from '$lib/workspace';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
 </script>
@@ -20,7 +20,7 @@
 				Chat with AI about your tabs
 			</Drawer.Description>
 		</Drawer.Header>
-		{#if authState.session.status === 'authenticated'}
+		{#if auth.session.status === 'authenticated'}
 			<div class="h-[clamp(300px,50vh,600px)] px-4 pb-4"><AiChat /></div>
 		{:else}
 			<div

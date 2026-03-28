@@ -58,11 +58,11 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import AuthForm from '$lib/components/AuthForm.svelte';
-	import { authState, workspace } from '$lib/workspace';
+	import { auth, workspace } from '$lib/workspace';
 
-	const isSignedIn = $derived(authState.session.status === 'authenticated');
+	const isSignedIn = $derived(auth.session.status === 'authenticated');
 	const currentUser = $derived(
-		authState.session.status === 'authenticated' ? authState.session.user : null,
+		auth.session.status === 'authenticated' ? auth.session.user : null,
 	);
 	const tooltip = $derived(getTooltip(syncStatus.current, isSignedIn));
 
@@ -126,7 +126,7 @@
 						size="sm"
 						class="flex-1"
 						onclick={async () => {
-						await authState.signOut();
+					await auth.signOut();
 							popoverOpen = false;
 						}}
 					>

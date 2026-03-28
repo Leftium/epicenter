@@ -44,7 +44,7 @@ import {
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
 import { getDeviceId } from '$lib/device/device-id';
-import { authState } from '$lib/workspace';
+import { auth } from '$lib/workspace';
 import { remoteServerUrl } from '$lib/state/settings.svelte';
 import {
 	type ChatMessageId,
@@ -156,7 +156,7 @@ function createAiChatState() {
 				async () => {
 					const deviceId = await getDeviceId();
 					return {
-						fetchClient: authState.fetch,
+						fetchClient: auth.fetch,
 						body: {
 							data: {
 								provider: metadata?.provider ?? DEFAULT_PROVIDER,

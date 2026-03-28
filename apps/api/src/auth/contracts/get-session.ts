@@ -17,21 +17,15 @@ import type {
 } from 'better-auth';
 
 /**
- * Extra fields Epicenter adds to the base Better Auth session payload.
- *
- * The session carries only the key version so clients can detect stale caches.
- * The actual key material is fetched separately via `GET /workspace-key`.
- */
-export type EpicenterSessionFields = {
-	keyVersion: number;
-};
-
-/**
  * Canonical `/auth/get-session` response for Epicenter clients.
+ *
+ * Extends Better Auth's base `{ user, session }` with `keyVersion` so clients
+ * can detect stale encryption key caches without fetching key material.
  *
  * Import from `@epicenter/api/types` rather than hand-writing the response.
  */
 export type EpicenterSessionResponse = {
 	user: BetterAuthUser;
 	session: BetterAuthSession;
-} & EpicenterSessionFields;
+	keyVersion: number;
+};

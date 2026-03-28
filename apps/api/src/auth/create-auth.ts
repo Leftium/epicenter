@@ -11,7 +11,7 @@ import { createAutumn } from '../autumn';
 import type * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
 import type { EpicenterSessionResponse } from './contracts';
-import { createSessionEncryptionFields } from './encryption';
+import { getKeyVersion } from './encryption';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -26,8 +26,8 @@ type Db = NodePgDatabase<typeof schema>;
  * - Drizzle adapter (Postgres via Hyperdrive)
  * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
  * - Plugins: bearer tokens, JWT, device authorization, OAuth provider (PKCE)
- * - `customSession()` enrichment that appends per-user encryption keys to
- *   `/auth/get-session` responses (see {@link EpicenterSessionResponse})
+ * - `customSession()` enrichment that appends the current encryption key version
+ *   to `/auth/get-session` responses (see {@link EpicenterSessionResponse})
  * - Autumn billing customer creation on user signup
  * - Cloudflare KV secondary storage for session caching
  */
@@ -141,15 +141,17 @@ export function createAuth({
 		}),
 	];
 	/**
-	 * Enrich `/auth/get-session` responses with the per-user encryption material
-	 * clients need to unlock workspace data after auth completes.
+	 * Enrich `/auth/get-session` responses with the current key version.
+	 *
+	 * Key material is served separately by `GET /workspace-key`—the session
+	 * only carries the version so clients can detect stale caches.
 	 */
 	const customSessionPlugin = customSession(
-		async ({ user, session }) =>
+		({ user, session }) =>
 			({
 				user,
 				session,
-				...(await createSessionEncryptionFields(user.id)),
+				...getKeyVersion(),
 			}) satisfies EpicenterSessionResponse,
 		{
 			...authOptionsBase,

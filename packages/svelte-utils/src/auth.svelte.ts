@@ -9,8 +9,10 @@ export {
 export {
 	AuthTransportError,
 	createAuthTransport,
+	fetchWorkspaceKey,
 	type ResolveSession,
 	type SessionResolution,
+	type WorkspaceKeyResponse,
 } from './auth-transport.js';
 export {
 	type AuthOperation,

@@ -48,7 +48,7 @@ export type AuthCommandError = InferErrors<typeof AuthCommandError>;
 
 export type AuthRefreshResult = {
 	session: AuthSession;
-	userKeyBase64?: string;
+	keyVersion?: number;
 };
 
 export type AuthCommandResult =
@@ -153,7 +153,7 @@ export function createAuthSession({
 				});
 				return {
 					session: storage.current,
-					userKeyBase64: result.userKeyBase64,
+					keyVersion: result.keyVersion,
 				};
 		}
 	}

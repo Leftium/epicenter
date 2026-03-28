@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthClient, AuthRefreshResult } from './auth-session.svelte.js';
 import type { AuthSession } from './auth-types.js';
+import type { WorkspaceKeyResponse } from './auth-transport.js';
 import { createWorkspaceAuth } from './workspace-auth.svelte.js';
 
 describe('createWorkspaceAuth.refresh', () => {
@@ -9,13 +10,15 @@ describe('createWorkspaceAuth.refresh', () => {
 		const auth = createFakeAuth({
 			refreshResult: {
 				session: authenticatedSession(),
-			userKeyBase64: 'AQIDBA==',
+				keyVersion: 1,
 			},
 		});
+		const fetchWorkspaceKey = createFakeFetchWorkspaceKey();
 		let reconnectCalls = 0;
 		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
+			fetchWorkspaceKey,
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
@@ -37,6 +40,7 @@ describe('createWorkspaceAuth.refresh', () => {
 		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
+			fetchWorkspaceKey: createFakeFetchWorkspaceKey(),
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
@@ -46,6 +50,36 @@ describe('createWorkspaceAuth.refresh', () => {
 
 		expect(reconnectCalls).toBe(1);
 	});
+
+	test('skips key fetch when keyVersion matches the last unlocked version', async () => {
+		const workspace = createFakeWorkspace({ bootFromCacheResult: 'plaintext' });
+		let fetchCalls = 0;
+		const auth = createFakeAuth({
+			refreshResult: {
+				session: authenticatedSession(),
+				keyVersion: 1,
+			},
+		});
+		const workspaceAuth = createWorkspaceAuth({
+			workspace,
+			auth,
+			fetchWorkspaceKey: async () => {
+				fetchCalls += 1;
+				return { userKeyBase64: 'AQIDBA==', keyVersion: 1 };
+			},
+		});
+
+		// First refresh — version is new, should fetch key
+		await workspaceAuth.refresh();
+		expect(fetchCalls).toBe(1);
+		expect(workspace.unlockWithKeyCalls).toEqual(['AQIDBA==']);
+
+		// Second refresh — same version, should skip fetch
+		await workspaceAuth.refresh();
+		expect(fetchCalls).toBe(1);
+		expect(workspace.unlockWithKeyCalls).toEqual(['AQIDBA==']);
+	});
+
 });
 
 describe('createWorkspaceAuth.signIn', () => {
@@ -61,6 +95,7 @@ describe('createWorkspaceAuth.signIn', () => {
 		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
+			fetchWorkspaceKey: createFakeFetchWorkspaceKey(),
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
@@ -89,13 +124,15 @@ describe('createWorkspaceAuth.signInWithGoogle', () => {
 		const auth = createFakeAuth({
 			signInWithGoogleResult: {
 				session: authenticatedSession(),
-				userKeyBase64: 'AQIDBA==',
+				keyVersion: 1,
 			},
 		});
+		const fetchWorkspaceKey = createFakeFetchWorkspaceKey();
 		let reconnectCalls = 0;
 		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
+			fetchWorkspaceKey,
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
@@ -105,7 +142,7 @@ describe('createWorkspaceAuth.signInWithGoogle', () => {
 
 		expect(result).toEqual({
 			session: authenticatedSession(),
-			userKeyBase64: 'AQIDBA==',	
+			keyVersion: 1,
 		});
 		expect(auth.signInWithGoogleCalls).toBe(1);
 		expect(workspace.unlockWithKeyCalls).toEqual(['AQIDBA==']);
@@ -121,6 +158,7 @@ describe('createWorkspaceAuth.signOut', () => {
 		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
+			fetchWorkspaceKey: createFakeFetchWorkspaceKey(),
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
@@ -255,4 +293,10 @@ function authenticatedSession(): Extract<AuthSession, { status: 'authenticated' 
 			image: null,
 		},
 	};
+}
+
+function createFakeFetchWorkspaceKey(
+	response: WorkspaceKeyResponse = { userKeyBase64: 'AQIDBA==', keyVersion: 1 },
+): (token: string) => Promise<WorkspaceKeyResponse> {
+	return async () => response;
 }

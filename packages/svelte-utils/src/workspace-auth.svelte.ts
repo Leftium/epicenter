@@ -4,6 +4,7 @@ import type {
 	AuthCommandResult,
 	AuthRefreshResult,
 } from './auth-session.svelte.js';
+import type { WorkspaceKeyResponse } from './auth-transport.js';
 
 type WorkspaceBootWorkspace = {
 	bootFromCache(): Promise<'plaintext' | 'unlocked'>;
@@ -12,11 +13,16 @@ type WorkspaceBootWorkspace = {
 };
 
 type WorkspaceAuthResult = AuthRefreshResult | AuthCommandResult;
+
 /**
  * Inputs needed to reconcile auth state with a workspace during app boot.
  *
  * The workspace contract is intentionally tiny: boot from local cache, unlock
  * when auth returns a user key, and wipe authenticated local data on sign-out.
+ *
+ * `fetchWorkspaceKey` is the bridge between auth identity (bearer token) and
+ * workspace encryption (key material). It's called once after sign-in and only
+ * again if the server reports a different `keyVersion` than the local cache.
  */
 export type CreateWorkspaceAuthOptions = {
 	workspace: WorkspaceBootWorkspace;
@@ -24,14 +30,19 @@ export type CreateWorkspaceAuthOptions = {
 		AuthClient,
 		'refresh' | 'session' | 'signIn' | 'signUp' | 'signInWithGoogle' | 'signOut'
 	>;
+	fetchWorkspaceKey: (token: string) => Promise<WorkspaceKeyResponse>;
 	reconnect?: () => void;
 };
 
 export function createWorkspaceAuth({
 	workspace,
 	auth,
+	fetchWorkspaceKey,
 	reconnect,
 }: CreateWorkspaceAuthOptions) {
+	/** Tracks the last key version we successfully unlocked with. */
+	let lastKeyVersion: number | undefined;
+
 	async function refreshWorkspaceAuth(): Promise<AuthRefreshResult> {
 		const shouldReconnectAfterRefresh =
 			auth.session.status === 'authenticated';
@@ -49,20 +60,30 @@ export function createWorkspaceAuth({
 	}
 
 	async function applyAuthResult(result: WorkspaceAuthResult): Promise<void> {
-		if ('error' in result) {
+		if ('error' in result) return;
+		if (result.session.status !== 'authenticated') return;
+
+		// Key version unchanged — workspace is already unlocked with the right key
+		if (result.keyVersion !== undefined && result.keyVersion === lastKeyVersion) {
+			reconnect?.();
 			return;
 		}
 
-		if (
-			result.session.status === 'authenticated' &&
-			result.userKeyBase64
-		) {
-			await workspace.unlockWithKey(result.userKeyBase64);
+		// Version changed (or first boot) — fetch the actual key material
+		if (result.keyVersion !== undefined) {
+			const session = auth.session;
+			if (session.status !== 'authenticated') return;
+
+			try {
+				const { userKeyBase64, keyVersion } = await fetchWorkspaceKey(session.token);
+				await workspace.unlockWithKey(userKeyBase64);
+				lastKeyVersion = keyVersion;
+			} catch (error) {
+				console.error('[workspace-auth] Failed to fetch workspace key:', error);
+			}
 		}
 
-		if (result.session.status === 'authenticated') {
-			reconnect?.();
-		}
+		reconnect?.();
 	}
 
 	async function startAppBoot(refresh: () => Promise<AuthRefreshResult>) {
@@ -131,6 +152,7 @@ export function createWorkspaceAuth({
 		async signOut(): Promise<void> {
 			await auth.signOut();
 			await workspace.clearLocalData();
+			lastKeyVersion = undefined;
 			reconnect?.();
 		},
 	};

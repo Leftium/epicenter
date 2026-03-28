@@ -94,7 +94,7 @@ function createAuthenticatedSessionPayload() {
 		session: {
 			token: 'rotated-token',
 		},
-		userKeyBase64: 'AQIDBA==',
+		keyVersion: 1,
 	};
 }
 
@@ -131,7 +131,7 @@ describe('createAuthTransport.resolveSession', () => {
 				name: 'Braden',
 				image: null,
 			},
-			userKeyBase64: 'AQIDBA==',
+			keyVersion: 1,
 		});
 	});
 
@@ -180,7 +180,7 @@ describe('createAuthTransport.resolveSession', () => {
 				name: 'Braden',
 				image: null,
 			},
-			userKeyBase64: 'AQIDBA==',
+			keyVersion: 1,
 		});
 	});
 });

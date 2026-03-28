@@ -103,15 +103,30 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /**
- * Build the portable session fields Epicenter adds to `/auth/get-session`.
+ * Return the current key version for embedding in session responses.
  *
- * The response carries a base64-encoded per-user key plus the active key
- * version so clients can unlock encrypted workspace state immediately after
- * loading the authenticated session.
+ * Synchronous—no HKDF, no key material. Used by `customSession()` so every
+ * `getSession()` call carries version metadata without crypto overhead.
  */
-export async function createSessionEncryptionFields(
+export function getKeyVersion(): EpicenterSessionFields {
+	return { keyVersion: currentKey.version };
+}
+
+/** Response shape for `GET /workspace-key`. */
+export type WorkspaceKeyResponse = {
+	userKeyBase64: string;
+	keyVersion: number;
+};
+
+/**
+ * Derive and return the full per-user encryption key for the workspace-key endpoint.
+ *
+ * Called once per sign-in or when a client detects a stale cached version—not on
+ * every session refresh.
+ */
+export async function deriveWorkspaceKey(
 	userId: string,
-): Promise<EpicenterSessionFields> {
+): Promise<WorkspaceKeyResponse> {
 	const userKey = await deriveUserKey(currentKey.secret, userId);
 	return {
 		userKeyBase64: bytesToBase64(userKey),

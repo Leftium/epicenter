@@ -82,13 +82,16 @@ type BaseURL = string | (() => string);
  * The canonical remote `/auth/get-session` contract is owned by the API. This
  * union is a separate layer that adds client flow states the API never returns
  * directly: anonymous and unchanged.
+ *
+ * The session carries only `keyVersion` so clients can detect stale local caches.
+ * The actual key material is fetched separately via `fetchWorkspaceKey()`.
  */
 export type SessionResolution =
 	| {
 			status: 'authenticated';
 			token: string;
 			user: StoredUser;
-			userKeyBase64: string;
+			keyVersion: number;
 	  }
 	| { status: 'anonymous' }
 	| { status: 'unchanged' };
@@ -170,7 +173,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 				name: data.user.name,
 				image: data.user.image,
 			} satisfies StoredUser,
-			userKeyBase64: data.userKeyBase64,
+			keyVersion: data.keyVersion,
 		};
 	}
 
@@ -277,4 +280,30 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			);
 		},
 	};
+}
+
+/** Response shape from `GET /workspace-key`. */
+export type WorkspaceKeyResponse = {
+	userKeyBase64: string;
+	keyVersion: number;
+};
+
+/**
+ * Fetch the per-user workspace encryption key from the dedicated endpoint.
+ *
+ * Called once after sign-in/sign-up and when the client detects its cached
+ * key version is stale. Not called on routine session refreshes.
+ */
+export async function fetchWorkspaceKey(
+	baseURL: string | (() => string),
+	token: string,
+): Promise<WorkspaceKeyResponse> {
+	const url = typeof baseURL === 'function' ? baseURL() : baseURL;
+	const response = await fetch(`${url}/workspace-key`, {
+		headers: { Authorization: `Bearer ${token}` },
+	});
+	if (!response.ok) {
+		throw new Error(`Failed to fetch workspace key: ${response.status}`);
+	}
+	return response.json() as Promise<WorkspaceKeyResponse>;
 }

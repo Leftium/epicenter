@@ -2,9 +2,9 @@
  * Portable contract for the `/auth/get-session` response.
  *
  * Better Auth returns `{ user, session }`. Epicenter enriches that payload with
- * encryption metadata so clients can unlock encrypted workspace data as soon as
- * the session loads. These fields appear only on `getSession()` responses.
- * `signIn` and `signUp` responses do not include them.
+ * the current encryption key version so clients can detect stale local caches.
+ * The actual encryption key material is served by a dedicated endpoint
+ * (`GET /workspace-key`) rather than embedded in every session response.
  *
  * This file is intentionally runtime-free. Shared consumers should be able to
  * import the contract without pulling in Cloudflare Workers, Drizzle, or the
@@ -19,11 +19,10 @@ import type {
 /**
  * Extra fields Epicenter adds to the base Better Auth session payload.
  *
- * The server derives a per-user encryption key via HKDF and returns it
- * alongside the standard session and user data.
+ * The session carries only the key version so clients can detect stale caches.
+ * The actual key material is fetched separately via `GET /workspace-key`.
  */
 export type EpicenterSessionFields = {
-	userKeyBase64: string;
 	keyVersion: number;
 };
 

@@ -8,7 +8,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 import { type AuthSession, type StoredUser, readStatusCode } from './auth-types.js';
 
 /**
@@ -47,15 +47,15 @@ export type AuthTransportError = InferErrors<typeof AuthTransportError>;
  * Uses `readStatusCode` internally — the only place this structural read is
  * needed. Callers get typed `AuthTransportError` variants instead.
  */
-function classifyBetterAuthError(error: unknown): AuthTransportError {
+function classifyBetterAuthError(error: unknown) {
 	const status = readStatusCode(error);
 	if (status === 401 || status === 403) {
-		return AuthTransportError.InvalidCredentials({ cause: error }).error;
+		return AuthTransportError.InvalidCredentials({ cause: error });
 	}
 	if (status !== undefined) {
-		return AuthTransportError.RequestFailed({ status, cause: error }).error;
+		return AuthTransportError.RequestFailed({ status, cause: error });
 	}
-	return AuthTransportError.UnexpectedError({ cause: error }).error;
+	return AuthTransportError.UnexpectedError({ cause: error });
 }
 
 /**
@@ -251,7 +251,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		}): Promise<Result<SessionResolution, AuthTransportError>> {
 			const sessionClient = createBetterAuthSessionClient(null);
 			const { error } = await sessionClient.signInWithPassword(input);
-			if (error) return Err(classifyBetterAuthError(error));
+			if (error) return classifyBetterAuthError(error);
 
 			return Ok(
 				await resolveSessionWithToken(sessionClient.getCurrentToken()),
@@ -268,7 +268,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		}): Promise<Result<SessionResolution, AuthTransportError>> {
 			const sessionClient = createBetterAuthSessionClient(null);
 			const { error } = await sessionClient.signUpWithPassword(input);
-			if (error) return Err(classifyBetterAuthError(error));
+			if (error) return classifyBetterAuthError(error);
 
 			return Ok(
 				await resolveSessionWithToken(sessionClient.getCurrentToken()),
@@ -324,13 +324,11 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 				idToken,
 				nonce,
 			});
-			if (error) return Err(classifyBetterAuthError(error));
+			if (error) return classifyBetterAuthError(error);
 			if (!data || !('token' in data) || !('user' in data)) {
-				return Err(
-					AuthTransportError.UnexpectedError({
-						cause: new Error('Google sign-in response missing token or user'),
-					}).error,
-				);
+				return AuthTransportError.UnexpectedError({
+					cause: new Error('Google sign-in response missing token or user'),
+				});
 			}
 
 			return Ok(

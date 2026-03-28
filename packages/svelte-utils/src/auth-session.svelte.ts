@@ -77,6 +77,11 @@ export type CreateAuthSessionOptions = {
 	signOutRemote?: (current: AuthSession) => Promise<void>;
 };
 
+export type AuthFetch = (
+	input: RequestInfo | URL,
+	init?: RequestInit,
+) => Promise<Response>;
+
 export type AuthClient = {
 	readonly session: AuthSession;
 	readonly operation: AuthOperation;
@@ -95,7 +100,7 @@ export type AuthClient = {
 	signInWithGoogle(): Promise<AuthCommandResult>;
 	signOut(): Promise<void>;
 
-	fetch: typeof fetch;
+	fetch: AuthFetch;
 };
 
 export function createAuthSession({
@@ -106,6 +111,19 @@ export function createAuthSession({
 }: CreateAuthSessionOptions): AuthClient {
 	let operation = $state<AuthOperation>({ status: 'bootstrapping' });
 	let initializationPromise: Promise<void> | null = null;
+	const authFetch: AuthFetch = (input, init) => {
+		const headers = new Headers(init?.headers);
+		const token = getToken(storage.current);
+		if (token) {
+			headers.set('Authorization', `Bearer ${token}`);
+		}
+
+		return fetch(input, {
+			...init,
+			headers,
+			credentials: 'include',
+		});
+	};
 
 	function setOperation(next: AuthOperation) {
 		if (operation.status === next.status) return;
@@ -317,19 +335,7 @@ export function createAuthSession({
 			}
 		},
 
-		fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
-			const headers = new Headers(init?.headers);
-			const token = getToken(storage.current);
-			if (token) {
-				headers.set('Authorization', `Bearer ${token}`);
-			}
-
-			return fetch(input, {
-				...init,
-				headers,
-				credentials: 'include',
-			});
-		}) as typeof fetch,
+		fetch: authFetch,
 	};
 }
 
@@ -389,10 +395,7 @@ function isCancelledGoogleSignIn(error: unknown): boolean {
 }
 
 function isInvalidCredentialsError(error: unknown): boolean {
-	const status =
-		typeof error === 'object' && error !== null && 'status' in error
-			? (error as { status?: unknown }).status
-			: undefined;
+	const status = readStatusCode(error);
 	if (status === 401 || status === 403) {
 		return true;
 	}
@@ -403,6 +406,12 @@ function isInvalidCredentialsError(error: unknown): boolean {
 		message.includes('invalid credentials') ||
 		message.includes('invalid password')
 	);
+}
+
+function readStatusCode(error: unknown): number | undefined {
+	if (typeof error !== 'object' || error === null) return undefined;
+	if (!('status' in error)) return undefined;
+	return typeof error.status === 'number' ? error.status : undefined;
 }
 
 function reportBackgroundAuthError(phase: 'refresh' | 'sign-out', error: unknown) {

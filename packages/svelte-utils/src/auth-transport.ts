@@ -1,9 +1,18 @@
+import type { EpicenterAuth } from '@epicenter/api/auth/client-types';
 import type { User } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
+import { customSessionClient } from 'better-auth/client/plugins';
 import type { AuthSession, StoredUser } from './auth-types.js';
 
 type BaseURL = string | (() => string);
 
+/**
+ * Local auth resolution result used by app state.
+ *
+ * The canonical remote `/auth/get-session` contract is owned by the API. This
+ * union is a separate layer that adds client flow states the API never returns
+ * directly: anonymous and unchanged.
+ */
 export type SessionResolution =
 	| {
 			status: 'authenticated';
@@ -23,8 +32,6 @@ export type ResolveSession = (
 export type AuthTransport = ReturnType<typeof createAuthTransport>;
 
 type BetterAuthClient = ReturnType<typeof createAuthClient>;
-type GetSessionResult = Awaited<ReturnType<BetterAuthClient['getSession']>>;
-type GetSessionData = NonNullable<GetSessionResult['data']>;
 type SignInEmailResult = Awaited<
 	ReturnType<BetterAuthClient['signIn']['email']>
 >;
@@ -51,17 +58,30 @@ type AuthCommandTokenPayload =
 /**
  * Create the shared Better Auth transport used by Epicenter apps.
  *
- * This wrapper keeps auth operations on top of Better Auth while translating
- * responses into the smaller local union consumed by auth state and workspace
- * boot. The browser extension can swap only the Google entrypoint while keeping
- * the rest of the transport behavior consistent.
+ * Mental model:
+ *
+ * - Better Auth commands establish auth state
+ * - `/auth/get-session` is the canonical remote session query
+ * - bearer tokens are transport, not session data
+ *
+ * The transport keeps those concerns separate. Command methods sign in or sign
+ * up, then immediately re-hydrate through `getSession()` so every client flow
+ * converges on the same API-owned session contract.
  */
 export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
+	/**
+	 * Wrap Better Auth's client with Epicenter's bearer-token transport rules.
+	 *
+	 * This factory owns the protocol weirdness so the outer transport can read in
+	 * domain terms: sign in, then resolve the canonical session. The only state it
+	 * tracks is "what bearer token should the next request send?"
+	 */
 	function createBetterAuthSessionClient(authToken: string | null) {
 		const bearerToken = createBearerTokenState(authToken);
 		const client = createAuthClient({
 			baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
 			basePath: '/auth',
+			plugins: [customSessionClient<EpicenterAuth>()],
 			fetchOptions: {
 				auth: {
 					type: 'Bearer',
@@ -169,7 +189,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 				name: data.user.name,
 				image: data.user.image,
 			} satisfies StoredUser,
-			userKeyBase64: readEpicenterUserKeyBase64(data),
+			userKeyBase64: data.userKeyBase64,
 		};
 	}
 
@@ -277,6 +297,15 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 	};
 }
 
+/**
+ * Track the freshest bearer token known to this client instance.
+ *
+ * Better Auth's bearer plugin can update the token through response headers,
+ * while session reads expose the same session through the canonical
+ * `/auth/get-session` payload. This factory keeps that transport state in one
+ * place instead of spreading header and payload reconciliation through the auth
+ * flows.
+ */
 function createBearerTokenState(authToken: string | null) {
 	let currentToken: string | null | undefined;
 
@@ -292,7 +321,7 @@ function createBearerTokenState(authToken: string | null) {
 				currentToken = nextToken || null;
 			}
 		},
-		rememberTokenFromSessionPayload(data: GetSessionData) {
+		rememberTokenFromSessionPayload(data: { session: { token: string } }) {
 			currentToken = data.session.token;
 		},
 		rememberTokenFromAuthCommandPayload(data?: AuthCommandTokenPayload) {
@@ -310,13 +339,6 @@ function createBearerTokenState(authToken: string | null) {
 			return token;
 		},
 	};
-}
-
-function readEpicenterUserKeyBase64(
-	data: GetSessionData,
-): string | null | undefined {
-	return (data as GetSessionData & { userKeyBase64?: string | null })
-		.userKeyBase64;
 }
 
 function readAuthCommandToken(data?: AuthCommandTokenPayload): string | null {

@@ -11,6 +11,7 @@
 		"./auth": "./src/auth.svelte.ts"
 	},
 	"dependencies": {
+		"@epicenter/api": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",

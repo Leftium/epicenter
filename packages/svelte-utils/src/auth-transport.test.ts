@@ -1,14 +1,12 @@
 /**
  * Auth Transport Tests
  *
- * Verifies the Better Auth wrapper keeps bearer tokens fresh across transport
- * calls and maps Better Auth session payloads into Epicenter's local auth
- * contract.
+ * Verifies the auth transport maps Better Auth session payloads into
+ * Epicenter's local auth contract.
  *
  * Key behaviors:
- * - Rotated bearer tokens are reused immediately by the client token callback
  * - `resolveSessionWithToken()` reads nested `session.token`
- * - Explicit empty `set-auth-token` headers clear the cached bearer token
+ * - Resolved token comes from remote session payload over caller input token
  */
 
 import { describe, expect, mock, test } from 'bun:test';
@@ -19,9 +17,8 @@ type CreateAuthClientOptions = {
 	fetchOptions: {
 		auth: {
 			type: 'Bearer';
-			token: () => string | undefined;
+			token: string | undefined;
 		};
-		onSuccess: ({ response }: { response: Response }) => void;
 	};
 };
 
@@ -101,83 +98,6 @@ function createAuthenticatedSessionPayload() {
 	};
 }
 
-describe('createBetterAuthClientSession', () => {
-	test('reuses rotated token immediately after a successful response', async () => {
-		let tokenBeforeRotation: string | undefined;
-		let tokenAfterRotation: string | undefined;
-
-		const transport = await setup({
-			onCreateAuthClient(options) {
-				tokenBeforeRotation = options.fetchOptions.auth.token();
-				options.fetchOptions.onSuccess({
-					response: new Response(null, {
-						headers: { 'set-auth-token': 'rotated-token' },
-					}),
-				});
-				tokenAfterRotation = options.fetchOptions.auth.token();
-				return createAuthClientStub();
-			},
-		});
-
-		await transport
-			.createAuthTransport({
-				baseURL: 'https://example.com',
-			})
-			.resolveSession({
-				status: 'authenticated',
-				token: 'initial-token',
-				user: {
-					id: 'user-1',
-					createdAt: '2026-03-28T00:00:00.000Z',
-					updatedAt: '2026-03-28T00:00:00.000Z',
-					email: 'braden@example.com',
-					emailVerified: true,
-					name: 'Braden',
-					image: null,
-				},
-			});
-
-		expect(tokenBeforeRotation).toBe('initial-token');
-		expect(tokenAfterRotation).toBe('rotated-token');
-	});
-
-	test('empty set-auth-token clears the cached bearer token', async () => {
-		let tokenAfterClear: string | undefined;
-
-		const transport = await setup({
-			onCreateAuthClient(options) {
-				options.fetchOptions.onSuccess({
-					response: new Response(null, {
-						headers: { 'set-auth-token': '' },
-					}),
-				});
-				tokenAfterClear = options.fetchOptions.auth.token();
-				return createAuthClientStub();
-			},
-		});
-
-		await transport
-			.createAuthTransport({
-				baseURL: 'https://example.com',
-			})
-			.resolveSession({
-				status: 'authenticated',
-				token: 'initial-token',
-				user: {
-					id: 'user-1',
-					createdAt: '2026-03-28T00:00:00.000Z',
-					updatedAt: '2026-03-28T00:00:00.000Z',
-					email: 'braden@example.com',
-					emailVerified: true,
-					name: 'Braden',
-					image: null,
-				},
-			});
-
-		expect(tokenAfterClear).toBeUndefined();
-	});
-});
-
 describe('createAuthTransport.resolveSession', () => {
 	test('hydrates authenticated session from nested session.token', async () => {
 		const transport = await setup({
@@ -199,6 +119,55 @@ describe('createAuthTransport.resolveSession', () => {
 				status: 'anonymous',
 			});
 
+		expect(result).toEqual({
+			status: 'authenticated',
+			token: 'rotated-token',
+			user: {
+				id: 'user-1',
+				createdAt: '2026-03-28T00:00:00.000Z',
+				updatedAt: '2026-03-28T00:00:00.000Z',
+				email: 'braden@example.com',
+				emailVerified: true,
+				name: 'Braden',
+				image: null,
+			},
+			userKeyBase64: 'AQIDBA==',
+		});
+	});
+
+	test('prefers token from session payload over input token', async () => {
+		let clientToken: string | undefined;
+		const transport = await setup({
+			onCreateAuthClient(options) {
+				clientToken = options.fetchOptions.auth.token;
+				return createAuthClientStub({
+					getSession: async () => ({
+						data: createAuthenticatedSessionPayload(),
+						error: null,
+					}),
+				});
+			},
+		});
+
+		const result = await transport
+			.createAuthTransport({
+				baseURL: 'https://example.com',
+			})
+			.resolveSession({
+				status: 'authenticated',
+				token: 'initial-token',
+				user: {
+					id: 'user-1',
+					createdAt: '2026-03-28T00:00:00.000Z',
+					updatedAt: '2026-03-28T00:00:00.000Z',
+					email: 'braden@example.com',
+					emailVerified: true,
+					name: 'Braden',
+					image: null,
+				},
+			});
+
+		expect(clientToken).toBe('initial-token');
 		expect(result).toEqual({
 			status: 'authenticated',
 			token: 'rotated-token',

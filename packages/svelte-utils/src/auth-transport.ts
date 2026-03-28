@@ -1,15 +1,19 @@
+import type { EpicenterSessionResponse } from '@epicenter/api/types';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
 import { customSessionClient } from 'better-auth/client/plugins';
 import type { customSession } from 'better-auth/plugins';
-import type { EpicenterSessionResponse } from '@epicenter/api/types';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { type AuthSession, type StoredUser, readStatusCode } from './auth-types.js';
+import {
+	type AuthSession,
+	readStatusCode,
+	type StoredUser,
+} from './auth-types.js';
 
 /**
  * Typed errors for the auth transport layer.
@@ -23,13 +27,7 @@ export const AuthTransportError = defineErrors({
 		message: `Invalid email or password: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	RequestFailed: ({
-		status,
-		cause,
-	}: {
-		status: number;
-		cause: unknown;
-	}) => ({
+	RequestFailed: ({ status, cause }: { status: number; cause: unknown }) => ({
 		message: `Auth request failed (${status}): ${extractErrorMessage(cause)}`,
 		status,
 		cause,
@@ -112,97 +110,47 @@ export type ResolveSession = (
  * converges on the same API-owned session contract.
  */
 export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
-	/**
-	 * Wrap Better Auth's client with Epicenter's bearer-token transport rules.
-	 *
-	 * This factory owns the protocol weirdness so the outer transport can read in
-	 * domain terms: sign in, then resolve the canonical session. The only state it
-	 * tracks is "what bearer token should the next request send?"
-	 */
-	function createBetterAuthSessionClient(authToken: string | null) {
-		const bearerToken = createBearerTokenState(authToken);
-		const client = createAuthClient({
+	function makeClient(token: string | null) {
+		return createAuthClient({
 			baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
 			basePath: '/auth',
 			plugins: [customSessionClient<EpicenterAuthPluginShape>()],
 			fetchOptions: {
-				auth: {
-					type: 'Bearer',
-					token: () => bearerToken.getCurrentToken() ?? undefined,
-				},
-				onSuccess: ({ response }) => {
-					bearerToken.rememberTokenFromHeaders(response);
-				},
+				auth: { type: 'Bearer', token: token ?? undefined },
 			},
 		});
+	}
 
-		return {
-			getCurrentToken() {
-				return bearerToken.getCurrentToken();
-			},
-			requireAuthenticatedToken() {
-				return bearerToken.requireAuthenticatedToken();
-			},
-			async getSession() {
-				const result = await client.getSession();
-				if (result.data) {
-					bearerToken.rememberTokenFromSessionPayload(result.data);
-				}
+	function extractCommandToken(data: unknown): string | null {
+		if (typeof data !== 'object' || data === null) return null;
+		if (
+			'token' in data &&
+			typeof (data as Record<string, unknown>).token === 'string'
+		) {
+			return (data as Record<string, unknown>).token as string;
+		}
+		if (
+			'session' in data &&
+			typeof (data as Record<string, unknown>).session === 'object' &&
+			(data as Record<string, unknown>).session !== null
+		) {
+			const session = (data as Record<string, unknown>).session as Record<
+				string,
+				unknown
+			>;
+			if ('token' in session && typeof session.token === 'string') {
+				return session.token;
+			}
+		}
 
-				return result;
-			},
-			async signInWithPassword(input: { email: string; password: string }) {
-				const result = await client.signIn.email(input);
-				bearerToken.rememberTokenFromAuthCommand(result.data);
-				return result;
-			},
-			async signUpWithPassword(input: {
-				email: string;
-				password: string;
-				name: string;
-			}) {
-				const result = await client.signUp.email(input);
-				bearerToken.rememberTokenFromAuthCommand(result.data);
-				return result;
-			},
-			async signOut() {
-				return await client.signOut();
-			},
-			async startGoogleSignInRedirect({
-				callbackURL,
-			}: {
-				callbackURL: string;
-			}) {
-				await client.signIn.social({
-					provider: 'google',
-					callbackURL,
-				});
-			},
-			async signInWithGoogleIdToken({
-				idToken,
-				nonce,
-			}: {
-				idToken: string;
-				nonce: string;
-			}) {
-				const result = await client.signIn.social({
-					provider: 'google',
-					idToken: { token: idToken, nonce },
-				});
-				if (result.data && 'token' in result.data && 'user' in result.data) {
-					bearerToken.rememberTokenFromAuthCommand(result.data);
-				}
-
-				return result;
-			},
-		};
+		return null;
 	}
 
 	async function resolveSessionWithToken(
 		authToken: string | null,
 	): Promise<SessionResolution> {
-		const sessionClient = createBetterAuthSessionClient(authToken);
-		const { data, error } = await sessionClient.getSession();
+		const client = makeClient(authToken);
+		const { data, error } = await client.getSession();
 
 		if (error) {
 			const status = readStatusCode(error);
@@ -214,9 +162,13 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 
 		if (!data) return { status: 'anonymous' };
 
+		const sessionToken =
+			typeof data.session.token === 'string' ? data.session.token : authToken;
+		if (!sessionToken) return { status: 'anonymous' };
+
 		return {
 			status: 'authenticated',
-			token: sessionClient.requireAuthenticatedToken(),
+			token: sessionToken,
 			user: {
 				id: data.user.id,
 				createdAt: data.user.createdAt.toISOString(),
@@ -249,13 +201,12 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			email: string;
 			password: string;
 		}): Promise<Result<SessionResolution, AuthTransportError>> {
-			const sessionClient = createBetterAuthSessionClient(null);
-			const { error } = await sessionClient.signInWithPassword(input);
+			const client = makeClient(null);
+			const { data, error } = await client.signIn.email(input);
 			if (error) return classifyBetterAuthError(error);
+			const token = extractCommandToken(data);
 
-			return Ok(
-				await resolveSessionWithToken(sessionClient.getCurrentToken()),
-			);
+			return Ok(await resolveSessionWithToken(token));
 		},
 
 		/**
@@ -266,13 +217,12 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			password: string;
 			name: string;
 		}): Promise<Result<SessionResolution, AuthTransportError>> {
-			const sessionClient = createBetterAuthSessionClient(null);
-			const { error } = await sessionClient.signUpWithPassword(input);
+			const client = makeClient(null);
+			const { data, error } = await client.signUp.email(input);
 			if (error) return classifyBetterAuthError(error);
+			const token = extractCommandToken(data);
 
-			return Ok(
-				await resolveSessionWithToken(sessionClient.getCurrentToken()),
-			);
+			return Ok(await resolveSessionWithToken(token));
 		},
 
 		/**
@@ -284,8 +234,8 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		async signOutRemote(current: AuthSession): Promise<void> {
 			if (current.status !== 'authenticated') return;
 
-			const sessionClient = createBetterAuthSessionClient(current.token);
-			const { error } = await sessionClient.signOut();
+			const client = makeClient(current.token);
+			const { error } = await client.signOut();
 			if (error) {
 				throw error;
 			}
@@ -302,8 +252,11 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		}: {
 			callbackURL: string;
 		}): Promise<void> {
-			const sessionClient = createBetterAuthSessionClient(null);
-			await sessionClient.startGoogleSignInRedirect({ callbackURL });
+			const client = makeClient(null);
+			await client.signIn.social({
+				provider: 'google',
+				callbackURL,
+			});
 		},
 
 		/**
@@ -319,10 +272,10 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			idToken: string;
 			nonce: string;
 		}): Promise<Result<SessionResolution, AuthTransportError>> {
-			const sessionClient = createBetterAuthSessionClient(null);
-			const { data, error } = await sessionClient.signInWithGoogleIdToken({
-				idToken,
-				nonce,
+			const client = makeClient(null);
+			const { data, error } = await client.signIn.social({
+				provider: 'google',
+				idToken: { token: idToken, nonce },
 			});
 			if (error) return classifyBetterAuthError(error);
 			if (!data || !('token' in data) || !('user' in data)) {
@@ -330,59 +283,9 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 					cause: new Error('Google sign-in response missing token or user'),
 				});
 			}
+			const token = extractCommandToken(data);
 
-			return Ok(
-				await resolveSessionWithToken(sessionClient.getCurrentToken()),
-			);
+			return Ok(await resolveSessionWithToken(token));
 		},
 	};
 }
-
-/**
- * Track the freshest bearer token known to this client instance.
- *
- * Better Auth's bearer plugin can update the token through response headers,
- * while session reads expose the same session through the canonical
- * `/auth/get-session` payload. This factory keeps that transport state in one
- * place instead of spreading header and payload reconciliation through the auth
- * flows.
- */
-function createBearerTokenState(authToken: string | null) {
-	let currentToken: string | null | undefined;
-
-	function getCurrentToken() {
-		return currentToken === undefined ? authToken : currentToken;
-	}
-
-	return {
-		getCurrentToken,
-		rememberTokenFromHeaders(response: Response) {
-			const nextToken = response.headers.get('set-auth-token');
-			if (nextToken !== null) {
-				currentToken = nextToken || null;
-			}
-		},
-		rememberTokenFromSessionPayload(data: { session: { token: string } }) {
-			currentToken = data.session.token;
-		},
-		rememberTokenFromAuthCommand(data: unknown) {
-			if (
-				typeof data === 'object' &&
-				data !== null &&
-				'token' in data &&
-				typeof data.token === 'string'
-			) {
-				currentToken = data.token;
-			}
-		},
-		requireAuthenticatedToken() {
-			const token = getCurrentToken();
-			if (!token) {
-				throw new Error('Authenticated session is missing bearer token');
-			}
-
-			return token;
-		},
-	};
-}
-

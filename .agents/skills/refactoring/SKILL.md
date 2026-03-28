@@ -293,6 +293,43 @@ af643fd  refactor: replace validated()/currentType() closures with this.currentE
 c4f8ddc  refactor: move SheetBinding to sheet.ts, accept as single param
 ```
 
+## Post-Refactor Straggler Sweep
+
+After a refactor lands, immediately hunt for dead references the change left behind. Refactors that remove or move code create orphaned exports, stale JSDoc, and unnecessary indirection that won't trigger type errors—they compile fine but add confusion.
+
+### The Sweep Checklist
+
+Run these searches against the codebase after every non-trivial refactor:
+
+1. **Dead exports**: Grep for the removed symbol. If nothing imports it, un-export or delete.
+2. **Stale imports**: An import that pulled the old name may now be partially unused. Check each importing file.
+3. **Orphaned JSDoc**: Comments that reference removed endpoints, deleted types, or old patterns. These mislead future readers worse than no comment.
+4. **Single-file directories**: If a refactor moved the only meaningful file out of a directory, the directory may now hold just an `index.ts` barrel re-exporting one thing. Flatten `dir/index.ts` → `dir.ts` when the import path resolves identically (Node/Vite resolve both `$lib/auth` and `$lib/auth/index.ts`).
+5. **Unnecessary indirection**: A contract type that existed solely for a removed endpoint. A helper that wrapped a one-liner. A re-export chain where the middle barrel is now a single passthrough.
+
+### Example: Key Delivery Refactor
+
+Embedding encryption keys in the session response (eliminating `GET /workspace-key`) left these stragglers:
+
+```
+Straggler                                    Found by
+─────────────────────────────────────────────────────────────
+currentKeyVersion import in create-auth.ts    grep for the symbol → imported but unreferenced
+currentKeyVersion export from encryption.ts   only consumer was create-auth.ts → dead export
+SessionResponse JSDoc: "without fetching       grep for old pattern language → stale
+ key material"
+WorkspaceKeyResponse contract type             grep for the type → zero consumers
+```
+
+### When to Sweep
+
+- After removing an endpoint, type, or module
+- After collapsing a multi-step flow into fewer steps
+- After inlining a function (its callers may have stale comments)
+- After renaming (old name may linger in JSDoc, error messages, tests)
+
+The sweep is a separate commit from the refactor. Label it `refactor(scope): remove dead X` or `refactor(scope): fix stale JSDoc after Y`.
+
 ## Anti-Patterns
 
 - **Premature extraction**: Extracting a 1–3 line block used 2–3 times into a named helper. The indirection costs more than the duplication. See "Prefer Inline for Trivial Duplications" above.
@@ -301,3 +338,4 @@ c4f8ddc  refactor: move SheetBinding to sheet.ts, accept as single param
 - **Refactoring while fixing bugs**: Fix the bug minimally first, refactor in a separate commit
 - **Batch-committing**: "Cleaned up the module" as one commit with 15 changes—impossible to review or revert
 - **Shotgun inlining**: Inlining everything with 1 caller regardless of context. Respect constructor families and complex logic.
+- **Skipping the straggler sweep**: Refactoring without cleaning up dead references. The code compiles, but the next person reads stale JSDoc and wastes 30 minutes confused about an endpoint that no longer exists.

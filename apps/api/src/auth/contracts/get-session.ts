@@ -6,8 +6,9 @@
  * the session loads. These fields appear only on `getSession()` responses.
  * `signIn` and `signUp` responses do not include them.
  *
- * This file intentionally stays lightweight so other packages can import it
- * without pulling in Cloudflare Workers, Drizzle, or the API runtime.
+ * This file is intentionally runtime-free. Shared consumers should be able to
+ * import the contract without pulling in Cloudflare Workers, Drizzle, or the
+ * API's auth factory.
  */
 
 import type {
@@ -29,9 +30,8 @@ export type EpicenterSessionFields = {
 /**
  * Generic shape of Epicenter's enriched `getSession()` response.
  *
- * This stays generic so server code can plug in concrete Better Auth
- * `user` and `session` types, while consumers can compose the same contract
- * without importing the auth instance.
+ * Server code plugs in concrete Better Auth `user` and `session` types, while
+ * clients can compose the same contract without importing the auth instance.
  */
 export type GetSessionResponse<User = unknown, Session = unknown> = {
 	user: User;

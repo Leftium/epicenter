@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { type } from 'arktype';
-import type { EpicenterSessionFields } from './session-contract';
+import type { EpicenterSessionFields } from './contracts';
 
 /**
  * Validated shape of a single keyring entry.

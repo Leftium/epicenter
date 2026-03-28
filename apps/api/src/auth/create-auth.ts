@@ -10,8 +10,8 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createAutumn } from '../autumn';
 import type * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
+import type { GetSessionResponse } from './contracts';
 import { createSessionEncryptionFields } from './encryption';
-import type { GetSessionResponse } from './session-contract';
 
 type Db = NodePgDatabase<typeof schema>;
 

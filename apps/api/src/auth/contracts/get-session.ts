@@ -12,8 +12,8 @@
  */
 
 import type {
-	Session as BetterAuthSession,
-	User as BetterAuthUser,
+	Session,
+	User,
 } from 'better-auth';
 
 /**
@@ -24,8 +24,8 @@ import type {
  *
  * Import from `@epicenter/api/types` rather than hand-writing the response.
  */
-export type EpicenterSessionResponse = {
-	user: BetterAuthUser;
-	session: BetterAuthSession;
+export type SessionResponse = {
+	user: User;
+	session: Session;
 	keyVersion: number;
 };

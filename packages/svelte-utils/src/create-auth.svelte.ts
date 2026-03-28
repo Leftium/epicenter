@@ -1,5 +1,5 @@
 import type {
-	EpicenterSessionResponse,
+	SessionResponse,
 	WorkspaceKeyResponse,
 } from '@epicenter/api/types';
 import type { BetterAuthOptions } from 'better-auth';
@@ -155,7 +155,7 @@ export type CreateAuthOptions = {
  * `typeof auth` drags in server-only types client packages cannot resolve.
  */
 type EpicenterCustomSessionPlugin = ReturnType<
-	typeof customSession<EpicenterSessionResponse, BetterAuthOptions>
+	typeof customSession<SessionResponse, BetterAuthOptions>
 >;
 type EpicenterAuthPluginShape = {
 	options: { plugins: EpicenterCustomSessionPlugin[] };

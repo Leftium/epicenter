@@ -5,5 +5,5 @@
  * Client-only Better Auth inference helpers belong in the consuming package,
  * and server runtime wiring belongs next to the auth factory.
  */
-export type { EpicenterSessionResponse } from './get-session';
+export type { SessionResponse } from './get-session';
 export type { WorkspaceKeyResponse } from './workspace-key';

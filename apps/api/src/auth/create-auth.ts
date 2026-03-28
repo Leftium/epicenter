@@ -10,7 +10,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createAutumn } from '../autumn';
 import type * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
-import type { EpicenterSessionResponse } from './contracts';
+import type { SessionResponse } from './contracts';
 import { currentKeyVersion } from './encryption';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -27,7 +27,7 @@ type Db = NodePgDatabase<typeof schema>;
  * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
  * - Plugins: bearer tokens, JWT, device authorization, OAuth provider (PKCE)
  * - `customSession()` enrichment that appends the current encryption key version
- *   to `/auth/get-session` responses (see {@link EpicenterSessionResponse})
+	   to `/auth/get-session` responses (see {@link SessionResponse})
  * - Autumn billing customer creation on user signup
  * - Cloudflare KV secondary storage for session caching
  */
@@ -152,7 +152,7 @@ export function createAuth({
 				user,
 				session,
 				keyVersion: currentKeyVersion,
-			}) satisfies EpicenterSessionResponse,
+			}) satisfies SessionResponse,
 		{
 			...authOptionsBase,
 			plugins: basePlugins,

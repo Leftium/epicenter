@@ -55,9 +55,9 @@ export function createWorkspaceAuth({
 
 		if (
 			result.session.status === 'authenticated' &&
-			result.workspaceKeyBase64
+			result.userKeyBase64
 		) {
-			await workspace.unlockWithKey(result.workspaceKeyBase64);
+			await workspace.unlockWithKey(result.userKeyBase64);
 		}
 
 		if (result.session.status === 'authenticated') {

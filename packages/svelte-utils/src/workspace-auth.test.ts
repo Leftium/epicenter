@@ -9,7 +9,7 @@ describe('createWorkspaceAuth.refresh', () => {
 		const auth = createFakeAuth({
 			refreshResult: {
 				session: authenticatedSession(),
-				workspaceKeyBase64: 'AQIDBA==',
+			userKeyBase64: 'AQIDBA==',
 			},
 		});
 		let reconnectCalls = 0;
@@ -89,7 +89,7 @@ describe('createWorkspaceAuth.signInWithGoogle', () => {
 		const auth = createFakeAuth({
 			signInWithGoogleResult: {
 				session: authenticatedSession(),
-				workspaceKeyBase64: 'AQIDBA==',
+				userKeyBase64: 'AQIDBA==',
 			},
 		});
 		let reconnectCalls = 0;
@@ -105,7 +105,7 @@ describe('createWorkspaceAuth.signInWithGoogle', () => {
 
 		expect(result).toEqual({
 			session: authenticatedSession(),
-			workspaceKeyBase64: 'AQIDBA==',
+			userKeyBase64: 'AQIDBA==',	
 		});
 		expect(auth.signInWithGoogleCalls).toBe(1);
 		expect(workspace.unlockWithKeyCalls).toEqual(['AQIDBA==']);

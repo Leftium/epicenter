@@ -23,8 +23,6 @@ export type SessionResolution =
 	| { status: 'anonymous' }
 	| { status: 'unchanged' };
 
-export type RemoteAuthResult = SessionResolution;
-
 export type ResolveSession = (
 	current: AuthSession,
 ) => Promise<SessionResolution>;

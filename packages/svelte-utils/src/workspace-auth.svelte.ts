@@ -15,6 +15,12 @@ type WorkspaceAuthResult = AuthRefreshResult | AuthCommandResult;
 
 export type WorkspaceAuth = ReturnType<typeof createWorkspaceAuth>;
 
+/**
+ * Inputs needed to reconcile auth state with a workspace during app boot.
+ *
+ * The workspace contract is intentionally tiny: boot from local cache, unlock
+ * when auth returns a user key, and wipe authenticated local data on sign-out.
+ */
 export type CreateWorkspaceAuthOptions = {
 	workspace: WorkspaceBootWorkspace;
 	auth: Pick<
@@ -29,6 +35,22 @@ export function createWorkspaceAuth({
 	auth,
 	reconnect,
 }: CreateWorkspaceAuthOptions) {
+	async function refreshWorkspaceAuth(): Promise<AuthRefreshResult> {
+		const shouldReconnectAfterRefresh =
+			auth.session.status === 'authenticated';
+		const refreshResult = await auth.refresh();
+
+		if (
+			shouldReconnectAfterRefresh &&
+			refreshResult.session.status === 'anonymous'
+		) {
+			reconnect?.();
+		}
+
+		await applyAuthResult(refreshResult);
+		return refreshResult;
+	}
+
 	async function applyAuthResult(result: WorkspaceAuthResult): Promise<void> {
 		if ('error' in result) {
 			return;
@@ -58,7 +80,7 @@ export function createWorkspaceAuth({
 		return result;
 	}
 
-	return {
+	const workspaceAuth = {
 		/**
 		 * Sign in with email and password and adopt any returned workspace key.
 		 */
@@ -87,19 +109,7 @@ export function createWorkspaceAuth({
 		 * reconnects sync so transport state can downgrade cleanly.
 		 */
 		async refresh(): Promise<AuthRefreshResult> {
-			const shouldReconnectAfterRefresh =
-				auth.session.status === 'authenticated';
-			const refreshResult = await auth.refresh();
-
-			if (
-				shouldReconnectAfterRefresh &&
-				refreshResult.session.status === 'anonymous'
-			) {
-				reconnect?.();
-			}
-
-			await applyAuthResult(refreshResult);
-			return refreshResult;
+			return await refreshWorkspaceAuth();
 		},
 
 		/**
@@ -109,23 +119,12 @@ export function createWorkspaceAuth({
 		 * document becomes visible again while the user is signed in.
 		 */
 		mount(): void {
-			const boundary = this;
-
 			onMount(() => {
-				void startAppBoot(() => boundary.refresh());
-
-				const onVisibilityChange = () => {
-					if (
-						document.visibilityState === 'visible' &&
-						auth.session.status === 'authenticated'
-					) {
-						void boundary.refresh();
-					}
-				};
-
-				document.addEventListener('visibilitychange', onVisibilityChange);
-				return () =>
-					document.removeEventListener('visibilitychange', onVisibilityChange);
+				return installWorkspaceAuthLifecycle({
+					startAppBoot,
+					refresh: workspaceAuth.refresh,
+					currentSession: () => auth.session,
+				});
 			});
 		},
 
@@ -138,4 +137,38 @@ export function createWorkspaceAuth({
 			reconnect?.();
 		},
 	};
+
+	return workspaceAuth;
+}
+
+/**
+ * Install the Svelte lifecycle that boots workspace auth on mount and refreshes
+ * when the document becomes visible again for authenticated sessions.
+ *
+ * Kept separate from `createWorkspaceAuth()` so the returned controller stays a
+ * plain coordinator object instead of hiding Svelte lifecycle logic inline.
+ */
+function installWorkspaceAuthLifecycle({
+	startAppBoot,
+	refresh,
+	currentSession,
+}: {
+	startAppBoot: (refresh: () => Promise<AuthRefreshResult>) => Promise<void>;
+	refresh: () => Promise<AuthRefreshResult>;
+	currentSession: () => AuthClient['session'];
+}) {
+	void startAppBoot(refresh);
+
+	const onVisibilityChange = () => {
+		if (
+			document.visibilityState === 'visible' &&
+			currentSession().status === 'authenticated'
+		) {
+			void refresh();
+		}
+	};
+
+	document.addEventListener('visibilitychange', onVisibilityChange);
+	return () =>
+		document.removeEventListener('visibilitychange', onVisibilityChange);
 }

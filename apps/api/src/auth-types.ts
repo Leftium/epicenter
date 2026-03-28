@@ -6,17 +6,14 @@
  * of hand-writing response types.
  */
 
-import type { betterAuth } from 'better-auth';
-import type { BASE_AUTH_CONFIG } from './app';
+import type { Session as BetterAuthSession, User as BetterAuthUser } from 'better-auth';
+import type { CustomSessionFields } from './custom-session-fields';
 
-/** Better Auth instance type derived from the shared base config. */
-type Auth = ReturnType<typeof betterAuth<typeof BASE_AUTH_CONFIG>>;
-
-/** Full session object returned by `/auth/get-session`. Contains both session metadata and user info. */
-export type Session = Auth['$Infer']['Session'];
-
-/** The `session` portion of the get-session response (token, expiry, userId). */
-export type SessionData = Session['session'];
-
-/** The `user` portion of the get-session response (id, email, name, etc.). */
-export type SessionUser = Session['user'];
+/**
+ * The `user` and `session` sub-objects come from Better Auth's base models.
+ *
+ * The top-level response is then composed with our portable custom-session
+ * contract so consumers see the actual `/auth/get-session` payload without
+ * importing the worker runtime or auth instance.
+ */
+export type Session = CustomSessionFields<BetterAuthUser, BetterAuthSession>;

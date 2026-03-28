@@ -85,7 +85,7 @@ The `set-auth-token` response header carries refreshed tokens from the server. R
 The session response includes two custom fields beyond standard Better Auth:
 
 ```typescript
-type CustomSessionFields = {
+type CustomSessionExtraFields = {
   encryptionKey: string; // base64-encoded, per-user HKDF-derived key
   keyVersion: number;    // which encryption key generation was used
 };

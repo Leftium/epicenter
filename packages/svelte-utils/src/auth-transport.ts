@@ -29,6 +29,10 @@ type SignInEmailResult = Awaited<
 	ReturnType<BetterAuthClient['signIn']['email']>
 >;
 type SignInEmailData = NonNullable<SignInEmailResult['data']>;
+type SignUpEmailResult = Awaited<
+	ReturnType<BetterAuthClient['signUp']['email']>
+>;
+type SignUpEmailData = NonNullable<SignUpEmailResult['data']>;
 type SignInSocialResult = Awaited<
 	ReturnType<BetterAuthClient['signIn']['social']>
 >;
@@ -37,25 +41,12 @@ type CompletedSocialSignInData = Extract<
 	SignInSocialData,
 	{ token: string; user: User }
 >;
-type IssuedTokenPayload =
-	| GetSessionData
+type AuthCommandTokenPayload =
 	| SignInEmailData
+	| SignUpEmailData
 	| CompletedSocialSignInData
 	| null
 	| undefined;
-
-/**
- * Epicenter extends Better Auth's session payload with an optional encrypted
- * workspace key. Better Auth's generated client types do not know about this
- * field, so we keep the cast isolated to one helper instead of letting
- * `encryptionKey` access leak through the transport flow.
- *
- * This should go away if the field is ever modeled through a Better Auth plugin
- * or another typed client extension point.
- */
-type EpicenterSessionData = GetSessionData & {
-	encryptionKey?: string | null;
-};
 
 /**
  * Create the shared Better Auth transport used by Epicenter apps.
@@ -67,49 +58,42 @@ type EpicenterSessionData = GetSessionData & {
  */
 export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 	function createClientSession(authToken: string | null) {
-		let issuedToken: string | null | undefined;
-		function getCurrentToken() {
-			return issuedToken === undefined ? authToken : issuedToken;
-		}
+		const bearerToken = createBearerTokenState(authToken);
 
 		const client = createAuthClient({
-			baseURL: resolveBaseURL(baseURL),
+			baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
 			basePath: '/auth',
 			fetchOptions: {
 				auth: {
 					type: 'Bearer',
-					token: () => getCurrentToken() ?? undefined,
+					token: () => bearerToken.getCurrentToken() ?? undefined,
 				},
 				onSuccess: ({ response }) => {
-					const nextToken = response.headers.get('set-auth-token');
-					if (nextToken !== null) {
-						issuedToken = nextToken || null;
-					}
+					bearerToken.rememberTokenFromHeaders(response);
 				},
 			},
 		});
 
 		return {
 			client,
-			getIssuedToken(payload?: IssuedTokenPayload) {
-				const payloadToken = readAuthToken(payload);
-				if (payloadToken !== null) {
-					issuedToken = payloadToken;
-				}
-
-				return getCurrentToken() ?? null;
-			},
+			bearerToken,
 		};
 	}
 
 	async function resolveSessionWithToken(
 		authToken: string | null,
 	): Promise<SessionResolution> {
-		const { client, getIssuedToken } = createClientSession(authToken);
+		const { client, bearerToken } = createClientSession(authToken);
 		const { data, error } = await client.getSession();
 
 		if (error) {
-			const status = getErrorStatus(error);
+			const status =
+				typeof error === 'object' &&
+				error !== null &&
+				'status' in error &&
+				typeof error.status === 'number'
+					? error.status
+					: undefined;
 
 			return status !== undefined && status < 500
 				? { status: 'anonymous' }
@@ -118,15 +102,20 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 
 		if (!data) return { status: 'anonymous' };
 
-		const token = getIssuedToken(data);
-		if (!token) {
-			throw new Error('Authenticated session is missing bearer token');
-		}
+		bearerToken.rememberTokenFromSessionPayload(data);
 
 		return {
 			status: 'authenticated',
-			token,
-			user: toStoredUser(data.user),
+			token: bearerToken.requireAuthenticatedToken(),
+			user: {
+				id: data.user.id,
+				createdAt: data.user.createdAt.toISOString(),
+				updatedAt: data.user.updatedAt.toISOString(),
+				email: data.user.email,
+				emailVerified: data.user.emailVerified,
+				name: data.user.name,
+				image: data.user.image,
+			} satisfies StoredUser,
 			userKeyBase64: readEpicenterUserKeyBase64(data),
 		};
 	}
@@ -150,13 +139,14 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			email: string;
 			password: string;
 		}): Promise<SessionResolution> {
-			const { client, getIssuedToken } = createClientSession(null);
+			const { client, bearerToken } = createClientSession(null);
 			const { data, error } = await client.signIn.email(input);
 			if (error) {
 				throw error;
 			}
 
-			return await resolveSessionWithToken(getIssuedToken(data));
+			bearerToken.rememberTokenFromAuthCommandPayload(data);
+			return await resolveSessionWithToken(bearerToken.getCurrentToken());
 		},
 
 		/**
@@ -167,13 +157,14 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			password: string;
 			name: string;
 		}): Promise<SessionResolution> {
-			const { client, getIssuedToken } = createClientSession(null);
+			const { client, bearerToken } = createClientSession(null);
 			const { data, error } = await client.signUp.email(input);
 			if (error) {
 				throw error;
 			}
 
-			return await resolveSessionWithToken(getIssuedToken(data));
+			bearerToken.rememberTokenFromAuthCommandPayload(data);
+			return await resolveSessionWithToken(bearerToken.getCurrentToken());
 		},
 
 		/**
@@ -224,7 +215,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			idToken: string;
 			nonce: string;
 		}): Promise<SessionResolution> {
-			const { client, getIssuedToken } = createClientSession(null);
+			const { client, bearerToken } = createClientSession(null);
 			const { data, error } = await client.signIn.social({
 				provider: 'google',
 				idToken: { token: idToken, nonce },
@@ -234,71 +225,76 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 				throw new Error('Unexpected response from server');
 			}
 
-			return await resolveSessionWithToken(getIssuedToken(data));
+			bearerToken.rememberTokenFromAuthCommandPayload(data);
+			return await resolveSessionWithToken(bearerToken.getCurrentToken());
 		},
 	};
 }
 
-function toStoredUser(user: User): StoredUser {
+function createBearerTokenState(authToken: string | null) {
+	let currentToken: string | null | undefined;
+
+	function getCurrentToken() {
+		return currentToken === undefined ? authToken : currentToken;
+	}
+
 	return {
-		id: user.id,
-		createdAt: toISOString(user.createdAt),
-		updatedAt: toISOString(user.updatedAt),
-		email: user.email,
-		emailVerified: user.emailVerified,
-		name: user.name,
-		image: user.image,
+		getCurrentToken,
+		rememberTokenFromHeaders(response: Response) {
+			const nextToken = response.headers.get('set-auth-token');
+			if (nextToken !== null) {
+				currentToken = nextToken || null;
+			}
+		},
+		rememberTokenFromSessionPayload(data: GetSessionData) {
+			currentToken = data.session.token;
+		},
+		rememberTokenFromAuthCommandPayload(data?: AuthCommandTokenPayload) {
+			const nextToken = readAuthCommandToken(data);
+			if (nextToken !== null) {
+				currentToken = nextToken;
+			}
+		},
+		requireAuthenticatedToken() {
+			const token = getCurrentToken();
+			if (!token) {
+				throw new Error('Authenticated session is missing bearer token');
+			}
+
+			return token;
+		},
 	};
-}
-
-function getErrorStatus(error: unknown): number | undefined {
-	if (
-		typeof error === 'object' &&
-		error !== null &&
-		'status' in error &&
-		typeof error.status === 'number'
-	) {
-		return error.status;
-	}
-
-	return undefined;
-}
-
-function readAuthToken(value: unknown): string | null {
-	if (
-		typeof value === 'object' &&
-		value !== null &&
-		'session' in value &&
-		typeof value.session === 'object' &&
-		value.session !== null &&
-		'token' in value.session &&
-		typeof value.session.token === 'string'
-	) {
-		return value.session.token;
-	}
-
-	if (
-		typeof value === 'object' &&
-		value !== null &&
-		'token' in value &&
-		typeof value.token === 'string'
-	) {
-		return value.token;
-	}
-
-	return null;
 }
 
 function readEpicenterUserKeyBase64(
 	data: GetSessionData,
 ): string | null | undefined {
-	return (data as EpicenterSessionData).encryptionKey;
+	return (data as GetSessionData & { encryptionKey?: string | null }).encryptionKey;
 }
 
-function toISOString(value: Date | string): string {
-	return value instanceof Date ? value.toISOString() : value;
-}
+function readAuthCommandToken(
+	data?: AuthCommandTokenPayload,
+): string | null {
+	if (
+		typeof data === 'object' &&
+		data !== null &&
+		'token' in data &&
+		typeof data.token === 'string'
+	) {
+		return data.token;
+	}
 
-function resolveBaseURL(baseURL: BaseURL): string {
-	return typeof baseURL === 'function' ? baseURL() : baseURL;
+	if (
+		typeof data === 'object' &&
+		data !== null &&
+		'session' in data &&
+		typeof data.session === 'object' &&
+		data.session !== null &&
+		'token' in data.session &&
+		typeof data.session.token === 'string'
+	) {
+		return data.session.token;
+	}
+
+	return null;
 }

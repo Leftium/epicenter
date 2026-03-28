@@ -30,6 +30,7 @@ import { createAutumn } from './autumn';
 import { billing } from './billing';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
+import type { CustomSessionFields } from './custom-session-fields';
 
 export { DocumentRoom } from './document-room';
 // Re-export so wrangler types generates DurableObjectNamespace<WorkspaceRoom|DocumentRoom>
@@ -217,7 +218,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 /** Creates a Better Auth instance using an already-connected Drizzle instance. */
 function createAuth({ db, env, baseURL }: { db: Db; env: Env['Bindings']; baseURL: string }) {
-	return betterAuth({
+	const authOptionsBase = {
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg' }),
 		baseURL,
@@ -228,56 +229,6 @@ function createAuth({ db, env, baseURL }: { db: Db; env: Env['Bindings']; baseUR
 				clientSecret: env.GOOGLE_CLIENT_SECRET,
 			},
 		},
-		plugins: [
-			bearer(),
-			jwt(),
-			customSession(async ({ user, session }) => {
-				const encryptionKey = await deriveUserKey(currentKey.secret, user.id);
-				return {
-					user,
-					session,
-					encryptionKey: bytesToBase64(encryptionKey),
-					keyVersion: currentKey.version,
-				};
-			}),
-			deviceAuthorization({
-				verificationUri: '/device',
-				expiresIn: '10m',
-				interval: '5s',
-			}),
-			oauthProvider({
-				loginPage: '/sign-in',
-				consentPage: '/consent',
-				requirePKCE: true,
-				allowDynamicClientRegistration: false,
-				trustedClients: [
-					{
-						clientId: 'epicenter-desktop',
-						name: 'Epicenter Desktop',
-						type: 'native',
-						redirectUrls: ['tauri://localhost/auth/callback'],
-						skipConsent: true,
-						metadata: {},
-					},
-					{
-						clientId: 'epicenter-mobile',
-						name: 'Epicenter Mobile',
-						type: 'native',
-						redirectUrls: ['epicenter://auth/callback'],
-						skipConsent: true,
-						metadata: {},
-					},
-					{
-						clientId: 'epicenter-runner',
-						name: 'Epicenter Runner',
-						type: 'native',
-						redirectUrls: [],
-						skipConsent: true,
-						metadata: {},
-					},
-				],
-			}),
-		],
 		session: {
 			expiresIn: 60 * 60 * 24 * 7,
 			updateAge: 60 * 60 * 24,
@@ -322,6 +273,74 @@ function createAuth({ db, env, baseURL }: { db: Db; env: Env['Bindings']; baseUR
 				}),
 			delete: (key: string) => env.SESSION_KV.delete(key),
 		},
+	} satisfies Omit<BetterAuthOptions, 'plugins'>;
+
+	const bearerPlugin = bearer();
+	const jwtPlugin = jwt();
+	const deviceAuthorizationPlugin = deviceAuthorization({
+		verificationUri: '/device',
+		expiresIn: '10m',
+		interval: '5s',
+	});
+	const oauthProviderPlugin = oauthProvider({
+		loginPage: '/sign-in',
+		consentPage: '/consent',
+		requirePKCE: true,
+		allowDynamicClientRegistration: false,
+		trustedClients: [
+			{
+				clientId: 'epicenter-desktop',
+				name: 'Epicenter Desktop',
+				type: 'native',
+				redirectUrls: ['tauri://localhost/auth/callback'],
+				skipConsent: true,
+				metadata: {},
+			},
+			{
+				clientId: 'epicenter-mobile',
+				name: 'Epicenter Mobile',
+				type: 'native',
+				redirectUrls: ['epicenter://auth/callback'],
+				skipConsent: true,
+				metadata: {},
+			},
+			{
+				clientId: 'epicenter-runner',
+				name: 'Epicenter Runner',
+				type: 'native',
+				redirectUrls: [],
+				skipConsent: true,
+				metadata: {},
+			},
+		],
+	});
+	const customSessionPlugin = customSession(async ({ user, session }) => {
+		const encryptionKey = await deriveUserKey(currentKey.secret, user.id);
+		return {
+			user,
+			session,
+			encryptionKey: bytesToBase64(encryptionKey),
+			keyVersion: currentKey.version,
+		} satisfies CustomSessionFields<typeof user, typeof session>;
+	}, {
+		...authOptionsBase,
+		plugins: [
+			bearerPlugin,
+			jwtPlugin,
+			deviceAuthorizationPlugin,
+			oauthProviderPlugin,
+		],
+	});
+
+	return betterAuth({
+		...authOptionsBase,
+		plugins: [
+			bearerPlugin,
+			jwtPlugin,
+			customSessionPlugin,
+			deviceAuthorizationPlugin,
+			oauthProviderPlugin,
+		],
 	});
 }
 

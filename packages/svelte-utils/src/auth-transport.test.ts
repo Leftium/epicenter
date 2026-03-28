@@ -91,8 +91,8 @@ function createAuthenticatedSessionPayload() {
 	return {
 		user: {
 			id: 'user-1',
-			createdAt: '2026-03-28T00:00:00.000Z',
-			updatedAt: '2026-03-28T00:00:00.000Z',
+			createdAt: new Date('2026-03-28T00:00:00.000Z'),
+			updatedAt: new Date('2026-03-28T00:00:00.000Z'),
 			email: 'braden@example.com',
 			emailVerified: true,
 			name: 'Braden',

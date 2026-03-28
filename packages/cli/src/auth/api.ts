@@ -24,9 +24,9 @@ const CLIENT_ID = 'epicenter-runner';
 // ─── Response types ──────────────────────────────────────────────────────────
 
 /** Derived from Better Auth's `$Infer` — always matches the actual API response. */
-import type { Session, SessionUser } from '@epicenter/api/types';
+import type { Session } from '@epicenter/api/types';
 
-export type { Session, SessionUser } from '@epicenter/api/types';
+export type { Session } from '@epicenter/api/types';
 
 /**
  * Response from `/auth/sign-in/email` with the bearer plugin active.
@@ -37,7 +37,7 @@ export type { Session, SessionUser } from '@epicenter/api/types';
 export type SignInResponse = {
 	token: string;
 	expiresAt: string;
-	user: SessionUser;
+	user: Session['user'];
 };
 
 export type DeviceCodeResponse = {

@@ -7,6 +7,7 @@ export {
 	createAuthSession,
 } from './auth-session.svelte.js';
 export {
+	AuthTransportError,
 	createAuthTransport,
 	type ResolveSession,
 	type SessionResolution,

@@ -3,8 +3,9 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type { ResolveSession, SessionResolution } from './auth-transport.js';
-import { type AuthOperation, type AuthSession, type AuthSessionStorage, readStatusCode } from './auth-types.js';
+import type { AuthTransportError, ResolveSession, SessionResolution } from './auth-transport.js';
+import type { Result } from 'wellcrafted/result';
+import { type AuthOperation, type AuthSession, type AuthSessionStorage } from './auth-types.js';
 
 type AuthCommandReason = 'sign-in' | 'sign-up' | 'google-sign-in';
 
@@ -61,13 +62,13 @@ export type AuthCommandHandlers = {
 	signIn?: (input: {
 		email: string;
 		password: string;
-	}) => Promise<SessionResolution>;
+	}) => Promise<Result<SessionResolution, AuthTransportError>>;
 	signUp?: (input: {
 		email: string;
 		password: string;
 		name: string;
-	}) => Promise<SessionResolution>;
-	signInWithGoogle?: () => Promise<SessionResolution>;
+	}) => Promise<Result<SessionResolution, AuthTransportError>>;
+	signInWithGoogle?: () => Promise<Result<SessionResolution, AuthTransportError>>;
 };
 
 export type CreateAuthSessionOptions = {
@@ -197,22 +198,29 @@ export function createAuthSession({
 	}
 
 	async function executeAuthCommand(
-		execute: () => Promise<SessionResolution>,
+		execute: () => Promise<Result<SessionResolution, AuthTransportError>>,
 		opts: {
 			reason: AuthCommandReason;
-			mapCatchError: (error: unknown) => AuthCommandError;
+			mapTransportError: (error: AuthTransportError) => AuthCommandError;
 		},
 	): Promise<AuthCommandResult> {
 		await initializeSession();
 		setOperation({ status: 'signing-in' });
 		try {
-			return await completeAuthCommand(await execute(), {
+			const result = await execute();
+			if (result.error) {
+				return {
+					session: storage.current,
+					error: opts.mapTransportError(result.error),
+				};
+			}
+			return await completeAuthCommand(result.data, {
 				reason: opts.reason,
 			});
 		} catch (error) {
 			return {
 				session: storage.current,
-				error: opts.mapCatchError(error),
+				error: mapUnexpectedFailure(opts.reason, error),
 			};
 		} finally {
 			setOperation({ status: 'idle' });
@@ -263,7 +271,7 @@ export function createAuthSession({
 			}
 			return executeAuthCommand(() => signIn(input), {
 				reason: 'sign-in',
-				mapCatchError: mapSignInFailure,
+				mapTransportError: mapSignInTransportError,
 			});
 		},
 
@@ -279,7 +287,8 @@ export function createAuthSession({
 			}
 			return executeAuthCommand(() => signUp(input), {
 				reason: 'sign-up',
-				mapCatchError: (error) => AuthCommandError.SignUpFailed({ cause: error }).error,
+				mapTransportError: (error) =>
+					AuthCommandError.SignUpFailed({ cause: error }).error,
 			});
 		},
 
@@ -295,7 +304,8 @@ export function createAuthSession({
 			}
 			return executeAuthCommand(() => signInWithGoogle(), {
 				reason: 'google-sign-in',
-				mapCatchError: mapGoogleSignInFailure,
+				mapTransportError: (error) =>
+					AuthCommandError.GoogleSignInFailed({ cause: error }).error,
 			});
 		},
 
@@ -352,41 +362,46 @@ function describeCommand(reason: AuthCommandReason): string {
 	}
 }
 
-function mapSignInFailure(error: unknown): AuthCommandError {
-	if (isInvalidCredentialsError(error)) {
+/**
+ * Map a typed transport error to the session layer's sign-in error.
+ *
+ * The transport already classified the raw Better Auth error, so we match on
+ * variant names instead of doing structural reads on unknown objects.
+ */
+function mapSignInTransportError(error: AuthTransportError): AuthCommandError {
+	if (error.name === 'InvalidCredentials') {
 		return AuthCommandError.InvalidCredentials().error;
 	}
-
 	return AuthCommandError.SignInFailed({ cause: error }).error;
 }
 
-function mapGoogleSignInFailure(error: unknown): AuthCommandError {
-	if (isCancelledGoogleSignIn(error)) {
-		return AuthCommandError.GoogleSignInCancelled().error;
+/**
+ * Fallback for truly unexpected thrown errors (not transport Results).
+ *
+ * This handles pre-transport failures like `chrome.identity` cancellations
+ * that throw before the transport is ever called.
+ */
+function mapUnexpectedFailure(
+	reason: AuthCommandReason,
+	error: unknown,
+): AuthCommandError {
+	switch (reason) {
+		case 'sign-in':
+			return AuthCommandError.SignInFailed({ cause: error }).error;
+		case 'sign-up':
+			return AuthCommandError.SignUpFailed({ cause: error }).error;
+		case 'google-sign-in':
+			if (isCancelledGoogleSignIn(error)) {
+				return AuthCommandError.GoogleSignInCancelled().error;
+			}
+			return AuthCommandError.GoogleSignInFailed({ cause: error }).error;
 	}
-
-	return AuthCommandError.GoogleSignInFailed({ cause: error }).error;
 }
 
 function isCancelledGoogleSignIn(error: unknown): boolean {
 	if (!(error instanceof Error)) return false;
-
 	const message = error.message.toLowerCase();
 	return message.includes('canceled') || message.includes('cancelled');
-}
-
-function isInvalidCredentialsError(error: unknown): boolean {
-	const status = readStatusCode(error);
-	if (status === 401 || status === 403) {
-		return true;
-	}
-
-	const message = extractErrorMessage(error).toLowerCase();
-	return (
-		message.includes('invalid email or password') ||
-		message.includes('invalid credentials') ||
-		message.includes('invalid password')
-	);
 }
 
 function reportBackgroundAuthError(phase: 'refresh' | 'sign-out', error: unknown) {

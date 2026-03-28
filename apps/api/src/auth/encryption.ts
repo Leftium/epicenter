@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { type } from 'arktype';
-import type { EpicenterSessionFields } from './contracts';
+import type { WorkspaceKeyResponse } from './contracts';
 
 /**
  * Validated shape of a single keyring entry.
@@ -58,8 +58,12 @@ const EncryptionKeyring = type('string')
  * `cloudflare:workers` exposes `env` at module scope. Parsing here means a
  * malformed ENCRYPTION_SECRETS prevents the worker from loading at all rather
  * than failing on the first auth request.
+ *
+ * Destructured so `currentKeySecret` stays private and `currentKeyVersion`
+ * can be exported without exposing key material.
  */
-const currentKey = EncryptionKeyring.assert(env.ENCRYPTION_SECRETS)[0];
+const [{ version: currentKeyVersion, secret: currentKeySecret }] =
+	EncryptionKeyring.assert(env.ENCRYPTION_SECRETS);
 
 /**
  * Derive a per-user 32-byte encryption key via two-step HKDF-SHA256.
@@ -103,20 +107,13 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /**
- * Return the current key version for embedding in session responses.
+ * Current encryption key version—embed in session metadata so clients detect stale caches.
  *
- * Synchronous—no HKDF, no key material. Used by `customSession()` so every
- * `getSession()` call carries version metadata without crypto overhead.
+ * Synchronous constant, no crypto overhead. Used by `customSession()` so every
+ * `getSession()` call carries version metadata.
  */
-export function getKeyVersion(): EpicenterSessionFields {
-	return { keyVersion: currentKey.version };
-}
+export { currentKeyVersion };
 
-/** Response shape for `GET /workspace-key`. */
-export type WorkspaceKeyResponse = {
-	userKeyBase64: string;
-	keyVersion: number;
-};
 
 /**
  * Derive and return the full per-user encryption key for the workspace-key endpoint.
@@ -127,9 +124,9 @@ export type WorkspaceKeyResponse = {
 export async function deriveWorkspaceKey(
 	userId: string,
 ): Promise<WorkspaceKeyResponse> {
-	const userKey = await deriveUserKey(currentKey.secret, userId);
+	const userKey = await deriveUserKey(currentKeySecret, userId);
 	return {
 		userKeyBase64: bytesToBase64(userKey),
-		keyVersion: currentKey.version,
+		keyVersion: currentKeyVersion,
 	};
 }

@@ -9,3 +9,4 @@ export type {
 	EpicenterSessionFields,
 	EpicenterSessionResponse,
 } from './get-session';
+export type { WorkspaceKeyResponse } from './workspace-key';

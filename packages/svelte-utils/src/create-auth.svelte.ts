@@ -1,4 +1,7 @@
-import type { EpicenterSessionResponse } from '@epicenter/api/types';
+import type {
+	EpicenterSessionResponse,
+	WorkspaceKeyResponse,
+} from '@epicenter/api/types';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
 import { customSessionClient } from 'better-auth/client/plugins';
@@ -16,14 +19,11 @@ import {
 	type StoredUser,
 } from './auth-types.js';
 
+export type { WorkspaceKeyResponse };
+
 type BaseURL = string | (() => string);
 type AuthCommandReason = 'sign-in' | 'sign-up' | 'google-sign-in';
 
-/** Response shape from `GET /workspace-key`. */
-export type WorkspaceKeyResponse = {
-	userKeyBase64: string;
-	keyVersion: number;
-};
 
 /**
  * Local auth resolution result used by app state.

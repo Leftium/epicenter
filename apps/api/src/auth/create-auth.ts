@@ -11,7 +11,7 @@ import { createAutumn } from '../autumn';
 import type * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
 import type { EpicenterSessionResponse } from './contracts';
-import { getKeyVersion } from './encryption';
+import { currentKeyVersion } from './encryption';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -151,7 +151,7 @@ export function createAuth({
 			({
 				user,
 				session,
-				...getKeyVersion(),
+				keyVersion: currentKeyVersion,
 			}) satisfies EpicenterSessionResponse,
 		{
 			...authOptionsBase,

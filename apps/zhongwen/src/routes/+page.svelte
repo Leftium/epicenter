@@ -3,7 +3,6 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { onMount } from 'svelte';
 	import { chatState } from '$lib/chat/chat-state.svelte';
 	import ChatInput from '$lib/components/ChatInput.svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
@@ -19,9 +18,6 @@
 		authState.session.status === 'authenticated' ? authState.session.user : null,
 	);
 
-	onMount(() => {
-		void workspace.bootFromCache();
-	});
 
 	async function signInWithGoogle() {
 		await authState.signInWithGoogleRedirect({

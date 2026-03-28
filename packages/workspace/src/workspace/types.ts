@@ -1106,7 +1106,6 @@ export type WorkspaceEncryptionWithCache = WorkspaceEncryption & {
 	tryUnlock(): Promise<boolean>;
 };
 
-export type WorkspaceBootState = 'plaintext' | 'unlocked';
 
 /**
  * Product-level unlock helpers exposed when `.withEncryption()` is configured.
@@ -1125,20 +1124,12 @@ export type WorkspaceKeyAccess = {
  * Product-level startup helpers exposed when `.withEncryption({ userKeyCache })`
  * is configured.
  */
-export type WorkspaceKeyAccessWithCache = WorkspaceKeyAccess & {
-	/**
-	 * Boot the workspace from the cached user key when available.
-	 *
-	 * Returns `'unlocked'` when the cached key restored successfully, otherwise
-	 * `'plaintext'`.
-	 */
-	bootFromCache(): Promise<WorkspaceBootState>;
-};
+export type WorkspaceKeyAccessWithCache = WorkspaceKeyAccess;
 
 export type WorkspaceKeyAccessFor<
 	TConfig extends EncryptionConfig | undefined,
 > = TConfig extends EncryptionConfig
-	? WorkspaceKeyAccessWithCache
+	? WorkspaceKeyAccess
 	: WorkspaceKeyAccess;
 
 export type WorkspaceEncryptionFor<

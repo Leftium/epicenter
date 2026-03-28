@@ -17,10 +17,9 @@
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
-	import { registerDevice, workspace } from '$lib/workspace';
+	import { registerDevice } from '$lib/workspace';
 
 	onMount(() => {
-		void workspace.bootFromCache();
 		void registerDevice();
 	});
 

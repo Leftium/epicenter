@@ -304,7 +304,7 @@ export function createWorkspace<
 			}
 		};
 
-		const whenReady = Promise.all(state.whenReadyPromises)
+		let whenReady = Promise.all(state.whenReadyPromises)
 			.then(() => {})
 			.catch(async (err) => {
 				// If any extension's whenReady rejects, clean up everything
@@ -358,22 +358,20 @@ export function createWorkspace<
 					? encryptionRuntime.encryption
 					: null;
 
+			// Auto-boot: attempt unlock from cached key after all extensions
+			// are ready. Apps never need to call bootFromCache() manually.
+			if (encryptionWithCache) {
+				whenReady = whenReady.then(async () => {
+					await encryptionWithCache.tryUnlock();
+				});
+			}
+
 			Object.assign(client, {
 				encryption: encryptionRuntime.encryption,
 				async unlockWithKey(userKeyBase64: string) {
 					await whenReady;
 					await encryptionRuntime.encryption.unlock(base64ToBytes(userKeyBase64));
 				},
-				...(encryptionWithCache
-					? {
-							async bootFromCache() {
-								await whenReady;
-								return (await encryptionWithCache.tryUnlock())
-									? 'unlocked'
-									: 'plaintext';
-							},
-						}
-					: {}),
 			});
 		}
 

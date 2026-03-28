@@ -147,7 +147,7 @@ export function createAuth({
 	 * only carries the version so clients can detect stale caches.
 	 */
 	const customSessionPlugin = customSession(
-		({ user, session }) =>
+		async ({ user, session }) =>
 			({
 				user,
 				session,

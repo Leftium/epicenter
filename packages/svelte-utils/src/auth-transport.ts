@@ -1,9 +1,62 @@
-import type { BetterAuthOptions, User } from 'better-auth';
+import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
 import { customSessionClient } from 'better-auth/client/plugins';
 import type { customSession } from 'better-auth/plugins';
 import type { EpicenterSessionResponse } from '@epicenter/api/types';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { type AuthSession, type StoredUser, readStatusCode } from './auth-types.js';
+
+/**
+ * Typed errors for the auth transport layer.
+ *
+ * These wrap Better Auth's raw `BetterFetchError` at the transport boundary so
+ * callers can match on named variants instead of doing structural reads on
+ * unknown error objects.
+ */
+export const AuthTransportError = defineErrors({
+	InvalidCredentials: ({ cause }: { cause: unknown }) => ({
+		message: `Invalid email or password: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	RequestFailed: ({
+		status,
+		cause,
+	}: {
+		status: number;
+		cause: unknown;
+	}) => ({
+		message: `Auth request failed (${status}): ${extractErrorMessage(cause)}`,
+		status,
+		cause,
+	}),
+	UnexpectedError: ({ cause }: { cause: unknown }) => ({
+		message: `Unexpected auth error: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type AuthTransportError = InferErrors<typeof AuthTransportError>;
+
+/**
+ * Classify a raw Better Auth / better-fetch error into a typed transport error.
+ *
+ * Uses `readStatusCode` internally — the only place this structural read is
+ * needed. Callers get typed `AuthTransportError` variants instead.
+ */
+function classifyBetterAuthError(error: unknown): AuthTransportError {
+	const status = readStatusCode(error);
+	if (status === 401 || status === 403) {
+		return AuthTransportError.InvalidCredentials({ cause: error }).error;
+	}
+	if (status !== undefined) {
+		return AuthTransportError.RequestFailed({ status, cause: error }).error;
+	}
+	return AuthTransportError.UnexpectedError({ cause: error }).error;
+}
 
 /**
  * Compile-time bridge for `customSessionClient<T>()`.
@@ -45,30 +98,6 @@ export type SessionResolution =
 export type ResolveSession = (
 	current: AuthSession,
 ) => Promise<SessionResolution>;
-type BetterAuthClient = ReturnType<typeof createAuthClient>;
-type SignInEmailResult = Awaited<
-	ReturnType<BetterAuthClient['signIn']['email']>
->;
-type SignInEmailData = NonNullable<SignInEmailResult['data']>;
-type SignUpEmailResult = Awaited<
-	ReturnType<BetterAuthClient['signUp']['email']>
->;
-type SignUpEmailData = NonNullable<SignUpEmailResult['data']>;
-type SignInSocialResult = Awaited<
-	ReturnType<BetterAuthClient['signIn']['social']>
->;
-type SignInSocialData = NonNullable<SignInSocialResult['data']>;
-type CompletedSocialSignInData = Extract<
-	SignInSocialData,
-	{ token: string; user: User }
->;
-type AuthCommandTokenPayload =
-	| SignInEmailData
-	| SignUpEmailData
-	| CompletedSocialSignInData
-	| null
-	| undefined;
-
 /**
  * Create the shared Better Auth transport used by Epicenter apps.
  *
@@ -124,7 +153,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			},
 			async signInWithPassword(input: { email: string; password: string }) {
 				const result = await client.signIn.email(input);
-				bearerToken.rememberTokenFromAuthCommandPayload(result.data);
+				bearerToken.rememberTokenFromAuthCommand(result.data);
 				return result;
 			},
 			async signUpWithPassword(input: {
@@ -133,7 +162,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 				name: string;
 			}) {
 				const result = await client.signUp.email(input);
-				bearerToken.rememberTokenFromAuthCommandPayload(result.data);
+				bearerToken.rememberTokenFromAuthCommand(result.data);
 				return result;
 			},
 			async signOut() {
@@ -161,7 +190,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 					idToken: { token: idToken, nonce },
 				});
 				if (result.data && 'token' in result.data && 'user' in result.data) {
-					bearerToken.rememberTokenFromAuthCommandPayload(result.data);
+					bearerToken.rememberTokenFromAuthCommand(result.data);
 				}
 
 				return result;
@@ -219,14 +248,14 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		async signInWithPassword(input: {
 			email: string;
 			password: string;
-		}): Promise<SessionResolution> {
+		}): Promise<Result<SessionResolution, AuthTransportError>> {
 			const sessionClient = createBetterAuthSessionClient(null);
 			const { error } = await sessionClient.signInWithPassword(input);
-			if (error) {
-				throw error;
-			}
+			if (error) return Err(classifyBetterAuthError(error));
 
-			return await resolveSessionWithToken(sessionClient.getCurrentToken());
+			return Ok(
+				await resolveSessionWithToken(sessionClient.getCurrentToken()),
+			);
 		},
 
 		/**
@@ -236,14 +265,14 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			email: string;
 			password: string;
 			name: string;
-		}): Promise<SessionResolution> {
+		}): Promise<Result<SessionResolution, AuthTransportError>> {
 			const sessionClient = createBetterAuthSessionClient(null);
 			const { error } = await sessionClient.signUpWithPassword(input);
-			if (error) {
-				throw error;
-			}
+			if (error) return Err(classifyBetterAuthError(error));
 
-			return await resolveSessionWithToken(sessionClient.getCurrentToken());
+			return Ok(
+				await resolveSessionWithToken(sessionClient.getCurrentToken()),
+			);
 		},
 
 		/**
@@ -289,18 +318,24 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		}: {
 			idToken: string;
 			nonce: string;
-		}): Promise<SessionResolution> {
+		}): Promise<Result<SessionResolution, AuthTransportError>> {
 			const sessionClient = createBetterAuthSessionClient(null);
 			const { data, error } = await sessionClient.signInWithGoogleIdToken({
 				idToken,
 				nonce,
 			});
-			if (error) throw error;
+			if (error) return Err(classifyBetterAuthError(error));
 			if (!data || !('token' in data) || !('user' in data)) {
-				throw new Error('Unexpected response from server');
+				return Err(
+					AuthTransportError.UnexpectedError({
+						cause: new Error('Google sign-in response missing token or user'),
+					}).error,
+				);
 			}
 
-			return await resolveSessionWithToken(sessionClient.getCurrentToken());
+			return Ok(
+				await resolveSessionWithToken(sessionClient.getCurrentToken()),
+			);
 		},
 	};
 }
@@ -332,10 +367,14 @@ function createBearerTokenState(authToken: string | null) {
 		rememberTokenFromSessionPayload(data: { session: { token: string } }) {
 			currentToken = data.session.token;
 		},
-		rememberTokenFromAuthCommandPayload(data?: AuthCommandTokenPayload) {
-			const nextToken = readAuthCommandToken(data);
-			if (nextToken !== null) {
-				currentToken = nextToken;
+		rememberTokenFromAuthCommand(data: unknown) {
+			if (
+				typeof data === 'object' &&
+				data !== null &&
+				'token' in data &&
+				typeof data.token === 'string'
+			) {
+				currentToken = data.token;
 			}
 		},
 		requireAuthenticatedToken() {
@@ -349,27 +388,3 @@ function createBearerTokenState(authToken: string | null) {
 	};
 }
 
-function readAuthCommandToken(data?: AuthCommandTokenPayload): string | null {
-	if (
-		typeof data === 'object' &&
-		data !== null &&
-		'token' in data &&
-		typeof data.token === 'string'
-	) {
-		return data.token;
-	}
-
-	if (
-		typeof data === 'object' &&
-		data !== null &&
-		'session' in data &&
-		typeof data.session === 'object' &&
-		data.session !== null &&
-		'token' in data.session &&
-		typeof data.session.token === 'string'
-	) {
-		return data.session.token;
-	}
-
-	return null;
-}

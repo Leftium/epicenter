@@ -13,7 +13,6 @@ import { session } from '$lib/auth';
 import { definition } from './schema';
 import { userKeyCache } from './user-key-cache';
 
-let lastKeyVersion: number | undefined;
 
 export const workspace = createWorkspace(definition)
 	.withEncryption({ userKeyCache })
@@ -25,19 +24,9 @@ export const authState = createAuth({
 	session,
 	onSessionChange(next, prev) {
 		if (next.status === 'authenticated') {
-			if (next.keyVersion !== lastKeyVersion) {
-				authState
-					.fetchWorkspaceKey()
-					.then(({ userKeyBase64, keyVersion }) => {
-						workspace.unlockWithKey(userKeyBase64);
-						lastKeyVersion = keyVersion;
-					});
-			}
+			workspace.unlockWithKey(next.userKeyBase64);
 		}
-		if (
-			prev.status === 'authenticated' &&
-			next.status === 'anonymous'
-		) {
+		if (prev.status === 'authenticated' && next.status === 'anonymous') {
 			workspace.clearLocalData();
 		}
 	},

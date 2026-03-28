@@ -12,7 +12,6 @@ import { Bash } from 'just-bash';
 import { session } from '$lib/auth';
 import { userKeyCache } from '$lib/user-key-cache';
 
-let lastKeyVersion: number | undefined;
 
 /**
  * Opensidian workspace infrastructure.
@@ -44,20 +43,10 @@ export const authState = createAuth({
 	session,
 	onSessionChange(next, prev) {
 		if (next.status === 'authenticated') {
-			if (next.keyVersion !== lastKeyVersion) {
-				authState
-					.fetchWorkspaceKey()
-					.then(({ userKeyBase64, keyVersion }) => {
-						ws.unlockWithKey(userKeyBase64);
-						lastKeyVersion = keyVersion;
-					});
-			}
+			ws.unlockWithKey(next.userKeyBase64);
 			ws.extensions.sync.reconnect();
 		}
-		if (
-			prev.status === 'authenticated' &&
-			next.status === 'anonymous'
-		) {
+		if (prev.status === 'authenticated' && next.status === 'anonymous') {
 			ws.clearLocalData();
 			ws.extensions.sync.reconnect();
 		}

@@ -1,6 +1,5 @@
 import { env } from 'cloudflare:workers';
 import { type } from 'arktype';
-import type { WorkspaceKeyResponse } from './contracts';
 
 /**
  * Validated shape of a single keyring entry.
@@ -116,14 +115,14 @@ export { currentKeyVersion };
 
 
 /**
- * Derive and return the full per-user encryption key for the workspace-key endpoint.
+ * Derive and return the per-user encryption key.
  *
- * Called once per sign-in or when a client detects a stale cached version—not on
- * every session refresh.
+ * Called by `customSession()` on every `/auth/get-session` response.
+ * HKDF derivation adds <0.1ms—negligible next to the network round-trip.
  */
 export async function deriveWorkspaceKey(
 	userId: string,
-): Promise<WorkspaceKeyResponse> {
+) {
 	const userKey = await deriveUserKey(currentKeySecret, userId);
 	return {
 		userKeyBase64: bytesToBase64(userKey),

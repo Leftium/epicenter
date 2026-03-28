@@ -10,5 +10,4 @@ export {
 	type AuthSessionEvent,
 	type CreateAuthOptions,
 	createAuth,
-	type WorkspaceKeyResponse,
 } from './create-auth.svelte.js';

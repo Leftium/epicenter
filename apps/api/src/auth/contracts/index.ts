@@ -6,4 +6,3 @@
  * and server runtime wiring belongs next to the auth factory.
  */
 export type { SessionResponse } from './get-session';
-export type { WorkspaceKeyResponse } from './workspace-key';

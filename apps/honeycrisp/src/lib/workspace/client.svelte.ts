@@ -16,7 +16,6 @@ import { session } from '$lib/auth';
 import { userKeyCache } from './user-key-cache';
 import { honeycrisp } from './schema';
 
-let lastKeyVersion: number | undefined;
 
 const workspace = createWorkspace(honeycrisp)
 	.withEncryption({ userKeyCache })
@@ -37,20 +36,10 @@ export const authState = createAuth({
 	session,
 	onSessionChange(next, prev) {
 		if (next.status === 'authenticated') {
-			if (next.keyVersion !== lastKeyVersion) {
-				authState
-					.fetchWorkspaceKey()
-					.then(({ userKeyBase64, keyVersion }) => {
-						workspace.unlockWithKey(userKeyBase64);
-						lastKeyVersion = keyVersion;
-					});
-			}
+			workspace.unlockWithKey(next.userKeyBase64);
 			workspace.extensions.sync.reconnect();
 		}
-		if (
-			prev.status === 'authenticated' &&
-			next.status === 'anonymous'
-		) {
+		if (prev.status === 'authenticated' && next.status === 'anonymous') {
 			workspace.clearLocalData();
 			workspace.extensions.sync.reconnect();
 		}

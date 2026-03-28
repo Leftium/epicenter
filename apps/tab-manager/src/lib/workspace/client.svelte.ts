@@ -42,7 +42,6 @@ import { definition, generateSavedTabId } from './schema';
 
 export const workspace = buildWorkspaceClient();
 
-let lastKeyVersion: number | undefined;
 
 export const authState = createAuth({
 	baseURL: authBaseURL,
@@ -50,20 +49,10 @@ export const authState = createAuth({
 	signInWithGoogle: getGoogleCredentials,
 	onSessionChange(next, prev) {
 		if (next.status === 'authenticated') {
-			if (next.keyVersion !== lastKeyVersion) {
-				authState
-					.fetchWorkspaceKey()
-					.then(({ userKeyBase64, keyVersion }) => {
-						workspace.unlockWithKey(userKeyBase64);
-						lastKeyVersion = keyVersion;
-					});
-			}
+			workspace.unlockWithKey(next.userKeyBase64);
 			workspace.extensions.sync.reconnect();
 		}
-		if (
-			prev.status === 'authenticated' &&
-			next.status === 'anonymous'
-		) {
+		if (prev.status === 'authenticated' && next.status === 'anonymous') {
 			workspace.clearLocalData();
 			workspace.extensions.sync.reconnect();
 		}

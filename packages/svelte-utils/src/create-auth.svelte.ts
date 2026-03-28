@@ -1,7 +1,4 @@
-import type {
-	SessionResponse,
-	WorkspaceKeyResponse,
-} from '@epicenter/api/types';
+import type { SessionResponse } from '@epicenter/api/types';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
 import { customSessionClient } from 'better-auth/client/plugins';
@@ -20,7 +17,6 @@ import {
 	type StoredUser,
 } from './auth-types.js';
 
-export type { WorkspaceKeyResponse };
 
 type BaseURL = string | (() => string);
 
@@ -55,9 +51,10 @@ export type AuthFetch = (
 /**
  * Extended session state passed to the `onSessionChange` callback.
  *
- * Includes `keyVersion` from BA's session data so apps can decide whether
- * to fetch a new workspace key. The persisted box (`session.current`) stores
- * the simpler `AuthSession` without `keyVersion`.
+ * Includes `userKeyBase64` from the enriched session response so apps can
+ * call `workspace.unlockWithKey()` directly—no separate fetch or version
+ * tracking needed. The persisted box (`session.current`) stores the simpler
+ * `AuthSession` without key material.
  */
 export type AuthSessionEvent =
 	| {
@@ -65,6 +62,7 @@ export type AuthSessionEvent =
 			token: string;
 			user: StoredUser;
 			keyVersion: number;
+			userKeyBase64: string;
 	  }
 	| { status: 'anonymous' };
 
@@ -87,7 +85,6 @@ export type AuthClient = {
 	signInWithGoogleRedirect(options: { callbackURL: string }): Promise<void>;
 
 	fetch: AuthFetch;
-	fetchWorkspaceKey(): Promise<WorkspaceKeyResponse>;
 };
 
 export type CreateAuthOptions = {
@@ -165,6 +162,7 @@ export function createAuth({
 						token,
 						user,
 						keyVersion: state.data.keyVersion,
+						userKeyBase64: state.data.userKeyBase64,
 					},
 					prev,
 				);
@@ -277,16 +275,6 @@ export function createAuth({
 
 		fetch: authFetch,
 
-		async fetchWorkspaceKey() {
-			const url = typeof baseURL === 'function' ? baseURL() : baseURL;
-			const response = await authFetch(`${url}/workspace-key`);
-			if (!response.ok) {
-				throw new Error(
-					`Failed to fetch workspace key: ${response.status}`,
-				);
-			}
-			return response.json() as Promise<WorkspaceKeyResponse>;
-		},
 	};
 }
 

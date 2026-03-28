@@ -11,7 +11,7 @@ import { createAutumn } from '../autumn';
 import type * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
 import type { SessionResponse } from './contracts';
-import { currentKeyVersion } from './encryption';
+import { currentKeyVersion, deriveWorkspaceKey } from './encryption';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -141,18 +141,22 @@ export function createAuth({
 		}),
 	];
 	/**
-	 * Enrich `/auth/get-session` responses with the current key version.
+	 * Enrich `/auth/get-session` responses with key version and derived key.
 	 *
-	 * Key material is served separately by `GET /workspace-key`—the session
-	 * only carries the version so clients can detect stale caches.
+	 * HKDF derivation adds <0.1ms—negligible next to the network round-trip.
+	 * Embedding the key here eliminates the separate `/workspace-key` endpoint
+	 * and all client-side version tracking.
 	 */
 	const customSessionPlugin = customSession(
-		async ({ user, session }) =>
-			({
+		async ({ user, session }) => {
+			const { userKeyBase64, keyVersion } = await deriveWorkspaceKey(user.id);
+			return {
 				user,
 				session,
-				keyVersion: currentKeyVersion,
-			}) satisfies SessionResponse,
+				keyVersion,
+				userKeyBase64,
+			} satisfies SessionResponse;
+		},
 		{
 			...authOptionsBase,
 			plugins: basePlugins,

@@ -13,7 +13,6 @@ import { describeRoute } from 'hono-openapi';
 import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
 import { createAuth } from './auth/create-auth';
-import { deriveWorkspaceKey } from './auth/encryption';
 import {
 	renderConsentPage,
 	renderDevicePage,
@@ -283,16 +282,6 @@ app.use('/documents/*', authGuard);
 app.use('/billing', authGuard);
 app.use('/billing/*', authGuard);
 
-// Workspace encryption key — fetched once per sign-in or when cached version is stale
-app.get(
-	'/workspace-key',
-	describeRoute({
-		description: 'Derive the per-user workspace encryption key',
-		tags: ['auth'],
-	}),
-	authGuard,
-	async (c) => c.json(await deriveWorkspaceKey(c.var.user.id)),
-);
 // Billing — server-rendered Hono JSX billing page
 app.route('/billing', billing);
 

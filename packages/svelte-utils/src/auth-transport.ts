@@ -57,9 +57,8 @@ type AuthCommandTokenPayload =
  * the rest of the transport behavior consistent.
  */
 export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
-	function createClientSession(authToken: string | null) {
+	function createBetterAuthSessionClient(authToken: string | null) {
 		const bearerToken = createBearerTokenState(authToken);
-
 		const client = createAuthClient({
 			baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
 			basePath: '/auth',
@@ -75,16 +74,75 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		});
 
 		return {
-			client,
-			bearerToken,
+			getCurrentToken() {
+				return bearerToken.getCurrentToken();
+			},
+			requireAuthenticatedToken() {
+				return bearerToken.requireAuthenticatedToken();
+			},
+			async getSession() {
+				const result = await client.getSession();
+				if (result.data) {
+					bearerToken.rememberTokenFromSessionPayload(result.data);
+				}
+
+				return result;
+			},
+			async signInWithPassword(input: {
+				email: string;
+				password: string;
+			}) {
+				const result = await client.signIn.email(input);
+				bearerToken.rememberTokenFromAuthCommandPayload(result.data);
+				return result;
+			},
+			async signUpWithPassword(input: {
+				email: string;
+				password: string;
+				name: string;
+			}) {
+				const result = await client.signUp.email(input);
+				bearerToken.rememberTokenFromAuthCommandPayload(result.data);
+				return result;
+			},
+			async signOut() {
+				return await client.signOut();
+			},
+			async startGoogleSignInRedirect({
+				callbackURL,
+			}: {
+				callbackURL: string;
+			}) {
+				await client.signIn.social({
+					provider: 'google',
+					callbackURL,
+				});
+			},
+			async signInWithGoogleIdToken({
+				idToken,
+				nonce,
+			}: {
+				idToken: string;
+				nonce: string;
+			}) {
+				const result = await client.signIn.social({
+					provider: 'google',
+					idToken: { token: idToken, nonce },
+				});
+				if (result.data && 'token' in result.data && 'user' in result.data) {
+					bearerToken.rememberTokenFromAuthCommandPayload(result.data);
+				}
+
+				return result;
+			},
 		};
 	}
 
 	async function resolveSessionWithToken(
 		authToken: string | null,
 	): Promise<SessionResolution> {
-		const { client, bearerToken } = createClientSession(authToken);
-		const { data, error } = await client.getSession();
+		const sessionClient = createBetterAuthSessionClient(authToken);
+		const { data, error } = await sessionClient.getSession();
 
 		if (error) {
 			const status =
@@ -102,11 +160,9 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 
 		if (!data) return { status: 'anonymous' };
 
-		bearerToken.rememberTokenFromSessionPayload(data);
-
 		return {
 			status: 'authenticated',
-			token: bearerToken.requireAuthenticatedToken(),
+			token: sessionClient.requireAuthenticatedToken(),
 			user: {
 				id: data.user.id,
 				createdAt: data.user.createdAt.toISOString(),
@@ -139,14 +195,13 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			email: string;
 			password: string;
 		}): Promise<SessionResolution> {
-			const { client, bearerToken } = createClientSession(null);
-			const { data, error } = await client.signIn.email(input);
+			const sessionClient = createBetterAuthSessionClient(null);
+			const { error } = await sessionClient.signInWithPassword(input);
 			if (error) {
 				throw error;
 			}
 
-			bearerToken.rememberTokenFromAuthCommandPayload(data);
-			return await resolveSessionWithToken(bearerToken.getCurrentToken());
+			return await resolveSessionWithToken(sessionClient.getCurrentToken());
 		},
 
 		/**
@@ -157,14 +212,13 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			password: string;
 			name: string;
 		}): Promise<SessionResolution> {
-			const { client, bearerToken } = createClientSession(null);
-			const { data, error } = await client.signUp.email(input);
+			const sessionClient = createBetterAuthSessionClient(null);
+			const { error } = await sessionClient.signUpWithPassword(input);
 			if (error) {
 				throw error;
 			}
 
-			bearerToken.rememberTokenFromAuthCommandPayload(data);
-			return await resolveSessionWithToken(bearerToken.getCurrentToken());
+			return await resolveSessionWithToken(sessionClient.getCurrentToken());
 		},
 
 		/**
@@ -176,8 +230,8 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		async signOutRemote(current: AuthSession): Promise<void> {
 			if (current.status !== 'authenticated') return;
 
-			const { client } = createClientSession(current.token);
-			const { error } = await client.signOut();
+			const sessionClient = createBetterAuthSessionClient(current.token);
+			const { error } = await sessionClient.signOut();
 			if (error) {
 				throw error;
 			}
@@ -194,12 +248,8 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		}: {
 			callbackURL: string;
 		}): Promise<void> {
-			const { client } = createClientSession(null);
-
-			await client.signIn.social({
-				provider: 'google',
-				callbackURL,
-			});
+			const sessionClient = createBetterAuthSessionClient(null);
+			await sessionClient.startGoogleSignInRedirect({ callbackURL });
 		},
 
 		/**
@@ -215,18 +265,17 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 			idToken: string;
 			nonce: string;
 		}): Promise<SessionResolution> {
-			const { client, bearerToken } = createClientSession(null);
-			const { data, error } = await client.signIn.social({
-				provider: 'google',
-				idToken: { token: idToken, nonce },
+			const sessionClient = createBetterAuthSessionClient(null);
+			const { data, error } = await sessionClient.signInWithGoogleIdToken({
+				idToken,
+				nonce,
 			});
 			if (error) throw new Error(error.message ?? error.statusText);
 			if (!data || !('token' in data) || !('user' in data)) {
 				throw new Error('Unexpected response from server');
 			}
 
-			bearerToken.rememberTokenFromAuthCommandPayload(data);
-			return await resolveSessionWithToken(bearerToken.getCurrentToken());
+			return await resolveSessionWithToken(sessionClient.getCurrentToken());
 		},
 	};
 }

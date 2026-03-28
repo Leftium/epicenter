@@ -123,26 +123,18 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 
 	function extractCommandToken(data: unknown): string | null {
 		if (typeof data !== 'object' || data === null) return null;
-		if (
-			'token' in data &&
-			typeof (data as Record<string, unknown>).token === 'string'
-		) {
-			return (data as Record<string, unknown>).token as string;
+		if ('token' in data && typeof data.token === 'string') {
+			return data.token;
 		}
 		if (
 			'session' in data &&
-			typeof (data as Record<string, unknown>).session === 'object' &&
-			(data as Record<string, unknown>).session !== null
+			typeof data.session === 'object' &&
+			data.session !== null &&
+			'token' in data.session &&
+			typeof data.session.token === 'string'
 		) {
-			const session = (data as Record<string, unknown>).session as Record<
-				string,
-				unknown
-			>;
-			if ('token' in session && typeof session.token === 'string') {
-				return session.token;
-			}
+			return data.session.token;
 		}
-
 		return null;
 	}
 
@@ -182,6 +174,21 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		};
 	}
 
+	/**
+	 * Run an auth command (sign-in, sign-up, etc.) and resolve the resulting
+	 * session through the canonical getSession path.
+	 *
+	 * Every auth command follows the same pipeline: execute → extract token →
+	 * hydrate the full session. This function is that pipeline.
+	 */
+	async function commandThenResolve(
+		command: () => Promise<{ data: unknown; error: unknown }>,
+	): Promise<Result<SessionResolution, AuthTransportError>> {
+		const { data, error } = await command();
+		if (error) return classifyBetterAuthError(error);
+		return Ok(await resolveSessionWithToken(extractCommandToken(data)));
+	}
+
 	return {
 		/**
 		 * Refresh the remote auth session using the caller's current local token
@@ -197,32 +204,22 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		 * Sign in with email/password, then normalize the remote session using the
 		 * same resolution path as boot and refresh.
 		 */
-		async signInWithPassword(input: {
+		signInWithPassword(input: {
 			email: string;
 			password: string;
 		}): Promise<Result<SessionResolution, AuthTransportError>> {
-			const client = makeClient(null);
-			const { data, error } = await client.signIn.email(input);
-			if (error) return classifyBetterAuthError(error);
-			const token = extractCommandToken(data);
-
-			return Ok(await resolveSessionWithToken(token));
+			return commandThenResolve(() => makeClient(null).signIn.email(input));
 		},
 
 		/**
 		 * Create an account with email/password, then normalize the remote session.
 		 */
-		async signUpWithPassword(input: {
+		signUpWithPassword(input: {
 			email: string;
 			password: string;
 			name: string;
 		}): Promise<Result<SessionResolution, AuthTransportError>> {
-			const client = makeClient(null);
-			const { data, error } = await client.signUp.email(input);
-			if (error) return classifyBetterAuthError(error);
-			const token = extractCommandToken(data);
-
-			return Ok(await resolveSessionWithToken(token));
+			return commandThenResolve(() => makeClient(null).signUp.email(input));
 		},
 
 		/**
@@ -265,27 +262,19 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		 * This is used by the browser extension after `chrome.identity` completes
 		 * and needs to re-enter the shared session resolution path.
 		 */
-		async signInWithGoogleIdToken({
+		signInWithGoogleIdToken({
 			idToken,
 			nonce,
 		}: {
 			idToken: string;
 			nonce: string;
 		}): Promise<Result<SessionResolution, AuthTransportError>> {
-			const client = makeClient(null);
-			const { data, error } = await client.signIn.social({
-				provider: 'google',
-				idToken: { token: idToken, nonce },
-			});
-			if (error) return classifyBetterAuthError(error);
-			if (!data || !('token' in data) || !('user' in data)) {
-				return AuthTransportError.UnexpectedError({
-					cause: new Error('Google sign-in response missing token or user'),
-				});
-			}
-			const token = extractCommandToken(data);
-
-			return Ok(await resolveSessionWithToken(token));
+			return commandThenResolve(() =>
+				makeClient(null).signIn.social({
+					provider: 'google',
+					idToken: { token: idToken, nonce },
+				}),
+			);
 		},
 	};
 }

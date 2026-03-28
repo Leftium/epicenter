@@ -1,7 +1,7 @@
 import type { FileId, FileRow } from '@epicenter/filesystem';
 import { SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
-import { fs, ws } from '$lib/workspace';
+import { fs, workspace } from '$lib/workspace';
 
 /**
  * Interaction mode discriminated union.
@@ -54,7 +54,7 @@ function createFsState() {
 
 	// ── rAF-coalesced observer ────────────────────────────────────────
 	let pendingBump = false;
-	const unobserve = ws.tables.files.observe(() => {
+	const unobserve = workspace.tables.files.observe(() => {
 		if (!pendingBump) {
 			pendingBump = true;
 			requestAnimationFrame(() => {
@@ -76,7 +76,7 @@ function createFsState() {
 	const selectedNode = $derived.by(() => {
 		void version;
 		if (!activeFileId) return null;
-		const result = ws.tables.files.get(activeFileId);
+		const result = workspace.tables.files.get(activeFileId);
 		return result.status === 'valid' ? result.row : null;
 	});
 
@@ -180,7 +180,7 @@ function createFsState() {
 		 */
 		getRow(id: FileId): FileRow | null {
 			void version;
-			const result = ws.tables.files.get(id);
+			const result = workspace.tables.files.get(id);
 			return result.status === 'valid' ? result.row : null;
 		},
 
@@ -225,7 +225,7 @@ function createFsState() {
 			const results: T[] = [];
 			function walk(pid: FileId | null) {
 				for (const childId of fs.index.getChildIds(pid)) {
-					const result = ws.tables.files.get(childId);
+					const result = workspace.tables.files.get(childId);
 					if (result.status !== 'valid' || result.row.trashedAt !== null)
 						continue;
 					const { collect, descend } = visitor(childId, result.row);
@@ -390,7 +390,7 @@ function createFsState() {
 		 */
 		async readContent(id: FileId): Promise<string | null> {
 			try {
-				const handle = await ws.documents.files.content.open(id);
+				const handle = await workspace.documents.files.content.open(id);
 				return handle.read();
 			} catch (err) {
 				console.error('Failed to read content:', err);
@@ -406,7 +406,7 @@ function createFsState() {
 		 */
 		async writeContent(id: FileId, data: string): Promise<void> {
 			await withErrorToast(async () => {
-				const handle = await ws.documents.files.content.open(id);
+				const handle = await workspace.documents.files.content.open(id);
 				handle.write(data);
 			}, 'Failed to save file');
 		},

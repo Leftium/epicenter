@@ -3,7 +3,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import { fsState } from '$lib/state/fs-state.svelte';
-	import { ws } from '$lib/workspace';
+	import { workspace } from '$lib/workspace';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let {
@@ -17,7 +17,7 @@
 	$effect(() => {
 		const id = fileId;
 		handle = null;
-		ws.documents.files.content.open(id).then((h) => {
+		workspace.documents.files.content.open(id).then((h) => {
 			// Guard against race condition -- if file changed while loading, ignore
 			if (fsState.activeFileId !== id) return;
 			handle = h;

@@ -4,7 +4,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { authState } from '$lib/workspace.svelte';
+	import { auth } from '$lib/workspace';
 
 	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
 	let email = $state('');
@@ -13,7 +13,7 @@
 	let submitError = $state<string | null>(null);
 
 	const isSignUp = $derived(mode === 'sign-up');
-	const isBusy = $derived(authState.operation.status === 'signing-in');
+	const isBusy = $derived(auth.operation.status === 'signing-in');
 </script>
 
 <form
@@ -21,8 +21,8 @@
 		e.preventDefault();
 		submitError = null;
 		const { error } = isSignUp
-			? await authState.signUp({ email, password, name })
-			: await authState.signIn({ email, password });
+			? await auth.signUp({ email, password, name })
+			: await auth.signIn({ email, password });
 		if (error) submitError = error.message;
 	}}
 	class="w-full max-w-xs"
@@ -49,7 +49,7 @@
 			onclick={async () => {
 				submitError = null;
 				try {
-					await authState.signInWithGoogleRedirect({
+					await auth.signInWithGoogleRedirect({
 						callbackURL: window.location.origin,
 					});
 				} catch (error) {

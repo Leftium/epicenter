@@ -58,7 +58,7 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import AuthForm from '$lib/components/AuthForm.svelte';
-	import { auth, workspace } from '$lib/workspace';
+	import { auth } from '$lib/workspace';
 
 	const isSignedIn = $derived(auth.session.status === 'authenticated');
 	const currentUser = $derived(

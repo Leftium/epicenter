@@ -6,14 +6,14 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import AuthForm from '$lib/components/AuthForm.svelte';
-	import { authState } from '$lib/workspace.svelte';
+	import { auth } from '$lib/workspace';
 
-	const isSignedIn = $derived(authState.session.status === 'authenticated');
+	const isSignedIn = $derived(auth.session.status === 'authenticated');
 	const isChecking = $derived(
-		authState.operation.status === 'signing-in',
+		auth.operation.status === 'signing-in',
 	);
 	const currentUser = $derived(
-		authState.session.status === 'authenticated' ? authState.session.user : null,
+		auth.session.status === 'authenticated' ? auth.session.user : null,
 	);
 
 	let popoverOpen = $state(false);
@@ -45,7 +45,7 @@
 						size="sm"
 						class="w-full"
 						onclick={async () => {
-							await authState.signOut();
+						await auth.signOut();
 							popoverOpen = false;
 						}}
 					>

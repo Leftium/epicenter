@@ -11,8 +11,6 @@ import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Bash } from 'just-bash';
 import { session } from '$lib/auth';
 import { userKeyCache } from '$lib/user-key-cache';
-
-
 /**
  * Opensidian workspace infrastructure.
  *
@@ -20,7 +18,7 @@ import { userKeyCache } from '$lib/user-key-cache';
  * Imported by both fs-state.svelte.ts (for reactive wrappers) and
  * components that need direct infra access (Toolbar, ContentEditor).
  */
-export const ws = createWorkspace({
+export const workspace = createWorkspace({
 	id: 'opensidian',
 	tables: { files: filesTable },
 })
@@ -31,32 +29,32 @@ export const ws = createWorkspace({
 		createSyncExtension({
 			url: (workspaceId) => `${APP_URLS.API}/workspaces/${workspaceId}`,
 			getToken: async () =>
-				authState.session.status === 'authenticated'
-					? authState.session.token
+				auth.session.status === 'authenticated'
+					? auth.session.token
 					: null,
 		}),
 	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 
-export const authState = createAuth({
+export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
 	onSessionChange(next, prev) {
 		if (next.status === 'authenticated') {
-			ws.unlockWithKey(next.userKeyBase64);
-			ws.extensions.sync.reconnect();
+			workspace.unlockWithKey(next.userKeyBase64);
+			workspace.extensions.sync.reconnect();
 		}
 		if (prev.status === 'authenticated' && next.status === 'anonymous') {
-			ws.clearLocalData();
-			ws.extensions.sync.reconnect();
+			workspace.clearLocalData();
+			workspace.extensions.sync.reconnect();
 		}
 	},
 });
 
 /** Yjs-backed virtual filesystem with path-based operations. */
 export const fs = createYjsFileSystem(
-	ws.tables.files,
-	ws.documents.files.content,
+	workspace.tables.files,
+	workspace.documents.files.content,
 );
 
 /**

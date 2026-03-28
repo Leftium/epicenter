@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import type { AuthClient, AuthRefreshResult } from './auth-session.svelte.js';
 import type { AuthSession } from './auth-types.js';
-import type { WorkspaceKeyResponse } from './auth-transport.js';
+import type {
+	AuthClient,
+	AuthRefreshResult,
+	WorkspaceKeyResponse,
+} from './create-auth.svelte.js';
 import { createWorkspaceAuth } from './workspace-auth.svelte.js';
 
 describe('createWorkspaceAuth.refresh', () => {
@@ -12,13 +15,12 @@ describe('createWorkspaceAuth.refresh', () => {
 				session: authenticatedSession(),
 				keyVersion: 1,
 			},
+			fetchWorkspaceKey: createFakeFetchWorkspaceKey(),
 		});
-		const fetchWorkspaceKey = createFakeFetchWorkspaceKey();
 		let reconnectCalls = 0;
 		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
-			fetchWorkspaceKey,
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
@@ -40,7 +42,6 @@ describe('createWorkspaceAuth.refresh', () => {
 		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
-			fetchWorkspaceKey: createFakeFetchWorkspaceKey(),
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
@@ -59,14 +60,14 @@ describe('createWorkspaceAuth.refresh', () => {
 				session: authenticatedSession(),
 				keyVersion: 1,
 			},
-		});
-		const workspaceAuth = createWorkspaceAuth({
-			workspace,
-			auth,
 			fetchWorkspaceKey: async () => {
 				fetchCalls += 1;
 				return { userKeyBase64: 'AQIDBA==', keyVersion: 1 };
 			},
+		});
+		const workspaceAuth = createWorkspaceAuth({
+			workspace,
+			auth,
 		});
 
 		// First refresh — version is new, should fetch key
@@ -95,7 +96,6 @@ describe('createWorkspaceAuth.signIn', () => {
 		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
-			fetchWorkspaceKey: createFakeFetchWorkspaceKey(),
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
@@ -126,13 +126,12 @@ describe('createWorkspaceAuth.signInWithGoogle', () => {
 				session: authenticatedSession(),
 				keyVersion: 1,
 			},
+			fetchWorkspaceKey: createFakeFetchWorkspaceKey(),
 		});
-		const fetchWorkspaceKey = createFakeFetchWorkspaceKey();
 		let reconnectCalls = 0;
 		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
-			fetchWorkspaceKey,
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
@@ -158,7 +157,6 @@ describe('createWorkspaceAuth.signOut', () => {
 		const workspaceAuth = createWorkspaceAuth({
 			workspace,
 			auth,
-			fetchWorkspaceKey: createFakeFetchWorkspaceKey(),
 			reconnect: () => {
 				reconnectCalls += 1;
 			},
@@ -178,12 +176,14 @@ function createFakeAuth({
 	signInResult = { session: initialSession },
 	signUpResult = { session: initialSession },
 	signInWithGoogleResult = { session: initialSession },
+	fetchWorkspaceKey = createFakeFetchWorkspaceKey(),
 }: {
 	initialSession?: AuthSession;
 	refreshResult?: AuthRefreshResult;
 	signInResult?: Awaited<ReturnType<AuthClient['signIn']>>;
 	signUpResult?: Awaited<ReturnType<AuthClient['signUp']>>;
 	signInWithGoogleResult?: Awaited<ReturnType<AuthClient['signInWithGoogle']>>;
+	fetchWorkspaceKey?: () => Promise<WorkspaceKeyResponse>;
 } = {}): AuthClient & {
 	signInCalls: number;
 	signUpCalls: number;
@@ -230,6 +230,9 @@ function createFakeAuth({
 		async signOut() {
 			signOutCalls += 1;
 			session = { status: 'anonymous' };
+		},
+		async fetchWorkspaceKey() {
+			return await fetchWorkspaceKey();
 		},
 		fetch: fetch,
 		get signInCalls() {
@@ -297,6 +300,6 @@ function authenticatedSession(): Extract<AuthSession, { status: 'authenticated' 
 
 function createFakeFetchWorkspaceKey(
 	response: WorkspaceKeyResponse = { userKeyBase64: 'AQIDBA==', keyVersion: 1 },
-): (token: string) => Promise<WorkspaceKeyResponse> {
+): () => Promise<WorkspaceKeyResponse> {
 	return async () => response;
 }

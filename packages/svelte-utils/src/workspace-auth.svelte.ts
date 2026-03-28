@@ -3,8 +3,7 @@ import type {
 	AuthClient,
 	AuthCommandResult,
 	AuthRefreshResult,
-} from './auth-session.svelte.js';
-import type { WorkspaceKeyResponse } from './auth-transport.js';
+} from './create-auth.svelte.js';
 
 type WorkspaceBootWorkspace = {
 	bootFromCache(): Promise<'plaintext' | 'unlocked'>;
@@ -20,24 +19,28 @@ type WorkspaceAuthResult = AuthRefreshResult | AuthCommandResult;
  * The workspace contract is intentionally tiny: boot from local cache, unlock
  * when auth returns a user key, and wipe authenticated local data on sign-out.
  *
- * `fetchWorkspaceKey` is the bridge between auth identity (bearer token) and
- * workspace encryption (key material). It's called once after sign-in and only
- * again if the server reports a different `keyVersion` than the local cache.
+ * Workspace key fetches are driven by the auth client itself via
+ * `auth.fetchWorkspaceKey()`. This is called once after sign-in and only again
+ * if the server reports a different `keyVersion` than the local cache.
  */
 export type CreateWorkspaceAuthOptions = {
 	workspace: WorkspaceBootWorkspace;
 	auth: Pick<
 		AuthClient,
-		'refresh' | 'session' | 'signIn' | 'signUp' | 'signInWithGoogle' | 'signOut'
+		| 'refresh'
+		| 'session'
+		| 'signIn'
+		| 'signUp'
+		| 'signInWithGoogle'
+		| 'signOut'
+		| 'fetchWorkspaceKey'
 	>;
-	fetchWorkspaceKey: (token: string) => Promise<WorkspaceKeyResponse>;
 	reconnect?: () => void;
 };
 
 export function createWorkspaceAuth({
 	workspace,
 	auth,
-	fetchWorkspaceKey,
 	reconnect,
 }: CreateWorkspaceAuthOptions) {
 	/** Tracks the last key version we successfully unlocked with. */
@@ -71,11 +74,8 @@ export function createWorkspaceAuth({
 
 		// Version changed (or first boot) — fetch the actual key material
 		if (result.keyVersion !== undefined) {
-			const session = auth.session;
-			if (session.status !== 'authenticated') return;
-
 			try {
-				const { userKeyBase64, keyVersion } = await fetchWorkspaceKey(session.token);
+				const { userKeyBase64, keyVersion } = await auth.fetchWorkspaceKey();
 				await workspace.unlockWithKey(userKeyBase64);
 				lastKeyVersion = keyVersion;
 			} catch (error) {

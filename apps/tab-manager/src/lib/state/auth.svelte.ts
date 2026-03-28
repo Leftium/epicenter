@@ -1,19 +1,17 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Uses the shared auth transport + session store primitives with the extension's
- * two real seams: custom Google OAuth (`chrome.identity`) and chrome-backed
- * session persistence.
+ * Uses the shared auth client with the extension's two seams: custom Google
+ * OAuth (`chrome.identity`) and chrome-backed session persistence.
  *
- * @see {@link @epicenter/svelte/auth!createAuthSession} — session store
+ * @see {@link @epicenter/svelte/auth!createAuth} — unified auth client
  * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
  * @see {@link ./key-cache} — session-scoped user-key cache
  */
 
 import {
 	AuthSession,
-	createAuthTransport,
-	createAuthSession,
+	createAuth,
 } from '@epicenter/svelte/auth';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
@@ -29,11 +27,7 @@ const authSession = createStorageState('local:authSession', {
 
 const authBaseURL = () => remoteServerUrl.current;
 
-const authTransport = createAuthTransport({
-	baseURL: authBaseURL,
-});
-
-async function signInWithGoogleViaChromeIdentity() {
+async function getGoogleCredentials(): Promise<{ idToken: string; nonce: string }> {
 	const redirectUri = browser.identity.getRedirectURL();
 	const nonce = crypto.randomUUID();
 	const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -54,19 +48,11 @@ async function signInWithGoogleViaChromeIdentity() {
 	const idToken = params.get('id_token');
 	if (!idToken) throw new Error('No id_token in response');
 
-	return await authTransport.signInWithGoogleIdToken({
-		idToken,
-		nonce,
-	});
+	return { idToken, nonce };
 }
 
-export const authState = createAuthSession({
-	storage: authSession,
-	resolveSession: authTransport.resolveSession,
-	commands: {
-		signIn: authTransport.signInWithPassword,
-		signUp: authTransport.signUpWithPassword,
-		signInWithGoogle: signInWithGoogleViaChromeIdentity,
-	},
-	signOutRemote: authTransport.signOutRemote,
+export const authState = createAuth({
+	baseURL: authBaseURL,
+	session: authSession,
+	signInWithGoogle: getGoogleCredentials,
 });

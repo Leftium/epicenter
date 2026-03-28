@@ -455,9 +455,11 @@
       "name": "@epicenter/svelte",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/api": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
+        "idb": "^8.0.3",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -559,6 +561,7 @@
         "@ark/json-schema": "^0.0.4",
         "@epicenter/sync-client": "workspace:*",
         "@noble/ciphers": "^2.1.1",
+        "@noble/hashes": "^2.0.1",
         "@sindresorhus/slugify": "catalog:",
         "@standard-schema/spec": "catalog:",
         "@tursodatabase/database": "^0.3.2",

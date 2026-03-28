@@ -1,46 +1,28 @@
 import type { UserKeyCache } from '@epicenter/workspace';
+import { openDB, type DBSchema } from 'idb';
 
 const DB_NAME = 'epicenter-key-cache';
-const STORE_NAME = 'keys';
+const STORE_NAME = 'keys' as const;
+
+type KeyCacheDB = DBSchema & {
+	[K in typeof STORE_NAME]: {
+		key: string;
+		value: string;
+	};
+};
 
 /**
- * Open (or create) the shared IndexedDB database for key caching.
+ * Lazily open (or create) the shared IndexedDB database for key caching.
  *
  * The database has a single object store with no key path—entries are
  * keyed by the caller-provided `storageKey` string. Each app gets its
  * own key so multiple apps on the same origin don't collide.
  */
-function openDb(): Promise<IDBDatabase> {
-	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(DB_NAME, 1);
-		request.onupgradeneeded = () => {
-			request.result.createObjectStore(STORE_NAME);
-		};
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error);
-	});
-}
-
-/**
- * Run a single read or write transaction against the key cache store.
- *
- * Wraps the IndexedDB transaction lifecycle in a promise so callers
- * don't need to juggle `onsuccess`/`onerror`/`oncomplete` callbacks.
- */
-function withTransaction<T>(
-	mode: IDBTransactionMode,
-	fn: (store: IDBObjectStore) => IDBRequest<T>,
-): Promise<T> {
-	return openDb().then(
-		(db) =>
-			new Promise((resolve, reject) => {
-				const tx = db.transaction(STORE_NAME, mode);
-				const request = fn(tx.objectStore(STORE_NAME));
-				request.onsuccess = () => resolve(request.result);
-				tx.onerror = () => reject(tx.error);
-			}),
-	);
-}
+const dbPromise = openDB<KeyCacheDB>(DB_NAME, 1, {
+	upgrade(db) {
+		db.createObjectStore(STORE_NAME);
+	},
+});
 
 /**
  * Create a `UserKeyCache` backed by IndexedDB.
@@ -48,9 +30,6 @@ function withTransaction<T>(
  * Survives tab closes, page refreshes, and browser restarts—unlike
  * `sessionStorage` which clears when the tab closes. The key persists
  * until explicitly cleared (usually on sign-out).
- *
- * Uses raw IndexedDB (no `idb` library) since the cache only needs
- * three operations on a single key.
  *
  * @param storageKey - Unique key within the shared store, typically
  *   `'{appName}:encryption-key'` to avoid collisions across apps on
@@ -66,20 +45,16 @@ function withTransaction<T>(
 export function createIndexedDbKeyCache(storageKey: string): UserKeyCache {
 	return {
 		async save(userKeyBase64) {
-			await withTransaction('readwrite', (store) =>
-				store.put(userKeyBase64, storageKey),
-			);
+			const db = await dbPromise;
+			await db.put(STORE_NAME, userKeyBase64, storageKey);
 		},
 		async load() {
-			const value = await withTransaction('readonly', (store) =>
-				store.get(storageKey),
-			);
-			return typeof value === 'string' ? value : null;
+			const db = await dbPromise;
+			return (await db.get(STORE_NAME, storageKey)) ?? null;
 		},
 		async clear() {
-			await withTransaction('readwrite', (store) =>
-				store.delete(storageKey),
-			);
+			const db = await dbPromise;
+			await db.delete(STORE_NAME, storageKey);
 		},
 	};
 }

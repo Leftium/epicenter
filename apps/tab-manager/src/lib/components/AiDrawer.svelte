@@ -4,7 +4,7 @@
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import AiChat from '$lib/components/chat/AiChat.svelte';
 	import TrustSettings from '$lib/components/chat/TrustSettings.svelte';
-	import { authState } from '$lib/state/auth.svelte';
+	import { authState } from '$lib/workspace';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
 </script>

@@ -23,28 +23,6 @@ export type { WorkspaceKeyResponse };
 
 type BaseURL = string | (() => string);
 
-/**
- * Typed errors for the auth transport layer.
- *
- * These wrap Better Auth's raw `BetterFetchError` at the transport boundary so
- * callers can match on named variants instead of reading unknown error objects.
- */
-export const AuthTransportError = defineErrors({
-	InvalidCredentials: ({ cause }: { cause: unknown }) => ({
-		message: `Invalid email or password: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	RequestFailed: ({ status, cause }: { status: number; cause: unknown }) => ({
-		message: `Auth request failed (${status}): ${extractErrorMessage(cause)}`,
-		status,
-		cause,
-	}),
-	UnexpectedError: ({ cause }: { cause: unknown }) => ({
-		message: `Unexpected auth error: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-export type AuthTransportError = InferErrors<typeof AuthTransportError>;
 
 export const AuthCommandError = defineErrors({
 	InvalidCredentials: () => ({
@@ -300,16 +278,8 @@ export function createAuth({
 		fetch: authFetch,
 
 		async fetchWorkspaceKey() {
-			const token = getToken(session.current);
-			if (!token) {
-				throw new Error(
-					'Cannot fetch workspace key without an authenticated session.',
-				);
-			}
 			const url = typeof baseURL === 'function' ? baseURL() : baseURL;
-			const response = await fetch(`${url}/workspace-key`, {
-				headers: { Authorization: `Bearer ${token}` },
-			});
+			const response = await authFetch(`${url}/workspace-key`);
 			if (!response.ok) {
 				throw new Error(
 					`Failed to fetch workspace key: ${response.status}`,

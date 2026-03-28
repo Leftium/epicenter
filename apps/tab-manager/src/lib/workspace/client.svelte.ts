@@ -31,7 +31,7 @@ import {
 	authBaseURL,
 	authSession,
 	getGoogleCredentials,
-} from '$lib/state/auth.svelte';
+} from '$lib/state/auth';
 import { userKeyCache } from '$lib/state/key-cache';
 import { serverUrl } from '$lib/state/settings.svelte';
 import { definition, generateSavedTabId } from './schema';

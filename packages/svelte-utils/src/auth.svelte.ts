@@ -8,7 +8,6 @@ export {
 	AuthCommandError,
 	type AuthFetch,
 	type AuthSessionEvent,
-	AuthTransportError,
 	type CreateAuthOptions,
 	createAuth,
 	type WorkspaceKeyResponse,

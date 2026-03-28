@@ -37,8 +37,6 @@ export type AuthSession = typeof AuthSession.infer;
 /** Lifecycle state for long-running auth operations in UI code. */
 export type AuthOperation =
 	| { status: 'idle' }
-	| { status: 'bootstrapping' }
-	| { status: 'refreshing' }
 	| { status: 'signing-in' }
 	| { status: 'signing-out' };
 

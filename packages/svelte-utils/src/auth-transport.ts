@@ -295,7 +295,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 				idToken,
 				nonce,
 			});
-			if (error) throw new Error(error.message ?? error.statusText);
+			if (error) throw error;
 			if (!data || !('token' in data) || !('user' in data)) {
 				throw new Error('Unexpected response from server');
 			}

@@ -389,7 +389,6 @@ function isInvalidCredentialsError(error: unknown): boolean {
 	);
 }
 
-
 function reportBackgroundAuthError(phase: 'refresh' | 'sign-out', error: unknown) {
 	console.error(`[auth] ${phase} failed:`, error);
 }

@@ -8,5 +8,4 @@
 export type {
 	EpicenterSessionFields,
 	EpicenterSessionResponse,
-	GetSessionResponse,
 } from './get-session';

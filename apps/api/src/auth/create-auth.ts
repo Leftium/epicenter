@@ -1,6 +1,10 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { APPS } from '@epicenter/constants/apps';
-import { type BetterAuthOptions, betterAuth } from 'better-auth';
+import {
+	type BetterAuthOptions,
+	type BetterAuthPlugin,
+	betterAuth,
+} from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { customSession } from 'better-auth/plugins';
 import { bearer } from 'better-auth/plugins/bearer';
@@ -10,7 +14,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createAutumn } from '../autumn';
 import type * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
-import type { GetSessionResponse } from './contracts';
+import type { EpicenterSessionResponse } from './contracts';
 import { createSessionEncryptionFields } from './encryption';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -91,45 +95,7 @@ export function createAuth({
 		},
 	} satisfies Omit<BetterAuthOptions, 'plugins'>;
 
-	const bearerPlugin = bearer();
-	const jwtPlugin = jwt();
-	const deviceAuthorizationPlugin = deviceAuthorization({
-		verificationUri: '/device',
-		expiresIn: '10m',
-		interval: '5s',
-	});
-	const oauthProviderPlugin = oauthProvider({
-		loginPage: '/sign-in',
-		consentPage: '/consent',
-		requirePKCE: true,
-		allowDynamicClientRegistration: false,
-		trustedClients: [
-			{
-				clientId: 'epicenter-desktop',
-				name: 'Epicenter Desktop',
-				type: 'native',
-				redirectUrls: ['tauri://localhost/auth/callback'],
-				skipConsent: true,
-				metadata: {},
-			},
-			{
-				clientId: 'epicenter-mobile',
-				name: 'Epicenter Mobile',
-				type: 'native',
-				redirectUrls: ['epicenter://auth/callback'],
-				skipConsent: true,
-				metadata: {},
-			},
-			{
-				clientId: 'epicenter-runner',
-				name: 'Epicenter Runner',
-				type: 'native',
-				redirectUrls: [],
-				skipConsent: true,
-				metadata: {},
-			},
-		],
-	});
+	const basePlugins = createBaseAuthPlugins();
 	/**
 	 * Enrich `/auth/get-session` responses with the per-user encryption material
 	 * clients need to unlock workspace data after auth completes.
@@ -140,26 +106,65 @@ export function createAuth({
 				user,
 				session,
 				...(await createSessionEncryptionFields(user.id)),
-			}) satisfies GetSessionResponse<typeof user, typeof session>,
+			}) satisfies EpicenterSessionResponse,
 		{
 			...authOptionsBase,
-			plugins: [
-				bearerPlugin,
-				jwtPlugin,
-				deviceAuthorizationPlugin,
-				oauthProviderPlugin,
-			],
+			plugins: basePlugins,
 		},
 	);
 
 	return betterAuth({
 		...authOptionsBase,
-		plugins: [
-			bearerPlugin,
-			jwtPlugin,
-			customSessionPlugin,
-			deviceAuthorizationPlugin,
-			oauthProviderPlugin,
-		],
+		plugins: [...basePlugins, customSessionPlugin],
 	});
+}
+
+function createBaseAuthPlugins() {
+	return defineAuthPlugins(
+		bearer(),
+		jwt(),
+		deviceAuthorization({
+			verificationUri: '/device',
+			expiresIn: '10m',
+			interval: '5s',
+		}),
+		oauthProvider({
+			loginPage: '/sign-in',
+			consentPage: '/consent',
+			requirePKCE: true,
+			allowDynamicClientRegistration: false,
+			trustedClients: [
+				{
+					clientId: 'epicenter-desktop',
+					name: 'Epicenter Desktop',
+					type: 'native',
+					redirectUrls: ['tauri://localhost/auth/callback'],
+					skipConsent: true,
+					metadata: {},
+				},
+				{
+					clientId: 'epicenter-mobile',
+					name: 'Epicenter Mobile',
+					type: 'native',
+					redirectUrls: ['epicenter://auth/callback'],
+					skipConsent: true,
+					metadata: {},
+				},
+				{
+					clientId: 'epicenter-runner',
+					name: 'Epicenter Runner',
+					type: 'native',
+					redirectUrls: [],
+					skipConsent: true,
+					metadata: {},
+				},
+			],
+		}),
+	);
+}
+
+function defineAuthPlugins<TPlugins extends BetterAuthPlugin[]>(
+	...plugins: TPlugins
+) {
+	return plugins;
 }

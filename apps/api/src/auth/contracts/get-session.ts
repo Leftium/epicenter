@@ -28,22 +28,11 @@ export type EpicenterSessionFields = {
 };
 
 /**
- * Generic shape of Epicenter's enriched `getSession()` response.
- *
- * Server code plugs in concrete Better Auth `user` and `session` types, while
- * clients can compose the same contract without importing the auth instance.
- */
-export type GetSessionResponse<User = unknown, Session = unknown> = {
-	user: User;
-	session: Session;
-} & EpicenterSessionFields;
-
-/**
  * Canonical `/auth/get-session` response for Epicenter clients.
  *
  * Import from `@epicenter/api/types` rather than hand-writing the response.
  */
-export type EpicenterSessionResponse = GetSessionResponse<
-	BetterAuthUser,
-	BetterAuthSession
->;
+export type EpicenterSessionResponse = {
+	user: BetterAuthUser;
+	session: BetterAuthSession;
+} & EpicenterSessionFields;

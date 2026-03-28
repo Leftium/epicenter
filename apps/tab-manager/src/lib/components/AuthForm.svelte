@@ -20,7 +20,7 @@
 	onsubmit={async (e) => {
 		e.preventDefault();
 		submitError = null;
-		const error = isSignUp
+		const { error } = isSignUp
 			? await authState.signUp({ email, password, name })
 			: await authState.signIn({ email, password });
 		if (error) submitError = error.message;
@@ -48,7 +48,7 @@
 			disabled={isBusy}
 			onclick={async () => {
 				submitError = null;
-				const error = await authState.signInWithGoogle();
+				const { error } = await authState.signInWithGoogle();
 				if (error) submitError = error.message;
 			}}
 		>

@@ -20,7 +20,7 @@
 	onsubmit={async (e) => {
 		e.preventDefault();
 		submitError = null;
-		const error = isSignUp
+		const { error } = isSignUp
 			? await authState.signUp({ email, password, name })
 			: await authState.signIn({ email, password });
 		if (error) submitError = error.message;

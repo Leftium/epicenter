@@ -12,6 +12,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
+import { Ok, type Result } from 'wellcrafted/result';
 import {
 	type AuthOperation,
 	type AuthSession,
@@ -75,13 +76,13 @@ export type AuthClient = {
 	signIn(input: {
 		email: string;
 		password: string;
-	}): Promise<AuthCommandError | undefined>;
+	}): Promise<Result<undefined, AuthCommandError>>;
 	signUp(input: {
 		email: string;
 		password: string;
 		name: string;
-	}): Promise<AuthCommandError | undefined>;
-	signInWithGoogle(): Promise<AuthCommandError | undefined>;
+	}): Promise<Result<undefined, AuthCommandError>>;
+	signInWithGoogle(): Promise<Result<undefined, AuthCommandError>>;
 	signOut(): Promise<void>;
 	signInWithGoogleRedirect(options: { callbackURL: string }): Promise<void>;
 
@@ -178,9 +179,8 @@ export function createAuth({
 
 	const authFetch: AuthFetch = (input, init) => {
 		const headers = new Headers(init?.headers);
-		const token = getToken(session.current);
-		if (token) {
-			headers.set('Authorization', `Bearer ${token}`);
+		if (session.current.status === 'authenticated') {
+			headers.set('Authorization', `Bearer ${session.current.token}`);
 		}
 		return fetch(input, { ...init, headers, credentials: 'include' });
 	};
@@ -204,10 +204,13 @@ export function createAuth({
 			operation = { status: 'signing-in' };
 			try {
 				const { error } = await client.signIn.email(input);
-				if (error) return classifySignInError(error);
-				return undefined;
+				if (!error) return Ok(undefined);
+				const status = readStatusCode(error);
+				if (status === 401 || status === 403)
+					return AuthCommandError.InvalidCredentials();
+				return AuthCommandError.SignInFailed({ cause: error });
 			} catch (error) {
-				return AuthCommandError.SignInFailed({ cause: error }).error;
+				return AuthCommandError.SignInFailed({ cause: error });
 			} finally {
 				operation = { status: 'idle' };
 			}
@@ -217,11 +220,10 @@ export function createAuth({
 			operation = { status: 'signing-in' };
 			try {
 				const { error } = await client.signUp.email(input);
-				if (error)
-					return AuthCommandError.SignUpFailed({ cause: error }).error;
-				return undefined;
+				if (error) return AuthCommandError.SignUpFailed({ cause: error });
+				return Ok(undefined);
 			} catch (error) {
-				return AuthCommandError.SignUpFailed({ cause: error }).error;
+				return AuthCommandError.SignUpFailed({ cause: error });
 			} finally {
 				operation = { status: 'idle' };
 			}
@@ -231,7 +233,7 @@ export function createAuth({
 			if (!signInWithGoogleOption) {
 				return AuthCommandError.GoogleSignInFailed({
 					cause: new Error('Google sign-in is not configured.'),
-				}).error;
+				});
 			}
 
 			operation = { status: 'signing-in' };
@@ -242,14 +244,12 @@ export function createAuth({
 					idToken: { token: idToken, nonce },
 				});
 				if (error)
-					return AuthCommandError.GoogleSignInFailed({ cause: error })
-						.error;
-				return undefined;
+					return AuthCommandError.GoogleSignInFailed({ cause: error });
+				return Ok(undefined);
 			} catch (error) {
-				if (isCancelledGoogleSignIn(error)) {
-					return AuthCommandError.GoogleSignInCancelled().error;
-				}
-				return AuthCommandError.GoogleSignInFailed({ cause: error }).error;
+				if (isCancelledGoogleSignIn(error))
+					return AuthCommandError.GoogleSignInCancelled();
+				return AuthCommandError.GoogleSignInFailed({ cause: error });
 			} finally {
 				operation = { status: 'idle' };
 			}
@@ -310,17 +310,6 @@ function normalizeUser(user: {
 	};
 }
 
-function getToken(current: AuthSession): string | null {
-	return current.status === 'authenticated' ? current.token : null;
-}
-
-function classifySignInError(error: unknown): AuthCommandError {
-	const status = readStatusCode(error);
-	if (status === 401 || status === 403) {
-		return AuthCommandError.InvalidCredentials().error;
-	}
-	return AuthCommandError.SignInFailed({ cause: error }).error;
-}
 
 function isCancelledGoogleSignIn(error: unknown): boolean {
 	if (!(error instanceof Error)) return false;

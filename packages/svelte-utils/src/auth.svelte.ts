@@ -6,7 +6,6 @@ export {
 	type CreateAuthSessionOptions,
 	createAuthSession,
 } from './auth-session.svelte.js';
-export type { EpicenterAuthPluginShape } from './auth-client.js';
 export {
 	type AuthTransport,
 	createAuthTransport,

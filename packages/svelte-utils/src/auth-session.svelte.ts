@@ -324,7 +324,7 @@ export function createAuthSession({
 
 			try {
 				await signOutRemote?.(storage.current);
-			} catch {}
+			} catch { /* best-effort — local state resets regardless */ }
 
 			try {
 				await persistSession({ status: 'anonymous' });

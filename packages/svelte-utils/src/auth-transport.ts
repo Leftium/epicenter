@@ -1,8 +1,27 @@
-import type { User } from 'better-auth';
+import type { BetterAuthOptions, User } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
 import { customSessionClient } from 'better-auth/client/plugins';
-import type { EpicenterAuthPluginShape } from './auth-client.js';
+import type { customSession } from 'better-auth/plugins';
+import type { EpicenterSessionResponse } from '@epicenter/api/types';
 import type { AuthSession, StoredUser } from './auth-types.js';
+
+/**
+ * Compile-time bridge for `customSessionClient<T>()`.
+ *
+ * Better Auth's canonical pattern is `customSessionClient<typeof auth>()`, but
+ * `typeof auth` drags in server-only types (Drizzle, Cloudflare.Env) that client
+ * packages can't resolve. Instead we reconstruct the minimum type that
+ * `InferServerPlugin` actually inspects: an `options.plugins` array containing a
+ * plugin with `id: "custom-session"`. The plugin's return type is derived from
+ * `EpicenterSessionResponse`—the portable contract in `@epicenter/api/types`—so
+ * this adapter stays server-decoupled while producing the same type inference.
+ */
+type EpicenterCustomSessionPlugin = ReturnType<
+	typeof customSession<EpicenterSessionResponse, BetterAuthOptions>
+>;
+type EpicenterAuthPluginShape = {
+	options: { plugins: EpicenterCustomSessionPlugin[] };
+};
 
 type BaseURL = string | (() => string);
 
@@ -26,9 +45,6 @@ export type SessionResolution =
 export type ResolveSession = (
 	current: AuthSession,
 ) => Promise<SessionResolution>;
-
-export type AuthTransport = ReturnType<typeof createAuthTransport>;
-
 type BetterAuthClient = ReturnType<typeof createAuthClient>;
 type SignInEmailResult = Awaited<
 	ReturnType<BetterAuthClient['signIn']['email']>

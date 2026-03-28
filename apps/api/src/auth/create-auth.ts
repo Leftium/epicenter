@@ -91,7 +91,47 @@ export function createAuth({
 		},
 	} satisfies Omit<BetterAuthOptions, 'plugins'>;
 
-	const basePlugins = createBaseAuthPlugins();
+	const basePlugins = [
+		bearer(),
+		jwt(),
+		deviceAuthorization({
+			verificationUri: '/device',
+			expiresIn: '10m',
+			interval: '5s',
+		}),
+		oauthProvider({
+			loginPage: '/sign-in',
+			consentPage: '/consent',
+			requirePKCE: true,
+			allowDynamicClientRegistration: false,
+			trustedClients: [
+				{
+					clientId: 'epicenter-desktop',
+					name: 'Epicenter Desktop',
+					type: 'native',
+					redirectUrls: ['tauri://localhost/auth/callback'],
+					skipConsent: true,
+					metadata: {},
+				},
+				{
+					clientId: 'epicenter-mobile',
+					name: 'Epicenter Mobile',
+					type: 'native',
+					redirectUrls: ['epicenter://auth/callback'],
+					skipConsent: true,
+					metadata: {},
+				},
+				{
+					clientId: 'epicenter-runner',
+					name: 'Epicenter Runner',
+					type: 'native',
+					redirectUrls: [],
+					skipConsent: true,
+					metadata: {},
+				},
+			],
+		}),
+	];
 	/**
 	 * Enrich `/auth/get-session` responses with the per-user encryption material
 	 * clients need to unlock workspace data after auth completes.
@@ -113,48 +153,4 @@ export function createAuth({
 		...authOptionsBase,
 		plugins: [...basePlugins, customSessionPlugin],
 	});
-}
-
-function createBaseAuthPlugins() {
-  return [
-    bearer(),
-    jwt(),
-    deviceAuthorization({
-      verificationUri: '/device',
-      expiresIn: '10m',
-      interval: '5s',
-    }),
-    oauthProvider({
-      loginPage: '/sign-in',
-      consentPage: '/consent',
-      requirePKCE: true,
-      allowDynamicClientRegistration: false,
-      trustedClients: [
-        {
-          clientId: 'epicenter-desktop',
-          name: 'Epicenter Desktop',
-          type: 'native',
-          redirectUrls: ['tauri://localhost/auth/callback'],
-          skipConsent: true,
-          metadata: {},
-        },
-        {
-          clientId: 'epicenter-mobile',
-          name: 'Epicenter Mobile',
-          type: 'native',
-          redirectUrls: ['epicenter://auth/callback'],
-          skipConsent: true,
-          metadata: {},
-        },
-        {
-          clientId: 'epicenter-runner',
-          name: 'Epicenter Runner',
-          type: 'native',
-          redirectUrls: [],
-          skipConsent: true,
-          metadata: {},
-        },
-      ],
-    }),
-  ];
 }

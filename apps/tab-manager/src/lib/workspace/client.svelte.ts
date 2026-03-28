@@ -10,7 +10,7 @@
  */
 
 import { actionsToClientTools, toToolDefinitions } from '@epicenter/ai';
-import { createWorkspaceAuth } from '@epicenter/svelte/auth';
+import { createAuth } from '@epicenter/svelte/auth';
 import {
 	createWorkspace,
 	defineMutation,
@@ -27,7 +27,11 @@ import {
 	getBrowserName,
 	getDeviceId,
 } from '$lib/device/device-id';
-import { authState } from '$lib/state/auth.svelte';
+import {
+	authBaseURL,
+	authSession,
+	getGoogleCredentials,
+} from '$lib/state/auth.svelte';
 import { userKeyCache } from '$lib/state/key-cache';
 import { serverUrl } from '$lib/state/settings.svelte';
 import { definition, generateSavedTabId } from './schema';
@@ -37,10 +41,33 @@ import { definition, generateSavedTabId } from './schema';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const workspace = buildWorkspaceClient();
-export const workspaceAuth = createWorkspaceAuth({
-	workspace,
-	auth: authState,
-	reconnect: () => workspace.extensions.sync.reconnect(),
+
+let lastKeyVersion: number | undefined;
+
+export const authState = createAuth({
+	baseURL: authBaseURL,
+	session: authSession,
+	signInWithGoogle: getGoogleCredentials,
+	onSessionChange(next, prev) {
+		if (next.status === 'authenticated') {
+			if (next.keyVersion !== lastKeyVersion) {
+				authState
+					.fetchWorkspaceKey()
+					.then(({ userKeyBase64, keyVersion }) => {
+						workspace.unlockWithKey(userKeyBase64);
+						lastKeyVersion = keyVersion;
+					});
+			}
+			workspace.extensions.sync.reconnect();
+		}
+		if (
+			prev.status === 'authenticated' &&
+			next.status === 'anonymous'
+		) {
+			workspace.clearLocalData();
+			workspace.extensions.sync.reconnect();
+		}
+	},
 });
 
 export const workspaceTools = actionsToClientTools(workspace.actions);

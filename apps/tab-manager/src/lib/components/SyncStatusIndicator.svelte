@@ -58,8 +58,7 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import AuthForm from '$lib/components/AuthForm.svelte';
-	import { authState } from '$lib/state/auth.svelte';
-	import { workspace, workspaceAuth } from '$lib/workspace';
+	import { authState, workspace } from '$lib/workspace';
 
 	const isSignedIn = $derived(authState.session.status === 'authenticated');
 	const currentUser = $derived(
@@ -127,7 +126,7 @@
 						size="sm"
 						class="flex-1"
 						onclick={async () => {
-							await workspaceAuth.signOut();
+						await authState.signOut();
 							popoverOpen = false;
 						}}
 					>

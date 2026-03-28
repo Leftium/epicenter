@@ -6,12 +6,12 @@ import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient } from 'better-auth/client';
 import { customSessionClient } from 'better-auth/client/plugins';
 import type { customSession } from 'better-auth/plugins';
+import { createSubscriber } from 'svelte/reactivity';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
 import {
 	type AuthOperation,
 	type AuthSession,
@@ -22,25 +22,6 @@ import {
 export type { WorkspaceKeyResponse };
 
 type BaseURL = string | (() => string);
-type AuthCommandReason = 'sign-in' | 'sign-up' | 'google-sign-in';
-
-
-/**
- * Local auth resolution result used by app state.
- *
- * The canonical remote `/auth/get-session` contract is owned by the API. This
- * union is a separate layer that adds client flow states the API never returns
- * directly: anonymous and unchanged.
- */
-export type SessionResolution =
-	| {
-			status: 'authenticated';
-			token: string;
-			user: StoredUser;
-			keyVersion: number;
-	  }
-	| { status: 'anonymous' }
-	| { status: 'unchanged' };
 
 /**
  * Typed errors for the auth transport layer.
@@ -84,59 +65,47 @@ export const AuthCommandError = defineErrors({
 		message: `Failed to sign in with Google: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	SessionHydrationFailed: ({ reason }: { reason: AuthCommandReason }) => ({
-		message: `${describeCommand(reason)} completed, but the authenticated session could not be loaded.`,
-		reason,
-	}),
-	SessionCommitFailed: ({
-		reason,
-		cause,
-	}: {
-		reason: AuthCommandReason;
-		cause: unknown;
-	}) => ({
-		message: `${describeCommand(reason)} succeeded, but app session setup failed: ${extractErrorMessage(cause)}`,
-		reason,
-		cause,
-	}),
 });
 export type AuthCommandError = InferErrors<typeof AuthCommandError>;
-
-export type AuthRefreshResult = {
-	session: AuthSession;
-	keyVersion?: number;
-};
-
-export type AuthCommandResult =
-	| AuthRefreshResult
-	| {
-			session: AuthSession;
-			error: AuthCommandError;
-	  };
 
 export type AuthFetch = (
 	input: RequestInfo | URL,
 	init?: RequestInit,
 ) => Promise<Response>;
 
+/**
+ * Extended session state passed to the `onSessionChange` callback.
+ *
+ * Includes `keyVersion` from BA's session data so apps can decide whether
+ * to fetch a new workspace key. The persisted box (`session.current`) stores
+ * the simpler `AuthSession` without `keyVersion`.
+ */
+export type AuthSessionEvent =
+	| {
+			status: 'authenticated';
+			token: string;
+			user: StoredUser;
+			keyVersion: number;
+	  }
+	| { status: 'anonymous' };
+
 export type AuthClient = {
 	readonly session: AuthSession;
 	readonly operation: AuthOperation;
-	readonly isRefreshing: boolean;
+	readonly isPending: boolean;
 
-	refresh(): Promise<AuthRefreshResult>;
 	signIn(input: {
 		email: string;
 		password: string;
-	}): Promise<AuthCommandResult>;
+	}): Promise<AuthCommandError | undefined>;
 	signUp(input: {
 		email: string;
 		password: string;
 		name: string;
-	}): Promise<AuthCommandResult>;
-	signInWithGoogle(): Promise<AuthCommandResult>;
+	}): Promise<AuthCommandError | undefined>;
+	signInWithGoogle(): Promise<AuthCommandError | undefined>;
 	signOut(): Promise<void>;
-	startGoogleSignInRedirect(options: { callbackURL: string }): Promise<void>;
+	signInWithGoogleRedirect(options: { callbackURL: string }): Promise<void>;
 
 	fetch: AuthFetch;
 	fetchWorkspaceKey(): Promise<WorkspaceKeyResponse>;
@@ -145,6 +114,7 @@ export type AuthClient = {
 export type CreateAuthOptions = {
 	baseURL: BaseURL;
 	session: { current: AuthSession };
+	onSessionChange?: (next: AuthSessionEvent, prev: AuthSession) => void;
 	signInWithGoogle?: () => Promise<{ idToken: string; nonce: string }>;
 };
 
@@ -164,16 +134,19 @@ type EpicenterAuthPluginShape = {
 /**
  * Create a single auth client that owns transport and session lifecycle.
  *
+ * BA's `useSession.subscribe()` drives reactive state via `createSubscriber`.
+ * Commands return errors only—subscribe handles the success path.
  * `session.current` is the source of truth. This module only reads/writes the
  * box and does not own persistence.
  */
 export function createAuth({
 	baseURL,
 	session,
+	onSessionChange,
 	signInWithGoogle: signInWithGoogleOption,
 }: CreateAuthOptions): AuthClient {
-	let operation = $state<AuthOperation>({ status: 'bootstrapping' });
-	let initializationPromise: Promise<void> | null = null;
+	let operation = $state<AuthOperation>({ status: 'idle' });
+	let pending = $state(true);
 
 	const client = createAuthClient({
 		baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
@@ -187,7 +160,42 @@ export function createAuth({
 						? session.current.token
 						: undefined,
 			},
+			onSuccess: (context) => {
+				const newToken = context.response.headers.get('set-auth-token');
+				if (newToken && session.current.status === 'authenticated') {
+					session.current = { ...session.current, token: newToken };
+				}
+			},
 		},
+	});
+
+	const subscribe = createSubscriber((update) => {
+		return client.useSession.subscribe((state) => {
+			if (state.isPending) return;
+
+			pending = false;
+			const prev = session.current;
+
+			if (state.data) {
+				const user = normalizeUser(state.data.user);
+				const token = state.data.session.token;
+				session.current = { status: 'authenticated', token, user };
+				onSessionChange?.(
+					{
+						status: 'authenticated',
+						token,
+						user,
+						keyVersion: state.data.keyVersion,
+					},
+					prev,
+				);
+			} else {
+				session.current = { status: 'anonymous' };
+				onSessionChange?.({ status: 'anonymous' }, prev);
+			}
+
+			update();
+		});
 	});
 
 	const authFetch: AuthFetch = (input, init) => {
@@ -196,189 +204,12 @@ export function createAuth({
 		if (token) {
 			headers.set('Authorization', `Bearer ${token}`);
 		}
-
-		return fetch(input, {
-			...init,
-			headers,
-			credentials: 'include',
-		});
+		return fetch(input, { ...init, headers, credentials: 'include' });
 	};
-
-	function setOperation(next: AuthOperation) {
-		if (operation.status === next.status) return;
-		operation = next;
-	}
-
-	function extractCommandToken(data: unknown): string | null {
-		if (typeof data !== 'object' || data === null) return null;
-		if ('token' in data && typeof data.token === 'string') {
-			return data.token;
-		}
-		if (
-			'session' in data &&
-			typeof data.session === 'object' &&
-			data.session !== null &&
-			'token' in data.session &&
-			typeof data.session.token === 'string'
-		) {
-			return data.session.token;
-		}
-		return null;
-	}
-
-	function classifyBetterAuthError(error: unknown) {
-		const status = readStatusCode(error);
-		if (status === 401 || status === 403) {
-			return AuthTransportError.InvalidCredentials({ cause: error });
-		}
-		if (status !== undefined) {
-			return AuthTransportError.RequestFailed({ status, cause: error });
-		}
-		return AuthTransportError.UnexpectedError({ cause: error });
-	}
-
-	async function resolveWithToken(token: string | null): Promise<SessionResolution> {
-		const { data, error } = await client.getSession(
-			token
-				? { fetchOptions: { headers: { Authorization: `Bearer ${token}` } } }
-				: undefined,
-		);
-
-		if (error) {
-			const status = readStatusCode(error);
-			return status !== undefined && status < 500
-				? { status: 'anonymous' }
-				: { status: 'unchanged' };
-		}
-
-		if (!data) return { status: 'anonymous' };
-
-		const sessionToken =
-			typeof data.session.token === 'string' ? data.session.token : token;
-		if (!sessionToken) return { status: 'anonymous' };
-
-		return {
-			status: 'authenticated',
-			token: sessionToken,
-			user: {
-				id: data.user.id,
-				createdAt: data.user.createdAt.toISOString(),
-				updatedAt: data.user.updatedAt.toISOString(),
-				email: data.user.email,
-				emailVerified: data.user.emailVerified,
-				name: data.user.name,
-				image: data.user.image,
-			} satisfies StoredUser,
-			keyVersion: data.keyVersion,
-		};
-	}
-
-	async function commandThenResolve(
-		command: () => Promise<{ data: unknown; error: unknown }>,
-	): Promise<Result<SessionResolution, AuthTransportError>> {
-		const { data, error } = await command();
-		if (error) return classifyBetterAuthError(error);
-		return Ok(await resolveWithToken(extractCommandToken(data)));
-	}
-
-	function initializeSession() {
-		if (!initializationPromise) {
-			initializationPromise = Promise.resolve().then(() => {
-				setOperation({ status: 'idle' });
-			});
-		}
-		return initializationPromise;
-	}
-
-	async function persistSession(next: AuthSession) {
-		if (areSessionsEqual(session.current, next)) return;
-		session.current = next;
-	}
-
-	async function applyResolvedSession(
-		result: SessionResolution,
-	): Promise<AuthRefreshResult> {
-		switch (result.status) {
-			case 'unchanged':
-				return { session: session.current };
-			case 'anonymous':
-				await persistSession({ status: 'anonymous' });
-				return { session: session.current };
-			case 'authenticated':
-				await persistSession({
-					status: 'authenticated',
-					token: result.token,
-					user: result.user,
-				});
-				return {
-					session: session.current,
-					keyVersion: result.keyVersion,
-				};
-		}
-	}
-
-	async function completeAuthCommand(
-		result: SessionResolution,
-		{
-			reason,
-		}: {
-			reason: AuthCommandReason;
-		},
-	): Promise<AuthCommandResult> {
-		if (result.status !== 'authenticated') {
-			return {
-				session: session.current,
-				error: AuthCommandError.SessionHydrationFailed({ reason }).error,
-			};
-		}
-
-		try {
-			return await applyResolvedSession(result);
-		} catch (error) {
-			return {
-				session: session.current,
-				error: AuthCommandError.SessionCommitFailed({
-					reason,
-					cause: error,
-				}).error,
-			};
-		}
-	}
-
-	async function executeAuthCommand(
-		execute: () => Promise<Result<SessionResolution, AuthTransportError>>,
-		opts: {
-			reason: AuthCommandReason;
-			mapTransportError: (error: AuthTransportError) => AuthCommandError;
-		},
-	): Promise<AuthCommandResult> {
-		await initializeSession();
-		setOperation({ status: 'signing-in' });
-
-		try {
-			const result = await execute();
-			if (result.error) {
-				return {
-					session: session.current,
-					error: opts.mapTransportError(result.error),
-				};
-			}
-
-			return await completeAuthCommand(result.data, { reason: opts.reason });
-		} catch (error) {
-			return {
-				session: session.current,
-				error: mapUnexpectedFailure(opts.reason, error),
-			};
-		} finally {
-			setOperation({ status: 'idle' });
-		}
-	}
-
-	void initializeSession();
 
 	return {
 		get session() {
+			subscribe();
 			return session.current;
 		},
 
@@ -386,99 +217,83 @@ export function createAuth({
 			return operation;
 		},
 
-		get isRefreshing() {
-			return (
-				operation.status === 'bootstrapping' ||
-				operation.status === 'refreshing'
-			);
+		get isPending() {
+			subscribe();
+			return pending;
 		},
 
-		async refresh() {
-			await initializeSession();
-			setOperation({ status: 'refreshing' });
-
+		async signIn(input) {
+			operation = { status: 'signing-in' };
 			try {
-				return await applyResolvedSession(await resolveWithToken(null));
+				const { error } = await client.signIn.email(input);
+				if (error) return classifySignInError(error);
+				return undefined;
 			} catch (error) {
-				reportBackgroundAuthError('refresh', error);
-				return { session: session.current };
+				return AuthCommandError.SignInFailed({ cause: error }).error;
 			} finally {
-				setOperation({ status: 'idle' });
+				operation = { status: 'idle' };
 			}
 		},
 
-		signIn(input) {
-			return executeAuthCommand(
-				() => commandThenResolve(() => client.signIn.email(input)),
-				{
-					reason: 'sign-in',
-					mapTransportError: mapSignInTransportError,
-				},
-			);
+		async signUp(input) {
+			operation = { status: 'signing-in' };
+			try {
+				const { error } = await client.signUp.email(input);
+				if (error)
+					return AuthCommandError.SignUpFailed({ cause: error }).error;
+				return undefined;
+			} catch (error) {
+				return AuthCommandError.SignUpFailed({ cause: error }).error;
+			} finally {
+				operation = { status: 'idle' };
+			}
 		},
 
-		signUp(input) {
-			return executeAuthCommand(
-				() => commandThenResolve(() => client.signUp.email(input)),
-				{
-					reason: 'sign-up',
-					mapTransportError: (error) =>
-						AuthCommandError.SignUpFailed({ cause: error }).error,
-				},
-			);
-		},
-
-		signInWithGoogle() {
+		async signInWithGoogle() {
 			if (!signInWithGoogleOption) {
-				return Promise.resolve({
-					session: session.current,
-					error: AuthCommandError.GoogleSignInFailed({
-						cause: new Error('Google sign-in is not configured.'),
-					}).error,
-				});
+				return AuthCommandError.GoogleSignInFailed({
+					cause: new Error('Google sign-in is not configured.'),
+				}).error;
 			}
 
-			return executeAuthCommand(
-				async () => {
-					const { idToken, nonce } = await signInWithGoogleOption();
-					return commandThenResolve(() =>
-						client.signIn.social({
-							provider: 'google',
-							idToken: { token: idToken, nonce },
-						}),
-					);
-				},
-				{
-					reason: 'google-sign-in',
-					mapTransportError: (error) =>
-						AuthCommandError.GoogleSignInFailed({ cause: error }).error,
-				},
-			);
+			operation = { status: 'signing-in' };
+			try {
+				const { idToken, nonce } = await signInWithGoogleOption();
+				const { error } = await client.signIn.social({
+					provider: 'google',
+					idToken: { token: idToken, nonce },
+				});
+				if (error)
+					return AuthCommandError.GoogleSignInFailed({ cause: error })
+						.error;
+				return undefined;
+			} catch (error) {
+				if (isCancelledGoogleSignIn(error)) {
+					return AuthCommandError.GoogleSignInCancelled().error;
+				}
+				return AuthCommandError.GoogleSignInFailed({ cause: error }).error;
+			} finally {
+				operation = { status: 'idle' };
+			}
 		},
 
 		async signOut() {
-			await initializeSession();
-			setOperation({ status: 'signing-out' });
-
+			operation = { status: 'signing-out' };
 			try {
-				const { error } = await client.signOut();
-				if (error) {
-					throw error;
-				}
+				await client.signOut();
 			} catch (error) {
-				reportBackgroundAuthError('sign-out', error);
+				console.error('[auth] sign-out failed:', error);
 			} finally {
-				try {
-					await persistSession({ status: 'anonymous' });
-				} catch (error) {
-					reportBackgroundAuthError('sign-out', error);
-				} finally {
-					setOperation({ status: 'idle' });
+				if (session.current.status !== 'anonymous') {
+					const prev = session.current;
+					session.current = { status: 'anonymous' };
+					onSessionChange?.({ status: 'anonymous' }, prev);
 				}
+				operation = { status: 'idle' };
 			}
 		},
 
-		async startGoogleSignInRedirect({ callbackURL }: { callbackURL: string }) {
+		async signInWithGoogleRedirect({ callbackURL }) {
 			await client.signIn.social({ provider: 'google', callbackURL });
 		},
 
@@ -487,85 +302,58 @@ export function createAuth({
 		async fetchWorkspaceKey() {
 			const token = getToken(session.current);
 			if (!token) {
-				throw new Error('Cannot fetch workspace key without an authenticated session.');
+				throw new Error(
+					'Cannot fetch workspace key without an authenticated session.',
+				);
 			}
-
 			const url = typeof baseURL === 'function' ? baseURL() : baseURL;
 			const response = await fetch(`${url}/workspace-key`, {
 				headers: { Authorization: `Bearer ${token}` },
 			});
-
 			if (!response.ok) {
-				throw new Error(`Failed to fetch workspace key: ${response.status}`);
+				throw new Error(
+					`Failed to fetch workspace key: ${response.status}`,
+				);
 			}
-
 			return response.json() as Promise<WorkspaceKeyResponse>;
 		},
 	};
 }
 
-function areSessionsEqual(left: AuthSession, right: AuthSession): boolean {
-	if (left.status !== right.status) return false;
-	if (left.status === 'anonymous') return true;
-	if (right.status === 'anonymous') return false;
-
-	return (
-		left.token === right.token &&
-		left.user.id === right.user.id &&
-		left.user.createdAt === right.user.createdAt &&
-		left.user.updatedAt === right.user.updatedAt &&
-		left.user.email === right.user.email &&
-		left.user.emailVerified === right.user.emailVerified &&
-		left.user.name === right.user.name &&
-		left.user.image === right.user.image
-	);
+function normalizeUser(user: {
+	id: string;
+	createdAt: Date;
+	updatedAt: Date;
+	email: string;
+	emailVerified: boolean;
+	name: string;
+	image?: string | null;
+}): StoredUser {
+	return {
+		id: user.id,
+		createdAt: user.createdAt.toISOString(),
+		updatedAt: user.updatedAt.toISOString(),
+		email: user.email,
+		emailVerified: user.emailVerified,
+		name: user.name,
+		image: user.image,
+	};
 }
 
 function getToken(current: AuthSession): string | null {
 	return current.status === 'authenticated' ? current.token : null;
 }
 
-function describeCommand(reason: AuthCommandReason): string {
-	switch (reason) {
-		case 'sign-in':
-			return 'Sign-in';
-		case 'sign-up':
-			return 'Sign-up';
-		case 'google-sign-in':
-			return 'Google sign-in';
-	}
-}
-
-function mapSignInTransportError(error: AuthTransportError): AuthCommandError {
-	if (error.name === 'InvalidCredentials') {
+function classifySignInError(error: unknown): AuthCommandError {
+	const status = readStatusCode(error);
+	if (status === 401 || status === 403) {
 		return AuthCommandError.InvalidCredentials().error;
 	}
 	return AuthCommandError.SignInFailed({ cause: error }).error;
-}
-
-function mapUnexpectedFailure(
-	reason: AuthCommandReason,
-	error: unknown,
-): AuthCommandError {
-	switch (reason) {
-		case 'sign-in':
-			return AuthCommandError.SignInFailed({ cause: error }).error;
-		case 'sign-up':
-			return AuthCommandError.SignUpFailed({ cause: error }).error;
-		case 'google-sign-in':
-			if (isCancelledGoogleSignIn(error)) {
-				return AuthCommandError.GoogleSignInCancelled().error;
-			}
-			return AuthCommandError.GoogleSignInFailed({ cause: error }).error;
-	}
 }
 
 function isCancelledGoogleSignIn(error: unknown): boolean {
 	if (!(error instanceof Error)) return false;
 	const message = error.message.toLowerCase();
 	return message.includes('canceled') || message.includes('cancelled');
-}
-
-function reportBackgroundAuthError(phase: 'refresh' | 'sign-out', error: unknown) {
-	console.error(`[auth] ${phase} failed:`, error);
 }

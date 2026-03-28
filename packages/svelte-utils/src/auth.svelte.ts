@@ -6,15 +6,10 @@ export {
 export {
 	type AuthClient,
 	AuthCommandError,
-	type AuthCommandResult,
-	type AuthRefreshResult,
+	type AuthFetch,
+	type AuthSessionEvent,
 	AuthTransportError,
 	type CreateAuthOptions,
 	createAuth,
-	type SessionResolution,
 	type WorkspaceKeyResponse,
 } from './create-auth.svelte.js';
-export {
-	type CreateWorkspaceAuthOptions,
-	createWorkspaceAuth,
-} from './workspace-auth.svelte.js';

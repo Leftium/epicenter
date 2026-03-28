@@ -5,9 +5,8 @@
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
-	import { authState } from '$lib/auth';
+	import { authState } from '$lib/workspace';
 	import AuthForm from '$lib/components/AuthForm.svelte';
-	import { workspaceAuth } from '$lib/workspace';
 
 	const isSignedIn = $derived(authState.session.status === 'authenticated');
 	const isChecking = $derived(
@@ -46,7 +45,7 @@
 						size="sm"
 						class="w-full"
 						onclick={async () => {
-							await workspaceAuth.signOut();
+							await authState.signOut();
 							popoverOpen = false;
 						}}
 					>

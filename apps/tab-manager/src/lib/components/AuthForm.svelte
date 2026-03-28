@@ -4,8 +4,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { authState } from '$lib/state/auth.svelte';
-	import { workspaceAuth } from '$lib/workspace';
+	import { authState } from '$lib/workspace';
 
 	let email = $state('');
 	let password = $state('');
@@ -21,10 +20,10 @@
 	onsubmit={async (e) => {
 		e.preventDefault();
 		submitError = null;
-		const result = isSignUp
-			? await workspaceAuth.signUp({ email, password, name })
-			: await workspaceAuth.signIn({ email, password });
-		if ('error' in result) submitError = result.error.message;
+		const error = isSignUp
+			? await authState.signUp({ email, password, name })
+			: await authState.signIn({ email, password });
+		if (error) submitError = error.message;
 	}}
 	class="w-full max-w-xs"
 >
@@ -49,8 +48,8 @@
 			disabled={isBusy}
 			onclick={async () => {
 				submitError = null;
-				const result = await workspaceAuth.signInWithGoogle();
-				if ('error' in result) submitError = result.error.message;
+				const error = await authState.signInWithGoogle();
+				if (error) submitError = error.message;
 			}}
 		>
 			<svg class="size-4" viewBox="0 0 24 24" aria-hidden="true">

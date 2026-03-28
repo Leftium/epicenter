@@ -1,18 +1,15 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Uses the shared auth client with the extension's two seams: custom Google
- * OAuth (`chrome.identity`) and chrome-backed session persistence.
+ * Exports the persisted session and Google credentials helper. The actual
+ * `authState` (createAuth) lives in the workspace client where
+ * `onSessionChange` can wire workspace unlock and sync reconnect.
  *
- * @see {@link @epicenter/svelte/auth!createAuth} — unified auth client
+ * @see {@link ../workspace/client.svelte} — authState with onSessionChange
  * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
- * @see {@link ./key-cache} — session-scoped user-key cache
  */
 
-import {
-	AuthSession,
-	createAuth,
-} from '@epicenter/svelte/auth';
+import { AuthSession } from '@epicenter/svelte/auth';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
 
@@ -20,14 +17,17 @@ const GOOGLE_CLIENT_ID =
 	'702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
 
 /** Persisted auth snapshot in `chrome.storage.local`. */
-const authSession = createStorageState('local:authSession', {
+export const authSession = createStorageState('local:authSession', {
 	fallback: { status: 'anonymous' },
 	schema: AuthSession,
 });
 
-const authBaseURL = () => remoteServerUrl.current;
+export const authBaseURL = () => remoteServerUrl.current;
 
-async function getGoogleCredentials(): Promise<{ idToken: string; nonce: string }> {
+export async function getGoogleCredentials(): Promise<{
+	idToken: string;
+	nonce: string;
+}> {
 	const redirectUri = browser.identity.getRedirectURL();
 	const nonce = crypto.randomUUID();
 	const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -50,9 +50,3 @@ async function getGoogleCredentials(): Promise<{ idToken: string; nonce: string 
 
 	return { idToken, nonce };
 }
-
-export const authState = createAuth({
-	baseURL: authBaseURL,
-	session: authSession,
-	signInWithGoogle: getGoogleCredentials,
-});

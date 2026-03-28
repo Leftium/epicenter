@@ -1,5 +1,5 @@
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createWorkspaceAuth } from '@epicenter/svelte/auth';
+import { createAuth } from '@epicenter/svelte/auth';
 import {
 	createSqliteIndex,
 	createYjsFileSystem,
@@ -9,8 +9,10 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Bash } from 'just-bash';
-import { authState } from '$lib/auth';
+import { session } from '$lib/auth';
 import { userKeyCache } from '$lib/user-key-cache';
+
+let lastKeyVersion: number | undefined;
 
 /**
  * Opensidian workspace infrastructure.
@@ -37,10 +39,29 @@ export const ws = createWorkspace({
 	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 
-export const workspaceAuth = createWorkspaceAuth({
-	workspace: ws,
-	auth: authState,
-	reconnect: () => ws.extensions.sync.reconnect(),
+export const authState = createAuth({
+	baseURL: APP_URLS.API,
+	session,
+	onSessionChange(next, prev) {
+		if (next.status === 'authenticated') {
+			if (next.keyVersion !== lastKeyVersion) {
+				authState
+					.fetchWorkspaceKey()
+					.then(({ userKeyBase64, keyVersion }) => {
+						ws.unlockWithKey(userKeyBase64);
+						lastKeyVersion = keyVersion;
+					});
+			}
+			ws.extensions.sync.reconnect();
+		}
+		if (
+			prev.status === 'authenticated' &&
+			next.status === 'anonymous'
+		) {
+			ws.clearLocalData();
+			ws.extensions.sync.reconnect();
+		}
+	},
 });
 
 /** Yjs-backed virtual filesystem with path-based operations. */

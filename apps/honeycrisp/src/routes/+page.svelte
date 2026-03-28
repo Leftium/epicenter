@@ -3,16 +3,19 @@
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import type * as Y from 'yjs';
+	import { onMount } from 'svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
-	import workspaceClient, { workspaceAuth } from '$lib/workspace';
+	import workspaceClient from '$lib/workspace';
 
 	let commandPaletteOpen = $state(false);
 
-	workspaceAuth.mount();
+	onMount(() => {
+		void workspaceClient.bootFromCache();
+	});
 
 	// ─── Document Handle ────────────────────────────────────────────────────
 

@@ -4,8 +4,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { authState } from '$lib/auth';
-	import { workspaceAuth } from '$lib/workspace.svelte';
+	import { authState } from '$lib/workspace.svelte';
 
 	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
 	let email = $state('');
@@ -21,10 +20,10 @@
 	onsubmit={async (e) => {
 		e.preventDefault();
 		submitError = null;
-		const result = isSignUp
-			? await workspaceAuth.signUp({ email, password, name })
-			: await workspaceAuth.signIn({ email, password });
-		if ('error' in result) submitError = result.error.message;
+		const error = isSignUp
+			? await authState.signUp({ email, password, name })
+			: await authState.signIn({ email, password });
+		if (error) submitError = error.message;
 	}}
 	class="w-full max-w-xs"
 >
@@ -50,7 +49,7 @@
 			onclick={async () => {
 				submitError = null;
 				try {
-					await authState.startGoogleSignInRedirect({
+					await authState.signInWithGoogleRedirect({
 						callbackURL: window.location.origin,
 					});
 				} catch (error) {

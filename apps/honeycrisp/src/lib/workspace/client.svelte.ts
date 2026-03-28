@@ -8,13 +8,15 @@
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createWorkspaceAuth } from '@epicenter/svelte/auth';
+import { createAuth } from '@epicenter/svelte/auth';
 import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
-import { authState } from '$lib/auth';
+import { session } from '$lib/auth';
 import { userKeyCache } from './user-key-cache';
 import { honeycrisp } from './schema';
+
+let lastKeyVersion: number | undefined;
 
 const workspace = createWorkspace(honeycrisp)
 	.withEncryption({ userKeyCache })
@@ -30,10 +32,29 @@ const workspace = createWorkspace(honeycrisp)
 		}),
 	);
 
-export const workspaceAuth = createWorkspaceAuth({
-	workspace,
-	auth: authState,
-	reconnect: () => workspace.extensions.sync.reconnect(),
+export const authState = createAuth({
+	baseURL: APP_URLS.API,
+	session,
+	onSessionChange(next, prev) {
+		if (next.status === 'authenticated') {
+			if (next.keyVersion !== lastKeyVersion) {
+				authState
+					.fetchWorkspaceKey()
+					.then(({ userKeyBase64, keyVersion }) => {
+						workspace.unlockWithKey(userKeyBase64);
+						lastKeyVersion = keyVersion;
+					});
+			}
+			workspace.extensions.sync.reconnect();
+		}
+		if (
+			prev.status === 'authenticated' &&
+			next.status === 'anonymous'
+		) {
+			workspace.clearLocalData();
+			workspace.extensions.sync.reconnect();
+		}
+	},
 });
 
 export default workspace;

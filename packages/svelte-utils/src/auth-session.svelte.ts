@@ -4,7 +4,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { ResolveSession, SessionResolution } from './auth-transport.js';
-import type { AuthOperation, AuthSession, AuthSessionStorage } from './auth-types.js';
+import { type AuthOperation, type AuthSession, type AuthSessionStorage, readStatusCode } from './auth-types.js';
 
 type AuthCommandReason = 'sign-in' | 'sign-up' | 'google-sign-in';
 
@@ -47,7 +47,7 @@ export type AuthCommandError = InferErrors<typeof AuthCommandError>;
 
 export type AuthRefreshResult = {
 	session: AuthSession;
-	workspaceKeyBase64?: string | null;
+	workspaceKeyBase64?: string;
 };
 
 export type AuthCommandResult =
@@ -196,6 +196,29 @@ export function createAuthSession({
 		}
 	}
 
+	async function executeAuthCommand(
+		execute: () => Promise<SessionResolution>,
+		opts: {
+			reason: AuthCommandReason;
+			mapCatchError: (error: unknown) => AuthCommandError;
+		},
+	): Promise<AuthCommandResult> {
+		await initializeSession();
+		setOperation({ status: 'signing-in' });
+		try {
+			return await completeAuthCommand(await execute(), {
+				reason: opts.reason,
+			});
+		} catch (error) {
+			return {
+				session: storage.current,
+				error: opts.mapCatchError(error),
+			};
+		} finally {
+			setOperation({ status: 'idle' });
+		}
+	}
+
 	void initializeSession();
 
 	return {
@@ -238,24 +261,10 @@ export function createAuthSession({
 					}).error,
 				});
 			}
-
-			return (async () => {
-				await initializeSession();
-				setOperation({ status: 'signing-in' });
-
-				try {
-					return await completeAuthCommand(await signIn(input), {
-						reason: 'sign-in',
-					});
-				} catch (error) {
-					return {
-						session: storage.current,
-						error: mapSignInFailure(error),
-					};
-				} finally {
-					setOperation({ status: 'idle' });
-				}
-			})();
+			return executeAuthCommand(() => signIn(input), {
+				reason: 'sign-in',
+				mapCatchError: mapSignInFailure,
+			});
 		},
 
 		signUp(input) {
@@ -268,24 +277,10 @@ export function createAuthSession({
 					}).error,
 				});
 			}
-
-			return (async () => {
-				await initializeSession();
-				setOperation({ status: 'signing-in' });
-
-				try {
-					return await completeAuthCommand(await signUp(input), {
-						reason: 'sign-up',
-					});
-				} catch (error) {
-					return {
-						session: storage.current,
-						error: AuthCommandError.SignUpFailed({ cause: error }).error,
-					};
-				} finally {
-					setOperation({ status: 'idle' });
-				}
-			})();
+			return executeAuthCommand(() => signUp(input), {
+				reason: 'sign-up',
+				mapCatchError: (error) => AuthCommandError.SignUpFailed({ cause: error }).error,
+			});
 		},
 
 		signInWithGoogle() {
@@ -298,24 +293,10 @@ export function createAuthSession({
 					}).error,
 				});
 			}
-
-			return (async () => {
-				await initializeSession();
-				setOperation({ status: 'signing-in' });
-
-				try {
-					return await completeAuthCommand(await signInWithGoogle(), {
-						reason: 'google-sign-in',
-					});
-				} catch (error) {
-					return {
-						session: storage.current,
-						error: mapGoogleSignInFailure(error),
-					};
-				} finally {
-					setOperation({ status: 'idle' });
-				}
-			})();
+			return executeAuthCommand(() => signInWithGoogle(), {
+				reason: 'google-sign-in',
+				mapCatchError: mapGoogleSignInFailure,
+			});
 		},
 
 		async signOut() {
@@ -408,11 +389,6 @@ function isInvalidCredentialsError(error: unknown): boolean {
 	);
 }
 
-function readStatusCode(error: unknown): number | undefined {
-	if (typeof error !== 'object' || error === null) return undefined;
-	if (!('status' in error)) return undefined;
-	return typeof error.status === 'number' ? error.status : undefined;
-}
 
 function reportBackgroundAuthError(phase: 'refresh' | 'sign-out', error: unknown) {
 	console.error(`[auth] ${phase} failed:`, error);

@@ -16,11 +16,20 @@ import { createSessionEncryptionFields } from './encryption';
 type Db = NodePgDatabase<typeof schema>;
 
 /**
- * Create the API's Better Auth instance from already-initialized runtime deps.
+ * Assemble and return a configured `betterAuth()` instance from runtime deps.
  *
- * This owns Epicenter's server-side auth wiring: database adapter, OAuth
- * providers, token plugins, and the `customSession()` enrichment that produces
- * the portable `/auth/get-session` contract consumed by other packages.
+ * Cloudflare Workers doesn't expose `env` or database connections at module scope,
+ * so this defers Better Auth initialization to request time. The returned object is
+ * the raw Better Auth instance—no wrapper or additional abstraction.
+ *
+ * Wires up:
+ * - Drizzle adapter (Postgres via Hyperdrive)
+ * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
+ * - Plugins: bearer tokens, JWT, device authorization, OAuth provider (PKCE)
+ * - `customSession()` enrichment that appends per-user encryption keys to
+ *   `/auth/get-session` responses (see {@link EpicenterSessionResponse})
+ * - Autumn billing customer creation on user signup
+ * - Cloudflare KV secondary storage for session caching
  */
 export function createAuth({
 	db,
@@ -66,7 +75,6 @@ export function createAuth({
 				},
 			},
 		},
-		advanced: {},
 		trustedOrigins: (request) => {
 			const origins = [
 				'tauri://localhost',

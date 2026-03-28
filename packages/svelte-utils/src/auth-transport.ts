@@ -3,7 +3,7 @@ import { createAuthClient } from 'better-auth/client';
 import { customSessionClient } from 'better-auth/client/plugins';
 import type { customSession } from 'better-auth/plugins';
 import type { EpicenterSessionResponse } from '@epicenter/api/types';
-import type { AuthSession, StoredUser } from './auth-types.js';
+import { type AuthSession, type StoredUser, readStatusCode } from './auth-types.js';
 
 /**
  * Compile-time bridge for `customSessionClient<T>()`.
@@ -37,7 +37,7 @@ export type SessionResolution =
 			status: 'authenticated';
 			token: string;
 			user: StoredUser;
-			userKeyBase64?: string | null;
+			userKeyBase64: string;
 	  }
 	| { status: 'anonymous' }
 	| { status: 'unchanged' };
@@ -176,13 +176,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 		const { data, error } = await sessionClient.getSession();
 
 		if (error) {
-			const status =
-				typeof error === 'object' &&
-				error !== null &&
-				'status' in error &&
-				typeof error.status === 'number'
-					? error.status
-					: undefined;
+			const status = readStatusCode(error);
 
 			return status !== undefined && status < 500
 				? { status: 'anonymous' }

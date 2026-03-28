@@ -52,6 +52,12 @@ export type AuthOperation =
 export type AuthSessionStorage = {
 	readonly current: AuthSession;
 	set(value: AuthSession): void | Promise<void>;
-	watch(callback: (value: AuthSession) => void): (() => void) | undefined;
 	whenReady?: Promise<void>;
 };
+
+/** Extract a numeric HTTP status code from an untyped error object. */
+export function readStatusCode(error: unknown): number | undefined {
+	if (typeof error !== 'object' || error === null) return undefined;
+	if (!('status' in error)) return undefined;
+	return typeof error.status === 'number' ? error.status : undefined;
+}

@@ -21,11 +21,7 @@ type CreateAuthClientOptions = {
 			type: 'Bearer';
 			token: () => string | undefined;
 		};
-		onSuccess: ({
-			response,
-		}: {
-			response: Response;
-		}) => void;
+		onSuccess: ({ response }: { response: Response }) => void;
 	};
 };
 
@@ -101,7 +97,7 @@ function createAuthenticatedSessionPayload() {
 		session: {
 			token: 'rotated-token',
 		},
-		encryptionKey: 'AQIDBA==',
+		userKeyBase64: 'AQIDBA==',
 	};
 }
 
@@ -110,7 +106,7 @@ describe('createBetterAuthClientSession', () => {
 		let tokenBeforeRotation: string | undefined;
 		let tokenAfterRotation: string | undefined;
 
-	const transport = await setup({
+		const transport = await setup({
 			onCreateAuthClient(options) {
 				tokenBeforeRotation = options.fetchOptions.auth.token();
 				options.fetchOptions.onSuccess({

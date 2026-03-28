@@ -88,10 +88,7 @@ export function createAuthTransport({ baseURL }: { baseURL: BaseURL }) {
 
 				return result;
 			},
-			async signInWithPassword(input: {
-				email: string;
-				password: string;
-			}) {
+			async signInWithPassword(input: { email: string; password: string }) {
 				const result = await client.signIn.email(input);
 				bearerToken.rememberTokenFromAuthCommandPayload(result.data);
 				return result;
@@ -318,12 +315,11 @@ function createBearerTokenState(authToken: string | null) {
 function readEpicenterUserKeyBase64(
 	data: GetSessionData,
 ): string | null | undefined {
-	return (data as GetSessionData & { encryptionKey?: string | null }).encryptionKey;
+	return (data as GetSessionData & { userKeyBase64?: string | null })
+		.userKeyBase64;
 }
 
-function readAuthCommandToken(
-	data?: AuthCommandTokenPayload,
-): string | null {
+function readAuthCommandToken(data?: AuthCommandTokenPayload): string | null {
 	if (
 		typeof data === 'object' &&
 		data !== null &&

@@ -1,0 +1,120 @@
+import { env } from 'cloudflare:workers';
+import { type } from 'arktype';
+import type { EpicenterSessionFields } from './session-contract';
+
+/**
+ * Validated shape of a single keyring entry.
+ *
+ * `version` is a positive integer identifying the key generation; `secret` is
+ * the raw key material (typically base64-encoded via `openssl rand -base64 32`).
+ */
+const EncryptionEntry = type({
+	version: 'number.integer > 0',
+	secret: 'string',
+});
+
+/**
+ * Parse a single `"version:secret"` string into a validated `EncryptionEntry`.
+ *
+ * Finds the first colon—everything before it is the version, everything after
+ * is the secret (which may itself contain colons). Uses `ctx.error()` for
+ * arktype-native error reporting when the colon delimiter is missing.
+ */
+const EncryptionEntryParser = type('string')
+	.pipe((entry, ctx) => {
+		const separatorIndex = entry.indexOf(':');
+		if (separatorIndex === -1) return ctx.error('must be "version:secret"');
+		return {
+			version: Number(entry.slice(0, separatorIndex)),
+			secret: entry.slice(separatorIndex + 1),
+		};
+	})
+	.to(EncryptionEntry);
+
+/**
+ * Parse and validate the full ENCRYPTION_SECRETS env var into a sorted keyring.
+ *
+ * Input format: `"2:base64Secret2,1:base64Secret1"` (comma-separated entries).
+ * Output: a non-empty array of `{ version, secret }` sorted by version descending
+ * (highest version first—the current key for new encryptions).
+ *
+ * `.pipe.try()` catches any `TraversalError` thrown by `EncryptionEntryParser.assert()`
+ * and wraps it as `ArkErrors`. The non-empty tuple `.to()` guarantees `keyring[0]`
+ * is always defined. `.assert()` at module load throws a `TraversalError` if the
+ * env var is missing or malformed—the worker will not serve requests until fixed.
+ */
+const EncryptionKeyring = type('string')
+	.pipe.try((value) =>
+		value
+			.split(',')
+			.map((entry) => EncryptionEntryParser.assert(entry))
+			.sort((left, right) => right.version - left.version),
+	)
+	.to([EncryptionEntry, '...', EncryptionEntry.array()]);
+
+/**
+ * Module-scope keyring—parsed once when the worker loads.
+ *
+ * `cloudflare:workers` exposes `env` at module scope. Parsing here means a
+ * malformed ENCRYPTION_SECRETS prevents the worker from loading at all rather
+ * than failing on the first auth request.
+ */
+const currentKey = EncryptionKeyring.assert(env.ENCRYPTION_SECRETS)[0];
+
+/**
+ * Derive a per-user 32-byte encryption key via two-step HKDF-SHA256.
+ *
+ * 1. SHA-256 the secret to get high-entropy root key material.
+ * 2. Import as HKDF key and derive 256 bits with info="user:{userId}".
+ *
+ * Same inputs always produce the same key—deterministic, no storage needed.
+ *
+ * The info string is a domain-separation label for HKDF (RFC 5869 §3.2),
+ * not a version identifier. If the derivation scheme ever changes, the blob
+ * format version handles migration—not the info string.
+ */
+async function deriveUserKey(
+	secret: string,
+	userId: string,
+): Promise<Uint8Array> {
+	const rawKey = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(secret),
+	);
+	const hkdfKey = await crypto.subtle.importKey('raw', rawKey, 'HKDF', false, [
+		'deriveBits',
+	]);
+	const derivedBits = await crypto.subtle.deriveBits(
+		{
+			name: 'HKDF',
+			hash: 'SHA-256',
+			salt: new Uint8Array(0),
+			info: new TextEncoder().encode(`user:${userId}`),
+		},
+		hkdfKey,
+		256,
+	);
+	return new Uint8Array(derivedBits);
+}
+
+/** Convert bytes to a base64 string suitable for JSON transport. */
+function bytesToBase64(bytes: Uint8Array): string {
+	return btoa(String.fromCharCode(...bytes));
+}
+
+/**
+ * Build the portable session fields Epicenter adds to `/auth/get-session`.
+ *
+ * The response carries a base64-encoded per-user key plus the active key
+ * version so clients can unlock encrypted workspace state immediately after
+ * loading the authenticated session.
+ */
+export async function createSessionEncryptionFields(
+	userId: string,
+): Promise<EpicenterSessionFields> {
+	const userKey = await deriveUserKey(currentKey.secret, userId);
+	return {
+		userKeyBase64: bytesToBase64(userKey),
+		keyVersion: currentKey.version,
+	};
+}

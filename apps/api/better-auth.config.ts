@@ -3,7 +3,7 @@
  *
  * This file exists solely for `@better-auth/cli generate` to introspect the auth
  * config and emit the correct Drizzle schema. It is never used at runtime—the
- * Cloudflare Worker uses `createAuth()` in `src/app.ts` instead.
+ * Cloudflare Worker uses `createAuth()` in `src/auth/create-auth.ts` instead.
  *
  * Both configs spread `BASE_AUTH_CONFIG` (which owns the plugin list) so the CLI
  * and runtime always agree on which tables exist.
@@ -25,8 +25,8 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { config } from 'dotenv';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
-import { BASE_AUTH_CONFIG } from './src/app';
 import { LOCAL_DATABASE_URL } from './env';
+import { BASE_AUTH_CONFIG } from './src/auth/base-config';
 
 config({ path: fileURLToPath(new URL('.dev.vars', import.meta.url)) });
 const env = type({
@@ -34,7 +34,9 @@ const env = type({
 	'DATABASE_URL?': 'string',
 }).assert(process.env);
 
-const client = new pg.Client({ connectionString: env.DATABASE_URL ?? LOCAL_DATABASE_URL });
+const client = new pg.Client({
+	connectionString: env.DATABASE_URL ?? LOCAL_DATABASE_URL,
+});
 await client.connect();
 const db = drizzle(client);
 

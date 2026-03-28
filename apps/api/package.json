@@ -6,7 +6,7 @@
 	"types": "./src/app.ts",
 	"exports": {
 		".": "./src/app.ts",
-		"./types": "./src/auth-types.ts"
+		"./types": "./src/auth/session-contract.ts"
 	},
 	"license": "AGPL-3.0",
 	"scripts": {

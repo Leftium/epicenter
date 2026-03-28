@@ -1,0 +1,165 @@
+import { oauthProvider } from '@better-auth/oauth-provider';
+import { APPS } from '@epicenter/constants/apps';
+import { type BetterAuthOptions, betterAuth } from 'better-auth';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { customSession } from 'better-auth/plugins';
+import { bearer } from 'better-auth/plugins/bearer';
+import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
+import { jwt } from 'better-auth/plugins/jwt';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { createAutumn } from '../autumn';
+import type * as schema from '../db/schema';
+import { BASE_AUTH_CONFIG } from './base-config';
+import { createSessionEncryptionFields } from './encryption';
+import type { GetSessionResponse } from './session-contract';
+
+type Db = NodePgDatabase<typeof schema>;
+
+/**
+ * Create the API's Better Auth instance from already-initialized runtime deps.
+ *
+ * This owns Epicenter's server-side auth wiring: database adapter, OAuth
+ * providers, token plugins, and the `customSession()` enrichment that produces
+ * the portable `/auth/get-session` contract consumed by other packages.
+ */
+export function createAuth({
+	db,
+	env,
+	baseURL,
+}: {
+	db: Db;
+	env: Cloudflare.Env;
+	baseURL: string;
+}) {
+	const authOptionsBase = {
+		...BASE_AUTH_CONFIG,
+		database: drizzleAdapter(db, { provider: 'pg' }),
+		baseURL,
+		secret: env.BETTER_AUTH_SECRET,
+		socialProviders: {
+			google: {
+				clientId: env.GOOGLE_CLIENT_ID,
+				clientSecret: env.GOOGLE_CLIENT_SECRET,
+			},
+		},
+		session: {
+			expiresIn: 60 * 60 * 24 * 7,
+			updateAge: 60 * 60 * 24,
+			storeSessionInDatabase: true,
+			cookieCache: {
+				enabled: true,
+				maxAge: 60 * 5,
+				strategy: 'jwe',
+			},
+		},
+		databaseHooks: {
+			user: {
+				create: {
+					after: async (user) => {
+						const autumn = createAutumn(env);
+						await autumn.customers.getOrCreate({
+							customerId: user.id,
+							name: user.name,
+							email: user.email,
+						});
+					},
+				},
+			},
+		},
+		advanced: {},
+		trustedOrigins: (request) => {
+			const origins = [
+				'tauri://localhost',
+				...Object.values(APPS).flatMap((app) => [
+					app.url,
+					`http://localhost:${app.port}`,
+				]),
+			];
+			const origin = request?.headers.get('origin');
+			if (origin?.startsWith('chrome-extension://')) {
+				origins.push(origin);
+			}
+			return origins;
+		},
+		secondaryStorage: {
+			get: (key: string) => env.SESSION_KV.get(key),
+			set: (key: string, value: string, ttl?: number) =>
+				env.SESSION_KV.put(key, value, {
+					expirationTtl: ttl ?? 60 * 5,
+				}),
+			delete: (key: string) => env.SESSION_KV.delete(key),
+		},
+	} satisfies Omit<BetterAuthOptions, 'plugins'>;
+
+	const bearerPlugin = bearer();
+	const jwtPlugin = jwt();
+	const deviceAuthorizationPlugin = deviceAuthorization({
+		verificationUri: '/device',
+		expiresIn: '10m',
+		interval: '5s',
+	});
+	const oauthProviderPlugin = oauthProvider({
+		loginPage: '/sign-in',
+		consentPage: '/consent',
+		requirePKCE: true,
+		allowDynamicClientRegistration: false,
+		trustedClients: [
+			{
+				clientId: 'epicenter-desktop',
+				name: 'Epicenter Desktop',
+				type: 'native',
+				redirectUrls: ['tauri://localhost/auth/callback'],
+				skipConsent: true,
+				metadata: {},
+			},
+			{
+				clientId: 'epicenter-mobile',
+				name: 'Epicenter Mobile',
+				type: 'native',
+				redirectUrls: ['epicenter://auth/callback'],
+				skipConsent: true,
+				metadata: {},
+			},
+			{
+				clientId: 'epicenter-runner',
+				name: 'Epicenter Runner',
+				type: 'native',
+				redirectUrls: [],
+				skipConsent: true,
+				metadata: {},
+			},
+		],
+	});
+	/**
+	 * Enrich `/auth/get-session` responses with the per-user encryption material
+	 * clients need to unlock workspace data after auth completes.
+	 */
+	const customSessionPlugin = customSession(
+		async ({ user, session }) =>
+			({
+				user,
+				session,
+				...(await createSessionEncryptionFields(user.id)),
+			}) satisfies GetSessionResponse<typeof user, typeof session>,
+		{
+			...authOptionsBase,
+			plugins: [
+				bearerPlugin,
+				jwtPlugin,
+				deviceAuthorizationPlugin,
+				oauthProviderPlugin,
+			],
+		},
+	);
+
+	return betterAuth({
+		...authOptionsBase,
+		plugins: [
+			bearerPlugin,
+			jwtPlugin,
+			customSessionPlugin,
+			deviceAuthorizationPlugin,
+			oauthProviderPlugin,
+		],
+	});
+}

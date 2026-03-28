@@ -8,19 +8,19 @@
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ModelPicker from '$lib/components/ModelPicker.svelte';
 	import ZhongwenSidebar from '$lib/components/ZhongwenSidebar.svelte';
-	import { authState, workspace } from '$lib/workspace/client';
+	import { auth, workspace } from '$lib/workspace';
 
 	const showPinyin = fromKv(workspace.kv, 'showPinyin');
 	let dismissedError = $state(false);
 
 	const handle = $derived(chatState.active);
 	const currentUser = $derived(
-		authState.session.status === 'authenticated' ? authState.session.user : null,
+		auth.session.status === 'authenticated' ? auth.session.user : null,
 	);
 
 
 	async function signInWithGoogle() {
-		await authState.signInWithGoogleRedirect({
+		await auth.signInWithGoogleRedirect({
 			callbackURL: window.location.origin,
 		});
 	}
@@ -51,11 +51,11 @@
 					{showPinyin.current ? 'Hide Pinyin' : 'Show Pinyin'}
 				</Button>
 
-				{#if authState.session.status === 'authenticated'}
+			{#if auth.session.status === 'authenticated'}
 					<span class="text-sm text-muted-foreground"
 						>{currentUser?.name}</span
 					>
-				{:else if authState.session.status === 'anonymous'}
+			{:else if auth.session.status === 'anonymous'}
 					<Button size="sm" onclick={signInWithGoogle}>
 						Sign In
 					</Button>
@@ -64,11 +64,11 @@
 		</header>
 
 		<!-- Messages -->
-		{#if authState.operation.status === 'signing-in'}
+		{#if auth.operation.status === 'signing-in'}
 			<div class="flex flex-1 items-center justify-center">
 				<p class="text-muted-foreground">Signing in…</p>
 			</div>
-		{:else if authState.session.status !== 'authenticated'}
+		{:else if auth.session.status !== 'authenticated'}
 			<div class="flex flex-1 items-center justify-center">
 				<div class="text-center text-muted-foreground">
 					<p class="mb-4">Sign in to start chatting</p>

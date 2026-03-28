@@ -12,14 +12,12 @@ import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { session } from '$lib/auth';
 import { definition } from './schema';
 import { userKeyCache } from './user-key-cache';
-
-
 export const workspace = createWorkspace(definition)
 	.withEncryption({ userKeyCache })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('broadcast', broadcastChannelSync);
 
-export const authState = createAuth({
+export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
 	onSessionChange(next, prev) {

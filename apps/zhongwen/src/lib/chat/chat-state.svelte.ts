@@ -11,7 +11,15 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { fromTable } from '@epicenter/svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
-import { authState } from '$lib/auth';
+import {
+	auth,
+	type ChatMessageId,
+	type Conversation,
+	type ConversationId,
+	generateChatMessageId,
+	generateConversationId,
+	workspace,
+} from '$lib/workspace';
 import {
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,
@@ -20,14 +28,6 @@ import {
 } from '$lib/chat/providers';
 import { ZHONGWEN_SYSTEM_PROMPT } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { workspace } from '$lib/workspace/client';
-import {
-	type ChatMessageId,
-	type Conversation,
-	type ConversationId,
-	generateChatMessageId,
-	generateConversationId,
-} from '$lib/workspace/schema';
 
 const asChatMessageId = (id: string) => id as ChatMessageId;
 
@@ -100,7 +100,7 @@ function createChatState() {
 			connection: fetchServerSentEvents(
 				() => `${APP_URLS.API}/ai/chat`,
 				() => ({
-					fetchClient: authState.fetch,
+					fetchClient: auth.fetch,
 					body: {
 						data: {
 							provider: metadata?.provider ?? DEFAULT_PROVIDER,

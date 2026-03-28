@@ -7,7 +7,7 @@
 
 import type { MessagePart } from '@tanstack/ai';
 import type { UIMessage } from '@tanstack/ai-client';
-import type { ChatMessage } from '$lib/workspace/schema';
+import type { ChatMessage } from '$lib/workspace';
 
 export function toUiMessage(message: ChatMessage): UIMessage {
 	return {

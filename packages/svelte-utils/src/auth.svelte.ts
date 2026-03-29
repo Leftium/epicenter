@@ -5,7 +5,6 @@ export {
 export {
 	type AuthClient,
 	AuthCommandError,
-	type AuthFetch,
 	type AuthenticatedSession,
 	type CreateAuthOptions,
 	createAuth,

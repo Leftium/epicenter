@@ -38,10 +38,6 @@ export const AuthCommandError = defineErrors({
 });
 export type AuthCommandError = InferErrors<typeof AuthCommandError>;
 
-export type AuthFetch = (
-	input: RequestInfo | URL,
-	init?: RequestInit,
-) => Promise<Response>;
 
 /**
  * Authenticated session data passed to the `onLogin` hook.
@@ -69,8 +65,8 @@ export type AuthenticatedSession = {
 export type AuthClient = {
 	/**
 	 * Whether the user is currently authenticated.
-	 * Convenience getter so consumers don't manually check the session
-	 * discriminated union in every component.
+	 * Convenience getter so consumers don't null-check the session
+	 * in every component.
 	 *
 	 * @example
 	 * ```svelte
@@ -149,7 +145,7 @@ export type AuthClient = {
 	 */
 	signInWithGoogleRedirect(options: { callbackURL: string }): Promise<void>;
 
-	fetch: AuthFetch;
+	fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 };
 
 export type CreateAuthOptions = {

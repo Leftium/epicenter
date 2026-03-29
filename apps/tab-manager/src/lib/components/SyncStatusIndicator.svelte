@@ -33,7 +33,8 @@
 
 	const syncStatus = createSyncStatus();
 
-	function getTooltip(s: SyncStatus, isSignedIn: boolean): string {
+	function getTooltip(s: SyncStatus, isAuthenticated: boolean): string {
+		if (!isAuthenticated) return 'Sign in to sync across devices';
 		if (!isSignedIn) return 'Sign in to sync across devices';
 		switch (s.phase) {
 			case 'connected':
@@ -60,11 +61,7 @@
 	import AuthForm from '$lib/components/AuthForm.svelte';
 	import { auth } from '$lib/workspace';
 
-	const isSignedIn = $derived(auth.session.status === 'authenticated');
-	const currentUser = $derived(
-		auth.session.status === 'authenticated' ? auth.session.user : null,
-	);
-	const tooltip = $derived(getTooltip(syncStatus.current, isSignedIn));
+	const tooltip = $derived(getTooltip(syncStatus.current, auth.isAuthenticated));
 
 	let popoverOpen = $state(false);
 </script>
@@ -75,7 +72,7 @@
 		title={tooltip}
 	>
 		<div class="relative">
-			{#if !isSignedIn}
+			{#if !auth.isAuthenticated}
 				<CloudOff class="size-4 text-muted-foreground" />
 			{:else if syncStatus.current.phase === 'connected'}
 				<Cloud class="size-4" />
@@ -84,7 +81,7 @@
 			{:else}
 				<CloudOff class="size-4 text-destructive" />
 			{/if}
-			{#if !isSignedIn}
+			{#if !auth.isAuthenticated}
 				<span
 					class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary"
 				></span>
@@ -92,12 +89,12 @@
 		</div>
 	</Popover.Trigger>
 	<Popover.Content class="w-80 p-0" align="end">
-		{#if isSignedIn}
+		{#if auth.isAuthenticated}
 			<!-- Account panel -->
 			<div class="p-4 space-y-3">
 				<div class="space-y-1">
-					<p class="text-sm font-medium">{currentUser?.name}</p>
-					<p class="text-xs text-muted-foreground">{currentUser?.email}</p>
+					<p class="text-sm font-medium">{auth.user?.name}</p>
+					<p class="text-xs text-muted-foreground">{auth.user?.email}</p>
 				</div>
 				<div class="border-t pt-3 space-y-1">
 					<p class="text-xs text-muted-foreground">

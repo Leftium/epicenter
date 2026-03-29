@@ -14,9 +14,6 @@
 	let dismissedError = $state(false);
 
 	const handle = $derived(chatState.active);
-	const currentUser = $derived(
-		auth.session.status === 'authenticated' ? auth.session.user : null,
-	);
 
 
 	async function signInWithGoogle() {
@@ -51,11 +48,11 @@
 					{showPinyin.current ? 'Hide Pinyin' : 'Show Pinyin'}
 				</Button>
 
-			{#if auth.session.status === 'authenticated'}
+			{#if auth.isAuthenticated}
 					<span class="text-sm text-muted-foreground"
-						>{currentUser?.name}</span
+						>{auth.user?.name}</span
 					>
-			{:else if auth.session.status === 'anonymous'}
+			{:else if !auth.isAuthenticated}
 					<Button size="sm" onclick={signInWithGoogle}>
 						Sign In
 					</Button>
@@ -64,11 +61,11 @@
 		</header>
 
 		<!-- Messages -->
-		{#if auth.operation.status === 'signing-in'}
+		{#if auth.isBusy}
 			<div class="flex flex-1 items-center justify-center">
 				<p class="text-muted-foreground">Signing in…</p>
 			</div>
-		{:else if auth.session.status !== 'authenticated'}
+		{:else if !auth.isAuthenticated}
 			<div class="flex flex-1 items-center justify-center">
 				<div class="text-center text-muted-foreground">
 					<p class="mb-4">Sign in to start chatting</p>

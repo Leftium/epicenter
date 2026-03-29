@@ -1,5 +1,4 @@
 export {
-	type AuthOperation,
 	AuthSession,
 	StoredUser,
 } from './auth-types.js';

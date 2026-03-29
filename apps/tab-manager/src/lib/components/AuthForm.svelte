@@ -13,7 +13,7 @@
 	let submitError = $state<string | null>(null);
 
 	const isSignUp = $derived(mode === 'sign-up');
-	const isBusy = $derived(auth.operation.status === 'signing-in');
+	const isBusy = $derived(auth.isBusy);
 </script>
 
 <form

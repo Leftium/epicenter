@@ -11,7 +11,6 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import {
-	type AuthOperation,
 	type AuthSession,
 	readStatusCode,
 	type StoredUser,
@@ -68,8 +67,67 @@ export type AuthSessionEvent =
 
 export type AuthClient = {
 	readonly session: AuthSession;
-	readonly operation: AuthOperation;
+
+	/**
+	 * Whether the user is currently authenticated.
+	 *
+	 * Convenience getter that eliminates the need for consumers to check
+	 * `auth.session.status === 'authenticated'` in every component. Reads from
+	 * the same external session box as `session`, so it requires the
+	 * `createSubscriber` subscription to be active.
+	 *
+	 * @example
+	 * ```svelte
+	 * {#if auth.isAuthenticated}
+	 *   <p>Welcome back, {auth.user?.name}!</p>
+	 * {:else}
+	 *   <AuthForm />
+	 * {/if}
+	 * ```
+	 */
+	readonly isAuthenticated: boolean;
+
+	/**
+	 * The current user, or `null` if not authenticated.
+	 *
+	 * Narrows the `AuthSession` discriminated union once at the source so every
+	 * consumer doesn't repeat the same `status === 'authenticated' ? session.user : null`
+	 * pattern. Reads from the external session box via `createSubscriber`.
+	 *
+	 * @example
+	 * ```svelte
+	 * {#if auth.user}
+	 *   <p>{auth.user.name} — {auth.user.email}</p>
+	 * {/if}
+	 * ```
+	 */
+	readonly user: StoredUser | null;
+
 	readonly isPending: boolean;
+
+	/**
+	 * Whether a user-initiated auth operation (sign-in, sign-up, sign-out) is
+	 * in progress.
+	 *
+	 * Unlike `isPending` (which tracks the initial Better Auth session
+	 * resolution and is one-way), `isBusy` toggles on and off with each auth
+	 * command. Use it to disable buttons and show spinners during auth flows.
+	 *
+	 * Backed by an internal `$state` variable—no `subscribe()` needed since
+	 * it's written directly by the auth methods, not the BA subscription.
+	 *
+	 * @example
+	 * ```svelte
+	 * <Button disabled={auth.isBusy}>
+	 *   {#if auth.isBusy}
+	 *     <Spinner />
+	 *   {:else}
+	 *     Sign in
+	 *   {/if}
+	 * </Button>
+	 * ```
+	 */
+	readonly isBusy: boolean;
 
 	signIn(input: {
 		email: string;
@@ -121,7 +179,7 @@ export function createAuth({
 	onSessionChange,
 	signInWithGoogle: signInWithGoogleOption,
 }: CreateAuthOptions): AuthClient {
-	let operation = $state<AuthOperation>({ status: 'idle' });
+	let busy = $state(false);
 	let pending = $state(true);
 
 	const client = createAuthClient({
@@ -175,13 +233,6 @@ export function createAuth({
 		});
 	});
 
-	const authFetch: AuthFetch = (input, init) => {
-		const headers = new Headers(init?.headers);
-		if (session.current.status === 'authenticated') {
-			headers.set('Authorization', `Bearer ${session.current.token}`);
-		}
-		return fetch(input, { ...init, headers, credentials: 'include' });
-	};
 
 	return {
 		get session() {
@@ -189,8 +240,16 @@ export function createAuth({
 			return session.current;
 		},
 
-		get operation() {
-			return operation;
+		get isAuthenticated() {
+			subscribe();
+			return session.current.status === 'authenticated';
+		},
+
+		get user() {
+			subscribe();
+			return session.current.status === 'authenticated'
+				? session.current.user
+				: null;
 		},
 
 		get isPending() {
@@ -198,8 +257,12 @@ export function createAuth({
 			return pending;
 		},
 
+		get isBusy() {
+			return busy;
+		},
+
 		async signIn(input) {
-			operation = { status: 'signing-in' };
+			busy = true;
 			try {
 				const { error } = await client.signIn.email(input);
 				if (!error) return Ok(undefined);
@@ -210,12 +273,12 @@ export function createAuth({
 			} catch (error) {
 				return AuthCommandError.SignInFailed({ cause: error });
 			} finally {
-				operation = { status: 'idle' };
+				busy = false;
 			}
 		},
 
 		async signUp(input) {
-			operation = { status: 'signing-in' };
+			busy = true;
 			try {
 				const { error } = await client.signUp.email(input);
 				if (error) return AuthCommandError.SignUpFailed({ cause: error });
@@ -223,7 +286,7 @@ export function createAuth({
 			} catch (error) {
 				return AuthCommandError.SignUpFailed({ cause: error });
 			} finally {
-				operation = { status: 'idle' };
+				busy = false;
 			}
 		},
 
@@ -234,7 +297,7 @@ export function createAuth({
 				});
 			}
 
-			operation = { status: 'signing-in' };
+			busy = true;
 			try {
 				const { idToken, nonce } = await signInWithGoogleOption();
 				const { error } = await client.signIn.social({
@@ -249,12 +312,12 @@ export function createAuth({
 					return AuthCommandError.GoogleSignInCancelled();
 				return AuthCommandError.GoogleSignInFailed({ cause: error });
 			} finally {
-				operation = { status: 'idle' };
+				busy = false;
 			}
 		},
 
 		async signOut() {
-			operation = { status: 'signing-out' };
+			busy = true;
 			try {
 				await client.signOut();
 			} catch (error) {
@@ -265,7 +328,7 @@ export function createAuth({
 					session.current = { status: 'anonymous' };
 					onSessionChange?.({ status: 'anonymous' }, prev);
 				}
-				operation = { status: 'idle' };
+				busy = false;
 			}
 		},
 
@@ -273,8 +336,13 @@ export function createAuth({
 			await client.signIn.social({ provider: 'google', callbackURL });
 		},
 
-		fetch: authFetch,
-
+		fetch(input: RequestInfo | URL, init?: RequestInit) {
+			const headers = new Headers(init?.headers);
+			if (session.current.status === 'authenticated') {
+				headers.set('Authorization', `Bearer ${session.current.token}`);
+			}
+			return fetch(input, { ...init, headers, credentials: 'include' });
+		},
 	};
 }
 

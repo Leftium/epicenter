@@ -34,12 +34,6 @@ export const AuthSession = type({
 
 export type AuthSession = typeof AuthSession.infer;
 
-/** Lifecycle state for long-running auth operations in UI code. */
-export type AuthOperation =
-	| { status: 'idle' }
-	| { status: 'signing-in' }
-	| { status: 'signing-out' };
-
 
 /** Extract a numeric HTTP status code from an untyped error object. */
 export function readStatusCode(error: unknown): number | undefined {

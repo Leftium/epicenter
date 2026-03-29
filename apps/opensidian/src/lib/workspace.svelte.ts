@@ -39,15 +39,13 @@ export const workspace = createWorkspace({
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
-	onSessionChange(next, prev) {
-		if (next.status === 'authenticated') {
-			workspace.unlockWithKey(next.userKeyBase64);
-			workspace.extensions.sync.reconnect();
-		}
-		if (prev.status === 'authenticated' && next.status === 'anonymous') {
-			workspace.clearLocalData();
-			workspace.extensions.sync.reconnect();
-		}
+	onLogin(session) {
+		workspace.unlockWithKey(session.userKeyBase64);
+		workspace.extensions.sync.reconnect();
+	},
+	onLogout() {
+		workspace.clearLocalData();
+		workspace.extensions.sync.reconnect();
 	},
 });
 

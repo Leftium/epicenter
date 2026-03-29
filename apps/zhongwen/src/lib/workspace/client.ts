@@ -20,12 +20,10 @@ export const workspace = createWorkspace(definition)
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
-	onSessionChange(next, prev) {
-		if (next.status === 'authenticated') {
-			workspace.unlockWithKey(next.userKeyBase64);
-		}
-		if (prev.status === 'authenticated' && next.status === 'anonymous') {
-			workspace.clearLocalData();
-		}
+	onLogin(session) {
+		workspace.unlockWithKey(session.userKeyBase64);
+	},
+	onLogout() {
+		workspace.clearLocalData();
 	},
 });

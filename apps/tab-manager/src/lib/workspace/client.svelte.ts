@@ -45,15 +45,13 @@ export const auth = createAuth({
 	baseURL: authBaseURL,
 	session: authSession,
 	signInWithGoogle: getGoogleCredentials,
-	onSessionChange(next, prev) {
-		if (next.status === 'authenticated') {
-			workspace.unlockWithKey(next.userKeyBase64);
-			workspace.extensions.sync.reconnect();
-		}
-		if (prev.status === 'authenticated' && next.status === 'anonymous') {
-			workspace.clearLocalData();
-			workspace.extensions.sync.reconnect();
-		}
+	onLogin(session) {
+		workspace.unlockWithKey(session.userKeyBase64);
+		workspace.extensions.sync.reconnect();
+	},
+	onLogout() {
+		workspace.clearLocalData();
+		workspace.extensions.sync.reconnect();
 	},
 });
 

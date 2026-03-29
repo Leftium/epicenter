@@ -6,7 +6,7 @@ export {
 	type AuthClient,
 	AuthCommandError,
 	type AuthFetch,
-	type AuthSessionEvent,
+	type AuthLoginEvent,
 	type CreateAuthOptions,
 	createAuth,
 } from './create-auth.svelte.js';

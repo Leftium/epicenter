@@ -16,7 +16,7 @@ import {
 
 type BaseURL = string | (() => string);
 
-export const AuthCommandError = defineErrors({
+export const AuthError = defineErrors({
 	InvalidCredentials: () => ({
 		message: 'Invalid email or password.',
 	}),
@@ -36,7 +36,7 @@ export const AuthCommandError = defineErrors({
 		cause,
 	}),
 });
-export type AuthCommandError = InferErrors<typeof AuthCommandError>;
+export type AuthError = InferErrors<typeof AuthError>;
 
 
 /**
@@ -111,7 +111,7 @@ export type AuthClient = {
 	readonly token: string | null;
 	/**
 	 * Whether a user-initiated auth operation (sign-in, sign-up, sign-out) is
-	 * in progress. Toggles on and off with each auth command. Use it to
+	 * in progress. Toggles on and off with each auth operation. Use it to
 	 * disable buttons and show spinners during auth flows.
 	 *
 	 * @example
@@ -130,13 +130,13 @@ export type AuthClient = {
 	signIn(input: {
 		email: string;
 		password: string;
-	}): Promise<Result<undefined, AuthCommandError>>;
+	}): Promise<Result<undefined, AuthError>>;
 	signUp(input: {
 		email: string;
 		password: string;
 		name: string;
-	}): Promise<Result<undefined, AuthCommandError>>;
-	signInWithGoogle(): Promise<Result<undefined, AuthCommandError>>;
+	}): Promise<Result<undefined, AuthError>>;
+	signInWithGoogle(): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<void>;
 	/**
 	 * Redirect-based Google sign-in for web apps. Navigates away from the
@@ -204,7 +204,7 @@ type EpicenterCustomSessionPlugin = ReturnType<
  *
  * BA's `useSession.subscribe()` drives reactive state—writes to the `$state`-backed
  * session box so getters are reactive without additional subscription wiring.
- * Commands return errors only—subscribe handles the success path.
+ * Methods return errors only—subscribe handles the success path.
  * `session.current` is the source of truth. This module only reads/writes the
  * box and does not own persistence.
  */
@@ -285,10 +285,10 @@ export function createAuth({
 				if (!error) return Ok(undefined);
 				const status = readStatusCode(error);
 				if (status === 401 || status === 403)
-					return AuthCommandError.InvalidCredentials();
-				return AuthCommandError.SignInFailed({ cause: error });
+					return AuthError.InvalidCredentials();
+				return AuthError.SignInFailed({ cause: error });
 			} catch (error) {
-				return AuthCommandError.SignInFailed({ cause: error });
+				return AuthError.SignInFailed({ cause: error });
 			} finally {
 				busy = false;
 			}
@@ -298,10 +298,10 @@ export function createAuth({
 			busy = true;
 			try {
 				const { error } = await client.signUp.email(input);
-				if (error) return AuthCommandError.SignUpFailed({ cause: error });
+				if (error) return AuthError.SignUpFailed({ cause: error });
 				return Ok(undefined);
 			} catch (error) {
-				return AuthCommandError.SignUpFailed({ cause: error });
+				return AuthError.SignUpFailed({ cause: error });
 			} finally {
 				busy = false;
 			}
@@ -309,7 +309,7 @@ export function createAuth({
 
 		async signInWithGoogle() {
 			if (!signInWithGoogleOption) {
-				return AuthCommandError.GoogleSignInFailed({
+				return AuthError.GoogleSignInFailed({
 					cause: new Error('Google sign-in is not configured.'),
 				});
 			}
@@ -321,12 +321,12 @@ export function createAuth({
 					provider: 'google',
 					idToken: { token: idToken, nonce },
 				});
-				if (error) return AuthCommandError.GoogleSignInFailed({ cause: error });
+				if (error) return AuthError.GoogleSignInFailed({ cause: error });
 				return Ok(undefined);
 			} catch (error) {
 				if (isCancelledGoogleSignIn(error))
-					return AuthCommandError.GoogleSignInCancelled();
-				return AuthCommandError.GoogleSignInFailed({ cause: error });
+					return AuthError.GoogleSignInCancelled();
+				return AuthError.GoogleSignInFailed({ cause: error });
 			} finally {
 				busy = false;
 			}

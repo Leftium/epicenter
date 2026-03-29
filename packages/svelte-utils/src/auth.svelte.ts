@@ -4,7 +4,7 @@ export {
 } from './auth-types.js';
 export {
 	type AuthClient,
-	AuthCommandError,
+	AuthError,
 	type AuthenticatedSession,
 	type CreateAuthOptions,
 	createAuth,

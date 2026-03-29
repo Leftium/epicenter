@@ -118,14 +118,14 @@ AFTER (1 factory, 1 box, zero threading)
   - Auth reads `session.current` for current state, writes `session.current = next` on changes
   - `fetchWorkspaceKey()` as a method on the returned `AuthClient`
   - Same `AuthClient` return type shape (session, operation, isRefreshing, refresh, signIn, signUp, signInWithGoogle, signOut, fetch)
-- [ ] **1.2** Export `AuthTransportError`, `AuthCommandError`, `SessionResolution`, `AuthClient`, `CreateAuthOptions` from the new module
+- [ ] **1.2** Export `AuthTransportError`, `AuthError`, `SessionResolution`, `AuthClient`, `CreateAuthOptions` from the new module
 - [ ] **1.3** Keep `auth-types.ts` unchanged (StoredUser, AuthSession, AuthOperation still needed)
 
 ### Wave 2: Update barrel exports
 
 - [ ] **2.1** Update `packages/svelte-utils/src/auth.svelte.ts` barrel:
   - Export `createAuth`, `CreateAuthOptions` from `./create-auth.svelte.js`
-  - Export `AuthTransportError`, `AuthCommandError`, `AuthClient`, `SessionResolution` from `./create-auth.svelte.js`
+  - Export `AuthTransportError`, `AuthError`, `AuthClient`, `SessionResolution` from `./create-auth.svelte.js`
   - Keep exporting `AuthSession`, `StoredUser`, `AuthOperation` from `./auth-types.js`
   - Keep exporting `createWorkspaceAuth`, `CreateWorkspaceAuthOptions` from `./workspace-auth.svelte.js`
   - Remove `createAuthTransport`, `createAuthSession`, `AuthSessionStorage` exports

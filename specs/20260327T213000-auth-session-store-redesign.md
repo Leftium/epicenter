@@ -179,7 +179,7 @@ That is not the dominant complexity today.
 | Token notifications | Keep `onTokenChange()` on the auth session store | Sync clients depend on this seam today |
 | Convenience accessors | Keep `user`, `token`, and `isAuthenticated` as projections | Ergonomic reads without creating parallel state roots |
 | Authorized fetch | Keep `fetch` on the auth session store for now | Minimizes migration cost; can be split later if still awkward |
-| Error modeling | Explicit command-local `Result<void, AuthCommandError>` returns for sign-in flows | Keeps forms specific without turning the session store into a shared UI error bucket |
+| Error modeling | Explicit command-local `Result<void, AuthError>` returns for sign-in flows | Keeps forms specific without turning the session store into a shared UI error bucket |
 | Compatibility strategy | Clean break to `createAuthSession` / `createAuthTransport` with caller migration | Keeps the public surface honest and avoids re-hiding the old god-object behind a compatibility shim |
 | State machine library | Do not introduce XState in this redesign | Ownership boundaries are the primary problem today |
 
@@ -360,9 +360,9 @@ export type AuthSessionStore = {
   readonly token: string | null;
 
   refresh(): Promise<void>;
-  signIn(input: { email: string; password: string }): Promise<Result<void, AuthCommandError>>;
-  signUp(input: { email: string; password: string; name: string }): Promise<Result<void, AuthCommandError>>;
-  signInWithGoogle(): Promise<Result<void, AuthCommandError>>;
+  signIn(input: { email: string; password: string }): Promise<Result<void, AuthError>>;
+  signUp(input: { email: string; password: string; name: string }): Promise<Result<void, AuthError>>;
+  signInWithGoogle(): Promise<Result<void, AuthError>>;
   signOut(): Promise<void>;
 
   onSessionChange(listener: (session: AuthSession) => void): () => void;
@@ -550,14 +550,14 @@ Recommendation: do not roll back the committed auth session. Session state and w
 
 ### Summary
 
-The auth core is now split into dedicated auth types, a Better Auth transport module, and a session-centered Svelte store. All app entrypoints now compose transport plus injected workspace side effects locally, and runtime callers now read `session` / `operation` directly while explicit auth commands return typed `Result`s for form-specific failures.
+The auth core is now split into dedicated auth types, a Better Auth transport module, and a session-centered Svelte store. All app entrypoints now compose transport plus injected workspace side effects locally, and runtime callers now read `session` / `operation` directly while explicit auth operations return typed `Result`s for form-specific failures.
 
 ### Deviations from Spec
 
 - `onSessionCommitted` carries `reason` and optional `userKeyBase64` so app-owned workspace effects can unlock with the actual remote encryption key when available.
 - The implementation intentionally made a clean caller-breaking rename instead of keeping `createAuth` as an alias.
 - Email/password and custom Google sign-in hydrate the canonical authenticated snapshot through `getSession()` after sign-in so the store can obtain the server-provided encryption key.
-- Shared `lastError` auth UI state was replaced with typed command results so forms render only the failures from the command they just ran.
+- Shared `lastError` auth UI state was replaced with typed operation results so forms render only the failures from the operation they just ran.
 
 ### Verification Notes
 

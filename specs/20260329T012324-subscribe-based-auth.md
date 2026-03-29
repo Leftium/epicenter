@@ -110,7 +110,7 @@ get value() {
 | Token storage | Reads from box (`session.current.token`) | Box is persisted → token survives page reload → BA uses it for initial getSession. |
 | Token rotation | `onSuccess` header check | Captures rotated token from `set-auth-token` header immediately. Subscribe confirms with full session. |
 | Workspace integration | `onSessionChange(next, prev)` callback | Auth emits, app responds. Auth doesn't know about workspaces, keys, or sync. Supports multiple workspaces—each callback decides what to unlock/reconnect. |
-| Command return | `Promise<AuthCommandError \| undefined>` | Commands return errors only. Session updates propagate via subscribe → reactive getters. Return value carried dead weight. |
+| Command return | `Promise<AuthError \| undefined>` | Commands return errors only. Session updates propagate via subscribe → reactive getters. Return value carried dead weight. |
 | Operation state | Internal `$state<AuthOperation>` | BA has `isPending`/`isRefetching` but not `signing-in`/`signing-out`. Still needed for command-specific UI spinners. |
 | Auto-refresh | BA's SessionRefreshManager | Handles visibility, network online, cross-tab, polling. Replaces our manual visibility listener. |
 | Google redirect | Thin passthrough `signInWithGoogleRedirect()` | Keeps BA client private. BA refresh picks up session on return via visibility change. |
@@ -164,10 +164,10 @@ get value() {
 │  get isPending() { subscribe(); return lastState?.isPending; }    │
 │  get operation() { return operation; }  // $state, commands only  │
 │                                                                   │
-│  signIn(input)  → AuthCommandError | undefined                    │
-│  signUp(input)  → AuthCommandError | undefined                    │
+│  signIn(input)  → AuthError | undefined                    │
+│  signUp(input)  → AuthError | undefined                    │
 │  signOut()      → void                                            │
-│  signInWithGoogle()  → AuthCommandError | undefined               │
+│  signInWithGoogle()  → AuthError | undefined               │
 │  signInWithGoogleRedirect({ callbackURL })  → void                │
 │                                                                   │
 │  fetch          → authorized fetch (bearer from box)              │
@@ -235,7 +235,7 @@ Startup flow:
   - `signInWithGoogleRedirect()` stays as thin passthrough to `client.signIn.social()`
   - Token rotation via `onSuccess` callback on the BA client
 - [x] **1.2** Update `AuthClient` type:
-  - Commands return `Promise<AuthCommandError | undefined>`
+  - Commands return `Promise<AuthError | undefined>`
   - Add `isPending` getter
   - Remove `isRefreshing` (use `isPending` from BA)
   - Add `onSessionChange` to `CreateAuthOptions`
@@ -243,7 +243,7 @@ Startup flow:
   - Remove `SessionHydrationFailed`, `SessionCommitFailed`
   - Remove `AuthRefreshResult`, `AuthCommandResult` types
   - Keep `AuthTransportError` for classifying BA errors in commands
-  - Keep `AuthCommandError` for UI-facing error messages
+  - Keep `AuthError` for UI-facing error messages
 - [x] **1.4** Keep `auth-types.ts` unchanged
 
 ### Wave 2: Delete `workspace-auth.svelte.ts`, update barrel
@@ -318,7 +318,7 @@ The `onSuccess` callback ensures the token is updated before any subsequent requ
 - [x] `workspace-auth.svelte.ts` deleted
 - [x] No manual `getSession` calls — BA handles session resolution
 - [x] No manual visibility change listener — BA's SessionRefreshManager
-- [x] Commands return `AuthCommandError | undefined` — no session in return
+- [x] Commands return `AuthError | undefined` — no session in return
 - [x] `onSessionChange` callback drives all workspace side effects
 - [x] `bun test` passes
 - [x] `lsp_diagnostics` clean
@@ -340,11 +340,11 @@ The `onSuccess` callback ensures the token is updated before any subsequent requ
 
 ### Summary
 
-Rewrote `createAuth` to use BA's `useSession.subscribe()` bridged to Svelte 5 via `createSubscriber`. Deleted `workspace-auth.svelte.ts` entirely—the subscribe callback + `onSessionChange` replaces it. All 4 apps (honeycrisp, tab-manager, opensidian, zhongwen) updated to wire `onSessionChange` in their workspace client files. Commands now return `AuthCommandError | undefined` instead of the old `AuthCommandResult` union.
+Rewrote `createAuth` to use BA's `useSession.subscribe()` bridged to Svelte 5 via `createSubscriber`. Deleted `workspace-auth.svelte.ts` entirely—the subscribe callback + `onSessionChange` replaces it. All 4 apps (honeycrisp, tab-manager, opensidian, zhongwen) updated to wire `onSessionChange` in their workspace client files. Commands now return `AuthError | undefined` instead of the old `AuthCommandResult` union.
 
 ### Deviations from Spec
 
-- **Line count**: `create-auth.svelte.ts` is ~290 lines (vs spec target of <200). The type definitions (`AuthTransportError`, `AuthCommandError`, `AuthSessionEvent`, `AuthClient`, `CreateAuthOptions`) account for ~100 lines of that. The `createAuth` function body itself is well under 150 lines.
+- **Line count**: `create-auth.svelte.ts` is ~290 lines (vs spec target of <200). The type definitions (`AuthTransportError`, `AuthError`, `AuthSessionEvent`, `AuthClient`, `CreateAuthOptions`) account for ~100 lines of that. The `createAuth` function body itself is well under 150 lines.
 - **Auth creation moved to workspace files**: To wire `onSessionChange` (which needs both `workspace` and `auth` in scope), `createAuth()` moved from each app's `auth/index.ts` into the workspace client file. Auth files now export only the persisted session. This avoids circular dependencies.
 - **`AuthSessionEvent` type added**: The `onSessionChange` callback receives `AuthSessionEvent` (includes `keyVersion`) for `next` and plain `AuthSession` (from the box) for `prev`. This lets apps compare keyVersion without storing it in the persisted session.
 - **Token rotation via `onSuccess`**: Added `fetchOptions.onSuccess` on the BA client to capture rotated tokens from the `set-auth-token` response header immediately, before the subscribe callback fires.

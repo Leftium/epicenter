@@ -11,7 +11,7 @@ import { createAutumn } from '../autumn';
 import type * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
 import type { SessionResponse } from './contracts';
-import { deriveWorkspaceKey } from './encryption';
+import { deriveUserEncryptionKey } from './encryption';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -149,7 +149,7 @@ export function createAuth({
 	 */
 	const customSessionPlugin = customSession(
 		async ({ user, session }) => {
-			const { userKeyBase64, keyVersion } = await deriveWorkspaceKey(user.id);
+			const { userKeyBase64, keyVersion } = await deriveUserEncryptionKey(user.id);
 			return {
 				user,
 				session,

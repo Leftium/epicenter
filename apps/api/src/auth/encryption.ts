@@ -111,7 +111,7 @@ function bytesToBase64(bytes: Uint8Array): string {
  * Called by `customSession()` on every `/auth/get-session` response.
  * HKDF derivation adds <0.1ms—negligible next to the network round-trip.
  */
-export async function deriveWorkspaceKey(
+export async function deriveUserEncryptionKey(
 	userId: string,
 ) {
 	const userKey = await deriveUserKey(currentKeySecret, userId);

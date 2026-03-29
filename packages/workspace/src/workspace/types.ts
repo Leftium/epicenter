@@ -1033,8 +1033,8 @@ export type EncryptionConfig = {
 	 * Cache for the raw user key as a base64 string.
 	 *
 	 * This is the local-first startup seam: the workspace saves the user key
-	 * after `encryption.unlock()`, restores it on the next launch via
-	 * `encryption.tryUnlock()`, and clears it during `workspace.clearLocalData()`.
+ * after `encryption.unlock()`, auto-boots from it on the next launch via
+ * `whenReady`, and clears it during `workspace.clearLocalData()`.
 	 *
 	 * The cached value is the root user key, not the derived per-workspace key.
 	 * That keeps the cache format stable across workspace ids while the runtime
@@ -1065,7 +1065,8 @@ export type EncryptionConfig = {
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createSyncExtension({ ... }));
  *
- * await workspace.encryption.tryUnlock();
+ * // Auto-boot loads cached key on whenReady — no manual call needed.
+ * // Explicit unlock for keys from auth:
  * await workspace.encryption.unlock(base64ToBytes(session.userKeyBase64));
  * workspace.encryption.lock();
  * await workspace.clearLocalData();
@@ -1094,20 +1095,6 @@ export type WorkspaceEncryption = {
 };
 
 /**
- * Unlock API when `.withEncryption({ userKeyCache })` is configured.
- */
-export type WorkspaceEncryptionWithCache = WorkspaceEncryption & {
-	/**
-	 * Try to unlock from the configured key cache.
-	 *
-	 * Returns `false` when the cache is empty or invalid. Returns `true` when
-	 * a cached key was loaded and the workspace is now unlocked.
-	 */
-	tryUnlock(): Promise<boolean>;
-};
-
-
-/**
  * Product-level unlock helpers exposed when `.withEncryption()` is configured.
  */
 export type WorkspaceKeyAccess = {
@@ -1120,23 +1107,13 @@ export type WorkspaceKeyAccess = {
 	unlockWithKey(userKeyBase64: string): Promise<void>;
 };
 
-/**
- * Product-level startup helpers exposed when `.withEncryption({ userKeyCache })`
- * is configured.
- */
-export type WorkspaceKeyAccessWithCache = WorkspaceKeyAccess;
-
 export type WorkspaceKeyAccessFor<
 	TConfig extends EncryptionConfig | undefined,
-> = TConfig extends EncryptionConfig
-	? WorkspaceKeyAccess
-	: WorkspaceKeyAccess;
+> = TConfig extends EncryptionConfig ? WorkspaceKeyAccess : WorkspaceKeyAccess;
 
 export type WorkspaceEncryptionFor<
 	TConfig extends EncryptionConfig | undefined,
-> = TConfig extends EncryptionConfig
-	? WorkspaceEncryptionWithCache
-	: WorkspaceEncryption;
+> = TConfig extends EncryptionConfig ? WorkspaceEncryption : WorkspaceEncryption;
 export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
@@ -1328,12 +1305,11 @@ export type WorkspaceClientBuilder<
 		 * @example
 		 * ```typescript
 		 * const workspace = createWorkspace(definition)
-		 *   .withEncryption({ userKeyCache })
+		 *   .withEncryption({ userKeyCache })  // auto-boots from cache on whenReady
 		 *   .withExtension('persistence', indexeddbPersistence)
 		 *   .withExtension('sync', createSyncExtension({ ... }));
 		 *
-		 * await workspace.encryption.unlock(userKeyBytes);
-		 * await workspace.encryption.tryUnlock();
+		 * await workspace.encryption.unlock(userKeyBytes);  // explicit unlock from auth
 		 * ```
 		 */
 		withEncryption<TConfig extends EncryptionConfig | undefined = undefined>(

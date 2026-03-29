@@ -4,13 +4,11 @@
  * Stores the user key as a base64 string—the same format the auth session
  * provides and the workspace unlock boundary restores. This keeps the
  * cache representation simple: the key enters as a string, caches as a
- * string, and only decodes to bytes once the workspace calls
- * `tryUnlock()`.
+ * string, and only decodes to bytes once the workspace calls `unlock()`.
  *
- * Every concrete backend stores strings natively. WXT storage wraps
- * `chrome.storage.session` for the extension, `sessionStorage` is string-only
- * in the browser, and Stronghold persists opaque values on desktop. The
- * interface matches that storage reality.
+ * Passing a `UserKeyCache` to `.withEncryption({ userKeyCache })` implies
+ * auto-boot: the workspace loads the cached key on startup and unlocks
+ * immediately if one is available. No explicit boot call is needed.
  *
  * | Platform         | Implementation                                            |
  * |------------------|-----------------------------------------------------------|
@@ -29,10 +27,10 @@
  *   │  stored locally as-is (no conversion needed)
  *   ▼
  * App startup (before auth roundtrip completes)
- *   │  UserKeyCache.load() → base64 string | null (cached from last session)
- *   │  consumed by workspace.encryption.tryUnlock()
+ *   │  UserKeyCache.load() → base64 string | null
+ *   │  consumed by auto-boot in whenReady
  *   ▼
- * tryUnlock() → base64ToBytes → unlock() → HKDF
+ * auto-boot → base64ToBytes → unlock() → HKDF
  *   │  base64 decoding happens once, at the crypto boundary
  * ```
  *
@@ -53,9 +51,9 @@ export type UserKeyCache = {
 	/**
 	 * Load the cached base64-encoded user key during startup.
 	 *
-	 * `createWorkspace().withEncryption({ userKeyCache })` calls this before the
-	 * auth roundtrip completes so encrypted data can unlock immediately. Return
-	 * `null` to opt out and force the workspace to wait for the server session.
+	 * Called automatically during `whenReady` when a `UserKeyCache` is provided
+	 * to `.withEncryption()`. Return `null` to skip auto-unlock and wait for
+	 * the server session to provide a key.
 	 */
 	load(): Promise<string | null>;
 	/**

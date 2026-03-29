@@ -26,10 +26,10 @@
  *   → set runtime unlock state immediately
  *   → await userKeyCache.save(bytesToBase64(userKey)) if configured
  *
- * workspace.encryption.tryUnlock()
- *   → userKeyCache.load() if configured
- *   → base64ToBytes(cachedUserKey)
- *   → workspace.encryption.unlock(userKey)
+ * Auto-boot (when userKeyCache is provided):
+ *   → whenReady: userKeyCache.load()
+ *   → if cached key exists: workspace.encryption.unlock(cachedKey)
+ *   → if unlock fails: userKeyCache.clear()
  *
  * workspace.encryption.lock()
  *   → clear key + deactivate all stores
@@ -108,7 +108,6 @@ import type {
 	WorkspaceClientBuilder,
 	WorkspaceClientWithActions,
 	WorkspaceEncryption,
-	WorkspaceEncryptionWithCache,
 	WorkspaceDefinition,
 } from './types.js';
 import { KV_KEY, TableKey } from './ydoc-keys.js';
@@ -214,7 +213,7 @@ export function createWorkspace<
 	};
 
 	type EncryptionRuntime = {
-		encryption: WorkspaceEncryption | WorkspaceEncryptionWithCache;
+		encryption: WorkspaceEncryption;
 		lock: () => void;
 		clearCache: () => Promise<void>;
 	};
@@ -581,51 +580,29 @@ export function createWorkspace<
 					lock,
 				};
 
-				const encryptionRuntime: EncryptionRuntime = config?.userKeyCache
-					? (() => {
-							async function tryUnlock() {
-								if (workspaceKey !== undefined) return true;
-
-								const cachedUserKey = await config.userKeyCache.load();
-								if (!cachedUserKey) return false;
-
-								try {
-									await unlock(base64ToBytes(cachedUserKey));
-									return workspaceKey !== undefined;
-								} catch (error) {
-									console.error(
-										'[workspace] Cached key unlock failed:',
-										error,
-									);
-									await clearCache();
-									return false;
-								}
+				// Auto-boot: if a key cache is provided, attempt unlock from cache
+				// after all extensions are ready. Passing userKeyCache implies auto-boot.
+				if (config?.userKeyCache) {
+					const cache = config.userKeyCache;
+					state.whenReadyPromises.push(
+						Promise.all(state.whenReadyPromises).then(async () => {
+							const cachedKey = await cache.load();
+							if (!cachedKey) return;
+							try {
+								await unlock(base64ToBytes(cachedKey));
+							} catch (error) {
+								console.error('[workspace] Cached key unlock failed:', error);
+								await clearCache();
 							}
+						}),
+					);
+				}
 
-							// Auto-boot: tryUnlock runs after all current extensions are ready.
-							// Pushed into whenReadyPromises so whenReady includes it.
-							state.whenReadyPromises.push(
-								Promise.all(state.whenReadyPromises).then(() => tryUnlock()),
-							);
-
-							return {
-								encryption: {
-									get isUnlocked() {
-										return workspaceKey !== undefined;
-									},
-									unlock,
-									lock,
-									tryUnlock,
-								} satisfies WorkspaceEncryptionWithCache,
-								lock,
-								clearCache,
-							};
-						})()
-					: {
-							encryption: baseEncryption,
-							lock,
-							clearCache,
-						};
+				const encryptionRuntime: EncryptionRuntime = {
+					encryption: baseEncryption,
+					lock,
+					clearCache,
+				};
 
 				return buildClient(
 					extensions,

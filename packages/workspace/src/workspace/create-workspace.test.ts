@@ -1097,6 +1097,7 @@ describe('.withEncryption() lifecycle', () => {
 	describe('userKeyCache integration', () => {
 		test('encryption.unlock saves the user key through userKeyCache', async () => {
 			const { client, userKeyCache, readCachedValue } = setupWithUserKeyCache();
+			await client.whenReady;
 			const userKey = generateEncryptionKey();
 
 			await client.encryption.unlock(userKey);
@@ -1109,6 +1110,7 @@ describe('.withEncryption() lifecycle', () => {
 		test('encryption.unlock retries the same key after userKeyCache.save fails', async () => {
 			const { client, userKeyCache, failNextSave, readCachedValue } =
 				setupWithUserKeyCache();
+			await client.whenReady;
 			const userKey = generateEncryptionKey();
 
 			failNextSave();
@@ -1139,6 +1141,7 @@ describe('.withEncryption() lifecycle', () => {
 			const client = createWorkspace(
 				defineWorkspace({ id: 'delayed-save-test', tables: { posts } }),
 			).withEncryption({ userKeyCache });
+			await client.whenReady;
 			const userKey = generateEncryptionKey();
 
 			const unlockPromise = client.encryption.unlock(userKey);
@@ -1152,25 +1155,20 @@ describe('.withEncryption() lifecycle', () => {
 			expect(cachedValue ?? '').toBe(bytesToBase64(userKey));
 		});
 
-		test('tryUnlock returns false when userKeyCache is empty', async () => {
+		test('auto-boot stays locked when userKeyCache is empty', async () => {
 			const { client, userKeyCache } = setupWithUserKeyCache();
-			await client.whenReady; // auto-boot tryUnlock runs here
-			(userKeyCache.load as ReturnType<typeof mock>).mockClear();
+			await client.whenReady;
 
-			const restored = await client.encryption.tryUnlock();
-
-			expect(restored).toBe(false);
 			expect(client.encryption.isUnlocked).toBe(false);
 			expect(userKeyCache.load).toHaveBeenCalledTimes(1);
 			expect(userKeyCache.save).toHaveBeenCalledTimes(0);
 		});
 
-		test('tryUnlock loads the cached key and unlocks the runtime', async () => {
+		test('auto-boot unlocks from cached key', async () => {
 			const userKey = generateEncryptionKey();
 			const { client, userKeyCache } = setupWithUserKeyCache(
 				bytesToBase64(userKey),
 			);
-			// Auto-boot already calls tryUnlock and unlocks from cache
 			await client.whenReady;
 
 			expect(client.encryption.isUnlocked).toBe(true);
@@ -1179,10 +1177,9 @@ describe('.withEncryption() lifecycle', () => {
 			expect(userKeyCache.save).toHaveBeenCalledWith(bytesToBase64(userKey));
 		});
 
-		test('tryUnlock clears corrupt cache entries and stays locked', async () => {
+		test('auto-boot clears corrupt cache entries and stays locked', async () => {
 			const { client, userKeyCache, readCachedValue } =
 				setupWithUserKeyCache('%%%not-base64%%%');
-			// Auto-boot attempts tryUnlock with corrupt data
 			await client.whenReady;
 
 			expect(client.encryption.isUnlocked).toBe(false);
@@ -1213,6 +1210,7 @@ describe('.withEncryption() lifecycle', () => {
 			const client = createWorkspace(
 				defineWorkspace({ id: 'rapid-switch-cache-test', tables: { posts } }),
 			).withEncryption({ userKeyCache });
+			await client.whenReady;
 			const firstKey = generateEncryptionKey();
 			const secondKey = generateEncryptionKey();
 
@@ -1254,6 +1252,7 @@ describe('.withEncryption() lifecycle', () => {
 					tables: { posts },
 				}),
 			).withEncryption({ userKeyCache });
+			await client.whenReady;
 			const userKey = generateEncryptionKey();
 
 			const unlockPromise = client.encryption.unlock(userKey);
@@ -1295,30 +1294,5 @@ describe('.withEncryption() lifecycle', () => {
 			expect(client.encryption.isUnlocked).toBe(false);
 		});
 
-		test('tryUnlock only exists when userKeyCache is configured in the type', async () => {
-			const posts = defineTable(
-				type({ id: 'string', title: 'string', _v: '1' }),
-			);
-			const withoutCache = createWorkspace(
-				defineWorkspace({ id: 'type-test-no-cache', tables: { posts } }),
-			).withEncryption();
-			const withCache = createWorkspace(
-				defineWorkspace({ id: 'type-test-cache', tables: { posts } }),
-			).withEncryption({
-				userKeyCache: {
-					save: async () => {},
-					load: async () => null,
-					clear: async () => {},
-				},
-			});
-
-			if (false) {
-				// @ts-expect-error tryUnlock only exists when userKeyCache is configured
-				void withoutCache.encryption.tryUnlock();
-			}
-
-			expect(typeof withCache.encryption.tryUnlock).toBe('function');
-			expect(await withCache.encryption.tryUnlock()).toBe(false);
-		});
 	});
 });

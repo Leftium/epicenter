@@ -48,7 +48,8 @@
 			onclick={async () => {
 				submitError = null;
 				try {
-					await auth.signInWithGoogleRedirect({
+					await auth.signInWithSocialRedirect({
+						provider: 'google',
 						callbackURL: window.location.origin,
 					});
 				} catch (error) {

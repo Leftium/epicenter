@@ -17,7 +17,8 @@
 
 
 	async function signInWithGoogle() {
-		await auth.signInWithGoogleRedirect({
+		await auth.signInWithSocialRedirect({
+			provider: 'google',
 			callbackURL: window.location.origin,
 		});
 	}

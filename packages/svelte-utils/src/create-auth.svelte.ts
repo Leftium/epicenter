@@ -28,16 +28,12 @@ export const AuthError = defineErrors({
 		message: `Failed to create account: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	GoogleSignInCancelled: () => ({
-		message: 'Google sign-in was cancelled.',
-	}),
-	GoogleSignInFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to sign in with Google: ${extractErrorMessage(cause)}`,
+	SocialSignInFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Social sign-in failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
 export type AuthError = InferErrors<typeof AuthError>;
-
 
 /**
  * Authenticated session data passed to the `onLogin` hook.
@@ -77,7 +73,7 @@ export type AuthClient = {
 	 * {/if}
 	 * ```
 	 */
-	readonly isAuthenticated: boolean;
+	isAuthenticated: boolean;
 
 	/**
 	 * The current user, or `null` if not authenticated.
@@ -92,7 +88,7 @@ export type AuthClient = {
 	 * {/if}
 	 * ```
 	 */
-	readonly user: StoredUser | null;
+	user: StoredUser | null;
 
 	/**
 	 * The current session token, or `null` if not authenticated.
@@ -108,7 +104,7 @@ export type AuthClient = {
 	 * })
 	 * ```
 	 */
-	readonly token: string | null;
+	token: string | null;
 	/**
 	 * Whether a user-initiated auth operation (sign-in, sign-up, sign-out) is
 	 * in progress. Toggles on and off with each auth operation. Use it to
@@ -125,7 +121,7 @@ export type AuthClient = {
 	 * </Button>
 	 * ```
 	 */
-	readonly isBusy: boolean;
+	isBusy: boolean;
 
 	signIn(input: {
 		email: string;
@@ -136,14 +132,67 @@ export type AuthClient = {
 		password: string;
 		name: string;
 	}): Promise<Result<undefined, AuthError>>;
-	signInWithGoogle(): Promise<Result<undefined, AuthError>>;
+	/**
+	 * Sign in with a pre-obtained social provider ID token.
+	 *
+	 * Provider-agnostic—the caller is responsible for acquiring the token
+	 * (e.g. via a platform-specific popup, native SDK, or redirect callback).
+	 * This method only sends the token to Better Auth for verification.
+	 *
+	 * Not all providers support ID tokens—GitHub uses OAuth code exchange
+	 * and requires the redirect flow. Google and Apple support ID tokens.
+	 *
+	 * @example
+	 * ```typescript
+	 * const { idToken, nonce } = await getGoogleCredentials();
+	 * const { error } = await auth.signInWithIdToken({
+	 *   provider: 'google',
+	 *   idToken: { token: idToken, nonce },
+	 * });
+	 * ```
+	 */
+	signInWithIdToken(input: {
+		provider: string;
+		idToken: { token: string; nonce?: string };
+	}): Promise<Result<undefined, AuthError>>;
+	/**
+	 * Sign in using the injected `socialTokenProvider`.
+	 *
+	 * Orchestrates the full popup/native flow: acquires the token from the
+	 * platform-specific provider, sends it to BA, and handles errors—keeping
+	 * UI components free of auth orchestration logic.
+	 *
+	 * Only available when `socialTokenProvider` was passed to `createAuth`.
+	 * Returns `SocialSignInFailed` if no provider was configured.
+	 *
+	 * @example
+	 * ```svelte
+	 * <Button onclick={async () => {
+	 *   const { error } = await auth.signInWithSocialPopup();
+	 *   if (error) submitError = error.message;
+	 * }}>
+	 *   Continue with Google
+	 * </Button>
+	 * ```
+	 */
+	signInWithSocialPopup(): Promise<Result<undefined, AuthError>>;
 	signOut(): Promise<void>;
 	/**
-	 * Redirect-based Google sign-in for web apps. Navigates away from the
+	 * Redirect-based social sign-in for web apps. Navigates away from the
 	 * current page—no `isBusy` toggle or `Result` return since the browser
 	 * leaves before either would be useful.
+	 *
+	 * Works for ALL social providers (Google, GitHub, Apple, etc.).
+	 * This is the only sign-in path for providers like GitHub that don't
+	 * support ID token verification.
+	 *
+	 * @example
+	 * ```typescript
+	 * auth.signInWithSocialRedirect({ provider: 'google', callbackURL: '/' });
+	 * auth.signInWithSocialRedirect({ provider: 'github', callbackURL: '/' });
+	 * ```
 	 */
-	signInWithGoogleRedirect(options: { callbackURL: string }): Promise<void>;
+	signInWithSocialRedirect(options: { provider: string; callbackURL: string }): Promise<void>;
 
 	fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 };
@@ -184,8 +233,32 @@ export type CreateAuthOptions = {
 	 * ```
 	 */
 	onLogout?: () => void;
-	signInWithGoogle?: () => Promise<{ idToken: string; nonce: string }>;
-};
+	/**
+	 * Platform-specific credential provider for social ID token sign-in.
+	 *
+	 * Injected at creation time so the auth client can orchestrate the full
+	 * popup flow (acquire token → send to BA → handle errors) without pushing
+	 * platform logic into UI components. Only needed for native/popup flows—
+	 * web apps using redirect sign-in don't need this.
+	 *
+	 * The returned `provider` identifies which BA social provider to verify
+	 * the token against (e.g. `'google'`, `'apple'`).
+	 *
+	 * @example
+	 * ```typescript
+	 * createAuth({
+	 *   socialTokenProvider: async () => {
+	 *     const { idToken, nonce } = await getGoogleCredentials();
+	 *     return { provider: 'google', idToken, nonce };
+	 *   },
+	 * });
+	 * ```
+	 */
+	socialTokenProvider?: () => Promise<{
+		provider: string;
+		idToken: string;
+		nonce: string;
+	}>;
 
 /**
  * Compile-time bridge for Better Auth's custom session type inference.
@@ -213,11 +286,20 @@ export function createAuth({
 	session,
 	onLogin,
 	onLogout,
-	signInWithGoogle: signInWithGoogleOption,
+	socialTokenProvider,
 }: CreateAuthOptions): AuthClient {
-	/** Whether a user-initiated auth operation (sign-in, sign-up, sign-out) is in flight. */
-	let busy = $state(false);
+	/**
+	 * Tracks whether a user-initiated auth command is in flight.
+	 * Toggled by every command method (signIn, signUp, signOut, signInWithIdToken)
+	 * via try/finally so it always resets—even on errors.
+	 */
+	let isBusy = $state(false);
 
+	/**
+	 * Internal Better Auth client. All BA-specific API calls go through this.
+	 * Configured with bearer auth from the persisted session box and a
+	 * token-rotation interceptor so the local copy stays fresh.
+	 */
 	const client = createAuthClient({
 		baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
 		basePath: '/auth',
@@ -227,7 +309,11 @@ export function createAuth({
 				type: 'Bearer',
 				token: () => session.current?.token,
 			},
-			// Persist rotated tokens so subsequent requests don't use a stale one.
+			// BA silently rotates tokens on authenticated requests. The new
+			// token arrives in a response header rather than through the
+			// useSession subscription, so we intercept it here and write it
+			// to the persisted session box—otherwise the local copy goes
+			// stale and subsequent requests use an expired token.
 			onSuccess: (context) => {
 				const newToken = context.response.headers.get('set-auth-token');
 				if (newToken && session.current !== null) {
@@ -274,11 +360,11 @@ export function createAuth({
 		},
 
 		get isBusy() {
-			return busy;
+			return isBusy;
 		},
 
 		async signIn(input) {
-			busy = true;
+			isBusy = true;
 			try {
 				const { error } = await client.signIn.email(input);
 				if (!error) return Ok(undefined);
@@ -289,12 +375,12 @@ export function createAuth({
 			} catch (error) {
 				return AuthError.SignInFailed({ cause: error });
 			} finally {
-				busy = false;
+				isBusy = false;
 			}
 		},
 
 		async signUp(input) {
-			busy = true;
+			isBusy = true;
 			try {
 				const { error } = await client.signUp.email(input);
 				if (error) return AuthError.SignUpFailed({ cause: error });
@@ -302,48 +388,62 @@ export function createAuth({
 			} catch (error) {
 				return AuthError.SignUpFailed({ cause: error });
 			} finally {
-				busy = false;
+				isBusy = false;
 			}
 		},
 
-		async signInWithGoogle() {
-			if (!signInWithGoogleOption) {
-				return AuthError.GoogleSignInFailed({
-					cause: new Error('Google sign-in is not configured.'),
+		async signInWithIdToken(input) {
+			isBusy = true;
+			try {
+				const { error } = await client.signIn.social({
+					provider: input.provider,
+					idToken: input.idToken,
+				});
+				if (error) return AuthError.SocialSignInFailed({ cause: error });
+				return Ok(undefined);
+			} catch (error) {
+				return AuthError.SocialSignInFailed({ cause: error });
+			} finally {
+				isBusy = false;
+			}
+		},
+
+		async signInWithSocialPopup() {
+			if (!socialTokenProvider) {
+				return AuthError.SocialSignInFailed({
+					cause: new Error('No socialTokenProvider configured.'),
 				});
 			}
 
-			busy = true;
+			isBusy = true;
 			try {
-				const { idToken, nonce } = await signInWithGoogleOption();
+				const { provider, idToken, nonce } = await socialTokenProvider();
 				const { error } = await client.signIn.social({
-					provider: 'google',
+					provider,
 					idToken: { token: idToken, nonce },
 				});
-				if (error) return AuthError.GoogleSignInFailed({ cause: error });
+				if (error) return AuthError.SocialSignInFailed({ cause: error });
 				return Ok(undefined);
 			} catch (error) {
-				if (isCancelledGoogleSignIn(error))
-					return AuthError.GoogleSignInCancelled();
-				return AuthError.GoogleSignInFailed({ cause: error });
+				return AuthError.SocialSignInFailed({ cause: error });
 			} finally {
-				busy = false;
+				isBusy = false;
 			}
 		},
 
 		async signOut() {
-			busy = true;
+			isBusy = true;
 			try {
 				await client.signOut();
 			} catch (error) {
 				console.error('[auth] sign-out failed:', error);
 			} finally {
-				busy = false;
+				isBusy = false;
 			}
 		},
 
-		async signInWithGoogleRedirect({ callbackURL }) {
-			await client.signIn.social({ provider: 'google', callbackURL });
+		async signInWithSocialRedirect({ provider, callbackURL }) {
+			await client.signIn.social({ provider, callbackURL });
 		},
 
 		fetch(input: RequestInfo | URL, init?: RequestInit) {
@@ -355,6 +455,13 @@ export function createAuth({
 	};
 }
 
+/**
+ * Convert BA's `Date` fields to ISO strings for JSON-safe persistence.
+ *
+ * BA returns `createdAt` and `updatedAt` as `Date` objects. The persisted
+ * session box (chrome.storage, localStorage) needs plain JSON, so we
+ * normalize here at the boundary rather than forcing every consumer to handle it.
+ */
 function normalizeUser(user: {
 	id: string;
 	createdAt: Date;
@@ -373,10 +480,4 @@ function normalizeUser(user: {
 		name: user.name,
 		image: user.image,
 	};
-}
-
-function isCancelledGoogleSignIn(error: unknown): boolean {
-	if (!(error instanceof Error)) return false;
-	const message = error.message.toLowerCase();
-	return message.includes('canceled') || message.includes('cancelled');
 }

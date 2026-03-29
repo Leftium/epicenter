@@ -27,10 +27,7 @@ import {
 	getBrowserName,
 	getDeviceId,
 } from '$lib/device/device-id';
-import {
-	authSession,
-	getGoogleCredentials,
-} from '$lib/state/auth';
+import { authSession, getGoogleCredentials } from '$lib/state/auth';
 import { userKeyCache } from '$lib/state/key-cache';
 import { remoteServerUrl, serverUrl } from '$lib/state/settings.svelte';
 import { definition, generateSavedTabId } from './schema';
@@ -43,7 +40,10 @@ export const workspace = buildWorkspaceClient();
 export const auth = createAuth({
 	baseURL: () => remoteServerUrl.current,
 	session: authSession,
-	signInWithGoogle: getGoogleCredentials,
+	socialTokenProvider: async () => {
+		const { idToken, nonce } = await getGoogleCredentials();
+		return { provider: 'google', idToken, nonce };
+	},
 	onLogin(session) {
 		workspace.unlockWithKey(session.userKeyBase64);
 		workspace.extensions.sync.reconnect();

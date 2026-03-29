@@ -47,7 +47,7 @@
 			disabled={auth.isBusy}
 			onclick={async () => {
 				submitError = null;
-				const { error } = await auth.signInWithGoogle();
+				const { error } = await auth.signInWithSocialPopup();
 				if (error) submitError = error.message;
 			}}
 		>

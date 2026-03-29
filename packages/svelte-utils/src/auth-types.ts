@@ -25,12 +25,9 @@ export type StoredUser = typeof StoredUser.infer;
  * a bearer token plus the normalized user snapshot needed for boot and refresh.
  */
 export const AuthSession = type({
-	status: "'anonymous'",
-}).or({
-	status: "'authenticated'",
 	token: 'string',
 	user: StoredUser,
-});
+}).or('null');
 
 export type AuthSession = typeof AuthSession.infer;
 

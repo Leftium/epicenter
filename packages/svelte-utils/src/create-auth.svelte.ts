@@ -7,16 +7,14 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, tryAsync, type Result } from 'wellcrafted/result';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import {
 	type AuthSession,
 	readStatusCode,
 	type StoredUser,
 } from './auth-types.js';
 
-
 type BaseURL = string | (() => string);
-
 
 export const AuthCommandError = defineErrors({
 	InvalidCredentials: () => ({
@@ -88,9 +86,8 @@ export type AuthClient = {
 	/**
 	 * The current user, or `null` if not authenticated.
 	 *
-	 * Narrows the `AuthSession` discriminated union once at the source so every
-	 * consumer doesn't repeat the same `status === 'authenticated' ? session.user : null`
-	 * pattern.
+	 * Narrows the `AuthSession` nullable value once at the source so every
+	 * consumer doesn't repeat the same `session ? session.user : null` pattern.
 	 *
 	 * @example
 	 * ```svelte
@@ -105,7 +102,7 @@ export type AuthClient = {
 	 * The current session token, or `null` if not authenticated.
 	 *
 	 * Same narrowing as `user`—extracts the token from the authenticated
-	 * session so consumers don't repeat the `status === 'authenticated'`
+	 * session so consumers don't repeat the `session ? session.token : null`
 	 * ternary in every `getToken` callback.
 	 *
 	 * @example
@@ -235,7 +232,7 @@ export function createAuth({
 			},
 			onSuccess: (context) => {
 				const newToken = context.response.headers.get('set-auth-token');
-				if (newToken && session.current.status === 'authenticated') {
+				if (newToken && session.current !== null) {
 					session.current = { ...session.current, token: newToken };
 				}
 			},
@@ -250,7 +247,7 @@ export function createAuth({
 		if (state.data) {
 			const user = normalizeUser(state.data.user);
 			const token = state.data.session.token;
-			session.current = { status: 'authenticated', token, user };
+			session.current = { token, user };
 			onLogin?.({
 				token,
 				user,
@@ -258,35 +255,28 @@ export function createAuth({
 				userKeyBase64: state.data.userKeyBase64,
 			});
 		} else {
-			session.current = { status: 'anonymous' };
-			if (prev.status === 'authenticated') {
+			session.current = null;
+			if (prev !== null) {
 				onLogout?.();
 			}
 		}
 	});
 
-
 	const currentToken = () =>
-		session.current.status === 'authenticated'
-			? session.current.token
-			: null;
+		session.current !== null ? session.current.token : null;
 
 	return {
-
 		get isAuthenticated() {
-			return session.current.status === 'authenticated';
+			return session.current !== null;
 		},
 
 		get user() {
-			return session.current.status === 'authenticated'
-				? session.current.user
-				: null;
+			return session.current !== null ? session.current.user : null;
 		},
 
 		get token() {
 			return currentToken();
 		},
-
 
 		get isBusy() {
 			return busy;
@@ -335,8 +325,7 @@ export function createAuth({
 					provider: 'google',
 					idToken: { token: idToken, nonce },
 				});
-				if (error)
-					return AuthCommandError.GoogleSignInFailed({ cause: error });
+				if (error) return AuthCommandError.GoogleSignInFailed({ cause: error });
 				return Ok(undefined);
 			} catch (error) {
 				if (isCancelledGoogleSignIn(error))
@@ -391,7 +380,6 @@ function normalizeUser(user: {
 		image: user.image,
 	};
 }
-
 
 function isCancelledGoogleSignIn(error: unknown): boolean {
 	if (!(error instanceof Error)) return false;

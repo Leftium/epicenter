@@ -17,7 +17,7 @@ const GOOGLE_CLIENT_ID =
 
 /** Persisted auth snapshot in `chrome.storage.local`. */
 export const authSession = createStorageState('local:authSession', {
-	fallback: { status: 'anonymous' },
+	fallback: null,
 	schema: AuthSession,
 });
 

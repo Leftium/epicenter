@@ -4,5 +4,5 @@ import { AuthSession } from '@epicenter/svelte/auth';
 export const session = createPersistedState({
 	key: 'zhongwen:authSession',
 	schema: AuthSession,
-	defaultValue: { status: 'anonymous' },
+	defaultValue: null,
 });

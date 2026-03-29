@@ -7,7 +7,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 import {
 	type AuthSession,
 	readStatusCode,
@@ -226,6 +226,7 @@ export function createAuth({
 				type: 'Bearer',
 				token: () => currentToken() ?? undefined,
 			},
+			// Persist rotated tokens so subsequent requests don't use a stale one.
 			onSuccess: (context) => {
 				const newToken = context.response.headers.get('set-auth-token');
 				if (newToken && session.current !== null) {
@@ -334,14 +335,13 @@ export function createAuth({
 
 		async signOut() {
 			busy = true;
-			await tryAsync({
-				try: () => client.signOut(),
-				catch: (error) => {
-					console.error('[auth] sign-out failed:', error);
-					return Ok(undefined);
-				},
-			});
-			busy = false;
+			try {
+				await client.signOut();
+			} catch (error) {
+				console.error('[auth] sign-out failed:', error);
+			} finally {
+				busy = false;
+			}
 		},
 
 		async signInWithGoogleRedirect({ callbackURL }) {

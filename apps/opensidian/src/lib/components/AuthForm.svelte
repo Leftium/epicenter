@@ -13,7 +13,6 @@
 	let submitError = $state<string | null>(null);
 
 	const isSignUp = $derived(mode === 'sign-up');
-	const isBusy = $derived(auth.isBusy);
 </script>
 
 <form
@@ -45,7 +44,7 @@
 			type="button"
 			variant="outline"
 			class="w-full"
-			disabled={isBusy}
+			disabled={auth.isBusy}
 			onclick={async () => {
 				submitError = null;
 				try {
@@ -119,8 +118,8 @@
 			</Field.Field>
 		</Field.Group>
 
-		<Button type="submit" class="w-full" disabled={isBusy}>
-			{#if isBusy}
+		<Button type="submit" class="w-full" disabled={auth.isBusy}>
+			{#if auth.isBusy}
 				<Spinner class="size-4" />
 				{isSignUp ? 'Creating account…' : 'Signing in…'}
 			{:else}

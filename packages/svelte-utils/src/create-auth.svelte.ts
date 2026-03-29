@@ -2,7 +2,6 @@ import type { SessionResponse } from '@epicenter/api/types';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
-import { createSubscriber } from 'svelte/reactivity';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -47,7 +46,7 @@ export type AuthFetch = (
 ) => Promise<Response>;
 
 /**
- * Session data passed to the `onLogin` hook.
+ * Authenticated session data passed to the `onLogin` hook.
  *
  * Includes `userKeyBase64` so apps can call `workspace.unlockWithKey()`
  * directly—no separate fetch or version tracking needed. The persisted
@@ -62,7 +61,7 @@ export type AuthFetch = (
  * });
  * ```
  */
-export type AuthLoginEvent = {
+export type AuthenticatedSession = {
 	token: string;
 	user: StoredUser;
 	keyVersion: number;
@@ -76,9 +75,7 @@ export type AuthClient = {
 	 * Whether the user is currently authenticated.
 	 *
 	 * Convenience getter that eliminates the need for consumers to check
-	 * `auth.session.status === 'authenticated'` in every component. Reads from
-	 * the same external session box as `session`, so it requires the
-	 * `createSubscriber` subscription to be active.
+	 * `auth.session.status === 'authenticated'` in every component.
 	 *
 	 * @example
 	 * ```svelte
@@ -96,7 +93,7 @@ export type AuthClient = {
 	 *
 	 * Narrows the `AuthSession` discriminated union once at the source so every
 	 * consumer doesn't repeat the same `status === 'authenticated' ? session.user : null`
-	 * pattern. Reads from the external session box via `createSubscriber`.
+	 * pattern.
 	 *
 	 * @example
 	 * ```svelte
@@ -181,7 +178,7 @@ export type CreateAuthOptions = {
 	 * }
 	 * ```
 	 */
-	onLogin?: (session: AuthLoginEvent) => void;
+	onLogin?: (session: AuthenticatedSession) => void;
 	/**
 	 * Called on the authenticated → anonymous transition only.
 	 *
@@ -204,10 +201,10 @@ export type CreateAuthOptions = {
 /**
  * Compile-time bridge for Better Auth's custom session type inference.
  *
- * Better Auth's canonical pattern is `customSessionClient<typeof auth>()`, but
- * `typeof auth` drags in server-only types client packages cannot resolve.
- * `InferPlugin<T>()` directly wraps the server plugin type as
- * `$InferServerPlugin`—same mechanism, less indirection.
+ * The canonical pattern is `customSessionClient<typeof auth>()`, but `typeof auth`
+ * drags in server-only types that client packages in a monorepo cannot resolve.
+ * `InferPlugin<T>()` is a first-party export from `better-auth/client` that sets
+ * the same `$InferServerPlugin` property without requiring a fabricated auth shape.
  */
 type EpicenterCustomSessionPlugin = ReturnType<
 	typeof customSession<SessionResponse, BetterAuthOptions>
@@ -216,7 +213,8 @@ type EpicenterCustomSessionPlugin = ReturnType<
 /**
  * Create a single auth client that owns transport and session lifecycle.
  *
- * BA's `useSession.subscribe()` drives reactive state via `createSubscriber`.
+ * BA's `useSession.subscribe()` drives reactive state—writes to the `$state`-backed
+ * session box so getters are reactive without additional subscription wiring.
  * Commands return errors only—subscribe handles the success path.
  * `session.current` is the source of truth. This module only reads/writes the
  * box and does not own persistence.
@@ -249,32 +247,28 @@ export function createAuth({
 		},
 	});
 
-	const subscribe = createSubscriber((update) => {
-		return client.useSession.subscribe((state) => {
-			if (state.isPending) return;
+	client.useSession.subscribe((state) => {
+		if (state.isPending) return;
 
-			initializing = false;
-			const prev = session.current;
+		initializing = false;
+		const prev = session.current;
 
-			if (state.data) {
-				const user = normalizeUser(state.data.user);
-				const token = state.data.session.token;
-				session.current = { status: 'authenticated', token, user };
-				onLogin?.({
-					token,
-					user,
-					keyVersion: state.data.keyVersion,
-					userKeyBase64: state.data.userKeyBase64,
-				});
-			} else {
-				session.current = { status: 'anonymous' };
-				if (prev.status === 'authenticated') {
-					onLogout?.();
-				}
+		if (state.data) {
+			const user = normalizeUser(state.data.user);
+			const token = state.data.session.token;
+			session.current = { status: 'authenticated', token, user };
+			onLogin?.({
+				token,
+				user,
+				keyVersion: state.data.keyVersion,
+				userKeyBase64: state.data.userKeyBase64,
+			});
+		} else {
+			session.current = { status: 'anonymous' };
+			if (prev.status === 'authenticated') {
+				onLogout?.();
 			}
-
-			update();
-		});
+		}
 	});
 
 
@@ -285,34 +279,28 @@ export function createAuth({
 
 	return {
 		get session() {
-			subscribe();
 			return session.current;
 		},
 
 		get isAuthenticated() {
-			subscribe();
 			return session.current.status === 'authenticated';
 		},
 
 		get user() {
-			subscribe();
 			return session.current.status === 'authenticated'
 				? session.current.user
 				: null;
 		},
 
 		get token() {
-			subscribe();
 			return currentToken();
 		},
 
 		get isInitializing() {
-			subscribe();
 			return initializing;
 		},
 
 		get isBusy() {
-			subscribe();
 			return busy;
 		},
 

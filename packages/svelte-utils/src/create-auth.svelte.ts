@@ -108,6 +108,22 @@ export type AuthClient = {
 	 */
 	readonly user: StoredUser | null;
 
+	/**
+	 * The current session token, or `null` if not authenticated.
+	 *
+	 * Same narrowing as `user`—extracts the token from the authenticated
+	 * session so consumers don't repeat the `status === 'authenticated'`
+	 * ternary in every `getToken` callback.
+	 *
+	 * @example
+	 * ```typescript
+	 * createSyncExtension({
+	 *   getToken: async () => auth.token,
+	 * })
+	 * ```
+	 */
+	readonly token: string | null;
+
 	readonly isInitializing: boolean;
 
 	/**
@@ -282,6 +298,13 @@ export function createAuth({
 			subscribe();
 			return session.current.status === 'authenticated'
 				? session.current.user
+				: null;
+		},
+
+		get token() {
+			subscribe();
+			return session.current.status === 'authenticated'
+				? session.current.token
 				: null;
 		},
 

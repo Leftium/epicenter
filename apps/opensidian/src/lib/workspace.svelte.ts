@@ -28,10 +28,7 @@ export const workspace = createWorkspace({
 		'sync',
 		createSyncExtension({
 			url: (workspaceId) => `${APP_URLS.API}/workspaces/${workspaceId}`,
-			getToken: async () =>
-				auth.session.status === 'authenticated'
-					? auth.session.token
-					: null,
+			getToken: async () => auth.token,
 		}),
 	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());

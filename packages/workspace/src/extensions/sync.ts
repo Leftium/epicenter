@@ -78,7 +78,7 @@ export type SyncExtensionConfig = {
 	 *
 	 * @example Auth subscription
 	 * ```typescript
-	 * onTokenChange: authState.onTokenChange
+	 * onTokenChange: auth.onTokenChange
 	 * ```
 	 */
 	onTokenChange?: (reconnect: () => void) => () => void;

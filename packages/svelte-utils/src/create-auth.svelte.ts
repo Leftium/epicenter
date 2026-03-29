@@ -238,10 +238,7 @@ export function createAuth({
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',
-				token: () =>
-					session.current.status === 'authenticated'
-						? session.current.token
-						: undefined,
+				token: () => currentToken() ?? undefined,
 			},
 			onSuccess: (context) => {
 				const newToken = context.response.headers.get('set-auth-token');
@@ -281,6 +278,11 @@ export function createAuth({
 	});
 
 
+	const currentToken = () =>
+		session.current.status === 'authenticated'
+			? session.current.token
+			: null;
+
 	return {
 		get session() {
 			subscribe();
@@ -301,9 +303,7 @@ export function createAuth({
 
 		get token() {
 			subscribe();
-			return session.current.status === 'authenticated'
-				? session.current.token
-				: null;
+			return currentToken();
 		},
 
 		get isInitializing() {
@@ -392,9 +392,8 @@ export function createAuth({
 
 		fetch(input: RequestInfo | URL, init?: RequestInit) {
 			const headers = new Headers(init?.headers);
-			if (session.current.status === 'authenticated') {
-				headers.set('Authorization', `Bearer ${session.current.token}`);
-			}
+			const token = currentToken();
+			if (token) headers.set('Authorization', `Bearer ${token}`);
 			return fetch(input, { ...init, headers, credentials: 'include' });
 		},
 	};

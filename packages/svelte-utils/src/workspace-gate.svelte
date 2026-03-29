@@ -1,13 +1,13 @@
 <!--
 	Render gate that blocks children until a workspace `whenReady` promise resolves.
 
-	Shows a centered spinner while loading and an error state if initialization
-	fails. Both states are overridable via optional snippets.
+	Uses `Empty.*` for both loading and error states to keep the structure symmetric.
+	Both states are overridable via optional snippets.
 
 	@example
 	```svelte
 	<script lang="ts">
-		import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
+		import WorkspaceGate from '@epicenter/svelte/workspace-gate';
 		import workspace from '$lib/workspace';
 	</script>
 
@@ -30,11 +30,9 @@
 	}: {
 		/** Promise that resolves when the workspace is ready to read. */
 		whenReady: Promise<unknown>;
-		/** Content to render once the workspace is ready. */
-		children: Snippet;
-		/** Optional override for the loading state. Defaults to a centered spinner. */
+		/** Optional override for the loading state. Defaults to Empty with a centered spinner. */
 		loading?: Snippet;
-		/** Optional override for the error state. Defaults to an Empty with a warning icon. */
+		/** Optional override for the error state. Defaults to Empty with a warning icon. */
 		error?: Snippet<[unknown]>;
 	} = $props();
 </script>
@@ -43,9 +41,11 @@
 	{#if loading}
 		{@render loading()}
 	{:else}
-		<div class="flex min-h-screen items-center justify-center">
-			<Spinner class="size-5 text-muted-foreground" />
-		</div>
+		<Empty.Root class="min-h-screen border-none">
+			<Empty.Media>
+				<Spinner class="size-5 text-muted-foreground" />
+			</Empty.Media>
+		</Empty.Root>
 	{/if}
 {:then}
 	{@render children()}
@@ -53,17 +53,15 @@
 	{#if error}
 		{@render error(err)}
 	{:else}
-		<div class="flex min-h-screen items-center justify-center">
-			<Empty.Root class="border-none">
-				<Empty.Media>
-					<TriangleAlertIcon class="size-8 text-muted-foreground" />
-				</Empty.Media>
-				<Empty.Title>Failed to load workspace</Empty.Title>
-				<Empty.Description>
-					Something went wrong initializing the workspace. Try refreshing the
-					page.
-				</Empty.Description>
-			</Empty.Root>
-		</div>
+		<Empty.Root class="min-h-screen border-none">
+			<Empty.Media>
+				<TriangleAlertIcon class="size-8 text-muted-foreground" />
+			</Empty.Media>
+			<Empty.Title>Failed to load workspace</Empty.Title>
+			<Empty.Description>
+				Something went wrong initializing the workspace. Try refreshing the
+				page.
+			</Empty.Description>
+		</Empty.Root>
 	{/if}
 {/await}

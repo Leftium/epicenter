@@ -7,7 +7,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Ok, tryAsync, type Result } from 'wellcrafted/result';
 import {
 	type AuthSession,
 	readStatusCode,
@@ -69,8 +69,6 @@ export type AuthenticatedSession = {
 };
 
 export type AuthClient = {
-	readonly session: AuthSession;
-
 	/**
 	 * Whether the user is currently authenticated.
 	 *
@@ -119,16 +117,10 @@ export type AuthClient = {
 	 * ```
 	 */
 	readonly token: string | null;
-
-	readonly isInitializing: boolean;
-
 	/**
 	 * Whether a user-initiated auth operation (sign-in, sign-up, sign-out) is
-	 * in progress.
-	 *
-	 * Unlike `isInitializing` (which tracks the initial Better Auth session
-	 * resolution and is one-way), `isBusy` toggles on and off with each auth
-	 * command. Use it to disable buttons and show spinners during auth flows.
+	 * in progress. Toggles on and off with each auth command. Use it to
+	 * disable buttons and show spinners during auth flows.
 	 *
 	 * @example
 	 * ```svelte
@@ -154,6 +146,11 @@ export type AuthClient = {
 	}): Promise<Result<undefined, AuthCommandError>>;
 	signInWithGoogle(): Promise<Result<undefined, AuthCommandError>>;
 	signOut(): Promise<void>;
+	/**
+	 * Redirect-based Google sign-in for web apps. Navigates away from the
+	 * current page—no `isBusy` toggle or `Result` return since the browser
+	 * leaves before either would be useful.
+	 */
 	signInWithGoogleRedirect(options: { callbackURL: string }): Promise<void>;
 
 	fetch: AuthFetch;
@@ -227,7 +224,6 @@ export function createAuth({
 	signInWithGoogle: signInWithGoogleOption,
 }: CreateAuthOptions): AuthClient {
 	let busy = $state(false);
-	let initializing = $state(true);
 
 	const client = createAuthClient({
 		baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
@@ -250,7 +246,6 @@ export function createAuth({
 	client.useSession.subscribe((state) => {
 		if (state.isPending) return;
 
-		initializing = false;
 		const prev = session.current;
 
 		if (state.data) {
@@ -278,9 +273,6 @@ export function createAuth({
 			: null;
 
 	return {
-		get session() {
-			return session.current;
-		},
 
 		get isAuthenticated() {
 			return session.current.status === 'authenticated';
@@ -296,9 +288,6 @@ export function createAuth({
 			return currentToken();
 		},
 
-		get isInitializing() {
-			return initializing;
-		},
 
 		get isBusy() {
 			return busy;
@@ -361,17 +350,14 @@ export function createAuth({
 
 		async signOut() {
 			busy = true;
-			try {
-				await client.signOut();
-			} catch (error) {
-				console.error('[auth] sign-out failed:', error);
-			} finally {
-				if (session.current.status !== 'anonymous') {
-					session.current = { status: 'anonymous' };
-					onLogout?.();
-				}
-				busy = false;
-			}
+			await tryAsync({
+				try: () => client.signOut(),
+				catch: (error) => {
+					console.error('[auth] sign-out failed:', error);
+					return Ok(undefined);
+				},
+			});
+			busy = false;
 		},
 
 		async signInWithGoogleRedirect({ callbackURL }) {

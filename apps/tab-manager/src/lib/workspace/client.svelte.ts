@@ -28,12 +28,11 @@ import {
 	getDeviceId,
 } from '$lib/device/device-id';
 import {
-	authBaseURL,
 	authSession,
 	getGoogleCredentials,
 } from '$lib/state/auth';
 import { userKeyCache } from '$lib/state/key-cache';
-import { serverUrl } from '$lib/state/settings.svelte';
+import { remoteServerUrl, serverUrl } from '$lib/state/settings.svelte';
 import { definition, generateSavedTabId } from './schema';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,7 +41,7 @@ import { definition, generateSavedTabId } from './schema';
 
 export const workspace = buildWorkspaceClient();
 export const auth = createAuth({
-	baseURL: authBaseURL,
+	baseURL: () => remoteServerUrl.current,
 	session: authSession,
 	signInWithGoogle: getGoogleCredentials,
 	onLogin(session) {

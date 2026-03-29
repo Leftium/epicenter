@@ -10,7 +10,6 @@
  */
 
 import { AuthSession } from '@epicenter/svelte/auth';
-import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
 
 const GOOGLE_CLIENT_ID =
@@ -21,8 +20,6 @@ export const authSession = createStorageState('local:authSession', {
 	fallback: { status: 'anonymous' },
 	schema: AuthSession,
 });
-
-export const authBaseURL = () => remoteServerUrl.current;
 
 export async function getGoogleCredentials(): Promise<{
 	idToken: string;

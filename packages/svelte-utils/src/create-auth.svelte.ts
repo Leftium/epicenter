@@ -215,6 +215,7 @@ export function createAuth({
 	onLogout,
 	signInWithGoogle: signInWithGoogleOption,
 }: CreateAuthOptions): AuthClient {
+	/** Whether a user-initiated auth operation (sign-in, sign-up, sign-out) is in flight. */
 	let busy = $state(false);
 
 	const client = createAuthClient({
@@ -224,7 +225,7 @@ export function createAuth({
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',
-				token: () => currentToken() ?? undefined,
+				token: () => session.current?.token,
 			},
 			// Persist rotated tokens so subsequent requests don't use a stale one.
 			onSuccess: (context) => {
@@ -259,20 +260,17 @@ export function createAuth({
 		}
 	});
 
-	const currentToken = () =>
-		session.current !== null ? session.current.token : null;
-
 	return {
 		get isAuthenticated() {
 			return session.current !== null;
 		},
 
 		get user() {
-			return session.current !== null ? session.current.user : null;
+			return session.current?.user ?? null;
 		},
 
 		get token() {
-			return currentToken();
+			return session.current?.token ?? null;
 		},
 
 		get isBusy() {
@@ -350,7 +348,7 @@ export function createAuth({
 
 		fetch(input: RequestInfo | URL, init?: RequestInit) {
 			const headers = new Headers(init?.headers);
-			const token = currentToken();
+			const token = session.current?.token;
 			if (token) headers.set('Authorization', `Bearer ${token}`);
 			return fetch(input, { ...init, headers, credentials: 'include' });
 		},

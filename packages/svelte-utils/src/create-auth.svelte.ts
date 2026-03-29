@@ -48,22 +48,27 @@ export type AuthFetch = (
 ) => Promise<Response>;
 
 /**
- * Extended session state passed to the `onSessionChange` callback.
+ * Session data passed to the `onLogin` hook.
  *
- * Includes `userKeyBase64` from the enriched session response so apps can
- * call `workspace.unlockWithKey()` directly—no separate fetch or version
- * tracking needed. The persisted box (`session.current`) stores the simpler
- * `AuthSession` without key material.
+ * Includes `userKeyBase64` so apps can call `workspace.unlockWithKey()`
+ * directly—no separate fetch or version tracking needed. The persisted
+ * session box stores the simpler `AuthSession` without key material.
+ *
+ * @example
+ * ```typescript
+ * createAuth({
+ *   onLogin(session) {
+ *     workspace.unlockWithKey(session.userKeyBase64);
+ *   },
+ * });
+ * ```
  */
-export type AuthSessionEvent =
-	| {
-			status: 'authenticated';
-			token: string;
-			user: StoredUser;
-			keyVersion: number;
-			userKeyBase64: string;
-	  }
-	| { status: 'anonymous' };
+export type AuthLoginEvent = {
+	token: string;
+	user: StoredUser;
+	keyVersion: number;
+	userKeyBase64: string;
+};
 
 export type AuthClient = {
 	readonly session: AuthSession;
@@ -103,18 +108,15 @@ export type AuthClient = {
 	 */
 	readonly user: StoredUser | null;
 
-	readonly isPending: boolean;
+	readonly isInitializing: boolean;
 
 	/**
 	 * Whether a user-initiated auth operation (sign-in, sign-up, sign-out) is
 	 * in progress.
 	 *
-	 * Unlike `isPending` (which tracks the initial Better Auth session
+	 * Unlike `isInitializing` (which tracks the initial Better Auth session
 	 * resolution and is one-way), `isBusy` toggles on and off with each auth
 	 * command. Use it to disable buttons and show spinners during auth flows.
-	 *
-	 * Backed by an internal `$state` variable—no `subscribe()` needed since
-	 * it's written directly by the auth methods, not the BA subscription.
 	 *
 	 * @example
 	 * ```svelte
@@ -148,7 +150,39 @@ export type AuthClient = {
 export type CreateAuthOptions = {
 	baseURL: BaseURL;
 	session: { current: AuthSession };
-	onSessionChange?: (next: AuthSessionEvent, prev: AuthSession) => void;
+	/**
+	 * Called whenever the session is authenticated—sign-in, session restore
+	 * from storage, or token refresh.
+	 *
+	 * Fires on every authenticated session update, not just login transitions.
+	 * Consumers should use idempotent operations (e.g. `unlockWithKey` is safe
+	 * to call repeatedly with the same key).
+	 *
+	 * @example
+	 * ```typescript
+	 * onLogin(session) {
+	 *   workspace.unlockWithKey(session.userKeyBase64);
+	 *   workspace.extensions.sync.reconnect();
+	 * }
+	 * ```
+	 */
+	onLogin?: (session: AuthLoginEvent) => void;
+	/**
+	 * Called on the authenticated → anonymous transition only.
+	 *
+	 * NOT called on cold start when no prior session exists—only when a
+	 * previously authenticated session ends (explicit sign-out or server
+	 * revocation). Use this to clear local data and disconnect sync.
+	 *
+	 * @example
+	 * ```typescript
+	 * onLogout() {
+	 *   workspace.clearLocalData();
+	 *   workspace.extensions.sync.reconnect();
+	 * }
+	 * ```
+	 */
+	onLogout?: () => void;
 	signInWithGoogle?: () => Promise<{ idToken: string; nonce: string }>;
 };
 
@@ -176,11 +210,12 @@ type EpicenterAuthPluginShape = {
 export function createAuth({
 	baseURL,
 	session,
-	onSessionChange,
+	onLogin,
+	onLogout,
 	signInWithGoogle: signInWithGoogleOption,
 }: CreateAuthOptions): AuthClient {
 	let busy = $state(false);
-	let pending = $state(true);
+	let initializing = $state(true);
 
 	const client = createAuthClient({
 		baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
@@ -207,26 +242,24 @@ export function createAuth({
 		return client.useSession.subscribe((state) => {
 			if (state.isPending) return;
 
-			pending = false;
+			initializing = false;
 			const prev = session.current;
 
 			if (state.data) {
 				const user = normalizeUser(state.data.user);
 				const token = state.data.session.token;
 				session.current = { status: 'authenticated', token, user };
-				onSessionChange?.(
-					{
-						status: 'authenticated',
-						token,
-						user,
-						keyVersion: state.data.keyVersion,
-						userKeyBase64: state.data.userKeyBase64,
-					},
-					prev,
-				);
+				onLogin?.({
+					token,
+					user,
+					keyVersion: state.data.keyVersion,
+					userKeyBase64: state.data.userKeyBase64,
+				});
 			} else {
 				session.current = { status: 'anonymous' };
-				onSessionChange?.({ status: 'anonymous' }, prev);
+				if (prev.status === 'authenticated') {
+					onLogout?.();
+				}
 			}
 
 			update();
@@ -252,12 +285,13 @@ export function createAuth({
 				: null;
 		},
 
-		get isPending() {
+		get isInitializing() {
 			subscribe();
-			return pending;
+			return initializing;
 		},
 
 		get isBusy() {
+			subscribe();
 			return busy;
 		},
 
@@ -324,9 +358,8 @@ export function createAuth({
 				console.error('[auth] sign-out failed:', error);
 			} finally {
 				if (session.current.status !== 'anonymous') {
-					const prev = session.current;
 					session.current = { status: 'anonymous' };
-					onSessionChange?.({ status: 'anonymous' }, prev);
+					onLogout?.();
 				}
 				busy = false;
 			}

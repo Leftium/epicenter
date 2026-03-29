@@ -71,9 +71,8 @@ export type AuthenticatedSession = {
 export type AuthClient = {
 	/**
 	 * Whether the user is currently authenticated.
-	 *
-	 * Convenience getter that eliminates the need for consumers to check
-	 * `auth.session.status === 'authenticated'` in every component.
+	 * Convenience getter so consumers don't manually check the session
+	 * discriminated union in every component.
 	 *
 	 * @example
 	 * ```svelte

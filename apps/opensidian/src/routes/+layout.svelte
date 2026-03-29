@@ -1,9 +1,13 @@
 <script lang="ts">
-	import '../app.css';
+	import WorkspaceGate from '@epicenter/svelte/workspace-gate';
 	import { Toaster } from 'svelte-sonner';
+	import { workspace } from '$lib/workspace.svelte';
+	import '../app.css';
 
 	let { children } = $props();
 </script>
 
 <Toaster richColors />
-{@render children()}
+<WorkspaceGate whenReady={workspace.whenReady}>
+	{@render children()}
+</WorkspaceGate>

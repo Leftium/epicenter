@@ -8,11 +8,14 @@
 		".": "./src/index.ts",
 		"./persisted-state": "./src/persisted-state.svelte.ts",
 		"./persisted-map": "./src/persisted-map.svelte.ts",
-		"./auth": "./src/auth.svelte.ts"
+		"./auth": "./src/auth.svelte.ts",
+		"./workspace-gate": "./src/workspace-gate.svelte"
 	},
 	"dependencies": {
 		"@epicenter/api": "workspace:*",
+		"@epicenter/ui": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
+		"@lucide/svelte": "catalog:",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
 		"idb": "^8.0.3",

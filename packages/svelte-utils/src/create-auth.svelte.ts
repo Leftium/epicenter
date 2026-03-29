@@ -1,7 +1,6 @@
 import type { SessionResponse } from '@epicenter/api/types';
 import type { BetterAuthOptions } from 'better-auth';
-import { createAuthClient } from 'better-auth/client';
-import { customSessionClient } from 'better-auth/client/plugins';
+import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
 import { createSubscriber } from 'svelte/reactivity';
 import {
@@ -203,17 +202,16 @@ export type CreateAuthOptions = {
 };
 
 /**
- * Compile-time bridge for `customSessionClient<T>()`.
+ * Compile-time bridge for Better Auth's custom session type inference.
  *
  * Better Auth's canonical pattern is `customSessionClient<typeof auth>()`, but
  * `typeof auth` drags in server-only types client packages cannot resolve.
+ * `InferPlugin<T>()` directly wraps the server plugin type as
+ * `$InferServerPlugin`—same mechanism, less indirection.
  */
 type EpicenterCustomSessionPlugin = ReturnType<
 	typeof customSession<SessionResponse, BetterAuthOptions>
 >;
-type EpicenterAuthPluginShape = {
-	options: { plugins: EpicenterCustomSessionPlugin[] };
-};
 
 /**
  * Create a single auth client that owns transport and session lifecycle.
@@ -236,7 +234,7 @@ export function createAuth({
 	const client = createAuthClient({
 		baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
 		basePath: '/auth',
-		plugins: [customSessionClient<EpicenterAuthPluginShape>()],
+		plugins: [InferPlugin<EpicenterCustomSessionPlugin>()],
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',

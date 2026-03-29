@@ -25,13 +25,13 @@ const workspace = createWorkspace(honeycrisp)
 		createSyncExtension({
 			url: (workspaceId) => `${APP_URLS.API}/workspaces/${workspaceId}`,
 			getToken: async () =>
-				authState.session.status === 'authenticated'
-					? authState.session.token
+				auth.session.status === 'authenticated'
+					? auth.session.token
 					: null,
 		}),
 	);
 
-export const authState = createAuth({
+export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
 	onLogin(session) {

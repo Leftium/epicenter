@@ -5,7 +5,7 @@
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
-	import { authState } from '$lib/workspace';
+	import { auth } from '$lib/workspace';
 	import AuthForm from '$lib/components/AuthForm.svelte';
 
 
@@ -15,22 +15,22 @@
 <Popover.Root bind:open={popoverOpen}>
 	<Popover.Trigger
 		class={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
-		title={authState.isAuthenticated ? 'Account' : 'Sign in to sync across devices'}
+		title={auth.isAuthenticated ? 'Account' : 'Sign in to sync across devices'}
 	>
-		{#if authState.isBusy}
+		{#if auth.isBusy}
 			<LoaderCircle class="size-4 animate-spin" />
-		{:else if authState.isAuthenticated}
+		{:else if auth.isAuthenticated}
 			<Cloud class="size-4" />
 		{:else}
 			<CloudOff class="size-4 text-muted-foreground" />
 		{/if}
 	</Popover.Trigger>
 	<Popover.Content class="w-80 p-0" align="end">
-		{#if authState.isAuthenticated}
+		{#if auth.isAuthenticated}
 			<div class="p-4 space-y-3">
 				<div class="space-y-1">
-					<p class="text-sm font-medium">{authState.user?.name}</p>
-					<p class="text-xs text-muted-foreground">{authState.user?.email}</p>
+					<p class="text-sm font-medium">{auth.user?.name}</p>
+					<p class="text-xs text-muted-foreground">{auth.user?.email}</p>
 				</div>
 				<div class="border-t pt-3">
 					<Button
@@ -38,7 +38,7 @@
 						size="sm"
 						class="w-full"
 						onclick={async () => {
-							await authState.signOut();
+						await auth.signOut();
 							popoverOpen = false;
 						}}
 					>

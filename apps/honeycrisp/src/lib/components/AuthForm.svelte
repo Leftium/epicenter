@@ -4,7 +4,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { authState } from '$lib/workspace';
+	import { auth } from '$lib/workspace';
 
 	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
 	let email = $state('');
@@ -20,8 +20,8 @@
 		e.preventDefault();
 		submitError = null;
 		const { error } = isSignUp
-			? await authState.signUp({ email, password, name })
-			: await authState.signIn({ email, password });
+			? await auth.signUp({ email, password, name })
+			: await auth.signIn({ email, password });
 		if (error) submitError = error.message;
 	}}
 	class="w-full max-w-xs"
@@ -44,11 +44,11 @@
 			type="button"
 			variant="outline"
 			class="w-full"
-			disabled={authState.isBusy}
+			disabled={auth.isBusy}
 			onclick={async () => {
 				submitError = null;
 				try {
-					await authState.signInWithGoogleRedirect({
+					await auth.signInWithGoogleRedirect({
 						callbackURL: window.location.origin,
 					});
 				} catch (error) {
@@ -118,8 +118,8 @@
 			</Field.Field>
 		</Field.Group>
 
-		<Button type="submit" class="w-full" disabled={authState.isBusy}>
-			{#if authState.isBusy}
+		<Button type="submit" class="w-full" disabled={auth.isBusy}>
+			{#if auth.isBusy}
 				<Spinner class="size-4" />
 				{isSignUp ? 'Creating account…' : 'Signing in…'}
 			{:else}

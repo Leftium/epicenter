@@ -1,7 +1,7 @@
 import type { UserKeyStore } from '@epicenter/workspace';
 import { openDB, type DBSchema } from 'idb';
 
-const DB_NAME = 'epicenter-key-cache';
+const DB_NAME = 'epicenter-key-store';
 const STORE_NAME = 'keys' as const;
 
 type KeyCacheDB = DBSchema & {

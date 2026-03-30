@@ -277,12 +277,17 @@ export function createWorkspace<
 	 * builders (same `ydoc`, `tables`, `kv`), but the builder methods and extensions
 	 * map are new.
 	 */
-	function buildClient<TExtensions extends Record<string, unknown>>(
-		extensions: TExtensions,
-		state: BuilderState,
-		encryptionRuntime?: EncryptionRuntime,
-		actions?: Actions,
-	): WorkspaceClientBuilder<
+	function buildClient<TExtensions extends Record<string, unknown>>({
+		extensions,
+		state,
+		encryptionRuntime,
+		actions,
+	}: {
+		extensions: TExtensions;
+		state: BuilderState;
+		encryptionRuntime?: EncryptionRuntime;
+		actions?: Actions;
+	}): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
@@ -321,8 +326,7 @@ export function createWorkspace<
 			awareness,
 			// Each extension entry is the exports object stored by reference.
 			extensions,
-			// Spread definition-level or previously-declared actions onto the client.
-			...(actions !== undefined ? { actions } : {}),
+			...(actions !== undefined && { actions }),
 			batch(fn: () => void): void {
 				ydoc.transact(fn);
 			},
@@ -407,16 +411,16 @@ export function createWorkspace<
 				const raw = factory(ctx);
 
 				// Void return means "not installed" — skip registration
-				if (!raw) return buildClient(extensions, state, encryptionRuntime, actions);
+				if (!raw) return buildClient({ extensions, state, encryptionRuntime, actions });
 
 				const resolved = defineExtension(raw);
 
-				return buildClient(
-					{
+				return buildClient({
+					extensions: {
 						...extensions,
 						[key]: resolved,
 					} as TExtensions & Record<TKey, TExports>,
-					{
+					state: {
 						extensionCleanups: [...state.extensionCleanups, resolved.dispose],
 						clearLocalDataCallbacks: [
 							...state.clearLocalDataCallbacks,
@@ -426,7 +430,7 @@ export function createWorkspace<
 					},
 					encryptionRuntime,
 					actions,
-				);
+				});
 			} catch (err) {
 				startDisposeLifo(state.extensionCleanups);
 				throw err;
@@ -500,7 +504,7 @@ export function createWorkspace<
 					factory,
 					tags: options?.tags ?? [],
 				});
-				return buildClient(extensions, state, encryptionRuntime, actions);
+				return buildClient({ extensions, state, encryptionRuntime, actions });
 			},
 
 			withEncryption(config?: EncryptionConfig) {
@@ -607,12 +611,12 @@ export function createWorkspace<
 					clearCache,
 				};
 
-				return buildClient(
+				return buildClient({
 					extensions,
 					state,
 					encryptionRuntime,
 					actions,
-				) as unknown as WorkspaceClientBuilder<
+				}) as unknown as WorkspaceClientBuilder<
 					TId,
 					TTableDefinitions,
 					TKvDefinitions,
@@ -625,10 +629,20 @@ export function createWorkspace<
 				>;
 			},
 
-			withActions(factory: (client: WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TAwarenessDefinitions, TExtensions>) => Actions) {
+			withActions(
+				factory: (
+					client: WorkspaceClient<
+						TId,
+						TTableDefinitions,
+						TKvDefinitions,
+						TAwarenessDefinitions,
+						TExtensions
+					>,
+				) => Actions,
+			) {
 				const newActions = factory(client);
 				const merged = actions ? { ...actions, ...newActions } : newActions;
-				return buildClient(extensions, state, encryptionRuntime, merged);
+				return buildClient({ extensions, state, encryptionRuntime, actions: merged });
 			},
 		});
 
@@ -641,10 +655,13 @@ export function createWorkspace<
 		>;
 	}
 
-	return buildClient({} as Record<string, never>, {
-		extensionCleanups: [],
-		clearLocalDataCallbacks: [],
-		whenReadyPromises: [],
+	return buildClient({
+		extensions: {} as Record<string, never>,
+		state: {
+			extensionCleanups: [],
+			clearLocalDataCallbacks: [],
+			whenReadyPromises: [],
+		},
 	});
 }
 

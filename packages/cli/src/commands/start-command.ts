@@ -2,7 +2,7 @@
  * `epicenter start [dir]` — long-lived sync daemon.
  *
  * Loads workspace config, auto-wires persistence + sync, stays alive.
- * This replaces the standalone `apps/runner` binary.
+ * This is the canonical workspace daemon entrypoint for the CLI package.
  */
 
 import type { Argv, CommandModule } from 'yargs';

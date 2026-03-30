@@ -39,8 +39,7 @@ type RecordingFrontMatter = typeof RecordingFrontMatter.infer;
 /**
  * Convert Recording to markdown format (frontmatter + body)
  */
-function recordingToMarkdown(recording: Recording): string {
-	const { transcribedText, ...frontMatter } = recording;
+function recordingToMarkdown({ transcribedText, ...frontMatter }: Recording): string {
 	return stringifyFrontmatter(transcribedText ?? '', frontMatter);
 }
 

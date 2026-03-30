@@ -1,9 +1,11 @@
 <script lang="ts">
+	import WorkspaceGate from '@epicenter/svelte/workspace-gate';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher, mode } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import { queryClient } from '$lib/query/client';
+	import workspaceClient from '$lib/workspace';
 	import '@epicenter/ui/app.css';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 
@@ -13,7 +15,9 @@
 <svelte:head><title>Honeycrisp</title></svelte:head>
 
 <QueryClientProvider client={queryClient}>
-	<Tooltip.Provider>{@render children()}</Tooltip.Provider>
+	<WorkspaceGate whenReady={workspaceClient.whenReady}>
+		<Tooltip.Provider>{@render children()}</Tooltip.Provider>
+	</WorkspaceGate>
 </QueryClientProvider>
 
 <Toaster offset={16} theme={mode.current} richColors closeButton />

@@ -4,6 +4,7 @@
 		ToolCallPart as TanStackToolCallPart,
 		ToolResultPart as ToolResultPartType,
 	} from '@tanstack/ai-client';
+	import DOMPurify from 'dompurify';
 	import { marked } from 'marked';
 	import type { WorkspaceTools } from '$lib/workspace';
 	import ThinkingPart from './ThinkingPart.svelte';
@@ -28,7 +29,7 @@
 {#each parts as part, i (`${part.type}-${i}`)}
 	{#if part.type === 'text'}
 		<div class="prose prose-sm">
-			{@html marked.parse(part.content, { breaks: true, gfm: true })}
+			{@html DOMPurify.sanitize(marked.parse(part.content, { breaks: true, gfm: true }) as string)}
 		</div>
 	{:else if part.type === 'tool-call'}
 		<ToolCallPart part={part as TanStackToolCallPart<WorkspaceTools>} {onApproveToolCall} {onDenyToolCall} />

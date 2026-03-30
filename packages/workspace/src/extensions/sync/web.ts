@@ -35,7 +35,7 @@ import type * as Y from 'yjs';
 export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
 	const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
 	return {
-		clearData: () => idb.clearData(),
+		clearLocalData: () => idb.clearData(),
 		// y-indexeddb's whenSynced = "data loaded from IndexedDB"
 		whenReady: idb.whenSynced,
 		dispose: () => idb.destroy(),

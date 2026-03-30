@@ -1,22 +1,13 @@
 /**
  * Reactive AI chat state with multi-conversation support.
  *
- * Architecture: self-contained ConversationHandles with own `$state`.
+ * Architecture: self-contained ConversationHandles backed by `createChat`.
  *
- * Each ConversationHandle owns its ChatClient instance and reactive state
- * (`$state` for messages, status, error, drafts). Callbacks on the ChatClient
- * drive `$state` reassignment — the same pattern TanStack AI's `createChat`
- * uses internally.
+ * Each ConversationHandle owns a `createChat` instance from `@tanstack/ai-svelte`
+ * which manages reactive state internally via Svelte 5 runes. Domain logic
+ * (workspace persistence, title updates, tool approval) is layered on top.
  *
- * Why ChatClient directly instead of `createChat` from `@tanstack/ai-svelte`?
- * TanStack AI's StreamProcessor mutates tool-call parts (`state`, `approval`,
- * `output`) in-place AFTER `onMessagesChange` returns. `createChat` sets
- * `messages = newMessages` internally, but the in-place mutations bypass
- * Svelte 5's proxy — `$derived(part.state === 'approval-requested')` never
- * fires. Direct ChatClient access lets us shallow-clone in `onMessagesChange`
- * and re-clone on status transitions to break reference identity.
- *
- * Background streaming is free: each conversation has its own ChatClient.
+ * Background streaming is free: each conversation has its own chat instance.
  * Switching away from a streaming conversation doesn't stop it.
  *
  * @example
@@ -37,12 +28,7 @@
  * ```
  */
 
-import {
-	ChatClient,
-	type ChatClientState,
-	fetchServerSentEvents,
-	type UIMessage,
-} from '@tanstack/ai-client';
+import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
 import {
@@ -58,6 +44,7 @@ import {
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
 import { getDeviceId } from '$lib/device/device-id';
+import { auth } from '$lib/workspace';
 import { remoteServerUrl } from '$lib/state/settings.svelte';
 import {
 	type ChatMessageId,
@@ -69,48 +56,6 @@ import {
 	workspaceDefinitions,
 	workspaceTools,
 } from '$lib/workspace';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Milliseconds to wait for the server to begin streaming before timing out. */
-const SUBMITTED_TIMEOUT_MS = 60_000;
-
-/**
- * Clone messages that contain tool-call parts to break reference identity.
- *
- * TanStack AI's StreamProcessor mutates tool-call parts (`state`, `approval`,
- * `output`) in-place after `onMessagesChange` returns. Svelte 5's `$state`
- * proxy can't detect these mutations since they bypass the proxy. Cloning
- * creates new objects that Svelte wraps in fresh proxies.
- *
- * The `approval` nested object is deep-cloned because `updateToolCallApproval()`
- * (in TanStack AI's message-updaters) mutates the part in-place while returning
- * a new message array. The shallow `{ ...p }` copies the `approval` reference,
- * but Svelte 5's proxy may cache the old reference identity and skip re-render.
- * Deep-cloning `approval` ensures each clone is a fully independent object.
- *
- * Only assistant messages with tool-call parts need cloning — user messages
- * and text-only assistant messages are passed through unchanged.
- */
-const cloneMessages = (msgs: UIMessage[]) =>
-	msgs.map((m) => {
-		if (m.role !== 'assistant') return m;
-		const hasToolCall = m.parts.some((p) => p.type === 'tool-call');
-		if (!hasToolCall) return m;
-		return {
-			...m,
-			parts: m.parts.map((p) => {
-				if (p.type !== 'tool-call') return p;
-				const clone = { ...p };
-				if (clone.approval) {
-					clone.approval = { ...clone.approval };
-				}
-				return clone;
-			}),
-		};
-	});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State Factory
@@ -179,57 +124,47 @@ function createAiChatState() {
 		ReturnType<typeof createConversationHandle>
 	>();
 
+	/** Internal lifecycle closures — not exposed on ConversationHandle. */
+	const destroyFns = new Map<ConversationId, () => void>();
+	const refreshFns = new Map<ConversationId, () => void>();
+
 	// ── Conversation Handle Factory ──────────────────────────────────
 
 	/**
 	 * Create a self-contained reactive handle for a single conversation.
 	 *
-	 * Owns its own `$state` for messages, status, error, and ephemeral UI
-	 * state. Creates and owns a ChatClient whose callbacks drive the `$state`.
-	 *
-	 * Messages are shallow-cloned in `onMessagesChange` and re-cloned on
-	 * status transitions. This breaks reference identity so Svelte 5 detects
-	 * in-place mutations by TanStack AI's StreamProcessor (tool-call `state`,
-	 * `approval`, `output` are set after the callback returns).
+	 * Uses `createChat` from `@tanstack/ai-svelte` for reactive state
+	 * management. Domain logic (workspace persistence, tool approval,
+	 * title updates) is layered on top.
 	 *
 	 * The baked-in `conversationId` means getters and actions always target
 	 * the correct conversation, even from async callbacks.
 	 */
 	function createConversationHandle(conversationId: ConversationId) {
-		// ── Own reactive state ──
-		const initialMsgs = loadMessages(conversationId);
-		let messages = $state<UIMessage[]>(initialMsgs);
-		let status = $state<ChatClientState>('ready');
-		let isLoading = $state(false);
-		let error = $state<Error | undefined>(undefined);
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);
 
-		/** Timeout ID for stuck 'submitted' status recovery. */
-		let submittedTimer: ReturnType<typeof setTimeout> | undefined;
+		const metadata = $derived(
+			conversations.find((c) => c.id === conversationId),
+		);
 
-		// ── ChatClient (owned by this handle) ──
-
-		const client = new ChatClient({
-			initialMessages: initialMsgs,
+		const chat = createChat({
+			initialMessages: loadMessages(conversationId),
 			tools: workspaceTools,
 			connection: fetchServerSentEvents(
 				() => `${remoteServerUrl.current}/ai/chat`,
 				async () => {
-					const conv = conversations.find((c) => c.id === conversationId);
 					const deviceId = await getDeviceId();
 					return {
-						credentials: 'include',
+						fetchClient: auth.fetch,
 						body: {
 							data: {
-								provider: conv?.provider ?? DEFAULT_PROVIDER,
-								model: conv?.model ?? DEFAULT_MODEL,
+								provider: metadata?.provider ?? DEFAULT_PROVIDER,
+								model: metadata?.model ?? DEFAULT_MODEL,
 								conversationId,
-								// Device constraints first (immutable), then base/custom prompt.
-								// Constraints stay even if the conversation overrides the prompt.
 								systemPrompts: [
 									buildDeviceConstraints(deviceId),
-									conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
+									metadata?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
 								],
 								tools: workspaceDefinitions,
 							},
@@ -237,76 +172,6 @@ function createAiChatState() {
 					};
 				},
 			),
-			onMessagesChange: (msgs) => {
-				// Shallow-clone every message and part to break reference identity.
-				// TanStack AI's StreamProcessor mutates tool-call parts in place
-				// (output, state, approval) but Svelte 5's $state proxy can't
-				// detect mutations that bypass the proxy. Fresh references ensure
-				// $derived() in child components (isRunning, isApprovalRequested)
-				// re-evaluate correctly.
-				if (import.meta.env.DEV) {
-					for (const m of msgs) {
-						for (const p of m.parts) {
-							if (
-								p.type === 'tool-call' &&
-								p.state === 'approval-requested'
-							) {
-								console.log('[ai-chat] approval-requested part:', {
-									name: p.name,
-									state: p.state,
-									approval: p.approval,
-								});
-							}
-						}
-					}
-				}
-				messages = cloneMessages(msgs);
-				// Re-clone on the next microtask to capture deferred in-place
-				// mutations (e.g. needsApproval set after this callback returns).
-				queueMicrotask(() => {
-					messages = cloneMessages(msgs);
-				});
-			},
-			onLoadingChange: (loading) => {
-				isLoading = loading;
-			},
-			onErrorChange: (err) => {
-				error = err;
-			},
-			onStatusChange: (newStatus) => {
-				status = newStatus;
-
-				// Force re-clone messages on every status change. Status transitions
-				// are lifecycle boundaries — by this point, all part mutations for
-				// the current phase are finalized.
-				messages = cloneMessages(client.getMessages());
-
-				// Clear any existing submitted timeout when status changes.
-				if (submittedTimer) {
-					clearTimeout(submittedTimer);
-					submittedTimer = undefined;
-				}
-
-				// Start a timeout when entering 'submitted' — if the server
-				// never begins streaming, auto-stop and surface an error.
-				if (newStatus === 'submitted') {
-					submittedTimer = setTimeout(() => {
-						submittedTimer = undefined;
-						if (status !== 'submitted') return;
-
-						console.warn(
-							'[ai-chat] timeout: no response within 60 s, stopping',
-							conversationId,
-						);
-						client.stop();
-						error = new Error(
-							'Request timed out. The AI did not respond within 60 seconds.',
-						);
-						status = 'error';
-						isLoading = false;
-					}, SUBMITTED_TIMEOUT_MS);
-				}
-			},
 			onError: (err) => {
 				console.error(
 					'[ai-chat] stream error:',
@@ -328,11 +193,12 @@ function createAiChatState() {
 			},
 		});
 
-		// ── Derived metadata (from Y.Doc-backed conversations array) ──
-
-		const metadata = $derived(
-			conversations.find((c) => c.id === conversationId),
-		);
+		// Register internal lifecycle closures
+		destroyFns.set(conversationId, () => chat.stop());
+		refreshFns.set(conversationId, () => {
+			if (chat.isLoading) return;
+			chat.setMessages(loadMessages(conversationId));
+		});
 
 		return {
 			// ── Identity ──
@@ -385,39 +251,34 @@ function createAiChatState() {
 				return metadata?.sourceMessageId;
 			},
 
-			// ── Chat state (own $state) ──
+			// ── Chat state (from createChat) ──
 
 			get messages() {
-				return messages;
+				return chat.messages;
 			},
 
 			get isLoading() {
-				return isLoading;
+				return chat.isLoading;
 			},
 
 			get error() {
-				return error;
+				return chat.error;
 			},
 
 			get status() {
-				return status;
+				return chat.status;
 			},
 
 			/**
 			 * Whether the last error was a 402 (credits exhausted).
 			 * UI should show an upgrade prompt when true.
-			 *
-			 * TanStack AI's `fetchServerSentEvents` discards the response body on
-			 * non-2xx responses and throws `Error('HTTP error! status: 402 ...')`.
-			 * We match on the status code since it's the only signal available.
-			 * 402 is only returned by the `InsufficientCredits` path in ai-chat.ts.
 			 */
 			get isCreditsExhausted() {
-				if (!error) return false;
-				return error.message.includes('status: 402');
+				if (!chat.error) return false;
+				return chat.error.message.includes('status: 402');
 			},
 
-			// ── Ephemeral UI state (own $state) ──
+			// ── Ephemeral UI state ──
 
 			get inputValue() {
 				return inputValue;
@@ -459,12 +320,12 @@ function createAiChatState() {
 				if (!content.trim()) return;
 				const userMessageId = generateChatMessageId();
 
-				// Send to client FIRST so isLoading=true before the
+				// Send to chat FIRST so isLoading=true before the
 				// Y.Doc observer fires refreshFromDoc (which skips
 				// when loading). Without this, the observer loads the
-				// user message from Y.Doc AND ChatClient appends its
+				// user message from Y.Doc AND the chat appends its
 				// own copy → duplicate key → Svelte crash.
-				void client.sendMessage({
+				void chat.sendMessage({
 					content,
 					id: userMessageId,
 				});
@@ -478,61 +339,34 @@ function createAiChatState() {
 					_v: 1,
 				});
 
-				const conv = conversations.find((c) => c.id === conversationId);
 				updateConversation(conversationId, {
 					title:
-						conv?.title === 'New Chat'
+						metadata?.title === 'New Chat'
 							? content.trim().slice(0, 50)
-							: conv?.title,
+							: metadata?.title,
 				});
 			},
 
 			reload() {
-				const lastMessage = messages.at(-1);
+				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
 					workspace.tables.chatMessages.delete(
 						lastMessage.id as string as ChatMessageId,
 					);
 				}
-				void client.reload();
+				void chat.reload();
 			},
 
 			stop() {
-				client.stop();
+				chat.stop();
 			},
 
-			/**
-			 * Approve a tool call that requires user confirmation.
-			 *
-			 * Called when the user clicks [Allow] or [Always Allow] on a
-			 * mutation tool call. Resumes server-side execution.
-			 *
-			 * @param approvalId - The `part.approval.id` from the ToolCallPart
-			 *
-			 * @example
-			 * ```typescript
-			 * handle.approveToolCall(part.approval.id);
-			 * ```
-			 */
 			approveToolCall(approvalId: string) {
-				void client.addToolApprovalResponse({ id: approvalId, approved: true });
+				void chat.addToolApprovalResponse({ id: approvalId, approved: true });
 			},
 
-			/**
-			 * Deny a tool call that requires user confirmation.
-			 *
-			 * Called when the user clicks [Deny] on a mutation tool call.
-			 * Cancels server-side execution.
-			 *
-			 * @param approvalId - The `part.approval.id` from the ToolCallPart
-			 *
-			 * @example
-			 * ```typescript
-			 * handle.denyToolCall(part.approval.id);
-			 * ```
-			 */
 			denyToolCall(approvalId: string) {
-				void client.addToolApprovalResponse({ id: approvalId, approved: false });
+				void chat.addToolApprovalResponse({ id: approvalId, approved: false });
 			},
 
 			rename(title: string) {
@@ -542,28 +376,6 @@ function createAiChatState() {
 			delete() {
 				deleteConversation(conversationId);
 			},
-
-			// ── Internal (used by lifecycle functions, not by components) ──
-
-			/** Stop client and clear timers. Called by destroyConversation. */
-			destroy() {
-				if (submittedTimer) clearTimeout(submittedTimer);
-				client.stop();
-			},
-
-			/**
-			 * Refresh messages from Y.Doc into the ChatClient.
-			 *
-			 * Skips if the conversation is currently streaming (the in-progress
-			 * assistant message isn't in Y.Doc yet). A single call to
-			 * `setMessagesManually` is sufficient — it triggers `onMessagesChange`
-			 * which updates the `$state` automatically via cloning.
-			 */
-			refreshFromDoc() {
-				if (isLoading) return;
-				const msgs = loadMessages(conversationId);
-				client.setMessagesManually(msgs);
-			},
 		};
 	}
 
@@ -571,7 +383,9 @@ function createAiChatState() {
 
 	/** Stop client and remove the handle for a conversation. */
 	function destroyConversation(id: ConversationId) {
-		handles.get(id)?.destroy();
+		destroyFns.get(id)?.();
+		destroyFns.delete(id);
+		refreshFns.delete(id);
 		handles.delete(id);
 	}
 
@@ -579,7 +393,7 @@ function createAiChatState() {
 	 * Sync handles with the conversations array.
 	 *
 	 * Creates handles for new conversation IDs, destroys handles
-	 * for deleted IDs. Existing handles survive — their ChatClient
+	 * for deleted IDs. Existing handles survive — their chat instance
 	 * and ephemeral state persist.
 	 */
 	function reconcileHandles() {
@@ -609,7 +423,7 @@ function createAiChatState() {
 		reconcileHandles();
 	});
 	const _unobserveChatMessages = workspace.tables.chatMessages.observe(() => {
-		handles.get(activeConversationId)?.refreshFromDoc();
+		refreshFns.get(activeConversationId)?.();
 	});
 
 	// Initialize after persistence loads
@@ -655,7 +469,7 @@ function createAiChatState() {
 
 	function switchConversation(conversationId: ConversationId) {
 		activeConversationId = conversationId;
-		handles.get(conversationId)?.refreshFromDoc();
+		refreshFns.get(conversationId)?.();
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
@@ -686,18 +500,22 @@ function createAiChatState() {
 
 	// ── Public API ────────────────────────────────────────────────────
 
+	const conversationList = $derived(
+		conversations
+			.map((c) => handles.get(c.id))
+			.filter(
+				(h): h is ReturnType<typeof createConversationHandle> =>
+					h !== undefined,
+			),
+	);
+
 	return {
 		get active() {
 			return handles.get(activeConversationId);
 		},
 
 		get conversations() {
-			return conversations
-				.map((c) => handles.get(c.id))
-				.filter(
-					(h): h is ReturnType<typeof createConversationHandle> =>
-						h !== undefined,
-				);
+			return conversationList;
 		},
 
 		get(id: ConversationId) {
@@ -731,13 +549,7 @@ function createAiChatState() {
 
 export const aiChatState = createAiChatState();
 
-/**
- * A reactive handle for a single conversation.
- *
- * Self-contained — owns its own `$state` for messages, status, error,
- * and ephemeral UI state. Driven by ChatClient callbacks with shallow-cloning
- * to ensure Svelte 5 detects in-place part mutations by the StreamProcessor.
- */
+/** A reactive handle for a single conversation backed by `createChat`. */
 export type ConversationHandle = NonNullable<
 	ReturnType<(typeof aiChatState)['get']>
 >;

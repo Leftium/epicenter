@@ -293,7 +293,7 @@ describe('createDocuments', () => {
 					{
 						key: 'persistence',
 						factory: () => ({
-							clearData: () => {},
+							clearLocalData: () => {},
 							dispose: () => {},
 						}),
 						tags: [],
@@ -304,7 +304,9 @@ describe('createDocuments', () => {
 			const handle = await documents.open('f1');
 			expect(handle.extensions).toBeDefined();
 			expect(handle.extensions.persistence).toBeDefined();
-			expect(typeof handle.extensions.persistence?.clearData).toBe('function');
+			expect(typeof handle.extensions.persistence?.clearLocalData).toBe(
+				'function',
+			);
 		});
 
 		test('lifecycle-only extension is accessible with whenReady and dispose', async () => {

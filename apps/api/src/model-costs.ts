@@ -1,9 +1,11 @@
 import type { ANTHROPIC_MODELS } from '@tanstack/ai-anthropic';
+import type { GeminiTextModels } from '@tanstack/ai-gemini';
 import type { OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 
 type SupportedModel =
 	| (typeof OPENAI_CHAT_MODELS)[number]
-	| (typeof ANTHROPIC_MODELS)[number];
+	| (typeof ANTHROPIC_MODELS)[number]
+	| (typeof GeminiTextModels)[number];
 
 /**
  * Per-model credit costs for proportional AI billing.
@@ -72,6 +74,21 @@ export const MODEL_CREDITS: Partial<Record<SupportedModel, number>> = {
 	'gpt-5-pro': 40, // $15/$120
 	'gpt-5.2-pro': 55, // $21/$168
 	// o1-pro: BLOCKED ($150/$600 — not included)
+
+	// ── Gemini: Flash Lite (1 credit) ────────────────────────────
+	'gemini-3.1-flash-lite-preview': 1, // $0.25/$1.50
+	'gemini-2.5-flash-lite': 1, // $0.04/$0.16
+	'gemini-2.0-flash-lite': 1, // $0.02/$0.08
+
+	// ── Gemini: Flash (1–2 credits) ──────────────────────────────
+	'gemini-3-flash-preview': 2, // $0.30/$2.50
+	'gemini-2.5-flash': 1, // $0.15/$0.60
+	'gemini-2.0-flash': 1, // $0.10/$0.40
+
+	// ── Gemini: Pro (5 credits) ──────────────────────────────────
+	'gemini-3.1-pro-preview': 5, // $1.25/$10
+	'gemini-3-pro-preview': 5, // $1.25/$10
+	'gemini-2.5-pro': 5, // $1.25/$10
 
 	// ── Anthropic: Haiku (1–2 credits) ───────────────────────────
 	'claude-3-haiku': 1, // $0.25/$1

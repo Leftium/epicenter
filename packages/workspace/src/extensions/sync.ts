@@ -66,7 +66,22 @@ export type SyncExtensionConfig = {
 	 * The same token is used for both WebSocket (`?token=` query param) and
 	 * HTTP snapshot (`Authorization: Bearer` header).
 	 */
-	getToken?: (docId: string) => Promise<string | undefined>;
+	getToken?: (docId: string) => Promise<string | null>;
+
+	/**
+	 * Subscribe to auth token changes. Called once per Y.Doc during extension
+	 * setup with a `reconnect` callback. Return an unsubscribe function.
+	 *
+	 * When the token changes, call `reconnect()` — the provider will
+	 * disconnect the current WebSocket and start a new connection with
+	 * a fresh token from `getToken`.
+	 *
+	 * @example Auth subscription
+	 * ```typescript
+	 * onTokenChange: auth.onTokenChange
+	 * ```
+	 */
+	onTokenChange?: (reconnect: () => void) => () => void;
 };
 
 /** Exports available on `client.extensions.sync` after registration. */
@@ -125,6 +140,13 @@ export function createSyncExtension(
 				: undefined,
 		});
 
+		const reconnect = () => {
+			provider.disconnect();
+			provider.connect();
+		};
+
+		const unsubTokenChange = config.onTokenChange?.(reconnect);
+
 		// Wait for all prior extensions (persistence, etc.) then connect.
 		// This ensures the Y.Doc has local state loaded before syncing,
 		// giving an accurate state vector for the initial WebSocket handshake.
@@ -142,15 +164,13 @@ export function createSyncExtension(
 			/**
 			 * Force an immediate disconnect + reconnect.
 			 *
-			 * Call after auth state changes (sign-in/sign-out) so the WebSocket
-			 * reconnects with a fresh token from `getToken`.
+			 * Prefer `onTokenChange` for automatic reconnection on auth changes.
+			 * Use this for manual reconnection (e.g. user-initiated retry button).
 			 */
-			reconnect() {
-				provider.disconnect();
-				provider.connect();
-			},
+			reconnect,
 			whenReady,
 			dispose() {
+				unsubTokenChange?.();
 				provider.dispose();
 			},
 		};

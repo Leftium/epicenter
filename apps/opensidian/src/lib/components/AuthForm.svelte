@@ -4,23 +4,25 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { authState } from '$lib/auth';
+	import { auth } from '$lib/workspace';
 
 	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
 	let email = $state('');
 	let password = $state('');
 	let name = $state('');
+	let submitError = $state<string | null>(null);
 
 	const isSignUp = $derived(mode === 'sign-up');
-	const isBusy = $derived(authState.status === 'signing-in');
 </script>
 
 <form
 	onsubmit={async (e) => {
 		e.preventDefault();
-		isSignUp
-			? await authState.signUp({ email, password, name })
-			: await authState.signIn({ email, password });
+		submitError = null;
+		const { error } = isSignUp
+			? await auth.signUp({ email, password, name })
+			: await auth.signIn({ email, password });
+		if (error) submitError = error.message;
 	}}
 	class="w-full max-w-xs"
 >
@@ -32,9 +34,9 @@
 				: 'Sign in to sync your notes across devices.'}
 		</Field.Description>
 
-		{#if authState.signInError}
+		{#if submitError}
 			<Alert.Root variant="destructive">
-				<Alert.Description>{authState.signInError}</Alert.Description>
+				<Alert.Description>{submitError}</Alert.Description>
 			</Alert.Root>
 		{/if}
 
@@ -42,8 +44,19 @@
 			type="button"
 			variant="outline"
 			class="w-full"
-			disabled={isBusy}
-			onclick={() => authState.signInWithGoogle()}
+			disabled={auth.isBusy}
+			onclick={async () => {
+				submitError = null;
+				try {
+					await auth.signInWithSocialRedirect({
+						provider: 'google',
+						callbackURL: window.location.origin,
+					});
+				} catch (error) {
+					submitError =
+						error instanceof Error ? error.message : 'Failed to sign in with Google.';
+				}
+			}}
 		>
 			<svg class="size-4" viewBox="0 0 24 24" aria-hidden="true">
 				<path
@@ -106,8 +119,8 @@
 			</Field.Field>
 		</Field.Group>
 
-		<Button type="submit" class="w-full" disabled={isBusy}>
-			{#if isBusy}
+		<Button type="submit" class="w-full" disabled={auth.isBusy}>
+			{#if auth.isBusy}
 				<Spinner class="size-4" />
 				{isSignUp ? 'Creating account…' : 'Signing in…'}
 			{:else}
@@ -121,7 +134,10 @@
 				<button
 					type="button"
 					class="text-foreground underline underline-offset-4 hover:text-foreground/80"
-					onclick={() => (mode = 'sign-in')}
+					onclick={() => {
+						mode = 'sign-in';
+						submitError = null;
+					}}
 				>
 					Sign in
 				</button>
@@ -130,7 +146,10 @@
 				<button
 					type="button"
 					class="text-foreground underline underline-offset-4 hover:text-foreground/80"
-					onclick={() => (mode = 'sign-up')}
+					onclick={() => {
+						mode = 'sign-up';
+						submitError = null;
+					}}
 				>
 					Sign up
 				</button>

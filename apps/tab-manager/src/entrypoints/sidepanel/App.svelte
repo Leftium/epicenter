@@ -15,27 +15,12 @@
 	import { CommandPalette } from '$lib/components/command-palette';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
-	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
 	import { registerDevice } from '$lib/workspace';
 
-	// Auth initialization — check cached session on mount
 	onMount(() => {
-		authState.checkSession();
 		void registerDevice();
-		// External sign-in handled by $effect in auth.svelte.ts
-		// Sync naturally handles auth token changes (stable client, no rebuild needed)
-		const onVisibilityChange = () => {
-			if (
-				document.visibilityState === 'visible' &&
-				authState.status === 'signed-in'
-			) {
-				authState.checkSession();
-			}
-		};
-		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () => document.removeEventListener('visibilitychange', onVisibilityChange);
 	});
 
 	let searchInputRef = $state<HTMLInputElement | null>(null);
@@ -60,23 +45,23 @@
 						type="search"
 						placeholder="Search tabs..."
 						bind:value={unifiedViewState.searchQuery}
-						onkeydown={(e) => {
-					// "/" in empty input opens command palette
-					if (e.key === '/' && unifiedViewState.searchQuery === '') {
-						e.preventDefault();
-						commandPaletteOpen = true;
-					}
-					// "@" in empty input opens AI drawer (Phase 4)
-					if (e.key === '@' && unifiedViewState.searchQuery === '') {
-						e.preventDefault();
-						aiDrawerOpen = true;
-					}
-					// Escape clears search
-					if (e.key === 'Escape') {
-						unifiedViewState.searchQuery = '';
-						searchInputRef?.blur();
-					}
-				}}
+						onkeydown={(e: KeyboardEvent) => {
+						// "/" in empty input opens command palette
+						if (e.key === '/' && unifiedViewState.searchQuery === '') {
+							e.preventDefault();
+							commandPaletteOpen = true;
+						}
+						// "@" in empty input opens AI drawer (Phase 4)
+						if (e.key === '@' && unifiedViewState.searchQuery === '') {
+							e.preventDefault();
+							aiDrawerOpen = true;
+						}
+						// Escape clears search
+						if (e.key === 'Escape') {
+							unifiedViewState.searchQuery = '';
+							searchInputRef?.blur();
+						}
+					}}
 						class="h-8 pl-8 pr-8 text-sm [&::-webkit-search-cancel-button]:hidden"
 					/>
 					{#if unifiedViewState.searchQuery}
@@ -115,28 +100,30 @@
 				<SyncStatusIndicator />
 			</div>
 		</header>
-		<!-- Gate on browser state seed so child components can read data synchronously -->
-		{#await browserState.whenReady}
-			<div class="flex-1 flex items-center justify-center">
-				<div class="flex flex-col items-center gap-3">
-					<Spinner class="size-5 text-muted-foreground" />
-					<p class="text-sm text-muted-foreground">Loading tabs…</p>
+		<div class="flex-1 flex items-center justify-center">
+			<!-- Gate on browser state seed so child components can read data synchronously -->
+			{#await browserState.whenReady}
+				<div class="flex flex-1 items-center justify-center">
+					<div class="flex flex-col items-center gap-3">
+						<Spinner class="size-5 text-muted-foreground" />
+						<p class="text-sm text-muted-foreground">Loading tabs…</p>
+					</div>
 				</div>
-			</div>
-		{:then _}
-			<div class="flex-1 min-h-0"><UnifiedTabList /></div>
-		{:catch}
-			<Empty.Root class="flex-1">
-				<Empty.Media>
-					<TriangleAlertIcon class="size-8 text-muted-foreground" />
-				</Empty.Media>
-				<Empty.Title>Failed to load tabs</Empty.Title>
-				<Empty.Description>
-					Something went wrong loading browser state. Try reopening the side
-					panel.
-				</Empty.Description>
-			</Empty.Root>
-		{/await}
+			{:then _}
+				<div class="flex-1 min-h-0"><UnifiedTabList /></div>
+			{:catch _error}
+				<Empty.Root class="flex-1">
+					<Empty.Media>
+						<TriangleAlertIcon class="size-8 text-muted-foreground" />
+					</Empty.Media>
+					<Empty.Title>Failed to load tabs</Empty.Title>
+					<Empty.Description>
+						Something went wrong loading browser state. Try reopening the side
+						panel.
+					</Empty.Description>
+				</Empty.Root>
+			{/await}
+		</div>
 	</main>
 </Tooltip.Provider>
 <ConfirmationDialog />

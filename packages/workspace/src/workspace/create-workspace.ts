@@ -12,27 +12,32 @@
  * Actions use a single `.withActions(factory)` because they don't build on each other,
  * are always defined by the app author, and benefit from being declared in one place.
  *
- * ## Encryption lifecycle
+ * ## Unlock lifecycle
  *
- * `.withEncryption(config?)` opts the client into encryption. Without it, encryption
- * methods (`activateEncryption`, `deactivateEncryption`, `isEncrypted`) don't exist
- * on the type — Whispering and CLI never see them.
+ * `.withEncryption(config?)` opts the client into encryption. Without it,
+ * `workspace.encryption` does not exist on the type.
  *
- * When configured, the full activation pipeline is:
+ * When configured, the full unlock pipeline is:
  * ```
- * activateEncryption(userKey)
- *   → byte-level dedup (same key? skip)
- *   → ++generation (race protection)
- *   → await deriveWorkspaceKey(userKey, workspaceId)  // HKDF
- *   → stale check (generation changed? discard)
+ * workspace.encryption.unlock(userKey)
+ *   → byte-level dedup against the active runtime key
+ *   → deriveWorkspaceKey(userKey, workspaceId)  // sync HKDF
  *   → apply derived key to all encrypted stores
- *   → await onActivate hook (e.g. cache user key)
+ *   → set runtime unlock state immediately
+ *   → await userKeyCache.save(bytesToBase64(userKey)) if configured
  *
- * deactivateEncryption()
- *   → ++generation (invalidate in-flight HKDF)
+ * Auto-boot (when userKeyCache is provided):
+ *   → whenReady: userKeyCache.load()
+ *   → if cached key exists: workspace.encryption.unlock(cachedKey)
+ *   → if unlock fails: userKeyCache.clear()
+ *
+ * workspace.encryption.lock()
  *   → clear key + deactivate all stores
- *   → wipe persisted data (clearData callbacks, LIFO)
- *   → await onDeactivate hook (e.g. clear key cache)
+ *
+ * workspace.clearLocalData()
+ *   → workspace.encryption.lock()
+ *   → wipe persisted data (clearLocalData callbacks, LIFO)
+ *   → await userKeyCache.clear() if configured
  * ```
  *
  * @example
@@ -48,10 +53,7 @@
  *
  * // With encryption + extensions
  * const client = createWorkspace({ id: 'my-app', tables: { posts } })
- *   .withEncryption({
- *     onActivate: (userKey) => keyCache.save(bytesToBase64(userKey)),
- *     onDeactivate: () => keyCache.clear(),
- *   })
+ *   .withEncryption({ userKeyCache })
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createSyncExtension({ ... }));
  *
@@ -70,7 +72,11 @@
 
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import { deriveWorkspaceKey } from '../shared/crypto/index.js';
+import {
+	base64ToBytes,
+	bytesToBase64,
+	deriveWorkspaceKey,
+} from '../shared/crypto/index.js';
 import type { YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import {
 	createEncryptedYkvLww,
@@ -95,17 +101,16 @@ import type {
 	Documents,
 	DocumentsHelper,
 	EncryptionConfig,
-	EncryptionMethods,
 	ExtensionContext,
 	KvDefinitions,
 	TableDefinitions,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceClientWithActions,
+	WorkspaceEncryption,
 	WorkspaceDefinition,
 } from './types.js';
 import { KV_KEY, TableKey } from './ydoc-keys.js';
-
 
 /** Byte-level comparison for Uint8Array dedup. */
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -162,8 +167,6 @@ export function createWorkspace<
 	// The workspace owns all encrypted KV stores so it can coordinate
 	// activateEncryption across tables and KV simultaneously.
 	const encryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
-	/** Whether a key has been provided — the single source of truth for encryption state. */
-	let workspaceKey: Uint8Array | undefined = options?.key;
 
 	// Create table stores + helpers (one encrypted KV per table)
 	const tableHelpers: Record<
@@ -200,13 +203,19 @@ export function createWorkspace<
 	 *
 	 * Three arrays track three distinct lifecycle moments:
 	 * - `extensionCleanups` — `dispose()` shutdown: close connections, stop observers (irreversible)
-	 * - `clearDataCallbacks` — `deactivateEncryption()` data wipe: delete IndexedDB (reversible, repeatable)
+	 * - `clearLocalDataCallbacks` — `workspace.clearLocalData()` data wipe: delete IndexedDB (reversible, repeatable)
 	 * - `whenReadyPromises` — construction: composite `whenReady` waits for all extensions to init
 	 */
 	type BuilderState = {
 		extensionCleanups: (() => MaybePromise<void>)[];
-		clearDataCallbacks: (() => MaybePromise<void>)[];
+		clearLocalDataCallbacks: (() => MaybePromise<void>)[];
 		whenReadyPromises: Promise<unknown>[];
+	};
+
+	type EncryptionRuntime = {
+		encryption: WorkspaceEncryption;
+		lock: () => void;
+		clearCache: () => Promise<void>;
 	};
 
 	// Accumulated document extension registrations (in chain order).
@@ -272,6 +281,7 @@ export function createWorkspace<
 	function buildClient<TExtensions extends Record<string, unknown>>(
 		extensions: TExtensions,
 		state: BuilderState,
+		encryptionRuntime?: EncryptionRuntime,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
@@ -325,10 +335,31 @@ export function createWorkspace<
 			loadSnapshot(update: Uint8Array): void {
 				Y.applyUpdate(ydoc, update);
 			},
+			async clearLocalData(): Promise<void> {
+				encryptionRuntime?.lock();
+				for (let i = state.clearLocalDataCallbacks.length - 1; i >= 0; i--) {
+					try {
+						await state.clearLocalDataCallbacks[i]?.();
+					} catch (err) {
+						console.error('Extension clearLocalData error:', err);
+					}
+				}
+				await encryptionRuntime?.clearCache();
+			},
 			whenReady,
 			dispose,
 			[Symbol.asyncDispose]: dispose,
 		};
+
+		if (encryptionRuntime) {
+			Object.assign(client, {
+				encryption: encryptionRuntime.encryption,
+				async unlockWithKey(userKeyBase64: string) {
+					await whenReady;
+					await encryptionRuntime.encryption.unlock(base64ToBytes(userKeyBase64));
+				},
+			});
+		}
 
 		/**
 		 * Apply an extension factory to the workspace Y.Doc.
@@ -353,7 +384,7 @@ export function createWorkspace<
 			) => TExports & {
 				whenReady?: Promise<unknown>;
 				dispose?: () => MaybePromise<void>;
-				clearData?: () => MaybePromise<void>;
+				clearLocalData?: () => MaybePromise<void>;
 			},
 		) {
 			const {
@@ -374,7 +405,7 @@ export function createWorkspace<
 				const raw = factory(ctx);
 
 				// Void return means "not installed" — skip registration
-				if (!raw) return buildClient(extensions, state);
+				if (!raw) return buildClient(extensions, state, encryptionRuntime);
 
 				const resolved = defineExtension(raw);
 
@@ -385,12 +416,13 @@ export function createWorkspace<
 					} as TExtensions & Record<TKey, TExports>,
 					{
 						extensionCleanups: [...state.extensionCleanups, resolved.dispose],
-						clearDataCallbacks: [
-							...state.clearDataCallbacks,
-							...(resolved.clearData ? [resolved.clearData] : []),
+						clearLocalDataCallbacks: [
+							...state.clearLocalDataCallbacks,
+							...(resolved.clearLocalData ? [resolved.clearLocalData] : []),
 						],
 						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
 					},
+					encryptionRuntime,
 				);
 			} catch (err) {
 				startDisposeLifo(state.extensionCleanups);
@@ -407,10 +439,13 @@ export function createWorkspace<
 				TExports extends Record<string, unknown>,
 			>(
 				key: TKey,
-				factory: (context: { ydoc: Y.Doc; whenReady: Promise<void> }) => TExports & {
+				factory: (context: {
+					ydoc: Y.Doc;
+					whenReady: Promise<void>;
+				}) => TExports & {
 					whenReady?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
-					clearData?: () => MaybePromise<void>;
+					clearLocalData?: () => MaybePromise<void>;
 				},
 			) {
 				// Sugar: register for both scopes with the same factory.
@@ -440,7 +475,7 @@ export function createWorkspace<
 				) => TExports & {
 					whenReady?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
-					clearData?: () => MaybePromise<void>;
+					clearLocalData?: () => MaybePromise<void>;
 				},
 			) {
 				return applyWorkspaceExtension(key, factory);
@@ -452,7 +487,7 @@ export function createWorkspace<
 					| (Record<string, unknown> & {
 							whenReady?: Promise<unknown>;
 							dispose?: () => MaybePromise<void>;
-							clearData?: () => MaybePromise<void>;
+							clearLocalData?: () => MaybePromise<void>;
 					  })
 					| void,
 				options?: { tags?: string[] },
@@ -462,95 +497,127 @@ export function createWorkspace<
 					factory,
 					tags: options?.tags ?? [],
 				});
-				return buildClient(extensions, state);
+				return buildClient(extensions, state, encryptionRuntime);
 			},
 
 			withEncryption(config?: EncryptionConfig) {
-				// Private closure state — inaccessible from outside.
-				// lastUserKey: enables byte-level dedup (same key → skip HKDF).
-				// keyGeneration: monotonic counter for race protection. Each call to
-				//   activateEncryption or deactivateEncryption increments it. When HKDF
-				//   resolves, the generation is compared — if it changed, a newer call
-				//   superseded this one and the stale result is discarded.
-				let lastUserKey: Uint8Array | undefined;
-				let keyGeneration = 0;
+				let activeUserKey: Uint8Array | undefined;
+				let isActiveUserKeyCached = config?.userKeyCache === undefined;
+				let workspaceKey: Uint8Array | undefined = options?.key;
+				let cacheQueue = Promise.resolve();
 
-				Object.defineProperty(client, 'isEncrypted', {
-					get() {
+				const runSerializedCacheTask = async (
+					task: () => Promise<void>,
+				): Promise<void> => {
+					const next = cacheQueue.catch(() => {}).then(task);
+					cacheQueue = next.catch(() => {});
+					return await next;
+				};
+
+				const lock = () => {
+					activeUserKey = undefined;
+					isActiveUserKeyCached = config?.userKeyCache === undefined;
+					workspaceKey = undefined;
+					for (const store of encryptedStores) {
+						store.deactivateEncryption();
+					}
+				};
+
+				const persistUnlockedUserKey = async (userKey: Uint8Array) => {
+					if (!config?.userKeyCache) return;
+
+					try {
+						await runSerializedCacheTask(async () => {
+							await config.userKeyCache.save(bytesToBase64(userKey));
+							if (
+								activeUserKey !== undefined &&
+								bytesEqual(activeUserKey, userKey)
+							) {
+								isActiveUserKeyCached = true;
+							}
+						});
+					} catch (error) {
+						console.error('[workspace] User key cache save failed:', error);
+					}
+				};
+
+				const unlock = async (userKey: Uint8Array) => {
+					const isSameUserKey =
+						activeUserKey !== undefined && bytesEqual(activeUserKey, userKey);
+
+					if (!isSameUserKey) {
+						try {
+							const nextWorkspaceKey = deriveWorkspaceKey(userKey, id);
+							for (const store of encryptedStores) {
+								store.activateEncryption(nextWorkspaceKey);
+							}
+							workspaceKey = nextWorkspaceKey;
+							activeUserKey = userKey;
+							isActiveUserKeyCached = config?.userKeyCache === undefined;
+						} catch (error) {
+							console.error('[workspace] Workspace unlock failed:', error);
+							return;
+						}
+					}
+
+					if (config?.userKeyCache && !isActiveUserKeyCached) {
+						await persistUnlockedUserKey(userKey);
+					}
+				};
+
+				const clearCache = async () => {
+					if (!config?.userKeyCache) return;
+					await runSerializedCacheTask(async () => {
+						await config.userKeyCache.clear();
+					});
+				};
+
+				const baseEncryption: WorkspaceEncryption = {
+					get isUnlocked() {
 						return workspaceKey !== undefined;
 					},
-					enumerable: true,
-					configurable: true,
-				});
+					unlock,
+					lock,
+				};
 
-				Object.assign(client, {
-					// Activation pipeline:
-					//   1. Byte-level dedup (same key bytes → early return, no work)
-					//   2. ++generation (race protection)
-					//   3. HKDF: deriveWorkspaceKey(userKey, workspaceId) → derived key
-					//   4. Stale check (generation changed during HKDF → discard)
-					//   5. Apply derived key to all encrypted stores
-					//   6. onActivate hook (e.g. cache the user key for sidebar reopens)
-					//
-					// Why the generation counter matters: HKDF is async. If the user signs
-					// out and back in during derivation, a slow HKDF from the old key could
-					// resolve after the new key is already active. The generation check at
-					// step 4 catches this — the stale result is silently discarded.
-					async activateEncryption(userKey: Uint8Array) {
-						if (lastUserKey && bytesEqual(lastUserKey, userKey)) return;
-						lastUserKey = userKey;
-
-						const thisGen = ++keyGeneration;
-						try {
-							const wsKey = await deriveWorkspaceKey(userKey, id);
-							if (thisGen !== keyGeneration) return;
-							workspaceKey = wsKey;
-							for (const store of encryptedStores) {
-								store.activateEncryption(wsKey);
-							}
-							await config?.onActivate?.(userKey);
-						} catch (error) {
-							console.error('[workspace] Key derivation failed:', error);
-						}
-					},
-					// Deactivation pipeline:
-					//   1. ++generation (invalidates any in-flight HKDF from activateEncryption)
-					//   2. Clear lastUserKey and workspaceKey
-					//   3. Deactivate all stores (switch back to plaintext mode)
-					//   4. Wipe persisted data via clearData callbacks (LIFO order)
-					//   5. Call onDeactivate hook (e.g. keyCache.clear())
-					//
-					// Step 1 is critical: if activateEncryption is mid-HKDF when deactivate
-					// is called, the generation bump ensures the in-flight derivation's
-					// result is discarded when it resolves. Without this, the sequence
-					// activate → deactivate could end with encryption re-enabled by the
-					// stale HKDF completing after deactivation.
-					async deactivateEncryption() {
-						++keyGeneration;
-						lastUserKey = undefined;
-						workspaceKey = undefined;
-						for (const store of encryptedStores) {
-							store.deactivateEncryption();
-						}
-						for (let i = state.clearDataCallbacks.length - 1; i >= 0; i--) {
+				// Auto-boot: if a key cache is provided, attempt unlock from cache
+				// after all extensions are ready. Passing userKeyCache implies auto-boot.
+				if (config?.userKeyCache) {
+					const cache = config.userKeyCache;
+					state.whenReadyPromises.push(
+						Promise.all(state.whenReadyPromises).then(async () => {
+							const cachedKey = await cache.load();
+							if (!cachedKey) return;
 							try {
-								await state.clearDataCallbacks[i]?.();
-							} catch (err) {
-								console.error('Extension clearData error:', err);
+								await unlock(base64ToBytes(cachedKey));
+							} catch (error) {
+								console.error('[workspace] Cached key unlock failed:', error);
+								await clearCache();
 							}
-						}
-						await config?.onDeactivate?.();
-					},
-				});
+						}),
+					);
+				}
 
-				return builder as unknown as WorkspaceClientBuilder<
+				const encryptionRuntime: EncryptionRuntime = {
+					encryption: baseEncryption,
+					lock,
+					clearCache,
+				};
+
+				return buildClient(
+					extensions,
+					state,
+					encryptionRuntime,
+				) as unknown as WorkspaceClientBuilder<
 					TId,
 					TTableDefinitions,
 					TKvDefinitions,
 					TAwarenessDefinitions,
 					TExtensions,
 					Record<string, never>,
-					EncryptionMethods
+					{
+						encryption: typeof encryptionRuntime.encryption;
+					}
 				>;
 			},
 
@@ -591,7 +658,7 @@ export function createWorkspace<
 
 	return buildClient({} as Record<string, never>, {
 		extensionCleanups: [],
-		clearDataCallbacks: [],
+		clearLocalDataCallbacks: [],
 		whenReadyPromises: [],
 	});
 }

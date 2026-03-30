@@ -1,32 +1,24 @@
-import { env } from 'cloudflare:workers';
 import {
-	oauthProvider,
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
+import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
-import { type BetterAuthOptions, betterAuth } from 'better-auth';
-import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { customSession } from 'better-auth/plugins';
-import { bearer } from 'better-auth/plugins/bearer';
-import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
-import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import pg from 'pg';
-import { APPS } from '@epicenter/constants/apps';
 import { aiChatHandlers } from './ai-chat';
+import { createAuth } from './auth/create-auth';
 import {
 	renderConsentPage,
 	renderDevicePage,
 	renderSignedInPage,
 	renderSignInPage,
 } from './auth-pages';
-import { createAutumn } from './autumn';
 import { billing } from './billing';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
@@ -93,230 +85,6 @@ export type Env = {
 };
 
 // ---------------------------------------------------------------------------
-// Auth
-// ---------------------------------------------------------------------------
-
-/** Shared base config for Better Auth — used by both the runtime and the CLI schema tool. */
-export const BASE_AUTH_CONFIG = {
-	basePath: '/auth',
-	emailAndPassword: { enabled: true },
-	account: {
-		accountLinking: {
-			enabled: true,
-			trustedProviders: ['google', 'email-password'],
-		},
-	},
-} satisfies BetterAuthOptions;
-
-/**
- * Validated shape of a single keyring entry.
- *
- * `version` is a positive integer identifying the key generation; `secret` is
- * the raw key material (typically base64-encoded via `openssl rand -base64 32`).
- */
-const EncryptionEntry = type({
-	version: 'number.integer > 0',
-	secret: 'string',
-});
-
-/**
- * Parse a single `"version:secret"` string into a validated `EncryptionEntry`.
- *
- * Finds the first colon—everything before it is the version, everything after
- * is the secret (which may itself contain colons). Uses `ctx.error()` for
- * arktype-native error reporting when the colon delimiter is missing.
- */
-const EncryptionEntryParser = type('string')
-	.pipe((entry, ctx) => {
-		const i = entry.indexOf(':');
-		if (i === -1) return ctx.error('must be "version:secret"');
-		return { version: Number(entry.slice(0, i)), secret: entry.slice(i + 1) };
-	})
-	.to(EncryptionEntry);
-
-/**
- * Parse and validate the full ENCRYPTION_SECRETS env var into a sorted keyring.
- *
- * Input format: `"2:base64Secret2,1:base64Secret1"` (comma-separated entries).
- * Output: a non-empty array of `{ version, secret }` sorted by version descending
- * (highest version first—the current key for new encryptions).
- *
- * `.pipe.try()` catches any `TraversalError` thrown by `EncryptionEntryParser.assert()`
- * and wraps it as `ArkErrors`. The non-empty tuple `.to()` guarantees `keyring[0]`
- * is always defined. `.assert()` at module load throws a `TraversalError` if the
- * env var is missing or malformed—the worker won’t serve requests until fixed.
- *
- * @example
- * ```
- * // ENCRYPTION_SECRETS="2:newSecret,1:oldSecret"
- * keyring[0] // { version: 2, secret: "newSecret" }  (current key)
- * keyring[1] // { version: 1, secret: "oldSecret" }  (for decrypting old blobs)
- * ```
- */
-const EncryptionKeyring = type('string')
-	.pipe.try((s) =>
-		s
-			.split(',')
-			.map((e) => EncryptionEntryParser.assert(e))
-			.sort((a, b) => b.version - a.version),
-	)
-	.to([EncryptionEntry, '...', EncryptionEntry.array()]);
-
-/**
- * Module-scope keyring—parsed once when the worker loads.
- *
- * `cloudflare:workers` exposes `env` at module scope. Parsing here means a
- * malformed ENCRYPTION_SECRETS prevents the worker from loading at all (no
- * requests served) rather than failing on the first auth check.
- */
-const keyring = EncryptionKeyring.assert(env.ENCRYPTION_SECRETS);
-const currentKey = keyring[0];
-
-/**
- * Derive a per-user 32-byte encryption key via two-step HKDF-SHA256.
- *
- * 1. SHA-256 the secret to get high-entropy root key material.
- * 2. Import as HKDF key and derive 256 bits with info="user:{userId}".
- *
- * Same inputs always produce the same key—deterministic, no storage needed.
- *
- * The info string is a domain-separation label for HKDF (RFC 5869 §3.2),
- * not a version identifier. If the derivation scheme ever changes (hash
- * algorithm, salt policy), the blob format version handles migration—not
- * the info string. Vault Transit, Signal Protocol, libsodium, and AWS KMS
- * all use unversioned derivation context strings.
- */
-async function deriveUserKey(
-	secret: string,
-	userId: string,
-): Promise<Uint8Array> {
-	const rawKey = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(secret),
-	);
-	const hkdfKey = await crypto.subtle.importKey('raw', rawKey, 'HKDF', false, [
-		'deriveBits',
-	]);
-	const derivedBits = await crypto.subtle.deriveBits(
-		{
-			name: 'HKDF',
-			hash: 'SHA-256',
-			salt: new Uint8Array(0),
-			info: new TextEncoder().encode(`user:${userId}`),
-		},
-		hkdfKey,
-		256,
-	);
-	return new Uint8Array(derivedBits);
-}
-
-/** Convert bytes to base64 string for JSON transport. */
-function bytesToBase64(bytes: Uint8Array): string {
-	return btoa(String.fromCharCode(...bytes));
-}
-
-/** Creates a Better Auth instance using an already-connected Drizzle instance. */
-function createAuth({ db, env, baseURL }: { db: Db; env: Env['Bindings']; baseURL: string }) {
-	return betterAuth({
-		...BASE_AUTH_CONFIG,
-		database: drizzleAdapter(db, { provider: 'pg' }),
-		baseURL,
-		secret: env.BETTER_AUTH_SECRET,
-		socialProviders: {
-			google: {
-				clientId: env.GOOGLE_CLIENT_ID,
-				clientSecret: env.GOOGLE_CLIENT_SECRET,
-			},
-		},
-		plugins: [
-			bearer(),
-			jwt(),
-			customSession(async ({ user, session }) => {
-				const encryptionKey = await deriveUserKey(currentKey.secret, user.id);
-				return {
-					user,
-					session,
-					encryptionKey: bytesToBase64(encryptionKey),
-					keyVersion: currentKey.version,
-				};
-			}),
-			deviceAuthorization({
-				verificationUri: '/device',
-				expiresIn: '10m',
-				interval: '5s',
-			}),
-			oauthProvider({
-				loginPage: '/sign-in',
-				consentPage: '/consent',
-				requirePKCE: true,
-				allowDynamicClientRegistration: false,
-				trustedClients: [
-					{
-						clientId: 'epicenter-desktop',
-						name: 'Epicenter Desktop',
-						type: 'native',
-						redirectUrls: ['tauri://localhost/auth/callback'],
-						skipConsent: true,
-						metadata: {},
-					},
-					{
-						clientId: 'epicenter-mobile',
-						name: 'Epicenter Mobile',
-						type: 'native',
-						redirectUrls: ['epicenter://auth/callback'],
-						skipConsent: true,
-						metadata: {},
-					},
-					{
-						clientId: 'epicenter-runner',
-						name: 'Epicenter Runner',
-						type: 'native',
-						redirectUrls: [],
-						skipConsent: true,
-						metadata: {},
-					},
-				],
-			}),
-		],
-		session: {
-			expiresIn: 60 * 60 * 24 * 7,
-			updateAge: 60 * 60 * 24,
-			storeSessionInDatabase: true,
-			cookieCache: {
-				enabled: true,
-				maxAge: 60 * 5,
-				strategy: 'jwe',
-			},
-		},
-		advanced: {
-			crossSubDomainCookies: {
-				enabled: true,
-				domain: 'epicenter.so',
-			},
-		},
-		trustedOrigins: (request) => {
-			const origins = [
-				'tauri://localhost',
-				...Object.values(APPS).flatMap((a) => [a.url, `http://localhost:${a.port}`]),
-			];
-			const origin = request?.headers.get('origin');
-			if (origin?.startsWith('chrome-extension://')) {
-				origins.push(origin);
-			}
-			return origins;
-		},
-		secondaryStorage: {
-			get: (key: string) => env.SESSION_KV.get(key),
-			set: (key: string, value: string, ttl?: number) =>
-				env.SESSION_KV.put(key, value, {
-					expirationTtl: ttl ?? 60 * 5,
-				}),
-			delete: (key: string) => env.SESSION_KV.delete(key),
-		},
-	});
-}
-
-// ---------------------------------------------------------------------------
 // Factory & App
 // ---------------------------------------------------------------------------
 
@@ -326,7 +94,10 @@ const factory = createFactory<Env>({
 		// Allowed origins derived from APPS so adding an app automatically allows it.
 		const allowedOrigins = new Set([
 			'tauri://localhost',
-			...Object.values(APPS).flatMap((a) => [a.url, `http://localhost:${a.port}`]),
+			...Object.values(APPS).flatMap((a) => [
+				a.url,
+				`http://localhost:${a.port}`,
+			]),
 		]);
 		app.use('*', async (c, next) => {
 			if (c.req.header('upgrade') === 'websocket') return next();
@@ -340,6 +111,7 @@ const factory = createFactory<Env>({
 				credentials: true,
 				allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
 				allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+				exposeHeaders: ['set-auth-token'],
 			})(c, next);
 		});
 
@@ -374,8 +146,15 @@ const factory = createFactory<Env>({
 		});
 
 		// Layer 2: Auth — pure, reads db from context.
+		// Wrangler dev uses the custom domain from routes config as the Host header,
+		// producing http://api.epicenter.so (no TLS). Detect this and use localhost.
 		app.use('*', async (c, next) => {
-			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL: new URL(c.req.url).origin }));
+			const origin = new URL(c.req.url).origin;
+			const baseURL =
+				origin === `http://${new URL(APPS.API.url).host}`
+					? `http://localhost:${APPS.API.port}`
+					: origin;
+			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));
 			await next();
 		});
 	},
@@ -498,17 +277,6 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 	await next();
 });
 app.use('/ai/*', authGuard);
-// Ensure authenticated AI users exist as Autumn customers (blocking—must
-// complete before downstream check() calls, which require the customer to exist).
-app.use('/ai/*', async (c, next) => {
-	const autumn = createAutumn(c.env);
-	await autumn.customers.getOrCreate({
-		customerId: c.var.user.id,
-		name: c.var.user.name ?? undefined,
-		email: c.var.user.email ?? undefined,
-	});
-	await next();
-});
 app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
 app.use('/billing', authGuard);

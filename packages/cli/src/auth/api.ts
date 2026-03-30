@@ -24,9 +24,9 @@ const CLIENT_ID = 'epicenter-runner';
 // ─── Response types ──────────────────────────────────────────────────────────
 
 /** Derived from Better Auth's `$Infer` — always matches the actual API response. */
-import type { Session, SessionUser } from '@epicenter/api/types';
+import type { SessionResponse } from '@epicenter/api/types';
 
-export type { Session, SessionUser } from '@epicenter/api/types';
+export type { SessionResponse } from '@epicenter/api/types';
 
 /**
  * Response from `/auth/sign-in/email` with the bearer plugin active.
@@ -37,7 +37,7 @@ export type { Session, SessionUser } from '@epicenter/api/types';
 export type SignInResponse = {
 	token: string;
 	expiresAt: string;
-	user: SessionUser;
+	user: SessionResponse['user'];
 };
 
 export type DeviceCodeResponse = {
@@ -59,7 +59,7 @@ export type DeviceTokenResponse =
  * Create a typed API client for Epicenter auth endpoints.
  *
  * All paths are relative to the server's Better Auth `basePath: '/auth'`
- * as configured in `apps/api/src/app.ts`.
+ * as configured in `apps/api/src/auth/create-auth.ts`.
  *
  * @param serverUrl - Base URL of the Epicenter server (e.g. `https://api.epicenter.so`).
  * @param token - Optional bearer token for authenticated requests.
@@ -132,7 +132,7 @@ export function createAuthApi(serverUrl: string, token?: string) {
 		 * Returns user profile and session expiry.
 		 */
 		getSession() {
-			return request<Session>('GET', '/auth/get-session');
+			return request<SessionResponse>('GET', '/auth/get-session');
 		},
 
 		// ── Device code flow (RFC 8628) ────────────────────────────────────

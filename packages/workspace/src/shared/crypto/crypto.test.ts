@@ -1,3 +1,17 @@
+/**
+ * Encryption Primitive Tests
+ *
+ * Verifies the workspace crypto helpers that protect encrypted storage and
+ * key derivation. These tests keep the encryption format stable while proving
+ * the new synchronous HKDF implementation still matches the old Web Crypto
+ * contract byte for byte.
+ *
+ * Key behaviors:
+ * - XChaCha20-Poly1305 round-trips plaintext and rejects tampering
+ * - Base64 and password/salt helpers stay deterministic
+ * - `deriveWorkspaceKey()` stays deterministic and Web Crypto compatible
+ */
+
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import type { YKeyValueLwwEntry } from '../y-keyvalue/y-keyvalue-lww';
@@ -15,6 +29,30 @@ import {
 	getKeyVersion,
 	isEncryptedBlob,
 } from './index';
+
+async function deriveWorkspaceKeyWithWebCrypto(
+	userKey: Uint8Array,
+	workspaceId: string,
+): Promise<Uint8Array> {
+	const hkdfKey = await crypto.subtle.importKey(
+		'raw',
+		new Uint8Array(userKey).buffer,
+		'HKDF',
+		false,
+		['deriveBits'],
+	);
+	const derivedBits = await crypto.subtle.deriveBits(
+		{
+			name: 'HKDF',
+			hash: 'SHA-256',
+			salt: new Uint8Array(0),
+			info: new TextEncoder().encode(`workspace:${workspaceId}`),
+		},
+		hkdfKey,
+		256,
+	);
+	return new Uint8Array(derivedBits);
+}
 
 describe('generateEncryptionKey', () => {
 	test('returns 32-byte Uint8Array', () => {
@@ -445,41 +483,71 @@ describe('binary storage overhead', () => {
 });
 
 describe('deriveWorkspaceKey', () => {
-	test('same inputs produce same key (deterministic)', async () => {
+	test('same inputs produce same key (deterministic)', () => {
 		const userKey = generateEncryptionKey();
 		const workspaceId = 'tab-manager';
 
-		const key1 = await deriveWorkspaceKey(userKey, workspaceId);
-		const key2 = await deriveWorkspaceKey(userKey, workspaceId);
+		const key1 = deriveWorkspaceKey(userKey, workspaceId);
+		const key2 = deriveWorkspaceKey(userKey, workspaceId);
 
 		expect(key1).toEqual(key2);
 	});
 
-	test('different userKeys produce different workspace keys', async () => {
+	test('different userKeys produce different workspace keys', () => {
 		const userKey1 = generateEncryptionKey();
 		const userKey2 = generateEncryptionKey();
 		const workspaceId = 'tab-manager';
 
-		const key1 = await deriveWorkspaceKey(userKey1, workspaceId);
-		const key2 = await deriveWorkspaceKey(userKey2, workspaceId);
+		const key1 = deriveWorkspaceKey(userKey1, workspaceId);
+		const key2 = deriveWorkspaceKey(userKey2, workspaceId);
 
 		expect(key1).not.toEqual(key2);
 	});
 
-	test('different workspaceIds produce different keys', async () => {
+	test('different workspaceIds produce different keys', () => {
 		const userKey = generateEncryptionKey();
 
-		const key1 = await deriveWorkspaceKey(userKey, 'tab-manager');
-		const key2 = await deriveWorkspaceKey(userKey, 'whispering');
+		const key1 = deriveWorkspaceKey(userKey, 'tab-manager');
+		const key2 = deriveWorkspaceKey(userKey, 'whispering');
 
 		expect(key1).not.toEqual(key2);
 	});
 
-	test('output is 32 bytes', async () => {
+	test('output is 32 bytes', () => {
 		const userKey = generateEncryptionKey();
-		const key = await deriveWorkspaceKey(userKey, 'tab-manager');
+		const key = deriveWorkspaceKey(userKey, 'tab-manager');
 
 		expect(key).toBeInstanceOf(Uint8Array);
 		expect(key.length).toBe(32);
+	});
+
+	test('matches the previous Web Crypto HKDF output for fixed fixtures', async () => {
+		const fixtures = [
+			{
+				userKey: base64ToBytes(
+					'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+				),
+				workspaceId: 'tab-manager',
+			},
+			{
+				userKey: base64ToBytes(
+					'8PHy8/T19vf4+fr7/P3+/wABAgMEBQYHCAkKCwwNDg8=',
+				),
+				workspaceId: 'workspace:with:colons',
+			},
+		];
+
+		for (const fixture of fixtures) {
+			const syncKey = deriveWorkspaceKey(
+				fixture.userKey,
+				fixture.workspaceId,
+			);
+			const webCryptoKey = await deriveWorkspaceKeyWithWebCrypto(
+				fixture.userKey,
+				fixture.workspaceId,
+			);
+
+			expect(syncKey).toEqual(webCryptoKey);
+		}
 	});
 });

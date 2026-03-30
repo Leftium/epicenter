@@ -40,7 +40,7 @@
  * |------|---------|---------|
  * | `whenReady` | Track async initialization (render gates, sequencing) | `Promise.resolve()` |
  * | `dispose` | Release resources on shutdown (connections, observers) | No-op `() => {}` |
- * | `clearData` | Wipe persisted data on sign-out (IndexedDB, SQLite) | `undefined` (omit if no persistence) |
+ * | `clearLocalData` | Wipe persisted data on sign-out (IndexedDB, SQLite) | `undefined` (omit if no persistence) |
  *
  * Factory functions are **always synchronous**. Async initialization is tracked
  * via the returned `whenReady` promise, not the factory itself.
@@ -64,12 +64,10 @@
  * ```
  */
 
-
 /**
  * A value that may be synchronous or wrapped in a Promise.
  */
 export type MaybePromise<T> = T | Promise<T>;
-
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION — Flat resolved type with required lifecycle hooks
@@ -83,7 +81,7 @@ export type MaybePromise<T> = T | Promise<T>;
  * `dispose`. The framework normalizes defaults via `defineExtension()` so the
  * stored form always has both lifecycle hooks present.
  *
- * `whenReady`, `dispose`, and `clearData` are reserved property names—extension
+ * `whenReady`, `dispose`, and `clearLocalData` are reserved property names—extension
  * authors should not use them for custom exports.
  *
  * ## Framework Guarantees
@@ -91,9 +89,9 @@ export type MaybePromise<T> = T | Promise<T>;
  * - `dispose()` will be called even if `whenReady` rejects
  * - `dispose()` may be called while `whenReady` is still pending
  * - Multiple `dispose()` calls should be safe (idempotent)
- * - `clearData()` is called before `dispose()` during sign-out (never alone)
+ * - `clearLocalData()` is called before `dispose()` during sign-out (never alone)
  *
- * @typeParam T - Custom exports (everything except `whenReady`, `dispose`, `clearData`).
+ * @typeParam T - Custom exports (everything except `whenReady`, `dispose`, `clearLocalData`).
  *   Defaults to `Record<string, never>` for lifecycle-only extensions.
  *
  * @example
@@ -153,12 +151,13 @@ export type Extension<
 	 *
 	 * Semantics vs `dispose()`:
 	 * - `dispose()` releases resources but **keeps data** (normal cleanup)
-	 * - `clearData()` **wipes data** but does not release resources
-	 *
-	 * The framework calls `clearData()` during `deactivateEncryption()` in LIFO order.
+	 * - `clearLocalData()` **wipes data** but does not release resources
+ *
+	 * The framework calls `clearLocalData()` during `workspace.clearLocalData()`
+	 * in LIFO order.
 	 * Extensions without persistent state should omit this (leave `undefined`).
 	 */
-	clearData?: () => MaybePromise<void>;
+	clearLocalData?: () => MaybePromise<void>;
 };
 
 /**
@@ -190,15 +189,15 @@ export function defineExtension<T extends Record<string, unknown>>(
 	input: T & {
 		whenReady?: Promise<unknown>;
 		dispose?: () => MaybePromise<void>;
-		clearData?: () => MaybePromise<void>;
+		clearLocalData?: () => MaybePromise<void>;
 	},
-): Extension<Omit<T, 'whenReady' | 'dispose' | 'clearData'>> {
+): Extension<Omit<T, 'whenReady' | 'dispose' | 'clearLocalData'>> {
 	return {
 		...input,
 		whenReady: input.whenReady?.then(() => {}) ?? Promise.resolve(),
 		dispose: input.dispose ?? (() => {}),
-		clearData: input.clearData,
-	} as Extension<Omit<T, 'whenReady' | 'dispose' | 'clearData'>>;
+		clearLocalData: input.clearLocalData,
+	} as Extension<Omit<T, 'whenReady' | 'dispose' | 'clearLocalData'>>;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -240,9 +239,7 @@ export async function disposeLifo(
  *
  * @param cleanups - Array of cleanup functions to invoke in reverse order
  */
-export function startDisposeLifo(
-	cleanups: (() => MaybePromise<void>)[],
-): void {
+export function startDisposeLifo(cleanups: (() => MaybePromise<void>)[]): void {
 	for (let i = cleanups.length - 1; i >= 0; i--) {
 		try {
 			Promise.resolve(cleanups[i]?.()).catch((err) => {

@@ -7,8 +7,31 @@
 	import FlaskConicalIcon from '@lucide/svelte/icons/flask-conical';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import TrashIcon from '@lucide/svelte/icons/trash';
+	import { nanoid } from 'nanoid/non-secure';
+	import {
+		defineErrors,
+		extractErrorMessage,
+		type InferErrors,
+	} from 'wellcrafted/error';
+	import { tryAsync, trySync } from 'wellcrafted/result';
 	import * as Y from 'yjs';
 	import workspace from '$lib/workspace';
+
+	const DebugStressTestError = defineErrors({
+		GenerateFailed: ({ cause }: { cause: unknown }) => ({
+			message: `Failed to generate test recordings: ${extractErrorMessage(cause)}`,
+			cause,
+		}),
+		DeleteFailed: ({ cause }: { cause: unknown }) => ({
+			message: `Failed to delete test recordings: ${extractErrorMessage(cause)}`,
+			cause,
+		}),
+		RefreshFailed: ({ cause }: { cause: unknown }) => ({
+			message: `Failed to refresh debug metrics: ${extractErrorMessage(cause)}`,
+			cause,
+		}),
+	});
+	type DebugStressTestError = InferErrors<typeof DebugStressTestError>;
 
 	// ── Metrics ────────────────────────────────────────────────────────────────
 
@@ -77,6 +100,7 @@
 		let selectedCount = $state('100');
 		let selectedContentLength = $state<keyof typeof loremByLength>('short');
 		let lastResult = $state<StressTestResult | null>(null);
+		let lastError = $state<DebugStressTestError | null>(null);
 
 		function measure(label: string, count: number, operation: () => void) {
 			const sizeBefore = Y.encodeStateAsUpdate(workspace.ydoc).byteLength;
@@ -111,33 +135,79 @@
 			get lastResult() {
 				return lastResult;
 			},
+			get lastError() {
+				return lastError;
+			},
 			generate() {
 				const count = Number(selectedCount);
 				const content =
 					loremByLength[selectedContentLength] ?? loremByLength.short;
-				measure('Generated', count, () => {
-					workspace.ydoc.transact(() => {
-						for (let i = 0; i < count; i++) {
-							const now = new Date().toISOString();
-							workspace.tables.recordings.set({
-								id: crypto.randomUUID(),
-								title: `Test Recording #${i + 1}`,
-								subtitle: 'Generated for stress testing',
-								timestamp: now,
-								createdAt: now,
-								updatedAt: now,
-								transcribedText: content,
-								transcriptionStatus: 'DONE',
-								_v: 1,
+				lastError = null;
+				const { error } = trySync({
+					try: () => {
+						measure('Generated', count, () => {
+							workspace.ydoc.transact(() => {
+								for (let i = 0; i < count; i++) {
+									const now = new Date().toISOString();
+									workspace.tables.recordings.set({
+										id: nanoid(),
+										title: `Test Recording #${i + 1}`,
+										subtitle: 'Generated for stress testing',
+										timestamp: now,
+										createdAt: now,
+										updatedAt: now,
+										transcribedText: content,
+										transcriptionStatus: 'DONE',
+										_v: 1,
+									});
+								}
 							});
-						}
-					});
+						});
+					},
+					catch: (cause) => DebugStressTestError.GenerateFailed({ cause }),
 				});
+				if (error) {
+					lastError = error;
+					return false;
+				}
+				return true;
 			},
 			deleteAll() {
-				if (!confirm('Delete ALL recordings? This cannot be undone.')) return;
-				const count = workspace.tables.recordings.count();
-				measure('Deleted', count, () => workspace.tables.recordings.clear());
+				lastError = null;
+				if (!confirm('Delete ALL recordings? This cannot be undone.'))
+					return false;
+				const { error } = trySync({
+					try: () => {
+						const count = workspace.tables.recordings.count();
+						measure('Deleted', count, () => workspace.tables.recordings.clear());
+					},
+					catch: (cause) => DebugStressTestError.DeleteFailed({ cause }),
+				});
+				if (error) {
+					lastError = error;
+					return false;
+				}
+				return true;
+			},
+			async generateAndRefresh() {
+				if (!this.generate()) return;
+				const { error } = await tryAsync({
+					try: async () => {
+						metrics.refresh();
+					},
+					catch: (cause) => DebugStressTestError.RefreshFailed({ cause }),
+				});
+				if (error) lastError = error;
+			},
+			async deleteAllAndRefresh() {
+				if (!this.deleteAll()) return;
+				const { error } = await tryAsync({
+					try: async () => {
+						metrics.refresh();
+					},
+					catch: (cause) => DebugStressTestError.RefreshFailed({ cause }),
+				});
+				if (error) lastError = error;
 			},
 		};
 	}
@@ -303,15 +373,24 @@
 
 				<!-- Actions -->
 				<div class="flex gap-2">
-					<Button onclick={() => { stressTest.generate(); metrics.refresh(); }}>
+					<Button onclick={() => stressTest.generateAndRefresh()}>
 						<FlaskConicalIcon class="mr-1.5 h-3.5 w-3.5" />
 						Generate
 					</Button>
-					<Button variant="destructive" onclick={() => { stressTest.deleteAll(); metrics.refresh(); }}>
+					<Button
+						variant="destructive"
+						onclick={() => stressTest.deleteAllAndRefresh()}
+					>
 						<TrashIcon class="mr-1.5 h-3.5 w-3.5" />
 						Delete All Recordings
 					</Button>
 				</div>
+
+				{#if stressTest.lastError}
+					<div class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+						{stressTest.lastError.message}
+					</div>
+				{/if}
 
 				<!-- Results -->
 				{#if stressTest.lastResult}

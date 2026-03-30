@@ -95,7 +95,7 @@ describe('e2e: honeycrisp workspace', () => {
 		expect(notes[0]!.title).toBe('Test Note');
 		expect(notes[0]!.folderId).toBe('folder-1');
 
-		await client.destroy();
+		await client.dispose();
 	});
 
 	test('persistence: data survives restart', async () => {
@@ -118,7 +118,7 @@ describe('e2e: honeycrisp workspace', () => {
 		expect(notes).toHaveLength(1);
 		expect(notes[0]!.title).toBe('Test Note');
 
-		await client.destroy();
+		await client.dispose();
 	});
 
 	test('KV: set, persist, read after restart', async () => {
@@ -135,7 +135,7 @@ describe('e2e: honeycrisp workspace', () => {
 		client1.kv.set('sortBy', 'title');
 		client1.kv.set('sidebarCollapsed', true);
 
-		await client1.destroy();
+		await client1.dispose();
 
 		// Re-open and verify
 		const client2 = createWorkspace(definition).withExtension(
@@ -147,6 +147,6 @@ describe('e2e: honeycrisp workspace', () => {
 		expect(client2.kv.get('sortBy')).toBe('title');
 		expect(client2.kv.get('sidebarCollapsed')).toBe(true);
 
-		await client2.destroy();
+		await client2.dispose();
 	});
 });

@@ -13,6 +13,7 @@
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import { nanoid } from 'nanoid/non-secure';
 	import { slide } from 'svelte/transition';
 	import {
 		AnthropicApiKeyInput,
@@ -72,7 +73,7 @@
 		if (!stepToDuplicate) return;
 		steps = [
 			...steps.slice(0, index + 1),
-			{ ...stepToDuplicate, id: crypto.randomUUID() },
+			{ ...stepToDuplicate, id: nanoid() },
 			...steps.slice(index + 1),
 		];
 	}

@@ -59,13 +59,21 @@ ENCRYPTION_SECRETS="1:base64Secret"
        |
        |  SHA-256(currentSecret) -> root key material
        |  HKDF(root, info="user:{userId}") -> per-user key (32 bytes)
-       v
-  Session response -> client receives { encryptionKey, keyVersion }
        |
        |  HKDF(userKey, info="workspace:{wsId}") -> per-workspace key (32 bytes)
        v
   XChaCha20-Poly1305 encrypt/decrypt with @noble/ciphers
 ```
+
+### Key Delivery Best Practices
+
+**Prefer inline key delivery over separate endpoints.** If the session already authenticates the user, derive and embed key material in the session response. HKDF-SHA256 derivation adds <0.1ms—the optimization of splitting key delivery from session delivery costs more in complexity (version-tracking state, extra round-trips, duplicated callbacks) than it saves in compute.
+
+**Make unlock operations idempotent.** Calling `unlock()` with the same key twice should be a no-op, and calling it with a different key should cleanly replace the active key. This eliminates client-side version tracking—the client receives the key, calls unlock, done. No mutable `lastVersion` state, no conditional fetches.
+
+**Embed key version in the ciphertext, not in application logic.** The blob header (`blob[1]`) carries the version that encrypted it. Decryption reads the version from the blob and selects the matching key from the keyring. Clients never need to track which version they’re using—the data is self-describing.
+
+**Minimize client-side key state.** Ideally zero mutable state. The session carries the key, the client passes it to `unlock()`, the workspace derives per-workspace keys internally. No caches to invalidate, no version comparisons, no separate fetch methods.
 
 ### Why XChaCha20-Poly1305 Over AES-256-GCM
 

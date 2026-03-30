@@ -1,13 +1,8 @@
-import { APP_URLS } from '@epicenter/constants/vite';
-import {
-	createAuthState,
-	createTokenStore,
-} from '@epicenter/svelte/auth-state';
+import { createPersistedState } from '@epicenter/svelte';
+import { AuthSession } from '@epicenter/svelte/auth';
 
-export const tokenStore = createTokenStore('zhongwen');
-
-export const authState = createAuthState({
-	baseURL: APP_URLS.API,
-	storagePrefix: 'zhongwen',
-	tokenStore,
+export const session = createPersistedState({
+	key: 'zhongwen:authSession',
+	schema: AuthSession,
+	defaultValue: null,
 });

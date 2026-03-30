@@ -100,6 +100,12 @@ Column definitions are plain JSON objects, not builder functions. This enables:
 - Runtime introspection
 - Type-safe conversions to validation schemas
 
+**Client-Side Only — No SSR**
+
+Workspaces always initialize in the browser, never on the server. This is by design, not a limitation. While Y.Doc itself is pure JS, everything plugged into it is browser-only: IndexedDB persistence, WebSocket sync, encryption key caches, and Svelte's `createSubscriber` bridge. More fundamentally, there's nothing useful to server-render — the data lives on the device, encrypted, per-user. The server is a sync relay, not a content authority. A server-rendered workspace would be empty, then immediately replaced by the client's local state, producing a flash of wrong content worse than a loading spinner.
+
+If you're using SvelteKit, disable SSR for workspace pages (`export const ssr = false` in `+layout.ts`) or initialize the workspace in a `.svelte.ts` module that only runs client-side. This matches the local-first model: the device owns the data, the server just helps it travel.
+
 ## Architecture Overview
 
 ### The Y.Doc: Heart of Every Workspace

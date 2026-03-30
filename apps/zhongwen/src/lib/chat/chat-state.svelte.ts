@@ -1,57 +1,86 @@
 /**
- * Reactive AI chat state for Zhongwen.
+ * Reactive AI chat state for Zhongwen with workspace persistence.
  *
- * Simplified from tab-manager's chat-state — no Y.Doc, no tool calls.
- * Conversations are in-memory with messages persisted to localStorage.
+ * Conversations and messages persist to IndexedDB via the workspace API.
+ * Modeled after tab-manager's chat-state but simplified — no tool calls,
+ * no encryption, no WebSocket sync.
  */
 
-import {
-	ChatClient,
-	type ChatClientState,
-	fetchServerSentEvents,
-	type UIMessage,
-} from '@tanstack/ai-client';
+import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
+import { fromTable } from '@epicenter/svelte';
 import { SvelteMap } from 'svelte/reactivity';
-import { tokenStore } from '$lib/auth';
+import type { JsonValue } from 'wellcrafted/json';
 import {
-	AVAILABLE_PROVIDERS,
+	auth,
+	type ChatMessageId,
+	type Conversation,
+	type ConversationId,
+	generateChatMessageId,
+	generateConversationId,
+	workspace,
+} from '$lib/workspace';
+import {
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,
 	PROVIDER_MODELS,
 	type Provider,
 } from '$lib/chat/providers';
 import { ZHONGWEN_SYSTEM_PROMPT } from '$lib/chat/system-prompt';
+import { toUiMessage } from '$lib/chat/ui-message';
 
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type ConversationId = string & { __brand: 'ConversationId' };
-
-type Conversation = {
-	id: ConversationId;
-	title: string;
-	provider: string;
-	model: string;
-	createdAt: number;
-	updatedAt: number;
-};
-
-// ─── ID Generation ───────────────────────────────────────────────────────────
-
-let idCounter = 0;
-function generateId(): ConversationId {
-	return `conv_${Date.now()}_${++idCounter}` as ConversationId;
-}
-
-function generateMessageId(): string {
-	return `msg_${Date.now()}_${++idCounter}`;
-}
+const asChatMessageId = (id: string) => id as ChatMessageId;
 
 // ─── State Factory ───────────────────────────────────────────────────────────
 
 function createChatState() {
-	let conversations = $state<Conversation[]>([]);
+	// ── Conversation List (Y.Doc-backed) ──
+
+	const conversationsMap = fromTable(workspace.tables.conversations);
+	const conversations = $derived(
+		conversationsMap.values().toArray().sort((a, b) => b.updatedAt - a.updatedAt),
+	);
+
+	/** Returns the ID to activate — either the first existing conversation or a newly created default. */
+	function ensureDefaultConversation(): ConversationId {
+		const first = conversations[0];
+		if (first) return first.id;
+
+		const id = generateConversationId();
+		const now = Date.now();
+		workspace.tables.conversations.set({
+			id,
+			title: 'New Chat',
+			provider: DEFAULT_PROVIDER,
+			model: DEFAULT_MODEL,
+			createdAt: now,
+			updatedAt: now,
+			_v: 1,
+		});
+		return id;
+	}
+
+	// ── Helpers ──
+
+	function updateConversation(
+		conversationId: ConversationId,
+		patch: Partial<Omit<Conversation, 'id'>>,
+	) {
+		workspace.tables.conversations.update(conversationId, {
+			...patch,
+			updatedAt: Date.now(),
+		});
+	}
+
+	function loadMessages(conversationId: ConversationId) {
+		return workspace.tables.chatMessages
+			.filter((m) => m.conversationId === conversationId)
+			.sort((a, b) => a.createdAt - b.createdAt)
+			.map(toUiMessage);
+	}
+
+	// ── Handle Registry ──
+
 	let activeConversationId = $state<ConversationId>('' as ConversationId);
 
 	const handles = new SvelteMap<
@@ -62,58 +91,53 @@ function createChatState() {
 	// ── Conversation Handle Factory ──
 
 	function createConversationHandle(conversationId: ConversationId) {
-		let messages = $state<UIMessage[]>([]);
-		let status = $state<ChatClientState>('ready');
-		let isLoading = $state(false);
-		let error = $state<Error | undefined>(undefined);
 		let inputValue = $state('');
 
-		const client = new ChatClient({
+		const metadata = $derived(conversationsMap.get(conversationId));
+
+		const chat = createChat({
+			initialMessages: loadMessages(conversationId),
 			connection: fetchServerSentEvents(
 				() => `${APP_URLS.API}/ai/chat`,
-				() => {
-					const conv = conversations.find((c) => c.id === conversationId);
-					return {
-						credentials: 'include',
-						headers: {
-							Authorization: `Bearer ${tokenStore.get()}`,
+				() => ({
+					fetchClient: auth.fetch,
+					body: {
+						data: {
+							provider: metadata?.provider ?? DEFAULT_PROVIDER,
+							model: metadata?.model ?? DEFAULT_MODEL,
+							systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
 						},
-						body: {
-							data: {
-								provider: conv?.provider ?? DEFAULT_PROVIDER,
-								model: conv?.model ?? DEFAULT_MODEL,
-								systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
-							},
-						},
-					};
-				},
+					},
+				}),
 			),
-			onMessagesChange: (msgs) => {
-				messages = [...msgs];
+			onError: (err) => {
+				console.error(
+					'[zhongwen] stream error:',
+					err.message,
+					'conversation:',
+					conversationId,
+				);
 			},
-			onLoadingChange: (loading) => {
-				isLoading = loading;
-			},
-			onErrorChange: (err) => {
-				error = err;
-			},
-			onStatusChange: (newStatus) => {
-				status = newStatus;
-				messages = [...client.getMessages()];
-			},
-			onFinish: () => {
-				const conv = conversations.find((c) => c.id === conversationId);
-				if (conv) {
-					conv.updatedAt = Date.now();
-				}
+			onFinish: (message) => {
+				workspace.tables.chatMessages.set({
+					id: asChatMessageId(message.id),
+					conversationId,
+					role: 'assistant',
+					parts: message.parts as JsonValue[],
+					createdAt: message.createdAt?.getTime() ?? Date.now(),
+					_v: 1,
+				});
+				workspace.tables.conversations.update(conversationId, {
+					updatedAt: Date.now(),
+				});
 			},
 		});
 
-		const metadata = $derived(
-			conversations.find((c) => c.id === conversationId),
-		);
-
 		return {
+			syncMessages() {
+				if (chat.isLoading) return;
+				chat.setMessages(loadMessages(conversationId));
+			},
 			get id() {
 				return conversationId;
 			},
@@ -126,35 +150,30 @@ function createChatState() {
 				return metadata?.provider ?? DEFAULT_PROVIDER;
 			},
 			set provider(value: string) {
-				const conv = conversations.find((c) => c.id === conversationId);
-				if (!conv) return;
 				const models = PROVIDER_MODELS[value as Provider];
-				conv.provider = value;
-				conv.model = models?.[0] ?? DEFAULT_MODEL;
+				updateConversation(conversationId, {
+					provider: value,
+					model: models?.[0] ?? DEFAULT_MODEL,
+				});
 			},
 
 			get model() {
 				return metadata?.model ?? DEFAULT_MODEL;
 			},
 			set model(value: string) {
-				const conv = conversations.find((c) => c.id === conversationId);
-				if (conv) conv.model = value;
+				updateConversation(conversationId, { model: value });
 			},
 
 			get messages() {
-				return messages;
+				return chat.messages;
 			},
 
 			get isLoading() {
-				return isLoading;
+				return chat.isLoading;
 			},
 
 			get error() {
-				return error;
-			},
-
-			get status() {
-				return status;
+				return chat.error;
 			},
 
 			get inputValue() {
@@ -166,106 +185,146 @@ function createChatState() {
 
 			sendMessage(content: string) {
 				if (!content.trim()) return;
-				const id = generateMessageId();
+				const userMessageId = generateChatMessageId();
 
-				void client.sendMessage({ content, id });
+				// Send to client FIRST so isLoading=true before the
+				// observer fires refreshFromDoc (which skips when loading).
+				void chat.sendMessage({ content, id: userMessageId });
 
-				const conv = conversations.find((c) => c.id === conversationId);
-				if (conv && conv.title === 'New Chat') {
-					conv.title = content.trim().slice(0, 50);
-				}
+				workspace.tables.chatMessages.set({
+					id: userMessageId,
+					conversationId,
+					role: 'user',
+					parts: [{ type: 'text', content }],
+					createdAt: Date.now(),
+					_v: 1,
+				});
+
+				updateConversation(conversationId, {
+					title:
+						metadata?.title === 'New Chat'
+							? content.trim().slice(0, 50)
+							: metadata?.title,
+				});
 			},
 
 			reload() {
-				void client.reload();
+				const lastMessage = chat.messages.at(-1);
+				if (lastMessage?.role === 'assistant') {
+					workspace.tables.chatMessages.delete(
+						asChatMessageId(lastMessage.id),
+					);
+				}
+				void chat.reload();
 			},
 
 			stop() {
-				client.stop();
-			},
-
-			rename(title: string) {
-				const conv = conversations.find((c) => c.id === conversationId);
-				if (conv) conv.title = title;
-			},
-
-			destroy() {
-				client.stop();
+				chat.stop();
 			},
 		};
 	}
 
 	// ── Lifecycle ──
 
-	function reconcileHandles() {
-		const currentIds = new Set(conversations.map((c) => c.id));
+	function destroyConversation(id: ConversationId) {
+		handles.get(id)?.stop();
+		handles.delete(id);
+	}
 
+	function reconcileHandles() {
 		for (const id of handles.keys()) {
-			if (!currentIds.has(id)) {
-				handles.get(id)?.destroy();
-				handles.delete(id);
+			if (!conversationsMap.has(id)) {
+				destroyConversation(id);
 			}
 		}
 
-		for (const conv of conversations) {
-			if (!handles.has(conv.id)) {
-				handles.set(conv.id, createConversationHandle(conv.id));
+		for (const id of conversationsMap.keys()) {
+			const convId = id as ConversationId;
+			if (!handles.has(convId)) {
+				handles.set(convId, createConversationHandle(convId));
 			}
 		}
 	}
 
+	// ── Observers ──
+
+	// fromTable owns the reactive data; this observer only handles
+	// imperative handle lifecycle (creating/destroying chat instances).
+	workspace.tables.conversations.observe(() => {
+		reconcileHandles();
+	});
+	workspace.tables.chatMessages.observe(() => {
+		handles.get(activeConversationId)?.syncMessages();
+	});
+
+	// Initialize after persistence loads
+	void workspace.whenReady.then(() => {
+		reconcileHandles();
+		activeConversationId = ensureDefaultConversation();
+	});
+
+	reconcileHandles();
+
+	// ── Conversation CRUD ──
+
 	function createConversation(): ConversationId {
-		const id = generateId();
+		const id = generateConversationId();
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 
-		conversations = [
-			{
-				id,
-				title: 'New Chat',
-				provider: current?.provider ?? DEFAULT_PROVIDER,
-				model: current?.model ?? DEFAULT_MODEL,
-				createdAt: now,
-				updatedAt: now,
-			},
-			...conversations,
-		];
+		workspace.tables.conversations.set({
+			id,
+			title: 'New Chat',
+			provider: current?.provider ?? DEFAULT_PROVIDER,
+			model: current?.model ?? DEFAULT_MODEL,
+			createdAt: now,
+			updatedAt: now,
+			_v: 1,
+		});
 
-		reconcileHandles();
-		activeConversationId = id;
+		switchConversation(id);
 		return id;
 	}
 
-	function deleteConversation(conversationId: ConversationId) {
-		handles.get(conversationId)?.destroy();
-		handles.delete(conversationId);
+	function switchConversation(conversationId: ConversationId) {
+		activeConversationId = conversationId;
+		handles.get(conversationId)?.syncMessages();
+	}
 
-		conversations = conversations.filter((c) => c.id !== conversationId);
+	function deleteConversation(conversationId: ConversationId) {
+		destroyConversation(conversationId);
+
+		const msgs = workspace.tables.chatMessages
+			.getAllValid()
+			.filter((m) => m.conversationId === conversationId);
+		workspace.batch(() => {
+			for (const m of msgs) {
+				workspace.tables.chatMessages.delete(m.id);
+			}
+			workspace.tables.conversations.delete(conversationId);
+		});
 
 		if (activeConversationId === conversationId) {
-			const first = conversations[0];
-			if (first) {
-				activeConversationId = first.id;
-			} else {
-				createConversation();
-			}
+			switchConversation(ensureDefaultConversation());
 		}
 	}
 
-	// Initialize with one conversation
-	createConversation();
-
 	// ── Public API ──
+
+	// Safe to assert: reconcileHandles() runs synchronously in the
+	// conversations observer, so every conversation ID has a handle
+	// before any $derived re-evaluates.
+	const conversationList = $derived(
+		conversations.map((c) => handles.get(c.id)!),
+	);
 
 	return {
 		get active() {
 			return handles.get(activeConversationId);
 		},
 
-		get conversations() {
-			return conversations
-				.map((c) => handles.get(c.id))
-				.filter((h) => h !== undefined);
+		get conversationHandles() {
+			return conversationList;
 		},
 
 		get activeConversationId() {
@@ -274,19 +333,9 @@ function createChatState() {
 
 		createConversation,
 
-		switchTo(conversationId: ConversationId) {
-			activeConversationId = conversationId;
-		},
+		switchTo: switchConversation,
 
 		deleteConversation,
-
-		get availableProviders() {
-			return AVAILABLE_PROVIDERS;
-		},
-
-		modelsForProvider(providerName: string): readonly string[] {
-			return PROVIDER_MODELS[providerName as Provider] ?? [];
-		},
 	};
 }
 

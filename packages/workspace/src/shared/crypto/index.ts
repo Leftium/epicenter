@@ -15,7 +15,7 @@
  * ┌─────────────────────────────────────────────────────────────────────┐
  * │  Auth Flow                                                         │
  * │  Server derives key from secret → sends base64 in session response │
- * │  Client decodes → stores in memory via KeyCache                    │
+ * │  Client decodes → stores in memory via UserKeyCache                │
  * └────────────────────────┬────────────────────────────────────────────┘
  * │  key: Uint8Array | undefined
  *                          ▼
@@ -48,7 +48,7 @@
  * ## Related Modules
  *
  * - {@link ../y-keyvalue/y-keyvalue-lww-encrypted.ts} — Composition wrapper that wires these primitives into the CRDT
- * - {@link ./key-cache.ts} — Platform-agnostic key caching interface (survives page refresh)
+ * - {@link ../../workspace/user-key-cache.ts} — Platform-agnostic cached user-key interface
  * - {@link ../y-keyvalue/y-keyvalue-lww.ts} — Underlying CRDT (unaware of encryption)
  *
  * @module
@@ -57,8 +57,11 @@
 import type { Brand } from 'wellcrafted/brand';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
+import { hkdf } from '@noble/hashes/hkdf.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 const NONCE_LENGTH = 24;
+const textEncoder = new TextEncoder();
 
 /**
  * Encrypted blob stored directly in the CRDT as a bare Uint8Array.
@@ -281,7 +284,7 @@ function isEncryptedBlob(value: unknown): value is EncryptedBlob {
  * ```
  * Password (user input, low entropy)
  *   → PBKDF2(password, salt, 600k iterations) → userKey (32 bytes, high entropy)
- *   → workspace.activateEncryption(userKey)
+ *   → workspace.encryption.unlock(userKey)
  *     → HKDF(userKey, "workspace:{id}") → workspaceKey (per-workspace isolation)
  *       → XChaCha20-Poly1305(plaintext, workspaceKey) → ciphertext
  * ```
@@ -303,7 +306,7 @@ function isEncryptedBlob(value: unknown): value is EncryptedBlob {
  * // Self-hosted password flow:
  * const salt = await deriveSalt(userId, workspaceId);
  * const userKey = await deriveKeyFromPassword(password, salt);
- * await workspace.activateEncryption(userKey); // internally derives per-workspace key via HKDF
+ * await workspace.encryption.unlock(userKey); // internally derives per-workspace key via HKDF
  * ```
  */
 async function deriveKeyFromPassword(
@@ -373,12 +376,12 @@ async function deriveSalt(
  * user key. Compromising one workspace key reveals nothing about other workspaces.
  *
  * **Batteries-included in `.withEncryption()`**: You typically don't call this directly.
- * `workspace.activateEncryption(userKey)` calls it internally. This function is exported
+ * `workspace.encryption.unlock(userKey)` calls it internally. This function is exported
  * for testing and for consumers that need manual key derivation outside the workspace builder.
  *
  * Deterministic—same inputs always produce the same key. No storage needed.
- * Uses Web Crypto `deriveBits` which is available in browser, Cloudflare Workers,
- * and Tauri WebView.
+ * Uses synchronous HKDF-SHA256 from `@noble/hashes`, so workspace runtime unlock
+ * can derive and apply the key immediately before any cache persistence is awaited.
  *
  * The info string is a domain-separation label for HKDF (RFC 5869 §3.2),
  * not a version identifier. If the derivation scheme ever changes (hash
@@ -388,41 +391,30 @@ async function deriveSalt(
  *
  * @param userKey - A 32-byte Uint8Array user key (root key, NOT a workspace-specific key)
  * @param workspaceId - The workspace identifier (e.g. "tab-manager")
- * @returns A promise that resolves to a 32-byte Uint8Array per-workspace encryption key
+ * @returns A 32-byte Uint8Array per-workspace encryption key
  *
  * @example
  * ```typescript
- * // Typically called internally by workspace.activateEncryption(userKey):
- * //   const wsKey = await deriveWorkspaceKey(userKey, workspaceId);
+ * // Typically called internally by workspace.encryption.unlock(userKey):
+ * //   const wsKey = deriveWorkspaceKey(userKey, workspaceId);
  * //   store.activateEncryption(wsKey);
  *
  * // Direct usage (testing or manual key management):
- * const userKey = base64ToBytes(session.encryptionKey);
- * const wsKey = await deriveWorkspaceKey(userKey, 'tab-manager');
+ * const userKey = base64ToBytes(session.userKeyBase64);
+ * const wsKey = deriveWorkspaceKey(userKey, 'tab-manager');
  * ```
  */
-async function deriveWorkspaceKey(
+function deriveWorkspaceKey(
 	userKey: Uint8Array,
 	workspaceId: string,
-): Promise<Uint8Array> {
-	const hkdfKey = await crypto.subtle.importKey(
-		'raw',
-		userKey.buffer as ArrayBuffer,
-		'HKDF',
-		false,
-		['deriveBits'],
+): Uint8Array {
+	return hkdf(
+		sha256,
+		userKey,
+		new Uint8Array(0),
+		textEncoder.encode(`workspace:${workspaceId}`),
+		32,
 	);
-	const derivedBits = await crypto.subtle.deriveBits(
-		{
-			name: 'HKDF',
-			hash: 'SHA-256',
-			salt: new Uint8Array(0),
-			info: new TextEncoder().encode(`workspace:${workspaceId}`),
-		},
-		hkdfKey,
-		256,
-	);
-	return new Uint8Array(derivedBits);
 }
 
 /**
@@ -484,4 +476,3 @@ export {
 	base64ToBytes,
 	deriveWorkspaceKey,
 };
-

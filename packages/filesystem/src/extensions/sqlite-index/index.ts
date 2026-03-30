@@ -143,8 +143,7 @@ type SqliteIndexContext = {
  *   .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
  * ```
  */
-export function createSqliteIndex(options: SqliteIndexOptions = {}) {
-	const { debounceMs = 100 } = options;
+export function createSqliteIndex({ debounceMs = 100 }: SqliteIndexOptions = {}) {
 
 	return (context: SqliteIndexContext): SqliteIndex => {
 		const filesTable = context.tables.files;

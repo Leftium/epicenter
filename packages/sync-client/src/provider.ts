@@ -104,10 +104,14 @@ const CONNECT_TIMEOUT_MS = 15_000;
  * provider.connect();
  * ```
  */
-export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
-	const { doc, getToken } = config;
-	const ownsAwareness = !config.awareness;
-	const awareness = config.awareness ?? new Awareness(doc);
+export function createSyncProvider({
+	doc,
+	getToken,
+	awareness: awarenessOption,
+	url,
+}: SyncProviderConfig): SyncProvider {
+	const ownsAwareness = !awarenessOption;
+	const awareness = awarenessOption ?? new Awareness(doc);
 	/** User intent: should we be connected? Set by connect()/disconnect(). */
 	let desired: 'online' | 'offline' = 'offline';
 
@@ -231,7 +235,7 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 			status.set({ phase: 'connecting', attempt, lastError });
 
 			// --- Token acquisition (fresh each iteration) ---
-			let token: string | undefined;
+			let token: string | null = null;
 			if (getToken) {
 				try {
 					token = await getToken();
@@ -286,7 +290,7 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 		token: string | undefined,
 		myRunId: number,
 	): Promise<'connected' | 'failed' | 'cancelled'> {
-		let wsUrl = typeof config.url === 'function' ? config.url() : config.url;
+		let wsUrl = typeof url === 'function' ? url() : url;
 		if (token) {
 			const parsed = new URL(wsUrl);
 			parsed.searchParams.set('token', token);

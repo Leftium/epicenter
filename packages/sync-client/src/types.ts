@@ -55,7 +55,7 @@ export type SyncProviderConfig = {
 	/**
 	 * Dynamic token fetcher for authenticated mode. Called on each connect/reconnect.
 	 */
-	getToken?: () => Promise<string | undefined>;
+	getToken?: () => Promise<string | null>;
 
 	/** External awareness instance. If provided, dispose() will NOT remove its states. Defaults to `new Awareness(doc)`. */
 	awareness?: Awareness;

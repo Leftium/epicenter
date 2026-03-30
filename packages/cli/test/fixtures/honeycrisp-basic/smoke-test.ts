@@ -99,9 +99,9 @@ for (const n of notes) {
 
 console.log(`   KV sortBy: ${sortBy}`);
 
-// 5. Destroy (flush to disk)
-await client.destroy();
-console.log('\n5. ✓ Client destroyed, data flushed to SQLite.');
+// 5. Dispose (flush to disk)
+await client.dispose();
+console.log('\n5. ✓ Client disposed, data flushed to SQLite.');
 
 // 6. Reopen and verify persistence
 console.log('\n6. Reopening to verify persistence...');
@@ -118,6 +118,6 @@ for (const n of persistedNotes) {
 	console.log(`     ${n.pinned ? '📌' : '  '} ${n.title}`);
 }
 
-await client2.destroy();
+await client2.dispose();
 
 console.log('\n─── Smoke test complete ───');

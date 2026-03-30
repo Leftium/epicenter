@@ -159,5 +159,52 @@ export const referencesTable = defineTable(
 // 	}),
 // );
 
+/**
+ * Script row type—one row per executable file in a skill's `scripts/` directory.
+ *
+ * Deferred to v2. Defined here for forward-compatible type exports so consumers
+ * can reference the shape without importing a table that doesn't exist yet.
+ *
+ * Maps to the agentskills.io `scripts/` directory: code files (Python, Bash,
+ * JavaScript) that agents can run. Self-contained with documented dependencies.
+ *
+ * @example
+ * ```typescript
+ * // Future usage when scriptsTable is implemented:
+ * const scripts: Script[] = ws.tables.scripts.filter(s => s.skillId === id)
+ * ```
+ */
+export type Script = {
+	id: string;
+	skillId: string;
+	path: string;
+	content: string;
+	_v: 1;
+};
+
+/**
+ * Asset row type—one row per static resource in a skill's `assets/` directory.
+ *
+ * Deferred to v2. Defined here for forward-compatible type exports so consumers
+ * can reference the shape without importing a table that doesn't exist yet.
+ *
+ * Maps to the agentskills.io `assets/` directory: templates (JSON, YAML),
+ * images (PNG, SVG), and data files (CSV, schemas). Text-only for now—binary
+ * files are skipped on import.
+ *
+ * @example
+ * ```typescript
+ * // Future usage when assetsTable is implemented:
+ * const assets: Asset[] = ws.tables.assets.filter(a => a.skillId === id)
+ * ```
+ */
+export type Asset = {
+	id: string;
+	skillId: string;
+	path: string;
+	content: string;
+	_v: 1;
+};
+
 export type Skill = InferTableRow<typeof skillsTable>;
 export type Reference = InferTableRow<typeof referencesTable>;

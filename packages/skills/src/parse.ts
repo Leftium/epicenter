@@ -35,7 +35,7 @@ import type { Reference, Skill } from './tables.js';
  * body                    // '# Svelte Guidelines\n...'
  * ```
  */
-function splitFrontmatter(content: string): {
+export function splitFrontmatter(content: string): {
 	frontmatter: Record<string, unknown>;
 	body: string;
 } {

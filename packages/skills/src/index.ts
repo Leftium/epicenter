@@ -24,24 +24,16 @@
  * @module
  */
 
-// Tables
+// Tables + types
 export { skillsTable, referencesTable } from './tables.js';
-
-// Types
-export type {
-	Skill,
-	Reference,
-	Script,
-	Asset,
-	SkillsWorkspaceClient,
-} from './types.js';
+export type { Skill, Reference, Script, Asset } from './tables.js';
 
 // Parse
-export { parseSkillMd, parseReferenceMd } from './parse.js';
+export { parseSkillMd, parseReferenceMd, splitFrontmatter } from './parse.js';
 
 // Serialize
 export { serializeSkillMd, serializeReferenceMd } from './serialize.js';
 
-// Import / Export
-export { importFromDisk } from './import.js';
-export { exportToDisk } from './export.js';
+// Disk I/O
+export { importFromDisk, exportToDisk } from './disk.js';
+export type { SkillsWorkspaceClient } from './disk.js';

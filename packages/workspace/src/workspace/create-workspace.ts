@@ -286,7 +286,7 @@ export function createWorkspace<
 		extensions: TExtensions;
 		state: BuilderState;
 		encryptionRuntime?: EncryptionRuntime;
-		actions?: Actions;
+		actions: Actions;
 	}): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
@@ -326,7 +326,7 @@ export function createWorkspace<
 			awareness,
 			// Each extension entry is the exports object stored by reference.
 			extensions,
-			...(actions !== undefined && { actions }),
+			actions,
 			batch(fn: () => void): void {
 				ydoc.transact(fn);
 			},
@@ -641,8 +641,7 @@ export function createWorkspace<
 				) => Actions,
 			) {
 				const newActions = factory(client);
-				const merged = actions ? { ...actions, ...newActions } : newActions;
-				return buildClient({ extensions, state, encryptionRuntime, actions: merged });
+				return buildClient({ extensions, state, encryptionRuntime, actions: { ...actions, ...newActions } });
 			},
 		});
 
@@ -662,6 +661,7 @@ export function createWorkspace<
 			clearLocalDataCallbacks: [],
 			whenReadyPromises: [],
 		},
+		actions: {},
 	});
 }
 

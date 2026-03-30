@@ -1122,7 +1122,7 @@ export type WorkspaceClientBuilder<
 	TExtensions extends Record<string, unknown> = Record<string, never>,
 	TDocExtensions extends Record<string, unknown> = Record<string, never>,
 	TEncryption = Record<string, never>,
-	TActions extends Actions | undefined = undefined,
+	TActions extends Actions = Record<string, never>,
 > = WorkspaceClient<
 	TId,
 	TTableDefinitions,
@@ -1131,8 +1131,9 @@ export type WorkspaceClientBuilder<
 	TExtensions,
 	TDocExtensions
 > &
-	TEncryption &
-	(TActions extends Actions ? { actions: TActions } : unknown) & {
+	TEncryption & {
+		/** Accumulated actions from `.withActions()` calls. Empty object when none declared. */
+		actions: TActions;
 		/**
 		 * Register an extension for BOTH the workspace Y.Doc AND all content document Y.Docs.
 		 *
@@ -1364,7 +1365,7 @@ export type WorkspaceClientBuilder<
 			TExtensions,
 			TDocExtensions,
 			TEncryption,
-			TActions extends Actions ? TActions & TNewActions : TNewActions
+			TActions & TNewActions
 		>;
 	};
 

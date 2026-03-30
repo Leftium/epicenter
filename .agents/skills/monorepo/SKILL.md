@@ -88,7 +88,7 @@ Key conventions:
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "module": "Preserve",
+    "module": "preserve",
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noPropertyAccessFromIndexSignature": false

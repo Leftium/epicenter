@@ -86,14 +86,14 @@ Load these on demand based on what you're working on:
   ```
 
 - When moving components to new locations, always update relative imports to absolute imports (e.g., change `import Component from '../Component.svelte'` to `import Component from '$lib/components/Component.svelte'`)
-- **Use `.js` extensions in relative imports**: The monorepo uses `"module": "Preserve"` in tsconfig, which requires explicit file extensions. Always use `.js` (not `.ts`) in relative import paths—TypeScript resolves `.js` to the corresponding `.ts` file at compile time:
+- **Use `.js` extensions in relative imports**: The monorepo uses `"module": "preserve"` in tsconfig, which requires explicit file extensions. Always use `.js` (not `.ts`) in relative import paths—TypeScript resolves `.js` to the corresponding `.ts` file at compile time:
 
   ```typescript
   // Good — .js extension in relative imports
   import { parseSkill } from './parse.js';
   import type { Skill } from './types.js';
 
-  // Bad — no extension (fails with module: Preserve)
+  // Bad — no extension (fails with module: preserve)
   import { parseSkill } from './parse';
 
   // Bad — .ts extension (non-standard, won't resolve correctly)

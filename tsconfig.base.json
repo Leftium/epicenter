@@ -6,7 +6,7 @@
 		"moduleDetection": "force",
 
 		// Modules
-		"module": "ESNext",
+		"module": "preserve",
 		"moduleResolution": "bundler",
 		"resolvePackageJsonExports": true,
 		"resolveJsonModule": true,

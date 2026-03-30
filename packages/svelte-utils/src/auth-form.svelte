@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
@@ -48,9 +47,7 @@
 		</Field.Description>
 
 		{#if submitError}
-			<Alert.Root variant="destructive">
-				<Alert.Description>{submitError}</Alert.Description>
-			</Alert.Root>
+			<Field.Error>{submitError}</Field.Error>
 		{/if}
 
 		<Button

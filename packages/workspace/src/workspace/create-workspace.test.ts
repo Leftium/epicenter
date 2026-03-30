@@ -17,6 +17,7 @@ import {
 	bytesToBase64,
 	generateEncryptionKey,
 } from '../shared/crypto/index.js';
+import { defineMutation, defineQuery } from '../shared/actions.js';
 import { createDocuments } from './create-document.js';
 import { createTables } from './create-tables.js';
 import { createWorkspace } from './create-workspace.js';
@@ -1294,5 +1295,132 @@ describe('.withEncryption() lifecycle', () => {
 			expect(client.encryption.isUnlocked).toBe(false);
 		});
 
+	});
+});
+
+describe('withActions (non-terminal)', () => {
+	function actionsSetup() {
+		const postsTable = defineTable(
+			type({ id: 'string', title: 'string', _v: '1' }),
+		);
+		const definition = defineWorkspace({
+			id: 'actions-test',
+			tables: { posts: postsTable },
+			kv: {},
+		});
+		return { definition };
+	}
+
+	test('withActions before withExtension — actions available on final builder', () => {
+		const { definition } = actionsSetup();
+
+		const ws = createWorkspace(definition)
+			.withActions(({ tables }) => ({
+				getAllPosts: defineQuery({
+					handler: () => tables.posts.getAllValid(),
+				}),
+			}))
+			.withExtension('dummy', ({ ydoc }) => ({
+				testValue: 42,
+			}));
+
+		// Actions survive the extension chain
+		expect(ws.actions).toBeDefined();
+		expect(ws.actions.getAllPosts).toBeDefined();
+		expect(ws.actions.getAllPosts.type).toBe('query');
+
+		// Extension also exists
+		expect(ws.extensions.dummy.testValue).toBe(42);
+	});
+
+	test('multiple withActions calls merge action trees', () => {
+		const { definition } = actionsSetup();
+
+		const ws = createWorkspace(definition)
+			.withActions(({ tables }) => ({
+				getAll: defineQuery({ handler: () => tables.posts.getAllValid() }),
+			}))
+			.withActions(({ tables }) => ({
+				count: defineQuery({ handler: () => tables.posts.count() }),
+			}));
+
+		expect(ws.actions.getAll).toBeDefined();
+		expect(ws.actions.count).toBeDefined();
+		expect(ws.actions.getAll.type).toBe('query');
+		expect(ws.actions.count.type).toBe('query');
+	});
+
+	test('withActions factory receives client WITHOUT extensions when called before extensions', () => {
+		const { definition } = actionsSetup();
+		let capturedExtensions: Record<string, unknown> = {};
+
+		const ws = createWorkspace(definition)
+			.withActions((client) => {
+				capturedExtensions = client.extensions;
+				return {
+					noop: defineQuery({ handler: () => {} }),
+				};
+			})
+			.withExtension('dummy', ({ ydoc }) => ({ flag: true }));
+
+		// At the time withActions was called, no extensions existed
+		expect(Object.keys(capturedExtensions)).toHaveLength(0);
+
+		// But extensions are available on the final builder
+		expect(ws.extensions.dummy.flag).toBe(true);
+	});
+
+	test('withActions factory receives client WITH extensions when called after extensions', () => {
+		const { definition } = actionsSetup();
+		let capturedExtensions: Record<string, unknown> = {};
+
+		const ws = createWorkspace(definition)
+			.withExtension('dummy', ({ ydoc }) => ({ flag: true }))
+			.withActions((client) => {
+				capturedExtensions = client.extensions;
+				return {
+					noop: defineQuery({ handler: () => {} }),
+				};
+			});
+
+		// Extensions were available when withActions was called
+		expect(Object.keys(capturedExtensions)).toContain('dummy');
+	});
+
+	test('actions work correctly — factory closes over live tables', () => {
+		const { definition } = actionsSetup();
+
+		const ws = createWorkspace(definition)
+			.withActions(({ tables }) => ({
+				getAll: defineQuery({
+					handler: () => tables.posts.getAllValid(),
+				}),
+				create: defineMutation({
+					handler: () => {
+						tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
+					},
+				}),
+			}));
+
+		// Mutation writes to tables
+		ws.actions.create();
+		const result = ws.actions.getAll();
+		expect(result).toHaveLength(1);
+		expect(result[0].title).toBe('Hello');
+	});
+
+	test('withActions after withExtension still allows more withExtension calls', () => {
+		const { definition } = actionsSetup();
+
+		const ws = createWorkspace(definition)
+			.withExtension('ext1', ({ ydoc }) => ({ a: 1 }))
+			.withActions(() => ({
+				noop: defineQuery({ handler: () => {} }),
+			}))
+			.withExtension('ext2', ({ ydoc }) => ({ b: 2 }));
+
+		expect(ws.extensions.ext1.a).toBe(1);
+		expect(ws.extensions.ext2.b).toBe(2);
+		expect(ws.actions.noop).toBeDefined();
 	});
 });

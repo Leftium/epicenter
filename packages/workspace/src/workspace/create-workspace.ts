@@ -106,7 +106,6 @@ import type {
 	TableDefinitions,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
-	WorkspaceClientWithActions,
 	WorkspaceEncryption,
 	WorkspaceDefinition,
 } from './types.js';
@@ -282,6 +281,7 @@ export function createWorkspace<
 		extensions: TExtensions,
 		state: BuilderState,
 		encryptionRuntime?: EncryptionRuntime,
+		actions?: Actions,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
@@ -321,6 +321,8 @@ export function createWorkspace<
 			awareness,
 			// Each extension entry is the exports object stored by reference.
 			extensions,
+			// Spread definition-level or previously-declared actions onto the client.
+			...(actions !== undefined ? { actions } : {}),
 			batch(fn: () => void): void {
 				ydoc.transact(fn);
 			},
@@ -405,7 +407,7 @@ export function createWorkspace<
 				const raw = factory(ctx);
 
 				// Void return means "not installed" — skip registration
-				if (!raw) return buildClient(extensions, state, encryptionRuntime);
+				if (!raw) return buildClient(extensions, state, encryptionRuntime, actions);
 
 				const resolved = defineExtension(raw);
 
@@ -423,6 +425,7 @@ export function createWorkspace<
 						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
 					},
 					encryptionRuntime,
+					actions,
 				);
 			} catch (err) {
 				startDisposeLifo(state.extensionCleanups);
@@ -497,7 +500,7 @@ export function createWorkspace<
 					factory,
 					tags: options?.tags ?? [],
 				});
-				return buildClient(extensions, state, encryptionRuntime);
+				return buildClient(extensions, state, encryptionRuntime, actions);
 			},
 
 			withEncryption(config?: EncryptionConfig) {
@@ -608,6 +611,7 @@ export function createWorkspace<
 					extensions,
 					state,
 					encryptionRuntime,
+					actions,
 				) as unknown as WorkspaceClientBuilder<
 					TId,
 					TTableDefinitions,
@@ -621,29 +625,10 @@ export function createWorkspace<
 				>;
 			},
 
-			withActions<TActions extends Actions>(
-				factory: (
-					client: WorkspaceClient<
-						TId,
-						TTableDefinitions,
-						TKvDefinitions,
-						TAwarenessDefinitions,
-						TExtensions
-					>,
-				) => TActions,
-			) {
-				const actions = factory(client);
-				return {
-					...client,
-					actions,
-				} as unknown as WorkspaceClientWithActions<
-					TId,
-					TTableDefinitions,
-					TKvDefinitions,
-					TAwarenessDefinitions,
-					TExtensions,
-					TActions
-				>;
+			withActions(factory: (client: WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TAwarenessDefinitions, TExtensions>) => Actions) {
+				const newActions = factory(client);
+				const merged = actions ? { ...actions, ...newActions } : newActions;
+				return buildClient(extensions, state, encryptionRuntime, merged);
 			},
 		});
 

@@ -7,7 +7,19 @@
  * Export to the agentskills.io folder format is a secondary publish step for
  * Codex/Claude Code/OpenCode compatibility.
  *
- * @example
+ * @example Using the pre-built definition + actions (recommended)
+ * ```typescript
+ * import { skillsDefinition, skillsActions } from '@epicenter/skills'
+ * import { createWorkspace } from '@epicenter/workspace'
+ *
+ * const ws = createWorkspace(skillsDefinition)
+ *   .withActions(skillsActions)
+ *   .withExtension('persistence', indexeddbPersistence)
+ *
+ * await ws.actions.importFromDisk({ dir: '.agents/skills' })
+ * ```
+ *
+ * @example Using raw tables in a custom workspace
  * ```typescript
  * import { skillsTable, referencesTable, importFromDisk } from '@epicenter/skills'
  * import { defineWorkspace, createWorkspace } from '@epicenter/workspace'
@@ -37,3 +49,7 @@ export { serializeSkillMd } from './serialize.js';
 // Disk I/O
 export { importFromDisk, exportToDisk } from './disk.js';
 export type { SkillsWorkspaceClient } from './disk.js';
+
+// Pre-built workspace definition + actions factory
+export { skillsDefinition } from './workspace.js';
+export { skillsActions } from './actions.js';

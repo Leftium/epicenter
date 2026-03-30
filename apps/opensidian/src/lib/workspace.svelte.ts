@@ -10,7 +10,7 @@ import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Bash } from 'just-bash';
 import { session } from '$lib/auth';
-import { userKeyCache } from '$lib/user-key-cache';
+import { userKeyStore } from '$lib/user-key-store';
 /**
  * Opensidian workspace infrastructure.
  *
@@ -22,7 +22,7 @@ export const workspace = createWorkspace({
 	id: 'opensidian',
 	tables: { files: filesTable },
 })
-	.withEncryption({ userKeyCache })
+	.withEncryption({ userKeyStore })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',

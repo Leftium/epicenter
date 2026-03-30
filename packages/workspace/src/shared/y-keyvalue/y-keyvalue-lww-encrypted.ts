@@ -72,7 +72,7 @@
  * ## Related Modules
  *
  * - {@link ../crypto/index.ts} — Encryption primitives (encryptValue, decryptValue, isEncryptedBlob)
- * - {@link ../crypto/key-cache.ts} — Platform-agnostic key caching (survives page refresh)
+ * - {@link ../crypto/key-store.ts} — Platform-agnostic key store (survives page refresh)
  * - {@link ./y-keyvalue-lww.ts} — Inner CRDT that handles conflict resolution (unaware of encryption)
  *
  * @module

@@ -11,9 +11,9 @@ import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broad
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { session } from '$lib/auth';
 import { definition } from './schema';
-import { userKeyCache } from './user-key-cache';
+import { userKeyStore } from './user-key-store';
 export const workspace = createWorkspace(definition)
-	.withEncryption({ userKeyCache })
+	.withEncryption({ userKeyStore })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('broadcast', broadcastChannelSync);
 

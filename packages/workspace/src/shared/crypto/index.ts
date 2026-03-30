@@ -15,7 +15,7 @@
  * ┌─────────────────────────────────────────────────────────────────────┐
  * │  Auth Flow                                                         │
  * │  Server derives key from secret → sends base64 in session response │
- * │  Client decodes → stores in memory via UserKeyCache                │
+ * │  Client decodes → stores in memory via UserKeyStore                │
  * └────────────────────────┬────────────────────────────────────────────┘
  * │  key: Uint8Array | undefined
  *                          ▼
@@ -48,7 +48,7 @@
  * ## Related Modules
  *
  * - {@link ../y-keyvalue/y-keyvalue-lww-encrypted.ts} — Composition wrapper that wires these primitives into the CRDT
- * - {@link ../../workspace/user-key-cache.ts} — Platform-agnostic cached user-key interface
+ * - {@link ../../workspace/user-key-store.ts} — Platform-agnostic cached user-key interface
  * - {@link ../y-keyvalue/y-keyvalue-lww.ts} — Underlying CRDT (unaware of encryption)
  *
  * @module

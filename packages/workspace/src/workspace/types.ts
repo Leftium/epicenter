@@ -9,7 +9,7 @@ import type { JsonObject } from 'wellcrafted/json';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { UserKeyCache } from './user-key-cache.js';
+import type { UserKeyStore } from './user-key-store.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { Timeline } from '../timeline/timeline.js';
 import type { Extension, MaybePromise } from './lifecycle.js';
@@ -1023,14 +1023,14 @@ export type WorkspaceClientWithActions<
  * 1. **User key** (your input) — a 32-byte root key from any source (server HKDF, PBKDF2 password, cache)
  * 2. **Workspace key** (derived internally) — `HKDF(userKey, "workspace:{id}")` ensures per-workspace isolation
  *
- * `userKeyCache` owns the cached user-key lifecycle:
- * - `save` after successful unlock
- * - `load` during startup unlock
- * - `clear` during `workspace.clearLocalData()`
+ * `userKeyStore` owns the cached user-key lifecycle:
+ * - `set` after successful unlock
+ * - `get` during startup unlock
+ * - `delete` during `workspace.clearLocalData()`
  */
 export type EncryptionConfig = {
 	/**
-	 * Cache for the raw user key as a base64 string.
+	 * Store for the raw user key as a base64 string.
 	 *
 	 * This is the local-first startup seam: the workspace saves the user key
  * after `encryption.unlock()`, auto-boots from it on the next launch via
@@ -1043,11 +1043,11 @@ export type EncryptionConfig = {
 	 * @example
 	 * ```typescript
 	 * createWorkspace(definition).withEncryption({
-	 *   userKeyCache,
+	 *   userKeyStore,
 	 * })
 	 * ```
 	 */
-	userKeyCache: UserKeyCache;
+	userKeyStore: UserKeyStore;
 };
 
 /**
@@ -1061,7 +1061,7 @@ export type EncryptionConfig = {
  *
  * ```typescript
  * const workspace = createWorkspace(definition)
- *   .withEncryption({ userKeyCache })
+ *   .withEncryption({ userKeyStore })
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createSyncExtension({ ... }));
  *
@@ -1298,14 +1298,14 @@ export type WorkspaceClientBuilder<
 		 *
 		 * Batteries-included: handles synchronous HKDF derivation, runtime unlock,
 		 * serialized cache save/clear ordering, and the full cached-key lifecycle when
-		 * `userKeyCache` is provided.
+		 * `userKeyStore` is provided.
 		 *
 		 * Can be chained in any order with `.withExtension()`:
 		 *
 		 * @example
 		 * ```typescript
 		 * const workspace = createWorkspace(definition)
-		 *   .withEncryption({ userKeyCache })  // auto-boots from cache on whenReady
+		 *   .withEncryption({ userKeyStore })  // auto-boots from cache on whenReady
 		 *   .withExtension('persistence', indexeddbPersistence)
 		 *   .withExtension('sync', createSyncExtension({ ... }));
 		 *
@@ -1548,7 +1548,7 @@ export type WorkspaceClient<
 	 *
 	 * This is the sign-out primitive for local persistence. It locks the runtime
 	 * first, then calls extension `clearLocalData()` hooks in LIFO order, then clears
-	 * the configured `userKeyCache` if encryption was set up with one.
+	 * the configured `userKeyStore` if encryption was set up with one.
 	 */
 	clearLocalData(): Promise<void>;
 

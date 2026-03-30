@@ -1,9 +1,8 @@
 /**
- * `epicenter auth` \u2014 manage authentication with Epicenter servers.
+ * `epicenter auth` — manage authentication with Epicenter servers.
  *
- * Supports two auth flows:
- * - Password login: interactive email/password prompt (default for TTY)
- * - Device code: RFC 8628 flow for headless/CI environments (`--device`)
+ * Uses the RFC 8628 device code flow: the CLI prints a URL and one-time code,
+ * the user approves in a browser, and the CLI picks up the session automatically.
  *
  * All sessions stored in the unified auth store at `$EPICENTER_HOME/auth/sessions.json`.
  */
@@ -16,93 +15,21 @@ import {
 	loadDefaultSession,
 	loadSession,
 	normalizeServerUrl,
-	saveSession,
 } from '../auth/store';
-
-async function readLine(prompt: string, silent = false): Promise<string> {
-	const readline = await import('node:readline');
-
-	const inputStream = process.stdin;
-	let outputStream: NodeJS.WritableStream;
-
-	if (silent) {
-		const { Writable } = await import('node:stream');
-		outputStream = new Writable({
-			write(_, __, cb) {
-				cb();
-			},
-		});
-	} else {
-		outputStream = process.stdout;
-	}
-
-	const rl = readline.createInterface({
-		input: inputStream,
-		output: outputStream,
-		terminal: true,
-	});
-
-	process.stdout.write(prompt);
-
-	return new Promise((resolve) => {
-		rl.once('line', (line) => {
-			if (silent) process.stdout.write('\n');
-			rl.close();
-			resolve(line);
-		});
-	});
-}
 
 function buildLoginCommand(home: string) {
 	return {
 		command: 'login',
-		describe: 'Log in to an Epicenter server',
+		describe: 'Log in to an Epicenter server (opens browser)',
 		builder: (yargs: Argv) =>
-			yargs
-				.option('server', {
-					type: 'string',
-					description: 'Server URL (e.g. https://api.epicenter.so)',
-					demandOption: true,
-				})
-				.option('device', {
-					type: 'boolean',
-					description:
-						'Use device code flow (headless/CI-friendly, opens browser)',
-					default: false,
-				}),
+			yargs.option('server', {
+				type: 'string',
+				description: 'Server URL (e.g. https://api.epicenter.so)',
+				demandOption: true,
+			}),
 		handler: async (argv: any) => {
 			const serverUrl = normalizeServerUrl(argv.server);
-
-			// Device code flow: explicit --device or non-interactive stdin
-			if (argv.device || !process.stdin.isTTY) {
-				await loginWithDeviceCode(serverUrl, home);
-				return;
-			}
-
-			// Password flow
-			const email = await readLine('Email: ');
-			const password = await readLine('Password: ', true);
-
-			const api = createAuthApi(serverUrl);
-
-			let response;
-			try {
-				response = await api.signInWithEmail(email, password);
-			} catch (err) {
-				console.error(`Login failed: ${(err as Error).message}`);
-				process.exit(1);
-			}
-
-			await saveSession(home, {
-				server: serverUrl,
-				accessToken: response.token,
-				createdAt: Date.now(),
-				expiresIn: 60 * 60 * 24 * 7,
-				user: response.user,
-			});
-
-			const displayName = response.user.name ?? response.user.email;
-			console.log(`\u2713 Logged in as ${displayName} (${response.user.email})`);
+			await loginWithDeviceCode(serverUrl, home);
 		},
 	};
 }
@@ -169,10 +96,13 @@ function buildStatusCommand(home: string) {
 				console.log(`Server:       ${session.server}`);
 				console.log(`Session:      valid`);
 				if (remote.session.expiresAt) {
-					console.log(`Expires at:   ${new Date(remote.session.expiresAt).toLocaleString()}`);
+					console.log(
+						`Expires at:   ${new Date(remote.session.expiresAt).toLocaleString()}`,
+					);
 				}
 			} catch {
-				const displayName = session.user?.name ?? session.user?.email ?? '(unknown)';
+				const displayName =
+					session.user?.name ?? session.user?.email ?? '(unknown)';
 				console.log(`Logged in as: ${displayName} [stored]`);
 				console.log(`Server:       ${session.server}`);
 				console.warn('Warning: Could not verify session with remote server.');
@@ -190,9 +120,9 @@ export function buildAuthCommand(home: string): CommandModule {
 		describe: 'Manage authentication with Epicenter servers',
 		builder: (yargs: Argv) =>
 			yargs
-			.command(buildLoginCommand(home) as unknown as CommandModule)
-			.command(buildLogoutCommand(home) as unknown as CommandModule)
-			.command(buildStatusCommand(home) as unknown as CommandModule)
+				.command(buildLoginCommand(home) as unknown as CommandModule)
+				.command(buildLogoutCommand(home) as unknown as CommandModule)
+				.command(buildStatusCommand(home) as unknown as CommandModule)
 				.demandCommand(1, 'Specify a subcommand: login, logout, or status'),
 		handler: () => {},
 	};

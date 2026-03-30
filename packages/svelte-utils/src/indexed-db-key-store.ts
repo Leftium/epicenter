@@ -2,8 +2,24 @@ import type { UserKeyStore } from '@epicenter/workspace';
 import { openDB, type DBSchema } from 'idb';
 
 const DB_NAME = 'epicenter-key-store';
-const STORE_NAME = 'keys' as const;
 
+/**
+ * Explicit name to avoid confusion with IndexedDB's own "key" concept.
+ *
+ * `db.get('encryption-keys', storageKey)` reads unambiguously vs
+ * `db.get('keys', storageKey)` which looks like "get keys by key."
+ *
+ * @see https://github.com/jakearchibald/idb — store names should describe
+ *   what's stored, not the storage mechanism.
+ */
+const STORE_NAME = 'encryption-keys' as const;
+
+/**
+ * Uses `type` intersection instead of `interface extends DBSchema` to match
+ * codebase conventions. The `idb` library idiomatically uses interfaces, but
+ * the intersection + mapped type approach is equivalent and keeps the store
+ * name coupled to the `STORE_NAME` constant.
+ */
 type KeyCacheDB = DBSchema & {
 	[K in typeof STORE_NAME]: {
 		key: string;

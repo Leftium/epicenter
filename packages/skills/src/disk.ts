@@ -17,7 +17,7 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path';
 import { generateId } from '@epicenter/workspace';
 import { parseReferenceMd, parseSkillMd } from './parse.js';
-import { serializeReferenceMd, serializeSkillMd } from './serialize.js';
+import { serializeSkillMd } from './serialize.js';
 import type { Reference, Skill } from './tables.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -67,7 +67,6 @@ export type SkillsWorkspaceClient = {
 type SkillsTableHelper = {
 	set(row: Skill): void;
 	getAllValid(): Skill[];
-	find(predicate: (row: Skill) => boolean): Skill | undefined;
 	filter(predicate: (row: Skill) => boolean): Skill[];
 	delete(id: string): void;
 };
@@ -101,12 +100,10 @@ type DocumentHandleMinimal = {
  * Scans `dir` for subdirectories containing a `SKILL.md` file. For each skill:
  *
  * 1. Parses SKILL.md frontmatter into a skills table row
- * 2. Matches existing skills by `name` to avoid duplicates on re-import
- * 3. Upserts the skill row (new id for first import, existing id for updates)
- * 4. Writes the instructions markdown to the skill's document handle
- * 5. Enumerates `references/*.md` files into `referencesTable` rows with documents
- *
- * Skips `scripts/` and `assets/` directories (deferred to v2).
+ * 2. Uses the persisted `metadata.id` from SKILL.md (falls back to `generateId()`
+ *    for brand-new skills that have never been exported)
+ * 3. Upserts the skill row and writes the instructions document
+ * 4. Enumerates `references/*.md` files into `referencesTable` rows with documents
  *
  * @param dir - Path to the skills directory (e.g., `.agents/skills`)
  * @param workspace - A workspace client with skills/references tables and documents
@@ -122,10 +119,6 @@ type DocumentHandleMinimal = {
  *   kv: {},
  * }))
  *
- * // First import — creates rows with new nanoid IDs
- * await importFromDisk('.agents/skills', ws)
- *
- * // Re-import after editing SKILL.md in a text editor — updates existing rows
  * await importFromDisk('.agents/skills', ws)
  * ```
  */
@@ -152,11 +145,7 @@ export async function importFromDisk(
 			rawContent,
 		);
 
-		// Match by name to support re-import without duplication
-		const existing = workspace.tables.skills.find(
-			(s) => s.name === skillDir.name,
-		);
-		const skillId = existing?.id ?? generateId();
+		const skillId = parsedSkill.id ?? generateId();
 
 		workspace.tables.skills.set({
 			...parsedSkill,
@@ -286,7 +275,7 @@ export async function exportToDisk(
 			for (const ref of refs) {
 				const contentHandle =
 					await workspace.documents.references.content.open(ref.id);
-				const content = serializeReferenceMd(contentHandle.read());
+				const content = contentHandle.read();
 				await writeFile(join(refsDir, ref.path), content, 'utf-8');
 			}
 		}

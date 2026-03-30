@@ -35,7 +35,7 @@ import type { Reference, Skill } from './tables.js';
  * body                    // '# Svelte Guidelines\n...'
  * ```
  */
-export function splitFrontmatter(content: string): {
+function splitFrontmatter(content: string): {
 	frontmatter: Record<string, unknown>;
 	body: string;
 } {
@@ -58,20 +58,23 @@ export function splitFrontmatter(content: string): {
  * Splits YAML frontmatter from the markdown body. Frontmatter fields map 1:1
  * to table columns per the agentskills.io spec:
  *
+ * - `id` → extracted from `metadata.id` if present (survives serialize/deserialize
+ *   round-trips via the agentskills.io metadata field)
  * - `name` → from the directory name (passed as parameter), not from frontmatter
  * - `description` → frontmatter `description` field
  * - `license` → frontmatter `license` field (optional)
  * - `compatibility` → frontmatter `compatibility` field (optional)
- * - `metadata` → frontmatter `metadata` field, JSON-stringified (optional)
+ * - `metadata` → frontmatter `metadata` field minus the reserved `id` key,
+ *   JSON-stringified (optional)
  * - `allowedTools` → frontmatter `allowed-tools` field (optional)
  *
- * The returned `skill` object omits `id`—the caller provides one (either
- * generating a new nanoid on first import, or reusing an existing one on
- * re-import to avoid duplicates).
+ * When `metadata.id` is present in frontmatter, it is extracted as the skill's
+ * stable identity and stripped from the `metadata` column to avoid redundancy.
+ * This lets IDs survive a full export→import cycle even on a fresh workspace.
  *
  * @param name - The skill's directory name (becomes the `name` column)
  * @param content - The raw SKILL.md file content
- * @returns Parsed skill metadata (without `id`) and instructions text
+ * @returns Parsed skill metadata (with `id` from metadata or undefined) and instructions text
  *
  * @example
  * ```typescript
@@ -81,8 +84,8 @@ export function splitFrontmatter(content: string): {
  * const raw = await readFile('.agents/skills/svelte/SKILL.md', 'utf-8')
  * const { skill, instructions } = parseSkillMd('svelte', raw)
  *
- * // Assign an id and write to the workspace
- * const fullSkill = { ...skill, id: generateId() }
+ * // Use parsed id if available, otherwise generate a new one
+ * const fullSkill = { ...skill, id: skill.id ?? generateId() }
  * ws.tables.skills.set(fullSkill)
  *
  * const handle = await ws.documents.skills.instructions.open(fullSkill.id)
@@ -92,12 +95,30 @@ export function splitFrontmatter(content: string): {
 export function parseSkillMd(
 	name: string,
 	content: string,
-): { skill: Omit<Skill, 'id'> & { id?: undefined }; instructions: string } {
+): { skill: Omit<Skill, 'id'> & { id: string | undefined }; instructions: string } {
 	const { frontmatter, body } = splitFrontmatter(content);
+
+	// Extract id from metadata.id, then strip it so it doesn't pollute the metadata column
+	let parsedId: string | undefined;
+	let metadataRecord: Record<string, unknown> | undefined;
+
+	if (
+		frontmatter.metadata != null &&
+		typeof frontmatter.metadata === 'object' &&
+		!Array.isArray(frontmatter.metadata)
+	) {
+		const { id: rawId, ...rest } = frontmatter.metadata as Record<
+			string,
+			unknown
+		>;
+		if (typeof rawId === 'string') parsedId = rawId;
+		// Only keep metadata if there are remaining keys after stripping id
+		if (Object.keys(rest).length > 0) metadataRecord = rest;
+	}
 
 	return {
 		skill: {
-			id: undefined,
+			id: parsedId,
 			name,
 			description: String(frontmatter.description ?? ''),
 			license:
@@ -109,10 +130,8 @@ export function parseSkillMd(
 					? frontmatter.compatibility
 					: undefined,
 			metadata:
-				frontmatter.metadata != null &&
-				typeof frontmatter.metadata === 'object' &&
-				!Array.isArray(frontmatter.metadata)
-					? JSON.stringify(frontmatter.metadata)
+				metadataRecord !== undefined
+					? JSON.stringify(metadataRecord)
 					: undefined,
 			allowedTools:
 				typeof frontmatter['allowed-tools'] === 'string'

@@ -26,13 +26,13 @@
 
 // Tables + types
 export { skillsTable, referencesTable } from './tables.js';
-export type { Skill, Reference, Script, Asset } from './tables.js';
+export type { Skill, Reference } from './tables.js';
 
 // Parse
-export { parseSkillMd, parseReferenceMd, splitFrontmatter } from './parse.js';
+export { parseSkillMd, parseReferenceMd } from './parse.js';
 
 // Serialize
-export { serializeSkillMd, serializeReferenceMd } from './serialize.js';
+export { serializeSkillMd } from './serialize.js';
 
 // Disk I/O
 export { importFromDisk, exportToDisk } from './disk.js';

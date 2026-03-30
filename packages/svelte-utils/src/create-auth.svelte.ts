@@ -240,7 +240,7 @@ export type CreateAuthOptions = {
 		idToken: string;
 		nonce: string;
 	}>;
-
+};
 /**
  * Compile-time bridge for Better Auth's custom session type inference.
  *

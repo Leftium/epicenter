@@ -1,55 +1,25 @@
 /**
- * @fileoverview Workspace table definitions and utilities for agent skills.
+ * @fileoverview Workspace tables and factory for agent skills.
  *
  * Provides a 1:1 mapping of the [agentskills.io](https://agentskills.io/specification)
- * skill package format to Yjs CRDT-backed workspace tables. Skills are a shared
- * runtime resource—consumed by browser apps, edge workers, and desktop apps.
- * Export to the agentskills.io folder format is a secondary publish step for
- * Codex/Claude Code/OpenCode compatibility.
+ * skill package format to Yjs CRDT-backed workspace tables.
  *
- * @example Using the pre-built definition + actions (recommended)
+ * @example
  * ```typescript
- * import { skillsDefinition, skillsActions } from '@epicenter/skills'
- * import { createWorkspace } from '@epicenter/workspace'
+ * import { createSkillsWorkspace } from '@epicenter/skills'
  *
- * const ws = createWorkspace(skillsDefinition)
- *   .withActions(skillsActions)
+ * const ws = createSkillsWorkspace()
  *   .withExtension('persistence', indexeddbPersistence)
  *
  * await ws.actions.importFromDisk({ dir: '.agents/skills' })
  * ```
  *
- * @example Using raw tables in a custom workspace
- * ```typescript
- * import { skillsTable, referencesTable, importFromDisk } from '@epicenter/skills'
- * import { defineWorkspace, createWorkspace } from '@epicenter/workspace'
- *
- * const ws = createWorkspace(defineWorkspace({
- *   id: 'epicenter.skills',
- *   tables: { skills: skillsTable, references: referencesTable },
- *   kv: {},
- * }))
- *
- * await importFromDisk('.agents/skills', ws)
- * ```
- *
  * @module
  */
 
-// Tables + types
+// Workspace factory + definition
+export { createSkillsWorkspace, skillsDefinition } from './workspace.js';
+
+// Tables + types (for embedding in custom workspaces)
 export { skillsTable, referencesTable } from './tables.js';
 export type { Skill, Reference } from './tables.js';
-
-// Parse
-export { parseSkillMd, parseReferenceMd } from './parse.js';
-
-// Serialize
-export { serializeSkillMd } from './serialize.js';
-
-// Disk I/O
-export { importFromDisk, exportToDisk } from './disk.js';
-export type { SkillsWorkspaceClient } from './disk.js';
-
-// Pre-built workspace definition + actions factory
-export { skillsDefinition } from './workspace.js';
-export { skillsActions } from './actions.js';

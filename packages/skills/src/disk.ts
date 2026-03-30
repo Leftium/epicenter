@@ -1,14 +1,9 @@
 /**
  * @fileoverview Filesystem ↔ workspace bridge for agent skills.
  *
- * Two operations:
- * - `importFromDisk` scans agentskills.io-compliant folders and upserts rows
- *   into workspace tables.
- * - `exportToDisk` reads workspace tables and writes agentskills.io-compliant
- *   folders to disk.
- *
- * Both share the `SkillsWorkspaceClient` duck type that defines the minimal
- * workspace surface they need.
+ * Internal module—consumers use `createSkillsWorkspace()` which exposes
+ * these as workspace actions. The standalone functions are kept as the
+ * implementation layer so they can be tested and composed independently.
  *
  * @module
  */
@@ -25,31 +20,8 @@ import type { Reference, Skill } from './tables.js';
 // Types
 // ════════════════════════════════════════════════════════════════════════════
 
-/**
- * Minimal workspace client shape required by `importFromDisk` and `exportToDisk`.
- *
- * Structurally compatible with the result of `createWorkspace(defineWorkspace({
- *   id: 'epicenter.skills',
- *   tables: { skills: skillsTable, references: referencesTable },
- * }))`. Duck-typed so import/export don't depend on the full generic workspace
- * client type.
- *
- * @example
- * ```typescript
- * import { skillsTable, referencesTable } from '@epicenter/skills'
- * import { defineWorkspace, createWorkspace } from '@epicenter/workspace'
- *
- * const ws = createWorkspace(defineWorkspace({
- *   id: 'epicenter.skills',
- *   tables: { skills: skillsTable, references: referencesTable },
- *   kv: {},
- * }))
- *
- * // ws satisfies SkillsWorkspaceClient
- * await importFromDisk('.agents/skills', ws)
- * ```
- */
-export type SkillsWorkspaceClient = {
+/** Minimal workspace client shape required by `importFromDisk` and `exportToDisk`. */
+type SkillsWorkspaceClient = {
 	tables: {
 		skills: SkillsTableHelper;
 		references: ReferencesTableHelper;
@@ -114,16 +86,10 @@ type DocumentHandleMinimal = {
  *
  * @example
  * ```typescript
- * import { importFromDisk, skillsTable, referencesTable } from '@epicenter/skills'
- * import { defineWorkspace, createWorkspace } from '@epicenter/workspace'
+ * import { createSkillsWorkspace } from '@epicenter/skills'
  *
- * const ws = createWorkspace(defineWorkspace({
- *   id: 'epicenter.skills',
- *   tables: { skills: skillsTable, references: referencesTable },
- *   kv: {},
- * }))
- *
- * await importFromDisk('.agents/skills', ws)
+ * const ws = createSkillsWorkspace()
+ * await ws.actions.importFromDisk({ dir: '.agents/skills' })
  * ```
  */
 export async function importFromDisk(
@@ -273,17 +239,10 @@ function deriveReferenceId(skillId: string, path: string): string {
  *
  * @example
  * ```typescript
- * import { exportToDisk, skillsTable, referencesTable } from '@epicenter/skills'
- * import { defineWorkspace, createWorkspace } from '@epicenter/workspace'
+ * import { createSkillsWorkspace } from '@epicenter/skills'
  *
- * const ws = createWorkspace(defineWorkspace({
- *   id: 'epicenter.skills',
- *   tables: { skills: skillsTable, references: referencesTable },
- *   kv: {},
- * }))
- *
- * // Export all skills to .agents/skills/ for agent consumption
- * await exportToDisk(ws, '.agents/skills')
+ * const ws = createSkillsWorkspace()
+ * await ws.actions.exportToDisk({ dir: '.agents/skills' })
  * ```
  */
 export async function exportToDisk(

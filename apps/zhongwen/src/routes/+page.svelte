@@ -12,15 +12,17 @@
 
 	const showPinyin = fromKv(workspace.kv, 'showPinyin');
 	let dismissedError = $state(false);
+	let submitError = $state<string | null>(null);
 
 	const handle = $derived(chatState.active);
 
 
 	async function signInWithGoogle() {
-		await auth.signInWithSocialRedirect({
+		const { error } = await auth.signInWithSocialRedirect({
 			provider: 'google',
 			callbackURL: window.location.origin,
 		});
+		if (error) submitError = error.message;
 	}
 </script>
 
@@ -70,6 +72,9 @@
 			<div class="flex flex-1 items-center justify-center">
 				<div class="text-center text-muted-foreground">
 					<p class="mb-4">Sign in to start chatting</p>
+					{#if submitError}
+						<p class="text-sm text-destructive">{submitError}</p>
+					{/if}
 					<Button onclick={signInWithGoogle}
 						>Sign in with Google</Button
 					>

@@ -133,29 +133,6 @@ export type AuthClient = {
 		name: string;
 	}): Promise<Result<undefined, AuthError>>;
 	/**
-	 * Sign in with a pre-obtained social provider ID token.
-	 *
-	 * Provider-agnostic—the caller is responsible for acquiring the token
-	 * (e.g. via a platform-specific popup, native SDK, or redirect callback).
-	 * This method only sends the token to Better Auth for verification.
-	 *
-	 * Not all providers support ID tokens—GitHub uses OAuth code exchange
-	 * and requires the redirect flow. Google and Apple support ID tokens.
-	 *
-	 * @example
-	 * ```typescript
-	 * const { idToken, nonce } = await getGoogleCredentials();
-	 * const { error } = await auth.signInWithIdToken({
-	 *   provider: 'google',
-	 *   idToken: { token: idToken, nonce },
-	 * });
-	 * ```
-	 */
-	signInWithIdToken(input: {
-		provider: string;
-		idToken: { token: string; nonce?: string };
-	}): Promise<Result<undefined, AuthError>>;
-	/**
 	 * Sign in using the injected `socialTokenProvider`.
 	 *
 	 * Orchestrates the full popup/native flow: acquires the token from the
@@ -179,8 +156,9 @@ export type AuthClient = {
 	signOut(): Promise<void>;
 	/**
 	 * Redirect-based social sign-in for web apps. Navigates away from the
-	 * current page—no `isBusy` toggle or `Result` return since the browser
-	 * leaves before either would be useful.
+	 * current page on success. Returns a `Result` so pre-navigation errors
+	 * (network failures, misconfigured providers) are handled consistently
+	 * with other auth methods.
 	 *
 	 * Works for ALL social providers (Google, GitHub, Apple, etc.).
 	 * This is the only sign-in path for providers like GitHub that don't
@@ -188,11 +166,14 @@ export type AuthClient = {
 	 *
 	 * @example
 	 * ```typescript
-	 * auth.signInWithSocialRedirect({ provider: 'google', callbackURL: '/' });
-	 * auth.signInWithSocialRedirect({ provider: 'github', callbackURL: '/' });
+	 * const { error } = await auth.signInWithSocialRedirect({
+	 *   provider: 'google',
+	 *   callbackURL: '/',
+	 * });
+	 * if (error) submitError = error.message;
 	 * ```
 	 */
-	signInWithSocialRedirect(options: { provider: string; callbackURL: string }): Promise<void>;
+	signInWithSocialRedirect(options: { provider: string; callbackURL: string }): Promise<Result<undefined, AuthError>>;
 
 	fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 };
@@ -290,7 +271,7 @@ export function createAuth({
 }: CreateAuthOptions): AuthClient {
 	/**
 	 * Tracks whether a user-initiated auth command is in flight.
-	 * Toggled by every command method (signIn, signUp, signOut, signInWithIdToken)
+	 * Toggled by every command method (signIn, signUp, signOut, signInWithSocialPopup)
 	 * via try/finally so it always resets—even on errors.
 	 */
 	let isBusy = $state(false);
@@ -392,21 +373,6 @@ export function createAuth({
 			}
 		},
 
-		async signInWithIdToken(input) {
-			isBusy = true;
-			try {
-				const { error } = await client.signIn.social({
-					provider: input.provider,
-					idToken: input.idToken,
-				});
-				if (error) return AuthError.SocialSignInFailed({ cause: error });
-				return Ok(undefined);
-			} catch (error) {
-				return AuthError.SocialSignInFailed({ cause: error });
-			} finally {
-				isBusy = false;
-			}
-		},
 
 		async signInWithSocialPopup() {
 			if (!socialTokenProvider) {
@@ -443,7 +409,12 @@ export function createAuth({
 		},
 
 		async signInWithSocialRedirect({ provider, callbackURL }) {
-			await client.signIn.social({ provider, callbackURL });
+			try {
+				await client.signIn.social({ provider, callbackURL });
+				return Ok(undefined);
+			} catch (error) {
+				return AuthError.SocialSignInFailed({ cause: error });
+			}
 		},
 
 		fetch(input: RequestInfo | URL, init?: RequestInit) {

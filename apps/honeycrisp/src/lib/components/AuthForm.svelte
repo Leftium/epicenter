@@ -46,16 +46,11 @@
 			class="w-full"
 			disabled={auth.isBusy}
 			onclick={async () => {
-				submitError = null;
-				try {
-					await auth.signInWithSocialRedirect({
-						provider: 'google',
-						callbackURL: window.location.origin,
-					});
-				} catch (error) {
-					submitError =
-						error instanceof Error ? error.message : 'Failed to sign in with Google.';
-				}
+				const { error } = await auth.signInWithSocialRedirect({
+					provider: 'google',
+					callbackURL: window.location.origin,
+				});
+				if (error) submitError = error.message;
 			}}
 		>
 			<svg class="size-4" viewBox="0 0 24 24" aria-hidden="true">

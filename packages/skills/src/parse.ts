@@ -111,7 +111,9 @@ export function parseSkillMd(
 			string,
 			unknown
 		>;
-		if (typeof rawId === 'string') parsedId = rawId;
+		if (typeof rawId === 'string' && rawId.length > 0 && rawId.trim() === rawId && !rawId.includes(':')) {
+			parsedId = rawId;
+		}
 		// Only keep metadata if there are remaining keys after stripping id
 		if (Object.keys(rest).length > 0) metadataRecord = rest;
 	}

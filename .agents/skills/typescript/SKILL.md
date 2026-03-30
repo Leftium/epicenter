@@ -286,3 +286,37 @@ const tooltip = ({
 When the record is used once, inline it. When it's shared or has 5+ entries, extract to a named constant.
 
 See `docs/articles/record-lookup-over-nested-ternaries.md` for rationale.
+
+## Silent Fallback Smell
+
+Not all `??` expressions are safe defaults. When the fallback creates **state that other systems depend on**, the nullish coalescing hides a broken invariant.
+
+```typescript
+// Safe default — divergence doesn't matter
+const timeout = options.timeout ?? 5000;
+
+// SMELL — fallback creates divergent identity
+// Two machines importing the same data silently get different IDs
+const id = parsedId ?? generateId();
+```
+
+The test: **does the fallback create state that must be consistent across systems?** If yes, the `??` is masking a problem. Fix it by:
+
+- **Self-healing**: generate the value and write it back to the source, so the fallback never fires again
+- **Throwing**: make the invariant explicit—if the value should exist, its absence is an error
+- **Warning**: at minimum, make the fallback visible so silent divergence doesn't go unnoticed
+
+## Round-Trip Invariant
+
+If you serialize and then deserialize, identity properties must survive:
+
+```typescript
+// This must hold for any entity with stable identity:
+const exported = serialize(entity);
+const reimported = deserialize(exported);
+assert(reimported.id === entity.id);
+```
+
+If an ID doesn't survive a full cycle, every system that references it by ID is broken—document handles, foreign keys, cache entries. The round-trip test is: "If I export to disk and import on a fresh machine, does everything still match?"
+
+When designing parse/serialize pairs, decide which fields are **identity** (must survive round-trips) vs **derived** (can be recomputed). Persist identity fields explicitly—don't rely on matching by secondary keys to recover them.

@@ -19,7 +19,7 @@
  * ```
  */
 import { nanoid } from 'nanoid/non-secure';
-import { SvelteMap } from 'svelte/reactivity';
+import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 import { transformationSteps, type TransformationStep } from './transformation-steps.svelte';
 
@@ -29,28 +29,11 @@ export type Transformation = ReturnType<
 >[number];
 
 function createTransformations() {
-	const map = new SvelteMap<string, Transformation>();
-
-	// Initialize from current workspace state.
-	for (const row of workspace.tables.transformations.getAllValid()) {
-		map.set(row.id, row);
-	}
-
-	// Observe all changes (local writes, remote CRDT sync, migration).
-	workspace.tables.transformations.observe((changedIds) => {
-		for (const id of changedIds) {
-			const result = workspace.tables.transformations.get(id);
-			if (result.status === 'valid') {
-				map.set(id, result.row);
-			} else if (result.status === 'not_found') {
-				map.delete(id);
-			}
-		}
-	});
+	const map = fromTable(workspace.tables.transformations);
 
 	// Memoize sorted array with $derived for referential stability.
 	const sorted = $derived(
-		Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title)),
+		map.values().toArray().sort((a, b) => a.title.localeCompare(b.title)),
 	);
 
 	return {

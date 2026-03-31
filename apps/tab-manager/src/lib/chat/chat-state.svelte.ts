@@ -30,6 +30,7 @@
 
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
+import { fromTable } from '@epicenter/svelte';
 import type { JsonValue } from 'wellcrafted/json';
 import {
 	AVAILABLE_PROVIDERS,
@@ -60,13 +61,10 @@ import {
 function createAiChatState() {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
 
-	/** Read all conversations sorted by most recently updated first. */
-	const readAllConversations = (): Conversation[] =>
-		workspace.tables.conversations
-			.getAllValid()
-			.sort((a, b) => b.updatedAt - a.updatedAt);
-
-	let conversations = $state<Conversation[]>(readAllConversations());
+	const conversationsMap = fromTable(workspace.tables.conversations);
+	const conversations = $derived(
+		conversationsMap.values().toArray().sort((a, b) => b.updatedAt - a.updatedAt),
+	);
 
 	/**
 	 * Ensure at least one conversation exists.
@@ -87,7 +85,6 @@ function createAiChatState() {
 			updatedAt: now,
 			_v: 1,
 		});
-		conversations = readAllConversations();
 		return id;
 	}
 
@@ -140,9 +137,7 @@ function createAiChatState() {
 		let inputValue = $state('');
 		let dismissedError = $state<string | null>(null);
 
-		const metadata = $derived(
-			conversations.find((c) => c.id === conversationId),
-		);
+		const metadata = $derived(conversationsMap.get(conversationId));
 
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
@@ -386,24 +381,23 @@ function createAiChatState() {
 	}
 
 	/**
-	 * Sync handles with the conversations array.
+	 * Sync handles with the conversationsMap.
 	 *
 	 * Creates handles for new conversation IDs, destroys handles
 	 * for deleted IDs. Existing handles survive — their chat instance
 	 * and ephemeral state persist.
 	 */
 	function reconcileHandles() {
-		const currentIds = new Set(conversations.map((c) => c.id));
-
 		for (const id of handles.keys()) {
-			if (!currentIds.has(id)) {
+			if (!conversationsMap.has(id as string)) {
 				destroyConversation(id);
 			}
 		}
 
-		for (const conv of conversations) {
-			if (!handles.has(conv.id)) {
-				handles.set(conv.id, createConversationHandle(conv.id));
+		for (const id of conversationsMap.keys()) {
+			const convId = id as ConversationId;
+			if (!handles.has(convId)) {
+				handles.set(convId, createConversationHandle(convId));
 			}
 		}
 	}
@@ -415,7 +409,6 @@ function createAiChatState() {
 	// ── Observers ────────────────────────────────────────────────────────────
 
 	const _unobserveConversations = workspace.tables.conversations.observe(() => {
-		conversations = readAllConversations();
 		reconcileHandles();
 	});
 	const _unobserveChatMessages = workspace.tables.chatMessages.observe(() => {
@@ -424,7 +417,6 @@ function createAiChatState() {
 
 	// Initialize after persistence loads
 	void workspace.whenReady.then(() => {
-		conversations = readAllConversations();
 		reconcileHandles();
 		const newId = ensureDefaultConversation();
 		if (conversations.length > 0) {

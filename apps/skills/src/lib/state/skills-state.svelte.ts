@@ -31,10 +31,7 @@ function createSkillsState() {
 
 	let selectedSkillId = $state<string | null>(null);
 
-	const selectedSkill = $derived.by(() => {
-		if (!selectedSkillId) return null;
-		return skillsMap.get(selectedSkillId) ?? null;
-	});
+	const selectedSkill = $derived(skillsMap.get(selectedSkillId ?? '') ?? null);
 
 	const selectedReferences = $derived.by(() => {
 		if (!selectedSkillId) return [];
@@ -91,7 +88,9 @@ function createSkillsState() {
 
 		updateSkill(
 			id: string,
-			updates: Partial<Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>>,
+			updates: Partial<
+				Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
+			>,
 		) {
 			workspace.tables.skills.update(id, { ...updates, updatedAt: Date.now() });
 		},

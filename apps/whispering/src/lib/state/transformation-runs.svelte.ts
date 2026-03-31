@@ -17,7 +17,7 @@
  * const recordingRuns = transformationRuns.getByRecordingId(recordingId);
  * ```
  */
-import { SvelteMap } from 'svelte/reactivity';
+import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 
 /** Transformation run row type inferred from the workspace table schema. */
@@ -26,24 +26,7 @@ export type TransformationRun = ReturnType<
 >[number];
 
 function createTransformationRuns() {
-	const map = new SvelteMap<string, TransformationRun>();
-
-	// Initialize from current workspace state.
-	for (const row of workspace.tables.transformationRuns.getAllValid()) {
-		map.set(row.id, row);
-	}
-
-	// Observe all changes.
-	workspace.tables.transformationRuns.observe((changedIds) => {
-		for (const id of changedIds) {
-			const result = workspace.tables.transformationRuns.get(id);
-			if (result.status === 'valid') {
-				map.set(id, result.row);
-			} else if (result.status === 'not_found') {
-				map.delete(id);
-			}
-		}
-	});
+	const map = fromTable(workspace.tables.transformationRuns);
 
 	return {
 		/** All transformation runs as a reactive SvelteMap. */

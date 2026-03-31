@@ -18,7 +18,7 @@
  * ```
  */
 import { nanoid } from 'nanoid/non-secure';
-import { SvelteMap } from 'svelte/reactivity';
+import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 
 /** Transformation step row type inferred from the workspace table schema. */
@@ -27,24 +27,7 @@ export type TransformationStep = ReturnType<
 >[number];
 
 function createTransformationSteps() {
-	const map = new SvelteMap<string, TransformationStep>();
-
-	// Initialize from current workspace state.
-	for (const row of workspace.tables.transformationSteps.getAllValid()) {
-		map.set(row.id, row);
-	}
-
-	// Observe all changes (local writes, remote CRDT sync, migration).
-	workspace.tables.transformationSteps.observe((changedIds) => {
-		for (const id of changedIds) {
-			const result = workspace.tables.transformationSteps.get(id);
-			if (result.status === 'valid') {
-				map.set(id, result.row);
-			} else if (result.status === 'not_found') {
-				map.delete(id);
-			}
-		}
-	});
+	const map = fromTable(workspace.tables.transformationSteps);
 
 	return {
 		/**

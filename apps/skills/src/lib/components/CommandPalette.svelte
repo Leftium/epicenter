@@ -51,7 +51,9 @@
 			label: skill.name,
 			description: skill.description,
 			group: 'Skills',
-			onSelect: () => skillsState.selectSkill(skill.id),
+			onSelect: () => {
+				skillsState.selectedSkillId = skill.id;
+			},
 		})),
 	);
 </script>

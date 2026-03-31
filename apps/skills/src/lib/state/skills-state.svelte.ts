@@ -14,8 +14,11 @@ import { workspace } from '$lib/client';
  * ```svelte
  * <script>
  *   import { skillsState } from '$lib/state/skills-state.svelte';
- *   const skills = $derived(skillsState.skills);
  * </script>
+ *
+ * {#each skillsState.skills as skill (skill.id)}
+ *   <p>{skill.name}</p>
+ * {/each}
  * ```
  */
 function createSkillsState() {
@@ -31,19 +34,17 @@ function createSkillsState() {
 
 	let selectedSkillId = $state<string | null>(null);
 
-	const selectedSkill = $derived(skillsMap.get(selectedSkillId ?? '') ?? null);
-
-	const selectedReferences = $derived.by(() => {
-		if (!selectedSkillId) return [];
-		return referencesMap
+	const selected = $derived.by(() => {
+		if (!selectedSkillId) return { skill: null, references: [] };
+		const skill = skillsMap.get(selectedSkillId) ?? null;
+		const references = referencesMap
 			.values()
 			.toArray()
 			.filter((r) => r.skillId === selectedSkillId)
 			.sort((a, b) => a.path.localeCompare(b.path));
+		return { skill, references };
 	});
 
-	let deleteDialogOpen = $state(false);
-	let renamingSkillId = $state<string | null>(null);
 
 	return {
 		get skills() {
@@ -52,21 +53,14 @@ function createSkillsState() {
 		get selectedSkillId() {
 			return selectedSkillId;
 		},
+		set selectedSkillId(id: string | null) {
+			selectedSkillId = id;
+		},
 		get selectedSkill() {
-			return selectedSkill;
+			return selected.skill;
 		},
 		get selectedReferences() {
-			return selectedReferences;
-		},
-		get deleteDialogOpen() {
-			return deleteDialogOpen;
-		},
-		get renamingSkillId() {
-			return renamingSkillId;
-		},
-
-		selectSkill(id: string) {
-			selectedSkillId = id;
+			return selected.references;
 		},
 
 		createSkill(name: string) {
@@ -102,33 +96,8 @@ function createSkillsState() {
 			}
 			workspace.tables.skills.delete(id);
 			if (selectedSkillId === id) selectedSkillId = null;
-			deleteDialogOpen = false;
 		},
 
-		openDelete() {
-			deleteDialogOpen = true;
-		},
-		closeDelete() {
-			deleteDialogOpen = false;
-		},
-
-		startRename(id: string) {
-			renamingSkillId = id;
-		},
-		cancelRename() {
-			renamingSkillId = null;
-		},
-		confirmRename(newName: string) {
-			if (!renamingSkillId || !newName.trim()) {
-				renamingSkillId = null;
-				return;
-			}
-			workspace.tables.skills.update(renamingSkillId, {
-				name: newName.trim(),
-				updatedAt: Date.now(),
-			});
-			renamingSkillId = null;
-		},
 
 		createReference(skillId: string, path: string) {
 			const id = generateId();

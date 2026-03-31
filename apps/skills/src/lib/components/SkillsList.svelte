@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
 	import { skillsState } from '$lib/state/skills-state.svelte';
 	import SkillListItem from './SkillListItem.svelte';
 	import InlineNameInput from './tree/InlineNameInput.svelte';
 
-	const isEditing = $derived(skillsState.renamingSkillId !== null);
+	let renamingSkillId = $state<string | null>(null);
+	const isEditing = $derived(renamingSkillId !== null);
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (isEditing) return;
@@ -18,22 +20,30 @@
 			case 'ArrowDown': {
 				e.preventDefault();
 				const next = skills[idx + 1] ?? skills[0];
-				if (next) skillsState.selectSkill(next.id);
+				if (next) skillsState.selectedSkillId = next.id;
 				break;
 			}
 			case 'ArrowUp': {
 				e.preventDefault();
 				const prev = skills[idx - 1] ?? skills.at(-1);
-				if (prev) skillsState.selectSkill(prev.id);
+				if (prev) skillsState.selectedSkillId = prev.id;
 				break;
 			}
 			case 'F2': {
-				if (skillsState.selectedSkillId) skillsState.startRename(skillsState.selectedSkillId);
+				if (skillsState.selectedSkillId) renamingSkillId = skillsState.selectedSkillId;
 				break;
 			}
 			case 'Delete':
 			case 'Backspace': {
-				if (skillsState.selectedSkillId) skillsState.openDelete();
+				const selected = skillsState.selectedSkill;
+				if (selected) {
+					confirmationDialog.open({
+						title: `Delete ${selected.name}?`,
+						description: 'This will delete the skill and all its references. This action cannot be undone.',
+						confirm: { text: 'Delete', variant: 'destructive' },
+						onConfirm: () => skillsState.deleteSkill(selected.id),
+					});
+				}
 				break;
 			}
 		}
@@ -50,15 +60,24 @@
 {:else}
 	<div role="listbox" aria-label="Skills" tabindex={0} onkeydown={handleKeydown}>
 		{#each skillsState.skills as skill (skill.id)}
-			{#if skillsState.renamingSkillId === skill.id}
+			{#if renamingSkillId === skill.id}
 				<InlineNameInput
 					defaultValue={skill.name}
-					onConfirm={(name) => skillsState.confirmRename(name)}
-					onCancel={() => skillsState.cancelRename()}
+					onConfirm={(name) => {
+						if (renamingSkillId && name.trim()) {
+							skillsState.updateSkill(renamingSkillId, { name: name.trim() });
+						}
+						renamingSkillId = null;
+					}}
+					onCancel={() => (renamingSkillId = null)}
 				/>
 			{:else}
-				<SkillListItem {skill} />
+				<SkillListItem
+					{skill}
+					onRequestRename={() => (renamingSkillId = skill.id)}
+				/>
 			{/if}
 		{/each}
 	</div>
 {/if}
+

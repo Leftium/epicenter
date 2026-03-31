@@ -2,10 +2,9 @@
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import CommandPalette from './CommandPalette.svelte';
-	import DeleteConfirmation from './dialogs/DeleteConfirmation.svelte';
 	import SkillEditor from './editor/SkillEditor.svelte';
-	import Toolbar from './Toolbar.svelte';
 	import SkillsList from './SkillsList.svelte';
+	import Toolbar from './Toolbar.svelte';
 </script>
 
 <div class="flex h-screen flex-col">
@@ -24,4 +23,3 @@
 	<CommandPalette />
 </div>
 
-<DeleteConfirmation />

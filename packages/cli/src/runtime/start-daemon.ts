@@ -7,7 +7,7 @@
  * Lifecycle:
  * 1. Load `epicenter.config.ts` from the target directory
  * 2. Await `whenReady` on all clients
- * 3. Print status, stay alive
+ * 3. Print status (workspaces, extensions), stay alive
  * 4. SIGINT/SIGTERM → destroy all clients → exit
  */
 
@@ -16,6 +16,8 @@ import { loadConfig } from '../load-config';
 export type StartDaemonOptions = {
 	/** Directory containing epicenter.config.ts. Defaults to cwd. */
 	dir?: string;
+	/** Enable periodic heartbeat logging. */
+	verbose?: boolean;
 };
 
 /**
@@ -33,16 +35,40 @@ export async function startDaemon(options: StartDaemonOptions = {}) {
 
 	// ─── Log status ────────────────────────────────────────────────────────
 
-	const ids = clients.map((c) => c.id);
 	console.log(`✓ Started — ${clients.length} workspace(s)`);
-	console.log(`  Workspaces: ${ids.join(', ')}`);
 	console.log(`  Config: ${configDir}`);
+
+	for (const client of clients) {
+		const extensionNames = Object.keys(client.extensions ?? {});
+		const extLabel =
+			extensionNames.length > 0
+				? extensionNames.join(', ')
+				: '(none)';
+		console.log(`  ${client.id}: extensions=[${extLabel}]`);
+	}
+
 	console.log('');
 	console.log('Press Ctrl+C to stop');
+
+	// ─── Verbose heartbeat ────────────────────────────────────────────────
+
+	let heartbeatInterval: ReturnType<typeof setInterval> | undefined;
+	if (options.verbose) {
+		heartbeatInterval = setInterval(() => {
+			const uptime = process.uptime();
+			const hours = Math.floor(uptime / 3600);
+			const minutes = Math.floor((uptime % 3600) / 60);
+			const seconds = Math.floor(uptime % 60);
+			console.log(
+				`  ♥ alive — ${hours}h ${minutes}m ${seconds}s — ${clients.length} workspace(s)`,
+			);
+		}, 30_000);
+	}
 
 	// ─── Graceful shutdown ─────────────────────────────────────────────────
 
 	async function shutdown() {
+		if (heartbeatInterval) clearInterval(heartbeatInterval);
 		console.log('\nShutting down...');
 		await Promise.all(clients.map((c) => c.dispose()));
 		console.log('✓ Graceful shutdown complete');

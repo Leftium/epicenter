@@ -13,15 +13,21 @@ export function buildStartCommand(): CommandModule {
 		describe: 'Start the workspace daemon for a directory',
 		builder: (y: Argv) =>
 			y.positional('dir', {
-				type: 'string' as const,
-				default: '.',
-				describe:
-					'Directory containing epicenter.config.ts (default: current directory)',
-			}),
+					type: 'string' as const,
+					default: '.',
+					describe:
+						'Directory containing epicenter.config.ts (default: current directory)',
+				})
+				.option('verbose', {
+					type: 'boolean',
+					default: false,
+					describe: 'Enable periodic heartbeat logging',
+				}),
 		handler: async (argv) => {
 			try {
 				await startDaemon({
 					dir: argv.dir as string | undefined,
+					verbose: argv.verbose as boolean | undefined,
 				});
 				// Process stays alive — SIGINT/SIGTERM handlers manage shutdown
 			} catch (err) {

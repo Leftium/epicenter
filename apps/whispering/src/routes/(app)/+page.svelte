@@ -261,7 +261,7 @@
 				aria-label={`Switch to ${option.label.toLowerCase()} mode`}
 			>
 				{option.icon}
-				{option.label}
+				<span class="hidden sm:inline">{option.label}</span>
 			</ToggleGroup.Item>
 		{/each}
 	</ToggleGroup.Root>

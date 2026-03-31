@@ -13,6 +13,10 @@
 	import { services } from '$lib/services';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { settings } from '$lib/state/settings.svelte';
+	import {
+		RECORDER_STATE_TO_ICON,
+		VAD_STATE_TO_ICON,
+	} from '$lib/constants/audio';
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
 	import {
 		checkCompressionRecommendation,
@@ -91,21 +95,31 @@
 	let { children } = $props();
 </script>
 
-<button
-	class="xxs:hidden hover:bg-accent hover:text-accent-foreground h-screen w-screen transform duration-300 ease-in-out"
-	onclick={() => commandCallbacks.toggleManualRecording()}
->
-	<span
-		style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5));"
-		class="text-[48px] leading-none"
+{#if settings.get('recording.mode') === 'vad'}
+	<button
+		class="xxs:hidden hover:bg-accent hover:text-accent-foreground h-screen w-screen transform duration-300 ease-in-out"
+		onclick={() => commandCallbacks.toggleVadRecording()}
 	>
-		{#if getRecorderStateQuery.data === 'RECORDING'}
-			⏹️
-		{:else}
-			🎙️
-		{/if}
-	</span>
-</button>
+		<span
+			style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5));"
+			class="text-[48px] leading-none"
+		>
+			{VAD_STATE_TO_ICON[vadRecorder.state]}
+		</span>
+	</button>
+{:else}
+	<button
+		class="xxs:hidden hover:bg-accent hover:text-accent-foreground h-screen w-screen transform duration-300 ease-in-out"
+		onclick={() => commandCallbacks.toggleManualRecording()}
+	>
+		<span
+			style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5));"
+			class="text-[48px] leading-none"
+		>
+			{RECORDER_STATE_TO_ICON[getRecorderStateQuery.data ?? 'IDLE']}
+		</span>
+	</button>
+{/if}
 
 <div class="hidden flex-1 flex-col gap-2 xxs:flex min-w-0 w-full">
 	{@render children()}

@@ -42,8 +42,8 @@ function createFsState() {
 	let focusedId = $state<FileId | null>(null);
 
 	// ── Interaction mode ─────────────────────────────────────────────
-	// Replaces the old independent renamingId / inlineCreate / deleteDialogOpen
-	// states. A single discriminated union prevents conflicting modes.
+	// A single discriminated union prevents conflicting modes
+	// (e.g. can't rename and create at the same time).
 	let interactionMode = $state<InteractionMode>({ type: 'idle' });
 
 	// ── Context menu hover persistence ───────────────────────────────

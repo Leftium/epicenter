@@ -92,7 +92,9 @@ function buildStatusCommand(home: string) {
 			try {
 				const remote = await api.getSession();
 				const displayName = remote.user.name ?? remote.user.email;
-				console.log(`Logged in as: ${displayName} (${remote.user.email})`);
+				console.log(
+					`Logged in as: ${displayName} (${remote.user.email})`,
+				);
 				console.log(`Server:       ${session.server}`);
 				console.log(`Session:      valid`);
 				if (remote.session.expiresAt) {
@@ -105,7 +107,9 @@ function buildStatusCommand(home: string) {
 					session.user?.name ?? session.user?.email ?? '(unknown)';
 				console.log(`Logged in as: ${displayName} [stored]`);
 				console.log(`Server:       ${session.server}`);
-				console.warn('Warning: Could not verify session with remote server.');
+				console.warn(
+					'Warning: Could not verify session with remote server.',
+				);
 			}
 		},
 	};
@@ -113,6 +117,13 @@ function buildStatusCommand(home: string) {
 
 /**
  * Build the `auth` command group.
+ *
+ * @example
+ * ```bash
+ * epicenter auth login --server https://api.epicenter.so
+ * epicenter auth logout
+ * epicenter auth status
+ * ```
  */
 export function buildAuthCommand(home: string): CommandModule {
 	return {
@@ -123,7 +134,10 @@ export function buildAuthCommand(home: string): CommandModule {
 				.command(buildLoginCommand(home) as unknown as CommandModule)
 				.command(buildLogoutCommand(home) as unknown as CommandModule)
 				.command(buildStatusCommand(home) as unknown as CommandModule)
-				.demandCommand(1, 'Specify a subcommand: login, logout, or status'),
+				.demandCommand(
+					1,
+					'Specify a subcommand: login, logout, or status',
+				),
 		handler: () => {},
 	};
 }

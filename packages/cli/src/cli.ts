@@ -1,19 +1,29 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import yargs from 'yargs';
-import { buildAuthCommand } from './commands/auth-command';
-import { buildDescribeCommand } from './commands/describe-command';
-import { buildInitCommand } from './commands/init-command';
-import { buildInstallCommand } from './commands/install-command';
-import { buildUninstallCommand } from './commands/uninstall-command';
-import { buildCountCommand } from './commands/count-command';
-import { buildDeleteCommand } from './commands/delete-command';
-import { buildExportCommand } from './commands/export-command';
-import { buildGetCommand } from './commands/get-command';
-import { buildKvCommand } from './commands/kv-command';
-import { buildListCommand } from './commands/list-command';
-import { buildStartCommand } from './commands/start-command';
-import { buildRunCommand } from './commands/run-command';
-import { buildTablesCommand } from './commands/tables-command';
-import { resolveEpicenterHome } from './util/paths';
+import { buildAuthCommand } from './commands/auth';
+import {
+	buildCountCommand,
+	buildDeleteCommand,
+	buildExportCommand,
+	buildGetCommand,
+	buildListCommand,
+	buildTablesCommand,
+} from './commands/data';
+import { buildDescribeCommand } from './commands/describe';
+import { buildKvCommand } from './commands/kv';
+import {
+	buildInitCommand,
+	buildInstallCommand,
+	buildUninstallCommand,
+} from './commands/project';
+import { buildRunCommand } from './commands/run';
+import { buildStartCommand } from './commands/start';
+
+/** Resolution order: EPICENTER_HOME env > ~/.epicenter/ */
+export function resolveEpicenterHome(flagValue?: string): string {
+	return flagValue ?? Bun.env.EPICENTER_HOME ?? join(homedir(), '.epicenter');
+}
 
 /**
  * Create the Epicenter CLI instance.

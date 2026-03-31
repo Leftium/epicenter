@@ -8,10 +8,7 @@
 import type { Argv, CommandModule } from 'yargs';
 import { formatYargsOptions, outputError } from '../util/format-output';
 import { parseJsonInput, readStdinSync } from '../util/parse-input';
-import {
-	runDataCommand,
-	withWorkspaceOptions,
-} from '../util/with-workspace-options';
+import { runCommand, withWorkspaceOptions } from '../util/workspace';
 
 /**
  * Parse a value from argv positional, --file, or stdin.
@@ -75,7 +72,7 @@ export function buildKvCommand(): CommandModule {
 							})
 							.options(formatYargsOptions()),
 					handler: async (argv: any) => {
-						await runDataCommand(
+						await runCommand(
 							{ dir: argv.dir, workspaceId: argv.workspace },
 							(client) => client.kv.get(argv.key),
 							argv.format,
@@ -103,7 +100,7 @@ export function buildKvCommand(): CommandModule {
 					handler: async (argv: any) => {
 						const parsed = resolveInputValue(argv);
 						if (parsed === undefined) return;
-						await runDataCommand(
+						await runCommand(
 							{ dir: argv.dir, workspaceId: argv.workspace },
 							(client) => {
 								client.kv.set(argv.key, parsed);
@@ -129,7 +126,7 @@ export function buildKvCommand(): CommandModule {
 							})
 							.options(formatYargsOptions()),
 					handler: async (argv: any) => {
-						await runDataCommand(
+						await runCommand(
 							{ dir: argv.dir, workspaceId: argv.workspace },
 							(client) => {
 								client.kv.delete(argv.key);

@@ -1,12 +1,3 @@
-import {
-	createSqliteIndex,
-	createYjsFileSystem,
-	filesTable,
-} from '@epicenter/filesystem';
-import { createWorkspace } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
-import { Bash } from 'just-bash';
-
 /**
  * Skills editor workspace infrastructure.
  *
@@ -15,10 +6,16 @@ import { Bash } from 'just-bash';
  * fs-state.svelte.ts (for reactive wrappers) and components
  * that need direct infra access (Toolbar, ContentEditor).
  */
-export const ws = createWorkspace({
-	id: 'epicenter.skills',
-	tables: { files: filesTable },
-})
+
+import {
+	createSqliteIndex,
+	createYjsFileSystem,
+} from '@epicenter/filesystem';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import { Bash } from 'just-bash';
+import { createSkillsEditor } from './workspace';
+
+export const ws = createSkillsEditor()
 	.withExtension('persistence', indexeddbPersistence)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 

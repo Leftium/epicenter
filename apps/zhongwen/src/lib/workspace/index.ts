@@ -7,4 +7,4 @@ export {
 	definition,
 	generateChatMessageId,
 	generateConversationId,
-} from './schema';
+} from './definition';

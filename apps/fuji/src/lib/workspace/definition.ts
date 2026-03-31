@@ -1,5 +1,5 @@
 /**
- * Workspace — schema and client for Fuji personal content app.
+ * Workspace definition — branded IDs, table definitions, and workspace definition.
  *
  * Fuji is a personal CMS with a 1:1 mapping to your blog. Entries are content
  * pieces—articles, thoughts, ideas—organized by tags and type, displayed in a
@@ -7,21 +7,17 @@
  * collaborative rich-text editing via Tiptap + y-prosemirror.
  *
  * Contains the branded EntryId type, entries table definition with
- * DateTimeString timestamps, KV settings, and the workspace client with
- * IndexedDB persistence.
+ * DateTimeString timestamps, KV settings, and the workspace definition.
  */
 
 import {
-	createWorkspace,
 	DateTimeString,
 	dateTimeStringNow,
 	defineKv,
 	defineTable,
 	defineWorkspace,
-	generateId,
 	type InferTableRow,
 } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -81,15 +77,3 @@ export const fujiWorkspace = defineWorkspace({
 		sidebarCollapsed: defineKv(type('boolean')),
 	},
 });
-
-/**
- * Fuji workspace client — single Y.Doc instance with IndexedDB persistence.
- *
- * Access tables via `workspaceClient.tables.entries` and KV settings via
- * `workspaceClient.kv`. The client is ready when `workspaceClient.whenReady`
- * resolves.
- */
-export default createWorkspace(fujiWorkspace).withExtension(
-	'persistence',
-	indexeddbPersistence,
-);

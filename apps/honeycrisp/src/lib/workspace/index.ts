@@ -6,4 +6,4 @@ export {
 	honeycrisp,
 	type Note,
 	NoteId,
-} from './schema';
+} from './definition';

@@ -3,14 +3,14 @@ import { createAuth } from '@epicenter/svelte/auth';
 import {
 	createSqliteIndex,
 	createYjsFileSystem,
-	filesTable,
 } from '@epicenter/filesystem';
-import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Bash } from 'just-bash';
 import { session } from '$lib/auth';
 import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
+import { createOpensidian } from './workspace';
+
 /**
  * Opensidian workspace infrastructure.
  *
@@ -18,10 +18,7 @@ import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
  * Imported by both fs-state.svelte.ts (for reactive wrappers) and
  * components that need direct infra access (Toolbar, ContentEditor).
  */
-export const workspace = createWorkspace({
-	id: 'opensidian',
-	tables: { files: filesTable },
-})
+export const workspace = createOpensidian()
 	.withEncryption({ userKeyStore: createIndexedDbKeyStore('opensidian:encryption-key') })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(

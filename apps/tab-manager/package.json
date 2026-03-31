@@ -5,7 +5,7 @@
 	"private": true,
 	"exports": {
 		"./workspace": "./src/lib/workspace/index.ts",
-		"./schema": "./src/lib/workspace/schema.ts"
+		"./definition": "./src/lib/workspace/definition.ts"
 	},
 	"scripts": {
 		"dev": "wxt",

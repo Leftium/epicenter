@@ -10,7 +10,7 @@ import { createWorkspace } from '@epicenter/workspace';
 import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { session } from '$lib/auth';
-import { definition } from './schema';
+import { definition } from './definition';
 import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
 export const workspace = createWorkspace(definition)
 	.withEncryption({ userKeyStore: createIndexedDbKeyStore('zhongwen:encryption-key') })

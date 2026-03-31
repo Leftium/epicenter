@@ -4,7 +4,8 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		"./schema": "./src/lib/workspace/schema.ts"
+		"./definition": "./src/lib/workspace/definition.ts",
+		"./workspace": "./src/lib/workspace/workspace.ts"
 	},
 	"scripts": {
 		"dev": "vite dev",

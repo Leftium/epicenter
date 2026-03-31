@@ -1,10 +1,8 @@
 import {
-	createWorkspace,
 	defineKv,
 	defineTable,
 	defineWorkspace,
 } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { type } from 'arktype';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
@@ -274,30 +272,27 @@ const shortcuts = {
 } as const;
 
 /**
- * The Whispering workspace — 5 normalized tables for domain data and ~40 KV entries
- * for synced preferences. Persisted to IndexedDB; future sync extensions will add
- * remote replication.
+ * The Whispering workspace definition — 5 normalized tables for domain data
+ * and ~40 KV entries for synced preferences.
  */
-export default createWorkspace(
-	defineWorkspace({
-		id: 'whispering',
-		tables: {
-			recordings,
-			transformations,
-			transformationSteps,
-			transformationRuns,
-			transformationStepRuns,
-		},
-		kv: {
-			...sound,
-			...output,
-			...ui,
-			...dataRetention,
-			...recording,
-			...transcription,
-			...transformation,
-			...analytics,
-			...shortcuts,
-		},
-	}),
-).withExtension('persistence', indexeddbPersistence);
+export const whisperingDefinition = defineWorkspace({
+	id: 'whispering',
+	tables: {
+		recordings,
+		transformations,
+		transformationSteps,
+		transformationRuns,
+		transformationStepRuns,
+	},
+	kv: {
+		...sound,
+		...output,
+		...ui,
+		...dataRetention,
+		...recording,
+		...transcription,
+		...transformation,
+		...analytics,
+		...shortcuts,
+	},
+});

@@ -1,7 +1,7 @@
 /**
  * Workspace client — browser-specific wiring and AI-callable actions.
  *
- * Imports the schema from `schema.ts` and adds IndexedDB persistence,
+ * Imports the definition from `definition.ts` and adds IndexedDB persistence,
  * BroadcastChannel sync, WebSocket sync, encryption, and action handlers
  * that call Chrome extension APIs.
  *
@@ -12,9 +12,7 @@
 import { actionsToClientTools, toToolDefinitions } from '@epicenter/ai';
 import { createAuth } from '@epicenter/svelte/auth';
 import {
-	createWorkspace,
 	defineMutation,
-	defineQuery,
 	iterateActions,
 } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
@@ -30,7 +28,8 @@ import {
 import { authSession, getGoogleCredentials } from '$lib/state/auth';
 import { userKeyStore } from '$lib/state/key-store';
 import { remoteServerUrl, serverUrl } from '$lib/state/settings.svelte';
-import { definition, generateSavedTabId } from './schema';
+import { generateSavedTabId } from './definition';
+import { createTabManagerWorkspace } from './workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Singleton
@@ -97,7 +96,7 @@ export async function registerDevice(): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildWorkspaceClient() {
-	return createWorkspace(definition)
+	return createTabManagerWorkspace()
 		.withEncryption({ userKeyStore })
 		.withExtension('persistence', indexeddbPersistence)
 		.withExtension('broadcast', broadcastChannelSync)
@@ -290,26 +289,6 @@ function buildWorkspaceClient() {
 						return {
 							reloadedCount: results.filter((r) => r.status === 'fulfilled')
 								.length,
-						};
-					},
-				}),
-			},
-
-			devices: {
-				list: defineQuery({
-					title: 'List Devices',
-					description:
-						'List all synced devices with their names, browsers, and online status.',
-					input: Type.Object({}),
-					handler: () => {
-						const devices = tables.devices.getAllValid();
-						return {
-							devices: devices.map((d) => ({
-								id: d.id,
-								name: d.name,
-								browser: d.browser,
-								lastSeen: d.lastSeen,
-							})),
 						};
 					},
 				}),

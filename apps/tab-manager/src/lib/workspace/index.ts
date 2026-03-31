@@ -25,4 +25,5 @@ export {
 	type SavedTab,
 	SavedTabId,
 	type ToolTrust,
-} from './schema';
+} from './definition';
+export { createTabManagerWorkspace } from './workspace';

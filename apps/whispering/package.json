@@ -4,7 +4,9 @@
 	"version": "7.11.0",
 	"description": "",
 	"exports": {
-		"./commands": "./src/lib/commands.ts"
+		"./commands": "./src/lib/commands.ts",
+		"./definition": "./src/lib/workspace/definition.ts",
+		"./workspace": "./src/lib/workspace/workspace.ts"
 	},
 	"scripts": {
 		"dev:web": "vite dev",

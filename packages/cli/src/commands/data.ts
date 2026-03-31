@@ -11,7 +11,7 @@ import {
 	resolveTable,
 	runCommand,
 	withWorkspaceOptions,
-} from '../util/workspace';
+} from '../util/command';
 
 // ─── Table CRUD ──────────────────────────────────────────────────────────────
 

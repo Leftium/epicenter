@@ -11,7 +11,7 @@ import {
 	defineCommand,
 	runCommand,
 	withWorkspaceOptions,
-} from '../util/workspace';
+} from '../util/command';
 
 /**
  * @example

@@ -8,7 +8,7 @@
 
 import type { Argv } from 'yargs';
 import { loadConfig } from '../load-config';
-import { defineCommand } from '../util/workspace';
+import { defineCommand } from '../util/command';
 
 // ─── Daemon runtime ──────────────────────────────────────────────────────────
 

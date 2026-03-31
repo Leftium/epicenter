@@ -16,7 +16,7 @@ import {
 	loadSession,
 	normalizeServerUrl,
 } from '../auth/store';
-import { defineCommand } from '../util/workspace';
+import { defineCommand } from '../util/command';
 
 /**
  * Create the `auth` command group.

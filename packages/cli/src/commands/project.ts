@@ -25,7 +25,7 @@ import {
 	toCamelCase,
 	toFactoryName,
 } from '../util/update-config';
-import { defineCommand } from '../util/workspace';
+import { defineCommand } from '../util/command';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

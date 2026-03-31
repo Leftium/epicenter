@@ -1,11 +1,11 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
-	import * as Tabs from '@epicenter/ui/tabs';
 	import { Button } from '@epicenter/ui/button';
+	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { fsState } from '$lib/state/fs-state.svelte';
 
-	const hasOpenFiles = $derived(fsState.openFileIds.length > 0);
+	const hasOpenFiles = $derived(fsState.openFileIds.size > 0);
 </script>
 
 {#if hasOpenFiles}

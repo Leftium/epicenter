@@ -37,7 +37,7 @@ function createFsState() {
 	// ── Reactive state ────────────────────────────────────────────────
 	let version = $state(0);
 	let activeFileId = $state<FileId | null>(null);
-	let openFileIds = $state<FileId[]>([]);
+	const openFileIds = new SvelteSet<FileId>();
 	const expandedIds = new SvelteSet<FileId>();
 	let focusedId = $state<FileId | null>(null);
 
@@ -291,15 +291,13 @@ function createFsState() {
 
 		selectFile(id: FileId) {
 			activeFileId = id;
-			if (!openFileIds.includes(id)) {
-				openFileIds = [...openFileIds, id];
-			}
+			openFileIds.add(id);
 		},
 
 		closeFile(id: FileId) {
-			openFileIds = openFileIds.filter((f) => f !== id);
+			openFileIds.delete(id);
 			if (activeFileId === id) {
-				activeFileId = openFileIds.at(-1) ?? null;
+				activeFileId = [...openFileIds].at(-1) ?? null;
 			}
 		},
 
@@ -341,7 +339,7 @@ function createFsState() {
 				if (!path) return;
 				await fs.rm(path, { recursive: true });
 				if (activeFileId === id) activeFileId = null;
-				openFileIds = openFileIds.filter((f) => f !== id);
+				openFileIds.delete(id);
 				toast.success(`Deleted ${path}`);
 			}, 'Failed to delete');
 		},

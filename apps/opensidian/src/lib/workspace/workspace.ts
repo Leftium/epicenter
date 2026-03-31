@@ -16,7 +16,6 @@
 import { createWorkspace } from '@epicenter/workspace';
 import { opensidianDefinition } from './definition';
 
-export { opensidianDefinition } from './definition';
 
 export function createOpensidian() {
 	return createWorkspace(opensidianDefinition);

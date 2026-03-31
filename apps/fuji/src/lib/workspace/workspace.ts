@@ -16,7 +16,6 @@
 import { createWorkspace } from '@epicenter/workspace';
 import { fujiWorkspace } from './definition';
 
-export { fujiWorkspace } from './definition';
 
 export function createFuji() {
 	return createWorkspace(fujiWorkspace);

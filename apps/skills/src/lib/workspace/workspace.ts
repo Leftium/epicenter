@@ -16,7 +16,6 @@
 import { createWorkspace } from '@epicenter/workspace';
 import { skillsEditorDefinition } from './definition';
 
-export { skillsEditorDefinition } from './definition';
 
 export function createSkillsEditor() {
 	return createWorkspace(skillsEditorDefinition);

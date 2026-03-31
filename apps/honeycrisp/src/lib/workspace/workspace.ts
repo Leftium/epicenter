@@ -16,7 +16,6 @@
 import { createWorkspace } from '@epicenter/workspace';
 import { honeycrisp } from './definition';
 
-export { honeycrisp } from './definition';
 
 export function createHoneycrisp() {
 	return createWorkspace(honeycrisp);

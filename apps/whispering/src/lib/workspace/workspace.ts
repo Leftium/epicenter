@@ -16,7 +16,6 @@
 import { createWorkspace } from '@epicenter/workspace';
 import { whisperingDefinition } from './definition';
 
-export { whisperingDefinition } from './definition';
 
 export function createWhispering() {
 	return createWorkspace(whisperingDefinition);

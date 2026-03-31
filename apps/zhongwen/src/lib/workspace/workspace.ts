@@ -16,7 +16,6 @@
 import { createWorkspace } from '@epicenter/workspace';
 import { definition } from './definition';
 
-export { definition } from './definition';
 
 export function createZhongwen() {
 	return createWorkspace(definition);

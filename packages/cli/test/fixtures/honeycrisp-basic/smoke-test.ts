@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { createWorkspace, dateTimeStringNow } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
 import { loadConfig } from '../../../src/config/load-config';
+import { definition } from './epicenter.config';
 
 const FIXTURE_DIR = import.meta.dir;
 const DB_PATH = join(
@@ -26,9 +27,9 @@ console.log('─── Epicenter Honeycrisp Smoke Test ───\n');
 
 // 1. Load config
 console.log('1. Loading epicenter.config.ts...');
-const { definitions, configDir } = await loadConfig(FIXTURE_DIR);
-const definition = definitions[0]!;
-console.log(`   ✓ Found workspace: ${definition.id}`);
+const { clients, configDir } = await loadConfig(FIXTURE_DIR);
+const client0 = clients[0]!;
+console.log(`   ✓ Found workspace: ${client0.id}`);
 console.log(`   Config dir: ${configDir}\n`);
 
 // 2. Create client with persistence (no sync)

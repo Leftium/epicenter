@@ -124,7 +124,10 @@ function createFsState() {
 			return activeFileId;
 		},
 		get openFileIds() {
-			return openFileIds;
+			return openFileIds as ReadonlySet<FileId>;
+		},
+		get hasOpenFiles() {
+			return openFileIds.size > 0;
 		},
 		get rootChildIds() {
 			return rootChildIds;

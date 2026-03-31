@@ -5,7 +5,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { fsState } from '$lib/state/fs-state.svelte';
 
-	const hasOpenFiles = $derived(fsState.openFileIds.size > 0);
+	const hasOpenFiles = $derived(fsState.hasOpenFiles);
 </script>
 
 {#if hasOpenFiles}

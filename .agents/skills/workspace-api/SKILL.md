@@ -177,10 +177,74 @@ importFromDisk: defineMutation({ description: 'Import skills from an agentskills
 
 ## Workspace File Structure
 
-A workspace file has two layers:
+Each app's `src/lib/workspace/` directory has four files with a strict layering:
 
-1. **Table definitions with co-located types** — `defineTable(schema)` as standalone consts, each immediately followed by `export type = InferTableRow<typeof table>`
-2. **`createWorkspace(defineWorkspace({...}))` call** — composes pre-built tables into the client, optionally with `.withActions()`
+```
+workspace/
+├── definition.ts      ← Schema only (defineWorkspace, defineTable, branded IDs)
+├── workspace.ts       ← Isomorphic factory (createWorkspace + isomorphic withActions)
+├── client.svelte.ts   ← Browser singleton (extensions, encryption, sync, browser-only actions)
+└── index.ts           ← Barrel re-export (the sole public API within the app)
+```
+
+### Layering Rules
+
+1. **`definition.ts`** — Pure schema. `defineWorkspace()`, `defineTable()`, `defineKv()`, branded ID types and generators. No imports from `@epicenter/workspace` beyond schema utilities. Isomorphic.
+2. **`workspace.ts`** — Factory function that calls `createWorkspace(definition)`. May chain `.withActions()` for **isomorphic** actions (table reads/writes only, no browser APIs). Imports from `./definition`. Isomorphic.
+3. **`client.svelte.ts`** (or `client.ts`) — The app singleton. Calls the factory, then chains `.withEncryption()`, `.withExtension()` (IndexedDB, sync, broadcast), and `.withActions()` for **browser-only** actions (Chrome APIs, DOM, etc.). Browser-only.
+4. **`index.ts`** — Barrel that re-exports from all three files. This is the only import path used within the app (`$lib/workspace`).
+
+### Export Rules
+
+- Each file exports only its own symbols. **No re-exporting peer files.** The barrel handles composition.
+- `package.json` subpath exports point to the isomorphic files only:
+
+```json
+{
+  "exports": {
+    "./definition": "./src/lib/workspace/definition.ts",
+    "./workspace": "./src/lib/workspace/workspace.ts"
+  }
+}
+```
+
+These subpaths are safe for Node/server consumption (e.g., API server importing an app's definition or factory). The barrel `index.ts` is **not** exported as a subpath because it pulls in browser-only code.
+
+### Isomorphic vs Browser-Only Actions
+
+```typescript
+// workspace.ts — isomorphic actions (table reads, portable logic)
+export function createMyApp() {
+  return createWorkspace(definition).withActions(({ tables }) => ({
+    devices: {
+      list: defineQuery({
+        title: 'List Devices',
+        description: 'List all synced devices.',
+        input: Type.Object({}),
+        handler: () => ({ devices: tables.devices.getAllValid() }),
+      }),
+    },
+  }));
+}
+
+// client.svelte.ts — browser-only actions chained on top
+export const workspace = createMyApp()
+  .withExtension('persistence', indexeddbPersistence)
+  .withExtension('sync', createSyncExtension({ ... }))
+  .withActions(({ tables }) => ({
+    tabs: {
+      close: defineMutation({
+        title: 'Close Tabs',
+        description: 'Close browser tabs by ID.',
+        input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
+        handler: async ({ tabIds }) => {
+          await browser.tabs.remove(tabIds);  // Chrome API — not isomorphic
+          return { closedCount: tabIds.length };
+        },
+      }),
+    },
+  }));
+```
 
 ## The `_v` Convention
 

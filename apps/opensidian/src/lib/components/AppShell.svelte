@@ -20,7 +20,7 @@
 		if (!paletteOpen) return [];
 		return fsState.walkTree<FileEntry>((id, row) => {
 			if (row.type === 'file') {
-				const fullPath = fsState.getPathForId(id) ?? '';
+				const fullPath = fsState.getPath(id) ?? '';
 				const lastSlash = fullPath.lastIndexOf('/');
 				const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
 				return { collect: { id, name: row.name, parentDir }, descend: false };

@@ -10,11 +10,11 @@
 
 	let { id }: { id: FileId } = $props();
 
-	const row = $derived(fsState.getRow(id));
+	const row = $derived(fsState.getFile(id));
 	const isFolder = $derived(row?.type === 'folder');
-	const isExpanded = $derived(fsState.expandedIds.has(id));
+	const isExpanded = $derived(fsState.isExpanded(id));
 	const isSelected = $derived(fsState.activeFileId === id);
-	const children = $derived(isFolder ? fsState.getChildIds(id) : []);
+	const children = $derived(isFolder ? fsState.getChildren(id) : []);
 	const isFocused = $derived(fsState.focusedId === id);
 	const isRenaming = $derived(fsState.renamingId === id);
 	const showInlineCreate = $derived(fsState.inlineCreate?.parentId === id);
@@ -107,7 +107,7 @@
 				<ContextMenu.Item
 					onclick={() => {
 						fsState.focus(id);
-						fsState.expandedIds.add(id);
+						fsState.expand(id);
 						fsState.startCreate('file');
 					}}
 				>
@@ -117,7 +117,7 @@
 				<ContextMenu.Item
 					onclick={() => {
 						fsState.focus(id);
-						fsState.expandedIds.add(id);
+						fsState.expand(id);
 						fsState.startCreate('folder');
 					}}
 				>
@@ -133,7 +133,7 @@
 			<ContextMenu.Item
 				class="text-destructive"
 				onclick={() => {
-					const row = fsState.getRow(id);
+					const row = fsState.getFile(id);
 					const name = row?.name ?? 'this item';
 					const isFolder = row?.type === 'folder';
 					confirmationDialog.open({

@@ -18,7 +18,7 @@
 			class="w-full justify-start overflow-x-auto rounded-none border-b bg-transparent p-0"
 		>
 			{#each fsState.openFileIds as fileId (fileId)}
-				{@const row = fsState.getRow(fileId)}
+			{@const row = fsState.getFile(fileId)}
 				{#if row}
 					<Tabs.Trigger
 						value={fileId}

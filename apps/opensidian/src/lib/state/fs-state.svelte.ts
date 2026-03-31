@@ -117,18 +117,25 @@ function createFsState() {
 	const rootChildIds = $derived(childrenOf.get(null) ?? []);
 
 	/**
-	 * Active file's row and path.
+	 * Active file's row data.
 	 *
-	 * Fine-grained: only tracks the active file's row and its ancestor chain
-	 * (via `computePath`). Unrelated row changes—like another file's updatedAt
-	 * bump—don't trigger recomputation.
+	 * Fine-grained: only tracks the active file's row via `filesMap.get()`.
+	 * Unrelated row changes don't trigger recomputation.
 	 */
-	const selected = $derived.by(() => {
-		if (!activeFileId) return { node: null, path: null };
-		const node = filesMap.get(activeFileId) ?? null;
-		const path = computePath(activeFileId);
-		return { node, path };
-	});
+	const selectedNode = $derived(
+		activeFileId ? (filesMap.get(activeFileId) ?? null) : null,
+	);
+
+	/**
+	 * Active file's full POSIX path.
+	 *
+	 * Fine-grained: only tracks the active file's name and ancestor chain
+	 * (via `computePath`). A `size` or `updatedAt` change on a sibling file
+	 * won't trigger recomputation—only name/ancestry changes matter.
+	 */
+	const selectedPath = $derived(
+		activeFileId ? computePath(activeFileId) : null,
+	);
 
 	// ── Derived from interaction mode ────────────────────────────────
 	// Stable public API over the internal union. Components read these
@@ -179,10 +186,10 @@ function createFsState() {
 			return rootChildIds;
 		},
 		get selectedNode() {
-			return selected.node;
+			return selectedNode;
 		},
 		get selectedPath() {
-			return selected.path;
+			return selectedPath;
 		},
 		get focusedId() {
 			return focusedId;
@@ -197,10 +204,23 @@ function createFsState() {
 			return contextMenuTargetId;
 		},
 
-		expandedIds,
+		/** Whether a folder is expanded in the tree view. */
+		isExpanded(id: FileId) {
+			return expandedIds.has(id);
+		},
+
+		/** Expand a folder in the tree view (no-op if already expanded). */
+		expand(id: FileId) {
+			expandedIds.add(id);
+		},
+
+		/** Collapse a folder in the tree view (no-op if already collapsed). */
+		collapse(id: FileId) {
+			expandedIds.delete(id);
+		},
 
 		/** Get child FileIds of a folder. Reactive via `childrenOf` derived. */
-		getChildIds(parentId: FileId | null) {
+		getChildren(parentId: FileId | null) {
 			return childrenOf.get(parentId) ?? [];
 		},
 
@@ -208,7 +228,7 @@ function createFsState() {
 		 * Get the FileRow for a given ID.
 		 * Returns null if the row is deleted/invalid.
 		 */
-		getRow(id: FileId): FileRow | null {
+		getFile(id: FileId): FileRow | null {
 			return filesMap.get(id) ?? null;
 		},
 
@@ -221,7 +241,7 @@ function createFsState() {
 		 *
 		 * @returns The full path (e.g., `/docs/api/reference.md`) or null if trashed/deleted.
 		 */
-		getPathForId(id: FileId): string | null {
+		getPath(id: FileId): string | null {
 			return computePath(id);
 		},
 
@@ -237,7 +257,7 @@ function createFsState() {
 		 * // Collect all visible IDs (respecting folder expansion)
 		 * const visibleIds = fsState.walkTree((id, row) => ({
 		 *   collect: id,
-		 *   descend: row.type === 'folder' && fsState.expandedIds.has(id),
+		 *   descend: row.type === 'folder' && fsState.isExpanded(id),
 		 * }));
 		 *
 		 * // Collect only files with metadata
@@ -278,7 +298,7 @@ function createFsState() {
 				interactionMode = { type: 'creating', parentId: null, fileType };
 				return;
 			}
-			const row = state.getRow(focused);
+			const row = state.getFile(focused);
 			if (row?.type === 'folder') {
 				expandedIds.add(focused);
 				interactionMode = { type: 'creating', parentId: focused, fileType };
@@ -356,7 +376,7 @@ function createFsState() {
 		async createFile(parentId: FileId | null, name: string) {
 			await withErrorToast(async () => {
 				const parentPath = parentId
-					? (state.getPathForId(parentId) ?? '/')
+					? (state.getPath(parentId) ?? '/')
 					: '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
 				await fs.writeFile(path, '');
@@ -367,7 +387,7 @@ function createFsState() {
 		async createFolder(parentId: FileId | null, name: string) {
 			await withErrorToast(async () => {
 				const parentPath = parentId
-					? (state.getPathForId(parentId) ?? '/')
+					? (state.getPath(parentId) ?? '/')
 					: '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
 				await fs.mkdir(path);
@@ -378,7 +398,7 @@ function createFsState() {
 
 		async deleteFile(id: FileId) {
 			await withErrorToast(async () => {
-				const path = state.getPathForId(id);
+				const path = state.getPath(id);
 				if (!path) return;
 				await fs.rm(path, { recursive: true });
 				if (activeFileId === id) activeFileId = null;
@@ -389,7 +409,7 @@ function createFsState() {
 
 		async rename(id: FileId, newName: string) {
 			await withErrorToast(async () => {
-				const oldPath = state.getPathForId(id);
+				const oldPath = state.getPath(id);
 				if (!oldPath) return;
 				const parentPath =
 					oldPath.substring(0, oldPath.lastIndexOf('/')) || '/';
@@ -400,33 +420,6 @@ function createFsState() {
 			}, 'Failed to rename');
 		},
 
-		/**
-		 * Read file content as string.
-		 *
-		 * Opens the per-file content Y.Doc and reads from the timeline.
-		 */
-		async readContent(id: FileId): Promise<string | null> {
-			try {
-				const handle = await workspace.documents.files.content.open(id);
-				return handle.read();
-			} catch (err) {
-				console.error('Failed to read content:', err);
-				return null;
-			}
-		},
-
-		/**
-		 * Write file content as string.
-		 *
-		 * Opens the per-file content Y.Doc and writes to the timeline.
-		 * The documents manager's `onUpdate` callback bumps `updatedAt` on the file row.
-		 */
-		async writeContent(id: FileId, data: string): Promise<void> {
-			await withErrorToast(async () => {
-				const handle = await workspace.documents.files.content.open(id);
-				handle.write(data);
-			}, 'Failed to save file');
-		},
 
 		/** Cleanup — call from +layout.svelte onDestroy if needed. */
 		async dispose() {

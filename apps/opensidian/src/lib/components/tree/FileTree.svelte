@@ -14,7 +14,7 @@
 	const visibleIds = $derived.by(() => {
 		return fsState.walkTree<FileId>((id, row) => ({
 			collect: id,
-			descend: row.type === 'folder' && fsState.expandedIds.has(id),
+			descend: row.type === 'folder' && fsState.isExpanded(id),
 		}));
 	});
 
@@ -55,12 +55,12 @@
 			case 'ArrowRight': {
 				e.preventDefault();
 				if (!current) break;
-				const row = fsState.getRow(current);
+				const row = fsState.getFile(current);
 				if (row?.type !== 'folder') break;
-				if (!fsState.expandedIds.has(current)) {
+				if (!fsState.isExpanded(current)) {
 					fsState.toggleExpand(current);
 				} else {
-					const children = fsState.getChildIds(current);
+					const children = fsState.getChildren(current);
 					if (children.length > 0) fsState.focus(children[0] ?? null);
 				}
 				break;
@@ -68,8 +68,8 @@
 			case 'ArrowLeft': {
 				e.preventDefault();
 				if (!current) break;
-				const row = fsState.getRow(current);
-				if (row?.type === 'folder' && fsState.expandedIds.has(current)) {
+				const row = fsState.getFile(current);
+				if (row?.type === 'folder' && fsState.isExpanded(current)) {
 					fsState.toggleExpand(current);
 				} else if (row?.parentId) {
 					fsState.focus(row.parentId);
@@ -80,7 +80,7 @@
 			case ' ': {
 				e.preventDefault();
 				if (!current) break;
-				const row = fsState.getRow(current);
+				const row = fsState.getFile(current);
 				if (row?.type === 'file') {
 					fsState.selectFile(current);
 				} else if (row?.type === 'folder') {
@@ -114,7 +114,7 @@
 			case 'Backspace': {
 				e.preventDefault();
 				if (!current) break;
-				const row = fsState.getRow(current);
+				const row = fsState.getFile(current);
 				const name = row?.name ?? 'this item';
 				const isFolder = row?.type === 'folder';
 				confirmationDialog.open({

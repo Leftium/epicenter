@@ -110,7 +110,7 @@
 						onclick={() => {
 							const id = fsState.activeFileId;
 							if (!id) return;
-							const row = fsState.getRow(id);
+						const row = fsState.getFile(id);
 							const name = row?.name ?? 'this item';
 							const isFolder = row?.type === 'folder';
 							confirmationDialog.open({

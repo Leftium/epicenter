@@ -1,5 +1,8 @@
 import yargs from 'yargs';
 import { buildAuthCommand } from './commands/auth-command';
+import { buildInitCommand } from './commands/init-command';
+import { buildInstallCommand } from './commands/install-command';
+import { buildUninstallCommand } from './commands/uninstall-command';
 import { buildCountCommand } from './commands/count-command';
 import { buildDeleteCommand } from './commands/delete-command';
 import { buildExportCommand } from './commands/export-command';
@@ -14,7 +17,7 @@ import { resolveEpicenterHome } from './util/paths';
  * Create the Epicenter CLI instance.
  *
  * Registers all top-level commands: table CRUD (get, list, count, delete),
- * tables, kv, export, start, and auth.
+ * tables, kv, export, init, install, uninstall, start, and auth.
  *
  * @returns An object with a `run` method that parses and executes CLI commands.
  */
@@ -33,6 +36,9 @@ export function createCLI() {
 				.command(buildTablesCommand())
 				.command(buildKvCommand())
 				.command(buildExportCommand())
+				.command(buildInitCommand())
+				.command(buildInstallCommand())
+				.command(buildUninstallCommand())
 				.command(buildAuthCommand(home))
 				.demandCommand(1)
 				.strict()

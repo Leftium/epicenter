@@ -22,6 +22,7 @@ export function createCLI() {
 				.command(buildDataCommand())
 				.demandCommand(1)
 				.strict()
+				.exitProcess(false)
 				.help();
 
 			await cli.parse(argv);

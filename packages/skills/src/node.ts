@@ -31,12 +31,23 @@ import {
 	generateId,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import { Ok, tryAsync } from 'wellcrafted/result';
 import { parseSkillMd } from './parse.js';
 import { serializeSkillMd } from './serialize.js';
 import type { Skill } from './tables.js';
 import { skillsDefinition } from './definition.js';
 
 const DirInput = Type.Object({ dir: Type.String() });
+
+export const SkillsIoError = defineErrors({
+	ScanDirectoryFailed: ({ dir, cause }: { dir: string; cause: unknown }) => ({
+		message: `Failed to scan directory '${dir}': ${extractErrorMessage(cause)}`,
+		dir,
+		cause,
+	}),
+});
+export type SkillsIoError = InferErrors<typeof SkillsIoError>;
 
 /**
  * Create a skills workspace client with disk I/O actions pre-attached.
@@ -82,10 +93,10 @@ export function createSkillsWorkspace() {
 				const reads = await Promise.all(
 					skillDirs.map(async (skillDir) => {
 						const skillPath = join(dir, skillDir.name);
-						const rawContent = await readFile(
-							join(skillPath, 'SKILL.md'),
-							'utf-8',
-						).catch(() => null);
+						const { data: rawContent } = await tryAsync({
+							try: () => readFile(join(skillPath, 'SKILL.md'), 'utf-8'),
+							catch: () => Ok(null),
+						});
 						if (rawContent === null) return null;
 
 						const { skill: parsedSkill, instructions } = parseSkillMd(
@@ -133,7 +144,10 @@ export function createSkillsWorkspace() {
 
 					// Import references in parallel
 					const refsPath = join(skillPath, 'references');
-					const refEntries = await readdir(refsPath).catch(() => null);
+					const { data: refEntries } = await tryAsync({
+						try: () => readdir(refsPath),
+						catch: () => Ok(null),
+					});
 					if (refEntries !== null) {
 						const mdFiles = refEntries.filter((f) => f.endsWith('.md'));
 
@@ -217,14 +231,20 @@ export function createSkillsWorkspace() {
 				);
 
 				// Clean up stale directories in parallel
-				const existingDirs = await readdir(dir, {
-					withFileTypes: true,
-				}).catch((error: NodeJS.ErrnoException) => {
-					if (error.code === 'ENOENT') return [];
-					throw error;
+				const scanResult = await tryAsync({
+					try: () => readdir(dir, { withFileTypes: true }),
+					catch: (error) => {
+						const isNotFound =
+							error instanceof Error &&
+							'code' in error &&
+							error.code === 'ENOENT';
+						if (isNotFound) return Ok([]);
+						return SkillsIoError.ScanDirectoryFailed({ dir, cause: error });
+					},
 				});
+				if (scanResult.error) throw scanResult.error;
 
-				const staleDirs = existingDirs.filter(
+				const staleDirs = scanResult.data.filter(
 					(entry) => entry.isDirectory() && !skillNames.has(entry.name),
 				);
 				await Promise.all(

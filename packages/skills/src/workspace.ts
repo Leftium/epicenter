@@ -12,14 +12,20 @@
  * @module
  */
 
+import { createHash } from 'node:crypto';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
 	createWorkspace,
 	defineMutation,
 	defineWorkspace,
+	generateId,
 } from '@epicenter/workspace';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
-import { exportToDisk, importFromDisk } from './disk.js';
+import { parseReferenceMd, parseSkillMd } from './parse.js';
+import { serializeSkillMd } from './serialize.js';
+import type { Skill } from './tables.js';
 import { referencesTable, skillsTable } from './tables.js';
 
 const DirInput = Type.Object({ dir: Type.String() });
@@ -78,14 +84,75 @@ export function createSkillsWorkspace() {
 		 *
 		 * Skills without a `metadata.id` in their frontmatter get one generated
 		 * and written back to the file, so future imports produce stable IDs
-		 * across machines. References in `references/*.md` subdirectories are
-		 * imported with deterministic IDs derived from skillId + filename.
+		 * across machines. If two skills in the same batch collide on id, the
+		 * second gets a fresh one and its SKILL.md is rewritten.
+		 *
+		 * References in `references/*.md` subdirectories are imported with
+		 * deterministic IDs derived from `skillId + filename`—no ephemeral IDs,
+		 * no matching needed.
 		 */
 		importFromDisk: defineMutation({
 			description: 'Import skills from an agentskills.io-compliant directory',
 			input: DirInput,
-			handler: ({ dir }: Static<typeof DirInput>) =>
-				importFromDisk(dir, client),
+			handler: async ({ dir }: Static<typeof DirInput>) => {
+				const entries = await readdir(dir, { withFileTypes: true });
+				const skillDirs = entries.filter((e) => e.isDirectory());
+				const seenIds = new Set<string>();
+
+				for (const skillDir of skillDirs) {
+					const skillPath = join(dir, skillDir.name);
+					const skillMdPath = join(skillPath, 'SKILL.md');
+
+					// Skip directories without SKILL.md
+					const hasSkillMd = await stat(skillMdPath)
+						.then((s) => s.isFile())
+						.catch(() => false);
+					if (!hasSkillMd) continue;
+
+					const rawContent = await readFile(skillMdPath, 'utf-8');
+					const { skill: parsedSkill, instructions } = parseSkillMd(
+						skillDir.name,
+						rawContent,
+					);
+
+					// Resolve id: use parsed id, or generate a new one for
+					// brand-new / pre-metadata skills
+					let skillId: string;
+					const needsWriteBack =
+						parsedSkill.id === undefined || seenIds.has(parsedSkill.id);
+
+					if (
+						parsedSkill.id !== undefined &&
+						!seenIds.has(parsedSkill.id)
+					) {
+						skillId = parsedSkill.id;
+					} else {
+						skillId = generateId();
+					}
+					seenIds.add(skillId);
+
+					const skill: Skill = {
+						...parsedSkill,
+						id: skillId,
+						updatedAt: Date.now(),
+					};
+					client.tables.skills.set(skill);
+
+					// Write back SKILL.md with the id baked into metadata so
+					// future imports on any machine get the same id
+					if (needsWriteBack) {
+						const updatedMd = serializeSkillMd(skill, instructions);
+						await writeFile(skillMdPath, updatedMd, 'utf-8');
+					}
+
+					const instructionsHandle =
+						await client.documents.skills.instructions.open(skillId);
+					instructionsHandle.write(instructions);
+
+					// Import references
+					await importReferences(client, skillId, skillPath);
+				}
+			},
 		}),
 		/**
 		 * Serialize workspace table data to agentskills.io-compliant folders.
@@ -98,8 +165,130 @@ export function createSkillsWorkspace() {
 			description:
 				'Export all skills to an agentskills.io-compliant directory',
 			input: DirInput,
-			handler: ({ dir }: Static<typeof DirInput>) =>
-				exportToDisk(client, dir),
+			handler: async ({ dir }: Static<typeof DirInput>) => {
+				const skills = client.tables.skills.getAllValid();
+				const skillNames = new Set(skills.map((s) => s.name));
+
+				for (const skill of skills) {
+					const skillDir = join(dir, skill.name);
+					await mkdir(skillDir, { recursive: true });
+
+					// Write SKILL.md
+					const instructionsHandle =
+						await client.documents.skills.instructions.open(skill.id);
+					const instructions = instructionsHandle.read();
+					const skillMd = serializeSkillMd(skill, instructions);
+					await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
+
+					// Write references
+					const refs = client.tables.references.filter(
+						(r) => r.skillId === skill.id,
+					);
+					if (refs.length > 0) {
+						const refsDir = join(skillDir, 'references');
+						await mkdir(refsDir, { recursive: true });
+
+						for (const ref of refs) {
+							const contentHandle =
+								await client.documents.references.content.open(
+									ref.id,
+								);
+							const content = contentHandle.read();
+							await writeFile(
+								join(refsDir, ref.path),
+								content,
+								'utf-8',
+							);
+						}
+					}
+				}
+
+				// Clean up folders for deleted skills
+				const existingDirs = await readdir(dir, {
+					withFileTypes: true,
+				}).catch(() => []);
+				for (const entry of existingDirs) {
+					if (entry.isDirectory() && !skillNames.has(entry.name)) {
+						await rm(join(dir, entry.name), {
+							recursive: true,
+							force: true,
+						});
+					}
+				}
+			},
 		}),
 	}));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Private helpers
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Import all `references/*.md` files for a single skill.
+ *
+ * Reference IDs are derived deterministically from `skillId + path`,
+ * so they survive round-trips without needing to be stored in the file.
+ * Same skill + same filename always produces the same reference ID.
+ */
+async function importReferences(
+	client: {
+		tables: { references: { set(row: unknown): void } };
+		documents: {
+			references: {
+				content: { open(id: string): Promise<{ write(t: string): void }> };
+			};
+		};
+	},
+	skillId: string,
+	skillPath: string,
+): Promise<void> {
+	const refsPath = join(skillPath, 'references');
+	const hasRefsDir = await stat(refsPath)
+		.then((s) => s.isDirectory())
+		.catch(() => false);
+	if (!hasRefsDir) return;
+
+	const refFiles = await readdir(refsPath);
+	const mdFiles = refFiles.filter((f) => f.endsWith('.md'));
+
+	for (const fileName of mdFiles) {
+		const rawContent = await readFile(join(refsPath, fileName), 'utf-8');
+		const { reference: parsedRef, content } = parseReferenceMd(
+			skillId,
+			fileName,
+			rawContent,
+		);
+
+		const refId = deriveReferenceId(skillId, fileName);
+
+		client.tables.references.set({
+			...parsedRef,
+			id: refId,
+			updatedAt: Date.now(),
+		});
+
+		const contentHandle =
+			await client.documents.references.content.open(refId);
+		contentHandle.write(content);
+	}
+}
+
+const REFERENCE_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+/**
+ * Derive a deterministic 10-char ID from `skillId + reference path`.
+ *
+ * Uses SHA-256, then maps each byte to the same `[a-z0-9]` alphabet
+ * used by `generateId()`. Renaming a reference file naturally creates
+ * a new ID—the old file is conceptually a different reference.
+ */
+function deriveReferenceId(skillId: string, path: string): string {
+	const hash = createHash('sha256').update(`${skillId}:${path}`).digest();
+	let result = '';
+	for (let i = 0; i < 10; i++) {
+		const byte = hash[i] ?? 0;
+		result += REFERENCE_ID_ALPHABET[byte % REFERENCE_ID_ALPHABET.length];
+	}
+	return result;
 }

@@ -19,10 +19,17 @@ import {
 	resolveWantedItems,
 } from 'jsrepo';
 import type { Argv, CommandModule } from 'yargs';
-import { loadClientFromPath } from '../config/load-config';
-import type { DiscoveredWorkspace } from '../config/resolve-config';
+import { loadConfig } from '../config/load-config';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { workspacesDir } from '../util/paths';
+
+export type DiscoveredWorkspace = {
+	id: string;
+	type: 'installed' | 'linked';
+	path: string;
+	status: 'ok' | 'error';
+	error?: string;
+};
 
 /**
  * Build the `workspace` command group with subcommands for managing local workspaces.
@@ -66,7 +73,8 @@ function buildWorkspaceAddCommand(home: string) {
 				return;
 			}
 
-			const client = await loadClientFromPath(configPath);
+			const { clients } = await loadConfig(targetPath);
+			const client = clients[0]!;
 			const workspaceId = client.id;
 			const linkPath = join(workspacesDir(home), workspaceId);
 
@@ -376,7 +384,8 @@ function buildWorkspaceExportCommand(home: string) {
 
 			// Load the Y.Doc from disk if it exists
 			const dataPath = join(wsPath, 'data', 'workspace.yjs');
-			const client = await loadClientFromPath(configPath);
+			const { clients } = await loadConfig(wsPath);
+			const client = clients[0]!;
 
 			if (await Bun.file(dataPath).exists()) {
 				const data = await Bun.file(dataPath).arrayBuffer();

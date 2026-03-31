@@ -1,13 +1,13 @@
 /**
  * End-to-end test: Honeycrisp workspace through the CLI pipeline.
  *
- * Proves the full local companion flow without jsrepo, without auth,
- * without Cloudflare:
+ * Uses the single-workspace fixture (one named export) to verify:
  *
- * 1. loadConfig() loads epicenter.config.ts with a named export client
- * 2. Table CRUD works (set, getAllValid)
- * 3. KV works (get, set)
- * 4. SQLite persistence survives process restart
+ * Key behaviors:
+ * - loadConfig() discovers exactly one workspace client from a single export
+ * - Table CRUD works (set, getAllValid)
+ * - KV works (get, set)
+ * - SQLite persistence survives process restart
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -18,7 +18,7 @@ import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desk
 import { honeycrisp, createHoneycrisp } from '@epicenter/honeycrisp/workspace';
 import { loadConfig } from '../src/load-config';
 
-const FIXTURE_DIR = join(import.meta.dir, 'fixtures/honeycrisp-basic');
+const FIXTURE_DIR = join(import.meta.dir, 'fixtures/single-workspace');
 const PERSISTENCE_DIR = join(FIXTURE_DIR, '.epicenter-test');
 
 function dbPath(id: string) {
@@ -34,15 +34,11 @@ describe('e2e: honeycrisp workspace', () => {
 		await rm(PERSISTENCE_DIR, { recursive: true, force: true });
 	});
 
-	test('loadConfig: loads named export as client', async () => {
+	test('loadConfig: discovers exactly one client from single export', async () => {
 		const result = await loadConfig(FIXTURE_DIR);
 
-		expect(result.clients.length).toBeGreaterThan(0);
-
-		const found = result.clients.find(
-			(c) => c.id === 'epicenter.honeycrisp',
-		);
-		expect(found).toBeDefined();
+		expect(result.clients).toHaveLength(1);
+		expect(result.clients[0]!.id).toBe('epicenter.honeycrisp');
 		expect(result.configDir).toBe(FIXTURE_DIR);
 	});
 

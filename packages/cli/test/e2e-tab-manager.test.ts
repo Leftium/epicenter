@@ -1,15 +1,16 @@
 /**
  * End-to-end test: Tab Manager workspace through the CLI pipeline.
  *
- * Unlike the honeycrisp fixture (inlined schema), this test imports
- * the real tab-manager workspace factory to verify cross-package
- * config loading works end-to-end.
+ * Uses the multi-workspace fixture (honeycrisp + tab-manager exports) to verify
+ * that loadConfig() handles multiple workspace clients and that CRUD works
+ * for tab-manager specifically.
  *
- * 1. loadConfig() loads epicenter.config.ts with a named export client
- * 2. Client has the correct workspace ID
- * 3. Table CRUD works (set, getAllValid)
- * 4. Portable actions work (devices.list)
- * 5. Persistence survives restart
+ * Key behaviors:
+ * - loadConfig() discovers both workspace clients from a multi-export config
+ * - Workspace selection by ID finds the correct client
+ * - Table CRUD works (set, getAllValid)
+ * - Portable actions work (devices.list)
+ * - Persistence survives restart
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -20,7 +21,7 @@ import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desk
 import { definition, createTabManagerWorkspace } from '@epicenter/tab-manager/workspace';
 import { loadConfig } from '../src/load-config';
 
-const FIXTURE_DIR = join(import.meta.dir, 'fixtures/tab-manager');
+const FIXTURE_DIR = join(import.meta.dir, 'fixtures/multi-workspace');
 const PERSISTENCE_DIR = join(FIXTURE_DIR, '.epicenter-test');
 
 function dbPath(id: string) {
@@ -36,12 +37,28 @@ describe('e2e: tab-manager workspace', () => {
 		await rm(PERSISTENCE_DIR, { recursive: true, force: true });
 	});
 
-	test('loadConfig: loads named export as client', async () => {
+	test('loadConfig: discovers both workspace clients', async () => {
 		const result = await loadConfig(FIXTURE_DIR);
 
-		expect(result.clients.length).toBe(1);
-		expect(result.clients[0]!.id).toBe('epicenter.tab-manager');
+		expect(result.clients).toHaveLength(2);
 		expect(result.configDir).toBe(FIXTURE_DIR);
+
+		const ids = result.clients.map((c) => c.id).sort();
+		expect(ids).toEqual(['epicenter.honeycrisp', 'epicenter.tab-manager']);
+	});
+
+	test('loadConfig: each client has correct workspace ID', async () => {
+		const result = await loadConfig(FIXTURE_DIR);
+
+		const tabManager = result.clients.find(
+			(c) => c.id === 'epicenter.tab-manager',
+		);
+		const honeycrisp = result.clients.find(
+			(c) => c.id === 'epicenter.honeycrisp',
+		);
+
+		expect(tabManager).toBeDefined();
+		expect(honeycrisp).toBeDefined();
 	});
 
 	test('table CRUD: write and read devices + bookmarks', async () => {

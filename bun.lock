@@ -433,6 +433,7 @@
       "devDependencies": {
         "@epicenter/api": "workspace:*",
         "@epicenter/honeycrisp": "workspace:*",
+        "@epicenter/tab-manager": "workspace:*",
         "@types/yargs": "catalog:",
         "arktype": "catalog:",
         "typescript": "catalog:",

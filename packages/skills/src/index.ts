@@ -2,7 +2,7 @@
  * @fileoverview Isomorphic workspace tables and factory for agent skills.
  *
  * This entry point is safe to import in any runtime (browser, Node, Bun).
- * For server-side disk I/O actions, use `@epicenter/skills/disk` instead.
+ * For server-side disk I/O actions, use `@epicenter/skills/node` instead.
  *
  * @example Browser — tables only
  * ```typescript
@@ -14,7 +14,7 @@
  *
  * @example Server — with disk I/O
  * ```typescript
- * import { createSkillsWorkspace } from '@epicenter/skills/disk'
+ * import { createSkillsWorkspace } from '@epicenter/skills/node'
  *
  * const ws = createSkillsWorkspace()
  * await ws.actions.importFromDisk({ dir: '.agents/skills' })

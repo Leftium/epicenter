@@ -1,12 +1,12 @@
 /**
- * @fileoverview Server-side skills workspace with disk I/O actions.
+ * @fileoverview Server-side skills workspace with Node.js disk I/O actions.
  *
- * Imports `node:crypto`, `node:fs/promises`, and `node:path`—do NOT import
+ * Requires `node:crypto`, `node:fs/promises`, and `node:path`—do NOT import
  * this in browser bundles. Use the base `@epicenter/skills` import instead.
  *
  * @example
  * ```typescript
- * import { createSkillsWorkspace } from '@epicenter/skills/disk'
+ * import { createSkillsWorkspace } from '@epicenter/skills/node'
  *
  * const ws = createSkillsWorkspace()
  * await ws.actions.importFromDisk({ dir: '.agents/skills' })
@@ -49,7 +49,7 @@ const DirInput = Type.Object({ dir: Type.String() });
  *
  * @example
  * ```typescript
- * import { createSkillsWorkspace } from '@epicenter/skills/disk'
+ * import { createSkillsWorkspace } from '@epicenter/skills/node'
  *
  * const ws = createSkillsWorkspace()
  *   .withExtension('persistence', indexeddbPersistence)

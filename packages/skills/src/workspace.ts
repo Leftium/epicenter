@@ -5,7 +5,7 @@
  * actions attached. This is safe to import in any runtime (browser, Node, Bun).
  *
  * For disk I/O actions (importFromDisk, exportToDisk), import from
- * `@epicenter/skills/disk` instead—that subpath re-exports a pre-built
+ * `@epicenter/skills/node` instead—that subpath re-exports a pre-built
  * `createSkillsWorkspace()` with server-side actions attached.
  *
  * @module
@@ -45,9 +45,9 @@ export const skillsDefinition = defineWorkspace({
  *   .withExtension('persistence', indexeddbPersistence)
  * ```
  *
- * @example Server — with disk I/O (use the /disk subpath)
+ * @example Server — with disk I/O (use the /node subpath)
  * ```typescript
- * import { createSkillsWorkspace } from '@epicenter/skills/disk'
+ * import { createSkillsWorkspace } from '@epicenter/skills/node'
  *
  * const ws = createSkillsWorkspace()
  *   .withExtension('persistence', indexeddbPersistence)

@@ -19,7 +19,7 @@ import {
 	resolveWantedItems,
 } from 'jsrepo';
 import type { Argv, CommandModule } from 'yargs';
-import { loadConfig } from '../config/load-config';
+import { loadConfig } from '../load-config';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { workspacesDir } from '../util/paths';
 

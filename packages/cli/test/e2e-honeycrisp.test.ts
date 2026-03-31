@@ -15,7 +15,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createWorkspace, dateTimeStringNow } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
-import { loadConfig } from '../src/config/load-config';
+import { loadConfig } from '../src/load-config';
 import { definition } from './fixtures/honeycrisp-basic/epicenter.config';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/honeycrisp-basic');

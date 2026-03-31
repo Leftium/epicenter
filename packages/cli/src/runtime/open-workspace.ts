@@ -17,7 +17,7 @@
  */
 
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
-import { loadConfig } from '../config/load-config';
+import { loadConfig } from '../load-config';
 
 export type OpenWorkspaceOptions = {
 	/** Directory containing epicenter.config.ts. */

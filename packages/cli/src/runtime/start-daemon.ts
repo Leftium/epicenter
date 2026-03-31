@@ -12,7 +12,7 @@
  * 5. SIGINT/SIGTERM → destroy all clients → exit
  */
 
-import { loadConfig } from '../config/load-config';
+import { loadConfig } from '../load-config';
 import { normalizeServerUrl, resolveServer, resolveToken } from '../auth/store';
 import { resolveEpicenterHome } from '../util/paths';
 

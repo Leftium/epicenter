@@ -1,12 +1,21 @@
 import yargs from 'yargs';
 import { buildAuthCommand } from './commands/auth-command';
-import { buildDataCommand } from './commands/data-command';
+import { buildCountCommand } from './commands/count-command';
+import { buildDeleteCommand } from './commands/delete-command';
+import { buildExportCommand } from './commands/export-command';
+import { buildGetCommand } from './commands/get-command';
+import { buildKvCommand } from './commands/kv-command';
+import { buildListCommand } from './commands/list-command';
 import { buildStartCommand } from './commands/start-command';
-import { buildWorkspaceCommand } from './commands/workspace-command';
+import { buildTablesCommand } from './commands/tables-command';
 import { resolveEpicenterHome } from './util/paths';
 
 /**
  * Create the Epicenter CLI instance.
+ *
+ * Registers all top-level commands: table CRUD (get, list, count, delete),
+ * tables, kv, export, start, and auth.
+ *
  * @returns An object with a `run` method that parses and executes CLI commands.
  */
 export function createCLI() {
@@ -17,9 +26,14 @@ export function createCLI() {
 			const cli = yargs()
 				.scriptName('epicenter')
 				.command(buildStartCommand())
-				.command(buildWorkspaceCommand(home))
+				.command(buildGetCommand())
+				.command(buildListCommand())
+				.command(buildCountCommand())
+				.command(buildDeleteCommand())
+				.command(buildTablesCommand())
+				.command(buildKvCommand())
+				.command(buildExportCommand())
 				.command(buildAuthCommand(home))
-				.command(buildDataCommand())
 				.demandCommand(1)
 				.strict()
 				.exitProcess(false)

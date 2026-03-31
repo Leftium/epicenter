@@ -2,5 +2,5 @@
 
 export { createCLI } from './cli';
 export { createAuthApi, type AuthApi } from './auth/api';
-export { resolveEpicenterHome, workspacesDir } from './util/paths';
+export { resolveEpicenterHome } from './util/paths';
 export { loadConfig, type LoadConfigResult } from './load-config';

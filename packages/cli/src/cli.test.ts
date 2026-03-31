@@ -2,7 +2,7 @@
  * CLI Tests
  *
  * These tests verify that the CLI entry point correctly dispatches
- * commands via command groups (workspace, local, remote, auth, data).
+ * commands via top-level commands (get, list, count, delete, tables, kv, export, auth, start).
  */
 import { describe, expect, spyOn, test } from 'bun:test';
 import { createCLI } from './cli';
@@ -25,4 +25,3 @@ describe('createCLI', () => {
 		errorSpy.mockRestore();
 	});
 });
-

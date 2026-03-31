@@ -4,6 +4,7 @@
 	import CommandPalette from './CommandPalette.svelte';
 	import SkillEditor from './editor/SkillEditor.svelte';
 	import SkillsList from './SkillsList.svelte';
+	import StorageBadge from './StorageBadge.svelte';
 	import Toolbar from './Toolbar.svelte';
 </script>
 
@@ -11,9 +12,12 @@
 	<Toolbar />
 	<Resizable.PaneGroup direction="horizontal" class="flex-1">
 		<Resizable.Pane defaultSize={25} minSize={15} maxSize={50}>
-			<ScrollArea class="h-full">
-				<div class="p-2"><SkillsList /></div>
-			</ScrollArea>
+			<div class="flex h-full flex-col">
+				<ScrollArea class="flex-1">
+					<div class="p-2"><SkillsList /></div>
+				</ScrollArea>
+				<StorageBadge />
+			</div>
 		</Resizable.Pane>
 		<Resizable.Handle withHandle />
 		<Resizable.Pane defaultSize={75}>

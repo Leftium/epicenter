@@ -5,7 +5,7 @@
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
-	import AuthForm from '@epicenter/svelte/auth-form';
+	import { AuthForm } from '@epicenter/svelte/auth-form';
 	import { auth } from '$lib/client';
 
 

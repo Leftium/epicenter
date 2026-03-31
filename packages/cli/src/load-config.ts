@@ -1,15 +1,13 @@
 /**
  * Workspace config loader.
  *
- * Loads `epicenter.config.ts` and collects all `WorkspaceClient` exports
- * (results of `createWorkspace()`). Treats default and named exports
- * uniformly—all valid clients are returned.
+ * Loads `epicenter.config.ts` and collects all named `WorkspaceClient` exports
+ * (results of `createWorkspace()`). Default exports are ignored—use named exports
+ * so multi-workspace configs are unambiguous and export names appear in error messages.
  *
  * @example
  * ```typescript
  * // epicenter.config.ts:
- * //   export default createWorkspace(defineWorkspace({ id: 'my-app', ... }));
- * //   — or —
  * //   export const notes = createNotesWorkspace();
  * //   export const tasks = createTasksWorkspace();
  *
@@ -31,9 +29,8 @@ export type LoadConfigResult = {
 
 /**
  * Load workspace clients from an epicenter.config.ts file.
- *
- * Collects all exports (default + named) that pass the workspace client
- * duck-type check. Deduplicates by workspace ID.
+ * Collects all named exports that pass the workspace client duck-type check.
+ * Default exports are skipped. Deduplicates by workspace ID.
  *
  * @param targetDir - Directory containing epicenter.config.ts.
  * @throws If no config file found or no valid exports detected.
@@ -51,9 +48,8 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	const clients: AnyWorkspaceClient[] = [];
 	const seenIds = new Set<string>();
 
-	// Object.entries includes `default` as a key for ESM imports.
-	// No special-casing needed—collect everything that's a workspace client.
 	for (const [name, value] of Object.entries(module)) {
+		if (name === 'default') continue;
 		if (!isWorkspaceClient(value)) continue;
 
 		if (seenIds.has(value.id)) {
@@ -66,11 +62,12 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	}
 
 	if (clients.length === 0) {
+		const hasDefault = isWorkspaceClient(module.default);
+		const hint = hasDefault
+			? `\nFound a default export—use a named export instead:\n  export const myApp = createMyWorkspace()`
+			: `\nExport createWorkspace() results as named exports:\n  export const myApp = createMyWorkspace()`;
 		throw new Error(
-			`No workspace clients found in ${CONFIG_FILENAME}.\n` +
-				`Export createWorkspace() results:\n` +
-				`  export default createWorkspace(defineWorkspace({...}))\n` +
-				`  export const myApp = createMyWorkspace()`,
+			`No workspace clients found in ${CONFIG_FILENAME}.${hint}`,
 		);
 	}
 

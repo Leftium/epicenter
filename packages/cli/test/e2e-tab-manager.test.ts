@@ -15,11 +15,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createWorkspace, generateId } from '@epicenter/workspace';
+import { generateId } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
-import { loadConfig } from '../src/load-config';
 import { definition } from '@epicenter/tab-manager/definition';
 import { createTabManagerWorkspace } from '@epicenter/tab-manager/workspace';
+import { loadConfig } from '../src/load-config';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/tab-manager');
 const PERSISTENCE_DIR = join(FIXTURE_DIR, '.epicenter-test');
@@ -46,7 +46,7 @@ describe('e2e: tab-manager workspace', () => {
 	});
 
 	test('table CRUD: write and read devices + bookmarks', async () => {
-		const client = createWorkspace(definition).withExtension(
+		const client = createTabManagerWorkspace().withExtension(
 			'persistence',
 			filesystemPersistence({ filePath: dbPath(definition.id) }),
 		);
@@ -104,7 +104,7 @@ describe('e2e: tab-manager workspace', () => {
 	});
 
 	test('persistence: data survives restart', async () => {
-		const client = createWorkspace(definition).withExtension(
+		const client = createTabManagerWorkspace().withExtension(
 			'persistence',
 			filesystemPersistence({ filePath: dbPath(definition.id) }),
 		);

@@ -4,11 +4,10 @@
  * Proves the full local companion flow without jsrepo, without auth,
  * without Cloudflare:
  *
- * 1. loadConfig() loads epicenter.config.ts with a default export
- * 2. Raw definitions can be wired with filesystemPersistence
- * 3. Table CRUD works (set, getAllValid)
- * 4. KV works (get, set)
- * 5. SQLite persistence survives process restart
+ * 1. loadConfig() loads epicenter.config.ts with a default export client
+ * 2. Table CRUD works (set, getAllValid)
+ * 3. KV works (get, set)
+ * 4. SQLite persistence survives process restart
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -17,6 +16,7 @@ import { join } from 'node:path';
 import { createWorkspace, dateTimeStringNow } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
 import { loadConfig } from '../src/config/load-config';
+import { definition } from './fixtures/honeycrisp-basic/epicenter.config';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/honeycrisp-basic');
 const PERSISTENCE_DIR = join(FIXTURE_DIR, '.epicenter-test');
@@ -34,26 +34,19 @@ describe('e2e: honeycrisp workspace', () => {
 		await rm(PERSISTENCE_DIR, { recursive: true, force: true });
 	});
 
-	test('loadConfig: loads default export as definition', async () => {
+	test('loadConfig: loads default export as client', async () => {
 		const result = await loadConfig(FIXTURE_DIR);
 
-		// Default export is a raw WorkspaceDefinition, not a pre-wired client
-		expect(result.definitions.length + result.clients.length).toBeGreaterThan(0);
+		expect(result.clients.length).toBeGreaterThan(0);
 
-		// Should find honeycrisp workspace (could be definition or client depending on export)
-		const allDefs = result.definitions;
-		const allClients = result.clients;
-		const found = [...allDefs, ...allClients].find(
-			(w) => (w as { id: string }).id === 'epicenter.honeycrisp',
+		const found = result.clients.find(
+			(c) => c.id === 'epicenter.honeycrisp',
 		);
 		expect(found).toBeDefined();
 		expect(result.configDir).toBe(FIXTURE_DIR);
 	});
 
 	test('table CRUD: write and read folders + notes', async () => {
-		const { definitions } = await loadConfig(FIXTURE_DIR);
-		const definition = definitions[0]!;
-
 		const client = createWorkspace(definition).withExtension(
 			'persistence',
 			filesystemPersistence({ filePath: dbPath(definition.id) }),
@@ -99,9 +92,6 @@ describe('e2e: honeycrisp workspace', () => {
 	});
 
 	test('persistence: data survives restart', async () => {
-		const { definitions } = await loadConfig(FIXTURE_DIR);
-		const definition = definitions[0]!;
-
 		// Re-open same workspace — should load persisted state from SQLite
 		const client = createWorkspace(definition).withExtension(
 			'persistence',
@@ -122,9 +112,6 @@ describe('e2e: honeycrisp workspace', () => {
 	});
 
 	test('KV: set, persist, read after restart', async () => {
-		const { definitions } = await loadConfig(FIXTURE_DIR);
-		const definition = definitions[0]!;
-
 		// Open, set KV values, destroy
 		const client1 = createWorkspace(definition).withExtension(
 			'persistence',

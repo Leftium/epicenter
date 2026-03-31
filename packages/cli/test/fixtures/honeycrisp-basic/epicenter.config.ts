@@ -1,15 +1,16 @@
 /**
- * Honeycrisp workspace definition — e2e test fixture.
+ * Honeycrisp workspace client — e2e test fixture.
  *
  * Mirrors the schema from apps/honeycrisp/src/lib/workspace.ts but
  * inlined here so the test has zero cross-app dependencies.
  *
  * This is exactly what a user would get after `epicenter install honeycrisp`:
- * a standalone epicenter.config.ts with a workspace definition.
+ * a standalone epicenter.config.ts with a workspace client.
  */
 
 import {
 	DateTimeString,
+	createWorkspace,
 	defineKv,
 	defineTable,
 	defineWorkspace,
@@ -41,7 +42,7 @@ const notesTable = defineTable(
 	}),
 );
 
-export default defineWorkspace({
+const definition = defineWorkspace({
 	id: 'epicenter.honeycrisp',
 	tables: { folders: foldersTable, notes: notesTable },
 	kv: {
@@ -54,3 +55,6 @@ export default defineWorkspace({
 		sidebarCollapsed: defineKv(type('boolean'), false),
 	},
 });
+export { definition };
+
+export default createWorkspace(definition);

@@ -1,8 +1,8 @@
 /**
  * Open a workspace from disk with persistence only (no sync).
  *
- * Used by `data` commands to read/write workspace data directly from the
- * SQLite persistence file. Does not connect to any sync server.
+ * Used by `data` commands to read/write workspace data directly.
+ * The config must export pre-wired `createWorkspace()` clients.
  *
  * @example
  * ```typescript
@@ -16,10 +16,7 @@
  * ```
  */
 
-import { join } from 'node:path';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
-import { createWorkspace } from '@epicenter/workspace';
-import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
 import { loadConfig } from '../config/load-config';
 
 export type OpenWorkspaceOptions = {
@@ -30,7 +27,7 @@ export type OpenWorkspaceOptions = {
 };
 
 export type OpenWorkspaceResult = {
-	/** The fully-wired workspace client with persistence loaded. */
+	/** The workspace client loaded from config. */
 	client: AnyWorkspaceClient;
 	/** Config directory path. */
 	configDir: string;
@@ -39,71 +36,37 @@ export type OpenWorkspaceResult = {
 };
 
 /**
- * Open a workspace from disk with filesystem persistence.
+ * Open a workspace from disk.
  *
- * Loads the config, finds the requested workspace, wires persistence
- * (no sync), waits for ready, and returns the client.
- *
- * For pre-wired clients (already have extensions), returns as-is.
- * For raw definitions, auto-wires filesystem persistence.
+ * Loads the config, finds the requested workspace, waits for ready,
+ * and returns the client.
  */
 export async function openWorkspaceFromDisk(
 	options: OpenWorkspaceOptions,
 ): Promise<OpenWorkspaceResult> {
-	const { configDir, definitions, clients } = await loadConfig(options.dir);
+	const { configDir, clients } = await loadConfig(options.dir);
 
-	// Find the requested workspace
-	const allEntries = [
-		...definitions.map((d) => ({ type: 'definition' as const, value: d })),
-		...clients.map((c) => ({ type: 'client' as const, value: c })),
-	];
-
-	if (allEntries.length === 0) {
+	if (clients.length === 0) {
 		throw new Error('No workspaces found in config');
 	}
 
-	let entry: (typeof allEntries)[number];
+	let client: AnyWorkspaceClient;
 
 	if (options.workspaceId) {
-		const found = allEntries.find(
-			(e) => (e.value as { id: string }).id === options.workspaceId,
-		);
+		const found = clients.find((c) => c.id === options.workspaceId);
 		if (!found) {
-			const ids = allEntries
-				.map((e) => (e.value as { id: string }).id)
-				.join(', ');
+			const ids = clients.map((c) => c.id).join(', ');
 			throw new Error(
 				`Workspace "${options.workspaceId}" not found. Available: ${ids}`,
 			);
 		}
-		entry = found;
-	} else if (allEntries.length === 1) {
-		entry = allEntries[0]!;
+		client = found;
+	} else if (clients.length === 1) {
+		client = clients[0]!;
 	} else {
-		const ids = allEntries
-			.map((e) => (e.value as { id: string }).id)
-			.join(', ');
+		const ids = clients.map((c) => c.id).join(', ');
 		throw new Error(
 			`Multiple workspaces found. Specify one with --workspace: ${ids}`,
-		);
-	}
-
-	// Wire persistence for raw definitions; passthrough for pre-wired clients
-	let client: AnyWorkspaceClient;
-
-	if (entry.type === 'client') {
-		client = entry.value as AnyWorkspaceClient;
-	} else {
-		const definition = entry.value;
-		const persistencePath = join(
-			configDir,
-			'.epicenter',
-			'persistence',
-			`${definition.id}.db`,
-		);
-		client = createWorkspace(definition).withExtension(
-			'persistence',
-			filesystemPersistence({ filePath: persistencePath }),
 		);
 	}
 

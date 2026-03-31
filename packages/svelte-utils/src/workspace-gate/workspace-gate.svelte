@@ -7,7 +7,7 @@
 	@example
 	```svelte
 	<script lang="ts">
-		import WorkspaceGate from '@epicenter/svelte/workspace-gate';
+		import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 		import workspace from '$lib/workspace';
 	</script>
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import WorkspaceGate from '@epicenter/svelte/workspace-gate';
+	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher, mode } from 'mode-watcher';

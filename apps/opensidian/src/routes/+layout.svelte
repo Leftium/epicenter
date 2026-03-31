@@ -1,5 +1,5 @@
 <script lang="ts">
-	import WorkspaceGate from '@epicenter/svelte/workspace-gate';
+	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Toaster } from 'svelte-sonner';
 	import { workspace } from '$lib/client';

@@ -12,8 +12,7 @@ import { fs, workspace } from '$lib/client';
 type InteractionMode =
 	| { type: 'idle' }
 	| { type: 'renaming'; targetId: FileId }
-	| { type: 'creating'; parentId: FileId | null; fileType: 'file' | 'folder' }
-	| { type: 'confirming-delete' };
+	| { type: 'creating'; parentId: FileId | null; fileType: 'file' | 'folder' };
 
 /**
  * Reactive filesystem state singleton.
@@ -30,7 +29,7 @@ type InteractionMode =
  * ```svelte
  * <script>
  *   import { fsState } from '$lib/state/fs-state.svelte';
- *   const children = $derived(fsState.rootChildIds);
+ *   const children = fsState.rootChildIds;
  * </script>
  * ```
  */
@@ -72,22 +71,14 @@ function createFsState() {
 		return fs.index.getChildIds(null);
 	});
 
-	/** Full FileRow for the active file, or null. */
-	const selectedNode = $derived.by(() => {
+	/** Active file's row and path—single derivation since both depend on activeFileId + version. */
+	const selected = $derived.by(() => {
 		void version;
-		if (!activeFileId) return null;
+		if (!activeFileId) return { node: null, path: null };
 		const result = workspace.tables.files.get(activeFileId);
-		return result.status === 'valid' ? result.row : null;
-	});
-
-	/**
-	 * Path string for the active file (e.g. "/docs/api.md"), or null.
-	 * Uses the index's O(1) reverse lookup.
-	 */
-	const selectedPath = $derived.by(() => {
-		void version;
-		if (!activeFileId) return null;
-		return fs.index.getPathById(activeFileId) ?? null;
+		const node = result.status === 'valid' ? result.row : null;
+		const path = fs.index.getPathById(activeFileId) ?? null;
+		return { node, path };
 	});
 
 	// ── Derived from interaction mode ────────────────────────────────
@@ -104,9 +95,6 @@ function createFsState() {
 			: null,
 	);
 
-	const deleteDialogOpen = $derived(
-		interactionMode.type === 'confirming-delete',
-	);
 
 	// ── Private helpers ───────────────────────────────────────────────
 
@@ -142,10 +130,10 @@ function createFsState() {
 			return rootChildIds;
 		},
 		get selectedNode() {
-			return selectedNode;
+			return selected.node;
 		},
 		get selectedPath() {
-			return selectedPath;
+			return selected.path;
 		},
 		get focusedId() {
 			return focusedId;
@@ -155,9 +143,6 @@ function createFsState() {
 		},
 		get renamingId() {
 			return renamingId;
-		},
-		get deleteDialogOpen() {
-			return deleteDialogOpen;
 		},
 		get contextMenuTargetId() {
 			return contextMenuTargetId;
@@ -295,15 +280,6 @@ function createFsState() {
 			await state.rename(id, newName.trim());
 		},
 
-		// ── Delete dialog ────────────────────────────────────────────
-
-		openDelete() {
-			interactionMode = { type: 'confirming-delete' };
-		},
-
-		closeDelete() {
-			interactionMode = { type: 'idle' };
-		},
 
 		// ── Context menu ─────────────────────────────────────────────
 

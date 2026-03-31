@@ -1,16 +1,22 @@
 /**
- * @fileoverview Workspace tables and factory for agent skills.
+ * @fileoverview Isomorphic workspace tables and factory for agent skills.
  *
- * Provides a 1:1 mapping of the [agentskills.io](https://agentskills.io/specification)
- * skill package format to Yjs CRDT-backed workspace tables.
+ * This entry point is safe to import in any runtime (browser, Node, Bun).
+ * For server-side disk I/O actions, use `@epicenter/skills/disk` instead.
  *
- * @example
+ * @example Browser — tables only
  * ```typescript
  * import { createSkillsWorkspace } from '@epicenter/skills'
  *
  * const ws = createSkillsWorkspace()
  *   .withExtension('persistence', indexeddbPersistence)
+ * ```
  *
+ * @example Server — with disk I/O
+ * ```typescript
+ * import { createSkillsWorkspace } from '@epicenter/skills/disk'
+ *
+ * const ws = createSkillsWorkspace()
  * await ws.actions.importFromDisk({ dir: '.agents/skills' })
  * ```
  *

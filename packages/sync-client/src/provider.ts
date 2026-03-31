@@ -70,9 +70,9 @@ const CONNECT_TIMEOUT_MS = 15_000;
  *
  * @example Recommended: via workspace extension chain
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+ * import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
  * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
- * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+ * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
  *
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)

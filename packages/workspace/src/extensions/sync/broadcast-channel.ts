@@ -25,9 +25,9 @@ const BC_ORIGIN = Symbol('bc-sync');
  *
  * @example Persistence + BroadcastChannel + WebSocket (recommended)
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+ * import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
  * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
- * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+ * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
  *
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)

@@ -3,7 +3,7 @@ import {
 	type SyncProvider,
 	type SyncStatus,
 } from '@epicenter/sync-client';
-import type { SharedExtensionContext } from '../workspace/types';
+import type { SharedExtensionContext } from '../../workspace/types';
 
 /**
  * Sync extension configuration.
@@ -23,9 +23,9 @@ import type { SharedExtensionContext } from '../workspace/types';
  *
  * @example Recommended: persistence + BroadcastChannel + WebSocket (both scopes)
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+ * import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
  * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
- * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+ * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
  *
  * const sync = createSyncExtension({
  *   url: (docId) => `http://localhost:3913/rooms/${docId}`,

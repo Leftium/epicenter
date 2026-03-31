@@ -11,7 +11,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { SyncProvider } from '@epicenter/sync-client';
 import * as Y from 'yjs';
-import { createSyncExtension } from './sync';
+import { createSyncExtension } from './websocket';
 
 /** The shape returned by the extension factory (flat). */
 type SyncExtensionResult = {

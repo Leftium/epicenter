@@ -4,8 +4,8 @@ import {
 	createSqliteIndex,
 	createYjsFileSystem,
 } from '@epicenter/filesystem';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { Bash } from 'just-bash';
 import { session } from '$lib/auth';
 import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';

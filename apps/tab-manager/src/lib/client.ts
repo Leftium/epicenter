@@ -15,9 +15,9 @@ import {
 	defineMutation,
 	iterateActions,
 } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import Type from 'typebox';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import {

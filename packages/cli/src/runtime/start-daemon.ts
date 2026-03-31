@@ -6,28 +6,16 @@
  *
  * Lifecycle:
  * 1. Load `epicenter.config.ts` from the target directory
- * 2. Resolve auth token (env var → stored session → undefined)
- * 3. Await `whenReady` on all clients
- * 4. Print status, stay alive
- * 5. SIGINT/SIGTERM → destroy all clients → exit
+ * 2. Await `whenReady` on all clients
+ * 3. Print status, stay alive
+ * 4. SIGINT/SIGTERM → destroy all clients → exit
  */
 
 import { loadConfig } from '../load-config';
-import { normalizeServerUrl, resolveServer, resolveToken } from '../auth/store';
-import { resolveEpicenterHome } from '../util/paths';
 
 export type StartDaemonOptions = {
 	/** Directory containing epicenter.config.ts. Defaults to cwd. */
 	dir?: string;
-	/** Server URL (any protocol accepted — normalized to HTTPS internally). */
-	serverUrl?: string;
-	/** Epicenter home directory (for auth store). Defaults to $EPICENTER_HOME or ~/.epicenter. */
-	home?: string;
-	/**
-	 * Token resolver. Called on each WebSocket connect/reconnect.
-	 * Defaults to: EPICENTER_TOKEN env → stored session → undefined.
-	 */
-	getToken?: () => Promise<string | undefined>;
 };
 
 /**
@@ -39,35 +27,15 @@ export type StartDaemonOptions = {
  */
 export async function startDaemon(options: StartDaemonOptions = {}) {
 	const targetDir = options.dir ?? process.cwd();
-	const home = options.home ?? resolveEpicenterHome();
-
-	// Resolve server: flag → env → stored session → default (always canonical HTTPS form)
-	const serverUrl = normalizeServerUrl(
-		options.serverUrl ??
-			process.env.EPICENTER_SERVER_URL ??
-			(await resolveServer(home)) ??
-			'http://localhost:3913',
-	);
-
 	const { configDir, clients } = await loadConfig(targetDir);
-
-	// Token resolver: custom → env → stored session for this server
-	const getToken =
-		options.getToken ??
-		(() => resolveToken(home, serverUrl));
-
-	// ─── Wait for all clients to be ready ──────────────────────────────────
 
 	await Promise.all(clients.map((c) => c.whenReady));
 
 	// ─── Log status ────────────────────────────────────────────────────────
 
 	const ids = clients.map((c) => c.id);
-	console.log(`✓ Runner started — ${clients.length} workspace(s)`);
+	console.log(`✓ Started — ${clients.length} workspace(s)`);
 	console.log(`  Workspaces: ${ids.join(', ')}`);
-	console.log(`  Server: ${serverUrl}`);
-	const initialToken = await getToken();
-	console.log(`  Auth: ${initialToken ? 'token loaded' : 'none (open mode)'}`);
 	console.log(`  Config: ${configDir}`);
 	console.log('');
 	console.log('Press Ctrl+C to stop');

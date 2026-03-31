@@ -3,11 +3,6 @@
  *
  * Stores auth sessions keyed by server URL at `$EPICENTER_HOME/auth/sessions.json`.
  * Supports multiple simultaneous server sessions.
- *
- * Token resolution order:
- * 1. `EPICENTER_TOKEN` env var (CI/scripts override)
- * 2. Stored session for the given server URL
- * 3. `undefined` (unauthenticated / open mode)
  */
 
 import { mkdir } from 'node:fs/promises';
@@ -55,27 +50,6 @@ export function normalizeServerUrl(url: string): string {
 		.replace(/^ws:/, 'http:')
 		.replace(/\/+$/, '')
 		.toLowerCase();
-}
-
-/**
- * Convert a canonical server URL to its WebSocket equivalent.
- *
- * Intended for sync/WebSocket consumers that need `wss://` or `ws://`
- * from the canonical HTTPS form.
- *
- * - `https://api.epicenter.so` → `wss://api.epicenter.so`
- * - `http://localhost:3913` → `ws://localhost:3913`
- *
- * @example
- * ```typescript
- * toWebSocketUrl('https://api.epicenter.so');
- * // → 'wss://api.epicenter.so'
- * ```
- */
-export function toWebSocketUrl(url: string): string {
-	return url
-		.replace(/^https:/, 'wss:')
-		.replace(/^http:/, 'ws:');
 }
 
 /**
@@ -158,50 +132,4 @@ export async function clearSession(
 	const store = await readStore(home);
 	delete store[normalizeServerUrl(server)];
 	await writeStore(home, store);
-}
-
-/**
- * Delete all stored sessions.
- */
-export async function clearAllSessions(home: string): Promise<void> {
-	await writeStore(home, {});
-}
-
-/**
- * Resolve an auth token for a given server.
- *
- * Resolution order:
- * 1. `EPICENTER_TOKEN` env var (CI/scripts)
- * 2. Stored session for `server`
- * 3. Most recent session (if `server` is undefined)
- * 4. `undefined`
- */
-export async function resolveToken(
-	home: string,
-	server?: string,
-): Promise<string | undefined> {
-	if (process.env.EPICENTER_TOKEN) return process.env.EPICENTER_TOKEN;
-
-	if (server) {
-		const session = await loadSession(home, server);
-		return session?.accessToken;
-	}
-
-	const session = await loadDefaultSession(home);
-	return session?.accessToken;
-}
-
-/**
- * Resolve the server URL from the session store.
- *
- * If `server` is provided, returns it as-is.
- * Otherwise returns the server from the most recent session.
- */
-export async function resolveServer(
-	home: string,
-	server?: string,
-): Promise<string | undefined> {
-	if (server) return server;
-	const session = await loadDefaultSession(home);
-	return session?.server;
 }

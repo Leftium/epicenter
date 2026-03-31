@@ -46,10 +46,6 @@ export async function openWorkspaceFromDisk(
 ): Promise<OpenWorkspaceResult> {
 	const { configDir, clients } = await loadConfig(options.dir);
 
-	if (clients.length === 0) {
-		throw new Error('No workspaces found in config');
-	}
-
 	let client: AnyWorkspaceClient;
 
 	if (options.workspaceId) {

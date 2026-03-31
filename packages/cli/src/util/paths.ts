@@ -9,7 +9,3 @@ export function resolveEpicenterHome(flagValue?: string): string {
 export function workspacesDir(home: string): string {
 	return join(home, 'workspaces');
 }
-
-export function cacheDir(home: string): string {
-	return join(home, 'cache');
-}

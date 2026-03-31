@@ -1,4 +1,5 @@
 import type { FileId, FileRow } from '@epicenter/filesystem';
+import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
 import { fs, workspace } from '$lib/client';
@@ -20,10 +21,9 @@ type InteractionMode =
  * Follows the tab-manager pattern: factory function creates all state,
  * exports a single const. Components import and read directly.
  *
- * Reactivity bridge: `FileSystemIndex` rebuilds itself on every table
- * mutation via its own observer. We layer a `version` counter ($state)
- * that bumps on every mutation (coalesced via rAF), which triggers
- * `$derived` recomputations that re-read from the already-updated index.
+ * Reactivity: `fromTable()` provides a reactive `SvelteMap` that updates
+ * granularly per-row. Derived tree indexes (`childrenOf`, `pathIndex`)
+ * recompute automatically when the map changes—no manual version tracking.
  *
  * @example
  * ```svelte
@@ -34,8 +34,10 @@ type InteractionMode =
  * ```
  */
 function createFsState() {
-	// ── Reactive state ────────────────────────────────────────────────
-	let version = $state(0);
+	// ── Reactive source ──────────────────────────────────────────────
+	const filesMap = fromTable(workspace.tables.files);
+
+	// ── Reactive state ───────────────────────────────────────────────
 	let activeFileId = $state<FileId | null>(null);
 	const openFileIds = new SvelteSet<FileId>();
 	const expandedIds = new SvelteSet<FileId>();
@@ -51,33 +53,53 @@ function createFsState() {
 	// item stays visually highlighted while the mouse is on the menu.
 	let contextMenuTargetId = $state<FileId | null>(null);
 
-	// ── rAF-coalesced observer ────────────────────────────────────────
-	let pendingBump = false;
-	const unobserve = workspace.tables.files.observe(() => {
-		if (!pendingBump) {
-			pendingBump = true;
-			requestAnimationFrame(() => {
-				version++;
-				pendingBump = false;
-			});
+	// ── Derived tree indexes ─────────────────────────────────────────
+
+	/**
+	 * Parent→children mapping derived from the flat file table.
+	 * Recomputes when any row in `filesMap` changes.
+	 */
+	const childrenOf = $derived.by(() => {
+		const map = new Map<FileId | null, FileId[]>();
+		for (const [id, row] of filesMap) {
+			if (row.trashedAt !== null) continue;
+			const siblings = map.get(row.parentId) ?? [];
+			siblings.push(id);
+			map.set(row.parentId, siblings);
 		}
+		return map;
 	});
 
-	// ── Derived state ─────────────────────────────────────────────────
-
-	/** Root-level child IDs — recomputes when version bumps. */
-	const rootChildIds = $derived.by(() => {
-		void version;
-		return fs.index.getChildIds(null);
+	/**
+	 * ID→path reverse index for O(1) path lookups.
+	 * Walks the `childrenOf` tree to build full POSIX paths.
+	 */
+	const pathIndex = $derived.by(() => {
+		const idToPath = new Map<FileId, string>();
+		function buildPaths(parentId: FileId | null, parentPath: string) {
+			for (const childId of childrenOf.get(parentId) ?? []) {
+				const row = filesMap.get(childId);
+				if (!row) continue;
+				const childPath =
+					parentPath === '/' ? `/${row.name}` : `${parentPath}/${row.name}`;
+				idToPath.set(childId, childPath);
+				if (row.type === 'folder') {
+					buildPaths(childId, childPath);
+				}
+			}
+		}
+		buildPaths(null, '/');
+		return idToPath;
 	});
 
-	/** Active file's row and path—single derivation since both depend on activeFileId + version. */
+	/** Root-level child IDs. */
+	const rootChildIds = $derived(childrenOf.get(null) ?? []);
+
+	/** Active file's row and path—single derivation since both depend on activeFileId. */
 	const selected = $derived.by(() => {
-		void version;
 		if (!activeFileId) return { node: null, path: null };
-		const result = workspace.tables.files.get(activeFileId);
-		const node = result.status === 'valid' ? result.row : null;
-		const path = fs.index.getPathById(activeFileId) ?? null;
+		const node = filesMap.get(activeFileId) ?? null;
+		const path = pathIndex.get(activeFileId) ?? null;
 		return { node, path };
 	});
 
@@ -117,9 +139,6 @@ function createFsState() {
 
 	const state = {
 		// ── Read-only getters ───────────────────────────────────────
-		get version() {
-			return version;
-		},
 		get activeFileId() {
 			return activeFileId;
 		},
@@ -153,13 +172,9 @@ function createFsState() {
 
 		expandedIds,
 
-		/**
-		 * Get child FileIds of a folder. Reads from FileSystemIndex.
-		 * Must be called in a reactive context to track `version`.
-		 */
+		/** Get child FileIds of a folder. Reactive via `childrenOf` derived. */
 		getChildIds(parentId: FileId | null) {
-			void version;
-			return fs.index.getChildIds(parentId);
+			return childrenOf.get(parentId) ?? [];
 		},
 
 		/**
@@ -167,18 +182,15 @@ function createFsState() {
 		 * Returns null if the row is deleted/invalid.
 		 */
 		getRow(id: FileId): FileRow | null {
-			void version;
-			const result = workspace.tables.files.get(id);
-			return result.status === 'valid' ? result.row : null;
+			return filesMap.get(id) ?? null;
 		},
 
 		/**
-		 * Find the path for a file ID using O(1) reverse index lookup.
+		 * Find the path for a file ID using the derived path index.
 		 * Returns null if not found (deleted/trashed).
 		 */
 		getPathForId(id: FileId): string | null {
-			void version;
-			return fs.index.getPathById(id) ?? null;
+			return pathIndex.get(id) ?? null;
 		},
 
 		/**
@@ -187,8 +199,6 @@ function createFsState() {
 		 * The visitor receives a file ID and its row, and returns an object:
 		 * - `collect`: if present, the value is added to the result array
 		 * - `descend`: if true, recurse into children (only meaningful for folders)
-		 *
-		 * Must be called in a reactive context to track `version`.
 		 *
 		 * @example
 		 * ```typescript
@@ -209,14 +219,12 @@ function createFsState() {
 			visitor: (id: FileId, row: FileRow) => { collect?: T; descend: boolean },
 			parentId: FileId | null = null,
 		): T[] {
-			void version;
 			const results: T[] = [];
 			function walk(pid: FileId | null) {
-				for (const childId of fs.index.getChildIds(pid)) {
-					const result = workspace.tables.files.get(childId);
-					if (result.status !== 'valid' || result.row.trashedAt !== null)
-						continue;
-					const { collect, descend } = visitor(childId, result.row);
+				for (const childId of (childrenOf.get(pid) ?? [])) {
+					const row = filesMap.get(childId);
+					if (!row || row.trashedAt !== null) continue;
+					const { collect, descend } = visitor(childId, row);
 					if (collect !== undefined) results.push(collect);
 					if (descend) walk(childId);
 				}
@@ -390,7 +398,7 @@ function createFsState() {
 
 		/** Cleanup — call from +layout.svelte onDestroy if needed. */
 		async dispose() {
-			unobserve();
+			filesMap.destroy();
 			fs.index.dispose();
 			fs.dispose();
 		},

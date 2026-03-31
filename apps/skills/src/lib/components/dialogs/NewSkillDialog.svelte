@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import PlusIcon from '@lucide/svelte/icons/plus';
 	import * as Dialog from '@epicenter/ui/dialog';
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
@@ -38,12 +39,12 @@
 	<Tooltip.Root>
 		<Tooltip.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="ghost" size="sm" onclick={() => (open = true)}>
-					New Skill
+				<Button {...props} variant="ghost" size="icon-xs" onclick={() => (open = true)}>
+					<PlusIcon class="size-3.5" />
 				</Button>
 			{/snippet}
 		</Tooltip.Trigger>
-		<Tooltip.Content>Create a new skill</Tooltip.Content>
+		<Tooltip.Content>New skill</Tooltip.Content>
 	</Tooltip.Root>
 	<Dialog.Content class="max-w-sm">
 		<Dialog.Header>

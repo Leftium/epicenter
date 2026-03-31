@@ -13,7 +13,7 @@
 	import { onMount } from 'svelte';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { CommandPalette } from '@epicenter/ui/command-palette';
-	import { items as commandPaletteItems } from '$lib/components/command-palette/items';
+	import { items } from '$lib/components/command-palette-items';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
@@ -128,5 +128,5 @@
 	</main>
 </Tooltip.Provider>
 <ConfirmationDialog />
-	<CommandPalette items={commandPaletteItems} bind:open={commandPaletteOpen} shortcut={null} />
+	<CommandPalette {items} bind:open={commandPaletteOpen} shortcut={null} />
 <AiDrawer bind:open={aiDrawerOpen} />

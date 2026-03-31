@@ -11,14 +11,14 @@
 	import EntryEditor from '$lib/components/EntryEditor.svelte';
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
-	import workspaceClient, { type Entry, type EntryId } from '$lib/workspace';
+	import { workspace, type Entry, type EntryId } from '$lib/workspace';
 
 	// ─── Reactive State ────────────────────────────────────────────────────────────
 
-	const entries = fromTable(workspaceClient.tables.entries);
+	const entries = fromTable(workspace.tables.entries);
 	const entriesArray = $derived(entries.values().toArray());
-	const selectedEntryId = fromKv(workspaceClient.kv, 'selectedEntryId');
-	const viewMode = fromKv(workspaceClient.kv, 'viewMode');
+	const selectedEntryId = fromKv(workspace.kv, 'selectedEntryId');
+	const viewMode = fromKv(workspace.kv, 'viewMode');
 	let currentYText = $state<Y.Text | null>(null);
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 
@@ -52,7 +52,7 @@
 
 function createEntry() {
 		const id = generateId() as unknown as EntryId;
-		workspaceClient.tables.entries.set({
+		workspace.tables.entries.set({
 			id,
 			title: '',
 			preview: '',
@@ -82,7 +82,7 @@ function createEntry() {
 		}
 
 		let cancelled = false;
-		workspaceClient.documents.entries.body.open(entryId).then((handle) => {
+		workspace.documents.entries.body.open(entryId).then((handle) => {
 			if (cancelled) return;
 			currentDocHandle = handle;
 			currentYText = handle.asText();
@@ -91,7 +91,7 @@ function createEntry() {
 		return () => {
 			cancelled = true;
 			if (currentDocHandle) {
-				workspaceClient.documents.entries.body.close(entryId);
+				workspace.documents.entries.body.close(entryId);
 			}
 			currentYText = null;
 			currentDocHandle = null;
@@ -108,7 +108,7 @@ function createEntry() {
 	if (event.key === 'n' && event.metaKey) {
 		event.preventDefault();
 		const id = generateId() as unknown as EntryId;
-		workspaceClient.tables.entries.set({
+		workspace.tables.entries.set({
 			id,
 			title: '',
 			preview: '',
@@ -146,11 +146,11 @@ function createEntry() {
 					ytext={currentYText}
 					onUpdateEntry={(updates) => {
 						if (!selectedEntryId.current) return;
-						workspaceClient.tables.entries.update(selectedEntryId.current, updates);
+						workspace.tables.entries.update(selectedEntryId.current, updates);
 					}}
 					onPreviewChange={(preview) => {
 						if (!selectedEntryId.current) return;
-						workspaceClient.tables.entries.update(selectedEntryId.current, { preview });
+						workspace.tables.entries.update(selectedEntryId.current, { preview });
 					}}
 					onBack={() => (selectedEntryId.current = null)}
 				/>

@@ -5,7 +5,7 @@
 	import { ModeWatcher, mode } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import { queryClient } from '$lib/query/client';
-	import workspaceClient from '$lib/workspace';
+	import { workspace } from '$lib/workspace';
 	import '@epicenter/ui/app.css';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 
@@ -15,7 +15,7 @@
 <svelte:head><title>Honeycrisp</title></svelte:head>
 
 <QueryClientProvider client={queryClient}>
-	<WorkspaceGate whenReady={workspaceClient.whenReady}>
+	<WorkspaceGate whenReady={workspace.whenReady}>
 		<Tooltip.Provider>{@render children()}</Tooltip.Provider>
 	</WorkspaceGate>
 </QueryClientProvider>

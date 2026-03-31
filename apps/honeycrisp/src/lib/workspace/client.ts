@@ -41,4 +41,4 @@ export const auth = createAuth({
 	},
 });
 
-export default workspace;
+export { workspace };

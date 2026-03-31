@@ -7,4 +7,4 @@
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { createWhispering } from './workspace';
 
-export default createWhispering().withExtension('persistence', indexeddbPersistence);
+export const workspace = createWhispering().withExtension('persistence', indexeddbPersistence);

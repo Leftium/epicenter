@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid/non-secure';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { DbServiceLive } from '$lib/services/db';
 import { ToastServiceLive } from '$lib/services/toast';
-import workspace from '$lib/workspace';
+import { workspace } from '$lib/workspace';
 import {
 	type DbMigrationState,
 	getDatabaseMigrationState,

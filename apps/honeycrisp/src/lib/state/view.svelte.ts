@@ -22,7 +22,7 @@
  * ```
  */
 
-import workspaceClient, { type FolderId, type NoteId } from '$lib/workspace';
+import { workspace, type FolderId, type NoteId } from '$lib/workspace';
 import { fromKv } from '@epicenter/svelte';
 import { foldersState } from './folders.svelte';
 import { notesState } from './notes.svelte';
@@ -30,9 +30,9 @@ import { notesState } from './notes.svelte';
 function createViewState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
-	const selectedFolderId = fromKv(workspaceClient.kv, 'selectedFolderId');
-	const selectedNoteId = fromKv(workspaceClient.kv, 'selectedNoteId');
-	const sortBy = fromKv(workspaceClient.kv, 'sortBy');
+	const selectedFolderId = fromKv(workspace.kv, 'selectedFolderId');
+	const selectedNoteId = fromKv(workspace.kv, 'selectedNoteId');
+	const sortBy = fromKv(workspace.kv, 'sortBy');
 	let searchQuery = $state('');
 	let isRecentlyDeletedView = $state(false);
 

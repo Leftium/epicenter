@@ -23,17 +23,13 @@
 
 import { dateTimeStringNow, generateId } from '@epicenter/workspace';
 import { fromTable } from '@epicenter/svelte';
-import workspaceClient, {
-	type FolderId,
-	type Note,
-	type NoteId,
-} from '$lib/workspace';
+import { workspace, type FolderId, type Note, type NoteId } from '$lib/workspace';
 import { foldersState } from './folders.svelte';
 
 function createNotesState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
-	const allNotesMap = fromTable(workspaceClient.tables.notes);
+	const allNotesMap = fromTable(workspace.tables.notes);
 
 	/** All valid notes (including deleted). Cached — only recomputes when table changes. */
 	const allNotes = $derived(allNotesMap.values().toArray());
@@ -90,8 +86,8 @@ function createNotesState() {
 		 */
 		createNote() {
 			const id = generateId() as string as NoteId;
-			const selectedFolderId = workspaceClient.kv.get('selectedFolderId');
-			workspaceClient.tables.notes.set({
+			const selectedFolderId = workspace.kv.get('selectedFolderId');
+			workspace.tables.notes.set({
 				id,
 				folderId: selectedFolderId ?? undefined,
 				title: '',
@@ -103,7 +99,7 @@ function createNotesState() {
 				updatedAt: dateTimeStringNow(),
 				_v: 2,
 			});
-			workspaceClient.kv.set('selectedNoteId', id);
+			workspace.kv.set('selectedNoteId', id);
 		},
 
 		/**
@@ -120,11 +116,11 @@ function createNotesState() {
 		 * ```
 		 */
 		softDeleteNote(noteId: NoteId) {
-			workspaceClient.tables.notes.update(noteId, {
+			workspace.tables.notes.update(noteId, {
 				deletedAt: dateTimeStringNow(),
 			});
-			if (workspaceClient.kv.get('selectedNoteId') === noteId) {
-				workspaceClient.kv.set('selectedNoteId', null);
+			if (workspace.kv.get('selectedNoteId') === noteId) {
+				workspace.kv.set('selectedNoteId', null);
 			}
 		},
 
@@ -146,7 +142,7 @@ function createNotesState() {
 			const folderExists = note.folderId
 				? foldersState.folders.some((f) => f.id === note.folderId)
 				: true;
-			workspaceClient.tables.notes.update(noteId, {
+			workspace.tables.notes.update(noteId, {
 				deletedAt: undefined,
 				...(folderExists ? {} : { folderId: undefined }),
 			});
@@ -165,9 +161,9 @@ function createNotesState() {
 		 * ```
 		 */
 		permanentlyDeleteNote(noteId: NoteId) {
-			workspaceClient.tables.notes.delete(noteId);
-			if (workspaceClient.kv.get('selectedNoteId') === noteId) {
-				workspaceClient.kv.set('selectedNoteId', null);
+			workspace.tables.notes.delete(noteId);
+			if (workspace.kv.get('selectedNoteId') === noteId) {
+				workspace.kv.set('selectedNoteId', null);
 			}
 		},
 
@@ -186,7 +182,7 @@ function createNotesState() {
 		pinNote(noteId: NoteId) {
 			const note = allNotesMap.get(noteId);
 			if (!note) return;
-			workspaceClient.tables.notes.update(noteId, {
+			workspace.tables.notes.update(noteId, {
 				pinned: !note.pinned,
 			});
 		},
@@ -206,7 +202,7 @@ function createNotesState() {
 		 * ```
 		 */
 		moveNoteToFolder(noteId: NoteId, folderId: FolderId | undefined) {
-			workspaceClient.tables.notes.update(noteId, { folderId });
+			workspace.tables.notes.update(noteId, { folderId });
 		},
 
 		/**
@@ -233,9 +229,9 @@ function createNotesState() {
 			preview: string;
 			wordCount: number;
 		}) {
-			const selectedNoteId = workspaceClient.kv.get('selectedNoteId');
+			const selectedNoteId = workspace.kv.get('selectedNoteId');
 			if (!selectedNoteId) return;
-			workspaceClient.tables.notes.update(selectedNoteId, {
+			workspace.tables.notes.update(selectedNoteId, {
 				title,
 				preview,
 				wordCount,

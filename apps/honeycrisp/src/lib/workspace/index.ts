@@ -1,5 +1,4 @@
-export { default } from './client';
-export { auth } from './client';
+export { workspace, auth } from './client';
 export {
 	type Folder,
 	FolderId,

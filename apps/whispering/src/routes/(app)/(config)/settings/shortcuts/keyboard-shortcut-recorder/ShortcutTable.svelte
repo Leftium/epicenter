@@ -5,7 +5,7 @@
 	import { commands } from '$lib/commands';
 	import { rpc } from '$lib/query';
 	import { deviceConfig, type DeviceConfigKey } from '$lib/state/device-config.svelte';
-	import workspace from '$lib/workspace';
+	import { workspace } from '$lib/workspace';
 	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import GlobalKeyboardShortcutRecorder from './GlobalKeyboardShortcutRecorder.svelte';
 	import LocalKeyboardShortcutRecorder from './LocalKeyboardShortcutRecorder.svelte';

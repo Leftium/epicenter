@@ -16,6 +16,7 @@
 	},
 	"devDependencies": {
 		"@epicenter/api": "workspace:*",
+		"@epicenter/honeycrisp": "workspace:*",
 		"@types/yargs": "catalog:",
 		"arktype": "catalog:",
 		"typescript": "catalog:"

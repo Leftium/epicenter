@@ -10,10 +10,10 @@
  */
 
 import { join } from 'node:path';
-import { createWorkspace, dateTimeStringNow } from '@epicenter/workspace';
+import { dateTimeStringNow } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
 import { loadConfig } from '../../../src/load-config';
-import { definition } from './epicenter.config';
+import { createHoneycrisp } from '@epicenter/honeycrisp/workspace';
 
 const FIXTURE_DIR = import.meta.dir;
 const DB_PATH = join(
@@ -34,7 +34,7 @@ console.log(`   Config dir: ${configDir}\n`);
 
 // 2. Create client with persistence (no sync)
 console.log('2. Creating workspace client with persistence...');
-const client = createWorkspace(definition).withExtension(
+const client = createHoneycrisp().withExtension(
 	'persistence',
 	filesystemPersistence({ filePath: DB_PATH }),
 );
@@ -106,7 +106,7 @@ console.log('\n5. ✓ Client disposed, data flushed to SQLite.');
 
 // 6. Reopen and verify persistence
 console.log('\n6. Reopening to verify persistence...');
-const client2 = createWorkspace(definition).withExtension(
+const client2 = createHoneycrisp().withExtension(
 	'persistence',
 	filesystemPersistence({ filePath: DB_PATH }),
 );

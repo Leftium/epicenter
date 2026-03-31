@@ -4,7 +4,7 @@
 	"type": "module",
 	"private": true,
 	"exports": {
-		"./workspace": "./src/lib/workspace/index.ts",
+		"./workspace": "./src/lib/workspace/workspace.ts",
 		"./definition": "./src/lib/workspace/definition.ts"
 	},
 	"scripts": {

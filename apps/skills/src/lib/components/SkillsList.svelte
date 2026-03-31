@@ -8,6 +8,12 @@
 	let renamingSkillId = $state<string | null>(null);
 	const isEditing = $derived(renamingSkillId !== null);
 
+	/**
+	 * Navigate the skill list via keyboard.
+	 * Arrow keys move selection (wrapping at boundaries), F2 starts rename,
+	 * Delete/Backspace opens the delete confirmation dialog.
+	 * Suppressed while an inline rename is active.
+	 */
 	function handleKeydown(e: KeyboardEvent) {
 		if (isEditing) return;
 

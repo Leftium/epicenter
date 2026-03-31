@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import type { DocumentHandle } from '@epicenter/workspace';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import type { DocumentHandle } from '@epicenter/workspace';
-	import { skillsState } from '$lib/state/skills-state.svelte';
 	import { workspace } from '$lib/client';
+	import { skillsState } from '$lib/state/skills-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let expandedRefId = $state<string | null>(null);
@@ -23,13 +22,15 @@
 		}
 		refHandle = null;
 		refError = null;
-		workspace.documents.references.content.open(id).then((h) => {
+		workspace.documents.references.content.open(id).then(
+			(h) => {
 				if (expandedRefId !== id) return;
 				refHandle = h;
 			},
 			(err) => {
 				console.error('Failed to open reference document:', err);
-				refError = err instanceof Error ? err.message : 'Failed to open document';
+				refError =
+					err instanceof Error ? err.message : 'Failed to open document';
 			},
 		);
 	});

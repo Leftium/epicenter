@@ -10,16 +10,6 @@
 	} = $props();
 
 	const isSelected = $derived(skillsState.selectedSkillId === skill.id);
-
-	function requestDelete() {
-		skillsState.selectedSkillId = skill.id;
-		confirmationDialog.open({
-			title: `Delete ${skill.name}?`,
-			description: 'This will delete the skill and all its references. This action cannot be undone.',
-			confirm: { text: 'Delete', variant: 'destructive' },
-			onConfirm: () => skillsState.deleteSkill(skill.id),
-		});
-	}
 </script>
 
 <ContextMenu.Root>
@@ -48,8 +38,15 @@
 		</ContextMenu.Item>
 		<ContextMenu.Item
 			class="text-destructive"
-			onclick={requestDelete}
-		>
+			onclick={() => {
+				skillsState.selectedSkillId = skill.id;
+				confirmationDialog.open({
+					title: `Delete ${skill.name}?`,
+					description: 'This will delete the skill and all its references. This action cannot be undone.',
+					confirm: { text: 'Delete', variant: 'destructive' },
+					onConfirm: () => skillsState.deleteSkill(skill.id),
+				});
+			}}
 		>
 			Delete
 			<ContextMenu.Shortcut>⌫</ContextMenu.Shortcut>

@@ -22,7 +22,6 @@ import {
 	readdir,
 	readFile,
 	rm,
-	stat,
 	writeFile,
 } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -35,7 +34,7 @@ import { Type } from 'typebox';
 import { parseSkillMd } from './parse.js';
 import { serializeSkillMd } from './serialize.js';
 import type { Skill } from './tables.js';
-import { skillsDefinition } from './workspace.js';
+import { skillsDefinition } from './definition.js';
 
 const DirInput = Type.Object({ dir: Type.String() });
 
@@ -78,29 +77,36 @@ export function createSkillsWorkspace() {
 			handler: async ({ dir }) => {
 				const entries = await readdir(dir, { withFileTypes: true });
 				const skillDirs = entries.filter((e) => e.isDirectory());
+
+				// Phase 1: Read and parse all SKILL.md files in parallel
+				const reads = await Promise.all(
+					skillDirs.map(async (skillDir) => {
+						const skillPath = join(dir, skillDir.name);
+						const rawContent = await readFile(
+							join(skillPath, 'SKILL.md'),
+							'utf-8',
+						).catch(() => null);
+						if (rawContent === null) return null;
+
+						const { skill: parsedSkill, instructions } = parseSkillMd(
+							skillDir.name,
+							rawContent,
+						);
+						return { skillPath, parsedSkill, instructions };
+					}),
+				);
+
+				// Phase 2: Assign IDs sequentially (dedup requires ordering),
+				// then import references in parallel within each skill
 				const seenIds = new Set<string>();
 
-				for (const skillDir of skillDirs) {
-					const skillPath = join(dir, skillDir.name);
-					const skillMdPath = join(skillPath, 'SKILL.md');
+				for (const entry of reads) {
+					if (entry === null) continue;
+					const { skillPath, parsedSkill, instructions } = entry;
 
-					// Skip directories without SKILL.md
-					const hasSkillMd = await stat(skillMdPath)
-						.then((s) => s.isFile())
-						.catch(() => false);
-					if (!hasSkillMd) continue;
-
-					const rawContent = await readFile(skillMdPath, 'utf-8');
-					const { skill: parsedSkill, instructions } = parseSkillMd(
-						skillDir.name,
-						rawContent,
-					);
-
-					// Reuse parsed id when available and unique, otherwise generate
-					const skillId =
-						parsedSkill.id !== undefined && !seenIds.has(parsedSkill.id)
-							? parsedSkill.id
-							: generateId();
+					const hasUniqueId =
+						parsedSkill.id !== undefined && !seenIds.has(parsedSkill.id);
+					const skillId = hasUniqueId ? parsedSkill.id : generateId();
 					seenIds.add(skillId);
 
 					const skill = {
@@ -114,41 +120,46 @@ export function createSkillsWorkspace() {
 					// future imports on any machine get the same id
 					if (skillId !== parsedSkill.id) {
 						const updatedMd = serializeSkillMd(skill, instructions);
-						await writeFile(skillMdPath, updatedMd, 'utf-8');
+						await writeFile(
+							join(skillPath, 'SKILL.md'),
+							updatedMd,
+							'utf-8',
+						);
 					}
 
 					const instructionsHandle =
 						await client.documents.skills.instructions.open(skillId);
 					instructionsHandle.write(instructions);
 
-					// Import references
+					// Import references in parallel
 					const refsPath = join(skillPath, 'references');
-					const hasRefsDir = await stat(refsPath)
-						.then((s) => s.isDirectory())
-						.catch(() => false);
-					if (hasRefsDir) {
-						const refFiles = await readdir(refsPath);
-						const mdFiles = refFiles.filter((f) => f.endsWith('.md'));
+					const refEntries = await readdir(refsPath).catch(() => null);
+					if (refEntries !== null) {
+						const mdFiles = refEntries.filter((f) => f.endsWith('.md'));
 
-						for (const fileName of mdFiles) {
-							const refContent = await readFile(
-								join(refsPath, fileName),
-								'utf-8',
-							);
-							const refId = deriveReferenceId(skillId, fileName);
+						await Promise.all(
+							mdFiles.map(async (fileName) => {
+								const refContent = await readFile(
+									join(refsPath, fileName),
+									'utf-8',
+								);
+								const refId = deriveReferenceId(skillId, fileName);
 
-							client.tables.references.set({
-								id: refId,
-								skillId,
-								path: fileName,
-								updatedAt: Date.now(),
-								_v: 1,
-							});
+								client.tables.references.set({
+									id: refId,
+									skillId,
+									path: fileName,
+									updatedAt: Date.now(),
+									_v: 1,
+								});
 
-							const contentHandle =
-								await client.documents.references.content.open(refId);
-							contentHandle.write(refContent);
-						}
+								const contentHandle =
+									await client.documents.references.content.open(
+										refId,
+									);
+								contentHandle.write(refContent);
+							}),
+						);
 					}
 				}
 			},
@@ -167,46 +178,60 @@ export function createSkillsWorkspace() {
 				const skills = client.tables.skills.getAllValid();
 				const skillNames = new Set(skills.map((s) => s.name));
 
-				for (const skill of skills) {
-					const skillDir = join(dir, skill.name);
-					await mkdir(skillDir, { recursive: true });
+				// Export all skills in parallel
+				await Promise.all(
+					skills.map(async (skill) => {
+						const skillDir = join(dir, skill.name);
+						await mkdir(skillDir, { recursive: true });
 
-					// Write SKILL.md
-					const instructionsHandle =
-						await client.documents.skills.instructions.open(skill.id);
-					const instructions = instructionsHandle.read();
-					const skillMd = serializeSkillMd(skill, instructions);
-					await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
+						const instructionsHandle =
+							await client.documents.skills.instructions.open(skill.id);
+						const instructions = instructionsHandle.read();
+						const skillMd = serializeSkillMd(skill, instructions);
+						await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
 
-					// Write references
-					const refs = client.tables.references.filter(
-						(r) => r.skillId === skill.id,
-					);
-					if (refs.length > 0) {
-						const refsDir = join(skillDir, 'references');
-						await mkdir(refsDir, { recursive: true });
+						// Write references in parallel
+						const refs = client.tables.references.filter(
+							(r) => r.skillId === skill.id,
+						);
+						if (refs.length > 0) {
+							const refsDir = join(skillDir, 'references');
+							await mkdir(refsDir, { recursive: true });
 
-						for (const ref of refs) {
-							const contentHandle =
-								await client.documents.references.content.open(ref.id);
-							const content = contentHandle.read();
-							await writeFile(join(refsDir, ref.path), content, 'utf-8');
+							await Promise.all(
+								refs.map(async (ref) => {
+									const contentHandle =
+										await client.documents.references.content.open(
+											ref.id,
+										);
+									const content = contentHandle.read();
+									await writeFile(
+										join(refsDir, ref.path),
+										content,
+										'utf-8',
+									);
+								}),
+							);
 						}
-					}
-				}
+					}),
+				);
 
-				// Clean up folders for deleted skills
+				// Clean up stale directories in parallel
 				const existingDirs = await readdir(dir, {
 					withFileTypes: true,
-				}).catch(() => []);
-				for (const entry of existingDirs) {
-					if (entry.isDirectory() && !skillNames.has(entry.name)) {
-						await rm(join(dir, entry.name), {
-							recursive: true,
-							force: true,
-						});
-					}
-				}
+				}).catch((error: NodeJS.ErrnoException) => {
+					if (error.code === 'ENOENT') return [];
+					throw error;
+				});
+
+				const staleDirs = existingDirs.filter(
+					(entry) => entry.isDirectory() && !skillNames.has(entry.name),
+				);
+				await Promise.all(
+					staleDirs.map((entry) =>
+						rm(join(dir, entry.name), { recursive: true, force: true }),
+					),
+				);
 			},
 		}),
 	}));

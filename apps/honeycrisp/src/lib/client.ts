@@ -14,7 +14,7 @@ import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { session } from '$lib/auth';
 import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
-import { honeycrisp } from './definition';
+import { honeycrisp } from './workspace/definition';
 
 
 const workspace = createWorkspace(honeycrisp)

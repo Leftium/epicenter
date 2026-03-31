@@ -1,14 +1,4 @@
 export {
-	registerDevice,
-	type WorkspaceActionName,
-	type WorkspaceTools,
-	workspace,
-	auth,
-	workspaceDefinitions,
-	workspaceTools,
-	workspaceToolTitles,
-} from './client';
-export {
 	type Bookmark,
 	BookmarkId,
 	type ChatMessage,

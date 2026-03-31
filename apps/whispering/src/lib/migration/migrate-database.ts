@@ -1,7 +1,7 @@
 import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, tryAsync, trySync, type Result } from 'wellcrafted/result';
 import type { DbService } from '$lib/services/db/types';
-import type { workspace } from '$lib/workspace';
+import type { workspace } from '$lib/client';
 
 const MIGRATION_KEY = 'whispering:db-migration';
 export type DbMigrationState = 'pending' | 'done';

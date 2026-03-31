@@ -177,45 +177,85 @@ importFromDisk: defineMutation({ description: 'Import skills from an agentskills
 
 ## Workspace File Structure
 
-Each app's `src/lib/workspace/` directory has four files with a strict layering:
+Each app splits workspace code into an **isomorphic `workspace/` folder** and a **runtime-specific `client.ts`**:
 
 ```
-workspace/
-├── definition.ts      ← Schema only (defineWorkspace, defineTable, branded IDs)
-├── workspace.ts       ← Isomorphic factory (createWorkspace + isomorphic withActions)
-├── client.svelte.ts   ← Browser singleton (extensions, encryption, sync, browser-only actions)
-└── index.ts           ← Barrel re-export (the sole public API within the app)
+src/lib/
+│
+├── workspace/                          ← 100% isomorphic (safe for Node, Bun, browser)
+│   ├── definition.ts                   ← Schema: defineWorkspace, defineTable, branded IDs
+│   ├── workspace.ts                    ← Factory: createWorkspace(definition) + isomorphic actions
+│   └── index.ts                        ← Barrel: re-exports definition + workspace only
+│
+└── client.ts                           ← Runtime singleton: extensions, encryption, sync,
+                                           runtime-specific actions (browser APIs, Node fs, etc.)
+```
+
+```
+                    ┌─────────────────────────┐
+                    │     definition.ts        │
+                    │  tables, KV, branded IDs │
+                    └────────────┬────────────┘
+                                 │ imports
+                    ┌────────────▼────────────┐
+                    │     workspace.ts         │
+                    │  createX() factory       │
+                    │  + isomorphic actions    │
+                    └────────────┬────────────┘
+                                 │ imports
+   ┌─────────────────────────────┼─────────────────────────────┐
+   │                             │                             │
+   ▼                             ▼                             ▼
+┌──────────────┐   ┌──────────────────┐   ┌──────────────────┐
+│ client.ts    │   │ server-client.ts │   │ cli-client.ts    │
+│ (browser)    │   │ (Node/Bun)       │   │ (CLI)            │
+│ IndexedDB    │   │ SQLite           │   │ filesystem       │
+│ WebSocket    │   │ TCP sync         │   │ persistence      │
+│ Chrome APIs  │   │ Node fs APIs     │   │                  │
+└──────────────┘   └──────────────────┘   └──────────────────┘
 ```
 
 ### Layering Rules
 
-1. **`definition.ts`** — Pure schema. `defineWorkspace()`, `defineTable()`, `defineKv()`, branded ID types and generators. No imports from `@epicenter/workspace` beyond schema utilities. Isomorphic.
-2. **`workspace.ts`** — Factory function that calls `createWorkspace(definition)`. May chain `.withActions()` for **isomorphic** actions (table reads/writes only, no browser APIs). Imports from `./definition`. Isomorphic.
-3. **`client.svelte.ts`** (or `client.ts`) — The app singleton. Calls the factory, then chains `.withEncryption()`, `.withExtension()` (IndexedDB, sync, broadcast), and `.withActions()` for **browser-only** actions (Chrome APIs, DOM, etc.). Browser-only.
-4. **`index.ts`** — Barrel that re-exports from all three files. This is the only import path used within the app (`$lib/workspace`).
+1. **`definition.ts`** — Pure schema. `defineWorkspace()`, `defineTable()`, `defineKv()`, branded ID types and generators. Isomorphic.
+2. **`workspace.ts`** — Factory function that calls `createWorkspace(definition)`. May chain `.withActions()` for **isomorphic** actions (table reads/writes only). Isomorphic.
+3. **`index.ts`** — Barrel that re-exports from `definition.ts` and `workspace.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
+4. **`client.ts`** — Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Calls the factory, chains `.withEncryption()`, `.withExtension()`, and runtime-specific `.withActions()`. Exports the singleton as a named export (`export const workspace = ...`).
 
-### Export Rules
+### Import Convention
 
-- Each file exports only its own symbols. **No re-exporting peer files.** The barrel handles composition.
-- `package.json` subpath exports point to the isomorphic files only:
+```typescript
+// Components/state that need the live workspace instance:
+import { workspace, auth } from '$lib/client';
+
+// Components that only need types or the definition:
+import { type Note, NoteId } from '$lib/workspace';
+
+// Other packages in the monorepo:
+import { createHoneycrisp } from '@epicenter/honeycrisp/workspace';
+import { honeycrisp } from '@epicenter/honeycrisp/definition';
+```
+
+### Package.json Subpath Exports
+
+Each app exports a single `./workspace` subpath pointing to the barrel:
 
 ```json
 {
   "exports": {
-    "./definition": "./src/lib/workspace/definition.ts",
-    "./workspace": "./src/lib/workspace/workspace.ts"
+    "./workspace": "./src/lib/workspace/index.ts"
   }
 }
 ```
 
-These subpaths are safe for Node/server consumption (e.g., API server importing an app's definition or factory). The barrel `index.ts` is **not** exported as a subpath because it pulls in browser-only code.
+The barrel is 100% isomorphic, so this single subpath is safe for any consumer (server, CLI, other apps). The separate `./definition` subpath is no longer needed since the barrel already re-exports everything from `definition.ts`.
 
 ### Isomorphic vs Runtime-Specific Actions
 
 Isomorphic actions (table reads/writes, portable logic) belong in the exported `workspace.ts` factory. Runtime-specific actions—whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands—are chained via `.withActions()` in the client file closest to that runtime.
 
 ```typescript
-// workspace.ts — isomorphic actions (exported via package.json subpath)
+// workspace.ts — isomorphic actions (exported via barrel)
 export function createMyApp() {
   return createWorkspace(definition).withActions(({ tables }) => ({
     devices: {
@@ -229,7 +269,7 @@ export function createMyApp() {
   }));
 }
 
-// client.svelte.ts — browser-specific actions chained at the runtime boundary
+// src/lib/client.ts — browser-specific actions chained at the runtime boundary
 export const workspace = createMyApp()
   .withExtension('persistence', indexeddbPersistence)
   .withExtension('sync', createSyncExtension({ ... }))
@@ -247,7 +287,7 @@ export const workspace = createMyApp()
     },
   }));
 
-// OR: server-client.ts — Node/Bun-specific actions at the server runtime boundary
+// OR: src/lib/server-client.ts — Node/Bun-specific at the server boundary
 export const workspace = createMyApp()
   .withExtension('persistence', sqlitePersistence)
   .withActions(({ tables }) => ({

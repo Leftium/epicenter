@@ -8,7 +8,7 @@
  * @see specs/20260313T163000-settings-data-migration.md
  */
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import { workspace } from '$lib/workspace';
+import { workspace } from '$lib/client';
 import { Ok, tryAsync, trySync } from 'wellcrafted/result';
 
 // ── Migration state ──────────────────────────────────────────────────────────

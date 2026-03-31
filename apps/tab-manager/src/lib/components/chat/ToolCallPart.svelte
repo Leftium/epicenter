@@ -7,7 +7,7 @@
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
 	import { toolTrustState } from '$lib/state/tool-trust.svelte';
-	import { type WorkspaceTools, workspaceToolTitles } from '$lib/workspace';
+	import { type WorkspaceTools, workspaceToolTitles } from '$lib/client';
 	import CollapsibleSection from '../CollapsibleSection.svelte';
 
 	let {

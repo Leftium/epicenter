@@ -23,7 +23,8 @@
 
 import { dateTimeStringNow, generateId } from '@epicenter/workspace';
 import { fromTable } from '@epicenter/svelte';
-import { workspace, type FolderId, type Note, type NoteId } from '$lib/workspace';
+import { workspace } from '$lib/client';
+import { type FolderId, type Note, type NoteId } from '$lib/workspace';
 import { foldersState } from './folders.svelte';
 
 function createNotesState() {

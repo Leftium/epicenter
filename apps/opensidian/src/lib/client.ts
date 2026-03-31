@@ -9,7 +9,7 @@ import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Bash } from 'just-bash';
 import { session } from '$lib/auth';
 import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
-import { createOpensidian } from './workspace';
+import { createOpensidian } from './workspace/workspace';
 
 /**
  * Opensidian workspace infrastructure.

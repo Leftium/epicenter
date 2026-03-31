@@ -9,7 +9,7 @@
 	import { toast } from 'svelte-sonner';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import { createSkillTemplate, validateSkill } from '$lib/types';
-	import { fs, ws } from '$lib/workspace';
+	import { fs, ws } from '$lib/client';
 
 	let seeding = $state(false);
 	let newSkillOpen = $state(false);

@@ -12,7 +12,7 @@
 	import { toast } from 'svelte-sonner';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import { type SkillFrontmatter, validateSkill } from '$lib/types';
-	import { fs } from '$lib/workspace';
+	import { fs } from '$lib/client';
 
 	let {
 		fileId,

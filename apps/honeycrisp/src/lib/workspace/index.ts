@@ -1,4 +1,3 @@
-export { workspace, auth } from './client';
 export {
 	type Folder,
 	FolderId,
@@ -6,3 +5,4 @@ export {
 	type Note,
 	NoteId,
 } from './definition';
+export { createHoneycrisp } from './workspace';

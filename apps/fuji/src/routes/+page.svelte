@@ -11,7 +11,8 @@
 	import EntryEditor from '$lib/components/EntryEditor.svelte';
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
-	import { workspace, type Entry, type EntryId } from '$lib/workspace';
+	import { workspace } from '$lib/client';
+import type { Entry, EntryId } from '$lib/workspace';
 
 	// ─── Reactive State ────────────────────────────────────────────────────────────
 

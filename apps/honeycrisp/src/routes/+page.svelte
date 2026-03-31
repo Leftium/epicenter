@@ -8,7 +8,7 @@
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
-	import { workspace } from '$lib/workspace';
+	import { workspace } from '$lib/client';
 
 	let commandPaletteOpen = $state(false);
 

@@ -21,7 +21,7 @@
  * ```
  */
 import { SvelteMap } from 'svelte/reactivity';
-import { workspace } from '$lib/workspace';
+import { workspace } from '$lib/client';
 
 /** Recording row type inferred from the workspace table schema. */
 export type Recording = ReturnType<

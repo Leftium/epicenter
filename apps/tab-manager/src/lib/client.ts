@@ -28,8 +28,8 @@ import {
 import { authSession, getGoogleCredentials } from '$lib/state/auth';
 import { userKeyStore } from '$lib/state/key-store';
 import { remoteServerUrl, serverUrl } from '$lib/state/settings.svelte';
-import { generateSavedTabId } from './definition';
-import { createTabManagerWorkspace } from './workspace';
+import { generateSavedTabId } from './workspace/definition';
+import { createTabManagerWorkspace } from './workspace/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Singleton

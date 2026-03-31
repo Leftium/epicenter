@@ -17,8 +17,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { generateId } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
-import { definition } from '@epicenter/tab-manager/definition';
-import { createTabManagerWorkspace } from '@epicenter/tab-manager/workspace';
+import { definition, createTabManagerWorkspace } from '@epicenter/tab-manager/workspace';
 import { loadConfig } from '../src/load-config';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/tab-manager');

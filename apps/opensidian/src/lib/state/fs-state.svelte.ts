@@ -1,7 +1,7 @@
 import type { FileId, FileRow } from '@epicenter/filesystem';
 import { SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
-import { fs, workspace } from '$lib/workspace';
+import { fs, workspace } from '$lib/client';
 
 /**
  * Interaction mode discriminated union.

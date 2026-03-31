@@ -1,4 +1,3 @@
-export { auth, workspace } from './client';
 export {
 	type ChatMessage,
 	ChatMessageId,
@@ -8,3 +7,4 @@ export {
 	generateChatMessageId,
 	generateConversationId,
 } from './definition';
+export { createZhongwen } from './workspace';

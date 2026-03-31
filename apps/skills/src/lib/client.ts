@@ -13,7 +13,7 @@ import {
 } from '@epicenter/filesystem';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Bash } from 'just-bash';
-import { createSkillsEditor } from './workspace';
+import { createSkillsEditor } from './workspace/workspace';
 
 export const ws = createSkillsEditor()
 	.withExtension('persistence', indexeddbPersistence)

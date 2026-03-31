@@ -5,7 +5,7 @@
 	import { ModeWatcher, mode } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import { queryClient } from '$lib/query/client';
-	import { workspace } from '$lib/workspace';
+	import { workspace } from '$lib/client';
 	import '@epicenter/ui/app.css';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 

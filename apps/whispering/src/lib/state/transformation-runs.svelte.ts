@@ -18,7 +18,7 @@
  * ```
  */
 import { SvelteMap } from 'svelte/reactivity';
-import { workspace } from '$lib/workspace';
+import { workspace } from '$lib/client';
 
 /** Transformation run row type inferred from the workspace table schema. */
 export type TransformationRun = ReturnType<

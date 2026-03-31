@@ -5,8 +5,7 @@
 	"description": "",
 	"exports": {
 		"./commands": "./src/lib/commands.ts",
-		"./definition": "./src/lib/workspace/definition.ts",
-		"./workspace": "./src/lib/workspace/workspace.ts"
+		"./workspace": "./src/lib/workspace/index.ts"
 	},
 	"scripts": {
 		"dev:web": "vite dev",

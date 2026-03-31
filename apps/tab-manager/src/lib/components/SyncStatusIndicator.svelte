@@ -13,7 +13,7 @@
 	 */
 
 	import type { SyncStatus } from '@epicenter/sync-client';
-	import { workspace } from '$lib/workspace';
+	import { workspace } from '$lib/client';
 
 	function createSyncStatus() {
 		let current = $state<SyncStatus>('offline' as SyncStatus);
@@ -59,7 +59,7 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import AuthForm from '$lib/components/AuthForm.svelte';
-	import { auth } from '$lib/workspace';
+	import { auth } from '$lib/client';
 
 	const tooltip = $derived(getTooltip(syncStatus.current, auth.isAuthenticated));
 

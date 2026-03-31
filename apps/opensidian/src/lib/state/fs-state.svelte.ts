@@ -22,8 +22,10 @@ type InteractionMode =
  * exports a single const. Components import and read directly.
  *
  * Reactivity: `fromTable()` provides a reactive `SvelteMap` that updates
- * granularly per-row. Derived tree indexes (`childrenOf`, `pathIndex`)
- * recompute automatically when the map changes—no manual version tracking.
+ * granularly per-row. `childrenOf` derives tree structure eagerly (O(n)
+ * iteration on any row change—acceptable for <5000 files). Paths are
+ * computed lazily via `computePath()`—only the accessed file's ancestor
+ * chain is tracked, so `selected` and `PathBreadcrumb` stay fine-grained.
  *
  * @example
  * ```svelte
@@ -53,12 +55,14 @@ function createFsState() {
 	// item stays visually highlighted while the mouse is on the menu.
 	let contextMenuTargetId = $state<FileId | null>(null);
 
-	// ── Derived tree indexes ─────────────────────────────────────────
+	// ── Derived tree structure ───────────────────────────────────────
+	//
+	// childrenOf iterates the full filesMap (creating an all-key dependency),
+	// so it recomputes on ANY row change—even non-structural edits like
+	// updatedAt bumps. At O(n) Map iteration for <5000 files this is <1ms,
+	// an intentional trade-off over the complexity of structural-only tracking.
 
-	/**
-	 * Parent→children mapping derived from the flat file table.
-	 * Recomputes when any row in `filesMap` changes.
-	 */
+	/** Parent→children mapping. Groups non-trashed file IDs by parentId. */
 	const childrenOf = $derived.by(() => {
 		const map = new Map<FileId | null, FileId[]>();
 		for (const [id, row] of filesMap) {
@@ -70,36 +74,59 @@ function createFsState() {
 		return map;
 	});
 
+	// ── Lazy path computation ────────────────────────────────────────
+
 	/**
-	 * ID→path reverse index for O(1) path lookups.
-	 * Walks the `childrenOf` tree to build full POSIX paths.
+	 * Build the full POSIX path for a file by walking up the ancestor chain.
+	 *
+	 * O(depth) per call—typically 3–5 `filesMap.get()` lookups. In a reactive
+	 * context (`$derived`), this creates fine-grained dependencies on only the
+	 * accessed file's ancestors, not every row in the tree. In an imperative
+	 * context (action methods), it's a plain lookup with no reactive cost.
+	 *
+	 * Replaces the previous eager `pathIndex` derived which rebuilt all paths
+	 * (O(n) string concatenation) on any row change.
+	 *
+	 * @example
+	 * ```typescript
+	 * // In $derived — tracks only activeFile + ancestors
+	 * const path = $derived(computePath(activeFileId));
+	 *
+	 * // In action — plain lookup, no reactive tracking
+	 * const oldPath = computePath(id);
+	 * ```
 	 */
-	const pathIndex = $derived.by(() => {
-		const idToPath = new Map<FileId, string>();
-		function buildPaths(parentId: FileId | null, parentPath: string) {
-			for (const childId of childrenOf.get(parentId) ?? []) {
-				const row = filesMap.get(childId);
-				if (!row) continue;
-				const childPath =
-					parentPath === '/' ? `/${row.name}` : `${parentPath}/${row.name}`;
-				idToPath.set(childId, childPath);
-				if (row.type === 'folder') {
-					buildPaths(childId, childPath);
-				}
-			}
+	function computePath(id: FileId): string | null {
+		const row = filesMap.get(id);
+		if (!row || row.trashedAt !== null) return null;
+
+		const parts: string[] = [row.name];
+		let parentId = row.parentId;
+
+		while (parentId !== null) {
+			const parent = filesMap.get(parentId);
+			if (!parent || parent.trashedAt !== null) return null;
+			parts.unshift(parent.name);
+			parentId = parent.parentId;
 		}
-		buildPaths(null, '/');
-		return idToPath;
-	});
+
+		return '/' + parts.join('/');
+	}
 
 	/** Root-level child IDs. */
 	const rootChildIds = $derived(childrenOf.get(null) ?? []);
 
-	/** Active file's row and path—single derivation since both depend on activeFileId. */
+	/**
+	 * Active file's row and path.
+	 *
+	 * Fine-grained: only tracks the active file's row and its ancestor chain
+	 * (via `computePath`). Unrelated row changes—like another file's updatedAt
+	 * bump—don't trigger recomputation.
+	 */
 	const selected = $derived.by(() => {
 		if (!activeFileId) return { node: null, path: null };
 		const node = filesMap.get(activeFileId) ?? null;
-		const path = pathIndex.get(activeFileId) ?? null;
+		const path = computePath(activeFileId);
 		return { node, path };
 	});
 
@@ -186,11 +213,16 @@ function createFsState() {
 		},
 
 		/**
-		 * Find the path for a file ID using the derived path index.
-		 * Returns null if not found (deleted/trashed).
+		 * Build the full POSIX path for a file by walking up its ancestor chain.
+		 *
+		 * In reactive contexts (e.g., inside `$derived`), creates fine-grained
+		 * dependencies on only the accessed file's ancestors. In imperative
+		 * contexts (action methods), it's a plain O(depth) lookup.
+		 *
+		 * @returns The full path (e.g., `/docs/api/reference.md`) or null if trashed/deleted.
 		 */
 		getPathForId(id: FileId): string | null {
-			return pathIndex.get(id) ?? null;
+			return computePath(id);
 		},
 
 		/**

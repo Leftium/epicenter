@@ -1,5 +1,5 @@
-export { default } from './client.svelte';
-export { auth } from './client.svelte';
+export { default } from './client';
+export { auth } from './client';
 export {
 	type Folder,
 	FolderId,

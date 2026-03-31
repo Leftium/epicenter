@@ -3,7 +3,7 @@
  *
  * Includes data-only actions that work in any JS runtime (e.g. `devices.list`).
  * Chrome-specific actions (tabs.close, tabs.open, etc.) are chained at the
- * call site in `client.svelte.ts`.
+ * call site in `client.ts`.
  *
  * @example
  * ```typescript
@@ -18,7 +18,6 @@ import { createWorkspace, defineQuery } from '@epicenter/workspace';
 import Type from 'typebox';
 import { definition } from './definition';
 
-export { definition } from './definition';
 
 export function createTabManagerWorkspace() {
 	return createWorkspace(definition).withActions(({ tables }) => ({

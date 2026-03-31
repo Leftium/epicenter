@@ -5,7 +5,7 @@
  * `auth` (createAuth) lives in the workspace client where
  * `onLogin`/`onLogout` can wire workspace unlock and sync reconnect.
  *
- * @see {@link ../workspace/client.svelte} — auth with onLogin/onLogout
+ * @see {@link ../workspace/client} — auth with onLogin/onLogout
  * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
  */
 

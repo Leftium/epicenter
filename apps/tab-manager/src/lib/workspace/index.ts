@@ -7,7 +7,7 @@ export {
 	workspaceDefinitions,
 	workspaceTools,
 	workspaceToolTitles,
-} from './client.svelte';
+} from './client';
 export {
 	type Bookmark,
 	BookmarkId,

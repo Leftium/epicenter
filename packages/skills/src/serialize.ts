@@ -26,28 +26,12 @@ import type { Skill } from './tables.js';
  * The `metadata` column (JSON-stringified `Record<string, string>`) is parsed
  * back into a nested YAML object. The `allowedTools` column is written as
  * `allowed-tools` in frontmatter to match the agentskills.io spec.
- *
- * @param skill - The skill row from the workspace table
- * @param instructions - The instructions text from the skill's document handle
- * @returns A valid SKILL.md file string ready to write to disk
- *
- * @example
- * ```typescript
- * import { serializeSkillMd } from '@epicenter/skills'
- *
- * const skill = ws.tables.skills.find(s => s.name === 'svelte')
- * if (skill) {
- *   const handle = await ws.documents.skills.instructions.open(skill.id)
- *   const md = serializeSkillMd(skill, handle.read())
- *   await writeFile(`${dir}/${skill.name}/SKILL.md`, md)
- * }
- * ```
  */
 export function serializeSkillMd(skill: Skill, instructions: string): string {
 	// Merge skill.id into metadata so it survives round-trips through disk
-	const existingMetadata: Record<string, string> = skill.metadata !== undefined
-		? (JSON.parse(skill.metadata) as Record<string, string>)
-		: {};
+	const existingMetadata = (skill.metadata !== undefined
+		? JSON.parse(skill.metadata)
+		: {}) as Record<string, string>;
 	const metadataWithId = { id: skill.id, ...existingMetadata };
 
 	const fm = {

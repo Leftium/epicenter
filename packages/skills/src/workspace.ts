@@ -23,7 +23,7 @@ import {
 } from '@epicenter/workspace';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
-import { parseReferenceMd, parseSkillMd } from './parse.js';
+import { parseSkillMd } from './parse.js';
 import { serializeSkillMd } from './serialize.js';
 import type { Skill } from './tables.js';
 import { referencesTable, skillsTable } from './tables.js';
@@ -131,11 +131,11 @@ export function createSkillsWorkspace() {
 					}
 					seenIds.add(skillId);
 
-					const skill: Skill = {
+					const skill = {
 						...parsedSkill,
 						id: skillId,
 						updatedAt: Date.now(),
-					};
+					} satisfies Skill;
 					client.tables.skills.set(skill);
 
 					// Write back SKILL.md with the id baked into metadata so
@@ -254,23 +254,20 @@ async function importReferences(
 
 	for (const fileName of mdFiles) {
 		const rawContent = await readFile(join(refsPath, fileName), 'utf-8');
-		const { reference: parsedRef, content } = parseReferenceMd(
-			skillId,
-			fileName,
-			rawContent,
-		);
 
 		const refId = deriveReferenceId(skillId, fileName);
 
 		client.tables.references.set({
-			...parsedRef,
 			id: refId,
+			skillId,
+			path: fileName,
 			updatedAt: Date.now(),
+			_v: 1 as const,
 		});
 
 		const contentHandle =
 			await client.documents.references.content.open(refId);
-		contentHandle.write(content);
+		contentHandle.write(rawContent);
 	}
 }
 

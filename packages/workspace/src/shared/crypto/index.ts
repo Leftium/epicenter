@@ -112,7 +112,7 @@ type EncryptedBlob = Uint8Array & Brand<'EncryptedBlob'>;
  * console.log(key.length); // 32
  * ```
  */
-function generateEncryptionKey(): Uint8Array {
+export function generateEncryptionKey(): Uint8Array {
 	return randomBytes(32);
 }
 
@@ -141,7 +141,7 @@ function generateEncryptionKey(): Uint8Array {
  * encrypted[1]; // 1 (key version)
  * ```
  */
-function encryptValue(
+export function encryptValue(
 	plaintext: string,
 	key: Uint8Array,
 	aad?: Uint8Array,
@@ -194,7 +194,7 @@ function encryptValue(
  * console.log(decrypted); // 'secret data'
  * ```
  */
-function decryptValue(
+export function decryptValue(
 	blob: EncryptedBlob,
 	key: Uint8Array,
 	aad?: Uint8Array,
@@ -230,7 +230,7 @@ function decryptValue(
  * @param blob - An EncryptedBlob to read the key version from
  * @returns The key version number (1-255)
  */
-function getKeyVersion(blob: EncryptedBlob): number {
+export function getKeyVersion(blob: EncryptedBlob): number {
 	return blob[1]!;
 }
 
@@ -245,7 +245,7 @@ function getKeyVersion(blob: EncryptedBlob): number {
  * @param blob - An EncryptedBlob to read the format version from
  * @returns The format version number (currently always 1)
  */
-function getFormatVersion(blob: EncryptedBlob): number {
+export function getFormatVersion(blob: EncryptedBlob): number {
 	return blob[0]!;
 }
 
@@ -271,7 +271,7 @@ function getFormatVersion(blob: EncryptedBlob): number {
  * }
  * ```
  */
-function isEncryptedBlob(value: unknown): value is EncryptedBlob {
+export function isEncryptedBlob(value: unknown): value is EncryptedBlob {
 	return value instanceof Uint8Array && value[0] === 1;
 }
 
@@ -309,7 +309,7 @@ function isEncryptedBlob(value: unknown): value is EncryptedBlob {
  * await workspace.encryption.unlock(userKey); // internally derives per-workspace key via HKDF
  * ```
  */
-async function deriveKeyFromPassword(
+export async function deriveKeyFromPassword(
 	password: string,
 	salt: Uint8Array,
 ): Promise<Uint8Array> {
@@ -352,7 +352,7 @@ async function deriveKeyFromPassword(
  * console.log(salt.length); // 16
  * ```
  */
-async function deriveSalt(
+export async function deriveSalt(
 	userId: string,
 	workspaceId: string,
 ): Promise<Uint8Array> {
@@ -404,7 +404,7 @@ async function deriveSalt(
  * const wsKey = deriveWorkspaceKey(userKey, 'tab-manager');
  * ```
  */
-function deriveWorkspaceKey(
+export function deriveWorkspaceKey(
 	userKey: Uint8Array,
 	workspaceId: string,
 ): Uint8Array {
@@ -433,7 +433,7 @@ function deriveWorkspaceKey(
  * console.log(base64); // 'AQID'
  * ```
  */
-function bytesToBase64(bytes: Uint8Array): string {
+export function bytesToBase64(bytes: Uint8Array): string {
 	return btoa(String.fromCharCode(...bytes));
 }
 
@@ -453,7 +453,7 @@ function bytesToBase64(bytes: Uint8Array): string {
  * console.log(bytes); // Uint8Array(3) [ 1, 2, 3 ]
  * ```
  */
-function base64ToBytes(base64: string): Uint8Array {
+export function base64ToBytes(base64: string): Uint8Array {
 	const binaryString = atob(base64);
 	const bytes = new Uint8Array(binaryString.length);
 	for (let i = 0; i < binaryString.length; i++) {
@@ -463,16 +463,3 @@ function base64ToBytes(base64: string): Uint8Array {
 }
 
 export type { EncryptedBlob };
-export {
-	generateEncryptionKey,
-	encryptValue,
-	decryptValue,
-	getKeyVersion,
-	getFormatVersion,
-	isEncryptedBlob,
-	deriveKeyFromPassword,
-	deriveSalt,
-	bytesToBase64,
-	base64ToBytes,
-	deriveWorkspaceKey,
-};

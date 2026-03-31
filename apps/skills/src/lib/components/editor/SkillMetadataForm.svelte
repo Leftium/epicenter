@@ -1,117 +1,42 @@
 <script lang="ts">
-	import type { FileId } from '@epicenter/filesystem';
-	import {
-		parseFrontmatter,
-		serializeMarkdownWithFrontmatter,
-	} from '@epicenter/filesystem';
+	import type { Skill } from '@epicenter/skills';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import { toast } from 'svelte-sonner';
-	import { fsState } from '$lib/state/fs-state.svelte';
-	import { type SkillFrontmatter, validateSkill } from '$lib/types';
-	import { fs } from '$lib/client';
+	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { validateSkill } from '$lib/utils/validation';
 
-	let {
-		fileId,
-	}: {
-		fileId: FileId;
-	} = $props();
+	let { skill }: { skill: Skill } = $props();
 
-	let name = $state('');
-	let description = $state('');
-	let license = $state('');
-	let compatibility = $state('');
-	let originalName = $state('');
+	let name = $state(skill.name);
+	let description = $state(skill.description);
+	let license = $state(skill.license ?? '');
+	let compatibility = $state(skill.compatibility ?? '');
 	let errors = $state<string[]>([]);
 	let isDirty = $state(false);
 
-	// Load frontmatter when fileId changes
-	$effect(() => {
-		const id = fileId;
-		loadFrontmatter(id);
-	});
-
-	async function loadFrontmatter(id: FileId) {
-		const content = await fsState.readContent(id);
-		if (!content) return;
-
-		const parsed = parseFrontmatter(content);
-		const fm = parsed.frontmatter as SkillFrontmatter;
-
-		name = fm.name ?? '';
-		description = fm.description ?? '';
-		license = fm.license ?? '';
-		compatibility = fm.compatibility ?? '';
-		originalName = fm.name ?? '';
-		errors = [];
-		isDirty = false;
-	}
-
 	function markDirty() {
 		isDirty = true;
-		// Live validation
 		errors = validateSkill({ name, description, license, compatibility });
 	}
 
-	async function handleSave() {
-		const frontmatter: SkillFrontmatter = { name, description };
-		if (license) frontmatter.license = license;
-		if (compatibility) frontmatter.compatibility = compatibility;
-
-		const validationErrors = validateSkill(frontmatter);
+	function handleSave() {
+		const validationErrors = validateSkill({ name, description, license, compatibility });
 		if (validationErrors.length > 0) {
 			errors = validationErrors;
 			toast.error('Fix validation errors before saving');
 			return;
 		}
 
-		// Read current content to preserve body
-		const content = await fsState.readContent(fileId);
-		if (!content) return;
-
-		const parsed = parseFrontmatter(content);
-
-		// Merge frontmatter—preserve any extra fields from the original
-		const mergedFrontmatter = {
-			...(parsed.frontmatter as Record<string, unknown>),
+		skillsState.updateSkill(skill.id, {
 			name,
 			description,
-			...(license ? { license } : {}),
-			...(compatibility ? { compatibility } : {}),
-		};
-
-		const newContent = serializeMarkdownWithFrontmatter(
-			mergedFrontmatter,
-			parsed.body,
-		);
-		await fsState.writeContent(fileId, newContent);
-
-		// Enforce folder name = name field
-		if (name !== originalName && originalName) {
-			const currentPath = fsState.selectedPath;
-			if (currentPath) {
-				// Get the skill folder path (parent of SKILL.md)
-				const parentPath = currentPath.substring(
-					0,
-					currentPath.lastIndexOf('/'),
-				);
-				if (parentPath) {
-					const newParentPath =
-						parentPath.substring(0, parentPath.lastIndexOf('/') + 1) + name;
-					try {
-						await fs.mv(parentPath, newParentPath);
-						toast.success(`Renamed skill folder to ${name}`);
-					} catch (err) {
-						toast.error('Failed to rename skill folder');
-						console.error(err);
-					}
-				}
-			}
-			originalName = name;
-		}
+			...(license ? { license } : { license: undefined }),
+			...(compatibility ? { compatibility } : { compatibility: undefined }),
+		});
 
 		isDirty = false;
 		toast.success('Skill metadata saved');
@@ -125,10 +50,9 @@
 		<h3 class="text-sm font-medium text-muted-foreground">Skill Metadata</h3>
 		<div class="flex items-center gap-2">
 			{#if errors.length > 0}
-				<Badge variant="destructive"
-					>{errors.length}
-					error{errors.length > 1 ? 's' : ''}</Badge
-				>
+				<Badge variant="destructive">
+					{errors.length} error{errors.length > 1 ? 's' : ''}
+				</Badge>
 			{:else if isDirty}
 				<Badge variant="secondary">Unsaved</Badge>
 			{/if}
@@ -149,9 +73,7 @@
 					class="font-mono text-sm"
 				/>
 			</Field.Content>
-			<Field.Description
-				>Lowercase, hyphens only (1–64 chars)</Field.Description
-			>
+			<Field.Description>Lowercase, hyphens only (1–64 chars)</Field.Description>
 		</Field.Field>
 
 		<Field.Field>
@@ -185,9 +107,7 @@
 				placeholder="Claude Code, OpenCode, Cursor..."
 			/>
 		</Field.Content>
-		<Field.Description
-			>Which agents/tools this skill targets (optional, ≤500 chars)</Field.Description
-		>
+		<Field.Description>Which agents/tools this skill targets (optional, ≤500 chars)</Field.Description>
 	</Field.Field>
 
 	{#if errors.length > 0}

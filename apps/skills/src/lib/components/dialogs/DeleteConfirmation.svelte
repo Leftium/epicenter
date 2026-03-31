@@ -1,41 +1,36 @@
 <script lang="ts">
 	import * as AlertDialog from '@epicenter/ui/alert-dialog';
 	import { Button } from '@epicenter/ui/button';
-	import { fsState } from '$lib/state/fs-state.svelte';
+	import { skillsState } from '$lib/state/skills-state.svelte';
 
-	const nodeName = $derived(fsState.selectedNode?.name ?? 'this item');
-	const nodeType = $derived(fsState.selectedNode?.type ?? 'file');
-
-	async function handleDelete() {
-		if (!fsState.activeFileId) return;
-		await fsState.deleteFile(fsState.activeFileId);
-		fsState.closeDelete();
-	}
-
-	function handleOpenChange(isOpen: boolean) {
-		if (!isOpen) fsState.closeDelete();
-	}
+	const skillName = $derived(skillsState.selectedSkill?.name ?? 'this skill');
 </script>
 
 <AlertDialog.Root
-	open={fsState.deleteDialogOpen}
-	onOpenChange={handleOpenChange}
+	open={skillsState.deleteDialogOpen}
+	onOpenChange={(isOpen) => {
+		if (!isOpen) skillsState.closeDelete();
+	}}
 >
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>Delete {nodeName}?</AlertDialog.Title>
+			<AlertDialog.Title>Delete {skillName}?</AlertDialog.Title>
 			<AlertDialog.Description>
-				{#if nodeType === 'folder'}
-					This will delete the folder and all its contents. This action cannot
-					be undone.
-				{:else}
-					This will delete the file. This action cannot be undone.
-				{/if}
+				This will delete the skill and all its references. This action cannot be undone.
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-			<Button variant="destructive" onclick={handleDelete}>Delete</Button>
+			<Button
+				variant="destructive"
+				onclick={() => {
+					if (skillsState.selectedSkillId) {
+						skillsState.deleteSkill(skillsState.selectedSkillId);
+					}
+				}}
+			>
+				Delete
+			</Button>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>

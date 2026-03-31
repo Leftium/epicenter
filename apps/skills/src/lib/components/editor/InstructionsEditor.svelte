@@ -1,25 +1,20 @@
 <script lang="ts">
-	import type { FileId } from '@epicenter/filesystem';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import type { DocumentHandle } from '@epicenter/workspace';
-	import { fsState } from '$lib/state/fs-state.svelte';
-	import { ws } from '$lib/client';
+	import { skillsState } from '$lib/state/skills-state.svelte';
+	import { workspace } from '$lib/client';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
-	let {
-		fileId,
-	}: {
-		fileId: FileId;
-	} = $props();
+	let { skillId }: { skillId: string } = $props();
 
 	let handle = $state<DocumentHandle | null>(null);
 
 	$effect(() => {
-		const id = fileId;
+		const id = skillId;
 		handle = null;
-		ws.documents.files.content.open(id).then((h) => {
-			// Guard against race condition—if file changed while loading, ignore
-			if (fsState.activeFileId !== id) return;
+		workspace.documents.skills.instructions.open(id).then((h) => {
+			// Guard against race condition—if skill changed while loading, ignore
+			if (skillsState.selectedSkillId !== id) return;
 			handle = h;
 		});
 	});

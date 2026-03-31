@@ -1,33 +1,12 @@
 <script lang="ts">
-	import type { FileId } from '@epicenter/filesystem';
-	import {
-		CommandPalette,
-		type CommandPaletteItem,
-	} from '@epicenter/ui/command-palette';
-	import { fsState } from '$lib/state/fs-state.svelte';
-	import { getFileIcon } from '$lib/utils/file-icons';
+	import { CommandPalette, type CommandPaletteItem } from '@epicenter/ui/command-palette';
+	import { skillsState } from '$lib/state/skills-state.svelte';
 
 	let open = $state(false);
 	let searchQuery = $state('');
 	let debouncedQuery = $state('');
 
-	// ── Collect all files recursively (only when palette is open) ───
-	type FileEntry = { id: FileId; name: string; parentDir: string };
-
-	const allFiles = $derived.by((): FileEntry[] => {
-		if (!open) return [];
-		return fsState.walkTree<FileEntry>((id, row) => {
-			if (row.type === 'file') {
-				const fullPath = fsState.getPathForId(id) ?? '';
-				const lastSlash = fullPath.lastIndexOf('/');
-				const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
-				return { collect: { id, name: row.name, parentDir }, descend: false };
-			}
-			return { descend: true };
-		});
-	});
-
-	// ── Debounce search input at 150ms ───────────────────────────────
+	// Debounce search input at 150ms
 	$effect(() => {
 		const query = searchQuery;
 		const timer = setTimeout(() => {
@@ -36,7 +15,7 @@
 		return () => clearTimeout(timer);
 	});
 
-	// ── Reset search when palette closes ─────────────────────────────
+	// Reset search when palette closes
 	$effect(() => {
 		if (!open) {
 			searchQuery = '';
@@ -44,20 +23,21 @@
 		}
 	});
 
-	// ── Filtered results: startsWith first, then includes, cap 50 ───
-	const filteredFiles = $derived.by(() => {
+	// Filtered results: startsWith first, then includes, cap 50
+	const filteredSkills = $derived.by(() => {
 		const q = debouncedQuery.toLowerCase().trim();
-		if (!q) return allFiles.slice(0, 50);
+		const skills = skillsState.skills;
+		if (!q) return skills.slice(0, 50);
 
-		const startsWith: FileEntry[] = [];
-		const includes: FileEntry[] = [];
+		const startsWith: typeof skills = [];
+		const includes: typeof skills = [];
 
-		for (const file of allFiles) {
-			const name = file.name.toLowerCase();
+		for (const skill of skills) {
+			const name = skill.name.toLowerCase();
 			if (name.startsWith(q)) {
-				startsWith.push(file);
-			} else if (name.includes(q)) {
-				includes.push(file);
+				startsWith.push(skill);
+			} else if (name.includes(q) || skill.description.toLowerCase().includes(q)) {
+				includes.push(skill);
 			}
 			if (startsWith.length + includes.length >= 50) break;
 		}
@@ -65,15 +45,13 @@
 		return [...startsWith, ...includes].slice(0, 50);
 	});
 
-	// ── Convert filtered files to palette items ─────────────────────
-	const fileItems = $derived<CommandPaletteItem[]>(
-		filteredFiles.map((file) => ({
-			id: file.id,
-			label: file.name,
-			description: file.parentDir || undefined,
-			icon: getFileIcon(file.name),
-			group: 'Files',
-			onSelect: () => fsState.selectFile(file.id),
+	const skillItems = $derived<CommandPaletteItem[]>(
+		filteredSkills.map((skill) => ({
+			id: skill.id,
+			label: skill.name,
+			description: skill.description,
+			group: 'Skills',
+			onSelect: () => skillsState.selectSkill(skill.id),
 		})),
 	);
 </script>
@@ -88,12 +66,12 @@
 />
 
 <CommandPalette
-	items={fileItems}
+	items={skillItems}
 	bind:open
 	bind:value={searchQuery}
 	shouldFilter={false}
-	placeholder="Search files..."
-	emptyMessage="No files found."
-	title="Search Files"
-	description="Search for a file by name"
+	placeholder="Search skills..."
+	emptyMessage="No skills found."
+	title="Search Skills"
+	description="Search for a skill by name or description"
 />

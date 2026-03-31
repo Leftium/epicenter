@@ -34,15 +34,18 @@ function createSkillsState() {
 
 	let selectedSkillId = $state<string | null>(null);
 
-	const selected = $derived.by(() => {
-		if (!selectedSkillId) return { skill: null, references: [] };
-		const skill = skillsMap.get(selectedSkillId) ?? null;
-		const references = referencesMap
+	const selectedSkill = $derived.by(() => {
+		if (!selectedSkillId) return null;
+		return skillsMap.get(selectedSkillId) ?? null;
+	});
+
+	const selectedReferences = $derived.by(() => {
+		if (!selectedSkillId) return [];
+		return referencesMap
 			.values()
 			.toArray()
 			.filter((r) => r.skillId === selectedSkillId)
 			.sort((a, b) => a.path.localeCompare(b.path));
-		return { skill, references };
 	});
 
 
@@ -57,10 +60,10 @@ function createSkillsState() {
 			selectedSkillId = id;
 		},
 		get selectedSkill() {
-			return selected.skill;
+			return selectedSkill;
 		},
 		get selectedReferences() {
-			return selected.references;
+			return selectedReferences;
 		},
 
 		createSkill(name: string) {

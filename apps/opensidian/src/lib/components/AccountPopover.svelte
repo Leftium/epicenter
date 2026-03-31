@@ -5,7 +5,7 @@
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
-	import AuthForm from '$lib/components/AuthForm.svelte';
+	import AuthForm from '@epicenter/svelte/auth-form';
 	import { auth } from '$lib/client';
 
 
@@ -48,7 +48,17 @@
 				</div>
 			</div>
 		{:else}
-			<div class="flex items-center justify-center p-4"><AuthForm /></div>
+			<div class="flex items-center justify-center p-4">
+				<AuthForm
+					{auth}
+					syncNoun="notes"
+					onSocialSignIn={() =>
+						auth.signInWithSocialRedirect({
+							provider: 'google',
+							callbackURL: window.location.origin,
+						})}
+				/>
+			</div>
 		{/if}
 	</Popover.Content>
 </Popover.Root>

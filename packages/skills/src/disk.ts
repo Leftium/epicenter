@@ -17,7 +17,14 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+	mkdir,
+	readdir,
+	readFile,
+	rm,
+	stat,
+	writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 import {
 	createWorkspace,
@@ -91,8 +98,7 @@ export function createSkillsWorkspace() {
 
 					// Reuse parsed id when available and unique, otherwise generate
 					const skillId =
-						parsedSkill.id !== undefined &&
-						!seenIds.has(parsedSkill.id)
+						parsedSkill.id !== undefined && !seenIds.has(parsedSkill.id)
 							? parsedSkill.id
 							: generateId();
 					seenIds.add(skillId);
@@ -122,32 +128,25 @@ export function createSkillsWorkspace() {
 						.catch(() => false);
 					if (hasRefsDir) {
 						const refFiles = await readdir(refsPath);
-						const mdFiles = refFiles.filter((f) =>
-							f.endsWith('.md'),
-						);
+						const mdFiles = refFiles.filter((f) => f.endsWith('.md'));
 
 						for (const fileName of mdFiles) {
 							const refContent = await readFile(
 								join(refsPath, fileName),
 								'utf-8',
 							);
-							const refId = deriveReferenceId(
-								skillId,
-								fileName,
-							);
+							const refId = deriveReferenceId(skillId, fileName);
 
 							client.tables.references.set({
 								id: refId,
 								skillId,
 								path: fileName,
 								updatedAt: Date.now(),
-								_v: 1 as const,
+								_v: 1,
 							});
 
 							const contentHandle =
-								await client.documents.references.content.open(
-									refId,
-								);
+								await client.documents.references.content.open(refId);
 							contentHandle.write(refContent);
 						}
 					}
@@ -162,8 +161,7 @@ export function createSkillsWorkspace() {
 		 * Stale directories for deleted skills are cleaned up automatically.
 		 */
 		exportToDisk: defineMutation({
-			description:
-				'Export all skills to an agentskills.io-compliant directory',
+			description: 'Export all skills to an agentskills.io-compliant directory',
 			input: DirInput,
 			handler: async ({ dir }) => {
 				const skills = client.tables.skills.getAllValid();
@@ -175,16 +173,10 @@ export function createSkillsWorkspace() {
 
 					// Write SKILL.md
 					const instructionsHandle =
-						await client.documents.skills.instructions.open(
-							skill.id,
-						);
+						await client.documents.skills.instructions.open(skill.id);
 					const instructions = instructionsHandle.read();
 					const skillMd = serializeSkillMd(skill, instructions);
-					await writeFile(
-						join(skillDir, 'SKILL.md'),
-						skillMd,
-						'utf-8',
-					);
+					await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
 
 					// Write references
 					const refs = client.tables.references.filter(
@@ -196,15 +188,9 @@ export function createSkillsWorkspace() {
 
 						for (const ref of refs) {
 							const contentHandle =
-								await client.documents.references.content.open(
-									ref.id,
-								);
+								await client.documents.references.content.open(ref.id);
 							const content = contentHandle.read();
-							await writeFile(
-								join(refsDir, ref.path),
-								content,
-								'utf-8',
-							);
+							await writeFile(join(refsDir, ref.path), content, 'utf-8');
 						}
 					}
 				}

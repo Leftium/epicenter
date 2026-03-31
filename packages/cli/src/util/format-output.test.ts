@@ -10,7 +10,7 @@
  * - Serializes arrays into newline-delimited JSON for JSONL output
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { formatJson, formatJsonl, output } from '../src/util/format-output.js';
+import { formatJson, formatJsonl, output } from './format-output.js';
 
 describe('formatJson', () => {
 	const originalIsTTY = process.stdout.isTTY;

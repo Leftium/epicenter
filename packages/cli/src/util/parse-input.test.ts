@@ -9,11 +9,11 @@
  * - Accepts JSON from positional input, --file, and stdin
  * - Applies source precedence and returns clear errors for invalid input
  */
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type ParseInputOptions, parseJsonInput } from '../src/util/parse-input.js';
+import { type ParseInputOptions, parseJsonInput } from './parse-input.js';
 
 describe('parseJsonInput', () => {
 	let tempDir: string;
@@ -26,7 +26,7 @@ describe('parseJsonInput', () => {
 		rmSync(tempDir, { recursive: true, force: true });
 	});
 
-	it('parses inline JSON', () => {
+	test('parses inline JSON', () => {
 		const options: ParseInputOptions = {
 			positional: '{"id":"1","name":"test"}',
 		};
@@ -37,7 +37,7 @@ describe('parseJsonInput', () => {
 		expect(result.data).toEqual({ id: '1', name: 'test' });
 	});
 
-	it('reads @file shorthand', () => {
+	test('reads @file shorthand', () => {
 		const filePath = join(tempDir, 'test.json');
 		writeFileSync(filePath, '{"id":"2","value":42}');
 
@@ -51,7 +51,7 @@ describe('parseJsonInput', () => {
 		expect(result.data).toEqual({ id: '2', value: 42 });
 	});
 
-	it('reads --file flag', () => {
+	test('reads --file flag', () => {
 		const filePath = join(tempDir, 'file-flag.json');
 		writeFileSync(filePath, '{"source":"file-flag"}');
 
@@ -65,7 +65,7 @@ describe('parseJsonInput', () => {
 		expect(result.data).toEqual({ source: 'file-flag' });
 	});
 
-	it('reads stdin content', () => {
+	test('reads stdin content', () => {
 		const options: ParseInputOptions = {
 			hasStdin: true,
 			stdinContent: '{"from":"stdin"}',
@@ -77,7 +77,7 @@ describe('parseJsonInput', () => {
 		expect(result.data).toEqual({ from: 'stdin' });
 	});
 
-	it('returns error for invalid JSON', () => {
+	test('returns error for invalid JSON', () => {
 		const options: ParseInputOptions = {
 			positional: '{invalid json}',
 		};
@@ -88,7 +88,7 @@ describe('parseJsonInput', () => {
 		expect(result.error?.message).toContain('Invalid JSON');
 	});
 
-	it('returns error for missing file', () => {
+	test('returns error for missing file', () => {
 		const options: ParseInputOptions = {
 			positional: '@/nonexistent/path/file.json',
 		};
@@ -99,7 +99,7 @@ describe('parseJsonInput', () => {
 		expect(result.error?.message).toContain('File not found');
 	});
 
-	it('returns error when no input provided', () => {
+	test('returns error when no input provided', () => {
 		const options: ParseInputOptions = {};
 
 		const result = parseJsonInput(options);
@@ -108,7 +108,7 @@ describe('parseJsonInput', () => {
 		expect(result.error?.message).toContain('No input provided');
 	});
 
-	it('prioritizes positional over --file', () => {
+	test('prioritizes positional over --file', () => {
 		const filePath = join(tempDir, 'should-not-read.json');
 		writeFileSync(filePath, '{"source":"file"}');
 
@@ -123,7 +123,7 @@ describe('parseJsonInput', () => {
 		expect(result.data!.source).toBe('positional');
 	});
 
-	it('prioritizes --file over stdin', () => {
+	test('prioritizes --file over stdin', () => {
 		const filePath = join(tempDir, 'file-priority.json');
 		writeFileSync(filePath, '{"source":"file"}');
 

@@ -1,6 +1,19 @@
+/**
+ * TypeBox-to-Yargs Conversion Tests
+ *
+ * Verifies that TypeBox schemas are correctly translated into yargs option
+ * definitions so CLI flags match the workspace contract types.
+ *
+ * Key behaviors:
+ * - Maps TypeBox primitives (string, number, boolean, array) to yargs types
+ * - Extracts literal unions and enums as yargs choices
+ * - Propagates description and default metadata
+ * - Marks optional fields as non-required
+ */
+
 import { describe, expect, test } from 'bun:test';
 import Type from 'typebox';
-import { typeboxToYargsOptions } from '../src/util/typebox-to-yargs';
+import { typeboxToYargsOptions } from './typebox-to-yargs';
 
 describe('typeboxToYargsOptions', () => {
 	describe('type mapping', () => {

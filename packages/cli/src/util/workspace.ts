@@ -7,7 +7,7 @@
  */
 
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
-import type { Argv } from 'yargs';
+import type { Argv, CommandModule } from 'yargs';
 import { loadConfig } from '../load-config';
 import { formatYargsOptions, output, outputError } from './format-output';
 
@@ -185,4 +185,26 @@ export function resolveTable(client: AnyWorkspaceClient, name: string) {
 	const table = client.tables[name];
 	if (!table) throw new Error(`Table "${name}" not found`);
 	return table;
+}
+
+// ─── Command definition ──────────────────────────────────────────────────────
+
+/**
+ * Identity function for defining a yargs command with full type inference.
+ *
+ * Same pattern as `defineConfig` in Vite or `defineStore` in Pinia—a
+ * pass-through that narrows the type without any runtime overhead.
+ *
+ * @example
+ * ```typescript
+ * export const listCommand = defineCommand({
+ *   command: 'list <table>',
+ *   describe: 'List all valid rows in a table',
+ *   builder: (y) => withWorkspaceOptions(y).positional('table', { type: 'string', demandOption: true }),
+ *   handler: async (argv) => { ... },
+ * });
+ * ```
+ */
+export function defineCommand(command: CommandModule): CommandModule {
+	return command;
 }

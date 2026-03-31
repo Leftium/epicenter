@@ -1,24 +1,20 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import yargs from 'yargs';
-import { buildAuthCommand } from './commands/auth';
+import { createAuthCommand } from './commands/auth';
 import {
-	buildCountCommand,
-	buildDeleteCommand,
-	buildExportCommand,
-	buildGetCommand,
-	buildListCommand,
-	buildTablesCommand,
+	countCommand,
+	deleteCommand,
+	exportCommand,
+	getCommand,
+	listCommand,
+	tablesCommand,
 } from './commands/data';
-import { buildDescribeCommand } from './commands/describe';
-import { buildKvCommand } from './commands/kv';
-import {
-	buildInitCommand,
-	buildInstallCommand,
-	buildUninstallCommand,
-} from './commands/project';
-import { buildRunCommand } from './commands/run';
-import { buildStartCommand } from './commands/start';
+import { describeCommand } from './commands/describe';
+import { kvCommand } from './commands/kv';
+import { initCommand, installCommand, uninstallCommand } from './commands/project';
+import { runActionCommand } from './commands/run';
+import { startCommand } from './commands/start';
 
 /** Resolution order: EPICENTER_HOME env > ~/.epicenter/ */
 export function resolveEpicenterHome(flagValue?: string): string {
@@ -40,20 +36,20 @@ export function createCLI() {
 
 			const cli = yargs()
 				.scriptName('epicenter')
-				.command(buildStartCommand())
-				.command(buildGetCommand())
-				.command(buildListCommand())
-				.command(buildCountCommand())
-				.command(buildDeleteCommand())
-				.command(buildTablesCommand())
-				.command(buildKvCommand())
-				.command(buildExportCommand())
-				.command(buildInitCommand())
-				.command(buildInstallCommand())
-				.command(buildUninstallCommand())
-				.command(buildRunCommand())
-				.command(buildDescribeCommand())
-				.command(buildAuthCommand(home))
+				.command(startCommand)
+				.command(getCommand)
+				.command(listCommand)
+				.command(countCommand)
+				.command(deleteCommand)
+				.command(tablesCommand)
+				.command(kvCommand)
+				.command(exportCommand)
+				.command(initCommand)
+				.command(installCommand)
+				.command(uninstallCommand)
+				.command(runActionCommand)
+				.command(describeCommand)
+				.command(createAuthCommand(home))
 				.demandCommand(1)
 				.strict()
 				.exitProcess(false)

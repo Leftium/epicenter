@@ -17,7 +17,7 @@ import {
 	resolveRegistries,
 	resolveWantedItems,
 } from 'jsrepo';
-import type { Argv, CommandModule } from 'yargs';
+import type { Argv } from 'yargs';
 import { output, outputError } from '../util/format-output';
 import {
 	addWorkspaceToConfig,
@@ -25,6 +25,7 @@ import {
 	toCamelCase,
 	toFactoryName,
 } from '../util/update-config';
+import { defineCommand } from '../util/workspace';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -77,8 +78,7 @@ const GITIGNORE_TEMPLATE = `# Epicenter runtime data (persistence, SQLite, logs)
  * epicenter init
  * ```
  */
-export function buildInitCommand(): CommandModule {
-	return {
+export const initCommand = defineCommand({
 		command: 'init',
 		describe: 'Initialize a new Epicenter project',
 		builder: (y) =>
@@ -143,8 +143,7 @@ export function buildInitCommand(): CommandModule {
 				process.exitCode = 1;
 			}
 		},
-	};
-}
+	});
 
 // ─── Install ─────────────────────────────────────────────────────────────────
 
@@ -266,8 +265,7 @@ async function installWorkspace(dir: string, itemArg: string, registryFlag?: str
  * epicenter install my-notes --registry github/epicenterhq/workspaces
  * ```
  */
-export function buildInstallCommand(): CommandModule {
-	return {
+export const installCommand = defineCommand({
 		command: 'install <item>',
 		describe: 'Install a workspace from a jsrepo registry',
 		builder: (y: Argv) =>
@@ -296,8 +294,7 @@ export function buildInstallCommand(): CommandModule {
 				process.exitCode = 1;
 			}
 		},
-	};
-}
+	});
 
 // ─── Uninstall ───────────────────────────────────────────────────────────────
 
@@ -313,8 +310,7 @@ export function buildInstallCommand(): CommandModule {
  * epicenter uninstall my-notes -C ./my-project
  * ```
  */
-export function buildUninstallCommand(): CommandModule {
-	return {
+export const uninstallCommand = defineCommand({
 		command: 'uninstall <workspace-id>',
 		describe: 'Remove a workspace from the project',
 		builder: (y: Argv) =>
@@ -385,5 +381,4 @@ export function buildUninstallCommand(): CommandModule {
 
 			output({ removed: wsId });
 		},
-	};
-}
+	});

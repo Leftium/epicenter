@@ -6,12 +6,14 @@
  */
 
 import { describeWorkspace } from '@epicenter/workspace';
-import type { Argv, CommandModule } from 'yargs';
-import { runCommand, withWorkspaceOptions } from '../util/workspace';
+import type { Argv } from 'yargs';
+import {
+	defineCommand,
+	runCommand,
+	withWorkspaceOptions,
+} from '../util/workspace';
 
 /**
- * Build the `describe` command.
- *
  * @example
  * ```bash
  * epicenter describe
@@ -19,17 +21,15 @@ import { runCommand, withWorkspaceOptions } from '../util/workspace';
  * epicenter describe --format json | jq '.tables'
  * ```
  */
-export function buildDescribeCommand(): CommandModule {
-	return {
-		command: 'describe',
-		describe: 'Describe workspace schema, actions, and KV definitions',
-		builder: (y: Argv) => withWorkspaceOptions(y),
-		handler: async (argv: any) => {
-			await runCommand(
-				{ dir: argv.dir, workspaceId: argv.workspace },
-				(client) => describeWorkspace(client),
-				argv.format,
-			);
-		},
-	};
-}
+export const describeCommand = defineCommand({
+	command: 'describe',
+	describe: 'Describe workspace schema, actions, and KV definitions',
+	builder: (y: Argv) => withWorkspaceOptions(y),
+	handler: async (argv: any) => {
+		await runCommand(
+			{ dir: argv.dir, workspaceId: argv.workspace },
+			(client) => describeWorkspace(client),
+			argv.format,
+		);
+	},
+});

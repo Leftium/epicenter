@@ -6,8 +6,9 @@
  * SIGINT/SIGTERM.
  */
 
-import type { Argv, CommandModule } from 'yargs';
+import type { Argv } from 'yargs';
 import { loadConfig } from '../load-config';
+import { defineCommand } from '../util/workspace';
 
 // ─── Daemon runtime ──────────────────────────────────────────────────────────
 
@@ -95,8 +96,6 @@ async function startDaemon(options: StartDaemonOptions = {}) {
 // ─── Command ─────────────────────────────────────────────────────────────────
 
 /**
- * Build the `start` command.
- *
  * @example
  * ```bash
  * epicenter start
@@ -104,36 +103,33 @@ async function startDaemon(options: StartDaemonOptions = {}) {
  * epicenter start --verbose
  * ```
  */
-export function buildStartCommand(): CommandModule {
-	return {
-		command: 'start [dir]',
-		describe: 'Start the workspace daemon for a directory',
-		builder: (y: Argv) =>
-			y
-				.positional('dir', {
-					type: 'string' as const,
-					default: '.',
-					describe:
-						'Directory containing epicenter.config.ts (default: current directory)',
-				})
-				.option('verbose', {
-					type: 'boolean',
-					default: false,
-					describe: 'Enable periodic heartbeat logging',
-				}),
-		handler: async (argv) => {
-			try {
-				await startDaemon({
-					dir: argv.dir as string | undefined,
-					verbose: argv.verbose as boolean | undefined,
-				});
-				// Process stays alive — SIGINT/SIGTERM handlers manage shutdown
-			} catch (err) {
-				console.error(
-					`Failed to start: ${err instanceof Error ? err.message : String(err)}`,
-				);
-				process.exit(1);
-			}
-		},
-	};
-}
+export const startCommand = defineCommand({
+	command: 'start [dir]',
+	describe: 'Start the workspace daemon for a directory',
+	builder: (y: Argv) =>
+		y
+			.positional('dir', {
+				type: 'string' as const,
+				default: '.',
+				describe:
+					'Directory containing epicenter.config.ts (default: current directory)',
+			})
+			.option('verbose', {
+				type: 'boolean',
+				default: false,
+				describe: 'Enable periodic heartbeat logging',
+			}),
+	handler: async (argv) => {
+		try {
+			await startDaemon({
+				dir: argv.dir as string | undefined,
+				verbose: argv.verbose as boolean | undefined,
+			});
+		} catch (err) {
+			console.error(
+				`Failed to start: ${err instanceof Error ? err.message : String(err)}`,
+			);
+			process.exit(1);
+		}
+	},
+});

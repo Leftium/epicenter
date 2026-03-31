@@ -210,10 +210,12 @@ workspace/
 
 These subpaths are safe for Node/server consumption (e.g., API server importing an app's definition or factory). The barrel `index.ts` is **not** exported as a subpath because it pulls in browser-only code.
 
-### Isomorphic vs Browser-Only Actions
+### Isomorphic vs Runtime-Specific Actions
+
+Isomorphic actions (table reads/writes, portable logic) belong in the exported `workspace.ts` factory. Runtime-specific actions—whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands—are chained via `.withActions()` in the client file closest to that runtime.
 
 ```typescript
-// workspace.ts — isomorphic actions (table reads, portable logic)
+// workspace.ts — isomorphic actions (exported via package.json subpath)
 export function createMyApp() {
   return createWorkspace(definition).withActions(({ tables }) => ({
     devices: {
@@ -227,7 +229,7 @@ export function createMyApp() {
   }));
 }
 
-// client.svelte.ts — browser-only actions chained on top
+// client.svelte.ts — browser-specific actions chained at the runtime boundary
 export const workspace = createMyApp()
   .withExtension('persistence', indexeddbPersistence)
   .withExtension('sync', createSyncExtension({ ... }))
@@ -238,8 +240,25 @@ export const workspace = createMyApp()
         description: 'Close browser tabs by ID.',
         input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
         handler: async ({ tabIds }) => {
-          await browser.tabs.remove(tabIds);  // Chrome API — not isomorphic
+          await browser.tabs.remove(tabIds);  // Chrome API
           return { closedCount: tabIds.length };
+        },
+      }),
+    },
+  }));
+
+// OR: server-client.ts — Node/Bun-specific actions at the server runtime boundary
+export const workspace = createMyApp()
+  .withExtension('persistence', sqlitePersistence)
+  .withActions(({ tables }) => ({
+    files: {
+      importFromDisk: defineMutation({
+        title: 'Import Files',
+        description: 'Import files from a local directory.',
+        input: Type.Object({ dirPath: Type.String() }),
+        handler: async ({ dirPath }) => {
+          const entries = await readdir(dirPath);  // Node fs API
+          // ...
         },
       }),
     },

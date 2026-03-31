@@ -36,7 +36,7 @@
 					syntaxHighlighting(defaultHighlightStyle),
 					markdown(),
 					yCollab(ytext, null),
-					placeholder('Empty file'),
+					placeholder('Write skill instructions here...'),
 					EditorView.theme({
 						'&': {
 							height: '100%',

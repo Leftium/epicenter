@@ -12,17 +12,26 @@
 	let expandedRefId = $state<string | null>(null);
 	let refHandle = $state<DocumentHandle | null>(null);
 
+	let refError = $state<string | null>(null);
+
 	$effect(() => {
 		const id = expandedRefId;
 		if (!id) {
 			refHandle = null;
+			refError = null;
 			return;
 		}
 		refHandle = null;
+		refError = null;
 		workspace.documents.references.content.open(id).then((h) => {
-			if (expandedRefId !== id) return;
-			refHandle = h;
-		});
+				if (expandedRefId !== id) return;
+				refHandle = h;
+			},
+			(err) => {
+				console.error('Failed to open reference document:', err);
+				refError = err instanceof Error ? err.message : 'Failed to open document';
+			},
+		);
 	});
 </script>
 
@@ -74,7 +83,11 @@
 						</div>
 						{#if expandedRefId === ref.id}
 							<div class="h-48 border-t">
-								{#if refHandle}
+								{#if refError}
+									<div class="flex h-full items-center justify-center">
+										<p class="text-sm text-destructive">{refError}</p>
+									</div>
+								{:else if refHandle}
 									<CodeMirrorEditor ytext={refHandle.asText()} />
 								{:else}
 									<div class="flex h-full items-center justify-center">

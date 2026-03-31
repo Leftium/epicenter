@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as TreeView from '@epicenter/ui/tree-view';
 	import { fsState } from '$lib/state/fs-state.svelte';
@@ -132,8 +133,17 @@
 			<ContextMenu.Item
 				class="text-destructive"
 				onclick={() => {
-					fsState.selectFile(id);
-					fsState.openDelete();
+					const row = fsState.getRow(id);
+					const name = row?.name ?? 'this item';
+					const isFolder = row?.type === 'folder';
+					confirmationDialog.open({
+						title: `Delete ${name}?`,
+						description: isFolder
+							? 'This will delete the folder and all its contents. This action cannot be undone.'
+							: 'This will delete the file. This action cannot be undone.',
+						confirm: { text: 'Delete', variant: 'destructive' },
+						onConfirm: () => fsState.deleteFile(id),
+					});
 				}}
 			>
 				Delete

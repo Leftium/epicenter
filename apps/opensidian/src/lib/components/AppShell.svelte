@@ -3,7 +3,6 @@
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import { terminalState } from '$lib/state/terminal-state.svelte';
 	import CommandPalette from './CommandPalette.svelte';
-	import DeleteConfirmation from './dialogs/DeleteConfirmation.svelte';
 	import ContentPanel from './editor/ContentPanel.svelte';
 	import Toolbar from './Toolbar.svelte';
 	import TerminalPanel from './terminal/TerminalPanel.svelte';
@@ -69,4 +68,3 @@
 	<CommandPalette />
 </div>
 
-<DeleteConfirmation />

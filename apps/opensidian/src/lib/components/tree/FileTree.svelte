@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as TreeView from '@epicenter/ui/tree-view';
 	import { fsState } from '$lib/state/fs-state.svelte';
@@ -113,9 +114,17 @@
 			case 'Backspace': {
 				e.preventDefault();
 				if (!current) break;
-				// Select the focused item so DeleteConfirmation reads the right target
-				fsState.selectFile(current);
-				fsState.openDelete();
+				const row = fsState.getRow(current);
+				const name = row?.name ?? 'this item';
+				const isFolder = row?.type === 'folder';
+				confirmationDialog.open({
+					title: `Delete ${name}?`,
+					description: isFolder
+						? 'This will delete the folder and all its contents. This action cannot be undone.'
+						: 'This will delete the file. This action cannot be undone.',
+					confirm: { text: 'Delete', variant: 'destructive' },
+					onConfirm: () => fsState.deleteFile(current),
+				});
 				break;
 			}
 			default:

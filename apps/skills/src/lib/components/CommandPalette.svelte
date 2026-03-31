@@ -52,7 +52,7 @@
 			description: skill.description,
 			group: 'Skills',
 			onSelect: () => {
-				skillsState.selectedSkillId = skill.id;
+				skillsState.selectSkill(skill.id);
 			},
 		})),
 	);

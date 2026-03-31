@@ -26,13 +26,13 @@
 			case 'ArrowDown': {
 				e.preventDefault();
 				const next = skills[idx + 1] ?? skills[0];
-				if (next) skillsState.selectedSkillId = next.id;
+				if (next) skillsState.selectSkill(next.id);
 				break;
 			}
 			case 'ArrowUp': {
 				e.preventDefault();
 				const prev = skills[idx - 1] ?? skills.at(-1);
-				if (prev) skillsState.selectedSkillId = prev.id;
+				if (prev) skillsState.selectSkill(prev.id);
 				break;
 			}
 			case 'F2': {

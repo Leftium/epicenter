@@ -50,22 +50,50 @@ function createSkillsState() {
 
 
 	return {
+		/** All skills, sorted alphabetically by name. */
 		get skills() {
 			return skills;
 		},
 		get selectedSkillId() {
 			return selectedSkillId;
 		},
-		set selectedSkillId(id: string | null) {
-			selectedSkillId = id;
-		},
+		/** The currently selected skill, or `null` if nothing is selected. */
 		get selectedSkill() {
 			return selectedSkill;
 		},
+		/** References belonging to the currently selected skill, sorted by path. */
 		get selectedReferences() {
 			return selectedReferences;
 		},
 
+		/**
+		 * Set the active skill for the editor panel.
+		 *
+		 * Prefer this over raw assignment—gives a single greppable call site
+		 * for selection and a stable extension point for future side effects
+		 * (analytics, scroll-into-view, etc.).
+		 */
+		selectSkill(id: string | null) {
+			selectedSkillId = id;
+		},
+
+		/**
+		 * Look up a skill by ID.
+		 *
+		 * @returns The skill row, or `undefined` if it doesn't exist.
+		 */
+		get(id: string) {
+			return skillsMap.get(id);
+		},
+
+		/**
+		 * Create a new skill and select it.
+		 *
+		 * Inserts a row with a placeholder description and auto-selects
+		 * the new skill so the editor opens immediately.
+		 *
+		 * @returns The generated skill ID.
+		 */
 		createSkill(name: string) {
 			const id = generateId();
 			workspace.tables.skills.set({
@@ -83,6 +111,12 @@ function createSkillsState() {
 			return id;
 		},
 
+		/**
+		 * Update editable fields on a skill.
+		 *
+		 * Automatically bumps `updatedAt`. Only name, description,
+		 * license, and compatibility are editable through this method.
+		 */
 		updateSkill(
 			id: string,
 			updates: Partial<
@@ -92,16 +126,33 @@ function createSkillsState() {
 			workspace.tables.skills.update(id, { ...updates, updatedAt: Date.now() });
 		},
 
+		/**
+		 * Delete a skill and cascade-delete all its references.
+		 *
+		 * Uses `workspace.batch()` to collapse observer notifications.
+		 * If the deleted skill was selected, selects the next skill
+		 * alphabetically—or clears the selection if none remain.
+		 */
 		deleteSkill(id: string) {
-			// Cascade: delete all references for this skill
-			for (const ref of referencesMap.values()) {
-				if (ref.skillId === id) workspace.tables.references.delete(ref.id);
+			workspace.batch(() => {
+				for (const ref of referencesMap.values()) {
+					if (ref.skillId === id) workspace.tables.references.delete(ref.id);
+				}
+				workspace.tables.skills.delete(id);
+			});
+
+			if (selectedSkillId === id) {
+				const next = skills.find((s) => s.id !== id);
+				selectedSkillId = next?.id ?? null;
 			}
-			workspace.tables.skills.delete(id);
-			if (selectedSkillId === id) selectedSkillId = null;
 		},
 
 
+		/**
+		 * Add a file reference to a skill.
+		 *
+		 * @returns The generated reference ID.
+		 */
 		createReference(skillId: string, path: string) {
 			const id = generateId();
 			workspace.tables.references.set({
@@ -114,6 +165,7 @@ function createSkillsState() {
 			return id;
 		},
 
+		/** Remove a file reference by ID. */
 		deleteReference(id: string) {
 			workspace.tables.references.delete(id);
 		},

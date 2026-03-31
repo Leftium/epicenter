@@ -20,7 +20,7 @@
 				class="flex w-full flex-col items-start gap-0.5 rounded-sm px-3 py-2 text-left hover:bg-accent/50 {isSelected
 					? 'bg-accent text-accent-foreground'
 					: ''}"
-				onclick={() => (skillsState.selectedSkillId = skill.id)}
+				onclick={() => skillsState.selectSkill(skill.id)}
 				role="option"
 				aria-selected={isSelected}
 			>
@@ -39,7 +39,7 @@
 		<ContextMenu.Item
 			class="text-destructive"
 			onclick={() => {
-				skillsState.selectedSkillId = skill.id;
+				skillsState.selectSkill(skill.id);
 				confirmationDialog.open({
 					title: `Delete ${skill.name}?`,
 					description: 'This will delete the skill and all its references. This action cannot be undone.',

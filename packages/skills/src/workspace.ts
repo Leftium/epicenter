@@ -150,7 +150,34 @@ export function createSkillsWorkspace() {
 					instructionsHandle.write(instructions);
 
 					// Import references
-					await importReferences(client, skillId, skillPath);
+					const refsPath = join(skillPath, 'references');
+					const hasRefsDir = await stat(refsPath)
+						.then((s) => s.isDirectory())
+						.catch(() => false);
+					if (hasRefsDir) {
+						const refFiles = await readdir(refsPath);
+						const mdFiles = refFiles.filter((f) => f.endsWith('.md'));
+
+						for (const fileName of mdFiles) {
+							const refContent = await readFile(
+								join(refsPath, fileName),
+								'utf-8',
+							);
+							const refId = deriveReferenceId(skillId, fileName);
+
+							client.tables.references.set({
+								id: refId,
+								skillId,
+								path: fileName,
+								updatedAt: Date.now(),
+								_v: 1 as const,
+							});
+
+							const contentHandle =
+								await client.documents.references.content.open(refId);
+							contentHandle.write(refContent);
+						}
+					}
 				}
 			},
 		}),
@@ -218,57 +245,6 @@ export function createSkillsWorkspace() {
 			},
 		}),
 	}));
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Private helpers
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Import all `references/*.md` files for a single skill.
- *
- * Reference IDs are derived deterministically from `skillId + path`,
- * so they survive round-trips without needing to be stored in the file.
- * Same skill + same filename always produces the same reference ID.
- */
-async function importReferences(
-	client: {
-		tables: { references: { set(row: unknown): void } };
-		documents: {
-			references: {
-				content: { open(id: string): Promise<{ write(t: string): void }> };
-			};
-		};
-	},
-	skillId: string,
-	skillPath: string,
-): Promise<void> {
-	const refsPath = join(skillPath, 'references');
-	const hasRefsDir = await stat(refsPath)
-		.then((s) => s.isDirectory())
-		.catch(() => false);
-	if (!hasRefsDir) return;
-
-	const refFiles = await readdir(refsPath);
-	const mdFiles = refFiles.filter((f) => f.endsWith('.md'));
-
-	for (const fileName of mdFiles) {
-		const rawContent = await readFile(join(refsPath, fileName), 'utf-8');
-
-		const refId = deriveReferenceId(skillId, fileName);
-
-		client.tables.references.set({
-			id: refId,
-			skillId,
-			path: fileName,
-			updatedAt: Date.now(),
-			_v: 1 as const,
-		});
-
-		const contentHandle =
-			await client.documents.references.content.open(refId);
-		contentHandle.write(rawContent);
-	}
 }
 
 const REFERENCE_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';

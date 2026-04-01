@@ -356,7 +356,7 @@ export async function deriveSalt(
 	userId: string,
 	workspaceId: string,
 ): Promise<Uint8Array> {
-	const combined = userId + workspaceId;
+	const combined = userId + '\0' + workspaceId;
 	const hash = await crypto.subtle.digest(
 		'SHA-256',
 		new TextEncoder().encode(combined),

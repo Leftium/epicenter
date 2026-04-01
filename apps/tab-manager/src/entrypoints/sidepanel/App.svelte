@@ -101,7 +101,7 @@
 				<SyncStatusIndicator />
 			</div>
 		</header>
-		<div class="flex-1 flex items-center justify-center">
+		<div class="flex-1 flex flex-col min-h-0">
 			<!-- Gate on browser state seed so child components can read data synchronously -->
 			{#await browserState.whenReady}
 				<div class="flex flex-1 items-center justify-center">
@@ -113,7 +113,7 @@
 			{:then _}
 				<div class="flex-1 min-h-0"><UnifiedTabList /></div>
 			{:catch _error}
-				<Empty.Root class="flex-1">
+				<Empty.Root class="flex-1 flex items-center justify-center">
 					<Empty.Media>
 						<TriangleAlertIcon class="size-8 text-muted-foreground" />
 					</Empty.Media>

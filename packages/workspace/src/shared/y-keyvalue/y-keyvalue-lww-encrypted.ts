@@ -95,6 +95,16 @@ import {
 const textEncoder = new TextEncoder();
 
 /**
+ * Sentinel used for synthetic change events emitted by activateEncryption/
+ * deactivateEncryption. These events have no real Y.Transaction because
+ * encryption state transitions are not Yjs operations. Handlers can check
+ * `(transaction as any).__synthetic` to distinguish from real CRDT events.
+ */
+const SYNTHETIC_TRANSACTION = Object.freeze({
+	__synthetic: true as const,
+}) as unknown as Y.Transaction;
+
+/**
  * Options for `createEncryptedYkvLww`.
  *
  * `key` seeds the initial encryption key. If provided, all writes are encrypted
@@ -441,11 +451,8 @@ export function createEncryptedYkvLww<T>(
 
 			if (syntheticChanges.size === 0) return;
 
-			// Synthetic events have no real Y.Transaction — activateEncryption is not a Yjs operation.
-			// Handlers that only read the changes map (all current consumers) are unaffected.
-			const syntheticTransaction = undefined as unknown as Y.Transaction;
 			for (const handler of changeHandlers)
-				handler(syntheticChanges, syntheticTransaction);
+				handler(syntheticChanges, SYNTHETIC_TRANSACTION);
 		},
 
 		deactivateEncryption() {
@@ -460,9 +467,8 @@ export function createEncryptedYkvLww<T>(
 				syntheticChanges.set(key, { action: 'delete' });
 			}
 
-			const syntheticTransaction = undefined as unknown as Y.Transaction;
 			for (const handler of changeHandlers)
-				handler(syntheticChanges, syntheticTransaction);
+				handler(syntheticChanges, SYNTHETIC_TRANSACTION);
 		},
 		get failedDecryptCount() {
 			return inner.map.size - map.size;

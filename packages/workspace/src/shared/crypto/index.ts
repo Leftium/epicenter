@@ -61,6 +61,15 @@ import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 const NONCE_LENGTH = 24;
+const TAG_LENGTH = 16;
+const HEADER_LENGTH = 2;
+
+/**
+ * Minimum valid EncryptedBlob size: 2-byte header + 24-byte nonce + 16-byte auth tag.
+ * An empty plaintext produces a blob of exactly this size.
+ */
+const MINIMUM_BLOB_SIZE = HEADER_LENGTH + NONCE_LENGTH + TAG_LENGTH;
+
 const textEncoder = new TextEncoder();
 
 /**
@@ -128,9 +137,10 @@ export function generateEncryptionKey(): Uint8Array {
  * eliminating base64 overhead and the old `{ v, ct }` JSON wrapper.
  *
  * @param plaintext - The string to encrypt
- * @param key - A 32-byte Uint8Array encryption key
  * @param aad - Optional additional authenticated data bound to ciphertext integrity
- * @param keyVersion - Key version from ENCRYPTION_SECRETS keyring (default 1). Embedded as byte 1.
+ * @param keyVersion - Key version embedded as byte 1. Currently written but not read
+ *   during decryption—reserved for future keyring rotation. The caller is responsible
+ *   for passing the correct version from the ENCRYPTION_SECRETS keyring.
  * @returns A bare Uint8Array: `[formatVersion, keyVersion, ...nonce(24), ...ciphertext, ...tag(16)]`
  *
  * @example
@@ -227,13 +237,18 @@ export function decryptValue(
  * The key version is stored at byte 1 of the blob and identifies which
  * secret from the ENCRYPTION_SECRETS keyring was used to encrypt this blob.
  *
+ * **Note**: Currently written but not read during decryption. The encrypted
+ * KV wrapper's `activateEncryption` handles key transitions by trying the
+ * current key then falling back to the previous key, without consulting
+ * keyVersion. This function exists for diagnostics and future keyring
+ * rotation where version-aware key lookup would avoid brute-forcing.
+ *
  * @param blob - An EncryptedBlob to read the key version from
  * @returns The key version number (1-255)
  */
 export function getKeyVersion(blob: EncryptedBlob): number {
 	return blob[1]!;
 }
-
 /**
  * Read the format version from an EncryptedBlob without decrypting.
  *
@@ -252,13 +267,16 @@ export function getFormatVersion(blob: EncryptedBlob): number {
 /**
  * Type guard to check if a value is a valid EncryptedBlob.
  *
- * Checks that the value is a `Uint8Array` with format version 1 at byte 0.
- * User values stored in the CRDT are always JS objects (from schema definitions),
- * never `Uint8Array` instances, so this check is a reliable discriminant.
+ * Checks that the value is a `Uint8Array` with at least the minimum blob size
+ * (2-byte header + 24-byte nonce + 16-byte auth tag = 42 bytes). User values
+ * stored in the CRDT are always JS objects (from schema definitions), never
+ * `Uint8Array` instances, so `instanceof Uint8Array` is the primary discriminant.
  *
- * Truncated or corrupted blobs that pass this check will fail during
- * `decryptValue()` and get quarantined by the encrypted wrapper's error
- * containment—they are not silently misinterpreted.
+ * The minimum-length check replaces the previous `value[0] === 1` format-version
+ * check so that future format versions (v2, v3, etc.) are recognized as encrypted
+ * blobs without updating this guard. Truncated or corrupted blobs that pass this
+ * check will fail during `decryptValue()` and get quarantined by the encrypted
+ * wrapper's error containment—they are not silently misinterpreted.
  *
  * @param value - The value to check
  * @returns True if value is a valid EncryptedBlob, false otherwise
@@ -272,7 +290,7 @@ export function getFormatVersion(blob: EncryptedBlob): number {
  * ```
  */
 export function isEncryptedBlob(value: unknown): value is EncryptedBlob {
-	return value instanceof Uint8Array && value[0] === 1;
+	return value instanceof Uint8Array && value.length >= MINIMUM_BLOB_SIZE;
 }
 
 /**

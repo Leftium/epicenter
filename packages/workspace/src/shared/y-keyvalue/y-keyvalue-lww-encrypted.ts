@@ -92,6 +92,8 @@ import {
 	type YKeyValueLwwEntry,
 } from './y-keyvalue-lww';
 
+const textEncoder = new TextEncoder();
+
 /**
  * Options for `createEncryptedYkvLww`.
  *
@@ -210,12 +212,15 @@ export function createEncryptedYkvLww<T>(
 	 * Conditionally decrypt a value. Handles three cases:
 	 * 1. Value is not an `EncryptedBlob` → return as-is (plaintext or migration entry)
 	 * 2. No key available → throw (caller is responsible for error containment)
-	 * 3. Value is an `EncryptedBlob` + key available → decrypt and JSON.parse
+	 * 3. Value is an `EncryptedBlob` + key available → decrypt with AAD and JSON.parse
+	 *
+	 * AAD binds the ciphertext to its entry key, preventing blob-swapping attacks
+	 * where a malicious sync peer moves an encrypted value between KV entries.
 	 */
-	const maybeDecrypt = (value: EncryptedBlob | T): T => {
+	const maybeDecrypt = (value: EncryptedBlob | T, aad: Uint8Array): T => {
 		if (!isEncryptedBlob(value)) return value as T;
 		if (!currentKey) throw new Error('Missing encryption key');
-		return JSON.parse(decryptValue(value, currentKey)) as T;
+		return JSON.parse(decryptValue(value, currentKey, aad)) as T;
 	};
 
 	/**
@@ -243,7 +248,7 @@ export function createEncryptedYkvLww<T>(
 		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
 	): YKeyValueLwwEntry<T> | undefined => {
 		const { data: decryptedVal, error: decryptError } = trySync({
-			try: () => maybeDecrypt(entry.val),
+			try: () => maybeDecrypt(entry.val, textEncoder.encode(key)),
 			catch: (e) => {
 				console.warn(`[encrypted-kv] Failed to decrypt entry "${key}":`, e);
 				return Ok(undefined);
@@ -262,12 +267,12 @@ export function createEncryptedYkvLww<T>(
 	 * Used by `get()` as a fallback when wrapper.map doesn't have the entry
 	 * yet (transaction gap between set() and observer firing).
 	 */
-	const decryptRawValue = (raw: EncryptedBlob | T): T | undefined => {
+	const decryptRawValue = (raw: EncryptedBlob | T, aad: Uint8Array): T | undefined => {
 		if (!isEncryptedBlob(raw)) return raw as T;
 		const key = currentKey;
 		if (!key) return undefined;
 		const { data } = trySync({
-			try: () => JSON.parse(decryptValue(raw, key)) as T,
+			try: () => JSON.parse(decryptValue(raw, key, aad)) as T,
 			catch: () => Ok(undefined),
 		});
 		return data;
@@ -323,7 +328,7 @@ export function createEncryptedYkvLww<T>(
 				inner.set(key, val);
 				return;
 			}
-			inner.set(key, encryptValue(JSON.stringify(val), currentKey));
+			inner.set(key, encryptValue(JSON.stringify(val), currentKey, textEncoder.encode(key)));
 		},
 
 		/**
@@ -341,7 +346,7 @@ export function createEncryptedYkvLww<T>(
 			// processed yet. Decrypt on the fly.
 			const raw = inner.get(key);
 			if (raw === undefined) return undefined;
-			return decryptRawValue(raw);
+			return decryptRawValue(raw, textEncoder.encode(key));
 		},
 
 		/**
@@ -353,7 +358,7 @@ export function createEncryptedYkvLww<T>(
 			// Check inner for pending values not yet in wrapper.map
 			const raw = inner.get(key);
 			if (raw === undefined) return false;
-			return decryptRawValue(raw) !== undefined;
+			return decryptRawValue(raw, textEncoder.encode(key)) !== undefined;
 		},
 
 		delete(key) {
@@ -369,7 +374,7 @@ export function createEncryptedYkvLww<T>(
 				if (cached) {
 					yield [key, cached];
 				} else {
-					const val = decryptRawValue(entry.val);
+					const val = decryptRawValue(entry.val, textEncoder.encode(key));
 					if (val !== undefined) yield [key, { ...entry, val }];
 				}
 			}
@@ -404,7 +409,7 @@ export function createEncryptedYkvLww<T>(
 
 			for (const [entryKey, entry] of inner.map) {
 				if (isEncryptedBlob(entry.val)) continue;
-				inner.set(entryKey, encryptValue(JSON.stringify(entry.val), nextKey));
+				inner.set(entryKey, encryptValue(JSON.stringify(entry.val), nextKey, textEncoder.encode(entryKey)));
 			}
 
 			// Compute synthetic change events by diffing old vs new map

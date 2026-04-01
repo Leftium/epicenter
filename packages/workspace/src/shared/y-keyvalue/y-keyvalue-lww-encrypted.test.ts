@@ -22,13 +22,13 @@ function syncBoth(doc1: Y.Doc, doc2: Y.Doc): void {
 	syncDocs(doc2, doc1);
 }
 
-function createEncryptedBlob<T>(value: T, key: Uint8Array): EncryptedBlob {
+function createEncryptedBlob<T>(value: T, key: Uint8Array, entryKey: string): EncryptedBlob {
 	const helperDoc = new Y.Doc({ guid: 'helper-blob' });
 	const helperArray =
 		helperDoc.getArray<YKeyValueLwwEntry<EncryptedBlob | T>>('helper-data');
 	const helperKv = createEncryptedYkvLww<T>(helperArray, { key: key });
 
-	helperKv.set('helper-key', value);
+	helperKv.set(entryKey, value);
 
 	const entry = helperArray.toArray()[0];
 	if (!entry || !isEncryptedBlob(entry.val)) {
@@ -277,7 +277,7 @@ describe('createEncryptedYkvLww', () => {
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 
-			const encrypted = createEncryptedBlob('encrypted-value', key);
+			const encrypted = createEncryptedBlob('encrypted-value', key, 'enc');
 			yarray.push([{ key: 'enc', val: encrypted, ts: 1000 }]);
 
 			const kv = createEncryptedYkvLww<string>(yarray, { key: key });
@@ -290,7 +290,7 @@ describe('createEncryptedYkvLww', () => {
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 
-			const encrypted = createEncryptedBlob('new-secret', key);
+			const encrypted = createEncryptedBlob('new-secret', key, 'new');
 			yarray.push([
 				{ key: 'old', val: 'old-plaintext', ts: 1000 },
 				{ key: 'new', val: encrypted, ts: 1001 },
@@ -375,14 +375,14 @@ describe('createEncryptedYkvLww', () => {
 			yarray1.push([
 				{
 					key: 'x',
-					val: createEncryptedBlob('from-client-1-earlier', key),
+					val: createEncryptedBlob('from-client-1-earlier', key, 'x'),
 					ts: 1000,
 				},
 			]);
 			yarray2.push([
 				{
 					key: 'x',
-					val: createEncryptedBlob('from-client-2-later', key),
+					val: createEncryptedBlob('from-client-2-later', key, 'x'),
 					ts: 2000,
 				},
 			]);
@@ -569,7 +569,7 @@ describe('createEncryptedYkvLww', () => {
 				{
 					key: 'corrupt',
 					val: (() => {
-						const blob = createEncryptedBlob('broken', key);
+						const blob = createEncryptedBlob('broken', key, 'corrupt');
 						const tampered = new Uint8Array(blob);
 						tampered[2] = tampered[2]! ^ 0xff;
 						return tampered as EncryptedBlob;
@@ -596,7 +596,7 @@ describe('createEncryptedYkvLww', () => {
 				{
 					key: 'corrupt',
 					val: (() => {
-						const blob = createEncryptedBlob('broken', key);
+						const blob = createEncryptedBlob('broken', key, 'corrupt');
 						const tampered = new Uint8Array(blob);
 						tampered[2] = tampered[2]! ^ 0xff;
 						return tampered as EncryptedBlob;

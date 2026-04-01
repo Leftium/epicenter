@@ -650,7 +650,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(isEncryptedBlob(afterEntry?.val)).toBe(true);
 		});
 
-		test('activateEncryption rebuilds map and fires synthetic events', () => {
+		test('activateEncryption with key rotation preserves entries via fallback', () => {
 			const key1 = generateEncryptionKey();
 			const key2 = generateEncryptionKey();
 			const ydoc = new Y.Doc({ guid: 'key-transition-synthetic-events' });
@@ -667,21 +667,22 @@ describe('createEncryptedYkvLww', () => {
 					events.push({ key: entryKey, change });
 			});
 
+			// Rotate from key1 to key2 — entries should be preserved via fallback
 			kv.activateEncryption(key2);
-			expect(kv.failedDecryptCount).toBe(2);
+			expect(kv.failedDecryptCount).toBe(0);
+			expect(kv.get('a')).toBe('alpha');
+			expect(kv.get('b')).toBe('beta');
 
+			// No delete events — entries were recovered via previous key fallback
 			const deleteEvents = events.filter(
 				(event) => event.change.action === 'delete',
 			);
-			expect(deleteEvents.length).toBe(2);
-			expect(deleteEvents.map((event) => event.key).sort()).toEqual(['a', 'b']);
+			expect(deleteEvents.length).toBe(0);
 
+			// Rotate back to key1 — entries re-encrypted with key2, fallback to key2 works
+			events.length = 0;
 			kv.activateEncryption(key1);
 			expect(kv.failedDecryptCount).toBe(0);
-
-			const addEvents = events.filter((event) => event.change.action === 'add');
-			expect(addEvents.length).toBe(2);
-			expect(addEvents.map((event) => event.key).sort()).toEqual(['a', 'b']);
 			expect(kv.get('a')).toBe('alpha');
 			expect(kv.get('b')).toBe('beta');
 		});

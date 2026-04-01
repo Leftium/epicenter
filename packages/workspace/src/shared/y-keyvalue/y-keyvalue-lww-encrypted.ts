@@ -221,15 +221,30 @@ export function createEncryptedYkvLww<T>(
 	let currentKey: Uint8Array | undefined = options?.key;
 
 	/**
+	 * Attempt to decrypt an entry with a specific key.
+	 *
+	 * Returns the decrypted entry or undefined on failure.
+	 * Used by activateEncryption for key fallback and by the default tryDecryptEntry.
+	 */
+	const tryDecryptEntryWithKey = (
+		key: string,
+		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
+		decryptionKey: Uint8Array,
+	): YKeyValueLwwEntry<T> | undefined => {
+		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T };
+		try {
+			const val = JSON.parse(decryptValue(entry.val, decryptionKey, textEncoder.encode(key))) as T;
+			return { ...entry, val };
+		} catch {
+			return undefined;
+		}
+	};
+
+	/**
 	 * Attempt to decrypt an entry with warning on failure.
 	 *
-	 * Handles three cases:
-	 * 1. Value is not an EncryptedBlob → return as-is (plaintext)
-	 * 2. No key available → return undefined (can't decrypt)
-	 * 3. EncryptedBlob + key → decrypt with AAD, return entry or undefined on failure
-	 *
-	 * Used during map rebuild and observer processing where failures indicate
-	 * corruption or key mismatch and should be logged.
+	 * Delegates to tryDecryptEntryWithKey using currentKey.
+	 * Logs a warning on failure for diagnostics.
 	 */
 	const tryDecryptEntry = (
 		key: string,
@@ -237,13 +252,9 @@ export function createEncryptedYkvLww<T>(
 	): YKeyValueLwwEntry<T> | undefined => {
 		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T };
 		if (!currentKey) return undefined;
-		try {
-			const val = JSON.parse(decryptValue(entry.val, currentKey, textEncoder.encode(key))) as T;
-			return { ...entry, val };
-		} catch (e) {
-			console.warn(`[encrypted-kv] Failed to decrypt entry "${key}":`, e);
-			return undefined;
-		}
+		const result = tryDecryptEntryWithKey(key, entry, currentKey);
+		if (!result) console.warn(`[encrypted-kv] Failed to decrypt entry "${key}"`);
+		return result;
 	};
 
 	/**
@@ -271,6 +282,40 @@ export function createEncryptedYkvLww<T>(
 			if (!decryptedEntry) continue;
 			map.set(key, decryptedEntry);
 		}
+	};
+
+	/**
+	 * Diff old map vs current map and emit synthetic change events.
+	 *
+	 * Shared by activateEncryption and deactivateEncryption to ensure
+	 * symmetric event emission on all encryption state transitions.
+	 */
+	const diffAndEmit = (oldMap: Map<string, YKeyValueLwwEntry<T>>) => {
+		const changes = new Map<string, YKeyValueLwwChange<T>>();
+		const allKeys = new Set([...oldMap.keys(), ...map.keys()]);
+
+		for (const key of allKeys) {
+			const oldEntry = oldMap.get(key);
+			const newEntry = map.get(key);
+
+			if (!oldEntry && newEntry) {
+				changes.set(key, { action: 'add', newValue: newEntry.val });
+				continue;
+			}
+
+			if (oldEntry && !newEntry) {
+				changes.set(key, { action: 'delete' });
+				continue;
+			}
+
+			if (!oldEntry || !newEntry) continue;
+			if (Object.is(oldEntry.val, newEntry.val) || JSON.stringify(oldEntry.val) === JSON.stringify(newEntry.val)) continue;
+
+			changes.set(key, { action: 'update', newValue: newEntry.val });
+		}
+
+		if (changes.size === 0) return;
+		for (const handler of changeHandlers) handler(changes, undefined);
 	};
 
 	// Initialize wrapper.map from inner.map (decrypt any pre-existing entries)
@@ -387,56 +432,76 @@ export function createEncryptedYkvLww<T>(
 		},
 
 		/**
-		 * Activate encryption with a new encryption key. Rebuilds the decrypted map
-		 * from scratch and fires synthetic change events for any values
-		 * that changed.
+		 * Activate encryption with a new key. Saves the previous key and uses
+		 * it as a fallback when decrypting entries encrypted with the old key.
+		 * Only re-encrypts entries that needed the fallback key or were plaintext,
+		 * avoiding unnecessary CRDT mutations for entries already on the current key.
 		 *
 		 * @param nextKey - A 32-byte encryption key
 		 */
 		activateEncryption(nextKey) {
+			const previousKey = currentKey;
 			currentKey = nextKey;
+
 			const oldMap = new Map(map);
-			rebuildMap();
+			map.clear();
+			const needsReEncrypt: string[] = [];
 
-			// Encrypt any plaintext entries stored before encryption was activated
-			for (const [entryKey, entry] of inner.map) {
-				if (isEncryptedBlob(entry.val)) continue;
-				inner.set(entryKey, encryptValue(JSON.stringify(entry.val), nextKey, textEncoder.encode(entryKey)));
-			}
-
-			// Diff old vs new and fire change events
-			const changes = new Map<string, YKeyValueLwwChange<T>>();
-			const allKeys = new Set<string>([...oldMap.keys(), ...map.keys()]);
-
-			for (const key of allKeys) {
-				const oldEntry = oldMap.get(key);
-				const newEntry = map.get(key);
-
-				if (!oldEntry && newEntry) {
-					changes.set(key, { action: 'add', newValue: newEntry.val });
+			for (const [key, entry] of inner.map) {
+				if (!isEncryptedBlob(entry.val)) {
+					// Plaintext entry — always needs encryption
+					map.set(key, { ...entry, val: entry.val as T });
+					needsReEncrypt.push(key);
 					continue;
 				}
 
-				if (oldEntry && !newEntry) {
-					changes.set(key, { action: 'delete' });
-					continue;
+				// Try new key first
+				let decrypted = tryDecryptEntryWithKey(key, entry, nextKey);
+				if (decrypted) {
+					map.set(key, decrypted);
+					continue; // already encrypted with current key
 				}
 
-				if (!oldEntry || !newEntry) continue;
-				if (Object.is(oldEntry.val, newEntry.val) || JSON.stringify(oldEntry.val) === JSON.stringify(newEntry.val)) continue;
+				// Fall back to previous key
+				if (previousKey) {
+					decrypted = tryDecryptEntryWithKey(key, entry, previousKey);
+					if (decrypted) {
+						map.set(key, decrypted);
+						needsReEncrypt.push(key);
+						continue;
+					}
+				}
 
-				changes.set(key, { action: 'update', newValue: newEntry.val });
+				console.warn(`[encrypted-kv] Entry "${key}" undecryptable with current or previous key`);
 			}
 
-			if (changes.size === 0) return;
+			// Re-encrypt only entries that need it (plaintext or old-key)
+			for (const entryKey of needsReEncrypt) {
+				const plainVal = map.get(entryKey)!;
+				inner.set(entryKey, encryptValue(JSON.stringify(plainVal.val), nextKey, textEncoder.encode(entryKey)));
+			}
 
-			for (const handler of changeHandlers)
-				handler(changes, undefined);
+			diffAndEmit(oldMap);
 		},
 
+		/**
+		 * Deactivate encryption. Clears the key and emits delete events for
+		 * entries that are no longer readable (encrypted entries disappear,
+		 * plaintext entries remain visible).
+		 */
 		deactivateEncryption() {
 			currentKey = undefined;
+			const oldMap = new Map(map);
 			map.clear();
+
+			// Plaintext entries survive deactivation
+			for (const [key, entry] of inner.map) {
+				if (!isEncryptedBlob(entry.val)) {
+					map.set(key, { ...entry, val: entry.val as T });
+				}
+			}
+
+			diffAndEmit(oldMap);
 		},
 		get failedDecryptCount() {
 			return inner.map.size - map.size;

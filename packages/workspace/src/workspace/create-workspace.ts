@@ -187,6 +187,8 @@ export function createWorkspace<
 	// Mutable — swapped on compact(). All tables, KV, and extensions
 	// bind to this doc. The `let` enables compact() to replace it.
 	let ydoc = new Y.Doc({ guid: `${id}-${initialEpoch}` });
+	let currentDataEpoch = initialEpoch;
+	let isCompacting = false;
 
 	const tableDefs = (tablesDef ?? {}) as TTableDefinitions;
 	const kvDefs = (kvDef ?? {}) as TKvDefinitions;
@@ -347,6 +349,155 @@ export function createWorkspace<
 	const typedDocuments =
 		documentsNamespace as unknown as DocumentsHelper<TTableDefinitions>;
 
+	// ── Data doc swap ──────────────────────────────────────────────────────
+	// Shared logic for both compact() (local) and epoch observation (remote).
+	// When `dataToWrite` is provided, data is written into the fresh doc.
+	// When omitted, the fresh doc starts empty (CRDT sync delivers data).
+
+	async function swapDataDoc(
+		newEpoch: number,
+		state: BuilderState,
+		extensions: Record<string, unknown>,
+		dataToWrite?: {
+			tables: Record<string, BaseRow[]>;
+			kv: Record<string, unknown>;
+		},
+	) {
+		const oldYdoc = ydoc;
+		const freshYdoc = new Y.Doc({ guid: `${id}-${newEpoch}` });
+
+		// Create fresh stores + optionally write data
+		const newEncryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
+
+		for (const [name, definition] of Object.entries(tableDefs)) {
+			const yarray = freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(
+				TableKey(name),
+			);
+			const newYkv = createEncryptedYkvLww(yarray, {
+				key: options?.key,
+			});
+			newEncryptedStores.push(newYkv);
+
+			const newHelper = createTable(newYkv, definition);
+			if (dataToWrite) {
+				for (const row of dataToWrite.tables[name] ?? []) {
+					newHelper.set(row);
+				}
+			}
+
+			const wrapped = wrapTableWithObserverTracking(name, newHelper);
+			const registry = tableObserverRegistry.get(name);
+			if (registry) {
+				for (const cb of registry) {
+					newHelper.observe(cb);
+				}
+			}
+			tableHelpers[name] = wrapped;
+		}
+
+		// Fresh KV store + optionally write data
+		const newKvYarray =
+			freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+		const newKvStore = createEncryptedYkvLww(newKvYarray, {
+			key: options?.key,
+		});
+		newEncryptedStores.push(newKvStore);
+
+		if (dataToWrite) {
+			for (const [key, val] of Object.entries(dataToWrite.kv)) {
+				newKvStore.set(key, val);
+			}
+		}
+
+		kvStore = newKvStore;
+		kvHelper = createKv(newKvStore, kvDefs);
+
+		// Update encrypted stores
+		encryptedStores.length = 0;
+		encryptedStores.push(...newEncryptedStores);
+
+		// Dispose old extensions LIFO
+		await disposeLifo(state.extensionCleanups);
+
+		// Re-fire extension factories on fresh doc
+		state.extensionCleanups.length = 0;
+		state.whenReadyPromises.length = 0;
+
+		for (const { key, factory } of dataDocExtensionFactories) {
+			try {
+				const raw = factory({
+					ydoc: freshYdoc,
+					whenReady: Promise.resolve(),
+				});
+				if (!raw) continue;
+				const resolved = defineExtension(raw);
+				(extensions as Record<string, unknown>)[key] = resolved;
+				state.extensionCleanups.push(resolved.dispose);
+				state.whenReadyPromises.push(resolved.whenReady);
+			} catch (err) {
+				console.error(
+					`[workspace] Extension '${key}' failed on epoch transition:`,
+					err,
+				);
+			}
+		}
+
+		// Wait for new extensions to be ready
+		await Promise.all(state.whenReadyPromises);
+
+		// Swap ydoc reference
+		ydoc = freshYdoc;
+		currentDataEpoch = newEpoch;
+
+		// Destroy old data doc
+		oldYdoc.destroy();
+	}
+
+	/**
+	 * Perform a local compaction: snapshot data, bump epoch, write into fresh doc.
+	 */
+	async function performCompaction(
+		state: BuilderState,
+		extensions: Record<string, unknown>,
+	) {
+		// Snapshot current data
+		const tableSnapshots: Record<string, BaseRow[]> = {};
+		for (const [name, helper] of Object.entries(tableHelpers)) {
+			tableSnapshots[name] = helper.getAllValid();
+		}
+
+		const kvSnapshot: Record<string, unknown> = {};
+		for (const key of Object.keys(kvDefs)) {
+			const raw = kvStore.get(key);
+			if (raw !== undefined) {
+				kvSnapshot[key] = raw;
+			}
+		}
+
+		// Bump epoch
+		const newEpoch = epochTracker.bumpEpoch();
+
+		// Swap to fresh doc with data
+		await swapDataDoc(newEpoch, state, extensions, {
+			tables: tableSnapshots,
+			kv: kvSnapshot,
+		});
+	}
+
+	// ── Epoch observation (multi-device) ─────────────────────────────────────
+	// When a remote client bumps the epoch, we detect it here and swap
+	// to the new data doc. The remote client already seeded the new doc,
+	// so we create empty stores and let CRDT sync deliver the data.
+	//
+	// The callback reference is set by buildClient so it closes over the
+	// correct `state` and `extensions` from the final builder.
+	let onRemoteEpochChange: ((newEpoch: number) => Promise<void>) | null =
+		null;
+	const unsubEpochObserver = epochTracker.observeEpoch((newEpoch) => {
+		if (isCompacting) return;
+		if (newEpoch <= currentDataEpoch) return;
+		onRemoteEpochChange?.(newEpoch);
+	});
 	/**
 	 * Build a workspace client with the given extensions and lifecycle state.
 	 *
@@ -373,7 +524,16 @@ export function createWorkspace<
 		TAwarenessDefinitions,
 		TExtensions
 	> {
+		// Wire up epoch observation for this builder's state/extensions.
+		// Each buildClient call overwrites the previous — the final builder wins.
+		onRemoteEpochChange = async (newEpoch: number) => {
+			await swapDataDoc(newEpoch, state, extensions);
+		};
+
 		const dispose = async (): Promise<void> => {
+			// Stop observing epoch changes
+			unsubEpochObserver();
+			onRemoteEpochChange = null;
 			// Close all documents first (before extensions they depend on)
 			for (const cleanup of documentCleanups) {
 				await cleanup();
@@ -462,110 +622,12 @@ export function createWorkspace<
 			 * ```
 			 */
 			async compact(): Promise<void> {
-				// ── Step 1: Snapshot current data ────────────────────────────
-				const tableSnapshots: Record<string, BaseRow[]> = {};
-				for (const [name, helper] of Object.entries(tableHelpers)) {
-					tableSnapshots[name] = helper.getAllValid();
+				isCompacting = true;
+				try {
+					await performCompaction(state, extensions);
+				} finally {
+					isCompacting = false;
 				}
-
-				const kvSnapshot: Record<string, unknown> = {};
-				for (const key of Object.keys(kvDefs)) {
-					const raw = kvStore.get(key);
-					if (raw !== undefined) {
-						kvSnapshot[key] = raw;
-					}
-				}
-
-				// ── Step 2: Bump epoch ──────────────────────────────────────
-				const newEpoch = epochTracker.bumpEpoch();
-
-				// ── Step 3: Create fresh data doc ───────────────────────────
-				const oldYdoc = ydoc;
-				const freshYdoc = new Y.Doc({ guid: `${id}-${newEpoch}` });
-
-				// ── Step 4: Create fresh stores + write data ────────────────
-				const newEncryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
-
-				for (const [name, definition] of Object.entries(tableDefs)) {
-					const yarray = freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(
-						TableKey(name),
-					);
-					const newYkv = createEncryptedYkvLww(yarray, {
-						key: options?.key,
-					});
-					newEncryptedStores.push(newYkv);
-
-					const newHelper = createTable(newYkv, definition);
-					for (const row of tableSnapshots[name] ?? []) {
-						newHelper.set(row);
-					}
-
-					// Wrap with observer tracking and re-register existing observers
-					const wrapped = wrapTableWithObserverTracking(name, newHelper);
-					const registry = tableObserverRegistry.get(name);
-					if (registry) {
-						for (const cb of registry) {
-							// The wrapped observe will add to registry (Set dedup handles it)
-							// but we call the inner helper directly to avoid double-tracking
-							newHelper.observe(cb);
-						}
-					}
-					tableHelpers[name] = wrapped;
-				}
-
-				// ── Step 5: Create fresh KV store + write data ──────────────
-				const newKvYarray =
-					freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-				const newKvStore = createEncryptedYkvLww(newKvYarray, {
-					key: options?.key,
-				});
-				newEncryptedStores.push(newKvStore);
-
-				for (const [key, val] of Object.entries(kvSnapshot)) {
-					newKvStore.set(key, val);
-				}
-
-				kvStore = newKvStore;
-				kvHelper = createKv(newKvStore, kvDefs);
-
-				// ── Step 6: Update encrypted stores ─────────────────────────
-				encryptedStores.length = 0;
-				encryptedStores.push(...newEncryptedStores);
-
-				// ── Step 7: Dispose old extensions LIFO ─────────────────────
-				await disposeLifo(state.extensionCleanups);
-
-				// ── Step 8: Re-fire extension factories on fresh doc ────────
-				state.extensionCleanups.length = 0;
-				state.whenReadyPromises.length = 0;
-
-				for (const { key, factory } of dataDocExtensionFactories) {
-					try {
-						const raw = factory({
-							ydoc: freshYdoc,
-							whenReady: Promise.resolve(),
-						});
-						if (!raw) continue;
-						const resolved = defineExtension(raw);
-						(extensions as Record<string, unknown>)[key] = resolved;
-						state.extensionCleanups.push(resolved.dispose);
-						state.whenReadyPromises.push(resolved.whenReady);
-					} catch (err) {
-						console.error(
-							`[workspace] Extension '${key}' failed on compact:`,
-							err,
-						);
-					}
-				}
-
-				// Wait for new extensions to be ready
-				await Promise.all(state.whenReadyPromises);
-
-				// ── Step 9: Swap ydoc reference ─────────────────────────────
-				ydoc = freshYdoc;
-
-				// ── Step 10: Destroy old data doc ───────────────────────────
-				oldYdoc.destroy();
 			},
 			async clearLocalData(): Promise<void> {
 				encryptionRuntime?.lock();

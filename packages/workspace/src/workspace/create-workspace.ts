@@ -349,6 +349,122 @@ export function createWorkspace<
 	const typedDocuments =
 		documentsNamespace as unknown as DocumentsHelper<TTableDefinitions>;
 
+	// ── Blue-green helpers ────────────────────────────────────────────────
+	// Pure preparation functions for epoch transitions. Neither touches
+	// mutable workspace state — they return self-contained bundles that
+	// the swap logic commits atomically.
+	/**
+	 * Create a fresh data doc with new stores, table helpers, and KV.
+	 * Does NOT modify any mutable workspace state — returns a self-contained bundle.
+	 * Used by the blue-green swap to prepare everything before committing.
+	 */
+	function prepareFreshDoc(
+		newEpoch: number,
+		dataToWrite?: {
+			tables: Record<string, BaseRow[]>;
+			kv: Record<string, unknown>;
+		},
+	) {
+		const freshYdoc = new Y.Doc({ guid: `${id}-${newEpoch}` });
+		const freshEncryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
+		const freshTableHelpers: Record<
+			string,
+			import('./types.js').TableHelper<BaseRow>
+		> = {};
+
+		for (const [name, definition] of Object.entries(tableDefs)) {
+			const yarray = freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(
+				TableKey(name),
+			);
+			const newYkv = createEncryptedYkvLww(yarray, {
+				key: options?.key,
+			});
+			freshEncryptedStores.push(newYkv);
+
+			const newHelper = createTable(newYkv, definition);
+			if (dataToWrite) {
+				for (const row of dataToWrite.tables[name] ?? []) {
+					newHelper.set(row);
+				}
+			}
+
+			const wrapped = wrapTableWithObserverTracking(name, newHelper);
+			const registry = tableObserverRegistry.get(name);
+			if (registry) {
+				for (const cb of registry) {
+					newHelper.observe(cb);
+				}
+			}
+			freshTableHelpers[name] = wrapped;
+		}
+
+		// Fresh KV
+		const freshKvYarray =
+			freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+		const freshKvStore = createEncryptedYkvLww(freshKvYarray, {
+			key: options?.key,
+		});
+		freshEncryptedStores.push(freshKvStore);
+
+		if (dataToWrite) {
+			for (const [key, val] of Object.entries(dataToWrite.kv)) {
+				freshKvStore.set(key, val);
+			}
+		}
+
+		const freshKvHelper = createKv(freshKvStore, kvDefs);
+
+		return {
+			ydoc: freshYdoc,
+			encryptedStores: freshEncryptedStores,
+			tableHelpers: freshTableHelpers,
+			kvStore: freshKvStore,
+			kvHelper: freshKvHelper,
+		};
+	}
+
+	/**
+	 * Re-fire all data-doc extension factories on a fresh Y.Doc.
+	 * Returns new lifecycle arrays — does NOT mutate the existing BuilderState.
+	 * If any factory throws, disposes already-created extensions and re-throws.
+	 */
+	async function createFreshExtensions(freshYdoc: Y.Doc) {
+		const freshCleanups: (() => MaybePromise<void>)[] = [];
+		const freshWhenReady: Promise<unknown>[] = [];
+		const freshExtensionEntries: Record<string, unknown> = {};
+
+		for (const { key, factory } of dataDocExtensionFactories) {
+			try {
+				const raw = factory({
+					ydoc: freshYdoc,
+					whenReady: Promise.resolve(),
+				});
+				if (!raw) continue;
+				const resolved = defineExtension(raw);
+				freshExtensionEntries[key] = resolved;
+				freshCleanups.push(resolved.dispose);
+				freshWhenReady.push(resolved.whenReady);
+			} catch (err) {
+				// Clean up any extensions that were already created
+				await disposeLifo(freshCleanups);
+				throw err;
+			}
+		}
+
+		// Wait for all new extensions to be ready
+		try {
+			await Promise.all(freshWhenReady);
+		} catch (err) {
+			await disposeLifo(freshCleanups);
+			throw err;
+		}
+
+		return {
+			cleanups: freshCleanups,
+			whenReadyPromises: freshWhenReady,
+			extensionEntries: freshExtensionEntries,
+		};
+	}
 	// ── Data doc swap ──────────────────────────────────────────────────────
 	// Shared logic for both compact() (local) and epoch observation (remote).
 	// When `dataToWrite` is provided, data is written into the fresh doc.

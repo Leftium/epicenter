@@ -88,21 +88,24 @@ import {
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
-	type YKeyValueLwwChangeHandler,
 	type YKeyValueLwwEntry,
 } from './y-keyvalue-lww';
 
 const textEncoder = new TextEncoder();
 
 /**
- * Sentinel used for synthetic change events emitted by activateEncryption/
- * deactivateEncryption. These events have no real Y.Transaction because
- * encryption state transitions are not Yjs operations. Handlers can check
- * `(transaction as any).__synthetic` to distinguish from real CRDT events.
+ * Change handler for the encrypted KV wrapper.
+ *
+ * The second parameter is `Y.Transaction | undefined` because encryption
+ * state transitions (`activateEncryption`, `deactivateEncryption`) fire
+ * change events without a backing Yjs transaction. Real CRDT changes
+ * always provide a `Y.Transaction`; encryption lifecycle events pass
+ * `undefined`.
  */
-const SYNTHETIC_TRANSACTION = Object.freeze({
-	__synthetic: true as const,
-}) as unknown as Y.Transaction;
+export type EncryptedKvChangeHandler<T> = (
+	changes: Map<string, YKeyValueLwwChange<T>>,
+	transaction: Y.Transaction | undefined,
+) => void;
 
 /**
  * Options for `createEncryptedYkvLww`.
@@ -127,8 +130,8 @@ export type YKeyValueLwwEncrypted<T> = {
 	has(key: string): boolean;
 	delete(key: string): void;
 	entries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
-	observe(handler: YKeyValueLwwChangeHandler<T>): void;
-	unobserve(handler: YKeyValueLwwChangeHandler<T>): void;
+	observe(handler: EncryptedKvChangeHandler<T>): void;
+	unobserve(handler: EncryptedKvChangeHandler<T>): void;
 
 	/**
 	 * Unlock the workspace with an encryption key. Rebuilds the decrypted map
@@ -210,7 +213,7 @@ export function createEncryptedYkvLww<T>(
 	const map = new Map<string, YKeyValueLwwEntry<T>>();
 
 	/** Registered change handlers. Receive decrypted change events. */
-	const changeHandlers = new Set<YKeyValueLwwChangeHandler<T>>();
+	const changeHandlers = new Set<EncryptedKvChangeHandler<T>>();
 
 	/**
 	 * The active encryption key. Seeded from `options.key` at creation,
@@ -452,7 +455,7 @@ export function createEncryptedYkvLww<T>(
 			if (syntheticChanges.size === 0) return;
 
 			for (const handler of changeHandlers)
-				handler(syntheticChanges, SYNTHETIC_TRANSACTION);
+				handler(syntheticChanges, undefined);
 		},
 
 		deactivateEncryption() {

@@ -177,9 +177,9 @@ export function createTable<
 		): () => void {
 			const handler = (
 				changes: Map<string, YKeyValueLwwChange<unknown>>,
-				transaction: Y.Transaction,
+				transaction: Y.Transaction | undefined,
 			) => {
-				callback(new Set(changes.keys()) as ReadonlySet<TRow['id']>, transaction);
+				callback(new Set(changes.keys()) as ReadonlySet<TRow['id']>, { origin: transaction?.origin });
 			};
 
 			ykv.observe(handler);

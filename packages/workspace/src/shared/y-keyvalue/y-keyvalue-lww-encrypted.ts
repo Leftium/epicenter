@@ -335,7 +335,8 @@ export function createEncryptedYkvLww<T>(
 	 * 3. Forward decrypted change events to registered handlers
 	 *
 	 * This keeps `wrapper.map` always in sync with `inner.map` but with
-	 * plaintext values. The observer is the sole writer to `map`.
+	 * plaintext values. `activateEncryption` and `deactivateEncryption` also
+	 * write to `map` during encryption state transitions.
 	 */
 	inner.observe((changes, transaction) => {
 		// Skip re-encryption writes — they don't change decrypted values.
@@ -447,13 +448,13 @@ export function createEncryptedYkvLww<T>(
 
 			const oldMap = new Map(map);
 			map.clear();
-			const needsReEncrypt: string[] = [];
+			const needsReEncrypt: Array<{ key: string; val: T }> = [];
 
 			for (const [key, entry] of inner.map) {
 				if (!isEncryptedBlob(entry.val)) {
 					// Plaintext entry — always needs encryption
 					map.set(key, { ...entry, val: entry.val as T });
-					needsReEncrypt.push(key);
+					needsReEncrypt.push({ key, val: entry.val as T });
 					continue;
 				}
 
@@ -469,7 +470,7 @@ export function createEncryptedYkvLww<T>(
 					decrypted = tryDecryptEntryWithKey(key, entry, previousKey);
 					if (decrypted) {
 						map.set(key, decrypted);
-						needsReEncrypt.push(key);
+						needsReEncrypt.push({ key, val: decrypted.val });
 						continue;
 					}
 				}
@@ -479,9 +480,8 @@ export function createEncryptedYkvLww<T>(
 
 			// Re-encrypt only entries that need it (plaintext or old-key)
 			inner.doc.transact(() => {
-				for (const entryKey of needsReEncrypt) {
-					const plainVal = map.get(entryKey)!;
-					inner.set(entryKey, encryptValue(JSON.stringify(plainVal.val), nextKey, textEncoder.encode(entryKey)));
+				for (const { key: entryKey, val } of needsReEncrypt) {
+					inner.set(entryKey, encryptValue(JSON.stringify(val), nextKey, textEncoder.encode(entryKey)));
 				}
 			}, RE_ENCRYPT);
 

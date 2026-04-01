@@ -1,14 +1,13 @@
 /**
  * Reactive bookmark state for the side panel.
  *
- * Backed by a Y.Doc CRDT table, so bookmarks sync across devices and survive
- * browser restarts. Unlike saved tabs (which are consumed on restore),
- * bookmarks persist indefinitely—opening a bookmarked URL does NOT delete
- * the record.
+ * Read-only reactive layer backed by `fromTable()` — provides granular
+ * per-row reactivity via `SvelteMap`. All write operations are delegated
+ * to workspace actions defined in `client.ts`.
  *
- * Backed by a `fromTable()` binding that provides granular per-row reactivity
- * via `SvelteMap`. The public API exposes a `$derived` sorted array since the
- * access pattern is always "render the full sorted list."
+ * The public API exposes a `$derived` sorted array (access pattern is
+ * always "render the full sorted list") plus a URL lookup set for O(1)
+ * bookmark checks.
  *
  * @example
  * ```svelte
@@ -20,21 +19,17 @@
  *   <BookmarkItem {bookmark} />
  * {/each}
  *
- * <button onclick={() => bookmarkState.add(tab)}>
- *   Bookmark
+ * <button onclick={() => bookmarkState.toggle(tab)}>
+ *   {bookmarkState.isUrlBookmarked(tab.url) ? 'Unbookmark' : 'Bookmark'}
  * </button>
  * ```
  */
 
 import { fromTable } from '@epicenter/svelte';
-import { getDeviceId } from '$lib/device/device-id';
+import { SvelteSet } from 'svelte/reactivity';
 import { workspace } from '$lib/client';
-	import {
-	type Bookmark,
-	type BookmarkId,
-	generateBookmarkId,
-} from '$lib/workspace';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
+import type { Bookmark, BookmarkId } from '$lib/workspace';
 
 function createBookmarkState() {
 	const bookmarksMap = fromTable(workspace.tables.bookmarks);
@@ -47,63 +42,72 @@ function createBookmarkState() {
 			.sort((a, b) => b.createdAt - a.createdAt),
 	);
 
+	/**
+	 * Reactive set of bookmarked URLs for O(1) lookup.
+	 *
+	 * Uses `SvelteSet` so `.has()` is a tracked reactive read—Svelte 5
+	 * re-renders any component that calls `isUrlBookmarked` when the set changes.
+	 */
+	const bookmarkedUrls = $derived(
+		new SvelteSet(bookmarksMap.values().map((b) => b.url)),
+	);
 	return {
 		get bookmarks() {
 			return bookmarks;
 		},
 
 		/**
-		 * Bookmark a tab—snapshot its metadata to Y.Doc.
+		 * Check whether a URL is currently bookmarked.
 		 *
-		 * Unlike "save for later," this does NOT close the browser tab.
-		 * The bookmark persists until explicitly deleted.
+		 * O(1) lookup via `SvelteSet.has()`, which is a tracked reactive
+		 * read in Svelte 5—safe to call per-row in a list render.
+		 */
+		isUrlBookmarked(url: string | undefined): boolean {
+			if (!url) return false;
+			return bookmarkedUrls.has(url);
+		},
+
+		/**
+		 * Toggle a bookmark for a tab—add if not bookmarked, remove if already bookmarked.
 		 *
+		 * Delegates to the `bookmarks.toggle` workspace action so the operation
+		 * is AI-callable and follows the same code path as programmatic toggles.
 		 * Silently no-ops for tabs without a URL.
 		 */
-		async add(tab: BrowserTab) {
+		async toggle(tab: BrowserTab) {
 			if (!tab.url) return;
-			const deviceId = await getDeviceId();
-			workspace.tables.bookmarks.set({
-				id: generateBookmarkId(),
+			await workspace.actions.bookmarks.toggle({
 				url: tab.url,
 				title: tab.title || 'Untitled',
 				favIconUrl: tab.favIconUrl,
-				description: undefined,
-				sourceDeviceId: deviceId,
-				createdAt: Date.now(),
-				_v: 1,
 			});
 		},
 
 		/**
-		 * Open a bookmark in a new browser tab.
+		 * Open a bookmark in a new browser tab without removing the bookmark.
 		 *
-		 * Unlike saved tab restore, the bookmark record is NOT deleted.
+		 * Delegates to the `bookmarks.open` workspace action.
 		 */
 		async open(bookmark: Bookmark) {
-			await browser.tabs.create({ url: bookmark.url });
+			await workspace.actions.bookmarks.open({ url: bookmark.url });
 		},
 
-		/** Delete a bookmark. */
-		remove(id: BookmarkId) {
-			workspace.tables.bookmarks.delete(id);
+		/**
+		 * Delete a bookmark by ID.
+		 *
+		 * Delegates to the `bookmarks.remove` workspace action.
+		 */
+		async remove(id: BookmarkId) {
+			await workspace.actions.bookmarks.remove({ id });
 		},
 
-		/** Delete all bookmarks. Wrapped in a Y.Doc transaction. */
-		removeAll() {
-			const all = bookmarksMap.values().toArray();
-			if (!all.length) return;
-
-			workspace.batch(() => {
-				for (const bookmark of all) {
-					workspace.tables.bookmarks.delete(bookmark.id);
-				}
-			});
-		},
-
-		/** Update a bookmark's metadata in Y.Doc. */
-		update(bookmark: Bookmark) {
-			workspace.tables.bookmarks.set(bookmark);
+		/**
+		 * Delete all bookmarks.
+		 *
+		 * Delegates to the `bookmarks.removeAll` workspace action.
+		 */
+		async removeAll() {
+			await workspace.actions.bookmarks.removeAll({});
 		},
 	};
 }

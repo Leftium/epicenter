@@ -21,6 +21,7 @@
 	let { tab }: { tab: BrowserTab } = $props();
 
 	const domain = $derived(tab.url ? getDomain(tab.url) : '');
+	const isBookmarked = $derived(bookmarkState.isUrlBookmarked(tab.url));
 </script>
 
 <Item.Root
@@ -155,13 +156,13 @@
 				<Button
 					variant="ghost"
 					size="icon-xs"
-					tooltip="Bookmark"
+					tooltip={isBookmarked ? 'Remove bookmark' : 'Bookmark'}
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						bookmarkState.add(tab);
+						bookmarkState.toggle(tab);
 					}}
 				>
-					<StarIcon />
+					<StarIcon class={isBookmarked ? 'fill-amber-500 text-amber-500' : ''} />
 				</Button>
 
 				<Button

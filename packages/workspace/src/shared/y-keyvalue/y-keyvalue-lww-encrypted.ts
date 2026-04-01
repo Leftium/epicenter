@@ -23,7 +23,7 @@
  *         │                                                (inner handles pending)
  *         ▼  inner.observe fires
  *   ├── inner.map has encrypted entry
- *   ├── maybeDecrypt → plaintext (or skip on failure)
+ *   ├── tryDecryptEntry → plaintext (or skip on failure)
  *   ├── wrapper.map.set('tab-1', plaintext entry)       ← cachedEntries() exposes this
  *   └── change event forwarded with decrypted values
  *
@@ -64,7 +64,7 @@
  *
  * ## Error Containment
  *
- * The observer wraps `maybeDecrypt` with `trySync`. A failed decrypt skips
+ * The observer wraps decrypt with try/catch. A failed decrypt skips
  * the entry and logs a warning instead of throwing. This prevents one bad blob
  * from crashing all observation. `failedDecryptCount` exposes the number of
  * entries that failed to decrypt. Entries are retried on `activateEncryption()`.
@@ -91,6 +91,9 @@ import {
 } from './y-keyvalue-lww';
 
 const textEncoder = new TextEncoder();
+
+/** Transaction origin for re-encryption writes. Observer skips events with this origin. */
+const RE_ENCRYPT = Symbol('re-encrypt');
 
 /**
  * Change handler for the encrypted KV wrapper.
@@ -142,9 +145,8 @@ export type YKeyValueLwwEncrypted<T> = {
 	activateEncryption(key: Uint8Array): void;
 
 	/**
-	 * Deactivate encryption. Clears the key and the decrypted cache.
-	 * After this call, new writes are plaintext and encrypted entries
-	 * are no longer readable until `activateEncryption()` is called again.
+	 * Deactivate encryption. Clears the key, emits delete events for entries
+	 * that become unreadable, and retains any plaintext entries.
 	 */
 	deactivateEncryption(): void;
 	/**
@@ -284,6 +286,10 @@ export function createEncryptedYkvLww<T>(
 		}
 	};
 
+	/** Compare two decrypted values for equality (deep via JSON.stringify fallback). */
+	const areValuesEqual = (left: T, right: T): boolean =>
+		Object.is(left, right) || JSON.stringify(left) === JSON.stringify(right);
+
 	/**
 	 * Diff old map vs current map and emit synthetic change events.
 	 *
@@ -309,7 +315,7 @@ export function createEncryptedYkvLww<T>(
 			}
 
 			if (!oldEntry || !newEntry) continue;
-			if (Object.is(oldEntry.val, newEntry.val) || JSON.stringify(oldEntry.val) === JSON.stringify(newEntry.val)) continue;
+			if (areValuesEqual(oldEntry.val, newEntry.val)) continue;
 
 			changes.set(key, { action: 'update', newValue: newEntry.val });
 		}
@@ -332,6 +338,10 @@ export function createEncryptedYkvLww<T>(
 	 * plaintext values. The observer is the sole writer to `map`.
 	 */
 	inner.observe((changes, transaction) => {
+		// Skip re-encryption writes — they don't change decrypted values.
+		// activateEncryption handles its own event emission via diffAndEmit.
+		if (transaction.origin === RE_ENCRYPT) return;
+
 		const decryptedChanges = new Map<string, YKeyValueLwwChange<T>>();
 
 		for (const [key, change] of changes) {
@@ -345,15 +355,7 @@ export function createEncryptedYkvLww<T>(
 				const decrypted = tryDecryptEntry(key, entry);
 				if (!decrypted) continue;
 
-				const existing = map.get(key);
-				if (existing && JSON.stringify(existing.val) === JSON.stringify(decrypted.val)) {
-					// Decrypted value unchanged (e.g., re-encryption during activateEncryption).
-					// Update the cache entry but don't emit a change event.
-					map.set(key, decrypted);
-					continue;
-				}
-
-				const wasNew = !existing;
+				const wasNew = !map.has(key);
 				map.set(key, decrypted);
 				decryptedChanges.set(key, {
 					action: wasNew ? 'add' : 'update',
@@ -476,10 +478,12 @@ export function createEncryptedYkvLww<T>(
 			}
 
 			// Re-encrypt only entries that need it (plaintext or old-key)
-			for (const entryKey of needsReEncrypt) {
-				const plainVal = map.get(entryKey)!;
-				inner.set(entryKey, encryptValue(JSON.stringify(plainVal.val), nextKey, textEncoder.encode(entryKey)));
-			}
+			inner.doc.transact(() => {
+				for (const entryKey of needsReEncrypt) {
+					const plainVal = map.get(entryKey)!;
+					inner.set(entryKey, encryptValue(JSON.stringify(plainVal.val), nextKey, textEncoder.encode(entryKey)));
+				}
+			}, RE_ENCRYPT);
 
 			diffAndEmit(oldMap);
 		},

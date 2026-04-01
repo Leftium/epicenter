@@ -502,6 +502,13 @@ export function createWorkspace<
 		}
 
 		// ── COMMIT (synchronous) ─────────────────────────────────────
+		// For local compact (dataToWrite present), bump the epoch NOW —
+		// after prep succeeded but before committing. This ensures the
+		// coordination doc is only updated if the swap will complete.
+		// For remote swaps, the epoch was already bumped by the remote client.
+		if (dataToWrite) {
+			epochTracker.bumpEpoch();
+		}
 		const oldYdoc = ydoc;
 		const oldCleanups = [...state.extensionCleanups];
 
@@ -719,14 +726,13 @@ export function createWorkspace<
 						kvSnapshot[key] = raw;
 					}
 				}
-
-				// Guard: bumpEpoch fires the epoch observer synchronously,
-				// which calls requestSwap. Setting isSwapping prevents the
-				// observer from starting a concurrent drainSwapQueue.
+				// Guard: the epoch observer fires synchronously when the
+				// coordination doc changes (inside doBlueGreenSwap's commit).
+				// Setting isSwapping prevents the observer from racing.
 				isSwapping = true;
-				const newEpoch = epochTracker.bumpEpoch();
+				const nextEpoch = epochTracker.getEpoch() + 1;
 				try {
-					await doBlueGreenSwap(newEpoch, state, extensions, {
+					await doBlueGreenSwap(nextEpoch, state, extensions, {
 						tables: tableSnapshots,
 						kv: kvSnapshot,
 					});

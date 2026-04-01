@@ -453,36 +453,6 @@ export function createWorkspace<
 		oldYdoc.destroy();
 	}
 
-	/**
-	 * Perform a local compaction: snapshot data, bump epoch, write into fresh doc.
-	 */
-	async function performCompaction(
-		state: BuilderState,
-		extensions: Record<string, unknown>,
-	) {
-		// Snapshot current data
-		const tableSnapshots: Record<string, BaseRow[]> = {};
-		for (const [name, helper] of Object.entries(tableHelpers)) {
-			tableSnapshots[name] = helper.getAllValid();
-		}
-
-		const kvSnapshot: Record<string, unknown> = {};
-		for (const key of Object.keys(kvDefs)) {
-			const raw = kvStore.get(key);
-			if (raw !== undefined) {
-				kvSnapshot[key] = raw;
-			}
-		}
-
-		// Bump epoch
-		const newEpoch = epochTracker.bumpEpoch();
-
-		// Swap to fresh doc with data
-		await swapDataDoc(newEpoch, state, extensions, {
-			tables: tableSnapshots,
-			kv: kvSnapshot,
-		});
-	}
 
 	// ── Epoch observation (multi-device) ─────────────────────────────────────
 	// When a remote client bumps the epoch, we detect it here and swap
@@ -624,7 +594,26 @@ export function createWorkspace<
 			async compact(): Promise<void> {
 				isCompacting = true;
 				try {
-					await performCompaction(state, extensions);
+					// Snapshot current data
+					const tableSnapshots: Record<string, BaseRow[]> = {};
+					for (const [name, helper] of Object.entries(tableHelpers)) {
+						tableSnapshots[name] = helper.getAllValid();
+					}
+
+					const kvSnapshot: Record<string, unknown> = {};
+					for (const key of Object.keys(kvDefs)) {
+						const raw = kvStore.get(key);
+						if (raw !== undefined) {
+							kvSnapshot[key] = raw;
+						}
+					}
+
+					// Bump epoch + swap to fresh doc with data
+					const newEpoch = epochTracker.bumpEpoch();
+					await swapDataDoc(newEpoch, state, extensions, {
+						tables: tableSnapshots,
+						kv: kvSnapshot,
+					});
 				} finally {
 					isCompacting = false;
 				}

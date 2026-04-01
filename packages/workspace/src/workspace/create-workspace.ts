@@ -921,13 +921,18 @@ export function createWorkspace<
 
 					try {
 						await runSerializedCacheTask(async () => {
-							await config.userKeyStore.set(bytesToBase64(userKey));
+							// Guard: only write if this key is still the active one.
+							// A rapid unlock(keyA) → unlock(keyB) sequence queues two
+							// writes. By the time keyA's task runs, activeUserKey is
+							// already keyB — skip the stale write entirely.
 							if (
-								activeUserKey !== undefined &&
-								bytesEqual(activeUserKey, userKey)
-							) {
-								isActiveUserKeyCached = true;
-							}
+								activeUserKey === undefined ||
+								!bytesEqual(activeUserKey, userKey)
+							)
+								return;
+
+							await config.userKeyStore.set(bytesToBase64(userKey));
+							isActiveUserKeyCached = true;
 						});
 					} catch (error) {
 						console.error('[workspace] User key cache save failed:', error);
@@ -939,15 +944,28 @@ export function createWorkspace<
 						activeUserKey !== undefined && bytesEqual(activeUserKey, userKey);
 
 					if (!isSameUserKey) {
+						const nextWorkspaceKey = deriveWorkspaceKey(userKey, id);
+						const previousWorkspaceKey = workspaceKey;
+						const activated: YKeyValueLwwEncrypted<unknown>[] = [];
 						try {
-							const nextWorkspaceKey = deriveWorkspaceKey(userKey, id);
 							for (const store of encryptedStores) {
 								store.activateEncryption(nextWorkspaceKey);
+								activated.push(store);
 							}
 							workspaceKey = nextWorkspaceKey;
 							activeUserKey = userKey;
 							isActiveUserKeyCached = config?.userKeyStore === undefined;
 						} catch (error) {
+							// Rollback: revert stores activated before the failure
+							for (const store of activated) {
+								try {
+									if (previousWorkspaceKey) {
+										store.activateEncryption(previousWorkspaceKey);
+									} else {
+										store.deactivateEncryption();
+									}
+								} catch { /* best-effort rollback */ }
+							}
 							console.error('[workspace] Workspace unlock failed:', error);
 							return;
 						}

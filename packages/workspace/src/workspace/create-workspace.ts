@@ -114,6 +114,8 @@ import type {
 	EncryptionConfig,
 	ExtensionContext,
 	KvDefinitions,
+	TableHelper,
+	TablesHelper,
 	TableDefinitions,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
@@ -129,11 +131,6 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 	return true;
 }
 
-/** Table observer callback type for tracking across compaction. */
-type TableObserverCallback = (
-	changedIds: ReadonlySet<string>,
-	origin?: unknown,
-) => void;
 
 /**
  * Create a workspace client with chainable extension support.
@@ -197,59 +194,32 @@ export function createWorkspace<
 	// activateEncryption across tables and KV simultaneously.
 	const encryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
 
-	// ── Table observer tracking ─────────────────────────────────────────
-	// Observers registered via table.observe() are tracked so they can be
-	// re-registered on the new table helpers after compact().
-	const tableObserverRegistry = new Map<string, Set<TableObserverCallback>>();
+	// Create table stores + helpers (one encrypted KV per table)
 
 	// Create table stores + helpers (one encrypted KV per table)
 	const tableHelpers: Record<
 		string,
-		import('./types.js').TableHelper<BaseRow>
+		TableHelper<BaseRow>
 	> = {};
 	for (const [name, definition] of Object.entries(tableDefs)) {
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 		const ykv = createEncryptedYkvLww(yarray, { key: options?.key });
 		encryptedStores.push(ykv);
 		const helper = createTable(ykv, definition);
-		tableHelpers[name] = wrapTableWithObserverTracking(name, helper);
+		tableHelpers[name] = helper;
 	}
 	const tables =
-		tableHelpers as import('./types.js').TablesHelper<TTableDefinitions>;
+		tableHelpers as TablesHelper<TTableDefinitions>;
 
-	/**
-	 * Wrap a table helper's observe method to track callbacks for compact re-registration.
-	 * Returns a new object that delegates all calls and tracks observe/unobserve.
-	 */
-	function wrapTableWithObserverTracking(
-		name: string,
-		helper: import('./types.js').TableHelper<BaseRow>,
-	): import('./types.js').TableHelper<BaseRow> {
-		if (!tableObserverRegistry.has(name)) {
-			tableObserverRegistry.set(name, new Set());
-		}
-		const registry = tableObserverRegistry.get(name)!;
-		const originalObserve = helper.observe;
-
-		return {
-			...helper,
-			observe(callback: TableObserverCallback) {
-				registry.add(callback);
-				const unsub = originalObserve.call(helper, callback);
-				return () => {
-					registry.delete(callback);
-					unsub();
-				};
-			},
-		};
-	}
 
 	// Create KV store + helper (single shared encrypted KV)
 	const kvYarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	let kvStore = createEncryptedYkvLww(kvYarray, { key: options?.key });
 	encryptedStores.push(kvStore);
 	let kvHelper = createKv(kvStore, kvDefs);
-	const awareness = createAwareness(ydoc, awarenessDefs);
+	// Awareness lives on the coordination doc — it represents peer presence,
+	// which persists across data doc epoch transitions (compaction).
+	const awareness = createAwareness(coordYdoc, awarenessDefs);
 	const definitions = {
 		tables: tableDefs,
 		kv: kvDefs,
@@ -367,7 +337,7 @@ export function createWorkspace<
 		const freshEncryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
 		const freshTableHelpers: Record<
 			string,
-			import('./types.js').TableHelper<BaseRow>
+			TableHelper<BaseRow>
 		> = {};
 
 		for (const [name, definition] of Object.entries(tableDefs)) {
@@ -386,14 +356,7 @@ export function createWorkspace<
 				}
 			}
 
-			const wrapped = wrapTableWithObserverTracking(name, newHelper);
-			const registry = tableObserverRegistry.get(name);
-			if (registry) {
-				for (const cb of registry) {
-					newHelper.observe(cb);
-				}
-			}
-			freshTableHelpers[name] = wrapped;
+			freshTableHelpers[name] = newHelper;
 		}
 
 		// Fresh KV

@@ -130,13 +130,36 @@ describe('workspace.compact()', () => {
 		}
 	});
 
-	test('observers survive compact and fire on new doc', async () => {
+	test('observers on old doc stop firing after compact', async () => {
 		const { client } = setup();
 
 		const changes: string[] = [];
 		client.tables.posts.observe((ids) => {
 			for (const id of ids) changes.push(id);
 		});
+
+		client.tables.posts.set({ id: '1', title: 'Pre', _v: 1 });
+		expect(changes).toContain('1');
+
+		await client.compact();
+		client.tables.posts.set({ id: '2', title: 'Post', _v: 1 });
+
+		// Observer was on the old data doc — does not fire after compact
+		expect(changes).not.toContain('2');
+	});
+
+	test('re-registering observers via onEpochChange works', async () => {
+		const { client } = setup();
+
+		const changes: string[] = [];
+		function registerObserver() {
+			client.tables.posts.observe((ids) => {
+				for (const id of ids) changes.push(id);
+			});
+		}
+
+		registerObserver();
+		client.onEpochChange(() => registerObserver());
 
 		client.tables.posts.set({ id: '1', title: 'Pre', _v: 1 });
 		await client.compact();

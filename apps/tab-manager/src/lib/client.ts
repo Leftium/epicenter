@@ -107,7 +107,7 @@ function buildWorkspaceClient() {
 				getToken: async () => authSession.current?.token ?? null,
 			}),
 		)
-		.withActions(({ tables }) => ({
+		.withActions(({ tables, batch }) => ({
 			tabs: {
 				close: defineMutation({
 					title: 'Close Tabs',
@@ -293,6 +293,123 @@ function buildWorkspaceClient() {
 					},
 				}),
 			},
+			savedTabs: {
+				/**
+				 * Save a single tab by its metadata—snapshot to Y.Doc and close the browser tab.
+				 *
+				 * Used by the UI where the BrowserTab object is already available.
+				 * Silently no-ops for tabs without a URL.
+				 */
+				save: defineMutation({
+					title: 'Save Tab',
+					description: 'Save a tab for later by its metadata, then close it.',
+					input: Type.Object({
+						browserTabId: Type.Number(),
+						url: Type.String(),
+						title: Type.String(),
+						favIconUrl: Type.Optional(Type.String()),
+						pinned: Type.Boolean(),
+					}),
+					handler: async ({ browserTabId, url, title, favIconUrl, pinned }) => {
+						const deviceId = await getDeviceId();
+						tables.savedTabs.set({
+							id: generateSavedTabId(),
+							url,
+							title,
+							favIconUrl,
+							pinned,
+							sourceDeviceId: deviceId,
+							savedAt: Date.now(),
+							_v: 1,
+						});
+						await tryAsync({
+							try: () => browser.tabs.remove(browserTabId),
+							catch: () => Ok(undefined),
+						});
+						return { saved: true };
+					},
+				}),
+
+				/**
+				 * Restore a saved tab—re-open in browser and delete the record.
+				 *
+				 * Preserves the tab's pinned state.
+				 */
+				restore: defineMutation({
+					title: 'Restore Saved Tab',
+					description: 'Re-open a saved tab in the browser and delete the record.',
+					input: Type.Object({
+						id: Type.String(),
+						url: Type.String(),
+						pinned: Type.Boolean(),
+					}),
+					handler: async ({ id, url, pinned }) => {
+						await tryAsync({
+							try: () => browser.tabs.create({ url, pinned }),
+							catch: () => Ok(undefined),
+						});
+						tables.savedTabs.delete(id);
+						return { restored: true };
+					},
+				}),
+
+				/**
+				 * Restore all saved tabs at once.
+				 *
+				 * Fires all tab creations in parallel and batch-deletes from
+				 * Y.Doc in a single transaction.
+				 */
+				restoreAll: defineMutation({
+					title: 'Restore All Saved Tabs',
+					description: 'Re-open all saved tabs and delete their records.',
+					input: Type.Object({}),
+					handler: async () => {
+						const all = tables.savedTabs.getAllValid();
+						if (!all.length) return { restoredCount: 0 };
+						const createPromises = all.map((tab) =>
+							browser.tabs.create({ url: tab.url, pinned: tab.pinned }),
+						);
+						batch(() => {
+							for (const tab of all) {
+								tables.savedTabs.delete(tab.id);
+							}
+						});
+						await Promise.allSettled(createPromises);
+						return { restoredCount: all.length };
+					},
+				}),
+
+				/** Remove a saved tab without restoring it. */
+				remove: defineMutation({
+					title: 'Remove Saved Tab',
+					description: 'Delete a saved tab without restoring it.',
+					input: Type.Object({ id: Type.String() }),
+					handler: ({ id }) => {
+						tables.savedTabs.delete(id);
+						return { removed: true };
+					},
+				}),
+
+				/**
+				 * Delete all saved tabs without restoring.
+				 *
+				 * Wrapped in a Y.Doc transaction so the observer fires once.
+				 */
+				removeAll: defineMutation({
+					title: 'Remove All Saved Tabs',
+					description: 'Delete all saved tabs without restoring them.',
+					input: Type.Object({}),
+					handler: () => {
+						const all = tables.savedTabs.getAllValid();
+						batch(() => {
+							for (const tab of all) {
+								tables.savedTabs.delete(tab.id);
+							}
+						});
+						return { removedCount: all.length };
+					},
+				}),
+			},
 			bookmarks: {
 				/**
 				 * Toggle a bookmark for a URL—add if not bookmarked, remove all matches if already bookmarked.
@@ -378,9 +495,11 @@ function buildWorkspaceClient() {
 					input: Type.Object({}),
 					handler: () => {
 						const all = tables.bookmarks.getAllValid();
-						for (const bookmark of all) {
-							tables.bookmarks.delete(bookmark.id);
-						}
+						batch(() => {
+							for (const bookmark of all) {
+								tables.bookmarks.delete(bookmark.id);
+							}
+						});
 						return { removedCount: all.length };
 					},
 				}),

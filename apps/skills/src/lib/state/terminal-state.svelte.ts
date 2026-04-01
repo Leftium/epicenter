@@ -1,6 +1,6 @@
 import { defineCommand } from 'just-bash';
 import { fsState } from '$lib/state/fs-state.svelte';
-import { bash, fs } from '$lib/workspace';
+import { bash, fs } from '$lib/client';
 
 /**
  * A single entry in the terminal history.

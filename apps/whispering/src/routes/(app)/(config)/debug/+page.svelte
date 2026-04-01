@@ -15,7 +15,7 @@
 	} from 'wellcrafted/error';
 	import { tryAsync, trySync } from 'wellcrafted/result';
 	import * as Y from 'yjs';
-	import workspace from '$lib/workspace';
+	import { workspace } from '$lib/client';
 
 	const DebugStressTestError = defineErrors({
 		GenerateFailed: ({ cause }: { cause: unknown }) => ({

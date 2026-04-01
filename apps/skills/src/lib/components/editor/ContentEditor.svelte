@@ -3,7 +3,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import { fsState } from '$lib/state/fs-state.svelte';
-	import { ws } from '$lib/workspace';
+	import { ws } from '$lib/client';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let {

@@ -206,6 +206,37 @@
         "wrangler": "catalog:",
       },
     },
+    "apps/skills": {
+      "name": "skills",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@codemirror/commands": "^6.10.3",
+        "@codemirror/lang-markdown": "^6.5.0",
+        "@codemirror/language": "^6.12.2",
+        "@codemirror/state": "^6.6.0",
+        "@codemirror/view": "^6.40.0",
+        "@epicenter/filesystem": "workspace:*",
+        "@epicenter/ui": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
+        "@lucide/svelte": "catalog:",
+        "@sveltejs/adapter-auto": "catalog:",
+        "@sveltejs/kit": "catalog:",
+        "@sveltejs/vite-plugin-svelte": "catalog:",
+        "@tailwindcss/vite": "catalog:",
+        "bun-types": "catalog:",
+        "just-bash": "^2.9.7",
+        "shiki": "^3.7.0",
+        "svelte": "catalog:",
+        "svelte-check": "catalog:",
+        "svelte-sonner": "catalog:",
+        "tailwindcss": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "y-codemirror.next": "^0.3.5",
+        "y-indexeddb": "catalog:",
+        "yjs": "catalog:",
+      },
+    },
     "apps/tab-manager": {
       "name": "@epicenter/tab-manager",
       "version": "0.0.1",
@@ -249,19 +280,6 @@
         "typescript": "catalog:",
         "vite": "catalog:",
         "wxt": "^0.20.8",
-      },
-    },
-    "apps/tab-manager-markdown": {
-      "name": "@epicenter/tab-manager-markdown",
-      "version": "0.0.1",
-      "dependencies": {
-        "@epicenter/tab-manager": "workspace:*",
-        "@epicenter/workspace": "workspace:*",
-        "yjs": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
       },
     },
     "apps/whispering": {
@@ -414,6 +432,8 @@
       },
       "devDependencies": {
         "@epicenter/api": "workspace:*",
+        "@epicenter/honeycrisp": "workspace:*",
+        "@epicenter/tab-manager": "workspace:*",
         "@types/yargs": "catalog:",
         "arktype": "catalog:",
         "typescript": "catalog:",
@@ -441,6 +461,24 @@
         "prosemirror-markdown": "^1.13.4",
         "wellcrafted": "catalog:",
         "y-prosemirror": "^1.3.7",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+        "yjs": "catalog:",
+      },
+      "peerDependencies": {
+        "yjs": "catalog:",
+      },
+    },
+    "packages/skills": {
+      "name": "@epicenter/skills",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/workspace": "workspace:*",
+        "arktype": "catalog:",
+        "wellcrafted": "catalog:",
+        "yaml": "^2.8.0",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -852,6 +890,8 @@
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
 
+    "@epicenter/skills": ["@epicenter/skills@workspace:packages/skills"],
+
     "@epicenter/svelte": ["@epicenter/svelte@workspace:packages/svelte-utils"],
 
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
@@ -859,8 +899,6 @@
     "@epicenter/sync-client": ["@epicenter/sync-client@workspace:packages/sync-client"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
-
-    "@epicenter/tab-manager-markdown": ["@epicenter/tab-manager-markdown@workspace:apps/tab-manager-markdown"],
 
     "@epicenter/ui": ["@epicenter/ui@workspace:packages/ui"],
 
@@ -2969,6 +3007,8 @@
     "sirv": ["sirv@3.0.2", "", { "dependencies": { "@polka/url": "^1.0.0-next.24", "mrmime": "^2.0.0", "totalist": "^3.0.0" } }, "sha512-2wcC/oGxHis/BoHkkPwldgiPSYcpZK3JU28WoMVv55yHJgcZ8rlXvuG9iZggz+sU1d4bRgIGASwyWqjxu3FM0g=="],
 
     "sisteransi": ["sisteransi@1.0.5", "", {}, "sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg=="],
+
+    "skills": ["skills@workspace:apps/skills"],
 
     "slice-ansi": ["slice-ansi@8.0.0", "", { "dependencies": { "ansi-styles": "^6.2.3", "is-fullwidth-code-point": "^5.1.0" } }, "sha512-stxByr12oeeOyY2BlviTNQlYV5xOj47GirPr4yA1hE9JCtxfQN0+tVbkxwCtYDQWhEKWFHsEK48ORg5jrouCAg=="],
 

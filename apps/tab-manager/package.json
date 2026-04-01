@@ -4,8 +4,7 @@
 	"type": "module",
 	"private": true,
 	"exports": {
-		"./workspace": "./src/lib/workspace/index.ts",
-		"./schema": "./src/lib/workspace/schema.ts"
+		"./workspace": "./src/lib/workspace/index.ts"
 	},
 	"scripts": {
 		"dev": "wxt",

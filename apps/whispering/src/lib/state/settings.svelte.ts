@@ -1,6 +1,6 @@
 import type { InferKvValue } from '@epicenter/workspace';
 import { SvelteMap } from 'svelte/reactivity';
-import workspace from '$lib/workspace';
+import { workspace } from '$lib/client';
 
 const KV_DEFINITIONS = workspace.definitions.kv;
 type KvKey = keyof typeof KV_DEFINITIONS & string;

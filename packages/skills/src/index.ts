@@ -24,7 +24,8 @@
  */
 
 // Workspace factory + definition
-export { createSkillsWorkspace, skillsDefinition } from './workspace.js';
+export { createSkillsWorkspace } from './workspace.js';
+export { skillsDefinition } from './definition.js';
 
 // Tables + types (for embedding in custom workspaces)
 export { skillsTable, referencesTable } from './tables.js';

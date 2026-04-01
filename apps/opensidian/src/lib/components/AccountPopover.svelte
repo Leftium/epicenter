@@ -6,7 +6,7 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import AuthForm from '$lib/components/AuthForm.svelte';
-	import { auth } from '$lib/workspace';
+	import { auth } from '$lib/client';
 
 
 	let popoverOpen = $state(false);

@@ -1,14 +1,4 @@
 export {
-	registerDevice,
-	type WorkspaceActionName,
-	type WorkspaceTools,
-	workspace,
-	auth,
-	workspaceDefinitions,
-	workspaceTools,
-	workspaceToolTitles,
-} from './client.svelte';
-export {
 	type Bookmark,
 	BookmarkId,
 	type ChatMessage,
@@ -25,4 +15,5 @@ export {
 	type SavedTab,
 	SavedTabId,
 	type ToolTrust,
-} from './schema';
+} from './definition';
+export { createTabManagerWorkspace } from './workspace';

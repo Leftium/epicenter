@@ -1,24 +1,24 @@
 /**
  * End-to-end test: Honeycrisp workspace through the CLI pipeline.
  *
- * Proves the full local companion flow without jsrepo, without auth,
- * without Cloudflare:
+ * Uses the single-workspace fixture (one named export) to verify:
  *
- * 1. loadConfig() loads epicenter.config.ts with a default export
- * 2. Raw definitions can be wired with filesystemPersistence
- * 3. Table CRUD works (set, getAllValid)
- * 4. KV works (get, set)
- * 5. SQLite persistence survives process restart
+ * Key behaviors:
+ * - loadConfig() discovers exactly one workspace client from a single export
+ * - Table CRUD works (set, getAllValid)
+ * - KV works (get, set)
+ * - SQLite persistence survives process restart
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createWorkspace, dateTimeStringNow } from '@epicenter/workspace';
+import { dateTimeStringNow } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
-import { loadConfig } from '../src/config/load-config';
+import { honeycrisp, createHoneycrisp } from '@epicenter/honeycrisp/workspace';
+import { loadConfig } from '../src/load-config';
 
-const FIXTURE_DIR = join(import.meta.dir, 'fixtures/honeycrisp-basic');
+const FIXTURE_DIR = join(import.meta.dir, 'fixtures/single-workspace');
 const PERSISTENCE_DIR = join(FIXTURE_DIR, '.epicenter-test');
 
 function dbPath(id: string) {
@@ -34,29 +34,18 @@ describe('e2e: honeycrisp workspace', () => {
 		await rm(PERSISTENCE_DIR, { recursive: true, force: true });
 	});
 
-	test('loadConfig: loads default export as definition', async () => {
+	test('loadConfig: discovers exactly one client from single export', async () => {
 		const result = await loadConfig(FIXTURE_DIR);
 
-		// Default export is a raw WorkspaceDefinition, not a pre-wired client
-		expect(result.definitions.length + result.clients.length).toBeGreaterThan(0);
-
-		// Should find honeycrisp workspace (could be definition or client depending on export)
-		const allDefs = result.definitions;
-		const allClients = result.clients;
-		const found = [...allDefs, ...allClients].find(
-			(w) => (w as { id: string }).id === 'epicenter.honeycrisp',
-		);
-		expect(found).toBeDefined();
+		expect(result.clients).toHaveLength(1);
+		expect(result.clients[0]!.id).toBe('epicenter.honeycrisp');
 		expect(result.configDir).toBe(FIXTURE_DIR);
 	});
 
 	test('table CRUD: write and read folders + notes', async () => {
-		const { definitions } = await loadConfig(FIXTURE_DIR);
-		const definition = definitions[0]!;
-
-		const client = createWorkspace(definition).withExtension(
+		const client = createHoneycrisp().withExtension(
 			'persistence',
-			filesystemPersistence({ filePath: dbPath(definition.id) }),
+			filesystemPersistence({ filePath: dbPath(honeycrisp.id) }),
 		);
 
 		await client.whenReady;
@@ -99,13 +88,10 @@ describe('e2e: honeycrisp workspace', () => {
 	});
 
 	test('persistence: data survives restart', async () => {
-		const { definitions } = await loadConfig(FIXTURE_DIR);
-		const definition = definitions[0]!;
-
 		// Re-open same workspace — should load persisted state from SQLite
-		const client = createWorkspace(definition).withExtension(
+		const client = createHoneycrisp().withExtension(
 			'persistence',
-			filesystemPersistence({ filePath: dbPath(definition.id) }),
+			filesystemPersistence({ filePath: dbPath(honeycrisp.id) }),
 		);
 
 		await client.whenReady;
@@ -122,13 +108,10 @@ describe('e2e: honeycrisp workspace', () => {
 	});
 
 	test('KV: set, persist, read after restart', async () => {
-		const { definitions } = await loadConfig(FIXTURE_DIR);
-		const definition = definitions[0]!;
-
 		// Open, set KV values, destroy
-		const client1 = createWorkspace(definition).withExtension(
+		const client1 = createHoneycrisp().withExtension(
 			'persistence',
-			filesystemPersistence({ filePath: dbPath(definition.id) }),
+			filesystemPersistence({ filePath: dbPath(honeycrisp.id) }),
 		);
 		await client1.whenReady;
 
@@ -138,9 +121,9 @@ describe('e2e: honeycrisp workspace', () => {
 		await client1.dispose();
 
 		// Re-open and verify
-		const client2 = createWorkspace(definition).withExtension(
+		const client2 = createHoneycrisp().withExtension(
 			'persistence',
-			filesystemPersistence({ filePath: dbPath(definition.id) }),
+			filesystemPersistence({ filePath: dbPath(honeycrisp.id) }),
 		);
 		await client2.whenReady;
 

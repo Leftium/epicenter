@@ -32,11 +32,11 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { getDeviceId } from '$lib/device/device-id';
-import {
+import { workspace } from '$lib/client';
+	import {
 	generateSavedTabId,
 	type SavedTab,
 	type SavedTabId,
-	workspace,
 } from '$lib/workspace';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 

@@ -1,5 +1,5 @@
 /**
- * @fileoverview Isomorphic workspace definition and factory for agent skills.
+ * @fileoverview Isomorphic workspace factory for agent skills.
  *
  * `createSkillsWorkspace()` returns a workspace client with tables only—no
  * actions attached. This is safe to import in any runtime (browser, Node, Bun).
@@ -11,22 +11,10 @@
  * @module
  */
 
-import { createWorkspace, defineWorkspace } from '@epicenter/workspace';
-import { referencesTable, skillsTable } from './tables.js';
+import { createWorkspace } from '@epicenter/workspace';
+import { skillsDefinition } from './definition.js';
 
-/**
- * Pre-built workspace definition for the skills workspace.
- *
- * Combines `skillsTable` and `referencesTable` under the standard
- * `epicenter.skills` workspace ID. Most consumers should use
- * `createSkillsWorkspace()` instead—this is exported for advanced use cases
- * like embedding skills tables in a custom workspace.
- */
-export const skillsDefinition = defineWorkspace({
-	id: 'epicenter.skills',
-	tables: { skills: skillsTable, references: referencesTable },
-	kv: {},
-});
+export { skillsDefinition } from './definition.js';
 
 /**
  * Create an isomorphic skills workspace client (tables only, no actions).

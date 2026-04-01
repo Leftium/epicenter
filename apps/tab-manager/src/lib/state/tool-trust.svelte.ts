@@ -13,7 +13,8 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { SvelteMap } from 'svelte/reactivity';
-import { type ToolTrust, workspace } from '$lib/workspace';
+import { type ToolTrust } from '$lib/workspace';
+import { workspace } from '$lib/client';
 
 /**
  * Trust level for a mutation tool.

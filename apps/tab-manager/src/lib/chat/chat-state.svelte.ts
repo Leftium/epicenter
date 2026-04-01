@@ -44,17 +44,13 @@ import {
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
 import { getDeviceId } from '$lib/device/device-id';
-import { auth } from '$lib/workspace';
-import { remoteServerUrl } from '$lib/state/settings.svelte';
+import { auth, workspace, workspaceDefinitions, workspaceTools } from '$lib/client';
 import {
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
 	generateChatMessageId,
 	generateConversationId,
-	workspace,
-	workspaceDefinitions,
-	workspaceTools,
 } from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────

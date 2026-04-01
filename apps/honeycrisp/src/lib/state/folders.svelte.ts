@@ -23,12 +23,13 @@
 
 import { generateId } from '@epicenter/workspace';
 import { fromTable } from '@epicenter/svelte';
-import workspaceClient, { type Folder, type FolderId } from '$lib/workspace';
+import { workspace } from '$lib/client';
+import { type Folder, type FolderId } from '$lib/workspace';
 
 function createFoldersState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
-	const foldersMap = fromTable(workspaceClient.tables.folders);
+	const foldersMap = fromTable(workspace.tables.folders);
 
 	const folders = $derived(foldersMap.values().toArray());
 
@@ -53,7 +54,7 @@ function createFoldersState() {
 		 */
 		createFolder() {
 			const id = generateId() as string as FolderId;
-			workspaceClient.tables.folders.set({
+			workspace.tables.folders.set({
 				id,
 				name: 'New Folder',
 				sortOrder: foldersMap.size,
@@ -73,7 +74,7 @@ function createFoldersState() {
 		 * ```
 		 */
 		renameFolder(folderId: FolderId, name: string) {
-			workspaceClient.tables.folders.update(folderId, { name });
+			workspace.tables.folders.update(folderId, { name });
 		},
 
 		/**
@@ -90,17 +91,17 @@ function createFoldersState() {
 		 * ```
 		 */
 		deleteFolder(folderId: FolderId) {
-			const folderNotes = workspaceClient.tables.notes
+			const folderNotes = workspace.tables.notes
 				.getAllValid()
 				.filter((n) => n.folderId === folderId);
 			for (const note of folderNotes) {
-				workspaceClient.tables.notes.update(note.id, {
+				workspace.tables.notes.update(note.id, {
 					folderId: undefined,
 				});
 			}
-			workspaceClient.tables.folders.delete(folderId);
-			if (workspaceClient.kv.get('selectedFolderId') === folderId) {
-				workspaceClient.kv.set('selectedFolderId', null);
+			workspace.tables.folders.delete(folderId);
+			if (workspace.kv.get('selectedFolderId') === folderId) {
+				workspace.kv.set('selectedFolderId', null);
 			}
 		},
 	};

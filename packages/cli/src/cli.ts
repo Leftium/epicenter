@@ -1,12 +1,32 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import yargs from 'yargs';
-import { buildAuthCommand } from './commands/auth-command';
-import { buildDataCommand } from './commands/data-command';
-import { buildStartCommand } from './commands/start-command';
-import { buildWorkspaceCommand } from './commands/workspace-command';
-import { resolveEpicenterHome } from './util/paths';
+import { createAuthCommand } from './commands/auth';
+import {
+	countCommand,
+	deleteCommand,
+	exportCommand,
+	getCommand,
+	listCommand,
+	tablesCommand,
+} from './commands/data';
+import { describeCommand } from './commands/describe';
+import { kvCommand } from './commands/kv';
+import { initCommand, installCommand, uninstallCommand } from './commands/project';
+import { runActionCommand } from './commands/run';
+import { startCommand } from './commands/start';
+
+/** Resolution order: EPICENTER_HOME env > ~/.epicenter/ */
+export function resolveEpicenterHome(flagValue?: string): string {
+	return flagValue ?? Bun.env.EPICENTER_HOME ?? join(homedir(), '.epicenter');
+}
 
 /**
  * Create the Epicenter CLI instance.
+ *
+ * Registers all top-level commands: table CRUD (get, list, count, delete),
+ * tables, kv, export, init, install, uninstall, run, describe, start, and auth.
+ *
  * @returns An object with a `run` method that parses and executes CLI commands.
  */
 export function createCLI() {
@@ -16,12 +36,23 @@ export function createCLI() {
 
 			const cli = yargs()
 				.scriptName('epicenter')
-				.command(buildStartCommand())
-				.command(buildWorkspaceCommand(home))
-				.command(buildAuthCommand(home))
-				.command(buildDataCommand())
+				.command(startCommand)
+				.command(getCommand)
+				.command(listCommand)
+				.command(countCommand)
+				.command(deleteCommand)
+				.command(tablesCommand)
+				.command(kvCommand)
+				.command(exportCommand)
+				.command(initCommand)
+				.command(installCommand)
+				.command(uninstallCommand)
+				.command(runActionCommand)
+				.command(describeCommand)
+				.command(createAuthCommand(home))
 				.demandCommand(1)
 				.strict()
+				.exitProcess(false)
 				.help();
 
 			await cli.parse(argv);

@@ -20,7 +20,7 @@
  */
 import { nanoid } from 'nanoid/non-secure';
 import { SvelteMap } from 'svelte/reactivity';
-import workspace from '$lib/workspace';
+import { workspace } from '$lib/client';
 import { transformationSteps, type TransformationStep } from './transformation-steps.svelte';
 
 /** Transformation row type inferred from the workspace table schema. */

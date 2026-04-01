@@ -11,14 +11,13 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { fromTable } from '@epicenter/svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
+import { auth, workspace } from '$lib/client';
 import {
-	auth,
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
 	generateChatMessageId,
 	generateConversationId,
-	workspace,
 } from '$lib/workspace';
 import {
 	DEFAULT_MODEL,

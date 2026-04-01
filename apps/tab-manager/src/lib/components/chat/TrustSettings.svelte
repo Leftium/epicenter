@@ -4,7 +4,7 @@
 	import { Switch } from '@epicenter/ui/switch';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import { toolTrustState } from '$lib/state/tool-trust.svelte';
-	import { workspaceToolTitles } from '$lib/workspace';
+	import { workspaceToolTitles } from '$lib/client';
 
 	const trustedTools = $derived(
 		[...toolTrustState.entries()].filter(([, level]) => level === 'always'),

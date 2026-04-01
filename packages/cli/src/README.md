@@ -5,58 +5,64 @@ Manage workspace data from the command line.
 ## Command Structure
 
 ```bash
-epicenter <table> <action>  # table operations (e.g., posts list)
-epicenter kv <action>       # key-value operations
-epicenter tables            # list table names
+epicenter get <table> <id>           # get a row by ID
+epicenter list <table>               # list all valid rows
+epicenter count <table>              # count valid rows
+epicenter delete <table> <id>        # delete a row
+epicenter tables                     # list table names
+
+epicenter kv get <key>               # read a KV value
+epicenter kv set <key> [value]       # write a KV value
+epicenter kv delete <key>            # delete a KV entry
+
+epicenter run <action.path> [--args] # invoke a workspace action
+epicenter describe                   # dump workspace schema as JSON
+epicenter export                     # export all data as JSON
+
+epicenter init                       # scaffold a new project
+epicenter install <item>             # install a workspace from a registry
+epicenter uninstall <workspace-id>   # remove a workspace
+
+epicenter start [dir]                # start the workspace daemon
+epicenter auth login --server <url>  # device-code login
+epicenter auth logout                # clear session
+epicenter auth status                # check auth state
 ```
 
 ## Table Commands
 
 ```bash
-epicenter users list              # list all rows
-epicenter users list --all        # include invalid rows
-epicenter users get <id>          # get row by id
-epicenter users set '<json>'      # create/replace row
-epicenter users update <id> --name "New"  # partial update
-epicenter users delete <id>       # delete row
-epicenter users clear             # delete all rows
-epicenter users count             # count rows
+epicenter list posts                 # list all valid rows
+epicenter get posts abc123           # get row by ID
+epicenter count posts                # count valid rows
+epicenter delete posts abc123        # delete row
+epicenter tables                     # list table names
 ```
 
 ## KV Commands
 
 ```bash
-epicenter kv get <key>            # get value
-epicenter kv set <key> <value>    # set value
-epicenter kv delete <key>         # delete key
+epicenter kv get <key>               # get value
+epicenter kv set <key> <value>       # set value
+epicenter kv delete <key>            # delete key
 ```
 
-## Input Methods
+## Action Commands
 
 ```bash
-# Inline JSON
-epicenter users set '{"id":"1","name":"Alice"}'
-
-# From file
-epicenter users set --file user.json
-epicenter users set @user.json
-
-# From stdin
-cat user.json | epicenter users set
-
-# Flag-based update
-epicenter users update abc123 --name "Bob" --active true
+epicenter run posts.getAll           # invoke a query action
+epicenter run posts.create --title "Hello"  # invoke with input flags
+epicenter describe                   # show all schemas and actions
 ```
 
 ## Output Formats
 
 ```bash
-epicenter users list                  # pretty JSON (TTY)
-epicenter users list | jq             # compact JSON (pipe)
-epicenter users list --format json    # force JSON
-epicenter users list --format jsonl   # JSON lines
+epicenter list posts                 # pretty JSON (TTY)
+epicenter list posts | jq            # compact JSON (pipe)
+epicenter list posts --format json   # force JSON
+epicenter list posts --format jsonl  # JSON lines
 ```
-
 
 ## Working Directory
 
@@ -65,23 +71,15 @@ By default, Epicenter looks for `epicenter.config.ts` in the current directory.
 Use `-C` or `--dir` to run from a different directory:
 
 ```bash
-epicenter -C apps/blog posts list
-epicenter --dir apps/shop products get abc123
-```
-
-If no config is found in the current directory but configs exist in subdirectories, Epicenter shows a helpful message:
-
-```
-No epicenter.config.ts found in current directory.
-
-Found configs in subdirectories:
-  - apps/blog/epicenter.config.ts
-  - apps/shop/epicenter.config.ts
-
-Use -C <dir> to specify which project:
-  epicenter -C apps/blog <command>
+epicenter -C apps/blog list posts
+epicenter --dir apps/shop get products abc123
 ```
 
 ## Multiple Workspaces
 
-For multiple workspaces, use separate directories with their own `epicenter.config.ts` files.
+If your config exports multiple workspaces, use `-w` to select one:
+
+```bash
+epicenter list posts -w my-blog
+epicenter get posts abc123 -w my-blog
+```

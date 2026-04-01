@@ -8,7 +8,7 @@
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
-	import workspaceClient from '$lib/workspace';
+	import { workspace } from '$lib/client';
 
 	let commandPaletteOpen = $state(false);
 
@@ -26,7 +26,7 @@
 		}
 
 		let cancelled = false;
-		workspaceClient.documents.notes.body
+		workspace.documents.notes.body
 			.open(noteId)
 			.then((handle: DocumentHandle) => {
 				if (cancelled) return;
@@ -37,7 +37,7 @@
 		return () => {
 			cancelled = true;
 			if (currentDocHandle) {
-				workspaceClient.documents.notes.body.close(noteId);
+				workspace.documents.notes.body.close(noteId);
 			}
 			currentYXmlFragment = null;
 			currentDocHandle = null;

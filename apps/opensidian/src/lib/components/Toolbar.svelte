@@ -6,7 +6,7 @@
 	import { toast } from 'svelte-sonner';
 	import AccountPopover from '$lib/components/AccountPopover.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';
-	import { fs } from '$lib/workspace';
+	import { fs } from '$lib/client';
 
 	let seeding = $state(false);
 

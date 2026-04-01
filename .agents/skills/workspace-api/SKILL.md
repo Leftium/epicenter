@@ -177,10 +177,133 @@ importFromDisk: defineMutation({ description: 'Import skills from an agentskills
 
 ## Workspace File Structure
 
-A workspace file has two layers:
+Each app splits workspace code into an **isomorphic `workspace/` folder** and a **runtime-specific `client.ts`**:
 
-1. **Table definitions with co-located types** — `defineTable(schema)` as standalone consts, each immediately followed by `export type = InferTableRow<typeof table>`
-2. **`createWorkspace(defineWorkspace({...}))` call** — composes pre-built tables into the client, optionally with `.withActions()`
+```
+src/lib/
+│
+├── workspace/                          ← 100% isomorphic (safe for Node, Bun, browser)
+│   ├── definition.ts                   ← Schema: defineWorkspace, defineTable, branded IDs
+│   ├── workspace.ts                    ← Factory: createWorkspace(definition) + isomorphic actions
+│   └── index.ts                        ← Barrel: re-exports definition + workspace only
+│
+└── client.ts                           ← Runtime singleton: extensions, encryption, sync,
+                                           runtime-specific actions (browser APIs, Node fs, etc.)
+```
+
+```
+                    ┌─────────────────────────┐
+                    │     definition.ts        │
+                    │  tables, KV, branded IDs │
+                    └────────────┬────────────┘
+                                 │ imports
+                    ┌────────────▼────────────┐
+                    │     workspace.ts         │
+                    │  createX() factory       │
+                    │  + isomorphic actions    │
+                    └────────────┬────────────┘
+                                 │ imports
+   ┌─────────────────────────────┼─────────────────────────────┐
+   │                             │                             │
+   ▼                             ▼                             ▼
+┌──────────────┐   ┌──────────────────┐   ┌──────────────────┐
+│ client.ts    │   │ server-client.ts │   │ cli-client.ts    │
+│ (browser)    │   │ (Node/Bun)       │   │ (CLI)            │
+│ IndexedDB    │   │ SQLite           │   │ filesystem       │
+│ WebSocket    │   │ TCP sync         │   │ persistence      │
+│ Chrome APIs  │   │ Node fs APIs     │   │                  │
+└──────────────┘   └──────────────────┘   └──────────────────┘
+```
+
+### Layering Rules
+
+1. **`definition.ts`** — Pure schema. `defineWorkspace()`, `defineTable()`, `defineKv()`, branded ID types and generators. Isomorphic.
+2. **`workspace.ts`** — Factory function that calls `createWorkspace(definition)`. May chain `.withActions()` for **isomorphic** actions (table reads/writes only). Isomorphic.
+3. **`index.ts`** — Barrel that re-exports from `definition.ts` and `workspace.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
+4. **`client.ts`** — Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Calls the factory, chains `.withEncryption()`, `.withExtension()`, and runtime-specific `.withActions()`. Exports the singleton as a named export (`export const workspace = ...`).
+
+### Import Convention
+
+```typescript
+// Components/state that need the live workspace instance:
+import { workspace, auth } from '$lib/client';
+
+// Components that only need types or the definition:
+import { type Note, NoteId } from '$lib/workspace';
+
+// Other packages in the monorepo:
+import { createHoneycrisp } from '@epicenter/honeycrisp/workspace';
+import { honeycrisp } from '@epicenter/honeycrisp/definition';
+```
+
+### Package.json Subpath Exports
+
+Each app exports a single `./workspace` subpath pointing to the barrel:
+
+```json
+{
+  "exports": {
+    "./workspace": "./src/lib/workspace/index.ts"
+  }
+}
+```
+
+The barrel is 100% isomorphic, so this single subpath is safe for any consumer (server, CLI, other apps). The separate `./definition` subpath is no longer needed since the barrel already re-exports everything from `definition.ts`.
+
+### Isomorphic vs Runtime-Specific Actions
+
+Isomorphic actions (table reads/writes, portable logic) belong in the exported `workspace.ts` factory. Runtime-specific actions—whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands—are chained via `.withActions()` in the client file closest to that runtime.
+
+```typescript
+// workspace.ts — isomorphic actions (exported via barrel)
+export function createMyApp() {
+  return createWorkspace(definition).withActions(({ tables }) => ({
+    devices: {
+      list: defineQuery({
+        title: 'List Devices',
+        description: 'List all synced devices.',
+        input: Type.Object({}),
+        handler: () => ({ devices: tables.devices.getAllValid() }),
+      }),
+    },
+  }));
+}
+
+// src/lib/client.ts — browser-specific actions chained at the runtime boundary
+export const workspace = createMyApp()
+  .withExtension('persistence', indexeddbPersistence)
+  .withExtension('sync', createSyncExtension({ ... }))
+  .withActions(({ tables }) => ({
+    tabs: {
+      close: defineMutation({
+        title: 'Close Tabs',
+        description: 'Close browser tabs by ID.',
+        input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
+        handler: async ({ tabIds }) => {
+          await browser.tabs.remove(tabIds);  // Chrome API
+          return { closedCount: tabIds.length };
+        },
+      }),
+    },
+  }));
+
+// OR: src/lib/server-client.ts — Node/Bun-specific at the server boundary
+export const workspace = createMyApp()
+  .withExtension('persistence', sqlitePersistence)
+  .withActions(({ tables }) => ({
+    files: {
+      importFromDisk: defineMutation({
+        title: 'Import Files',
+        description: 'Import files from a local directory.',
+        input: Type.Object({ dirPath: Type.String() }),
+        handler: async ({ dirPath }) => {
+          const entries = await readdir(dirPath);  // Node fs API
+          // ...
+        },
+      }),
+    },
+  }));
+```
 
 ## The `_v` Convention
 

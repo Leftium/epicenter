@@ -177,21 +177,23 @@ If epochs 2, 3, 4 arrive while swapping to 2: finish swap to 2, see `pendingEpoc
 
 - [x] **1.1** Extract `prepareFreshDoc()` — creates fresh Y.Doc, stores, table helpers, KV helper. Returns a bundle. Does NOT touch any `let` references.
 - [x] **1.2** Extract `createFreshExtensions()` — re-fires `dataDocExtensionFactories` on the fresh doc. Returns fresh `extensionCleanups` and `whenReadyPromises` arrays (new arrays, not mutated shared ones). If any factory throws, disposes already-created extensions and re-throws.
-- [ ] **1.3** Rewrite `swapDataDoc()` as prepare → commit → cleanup. The commit step is a synchronous block that reassigns `ydoc`, `tableHelpers`, `kvHelper`, `kvStore`, `encryptedStores`, `currentDataEpoch`, and `state.extensionCleanups`/`state.whenReadyPromises`.
-- [ ] **1.4** Remove `isCompacting` flag entirely.
-- [ ] **1.5** Replace `onRemoteEpochChange` callback with latest-wins `requestSwap` / `drainSwapQueue`.
-- [ ] **1.6** Update `compact()` to call the same `requestSwap` path (or call `doBlueGreenSwap` directly since it's local and serialized by design).
+- [x] **1.3** Rewrite `swapDataDoc()` as `doBlueGreenSwap()` with prepare → commit → cleanup structure.
+  > Note: Commit step synchronously reassigns all mutable references, then disposes old extensions after.
+- [x] **1.4** Remove `isCompacting` flag.
+  > Note: Replaced by `isSwapping` which serves the serialization role in the latest-wins loop. Compact sets `isSwapping = true` before `bumpEpoch()` to prevent the epoch observer from racing.
+- [x] **1.5** Replace `onRemoteEpochChange` callback with latest-wins `requestSwap` / `drainSwapQueue`.
+- [x] **1.6** Update `compact()` to call `doBlueGreenSwap` directly with `isSwapping` guard.
 
 ### Phase 2: Error handling and rollback
 
-- [ ] **2.1** If `createFreshExtensions` fails, destroy fresh Y.Doc and return without modifying any state. Log the error.
-- [ ] **2.2** If `await Promise.all(whenReadyPromises)` rejects during prep, same rollback: destroy fresh doc, return.
-- [ ] **2.3** Old extension disposal errors during cleanup should be logged but not block the transition (old doc is already detached).
+- [x] **2.1** If `createFreshExtensions` fails, `doBlueGreenSwap` destroys fresh Y.Doc and returns without modifying any state. Error is logged.
+- [x] **2.2** If `await Promise.all(whenReadyPromises)` rejects during prep, `createFreshExtensions` disposes already-created extensions and re-throws.
+- [x] **2.3** Old extension disposal errors during cleanup are handled by `disposeLifo` (continues on error, collects errors).
 
 ### Phase 3: Consumer API
 
-- [ ] **3.1** Add `onEpochChange(callback): () => void` to `WorkspaceClient`. Fires after a successful swap with `{ oldEpoch, newEpoch }`. Opt-in, not required for correctness.
-- [ ] **3.2** Verify `whenReady` remains unchanged—it's a one-shot boot gate, not affected by epoch transitions.
+- [x] **3.1** Added `onEpochChange(callback): () => void` to client object. Fires after successful swap with the new epoch number.
+- [x] **3.2** `whenReady` unchanged — still a one-shot boot gate.
 
 ### Phase 4: Tests
 

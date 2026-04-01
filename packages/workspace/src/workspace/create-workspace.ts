@@ -188,7 +188,6 @@ export function createWorkspace<
 	// bind to this doc. The `let` enables compact() to replace it.
 	let ydoc = new Y.Doc({ guid: `${id}-${initialEpoch}` });
 	let currentDataEpoch = initialEpoch;
-	let isCompacting = false;
 
 	const tableDefs = (tablesDef ?? {}) as TTableDefinitions;
 	const kvDefs = (kvDef ?? {}) as TKvDefinitions;
@@ -465,12 +464,22 @@ export function createWorkspace<
 			extensionEntries: freshExtensionEntries,
 		};
 	}
-	// ── Data doc swap ──────────────────────────────────────────────────────
-	// Shared logic for both compact() (local) and epoch observation (remote).
-	// When `dataToWrite` is provided, data is written into the fresh doc.
-	// When omitted, the fresh doc starts empty (CRDT sync delivers data).
+	// ── Blue-green epoch swap ─────────────────────────────────────────────
+	// Prepare → commit → cleanup. The old doc serves reads/writes until the
+	// fresh doc and its extensions are fully ready, then we flip atomically.
+	// If preparation fails, the old doc is untouched.
 
-	async function swapDataDoc(
+	/**
+	 * Perform a blue-green swap to a new epoch.
+	 *
+	 * PREPARE: Build fresh doc + stores + extensions (old doc still serving).
+	 * COMMIT:  Synchronous swap of all mutable references.
+	 * CLEANUP: Dispose old extensions, destroy old doc.
+	 *
+	 * If preparation fails (extension factory throws or whenReady rejects),
+	 * the fresh doc is destroyed and the old doc continues serving.
+	 */
+	async function doBlueGreenSwap(
 		newEpoch: number,
 		state: BuilderState,
 		extensions: Record<string, unknown>,
@@ -479,110 +488,99 @@ export function createWorkspace<
 			kv: Record<string, unknown>;
 		},
 	) {
+		// ── PREPARE ──────────────────────────────────────────────────
+		const fresh = prepareFreshDoc(newEpoch, dataToWrite);
+
+		let freshExtResult: Awaited<ReturnType<typeof createFreshExtensions>>;
+		try {
+			freshExtResult = await createFreshExtensions(fresh.ydoc);
+		} catch (err) {
+			// Extension init failed — abort. Old doc untouched.
+			fresh.ydoc.destroy();
+			console.error('[workspace] Epoch transition aborted — extension init failed:', err);
+			return;
+		}
+
+		// ── COMMIT (synchronous) ─────────────────────────────────────
 		const oldYdoc = ydoc;
-		const freshYdoc = new Y.Doc({ guid: `${id}-${newEpoch}` });
+		const oldCleanups = [...state.extensionCleanups];
 
-		// Create fresh stores + optionally write data
-		const newEncryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
-
-		for (const [name, definition] of Object.entries(tableDefs)) {
-			const yarray = freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(
-				TableKey(name),
-			);
-			const newYkv = createEncryptedYkvLww(yarray, {
-				key: options?.key,
-			});
-			newEncryptedStores.push(newYkv);
-
-			const newHelper = createTable(newYkv, definition);
-			if (dataToWrite) {
-				for (const row of dataToWrite.tables[name] ?? []) {
-					newHelper.set(row);
-				}
-			}
-
-			const wrapped = wrapTableWithObserverTracking(name, newHelper);
-			const registry = tableObserverRegistry.get(name);
-			if (registry) {
-				for (const cb of registry) {
-					newHelper.observe(cb);
-				}
-			}
-			tableHelpers[name] = wrapped;
-		}
-
-		// Fresh KV store + optionally write data
-		const newKvYarray =
-			freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-		const newKvStore = createEncryptedYkvLww(newKvYarray, {
-			key: options?.key,
-		});
-		newEncryptedStores.push(newKvStore);
-
-		if (dataToWrite) {
-			for (const [key, val] of Object.entries(dataToWrite.kv)) {
-				newKvStore.set(key, val);
-			}
-		}
-
-		kvStore = newKvStore;
-		kvHelper = createKv(newKvStore, kvDefs);
-
-		// Update encrypted stores
-		encryptedStores.length = 0;
-		encryptedStores.push(...newEncryptedStores);
-
-		// Dispose old extensions LIFO
-		await disposeLifo(state.extensionCleanups);
-
-		// Re-fire extension factories on fresh doc
-		state.extensionCleanups.length = 0;
-		state.whenReadyPromises.length = 0;
-
-		for (const { key, factory } of dataDocExtensionFactories) {
-			try {
-				const raw = factory({
-					ydoc: freshYdoc,
-					whenReady: Promise.resolve(),
-				});
-				if (!raw) continue;
-				const resolved = defineExtension(raw);
-				(extensions as Record<string, unknown>)[key] = resolved;
-				state.extensionCleanups.push(resolved.dispose);
-				state.whenReadyPromises.push(resolved.whenReady);
-			} catch (err) {
-				console.error(
-					`[workspace] Extension '${key}' failed on epoch transition:`,
-					err,
-				);
-			}
-		}
-
-		// Wait for new extensions to be ready
-		await Promise.all(state.whenReadyPromises);
-
-		// Swap ydoc reference
-		ydoc = freshYdoc;
+		ydoc = fresh.ydoc;
 		currentDataEpoch = newEpoch;
+		for (const [name, helper] of Object.entries(fresh.tableHelpers)) {
+			tableHelpers[name] = helper;
+		}
+		kvStore = fresh.kvStore;
+		kvHelper = fresh.kvHelper;
+		encryptedStores.length = 0;
+		encryptedStores.push(...fresh.encryptedStores);
 
-		// Destroy old data doc
+		// Update extension entries on the shared extensions object
+		for (const [key, value] of Object.entries(freshExtResult.extensionEntries)) {
+			(extensions as Record<string, unknown>)[key] = value;
+		}
+		state.extensionCleanups.length = 0;
+		state.extensionCleanups.push(...freshExtResult.cleanups);
+		state.whenReadyPromises.length = 0;
+		state.whenReadyPromises.push(...freshExtResult.whenReadyPromises);
+
+		// ── CLEANUP ──────────────────────────────────────────────────
+		await disposeLifo(oldCleanups);
 		oldYdoc.destroy();
+
+		// Fire epoch change callbacks
+		for (const cb of epochChangeCallbacks) {
+			try {
+				cb(newEpoch);
+			} catch (err) {
+				console.error('[workspace] onEpochChange callback error:', err);
+			}
+		}
 	}
 
+	// ── Epoch change callback registry ──────────────────────────────────
+	const epochChangeCallbacks: ((epoch: number) => void)[] = [];
 
-	// ── Epoch observation (multi-device) ─────────────────────────────────────
-	// When a remote client bumps the epoch, we detect it here and swap
-	// to the new data doc. The remote client already seeded the new doc,
-	// so we create empty stores and let CRDT sync deliver the data.
+	// ── Latest-wins epoch swap serialization ────────────────────────────
+	// When a remote client bumps the epoch, we queue a swap request.
+	// If multiple bumps arrive while a swap is in progress, we skip
+	// intermediate epochs and jump to the latest.
 	//
-	// The callback reference is set by buildClient so it closes over the
-	// correct `state` and `extensions` from the final builder.
-	let onRemoteEpochChange: ((newEpoch: number) => Promise<void>) | null =
-		null;
+	// The `swapState`/`swapExtensions` references are set by buildClient
+	// so the swap closes over the correct builder state.
+	let swapState: BuilderState | null = null;
+	let swapExtensions: Record<string, unknown> | null = null;
+	let pendingEpoch: number | null = null;
+	let isSwapping = false;
+
+	function requestSwap(newEpoch: number) {
+		pendingEpoch = newEpoch;
+		if (isSwapping) return;
+		drainSwapQueue();
+	}
+
+	async function drainSwapQueue() {
+		while (
+			pendingEpoch !== null &&
+			pendingEpoch > currentDataEpoch &&
+			swapState !== null &&
+			swapExtensions !== null
+		) {
+			isSwapping = true;
+			const target = pendingEpoch;
+			pendingEpoch = null;
+			try {
+				await doBlueGreenSwap(target, swapState, swapExtensions);
+			} catch (err) {
+				console.error('[workspace] Epoch swap failed:', err);
+			}
+			isSwapping = false;
+		}
+	}
+
 	const unsubEpochObserver = epochTracker.observeEpoch((newEpoch) => {
-		if (isCompacting) return;
 		if (newEpoch <= currentDataEpoch) return;
-		onRemoteEpochChange?.(newEpoch);
+		requestSwap(newEpoch);
 	});
 	/**
 	 * Build a workspace client with the given extensions and lifecycle state.
@@ -610,16 +608,16 @@ export function createWorkspace<
 		TAwarenessDefinitions,
 		TExtensions
 	> {
-		// Wire up epoch observation for this builder's state/extensions.
+		// Wire up latest-wins swap state for this builder.
 		// Each buildClient call overwrites the previous — the final builder wins.
-		onRemoteEpochChange = async (newEpoch: number) => {
-			await swapDataDoc(newEpoch, state, extensions);
-		};
+		swapState = state;
+		swapExtensions = extensions;
 
 		const dispose = async (): Promise<void> => {
 			// Stop observing epoch changes
 			unsubEpochObserver();
-			onRemoteEpochChange = null;
+			swapState = null;
+			swapExtensions = null;
 			// Close all documents first (before extensions they depend on)
 			for (const cleanup of documentCleanups) {
 				await cleanup();
@@ -708,30 +706,32 @@ export function createWorkspace<
 			 * ```
 			 */
 			async compact(): Promise<void> {
-				isCompacting = true;
+				// Snapshot current data
+				const tableSnapshots: Record<string, BaseRow[]> = {};
+				for (const [name, helper] of Object.entries(tableHelpers)) {
+					tableSnapshots[name] = helper.getAllValid();
+				}
+
+				const kvSnapshot: Record<string, unknown> = {};
+				for (const key of Object.keys(kvDefs)) {
+					const raw = kvStore.get(key);
+					if (raw !== undefined) {
+						kvSnapshot[key] = raw;
+					}
+				}
+
+				// Guard: bumpEpoch fires the epoch observer synchronously,
+				// which calls requestSwap. Setting isSwapping prevents the
+				// observer from starting a concurrent drainSwapQueue.
+				isSwapping = true;
+				const newEpoch = epochTracker.bumpEpoch();
 				try {
-					// Snapshot current data
-					const tableSnapshots: Record<string, BaseRow[]> = {};
-					for (const [name, helper] of Object.entries(tableHelpers)) {
-						tableSnapshots[name] = helper.getAllValid();
-					}
-
-					const kvSnapshot: Record<string, unknown> = {};
-					for (const key of Object.keys(kvDefs)) {
-						const raw = kvStore.get(key);
-						if (raw !== undefined) {
-							kvSnapshot[key] = raw;
-						}
-					}
-
-					// Bump epoch + swap to fresh doc with data
-					const newEpoch = epochTracker.bumpEpoch();
-					await swapDataDoc(newEpoch, state, extensions, {
+					await doBlueGreenSwap(newEpoch, state, extensions, {
 						tables: tableSnapshots,
 						kv: kvSnapshot,
 					});
 				} finally {
-					isCompacting = false;
+					isSwapping = false;
 				}
 			},
 			async clearLocalData(): Promise<void> {
@@ -748,6 +748,18 @@ export function createWorkspace<
 			whenReady,
 			dispose,
 			[Symbol.asyncDispose]: dispose,
+			/**
+			 * Register a callback for epoch transitions. Fires after a successful
+			 * swap with the new epoch number. Opt-in—not required for correctness.
+			 * Returns an unsubscribe function.
+			 */
+			onEpochChange(callback: (epoch: number) => void): () => void {
+				epochChangeCallbacks.push(callback);
+				return () => {
+					const idx = epochChangeCallbacks.indexOf(callback);
+					if (idx !== -1) epochChangeCallbacks.splice(idx, 1);
+				};
+			},
 		};
 
 		if (encryptionRuntime) {

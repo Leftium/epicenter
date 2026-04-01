@@ -101,7 +101,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 		observeAll(
 			callback: (
 				changes: Map<string, KvChange<unknown>>,
-				transaction: unknown,
+				origin: unknown,
 			) => void,
 		) {
 			const handler = (

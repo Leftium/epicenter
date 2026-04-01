@@ -231,3 +231,97 @@ describe('extension lifecycle during compact', () => {
 		expect(disposeOrder).toEqual(['second', 'first']);
 	});
 });
+
+describe('blue-green epoch swap', () => {
+	test('extension failure during prep aborts swap — old doc unchanged', async () => {
+		let callCount = 0;
+		const postsTable = defineTable(
+			type({ id: 'string', title: 'string', _v: '1' }),
+		);
+
+		const client = createWorkspace(
+			defineWorkspace({ id: 'fail-swap', tables: { posts: postsTable } }),
+		).withExtension('failing', () => {
+			callCount++;
+			if (callCount > 1) {
+				// Second call (during compact re-fire) throws
+				throw new Error('Extension init failed');
+			}
+			return { tag: 'ok' };
+		});
+
+		client.tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
+
+		// compact triggers doBlueGreenSwap which calls createFreshExtensions.
+		// The extension factory throws on the second call.
+		// Blue-green should abort — old doc stays.
+		await client.compact();
+
+		// Data should still be accessible on the old doc
+		expect(client.tables.posts.count()).toBe(1);
+		const post = client.tables.posts.get('1');
+		expect(post.status).toBe('valid');
+		if (post.status === 'valid') {
+			expect(post.row.title).toBe('Hello');
+		}
+	});
+
+	test('concurrent compact calls do not corrupt state', async () => {
+		const postsTable = defineTable(
+			type({ id: 'string', title: 'string', _v: '1' }),
+		);
+		const client = createWorkspace(
+			defineWorkspace({ id: 'concurrent-compact', tables: { posts: postsTable } }),
+		);
+
+		client.tables.posts.set({ id: '1', title: 'First', _v: 1 });
+
+		// Fire two compacts concurrently
+		await Promise.all([client.compact(), client.compact()]);
+
+		// State should be consistent — no double-free, no lost data
+		expect(client.tables.posts.count()).toBe(1);
+		const post = client.tables.posts.get('1');
+		expect(post.status).toBe('valid');
+		if (post.status === 'valid') {
+			expect(post.row.title).toBe('First');
+		}
+		// Epoch should have bumped twice
+		expect(client.epoch).toBe(2);
+	});
+
+	test('onEpochChange callback fires after compact', async () => {
+		const postsTable = defineTable(
+			type({ id: 'string', title: 'string', _v: '1' }),
+		);
+		const client = createWorkspace(
+			defineWorkspace({ id: 'epoch-cb', tables: { posts: postsTable } }),
+		);
+
+		const epochs: number[] = [];
+		client.onEpochChange((epoch) => epochs.push(epoch));
+
+		await client.compact();
+		await client.compact();
+
+		expect(epochs).toEqual([1, 2]);
+	});
+
+	test('onEpochChange unsubscribe stops callbacks', async () => {
+		const postsTable = defineTable(
+			type({ id: 'string', title: 'string', _v: '1' }),
+		);
+		const client = createWorkspace(
+			defineWorkspace({ id: 'epoch-unsub', tables: { posts: postsTable } }),
+		);
+
+		const epochs: number[] = [];
+		const unsub = client.onEpochChange((epoch) => epochs.push(epoch));
+
+		await client.compact();
+		unsub();
+		await client.compact();
+
+		expect(epochs).toEqual([1]);
+	});
+});

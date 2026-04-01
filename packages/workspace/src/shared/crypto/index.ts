@@ -420,8 +420,8 @@ export function deriveWorkspaceKey(
 /**
  * Convert a Uint8Array to a base64-encoded string.
  *
- * Uses the built-in `btoa` function with proper handling of binary data
- * via `String.fromCharCode`. Safe for all byte values (0-255).
+ * Builds a binary string via loop instead of `String.fromCharCode(...bytes)`
+ * to avoid stack overflow on large inputs (spread hits max call stack at ~65K bytes).
  *
  * @param bytes - The bytes to encode
  * @returns A base64-encoded string
@@ -434,7 +434,11 @@ export function deriveWorkspaceKey(
  * ```
  */
 export function bytesToBase64(bytes: Uint8Array): string {
-	return btoa(String.fromCharCode(...bytes));
+	let binary = '';
+	for (let i = 0; i < bytes.length; i++) {
+		binary += String.fromCharCode(bytes[i]!);
+	}
+	return btoa(binary);
 }
 
 /**

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as TreeView from '@epicenter/ui/tree-view';
 	import { fsState } from '$lib/state/fs-state.svelte';
@@ -13,7 +14,7 @@
 	const visibleIds = $derived.by(() => {
 		return fsState.walkTree<FileId>((id, row) => ({
 			collect: id,
-			descend: row.type === 'folder' && fsState.expandedIds.has(id),
+			descend: row.type === 'folder' && fsState.isExpanded(id),
 		}));
 	});
 
@@ -54,12 +55,12 @@
 			case 'ArrowRight': {
 				e.preventDefault();
 				if (!current) break;
-				const row = fsState.getRow(current);
+				const row = fsState.getFile(current);
 				if (row?.type !== 'folder') break;
-				if (!fsState.expandedIds.has(current)) {
+				if (!fsState.isExpanded(current)) {
 					fsState.toggleExpand(current);
 				} else {
-					const children = fsState.getChildIds(current);
+					const children = fsState.getChildren(current);
 					if (children.length > 0) fsState.focus(children[0] ?? null);
 				}
 				break;
@@ -67,8 +68,8 @@
 			case 'ArrowLeft': {
 				e.preventDefault();
 				if (!current) break;
-				const row = fsState.getRow(current);
-				if (row?.type === 'folder' && fsState.expandedIds.has(current)) {
+				const row = fsState.getFile(current);
+				if (row?.type === 'folder' && fsState.isExpanded(current)) {
 					fsState.toggleExpand(current);
 				} else if (row?.parentId) {
 					fsState.focus(row.parentId);
@@ -79,7 +80,7 @@
 			case ' ': {
 				e.preventDefault();
 				if (!current) break;
-				const row = fsState.getRow(current);
+				const row = fsState.getFile(current);
 				if (row?.type === 'file') {
 					fsState.selectFile(current);
 				} else if (row?.type === 'folder') {
@@ -113,9 +114,17 @@
 			case 'Backspace': {
 				e.preventDefault();
 				if (!current) break;
-				// Select the focused item so DeleteConfirmation reads the right target
-				fsState.selectFile(current);
-				fsState.openDelete();
+				const row = fsState.getFile(current);
+				const name = row?.name ?? 'this item';
+				const isFolder = row?.type === 'folder';
+				confirmationDialog.open({
+					title: `Delete ${name}?`,
+					description: isFolder
+						? 'This will delete the folder and all its contents. This action cannot be undone.'
+						: 'This will delete the file. This action cannot be undone.',
+					confirm: { text: 'Delete', variant: 'destructive' },
+					onConfirm: () => fsState.deleteFile(current),
+				});
 				break;
 			}
 			default:

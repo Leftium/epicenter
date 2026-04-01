@@ -851,7 +851,7 @@ The sync extension enables real-time Y.Doc synchronization using the y-websocket
 
 ````typescript
 import { createWorkspace } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 
 const client = createWorkspace(definition)
 	.withExtension(
@@ -1163,7 +1163,7 @@ type ProviderPaths = {
 ```typescript
 import { setupPersistence } from '@epicenter/workspace/providers';
 import { sqliteProvider, markdownProvider } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 
 providers: {
   // Filesystem persistence (Node.js) or IndexedDB (browser)

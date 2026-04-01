@@ -14,9 +14,9 @@ import type * as Y from 'yjs';
  *
  * @example Recommended: persistence + BroadcastChannel + WebSocket
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+ * import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
  * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
- * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+ * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
  *
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)

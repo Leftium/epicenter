@@ -6,11 +6,9 @@
 	"description": "Svelte utilities for synchronizing state with external systems",
 	"exports": {
 		".": "./src/index.ts",
-		"./persisted-state": "./src/persisted-state.svelte.ts",
-		"./persisted-map": "./src/persisted-map.svelte.ts",
-		"./auth": "./src/auth.svelte.ts",
-		"./auth-form": "./src/auth-form.svelte",
-		"./workspace-gate": "./src/workspace-gate.svelte"
+		"./auth": "./src/auth/index.ts",
+		"./auth-form": "./src/auth-form/index.ts",
+		"./workspace-gate": "./src/workspace-gate/index.ts"
 	},
 	"dependencies": {
 		"@epicenter/api": "workspace:*",

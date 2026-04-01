@@ -1,71 +1,77 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
-	import { terminalState } from '$lib/state/terminal-state.svelte';
-	import CommandPalette from './CommandPalette.svelte';
-	import DeleteConfirmation from './dialogs/DeleteConfirmation.svelte';
-	import ContentPanel from './editor/ContentPanel.svelte';
-	import Toolbar from './Toolbar.svelte';
-	import TerminalPanel from './terminal/TerminalPanel.svelte';
-	import FileTree from './tree/FileTree.svelte';
+	import { CommandPalette, type CommandPaletteItem } from '@epicenter/ui/command-palette';
+	import { Button } from '@epicenter/ui/button';
+	import * as Tooltip from '@epicenter/ui/tooltip';
+	import SearchIcon from '@lucide/svelte/icons/search';
+	import SkillEditor from './editor/SkillEditor.svelte';
+	import SkillsList from './SkillsList.svelte';
+	import StorageBadge from './StorageBadge.svelte';
+	import NewSkillDialog from './dialogs/NewSkillDialog.svelte';
+	import { skillsState } from '$lib/state/skills-state.svelte';
 
-	let terminalRef: ReturnType<typeof TerminalPanel> | undefined = $state();
-	let previousFocus: HTMLElement | null = $state(null);
+	let commandPaletteOpen = $state(false);
 
-	// Restore focus when terminal closes (covers both keyboard shortcut and X button).
-	let wasOpen = false;
-	$effect(() => {
-		const isOpen = terminalState.open;
-		if (wasOpen && !isOpen) {
-			previousFocus?.focus();
-			previousFocus = null;
-		}
-		wasOpen = isOpen;
-	});
+	const skillItems = $derived<CommandPaletteItem[]>(
+		skillsState.skills.map((skill) => ({
+			id: skill.id,
+			label: skill.name,
+			description: skill.description,
+			group: 'Skills',
+			onSelect: () => skillsState.selectSkill(skill.id),
+		})),
+	);
 </script>
 
-<svelte:window
-	onkeydown={(e) => {
-		if ((e.metaKey || e.ctrlKey) && e.key === '`') {
-			e.preventDefault();
-			if (!terminalState.open) {
-				previousFocus = document.activeElement as HTMLElement | null;
-				terminalState.toggle();
-				requestAnimationFrame(() => terminalRef?.focus());
-			} else {
-				terminalState.toggle();
-			}
-		}
-	}}
-/>
+<Tooltip.Provider>
+	<div class="flex h-screen flex-col">
+		<Resizable.PaneGroup direction="horizontal" class="flex-1">
+			<Resizable.Pane defaultSize={25} minSize={15} maxSize={50}>
+				<div class="flex h-full flex-col">
+					<!-- Sidebar Header -->
+					<div class="flex items-center justify-between border-b px-3 py-2">
+						<span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+							Skills
+						</span>
+						<NewSkillDialog />
+					</div>
 
-<div class="flex h-screen flex-col">
-	<Toolbar />
-	<Resizable.PaneGroup direction="horizontal" class="flex-1">
-		<Resizable.Pane defaultSize={25} minSize={15} maxSize={50}>
-			<ScrollArea class="h-full">
-				<div class="p-2"><FileTree /></div>
-			</ScrollArea>
-		</Resizable.Pane>
-		<Resizable.Handle withHandle />
-		<Resizable.Pane defaultSize={75}>
-			<Resizable.PaneGroup direction="vertical">
-				<Resizable.Pane
-					defaultSize={terminalState.open ? 70 : 100}
-					minSize={30}
-				>
-					<ContentPanel />
-				</Resizable.Pane>
-				{#if terminalState.open}
-					<Resizable.Handle withHandle />
-					<Resizable.Pane defaultSize={30} minSize={10} maxSize={60}>
-						<TerminalPanel bind:this={terminalRef} />
-					</Resizable.Pane>
-				{/if}
-			</Resizable.PaneGroup>
-		</Resizable.Pane>
-	</Resizable.PaneGroup>
-	<CommandPalette />
-</div>
+					<!-- Search Trigger — opens command palette -->
+					<div class="px-2 pt-2">
+						<Button
+							variant="outline"
+							class="h-7 w-full justify-start gap-2 text-xs font-normal text-muted-foreground"
+							onclick={() => (commandPaletteOpen = true)}
+						>
+							<SearchIcon class="size-3.5" />
+							<span>Search skills…</span>
+							<kbd
+								class="pointer-events-none ml-auto inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground"
+							>
+								⌘K
+							</kbd>
+						</Button>
+					</div>
 
-<DeleteConfirmation />
+					<ScrollArea class="flex-1">
+						<div class="p-2"><SkillsList /></div>
+					</ScrollArea>
+					<StorageBadge />
+				</div>
+			</Resizable.Pane>
+			<Resizable.Handle withHandle />
+			<Resizable.Pane defaultSize={75}>
+				<SkillEditor />
+			</Resizable.Pane>
+		</Resizable.PaneGroup>
+		<CommandPalette
+			items={skillItems}
+			bind:open={commandPaletteOpen}
+			placeholder="Search skills…"
+			emptyMessage="No skills found."
+			title="Search Skills"
+			description="Search for a skill by name or description"
+		/>
+	</div>
+</Tooltip.Provider>

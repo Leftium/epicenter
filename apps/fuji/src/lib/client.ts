@@ -6,7 +6,7 @@
  * resolves.
  */
 
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { createFuji } from './workspace/workspace';
 
 export const workspace = createFuji().withExtension('persistence', indexeddbPersistence);

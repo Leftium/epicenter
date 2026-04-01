@@ -1,4 +1,5 @@
 import type { FileId, FileRow } from '@epicenter/filesystem';
+import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
 import { fs, workspace } from '$lib/client';
@@ -12,8 +13,7 @@ import { fs, workspace } from '$lib/client';
 type InteractionMode =
 	| { type: 'idle' }
 	| { type: 'renaming'; targetId: FileId }
-	| { type: 'creating'; parentId: FileId | null; fileType: 'file' | 'folder' }
-	| { type: 'confirming-delete' };
+	| { type: 'creating'; parentId: FileId | null; fileType: 'file' | 'folder' };
 
 /**
  * Reactive filesystem state singleton.
@@ -21,30 +21,33 @@ type InteractionMode =
  * Follows the tab-manager pattern: factory function creates all state,
  * exports a single const. Components import and read directly.
  *
- * Reactivity bridge: `FileSystemIndex` rebuilds itself on every table
- * mutation via its own observer. We layer a `version` counter ($state)
- * that bumps on every mutation (coalesced via rAF), which triggers
- * `$derived` recomputations that re-read from the already-updated index.
+ * Reactivity: `fromTable()` provides a reactive `SvelteMap` that updates
+ * granularly per-row. `childrenOf` derives tree structure eagerly (O(n)
+ * iteration on any row change—acceptable for <5000 files). Paths are
+ * computed lazily via `computePath()`—only the accessed file's ancestor
+ * chain is tracked, so `selected` and `PathBreadcrumb` stay fine-grained.
  *
  * @example
  * ```svelte
  * <script>
  *   import { fsState } from '$lib/state/fs-state.svelte';
- *   const children = $derived(fsState.rootChildIds);
+ *   const children = fsState.rootChildIds;
  * </script>
  * ```
  */
 function createFsState() {
-	// ── Reactive state ────────────────────────────────────────────────
-	let version = $state(0);
+	// ── Reactive source ──────────────────────────────────────────────
+	const filesMap = fromTable(workspace.tables.files);
+
+	// ── Reactive state ───────────────────────────────────────────────
 	let activeFileId = $state<FileId | null>(null);
-	let openFileIds = $state<FileId[]>([]);
+	const openFileIds = new SvelteSet<FileId>();
 	const expandedIds = new SvelteSet<FileId>();
 	let focusedId = $state<FileId | null>(null);
 
 	// ── Interaction mode ─────────────────────────────────────────────
-	// Replaces the old independent renamingId / inlineCreate / deleteDialogOpen
-	// states. A single discriminated union prevents conflicting modes.
+	// A single discriminated union prevents conflicting modes
+	// (e.g. can't rename and create at the same time).
 	let interactionMode = $state<InteractionMode>({ type: 'idle' });
 
 	// ── Context menu hover persistence ───────────────────────────────
@@ -52,43 +55,87 @@ function createFsState() {
 	// item stays visually highlighted while the mouse is on the menu.
 	let contextMenuTargetId = $state<FileId | null>(null);
 
-	// ── rAF-coalesced observer ────────────────────────────────────────
-	let pendingBump = false;
-	const unobserve = workspace.tables.files.observe(() => {
-		if (!pendingBump) {
-			pendingBump = true;
-			requestAnimationFrame(() => {
-				version++;
-				pendingBump = false;
-			});
+	// ── Derived tree structure ───────────────────────────────────────
+	//
+	// childrenOf iterates the full filesMap (creating an all-key dependency),
+	// so it recomputes on ANY row change—even non-structural edits like
+	// updatedAt bumps. At O(n) Map iteration for <5000 files this is <1ms,
+	// an intentional trade-off over the complexity of structural-only tracking.
+
+	/** Parent→children mapping. Groups non-trashed file IDs by parentId. */
+	const childrenOf = $derived.by(() => {
+		const map = new Map<FileId | null, FileId[]>();
+		for (const [id, row] of filesMap) {
+			if (row.trashedAt !== null) continue;
+			const siblings = map.get(row.parentId) ?? [];
+			siblings.push(id);
+			map.set(row.parentId, siblings);
 		}
+		return map;
 	});
 
-	// ── Derived state ─────────────────────────────────────────────────
-
-	/** Root-level child IDs — recomputes when version bumps. */
-	const rootChildIds = $derived.by(() => {
-		void version;
-		return fs.index.getChildIds(null);
-	});
-
-	/** Full FileRow for the active file, or null. */
-	const selectedNode = $derived.by(() => {
-		void version;
-		if (!activeFileId) return null;
-		const result = workspace.tables.files.get(activeFileId);
-		return result.status === 'valid' ? result.row : null;
-	});
+	// ── Lazy path computation ────────────────────────────────────────
 
 	/**
-	 * Path string for the active file (e.g. "/docs/api.md"), or null.
-	 * Uses the index's O(1) reverse lookup.
+	 * Build the full POSIX path for a file by walking up the ancestor chain.
+	 *
+	 * O(depth) per call—typically 3–5 `filesMap.get()` lookups. In a reactive
+	 * context (`$derived`), this creates fine-grained dependencies on only the
+	 * accessed file's ancestors, not every row in the tree. In an imperative
+	 * context (action methods), it's a plain lookup with no reactive cost.
+	 *
+	 * Replaces the previous eager `pathIndex` derived which rebuilt all paths
+	 * (O(n) string concatenation) on any row change.
+	 *
+	 * @example
+	 * ```typescript
+	 * // In $derived — tracks only activeFile + ancestors
+	 * const path = $derived(computePath(activeFileId));
+	 *
+	 * // In action — plain lookup, no reactive tracking
+	 * const oldPath = computePath(id);
+	 * ```
 	 */
-	const selectedPath = $derived.by(() => {
-		void version;
-		if (!activeFileId) return null;
-		return fs.index.getPathById(activeFileId) ?? null;
-	});
+	function computePath(id: FileId): string | null {
+		const row = filesMap.get(id);
+		if (!row || row.trashedAt !== null) return null;
+
+		const parts: string[] = [row.name];
+		let parentId = row.parentId;
+
+		while (parentId !== null) {
+			const parent = filesMap.get(parentId);
+			if (!parent || parent.trashedAt !== null) return null;
+			parts.unshift(parent.name);
+			parentId = parent.parentId;
+		}
+
+		return '/' + parts.join('/');
+	}
+
+	/** Root-level child IDs. */
+	const rootChildIds = $derived(childrenOf.get(null) ?? []);
+
+	/**
+	 * Active file's row data.
+	 *
+	 * Fine-grained: only tracks the active file's row via `filesMap.get()`.
+	 * Unrelated row changes don't trigger recomputation.
+	 */
+	const selectedNode = $derived(
+		activeFileId ? (filesMap.get(activeFileId) ?? null) : null,
+	);
+
+	/**
+	 * Active file's full POSIX path.
+	 *
+	 * Fine-grained: only tracks the active file's name and ancestor chain
+	 * (via `computePath`). A `size` or `updatedAt` change on a sibling file
+	 * won't trigger recomputation—only name/ancestry changes matter.
+	 */
+	const selectedPath = $derived(
+		activeFileId ? computePath(activeFileId) : null,
+	);
 
 	// ── Derived from interaction mode ────────────────────────────────
 	// Stable public API over the internal union. Components read these
@@ -104,9 +151,6 @@ function createFsState() {
 			: null,
 	);
 
-	const deleteDialogOpen = $derived(
-		interactionMode.type === 'confirming-delete',
-	);
 
 	// ── Private helpers ───────────────────────────────────────────────
 
@@ -129,14 +173,14 @@ function createFsState() {
 
 	const state = {
 		// ── Read-only getters ───────────────────────────────────────
-		get version() {
-			return version;
-		},
 		get activeFileId() {
 			return activeFileId;
 		},
 		get openFileIds() {
-			return openFileIds;
+			return openFileIds as ReadonlySet<FileId>;
+		},
+		get hasOpenFiles() {
+			return openFileIds.size > 0;
 		},
 		get rootChildIds() {
 			return rootChildIds;
@@ -156,41 +200,49 @@ function createFsState() {
 		get renamingId() {
 			return renamingId;
 		},
-		get deleteDialogOpen() {
-			return deleteDialogOpen;
-		},
 		get contextMenuTargetId() {
 			return contextMenuTargetId;
 		},
 
-		expandedIds,
+		/** Whether a folder is expanded in the tree view. */
+		isExpanded(id: FileId) {
+			return expandedIds.has(id);
+		},
 
-		/**
-		 * Get child FileIds of a folder. Reads from FileSystemIndex.
-		 * Must be called in a reactive context to track `version`.
-		 */
-		getChildIds(parentId: FileId | null) {
-			void version;
-			return fs.index.getChildIds(parentId);
+		/** Expand a folder in the tree view (no-op if already expanded). */
+		expand(id: FileId) {
+			expandedIds.add(id);
+		},
+
+		/** Collapse a folder in the tree view (no-op if already collapsed). */
+		collapse(id: FileId) {
+			expandedIds.delete(id);
+		},
+
+		/** Get child FileIds of a folder. Reactive via `childrenOf` derived. */
+		getChildren(parentId: FileId | null) {
+			return childrenOf.get(parentId) ?? [];
 		},
 
 		/**
 		 * Get the FileRow for a given ID.
 		 * Returns null if the row is deleted/invalid.
 		 */
-		getRow(id: FileId): FileRow | null {
-			void version;
-			const result = workspace.tables.files.get(id);
-			return result.status === 'valid' ? result.row : null;
+		getFile(id: FileId): FileRow | null {
+			return filesMap.get(id) ?? null;
 		},
 
 		/**
-		 * Find the path for a file ID using O(1) reverse index lookup.
-		 * Returns null if not found (deleted/trashed).
+		 * Build the full POSIX path for a file by walking up its ancestor chain.
+		 *
+		 * In reactive contexts (e.g., inside `$derived`), creates fine-grained
+		 * dependencies on only the accessed file's ancestors. In imperative
+		 * contexts (action methods), it's a plain O(depth) lookup.
+		 *
+		 * @returns The full path (e.g., `/docs/api/reference.md`) or null if trashed/deleted.
 		 */
-		getPathForId(id: FileId): string | null {
-			void version;
-			return fs.index.getPathById(id) ?? null;
+		getPath(id: FileId): string | null {
+			return computePath(id);
 		},
 
 		/**
@@ -200,14 +252,12 @@ function createFsState() {
 		 * - `collect`: if present, the value is added to the result array
 		 * - `descend`: if true, recurse into children (only meaningful for folders)
 		 *
-		 * Must be called in a reactive context to track `version`.
-		 *
 		 * @example
 		 * ```typescript
 		 * // Collect all visible IDs (respecting folder expansion)
 		 * const visibleIds = fsState.walkTree((id, row) => ({
 		 *   collect: id,
-		 *   descend: row.type === 'folder' && fsState.expandedIds.has(id),
+		 *   descend: row.type === 'folder' && fsState.isExpanded(id),
 		 * }));
 		 *
 		 * // Collect only files with metadata
@@ -221,14 +271,12 @@ function createFsState() {
 			visitor: (id: FileId, row: FileRow) => { collect?: T; descend: boolean },
 			parentId: FileId | null = null,
 		): T[] {
-			void version;
 			const results: T[] = [];
 			function walk(pid: FileId | null) {
-				for (const childId of fs.index.getChildIds(pid)) {
-					const result = workspace.tables.files.get(childId);
-					if (result.status !== 'valid' || result.row.trashedAt !== null)
-						continue;
-					const { collect, descend } = visitor(childId, result.row);
+				for (const childId of (childrenOf.get(pid) ?? [])) {
+					const row = filesMap.get(childId);
+					if (!row || row.trashedAt !== null) continue;
+					const { collect, descend } = visitor(childId, row);
 					if (collect !== undefined) results.push(collect);
 					if (descend) walk(childId);
 				}
@@ -250,7 +298,7 @@ function createFsState() {
 				interactionMode = { type: 'creating', parentId: null, fileType };
 				return;
 			}
-			const row = state.getRow(focused);
+			const row = state.getFile(focused);
 			if (row?.type === 'folder') {
 				expandedIds.add(focused);
 				interactionMode = { type: 'creating', parentId: focused, fileType };
@@ -295,15 +343,6 @@ function createFsState() {
 			await state.rename(id, newName.trim());
 		},
 
-		// ── Delete dialog ────────────────────────────────────────────
-
-		openDelete() {
-			interactionMode = { type: 'confirming-delete' };
-		},
-
-		closeDelete() {
-			interactionMode = { type: 'idle' };
-		},
 
 		// ── Context menu ─────────────────────────────────────────────
 
@@ -315,15 +354,13 @@ function createFsState() {
 
 		selectFile(id: FileId) {
 			activeFileId = id;
-			if (!openFileIds.includes(id)) {
-				openFileIds = [...openFileIds, id];
-			}
+			openFileIds.add(id);
 		},
 
 		closeFile(id: FileId) {
-			openFileIds = openFileIds.filter((f) => f !== id);
+			openFileIds.delete(id);
 			if (activeFileId === id) {
-				activeFileId = openFileIds.at(-1) ?? null;
+				activeFileId = [...openFileIds].at(-1) ?? null;
 			}
 		},
 
@@ -339,7 +376,7 @@ function createFsState() {
 		async createFile(parentId: FileId | null, name: string) {
 			await withErrorToast(async () => {
 				const parentPath = parentId
-					? (state.getPathForId(parentId) ?? '/')
+					? (state.getPath(parentId) ?? '/')
 					: '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
 				await fs.writeFile(path, '');
@@ -350,7 +387,7 @@ function createFsState() {
 		async createFolder(parentId: FileId | null, name: string) {
 			await withErrorToast(async () => {
 				const parentPath = parentId
-					? (state.getPathForId(parentId) ?? '/')
+					? (state.getPath(parentId) ?? '/')
 					: '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
 				await fs.mkdir(path);
@@ -361,18 +398,18 @@ function createFsState() {
 
 		async deleteFile(id: FileId) {
 			await withErrorToast(async () => {
-				const path = state.getPathForId(id);
+				const path = state.getPath(id);
 				if (!path) return;
 				await fs.rm(path, { recursive: true });
 				if (activeFileId === id) activeFileId = null;
-				openFileIds = openFileIds.filter((f) => f !== id);
+				openFileIds.delete(id);
 				toast.success(`Deleted ${path}`);
 			}, 'Failed to delete');
 		},
 
 		async rename(id: FileId, newName: string) {
 			await withErrorToast(async () => {
-				const oldPath = state.getPathForId(id);
+				const oldPath = state.getPath(id);
 				if (!oldPath) return;
 				const parentPath =
 					oldPath.substring(0, oldPath.lastIndexOf('/')) || '/';
@@ -383,37 +420,10 @@ function createFsState() {
 			}, 'Failed to rename');
 		},
 
-		/**
-		 * Read file content as string.
-		 *
-		 * Opens the per-file content Y.Doc and reads from the timeline.
-		 */
-		async readContent(id: FileId): Promise<string | null> {
-			try {
-				const handle = await workspace.documents.files.content.open(id);
-				return handle.read();
-			} catch (err) {
-				console.error('Failed to read content:', err);
-				return null;
-			}
-		},
-
-		/**
-		 * Write file content as string.
-		 *
-		 * Opens the per-file content Y.Doc and writes to the timeline.
-		 * The documents manager's `onUpdate` callback bumps `updatedAt` on the file row.
-		 */
-		async writeContent(id: FileId, data: string): Promise<void> {
-			await withErrorToast(async () => {
-				const handle = await workspace.documents.files.content.open(id);
-				handle.write(data);
-			}, 'Failed to save file');
-		},
 
 		/** Cleanup — call from +layout.svelte onDestroy if needed. */
 		async dispose() {
-			unobserve();
+			filesMap.destroy();
 			fs.index.dispose();
 			fs.dispose();
 		},

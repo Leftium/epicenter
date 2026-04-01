@@ -12,6 +12,7 @@
 		title = 'Command Palette',
 		description = 'Search for a command to run',
 		shouldFilter,
+		shortcut = 'k',
 	}: {
 		items: CommandPaletteItem[];
 		open: boolean;
@@ -23,12 +24,42 @@
 		description?: string;
 		/** Set `false` to manage filtering yourself (e.g. debounced async search). */
 		shouldFilter?: boolean;
+		/**
+		 * Keyboard shortcut key that toggles the palette when pressed with Cmd (macOS) or Ctrl.
+		 *
+		 * Defaults to `'k'` (Cmd+K / Ctrl+K). Set to `null` to disable the built-in
+		 * shortcut entirely\u2014useful when the parent manages open state via a custom trigger
+		 * (e.g. a button click or a different key combo).
+		 *
+		 * @example
+		 * ```svelte
+		 * <!-- Default Cmd+K -->
+		 * <CommandPalette {items} />
+		 *
+		 * <!-- Disable shortcut, parent controls open -->
+		 * <CommandPalette {items} shortcut={null} bind:open />
+		 * ```
+		 */
+		shortcut?: string | null;
 	} = $props();
 
-	// ── Group items by the `group` field ────────────────────────────
-	const grouped = $derived(Map.groupBy(items, (item) => item.group));
+	// \u2500\u2500 Reset search value when palette closes \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	$effect(() => {
+		if (!open) value = '';
+	});
 
+	// \u2500\u2500 Group items by the `group` field \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	const grouped = $derived(Map.groupBy(items, (item) => item.group));
 </script>
+
+<svelte:window
+	onkeydown={(e) => {
+		if (shortcut && (e.metaKey || e.ctrlKey) && e.key === shortcut) {
+			e.preventDefault();
+			open = !open;
+		}
+	}}
+/>
 
 <Command.Dialog bind:open {title} {description} {shouldFilter}>
 	<Command.Input {placeholder} bind:value />

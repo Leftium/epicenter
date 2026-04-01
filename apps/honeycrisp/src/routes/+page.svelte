@@ -10,8 +10,6 @@
 	import { foldersState, notesState, viewState } from '$lib/state';
 	import { workspace } from '$lib/client';
 
-	let commandPaletteOpen = $state(false);
-
 	// ─── Document Handle ────────────────────────────────────────────────────
 
 	let currentYXmlFragment = $state<Y.XmlFragment | null>(null);
@@ -49,12 +47,6 @@
 	onkeydown={(e) => {
 		const meta = e.metaKey || e.ctrlKey;
 		if (!meta) return;
-
-		if (e.key === 'k') {
-			e.preventDefault();
-			commandPaletteOpen = !commandPaletteOpen;
-			return;
-		}
 
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
@@ -112,4 +104,4 @@
 	</main>
 </SidebarProvider>
 
-<CommandPalette bind:open={commandPaletteOpen} />
+<CommandPalette />

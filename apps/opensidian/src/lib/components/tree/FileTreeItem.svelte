@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as TreeView from '@epicenter/ui/tree-view';
 	import { fsState } from '$lib/state/fs-state.svelte';
@@ -9,11 +10,11 @@
 
 	let { id }: { id: FileId } = $props();
 
-	const row = $derived(fsState.getRow(id));
+	const row = $derived(fsState.getFile(id));
 	const isFolder = $derived(row?.type === 'folder');
-	const isExpanded = $derived(fsState.expandedIds.has(id));
+	const isExpanded = $derived(fsState.isExpanded(id));
 	const isSelected = $derived(fsState.activeFileId === id);
-	const children = $derived(isFolder ? fsState.getChildIds(id) : []);
+	const children = $derived(isFolder ? fsState.getChildren(id) : []);
 	const isFocused = $derived(fsState.focusedId === id);
 	const isRenaming = $derived(fsState.renamingId === id);
 	const showInlineCreate = $derived(fsState.inlineCreate?.parentId === id);
@@ -106,7 +107,7 @@
 				<ContextMenu.Item
 					onclick={() => {
 						fsState.focus(id);
-						fsState.expandedIds.add(id);
+						fsState.expand(id);
 						fsState.startCreate('file');
 					}}
 				>
@@ -116,7 +117,7 @@
 				<ContextMenu.Item
 					onclick={() => {
 						fsState.focus(id);
-						fsState.expandedIds.add(id);
+						fsState.expand(id);
 						fsState.startCreate('folder');
 					}}
 				>
@@ -132,8 +133,17 @@
 			<ContextMenu.Item
 				class="text-destructive"
 				onclick={() => {
-					fsState.selectFile(id);
-					fsState.openDelete();
+					const row = fsState.getFile(id);
+					const name = row?.name ?? 'this item';
+					const isFolder = row?.type === 'folder';
+					confirmationDialog.open({
+						title: `Delete ${name}?`,
+						description: isFolder
+							? 'This will delete the folder and all its contents. This action cannot be undone.'
+							: 'This will delete the file. This action cannot be undone.',
+						confirm: { text: 'Delete', variant: 'destructive' },
+						onConfirm: () => fsState.deleteFile(id),
+					});
 				}}
 			>
 				Delete

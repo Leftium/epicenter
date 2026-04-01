@@ -62,7 +62,7 @@
 
 	const workspaceCode = `import { createSqliteIndex, createYjsFileSystem, filesTable } from '@epicenter/filesystem';
 import { createWorkspace } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 
 export const ws = createWorkspace({
   id: 'opensidian',

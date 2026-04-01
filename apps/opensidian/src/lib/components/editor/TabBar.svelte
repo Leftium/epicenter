@@ -1,11 +1,11 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
-	import * as Tabs from '@epicenter/ui/tabs';
 	import { Button } from '@epicenter/ui/button';
+	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { fsState } from '$lib/state/fs-state.svelte';
 
-	const hasOpenFiles = $derived(fsState.openFileIds.length > 0);
+	const hasOpenFiles = $derived(fsState.hasOpenFiles);
 </script>
 
 {#if hasOpenFiles}
@@ -18,7 +18,7 @@
 			class="w-full justify-start overflow-x-auto rounded-none border-b bg-transparent p-0"
 		>
 			{#each fsState.openFileIds as fileId (fileId)}
-				{@const row = fsState.getRow(fileId)}
+			{@const row = fsState.getFile(fileId)}
 				{#if row}
 					<Tabs.Trigger
 						value={fileId}

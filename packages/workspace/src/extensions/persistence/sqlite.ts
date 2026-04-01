@@ -81,7 +81,7 @@ function initPersistenceDb(filePath: string, ydoc: Y.Doc): Database {
  * @example
  * ```typescript
  * import { createWorkspace } from '@epicenter/workspace';
- * import { persistence } from '@epicenter/workspace/extensions/sync/desktop';
+ * import { persistence } from '@epicenter/workspace/extensions/persistence/sqlite';
  * import { join } from 'node:path';
  *
  * const projectDir = '/my/project';
@@ -131,8 +131,8 @@ export const persistence = (
  *
  * @example
  * ```typescript
- * import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
- * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+ * import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+ * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
  *
  * createWorkspace(definition)
  *   .withExtension('persistence', filesystemPersistence({

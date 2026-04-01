@@ -3,7 +3,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import type { AuthClient } from './create-auth.svelte.js';
+	import type { AuthClient } from '../auth/create-auth.svelte.js';
 
 	let { auth, syncNoun, onSocialSignIn }: {
 		/** The auth client instance from `createAuth()`. */

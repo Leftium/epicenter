@@ -3,9 +3,6 @@
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
-	"exports": {
-		"./workspace": "./src/lib/workspace/index.ts"
-	},
 	"scripts": {
 		"dev": "bun --bun vite dev",
 		"build": "bun --bun vite build",
@@ -19,10 +16,10 @@
 		"@codemirror/language": "^6.12.2",
 		"@codemirror/state": "^6.6.0",
 		"@codemirror/view": "^6.40.0",
-		"@epicenter/filesystem": "workspace:*",
+		"@epicenter/skills": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
-		"just-bash": "^2.9.7",
+		"@epicenter/svelte": "workspace:*",
 		"shiki": "^3.7.0",
 		"@sveltejs/adapter-auto": "catalog:",
 		"@sveltejs/kit": "catalog:",

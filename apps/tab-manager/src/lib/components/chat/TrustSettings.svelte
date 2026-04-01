@@ -7,7 +7,7 @@
 	import { workspaceToolTitles } from '$lib/client';
 
 	const trustedTools = $derived(
-		[...toolTrustState.entries()].filter(([, level]) => level === 'always'),
+		toolTrustState.entries.filter(([, level]) => level === 'always'),
 	);
 </script>
 

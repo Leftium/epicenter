@@ -1,6 +1,6 @@
 import { defineCommand } from 'just-bash';
-import { fsState } from '$lib/state/fs-state.svelte';
 import { bash, fs } from '$lib/client';
+import { fsState } from '$lib/state/fs-state.svelte';
 
 /**
  * A single entry in the terminal history.
@@ -30,7 +30,7 @@ type TerminalEntry =
  * ```svelte
  * <script>
  *   import { terminalState } from '$lib/state/terminal-state.svelte';
- *   const isOpen = $derived(terminalState.open);
+ *   terminalState.open // reactive boolean
  * </script>
  * ```
  */

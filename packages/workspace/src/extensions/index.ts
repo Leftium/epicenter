@@ -2,10 +2,10 @@
  * Unified extensions export for Epicenter (Node.js/Bun only).
  *
  * Exports persistence extensions and utilities. For browser persistence,
- * use the conditional export:
+ * use the dedicated subpath export:
  *
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+ * import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
  * ```
  *
  * @example Node.js/Bun usage
@@ -23,8 +23,8 @@
 export {
 	type PersistenceConfig,
 	persistence,
-} from './sync/desktop.js';
-export { indexeddbPersistence as webPersistence } from './sync/web.js';
+} from './persistence/sqlite.js';
+export { indexeddbPersistence as webPersistence } from './persistence/indexeddb.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ERROR LOGGING (Utility)

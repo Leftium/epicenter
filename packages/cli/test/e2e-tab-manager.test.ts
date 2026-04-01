@@ -17,7 +17,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { generateId } from '@epicenter/workspace';
-import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
+import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { definition, createTabManagerWorkspace } from '@epicenter/tab-manager/workspace';
 import { loadConfig } from '../src/load-config';
 

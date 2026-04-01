@@ -6,8 +6,18 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { foldersState, notesState, viewState } from '$lib/state';
 
-	let { open = $bindable(false) }: { open: boolean } = $props();
+	let open = $state(false);
 </script>
+
+<svelte:window
+	onkeydown={(e) => {
+		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+			e.preventDefault();
+			open = !open;
+		}
+	}}
+/>
+
 
 <Command.Dialog bind:open>
 	<Command.Input placeholder="Search notes..." />

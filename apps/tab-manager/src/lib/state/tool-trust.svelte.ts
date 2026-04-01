@@ -12,7 +12,6 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import { SvelteMap } from 'svelte/reactivity';
 import { type ToolTrust } from '$lib/workspace';
 import { workspace } from '$lib/client';
 
@@ -31,6 +30,10 @@ export type TrustLevel = ToolTrust['trust'];
 function createToolTrustState() {
 	const trustMap = fromTable(workspace.tables.toolTrust);
 
+	/** Cached projection of trust entries — stable reference via $derived. */
+	const trustEntries = $derived(
+		trustMap.values().toArray().map((t): [string, TrustLevel] => [t.id, t.trust]),
+	);
 	return {
 		/**
 		 * Get the trust level for a tool.
@@ -90,22 +93,20 @@ function createToolTrustState() {
 		},
 
 		/**
-		 * All trust entries as a reactive map.
+		 * All trust entries as a cached reactive array.
 		 *
-		 * Returns the internal `SvelteMap` directly. Consumers get live
-		 * updates when trust changes (local or remote via Y.Doc sync).
-		 * Filter for `'always'` entries to show only explicitly trusted tools.
+		 * Returns `[toolName, trustLevel]` tuples. Stable reference via `$derived`—
+		 * recomputes only when the underlying trustMap changes.
 		 *
 		 * @example
 		 * ```typescript
 		 * const trusted = $derived(
-		 *   [...toolTrustState.entries()]
-		 *     .filter(([, level]) => level === 'always'),
+		 *   toolTrustState.entries.filter(([, level]) => level === 'always'),
 		 * );
 		 * ```
 		 */
-		entries(): SvelteMap<string, TrustLevel> {
-			return new SvelteMap([...trustMap].map(([k, v]) => [k, v.trust]));
+		get entries(): [string, TrustLevel][] {
+			return trustEntries;
 		},
 	};
 }

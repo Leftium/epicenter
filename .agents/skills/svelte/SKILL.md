@@ -92,6 +92,42 @@ Reserve `$derived.by()` for multi-statement logic where you genuinely need a fun
 
 See `docs/articles/record-lookup-over-nested-ternaries.md` for rationale.
 
+# When to Use SvelteMap vs $state
+
+Use `SvelteMap` when items have stable IDs and you need keyed lookup. Use `$state` for primitives, local UI booleans, and sequential data without identity.
+
+| Data Shape | Use | Example |
+|---|---|---|
+| Workspace table rows (have IDs) | `fromTable()` → `SvelteMap` | recordings, conversations, notes |
+| Workspace KV (single key) | `fromKv()` | selectedFolderId, sortBy |
+| Browser API keyed data | `new SvelteMap()` + listeners | Chrome tabs, windows |
+| Primitive value | `$state(value)` | `$state(false)`, `$state('')`, `$state(0)` |
+| Sequential data without IDs | `$state<T[]>([])` | terminal history, command history |
+| Ordered list where position matters | `$state<T[]>([])` | open file tab order |
+
+### Anti-Pattern: $state for ID-Keyed Collections
+
+```typescript
+// ❌ BAD: O(n) lookups, coarse reactivity, referential instability
+let conversations = $state<Conversation[]>(readAll());
+const metadata = $derived(conversations.find((c) => c.id === id)); // O(n) scan
+
+// ✅ GOOD: O(1) lookups, per-key reactivity, stable $derived array
+const conversationsMap = fromTable(workspace.tables.conversations);
+const conversations = $derived(
+	conversationsMap.values().toArray().sort((a, b) => b.updatedAt - a.updatedAt),
+);
+const metadata = $derived(conversationsMap.get(id)); // O(1) lookup
+```
+
+Three problems with `$state<T[]>` for keyed data:
+
+1. **O(n) lookups** — every `.find()` scans the whole array
+2. **Coarse reactivity** — updating one item re-triggers everything reading the array
+3. **Referential instability** — sorting in a getter creates a new array every access, causing TanStack Table infinite loops
+
+See `docs/articles/sveltemap-over-state-for-keyed-collections.md` for the full rationale.
+
 # Reactive Table State Pattern
 
 When a factory function exposes workspace table data via `fromTable`, follow this three-layer convention:

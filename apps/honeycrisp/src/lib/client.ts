@@ -10,14 +10,14 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createAuth } from '@epicenter/svelte/auth';
 import { createWorkspace } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { session } from '$lib/auth';
 import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
 import { honeycrisp } from './workspace/definition';
 
 
-const workspace = createWorkspace(honeycrisp)
+export const workspace = createWorkspace(honeycrisp)
 	.withEncryption({ userKeyStore: createIndexedDbKeyStore('honeycrisp:encryption-key') })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
@@ -41,4 +41,3 @@ export const auth = createAuth({
 	},
 });
 
-export { workspace };

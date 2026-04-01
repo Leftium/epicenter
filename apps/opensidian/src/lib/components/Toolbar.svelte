@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Separator } from '@epicenter/ui/separator';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { toast } from 'svelte-sonner';
+	import { fs } from '$lib/client';
 	import AccountPopover from '$lib/components/AccountPopover.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';
-	import { fs } from '$lib/client';
 
 	let seeding = $state(false);
 
@@ -107,7 +108,19 @@
 						variant="ghost"
 						size="sm"
 						onclick={() => {
-							if (fsState.activeFileId) fsState.openDelete();
+							const id = fsState.activeFileId;
+							if (!id) return;
+						const row = fsState.getFile(id);
+							const name = row?.name ?? 'this item';
+							const isFolder = row?.type === 'folder';
+							confirmationDialog.open({
+								title: `Delete ${name}?`,
+								description: isFolder
+									? 'This will delete the folder and all its contents. This action cannot be undone.'
+									: 'This will delete the file. This action cannot be undone.',
+								confirm: { text: 'Delete', variant: 'destructive' },
+								onConfirm: () => fsState.deleteFile(id),
+							});
 						}}
 						disabled={!fsState.activeFileId}
 					>

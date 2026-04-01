@@ -20,7 +20,7 @@
  * recordings.delete(id);
  * ```
  */
-import { SvelteMap } from 'svelte/reactivity';
+import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 
 /** Recording row type inferred from the workspace table schema. */
@@ -29,35 +29,13 @@ export type Recording = ReturnType<
 >[number];
 
 function createRecordings() {
-	const map = new SvelteMap<string, Recording>();
-
-	// Initialize from current workspace state.
-	// Returns empty if workspace persistence hasn't loaded yet—observe()
-	// populates rows as they arrive.
-	for (const row of workspace.tables.recordings.getAllValid()) {
-		map.set(row.id, row);
-	}
-
-	// Observe all changes (local writes, remote CRDT sync, migration).
-	// Callback receives Set<string> of changed IDs. We re-read each row
-	// to get the latest validated state.
-	workspace.tables.recordings.observe((changedIds) => {
-		for (const id of changedIds) {
-			const result = workspace.tables.recordings.get(id);
-			if (result.status === 'valid') {
-				map.set(id, result.row);
-			} else if (result.status === 'not_found') {
-				map.delete(id);
-			}
-			// 'invalid' rows are silently skipped (logged elsewhere by workspace)
-		}
-	});
+	const map = fromTable(workspace.tables.recordings);
 
 	// Memoize sorted array with $derived so consumers get a stable reference.
 	// Without this, every access creates a new array → TanStack Table's $derived
 	// sees "new data" → updates internal $state → re-triggers $derived → infinite loop.
 	const sorted = $derived(
-		Array.from(map.values()).sort(
+		map.values().toArray().sort(
 			(a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
 		),
 	);

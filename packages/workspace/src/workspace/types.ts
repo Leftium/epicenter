@@ -903,14 +903,14 @@ export type KvHelper<TKvDefinitions extends KvDefinitions> = {
 	 * are silently skipped—the callback only fires for valid state transitions.
 	 *
 	 * @param key - The KV key to observe
-	 * @param callback - Receives the change event and the Yjs transaction
+	 * @param callback - Receives the change event and the transaction origin
 	 * @returns Unsubscribe function
 	 */
 	observe<K extends keyof TKvDefinitions & string>(
 		key: K,
 		callback: (
 			change: KvChange<InferKvValue<TKvDefinitions[K]>>,
-			transaction: unknown,
+			origin?: unknown,
 		) => void,
 	): () => void;
 
@@ -924,13 +924,13 @@ export type KvHelper<TKvDefinitions extends KvDefinitions> = {
 	 * Useful for bulk reactivity (e.g., syncing all settings to a SvelteMap)
 	 * without registering per-key observers.
 	 *
-	 * @param callback - Receives a Map of changed keys to their KvChange, plus the transaction
+	 * @param callback - Receives a Map of changed keys to their KvChange, plus the transaction origin
 	 * @returns Unsubscribe function
 	 */
 	observeAll(
 		callback: (
 			changes: Map<keyof TKvDefinitions & string, KvChange<unknown>>,
-			transaction: unknown,
+			origin?: unknown,
 		) => void,
 	): () => void;
 };

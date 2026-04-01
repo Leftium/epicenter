@@ -10,7 +10,6 @@
  * and by tests.
  */
 
-import type * as Y from 'yjs';
 import type { YKeyValueLwwChange } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import type { YKeyValueLwwEncrypted } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type {
@@ -67,14 +66,14 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 
 			const handler = (
 				changes: Map<string, YKeyValueLwwChange<unknown>>,
-				transaction: Y.Transaction | undefined,
+				origin: unknown,
 			) => {
 				const change = changes.get(key);
 				if (!change) return;
 
 				switch (change.action) {
 					case 'delete':
-						callback({ type: 'delete' }, transaction);
+						callback({ type: 'delete' }, origin);
 						break;
 					case 'add':
 					case 'update': {
@@ -86,7 +85,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 								{ type: 'set', value: result.value } as Parameters<
 									typeof callback
 								>[0],
-								transaction,
+								origin,
 							);
 						}
 						// Skip callback for invalid values
@@ -107,7 +106,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 		) {
 			const handler = (
 				changes: Map<string, YKeyValueLwwChange<unknown>>,
-				transaction: Y.Transaction | undefined,
+				origin: unknown,
 			) => {
 				const parsed = new Map<string, KvChange<unknown>>();
 				for (const [key, change] of changes) {
@@ -127,7 +126,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 						}
 					}
 				}
-				if (parsed.size > 0) callback(parsed, transaction);
+				if (parsed.size > 0) callback(parsed, origin);
 			};
 			ykv.observe(handler);
 			return () => ykv.unobserve(handler);

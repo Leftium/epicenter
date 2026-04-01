@@ -449,9 +449,17 @@ export function createWorkspace<
 			}
 		}
 
-		// Wait for all new extensions to be ready
+		// Wait for all new extensions to be ready (with timeout)
 		try {
-			await Promise.all(freshWhenReady);
+			await Promise.race([
+				Promise.all(freshWhenReady),
+				new Promise<never>((_, reject) =>
+					setTimeout(
+						() => reject(new Error('[workspace] Extension init timed out during epoch transition')),
+						10_000,
+					),
+				),
+			]);
 		} catch (err) {
 			await disposeLifo(freshCleanups);
 			throw err;

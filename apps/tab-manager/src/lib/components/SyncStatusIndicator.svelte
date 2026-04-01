@@ -16,7 +16,7 @@
 	import { workspace } from '$lib/client';
 
 	function createSyncStatus() {
-		let current = $state<SyncStatus>('offline' as SyncStatus);
+		let current = $state<SyncStatus>({ phase: 'offline' });
 
 		current = workspace.extensions.sync.status;
 		workspace.extensions.sync.onStatusChange((status) => {
@@ -35,7 +35,6 @@
 
 	function getTooltip(s: SyncStatus, isAuthenticated: boolean): string {
 		if (!isAuthenticated) return 'Sign in to sync across devices';
-		if (!isSignedIn) return 'Sign in to sync across devices';
 		switch (s.phase) {
 			case 'connected':
 				return 'Connected';
@@ -97,14 +96,14 @@
 					<p class="text-xs text-muted-foreground">{auth.user?.email}</p>
 				</div>
 				<div class="border-t pt-3 space-y-1">
-					<p class="text-xs text-muted-foreground">
-						Sync:
-						{syncStatus.current.phase === 'connected'
-							? 'Connected'
-							: syncStatus.current.phase === 'connecting'
-								? 'Connecting…'
-								: 'Offline'}
-					</p>
+				<p class="text-xs text-muted-foreground">
+					Sync:
+					{({
+						connected: 'Connected',
+						connecting: 'Connecting…',
+						offline: 'Offline',
+					} satisfies Record<SyncStatus['phase'], string>)[syncStatus.current.phase]}
+				</p>
 				</div>
 				<div class="border-t pt-3 flex gap-2">
 					{#if syncStatus.current.phase !== 'connected'}
@@ -123,7 +122,7 @@
 						size="sm"
 						class="flex-1"
 						onclick={async () => {
-					await auth.signOut();
+							await auth.signOut();
 							popoverOpen = false;
 						}}
 					>

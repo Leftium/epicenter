@@ -1,52 +1,45 @@
 /**
- * Unified auth session store.
+ * Auth session store backed by `$EPICENTER_HOME/auth/sessions.json`.
  *
- * Stores auth sessions keyed by server URL at `$EPICENTER_HOME/auth/sessions.json`.
- * Supports multiple simultaneous server sessions.
+ * Sessions are keyed by canonical server URL. All URL variants (`wss://`,
+ * `https://`, trailing slashes) normalize to the same key automatically.
+ *
+ * @example
+ * ```typescript
+ * const sessions = createSessionStore(home);
+ *
+ * await sessions.save('https://api.epicenter.so', { ... });
+ * const s = await sessions.load('https://api.epicenter.so');
+ * ```
  */
 
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
+/**
+ * A persisted auth session for a single server.
+ *
+ * The server URL is not stored here—it's the map key in the session store.
+ */
 export type AuthSession = {
-	/** Canonical server URL (always `https://` or `http://`, lowercased, no trailing slash). */
-	server: string;
 	/** Bearer token for API/WebSocket auth. */
 	accessToken: string;
-	/** Unix ms when the session was created. */
-	createdAt: number;
-	/** Token lifetime in seconds (from the server). */
-	expiresIn: number;
-	/** User info (if available from the auth flow). */
-	user?: { id: string; email: string; name?: string };
+	/** Unix ms when the session expires. */
+	expiresAt: number;
 	/** Base64-encoded user encryption key for workspace decryption. */
-	userKeyBase64?: string;
+	userKeyBase64: string;
+	/** User info snapshot from the auth flow. */
+	user?: { id: string; email: string; name?: string };
 };
-
-type SessionStore = Record<string, AuthSession>;
-
-function sessionsPath(home: string): string {
-	return join(home, 'auth', 'sessions.json');
-}
 
 /**
  * Canonicalize a server URL to its HTTPS form.
  *
- * The canonical form is always `https://` (or `http://` for plaintext),
- * lowercased, with no trailing slash. This is the form used as the session
- * store key and for HTTP API calls.
- *
  * - `wss://API.epicenter.so/` → `https://api.epicenter.so`
  * - `ws://localhost:3913` → `http://localhost:3913`
  * - `https://api.epicenter.so/` → `https://api.epicenter.so`
- *
- * @example
- * ```typescript
- * normalizeServerUrl('wss://api.epicenter.so/');
- * // → 'https://api.epicenter.so'
- * ```
  */
-export function normalizeServerUrl(url: string): string {
+function normalizeUrl(url: string): string {
 	return url
 		.replace(/^wss:/, 'https:')
 		.replace(/^ws:/, 'http:')
@@ -55,83 +48,107 @@ export function normalizeServerUrl(url: string): string {
 }
 
 /**
- * Load all stored sessions from disk.
+ * Create a session store bound to a home directory.
  *
- * Returns an empty record if the file doesn't exist or is corrupt.
+ * All methods normalize server URLs internally—callers never need
+ * to think about URL canonicalization.
+ *
+ * @example
+ * ```typescript
+ * const sessions = createSessionStore('~/.epicenter');
+ *
+ * // Save after login
+ * await sessions.save('https://api.epicenter.so', {
+ *   accessToken: '...',
+ *   expiresAt: Date.now() + 86400_000,
+ *   userKeyBase64: '...',
+ *   user: { id: '1', email: 'me@example.com' },
+ * });
+ *
+ * // Load by server
+ * const session = await sessions.load('https://api.epicenter.so');
+ *
+ * // Load most recent (when no --server flag)
+ * const latest = await sessions.loadDefault();
+ *
+ * // Clear on logout
+ * await sessions.clear('https://api.epicenter.so');
+ * ```
  */
-async function readStore(home: string): Promise<SessionStore> {
-	const file = Bun.file(sessionsPath(home));
-	if (!(await file.exists())) return {};
-	try {
-		return (await file.json()) as SessionStore;
-	} catch {
-		return {};
+export function createSessionStore(home: string) {
+	const path = join(home, 'auth', 'sessions.json');
+
+	type Store = Record<string, AuthSession>;
+
+	async function read(): Promise<Store> {
+		const file = Bun.file(path);
+		if (!(await file.exists())) return {};
+		try {
+			return (await file.json()) as Store;
+		} catch {
+			return {};
+		}
 	}
+
+	async function write(store: Store): Promise<void> {
+		await mkdir(dirname(path), { recursive: true });
+		await Bun.write(path, JSON.stringify(store, null, '\t'));
+	}
+
+	return {
+		/**
+		 * Persist a session for a server.
+		 *
+		 * The server URL is normalized before storage so that `wss://host`,
+		 * `https://host`, and `https://host/` all map to the same entry.
+		 */
+		async save(server: string, session: AuthSession): Promise<void> {
+			const store = await read();
+			store[normalizeUrl(server)] = session;
+			await write(store);
+		},
+
+		/**
+		 * Load the session for a specific server.
+		 *
+		 * @returns The stored session, or `null` if none exists.
+		 */
+		async load(
+			server: string,
+		): Promise<(AuthSession & { server: string }) | null> {
+			const store = await read();
+			const key = normalizeUrl(server);
+			const session = store[key];
+			return session ? { ...session, server: key } : null;
+		},
+
+		/**
+		 * Load the most recent session (any server).
+		 *
+		 * Used when no `--server` flag is provided—returns the session
+		 * with the latest `expiresAt` timestamp.
+		 *
+		 * @returns The most recent session with its server URL, or `null` if empty.
+		 */
+		async loadDefault(): Promise<(AuthSession & { server: string }) | null> {
+			const store = await read();
+			const entries = Object.entries(store);
+			if (entries.length === 0) return null;
+			const [server, session] = entries.reduce((latest, entry) =>
+				entry[1].expiresAt > latest[1].expiresAt ? entry : latest,
+			);
+			return { ...session, server };
+		},
+
+		/**
+		 * Delete the session for a specific server.
+		 */
+		async clear(server: string): Promise<void> {
+			const store = await read();
+			delete store[normalizeUrl(server)];
+			await write(store);
+		},
+	};
 }
 
-/** Write the full session store to disk. */
-async function writeStore(home: string, store: SessionStore): Promise<void> {
-	const path = sessionsPath(home);
-	await mkdir(dirname(path), { recursive: true });
-	await Bun.write(path, JSON.stringify(store, null, '\t'));
-}
-
-/**
- * Save a session for a server.
- *
- * The server URL is canonicalized before storage so that `wss://host`,
- * `https://host`, and `https://host/` all map to the same entry.
- */
-export async function saveSession(
-	home: string,
-	session: AuthSession,
-): Promise<void> {
-	const store = await readStore(home);
-	const canonicalServer = normalizeServerUrl(session.server);
-	store[canonicalServer] = { ...session, server: canonicalServer };
-	await writeStore(home, store);
-}
-
-/**
- * Load a session for a specific server.
- *
- * @returns The stored session, or `null` if none exists.
- */
-export async function loadSession(
-	home: string,
-	server: string,
-): Promise<AuthSession | null> {
-	const store = await readStore(home);
-	return store[normalizeServerUrl(server)] ?? null;
-}
-
-/**
- * Load the most recent session (any server).
- *
- * Used when no `--server` flag is provided — returns the session
- * with the latest `createdAt` timestamp.
- *
- * @returns The most recent session, or `null` if no sessions exist.
- */
-export async function loadDefaultSession(
-	home: string,
-): Promise<AuthSession | null> {
-	const store = await readStore(home);
-	const sessions = Object.values(store);
-	if (sessions.length === 0) return null;
-	return sessions.reduce((latest, s) =>
-		s.createdAt > latest.createdAt ? s : latest,
-	);
-}
-
-/**
- * Delete the session for a specific server.
- */
-export async function clearSession(
-	home: string,
-	server: string,
-): Promise<void> {
-	const store = await readStore(home);
-	delete store[normalizeServerUrl(server)];
-	await writeStore(home, store);
-}
+export type SessionStore = ReturnType<typeof createSessionStore>;

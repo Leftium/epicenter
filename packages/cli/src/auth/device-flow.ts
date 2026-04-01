@@ -6,18 +6,18 @@
  */
 
 import { createAuthApi } from './api';
-import { saveSession } from './store';
+import type { SessionStore } from './store';
 
 /**
  * Authenticate with an Epicenter server using the RFC 8628 device code flow.
  *
  * Initiates a device authorization request, prints the verification URL and user code,
  * then polls until the user completes authorization or the request expires.
- * On success, fetches user info and saves the session to the unified auth store.
+ * On success, fetches the full session (user info + encryption key) and persists it.
  */
 export async function loginWithDeviceCode(
 	serverUrl: string,
-	home: string,
+	sessions: SessionStore,
 ): Promise<void> {
 	const api = createAuthApi(serverUrl);
 	const codeData = await api.requestDeviceCode();
@@ -38,17 +38,16 @@ export async function loginWithDeviceCode(
 			const authed = createAuthApi(serverUrl, accessToken);
 			const sessionData = await authed.getSession();
 
-			await saveSession(home, {
-				server: serverUrl,
+			await sessions.save(serverUrl, {
 				accessToken,
-				createdAt: Date.now(),
-				expiresIn,
-				user: sessionData.user,
+				expiresAt: Date.now() + expiresIn * 1000,
 				userKeyBase64: sessionData.userKeyBase64,
+				user: sessionData.user,
 			});
 
-			const displayName = sessionData.user?.name ?? sessionData.user?.email ?? serverUrl;
-			console.log(`\u2713 Logged in as ${displayName}`);
+			const displayName =
+				sessionData.user?.name ?? sessionData.user?.email ?? serverUrl;
+			console.log(`✓ Logged in as ${displayName}`);
 			return;
 		}
 
@@ -59,13 +58,11 @@ export async function loginWithDeviceCode(
 				interval *= 2;
 				continue;
 			case 'expired_token':
-				throw new Error('Device code expired \u2014 please run login again');
+				throw new Error('Device code expired — please run login again');
 			case 'access_denied':
-				throw new Error('Authorization denied \u2014 you rejected the request');
+				throw new Error('Authorization denied — you rejected the request');
 			default:
-				throw new Error(
-					tokenData.error_description ?? tokenData.error,
-				);
+				throw new Error(tokenData.error_description ?? tokenData.error);
 		}
 	}
 }

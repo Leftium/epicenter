@@ -10,12 +10,7 @@
 import type { Argv, CommandModule } from 'yargs';
 import { createAuthApi } from '../auth/api';
 import { loginWithDeviceCode } from '../auth/device-flow';
-import {
-	clearSession,
-	loadDefaultSession,
-	loadSession,
-	normalizeServerUrl,
-} from '../auth/store';
+import { createSessionStore } from '../auth/store';
 import { defineCommand } from '../util/command';
 
 /**
@@ -31,6 +26,8 @@ import { defineCommand } from '../util/command';
  * ```
  */
 export function createAuthCommand(home: string) {
+	const sessions = createSessionStore(home);
+
 	return defineCommand({
 		command: 'auth <subcommand>',
 		describe: 'Manage authentication with Epicenter servers',
@@ -42,13 +39,11 @@ export function createAuthCommand(home: string) {
 					builder: (y: Argv) =>
 						y.option('server', {
 							type: 'string',
-							description:
-								'Server URL (e.g. https://api.epicenter.so)',
+							description: 'Server URL (e.g. https://api.epicenter.so)',
 							demandOption: true,
 						}),
 					handler: async (argv: any) => {
-						const serverUrl = normalizeServerUrl(argv.server);
-						await loginWithDeviceCode(serverUrl, home);
+						await loginWithDeviceCode(argv.server, sessions);
 					},
 				} as unknown as CommandModule)
 				.command({
@@ -62,8 +57,8 @@ export function createAuthCommand(home: string) {
 						}),
 					handler: async (argv: any) => {
 						const session = argv.server
-							? await loadSession(home, argv.server)
-							: await loadDefaultSession(home);
+							? await sessions.load(argv.server)
+							: await sessions.loadDefault();
 
 						if (!session) {
 							console.log('No active session.');
@@ -72,17 +67,14 @@ export function createAuthCommand(home: string) {
 
 						// Best-effort remote sign-out
 						try {
-							const api = createAuthApi(
-								session.server,
-								session.accessToken,
-							);
+							const api = createAuthApi(session.server, session.accessToken);
 							await api.signOut();
 						} catch {
 							// Remote may be unreachable
 						}
 
-						await clearSession(home, session.server);
-						console.log('\u2713 Logged out.');
+						await sessions.clear(session.server);
+						console.log('✓ Logged out.');
 					},
 				} as unknown as CommandModule)
 				.command({
@@ -91,28 +83,23 @@ export function createAuthCommand(home: string) {
 					builder: (y: Argv) =>
 						y.option('server', {
 							type: 'string',
-							description:
-								'Server URL to check (default: most recent session)',
+							description: 'Server URL to check (default: most recent session)',
 						}),
 					handler: async (argv: any) => {
 						const session = argv.server
-							? await loadSession(home, argv.server)
-							: await loadDefaultSession(home);
+							? await sessions.load(argv.server)
+							: await sessions.loadDefault();
 
 						if (!session) {
 							console.log('Not logged in.');
 							return;
 						}
 
-						const api = createAuthApi(
-							session.server,
-							session.accessToken,
-						);
+						const api = createAuthApi(session.server, session.accessToken);
 
 						try {
 							const remote = await api.getSession();
-							const displayName =
-								remote.user.name ?? remote.user.email;
+							const displayName = remote.user.name ?? remote.user.email;
 							console.log(
 								`Logged in as: ${displayName} (${remote.user.email})`,
 							);
@@ -125,12 +112,8 @@ export function createAuthCommand(home: string) {
 							}
 						} catch {
 							const displayName =
-								session.user?.name ??
-								session.user?.email ??
-								'(unknown)';
-							console.log(
-								`Logged in as: ${displayName} [stored]`,
-							);
+								session.user?.name ?? session.user?.email ?? '(unknown)';
+							console.log(`Logged in as: ${displayName} [stored]`);
 							console.log(`Server:       ${session.server}`);
 							console.warn(
 								'Warning: Could not verify session with remote server.',
@@ -138,10 +121,7 @@ export function createAuthCommand(home: string) {
 						}
 					},
 				} as unknown as CommandModule)
-				.demandCommand(
-					1,
-					'Specify a subcommand: login, logout, or status',
-				),
+				.demandCommand(1, 'Specify a subcommand: login, logout, or status'),
 		handler: () => {},
 	});
 }

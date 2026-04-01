@@ -478,6 +478,151 @@ Export is a one-way publish step, not a bidirectional sync. Run it when you want
 - [ ] **3.1** Wire into skills editor app (`apps/skills/`) — replace virtual filesystem with workspace tables.
 - [ ] **3.2** Add skills loading to one existing app as proof-of-concept (e.g., `apps/honeycrisp` or `apps/api`).
 
+### Phase 4: Read Actions (Isomorphic)
+
+Add query actions to the isomorphic `createSkillsWorkspace()` so any app can consume skills without touching tables directly. These follow the agentskills.io progressive disclosure model (Catalog → Instructions → Resources) and use `defineQuery` from `@epicenter/workspace`.
+
+The agentskills.io spec is purely a file-format standard—it defines no consumption API. The `skills-ref` Python CLI provides `read_properties` and `to_prompt` as the only official programmatic surface. Our read actions are the TypeScript equivalent, designed for workspace-native consumption.
+
+#### Actions
+
+| Action | Tier | Docs Opened | Returns |
+|---|---|---|---|
+| `listSkills()` | 1 (Catalog) | 0 | `{ id, name, description }[]` |
+| `getSkill({ id })` | 2 (Instructions) | 1 | `{ skill, instructions }` |
+| `getSkillWithReferences({ id })` | 3 (Resources) | 1 + N | `{ skill, instructions, references[] }` |
+
+#### Design Decisions
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Actions vs raw table access | Actions | Assembly logic (skill row + instructions doc + references) is domain logic that belongs in the package, not reimplemented by each consumer |
+| `getSkill` returns metadata + instructions | Combined | Callers almost always want both. `getSkill(id).instructions` is fine when you only want one |
+| `getSkillWithReferences` vs `getSkillBundle` | `WithReferences` | "Bundle" is invented terminology. "WithReferences" says exactly what extra data you get. When scripts/assets are added, we can expand or add `getSkillWithResources` |
+| Input as `{ id }` object vs plain string | `{ id }` object | `defineQuery` input must be a Standard Schema object for MCP/OpenAPI compatibility |
+| Actions on isomorphic workspace | Yes | Read actions don't need Node fs or browser APIs—they only read tables and documents. Belongs in `workspace.ts`, not `node.ts` |
+| `listSkills` has no input | Correct | Returns all skills. Filtering is the consumer's job |
+
+#### Implementation
+
+```typescript
+// packages/skills/src/workspace.ts
+import { createWorkspace, defineQuery } from '@epicenter/workspace';
+import { type } from 'arktype';
+import { skillsDefinition } from './definition.js';
+
+export function createSkillsWorkspace() {
+  return createWorkspace(skillsDefinition).withActions((client) => ({
+    /**
+     * List all skills as lightweight catalog entries.
+     *
+     * Returns id, name, and description for every valid skill row.
+     * No documents are opened—this is cheap enough to call on every
+     * render cycle or at agent session startup.
+     *
+     * Mirrors tier 1 (Catalog) of the agentskills.io progressive
+     * disclosure model: ~50–100 tokens per skill.
+     */
+    listSkills: defineQuery({
+      description: 'List all skills (id, name, description)',
+      handler: () =>
+        client.tables.skills
+          .getAllValid()
+          .map((s) => ({ id: s.id, name: s.name, description: s.description }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+    }),
+
+    /**
+     * Get a single skill's metadata and instructions.
+     *
+     * Opens the skill's instructions document (one Y.Doc) and reads
+     * the full markdown content. Returns the skill row alongside the
+     * instructions text—callers almost always need both.
+     *
+     * Mirrors tier 2 (Instructions) of the agentskills.io progressive
+     * disclosure model: <5000 tokens recommended.
+     */
+    getSkill: defineQuery({
+      description: 'Get skill metadata and instructions by ID',
+      input: type({ id: 'string' }),
+      handler: async ({ id }) => {
+        const skill = client.tables.skills.find((s) => s.id === id);
+        if (!skill) return null;
+        const handle = await client.documents.skills.instructions.open(id);
+        return { skill, instructions: handle.read() };
+      },
+    }),
+
+    /**
+     * Get a skill with its full instructions and all reference content.
+     *
+     * Opens the instructions document plus one content document per
+     * reference—expensive for skills with many references. Use this
+     * at agent prompt assembly time when the full skill context is
+     * needed, not for catalog browsing.
+     *
+     * Mirrors tier 3 (Resources) of the agentskills.io progressive
+     * disclosure model.
+     */
+    getSkillWithReferences: defineQuery({
+      description: 'Get skill with instructions and all reference content',
+      input: type({ id: 'string' }),
+      handler: async ({ id }) => {
+        const skill = client.tables.skills.find((s) => s.id === id);
+        if (!skill) return null;
+        const instructionsHandle = await client.documents.skills.instructions.open(id);
+        const refs = client.tables.references.filter((r) => r.skillId === id);
+        const references = await Promise.all(
+          refs.map(async (ref) => {
+            const contentHandle = await client.documents.references.content.open(ref.id);
+            return { path: ref.path, content: contentHandle.read() };
+          }),
+        );
+        return {
+          skill,
+          instructions: instructionsHandle.read(),
+          references: references.sort((a, b) => a.path.localeCompare(b.path)),
+        };
+      },
+    }),
+  }));
+}
+```
+
+#### Consuming App Example
+
+```typescript
+// Any app—browser, server, edge
+import { createSkillsWorkspace } from '@epicenter/skills'
+
+const ws = createSkillsWorkspace()
+  .withExtension('persistence', indexeddbPersistence)
+
+// Tier 1—catalog for a skill picker
+const skills = ws.actions.listSkills()
+
+// Tier 2—inject into agent context
+const result = await ws.actions.getSkill({ id: 'abc123' })
+if (result) systemPrompt += result.instructions
+
+// Tier 3—full skill with references for deep agent context
+const full = await ws.actions.getSkillWithReferences({ id: 'abc123' })
+if (full) {
+  systemPrompt += full.instructions
+  for (const ref of full.references) {
+    systemPrompt += `\n\n## ${ref.path}\n${ref.content}`
+  }
+}
+```
+
+#### Tasks
+
+- [x] **4.1** Add read actions (`listSkills`, `getSkill`, `getSkillWithReferences`) to `packages/skills/src/workspace.ts` via `.withActions()`
+- [x] **4.2** Re-export `defineQuery` usage—ensure `workspace.ts` imports `defineQuery` from `@epicenter/workspace` and input schema from `typebox` (TypeBox used instead of arktype for `defineQuery` TypeBox `Static<>` inference compatibility)
+- [x] **4.3** Update `packages/skills/src/index.ts` barrel if any new types need exporting — no new types needed (return types inferred from handlers)
+- [ ] **4.4** Verify actions work: write a test or script that calls all three actions after `importFromDisk`
+- [x] **4.5** Run `bun typecheck` on `packages/skills` to confirm no type errors
+
 ## Edge Cases
 
 ### Skill renamed in editor

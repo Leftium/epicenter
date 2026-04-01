@@ -35,14 +35,16 @@ export async function loginWithDeviceCode(
 		if ('access_token' in tokenData) {
 			const { access_token: accessToken, expires_in: expiresIn } = tokenData;
 
-			// Fetch user info with the new token
+			// Fetch user info and encryption key with the new token
 			let user: AuthSession['user'];
+			let userKeyBase64: string | undefined;
 			try {
 				const authed = createAuthApi(serverUrl, accessToken);
 				const sessionData = await authed.getSession();
 				user = sessionData.user;
+				userKeyBase64 = sessionData.userKeyBase64;
 			} catch {
-				// Non-fatal \u2014 we still have the token
+				// Non-fatal — we still have the token
 			}
 
 			await saveSession(home, {
@@ -51,6 +53,7 @@ export async function loginWithDeviceCode(
 				createdAt: Date.now(),
 				expiresIn,
 				user,
+				userKeyBase64,
 			});
 
 			const displayName = user?.name ?? user?.email ?? serverUrl;

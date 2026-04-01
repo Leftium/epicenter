@@ -19,6 +19,8 @@ export type AuthSession = {
 	expiresIn: number;
 	/** User info (if available from the auth flow). */
 	user?: { id: string; email: string; name?: string };
+	/** Base64-encoded user encryption key for workspace decryption. */
+	userKeyBase64?: string;
 };
 
 type SessionStore = Record<string, AuthSession>;

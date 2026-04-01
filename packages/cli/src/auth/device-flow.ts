@@ -6,7 +6,7 @@
  */
 
 import { createAuthApi } from './api';
-import { type AuthSession, saveSession } from './store';
+import { saveSession } from './store';
 
 /**
  * Authenticate with an Epicenter server using the RFC 8628 device code flow.
@@ -35,17 +35,9 @@ export async function loginWithDeviceCode(
 		if ('access_token' in tokenData) {
 			const { access_token: accessToken, expires_in: expiresIn } = tokenData;
 
-			// Fetch user info and encryption key with the new token
-			let user: AuthSession['user'];
-			let userKeyBase64: string | undefined;
-			try {
-				const authed = createAuthApi(serverUrl, accessToken);
-				const sessionData = await authed.getSession();
-				user = sessionData.user;
-				userKeyBase64 = sessionData.userKeyBase64;
-			} catch {
-				// Non-fatal — we still have the token
-			}
+			const authed = createAuthApi(serverUrl, accessToken);
+			const sessionData = await authed.getSession();
+			const { user, userKeyBase64 } = sessionData;
 
 			await saveSession(home, {
 				server: serverUrl,

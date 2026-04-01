@@ -148,8 +148,13 @@ export type YKeyValueLwwEncrypted<T> = {
 	 */
 	deactivateEncryption(): void;
 	/**
-	 * Number of entries that failed to decrypt. Computed as
-	 * `inner.map.size - map.size`. Entries are retried on `activateEncryption()`.
+	 * Number of entries in the inner store that are not in the decrypted cache.
+	 * When a key is active, this counts entries that failed to decrypt.
+	 * When no key is active, this counts all encrypted entries (they are not
+	 * "failed"—they are waiting for a key). Entries are retried on
+	 * `activateEncryption()`.
+	 *
+	 * Computed as `inner.map.size - map.size`.
 	 */
 	readonly failedDecryptCount: number;
 
@@ -411,9 +416,15 @@ export function createEncryptedYkvLww<T>(
 			inner.delete(key);
 		},
 
+		/**
+		 * Iterate all entries with decrypted values. Prefers the wrapper.map cache;
+		 * falls back to on-the-fly decryption for entries in the transaction gap
+		 * (after set() but before the observer fires).
+		 *
+		 * Entries that cannot be decrypted (wrong key, corrupted blob, no key active)
+		 * are silently omitted. Use `failedDecryptCount` to detect missing entries.
+		 */
 		*entries() {
-			// Yield from inner.entries() (includes pending values during transaction gap),
-			// decrypting on the fly. Prefer wrapper.map cache when available.
 			for (const [key, entry] of inner.entries()) {
 				const cached = map.get(key);
 				if (cached) {

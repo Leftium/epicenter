@@ -162,7 +162,7 @@ export function encryptValue(
 	const cipher = aad
 		? xchacha20poly1305(key, nonce, aad)
 		: xchacha20poly1305(key, nonce);
-	const data = new TextEncoder().encode(plaintext);
+	const data = textEncoder.encode(plaintext);
 	const ciphertext = cipher.encrypt(data);
 
 	// Pack formatVersion(1) || keyVersion(1) || nonce(24) || ciphertext || tag(16)

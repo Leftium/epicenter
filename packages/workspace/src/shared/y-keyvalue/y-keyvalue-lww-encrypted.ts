@@ -300,7 +300,15 @@ export function createEncryptedYkvLww<T>(
 				const decrypted = tryDecryptEntry(key, entry);
 				if (!decrypted) continue;
 
-				const wasNew = !map.has(key);
+				const existing = map.get(key);
+				if (existing && JSON.stringify(existing.val) === JSON.stringify(decrypted.val)) {
+					// Decrypted value unchanged (e.g., re-encryption during activateEncryption).
+					// Update the cache entry but don't emit a change event.
+					map.set(key, decrypted);
+					continue;
+				}
+
+				const wasNew = !existing;
 				map.set(key, decrypted);
 				decryptedChanges.set(key, {
 					action: wasNew ? 'add' : 'update',

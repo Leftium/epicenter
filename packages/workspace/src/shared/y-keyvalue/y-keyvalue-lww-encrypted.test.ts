@@ -685,6 +685,32 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.get('a')).toBe('alpha');
 			expect(kv.get('b')).toBe('beta');
 		});
+
+		test('activateEncryption does not emit spurious events for plaintext re-encryption', () => {
+			const ydoc = new Y.Doc({ guid: 'no-spurious-reencrypt' });
+			const yarray =
+				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
+			// Start without encryption — entries stored as plaintext
+			const kv = createEncryptedYkvLww<string>(yarray);
+
+			kv.set('a', 'alpha');
+			kv.set('b', 'beta');
+
+			const events: Array<{ key: string; change: PlainChange<string> }> = [];
+			kv.observe((changes) => {
+				for (const [entryKey, change] of changes)
+					events.push({ key: entryKey, change });
+			});
+
+			// Activate encryption — plaintext entries get encrypted under the hood
+			// but their decrypted values don't change. Should fire zero events.
+			const key = generateEncryptionKey();
+			kv.activateEncryption(key);
+
+			expect(events).toEqual([]);
+			expect(kv.get('a')).toBe('alpha');
+			expect(kv.get('b')).toBe('beta');
+		});
 	});
 
 	describe('deactivateEncryption', () => {

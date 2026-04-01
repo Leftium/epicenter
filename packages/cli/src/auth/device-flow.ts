@@ -37,18 +37,17 @@ export async function loginWithDeviceCode(
 
 			const authed = createAuthApi(serverUrl, accessToken);
 			const sessionData = await authed.getSession();
-			const { user, userKeyBase64 } = sessionData;
 
 			await saveSession(home, {
 				server: serverUrl,
 				accessToken,
 				createdAt: Date.now(),
 				expiresIn,
-				user,
-				userKeyBase64,
+				user: sessionData.user,
+				userKeyBase64: sessionData.userKeyBase64,
 			});
 
-			const displayName = user?.name ?? user?.email ?? serverUrl;
+			const displayName = sessionData.user?.name ?? sessionData.user?.email ?? serverUrl;
 			console.log(`\u2713 Logged in as ${displayName}`);
 			return;
 		}

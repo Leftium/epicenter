@@ -40,6 +40,16 @@
  *   → await userKeyStore.delete() if configured
  * ```
  *
+ * ## Epoch-based compaction
+ *
+ * Internally, each workspace uses TWO Y.Docs:
+ * 1. **Coordination doc** (`guid: workspaceId`) — holds only the epoch map
+ * 2. **Data doc** (`guid: \`${workspaceId}-${epoch}\``) — holds tables + KV
+ *
+ * The coordination doc is purely internal. Consumers interact with the data doc
+ * via `client.ydoc`. Calling `client.compact()` migrates all data to a fresh
+ * data doc at epoch+1, shedding CRDT history.
+ *
  * @example
  * ```typescript
  * // Direct use (no extensions)
@@ -86,6 +96,7 @@ import { createAwareness } from './create-awareness.js';
 import { createDocuments } from './create-document.js';
 import { createKv } from './create-kv.js';
 import { createTable } from './create-table.js';
+import { createEpochTracker } from './epoch.js';
 import {
 	defineExtension,
 	disposeLifo,
@@ -104,10 +115,11 @@ import type {
 	ExtensionContext,
 	KvDefinitions,
 	TableDefinitions,
+	TransactionMeta,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
-	WorkspaceEncryption,
 	WorkspaceDefinition,
+	WorkspaceEncryption,
 } from './types.js';
 import { KV_KEY, TableKey } from './ydoc-keys.js';
 
@@ -117,6 +129,12 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
 	return true;
 }
+
+/** Table observer callback type for tracking across compaction. */
+type TableObserverCallback = (
+	changedIds: ReadonlySet<string>,
+	transaction: TransactionMeta,
+) => void;
 
 /**
  * Create a workspace client with chainable extension support.
@@ -157,7 +175,19 @@ export function createWorkspace<
 	TAwarenessDefinitions,
 	Record<string, never>
 > {
-	const ydoc = new Y.Doc({ guid: id });
+	// ── Coordination doc + epoch tracking ────────────────────────────────
+	// The coordination doc is a lightweight Y.Doc that holds only the epoch
+	// map. It uses the workspace ID as its GUID (stable anchor for sync).
+	// The data doc uses `{workspaceId}-{epoch}` as its GUID.
+	const coordYdoc = new Y.Doc({ guid: id });
+	const epochTracker = createEpochTracker(coordYdoc);
+	const initialEpoch = epochTracker.getEpoch();
+
+	// ── Data doc ────────────────────────────────────────────────────────
+	// Mutable — swapped on compact(). All tables, KV, and extensions
+	// bind to this doc. The `let` enables compact() to replace it.
+	let ydoc = new Y.Doc({ guid: `${id}-${initialEpoch}` });
+
 	const tableDefs = (tablesDef ?? {}) as TTableDefinitions;
 	const kvDefs = (kvDef ?? {}) as TKvDefinitions;
 	const awarenessDefs = (awarenessDef ?? {}) as TAwarenessDefinitions;
@@ -166,6 +196,11 @@ export function createWorkspace<
 	// The workspace owns all encrypted KV stores so it can coordinate
 	// activateEncryption across tables and KV simultaneously.
 	const encryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
+
+	// ── Table observer tracking ─────────────────────────────────────────
+	// Observers registered via table.observe() are tracked so they can be
+	// re-registered on the new table helpers after compact().
+	const tableObserverRegistry = new Map<string, Set<TableObserverCallback>>();
 
 	// Create table stores + helpers (one encrypted KV per table)
 	const tableHelpers: Record<
@@ -176,16 +211,44 @@ export function createWorkspace<
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 		const ykv = createEncryptedYkvLww(yarray, { key: options?.key });
 		encryptedStores.push(ykv);
-		tableHelpers[name] = createTable(ykv, definition);
+		const helper = createTable(ykv, definition);
+		tableHelpers[name] = wrapTableWithObserverTracking(name, helper);
 	}
 	const tables =
 		tableHelpers as import('./types.js').TablesHelper<TTableDefinitions>;
 
+	/**
+	 * Wrap a table helper's observe method to track callbacks for compact re-registration.
+	 * Returns a new object that delegates all calls and tracks observe/unobserve.
+	 */
+	function wrapTableWithObserverTracking(
+		name: string,
+		helper: import('./types.js').TableHelper<BaseRow>,
+	): import('./types.js').TableHelper<BaseRow> {
+		if (!tableObserverRegistry.has(name)) {
+			tableObserverRegistry.set(name, new Set());
+		}
+		const registry = tableObserverRegistry.get(name)!;
+		const originalObserve = helper.observe;
+
+		return {
+			...helper,
+			observe(callback: TableObserverCallback) {
+				registry.add(callback);
+				const unsub = originalObserve.call(helper, callback);
+				return () => {
+					registry.delete(callback);
+					unsub();
+				};
+			},
+		};
+	}
+
 	// Create KV store + helper (single shared encrypted KV)
 	const kvYarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const kvStore = createEncryptedYkvLww(kvYarray, { key: options?.key });
+	let kvStore = createEncryptedYkvLww(kvYarray, { key: options?.key });
 	encryptedStores.push(kvStore);
-	const kv = createKv(kvStore, kvDefs);
+	let kvHelper = createKv(kvStore, kvDefs);
 	const awareness = createAwareness(ydoc, awarenessDefs);
 	const definitions = {
 		tables: tableDefs,
@@ -216,6 +279,22 @@ export function createWorkspace<
 		lock: () => void;
 		clearCache: () => Promise<void>;
 	};
+
+	// ── Extension factory tracking for compact re-fire ──────────────────
+	// When compact() runs, data doc extensions need to be torn down and
+	// re-created on the fresh data doc. We store the factory functions
+	// (with their keys) so compact() can re-invoke them.
+	type StoredExtensionFactory = {
+		key: string;
+		factory: (context: { ydoc: Y.Doc; whenReady: Promise<void> }) =>
+			| (Record<string, unknown> & {
+					whenReady?: Promise<unknown>;
+					dispose?: () => MaybePromise<void>;
+					clearLocalData?: () => MaybePromise<void>;
+			  })
+			| void;
+	};
+	const dataDocExtensionFactories: StoredExtensionFactory[] = [];
 
 	// Accumulated document extension registrations (in chain order).
 	// Mutable array — grows as .withDocumentExtension() is called. Document
@@ -301,6 +380,7 @@ export function createWorkspace<
 			}
 			const errors = await disposeLifo(state.extensionCleanups);
 			awareness.raw.destroy();
+			coordYdoc.destroy();
 			ydoc.destroy();
 
 			if (errors.length > 0) {
@@ -318,15 +398,28 @@ export function createWorkspace<
 
 		const client = {
 			id,
-			ydoc,
+			get ydoc() {
+				return ydoc;
+			},
 			definitions,
 			tables,
 			documents: typedDocuments,
-			kv,
+			get kv() {
+				return kvHelper;
+			},
 			awareness,
 			// Each extension entry is the exports object stored by reference.
 			extensions,
 			actions,
+			/**
+			 * Current epoch number.
+			 *
+			 * The epoch starts at 0 and increments each time `compact()` is called.
+			 * The data doc's GUID is `{workspaceId}-{epoch}`.
+			 */
+			get epoch() {
+				return epochTracker.getEpoch();
+			},
 			batch(fn: () => void): void {
 				ydoc.transact(fn);
 			},
@@ -340,6 +433,139 @@ export function createWorkspace<
 			 */
 			loadSnapshot(update: Uint8Array): void {
 				Y.applyUpdate(ydoc, update);
+			},
+			/**
+			 * Get the encoded size of the current data doc in bytes.
+			 *
+			 * Useful for deciding when to compact. This is the total
+			 * CRDT state including history, not just the active data.
+			 */
+			encodedSize(): number {
+				return Y.encodeStateAsUpdate(ydoc).byteLength;
+			},
+			/**
+			 * Compact the workspace by migrating all data to a fresh Y.Doc.
+			 *
+			 * This creates a new Y.Doc at epoch N+1 with zero CRDT history,
+			 * copies all current table rows and KV entries into it, bumps
+			 * the epoch in the coordination doc, and tears down the old data doc.
+			 *
+			 * Other connected clients will see the epoch change via CRDT
+			 * sync on the coordination doc and automatically transition.
+			 *
+			 * @example
+			 * ```typescript
+			 * const sizeBefore = Y.encodeStateAsUpdate(client.ydoc).byteLength;
+			 * await client.compact();
+			 * const sizeAfter = Y.encodeStateAsUpdate(client.ydoc).byteLength;
+			 * // sizeAfter < sizeBefore (no CRDT history overhead)
+			 * ```
+			 */
+			async compact(): Promise<void> {
+				// ── Step 1: Snapshot current data ────────────────────────────
+				const tableSnapshots: Record<string, BaseRow[]> = {};
+				for (const [name, helper] of Object.entries(tableHelpers)) {
+					tableSnapshots[name] = helper.getAllValid();
+				}
+
+				const kvSnapshot: Record<string, unknown> = {};
+				for (const key of Object.keys(kvDefs)) {
+					const raw = kvStore.get(key);
+					if (raw !== undefined) {
+						kvSnapshot[key] = raw;
+					}
+				}
+
+				// ── Step 2: Bump epoch ──────────────────────────────────────
+				const newEpoch = epochTracker.bumpEpoch();
+
+				// ── Step 3: Create fresh data doc ───────────────────────────
+				const oldYdoc = ydoc;
+				const freshYdoc = new Y.Doc({ guid: `${id}-${newEpoch}` });
+
+				// ── Step 4: Create fresh stores + write data ────────────────
+				const newEncryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
+
+				for (const [name, definition] of Object.entries(tableDefs)) {
+					const yarray = freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(
+						TableKey(name),
+					);
+					const newYkv = createEncryptedYkvLww(yarray, {
+						key: options?.key,
+					});
+					newEncryptedStores.push(newYkv);
+
+					const newHelper = createTable(newYkv, definition);
+					for (const row of tableSnapshots[name] ?? []) {
+						newHelper.set(row);
+					}
+
+					// Wrap with observer tracking and re-register existing observers
+					const wrapped = wrapTableWithObserverTracking(name, newHelper);
+					const registry = tableObserverRegistry.get(name);
+					if (registry) {
+						for (const cb of registry) {
+							// The wrapped observe will add to registry (Set dedup handles it)
+							// but we call the inner helper directly to avoid double-tracking
+							newHelper.observe(cb);
+						}
+					}
+					tableHelpers[name] = wrapped;
+				}
+
+				// ── Step 5: Create fresh KV store + write data ──────────────
+				const newKvYarray =
+					freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+				const newKvStore = createEncryptedYkvLww(newKvYarray, {
+					key: options?.key,
+				});
+				newEncryptedStores.push(newKvStore);
+
+				for (const [key, val] of Object.entries(kvSnapshot)) {
+					newKvStore.set(key, val);
+				}
+
+				kvStore = newKvStore;
+				kvHelper = createKv(newKvStore, kvDefs);
+
+				// ── Step 6: Update encrypted stores ─────────────────────────
+				encryptedStores.length = 0;
+				encryptedStores.push(...newEncryptedStores);
+
+				// ── Step 7: Dispose old extensions LIFO ─────────────────────
+				await disposeLifo(state.extensionCleanups);
+
+				// ── Step 8: Re-fire extension factories on fresh doc ────────
+				state.extensionCleanups.length = 0;
+				state.whenReadyPromises.length = 0;
+
+				for (const { key, factory } of dataDocExtensionFactories) {
+					try {
+						const raw = factory({
+							ydoc: freshYdoc,
+							whenReady: Promise.resolve(),
+						});
+						if (!raw) continue;
+						const resolved = defineExtension(raw);
+						(extensions as Record<string, unknown>)[key] = resolved;
+						state.extensionCleanups.push(resolved.dispose);
+						state.whenReadyPromises.push(resolved.whenReady);
+					} catch (err) {
+						console.error(
+							`[workspace] Extension '${key}' failed on compact:`,
+							err,
+						);
+					}
+				}
+
+				// Wait for new extensions to be ready
+				await Promise.all(state.whenReadyPromises);
+
+				// ── Step 9: Swap ydoc reference ─────────────────────────────
+				ydoc = freshYdoc;
+
+				// ── Step 10: Destroy old data doc ───────────────────────────
+				oldYdoc.destroy();
 			},
 			async clearLocalData(): Promise<void> {
 				encryptionRuntime?.lock();
@@ -362,7 +588,9 @@ export function createWorkspace<
 				encryption: encryptionRuntime.encryption,
 				async unlockWithKey(userKeyBase64: string) {
 					await whenReady;
-					await encryptionRuntime.encryption.unlock(base64ToBytes(userKeyBase64));
+					await encryptionRuntime.encryption.unlock(
+						base64ToBytes(userKeyBase64),
+					);
 				},
 			});
 		}
@@ -411,7 +639,8 @@ export function createWorkspace<
 				const raw = factory(ctx);
 
 				// Void return means "not installed" — skip registration
-				if (!raw) return buildClient({ extensions, state, encryptionRuntime, actions });
+				if (!raw)
+					return buildClient({ extensions, state, encryptionRuntime, actions });
 
 				const resolved = defineExtension(raw);
 
@@ -463,6 +692,8 @@ export function createWorkspace<
 					factory,
 					tags: [],
 				});
+				// Track for compact re-fire
+				dataDocExtensionFactories.push({ key, factory });
 				return applyWorkspaceExtension(key, factory);
 			},
 
@@ -593,7 +824,7 @@ export function createWorkspace<
 					const store = config.userKeyStore;
 					state.whenReadyPromises.push(
 						Promise.all(state.whenReadyPromises).then(async () => {
-								const cachedKey = await store.get();
+							const cachedKey = await store.get();
 							if (!cachedKey) return;
 							try {
 								await unlock(base64ToBytes(cachedKey));
@@ -641,7 +872,12 @@ export function createWorkspace<
 				) => Actions,
 			) {
 				const newActions = factory(client);
-				return buildClient({ extensions, state, encryptionRuntime, actions: { ...actions, ...newActions } });
+				return buildClient({
+					extensions,
+					state,
+					encryptionRuntime,
+					actions: { ...actions, ...newActions },
+				});
 			},
 		});
 

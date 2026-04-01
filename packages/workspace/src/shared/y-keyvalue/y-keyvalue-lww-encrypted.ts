@@ -456,19 +456,8 @@ export function createEncryptedYkvLww<T>(
 		},
 
 		deactivateEncryption() {
-			const oldKeys = [...map.keys()];
 			currentKey = undefined;
 			map.clear();
-
-			if (oldKeys.length === 0) return;
-
-			const syntheticChanges = new Map<string, YKeyValueLwwChange<T>>();
-			for (const key of oldKeys) {
-				syntheticChanges.set(key, { action: 'delete' });
-			}
-
-			for (const handler of changeHandlers)
-				handler(syntheticChanges, SYNTHETIC_TRANSACTION);
 		},
 		get failedDecryptCount() {
 			return inner.map.size - map.size;

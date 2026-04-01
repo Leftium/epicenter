@@ -721,45 +721,6 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.cachedSize).toBe(0);
 		});
 
-		test('fires synthetic delete events for all cached entries', () => {
-			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'deactivate-events' });
-			const yarray =
-				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedYkvLww<string>(yarray, { key });
-
-			kv.set('a', 'alpha');
-			kv.set('b', 'beta');
-
-			const events: Array<{ key: string; change: PlainChange<string> }> = [];
-			kv.observe((changes) => {
-				for (const [entryKey, change] of changes)
-					events.push({ key: entryKey, change });
-			});
-
-			kv.deactivateEncryption();
-
-			expect(events.length).toBe(2);
-			expect(events.every((e) => e.change.action === 'delete')).toBe(true);
-			expect(events.map((e) => e.key).sort()).toEqual(['a', 'b']);
-		});
-
-		test('no events fired when cache is already empty', () => {
-			const key = generateEncryptionKey();
-			const ydoc = new Y.Doc({ guid: 'deactivate-empty-no-events' });
-			const yarray =
-				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedYkvLww<string>(yarray, { key });
-
-			const events: Array<{ key: string; change: PlainChange<string> }> = [];
-			kv.observe((changes) => {
-				for (const [entryKey, change] of changes)
-					events.push({ key: entryKey, change });
-			});
-
-			kv.deactivateEncryption();
-			expect(events.length).toBe(0);
-		});
 
 		test('encrypted entries unreadable after deactivation', () => {
 			const key = generateEncryptionKey();

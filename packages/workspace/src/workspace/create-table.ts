@@ -7,7 +7,6 @@
  * and by tests.
  */
 
-import type * as Y from 'yjs';
 import type { YKeyValueLwwChange } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import type { YKeyValueLwwEncrypted } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type {
@@ -17,7 +16,6 @@ import type {
 	RowResult,
 	TableDefinition,
 	TableHelper,
-	TransactionMeta,
 	UpdateResult,
 } from './types.js';
 
@@ -173,13 +171,13 @@ export function createTable<
 		// ═══════════════════════════════════════════════════════════════════════
 
 		observe(
-			callback: (changedIds: ReadonlySet<TRow['id']>, transaction: TransactionMeta) => void,
+			callback: (changedIds: ReadonlySet<TRow['id']>, origin?: unknown) => void,
 		): () => void {
 			const handler = (
 				changes: Map<string, YKeyValueLwwChange<unknown>>,
-				transaction: Y.Transaction | undefined,
+				origin: unknown,
 			) => {
-				callback(new Set(changes.keys()) as ReadonlySet<TRow['id']>, { origin: transaction?.origin });
+				callback(new Set(changes.keys()) as ReadonlySet<TRow['id']>, origin);
 			};
 
 			ykv.observe(handler);

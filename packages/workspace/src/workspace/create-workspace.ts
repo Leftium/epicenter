@@ -115,7 +115,6 @@ import type {
 	ExtensionContext,
 	KvDefinitions,
 	TableDefinitions,
-	TransactionMeta,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
@@ -133,7 +132,7 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 /** Table observer callback type for tracking across compaction. */
 type TableObserverCallback = (
 	changedIds: ReadonlySet<string>,
-	transaction: TransactionMeta,
+	origin?: unknown,
 ) => void;
 
 /**

@@ -98,15 +98,13 @@ const RE_ENCRYPT = Symbol('re-encrypt');
 /**
  * Change handler for the encrypted KV wrapper.
  *
- * The second parameter is `Y.Transaction | undefined` because encryption
- * state transitions (`activateEncryption`, `deactivateEncryption`) fire
- * change events without a backing Yjs transaction. Real CRDT changes
- * always provide a `Y.Transaction`; encryption lifecycle events pass
- * `undefined`.
+ * Receives the Yjs transaction origin for real CRDT changes, or `undefined`
+ * for encryption lifecycle events (activateEncryption, deactivateEncryption)
+ * which have no backing Yjs transaction.
  */
 export type EncryptedKvChangeHandler<T> = (
 	changes: Map<string, YKeyValueLwwChange<T>>,
-	transaction: Y.Transaction | undefined,
+	origin: unknown,
 ) => void;
 
 /**
@@ -366,7 +364,7 @@ export function createEncryptedYkvLww<T>(
 		}
 
 		for (const handler of changeHandlers)
-			handler(decryptedChanges, transaction);
+			handler(decryptedChanges, transaction.origin);
 	});
 
 	return {

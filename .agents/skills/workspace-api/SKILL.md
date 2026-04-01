@@ -1,9 +1,9 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, migrations, and data access (CRUD + observation). Use when the user mentions workspace, defineTable, defineKv, createWorkspace, or when defining schemas, reading/writing table data, observing changes, or writing migrations.
+description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), and withActions. Use when the user mentions workspace, defineTable, defineKv, createWorkspace, withActions, defineQuery, defineMutation, or when defining schemas, reading/writing table data, observing changes, writing migrations, or attaching actions to a workspace client.
 metadata:
   author: epicenter
-  version: '5.0'
+  version: '6.0'
 ---
 
 # Workspace API
@@ -22,6 +22,7 @@ Type-safe schema definitions for tables and KV stores.
 - Adding a new version to an existing table definition
 - Writing table migration functions
 - Reading, writing, or observing table/KV data
+- Attaching actions to a workspace client via `.withActions()`
 
 ## Tables
 
@@ -124,12 +125,62 @@ const newId = generateConversationId();  // Good
 // const newId = generateId() as string as ConversationId;  // Bad
 ```
 
+## Actions (`.withActions()`)
+
+Actions wrap workspace operations as `defineMutation` (writes) or `defineQuery` (reads). Attach them via `.withActions()` on a workspace builder—the call is non-terminal, so you can chain `.withExtension()` after it.
+
+```typescript
+import { createWorkspace, defineMutation, defineQuery, defineWorkspace } from '@epicenter/workspace';
+
+export function createBlogWorkspace() {
+	return createWorkspace(blogDefinition).withActions(({ tables }) => ({
+		/**
+		 * Mark a post as published and record the publication timestamp.
+		 *
+		 * Separated from a raw `tables.posts.update()` call because publish
+		 * involves setting multiple fields atomically and may trigger side
+		 * effects (notifications, RSS rebuild) in future versions.
+		 */
+		publish: defineMutation({
+			description: 'Publish a draft post',
+			input: type({ id: PostId }),
+			handler: ({ id }) => {
+				tables.posts.update({ id, published: true, publishedAt: Date.now() });
+			},
+		}),
+	}));
+}
+```
+
+### JSDoc on Action Methods
+
+Every action method inside `.withActions()` should have a JSDoc comment. The JSDoc and the `description` field serve **different audiences**:
+
+- **`description`** — consumed by MCP servers, CLI help text, and OpenAPI specs. Keep it short and declarative ("Import skills from disk").
+- **JSDoc** — consumed by developers hovering in an IDE. Explain *why* the action exists as a separate operation, what non-obvious behavior it has, or what assumptions it makes.
+
+```typescript
+// ❌ Parrots the description
+/** Import skills from an agentskills.io-compliant directory. */
+importFromDisk: defineMutation({ description: 'Import skills from an agentskills.io-compliant directory', ... })
+
+// ✅ Adds distinct value
+/**
+ * Scan a directory of SKILL.md files and upsert them into the workspace.
+ *
+ * Skills without a `metadata.id` in their frontmatter get one generated
+ * and written back to the file, so future imports produce stable IDs
+ * across machines.
+ */
+importFromDisk: defineMutation({ description: 'Import skills from an agentskills.io-compliant directory', ... })
+```
+
 ## Workspace File Structure
 
 A workspace file has two layers:
 
 1. **Table definitions with co-located types** — `defineTable(schema)` as standalone consts, each immediately followed by `export type = InferTableRow<typeof table>`
-2. **`createWorkspace(defineWorkspace({...}))` call** — composes pre-built tables into the client
+2. **`createWorkspace(defineWorkspace({...}))` call** — composes pre-built tables into the client, optionally with `.withActions()`
 
 ## The `_v` Convention
 
@@ -155,3 +206,4 @@ Code references:
 - `packages/workspace/src/workspace/index.ts`
 - `packages/workspace/src/workspace/create-tables.ts`
 - `packages/workspace/src/workspace/create-kv.ts`
+- `packages/workspace/src/workspace/create-workspace.ts`

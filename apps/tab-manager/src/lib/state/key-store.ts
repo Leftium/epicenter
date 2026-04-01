@@ -1,5 +1,5 @@
 /**
- * Chrome extension `UserKeyCache` backed by WXT storage (`session:` area).
+ * Chrome extension `UserKeyStore` backed by WXT storage (`session:` area).
  *
  * Caches the base64-encoded encryption key so the workspace can
  * unlock immediately on sidebar/popup reopen without a server roundtrip.
@@ -18,10 +18,10 @@
  * clears the
  * cache on every sign-out, so per-user scoping would add complexity for no benefit.
  *
- * @see {@link @epicenter/workspace!UserKeyCache} — The interface this implements
+ * @see {@link @epicenter/workspace!UserKeyStore} — The interface this implements
  */
 
-import type { UserKeyCache } from '@epicenter/workspace';
+import type { UserKeyStore } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
 
 /**
@@ -36,29 +36,29 @@ const encryptionKeyItem = storage.defineItem<string | null>(
 );
 
 /**
- * `UserKeyCache` implementation using WXT storage (`session:` area).
+ * `UserKeyStore` implementation using WXT storage (`session:` area).
  *
  * Stores and retrieves the base64-encoded encryption key via WXT's typed
- * storage API. The `clear()` method only removes that key—it does not wipe
+ * The `delete()` method only removes that key—it does not wipe
  * unrelated session storage entries that other parts of the extension might use.
  *
  * @example
  * ```typescript
- * import { userKeyCache } from '$lib/state/key-cache';
+ * import { userKeyStore } from '$lib/state/key-store';
  *
- * createWorkspace(definition).withEncryption({ userKeyCache });
+ * createWorkspace(definition).withEncryption({ userKeyStore });
  * ```
  */
-export const userKeyCache: UserKeyCache = {
-	async save(keyBase64) {
+export const userKeyStore: UserKeyStore = {
+	async set(keyBase64) {
 		await encryptionKeyItem.setValue(keyBase64);
 	},
 
-	async load() {
+	async get() {
 		return await encryptionKeyItem.getValue();
 	},
 
-	async clear() {
+	async delete() {
 		await encryptionKeyItem.removeValue();
 	},
 };

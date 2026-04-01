@@ -9,7 +9,7 @@ import type { JsonObject } from 'wellcrafted/json';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { UserKeyCache } from './user-key-cache.js';
+import type { UserKeyStore } from './user-key-store.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { Timeline } from '../timeline/timeline.js';
 import type { Extension, MaybePromise } from './lifecycle.js';
@@ -961,10 +961,11 @@ export type WorkspaceDefinition<
 /**
  * A workspace client with actions attached via `.withActions()`.
  *
- * This is an intersection of the base `WorkspaceClient` and `{ actions: TActions }`.
- * It is terminal — no more builder methods are available after `.withActions()`.
+ * Now a type alias for `WorkspaceClientBuilder` with `TActions` set—retained
+ * for backward compatibility. The builder is non-terminal, so this type includes
+ * builder methods (`.withExtension()`, etc.) alongside `actions`.
  */
-export type WorkspaceClientWithActions<
+	export type WorkspaceClientWithActions<
 	TId extends string,
 	TTableDefs extends TableDefinitions,
 	TKvDefs extends KvDefinitions,
@@ -973,17 +974,16 @@ export type WorkspaceClientWithActions<
 	TActions extends Actions,
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 	TEncryption = Record<string, never>,
-> = WorkspaceClient<
+	> = WorkspaceClientBuilder<
 	TId,
 	TTableDefs,
 	TKvDefs,
 	TAwarenessDefinitions,
 	TExtensions,
-	TDocExtensions
-> &
-	TEncryption & {
-		actions: TActions;
-	};
+	TDocExtensions,
+	TEncryption,
+	TActions
+	>;
 
 /**
  * Builder returned by `createWorkspace()` and by each `.withExtension()` call.
@@ -1023,14 +1023,14 @@ export type WorkspaceClientWithActions<
  * 1. **User key** (your input) — a 32-byte root key from any source (server HKDF, PBKDF2 password, cache)
  * 2. **Workspace key** (derived internally) — `HKDF(userKey, "workspace:{id}")` ensures per-workspace isolation
  *
- * `userKeyCache` owns the cached user-key lifecycle:
- * - `save` after successful unlock
- * - `load` during startup unlock
- * - `clear` during `workspace.clearLocalData()`
+ * `userKeyStore` owns the cached user-key lifecycle:
+ * - `set` after successful unlock
+ * - `get` during startup unlock
+ * - `delete` during `workspace.clearLocalData()`
  */
 export type EncryptionConfig = {
 	/**
-	 * Cache for the raw user key as a base64 string.
+	 * Store for the raw user key as a base64 string.
 	 *
 	 * This is the local-first startup seam: the workspace saves the user key
  * after `encryption.unlock()`, auto-boots from it on the next launch via
@@ -1043,11 +1043,11 @@ export type EncryptionConfig = {
 	 * @example
 	 * ```typescript
 	 * createWorkspace(definition).withEncryption({
-	 *   userKeyCache,
+	 *   userKeyStore,
 	 * })
 	 * ```
 	 */
-	userKeyCache: UserKeyCache;
+	userKeyStore: UserKeyStore;
 };
 
 /**
@@ -1061,7 +1061,7 @@ export type EncryptionConfig = {
  *
  * ```typescript
  * const workspace = createWorkspace(definition)
- *   .withEncryption({ userKeyCache })
+ *   .withEncryption({ userKeyStore })
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createSyncExtension({ ... }));
  *
@@ -1122,6 +1122,7 @@ export type WorkspaceClientBuilder<
 	TExtensions extends Record<string, unknown> = Record<string, never>,
 	TDocExtensions extends Record<string, unknown> = Record<string, never>,
 	TEncryption = Record<string, never>,
+	TActions extends Actions = Record<string, never>,
 > = WorkspaceClient<
 	TId,
 	TTableDefinitions,
@@ -1131,6 +1132,8 @@ export type WorkspaceClientBuilder<
 	TDocExtensions
 > &
 	TEncryption & {
+		/** Accumulated actions from `.withActions()` calls. Empty object when none declared. */
+		actions: TActions;
 		/**
 		 * Register an extension for BOTH the workspace Y.Doc AND all content document Y.Docs.
 		 *
@@ -1180,7 +1183,8 @@ export type WorkspaceClientBuilder<
 					TKey,
 					Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>
 				>,
-			TEncryption
+			TEncryption,
+			TActions
 		>;
 
 		/**
@@ -1235,7 +1239,8 @@ export type WorkspaceClientBuilder<
 					>
 				>,
 			TDocExtensions,
-			TEncryption
+			TEncryption,
+			TActions
 		>;
 
 		/**
@@ -1286,7 +1291,8 @@ export type WorkspaceClientBuilder<
 					K,
 					Omit<TDocExports, 'whenReady' | 'dispose' | 'clearLocalData'>
 				>,
-			TEncryption
+			TEncryption,
+			TActions
 		>;
 
 		/**
@@ -1298,14 +1304,14 @@ export type WorkspaceClientBuilder<
 		 *
 		 * Batteries-included: handles synchronous HKDF derivation, runtime unlock,
 		 * serialized cache save/clear ordering, and the full cached-key lifecycle when
-		 * `userKeyCache` is provided.
+		 * `userKeyStore` is provided.
 		 *
 		 * Can be chained in any order with `.withExtension()`:
 		 *
 		 * @example
 		 * ```typescript
 		 * const workspace = createWorkspace(definition)
-		 *   .withEncryption({ userKeyCache })  // auto-boots from cache on whenReady
+		 *   .withEncryption({ userKeyStore })  // auto-boots from cache on whenReady
 		 *   .withExtension('persistence', indexeddbPersistence)
 		 *   .withExtension('sync', createSyncExtension({ ... }));
 		 *
@@ -1323,20 +1329,24 @@ export type WorkspaceClientBuilder<
 			TDocExtensions,
 		{
 			encryption: WorkspaceEncryptionFor<TConfig>;
-		} & WorkspaceKeyAccessFor<TConfig>
-	>;
+		} & WorkspaceKeyAccessFor<TConfig>,
+			TActions
+		>;
 
 		/**
-		 * Attach actions to the workspace client. Terminal — no more chaining after this.
+		 * Attach actions to the workspace client.
 		 *
-		 * Actions use a single map (not chaining) because they don't build on each other
-		 * and are always defined by the app author. The ergonomic benefit of declaring
-		 * all actions in one place outweighs the progressive composition that extensions need.
+		 * Non-terminal—the returned builder still supports `.withExtension()` and further
+		 * `.withActions()` calls. This allows extension-independent actions to be declared
+		 * before extensions in the chain.
 		 *
-		 * @param factory - Receives the finalized client, returns an actions map
-		 * @returns Client with actions attached (no more builder methods)
+		 * Multiple `.withActions()` calls shallow-merge their action trees (later calls
+		 * overwrite earlier keys at the top level).
+		 *
+		 * @param factory - Receives the client-so-far, returns an actions map
+		 * @returns A new builder with actions attached (still chainable)
 		 */
-		withActions<TActions extends Actions>(
+		withActions<TNewActions extends Actions>(
 			factory: (
 				client: WorkspaceClient<
 					TId,
@@ -1346,16 +1356,16 @@ export type WorkspaceClientBuilder<
 					TExtensions,
 					TDocExtensions
 				>,
-			) => TActions,
-		): WorkspaceClientWithActions<
+			) => TNewActions,
+		): WorkspaceClientBuilder<
 			TId,
 			TTableDefinitions,
 			TKvDefinitions,
 			TAwarenessDefinitions,
 			TExtensions,
-			TActions,
 			TDocExtensions,
-			TEncryption
+			TEncryption,
+			TActions & TNewActions
 		>;
 	};
 
@@ -1548,7 +1558,7 @@ export type WorkspaceClient<
 	 *
 	 * This is the sign-out primitive for local persistence. It locks the runtime
 	 * first, then calls extension `clearLocalData()` hooks in LIFO order, then clears
-	 * the configured `userKeyCache` if encryption was set up with one.
+	 * the configured `userKeyStore` if encryption was set up with one.
 	 */
 	clearLocalData(): Promise<void>;
 

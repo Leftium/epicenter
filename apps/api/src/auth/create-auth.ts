@@ -130,8 +130,8 @@ export function createAuth({
 					metadata: {},
 				},
 				{
-					clientId: 'epicenter-runner',
-					name: 'Epicenter Runner',
+					clientId: 'epicenter-cli',
+					name: 'Epicenter CLI',
 					type: 'native',
 					redirectUrls: [],
 					skipConsent: true,

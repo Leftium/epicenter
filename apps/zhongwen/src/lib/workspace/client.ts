@@ -11,9 +11,9 @@ import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broad
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { session } from '$lib/auth';
 import { definition } from './schema';
-import { userKeyCache } from './user-key-cache';
+import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
 export const workspace = createWorkspace(definition)
-	.withEncryption({ userKeyCache })
+	.withEncryption({ userKeyStore: createIndexedDbKeyStore('zhongwen:encryption-key') })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('broadcast', broadcastChannelSync);
 

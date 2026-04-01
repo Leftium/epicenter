@@ -1,9 +1,25 @@
-import type { UserKeyCache } from '@epicenter/workspace';
+import type { UserKeyStore } from '@epicenter/workspace';
 import { openDB, type DBSchema } from 'idb';
 
-const DB_NAME = 'epicenter-key-cache';
-const STORE_NAME = 'keys' as const;
+const DB_NAME = 'epicenter-key-store';
 
+/**
+ * Explicit name to avoid confusion with IndexedDB's own "key" concept.
+ *
+ * `db.get('encryption-keys', storageKey)` reads unambiguously vs
+ * `db.get('keys', storageKey)` which looks like "get keys by key."
+ *
+ * @see https://github.com/jakearchibald/idb — store names should describe
+ *   what's stored, not the storage mechanism.
+ */
+const STORE_NAME = 'encryption-keys' as const;
+
+/**
+ * Uses `type` intersection instead of `interface extends DBSchema` to match
+ * codebase conventions. The `idb` library idiomatically uses interfaces, but
+ * the intersection + mapped type approach is equivalent and keeps the store
+ * name coupled to the `STORE_NAME` constant.
+ */
 type KeyCacheDB = DBSchema & {
 	[K in typeof STORE_NAME]: {
 		key: string;
@@ -25,7 +41,7 @@ const dbPromise = openDB<KeyCacheDB>(DB_NAME, 1, {
 });
 
 /**
- * Create a `UserKeyCache` backed by IndexedDB.
+ * Create a `UserKeyStore` backed by IndexedDB.
  *
  * Survives tab closes, page refreshes, and browser restarts—unlike
  * `sessionStorage` which clears when the tab closes. The key persists
@@ -37,22 +53,22 @@ const dbPromise = openDB<KeyCacheDB>(DB_NAME, 1, {
  *
  * @example
  * ```typescript
- * import { createIndexedDbKeyCache } from '@epicenter/svelte-utils';
+ * import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
  *
- * export const userKeyCache = createIndexedDbKeyCache('honeycrisp:encryption-key');
+ * export const userKeyStore = createIndexedDbKeyStore('honeycrisp:encryption-key');
  * ```
  */
-export function createIndexedDbKeyCache(storageKey: string): UserKeyCache {
+export function createIndexedDbKeyStore(storageKey: string): UserKeyStore {
 	return {
-		async save(userKeyBase64) {
+		async set(userKeyBase64) {
 			const db = await dbPromise;
 			await db.put(STORE_NAME, userKeyBase64, storageKey);
 		},
-		async load() {
+		async get() {
 			const db = await dbPromise;
 			return (await db.get(STORE_NAME, storageKey)) ?? null;
 		},
-		async clear() {
+		async delete() {
 			const db = await dbPromise;
 			await db.delete(STORE_NAME, storageKey);
 		},

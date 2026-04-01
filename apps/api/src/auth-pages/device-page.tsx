@@ -3,8 +3,8 @@ import { DEVICE_SCRIPT } from './scripts/device';
 /**
  * Server-rendered device authorization verification page (RFC 8628).
  *
- * The user enters the code displayed by Epicenter Runner, clicks Approve,
- * and the runner's polling loop picks up the token automatically. Session
+ * The user enters the code displayed by Epicenter CLI, clicks Approve,
+ * and the CLI's polling loop picks up the token automatically. Session
  * cookies from `epicenter.so` work here via cross-subdomain cookies.
  */
 export function DevicePage({ userCode }: { userCode?: string }) {
@@ -13,7 +13,7 @@ export function DevicePage({ userCode }: { userCode?: string }) {
 	return (
 		<>
 			<h1>Authorize device</h1>
-			<p class="subtitle">Enter the code shown by Epicenter Runner.</p>
+			<p class="subtitle">Enter the code shown by Epicenter CLI.</p>
 
 			<form id="form">
 				<div class="field">

@@ -28,7 +28,7 @@ import {
 	getDeviceId,
 } from '$lib/device/device-id';
 import { authSession, getGoogleCredentials } from '$lib/state/auth';
-import { userKeyCache } from '$lib/state/key-cache';
+import { userKeyStore } from '$lib/state/key-store';
 import { remoteServerUrl, serverUrl } from '$lib/state/settings.svelte';
 import { definition, generateSavedTabId } from './schema';
 
@@ -98,7 +98,7 @@ export async function registerDevice(): Promise<void> {
 
 function buildWorkspaceClient() {
 	return createWorkspace(definition)
-		.withEncryption({ userKeyCache })
+		.withEncryption({ userKeyStore })
 		.withExtension('persistence', indexeddbPersistence)
 		.withExtension('broadcast', broadcastChannelSync)
 		.withExtension(

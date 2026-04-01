@@ -24,12 +24,12 @@
  *   → deriveWorkspaceKey(userKey, workspaceId)  // sync HKDF
  *   → apply derived key to all encrypted stores
  *   → set runtime unlock state immediately
- *   → await userKeyCache.save(bytesToBase64(userKey)) if configured
+ *   → await userKeyStore.set(bytesToBase64(userKey)) if configured
  *
- * Auto-boot (when userKeyCache is provided):
- *   → whenReady: userKeyCache.load()
+ * Auto-boot (when userKeyStore is provided):
+ *   → whenReady: userKeyStore.get()
  *   → if cached key exists: workspace.encryption.unlock(cachedKey)
- *   → if unlock fails: userKeyCache.clear()
+ *   → if unlock fails: userKeyStore.delete()
  *
  * workspace.encryption.lock()
  *   → clear key + deactivate all stores
@@ -37,7 +37,7 @@
  * workspace.clearLocalData()
  *   → workspace.encryption.lock()
  *   → wipe persisted data (clearLocalData callbacks, LIFO)
- *   → await userKeyCache.clear() if configured
+ *   → await userKeyStore.delete() if configured
  * ```
  *
  * @example
@@ -53,7 +53,7 @@
  *
  * // With encryption + extensions
  * const client = createWorkspace({ id: 'my-app', tables: { posts } })
- *   .withEncryption({ userKeyCache })
+ *   .withEncryption({ userKeyStore })
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createSyncExtension({ ... }));
  *
@@ -106,7 +106,6 @@ import type {
 	TableDefinitions,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
-	WorkspaceClientWithActions,
 	WorkspaceEncryption,
 	WorkspaceDefinition,
 } from './types.js';
@@ -278,11 +277,17 @@ export function createWorkspace<
 	 * builders (same `ydoc`, `tables`, `kv`), but the builder methods and extensions
 	 * map are new.
 	 */
-	function buildClient<TExtensions extends Record<string, unknown>>(
-		extensions: TExtensions,
-		state: BuilderState,
-		encryptionRuntime?: EncryptionRuntime,
-	): WorkspaceClientBuilder<
+	function buildClient<TExtensions extends Record<string, unknown>>({
+		extensions,
+		state,
+		encryptionRuntime,
+		actions,
+	}: {
+		extensions: TExtensions;
+		state: BuilderState;
+		encryptionRuntime?: EncryptionRuntime;
+		actions: Actions;
+	}): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
@@ -321,6 +326,7 @@ export function createWorkspace<
 			awareness,
 			// Each extension entry is the exports object stored by reference.
 			extensions,
+			actions,
 			batch(fn: () => void): void {
 				ydoc.transact(fn);
 			},
@@ -405,16 +411,16 @@ export function createWorkspace<
 				const raw = factory(ctx);
 
 				// Void return means "not installed" — skip registration
-				if (!raw) return buildClient(extensions, state, encryptionRuntime);
+				if (!raw) return buildClient({ extensions, state, encryptionRuntime, actions });
 
 				const resolved = defineExtension(raw);
 
-				return buildClient(
-					{
+				return buildClient({
+					extensions: {
 						...extensions,
 						[key]: resolved,
 					} as TExtensions & Record<TKey, TExports>,
-					{
+					state: {
 						extensionCleanups: [...state.extensionCleanups, resolved.dispose],
 						clearLocalDataCallbacks: [
 							...state.clearLocalDataCallbacks,
@@ -423,7 +429,8 @@ export function createWorkspace<
 						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
 					},
 					encryptionRuntime,
-				);
+					actions,
+				});
 			} catch (err) {
 				startDisposeLifo(state.extensionCleanups);
 				throw err;
@@ -497,12 +504,12 @@ export function createWorkspace<
 					factory,
 					tags: options?.tags ?? [],
 				});
-				return buildClient(extensions, state, encryptionRuntime);
+				return buildClient({ extensions, state, encryptionRuntime, actions });
 			},
 
 			withEncryption(config?: EncryptionConfig) {
 				let activeUserKey: Uint8Array | undefined;
-				let isActiveUserKeyCached = config?.userKeyCache === undefined;
+				let isActiveUserKeyCached = config?.userKeyStore === undefined;
 				let workspaceKey: Uint8Array | undefined = options?.key;
 				let cacheQueue = Promise.resolve();
 
@@ -516,7 +523,7 @@ export function createWorkspace<
 
 				const lock = () => {
 					activeUserKey = undefined;
-					isActiveUserKeyCached = config?.userKeyCache === undefined;
+					isActiveUserKeyCached = config?.userKeyStore === undefined;
 					workspaceKey = undefined;
 					for (const store of encryptedStores) {
 						store.deactivateEncryption();
@@ -524,11 +531,11 @@ export function createWorkspace<
 				};
 
 				const persistUnlockedUserKey = async (userKey: Uint8Array) => {
-					if (!config?.userKeyCache) return;
+					if (!config?.userKeyStore) return;
 
 					try {
 						await runSerializedCacheTask(async () => {
-							await config.userKeyCache.save(bytesToBase64(userKey));
+							await config.userKeyStore.set(bytesToBase64(userKey));
 							if (
 								activeUserKey !== undefined &&
 								bytesEqual(activeUserKey, userKey)
@@ -553,22 +560,22 @@ export function createWorkspace<
 							}
 							workspaceKey = nextWorkspaceKey;
 							activeUserKey = userKey;
-							isActiveUserKeyCached = config?.userKeyCache === undefined;
+							isActiveUserKeyCached = config?.userKeyStore === undefined;
 						} catch (error) {
 							console.error('[workspace] Workspace unlock failed:', error);
 							return;
 						}
 					}
 
-					if (config?.userKeyCache && !isActiveUserKeyCached) {
+					if (config?.userKeyStore && !isActiveUserKeyCached) {
 						await persistUnlockedUserKey(userKey);
 					}
 				};
 
 				const clearCache = async () => {
-					if (!config?.userKeyCache) return;
+					if (!config?.userKeyStore) return;
 					await runSerializedCacheTask(async () => {
-						await config.userKeyCache.clear();
+						await config.userKeyStore.delete();
 					});
 				};
 
@@ -580,13 +587,13 @@ export function createWorkspace<
 					lock,
 				};
 
-				// Auto-boot: if a key cache is provided, attempt unlock from cache
-				// after all extensions are ready. Passing userKeyCache implies auto-boot.
-				if (config?.userKeyCache) {
-					const cache = config.userKeyCache;
+				// Auto-boot: if a key store is provided, attempt unlock from store
+				// after all extensions are ready. Passing userKeyStore implies auto-boot.
+				if (config?.userKeyStore) {
+					const store = config.userKeyStore;
 					state.whenReadyPromises.push(
 						Promise.all(state.whenReadyPromises).then(async () => {
-							const cachedKey = await cache.load();
+								const cachedKey = await store.get();
 							if (!cachedKey) return;
 							try {
 								await unlock(base64ToBytes(cachedKey));
@@ -604,11 +611,12 @@ export function createWorkspace<
 					clearCache,
 				};
 
-				return buildClient(
+				return buildClient({
 					extensions,
 					state,
 					encryptionRuntime,
-				) as unknown as WorkspaceClientBuilder<
+					actions,
+				}) as unknown as WorkspaceClientBuilder<
 					TId,
 					TTableDefinitions,
 					TKvDefinitions,
@@ -621,7 +629,7 @@ export function createWorkspace<
 				>;
 			},
 
-			withActions<TActions extends Actions>(
+			withActions(
 				factory: (
 					client: WorkspaceClient<
 						TId,
@@ -630,20 +638,10 @@ export function createWorkspace<
 						TAwarenessDefinitions,
 						TExtensions
 					>,
-				) => TActions,
+				) => Actions,
 			) {
-				const actions = factory(client);
-				return {
-					...client,
-					actions,
-				} as unknown as WorkspaceClientWithActions<
-					TId,
-					TTableDefinitions,
-					TKvDefinitions,
-					TAwarenessDefinitions,
-					TExtensions,
-					TActions
-				>;
+				const newActions = factory(client);
+				return buildClient({ extensions, state, encryptionRuntime, actions: { ...actions, ...newActions } });
 			},
 		});
 
@@ -656,10 +654,14 @@ export function createWorkspace<
 		>;
 	}
 
-	return buildClient({} as Record<string, never>, {
-		extensionCleanups: [],
-		clearLocalDataCallbacks: [],
-		whenReadyPromises: [],
+	return buildClient({
+		extensions: {} as Record<string, never>,
+		state: {
+			extensionCleanups: [],
+			clearLocalDataCallbacks: [],
+			whenReadyPromises: [],
+		},
+		actions: {},
 	});
 }
 

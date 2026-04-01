@@ -13,12 +13,12 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { session } from '$lib/auth';
-import { userKeyCache } from './user-key-cache';
+import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
 import { honeycrisp } from './schema';
 
 
 const workspace = createWorkspace(honeycrisp)
-	.withEncryption({ userKeyCache })
+	.withEncryption({ userKeyStore: createIndexedDbKeyStore('honeycrisp:encryption-key') })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',

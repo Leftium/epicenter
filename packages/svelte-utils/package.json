@@ -9,6 +9,7 @@
 		"./persisted-state": "./src/persisted-state.svelte.ts",
 		"./persisted-map": "./src/persisted-map.svelte.ts",
 		"./auth": "./src/auth.svelte.ts",
+		"./auth-form": "./src/auth-form.svelte",
 		"./workspace-gate": "./src/workspace-gate.svelte"
 	},
 	"dependencies": {

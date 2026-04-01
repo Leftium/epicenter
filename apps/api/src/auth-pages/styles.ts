@@ -15,10 +15,11 @@ body{
 	display:flex;
 	align-items:center;
 	justify-content:center;
-	background:#fafafa;
+	background:#f5f5f5;
 	color:oklch(0.129 0.042 264.695);
 	padding:1rem;
 	line-height:1.5;
+	-webkit-font-smoothing:antialiased;
 }
 
 /* ── Logo ────────────────────────────────────────────────── */
@@ -38,15 +39,15 @@ body{
 
 .card{
 	background:#fff;
-	border-radius:12px;
+	border-radius:16px;
 	padding:2.5rem;
-	max-width:400px;
+	max-width:420px;
 	width:100%;
-	box-shadow:0 1px 3px 0 rgb(0 0 0 / .1),0 1px 2px -1px rgb(0 0 0 / .1);
+	box-shadow:0 2px 8px 0 rgb(0 0 0 / .06),0 0 0 1px rgb(0 0 0 / .04);
 }
 
-h1{font-size:1.5rem;font-weight:600;margin-bottom:.25rem}
-.subtitle{color:oklch(0.554 0.046 257.417);font-size:.875rem;margin-bottom:1.5rem}
+h1{font-size:1.375rem;font-weight:700;letter-spacing:-.01em;margin-bottom:.25rem}
+.subtitle{color:oklch(0.554 0.046 257.417);font-size:.875rem;margin-bottom:1.75rem}
 
 /* ── Form elements ────────────────────────────────────────── */
 

@@ -339,3 +339,6 @@ The sweep is a separate commit from the refactor. Label it `refactor(scope): rem
 - **Batch-committing**: "Cleaned up the module" as one commit with 15 changes—impossible to review or revert
 - **Shotgun inlining**: Inlining everything with 1 caller regardless of context. Respect constructor families and complex logic.
 - **Skipping the straggler sweep**: Refactoring without cleaning up dead references. The code compiles, but the next person reads stale JSDoc and wastes 30 minutes confused about an endpoint that no longer exists.
+- **Identity functions**: `function f(x) { return x; }` has callers, but does nothing. It's dead code wearing a disguise. Inline the call.
+- **Speculative v2 code**: Commented-out types, tables, or functions "deferred to v2" with zero consumers. Git remembers—delete from the source file.
+- **Secondary key when primary exists**: Matching records by a secondary key (name, slug, path) when a stable primary key (id) is available. The secondary key can collide, change, or diverge across systems. If the primary key exists, use it.

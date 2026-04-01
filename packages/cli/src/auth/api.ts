@@ -19,7 +19,7 @@
  * ```
  */
 
-const CLIENT_ID = 'epicenter-runner';
+const CLIENT_ID = 'epicenter-cli';
 
 // ─── Response types ──────────────────────────────────────────────────────────
 

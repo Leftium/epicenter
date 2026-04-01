@@ -8,7 +8,7 @@
  * ```typescript
  * const sessions = createSessionStore(home);
  *
- * await sessions.save('https://api.epicenter.so', { ... });
+ * await sessions.save('https://api.epicenter.so', tokenData, sessionData);
  * const s = await sessions.load('https://api.epicenter.so');
  * ```
  */
@@ -58,13 +58,7 @@ function normalizeUrl(url: string): string {
  * ```typescript
  * const sessions = createSessionStore('~/.epicenter');
  *
- * // Save after login
- * await sessions.save('https://api.epicenter.so', {
- *   accessToken: '...',
- *   expiresAt: Date.now() + 86400_000,
- *   userKeyBase64: '...',
- *   user: { id: '1', email: 'me@example.com' },
- * });
+ * await sessions.save('https://api.epicenter.so', tokenData, sessionData);
  *
  * // Load by server
  * const session = await sessions.load('https://api.epicenter.so');
@@ -98,35 +92,28 @@ export function createSessionStore(home: string) {
 
 	return {
 		/**
-		 * Persist a session for a server.
-		 *
-		 * The server URL is normalized before storage so that `wss://host`,
-		 * `https://host`, and `https://host/` all map to the same entry.
-		 */
-		async save(server: string, session: AuthSession): Promise<void> {
-			const store = await read();
-			store[normalizeUrl(server)] = session;
-			await write(store);
-		},
-
-		/**
 		 * Save a session from a successful login flow.
 		 *
 		 * Maps the raw API responses (token grant + session info) into the
 		 * persisted `AuthSession` format. Callers pass through the API types
 		 * directly—no manual field picking needed.
+		 *
+		 * The server URL is normalized before storage so that `wss://host`,
+		 * `https://host`, and `https://host/` all map to the same entry.
 		 */
-		async saveFromLogin(
+		async save(
 			server: string,
 			token: { access_token: string; expires_in: number },
 			sessionData: SessionResponse,
 		): Promise<void> {
-			await this.save(server, {
+			const store = await read();
+			store[normalizeUrl(server)] = {
 				accessToken: token.access_token,
 				expiresAt: Date.now() + token.expires_in * 1000,
 				userKeyBase64: sessionData.userKeyBase64,
 				user: sessionData.user,
-			});
+			};
+			await write(store);
 		},
 
 		/**

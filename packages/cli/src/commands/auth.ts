@@ -59,7 +59,7 @@ export function createAuthCommand(home: string) {
 								const authed = createAuthApi(serverUrl, tokenData.access_token);
 								const sessionData = await authed.getSession();
 
-								await sessions.saveFromLogin(serverUrl, tokenData, sessionData);
+								await sessions.save(serverUrl, tokenData, sessionData);
 
 								const displayName =
 									sessionData.user?.name ?? sessionData.user?.email ?? serverUrl;

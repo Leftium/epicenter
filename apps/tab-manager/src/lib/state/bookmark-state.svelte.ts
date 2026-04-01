@@ -27,9 +27,38 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { tryAsync } from 'wellcrafted/result';
 import { workspace } from '$lib/client';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { Bookmark, BookmarkId } from '$lib/workspace';
+
+export const BookmarkError = defineErrors({
+	ToggleFailed: ({ url, cause }: { url: string; cause: unknown }) => ({
+		message: `Failed to toggle bookmark for '${url}': ${extractErrorMessage(cause)}`,
+		url,
+		cause,
+	}),
+	OpenFailed: ({ url, cause }: { url: string; cause: unknown }) => ({
+		message: `Failed to open bookmark '${url}': ${extractErrorMessage(cause)}`,
+		url,
+		cause,
+	}),
+	RemoveFailed: ({ id, cause }: { id: string; cause: unknown }) => ({
+		message: `Failed to remove bookmark '${id}': ${extractErrorMessage(cause)}`,
+		id,
+		cause,
+	}),
+	RemoveAllFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to remove all bookmarks: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type BookmarkError = InferErrors<typeof BookmarkError>;
 
 function createBookmarkState() {
 	const bookmarksMap = fromTable(workspace.tables.bookmarks);
@@ -51,6 +80,7 @@ function createBookmarkState() {
 	const bookmarkedUrls = $derived(
 		new SvelteSet(bookmarksMap.values().map((b) => b.url)),
 	);
+
 	return {
 		get bookmarks() {
 			return bookmarks;
@@ -76,10 +106,15 @@ function createBookmarkState() {
 		 */
 		async toggle(tab: BrowserTab) {
 			if (!tab.url) return;
-			await workspace.actions.bookmarks.toggle({
-				url: tab.url,
-				title: tab.title || 'Untitled',
-				favIconUrl: tab.favIconUrl,
+			const url = tab.url;
+			return tryAsync({
+				try: () =>
+					workspace.actions.bookmarks.toggle({
+						url,
+						title: tab.title || 'Untitled',
+						favIconUrl: tab.favIconUrl,
+					}),
+				catch: (cause) => BookmarkError.ToggleFailed({ url, cause }),
 			});
 		},
 
@@ -89,7 +124,11 @@ function createBookmarkState() {
 		 * Delegates to the `bookmarks.open` workspace action.
 		 */
 		async open(bookmark: Bookmark) {
-			await workspace.actions.bookmarks.open({ url: bookmark.url });
+			return tryAsync({
+				try: () => workspace.actions.bookmarks.open({ url: bookmark.url }),
+				catch: (cause) =>
+					BookmarkError.OpenFailed({ url: bookmark.url, cause }),
+			});
 		},
 
 		/**
@@ -98,7 +137,10 @@ function createBookmarkState() {
 		 * Delegates to the `bookmarks.remove` workspace action.
 		 */
 		async remove(id: BookmarkId) {
-			await workspace.actions.bookmarks.remove({ id });
+			return tryAsync({
+				try: () => workspace.actions.bookmarks.remove({ id }),
+				catch: (cause) => BookmarkError.RemoveFailed({ id, cause }),
+			});
 		},
 
 		/**
@@ -107,7 +149,10 @@ function createBookmarkState() {
 		 * Delegates to the `bookmarks.removeAll` workspace action.
 		 */
 		async removeAll() {
-			await workspace.actions.bookmarks.removeAll({});
+			return tryAsync({
+				try: () => workspace.actions.bookmarks.removeAll({}),
+				catch: (cause) => BookmarkError.RemoveAllFailed({ cause }),
+			});
 		},
 	};
 }

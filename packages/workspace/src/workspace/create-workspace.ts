@@ -671,15 +671,18 @@ export function createWorkspace<
 			 * copies all current table rows and KV entries into it, bumps
 			 * the epoch in the coordination doc, and tears down the old data doc.
 			 *
-			 * Other connected clients will see the epoch change via CRDT
-			 * sync on the coordination doc and automatically transition.
+			 * **Important:** Compaction invalidates all existing table and KV
+			 * observers (they were bound to the old Y.Doc). Callers should
+			 * reload the page or recreate the client after compaction.
+			 *
+			 * Other connected clients will detect the epoch change via the
+			 * coordination doc's `onEpochChange` callback and should reload
+			 * as well.
 			 *
 			 * @example
 			 * ```typescript
-			 * const sizeBefore = Y.encodeStateAsUpdate(client.ydoc).byteLength;
 			 * await client.compact();
-			 * const sizeAfter = Y.encodeStateAsUpdate(client.ydoc).byteLength;
-			 * // sizeAfter < sizeBefore (no CRDT history overhead)
+			 * window.location.reload();
 			 * ```
 			 */
 			async compact(): Promise<void> {
@@ -725,9 +728,20 @@ export function createWorkspace<
 			dispose,
 			[Symbol.asyncDispose]: dispose,
 			/**
-			 * Register a callback for epoch transitions. Fires after a successful
-			 * swap with the new epoch number. Opt-in—not required for correctness.
-			 * Returns an unsubscribe function.
+			 * Register a callback for epoch transitions (local or remote).
+			 *
+			 * Fires after a successful data doc swap with the new epoch number.
+			 * Since compaction invalidates all table and KV observers, the
+			 * recommended response is to reload the page or recreate the client.
+			 *
+			 * @example
+			 * ```typescript
+			 * workspace.onEpochChange(() => {
+			 *   window.location.reload();
+			 * });
+			 * ```
+			 *
+			 * @returns Unsubscribe function
 			 */
 			onEpochChange(callback: (epoch: number) => void): () => void {
 				epochChangeCallbacks.push(callback);

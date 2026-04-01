@@ -9,7 +9,6 @@
 
 import type { Argv, CommandModule } from 'yargs';
 import { createAuthApi } from '../auth/api';
-import { loginWithDeviceCode } from '../auth/device-flow';
 import { createSessionStore } from '../auth/store';
 import { defineCommand } from '../util/command';
 
@@ -43,7 +42,45 @@ export function createAuthCommand(home: string) {
 							demandOption: true,
 						}),
 					handler: async (argv: any) => {
-						await loginWithDeviceCode(argv.server, sessions);
+						const serverUrl = argv.server as string;
+						const api = createAuthApi(serverUrl);
+						const codeData = await api.requestDeviceCode();
+
+						console.log(`\nVisit: ${codeData.verification_uri_complete}`);
+						console.log(`Enter code: ${codeData.user_code}\n`);
+
+						let interval = codeData.interval * 1000;
+
+						while (true) {
+							await Bun.sleep(interval);
+							const tokenData = await api.pollDeviceToken(codeData.device_code);
+
+							if ('access_token' in tokenData) {
+								const authed = createAuthApi(serverUrl, tokenData.access_token);
+								const sessionData = await authed.getSession();
+
+								await sessions.saveFromLogin(serverUrl, tokenData, sessionData);
+
+								const displayName =
+									sessionData.user?.name ?? sessionData.user?.email ?? serverUrl;
+								console.log(`✓ Logged in as ${displayName}`);
+								return;
+							}
+
+							switch (tokenData.error) {
+								case 'authorization_pending':
+									continue;
+								case 'slow_down':
+									interval *= 2;
+									continue;
+								case 'expired_token':
+									throw new Error('Device code expired — please run login again');
+								case 'access_denied':
+									throw new Error('Authorization denied — you rejected the request');
+								default:
+									throw new Error(tokenData.error_description ?? tokenData.error);
+							}
+						}
 					},
 				} as unknown as CommandModule)
 				.command({

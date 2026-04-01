@@ -15,6 +15,7 @@
 
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import type { SessionResponse } from '@epicenter/api/types';
 
 /**
  * A persisted auth session for a single server.
@@ -106,6 +107,26 @@ export function createSessionStore(home: string) {
 			const store = await read();
 			store[normalizeUrl(server)] = session;
 			await write(store);
+		},
+
+		/**
+		 * Save a session from a successful login flow.
+		 *
+		 * Maps the raw API responses (token grant + session info) into the
+		 * persisted `AuthSession` format. Callers pass through the API types
+		 * directly—no manual field picking needed.
+		 */
+		async saveFromLogin(
+			server: string,
+			token: { access_token: string; expires_in: number },
+			sessionData: SessionResponse,
+		): Promise<void> {
+			await this.save(server, {
+				accessToken: token.access_token,
+				expiresAt: Date.now() + token.expires_in * 1000,
+				userKeyBase64: sessionData.userKeyBase64,
+				user: sessionData.user,
+			});
 		},
 
 		/**

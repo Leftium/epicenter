@@ -73,7 +73,7 @@ The single advantage of zero-knowledge—protection from the server operator—d
 
 ## One primitive, one code path
 
-Epicenter implements this philosophy by wrapping its core storage primitive in a single encryption layer. Instead of building separate "secure" and "insecure" versions of every feature, we use `createEncryptedKvLww` to wrap the standard `YKeyValueLww` structure. Every value—whether it's a transcript, a note, or a setting—is serialized and encrypted with AES-256-GCM before it ever touches the underlying Y.Doc.
+Epicenter implements this philosophy by wrapping its core storage primitive in a single encryption layer. Instead of building separate "secure" and "insecure" versions of every feature, we use `createEncryptedKvLww` to wrap the standard `YKeyValueLww` structure. Every value—whether it's a transcript, a note, or a setting—is serialized and encrypted with XChaCha20-Poly1305 before it ever touches the underlying Y.Doc.
 
 ```typescript
 const kv = createEncryptedKvLww(yarray, {

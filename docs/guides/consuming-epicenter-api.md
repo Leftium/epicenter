@@ -211,7 +211,7 @@ CORS allows `https://epicenter.so`, `https://*.epicenter.so`, `tauri://localhost
 
 The server derives per-user encryption keys via HKDF-SHA256 from a deployment secret (`ENCRYPTION_SECRETS` env var). The key is deterministic—same secret plus same userId always produces the same key. This means password recovery works without storing the key anywhere.
 
-Data is encrypted at the CRDT level using AES-256-GCM. Individual values within the Y.Doc are encrypted; the CRDT structure (key names, timestamps for conflict resolution) remains visible to the server. This lets the server power search, AI processing, and password recovery while keeping the raw data opaque to anyone without the key.
+Data is encrypted at the CRDT level using XChaCha20-Poly1305. Individual values within the Y.Doc are encrypted; the CRDT structure (key names, timestamps for conflict resolution) remains visible to the server. This lets the server power search, AI processing, and password recovery while keeping the raw data opaque to anyone without the key.
 
 A database dump or compromised storage bucket yields ciphertext. The encryption key lives in the application secret, not in the data store.
 

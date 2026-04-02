@@ -10,7 +10,7 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createAuth } from '@epicenter/svelte/auth';
 import { createWorkspace } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
+import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { session } from '$lib/auth';
 import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
@@ -23,7 +23,7 @@ export const workspace = createWorkspace(honeycrisp)
 	.withExtension(
 		'sync',
 		createSyncExtension({
-			url: (workspaceId) => `${APP_URLS.API}/workspaces/${workspaceId}`,
+			url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
 			getToken: async () => auth.token,
 		}),
 	);

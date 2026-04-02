@@ -78,7 +78,7 @@ const CONNECT_TIMEOUT_MS = 15_000;
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
  *   .withExtension('sync', createSyncExtension({
- *     url: (id) => `http://localhost:3913/rooms/${id}`,
+ *     url: (id) => `ws://localhost:3913/rooms/${id}`,
  *   }))
  * ```
  *

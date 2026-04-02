@@ -39,7 +39,7 @@ describe('createSyncExtension', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc' });
 
 			const factory = createSyncExtension({
-				url: (id: string) => `http://localhost:8080/rooms/${id}`,
+				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
 			const result = factory(
@@ -61,7 +61,7 @@ describe('createSyncExtension', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-status' });
 
 			const factory = createSyncExtension({
-				url: (id: string) => `http://localhost:8080/rooms/${id}`,
+				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
 			const result = factory(
@@ -81,7 +81,7 @@ describe('createSyncExtension', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-dispose' });
 
 			const factory = createSyncExtension({
-				url: (id: string) => `http://localhost:8080/rooms/${id}`,
+				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
 			const result = factory(
@@ -99,7 +99,7 @@ describe('createSyncExtension', () => {
 		const ydoc = new Y.Doc({ guid: 'my-workspace' });
 
 		const factory = createSyncExtension({
-			url: (id) => `http://localhost:3913/custom/${id}/ws`,
+			url: (id) => `ws://localhost:3913/custom/${id}/ws`,
 		});
 
 		const result = factory(
@@ -122,7 +122,7 @@ describe('createSyncExtension', () => {
 		});
 
 		const factory = createSyncExtension({
-			url: (id: string) => `http://localhost:8080/rooms/${id}`,
+			url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 		});
 
 		const result = factory({

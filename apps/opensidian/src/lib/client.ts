@@ -4,7 +4,7 @@ import {
 	createSqliteIndex,
 	createYjsFileSystem,
 } from '@epicenter/filesystem';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
+import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { Bash } from 'just-bash';
 import { session } from '$lib/auth';
@@ -24,7 +24,7 @@ export const workspace = createOpensidian()
 	.withExtension(
 		'sync',
 		createSyncExtension({
-			url: (workspaceId) => `${APP_URLS.API}/workspaces/${workspaceId}`,
+			url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
 			getToken: async () => auth.token,
 		}),
 	)

@@ -4,7 +4,7 @@
 	import { Separator } from '@epicenter/ui/separator';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
-	import { toast } from 'svelte-sonner';
+	import { toast } from '@epicenter/ui/sonner';
 	import { fs } from '$lib/client';
 	import AccountPopover from '$lib/components/AccountPopover.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';

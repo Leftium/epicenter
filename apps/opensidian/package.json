@@ -19,6 +19,7 @@
 		"@epicenter/sync-client": "workspace:*",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
+		"mode-watcher": "^1.1.0",
 		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {

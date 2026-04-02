@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import { Toaster } from 'svelte-sonner';
+	import { Toaster } from '@epicenter/ui/sonner';
+	import { ModeWatcher } from 'mode-watcher';
 	import { workspace } from '$lib/client';
 	import '../app.css';
 
@@ -10,6 +11,7 @@
 
 <ConfirmationDialog />
 <Toaster richColors />
+<ModeWatcher />
 <WorkspaceGate whenReady={workspace.whenReady}>
 	{@render children()}
 </WorkspaceGate>

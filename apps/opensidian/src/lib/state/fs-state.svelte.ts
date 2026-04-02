@@ -1,7 +1,7 @@
 import type { FileId, FileRow } from '@epicenter/filesystem';
 import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
-import { toast } from 'svelte-sonner';
+import { toast } from '@epicenter/ui/sonner';
 import { fs, workspace } from '$lib/client';
 
 /**

@@ -19,11 +19,8 @@
 	let sidebarOpen = $state(false);
 	let unlistenNavigate: UnlistenFn | null = null;
 
-	// Desktop (Tauri): always sidebar, collapses to icon rail when narrow.
-	// Web: sidebar when wide, bottom bar on phone-width viewports.
-	const isTauri = !!window.__TAURI_INTERNALS__;
+	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
 	const isNarrow = new MediaQuery('(max-width: 767px)');
-	const showBottomBar = $derived(!isTauri && isNarrow.current);
 
 	$effect(() => {
 		const unlisten = services.localShortcutManager.listen();
@@ -37,7 +34,7 @@
 
 	// Listen for navigation events from other windows
 	onMount(async () => {
-		if (!isTauri) return;
+		if (!window.__TAURI_INTERNALS__) return;
 		unlistenNavigate = await listen<{ path: string }>(
 			'navigate-main-window',
 			(event) => {
@@ -51,7 +48,7 @@
 	});
 </script>
 
-{#if showBottomBar}
+{#if isNarrow.current}
 	<div class="flex h-full min-h-svh flex-col">
 		<div class="flex-1 pb-14">
 			<AppLayout> {@render children()} </AppLayout>

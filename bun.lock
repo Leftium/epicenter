@@ -261,6 +261,7 @@
         "clsx": "catalog:",
         "dompurify": "^3.3.3",
         "marked": "catalog:",
+        "svelte-sonner": "^1.1.0",
         "tailwind-merge": "catalog:",
         "typebox": "catalog:",
         "virtua": "^0.48.5",

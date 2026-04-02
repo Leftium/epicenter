@@ -11,6 +11,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import { onMount } from 'svelte';
+	import { Toaster } from 'svelte-sonner';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { CommandPalette } from '@epicenter/ui/command-palette';
 	import { items } from '$lib/components/command-palette-items';
@@ -125,4 +126,5 @@
 </Tooltip.Provider>
 <ConfirmationDialog />
 	<CommandPalette {items} bind:open={commandPaletteOpen} shortcut={null} />
+<Toaster position="bottom-center" richColors closeButton />
 <AiDrawer bind:open={aiDrawerOpen} />

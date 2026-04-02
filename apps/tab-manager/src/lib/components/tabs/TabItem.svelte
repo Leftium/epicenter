@@ -17,6 +17,7 @@
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import { getDomain } from '$lib/utils/format';
 	import TabFavicon from './TabFavicon.svelte';
+	import { showErrorToast } from '$lib/utils/show-error-toast';
 
 	let { tab }: { tab: BrowserTab } = $props();
 
@@ -147,7 +148,7 @@
 					tooltip="Save for later"
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						savedTabState.save(tab);
+						savedTabState.save(tab).then(showErrorToast);
 					}}
 				>
 					<ArchiveIcon />
@@ -159,7 +160,7 @@
 					tooltip={isBookmarked ? 'Remove bookmark' : 'Bookmark'}
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						bookmarkState.toggle(tab);
+						bookmarkState.toggle(tab).then(showErrorToast);
 					}}
 				>
 					<StarIcon class={isBookmarked ? 'fill-amber-500 text-amber-500' : ''} />

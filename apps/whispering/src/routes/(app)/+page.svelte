@@ -19,7 +19,6 @@
 	import { Err, partitionResults, tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
-	import NavItems from '$lib/components/NavItems.svelte';
 	import {
 		CompressionSelector,
 		TranscriptionSelector,
@@ -401,9 +400,6 @@
 		</div>
 	{/if}
 
-	{#if settings.get('ui.layoutMode') === 'nav-items'}
-		<NavItems class="xs:flex -mb-2.5 -mt-1 hidden" />
-	{/if}
 
 	<div class="xs:flex hidden flex-col items-center gap-3">
 		{#if settings.get('recording.mode') === 'manual'}

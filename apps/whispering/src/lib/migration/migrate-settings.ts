@@ -224,7 +224,6 @@ const WORKSPACE_KEY_MAP: readonly {
 
 	// UI
 	{ oldKey: 'system.alwaysOnTop', newKey: 'ui.alwaysOnTop' },
-	{ oldKey: 'ui.layoutMode', newKey: 'ui.layoutMode' },
 
 	// Data retention (maxCount: string → number)
 	{

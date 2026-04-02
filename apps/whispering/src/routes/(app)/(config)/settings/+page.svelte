@@ -4,10 +4,7 @@
 	import * as Select from '@epicenter/ui/select';
 	import { Switch } from '@epicenter/ui/switch';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import {
-		ALWAYS_ON_TOP_MODE_OPTIONS,
-		LAYOUT_MODE_OPTIONS,
-	} from '$lib/constants/ui';
+	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/ui';
 	import { desktopRpc, rpc } from '$lib/query';
 	import { settings } from '$lib/state/settings.svelte';
 
@@ -239,30 +236,5 @@
 			</Field.Field>
 		{/if}
 
-		<Field.Separator />
-
-		<Field.Set>
-			<Field.Legend variant="label">Navigation Layout</Field.Legend>
-			<Field.Description>Choose how you navigate the app.</Field.Description>
-			<RadioGroup.Root
-				bind:value={() => settings.get('ui.layoutMode'),
-				(v) => settings.set('ui.layoutMode', v)}
-			>
-				{#each LAYOUT_MODE_OPTIONS as option (option.value)}
-					<Field.Label for="layout-{option.value}">
-						<Field.Field orientation="horizontal">
-							<Field.Content>
-								<Field.Title>{option.label}</Field.Title>
-								<Field.Description>{option.description}</Field.Description>
-							</Field.Content>
-							<RadioGroup.Item
-								value={option.value}
-								id="layout-{option.value}"
-							/>
-						</Field.Field>
-					</Field.Label>
-				{/each}
-			</RadioGroup.Root>
-		</Field.Set>
 	</Field.Group>
 </Field.Set>

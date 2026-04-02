@@ -11,6 +11,10 @@ export type NavItem = {
 	isActive: (pathname: string) => boolean;
 };
 
+/** Matches a route and all its sub-routes (e.g., `/settings` matches `/settings/audio`). */
+const matchesRoute = (href: string) => (pathname: string) =>
+	pathname === href || pathname.startsWith(`${href}/`);
+
 /**
  * Primary navigation items shared across sidebar and bottom bar layouts.
  *
@@ -28,22 +32,18 @@ export const NAV_ITEMS: NavItem[] = [
 		label: 'Recordings',
 		href: '/recordings',
 		icon: ListIcon,
-		isActive: (pathname) =>
-			pathname === '/recordings' || pathname.startsWith('/recordings/'),
+		isActive: matchesRoute('/recordings'),
 	},
 	{
 		label: 'Transformations',
 		href: '/transformations',
 		icon: LayersIcon,
-		isActive: (pathname) =>
-			pathname === '/transformations' ||
-			pathname.startsWith('/transformations/'),
+		isActive: matchesRoute('/transformations'),
 	},
 	{
 		label: 'Settings',
 		href: '/settings',
 		icon: SettingsIcon,
-		isActive: (pathname) =>
-			pathname === '/settings' || pathname.startsWith('/settings/'),
+		isActive: matchesRoute('/settings'),
 	},
 ];

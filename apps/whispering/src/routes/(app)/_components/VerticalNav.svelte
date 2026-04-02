@@ -6,7 +6,6 @@
 	import MoonIcon from '@lucide/svelte/icons/moon';
 	import LogsIcon from '@lucide/svelte/icons/scroll-text';
 	import SunIcon from '@lucide/svelte/icons/sun';
-	import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 	import { toggleMode } from 'mode-watcher';
 	import { page } from '$app/state';
 	import { GithubIcon } from '$lib/components/icons';
@@ -148,14 +147,16 @@
 				<Sidebar.MenuItem>
 					<Sidebar.MenuButton>
 						{#snippet child({ props })}
-							<button
-								onclick={() =>
-									getCurrentWindow().setSize(new LogicalSize(72, 84))}
-								{...props}
-							>
-								<Minimize2Icon />
-								<span>Minimize</span>
-							</button>
+						<button
+							onclick={async () => {
+								const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
+								getCurrentWindow().setSize(new LogicalSize(72, 84));
+							}}
+							{...props}
+						>
+							<Minimize2Icon />
+							<span>Minimize</span>
+						</button>
 						{/snippet}
 					</Sidebar.MenuButton>
 				</Sidebar.MenuItem>

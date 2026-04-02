@@ -19,23 +19,27 @@
  *
  * When configured, the full unlock pipeline is:
  * ```
- * workspace.encryption.unlock(userKey)
+ * workspace.encryption.unlock([{ version: 1, userKeyBase64 }])
  *   → byte-level dedup against the active runtime key
- *   → deriveWorkspaceKey(userKey, workspaceId)  // sync HKDF
- *   → apply derived key to all encrypted stores
- *   → set runtime unlock state immediately
- *   → await userKeyStore.set(bytesToBase64(userKey)) if configured
+ *   → deriveWorkspaceKey(userKey, workspaceId) for each version  // sync HKDF
+ *   → build keyring Map<version, derivedKey>
+ *   → activate all encrypted stores with the keyring
+ *   → persist keys to userKeyStore (JSON) if configured
+ * ```
  *
  * Auto-boot (when userKeyStore is provided):
+ * ```
  *   → whenReady: userKeyStore.get()
- *   → if cached key exists: workspace.encryption.unlock(cachedKey)
- *   → if unlock fails: userKeyStore.delete()
+ *   → if cached keys exist: validate with arktype, then unlock()
+ *   → if validation or unlock fails: userKeyStore.delete()
+ * ```
  *
+ * ```
  * workspace.encryption.lock()
- *   → clear key + deactivate all stores
+ *   → deactivate all stores + clear in-memory key state
  *
  * workspace.clearLocalData()
- *   → workspace.encryption.lock()
+ *   → lock()
  *   → wipe persisted data (clearLocalData callbacks, LIFO)
  *   → await userKeyStore.delete() if configured
  * ```
@@ -279,20 +283,17 @@ export function createWorkspace<
 
 		const tableDocumentsNamespace: Record<string, Documents<BaseRow>> = {};
 
-		for (const [docName, _documentConfig] of Object.entries(
-			tableDef.documents,
-		)) {
-			const documentConfig = _documentConfig as DocumentConfig;
-			const docTags: readonly string[] = documentConfig.tags ?? [];
+		for (const [docName, rawConfig] of Object.entries(tableDef.documents)) {
+			const { guid, onUpdate, tags } = rawConfig as DocumentConfig;
 
 			const documents = createDocuments({
 				id,
-				guidKey: documentConfig.guid as keyof BaseRow & string,
-				onUpdate: documentConfig.onUpdate,
+				guidKey: guid as keyof BaseRow & string,
+				onUpdate,
 				tableHelper,
 				ydoc,
 				documentExtensions: documentExtensionRegistrations,
-				documentTags: docTags,
+				documentTags: tags ?? [],
 			});
 
 			tableDocumentsNamespace[docName] = documents;
@@ -341,7 +342,7 @@ export function createWorkspace<
 			ydoc.destroy();
 
 			if (errors.length > 0) {
-				throw new Error(`Extension cleanup errors: ${errors.length}`);
+				throw new AggregateError(errors, `${errors.length} extension(s) failed during dispose`);
 			}
 		};
 
@@ -401,17 +402,14 @@ export function createWorkspace<
 			whenReady,
 			dispose,
 			[Symbol.asyncDispose]: dispose,
-		};
-
-		if (encryptionRuntime) {
-			Object.assign(client, {
+			...(encryptionRuntime && {
 				encryption: encryptionRuntime.encryption,
-				async unlockWithKeys(keys: EncryptionKey[]) {
+				async unlockWithKeys(keys: EncryptionKeys) {
 					await whenReady;
 					await encryptionRuntime.encryption.unlock(keys);
 				},
-			});
-		}
+			}),
+		};
 
 		/**
 		 * Apply an extension factory to the workspace Y.Doc.

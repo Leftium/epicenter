@@ -37,9 +37,5 @@ export const EncryptionKeys = type([
 	'...',
 	EncryptionKey.array(),
 ]);
-
-/** A single versioned encryption key for transport. */
 export type EncryptionKey = typeof EncryptionKey.infer;
-
-/** Non-empty array of versioned encryption keys. */
 export type EncryptionKeys = typeof EncryptionKeys.infer;

@@ -1,4 +1,5 @@
 import { toast } from 'svelte-sonner';
+import type { AnyTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
 /**
@@ -6,9 +7,6 @@ import type { Result } from 'wellcrafted/result';
  *
  * Works as both a `.then()` callback and a direct wrapper—the Result is
  * returned untouched so callers can still destructure `{ data, error }`.
- *
- * Accepts `void | undefined` so early returns (e.g. `if (!tab.url) return`)
- * don't require special handling at the call site.
  *
  * @example
  * ```typescript
@@ -21,9 +19,9 @@ import type { Result } from 'wellcrafted/result';
  * ```
  */
 export function toastOnError<
-	TResult extends Result<unknown, { message: string }> | void | undefined,
+	TResult extends Result<unknown, AnyTaggedError>,
 >(result: TResult): TResult {
-	if (result && 'error' in result && result.error) {
+	if (result.error) {
 		toast.error(result.error.message);
 	}
 	return result;

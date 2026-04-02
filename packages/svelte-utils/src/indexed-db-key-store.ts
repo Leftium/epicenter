@@ -1,5 +1,7 @@
 import type { UserKeyStore } from '@epicenter/workspace';
-import { openDB, type DBSchema } from 'idb';
+import { EncryptionKeys } from '@epicenter/workspace';
+import { type } from 'arktype';
+import { type DBSchema, openDB } from 'idb';
 
 const DB_NAME = 'epicenter-key-store';
 
@@ -47,6 +49,10 @@ const dbPromise = openDB<KeyCacheDB>(DB_NAME, 1, {
  * `sessionStorage` which clears when the tab closes. The key persists
  * until explicitly cleared (usually on sign-out).
  *
+ * Serialization is handled internally: `set()` JSON-stringifies the keys
+ * before writing, and `get()` parses + validates with the ArkType
+ * `EncryptionKeys` schema. Corrupt or schema-mismatched data returns `null`.
+ *
  * @param storageKey - Unique key within the shared store, typically
  *   `'{appName}:encryption-key'` to avoid collisions across apps on
  *   the same origin.
@@ -60,13 +66,33 @@ const dbPromise = openDB<KeyCacheDB>(DB_NAME, 1, {
  */
 export function createIndexedDbKeyStore(storageKey: string): UserKeyStore {
 	return {
-		async set(userKeyBase64) {
+		async set(keys) {
 			const db = await dbPromise;
-			await db.put(STORE_NAME, userKeyBase64, storageKey);
+			await db.put(STORE_NAME, JSON.stringify(keys), storageKey);
 		},
 		async get() {
 			const db = await dbPromise;
-			return (await db.get(STORE_NAME, storageKey)) ?? null;
+			const raw = await db.get(STORE_NAME, storageKey);
+			if (!raw) return null;
+
+			try {
+				const parsed = JSON.parse(raw);
+				const result = EncryptionKeys(parsed);
+				if (result instanceof type.errors) {
+					console.error(
+						'[indexed-db-key-store] Cached encryption keys invalid:',
+						result.summary,
+					);
+					return null;
+				}
+				return result;
+			} catch (error) {
+				console.error(
+					'[indexed-db-key-store] Failed to parse cached encryption keys:',
+					error,
+				);
+				return null;
+			}
 		},
 		async delete() {
 			const db = await dbPromise;

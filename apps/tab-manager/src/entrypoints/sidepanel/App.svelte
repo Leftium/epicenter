@@ -11,6 +11,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import { onMount } from 'svelte';
+	import { Toaster } from 'svelte-sonner';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { CommandPalette } from '@epicenter/ui/command-palette';
 	import { items } from '$lib/components/command-palette-items';
@@ -101,32 +102,29 @@
 				<SyncStatusIndicator />
 			</div>
 		</header>
-		<div class="flex-1 flex items-center justify-center">
-			<!-- Gate on browser state seed so child components can read data synchronously -->
-			{#await browserState.whenReady}
-				<div class="flex flex-1 items-center justify-center">
-					<div class="flex flex-col items-center gap-3">
-						<Spinner class="size-5 text-muted-foreground" />
-						<p class="text-sm text-muted-foreground">Loading tabs…</p>
-					</div>
-				</div>
-			{:then _}
-				<div class="flex-1 min-h-0"><UnifiedTabList /></div>
-			{:catch _error}
-				<Empty.Root class="flex-1">
-					<Empty.Media>
-						<TriangleAlertIcon class="size-8 text-muted-foreground" />
-					</Empty.Media>
-					<Empty.Title>Failed to load tabs</Empty.Title>
-					<Empty.Description>
-						Something went wrong loading browser state. Try reopening the side
-						panel.
-					</Empty.Description>
-				</Empty.Root>
-			{/await}
-		</div>
+		<!-- Gate on browser state seed so child components can read data synchronously -->
+		{#await browserState.whenReady}
+			<div class="flex flex-1 flex-col items-center justify-center gap-3">
+				<Spinner class="size-5 text-muted-foreground" />
+				<p class="text-sm text-muted-foreground">Loading tabs…</p>
+			</div>
+		{:then _}
+			<div class="flex-1 min-h-0"><UnifiedTabList /></div>
+		{:catch _error}
+			<Empty.Root class="flex-1 flex items-center justify-center">
+				<Empty.Media>
+					<TriangleAlertIcon class="size-8 text-muted-foreground" />
+				</Empty.Media>
+				<Empty.Title>Failed to load tabs</Empty.Title>
+				<Empty.Description>
+					Something went wrong loading browser state. Try reopening the side
+					panel.
+				</Empty.Description>
+			</Empty.Root>
+		{/await}
 	</main>
 </Tooltip.Provider>
 <ConfirmationDialog />
 	<CommandPalette {items} bind:open={commandPaletteOpen} shortcut={null} />
+<Toaster position="bottom-center" richColors closeButton />
 <AiDrawer bind:open={aiDrawerOpen} />

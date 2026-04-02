@@ -20,6 +20,7 @@
 	import { getDomain, getRelativeTime } from '$lib/utils/format';
 	import TabFavicon from './TabFavicon.svelte';
 	import TabItem from './TabItem.svelte';
+	import { showErrorToast } from '$lib/utils/show-error-toast';
 </script>
 
 {#if unifiedViewState.flatItems.length === 0}
@@ -95,7 +96,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Restore All"
-								onclick={() => savedTabState.restoreAll()}
+						onclick={() => savedTabState.restoreAll().then(showErrorToast)}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -104,7 +105,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete All"
-								onclick={() => savedTabState.removeAll()}
+						onclick={() => savedTabState.removeAll().then(showErrorToast)}
 							>
 								<Trash2Icon />
 							</Button>
@@ -170,8 +171,8 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Restore"
-								onclick={() =>
-									savedTabState.restore(tab)}
+							onclick={() =>
+								savedTabState.restore(tab).then(showErrorToast)}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -180,8 +181,8 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-								onclick={() =>
-									savedTabState.remove(tab.id)}
+							onclick={() =>
+								savedTabState.remove(tab.id).then(showErrorToast)}
 							>
 								<Trash2Icon />
 							</Button>
@@ -216,7 +217,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Open"
-								onclick={() => bookmarkState.open(bookmark)}
+							onclick={() => bookmarkState.open(bookmark).then(showErrorToast)}
 							>
 								<ExternalLinkIcon />
 							</Button>
@@ -225,7 +226,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-								onclick={() => bookmarkState.remove(bookmark.id)}
+							onclick={() => bookmarkState.remove(bookmark.id).then(showErrorToast)}
 							>
 								<Trash2Icon />
 							</Button>

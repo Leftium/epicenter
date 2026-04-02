@@ -17,10 +17,12 @@
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import { getDomain } from '$lib/utils/format';
 	import TabFavicon from './TabFavicon.svelte';
+	import { showErrorToast } from '$lib/utils/show-error-toast';
 
 	let { tab }: { tab: BrowserTab } = $props();
 
 	const domain = $derived(tab.url ? getDomain(tab.url) : '');
+	const isBookmarked = $derived(bookmarkState.isUrlBookmarked(tab.url));
 </script>
 
 <Item.Root
@@ -146,7 +148,7 @@
 					tooltip="Save for later"
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						savedTabState.save(tab);
+						savedTabState.save(tab).then(showErrorToast);
 					}}
 				>
 					<ArchiveIcon />
@@ -155,13 +157,13 @@
 				<Button
 					variant="ghost"
 					size="icon-xs"
-					tooltip="Bookmark"
+					tooltip={isBookmarked ? 'Remove bookmark' : 'Bookmark'}
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						bookmarkState.add(tab);
+						bookmarkState.toggle(tab).then(showErrorToast);
 					}}
 				>
-					<StarIcon />
+					<StarIcon class={isBookmarked ? 'fill-amber-500 text-amber-500' : ''} />
 				</Button>
 
 				<Button

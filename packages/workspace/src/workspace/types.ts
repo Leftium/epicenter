@@ -1068,16 +1068,7 @@ export type EncryptionConfig = {
  * await workspace.clearLocalData();
  * ```
  */
-/**
- * A single versioned encryption key for transport.
- *
- * Pairs a key version (from the server's `ENCRYPTION_SECRETS`) with the
- * HKDF-derived per-user key encoded as base64 for JSON transport.
- */
-export type EncryptionKey = {
-	version: number;
-	userKeyBase64: string;
-};
+export type { EncryptionKey, EncryptionKeys } from './encryption-key';
 
 export type WorkspaceEncryption = {
 	/** Whether the runtime is currently unlocked. */
@@ -1090,7 +1081,7 @@ export type WorkspaceEncryption = {
 	 * builds a keyring Map, and activates encrypted stores. Persists
 	 * the keys if a cache is configured.
 	 */
-	unlock(keys: EncryptionKey[]): Promise<void>;
+	unlock(keys: EncryptionKeys): Promise<void>;
 	/**
 	 * Lock the runtime.
 	 *

@@ -101,6 +101,7 @@ import type {
 	DocumentsHelper,
 	EncryptionConfig,
 	EncryptionKey,
+	EncryptionKeys,
 	ExtensionContext,
 	KvDefinitions,
 	TableHelper,
@@ -112,6 +113,8 @@ import type {
 	WorkspaceEncryption,
 } from './types.js';
 import { KV_KEY, TableKey } from './ydoc-keys.js';
+import { EncryptionKeys as EncryptionKeysSchema } from './encryption-key.js';
+import { type as arktype } from 'arktype';
 
 /** Byte-level comparison for Uint8Array dedup. */
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -574,7 +577,7 @@ export function createWorkspace<
 					}
 				};
 
-				const persistKeys = async (keys: EncryptionKey[]) => {
+				const persistKeys = async (keys: EncryptionKeys, currentUserKey: Uint8Array) => {
 					if (!config?.userKeyStore) return;
 
 					try {
@@ -585,7 +588,7 @@ export function createWorkspace<
 							// already keysB — skip the stale write entirely.
 							if (
 								activeUserKey === undefined ||
-								!bytesEqual(activeUserKey, base64ToBytes(keys[0]!.userKeyBase64))
+								!bytesEqual(activeUserKey, currentUserKey)
 							)
 								return;
 
@@ -597,24 +600,30 @@ export function createWorkspace<
 					}
 				};
 
-				const unlock = async (keys: EncryptionKey[]) => {
-					const currentUserKey = base64ToBytes(keys[0]!.userKeyBase64);
+				const unlock = async (keys: EncryptionKeys) => {
+					// Decode all keys once — avoids double base64 decode for the current key
+					const decoded = keys.map((k) => ({
+						version: k.version,
+						userKey: base64ToBytes(k.userKeyBase64),
+					}));
+					const maxEntry = decoded.reduce((a, b) =>
+						a.version > b.version ? a : b,
+					);
+					const currentUserKey = maxEntry.userKey;
 					const isSameUserKey =
 						activeUserKey !== undefined && bytesEqual(activeUserKey, currentUserKey);
 
 					if (!isSameUserKey) {
 						// Build version → workspaceKey map from all keyring entries
 						const workspaceKeyring = new Map<number, Uint8Array>();
-						for (const { version, userKeyBase64 } of keys) {
+						for (const { version, userKey } of decoded) {
 							workspaceKeyring.set(
 								version,
-								deriveWorkspaceKey(base64ToBytes(userKeyBase64), id),
+								deriveWorkspaceKey(userKey, id),
 							);
 						}
 						const previousKeyring = activeWorkspaceKeyring;
-						const nextWorkspaceKey = workspaceKeyring.get(
-							Math.max(...workspaceKeyring.keys()),
-						)!;
+						const nextWorkspaceKey = workspaceKeyring.get(maxEntry.version)!;
 						const activated: YKeyValueLwwEncrypted<unknown>[] = [];
 						try {
 							for (const store of encryptedStores) {
@@ -642,7 +651,7 @@ export function createWorkspace<
 					}
 
 					if (config?.userKeyStore && !isActiveUserKeyCached) {
-						await persistKeys(keys);
+						await persistKeys(keys, currentUserKey);
 					}
 				};
 
@@ -670,8 +679,13 @@ export function createWorkspace<
 							const cached = await store.get();
 							if (!cached) return;
 							try {
-								const keys = JSON.parse(cached) as EncryptionKey[];
-								await unlock(keys);
+								const parsed = EncryptionKeysSchema(JSON.parse(cached));
+								if (parsed instanceof arktype.errors) {
+									console.error('[workspace] Cached encryption keys invalid:', parsed.summary);
+									await clearCache();
+									return;
+								}
+								await unlock(parsed);
 							} catch (error) {
 								console.error('[workspace] Cached key unlock failed:', error);
 								await clearCache();

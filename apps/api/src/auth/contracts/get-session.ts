@@ -14,29 +14,19 @@ import type {
 	Session,
 	User,
 } from 'better-auth';
-
-/**
- * A single versioned encryption key for transport.
- *
- * Each entry pairs a key version (from `ENCRYPTION_SECRETS`) with the
- * HKDF-derived per-user key encoded as base64 for JSON transport.
- */
-export type EncryptionKey = {
-	version: number;
-	userKeyBase64: string;
-};
+import type { EncryptionKeys } from '@epicenter/workspace';
 
 /**
  * Canonical `/auth/get-session` response for Epicenter clients.
  *
  * Extends Better Auth's base `{ user, session }` with `encryptionKeys`—the
  * full keyring of derived per-user keys so clients can decrypt blobs encrypted
- * with any key version. First element is the current (highest-version) key.
+ * with any key version.
  *
  * Import from `@epicenter/api/types` rather than hand-writing the response.
  */
 export type SessionResponse = {
 	user: User;
 	session: Session;
-	encryptionKeys: [EncryptionKey, ...EncryptionKey[]];
+	encryptionKeys: EncryptionKeys;
 };

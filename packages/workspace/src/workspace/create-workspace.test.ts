@@ -25,10 +25,10 @@ import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
 import { defineWorkspace } from './define-workspace.js';
 import type { UserKeyStore } from './user-key-store.js';
-import type { EncryptionKey } from './types.js';
+import type { EncryptionKeys } from './types.js';
 
-/** Wrap a raw Uint8Array key into a single-entry EncryptionKey[] for tests. */
-function toEncryptionKeys(key: Uint8Array): EncryptionKey[] {
+/** Wrap a raw Uint8Array key into a single-entry EncryptionKeys for tests. */
+function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
 	return [{ version: 1, userKeyBase64: bytesToBase64(key) }];
 }
 

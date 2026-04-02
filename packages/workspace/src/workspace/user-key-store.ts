@@ -1,12 +1,25 @@
 import type { Brand } from 'wellcrafted/brand';
 
 /**
- * Branded string representing `JSON.stringify(EncryptionKeys)`.
+ * Branded string representing the JSON-serialized encryption keyring.
  *
- * Prevents accidentally passing an arbitrary string to `UserKeyStore.set()`
- * or treating a raw `UserKeyStore.get()` result as plain text. The only
- * way to produce this type is through the branded cast in `create-workspace.ts`
- * after `JSON.stringify(keys)` — store implementations treat it as an opaque string.
+ * The underlying shape is `JSON.stringify(EncryptionKeys)` where `EncryptionKeys`
+ * is an array of versioned user keys:
+ *
+ * ```json
+ * [{ "version": 1, "userKeyBase64": "a2V5LW1hdGVyaWFsLi4u" }]
+ * ```
+ *
+ * These keys come from the server auth session—not from `.env` or any local
+ * config. The server derives them during authentication, and the client caches
+ * them locally (via {@link UserKeyStore}) so the workspace can decrypt data
+ * instantly on next launch without waiting for an auth roundtrip.
+ *
+ * The brand prevents accidentally passing an arbitrary string to
+ * `UserKeyStore.set()` or treating a `UserKeyStore.get()` result as plain text.
+ * The only way to produce this type is through the branded cast in
+ * `create-workspace.ts` after `JSON.stringify(keys)`—store implementations
+ * treat it as an opaque blob.
  */
 export type EncryptionKeysJson = string & Brand<'EncryptionKeysJson'>;
 
@@ -45,10 +58,25 @@ export type EncryptionKeysJson = string & Brand<'EncryptionKeysJson'>;
  *   │  base64 decoding + HKDF happens inside unlock()
  * ```
  *
- * Without a `UserKeyStore`, every page refresh requires a full auth roundtrip
- * before encrypted data can be read. With a store, the workspace unlocks
- * immediately on launch using the cached keys, then refreshes them silently when
- * the session loads.
+ * ## With Cache vs Without Cache
+ *
+ * ```
+ * WITHOUT UserKeyStore:              WITH UserKeyStore:
+ *
+ * App opens                          App opens
+ *   │                                  │
+ *   ▼                                  ▼
+ * Auth roundtrip (network)           Read cached keys (local, <1ms)
+ *   │  ⏳ 200–2000ms                   │
+ *   ▼                                  ▼
+ * Receive keys                       unlock() → data readable immediately
+ *   │                                  │
+ *   ▼                                  ▼  (in background)
+ * unlock() → data readable           Auth roundtrip refreshes keys silently
+ * ```
+ *
+ * The cache eliminates the auth roundtrip from the critical startup path.
+ * For local-first apps where instant load is the whole point, this is essential.
  */
 export type UserKeyStore = {
 	/**

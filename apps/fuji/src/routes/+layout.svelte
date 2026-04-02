@@ -2,8 +2,8 @@
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
-	import { ModeWatcher, mode } from 'mode-watcher';
-	import { Toaster } from 'svelte-sonner';
+	import { ModeWatcher } from 'mode-watcher';
+	import { Toaster } from '@epicenter/ui/sonner';
 	import { queryClient } from '$lib/query/client';
 	import { workspace } from '$lib/client';
 	import '@epicenter/ui/app.css';
@@ -20,6 +20,6 @@
 	</WorkspaceGate>
 </QueryClientProvider>
 
-<Toaster offset={16} theme={mode.current} richColors closeButton />
+<Toaster offset={16} richColors closeButton />
 <ModeWatcher defaultMode="dark" track={false} />
 <SvelteQueryDevtools client={queryClient} buttonPosition="bottom-right" />

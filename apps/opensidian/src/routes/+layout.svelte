@@ -10,7 +10,7 @@
 </script>
 
 <ConfirmationDialog />
-<Toaster richColors />
+<Toaster />
 <ModeWatcher />
 <WorkspaceGate whenReady={workspace.whenReady}>
 	{@render children()}

@@ -8,6 +8,6 @@
 </script>
 
 <ConfirmationDialog />
-<Toaster richColors />
+<Toaster />
 <ModeWatcher />
 {@render children()}

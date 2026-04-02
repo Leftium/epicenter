@@ -20,6 +20,6 @@
 	</WorkspaceGate>
 </QueryClientProvider>
 
-<Toaster offset={16} richColors closeButton />
+<Toaster offset={16} closeButton />
 <ModeWatcher defaultMode="dark" track={false} />
 <SvelteQueryDevtools client={queryClient} buttonPosition="bottom-right" />

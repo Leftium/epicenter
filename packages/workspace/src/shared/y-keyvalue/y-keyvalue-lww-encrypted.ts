@@ -448,8 +448,21 @@ export function createEncryptedYkvLww<T>(
 		 * Only re-encrypts entries that needed the fallback key or were plaintext,
 		 * avoiding unnecessary CRDT mutations for entries already on the current key.
 		 *
+		 * ## Key rotation limitation
+		 *
+		 * Each blob stores a `keyVersion` byte (readable via `getKeyVersion()`),
+		 * but this method does NOT use it — it brute-forces by trying the current
+		 * key then the previous key. This two-key fallback covers a single key
+		 * rotation (v1 → v2) as long as the client was previously unlocked with
+		 * the old key.
+		 *
+		 * For full multi-key rotation (fresh client after N rotations), this
+		 * method would need to accept a keyring (`Map<number, Uint8Array>`) and
+		 * use `getKeyVersion(blob)` to select the correct decryption key per
+		 * entry. The API already has a keyring (`ENCRYPTION_SECRETS`); the
+		 * missing piece is transporting multiple derived keys to the client.
+		 *
 		 * @param nextKey - A 32-byte encryption key
-		 */
 		activateEncryption(nextKey) {
 			const previousKey = currentKey;
 			currentKey = nextKey;

@@ -35,26 +35,12 @@ describe('createSyncExtension', () => {
 
 			const result = factory(createMockContext(ydoc));
 
-			result.reconnect();
-
-			// Status is still accessible after reconnect
-			expect(result.status).toBeDefined();
-
-			result.dispose();
-		});
-
-		test('reconnect sets provider to offline then allows reconnection', () => {
-			const ydoc = new Y.Doc({ guid: 'test-doc-status' });
-
-			const factory = createSyncExtension({
-				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
-			});
-
-			const result = factory(createMockContext(ydoc));
+			// Status accessible before reconnect
+			expect(result.status.phase).toBe('offline');
 
 			result.reconnect();
 
-			// After reconnect, status is still accessible
+			// Status still accessible after reconnect
 			expect(result.status).toBeDefined();
 
 			result.dispose();

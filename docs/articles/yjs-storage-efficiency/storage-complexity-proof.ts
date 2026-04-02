@@ -14,7 +14,6 @@
  */
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../../../packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted';
-import { YKeyValueLww } from '../../../packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww';
 import {
 	generateEncryptionKey,
 	type EncryptedBlob,

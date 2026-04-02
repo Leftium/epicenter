@@ -463,6 +463,7 @@ export function createEncryptedYkvLww<T>(
 		 * missing piece is transporting multiple derived keys to the client.
 		 *
 		 * @param nextKey - A 32-byte encryption key
+		 */
 		activateEncryption(nextKey) {
 			const previousKey = currentKey;
 			currentKey = nextKey;

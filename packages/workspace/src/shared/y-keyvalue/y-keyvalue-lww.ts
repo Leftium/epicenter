@@ -189,7 +189,7 @@ export class YKeyValueLww<T> {
 	/** Registered change handlers. */
 	private changeHandlers: Set<YKeyValueLwwChangeHandler<T>> = new Set();
 
-	/** Stored observer reference for cleanup in destroy(). */
+	/** Stored observer reference for cleanup in dispose(). */
 	private _observer!: (event: Y.YArrayEvent<YKeyValueLwwEntry<T>>, transaction: Y.Transaction) => void;
 
 	/**
@@ -621,7 +621,7 @@ export class YKeyValueLww<T> {
 	 * Unregister the Y.Array observer. Call when this wrapper is no longer needed
 	 * but the underlying Y.Array continues to exist.
 	 */
-	destroy(): void {
+	dispose(): void {
 		this.yarray.unobserve(this._observer);
 	}
 }

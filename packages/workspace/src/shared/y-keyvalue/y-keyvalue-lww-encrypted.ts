@@ -139,6 +139,11 @@ export type YKeyValueLwwEncrypted<T> = {
 	 */
 	deactivateEncryption(): void;
 	/**
+	 * Unregister observers and release resources. Call when this wrapper
+	 * is no longer needed but the underlying Y.Array continues to exist.
+	 */
+	dispose(): void;
+	/**
 	 * Number of entries in the inner store that are not in the decrypted cache.
 	 * When a key is active, this counts entries that failed to decrypt.
 	 * When no key is active, this counts all encrypted entries (they are not
@@ -362,7 +367,7 @@ export function createEncryptedYkvLww<T>(
 	 * plaintext values. `activateEncryption` and `deactivateEncryption` also
 	 * write to `map` during encryption state transitions.
 	 */
-	inner.observe((changes, transaction) => {
+	const observer: Parameters<typeof inner.observe>[0] = (changes, transaction) => {
 		// Skip re-encryption writes — they don't change decrypted values.
 		// activateEncryption handles its own event emission via diffAndEmit.
 		if (transaction.origin === RE_ENCRYPT) return;
@@ -391,7 +396,8 @@ export function createEncryptedYkvLww<T>(
 
 		for (const handler of changeHandlers)
 			handler(decryptedChanges, transaction.origin);
-	});
+	};
+	inner.observe(observer);
 
 	return {
 		set(key, val) {
@@ -536,5 +542,9 @@ export function createEncryptedYkvLww<T>(
 		},
 		yarray: inner.yarray,
 		doc: inner.doc,
+		dispose() {
+			inner.unobserve(observer);
+			inner.dispose();
+		},
 	};
 }

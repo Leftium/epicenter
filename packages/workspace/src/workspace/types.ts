@@ -1103,7 +1103,7 @@ export type WorkspaceKeyAccess = {
 	 * Convenience wrapper for app-layer auth flows. Waits for whenReady,
 	 * then delegates to `encryption.unlock()`.
 	 */
-	unlockWithKeys(keys: EncryptionKey[]): Promise<void>;
+	unlockWithKeys(keys: EncryptionKeys): Promise<void>;
 };
 
 export type WorkspaceClientBuilder<

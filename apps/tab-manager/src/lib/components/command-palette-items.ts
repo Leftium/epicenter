@@ -27,7 +27,7 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import { browserState } from '$lib/state/browser-state.svelte';
 import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 import { findDuplicateGroups, groupTabsByDomain } from '$lib/utils/tab-helpers';
-import { showErrorToast } from '$lib/utils/show-error-toast';
+import { toastOnError } from '@epicenter/ui/sonner';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -197,7 +197,7 @@ export const items: CommandPaletteItem[] = [
 				async onConfirm() {
 					const tabsWithUrls = allTabs.filter((tab) => tab.url);
 					await Promise.allSettled(
-						tabsWithUrls.map((tab) => savedTabState.save(tab).then(showErrorToast)),
+						tabsWithUrls.map((tab) => savedTabState.save(tab).then(toastOnError)),
 					);
 				},
 			});

@@ -11,7 +11,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import { onMount } from 'svelte';
-	import { Toaster } from 'svelte-sonner';
+	import { Toaster } from '@epicenter/ui/sonner';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { CommandPalette } from '@epicenter/ui/command-palette';
 	import { items } from '$lib/components/command-palette-items';

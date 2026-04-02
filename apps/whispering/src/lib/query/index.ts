@@ -11,8 +11,6 @@ import { text } from './text';
 import { transcription } from './transcription';
 import { transformer } from './transformer';
 
-export { desktopRpc } from './desktop';
-
 /**
  * Cross-platform RPC namespace.
  * These query operations are available on both web and desktop.

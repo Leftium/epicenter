@@ -6,7 +6,8 @@ import {
 import { rpc } from '$lib/query';
 import { defineMutation, queryClient } from '$lib/query/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
-import { desktopServices, services } from '$lib/services';
+import { services } from '$lib/services';
+import { desktopServices } from '$lib/services/desktop';
 import type { Recording } from '$lib/state/recordings.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';

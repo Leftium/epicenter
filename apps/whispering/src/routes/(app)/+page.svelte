@@ -34,7 +34,8 @@
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/constants/keyboard';
 	import { rpc } from '$lib/query';
-	import { desktopServices, services } from '$lib/services';
+	import { services } from '$lib/services';
+	import { desktopServices } from '$lib/services/desktop';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { settings } from '$lib/state/settings.svelte';

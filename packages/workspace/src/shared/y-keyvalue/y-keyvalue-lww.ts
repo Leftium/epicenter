@@ -114,16 +114,19 @@ export class YKeyValueLww<T> {
 	/** The Y.Doc that owns this array. Required for transactions. */
 	readonly doc: Y.Doc;
 
+	/** Mutable in-memory index. Written exclusively by the constructor and observer. */
+	private readonly _map = new Map<string, YKeyValueLwwEntry<T>>();
+
 	/**
-	 * In-memory index for O(1) key lookups. Maps key -> entry object.
+	 * Read-only view of the in-memory index for O(1) key lookups.
 	 *
-	 * **Important**: This map is ONLY written to by the observer. The `set()` method
-	 * never directly updates this map. This "single-writer" architecture prevents
-	 * race conditions when operations are nested inside outer Yjs transactions.
+	 * Written exclusively by the observer and constructor. External consumers
+	 * (e.g. the encrypted wrapper) read via iteration, `.get()`, and `.size`.
+	 * The `set()` method never writes to this map—the observer is the sole writer.
 	 *
 	 * @see pending for how immediate reads work after `set()`
 	 */
-	readonly map: Map<string, YKeyValueLwwEntry<T>>;
+	readonly map: ReadonlyMap<string, YKeyValueLwwEntry<T>> = this._map;
 
 	/**
 	 * Pending entries written by `set()` but not yet processed by the observer.
@@ -186,6 +189,9 @@ export class YKeyValueLww<T> {
 	/** Registered change handlers. */
 	private changeHandlers: Set<YKeyValueLwwChangeHandler<T>> = new Set();
 
+	/** Stored observer reference for cleanup in destroy(). */
+	private _observer!: (event: Y.YArrayEvent<YKeyValueLwwEntry<T>>, transaction: Y.Transaction) => void;
+
 	/**
 	 * Last timestamp used for monotonic clock.
 	 *
@@ -221,7 +227,6 @@ export class YKeyValueLww<T> {
 	constructor(yarray: Y.Array<YKeyValueLwwEntry<T>>) {
 		this.yarray = yarray;
 		this.doc = yarray.doc as Y.Doc;
-		this.map = new Map();
 
 		const entries = yarray.toArray();
 		const indicesToDelete: number[] = [];
@@ -230,16 +235,16 @@ export class YKeyValueLww<T> {
 		for (let i = 0; i < entries.length; i++) {
 			const entry = entries[i];
 			if (!entry) continue;
-			const existing = this.map.get(entry.key);
+			const existing = this._map.get(entry.key);
 
 			if (!existing) {
-				this.map.set(entry.key, entry);
+				this._map.set(entry.key, entry);
 			} else {
 				if (entry.ts > existing.ts) {
 					// New entry wins, mark old for deletion
 					const oldIndex = entries.indexOf(existing);
 					if (oldIndex !== -1) indicesToDelete.push(oldIndex);
-					this.map.set(entry.key, entry);
+					this._map.set(entry.key, entry);
 				} else if (entry.ts < existing.ts) {
 					// Old entry wins, mark new for deletion
 					indicesToDelete.push(i);
@@ -248,7 +253,7 @@ export class YKeyValueLww<T> {
 					const oldIndex = entries.indexOf(existing);
 					if (oldIndex !== -1 && oldIndex < i) {
 						indicesToDelete.push(oldIndex);
-						this.map.set(entry.key, entry);
+						this._map.set(entry.key, entry);
 					} else {
 						indicesToDelete.push(i);
 					}
@@ -274,7 +279,7 @@ export class YKeyValueLww<T> {
 		}
 
 		// Set up observer for future changes
-		yarray.observe((event, transaction) => {
+		this._observer = (event, transaction) => {
 			const changes = new Map<string, YKeyValueLwwChange<T>>();
 			const addedEntries: YKeyValueLwwEntry<T>[] = [];
 
@@ -299,8 +304,8 @@ export class YKeyValueLww<T> {
 						this.pendingDeletes.delete(entry.key);
 
 						// Reference equality: only process if this is the entry we have cached
-						if (this.map.get(entry.key) === entry) {
-							this.map.delete(entry.key);
+						if (this._map.get(entry.key) === entry) {
+							this._map.delete(entry.key);
 							changes.set(entry.key, { action: 'delete' });
 						}
 					});
@@ -331,7 +336,7 @@ export class YKeyValueLww<T> {
 			};
 
 			for (const newEntry of addedEntries) {
-				const existing = this.map.get(newEntry.key);
+				const existing = this._map.get(newEntry.key);
 
 				if (!existing) {
 					// New key: just update the map. No array operations needed.
@@ -348,7 +353,7 @@ export class YKeyValueLww<T> {
 							newValue: newEntry.val,
 						});
 					}
-					this.map.set(newEntry.key, newEntry);
+					this._map.set(newEntry.key, newEntry);
 					this.pendingDeletes.delete(newEntry.key);
 				} else {
 					// Conflict: key exists in map. Must compare timestamps to determine winner,
@@ -365,7 +370,7 @@ export class YKeyValueLww<T> {
 						const oldIndex = getAllEntries().indexOf(existing);
 						if (oldIndex !== -1) indicesToDelete.push(oldIndex);
 
-						this.map.set(newEntry.key, newEntry);
+						this._map.set(newEntry.key, newEntry);
 						this.pendingDeletes.delete(newEntry.key);
 					} else if (newEntry.ts < existing.ts) {
 						// Old entry wins: delete new from array
@@ -383,7 +388,7 @@ export class YKeyValueLww<T> {
 								newValue: newEntry.val,
 							});
 							if (oldIndex !== -1) indicesToDelete.push(oldIndex);
-							this.map.set(newEntry.key, newEntry);
+							this._map.set(newEntry.key, newEntry);
 							this.pendingDeletes.delete(newEntry.key);
 						} else {
 							// Old is rightmost, delete new
@@ -415,7 +420,8 @@ export class YKeyValueLww<T> {
 					handler(changes, transaction);
 				}
 			}
-		});
+		};
+		yarray.observe(this._observer);
 	}
 
 	/**
@@ -504,7 +510,7 @@ export class YKeyValueLww<T> {
 
 		const doWork = () => {
 			// Check map for existing entry (pending entries aren't in yarray yet)
-			if (this.map.has(key)) this.deleteEntryByKey(key);
+			if (this._map.has(key)) this.deleteEntryByKey(key);
 			this.yarray.push([entry]);
 		};
 
@@ -534,7 +540,7 @@ export class YKeyValueLww<T> {
 		// If already pending delete, no-op
 		if (this.pendingDeletes.has(key)) return;
 
-		if (!this.map.has(key) && !wasPending) return;
+			if (!this._map.has(key) && !wasPending) return;
 
 		this.pendingDeletes.add(key);
 		this.deleteEntryByKey(key);
@@ -555,7 +561,7 @@ export class YKeyValueLww<T> {
 		const pending = this.pending.get(key);
 		if (pending) return pending.val;
 
-		return this.map.get(key)?.val;
+		return this._map.get(key)?.val;
 	}
 
 	/**
@@ -566,7 +572,7 @@ export class YKeyValueLww<T> {
 	 */
 	has(key: string): boolean {
 		if (this.pendingDeletes.has(key)) return false;
-		return this.pending.has(key) || this.map.has(key);
+		return this.pending.has(key) || this._map.has(key);
 	}
 
 	/**
@@ -594,7 +600,7 @@ export class YKeyValueLww<T> {
 		}
 
 		// Yield map entries that weren't in pending and aren't pending delete
-		for (const [key, entry] of this.map) {
+		for (const [key, entry] of this._map) {
 			if (!yieldedKeys.has(key) && !this.pendingDeletes.has(key)) {
 				yield [key, entry];
 			}
@@ -609,5 +615,13 @@ export class YKeyValueLww<T> {
 	/** Unregister an observer. */
 	unobserve(handler: YKeyValueLwwChangeHandler<T>): void {
 		this.changeHandlers.delete(handler);
+	}
+
+	/**
+	 * Unregister the Y.Array observer. Call when this wrapper is no longer needed
+	 * but the underlying Y.Array continues to exist.
+	 */
+	destroy(): void {
+		this.yarray.unobserve(this._observer);
 	}
 }

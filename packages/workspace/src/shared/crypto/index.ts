@@ -71,6 +71,7 @@ const HEADER_LENGTH = 2;
 const MINIMUM_BLOB_SIZE = HEADER_LENGTH + NONCE_LENGTH + TAG_LENGTH;
 
 const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
 
 /**
  * Encrypted blob stored directly in the CRDT as a bare Uint8Array.
@@ -92,9 +93,9 @@ const textEncoder = new TextEncoder();
  *  Total: 1 + 1 + 24 + len(plaintext) + 16 bytes
  * ```
  *
- * Detection: `value instanceof Uint8Array && value[0] === 1`.
+ * Detection: `value instanceof Uint8Array && value.length >= 42` (minimum blob size).
  * User values in the CRDT are always JS objects (never Uint8Arrays),
- * so this check is a reliable discriminant.
+ * so `instanceof Uint8Array` is the primary discriminant.
  *
  * @example
  * ```typescript
@@ -228,7 +229,7 @@ export function decryptValue(
 		: xchacha20poly1305(key, nonce);
 	const data = cipher.decrypt(ciphertext);
 
-	return new TextDecoder().decode(data);
+	return textDecoder.decode(data);
 }
 
 /**
@@ -237,11 +238,10 @@ export function decryptValue(
  * The key version is stored at byte 1 of the blob and identifies which
  * secret from the ENCRYPTION_SECRETS keyring was used to encrypt this blob.
  *
- * **Note**: Currently written but not read during decryption. The encrypted
- * KV wrapper's `activateEncryption` handles key transitions by trying the
- * current key then falling back to the previous key, without consulting
- * keyVersion. This function exists for diagnostics and future keyring
- * rotation where version-aware key lookup would avoid brute-forcing.
+ * Used by the encrypted KV wrapper for version-directed key lookup during
+ * decryption. When the current key fails to decrypt a blob, the wrapper reads
+ * the blob's key version via this function and looks up the matching key from
+ * the active keyring—avoiding brute-force trial of every key.
  *
  * @param blob - An EncryptedBlob to read the key version from
  * @returns The key version number (1-255)
@@ -307,7 +307,7 @@ export function isEncryptedBlob(value: unknown): value is EncryptedBlob {
  * @example
  * ```typescript
  * // Self-hosted password flow:
- * const salt = await deriveSalt(userId, workspaceId);
+ * const salt = deriveSalt(userId, workspaceId);
  * const userKey = await deriveKeyFromPassword(password, salt);
  * await workspace.encryption.unlock(userKey); // internally derives per-workspace key via HKDF
  * ```
@@ -318,7 +318,7 @@ export async function deriveKeyFromPassword(
 ): Promise<Uint8Array> {
 	const passwordKey = await crypto.subtle.importKey(
 		'raw',
-		new TextEncoder().encode(password),
+		textEncoder.encode(password),
 		'PBKDF2',
 		false,
 		['deriveBits'],
@@ -341,31 +341,28 @@ export async function deriveKeyFromPassword(
 /**
  * Derive a 16-byte salt from a userId and workspaceId using SHA-256.
  *
- * Combines the userId and workspaceId, hashes them with SHA-256, and returns
- * the first 16 bytes as a salt. This ensures that the same user in different
- * workspaces gets different salts, and different users get different salts.
+ * Combines the userId and workspaceId with a null-byte separator, hashes
+ * with SHA-256, and returns the first 16 bytes. Synchronous because
+ * SHA-256 of a short string is microseconds—no reason to force async.
+ *
+ * Uses `@noble/hashes` (already imported for HKDF) instead of
+ * `crypto.subtle.digest` to avoid an unnecessary `await` at every call site.
  *
  * @param userId - The user's unique identifier
  * @param workspaceId - The workspace's unique identifier
- * @returns A promise that resolves to a 16-byte Uint8Array salt
+ * @returns A 16-byte Uint8Array salt
  *
  * @example
  * ```typescript
- * const salt = await deriveSalt('user123', 'workspace456');
+ * const salt = deriveSalt('user123', 'workspace456');
  * console.log(salt.length); // 16
  * ```
  */
-export async function deriveSalt(
+export function deriveSalt(
 	userId: string,
 	workspaceId: string,
-): Promise<Uint8Array> {
-	const combined = userId + '\0' + workspaceId;
-	const hash = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(combined),
-	);
-
-	return new Uint8Array(hash).slice(0, 16);
+): Uint8Array {
+	return sha256(textEncoder.encode(userId + '\0' + workspaceId)).slice(0, 16);
 }
 
 /**

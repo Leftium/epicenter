@@ -10,7 +10,7 @@
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { readDir } from '@tauri-apps/plugin-fs';
 	import type { Snippet } from 'svelte';
-	import { toast } from 'svelte-sonner';
+	import { toast } from '@epicenter/ui/sonner';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 	import type { LocalModelConfig } from '$lib/services/transcription/local/types';

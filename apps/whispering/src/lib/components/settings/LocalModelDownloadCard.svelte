@@ -15,7 +15,7 @@
 		writeFile,
 	} from '@tauri-apps/plugin-fs';
 	import { fetch } from '@tauri-apps/plugin-http';
-	import { toast } from 'svelte-sonner';
+	import { toast } from '@epicenter/ui/sonner';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 	import { PATHS } from '$lib/constants/paths';

@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
-	import { ModeWatcher, mode } from 'mode-watcher';
-	import { Toaster, type ToasterProps } from 'svelte-sonner';
+	import { ModeWatcher } from 'mode-watcher';
+	import { Toaster } from '@epicenter/ui/sonner';
+	import type { ToasterProps } from 'svelte-sonner';
 	import { onNavigate } from '$app/navigation';
 	import { queryClient } from '$lib/query/client';
 	import '@epicenter/ui/app.css';
@@ -48,7 +49,6 @@
 <Toaster
 	offset={16}
 	class="xs:block hidden"
-	theme={mode.current}
 	{...TOASTER_SETTINGS}
 />
 <ModeWatcher defaultMode="dark" track={false} />

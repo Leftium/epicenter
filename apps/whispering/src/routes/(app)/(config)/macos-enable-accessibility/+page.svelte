@@ -5,7 +5,7 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import { toast } from 'svelte-sonner';
+	import { toast } from '@epicenter/ui/sonner';
 	import { goto } from '$app/navigation';
 	import { desktopServices } from '$lib/services';
 	import { asShellCommand } from '$lib/services/desktop/command';

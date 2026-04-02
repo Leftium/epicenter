@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid/non-secure';
-import { toast } from 'svelte-sonner';
+import { toast } from '@epicenter/ui/sonner';
 import { goto } from '$app/navigation';
 import { IS_MACOS } from '$lib/constants/platform';
 import { desktopServices } from '$lib/services';

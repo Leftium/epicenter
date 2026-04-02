@@ -11,7 +11,6 @@ import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import { TRANSCRIPTION, TRANSCRIPTION_SERVICE_IDS } from '$lib/constants/transcription';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
-import { LAYOUT_MODES } from '$lib/constants/ui/layout-mode';
 import { FFMPEG_DEFAULT_COMPRESSION_OPTIONS } from '$lib/services/desktop/recorder/ffmpeg';
 
 /**
@@ -195,7 +194,6 @@ const output = {
 /** Window behavior and navigation layout preferences. */
 const ui = {
 	'ui.alwaysOnTop': defineKv(type.enumerated(...ALWAYS_ON_TOP_MODES), 'Never'),
-	'ui.layoutMode': defineKv(type.enumerated(...LAYOUT_MODES), 'sidebar'),
 } as const;
 
 /**

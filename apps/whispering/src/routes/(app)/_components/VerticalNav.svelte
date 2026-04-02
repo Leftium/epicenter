@@ -1,19 +1,17 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { useSidebar } from '@epicenter/ui/sidebar';
+	import { MediaQuery } from 'svelte/reactivity';
 	import Database from '@lucide/svelte/icons/database';
-	import HomeIcon from '@lucide/svelte/icons/house';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import ListIcon from '@lucide/svelte/icons/list';
 	import Minimize2Icon from '@lucide/svelte/icons/minimize-2';
 	import MoonIcon from '@lucide/svelte/icons/moon';
 	import LogsIcon from '@lucide/svelte/icons/scroll-text';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import SunIcon from '@lucide/svelte/icons/sun';
 	import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 	import { toggleMode } from 'mode-watcher';
 	import { page } from '$app/state';
 	import { GithubIcon } from '$lib/components/icons';
+	import { NAV_ITEMS } from '$lib/constants/ui';
 	import MigrationDialog from '$lib/migration/MigrationDialog.svelte';
 	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 	import { notificationLog } from '$lib/components/NotificationLog.svelte';
@@ -24,37 +22,13 @@
 
 	const sidebar = useSidebar();
 
-	// Navigation items
-	const navItems = [
-		{
-			label: 'Home',
-			href: '/',
-			icon: HomeIcon,
-			isActive: (pathname: string) => pathname === '/',
-		},
-		{
-			label: 'Recordings',
-			href: '/recordings',
-			icon: ListIcon,
-			isActive: (pathname: string) =>
-				pathname === '/recordings' || pathname.startsWith('/recordings/'),
-		},
-		{
-			label: 'Transformations',
-			href: '/transformations',
-			icon: LayersIcon,
-			isActive: (pathname: string) =>
-				pathname === '/transformations' ||
-				pathname.startsWith('/transformations/'),
-		},
-		{
-			label: 'Settings',
-			href: '/settings',
-			icon: SettingsIcon,
-			isActive: (pathname: string) =>
-				pathname === '/settings' || pathname.startsWith('/settings/'),
-		},
-	];
+	// Auto-collapse sidebar on narrow viewports so it shows as an icon rail
+	const isNarrow = new MediaQuery('(max-width: 767px)');
+	$effect(() => {
+		if (isNarrow.current) {
+			sidebar.setOpen(false);
+		}
+	});
 </script>
 
 <Sidebar.Root collapsible="icon">
@@ -91,20 +65,12 @@
 			<Sidebar.GroupLabel>Navigation</Sidebar.GroupLabel>
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
-					{#each navItems as item}
+					{#each NAV_ITEMS as item}
 						<Sidebar.MenuItem>
 							<Sidebar.MenuButton isActive={item.isActive(page.url.pathname)}>
 								{#snippet child({ props })}
 									{@const Icon = item.icon}
-									<a
-										href={item.href}
-										{...props}
-										onclick={() => {
-											if (sidebar.isMobile) {
-												sidebar.setOpenMobile(false);
-											}
-										}}
-									>
+									<a href={item.href} {...props}>
 										<Icon />
 										<span>{item.label}</span>
 									</a>

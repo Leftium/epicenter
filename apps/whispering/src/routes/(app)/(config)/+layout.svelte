@@ -2,9 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { cn } from '@epicenter/ui/utils';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { MediaQuery } from 'svelte/reactivity';
 	import { commandCallbacks } from '$lib/commands';
-	import NavItems from '$lib/components/NavItems.svelte';
 	import {
 		CompressionSelector,
 		RecordingModeSelector,
@@ -27,8 +25,6 @@
 	);
 
 	let { children } = $props();
-
-	const isMobile = new MediaQuery('(max-width: 640px)');
 </script>
 
 <header
@@ -146,9 +142,6 @@
 				</div>
 			{/if}
 		</div>
-		{#if settings.get('ui.layoutMode') === 'nav-items'}
-			<NavItems class="-mr-4" collapsed={isMobile.current} />
-		{/if}
 	</div>
 </header>
 

@@ -226,19 +226,18 @@ export function createEncryptedYkvLww<T>(
 	let currentKey: Uint8Array | undefined = options?.key;
 
 	/**
-	 * Attempt to decrypt an entry with a specific key.
+	 * Attempt to decrypt an encrypted blob with a specific key.
 	 *
-	 * Returns the decrypted entry or undefined on failure.
-	 * Used by activateEncryption for key fallback and by the default tryDecryptEntry.
+	 * Callers must filter out plaintext entries before calling this.
+	 * Used by activateEncryption for key fallback and by tryDecryptEntry.
 	 */
 	const tryDecryptEntryWithKey = (
 		key: string,
 		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
 		decryptionKey: Uint8Array,
 	): YKeyValueLwwEntry<T> | undefined => {
-		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T };
 		try {
-			const val = JSON.parse(decryptValue(entry.val, decryptionKey, textEncoder.encode(key))) as T;
+			const val = JSON.parse(decryptValue(entry.val as EncryptedBlob, decryptionKey, textEncoder.encode(key))) as T;
 			return { ...entry, val };
 		} catch {
 			return undefined;

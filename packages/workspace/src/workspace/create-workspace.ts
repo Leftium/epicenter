@@ -40,6 +40,16 @@
  *   → await userKeyStore.delete() if configured
  * ```
  *
+ * ## Epoch-based compaction
+ *
+ * Internally, each workspace uses TWO Y.Docs:
+ * 1. **Coordination doc** (`guid: workspaceId`) — holds only the epoch map
+ * 2. **Data doc** (`guid: \`${workspaceId}-${epoch}\``) — holds tables + KV
+ *
+ * The coordination doc is purely internal. Consumers interact with the data doc
+ * via `client.ydoc`. Calling `client.compact()` migrates all data to a fresh
+ * data doc at epoch+1, shedding CRDT history.
+ *
  * @example
  * ```typescript
  * // Direct use (no extensions)
@@ -86,6 +96,7 @@ import { createAwareness } from './create-awareness.js';
 import { createDocuments } from './create-document.js';
 import { createKv } from './create-kv.js';
 import { createTable } from './create-table.js';
+import { createEpochTracker } from './epoch.js';
 import {
 	defineExtension,
 	disposeLifo,
@@ -104,10 +115,11 @@ import type {
 	ExtensionContext,
 	KvDefinitions,
 	TableDefinitions,
+	TransactionMeta,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
-	WorkspaceEncryption,
 	WorkspaceDefinition,
+	WorkspaceEncryption,
 } from './types.js';
 import { KV_KEY, TableKey } from './ydoc-keys.js';
 
@@ -117,6 +129,12 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
 	return true;
 }
+
+/** Table observer callback type for tracking across compaction. */
+type TableObserverCallback = (
+	changedIds: ReadonlySet<string>,
+	transaction: TransactionMeta,
+) => void;
 
 /**
  * Create a workspace client with chainable extension support.
@@ -157,7 +175,20 @@ export function createWorkspace<
 	TAwarenessDefinitions,
 	Record<string, never>
 > {
-	const ydoc = new Y.Doc({ guid: id });
+	// ── Coordination doc + epoch tracking ────────────────────────────────
+	// The coordination doc is a lightweight Y.Doc that holds only the epoch
+	// map. It uses the workspace ID as its GUID (stable anchor for sync).
+	// The data doc uses `{workspaceId}-{epoch}` as its GUID.
+	const coordYdoc = new Y.Doc({ guid: id });
+	const epochTracker = createEpochTracker(coordYdoc);
+	const initialEpoch = epochTracker.getEpoch();
+
+	// ── Data doc ────────────────────────────────────────────────────────
+	// Mutable — swapped on compact(). All tables, KV, and extensions
+	// bind to this doc. The `let` enables compact() to replace it.
+	let ydoc = new Y.Doc({ guid: `${id}-${initialEpoch}` });
+	let currentDataEpoch = initialEpoch;
+
 	const tableDefs = (tablesDef ?? {}) as TTableDefinitions;
 	const kvDefs = (kvDef ?? {}) as TKvDefinitions;
 	const awarenessDefs = (awarenessDef ?? {}) as TAwarenessDefinitions;
@@ -166,6 +197,11 @@ export function createWorkspace<
 	// The workspace owns all encrypted KV stores so it can coordinate
 	// activateEncryption across tables and KV simultaneously.
 	const encryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
+
+	// ── Table observer tracking ─────────────────────────────────────────
+	// Observers registered via table.observe() are tracked so they can be
+	// re-registered on the new table helpers after compact().
+	const tableObserverRegistry = new Map<string, Set<TableObserverCallback>>();
 
 	// Create table stores + helpers (one encrypted KV per table)
 	const tableHelpers: Record<
@@ -176,16 +212,44 @@ export function createWorkspace<
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 		const ykv = createEncryptedYkvLww(yarray, { key: options?.key });
 		encryptedStores.push(ykv);
-		tableHelpers[name] = createTable(ykv, definition);
+		const helper = createTable(ykv, definition);
+		tableHelpers[name] = wrapTableWithObserverTracking(name, helper);
 	}
 	const tables =
 		tableHelpers as import('./types.js').TablesHelper<TTableDefinitions>;
 
+	/**
+	 * Wrap a table helper's observe method to track callbacks for compact re-registration.
+	 * Returns a new object that delegates all calls and tracks observe/unobserve.
+	 */
+	function wrapTableWithObserverTracking(
+		name: string,
+		helper: import('./types.js').TableHelper<BaseRow>,
+	): import('./types.js').TableHelper<BaseRow> {
+		if (!tableObserverRegistry.has(name)) {
+			tableObserverRegistry.set(name, new Set());
+		}
+		const registry = tableObserverRegistry.get(name)!;
+		const originalObserve = helper.observe;
+
+		return {
+			...helper,
+			observe(callback: TableObserverCallback) {
+				registry.add(callback);
+				const unsub = originalObserve.call(helper, callback);
+				return () => {
+					registry.delete(callback);
+					unsub();
+				};
+			},
+		};
+	}
+
 	// Create KV store + helper (single shared encrypted KV)
 	const kvYarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const kvStore = createEncryptedYkvLww(kvYarray, { key: options?.key });
+	let kvStore = createEncryptedYkvLww(kvYarray, { key: options?.key });
 	encryptedStores.push(kvStore);
-	const kv = createKv(kvStore, kvDefs);
+	let kvHelper = createKv(kvStore, kvDefs);
 	const awareness = createAwareness(ydoc, awarenessDefs);
 	const definitions = {
 		tables: tableDefs,
@@ -216,6 +280,22 @@ export function createWorkspace<
 		lock: () => void;
 		clearCache: () => Promise<void>;
 	};
+
+	// ── Extension factory tracking for compact re-fire ──────────────────
+	// When compact() runs, data doc extensions need to be torn down and
+	// re-created on the fresh data doc. We store the factory functions
+	// (with their keys) so compact() can re-invoke them.
+	type StoredExtensionFactory = {
+		key: string;
+		factory: (context: { ydoc: Y.Doc; whenReady: Promise<void> }) =>
+			| (Record<string, unknown> & {
+					whenReady?: Promise<unknown>;
+					dispose?: () => MaybePromise<void>;
+					clearLocalData?: () => MaybePromise<void>;
+			  })
+			| void;
+	};
+	const dataDocExtensionFactories: StoredExtensionFactory[] = [];
 
 	// Accumulated document extension registrations (in chain order).
 	// Mutable array — grows as .withDocumentExtension() is called. Document
@@ -268,6 +348,240 @@ export function createWorkspace<
 	const typedDocuments =
 		documentsNamespace as unknown as DocumentsHelper<TTableDefinitions>;
 
+	// ── Blue-green helpers ────────────────────────────────────────────────
+	// Pure preparation functions for epoch transitions. Neither touches
+	// mutable workspace state — they return self-contained bundles that
+	// the swap logic commits atomically.
+	/**
+	 * Create a fresh data doc with new stores, table helpers, and KV.
+	 * Does NOT modify any mutable workspace state — returns a self-contained bundle.
+	 * Used by the blue-green swap to prepare everything before committing.
+	 */
+	function prepareFreshDoc(
+		newEpoch: number,
+		dataToWrite?: {
+			tables: Record<string, BaseRow[]>;
+			kv: Record<string, unknown>;
+		},
+	) {
+		const freshYdoc = new Y.Doc({ guid: `${id}-${newEpoch}` });
+		const freshEncryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
+		const freshTableHelpers: Record<
+			string,
+			import('./types.js').TableHelper<BaseRow>
+		> = {};
+
+		for (const [name, definition] of Object.entries(tableDefs)) {
+			const yarray = freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(
+				TableKey(name),
+			);
+			const newYkv = createEncryptedYkvLww(yarray, {
+				key: options?.key,
+			});
+			freshEncryptedStores.push(newYkv);
+
+			const newHelper = createTable(newYkv, definition);
+			if (dataToWrite) {
+				for (const row of dataToWrite.tables[name] ?? []) {
+					newHelper.set(row);
+				}
+			}
+
+			const wrapped = wrapTableWithObserverTracking(name, newHelper);
+			const registry = tableObserverRegistry.get(name);
+			if (registry) {
+				for (const cb of registry) {
+					newHelper.observe(cb);
+				}
+			}
+			freshTableHelpers[name] = wrapped;
+		}
+
+		// Fresh KV
+		const freshKvYarray =
+			freshYdoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+		const freshKvStore = createEncryptedYkvLww(freshKvYarray, {
+			key: options?.key,
+		});
+		freshEncryptedStores.push(freshKvStore);
+
+		if (dataToWrite) {
+			for (const [key, val] of Object.entries(dataToWrite.kv)) {
+				freshKvStore.set(key, val);
+			}
+		}
+
+		const freshKvHelper = createKv(freshKvStore, kvDefs);
+
+		return {
+			ydoc: freshYdoc,
+			encryptedStores: freshEncryptedStores,
+			tableHelpers: freshTableHelpers,
+			kvStore: freshKvStore,
+			kvHelper: freshKvHelper,
+		};
+	}
+
+	/**
+	 * Re-fire all data-doc extension factories on a fresh Y.Doc.
+	 * Returns new lifecycle arrays — does NOT mutate the existing BuilderState.
+	 * If any factory throws, disposes already-created extensions and re-throws.
+	 */
+	async function createFreshExtensions(freshYdoc: Y.Doc) {
+		const freshCleanups: (() => MaybePromise<void>)[] = [];
+		const freshWhenReady: Promise<unknown>[] = [];
+		const freshExtensionEntries: Record<string, unknown> = {};
+
+		for (const { key, factory } of dataDocExtensionFactories) {
+			try {
+				const raw = factory({
+					ydoc: freshYdoc,
+					whenReady: Promise.resolve(),
+				});
+				if (!raw) continue;
+				const resolved = defineExtension(raw);
+				freshExtensionEntries[key] = resolved;
+				freshCleanups.push(resolved.dispose);
+				freshWhenReady.push(resolved.whenReady);
+			} catch (err) {
+				// Clean up any extensions that were already created
+				await disposeLifo(freshCleanups);
+				throw err;
+			}
+		}
+
+		// Wait for all new extensions to be ready
+		try {
+			await Promise.all(freshWhenReady);
+		} catch (err) {
+			await disposeLifo(freshCleanups);
+			throw err;
+		}
+
+		return {
+			cleanups: freshCleanups,
+			whenReadyPromises: freshWhenReady,
+			extensionEntries: freshExtensionEntries,
+		};
+	}
+	// ── Blue-green epoch swap ─────────────────────────────────────────────
+	// Prepare → commit → cleanup. The old doc serves reads/writes until the
+	// fresh doc and its extensions are fully ready, then we flip atomically.
+	// If preparation fails, the old doc is untouched.
+
+	/**
+	 * Perform a blue-green swap to a new epoch.
+	 *
+	 * PREPARE: Build fresh doc + stores + extensions (old doc still serving).
+	 * COMMIT:  Synchronous swap of all mutable references.
+	 * CLEANUP: Dispose old extensions, destroy old doc.
+	 *
+	 * If preparation fails (extension factory throws or whenReady rejects),
+	 * the fresh doc is destroyed and the old doc continues serving.
+	 */
+	async function doBlueGreenSwap(
+		newEpoch: number,
+		state: BuilderState,
+		extensions: Record<string, unknown>,
+		dataToWrite?: {
+			tables: Record<string, BaseRow[]>;
+			kv: Record<string, unknown>;
+		},
+	) {
+		// ── PREPARE ──────────────────────────────────────────────────
+		const fresh = prepareFreshDoc(newEpoch, dataToWrite);
+
+		let freshExtResult: Awaited<ReturnType<typeof createFreshExtensions>>;
+		try {
+			freshExtResult = await createFreshExtensions(fresh.ydoc);
+		} catch (err) {
+			// Extension init failed — abort. Old doc untouched.
+			fresh.ydoc.destroy();
+			console.error('[workspace] Epoch transition aborted — extension init failed:', err);
+			return;
+		}
+
+		// ── COMMIT (synchronous) ─────────────────────────────────────
+		const oldYdoc = ydoc;
+		const oldCleanups = [...state.extensionCleanups];
+
+		ydoc = fresh.ydoc;
+		currentDataEpoch = newEpoch;
+		for (const [name, helper] of Object.entries(fresh.tableHelpers)) {
+			tableHelpers[name] = helper;
+		}
+		kvStore = fresh.kvStore;
+		kvHelper = fresh.kvHelper;
+		encryptedStores.length = 0;
+		encryptedStores.push(...fresh.encryptedStores);
+
+		// Update extension entries on the shared extensions object
+		for (const [key, value] of Object.entries(freshExtResult.extensionEntries)) {
+			(extensions as Record<string, unknown>)[key] = value;
+		}
+		state.extensionCleanups.length = 0;
+		state.extensionCleanups.push(...freshExtResult.cleanups);
+		state.whenReadyPromises.length = 0;
+		state.whenReadyPromises.push(...freshExtResult.whenReadyPromises);
+
+		// ── CLEANUP ──────────────────────────────────────────────────
+		await disposeLifo(oldCleanups);
+		oldYdoc.destroy();
+
+		// Fire epoch change callbacks
+		for (const cb of epochChangeCallbacks) {
+			try {
+				cb(newEpoch);
+			} catch (err) {
+				console.error('[workspace] onEpochChange callback error:', err);
+			}
+		}
+	}
+
+	// ── Epoch change callback registry ──────────────────────────────────
+	const epochChangeCallbacks: ((epoch: number) => void)[] = [];
+
+	// ── Latest-wins epoch swap serialization ────────────────────────────
+	// When a remote client bumps the epoch, we queue a swap request.
+	// If multiple bumps arrive while a swap is in progress, we skip
+	// intermediate epochs and jump to the latest.
+	//
+	// The `swapState`/`swapExtensions` references are set by buildClient
+	// so the swap closes over the correct builder state.
+	let swapState: BuilderState | null = null;
+	let swapExtensions: Record<string, unknown> | null = null;
+	let pendingEpoch: number | null = null;
+	let isSwapping = false;
+
+	function requestSwap(newEpoch: number) {
+		pendingEpoch = newEpoch;
+		if (isSwapping) return;
+		drainSwapQueue();
+	}
+
+	async function drainSwapQueue() {
+		while (
+			pendingEpoch !== null &&
+			pendingEpoch > currentDataEpoch &&
+			swapState !== null &&
+			swapExtensions !== null
+		) {
+			isSwapping = true;
+			const target = pendingEpoch;
+			pendingEpoch = null;
+			try {
+				await doBlueGreenSwap(target, swapState, swapExtensions);
+			} catch (err) {
+				console.error('[workspace] Epoch swap failed:', err);
+			}
+			isSwapping = false;
+		}
+	}
+
+	const unsubEpochObserver = epochTracker.observeEpoch((newEpoch) => {
+		if (newEpoch <= currentDataEpoch) return;
+		requestSwap(newEpoch);
+	});
 	/**
 	 * Build a workspace client with the given extensions and lifecycle state.
 	 *
@@ -294,13 +608,23 @@ export function createWorkspace<
 		TAwarenessDefinitions,
 		TExtensions
 	> {
+		// Wire up latest-wins swap state for this builder.
+		// Each buildClient call overwrites the previous — the final builder wins.
+		swapState = state;
+		swapExtensions = extensions;
+
 		const dispose = async (): Promise<void> => {
+			// Stop observing epoch changes
+			unsubEpochObserver();
+			swapState = null;
+			swapExtensions = null;
 			// Close all documents first (before extensions they depend on)
 			for (const cleanup of documentCleanups) {
 				await cleanup();
 			}
 			const errors = await disposeLifo(state.extensionCleanups);
 			awareness.raw.destroy();
+			coordYdoc.destroy();
 			ydoc.destroy();
 
 			if (errors.length > 0) {
@@ -318,15 +642,28 @@ export function createWorkspace<
 
 		const client = {
 			id,
-			ydoc,
+			get ydoc() {
+				return ydoc;
+			},
 			definitions,
 			tables,
 			documents: typedDocuments,
-			kv,
+			get kv() {
+				return kvHelper;
+			},
 			awareness,
 			// Each extension entry is the exports object stored by reference.
 			extensions,
 			actions,
+			/**
+			 * Current epoch number.
+			 *
+			 * The epoch starts at 0 and increments each time `compact()` is called.
+			 * The data doc's GUID is `{workspaceId}-{epoch}`.
+			 */
+			get epoch() {
+				return epochTracker.getEpoch();
+			},
 			batch(fn: () => void): void {
 				ydoc.transact(fn);
 			},
@@ -340,6 +677,62 @@ export function createWorkspace<
 			 */
 			loadSnapshot(update: Uint8Array): void {
 				Y.applyUpdate(ydoc, update);
+			},
+			/**
+			 * Get the encoded size of the current data doc in bytes.
+			 *
+			 * Useful for deciding when to compact. This is the total
+			 * CRDT state including history, not just the active data.
+			 */
+			encodedSize(): number {
+				return Y.encodeStateAsUpdate(ydoc).byteLength;
+			},
+			/**
+			 * Compact the workspace by migrating all data to a fresh Y.Doc.
+			 *
+			 * This creates a new Y.Doc at epoch N+1 with zero CRDT history,
+			 * copies all current table rows and KV entries into it, bumps
+			 * the epoch in the coordination doc, and tears down the old data doc.
+			 *
+			 * Other connected clients will see the epoch change via CRDT
+			 * sync on the coordination doc and automatically transition.
+			 *
+			 * @example
+			 * ```typescript
+			 * const sizeBefore = Y.encodeStateAsUpdate(client.ydoc).byteLength;
+			 * await client.compact();
+			 * const sizeAfter = Y.encodeStateAsUpdate(client.ydoc).byteLength;
+			 * // sizeAfter < sizeBefore (no CRDT history overhead)
+			 * ```
+			 */
+			async compact(): Promise<void> {
+				// Snapshot current data
+				const tableSnapshots: Record<string, BaseRow[]> = {};
+				for (const [name, helper] of Object.entries(tableHelpers)) {
+					tableSnapshots[name] = helper.getAllValid();
+				}
+
+				const kvSnapshot: Record<string, unknown> = {};
+				for (const key of Object.keys(kvDefs)) {
+					const raw = kvStore.get(key);
+					if (raw !== undefined) {
+						kvSnapshot[key] = raw;
+					}
+				}
+
+				// Guard: bumpEpoch fires the epoch observer synchronously,
+				// which calls requestSwap. Setting isSwapping prevents the
+				// observer from starting a concurrent drainSwapQueue.
+				isSwapping = true;
+				const newEpoch = epochTracker.bumpEpoch();
+				try {
+					await doBlueGreenSwap(newEpoch, state, extensions, {
+						tables: tableSnapshots,
+						kv: kvSnapshot,
+					});
+				} finally {
+					isSwapping = false;
+				}
 			},
 			async clearLocalData(): Promise<void> {
 				encryptionRuntime?.lock();
@@ -355,6 +748,18 @@ export function createWorkspace<
 			whenReady,
 			dispose,
 			[Symbol.asyncDispose]: dispose,
+			/**
+			 * Register a callback for epoch transitions. Fires after a successful
+			 * swap with the new epoch number. Opt-in—not required for correctness.
+			 * Returns an unsubscribe function.
+			 */
+			onEpochChange(callback: (epoch: number) => void): () => void {
+				epochChangeCallbacks.push(callback);
+				return () => {
+					const idx = epochChangeCallbacks.indexOf(callback);
+					if (idx !== -1) epochChangeCallbacks.splice(idx, 1);
+				};
+			},
 		};
 
 		if (encryptionRuntime) {
@@ -362,7 +767,9 @@ export function createWorkspace<
 				encryption: encryptionRuntime.encryption,
 				async unlockWithKey(userKeyBase64: string) {
 					await whenReady;
-					await encryptionRuntime.encryption.unlock(base64ToBytes(userKeyBase64));
+					await encryptionRuntime.encryption.unlock(
+						base64ToBytes(userKeyBase64),
+					);
 				},
 			});
 		}
@@ -411,7 +818,8 @@ export function createWorkspace<
 				const raw = factory(ctx);
 
 				// Void return means "not installed" — skip registration
-				if (!raw) return buildClient({ extensions, state, encryptionRuntime, actions });
+				if (!raw)
+					return buildClient({ extensions, state, encryptionRuntime, actions });
 
 				const resolved = defineExtension(raw);
 
@@ -463,6 +871,8 @@ export function createWorkspace<
 					factory,
 					tags: [],
 				});
+				// Track for compact re-fire
+				dataDocExtensionFactories.push({ key, factory });
 				return applyWorkspaceExtension(key, factory);
 			},
 
@@ -593,7 +1003,7 @@ export function createWorkspace<
 					const store = config.userKeyStore;
 					state.whenReadyPromises.push(
 						Promise.all(state.whenReadyPromises).then(async () => {
-								const cachedKey = await store.get();
+							const cachedKey = await store.get();
 							if (!cachedKey) return;
 							try {
 								await unlock(base64ToBytes(cachedKey));
@@ -641,7 +1051,12 @@ export function createWorkspace<
 				) => Actions,
 			) {
 				const newActions = factory(client);
-				return buildClient({ extensions, state, encryptionRuntime, actions: { ...actions, ...newActions } });
+				return buildClient({
+					extensions,
+					state,
+					encryptionRuntime,
+					actions: { ...actions, ...newActions },
+				});
 			},
 		});
 

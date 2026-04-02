@@ -77,7 +77,6 @@
  *
  * @module
  */
-import { Ok, trySync } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 import {
 	decryptValue,
@@ -88,9 +87,24 @@ import {
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
-	type YKeyValueLwwChangeHandler,
 	type YKeyValueLwwEntry,
 } from './y-keyvalue-lww';
+
+const textEncoder = new TextEncoder();
+
+/**
+ * Change handler for the encrypted KV wrapper.
+ *
+ * The second parameter is `Y.Transaction | undefined` because encryption
+ * state transitions (`activateEncryption`, `deactivateEncryption`) fire
+ * change events without a backing Yjs transaction. Real CRDT changes
+ * always provide a `Y.Transaction`; encryption lifecycle events pass
+ * `undefined`.
+ */
+export type EncryptedKvChangeHandler<T> = (
+	changes: Map<string, YKeyValueLwwChange<T>>,
+	transaction: Y.Transaction | undefined,
+) => void;
 
 /**
  * Options for `createEncryptedYkvLww`.
@@ -115,8 +129,8 @@ export type YKeyValueLwwEncrypted<T> = {
 	has(key: string): boolean;
 	delete(key: string): void;
 	entries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
-	observe(handler: YKeyValueLwwChangeHandler<T>): void;
-	unobserve(handler: YKeyValueLwwChangeHandler<T>): void;
+	observe(handler: EncryptedKvChangeHandler<T>): void;
+	unobserve(handler: EncryptedKvChangeHandler<T>): void;
 
 	/**
 	 * Unlock the workspace with an encryption key. Rebuilds the decrypted map
@@ -198,7 +212,7 @@ export function createEncryptedYkvLww<T>(
 	const map = new Map<string, YKeyValueLwwEntry<T>>();
 
 	/** Registered change handlers. Receive decrypted change events. */
-	const changeHandlers = new Set<YKeyValueLwwChangeHandler<T>>();
+	const changeHandlers = new Set<EncryptedKvChangeHandler<T>>();
 
 	/**
 	 * The active encryption key. Seeded from `options.key` at creation,
@@ -207,78 +221,60 @@ export function createEncryptedYkvLww<T>(
 	let currentKey: Uint8Array | undefined = options?.key;
 
 	/**
-	 * Conditionally decrypt a value. Handles three cases:
-	 * 1. Value is not an `EncryptedBlob` → return as-is (plaintext or migration entry)
-	 * 2. No key available → throw (caller is responsible for error containment)
-	 * 3. Value is an `EncryptedBlob` + key available → decrypt and JSON.parse
-	 */
-	const maybeDecrypt = (value: EncryptedBlob | T): T => {
-		if (!isEncryptedBlob(value)) return value as T;
-		if (!currentKey) throw new Error('Missing encryption key');
-		return JSON.parse(decryptValue(value, currentKey)) as T;
-	};
-
-	/**
-	 * Compare two decrypted values for equality. Used by `activateEncryption()` to
-	 * determine whether an entry's decrypted value actually changed (to avoid
-	 * emitting no-op 'update' events). Falls back to JSON.stringify comparison
-	 * when Object.is fails (handles deep object equality).
+	 * Attempt to decrypt an entry with warning on failure.
 	 *
-	 * All values in `map` originated from `JSON.parse(decryptValue(...))`, so
-	 * they are guaranteed JSON-safe. JSON.stringify will not throw.
-	 */
-	const areValuesEqual = (left: T, right: T): boolean => {
-		if (Object.is(left, right)) return true;
-		return JSON.stringify(left) === JSON.stringify(right);
-	};
-
-	/**
-	 * Attempt to decrypt an entry. On success, returns the decrypted entry.
-	 * On failure, returns `undefined`.
+	 * Handles three cases:
+	 * 1. Value is not an EncryptedBlob → return as-is (plaintext)
+	 * 2. No key available → return undefined (can't decrypt)
+	 * 3. EncryptedBlob + key → decrypt with AAD, return entry or undefined on failure
 	 *
-	 * Used during initialization, observer processing, and `activateEncryption()` rebuild.
+	 * Used during map rebuild and observer processing where failures indicate
+	 * corruption or key mismatch and should be logged.
 	 */
 	const tryDecryptEntry = (
 		key: string,
 		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
 	): YKeyValueLwwEntry<T> | undefined => {
-		const { data: decryptedVal, error: decryptError } = trySync({
-			try: () => maybeDecrypt(entry.val),
-			catch: (e) => {
-				console.warn(`[encrypted-kv] Failed to decrypt entry "${key}":`, e);
-				return Ok(undefined);
-			},
-		});
-
-		if (decryptError || decryptedVal === undefined) {
+		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T };
+		if (!currentKey) return undefined;
+		try {
+			const val = JSON.parse(decryptValue(entry.val, currentKey, textEncoder.encode(key))) as T;
+			return { ...entry, val };
+		} catch (e) {
+			console.warn(`[encrypted-kv] Failed to decrypt entry "${key}":`, e);
 			return undefined;
 		}
-
-		return { ...entry, val: decryptedVal };
 	};
 
 	/**
-	 * Decrypt a raw value from inner, returning plaintext or undefined.
-	 * Used by `get()` as a fallback when wrapper.map doesn't have the entry
-	 * yet (transaction gap between set() and observer firing).
+	 * Silent decrypt — returns plaintext value or undefined.
+	 *
+	 * Used by get(), has(), and entries() for on-the-fly decryption during the
+	 * transaction gap (after set() but before the observer fires). Failures are
+	 * expected and silent — the observer will handle them with proper logging.
 	 */
-	const decryptRawValue = (raw: EncryptedBlob | T): T | undefined => {
+	const tryDecryptValue = (raw: EncryptedBlob | T, aad: Uint8Array): T | undefined => {
 		if (!isEncryptedBlob(raw)) return raw as T;
-		const key = currentKey;
-		if (!key) return undefined;
-		const { data } = trySync({
-			try: () => JSON.parse(decryptValue(raw, key)) as T,
-			catch: () => Ok(undefined),
-		});
-		return data;
+		if (!currentKey) return undefined;
+		try {
+			return JSON.parse(decryptValue(raw, currentKey, aad)) as T;
+		} catch {
+			return undefined;
+		}
+	};
+
+	/** Clear and rebuild the decrypted cache from inner.map. */
+	const rebuildMap = () => {
+		map.clear();
+		for (const [key, entry] of inner.map) {
+			const decryptedEntry = tryDecryptEntry(key, entry);
+			if (!decryptedEntry) continue;
+			map.set(key, decryptedEntry);
+		}
 	};
 
 	// Initialize wrapper.map from inner.map (decrypt any pre-existing entries)
-	for (const [key, entry] of inner.map) {
-		const decryptedEntry = tryDecryptEntry(key, entry);
-		if (!decryptedEntry) continue;
-		map.set(key, decryptedEntry);
-	}
+	rebuildMap();
 
 	/**
 	 * The heart of the wrapper. When `inner`'s observer fires (entry added,
@@ -304,7 +300,15 @@ export function createEncryptedYkvLww<T>(
 				const decrypted = tryDecryptEntry(key, entry);
 				if (!decrypted) continue;
 
-				const wasNew = !map.has(key);
+				const existing = map.get(key);
+				if (existing && JSON.stringify(existing.val) === JSON.stringify(decrypted.val)) {
+					// Decrypted value unchanged (e.g., re-encryption during activateEncryption).
+					// Update the cache entry but don't emit a change event.
+					map.set(key, decrypted);
+					continue;
+				}
+
+				const wasNew = !existing;
 				map.set(key, decrypted);
 				decryptedChanges.set(key, {
 					action: wasNew ? 'add' : 'update',
@@ -323,7 +327,7 @@ export function createEncryptedYkvLww<T>(
 				inner.set(key, val);
 				return;
 			}
-			inner.set(key, encryptValue(JSON.stringify(val), currentKey));
+			inner.set(key, encryptValue(JSON.stringify(val), currentKey, textEncoder.encode(key)));
 		},
 
 		/**
@@ -341,7 +345,7 @@ export function createEncryptedYkvLww<T>(
 			// processed yet. Decrypt on the fly.
 			const raw = inner.get(key);
 			if (raw === undefined) return undefined;
-			return decryptRawValue(raw);
+			return tryDecryptValue(raw, textEncoder.encode(key));
 		},
 
 		/**
@@ -353,7 +357,7 @@ export function createEncryptedYkvLww<T>(
 			// Check inner for pending values not yet in wrapper.map
 			const raw = inner.get(key);
 			if (raw === undefined) return false;
-			return decryptRawValue(raw) !== undefined;
+			return tryDecryptValue(raw, textEncoder.encode(key)) !== undefined;
 		},
 
 		delete(key) {
@@ -369,7 +373,7 @@ export function createEncryptedYkvLww<T>(
 				if (cached) {
 					yield [key, cached];
 				} else {
-					const val = decryptRawValue(entry.val);
+					const val = tryDecryptValue(entry.val, textEncoder.encode(key));
 					if (val !== undefined) yield [key, { ...entry, val }];
 				}
 			}
@@ -391,24 +395,17 @@ export function createEncryptedYkvLww<T>(
 		 */
 		activateEncryption(nextKey) {
 			currentKey = nextKey;
-
 			const oldMap = new Map(map);
+			rebuildMap();
 
-			map.clear();
-
-			for (const [key, entry] of inner.map) {
-				const decryptedEntry = tryDecryptEntry(key, entry);
-				if (!decryptedEntry) continue;
-				map.set(key, decryptedEntry);
-			}
-
+			// Encrypt any plaintext entries stored before encryption was activated
 			for (const [entryKey, entry] of inner.map) {
 				if (isEncryptedBlob(entry.val)) continue;
-				inner.set(entryKey, encryptValue(JSON.stringify(entry.val), nextKey));
+				inner.set(entryKey, encryptValue(JSON.stringify(entry.val), nextKey, textEncoder.encode(entryKey)));
 			}
 
-			// Compute synthetic change events by diffing old vs new map
-			const syntheticChanges = new Map<string, YKeyValueLwwChange<T>>();
+			// Diff old vs new and fire change events
+			const changes = new Map<string, YKeyValueLwwChange<T>>();
 			const allKeys = new Set<string>([...oldMap.keys(), ...map.keys()]);
 
 			for (const key of allKeys) {
@@ -416,31 +413,25 @@ export function createEncryptedYkvLww<T>(
 				const newEntry = map.get(key);
 
 				if (!oldEntry && newEntry) {
-					syntheticChanges.set(key, { action: 'add', newValue: newEntry.val });
+					changes.set(key, { action: 'add', newValue: newEntry.val });
 					continue;
 				}
 
 				if (oldEntry && !newEntry) {
-					syntheticChanges.set(key, { action: 'delete' });
+					changes.set(key, { action: 'delete' });
 					continue;
 				}
 
 				if (!oldEntry || !newEntry) continue;
-				if (areValuesEqual(oldEntry.val, newEntry.val)) continue;
+				if (Object.is(oldEntry.val, newEntry.val) || JSON.stringify(oldEntry.val) === JSON.stringify(newEntry.val)) continue;
 
-				syntheticChanges.set(key, {
-					action: 'update',
-					newValue: newEntry.val,
-				});
+				changes.set(key, { action: 'update', newValue: newEntry.val });
 			}
 
-			if (syntheticChanges.size === 0) return;
+			if (changes.size === 0) return;
 
-			// Synthetic events have no real Y.Transaction — activateEncryption is not a Yjs operation.
-			// Handlers that only read the changes map (all current consumers) are unaffected.
-			const syntheticTransaction = undefined as unknown as Y.Transaction;
 			for (const handler of changeHandlers)
-				handler(syntheticChanges, syntheticTransaction);
+				handler(changes, undefined);
 		},
 
 		deactivateEncryption() {

@@ -67,7 +67,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 
 			const handler = (
 				changes: Map<string, YKeyValueLwwChange<unknown>>,
-				transaction: Y.Transaction,
+				transaction: Y.Transaction | undefined,
 			) => {
 				const change = changes.get(key);
 				if (!change) return;
@@ -107,7 +107,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 		) {
 			const handler = (
 				changes: Map<string, YKeyValueLwwChange<unknown>>,
-				transaction: Y.Transaction,
+				transaction: Y.Transaction | undefined,
 			) => {
 				const parsed = new Map<string, KvChange<unknown>>();
 				for (const [key, change] of changes) {

@@ -25,17 +25,13 @@ import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
 import { defineWorkspace } from './define-workspace.js';
 import type { UserKeyStore } from './user-key-store.js';
-import type { EncryptionKey } from './types.js';
+import type { EncryptionKeys } from './types.js';
 
-/** Wrap a raw Uint8Array key into a single-entry EncryptionKey[] for tests. */
-function toEncryptionKeys(key: Uint8Array): EncryptionKey[] {
+/** Wrap a raw Uint8Array key into a single-entry EncryptionKeys for tests. */
+function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
 	return [{ version: 1, userKeyBase64: bytesToBase64(key) }];
 }
 
-/** Serialize a raw key to the JSON format the UserKeyStore now expects. */
-function toKeysJson(key: Uint8Array): string {
-	return JSON.stringify(toEncryptionKeys(key));
-}
 
 /** Creates a workspace client with two tables and one KV for testing. */
 function setup() {
@@ -1024,17 +1020,17 @@ describe('.withEncryption() lifecycle', () => {
 		return { client };
 	}
 
-	function setupWithUserKeyStore(cachedKeyBase64: string | null = null) {
+	function setupWithUserKeyStore(cachedKeys: EncryptionKeys | null = null) {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
-		let cachedValue = cachedKeyBase64;
+		let cachedValue: EncryptionKeys | null = cachedKeys;
 		let shouldFailNextSave = false;
 		const userKeyStore: UserKeyStore = {
-			set: mock(async (keyBase64: string) => {
+			set: mock(async (keys: EncryptionKeys) => {
 				if (shouldFailNextSave) {
 					shouldFailNextSave = false;
 					throw new Error('forced user key store set failure');
 				}
-				cachedValue = keyBase64;
+				cachedValue = keys;
 			}),
 			get: mock(async () => cachedValue),
 			delete: mock(async () => {
@@ -1115,8 +1111,8 @@ describe('.withEncryption() lifecycle', () => {
 			await client.encryption.unlock(toEncryptionKeys(userKey));
 
 			expect(userKeyStore.set).toHaveBeenCalledTimes(1);
-			expect(userKeyStore.set).toHaveBeenCalledWith(toKeysJson(userKey));
-			expect(readCachedValue()).toBe(toKeysJson(userKey));
+			expect(userKeyStore.set).toHaveBeenCalledWith(toEncryptionKeys(userKey));
+			expect(readCachedValue()).toEqual(toEncryptionKeys(userKey));
 		});
 
 		test('encryption.unlock retries the same key after userKeyStore.set fails', async () => {
@@ -1131,7 +1127,7 @@ describe('.withEncryption() lifecycle', () => {
 
 			expect(client.encryption.isUnlocked).toBe(true);
 			expect(userKeyStore.set).toHaveBeenCalledTimes(2);
-			expect(readCachedValue()).toBe(toKeysJson(userKey));
+			expect(readCachedValue()).toEqual(toEncryptionKeys(userKey));
 		});
 
 		test('encryption.unlock updates runtime state before userKeyStore.set settles', async () => {
@@ -1139,11 +1135,11 @@ describe('.withEncryption() lifecycle', () => {
 				type({ id: 'string', title: 'string', _v: '1' }),
 			);
 			const saveDeferred = createDeferred<void>();
-			let cachedValue: string | null = null;
+			let cachedValue: EncryptionKeys | null = null;
 			const userKeyStore: UserKeyStore = {
-				set: mock(async (keyBase64: string) => {
+				set: mock(async (keys: EncryptionKeys) => {
 					await saveDeferred.promise;
-					cachedValue = keyBase64;
+					cachedValue = keys;
 				}),
 				get: mock(async () => cachedValue),
 				delete: mock(async () => {
@@ -1164,7 +1160,8 @@ describe('.withEncryption() lifecycle', () => {
 			saveDeferred.resolve();
 			await unlockPromise;
 
-			expect(cachedValue ?? '').toBe(toKeysJson(userKey));
+			expect(cachedValue).not.toBeNull();
+			expect(cachedValue!).toEqual(toEncryptionKeys(userKey));
 		});
 
 		test('auto-boot stays locked when userKeyStore is empty', async () => {
@@ -1179,19 +1176,22 @@ describe('.withEncryption() lifecycle', () => {
 		test('auto-boot unlocks from cached key', async () => {
 			const userKey = generateEncryptionKey();
 			const { client, userKeyStore } = setupWithUserKeyStore(
-				toKeysJson(userKey),
+				toEncryptionKeys(userKey),
 			);
 			await client.whenReady;
 
 			expect(client.encryption.isUnlocked).toBe(true);
 			expect(userKeyStore.get).toHaveBeenCalledTimes(1);
 			expect(userKeyStore.set).toHaveBeenCalledTimes(1);
-			expect(userKeyStore.set).toHaveBeenCalledWith(toKeysJson(userKey));
+			expect(userKeyStore.set).toHaveBeenCalledWith(toEncryptionKeys(userKey));
 		});
 
-		test('auto-boot clears corrupt cache entries and stays locked', async () => {
+		test('auto-boot clears cache and stays locked when unlock fails', async () => {
+			// The store returns valid EncryptionKeys shape, but with bad base64
+			// that causes unlock() to throw during key derivation.
+			const corruptKeys: EncryptionKeys = [{ version: 1, userKeyBase64: '%%%not-base64%%%' }];
 			const { client, userKeyStore, readCachedValue } =
-				setupWithUserKeyStore('%%%not-base64%%%');
+				setupWithUserKeyStore(corruptKeys);
 			await client.whenReady;
 
 			expect(client.encryption.isUnlocked).toBe(false);
@@ -1205,14 +1205,14 @@ describe('.withEncryption() lifecycle', () => {
 			);
 			const firstSaveDeferred = createDeferred<void>();
 			let saveCalls = 0;
-			let cachedValue: string | null = null;
+			let cachedValue: EncryptionKeys | null = null;
 			const userKeyStore: UserKeyStore = {
-				set: mock(async (keyBase64: string) => {
+				set: mock(async (keys: EncryptionKeys) => {
 					saveCalls += 1;
 					if (saveCalls === 1) {
 						await firstSaveDeferred.promise;
 					}
-					cachedValue = keyBase64;
+					cachedValue = keys;
 				}),
 				get: mock(async () => cachedValue),
 				delete: mock(async () => {
@@ -1238,7 +1238,8 @@ describe('.withEncryption() lifecycle', () => {
 			// persist task skips the write because activeUserKey has already
 			// changed to secondKey by the time the queued task runs.
 			expect(userKeyStore.set).toHaveBeenCalledTimes(1);
-			expect(cachedValue ?? '').toBe(toKeysJson(secondKey));
+			expect(cachedValue).not.toBeNull();
+			expect(cachedValue!).toEqual(toEncryptionKeys(secondKey));
 		});
 
 		test('clearLocalData clears userKeyStore after an in-flight set finishes', async () => {
@@ -1247,12 +1248,12 @@ describe('.withEncryption() lifecycle', () => {
 			);
 			const saveDeferred = createDeferred<void>();
 			const events: string[] = [];
-			let cachedValue: string | null = null;
+			let cachedValue: EncryptionKeys | null = null;
 			const userKeyStore: UserKeyStore = {
-				set: mock(async (keyBase64: string) => {
+				set: mock(async (keys: EncryptionKeys) => {
 					events.push('set:start');
 					await saveDeferred.promise;
-					cachedValue = keyBase64;
+					cachedValue = keys;
 					events.push('set:end');
 				}),
 				get: mock(async () => cachedValue),

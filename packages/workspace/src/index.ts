@@ -167,9 +167,16 @@ export type {
 	WorkspaceClientBuilder,
 	WorkspaceEncryption,
 	EncryptionKey,
+	EncryptionKeys,
 	WorkspaceClientWithActions,
 	WorkspaceDefinition,
 } from './workspace/types';
+
+// Runtime schemas (arktype) — for validation at deserialization boundaries
+export {
+	EncryptionKey,
+	EncryptionKeys,
+} from './workspace/encryption-key';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DRIZZLE RE-EXPORTS

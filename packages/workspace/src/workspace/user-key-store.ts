@@ -1,9 +1,9 @@
 /**
  * Platform-agnostic interface for persisting encryption keys across sessions.
  *
- * Stores the encryption keys as a JSON string—`JSON.stringify(EncryptionKey[])`
- * where each entry is `{ version: number, userKeyBase64: string }`. The store
- * interface deals only in opaque strings; callers handle serialization.
+ * Stores typed `EncryptionKeys` directly—implementations handle serialization
+ * internally (JSON for IndexedDB/WXT, could be binary for Stronghold). Callers
+ * pass and receive validated `EncryptionKeys` values, never raw strings.
  *
  * Passing a `UserKeyStore` to `.withEncryption({ userKeyStore })` implies
  * auto-boot: the workspace loads the cached keys on startup and unlocks
@@ -12,7 +12,7 @@
  * | Platform         | Implementation                                            |
  * |------------------|-----------------------------------------------------------|
  * | Tauri desktop    | `tauri-plugin-stronghold` — encrypted vault, memory zeroization |
- * | Browser          | `sessionStorage` — survives refresh, clears on tab close  |
+ * | Browser          | IndexedDB — survives refresh, clears on explicit delete   |
  * | Chrome extension | WXT storage (`session:` area over `chrome.storage.session`) — survives popup/sidebar reopens |
  * | Self-hosted      | No cache — user enters password each session              |
  *
@@ -22,14 +22,14 @@
  * Server (auth session)
  *   │  encryptionKeys: [{ version, userKeyBase64 }, ...]
  *   ▼
- * UserKeyStore.set(JSON.stringify(encryptionKeys))
- *   │  stored locally as opaque string
+ * UserKeyStore.set(encryptionKeys)
+ *   │  stored locally (serialization is implementation detail)
  *   ▼
  * App startup (before auth roundtrip completes)
- *   │  UserKeyStore.get() → JSON string | null
+ *   │  UserKeyStore.get() → EncryptionKeys | null
  *   │  consumed by auto-boot in whenReady
  *   ▼
- * auto-boot → JSON.parse → unlock(keys) → deriveWorkspaceKey per version
+ * auto-boot → unlock(keys) → deriveWorkspaceKey per version
  *   │  base64 decoding + HKDF happens inside unlock()
  * ```
  *
@@ -38,23 +38,27 @@
  * immediately on launch using the cached keys, then refreshes them silently when
  * the session loads.
  */
+import type { EncryptionKeys } from './encryption-key.js';
+
 export type UserKeyStore = {
 	/**
-	 * Persist the latest encryption keys as a JSON string.
+	 * Persist the latest encryption keys.
 	 *
 	 * Called after the workspace receives or refreshes valid keys from the
-	 * auth session. Implementations store one value and overwrite any
-	 * older cached entry.
+	 * auth session. Implementations serialize internally (e.g. JSON.stringify
+	 * for IndexedDB) and overwrite any older cached entry.
 	 */
-	set(keysJson: string): Promise<void>;
+	set(keys: EncryptionKeys): Promise<void>;
 	/**
 	 * Retrieve the cached encryption keys during startup.
 	 *
 	 * Called automatically during `whenReady` when a `UserKeyStore` is provided
-	 * to `.withEncryption()`. Return `null` to skip auto-unlock and wait for
-	 * the server session to provide keys.
+	 * to `.withEncryption()`. Implementations deserialize and validate with the
+	 * ArkType `EncryptionKeys` schema, returning `null` on any failure (corrupt
+	 * data, schema mismatch, missing entry). Return `null` to skip auto-unlock
+	 * and wait for the server session to provide keys.
 	 */
-	get(): Promise<string | null>;
+	get(): Promise<EncryptionKeys | null>;
 	/**
 	 * Remove the cached key on sign-out or account switch.
 	 *

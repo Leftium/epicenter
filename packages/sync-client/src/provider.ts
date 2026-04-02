@@ -78,7 +78,7 @@ const CONNECT_TIMEOUT_MS = 15_000;
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
  *   .withExtension('sync', createSyncExtension({
- *     url: (id) => `http://localhost:3913/rooms/${id}`,
+ *     url: (id) => `ws://localhost:3913/rooms/${id}`,
  *   }))
  * ```
  *
@@ -118,8 +118,9 @@ export function createSyncProvider({
 	const status = createStatusEmitter<SyncStatus>({ phase: 'offline' });
 
 	/**
-	 * Monotonic counter bumped by disconnect(). The supervisor loop captures
-	 * this at entry and exits when its snapshot no longer matches.
+	 * Monotonic counter bumped by disconnect() and reconnect(). The supervisor
+	 * loop captures this at the top of each iteration and `continue`s when
+	 * the snapshot no longer matches—restarting with a fresh token.
 	 */
 	let runId = 0;
 
@@ -226,12 +227,17 @@ export function createSyncProvider({
 	 *
 	 * Single `while` loop — no inner retry loop, no token caching.
 	 * Calls `getToken()` fresh on each iteration.
+	 *
+	 * The loop exits only when `desired` is `'offline'` (disconnect).
+	 * reconnect() bumps `runId`, causing the current iteration to
+	 * `continue` — the loop restarts with a fresh token without exiting.
 	 */
-	async function runLoop(myRunId: number) {
+	async function runLoop() {
 		let attempt = 0;
 		let lastError: SyncError | undefined;
 
-		while (desired === 'online' && runId === myRunId) {
+		while (desired === 'online') {
+			const myRunId = runId;
 			status.set({ phase: 'connecting', attempt, lastError });
 
 			// --- Token acquisition (fresh each iteration) ---
@@ -241,19 +247,23 @@ export function createSyncProvider({
 					token = await getToken();
 					if (!token) throw new Error('No token available');
 				} catch (e) {
+					if (runId !== myRunId) { attempt = 0; lastError = undefined; continue; }
 					console.warn('[SyncProvider] Failed to get token', e);
 					lastError = { type: 'auth', error: e };
 					status.set({ phase: 'connecting', attempt, lastError });
 					await backoff.sleep();
+					if (runId !== myRunId) { attempt = 0; lastError = undefined; continue; }
 					attempt += 1;
 					continue;
 				}
 			}
 
+			if (runId !== myRunId) { attempt = 0; lastError = undefined; continue; }
+
 			// --- Single connection attempt ---
 			const result = await attemptConnection(token, myRunId);
 
-			if (result === 'cancelled') break;
+			if (runId !== myRunId) { attempt = 0; lastError = undefined; continue; }
 
 			if (result === 'connected') {
 				// Connection was live, then dropped — retry quickly
@@ -264,18 +274,16 @@ export function createSyncProvider({
 				lastError = { type: 'connection' };
 			}
 
-			// Backoff before retry (skip if cancelled externally)
-			if (desired === 'online' && runId === myRunId) {
+			// Backoff before retry
+			if (desired === 'online') {
 				attempt += 1;
 				status.set({ phase: 'connecting', attempt, lastError });
 				await backoff.sleep();
+				if (runId !== myRunId) { attempt = 0; lastError = undefined; continue; }
 			}
 		}
 
-		if (desired === 'offline') {
-			status.set({ phase: 'offline' });
-		}
-
+		status.set({ phase: 'offline' });
 		connectRun = null;
 	}
 
@@ -448,8 +456,7 @@ export function createSyncProvider({
 			desired = 'online';
 			if (connectRun) return;
 			manageWindowListeners('add');
-			const myRunId = runId;
-			connectRun = runLoop(myRunId);
+			connectRun = runLoop();
 		},
 
 		disconnect() {
@@ -457,13 +464,24 @@ export function createSyncProvider({
 			runId++;
 			backoff.wake();
 			manageWindowListeners('remove');
-
-			if (websocket) {
-				websocket.close();
-			}
-
+			websocket?.close();
 			// Synchronously set offline so callers see the status immediately
 			status.set({ phase: 'offline' });
+		},
+
+		/**
+		 * Force a fresh connection with new credentials.
+		 *
+		 * Unlike disconnect() + connect(), this is a single operation: the
+		 * supervisor loop restarts its current iteration (fresh `getToken()`
+		 * call, reset backoff) without exiting. No race condition.
+		 */
+		reconnect() {
+			if (desired !== 'online') return;
+			runId++;
+			backoff.reset();
+			backoff.wake();
+			websocket?.close();
 		},
 
 		onStatusChange: status.subscribe,

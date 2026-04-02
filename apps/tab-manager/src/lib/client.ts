@@ -15,7 +15,7 @@ import {
 	defineMutation,
 	iterateActions,
 } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
+import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
 import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import Type from 'typebox';
@@ -103,7 +103,7 @@ function buildWorkspaceClient() {
 		.withExtension(
 			'sync',
 			createSyncExtension({
-				url: (workspaceId) => `${serverUrl.current}/workspaces/${workspaceId}`,
+				url: (workspaceId) => toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
 				getToken: async () => authSession.current?.token ?? null,
 			}),
 		)

@@ -13,8 +13,8 @@ import type { SharedExtensionContext } from '../../workspace/types';
  * - **Authenticated**: `url` + `getToken` — dynamic token refresh
  *
  * The `url` callback receives the Y.Doc's GUID (workspace GUID for workspace scope,
- * content doc GUID for document scope). The sync provider derives the WebSocket URL
- * automatically (`https:` → `wss:`, `http:` → `ws:`).
+ * content doc GUID for document scope). The URL must use the WebSocket protocol
+ * (`ws:` or `wss:`).
  *
  * Chain last in the extension chain. Persistence loads local state first,
  * BroadcastChannel handles instant cross-tab sync, then WebSocket connects
@@ -28,7 +28,7 @@ import type { SharedExtensionContext } from '../../workspace/types';
  * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
  *
  * const sync = createSyncExtension({
- *   url: (docId) => `http://localhost:3913/rooms/${docId}`,
+ *   url: (docId) => `ws://localhost:3913/rooms/${docId}`,
  * });
  *
  * createWorkspace(definition)
@@ -41,7 +41,7 @@ import type { SharedExtensionContext } from '../../workspace/types';
  * @example Authenticated mode (cloud)
  * ```typescript
  * const sync = createSyncExtension({
- *   url: (docId) => `https://sync.epicenter.so/rooms/${docId}`,
+ *   url: (docId) => `wss://sync.epicenter.so/rooms/${docId}`,
  *   getToken: async (docId) => {
  *     const res = await fetch('/api/sync/token', {
  *       method: 'POST',
@@ -54,10 +54,13 @@ import type { SharedExtensionContext } from '../../workspace/types';
  */
 export type SyncExtensionConfig = {
 	/**
-	 * HTTP base URL for the room. Receives the Y.Doc's GUID.
+	 * WebSocket URL for the room. Receives the Y.Doc's GUID.
 	 *
 	 * At workspace scope, this is the workspace ID. At document scope,
 	 * this is the content Y.Doc's GUID (unique per document).
+	 *
+	 * Must use `ws:` or `wss:` protocol. Use {@link toWsUrl} to convert
+	 * an HTTP URL if your server config provides one.
 	 */
 	url: (docId: string) => string;
 
@@ -67,34 +70,43 @@ export type SyncExtensionConfig = {
 	 * HTTP snapshot (`Authorization: Bearer` header).
 	 */
 	getToken?: (docId: string) => Promise<string | null>;
-
-	/**
-	 * Subscribe to auth token changes. Called once per Y.Doc during extension
-	 * setup with a `reconnect` callback. Return an unsubscribe function.
-	 *
-	 * When the token changes, call `reconnect()` — the provider will
-	 * disconnect the current WebSocket and start a new connection with
-	 * a fresh token from `getToken`.
-	 *
-	 * @example Auth subscription
-	 * ```typescript
-	 * onTokenChange: auth.onTokenChange
-	 * ```
-	 */
-	onTokenChange?: (reconnect: () => void) => () => void;
 };
 
 /** Exports available on `client.extensions.sync` after registration. */
 export type SyncExtensionExports = {
-	/** Current connection status. Shorthand for `provider.status`. */
+	/** Current connection status. */
 	readonly status: SyncStatus;
-	/** Subscribe to status changes. Shorthand for `provider.onStatusChange`. Returns unsubscribe function. */
+	/** Subscribe to status changes. Returns unsubscribe function. */
 	onStatusChange: SyncProvider['onStatusChange'];
-	/** The sync provider instance for advanced use (awareness, etc.). */
-	readonly provider: SyncProvider;
-	/** Force disconnect + reconnect (e.g. after auth change). */
+	/**
+	 * Force a fresh connection with new credentials.
+	 *
+	 * The supervisor loop restarts its current iteration with a fresh
+	 * `getToken()` call—no disconnect/connect race condition.
+	 */
 	reconnect(): void;
 };
+
+/**
+ * Convert an HTTP(S) URL to its WebSocket equivalent.
+ *
+ * Use this when your server config provides HTTP URLs (e.g. `APP_URLS.API`)
+ * but you need a WebSocket URL for sync.
+ *
+ * @example
+ * ```typescript
+ * import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
+ *
+ * createSyncExtension({
+ *   url: (id) => toWsUrl(`${APP_URLS.API}/workspaces/${id}`),
+ * })
+ * // 'http://localhost:8787/workspaces/my-ws' → 'ws://localhost:8787/workspaces/my-ws'
+ * // 'https://api.epicenter.so/workspaces/my-ws' → 'wss://api.epicenter.so/workspaces/my-ws'
+ * ```
+ */
+export function toWsUrl(httpUrl: string): string {
+	return httpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+}
 
 /**
  * Creates a sync extension that connects after prior extensions are ready.
@@ -107,7 +119,7 @@ export type SyncExtensionExports = {
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
  *   .withExtension('sync', createSyncExtension({
- *     url: (docId) => `http://localhost:3913/rooms/${docId}`,
+ *     url: (docId) => `ws://localhost:3913/rooms/${docId}`,
  *   }))
  * ```
  *
@@ -121,31 +133,20 @@ export type SyncExtensionExports = {
  * - `whenReady` resolves when the connection is initiated. The UI renders from
  *   local state immediately; connection status is reactive via `provider`.
  */
-export function createSyncExtension(
-	config: SyncExtensionConfig,
-): (context: SharedExtensionContext) => SyncExtensionExports & {
+export function createSyncExtension(config: SyncExtensionConfig): (
+	context: SharedExtensionContext,
+) => SyncExtensionExports & {
 	whenReady: Promise<unknown>;
 	dispose: () => void;
 } {
 	return ({ ydoc, whenReady: priorReady }) => {
 		const docId = ydoc.guid;
+		const { getToken } = config;
 		const provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
-			url: () => {
-				const base = config.url(docId);
-				return base.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
-			},
-			getToken: config.getToken
-				? () => config.getToken!(docId)
-				: undefined,
+			url: () => config.url(docId),
+			getToken: getToken ? () => getToken(docId) : undefined,
 		});
-
-		const reconnect = () => {
-			provider.disconnect();
-			provider.connect();
-		};
-
-		const unsubTokenChange = config.onTokenChange?.(reconnect);
 
 		// Wait for all prior extensions (persistence, etc.) then connect.
 		// This ensures the Y.Doc has local state loaded before syncing,
@@ -159,18 +160,10 @@ export function createSyncExtension(
 			get status() {
 				return provider.status;
 			},
-			onStatusChange: provider.onStatusChange.bind(provider),
-			provider,
-			/**
-			 * Force an immediate disconnect + reconnect.
-			 *
-			 * Prefer `onTokenChange` for automatic reconnection on auth changes.
-			 * Use this for manual reconnection (e.g. user-initiated retry button).
-			 */
-			reconnect,
+			onStatusChange: provider.onStatusChange,
+			reconnect: provider.reconnect,
 			whenReady,
 			dispose() {
-				unsubTokenChange?.();
 				provider.dispose();
 			},
 		};

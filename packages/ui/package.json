@@ -43,6 +43,7 @@
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"svelte-sonner": "catalog:",
+		"wellcrafted": "catalog:",
 		"svelte-toolbelt": "^0.10.6",
 		"tailwindcss": "catalog:",
 		"tw-animate-css": "^1.3.5",

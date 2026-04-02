@@ -37,5 +37,8 @@
 		"y-indexeddb": "catalog:",
 		"yjs": "catalog:"
 	},
-	"license": "MIT"
+	"license": "MIT",
+	"dependencies": {
+		"mode-watcher": "^1.1.0"
+	}
 }

@@ -1,9 +1,11 @@
 <script lang="ts">
 	import '../app.css';
-	import { Toaster } from 'svelte-sonner';
+	import { Toaster } from '@epicenter/ui/sonner';
+	import { ModeWatcher } from 'mode-watcher';
 
 	let { children } = $props();
 </script>
 
-<Toaster richColors />
+<Toaster />
+<ModeWatcher />
 {@render children()}

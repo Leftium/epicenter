@@ -5,7 +5,7 @@
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
 	import * as Tooltip from '@epicenter/ui/tooltip';
-	import { toast } from 'svelte-sonner';
+	import { toast } from '@epicenter/ui/sonner';
 	import { skillsState } from '$lib/state/skills-state.svelte';
 	import { validateSkill } from '$lib/utils/validation';
 

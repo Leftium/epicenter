@@ -99,7 +99,7 @@ These fields only appear in `getSession()` responses, not in `signIn` or `signUp
 
 ```typescript
 import { createWorkspace } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
+import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
 import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { bytesToBase64 } from '@epicenter/workspace/shared/crypto';
@@ -112,7 +112,7 @@ const client = createWorkspace(definition)
   .withExtension('persistence', indexeddbPersistence)
   .withExtension('broadcast', broadcastChannelSync)
   .withExtension('sync', createSyncExtension({
-    url: (workspaceId) => `https://api.epicenter.so/workspaces/${workspaceId}`,
+    url: (workspaceId) => toWsUrl(`https://api.epicenter.so/workspaces/${workspaceId}`),
     getToken: async () => authState.token,
   }));
 ```
@@ -124,7 +124,7 @@ Extension ordering matters. Each extension waits for the previous one via `whenR
 3. `broadcast`—BroadcastChannel for instant cross-tab sync. Runs after persistence so it starts with the correct local state.
 4. `sync`—WebSocket connection to the hub. Connects last, after local state is ready.
 
-The sync extension's `url` callback receives the workspace ID and returns an HTTP URL. The extension converts `https:` to `wss:` automatically when upgrading to WebSocket. `getToken` is called on every connect and reconnect—the same token is used for both the WebSocket handshake (`?token=` query param) and HTTP snapshot requests (`Authorization: Bearer` header).
+The sync extension's `url` callback receives the workspace ID and returns a WebSocket URL (`ws:` or `wss:`). Use the `toWsUrl` helper to convert an HTTP base URL if needed. `getToken` is called on every connect and reconnect—the same token is used for both the WebSocket handshake (`?token=` query param) and HTTP snapshot requests (`Authorization: Bearer` header).
 
 ## Step 4: Activate Encryption After Login
 
@@ -211,7 +211,7 @@ CORS allows `https://epicenter.so`, `https://*.epicenter.so`, `tauri://localhost
 
 The server derives per-user encryption keys via HKDF-SHA256 from a deployment secret (`ENCRYPTION_SECRETS` env var). The key is deterministic—same secret plus same userId always produces the same key. This means password recovery works without storing the key anywhere.
 
-Data is encrypted at the CRDT level using AES-256-GCM. Individual values within the Y.Doc are encrypted; the CRDT structure (key names, timestamps for conflict resolution) remains visible to the server. This lets the server power search, AI processing, and password recovery while keeping the raw data opaque to anyone without the key.
+Data is encrypted at the CRDT level using XChaCha20-Poly1305. Individual values within the Y.Doc are encrypted; the CRDT structure (key names, timestamps for conflict resolution) remains visible to the server. This lets the server power search, AI processing, and password recovery while keeping the raw data opaque to anyone without the key.
 
 A database dump or compromised storage bucket yields ciphertext. The encryption key lives in the application secret, not in the data store.
 

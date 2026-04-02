@@ -5,21 +5,12 @@
  * reconnect semantics, URL resolution, and readiness ordering.
  *
  * Key behaviors:
- * - Reconnect disconnects and reconnects the same provider instance
+ * - Reconnect does not break the extension's public API
  * - URL configuration and whenReady lifecycle resolve in the expected order
  */
 import { describe, expect, test } from 'bun:test';
-import type { SyncProvider } from '@epicenter/sync-client';
 import * as Y from 'yjs';
 import { createSyncExtension } from './websocket';
-
-/** The shape returned by the extension factory (flat). */
-type SyncExtensionResult = {
-	provider: SyncProvider;
-	reconnect: () => void;
-	whenReady: Promise<unknown>;
-	dispose: () => void;
-};
 
 type SyncExtensionFactoryClient = Parameters<
 	ReturnType<typeof createSyncExtension>
@@ -35,63 +26,38 @@ function createMockContext(ydoc: Y.Doc): SyncExtensionFactoryClient {
 
 describe('createSyncExtension', () => {
 	describe('reconnect', () => {
-		test('reconnect reuses the same provider instance', () => {
+		test('reconnect does not break the extension', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc' });
 
 			const factory = createSyncExtension({
-				url: (id: string) => `http://localhost:8080/rooms/${id}`,
+				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
-			const result = factory(
-				createMockContext(ydoc),
-			) as unknown as SyncExtensionResult;
+			const result = factory(createMockContext(ydoc));
 
-			const provider = result.provider;
-			expect(provider).toBeDefined();
+			// Status accessible before reconnect
+			expect(result.status.phase).toBe('offline');
 
 			result.reconnect();
 
-			// Same provider instance — reconnect delegates to disconnect/connect
-			expect(result.provider).toBe(provider);
+			// Status still accessible after reconnect
+			expect(result.status).toBeDefined();
 
 			result.dispose();
 		});
 
-		test('reconnect sets provider to offline then allows reconnection', () => {
-			const ydoc = new Y.Doc({ guid: 'test-doc-status' });
-
-			const factory = createSyncExtension({
-				url: (id: string) => `http://localhost:8080/rooms/${id}`,
-			});
-
-			const result = factory(
-				createMockContext(ydoc),
-			) as unknown as SyncExtensionResult;
-
-			result.reconnect();
-
-			// After disconnect(), status is synchronously offline
-			// connect() then kicks off the supervisor loop
-			expect(result.provider).toBeDefined();
-
-			result.dispose();
-		});
-
-		test('dispose sets provider to offline', () => {
+		test('dispose sets status to offline', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-dispose' });
 
 			const factory = createSyncExtension({
-				url: (id: string) => `http://localhost:8080/rooms/${id}`,
+				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
-			const result = factory(
-				createMockContext(ydoc),
-			) as unknown as SyncExtensionResult;
+			const result = factory(createMockContext(ydoc));
 
-			const provider = result.provider;
 			result.dispose();
 
-			expect(provider.status.phase).toBe('offline');
+			expect(result.status.phase).toBe('offline');
 		});
 	});
 
@@ -99,15 +65,12 @@ describe('createSyncExtension', () => {
 		const ydoc = new Y.Doc({ guid: 'my-workspace' });
 
 		const factory = createSyncExtension({
-			url: (id) => `http://localhost:3913/custom/${id}/ws`,
+			url: (id) => `ws://localhost:3913/custom/${id}/ws`,
 		});
 
-		const result = factory(
-			createMockContext(ydoc),
-		) as unknown as SyncExtensionResult;
+		const result = factory(createMockContext(ydoc));
 
-		expect(result.provider).toBeDefined();
-		expect(result.provider.status.phase).toBe('offline');
+		expect(result.status.phase).toBe('offline');
 
 		result.dispose();
 	});
@@ -122,7 +85,7 @@ describe('createSyncExtension', () => {
 		});
 
 		const factory = createSyncExtension({
-			url: (id: string) => `http://localhost:8080/rooms/${id}`,
+			url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 		});
 
 		const result = factory({
@@ -130,7 +93,7 @@ describe('createSyncExtension', () => {
 			whenReady: clientWhenReady.then(() => {
 				order.push('client-ready');
 			}),
-		} as SyncExtensionFactoryClient) as unknown as SyncExtensionResult;
+		} as SyncExtensionFactoryClient);
 
 		// whenReady should not have resolved yet
 		let resolved = false;

@@ -226,19 +226,18 @@ export function createEncryptedYkvLww<T>(
 	let currentKey: Uint8Array | undefined = options?.key;
 
 	/**
-	 * Attempt to decrypt an entry with a specific key.
+	 * Attempt to decrypt an encrypted blob with a specific key.
 	 *
-	 * Returns the decrypted entry or undefined on failure.
-	 * Used by activateEncryption for key fallback and by the default tryDecryptEntry.
+	 * Callers must filter out plaintext entries before calling this.
+	 * Used by activateEncryption for key fallback and by tryDecryptEntry.
 	 */
 	const tryDecryptEntryWithKey = (
 		key: string,
 		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
 		decryptionKey: Uint8Array,
 	): YKeyValueLwwEntry<T> | undefined => {
-		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T };
 		try {
-			const val = JSON.parse(decryptValue(entry.val, decryptionKey, textEncoder.encode(key))) as T;
+			const val = JSON.parse(decryptValue(entry.val as EncryptedBlob, decryptionKey, textEncoder.encode(key))) as T;
 			return { ...entry, val };
 		} catch {
 			return undefined;
@@ -448,6 +447,20 @@ export function createEncryptedYkvLww<T>(
 		 * it as a fallback when decrypting entries encrypted with the old key.
 		 * Only re-encrypts entries that needed the fallback key or were plaintext,
 		 * avoiding unnecessary CRDT mutations for entries already on the current key.
+		 *
+		 * ## Key rotation limitation
+		 *
+		 * Each blob stores a `keyVersion` byte (readable via `getKeyVersion()`),
+		 * but this method does NOT use it — it brute-forces by trying the current
+		 * key then the previous key. This two-key fallback covers a single key
+		 * rotation (v1 → v2) as long as the client was previously unlocked with
+		 * the old key.
+		 *
+		 * For full multi-key rotation (fresh client after N rotations), this
+		 * method would need to accept a keyring (`Map<number, Uint8Array>`) and
+		 * use `getKeyVersion(blob)` to select the correct decryption key per
+		 * entry. The API already has a keyring (`ENCRYPTION_SECRETS`); the
+		 * missing piece is transporting multiple derived keys to the client.
 		 *
 		 * @param nextKey - A 32-byte encryption key
 		 */

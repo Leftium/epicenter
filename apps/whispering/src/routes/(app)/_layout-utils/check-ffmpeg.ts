@@ -1,4 +1,4 @@
-import { toast } from 'svelte-sonner';
+import { toast } from '@epicenter/ui/sonner';
 import { goto } from '$app/navigation';
 import { desktopRpc } from '$lib/query';
 import { deviceConfig } from '$lib/state/device-config.svelte';

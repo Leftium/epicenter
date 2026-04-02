@@ -58,6 +58,15 @@
  * timing), falls back to positional ordering (rightmost wins). This is deterministic
  * because Yjs's CRDT merge produces consistent ordering based on clientID.
  *
+ * ## Storage Complexity
+ *
+ * With `gc:true` (the default), storage is `O(active data) + O(unique devices)`.
+ * Deleted entries, overwritten values, and edit history are garbage collected into
+ * compact GC structs. A store with 20 active keys stays at roughly the same size
+ * whether it was created yesterday or has processed 52,000 operations. The only
+ * additional overhead is ~22 bytes per unique Yjs clientID that has ever written
+ * to the doc. With `gc:false`, this property breaks—storage grows with operation
+ * count. See `docs/articles/yjs-storage-efficiency/storage-scales-with-data-not-history.md`.
  * ## Limitations
  *
  * - Future clock dominance: If a device's clock is far in the future, its writes dominate

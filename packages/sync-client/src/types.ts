@@ -116,6 +116,19 @@ export type SyncProvider = {
 	disconnect(): void;
 
 	/**
+	 * Force a fresh connection with new credentials.
+	 *
+	 * Bumps the internal run ID so the supervisor loop restarts its current
+	 * iteration with a fresh `getToken()` call and reset backoff—without
+	 * exiting the loop. No-op if not currently online.
+	 *
+	 * Use this when auth state changes (sign-in, sign-out, token refresh).
+	 * Unlike `disconnect()` + `connect()`, this is a single atomic operation
+	 * with no race condition.
+	 */
+	reconnect(): void;
+
+	/**
 	 * Subscribe to status changes. Returns unsubscribe function.
 	 *
 	 * @example

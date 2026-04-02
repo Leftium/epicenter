@@ -33,7 +33,7 @@ const BC_ORIGIN = Symbol('bc-sync');
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
  *   .withWorkspaceExtension('sync', createSyncExtension({
- *     url: (id) => `http://localhost:3913/rooms/${id}`,
+ *     url: (id) => `ws://localhost:3913/rooms/${id}`,
  *   }))
  * ```
  *

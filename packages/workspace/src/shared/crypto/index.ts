@@ -250,21 +250,6 @@ export function getKeyVersion(blob: EncryptedBlob): number {
 	return blob[1]!;
 }
 /**
- * Read the format version from an EncryptedBlob without decrypting.
- *
- * The format version is stored at byte 0 of the blob. Currently only
- * version 1 exists (XChaCha20-Poly1305 with the layout documented on
- * the `EncryptedBlob` type). Future versions may use different algorithms
- * or binary layouts.
- *
- * @param blob - An EncryptedBlob to read the format version from
- * @returns The format version number (currently always 1)
- */
-export function getFormatVersion(blob: EncryptedBlob): number {
-	return blob[0]!;
-}
-
-/**
  * Type guard to check if a value is a valid EncryptedBlob.
  *
  * Checks that the value is a `Uint8Array` with at least the minimum blob size

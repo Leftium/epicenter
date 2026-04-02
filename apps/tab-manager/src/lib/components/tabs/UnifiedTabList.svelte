@@ -20,7 +20,7 @@
 	import { getDomain, getRelativeTime } from '$lib/utils/format';
 	import TabFavicon from './TabFavicon.svelte';
 	import TabItem from './TabItem.svelte';
-	import { showErrorToast } from '$lib/utils/show-error-toast';
+	import { toastOnError } from '@epicenter/ui/sonner';
 </script>
 
 {#if unifiedViewState.flatItems.length === 0}
@@ -96,7 +96,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Restore All"
-						onclick={() => savedTabState.restoreAll().then(showErrorToast)}
+						onclick={() => savedTabState.restoreAll().then(toastOnError)}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -105,7 +105,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete All"
-						onclick={() => savedTabState.removeAll().then(showErrorToast)}
+						onclick={() => savedTabState.removeAll().then(toastOnError)}
 							>
 								<Trash2Icon />
 							</Button>
@@ -172,7 +172,7 @@
 								size="icon-xs"
 								tooltip="Restore"
 							onclick={() =>
-								savedTabState.restore(tab).then(showErrorToast)}
+								savedTabState.restore(tab).then(toastOnError)}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -182,7 +182,7 @@
 								class="text-destructive"
 								tooltip="Delete"
 							onclick={() =>
-								savedTabState.remove(tab.id).then(showErrorToast)}
+								savedTabState.remove(tab.id).then(toastOnError)}
 							>
 								<Trash2Icon />
 							</Button>
@@ -217,7 +217,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Open"
-							onclick={() => bookmarkState.open(bookmark).then(showErrorToast)}
+							onclick={() => bookmarkState.open(bookmark).then(toastOnError)}
 							>
 								<ExternalLinkIcon />
 							</Button>
@@ -226,7 +226,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-							onclick={() => bookmarkState.remove(bookmark.id).then(showErrorToast)}
+							onclick={() => bookmarkState.remove(bookmark.id).then(toastOnError)}
 							>
 								<Trash2Icon />
 							</Button>

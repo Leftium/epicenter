@@ -10,7 +10,7 @@ Self-hosting eliminates that threat without the tax.
 
 When you deploy a server on your own hardware, the encryption key sits on a machine in your closet. The server decrypts data to serve requests—search, AI, password recovery all work normally. But nobody else has access to the machine. The properties are identical to zero-knowledge: no third party can read your data. The mechanism is different: instead of mathematical guarantees, you have physical control.
 
-This isn't a separate implementation or a compatible mode. It's the same `createEncryptedKvLww` function using AES-256-GCM from `@noble/ciphers` for every operation. The only variable is the `key` source. In the cloud, the key is derived from `BETTER_AUTH_SECRET` on the server and sent to the client on authentication. When self-hosting, you enter a password that runs through PBKDF2 (SHA-256) with 600,000 iterations to derive the key locally. It never touches the network. The server receives the same encrypted blobs—`{ v: 1, ct }`—but the trust boundary has moved from our infrastructure to your own password.
+This isn't a separate implementation or a compatible mode. It's the same `createEncryptedKvLww` function using XChaCha20-Poly1305 from `@noble/ciphers` for every operation. The only variable is the `key` source. In the cloud, the key is derived from `ENCRYPTION_SECRETS` on the server and sent to the client on authentication. When self-hosting, you enter a password that runs through PBKDF2 (SHA-256) with 600,000 iterations to derive the key locally. It never touches the network. The server receives the same encrypted blobs—bare `Uint8Array` with a binary header—but the trust boundary has moved from our infrastructure to your own password.
 
 ```
 Zero-knowledge (hosted):

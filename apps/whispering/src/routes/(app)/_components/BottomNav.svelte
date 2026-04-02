@@ -6,9 +6,7 @@
 </script>
 
 <nav
-	class={cn(
-		'bg-sidebar border-sidebar-border fixed inset-x-0 bottom-0 z-50 flex h-14 items-center justify-around border-t',
-	)}
+	class="bg-sidebar border-sidebar-border fixed inset-x-0 bottom-0 z-50 flex h-14 items-center justify-around border-t"
 >
 	{#each NAV_ITEMS as item}
 		{@const active = item.isActive(page.url.pathname)}
@@ -16,8 +14,8 @@
 		<Button
 			href={item.href}
 			variant="ghost"
-			class={cn('h-auto flex-1 flex-col gap-0.5 rounded-none py-1.5 text-xs', {
-				'bg-accent text-accent-foreground': active,
+			class={cn('h-auto flex-1 flex-col gap-0.5 py-1.5 text-xs', {
+				'text-foreground font-medium': active,
 				'text-muted-foreground hover:text-foreground': !active,
 			})}
 		>

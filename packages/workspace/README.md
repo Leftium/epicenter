@@ -106,6 +106,10 @@ Workspaces always initialize in the browser, never on the server. This is by des
 
 If you're using SvelteKit, disable SSR for workspace pages (`export const ssr = false` in `+layout.ts`) or initialize the workspace in a `.svelte.ts` module that only runs client-side. This matches the local-first model: the device owns the data, the server just helps it travel.
 
+**Storage Scales With Data, Not History**
+
+With Yjs garbage collection enabled (the default), storage is proportional to your active data—not your operation count. Deleted rows, overwritten values, and edit history are garbage collected into compact metadata. A workspace with 20 active rows stays at roughly the same size whether it was created yesterday or has been edited daily for ten years. The only additional overhead comes from unique device count (~22 bytes per device that has ever synced). See [CRDT Storage Scales With Data, Not History](../../docs/articles/yjs-storage-efficiency/storage-scales-with-data-not-history.md) for the full proof with 16 test scenarios.
+
 ## Architecture Overview
 
 ### The Y.Doc: Heart of Every Workspace

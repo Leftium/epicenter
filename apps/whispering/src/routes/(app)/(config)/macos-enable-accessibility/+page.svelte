@@ -7,7 +7,7 @@
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import { toast } from '@epicenter/ui/sonner';
 	import { goto } from '$app/navigation';
-	import { desktopServices } from '$lib/services';
+	import { desktopServices } from '$lib/services/desktop';
 	import { asShellCommand } from '$lib/services/desktop/command';
 	import type { PageData } from './$types';
 

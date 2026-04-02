@@ -17,7 +17,7 @@
 	import XCircleIcon from '@lucide/svelte/icons/x-circle';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
-	import { desktopRpc } from '$lib/query';
+	import { desktopRpc } from '$lib/query/desktop';
 	import { services } from '$lib/services';
 
 	const platform = services.os.type();

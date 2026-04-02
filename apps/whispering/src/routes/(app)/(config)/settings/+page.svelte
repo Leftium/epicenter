@@ -5,7 +5,8 @@
 	import { Switch } from '@epicenter/ui/switch';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/ui';
-	import { desktopRpc, rpc } from '$lib/query';
+	import { rpc } from '$lib/query';
+import { desktopRpc } from '$lib/query/desktop';
 	import { settings } from '$lib/state/settings.svelte';
 
 	const retentionItems = [

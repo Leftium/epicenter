@@ -1,7 +1,8 @@
 import { partitionResults } from 'wellcrafted/result';
 import { commands } from '$lib/commands';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
-import { desktopRpc, rpc } from '$lib/query';
+import { rpc } from '$lib/query';
+import { desktopRpc } from '$lib/query/desktop';
 import type { Accelerator } from '$lib/services/desktop/global-shortcut-manager';
 import {
 	type CommandId,

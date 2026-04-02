@@ -167,32 +167,33 @@ export function createWorkspace<
 	const kvDefs = (kvDef ?? {}) as TKvDefinitions;
 	const awarenessDefs = (awarenessDef ?? {}) as TAwarenessDefinitions;
 
-	// ── Encrypted stores ─────────────────────────────────────────────────
-	// The workspace owns all encrypted KV stores so it can coordinate
-	// activateEncryption across tables and KV simultaneously.
-	const encryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
+	// ── Tables ───────────────────────────────────────────────────────────
+	const keyring = options?.key ? new Map([[1, options.key]]) : undefined;
 
-	// Create table stores + helpers (one encrypted KV per table)
-	const tableHelpers: Record<
-		string,
-		TableHelper<BaseRow>
-	> = {};
-	for (const [name, definition] of Object.entries(tableDefs)) {
+	const tableEntries = Object.entries(tableDefs).map(([name, definition]) => {
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
-		const ykv = createEncryptedYkvLww(yarray, { keyring: options?.key ? new Map([[1, options.key]]) : undefined });
-		encryptedStores.push(ykv);
-		const helper = createTable(ykv, definition);
-		tableHelpers[name] = helper;
-	}
-	const tables =
-		tableHelpers as TablesHelper<TTableDefinitions>;
+		const store = createEncryptedYkvLww(yarray, { keyring });
+		const helper = createTable(store, definition);
+		return { name, store, helper };
+	});
 
+	const tables = Object.fromEntries(
+		tableEntries.map(({ name, helper }) => [name, helper]),
+	) as TablesHelper<TTableDefinitions>;
 
-	// Create KV store + helper (single shared encrypted KV)
+	// ── KV ──────────────────────────────────────────────────────────────
 	const kvYarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const kvStore = createEncryptedYkvLww(kvYarray, { keyring: options?.key ? new Map([[1, options.key]]) : undefined });
-	encryptedStores.push(kvStore);
+	const kvStore = createEncryptedYkvLww(kvYarray, { keyring });
 	const kvHelper = createKv(kvStore, kvDefs);
+
+	// ── Encrypted stores (all table stores + KV store) ─────────────────────
+	// The workspace owns this list so it can coordinate activateEncryption
+	// and deactivateEncryption across all stores simultaneously.
+	const encryptedStores: readonly YKeyValueLwwEncrypted<unknown>[] = [
+		...tableEntries.map(({ store }) => store),
+		kvStore,
+	];
+
 	const awareness = createAwareness(ydoc, awarenessDefs);
 	const definitions = {
 		tables: tableDefs,
@@ -542,11 +543,26 @@ export function createWorkspace<
 				};
 
 				const lock = () => {
-					activeUserKey = undefined;
-					isActiveUserKeyCached = config?.userKeyStore === undefined;
-					workspaceKey = undefined;
-					for (const store of encryptedStores) {
-						store.deactivateEncryption();
+					const previousKey = workspaceKey;
+					const deactivated: YKeyValueLwwEncrypted<unknown>[] = [];
+					try {
+						for (const store of encryptedStores) {
+							store.deactivateEncryption();
+							deactivated.push(store);
+						}
+						activeUserKey = undefined;
+						isActiveUserKeyCached = config?.userKeyStore === undefined;
+						workspaceKey = undefined;
+					} catch (error) {
+						// Rollback: revert stores deactivated before the failure
+						if (previousKey) {
+							for (const store of deactivated) {
+								try {
+							store.activateEncryption(previousKey);
+								} catch { /* best-effort rollback */ }
+							}
+						}
+						console.error('[workspace] Workspace lock failed:', error);
 					}
 				};
 
@@ -582,10 +598,10 @@ export function createWorkspace<
 						const previousWorkspaceKey = workspaceKey;
 						const activated: YKeyValueLwwEncrypted<unknown>[] = [];
 						try {
-							for (const store of encryptedStores) {
-							store.activateEncryption(new Map([[1, nextWorkspaceKey]]));
-								activated.push(store);
-							}
+						for (const store of encryptedStores) {
+							store.activateEncryption(nextWorkspaceKey);
+							activated.push(store);
+						}
 							workspaceKey = nextWorkspaceKey;
 							activeUserKey = userKey;
 							isActiveUserKeyCached = config?.userKeyStore === undefined;
@@ -593,11 +609,11 @@ export function createWorkspace<
 							// Rollback: revert stores activated before the failure
 							for (const store of activated) {
 								try {
-									if (previousWorkspaceKey) {
-									store.activateEncryption(new Map([[1, previousWorkspaceKey]]));
-									} else {
-										store.deactivateEncryption();
-									}
+								if (previousWorkspaceKey) {
+									store.activateEncryption(previousWorkspaceKey);
+								} else {
+									store.deactivateEncryption();
+								}
 								} catch { /* best-effort rollback */ }
 							}
 							console.error('[workspace] Workspace unlock failed:', error);

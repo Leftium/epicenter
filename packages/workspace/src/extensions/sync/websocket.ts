@@ -71,12 +71,10 @@ export type SyncExtensionConfig = {
 
 /** Exports available on `client.extensions.sync` after registration. */
 export type SyncExtensionExports = {
-	/** Current connection status. Shorthand for `provider.status`. */
+	/** Current connection status. */
 	readonly status: SyncStatus;
-	/** Subscribe to status changes. Shorthand for `provider.onStatusChange`. Returns unsubscribe function. */
+	/** Subscribe to status changes. Returns unsubscribe function. */
 	onStatusChange: SyncProvider['onStatusChange'];
-	/** The sync provider instance for advanced use (awareness, etc.). */
-	readonly provider: SyncProvider;
 	/**
 	 * Force a fresh connection with new credentials.
 	 *
@@ -143,7 +141,6 @@ export function createSyncExtension(
 				return provider.status;
 			},
 			onStatusChange: provider.onStatusChange,
-			provider,
 			reconnect: provider.reconnect,
 			whenReady,
 			dispose() {

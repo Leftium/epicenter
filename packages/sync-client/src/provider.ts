@@ -277,6 +277,16 @@ export function createSyncProvider({
 		}
 
 		connectRun = null;
+
+		// Handle disconnect() → connect() race: connect() was called while
+		// this loop was still winding down, saw connectRun as non-null,
+		// and returned early. Honour the connect() intent by restarting.
+		if (desired === 'online') {
+			manageWindowListeners('add');
+			backoff.reset();
+			const newId = runId;
+			connectRun = runLoop(newId);
+		}
 	}
 
 	/**

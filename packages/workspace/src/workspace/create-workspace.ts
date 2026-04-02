@@ -132,7 +132,7 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
  * can handle it (log, return early, etc.).
  */
 function transactStores(
-	stores: YKeyValueLwwEncrypted<unknown>[],
+	stores: readonly YKeyValueLwwEncrypted<unknown>[],
 	apply: (store: YKeyValueLwwEncrypted<unknown>) => void,
 	rollback: (store: YKeyValueLwwEncrypted<unknown>) => void,
 ): void {

@@ -141,10 +141,11 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 } {
 	return ({ ydoc, whenReady: priorReady }) => {
 		const docId = ydoc.guid;
+		const { getToken } = config;
 		const provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
 			url: () => config.url(docId),
-			getToken: config.getToken ? () => config.getToken!(docId) : undefined,
+			getToken: getToken ? () => getToken(docId) : undefined,
 		});
 
 		// Wait for all prior extensions (persistence, etc.) then connect.

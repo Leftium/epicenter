@@ -1,7 +1,6 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { useSidebar } from '@epicenter/ui/sidebar';
-	import { MediaQuery } from 'svelte/reactivity';
 	import Database from '@lucide/svelte/icons/database';
 	import Minimize2Icon from '@lucide/svelte/icons/minimize-2';
 	import MoonIcon from '@lucide/svelte/icons/moon';
@@ -21,14 +20,6 @@
 	);
 
 	const sidebar = useSidebar();
-
-	// Auto-collapse sidebar on narrow viewports so it shows as an icon rail
-	const isNarrow = new MediaQuery('(max-width: 767px)');
-	$effect(() => {
-		if (isNarrow.current) {
-			sidebar.setOpen(false);
-		}
-	});
 </script>
 
 <Sidebar.Root collapsible="icon">

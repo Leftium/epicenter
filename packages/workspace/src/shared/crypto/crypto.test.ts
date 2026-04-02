@@ -256,16 +256,16 @@ describe('isEncryptedBlob', () => {
 		expect(isEncryptedBlob({})).toBe(false);
 	});
 
-	test('returns true for Uint8Array with format version 1 at byte 0', () => {
-		expect(isEncryptedBlob(new Uint8Array([1]))).toBe(true);
-		expect(isEncryptedBlob(new Uint8Array([1, 0, 0, 0]))).toBe(true);
-		expect(isEncryptedBlob(new Uint8Array(42).fill(0).map((_, i) => (i === 0 ? 1 : 0)))).toBe(true);
+	test('returns true for Uint8Array at or above minimum blob size (42 bytes)', () => {
+		// Minimum: 2 header + 24 nonce + 16 tag = 42 bytes
+		expect(isEncryptedBlob(new Uint8Array(42))).toBe(true);
+		expect(isEncryptedBlob(new Uint8Array(100))).toBe(true);
 	});
 
-	test('returns false for Uint8Array with byte 0 !== 1', () => {
-		expect(isEncryptedBlob(new Uint8Array([0]))).toBe(false);
-		expect(isEncryptedBlob(new Uint8Array([2]))).toBe(false);
-		expect(isEncryptedBlob(new Uint8Array([255]))).toBe(false);
+	test('returns false for Uint8Array below minimum blob size', () => {
+		expect(isEncryptedBlob(new Uint8Array([1]))).toBe(false);
+		expect(isEncryptedBlob(new Uint8Array([1, 0, 0, 0]))).toBe(false);
+		expect(isEncryptedBlob(new Uint8Array(41))).toBe(false);
 	});
 
 	test('returns false for empty Uint8Array', () => {

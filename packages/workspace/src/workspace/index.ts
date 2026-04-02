@@ -162,7 +162,6 @@ export type {
 	TableDefinitions,
 	// Helper types
 	TableHelper,
-	TransactionMeta,
 	TablesHelper,
 	UpdateResult,
 	// Result types - building blocks

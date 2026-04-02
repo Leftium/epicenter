@@ -58,11 +58,23 @@ const EncryptionKeyring = type('string')
  * malformed ENCRYPTION_SECRETS prevents the worker from loading at all rather
  * than failing on the first auth request.
  *
+ * Uses the call operator (not `.assert()`) so validation errors are returned
+ * as `ArkErrors` instead of thrown as `TraversalError`. This lets us wrap
+ * them in a human-readable message with the expected format.
+ *
  * Destructured so `currentKeySecret` stays private and `currentKeyVersion`
  * can be exported without exposing key material.
  */
-const [{ version: currentKeyVersion, secret: currentKeySecret }] =
-	EncryptionKeyring.assert(env.ENCRYPTION_SECRETS);
+const keyring = EncryptionKeyring(env.ENCRYPTION_SECRETS);
+if (keyring instanceof type.errors) {
+	throw new Error(
+		`ENCRYPTION_SECRETS is missing or malformed. ` +
+			`Expected format: "2:base64Secret2,1:base64Secret1" (comma-separated version:secret pairs). ` +
+			`Generate a secret with: openssl rand -base64 32\n\n` +
+			`Validation errors:\n${keyring.summary}`,
+	);
+}
+const [{ version: currentKeyVersion, secret: currentKeySecret }] = keyring;
 
 /**
  * Derive a per-user 32-byte encryption key via two-step HKDF-SHA256.

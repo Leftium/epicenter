@@ -28,7 +28,7 @@ Better Auth handles identity: email/password and Google OAuth for sign-in, plus 
 
 ## Encryption and trust model
 
-Workspace data is encrypted at the CRDT level using AES-256-GCM via @noble/ciphers (audited by Cure53). The encryption wraps YKeyValueLww—a synchronous layer that encrypts individual values within the data structure itself. Durable Objects see the CRDT skeleton (key names like `tab-1`, timestamps for conflict resolution) but every value is an opaque ciphertext blob: `{ v: 1, ct: Uint8Array }`. Yjs `writeAny` serializes `Uint8Array` natively as binary (type tag 116), so there is no base64 overhead.
+Workspace data is encrypted at the CRDT level using XChaCha20-Poly1305 via @noble/ciphers (audited by Cure53). The encryption wraps YKeyValueLww—a synchronous layer that encrypts individual values within the data structure itself. Durable Objects see the CRDT skeleton (key names like `tab-1`, timestamps for conflict resolution) but every value is an opaque ciphertext blob: `[formatVersion(1) ‖ keyVersion(1) ‖ nonce(24) ‖ ciphertext ‖ tag(16)]`. Yjs `writeAny` serializes `Uint8Array` natively as binary (type tag 116), so there is no base64 overhead.
 
 The encryption key derives from the deployment's auth secret (`BETTER_AUTH_SECRET`). This is server-managed, deployment-level encryption—the same model used by Notion, Linear, and most SaaS products, but applied deeper (individual CRDT values rather than database-level). The server can decrypt data to power search indexing, AI summarization, and password recovery.
 
@@ -47,7 +47,7 @@ PGP has been trying to make key management practical for thirty years. Signal wo
 
 ### Overhead
 
-Encryption adds a fixed ~28 bytes per value (12-byte nonce + 16-byte GCM auth tag) with zero proportional expansion—`ct` is stored as a raw `Uint8Array` via Yjs binary serialization. For typical workspace data (100–2000 byte values), total overhead is 14–28%. Performance impact is negligible—AES-256-GCM via @noble/ciphers encrypts 1 KB in ~0.01 ms, and decrypting an entire workspace (500 entries) takes under 5 ms.
+Encryption adds a fixed 42 bytes per value (2-byte header + 24-byte nonce + 16-byte Poly1305 auth tag) with zero proportional expansion—blobs are stored as raw `Uint8Array` via Yjs binary serialization. For typical workspace data (100–2000 byte values), total overhead is 2–42%. Performance impact is negligible—XChaCha20-Poly1305 via @noble/ciphers encrypts 1 KB in ~0.01 ms, and decrypting an entire workspace (500 entries) takes under 5 ms.
 
 For the full argument:
 

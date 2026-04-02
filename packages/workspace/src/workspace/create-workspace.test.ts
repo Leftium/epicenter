@@ -1223,7 +1223,10 @@ describe('.withEncryption() lifecycle', () => {
 			firstSaveDeferred.resolve();
 			await Promise.all([firstUnlock, secondUnlock]);
 
-			expect(userKeyStore.set).toHaveBeenCalledTimes(2);
+			// Only the second (current) key is written — the first key's
+			// persist task skips the write because activeUserKey has already
+			// changed to secondKey by the time the queued task runs.
+			expect(userKeyStore.set).toHaveBeenCalledTimes(1);
 			expect(cachedValue ?? '').toBe(bytesToBase64(secondKey));
 		});
 
@@ -1268,7 +1271,9 @@ describe('.withEncryption() lifecycle', () => {
 			expect(client.encryption.isUnlocked).toBe(false);
 			expect(userKeyStore.delete).toHaveBeenCalledTimes(1);
 			expect(cachedValue).toBe(null);
-			expect(events).toEqual(['set:start', 'set:end', 'delete']);
+			// The set task is skipped entirely because lock() clears
+			// activeUserKey synchronously before the queued task runs.
+			expect(events).toEqual(['delete']);
 		});
 
 		test('clearLocalData locks first and then runs persistence cleanup', async () => {

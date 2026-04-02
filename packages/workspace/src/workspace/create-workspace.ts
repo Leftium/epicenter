@@ -114,8 +114,9 @@ import type {
 	EncryptionConfig,
 	ExtensionContext,
 	KvDefinitions,
+	TableHelper,
+	TablesHelper,
 	TableDefinitions,
-	TransactionMeta,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
@@ -130,11 +131,6 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 	return true;
 }
 
-/** Table observer callback type for tracking across compaction. */
-type TableObserverCallback = (
-	changedIds: ReadonlySet<string>,
-	transaction: TransactionMeta,
-) => void;
 
 /**
  * Create a workspace client with chainable extension support.
@@ -198,59 +194,32 @@ export function createWorkspace<
 	// activateEncryption across tables and KV simultaneously.
 	const encryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
 
-	// ── Table observer tracking ─────────────────────────────────────────
-	// Observers registered via table.observe() are tracked so they can be
-	// re-registered on the new table helpers after compact().
-	const tableObserverRegistry = new Map<string, Set<TableObserverCallback>>();
+	// Create table stores + helpers (one encrypted KV per table)
 
 	// Create table stores + helpers (one encrypted KV per table)
 	const tableHelpers: Record<
 		string,
-		import('./types.js').TableHelper<BaseRow>
+		TableHelper<BaseRow>
 	> = {};
 	for (const [name, definition] of Object.entries(tableDefs)) {
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 		const ykv = createEncryptedYkvLww(yarray, { key: options?.key });
 		encryptedStores.push(ykv);
 		const helper = createTable(ykv, definition);
-		tableHelpers[name] = wrapTableWithObserverTracking(name, helper);
+		tableHelpers[name] = helper;
 	}
 	const tables =
-		tableHelpers as import('./types.js').TablesHelper<TTableDefinitions>;
+		tableHelpers as TablesHelper<TTableDefinitions>;
 
-	/**
-	 * Wrap a table helper's observe method to track callbacks for compact re-registration.
-	 * Returns a new object that delegates all calls and tracks observe/unobserve.
-	 */
-	function wrapTableWithObserverTracking(
-		name: string,
-		helper: import('./types.js').TableHelper<BaseRow>,
-	): import('./types.js').TableHelper<BaseRow> {
-		if (!tableObserverRegistry.has(name)) {
-			tableObserverRegistry.set(name, new Set());
-		}
-		const registry = tableObserverRegistry.get(name)!;
-		const originalObserve = helper.observe;
-
-		return {
-			...helper,
-			observe(callback: TableObserverCallback) {
-				registry.add(callback);
-				const unsub = originalObserve.call(helper, callback);
-				return () => {
-					registry.delete(callback);
-					unsub();
-				};
-			},
-		};
-	}
 
 	// Create KV store + helper (single shared encrypted KV)
 	const kvYarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	let kvStore = createEncryptedYkvLww(kvYarray, { key: options?.key });
 	encryptedStores.push(kvStore);
 	let kvHelper = createKv(kvStore, kvDefs);
-	const awareness = createAwareness(ydoc, awarenessDefs);
+	// Awareness lives on the coordination doc — it represents peer presence,
+	// which persists across data doc epoch transitions (compaction).
+	const awareness = createAwareness(coordYdoc, awarenessDefs);
 	const definitions = {
 		tables: tableDefs,
 		kv: kvDefs,
@@ -368,7 +337,7 @@ export function createWorkspace<
 		const freshEncryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
 		const freshTableHelpers: Record<
 			string,
-			import('./types.js').TableHelper<BaseRow>
+			TableHelper<BaseRow>
 		> = {};
 
 		for (const [name, definition] of Object.entries(tableDefs)) {
@@ -387,14 +356,7 @@ export function createWorkspace<
 				}
 			}
 
-			const wrapped = wrapTableWithObserverTracking(name, newHelper);
-			const registry = tableObserverRegistry.get(name);
-			if (registry) {
-				for (const cb of registry) {
-					newHelper.observe(cb);
-				}
-			}
-			freshTableHelpers[name] = wrapped;
+			freshTableHelpers[name] = newHelper;
 		}
 
 		// Fresh KV
@@ -450,9 +412,17 @@ export function createWorkspace<
 			}
 		}
 
-		// Wait for all new extensions to be ready
+		// Wait for all new extensions to be ready (with timeout)
 		try {
-			await Promise.all(freshWhenReady);
+			await Promise.race([
+				Promise.all(freshWhenReady),
+				new Promise<never>((_, reject) =>
+					setTimeout(
+						() => reject(new Error('[workspace] Extension init timed out during epoch transition')),
+						10_000,
+					),
+				),
+			]);
 		} catch (err) {
 			await disposeLifo(freshCleanups);
 			throw err;
@@ -502,6 +472,13 @@ export function createWorkspace<
 		}
 
 		// ── COMMIT (synchronous) ─────────────────────────────────────
+		// For local compact (dataToWrite present), bump the epoch NOW —
+		// after prep succeeded but before committing. This ensures the
+		// coordination doc is only updated if the swap will complete.
+		// For remote swaps, the epoch was already bumped by the remote client.
+		if (dataToWrite) {
+			epochTracker.bumpEpoch();
+		}
 		const oldYdoc = ydoc;
 		const oldCleanups = [...state.extensionCleanups];
 
@@ -694,15 +671,18 @@ export function createWorkspace<
 			 * copies all current table rows and KV entries into it, bumps
 			 * the epoch in the coordination doc, and tears down the old data doc.
 			 *
-			 * Other connected clients will see the epoch change via CRDT
-			 * sync on the coordination doc and automatically transition.
+			 * **Important:** Compaction invalidates all existing table and KV
+			 * observers (they were bound to the old Y.Doc). Callers should
+			 * reload the page or recreate the client after compaction.
+			 *
+			 * Other connected clients will detect the epoch change via the
+			 * coordination doc's `onEpochChange` callback and should reload
+			 * as well.
 			 *
 			 * @example
 			 * ```typescript
-			 * const sizeBefore = Y.encodeStateAsUpdate(client.ydoc).byteLength;
 			 * await client.compact();
-			 * const sizeAfter = Y.encodeStateAsUpdate(client.ydoc).byteLength;
-			 * // sizeAfter < sizeBefore (no CRDT history overhead)
+			 * window.location.reload();
 			 * ```
 			 */
 			async compact(): Promise<void> {
@@ -719,14 +699,13 @@ export function createWorkspace<
 						kvSnapshot[key] = raw;
 					}
 				}
-
-				// Guard: bumpEpoch fires the epoch observer synchronously,
-				// which calls requestSwap. Setting isSwapping prevents the
-				// observer from starting a concurrent drainSwapQueue.
+				// Guard: the epoch observer fires synchronously when the
+				// coordination doc changes (inside doBlueGreenSwap's commit).
+				// Setting isSwapping prevents the observer from racing.
 				isSwapping = true;
-				const newEpoch = epochTracker.bumpEpoch();
+				const nextEpoch = epochTracker.getEpoch() + 1;
 				try {
-					await doBlueGreenSwap(newEpoch, state, extensions, {
+					await doBlueGreenSwap(nextEpoch, state, extensions, {
 						tables: tableSnapshots,
 						kv: kvSnapshot,
 					});
@@ -749,9 +728,20 @@ export function createWorkspace<
 			dispose,
 			[Symbol.asyncDispose]: dispose,
 			/**
-			 * Register a callback for epoch transitions. Fires after a successful
-			 * swap with the new epoch number. Opt-in—not required for correctness.
-			 * Returns an unsubscribe function.
+			 * Register a callback for epoch transitions (local or remote).
+			 *
+			 * Fires after a successful data doc swap with the new epoch number.
+			 * Since compaction invalidates all table and KV observers, the
+			 * recommended response is to reload the page or recreate the client.
+			 *
+			 * @example
+			 * ```typescript
+			 * workspace.onEpochChange(() => {
+			 *   window.location.reload();
+			 * });
+			 * ```
+			 *
+			 * @returns Unsubscribe function
 			 */
 			onEpochChange(callback: (epoch: number) => void): () => void {
 				epochChangeCallbacks.push(callback);
@@ -945,13 +935,18 @@ export function createWorkspace<
 
 					try {
 						await runSerializedCacheTask(async () => {
-							await config.userKeyStore.set(bytesToBase64(userKey));
+							// Guard: only write if this key is still the active one.
+							// A rapid unlock(keyA) → unlock(keyB) sequence queues two
+							// writes. By the time keyA's task runs, activeUserKey is
+							// already keyB — skip the stale write entirely.
 							if (
-								activeUserKey !== undefined &&
-								bytesEqual(activeUserKey, userKey)
-							) {
-								isActiveUserKeyCached = true;
-							}
+								activeUserKey === undefined ||
+								!bytesEqual(activeUserKey, userKey)
+							)
+								return;
+
+							await config.userKeyStore.set(bytesToBase64(userKey));
+							isActiveUserKeyCached = true;
 						});
 					} catch (error) {
 						console.error('[workspace] User key cache save failed:', error);
@@ -963,15 +958,28 @@ export function createWorkspace<
 						activeUserKey !== undefined && bytesEqual(activeUserKey, userKey);
 
 					if (!isSameUserKey) {
+						const nextWorkspaceKey = deriveWorkspaceKey(userKey, id);
+						const previousWorkspaceKey = workspaceKey;
+						const activated: YKeyValueLwwEncrypted<unknown>[] = [];
 						try {
-							const nextWorkspaceKey = deriveWorkspaceKey(userKey, id);
 							for (const store of encryptedStores) {
 								store.activateEncryption(nextWorkspaceKey);
+								activated.push(store);
 							}
 							workspaceKey = nextWorkspaceKey;
 							activeUserKey = userKey;
 							isActiveUserKeyCached = config?.userKeyStore === undefined;
 						} catch (error) {
+							// Rollback: revert stores activated before the failure
+							for (const store of activated) {
+								try {
+									if (previousWorkspaceKey) {
+										store.activateEncryption(previousWorkspaceKey);
+									} else {
+										store.deactivateEncryption();
+									}
+								} catch { /* best-effort rollback */ }
+							}
 							console.error('[workspace] Workspace unlock failed:', error);
 							return;
 						}

@@ -142,9 +142,9 @@ export function createSyncExtension(
 			get status() {
 				return provider.status;
 			},
-			onStatusChange: provider.onStatusChange.bind(provider),
+			onStatusChange: provider.onStatusChange,
 			provider,
-			reconnect: provider.reconnect.bind(provider),
+			reconnect: provider.reconnect,
 			whenReady,
 			dispose() {
 				provider.dispose();

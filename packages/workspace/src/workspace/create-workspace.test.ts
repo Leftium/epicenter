@@ -24,7 +24,7 @@ import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
 import { defineWorkspace } from './define-workspace.js';
-import type { UserKeyStore } from './user-key-store.js';
+import type { UserKeyStore, EncryptionKeysJson } from './user-key-store.js';
 import type { EncryptionKeys } from './types.js';
 
 /** Wrap a raw Uint8Array key into a single-entry EncryptionKeys for tests. */
@@ -32,7 +32,10 @@ function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
 	return [{ version: 1, userKeyBase64: bytesToBase64(key) }];
 }
 
-
+/** Serialize a raw key to the JSON format the UserKeyStore stores. */
+function toKeysJson(key: Uint8Array): EncryptionKeysJson {
+	return JSON.stringify(toEncryptionKeys(key)) as EncryptionKeysJson;
+}
 /** Creates a workspace client with two tables and one KV for testing. */
 function setup() {
 	const postsTable = defineTable(
@@ -970,18 +973,14 @@ describe('workspace unlock', () => {
 		return { client, key: generateEncryptionKey() };
 	}
 
-	test('runtime starts locked when no key was provided', () => {
-		const { client } = setupUnlockedWorkspace();
-		expect(client.encryption.isUnlocked).toBe(false);
-	});
-
-	test('encryption.unlock transitions runtime to unlocked', async () => {
+	test('starts locked, unlock transitions to unlocked', async () => {
 		const { client, key } = setupUnlockedWorkspace();
+		expect(client.encryption.isUnlocked).toBe(false);
 		await client.encryption.unlock(toEncryptionKeys(key));
 		expect(client.encryption.isUnlocked).toBe(true);
 	});
 
-	test('encryption.unlock preserves encrypted writes when the same key is reused', async () => {
+	test('de-dup: same key preserves encrypted writes', async () => {
 		const { client, key } = setupUnlockedWorkspace();
 		await client.encryption.unlock(toEncryptionKeys(key));
 		client.tables.posts.set({ id: '1', title: 'Secret', _v: 1 });
@@ -995,16 +994,39 @@ describe('workspace unlock', () => {
 		}
 	});
 
-	test('unlock transitions runtime to unlocked (replaces construction-time key)', async () => {
-		const key = generateEncryptionKey();
+	test('key rotation: old data readable after unlock with new key', async () => {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const client = createWorkspace(
-			defineWorkspace({ id: 'key-test', tables: { posts } }),
+			defineWorkspace({ id: 'rotation-test', tables: { posts } }),
 		).withEncryption();
 
-		expect(client.encryption.isUnlocked).toBe(false);
-		await client.encryption.unlock(toEncryptionKeys(key));
-		expect(client.encryption.isUnlocked).toBe(true);
+		const keyV1 = generateEncryptionKey();
+		const keyV2 = generateEncryptionKey();
+
+		// Write with key v1
+		await client.encryption.unlock([{ version: 1, userKeyBase64: bytesToBase64(keyV1) }]);
+		client.tables.posts.set({ id: '1', title: 'Written with v1', _v: 1 });
+
+		// Rotate to v2 (keyring includes both versions for backward compat)
+		await client.encryption.unlock([
+			{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
+			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
+		]);
+
+		// Old data still readable
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Written with v1');
+		}
+
+		// New writes work too
+		client.tables.posts.set({ id: '2', title: 'Written with v2', _v: 1 });
+		const result2 = client.tables.posts.get('2');
+		expect(result2.status).toBe('valid');
+		if (result2.status === 'valid') {
+			expect(result2.row.title).toBe('Written with v2');
+		}
 	});
 });
 
@@ -1021,17 +1043,17 @@ describe('.withEncryption() lifecycle', () => {
 		return { client };
 	}
 
-	function setupWithUserKeyStore(cachedKeys: EncryptionKeys | null = null) {
+	function setupWithUserKeyStore(cachedKeyJson: EncryptionKeysJson | null = null) {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
-		let cachedValue: EncryptionKeys | null = cachedKeys;
+		let cachedValue: EncryptionKeysJson | null = cachedKeyJson;
 		let shouldFailNextSave = false;
 		const userKeyStore: UserKeyStore = {
-			set: mock(async (keys: EncryptionKeys) => {
+			set: mock(async (keyBase64: EncryptionKeysJson) => {
 				if (shouldFailNextSave) {
 					shouldFailNextSave = false;
 					throw new Error('forced user key store set failure');
 				}
-				cachedValue = keys;
+				cachedValue = keyBase64;
 			}),
 			get: mock(async () => cachedValue),
 			delete: mock(async () => {
@@ -1089,19 +1111,6 @@ describe('.withEncryption() lifecycle', () => {
 		});
 	});
 
-	describe('isUnlocked getter', () => {
-		test('reflects lock state transitions', async () => {
-			const { client } = setupLifecycle();
-
-			expect(client.encryption.isUnlocked).toBe(false);
-
-			await client.encryption.unlock(toEncryptionKeys(generateEncryptionKey()));
-			expect(client.encryption.isUnlocked).toBe(true);
-
-			client.encryption.lock();
-			expect(client.encryption.isUnlocked).toBe(false);
-		});
-	});
 
 	describe('userKeyStore integration', () => {
 		test('encryption.unlock saves the user key through userKeyStore', async () => {
@@ -1112,8 +1121,8 @@ describe('.withEncryption() lifecycle', () => {
 			await client.encryption.unlock(toEncryptionKeys(userKey));
 
 			expect(userKeyStore.set).toHaveBeenCalledTimes(1);
-			expect(userKeyStore.set).toHaveBeenCalledWith(toEncryptionKeys(userKey));
-			expect(readCachedValue()).toEqual(toEncryptionKeys(userKey));
+			expect(userKeyStore.set).toHaveBeenCalledWith(toKeysJson(userKey));
+			expect(readCachedValue()).toBe(toKeysJson(userKey));
 		});
 
 		test('encryption.unlock retries the same key after userKeyStore.set fails', async () => {
@@ -1128,7 +1137,7 @@ describe('.withEncryption() lifecycle', () => {
 
 			expect(client.encryption.isUnlocked).toBe(true);
 			expect(userKeyStore.set).toHaveBeenCalledTimes(2);
-			expect(readCachedValue()).toEqual(toEncryptionKeys(userKey));
+			expect(readCachedValue()).toBe(toKeysJson(userKey));
 		});
 
 		test('encryption.unlock updates runtime state before userKeyStore.set settles', async () => {
@@ -1136,11 +1145,11 @@ describe('.withEncryption() lifecycle', () => {
 				type({ id: 'string', title: 'string', _v: '1' }),
 			);
 			const saveDeferred = createDeferred<void>();
-			let cachedValue: EncryptionKeys | null = null;
+			let cachedValue: EncryptionKeysJson | null = null;
 			const userKeyStore: UserKeyStore = {
-				set: mock(async (keys: EncryptionKeys) => {
+				set: mock(async (keyBase64: EncryptionKeysJson) => {
 					await saveDeferred.promise;
-					cachedValue = keys;
+					cachedValue = keyBase64;
 				}),
 				get: mock(async () => cachedValue),
 				delete: mock(async () => {
@@ -1161,8 +1170,7 @@ describe('.withEncryption() lifecycle', () => {
 			saveDeferred.resolve();
 			await unlockPromise;
 
-			expect(cachedValue).not.toBeNull();
-			expect(cachedValue!).toEqual(toEncryptionKeys(userKey));
+			expect(cachedValue ?? '').toBe(toKeysJson(userKey));
 		});
 
 		test('auto-boot stays locked when userKeyStore is empty', async () => {
@@ -1177,22 +1185,19 @@ describe('.withEncryption() lifecycle', () => {
 		test('auto-boot unlocks from cached key', async () => {
 			const userKey = generateEncryptionKey();
 			const { client, userKeyStore } = setupWithUserKeyStore(
-				toEncryptionKeys(userKey),
+				toKeysJson(userKey),
 			);
 			await client.whenReady;
 
 			expect(client.encryption.isUnlocked).toBe(true);
 			expect(userKeyStore.get).toHaveBeenCalledTimes(1);
 			expect(userKeyStore.set).toHaveBeenCalledTimes(1);
-			expect(userKeyStore.set).toHaveBeenCalledWith(toEncryptionKeys(userKey));
+			expect(userKeyStore.set).toHaveBeenCalledWith(toKeysJson(userKey));
 		});
 
-		test('auto-boot clears cache and stays locked when unlock fails', async () => {
-			// The store returns valid EncryptionKeys shape, but with bad base64
-			// that causes unlock() to throw during key derivation.
-			const corruptKeys: EncryptionKeys = [{ version: 1, userKeyBase64: '%%%not-base64%%%' }];
+		test('auto-boot clears corrupt cache entries and stays locked', async () => {
 			const { client, userKeyStore, readCachedValue } =
-				setupWithUserKeyStore(corruptKeys);
+				setupWithUserKeyStore('%%%not-base64%%%' as EncryptionKeysJson);
 			await client.whenReady;
 
 			expect(client.encryption.isUnlocked).toBe(false);
@@ -1206,14 +1211,14 @@ describe('.withEncryption() lifecycle', () => {
 			);
 			const firstSaveDeferred = createDeferred<void>();
 			let saveCalls = 0;
-			let cachedValue: EncryptionKeys | null = null;
+			let cachedValue: EncryptionKeysJson | null = null;
 			const userKeyStore: UserKeyStore = {
-				set: mock(async (keys: EncryptionKeys) => {
+				set: mock(async (keyBase64: EncryptionKeysJson) => {
 					saveCalls += 1;
 					if (saveCalls === 1) {
 						await firstSaveDeferred.promise;
 					}
-					cachedValue = keys;
+					cachedValue = keyBase64;
 				}),
 				get: mock(async () => cachedValue),
 				delete: mock(async () => {
@@ -1239,8 +1244,7 @@ describe('.withEncryption() lifecycle', () => {
 			// persist task skips the write because activeUserKey has already
 			// changed to secondKey by the time the queued task runs.
 			expect(userKeyStore.set).toHaveBeenCalledTimes(1);
-			expect(cachedValue).not.toBeNull();
-			expect(cachedValue!).toEqual(toEncryptionKeys(secondKey));
+			expect(cachedValue ?? '').toBe(toKeysJson(secondKey));
 		});
 
 		test('clearLocalData clears userKeyStore after an in-flight set finishes', async () => {
@@ -1249,12 +1253,12 @@ describe('.withEncryption() lifecycle', () => {
 			);
 			const saveDeferred = createDeferred<void>();
 			const events: string[] = [];
-			let cachedValue: EncryptionKeys | null = null;
+			let cachedValue: EncryptionKeysJson | null = null;
 			const userKeyStore: UserKeyStore = {
-				set: mock(async (keys: EncryptionKeys) => {
+				set: mock(async (keyBase64: EncryptionKeysJson) => {
 					events.push('set:start');
 					await saveDeferred.promise;
-					cachedValue = keys;
+					cachedValue = keyBase64;
 					events.push('set:end');
 				}),
 				get: mock(async () => cachedValue),

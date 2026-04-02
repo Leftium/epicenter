@@ -113,6 +113,9 @@ import type {
 	WorkspaceEncryption,
 } from './types.js';
 import { KV_KEY, TableKey } from './ydoc-keys.js';
+import type { EncryptionKeysJson } from './user-key-store.js';
+import { EncryptionKeys as EncryptionKeysSchema } from './encryption-key.js';
+import { type as arktype } from 'arktype';
 
 /** Byte-level comparison for Uint8Array dedup. */
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -584,7 +587,7 @@ export function createWorkspace<
 						);
 					} catch (error) {
 						console.error('[workspace] Workspace lock failed:', error);
-						return;
+						throw error;
 					}
 					encryptionState = undefined;
 					persisted = !config?.userKeyStore;
@@ -600,7 +603,7 @@ export function createWorkspace<
 								!bytesEqual(encryptionState.userKey, currentUserKey)
 							)
 								return;
-							await config.userKeyStore.set(keys);
+							await config.userKeyStore.set(JSON.stringify(keys) as EncryptionKeysJson);
 							persisted = true;
 						});
 					} catch (error) {
@@ -639,7 +642,7 @@ export function createWorkspace<
 						);
 					} catch (error) {
 						console.error('[workspace] Workspace unlock failed:', error);
-						return;
+						throw error;
 					}
 
 					// Atomic state transition — one assignment, not three
@@ -656,11 +659,17 @@ export function createWorkspace<
 					});
 				};
 
-				const bootFromCache = async (store: { get(): Promise<EncryptionKeys | null> }) => {
-					const keys = await store.get();
-					if (!keys) return;
+				const bootFromCache = async (store: { get(): Promise<string | null> }) => {
+					const cached = await store.get();
+					if (!cached) return;
 					try {
-						await unlock(keys);
+						const parsed = EncryptionKeysSchema(JSON.parse(cached));
+						if (parsed instanceof arktype.errors) {
+							console.error('[workspace] Cached encryption keys invalid:', parsed.summary);
+							await clearCache();
+							return;
+						}
+						await unlock(parsed);
 					} catch (error) {
 						console.error('[workspace] Cached key unlock failed:', error);
 						await clearCache();

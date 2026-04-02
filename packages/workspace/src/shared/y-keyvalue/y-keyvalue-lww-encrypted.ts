@@ -142,7 +142,7 @@ export type YKeyValueLwwEncrypted<T> = {
 	 * Unregister observers and release resources. Call when this wrapper
 	 * is no longer needed but the underlying Y.Array continues to exist.
 	 */
-	destroy(): void;
+	dispose(): void;
 	/**
 	 * Number of entries in the inner store that are not in the decrypted cache.
 	 * When a key is active, this counts entries that failed to decrypt.
@@ -542,9 +542,9 @@ export function createEncryptedYkvLww<T>(
 		},
 		yarray: inner.yarray,
 		doc: inner.doc,
-		destroy() {
+		dispose() {
 			inner.unobserve(observer);
-			inner.destroy();
+			inner.dispose();
 		},
 	};
 }

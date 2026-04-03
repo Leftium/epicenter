@@ -94,8 +94,8 @@ type PersistedStateOptions<TSchema extends StandardSchemaV1> = {
  * theme.current;           // 'dark' (reactive)
  * theme.current = 'light';  // persists to localStorage
  *
- * // Imperative read (returns a resolved Promise for API parity with async stores):
- * const value = await theme.get();
+ * // Imperative read (sync — localStorage is immediate):
+ * const value = theme.get();
  * ```
  */
 export function createPersistedState<TSchema extends StandardSchemaV1>({
@@ -217,9 +217,6 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		 */
 		get(): StandardSchemaV1.InferOutput<TSchema> {
 			return value;
-		},
-		set(newValue: StandardSchemaV1.InferOutput<TSchema>) {
-			this.current = newValue;
 		},
 		watch(listener: (value: StandardSchemaV1.InferOutput<TSchema>) => void) {
 			listeners.add(listener);

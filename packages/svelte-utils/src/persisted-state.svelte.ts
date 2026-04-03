@@ -179,6 +179,11 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 	});
 
 	return {
+		/**
+		 * Reactive value for Svelte template bindings.
+		 *
+		 * Use `.get()` for imperative reads outside templates.
+		 */
 		get current() {
 			return value;
 		},
@@ -189,6 +194,24 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 			} catch (error) {
 				onUpdateError?.(error);
 			}
+		},
+		/**
+		 * Authoritative read — returns the current value synchronously.
+		 *
+		 * For `createPersistedState` (localStorage), this is identical to `.current`
+		 * since localStorage is synchronous. Prefer this over `.current` in imperative
+		 * code (boot scripts, closures, event handlers) — `.current` is for templates.
+		 *
+		 * @example
+		 * ```typescript
+		 * const cached = session.get();
+		 * if (cached?.encryptionKeys) {
+		 *   workspace.applyEncryptionKeys(cached.encryptionKeys);
+		 * }
+		 * ```
+		 */
+		get(): StandardSchemaV1.InferOutput<TSchema> {
+			return value;
 		},
 		set(newValue: StandardSchemaV1.InferOutput<TSchema>) {
 			this.current = newValue;

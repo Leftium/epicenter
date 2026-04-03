@@ -34,11 +34,10 @@ import { createTabManagerWorkspace } from './workspace/workspace';
 // Workspace Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Boot: apply cached encryption keys once chrome.storage loads.
-// chrome.storage is async (unlike localStorage), so we await readiness.
-void authSession.whenReady.then(() => {
-	if (authSession.current?.encryptionKeys) {
-		workspace.applyEncryptionKeys(authSession.current.encryptionKeys);
+// Boot: apply cached encryption keys from chrome.storage.
+void authSession.get().then((cached) => {
+	if (cached?.encryptionKeys) {
+		workspace.applyEncryptionKeys(cached.encryptionKeys);
 	}
 });
 export const workspace = buildWorkspaceClient();
@@ -104,7 +103,7 @@ export async function registerDevice(): Promise<void> {
 function buildWorkspaceClient() {
 	const sync = createSyncExtension({
 		url: (workspaceId) => toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
-		getToken: async () => authSession.current?.token ?? null,
+		getToken: async () => (await authSession.get())?.token ?? null,
 	});
 
 	const client = createTabManagerWorkspace()

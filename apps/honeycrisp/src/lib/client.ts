@@ -25,10 +25,10 @@ export const workspace = createWorkspace(honeycrisp)
 	.withExtension('persistence', indexeddbPersistence)
 	.withWorkspaceExtension('sync', sync.workspace);
 
-// Boot: apply cached encryption keys immediately (no network wait).
-// The auth roundtrip refreshes keys in background; dedup makes it a no-op.
-if (session.current?.encryptionKeys) {
-	workspace.applyEncryptionKeys(session.current.encryptionKeys);
+// Boot: apply cached encryption keys (sync — localStorage is immediate).
+const cached = session.get();
+if (cached?.encryptionKeys) {
+	workspace.applyEncryptionKeys(cached.encryptionKeys);
 }
 
 export const auth = createAuth({

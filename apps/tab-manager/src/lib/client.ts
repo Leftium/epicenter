@@ -34,10 +34,13 @@ import { createTabManagerWorkspace } from './workspace/workspace';
 // Workspace Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Boot: apply cached encryption keys immediately (no network wait).
-if (authSession.current?.encryptionKeys) {
-	workspace.applyEncryptionKeys(authSession.current.encryptionKeys);
-}
+// Boot: apply cached encryption keys once chrome.storage loads.
+// chrome.storage is async (unlike localStorage), so we await readiness.
+void authSession.whenReady.then(() => {
+	if (authSession.current?.encryptionKeys) {
+		workspace.applyEncryptionKeys(authSession.current.encryptionKeys);
+	}
+});
 export const workspace = buildWorkspaceClient();
 export const auth = createAuth({
 	baseURL: () => remoteServerUrl.current,

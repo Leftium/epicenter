@@ -126,7 +126,7 @@ type EncryptedBlob = Uint8Array & Brand<'EncryptedBlob'>;
  *
  * @example
  * ```typescript
- * const key = generateEncryptionKey();
+ * const key = randomBytes(32);
  * const encrypted = encryptValue('secret data', key);
  * encrypted[0]; // 1 (format version)
  * encrypted[1]; // 1 (key version)
@@ -179,7 +179,7 @@ export function encryptValue(
  *
  * @example
  * ```typescript
- * const key = generateEncryptionKey();
+ * const key = randomBytes(32);
  * const encrypted = encryptValue('secret data', key);
  * const decrypted = decryptValue(encrypted, key);
  * console.log(decrypted); // 'secret data'
@@ -268,9 +268,9 @@ export function isEncryptedBlob(value: unknown): value is EncryptedBlob {
  * The separation ensures each workspace gets an independent key even from the same
  * user key. Compromising one workspace key reveals nothing about other workspaces.
  *
- * **Batteries-included in `.withEncryption()`**: You typically don't call this directly.
- * `workspace.encryption.unlock(userKey)` calls it internally. This function is exported
- * for testing and for consumers that need manual key derivation outside the workspace builder.
+ * **Called internally by `applyEncryptionKeys()`**: You typically don't call this directly.
+ * The workspace client decodes transport keys, calls `deriveWorkspaceKey()` for each,
+ * and passes the resulting keyring to `activateEncryption()`. Exported for testing.
  *
  * Deterministic—same inputs always produce the same key. No storage needed.
  * Uses synchronous HKDF-SHA256 from `@noble/hashes`, so workspace runtime unlock
@@ -288,9 +288,9 @@ export function isEncryptedBlob(value: unknown): value is EncryptedBlob {
  *
  * @example
  * ```typescript
- * // Typically called internally by workspace.encryption.unlock(userKey):
- * //   const wsKey = deriveWorkspaceKey(userKey, workspaceId);
- * //   store.activateEncryption(wsKey);
+ * // Called internally by workspace.applyEncryptionKeys():
+ * //   for each key: deriveWorkspaceKey(userKey, id) → keyring
+ * //   then: store.activateEncryption(keyring)
  *
  * // Direct usage (testing or manual key management):
  * const userKey = base64ToBytes(session.userKeyBase64);

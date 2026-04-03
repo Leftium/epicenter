@@ -168,6 +168,7 @@
         "@epicenter/sync-client": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
+        "mode-watcher": "^1.1.0",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -380,6 +381,7 @@
         "arktype": "catalog:",
         "dompurify": "^3.3.3",
         "marked": "^17.0.5",
+        "mode-watcher": "^1.1.0",
         "pinyin-pro": "^3.28.0",
         "svelte-sonner": "catalog:",
         "wellcrafted": "catalog:",
@@ -520,6 +522,7 @@
       "version": "0.0.1",
       "dependencies": {
         "lib0": "catalog:",
+        "wellcrafted": "catalog:",
         "y-protocols": "catalog:",
       },
       "devDependencies": {

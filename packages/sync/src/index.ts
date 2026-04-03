@@ -1,8 +1,8 @@
 /**
  * @epicenter/sync — Yjs Sync Protocol Primitives
  *
- * Pure encode/decode functions for the y-websocket wire protocol.
- * Zero framework deps. Only yjs + lib0 + y-protocols.
+ * Encode/decode functions for the y-websocket wire protocol, plus
+ * RPC error variants shared by both server and client.
  *
  * For server-side WebSocket lifecycle handlers, import from
  * `@epicenter/sync/server` instead.
@@ -36,3 +36,6 @@ export {
 	type SyncMessageType,
 	stateVectorsEqual,
 } from './protocol';
+
+// RPC error variants (used by both server and client)
+export { RpcError } from './rpc-errors';

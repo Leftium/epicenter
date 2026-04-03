@@ -5,11 +5,15 @@ import {
 } from 'wellcrafted/error';
 
 /**
- * RPC error variants for remote action invocation.
+ * RPC error variants for remote action invocation over the sync protocol.
  *
  * These errors cover all failure modes in the RPC flow:
  * - Infrastructure errors (PeerOffline, Timeout) from the transport layer
  * - Application errors (ActionNotFound, ActionFailed) from the target peer
+ *
+ * Defined in `@epicenter/sync` because they describe wire-protocol failure
+ * modes—both the server (Durable Object) and client construct these errors
+ * at the sync boundary.
  *
  * All errors include a `name` discriminant for switch-based handling:
  *

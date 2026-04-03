@@ -17,6 +17,7 @@ import {
 	encodeAwarenessUpdate,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
+import { RpcError } from './rpc-errors';
 import {
 	decodeMessageType,
 	decodeRpcMessage,
@@ -167,17 +168,14 @@ describe('RPC protocol', () => {
 		const encoded = encodeRpcResponse({
 			requestId: 7,
 			requesterClientId: 300,
-			result: {
-				data: null,
-				error: { name: 'PeerOffline', message: 'Target peer is not connected' },
-			},
+			result: RpcError.PeerOffline(),
 		});
 
 		const decoded = decodeRpcMessage(encoded);
 		expect(decoded.type).toBe('response');
 		if (decoded.type === 'response') {
 			expect(decoded.result.data).toBeNull();
-			expect(decoded.result.error).toEqual({
+			expect(decoded.result.error).toMatchObject({
 				name: 'PeerOffline',
 				message: 'Target peer is not connected',
 			});

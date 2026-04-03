@@ -37,7 +37,6 @@ export {
 // RPC
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { RpcError } from './rpc/errors';
 export type { InferRpcMap, RpcActionMap } from './rpc/types';
 
 // ════════════════════════════════════════════════════════════════════════════

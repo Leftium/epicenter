@@ -33,6 +33,7 @@ import {
 	encodeSyncUpdate,
 	handleSyncPayload,
 	MESSAGE_TYPE,
+	RpcError,
 	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
@@ -286,10 +287,7 @@ export function applyMessage({
 							const onMissReply = encodeRpcResponse({
 								requestId: rpc.requestId,
 								requesterClientId: rpc.requesterClientId,
-								result: {
-									data: null,
-								error: { name: 'PeerOffline', message: 'Target peer is not connected' },
-								},
+								result: RpcError.PeerOffline(),
 							});
 							return {
 								action: 'forward',

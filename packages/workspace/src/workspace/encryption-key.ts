@@ -7,9 +7,8 @@
  *
  * Used by:
  * - Session response (`encryptionKeys` field)
- * - `workspace.encryption.unlock(keys)`
- * - `UserKeyStore` cache deserialization (runtime validation)
- *
+ * - `workspace.applyEncryptionKeys(keys)` — public API
+ * - Auth session cache deserialization (runtime validation)
  * @module
  */
 import { type } from 'arktype';
@@ -39,3 +38,31 @@ export const EncryptionKeys = type([
 ]);
 export type EncryptionKey = typeof EncryptionKey.infer;
 export type EncryptionKeys = typeof EncryptionKeys.infer;
+
+/**
+ * Canonical fingerprint for a set of encryption keys.
+ *
+ * Produces a deterministic string from an `EncryptionKeys` array by sorting
+ * entries by version ascending and joining as `version:base64` pairs. This
+ * mirrors the `ENCRYPTION_SECRETS` wire format (`1:secret,2:secret`).
+ *
+ * Used by `applyEncryptionKeys()` for same-key dedup — if the fingerprint
+ * hasn't changed since the last call, the expensive derivation + activation
+ * is skipped entirely.
+ *
+ * @example
+ * ```typescript
+ * const keys: EncryptionKeys = [
+ *   { version: 2, userKeyBase64: 'newKey==' },
+ *   { version: 1, userKeyBase64: 'oldKey==' },
+ * ];
+ * encryptionKeysFingerprint(keys);
+ * // => '1:oldKey==,2:newKey=='
+ * ```
+ */
+export function encryptionKeysFingerprint(keys: EncryptionKeys): string {
+	return [...keys]
+		.sort((a, b) => a.version - b.version)
+		.map((k) => `${k.version}:${k.userKeyBase64}`)
+		.join(',');
+}

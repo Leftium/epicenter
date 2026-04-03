@@ -171,6 +171,7 @@ export type {
 export {
 	EncryptionKey,
 	EncryptionKeys,
+	encryptionKeysFingerprint,
 } from './workspace/encryption-key';
 
 // ════════════════════════════════════════════════════════════════════════════

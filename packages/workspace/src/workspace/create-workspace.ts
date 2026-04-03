@@ -62,7 +62,7 @@ import { createAwareness } from './create-awareness.js';
 import { createDocuments } from './create-document.js';
 import { createKv } from './create-kv.js';
 import { createTable } from './create-table.js';
-import type { EncryptionKeys } from './encryption-key.js';
+import { type EncryptionKeys, encryptionKeysFingerprint } from './encryption-key.js';
 import {
 	defineExtension,
 	disposeLifo,
@@ -154,6 +154,11 @@ export function createWorkspace<
 		...tableEntries.map(({ store }) => store),
 		kvStore,
 	];
+
+	// Fingerprint of the last-applied encryption keys for same-key dedup.
+	// Token refreshes fire onLogin repeatedly with identical keys — this
+	// skips the expensive base64 decode → HKDF → per-store scan path.
+	let lastKeysFingerprint: string | undefined;
 
 	const awareness = createAwareness(ydoc, awarenessDefs);
 	const definitions = {
@@ -332,6 +337,10 @@ export function createWorkspace<
 			 * ```
 			 */
 			applyEncryptionKeys(keys: EncryptionKeys): void {
+				const fingerprint = encryptionKeysFingerprint(keys);
+				if (fingerprint === lastKeysFingerprint) return;
+				lastKeysFingerprint = fingerprint;
+
 				const keyring = new Map<number, Uint8Array>();
 				for (const { version, userKeyBase64 } of keys) {
 					const userKey = base64ToBytes(userKeyBase64);

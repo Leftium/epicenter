@@ -28,6 +28,11 @@ export const workspace = createOpensidian()
 	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 
+// Boot: apply cached encryption keys immediately (no network wait).
+if (session.current?.encryptionKeys) {
+	workspace.applyEncryptionKeys(session.current.encryptionKeys);
+}
+
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,

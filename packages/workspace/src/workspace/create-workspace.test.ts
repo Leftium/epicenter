@@ -1054,6 +1054,49 @@ describe('applyEncryptionKeys', () => {
 		const result = client.applyEncryptionKeys(toEncryptionKeys(key));
 		expect(result).toBeUndefined();
 	});
+
+	test('same-key dedup: second call with identical keys is a no-op', () => {
+		const { client, key } = setupEncryptedWorkspace();
+		const keys = toEncryptionKeys(key);
+		client.applyEncryptionKeys(keys);
+		client.tables.posts.set({ id: '1', title: 'Before dedup', _v: 1 });
+
+		// Second call with identical keys should be a no-op (dedup)
+		client.applyEncryptionKeys(keys);
+
+		// Data should still be readable (dedup didn't break anything)
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Before dedup');
+		}
+	});
+
+	test('same-key dedup: different order is still recognized as same keys', () => {
+		const { client } = setupEncryptedWorkspace();
+		const keyV1 = randomBytes(32);
+		const keyV2 = randomBytes(32);
+		const keysAsc: EncryptionKeys = [
+			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
+			{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
+		];
+		const keysDesc: EncryptionKeys = [
+			{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
+			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
+		];
+
+		client.applyEncryptionKeys(keysAsc);
+		client.tables.posts.set({ id: '1', title: 'Order test', _v: 1 });
+
+		// Reversed order should dedup (same fingerprint after sorting)
+		client.applyEncryptionKeys(keysDesc);
+
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Order test');
+		}
+	});
 });
 
 describe('withActions (non-terminal)', () => {

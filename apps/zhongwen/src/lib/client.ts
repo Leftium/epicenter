@@ -11,9 +11,15 @@ import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broad
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { session } from '$lib/auth';
 import { definition } from './workspace/definition';
+
 export const workspace = createWorkspace(definition)
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('broadcast', broadcastChannelSync);
+
+// Boot: apply cached encryption keys immediately (no network wait).
+if (session.current?.encryptionKeys) {
+	workspace.applyEncryptionKeys(session.current.encryptionKeys);
+}
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

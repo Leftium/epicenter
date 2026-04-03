@@ -9,8 +9,7 @@ import type { JsonObject } from 'wellcrafted/json';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { UserKeyStore } from './user-key-store.js';
-import type { EncryptionKey, EncryptionKeys } from './encryption-key.js';
+import type { EncryptionKeys } from './encryption-key.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { Timeline } from '../timeline/timeline.js';
 import type { Extension, MaybePromise } from './lifecycle.js';
@@ -986,98 +985,7 @@ export type WorkspaceDefinition<
  * ```
  */
 
-/**
- * Configuration for `.withEncryption()`.
- *
- * The encryption model uses a two-stage key hierarchy:
- * 1. **User key** (your input) — a 32-byte root key from any source (server HKDF, PBKDF2 password, cache)
- * 2. **Workspace key** (derived internally) — `HKDF(userKey, "workspace:{id}")` ensures per-workspace isolation
- *
- * `userKeyStore` owns the cached user-key lifecycle:
- * - `set` after successful unlock
- * - `get` during startup unlock
- * - `delete` during `workspace.clearLocalData()`
- */
-export type EncryptionConfig = {
-	/**
-	 * Store for the raw user key as a base64 string.
-	 *
-	 * This is the local-first startup seam: the workspace saves the user key
- * after `encryption.unlock()`, auto-boots from it on the next launch via
- * `whenReady`, and clears it during `workspace.clearLocalData()`.
-	 *
-	 * The cached value is the root user key, not the derived per-workspace key.
-	 * That keeps the cache format stable across workspace ids while the runtime
-	 * still derives an isolated workspace key internally via HKDF.
-	 *
-	 * @example
-	 * ```typescript
-	 * createWorkspace(definition).withEncryption({
-	 *   userKeyStore,
-	 * })
-	 * ```
-	 */
-	userKeyStore: UserKeyStore;
-};
-
-/**
- * Unlock API added to the workspace client by `.withEncryption()`.
- *
- * This API is NOT present on the base `WorkspaceClient` — only when
- * `.withEncryption()` is called. This prevents non-encryption consumers
- * (Whispering, CLI) from seeing unlock APIs on the type.
- *
- * Typical lifecycle in a Chrome extension:
- *
- * ```typescript
- * const workspace = createWorkspace(definition)
- *   .withEncryption({ userKeyStore })
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sync', createSyncExtension({ ... }));
- *
- * // Auto-boot loads cached key on whenReady — no manual call needed.
- * // Explicit unlock for keys from auth:
- * await workspace.encryption.unlock(base64ToBytes(session.userKeyBase64));
- * workspace.encryption.lock();
- * await workspace.clearLocalData();
- * ```
- */
 export type { EncryptionKey, EncryptionKeys } from './encryption-key';
-
-export type WorkspaceEncryption = {
-	/** Whether the runtime is currently unlocked. */
-	isUnlocked: boolean;
-	/**
-	 * Unlock the workspace with encryption keys.
-	 *
-	 * Accepts an array of versioned user keys (from the auth session).
-	 * Derives a per-workspace key for each version via HKDF-SHA256,
-	 * builds a keyring Map, and activates encrypted stores. Persists
-	 * the keys if a cache is configured.
-	 */
-	unlock(keys: EncryptionKeys): Promise<void>;
-	/**
-	 * Lock the runtime.
-	 *
-	 * Clears only in-memory key state and deactivates encrypted stores. It does
-	 * not wipe extension persistence or clear the cached user key. Use
-	 * `workspace.clearLocalData()` for sign-out.
-	 */
-	lock(): void;
-};
-
-/**
- * Product-level unlock helpers exposed when `.withEncryption()` is configured.
- */
-export type WorkspaceKeyAccess = {
-	/**
-	 * Unlock the workspace from an array of encryption keys.
-	 *
-	 * Convenience wrapper for app-layer auth flows. Waits for whenReady,
-	 * then delegates to `encryption.unlock()`.
-	 */
-	unlockWithKeys(keys: EncryptionKeys): Promise<void>;
-};
 
 export type WorkspaceClientBuilder<
 	TId extends string,
@@ -1086,7 +994,6 @@ export type WorkspaceClientBuilder<
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown> = Record<string, never>,
 	TDocExtensions extends Record<string, unknown> = Record<string, never>,
-	TEncryption = Record<string, never>,
 	TActions extends Actions = Record<string, never>,
 > = WorkspaceClient<
 	TId,
@@ -1095,8 +1002,7 @@ export type WorkspaceClientBuilder<
 	TAwarenessDefinitions,
 	TExtensions,
 	TDocExtensions
-> &
-	TEncryption & {
+> & {
 		/** Accumulated actions from `.withActions()` calls. Empty object when none declared. */
 		actions: TActions;
 		/**
@@ -1147,7 +1053,6 @@ export type WorkspaceClientBuilder<
 					TKey,
 					Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>
 				>,
-			TEncryption,
 			TActions
 		>;
 
@@ -1199,7 +1104,6 @@ export type WorkspaceClientBuilder<
 					>
 				>,
 			TDocExtensions,
-			TEncryption,
 			TActions
 		>;
 
@@ -1247,45 +1151,6 @@ export type WorkspaceClientBuilder<
 					K,
 					Omit<TDocExports, 'whenReady' | 'dispose' | 'clearLocalData'>
 				>,
-			TEncryption,
-			TActions
-		>;
-
-		/**
-		 * Configure encryption for this workspace.
-		 *
-		 * Adds `workspace.encryption` to the client. Without this call, that namespace
-		 * doesn't exist on the type—preventing accidental use in non-encryption
-		 * workspaces (Whispering, CLI).
-		 *
-		 * Batteries-included: handles synchronous HKDF derivation, runtime unlock,
-		 * serialized cache save/clear ordering, and the full cached-key lifecycle when
-		 * `userKeyStore` is provided.
-		 *
-		 * Can be chained in any order with `.withExtension()`:
-		 *
-		 * @example
-		 * ```typescript
-		 * const workspace = createWorkspace(definition)
-		 *   .withEncryption({ userKeyStore })  // auto-boots from cache on whenReady
-		 *   .withExtension('persistence', indexeddbPersistence)
-		 *   .withExtension('sync', createSyncExtension({ ... }));
-		 *
-		 * await workspace.encryption.unlock([{ version: 1, userKeyBase64 }]);  // explicit unlock from auth
-		 * ```
-		 */
-		withEncryption(
-			config?: EncryptionConfig,
-		): WorkspaceClientBuilder<
-			TId,
-			TTableDefinitions,
-			TKvDefinitions,
-			TAwarenessDefinitions,
-			TExtensions,
-			TDocExtensions,
-		{
-			encryption: WorkspaceEncryption;
-		} & WorkspaceKeyAccess,
 			TActions
 		>;
 
@@ -1320,7 +1185,6 @@ export type WorkspaceClientBuilder<
 			TAwarenessDefinitions,
 			TExtensions,
 			TDocExtensions,
-			TEncryption,
 			TActions & TNewActions
 		>;
 	};
@@ -1509,12 +1373,33 @@ export type WorkspaceClient<
 	 */
 	loadSnapshot(update: Uint8Array): void;
 
+
+	/**
+	 * Apply encryption keys to all stores.
+	 *
+	 * Decodes base64 user keys, derives per-workspace keys via HKDF-SHA256,
+	 * and activates encryption on all stores. Once activated, stores permanently
+	 * refuse plaintext writes — the only reset path is `clearLocalData()`.
+	 *
+	 * This method is synchronous — HKDF via @noble/hashes and XChaCha20 via
+	 * @noble/ciphers are both sync. Call it after persistence is ready but
+	 * before connecting sync.
+	 *
+	 * @param keys - Non-empty array of versioned user keys from the auth session
+	 *
+	 * @example
+	 * ```typescript
+	 * await workspace.whenReady;
+	 * workspace.applyEncryptionKeys(session.encryptionKeys);
+	 * workspace.extensions.sync.connect();
+	 * ```
+	 */
+	applyEncryptionKeys(keys: EncryptionKeys): void;
+
 	/**
 	 * Wipe local workspace data.
 	 *
-	 * This is the sign-out primitive for local persistence. It locks the runtime
-	 * first, then calls extension `clearLocalData()` hooks in LIFO order, then clears
-	 * the configured `userKeyStore` if encryption was set up with one.
+	 * Calls extension `clearLocalData()` hooks in LIFO order.
 	 */
 	clearLocalData(): Promise<void>;
 

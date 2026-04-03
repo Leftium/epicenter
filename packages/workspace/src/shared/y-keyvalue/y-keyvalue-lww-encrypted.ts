@@ -247,10 +247,6 @@ export function createEncryptedYkvLww<T>(
 	 * Attempt to decrypt an entry. Returns a plaintext entry on success,
 	 * `undefined` on failure (with a console warning for diagnostics).
 	 */
-	/**
-	 * Attempt to decrypt an entry. Returns a plaintext entry on success,
-	 * `undefined` on failure (with a console warning for diagnostics).
-	 */
 	const tryDecryptEntry = (
 		key: string,
 		entry: YKeyValueLwwEntry<EncryptedBlob | T>,

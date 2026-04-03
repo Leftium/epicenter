@@ -12,37 +12,19 @@
  * Actions use a single `.withActions(factory)` because they don't build on each other,
  * are always defined by the app author, and benefit from being declared in one place.
  *
- * ## Unlock lifecycle
+ * ## Encryption
  *
- * `.withEncryption(config?)` opts the client into encryption. Without it,
- * `workspace.encryption` does not exist on the type.
- *
- * When configured, the full unlock pipeline is:
- * ```
- * workspace.encryption.unlock([{ version: 1, userKeyBase64 }])
- *   → byte-level dedup against the active runtime key
- *   → deriveWorkspaceKey(userKey, workspaceId) for each version  // sync HKDF
- *   → build keyring Map<version, derivedKey>
- *   → activate all encrypted stores with the keyring
- *   → persist keys to userKeyStore (JSON) if configured
- * ```
- *
- * Auto-boot (when userKeyStore is provided):
- * ```
- *   → whenReady: userKeyStore.get()
- *   → if cached keys exist: validate with arktype, then unlock()
- *   → if validation or unlock fails: userKeyStore.delete()
- * ```
+ * All stores are always wrapped with `createEncryptedYkvLww()` (passthrough when no
+ * key is set). After the workspace is ready, call `applyEncryptionKeys()` to activate
+ * encryption on all stores. This is synchronous — HKDF and XChaCha20 are both sync.
  *
  * ```
- * workspace.encryption.lock()
- *   → deactivate all stores + clear in-memory key state
- *
- * workspace.clearLocalData()
- *   → lock()
- *   → wipe persisted data (clearLocalData callbacks, LIFO)
- *   → await userKeyStore.delete() if configured
+ * workspace.applyEncryptionKeys(session.encryptionKeys);
+ * workspace.extensions.sync.connect();
  * ```
+ *
+ * Once encryption has been activated, the stores permanently refuse plaintext writes.
+ * The only reset path is `clearLocalData()`.
  *
  * @example
  * ```typescript
@@ -54,12 +36,6 @@
  * const client = createWorkspace({ id: 'my-app', tables: { posts } })
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', ySweetSync({ auth: directAuth('...') }));
- *
- * // With encryption + extensions
- * const client = createWorkspace({ id: 'my-app', tables: { posts } })
- *   .withEncryption({ userKeyStore })
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sync', createSyncExtension({ ... }));
  *
  * // With actions (terminal)
  * const client = createWorkspace({ id: 'my-app', tables: { posts } })
@@ -76,6 +52,7 @@
 
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
+import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
 import type { YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import {
 	createEncryptedYkvLww,
@@ -85,7 +62,7 @@ import { createAwareness } from './create-awareness.js';
 import { createDocuments } from './create-document.js';
 import { createKv } from './create-kv.js';
 import { createTable } from './create-table.js';
-import { createEncryptionRuntime } from './encryption-runtime.js';
+import type { EncryptionKeys } from './encryption-key.js';
 import {
 	defineExtension,
 	disposeLifo,
@@ -100,16 +77,13 @@ import type {
 	DocumentExtensionRegistration,
 	Documents,
 	DocumentsHelper,
-	EncryptionConfig,
-	EncryptionKeys,
 	ExtensionContext,
 	KvDefinitions,
-	TablesHelper,
 	TableDefinitions,
+	TablesHelper,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
-	WorkspaceEncryption,
 } from './types.js';
 import { KV_KEY, TableKey } from './ydoc-keys.js';
 
@@ -132,19 +106,17 @@ export function createWorkspace<
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
 	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
->(
-	{
-		id,
-		tables: tablesDef,
-		kv: kvDef,
-		awareness: awarenessDef,
-	}: WorkspaceDefinition<
-		TId,
-		TTableDefinitions,
-		TKvDefinitions,
-		TAwarenessDefinitions
-	>,
-): WorkspaceClientBuilder<
+>({
+	id,
+	tables: tablesDef,
+	kv: kvDef,
+	awareness: awarenessDef,
+}: WorkspaceDefinition<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	TAwarenessDefinitions
+>): WorkspaceClientBuilder<
 	TId,
 	TTableDefinitions,
 	TKvDefinitions,
@@ -177,12 +149,11 @@ export function createWorkspace<
 
 	// ── Encrypted stores (all table stores + KV store) ─────────────────────
 	// The workspace owns this list so it can coordinate activateEncryption
-	// and deactivateEncryption across all stores simultaneously.
+	// across all stores simultaneously via applyEncryptionKeys().
 	const encryptedStores: readonly YKeyValueLwwEncrypted<unknown>[] = [
 		...tableEntries.map(({ store }) => store),
 		kvStore,
 	];
-
 
 	const awareness = createAwareness(ydoc, awarenessDefs);
 	const definitions = {
@@ -208,7 +179,6 @@ export function createWorkspace<
 		clearLocalDataCallbacks: (() => MaybePromise<void>)[];
 		whenReadyPromises: Promise<unknown>[];
 	};
-
 
 	// Accumulated document extension registrations (in chain order).
 	// Mutable array — grows as .withDocumentExtension() is called. Document
@@ -270,16 +240,10 @@ export function createWorkspace<
 	function buildClient<TExtensions extends Record<string, unknown>>({
 		extensions,
 		state,
-		encryptionRuntime,
 		actions,
 	}: {
 		extensions: TExtensions;
 		state: BuilderState;
-		encryptionRuntime?: {
- 			encryption: WorkspaceEncryption;
-			lock: () => void;
-			clearCache: () => Promise<void>;
-		};
 		actions: Actions;
 	}): WorkspaceClientBuilder<
 		TId,
@@ -298,7 +262,10 @@ export function createWorkspace<
 			ydoc.destroy();
 
 			if (errors.length > 0) {
-				throw new AggregateError(errors, `${errors.length} extension(s) failed during dispose`);
+				throw new AggregateError(
+					errors,
+					`${errors.length} extension(s) failed during dispose`,
+				);
 			}
 		};
 
@@ -344,8 +311,37 @@ export function createWorkspace<
 			encodedSize(): number {
 				return Y.encodeStateAsUpdate(ydoc).byteLength;
 			},
+			/**
+			 * Apply encryption keys to all stores.
+			 *
+			 * Decodes base64 user keys, derives per-workspace keys via HKDF-SHA256,
+			 * and activates encryption on all stores. Once activated, stores permanently
+			 * refuse plaintext writes — the only reset path is `clearLocalData()`.
+			 *
+			 * This method is synchronous — HKDF via @noble/hashes and XChaCha20 via
+			 * @noble/ciphers are both sync. Call it after persistence is ready but
+			 * before connecting sync.
+			 *
+			 * @param keys - Non-empty array of versioned user keys from the auth session
+			 *
+			 * @example
+			 * ```typescript
+			 * await workspace.whenReady;
+			 * workspace.applyEncryptionKeys(session.encryptionKeys);
+			 * workspace.extensions.sync.connect();
+			 * ```
+			 */
+			applyEncryptionKeys(keys: EncryptionKeys): void {
+				const keyring = new Map<number, Uint8Array>();
+				for (const { version, userKeyBase64 } of keys) {
+					const userKey = base64ToBytes(userKeyBase64);
+					keyring.set(version, deriveWorkspaceKey(userKey, id));
+				}
+				for (const store of encryptedStores) {
+					store.activateEncryption(keyring);
+				}
+			},
 			async clearLocalData(): Promise<void> {
-				encryptionRuntime?.lock();
 				for (let i = state.clearLocalDataCallbacks.length - 1; i >= 0; i--) {
 					try {
 						await state.clearLocalDataCallbacks[i]?.();
@@ -353,21 +349,10 @@ export function createWorkspace<
 						console.error('Extension clearLocalData error:', err);
 					}
 				}
-				await encryptionRuntime?.clearCache();
 			},
 			whenReady,
 			dispose,
 			[Symbol.asyncDispose]: dispose,
-			...(encryptionRuntime && {
-				encryption: encryptionRuntime.encryption,
-				async unlockWithKeys(keys: EncryptionKeys) {
-					if (!Array.isArray(keys) || keys.length === 0) {
-						throw new Error('unlockWithKeys requires a non-empty EncryptionKeys array');
-					}
-					await whenReady;
-					await encryptionRuntime.encryption.unlock(keys);
-				},
-			}),
 		};
 
 		/**
@@ -414,8 +399,7 @@ export function createWorkspace<
 				const raw = factory(ctx);
 
 				// Void return means "not installed" — skip registration
-				if (!raw)
-					return buildClient({ extensions, state, encryptionRuntime, actions });
+				if (!raw) return buildClient({ extensions, state, actions });
 
 				const resolved = defineExtension(raw);
 
@@ -432,7 +416,6 @@ export function createWorkspace<
 						],
 						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
 					},
-					encryptionRuntime,
 					actions,
 				});
 			} catch (err) {
@@ -508,42 +491,7 @@ export function createWorkspace<
 					factory,
 					tags: options?.tags ?? [],
 				});
-				return buildClient({ extensions, state, encryptionRuntime, actions });
-			},
-
-			withEncryption(config?: EncryptionConfig) {
-				const runtime = createEncryptionRuntime({
-					workspaceId: id,
-					stores: encryptedStores,
-					userKeyStore: config?.userKeyStore,
-				});
-
-				const newState = {
-					...state,
-					whenReadyPromises: runtime.bootPromise
-						? [
-								...state.whenReadyPromises,
-								Promise.all(state.whenReadyPromises).then(() => runtime.bootPromise),
-							]
-						: state.whenReadyPromises,
-				};
-
-				return buildClient({
-					extensions,
-					state: newState,
-					encryptionRuntime: runtime,
-					actions,
-				}) as unknown as WorkspaceClientBuilder<
-					TId,
-					TTableDefinitions,
-					TKvDefinitions,
-					TAwarenessDefinitions,
-					TExtensions,
-					Record<string, never>,
-					{
-						encryption: typeof runtime.encryption;
-					}
-				>;
+				return buildClient({ extensions, state, actions });
 			},
 
 			withActions(
@@ -561,7 +509,6 @@ export function createWorkspace<
 				return buildClient({
 					extensions,
 					state,
-					encryptionRuntime,
 					actions: { ...actions, ...newActions },
 				});
 			},

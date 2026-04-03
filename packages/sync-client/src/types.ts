@@ -85,7 +85,7 @@ export type SyncError =
 export type SyncStatus =
 	| { phase: 'offline' }
 	| { phase: 'connecting'; attempt: number; lastError?: SyncError }
-	| { phase: 'connected' };
+	| { phase: 'connected'; hasLocalChanges: boolean };
 
 /**
  * A sync provider instance returned by {@link createSyncProvider}.

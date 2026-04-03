@@ -1,6 +1,7 @@
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
+	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncPayload,
@@ -132,6 +133,11 @@ export function createSyncProvider({
 
 	const backoff = createBackoff();
 
+	// --- SYNC_STATUS version tracking ---
+	let localVersion = 0;
+	let ackedVersion = 0;
+	let syncStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
 	/** Send a binary message if the WebSocket is open; silently no-ops otherwise. */
 	function send(message: Uint8Array) {
 		if (websocket?.readyState === WebSocket.OPEN) {
@@ -149,6 +155,15 @@ export function createSyncProvider({
 	function handleDocUpdate(update: Uint8Array, origin: unknown) {
 		if (origin === SYNC_ORIGIN) return;
 		send(encodeSyncUpdate({ update }));
+		localVersion++;
+		// Debounce: send probe after 100ms quiet period, not per-update.
+		// "Saving…" appears immediately (localVersion > ackedVersion),
+		// the probe just confirms server receipt.
+		if (syncStatusTimer) clearTimeout(syncStatusTimer);
+		syncStatusTimer = setTimeout(() => {
+			send(encodeSyncStatus(localVersion));
+			syncStatusTimer = null;
+		}, 100);
 	}
 
 	/**
@@ -309,6 +324,14 @@ export function createSyncProvider({
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
 
+		// Reset SYNC_STATUS counters for fresh connection
+		localVersion = 0;
+		ackedVersion = 0;
+		if (syncStatusTimer) {
+			clearTimeout(syncStatusTimer);
+			syncStatusTimer = null;
+		}
+
 		const { promise: openPromise, resolve: resolveOpen } =
 			Promise.withResolvers<boolean>();
 		const { promise: closePromise, resolve: resolveClose } =
@@ -392,7 +415,7 @@ export function createSyncProvider({
 							syncType === SYNC_MESSAGE_TYPE.UPDATE)
 					) {
 						handshakeComplete = true;
-						status.set({ phase: 'connected' });
+						status.set({ phase: 'connected', hasLocalChanges: localVersion > ackedVersion });
 					}
 					break;
 				}
@@ -415,6 +438,21 @@ export function createSyncProvider({
 					);
 					break;
 				}
+
+				case MESSAGE_TYPE.SYNC_STATUS: {
+					const version = decoding.readVarUint(decoder);
+					const prevHasChanges = localVersion > ackedVersion;
+					ackedVersion = Math.max(ackedVersion, version);
+					const nowHasChanges = localVersion > ackedVersion;
+					if (prevHasChanges !== nowHasChanges && handshakeComplete) {
+						status.set({ phase: 'connected', hasLocalChanges: nowHasChanges });
+					}
+					break;
+				}
+
+				default:
+					console.warn(`[SyncProvider] Unknown message type: ${messageType}`);
+					break;
 			}
 		};
 

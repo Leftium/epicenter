@@ -4,6 +4,7 @@ import {
 	type SyncStatus,
 } from '@epicenter/sync-client';
 import type { RpcError } from '../../rpc/errors.js';
+import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
 import type { SharedExtensionContext } from '../../workspace/types.js';
 
 const DEFAULT_RPC_TIMEOUT_MS = 5_000;
@@ -59,7 +60,7 @@ export type SyncExtensionConfig = {
 /**
  * Info about a connected peer, derived from awareness state.
  *
- * At workspace scope, peers publish device identity (deviceId, deviceType).
+ * At workspace scope, peers publish identity (deviceId, client type).
  * At document scope, peers publish editing state (cursors, selections).
  */
 export type PeerInfo = {
@@ -67,8 +68,8 @@ export type PeerInfo = {
 	clientId: number;
 	/** Stable device identity (NanoID from localStorage), if published. */
 	deviceId?: string;
-	/** Capability class ('browser-extension', 'cli', etc.), if published. */
-	deviceType?: string;
+	/** Client type ('extension', 'cli', 'desktop', 'web'), if published. */
+	client?: string;
 };
 
 /** Exports available on `client.extensions.sync` after registration. */
@@ -94,7 +95,7 @@ export type SyncExtensionExports = {
 	 * @example
 	 * ```typescript
 	 * const peers = workspace.extensions.sync.peers();
-	 * const ext = peers.find(p => p.deviceType === 'browser-extension');
+	 * const ext = peers.find(p => p.client === 'extension');
 	 * ```
 	 */
 	peers(): PeerInfo[];
@@ -102,22 +103,26 @@ export type SyncExtensionExports = {
 	/**
 	 * Invoke an action on a remote peer in this room.
 	 *
-	 * Returns `{ data, error }` tuple. The target peer looks up the action
-	 * in its registered handler and invokes it.
+	 * Pass a type map (from `InferRpcMap`) for full type safety, or omit it
+	 * for untyped calls. When typed, action names autocomplete, input is
+	 * type-checked, and output is inferred.
 	 *
-	 * @example
+	 * @example Typed (recommended when target app is in the same monorepo)
+	 * ```typescript
+	 * import type { TabManagerRpc } from '@epicenter/tab-manager/rpc';
+	 *
+	 * const { data, error } = await workspace.extensions.sync.rpc<TabManagerRpc>(
+	 *   peer.clientId, 'tabs.close', { tabIds: [1, 2, 3] },
+	 * );
+	 * // data is { closedCount: number } | null — inferred from the map
+	 * ```
+	 *
+	 * @example Untyped (when target's types aren't available)
 	 * ```typescript
 	 * const { data, error } = await workspace.extensions.sync.rpc(
 	 *   peer.clientId, 'tabs.close', { tabIds: [1, 2, 3] },
 	 * );
-	 * if (error) {
-	 *   switch (error.name) {
-	 *     case 'PeerOffline': // target not connected
-	 *     case 'Timeout':     // no response in time
-	 *     case 'ActionNotFound': // bad action path
-	 *     case 'ActionFailed':   // handler error
-	 *   }
-	 * }
+	 * // data is unknown
 	 * ```
 	 *
 	 * @param target - Awareness clientId of the target peer
@@ -125,12 +130,15 @@ export type SyncExtensionExports = {
 	 * @param input - Action input (serialized as JSON)
 	 * @param options - Optional timeout override (default 5000ms)
 	 */
-	rpc<TData = unknown>(
+	rpc<
+		TMap extends RpcActionMap = DefaultRpcMap,
+		TAction extends string & keyof TMap = string & keyof TMap,
+	>(
 		target: number,
-		action: string,
-		input?: unknown,
+		action: TAction,
+		input?: TMap[TAction]['input'],
 		options?: { timeout?: number },
-	): Promise<{ data: TData | null; error: RpcError | null }>;
+	): Promise<{ data: TMap[TAction]['output'] | null; error: RpcError | null }>;
 };
 
 /**
@@ -202,19 +210,22 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 					if (clientId === selfId) continue;
 					peers.push({
 						clientId,
-						deviceId: state.deviceId as string | undefined,
-						deviceType: state.deviceType as string | undefined,
+					deviceId: state.deviceId as string | undefined,
+					client: state.client as string | undefined,
 					});
 				}
 				return peers;
 			},
 
-			async rpc<TData = unknown>(
+			async rpc<
+				TMap extends RpcActionMap = DefaultRpcMap,
+				TAction extends string & keyof TMap = string & keyof TMap,
+			>(
 				target: number,
-				action: string,
-				input?: unknown,
+				action: TAction,
+				input?: TMap[TAction]['input'],
 				options?: { timeout?: number },
-			): Promise<{ data: TData | null; error: RpcError | null }> {
+			): Promise<{ data: TMap[TAction]['output'] | null; error: RpcError | null }> {
 				if (target === ydoc.clientID) {
 					return {
 						data: null,

@@ -515,7 +515,7 @@ function buildWorkspaceClient() {
 		const deviceId = await getDeviceId();
 		client.awareness.setLocal({
 			deviceId,
-			deviceType: 'browser-extension',
+			client: 'extension',
 		});
 	});
 

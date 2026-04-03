@@ -236,7 +236,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				error: RpcError | null;
 			}> {
 				if (target === ydoc.clientID) {
-					return RpcError.ActionFailed({ action, cause: undefined });
+					return RpcError.ActionFailed({ action, cause: 'Cannot RPC to self — call the action directly' });
 				}
 
 				const timeoutMs = options?.timeout ?? DEFAULT_RPC_TIMEOUT_MS;

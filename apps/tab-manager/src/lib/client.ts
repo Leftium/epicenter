@@ -26,7 +26,6 @@ import {
 	getDeviceId,
 } from '$lib/device/device-id';
 import { authSession, getGoogleCredentials } from '$lib/state/auth';
-import { userKeyStore } from '$lib/state/key-store';
 import { remoteServerUrl, serverUrl } from '$lib/state/settings.svelte';
 import { generateBookmarkId, generateSavedTabId } from './workspace/definition';
 import { createTabManagerWorkspace } from './workspace/workspace';
@@ -44,7 +43,7 @@ export const auth = createAuth({
 		return { provider: 'google', idToken, nonce };
 	},
 	onLogin(session) {
-		workspace.unlockWithKeys(session.encryptionKeys);
+		workspace.applyEncryptionKeys(session.encryptionKeys);
 		workspace.extensions.sync.reconnect();
 	},
 	onLogout() {
@@ -97,7 +96,6 @@ export async function registerDevice(): Promise<void> {
 
 function buildWorkspaceClient() {
 	return createTabManagerWorkspace()
-		.withEncryption({ userKeyStore })
 		.withExtension('persistence', indexeddbPersistence)
 		.withExtension('broadcast', broadcastChannelSync)
 		.withExtension(

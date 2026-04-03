@@ -160,7 +160,7 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 		 * @example
 		 * ```typescript
 		 * const unsub = authToken.watch((token) => {
-		 *   if (!token) deactivateEncryption();
+		 *   if (!token) handleLogout();
 		 * });
 		 * ```
 		 */

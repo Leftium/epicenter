@@ -76,7 +76,7 @@ type PersistedStateOptions<TSchema extends StandardSchemaV1> = {
 /**
  * Create reactive persisted state backed by Web Storage with schema validation.
  *
- * Returns an object with a `.current` accessor (following Svelte 5 / runed conventions).
+ * Returns an object with a `.current` accessor (following Svelte 5 / runed conventions)
  * Values are validated against a StandardSchemaV1 schema on every read from storage.
  * Cross-tab sync via `storage` event, same-tab sync via `focus` event.
  *
@@ -91,8 +91,11 @@ type PersistedStateOptions<TSchema extends StandardSchemaV1> = {
  *   defaultValue: 'dark',
  * });
  *
- * theme.current;          // 'dark' (reactive)
- * theme.current = 'light'; // persists to localStorage
+ * theme.current;           // 'dark' (reactive)
+ * theme.current = 'light';  // persists to localStorage
+ *
+ * // Imperative read (returns a resolved Promise for API parity with async stores):
+ * const value = await theme.get();
  * ```
  */
 export function createPersistedState<TSchema extends StandardSchemaV1>({
@@ -180,9 +183,11 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 
 	return {
 		/**
-		 * Reactive value for Svelte template bindings.
+		 * Reactive value for Svelte template bindings and `$derived` blocks.
 		 *
-		 * Use `.get()` for imperative reads outside templates.
+		 * For localStorage-backed stores this is always the real value—localStorage
+		 * is synchronous, so `.current` is accurate at import time. Use `.get()`
+		 * in imperative code (boot scripts, closures) for API parity with async stores.
 		 */
 		get current() {
 			return value;
@@ -196,11 +201,11 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 			}
 		},
 		/**
-		 * Authoritative read — returns the current value synchronously.
+		 * Authoritative read—returns the current value synchronously.
 		 *
-		 * For `createPersistedState` (localStorage), this is identical to `.current`
-		 * since localStorage is synchronous. Prefer this over `.current` in imperative
-		 * code (boot scripts, closures, event handlers) — `.current` is for templates.
+		 * localStorage is synchronous, so this is always the real value.
+		 * Use this in imperative code (boot scripts, closures, event handlers)
+		 * where you want to be explicit about reading the persisted value.
 		 *
 		 * @example
 		 * ```typescript
@@ -222,5 +227,13 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 				listeners.delete(listener);
 			};
 		},
+
+		/**
+		 * Resolves immediately—localStorage is synchronous.
+		 *
+		 * Exists for API parity with `createStorageState.whenReady` so consumers
+		 * can `Promise.all([a.whenReady, b.whenReady])` regardless of backend.
+		 */
+		whenReady: Promise.resolve(),
 	};
 }

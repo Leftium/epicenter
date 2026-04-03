@@ -79,22 +79,6 @@ export type SyncExtensionExports = {
 	reconnect(): void;
 
 	/**
-	 * List connected peers in this room (excludes self).
-	 *
-	 * Returns only Yjs client IDs. Use `rpc()` with `clientId` to target peers.
-	 *
-	 * @example
-	 * ```typescript
-	 * const peers = workspace.extensions.sync.peers();
-	 * const peer = peers[0];
-	 * if (peer) {
-	 *   await workspace.extensions.sync.rpc(peer.clientId, 'tabs.close', { tabIds: [1] });
-	 * }
-	 * ```
-	 */
-	peers(): { clientId: number }[];
-
-	/**
 	 * Invoke an action on a remote peer in this room.
 	 *
 	 * Pass a type map (from `InferRpcMap`) for full type safety, or omit it
@@ -238,16 +222,6 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 			},
 			onStatusChange: transport.onStatusChange,
 			reconnect: transport.reconnect,
-
-			peers() {
-				const selfId = ydoc.clientID;
-				const peers: { clientId: number }[] = [];
-				for (const [clientId] of transport.awareness.getStates()) {
-					if (clientId === selfId) continue;
-					peers.push({ clientId });
-				}
-				return peers;
-			},
 
 			async rpc<
 				TMap extends RpcActionMap = DefaultRpcMap,

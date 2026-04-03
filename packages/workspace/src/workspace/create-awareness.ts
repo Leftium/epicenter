@@ -72,26 +72,40 @@ export function createAwareness<TDefs extends AwarenessDefinitions>(
 	awareness: Awareness,
 	definitions: TDefs,
 ): AwarenessHelper<TDefs> {
-	const raw = awareness;
 	const defEntries = Object.entries(definitions);
+
+	/** Validate awareness state fields against schemas. */
+	function validateState(state: unknown): Record<string, unknown> {
+		const validated: Record<string, unknown> = {};
+		for (const [fieldKey, fieldSchema] of defEntries) {
+			const fieldValue = (state as Record<string, unknown>)[fieldKey];
+			if (fieldValue === undefined) continue;
+
+			const fieldResult = fieldSchema['~standard'].validate(fieldValue);
+			if (fieldResult instanceof Promise) continue;
+			if (fieldResult.issues) continue;
+
+			validated[fieldKey] = fieldResult.value;
+		}
+		return validated;
+	}
 
 	return {
 		setLocal(state) {
-			// Merge with current state (partial update, like setLocalStateField for each key)
-			const current = raw.getLocalState() ?? {};
-			raw.setLocalState({ ...current, ...state });
+			const current = awareness.getLocalState() ?? {};
+			awareness.setLocalState({ ...current, ...state });
 		},
 
 		setLocalField(key, value) {
-			raw.setLocalStateField(key, value);
+			awareness.setLocalStateField(key, value);
 		},
 
 		getLocal() {
-			return raw.getLocalState() as AwarenessState<TDefs> | null;
+			return awareness.getLocalState() as AwarenessState<TDefs> | null;
 		},
 
 		getLocalField(key) {
-			const state = raw.getLocalState();
+			const state = awareness.getLocalState();
 			if (state === null) return undefined;
 			return (state as Record<string, unknown>)[key] as ReturnType<
 				AwarenessHelper<TDefs>['getLocalField']
@@ -100,24 +114,9 @@ export function createAwareness<TDefs extends AwarenessDefinitions>(
 
 		getAll() {
 			const result = new Map<number, AwarenessState<TDefs>>();
-
-			for (const [clientId, state] of raw.getStates()) {
+			for (const [clientId, state] of awareness.getStates()) {
 				if (state === null || typeof state !== 'object') continue;
-
-				// Validate each field independently against its schema
-				const validated: Record<string, unknown> = {};
-				for (const [fieldKey, fieldSchema] of defEntries) {
-					const fieldValue = (state as Record<string, unknown>)[fieldKey];
-					if (fieldValue === undefined) continue;
-
-					const fieldResult = fieldSchema['~standard'].validate(fieldValue);
-					if (fieldResult instanceof Promise) continue; // Skip async schemas
-					if (fieldResult.issues) continue; // Skip invalid fields
-
-					validated[fieldKey] = fieldResult.value;
-				}
-
-				// Skip clients with zero valid fields
+				const validated = validateState(state);
 				if (Object.keys(validated).length > 0) {
 					result.set(clientId, validated as AwarenessState<TDefs>);
 				}
@@ -127,27 +126,11 @@ export function createAwareness<TDefs extends AwarenessDefinitions>(
 
 		peers() {
 			const result = new Map<number, AwarenessState<TDefs>>();
-			const selfId = raw.clientID;
-
-			for (const [clientId, state] of raw.getStates()) {
+			const selfId = awareness.clientID;
+			for (const [clientId, state] of awareness.getStates()) {
 				if (clientId === selfId) continue;
 				if (state === null || typeof state !== 'object') continue;
-
-				// Validate each field independently against its schema
-				const validated: Record<string, unknown> = {};
-				for (const [fieldKey, fieldSchema] of defEntries) {
-					const fieldValue = (state as Record<string, unknown>)[fieldKey];
-					if (fieldValue === undefined) continue;
-
-					const fieldResult = fieldSchema['~standard'].validate(fieldValue);
-					if (fieldResult instanceof Promise) continue;
-					if (fieldResult.issues) continue;
-
-					validated[fieldKey] = fieldResult.value;
-				}
-
-				// Include ALL remote peers, even with zero valid fields
-				result.set(clientId, validated as AwarenessState<TDefs>);
+				result.set(clientId, validateState(state) as AwarenessState<TDefs>);
 			}
 			return result;
 		},
@@ -168,11 +151,11 @@ export function createAwareness<TDefs extends AwarenessDefinitions>(
 				for (const id of removed) changes.set(id, 'removed');
 				callback(changes);
 			};
-			raw.on('change', handler);
-			return () => raw.off('change', handler);
+			awareness.on('change', handler);
+			return () => awareness.off('change', handler);
 		},
 
-		raw,
+		raw: awareness,
 	};
 }
 

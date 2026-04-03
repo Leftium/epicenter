@@ -91,7 +91,6 @@ type DocEntry<
 	TAwarenessDefinitions extends AwarenessDefinitions,
 > = {
 	ydoc: Y.Doc;
-	awareness: Awareness;
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Extension<any>>;
 	unobserve: () => void;
@@ -246,8 +245,7 @@ export function createDocuments<
 				}
 			} catch (err) {
 				startDisposeLifo(disposers);
-
-				contentAwareness.destroy();
+				// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
 				contentYdoc.destroy();
 				throw err;
 			}
@@ -297,7 +295,7 @@ export function createDocuments<
 							.catch(async (err) => {
 								const errors = await disposeLifo(disposers);
 								unobserve();
-								contentAwareness.destroy();
+								// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
 								contentYdoc.destroy();
 								openDocuments.delete(guid);
 
@@ -309,7 +307,6 @@ export function createDocuments<
 
 			openDocuments.set(guid, {
 				ydoc: contentYdoc,
-				awareness: contentAwareness,
 				extensions: resolvedExtensions,
 				unobserve,
 				whenReady,
@@ -331,8 +328,8 @@ export function createDocuments<
 				Object.values(entry.extensions).map((e) => e.dispose),
 			);
 
+			// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
 			entry.ydoc.destroy();
-			entry.awareness.destroy();
 
 			if (errors.length > 0) {
 				throw new Error(`Document extension cleanup errors: ${errors.length}`);
@@ -352,8 +349,8 @@ export function createDocuments<
 					Object.values(entry.extensions).map((e) => e.dispose),
 				);
 
+				// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
 				entry.ydoc.destroy();
-				entry.awareness.destroy();
 
 				if (errors.length > 0) {
 					console.error('Document extension cleanup error:', errors);

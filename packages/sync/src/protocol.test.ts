@@ -20,9 +20,11 @@ import * as Y from 'yjs';
 import {
 	decodeMessageType,
 	decodeSyncMessage,
+	decodeSyncStatus,
 	encodeAwareness,
 	encodeAwarenessStates,
 	encodeQueryAwareness,
+	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
@@ -44,8 +46,47 @@ describe('MESSAGE_TYPE constants', () => {
 		expect(MESSAGE_TYPE.QUERY_AWARENESS).toBe(3);
 	});
 
-	test('SYNC_STATUS is 102 (extension beyond standard y-websocket)', () => {
-		expect(MESSAGE_TYPE.SYNC_STATUS).toBe(102);
+	test('SYNC_STATUS is 100 (custom extension for version tracking)', () => {
+		expect(MESSAGE_TYPE.SYNC_STATUS).toBe(100);
+	});
+});
+
+// ============================================================================
+// SYNC_STATUS Encode/Decode Tests
+// ============================================================================
+
+describe('SYNC_STATUS encode/decode', () => {
+	test('encodeSyncStatus produces correct message type', () => {
+		const message = encodeSyncStatus(42);
+		expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.SYNC_STATUS);
+	});
+
+	test('round-trip: encode then decode preserves localVersion', () => {
+		const version = 12345;
+		const encoded = encodeSyncStatus(version);
+		const decoded = decodeSyncStatus(encoded);
+		expect(decoded).toBe(version);
+	});
+
+	test('round-trip with version 0', () => {
+		const encoded = encodeSyncStatus(0);
+		const decoded = decodeSyncStatus(encoded);
+		expect(decoded).toBe(0);
+	});
+
+	test('round-trip with large version number', () => {
+		const version = 1_000_000;
+		const encoded = encodeSyncStatus(version);
+		const decoded = decodeSyncStatus(encoded);
+		expect(decoded).toBe(version);
+	});
+
+	test('decodeSyncStatus throws on non-SYNC_STATUS message', () => {
+		const doc = createDoc();
+		const syncMessage = encodeSyncStep1({ doc });
+		expect(() => decodeSyncStatus(syncMessage)).toThrow(
+			'Expected SYNC_STATUS message (100), got 0',
+		);
 	});
 });
 

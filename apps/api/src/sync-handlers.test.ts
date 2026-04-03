@@ -229,12 +229,12 @@ describe('applyMessage — SYNC', () => {
 		const result = applyMessage({ data: step1Message, room, connection });
 
 		expect(result.error).toBeNull();
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		expect(result.data!.response).toBeDefined();
-
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		const decoded = decodeSyncMessage(result.data!.response!);
-		expect(decoded.type).toBe('step2');
+		expect(result.data).not.toBeNull();
+		expect(result.data!.action).toBe('reply');
+		if (result.data?.action === 'reply') {
+			const decoded = decodeSyncMessage(result.data.data);
+			expect(decoded.type).toBe('step2');
+		}
 	});
 
 	test('SyncStep2 from client applies update to server doc', () => {
@@ -249,8 +249,7 @@ describe('applyMessage — SYNC', () => {
 		const result = applyMessage({ data: step2Message, room, connection });
 
 		expect(result.error).toBeNull();
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		expect(result.data!.response).toBeUndefined();
+		expect(result.data).toBeNull();
 		expect(doc.getMap('data').get('client-key')).toBe('client-value');
 	});
 
@@ -270,8 +269,7 @@ describe('applyMessage — SYNC', () => {
 		const result = applyMessage({ data: updateMessage, room, connection });
 
 		expect(result.error).toBeNull();
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		expect(result.data!.response).toBeUndefined();
+		expect(result.data).toBeNull();
 		expect(doc.getMap('data').get('incremental')).toBe('update-value');
 	});
 });
@@ -300,14 +298,12 @@ describe('applyMessage — AWARENESS', () => {
 		const result = applyMessage({ data: message, room, connection });
 
 		expect(result.error).toBeNull();
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		expect(result.data!.broadcast).toBeDefined();
-		// biome-ignore lint/style/noNonNullAssertion: error is null and broadcast asserted above
-		expect(decodeMessageType(result.data!.broadcast!)).toBe(
-			MESSAGE_TYPE.AWARENESS,
-		);
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		expect(result.data!.persistAttachment).toBe(true);
+		expect(result.data).not.toBeNull();
+		expect(result.data!.action).toBe('broadcast');
+		if (result.data?.action === 'broadcast') {
+			expect(decodeMessageType(result.data.data)).toBe(MESSAGE_TYPE.AWARENESS);
+			expect(result.data.shouldPersistAttachment).toBe(true);
+		}
 	});
 
 	test('awareness update is applied to the shared awareness instance', () => {
@@ -343,12 +339,11 @@ describe('applyMessage — QUERY_AWARENESS', () => {
 		const result = applyMessage({ data: message, room, connection });
 
 		expect(result.error).toBeNull();
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		expect(result.data!.response).toBeDefined();
-		// biome-ignore lint/style/noNonNullAssertion: error is null and response asserted above
-		expect(decodeMessageType(result.data!.response!)).toBe(
-			MESSAGE_TYPE.AWARENESS,
-		);
+		expect(result.data).not.toBeNull();
+		expect(result.data!.action).toBe('reply');
+		if (result.data?.action === 'reply') {
+			expect(decodeMessageType(result.data.data)).toBe(MESSAGE_TYPE.AWARENESS);
+		}
 	});
 
 	test('returns empty result when no awareness states exist', () => {
@@ -368,8 +363,7 @@ describe('applyMessage — QUERY_AWARENESS', () => {
 		const result = applyMessage({ data: message, room, connection });
 
 		expect(result.error).toBeNull();
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		expect(result.data!.response).toBeUndefined();
+		expect(result.data).toBeNull();
 	});
 });
 
@@ -401,8 +395,7 @@ describe('applyMessage — error handling', () => {
 
 		// Unknown types return empty effects array with no error
 		expect(result.error).toBeNull();
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		expect(result.data!.response).toBeUndefined();
+		expect(result.data).toBeNull();
 	});
 });
 
@@ -523,8 +516,8 @@ describe('multi-client broadcast', () => {
 		});
 
 		// The broadcast field should be set for the DO to distribute
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		expect(result.data!.broadcast).toBeDefined();
+		expect(result.data).not.toBeNull();
+		expect(result.data!.action).toBe('broadcast');
 
 		// The awareness state should be applied to the shared instance
 		expect(awareness.getStates().has(clientAwareness.clientID)).toBe(true);
@@ -561,15 +554,16 @@ describe('full handshake convergence', () => {
 		const result = applyMessage({ data: clientStep1, room, connection });
 
 		expect(result.error).toBeNull();
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		expect(result.data!.response).toBeDefined();
+		expect(result.data).not.toBeNull();
+		expect(result.data!.action).toBe('reply');
 
 		// Step 3: Client applies server's SyncStep2 response
-		// biome-ignore lint/style/noNonNullAssertion: error is null and response asserted above
-		const decodedStep2 = decodeSyncMessage(result.data!.response!);
-		expect(decodedStep2.type).toBe('step2');
-		if (decodedStep2.type === 'step2') {
-			Y.applyUpdateV2(clientDoc, decodedStep2.update, 'server');
+		if (result.data?.action === 'reply') {
+			const decodedStep2 = decodeSyncMessage(result.data.data);
+			expect(decodedStep2.type).toBe('step2');
+			if (decodedStep2.type === 'step2') {
+				Y.applyUpdateV2(clientDoc, decodedStep2.update, 'server');
+			}
 		}
 
 		// Step 4: Client sends its SyncStep2 to server (client has nothing server needs)
@@ -600,14 +594,15 @@ describe('full handshake convergence', () => {
 		// Client sends SyncStep1 to server → gets SyncStep2 back
 		const clientStep1 = encodeSyncStep1({ doc: clientDoc });
 		const result1 = applyMessage({ data: clientStep1, room, connection });
-		// biome-ignore lint/style/noNonNullAssertion: error is null, so data is non-null
-		expect(result1.data!.response).toBeDefined();
+		expect(result1.data).not.toBeNull();
+		expect(result1.data!.action).toBe('reply');
 
 		// Client applies server's diff
-		// biome-ignore lint/style/noNonNullAssertion: error is null and response asserted above
-		const serverDiff = decodeSyncMessage(result1.data!.response!);
-		if (serverDiff.type === 'step2') {
-			Y.applyUpdateV2(clientDoc, serverDiff.update, 'server');
+		if (result1.data?.action === 'reply') {
+			const serverDiff = decodeSyncMessage(result1.data.data);
+			if (serverDiff.type === 'step2') {
+				Y.applyUpdateV2(clientDoc, serverDiff.update, 'server');
+			}
 		}
 
 		// Client sends its full state to server (SyncStep2)

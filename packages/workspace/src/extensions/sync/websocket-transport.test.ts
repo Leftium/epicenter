@@ -1,7 +1,7 @@
 /**
- * Sync Provider Tests
+ * Sync Transport Tests
  *
- * Uses a mocked WebSocket to validate the provider supervisor loop without
+ * Uses a mocked WebSocket to validate the transport supervisor loop without
  * requiring a real sync server. The suite focuses on lifecycle transitions
  * and reconnection behavior.
  *
@@ -12,8 +12,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { encodeSyncStep2 } from '@epicenter/sync';
 import * as Y from 'yjs';
-import { createSyncProvider } from './provider';
-import type { SyncStatus } from './types';
+import { createTransport, type SyncStatus } from './websocket-transport';
 
 // ============================================================================
 // Mock WebSocket
@@ -100,7 +99,7 @@ function getLastWebSocket(): MockWebSocket {
 // Protocol Helpers
 // ============================================================================
 
-/** Build a sync step 2 message. The provider transitions to 'connected' on receipt. */
+/** Build a sync step 2 message. The transport transitions to 'connected' on receipt. */
 function buildSyncStep2Message(doc: Y.Doc): ArrayBuffer {
 	return encodeSyncStep2({ doc }).buffer as ArrayBuffer;
 }
@@ -123,7 +122,7 @@ function createDoc(init?: (doc: Y.Doc) => void): Y.Doc {
 
 const OriginalWebSocket = globalThis.WebSocket;
 
-describe('createSyncProvider', () => {
+describe('createTransport', () => {
 	beforeEach(() => {
 		globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
 		MockWebSocket.lastCreated = null;
@@ -135,61 +134,61 @@ describe('createSyncProvider', () => {
 
 	test('initial state is offline', () => {
 		const doc = createDoc();
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 		});
 
-		expect(provider.status.phase).toBe('offline');
+		expect(transport.status.phase).toBe('offline');
 
-		provider.dispose();
+		transport.dispose();
 	});
 
 	test('connect() transitions to connecting', async () => {
 		const doc = createDoc();
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 		});
 
-		provider.connect();
+		transport.connect();
 		await tick();
 
-		expect(provider.status.phase).toBe('connecting');
+		expect(transport.status.phase).toBe('connecting');
 		expect(MockWebSocket.lastCreated).not.toBeNull();
 
-		provider.dispose();
+		transport.dispose();
 	});
 
 	test('connect() starts the supervisor loop', async () => {
 		const doc = createDoc();
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 		});
 
-		expect(provider.status.phase).toBe('offline');
+		expect(transport.status.phase).toBe('offline');
 
-		provider.connect();
+		transport.connect();
 		await tick();
 
-		expect(provider.status.phase).toBe('connecting');
+		expect(transport.status.phase).toBe('connecting');
 
-		provider.dispose();
+		transport.dispose();
 	});
 
 	test('status transitions: connecting → connected', async () => {
 		const doc = createDoc();
 		const statuses: SyncStatus[] = [];
 
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 		});
 
-		provider.onStatusChange((s) => statuses.push(s));
+		transport.onStatusChange((s) => statuses.push(s));
 
-		provider.connect();
+		transport.connect();
 		await tick();
 
 		const ws = getLastWebSocket();
@@ -204,20 +203,20 @@ describe('createSyncProvider', () => {
 		ws.simulateMessage(buildSyncStep2Message(doc));
 		await tick();
 
-		expect(provider.status.phase).toBe('connected');
+		expect(transport.status.phase).toBe('connected');
 		expect(statuses.map((s) => s.phase)).toContain('connected');
 
-		provider.dispose();
+		transport.dispose();
 	});
 
 	test('disconnect() sets status to offline synchronously', async () => {
 		const doc = createDoc();
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 		});
 
-		provider.connect();
+		transport.connect();
 		await tick();
 		const ws = getLastWebSocket();
 		ws.simulateOpen();
@@ -225,50 +224,50 @@ describe('createSyncProvider', () => {
 		ws.simulateMessage(buildSyncStep2Message(doc));
 		await tick();
 
-		expect(provider.status.phase).toBe('connected');
+		expect(transport.status.phase).toBe('connected');
 
 		// disconnect() should synchronously set status
-		provider.disconnect();
-		expect(provider.status.phase).toBe('offline');
+		transport.disconnect();
+		expect(transport.status.phase).toBe('offline');
 
 		// Clean up the close event
 		await tick();
-		provider.dispose();
+		transport.dispose();
 	});
 
 	test('disconnect() during connecting cancels the loop', async () => {
 		const doc = createDoc();
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 		});
 
-		provider.connect();
+		transport.connect();
 		await tick();
-		expect(provider.status.phase).toBe('connecting');
+		expect(transport.status.phase).toBe('connecting');
 
-		provider.disconnect();
-		expect(provider.status.phase).toBe('offline');
+		transport.disconnect();
+		expect(transport.status.phase).toBe('offline');
 
 		// Let any pending promises settle
 		await tick(50);
-		expect(provider.status.phase).toBe('offline');
+		expect(transport.status.phase).toBe('offline');
 
-		provider.dispose();
+		transport.dispose();
 	});
 
 	test('onStatusChange listener fires on transitions', async () => {
 		const doc = createDoc();
 		const statuses: SyncStatus[] = [];
 
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 		});
 
-		provider.onStatusChange((s) => statuses.push(s));
+		transport.onStatusChange((s) => statuses.push(s));
 
-		provider.connect();
+		transport.connect();
 		await tick();
 
 		const ws = getLastWebSocket();
@@ -281,21 +280,21 @@ describe('createSyncProvider', () => {
 		const phases = statuses.map((s) => s.phase);
 		expect(phases).toEqual(['connecting', 'connected']);
 
-		provider.dispose();
+		transport.dispose();
 	});
 
 	test('onStatusChange unsubscribe stops notifications', async () => {
 		const doc = createDoc();
 		const statuses: SyncStatus[] = [];
 
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 		});
 
-		const unsub = provider.onStatusChange((s) => statuses.push(s));
+		const unsub = transport.onStatusChange((s) => statuses.push(s));
 
-		provider.connect();
+		transport.connect();
 		await tick();
 
 		// Unsubscribe after 'connecting'
@@ -311,21 +310,21 @@ describe('createSyncProvider', () => {
 		const phases = statuses.map((s) => s.phase);
 		expect(phases).toEqual(['connecting']);
 
-		provider.dispose();
+		transport.dispose();
 	});
 
 	test('dispose() sets status to offline and cleans up', async () => {
 		const doc = createDoc();
 		const statuses: SyncStatus[] = [];
 
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 		});
 
-		provider.onStatusChange((s) => statuses.push(s));
+		transport.onStatusChange((s) => statuses.push(s));
 
-		provider.connect();
+		transport.connect();
 		await tick();
 
 		const ws = getLastWebSocket();
@@ -334,53 +333,53 @@ describe('createSyncProvider', () => {
 		ws.simulateMessage(buildSyncStep2Message(doc));
 		await tick();
 
-		expect(provider.status.phase).toBe('connected');
+		expect(transport.status.phase).toBe('connected');
 
-		provider.dispose();
-		expect(provider.status.phase).toBe('offline');
+		transport.dispose();
+		expect(transport.status.phase).toBe('offline');
 
 		// After dispose, status listener should not fire
 		// (listeners are cleared in dispose)
 		statuses.length = 0;
 
 		await tick(50);
-		provider.dispose();
+		transport.dispose();
 	});
 
 	test('multiple connect() calls are idempotent', async () => {
 		const doc = createDoc();
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 		});
 
-		provider.connect();
+		transport.connect();
 		await tick();
 
 		const firstWs = MockWebSocket.lastCreated;
 
 		// Call connect again — should be a no-op
-		provider.connect();
+		transport.connect();
 		await tick();
 
 		// Same WebSocket instance — no new one was created
 		expect(MockWebSocket.lastCreated).toBe(firstWs);
 
-		provider.dispose();
+		transport.dispose();
 	});
 
 	test('reconnection after socket close', async () => {
 		const doc = createDoc();
 		const statuses: SyncStatus[] = [];
 
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 		});
 
-		provider.onStatusChange((s) => statuses.push(s));
+		transport.onStatusChange((s) => statuses.push(s));
 
-		provider.connect();
+		transport.connect();
 		await tick();
 
 		const ws1 = getLastWebSocket();
@@ -389,14 +388,14 @@ describe('createSyncProvider', () => {
 		ws1.simulateMessage(buildSyncStep2Message(doc));
 		await tick();
 
-		expect(provider.status.phase).toBe('connected');
+		expect(transport.status.phase).toBe('connected');
 
 		// Simulate server closing the connection
 		ws1.simulateClose();
 		// Backoff is ~500ms base, so wait 700ms for reconnection attempt
 		await tick(700);
 
-		// Provider should attempt to reconnect
+		// Transport should attempt to reconnect
 		const phases = statuses.map((s) => s.phase);
 		expect(phases).toContain('connecting');
 
@@ -404,18 +403,18 @@ describe('createSyncProvider', () => {
 		const ws2 = getLastWebSocket();
 		expect(ws2).not.toBe(ws1);
 
-		provider.dispose();
+		transport.dispose();
 	});
 
 	test('getToken result is passed as query param', async () => {
 		const doc = createDoc();
-		const provider = createSyncProvider({
+		const transport = createTransport({
 			doc,
-			url: 'ws://test/sync',
+			url: () => 'ws://test/sync',
 			getToken: async () => 'my-secret',
 		});
 
-		provider.connect();
+		transport.connect();
 		await tick();
 
 		const ws = getLastWebSocket();
@@ -426,6 +425,6 @@ describe('createSyncProvider', () => {
 		// into the Sec-WebSocket-Protocol header which proxies may log
 		expect(ws.protocols).toBeUndefined();
 
-		provider.dispose();
+		transport.dispose();
 	});
 });

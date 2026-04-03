@@ -33,7 +33,6 @@
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/sync-client": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
 		"@tanstack/svelte-query-devtools": "catalog:",
 		"@tiptap/core": "^2.12.0",

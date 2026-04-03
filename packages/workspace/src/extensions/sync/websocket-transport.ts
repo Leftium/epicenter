@@ -1,9 +1,8 @@
+/// <reference lib="dom" />
+
 import {
-	decodeRpcMessage,
 	encodeAwareness,
 	encodeAwarenessStates,
-	encodeRpcRequest,
-	encodeRpcResponse,
 	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
@@ -19,19 +18,146 @@ import {
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import type {
-	SyncError,
-	SyncProvider,
-	SyncProviderConfig,
-	SyncStatus,
-} from './types';
+import type * as Y from 'yjs';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/**
+ * Error context from the last failed connection attempt.
+ *
+ * Discriminated on `type`:
+ * - `auth` — Token acquisition failed (`getToken` threw)
+ * - `connection` — WebSocket failed to open or dropped
+ */
+export type SyncError =
+	| { type: 'auth'; error: unknown }
+	| { type: 'connection' };
+
+/**
+ * Connection status of the sync transport.
+ *
+ * Discriminated on `phase`:
+ * - `offline` — Not connected, not trying to connect
+ * - `connecting` — Attempting to open a WebSocket or performing handshake.
+ *   Carries `attempt` (0 = first, 1+ = reconnecting) and optional `lastError`
+ *   from the previous failed attempt.
+ * - `connected` — Fully synced and communicating
+ */
+export type SyncStatus =
+	| { phase: 'offline' }
+	| { phase: 'connecting'; attempt: number; lastError?: SyncError }
+	| { phase: 'connected'; hasLocalChanges: boolean };
+
+/**
+ * Configuration for creating a sync transport.
+ *
+ * Supports two auth modes:
+ * - **Open**: Just `url` — no auth (localhost, Tailscale, LAN)
+ * - **Authenticated**: `url` + `getToken` — dynamic token refresh
+ */
+export type TransportConfig = {
+	/** The Y.Doc to sync. */
+	doc: Y.Doc;
+
+	/**
+	 * WebSocket URL for the sync room. Called fresh on each connection attempt.
+	 */
+	url: () => string;
+
+	/**
+	 * Dynamic token fetcher for authenticated mode. Called on each connect/reconnect.
+	 */
+	getToken?: () => Promise<string | null>;
+
+	/** External awareness instance. If provided, dispose() will NOT remove its states. Defaults to `new Awareness(doc)`. */
+	awareness?: Awareness;
+
+	/**
+	 * Called for message types the transport doesn't handle internally.
+	 *
+	 * The transport handles SYNC, AWARENESS, QUERY_AWARENESS, and SYNC_STATUS.
+	 * Everything else (e.g. MESSAGE_TYPE.RPC) is forwarded here. The raw
+	 * `Uint8Array` is passed so the caller can decode as needed.
+	 */
+	onCustomMessage?: (messageType: number, data: Uint8Array) => void;
+};
+
+/**
+ * A sync transport instance that manages a WebSocket connection to a Yjs
+ * sync server.
+ *
+ * Handles Y.Doc sync, awareness, liveness detection, and reconnection
+ * with exponential backoff. Does NOT handle application-level protocols
+ * like RPC—those are forwarded via the `onCustomMessage` config callback.
+ */
+export type Transport = {
+	/** Current connection status. */
+	readonly status: SyncStatus;
+
+	/** The awareness instance for user presence. */
+	readonly awareness: Awareness;
+
+	/**
+	 * Start connecting. Idempotent — safe to call multiple times.
+	 * If a connect loop is already running, this is a no-op.
+	 */
+	connect(): void;
+
+	/**
+	 * Stop connecting and close the socket.
+	 * Sets desired state to offline and wakes any sleeping backoff.
+	 */
+	disconnect(): void;
+
+	/**
+	 * Force a fresh connection with new credentials.
+	 *
+	 * Bumps the internal run ID so the supervisor loop restarts its current
+	 * iteration with a fresh `getToken()` call and reset backoff—without
+	 * exiting the loop. No-op if not currently online.
+	 *
+	 * Use this when auth state changes (sign-in, sign-out, token refresh).
+	 * Unlike `disconnect()` + `connect()`, this is a single atomic operation
+	 * with no race condition.
+	 */
+	reconnect(): void;
+
+	/**
+	 * Subscribe to status changes. Returns unsubscribe function.
+	 *
+	 * @example
+	 * ```typescript
+	 * const unsub = transport.onStatusChange((status) => {
+	 *   switch (status.phase) {
+	 *     case 'connected': console.log('Online'); break;
+	 *     case 'connecting': console.log(`Attempt ${status.attempt}`); break;
+	 *     case 'offline': console.log('Offline'); break;
+	 *   }
+	 * });
+	 * // Later:
+	 * unsub();
+	 * ```
+	 */
+	onStatusChange(listener: (status: SyncStatus) => void): () => void;
+
+	/** Send a binary message if the WebSocket is open; silently no-ops otherwise. */
+	send(message: Uint8Array): void;
+
+	/**
+	 * Clean up everything — disconnect, remove listeners, release resources.
+	 * After calling dispose(), the transport is unusable.
+	 */
+	dispose(): void;
+};
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 /** Origin sentinel for sync updates — used to skip echoing remote changes back. */
-const SYNC_ORIGIN = Symbol('sync-provider');
+const SYNC_ORIGIN = Symbol('sync-transport');
 
 /** Base delay before reconnecting after a failed connection attempt. */
 const BASE_DELAY_MS = 500;
@@ -50,70 +176,31 @@ const LIVENESS_CHECK_INTERVAL_MS = 10_000;
 
 /** Max time to wait for a WebSocket to open before giving up. */
 const CONNECT_TIMEOUT_MS = 15_000;
+
 // ============================================================================
 // Factory Function
 // ============================================================================
 
 /**
- * Creates a sync provider that connects a Y.Doc to a WebSocket sync server.
+ * Creates a sync transport that connects a Y.Doc to a WebSocket sync server.
  *
- * Handles cross-device sync via WebSocket. For same-browser cross-tab sync,
- * use `broadcastChannelSync` from `@epicenter/workspace/extensions/sync/broadcast-channel`
- * alongside this provider—they run in parallel safely (Yjs deduplicates).
- *
- * Uses V2 encoding for all sync payloads (~40% smaller than V1).
+ * Handles Y.Doc sync, awareness, liveness detection, and reconnection with
+ * exponential backoff. Application-level protocols (like RPC) are forwarded
+ * to the caller via the `onCustomMessage` config callback.
  *
  * Uses a supervisor loop architecture where one loop owns all status transitions
  * and reconnection logic. Event handlers are reporters only—they resolve
  * promises that the loop awaits, but never make reconnection decisions.
  *
- * Most consumers use `createSyncExtension` from `@epicenter/workspace/extensions/sync`
- * rather than this provider directly. The extension wraps this provider with
- * workspace lifecycle management (waiting for persistence before connecting,
- * auto-cleanup on dispose).
- *
- * @example Recommended: via workspace extension chain
- * ```typescript
- * import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
- * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
- * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
- *
- * createWorkspace(definition)
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('broadcast', broadcastChannelSync)
- *   .withExtension('sync', createSyncExtension({
- *     url: (id) => `ws://localhost:3913/rooms/${id}`,
- *   }))
- * ```
- *
- * @example Direct usage (open mode, no auth)
- * ```typescript
- * const provider = createSyncProvider({
- *   doc: myDoc,
- *   url: 'ws://localhost:3913/rooms/blog',
- * });
- * provider.connect();
- * ```
- *
- * @example Direct usage (authenticated)
- * ```typescript
- * const provider = createSyncProvider({
- *   doc: myDoc,
- *   url: 'wss://sync.epicenter.so/rooms/blog',
- *   getToken: async () => {
- *     const res = await fetch('/api/sync/token');
- *     return (await res.json()).token;
- *   },
- * });
- * provider.connect();
- * ```
+ * Uses V2 encoding for all sync payloads (~40% smaller than V1).
  */
-export function createSyncProvider({
+export function createTransport({
 	doc,
 	getToken,
 	awareness: awarenessOption,
 	url,
-}: SyncProviderConfig): SyncProvider {
+	onCustomMessage,
+}: TransportConfig): Transport {
 	const ownsAwareness = !awarenessOption;
 	const awareness = awarenessOption ?? new Awareness(doc);
 	/** User intent: should we be connected? Set by connect()/disconnect(). */
@@ -140,11 +227,6 @@ export function createSyncProvider({
 	let localVersion = 0;
 	let ackedVersion = 0;
 	let syncStatusTimer: ReturnType<typeof setTimeout> | null = null;
-
-	// --- RPC state ---
-	let nextRequestId = 0;
-	const pendingRequests = new Map<number, { resolve: (result: { data: unknown; error: unknown }) => void; timer: ReturnType<typeof setTimeout> }>();
-	let rpcHandler: ((request: { requestId: number; action: string; input: unknown }, respond: (result: { data: unknown; error: unknown }) => void) => void) | null = null;
 
 	/** Send a binary message if the WebSocket is open; silently no-ops otherwise. */
 	function send(message: Uint8Array) {
@@ -270,23 +352,39 @@ export function createSyncProvider({
 					token = await getToken();
 					if (!token) throw new Error('No token available');
 				} catch (e) {
-					if (runId !== myRunId) { attempt = 0; lastError = undefined; continue; }
-					console.warn('[SyncProvider] Failed to get token', e);
+					if (runId !== myRunId) {
+						attempt = 0;
+						lastError = undefined;
+						continue;
+					}
+					console.warn('[SyncTransport] Failed to get token', e);
 					lastError = { type: 'auth', error: e };
 					status.set({ phase: 'connecting', attempt, lastError });
 					await backoff.sleep();
-					if (runId !== myRunId) { attempt = 0; lastError = undefined; continue; }
+					if (runId !== myRunId) {
+						attempt = 0;
+						lastError = undefined;
+						continue;
+					}
 					attempt += 1;
 					continue;
 				}
 			}
 
-			if (runId !== myRunId) { attempt = 0; lastError = undefined; continue; }
+			if (runId !== myRunId) {
+				attempt = 0;
+				lastError = undefined;
+				continue;
+			}
 
 			// --- Single connection attempt ---
 			const result = await attemptConnection(token, myRunId);
 
-			if (runId !== myRunId) { attempt = 0; lastError = undefined; continue; }
+			if (runId !== myRunId) {
+				attempt = 0;
+				lastError = undefined;
+				continue;
+			}
 
 			if (result === 'connected') {
 				// Connection was live, then dropped — retry quickly
@@ -302,7 +400,11 @@ export function createSyncProvider({
 				attempt += 1;
 				status.set({ phase: 'connecting', attempt, lastError });
 				await backoff.sleep();
-				if (runId !== myRunId) { attempt = 0; lastError = undefined; continue; }
+				if (runId !== myRunId) {
+					attempt = 0;
+					lastError = undefined;
+					continue;
+				}
 			}
 		}
 
@@ -318,10 +420,10 @@ export function createSyncProvider({
 	 *          'cancelled' if runId changed during the attempt.
 	 */
 	async function attemptConnection(
-		token: string | undefined,
+		token: string | null,
 		myRunId: number,
 	): Promise<'connected' | 'failed' | 'cancelled'> {
-		let wsUrl = typeof url === 'function' ? url() : url;
+		let wsUrl = url();
 		if (token) {
 			const parsed = new URL(wsUrl);
 			parsed.searchParams.set('token', token);
@@ -339,11 +441,6 @@ export function createSyncProvider({
 			clearTimeout(syncStatusTimer);
 			syncStatusTimer = null;
 		}
-
-		// Reset RPC state for fresh connection
-		for (const [, pending] of pendingRequests) clearTimeout(pending.timer);
-		pendingRequests.clear();
-		nextRequestId = 0;
 
 		const { promise: openPromise, resolve: resolveOpen } =
 			Promise.withResolvers<boolean>();
@@ -428,7 +525,10 @@ export function createSyncProvider({
 							syncType === SYNC_MESSAGE_TYPE.UPDATE)
 					) {
 						handshakeComplete = true;
-						status.set({ phase: 'connected', hasLocalChanges: localVersion > ackedVersion });
+						status.set({
+							phase: 'connected',
+							hasLocalChanges: localVersion > ackedVersion,
+						});
 					}
 					break;
 				}
@@ -463,32 +563,14 @@ export function createSyncProvider({
 					break;
 				}
 
-				case MESSAGE_TYPE.RPC: {
-					const rpc = decodeRpcMessage(data);
-					if (rpc.type === 'response') {
-						const pending = pendingRequests.get(rpc.requestId);
-						if (pending) {
-							clearTimeout(pending.timer);
-							pendingRequests.delete(rpc.requestId);
-							pending.resolve(rpc.result);
-						}
-					} else if (rpc.type === 'request' && rpcHandler) {
-						rpcHandler(
-							{ requestId: rpc.requestId, action: rpc.action, input: rpc.input },
-							(result) => {
-								send(encodeRpcResponse({
-									requestId: rpc.requestId,
-									requesterClientId: rpc.requesterClientId,
-									result,
-								}));
-							},
+				default:
+					if (onCustomMessage) {
+						onCustomMessage(messageType, data);
+					} else {
+						console.warn(
+							`[SyncTransport] Unknown message type: ${messageType}`,
 						);
 					}
-					break;
-				}
-
-				default:
-					console.warn(`[SyncProvider] Unknown message type: ${messageType}`);
 					break;
 			}
 		};
@@ -544,13 +626,6 @@ export function createSyncProvider({
 			status.set({ phase: 'offline' });
 		},
 
-		/**
-		 * Force a fresh connection with new credentials.
-		 *
-		 * Unlike disconnect() + connect(), this is a single operation: the
-		 * supervisor loop restarts its current iteration (fresh `getToken()`
-		 * call, reset backoff) without exiting. No race condition.
-		 */
 		reconnect() {
 			if (desired !== 'online') return;
 			runId++;
@@ -559,56 +634,24 @@ export function createSyncProvider({
 			websocket?.close();
 		},
 
-		/**
-		 * Send an RPC request to a target peer.
-		 *
-		 * @param target - Awareness clientId of the target peer
-		 * @param action - Dot-path action name (e.g. 'tabs.close')
-		 * @param input - Action input (serialized as JSON)
-		 * @returns The requestId for tracking
-		 */
-		sendRpcRequest(target: number, action: string, input?: unknown): number {
-			const requestId = nextRequestId++;
-			send(encodeRpcRequest({
-				requestId,
-				targetClientId: target,
-				requesterClientId: doc.clientID,
-				action,
-				input,
-			}));
-			return requestId;
-		},
-
-		/**
-		 * Register a handler for incoming RPC requests.
-		 *
-		 * Only one handler can be active at a time. The workspace sync extension
-		 * sets this to dispatch to the action tree.
-		 *
-		 * @returns Unsubscribe function
-		 */
-		onRpcRequest(handler: (request: { requestId: number; action: string; input: unknown }, respond: (result: { data: unknown; error: unknown }) => void) => void): () => void {
-			rpcHandler = handler;
-			return () => { rpcHandler = null; };
-		},
-
-		/** Map of pending RPC requests for external timeout management. */
-		get pendingRequests() {
-			return pendingRequests;
-		},
-
 		onStatusChange: status.subscribe,
 
+		send,
+
 		dispose() {
-			this.disconnect();
+			// Inline disconnect logic instead of this.disconnect() — avoids
+			// broken `this` binding if the method is destructured.
+			desired = 'offline';
+			runId++;
+			backoff.wake();
+			manageWindowListeners('remove');
+			websocket?.close();
+			status.set({ phase: 'offline' });
 			doc.off('updateV2', handleDocUpdate);
 			awareness.off('update', handleAwarenessUpdate);
 			if (ownsAwareness) {
 				removeAwarenessStates(awareness, [doc.clientID], 'window unload');
 			}
-			// Clean up pending RPC requests
-			for (const [, pending] of pendingRequests) clearTimeout(pending.timer);
-			pendingRequests.clear();
 			status.clear();
 		},
 	};

@@ -16,7 +16,6 @@
 	"dependencies": {
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
-		"@epicenter/sync-client": "workspace:*",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
 		"mode-watcher": "^1.1.0",

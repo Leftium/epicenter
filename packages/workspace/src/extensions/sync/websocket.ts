@@ -1,11 +1,18 @@
 import {
-	createSyncProvider,
-	type SyncProvider,
-	type SyncStatus,
-} from '@epicenter/sync-client';
-import { RpcError } from '@epicenter/sync';
+	decodeRpcMessage,
+	encodeRpcRequest,
+	MESSAGE_TYPE,
+	RpcError,
+} from '@epicenter/sync';
 import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
 import type { SharedExtensionContext } from '../../workspace/types.js';
+import {
+	createTransport,
+	type SyncStatus,
+	type Transport,
+} from './websocket-transport.js';
+
+export type { SyncError, SyncStatus } from './websocket-transport.js';
 
 const DEFAULT_RPC_TIMEOUT_MS = 5_000;
 
@@ -77,7 +84,7 @@ export type SyncExtensionExports = {
 	/** Current connection status. */
 	readonly status: SyncStatus;
 	/** Subscribe to status changes. Returns unsubscribe function. */
-	onStatusChange: SyncProvider['onStatusChange'];
+	onStatusChange: Transport['onStatusChange'];
 	/**
 	 * Force a fresh connection with new credentials.
 	 *
@@ -161,7 +168,7 @@ export function toWsUrl(httpUrl: string): string {
  * Creates a sync extension factory for any Y.Doc scope.
  *
  * Returns a factory function that receives `SharedExtensionContext` and
- * produces a sync provider with `peers()` and `rpc()`. Register with
+ * produces a sync transport with `peers()` and `rpc()`. Register with
  * `.withExtension()` for dual-scope (workspace + documents) or with
  * `.withWorkspaceExtension()` / `.withDocumentExtension()` for single-scope.
  *
@@ -180,27 +187,71 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 	return ({ ydoc, whenReady: priorReady }) => {
 		const docId = ydoc.guid;
 		const { getToken } = config;
-		const provider: SyncProvider = createSyncProvider({
+
+		// ── RPC state (private — owned entirely by this extension) ──
+		const pendingRequests = new Map<
+			number,
+			{
+				resolve: (result: { data: unknown; error: unknown }) => void;
+				timer: ReturnType<typeof setTimeout>;
+			}
+		>();
+		let nextRequestId = 0;
+
+		/** Clear all pending RPC requests (on reconnect or dispose). */
+		function clearPendingRequests() {
+			for (const [, pending] of pendingRequests) clearTimeout(pending.timer);
+			pendingRequests.clear();
+			nextRequestId = 0;
+		}
+
+		// ── Transport (handles sync, awareness, WebSocket lifecycle) ──
+		const transport = createTransport({
 			doc: ydoc,
 			url: () => config.url(docId),
 			getToken: getToken ? () => getToken(docId) : undefined,
+			onCustomMessage(messageType, data) {
+				if (messageType !== MESSAGE_TYPE.RPC) {
+					console.warn(`[SyncExtension] Unknown message type: ${messageType}`);
+					return;
+				}
+
+				const rpc = decodeRpcMessage(data);
+				if (rpc.type === 'response') {
+					const pending = pendingRequests.get(rpc.requestId);
+					if (pending) {
+						clearTimeout(pending.timer);
+						pendingRequests.delete(rpc.requestId);
+						pending.resolve(rpc.result);
+					}
+				}
+			},
 		});
-		const awareness = provider.awareness;
+
+		const awareness = transport.awareness;
+
+		// Clear pending RPC requests when a new connection attempt starts.
+		// The old WebSocket is gone — responses will never arrive.
+		transport.onStatusChange((s) => {
+			if (s.phase === 'connecting') {
+				clearPendingRequests();
+			}
+		});
 
 		// Wait for all prior extensions (persistence, etc.) then connect.
 		// This ensures the Y.Doc has local state loaded before syncing,
 		// giving an accurate state vector for the initial WebSocket handshake.
 		const whenReady = (async () => {
 			await priorReady;
-			provider.connect();
+			transport.connect();
 		})();
 
 		return {
 			get status() {
-				return provider.status;
+				return transport.status;
 			},
-			onStatusChange: provider.onStatusChange,
-			reconnect: provider.reconnect,
+			onStatusChange: transport.onStatusChange,
+			reconnect: transport.reconnect,
 
 			peers() {
 				const states = awareness.getStates();
@@ -210,7 +261,8 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 					if (clientId === selfId) continue;
 					peers.push({
 						clientId,
-						deviceId: typeof state.deviceId === 'string' ? state.deviceId : undefined,
+						deviceId:
+							typeof state.deviceId === 'string' ? state.deviceId : undefined,
 						client: typeof state.client === 'string' ? state.client : undefined,
 					});
 				}
@@ -225,7 +277,10 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				action: TAction,
 				input?: TMap[TAction]['input'],
 				options?: { timeout?: number },
-			): Promise<{ data: TMap[TAction]['output'] | null; error: RpcError | null }> {
+			): Promise<{
+				data: TMap[TAction]['output'] | null;
+				error: RpcError | null;
+			}> {
 				if (target === ydoc.clientID) {
 					return RpcError.ActionFailed({ action, cause: undefined });
 				}
@@ -233,15 +288,25 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				const timeoutMs = options?.timeout ?? DEFAULT_RPC_TIMEOUT_MS;
 
 				return new Promise((resolve) => {
-					const requestId = provider.sendRpcRequest(target, action, input);
+					const requestId = nextRequestId++;
+					transport.send(
+						encodeRpcRequest({
+							requestId,
+							targetClientId: target,
+							requesterClientId: ydoc.clientID,
+							action,
+							input,
+						}),
+					);
 
 					const timer = setTimeout(() => {
-						provider.pendingRequests.delete(requestId);
+						pendingRequests.delete(requestId);
 						resolve(RpcError.Timeout({ ms: timeoutMs }));
 					}, timeoutMs);
 
-					provider.pendingRequests.set(requestId, {
+					pendingRequests.set(requestId, {
 						resolve: (result) => {
+							clearTimeout(timer);
 							const error = result.error as RpcError | null;
 							resolve({
 								data: error ? null : (result.data as TMap[TAction]['output']),
@@ -255,7 +320,8 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 
 			whenReady,
 			dispose() {
-				provider.dispose();
+				clearPendingRequests();
+				transport.dispose();
 			},
 		};
 	};

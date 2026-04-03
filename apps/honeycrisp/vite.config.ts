@@ -11,5 +11,18 @@ export default defineConfig({
 	server: {
 		port: APPS.HONEYCRISP.port,
 		strictPort: true,
+		proxy: process.env.VITE_API_URL
+			? {
+					'/auth': {
+						target: process.env.VITE_API_URL,
+						changeOrigin: true,
+					},
+					'/workspaces': {
+						target: process.env.VITE_API_URL,
+						changeOrigin: true,
+						ws: true,
+					},
+				}
+			: undefined,
 	},
 });

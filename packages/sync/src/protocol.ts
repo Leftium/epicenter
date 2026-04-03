@@ -63,6 +63,17 @@ export const MESSAGE_TYPE = {
 	 * Wire format: `[varuint: 100] [varuint: localVersion]`
 	 */
 	SYNC_STATUS: 100,
+	/**
+	 * Remote procedure call between peers, routed through the DO.
+	 * Uses REQUEST/RESPONSE sub-types.
+	 *
+	 * Wire format (REQUEST):
+	 * `[varuint: 101] [varuint: 0] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: action] [varUint8Array: JSON input]`
+	 *
+	 * Wire format (RESPONSE):
+	 * `[varuint: 101] [varuint: 1] [varuint: requestId] [varuint: requesterClientId] [varUint8Array: JSON { data, error }]`
+	 */
+	RPC: 101,
 } as const;
 
 export type MessageType = (typeof MESSAGE_TYPE)[keyof typeof MESSAGE_TYPE];
@@ -430,4 +441,148 @@ export function decodeSyncStatus(data: Uint8Array): number {
 		throw new Error(`Expected SYNC_STATUS message (${MESSAGE_TYPE.SYNC_STATUS}), got ${messageType}`);
 	}
 	return decoding.readVarUint(decoder);
+}
+
+// ============================================================================
+// RPC Protocol (101)
+// ============================================================================
+
+/**
+ * RPC sub-types within an RPC message.
+ * The second varuint after MESSAGE_TYPE.RPC identifies the sub-type.
+ */
+export const RPC_TYPE = {
+	/** Client → DO → target peer: invoke an action */
+	REQUEST: 0,
+	/** Target peer → DO → requester: action result */
+	RESPONSE: 1,
+} as const;
+
+export type RpcType = (typeof RPC_TYPE)[keyof typeof RPC_TYPE];
+
+/**
+ * Decoded RPC message — discriminated union of REQUEST and RESPONSE.
+ */
+export type DecodedRpcMessage =
+	| {
+			type: 'request';
+			requestId: number;
+			targetClientId: number;
+			requesterClientId: number;
+			action: string;
+			input: unknown;
+	  }
+	| {
+			type: 'response';
+			requestId: number;
+			requesterClientId: number;
+			result: { data: unknown; error: unknown };
+	  };
+
+/**
+ * Encode an RPC REQUEST message.
+ *
+ * Wire format:
+ * `[varuint: 101] [varuint: 0=REQUEST] [varuint: requestId] [varuint: targetClientId] [varuint: requesterClientId] [varString: action] [varUint8Array: JSON input]`
+ *
+ * @param options.requestId - Monotonic counter scoped to the connection
+ * @param options.targetClientId - Awareness clientId of the target peer
+ * @param options.requesterClientId - Awareness clientId of the sender (for response routing)
+ * @param options.action - Dot-path action name (e.g. 'tabs.close')
+ * @param options.input - Action input (serialized as JSON)
+ * @returns Encoded RPC REQUEST message
+ */
+export function encodeRpcRequest({
+	requestId,
+	targetClientId,
+	requesterClientId,
+	action,
+	input,
+}: {
+	requestId: number;
+	targetClientId: number;
+	requesterClientId: number;
+	action: string;
+	input?: unknown;
+}): Uint8Array {
+	const jsonBytes = new TextEncoder().encode(JSON.stringify(input ?? null));
+	return encoding.encode((encoder) => {
+		encoding.writeVarUint(encoder, MESSAGE_TYPE.RPC);
+		encoding.writeVarUint(encoder, RPC_TYPE.REQUEST);
+		encoding.writeVarUint(encoder, requestId);
+		encoding.writeVarUint(encoder, targetClientId);
+		encoding.writeVarUint(encoder, requesterClientId);
+		encoding.writeVarString(encoder, action);
+		encoding.writeVarUint8Array(encoder, jsonBytes);
+	});
+}
+
+/**
+ * Encode an RPC RESPONSE message.
+ *
+ * Wire format:
+ * `[varuint: 101] [varuint: 1=RESPONSE] [varuint: requestId] [varuint: requesterClientId] [varUint8Array: JSON { data, error }]`
+ *
+ * @param options.requestId - Echo of the request's requestId
+ * @param options.requesterClientId - Awareness clientId of the original requester (for DO routing)
+ * @param options.result - The result envelope: `{ data, error }`
+ * @returns Encoded RPC RESPONSE message
+ */
+export function encodeRpcResponse({
+	requestId,
+	requesterClientId,
+	result,
+}: {
+	requestId: number;
+	requesterClientId: number;
+	result: { data: unknown; error: unknown };
+}): Uint8Array {
+	const jsonBytes = new TextEncoder().encode(JSON.stringify(result));
+	return encoding.encode((encoder) => {
+		encoding.writeVarUint(encoder, MESSAGE_TYPE.RPC);
+		encoding.writeVarUint(encoder, RPC_TYPE.RESPONSE);
+		encoding.writeVarUint(encoder, requestId);
+		encoding.writeVarUint(encoder, requesterClientId);
+		encoding.writeVarUint8Array(encoder, jsonBytes);
+	});
+}
+
+/**
+ * Decode an RPC message into its typed components.
+ *
+ * Reads the full message bytes (including the MESSAGE_TYPE.RPC prefix).
+ * Returns a discriminated union of REQUEST or RESPONSE.
+ *
+ * @param data - Raw RPC message bytes
+ * @returns Decoded RPC message with type discriminator
+ */
+export function decodeRpcMessage(data: Uint8Array): DecodedRpcMessage {
+	const decoder = decoding.createDecoder(data);
+	const messageType = decoding.readVarUint(decoder);
+	if (messageType !== MESSAGE_TYPE.RPC) {
+		throw new Error(`Expected RPC message (${MESSAGE_TYPE.RPC}), got ${messageType}`);
+	}
+
+	const rpcType = decoding.readVarUint(decoder);
+
+	switch (rpcType) {
+		case RPC_TYPE.REQUEST: {
+			const requestId = decoding.readVarUint(decoder);
+			const targetClientId = decoding.readVarUint(decoder);
+			const requesterClientId = decoding.readVarUint(decoder);
+			const action = decoding.readVarString(decoder);
+			const jsonBytes = decoding.readVarUint8Array(decoder);
+			const input = JSON.parse(new TextDecoder().decode(jsonBytes));
+			return { type: 'request', requestId, targetClientId, requesterClientId, action, input };
+		}
+		case RPC_TYPE.RESPONSE: {
+			const requestId = decoding.readVarUint(decoder);
+			const requesterClientId = decoding.readVarUint(decoder);
+			const jsonBytes = decoding.readVarUint8Array(decoder);
+			const result = JSON.parse(new TextDecoder().decode(jsonBytes)) as { data: unknown; error: unknown };
+			return { type: 'response', requestId, requesterClientId, result };
+		}
+		default:
+			throw new Error(`Unknown RPC sub-type: ${rpcType}`);
+	}
 }

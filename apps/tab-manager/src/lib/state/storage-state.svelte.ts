@@ -6,8 +6,9 @@
  * validated against a Standard Schema on every read from storage — invalid
  * data silently falls back to the default.
  *
- * Follows Svelte 5 convention: `.current` accessor (same as `fromStore`,
- * `MediaQuery`, `ReactiveValue`).
+ * Two read channels: `.current` for reactive template bindings (may be the
+ * fallback before chrome.storage loads) and `.get()` for authoritative async
+ * reads that wait for the real value.
  *
  * @example
  * ```typescript
@@ -19,9 +20,12 @@
  *   schema: type('string'),
  * });
  *
- * // In a component:
+ * // Reactive read (may be fallback before load):
  * // <p>{serverUrl.current}</p>
  * // <input bind:value={serverUrl.current} />
+ * //
+ * // Authoritative read (waits for chrome.storage):
+ * // const url = await serverUrl.get();
  * ```
  */
 

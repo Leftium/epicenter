@@ -288,7 +288,7 @@ export function applyMessage({
 								requesterClientId: rpc.requesterClientId,
 								result: {
 									data: null,
-									error: { tag: 'PeerOffline', message: 'Target peer is not connected' },
+								error: { name: 'PeerOffline', message: 'Target peer is not connected' },
 								},
 							});
 							return {

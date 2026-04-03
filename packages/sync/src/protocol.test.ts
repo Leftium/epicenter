@@ -169,7 +169,7 @@ describe('RPC protocol', () => {
 			requesterClientId: 300,
 			result: {
 				data: null,
-				error: { tag: 'PeerOffline', message: 'Target peer is not connected' },
+				error: { name: 'PeerOffline', message: 'Target peer is not connected' },
 			},
 		});
 
@@ -178,7 +178,7 @@ describe('RPC protocol', () => {
 		if (decoded.type === 'response') {
 			expect(decoded.result.data).toBeNull();
 			expect(decoded.result.error).toEqual({
-				tag: 'PeerOffline',
+				name: 'PeerOffline',
 				message: 'Target peer is not connected',
 			});
 		}

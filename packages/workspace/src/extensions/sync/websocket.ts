@@ -111,7 +111,7 @@ export type SyncExtensionExports = {
 	 *   peer.clientId, 'tabs.close', { tabIds: [1, 2, 3] },
 	 * );
 	 * if (error) {
-	 *   switch (error.tag) {
+	 *   switch (error.name) {
 	 *     case 'PeerOffline': // target not connected
 	 *     case 'Timeout':     // no response in time
 	 *     case 'ActionNotFound': // bad action path
@@ -218,7 +218,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				if (target === ydoc.clientID) {
 					return {
 						data: null,
-						error: { tag: 'ActionFailed', message: 'Cannot RPC to self \u2014 call the action directly', name: 'ActionFailed', action, cause: undefined } as unknown as RpcError,
+					error: { name: 'ActionFailed', message: 'Cannot RPC to self \u2014 call the action directly', action, cause: undefined } as unknown as RpcError,
 					};
 				}
 
@@ -231,7 +231,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 						provider.pendingRequests.delete(requestId);
 						resolve({
 							data: null,
-							error: { tag: 'Timeout', message: `RPC call timed out after ${timeoutMs}ms`, name: 'Timeout', ms: timeoutMs } as unknown as RpcError,
+						error: { name: 'Timeout', message: `RPC call timed out after ${timeoutMs}ms`, ms: timeoutMs } as unknown as RpcError,
 						});
 					}, timeoutMs);
 

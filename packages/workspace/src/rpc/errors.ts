@@ -11,13 +11,13 @@ import {
  * - Infrastructure errors (PeerOffline, Timeout) from the transport layer
  * - Application errors (ActionNotFound, ActionFailed) from the target peer
  *
- * All errors include a `tag` discriminant for switch-based handling:
+ * All errors include a `name` discriminant for switch-based handling:
  *
  * @example
  * ```typescript
  * const { data, error } = await workspace.extensions.sync.rpc(clientId, 'tabs.close', { tabIds: [1] });
  * if (error) {
- *   switch (error.tag) {
+ *   switch (error.name) {
  *     case 'PeerOffline': // target not connected
  *     case 'Timeout':     // no response in time
  *     case 'ActionNotFound': // bad action path

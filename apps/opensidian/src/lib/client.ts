@@ -17,14 +17,15 @@ import { createOpensidian } from './workspace/workspace';
  * Imported by both fs-state.svelte.ts (for reactive wrappers) and
  * components that need direct infra access (Toolbar, ContentEditor).
  */
-const sync = createSyncExtension({
-	url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
-	getToken: async () => auth.token,
-});
-
 export const workspace = createOpensidian()
 	.withExtension('persistence', indexeddbPersistence)
-	.withWorkspaceExtension('sync', sync.workspace)
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
+			getToken: async () => auth.token,
+		}),
+	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 
 // Boot: apply cached encryption keys (sync — localStorage is immediate).

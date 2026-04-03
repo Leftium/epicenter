@@ -101,15 +101,16 @@ export async function registerDevice(): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildWorkspaceClient() {
-	const sync = createSyncExtension({
-		url: (workspaceId) => toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
-		getToken: async () => (await authSession.get())?.token ?? null,
-	});
-
 	const client = createTabManagerWorkspace()
 		.withExtension('persistence', indexeddbPersistence)
 		.withExtension('broadcast', broadcastChannelSync)
-		.withWorkspaceExtension('sync', sync.workspace)
+		.withExtension(
+			'sync',
+			createSyncExtension({
+				url: (workspaceId) => toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
+				getToken: async () => authSession.current?.token ?? null,
+			}),
+		)
 		.withActions(({ tables, batch }) => ({
 			tabs: {
 				close: defineMutation({

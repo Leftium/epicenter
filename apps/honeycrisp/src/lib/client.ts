@@ -16,14 +16,15 @@ import { session } from '$lib/auth';
 import { honeycrisp } from './workspace/definition';
 
 
-const sync = createSyncExtension({
-	url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
-	getToken: async () => auth.token,
-});
-
 export const workspace = createWorkspace(honeycrisp)
 	.withExtension('persistence', indexeddbPersistence)
-	.withWorkspaceExtension('sync', sync.workspace);
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
+			getToken: async () => auth.token,
+		}),
+	);
 
 // Boot: apply cached encryption keys (sync — localStorage is immediate).
 const cached = session.get();

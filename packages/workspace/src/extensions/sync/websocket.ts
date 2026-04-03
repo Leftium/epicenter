@@ -3,7 +3,10 @@ import {
 	type SyncProvider,
 	type SyncStatus,
 } from '@epicenter/sync-client';
-import type { SharedExtensionContext } from '../../workspace/types';
+import type { RpcError } from '../../rpc/errors.js';
+import type { SharedExtensionContext } from '../../workspace/types.js';
+
+const DEFAULT_RPC_TIMEOUT_MS = 5_000;
 
 /**
  * Sync extension configuration.
@@ -34,112 +37,53 @@ import type { SharedExtensionContext } from '../../workspace/types';
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
- *   .withWorkspaceExtension('sync', sync.workspace)  // syncs workspace Y.Doc with awareness
+ *   .withWorkspaceExtension('sync', sync.workspace)  // syncs workspace Y.Doc with awareness + RPC
  *   .withDocumentExtension('sync', sync.document)     // syncs each content Y.Doc
- * ```
- *
- * @example Authenticated mode (cloud)
- * ```typescript
- * const sync = createSyncExtension({
- *   url: (docId) => `wss://sync.epicenter.so/rooms/${docId}`,
- *   getToken: async (docId) => {
- *     const res = await fetch('/api/sync/token', {
- *       method: 'POST',
- *       body: JSON.stringify({ docId }),
- *     });
- *     return (await res.json()).token;
- *   },
- * });
  * ```
  */
 export type SyncExtensionConfig = {
-	/**
-	 * WebSocket URL for the room. Receives the Y.Doc's GUID.
-	 *
-	 * At workspace scope, this is the workspace ID. At document scope,
-	 * this is the content Y.Doc's GUID (unique per document).
-	 *
-	 * Must use `ws:` or `wss:` protocol. Use {@link toWsUrl} to convert
-	 * an HTTP URL if your server config provides one.
-	 */
 	url: (docId: string) => string;
-
-	/**
-	 * Token fetcher for authenticated mode. Called on each connect/reconnect.
-	 * The same token is used for both WebSocket (`?token=` query param) and
-	 * HTTP snapshot (`Authorization: Bearer` header).
-	 */
 	getToken?: (docId: string) => Promise<string | null>;
 };
 
-/** Exports available on `client.extensions.sync` after registration. */
-export type SyncExtensionExports = {
-	/** Current connection status. */
-	readonly status: SyncStatus;
-	/** Subscribe to status changes. Returns unsubscribe function. */
-	onStatusChange: SyncProvider['onStatusChange'];
-	/**
-	 * Force a fresh connection with new credentials.
-	 *
-	 * The supervisor loop restarts its current iteration with a fresh
-	 * `getToken()` call—no disconnect/connect race condition.
-	 */
-	reconnect(): void;
+/** Info about a connected peer, derived from awareness state. */
+export type PeerInfo = {
+	/** Yjs awareness clientId (ephemeral, for targeting RPC calls). */
+	clientId: number;
+	/** Stable device identity (NanoID from localStorage), if published. */
+	deviceId?: string;
+	/** Capability class ('browser-extension', 'cli', etc.), if published. */
+	deviceType?: string;
 };
 
-/**
- * Convert an HTTP(S) URL to its WebSocket equivalent.
- *
- * Use this when your server config provides HTTP URLs (e.g. `APP_URLS.API`)
- * but you need a WebSocket URL for sync.
- *
- * @example
- * ```typescript
- * import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
- *
- * createSyncExtension({
- *   url: (id) => toWsUrl(`${APP_URLS.API}/workspaces/${id}`),
- * })
- * // 'http://localhost:8787/workspaces/my-ws' → 'ws://localhost:8787/workspaces/my-ws'
- * // 'https://api.epicenter.so/workspaces/my-ws' → 'wss://api.epicenter.so/workspaces/my-ws'
- * ```
- */
+/** Exports available on `client.extensions.sync` after workspace registration. */
+export type SyncExtensionExports = {
+	readonly status: SyncStatus;
+	onStatusChange: SyncProvider['onStatusChange'];
+	reconnect(): void;
+	peers(): PeerInfo[];
+	rpc<TData = unknown>(
+		target: number,
+		action: string,
+		input?: unknown,
+		options?: { timeout?: number },
+	): Promise<{ data: TData | null; error: RpcError | null }>;
+};
+
+/** Convert an HTTP(S) URL to its WebSocket equivalent. */
 export function toWsUrl(httpUrl: string): string {
 	return httpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 }
 
 /**
- * Creates a sync extension that connects after prior extensions are ready.
+ * Creates a sync extension with split workspace/document factories.
  *
- * Syncs any Y.Doc (workspace or content) via WebSocket. Register with
- * `withExtension` to sync both the workspace Y.Doc and every content Y.Doc:
- *
- * ```typescript
- * createWorkspace(definition)
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('broadcast', broadcastChannelSync)
- *   .withExtension('sync', createSyncExtension({
- *     url: (docId) => `ws://localhost:3913/rooms/${docId}`,
- *   }))
- * ```
- *
- * The `url` callback receives the Y.Doc's GUID—the workspace ID at workspace
- * scope, or the content doc's unique GUID at document scope. Each Y.Doc gets
- * its own WebSocket connection to its own room on the sync server.
- *
- * Lifecycle:
- * - Waits for prior extensions (`whenReady`) before connecting, so local state
- *   is loaded first (accurate state vector for the initial sync handshake).
- * - `whenReady` resolves when the connection is initiated. The UI renders from
- *   local state immediately; connection status is reactive via `provider`.
+ * Returns `{ workspace, document }`:
+ * - `workspace`: Syncs the workspace Y.Doc with awareness, peers(), and rpc().
+ * - `document`: Syncs each content Y.Doc (basic sync only).
  */
-export function createSyncExtension(config: SyncExtensionConfig): (
-	context: SharedExtensionContext,
-) => SyncExtensionExports & {
-	whenReady: Promise<unknown>;
-	dispose: () => void;
-} {
-	return ({ ydoc, whenReady: priorReady }) => {
+export function createSyncExtension(config: SyncExtensionConfig) {
+	function createProviderForDoc(ydoc: import('yjs').Doc, priorReady: Promise<unknown>) {
 		const docId = ydoc.guid;
 		const { getToken } = config;
 		const provider: SyncProvider = createSyncProvider({
@@ -148,24 +92,110 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 			getToken: getToken ? () => getToken(docId) : undefined,
 		});
 
-		// Wait for all prior extensions (persistence, etc.) then connect.
-		// This ensures the Y.Doc has local state loaded before syncing,
-		// giving an accurate state vector for the initial WebSocket handshake.
 		const whenReady = (async () => {
 			await priorReady;
 			provider.connect();
 		})();
 
-		return {
-			get status() {
-				return provider.status;
-			},
-			onStatusChange: provider.onStatusChange,
-			reconnect: provider.reconnect,
-			whenReady,
-			dispose() {
-				provider.dispose();
-			},
-		};
+		return { provider, whenReady };
+	}
+
+	return {
+		/**
+		 * Workspace factory — syncs the workspace Y.Doc with peers() and rpc().
+		 */
+		workspace({ ydoc, whenReady: priorReady }: SharedExtensionContext): SyncExtensionExports & {
+			whenReady: Promise<unknown>;
+			dispose: () => void;
+		} {
+			const { provider, whenReady } = createProviderForDoc(ydoc, priorReady);
+			const awareness = provider.awareness;
+
+			return {
+				get status() {
+					return provider.status;
+				},
+				onStatusChange: provider.onStatusChange,
+				reconnect: provider.reconnect,
+
+				peers() {
+					const states = awareness.getStates();
+					const selfId = ydoc.clientID;
+					const peers: PeerInfo[] = [];
+					for (const [clientId, state] of states) {
+						if (clientId === selfId) continue;
+						peers.push({
+							clientId,
+							deviceId: state.deviceId as string | undefined,
+							deviceType: state.deviceType as string | undefined,
+						});
+					}
+					return peers;
+				},
+
+				async rpc<TData = unknown>(
+					target: number,
+					action: string,
+					input?: unknown,
+					options?: { timeout?: number },
+				): Promise<{ data: TData | null; error: RpcError | null }> {
+					if (target === ydoc.clientID) {
+						return {
+							data: null,
+							error: { tag: 'ActionFailed', message: 'Cannot RPC to self \u2014 call the action directly', name: 'ActionFailed', action, cause: undefined } as unknown as RpcError,
+						};
+					}
+
+					const timeoutMs = options?.timeout ?? DEFAULT_RPC_TIMEOUT_MS;
+
+					return new Promise((resolve) => {
+						const requestId = provider.sendRpcRequest(target, action, input);
+
+						const timer = setTimeout(() => {
+							provider.pendingRequests.delete(requestId);
+							resolve({
+								data: null,
+								error: { tag: 'Timeout', message: `RPC call timed out after ${timeoutMs}ms`, name: 'Timeout', ms: timeoutMs } as unknown as RpcError,
+							});
+						}, timeoutMs);
+
+						provider.pendingRequests.set(requestId, {
+							resolve: (result) => {
+								const error = result.error as RpcError | null;
+								resolve({
+									data: error ? null : (result.data as TData),
+									error,
+								});
+							},
+							timer,
+						});
+					});
+				},
+
+				whenReady,
+				dispose() {
+					provider.dispose();
+				},
+			};
+		},
+
+		/**
+		 * Document factory — syncs each content Y.Doc (basic sync only).
+		 */
+		document({ ydoc, whenReady: priorReady }: SharedExtensionContext) {
+			const { provider, whenReady } = createProviderForDoc(ydoc, priorReady);
+
+			return {
+				get status() {
+					return provider.status;
+				},
+				onStatusChange: provider.onStatusChange,
+				reconnect: provider.reconnect,
+				whenReady,
+				dispose() {
+					provider.dispose();
+				},
+			};
+		},
 	};
 }

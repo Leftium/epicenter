@@ -16,15 +16,14 @@ import { session } from '$lib/auth';
 import { honeycrisp } from './workspace/definition';
 
 
+const sync = createSyncExtension({
+	url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
+	getToken: async () => auth.token,
+});
+
 export const workspace = createWorkspace(honeycrisp)
 	.withExtension('persistence', indexeddbPersistence)
-	.withExtension(
-		'sync',
-		createSyncExtension({
-			url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
-			getToken: async () => auth.token,
-		}),
-	);
+	.withWorkspaceExtension('sync', sync.workspace);
 
 // Boot: apply cached encryption keys immediately (no network wait).
 // The auth roundtrip refreshes keys in background; dedup makes it a no-op.

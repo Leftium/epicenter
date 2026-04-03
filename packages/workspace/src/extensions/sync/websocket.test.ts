@@ -12,12 +12,12 @@ import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { createSyncExtension } from './websocket';
 
-type SyncExtensionFactoryClient = Parameters<
-	ReturnType<typeof createSyncExtension>
+type SyncExtensionContext = Parameters<
+	ReturnType<typeof createSyncExtension>['workspace']
 >[0];
 
 /** Create a minimal mock context for the sync extension factory. */
-function createMockContext(ydoc: Y.Doc): SyncExtensionFactoryClient {
+function createMockContext(ydoc: Y.Doc): SyncExtensionContext {
 	return {
 		ydoc,
 		whenReady: Promise.resolve(),
@@ -33,7 +33,7 @@ describe('createSyncExtension', () => {
 				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
-			const result = factory(createMockContext(ydoc));
+			const result = factory.workspace(createMockContext(ydoc));
 
 			// Status accessible before reconnect
 			expect(result.status.phase).toBe('offline');
@@ -53,7 +53,7 @@ describe('createSyncExtension', () => {
 				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
-			const result = factory(createMockContext(ydoc));
+			const result = factory.workspace(createMockContext(ydoc));
 
 			result.dispose();
 
@@ -68,7 +68,7 @@ describe('createSyncExtension', () => {
 			url: (id) => `ws://localhost:3913/custom/${id}/ws`,
 		});
 
-		const result = factory(createMockContext(ydoc));
+		const result = factory.workspace(createMockContext(ydoc));
 
 		expect(result.status.phase).toBe('offline');
 
@@ -88,12 +88,12 @@ describe('createSyncExtension', () => {
 			url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 		});
 
-		const result = factory({
+		const result = factory.workspace({
 			ydoc,
 			whenReady: clientWhenReady.then(() => {
 				order.push('client-ready');
 			}),
-		} as SyncExtensionFactoryClient);
+		} as SyncExtensionContext);
 
 		// whenReady should not have resolved yet
 		let resolved = false;

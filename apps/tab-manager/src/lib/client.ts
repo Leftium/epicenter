@@ -102,16 +102,15 @@ export async function registerDevice(): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildWorkspaceClient() {
-	return createTabManagerWorkspace()
+	const sync = createSyncExtension({
+		url: (workspaceId) => toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
+		getToken: async () => authSession.current?.token ?? null,
+	});
+
+	const client = createTabManagerWorkspace()
 		.withExtension('persistence', indexeddbPersistence)
 		.withExtension('broadcast', broadcastChannelSync)
-		.withExtension(
-			'sync',
-			createSyncExtension({
-				url: (workspaceId) => toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
-				getToken: async () => authSession.current?.token ?? null,
-			}),
-		)
+		.withWorkspaceExtension('sync', sync.workspace)
 		.withActions(({ tables, batch }) => ({
 			tabs: {
 				close: defineMutation({
@@ -367,7 +366,7 @@ function buildWorkspaceClient() {
 				restoreAll: defineMutation({
 					title: 'Restore All Saved Tabs',
 					description: 'Re-open all saved tabs and delete their records.',
-					input: Type.Object({}),
+
 					handler: async () => {
 						const all = tables.savedTabs.getAllValid();
 						if (!all.length) return { restoredCount: 0 };
@@ -403,7 +402,7 @@ function buildWorkspaceClient() {
 				removeAll: defineMutation({
 					title: 'Remove All Saved Tabs',
 					description: 'Delete all saved tabs without restoring them.',
-					input: Type.Object({}),
+
 					handler: () => {
 						const all = tables.savedTabs.getAllValid();
 						batch(() => {
@@ -497,7 +496,7 @@ function buildWorkspaceClient() {
 				removeAll: defineMutation({
 					title: 'Remove All Bookmarks',
 					description: 'Delete every bookmark.',
-					input: Type.Object({}),
+
 					handler: () => {
 						const all = tables.bookmarks.getAllValid();
 						batch(() => {
@@ -510,4 +509,15 @@ function buildWorkspaceClient() {
 				}),
 			},
 		}));
+
+	// Publish awareness identity after sync is ready
+	client.whenReady.then(async () => {
+		const deviceId = await getDeviceId();
+		client.awareness.setLocal({
+			deviceId,
+			deviceType: 'browser-extension',
+		});
+	});
+
+	return client;
 }

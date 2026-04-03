@@ -145,6 +145,42 @@ export type SyncProvider = {
 	 */
 	onStatusChange(listener: (status: SyncStatus) => void): () => void;
 
+
+	/**
+	 * Send an RPC request to a target peer via the DO relay.
+	 *
+	 * The target is identified by awareness clientId. The DO forwards
+	 * the request to the target connection, or returns PeerOffline if
+	 * the target is not connected.
+	 *
+	 * @param target - Awareness clientId of the target peer
+	 * @param action - Dot-path action name (e.g. 'tabs.close')
+	 * @param input - Action input (serialized as JSON)
+	 * @returns The requestId for tracking the pending response
+	 */
+	sendRpcRequest(target: number, action: string, input?: unknown): number;
+
+	/**
+	 * Register a handler for incoming RPC requests from other peers.
+	 *
+	 * Only one handler can be active at a time. The workspace sync extension
+	 * sets this to dispatch incoming requests to the action tree.
+	 *
+	 * @returns Unsubscribe function that removes the handler
+	 */
+	onRpcRequest(
+		handler: (
+			request: { requestId: number; action: string; input: unknown },
+			respond: (result: { data: unknown; error: unknown }) => void,
+		) => void,
+	): () => void;
+
+	/** Map of pending RPC requests for external timeout management. */
+	readonly pendingRequests: Map<
+		number,
+		{ resolve: (result: { data: unknown; error: unknown }) => void; timer: ReturnType<typeof setTimeout> }
+	>;
+
 	/**
 	 * Clean up everything — disconnect, remove listeners, release resources.
 	 * After calling dispose(), the provider is unusable.

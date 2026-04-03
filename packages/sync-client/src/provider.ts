@@ -1,6 +1,9 @@
 import {
+	decodeRpcMessage,
 	encodeAwareness,
 	encodeAwarenessStates,
+	encodeRpcRequest,
+	encodeRpcResponse,
 	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
@@ -137,6 +140,11 @@ export function createSyncProvider({
 	let localVersion = 0;
 	let ackedVersion = 0;
 	let syncStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// --- RPC state ---
+	let nextRequestId = 0;
+	const pendingRequests = new Map<number, { resolve: (result: { data: unknown; error: unknown }) => void; timer: ReturnType<typeof setTimeout> }>();
+	let rpcHandler: ((request: { requestId: number; action: string; input: unknown }, respond: (result: { data: unknown; error: unknown }) => void) => void) | null = null;
 
 	/** Send a binary message if the WebSocket is open; silently no-ops otherwise. */
 	function send(message: Uint8Array) {
@@ -332,6 +340,11 @@ export function createSyncProvider({
 			syncStatusTimer = null;
 		}
 
+		// Reset RPC state for fresh connection
+		for (const [, pending] of pendingRequests) clearTimeout(pending.timer);
+		pendingRequests.clear();
+		nextRequestId = 0;
+
 		const { promise: openPromise, resolve: resolveOpen } =
 			Promise.withResolvers<boolean>();
 		const { promise: closePromise, resolve: resolveClose } =
@@ -450,6 +463,30 @@ export function createSyncProvider({
 					break;
 				}
 
+				case MESSAGE_TYPE.RPC: {
+					const rpc = decodeRpcMessage(data);
+					if (rpc.type === 'response') {
+						const pending = pendingRequests.get(rpc.requestId);
+						if (pending) {
+							clearTimeout(pending.timer);
+							pendingRequests.delete(rpc.requestId);
+							pending.resolve(rpc.result);
+						}
+					} else if (rpc.type === 'request' && rpcHandler) {
+						rpcHandler(
+							{ requestId: rpc.requestId, action: rpc.action, input: rpc.input },
+							(result) => {
+								send(encodeRpcResponse({
+									requestId: rpc.requestId,
+									requesterClientId: rpc.requesterClientId,
+									result,
+								}));
+							},
+						);
+					}
+					break;
+				}
+
 				default:
 					console.warn(`[SyncProvider] Unknown message type: ${messageType}`);
 					break;
@@ -522,6 +559,44 @@ export function createSyncProvider({
 			websocket?.close();
 		},
 
+		/**
+		 * Send an RPC request to a target peer.
+		 *
+		 * @param target - Awareness clientId of the target peer
+		 * @param action - Dot-path action name (e.g. 'tabs.close')
+		 * @param input - Action input (serialized as JSON)
+		 * @returns The requestId for tracking
+		 */
+		sendRpcRequest(target: number, action: string, input?: unknown): number {
+			const requestId = nextRequestId++;
+			send(encodeRpcRequest({
+				requestId,
+				targetClientId: target,
+				requesterClientId: doc.clientID,
+				action,
+				input,
+			}));
+			return requestId;
+		},
+
+		/**
+		 * Register a handler for incoming RPC requests.
+		 *
+		 * Only one handler can be active at a time. The workspace sync extension
+		 * sets this to dispatch to the action tree.
+		 *
+		 * @returns Unsubscribe function
+		 */
+		onRpcRequest(handler: (request: { requestId: number; action: string; input: unknown }, respond: (result: { data: unknown; error: unknown }) => void) => void): () => void {
+			rpcHandler = handler;
+			return () => { rpcHandler = null; };
+		},
+
+		/** Map of pending RPC requests for external timeout management. */
+		get pendingRequests() {
+			return pendingRequests;
+		},
+
 		onStatusChange: status.subscribe,
 
 		dispose() {
@@ -531,6 +606,9 @@ export function createSyncProvider({
 			if (ownsAwareness) {
 				removeAwarenessStates(awareness, [doc.clientID], 'window unload');
 			}
+			// Clean up pending RPC requests
+			for (const [, pending] of pendingRequests) clearTimeout(pending.timer);
+			pendingRequests.clear();
 			status.clear();
 		},
 	};

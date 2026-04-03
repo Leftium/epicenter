@@ -216,7 +216,7 @@ export function createWorkspace<
 		const tableDocumentsNamespace: Record<string, Documents<BaseRow>> = {};
 
 		for (const [docName, rawConfig] of Object.entries(tableDef.documents)) {
-			const { guid, onUpdate, tags } = rawConfig as DocumentConfig;
+			const { guid, onUpdate, tags, awareness } = rawConfig as DocumentConfig;
 
 			const documents = createDocuments({
 				id,
@@ -226,6 +226,7 @@ export function createWorkspace<
 				ydoc,
 				documentExtensions: documentExtensionRegistrations,
 				documentTags: tags ?? [],
+				awarenessDefinitions: awareness,
 			});
 
 			tableDocumentsNamespace[docName] = documents;

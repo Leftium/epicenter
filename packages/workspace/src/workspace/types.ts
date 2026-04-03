@@ -172,10 +172,13 @@ export type DocumentConfig<
 	TGuid extends string = string,
 	TRow extends BaseRow = BaseRow,
 	TTags extends string = string,
+	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
 > = {
 	guid: TGuid;
 	/** Called when the content Y.Doc changes. Return the fields to write to the row. */
 	onUpdate: () => Partial<Omit<TRow, 'id'>>;
+	/** Optional awareness schemas for this document scope. */
+	awareness?: TAwarenessDefs;
 	/**
 	 * Tag literals for document extension targeting.
 	 *
@@ -224,7 +227,10 @@ export type DocumentExtensionRegistration = {
  */
 export type ExtractAllDocumentTags<TTableDefs extends TableDefinitions> = {
 	[K in keyof TTableDefs]: TTableDefs[K] extends {
-		documents: Record<string, DocumentConfig<string, BaseRow, infer TTags>>;
+		documents: Record<
+			string,
+			DocumentConfig<string, BaseRow, infer TTags, AwarenessDefinitions>
+		>;
 	}
 		? TTags
 		: never;
@@ -358,7 +364,11 @@ export type DocumentContext<
  */
 export type DocumentHandle<
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = Omit<DocumentClient<TDocExtensions>, 'dispose'>;
+	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
+> = Omit<DocumentClient<TDocExtensions>, 'dispose'> & {
+	/** Typed awareness helper scoped to this document. */
+	awareness: AwarenessHelper<TAwarenessDefs>;
+};
 
 /**
  * Runtime manager for a table's associated content Y.Docs.
@@ -383,6 +393,7 @@ export type DocumentHandle<
 export type Documents<
 	TRow extends BaseRow,
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
+	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
 > = {
 	/**
 	 * Open a content Y.Doc for a row.
@@ -393,7 +404,9 @@ export type Documents<
 	 *
 	 * @param input - A row (extracts GUID from the bound column) or a GUID string
 	 */
-	open(input: TRow | string): Promise<DocumentHandle<TDocExtensions>>;
+	open(
+		input: TRow | string,
+	): Promise<DocumentHandle<TDocExtensions, TAwarenessDefs>>;
 
 	/**
 	 * Close a document — free memory, disconnect providers.
@@ -435,7 +448,20 @@ export type DocumentsOf<
 	migrate: (...args: never[]) => infer TLatest;
 }
 	? TLatest extends BaseRow
-		? { [K in keyof TDocuments]: Documents<TLatest, TDocExtensions> }
+		? {
+				[K in keyof TDocuments]: Documents<
+					TLatest,
+					TDocExtensions,
+					TDocuments[K] extends DocumentConfig<
+						string,
+						BaseRow,
+						string,
+						infer TAwarenessDefs
+					>
+						? TAwarenessDefs
+						: Record<string, never>
+				>;
+			}
 		: never
 	: never;
 
@@ -721,9 +747,8 @@ export type TableHelper<TRow extends BaseRow> = {
 export type AwarenessDefinitions = Record<string, CombinedStandardSchema>;
 
 /** Extract the output type of an awareness field's schema. */
-export type InferAwarenessValue<T> = T extends StandardSchemaV1
-	? StandardSchemaV1.InferOutput<T>
-	: never;
+export type InferAwarenessValue<T> =
+	T extends CombinedStandardSchema<unknown, infer TOutput> ? TOutput : never;
 
 /**
  * The composed state type — all fields optional since peers may not have set every field.

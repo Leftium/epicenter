@@ -49,6 +49,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
 import type {
+	AwarenessDefinitions,
 	BaseRow,
 	ClaimedDocumentColumns,
 	DocumentConfig,
@@ -113,13 +114,10 @@ type TableDefinitionWithDocBuilder<
 			StringKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
 			ClaimedDocumentColumns<TDocuments>
 		>,
-		_TUpdatedAt extends Exclude<
-			NumberKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
-			ClaimedDocumentColumns<TDocuments>
-		>,
 		// Defaults to `never` when no tags are passed. This flows into
 		// DocumentConfig<..., never>, making `tags: readonly never[]` (only accepts `[]`).
 		const TTags extends string = never,
+		const TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
 	>(
 		name: TName,
 		config: {
@@ -127,6 +125,7 @@ type TableDefinitionWithDocBuilder<
 			onUpdate: () => Partial<
 				Omit<StandardSchemaV1.InferOutput<LastSchema<TVersions>>, 'id'>
 			>;
+			awareness?: TAwarenessDefs;
 			tags?: readonly TTags[];
 		},
 	): TableDefinitionWithDocBuilder<
@@ -137,7 +136,8 @@ type TableDefinitionWithDocBuilder<
 				DocumentConfig<
 					TGuid,
 					StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
-					TTags
+					TTags,
+					TAwarenessDefs
 				>
 			>
 	>;
@@ -264,6 +264,7 @@ function attachDocumentBuilder<
 					[name]: {
 						guid: config.guid,
 						onUpdate: config.onUpdate,
+						awareness: config.awareness,
 						tags: config.tags ?? [],
 					},
 				},

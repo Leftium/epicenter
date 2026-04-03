@@ -8,22 +8,27 @@
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
+import { createIndexedDbKeyStore } from '@epicenter/svelte';
 import { createAuth } from '@epicenter/svelte/auth';
 import { createWorkspace } from '@epicenter/workspace';
-import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
+import {
+	createSyncExtension,
+	toWsUrl,
+} from '@epicenter/workspace/extensions/sync/websocket';
 import { session } from '$lib/auth';
-import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
 import { honeycrisp } from './workspace/definition';
 
-
 export const workspace = createWorkspace(honeycrisp)
-	.withEncryption({ userKeyStore: createIndexedDbKeyStore('honeycrisp:encryption-key') })
+	.withEncryption({
+		userKeyStore: createIndexedDbKeyStore('honeycrisp:encryption-key'),
+	})
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',
 		createSyncExtension({
-			url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
+			url: (workspaceId) =>
+				toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
 			getToken: async () => auth.token,
 		}),
 	);
@@ -40,4 +45,3 @@ export const auth = createAuth({
 		workspace.extensions.sync.reconnect();
 	},
 });
-

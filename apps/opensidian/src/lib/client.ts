@@ -1,14 +1,14 @@
 import { APP_URLS } from '@epicenter/constants/vite';
+import { createSqliteIndex, createYjsFileSystem } from '@epicenter/filesystem';
+import { createIndexedDbKeyStore } from '@epicenter/svelte';
 import { createAuth } from '@epicenter/svelte/auth';
-import {
-	createSqliteIndex,
-	createYjsFileSystem,
-} from '@epicenter/filesystem';
-import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
+import {
+	createSyncExtension,
+	toWsUrl,
+} from '@epicenter/workspace/extensions/sync/websocket';
 import { Bash } from 'just-bash';
 import { session } from '$lib/auth';
-import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
 import { createOpensidian } from './workspace/workspace';
 
 /**
@@ -19,12 +19,15 @@ import { createOpensidian } from './workspace/workspace';
  * components that need direct infra access (Toolbar, ContentEditor).
  */
 export const workspace = createOpensidian()
-	.withEncryption({ userKeyStore: createIndexedDbKeyStore('opensidian:encryption-key') })
+	.withEncryption({
+		userKeyStore: createIndexedDbKeyStore('opensidian:encryption-key'),
+	})
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',
 		createSyncExtension({
-			url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
+			url: (workspaceId) =>
+				toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
 			getToken: async () => auth.token,
 		}),
 	)

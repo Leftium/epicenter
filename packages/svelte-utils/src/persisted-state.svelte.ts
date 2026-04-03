@@ -227,13 +227,5 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 				listeners.delete(listener);
 			};
 		},
-
-		/**
-		 * Resolves immediately—localStorage is synchronous.
-		 *
-		 * Exists for API parity with `createStorageState.whenReady` so consumers
-		 * can `Promise.all([a.whenReady, b.whenReady])` regardless of backend.
-		 */
-		whenReady: Promise.resolve(),
 	};
 }

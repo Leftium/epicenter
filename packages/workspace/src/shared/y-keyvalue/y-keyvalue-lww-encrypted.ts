@@ -149,10 +149,10 @@ export type YKeyValueLwwEncrypted<T> = {
 	 * TableHelper uses this for `getAll()`, `filter()`, `find()`, `clear()`.
 	 * Entries that cannot be decrypted are silently omitted.
 	 */
-	cachedEntries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
+	decryptedEntries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
 
 	/** Count of decryptable entries. TableHelper uses this for `count()`. */
-	readonly cachedSize: number;
+	readonly decryptedSize: number;
 
 	/** The underlying Y.Array. Contains **ciphertext** when a key is active. */
 	readonly yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>;
@@ -426,10 +426,10 @@ export function createEncryptedYkvLww<T>(
 		get failedDecryptCount() {
 			return inner.map.size - countDecryptableInMap();
 		},
-		*cachedEntries() {
+		*decryptedEntries() {
 			yield* iterateDecrypted(inner.entries());
 		},
-		get cachedSize() {
+		get decryptedSize() {
 			return countDecryptableInMap();
 		},
 		yarray: inner.yarray,

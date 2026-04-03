@@ -92,7 +92,7 @@ for (let cycle = 0; cycle < 5; cycle++) {
 		gcKv.delete(`item_${i}`);
 	}
 	console.log(
-		`  Cycle ${cycle + 1}: ${fmt(size(gcDoc)).padStart(10)}  (${gcKv.cachedSize} active)`,
+		`  Cycle ${cycle + 1}: ${fmt(size(gcDoc)).padStart(10)}  (${gcKv.decryptedSize} active)`,
 	);
 }
 
@@ -114,7 +114,7 @@ for (let cycle = 0; cycle < 5; cycle++) {
 		noGcKv.delete(`item_${i}`);
 	}
 	console.log(
-		`  Cycle ${cycle + 1}: ${fmt(size(noGcDoc)).padStart(10)}  (${noGcKv.cachedSize} active)`,
+		`  Cycle ${cycle + 1}: ${fmt(size(noGcDoc)).padStart(10)}  (${noGcKv.decryptedSize} active)`,
 	);
 }
 

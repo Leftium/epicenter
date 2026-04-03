@@ -3,7 +3,7 @@ import {
 	type SyncProvider,
 	type SyncStatus,
 } from '@epicenter/sync-client';
-import type { RpcError } from '../../rpc/errors.js';
+import { RpcError } from '../../rpc/errors.js';
 import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
 import type { SharedExtensionContext } from '../../workspace/types.js';
 
@@ -210,8 +210,8 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 					if (clientId === selfId) continue;
 					peers.push({
 						clientId,
-					deviceId: state.deviceId as string | undefined,
-					client: state.client as string | undefined,
+						deviceId: typeof state.deviceId === 'string' ? state.deviceId : undefined,
+						client: typeof state.client === 'string' ? state.client : undefined,
 					});
 				}
 				return peers;
@@ -227,10 +227,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				options?: { timeout?: number },
 			): Promise<{ data: TMap[TAction]['output'] | null; error: RpcError | null }> {
 				if (target === ydoc.clientID) {
-					return {
-						data: null,
-					error: { name: 'ActionFailed', message: 'Cannot RPC to self \u2014 call the action directly', action, cause: undefined } as unknown as RpcError,
-					};
+					return RpcError.ActionFailed({ action, cause: undefined });
 				}
 
 				const timeoutMs = options?.timeout ?? DEFAULT_RPC_TIMEOUT_MS;
@@ -240,17 +237,14 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 
 					const timer = setTimeout(() => {
 						provider.pendingRequests.delete(requestId);
-						resolve({
-							data: null,
-						error: { name: 'Timeout', message: `RPC call timed out after ${timeoutMs}ms`, ms: timeoutMs } as unknown as RpcError,
-						});
+						resolve(RpcError.Timeout({ ms: timeoutMs }));
 					}, timeoutMs);
 
 					provider.pendingRequests.set(requestId, {
 						resolve: (result) => {
 							const error = result.error as RpcError | null;
 							resolve({
-								data: error ? null : (result.data as TData),
+								data: error ? null : (result.data as TMap[TAction]['output']),
 								error,
 							});
 						},

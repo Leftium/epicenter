@@ -1,5 +1,5 @@
 import type { Static, TSchema } from 'typebox';
-import type { Action, Actions } from '../shared/actions.js';
+import type { Action } from '../shared/actions.js';
 
 /**
  * Flattens a nested actions tree into a flat map of dot-path string keys
@@ -70,5 +70,9 @@ export type DefaultRpcMap = Record<string, { input: unknown; output: unknown }>;
 
 /**
  * Constraint for the TMap generic parameter on `rpc()`.
+ *
+ * Uses `any` (not `unknown`) for input/output because generic constraints
+ * need covariant compatibility — `{ input: string }` must extend
+ * `{ input: any }` but does NOT extend `{ input: unknown }`.
  */
 export type RpcActionMap = Record<string, { input: any; output: any }>;

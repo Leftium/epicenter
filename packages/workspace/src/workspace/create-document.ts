@@ -41,6 +41,7 @@
  * @module
  */
 
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createTimeline } from '../timeline/timeline.js';
 import {
@@ -176,6 +177,7 @@ export function createDocuments<TRow extends BaseRow>(
 			if (existing) return existing.whenReady;
 
 			const contentYdoc = new Y.Doc({ guid, gc: false });
+			const contentAwareness = new Awareness(contentYdoc);
 			const timeline = createTimeline(contentYdoc);
 
 			// Filter document extensions by tag matching:
@@ -202,6 +204,7 @@ export function createDocuments<TRow extends BaseRow>(
 						id,
 						ydoc: contentYdoc,
 						timeline,
+						awareness: { raw: contentAwareness },
 						whenReady:
 							whenReadyPromises.length === 0
 								? Promise.resolve()
@@ -262,16 +265,17 @@ export function createDocuments<TRow extends BaseRow>(
 			const whenReady =
 				whenReadyPromises.length === 0
 					? Promise.resolve(handle)
-					: compositeWhenReady.then(() => handle)
+					: compositeWhenReady
+							.then(() => handle)
 							.catch(async (err) => {
-							const errors = await disposeLifo(disposers);
-							unobserve();
-							contentYdoc.destroy();
-							openDocuments.delete(guid);
+								const errors = await disposeLifo(disposers);
+								unobserve();
+								contentYdoc.destroy();
+								openDocuments.delete(guid);
 
-							if (errors.length > 0) {
-								console.error('Document extension cleanup errors:', errors);
-							}
+								if (errors.length > 0) {
+									console.error('Document extension cleanup errors:', errors);
+								}
 								throw err;
 							});
 

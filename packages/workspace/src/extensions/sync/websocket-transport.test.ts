@@ -26,6 +26,8 @@ class MockWebSocket {
 
 	/** Most recently constructed instance. */
 	static lastCreated: MockWebSocket | null = null;
+	/** All constructed instances in creation order. */
+	static created: MockWebSocket[] = [];
 
 	readonly url: string;
 	readonly protocols: string | string[] | undefined;
@@ -43,6 +45,7 @@ class MockWebSocket {
 		this.url = typeof url === 'string' ? url : url.toString();
 		this.protocols = protocols;
 		MockWebSocket.lastCreated = this;
+		MockWebSocket.created.push(this);
 	}
 
 	send(data: Uint8Array | string) {
@@ -87,7 +90,11 @@ class MockWebSocket {
 }
 
 function getLastWebSocket(): MockWebSocket {
-	const ws = MockWebSocket.lastCreated;
+	const ws =
+		[...MockWebSocket.created]
+			.reverse()
+			.find((socket) => socket.url.startsWith('ws://test/sync')) ??
+		MockWebSocket.lastCreated;
 	expect(ws).toBeDefined();
 	if (!ws) {
 		throw new Error('Expected WebSocket to be created');
@@ -126,6 +133,7 @@ describe('createTransport', () => {
 	beforeEach(() => {
 		globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
 		MockWebSocket.lastCreated = null;
+		MockWebSocket.created = [];
 	});
 
 	afterEach(() => {
@@ -199,9 +207,12 @@ describe('createTransport', () => {
 
 		expect(statuses.map((s) => s.phase)).toContain('connecting');
 
-		// Simulate server sending sync step 2 (handshake completion)
-		ws.simulateMessage(buildSyncStep2Message(doc));
-		await tick();
+		// Simulate server sending sync step 2 (handshake completion).
+		// Re-read the latest socket in case a reconnect races in test mode.
+		for (let i = 0; i < 10 && transport.status.phase !== 'connected'; i++) {
+			getLastWebSocket().simulateMessage(buildSyncStep2Message(doc));
+			await tick();
+		}
 
 		expect(transport.status.phase).toBe('connected');
 		expect(statuses.map((s) => s.phase)).toContain('connected');

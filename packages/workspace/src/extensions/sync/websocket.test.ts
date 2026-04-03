@@ -9,6 +9,7 @@
  * - URL configuration and whenReady lifecycle resolve in the expected order
  */
 import { describe, expect, test } from 'bun:test';
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createSyncExtension } from './websocket';
 
@@ -20,6 +21,7 @@ type SyncExtensionFactoryClient = Parameters<
 function createMockContext(ydoc: Y.Doc): SyncExtensionFactoryClient {
 	return {
 		ydoc,
+		awareness: { raw: new Awareness(ydoc) },
 		whenReady: Promise.resolve(),
 	};
 }
@@ -44,6 +46,7 @@ describe('createSyncExtension', () => {
 			expect(result.status).toBeDefined();
 
 			result.dispose();
+			ydoc.destroy();
 		});
 
 		test('dispose sets status to offline', () => {
@@ -58,6 +61,7 @@ describe('createSyncExtension', () => {
 			result.dispose();
 
 			expect(result.status.phase).toBe('offline');
+			ydoc.destroy();
 		});
 	});
 
@@ -73,6 +77,7 @@ describe('createSyncExtension', () => {
 		expect(result.status.phase).toBe('offline');
 
 		result.dispose();
+		ydoc.destroy();
 	});
 
 	test('whenReady awaits client.whenReady before connecting', async () => {
@@ -90,6 +95,7 @@ describe('createSyncExtension', () => {
 
 		const result = factory({
 			ydoc,
+			awareness: { raw: new Awareness(ydoc) },
 			whenReady: clientWhenReady.then(() => {
 				order.push('client-ready');
 			}),
@@ -113,5 +119,6 @@ describe('createSyncExtension', () => {
 		expect(order).toEqual(['client-ready', 'sync-ready']);
 
 		result.dispose();
+		ydoc.destroy();
 	});
 });

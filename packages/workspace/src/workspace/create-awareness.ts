@@ -22,12 +22,14 @@
  *
  * @example
  * ```typescript
+ * import { Awareness } from 'y-protocols/awareness';
  * import * as Y from 'yjs';
  * import { createAwareness } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * const ydoc = new Y.Doc({ guid: 'my-doc' });
- * const awareness = createAwareness(ydoc, {
+ * const rawAwareness = new Awareness(ydoc);
+ * const awareness = createAwareness(rawAwareness, {
  *   deviceId: type('string'),
  *   deviceType: type('"browser-extension" | "desktop" | "server" | "cli"'),
  * });
@@ -48,8 +50,7 @@
  * ```
  */
 
-import { Awareness } from 'y-protocols/awareness';
-import type * as Y from 'yjs';
+import type { Awareness } from 'y-protocols/awareness';
 import type {
 	AwarenessDefinitions,
 	AwarenessHelper,
@@ -57,20 +58,21 @@ import type {
 } from './types.js';
 
 /**
- * Creates an AwarenessHelper from a Y.Doc and a record of field schemas.
+ * Creates an AwarenessHelper by wrapping an existing Awareness instance.
  *
- * The Awareness instance is created internally. Each field gets its own StandardSchemaV1
- * schema for independent validation on read.
+ * The caller owns the Awareness instance — this function only wraps it with
+ * typed helpers. Each field gets its own StandardSchemaV1 schema for independent
+ * validation on read.
  *
- * @param ydoc - The Y.Doc to create awareness for
+ * @param awareness - An existing y-protocols Awareness instance to wrap
  * @param definitions - Record of field name → StandardSchemaV1 schema
  * @returns AwarenessHelper with typed per-field methods
  */
 export function createAwareness<TDefs extends AwarenessDefinitions>(
-	ydoc: Y.Doc,
+	awareness: Awareness,
 	definitions: TDefs,
 ): AwarenessHelper<TDefs> {
-	const raw = new Awareness(ydoc);
+	const raw = awareness;
 	const defEntries = Object.entries(definitions);
 
 	return {
@@ -119,6 +121,33 @@ export function createAwareness<TDefs extends AwarenessDefinitions>(
 				if (Object.keys(validated).length > 0) {
 					result.set(clientId, validated as AwarenessState<TDefs>);
 				}
+			}
+			return result;
+		},
+
+		peers() {
+			const result = new Map<number, AwarenessState<TDefs>>();
+			const selfId = raw.clientID;
+
+			for (const [clientId, state] of raw.getStates()) {
+				if (clientId === selfId) continue;
+				if (state === null || typeof state !== 'object') continue;
+
+				// Validate each field independently against its schema
+				const validated: Record<string, unknown> = {};
+				for (const [fieldKey, fieldSchema] of defEntries) {
+					const fieldValue = (state as Record<string, unknown>)[fieldKey];
+					if (fieldValue === undefined) continue;
+
+					const fieldResult = fieldSchema['~standard'].validate(fieldValue);
+					if (fieldResult instanceof Promise) continue;
+					if (fieldResult.issues) continue;
+
+					validated[fieldKey] = fieldResult.value;
+				}
+
+				// Include ALL remote peers, even with zero valid fields
+				result.set(clientId, validated as AwarenessState<TDefs>);
 			}
 			return result;
 		},

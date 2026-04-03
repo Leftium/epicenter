@@ -64,21 +64,6 @@ export type SyncExtensionConfig = {
 	getToken?: (docId: string) => Promise<string | null>;
 };
 
-/**
- * Info about a connected peer, derived from awareness state.
- *
- * At workspace scope, peers publish identity (deviceId, client type).
- * At document scope, peers publish editing state (cursors, selections).
- */
-export type PeerInfo = {
-	/** Yjs awareness clientId (ephemeral, changes on reconnect). */
-	clientId: number;
-	/** Stable device identity (NanoID from localStorage), if published. */
-	deviceId?: string;
-	/** Client type ('extension', 'cli', 'desktop', 'web'), if published. */
-	client?: string;
-};
-
 /** Exports available on `client.extensions.sync` after registration. */
 export type SyncExtensionExports = {
 	/** Current connection status. */
@@ -96,16 +81,18 @@ export type SyncExtensionExports = {
 	/**
 	 * List connected peers in this room (excludes self).
 	 *
-	 * At workspace scope, returns all synced devices.
-	 * At document scope, returns all clients editing this document.
+	 * Returns only Yjs client IDs. Use `rpc()` with `clientId` to target peers.
 	 *
 	 * @example
 	 * ```typescript
 	 * const peers = workspace.extensions.sync.peers();
-	 * const ext = peers.find(p => p.client === 'extension');
+	 * const peer = peers[0];
+	 * if (peer) {
+	 *   await workspace.extensions.sync.rpc(peer.clientId, 'tabs.close', { tabIds: [1] });
+	 * }
 	 * ```
 	 */
-	peers(): PeerInfo[];
+	peers(): { clientId: number }[];
 
 	/**
 	 * Invoke an action on a remote peer in this room.
@@ -184,7 +171,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 	whenReady: Promise<unknown>;
 	dispose: () => void;
 } {
-	return ({ ydoc, whenReady: priorReady }) => {
+	return ({ ydoc, awareness: ctxAwareness, whenReady: priorReady }) => {
 		const docId = ydoc.guid;
 		const { getToken } = config;
 
@@ -208,6 +195,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		// ── Transport (handles sync, awareness, WebSocket lifecycle) ──
 		const transport = createTransport({
 			doc: ydoc,
+			awareness: ctxAwareness.raw,
 			url: () => config.url(docId),
 			getToken: getToken ? () => getToken(docId) : undefined,
 			onCustomMessage(messageType, data) {
@@ -227,8 +215,6 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				}
 			},
 		});
-
-		const awareness = transport.awareness;
 
 		// Clear pending RPC requests when a new connection attempt starts.
 		// The old WebSocket is gone — responses will never arrive.
@@ -254,17 +240,11 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 			reconnect: transport.reconnect,
 
 			peers() {
-				const states = awareness.getStates();
 				const selfId = ydoc.clientID;
-				const peers: PeerInfo[] = [];
-				for (const [clientId, state] of states) {
+				const peers: { clientId: number }[] = [];
+				for (const [clientId] of transport.awareness.getStates()) {
 					if (clientId === selfId) continue;
-					peers.push({
-						clientId,
-						deviceId:
-							typeof state.deviceId === 'string' ? state.deviceId : undefined,
-						client: typeof state.client === 'string' ? state.client : undefined,
-					});
+					peers.push({ clientId });
 				}
 				return peers;
 			},

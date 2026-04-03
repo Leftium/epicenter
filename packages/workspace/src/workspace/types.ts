@@ -9,9 +9,9 @@ import type { JsonObject } from 'wellcrafted/json';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { EncryptionKeys } from './encryption-key.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { Timeline } from '../timeline/timeline.js';
+import type { EncryptionKeys } from './encryption-key.js';
 import type { Extension, MaybePromise } from './lifecycle.js';
 
 // Re-export JSON types for consumers
@@ -323,7 +323,15 @@ export type DocumentContext<
 > = Pick<
 	DocumentClient<TDocExtensions>,
 	'id' | 'ydoc' | 'timeline' | 'extensions' | 'whenReady'
->;
+> & {
+	/**
+	 * Raw awareness instance for this document scope.
+	 *
+	 * Uses a minimal wrapper (`{ raw }`) so document and workspace scopes
+	 * share the same structural contract for `withExtension()` factories.
+	 */
+	awareness: { raw: Awareness };
+};
 
 /**
  * A handle to an open content Y.Doc, returned by `documents.open()`.
@@ -683,10 +691,7 @@ export type TableHelper<TRow extends BaseRow> = {
 	 * @returns Unsubscribe function
 	 */
 	observe(
-		callback: (
-			changedIds: ReadonlySet<TRow['id']>,
-			origin?: unknown,
-		) => void,
+		callback: (changedIds: ReadonlySet<TRow['id']>, origin?: unknown) => void,
 	): () => void;
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -786,6 +791,31 @@ export type AwarenessHelper<TDefs extends AwarenessDefinitions> = {
 	 * Clients with zero valid fields are excluded entirely.
 	 */
 	getAll(): Map<number, AwarenessState<TDefs>>;
+
+	/**
+	 * Get all remote peers' awareness states.
+	 *
+	 * Unlike `getAll()`, this method:
+	 * - Excludes the local client (self)
+	 * - Includes peers with zero valid fields (connected but haven't published identity)
+	 *
+	 * Use this for presence UIs and peer discovery. Each peer has a `clientId`
+	 * plus any validated awareness fields. Peers that haven't set awareness fields
+	 * appear with an empty state object—they're connected, just anonymous.
+	 *
+	 * @example
+	 * ```typescript
+	 * // Workspace: find all connected desktop clients
+	 * const desktops = [...client.awareness.peers()]
+	 *   .filter(([, state]) => state.client === 'desktop');
+	 *
+	 * // Document: show collaborator cursors
+	 * for (const [clientId, state] of handle.awareness.peers()) {
+	 *   if (state.cursor) renderCursor(clientId, state.cursor, state.color);
+	 * }
+	 * ```
+	 */
+	peers(): Map<number, AwarenessState<TDefs>>;
 
 	/**
 	 * Watch for awareness changes.
@@ -1003,191 +1033,178 @@ export type WorkspaceClientBuilder<
 	TExtensions,
 	TDocExtensions
 > & {
-		/** Accumulated actions from `.withActions()` calls. Empty object when none declared. */
-		actions: TActions;
-		/**
-		 * Register an extension for BOTH the workspace Y.Doc AND all content document Y.Docs.
-		 *
-		 * The factory fires once for the workspace doc (at build time, synchronously) and
-		 * once per content doc (at `documents.open()` time). This is the 90% default—use it
-		 * for persistence, sync, broadcast, or any extension that should apply everywhere.
-		 *
-		 * For workspace-only extensions, use {@link withWorkspaceExtension}.
-		 * For document-only extensions (with optional tag filtering), use {@link withDocumentExtension}.
-		 *
-		 * @param key - Unique name for this extension (used as the key in `.extensions`)
-		 * @param factory - Factory receiving the client-so-far context, returns flat exports
-		 * @returns A new builder with the extension's exports added to both workspace and document types
-		 *
-		 * @example
-		 * ```typescript
-		 * const client = createWorkspace(definition)
-		 *   .withExtension('persistence', indexeddbPersistence)
-		 *   .withExtension('sync', createSyncExtension({ ... }));
-		 * ```
-		 */
-		withExtension<
-			TKey extends string,
-			TExports extends Record<string, unknown>,
-		>(
-			key: TKey,
-			factory: (context: SharedExtensionContext) => TExports & {
-				whenReady?: Promise<unknown>;
-				dispose?: () => MaybePromise<void>;
-				clearLocalData?: () => MaybePromise<void>;
-			},
-		): WorkspaceClientBuilder<
-			TId,
-			TTableDefinitions,
-			TKvDefinitions,
-			TAwarenessDefinitions,
-			TExtensions &
-				Record<
-					TKey,
-					Extension<
-						Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>
-					>
-				>,
-			TDocExtensions &
-				Record<
-					TKey,
-					Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>
-				>,
-			TActions
-		>;
+	/** Accumulated actions from `.withActions()` calls. Empty object when none declared. */
+	actions: TActions;
+	/**
+	 * Register an extension for BOTH the workspace Y.Doc AND all content document Y.Docs.
+	 *
+	 * The factory fires once for the workspace doc (at build time, synchronously) and
+	 * once per content doc (at `documents.open()` time). This is the 90% default—use it
+	 * for persistence, sync, broadcast, or any extension that should apply everywhere.
+	 *
+	 * For workspace-only extensions, use {@link withWorkspaceExtension}.
+	 * For document-only extensions (with optional tag filtering), use {@link withDocumentExtension}.
+	 *
+	 * @param key - Unique name for this extension (used as the key in `.extensions`)
+	 * @param factory - Factory receiving the client-so-far context, returns flat exports
+	 * @returns A new builder with the extension's exports added to both workspace and document types
+	 *
+	 * @example
+	 * ```typescript
+	 * const client = createWorkspace(definition)
+	 *   .withExtension('persistence', indexeddbPersistence)
+	 *   .withExtension('sync', createSyncExtension({ ... }));
+	 * ```
+	 */
+	withExtension<TKey extends string, TExports extends Record<string, unknown>>(
+		key: TKey,
+		factory: (context: SharedExtensionContext) => TExports & {
+			whenReady?: Promise<unknown>;
+			dispose?: () => MaybePromise<void>;
+			clearLocalData?: () => MaybePromise<void>;
+		},
+	): WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions &
+			Record<
+				TKey,
+				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>>
+			>,
+		TDocExtensions &
+			Record<TKey, Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>>,
+		TActions
+	>;
 
-		/**
-		 * Register an extension for the workspace Y.Doc ONLY.
-		 *
-		 * The factory fires once at build time for the workspace doc. It does NOT
-		 * fire for content documents opened via `documents.open()`. Use this when
-		 * an extension needs workspace-specific context (tables, kv, awareness) or
-		 * is genuinely workspace-scoped (SQLite index, analytics).
-		 *
-		 * Most consumers want {@link withExtension} (both scopes) instead.
-		 *
-		 * @example
-		 * ```typescript
-		 * createWorkspace(definition)
-		 *   .withExtension('persistence', indexeddbPersistence)
-		 *   .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
-		 * ```
-		 */
-		withWorkspaceExtension<
-			TKey extends string,
-			TExports extends Record<string, unknown>,
-		>(
-			key: TKey,
-			factory: (
-				context: ExtensionContext<
-					TId,
-					TTableDefinitions,
-					TKvDefinitions,
-					TAwarenessDefinitions,
-					TExtensions
-				>,
-			) => TExports & {
-				whenReady?: Promise<unknown>;
-				dispose?: () => MaybePromise<void>;
-				clearLocalData?: () => MaybePromise<void>;
-			},
-		): WorkspaceClientBuilder<
-			TId,
-			TTableDefinitions,
-			TKvDefinitions,
-			TAwarenessDefinitions,
-			TExtensions &
-				Record<
-					TKey,
-					Extension<
-						Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>
-					>
-				>,
-			TDocExtensions,
-			TActions
-		>;
+	/**
+	 * Register an extension for the workspace Y.Doc ONLY.
+	 *
+	 * The factory fires once at build time for the workspace doc. It does NOT
+	 * fire for content documents opened via `documents.open()`. Use this when
+	 * an extension needs workspace-specific context (tables, kv, awareness) or
+	 * is genuinely workspace-scoped (SQLite index, analytics).
+	 *
+	 * Most consumers want {@link withExtension} (both scopes) instead.
+	 *
+	 * @example
+	 * ```typescript
+	 * createWorkspace(definition)
+	 *   .withExtension('persistence', indexeddbPersistence)
+	 *   .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
+	 * ```
+	 */
+	withWorkspaceExtension<
+		TKey extends string,
+		TExports extends Record<string, unknown>,
+	>(
+		key: TKey,
+		factory: (
+			context: ExtensionContext<
+				TId,
+				TTableDefinitions,
+				TKvDefinitions,
+				TAwarenessDefinitions,
+				TExtensions
+			>,
+		) => TExports & {
+			whenReady?: Promise<unknown>;
+			dispose?: () => MaybePromise<void>;
+			clearLocalData?: () => MaybePromise<void>;
+		},
+	): WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions &
+			Record<
+				TKey,
+				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>>
+			>,
+		TDocExtensions,
+		TActions
+	>;
 
-		/**
-		 * Register a document extension that fires when content Y.Docs are opened.
-		 *
-		 * Document extensions operate on content Y.Docs (not the workspace Y.Doc).
-		 * Use optional `{ tags }` to target specific document types declared via
-		 * `withDocument(..., { tags })`.
-		 *
-		 * If no `tags` option is provided, the extension is universal (fires for all content documents).
-		 *
-		 * @param key - Unique name for this document extension
-		 * @param factory - Factory receiving DocumentContext, returns Extension or void
-		 * @param options - Optional tag filter for targeting specific document types
-		 *
-		 * @example
-		 * ```typescript
-		 * createWorkspace({ id: 'app', tables: { notes } })
-		 *   .withExtension('persistence', workspacePersistence)
-		 *   .withDocumentExtension('persistence', indexeddbPersistence, { tags: ['persistent'] });
-		 * ```
-		 */
-		withDocumentExtension<
-			K extends string,
-			TDocExports extends Record<string, unknown>,
-		>(
-			key: K,
-			factory: (context: DocumentContext<TDocExtensions>) =>
-				| (TDocExports & {
-						whenReady?: Promise<unknown>;
-						dispose?: () => MaybePromise<void>;
-						clearLocalData?: () => MaybePromise<void>;
-				  })
-				| void,
-			options?: { tags?: ExtractAllDocumentTags<TTableDefinitions>[] },
-		): WorkspaceClientBuilder<
-			TId,
-			TTableDefinitions,
-			TKvDefinitions,
-			TAwarenessDefinitions,
-			TExtensions,
-			TDocExtensions &
-				Record<
-					K,
-					Omit<TDocExports, 'whenReady' | 'dispose' | 'clearLocalData'>
-				>,
-			TActions
-		>;
+	/**
+	 * Register a document extension that fires when content Y.Docs are opened.
+	 *
+	 * Document extensions operate on content Y.Docs (not the workspace Y.Doc).
+	 * Use optional `{ tags }` to target specific document types declared via
+	 * `withDocument(..., { tags })`.
+	 *
+	 * If no `tags` option is provided, the extension is universal (fires for all content documents).
+	 *
+	 * @param key - Unique name for this document extension
+	 * @param factory - Factory receiving DocumentContext, returns Extension or void
+	 * @param options - Optional tag filter for targeting specific document types
+	 *
+	 * @example
+	 * ```typescript
+	 * createWorkspace({ id: 'app', tables: { notes } })
+	 *   .withExtension('persistence', workspacePersistence)
+	 *   .withDocumentExtension('persistence', indexeddbPersistence, { tags: ['persistent'] });
+	 * ```
+	 */
+	withDocumentExtension<
+		K extends string,
+		TDocExports extends Record<string, unknown>,
+	>(
+		key: K,
+		factory: (context: DocumentContext<TDocExtensions>) =>
+			| (TDocExports & {
+					whenReady?: Promise<unknown>;
+					dispose?: () => MaybePromise<void>;
+					clearLocalData?: () => MaybePromise<void>;
+			  })
+			| void,
+		options?: { tags?: ExtractAllDocumentTags<TTableDefinitions>[] },
+	): WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions,
+		TDocExtensions &
+			Record<K, Omit<TDocExports, 'whenReady' | 'dispose' | 'clearLocalData'>>,
+		TActions
+	>;
 
-		/**
-		 * Attach actions to the workspace client.
-		 *
-		 * Non-terminal—the returned builder still supports `.withExtension()` and further
-		 * `.withActions()` calls. This allows extension-independent actions to be declared
-		 * before extensions in the chain.
-		 *
-		 * Multiple `.withActions()` calls shallow-merge their action trees (later calls
-		 * overwrite earlier keys at the top level).
-		 *
-		 * @param factory - Receives the client-so-far, returns an actions map
-		 * @returns A new builder with actions attached (still chainable)
-		 */
-		withActions<TNewActions extends Actions>(
-			factory: (
-				client: WorkspaceClient<
-					TId,
-					TTableDefinitions,
-					TKvDefinitions,
-					TAwarenessDefinitions,
-					TExtensions,
-					TDocExtensions
-				>,
-			) => TNewActions,
-		): WorkspaceClientBuilder<
-			TId,
-			TTableDefinitions,
-			TKvDefinitions,
-			TAwarenessDefinitions,
-			TExtensions,
-			TDocExtensions,
-			TActions & TNewActions
-		>;
-	};
+	/**
+	 * Attach actions to the workspace client.
+	 *
+	 * Non-terminal—the returned builder still supports `.withExtension()` and further
+	 * `.withActions()` calls. This allows extension-independent actions to be declared
+	 * before extensions in the chain.
+	 *
+	 * Multiple `.withActions()` calls shallow-merge their action trees (later calls
+	 * overwrite earlier keys at the top level).
+	 *
+	 * @param factory - Receives the client-so-far, returns an actions map
+	 * @returns A new builder with actions attached (still chainable)
+	 */
+	withActions<TNewActions extends Actions>(
+		factory: (
+			client: WorkspaceClient<
+				TId,
+				TTableDefinitions,
+				TKvDefinitions,
+				TAwarenessDefinitions,
+				TExtensions,
+				TDocExtensions
+			>,
+		) => TNewActions,
+	): WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions,
+		TDocExtensions,
+		TActions & TNewActions
+	>;
+};
 
 // Re-export Extension for convenience
 export type { Extension } from './lifecycle.js';
@@ -1232,23 +1249,30 @@ export type ExtensionContext<
 >;
 
 /**
- * The shared subset of `ExtensionContext` and `DocumentContext`—fields that
- * exist in both workspace and document scopes.
+ * Context shared by workspace and document extension scopes.
  *
  * Used by `withExtension()`, which registers the same factory for both scopes.
- * If a factory needs workspace-specific fields (tables, awareness, etc.),
+ * This type is intentionally standalone (not `Pick<ExtensionContext, ...>`) because
+ * workspace awareness is strongly typed (`AwarenessHelper<TDefs>`) while document
+ * awareness uses a scope-specific helper. The only guarantee both scopes share is
+ * a raw awareness instance (`{ raw: Awareness }`).
+ *
+ * If a factory needs workspace-specific fields (tables, full typed awareness, etc.),
  * use `withWorkspaceExtension()`. For document-specific fields (timeline),
  * use `withDocumentExtension()`.
  *
  * ```typescript
- * // Persistence only needs ydoc — works for both scopes:
- * .withExtension('persistence', ({ ydoc }) => { ... })
+ * // Sync needs ydoc + raw awareness — works for both scopes:
+ * .withExtension('sync', ({ ydoc, awareness, whenReady }) => {
+ *   return createProvider({ doc: ydoc, awareness: awareness.raw, whenReady });
+ * })
  * ```
  */
-export type SharedExtensionContext = Pick<
-	ExtensionContext,
-	'ydoc' | 'whenReady'
->;
+export type SharedExtensionContext = {
+	ydoc: Y.Doc;
+	awareness: { raw: Awareness };
+	whenReady: Promise<void>;
+};
 
 /**
  * Factory function that creates an extension.
@@ -1372,7 +1396,6 @@ export type WorkspaceClient<
 	 * @param update - A Uint8Array produced by `Y.encodeStateAsUpdate()` or equivalent
 	 */
 	loadSnapshot(update: Uint8Array): void;
-
 
 	/**
 	 * Apply encryption keys to all stores.

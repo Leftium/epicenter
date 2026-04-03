@@ -139,12 +139,6 @@ export type InferTableRow<T> = T extends {
 	? TLatest
 	: never;
 
-/** Extract the version union type from a TableDefinition */
-export type InferTableVersionUnion<T> = T extends {
-	schema: CombinedStandardSchema<unknown, infer TOutput>;
-}
-	? TOutput
-	: never;
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT CONFIG TYPES

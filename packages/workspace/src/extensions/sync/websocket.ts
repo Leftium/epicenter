@@ -261,11 +261,25 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 					pendingRequests.set(requestId, {
 						resolve: (result) => {
 							clearTimeout(timer);
-							const error = result.error as RpcError | null;
-							resolve({
-								data: error ? null : (result.data as TMap[TAction]['output']),
-								error,
-							});
+							if (
+								result.error != null &&
+								typeof result.error === 'object' &&
+								'name' in result.error
+							) {
+								resolve({ data: null, error: result.error as RpcError });
+							} else if (result.error != null) {
+								resolve(
+									RpcError.ActionFailed({
+										action,
+										cause: result.error,
+									}),
+								);
+							} else {
+								resolve({
+									data: result.data as TMap[TAction]['output'],
+									error: null,
+								});
+							}
 						},
 						timer,
 					});

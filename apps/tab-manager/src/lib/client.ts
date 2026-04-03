@@ -108,7 +108,7 @@ function buildWorkspaceClient() {
 			'sync',
 			createSyncExtension({
 				url: (workspaceId) => toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
-				getToken: async () => authSession.current?.token ?? null,
+				getToken: async () => (await authSession.get())?.token ?? null,
 			}),
 		)
 		.withActions(({ tables, batch }) => ({

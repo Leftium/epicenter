@@ -14,6 +14,7 @@ export {
 	type DecodedSyncMessage,
 	decodeMessageType,
 	decodeRpcMessage,
+	decodeRpcPayload,
 	decodeSyncMessage,
 	decodeSyncRequest,
 	decodeSyncStatus,

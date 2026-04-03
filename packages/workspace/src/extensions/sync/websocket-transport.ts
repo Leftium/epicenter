@@ -78,10 +78,10 @@ export type TransportConfig = {
 	 * Called for message types the transport doesn't handle internally.
 	 *
 	 * The transport handles SYNC, AWARENESS, QUERY_AWARENESS, and SYNC_STATUS.
-	 * Everything else (e.g. MESSAGE_TYPE.RPC) is forwarded here. The raw
-	 * `Uint8Array` is passed so the caller can decode as needed.
+	 * Everything else (e.g. MESSAGE_TYPE.RPC) is forwarded here with the
+	 * payload bytes **after** the message-type varint already consumed.
 	 */
-	onCustomMessage?: (messageType: number, data: Uint8Array) => void;
+	onCustomMessage?: (messageType: number, payload: Uint8Array) => void;
 };
 
 /**
@@ -565,7 +565,7 @@ export function createTransport({
 
 				default:
 					if (onCustomMessage) {
-						onCustomMessage(messageType, data);
+						onCustomMessage(messageType, data.subarray(decoder.pos));
 					} else {
 						console.warn(
 							`[SyncTransport] Unknown message type: ${messageType}`,

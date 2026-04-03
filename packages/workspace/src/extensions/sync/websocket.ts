@@ -1,5 +1,5 @@
 import {
-	decodeRpcMessage,
+	decodeRpcPayload,
 	encodeRpcRequest,
 	MESSAGE_TYPE,
 	RpcError,
@@ -182,13 +182,13 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 			awareness: ctxAwareness.raw,
 			url: () => config.url(docId),
 			getToken: getToken ? () => getToken(docId) : undefined,
-			onCustomMessage(messageType, data) {
+			onCustomMessage(messageType, payload) {
 				if (messageType !== MESSAGE_TYPE.RPC) {
 					console.warn(`[SyncExtension] Unknown message type: ${messageType}`);
 					return;
 				}
 
-				const rpc = decodeRpcMessage(data);
+				const rpc = decodeRpcPayload(payload);
 				if (rpc.type === 'response') {
 					const pending = pendingRequests.get(rpc.requestId);
 					if (pending) {

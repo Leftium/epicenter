@@ -553,7 +553,11 @@ export function encodeRpcResponse({
  * Reads the full message bytes (including the MESSAGE_TYPE.RPC prefix).
  * Returns a discriminated union of REQUEST or RESPONSE.
  *
- * @param data - Raw RPC message bytes
+ * Use this when you have the raw wire bytes. If the transport has already
+ * consumed the message-type varint, use {@link decodeRpcPayload} instead
+ * to avoid re-parsing the prefix.
+ *
+ * @param data - Raw RPC message bytes (starting with MESSAGE_TYPE.RPC prefix)
  * @returns Decoded RPC message with type discriminator
  */
 export function decodeRpcMessage(data: Uint8Array): DecodedRpcMessage {
@@ -562,6 +566,28 @@ export function decodeRpcMessage(data: Uint8Array): DecodedRpcMessage {
 	if (messageType !== MESSAGE_TYPE.RPC) {
 		throw new Error(`Expected RPC message (${MESSAGE_TYPE.RPC}), got ${messageType}`);
 	}
+
+	return decodeRpcPayload(decoder);
+}
+
+/**
+ * Decode an RPC payload after the message-type varint has already been consumed.
+ *
+ * The transport's `onCustomMessage` callback receives `(messageType, payload)`
+ * where `payload` is the bytes after the type prefix. Use this to decode the
+ * RPC sub-type and fields without re-parsing the prefix.
+ *
+ * @param decoderOrPayload - A lib0 decoder positioned after the type prefix,
+ *   or the raw payload bytes (everything after the MESSAGE_TYPE varint)
+ * @returns Decoded RPC message with type discriminator
+ */
+export function decodeRpcPayload(
+	decoderOrPayload: decoding.Decoder | Uint8Array,
+): DecodedRpcMessage {
+	const decoder =
+		decoderOrPayload instanceof Uint8Array
+			? decoding.createDecoder(decoderOrPayload)
+			: decoderOrPayload;
 
 	const rpcType = decoding.readVarUint(decoder);
 

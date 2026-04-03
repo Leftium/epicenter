@@ -32,15 +32,10 @@
  *
  * ## Encryption Lifecycle
  *
- * Encryption is **one-way**. Once `activateEncryption()` is called, the
- * `hasBeenEncrypted` flag is permanently set. Plaintext writes are forbidden
- * from that point forward. There is no `deactivateEncryption()`—the only
- * reset path is destroying the wrapper via `clearLocalData()`.
- *
- * ```
- * Before activateEncryption():    passthrough (plaintext reads/writes)
- * After activateEncryption():     encrypted (one-way, permanent)
- * ```
+ * Encryption is **one-way** by API surface—there is no
+ * `deactivateEncryption()`. Once `activateEncryption()` is called, the
+ * `encryption` state is set and no method clears it. The only reset
+ * path is destroying the wrapper via `clearLocalData()`.
  *
  * ## Re-encryption on Activation
  *
@@ -75,7 +70,6 @@ import {
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
 } from './y-keyvalue-lww.js';
-import { EncryptionError } from '../errors.js';
 
 const textEncoder = new TextEncoder();
 /** Transaction origin for re-encryption writes. Observer skips events with this origin. */
@@ -119,9 +113,8 @@ export type YKeyValueLwwEncrypted<T> = {
 	 * becomes the current key for new encryptions. Decryption reads
 	 * `getKeyVersion(blob)` to select the correct key from the keyring.
 	 *
-	 * This is a **one-way** operation. Once called, the wrapper permanently
-	 * refuses plaintext writes. Calling again with a new keyring updates
-	 * the active keys without resetting the one-way flag.
+	 * There is no deactivation path—this is one-way by API surface.
+	 * Calling again with a new keyring updates the active keys.
 	 *
 	 * Only plaintext entries are re-encrypted on activation. Existing
 	 * encrypted blobs (even on older key versions) are left alone—they're
@@ -203,12 +196,6 @@ export function createEncryptedYkvLww<T>(
 	/** Active encryption state. `undefined` = passthrough mode. */
 	let encryption: EncryptionState | undefined;
 
-	/**
-	 * One-way flag. Once `activateEncryption()` is called, this is permanently
-	 * `true`. Prevents plaintext writes after encryption has ever been active.
-	 * The only reset path is `clearLocalData()` which destroys the wrapper.
-	 */
-	let hasBeenEncrypted = false;
 
 	if (initialKeyring) {
 		if (initialKeyring.size === 0)
@@ -221,7 +208,6 @@ export function createEncryptedYkvLww<T>(
 			currentKey,
 			currentVersion: version,
 		};
-		hasBeenEncrypted = true;
 	}
 
 	/**
@@ -261,16 +247,18 @@ export function createEncryptedYkvLww<T>(
 	 * Attempt to decrypt an entry. Returns a plaintext entry on success,
 	 * `undefined` on failure (with a console warning for diagnostics).
 	 */
+	/**
+	 * Attempt to decrypt an entry. Returns a plaintext entry on success,
+	 * `undefined` on failure (with a console warning for diagnostics).
+	 */
 	const tryDecryptEntry = (
 		key: string,
 		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
-		state: EncryptionState | undefined = encryption,
 	): YKeyValueLwwEntry<T> | undefined => {
 		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T };
 		const json = decryptBlobWithFallback(
 			entry.val,
 			textEncoder.encode(key),
-			state,
 		);
 		if (!json) {
 			console.warn(`[encrypted-kv] Failed to decrypt entry "${key}"`);
@@ -344,7 +332,6 @@ export function createEncryptedYkvLww<T>(
 
 	return {
 		set(key, val) {
-			if (hasBeenEncrypted && !encryption) throw EncryptionError.Locked().error;
 			if (!encryption) {
 				inner.set(key, val);
 				return;
@@ -374,7 +361,6 @@ export function createEncryptedYkvLww<T>(
 			return tryDecryptValue(raw, textEncoder.encode(key)) !== undefined;
 		},
 		delete(key) {
-			if (hasBeenEncrypted && !encryption) throw EncryptionError.Locked().error;
 			inner.delete(key);
 		},
 		*entries() {
@@ -398,7 +384,6 @@ export function createEncryptedYkvLww<T>(
 				currentKey: nextKey,
 				currentVersion: nextVersion,
 			};
-			hasBeenEncrypted = true;
 			encryption = nextEncryption;
 
 			const newlyReadable = new Map<string, T>();

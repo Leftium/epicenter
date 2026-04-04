@@ -93,7 +93,7 @@ async function registerDevice(): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Implementation (hoisted — function declarations below are available above)
+// Implementation
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildWorkspaceClient() {

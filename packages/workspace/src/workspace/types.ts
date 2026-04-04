@@ -178,7 +178,7 @@ export type DocumentConfig<
  * Factories receive `DocumentContext` with `tableName` and `documentName`
  * and can return `void` to opt out for specific documents.
  */
-	export type DocumentExtensionRegistration = {
+export type DocumentExtensionRegistration = {
 	key: string;
 	factory: (context: DocumentContext) =>
 		| (Record<string, unknown> & {
@@ -1048,7 +1048,7 @@ export type WorkspaceClientBuilder<
 	 * for persistence, sync, broadcast, or any extension that should apply everywhere.
 	 *
 	 * For workspace-only extensions, use {@link withWorkspaceExtension}.
-	 * For document-only extensions (with optional tag filtering), use {@link withDocumentExtension}.
+	 * For document-only extensions, use {@link withDocumentExtension}.
 	 *
 	 * @param key - Unique name for this extension (used as the key in `.extensions`)
 	 * @param factory - Factory receiving the client-so-far context, returns flat exports

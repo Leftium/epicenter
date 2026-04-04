@@ -28,6 +28,8 @@
  *
  * const contentDocuments = createDocuments({
  *   id: 'my-workspace',
+ *   tableName: 'files',
+ *   documentName: 'content',
  *   guidKey: 'id',
  *   onUpdate: () => ({ updatedAt: Date.now() }),
  *   tableHelper: tables.files,
@@ -35,7 +37,9 @@
  * });
  *
  * const handle = await contentDocuments.open(someRow);
- * const text = handle.read();
+ * handle.tableName;    // 'files'
+ * handle.documentName; // 'content'
+ * handle.read();       // read content
  * handle.write('new content');
  * ```
  *
@@ -115,6 +119,10 @@ export type CreateDocumentsConfig<
 	 * collisions or silent failures in extensions.
 	 */
 	id: string;
+	/** The table this document belongs to (e.g., 'files', 'notes'). */
+	tableName: string;
+	/** The document name from `.withDocument()` (e.g., 'content', 'body'). */
+	documentName: string;
 	/** Column name storing the Y.Doc GUID. */
 	guidKey: keyof TRow & string;
 	/** Called when the content Y.Doc changes. Return the fields to write to the row. */
@@ -125,15 +133,9 @@ export type CreateDocumentsConfig<
 	ydoc: Y.Doc;
 	/**
 	 * Document extension registrations (from `withDocumentExtension()` calls).
-	 * Each registration has a key, factory, and optional tags for filtering.
-	 * At open time, registrations are filtered by tag matching before firing.
+	 * Each registration has a key and factory.
 	 */
 	documentExtensions?: DocumentExtensionRegistration[];
-	/**
-	 * Tags declared on this documents instance (from `withDocument(..., { tags })`).
-	 * Used for tag matching against document extension registrations.
-	 */
-	documentTags?: readonly string[];
 	/** Optional typed awareness schemas for this document scope. */
 	awarenessDefinitions?: TAwarenessDefinitions;
 };
@@ -160,12 +162,13 @@ export function createDocuments<
 ): Documents<TRow, TDocExtensions, TAwarenessDefinitions> {
 	const {
 		id,
+		tableName,
+		documentName,
 		guidKey,
 		onUpdate,
 		tableHelper,
 		ydoc: workspaceYdoc,
 		documentExtensions = [],
-		documentTags = [],
 		awarenessDefinitions,
 	} = config;
 
@@ -211,14 +214,6 @@ export function createDocuments<
 			);
 			const timeline = createTimeline(contentYdoc);
 
-			// Filter document extensions by tag matching:
-			// - No tags on extension → fire for all documents (universal)
-			// - Has tags → fire only if document tags and extension tags share ANY value
-			const applicableExtensions = documentExtensions.filter((reg) => {
-				if (reg.tags.length === 0) return true;
-				return reg.tags.some((tag) => documentTags.includes(tag));
-			});
-
 			// Call document extension factories synchronously.
 			// IMPORTANT: No await between openDocuments.get() and openDocuments.set() — ensures
 			// concurrent open() calls for the same guid are safe.
@@ -230,9 +225,11 @@ export function createDocuments<
 			const whenReadyPromises: Promise<unknown>[] = [];
 
 			try {
-				for (const { key, factory } of applicableExtensions) {
+				for (const { key, factory } of documentExtensions) {
 					const ctx = {
 						id,
+						tableName,
+						documentName,
 						ydoc: contentYdoc,
 						timeline,
 						awareness: { raw: contentAwareness },
@@ -289,6 +286,8 @@ export function createDocuments<
 					: Promise.all(whenReadyPromises).then(() => {});
 			const handle = Object.assign(timeline, {
 				id,
+				tableName,
+				documentName,
 				timeline,
 				awareness,
 				extensions: resolvedExtensions,

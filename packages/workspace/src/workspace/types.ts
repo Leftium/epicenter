@@ -152,7 +152,6 @@ export type InferTableRow<T> = T extends {
  * - `guid`: The column storing the Y.Doc GUID (must be a string column)
  * - `onUpdate`: Zero-argument callback returning `Partial<Omit<TRow, 'id'>>` — the fields
  *   to write when the doc changes. Callers control both the value and which columns to update.
- * - `tags`: Optional string tags for document extension targeting
  *
  * @typeParam TGuid - Literal string type of the guid column name
  * @typeParam TRow - The row type of the table (used to type-check `onUpdate` return)
@@ -167,25 +166,17 @@ export type DocumentConfig<
 	onUpdate: () => Partial<Omit<TRow, 'id'>>;
 	/** Optional awareness schemas for this document scope. */
 	awareness?: TAwarenessDefs;
-	/**
-	 * String tags for document extension targeting.
-	 *
-	 * Extensions registered via `withDocumentExtension({ tags })` only fire
-	 * for documents whose tags overlap. Extensions with no tags are universal.
-	 *
-	 * Defaults to `[]` when no tags are declared.
-	 */
-	tags: readonly string[];
 };
 
 /**
  * Internal registration for a document extension.
  *
  * Stored in an array by `withDocumentExtension()`. Each entry contains
- * the extension key, factory function, and optional tag filter.
+ * the extension key and factory function.
  *
- * At document open time, the runtime iterates registrations and fires
- * factories whose tags match (set intersection) or have no tags (universal).
+ * At document open time, the runtime calls every registered factory.
+ * Factories receive `DocumentContext` with `tableName` and `documentName`
+ * and can return `void` to opt out for specific documents.
  */
 export type DocumentExtensionRegistration = {
 	key: string;
@@ -196,7 +187,6 @@ export type DocumentExtensionRegistration = {
 				clearLocalData?: () => MaybePromise<void>;
 		  })
 		| void;
-	tags: readonly string[];
 };
 
 /**
@@ -241,6 +231,10 @@ export type DocumentClient<
 > = Timeline & {
 	/** The workspace identifier. */
 	id: string;
+	/** The table this document belongs to (e.g., 'files', 'notes'). */
+	tableName: string;
+	/** The document name declared via `.withDocument()` (e.g., 'content', 'body'). */
+	documentName: string;
 	/**
 	 * Self-reference for destructuring convenience.
 	 *
@@ -251,8 +245,8 @@ export type DocumentClient<
 	/**
 	 * Accumulated document extension exports with lifecycle hooks.
 	 *
-	 * Each entry is optional because tag-filtered extensions may be skipped
-	 * for certain document types. Guard access with optional chaining.
+	 * Each entry is optional because extension factories may return `void`
+	 * to skip specific documents. Guard access with optional chaining.
 	 */
 	extensions: {
 		[K in keyof TDocExtensions]?: Extension<
@@ -276,12 +270,11 @@ export type DocumentClient<
  *
  * ```typescript
  * .withDocumentExtension('persistence', ({ ydoc }) => { ... })
- * .withDocumentExtension('sync', ({ id, ydoc, timeline, whenReady }) => { ... })
+ * .withDocumentExtension('sync', ({ id, tableName, documentName, ydoc }) => { ... })
  * ```
  *
- * Uses `Pick` instead of `Omit<DocumentClient, 'dispose'>` because `DocumentClient`
- * extends `Timeline` (the handle IS a timeline), but factory contexts have `timeline`
- * as a field (factories destructure `{ timeline }`, not `{ read, write }`).
+ * Factories inspect `tableName` and `documentName` to decide whether to activate.
+ * Return `void` to skip a specific document.
  *
  * @typeParam TDocExtensions - Accumulated document extension exports from prior calls.
  *   Defaults to `Record<string, unknown>` so `DocumentExtensionRegistration` can
@@ -291,7 +284,13 @@ export type DocumentContext<
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = Pick<
 	DocumentClient<TDocExtensions>,
-	'id' | 'ydoc' | 'timeline' | 'extensions' | 'whenReady'
+	| 'id'
+	| 'tableName'
+	| 'documentName'
+	| 'ydoc'
+	| 'timeline'
+	| 'extensions'
+	| 'whenReady'
 > & {
 	/**
 	 * Raw awareness instance for this document scope.
@@ -396,6 +395,27 @@ export type HasDocuments<T> = T extends { documents: infer TDocuments }
 		? false
 		: true
 	: false;
+
+/**
+ * Extract all document names across all tables.
+ *
+ * Collects all document names (from `.withDocument()` calls) into a union
+ * for type-safe autocomplete in `withDocumentExtension()` factory context.
+ *
+ * @example
+ * ```typescript
+ * // Given tables with .withDocument('content') and .withDocument('body'):
+ * type Names = AllDocumentNames<typeof tables>;
+ * // => 'content' | 'body'
+ * ```
+ */
+export type AllDocumentNames<TTableDefs extends TableDefinitions> = {
+	[K in keyof TTableDefs]: TTableDefs[K] extends {
+		documents: infer TDocuments;
+	}
+		? keyof TDocuments & string
+		: never;
+}[keyof TTableDefs];
 
 /**
  * Extract the document map for a single table definition.
@@ -1028,7 +1048,7 @@ export type WorkspaceClientBuilder<
 	 * for persistence, sync, broadcast, or any extension that should apply everywhere.
 	 *
 	 * For workspace-only extensions, use {@link withWorkspaceExtension}.
-	 * For document-only extensions (with optional tag filtering), use {@link withDocumentExtension}.
+	 * For document-only extensions, use {@link withDocumentExtension}.
 	 *
 	 * @param key - Unique name for this extension (used as the key in `.extensions`)
 	 * @param factory - Factory receiving the client-so-far context, returns flat exports
@@ -1116,20 +1136,22 @@ export type WorkspaceClientBuilder<
 	 * Register a document extension that fires when content Y.Docs are opened.
 	 *
 	 * Document extensions operate on content Y.Docs (not the workspace Y.Doc).
-	 * Use optional `{ tags }` to target specific document types declared via
-	 * `withDocument(..., { tags })`.
+	 * Every registered factory fires for every document opened via `documents.open()`.
 	 *
-	 * If no `tags` option is provided, the extension is universal (fires for all content documents).
+	 * To skip specific documents, inspect `ctx.tableName` or `ctx.documentName`
+	 * in your factory and return `void` (the factory's return type allows this).
 	 *
 	 * @param key - Unique name for this document extension
-	 * @param factory - Factory receiving DocumentContext, returns Extension or void
-	 * @param options - Optional tag filter for targeting specific document types
+	 * @param factory - Factory receiving DocumentContext, returns Extension or void to skip
 	 *
 	 * @example
 	 * ```typescript
-	 * createWorkspace({ id: 'app', tables: { notes } })
-	 *   .withExtension('persistence', workspacePersistence)
-	 *   .withDocumentExtension('persistence', indexeddbPersistence, { tags: ['persistent'] });
+	 * createWorkspace({ id: 'app', tables: { files, notes } })
+	 *   .withExtension('persistence', indexeddbPersistence)
+	 *   .withDocumentExtension('sync', (ctx) => {
+	 *     if (ctx.documentName === 'thumbnail') return; // skip ephemeral docs
+	 *     return ySweetSync(ctx);
+	 *   });
 	 * ```
 	 */
 	withDocumentExtension<
@@ -1137,14 +1159,16 @@ export type WorkspaceClientBuilder<
 		TDocExports extends Record<string, unknown>,
 	>(
 		key: K,
-		factory: (context: DocumentContext<TDocExtensions>) =>
+		factory: (context: DocumentContext<TDocExtensions> & {
+			tableName: keyof TTableDefinitions & string;
+			documentName: AllDocumentNames<TTableDefinitions>;
+		}) =>
 			| (TDocExports & {
 					whenReady?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
 					clearLocalData?: () => MaybePromise<void>;
 			  })
 			| void,
-		options?: { tags?: string[] },
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,

@@ -51,6 +51,42 @@ export type SyncStatus =
 	| { phase: 'connected'; hasLocalChanges: boolean };
 
 /**
+ * Context provided to extension message handlers registered via
+ * {@link TransportConfig.messageHandlers}.
+ *
+ * Intentionally minimal—extensions access their own state from their
+ * construction closure. `send` is provided because the transport owns
+ * the WebSocket and handlers may need to reply to incoming messages.
+ */
+export type MessageHandlerContext = {
+	send(message: Uint8Array): void;
+};
+
+/**
+ * Handler for an inbound message type.
+ *
+ * The decoder is positioned after the message-type varint—each handler
+ * reads whatever sub-framing its message type defines.
+ *
+ * @example
+ * ```typescript
+ * const transport = createTransport({
+ *   // ...
+ *   messageHandlers: {
+ *     [MESSAGE_TYPE.RPC]: (decoder, ctx) => {
+ *       const rpc = decodeRpcPayload(decoder);
+ *       if (rpc.type === 'response') { // resolve pending request
+ *     },
+ *   },
+ * })
+* ```
+ */
+export type MessageHandler = (
+	decoder: decoding.Decoder,
+	ctx: MessageHandlerContext,
+) => void;
+
+/**
  * Configuration for creating a sync transport.
  *
  * Supports two auth modes:
@@ -75,13 +111,16 @@ export type TransportConfig = {
 	awareness?: Awareness;
 
 	/**
-	 * Called for message types the transport doesn't handle internally.
+	 * Extension message handlers keyed by message type number.
 	 *
-	 * The transport handles SYNC, AWARENESS, QUERY_AWARENESS, and SYNC_STATUS.
-	 * Everything else (e.g. MESSAGE_TYPE.RPC) is forwarded here with the
-	 * payload bytes **after** the message-type varint already consumed.
+	 * The transport handles core protocol types internally (SYNC, AWARENESS,
+	 * QUERY_AWARENESS, SYNC_STATUS). Registering a handler for a core type
+	 * throws at construction time.
+	 *
+	 * Each handler receives a lib0 decoder positioned after the message-type
+	 * varint, plus a context with `send()` for replying.
 	 */
-	onCustomMessage?: (messageType: number, payload: Uint8Array) => void;
+	messageHandlers?: Partial<Record<number, MessageHandler>>;
 };
 
 /**
@@ -89,8 +128,8 @@ export type TransportConfig = {
  * sync server.
  *
  * Handles Y.Doc sync, awareness, liveness detection, and reconnection
- * with exponential backoff. Does NOT handle application-level protocols
- * like RPC—those are forwarded via the `onCustomMessage` config callback.
+ * with exponential backoff. Extension message types (like RPC) are handled
+ * via registered {@link MessageHandler}s in the transport config.
  */
 export type Transport = {
 	/** Current connection status. */
@@ -177,6 +216,14 @@ const LIVENESS_CHECK_INTERVAL_MS = 10_000;
 /** Max time to wait for a WebSocket to open before giving up. */
 const CONNECT_TIMEOUT_MS = 15_000;
 
+/** Core message types handled internally — extensions cannot override these. */
+const CORE_MESSAGE_TYPES = new Set([
+	MESSAGE_TYPE.SYNC,
+	MESSAGE_TYPE.AWARENESS,
+	MESSAGE_TYPE.QUERY_AWARENESS,
+	MESSAGE_TYPE.SYNC_STATUS,
+]);
+
 // ============================================================================
 // Factory Function
 // ============================================================================
@@ -185,8 +232,8 @@ const CONNECT_TIMEOUT_MS = 15_000;
  * Creates a sync transport that connects a Y.Doc to a WebSocket sync server.
  *
  * Handles Y.Doc sync, awareness, liveness detection, and reconnection with
- * exponential backoff. Application-level protocols (like RPC) are forwarded
- * to the caller via the `onCustomMessage` config callback.
+ * exponential backoff. Extension message types (like RPC) are dispatched to
+ * handlers registered via `messageHandlers` in the config.
  *
  * Uses a supervisor loop architecture where one loop owns all status transitions
  * and reconnection logic. Event handlers are reporters only—they resolve
@@ -199,8 +246,15 @@ export function createTransport({
 	getToken,
 	awareness: awarenessOption,
 	url,
-	onCustomMessage,
+	messageHandlers: extensionHandlers,
 }: TransportConfig): Transport {
+	// --- Validate extension handlers don't collide with core protocol ---
+	for (const type of Object.keys(extensionHandlers ?? {})) {
+		if (CORE_MESSAGE_TYPES.has(Number(type))) {
+			throw new Error(`Cannot override core message handler for type ${type}`);
+		}
+	}
+
 	const ownsAwareness = !awarenessOption;
 	const awareness = awarenessOption ?? new Awareness(doc);
 	/** User intent: should we be connected? Set by connect()/disconnect(). */
@@ -234,7 +288,6 @@ export function createTransport({
 			websocket.send(message);
 		}
 	}
-
 	/**
 	 * Y.Doc `'updateV2'` handler — broadcasts local mutations to the server.
 	 *
@@ -317,6 +370,16 @@ export function createTransport({
 		if (typeof document !== 'undefined') {
 			document[method]('visibilitychange', handleVisibilityChange);
 		}
+	}
+
+	/** Shared teardown: set offline, bump runId, close socket, remove window listeners. */
+	function goOffline() {
+		desired = 'offline';
+		runId++;
+		backoff.wake();
+		manageWindowListeners('remove');
+		websocket?.close();
+		status.set({ phase: 'offline' });
 	}
 
 	// --- Supervisor loop ---
@@ -403,7 +466,6 @@ export function createTransport({
 				if (runId !== myRunId) {
 					attempt = 0;
 					lastError = undefined;
-					continue;
 				}
 			}
 		}
@@ -563,15 +625,17 @@ export function createTransport({
 					break;
 				}
 
-				default:
-					if (onCustomMessage) {
-						onCustomMessage(messageType, data.subarray(decoder.pos));
+				default: {
+					const handler = extensionHandlers?.[messageType];
+					if (handler) {
+						handler(decoder, { send });
 					} else {
 						console.warn(
 							`[SyncTransport] Unknown message type: ${messageType}`,
 						);
 					}
 					break;
+				}
 			}
 		};
 
@@ -617,13 +681,7 @@ export function createTransport({
 		},
 
 		disconnect() {
-			desired = 'offline';
-			runId++;
-			backoff.wake();
-			manageWindowListeners('remove');
-			websocket?.close();
-			// Synchronously set offline so callers see the status immediately
-			status.set({ phase: 'offline' });
+			goOffline();
 		},
 
 		reconnect() {
@@ -639,14 +697,7 @@ export function createTransport({
 		send,
 
 		dispose() {
-			// Inline disconnect logic instead of this.disconnect() — avoids
-			// broken `this` binding if the method is destructured.
-			desired = 'offline';
-			runId++;
-			backoff.wake();
-			manageWindowListeners('remove');
-			websocket?.close();
-			status.set({ phase: 'offline' });
+			goOffline();
 			doc.off('updateV2', handleDocUpdate);
 			awareness.off('update', handleAwarenessUpdate);
 			if (ownsAwareness) {
@@ -716,10 +767,15 @@ function createLivenessMonitor(ws: WebSocket) {
 	let livenessInterval: ReturnType<typeof setInterval> | null = null;
 	let lastMessageTime = 0;
 
+	function stop() {
+		if (pingInterval) clearInterval(pingInterval);
+		if (livenessInterval) clearInterval(livenessInterval);
+	}
+
 	return {
 		/** Begin sending pings and checking for staleness. */
 		start() {
-			this.stop(); // Guard: prevent interval leak on double-start
+			stop(); // Guard: prevent interval leak on double-start
 			lastMessageTime = Date.now();
 
 			pingInterval = setInterval(() => {
@@ -739,10 +795,7 @@ function createLivenessMonitor(ws: WebSocket) {
 		},
 
 		/** Clear all intervals. */
-		stop() {
-			if (pingInterval) clearInterval(pingInterval);
-			if (livenessInterval) clearInterval(livenessInterval);
-		},
+		stop,
 	};
 }
 

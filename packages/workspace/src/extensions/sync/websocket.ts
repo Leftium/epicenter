@@ -1,9 +1,11 @@
 import {
 	decodeRpcPayload,
 	encodeRpcRequest,
+	isRpcError,
 	MESSAGE_TYPE,
 	RpcError,
 } from '@epicenter/sync';
+import type { Result } from 'wellcrafted/result';
 import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
 import type { SharedExtensionContext } from '../../workspace/types.js';
 import {
@@ -116,7 +118,7 @@ export type SyncExtensionExports = {
 		action: TAction,
 		input?: TMap[TAction]['input'],
 		options?: { timeout?: number },
-	): Promise<{ data: TMap[TAction]['output'] | null; error: RpcError | null }>;
+	): Promise<Result<TMap[TAction]['output'], RpcError>>;
 };
 
 /**
@@ -163,15 +165,25 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		const pendingRequests = new Map<
 			number,
 			{
+				action: string;
 				resolve: (result: { data: unknown; error: unknown }) => void;
 				timer: ReturnType<typeof setTimeout>;
 			}
 		>();
 		let nextRequestId = 0;
 
-		/** Clear all pending RPC requests (on reconnect or dispose). */
+		/** Resolve all pending RPC requests with a Disconnected error and clear state. */
 		function clearPendingRequests() {
-			for (const [, pending] of pendingRequests) clearTimeout(pending.timer);
+			for (const [, pending] of pendingRequests) {
+				clearTimeout(pending.timer);
+				pending.resolve({
+					data: null,
+					error: {
+						name: 'Disconnected' as const,
+						message: 'Connection lost before RPC response arrived',
+					},
+				});
+			}
 			pendingRequests.clear();
 			nextRequestId = 0;
 		}
@@ -182,21 +194,18 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 			awareness: ctxAwareness.raw,
 			url: () => config.url(docId),
 			getToken: getToken ? () => getToken(docId) : undefined,
-			onCustomMessage(messageType, payload) {
-				if (messageType !== MESSAGE_TYPE.RPC) {
-					console.warn(`[SyncExtension] Unknown message type: ${messageType}`);
-					return;
-				}
-
-				const rpc = decodeRpcPayload(payload);
-				if (rpc.type === 'response') {
-					const pending = pendingRequests.get(rpc.requestId);
-					if (pending) {
-						clearTimeout(pending.timer);
-						pendingRequests.delete(rpc.requestId);
-						pending.resolve(rpc.result);
+			messageHandlers: {
+				[MESSAGE_TYPE.RPC]: (decoder) => {
+					const rpc = decodeRpcPayload(decoder);
+					if (rpc.type === 'response') {
+						const pending = pendingRequests.get(rpc.requestId);
+						if (pending) {
+							clearTimeout(pending.timer);
+							pendingRequests.delete(rpc.requestId);
+							pending.resolve(rpc.result);
+						}
 					}
-				}
+				},
 			},
 		});
 
@@ -231,12 +240,12 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				action: TAction,
 				input?: TMap[TAction]['input'],
 				options?: { timeout?: number },
-			): Promise<{
-				data: TMap[TAction]['output'] | null;
-				error: RpcError | null;
-			}> {
+			): Promise<Result<TMap[TAction]['output'], RpcError>> {
 				if (target === ydoc.clientID) {
-					return RpcError.ActionFailed({ action, cause: 'Cannot RPC to self — call the action directly' });
+					return RpcError.ActionFailed({
+						action,
+						cause: 'Cannot RPC to self — call the action directly',
+					});
 				}
 
 				const timeoutMs = options?.timeout ?? DEFAULT_RPC_TIMEOUT_MS;
@@ -259,14 +268,11 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 					}, timeoutMs);
 
 					pendingRequests.set(requestId, {
+						action,
 						resolve: (result) => {
 							clearTimeout(timer);
-							if (
-								result.error != null &&
-								typeof result.error === 'object' &&
-								'name' in result.error
-							) {
-								resolve({ data: null, error: result.error as RpcError });
+							if (isRpcError(result.error)) {
+								resolve({ data: null, error: result.error });
 							} else if (result.error != null) {
 								resolve(
 									RpcError.ActionFailed({
@@ -275,6 +281,9 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 									}),
 								);
 							} else {
+								// Trust-the-wire cast: both RPC sides are in the same monorepo.
+								// Same pattern as tRPC/Eden Treaty — structural type safety, not
+								// runtime. Unavoidable without output schemas on actions.
 								resolve({
 									data: result.data as TMap[TAction]['output'],
 									error: null,

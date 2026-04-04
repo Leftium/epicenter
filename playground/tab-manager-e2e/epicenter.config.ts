@@ -44,6 +44,15 @@ export const tabManager = createTabManagerWorkspace()
 			},
 		}),
 	)
+	.withWorkspaceExtension('unlock', ({ whenReady, applyEncryptionKeys }) => ({
+		whenReady: (async () => {
+			await whenReady;
+			const session = await sessions.load(SERVER_URL);
+			if (session?.encryptionKeys) {
+				applyEncryptionKeys(session.encryptionKeys);
+			}
+		})(),
+	}))
 	.withExtension(
 		'sync',
 		createSyncExtension({
@@ -54,11 +63,3 @@ export const tabManager = createTabManagerWorkspace()
 			},
 		}),
 	);
-
-// Apply encryption keys from the stored session (no separate cache needed—
-// the session store already persists keys from the login flow).
-sessions.load(SERVER_URL).then((session) => {
-	if (session?.encryptionKeys) {
-		tabManager.applyEncryptionKeys(session.encryptionKeys);
-	}
-});

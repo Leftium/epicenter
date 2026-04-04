@@ -97,7 +97,7 @@ export function createTable<
 
 		getAll(): RowResult<TRow>[] {
 			const results: RowResult<TRow>[] = [];
-			for (const [key, entry] of ykv.cachedEntries()) {
+			for (const [key, entry] of ykv.decryptedEntries()) {
 				const result = parseRow(key, entry.val);
 				results.push(result);
 			}
@@ -106,7 +106,7 @@ export function createTable<
 
 		getAllValid(): TRow[] {
 			const rows: TRow[] = [];
-			for (const [key, entry] of ykv.cachedEntries()) {
+			for (const [key, entry] of ykv.decryptedEntries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'valid') {
 					rows.push(result.row);
@@ -117,7 +117,7 @@ export function createTable<
 
 		getAllInvalid(): InvalidRowResult[] {
 			const invalid: InvalidRowResult[] = [];
-			for (const [key, entry] of ykv.cachedEntries()) {
+			for (const [key, entry] of ykv.decryptedEntries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'invalid') {
 					invalid.push(result);
@@ -132,7 +132,7 @@ export function createTable<
 
 		filter(predicate: (row: TRow) => boolean): TRow[] {
 			const rows: TRow[] = [];
-			for (const [key, entry] of ykv.cachedEntries()) {
+			for (const [key, entry] of ykv.decryptedEntries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'valid' && predicate(result.row)) {
 					rows.push(result.row);
@@ -142,7 +142,7 @@ export function createTable<
 		},
 
 		find(predicate: (row: TRow) => boolean): TRow | undefined {
-			for (const [key, entry] of ykv.cachedEntries()) {
+			for (const [key, entry] of ykv.decryptedEntries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'valid' && predicate(result.row)) {
 					return result.row;
@@ -160,7 +160,7 @@ export function createTable<
 		},
 
 		clear(): void {
-			const keys = Array.from(ykv.cachedEntries()).map(([k]) => k);
+			const keys = Array.from(ykv.decryptedEntries()).map(([k]) => k);
 			for (const key of keys) {
 				ykv.delete(key);
 			}
@@ -189,7 +189,7 @@ export function createTable<
 		// ═══════════════════════════════════════════════════════════════════════
 
 		count(): number {
-			return ykv.cachedSize;
+			return ykv.decryptedSize;
 		},
 
 		has(id: string): boolean {

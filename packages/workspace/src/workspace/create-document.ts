@@ -41,8 +41,10 @@
  * @module
  */
 
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createTimeline } from '../timeline/timeline.js';
+import { createAwareness } from './create-awareness.js';
 import {
 	defineExtension,
 	disposeLifo,
@@ -51,6 +53,7 @@ import {
 	startDisposeLifo,
 } from './lifecycle.js';
 import type {
+	AwarenessDefinitions,
 	BaseRow,
 	DocumentExtensionRegistration,
 	DocumentHandle,
@@ -83,12 +86,15 @@ export const DOCUMENTS_ORIGIN = Symbol('documents');
  * Tracks the Y.Doc, resolved extensions (with required whenReady/dispose),
  * the updatedAt observer teardown, and the composite whenReady promise.
  */
-type DocEntry = {
+type DocEntry<
+	TDocExtensions extends Record<string, unknown>,
+	TAwarenessDefinitions extends AwarenessDefinitions,
+> = {
 	ydoc: Y.Doc;
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Extension<any>>;
 	unobserve: () => void;
-	whenReady: Promise<DocumentHandle>;
+	whenReady: Promise<DocumentHandle<TDocExtensions, TAwarenessDefinitions>>;
 };
 
 /**
@@ -96,7 +102,10 @@ type DocEntry = {
  *
  * @typeParam TRow - The row type of the bound table
  */
-export type CreateDocumentsConfig<TRow extends BaseRow> = {
+export type CreateDocumentsConfig<
+	TRow extends BaseRow,
+	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
+> = {
 	/** The workspace identifier. Passed through to `DocumentContext.id`. */
 	id?: string;
 	/** Column name storing the Y.Doc GUID. */
@@ -118,6 +127,8 @@ export type CreateDocumentsConfig<TRow extends BaseRow> = {
 	 * Used for tag matching against document extension registrations.
 	 */
 	documentTags?: readonly string[];
+	/** Optional typed awareness schemas for this document scope. */
+	awarenessDefinitions?: TAwarenessDefinitions;
 };
 
 /**
@@ -133,9 +144,13 @@ export type CreateDocumentsConfig<TRow extends BaseRow> = {
  * @param config - Documents configuration
  * @returns A `Documents<TRow>` with open/close/closeAll/guidOf methods
  */
-export function createDocuments<TRow extends BaseRow>(
-	config: CreateDocumentsConfig<TRow>,
-): Documents<TRow> {
+export function createDocuments<
+	TRow extends BaseRow,
+	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
+	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
+>(
+	config: CreateDocumentsConfig<TRow, TAwarenessDefinitions>,
+): Documents<TRow, TDocExtensions, TAwarenessDefinitions> {
 	const {
 		id = '',
 		guidKey,
@@ -144,9 +159,13 @@ export function createDocuments<TRow extends BaseRow>(
 		ydoc: workspaceYdoc,
 		documentExtensions = [],
 		documentTags = [],
+		awarenessDefinitions,
 	} = config;
 
-	const openDocuments = new Map<string, DocEntry>();
+	const openDocuments = new Map<
+		string,
+		DocEntry<TDocExtensions, TAwarenessDefinitions>
+	>();
 
 	/**
 	 * Set up the table observer for row deletion cleanup.
@@ -168,14 +187,21 @@ export function createDocuments<TRow extends BaseRow>(
 		}
 	});
 
-	const documents: Documents<TRow> = {
-		async open(input: TRow | string): Promise<DocumentHandle> {
+	const documents: Documents<TRow, TDocExtensions, TAwarenessDefinitions> = {
+		async open(
+			input: TRow | string,
+		): Promise<DocumentHandle<TDocExtensions, TAwarenessDefinitions>> {
 			const guid = typeof input === 'string' ? input : String(input[guidKey]);
 
 			const existing = openDocuments.get(guid);
 			if (existing) return existing.whenReady;
 
 			const contentYdoc = new Y.Doc({ guid, gc: false });
+			const contentAwareness = new Awareness(contentYdoc);
+			const awareness = createAwareness(
+				contentAwareness,
+				(awarenessDefinitions ?? {}) as TAwarenessDefinitions,
+			);
 			const timeline = createTimeline(contentYdoc);
 
 			// Filter document extensions by tag matching:
@@ -202,6 +228,7 @@ export function createDocuments<TRow extends BaseRow>(
 						id,
 						ydoc: contentYdoc,
 						timeline,
+						awareness: { raw: contentAwareness },
 						whenReady:
 							whenReadyPromises.length === 0
 								? Promise.resolve()
@@ -218,7 +245,7 @@ export function createDocuments<TRow extends BaseRow>(
 				}
 			} catch (err) {
 				startDisposeLifo(disposers);
-
+				// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
 				contentYdoc.destroy();
 				throw err;
 			}
@@ -256,22 +283,25 @@ export function createDocuments<TRow extends BaseRow>(
 			const handle = Object.assign(timeline, {
 				id,
 				timeline,
+				awareness,
 				extensions: resolvedExtensions,
 				whenReady: compositeWhenReady,
-			}) as DocumentHandle;
+			}) as DocumentHandle<TDocExtensions, TAwarenessDefinitions>;
 			const whenReady =
 				whenReadyPromises.length === 0
 					? Promise.resolve(handle)
-					: compositeWhenReady.then(() => handle)
+					: compositeWhenReady
+							.then(() => handle)
 							.catch(async (err) => {
-							const errors = await disposeLifo(disposers);
-							unobserve();
-							contentYdoc.destroy();
-							openDocuments.delete(guid);
+								const errors = await disposeLifo(disposers);
+								unobserve();
+								// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
+								contentYdoc.destroy();
+								openDocuments.delete(guid);
 
-							if (errors.length > 0) {
-								console.error('Document extension cleanup errors:', errors);
-							}
+								if (errors.length > 0) {
+									console.error('Document extension cleanup errors:', errors);
+								}
 								throw err;
 							});
 
@@ -298,6 +328,7 @@ export function createDocuments<TRow extends BaseRow>(
 				Object.values(entry.extensions).map((e) => e.dispose),
 			);
 
+			// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
 			entry.ydoc.destroy();
 
 			if (errors.length > 0) {
@@ -318,6 +349,7 @@ export function createDocuments<TRow extends BaseRow>(
 					Object.values(entry.extensions).map((e) => e.dispose),
 				);
 
+				// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
 				entry.ydoc.destroy();
 
 				if (errors.length > 0) {

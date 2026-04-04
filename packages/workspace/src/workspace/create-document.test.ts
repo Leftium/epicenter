@@ -11,6 +11,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import {
 	type CreateDocumentsConfig,
@@ -18,7 +19,9 @@ import {
 	DOCUMENTS_ORIGIN,
 } from './create-document.js';
 import { createTables } from './create-tables.js';
+import { createWorkspace } from './create-workspace.js';
 import { defineTable } from './define-table.js';
+import type { AwarenessDefinitions } from './types.js';
 
 const fileSchema = type({
 	id: 'string',
@@ -26,6 +29,7 @@ const fileSchema = type({
 	updatedAt: 'number',
 	_v: '1',
 });
+const cursorSchema = type({ x: 'number', y: 'number' });
 
 function setupTables() {
 	const ydoc = new Y.Doc({ guid: 'test-workspace' });
@@ -37,7 +41,9 @@ function setup(
 	overrides?: Pick<
 		CreateDocumentsConfig<typeof fileSchema.infer>,
 		'documentExtensions' | 'documentTags'
-	>,
+	> & {
+		awarenessDefinitions?: AwarenessDefinitions;
+	},
 ) {
 	const { ydoc, tables } = setupTables();
 	const documents = createDocuments({
@@ -268,6 +274,28 @@ describe('createDocuments', () => {
 	});
 
 	describe('close', () => {
+		test('document awareness is destroyed when document is closed', async () => {
+			const { documents } = setup({
+				awarenessDefinitions: {
+					cursor: cursorSchema,
+				},
+			});
+
+			const handle = await documents.open('f1');
+			let destroyed = false;
+			const originalDestroy = handle.awareness.raw.destroy.bind(
+				handle.awareness.raw,
+			);
+
+			handle.awareness.raw.destroy = () => {
+				destroyed = true;
+				originalDestroy();
+			};
+
+			await documents.close('f1');
+			expect(destroyed).toBe(true);
+		});
+
 		test('frees memory — doc can be re-opened as new instance', async () => {
 			const { documents } = setup();
 
@@ -391,7 +419,6 @@ describe('createDocuments', () => {
 			const handle2 = await documents.open('f1');
 			expect(handle2.ydoc).not.toBe(handle1.ydoc);
 		});
-
 	});
 	describe('document extension hooks', () => {
 		test('hooks are called in order', async () => {
@@ -719,6 +746,63 @@ describe('createDocuments', () => {
 				throw new Error('Expected extensions for test extension');
 			}
 			expect(typeof handle.extensions.test.helper).toBe('function');
+		});
+	});
+
+	describe('document awareness', () => {
+		test('document handle has awareness with raw property', async () => {
+			const filesTable = defineTable(
+				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+				awareness: {
+					cursor: cursorSchema,
+				},
+			});
+
+			const client = createWorkspace({
+				id: 'doc-awareness-typed-handle',
+				tables: { files: filesTable },
+			});
+
+			const handle = await client.documents.files.content.open('f1');
+			handle.awareness.setLocalField('cursor', { x: 3, y: 4 });
+
+			const cursor = handle.awareness.getLocalField('cursor');
+			const _typedCursor: { x: number; y: number } | undefined = cursor;
+			void _typedCursor;
+
+			// @ts-expect-error unknown awareness field should fail type-checking
+			handle.awareness.setLocalField('presence', { online: true });
+
+			expect(handle.awareness.raw).toBeInstanceOf(Awareness);
+			expect(cursor).toEqual({ x: 3, y: 4 });
+		});
+
+		test('document awareness is independent per document', async () => {
+			const filesTable = defineTable(
+				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+				awareness: {
+					cursor: cursorSchema,
+				},
+			});
+
+			const client = createWorkspace({
+				id: 'doc-awareness-isolated',
+				tables: { files: filesTable },
+			});
+
+			const first = await client.documents.files.content.open('f1');
+			const second = await client.documents.files.content.open('f2');
+
+			first.awareness.setLocalField('cursor', { x: 7, y: 9 });
+
+			expect(first.awareness.getLocalField('cursor')).toEqual({ x: 7, y: 9 });
+			expect(second.awareness.getLocalField('cursor')).toBeUndefined();
 		});
 	});
 });

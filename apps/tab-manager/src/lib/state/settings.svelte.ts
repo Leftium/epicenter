@@ -17,6 +17,9 @@
  *
  * // Write (optimistic — UI updates immediately, persists async):
  * serverUrl.current = 'http://localhost:3913';
+ *
+ * // Authoritative read (waits for chrome.storage):
+ * const url = await serverUrl.get();
  * ```
  */
 

@@ -99,7 +99,6 @@
       "dependencies": {
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
-        "@epicenter/sync-client": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
         "@tanstack/svelte-query-devtools": "catalog:",
@@ -165,9 +164,9 @@
       "dependencies": {
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
-        "@epicenter/sync-client": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
+        "mode-watcher": "^1.1.0",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -247,7 +246,6 @@
         "@epicenter/ai": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
-        "@epicenter/sync-client": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
@@ -380,6 +378,7 @@
         "arktype": "catalog:",
         "dompurify": "^3.3.3",
         "marked": "^17.0.5",
+        "mode-watcher": "^1.1.0",
         "pinyin-pro": "^3.28.0",
         "svelte-sonner": "catalog:",
         "wellcrafted": "catalog:",
@@ -520,26 +519,12 @@
       "version": "0.0.1",
       "dependencies": {
         "lib0": "catalog:",
+        "wellcrafted": "catalog:",
         "y-protocols": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
-        "yjs": "catalog:",
-      },
-      "peerDependencies": {
-        "yjs": "catalog:",
-      },
-    },
-    "packages/sync-client": {
-      "name": "@epicenter/sync-client",
-      "version": "0.1.0",
-      "dependencies": {
-        "@epicenter/sync": "workspace:*",
-        "lib0": "catalog:",
-        "y-protocols": "catalog:",
-      },
-      "devDependencies": {
         "yjs": "catalog:",
       },
       "peerDependencies": {
@@ -605,7 +590,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@ark/json-schema": "^0.0.4",
-        "@epicenter/sync-client": "workspace:*",
+        "@epicenter/sync": "workspace:*",
         "@noble/ciphers": "^2.1.1",
         "@noble/hashes": "^2.0.1",
         "@sindresorhus/slugify": "catalog:",
@@ -901,8 +886,6 @@
     "@epicenter/svelte": ["@epicenter/svelte@workspace:packages/svelte-utils"],
 
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
-
-    "@epicenter/sync-client": ["@epicenter/sync-client@workspace:packages/sync-client"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
 

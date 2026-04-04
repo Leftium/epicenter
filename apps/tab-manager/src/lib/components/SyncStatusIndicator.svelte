@@ -12,7 +12,7 @@
 	 * no polling, no derived stores.
 	 */
 
-	import type { SyncStatus } from '@epicenter/sync-client';
+	import type { SyncStatus } from '@epicenter/workspace/extensions/sync/websocket';
 	import { workspace } from '$lib/client';
 
 	function createSyncStatus() {

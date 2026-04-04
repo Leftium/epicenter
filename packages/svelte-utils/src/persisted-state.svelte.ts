@@ -76,7 +76,7 @@ type PersistedStateOptions<TSchema extends StandardSchemaV1> = {
 /**
  * Create reactive persisted state backed by Web Storage with schema validation.
  *
- * Returns an object with a `.current` accessor (following Svelte 5 / runed conventions).
+ * Returns an object with a `.current` accessor (following Svelte 5 / runed conventions)
  * Values are validated against a StandardSchemaV1 schema on every read from storage.
  * Cross-tab sync via `storage` event, same-tab sync via `focus` event.
  *
@@ -91,8 +91,11 @@ type PersistedStateOptions<TSchema extends StandardSchemaV1> = {
  *   defaultValue: 'dark',
  * });
  *
- * theme.current;          // 'dark' (reactive)
- * theme.current = 'light'; // persists to localStorage
+ * theme.current;           // 'dark' (reactive)
+ * theme.current = 'light';  // persists to localStorage
+ *
+ * // Imperative read (sync — localStorage is immediate):
+ * const value = theme.get();
  * ```
  */
 export function createPersistedState<TSchema extends StandardSchemaV1>({
@@ -179,6 +182,13 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 	});
 
 	return {
+		/**
+		 * Reactive value for Svelte template bindings and `$derived` blocks.
+		 *
+		 * For localStorage-backed stores this is always the real value—localStorage
+		 * is synchronous, so `.current` is accurate at import time. Use `.get()`
+		 * in imperative code (boot scripts, closures) for API parity with async stores.
+		 */
 		get current() {
 			return value;
 		},
@@ -190,8 +200,23 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 				onUpdateError?.(error);
 			}
 		},
-		set(newValue: StandardSchemaV1.InferOutput<TSchema>) {
-			this.current = newValue;
+		/**
+		 * Authoritative read—returns the current value synchronously.
+		 *
+		 * localStorage is synchronous, so this is always the real value.
+		 * Use this in imperative code (boot scripts, closures, event handlers)
+		 * where you want to be explicit about reading the persisted value.
+		 *
+		 * @example
+		 * ```typescript
+		 * const cached = session.get();
+		 * if (cached?.encryptionKeys) {
+		 *   workspace.applyEncryptionKeys(cached.encryptionKeys);
+		 * }
+		 * ```
+		 */
+		get(): StandardSchemaV1.InferOutput<TSchema> {
+			return value;
 		},
 		watch(listener: (value: StandardSchemaV1.InferOutput<TSchema>) => void) {
 			listeners.add(listener);

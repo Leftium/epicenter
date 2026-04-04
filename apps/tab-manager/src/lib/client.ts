@@ -34,11 +34,10 @@ import { createTabManagerWorkspace } from './workspace/workspace';
 // Workspace Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Boot: apply cached encryption keys once chrome.storage loads.
-// chrome.storage is async (unlike localStorage), so we await readiness.
-void authSession.whenReady.then(() => {
-	if (authSession.current?.encryptionKeys) {
-		workspace.applyEncryptionKeys(authSession.current.encryptionKeys);
+// Boot: apply cached encryption keys from chrome.storage.
+void authSession.get().then((cached) => {
+	if (cached?.encryptionKeys) {
+		workspace.applyEncryptionKeys(cached.encryptionKeys);
 	}
 });
 export const workspace = buildWorkspaceClient();
@@ -102,14 +101,14 @@ export async function registerDevice(): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildWorkspaceClient() {
-	return createTabManagerWorkspace()
+	const client = createTabManagerWorkspace()
 		.withExtension('persistence', indexeddbPersistence)
 		.withExtension('broadcast', broadcastChannelSync)
 		.withExtension(
 			'sync',
 			createSyncExtension({
 				url: (workspaceId) => toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
-				getToken: async () => authSession.current?.token ?? null,
+				getToken: async () => (await authSession.get())?.token ?? null,
 			}),
 		)
 		.withActions(({ tables, batch }) => ({
@@ -367,7 +366,7 @@ function buildWorkspaceClient() {
 				restoreAll: defineMutation({
 					title: 'Restore All Saved Tabs',
 					description: 'Re-open all saved tabs and delete their records.',
-					input: Type.Object({}),
+
 					handler: async () => {
 						const all = tables.savedTabs.getAllValid();
 						if (!all.length) return { restoredCount: 0 };
@@ -403,7 +402,7 @@ function buildWorkspaceClient() {
 				removeAll: defineMutation({
 					title: 'Remove All Saved Tabs',
 					description: 'Delete all saved tabs without restoring them.',
-					input: Type.Object({}),
+
 					handler: () => {
 						const all = tables.savedTabs.getAllValid();
 						batch(() => {
@@ -497,7 +496,7 @@ function buildWorkspaceClient() {
 				removeAll: defineMutation({
 					title: 'Remove All Bookmarks',
 					description: 'Delete every bookmark.',
-					input: Type.Object({}),
+
 					handler: () => {
 						const all = tables.bookmarks.getAllValid();
 						batch(() => {
@@ -510,4 +509,15 @@ function buildWorkspaceClient() {
 				}),
 			},
 		}));
+
+	// Publish awareness identity after sync is ready
+	client.whenReady.then(async () => {
+		const deviceId = await getDeviceId();
+		client.awareness.setLocal({
+			deviceId,
+			client: 'extension',
+		});
+	});
+
+	return client;
 }

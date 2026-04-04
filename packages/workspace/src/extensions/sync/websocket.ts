@@ -1,9 +1,20 @@
 import {
-	createSyncProvider,
-	type SyncProvider,
+	decodeRpcPayload,
+	encodeRpcRequest,
+	MESSAGE_TYPE,
+	RpcError,
+} from '@epicenter/sync';
+import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
+import type { SharedExtensionContext } from '../../workspace/types.js';
+import {
+	createTransport,
 	type SyncStatus,
-} from '@epicenter/sync-client';
-import type { SharedExtensionContext } from '../../workspace/types';
+	type Transport,
+} from './websocket-transport.js';
+
+export type { SyncError, SyncStatus } from './websocket-transport.js';
+
+const DEFAULT_RPC_TIMEOUT_MS = 5_000;
 
 /**
  * Sync extension configuration.
@@ -21,35 +32,16 @@ import type { SharedExtensionContext } from '../../workspace/types';
  * for cross-device sync. The sync extension waits for all prior extensions
  * via `context.whenReady` before connecting.
  *
- * @example Recommended: persistence + BroadcastChannel + WebSocket (both scopes)
+ * @example
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
- * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
  * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
- *
- * const sync = createSyncExtension({
- *   url: (docId) => `ws://localhost:3913/rooms/${docId}`,
- * });
  *
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)
- *   .withWorkspaceExtension('sync', sync.workspace)  // syncs workspace Y.Doc with awareness
- *   .withDocumentExtension('sync', sync.document)     // syncs each content Y.Doc
- * ```
- *
- * @example Authenticated mode (cloud)
- * ```typescript
- * const sync = createSyncExtension({
- *   url: (docId) => `wss://sync.epicenter.so/rooms/${docId}`,
- *   getToken: async (docId) => {
- *     const res = await fetch('/api/sync/token', {
- *       method: 'POST',
- *       body: JSON.stringify({ docId }),
- *     });
- *     return (await res.json()).token;
- *   },
- * });
+ *   .withExtension('sync', createSyncExtension({
+ *     url: (docId) => `ws://localhost:3913/rooms/${docId}`,
+ *   }))
  * ```
  */
 export type SyncExtensionConfig = {
@@ -77,7 +69,7 @@ export type SyncExtensionExports = {
 	/** Current connection status. */
 	readonly status: SyncStatus;
 	/** Subscribe to status changes. Returns unsubscribe function. */
-	onStatusChange: SyncProvider['onStatusChange'];
+	onStatusChange: Transport['onStatusChange'];
 	/**
 	 * Force a fresh connection with new credentials.
 	 *
@@ -85,23 +77,58 @@ export type SyncExtensionExports = {
 	 * `getToken()` call—no disconnect/connect race condition.
 	 */
 	reconnect(): void;
+
+	/**
+	 * Invoke an action on a remote peer in this room.
+	 *
+	 * Pass a type map (from `InferRpcMap`) for full type safety, or omit it
+	 * for untyped calls. When typed, action names autocomplete, input is
+	 * type-checked, and output is inferred.
+	 *
+	 * @example Typed (recommended when target app is in the same monorepo)
+	 * ```typescript
+	 * import type { TabManagerRpc } from '@epicenter/tab-manager/rpc';
+	 *
+	 * const { data, error } = await workspace.extensions.sync.rpc<TabManagerRpc>(
+	 *   peer.clientId, 'tabs.close', { tabIds: [1, 2, 3] },
+	 * );
+	 * // data is { closedCount: number } | null — inferred from the map
+	 * ```
+	 *
+	 * @example Untyped (when target's types aren't available)
+	 * ```typescript
+	 * const { data, error } = await workspace.extensions.sync.rpc(
+	 *   peer.clientId, 'tabs.close', { tabIds: [1, 2, 3] },
+	 * );
+	 * // data is unknown
+	 * ```
+	 *
+	 * @param target - Awareness clientId of the target peer
+	 * @param action - Dot-path action name (e.g. 'tabs.close')
+	 * @param input - Action input (serialized as JSON)
+	 * @param options - Optional timeout override (default 5000ms)
+	 */
+	rpc<
+		TMap extends RpcActionMap = DefaultRpcMap,
+		TAction extends string & keyof TMap = string & keyof TMap,
+	>(
+		target: number,
+		action: TAction,
+		input?: TMap[TAction]['input'],
+		options?: { timeout?: number },
+	): Promise<{ data: TMap[TAction]['output'] | null; error: RpcError | null }>;
 };
 
 /**
  * Convert an HTTP(S) URL to its WebSocket equivalent.
  *
- * Use this when your server config provides HTTP URLs (e.g. `APP_URLS.API`)
- * but you need a WebSocket URL for sync.
- *
  * @example
  * ```typescript
- * import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
- *
  * createSyncExtension({
  *   url: (id) => toWsUrl(`${APP_URLS.API}/workspaces/${id}`),
  * })
- * // 'http://localhost:8787/workspaces/my-ws' → 'ws://localhost:8787/workspaces/my-ws'
- * // 'https://api.epicenter.so/workspaces/my-ws' → 'wss://api.epicenter.so/workspaces/my-ws'
+ * // 'http://localhost:8787/...' → 'ws://localhost:8787/...'
+ * // 'https://api.epicenter.so/...' → 'wss://api.epicenter.so/...'
  * ```
  */
 export function toWsUrl(httpUrl: string): string {
@@ -109,29 +136,18 @@ export function toWsUrl(httpUrl: string): string {
 }
 
 /**
- * Creates a sync extension that connects after prior extensions are ready.
+ * Creates a sync extension factory for any Y.Doc scope.
  *
- * Syncs any Y.Doc (workspace or content) via WebSocket. Register with
- * `withExtension` to sync both the workspace Y.Doc and every content Y.Doc:
- *
- * ```typescript
- * createWorkspace(definition)
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('broadcast', broadcastChannelSync)
- *   .withExtension('sync', createSyncExtension({
- *     url: (docId) => `ws://localhost:3913/rooms/${docId}`,
- *   }))
- * ```
- *
- * The `url` callback receives the Y.Doc's GUID—the workspace ID at workspace
- * scope, or the content doc's unique GUID at document scope. Each Y.Doc gets
- * its own WebSocket connection to its own room on the sync server.
+ * Returns a factory function that receives `SharedExtensionContext` and
+ * produces a sync transport with `peers()` and `rpc()`. Register with
+ * `.withExtension()` for dual-scope (workspace + documents) or with
+ * `.withWorkspaceExtension()` / `.withDocumentExtension()` for single-scope.
  *
  * Lifecycle:
  * - Waits for prior extensions (`whenReady`) before connecting, so local state
  *   is loaded first (accurate state vector for the initial sync handshake).
  * - `whenReady` resolves when the connection is initiated. The UI renders from
- *   local state immediately; connection status is reactive via `provider`.
+ *   local state immediately; connection status is reactive via `status`.
  */
 export function createSyncExtension(config: SyncExtensionConfig): (
 	context: SharedExtensionContext,
@@ -139,13 +155,57 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 	whenReady: Promise<unknown>;
 	dispose: () => void;
 } {
-	return ({ ydoc, whenReady: priorReady }) => {
+	return ({ ydoc, awareness: ctxAwareness, whenReady: priorReady }) => {
 		const docId = ydoc.guid;
 		const { getToken } = config;
-		const provider: SyncProvider = createSyncProvider({
+
+		// ── RPC state (private — owned entirely by this extension) ──
+		const pendingRequests = new Map<
+			number,
+			{
+				resolve: (result: { data: unknown; error: unknown }) => void;
+				timer: ReturnType<typeof setTimeout>;
+			}
+		>();
+		let nextRequestId = 0;
+
+		/** Clear all pending RPC requests (on reconnect or dispose). */
+		function clearPendingRequests() {
+			for (const [, pending] of pendingRequests) clearTimeout(pending.timer);
+			pendingRequests.clear();
+			nextRequestId = 0;
+		}
+
+		// ── Transport (handles sync, awareness, WebSocket lifecycle) ──
+		const transport = createTransport({
 			doc: ydoc,
+			awareness: ctxAwareness.raw,
 			url: () => config.url(docId),
 			getToken: getToken ? () => getToken(docId) : undefined,
+			onCustomMessage(messageType, payload) {
+				if (messageType !== MESSAGE_TYPE.RPC) {
+					console.warn(`[SyncExtension] Unknown message type: ${messageType}`);
+					return;
+				}
+
+				const rpc = decodeRpcPayload(payload);
+				if (rpc.type === 'response') {
+					const pending = pendingRequests.get(rpc.requestId);
+					if (pending) {
+						clearTimeout(pending.timer);
+						pendingRequests.delete(rpc.requestId);
+						pending.resolve(rpc.result);
+					}
+				}
+			},
+		});
+
+		// Clear pending RPC requests when a new connection attempt starts.
+		// The old WebSocket is gone — responses will never arrive.
+		transport.onStatusChange((s) => {
+			if (s.phase === 'connecting') {
+				clearPendingRequests();
+			}
 		});
 
 		// Wait for all prior extensions (persistence, etc.) then connect.
@@ -153,18 +213,83 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		// giving an accurate state vector for the initial WebSocket handshake.
 		const whenReady = (async () => {
 			await priorReady;
-			provider.connect();
+			transport.connect();
 		})();
 
 		return {
 			get status() {
-				return provider.status;
+				return transport.status;
 			},
-			onStatusChange: provider.onStatusChange,
-			reconnect: provider.reconnect,
+			onStatusChange: transport.onStatusChange,
+			reconnect: transport.reconnect,
+
+			async rpc<
+				TMap extends RpcActionMap = DefaultRpcMap,
+				TAction extends string & keyof TMap = string & keyof TMap,
+			>(
+				target: number,
+				action: TAction,
+				input?: TMap[TAction]['input'],
+				options?: { timeout?: number },
+			): Promise<{
+				data: TMap[TAction]['output'] | null;
+				error: RpcError | null;
+			}> {
+				if (target === ydoc.clientID) {
+					return RpcError.ActionFailed({ action, cause: 'Cannot RPC to self — call the action directly' });
+				}
+
+				const timeoutMs = options?.timeout ?? DEFAULT_RPC_TIMEOUT_MS;
+
+				return new Promise((resolve) => {
+					const requestId = nextRequestId++;
+					transport.send(
+						encodeRpcRequest({
+							requestId,
+							targetClientId: target,
+							requesterClientId: ydoc.clientID,
+							action,
+							input,
+						}),
+					);
+
+					const timer = setTimeout(() => {
+						pendingRequests.delete(requestId);
+						resolve(RpcError.Timeout({ ms: timeoutMs }));
+					}, timeoutMs);
+
+					pendingRequests.set(requestId, {
+						resolve: (result) => {
+							clearTimeout(timer);
+							if (
+								result.error != null &&
+								typeof result.error === 'object' &&
+								'name' in result.error
+							) {
+								resolve({ data: null, error: result.error as RpcError });
+							} else if (result.error != null) {
+								resolve(
+									RpcError.ActionFailed({
+										action,
+										cause: result.error,
+									}),
+								);
+							} else {
+								resolve({
+									data: result.data as TMap[TAction]['output'],
+									error: null,
+								});
+							}
+						},
+						timer,
+					});
+				});
+			},
+
 			whenReady,
 			dispose() {
-				provider.dispose();
+				clearPendingRequests();
+				transport.dispose();
 			},
 		};
 	};

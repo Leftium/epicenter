@@ -50,6 +50,7 @@
  * ```
  */
 
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
@@ -62,7 +63,10 @@ import { createAwareness } from './create-awareness.js';
 import { createDocuments } from './create-document.js';
 import { createKv } from './create-kv.js';
 import { createTable } from './create-table.js';
-import { type EncryptionKeys, encryptionKeysFingerprint } from './encryption-key.js';
+import {
+	type EncryptionKeys,
+	encryptionKeysFingerprint,
+} from './encryption-key.js';
 import {
 	defineExtension,
 	disposeLifo,
@@ -160,7 +164,8 @@ export function createWorkspace<
 	// skips the expensive base64 decode → HKDF → per-store scan path.
 	let lastKeysFingerprint: string | undefined;
 
-	const awareness = createAwareness(ydoc, awarenessDefs);
+	const rawAwareness = new Awareness(ydoc);
+	const awareness = createAwareness(rawAwareness, awarenessDefs);
 	const definitions = {
 		tables: tableDefs,
 		kv: kvDefs,
@@ -211,7 +216,7 @@ export function createWorkspace<
 		const tableDocumentsNamespace: Record<string, Documents<BaseRow>> = {};
 
 		for (const [docName, rawConfig] of Object.entries(tableDef.documents)) {
-			const { guid, onUpdate, tags } = rawConfig as DocumentConfig;
+			const { guid, onUpdate, tags, awareness } = rawConfig as DocumentConfig;
 
 			const documents = createDocuments({
 				id,
@@ -221,6 +226,7 @@ export function createWorkspace<
 				ydoc,
 				documentExtensions: documentExtensionRegistrations,
 				documentTags: tags ?? [],
+				awarenessDefinitions: awareness,
 			});
 
 			tableDocumentsNamespace[docName] = documents;
@@ -444,6 +450,7 @@ export function createWorkspace<
 				key: TKey,
 				factory: (context: {
 					ydoc: Y.Doc;
+					awareness: { raw: Awareness };
 					whenReady: Promise<void>;
 				}) => TExports & {
 					whenReady?: Promise<unknown>;
@@ -452,7 +459,7 @@ export function createWorkspace<
 				},
 			) {
 				// Registers for both workspace and document scopes.
-				// The factory only receives SharedExtensionContext (ydoc + whenReady),
+				// The factory only receives SharedExtensionContext (ydoc + awareness + whenReady),
 				// which is a structural subset of both ExtensionContext and DocumentContext.
 				documentExtensionRegistrations.push({
 					key,

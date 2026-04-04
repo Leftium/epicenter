@@ -288,12 +288,19 @@ const tables = {
 	toolTrust: toolTrustTable,
 };
 
+const awareness = {
+	deviceId: type('string'),
+	client: type('"extension" | "desktop" | "cli"'),
+};
+
 export const definition = defineWorkspace<
 	'epicenter.tab-manager',
 	typeof tables,
-	KvDefinitions
+	KvDefinitions,
+	typeof awareness
 >({
 	id: 'epicenter.tab-manager',
 	tables,
 	kv: {},
+	awareness,
 });

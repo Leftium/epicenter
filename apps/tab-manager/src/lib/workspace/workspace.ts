@@ -31,7 +31,7 @@ export function createTabManagerWorkspace() {
 				title: 'List Devices',
 				description:
 					'List all synced devices with their names, browsers, and online status.',
-				input: Type.Object({}),
+
 				handler: () => {
 					const devices = tables.devices.getAllValid();
 					return {

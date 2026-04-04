@@ -40,7 +40,7 @@ function setupTables() {
 function setup(
 	overrides?: Pick<
 		CreateDocumentsConfig<typeof fileSchema.infer>,
-		'documentExtensions' | 'documentTags'
+		'documentExtensions'
 	> & {
 		awarenessDefinitions?: AwarenessDefinitions;
 	},
@@ -327,7 +327,6 @@ describe('createDocuments', () => {
 							clearLocalData: () => {},
 							dispose: () => {},
 						}),
-						tags: [],
 					},
 				],
 			});
@@ -348,7 +347,6 @@ describe('createDocuments', () => {
 						factory: () => ({
 							dispose: () => {},
 						}),
-						tags: [],
 					},
 				],
 			});
@@ -369,7 +367,6 @@ describe('createDocuments', () => {
 						factory: () => ({
 							helper: () => 42,
 						}),
-						tags: [],
 					},
 				],
 			});
@@ -435,7 +432,6 @@ describe('createDocuments', () => {
 							order.push(1);
 							return { dispose: () => {} };
 						},
-						tags: [],
 					},
 					{
 						key: 'second',
@@ -443,7 +439,6 @@ describe('createDocuments', () => {
 							order.push(2);
 							return { dispose: () => {} };
 						},
-						tags: [],
 					},
 					{
 						key: 'third',
@@ -451,7 +446,6 @@ describe('createDocuments', () => {
 							order.push(3);
 							return { dispose: () => {} };
 						},
-						tags: [],
 					},
 				],
 			});
@@ -471,7 +465,6 @@ describe('createDocuments', () => {
 							whenReady: Promise.resolve(),
 							dispose: () => {},
 						}),
-						tags: [],
 					},
 					{
 						key: 'second',
@@ -479,7 +472,6 @@ describe('createDocuments', () => {
 							secondReceivedWhenReady = whenReady instanceof Promise;
 							return { dispose: () => {} };
 						},
-						tags: [],
 					},
 				],
 			});
@@ -499,7 +491,6 @@ describe('createDocuments', () => {
 							hooksCalled++;
 							return undefined; // void return
 						},
-						tags: [],
 					},
 					{
 						key: 'normal-hook',
@@ -507,7 +498,6 @@ describe('createDocuments', () => {
 							hooksCalled++;
 							return { dispose: () => {} };
 						},
-						tags: [],
 					},
 				],
 			});
@@ -521,94 +511,6 @@ describe('createDocuments', () => {
 
 			const handle = await documents.open('f1');
 			expect(handle.ydoc).toBeInstanceOf(Y.Doc);
-		});
-
-		test('tag matching: extension with no tags fires for all documents', async () => {
-			let called = false;
-			const { documents } = setup({
-				documentTags: ['persistent'],
-				documentExtensions: [
-					{
-						key: 'universal',
-						factory: () => {
-							called = true;
-							return { dispose: () => {} };
-						},
-						tags: [], // universal — no tags
-					},
-				],
-			});
-
-			await documents.open('f1');
-			expect(called).toBe(true);
-		});
-
-		test('tag matching: extension with matching tag fires', async () => {
-			let called = false;
-			const { documents } = setup({
-				documentTags: ['persistent', 'synced'],
-				documentExtensions: [
-					{
-						key: 'sync-ext',
-						factory: () => {
-							called = true;
-							return { dispose: () => {} };
-						},
-						tags: ['synced'],
-					},
-				],
-			});
-
-			await documents.open('f1');
-			expect(called).toBe(true);
-		});
-
-		test('tag matching: extension with non-matching tag does NOT fire', async () => {
-			let called = false;
-			const { documents } = setup({
-				documentTags: ['persistent'],
-				documentExtensions: [
-					{
-						key: 'ephemeral-ext',
-						factory: () => {
-							called = true;
-							return { dispose: () => {} };
-						},
-						tags: ['ephemeral'],
-					},
-				],
-			});
-
-			await documents.open('f1');
-			expect(called).toBe(false);
-		});
-
-		test('tag matching: doc with no tags only gets universal extensions', async () => {
-			const calls: string[] = [];
-			const { documents } = setup({
-				documentTags: [], // no tags on doc
-				documentExtensions: [
-					{
-						key: 'tagged',
-						factory: () => {
-							calls.push('tagged');
-							return { dispose: () => {} };
-						},
-						tags: ['persistent'],
-					},
-					{
-						key: 'universal',
-						factory: () => {
-							calls.push('universal');
-							return { dispose: () => {} };
-						},
-						tags: [],
-					},
-				],
-			});
-
-			await documents.open('f1');
-			expect(calls).toEqual(['universal']);
 		});
 	});
 
@@ -624,7 +526,6 @@ describe('createDocuments', () => {
 							someValue: 42,
 							dispose: () => {},
 						}),
-						tags: [],
 					},
 					{
 						key: 'second',
@@ -632,7 +533,6 @@ describe('createDocuments', () => {
 							capturedFirstExtension = context.extensions.first;
 							return { dispose: () => {} };
 						},
-						tags: [],
 					},
 				],
 			});
@@ -642,64 +542,6 @@ describe('createDocuments', () => {
 			expect(
 				(capturedFirstExtension as Record<string, unknown>).someValue,
 			).toBe(42);
-		});
-
-		test('document extension extensions map is optional (tag filtering may skip)', async () => {
-			let taggedPresentForPersistentDoc = false;
-			let taggedPresentForEphemeralDoc = true;
-
-			const persistentSetup = setup({
-				documentTags: ['persistent'],
-				documentExtensions: [
-					{
-						key: 'tagged',
-						factory: () => ({
-							label: 'tagged',
-							dispose: () => {},
-						}),
-						tags: ['persistent'],
-					},
-					{
-						key: 'universal',
-						factory: (context) => {
-							taggedPresentForPersistentDoc =
-								context.extensions.tagged !== undefined;
-							return { dispose: () => {} };
-						},
-						tags: [],
-					},
-				],
-			});
-
-			await persistentSetup.documents.open('f1');
-
-			const ephemeralSetup = setup({
-				documentTags: ['ephemeral'],
-				documentExtensions: [
-					{
-						key: 'tagged',
-						factory: () => ({
-							label: 'tagged',
-							dispose: () => {},
-						}),
-						tags: ['persistent'],
-					},
-					{
-						key: 'universal',
-						factory: (context) => {
-							taggedPresentForEphemeralDoc =
-								context.extensions.tagged !== undefined;
-							return { dispose: () => {} };
-						},
-						tags: [],
-					},
-				],
-			});
-
-			await ephemeralSetup.documents.open('f1');
-
-			expect(taggedPresentForPersistentDoc).toBe(true);
-			expect(taggedPresentForEphemeralDoc).toBe(false);
 		});
 
 		test('document extension with no exports is still accessible', async () => {
@@ -712,7 +554,6 @@ describe('createDocuments', () => {
 						factory: () => ({
 							dispose: () => {},
 						}),
-						tags: [],
 					},
 					{
 						key: 'second',
@@ -720,7 +561,6 @@ describe('createDocuments', () => {
 							firstExtensionSeen = context.extensions.first !== undefined;
 							return { dispose: () => {} };
 						},
-						tags: [],
 					},
 				],
 			});
@@ -738,7 +578,6 @@ describe('createDocuments', () => {
 							helper: () => 42,
 							dispose: () => {},
 						}),
-						tags: [],
 					},
 				],
 			});

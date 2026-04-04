@@ -11,13 +11,11 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { randomBytes } from '@noble/ciphers/utils.js';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import {
-	bytesToBase64,
-	} from '../shared/crypto/index.js';
-import { randomBytes } from '@noble/ciphers/utils.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
+import { bytesToBase64 } from '../shared/crypto/index.js';
 import { createDocuments } from './create-document.js';
 import { createTables } from './create-tables.js';
 import { createWorkspace } from './create-workspace.js';
@@ -51,7 +49,6 @@ function setup() {
 	const client = createWorkspace(definition);
 	return { client };
 }
-
 
 describe('createWorkspace', () => {
 	describe('batch()', () => {
@@ -552,72 +549,6 @@ describe('createWorkspace', () => {
 			expect(hookCalled).toBe(true);
 		});
 
-		test('withDocumentExtension with tags only fires for matching documents', async () => {
-			const hookCalls: string[] = [];
-
-			const notesTable = defineTable(
-				type({
-					id: 'string',
-					name: 'string',
-					updatedAt: 'number',
-					thumbId: 'string',
-					thumbUpdatedAt: 'number',
-					_v: '1',
-				}),
-			)
-				.withDocument('content', {
-					guid: 'id',
-					onUpdate: () => ({ updatedAt: Date.now() }),
-					tags: ['persistent', 'synced'],
-				})
-				.withDocument('thumb', {
-					guid: 'thumbId',
-					onUpdate: () => ({ thumbUpdatedAt: Date.now() }),
-					tags: ['ephemeral'],
-				});
-
-			const client = createWorkspace({
-				id: 'doc-tag-test',
-				tables: { notes: notesTable },
-			})
-				.withDocumentExtension(
-					'persistent-only',
-					() => {
-						hookCalls.push('persistent-only');
-						return { dispose: () => {} };
-					},
-					{ tags: ['persistent'] },
-				)
-				.withDocumentExtension(
-					'ephemeral-only',
-					() => {
-						hookCalls.push('ephemeral-only');
-						return { dispose: () => {} };
-					},
-					{ tags: ['ephemeral'] },
-				)
-				.withDocumentExtension('universal', () => {
-					hookCalls.push('universal');
-					return { dispose: () => {} };
-				});
-
-			// Content doc has tags ['persistent', 'synced']
-			await client.documents.notes.content.open('f1');
-			// 'persistent-only' matches (shares 'persistent')
-			// 'ephemeral-only' does NOT match (no overlap)
-			// 'universal' matches (no tags = fires for all)
-			expect(hookCalls).toEqual(['persistent-only', 'universal']);
-
-			hookCalls.length = 0;
-
-			// Thumb doc has tag ['ephemeral']
-			await client.documents.notes.thumb.open('t1');
-			// 'persistent-only' does NOT match
-			// 'ephemeral-only' matches (shares 'ephemeral')
-			// 'universal' matches (no tags = fires for all)
-			expect(hookCalls).toEqual(['ephemeral-only', 'universal']);
-		});
-
 		test('withExtension registers for both workspace and document Y.Docs', async () => {
 			let factoryCallCount = 0;
 
@@ -634,7 +565,7 @@ describe('createWorkspace', () => {
 			});
 
 			// withExtension fires factory for workspace Y.Doc AND registers
-			// it as a document extension (tags: [] = universal)
+			// it as a document extension
 			const client = createWorkspace({
 				id: 'three-tier-both-test',
 				tables: { files: filesTable },
@@ -841,9 +772,9 @@ describe('createWorkspace', () => {
 				tableHelper: tables.files,
 				ydoc: mockYdoc,
 				documentExtensions: [
-					{ key: 'first', factory: factory('first'), tags: [] },
-					{ key: 'second', factory: factory('second'), tags: [] },
-					{ key: 'third', factory: factory('third'), tags: [] },
+					{ key: 'first', factory: factory('first') },
+					{ key: 'second', factory: factory('second') },
+					{ key: 'third', factory: factory('third') },
 				],
 			});
 
@@ -917,7 +848,6 @@ describe('createWorkspace', () => {
 								cleanupCalled.add('first');
 							},
 						}),
-						tags: [],
 					},
 					{
 						key: 'second',
@@ -927,7 +857,6 @@ describe('createWorkspace', () => {
 								cleanupCalled.add('second');
 							},
 						}),
-						tags: [],
 					},
 				],
 			});
@@ -997,7 +926,9 @@ describe('applyEncryptionKeys', () => {
 		const keyV2 = randomBytes(32);
 
 		// Write with key v1
-		client.applyEncryptionKeys([{ version: 1, userKeyBase64: bytesToBase64(keyV1) }]);
+		client.applyEncryptionKeys([
+			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
+		]);
 		client.tables.posts.set({ id: '1', title: 'Written with v1', _v: 1 });
 
 		// Rotate to v2 (keyring includes both versions for backward compat)
@@ -1193,17 +1124,16 @@ describe('withActions (non-terminal)', () => {
 	test('actions work correctly — factory closes over live tables', () => {
 		const { definition } = actionsSetup();
 
-		const ws = createWorkspace(definition)
-			.withActions(({ tables }) => ({
-				getAll: defineQuery({
-					handler: () => tables.posts.getAllValid(),
-				}),
-				create: defineMutation({
-					handler: () => {
-						tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
-					},
-				}),
-			}));
+		const ws = createWorkspace(definition).withActions(({ tables }) => ({
+			getAll: defineQuery({
+				handler: () => tables.posts.getAllValid(),
+			}),
+			create: defineMutation({
+				handler: () => {
+					tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
+				},
+			}),
+		}));
 
 		// Mutation writes to tables
 		ws.actions.create();

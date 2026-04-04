@@ -1,18 +1,19 @@
 /**
  * Sync Transport Tests
  *
- * Uses a mocked WebSocket to validate the transport supervisor loop without
+ * TODO: Rewrite — createTransport was inlined into createSyncExtension.
+ * These tests need to be updated to test lifecycle transitions through
+ * createSyncExtension with a mocked WebSocket.
+ *
+ * Uses a mocked WebSocket to validate the supervisor loop without
  * requiring a real sync server. The suite focuses on lifecycle transitions
  * and reconnection behavior.
- *
- * Key behaviors:
- * - Connection lifecycle transitions follow the expected status model.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { encodeSyncStep2 } from '@epicenter/sync';
 import * as Y from 'yjs';
-import { createTransport, type SyncStatus } from './websocket-transport';
+import { createSyncExtension, type SyncStatus } from './websocket';
 
 // ============================================================================
 // Mock WebSocket

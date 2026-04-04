@@ -23,7 +23,7 @@
  */
 
 import { workspace } from '$lib/client';
-import { type FolderId, type NoteId } from '$lib/workspace';
+import type { FolderId, NoteId } from '$lib/workspace';
 import { fromKv } from '@epicenter/svelte';
 import { foldersState } from './folders.svelte';
 import { notesState } from './notes.svelte';

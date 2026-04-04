@@ -24,7 +24,7 @@
 import { generateId } from '@epicenter/workspace';
 import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
-import { type Folder, type FolderId } from '$lib/workspace';
+import type { Folder, FolderId } from '$lib/workspace';
 
 function createFoldersState() {
 	// ─── Reactive State ──────────────────────────────────────────────────

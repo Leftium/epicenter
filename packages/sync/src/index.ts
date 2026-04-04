@@ -13,6 +13,7 @@ export {
 	decodeMessageType,
 	decodeRpcMessage,
 	decodeRpcPayload,
+	type DecodedRpcMessage,
 	decodeSyncMessage,
 	decodeSyncRequest,
 	decodeSyncStatus,
@@ -34,5 +35,5 @@ export {
 	stateVectorsEqual,
 } from './protocol';
 
-// RPC error variants (used by both server and client)
-export { RpcError } from './rpc-errors';
+// RPC error variants and type guard (used by both server and client)
+export { isRpcError, RpcError } from './rpc-errors';

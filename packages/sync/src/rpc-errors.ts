@@ -47,5 +47,43 @@ export const RpcError = defineErrors({
 		action,
 		cause,
 	}),
+	Disconnected: () => ({
+		message: 'Connection lost before RPC response arrived',
+	}),
 });
 export type RpcError = InferErrors<typeof RpcError>;
+
+const RPC_ERROR_NAMES = new Set<string>([
+	'PeerOffline',
+	'Timeout',
+	'ActionNotFound',
+	'ActionFailed',
+	'Disconnected',
+]);
+
+/**
+ * Type guard that narrows an unknown wire value to a known {@link RpcError} variant.
+ *
+ * Use this at the deserialization boundary instead of `as RpcError` casts.
+ * Validates that the value is an object with a `name` field matching one of
+ * the known RPC error variant names.
+ *
+ * @example
+ * ```typescript
+ * if (isRpcError(result.error)) {
+ *   switch (result.error.name) {
+ *     case 'PeerOffline': // TypeScript knows the full shape
+ *     case 'Timeout':     // No cast needed
+ *   }
+ * }
+ * ```
+ */
+export function isRpcError(value: unknown): value is RpcError {
+	return (
+		value != null &&
+		typeof value === 'object' &&
+		'name' in value &&
+		typeof value.name === 'string' &&
+		RPC_ERROR_NAMES.has(value.name)
+	);
+}

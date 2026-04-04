@@ -12,7 +12,7 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import { type ToolTrust } from '$lib/workspace';
+import type { ToolTrust } from '$lib/workspace';
 import { workspace } from '$lib/client';
 
 /**

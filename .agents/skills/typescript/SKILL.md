@@ -101,6 +101,21 @@ Load these on demand based on what you're working on:
   ```
 
   This does NOT apply to package imports (`import { type } from 'arktype'`) or path aliases (`import Component from '$lib/components/Foo.svelte'`)—only bare relative paths.
+- **`export { }` is only for barrel files**: Every symbol is exported directly at its declaration (`export type`, `export const`, `export function`). The `export { Foo } from './bar'` re-export syntax is reserved for `index.ts` barrel files—that's their entire job. Don't add re-exports at the bottom of implementation files "for convenience"; they go unused, leave orphaned imports, and create a false second import path.
+
+  ```typescript
+  // Good — direct export at declaration
+  export type TablesHelper<T> = { ... };
+  export const EncryptionKey = type({ ... });
+  export function createTables(...) { ... }
+
+  // Good — barrel re-exports in index.ts
+  export { createTables } from './create-tables.js';
+  export type { TablesHelper } from './types.js';
+
+  // Bad — re-export at bottom of create-tables.ts
+  export type { TablesHelper, TableDefinitions };
+  ```
 - When functions are only used in the return statement of a factory/creator function, use object method shorthand syntax instead of defining them separately. For example, instead of:
   ```typescript
   function myFunction() {

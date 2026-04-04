@@ -20,17 +20,16 @@ export const StoredUser = type({
 export type StoredUser = typeof StoredUser.infer;
 
 /**
- * Local auth session state used by apps and persisted stores.
+ * Shape of an authenticated session.
  *
- * This stays intentionally small: either the user is anonymous, or the app has
- * a bearer token, the normalized user snapshot, and optionally cached encryption
- * keys for instant offline decrypt on boot.
+ * Persisted stores hold `AuthSession | null`—null means not logged in.
+ * The session itself is never null; absence is expressed at the store level.
  */
 export const AuthSession = type({
 	token: 'string',
 	user: StoredUser,
-	'encryptionKeys?': EncryptionKeys,
-}).or('null');
+	encryptionKeys: EncryptionKeys,
+});
 
 export type AuthSession = typeof AuthSession.infer;
 

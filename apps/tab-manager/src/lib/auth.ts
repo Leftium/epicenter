@@ -5,20 +5,20 @@
  * `auth` (createAuth) lives in the workspace client where
  * `onLogin`/`onLogout` can wire workspace unlock and sync reconnect.
  *
- * @see {@link ../workspace/client} — auth with onLogin/onLogout
- * @see {@link ./storage-state.svelte} — chrome.storage reactive wrapper
+ * @see {@link ./client} — auth with onLogin/onLogout
+ * @see {@link ./state/storage-state.svelte} — chrome.storage reactive wrapper
  */
 
 import { AuthSession } from '@epicenter/svelte/auth';
-import { createStorageState } from './storage-state.svelte';
+import { createStorageState } from './state/storage-state.svelte';
 
 const GOOGLE_CLIENT_ID =
 	'702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
 
 /** Persisted auth snapshot in `chrome.storage.local`. */
-export const authSession = createStorageState('local:authSession', {
+export const session = createStorageState('local:authSession', {
 	fallback: null,
-	schema: AuthSession,
+	schema: AuthSession.or('null'),
 });
 
 export async function getGoogleCredentials(): Promise<{

@@ -1034,8 +1034,6 @@ export type WorkspaceDefinition<
  * ```
  */
 
-export type { EncryptionKey, EncryptionKeys } from './encryption-key';
-
 export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
@@ -1225,8 +1223,6 @@ export type WorkspaceClientBuilder<
 	>;
 };
 
-// Re-export Extension for convenience
-export type { Extension } from './lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION TYPES

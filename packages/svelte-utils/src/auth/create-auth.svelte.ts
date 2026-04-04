@@ -1,4 +1,3 @@
-import type { SessionResponse } from '@epicenter/api/types';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
@@ -35,28 +34,6 @@ export const AuthError = defineErrors({
 });
 export type AuthError = InferErrors<typeof AuthError>;
 
-/**
- * Authenticated session data passed to the `onLogin` hook.
- *
- * Includes `encryptionKeys` so apps can call `workspace.applyEncryptionKeys()`
- * directly—no separate fetch or version tracking needed. Keys are also cached
- * in the persisted session box for instant offline decrypt on boot.
- *
- * @example
- * ```typescript
- * createAuth({
- *   onLogin(session) {
- *     workspace.applyEncryptionKeys(session.encryptionKeys);
- *   },
- * });
- * ```
- */
-export type AuthenticatedSession = {
-	token: string;
-	user: StoredUser;
-	encryptionKeys: SessionResponse['encryptionKeys'];
-};
-
 export type AuthClient = {
 	/**
 	 * Whether the user is currently authenticated.
@@ -77,8 +54,8 @@ export type AuthClient = {
 	/**
 	 * The current user, or `null` if not authenticated.
 	 *
-	 * Narrows the `AuthSession` nullable value once at the source so every
-	 * consumer doesn't repeat the same `session ? session.user : null` pattern.
+	 * Narrows the nullable session store once at the source so every
+	 * consumer doesn't repeat the same null-check pattern.
 	 *
 	 * @example
 	 * ```svelte
@@ -179,12 +156,17 @@ export type AuthClient = {
 
 export type CreateAuthOptions = {
 	baseURL: BaseURL;
-	session: { current: AuthSession };
+	session: {
+		current: AuthSession | null;
+		/** Authoritative read. Sync for localStorage, async for chrome.storage. */
+		get(): AuthSession | null | Promise<AuthSession | null>;
+	};
 	/**
-	 * Called whenever the session is authenticated—sign-in, session restore
-	 * from storage, or token refresh.
+	 * Called whenever the session is authenticated—construction (if a cached
+	 * session exists in the store), sign-in, session restore, or token refresh.
 	 *
-	 * Fires on every authenticated session update, not just login transitions.
+	 * Fires at construction time if a cached session exists in the store,
+	 * then on every authenticated session update from Better Auth.
 	 * Consumers should use idempotent operations (e.g. `applyEncryptionKeys` is safe
 	 * to call repeatedly with the same keys).
 	 *
@@ -196,7 +178,7 @@ export type CreateAuthOptions = {
 	 * }
 	 * ```
 	 */
-	onLogin?: (session: AuthenticatedSession) => void;
+	onLogin?: (session: AuthSession) => void;
 	/**
 	 * Called on the authenticated → anonymous transition only.
 	 *
@@ -311,12 +293,9 @@ export function createAuth({
 		if (state.data) {
 			const user = normalizeUser(state.data.user);
 			const token = state.data.session.token;
-			session.current = { token, user, encryptionKeys: state.data.encryptionKeys };
-			onLogin?.({
-				token,
-				user,
-				encryptionKeys: state.data.encryptionKeys,
-			});
+			const authenticated = { token, user, encryptionKeys: state.data.encryptionKeys };
+			session.current = authenticated;
+			onLogin?.(authenticated);
 		} else {
 			session.current = null;
 			if (prev !== null) {
@@ -324,6 +303,19 @@ export function createAuth({
 			}
 		}
 	});
+
+	// Boot: fire onLogin from the cached session so encryption keys are
+	// applied before the BA subscription's server roundtrip resolves.
+	// session.get() is sync for localStorage, async for chrome.storage.
+	const boot = session.get();
+	const applyBoot = (cached: AuthSession | null) => {
+		if (cached) onLogin?.(cached);
+	};
+	if (boot instanceof Promise) {
+		void boot.then(applyBoot);
+	} else {
+		applyBoot(boot);
+	}
 
 	return {
 		get isAuthenticated() {

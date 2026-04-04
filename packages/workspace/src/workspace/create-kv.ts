@@ -13,9 +13,7 @@
 import type { YKeyValueLwwChange } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import type { YKeyValueLwwEncrypted } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type {
-	InferKvValue,
 	KvChange,
-	KvDefinition,
 	KvDefinitions,
 	KvHelper,
 } from './types.js';
@@ -134,5 +132,3 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 	} as KvHelper<TKvDefinitions>;
 }
 
-// Re-export types for convenience
-export type { InferKvValue, KvDefinition, KvDefinitions, KvHelper };

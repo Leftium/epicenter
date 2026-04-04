@@ -259,6 +259,72 @@ Never let prose run for more than a short paragraph without a visual break. The 
 
 Each visual (code snippet, ASCII diagram, before/after block) should be preceded by 1-3 sentences of context and optionally followed by a sentence explaining the subtle detail. If you're writing more than 4-5 sentences of prose in a row, you're missing an opportunity for a diagram or code block.
 
+#### Framing Patterns That Work
+
+These patterns consistently produce strong PR descriptions. They're not formulas—they're thinking tools for finding the angle.
+
+##### Disproportionate Complexity Framing
+
+State the simplest possible description of what the old system accomplished, then contrast it with the machinery it required. The reader should think "that's absurd" before you show the fix.
+
+**Good**: "The old encryption system had five moving parts to answer one question: does this workspace have encryption keys?"
+
+**Good**: "All of that complexity existed to track a single boolean."
+
+**Bad**: "The encryption system was complex and needed simplification." (no contrast, no specifics)
+
+The fix then lands with zero effort—the reader is already rooting for it.
+
+##### Bold Topic Sentences for Long PRs
+
+For PRs with multiple distinct concerns, use `---` separators and bold opening sentences as scannable anchors. These are NOT section headers—they're topic sentences that let someone skim the PR and understand its shape.
+
+```markdown
+---
+
+**First, a small correction: SYNC_STATUS was documented as a heartbeat but it isn't one.**
+
+Liveness is already handled by text-level ping/pong. What SYNC_STATUS actually
+needs to do is track whether the client has local changes...
+
+---
+
+**The Durable Object message handler needed a cleaner return shape before RPC could be added.**
+
+The old handler returned an optional-fields bag...
+```
+
+Use this when a PR has 3+ distinct concerns that each need their own context. For simpler PRs, just write paragraphs.
+
+##### "Came Along for the Ride" Transitions
+
+When a PR includes secondary improvements that aren't the main point, subordinate them explicitly:
+
+**Good**: "Two follow-up improvements came along for the ride. First, fingerprint dedup..."
+
+**Good**: "While getting there required fixing a few things that were already slightly wrong..."
+
+This signals to the reader: "the main narrative is done, here are bonuses." Without this transition, the reader doesn't know if they're still in the main argument or reading about side effects.
+
+##### Sequential Journey for Multi-Part PRs
+
+When a PR builds on itself in stages (protocol + routing + client + typed contracts + structural collapse), tell the story in the order it happened. The reader follows the same journey you did:
+
+1. State the end goal ("peer-to-peer RPC over the sync layer")
+2. Walk through each prerequisite in the order you hit it
+3. Each step motivates the next: "the handler needed a cleaner shape *before* RPC could be added"
+
+This only works for PRs where the order matters. For PRs with independent concerns, bold topic sentences work better.
+
+##### Casual Closing Stats
+
+End with a one-liner about scope. Not a metrics table, not a section—just a fact:
+
+**Good**: "Net change across 26 files: about 1700 lines deleted, 900 net lines removed."
+
+**Good**: "23 commits on top of the encryption branch. 61 files changed. Stacks on #1591—merge that first."
+
+This grounds the reader in scope after they've absorbed the narrative. It's the last thing they see before deciding to review.
 ### Other Guidelines
 
 - NEVER include Claude Code or opencode watermarks or attribution in PR titles/descriptions
@@ -382,3 +448,118 @@ These are the most common failure modes. If you catch yourself doing any of thes
 - Test plans (unless specifically requested)
 - Over-explaining simple changes
 - Apologetic tone for reasonable decisions
+
+#### Real Examples (Gold Standard)
+
+These are actual PR descriptions from this repo that demonstrate every pattern above working together. Study them—they're the bar.
+
+##### Example: Refactor PR (disproportionate complexity + before/after + composition tree + casual close)
+
+````
+The old encryption system had five moving parts to answer one question: does this workspace have encryption keys? You had to call `.withEncryption()` on the builder chain, then call `encryption.unlock(keys)` asynchronously, and the encrypted Y.Map wrapper maintained a dual-cache of both encrypted and decrypted values simultaneously. On top of that, an IndexedDB key store persisted crypto keys separately from auth, and `encryption-runtime.ts` ran a full state machine managing activate/deactivate transitions. All of that complexity existed to track a single boolean.
+
+```typescript
+// Before — 3 steps, async, stateful
+const client = createWorkspace(def)
+  .withEncryption()
+  .withExtension('persistence', ...)
+
+await client.encryption.unlock(keys)
+```
+
+Now it's one synchronous call, no builder step, no state machine:
+
+```typescript
+// After — sync, idempotent, no builder step
+const client = createWorkspace(def)
+  .withExtension('persistence', ...)
+
+client.applyEncryptionKeys(keys)  // done
+```
+
+`applyEncryptionKeys()` is idempotent and safe to call multiple times. The encrypted Y.Map wrapper no longer maintains a dual-cache — it encrypts on write and decrypts on read, one direction each way. The encryption runtime, key stores, IndexedDB wrappers, and dual-cache logic are all gone.
+
+```
+Before:
+  WorkspaceClient
+    └── .withEncryption()
+        ├── encryption-runtime.ts (state machine)
+        ├── user-key-store.ts (IndexedDB persistence)
+        └── y-keyvalue-lww-encrypted.ts (dual-cache: encrypted + decrypted)
+
+After:
+  WorkspaceClient
+    └── .applyEncryptionKeys(keys)  // sync, one method
+        └── y-keyvalue-lww-encrypted.ts (one-way: encrypt on write, decrypt on read)
+```
+
+Two follow-up improvements came along for the ride. First, fingerprint dedup: `onLogin` fires on every token refresh in the auth flow, which meant each fire was re-deriving HKDF keys — an expensive operation — even when the keys hadn't changed. `applyEncryptionKeys()` now computes a canonical fingerprint (`version:base64`, sorted) and skips the re-derivation when the fingerprint matches the last applied set.
+
+Second, cached session boot: encrypted workspaces used to show empty content until the auth network roundtrip completed, because keys only arrived after the server responded. `AuthSession` now persists `encryptionKeys`, so apps can apply cached keys immediately on boot from `chrome.storage` or `localStorage` — no network wait, no flash of empty content.
+
+Net change across 26 files: about 1700 lines deleted, 900 net lines removed (-2048/+1114).
+````
+
+**Why this works**: Opens with absurd contrast ("five moving parts for one boolean"), shows code before/after, uses a composition tree instead of listing files, subordinates secondary improvements with "came along for the ride," closes with one line of stats.
+
+##### Example: Feature PR (sequential journey + bold topic sentences + protocol notation + casual close)
+
+````
+The tab-manager extension needs to tell a browser extension to close tabs, open URLs, and list connected devices. Epicenter already syncs shared state between devices via Yjs CRDTs through a Durable Object relay, but sync is one-way. You can read shared state, but you can't ask another device to *do* something. That gap is what this PR fills.
+
+The core addition is peer-to-peer RPC over the existing WebSocket sync layer. But getting there required fixing a few things that were already slightly wrong, and the whole journey ends with the `sync-client` package being collapsed into the workspace module entirely.
+
+---
+
+**First, a small correction: SYNC_STATUS was documented as a heartbeat but it isn't one.**
+
+Liveness is already handled by text-level ping/pong. What SYNC_STATUS actually needs to do is track whether the client has local changes that haven't reached the server yet — the "Saving..."/"Saved" UX. The fix makes that explicit:
+
+1. Client increments `localVersion` on every doc update, setting `hasLocalChanges = true` immediately
+2. After a 100ms quiet period, it sends a `[100, localVersion]` probe to the server
+3. Server echoes the raw bytes back (zero parsing cost — it doesn't care what's in them)
+4. Client compares the echoed version and clears `hasLocalChanges` when caught up
+
+---
+
+**The Durable Object message handler needed a cleaner return shape before RPC could be added.**
+
+The old handler returned an optional-fields bag — `{ response?, broadcast?, persistAttachment? }` — and the caller had to guess which combination of fields was actually set. Replacing it with a discriminated union makes each case unambiguous:
+
+```typescript
+type MessageResult =
+  | { action: 'reply'; data: Uint8Array }
+  | { action: 'broadcast'; data: Uint8Array; shouldPersistAttachment: boolean }
+  | { action: 'forward'; targetClientId: number; data: Uint8Array; onMissReply?: Uint8Array }
+```
+
+---
+
+**Now the RPC protocol itself.**
+
+Wire format uses lib0 varints, with JSON only for the payload:
+
+```
+REQUEST:  [101] [0=REQ] [requestId] [targetClientId] [requesterClientId] [action] [jsonInput]
+RESPONSE: [101] [1=RES] [requestId] [requesterClientId]                           [jsonResult]
+```
+
+The DO is a dumb relay. It forwards a REQUEST to the target peer if they're connected, or synthesizes a PeerOffline RESPONSE if they're not. No RPC logic lives in the server — it just routes bytes.
+
+```typescript
+const peers = workspace.extensions.sync.peers();
+const ext = peers.find(p => p.client === 'browser-extension');
+
+const { data, error } = await workspace.extensions.sync.rpc(
+  ext.clientId,
+  'tabs.close',
+  { tabIds: [1, 2] }
+);
+```
+
+23 commits on top of the encryption branch. 61 files changed, +3571/-1048. Stacks on #1591 — merge that first.
+````
+
+(Truncated for skill length — the full PR also covers typed RPC contracts with `InferRpcMap`, awareness unification, and the sync-client package collapse, each with their own bold topic sentence and code examples.)
+
+**Why this works**: Opens with the concrete need ("tell a browser extension to close tabs"), walks through each prerequisite in build order, uses bold topic sentences with `---` for pacing, shows protocol notation inline, ends with casual stats and stacking note.

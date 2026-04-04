@@ -1,8 +1,42 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { YAML } from 'bun';
 import type { ExtensionContext } from '../../../workspace/types.js';
-import { deleteMarkdownFile, writeMarkdownFile } from './io.js';
 import { defaultSerializer, type MarkdownSerializer } from './serializers.js';
+
+// ─── Private helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Assemble a markdown string from YAML frontmatter and an optional body.
+ *
+ * Pure function — no I/O. Uses `Bun.YAML.stringify` for spec-compliant
+ * serialization (handles quoting of booleans, numeric strings, special
+ * characters, newlines, etc.). Null/undefined frontmatter values are
+ * stripped so the output stays clean.
+ */
+function toMarkdown(
+	frontmatter: Record<string, unknown>,
+	body?: string,
+): string {
+	const cleaned: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(frontmatter)) {
+		if (value !== undefined && value !== null) {
+			cleaned[key] = value;
+		}
+	}
+	const yaml = YAML.stringify(cleaned, null, 2);
+	return body !== undefined
+		? `---\n${yaml}---\n\n${body}\n`
+		: `---\n${yaml}---\n`;
+}
+
+/** Delete a file, silently succeeding if it doesn't exist. */
+async function safeUnlink(filePath: string): Promise<void> {
+	if (!(await Bun.file(filePath).exists())) return;
+	await unlink(filePath);
+}
+
+// ─── Config ──────────────────────────────────────────────────────────────────
 
 /**
  * Configuration for the markdown materializer extension.
@@ -44,6 +78,8 @@ export type MarkdownMaterializerConfig = {
 		}
 	>;
 };
+
+// ─── Extension factory ───────────────────────────────────────────────────────
 
 /**
  * Create a one-way markdown materializer extension that writes table rows
@@ -101,21 +137,17 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 				const filenames = new Map<string, string>();
 
 				// Initial materialization: write all current valid rows
-				const rows = table.getAllValid();
-				for (const row of rows) {
+				for (const row of table.getAllValid()) {
 					const result = serializer.serialize(row as Record<string, unknown>);
-					await writeMarkdownFile(
+					await Bun.write(
 						join(dir, result.filename),
-						result.frontmatter,
-						result.body,
+						toMarkdown(result.frontmatter, result.body),
 					);
 					filenames.set(String(row.id), result.filename);
 				}
 
-				// Set up observer for ongoing changes
+				// Observe ongoing changes
 				const unsubscribe = table.observe((changedIds) => {
-					// Process the entire batch synchronously to avoid interleaving.
-					// Fire-and-forget the async writes—observers are synchronous.
 					const writes: Array<Promise<void>> = [];
 
 					for (const id of changedIds) {
@@ -124,7 +156,7 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 						if (getResult.status === 'not_found') {
 							const oldFilename = filenames.get(id);
 							if (oldFilename) {
-								writes.push(deleteMarkdownFile(join(dir, oldFilename)));
+								writes.push(safeUnlink(join(dir, oldFilename)));
 								filenames.delete(id);
 							}
 							continue;
@@ -135,20 +167,19 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 						const row = getResult.row as Record<string, unknown>;
 						const { frontmatter, body, filename } = serializer.serialize(row);
 
-						// Detect rename: if the filename changed, delete the old file
+						// Rename detection: delete the old file if filename changed
 						const oldFilename = filenames.get(id);
 						if (oldFilename && oldFilename !== filename) {
-							writes.push(deleteMarkdownFile(join(dir, oldFilename)));
+							writes.push(safeUnlink(join(dir, oldFilename)));
 						}
 
 						writes.push(
-							writeMarkdownFile(join(dir, filename), frontmatter, body),
+							Bun.write(join(dir, filename), toMarkdown(frontmatter, body)),
 						);
 						filenames.set(id, filename);
 					}
 
-					// Surface failures as warnings—the materializer is
-					// best-effort, not critical path.
+					// Best-effort — surface failures as warnings
 					Promise.allSettled(writes).then((results) => {
 						for (const r of results) {
 							if (r.status === 'rejected') {

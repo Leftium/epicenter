@@ -573,22 +573,16 @@ export function decodeRpcMessage(data: Uint8Array): DecodedRpcMessage {
 /**
  * Decode an RPC payload after the message-type varint has already been consumed.
  *
- * The transport's `onCustomMessage` callback receives `(messageType, payload)`
- * where `payload` is the bytes after the type prefix. Use this to decode the
- * RPC sub-type and fields without re-parsing the prefix.
+ * Use this when registering a message handler for {@link MESSAGE_TYPE.RPC}—the
+ * transport reads the message-type varint and passes the positioned decoder to
+ * the handler, which calls this to decode the RPC sub-type and fields.
  *
- * @param decoderOrPayload - A lib0 decoder positioned after the type prefix,
- *   or the raw payload bytes (everything after the MESSAGE_TYPE varint)
+ * @param decoder - A lib0 decoder positioned after the message-type varint
  * @returns Decoded RPC message with type discriminator
  */
 export function decodeRpcPayload(
-	decoderOrPayload: decoding.Decoder | Uint8Array,
+	decoder: decoding.Decoder,
 ): DecodedRpcMessage {
-	const decoder =
-		decoderOrPayload instanceof Uint8Array
-			? decoding.createDecoder(decoderOrPayload)
-			: decoderOrPayload;
-
 	const rpcType = decoding.readVarUint(decoder);
 
 	switch (rpcType) {
@@ -605,7 +599,11 @@ export function decodeRpcPayload(
 			const requestId = decoding.readVarUint(decoder);
 			const requesterClientId = decoding.readVarUint(decoder);
 			const jsonBytes = decoding.readVarUint8Array(decoder);
-			const result = JSON.parse(new TextDecoder().decode(jsonBytes)) as { data: unknown; error: unknown };
+			const raw = JSON.parse(new TextDecoder().decode(jsonBytes));
+			if (typeof raw !== 'object' || raw === null || !('data' in raw)) {
+				throw new Error('Malformed RPC response: expected { data, error }');
+			}
+			const result = raw as { data: unknown; error: unknown };
 			return { type: 'response', requestId, requesterClientId, result };
 		}
 		default:

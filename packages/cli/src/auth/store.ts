@@ -27,6 +27,8 @@ export type AuthSession = {
 	accessToken: string;
 	/** Unix ms when the session expires. */
 	expiresAt: number;
+	/** Unix ms when this session was saved (for loadDefault ordering). */
+	savedAt: number;
 	/** Versioned encryption keys for workspace decryption. */
 	encryptionKeys: SessionResponse['encryptionKeys'];
 	/** User info snapshot from the auth flow. */
@@ -110,6 +112,7 @@ export function createSessionStore(home: string) {
 			store[normalizeUrl(server)] = {
 				accessToken: token.access_token,
 				expiresAt: Date.now() + token.expires_in * 1000,
+				savedAt: Date.now(),
 				encryptionKeys: sessionData.encryptionKeys,
 				user: sessionData.user,
 			};
@@ -131,10 +134,11 @@ export function createSessionStore(home: string) {
 		},
 
 		/**
-		 * Load the most recent session (any server).
+		 * Load the most recently saved session (any server).
 		 *
 		 * Used when no `--server` flag is provided—returns the session
-		 * with the latest `expiresAt` timestamp.
+		 * with the latest `savedAt` timestamp, falling back to `expiresAt`
+		 * for older sessions that do not have `savedAt` yet.
 		 *
 		 * @returns The most recent session with its server URL, or `null` if empty.
 		 */
@@ -143,7 +147,10 @@ export function createSessionStore(home: string) {
 			const entries = Object.entries(store);
 			if (entries.length === 0) return null;
 			const [server, session] = entries.reduce((latest, entry) =>
-				entry[1].expiresAt > latest[1].expiresAt ? entry : latest,
+				(entry[1].savedAt ?? entry[1].expiresAt) >
+				(latest[1].savedAt ?? latest[1].expiresAt)
+					? entry
+					: latest,
 			);
 			return { ...session, server };
 		},

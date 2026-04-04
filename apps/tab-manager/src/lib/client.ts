@@ -26,7 +26,6 @@ import {
 	getDeviceId,
 } from '$lib/device/device-id';
 import { authSession, getGoogleCredentials } from '$lib/state/auth';
-import { userKeyStore } from '$lib/state/key-store';
 import { remoteServerUrl, serverUrl } from '$lib/state/settings.svelte';
 import { generateBookmarkId, generateSavedTabId } from './workspace/definition';
 import { createTabManagerWorkspace } from './workspace/workspace';
@@ -35,6 +34,13 @@ import { createTabManagerWorkspace } from './workspace/workspace';
 // Workspace Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Boot: apply cached encryption keys once chrome.storage loads.
+// chrome.storage is async (unlike localStorage), so we await readiness.
+void authSession.whenReady.then(() => {
+	if (authSession.current?.encryptionKeys) {
+		workspace.applyEncryptionKeys(authSession.current.encryptionKeys);
+	}
+});
 export const workspace = buildWorkspaceClient();
 export const auth = createAuth({
 	baseURL: () => remoteServerUrl.current,
@@ -44,7 +50,7 @@ export const auth = createAuth({
 		return { provider: 'google', idToken, nonce };
 	},
 	onLogin(session) {
-		workspace.unlockWithKeys(session.encryptionKeys);
+		workspace.applyEncryptionKeys(session.encryptionKeys);
 		workspace.extensions.sync.reconnect();
 	},
 	onLogout() {
@@ -97,7 +103,6 @@ export async function registerDevice(): Promise<void> {
 
 function buildWorkspaceClient() {
 	return createTabManagerWorkspace()
-		.withEncryption({ userKeyStore })
 		.withExtension('persistence', indexeddbPersistence)
 		.withExtension('broadcast', broadcastChannelSync)
 		.withExtension(

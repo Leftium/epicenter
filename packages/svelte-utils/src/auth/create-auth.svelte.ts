@@ -38,15 +38,15 @@ export type AuthError = InferErrors<typeof AuthError>;
 /**
  * Authenticated session data passed to the `onLogin` hook.
  *
- * Includes `encryptionKeys` so apps can call `workspace.unlockWithKeys()`
- * directly—no separate fetch or version tracking needed. The persisted
- * session box stores the simpler `AuthSession` without key material.
+ * Includes `encryptionKeys` so apps can call `workspace.applyEncryptionKeys()`
+ * directly—no separate fetch or version tracking needed. Keys are also cached
+ * in the persisted session box for instant offline decrypt on boot.
  *
  * @example
  * ```typescript
  * createAuth({
  *   onLogin(session) {
- *     workspace.unlockWithKeys(session.encryptionKeys);
+ *     workspace.applyEncryptionKeys(session.encryptionKeys);
  *   },
  * });
  * ```
@@ -185,13 +185,13 @@ export type CreateAuthOptions = {
 	 * from storage, or token refresh.
 	 *
 	 * Fires on every authenticated session update, not just login transitions.
-	 * Consumers should use idempotent operations (e.g. `unlockWithKeys` is safe
+	 * Consumers should use idempotent operations (e.g. `applyEncryptionKeys` is safe
 	 * to call repeatedly with the same keys).
 	 *
 	 * @example
 	 * ```typescript
 	 * onLogin(session) {
-	 *   workspace.unlockWithKeys(session.encryptionKeys);
+	 *   workspace.applyEncryptionKeys(session.encryptionKeys);
 	 *   workspace.extensions.sync.reconnect();
 	 * }
 	 * ```
@@ -311,7 +311,7 @@ export function createAuth({
 		if (state.data) {
 			const user = normalizeUser(state.data.user);
 			const token = state.data.session.token;
-			session.current = { token, user };
+			session.current = { token, user, encryptionKeys: state.data.encryptionKeys };
 			onLogin?.({
 				token,
 				user,

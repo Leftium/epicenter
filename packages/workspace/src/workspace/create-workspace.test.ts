@@ -10,13 +10,13 @@
  * - Document-bound tables expose `documents`, while non-bound tables do not.
  */
 
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
 	bytesToBase64,
-	generateEncryptionKey,
-} from '../shared/crypto/index.js';
+	} from '../shared/crypto/index.js';
+import { randomBytes } from '@noble/ciphers/utils.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { createDocuments } from './create-document.js';
 import { createTables } from './create-tables.js';
@@ -24,17 +24,11 @@ import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
 import { defineWorkspace } from './define-workspace.js';
-import type { UserKeyStore, EncryptionKeysJson } from './user-key-store.js';
-import type { EncryptionKeys } from './types.js';
+import type { EncryptionKeys } from './encryption-key.js';
 
 /** Wrap a raw Uint8Array key into a single-entry EncryptionKeys for tests. */
 function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
 	return [{ version: 1, userKeyBase64: bytesToBase64(key) }];
-}
-
-/** Serialize a raw key to the JSON format the UserKeyStore stores. */
-function toKeysJson(key: Uint8Array): EncryptionKeysJson {
-	return JSON.stringify(toEncryptionKeys(key)) as EncryptionKeysJson;
 }
 /** Creates a workspace client with two tables and one KV for testing. */
 function setup() {
@@ -58,15 +52,6 @@ function setup() {
 	return { client };
 }
 
-function createDeferred<T = void>() {
-	let resolve!: (value: T | PromiseLike<T>) => void;
-	let reject!: (reason?: unknown) => void;
-	const promise = new Promise<T>((res, rej) => {
-		resolve = res;
-		reject = rej;
-	});
-	return { promise, resolve, reject };
-}
 
 describe('createWorkspace', () => {
 	describe('batch()', () => {
@@ -961,31 +946,22 @@ describe('createWorkspace', () => {
 });
 
 // ============================================================================
-// Workspace Unlock (`workspace.encryption` / locked vs unlocked)
+// applyEncryptionKeys()
 // ============================================================================
 
-describe('workspace unlock', () => {
-	function setupUnlockedWorkspace() {
+describe('applyEncryptionKeys', () => {
+	function setupEncryptedWorkspace() {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const client = createWorkspace(
 			defineWorkspace({ id: 'enc-test', tables: { posts } }),
-		).withEncryption();
-		return { client, key: generateEncryptionKey() };
+		);
+		return { client, key: randomBytes(32) };
 	}
 
-	test('starts locked, unlock transitions to unlocked', async () => {
-		const { client, key } = setupUnlockedWorkspace();
-		expect(client.encryption.isUnlocked).toBe(false);
-		await client.encryption.unlock(toEncryptionKeys(key));
-		expect(client.encryption.isUnlocked).toBe(true);
-	});
-
-	test('de-dup: same key preserves encrypted writes', async () => {
-		const { client, key } = setupUnlockedWorkspace();
-		await client.encryption.unlock(toEncryptionKeys(key));
+	test('applyEncryptionKeys enables encrypted writes', () => {
+		const { client, key } = setupEncryptedWorkspace();
+		client.applyEncryptionKeys(toEncryptionKeys(key));
 		client.tables.posts.set({ id: '1', title: 'Secret', _v: 1 });
-
-		await client.encryption.unlock(toEncryptionKeys(key));
 
 		const result = client.tables.posts.get('1');
 		expect(result.status).toBe('valid');
@@ -994,21 +970,36 @@ describe('workspace unlock', () => {
 		}
 	});
 
-	test('key rotation: old data readable after unlock with new key', async () => {
+	test('de-dup: calling applyEncryptionKeys twice with same key preserves data', () => {
+		const { client, key } = setupEncryptedWorkspace();
+		client.applyEncryptionKeys(toEncryptionKeys(key));
+		client.tables.posts.set({ id: '1', title: 'Secret', _v: 1 });
+
+		// Apply same keys again
+		client.applyEncryptionKeys(toEncryptionKeys(key));
+
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Secret');
+		}
+	});
+
+	test('key rotation: old data readable after applying new keyring', () => {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const client = createWorkspace(
 			defineWorkspace({ id: 'rotation-test', tables: { posts } }),
-		).withEncryption();
+		);
 
-		const keyV1 = generateEncryptionKey();
-		const keyV2 = generateEncryptionKey();
+		const keyV1 = randomBytes(32);
+		const keyV2 = randomBytes(32);
 
 		// Write with key v1
-		await client.encryption.unlock([{ version: 1, userKeyBase64: bytesToBase64(keyV1) }]);
+		client.applyEncryptionKeys([{ version: 1, userKeyBase64: bytesToBase64(keyV1) }]);
 		client.tables.posts.set({ id: '1', title: 'Written with v1', _v: 1 });
 
 		// Rotate to v2 (keyring includes both versions for backward compat)
-		await client.encryption.unlock([
+		client.applyEncryptionKeys([
 			{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
 			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
 		]);
@@ -1028,295 +1019,83 @@ describe('workspace unlock', () => {
 			expect(result2.row.title).toBe('Written with v2');
 		}
 	});
-});
 
-// ============================================================================
-// .withEncryption() lifecycle (dedup, race, cache unlock, isUnlocked)
-// ============================================================================
+	test('plaintext data readable before keys applied', () => {
+		const { client } = setupEncryptedWorkspace();
+		// Write plaintext before applying keys
+		client.tables.posts.set({ id: '1', title: 'Plaintext', _v: 1 });
 
-describe('.withEncryption() lifecycle', () => {
-	function setupLifecycle() {
-		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
-		const client = createWorkspace(
-			defineWorkspace({ id: 'lifecycle-enc-test', tables: { posts } }),
-		).withEncryption();
-		return { client };
-	}
-
-	function setupWithUserKeyStore(cachedKeyJson: EncryptionKeysJson | null = null) {
-		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
-		let cachedValue: EncryptionKeysJson | null = cachedKeyJson;
-		let shouldFailNextSave = false;
-		const userKeyStore: UserKeyStore = {
-			set: mock(async (keyBase64: EncryptionKeysJson) => {
-				if (shouldFailNextSave) {
-					shouldFailNextSave = false;
-					throw new Error('forced user key store set failure');
-				}
-				cachedValue = keyBase64;
-			}),
-			get: mock(async () => cachedValue),
-			delete: mock(async () => {
-				cachedValue = null;
-			}),
-		};
-		const client = createWorkspace(
-			defineWorkspace({ id: 'key-cache-test', tables: { posts } }),
-		).withEncryption({ userKeyStore });
-
-		return {
-			client,
-			userKeyStore,
-			failNextSet() {
-				shouldFailNextSave = true;
-			},
-			readCachedValue: () => cachedValue,
-		};
-	}
-
-	describe('dedup', () => {
-		test('same key twice keeps the runtime unlocked', async () => {
-			const { client } = setupLifecycle();
-			const key = generateEncryptionKey();
-
-			await client.encryption.unlock(toEncryptionKeys(key));
-			expect(client.encryption.isUnlocked).toBe(true);
-
-			await client.encryption.unlock(toEncryptionKeys(key));
-			expect(client.encryption.isUnlocked).toBe(true);
-		});
-
-		test('different keys each keep the runtime unlocked', async () => {
-			const { client } = setupLifecycle();
-
-			await client.encryption.unlock(toEncryptionKeys(generateEncryptionKey()));
-			expect(client.encryption.isUnlocked).toBe(true);
-
-			await client.encryption.unlock(toEncryptionKeys(generateEncryptionKey()));
-			expect(client.encryption.isUnlocked).toBe(true);
-		});
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Plaintext');
+		}
 	});
 
-	describe('runtime key switches', () => {
-		test('rapid unlocks leave the runtime unlocked with the latest key', async () => {
-			const { client } = setupLifecycle();
+	test('applyEncryptionKeys re-encrypts plaintext entries', () => {
+		const { client, key } = setupEncryptedWorkspace();
+		// Write plaintext first
+		client.tables.posts.set({ id: '1', title: 'Was Plaintext', _v: 1 });
 
-			const p1 = client.encryption.unlock(toEncryptionKeys(generateEncryptionKey()));
-			const p2 = client.encryption.unlock(toEncryptionKeys(generateEncryptionKey()));
-			const p3 = client.encryption.unlock(toEncryptionKeys(generateEncryptionKey()));
+		// Apply keys — should re-encrypt existing plaintext
+		client.applyEncryptionKeys(toEncryptionKeys(key));
 
-			await Promise.all([p1, p2, p3]);
-
-			expect(client.encryption.isUnlocked).toBe(true);
-		});
+		// Data still readable through encrypted wrapper
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Was Plaintext');
+		}
 	});
 
+	test('applyEncryptionKeys is synchronous', () => {
+		const { client, key } = setupEncryptedWorkspace();
+		// Should not return a Promise
+		const result = client.applyEncryptionKeys(toEncryptionKeys(key));
+		expect(result).toBeUndefined();
+	});
 
-	describe('userKeyStore integration', () => {
-		test('encryption.unlock saves the user key through userKeyStore', async () => {
-			const { client, userKeyStore, readCachedValue } = setupWithUserKeyStore();
-			await client.whenReady;
-			const userKey = generateEncryptionKey();
+	test('same-key dedup: second call with identical keys is a no-op', () => {
+		const { client, key } = setupEncryptedWorkspace();
+		const keys = toEncryptionKeys(key);
+		client.applyEncryptionKeys(keys);
+		client.tables.posts.set({ id: '1', title: 'Before dedup', _v: 1 });
 
-			await client.encryption.unlock(toEncryptionKeys(userKey));
+		// Second call with identical keys should be a no-op (dedup)
+		client.applyEncryptionKeys(keys);
 
-			expect(userKeyStore.set).toHaveBeenCalledTimes(1);
-			expect(userKeyStore.set).toHaveBeenCalledWith(toKeysJson(userKey));
-			expect(readCachedValue()).toBe(toKeysJson(userKey));
-		});
+		// Data should still be readable (dedup didn't break anything)
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Before dedup');
+		}
+	});
 
-		test('encryption.unlock retries the same key after userKeyStore.set fails', async () => {
-			const { client, userKeyStore, failNextSet, readCachedValue } =
-				setupWithUserKeyStore();
-			await client.whenReady;
-			const userKey = generateEncryptionKey();
+	test('same-key dedup: different order is still recognized as same keys', () => {
+		const { client } = setupEncryptedWorkspace();
+		const keyV1 = randomBytes(32);
+		const keyV2 = randomBytes(32);
+		const keysAsc: EncryptionKeys = [
+			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
+			{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
+		];
+		const keysDesc: EncryptionKeys = [
+			{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
+			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
+		];
 
-			failNextSet();
-			await client.encryption.unlock(toEncryptionKeys(userKey));
-			await client.encryption.unlock(toEncryptionKeys(userKey));
+		client.applyEncryptionKeys(keysAsc);
+		client.tables.posts.set({ id: '1', title: 'Order test', _v: 1 });
 
-			expect(client.encryption.isUnlocked).toBe(true);
-			expect(userKeyStore.set).toHaveBeenCalledTimes(2);
-			expect(readCachedValue()).toBe(toKeysJson(userKey));
-		});
+		// Reversed order should dedup (same fingerprint after sorting)
+		client.applyEncryptionKeys(keysDesc);
 
-		test('encryption.unlock updates runtime state before userKeyStore.set settles', async () => {
-			const posts = defineTable(
-				type({ id: 'string', title: 'string', _v: '1' }),
-			);
-			const saveDeferred = createDeferred<void>();
-			let cachedValue: EncryptionKeysJson | null = null;
-			const userKeyStore: UserKeyStore = {
-				set: mock(async (keyBase64: EncryptionKeysJson) => {
-					await saveDeferred.promise;
-					cachedValue = keyBase64;
-				}),
-				get: mock(async () => cachedValue),
-				delete: mock(async () => {
-					cachedValue = null;
-				}),
-			};
-			const client = createWorkspace(
-				defineWorkspace({ id: 'delayed-save-test', tables: { posts } }),
-			).withEncryption({ userKeyStore });
-			await client.whenReady;
-			const userKey = generateEncryptionKey();
-
-			const unlockPromise = client.encryption.unlock(toEncryptionKeys(userKey));
-
-			expect(client.encryption.isUnlocked).toBe(true);
-			expect(cachedValue).toBe(null);
-
-			saveDeferred.resolve();
-			await unlockPromise;
-
-			expect(cachedValue ?? '').toBe(toKeysJson(userKey));
-		});
-
-		test('auto-boot stays locked when userKeyStore is empty', async () => {
-			const { client, userKeyStore } = setupWithUserKeyStore();
-			await client.whenReady;
-
-			expect(client.encryption.isUnlocked).toBe(false);
-			expect(userKeyStore.get).toHaveBeenCalledTimes(1);
-			expect(userKeyStore.set).toHaveBeenCalledTimes(0);
-		});
-
-		test('auto-boot unlocks from cached key', async () => {
-			const userKey = generateEncryptionKey();
-			const { client, userKeyStore } = setupWithUserKeyStore(
-				toKeysJson(userKey),
-			);
-			await client.whenReady;
-
-			expect(client.encryption.isUnlocked).toBe(true);
-			expect(userKeyStore.get).toHaveBeenCalledTimes(1);
-			expect(userKeyStore.set).toHaveBeenCalledTimes(1);
-			expect(userKeyStore.set).toHaveBeenCalledWith(toKeysJson(userKey));
-		});
-
-		test('auto-boot clears corrupt cache entries and stays locked', async () => {
-			const { client, userKeyStore, readCachedValue } =
-				setupWithUserKeyStore('%%%not-base64%%%' as EncryptionKeysJson);
-			await client.whenReady;
-
-			expect(client.encryption.isUnlocked).toBe(false);
-			expect(userKeyStore.delete).toHaveBeenCalledTimes(1);
-			expect(readCachedValue()).toBe(null);
-		});
-
-		test('rapid unlocks persist the latest key after earlier saves settle', async () => {
-			const posts = defineTable(
-				type({ id: 'string', title: 'string', _v: '1' }),
-			);
-			const firstSaveDeferred = createDeferred<void>();
-			let saveCalls = 0;
-			let cachedValue: EncryptionKeysJson | null = null;
-			const userKeyStore: UserKeyStore = {
-				set: mock(async (keyBase64: EncryptionKeysJson) => {
-					saveCalls += 1;
-					if (saveCalls === 1) {
-						await firstSaveDeferred.promise;
-					}
-					cachedValue = keyBase64;
-				}),
-				get: mock(async () => cachedValue),
-				delete: mock(async () => {
-					cachedValue = null;
-				}),
-			};
-			const client = createWorkspace(
-				defineWorkspace({ id: 'rapid-switch-cache-test', tables: { posts } }),
-			).withEncryption({ userKeyStore });
-			await client.whenReady;
-			const firstKey = generateEncryptionKey();
-			const secondKey = generateEncryptionKey();
-
-			const firstUnlock = client.encryption.unlock(toEncryptionKeys(firstKey));
-			const secondUnlock = client.encryption.unlock(toEncryptionKeys(secondKey));
-
-			expect(client.encryption.isUnlocked).toBe(true);
-
-			firstSaveDeferred.resolve();
-			await Promise.all([firstUnlock, secondUnlock]);
-
-			// Only the second (current) key is written — the first key's
-			// persist task skips the write because activeUserKey has already
-			// changed to secondKey by the time the queued task runs.
-			expect(userKeyStore.set).toHaveBeenCalledTimes(1);
-			expect(cachedValue ?? '').toBe(toKeysJson(secondKey));
-		});
-
-		test('clearLocalData clears userKeyStore after an in-flight set finishes', async () => {
-			const posts = defineTable(
-				type({ id: 'string', title: 'string', _v: '1' }),
-			);
-			const saveDeferred = createDeferred<void>();
-			const events: string[] = [];
-			let cachedValue: EncryptionKeysJson | null = null;
-			const userKeyStore: UserKeyStore = {
-				set: mock(async (keyBase64: EncryptionKeysJson) => {
-					events.push('set:start');
-					await saveDeferred.promise;
-					cachedValue = keyBase64;
-					events.push('set:end');
-				}),
-				get: mock(async () => cachedValue),
-				delete: mock(async () => {
-					events.push('delete');
-					cachedValue = null;
-				}),
-			};
-			const client = createWorkspace(
-				defineWorkspace({
-					id: 'clear-local-data-race-test',
-					tables: { posts },
-				}),
-			).withEncryption({ userKeyStore });
-			await client.whenReady;
-			const userKey = generateEncryptionKey();
-
-			const unlockPromise = client.encryption.unlock(toEncryptionKeys(userKey));
-			expect(client.encryption.isUnlocked).toBe(true);
-
-			const clearPromise = client.clearLocalData();
-			expect(client.encryption.isUnlocked).toBe(false);
-
-			saveDeferred.resolve();
-			await Promise.all([unlockPromise, clearPromise]);
-
-			expect(client.encryption.isUnlocked).toBe(false);
-			expect(userKeyStore.delete).toHaveBeenCalledTimes(1);
-			expect(cachedValue).toBe(null);
-			// The set task is skipped entirely because lock() clears
-			// activeUserKey synchronously before the queued task runs.
-			expect(events).toEqual(['delete']);
-		});
-
-		test('clearLocalData locks first and then runs persistence cleanup', async () => {
-			const userKeyStore: UserKeyStore = {
-				set: mock(async () => {}),
-				get: mock(async () => null),
-				delete: mock(async () => {}),
-			};
-			const events: string[] = [];
-			const client = createWorkspace(
-				defineWorkspace({ id: 'clear-order-test' }),
-			)
-				.withEncryption({ userKeyStore })
-				.withExtension('persistence', () => ({
-					clearLocalData: () => {
-						events.push(client.encryption.isUnlocked ? 'unlocked' : 'locked');
-					},
-				}));
-
-			await client.encryption.unlock(toEncryptionKeys(generateEncryptionKey()));
-			await client.clearLocalData();
-
-			expect(events).toEqual(['locked']);
-			expect(client.encryption.isUnlocked).toBe(false);
-		});
-
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Order test');
+		}
 	});
 });
 

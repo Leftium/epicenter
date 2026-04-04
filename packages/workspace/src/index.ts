@@ -108,7 +108,6 @@ export { defineWorkspace } from './workspace/define-workspace';
 
 export { createWorkspace } from './workspace/create-workspace';
 export { DOCUMENTS_ORIGIN } from './workspace/create-document';
-export type { UserKeyStore, EncryptionKeysJson } from './workspace/user-key-store';
 
 // ════════════════════════════════════════════════════════════════════════════
 // INTROSPECTION
@@ -165,7 +164,6 @@ export type {
 	ValidRowResult,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
-	WorkspaceEncryption,
 	WorkspaceDefinition,
 } from './workspace/types';
 
@@ -173,6 +171,7 @@ export type {
 export {
 	EncryptionKey,
 	EncryptionKeys,
+	encryptionKeysFingerprint,
 } from './workspace/encryption-key';
 
 // ════════════════════════════════════════════════════════════════════════════

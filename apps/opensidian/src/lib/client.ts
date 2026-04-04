@@ -8,7 +8,6 @@ import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sy
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { Bash } from 'just-bash';
 import { session } from '$lib/auth';
-import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
 import { createOpensidian } from './workspace/workspace';
 
 /**
@@ -19,7 +18,6 @@ import { createOpensidian } from './workspace/workspace';
  * components that need direct infra access (Toolbar, ContentEditor).
  */
 export const workspace = createOpensidian()
-	.withEncryption({ userKeyStore: createIndexedDbKeyStore('opensidian:encryption-key') })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',
@@ -30,11 +28,16 @@ export const workspace = createOpensidian()
 	)
 	.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 
+// Boot: apply cached encryption keys immediately (no network wait).
+if (session.current?.encryptionKeys) {
+	workspace.applyEncryptionKeys(session.current.encryptionKeys);
+}
+
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
 	onLogin(session) {
-		workspace.unlockWithKeys(session.encryptionKeys);
+		workspace.applyEncryptionKeys(session.encryptionKeys);
 		workspace.extensions.sync.reconnect();
 	},
 	onLogout() {

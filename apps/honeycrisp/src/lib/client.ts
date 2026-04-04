@@ -13,12 +13,10 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { session } from '$lib/auth';
-import { createIndexedDbKeyStore } from '@epicenter/svelte-utils';
 import { honeycrisp } from './workspace/definition';
 
 
 export const workspace = createWorkspace(honeycrisp)
-	.withEncryption({ userKeyStore: createIndexedDbKeyStore('honeycrisp:encryption-key') })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',
@@ -28,11 +26,17 @@ export const workspace = createWorkspace(honeycrisp)
 		}),
 	);
 
+// Boot: apply cached encryption keys immediately (no network wait).
+// The auth roundtrip refreshes keys in background; dedup makes it a no-op.
+if (session.current?.encryptionKeys) {
+	workspace.applyEncryptionKeys(session.current.encryptionKeys);
+}
+
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
 	onLogin(session) {
-		workspace.unlockWithKeys(session.encryptionKeys);
+		workspace.applyEncryptionKeys(session.encryptionKeys);
 		workspace.extensions.sync.reconnect();
 	},
 	onLogout() {

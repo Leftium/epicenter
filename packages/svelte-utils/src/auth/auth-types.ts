@@ -1,3 +1,4 @@
+import { EncryptionKeys } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 /**
@@ -22,11 +23,13 @@ export type StoredUser = typeof StoredUser.infer;
  * Local auth session state used by apps and persisted stores.
  *
  * This stays intentionally small: either the user is anonymous, or the app has
- * a bearer token plus the normalized user snapshot needed for boot and refresh.
+ * a bearer token, the normalized user snapshot, and optionally cached encryption
+ * keys for instant offline decrypt on boot.
  */
 export const AuthSession = type({
 	token: 'string',
 	user: StoredUser,
+	'encryptionKeys?': EncryptionKeys,
 }).or('null');
 
 export type AuthSession = typeof AuthSession.infer;

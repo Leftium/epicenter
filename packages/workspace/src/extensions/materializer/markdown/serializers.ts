@@ -1,3 +1,6 @@
+import slugify from '@sindresorhus/slugify';
+import filenamify from 'filenamify';
+
 /**
  * Defines how table rows are converted to markdown files and how filenames
  * are parsed back to row IDs. Each serializer is a pair of functions:
@@ -120,21 +123,8 @@ export function bodyFieldSerializer(fieldName: string): MarkdownSerializer {
 /** Nanoid IDs in this workspace are exactly 21 characters. */
 const NANOID_LENGTH = 21;
 
-/**
- * Slugify a string for use in filenames.
- *
- * Lowercases, replaces non-alphanumeric characters with dashes,
- * collapses consecutive dashes, trims leading/trailing dashes,
- * and truncates to 50 characters.
- */
-function slugify(value: string): string {
-	return value
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/-{2,}/g, '-')
-		.replace(/^-|-$/g, '')
-		.slice(0, 50);
-}
+/** Max slug length before the ID suffix. */
+const MAX_SLUG_LENGTH = 50;
 
 /**
  * Create a serializer that produces human-readable filenames by slugifying
@@ -185,8 +175,9 @@ export function titleFilenameSerializer(fieldName: string): MarkdownSerializer {
 				typeof titleValue === 'string' &&
 				titleValue.trim().length > 0
 			) {
-				const slug = slugify(titleValue);
-				filename = slug ? `${slug}-${id}.md` : `${id}.md`;
+				const slug = slugify(titleValue).slice(0, MAX_SLUG_LENGTH);
+				const raw = slug ? `${slug}-${id}.md` : `${id}.md`;
+				filename = filenamify(raw, { replacement: '-' });
 			} else {
 				filename = `${id}.md`;
 			}

@@ -30,16 +30,20 @@ export type MarkdownMaterializerConfig = {
 	/**
 	 * Per-table configuration. Only tables listed here are materialized
 	 * (explicit opt-in). Tables not listed are ignored entirely.
+	 *
+	 * Pass a {@link MarkdownSerializer} directly for the common case, or an
+	 * object with `serializer` and/or `directory` overrides. Omit `serializer`
+	 * (or pass `{}`) to use {@link defaultSerializer}.
 	 */
-	tables: Record<
-		string,
-		{
-			/** Subdirectory name within the root. Defaults to the table key name. */
-			directory?: string;
-			/** Custom serializer. Defaults to {@link defaultSerializer}. */
-			serializer?: MarkdownSerializer;
-		}
-	>;
+	tables: Record<string, MarkdownSerializer | MarkdownTableConfig>;
+};
+
+/** Per-table options when you need more than just a serializer. */
+export type MarkdownTableConfig = {
+	/** Subdirectory name within the root. Defaults to the table key name. */
+	directory?: string;
+	/** Custom serializer. Defaults to {@link defaultSerializer}. */
+	serializer?: MarkdownSerializer;
 };
 
 /**
@@ -88,9 +92,16 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 		const unsubscribers: Array<() => void> = [];
 
 		const whenReady = (async () => {
-			for (const [tableKey, tableConfig] of Object.entries(config.tables)) {
+			for (const [tableKey, tableValue] of Object.entries(config.tables)) {
 				const table = tables[tableKey];
 				if (!table) continue;
+
+				// Normalize: accept a bare MarkdownSerializer or a config object
+				const isSerializer =
+					typeof (tableValue as MarkdownSerializer).serialize === 'function';
+				const tableConfig: MarkdownTableConfig = isSerializer
+					? { serializer: tableValue as MarkdownSerializer }
+					: (tableValue as MarkdownTableConfig);
 
 				const dir = join(config.directory, tableConfig.directory ?? tableKey);
 				await mkdir(dir, { recursive: true });
@@ -149,9 +160,15 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 						tableFilenames.set(id, filename);
 					}
 
-					// Let all writes settle. Errors are not surfaced here—the
-					// materializer is a best-effort projection, not critical path.
-					void Promise.allSettled(writes);
+					// Let all writes settle. Surface failures as warnings—the
+					// materializer is best-effort, not critical path.
+					Promise.allSettled(writes).then((results) => {
+						for (const result of results) {
+							if (result.status === 'rejected') {
+								console.warn('[markdown-materializer] write failed:', result.reason);
+							}
+						}
+					});
 				});
 
 				unsubscribers.push(unsubscribe);

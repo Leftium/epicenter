@@ -124,11 +124,6 @@ export async function writeMarkdownFile(
  * ```
  */
 export async function deleteMarkdownFile(filePath: string): Promise<void> {
-	try {
-		await unlink(filePath);
-	} catch (error) {
-		if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
-			return;
-		throw error;
-	}
+	if (!(await Bun.file(filePath).exists())) return;
+	await unlink(filePath);
 }

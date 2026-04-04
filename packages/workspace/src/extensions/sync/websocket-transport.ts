@@ -1,6 +1,8 @@
 /// <reference lib="dom" />
 
 import {
+	decodeRpcPayload,
+	type DecodedRpcMessage,
 	encodeAwareness,
 	encodeAwarenessStates,
 	encodeSyncStatus,
@@ -113,11 +115,20 @@ export type TransportConfig = {
 	awareness?: Awareness;
 
 	/**
-	 * Extension message handlers keyed by message type number.
+	 * Called when an RPC message (101) arrives from the server.
 	 *
-	 * The transport handles core protocol types internally (SYNC, AWARENESS,
-	 * QUERY_AWARENESS, SYNC_STATUS). Registering a handler for a core type
-	 * throws at construction time.
+	 * The transport decodes the RPC payload and delivers the typed
+	 * message—the consumer never touches the raw decoder.
+	 */
+	onRpcMessage?: (rpc: DecodedRpcMessage) => void;
+
+	/**
+	 * Extension message handlers for genuinely custom (non-protocol)
+	 * message types, keyed by message type number.
+	 *
+	 * The transport handles all reserved protocol types internally
+	 * (SYNC, AWARENESS, QUERY_AWARENESS, SYNC_STATUS, RPC).
+	 * Registering a handler for a reserved type throws at construction.
 	 *
 	 * Each handler receives a lib0 decoder positioned after the message-type
 	 * varint, plus a context with `send()` for replying.
@@ -219,11 +230,13 @@ const LIVENESS_CHECK_INTERVAL_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 15_000;
 
 /** Core message types handled internally — extensions cannot override these. */
+/** Reserved protocol types — extensions cannot override these. */
 const CORE_MESSAGE_TYPES = new Set<number>([
 	MESSAGE_TYPE.SYNC,
 	MESSAGE_TYPE.AWARENESS,
 	MESSAGE_TYPE.QUERY_AWARENESS,
 	MESSAGE_TYPE.SYNC_STATUS,
+	MESSAGE_TYPE.RPC,
 ]);
 
 // ============================================================================
@@ -249,6 +262,7 @@ export function createTransport({
 	awareness: awarenessOption,
 	url,
 	messageHandlers: extensionHandlers,
+	onRpcMessage,
 }: TransportConfig): Transport {
 	// --- Validate extension handlers don't collide with core protocol ---
 	for (const type of Object.keys(extensionHandlers ?? {})) {
@@ -624,6 +638,12 @@ export function createTransport({
 					if (prevHasChanges !== nowHasChanges && handshakeComplete) {
 						status.set({ phase: 'connected', hasLocalChanges: nowHasChanges });
 					}
+					break;
+				}
+
+				case MESSAGE_TYPE.RPC: {
+					const rpc = decodeRpcPayload(decoder);
+					onRpcMessage?.(rpc);
 					break;
 				}
 

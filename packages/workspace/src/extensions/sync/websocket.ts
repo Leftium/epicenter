@@ -1,8 +1,6 @@
 import {
-	decodeRpcPayload,
 	encodeRpcRequest,
 	isRpcError,
-	MESSAGE_TYPE,
 	RpcError,
 } from '@epicenter/sync';
 import type { Result } from 'wellcrafted/result';
@@ -176,13 +174,8 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		function clearPendingRequests() {
 			for (const [, pending] of pendingRequests) {
 				clearTimeout(pending.timer);
-				pending.resolve({
-					data: null,
-					error: {
-						name: 'Disconnected' as const,
-						message: 'Connection lost before RPC response arrived',
-					},
-				});
+				const { error } = RpcError.Disconnected();
+				pending.resolve({ data: null, error });
 			}
 			pendingRequests.clear();
 			nextRequestId = 0;
@@ -194,18 +187,15 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 			awareness: ctxAwareness.raw,
 			url: () => config.url(docId),
 			getToken: getToken ? () => getToken(docId) : undefined,
-			messageHandlers: {
-				[MESSAGE_TYPE.RPC]: (decoder) => {
-					const rpc = decodeRpcPayload(decoder);
-					if (rpc.type === 'response') {
-						const pending = pendingRequests.get(rpc.requestId);
-						if (pending) {
-							clearTimeout(pending.timer);
-							pendingRequests.delete(rpc.requestId);
-							pending.resolve(rpc.result);
-						}
+			onRpcMessage(rpc) {
+				if (rpc.type === 'response') {
+					const pending = pendingRequests.get(rpc.requestId);
+					if (pending) {
+						clearTimeout(pending.timer);
+						pendingRequests.delete(rpc.requestId);
+						pending.resolve(rpc.result);
 					}
-				},
+				}
 			},
 		});
 

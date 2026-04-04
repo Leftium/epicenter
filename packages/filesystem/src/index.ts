@@ -1,9 +1,3 @@
-// Content (document layer)
-export type {
-	ContentType,
-	SheetEntry,
-} from './content/index.js';
-
 // Errors
 export { FS_ERRORS, type FsErrorCode } from './errors.js';
 

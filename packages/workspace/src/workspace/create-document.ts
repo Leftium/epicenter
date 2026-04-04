@@ -28,6 +28,8 @@
  *
  * const contentDocuments = createDocuments({
  *   id: 'my-workspace',
+ *   tableName: 'files',
+ *   documentName: 'content',
  *   guidKey: 'id',
  *   onUpdate: () => ({ updatedAt: Date.now() }),
  *   tableHelper: tables.files,
@@ -35,7 +37,9 @@
  * });
  *
  * const handle = await contentDocuments.open(someRow);
- * const text = handle.read();
+ * handle.tableName;    // 'files'
+ * handle.documentName; // 'content'
+ * handle.read();       // read content
  * handle.write('new content');
  * ```
  *

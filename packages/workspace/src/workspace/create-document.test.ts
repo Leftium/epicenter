@@ -75,6 +75,47 @@ describe('createDocuments', () => {
 			expect(handle.ydoc.gc).toBe(false);
 		});
 
+		test('handle exposes tableName and documentName', async () => {
+			const { documents } = setup();
+			const handle = await documents.open('f1');
+			expect(handle.tableName).toBe('files');
+			expect(handle.documentName).toBe('content');
+		});
+
+		test('document extension factory receives tableName and documentName in context', async () => {
+			let receivedTableName: string | undefined;
+			let receivedDocumentName: string | undefined;
+			const { documents } = setup({
+				documentExtensions: [
+					{
+						key: 'test',
+						factory: (ctx) => {
+							receivedTableName = ctx.tableName;
+							receivedDocumentName = ctx.documentName;
+						},
+					},
+				],
+			});
+			await documents.open('f1');
+			expect(receivedTableName).toBe('files');
+			expect(receivedDocumentName).toBe('content');
+		});
+
+		test('document extension factory can return void to skip', async () => {
+			const { documents } = setup({
+				documentExtensions: [
+					{
+						key: 'skipped',
+						factory: () => {
+							return; // void — opt out
+						},
+					},
+				],
+			});
+			const handle = await documents.open('f1');
+			expect(handle.extensions.skipped).toBeUndefined();
+		});
+
 		test('is idempotent — same GUID returns same underlying Y.Doc', async () => {
 			const { documents } = setup();
 

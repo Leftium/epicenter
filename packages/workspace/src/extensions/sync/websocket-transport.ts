@@ -75,11 +75,13 @@ export type MessageHandlerContext = {
  *   messageHandlers: {
  *     [MESSAGE_TYPE.RPC]: (decoder, ctx) => {
  *       const rpc = decodeRpcPayload(decoder);
- *       if (rpc.type === 'response') { // resolve pending request
+ *       if (rpc.type === 'response') {
+ *         // resolve pending request
+ *       }
  *     },
  *   },
- * })
-* ```
+ * });
+ * ```
  */
 export type MessageHandler = (
 	decoder: decoding.Decoder,
@@ -217,7 +219,7 @@ const LIVENESS_CHECK_INTERVAL_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 15_000;
 
 /** Core message types handled internally — extensions cannot override these. */
-const CORE_MESSAGE_TYPES = new Set([
+const CORE_MESSAGE_TYPES = new Set<number>([
 	MESSAGE_TYPE.SYNC,
 	MESSAGE_TYPE.AWARENESS,
 	MESSAGE_TYPE.QUERY_AWARENESS,

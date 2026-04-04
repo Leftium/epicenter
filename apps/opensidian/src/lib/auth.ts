@@ -3,6 +3,6 @@ import { AuthSession } from '@epicenter/svelte/auth';
 
 export const session = createPersistedState({
 	key: 'opensidian:authSession',
-	schema: AuthSession,
+	schema: AuthSession.or('null'),
 	defaultValue: null,
 });

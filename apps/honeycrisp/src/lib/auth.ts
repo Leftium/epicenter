@@ -3,6 +3,6 @@ import { AuthSession } from '@epicenter/svelte/auth';
 
 export const session = createPersistedState({
 	key: 'honeycrisp:authSession',
-	schema: AuthSession,
+	schema: AuthSession.or('null'),
 	defaultValue: null,
 });

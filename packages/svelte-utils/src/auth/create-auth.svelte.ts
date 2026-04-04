@@ -34,24 +34,6 @@ export const AuthError = defineErrors({
 });
 export type AuthError = InferErrors<typeof AuthError>;
 
-/**
- * Authenticated session data passed to the `onLogin` hook.
- *
- * Equivalent to a non-null `AuthSession`—includes `token`, `user`, and
- * `encryptionKeys` so apps can call `workspace.applyEncryptionKeys()`
- * directly.
- *
- * @example
- * ```typescript
- * createAuth({
- *   onLogin(session) {
- *     workspace.applyEncryptionKeys(session.encryptionKeys);
- *   },
- * });
- * ```
- */
-export type AuthenticatedSession = NonNullable<AuthSession>;
-
 export type AuthClient = {
 	/**
 	 * Whether the user is currently authenticated.
@@ -175,9 +157,9 @@ export type AuthClient = {
 export type CreateAuthOptions = {
 	baseURL: BaseURL;
 	session: {
-		current: AuthSession;
+		current: AuthSession | null;
 		/** Authoritative read. Sync for localStorage, async for chrome.storage. */
-		get(): AuthSession | Promise<AuthSession>;
+		get(): AuthSession | null | Promise<AuthSession | null>;
 	};
 	/**
 	 * Called whenever the session is authenticated—construction (if a cached
@@ -196,7 +178,7 @@ export type CreateAuthOptions = {
 	 * }
 	 * ```
 	 */
-	onLogin?: (session: AuthenticatedSession) => void;
+	onLogin?: (session: AuthSession) => void;
 	/**
 	 * Called on the authenticated → anonymous transition only.
 	 *

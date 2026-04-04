@@ -18,7 +18,7 @@ const GOOGLE_CLIENT_ID =
 /** Persisted auth snapshot in `chrome.storage.local`. */
 export const session = createStorageState('local:authSession', {
 	fallback: null,
-	schema: AuthSession,
+	schema: AuthSession.or('null'),
 });
 
 export async function getGoogleCredentials(): Promise<{

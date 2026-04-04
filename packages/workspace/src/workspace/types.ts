@@ -231,6 +231,10 @@ export type DocumentClient<
 > = Timeline & {
 	/** The workspace identifier. */
 	id: string;
+	/** The table this document belongs to (e.g., 'files', 'notes'). */
+	tableName: string;
+	/** The document name declared via `.withDocument()` (e.g., 'content', 'body'). */
+	documentName: string;
 	/**
 	 * Self-reference for destructuring convenience.
 	 *
@@ -241,8 +245,8 @@ export type DocumentClient<
 	/**
 	 * Accumulated document extension exports with lifecycle hooks.
 	 *
-	 * Each entry is optional because tag-filtered extensions may be skipped
-	 * for certain document types. Guard access with optional chaining.
+	 * Each entry is optional because extension factories may return `void`
+	 * to skip specific documents. Guard access with optional chaining.
 	 */
 	extensions: {
 		[K in keyof TDocExtensions]?: Extension<
@@ -266,12 +270,11 @@ export type DocumentClient<
  *
  * ```typescript
  * .withDocumentExtension('persistence', ({ ydoc }) => { ... })
- * .withDocumentExtension('sync', ({ id, ydoc, timeline, whenReady }) => { ... })
+ * .withDocumentExtension('sync', ({ id, tableName, documentName, ydoc }) => { ... })
  * ```
  *
- * Uses `Pick` instead of `Omit<DocumentClient, 'dispose'>` because `DocumentClient`
- * extends `Timeline` (the handle IS a timeline), but factory contexts have `timeline`
- * as a field (factories destructure `{ timeline }`, not `{ read, write }`).
+ * Factories inspect `tableName` and `documentName` to decide whether to activate.
+ * Return `void` to skip a specific document.
  *
  * @typeParam TDocExtensions - Accumulated document extension exports from prior calls.
  *   Defaults to `Record<string, unknown>` so `DocumentExtensionRegistration` can
@@ -281,7 +284,13 @@ export type DocumentContext<
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = Pick<
 	DocumentClient<TDocExtensions>,
-	'id' | 'ydoc' | 'timeline' | 'extensions' | 'whenReady'
+	| 'id'
+	| 'tableName'
+	| 'documentName'
+	| 'ydoc'
+	| 'timeline'
+	| 'extensions'
+	| 'whenReady'
 > & {
 	/**
 	 * Raw awareness instance for this document scope.
@@ -386,6 +395,27 @@ export type HasDocuments<T> = T extends { documents: infer TDocuments }
 		? false
 		: true
 	: false;
+
+/**
+ * Extract all document names across all tables.
+ *
+ * Collects all document names (from `.withDocument()` calls) into a union
+ * for type-safe autocomplete in `withDocumentExtension()` factory context.
+ *
+ * @example
+ * ```typescript
+ * // Given tables with .withDocument('content') and .withDocument('body'):
+ * type Names = AllDocumentNames<typeof tables>;
+ * // => 'content' | 'body'
+ * ```
+ */
+export type AllDocumentNames<TTableDefs extends TableDefinitions> = {
+	[K in keyof TTableDefs]: TTableDefs[K] extends {
+		documents: infer TDocuments;
+	}
+		? keyof TDocuments & string
+		: never;
+}[keyof TTableDefs];
 
 /**
  * Extract the document map for a single table definition.
@@ -1129,7 +1159,10 @@ export type WorkspaceClientBuilder<
 		TDocExports extends Record<string, unknown>,
 	>(
 		key: K,
-		factory: (context: DocumentContext<TDocExtensions>) =>
+		factory: (context: DocumentContext<TDocExtensions> & {
+			tableName: keyof TTableDefinitions & string;
+			documentName: AllDocumentNames<TTableDefinitions>;
+		}) =>
 			| (TDocExports & {
 					whenReady?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;

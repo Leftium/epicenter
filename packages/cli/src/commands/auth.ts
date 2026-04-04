@@ -50,8 +50,9 @@ export function createAuthCommand(home: string) {
 						console.log(`Enter code: ${codeData.user_code}\n`);
 
 						let interval = codeData.interval * 1000;
+						const deadline = Date.now() + codeData.expires_in * 1000;
 
-						while (true) {
+						while (Date.now() < deadline) {
 							await Bun.sleep(interval);
 							const tokenData = await api.pollDeviceToken(codeData.device_code);
 
@@ -81,6 +82,7 @@ export function createAuthCommand(home: string) {
 									throw new Error(tokenData.error_description ?? tokenData.error);
 							}
 						}
+						throw new Error('Device code expired — please run login again');
 					},
 				} as unknown as CommandModule)
 				.command({

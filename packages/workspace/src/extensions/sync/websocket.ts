@@ -18,7 +18,6 @@ import {
 import * as decoding from 'lib0/decoding';
 import type { Result } from 'wellcrafted/result';
 import {
-	Awareness,
 	applyAwarenessUpdate,
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
@@ -218,8 +217,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		const { getToken: getTokenConfig } = config;
 		const getToken = getTokenConfig ? () => getTokenConfig(docId) : undefined;
 
-		const ownsAwareness = !ctxAwareness.raw;
-		const awareness = ctxAwareness.raw ?? new Awareness(doc);
+		const awareness = ctxAwareness.raw;
 
 		// ── Zone 2: Mutable state ──
 
@@ -724,9 +722,6 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				goOffline();
 				doc.off('updateV2', handleDocUpdate);
 				awareness.off('update', handleAwarenessUpdate);
-				if (ownsAwareness) {
-					removeAwarenessStates(awareness, [doc.clientID], 'window unload');
-				}
 				status.clear();
 			},
 		};

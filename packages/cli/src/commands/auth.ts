@@ -71,7 +71,7 @@ export function createAuthCommand(home: string) {
 								case 'authorization_pending':
 									continue;
 								case 'slow_down':
-									interval *= 2;
+								interval += 5_000;
 									continue;
 								case 'expired_token':
 									throw new Error('Device code expired — please run login again');

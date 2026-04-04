@@ -214,8 +214,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 } {
 	return ({ ydoc: doc, awareness: ctxAwareness, whenReady: priorReady }) => {
 		const docId = doc.guid;
-		const { getToken: getTokenConfig } = config;
-		const getToken = getTokenConfig ? () => getTokenConfig(docId) : undefined;
+		const getToken = config.getToken ? () => config.getToken!(docId) : undefined;
 
 		const awareness = ctxAwareness.raw;
 
@@ -264,9 +263,9 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 
 		/** Resolve all pending RPC requests with a Disconnected error and clear state. */
 		function clearPendingRequests() {
+			const { error } = RpcError.Disconnected();
 			for (const [, pending] of pendingRequests) {
 				clearTimeout(pending.timer);
-				const { error } = RpcError.Disconnected();
 				pending.resolve({ data: null, error });
 			}
 			pendingRequests.clear();

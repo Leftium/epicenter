@@ -114,9 +114,6 @@ type TableDefinitionWithDocBuilder<
 			StringKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
 			ClaimedDocumentColumns<TDocuments>
 		>,
-		// Defaults to `never` when no tags are passed. This flows into
-		// DocumentConfig<..., never>, making `tags: readonly never[]` (only accepts `[]`).
-		const TTags extends string = never,
 		const TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
 	>(
 		name: TName,
@@ -126,7 +123,7 @@ type TableDefinitionWithDocBuilder<
 				Omit<StandardSchemaV1.InferOutput<LastSchema<TVersions>>, 'id'>
 			>;
 			awareness?: TAwarenessDefs;
-			tags?: readonly TTags[];
+			tags?: readonly string[];
 		},
 	): TableDefinitionWithDocBuilder<
 		TVersions,
@@ -136,7 +133,6 @@ type TableDefinitionWithDocBuilder<
 				DocumentConfig<
 					TGuid,
 					StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
-					TTags,
 					TAwarenessDefs
 				>
 			>

@@ -182,7 +182,7 @@ export function createSqliteIndex({ debounceMs = 100 }: SqliteIndexOptions = {})
 		})();
 
 		// ── Debounced sync ────────────────────────────────────────────
-		function scheduleSync(changedIds: Set<string>) {
+		function scheduleSync(changedIds: ReadonlySet<string>) {
 			for (const id of changedIds) pendingIds.add(id);
 			if (syncTimeout) clearTimeout(syncTimeout);
 			syncTimeout = setTimeout(() => {

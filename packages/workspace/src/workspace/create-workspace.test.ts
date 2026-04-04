@@ -835,6 +835,7 @@ describe('createWorkspace', () => {
 			});
 
 			const documents = createDocuments({
+				id: 'test-lifo',
 				guidKey: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 				tableHelper: tables.files,
@@ -903,6 +904,7 @@ describe('createWorkspace', () => {
 			});
 
 			const documents = createDocuments({
+				id: 'test-whenready-rejection',
 				guidKey: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 				tableHelper: tables.files,

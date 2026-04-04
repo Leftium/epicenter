@@ -12,7 +12,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
-import { createTimeline } from './content/timeline.js';
 import { createYjsFileSystem, type YjsFileSystem } from './file-system.js';
 import { filesTable } from './table.js';
 
@@ -382,7 +381,7 @@ describe('mv preserves content (no conversion)', () => {
 
 async function getTimelineLength(
 	fs: YjsFileSystem,
-	documents: { open(input: string): Promise<{ ydoc: import('yjs').Doc }> },
+	documents: { open(input: string): Promise<{ length: number }> },
 	path: string,
 ): Promise<number> {
 	const id = fs.lookupId(path);

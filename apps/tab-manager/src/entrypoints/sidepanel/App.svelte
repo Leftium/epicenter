@@ -10,7 +10,6 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
-	import { onMount } from 'svelte';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
@@ -20,11 +19,6 @@
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
-	import { registerDevice } from '$lib/client';
-
-	onMount(() => {
-		void registerDevice();
-	});
 
 	let searchInputRef = $state<HTMLInputElement | null>(null);
 	let commandPaletteOpen = $state(false);

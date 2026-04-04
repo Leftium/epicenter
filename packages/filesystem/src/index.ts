@@ -1,9 +1,3 @@
-// Content (document layer)
-export type {
-	ContentType,
-	SheetEntry,
-} from './content/index.js';
-
 // Errors
 export { FS_ERRORS, type FsErrorCode } from './errors.js';
 
@@ -37,9 +31,10 @@ export { type ColumnDefinition, type FileRow, filesTable } from './table.js';
 export {
 	assertUniqueName,
 	createFileSystemIndex,
+	createFileTree,
 	disambiguateNames,
 	type FileSystemIndex,
-	FileTree,
+	type FileTree,
 	validateName,
 } from './tree/index.js';
 

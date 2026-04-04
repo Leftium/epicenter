@@ -80,9 +80,16 @@ export type Timeline = {
 	 *
 	 * If the current entry is text, inserts at the end of the existing Y.Text
 	 * without creating a new timeline entry. If the timeline is empty, creates
-	 * a new text entry with the content. If the current entry is a different type
-	 * (richtext/sheet), reads existing content as a string, concatenates, and
-	 * replaces as text.
+	 * a new text entry with the content.
+	 *
+	 * **WARNING: Lossy on non-text entries.** If the current entry is richtext or
+	 * sheet, this method reads the content as a plain string (stripping all
+	 * formatting, structure, column metadata, etc.), concatenates the new text,
+	 * and pushes a **new text entry** — permanently converting the document to
+	 * plain text. All prior richtext formatting or sheet data is lost.
+	 *
+	 * If you need to append to a richtext document without losing formatting,
+	 * use `asRichText()` and manipulate the Y.XmlFragment directly.
 	 */
 	appendText(text: string): void;
 

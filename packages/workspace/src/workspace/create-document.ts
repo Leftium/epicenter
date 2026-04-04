@@ -111,7 +111,7 @@ export type CreateDocumentsConfig<
 	 * The workspace identifier. Passed through to `DocumentContext.id`.
 	 *
 	 * Extensions use this for persistence paths, sync room names, and other
-	 * workspace-scoped identifiers. An empty or missing value may cause
+	 * workspace-scoped identifiers. An empty string may cause
 	 * collisions or silent failures in extensions.
 	 */
 	id: string;

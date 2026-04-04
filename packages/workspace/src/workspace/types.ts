@@ -199,7 +199,6 @@ export type DocumentExtensionRegistration = {
 	tags: readonly string[];
 };
 
-
 /**
  * Extract keys of `TRow` whose value type extends `string`.
  * Used to constrain the `guid` parameter of `.withDocument()`.

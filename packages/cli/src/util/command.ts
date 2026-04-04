@@ -101,7 +101,7 @@ export async function runCommand<T>(
 			const result = await fn(client);
 			output(result, { format });
 		} finally {
-			await client.dispose();
+			await Promise.all(clients.map((c) => c.dispose()));
 		}
 	} catch (err) {
 		outputError(err instanceof Error ? err.message : String(err));

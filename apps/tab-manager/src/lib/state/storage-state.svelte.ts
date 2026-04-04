@@ -146,7 +146,7 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 		 *
 		 * @example
 		 * ```typescript
-		 * const session = await authSession.get();
+		 * const cached = await session.get();
 		 * if (session?.encryptionKeys) {
 		 *   workspace.applyEncryptionKeys(session.encryptionKeys);
 		 * }

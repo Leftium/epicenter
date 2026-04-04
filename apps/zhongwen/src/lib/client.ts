@@ -1,7 +1,7 @@
 /**
  * Workspace client — browser-specific wiring.
  *
- * IndexedDB persistence + BroadcastChannel sync with cached startup unlock.
+ * IndexedDB persistence + BroadcastChannel sync.
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -15,12 +15,6 @@ import { definition } from './workspace/definition';
 export const workspace = createWorkspace(definition)
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('broadcast', broadcastChannelSync);
-
-// Boot: apply cached encryption keys (sync — localStorage is immediate).
-const cached = session.get();
-if (cached?.encryptionKeys) {
-	workspace.applyEncryptionKeys(cached.encryptionKeys);
-}
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

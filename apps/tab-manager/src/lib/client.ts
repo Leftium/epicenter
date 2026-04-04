@@ -25,7 +25,7 @@ import {
 	getBrowserName,
 	getDeviceId,
 } from '$lib/device/device-id';
-import { authSession, getGoogleCredentials } from '$lib/state/auth';
+import { session, getGoogleCredentials } from '$lib/auth';
 import { remoteServerUrl, serverUrl } from '$lib/state/settings.svelte';
 import { generateBookmarkId, generateSavedTabId } from './workspace/definition';
 import { createTabManagerWorkspace } from './workspace/workspace';
@@ -35,7 +35,10 @@ import { createTabManagerWorkspace } from './workspace/workspace';
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Boot: apply cached encryption keys from chrome.storage.
-void authSession.get().then((cached) => {
+// Unlike web apps (where createAuth handles boot via sync localStorage),
+// chrome.storage is async—session.current starts as null until it loads.
+// This explicit async read fills the gap before BA's server roundtrip.
+void session.get().then((cached) => {
 	if (cached?.encryptionKeys) {
 		workspace.applyEncryptionKeys(cached.encryptionKeys);
 	}
@@ -43,7 +46,7 @@ void authSession.get().then((cached) => {
 export const workspace = buildWorkspaceClient();
 export const auth = createAuth({
 	baseURL: () => remoteServerUrl.current,
-	session: authSession,
+	session,
 	socialTokenProvider: async () => {
 		const { idToken, nonce } = await getGoogleCredentials();
 		return { provider: 'google', idToken, nonce };
@@ -108,7 +111,7 @@ function buildWorkspaceClient() {
 			'sync',
 			createSyncExtension({
 				url: (workspaceId) => toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
-				getToken: async () => (await authSession.get())?.token ?? null,
+				getToken: async () => (await session.get())?.token ?? null,
 			}),
 		)
 		.withActions(({ tables, batch }) => ({

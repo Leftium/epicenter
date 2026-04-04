@@ -181,10 +181,11 @@ export type CreateAuthOptions = {
 	baseURL: BaseURL;
 	session: { current: AuthSession };
 	/**
-	 * Called whenever the session is authenticated—sign-in, session restore
-	 * from storage, or token refresh.
+	 * Called whenever the session is authenticated—construction (if a cached
+	 * session exists in the store), sign-in, session restore, or token refresh.
 	 *
-	 * Fires on every authenticated session update, not just login transitions.
+	 * Fires at construction time if `session.current` has encryption keys,
+	 * then on every authenticated session update from Better Auth.
 	 * Consumers should use idempotent operations (e.g. `applyEncryptionKeys` is safe
 	 * to call repeatedly with the same keys).
 	 *
@@ -311,12 +312,9 @@ export function createAuth({
 		if (state.data) {
 			const user = normalizeUser(state.data.user);
 			const token = state.data.session.token;
-			session.current = { token, user, encryptionKeys: state.data.encryptionKeys };
-			onLogin?.({
-				token,
-				user,
-				encryptionKeys: state.data.encryptionKeys,
-			});
+			const authenticated = { token, user, encryptionKeys: state.data.encryptionKeys };
+			session.current = authenticated;
+			onLogin?.(authenticated);
 		} else {
 			session.current = null;
 			if (prev !== null) {
@@ -324,6 +322,16 @@ export function createAuth({
 			}
 		}
 	});
+
+	// Boot: fire onLogin immediately if a cached session with encryption keys
+	// exists. For sync stores (localStorage) this applies keys before the BA
+	// subscription's server roundtrip resolves. For async stores (chrome.storage)
+	// session.current starts as the fallback (null), so this is a no-op — those
+	// apps handle boot separately via an async read.
+	const cached = session.current;
+	if (cached?.encryptionKeys) {
+		onLogin?.({ token: cached.token, user: cached.user, encryptionKeys: cached.encryptionKeys });
+	}
 
 	return {
 		get isAuthenticated() {

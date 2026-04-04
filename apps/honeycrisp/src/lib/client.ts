@@ -15,7 +15,6 @@ import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistenc
 import { session } from '$lib/auth';
 import { honeycrisp } from './workspace/definition';
 
-
 export const workspace = createWorkspace(honeycrisp)
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
@@ -25,12 +24,6 @@ export const workspace = createWorkspace(honeycrisp)
 			getToken: async () => auth.token,
 		}),
 	);
-
-// Boot: apply cached encryption keys (sync — localStorage is immediate).
-const cached = session.get();
-if (cached?.encryptionKeys) {
-	workspace.applyEncryptionKeys(cached.encryptionKeys);
-}
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

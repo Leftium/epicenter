@@ -2,9 +2,9 @@ import slugify from '@sindresorhus/slugify';
 import filenamify from 'filenamify';
 
 /**
- * Defines how table rows are converted to markdown files and how filenames
- * are parsed back to row IDs. Each serializer is a pair of functions:
- * `serialize` (row → file content + filename) and `parseId` (filename → row ID).
+ * Defines how a table row is converted to a markdown file. The serializer
+ * maps row fields to YAML frontmatter, an optional markdown body, and a
+ * filename.
  *
  * Three built-in factories cover common patterns:
  * - {@link defaultSerializer} — all fields as frontmatter, `{id}.md` filename
@@ -17,9 +17,6 @@ import filenamify from 'filenamify';
  * const { frontmatter, filename } = serializer.serialize({ id: 'abc', title: 'Hello' });
  * // frontmatter = { id: 'abc', title: 'Hello' }
  * // filename = 'abc.md'
- *
- * const id = serializer.parseId('abc.md');
- * // id = 'abc'
  * ```
  */
 export type MarkdownSerializer = {
@@ -29,8 +26,6 @@ export type MarkdownSerializer = {
 		body?: string;
 		filename: string;
 	};
-	/** Extract the row ID from a filename (for rename detection). */
-	parseId(filename: string): string | null;
 };
 
 /**
@@ -55,8 +50,6 @@ export type MarkdownSerializer = {
  * // result.frontmatter = { id: 'device_xyz', name: 'Chrome on macOS', ... }
  * // result.body = undefined
  * // result.filename = 'device_xyz.md'
- *
- * serializer.parseId('device_xyz.md'); // 'device_xyz'
  * ```
  */
 export function defaultSerializer(): MarkdownSerializer {
@@ -66,10 +59,6 @@ export function defaultSerializer(): MarkdownSerializer {
 				frontmatter: { ...row },
 				filename: `${row.id}.md`,
 			};
-		},
-		parseId(filename) {
-			if (!filename.endsWith('.md')) return null;
-			return filename.slice(0, -3);
 		},
 	};
 }
@@ -113,15 +102,8 @@ export function bodyFieldSerializer(fieldName: string): MarkdownSerializer {
 				filename: `${row.id}.md`,
 			};
 		},
-		parseId(filename) {
-			if (!filename.endsWith('.md')) return null;
-			return filename.slice(0, -3);
-		},
 	};
 }
-
-/** Nanoid IDs in this workspace are exactly 21 characters. */
-const NANOID_LENGTH = 21;
 
 /** Max slug length before the ID suffix. */
 const MAX_SLUG_LENGTH = 50;
@@ -136,11 +118,6 @@ const MAX_SLUG_LENGTH = 50;
  * the same title. If the title field is empty or missing, falls back to
  * `{id}.md`.
  *
- * For `parseId`, the workspace uses 21-character nanoid IDs. The parser
- * extracts the last 21 characters before `.md` as the ID. For filenames
- * shorter than 21 characters (plus `.md`), the entire stem is returned
- * as a fallback.
- *
  * @param fieldName - The row field containing the title to slugify.
  *
  * @example
@@ -154,9 +131,6 @@ const MAX_SLUG_LENGTH = 50;
  * });
  * // result.filename = 'github-pr-review-Vk3xJ9mN2pQ8rW5tY7bHc.md'
  * // result.frontmatter = { id: 'Vk3xJ9mN2pQ8rW5tY7bHc', title: 'GitHub PR Review', ... }
- *
- * serializer.parseId('github-pr-review-Vk3xJ9mN2pQ8rW5tY7bHc.md');
- * // 'Vk3xJ9mN2pQ8rW5tY7bHc'
  *
  * // Falls back to {id}.md when title is missing
  * serializer.serialize({ id: 'abc123', title: '' });
@@ -186,15 +160,6 @@ export function titleFilenameSerializer(fieldName: string): MarkdownSerializer {
 				frontmatter: { ...row },
 				filename,
 			};
-		},
-		parseId(filename) {
-			if (!filename.endsWith('.md')) return null;
-			const stem = filename.slice(0, -3);
-
-			if (stem.length <= NANOID_LENGTH) return stem;
-
-			// Extract the last 21 characters as the nanoid ID
-			return stem.slice(-NANOID_LENGTH);
 		},
 	};
 }

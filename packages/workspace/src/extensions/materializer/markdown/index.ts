@@ -1,6 +1,5 @@
 export {
 	type MarkdownMaterializerConfig,
-	type MarkdownTableConfig,
 	markdownMaterializer,
 } from './markdown.js';
 export {

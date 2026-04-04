@@ -31,19 +31,18 @@ export type MarkdownMaterializerConfig = {
 	 * Per-table configuration. Only tables listed here are materialized
 	 * (explicit opt-in). Tables not listed are ignored entirely.
 	 *
-	 * Pass a {@link MarkdownSerializer} directly for the common case, or an
-	 * object with `serializer` and/or `directory` overrides. Omit `serializer`
-	 * (or pass `{}`) to use {@link defaultSerializer}.
+	 * Pass `{}` to use {@link defaultSerializer}, or provide a custom
+	 * `serializer` and/or `directory` override.
 	 */
-	tables: Record<string, MarkdownSerializer | MarkdownTableConfig>;
-};
-
-/** Per-table options when you need more than just a serializer. */
-export type MarkdownTableConfig = {
-	/** Subdirectory name within the root. Defaults to the table key name. */
-	directory?: string;
-	/** Custom serializer. Defaults to {@link defaultSerializer}. */
-	serializer?: MarkdownSerializer;
+	tables: Record<
+		string,
+		{
+			/** Subdirectory name within the root. Defaults to the table key name. */
+			directory?: string;
+			/** Custom serializer. Defaults to {@link defaultSerializer}. */
+			serializer?: MarkdownSerializer;
+		}
+	>;
 };
 
 /**
@@ -85,43 +84,32 @@ export type MarkdownTableConfig = {
  */
 export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 	return ({ tables }: ExtensionContext) => {
-		// Filename tracking: tableKey → (rowId → filename)
-		// Used to detect renames when a title field changes.
-		const filenameMap = new Map<string, Map<string, string>>();
-
 		const unsubscribers: Array<() => void> = [];
 
 		const whenReady = (async () => {
-			for (const [tableKey, tableValue] of Object.entries(config.tables)) {
+			for (const [tableKey, tableConfig] of Object.entries(config.tables)) {
 				const table = tables[tableKey];
 				if (!table) continue;
-
-				// Normalize: accept a bare MarkdownSerializer or a config object
-				const isSerializer =
-					typeof (tableValue as MarkdownSerializer).serialize === 'function';
-				const tableConfig: MarkdownTableConfig = isSerializer
-					? { serializer: tableValue as MarkdownSerializer }
-					: (tableValue as MarkdownTableConfig);
 
 				const dir = join(config.directory, tableConfig.directory ?? tableKey);
 				await mkdir(dir, { recursive: true });
 
 				const serializer = tableConfig.serializer ?? defaultSerializer();
-				const tableFilenames = new Map<string, string>();
-				filenameMap.set(tableKey, tableFilenames);
+
+				// Filename tracking for rename detection.
+				// Captured by the observer closure below.
+				const filenames = new Map<string, string>();
 
 				// Initial materialization: write all current valid rows
 				const rows = table.getAllValid();
 				for (const row of rows) {
-					const { frontmatter, body, filename } = serializer.serialize(
-						row as Record<string, unknown>,
+					const result = serializer.serialize(row as Record<string, unknown>);
+					await writeMarkdownFile(
+						join(dir, result.filename),
+						result.frontmatter,
+						result.body,
 					);
-					const filePath = join(dir, filename);
-					await writeMarkdownFile(filePath, frontmatter, body);
-					tableFilenames.set(
-						String((row as Record<string, unknown>).id),
-						filename,
-					);
+					filenames.set(String(row.id), result.filename);
 				}
 
 				// Set up observer for ongoing changes
@@ -131,25 +119,24 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 					const writes: Array<Promise<void>> = [];
 
 					for (const id of changedIds) {
-						const result = table.get(id);
+						const getResult = table.get(id);
 
-						if (result.status === 'not_found') {
-							// Row was deleted
-							const oldFilename = tableFilenames.get(id);
+						if (getResult.status === 'not_found') {
+							const oldFilename = filenames.get(id);
 							if (oldFilename) {
 								writes.push(deleteMarkdownFile(join(dir, oldFilename)));
-								tableFilenames.delete(id);
+								filenames.delete(id);
 							}
 							continue;
 						}
 
-						if (result.status !== 'valid') continue;
+						if (getResult.status !== 'valid') continue;
 
-						const row = result.row as Record<string, unknown>;
+						const row = getResult.row as Record<string, unknown>;
 						const { frontmatter, body, filename } = serializer.serialize(row);
 
 						// Detect rename: if the filename changed, delete the old file
-						const oldFilename = tableFilenames.get(id);
+						const oldFilename = filenames.get(id);
 						if (oldFilename && oldFilename !== filename) {
 							writes.push(deleteMarkdownFile(join(dir, oldFilename)));
 						}
@@ -157,15 +144,15 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 						writes.push(
 							writeMarkdownFile(join(dir, filename), frontmatter, body),
 						);
-						tableFilenames.set(id, filename);
+						filenames.set(id, filename);
 					}
 
-					// Let all writes settle. Surface failures as warnings—the
-					// materializer is best-effort, not critical path.
+					// Surface failures as warnings—the materializer is
+					// best-effort, not critical path.
 					Promise.allSettled(writes).then((results) => {
-						for (const result of results) {
-							if (result.status === 'rejected') {
-								console.warn('[markdown-materializer] write failed:', result.reason);
+						for (const r of results) {
+							if (r.status === 'rejected') {
+								console.warn('[markdown-materializer] write failed:', r.reason);
 							}
 						}
 					});

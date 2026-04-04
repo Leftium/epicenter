@@ -1,17 +1,29 @@
 import { mkdir, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
+/** YAML values that parsers interpret as booleans or null if unquoted. */
+const YAML_SPECIAL_VALUES = new Set([
+	'true', 'false', 'yes', 'no', 'on', 'off',
+	'null', '~', '',
+]);
+
 /**
  * Check whether a string value needs YAML double-quoting.
  *
- * Quotes are required when the value contains characters that are
- * syntactically significant in YAML: `:`, `#`, `[`, `]`, `{`, `}`,
- * or when it starts with a quote character (`"` or `'`).
+ * Quotes are required when the value:
+ * - contains syntactically significant chars: `:`, `#`, `[`, `]`, `{`, `}`
+ * - starts with a quote character (`"` or `'`)
+ * - contains newlines or carriage returns
+ * - matches a YAML boolean/null keyword (`true`, `yes`, `null`, etc.)
+ * - looks numeric (YAML parsers would coerce `"42"` to a number)
  */
 function needsQuoting(value: string): boolean {
-	return (
-		/[:#[\]{}]/.test(value) || value.startsWith('"') || value.startsWith("'")
-	);
+	if (YAML_SPECIAL_VALUES.has(value.toLowerCase())) return true;
+	if (/[:#[\]{}]/.test(value) || value.includes('\n') || value.includes('\r')) return true;
+	if (value.startsWith('"') || value.startsWith("'")) return true;
+	// Strings that look numeric: YAML parsers coerce on round-trip
+	if (value.length > 0 && !Number.isNaN(Number(value))) return true;
+	return false;
 }
 
 /**

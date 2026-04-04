@@ -132,15 +132,12 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 
 				const dir = join(config.directory, tableConfig.directory ?? tableKey);
 
-				const { error: mkdirError } = await tryAsync({
-					try: () => mkdir(dir, { recursive: true }),
-					catch: (error) => {
-						console.warn(`[markdown-materializer] failed to create ${dir}:`, error);
-						return Ok(undefined);
-					},
-				});
-				// If mkdir failed, skip this table entirely — all writes would fail
-				if (mkdirError) continue;
+				try {
+					await mkdir(dir, { recursive: true });
+				} catch (error) {
+					console.warn(`[markdown-materializer] failed to create ${dir}:`, error);
+					continue;
+				}
 
 				const serializer = tableConfig.serializer ?? defaultSerializer();
 
@@ -151,17 +148,15 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 				// Initial materialization: write all current valid rows
 				for (const row of table.getAllValid()) {
 					const result = serializer.serialize(row as Record<string, unknown>);
-					const { error: writeError } = await tryAsync({
-						try: () => Bun.write(
+					try {
+						await Bun.write(
 							join(dir, result.filename),
 							toMarkdown(result.frontmatter, result.body),
-						),
-						catch: (error) => {
-							console.warn(`[markdown-materializer] failed to write ${result.filename}:`, error);
-							return Ok(undefined);
-						},
-					});
-					if (!writeError) filenames.set(String(row.id), result.filename);
+						);
+						filenames.set(row.id as string, result.filename);
+					} catch (error) {
+						console.warn(`[markdown-materializer] failed to write ${result.filename}:`, error);
+					}
 				}
 
 				// Observe ongoing changes

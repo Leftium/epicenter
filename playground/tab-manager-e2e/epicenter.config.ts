@@ -24,8 +24,8 @@ import type { EncryptionKeys } from '@epicenter/workspace';
 import {
 	markdownMaterializer,
 	titleFilenameSerializer,
-	} from '@epicenter/workspace/extensions/materializer/markdown';
-	import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+} from '@epicenter/workspace/extensions/materializer/markdown';
+import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 
 const SERVER_URL = 'https://api.epicenter.so';

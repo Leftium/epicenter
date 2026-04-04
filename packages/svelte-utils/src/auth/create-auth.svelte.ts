@@ -179,7 +179,11 @@ export type AuthClient = {
 
 export type CreateAuthOptions = {
 	baseURL: BaseURL;
-	session: { current: AuthSession };
+	session: {
+		current: AuthSession;
+		/** Authoritative read. Sync for localStorage, async for chrome.storage. */
+		get(): AuthSession | Promise<AuthSession>;
+	};
 	/**
 	 * Called whenever the session is authenticated—construction (if a cached
 	 * session exists in the store), sign-in, session restore, or token refresh.
@@ -323,14 +327,19 @@ export function createAuth({
 		}
 	});
 
-	// Boot: fire onLogin immediately if a cached session with encryption keys
-	// exists. For sync stores (localStorage) this applies keys before the BA
-	// subscription's server roundtrip resolves. For async stores (chrome.storage)
-	// session.current starts as the fallback (null), so this is a no-op — those
-	// apps handle boot separately via an async read.
-	const cached = session.current;
-	if (cached?.encryptionKeys) {
-		onLogin?.({ token: cached.token, user: cached.user, encryptionKeys: cached.encryptionKeys });
+	// Boot: fire onLogin from the cached session so encryption keys are
+	// applied before the BA subscription's server roundtrip resolves.
+	// session.get() is sync for localStorage, async for chrome.storage.
+	const boot = session.get();
+	const applyBoot = (cached: AuthSession) => {
+		if (cached?.encryptionKeys) {
+			onLogin?.({ token: cached.token, user: cached.user, encryptionKeys: cached.encryptionKeys });
+		}
+	};
+	if (boot instanceof Promise) {
+		void boot.then(applyBoot);
+	} else {
+		applyBoot(boot);
 	}
 
 	return {

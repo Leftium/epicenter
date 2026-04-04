@@ -34,15 +34,6 @@ import { createTabManagerWorkspace } from './workspace/workspace';
 // Workspace Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Boot: apply cached encryption keys from chrome.storage.
-// Unlike web apps (where createAuth handles boot via sync localStorage),
-// chrome.storage is async—session.current starts as null until it loads.
-// This explicit async read fills the gap before BA's server roundtrip.
-void session.get().then((cached) => {
-	if (cached?.encryptionKeys) {
-		workspace.applyEncryptionKeys(cached.encryptionKeys);
-	}
-});
 export const workspace = buildWorkspaceClient();
 export const auth = createAuth({
 	baseURL: () => remoteServerUrl.current,

@@ -152,20 +152,14 @@ export type InferTableRow<T> = T extends {
  * - `guid`: The column storing the Y.Doc GUID (must be a string column)
  * - `onUpdate`: Zero-argument callback returning `Partial<Omit<TRow, 'id'>>` — the fields
  *   to write when the doc changes. Callers control both the value and which columns to update.
- * - `tags`: Optional tag literals for document extension targeting
+ * - `tags`: Optional string tags for document extension targeting
  *
  * @typeParam TGuid - Literal string type of the guid column name
  * @typeParam TRow - The row type of the table (used to type-check `onUpdate` return)
- * @typeParam TTags - Literal union of tag strings for document extension targeting.
- *   Defaults to `string` so bare `DocumentConfig` works as a wide constraint (accepts any tags).
- *   When `.withDocument()` is called without tags, `TTags` infers as `never` via the
- *   method's own default, which makes the `tags` property `undefined` — preventing
- *   tags on untagged documents.
  */
 export type DocumentConfig<
 	TGuid extends string = string,
 	TRow extends BaseRow = BaseRow,
-	TTags extends string = string,
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
 > = {
 	guid: TGuid;
@@ -174,15 +168,14 @@ export type DocumentConfig<
 	/** Optional awareness schemas for this document scope. */
 	awareness?: TAwarenessDefs;
 	/**
-	 * Tag literals for document extension targeting.
+	 * String tags for document extension targeting.
 	 *
-	 * Always present — defaults to `[]` when no tags are declared.
+	 * Extensions registered via `withDocumentExtension({ tags })` only fire
+	 * for documents whose tags overlap. Extensions with no tags are universal.
 	 *
-	 * - `TTags = never` (no tags on document) → `readonly never[]` (only accepts `[]`)
-	 * - `TTags = 'persistent' | 'synced'` → `readonly ('persistent' | 'synced')[]`
-	 * - `TTags = string` (bare `DocumentConfig`) → `readonly string[]`
+	 * Defaults to `[]` when no tags are declared.
 	 */
-	tags: readonly TTags[];
+	tags: readonly string[];
 };
 
 /**
@@ -206,29 +199,6 @@ export type DocumentExtensionRegistration = {
 	tags: readonly string[];
 };
 
-/**
- * Extract all tags across all tables' document configs.
- *
- * Collects all tag literal types from all table definitions into a union
- * for type-safe autocomplete in `withDocumentExtension({ tags: [...] })`.
- *
- * @example
- * ```typescript
- * // Given tables with tags ['persistent', 'synced'] and ['ephemeral']:
- * type Tags = ExtractAllDocumentTags<typeof tables>;
- * // => 'persistent' | 'synced' | 'ephemeral'
- * ```
- */
-export type ExtractAllDocumentTags<TTableDefs extends TableDefinitions> = {
-	[K in keyof TTableDefs]: TTableDefs[K] extends {
-		documents: Record<
-			string,
-			DocumentConfig<string, BaseRow, infer TTags, AwarenessDefinitions>
-		>;
-	}
-		? TTags
-		: never;
-}[keyof TTableDefs];
 
 /**
  * Extract keys of `TRow` whose value type extends `string`.
@@ -449,7 +419,6 @@ export type DocumentsOf<
 					TDocuments[K] extends DocumentConfig<
 						string,
 						BaseRow,
-						string,
 						infer TAwarenessDefs
 					>
 						? TAwarenessDefs
@@ -1176,7 +1145,7 @@ export type WorkspaceClientBuilder<
 					clearLocalData?: () => MaybePromise<void>;
 			  })
 			| void,
-		options?: { tags?: ExtractAllDocumentTags<TTableDefinitions>[] },
+		options?: { tags?: string[] },
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,

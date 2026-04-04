@@ -101,23 +101,21 @@ Load these on demand based on what you're working on:
   ```
 
   This does NOT apply to package imports (`import { type } from 'arktype'`) or path aliases (`import Component from '$lib/components/Foo.svelte'`)—only bare relative paths.
-- **No "convenience re-exports" at the bottom of files**: Types belong in one canonical location (usually `types.ts`). Don't add `export type { Foo } from './types.js'` at the bottom of implementation files "for convenience"—it creates dead re-exports that nobody uses, orphaned imports that only existed to feed the re-export, and a false sense that the type is owned by that file. If a consumer needs a type, they import it from `types.ts` or the barrel `index.ts`.
+- **`export { }` is only for barrel files**: Every symbol is exported directly at its declaration (`export type`, `export const`, `export function`). The `export { Foo } from './bar'` re-export syntax is reserved for `index.ts` barrel files—that's their entire job. Don't add re-exports at the bottom of implementation files "for convenience"; they go unused, leave orphaned imports, and create a false second import path.
 
   ```typescript
-  // Bad — convenience re-export at bottom of create-tables.ts
+  // Good — direct export at declaration
+  export type TablesHelper<T> = { ... };
+  export const EncryptionKey = type({ ... });
   export function createTables(...) { ... }
-  
-  // Re-export types for convenience
-  export type { InferTableRow, TableDefinition, TableDefinitions, TablesHelper };
-  ```
 
-  ```typescript
-  // Good — types live in types.ts, consumers import from there
-  // create-tables.ts only exports what it creates
-  export function createTables(...) { ... }
-  ```
+  // Good — barrel re-exports in index.ts
+  export { createTables } from './create-tables.js';
+  export type { TablesHelper } from './types.js';
 
-  Exception: Barrel `index.ts` files exist specifically to re-export—that's their job. The rule targets implementation files (`create-*.ts`, `define-*.ts`, etc.) that accumulate trailing re-exports over time.
+  // Bad — re-export at bottom of create-tables.ts
+  export type { TablesHelper, TableDefinitions };
+  ```
 - When functions are only used in the return statement of a factory/creator function, use object method shorthand syntax instead of defining them separately. For example, instead of:
   ```typescript
   function myFunction() {

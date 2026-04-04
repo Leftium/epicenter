@@ -1,6 +1,7 @@
 import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { YAML } from 'bun';
+import { Ok, tryAsync } from 'wellcrafted/result';
 import type { ExtensionContext } from '../../../workspace/types.js';
 import { defaultSerializer, type MarkdownSerializer } from './serializers.js';
 
@@ -30,10 +31,12 @@ function toMarkdown(
 		: `---\n${yaml}---\n`;
 }
 
-/** Delete a file, silently succeeding if it doesn't exist. */
+/** Delete a file, silently succeeding if it doesn't exist or can't be removed. */
 async function safeUnlink(filePath: string): Promise<void> {
-	if (!(await Bun.file(filePath).exists())) return;
-	await unlink(filePath);
+	await tryAsync({
+		try: () => unlink(filePath),
+		catch: () => Ok(undefined),
+	});
 }
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -128,7 +131,16 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 				if (!table) continue;
 
 				const dir = join(config.directory, tableConfig.directory ?? tableKey);
-				await mkdir(dir, { recursive: true });
+
+				const { error: mkdirError } = await tryAsync({
+					try: () => mkdir(dir, { recursive: true }),
+					catch: (error) => {
+						console.warn(`[markdown-materializer] failed to create ${dir}:`, error);
+						return Ok(undefined);
+					},
+				});
+				// If mkdir failed, skip this table entirely — all writes would fail
+				if (mkdirError) continue;
 
 				const serializer = tableConfig.serializer ?? defaultSerializer();
 
@@ -139,11 +151,17 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 				// Initial materialization: write all current valid rows
 				for (const row of table.getAllValid()) {
 					const result = serializer.serialize(row as Record<string, unknown>);
-					await Bun.write(
-						join(dir, result.filename),
-						toMarkdown(result.frontmatter, result.body),
-					);
-					filenames.set(String(row.id), result.filename);
+					const { error: writeError } = await tryAsync({
+						try: () => Bun.write(
+							join(dir, result.filename),
+							toMarkdown(result.frontmatter, result.body),
+						),
+						catch: (error) => {
+							console.warn(`[markdown-materializer] failed to write ${result.filename}:`, error);
+							return Ok(undefined);
+						},
+					});
+					if (!writeError) filenames.set(String(row.id), result.filename);
 				}
 
 				// Observe ongoing changes

@@ -158,5 +158,3 @@ export function createSessionStore(home: string) {
 		},
 	};
 }
-
-export type SessionStore = ReturnType<typeof createSessionStore>;

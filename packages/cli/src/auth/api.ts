@@ -26,8 +26,6 @@ const CLIENT_ID = 'epicenter-cli';
 /** Derived from Better Auth's `$Infer` — always matches the actual API response. */
 import type { SessionResponse } from '@epicenter/api/types';
 
-export type { SessionResponse } from '@epicenter/api/types';
-
 /**
  * Response from `/auth/sign-in/email` with the bearer plugin active.
  *

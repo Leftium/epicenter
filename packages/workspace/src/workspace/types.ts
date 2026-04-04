@@ -1034,8 +1034,6 @@ export type WorkspaceDefinition<
  * ```
  */
 
-export type { EncryptionKey, EncryptionKeys } from './encryption-key';
-
 export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,

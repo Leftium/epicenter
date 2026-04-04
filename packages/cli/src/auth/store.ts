@@ -27,8 +27,6 @@ export type AuthSession = {
 	accessToken: string;
 	/** Unix ms when the session expires. */
 	expiresAt: number;
-	/** Unix ms when this session was saved (for loadDefault ordering). */
-	savedAt: number;
 	/** Versioned encryption keys for workspace decryption. */
 	encryptionKeys: SessionResponse['encryptionKeys'];
 	/** User info snapshot from the auth flow. */
@@ -102,6 +100,9 @@ export function createSessionStore(home: string) {
 		 *
 		 * The server URL is normalized before storage so that `wss://host`,
 		 * `https://host`, and `https://host/` all map to the same entry.
+		 * Existing entries are deleted before reinsertion so the most recently
+		 * saved session stays at the end of JS object insertion order for
+		 * `loadDefault()`.
 		 */
 		async save(
 			server: string,
@@ -109,10 +110,11 @@ export function createSessionStore(home: string) {
 			sessionData: SessionResponse,
 		): Promise<void> {
 			const store = await read();
-			store[normalizeUrl(server)] = {
+			const key = normalizeUrl(server);
+			delete store[key];
+			store[key] = {
 				accessToken: token.access_token,
 				expiresAt: Date.now() + token.expires_in * 1000,
-				savedAt: Date.now(),
 				encryptionKeys: sessionData.encryptionKeys,
 				user: sessionData.user,
 			};
@@ -136,9 +138,12 @@ export function createSessionStore(home: string) {
 		/**
 		 * Load the most recently saved session (any server).
 		 *
-		 * Used when no `--server` flag is provided—returns the session
-		 * with the latest `savedAt` timestamp, falling back to `expiresAt`
-		 * for older sessions that do not have `savedAt` yet.
+		 * Returns the most recently saved session by reading the last entry in
+		 * the persisted object. This relies on ES2015+ object insertion order for
+		 * non-integer string keys, which is preserved across
+		 * `JSON.stringify()`/`JSON.parse()` round-trips. `save()` deletes an
+		 * existing server key before reinserting it so the newest session is
+		 * always the last entry.
 		 *
 		 * @returns The most recent session with its server URL, or `null` if empty.
 		 */
@@ -146,12 +151,9 @@ export function createSessionStore(home: string) {
 			const store = await read();
 			const entries = Object.entries(store);
 			if (entries.length === 0) return null;
-			const [server, session] = entries.reduce((latest, entry) =>
-				(entry[1].savedAt ?? entry[1].expiresAt) >
-				(latest[1].savedAt ?? latest[1].expiresAt)
-					? entry
-					: latest,
-			);
+			const lastEntry = entries[entries.length - 1];
+			if (!lastEntry) return null;
+			const [server, session] = lastEntry;
 			return { ...session, server };
 		},
 

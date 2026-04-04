@@ -1,7 +1,6 @@
 import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { YAML } from 'bun';
-import { Ok, tryAsync } from 'wellcrafted/result';
 import type { ExtensionContext } from '../../../workspace/types.js';
 import { defaultSerializer, type MarkdownSerializer } from './serializers.js';
 
@@ -12,8 +11,9 @@ import { defaultSerializer, type MarkdownSerializer } from './serializers.js';
  *
  * Pure function — no I/O. Uses `Bun.YAML.stringify` for spec-compliant
  * serialization (handles quoting of booleans, numeric strings, special
- * characters, newlines, etc.). Null/undefined frontmatter values are
- * stripped so the output stays clean.
+ * characters, newlines, etc.). Undefined frontmatter values are stripped
+ * (missing key); null values are preserved (YAML `null`) so nullable
+ * fields survive a future round-trip.
  */
 function toMarkdown(
 	frontmatter: Record<string, unknown>,
@@ -21,23 +21,19 @@ function toMarkdown(
 ): string {
 	const cleaned: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(frontmatter)) {
-		if (value !== undefined && value !== null) {
+		if (value !== undefined) {
 			cleaned[key] = value;
 		}
 	}
 	const yaml = YAML.stringify(cleaned, null, 2);
+	const yamlBlock = yaml.endsWith('\n') ? yaml : `${yaml}\n`;
 	return body !== undefined
-		? `---\n${yaml}---\n\n${body}\n`
-		: `---\n${yaml}---\n`;
+		? `---\n${yamlBlock}---\n\n${body}\n`
+		: `---\n${yamlBlock}---\n`;
 }
 
 /** Delete a file, silently succeeding if it doesn't exist or can't be removed. */
-async function safeUnlink(filePath: string): Promise<void> {
-	await tryAsync({
-		try: () => unlink(filePath),
-		catch: () => Ok(undefined),
-	});
-}
+const safeUnlink = (filePath: string) => unlink(filePath).catch(() => {});
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 

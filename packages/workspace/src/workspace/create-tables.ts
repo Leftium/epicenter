@@ -39,8 +39,6 @@ import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encry
 import { createTable } from './create-table.js';
 import type {
 	BaseRow,
-	InferTableRow,
-	TableDefinition,
 	TableDefinitions,
 	TableHelper,
 	TablesHelper,
@@ -74,5 +72,3 @@ export function createTables<TTableDefinitions extends TableDefinitions>(
 	return helpers as TablesHelper<TTableDefinitions>;
 }
 
-// Re-export types for convenience
-export type { InferTableRow, TableDefinition, TableDefinitions, TablesHelper };

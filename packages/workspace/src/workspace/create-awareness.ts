@@ -159,5 +159,3 @@ export function createAwareness<TDefs extends AwarenessDefinitions>(
 	};
 }
 
-// Re-export types for convenience
-export type { AwarenessHelper };

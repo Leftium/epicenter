@@ -58,5 +58,3 @@ export function defineWorkspace<
 	};
 }
 
-// Re-export types for convenience
-export type { WorkspaceDefinition };

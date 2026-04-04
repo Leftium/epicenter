@@ -549,5 +549,3 @@ export function createWorkspace<
 		actions: {},
 	});
 }
-
-export type { WorkspaceClient, WorkspaceClientBuilder };

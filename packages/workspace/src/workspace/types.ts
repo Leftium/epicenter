@@ -1223,8 +1223,6 @@ export type WorkspaceClientBuilder<
 	>;
 };
 
-// Re-export Extension for convenience
-export type { Extension } from './lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION TYPES

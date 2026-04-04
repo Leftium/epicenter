@@ -100,6 +100,9 @@ export function createSessionStore(home: string) {
 		 *
 		 * The server URL is normalized before storage so that `wss://host`,
 		 * `https://host`, and `https://host/` all map to the same entry.
+		 * Existing entries are deleted before reinsertion so the most recently
+		 * saved session stays at the end of JS object insertion order for
+		 * `loadDefault()`.
 		 */
 		async save(
 			server: string,
@@ -107,7 +110,9 @@ export function createSessionStore(home: string) {
 			sessionData: SessionResponse,
 		): Promise<void> {
 			const store = await read();
-			store[normalizeUrl(server)] = {
+			const key = normalizeUrl(server);
+			delete store[key];
+			store[key] = {
 				accessToken: token.access_token,
 				expiresAt: Date.now() + token.expires_in * 1000,
 				encryptionKeys: sessionData.encryptionKeys,
@@ -131,10 +136,14 @@ export function createSessionStore(home: string) {
 		},
 
 		/**
-		 * Load the most recent session (any server).
+		 * Load the most recently saved session (any server).
 		 *
-		 * Used when no `--server` flag is provided—returns the session
-		 * with the latest `expiresAt` timestamp.
+		 * Returns the most recently saved session by reading the last entry in
+		 * the persisted object. This relies on ES2015+ object insertion order for
+		 * non-integer string keys, which is preserved across
+		 * `JSON.stringify()`/`JSON.parse()` round-trips. `save()` deletes an
+		 * existing server key before reinserting it so the newest session is
+		 * always the last entry.
 		 *
 		 * @returns The most recent session with its server URL, or `null` if empty.
 		 */
@@ -142,9 +151,9 @@ export function createSessionStore(home: string) {
 			const store = await read();
 			const entries = Object.entries(store);
 			if (entries.length === 0) return null;
-			const [server, session] = entries.reduce((latest, entry) =>
-				entry[1].expiresAt > latest[1].expiresAt ? entry : latest,
-			);
+			const lastEntry = entries[entries.length - 1];
+			if (!lastEntry) return null;
+			const [server, session] = lastEntry;
 			return { ...session, server };
 		},
 
@@ -158,5 +167,3 @@ export function createSessionStore(home: string) {
 		},
 	};
 }
-
-export type SessionStore = ReturnType<typeof createSessionStore>;

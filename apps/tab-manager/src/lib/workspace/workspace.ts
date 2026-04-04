@@ -15,9 +15,7 @@
  */
 
 import { createWorkspace, defineQuery } from '@epicenter/workspace';
-import Type from 'typebox';
 import { definition } from './definition';
-
 
 export function createTabManagerWorkspace() {
 	return createWorkspace(definition).withActions(({ tables }) => ({

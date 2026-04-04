@@ -26,8 +26,6 @@ const CLIENT_ID = 'epicenter-cli';
 /** Derived from Better Auth's `$Infer` — always matches the actual API response. */
 import type { SessionResponse } from '@epicenter/api/types';
 
-export type { SessionResponse } from '@epicenter/api/types';
-
 /**
  * Response from `/auth/sign-in/email` with the bearer plugin active.
  *
@@ -88,7 +86,9 @@ export function createAuthApi(serverUrl: string, token?: string) {
 			);
 		}
 
-		if (!text) return undefined as T;
+		if (!text) {
+			throw new Error(`${method} ${path}: empty response body`);
+		}
 
 		try {
 			return JSON.parse(text) as T;
@@ -117,10 +117,13 @@ export function createAuthApi(serverUrl: string, token?: string) {
 		/**
 		 * Sign out the current session.
 		 *
-		 * Best-effort — the server may be unreachable.
+		 * Best-effort — the server may be unreachable. Does not parse
+		 * the response body (sign-out returns no JSON).
 		 */
-		signOut() {
-			return request<void>('POST', '/auth/sign-out');
+		async signOut() {
+			const headers: Record<string, string> = {};
+			if (token) headers.authorization = `Bearer ${token}`;
+			await fetch(`${serverUrl}/auth/sign-out`, { method: 'POST', headers });
 		},
 
 		// ── Session ────────────────────────────────────────────────────────

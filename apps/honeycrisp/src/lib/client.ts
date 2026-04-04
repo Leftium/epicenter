@@ -9,13 +9,12 @@
 
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createAuth } from '@epicenter/svelte/auth';
-import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { session } from '$lib/auth';
-import { honeycrisp } from './workspace/definition';
+import { createHoneycrisp } from './workspace/workspace';
 
-export const workspace = createWorkspace(honeycrisp)
+export const workspace = createHoneycrisp()
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',

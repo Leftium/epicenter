@@ -48,6 +48,8 @@ function setup(
 	const { ydoc, tables } = setupTables();
 	const documents = createDocuments({
 		id: 'test-workspace',
+		tableName: 'files',
+		documentName: 'content',
 		guidKey: 'id',
 		onUpdate: () => ({ updatedAt: Date.now() }),
 		tableHelper: tables.files,
@@ -168,6 +170,8 @@ describe('createDocuments', () => {
 
 			const documents = createDocuments({
 				id: 'test-custom-onUpdate',
+				tableName: 'files',
+				documentName: 'content',
 				guidKey: 'id',
 				onUpdate: () => ({
 					updatedAt: 999,
@@ -204,6 +208,8 @@ describe('createDocuments', () => {
 
 			const documents = createDocuments({
 				id: 'test-noop-onUpdate',
+				tableName: 'files',
+				documentName: 'content',
 				guidKey: 'id',
 				onUpdate: () => ({}),
 				tableHelper: tables.files,
@@ -662,6 +668,8 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const tables = createTables(ydoc, { files: tableDef });
 		const documents = createDocuments({
 			id: 'test-timeline',
+			tableName: 'files',
+			documentName: 'content',
 			guidKey: 'id',
 			onUpdate: () => ({ updatedAt: Date.now() }),
 			tableHelper: tables.files,

@@ -220,6 +220,8 @@ export function createWorkspace<
 
 			const documents = createDocuments({
 				id,
+				tableName,
+				documentName: docName,
 				guidKey: guid as keyof BaseRow & string,
 				onUpdate,
 				tableHelper,

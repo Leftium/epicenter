@@ -115,6 +115,10 @@ export type CreateDocumentsConfig<
 	 * collisions or silent failures in extensions.
 	 */
 	id: string;
+	/** The table this document belongs to (e.g., 'files', 'notes'). */
+	tableName: string;
+	/** The document name from `.withDocument()` (e.g., 'content', 'body'). */
+	documentName: string;
 	/** Column name storing the Y.Doc GUID. */
 	guidKey: keyof TRow & string;
 	/** Called when the content Y.Doc changes. Return the fields to write to the row. */
@@ -154,6 +158,8 @@ export function createDocuments<
 ): Documents<TRow, TDocExtensions, TAwarenessDefinitions> {
 	const {
 		id,
+		tableName,
+		documentName,
 		guidKey,
 		onUpdate,
 		tableHelper,
@@ -218,6 +224,8 @@ export function createDocuments<
 				for (const { key, factory } of documentExtensions) {
 					const ctx = {
 						id,
+						tableName,
+						documentName,
 						ydoc: contentYdoc,
 						timeline,
 						awareness: { raw: contentAwareness },
@@ -274,6 +282,8 @@ export function createDocuments<
 					: Promise.all(whenReadyPromises).then(() => {});
 			const handle = Object.assign(timeline, {
 				id,
+				tableName,
+				documentName,
 				timeline,
 				awareness,
 				extensions: resolvedExtensions,

@@ -27,6 +27,7 @@
  * const tables = createTables(ydoc, { files: filesTable });
  *
  * const contentDocuments = createDocuments({
+ *   id: 'my-workspace',
  *   guidKey: 'id',
  *   onUpdate: () => ({ updatedAt: Date.now() }),
  *   tableHelper: tables.files,
@@ -106,8 +107,14 @@ export type CreateDocumentsConfig<
 	TRow extends BaseRow,
 	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
 > = {
-	/** The workspace identifier. Passed through to `DocumentContext.id`. */
-	id?: string;
+	/**
+	 * The workspace identifier. Passed through to `DocumentContext.id`.
+	 *
+	 * Extensions use this for persistence paths, sync room names, and other
+	 * workspace-scoped identifiers. An empty or missing value may cause
+	 * collisions or silent failures in extensions.
+	 */
+	id: string;
 	/** Column name storing the Y.Doc GUID. */
 	guidKey: keyof TRow & string;
 	/** Called when the content Y.Doc changes. Return the fields to write to the row. */
@@ -152,7 +159,7 @@ export function createDocuments<
 	config: CreateDocumentsConfig<TRow, TAwarenessDefinitions>,
 ): Documents<TRow, TDocExtensions, TAwarenessDefinitions> {
 	const {
-		id = '',
+		id,
 		guidKey,
 		onUpdate,
 		tableHelper,

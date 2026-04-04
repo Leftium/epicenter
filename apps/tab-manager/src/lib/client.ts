@@ -45,6 +45,7 @@ export const auth = createAuth({
 	onLogin(session) {
 		workspace.applyEncryptionKeys(session.encryptionKeys);
 		workspace.extensions.sync.reconnect();
+		void registerDevice();
 	},
 	onLogout() {
 		workspace.clearLocalData();
@@ -74,9 +75,10 @@ export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
  * Register this browser installation as a device in the workspace.
  *
  * Upserts the device row—preserves existing name if present, otherwise
- * generates a default. Called once from App.svelte after workspace is ready.
+ * generates a default. Called from `onLogin` so encryption keys are always
+ * active before the write reaches the Y.Doc.
  */
-export async function registerDevice(): Promise<void> {
+async function registerDevice(): Promise<void> {
 	await workspace.whenReady;
 	const id = await getDeviceId();
 	const existing = workspace.tables.devices.get(id);

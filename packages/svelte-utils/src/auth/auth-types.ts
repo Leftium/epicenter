@@ -29,7 +29,7 @@ export type StoredUser = typeof StoredUser.infer;
 export const AuthSession = type({
 	token: 'string',
 	user: StoredUser,
-	'encryptionKeys?': EncryptionKeys,
+	encryptionKeys: EncryptionKeys,
 }).or('null');
 
 export type AuthSession = typeof AuthSession.infer;

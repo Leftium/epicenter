@@ -1,4 +1,3 @@
-import type { SessionResponse } from '@epicenter/api/types';
 import type { BetterAuthOptions } from 'better-auth';
 import { createAuthClient, InferPlugin } from 'better-auth/client';
 import type { customSession } from 'better-auth/plugins';
@@ -38,9 +37,9 @@ export type AuthError = InferErrors<typeof AuthError>;
 /**
  * Authenticated session data passed to the `onLogin` hook.
  *
- * Includes `encryptionKeys` so apps can call `workspace.applyEncryptionKeys()`
- * directly—no separate fetch or version tracking needed. Keys are also cached
- * in the persisted session box for instant offline decrypt on boot.
+ * Equivalent to a non-null `AuthSession`—includes `token`, `user`, and
+ * `encryptionKeys` so apps can call `workspace.applyEncryptionKeys()`
+ * directly.
  *
  * @example
  * ```typescript
@@ -51,11 +50,7 @@ export type AuthError = InferErrors<typeof AuthError>;
  * });
  * ```
  */
-export type AuthenticatedSession = {
-	token: string;
-	user: StoredUser;
-	encryptionKeys: SessionResponse['encryptionKeys'];
-};
+export type AuthenticatedSession = NonNullable<AuthSession>;
 
 export type AuthClient = {
 	/**
@@ -332,9 +327,7 @@ export function createAuth({
 	// session.get() is sync for localStorage, async for chrome.storage.
 	const boot = session.get();
 	const applyBoot = (cached: AuthSession) => {
-		if (cached?.encryptionKeys) {
-			onLogin?.({ token: cached.token, user: cached.user, encryptionKeys: cached.encryptionKeys });
-		}
+		if (cached) onLogin?.(cached);
 	};
 	if (boot instanceof Promise) {
 		void boot.then(applyBoot);

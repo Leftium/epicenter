@@ -210,8 +210,8 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		 * @example
 		 * ```typescript
 		 * const cached = session.get();
-		 * if (cached?.encryptionKeys) {
-		 *   workspace.applyEncryptionKeys(cached.encryptionKeys);
+		 * if (cached) {
+		 *   console.log('Cached session:', cached.token);
 		 * }
 		 * ```
 		 */

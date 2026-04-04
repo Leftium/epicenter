@@ -586,7 +586,7 @@ app.delete(
 	}),
 	sValidator('param', type({ document: 'string', id: 'string.numeric' })),
 	async (c) => {
-		const stub = getDocumentStub(c);
+		const { stub } = getDocumentStub(c);
 		const { id } = c.req.valid('param');
 		const deleted = await stub.deleteSnapshot(Number(id));
 		if (!deleted) return c.body('Snapshot not found', 404);

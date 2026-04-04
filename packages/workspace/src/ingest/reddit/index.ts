@@ -22,7 +22,7 @@
 
 import { type } from 'arktype';
 import { snakify } from '../../shared/snakify.js';
-import { createWorkspace } from '../../workspace/index.js';
+import { createWorkspace } from '../../workspace/create-workspace.js';
 import { csvSchemas, type TableName } from './csv-schemas.js';
 import { type ParsedRedditData, parseRedditZip } from './parse.js';
 import { type RedditWorkspace, redditWorkspace } from './workspace.js';

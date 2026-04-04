@@ -7,4 +7,3 @@ export {
 	generateChatMessageId,
 	generateConversationId,
 } from './definition';
-export { createZhongwen } from './workspace';

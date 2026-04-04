@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { zipSync } from 'fflate';
-import { createWorkspace } from '../../workspace/index.js';
+import { createWorkspace } from '../../workspace/create-workspace.js';
 import { importRedditExport } from './index.js';
 import { redditWorkspace } from './workspace.js';
 

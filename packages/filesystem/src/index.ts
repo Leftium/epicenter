@@ -31,9 +31,10 @@ export { type ColumnDefinition, type FileRow, filesTable } from './table.js';
 export {
 	assertUniqueName,
 	createFileSystemIndex,
+	createFileTree,
 	disambiguateNames,
 	type FileSystemIndex,
-	FileTree,
+	type FileTree,
 	validateName,
 } from './tree/index.js';
 

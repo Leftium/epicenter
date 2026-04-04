@@ -8,7 +8,7 @@ import type { FileId } from './ids.js';
 import { posixResolve } from './path.js';
 import type { FileRow } from './table.js';
 import { disambiguateNames } from './tree/naming.js';
-import { FileTree } from './tree/tree.js';
+import { createFileTree, type FileTree } from './tree/tree.js';
 
 /** Validate `fs` extends {@link IFileSystem} while preserving the full inferred type (avoids excess-property errors from `satisfies`). */
 function FileSystem<T extends IFileSystem>(fs: T): T {
@@ -43,7 +43,7 @@ export function createYjsFileSystem(
 	contentDocuments: Documents<FileRow>,
 	cwd: string = '/',
 ) {
-	const tree = new FileTree(filesTable);
+	const tree = createFileTree(filesTable);
 
 	return FileSystem({
 		/** Reactive file-system indexes for path lookups and parent-child queries. */

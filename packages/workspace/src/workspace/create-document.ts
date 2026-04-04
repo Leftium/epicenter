@@ -125,15 +125,9 @@ export type CreateDocumentsConfig<
 	ydoc: Y.Doc;
 	/**
 	 * Document extension registrations (from `withDocumentExtension()` calls).
-	 * Each registration has a key, factory, and optional tags for filtering.
-	 * At open time, registrations are filtered by tag matching before firing.
+	 * Each registration has a key and factory.
 	 */
 	documentExtensions?: DocumentExtensionRegistration[];
-	/**
-	 * Tags declared on this documents instance (from `withDocument(..., { tags })`).
-	 * Used for tag matching against document extension registrations.
-	 */
-	documentTags?: readonly string[];
 	/** Optional typed awareness schemas for this document scope. */
 	awarenessDefinitions?: TAwarenessDefinitions;
 };
@@ -165,7 +159,6 @@ export function createDocuments<
 		tableHelper,
 		ydoc: workspaceYdoc,
 		documentExtensions = [],
-		documentTags = [],
 		awarenessDefinitions,
 	} = config;
 
@@ -211,14 +204,6 @@ export function createDocuments<
 			);
 			const timeline = createTimeline(contentYdoc);
 
-			// Filter document extensions by tag matching:
-			// - No tags on extension → fire for all documents (universal)
-			// - Has tags → fire only if document tags and extension tags share ANY value
-			const applicableExtensions = documentExtensions.filter((reg) => {
-				if (reg.tags.length === 0) return true;
-				return reg.tags.some((tag) => documentTags.includes(tag));
-			});
-
 			// Call document extension factories synchronously.
 			// IMPORTANT: No await between openDocuments.get() and openDocuments.set() — ensures
 			// concurrent open() calls for the same guid are safe.
@@ -230,7 +215,7 @@ export function createDocuments<
 			const whenReadyPromises: Promise<unknown>[] = [];
 
 			try {
-				for (const { key, factory } of applicableExtensions) {
+				for (const { key, factory } of documentExtensions) {
 					const ctx = {
 						id,
 						ydoc: contentYdoc,

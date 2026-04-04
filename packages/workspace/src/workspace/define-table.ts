@@ -82,7 +82,7 @@ type TableDefinitionWithDocBuilder<
 	 * a GUID column already bound to a prior document (prevents storage collisions).
 	 *
 	 * @param name - The document name (becomes `client.documents.{tableName}[name]`)
-	 * @param config - `guid` (string column), `onUpdate` (callback returning partial row), and optional `tags`
+	 * @param config - `guid` (string column) and `onUpdate` (callback returning partial row)
 	 *
 	 * @example
 	 * ```typescript
@@ -123,7 +123,6 @@ type TableDefinitionWithDocBuilder<
 				Omit<StandardSchemaV1.InferOutput<LastSchema<TVersions>>, 'id'>
 			>;
 			awareness?: TAwarenessDefs;
-			tags?: readonly string[];
 		},
 	): TableDefinitionWithDocBuilder<
 		TVersions,
@@ -257,12 +256,11 @@ function attachDocumentBuilder<
 				...def,
 				documents: {
 					...def.documents,
-					[name]: {
-						guid: config.guid,
-						onUpdate: config.onUpdate,
-						awareness: config.awareness,
-						tags: config.tags ?? [],
-					},
+				[name]: {
+					guid: config.guid,
+					onUpdate: config.onUpdate,
+					awareness: config.awareness,
+				},
 				},
 			});
 		},

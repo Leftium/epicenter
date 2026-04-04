@@ -216,7 +216,7 @@ export function createWorkspace<
 		const tableDocumentsNamespace: Record<string, Documents<BaseRow>> = {};
 
 		for (const [docName, rawConfig] of Object.entries(tableDef.documents)) {
-			const { guid, onUpdate, tags, awareness } = rawConfig as DocumentConfig;
+			const { guid, onUpdate, awareness } = rawConfig as DocumentConfig;
 
 			const documents = createDocuments({
 				id,
@@ -225,7 +225,6 @@ export function createWorkspace<
 				tableHelper,
 				ydoc,
 				documentExtensions: documentExtensionRegistrations,
-				documentTags: tags ?? [],
 				awarenessDefinitions: awareness,
 			});
 
@@ -464,7 +463,6 @@ export function createWorkspace<
 				documentExtensionRegistrations.push({
 					key,
 					factory,
-					tags: [],
 				});
 				return applyWorkspaceExtension(key, factory);
 			},
@@ -500,12 +498,10 @@ export function createWorkspace<
 							clearLocalData?: () => MaybePromise<void>;
 					  })
 					| void,
-				options?: { tags?: string[] },
 			) {
 				documentExtensionRegistrations.push({
 					key,
 					factory,
-					tags: options?.tags ?? [],
 				});
 				return buildClient({ extensions, state, actions });
 			},

@@ -54,8 +54,8 @@ export type AuthClient = {
 	/**
 	 * The current user, or `null` if not authenticated.
 	 *
-	 * Narrows the `AuthSession` nullable value once at the source so every
-	 * consumer doesn't repeat the same `session ? session.user : null` pattern.
+	 * Narrows the nullable session store once at the source so every
+	 * consumer doesn't repeat the same null-check pattern.
 	 *
 	 * @example
 	 * ```svelte
@@ -165,7 +165,7 @@ export type CreateAuthOptions = {
 	 * Called whenever the session is authenticated—construction (if a cached
 	 * session exists in the store), sign-in, session restore, or token refresh.
 	 *
-	 * Fires at construction time if `session.current` has encryption keys,
+	 * Fires at construction time if a cached session exists in the store,
 	 * then on every authenticated session update from Better Auth.
 	 * Consumers should use idempotent operations (e.g. `applyEncryptionKeys` is safe
 	 * to call repeatedly with the same keys).
@@ -308,7 +308,7 @@ export function createAuth({
 	// applied before the BA subscription's server roundtrip resolves.
 	// session.get() is sync for localStorage, async for chrome.storage.
 	const boot = session.get();
-	const applyBoot = (cached: AuthSession) => {
+	const applyBoot = (cached: AuthSession | null) => {
 		if (cached) onLogin?.(cached);
 	};
 	if (boot instanceof Promise) {

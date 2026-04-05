@@ -58,7 +58,7 @@
 				{} as Record<string, number>,
 			),
 		)
-			.sort(([, a], [, b]) => b - a)
+			.sort(([, a], [, b]) => (b as number) - (a as number))
 			.slice(0, 5),
 	);
 </script>
@@ -125,7 +125,7 @@
 							class="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs"
 						>
 							{model}
-							<span class="text-muted-foreground">{count.toLocaleString()}</span>
+						<span class="text-muted-foreground">{(count as number).toLocaleString()}</span>
 						</span>
 					{/each}
 				</div>

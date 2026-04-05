@@ -36,7 +36,7 @@
 
 	const sortedModels = $derived(
 		Object.entries(modelTotals)
-			.sort(([, a], [, b]) => b - a)
+			.sort(([, a], [, b]) => (b as number) - (a as number))
 			.slice(0, 10),
 	);
 </script>
@@ -71,7 +71,7 @@
 						<Table.Row>
 							<Table.Cell class="font-mono text-xs">{model}</Table.Cell>
 							<Table.Cell class="text-right tabular-nums">
-								{credits.toLocaleString()}
+						{(credits as number).toLocaleString()}
 							</Table.Cell>
 						</Table.Row>
 					{/each}

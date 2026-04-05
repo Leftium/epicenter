@@ -7,7 +7,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
-	import { api } from '$lib/api';
+	import { api, type AttachResponse, type PreviewResponse } from '$lib/api';
 	import { balanceQueryOptions, plansQueryOptions } from '$lib/query/billing';
 	import { queryClient } from '$lib/query/client';
 
@@ -106,22 +106,13 @@
 	);
 
 	const previewUpgrade = createMutation(() => ({
-		mutationFn: async (planId: string) => {
-			const res = await api.api.billing.preview.$post({ json: { planId } });
-			if (!res.ok) throw new Error('Failed to preview upgrade');
-			return res.json();
-		},
+		mutationFn: (planId: string) => api.billing.preview(planId),
 	}));
 
 	const attachPlan = createMutation(() => ({
-		mutationFn: async (planId: string) => {
-			const res = await api.api.billing.upgrade.$post({
-				json: { planId, successUrl: window.location.href },
-			});
-			if (!res.ok) throw new Error('Failed to upgrade');
-			return res.json();
-		},
-		onSuccess: (result: { paymentUrl?: string }) => {
+		mutationFn: (planId: string) =>
+			api.billing.upgrade(planId, window.location.href),
+		onSuccess: (result: AttachResponse) => {
 			if (result.paymentUrl) {
 				window.location.href = result.paymentUrl;
 			} else {
@@ -139,8 +130,8 @@
 		confirmDialog = { planId, planName };
 		previewData = null;
 		previewUpgrade.mutate(planId, {
-			onSuccess: (data) => {
-				previewData = data as { prorationAmount?: number; currency?: string };
+			onSuccess: (data: PreviewResponse) => {
+				previewData = data;
 			},
 		});
 	}
@@ -215,10 +206,11 @@
 								variant={eligibility === 'upgrade' ? 'default' : 'secondary'}
 								onclick={() => handleUpgradeClick(planId, display.name)}
 							>
-								{({
-									upgrade: `Upgrade to ${display.name}`,
-									downgrade: `Downgrade to ${display.name}`,
-								} as Record<string, string>)[eligibility ?? ''] ?? `Switch to ${display.name}`}
+								{eligibility === 'upgrade'
+									? `Upgrade to ${display.name}`
+									: eligibility === 'downgrade'
+										? `Downgrade to ${display.name}`
+										: `Switch to ${display.name}`}
 							</Button>
 						{/if}
 					</Card.Footer>

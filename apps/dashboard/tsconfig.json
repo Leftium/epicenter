@@ -3,5 +3,10 @@
 	"compilerOptions": {
 		"checkJs": true,
 		"types": ["bun-types"]
-	}
+	},
+	"include": [
+		"src/**/*.ts",
+		"src/**/*.svelte",
+		"../api/worker-configuration.d.ts"
+	]
 }

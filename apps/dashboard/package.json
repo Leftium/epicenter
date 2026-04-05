@@ -26,13 +26,11 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
-		"@epicenter/api": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
 		"@tanstack/svelte-query-devtools": "catalog:",
 		"bits-ui": "catalog:",
-		"hono": "catalog:",
 		"wellcrafted": "catalog:"
 	},
 	"license": "AGPL-3.0"

@@ -243,7 +243,8 @@ export function createEncryptedYkvLww<T>(
 
 	/**
 	 * Attempt to decrypt an entry. Returns a plaintext entry on success,
-	 * `undefined` on failure (with a console warning when a key is active).
+	 * `undefined` on failure. When a key IS active and decryption still fails,
+	 * logs a single warning with the entry key and actionable failure reason.
 	 */
 	const tryDecryptEntry = (
 		key: string,
@@ -254,11 +255,16 @@ export function createEncryptedYkvLww<T>(
 			entry.val,
 			textEncoder.encode(key),
 		);
-		if (json === undefined) {
-			if (encryption) console.warn(`[encrypted-kv] Failed to decrypt entry "${key}"`);
-			return undefined;
-		}
-		return { ...entry, val: JSON.parse(json) as T };
+		if (json !== undefined) return { ...entry, val: JSON.parse(json) as T };
+		if (!encryption) return undefined;
+
+		const blobVersion = getKeyVersion(entry.val);
+		const isKnownKeyVersion = encryption.keyring.has(blobVersion);
+		const reason = isKnownKeyVersion
+			? 'wrong key material or corrupted blob'
+			: `keyVersion=${blobVersion} not in keyring [${[...encryption.keyring.keys()].join(', ')}]`;
+		console.warn(`[encrypted-kv] Failed to decrypt entry "${key}": ${reason}`);
+		return undefined;
 	};
 
 	/** Silent decrypt—returns plaintext value or `undefined`. No console warning. */

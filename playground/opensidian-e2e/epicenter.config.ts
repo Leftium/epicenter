@@ -22,7 +22,8 @@ import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdow
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import slugify from '@sindresorhus/slugify';
 import filenamify from 'filenamify';
-import { createOpensidian } from 'opensidian/workspace';
+import { createWorkspace } from '@epicenter/workspace';
+import { opensidianDefinition } from 'opensidian/workspace';
 
 const SERVER_URL = 'https://api.epicenter.so';
 const PERSISTENCE_DIR = join(import.meta.dir, '.epicenter', 'persistence');
@@ -51,7 +52,7 @@ const safeUnlink = (filePath: string) => unlink(filePath).catch(() => {});
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-export const opensidian = createOpensidian()
+export const opensidian = createWorkspace(opensidianDefinition)
 	.withWorkspaceExtension('persistence', (ctx) =>
 		persistence(ctx, {
 			filePath: join(PERSISTENCE_DIR, 'opensidian.db'),

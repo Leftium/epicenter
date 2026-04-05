@@ -22,7 +22,7 @@ import { makeInternalHref } from '@epicenter/filesystem';
  */
 type WikilinkAutocompleteConfig = {
 	/** Return all files available for linking. Called on every completion request. */
-	getFiles: () => Array<{ id: FileId; name: string; parentId: FileId | null }>;
+	getFiles: () => Array<{ id: FileId; name: string }>;
 };
 
 /**

@@ -1,6 +1,13 @@
 <script lang="ts">
 	import * as Tabs from '@epicenter/ui/tabs';
+	import CreditBalance from '$lib/components/CreditBalance.svelte';
+	import UsageChart from '$lib/components/UsageChart.svelte';
+	import TopModels from '$lib/components/TopModels.svelte';
+	import ModelCostGuide from '$lib/components/ModelCostGuide.svelte';
+	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
 </script>
+
+<CreditBalance />
 
 <Tabs.Root value="overview">
 	<Tabs.List>
@@ -9,21 +16,16 @@
 		<Tabs.Trigger value="activity">Activity</Tabs.Trigger>
 	</Tabs.List>
 
-	<Tabs.Content value="overview">
-		<div class="py-6 text-muted-foreground">
-			Overview tab — credits, usage chart, top models (Wave 5)
-		</div>
+	<Tabs.Content value="overview" class="pt-6">
+		<UsageChart />
+		<TopModels />
 	</Tabs.Content>
 
-	<Tabs.Content value="models">
-		<div class="py-6 text-muted-foreground">
-			Models tab — model cost guide (Wave 5)
-		</div>
+	<Tabs.Content value="models" class="pt-6">
+		<ModelCostGuide />
 	</Tabs.Content>
 
-	<Tabs.Content value="activity">
-		<div class="py-6 text-muted-foreground">
-			Activity tab — event feed (Wave 5)
-		</div>
+	<Tabs.Content value="activity" class="pt-6">
+		<ActivityFeed />
 	</Tabs.Content>
 </Tabs.Root>

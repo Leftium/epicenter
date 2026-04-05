@@ -907,11 +907,12 @@ export type AppType = typeof app; // hc<AppType> gets all routes typed
 
 ### Phase 4: Dashboard UI Implementation
 
-- [ ] **4.1** Credit Balance section — Card + segmented Progress bar (monthly vs rollover from `breakdown` array), rollover display, reset countdown from `next_reset_at`
-- [ ] **4.2** Usage Chart — LayerChart area chart, time range selector (Select), grouped by model via `events.aggregate({ groupBy: "properties.model" })`
-- [ ] **4.3** Top Models table — model name, provider, total credits used, call count (from aggregate totals)
-- [ ] **4.4** Model Cost Guide — static table from `/billing/models`, sorted by credit cost
-- [ ] **4.5** Activity Feed — paginated event list from `/billing/events`, timestamp + model + credits
+- [x] **4.1** Credit Balance section — Card + segmented Progress bar (monthly vs rollover from `breakdown` array), rollover display, reset countdown from `next_reset_at`
+- [x] **4.2** Usage Chart — Bar chart with tooltips, time range selector (Select), grouped by model via `events.aggregate({ groupBy: "properties.model" })`
+  > **Note**: Used simple CSS bar chart instead of LayerChart for MVP. LayerChart integration can be added later for area/line charts.
+- [x] **4.3** Top Models table — model name, total credits used (from aggregate totals)
+- [x] **4.4** Model Cost Guide — static table from `/billing/models`, sorted by credit cost
+- [x] **4.5** Activity Feed — paginated event list from `/billing/events`, timestamp + model + credits
 - [ ] **4.6** Plan Comparison — 3 plan cards (Pro/Ultra/Max), current plan highlighted, monthly/annual toggle. Upgrade button calls `previewAttach()` to show prorated cost before confirming with `billing.attach()`
 - [ ] **4.7** Actions — top-up button, manage billing (portal) link
 

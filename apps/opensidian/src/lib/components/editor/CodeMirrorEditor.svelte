@@ -26,7 +26,7 @@
 	}: {
 		ytext: Y.Text;
 		onNavigate: (fileId: FileId) => void;
-		resolveTitle: (fileId: FileId) => string | null;
+		resolveTitle?: (fileId: FileId) => string | null;
 		getFiles: () => Array<{ id: FileId; name: string; parentId: FileId | null }>;
 	} = $props();
 

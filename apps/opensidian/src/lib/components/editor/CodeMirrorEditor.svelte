@@ -12,13 +12,22 @@
 		keymap,
 		placeholder,
 	} from '@codemirror/view';
+	import type { FileId } from '@epicenter/filesystem';
 	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 	import type * as Y from 'yjs';
+	import { linkDecorations } from './extensions/link-decorations';
+	import { wikilinkAutocomplete } from './extensions/wikilink-autocomplete';
 
 	let {
 		ytext,
+		onNavigate,
+		resolveTitle,
+		getFiles,
 	}: {
 		ytext: Y.Text;
+		onNavigate: (fileId: FileId) => void;
+		resolveTitle: (fileId: FileId) => string | null;
+		getFiles: () => Array<{ id: FileId; name: string; parentId: FileId | null }>;
 	} = $props();
 
 	let container: HTMLDivElement | undefined = $state();
@@ -37,6 +46,8 @@
 					markdown(),
 					yCollab(ytext, null),
 					placeholder('Empty file'),
+					linkDecorations({ onNavigate, resolveTitle }),
+					wikilinkAutocomplete({ getFiles }),
 					EditorView.theme({
 						'&': {
 							height: '100%',

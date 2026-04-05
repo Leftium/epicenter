@@ -230,34 +230,21 @@ export function createEncryptedYkvLww<T>(
 		try {
 			return decryptValue(blob, state.currentKey, aad);
 		} catch {
-			/* fall through to version-directed lookup */
+			/* fast path miss — try version-directed lookup */
 		}
-		const blobVersion = getKeyVersion(blob);
-		const versionKey = state.keyring.get(blobVersion);
-		if (!versionKey) {
-			console.warn(
-				`[encrypted-kv] Blob keyVersion=${blobVersion} not in keyring [${[...state.keyring.keys()].join(',')}]`,
-			);
-			return undefined;
-		}
-		if (versionKey === state.currentKey) {
-			// Already tried this key above
-			return undefined;
-		}
+		const versionKey = state.keyring.get(getKeyVersion(blob));
+		if (!versionKey || versionKey === state.currentKey) return undefined;
 		try {
 			return decryptValue(blob, versionKey, aad);
-		} catch (err) {
-			console.warn(
-				`[encrypted-kv] Fallback key (v${blobVersion}) also failed. ` +
-					`Error: ${err instanceof Error ? err.message : err}`,
-			);
+		} catch {
+			return undefined;
 		}
-		return undefined;
 	};
 
 	/**
 	 * Attempt to decrypt an entry. Returns a plaintext entry on success,
-	 * `undefined` on failure (with a console warning for diagnostics).
+	 * `undefined` on failure. When a key IS active and decryption still fails,
+	 * logs a single consolidated warning with the entry key and failure reason.
 	 */
 	const tryDecryptEntry = (
 		key: string,
@@ -268,8 +255,14 @@ export function createEncryptedYkvLww<T>(
 			entry.val,
 			textEncoder.encode(key),
 		);
-		if (!json) {
-			if (encryption) console.warn(`[encrypted-kv] Failed to decrypt entry "${key}"`);
+		if (json === undefined) {
+			if (encryption) {
+				const blobVersion = getKeyVersion(entry.val);
+				const reason = !encryption.keyring.has(blobVersion)
+					? `keyVersion=${blobVersion} not in keyring [${[...encryption.keyring.keys()].join(',')}]`
+					: 'decryption failed (wrong key material or corrupted blob)';
+				console.warn(`[encrypted-kv] Failed to decrypt entry "${key}": ${reason}`);
+			}
 			return undefined;
 		}
 		return { ...entry, val: JSON.parse(json) as T };

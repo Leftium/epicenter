@@ -1,4 +1,4 @@
-# OpenSidian Tree View Component Adoption
+# Opensidian Tree View Component Adoption
 
 **Date**: 2026-03-13
 **Status**: Implemented
@@ -6,13 +6,13 @@
 
 ## Overview
 
-Evaluate whether to replace OpenSidian's custom `TreeNode.svelte` (177 lines) with the `TreeView` component from `shadcn-svelte-extras`, which is already configured as a registry in the UI package (`jsrepo.config.ts` → `@ieedan/shadcn-svelte-extras`).
+Evaluate whether to replace Opensidian's custom `TreeNode.svelte` (177 lines) with the `TreeView` component from `shadcn-svelte-extras`, which is already configured as a registry in the UI package (`jsrepo.config.ts` → `@ieedan/shadcn-svelte-extras`).
 
 ## Motivation
 
 ### Current State
 
-OpenSidian renders its file tree with two custom components:
+Opensidian renders its file tree with two custom components:
 
 **`FileTree.svelte`** (34 lines) — the root container:
 ```svelte
@@ -58,7 +58,7 @@ This is structurally identical to what TreeNode already does manually.
 
 ## Research Findings
 
-### What TreeView Provides vs What OpenSidian Needs
+### What TreeView Provides vs What Opensidian Needs
 
 | Capability | TreeView (extras) | Current TreeNode | Gap |
 |---|---|---|---|
@@ -72,7 +72,7 @@ This is structurally identical to what TreeNode already does manually.
 | Data binding | ❌ Static props only | ✅ Reactive fsState integration | **TreeView lacks this** |
 | Accessibility (`role`) | Partial | ✅ `role="tree"` / `role="treeitem"` | TreeNode is better |
 
-**Key finding**: The extras Tree View is a thin wrapper around Collapsible with folder/file semantics. It provides structural correctness (the right nesting pattern) but not the interactive features OpenSidian needs (selection, context menus, CRUD, reactive data binding).
+**Key finding**: The extras Tree View is a thin wrapper around Collapsible with folder/file semantics. It provides structural correctness (the right nesting pattern) but not the interactive features Opensidian needs (selection, context menus, CRUD, reactive data binding).
 
 ### What Migration Would Look Like
 
@@ -83,7 +83,7 @@ To adopt TreeView, you'd:
 3. Split `TreeNode.svelte` into a wrapper that renders `<TreeView.Folder>` or `<TreeView.File>`
 4. **Still need custom logic for**: selection highlighting, context menu integration, depth-aware CRUD dialog triggers, reactive fsState binding
 
-The wrapper component would still be ~100+ lines because all the OpenSidian-specific behavior (selection, context menus, CRUD) lives outside what TreeView provides.
+The wrapper component would still be ~100+ lines because all the Opensidian-specific behavior (selection, context menus, CRUD) lives outside what TreeView provides.
 
 ### Honest Assessment
 
@@ -99,7 +99,7 @@ But it doesn't give you:
 - Any data-binding patterns
 - CRUD integration
 
-OpenSidian's TreeNode already handles all of these. The Tree View component would replace maybe 40% of TreeNode's code (the structural rendering), while the other 60% (behavior, state, interactions) would remain custom.
+Opensidian's TreeNode already handles all of these. The Tree View component would replace maybe 40% of TreeNode's code (the structural rendering), while the other 60% (behavior, state, interactions) would remain custom.
 
 ## Design Decisions
 
@@ -175,7 +175,7 @@ The net effect: `TreeNode.svelte` (177 lines) becomes `FileTreeItem.svelte` (~12
 ### TreeView Styling Conflicts
 
 1. The extras TreeView applies its own Tailwind classes for spacing and hover
-2. OpenSidian's current TreeNode also applies hover/focus classes
+2. Opensidian's current TreeNode also applies hover/focus classes
 3. Merging may cause double-styling. Need to audit and remove redundant classes.
 
 ### Controlled vs Uncontrolled Expansion
@@ -188,15 +188,15 @@ The net effect: `TreeNode.svelte` (177 lines) becomes `FileTreeItem.svelte` (~12
 
 1. **Is the code reduction worth the migration cost?**
    - The structural win is ~50 lines (Collapsible boilerplate). The total component stays ~120 lines.
-   - **Recommendation**: Yes, but primarily for design system alignment, not line count. Being on the standard Tree View means upstream improvements (keyboard navigation, accessibility) benefit OpenSidian automatically.
+   - **Recommendation**: Yes, but primarily for design system alignment, not line count. Being on the standard Tree View means upstream improvements (keyboard navigation, accessibility) benefit Opensidian automatically.
 
 2. **Should we wait for the extras Tree View to add selection/keyboard nav?**
    - The extras Tree View is young. It may gain selection and keyboard navigation later.
    - **Recommendation**: Don't wait. Adopt now with custom selection logic. If extras adds selection later, refactor to use it.
 
-3. **Should the `FileTreeItem` wrapper live in OpenSidian or in `@epicenter/ui`?**
+3. **Should the `FileTreeItem` wrapper live in Opensidian or in `@epicenter/ui`?**
    - Options: (a) `apps/opensidian/src/lib/components/FileTreeItem.svelte`, (b) `packages/ui/src/file-tree/`
-   - **Recommendation**: (a) — it's OpenSidian-specific (binds to `fsState`). If other apps need a file tree, extract then.
+   - **Recommendation**: (a) — it's Opensidian-specific (binds to `fsState`). If other apps need a file tree, extract then.
 
 ## Success Criteria
 
@@ -223,12 +223,12 @@ The net effect: `TreeNode.svelte` (177 lines) becomes `FileTreeItem.svelte` (~12
 
 ### Summary
 
-Replaced OpenSidian's custom `TreeNode.svelte` (140 lines) with `FileTreeItem.svelte` (128 lines) backed by `TreeView.Folder` and `TreeView.File` from shadcn-svelte-extras. The installed tree-view component was customized to support controlled open state (`onOpenChange` forwarded to Collapsible.Root) and style forwarding for depth-based indentation.
+Replaced Opensidian's custom `TreeNode.svelte` (140 lines) with `FileTreeItem.svelte` (128 lines) backed by `TreeView.Folder` and `TreeView.File` from shadcn-svelte-extras. The installed tree-view component was customized to support controlled open state (`onOpenChange` forwarded to Collapsible.Root) and style forwarding for depth-based indentation.
 
 ### Changes Made
 
 1. **Installed tree-view** via `bunx jsrepo add tree-view` in `packages/ui/`
-2. **Customized `tree-view-folder.svelte`**: Added `onOpenChange` and `style` props; removed tree-line nesting from `Collapsible.Content` to match OpenSidian's padding-based indentation
+2. **Customized `tree-view-folder.svelte`**: Added `onOpenChange` and `style` props; removed tree-line nesting from `Collapsible.Content` to match Opensidian's padding-based indentation
 3. **Updated `types.ts`**: Extended `TreeViewFolderProps` with `onOpenChange` and `style`
 4. **Modified `tree-view.svelte`**: Added `...rest` forwarding so `role="tree"` can be passed
 5. **Created `FileTreeItem.svelte`**: New recursive wrapper using TreeView.Folder/File with all existing behavior (selection, context menu, CRUD dialogs, keyboard handlers)

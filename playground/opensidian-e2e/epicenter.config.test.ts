@@ -1,5 +1,5 @@
 /**
- * End-to-end test: OpenSidian workspace through the CLI pipeline.
+ * End-to-end test: Opensidian workspace through the CLI pipeline.
  *
  * Verifies that the opensidian workspace (filesystem-backed note-taking)
  * works end-to-end with persistence and document content.

@@ -1,4 +1,4 @@
-# OpenSidian SQLite Index Extension
+# Opensidian SQLite Index Extension
 
 **Date**: 2026-03-13
 **Status**: Draft
@@ -12,7 +12,7 @@ A workspace extension that mirrors the Yjs CRDT filesystem into a local SQLite d
 
 ### Current State
 
-OpenSidian's filesystem is backed by Yjs CRDTs via `@epicenter/filesystem`. The `FileTree` class provides reactive indexes for path lookups and parent-child queries:
+Opensidian's filesystem is backed by Yjs CRDTs via `@epicenter/filesystem`. The `FileTree` class provides reactive indexes for path lookups and parent-child queries:
 
 ```typescript
 const ws = createWorkspace({ id: 'opensidian', tables: { files: filesTable } })
@@ -61,7 +61,7 @@ await ws.extensions.sqliteIndex.rebuild();
 
 ### Browser SQLite Options
 
-OpenSidian is a SvelteKit web app (no Tauri backend). SQLite must run in the browser via WASM.
+Opensidian is a SvelteKit web app (no Tauri backend). SQLite must run in the browser via WASM.
 
 | Option | Browser Support | Drizzle Adapter | Maturity | Notes |
 |---|---|---|---|---|
@@ -72,7 +72,7 @@ OpenSidian is a SvelteKit web app (no Tauri backend). SQLite must run in the bro
 
 **Key finding**: sql.js is the safest choice for browser today. It has the most ecosystem support and a first-class Drizzle adapter.
 
-**Turso/libSQL upgrade path**: If OpenSidian later needs remote sync (sharing indexes across devices), the schema stays identical—only the driver changes from sql.js to `@libsql/client`. Turso's "embedded replicas" pattern (local SQLite that syncs to a remote Turso database) maps perfectly to this architecture. The local SQLite index remains the read surface; the remote database becomes the sync target.
+**Turso/libSQL upgrade path**: If Opensidian later needs remote sync (sharing indexes across devices), the schema stays identical—only the driver changes from sql.js to `@libsql/client`. Turso's "embedded replicas" pattern (local SQLite that syncs to a remote Turso database) maps perfectly to this architecture. The local SQLite index remains the read surface; the remote database becomes the sync target.
 
 ### Turso Platform
 
@@ -267,9 +267,9 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 - [x] **2.3** Return ranked results with highlighted snippets via `snippet()` function
 - [x] **2.4** Handle content-less files (folders, binary) gracefully in FTS
 
-### Phase 3: OpenSidian Integration
+### Phase 3: Opensidian Integration
 
-- [x] **3.1** Wire extension into OpenSidian's workspace: `.withWorkspaceExtension('sqliteIndex', createSqliteIndex())`
+- [x] **3.1** Wire extension into Opensidian's workspace: `.withWorkspaceExtension('sqliteIndex', createSqliteIndex())`
 - [ ] **3.2** Create a search service in `apps/opensidian/src/lib/fs/` that wraps the extension's `search()` method
 - [ ] **3.3** Expose rebuild/status in the UI (e.g., "Index: 1,234 files" in the status bar)
 
@@ -378,4 +378,4 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 
 - All existing tests pass: 189 pass, 0 fail (packages/filesystem)
 - LSP diagnostics clean on all changed files (schema.ts, index.ts, index.ts barrel, fs-state.svelte.ts)
-- Extension is purely additive—no existing code was modified beyond the barrel export and OpenSidian wiring
+- Extension is purely additive—no existing code was modified beyond the barrel export and Opensidian wiring

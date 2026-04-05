@@ -1,7 +1,7 @@
 /**
- * OpenSidian workspace config — one-way materialization to markdown files.
+ * Opensidian workspace config — one-way materialization to markdown files.
  *
- * Syncs the OpenSidian workspace from the Epicenter API, persists the files
+ * Syncs the Opensidian workspace from the Epicenter API, persists the files
  * table to SQLite, and materializes each file as a `.md` on disk with YAML
  * frontmatter (metadata) and markdown body (document content).
  *

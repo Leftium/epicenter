@@ -18,7 +18,6 @@ import { join } from 'node:path';
 import { generateId } from '@epicenter/workspace';
 import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
 import { persistence } from '@epicenter/workspace/extensions/persistence/sqlite';
-import { YAML } from 'bun';
 import { createOpensidian, opensidianDefinition } from 'opensidian/workspace';
 import { pushFromMarkdown } from './push-from-markdown';
 

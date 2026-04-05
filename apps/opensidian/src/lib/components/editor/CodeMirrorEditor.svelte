@@ -10,8 +10,8 @@
 	} from '@codemirror/view';
 	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 	import type * as Y from 'yjs';
+	import { editorState } from '$lib/state/editor-state.svelte';
 	import { markdownHighlighting } from './extensions/markdown-highlight';
-	import { vimModeExtension } from './extensions/vim-mode';
 
 	let {
 		ytext,
@@ -30,7 +30,7 @@
 			state: EditorState.create({
 				doc: ytext.toString(),
 				extensions: [
-					vimModeExtension(),
+					...editorState.extension(),
 					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
 					drawSelection(),
 					EditorView.lineWrapping,
@@ -67,8 +67,12 @@
 			}),
 			parent: container,
 		});
+		editorState.attach(view);
 
-		return () => view.destroy();
+		return () => {
+			view.destroy();
+			editorState.detach();
+		};
 	});
 </script>
 

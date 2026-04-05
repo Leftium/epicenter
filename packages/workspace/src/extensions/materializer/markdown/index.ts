@@ -1,6 +1,7 @@
 export {
 	type MarkdownMaterializerConfig,
 	markdownMaterializer,
+	toMarkdown,
 } from './markdown.js';
 export {
 	bodyFieldSerializer,

@@ -13,15 +13,14 @@
  *   epicenter list files -C playground/opensidian-e2e
  */
 
-import { readdir, mkdir, unlink } from 'node:fs/promises';
+import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createSessionStore, resolveEpicenterHome } from '@epicenter/cli';
-import { convertInternalLinksToWikilinks, convertWikilinksToInternalLinks, type FileRow } from '@epicenter/filesystem';
+import { convertInternalLinksToWikilinks, type FileRow } from '@epicenter/filesystem';
 import { persistence } from '@epicenter/workspace/extensions/persistence/sqlite';
-import { parseMarkdownFile } from '@epicenter/workspace/extensions/materializer/markdown';
+import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import slugify from '@sindresorhus/slugify';
-import { YAML } from 'bun';
 import filenamify from 'filenamify';
 import { createOpensidian } from 'opensidian/workspace';
 
@@ -47,109 +46,8 @@ function toFilename(row: FileRow): string {
 	return `${row.id}.md`;
 }
 
-/** Assemble YAML frontmatter + optional markdown body. */
-function toMarkdown(
-	frontmatter: Record<string, unknown>,
-	body?: string,
-): string {
-	const cleaned: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(frontmatter)) {
-		if (value !== undefined) cleaned[key] = value;
-	}
-	const yaml = YAML.stringify(cleaned, null, 2);
-	const yamlBlock = yaml.endsWith('\n') ? yaml : `${yaml}\n`;
-	return body !== undefined && body.length > 0
-		? `---\n${yamlBlock}---\n\n${body}\n`
-		: `---\n${yamlBlock}---\n`;
-}
-
 /** Delete a file, silently succeeding if it doesn't exist. */
 const safeUnlink = (filePath: string) => unlink(filePath).catch(() => {});
-
-// ─── Import ─────────────────────────────────────────────────────────────────────
-
-/**
- * Read `.md` files from a directory and import them into the workspace.
- *
- * Frontmatter fields map to the files table row. The markdown body is
- * written to the per-file document content Y.Doc. Files without a string
- * `id` in frontmatter are skipped.
- */
-export async function pushFromMarkdown(ctx: {
-	tables: (typeof opensidian)['tables'];
-	documents: (typeof opensidian)['documents'];
-	filesDir?: string;
-}): Promise<{ imported: number; skipped: number; errors: string[] }> {
-	const dir = ctx.filesDir ?? join(MARKDOWN_DIR, 'files');
-	let imported = 0;
-	let skipped = 0;
-	const errors: string[] = [];
-
-	let entries: string[];
-	try {
-		entries = await readdir(dir);
-	} catch {
-		return { imported, skipped, errors };
-	}
-
-	for (const filename of entries) {
-		if (!filename.endsWith('.md')) continue;
-
-		let content: string;
-		try {
-			content = await Bun.file(join(dir, filename)).text();
-		} catch (error) {
-			errors.push(`Failed to read ${filename}: ${error}`);
-			continue;
-		}
-
-		const parsed = parseMarkdownFile(content);
-		if (!parsed) {
-			skipped++;
-			continue;
-		}
-
-		const { frontmatter, body } = parsed;
-		if (typeof frontmatter.id !== 'string') {
-			skipped++;
-			continue;
-		}
-
-		try {
-			ctx.tables.files.set({
-				id: frontmatter.id as FileRow['id'],
-				name: String(frontmatter.name ?? ''),
-				parentId: (frontmatter.parentId as FileRow['parentId']) ?? null,
-				type: 'file',
-				size: Number(frontmatter.size ?? 0),
-				createdAt: Number(frontmatter.createdAt ?? Date.now()),
-				updatedAt: Number(frontmatter.updatedAt ?? Date.now()),
-				trashedAt: frontmatter.trashedAt != null ? Number(frontmatter.trashedAt) : null,
-				_v: 1,
-			});
-		} catch (error) {
-			errors.push(`Failed to set row ${frontmatter.id} from ${filename}: ${error}`);
-			continue;
-		}
-
-		if (body) {
-			try {
-				const resolvedBody = convertWikilinksToInternalLinks(body, (name) => {
-					const match = ctx.tables.files.find((row) => row.name === name);
-					return match?.id ?? null;
-				});
-				const handle = await ctx.documents.files.content.open(frontmatter.id as FileRow['id']);
-				handle.write(resolvedBody);
-			} catch (error) {
-				errors.push(`Failed to write content for ${frontmatter.id}: ${error}`);
-			}
-		}
-
-		imported++;
-	}
-
-	return { imported, skipped, errors };
-}
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 

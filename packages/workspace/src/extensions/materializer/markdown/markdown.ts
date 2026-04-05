@@ -16,7 +16,7 @@ import { defaultSerializer, type MarkdownSerializer } from './serializers.js';
  * (missing key); null values are preserved (YAML `null`) so nullable
  * fields survive a future round-trip.
  */
-function toMarkdown(
+export function toMarkdown(
 	frontmatter: Record<string, unknown>,
 	body?: string,
 ): string {

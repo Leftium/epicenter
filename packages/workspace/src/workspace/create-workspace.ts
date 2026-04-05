@@ -57,7 +57,7 @@ import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
 import type { YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import {
 	createEncryptedYkvLww,
-	type YKeyValueLwwEncrypted,
+	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { createAwareness } from './create-awareness.js';
 import { createDocuments } from './create-document.js';
@@ -154,7 +154,7 @@ export function createWorkspace<
 	// ── Encrypted stores (all table stores + KV store) ─────────────────────
 	// The workspace owns this list so it can coordinate activateEncryption
 	// across all stores simultaneously via applyEncryptionKeys().
-	const encryptedStores: readonly YKeyValueLwwEncrypted<unknown>[] = [
+	const encryptedStores: readonly EncryptedYKeyValueLww<unknown>[] = [
 		...tableEntries.map(({ store }) => store),
 		kvStore,
 	];

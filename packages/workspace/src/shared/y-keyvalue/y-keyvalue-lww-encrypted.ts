@@ -48,7 +48,7 @@
  *
  * The observer wraps decrypt with try/catch. A failed decrypt skips the entry
  * and logs a warning instead of throwing. This prevents one bad blob from
- * crashing all observation. `failedDecryptCount` exposes the count.
+ * crashing all observation. `unreadableEntryCount` exposes the count.
  *
  * ## Related Modules
  *
@@ -73,7 +73,7 @@ import {
 
 const textEncoder = new TextEncoder();
 /** Transaction origin for re-encryption writes. Observer skips events with this origin. */
-const RE_ENCRYPT = Symbol('re-encrypt');
+const REENCRYPT_ORIGIN = Symbol('re-encrypt');
 
 /**
  * Change handler for the encrypted KV wrapper.
@@ -82,7 +82,7 @@ const RE_ENCRYPT = Symbol('re-encrypt');
  * for synthetic events emitted during `activateEncryption()` (which have
  * no backing Yjs transaction).
  */
-export type EncryptedKvChangeHandler<T> = (
+export type EncryptedKvObserver<T> = (
 	changes: Map<string, YKeyValueLwwChange<T>>,
 	origin: unknown,
 ) => void;
@@ -95,18 +95,18 @@ type EncryptionState = {
 
 /**
  * Return type of `createEncryptedYkvLww`. Same API surface as `YKeyValueLww<T>`
- * plus encryption-specific members (`failedDecryptCount`, `activateEncryption`).
+ * plus encryption-specific members (`unreadableEntryCount`, `activateEncryption`).
  * All values exposed through this type are **plaintext**—encryption is fully
  * transparent to consumers.
  */
-export type YKeyValueLwwEncrypted<T> = {
+export type EncryptedYKeyValueLww<T> = {
 	set(key: string, val: T): void;
 	get(key: string): T | undefined;
 	has(key: string): boolean;
 	delete(key: string): void;
 	entries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
-	observe(handler: EncryptedKvChangeHandler<T>): void;
-	unobserve(handler: EncryptedKvChangeHandler<T>): void;
+	observe(handler: EncryptedKvObserver<T>): void;
+	unobserve(handler: EncryptedKvObserver<T>): void;
 
 	/**
 	 * Activate encryption with a versioned keyring. The highest-version key
@@ -140,7 +140,7 @@ export type YKeyValueLwwEncrypted<T> = {
 	 *
 	 * Computed by iterating `inner.map` and counting undecryptable entries.
 	 */
-	readonly failedDecryptCount: number;
+	readonly unreadableEntryCount: number;
 
 	/**
 	 * Iterate all decryptable entries. Decrypts on the fly from the inner
@@ -149,10 +149,10 @@ export type YKeyValueLwwEncrypted<T> = {
 	 * TableHelper uses this for `getAll()`, `filter()`, `find()`, `clear()`.
 	 * Entries that cannot be decrypted are silently omitted.
 	 */
-	decryptedEntries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
+	readableEntries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
 
 	/** Count of decryptable entries. TableHelper uses this for `count()`. */
-	readonly decryptedSize: number;
+	readonly readableEntryCount: number;
 
 	/** The underlying Y.Array. Contains **ciphertext** when a key is active. */
 	readonly yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>;
@@ -184,14 +184,14 @@ export type YKeyValueLwwEncrypted<T> = {
 export function createEncryptedYkvLww<T>(
 	yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>,
 	initialKeyring?: ReadonlyMap<number, Uint8Array>,
-): YKeyValueLwwEncrypted<T> {
+): EncryptedYKeyValueLww<T> {
 	/**
 	 * The inner LWW store. It sees `EncryptedBlob | T` as its value type—it
 	 * doesn't know or care that some values are ciphertext. Timestamps, conflict
 	 * resolution, and observer mechanics all live here.
 	 */
 	const inner = new YKeyValueLww<EncryptedBlob | T>(yarray);
-	const changeHandlers = new Set<EncryptedKvChangeHandler<T>>();
+	const changeHandlers = new Set<EncryptedKvObserver<T>>();
 
 	/** Active encryption state. `undefined` = passthrough mode. */
 	let encryption: EncryptionState | undefined;
@@ -211,17 +211,20 @@ export function createEncryptedYkvLww<T>(
 	}
 
 	/**
-	 * Decrypt an encrypted blob with version-directed keyring fallback.
+	 * Best-effort blob decryption with keyring fallback.
 	 *
-	 * Tries currentKey first (fast path for latest-version blobs).
-	 * Falls back to version-directed lookup from the keyring when
-	 * currentKey fails (handles blobs encrypted with older key versions).
+	 * Tries currentKey first (most blobs use the latest version).
+	 * On failure, reads the blob's embedded key version and tries
+	 * the matching key from the keyring.
 	 *
-	 * @param state - Explicit encryption state to use. Defaults to the
-	 *   current closure state. Overridden during `activateEncryption()` to
-	 *   compare before/after readability.
+	 * Pure function—no logging, no side effects. Callers decide
+	 * what to do with `undefined` (warn, skip, etc.).
+	 *
+	 * @param state - Defaults to the closure's `encryption`. Overridden by
+	 *   `activateEncryption()` to compare before/after readability without
+	 *   mutating the closure mid-iteration.
 	 */
-	const decryptBlobWithFallback = (
+	const tryDecryptBlob = (
 		blob: EncryptedBlob,
 		aad: Uint8Array,
 		state: EncryptionState | undefined = encryption,
@@ -230,37 +233,41 @@ export function createEncryptedYkvLww<T>(
 		try {
 			return decryptValue(blob, state.currentKey, aad);
 		} catch {
-			/* fall through to version-directed lookup */
+			// Current key didn't work — try the blob's recorded key version
 		}
 		const versionKey = state.keyring.get(getKeyVersion(blob));
-		if (versionKey && versionKey !== state.currentKey) {
-			try {
-				return decryptValue(blob, versionKey, aad);
-			} catch {
-				/* fall through */
-			}
+		if (!versionKey || versionKey === state.currentKey) return undefined; // Missing version, or same key we already tried
+		try {
+			return decryptValue(blob, versionKey, aad);
+		} catch {
+			return undefined;
 		}
-		return undefined;
 	};
 
 	/**
 	 * Attempt to decrypt an entry. Returns a plaintext entry on success,
-	 * `undefined` on failure (with a console warning for diagnostics).
+	 * `undefined` on failure. When a key IS active and decryption still fails,
+	 * logs a single warning with the entry key and actionable failure reason.
 	 */
 	const tryDecryptEntry = (
 		key: string,
 		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
 	): YKeyValueLwwEntry<T> | undefined => {
-		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T };
-		const json = decryptBlobWithFallback(
+		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T }; // Plaintext — nothing to decrypt
+		const json = tryDecryptBlob(
 			entry.val,
 			textEncoder.encode(key),
 		);
-		if (!json) {
-			console.warn(`[encrypted-kv] Failed to decrypt entry "${key}"`);
-			return undefined;
-		}
-		return { ...entry, val: JSON.parse(json) as T };
+		if (json !== undefined) return { ...entry, val: JSON.parse(json) as T };
+		if (!encryption) return undefined; // No key loaded yet — skip silently, activateEncryption() will catch up
+
+		const blobVersion = getKeyVersion(entry.val);
+		const isKnownKeyVersion = encryption.keyring.has(blobVersion);
+		const reason = isKnownKeyVersion
+			? 'wrong key material or corrupted blob'
+			: `keyVersion=${blobVersion} not in keyring [${[...encryption.keyring.keys()].join(', ')}]`;
+		console.warn(`[encrypted-kv] Failed to decrypt entry "${key}": ${reason}`);
+		return undefined;
 	};
 
 	/** Silent decrypt—returns plaintext value or `undefined`. No console warning. */
@@ -270,13 +277,13 @@ export function createEncryptedYkvLww<T>(
 		state: EncryptionState | undefined = encryption,
 	): T | undefined => {
 		if (!isEncryptedBlob(raw)) return raw as T;
-		const json = decryptBlobWithFallback(raw, aad, state);
+		const json = tryDecryptBlob(raw, aad, state);
 		if (!json) return undefined;
 		return JSON.parse(json) as T;
 	};
 
-	/** Count entries in inner.map that can be decrypted with the current keyring. */
-	const countDecryptableInMap = (): number => {
+	/** Count entries that can be decrypted (or are plaintext) with the current keyring. */
+	const countDecryptable = (): number => {
 		let count = 0;
 		for (const [key, entry] of inner.map)
 			if (tryDecryptValue(entry.val, textEncoder.encode(key)) !== undefined)
@@ -296,14 +303,14 @@ export function createEncryptedYkvLww<T>(
 
 	/**
 	 * Inner observer. When entries change in the CRDT, decrypt and forward
-	 * plaintext change events to registered handlers. Skips RE_ENCRYPT writes
+	 * plaintext change events to registered handlers. Skips REENCRYPT_ORIGIN writes
 	 * (those are internal re-encryption during activation, not user changes).
 	 */
 	const observer: Parameters<typeof inner.observe>[0] = (
 		changes,
 		transaction,
 	) => {
-		if (transaction.origin === RE_ENCRYPT) return;
+		if (transaction.origin === REENCRYPT_ORIGIN) return;
 		const decryptedChanges = new Map<string, YKeyValueLwwChange<T>>();
 		for (const [key, change] of changes) {
 			if (change.action === 'delete') {
@@ -414,7 +421,7 @@ export function createEncryptedYkvLww<T>(
 							nextEncryption.currentVersion,
 						),
 					);
-			}, RE_ENCRYPT);
+			}, REENCRYPT_ORIGIN);
 
 			if (newlyReadable.size === 0) return;
 			const syntheticChanges = new Map<string, YKeyValueLwwChange<T>>();
@@ -423,14 +430,14 @@ export function createEncryptedYkvLww<T>(
 			for (const handler of changeHandlers)
 				handler(syntheticChanges, undefined);
 		},
-		get failedDecryptCount() {
-			return inner.map.size - countDecryptableInMap();
+		get unreadableEntryCount() {
+			return inner.map.size - countDecryptable();
 		},
-		*decryptedEntries() {
+		*readableEntries() {
 			yield* iterateDecrypted(inner.entries());
 		},
-		get decryptedSize() {
-			return countDecryptableInMap();
+		get readableEntryCount() {
+			return countDecryptable();
 		},
 		yarray: inner.yarray,
 		doc: inner.doc,

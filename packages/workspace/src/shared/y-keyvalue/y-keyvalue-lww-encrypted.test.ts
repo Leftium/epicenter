@@ -9,14 +9,14 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import type { YKeyValueLwwEntry } from './y-keyvalue-lww';
 import {
 	createEncryptedYkvLww,
-	type YKeyValueLwwEncrypted,
+	type EncryptedYKeyValueLww,
 } from './y-keyvalue-lww-encrypted';
 
 /** Create a single-doc encrypted KV for tests. Skips the 4-line Y.Doc ceremony. */
 function setup<T = string>(keyring?: ReadonlyMap<number, Uint8Array>) {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | T>>('data');
-	const kv: YKeyValueLwwEncrypted<T> = createEncryptedYkvLww<T>(
+	const kv: EncryptedYKeyValueLww<T> = createEncryptedYkvLww<T>(
 		yarray,
 		keyring,
 	);
@@ -156,7 +156,7 @@ describe('createEncryptedYkvLww', () => {
 
 			expect(kv.get('x')).toBe('10');
 			expect(kv.get('y')).toBe('20');
-			expect(kv.decryptedSize).toBe(2);
+			expect(kv.readableEntryCount).toBe(2);
 		});
 	});
 
@@ -528,7 +528,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.get('corrupt')).toBeUndefined();
 			expect(kv.get('good-1')).toBe('value-1');
 			expect(kv.get('good-2')).toBe('value-2');
-			expect(kv.failedDecryptCount).toBe(1);
+			expect(kv.unreadableEntryCount).toBe(1);
 		});
 
 		test('observation continues after decrypt failure', () => {
@@ -554,7 +554,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.get('good')).toBe('still-works');
 			expect(kv.get('new-good')).toBe('appears-after-failure');
 			expect(kv.get('corrupt')).toBeUndefined();
-			expect(kv.failedDecryptCount).toBe(1);
+			expect(kv.unreadableEntryCount).toBe(1);
 		});
 	});
 
@@ -608,7 +608,7 @@ describe('createEncryptedYkvLww', () => {
 					[1, key1],
 				]),
 			);
-			expect(kv.failedDecryptCount).toBe(0);
+			expect(kv.unreadableEntryCount).toBe(0);
 			expect(kv.get('a')).toBe('alpha');
 			expect(kv.get('b')).toBe('beta');
 
@@ -631,7 +631,7 @@ describe('createEncryptedYkvLww', () => {
 					[2, key2],
 				]),
 			);
-			expect(kv.failedDecryptCount).toBe(0);
+			expect(kv.unreadableEntryCount).toBe(0);
 			expect(kv.get('a')).toBe('alpha');
 			expect(kv.get('b')).toBe('beta');
 
@@ -689,7 +689,7 @@ describe('createEncryptedYkvLww', () => {
 			// Values still readable
 			expect(kv.get('a')).toBe('alpha');
 			expect(kv.get('b')).toBe('beta');
-			expect(kv.failedDecryptCount).toBe(0);
+			expect(kv.unreadableEntryCount).toBe(0);
 
 			// Existing blobs stay at v1
 			for (const entry of yarray.toArray()) {

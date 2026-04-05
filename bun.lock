@@ -22,6 +22,7 @@
         "@better-auth/drizzle-adapter": "catalog:",
         "@better-auth/oauth-provider": "catalog:",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/dashboard": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "@tanstack/ai": "catalog:",
@@ -50,6 +51,35 @@
         "jsonc-parser": "^3.3.1",
         "typescript": "catalog:",
         "wrangler": "catalog:",
+      },
+    },
+    "apps/dashboard": {
+      "name": "@epicenter/dashboard",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/api": "workspace:*",
+        "@epicenter/constants": "workspace:*",
+        "@epicenter/svelte": "workspace:*",
+        "@tanstack/svelte-query": "catalog:",
+        "@tanstack/svelte-query-devtools": "catalog:",
+        "bits-ui": "catalog:",
+        "hono": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@epicenter/ui": "workspace:*",
+        "@lucide/svelte": "catalog:",
+        "@sveltejs/adapter-static": "catalog:",
+        "@sveltejs/kit": "catalog:",
+        "@sveltejs/vite-plugin-svelte": "catalog:",
+        "@tailwindcss/vite": "catalog:",
+        "mode-watcher": "catalog:",
+        "svelte": "catalog:",
+        "svelte-check": "catalog:",
+        "svelte-sonner": "catalog:",
+        "tailwindcss": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
       },
     },
     "apps/fuji": {
@@ -870,6 +900,8 @@
     "@epicenter/cli": ["@epicenter/cli@workspace:packages/cli"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
+
+    "@epicenter/dashboard": ["@epicenter/dashboard@workspace:apps/dashboard"],
 
     "@epicenter/filesystem": ["@epicenter/filesystem@workspace:packages/filesystem"],
 

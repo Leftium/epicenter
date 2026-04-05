@@ -133,9 +133,7 @@ billingRoutes.get('/models', (c) => {
 
 // ── Upgrade preview ──────────────────────────────────────────────────────
 
-const previewSchema = type({
-	planId: 'string',
-});
+const planIdSchema = type({ planId: 'string' });
 
 /**
  * POST /billing/preview
@@ -143,7 +141,7 @@ const previewSchema = type({
  * Preview what a plan change will cost before committing.
  * Shows prorated amount for upgrades, or schedule info for downgrades.
  */
-billingRoutes.post('/preview', sValidator('json', previewSchema), async (c) => {
+billingRoutes.post('/preview', sValidator('json', planIdSchema), async (c) => {
 	const autumn = createAutumn(c.env);
 	const { planId } = c.req.valid('json');
 	const preview = await autumn.billing.previewAttach({
@@ -171,7 +169,8 @@ billingRoutes.post('/upgrade', sValidator('json', attachSchema), async (c) => {
 	const autumn = createAutumn(c.env);
 	const { planId, successUrl } = c.req.valid('json');
 
-	// Carry over credits when upgrading to Ultra/Max (plans with rollover)
+	// Carry over credits when upgrading to Ultra/Max (plans with rollover).
+	// NOTE: If a new rollover plan is added, update this set.
 	const isRolloverPlan =
 		planId === PLAN_IDS.ultra ||
 		planId === PLAN_IDS.max ||
@@ -194,16 +193,13 @@ billingRoutes.post('/upgrade', sValidator('json', attachSchema), async (c) => {
 
 // ── Cancel subscription ──────────────────────────────────────────────────
 
-const cancelSchema = type({
-	planId: 'string',
-});
 
 /**
  * POST /billing/cancel
  *
  * Cancel a subscription at end of billing cycle.
  */
-billingRoutes.post('/cancel', sValidator('json', cancelSchema), async (c) => {
+billingRoutes.post('/cancel', sValidator('json', planIdSchema), async (c) => {
 	const autumn = createAutumn(c.env);
 	const { planId } = c.req.valid('json');
 	const result = await autumn.billing.update({
@@ -216,9 +212,6 @@ billingRoutes.post('/cancel', sValidator('json', cancelSchema), async (c) => {
 
 // ── Uncancel ─────────────────────────────────────────────────────────────
 
-const uncancelSchema = type({
-	planId: 'string',
-});
 
 /**
  * POST /billing/uncancel
@@ -227,7 +220,7 @@ const uncancelSchema = type({
  */
 billingRoutes.post(
 	'/uncancel',
-	sValidator('json', uncancelSchema),
+	sValidator('json', planIdSchema),
 	async (c) => {
 		const autumn = createAutumn(c.env);
 		const { planId } = c.req.valid('json');

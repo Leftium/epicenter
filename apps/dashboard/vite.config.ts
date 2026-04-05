@@ -8,5 +8,17 @@ export default defineConfig({
 	server: {
 		port: APPS.DASHBOARD.port,
 		strictPort: true,
+		proxy: {
+			// Forward API requests to the local Hono dev server
+			'/api': {
+				target: `http://localhost:${APPS.API.port}`,
+				changeOrigin: true,
+			},
+			// Forward auth requests for session cookies
+			'/auth': {
+				target: `http://localhost:${APPS.API.port}`,
+				changeOrigin: true,
+			},
+		},
 	},
 });

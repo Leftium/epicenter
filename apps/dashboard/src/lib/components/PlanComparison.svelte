@@ -17,6 +17,11 @@
 		annual: ['pro_annual', 'ultra_annual', 'max_annual'] as const,
 	};
 
+	/**
+	 * Plan display metadata. WARNING: This duplicates pricing data from
+	 * `apps/api/src/billing-plans.ts`. If prices change, update both.
+	 * TODO: Derive from /billing/models endpoint to eliminate duplication.
+	 */
 	const PLAN_DISPLAY = {
 		pro: {
 			name: 'Pro',
@@ -210,7 +215,10 @@
 								variant={eligibility === 'upgrade' ? 'default' : 'secondary'}
 								onclick={() => handleUpgradeClick(planId, display.name)}
 							>
-								{eligibility === 'upgrade' ? `Upgrade to ${display.name}` : eligibility === 'downgrade' ? `Downgrade to ${display.name}` : `Switch to ${display.name}`}
+								{({
+									upgrade: `Upgrade to ${display.name}`,
+									downgrade: `Downgrade to ${display.name}`,
+								} as Record<string, string>)[eligibility ?? ''] ?? `Switch to ${display.name}`}
 							</Button>
 						{/if}
 					</Card.Footer>

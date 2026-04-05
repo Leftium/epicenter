@@ -25,6 +25,42 @@
 	];
 
 	const totalCredits = $derived(usage.data?.total?.ai_usage?.sum ?? 0);
+
+	const periods = $derived(usage.data?.list ?? []);
+
+	/** Max value across all periods — computed once, not per-bar. */
+	const maxValue = $derived(
+		Math.max(
+			...periods.map(
+				(p: { values?: { ai_usage?: number } }) => p.values?.ai_usage ?? 0,
+			),
+			1,
+		),
+	);
+
+	/** Top 5 models by total credit usage across all periods. */
+	const topModels = $derived(
+		Object.entries(
+			periods.reduce(
+				(
+					acc: Record<string, number>,
+					period: {
+						grouped_values?: { ai_usage?: Record<string, number> };
+					},
+				) => {
+					for (const [model, count] of Object.entries(
+						period.grouped_values?.ai_usage ?? {},
+					)) {
+						acc[model] = (acc[model] ?? 0) + count;
+					}
+					return acc;
+				},
+				{} as Record<string, number>,
+			),
+		)
+			.sort(([, a], [, b]) => b - a)
+			.slice(0, 5),
+	);
 </script>
 
 <Card.Root class="mb-6">
@@ -54,9 +90,8 @@
 			</p>
 		{:else}
 			<div class="h-48 flex items-end gap-1">
-				{#each usage.data?.list ?? [] as period}
+				{#each periods as period}
 					{@const value = period.values?.ai_usage ?? 0}
-					{@const maxValue = Math.max(...(usage.data?.list ?? []).map((p: { values?: { ai_usage?: number } }) => p.values?.ai_usage ?? 0), 1)}
 					<div
 						class="flex-1 bg-primary/20 hover:bg-primary/30 rounded-t transition-colors relative group"
 						style="height: {Math.max(2, (value / maxValue) * 100)}%"
@@ -83,26 +118,14 @@
 				{/if}
 			</div>
 
-			{#if usage.data?.list?.[0]?.grouped_values?.ai_usage}
-				{@const models = Object.entries(usage.data.list.reduce(
-					(acc: Record<string, number>, period: { grouped_values?: { ai_usage?: Record<string, number> } }) => {
-						for (const [model, count] of Object.entries(period.grouped_values?.ai_usage ?? {})) {
-							acc[model] = (acc[model] ?? 0) + count;
-						}
-						return acc;
-					},
-					{} as Record<string, number>,
-				)).sort(([, a], [, b]) => b - a).slice(0, 5)}
-
+			{#if topModels.length > 0}
 				<div class="mt-3 flex flex-wrap gap-2">
-					{#each models as [ model, count ]}
+					{#each topModels as [model, count]}
 						<span
 							class="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs"
 						>
 							{model}
-							<span class="text-muted-foreground"
-								>{count.toLocaleString()}</span
-							>
+							<span class="text-muted-foreground">{count.toLocaleString()}</span>
 						</span>
 					{/each}
 				</div>

@@ -7,6 +7,9 @@ const config = {
 		adapter: staticAdapter({
 			fallback: 'index.html',
 		}),
+		paths: {
+			base: '/dashboard',
+		},
 		alias: {
 			'#': '../../packages/ui/src',
 		},

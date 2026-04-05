@@ -5,6 +5,13 @@
 	"compatibility_date": "2026-03-06",
 	"compatibility_flags": ["nodejs_compat"],
 	"send_metrics": false,
+	// --- Static assets: Dashboard SPA (built by SvelteKit adapter-static) ---
+	// Build first: cd apps/dashboard && bun run build
+	// Static files are served at their path. Hono handles SPA fallback for /dashboard/*.
+	"assets": {
+		"directory": "../dashboard/build",
+		"binding": "ASSETS"
+	},
 	// --- Custom domain: api.epicenter.so (auto-creates DNS record on deploy) ---
 	"routes": [
 		{

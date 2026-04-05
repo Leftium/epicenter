@@ -12,24 +12,6 @@ const vimPreference = createPersistedState({
 	defaultValue: false,
 });
 
-// ── Private helpers ─────────────────────────────────────────────
-
-/** Remap j→gj and k→gk so cursor movement respects line wrapping. */
-function applyLineWrapRemaps(): void {
-	Vim.map('j', 'gj', 'normal');
-	Vim.map('k', 'gk', 'normal');
-}
-
-function countWords(doc: Text): number {
-	let count = 0;
-	const iter = doc.iter();
-	while (!iter.next().done) {
-		const matches = iter.value.match(/\S+/g);
-		if (matches) count += matches.length;
-	}
-	return count;
-}
-
 // ── Singleton factory ───────────────────────────────────────────
 
 /**
@@ -61,6 +43,24 @@ function countWords(doc: Text): number {
  * ```
  */
 function createEditorState() {
+	// ── Private helpers ────────────────────────────────────────
+
+	/** Remap j→gj and k→gk so cursor movement respects line wrapping. */
+	function applyLineWrapRemaps(): void {
+		Vim.map('j', 'gj', 'normal');
+		Vim.map('k', 'gk', 'normal');
+	}
+
+	function countWords(doc: Text): number {
+		let count = 0;
+		const iter = doc.iter();
+		while (!iter.next().done) {
+			const matches = iter.value.match(/\S+/g);
+			if (matches) count += matches.length;
+		}
+		return count;
+	}
+
 	// ── Reactive state ──────────────────────────────────────────
 	let view = $state<EditorView | null>(null);
 	let wordCount = $state(0);

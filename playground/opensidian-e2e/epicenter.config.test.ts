@@ -10,19 +10,21 @@
  * - Document content round-trips through write → read
  * - Persistence survives restart (table data + document content)
  * - pushFromMarkdown imports .md files into tables + document content
+ * - Wikilinks in imported bodies are resolved to id: links
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { YAML } from 'bun';
 import { generateId } from '@epicenter/workspace';
+import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
 import { persistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+import { YAML } from 'bun';
 import { createOpensidian, opensidianDefinition } from 'opensidian/workspace';
+import { pushFromMarkdown } from './push-from-markdown';
 
-const FIXTURE_DIR = join(import.meta.dir, 'fixtures/single-workspace');
 const PERSISTENCE_DIR = join(
 	import.meta.dir,
-	'fixtures/.epicenter-opensidian-test',
+	'.test-fixtures/.epicenter-opensidian-test',
 );
 
 function dbPath(id: string) {
@@ -129,8 +131,14 @@ describe('e2e: opensidian workspace', () => {
 });
 
 describe('e2e: opensidian pushFromMarkdown', () => {
-	const IMPORT_DIR = join(import.meta.dir, 'fixtures/.opensidian-import-test');
-	const IMPORT_PERSISTENCE = join(import.meta.dir, 'fixtures/.epicenter-opensidian-import');
+	const IMPORT_DIR = join(
+		import.meta.dir,
+		'.test-fixtures/.opensidian-import-test',
+	);
+	const IMPORT_PERSISTENCE = join(
+		import.meta.dir,
+		'.test-fixtures/.epicenter-opensidian-import',
+	);
 	const IMPORT_FILES_DIR = join(IMPORT_DIR, 'files');
 
 	function createImportClient() {
@@ -146,12 +154,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		body?: string,
 	): Promise<void> {
 		await mkdir(IMPORT_FILES_DIR, { recursive: true });
-		const yaml = YAML.stringify(frontmatter, null, 2);
-		const yamlBlock = yaml.endsWith('\n') ? yaml : `${yaml}\n`;
-		const content =
-			body !== undefined
-				? `---\n${yamlBlock}---\n\n${body}\n`
-				: `---\n${yamlBlock}---\n`;
+		const content = toMarkdown(frontmatter, body);
 		await Bun.write(join(IMPORT_FILES_DIR, filename), content);
 	}
 
@@ -167,17 +170,20 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 	test('imports table row + document content from .md file', async () => {
 		const fileId = generateId();
-		await writeTestMd('test-note.md', {
-			id: fileId,
-			name: 'test-note.md',
-			parentId: null,
-			size: 0,
-			createdAt: 1712300000000,
-			updatedAt: 1712300000000,
-			trashedAt: null,
-		}, '# Test Note\n\nHello from import.');
+		await writeTestMd(
+			'test-note.md',
+			{
+				id: fileId,
+				name: 'test-note.md',
+				parentId: null,
+				size: 0,
+				createdAt: 1712300000000,
+				updatedAt: 1712300000000,
+				trashedAt: null,
+			},
+			'# Test Note\n\nHello from import.',
+		);
 
-		const { pushFromMarkdown } = await import('../../../playground/opensidian-e2e/epicenter.config');
 		const client = createImportClient();
 		await client.whenReady;
 
@@ -210,7 +216,6 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 	test('skips files without id in frontmatter', async () => {
 		await writeTestMd('no-id.md', { name: 'orphan', size: 0 });
 
-		const { pushFromMarkdown } = await import('../../../playground/opensidian-e2e/epicenter.config');
 		const client = createImportClient();
 		await client.whenReady;
 
@@ -230,7 +235,6 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		const targetId = generateId();
 		const sourceId = generateId();
 
-		const { pushFromMarkdown } = await import('../../../playground/opensidian-e2e/epicenter.config');
 		const client = createImportClient();
 		await client.whenReady;
 
@@ -248,15 +252,19 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		});
 
 		// Write source file with a wikilink referencing the target
-		await writeTestMd('wikilink-source.md', {
-			id: sourceId,
-			name: 'Source Note',
-			parentId: null,
-			size: 0,
-			createdAt: 1712300000000,
-			updatedAt: 1712300000000,
-			trashedAt: null,
-		}, '# Source\n\nSee [[Target Note]] for details.');
+		await writeTestMd(
+			'wikilink-source.md',
+			{
+				id: sourceId,
+				name: 'Source Note',
+				parentId: null,
+				size: 0,
+				createdAt: 1712300000000,
+				updatedAt: 1712300000000,
+				trashedAt: null,
+			},
+			'# Source\n\nSee [[Target Note]] for details.',
+		);
 
 		const result = await pushFromMarkdown({
 			tables: client.tables,
@@ -268,7 +276,9 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 		// [[Target Note]] should have been resolved to [Target Note](id:GUID)
 		const handle = await client.documents.files.content.open(sourceId);
-		expect(handle.read()).toBe(`# Source\n\nSee [Target Note](id:${targetId}) for details.`);
+		expect(handle.read()).toBe(
+			`# Source\n\nSee [Target Note](id:${targetId}) for details.`,
+		);
 
 		await client.dispose();
 	});

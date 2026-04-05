@@ -30,7 +30,7 @@
 			state: EditorState.create({
 				doc: ytext.toString(),
 				extensions: [
-					vimModeExtension,
+					vimModeExtension(),
 					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
 					drawSelection(),
 					EditorView.lineWrapping,

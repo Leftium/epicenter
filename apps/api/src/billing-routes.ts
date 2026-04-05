@@ -27,6 +27,20 @@ import type {
 
 const billingRoutes = new Hono<Env>();
 
+// Catch Autumn SDK errors and return proper HTTP status codes instead of 500.
+billingRoutes.onError((err, c) => {
+	const autumnErr = err as { statusCode?: number; body?: string };
+	if (autumnErr.statusCode && autumnErr.body) {
+		try {
+			const body = JSON.parse(autumnErr.body);
+			return c.json(body, autumnErr.statusCode as 400);
+		} catch {
+			return c.json({ message: autumnErr.body }, autumnErr.statusCode as 400);
+		}
+	}
+	throw err;
+});
+
 // ── Balance + subscription info ──────────────────────────────────────────
 
 /**

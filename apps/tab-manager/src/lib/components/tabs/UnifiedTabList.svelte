@@ -3,6 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as Item from '@epicenter/ui/item';
+	import { toastOnError } from '@epicenter/ui/sonner';
 	import { cn } from '@epicenter/ui/utils';
 	import AppWindowIcon from '@lucide/svelte/icons/app-window';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -10,7 +11,6 @@
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import StarIcon from '@lucide/svelte/icons/star';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { VList } from 'virtua/svelte';
 	import { bookmarkState } from '$lib/state/bookmark-state.svelte';
@@ -20,7 +20,6 @@
 	import { getDomain, getRelativeTime } from '$lib/utils/format';
 	import TabFavicon from './TabFavicon.svelte';
 	import TabItem from './TabItem.svelte';
-	import { toastOnError } from '@epicenter/ui/sonner';
 </script>
 
 {#if unifiedViewState.flatItems.length === 0}
@@ -35,7 +34,11 @@
 		{#if unifiedViewState.isFiltering}
 			<Empty.Title>No matching tabs</Empty.Title>
 			<Empty.Description>
-				No tabs match "{unifiedViewState.searchQuery}"
+				{#if unifiedViewState.isRegex && unifiedViewState.isRegexInvalid}
+					Check your regular expression syntax
+				{:else}
+					No tabs match "{unifiedViewState.searchQuery}"
+				{/if}
 			</Empty.Description>
 		{:else}
 			<Empty.Title>No tabs found</Empty.Title>
@@ -96,7 +99,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Restore All"
-						onclick={() => savedTabState.restoreAll().then(toastOnError)}
+								onclick={() => savedTabState.restoreAll().then(toastOnError)}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -105,7 +108,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete All"
-						onclick={() => savedTabState.removeAll().then(toastOnError)}
+								onclick={() => savedTabState.removeAll().then(toastOnError)}
 							>
 								<Trash2Icon />
 							</Button>
@@ -171,7 +174,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Restore"
-							onclick={() =>
+								onclick={() =>
 								savedTabState.restore(tab).then(toastOnError)}
 							>
 								<RotateCcwIcon />
@@ -181,7 +184,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-							onclick={() =>
+								onclick={() =>
 								savedTabState.remove(tab.id).then(toastOnError)}
 							>
 								<Trash2Icon />
@@ -193,9 +196,7 @@
 				{@const bookmark = item.bookmark}
 				<div class="border-b border-border">
 					<Item.Root size="sm" class="hover:bg-accent/50">
-						<Item.Media>
-							<StarIcon class="size-4 text-amber-500" />
-						</Item.Media>
+						<Item.Media> <TabFavicon src={bookmark.favIconUrl} /> </Item.Media>
 
 						<Item.Content>
 							<Item.Title>
@@ -217,7 +218,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Open"
-							onclick={() => bookmarkState.open(bookmark).then(toastOnError)}
+								onclick={() => bookmarkState.open(bookmark).then(toastOnError)}
 							>
 								<ExternalLinkIcon />
 							</Button>
@@ -226,7 +227,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-							onclick={() => bookmarkState.remove(bookmark.id).then(toastOnError)}
+								onclick={() => bookmarkState.remove(bookmark.id).then(toastOnError)}
 							>
 								<Trash2Icon />
 							</Button>

@@ -5,6 +5,7 @@
  * Data flows from the Hono API routes via the typed API client.
  */
 import { api } from '$lib/api';
+import type { UsageParams, EventsParams } from '@epicenter/api/billing-contract';
 
 /** Fetch customer balance, subscription, and credit breakdown. */
 export function balanceQueryOptions() {
@@ -23,14 +24,7 @@ export function balanceQueryOptions() {
  * const usage = createQuery(usageQueryOptions({ range: '30d', binSize: 'day', groupBy: 'properties.model' }));
  * ```
  */
-export function usageQueryOptions(
-	params: {
-		range?: string;
-		binSize?: string;
-		groupBy?: string;
-		maxGroups?: number;
-	} = {},
-) {
+export function usageQueryOptions(params: UsageParams = {}) {
 	return {
 		queryKey: ['billing', 'usage', params],
 		queryFn: () => api.billing.usage(params),
@@ -39,9 +33,7 @@ export function usageQueryOptions(
 }
 
 /** Fetch paginated event history for the activity feed. */
-export function eventsQueryOptions(
-	params: { limit?: number; startingAfter?: string } = {},
-) {
+export function eventsQueryOptions(params: EventsParams = {}) {
 	return {
 		queryKey: ['billing', 'events', params],
 		queryFn: () => api.billing.events(params),

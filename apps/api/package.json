@@ -6,7 +6,8 @@
 	"types": "./src/app.ts",
 	"exports": {
 		".": "./src/app.ts",
-		"./types": "./src/auth/contracts/index.ts"
+		"./types": "./src/auth/contracts/index.ts",
+		"./billing-contract": "./src/billing-contract.ts"
 	},
 	"license": "AGPL-3.0",
 	"scripts": {

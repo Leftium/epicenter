@@ -24,7 +24,7 @@
 import { generateId } from '@epicenter/workspace';
 import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
-import type { Folder, FolderId } from '$lib/workspace';
+import type { FolderId } from '$lib/workspace';
 
 function createFoldersState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
@@ -91,18 +91,7 @@ function createFoldersState() {
 		 * ```
 		 */
 		deleteFolder(folderId: FolderId) {
-			const folderNotes = workspace.tables.notes
-				.getAllValid()
-				.filter((n) => n.folderId === folderId);
-			for (const note of folderNotes) {
-				workspace.tables.notes.update(note.id, {
-					folderId: undefined,
-				});
-			}
-			workspace.tables.folders.delete(folderId);
-			if (workspace.kv.get('selectedFolderId') === folderId) {
-				workspace.kv.set('selectedFolderId', null);
-			}
+			workspace.actions.folders.delete({ folderId });
 		},
 	};
 }

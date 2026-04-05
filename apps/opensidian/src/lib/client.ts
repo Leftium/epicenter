@@ -4,11 +4,12 @@ import {
 	createSqliteIndex,
 	createYjsFileSystem,
 } from '@epicenter/filesystem';
+import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { Bash } from 'just-bash';
 import { session } from '$lib/auth';
-import { createOpensidian } from './workspace/workspace';
+import { opensidianDefinition } from './workspace/definition';
 
 /**
  * Opensidian workspace infrastructure.
@@ -17,7 +18,7 @@ import { createOpensidian } from './workspace/workspace';
  * Imported by both fs-state.svelte.ts (for reactive wrappers) and
  * components that need direct infra access (Toolbar, ContentEditor).
  */
-export const workspace = createOpensidian()
+export const workspace = createWorkspace(opensidianDefinition)
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',

@@ -93,3 +93,19 @@ epicenter size -w blog               # single workspace
 epicenter size --format json         # machine-readable JSON
 epicenter size -C apps/my-project    # different directory
 ```
+
+## Playground Configs
+
+The `playground/` directory contains standalone `epicenter.config.ts` files that sync workspace data from the Epicenter API down to local persistence and markdown files. Each playground is a self-contained project that consumes a workspace package.
+
+```bash
+# Tab Manager — syncs saved tabs, bookmarks, and devices
+epicenter start playground/tab-manager-e2e --verbose
+
+# OpenSidian — syncs notes with document content as markdown body
+epicenter start playground/opensidian-e2e --verbose
+```
+
+Run `epicenter auth login --server https://api.epicenter.so` first to store your session credentials.
+
+See each playground's `README.md` for details on what it produces and how to query the data.

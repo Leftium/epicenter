@@ -211,17 +211,20 @@ export function createEncryptedYkvLww<T>(
 	}
 
 	/**
-	 * Decrypt an encrypted blob with version-directed keyring fallback.
+	 * Best-effort blob decryption with keyring fallback.
 	 *
-	 * Tries currentKey first (fast path for latest-version blobs).
-	 * Falls back to version-directed lookup from the keyring when
-	 * currentKey fails (handles blobs encrypted with older key versions).
+	 * Tries currentKey first (most blobs use the latest version).
+	 * On failure, reads the blob's embedded key version and tries
+	 * the matching key from the keyring.
 	 *
-	 * @param state - Explicit encryption state to use. Defaults to the
-	 *   current closure state. Overridden during `activateEncryption()` to
-	 *   compare before/after readability.
+	 * Pure function—no logging, no side effects. Callers decide
+	 * what to do with `undefined` (warn, skip, etc.).
+	 *
+	 * @param state - Defaults to the closure's `encryption`. Overridden by
+	 *   `activateEncryption()` to compare before/after readability without
+	 *   mutating the closure mid-iteration.
 	 */
-	const decryptBlobWithFallback = (
+	const tryDecryptBlob = (
 		blob: EncryptedBlob,
 		aad: Uint8Array,
 		state: EncryptionState | undefined = encryption,
@@ -230,10 +233,10 @@ export function createEncryptedYkvLww<T>(
 		try {
 			return decryptValue(blob, state.currentKey, aad);
 		} catch {
-			/* fast path miss — try version-directed lookup */
+			// Current key didn't work — try the blob's recorded key version
 		}
 		const versionKey = state.keyring.get(getKeyVersion(blob));
-		if (!versionKey || versionKey === state.currentKey) return undefined;
+		if (!versionKey || versionKey === state.currentKey) return undefined; // Missing version, or same key we already tried
 		try {
 			return decryptValue(blob, versionKey, aad);
 		} catch {
@@ -250,13 +253,13 @@ export function createEncryptedYkvLww<T>(
 		key: string,
 		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
 	): YKeyValueLwwEntry<T> | undefined => {
-		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T };
-		const json = decryptBlobWithFallback(
+		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T }; // Plaintext — nothing to decrypt
+		const json = tryDecryptBlob(
 			entry.val,
 			textEncoder.encode(key),
 		);
 		if (json !== undefined) return { ...entry, val: JSON.parse(json) as T };
-		if (!encryption) return undefined;
+		if (!encryption) return undefined; // No key loaded yet — skip silently, activateEncryption() will catch up
 
 		const blobVersion = getKeyVersion(entry.val);
 		const isKnownKeyVersion = encryption.keyring.has(blobVersion);
@@ -274,13 +277,13 @@ export function createEncryptedYkvLww<T>(
 		state: EncryptionState | undefined = encryption,
 	): T | undefined => {
 		if (!isEncryptedBlob(raw)) return raw as T;
-		const json = decryptBlobWithFallback(raw, aad, state);
+		const json = tryDecryptBlob(raw, aad, state);
 		if (!json) return undefined;
 		return JSON.parse(json) as T;
 	};
 
-	/** Count entries in inner.map that can be decrypted with the current keyring. */
-	const countDecryptableInMap = (): number => {
+	/** Count entries that can be decrypted (or are plaintext) with the current keyring. */
+	const countDecryptable = (): number => {
 		let count = 0;
 		for (const [key, entry] of inner.map)
 			if (tryDecryptValue(entry.val, textEncoder.encode(key)) !== undefined)
@@ -428,13 +431,13 @@ export function createEncryptedYkvLww<T>(
 				handler(syntheticChanges, undefined);
 		},
 		get failedDecryptCount() {
-			return inner.map.size - countDecryptableInMap();
+			return inner.map.size - countDecryptable();
 		},
 		*decryptedEntries() {
 			yield* iterateDecrypted(inner.entries());
 		},
 		get decryptedSize() {
-			return countDecryptableInMap();
+			return countDecryptable();
 		},
 		yarray: inner.yarray,
 		doc: inner.doc,

@@ -232,13 +232,25 @@ export function createEncryptedYkvLww<T>(
 		} catch {
 			/* fall through to version-directed lookup */
 		}
-		const versionKey = state.keyring.get(getKeyVersion(blob));
-		if (versionKey && versionKey !== state.currentKey) {
-			try {
-				return decryptValue(blob, versionKey, aad);
-			} catch {
-				/* fall through */
-			}
+		const blobVersion = getKeyVersion(blob);
+		const versionKey = state.keyring.get(blobVersion);
+		if (!versionKey) {
+			console.warn(
+				`[encrypted-kv] Blob keyVersion=${blobVersion} not in keyring [${[...state.keyring.keys()].join(',')}]`,
+			);
+			return undefined;
+		}
+		if (versionKey === state.currentKey) {
+			// Already tried this key above
+			return undefined;
+		}
+		try {
+			return decryptValue(blob, versionKey, aad);
+		} catch (err) {
+			console.warn(
+				`[encrypted-kv] Fallback key (v${blobVersion}) also failed. ` +
+					`Error: ${err instanceof Error ? err.message : err}`,
+			);
 		}
 		return undefined;
 	};
@@ -257,7 +269,7 @@ export function createEncryptedYkvLww<T>(
 			textEncoder.encode(key),
 		);
 		if (!json) {
-			console.warn(`[encrypted-kv] Failed to decrypt entry "${key}"`);
+			if (encryption) console.warn(`[encrypted-kv] Failed to decrypt entry "${key}"`);
 			return undefined;
 		}
 		return { ...entry, val: JSON.parse(json) as T };

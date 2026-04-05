@@ -1,4 +1,4 @@
-# OpenSidian Feature Additions
+# Opensidian Feature Additions
 
 **Date**: 2026-03-13
 **Status**: Draft
@@ -6,13 +6,13 @@
 
 ## Overview
 
-New features for OpenSidian that transform it from a filesystem demo into a usable note-taking application. Each feature is scoped independently—they can be built in any order, though some have natural dependencies.
+New features for Opensidian that transform it from a filesystem demo into a usable note-taking application. Each feature is scoped independently—they can be built in any order, though some have natural dependencies.
 
 ## Motivation
 
 ### Current State
 
-OpenSidian has the bones of a file manager:
+Opensidian has the bones of a file manager:
 - Tree view with expand/collapse
 - Single-file text editing (raw textarea)
 - Create, rename, delete operations
@@ -141,7 +141,7 @@ This requires managing a `focusedId` state separate from `activeFileId` (focused
 | **Milkdown** | Built on ProseMirror + Yjs | First-class markdown | ~100KB | Moderate |
 | **BlockNote** | Built on TipTap + Yjs | Block-based markdown | ~250KB | Growing |
 
-**Key insight**: OpenSidian's content layer already stores data in Yjs Y.Docs. Editors with native Yjs bindings (TipTap via y-tiptap, CodeMirror via y-codemirror) can bind DIRECTLY to the existing content documents without any serialization layer. This is the ideal path.
+**Key insight**: Opensidian's content layer already stores data in Yjs Y.Docs. Editors with native Yjs bindings (TipTap via y-tiptap, CodeMirror via y-codemirror) can bind DIRECTLY to the existing content documents without any serialization layer. This is the ideal path.
 
 **Recommendation**: Start with CodeMirror 6 for a code/markdown editor with syntax highlighting and Yjs binding. It's the most flexible and has excellent Svelte integration patterns.
 

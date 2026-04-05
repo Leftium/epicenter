@@ -42,7 +42,7 @@ Every handoff prompt has six sections. Order matters—context before requiremen
 What to build and where. Be specific about file paths.
 
 ```
-Create an About page for OpenSidian at `apps/opensidian/src/routes/about/+page.svelte`.
+Create an About page for Opensidian at `apps/opensidian/src/routes/about/+page.svelte`.
 This page explains the technical architecture to visitors and is linkable from the app toolbar.
 ```
 

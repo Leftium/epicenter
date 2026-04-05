@@ -1,6 +1,6 @@
-# Rename fs-explorer to OpenSidian
+# Rename fs-explorer to Opensidian
 
-**Goal**: Rebrand `apps/fs-explorer` (a dev-only filesystem UI) into **OpenSidian**—the starting point for an Obsidian-like note-taking app within the Epicenter monorepo.
+**Goal**: Rebrand `apps/fs-explorer` (a dev-only filesystem UI) into **Opensidian**—the starting point for an Obsidian-like note-taking app within the Epicenter monorepo.
 
 **Scope**: Medium rename—directory, configs, branding, README. No feature changes, no new dependencies, no Tauri yet.
 
@@ -8,7 +8,7 @@
 
 `apps/fs-explorer/` is a SvelteKit web app with 10 components and one state file. It uses `@epicenter/filesystem`, `@epicenter/workspace`, and `@epicenter/ui`. Currently described as a "dev tool"—that changes with this rename.
 
-The app already has the bones of a file manager (tree view, content editor, create/rename/delete) built on Yjs CRDTs. Renaming it to OpenSidian sets the direction for gradual evolution toward an Obsidian clone.
+The app already has the bones of a file manager (tree view, content editor, create/rename/delete) built on Yjs CRDTs. Renaming it to Opensidian sets the direction for gradual evolution toward an Obsidian clone.
 
 ## Decisions
 
@@ -51,17 +51,17 @@ Add a title tag:
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-+   <title>OpenSidian</title>
++   <title>Opensidian</title>
     %sveltekit.head%
   </head>
 ```
 
 ### 5. Rewrite `apps/opensidian/README.md`
 
-Replace the dev-tool README with one describing OpenSidian's purpose:
+Replace the dev-tool README with one describing Opensidian's purpose:
 
 ```markdown
-# OpenSidian
+# Opensidian
 
 Open-source, local-first note-taking app inspired by Obsidian. Built with SvelteKit on the Epicenter ecosystem.
 
@@ -98,7 +98,7 @@ cd apps/opensidian && bun run build
 - [x] 1. `git mv apps/fs-explorer apps/opensidian`
 - [x] 2. Update `package.json` name to `"opensidian"`
 - [x] 3. Update workspace ID in `fs-state.svelte.ts` from `'fs-explorer'` to `'opensidian'`
-- [x] 4. Add `<title>OpenSidian</title>` to `app.html`
+- [x] 4. Add `<title>Opensidian</title>` to `app.html`
 - [x] 5. Rewrite `README.md` with new identity
 - [x] 6. Run `bun install` to regenerate lockfile
 - [x] 7. Verify build passes

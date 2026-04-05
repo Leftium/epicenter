@@ -11,7 +11,7 @@
  */
 
 import type { YKeyValueLwwChange } from '../shared/y-keyvalue/y-keyvalue-lww.js';
-import type { YKeyValueLwwEncrypted } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import type { EncryptedYKeyValueLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type {
 	KvChange,
 	KvDefinitions,
@@ -29,7 +29,7 @@ import type {
  * @returns KvHelper with type-safe get/set/delete/observe methods
  */
 export function createKv<TKvDefinitions extends KvDefinitions>(
-	ykv: YKeyValueLwwEncrypted<unknown>,
+	ykv: EncryptedYKeyValueLww<unknown>,
 	definitions: TKvDefinitions,
 ): KvHelper<TKvDefinitions> {
 	return {

@@ -48,7 +48,7 @@
  *
  * The observer wraps decrypt with try/catch. A failed decrypt skips the entry
  * and logs a warning instead of throwing. This prevents one bad blob from
- * crashing all observation. `failedDecryptCount` exposes the count.
+ * crashing all observation. `unreadableEntryCount` exposes the count.
  *
  * ## Related Modules
  *
@@ -73,7 +73,7 @@ import {
 
 const textEncoder = new TextEncoder();
 /** Transaction origin for re-encryption writes. Observer skips events with this origin. */
-const RE_ENCRYPT = Symbol('re-encrypt');
+const REENCRYPT_ORIGIN = Symbol('re-encrypt');
 
 /**
  * Change handler for the encrypted KV wrapper.
@@ -82,7 +82,7 @@ const RE_ENCRYPT = Symbol('re-encrypt');
  * for synthetic events emitted during `activateEncryption()` (which have
  * no backing Yjs transaction).
  */
-export type EncryptedKvChangeHandler<T> = (
+export type EncryptedKvObserver<T> = (
 	changes: Map<string, YKeyValueLwwChange<T>>,
 	origin: unknown,
 ) => void;
@@ -95,18 +95,18 @@ type EncryptionState = {
 
 /**
  * Return type of `createEncryptedYkvLww`. Same API surface as `YKeyValueLww<T>`
- * plus encryption-specific members (`failedDecryptCount`, `activateEncryption`).
+ * plus encryption-specific members (`unreadableEntryCount`, `activateEncryption`).
  * All values exposed through this type are **plaintext**—encryption is fully
  * transparent to consumers.
  */
-export type YKeyValueLwwEncrypted<T> = {
+export type EncryptedYKeyValueLww<T> = {
 	set(key: string, val: T): void;
 	get(key: string): T | undefined;
 	has(key: string): boolean;
 	delete(key: string): void;
 	entries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
-	observe(handler: EncryptedKvChangeHandler<T>): void;
-	unobserve(handler: EncryptedKvChangeHandler<T>): void;
+	observe(handler: EncryptedKvObserver<T>): void;
+	unobserve(handler: EncryptedKvObserver<T>): void;
 
 	/**
 	 * Activate encryption with a versioned keyring. The highest-version key
@@ -140,7 +140,7 @@ export type YKeyValueLwwEncrypted<T> = {
 	 *
 	 * Computed by iterating `inner.map` and counting undecryptable entries.
 	 */
-	readonly failedDecryptCount: number;
+	readonly unreadableEntryCount: number;
 
 	/**
 	 * Iterate all decryptable entries. Decrypts on the fly from the inner
@@ -149,10 +149,10 @@ export type YKeyValueLwwEncrypted<T> = {
 	 * TableHelper uses this for `getAll()`, `filter()`, `find()`, `clear()`.
 	 * Entries that cannot be decrypted are silently omitted.
 	 */
-	decryptedEntries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
+	readableEntries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
 
 	/** Count of decryptable entries. TableHelper uses this for `count()`. */
-	readonly decryptedSize: number;
+	readonly readableEntryCount: number;
 
 	/** The underlying Y.Array. Contains **ciphertext** when a key is active. */
 	readonly yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>;
@@ -184,14 +184,14 @@ export type YKeyValueLwwEncrypted<T> = {
 export function createEncryptedYkvLww<T>(
 	yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>,
 	initialKeyring?: ReadonlyMap<number, Uint8Array>,
-): YKeyValueLwwEncrypted<T> {
+): EncryptedYKeyValueLww<T> {
 	/**
 	 * The inner LWW store. It sees `EncryptedBlob | T` as its value type—it
 	 * doesn't know or care that some values are ciphertext. Timestamps, conflict
 	 * resolution, and observer mechanics all live here.
 	 */
 	const inner = new YKeyValueLww<EncryptedBlob | T>(yarray);
-	const changeHandlers = new Set<EncryptedKvChangeHandler<T>>();
+	const changeHandlers = new Set<EncryptedKvObserver<T>>();
 
 	/** Active encryption state. `undefined` = passthrough mode. */
 	let encryption: EncryptionState | undefined;
@@ -303,14 +303,14 @@ export function createEncryptedYkvLww<T>(
 
 	/**
 	 * Inner observer. When entries change in the CRDT, decrypt and forward
-	 * plaintext change events to registered handlers. Skips RE_ENCRYPT writes
+	 * plaintext change events to registered handlers. Skips REENCRYPT_ORIGIN writes
 	 * (those are internal re-encryption during activation, not user changes).
 	 */
 	const observer: Parameters<typeof inner.observe>[0] = (
 		changes,
 		transaction,
 	) => {
-		if (transaction.origin === RE_ENCRYPT) return;
+		if (transaction.origin === REENCRYPT_ORIGIN) return;
 		const decryptedChanges = new Map<string, YKeyValueLwwChange<T>>();
 		for (const [key, change] of changes) {
 			if (change.action === 'delete') {
@@ -421,7 +421,7 @@ export function createEncryptedYkvLww<T>(
 							nextEncryption.currentVersion,
 						),
 					);
-			}, RE_ENCRYPT);
+			}, REENCRYPT_ORIGIN);
 
 			if (newlyReadable.size === 0) return;
 			const syntheticChanges = new Map<string, YKeyValueLwwChange<T>>();
@@ -430,13 +430,13 @@ export function createEncryptedYkvLww<T>(
 			for (const handler of changeHandlers)
 				handler(syntheticChanges, undefined);
 		},
-		get failedDecryptCount() {
+		get unreadableEntryCount() {
 			return inner.map.size - countDecryptable();
 		},
-		*decryptedEntries() {
+		*readableEntries() {
 			yield* iterateDecrypted(inner.entries());
 		},
-		get decryptedSize() {
+		get readableEntryCount() {
 			return countDecryptable();
 		},
 		yarray: inner.yarray,

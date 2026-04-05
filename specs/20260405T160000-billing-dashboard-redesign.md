@@ -919,10 +919,14 @@ export type AppType = typeof app; // hc<AppType> gets all routes typed
 ### Phase 5: Deploy + Cutover
 
 - [ ] **5.1** Add Hono static asset middleware to serve dashboard SPA from `/dashboard/*`
+  > **Note**: Deployment-specific. In dev, the dashboard runs on its own Vite server. In production, static assets will be served via Cloudflare Workers site configuration or custom Hono middleware.
 - [ ] **5.2** Build pipeline: SvelteKit builds to `apps/dashboard/build/`, Worker bundles the static output
-- [ ] **5.3** Delete `apps/api/src/billing.tsx` and its import/route in `app.ts`. Add redirect: `GET /billing → 302 /dashboard`
+  > **Note**: Deferred to deployment phase. `bun run build` in apps/dashboard/ produces static files.
+- [x] **5.3** Delete `apps/api/src/billing.tsx` and its import/route in `app.ts`. Add redirect: `GET /billing → 302 /dashboard`
 - [ ] **5.4** Link from desktop apps (Whispering "Manage billing →" opens browser to `/dashboard`)
-- [ ] **5.5** Add upgrade handler with `carryOverBalances: { enabled: true }` for Pro → Ultra/Max upgrades
+  > **Note**: Deferred. Whispering settings sidebar needs an external link entry. Low priority for MVP.
+- [x] **5.5** Add upgrade handler with `carryOverBalances: { enabled: true }` for Pro → Ultra/Max upgrades
+  > **Note**: Implemented in Wave 3 (billing-routes.ts upgrade endpoint).
 
 ### Phase 6: Billing Controls UI (Post-MVP)
 

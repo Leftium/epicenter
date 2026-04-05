@@ -21,7 +21,6 @@ import {
 } from './auth-pages';
 import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
-import { billing } from './billing';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 
@@ -283,8 +282,7 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 app.use('/ai/*', authGuard);
 app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
-app.use('/billing', authGuard);
-app.use('/billing/*', authGuard);
+app.use('/api/billing/*', authGuard);
 
 // Ensure Autumn customer exists and stash planId for model gating.
 // Runs after authGuard for AI routes so c.var.user is available.
@@ -303,8 +301,9 @@ app.use('/ai/*', async (c, next) => {
 	await next();
 });
 
-// Billing — server-rendered page (legacy, will be replaced by dashboard)
-app.route('/billing', billing);
+// Billing — redirect legacy page to dashboard SPA
+app.get('/billing', (c) => c.redirect('/dashboard'));
+app.get('/billing/*', (c) => c.redirect('/dashboard'));
 
 // Billing API routes — typed JSON routes consumed by the dashboard SPA via hc<AppType>
 app.route('/api/billing', billingRoutes);

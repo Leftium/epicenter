@@ -89,7 +89,6 @@ function createUnifiedViewState() {
 	/** Whether a search filter is currently active. */
 	const isFiltering = $derived(searchQuery.trim().length > 0);
 
-
 	/**
 	 * Pre-compiled regex for the current search query.
 	 * Null when regex mode is off, query is empty, or the pattern is invalid.

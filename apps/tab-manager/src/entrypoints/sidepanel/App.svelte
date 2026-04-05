@@ -124,7 +124,7 @@
 											class="flex items-center gap-0.5 rounded-sm px-1 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
 											{...props}
 										>
-											{({ all: 'All', title: 'Title', url: 'URL' } as const)[unifiedViewState.searchField]}
+									{({ all: 'All', title: 'Title', url: 'URL' })[unifiedViewState.searchField]}
 											<ChevronDownIcon class="size-2.5" />
 										</button>
 									{/snippet}

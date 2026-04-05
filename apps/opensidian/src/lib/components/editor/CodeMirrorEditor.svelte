@@ -27,7 +27,7 @@
 		ytext: Y.Text;
 		onNavigate: (fileId: FileId) => void;
 		resolveTitle?: (fileId: FileId) => string | null;
-		getFiles: () => Array<{ id: FileId; name: string; parentId: FileId | null }>;
+		getFiles: () => Array<{ id: FileId; name: string }>;
 	} = $props();
 
 	let container: HTMLDivElement | undefined = $state();

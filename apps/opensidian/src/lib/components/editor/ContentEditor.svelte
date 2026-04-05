@@ -34,7 +34,7 @@
 			workspace.tables.files
 				.getAllValid()
 				.filter((r) => r.type === 'file')
-				.map((r) => ({ id: r.id, name: r.name, parentId: r.parentId }))
+				.map((r) => ({ id: r.id, name: r.name }))
 		}
 	/>
 {:else}

@@ -10,7 +10,6 @@
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import StarIcon from '@lucide/svelte/icons/star';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { VList } from 'virtua/svelte';
 	import { bookmarkState } from '$lib/state/bookmark-state.svelte';
@@ -193,9 +192,7 @@
 				{@const bookmark = item.bookmark}
 				<div class="border-b border-border">
 					<Item.Root size="sm" class="hover:bg-accent/50">
-						<Item.Media>
-							<StarIcon class="size-4 text-amber-500" />
-						</Item.Media>
+						<Item.Media> <TabFavicon src={bookmark.favIconUrl} /> </Item.Media>
 
 						<Item.Content>
 							<Item.Title>

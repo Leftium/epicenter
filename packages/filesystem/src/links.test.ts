@@ -11,7 +11,13 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type { FileId } from './ids.js';
-import { getTargetFileId, isInternalLink, makeInternalHref } from './links.js';
+import {
+	convertInternalLinksToWikilinks,
+	convertWikilinksToInternalLinks,
+	getTargetFileId,
+	isInternalLink,
+	makeInternalHref,
+} from './links.js';
 
 const SAMPLE_ID = '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b' as FileId;
 
@@ -55,5 +61,80 @@ describe('makeInternalHref', () => {
 
 	test('round-trip: isInternalLink recognizes makeInternalHref output', () => {
 		expect(isInternalLink(makeInternalHref(SAMPLE_ID))).toBe(true);
+	});
+});
+
+describe('convertInternalLinksToWikilinks', () => {
+	test('converts id: link to wikilink', () => {
+		const body = 'See [Meeting Notes](id:abc-123) for details.';
+		expect(convertInternalLinksToWikilinks(body)).toBe(
+			'See [[Meeting Notes]] for details.',
+		);
+	});
+
+	test('converts multiple id: links', () => {
+		const body = '[A](id:aaa) and [B](id:bbb)';
+		expect(convertInternalLinksToWikilinks(body)).toBe('[[A]] and [[B]]');
+	});
+
+	test('leaves external links untouched', () => {
+		const body = '[Google](https://google.com)';
+		expect(convertInternalLinksToWikilinks(body)).toBe(body);
+	});
+
+	test('handles mixed internal and external links', () => {
+		const body = '[Notes](id:abc) and [Google](https://google.com)';
+		expect(convertInternalLinksToWikilinks(body)).toBe(
+			'[[Notes]] and [Google](https://google.com)',
+		);
+	});
+
+	test('returns body unchanged when no links present', () => {
+		const body = 'Just plain text.';
+		expect(convertInternalLinksToWikilinks(body)).toBe(body);
+	});
+});
+
+describe('convertWikilinksToInternalLinks', () => {
+	const resolve = (name: string) => {
+		const lookup: Record<string, string> = {
+			'Meeting Notes': 'abc-123',
+			'Project Plan': 'def-456',
+		};
+		return (lookup[name] as FileId) ?? null;
+	};
+
+	test('converts wikilink to id: link', () => {
+		const body = 'See [[Meeting Notes]] for details.';
+		expect(convertWikilinksToInternalLinks(body, resolve)).toBe(
+			'See [Meeting Notes](id:abc-123) for details.',
+		);
+	});
+
+	test('converts multiple wikilinks', () => {
+		const body = '[[Meeting Notes]] and [[Project Plan]]';
+		expect(convertWikilinksToInternalLinks(body, resolve)).toBe(
+			'[Meeting Notes](id:abc-123) and [Project Plan](id:def-456)',
+		);
+	});
+
+	test('leaves unresolved wikilinks as-is', () => {
+		const body = '[[Unknown Page]]';
+		expect(convertWikilinksToInternalLinks(body, resolve)).toBe(body);
+	});
+
+	test('handles mix of resolved and unresolved', () => {
+		const body = '[[Meeting Notes]] and [[Unknown Page]]';
+		expect(convertWikilinksToInternalLinks(body, resolve)).toBe(
+			'[Meeting Notes](id:abc-123) and [[Unknown Page]]',
+		);
+	});
+
+	test('round-trips with convertInternalLinksToWikilinks', () => {
+		const original = '[Meeting Notes](id:abc-123)';
+		const asWikilink = convertInternalLinksToWikilinks(original);
+		expect(asWikilink).toBe('[[Meeting Notes]]');
+		const backToLink = convertWikilinksToInternalLinks(asWikilink, resolve);
+		expect(backToLink).toBe(original);
 	});
 });

@@ -13,40 +13,18 @@
 	let {
 		entry,
 		ytext,
-		onUpdateEntry,
-		onPreviewChange,
+		onUpdate,
 		onBack,
 	}: {
 		entry: Entry;
 		ytext: Y.Text;
-		onUpdateEntry: (
-			updates: Partial<{ title: string; type: string[]; tags: string[] }>,
+		onUpdate: (
+			updates: Partial<{ title: string; subtitle: string; type: string[]; tags: string[] }>,
 		) => void;
-		onPreviewChange: (preview: string) => void;
 		onBack: () => void;
 	} = $props();
 
 	let element: HTMLDivElement | undefined = $state();
-	let editor: Editor | undefined = $state();
-
-	/**
-	 * Create a Tiptap extension that wraps y-prosemirror plugins for Yjs collaboration.
-	 *
-	 * Uses ySyncPlugin for binding ProseMirror state to Y.Text, and yUndoPlugin for
-	 * collaborative undo/redo that respects per-client origins.
-	 */
-	function createYjsExtension(text: Y.Text) {
-		return Extension.create({
-			name: 'yjs-collaboration',
-			addProseMirrorPlugins() {
-				return [ySyncPlugin(text), yUndoPlugin()];
-			},
-		});
-	}
-
-	function extractPreview(ed: Editor): string {
-		return ed.getText().slice(0, 100).trim();
-	}
 
 	function parseDateTime(dts: string): Date {
 		return new Date(dts.split('|')[0]!);
@@ -54,8 +32,6 @@
 
 	$effect(() => {
 		if (!element) return;
-
-		const yjsExtension = createYjsExtension(ytext);
 
 		const ed = new Editor({
 			element,
@@ -67,7 +43,12 @@
 				Placeholder.configure({
 					placeholder: 'Start writing…',
 				}),
-				yjsExtension,
+				Extension.create({
+					name: 'yjs-collaboration',
+					addProseMirrorPlugins() {
+						return [ySyncPlugin(ytext), yUndoPlugin()];
+					},
+				}),
 			],
 			editorProps: {
 				attributes: {
@@ -75,20 +56,9 @@
 						'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-full',
 				},
 			},
-			onUpdate({ editor: ed }) {
-				onPreviewChange(extractPreview(ed));
-			},
 		});
 
-		editor = ed;
-
-		// Fire initial content extraction
-		onPreviewChange(extractPreview(ed));
-
-		return () => {
-			ed.destroy();
-			editor = undefined;
-		};
+		return () => ed.destroy();
 	});
 </script>
 
@@ -108,20 +78,27 @@
 			class="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground"
 			placeholder="Entry title"
 			value={entry.title}
-			oninput={(e) => onUpdateEntry({ title: e.currentTarget.value })}
+			oninput={(e) => onUpdate({ title: e.currentTarget.value })}
+		>
+		<input
+			type="text"
+			class="w-full bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/60"
+			placeholder="Subtitle — a one-liner for your blog listing"
+			value={entry.subtitle}
+			oninput={(e) => onUpdate({ subtitle: e.currentTarget.value })}
 		>
 
 		<div class="flex flex-wrap items-center gap-4">
 			<div class="flex items-center gap-2">
 				<span class="text-xs font-medium text-muted-foreground">Type</span>
 				<TagInput
-					values={entry.type ?? []}
+					values={entry.type}
 					placeholder="Add type…"
 					onAdd={(value) =>
-						onUpdateEntry({ type: [...(entry.type ?? []), value] })}
+						onUpdate({ type: [...entry.type, value] })}
 					onRemove={(value) =>
-						onUpdateEntry({
-							type: (entry.type ?? []).filter((t) => t !== value),
+						onUpdate({
+							type: entry.type.filter((t) => t !== value),
 						})}
 				/>
 			</div>
@@ -129,13 +106,13 @@
 			<div class="flex items-center gap-2">
 				<span class="text-xs font-medium text-muted-foreground">Tags</span>
 				<TagInput
-					values={entry.tags ?? []}
+					values={entry.tags}
 					placeholder="Add tag…"
 					onAdd={(value) =>
-						onUpdateEntry({ tags: [...(entry.tags ?? []), value] })}
+						onUpdate({ tags: [...entry.tags, value] })}
 					onRemove={(value) =>
-						onUpdateEntry({
-							tags: (entry.tags ?? []).filter((t) => t !== value),
+						onUpdate({
+							tags: entry.tags.filter((t) => t !== value),
 						})}
 				/>
 			</div>

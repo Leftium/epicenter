@@ -3,8 +3,8 @@
  *
  * Fuji is a personal CMS with a 1:1 mapping to your blog. Entries are content
  * pieces—articles, thoughts, ideas—organized by tags and type, displayed in a
- * data table with an editor panel. Each entry has a Y.Text body for
- * collaborative rich-text editing via Tiptap + y-prosemirror.
+ * data table with an editor panel. Each entry has a rich-text content document
+ * for collaborative editing via Tiptap + y-prosemirror.
  *
  * Contains the branded EntryId type, entries table definition with
  * DateTimeString timestamps, KV settings, and the workspace definition.
@@ -36,30 +36,26 @@ export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
 /**
  * Entries table — content pieces in a personal CMS.
  *
- * Unlike v1's timeline-only notes, entries are typed and tagged content. The
- * `type` field categorizes entries (article, thought, reading, etc.) while
- * `tags` provide freeform cross-cutting labels (crdt, open-source, etc.).
+ * Each entry has a title, subtitle (editorial hook for blog listings and table
+ * display), type classification, and freeform tags. Both `type` and `tags` are
+ * always present—an unclassified entry has empty arrays, not missing fields.
  *
- * The `title` field is explicit and required—blog posts have titles. The
- * `preview` column stores the first ~100 chars of body content for table
- * display.
- *
- * Each entry has a Y.Text document (`body`) for collaborative rich-text
- * editing. The document GUID matches the entry `id` so there's a 1:1 mapping.
- * Updates to the document automatically touch `updatedAt`.
+ * The rich-text content document is attached via `.withDocument('content')` and
+ * keyed by entry `id` for a 1:1 mapping. Edits to the document automatically
+ * touch `updatedAt`.
  */
 const entriesTable = defineTable(
 	type({
 		id: EntryId,
 		title: 'string',
-		preview: 'string',
-		'type?': 'string[] | undefined',
-		'tags?': 'string[] | undefined',
+		subtitle: 'string',
+		type: 'string[]',
+		tags: 'string[]',
 		createdAt: DateTimeString,
 		updatedAt: DateTimeString,
-		_v: '2',
+		_v: '1',
 	}),
-).withDocument('body', {
+).withDocument('content', {
 	guid: 'id',
 	onUpdate: () => ({ updatedAt: dateTimeStringNow() }),
 });

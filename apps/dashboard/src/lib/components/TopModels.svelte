@@ -3,8 +3,8 @@
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import * as Table from '@epicenter/ui/table';
 	import { createQuery } from '@tanstack/svelte-query';
+	import { FEATURE_IDS } from '$lib/constants';
 	import { usageQueryOptions } from '$lib/query/billing';
-
 	const usage = createQuery(() =>
 		usageQueryOptions({
 			range: '30d',
@@ -17,14 +17,12 @@
 	 * Aggregate per-model totals across all time periods.
 	 * Returns sorted array of [model, totalCredits] pairs.
 	 */
+	const featureKey = FEATURE_IDS.aiUsage;
 	const modelTotals = $derived(
 		(usage.data?.list ?? []).reduce(
-			(
-				acc: Record<string, number>,
-				period: { grouped_values?: { ai_usage?: Record<string, number> } },
-			) => {
+			(acc: Record<string, number>, period) => {
 				for (const [model, count] of Object.entries(
-					period.grouped_values?.ai_usage ?? {},
+					period.groupedValues?.[featureKey] ?? {},
 				)) {
 					acc[model] = (acc[model] ?? 0) + count;
 				}

@@ -4,37 +4,38 @@
 	import { Progress } from '@epicenter/ui/progress';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { createQuery } from '@tanstack/svelte-query';
+	import { FEATURE_IDS } from '$lib/constants';
 	import { balanceQueryOptions } from '$lib/query/billing';
 
 	const balance = createQuery(() => balanceQueryOptions());
 
-	const creditBalance = $derived(balance.data?.balances?.ai_credits ?? null);
-	const currentBalance = $derived(creditBalance?.balance ?? 0);
-	const includedUsage = $derived(creditBalance?.included_usage ?? 0);
+	/** The ai_credits balance object from the customer response. */
+	const creditBalance = $derived(
+		balance.data?.balances?.[FEATURE_IDS.aiCredits] ?? null,
+	);
+	const currentBalance = $derived(creditBalance?.remaining ?? 0);
+	const totalGranted = $derived(creditBalance?.granted ?? 0);
 	const usagePercent = $derived(
-		includedUsage > 0
-			? Math.min(100, Math.round((currentBalance / includedUsage) * 100))
+		totalGranted > 0
+			? Math.min(100, Math.round((currentBalance / totalGranted) * 100))
 			: 0,
 	);
 
 	/** Find the monthly breakdown entry for the reset countdown. */
 	const monthlyEntry = $derived(
 		creditBalance?.breakdown?.find(
-			(e: { interval?: string }) => e.interval === 'month',
+			(e) => e.reset?.interval === 'month',
 		) ?? null,
 	);
 	const rolloverEntry = $derived(
-		creditBalance?.breakdown?.find(
-			(e: { interval?: string }) => e.interval === 'one_off',
-		) ?? null,
+		creditBalance?.rollovers?.[0] ?? null,
 	);
 
-	const resetDate = $derived(
-		monthlyEntry?.next_reset_at ? new Date(monthlyEntry.next_reset_at) : null,
-	);
+	/** resetsAt is epoch ms from the Balance level, not breakdown. */
+	const resetTimestamp = $derived(creditBalance?.nextResetAt ?? null);
 	const daysUntilReset = $derived(
-		resetDate
-			? Math.max(0, Math.ceil((resetDate.getTime() - Date.now()) / 86_400_000))
+		resetTimestamp !== null
+			? Math.max(0, Math.ceil((resetTimestamp - Date.now()) / 86_400_000))
 			: null,
 	);
 </script>
@@ -71,7 +72,7 @@
 					{currentBalance.toLocaleString()}
 				</span>
 				<span class="text-sm text-muted-foreground">
-					of {includedUsage.toLocaleString()} included
+					of {totalGranted.toLocaleString()} included
 				</span>
 			</div>
 
@@ -80,9 +81,9 @@
 			{#if rolloverEntry && rolloverEntry.balance > 0}
 				<div class="flex gap-4 text-xs text-muted-foreground">
 					<span>
-						Monthly: {(monthlyEntry?.balance ?? 0).toLocaleString()}
+						Monthly: {(monthlyEntry?.remaining ?? 0).toLocaleString()}
 					</span>
-					<span> Rollover: {rolloverEntry.balance.toLocaleString()} </span>
+					<span>Rollover: {rolloverEntry.balance.toLocaleString()}</span>
 				</div>
 			{/if}
 		</Card.Content>

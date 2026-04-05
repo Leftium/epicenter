@@ -86,8 +86,7 @@
 	const plans = createQuery(() => plansQueryOptions());
 
 	const currentPlanId = $derived(
-		balance.data?.subscriptions?.find((s: { addOn?: boolean }) => !s.addOn)
-			?.planId ?? 'free',
+		balance.data?.subscriptions?.find((s) => !s.addOn)?.planId ?? 'free',
 	);
 
 	const visiblePlanIds = $derived(
@@ -96,12 +95,10 @@
 
 	const eligibilityMap = $derived(
 		new Map(
-			(plans.data?.list ?? []).map(
-				(p: { id: string; customerEligibility?: { attachAction: string } }) => [
-					p.id,
-					p.customerEligibility?.attachAction,
-				],
-			),
+			(plans.data?.list ?? []).map((p) => [
+				p.id,
+				p.customerEligibility?.attachAction,
+			]),
 		),
 	);
 

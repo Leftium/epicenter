@@ -6,14 +6,19 @@
 
 	const events = createQuery(() => eventsQueryOptions({ limit: 50 }));
 
-	function formatTimestamp(ts: number | string): string {
-		const date = new Date(typeof ts === 'number' ? ts : ts);
-		return date.toLocaleDateString('en-US', {
+	/** Autumn stores timestamp as epoch ms. */
+	function formatTimestamp(ts: number): string {
+		return new Date(ts).toLocaleDateString('en-US', {
 			month: 'short',
 			day: 'numeric',
 			hour: 'numeric',
 			minute: '2-digit',
 		});
+	}
+
+	/** Properties are JSONB—model/provider are custom keys we send via autumn.check(). */
+	function prop(event: { properties: Record<string, never> }, key: string): string {
+		return (event.properties as Record<string, string>)[key] ?? '—';
 	}
 </script>
 
@@ -25,7 +30,7 @@
 	</div>
 {:else if events.isError}
 	<p class="text-sm text-destructive">Failed to load activity.</p>
-{:else if !events.data?.list?.length}
+{:else if !events.data?.list.length}
 	<p class="text-sm text-muted-foreground py-8 text-center">No activity yet.</p>
 {:else}
 	<Table.Root>
@@ -41,16 +46,16 @@
 			{#each events.data.list as event}
 				<Table.Row>
 					<Table.Cell class="text-xs text-muted-foreground whitespace-nowrap">
-						{formatTimestamp(event.timestamp ?? event.created_at ?? '')}
+					{formatTimestamp(event.timestamp)}
 					</Table.Cell>
 					<Table.Cell class="font-mono text-xs">
-						{event.properties?.model ?? '—'}
+					{prop(event, 'model')}
 					</Table.Cell>
 					<Table.Cell class="text-xs text-muted-foreground">
-						{event.properties?.provider ?? '—'}
+					{prop(event, 'provider')}
 					</Table.Cell>
 					<Table.Cell class="text-right tabular-nums">
-						{event.value ?? 1}
+					{event.value}
 					</Table.Cell>
 				</Table.Row>
 			{/each}

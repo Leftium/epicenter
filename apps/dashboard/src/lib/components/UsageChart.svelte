@@ -3,8 +3,8 @@
 	import * as Select from '@epicenter/ui/select';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { createQuery } from '@tanstack/svelte-query';
+	import { FEATURE_IDS } from '$lib/constants';
 	import { usageQueryOptions } from '$lib/query/billing';
-
 	type Range = '7d' | '30d' | '90d';
 
 	let selectedRange = $state<Range>('30d');
@@ -24,16 +24,15 @@
 		{ value: '90d' as const, label: '90 days' },
 	];
 
-	const totalCredits = $derived(usage.data?.total?.ai_usage?.sum ?? 0);
+	const featureKey = FEATURE_IDS.aiUsage;
+	const totalCredits = $derived(usage.data?.total?.[featureKey]?.sum ?? 0);
 
 	const periods = $derived(usage.data?.list ?? []);
 
-	/** Max value across all periods — computed once, not per-bar. */
+	/** Max value across all periods—computed once, not per-bar. */
 	const maxValue = $derived(
 		Math.max(
-			...periods.map(
-				(p: { values?: { ai_usage?: number } }) => p.values?.ai_usage ?? 0,
-			),
+			...periods.map((p) => p.values?.[featureKey] ?? 0),
 			1,
 		),
 	);
@@ -41,25 +40,20 @@
 	/** Top 5 models by total credit usage across all periods. */
 	const topModels = $derived(
 		Object.entries(
-			periods.reduce(
-				(
-					acc: Record<string, number>,
-					period: {
-						grouped_values?: { ai_usage?: Record<string, number> };
-					},
-				) => {
-					for (const [model, count] of Object.entries(
-						period.grouped_values?.ai_usage ?? {},
-					)) {
-						acc[model] = (acc[model] ?? 0) + count;
-					}
-					return acc;
-				},
-				{} as Record<string, number>,
-			),
-		)
-			.sort(([, a], [, b]) => (b as number) - (a as number))
-			.slice(0, 5),
+		periods.reduce(
+			(acc: Record<string, number>, period) => {
+				for (const [model, count] of Object.entries(
+					period.groupedValues?.[featureKey] ?? {},
+				)) {
+					acc[model] = (acc[model] ?? 0) + count;
+				}
+				return acc;
+			},
+			{} as Record<string, number>,
+		),
+	)
+		.sort(([, a], [, b]) => (b as number) - (a as number))
+		.slice(0, 5),
 	);
 </script>
 
@@ -91,7 +85,7 @@
 		{:else}
 			<div class="h-48 flex items-end gap-1">
 				{#each periods as period}
-					{@const value = period.values?.ai_usage ?? 0}
+				{@const value = period.values?.[featureKey] ?? 0}
 					<div
 						class="flex-1 bg-primary/20 hover:bg-primary/30 rounded-t transition-colors relative group"
 						style="height: {Math.max(2, (value / maxValue) * 100)}%"
@@ -110,11 +104,10 @@
 				class="mt-4 flex items-center justify-between text-xs text-muted-foreground"
 			>
 				<span>Total: {totalCredits.toLocaleString()} credits</span>
-				{#if usage.data?.total?.ai_usage?.count}
-					<span
-						>{usage.data.total.ai_usage.count.toLocaleString()}
-						requests</span
-					>
+				{#if usage.data?.total?.[featureKey]?.count}
+					<span>
+						{usage.data.total[featureKey].count.toLocaleString()} requests
+					</span>
 				{/if}
 			</div>
 

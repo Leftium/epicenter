@@ -1,26 +1,18 @@
 import { Compartment, type Extension, type Text } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
+import { createPersistedState } from '@epicenter/svelte';
 import { Vim, vim } from '@replit/codemirror-vim';
+import { type } from 'arktype';
 
-const VIM_STORAGE_KEY = 'opensidian.vim-mode';
+// ── Persisted preferences ───────────────────────────────────────
 
-// ── localStorage helpers ────────────────────────────────────────
+const vimPreference = createPersistedState({
+	key: 'opensidian.vim-mode',
+	schema: type('boolean'),
+	defaultValue: false,
+});
 
-function readVimPreference(): boolean {
-	try {
-		return localStorage.getItem(VIM_STORAGE_KEY) === 'true';
-	} catch {
-		return false;
-	}
-}
-
-function persistVimPreference(enabled: boolean): void {
-	try {
-		localStorage.setItem(VIM_STORAGE_KEY, String(enabled));
-	} catch {
-		// Storage unavailable—silently ignore.
-	}
-}
+// ── Private helpers ─────────────────────────────────────────────
 
 /** Remap j→gj and k→gk so cursor movement respects line wrapping. */
 function applyLineWrapRemaps(): void {
@@ -28,13 +20,10 @@ function applyLineWrapRemaps(): void {
 	Vim.map('k', 'gk', 'normal');
 }
 
-// ── Word count ──────────────────────────────────────────────────
-
 function countWords(doc: Text): number {
 	let count = 0;
 	const iter = doc.iter();
 	while (!iter.next().done) {
-		// Match sequences of word characters (handles unicode basics)
 		const matches = iter.value.match(/\S+/g);
 		if (matches) count += matches.length;
 	}
@@ -50,6 +39,9 @@ function countWords(doc: Text): number {
  * an `EditorView.updateListener` that pushes values into `$state`.
  * Components import the singleton and read getters directly—fine-grained
  * reactivity means only consumers of a changed value re-render.
+ *
+ * Vim preference is backed by `createPersistedState`—cross-tab sync
+ * and focus-based re-reads come free.
  *
  * Follows the same factory pattern as `fs-state.svelte.ts` and
  * `terminal-state.svelte.ts`.
@@ -71,7 +63,6 @@ function countWords(doc: Text): number {
 function createEditorState() {
 	// ── Reactive state ──────────────────────────────────────────
 	let view = $state<EditorView | null>(null);
-	let vimEnabled = $state(readVimPreference());
 	let wordCount = $state(0);
 	let cursorLine = $state(1);
 	let cursorCol = $state(0);
@@ -100,7 +91,7 @@ function createEditorState() {
 	return {
 		// ── Read-only getters ───────────────────────────────────
 		get vimEnabled() {
-			return vimEnabled;
+			return vimPreference.current;
 		},
 		get wordCount() {
 			return wordCount;
@@ -121,7 +112,7 @@ function createEditorState() {
 		/**
 		 * Build the editor state extensions.
 		 *
-		 * Returns a fresh vim compartment (reading current localStorage)
+		 * Returns a fresh vim compartment (reading current persisted preference)
 		 * plus the update listener that bridges CM6 → `$state`.
 		 * Call once per `EditorView` creation—do NOT reuse across views.
 		 *
@@ -129,8 +120,7 @@ function createEditorState() {
 		 * keybindings take precedence when enabled.
 		 */
 		extension(): Extension[] {
-			const enabled = readVimPreference();
-			vimEnabled = enabled;
+			const enabled = vimPreference.current;
 			if (enabled) applyLineWrapRemaps();
 			return [vimCompartment.of(enabled ? vim() : []), listener];
 		},
@@ -162,13 +152,13 @@ function createEditorState() {
 		/**
 		 * Toggle vim mode on the active editor.
 		 *
-		 * Persists preference to localStorage, reconfigures the compartment,
-		 * and applies j/k line-wrap remaps when enabling.
+		 * Persists preference via `createPersistedState` (cross-tab sync
+		 * included), reconfigures the compartment, and applies j/k
+		 * line-wrap remaps when enabling.
 		 */
 		toggleVim() {
-			const next = !vimEnabled;
-			persistVimPreference(next);
-			vimEnabled = next;
+			const next = !vimPreference.current;
+			vimPreference.current = next;
 			if (next) applyLineWrapRemaps();
 			view?.dispatch({
 				effects: vimCompartment.reconfigure(next ? vim() : []),

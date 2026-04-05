@@ -19,7 +19,8 @@ import {
 	renderSignedInPage,
 	renderSignInPage,
 } from './auth-pages';
-import { billing } from './billing';
+import { createAutumn } from './autumn';
+import { billingRoutes } from './billing-routes';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 
@@ -81,6 +82,8 @@ export type Env = {
 		user: Session['user'];
 		session: Session['session'];
 		afterResponse: AfterResponseQueue;
+		/** Current plan ID. Only set by ensureAutumnCustomer middleware on /ai/* routes. */
+		planId: string | undefined;
 	};
 };
 
@@ -279,11 +282,46 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 app.use('/ai/*', authGuard);
 app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
-app.use('/billing', authGuard);
-app.use('/billing/*', authGuard);
+app.use('/api/billing/*', authGuard);
 
-// Billing — server-rendered Hono JSX billing page
-app.route('/billing', billing);
+// Ensure Autumn customer exists and stash planId for model gating.
+// Runs after authGuard for AI routes so c.var.user is available.
+app.use('/ai/*', async (c, next) => {
+	const autumn = createAutumn(c.env);
+	const customer = await autumn.customers.getOrCreate({
+		customerId: c.var.user.id,
+		name: c.var.user.name ?? undefined,
+		email: c.var.user.email ?? undefined,
+		expand: ['subscriptions.plan'],
+	});
+	const mainSub = customer.subscriptions?.find(
+		(s: { addOn?: boolean }) => !s.addOn,
+	);
+	c.set('planId', mainSub?.planId ?? 'free');
+	await next();
+});
+
+// Billing — redirect legacy page to dashboard SPA
+app.get('/billing', (c) => c.redirect('/dashboard'));
+
+// Dashboard SPA — static assets served by Workers Static Assets (wrangler.jsonc).
+// This catch-all handles SPA client-side routing: when no static file matches,
+// serve index.html so the SvelteKit router takes over.
+app.get('/dashboard/*', async (c) => {
+	const assets = (c.env as { ASSETS?: { fetch: typeof fetch } }).ASSETS;
+	if (!assets) return c.notFound();
+	const indexUrl = new URL('/dashboard/index.html', c.req.url);
+	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
+});
+app.get('/dashboard', async (c) => {
+	const assets = (c.env as { ASSETS?: { fetch: typeof fetch } }).ASSETS;
+	if (!assets) return c.notFound();
+	const indexUrl = new URL('/dashboard/index.html', c.req.url);
+	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
+});
+
+// Billing API routes — typed JSON routes consumed by the dashboard SPA via hc<AppType>
+app.route('/api/billing', billingRoutes);
 
 // AI chat
 app.post(
@@ -593,5 +631,8 @@ app.delete(
 		return c.body(null, 204);
 	},
 );
+
+/** App type for hc<AppType> in the dashboard. */
+export type AppType = typeof app;
 
 export default app;

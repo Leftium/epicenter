@@ -5,6 +5,8 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 const config = {
 	kit: {
 		adapter: staticAdapter({
+			pages: 'build/dashboard',
+			assets: 'build/dashboard',
 			fallback: 'index.html',
 		}),
 		paths: {

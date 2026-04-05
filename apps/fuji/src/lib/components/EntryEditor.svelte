@@ -14,15 +14,13 @@
 		entry,
 		ytext,
 		onUpdateEntry,
-		onPreviewChange,
 		onBack,
 	}: {
 		entry: Entry;
 		ytext: Y.Text;
 		onUpdateEntry: (
-			updates: Partial<{ title: string; type: string[]; tags: string[] }>,
+			updates: Partial<{ title: string; subtitle: string; type: string[]; tags: string[] }>,
 		) => void;
-		onPreviewChange: (preview: string) => void;
 		onBack: () => void;
 	} = $props();
 
@@ -44,9 +42,6 @@
 		});
 	}
 
-	function extractPreview(ed: Editor): string {
-		return ed.getText().slice(0, 100).trim();
-	}
 
 	function parseDateTime(dts: string): Date {
 		return new Date(dts.split('|')[0]!);
@@ -75,15 +70,13 @@
 						'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-full',
 				},
 			},
-			onUpdate({ editor: ed }) {
-				onPreviewChange(extractPreview(ed));
+			onUpdate() {
+				// Content updates are handled by the workspace document's onUpdate
 			},
 		});
 
 		editor = ed;
 
-		// Fire initial content extraction
-		onPreviewChange(extractPreview(ed));
 
 		return () => {
 			ed.destroy();
@@ -110,18 +103,25 @@
 			value={entry.title}
 			oninput={(e) => onUpdateEntry({ title: e.currentTarget.value })}
 		>
+		<input
+			type="text"
+			class="w-full bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/60"
+			placeholder="Subtitle — a one-liner for your blog listing"
+			value={entry.subtitle}
+			oninput={(e) => onUpdateEntry({ subtitle: e.currentTarget.value })}
+		>
 
 		<div class="flex flex-wrap items-center gap-4">
 			<div class="flex items-center gap-2">
 				<span class="text-xs font-medium text-muted-foreground">Type</span>
 				<TagInput
-					values={entry.type ?? []}
+					values={entry.type}
 					placeholder="Add type…"
 					onAdd={(value) =>
-						onUpdateEntry({ type: [...(entry.type ?? []), value] })}
+						onUpdateEntry({ type: [...entry.type, value] })}
 					onRemove={(value) =>
 						onUpdateEntry({
-							type: (entry.type ?? []).filter((t) => t !== value),
+						type: entry.type.filter((t) => t !== value),
 						})}
 				/>
 			</div>
@@ -129,13 +129,13 @@
 			<div class="flex items-center gap-2">
 				<span class="text-xs font-medium text-muted-foreground">Tags</span>
 				<TagInput
-					values={entry.tags ?? []}
+					values={entry.tags}
 					placeholder="Add tag…"
 					onAdd={(value) =>
-						onUpdateEntry({ tags: [...(entry.tags ?? []), value] })}
+						onUpdateEntry({ tags: [...entry.tags, value] })}
 					onRemove={(value) =>
 						onUpdateEntry({
-							tags: (entry.tags ?? []).filter((t) => t !== value),
+						tags: entry.tags.filter((t) => t !== value),
 						})}
 				/>
 			</div>

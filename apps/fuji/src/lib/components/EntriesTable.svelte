@@ -63,22 +63,21 @@
 			},
 			filterFn: (row, _columnId, filterValue) => {
 				const title = String(row.getValue('title')).toLowerCase();
-				const preview = String(row.getValue('preview')).toLowerCase();
 				const filter = filterValue.toLowerCase();
-				return title.includes(filter) || preview.includes(filter);
+				return title.includes(filter);
 			},
 		},
 		{
-			id: 'preview',
-			accessorKey: 'preview',
+			id: 'subtitle',
+			accessorKey: 'subtitle',
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
-					headerText: 'Preview',
+					headerText: 'Subtitle',
 				}),
 			cell: ({ getValue }) => {
-				const preview = getValue<string>();
-				return preview || '';
+				const subtitle = getValue<string>();
+				return subtitle || '';
 			},
 		},
 		{
@@ -90,8 +89,8 @@
 					headerText: 'Type',
 				}),
 			cell: ({ getValue }) => {
-				const types = getValue<string[] | undefined>();
-				if (!types?.length) return '';
+				const types = getValue<string[]>();
+				if (!types.length) return '';
 				return renderComponent(BadgeList, { items: types });
 			},
 			enableSorting: false,
@@ -105,8 +104,8 @@
 					headerText: 'Tags',
 				}),
 			cell: ({ getValue }) => {
-				const tags = getValue<string[] | undefined>();
-				if (!tags?.length) return '';
+				const tags = getValue<string[]>();
+				if (!tags.length) return '';
 				return renderComponent(BadgeList, { items: tags });
 			},
 			enableSorting: false,
@@ -161,9 +160,8 @@
 		},
 		globalFilterFn: (row, _columnId, filterValue) => {
 			const title = String(row.getValue('title')).toLowerCase();
-			const preview = String(row.getValue('preview')).toLowerCase();
 			const filter = filterValue.toLowerCase();
-			return title.includes(filter) || preview.includes(filter);
+			return title.includes(filter);
 		},
 	});
 </script>

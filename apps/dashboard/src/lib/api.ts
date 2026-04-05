@@ -12,30 +12,29 @@
  * @see docs/articles/shared-contract-over-derived-types.md
  */
 import type {
-	AttachParams,
 	AttachResponse,
-	BalanceResponse,
+	AggregateResponse,
+	CustomerResponse,
+	EventsListResponse,
 	EventsParams,
-	EventsResponse,
 	ModelsResponse,
-	PlansResponse,
+	PlansListResponse,
 	PortalResponse,
 	PreviewResponse,
 	UsageParams,
-	UsageResponse,
 } from '@epicenter/api/billing-contract';
 import { auth } from './auth';
 
 // Re-export contract types for components that need them
 export type {
 	AttachResponse,
-	BalanceResponse,
-	EventsResponse,
+	AggregateResponse,
+	CustomerResponse,
+	EventsListResponse,
 	ModelsResponse,
-	PlansResponse,
+	PlansListResponse,
 	PortalResponse,
 	PreviewResponse,
-	UsageResponse,
 } from '@epicenter/api/billing-contract';
 
 /** Fetch JSON from an API endpoint with auth. */
@@ -62,22 +61,22 @@ async function post<TBody, TResponse>(
 
 export const api = {
 	billing: {
-		balance: () => get<BalanceResponse>('/api/billing/balance'),
+		balance: () => get<CustomerResponse>('/api/billing/balance'),
 		usage: (params: UsageParams) =>
-			post<UsageParams, UsageResponse>('/api/billing/usage', params),
+			post<UsageParams, AggregateResponse>('/api/billing/usage', params),
 		events: (params: EventsParams = {}) =>
-			post<EventsParams, EventsResponse>('/api/billing/events', params),
-		plans: () => get<PlansResponse>('/api/billing/plans'),
+			post<EventsParams, EventsListResponse>('/api/billing/events', params),
+		plans: () => get<PlansListResponse>('/api/billing/plans'),
 		models: () => get<ModelsResponse>('/api/billing/models'),
 		preview: (planId: string) =>
 			post<{ planId: string }, PreviewResponse>('/api/billing/preview', {
 				planId,
 			}),
 		upgrade: (planId: string, successUrl?: string) =>
-			post<AttachParams, AttachResponse>('/api/billing/upgrade', {
-				planId,
-				successUrl,
-			}),
+			post<{ planId: string; successUrl?: string }, AttachResponse>(
+				'/api/billing/upgrade',
+				{ planId, successUrl },
+			),
 		cancel: (planId: string) =>
 			post<{ planId: string }, unknown>('/api/billing/cancel', { planId }),
 		uncancel: (planId: string) =>

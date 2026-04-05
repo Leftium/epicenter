@@ -1,18 +1,66 @@
 /**
- * Billing route contract — the shared type boundary between server and client.
+ * Billing route contract—the shared type boundary between server and client.
  *
  * This file is the "C" that defines both "A" and "B":
  * - The API routes (A) satisfy these types when returning responses
  * - The dashboard client (B) consumes these types for typed fetch calls
  * - Neither derives from the other; both derive from this contract
  *
- * Zero runtime imports. Zero Cloudflare deps. Safe to import from anywhere.
+ * Response types are derived from the Autumn SDK via `Awaited<ReturnType<...>>`
+ * so they stay in sync with the SDK automatically. Request types that the
+ * dashboard needs (params for POST bodies) are defined explicitly since
+ * the SDK's param types include server-only fields (customerId, featureId)
+ * that the dashboard never sends.
+ *
+ * This file imports `autumn-js` for type derivation only—zero runtime cost.
+ * The dashboard imports from `@epicenter/api/billing-contract` and never
+ * touches autumn-js directly.
  *
  * @see docs/articles/shared-contract-over-derived-types.md
  */
 
-// ── Request types ────────────────────────────────────────────────────
+import type { Autumn } from 'autumn-js';
 
+// ── Derived response types (from Autumn SDK method signatures) ───────
+
+/** Response from `autumn.customers.getOrCreate()` with expand. */
+export type CustomerResponse = Awaited<
+	ReturnType<Autumn['customers']['getOrCreate']>
+>;
+
+/** Response from `autumn.events.aggregate()`. */
+export type AggregateResponse = Awaited<
+	ReturnType<Autumn['events']['aggregate']>
+>;
+
+/** Response from `autumn.events.list()`. */
+export type EventsListResponse = Awaited<ReturnType<Autumn['events']['list']>>;
+
+/** Response from `autumn.plans.list()`. */
+export type PlansListResponse = Awaited<ReturnType<Autumn['plans']['list']>>;
+
+/** Response from `autumn.billing.attach()`. */
+export type AttachResponse = Awaited<ReturnType<Autumn['billing']['attach']>>;
+
+/** Response from `autumn.billing.previewAttach()`. */
+export type PreviewResponse = Awaited<
+	ReturnType<Autumn['billing']['previewAttach']>
+>;
+
+/** Response from `autumn.billing.openCustomerPortal()`. */
+export type PortalResponse = Awaited<
+	ReturnType<Autumn['billing']['openCustomerPortal']>
+>;
+
+/** Response from `autumn.check()`. */
+export type CheckResponse = Awaited<ReturnType<Autumn['check']>>;
+
+// ── Dashboard request types (subset of SDK params, no server fields) ─
+
+/**
+ * Params the dashboard sends for usage aggregation.
+ * Server adds customerId and featureId before forwarding to Autumn.
+ */
 export type UsageParams = {
 	range?: '24h' | '7d' | '30d' | '90d' | 'last_cycle';
 	binSize?: 'hour' | 'day' | 'month';
@@ -20,141 +68,21 @@ export type UsageParams = {
 	maxGroups?: number;
 };
 
+/** Params the dashboard sends for event listing. */
 export type EventsParams = {
 	limit?: number;
 	startingAfter?: string;
 };
 
-export type AttachParams = {
-	planId: string;
-	successUrl?: string;
-};
-
-// ── Response types ───────────────────────────────────────────────────
-
-export type BalanceSubscription = {
-	planId: string;
-	addOn?: boolean;
-	status?: string;
-	cancelAtEnd?: boolean;
-};
-
-export type BalanceBreakdownEntry = {
-	interval?: string;
-	balance: number;
-	next_reset_at?: string;
-};
-
-export type BalanceFeature = {
-	balance: number;
-	included_usage: number;
-	breakdown?: BalanceBreakdownEntry[];
-};
+// ── Custom response types (our code, not Autumn) ─────────────────────
 
 /**
- * Customer balance, subscriptions, and credit breakdown.
- *
- * The `balances` record is keyed by feature ID (e.g., `ai_credits`).
- * Each feature has a `breakdown` array separating monthly, rollover,
- * and top-up credit sources—Autumn tracks deduction order automatically.
- */
-export type BalanceResponse = {
-	subscriptions?: BalanceSubscription[];
-	balances?: Record<string, BalanceFeature>;
-};
-
-export type UsagePeriod = {
-	values?: { ai_usage?: number };
-	grouped_values?: { ai_usage?: Record<string, number> };
-};
-
-/**
- * Aggregated usage data for charts.
- *
- * `list` contains one entry per time bin (hour/day/month).
- * `grouped_values` breaks down each bin by model or provider.
- * `total` aggregates across the full range.
- */
-export type UsageResponse = {
-	list?: UsagePeriod[];
-	total?: {
-		ai_usage?: { sum?: number; count?: number };
-	};
-};
-
-export type UsageEvent = {
-	timestamp?: string | number;
-	created_at?: string;
-	value?: number;
-	properties?: { model?: string; provider?: string };
-};
-
-/** Paginated list of individual usage events. */
-export type EventsResponse = {
-	list?: UsageEvent[];
-};
-
-export type PlanEligibility = {
-	id: string;
-	customerEligibility?: { attachAction: string };
-};
-
-/** Available plans with per-customer eligibility. */
-export type PlansResponse = {
-	list?: PlanEligibility[];
-};
-
-/**
- * Model credit costs plus plan metadata.
- *
- * `credits` maps model name → credit cost per call.
- * `plans` and `annualPlans` are the full PLANS/ANNUAL_PLANS objects
- * from billing-plans.ts, included so the dashboard can derive
- * display data without hardcoding prices.
+ * Response from GET /api/billing/models.
+ * This endpoint returns our own data (MODEL_CREDITS + plan metadata),
+ * not an Autumn API response.
  */
 export type ModelsResponse = {
 	credits: Record<string, number>;
 	plans: Record<string, unknown>;
 	annualPlans: Record<string, unknown>;
-};
-
-/** Result of attaching a plan or purchasing a top-up. */
-export type AttachResponse = {
-	paymentUrl?: string;
-};
-
-/** Upgrade cost preview from previewAttach. */
-export type PreviewResponse = {
-	prorationAmount?: number;
-	currency?: string;
-};
-
-/** Stripe customer portal URL. */
-export type PortalResponse = {
-	url?: string;
-};
-
-// ── Route map ────────────────────────────────────────────────────────
-
-/**
- * Complete billing route contract.
- *
- * Each entry maps a route to its request/response types.
- * The API routes satisfy this contract; the dashboard consumes it.
- * This type isn't used at runtime—it's documentation-as-code that
- * TypeScript enforces at the module boundary.
- */
-export type BillingRouteContract = {
-	'GET /balance': { response: BalanceResponse };
-	'POST /usage': { body: UsageParams; response: UsageResponse };
-	'POST /events': { body: EventsParams; response: EventsResponse };
-	'GET /plans': { response: PlansResponse };
-	'GET /models': { response: ModelsResponse };
-	'POST /preview': { body: { planId: string }; response: PreviewResponse };
-	'POST /upgrade': { body: AttachParams; response: AttachResponse };
-	'POST /cancel': { body: { planId: string }; response: unknown };
-	'POST /uncancel': { body: { planId: string }; response: unknown };
-	'POST /top-up': { body: { successUrl?: string }; response: AttachResponse };
-	'GET /portal': { response: PortalResponse };
-	'POST /controls': { body: unknown; response: unknown };
 };

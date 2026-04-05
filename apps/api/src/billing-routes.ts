@@ -16,14 +16,13 @@ import { createAutumn } from './autumn';
 import { ANNUAL_PLANS, FEATURE_IDS, PLAN_IDS, PLANS } from './billing-plans';
 import { MODEL_CREDITS } from './model-costs';
 import type {
-	BalanceResponse,
-	UsageResponse,
-	EventsResponse,
-	PlansResponse,
-	ModelsResponse,
-	PreviewResponse,
+	AggregateResponse,
 	AttachResponse,
+	EventsListResponse,
+	ModelsResponse,
+	PlansListResponse,
 	PortalResponse,
+	PreviewResponse,
 } from './billing-contract';
 
 const billingRoutes = new Hono<Env>();

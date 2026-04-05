@@ -61,24 +61,26 @@
 	] as const;
 
 	const workspaceCode = `import { createSqliteIndex, createYjsFileSystem, filesTable } from '@epicenter/filesystem';
-import { createWorkspace } from '@epicenter/workspace';
+import { defineWorkspace, createWorkspace } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 
-export const ws = createWorkspace({
+const definition = defineWorkspace({
   id: 'opensidian',
   tables: { files: filesTable },
-})
+});
+
+export const workspace = createWorkspace(definition)
   .withExtension('persistence', indexeddbPersistence)
   .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 
-export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);`;
+export const fs = createYjsFileSystem(workspace.tables.files, workspace.documents.files.content);`;
 
 	const codeAnnotations = [
 		{
-			id: 'create-workspace',
-			line: 'createWorkspace({ id, tables })',
+			id: 'define-workspace',
+			line: 'defineWorkspace({ id, tables })',
 			explanation:
-				'Creates a Yjs workspace with a unique ID and a typed table schema. Each table becomes a Y.Map of rows inside a shared Y.Doc.',
+				'Declares the workspace schema—a unique ID and typed tables. Each table becomes a Y.Map of rows inside a shared Y.Doc.',
 		},
 		{
 			id: 'persistence',
@@ -103,7 +105,7 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 	const footerLinks = [
 		{
 			href: 'https://github.com/EpicenterHQ/epicenter/tree/main/apps/opensidian',
-			label: 'GitHub (OpenSidian)',
+			label: 'GitHub (Opensidian)',
 		},
 		{
 			href: 'https://github.com/EpicenterHQ/epicenter',
@@ -154,7 +156,7 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 
 	<!-- Header -->
 	<header>
-		<h1 class="text-4xl font-extrabold tracking-tight">OpenSidian</h1>
+		<h1 class="text-4xl font-extrabold tracking-tight">Opensidian</h1>
 		<p class="text-muted-foreground mt-2 text-lg">
 			Open-source, local-first notes&mdash;built on CRDTs
 		</p>
@@ -211,10 +213,7 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 	<section>
 		<h2 class="text-2xl font-semibold tracking-tight">The entire data layer</h2>
 		<p class="text-muted-foreground mt-3 leading-relaxed">
-			The app is roughly 600 lines of code. The entire data layer is this one
-			file&mdash;<code class="bg-muted rounded px-1.5 py-0.5 font-mono text-sm"
-				>src/lib/workspace.ts</code
-			>:
+			The data layer is a handful of files under <code class="bg-muted rounded px-1.5 py-0.5 font-mono text-sm">src/lib/workspace/</code> and <code class="bg-muted rounded px-1.5 py-0.5 font-mono text-sm">src/lib/client.ts</code>:
 		</p>
 		<Card.Root class="mt-6 overflow-hidden">
 			<!-- File header bar -->
@@ -222,7 +221,7 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2">
 						<FileText aria-hidden="true" class="text-muted-foreground size-3.5" />
-						<span class="font-mono text-sm">workspace.ts</span>
+						<span class="font-mono text-sm">client.ts</span>
 					</div>
 					<div class="flex items-center gap-2">
 						<Badge variant="secondary" class="text-xs">TypeScript</Badge>
@@ -247,7 +246,7 @@ export const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.conten
 			</Card.Content>
 		</Card.Root>
 		<p class="text-muted-foreground mt-4 leading-relaxed">
-			That's it. 10 lines. The workspace API handles the hard parts:
+			That's it. The workspace API handles the hard parts:
 		</p>
 		<Accordion.Root type="multiple" class="mt-4">
 			{#each codeAnnotations as annotation}

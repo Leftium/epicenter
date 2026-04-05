@@ -52,6 +52,34 @@
         "wrangler": "catalog:",
       },
     },
+    "apps/dashboard": {
+      "name": "@epicenter/dashboard",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/api": "workspace:*",
+        "@epicenter/constants": "workspace:*",
+        "@tanstack/svelte-query": "catalog:",
+        "@tanstack/svelte-query-devtools": "catalog:",
+        "bits-ui": "catalog:",
+        "hono": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@epicenter/ui": "workspace:*",
+        "@lucide/svelte": "catalog:",
+        "@sveltejs/adapter-static": "catalog:",
+        "@sveltejs/kit": "catalog:",
+        "@sveltejs/vite-plugin-svelte": "catalog:",
+        "@tailwindcss/vite": "catalog:",
+        "mode-watcher": "catalog:",
+        "svelte": "catalog:",
+        "svelte-check": "catalog:",
+        "svelte-sonner": "catalog:",
+        "tailwindcss": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+      },
+    },
     "apps/fuji": {
       "name": "@epicenter/fuji",
       "version": "0.0.1",
@@ -870,6 +898,8 @@
     "@epicenter/cli": ["@epicenter/cli@workspace:packages/cli"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
+
+    "@epicenter/dashboard": ["@epicenter/dashboard@workspace:apps/dashboard"],
 
     "@epicenter/filesystem": ["@epicenter/filesystem@workspace:packages/filesystem"],
 

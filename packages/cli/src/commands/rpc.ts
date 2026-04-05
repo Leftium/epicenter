@@ -139,98 +139,85 @@ export const rpcCommand = defineCommand({
 			})
 			.strict(false),
 	handler: async (argv: any) => {
+		let clients: any[] | undefined;
 		try {
-			const { clients } = await loadConfig(argv.dir ?? '.');
+			const loaded = await loadConfig(argv.dir ?? '.');
+			clients = loaded.clients;
 			const client = resolveWorkspace(clients, argv.workspace);
 			await client.whenReady;
 
-			try {
-				const sync = (client.extensions as Record<string, any>)?.sync;
-				if (!sync?.rpc) {
-					throw new Error(
-						'This workspace has no sync extension. RPC requires a sync extension with a server connection.',
-					);
-				}
-
-				// Wait for sync to connect
-				const connected = await waitForSync(sync, DEFAULT_CONNECT_TIMEOUT_MS);
-				if (!connected) {
-					throw new Error(
-						`Sync did not connect within ${DEFAULT_CONNECT_TIMEOUT_MS / 1000}s. Is the server running?`,
-					);
-				}
-
-				// --peers flag: list peers and exit
-				if (argv.peers) {
-					const peers = client.awareness.peers();
-					const entries: Record<string, unknown>[] = [];
-					for (const [clientId, state] of peers) {
-						entries.push({ clientId, ...state });
-					}
-					output(entries, { format: argv.format });
-					return;
-				}
-
-				if (!argv.action) {
-					throw new Error('Missing required argument: action (e.g. epicenter rpc tabs.list)');
-				}
-
-				// Discover target peer
-				const targetPeer = await waitForPeer(
-					client.awareness,
-					argv.peer,
-					DEFAULT_CONNECT_TIMEOUT_MS,
+			const sync = (client.extensions as Record<string, any>)?.sync;
+			if (!sync?.rpc) {
+				throw new Error(
+					'This workspace has no sync extension. RPC requires a sync extension with a server connection.',
 				);
-				if (targetPeer === null) {
-					const peers = client.awareness.peers();
-					if (peers.size === 0) {
-						throw new Error(
-							'No remote peers found. Is the target app running and connected to the sync server?',
-						);
-					}
+			}
+
+			const connected = await waitForSync(sync, DEFAULT_CONNECT_TIMEOUT_MS);
+			if (!connected) {
+				throw new Error(
+					`Sync did not connect within ${DEFAULT_CONNECT_TIMEOUT_MS / 1000}s. Is the server running?`,
+				);
+			}
+
+			if (argv.peers) {
+				const peers = client.awareness.peers();
+				const entries: Record<string, unknown>[] = [];
+				for (const [clientId, state] of peers) {
+					entries.push({ clientId, ...state });
+				}
+				output(entries, { format: argv.format });
+				return;
+			}
+
+			if (!argv.action) {
+				throw new Error('Missing required argument: action (e.g. epicenter rpc tabs.list)');
+			}
+
+			const targetPeer = await waitForPeer(
+				client.awareness,
+				argv.peer,
+				DEFAULT_CONNECT_TIMEOUT_MS,
+			);
+			if (targetPeer === null) {
+				const peers = client.awareness.peers();
+				if (peers.size === 0) {
 					throw new Error(
-						`Peer ${argv.peer} not found. Connected peers: ${[...peers.keys()].join(', ')}`,
+						'No remote peers found. Is the target app running and connected to the sync server?',
 					);
 				}
+				throw new Error(
+					`Peer ${argv.peer} not found. Connected peers: ${[...peers.keys()].join(', ')}`,
+				);
+			}
 
-				// Build input from remaining CLI args (skip yargs internals)
-				const skipKeys = new Set([
-					'_',
-					'$0',
-					'action',
-					'dir',
-					'C',
-					'workspace',
-					'w',
-					'format',
-					'peer',
-					'timeout',
-					'peers',
-				]);
-				let input: Record<string, unknown> | undefined;
-				for (const [key, value] of Object.entries(argv)) {
-					if (skipKeys.has(key) || key.includes('-')) continue;
-					if (value === undefined) continue;
-					input ??= {};
-					input[key] = typeof value === 'string' ? parseArgValue(value) : value;
-				}
+			const skipKeys = new Set([
+				'_', '$0', 'action', 'dir', 'C', 'workspace', 'w',
+				'format', 'peer', 'timeout', 'peers',
+			]);
+			let input: Record<string, unknown> | undefined;
+			for (const [key, value] of Object.entries(argv)) {
+				if (skipKeys.has(key) || key.includes('-')) continue;
+				if (value === undefined) continue;
+				input ??= {};
+				input[key] = typeof value === 'string' ? parseArgValue(value) : value;
+			}
 
-				const { data, error } = await sync.rpc(targetPeer, argv.action, input, {
-					timeout: argv.timeout,
-				});
+			const { data, error } = await sync.rpc(targetPeer, argv.action, input, {
+				timeout: argv.timeout,
+			});
 
-				if (error) {
-					outputError(`RPC error: ${JSON.stringify(error)}`);
-					process.exitCode = 1;
-				} else {
-					output(data, { format: argv.format });
-				}
-			} finally {
-				await Promise.all(clients.map((c) => c.dispose()));
+			if (error) {
+				outputError(`RPC error: ${JSON.stringify(error)}`);
+				process.exitCode = 1;
+			} else {
+				output(data, { format: argv.format });
 			}
 		} catch (err) {
 			outputError(err instanceof Error ? err.message : String(err));
 			process.exitCode = 1;
+		} finally {
+			if (clients) await Promise.all(clients.map((c: any) => c.dispose()));
 		}
 	},
 });

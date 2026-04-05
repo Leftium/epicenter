@@ -520,10 +520,20 @@ export function createWorkspace<
 				) => Actions,
 			) {
 				const newActions = factory(client);
+				const allActions = { ...actions, ...newActions };
+
+				// Wire actions into the sync extension for inbound RPC dispatch.
+				// The sync extension is registered before actions (it needs to connect
+				// first), so we push actions to it after the fact.
+				const sync = (extensions as Record<string, any>).sync;
+				if (typeof sync?.registerActions === 'function') {
+					sync.registerActions(allActions);
+				}
+
 				return buildClient({
 					extensions,
 					state,
-					actions: { ...actions, ...newActions },
+					actions: allActions,
 				});
 			},
 		});

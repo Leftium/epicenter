@@ -718,6 +718,10 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 
 			dispose() {
 				clearPendingRequests();
+				if (syncStatusTimer) {
+					clearTimeout(syncStatusTimer);
+					syncStatusTimer = null;
+				}
 				goOffline();
 				doc.off('updateV2', handleDocUpdate);
 				awareness.off('update', handleAwarenessUpdate);

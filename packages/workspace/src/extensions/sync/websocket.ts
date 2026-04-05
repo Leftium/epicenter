@@ -26,7 +26,7 @@ import {
 } from 'y-protocols/awareness';
 import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
 import type { SharedExtensionContext } from '../../workspace/types.js';
-import { isAction, iterateActions, type Actions } from '../../shared/actions.js';
+import { isAction, type Actions } from '../../shared/actions.js';
 
 // ============================================================================
 // Types
@@ -297,7 +297,6 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 			action: string;
 			input: unknown;
 		}) {
-			console.log(`[RPC] Received request: action=${rpc.action}, from=${rpc.requesterClientId}, hasActions=${!!registeredActions})`);
 			const sendResponse = (result: { data: unknown; error: unknown }) =>
 				send(
 					encodeRpcResponse({
@@ -799,6 +798,10 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 
 			dispose() {
 				clearPendingRequests();
+				if (syncStatusTimer) {
+					clearTimeout(syncStatusTimer);
+					syncStatusTimer = null;
+				}
 				goOffline();
 				doc.off('updateV2', handleDocUpdate);
 				awareness.off('update', handleAwarenessUpdate);

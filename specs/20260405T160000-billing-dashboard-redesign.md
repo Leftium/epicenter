@@ -901,8 +901,8 @@ export type AppType = typeof app; // hc<AppType> gets all routes typed
 - [x] **3.1** Create `apps/dashboard/` SvelteKit project with `adapter-static` (builds to static assets)
 - [x] **3.2** Configure: `@epicenter/ui` dependency, `@epicenter/api` type import, TanStack Query, tailwindcss
 - [x] **3.3** Set up Hono `hc` client with relative paths (same origin, no CORS needed)
-- [ ] **3.4** Add Chart component to `packages/ui/` via `bunx shadcn-svelte@latest add chart`
-  > **Note**: Deferred to Wave 5 when implementing the usage chart. Scaffold doesn't need charts yet.
+- [x] **3.4** Add Chart component to `packages/ui/` via `bunx shadcn-svelte@latest add chart`
+  > UsageChart upgraded from CSS bars to LayerChart stacked area chart with gradient fills, model-colored series, and interactive tooltips.
 - [x] **3.5** Create billing page layout with Tabs (Overview / Models / Activity)
 
 ### Phase 4: Dashboard UI Implementation
@@ -923,8 +923,8 @@ export type AppType = typeof app; // hc<AppType> gets all routes typed
 - [ ] **5.2** Build pipeline: SvelteKit builds to `apps/dashboard/build/`, Worker bundles the static output
   > **Note**: Deferred to deployment phase. `bun run build` in apps/dashboard/ produces static files.
 - [x] **5.3** Delete `apps/api/src/billing.tsx` and its import/route in `app.ts`. Add redirect: `GET /billing → 302 /dashboard`
-- [ ] **5.4** Link from desktop apps (Whispering "Manage billing →" opens browser to `/dashboard`)
-  > **Note**: Deferred. Whispering settings sidebar needs an external link entry. Low priority for MVP.
+- [x] **5.4** Link from desktop apps (Whispering "Manage billing →" opens browser to `/dashboard`)
+  > Added to settings sidebar as external link with ExternalLinkIcon. Opens `{APPS.API.url}/dashboard` in system browser via Tauri opener.
 - [x] **5.5** Add upgrade handler with `carryOverBalances: { enabled: true }` for Pro → Ultra/Max upgrades
   > **Note**: Implemented in Wave 3 (billing-routes.ts upgrade endpoint).
 

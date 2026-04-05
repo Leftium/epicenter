@@ -82,6 +82,10 @@ export function createAuth({
 					app.url,
 					`http://localhost:${app.port}`,
 				]),
+				// Wrangler dev serves at the custom domain over plain HTTP (no TLS).
+				// The browser sends Origin: http://api.epicenter.so which doesn't
+				// match https://api.epicenter.so. Add the HTTP variant.
+				`http://${new URL(APPS.API.url).host}`,
 			];
 			const origin = request?.headers.get('origin');
 			if (origin?.startsWith('chrome-extension://')) {

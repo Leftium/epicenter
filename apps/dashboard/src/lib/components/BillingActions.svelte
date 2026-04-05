@@ -3,18 +3,12 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
-	import { api } from '$lib/api';
+	import { api, type AttachResponse, type PortalResponse } from '$lib/api';
 	import { queryClient } from '$lib/query/client';
 
 	const topUp = createMutation(() => ({
-		mutationFn: async () => {
-			const res = await api.api.billing['top-up'].$post({
-				json: { successUrl: window.location.href },
-			});
-			if (!res.ok) throw new Error('Top-up failed');
-			return res.json();
-		},
-		onSuccess: (result: { paymentUrl?: string }) => {
+		mutationFn: () => api.billing.topUp(window.location.href),
+		onSuccess: (result: AttachResponse) => {
 			if (result.paymentUrl) {
 				window.location.href = result.paymentUrl;
 			} else {
@@ -28,14 +22,11 @@
 	}));
 
 	async function openPortal() {
-		const res = await api.api.billing.portal.$get();
-		if (!res.ok) {
+		try {
+			const data = await api.billing.portal();
+			if (data.url) window.location.href = data.url;
+		} catch {
 			toast.error('Could not open billing portal.');
-			return;
-		}
-		const data = await res.json();
-		if (data.url) {
-			window.location.href = data.url;
 		}
 	}
 </script>

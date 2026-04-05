@@ -139,11 +139,11 @@ export const proAnnual = plan({
 		item({
 			featureId: aiCredits.id,
 			included: pa.credits.included,
-			reset: { interval: 'month' },
 			price: {
 				amount: pa.credits.overage.amount,
 				billingUnits: pa.credits.overage.billingUnits,
 				billingMethod: pa.credits.overage.billingMethod,
+				interval: 'month',
 			},
 		}),
 	],
@@ -159,11 +159,11 @@ export const ultraAnnual = plan({
 		item({
 			featureId: aiCredits.id,
 			included: ua.credits.included,
-			reset: { interval: 'month' },
 			price: {
 				amount: ua.credits.overage.amount,
 				billingUnits: ua.credits.overage.billingUnits,
 				billingMethod: ua.credits.overage.billingMethod,
+				interval: 'month',
 			},
 			rollover: { max: null, expiryDurationType: 'forever' },
 		}),
@@ -180,11 +180,11 @@ export const maxAnnual = plan({
 		item({
 			featureId: aiCredits.id,
 			included: ma.credits.included,
-			reset: { interval: 'month' },
 			price: {
 				amount: ma.credits.overage.amount,
 				billingUnits: ma.credits.overage.billingUnits,
 				billingMethod: ma.credits.overage.billingMethod,
+				interval: 'month',
 			},
 			rollover: { max: null, expiryDurationType: 'forever' },
 		}),

@@ -22,11 +22,17 @@ function persist(enabled: boolean): void {
 	}
 }
 
+/** Apply j→gj and k→gk remaps so cursor movement respects line wrapping. */
+function applyLineWrapRemaps(): void {
+	Vim.map('j', 'gj', 'normal');
+	Vim.map('k', 'gk', 'normal');
+}
+
 /**
- * CodeMirror extension that provides an opt-in vim mode.
+ * Build the vim mode extension, reading the current localStorage preference.
  *
- * Reads initial state from localStorage (`opensidian.vim-mode`).
- * Toggle at runtime with {@link toggleVimMode}.
+ * Returns a fresh `Compartment.of(...)` each call so new EditorView instances
+ * pick up the latest persisted preference—not a stale import-time snapshot.
  *
  * Must be placed **before** other keymap extensions so vim
  * keybindings take precedence.
@@ -36,32 +42,27 @@ function persist(enabled: boolean): void {
  * import { vimModeExtension, toggleVimMode } from './extensions/vim-mode';
  *
  * // In the extension array (place early):
- * const extensions = [vimModeExtension, ...otherExtensions];
+ * const extensions = [vimModeExtension(), ...otherExtensions];
  *
  * // Toggle from a button:
  * toggleVimMode(view, true);
  * ```
  */
-export const vimModeExtension: Extension = vimCompartment.of(
-	isEnabled() ? vim() : [],
-);
+export function vimModeExtension(): Extension {
+	const enabled = isEnabled();
+	if (enabled) applyLineWrapRemaps();
+	return vimCompartment.of(enabled ? vim() : []);
+}
 
 /**
  * Toggle vim mode on or off at runtime.
  *
  * Dispatches a compartment reconfigure effect and persists the
  * preference to localStorage so it survives page reloads.
- *
- * Also remaps `j→gj` and `k→gk` when enabling so cursor movement
- * respects line wrapping (standard for markdown editors).
  */
 export function toggleVimMode(view: EditorView, enabled: boolean): void {
 	persist(enabled);
-
-	if (enabled) {
-		Vim.map('j', 'gj', 'normal');
-		Vim.map('k', 'gk', 'normal');
-	}
+	if (enabled) applyLineWrapRemaps();
 
 	view.dispatch({
 		effects: vimCompartment.reconfigure(enabled ? vim() : []),

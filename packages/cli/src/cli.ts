@@ -14,6 +14,7 @@ import { describeCommand } from './commands/describe';
 import { kvCommand } from './commands/kv';
 import { initCommand, installCommand, uninstallCommand } from './commands/project';
 import { runActionCommand } from './commands/run';
+import { sizeCommand } from './commands/size';
 import { startCommand } from './commands/start';
 
 /** Resolution order: EPICENTER_HOME env > ~/.epicenter/ */
@@ -49,6 +50,7 @@ export function createCLI() {
 				.command(uninstallCommand)
 				.command(runActionCommand)
 				.command(describeCommand)
+				.command(sizeCommand)
 				.command(createAuthCommand(home))
 				.demandCommand(1)
 				.strict()

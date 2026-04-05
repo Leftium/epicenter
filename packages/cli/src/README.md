@@ -18,6 +18,7 @@ epicenter kv delete <key>            # delete a KV entry
 epicenter run <action.path> [--args] # invoke a workspace action
 epicenter describe                   # dump workspace schema as JSON
 epicenter export                     # export all data as JSON
+epicenter size                       # report workspace sizes and row counts
 
 epicenter init                       # scaffold a new project
 epicenter install <item>             # install a workspace from a registry
@@ -82,4 +83,13 @@ If your config exports multiple workspaces, use `-w` to select one:
 ```bash
 epicenter list posts -w my-blog
 epicenter get posts abc123 -w my-blog
+```
+
+## Size Commands
+
+```bash
+epicenter size                       # all workspaces, human-readable
+epicenter size -w blog               # single workspace
+epicenter size --format json         # machine-readable JSON
+epicenter size -C apps/my-project    # different directory
 ```

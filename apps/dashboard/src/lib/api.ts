@@ -25,14 +25,10 @@ import type {
 } from '@epicenter/api/billing-contract';
 import { auth } from './auth';
 
-// Re-export contract types for components that need them
+// Re-export only the contract types that components actually import.
+// Components needing other types can import from @epicenter/api/billing-contract directly.
 export type {
 	AttachResponse,
-	AggregateResponse,
-	CustomerResponse,
-	EventsListResponse,
-	ModelsResponse,
-	PlansListResponse,
 	PortalResponse,
 	PreviewResponse,
 } from '@epicenter/api/billing-contract';

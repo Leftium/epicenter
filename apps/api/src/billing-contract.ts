@@ -52,8 +52,6 @@ export type PortalResponse = Awaited<
 	ReturnType<Autumn['billing']['openCustomerPortal']>
 >;
 
-/** Response from `autumn.check()`. */
-export type CheckResponse = Awaited<ReturnType<Autumn['check']>>;
 
 // ── Dashboard request types (subset of SDK params, no server fields) ─
 

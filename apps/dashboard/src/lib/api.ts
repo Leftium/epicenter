@@ -16,8 +16,9 @@
 
 import type { AppType } from '@epicenter/api';
 import { hc } from 'hono/client';
+import { auth } from './auth';
 
 export const api = hc<AppType>('/', {
 	fetch: (input: RequestInfo | URL, init?: RequestInit) =>
-		fetch(input, { ...init, credentials: 'include' }),
+		auth.fetch(input, init),
 });

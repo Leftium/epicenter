@@ -54,10 +54,10 @@
 	] as const;
 
 	const roadmap = [
-		'Multi-device sync\u2014the workspace API already supports WebSocket sync via Yjs providers',
 		'Markdown preview',
 		'Full-text search',
-		'Encryption',
+		'Internal links between notes',
+		'Plugin system for custom extensions',
 	] as const;
 
 	const workspaceCode = `import { createSqliteIndex, createYjsFileSystem, filesTable } from '@epicenter/filesystem';
@@ -83,6 +83,12 @@ export const fs = createYjsFileSystem(workspace.tables.files, workspace.document
 				'Declares the workspace schema—a unique ID and typed tables. Each table becomes a Y.Map of rows inside a shared Y.Doc.',
 		},
 		{
+			id: 'create-workspace',
+			line: 'createWorkspace(definition)',
+			explanation:
+				'Instantiates the workspace from the definition. Returns a builder—chain .withExtension() to add persistence, sync, or other capabilities.',
+		},
+		{
 			id: 'persistence',
 			line: ".withExtension('persistence', indexeddbPersistence)",
 			explanation:
@@ -96,7 +102,7 @@ export const fs = createYjsFileSystem(workspace.tables.files, workspace.document
 		},
 		{
 			id: 'filesystem',
-			line: 'createYjsFileSystem(tables.files, documents.files.content)',
+			line: 'createYjsFileSystem(workspace.tables.files, workspace.documents.files.content)',
 			explanation:
 				'Wraps the raw table and document APIs into a familiar filesystem interface\u2014writeFile, mkdir, rm, mv.',
 		},

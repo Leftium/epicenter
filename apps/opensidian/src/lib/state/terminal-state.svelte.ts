@@ -1,6 +1,7 @@
 import { defineCommand } from 'just-bash';
 import { bash, fs } from '$lib/client';
 import { fsState } from '$lib/state/fs-state.svelte';
+import { Ok, tryAsync } from 'wellcrafted/result';
 
 /**
  * A single entry in the terminal history.
@@ -113,30 +114,26 @@ function createTerminalState() {
 			history = [...history, { type: 'input', command }];
 			commandHistory = [...commandHistory, command];
 			historyIndex = -1;
-			try {
-				const result = await bash.exec(command);
-				history = [
-					...history,
-					{
-						type: 'output',
+			const { data: entry } = await tryAsync({
+				try: async () => {
+					const result = await bash.exec(command);
+					return {
+						type: 'output' as const,
 						stdout: result.stdout,
 						stderr: result.stderr,
 						exitCode: result.exitCode,
-					},
-				];
-			} catch (err) {
-				history = [
-					...history,
-					{
-						type: 'output',
+					};
+				},
+				catch: (err) =>
+					Ok({
+						type: 'output' as const,
 						stdout: '',
 						stderr: err instanceof Error ? err.message : 'Unknown error',
 						exitCode: 1,
-					},
-				];
-			} finally {
-				running = false;
-			}
+					}),
+			});
+			history = [...history, entry];
+			running = false;
 		},
 
 		/**

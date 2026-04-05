@@ -99,9 +99,6 @@ function createEditorState() {
 
 	return {
 		// ── Read-only getters ───────────────────────────────────
-		get view() {
-			return view;
-		},
 		get vimEnabled() {
 			return vimEnabled;
 		},

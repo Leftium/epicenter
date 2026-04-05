@@ -25,7 +25,7 @@ import filenamify from 'filenamify';
 import { createWorkspace } from '@epicenter/workspace';
 import { opensidianDefinition } from 'opensidian/workspace';
 
-const SERVER_URL = 'https://api.epicenter.so';
+const SERVER_URL = process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so';
 const PERSISTENCE_DIR = join(import.meta.dir, '.epicenter', 'persistence');
 const MARKDOWN_DIR = join(import.meta.dir, 'data');
 

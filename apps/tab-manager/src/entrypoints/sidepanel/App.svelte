@@ -30,6 +30,26 @@
 	let aiDrawerOpen = $state(false);
 </script>
 
+{#snippet searchToggle(pressed: boolean, onPressedChange: (v: boolean) => void, Icon: typeof CaseSensitiveIcon, label: string)}
+	<Tooltip.Root>
+		<Tooltip.Trigger>
+			{#snippet child({ props })}
+				<Toggle
+					size="sm"
+					{pressed}
+					{onPressedChange}
+					aria-label={label}
+					class="size-6 rounded-sm p-0"
+					{...props}
+				>
+					<Icon class="size-3.5" />
+				</Toggle>
+			{/snippet}
+		</Tooltip.Trigger>
+		<Tooltip.Content>{label}</Tooltip.Content>
+	</Tooltip.Root>
+{/snippet}
+
 <Tooltip.Provider>
 	<main
 		class="h-full w-full overflow-hidden flex flex-col bg-background text-foreground"
@@ -42,6 +62,7 @@
 					<SearchIcon
 						class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
 					/>
+					<!-- pr-[5.5rem] = clear button + 3 toggles (size-6 each) + gaps -->
 					<Input
 						bind:ref={searchInputRef}
 						type="search"
@@ -79,54 +100,9 @@
 								<XIcon class="size-3.5" />
 							</button>
 						{/if}
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								{#snippet child({ props })}
-									<Toggle
-										size="sm"
-										bind:pressed={unifiedViewState.isCaseSensitive}
-										aria-label="Match Case"
-										class="size-6 rounded-sm p-0"
-										{...props}
-									>
-										<CaseSensitiveIcon class="size-3.5" />
-									</Toggle>
-								{/snippet}
-							</Tooltip.Trigger>
-							<Tooltip.Content>Match Case</Tooltip.Content>
-						</Tooltip.Root>
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								{#snippet child({ props })}
-									<Toggle
-										size="sm"
-										bind:pressed={unifiedViewState.isRegex}
-										aria-label="Use Regular Expression"
-										class="size-6 rounded-sm p-0"
-										{...props}
-									>
-										<RegexIcon class="size-3.5" />
-									</Toggle>
-								{/snippet}
-							</Tooltip.Trigger>
-							<Tooltip.Content>Use Regular Expression</Tooltip.Content>
-						</Tooltip.Root>
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								{#snippet child({ props })}
-									<Toggle
-										size="sm"
-										bind:pressed={unifiedViewState.isExactMatch}
-										aria-label="Match Whole Word"
-										class="size-6 rounded-sm p-0"
-										{...props}
-									>
-										<WholeWordIcon class="size-3.5" />
-									</Toggle>
-								{/snippet}
-							</Tooltip.Trigger>
-							<Tooltip.Content>Match Whole Word</Tooltip.Content>
-						</Tooltip.Root>
+					{@render searchToggle(unifiedViewState.isCaseSensitive, (v) => { unifiedViewState.isCaseSensitive = v; }, CaseSensitiveIcon, 'Match Case')}
+					{@render searchToggle(unifiedViewState.isRegex, (v) => { unifiedViewState.isRegex = v; }, RegexIcon, 'Use Regular Expression')}
+					{@render searchToggle(unifiedViewState.isExactMatch, (v) => { unifiedViewState.isExactMatch = v; }, WholeWordIcon, 'Match Whole Word')}
 					</div>
 				</div>
 				<ToggleGroup.Root

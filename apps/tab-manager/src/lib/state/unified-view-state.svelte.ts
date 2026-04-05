@@ -89,20 +89,63 @@ function createUnifiedViewState() {
 	/** Whether a search filter is currently active. */
 	const isFiltering = $derived(searchQuery.trim().length > 0);
 
-	/** Whether the current regex query has invalid syntax. */
-	const isRegexInvalid = $derived.by(() => {
-		if (!searchRegex.current || !isFiltering) return false;
+
+	/**
+	 * Pre-compiled regex for the current search query.
+	 * Null when regex mode is off, query is empty, or the pattern is invalid.
+	 * Computed once per reactive change—avoids recompiling per tab.
+	 */
+	const compiledRegex = $derived.by(() => {
+		if (!searchRegex.current || !isFiltering) return null;
 		try {
-			new RegExp(searchQuery);
-			return false;
+			return new RegExp(searchQuery, searchCaseSensitive.current ? '' : 'i');
 		} catch {
-			return true;
+			return null;
 		}
 	});
+
+	/** Whether the current regex query has invalid syntax. */
+	const isRegexInvalid = $derived(
+		searchRegex.current && isFiltering && compiledRegex === null,
+	);
 
 	/** Escape special regex characters for safe use in `new RegExp()`. */
 	function escapeRegex(str: string): string {
 		return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}
+
+	/** Test a single field value against the current search query using the active mode. */
+	function testField(value: string, fieldType: 'title' | 'url'): boolean {
+		if (searchRegex.current) {
+			return compiledRegex?.test(value) ?? false;
+		}
+
+		if (searchExactMatch.current) {
+			if (fieldType === 'title') {
+				// Whole-word boundary match for titles
+				try {
+					const re = new RegExp(
+						`\\b${escapeRegex(searchQuery)}\\b`,
+						searchCaseSensitive.current ? '' : 'i',
+					);
+					return re.test(value);
+				} catch {
+					return false;
+				}
+			}
+			// Exact URL match after normalization
+			const normalizedValue = normalizeUrl(value);
+			const normalizedQuery = normalizeUrl(searchQuery);
+			if (searchCaseSensitive.current) {
+				return normalizedValue === normalizedQuery;
+			}
+			return normalizedValue.toLowerCase() === normalizedQuery.toLowerCase();
+		}
+
+		// Default: substring includes
+		const q = searchCaseSensitive.current ? searchQuery : searchQuery.toLowerCase();
+		const v = searchCaseSensitive.current ? value : value.toLowerCase();
+		return v.includes(q);
 	}
 
 	/** Match against title and/or URL based on current search preferences. */
@@ -112,54 +155,10 @@ function createUnifiedViewState() {
 	): boolean {
 		if (!isFiltering) return true;
 
-		const field = searchField.current;
-		const isCaseSensitive = searchCaseSensitive.current;
-		const isRegex = searchRegex.current;
-		const isExact = searchExactMatch.current;
-
-		/** Test a single string against the current query using the active mode. */
-		function testField(value: string, fieldType: 'title' | 'url'): boolean {
-			if (isRegex) {
-				try {
-					const re = new RegExp(searchQuery, isCaseSensitive ? '' : 'i');
-					return re.test(value);
-				} catch {
-					return false;
-				}
-			}
-
-			if (isExact) {
-				if (fieldType === 'title') {
-					// Whole-word boundary match for titles
-					try {
-						const re = new RegExp(
-							`\\b${escapeRegex(searchQuery)}\\b`,
-							isCaseSensitive ? '' : 'i',
-						);
-						return re.test(value);
-					} catch {
-						return false;
-					}
-				}
-				// Exact URL match after normalization
-				const normalizedValue = normalizeUrl(value);
-				const normalizedQuery = normalizeUrl(searchQuery);
-				if (isCaseSensitive) {
-					return normalizedValue === normalizedQuery;
-				}
-				return normalizedValue.toLowerCase() === normalizedQuery.toLowerCase();
-			}
-
-			// Default: substring includes
-			const q = isCaseSensitive ? searchQuery : searchQuery.toLowerCase();
-			const v = isCaseSensitive ? value : value.toLowerCase();
-			return v.includes(q);
-		}
-
 		const t = title ?? '';
 		const u = url ?? '';
 
-		switch (field) {
+		switch (searchField.current) {
 			case 'title':
 				return testField(t, 'title');
 			case 'url':

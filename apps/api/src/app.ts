@@ -19,6 +19,7 @@ import {
 	renderSignedInPage,
 	renderSignInPage,
 } from './auth-pages';
+import { createAutumn } from './autumn';
 import { billing } from './billing';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
@@ -81,6 +82,8 @@ export type Env = {
 		user: Session['user'];
 		session: Session['session'];
 		afterResponse: AfterResponseQueue;
+		/** Current plan ID from Autumn customer data. Set by ensureAutumnCustomer middleware. */
+		planId: string;
 	};
 };
 
@@ -281,6 +284,23 @@ app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
 app.use('/billing', authGuard);
 app.use('/billing/*', authGuard);
+
+// Ensure Autumn customer exists and stash planId for model gating.
+// Runs after authGuard for AI routes so c.var.user is available.
+app.use('/ai/*', async (c, next) => {
+	const autumn = createAutumn(c.env);
+	const customer = await autumn.customers.getOrCreate({
+		customerId: c.var.user.id,
+		name: c.var.user.name,
+		email: c.var.user.email,
+		expand: ['subscriptions.plan'],
+	});
+	const mainSub = customer.subscriptions?.find(
+		(s: { addOn?: boolean }) => !s.addOn,
+	);
+	c.set('planId', mainSub?.planId ?? 'free');
+	await next();
+});
 
 // Billing — server-rendered Hono JSX billing page
 app.route('/billing', billing);

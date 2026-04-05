@@ -13,10 +13,17 @@ import { createOpenaiChat, OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 import { type } from 'arktype';
 import { createFactory } from 'hono/factory';
 import { defineErrors } from 'wellcrafted/error';
-import { FEATURE_IDS } from './billing-plans';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
+import { FEATURE_IDS, PLAN_IDS } from './billing-plans';
 import { MODEL_CREDITS } from './model-costs';
+
+/**
+ * Maximum credit cost a Free tier user can spend per request.
+ * Models costing more than this are rejected for Free users.
+ * This effectively restricts Free to mini/flash/haiku models (1-2 credits).
+ */
+const FREE_TIER_MAX_CREDITS = 2;
 
 const chatOptions = type({
 	'systemPrompts?': 'string[] | undefined',
@@ -41,6 +48,17 @@ const AiChatError = defineErrors({
 		message: 'Insufficient credits',
 		balance,
 	}),
+	ModelRequiresPaidPlan: ({
+		model,
+		credits,
+	}: {
+		model: string;
+		credits: number;
+	}) => ({
+		message: `${model} requires a paid plan (costs ${credits} credits, Free tier limit is ${FREE_TIER_MAX_CREDITS})`,
+		model,
+		credits,
+	}),
 });
 
 const aiChatBody = type({
@@ -53,6 +71,8 @@ const aiChatBody = type({
 			{ provider: "'grok'", model: type.enumerated(...GROK_CHAT_MODELS) },
 		),
 	),
+	/** User-provided API key for BYOK. When present, billing is bypassed entirely. */
+	'apiKey?': 'string | undefined',
 });
 
 const factory = createFactory<Env>();
@@ -60,29 +80,46 @@ const factory = createFactory<Env>();
 export const aiChatHandlers = factory.createHandlers(
 	sValidator('json', aiChatBody),
 	async (c) => {
-		const { messages, data } = c.req.valid('json');
+		const { messages, data, apiKey: userApiKey } = c.req.valid('json');
 		const { provider, tools, ...options } = data;
+		const isByok = !!userApiKey;
 
 		// ---------------------------------------------------------------
-		// Credit check
+		// Model lookup (needed for both billing and BYOK paths)
 		// ---------------------------------------------------------------
 		const credits = MODEL_CREDITS[data.model];
 		if (credits === undefined) {
 			return c.json(AiChatError.UnknownModel({ model: data.model }), 400);
 		}
 
-		const autumn = createAutumn(c.env);
-		const { allowed, balance } = await autumn.check({
-			customerId: c.var.user.id,
-			featureId: FEATURE_IDS.aiUsage,
-			requiredBalance: credits,
-			sendEvent: true,
-			withPreview: true,
-			properties: { model: data.model, provider: data.provider },
-		});
+		// ---------------------------------------------------------------
+		// BYOK: user-provided key bypasses all billing
+		// ---------------------------------------------------------------
+		let autumn: ReturnType<typeof createAutumn> | undefined;
 
-		if (!allowed) {
-			return c.json(AiChatError.InsufficientCredits({ balance }), 402);
+		if (!isByok) {
+			// Free tier model gating: reject expensive models
+			if (c.var.planId === PLAN_IDS.free && credits > FREE_TIER_MAX_CREDITS) {
+				return c.json(
+					AiChatError.ModelRequiresPaidPlan({ model: data.model, credits }),
+					403,
+				);
+			}
+
+			// Credit check + atomic deduction
+			autumn = createAutumn(c.env);
+			const { allowed, balance } = await autumn.check({
+				customerId: c.var.user.id,
+				featureId: FEATURE_IDS.aiUsage,
+				requiredBalance: credits,
+				sendEvent: true,
+				withPreview: true,
+				properties: { model: data.model, provider: data.provider },
+			});
+
+			if (!allowed) {
+				return c.json(AiChatError.InsufficientCredits({ balance }), 402);
+			}
 		}
 
 		// ---------------------------------------------------------------
@@ -91,28 +128,28 @@ export const aiChatHandlers = factory.createHandlers(
 		let adapter: AnyTextAdapter;
 		switch (data.provider) {
 			case 'openai': {
-				const apiKey = c.env.OPENAI_API_KEY;
+				const apiKey = userApiKey ?? c.env.OPENAI_API_KEY;
 				if (!apiKey)
 					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
 				adapter = createOpenaiChat(data.model, apiKey);
 				break;
 			}
 			case 'anthropic': {
-				const apiKey = c.env.ANTHROPIC_API_KEY;
+				const apiKey = userApiKey ?? c.env.ANTHROPIC_API_KEY;
 				if (!apiKey)
 					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
 				adapter = createAnthropicChat(data.model, apiKey);
 				break;
 			}
 			case 'gemini': {
-				const apiKey = c.env.GEMINI_API_KEY;
+				const apiKey = userApiKey ?? c.env.GEMINI_API_KEY;
 				if (!apiKey)
 					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
 				adapter = createGeminiChat(data.model, apiKey);
 				break;
 			}
 			case 'grok': {
-				const apiKey = c.env.GROK_API_KEY;
+				const apiKey = userApiKey ?? c.env.GROK_API_KEY;
 				if (!apiKey)
 					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
 				adapter = createGrokText(data.model, apiKey);
@@ -133,13 +170,16 @@ export const aiChatHandlers = factory.createHandlers(
 			return toServerSentEventsResponse(stream, { abortController });
 		} catch (error) {
 			// Refund the credit that was atomically deducted by sendEvent: true
-			c.var.afterResponse.push(
-				autumn.track({
-					customerId: c.var.user.id,
-					featureId: FEATURE_IDS.aiUsage,
-					value: -credits,
-				}),
-			);
+			// Only refund if we actually deducted (not BYOK)
+			if (autumn) {
+				c.var.afterResponse.push(
+					autumn.track({
+						customerId: c.var.user.id,
+						featureId: FEATURE_IDS.aiUsage,
+						value: -credits,
+					}),
+				);
+			}
 			throw error;
 		}
 	},

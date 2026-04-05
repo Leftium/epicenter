@@ -875,8 +875,8 @@ export type AppType = typeof app; // hc<AppType> gets all routes typed
   - Add annual plan variants with `price: { interval: 'year' }` and discounted amounts ($200/yr, $600/yr, $2000/yr)
   - Update Free plan: keep `autoEnable: true` (acts as fallback when Ultra trial expires)
   > **Note**: Annual plan items use `reset: { interval: 'month' }` (PlanItemWithReset variant) so credits reset monthly even on annual billing. The plan-level price has `interval: 'year'` for billing.
-- [ ] **1.3** Add model gating in `ai-chat.ts`: check user's plan via Autumn customer data from `ensureAutumnCustomer` middleware (stash `planId` on `c.var`). Free tier → reject models above 2 credits (mini/flash/haiku only). Define `FREE_TIER_MAX_CREDITS` constant.
-- [ ] **1.4** Add BYOK support in `ai-chat.ts`: if request includes user-provided API key, skip credit check and model gating entirely. Use provided key for adapter creation.
+- [x] **1.3** Add model gating in `ai-chat.ts`: check user's plan via Autumn customer data from `ensureAutumnCustomer` middleware (stash `planId` on `c.var`). Free tier → reject models above 2 credits (mini/flash/haiku only). Define `FREE_TIER_MAX_CREDITS` constant.
+- [x] **1.4** Add BYOK support in `ai-chat.ts`: if request includes user-provided API key, skip credit check and model gating entirely. Use provided key for adapter creation.
 - [ ] **1.5** Delete old plans in Autumn: no existing users, clean slate
 - [ ] **1.6** Push new plans to Autumn sandbox: `bunx atmn preview` then `bunx atmn push`
 - [ ] **1.7** Verify in Autumn dashboard: all plans correct, trial config on Ultra, rollover on Ultra/Max only, annual variants present

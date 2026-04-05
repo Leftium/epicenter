@@ -8,3 +8,4 @@ export {
 	type MarkdownSerializer,
 	titleFilenameSerializer,
 } from './serializers.js';
+export { parseMarkdownFile } from './parse-markdown-file.js';

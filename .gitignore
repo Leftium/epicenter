@@ -41,6 +41,7 @@ yarn-error.log*
 # WXT (browser extension framework)
 .wxt
 .output
+.svelte-kit
 
 # Wrangler (Cloudflare Workers local state)
 .wrangler

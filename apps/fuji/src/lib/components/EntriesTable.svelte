@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Table from '@epicenter/ui/table';
 	import { SortableTableHeader } from '@epicenter/ui/table';
@@ -16,19 +15,18 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { formatDistanceToNowStrict } from 'date-fns';
-	import { createRawSnippet } from 'svelte';
 	import type { Entry, EntryId } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
 
 	let {
 		entries,
-		globalFilter,
+		searchQuery,
 		selectedEntryId,
 		onSelectEntry,
 		onAddEntry,
 	}: {
 		entries: Entry[];
-		globalFilter: string;
+		searchQuery: string;
 		selectedEntryId: EntryId | null;
 		onSelectEntry: (id: EntryId) => void;
 		onAddEntry: () => void;
@@ -60,11 +58,6 @@
 			cell: ({ getValue }) => {
 				const title = getValue<string>();
 				return title || 'Untitled';
-			},
-			filterFn: (row, _columnId, filterValue) => {
-				const title = String(row.getValue('title')).toLowerCase();
-				const filter = filterValue.toLowerCase();
-				return title.includes(filter);
 			},
 		},
 		{
@@ -155,7 +148,7 @@
 				return sorting;
 			},
 			get globalFilter() {
-				return globalFilter;
+				return searchQuery;
 			},
 		},
 		globalFilterFn: (row, _columnId, filterValue) => {
@@ -222,7 +215,7 @@
 								class="flex items-center justify-center py-8 text-muted-foreground"
 							>
 								<p class="text-sm">
-									{#if globalFilter}
+							{#if searchQuery}
 										No entries match your search.
 									{:else}
 										No entries yet. Click + to create one.

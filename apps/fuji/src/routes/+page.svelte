@@ -12,7 +12,7 @@
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
 	import { workspace } from '$lib/client';
-import type { Entry, EntryId } from '$lib/workspace';
+	import type { Entry, EntryId } from '$lib/workspace';
 
 	// ─── Reactive State ────────────────────────────────────────────────────────────
 
@@ -66,13 +66,6 @@ function createEntry() {
 		selectedEntryId.current = id;
 	}
 
-	function toggleViewMode() {
-		const next = viewMode.current === 'table' ? 'timeline' : 'table';
-		viewMode.current = next;
-	}
-
-	// ─── Keyboard Shortcuts ───────────────────────────────────────────────────────
-
 
 	// ─── Document Handle (Y.Text) ────────────────────────────────────────────────
 
@@ -110,18 +103,7 @@ function createEntry() {
 
 	if (event.key === 'n' && event.metaKey) {
 		event.preventDefault();
-		const id = generateId() as unknown as EntryId;
-		workspace.tables.entries.set({
-			id,
-			title: '',
-		subtitle: '',
-			type: [],
-			tags: [],
-			createdAt: dateTimeStringNow(),
-			updatedAt: dateTimeStringNow(),
-			_v: '1',
-		});
-		selectedEntryId.current = id;
+		createEntry();
 		return;
 	}
 
@@ -149,7 +131,7 @@ function createEntry() {
 				<EntryEditor
 					entry={selectedEntry}
 					ytext={currentYText}
-					onUpdateEntry={(updates) => {
+					onUpdate={(updates) => {
 						if (!selectedEntryId.current) return;
 						workspace.tables.entries.update(selectedEntryId.current, updates);
 					}}
@@ -167,7 +149,7 @@ function createEntry() {
 					variant="ghost"
 					size="icon"
 					class="size-7"
-					onclick={toggleViewMode}
+					onclick={() => (viewMode.current = viewMode.current === 'table' ? 'timeline' : 'table')}
 					title={viewMode.current === 'table' ? 'Switch to timeline' : 'Switch to table'}
 				>
 					{#if viewMode.current === 'table'}
@@ -181,7 +163,7 @@ function createEntry() {
 			{#if viewMode.current === 'table'}
 				<EntriesTable
 					entries={filteredEntries}
-					globalFilter={searchQuery}
+					{searchQuery}
 					selectedEntryId={selectedEntryId.current}
 					onSelectEntry={(id) => (selectedEntryId.current = id)}
 					onAddEntry={createEntry}

@@ -26,9 +26,19 @@
 
 import { SvelteSet } from 'svelte/reactivity';
 import { bookmarkState } from '$lib/state/bookmark-state.svelte';
+import type {
+	BrowserTab,
+	BrowserWindow,
+} from '$lib/state/browser-state.svelte';
 import { browserState } from '$lib/state/browser-state.svelte';
 import { savedTabState } from '$lib/state/saved-tab-state.svelte';
-import type { BrowserTab, BrowserWindow } from '$lib/state/browser-state.svelte';
+import {
+	searchCaseSensitive,
+	searchExactMatch,
+	searchField,
+	searchRegex,
+} from '$lib/state/search-preferences.svelte';
+import { normalizeUrl } from '$lib/utils/tab-helpers';
 import type { Bookmark, SavedTab } from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,16 +89,84 @@ function createUnifiedViewState() {
 	/** Whether a search filter is currently active. */
 	const isFiltering = $derived(searchQuery.trim().length > 0);
 
-	/** Case-insensitive match against title and URL. */
+	/** Whether the current regex query has invalid syntax. */
+	const isRegexInvalid = $derived.by(() => {
+		if (!searchRegex.current || !isFiltering) return false;
+		try {
+			new RegExp(searchQuery);
+			return false;
+		} catch {
+			return true;
+		}
+	});
+
+	/** Escape special regex characters for safe use in `new RegExp()`. */
+	function escapeRegex(str: string): string {
+		return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}
+
+	/** Match against title and/or URL based on current search preferences. */
 	function matchesFilter(
 		title: string | undefined,
 		url: string | undefined,
 	): boolean {
 		if (!isFiltering) return true;
-		const lower = searchQuery.toLowerCase();
-		const t = title?.toLowerCase() ?? '';
-		const u = url?.toLowerCase() ?? '';
-		return t.includes(lower) || u.includes(lower);
+
+		const field = searchField.current;
+		const isCaseSensitive = searchCaseSensitive.current;
+		const isRegex = searchRegex.current;
+		const isExact = searchExactMatch.current;
+
+		/** Test a single string against the current query using the active mode. */
+		function testField(value: string, fieldType: 'title' | 'url'): boolean {
+			if (isRegex) {
+				try {
+					const re = new RegExp(searchQuery, isCaseSensitive ? '' : 'i');
+					return re.test(value);
+				} catch {
+					return false;
+				}
+			}
+
+			if (isExact) {
+				if (fieldType === 'title') {
+					// Whole-word boundary match for titles
+					try {
+						const re = new RegExp(
+							`\\b${escapeRegex(searchQuery)}\\b`,
+							isCaseSensitive ? '' : 'i',
+						);
+						return re.test(value);
+					} catch {
+						return false;
+					}
+				}
+				// Exact URL match after normalization
+				const normalizedValue = normalizeUrl(value);
+				const normalizedQuery = normalizeUrl(searchQuery);
+				if (isCaseSensitive) {
+					return normalizedValue === normalizedQuery;
+				}
+				return normalizedValue.toLowerCase() === normalizedQuery.toLowerCase();
+			}
+
+			// Default: substring includes
+			const q = isCaseSensitive ? searchQuery : searchQuery.toLowerCase();
+			const v = isCaseSensitive ? value : value.toLowerCase();
+			return v.includes(q);
+		}
+
+		const t = title ?? '';
+		const u = url ?? '';
+
+		switch (field) {
+			case 'title':
+				return testField(t, 'title');
+			case 'url':
+				return testField(u, 'url');
+			case 'all':
+				return testField(t, 'title') || testField(u, 'url');
+		}
 	}
 
 	/**
@@ -265,6 +343,45 @@ function createUnifiedViewState() {
 		/** Check if a window is expanded. */
 		isWindowExpanded(windowId: number): boolean {
 			return expandedWindows.has(windowId);
+		},
+
+		/** Whether search matching is case-sensitive. Persisted to chrome.storage. */
+		get isCaseSensitive() {
+			return searchCaseSensitive.current;
+		},
+		set isCaseSensitive(value: boolean) {
+			searchCaseSensitive.current = value;
+		},
+
+		/** Whether the query is a regular expression. Mutually exclusive with exactMatch. */
+		get isRegex() {
+			return searchRegex.current;
+		},
+		set isRegex(value: boolean) {
+			searchRegex.current = value;
+			if (value) searchExactMatch.current = false;
+		},
+
+		/** Whether to match whole words (titles) or exact URLs. Mutually exclusive with regex. */
+		get isExactMatch() {
+			return searchExactMatch.current;
+		},
+		set isExactMatch(value: boolean) {
+			searchExactMatch.current = value;
+			if (value) searchRegex.current = false;
+		},
+
+		/** Which fields to search: all, title only, or URL only. */
+		get searchField() {
+			return searchField.current;
+		},
+		set searchField(value: 'all' | 'title' | 'url') {
+			searchField.current = value;
+		},
+
+		/** Whether the current regex pattern has invalid syntax. */
+		get isRegexInvalid() {
+			return isRegexInvalid;
 		},
 	};
 }

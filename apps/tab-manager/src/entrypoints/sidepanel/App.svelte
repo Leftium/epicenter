@@ -4,12 +4,17 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import { Toggle } from '@epicenter/ui/toggle';
+	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
+	import CaseSensitiveIcon from '@lucide/svelte/icons/case-sensitive';
+	import RegexIcon from '@lucide/svelte/icons/regex';
+	import WholeWordIcon from '@lucide/svelte/icons/whole-word';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
@@ -59,21 +64,82 @@
 							searchInputRef?.blur();
 						}
 					}}
-						class="h-8 pl-8 pr-8 text-sm [&::-webkit-search-cancel-button]:hidden"
+						class="h-8 pl-8 pr-[5.5rem] text-sm [&::-webkit-search-cancel-button]:hidden"
 					/>
-					{#if unifiedViewState.searchQuery}
-						<button
-							type="button"
-							class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-							onclick={() => {
-								unifiedViewState.searchQuery = '';
-								searchInputRef?.focus();
-							}}
-						>
-							<XIcon class="size-3.5" />
-						</button>
-					{/if}
+					<div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+						{#if unifiedViewState.searchQuery}
+							<button
+								type="button"
+								class="text-muted-foreground hover:text-foreground"
+								onclick={() => {
+									unifiedViewState.searchQuery = '';
+									searchInputRef?.focus();
+								}}
+							>
+								<XIcon class="size-3.5" />
+							</button>
+						{/if}
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								{#snippet child({ props })}
+									<Toggle
+										size="sm"
+										bind:pressed={unifiedViewState.isCaseSensitive}
+										aria-label="Match Case"
+										class="size-6 rounded-sm p-0"
+										{...props}
+									>
+										<CaseSensitiveIcon class="size-3.5" />
+									</Toggle>
+								{/snippet}
+							</Tooltip.Trigger>
+							<Tooltip.Content>Match Case</Tooltip.Content>
+						</Tooltip.Root>
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								{#snippet child({ props })}
+									<Toggle
+										size="sm"
+										bind:pressed={unifiedViewState.isRegex}
+										aria-label="Use Regular Expression"
+										class="size-6 rounded-sm p-0"
+										{...props}
+									>
+										<RegexIcon class="size-3.5" />
+									</Toggle>
+								{/snippet}
+							</Tooltip.Trigger>
+							<Tooltip.Content>Use Regular Expression</Tooltip.Content>
+						</Tooltip.Root>
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								{#snippet child({ props })}
+									<Toggle
+										size="sm"
+										bind:pressed={unifiedViewState.isExactMatch}
+										aria-label="Match Whole Word"
+										class="size-6 rounded-sm p-0"
+										{...props}
+									>
+										<WholeWordIcon class="size-3.5" />
+									</Toggle>
+								{/snippet}
+							</Tooltip.Trigger>
+							<Tooltip.Content>Match Whole Word</Tooltip.Content>
+						</Tooltip.Root>
+					</div>
 				</div>
+				<ToggleGroup.Root
+					type="single"
+					size="sm"
+					variant="outline"
+					bind:value={unifiedViewState.searchField}
+					class="h-7"
+				>
+					<ToggleGroup.Item value="all" class="px-1.5 text-xs h-7">All</ToggleGroup.Item>
+					<ToggleGroup.Item value="title" class="px-1.5 text-xs h-7">Title</ToggleGroup.Item>
+					<ToggleGroup.Item value="url" class="px-1.5 text-xs h-7">URL</ToggleGroup.Item>
+				</ToggleGroup.Root>
 				<Button
 					variant="ghost"
 					size="icon-xs"

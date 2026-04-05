@@ -34,7 +34,7 @@ import { getDomain } from '$lib/utils/format';
  * // 'https://example.com/page?a=1&b=2'
  * ```
  */
-function normalizeUrl(url: string): string {
+export function normalizeUrl(url: string): string {
 	try {
 		const parsed = new URL(url);
 		parsed.hash = '';

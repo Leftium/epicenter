@@ -1,11 +1,27 @@
 <script lang="ts">
 	import * as Card from '@epicenter/ui/card';
+	import * as Chart from '@epicenter/ui/chart';
 	import * as Select from '@epicenter/ui/select';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { FEATURE_IDS } from '$lib/constants';
+	import { scaleUtc } from 'd3-scale';
+	import { curveMonotoneX } from 'd3-shape';
+	import { Area, AreaChart, LinearGradient } from 'layerchart';
 	import { usageQueryOptions } from '$lib/query/billing';
+
 	type Range = '7d' | '30d' | '90d';
+
+	/** Chart color palette — up to 8 series (matches shadcn chart vars). */
+	const CHART_COLORS = [
+		'var(--chart-1)',
+		'var(--chart-2)',
+		'var(--chart-3)',
+		'var(--chart-4)',
+		'var(--chart-5)',
+		'hsl(280 65% 60%)',
+		'hsl(340 75% 55%)',
+		'hsl(160 60% 45%)',
+	];
 
 	let selectedRange = $state<Range>('30d');
 
@@ -24,36 +40,64 @@
 		{ value: '90d' as const, label: '90 days' },
 	];
 
-	const featureKey = FEATURE_IDS.aiUsage;
-	const totalCredits = $derived(usage.data?.total?.[featureKey]?.sum ?? 0);
+	const totalCredits = $derived(usage.data?.total?.ai_usage?.sum ?? 0);
 
-	const periods = $derived(usage.data?.list ?? []);
+	/**
+	 * Discover all model names across the response, sorted by total usage descending.
+	 * These become the chart series keys.
+	 */
+	const modelNames = $derived.by(() => {
+		const totals: Record<string, number> = {};
+		for (const period of usage.data?.list ?? []) {
+			for (const [model, count] of Object.entries(
+				period.grouped_values?.ai_usage ?? {},
+			)) {
+				totals[model] = (totals[model] ?? 0) + (count as number);
+			}
+		}
+		return Object.entries(totals)
+			.sort(([, a], [, b]) => b - a)
+			.map(([name]) => name);
+	});
 
-	/** Max value across all periods—computed once, not per-bar. */
-	const maxValue = $derived(
-		Math.max(
-			...periods.map((p) => p.values?.[featureKey] ?? 0),
-			1,
-		),
+	/**
+	 * Transform Autumn's aggregate response into flat rows for LayerChart.
+	 * Each row: { date: Date, 'claude-sonnet-4': 100, 'gpt-4o-mini': 30, ... }
+	 */
+	const chartData = $derived(
+		(usage.data?.list ?? []).map((period) => {
+			const row: Record<string, unknown> = {
+				date: new Date(period.period),
+			};
+			for (const model of modelNames) {
+				row[model] =
+					(
+						period.grouped_values?.ai_usage as
+							| Record<string, number>
+							| undefined
+					)?.[model] ?? 0;
+			}
+			return row;
+		}),
 	);
 
-	/** Top 5 models by total credit usage across all periods. */
-	const topModels = $derived(
-		Object.entries(
-		periods.reduce(
-			(acc: Record<string, number>, period) => {
-				for (const [model, count] of Object.entries(
-					period.groupedValues?.[featureKey] ?? {},
-				)) {
-					acc[model] = (acc[model] ?? 0) + count;
-				}
-				return acc;
-			},
-			{} as Record<string, number>,
-		),
-	)
-		.sort(([, a], [, b]) => (b as number) - (a as number))
-		.slice(0, 5),
+	/** Dynamic chart config — one entry per model with assigned colors. */
+	const chartConfig = $derived(
+		Object.fromEntries(
+			modelNames.map((name, i) => [
+				name,
+				{ label: name, color: CHART_COLORS[i % CHART_COLORS.length] },
+			]),
+		) satisfies Chart.ChartConfig,
+	);
+
+	/** Series array for AreaChart. */
+	const series = $derived(
+		modelNames.map((name, i) => ({
+			key: name,
+			label: name,
+			color: CHART_COLORS[i % CHART_COLORS.length],
+		})),
 	);
 </script>
 
@@ -82,47 +126,77 @@
 			<p class="text-sm text-destructive py-12 text-center">
 				Failed to load usage data.
 			</p>
+		{:else if chartData.length === 0}
+			<p class="text-sm text-muted-foreground py-12 text-center">
+				No usage data yet.
+			</p>
 		{:else}
-			<div class="h-48 flex items-end gap-1">
-				{#each periods as period}
-				{@const value = period.values?.[featureKey] ?? 0}
-					<div
-						class="flex-1 bg-primary/20 hover:bg-primary/30 rounded-t transition-colors relative group"
-						style="height: {Math.max(2, (value / maxValue) * 100)}%"
-					>
-						<div
-							class="absolute -top-6 left-1/2 -translate-x-1/2 bg-popover text-popover-foreground text-xs px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none"
-						>
-							{value.toLocaleString()}
-							credits
-						</div>
-					</div>
-				{/each}
-			</div>
+			<Chart.Container config={chartConfig} class="aspect-[3/1] w-full">
+				<AreaChart
+					data={chartData}
+					x="date"
+					xScale={scaleUtc()}
+					yPadding={[0, 15]}
+					{series}
+					seriesLayout="stack"
+					props={{
+						area: {
+							curve: curveMonotoneX,
+							'fill-opacity': 0.4,
+							line: { class: 'stroke-1' },
+						},
+						xAxis: {
+							format: (v: Date) =>
+								v.toLocaleDateString('en-US', {
+									month: 'short',
+									day: 'numeric',
+								}),
+						},
+						yAxis: {
+							format: (v: number) =>
+								v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v),
+						},
+					}}
+				>
+					{#snippet tooltip()}
+						<Chart.Tooltip
+							indicator="dot"
+							labelFormatter={(v: Date) =>
+								v.toLocaleDateString('en-US', {
+									month: 'long',
+									day: 'numeric',
+								})}
+						/>
+					{/snippet}
+					{#snippet marks({ series: chartSeries, getAreaProps })}
+						{#each chartSeries as s, i (s.key)}
+							<LinearGradient
+								stops={[
+									s.color ?? '',
+									`color-mix(in lch, ${s.color} 10%, transparent)`,
+								]}
+								vertical
+							>
+								{#snippet children({ gradient })}
+									<Area {...getAreaProps(s, i)} fill={gradient} />
+								{/snippet}
+							</LinearGradient>
+						{/each}
+					{/snippet}
+				</AreaChart>
+			</Chart.Container>
 
 			<div
 				class="mt-4 flex items-center justify-between text-xs text-muted-foreground"
 			>
 				<span>Total: {totalCredits.toLocaleString()} credits</span>
-				{#if usage.data?.total?.[featureKey]?.count}
-					<span>
-						{usage.data.total[featureKey].count.toLocaleString()} requests
-					</span>
+				{#if usage.data?.total?.ai_usage?.count}
+					<span
+						>{usage.data.total.ai_usage.count.toLocaleString()}
+						requests</span
+					>
 				{/if}
 			</div>
-
-			{#if topModels.length > 0}
-				<div class="mt-3 flex flex-wrap gap-2">
-					{#each topModels as [model, count]}
-						<span
-							class="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs"
-						>
-							{model}
-						<span class="text-muted-foreground">{(count as number).toLocaleString()}</span>
-						</span>
-					{/each}
-				</div>
-			{/if}
 		{/if}
 	</Card.Content>
 </Card.Root>

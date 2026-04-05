@@ -1,10 +1,6 @@
 <script lang="ts">
 	import { defaultKeymap, indentWithTab } from '@codemirror/commands';
 	import { markdown } from '@codemirror/lang-markdown';
-	import {
-		defaultHighlightStyle,
-		syntaxHighlighting,
-	} from '@codemirror/language';
 	import { EditorState, type Extension } from '@codemirror/state';
 	import {
 		drawSelection,
@@ -14,6 +10,8 @@
 	} from '@codemirror/view';
 	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 	import type * as Y from 'yjs';
+	import { markdownHighlighting } from './extensions/markdown-highlight';
+	import { vimModeExtension } from './extensions/vim-mode';
 
 	let {
 		ytext,
@@ -32,10 +30,11 @@
 			state: EditorState.create({
 				doc: ytext.toString(),
 				extensions: [
+					vimModeExtension,
 					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
 					drawSelection(),
 					EditorView.lineWrapping,
-					syntaxHighlighting(defaultHighlightStyle),
+					markdownHighlighting,
 					markdown(),
 					yCollab(ytext, null),
 					placeholder('Empty file'),

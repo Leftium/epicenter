@@ -118,8 +118,8 @@ function createEditorState() {
 		 * plus the update listener that bridges CM6 → `$state`.
 		 * Call once per `EditorView` creation—do NOT reuse across views.
 		 *
-		 * Must be placed **before** other keymap extensions so vim
-		 * keybindings take precedence when enabled.
+		 * Must be placed **after** `keymap.of(defaultKeymap)` so vim's
+		 * Escape binding takes precedence over `simplifySelection`.
 		 */
 		extension(): Extension[] {
 			const vimEnabled = vimPreference.current;

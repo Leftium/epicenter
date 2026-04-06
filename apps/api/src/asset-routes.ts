@@ -33,10 +33,10 @@ const ALLOWED_MIME_TYPES = new Set([
 // ---------------------------------------------------------------------------
 
 /** Authenticated routes (upload + delete). Mounted behind authGuard in app.ts. */
-const assetAuthedRoutes = new Hono<Env>();
+export const assetAuthedRoutes = new Hono<Env>();
 
 /** Public routes (read). Mounted without authGuard in app.ts. */
-const assetPublicRoutes = new Hono<Env>();
+export const assetPublicRoutes = new Hono<Env>();
 
 // ---------------------------------------------------------------------------
 // POST / — Upload
@@ -299,7 +299,7 @@ assetPublicRoutes.get(
 		}
 
 		// Object exists but no body → precondition failed (ETag matched)
-		if (!('body' in object && object.body)) {
+		if (!('body' in object)) {
 			const headers = new Headers();
 			object.writeHttpMetadata(headers);
 			headers.set('etag', object.httpEtag);
@@ -317,9 +317,9 @@ assetPublicRoutes.get(
 		const status = range ? 206 : 200;
 		if (range && 'offset' in range) {
 			const start = range.offset ?? 0;
-			const end = range.length
-				? start + range.length - 1
-				: object.size - 1;
+		const end = range.length != null
+			? start + range.length - 1
+			: object.size - 1;
 			headers.set('content-range', `bytes ${start}-${end}/${object.size}`);
 			headers.set('content-length', String(end - start + 1));
 		}
@@ -328,4 +328,3 @@ assetPublicRoutes.get(
 	},
 );
 
-export { assetAuthedRoutes, assetPublicRoutes };

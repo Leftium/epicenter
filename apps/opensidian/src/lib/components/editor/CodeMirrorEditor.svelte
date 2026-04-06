@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { defaultKeymap, indentWithTab } from '@codemirror/commands';
-	import { Compartment, EditorState, type Extension } from '@codemirror/state';
+	import { EditorState, type Extension } from '@codemirror/state';
 	import {
 		drawSelection,
 		EditorView,
@@ -27,7 +27,6 @@
 	} = $props();
 
 	let container: HTMLDivElement | undefined = $state();
-	const highlightCompartment = new Compartment();
 
 	$effect(() => {
 		if (!container) return;
@@ -42,9 +41,7 @@
 					drawSelection(),
 					EditorView.lineWrapping,
 					...getLanguageExtensions(filename),
-					highlightCompartment.of(
-						getHighlightStyle(filename, mode.current === 'dark'),
-					),
+					getHighlightStyle(filename, mode.current === 'dark'),
 					yCollab(ytext, null),
 					placeholder('Empty file'),
 					...extraExtensions,

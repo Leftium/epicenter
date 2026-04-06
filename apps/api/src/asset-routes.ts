@@ -16,7 +16,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
 import type { Env } from './app.js';
 import { createAutumn } from './autumn.js';
-import { PLAN_IDS } from './billing-plans.js';
+import { FEATURE_IDS } from './billing-plans.js';
 import { MAX_ASSET_BYTES } from './constants.js';
 import * as schema from './db/schema.js';
 
@@ -50,21 +50,13 @@ authedRoutes.post(
 	}),
 	bodyLimit({ maxSize: MAX_ASSET_BYTES }),
 	async (c) => {
-		// -- Plan gate: paid users only --
+		// -- Storage billing gate --
 		const autumn = createAutumn(c.env);
-		const customer = await autumn.customers.getOrCreate({
+		await autumn.customers.getOrCreate({
 			customerId: c.var.user.id,
 			name: c.var.user.name ?? undefined,
 			email: c.var.user.email ?? undefined,
-			expand: ['subscriptions.plan'],
 		});
-		const mainSub = customer.subscriptions?.find(
-			(s: { addOn?: boolean }) => !s.addOn,
-		);
-		const planId = mainSub?.planId ?? 'free';
-		if (planId === PLAN_IDS.free) {
-			return c.json({ error: 'Paid plan required for asset uploads' }, 402);
-		}
 
 		// -- Extract file from multipart body --
 		const body = await c.req.parseBody();
@@ -89,10 +81,19 @@ authedRoutes.post(
 			return c.json({ error: 'File too large' }, 413);
 		}
 
+		// -- Check storage allowance before writing --
+		const { allowed } = await autumn.check({
+			customerId: c.var.user.id,
+			featureId: FEATURE_IDS.storageBytes,
+			requiredBalance: file.size,
+		});
+		if (!allowed) {
+			return c.json({ error: 'Storage limit exceeded' }, 402);
+		}
+
 		// -- Store in R2 --
 		const assetId = generateGuid();
 		const key = `${c.var.user.id}/${assetId}`;
-
 		await c.env.ASSETS_BUCKET.put(key, file.stream(), {
 			httpMetadata: {
 				contentType: file.type,
@@ -109,6 +110,15 @@ authedRoutes.post(
 			sizeBytes: file.size,
 			originalName: file.name,
 		});
+
+		// Track storage usage (fire-and-forget after response)
+		c.var.afterResponse.push(
+			autumn.track({
+				customerId: c.var.user.id,
+				featureId: FEATURE_IDS.storageBytes,
+				value: file.size,
+			}),
+		);
 
 		return c.json(
 			{
@@ -141,7 +151,7 @@ authedRoutes.delete(
 			return c.json({ error: 'Forbidden' }, 403);
 		}
 
-		// Look up asset to get sizeBytes for billing (Wave 4)
+		// Look up asset to get sizeBytes for billing credit
 		const [row] = await c.var.db
 			.select({ sizeBytes: schema.asset.sizeBytes })
 			.from(schema.asset)
@@ -155,6 +165,16 @@ authedRoutes.delete(
 		const key = `${userId}/${assetId}`;
 		await c.env.ASSETS_BUCKET.delete(key);
 		await c.var.db.delete(schema.asset).where(eq(schema.asset.id, assetId));
+
+		// Credit storage back (fire-and-forget after response)
+		const autumn = createAutumn(c.env);
+		c.var.afterResponse.push(
+			autumn.track({
+				customerId: c.var.user.id,
+				featureId: FEATURE_IDS.storageBytes,
+				value: -row.sizeBytes,
+			}),
+		);
 
 		return c.body(null, 204);
 	},

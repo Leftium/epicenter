@@ -95,5 +95,5 @@ export function getHighlightStyle(
 	}
 
 	const style = isDark ? oneDarkHighlightStyle : defaultHighlightStyle;
-	return syntaxHighlighting(style, { fallback: true });
+	return syntaxHighlighting(style);
 }

@@ -1,10 +1,5 @@
 // Errors
 export { FS_ERRORS, type FsErrorCode } from './errors.js';
-export {
-	generateCreateIndexSQL,
-	generateCreateTableSQL,
-	generateDDL,
-} from './extensions/sqlite-index/ddl.js';
 // Extensions
 export {
 	createSqliteIndex,

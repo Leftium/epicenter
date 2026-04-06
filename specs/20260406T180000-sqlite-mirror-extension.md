@@ -234,6 +234,42 @@ INSERT OR REPLACE INTO recordings ...   ← SQLite updated
 FTS5 triggers fire automatically        ← FTS index updated
 ```
 
+### Multi-Version Table Handling
+
+Multi-version tables produce `{ "oneOf": [v1Schema, v2Schema] }` from `describeWorkspace()` instead of a flat object schema. The DDL generator must:
+
+1. Detect `oneOf` in the schema
+2. Pick the version with the highest `_v.const` value — the last entry in `oneOf` is always the latest, but we use `_v.const` for safety
+3. Generate DDL from that version's `properties` and `required` arrays
+4. This is safe because `table.getAllValid()` runs migrations — all returned rows are already at the latest version
+
+```json
+// describeWorkspace() output for a multi-version table
+{
+  "oneOf": [
+    { "type": "object", "properties": { "_v": { "const": 1 }, "title": ... }, ... },
+    { "type": "object", "properties": { "_v": { "const": 2 }, "title": ..., "views": ... }, ... }
+  ]
+}
+// DDL generator picks the schema where _v.const is highest (2)
+// → CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL, views REAL NOT NULL, _v INTEGER NOT NULL)
+```
+
+### Async Everywhere
+
+Both `@tursodatabase/database` (native) and `@tursodatabase/database-wasm` (browser) use async APIs — `await db.exec()`, `await db.prepare().run()`. The extension uses `async/await` throughout. No sync/async branching needed.
+
+### OPFS Browser Persistence
+
+`@tursodatabase/database-wasm` uses OPFS (Origin Private File System) for persistent browser storage — SQLite files survive page reloads without IndexedDB. This requires COEP/COOP headers:
+
+```
+Cross-Origin-Embedder-Policy: require-corp
+Cross-Origin-Opener-Policy: same-origin
+```
+
+Apps already using SharedArrayBuffer (common for Yjs sync) will have these headers set. For `:memory:` mode, OPFS isn't used and no headers are needed.
+
 ### JSON Schema → DDL Type Mapping
 
 | JSON Schema | SQLite Type | Notes |
@@ -242,10 +278,10 @@ FTS5 triggers fire automatically        ← FTS index updated
 | `{ "type": "number" }` | `REAL` | Floats |
 | `{ "type": "integer" }` | `INTEGER` | When JSON Schema has `"type": "integer"` |
 | `{ "type": "boolean" }` | `INTEGER` | 0/1 |
-| nullable (anyOf with null) | Column allows `NULL` | |
-| `{ "type": "object" }` or `{ "type": "array" }` | `TEXT` | JSON-serialized |
-| Union of string literals | `TEXT` | e.g., `'DONE' | 'PENDING'` → `TEXT` |
-| `_v` field | `INTEGER NOT NULL` | Version discriminant, always present |
+| `{ "enum": ["A", "B"] }` | `TEXT` | String literal unions from arktype |
+| Not in `required[]` | Column allows `NULL` | Arktype optional fields (`'key?'`) |
+| `{ "type": "object" }` or `{ "type": "array" }` | `TEXT` | JSON-serialized via `JSON.stringify` |
+| `{ "const": N }` (`_v` field) | `INTEGER NOT NULL` | Version discriminant, always present |
 | `id` field | `TEXT PRIMARY KEY` | Always the primary key |
 
 ## API Design
@@ -432,16 +468,16 @@ queryData: defineQuery({
 ### Phase 1: Core Mirror (no FTS, no vectors)
 
 - [ ] **1.1** Create `packages/workspace/src/extensions/materializer/sqlite/` directory
-- [ ] **1.2** Implement `generateDDL(tableDefinitions)`: walk `describeWorkspace()` JSON Schema per table → `CREATE TABLE IF NOT EXISTS` statements using the type mapping table above
+- [ ] **1.2** Implement `generateDDL(jsonSchema)`: walk JSON Schema per table → `CREATE TABLE IF NOT EXISTS`. Handle `oneOf` (multi-version) by picking the schema with the highest `_v.const`. Use `required[]` to determine NOT NULL vs nullable.
 - [ ] **1.3** Implement `createSqliteMirror(options)` extension factory:
   - Await `ctx.whenReady` before touching SQLite
   - Generate and execute DDL for each table
   - Full load: `table.getAllValid()` → batch `INSERT OR REPLACE INTO`
   - Return `{ db, rebuild }`
 - [ ] **1.4** Implement observer-based incremental sync:
-  - `table.observe()` per mirrored table
-  - Debounced batch: collect changed IDs, then `INSERT OR REPLACE` for upserts, `DELETE` for removals
-  - Call `onSync` hook after each batch
+  - `table.observe((changedIds: ReadonlySet<string>) => ...)` per mirrored table — returns unsubscribe fn
+  - Debounced batch: collect changed IDs into a Set, then for each ID: `table.get(id)` → `valid` = `INSERT OR REPLACE`, `not_found` = `DELETE`
+  - Call `onSync` hook after each batch with `{ table, upserted, deleted }` arrays
 - [ ] **1.5** Implement `dispose()`: unsubscribe observers, close client if owned
 - [ ] **1.6** Add tests: mirror creation, full load, incremental sync, rebuild
 

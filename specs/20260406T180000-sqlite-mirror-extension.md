@@ -480,14 +480,14 @@ queryData: defineQuery({
   - Debounced batch: collect changed IDs into a Set, then for each ID: `table.get(id)` → `valid` = `INSERT OR REPLACE`, `not_found` = `DELETE`
   - Call `onSync` hook after each batch with `{ table, upserted, deleted }` arrays
 - [x] **1.5** Implement `dispose()`: unsubscribe observers, close client if owned
-- [ ] **1.6** Add tests: mirror creation, full load, incremental sync, rebuild
+- [x] **1.6** Add tests: mirror creation, full load, incremental sync, rebuild
 
 ### Phase 2: FTS5
 
 - [x] **2.1** Implement FTS config parsing: `fts: { recordings: ['title', 'transcribedText'] }` → `CREATE VIRTUAL TABLE recordings_fts USING fts5(title, transcribedText, content=recordings, content_rowid=rowid)`
 - [x] **2.2** Generate INSERT/UPDATE/DELETE triggers to keep FTS in sync with mirror tables
 - [x] **2.3** Implement `search(table, query, options)` helper using FTS5 `MATCH` + `snippet()` + `rank`
-- [ ] **2.4** Add tests: FTS creation, search, trigger-based sync after upsert/delete
+- [x] **2.4** Add tests: FTS creation, search, trigger-based sync after upsert/delete
 
 ### Phase 3: Lifecycle Hooks
 

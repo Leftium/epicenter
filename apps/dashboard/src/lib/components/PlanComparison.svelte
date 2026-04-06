@@ -10,6 +10,7 @@
 	import { api, type AttachResponse, type PreviewResponse } from '$lib/api';
 	import { balanceQueryOptions, plansQueryOptions } from '$lib/query/billing';
 	import { queryClient } from '$lib/query/client';
+	import { PLANS, ANNUAL_PLANS, PLAN_IDS } from '@epicenter/api/billing-plans';
 
 	/** Visible plan IDs in display order. Free is NOT shown as a card. */
 	const VISIBLE_PLAN_IDS = {
@@ -17,63 +18,51 @@
 		annual: ['pro_annual', 'ultra_annual', 'max_annual'] as const,
 	};
 
-	/**
-	 * Plan display metadata. WARNING: This duplicates pricing data from
-	 * `apps/api/src/billing-plans.ts`. If prices change, update both.
-	 * TODO: Derive from /billing/models endpoint to eliminate duplication.
-	 */
-	const PLAN_DISPLAY = {
-		pro: {
-			name: 'Pro',
-			price: '$20/mo',
-			annualPrice: '$17/mo',
-			credits: '2,500',
-			overage: '$1/100',
-			rollover: false,
-		},
-		ultra: {
-			name: 'Ultra',
-			price: '$60/mo',
-			annualPrice: '$50/mo',
-			credits: '10,000',
-			overage: '$0.75/100',
-			rollover: true,
-			isRecommended: true,
-		},
-		max: {
-			name: 'Max',
-			price: '$200/mo',
-			annualPrice: '$167/mo',
-			credits: '50,000',
-			overage: '$0.50/100',
-			rollover: true,
-		},
-		pro_annual: {
-			name: 'Pro',
-			price: '$200/yr',
-			annualPrice: '$200/yr',
-			credits: '2,500',
-			overage: '$1/100',
-			rollover: false,
-		},
-		ultra_annual: {
-			name: 'Ultra',
-			price: '$600/yr',
-			annualPrice: '$600/yr',
-			credits: '10,000',
-			overage: '$0.75/100',
-			rollover: true,
-			isRecommended: true,
-		},
-		max_annual: {
-			name: 'Max',
-			price: '$2,000/yr',
-			annualPrice: '$2,000/yr',
-			credits: '50,000',
-			overage: '$0.50/100',
-			rollover: true,
-		},
-	} as const;
+	function formatPrice(amount: number, interval: 'month' | 'year'): string {
+		return `$${amount.toLocaleString()}/${interval === 'month' ? 'mo' : 'yr'}`;
+	}
+
+	function formatOverage(overage: { amount: number; billingUnits: number }): string {
+		const amt = Number.isInteger(overage.amount)
+			? `${overage.amount}`
+			: overage.amount.toFixed(2);
+		return `$${amt}/${overage.billingUnits}`;
+	}
+
+	/** Display metadata derived from plan constants in @epicenter/api/billing-plans. */
+	const PLAN_DISPLAY = Object.fromEntries([
+		...VISIBLE_PLAN_IDS.monthly.map((id) => {
+			const plan = PLANS[id];
+			const annual = Object.values(ANNUAL_PLANS).find(
+				(p) => p.monthlyEquivalent === id,
+			);
+			return [id, {
+				name: plan.name,
+				price: formatPrice(plan.price.amount, plan.price.interval),
+				annualPrice: annual
+					? `$${Math.round(annual.price.amount / 12)}/mo`
+					: formatPrice(plan.price.amount, plan.price.interval),
+				credits: plan.credits.included.toLocaleString(),
+				overage: formatOverage(plan.credits.overage),
+				rollover: id === PLAN_IDS.ultra || id === PLAN_IDS.max,
+				isRecommended: id === PLAN_IDS.ultra,
+			}];
+		}),
+		...VISIBLE_PLAN_IDS.annual.map((id) => {
+			const plan = ANNUAL_PLANS[id];
+			return [id, {
+				name: plan.name.replace(' (Annual)', ''),
+				price: formatPrice(plan.price.amount, plan.price.interval),
+				annualPrice: formatPrice(plan.price.amount, plan.price.interval),
+				credits: plan.credits.included.toLocaleString(),
+				overage: formatOverage(plan.credits.overage),
+				rollover:
+					plan.monthlyEquivalent === PLAN_IDS.ultra ||
+					plan.monthlyEquivalent === PLAN_IDS.max,
+				isRecommended: plan.monthlyEquivalent === PLAN_IDS.ultra,
+			}];
+		}),
+	]);
 
 	let isAnnual = $state(false);
 	let confirmDialog = $state<{ planId: string; planName: string } | null>(null);

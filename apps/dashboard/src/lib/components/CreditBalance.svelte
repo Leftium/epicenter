@@ -4,7 +4,7 @@
 	import { Progress } from '@epicenter/ui/progress';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { FEATURE_IDS } from '$lib/constants';
+	import { FEATURE_IDS } from '@epicenter/api/billing-plans';
 	import { balanceQueryOptions } from '$lib/query/billing';
 
 	const balance = createQuery(() => balanceQueryOptions());

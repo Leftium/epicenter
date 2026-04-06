@@ -3,7 +3,6 @@ import { EditorView } from '@codemirror/view';
 import { createPersistedState } from '@epicenter/svelte';
 import { Vim, vim } from '@replit/codemirror-vim';
 import { type } from 'arktype';
-import { mode } from 'mode-watcher';
 
 // ── Persisted preferences ───────────────────────────────────────
 
@@ -118,13 +117,15 @@ function createEditorState() {
 		 * plus the update listener that bridges CM6 → `$state`.
 		 * Call once per `EditorView` creation—do NOT reuse across views.
 		 *
-		 * Must be placed **before** other keymap extensions so vim
-		 * keybindings take precedence when enabled.
+		 * Must be placed **after** `keymap.of(defaultKeymap)` so vim's
+		 * Escape binding takes precedence over `simplifySelection`.
+		 *
+		 * @param isDark Whether the editor is in dark mode. Passed by
+		 * the component that owns the `mode-watcher` dependency.
 		 */
-		extension(): Extension[] {
+		extension(isDark: boolean): Extension[] {
 			const vimEnabled = vimPreference.current;
 			if (vimEnabled) applyLineWrapRemaps();
-			const isDark = mode.current === 'dark';
 			return [
 				vimCompartment.of(vimEnabled ? vim() : []),
 				darkModeCompartment.of(isDark ? EditorView.theme({}, { dark: true }) : []),

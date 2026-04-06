@@ -10,6 +10,7 @@
 	import Toolbar from './Toolbar.svelte';
 	import TerminalPanel from './terminal/TerminalPanel.svelte';
 	import FileTree from './tree/FileTree.svelte';
+	import StatusBar from './editor/StatusBar.svelte';
 
 	let paletteOpen = $state(false);
 
@@ -97,6 +98,7 @@
 			</Resizable.PaneGroup>
 		</Resizable.Pane>
 	</Resizable.PaneGroup>
+	<StatusBar />
 	<CommandPalette
 		items={fileItems}
 		bind:open={paletteOpen}

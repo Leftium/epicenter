@@ -308,13 +308,13 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 // This catch-all handles SPA client-side routing: when no static file matches,
 // serve index.html so the SvelteKit router takes over.
 app.get('/dashboard/*', async (c) => {
-	const assets = (c.env as { ASSETS?: { fetch: typeof fetch } }).ASSETS;
+	const assets = c.env.ASSETS;
 	if (!assets) return c.notFound();
 	const indexUrl = new URL('/dashboard/index.html', c.req.url);
 	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
 });
 app.get('/dashboard', async (c) => {
-	const assets = (c.env as { ASSETS?: { fetch: typeof fetch } }).ASSETS;
+	const assets = c.env.ASSETS;
 	if (!assets) return c.notFound();
 	const indexUrl = new URL('/dashboard/index.html', c.req.url);
 	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));

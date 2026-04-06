@@ -206,6 +206,21 @@ export const durableObjectInstance = pgTable(
 	(table) => [index('doi_user_id_idx').on(table.userId)],
 );
 
+export const asset = pgTable(
+	'asset',
+	{
+		id: text('id').primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		contentType: text('content_type').notNull(),
+		sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+		originalName: text('original_name').notNull(),
+		uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
+	},
+	(table) => [index('asset_user_id_idx').on(table.userId)],
+);
+
 export const userRelations = relations(user, ({ many }) => ({
 	sessions: many(session),
 	accounts: many(account),
@@ -214,6 +229,7 @@ export const userRelations = relations(user, ({ many }) => ({
 	oauthAccessTokens: many(oauthAccessToken),
 	oauthConsents: many(oauthConsent),
 	durableObjectInstances: many(durableObjectInstance),
+	assets: many(asset),
 }));
 
 export const sessionRelations = relations(session, ({ one, many }) => ({
@@ -303,4 +319,11 @@ export const durableObjectInstanceRelations = relations(
 		}),
 	}),
 );
+
+export const assetRelations = relations(asset, ({ one }) => ({
+	user: one(user, {
+		fields: [asset.userId],
+		references: [user.id],
+	}),
+}));
 

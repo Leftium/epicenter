@@ -24,6 +24,13 @@ export const aiCredits = feature({
 	creditSchema: [{ meteredFeatureId: aiUsage.id, creditCost: 1 }],
 });
 
+export const storageBytes = feature({
+	id: FEATURE_IDS.storageBytes,
+	name: 'Storage',
+	type: 'metered',
+	consumable: false,
+});
+
 // ---------------------------------------------------------------------------
 // Plans — Monthly
 // ---------------------------------------------------------------------------
@@ -40,6 +47,7 @@ export const free = plan({
 			included: f.credits.included,
 			reset: { interval: f.credits.reset },
 		}),
+		item({ featureId: storageBytes.id, included: 0 }),
 	],
 });
 
@@ -57,6 +65,16 @@ export const pro = plan({
 				amount: p.credits.overage.amount,
 				billingUnits: p.credits.overage.billingUnits,
 				billingMethod: p.credits.overage.billingMethod,
+				interval: p.credits.reset,
+			},
+		}),
+		item({
+			featureId: storageBytes.id,
+			included: 5_000_000_000,
+			price: {
+				amount: 1,
+				billingUnits: 1_000_000_000,
+				billingMethod: 'usage_based' as const,
 				interval: p.credits.reset,
 			},
 		}),
@@ -83,6 +101,16 @@ export const ultra = plan({
 			},
 			rollover: { max: null, expiryDurationType: 'forever' },
 		}),
+		item({
+			featureId: storageBytes.id,
+			included: 10_000_000_000,
+			price: {
+				amount: 0.75,
+				billingUnits: 1_000_000_000,
+				billingMethod: 'usage_based' as const,
+				interval: u.credits.reset,
+			},
+		}),
 	],
 });
 
@@ -103,6 +131,16 @@ export const max = plan({
 				interval: m.credits.reset,
 			},
 			rollover: { max: null, expiryDurationType: 'forever' },
+		}),
+		item({
+			featureId: storageBytes.id,
+			included: 50_000_000_000,
+			price: {
+				amount: 0.5,
+				billingUnits: 1_000_000_000,
+				billingMethod: 'usage_based' as const,
+				interval: m.credits.reset,
+			},
 		}),
 	],
 });
@@ -146,6 +184,16 @@ export const proAnnual = plan({
 				interval: 'month',
 			},
 		}),
+		item({
+			featureId: storageBytes.id,
+			included: 5_000_000_000,
+			price: {
+				amount: 1,
+				billingUnits: 1_000_000_000,
+				billingMethod: 'usage_based' as const,
+				interval: 'month',
+			},
+		}),
 	],
 });
 
@@ -167,6 +215,16 @@ export const ultraAnnual = plan({
 			},
 			rollover: { max: null, expiryDurationType: 'forever' },
 		}),
+		item({
+			featureId: storageBytes.id,
+			included: 10_000_000_000,
+			price: {
+				amount: 0.75,
+				billingUnits: 1_000_000_000,
+				billingMethod: 'usage_based' as const,
+				interval: 'month',
+			},
+		}),
 	],
 });
 
@@ -187,6 +245,16 @@ export const maxAnnual = plan({
 				interval: 'month',
 			},
 			rollover: { max: null, expiryDurationType: 'forever' },
+		}),
+		item({
+			featureId: storageBytes.id,
+			included: 50_000_000_000,
+			price: {
+				amount: 0.5,
+				billingUnits: 1_000_000_000,
+				billingMethod: 'usage_based' as const,
+				interval: 'month',
+			},
 		}),
 	],
 });

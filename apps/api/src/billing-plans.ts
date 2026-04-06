@@ -7,6 +7,7 @@
 export const FEATURE_IDS = {
 	aiUsage: 'ai_usage',
 	aiCredits: 'ai_credits',
+	storageBytes: 'storage_bytes',
 } as const;
 
 export const PLAN_IDS = {

@@ -6,9 +6,11 @@ import { customSession } from 'better-auth/plugins';
 import { bearer } from 'better-auth/plugins/bearer';
 import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
 import { jwt } from 'better-auth/plugins/jwt';
+import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createAutumn } from '../autumn';
-import type * as schema from '../db/schema';
+import * as schema from '../db/schema';
+import { FEATURE_IDS } from '../billing-plans';
 import { BASE_AUTH_CONFIG } from './base-config';
 import type { SessionResponse } from './contracts';
 import { deriveUserEncryptionKeys } from './encryption';
@@ -71,6 +73,32 @@ export function createAuth({
 							name: user.name,
 							email: user.email,
 						});
+					},
+				},
+				delete: {
+					before: async (user) => {
+						// Clean up R2 assets before CASCADE deletes Postgres rows
+						const assets = await db
+							.select({ id: schema.asset.id })
+							.from(schema.asset)
+							.where(eq(schema.asset.userId, user.id));
+
+						if (assets.length > 0) {
+							const keys = assets.map((a) => `${user.id}/${a.id}`);
+							await env.ASSETS_BUCKET.delete(keys);
+						}
+
+						// Zero Autumn storage balance
+						const autumn = createAutumn(env);
+						await autumn.balances
+							.update({
+								customerId: user.id,
+								featureId: FEATURE_IDS.storageBytes,
+								usage: 0,
+							})
+							.catch((e) =>
+								console.error('[user-delete] Autumn zero failed:', e),
+							);
 					},
 				},
 			},

@@ -6,6 +6,7 @@ import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { defineErrors } from 'wellcrafted/error';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
@@ -21,6 +22,7 @@ import {
 } from './auth-pages';
 import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
+import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 
@@ -265,6 +267,14 @@ app.get(
 	(c) => oauthProviderAuthServerMetadata(c.var.auth)(c.req.raw),
 );
 
+// Asset reads — unauthenticated (unguessable URL is the credential).
+// Must be mounted BEFORE authGuard so GET requests aren't blocked.
+app.route('/api/assets', assetPublicRoutes);
+
+const AuthError = defineErrors({
+	Unauthorized: () => ({ message: 'Unauthorized' }),
+});
+
 // Auth guard for protected routes
 const authGuard = factory.createMiddleware(async (c, next) => {
 	const wsToken = c.req.query('token');
@@ -273,7 +283,7 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 		: c.req.raw.headers;
 
 	const result = await c.var.auth.api.getSession({ headers });
-	if (!result) return c.json({ error: 'Unauthorized' }, 401);
+	if (!result) return c.json(AuthError.Unauthorized(), 401);
 
 	c.set('user', result.user);
 	c.set('session', result.session);
@@ -283,6 +293,7 @@ app.use('/ai/*', authGuard);
 app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
 app.use('/api/billing/*', authGuard);
+app.use('/api/assets/*', authGuard);
 
 // Ensure Autumn customer exists and stash planId for model gating.
 // Runs after authGuard for AI routes so c.var.user is available.
@@ -308,13 +319,13 @@ app.get('/billing', (c) => c.redirect('/dashboard'));
 // This catch-all handles SPA client-side routing: when no static file matches,
 // serve index.html so the SvelteKit router takes over.
 app.get('/dashboard/*', async (c) => {
-	const assets = (c.env as { ASSETS?: { fetch: typeof fetch } }).ASSETS;
+	const assets = c.env.ASSETS;
 	if (!assets) return c.notFound();
 	const indexUrl = new URL('/dashboard/index.html', c.req.url);
 	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
 });
 app.get('/dashboard', async (c) => {
-	const assets = (c.env as { ASSETS?: { fetch: typeof fetch } }).ASSETS;
+	const assets = c.env.ASSETS;
 	if (!assets) return c.notFound();
 	const indexUrl = new URL('/dashboard/index.html', c.req.url);
 	return assets.fetch(new Request(indexUrl.toString(), c.req.raw));
@@ -322,6 +333,9 @@ app.get('/dashboard', async (c) => {
 
 // Billing API routes — typed JSON routes consumed by the dashboard SPA via hc<AppType>
 app.route('/api/billing', billingRoutes);
+
+// Asset routes — upload + delete (authed, mounted after authGuard)
+app.route('/api/assets', assetAuthedRoutes);
 
 // AI chat
 app.post(

@@ -35,7 +35,7 @@
 			>
 				<SettingsIcon class="size-3.5" />
 			</Popover.Trigger>
-			<Popover.Content class="w-56 space-y-3" align="end" side="top">
+			<Popover.Content class="w-64 space-y-3" align="end" side="top">
 				<div class="flex items-center justify-between">
 					<Label for="vim-mode" class="text-sm">Vim mode</Label>
 					<Switch
@@ -44,6 +44,12 @@
 						onCheckedChange={() => editorState.toggleVim()}
 					/>
 				</div>
+				{#if editorState.vimEnabled}
+					<p class="text-xs text-muted-foreground">
+						Browser extensions like Vimium can intercept Escape and break
+						vim keybindings—disable them for this site if keys aren't working.
+					</p>
+				{/if}
 				<div class="flex items-center justify-between">
 					<span class="text-sm">Theme</span>
 					<LightSwitch variant="ghost" />

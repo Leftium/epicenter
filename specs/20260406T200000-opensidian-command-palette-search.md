@@ -167,13 +167,13 @@ apps/opensidian/src/lib/components/AppShell.svelte
 
 ### Phase 2: Create search state for opensidian
 
-- [ ] **2.1** Create `apps/opensidian/src/lib/state/search-state.svelte.ts` with:
-  - `searchScope: 'names' | 'content' | 'both'` — persisted to localStorage
+- [x] **2.1** Create `apps/opensidian/src/lib/state/search-state.svelte.ts` with:
+  - `searchScope: 'names' | 'content' | 'both'` — persisted to localStorage via `createPersistedState`
   - `searchQuery: string` — bound to palette input
   - `searchResults: CommandPaletteItem[]` — derived from scope + query
-- [ ] **2.2** Implement name search: filter `fsState.walkTree()` results by substring match on file name. No debounce.
-- [ ] **2.3** Implement content search: call `workspace.extensions.sqliteIndex.search(query)` with 150ms debounce. Map `SearchResult` → `CommandPaletteItem` with snippet.
-- [ ] **2.4** Implement "both" search: run name search (instant) + content search (debounced) in parallel. Merge results: name matches first, then content matches. Deduplicate by file ID (name match wins if both return same file).
+- [x] **2.2** Implement name search: filter `fsState.walkTree()` results by substring match on file name. No debounce.
+- [x] **2.3** Implement content search: call `workspace.extensions.sqliteIndex.search(query)` with 150ms debounce. Map `SearchResult` → `CommandPaletteItem` with snippet.
+- [x] **2.4** Implement "both" search: run name search (instant) + content search (debounced) in parallel. Merge results: name matches first, then content matches. Deduplicate by file ID (name match wins if both return same file).
 
 ### Phase 3: Wire into AppShell
 

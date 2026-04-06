@@ -1,4 +1,4 @@
-import { Compartment, type EditorState as CMEditorState, type Extension, type Text } from '@codemirror/state';
+import { Compartment, type Extension, type Text } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { createPersistedState } from '@epicenter/svelte';
 import { Vim, vim } from '@replit/codemirror-vim';
@@ -44,19 +44,29 @@ const vimPreference = createPersistedState({
  * ```
  */
 function createEditorState() {
-	// ── Vim global config (idempotent, runs once at construction) ──
+	// ── Private helpers ────────────────────────────────────────
 
-	const yUndo = yUndoManagerKeymap.find((k) => k.key === 'Mod-z')?.run;
-	const yRedo = yUndoManagerKeymap.find((k) => k.key === 'Mod-y')?.run;
+	/** Remap j→gj and k→gk so cursor movement respects line wrapping. */
+	function applyLineWrapRemaps(): void {
+		Vim.map('j', 'gj', 'normal');
+		Vim.map('k', 'gk', 'normal');
+	}
 
-	// Remap j→gj and k→gk so cursor movement respects line wrapping.
-	Vim.map('j', 'gj', 'normal');
-	Vim.map('k', 'gk', 'normal');
+	/**
+	 * Override Vim's built-in undo/redo to route through the Yjs UndoManager.
+	 *
+	 * Without this, Vim's `u` and `Ctrl-R` call CodeMirror's `history()` undo—which
+	 * isn't configured because all edits flow through Yjs. The `yUndoManagerKeymap`
+	 * only binds `Mod-z`/`Mod-Shift-z`, so Vim's own keybindings are left dangling.
+	 *
+	 * `Vim.defineAction` overwrites the global action dispatch table, so this is
+	 * idempotent and safe to call on every vim enable.
+	 */
+	function applyYjsUndoOverrides(): void {
+		const yUndo = yUndoManagerKeymap.find((k) => k.key === 'Mod-z')?.run;
+		const yRedo = yUndoManagerKeymap.find((k) => k.key === 'Mod-y')?.run;
+		if (!yUndo || !yRedo) return;
 
-	// Override Vim's built-in undo/redo to route through the Yjs UndoManager.
-	// Without this, Vim's `u` and `Ctrl-R` call CodeMirror's `history()` undo—
-	// which isn't configured because all edits flow through Yjs.
-	if (yUndo && yRedo) {
 		Vim.defineAction('undo', (cm, actionArgs) => {
 			for (let i = 0; i < actionArgs.repeat; i++) yUndo(cm.cm6);
 		});
@@ -73,16 +83,6 @@ function createEditorState() {
 			if (matches) count += matches.length;
 		}
 		return count;
-	}
-
-	/** Sync cursor/selection reactive state from a CM6 EditorState. */
-	function syncCursorFromState(state: CMEditorState): void {
-		const head = state.selection.main.head;
-		const line = state.doc.lineAt(head);
-		cursorLine = line.number;
-		cursorCol = head - line.from;
-		const { from, to } = state.selection.main;
-		selectionLength = to - from;
 	}
 
 	// ── Reactive state ──────────────────────────────────────────
@@ -103,8 +103,13 @@ function createEditorState() {
 			wordCount = countWords(update.state.doc);
 			lineCount = update.state.doc.lines;
 		}
-		if (update.docChanged || update.selectionSet) {
-			syncCursorFromState(update.state);
+		if (update.selectionSet || update.docChanged) {
+			const head = update.state.selection.main.head;
+			const line = update.state.doc.lineAt(head);
+			cursorLine = line.number;
+			cursorCol = head - line.from;
+			const { from, to } = update.state.selection.main;
+			selectionLength = to - from;
 		}
 	});
 
@@ -145,6 +150,10 @@ function createEditorState() {
 		 */
 		extension(isDark: boolean): Extension[] {
 			const vimEnabled = vimPreference.current;
+			if (vimEnabled) {
+				applyLineWrapRemaps();
+				applyYjsUndoOverrides();
+			}
 			return [
 				vimCompartment.of(vimEnabled ? vim() : []),
 				darkModeCompartment.of(isDark ? EditorView.theme({}, { dark: true }) : []),
@@ -160,9 +169,15 @@ function createEditorState() {
 		 */
 		attach(v: EditorView) {
 			view = v;
+			// Seed initial values from the editor's current state
 			wordCount = countWords(v.state.doc);
 			lineCount = v.state.doc.lines;
-			syncCursorFromState(v.state);
+			const head = v.state.selection.main.head;
+			const line = v.state.doc.lineAt(head);
+			cursorLine = line.number;
+			cursorCol = head - line.from;
+			const { from, to } = v.state.selection.main;
+			selectionLength = to - from;
 		},
 
 		/** Unregister the active EditorView (call from `$effect` cleanup). */
@@ -174,11 +189,16 @@ function createEditorState() {
 		 * Toggle vim mode on the active editor.
 		 *
 		 * Persists preference via `createPersistedState` (cross-tab sync
-		 * included) and reconfigures the compartment.
+		 * included), reconfigures the compartment, and applies j/k
+		 * line-wrap remaps when enabling.
 		 */
 		toggleVim() {
 			const next = !vimPreference.current;
 			vimPreference.current = next;
+			if (next) {
+				applyLineWrapRemaps();
+				applyYjsUndoOverrides();
+			}
 			view?.dispatch({
 				effects: vimCompartment.reconfigure(next ? vim() : []),
 			});

@@ -13,6 +13,7 @@
 	}: {
 		fileId: FileId;
 	} = $props();
+	const filename = $derived(fsState.getFile(fileId)?.name ?? 'untitled.md');
 
 	let handle = $state<DocumentHandle | null>(null);
 
@@ -42,7 +43,7 @@
 </script>
 
 {#if handle}
-	<CodeMirrorEditor ytext={handle.asText()} {extensions} />
+	<CodeMirrorEditor ytext={handle.asText()} {extensions} {filename} />
 {:else}
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />

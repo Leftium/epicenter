@@ -381,8 +381,16 @@ assetPublicRoutes.get(
 		const { userId, assetId } = c.req.param();
 		const key = `${userId}/${assetId}`;
 
+		// Only forward cache-revalidation headers so bodyless response
+		// unambiguously means 304 (not 412 from If-Match/If-Unmodified-Since).
+		const onlyIf: Record<string, string> = {};
+		const inm = c.req.raw.headers.get('if-none-match');
+		const ims = c.req.raw.headers.get('if-modified-since');
+		if (inm) onlyIf.etagDoesNotMatch = inm;
+		if (ims) onlyIf.uploadedBefore = ims;
+
 		const object = await c.env.ASSETS_BUCKET.get(key, {
-			onlyIf: c.req.raw.headers,
+			onlyIf: Object.keys(onlyIf).length > 0 ? onlyIf : undefined,
 			range: c.req.raw.headers,
 		});
 
@@ -403,19 +411,35 @@ assetPublicRoutes.get(
 		const headers = new Headers();
 		object.writeHttpMetadata(headers);
 		headers.set('etag', object.httpEtag);
+		headers.set('accept-ranges', 'bytes');
 		headers.set('x-content-type-options', 'nosniff');
+		if (object.uploaded) {
+			headers.set('last-modified', object.uploaded.toUTCString());
+		}
 
 		// Range request → 206 with content-range header
 		const range = object.range;
-		const status = range ? 206 : 200;
-		if (range && 'offset' in range) {
-			const start = range.offset ?? 0;
-			const end =
-				range.length != null ? start + range.length - 1 : object.size - 1;
+		if (range) {
+			let start: number;
+			let end: number;
+			if ('suffix' in range) {
+				// bytes=-N → last N bytes
+				const len = Math.min(range.suffix, object.size);
+				start = object.size - len;
+				end = object.size - 1;
+			} else {
+				start = range.offset ?? 0;
+				// Clamp to actual object size
+				end = range.length != null
+					? Math.min(start + range.length - 1, object.size - 1)
+					: object.size - 1;
+			}
 			headers.set('content-range', `bytes ${start}-${end}/${object.size}`);
 			headers.set('content-length', String(end - start + 1));
+			return new Response(object.body, { status: 206, headers });
 		}
 
-		return new Response(object.body, { status, headers });
+		headers.set('content-length', String(object.size));
+		return new Response(object.body, { status: 200, headers });
 	},
 );

@@ -31,8 +31,10 @@
 			state: EditorState.create({
 				doc: ytext.toString(),
 				extensions: [
-					...editorState.extension(),
 					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
+					// vim() must load AFTER defaultKeymap so its Escape binding
+					// takes precedence over defaultKeymap's simplifySelection.
+					...editorState.extension(),
 					drawSelection(),
 					EditorView.lineWrapping,
 					markdownHighlighting,

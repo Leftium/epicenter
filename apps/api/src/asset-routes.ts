@@ -10,7 +10,7 @@
  */
 
 import { generateGuid } from '@epicenter/workspace';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
@@ -188,27 +188,25 @@ assetAuthedRoutes.delete(
 		tags: ['assets'],
 	}),
 	async (c) => {
-		const { userId, assetId } = c.req.param();
+		const { assetId } = c.req.param();
 
-		// Owner check
-		if (c.var.user.id !== userId) {
-			return c.json({ error: 'Forbidden' }, 403);
-		}
+		// Atomic lookup + delete scoped by authenticated user
+		const [deleted] = await c.var.db
+			.delete(schema.asset)
+			.where(
+				and(
+					eq(schema.asset.id, assetId),
+					eq(schema.asset.userId, c.var.user.id),
+				),
+			)
+			.returning({ sizeBytes: schema.asset.sizeBytes });
 
-		// Look up asset to get sizeBytes for billing credit
-		const [row] = await c.var.db
-			.select({ sizeBytes: schema.asset.sizeBytes })
-			.from(schema.asset)
-			.where(eq(schema.asset.id, assetId))
-			.limit(1);
-
-		if (!row) {
+		if (!deleted) {
 			return c.json({ error: 'Asset not found' }, 404);
 		}
 
-		const key = `${userId}/${assetId}`;
+		const key = `${c.var.user.id}/${assetId}`;
 		await c.env.ASSETS_BUCKET.delete(key);
-		await c.var.db.delete(schema.asset).where(eq(schema.asset.id, assetId));
 
 		// Credit storage back (fire-and-forget after response)
 		const autumn = createAutumn(c.env);
@@ -216,14 +214,13 @@ assetAuthedRoutes.delete(
 			autumn.track({
 				customerId: c.var.user.id,
 				featureId: FEATURE_IDS.storageBytes,
-				value: -row.sizeBytes,
+				value: -deleted.sizeBytes,
 			}),
 		);
 
 		return c.body(null, 204);
 	},
 );
-
 // ---------------------------------------------------------------------------
 // POST /reconcile — Manual storage billing reconciliation (admin)
 // ---------------------------------------------------------------------------
@@ -235,6 +232,11 @@ assetAuthedRoutes.post(
 		tags: ['assets', 'admin'],
 	}),
 	async (c) => {
+		// Admin gate — only allowed user IDs can trigger reconciliation
+		const adminIds = (c.env.ADMIN_USER_IDS ?? '').split(',').filter(Boolean);
+		if (!adminIds.includes(c.var.user.id)) {
+			return c.json({ error: 'Forbidden' }, 403);
+		}
 		const userTotals = await c.var.db
 			.select({
 				userId: schema.asset.userId,

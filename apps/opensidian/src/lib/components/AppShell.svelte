@@ -11,13 +11,15 @@
 	import TextIcon from '@lucide/svelte/icons/text';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import { searchState } from '$lib/state/search-state.svelte';
+	import { sidebarSearchState } from '$lib/state/sidebar-search-state.svelte';
 	import { terminalState } from '$lib/state/terminal-state.svelte';
 	import { getFileIcon } from '$lib/utils/file-icons';
 	import AiChat from './chat/AiChat.svelte';
 	import ContentPanel from './editor/ContentPanel.svelte';
 	import StatusBar from './editor/StatusBar.svelte';
-	import TerminalPanel from './terminal/TerminalPanel.svelte';
+	import SearchPanel from './search/SearchPanel.svelte';
 	import Toolbar from './Toolbar.svelte';
+	import TerminalPanel from './terminal/TerminalPanel.svelte';
 	import FileTree from './tree/FileTree.svelte';
 
 	let paletteOpen = $state(false);
@@ -54,6 +56,7 @@
 		searchState.shouldFilter ? allFileItems : searchState.searchResults,
 	);
 
+	let searchPanelRef: ReturnType<typeof SearchPanel> | undefined = $state();
 	let terminalRef: ReturnType<typeof TerminalPanel> | undefined = $state();
 	let previousFocus: HTMLElement | null = $state(null);
 
@@ -69,6 +72,16 @@
 	});
 
 	function handleKeydown(e: KeyboardEvent) {
+		if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'f') {
+			e.preventDefault();
+			if (sidebarSearchState.leftPaneView === 'search') {
+				sidebarSearchState.closeSearch();
+			} else {
+				sidebarSearchState.openSearch();
+				requestAnimationFrame(() => searchPanelRef?.focusInput());
+			}
+		}
+
 		if ((e.metaKey || e.ctrlKey) && e.key === '`') {
 			e.preventDefault();
 			if (!terminalState.open) {
@@ -93,9 +106,13 @@
 	<Toolbar bind:chatOpen />
 	<Resizable.PaneGroup direction="horizontal" class="flex-1">
 		<Resizable.Pane defaultSize={25} minSize={15} maxSize={50}>
-			<ScrollArea class="h-full">
-				<div class="p-2"><FileTree /></div>
-			</ScrollArea>
+			{#if sidebarSearchState.leftPaneView === 'search'}
+				<SearchPanel bind:this={searchPanelRef} />
+			{:else}
+				<ScrollArea class="h-full">
+					<div class="p-2"><FileTree /></div>
+				</ScrollArea>
+			{/if}
 		</Resizable.Pane>
 		<Resizable.Handle withHandle />
 		<Resizable.Pane defaultSize={chatOpen ? 45 : 75}>

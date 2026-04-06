@@ -27,6 +27,7 @@ import {
 import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
 import type { SharedExtensionContext } from '../../workspace/types.js';
 import { isAction, type Actions } from '../../shared/actions.js';
+import { broadcastChannelSync } from './broadcast-channel.js';
 
 // ============================================================================
 // Types
@@ -70,9 +71,8 @@ export type SyncStatus =
  * (`ws:` or `wss:`).
  *
  * Chain last in the extension chain. Persistence loads local state first,
- * BroadcastChannel handles instant cross-tab sync, then WebSocket connects
- * for cross-device sync. The sync extension waits for all prior extensions
- * via `context.whenReady` before connecting.
+ * then WebSocket connects for cross-device sync. BroadcastChannel cross-tab
+ * sync is included automatically—no separate extension needed.
  *
  * @example
  * ```typescript
@@ -80,7 +80,6 @@ export type SyncStatus =
  *
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('broadcast', broadcastChannelSync)
  *   .withExtension('sync', createSyncExtension({
  *     url: (docId) => `ws://localhost:3913/rooms/${docId}`,
  *   }))
@@ -212,6 +211,10 @@ export function toWsUrl(httpUrl: string): string {
  * exponential backoff, and RPC between peers. Waits for prior extensions
  * (`whenReady`) before connecting, so local state is loaded first.
  *
+ * Automatically includes BroadcastChannel cross-tab sync so multiple tabs
+ * converge instantly without waiting for the server round-trip. BroadcastChannel
+ * no-ops gracefully when unavailable (Node.js, SSR, older browsers).
+ *
  * Uses a supervisor loop architecture where one loop owns all status transitions
  * and reconnection logic. Event handlers are reporters only—they resolve
  * promises that the loop awaits, but never make reconnection decisions.
@@ -229,6 +232,10 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		const getToken = config.getToken ? () => config.getToken!(docId) : undefined;
 
 		const awareness = ctxAwareness.raw;
+
+		// BroadcastChannel cross-tab sync — instant convergence between same-origin tabs.
+		// Runs independently of WebSocket. No-ops when BroadcastChannel is unavailable.
+		const bc = broadcastChannelSync({ ydoc: doc });
 
 		// ── Zone 2: Mutable state ──
 
@@ -805,6 +812,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				goOffline();
 				doc.off('updateV2', handleDocUpdate);
 				awareness.off('update', handleAwarenessUpdate);
+				bc.dispose?.();
 				status.clear();
 			},
 		};

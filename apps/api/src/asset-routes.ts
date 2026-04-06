@@ -10,7 +10,7 @@
  */
 
 import { generateGuid } from '@epicenter/workspace';
-import { eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
@@ -133,6 +133,50 @@ authedRoutes.post(
 	},
 );
 
+// ---------------------------------------------------------------------------
+// GET / — List current user's assets (paginated)
+// ---------------------------------------------------------------------------
+
+authedRoutes.get(
+	'/',
+	describeRoute({
+		description: "List the current user's assets",
+		tags: ['assets'],
+	}),
+	async (c) => {
+		const assets = await c.var.db
+			.select()
+			.from(schema.asset)
+			.where(eq(schema.asset.userId, c.var.user.id))
+			.orderBy(desc(schema.asset.uploadedAt))
+			.limit(100);
+
+		return c.json(assets);
+	},
+);
+
+// ---------------------------------------------------------------------------
+// GET /usage — Current user's total storage in bytes
+// ---------------------------------------------------------------------------
+
+authedRoutes.get(
+	'/usage',
+	describeRoute({
+		description: "Get the current user's total storage usage in bytes",
+		tags: ['assets'],
+	}),
+	async (c) => {
+		const result = await c.var.db
+			.select({
+				total: sql<number>`COALESCE(SUM(${schema.asset.sizeBytes}), 0)`,
+			})
+			.from(schema.asset)
+			.where(eq(schema.asset.userId, c.var.user.id));
+		const total = result[0]?.total ?? 0;
+
+		return c.json({ totalBytes: total });
+	},
+);
 // ---------------------------------------------------------------------------
 // DELETE /:userId/:assetId — Delete (authenticated, owner only)
 // ---------------------------------------------------------------------------

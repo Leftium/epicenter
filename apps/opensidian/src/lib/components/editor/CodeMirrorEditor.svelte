@@ -11,10 +11,7 @@
 	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 	import type * as Y from 'yjs';
 	import { editorState } from '$lib/state/editor-state.svelte';
-	import {
-		getHighlightStyle,
-		getLanguageExtensions,
-	} from './extensions/language-support';
+	import { getEditorExtensions } from './extensions/language-support';
 
 	let {
 		ytext,
@@ -30,18 +27,18 @@
 
 	$effect(() => {
 		if (!container) return;
-
+		const isDark = mode.current === 'dark';
+		console.log('[CM] creating view', { filename, isDark });
 		const view = new EditorView({
 			state: EditorState.create({
 				doc: ytext.toString(),
 				extensions: [
 					// vim() must be BEFORE other keymaps per @replit/codemirror-vim README.
-					...editorState.extension(mode.current === 'dark'),
+					...editorState.extension(isDark),
 					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
 					drawSelection(),
 					EditorView.lineWrapping,
-					...getLanguageExtensions(filename),
-					getHighlightStyle(filename, mode.current === 'dark'),
+					...getEditorExtensions(filename, isDark),
 					yCollab(ytext, null),
 					placeholder('Empty file'),
 					...extraExtensions,
@@ -70,11 +67,6 @@
 		};
 	});
 
-	// Sync CM6 dark theme facet and highlight style when color mode changes
-	$effect(() => {
-		const isDark = mode.current === 'dark';
-		editorState.syncDarkMode(isDark);
-	});
 </script>
 
 <div

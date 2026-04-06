@@ -19,9 +19,11 @@ import {
 	createSessionStore,
 	resolveEpicenterHome,
 	} from '@epicenter/cli';
-import { createWorkspace } from '@epicenter/workspace';
+import { createWorkspace, defineMutation } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
+import { prepareMarkdownFiles } from '@epicenter/workspace/extensions/materializer/markdown';
+import Type from 'typebox';
 import { opensidianDefinition } from 'opensidian/workspace';
 import { createOpensidianMaterializer } from './materializer';
 
@@ -52,4 +54,20 @@ export const opensidian = createWorkspace(opensidianDefinition)
 				return session?.accessToken ?? null;
 			},
 		}),
-	);
+	)
+	.withActions(() => ({
+		/**
+		 * Scan a directory for `.md` files and inject a unique `id` into the YAML
+		 * frontmatter of any file that doesn't already have one. Errors if duplicate
+		 * IDs are detected across files.
+		 */
+		markdown: {
+			prepare: defineMutation({
+				title: 'Prepare Markdown Files',
+				description:
+					'Add unique IDs to markdown files missing them in YAML frontmatter',
+				input: Type.Object({ directory: Type.String() }),
+				handler: async ({ directory }) => prepareMarkdownFiles(directory),
+			}),
+		},
+	}));

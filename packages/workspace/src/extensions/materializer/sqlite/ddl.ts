@@ -14,58 +14,9 @@
 
 type JsonSchema = Record<string, unknown>;
 
-/**
- * Resolve the concrete schema variant used for SQLite DDL generation.
- *
- * Multi-version workspace tables expose a `oneOf` where each entry represents a
- * versioned row shape. The workspace read path migrates rows to the latest
- * version before materialization, so the SQLite mirror should generate columns
- * from the schema whose `_v.const` is highest.
- *
- * If the schema is not versioned, this returns the original object unchanged.
- *
- * @param schema - A JSON Schema object from `describeWorkspace()`
- * @returns The highest-version object schema when `oneOf` is present, otherwise the original schema
- *
- * @example
- * ```typescript
- * const resolved = resolveSchema({
- *   oneOf: [
- *     { type: 'object', properties: { _v: { const: 1 }, id: { type: 'string' } } },
- *     { type: 'object', properties: { _v: { const: 2 }, id: { type: 'string' }, title: { type: 'string' } } },
- *   ],
- * });
- *
- * // Picks the `_v: 2` schema
- * console.log((resolved.properties as Record<string, unknown>).title);
- * ```
- */
-export function resolveSchema(schema: JsonSchema): JsonSchema {
-	const candidates = Array.isArray(schema.oneOf)
-		? schema.oneOf.filter(isRecord)
-		: undefined;
-
-	if (candidates === undefined || candidates.length === 0) {
-		return schema;
-	}
-
-	let resolved: JsonSchema | undefined;
-	let highestVersion = Number.NEGATIVE_INFINITY;
-
-	for (const candidate of candidates) {
-		const version = getSchemaVersion(candidate);
-		if (resolved === undefined || version > highestVersion) {
-			resolved = candidate;
-			highestVersion = version;
-		}
-	}
-
-	if (resolved === undefined) {
-		return schema;
-	}
-
-	return resolved;
-}
+// ════════════════════════════════════════════════════════════════════════════
+// PUBLIC API
+// ════════════════════════════════════════════════════════════════════════════
 
 /**
  * Generate a `CREATE TABLE IF NOT EXISTS` statement for a workspace table.
@@ -128,6 +79,82 @@ export function generateDdl(
 	return `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (${columns.join(', ')})`;
 }
 
+/**
+ * Resolve the concrete schema variant used for SQLite DDL generation.
+ *
+ * Multi-version workspace tables expose a `oneOf` where each entry represents a
+ * versioned row shape. The workspace read path migrates rows to the latest
+ * version before materialization, so the SQLite mirror should generate columns
+ * from the schema whose `_v.const` is highest.
+ *
+ * If the schema is not versioned, this returns the original object unchanged.
+ *
+ * @param schema - A JSON Schema object from `describeWorkspace()`
+ * @returns The highest-version object schema when `oneOf` is present, otherwise the original schema
+ *
+ * @example
+ * ```typescript
+ * const resolved = resolveSchema({
+ *   oneOf: [
+ *     { type: 'object', properties: { _v: { const: 1 }, id: { type: 'string' } } },
+ *     { type: 'object', properties: { _v: { const: 2 }, id: { type: 'string' }, title: { type: 'string' } } },
+ *   ],
+ * });
+ *
+ * // Picks the `_v: 2` schema
+ * console.log((resolved.properties as Record<string, unknown>).title);
+ * ```
+ */
+export function resolveSchema(schema: JsonSchema): JsonSchema {
+	const candidates = Array.isArray(schema.oneOf)
+		? schema.oneOf.filter(isRecord)
+		: undefined;
+
+	if (candidates === undefined || candidates.length === 0) {
+		return schema;
+	}
+
+	let resolved: JsonSchema | undefined;
+	let highestVersion = Number.NEGATIVE_INFINITY;
+
+	for (const candidate of candidates) {
+		const version = getSchemaVersion(candidate);
+		if (resolved === undefined || version > highestVersion) {
+			resolved = candidate;
+			highestVersion = version;
+		}
+	}
+
+	if (resolved === undefined) {
+		return schema;
+	}
+
+	return resolved;
+}
+
+/** Double-quote a SQL identifier, escaping embedded quotes. */
+export function quoteIdentifier(identifier: string) {
+	return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PRIVATE HELPERS
+// ════════════════════════════════════════════════════════════════════════════
+
+function getSchemaVersion(schema: JsonSchema) {
+	const properties = schema.properties;
+	if (!isRecord(properties)) {
+		return Number.NEGATIVE_INFINITY;
+	}
+
+	const versionSchema = properties._v;
+	if (!isRecord(versionSchema) || typeof versionSchema.const !== 'number') {
+		return Number.NEGATIVE_INFINITY;
+	}
+
+	return versionSchema.const;
+}
+
 function columnDef(
 	name: string,
 	propSchema: JsonSchema,
@@ -173,25 +200,6 @@ function appendNullability(column: string, isRequired: boolean) {
 	}
 
 	return `${column} NOT NULL`;
-}
-
-function getSchemaVersion(schema: JsonSchema) {
-	const properties = schema.properties;
-	if (!isRecord(properties)) {
-		return Number.NEGATIVE_INFINITY;
-	}
-
-	const versionSchema = properties._v;
-	if (!isRecord(versionSchema) || typeof versionSchema.const !== 'number') {
-		return Number.NEGATIVE_INFINITY;
-	}
-
-	return versionSchema.const;
-}
-
-/** Double-quote a SQL identifier, escaping embedded quotes. */
-export function quoteIdentifier(identifier: string) {
-	return `"${identifier.replaceAll('"', '""')}"`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

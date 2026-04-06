@@ -70,7 +70,84 @@ export function createSqliteMirror(
 		let syncQueue = Promise.resolve();
 		let isDisposed = false;
 
-		const whenReady = initialize();
+		// ── Public methods ───────────────────────────────────────────
+
+		async function rebuild() {
+			await whenReady;
+
+			if (isDisposed) {
+				return;
+			}
+
+			await rebuildTables();
+		}
+
+		async function search(
+			table: string,
+			query: string,
+			searchOptions?: SearchOptions,
+		): Promise<SearchResult[]> {
+			await whenReady;
+
+			if (isDisposed) {
+				return [];
+			}
+
+			const trimmed = query.trim();
+			if (!trimmed) {
+				return [];
+			}
+
+			const ftsColumns = options.fts?.[table];
+			if (ftsColumns === undefined || ftsColumns.length === 0) {
+				return [];
+			}
+
+			const ftsTableName = `${table}_fts`;
+			const limit = searchOptions?.limit ?? 50;
+			const snippetColumnIndex = searchOptions?.snippetColumn
+				? Math.max(ftsColumns.indexOf(searchOptions.snippetColumn), 0)
+				: 0;
+
+			try {
+				const qt = quoteIdentifier(table);
+				const qfts = quoteIdentifier(ftsTableName);
+				const rows = await db
+					.prepare(
+						`SELECT ${qt}.${quoteIdentifier('id')} AS id,\n` +
+							`  snippet(${qfts}, ${snippetColumnIndex}, '<mark>', '</mark>', '...', 64) AS snippet,\n` +
+							`  rank\n` +
+							`FROM ${qfts}\n` +
+							`JOIN ${qt} ON ${qt}.rowid = ${qfts}.rowid\n` +
+							`WHERE ${qfts} MATCH ?\n` +
+							`ORDER BY rank LIMIT ?`,
+					)
+					.all(trimmed, limit);
+
+				return rows.map((row) => ({
+					id: String(row.id),
+					snippet: String(row.snippet ?? ''),
+					rank: Number(row.rank ?? 0),
+				}));
+			} catch {
+				return [];
+			}
+		}
+
+		function dispose() {
+			isDisposed = true;
+
+			if (syncTimeout !== null) {
+				clearTimeout(syncTimeout);
+				syncTimeout = null;
+			}
+
+			for (const unsubscribe of unsubscribes) {
+				unsubscribe();
+			}
+		}
+
+		// ── Lifecycle ────────────────────────────────────────────────
 
 		async function initialize() {
 			await context.whenReady;
@@ -107,6 +184,8 @@ export function createSqliteMirror(
 			}
 		}
 
+		// ── Sync engine ──────────────────────────────────────────────
+
 		function scheduleSync(tableName: string, changedIds: ReadonlySet<string>) {
 			if (isDisposed) {
 				return;
@@ -128,6 +207,7 @@ export function createSqliteMirror(
 
 			syncTimeout = setTimeout(() => {
 				syncTimeout = null;
+				// Chain flushes sequentially to prevent concurrent SQLite writes
 				syncQueue = syncQueue
 					.then(() => flushPendingSync())
 					.catch((error: unknown) => {
@@ -187,6 +267,8 @@ export function createSqliteMirror(
 			}
 		}
 
+		// ── Init helpers ─────────────────────────────────────────────
+
 		async function setupFtsTables() {
 			if (options.fts === undefined) {
 				return;
@@ -212,33 +294,33 @@ export function createSqliteMirror(
 
 				await db.exec(
 					`CREATE VIRTUAL TABLE IF NOT EXISTS ${qfts}\n` +
-					`USING fts5(${quotedColumns}, content=${quoteString(tableName)}, content_rowid=rowid)`,
+						`USING fts5(${quotedColumns}, content=${quoteString(tableName)}, content_rowid=rowid)`,
 				);
 
 				await db.exec(
 					`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_ai`)}\n` +
-					`AFTER INSERT ON ${qt} BEGIN\n` +
-					`  INSERT INTO ${qfts}(rowid, ${quotedColumns})\n` +
-					`  VALUES (new.rowid, ${newValues});\n` +
-					`END`,
+						`AFTER INSERT ON ${qt} BEGIN\n` +
+						`  INSERT INTO ${qfts}(rowid, ${quotedColumns})\n` +
+						`  VALUES (new.rowid, ${newValues});\n` +
+						`END`,
 				);
 
 				await db.exec(
 					`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_ad`)}\n` +
-					`AFTER DELETE ON ${qt} BEGIN\n` +
-					`  INSERT INTO ${qfts}(${qfts}, rowid, ${quotedColumns})\n` +
-					`  VALUES('delete', old.rowid, ${oldValues});\n` +
-					`END`,
+						`AFTER DELETE ON ${qt} BEGIN\n` +
+						`  INSERT INTO ${qfts}(${qfts}, rowid, ${quotedColumns})\n` +
+						`  VALUES('delete', old.rowid, ${oldValues});\n` +
+						`END`,
 				);
 
 				await db.exec(
 					`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_au`)}\n` +
-					`AFTER UPDATE ON ${qt} BEGIN\n` +
-					`  INSERT INTO ${qfts}(${qfts}, rowid, ${quotedColumns})\n` +
-					`  VALUES('delete', old.rowid, ${oldValues});\n` +
-					`  INSERT INTO ${qfts}(rowid, ${quotedColumns})\n` +
-					`  VALUES (new.rowid, ${newValues});\n` +
-					`END`,
+						`AFTER UPDATE ON ${qt} BEGIN\n` +
+						`  INSERT INTO ${qfts}(${qfts}, rowid, ${quotedColumns})\n` +
+						`  VALUES('delete', old.rowid, ${oldValues});\n` +
+						`  INSERT INTO ${qfts}(rowid, ${quotedColumns})\n` +
+						`  VALUES (new.rowid, ${newValues});\n` +
+						`END`,
 				);
 			}
 		}
@@ -264,6 +346,8 @@ export function createSqliteMirror(
 			}
 		}
 
+		// ── SQL primitives ───────────────────────────────────────────
+
 		async function insertRow(tableName: string, row: BaseRow) {
 			const keys = Object.keys(row);
 			const placeholders = keys.map(() => '?').join(', ');
@@ -285,80 +369,9 @@ export function createSqliteMirror(
 				.run(id);
 		}
 
-		async function rebuild() {
-			await whenReady;
+		// ── Kick off and return ──────────────────────────────────────
 
-			if (isDisposed) {
-				return;
-			}
-
-			await rebuildTables();
-		}
-
-		async function search(
-			table: string,
-			query: string,
-			searchOptions?: SearchOptions,
-		): Promise<SearchResult[]> {
-			await whenReady;
-
-			if (isDisposed) {
-				return [];
-			}
-
-			const trimmed = query.trim();
-			if (!trimmed) {
-				return [];
-			}
-
-			const ftsColumns = options.fts?.[table];
-			if (ftsColumns === undefined || ftsColumns.length === 0) {
-				return [];
-			}
-
-			const ftsTableName = `${table}_fts`;
-			const limit = searchOptions?.limit ?? 50;
-			const snippetColumnIndex = searchOptions?.snippetColumn
-				? Math.max(ftsColumns.indexOf(searchOptions.snippetColumn), 0)
-				: 0;
-
-			try {
-				const qt = quoteIdentifier(table);
-				const qfts = quoteIdentifier(ftsTableName);
-				const rows = await db
-					.prepare(
-						`SELECT ${qt}.${quoteIdentifier('id')} AS id,\n` +
-						`  snippet(${qfts}, ${snippetColumnIndex}, '<mark>', '</mark>', '...', 64) AS snippet,\n` +
-						`  rank\n` +
-						`FROM ${qfts}\n` +
-						`JOIN ${qt} ON ${qt}.rowid = ${qfts}.rowid\n` +
-						`WHERE ${qfts} MATCH ?\n` +
-						`ORDER BY rank LIMIT ?`,
-					)
-					.all(trimmed, limit);
-
-				return rows.map((row) => ({
-					id: String(row.id),
-					snippet: String(row.snippet ?? ''),
-					rank: Number(row.rank ?? 0),
-				}));
-			} catch {
-				return [];
-			}
-		}
-
-		function dispose() {
-			isDisposed = true;
-
-			if (syncTimeout !== null) {
-				clearTimeout(syncTimeout);
-				syncTimeout = null;
-			}
-
-			for (const unsubscribe of unsubscribes) {
-				unsubscribe();
-			}
-		}
+		const whenReady = initialize();
 
 		return {
 			db,
@@ -369,6 +382,10 @@ export function createSqliteMirror(
 		};
 	};
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// MODULE-LEVEL HELPERS
+// ════════════════════════════════════════════════════════════════════════════
 
 function resolveMirroredTables(
 	context: SqliteMirrorContext,

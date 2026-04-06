@@ -10,18 +10,16 @@ import type * as Y from 'yjs';
  *
  * Works directly as an extension factory — destructures `ydoc` from the
  * workspace client context. Chain first so all subsequent extensions
- * (BroadcastChannel, WebSocket) start with local state already loaded.
+ * (sync, which now includes BroadcastChannel) start with local state already loaded.
  *
- * @example Recommended: persistence + BroadcastChannel + WebSocket
+ * @example Persistence + sync (BroadcastChannel included automatically)
  * ```typescript
  * import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
- * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
  * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
  *
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('broadcast', broadcastChannelSync)
- *   .withWorkspaceExtension('sync', createSyncExtension({
+ *   .withExtension('sync', createSyncExtension({
  *     url: (id) => `ws://localhost:3913/rooms/${id}`,
  *   }))
  * ```

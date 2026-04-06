@@ -6,6 +6,7 @@ import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { defineErrors } from 'wellcrafted/error';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
@@ -270,6 +271,10 @@ app.get(
 // Must be mounted BEFORE authGuard so GET requests aren't blocked.
 app.route('/api/assets', assetPublicRoutes);
 
+const AuthError = defineErrors({
+	Unauthorized: () => ({ message: 'Unauthorized' }),
+});
+
 // Auth guard for protected routes
 const authGuard = factory.createMiddleware(async (c, next) => {
 	const wsToken = c.req.query('token');
@@ -278,7 +283,7 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 		: c.req.raw.headers;
 
 	const result = await c.var.auth.api.getSession({ headers });
-	if (!result) return c.json({ error: 'Unauthorized' }, 401);
+	if (!result) return c.json(AuthError.Unauthorized(), 401);
 
 	c.set('user', result.user);
 	c.set('session', result.session);

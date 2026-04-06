@@ -32,6 +32,7 @@ const AssetError = defineErrors({
 	FileTypeNotAllowed: ({ contentType }: { contentType: string }) => ({
 		message: `File type not allowed: ${contentType}`,
 		contentType,
+		allowed: [...ALLOWED_MIME_TYPES],
 	}),
 	FileTooLarge: ({ size }: { size: number }) => ({
 		message: `File exceeds ${MAX_ASSET_BYTES} byte limit (got ${size})`,
@@ -98,27 +99,20 @@ assetAuthedRoutes.post(
 		const body = await c.req.parseBody();
 		const file = body.file;
 		if (!(file instanceof File)) {
-			return c.json({ error: AssetError.MissingFile().error.message }, 400);
+			return c.json(AssetError.MissingFile(), 400);
 		}
 
 		const sanitizedFilename = sanitizeFilename(file.name);
 
 		if (!ALLOWED_MIME_TYPES.has(file.type)) {
 			return c.json(
-				{
-					error: AssetError.FileTypeNotAllowed({ contentType: file.type }).error
-						.message,
-					allowed: [...ALLOWED_MIME_TYPES],
-				},
+				AssetError.FileTypeNotAllowed({ contentType: file.type }),
 				415,
 			);
 		}
 
 		if (file.size > MAX_ASSET_BYTES) {
-			return c.json(
-				{ error: AssetError.FileTooLarge({ size: file.size }).error.message },
-				413,
-			);
+			return c.json(AssetError.FileTooLarge({ size: file.size }), 413);
 		}
 
 		// -- Billing gate (after validation to avoid wasted calls) --
@@ -135,10 +129,7 @@ assetAuthedRoutes.post(
 			requiredBalance: file.size,
 		});
 		if (!allowed) {
-			return c.json(
-				{ error: AssetError.StorageLimitExceeded().error.message },
-				402,
-			);
+			return c.json(AssetError.StorageLimitExceeded(), 402);
 		}
 
 		// -- Store in R2 + Postgres --
@@ -261,7 +252,7 @@ assetAuthedRoutes.delete(
 			.returning({ sizeBytes: schema.asset.sizeBytes });
 
 		if (!deleted) {
-			return c.json({ error: AssetError.NotFound().error.message }, 404);
+			return c.json(AssetError.NotFound(), 404);
 		}
 
 		const key = `${c.var.user.id}/${assetId}`;
@@ -295,7 +286,7 @@ assetAuthedRoutes.post(
 		// Admin gate
 		const adminIds = (c.env.ADMIN_USER_IDS ?? '').split(',').filter(Boolean);
 		if (!adminIds.includes(c.var.user.id)) {
-			return c.json({ error: AssetError.Forbidden().error.message }, 403);
+			return c.json(AssetError.Forbidden(), 403);
 		}
 
 		// Left join user → asset so zero-asset users get corrected too

@@ -1,7 +1,7 @@
 # Opensidian Command Palette Search
 
 **Date**: 2026-04-06
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
 
 ## Overview
@@ -247,3 +247,24 @@ apps/opensidian/src/lib/components/AppShell.svelte
 - `packages/ui/src/command-palette/index.ts` — CommandPaletteItem type
 - `apps/tab-manager/src/lib/state/search-preferences.svelte.ts` — localStorage persistence pattern for search toggles
 - `apps/tab-manager/src/lib/state/unified-view-state.svelte.ts` — search filter implementation reference
+
+## Review
+
+**Completed**: 2026-04-06
+**Branch**: feat/fix-dashboard
+
+### Summary
+
+Implemented FTS5-powered content search in opensidian's command palette with a three-mode scope toggle (Names / Content / Both). Name search remains instant via in-memory `walkTree` filtering. Content search debounces at 150ms and queries the existing `sqliteIndex.search()` FTS5 engine, returning snippets with `<mark>`-highlighted match terms. "Both" mode merges name matches (first) with content matches (deduped by file ID).
+
+### Deviations from Spec
+
+- **Segmented control instead of radio buttons** — per Open Question #1 resolution, used styled button group instead of radio inputs.
+- **`allFileItems` retained for names mode** — bits-ui's built-in filter needs the full item list to filter from, so we kept a walkTree-based derivation that only runs in names mode. The spec implied replacing `allFiles` entirely, but this was necessary for the `shouldFilter=true` path.
+- **"Searching…" text instead of spinner** — used plain text indicator for the loading state rather than importing the Spinner component. Keeps the palette lightweight.
+
+### Follow-up Work
+
+- Consider caching the file list for names mode (invalidate on observer callback) for large vaults with 10,000+ files.
+- The FTS5 column filter syntax (`content:query`) doesn't support phrases — may need query escaping for complex searches.
+- Could add a visual indicator showing which result came from name vs content match in "Both" mode.

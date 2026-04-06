@@ -34,6 +34,7 @@
 	import {
 		type MarkSpec,
 		type MarkType,
+		type Node,
 		type NodeSpec,
 		type NodeType,
 		Schema,
@@ -51,7 +52,6 @@
 	import 'prosemirror-view/style/prosemirror.css';
 	import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
 	import type * as Y from 'yjs';
-	import { extractTitleAndPreview } from './utils';
 
 	const taskList: NodeSpec = {
 		group: 'block',
@@ -119,18 +119,6 @@
 		marks: basicSchema.spec.marks.append({ underline, strike }),
 	});
 
-	const headingKeys = ['heading1', 'heading2', 'heading3'] as const;
-	const listKeys = ['bulletList', 'orderedList', 'taskList'] as const;
-	const headingValues = {
-		heading1: 'h1',
-		heading2: 'h2',
-		heading3: 'h3',
-	} satisfies Record<(typeof headingKeys)[number], 'h1' | 'h2' | 'h3'>;
-	const listValues = {
-		bulletList: 'bullet',
-		orderedList: 'ordered',
-		taskList: 'task',
-	} satisfies Record<(typeof listKeys)[number], 'bullet' | 'ordered' | 'task'>;
 
 	function markActive(state: EditorState, markType: MarkType): boolean {
 		const { from, $from: resolvedFrom, to, empty } = state.selection;
@@ -219,6 +207,28 @@
 		};
 	}
 
+	/**
+	 * Extract title, preview, and word count from the ProseMirror document.
+	 *
+	 * Title is the first line (up to 80 chars), preview is the first 100 chars,
+	 * and word count is computed by splitting on whitespace.
+	 */
+	function extractTitleAndPreview(doc: Node): {
+		title: string;
+		preview: string;
+		wordCount: number;
+	} {
+		const text = doc.textContent;
+		const firstNewline = text.indexOf('\n');
+		const firstLine = firstNewline === -1 ? text : text.slice(0, firstNewline);
+		const trimmed = text.trim();
+		return {
+			title: firstLine.slice(0, 80).trim(),
+			preview: text.slice(0, 100).trim(),
+			wordCount: trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length,
+		};
+	}
+
 	let {
 		yxmlfragment,
 		onContentChange,
@@ -248,15 +258,17 @@
 	});
 
 	const activeHeading = $derived.by(() => {
-		const activeKey = headingKeys.find((key) => activeFormats[key]);
-		if (!activeKey) return '';
-		return headingValues[activeKey];
+		if (activeFormats.heading1) return 'h1';
+		if (activeFormats.heading2) return 'h2';
+		if (activeFormats.heading3) return 'h3';
+		return '';
 	});
 
 	const activeListType = $derived.by(() => {
-		const activeKey = listKeys.find((key) => activeFormats[key]);
-		if (!activeKey) return '';
-		return listValues[activeKey];
+		if (activeFormats.bulletList) return 'bullet';
+		if (activeFormats.orderedList) return 'ordered';
+		if (activeFormats.taskList) return 'task';
+		return '';
 	});
 
 	$effect(() => {

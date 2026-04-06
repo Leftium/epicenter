@@ -108,18 +108,29 @@ JOIN recordings ON recordings.rowid = id;
 
 Supported vector types: `F64_BLOB`, `F32_BLOB`, `F16_BLOB`, `FB16_BLOB`, `F8_BLOB`, `F1BIT_BLOB`. Distance functions: `vector_distance_cos`, `vector_distance_l2`.
 
-### libSQL vs Vanilla SQLite: Platform Matrix
+### SQLite Driver: `@tursodatabase/database` Family
 
-| Platform | Current SQLite | libSQL Option | Vector Support | FTS5 |
-|---|---|---|---|---|
-| **Browser** | `@libsql/client-wasm` (already used by filesystem) | Same | Unclear—DiskANN may be server-only in WASM builds | Yes |
-| **Desktop (Tauri)** | `bun:sqlite` (vanilla) | `libsql` Rust crate via Tauri command | Yes (native) | Yes |
-| **CLI (Bun)** | `bun:sqlite` (vanilla) | `@libsql/client` (Node/Bun native) | Yes | Yes |
-| **Server** | `better-sqlite3` (dev dep) | `@libsql/client` | Yes | Yes |
+Turso publishes two packages with the same `better-sqlite3`-compatible API:
 
-**Key finding**: `@libsql/client-wasm` is already a dependency in `packages/filesystem`. Using libSQL everywhere gives us vector support on desktop/server. Browser vector support needs verification—WASM builds may not include the DiskANN index. FTS5 works everywhere regardless.
+| Package | Platform | Persistence | Notes |
+|---|---|---|---|
+| `@tursodatabase/database` | Node, Bun, Deno | File-based | Native bindings, sync API with async option |
+| `@tursodatabase/database-wasm` | Browser | OPFS (persistent across reloads) | WASM, all methods async, requires COEP/COOP headers |
 
-**Implication**: Use libSQL as the default SQLite driver. Fall back to vanilla SQLite only if libSQL WASM proves too large or missing vector support in browser. The mirror extension should accept an injected `Client` so the driver choice is the consumer's concern.
+Both packages include the full Turso/libSQL engine: FTS5, vector columns (`F32_BLOB`), DiskANN indexes (`libsql_vector_idx`), `vector_top_k()`. Same API surface:
+
+```typescript
+import { connect } from '@tursodatabase/database';       // Node/Bun
+import { connect } from '@tursodatabase/database-wasm';  // Browser
+
+const db = await connect(':memory:');  // or 'file:workspace.db'
+await db.exec('CREATE TABLE recordings (id TEXT PRIMARY KEY, title TEXT)');
+const rows = await db.prepare('SELECT * FROM recordings').all();
+```
+
+**Key finding**: `@libsql/client-wasm` is already used by `packages/filesystem`, but `@tursodatabase/database-wasm` is the newer, cleaner API (better-sqlite3 style vs HTTP client style). Both use the same libSQL engine under the hood.
+
+**Implication**: Use `@tursodatabase/database` (native) and `@tursodatabase/database-wasm` (browser) as the standard SQLite driver. The mirror extension accepts an injected database instance, so the driver choice is the consumer's concern. This gives us vectors + FTS5 everywhere, including browser.
 
 ### Drizzle ORM: Needed or Not?
 
@@ -141,7 +152,7 @@ Supported vector types: `F64_BLOB`, `F32_BLOB`, `F16_BLOB`, `FB16_BLOB`, `F8_BLO
 | Decision | Choice | Rationale |
 |---|---|---|
 | DDL generation | Auto-generate from workspace JSON Schema | Eliminates schema duplication. `describeWorkspace()` already produces JSON Schema per table. |
-| SQL driver | Raw `@libsql/client` (injected) | No Drizzle in core. FTS5 and vectors require raw SQL anyway. Driver injection lets consumers choose WASM vs native. |
+| SQL driver | `@tursodatabase/database` family (injected) | No Drizzle in core. FTS5 and vectors require raw SQL. Driver injection lets consumers choose native vs WASM. `better-sqlite3`-compatible API. |
 | FTS5 | Config option inside the extension | FTS triggers reference mirrored tables—same concern. Separate extension would need to reach into mirror internals. |
 | Vectors | `onReady`/`onSync` lifecycle hooks | Vector columns and embeddings are app-specific (which columns, which model, what dimensions). Hooks give full control without baking AI concerns into the core. |
 | Filesystem sqlite-index | Stays separate | It has derived columns (`path`, `content`), custom logic, in-memory storage. It's a specialized projection, not a generic mirror. |
@@ -244,13 +255,13 @@ FTS5 triggers fire automatically        ← FTS index updated
 
 type SqliteMirrorOptions = {
   /**
-   * libSQL client instance. Caller chooses driver and storage mode.
+   * Turso database instance. Caller chooses driver and storage mode.
    *
-   * Browser: createClient({ url: ':memory:' }) from @libsql/client-wasm
-   * Desktop: createClient({ url: 'file:///path/to/workspace.db' })
-   * CLI:     createClient({ url: 'file:workspace.db' })
+   * Browser: connect(':memory:') from @tursodatabase/database-wasm
+   * Desktop: connect('workspace-mirror.db') from @tursodatabase/database
+   * CLI:     connect('workspace-mirror.db') from @tursodatabase/database
    */
-  client: Client;
+  db: Database;
 
   /**
    * Which tables to mirror. Default: all workspace tables.
@@ -270,7 +281,7 @@ type SqliteMirrorOptions = {
    * Called after mirror tables are created and initial data is loaded.
    * Use for: vector columns, custom indexes, views, additional tables.
    */
-  onReady?: (db: Client) => void | Promise<void>;
+  onReady?: (db: Database) => void | Promise<void>;
 
   /**
    * Called after each sync cycle (batch of observer changes applied).
@@ -278,7 +289,7 @@ type SqliteMirrorOptions = {
    *
    * `changes` contains which tables had rows upserted or deleted.
    */
-  onSync?: (db: Client, changes: SyncChange[]) => void | Promise<void>;
+  onSync?: (db: Database, changes: SyncChange[]) => void | Promise<void>;
 
   /** Debounce interval (ms). @default 100 */
   debounceMs?: number;
@@ -293,8 +304,8 @@ type SyncChange = {
 // ── Extension return type ─────────────────────────────────────
 
 type SqliteMirror = {
-  /** Raw libSQL client for arbitrary SQL. */
-  client: Client;
+  /** Turso database instance for arbitrary SQL. */
+  db: Database;
 
   /** Rebuild all mirrored tables from Yjs. Drops and recreates. */
   rebuild: () => Promise<void>;
@@ -321,12 +332,12 @@ type SearchResult = {
 **Minimal (just mirror, no FTS):**
 
 ```typescript
-import { createClient } from '@libsql/client-wasm';
+import { connect } from '@tursodatabase/database-wasm';
 
 export const workspace = createWorkspace(whisperingDefinition)
   .withExtension('persistence', indexeddbPersistence)
   .withWorkspaceExtension('sqlite', createSqliteMirror({
-    client: createClient({ url: ':memory:' }),
+    db: await connect(':memory:'),
   }));
 ```
 
@@ -336,7 +347,7 @@ export const workspace = createWorkspace(whisperingDefinition)
 export const workspace = createWorkspace(whisperingDefinition)
   .withExtension('persistence', indexeddbPersistence)
   .withWorkspaceExtension('sqlite', createSqliteMirror({
-    client: createClient({ url: ':memory:' }),
+    db: await connect(':memory:'),
     fts: {
       recordings: ['title', 'transcribedText'],
       transformations: ['title', 'description'],
@@ -347,42 +358,42 @@ export const workspace = createWorkspace(whisperingDefinition)
 **With vectors (desktop, via lifecycle hook):**
 
 ```typescript
-export const workspace = createWorkspace(whisperingDefinition)
+import { connect } from '@tursodatabase/database';
+
+  export const workspace = createWorkspace(whisperingDefinition)
   .withExtension('persistence', indexeddbPersistence)
   .withWorkspaceExtension('sqlite', createSqliteMirror({
-    client: createClient({ url: 'file:workspace-mirror.db' }),
+    db: await connect('workspace-mirror.db'),
     fts: {
       recordings: ['title', 'transcribedText'],
     },
     async onReady(db) {
-      await db.execute(
+      await db.exec(
         'ALTER TABLE recordings ADD COLUMN IF NOT EXISTS embedding F32_BLOB(1536)'
       );
-      await db.execute(
+      await db.exec(
         'CREATE INDEX IF NOT EXISTS recordings_vec_idx ON recordings(libsql_vector_idx(embedding))'
       );
     },
     async onSync(db, changes) {
-      // Re-embed changed recordings
       const recordingChanges = changes.find(c => c.table === 'recordings');
       if (!recordingChanges) return;
       for (const id of recordingChanges.upserted) {
-        const row = await db.execute('SELECT transcribed_text FROM recordings WHERE id = ?', [id]);
-        if (!row.rows[0]) continue;
-        const embedding = await getEmbedding(row.rows[0].transcribed_text as string);
-        await db.execute(
-          'UPDATE recordings SET embedding = vector32(?) WHERE id = ?',
-          [JSON.stringify(embedding), id]
+        const row = await db.prepare('SELECT transcribed_text FROM recordings WHERE id = ?').get(id);
+        if (!row) continue;
+        const embedding = await getEmbedding(row.transcribed_text as string);
+        await db.prepare('UPDATE recordings SET embedding = vector32(?) WHERE id = ?').run(
+          JSON.stringify(embedding), id
         );
       }
     },
   }));
 ```
 
-**With optional Drizzle typed queries (app-local):**
+**With optional Drizzle typed queries (app-local, if you really want them):**
 
 ```typescript
-// sqlite/schema.ts — hand-written, opt-in
+// sqlite/schema.ts — hand-written, opt-in, only if you need typed SELECT queries
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 export const recordings = sqliteTable('recordings', {
@@ -409,9 +420,9 @@ const done = await db.select().from(schema.recordings)
 queryData: defineQuery({
   description: 'Run a read-only SQL query against workspace data',
   input: type({ sql: 'string' }),
-  handler: ({ sql }) => {
-    const result = workspace.extensions.sqlite.client.execute(sql);
-    return { rows: result.rows, columns: result.columns };
+  handler: async ({ sql }) => {
+    const rows = await workspace.extensions.sqlite.db.prepare(sql).all();
+    return { rows };
   },
 });
 ```
@@ -426,7 +437,7 @@ queryData: defineQuery({
   - Await `ctx.whenReady` before touching SQLite
   - Generate and execute DDL for each table
   - Full load: `table.getAllValid()` → batch `INSERT OR REPLACE INTO`
-  - Return `{ client, rebuild }`
+  - Return `{ db, rebuild }`
 - [ ] **1.4** Implement observer-based incremental sync:
   - `table.observe()` per mirrored table
   - Debounced batch: collect changed IDs, then `INSERT OR REPLACE` for upserts, `DELETE` for removals
@@ -495,12 +506,12 @@ queryData: defineQuery({
 
 ## Open Questions
 
-1. **libSQL WASM vector support**: Does `@libsql/client-wasm` include `F32_BLOB` columns and `libsql_vector_idx`? DiskANN may require native code not available in WASM. If not, vectors are desktop/server-only.
+1. **WASM vector support**: Does `@tursodatabase/database-wasm` include `F32_BLOB` columns and `libsql_vector_idx`? DiskANN may require native code not available in WASM. If not, vectors are desktop/server-only.
    - **Recommendation**: Verify by testing. If WASM lacks vectors, document it. FTS5 works everywhere regardless—that's the primary browser use case.
 
-2. **Encrypted on-disk mirrors**: If the SQLite file is persistent and the workspace uses encryption, should we encrypt the SQLite file too?
-   - Options: (a) Accept plaintext (local disk is trusted), (b) Use SQLCipher/libSQL encryption, (c) Only allow `:memory:` for encrypted workspaces
-   - **Recommendation**: Accept plaintext for v1. The user's local filesystem is the same trust boundary as IndexedDB. Revisit if users request at-rest encryption for the mirror.
+2. **Encrypted on-disk mirrors**: `@tursodatabase/database-wasm` uses OPFS for browser persistence (survives page reloads). If the workspace uses encryption, the OPFS-persisted SQLite file contains plaintext.
+   - Options: (a) Accept plaintext (same trust boundary as IndexedDB), (b) Use libSQL encryption, (c) Only allow `:memory:` for encrypted workspaces
+   - **Recommendation**: Accept plaintext for v1. The user's local filesystem / OPFS is the same trust boundary as IndexedDB. Revisit if users request at-rest encryption for the mirror.
 
 3. **Column name mapping**: Workspace schemas use camelCase (`transcribedText`). Should SQLite columns be snake_case (`transcribed_text`) or match the workspace?
    - Options: (a) Match workspace camelCase exactly, (b) Convert to snake_case for SQL convention
@@ -510,13 +521,13 @@ queryData: defineQuery({
    - Options: (a) Tables only, (b) Also mirror KV as a `kv` table with `key TEXT PRIMARY KEY, value TEXT` columns
    - **Recommendation**: Tables only for v1. KV is settings/preferences—not useful for SQL queries or agent access.
 
-5. **Should the extension own the client lifecycle?**: Currently the caller creates and passes the `Client`. Should the extension optionally accept a file path and create the client internally?
-   - Options: (a) Always injected, (b) Accept `client` OR `filePath`, create client if path given
-   - **Recommendation**: Support both. `filePath` is sugar for the common case; `client` gives full control.
+5. **Should the extension own the database lifecycle?**: Currently the caller creates and passes the `Database`. Should the extension optionally accept a path string and create the database internally?
+   - Options: (a) Always injected, (b) Accept `db` OR `path`, create database if path given
+   - **Recommendation**: Support both. `path` is sugar for the common case; `db` gives full control.
 
 ## Success Criteria
 
-- [ ] `createSqliteMirror({ client })` mirrors all workspace tables to SQLite with zero configuration
+- [ ] `createSqliteMirror({ db })` mirrors all workspace tables to SQLite with zero configuration
 - [ ] DDL is auto-generated from workspace JSON Schema—no manual schema declaration required
 - [ ] Incremental sync: Yjs table mutations appear in SQLite within `debounceMs`
 - [ ] `fts` config generates working FTS5 virtual tables with trigger-based sync

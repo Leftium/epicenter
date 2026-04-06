@@ -1,7 +1,7 @@
 # TipTap → Raw ProseMirror Migration
 
 **Date**: 2026-04-06
-**Status**: In Progress
+**Status**: Implemented
 **Author**: AI-assisted
 
 ## Overview
@@ -299,9 +299,10 @@ Honeycrisp has the full toolbar and additional extensions.
 
 ### Phase 4: Cleanup
 
-- [ ] **4.1** Run `bun install` to confirm no TipTap packages remain in lockfile.
-- [ ] **4.2** Run `bun run typecheck` across both apps.
-- [ ] **4.3** Verify no remaining `@tiptap` imports anywhere: `grep -r "@tiptap" apps/`.
+- [x] **4.1** Run `bun install` to confirm no TipTap packages remain in lockfile.
+- [x] **4.2** Run `bun run typecheck` across both apps.
+  > **Note**: Pre-existing failures in `@epicenter/zhongwen` unrelated to migration. Both Fuji and Honeycrisp editor files are type-clean.
+- [x] **4.3** Verify no remaining `@tiptap` imports anywhere: `grep -r "@tiptap" apps/`.
 - [ ] **4.4** Test both editors end-to-end: create content, reload, verify persistence via Yjs.
 
 ## Edge Cases
@@ -388,3 +389,36 @@ Honeycrisp has the full toolbar and additional extensions.
 - [TipTap task-item source](https://github.com/ueberdosis/tiptap/blob/main/packages/extension-task-item/src/task-item.ts) — Reference for task item NodeSpec + NodeView
 - [ProseMirror example-setup inputrules](https://github.com/ProseMirror/prosemirror-example-setup/blob/master/src/inputrules.ts) — Reference for input rule definitions
 - [Svelte Summit Fall 2024: Building a rich text editor with Svelte 5](https://www.youtube.com/watch?v=T2RMYj_1g9E) — Michael Aufreiter on ProseMirror alternatives in Svelte 5
+
+## Review
+
+**Completed**: 2026-04-06
+
+### Summary
+
+Replaced TipTap with raw ProseMirror in both Fuji and Honeycrisp editors. Both apps now use `EditorView` mounted via `$effect` with cleanup, schemas built from `prosemirror-schema-basic` + `prosemirror-schema-list`, and direct `y-prosemirror` plugin integration. The Honeycrisp toolbar uses ProseMirror commands (`toggleMark`, `setBlockType`, `wrapInList`) with active format detection via `dispatchTransaction`. No shared `packages/editor/` was created—schemas are inlined in each editor since they differ (Honeycrisp has taskList/taskItem/underline/strike that Fuji doesn't need).
+
+### Deviations from Spec
+
+- **No shared module (Phase 1 skipped)**: The spec proposed `packages/editor/` for shared code. Instead, schemas and helpers are inlined in each editor component. The schemas genuinely differ between apps, and the helpers are small (~10 lines each). Extraction can happen later if a third editor appears.
+- **Fuji got keyboard shortcuts and input rules**: The spec only listed these for Honeycrisp, but Fuji benefits from them too (markdown shortcuts for headings, lists, etc.).
+- **`$from` renamed to `resolvedFrom`**: Svelte 5 reserves the `$` prefix for reactive variables. ProseMirror's `selection.$from` needed aliasing in destructuring.
+- **Custom `strike` MarkSpec added**: `prosemirror-schema-basic` doesn't include strikethrough. Added alongside `underline` in Honeycrisp's schema.
+- **`ySyncPlugin(ytext)` type cast in Fuji**: The function is typed for `Y.XmlFragment` but accepts `Y.Text` at runtime (same as the original TipTap code). Used `as unknown as Y.XmlFragment`.
+
+### Dependencies Removed
+
+| App | Removed |
+|---|---|
+| Fuji | `@tiptap/core`, `@tiptap/extension-placeholder`, `@tiptap/starter-kit` |
+| Honeycrisp | `@tiptap/core`, `@tiptap/extension-placeholder`, `@tiptap/extension-task-item`, `@tiptap/extension-task-list`, `@tiptap/extension-underline`, `@tiptap/starter-kit` |
+
+### Dependencies Added (both apps)
+
+`prosemirror-commands`, `prosemirror-inputrules`, `prosemirror-keymap`, `prosemirror-schema-basic`, `prosemirror-schema-list`
+
+### Follow-up Work
+
+- End-to-end testing (spec item 4.4) requires manual verification with running apps
+- Consider extracting shared schema/helpers to `packages/editor/` if a third editor appears
+- The `<svelte:component>` deprecation warnings in Honeycrisp toolbar snippets are pre-existing and unrelated—can be fixed by replacing with direct component rendering

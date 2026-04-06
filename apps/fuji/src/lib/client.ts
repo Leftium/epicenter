@@ -10,4 +10,7 @@ import { createWorkspace } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { fujiWorkspace } from './workspace/definition';
 
-export const workspace = createWorkspace(fujiWorkspace).withExtension('persistence', indexeddbPersistence);
+export const workspace = createWorkspace(fujiWorkspace).withExtension(
+	'persistence',
+	indexeddbPersistence,
+);

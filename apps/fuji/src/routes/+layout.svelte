@@ -1,10 +1,7 @@
 <script lang="ts">
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
-	import { QueryClientProvider } from '@tanstack/svelte-query';
-	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from '@epicenter/ui/sonner';
-	import { queryClient } from '$lib/query/client';
 	import { workspace } from '$lib/client';
 	import '@epicenter/ui/app.css';
 	import * as Tooltip from '@epicenter/ui/tooltip';
@@ -14,12 +11,9 @@
 
 <svelte:head><title>Fuji</title></svelte:head>
 
-<QueryClientProvider client={queryClient}>
-	<WorkspaceGate whenReady={workspace.whenReady}>
-		<Tooltip.Provider>{@render children()}</Tooltip.Provider>
-	</WorkspaceGate>
-</QueryClientProvider>
+<WorkspaceGate whenReady={workspace.whenReady}>
+	<Tooltip.Provider>{@render children()}</Tooltip.Provider>
+</WorkspaceGate>
 
 <Toaster offset={16} closeButton />
 <ModeWatcher defaultMode="dark" track={false} />
-<SvelteQueryDevtools client={queryClient} buttonPosition="bottom-right" />

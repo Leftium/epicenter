@@ -12,7 +12,7 @@
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
 	import { workspace } from '$lib/client';
-import type { Entry, EntryId } from '$lib/workspace';
+	import type { Entry, EntryId } from '$lib/workspace';
 
 	// ─── Reactive State ────────────────────────────────────────────────────────────
 
@@ -41,10 +41,10 @@ import type { Entry, EntryId } from '$lib/workspace';
 		const typeFilter = activeTypeFilter;
 		const tagFilter = activeTagFilter;
 		if (typeFilter) {
-			result = result.filter((e) => e.type?.includes(typeFilter));
+			result = result.filter((e) => e.type.includes(typeFilter));
 		}
 		if (tagFilter) {
-			result = result.filter((e) => e.tags?.includes(tagFilter));
+			result = result.filter((e) => e.tags.includes(tagFilter));
 		}
 		return result;
 	});
@@ -56,20 +56,15 @@ function createEntry() {
 		workspace.tables.entries.set({
 			id,
 			title: '',
-			preview: '',
+			subtitle: '',
+			type: [],
+			tags: [],
 			createdAt: dateTimeStringNow(),
 			updatedAt: dateTimeStringNow(),
-			_v: 2,
+			_v: '1',
 		});
 		selectedEntryId.current = id;
 	}
-
-	function toggleViewMode() {
-		const next = viewMode.current === 'table' ? 'timeline' : 'table';
-		viewMode.current = next;
-	}
-
-	// ─── Keyboard Shortcuts ───────────────────────────────────────────────────────
 
 
 	// ─── Document Handle (Y.Text) ────────────────────────────────────────────────
@@ -83,7 +78,7 @@ function createEntry() {
 		}
 
 		let cancelled = false;
-		workspace.documents.entries.body.open(entryId).then((handle) => {
+		workspace.documents.entries.content.open(entryId).then((handle) => {
 			if (cancelled) return;
 			currentDocHandle = handle;
 			currentYText = handle.asText();
@@ -92,7 +87,7 @@ function createEntry() {
 		return () => {
 			cancelled = true;
 			if (currentDocHandle) {
-				workspace.documents.entries.body.close(entryId);
+				workspace.documents.entries.content.close(entryId);
 			}
 			currentYText = null;
 			currentDocHandle = null;
@@ -108,16 +103,7 @@ function createEntry() {
 
 	if (event.key === 'n' && event.metaKey) {
 		event.preventDefault();
-		const id = generateId() as unknown as EntryId;
-		workspace.tables.entries.set({
-			id,
-			title: '',
-			preview: '',
-			createdAt: dateTimeStringNow(),
-			updatedAt: dateTimeStringNow(),
-			_v: 2,
-		});
-		selectedEntryId.current = id;
+		createEntry();
 		return;
 	}
 
@@ -145,13 +131,9 @@ function createEntry() {
 				<EntryEditor
 					entry={selectedEntry}
 					ytext={currentYText}
-					onUpdateEntry={(updates) => {
+					onUpdate={(updates) => {
 						if (!selectedEntryId.current) return;
 						workspace.tables.entries.update(selectedEntryId.current, updates);
-					}}
-					onPreviewChange={(preview) => {
-						if (!selectedEntryId.current) return;
-						workspace.tables.entries.update(selectedEntryId.current, { preview });
 					}}
 					onBack={() => (selectedEntryId.current = null)}
 				/>
@@ -167,7 +149,7 @@ function createEntry() {
 					variant="ghost"
 					size="icon"
 					class="size-7"
-					onclick={toggleViewMode}
+					onclick={() => (viewMode.current = viewMode.current === 'table' ? 'timeline' : 'table')}
 					title={viewMode.current === 'table' ? 'Switch to timeline' : 'Switch to table'}
 				>
 					{#if viewMode.current === 'table'}
@@ -181,7 +163,7 @@ function createEntry() {
 			{#if viewMode.current === 'table'}
 				<EntriesTable
 					entries={filteredEntries}
-					globalFilter={searchQuery}
+					{searchQuery}
 					selectedEntryId={selectedEntryId.current}
 					onSelectEntry={(id) => (selectedEntryId.current = id)}
 					onAddEntry={createEntry}

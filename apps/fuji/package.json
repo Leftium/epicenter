@@ -34,8 +34,6 @@
 	"dependencies": {
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
-		"@tanstack/svelte-query": "catalog:",
-		"@tanstack/svelte-query-devtools": "catalog:",
 		"@tanstack/svelte-table": "catalog:",
 		"@tanstack/table-core": "9.0.0-alpha.10",
 		"@tiptap/core": "^2.12.0",

@@ -30,10 +30,8 @@
 	const typeGroups = $derived.by(() => {
 		const counts = new Map<string, number>();
 		for (const entry of entries) {
-			if (entry.type) {
-				for (const t of entry.type) {
-					counts.set(t, (counts.get(t) ?? 0) + 1);
-				}
+			for (const t of entry.type) {
+				counts.set(t, (counts.get(t) ?? 0) + 1);
 			}
 		}
 		return [...counts.entries()]
@@ -45,10 +43,8 @@
 	const tagGroups = $derived.by(() => {
 		const counts = new Map<string, number>();
 		for (const entry of entries) {
-			if (entry.tags) {
-				for (const tag of entry.tags) {
-					counts.set(tag, (counts.get(tag) ?? 0) + 1);
-				}
+			for (const tag of entry.tags) {
+				counts.set(tag, (counts.get(tag) ?? 0) + 1);
 			}
 		}
 		return [...counts.entries()]

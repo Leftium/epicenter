@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Table from '@epicenter/ui/table';
 	import { SortableTableHeader } from '@epicenter/ui/table';
@@ -16,19 +15,18 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { formatDistanceToNowStrict } from 'date-fns';
-	import { createRawSnippet } from 'svelte';
 	import type { Entry, EntryId } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
 
 	let {
 		entries,
-		globalFilter,
+		searchQuery,
 		selectedEntryId,
 		onSelectEntry,
 		onAddEntry,
 	}: {
 		entries: Entry[];
-		globalFilter: string;
+		searchQuery: string;
 		selectedEntryId: EntryId | null;
 		onSelectEntry: (id: EntryId) => void;
 		onAddEntry: () => void;
@@ -61,24 +59,18 @@
 				const title = getValue<string>();
 				return title || 'Untitled';
 			},
-			filterFn: (row, _columnId, filterValue) => {
-				const title = String(row.getValue('title')).toLowerCase();
-				const preview = String(row.getValue('preview')).toLowerCase();
-				const filter = filterValue.toLowerCase();
-				return title.includes(filter) || preview.includes(filter);
-			},
 		},
 		{
-			id: 'preview',
-			accessorKey: 'preview',
+			id: 'subtitle',
+			accessorKey: 'subtitle',
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
-					headerText: 'Preview',
+					headerText: 'Subtitle',
 				}),
 			cell: ({ getValue }) => {
-				const preview = getValue<string>();
-				return preview || '';
+				const subtitle = getValue<string>();
+				return subtitle || '';
 			},
 		},
 		{
@@ -90,8 +82,8 @@
 					headerText: 'Type',
 				}),
 			cell: ({ getValue }) => {
-				const types = getValue<string[] | undefined>();
-				if (!types?.length) return '';
+				const types = getValue<string[]>();
+				if (!types.length) return '';
 				return renderComponent(BadgeList, { items: types });
 			},
 			enableSorting: false,
@@ -105,8 +97,8 @@
 					headerText: 'Tags',
 				}),
 			cell: ({ getValue }) => {
-				const tags = getValue<string[] | undefined>();
-				if (!tags?.length) return '';
+				const tags = getValue<string[]>();
+				if (!tags.length) return '';
 				return renderComponent(BadgeList, { items: tags });
 			},
 			enableSorting: false,
@@ -156,14 +148,13 @@
 				return sorting;
 			},
 			get globalFilter() {
-				return globalFilter;
+				return searchQuery;
 			},
 		},
 		globalFilterFn: (row, _columnId, filterValue) => {
 			const title = String(row.getValue('title')).toLowerCase();
-			const preview = String(row.getValue('preview')).toLowerCase();
 			const filter = filterValue.toLowerCase();
-			return title.includes(filter) || preview.includes(filter);
+			return title.includes(filter);
 		},
 	});
 </script>
@@ -224,7 +215,7 @@
 								class="flex items-center justify-center py-8 text-muted-foreground"
 							>
 								<p class="text-sm">
-									{#if globalFilter}
+							{#if searchQuery}
 										No entries match your search.
 									{:else}
 										No entries yet. Click + to create one.

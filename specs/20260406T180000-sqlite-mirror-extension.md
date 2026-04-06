@@ -1,4 +1,5 @@
 # SQLite Mirror Extension
+# SQLite Mirror Extension
 
 **Date**: 2026-04-06
 **Status**: Draft

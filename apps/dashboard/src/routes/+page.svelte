@@ -14,13 +14,22 @@
 	import UsageChart from '$lib/components/UsageChart.svelte';
 	import { balanceQueryOptions, billingKeys } from '$lib/query/billing';
 	import { queryClient } from '$lib/query/client';
-	import { openBillingPortal } from '$lib/utils';
 
 	const balance = createQuery(() => balanceQueryOptions());
 	const subscription = $derived(
 		balance.data?.subscriptions?.find((s) => !s.addOn) ?? null,
 	);
 	const isOnTrial = $derived(subscription?.trialEndsAt != null);
+
+	/** Open Stripe billing portal via the API. */
+	async function openBillingPortal() {
+		try {
+			const data = await api.billing.portal();
+			if (data.url) window.location.href = data.url;
+		} catch {
+			toast.error('Could not open billing portal.');
+		}
+	}
 
 	const topUp = createMutation(() => ({
 		mutationFn: () => api.billing.topUp(window.location.href),

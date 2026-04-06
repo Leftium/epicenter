@@ -1,6 +1,3 @@
-import { toast } from 'svelte-sonner';
-import { api } from './api';
-
 /**
  * Capitalize the first letter of a string.
  *
@@ -44,24 +41,4 @@ export function getInitials(name: string, email: string): string {
 		return name.slice(0, 2).toUpperCase();
 	}
 	return email.slice(0, 2).toUpperCase();
-}
-
-/**
- * Open the Stripe billing portal in the current window.
- *
- * Fetches a portal session URL from the API and redirects.
- * Shows a toast on failure.
- *
- * @example
- * ```svelte
- * <Button onclick={openBillingPortal}>Manage billing</Button>
- * ```
- */
-export async function openBillingPortal(): Promise<void> {
-	try {
-		const data = await api.billing.portal();
-		if (data.url) window.location.href = data.url;
-	} catch {
-		toast.error('Could not open billing portal.');
-	}
 }

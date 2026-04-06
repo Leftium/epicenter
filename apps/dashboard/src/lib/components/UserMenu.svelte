@@ -8,9 +8,11 @@
 	import SunIcon from '@lucide/svelte/icons/sun';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { mode, toggleMode } from 'mode-watcher';
+	import { toast } from 'svelte-sonner';
+	import { api } from '$lib/api';
 	import { auth } from '$lib/auth';
 	import { balanceQueryOptions } from '$lib/query/billing';
-	import { capitalize, getInitials, openBillingPortal } from '$lib/utils';
+	import { capitalize, getInitials } from '$lib/utils';
 
 	const balance = createQuery(() => balanceQueryOptions());
 
@@ -28,7 +30,15 @@
 
 	const initials = $derived(getInitials(name, email));
 
-
+	/** Open Stripe billing portal via the API. */
+	async function openBillingPortal() {
+		try {
+			const data = await api.billing.portal();
+			if (data.url) window.location.href = data.url;
+		} catch {
+			toast.error('Could not open billing portal.');
+		}
+	}
 	const isDark = $derived(mode.current === 'dark');
 </script>
 

@@ -34,7 +34,7 @@
 					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
 					// vim() must load AFTER defaultKeymap so its Escape binding
 					// takes precedence over defaultKeymap's simplifySelection.
-					...editorState.extension(),
+					...editorState.extension(mode.current === 'dark'),
 					drawSelection(),
 					EditorView.lineWrapping,
 					markdownHighlighting,

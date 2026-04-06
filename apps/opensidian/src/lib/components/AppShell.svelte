@@ -1,44 +1,55 @@
 <script lang="ts">
+	import {
+		CommandPalette,
+		type CommandPaletteItem,
+	} from '@epicenter/ui/command-palette';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
-	import { CommandPalette, type CommandPaletteItem } from '@epicenter/ui/command-palette';
-	import type { FileId } from '@epicenter/filesystem';
-	import { terminalState } from '$lib/state/terminal-state.svelte';
+	import { Toggle } from '@epicenter/ui/toggle';
+	import * as Tooltip from '@epicenter/ui/tooltip';
+	import FileIcon from '@lucide/svelte/icons/file';
+	import TextIcon from '@lucide/svelte/icons/text';
 	import { fsState } from '$lib/state/fs-state.svelte';
+	import { searchState } from '$lib/state/search-state.svelte';
+	import { terminalState } from '$lib/state/terminal-state.svelte';
 	import { getFileIcon } from '$lib/utils/file-icons';
 	import ContentPanel from './editor/ContentPanel.svelte';
+	import StatusBar from './editor/StatusBar.svelte';
 	import Toolbar from './Toolbar.svelte';
 	import TerminalPanel from './terminal/TerminalPanel.svelte';
 	import FileTree from './tree/FileTree.svelte';
-	import StatusBar from './editor/StatusBar.svelte';
 
 	let paletteOpen = $state(false);
 
-	// \u2500\u2500 Collect all files recursively (only when palette is open) \u2500\u2500\u2500\u2500
-	type FileEntry = { id: FileId; name: string; parentDir: string };
+	$effect(() => {
+		if (!paletteOpen) searchState.reset();
+	});
 
-	const allFiles = $derived.by((): FileEntry[] => {
-		if (!paletteOpen) return [];
-		return fsState.walkTree<FileEntry>((id, row) => {
+	const allFileItems = $derived.by((): CommandPaletteItem[] => {
+		if (!paletteOpen || searchState.scope !== 'names') return [];
+		return fsState.walkTree<CommandPaletteItem>((id, row) => {
 			if (row.type === 'file') {
 				const fullPath = fsState.getPath(id) ?? '';
 				const lastSlash = fullPath.lastIndexOf('/');
 				const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
-				return { collect: { id, name: row.name, parentDir }, descend: false };
+				return {
+					collect: {
+						id,
+						label: row.name,
+						description: parentDir || undefined,
+						icon: getFileIcon(row.name),
+						group: 'Files',
+						onSelect: () => fsState.selectFile(id),
+					},
+					descend: false,
+				};
 			}
 			return { descend: true };
 		});
 	});
 
-	const fileItems = $derived<CommandPaletteItem[]>(
-		allFiles.map((file) => ({
-			id: file.id,
-			label: file.name,
-			description: file.parentDir || undefined,
-			icon: getFileIcon(file.name),
-			group: 'Files',
-			onSelect: () => fsState.selectFile(file.id),
-		})),
+	const paletteItems = $derived(
+		searchState.shouldFilter ? allFileItems : searchState.searchResults,
 	);
 
 	let terminalRef: ReturnType<typeof TerminalPanel> | undefined = $state();
@@ -67,7 +78,6 @@
 			}
 		}
 	}
-
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -100,12 +110,52 @@
 	</Resizable.PaneGroup>
 	<StatusBar />
 	<CommandPalette
-		items={fileItems}
+		items={paletteItems}
 		bind:open={paletteOpen}
-		placeholder="Search files..."
-		emptyMessage="No files found."
+		bind:value={searchState.searchQuery}
+		placeholder={searchState.scope === 'names' ? 'Search file names...' : searchState.scope === 'content' ? 'Search content...' : 'Search files...'}
+		emptyMessage={searchState.scope === 'content' ? 'No content matches.' : searchState.scope === 'both' ? 'No results.' : 'No files found.'}
 		title="Search Files"
-		description="Search for a file by name"
-	/>
+		description="Search for files by name or content"
+		shouldFilter={searchState.shouldFilter}
+	>
+		{#snippet inputEndContent()}
+			<div class="flex items-center gap-0.5">
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<Toggle
+								size="sm"
+								pressed={searchState.scope === 'names'}
+								onPressedChange={(v) => { searchState.scope = v ? 'names' : 'both'; }}
+								aria-label="Names only"
+								class="size-6 rounded-sm p-0"
+								{...props}
+							>
+								<FileIcon class="size-3.5" />
+							</Toggle>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content>Names only</Tooltip.Content>
+				</Tooltip.Root>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<Toggle
+								size="sm"
+								pressed={searchState.scope === 'content'}
+								onPressedChange={(v) => { searchState.scope = v ? 'content' : 'both'; }}
+								aria-label="Content only"
+								class="size-6 rounded-sm p-0"
+								{...props}
+							>
+								<TextIcon class="size-3.5" />
+							</Toggle>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content>Content only</Tooltip.Content>
+				</Tooltip.Root>
+			</div>
+		{/snippet}
+	</CommandPalette>
 </div>
-

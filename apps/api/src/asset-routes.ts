@@ -321,39 +321,46 @@ assetAuthedRoutes.post(
 		if (!adminIds.includes(c.var.user.id)) {
 			return c.json({ error: 'Forbidden' }, 403);
 		}
+		// Left join from user → asset to include users with zero assets.
+		// Without this, users who deleted all assets keep stale billing.
 		const userTotals = await c.var.db
 			.select({
-				userId: schema.asset.userId,
+				userId: schema.user.id,
 				totalBytes: sql<number>`COALESCE(SUM(${schema.asset.sizeBytes}), 0)`,
 			})
-			.from(schema.asset)
-			.groupBy(schema.asset.userId);
+			.from(schema.user)
+			.leftJoin(schema.asset, eq(schema.user.id, schema.asset.userId))
+			.groupBy(schema.user.id);
 
 		let errors = 0;
 		const secretKey = c.env.AUTUMN_SECRET_KEY;
+		const batchSize = 10;
 
-		for (const { userId, totalBytes } of userTotals) {
-			try {
-				const res = await fetch('https://api.useautumn.com/v1/usage', {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						Authorization: `Bearer ${secretKey}`,
-					},
-					body: JSON.stringify({
-						customer_id: userId,
-						feature_id: FEATURE_IDS.storageBytes,
-						value: totalBytes,
+		// Process in batches of 10 to avoid timeout on large user sets
+		for (let i = 0; i < userTotals.length; i += batchSize) {
+			const batch = userTotals.slice(i, i + batchSize);
+			const results = await Promise.allSettled(
+				batch.map(({ userId, totalBytes }) =>
+					fetch('https://api.useautumn.com/v1/usage', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							Authorization: `Bearer ${secretKey}`,
+						},
+						body: JSON.stringify({
+							customer_id: userId,
+							feature_id: FEATURE_IDS.storageBytes,
+							value: totalBytes,
+						}),
+					}).then(async (res) => {
+						if (!res.ok) {
+							const body = await res.text();
+							throw new Error(`Autumn /usage (${res.status}): ${body}`);
+						}
 					}),
-				});
-				if (!res.ok) {
-					const body = await res.text();
-					throw new Error(`Autumn /usage failed (${res.status}): ${body}`);
-				}
-			} catch (e) {
-				console.error(`[reconciliation] Failed for user ${userId}:`, e);
-				errors++;
-			}
+				),
+			);
+			errors += results.filter((r) => r.status === 'rejected').length;
 		}
 
 		return c.json({ usersProcessed: userTotals.length, errors });

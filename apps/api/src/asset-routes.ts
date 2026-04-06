@@ -10,6 +10,7 @@
  */
 
 import { generateGuid } from '@epicenter/workspace';
+import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
@@ -17,6 +18,7 @@ import type { Env } from './app.js';
 import { createAutumn } from './autumn.js';
 import { PLAN_IDS } from './billing-plans.js';
 import { MAX_ASSET_BYTES } from './constants.js';
+import * as schema from './db/schema.js';
 
 const ALLOWED_MIME_TYPES = new Set([
 	'image/png',
@@ -97,11 +99,15 @@ authedRoutes.post(
 				contentDisposition: `inline; filename="${file.name}"`,
 				cacheControl: 'private, max-age=31536000, immutable',
 			},
-			customMetadata: {
-				originalName: file.name,
-				userId: c.var.user.id,
-				uploadedAt: new Date().toISOString(),
-			},
+		});
+
+		// Insert metadata row — Postgres is the source of truth for billing/listing
+		await c.var.db.insert(schema.asset).values({
+			id: assetId,
+			userId: c.var.user.id,
+			contentType: file.type,
+			sizeBytes: file.size,
+			originalName: file.name,
 		});
 
 		return c.json(
@@ -135,8 +141,20 @@ authedRoutes.delete(
 			return c.json({ error: 'Forbidden' }, 403);
 		}
 
+		// Look up asset to get sizeBytes for billing (Wave 4)
+		const [row] = await c.var.db
+			.select({ sizeBytes: schema.asset.sizeBytes })
+			.from(schema.asset)
+			.where(eq(schema.asset.id, assetId))
+			.limit(1);
+
+		if (!row) {
+			return c.json({ error: 'Asset not found' }, 404);
+		}
+
 		const key = `${userId}/${assetId}`;
 		await c.env.ASSETS_BUCKET.delete(key);
+		await c.var.db.delete(schema.asset).where(eq(schema.asset.id, assetId));
 
 		return c.body(null, 204);
 	},

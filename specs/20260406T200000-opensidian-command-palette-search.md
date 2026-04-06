@@ -161,9 +161,9 @@ apps/opensidian/src/lib/components/AppShell.svelte
 
 ### Phase 1: Extend CommandPalette to support snippets and header content
 
-- [ ] **1.1** Add optional `snippet?: string` to `CommandPaletteItem` type
-- [ ] **1.2** Render snippet below description in `command-palette.svelte` — use `{@html snippet}` since FTS5 returns `<mark>` tags. Sanitize with a simple allowlist (only `<mark>` and text).
-- [ ] **1.3** Add `headerContent` snippet prop to `CommandPalette` — rendered between the title area and the input. This is where the scope toggle goes.
+- [x] **1.1** Add optional `snippet?: string` to `CommandPaletteItem` type
+- [x] **1.2** Render snippet below description in `command-palette.svelte` — use `{@html snippet}` since FTS5 returns `<mark>` tags. Sanitize with a simple allowlist (only `<mark>` and text).
+- [x] **1.3** Add `headerContent` snippet prop to `CommandPalette` — rendered between the title area and the input. This is where the scope toggle goes.
 
 ### Phase 2: Create search state for opensidian
 

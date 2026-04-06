@@ -43,6 +43,24 @@ export type CommandPaletteItem = {
 	 */
 	description?: string;
 	/**
+	 * HTML snippet shown below the description for search result context.
+	 *
+	 * Rendered with `{@html}` after sanitization (only `<mark>` tags allowed).
+	 * Typically comes from FTS5 `snippet()` with highlighted match terms.
+	 *
+	 * @example
+	 * ```typescript
+	 * const item: CommandPaletteItem = {
+	 *   id: 'note-123',
+	 *   label: 'meeting-notes.md',
+	 *   description: 'docs/work',
+	 *   snippet: '...discussed the <mark>standup</mark> format...',
+	 *   onSelect: () => openFile('note-123'),
+	 * };
+	 * ```
+	 */
+	snippet?: string;
+	/**
 	 * Svelte component rendered as a 16×16 icon to the left of the label.
 	 *
 	 * Typically a Lucide icon import. Omit when icons aren't available

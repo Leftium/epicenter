@@ -2,6 +2,7 @@
 	import * as Command from '#command/index.js';
 	import { confirmationDialog } from '#confirmation-dialog/index.js';
 	import type { CommandPaletteItem } from './index.js';
+	import type { Snippet } from 'svelte';
 
 	let {
 		items,
@@ -13,6 +14,7 @@
 		description = 'Search for a command to run',
 		shouldFilter,
 		shortcut = 'k',
+		headerContent,
 	}: {
 		items: CommandPaletteItem[];
 		open: boolean;
@@ -41,6 +43,8 @@
 		 * ```
 		 */
 		shortcut?: string | null;
+		/** Optional snippet rendered between the dialog top and the search input. */
+		headerContent?: Snippet;
 	} = $props();
 
 	// \u2500\u2500 Reset search value when palette closes \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -50,6 +54,10 @@
 
 	// \u2500\u2500 Group items by the `group` field \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	const grouped = $derived(Map.groupBy(items, (item) => item.group));
+
+	function sanitizeSnippet(html: string): string {
+		return html.replace(/<(?!\/?mark\b)[^>]*>/gi, '');
+	}
 </script>
 
 <svelte:window
@@ -62,6 +70,9 @@
 />
 
 <Command.Dialog bind:open {title} {description} {shouldFilter}>
+	{#if headerContent}
+		{@render headerContent()}
+	{/if}
 	<Command.Input {placeholder} bind:value />
 	<Command.List>
 		<Command.Empty>{emptyMessage}</Command.Empty>
@@ -96,6 +107,11 @@
 									{item.description}
 								</span>
 							{/if}
+							{#if item.snippet}
+								<span class="snippet line-clamp-2 text-xs text-muted-foreground/70">
+									{@html sanitizeSnippet(item.snippet)}
+								</span>
+							{/if}
 						</div>
 					</Command.Item>
 				{/each}
@@ -103,3 +119,12 @@
 		{/each}
 	</Command.List>
 </Command.Dialog>
+
+<style>
+	.snippet :global(mark) {
+		background-color: hsl(var(--primary) / 0.2);
+		color: inherit;
+		border-radius: 2px;
+		padding: 0 1px;
+	}
+</style>

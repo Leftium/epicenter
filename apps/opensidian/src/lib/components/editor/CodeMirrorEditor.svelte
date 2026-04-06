@@ -31,10 +31,11 @@
 			state: EditorState.create({
 				doc: ytext.toString(),
 				extensions: [
-					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
-					// vim() must load AFTER defaultKeymap so its Escape binding
-					// takes precedence over defaultKeymap's simplifySelection.
+					// vim() must be BEFORE other keymaps per @replit/codemirror-vim README.
+					// It uses ViewPlugin eventHandlers (DOM-level), not CM6 keymaps,
+					// so ordering only affects insert-mode key fallthrough.
 					...editorState.extension(mode.current === 'dark'),
+					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
 					drawSelection(),
 					EditorView.lineWrapping,
 					markdownHighlighting,

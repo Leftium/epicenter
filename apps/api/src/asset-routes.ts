@@ -11,15 +11,46 @@
 
 import { generateGuid } from '@epicenter/workspace';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
+import { defineErrors } from 'wellcrafted/error';
 import type { Env } from './app.js';
 import { createAutumn } from './autumn.js';
 import { FEATURE_IDS } from './billing-plans.js';
 import { MAX_ASSET_BYTES } from './constants.js';
 import * as schema from './db/schema.js';
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+const AssetError = defineErrors({
+	MissingFile: () => ({
+		message: 'Missing file field in multipart body',
+	}),
+	FileTypeNotAllowed: ({ contentType }: { contentType: string }) => ({
+		message: `File type not allowed: ${contentType}`,
+		contentType,
+	}),
+	FileTooLarge: ({ size }: { size: number }) => ({
+		message: `File exceeds ${MAX_ASSET_BYTES} byte limit (got ${size})`,
+		size,
+	}),
+	StorageLimitExceeded: () => ({
+		message: 'Storage limit exceeded',
+	}),
+	NotFound: () => ({
+		message: 'Asset not found',
+	}),
+	Forbidden: () => ({
+		message: 'Forbidden',
+	}),
+});
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 const ALLOWED_MIME_TYPES = new Set([
 	'image/png',
@@ -29,119 +60,21 @@ const ALLOWED_MIME_TYPES = new Set([
 	'application/pdf',
 ]);
 
-async function detectMimeType(file: File): Promise<string | null> {
-	const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
-
-	if (
-		bytes.length >= 4 &&
-		bytes[0] === 0x89 &&
-		bytes[1] === 0x50 &&
-		bytes[2] === 0x4e &&
-		bytes[3] === 0x47
-	) {
-		return 'image/png';
-	}
-
-	if (
-		bytes.length >= 3 &&
-		bytes[0] === 0xff &&
-		bytes[1] === 0xd8 &&
-		bytes[2] === 0xff
-	) {
-		return 'image/jpeg';
-	}
-
-	if (
-		bytes.length >= 4 &&
-		bytes[0] === 0x47 &&
-		bytes[1] === 0x49 &&
-		bytes[2] === 0x46 &&
-		bytes[3] === 0x38
-	) {
-		return 'image/gif';
-	}
-
-	if (
-		bytes.length >= 12 &&
-		bytes[0] === 0x52 &&
-		bytes[1] === 0x49 &&
-		bytes[2] === 0x46 &&
-		bytes[3] === 0x46 &&
-		bytes[8] === 0x57 &&
-		bytes[9] === 0x45 &&
-		bytes[10] === 0x42 &&
-		bytes[11] === 0x50
-	) {
-		return 'image/webp';
-	}
-
-	if (
-		bytes.length >= 4 &&
-		bytes[0] === 0x25 &&
-		bytes[1] === 0x50 &&
-		bytes[2] === 0x44 &&
-		bytes[3] === 0x46
-	) {
-		return 'application/pdf';
-	}
-
-	return null;
-}
-
 function sanitizeFilename(name: string): string {
-	const withoutControlCharacters = Array.from(name)
-		.filter((character) => {
-			const code = character.charCodeAt(0);
-			return !(code <= 0x1f || code === 0x7f);
+	return Array.from(name)
+		.filter((ch) => {
+			const code = ch.charCodeAt(0);
+			return code > 0x1f && code !== 0x7f;
 		})
-		.join('');
-
-	return withoutControlCharacters.replaceAll('"', "'").trim().slice(0, 255);
+		.join('')
+		.replaceAll('"', "'")
+		.trim()
+		.slice(0, 255);
 }
 
 // ---------------------------------------------------------------------------
 // Sub-routers: separate auth'd and public routes
 // ---------------------------------------------------------------------------
-
-/**
- * Clean up R2 assets for a user. Call before deleting the user row
- * (ON DELETE CASCADE will handle Postgres rows, but R2 objects remain).
- *
- * Lists all assets for the user from Postgres, then batch-deletes from R2.
- * Also zeros the user's Autumn storage balance.
- */
-export async function cleanupUserAssets(
-	userId: string,
-	bucket: R2Bucket,
-	db: NodePgDatabase<typeof import('./db/schema.js')>,
-	autumnSecretKey: string,
-) {
-	const assets = await db
-		.select({ id: schema.asset.id })
-		.from(schema.asset)
-		.where(eq(schema.asset.userId, userId));
-
-	if (assets.length === 0) return;
-
-	// R2 supports batch delete
-	const keys = assets.map((a) => `${userId}/${a.id}`);
-	await bucket.delete(keys);
-
-	// Zero Autumn storage balance
-	await fetch('https://api.useautumn.com/v1/usage', {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${autumnSecretKey}`,
-		},
-		body: JSON.stringify({
-			customer_id: userId,
-			feature_id: FEATURE_IDS.storageBytes,
-			value: 0,
-		}),
-	}).catch((e) => console.error('[cleanup] Autumn zero failed:', e));
-}
-
 
 /** Authenticated routes (upload + delete). Mounted behind authGuard in app.ts. */
 export const assetAuthedRoutes = new Hono<Env>();
@@ -161,7 +94,34 @@ assetAuthedRoutes.post(
 	}),
 	bodyLimit({ maxSize: MAX_ASSET_BYTES }),
 	async (c) => {
-		// -- Storage billing gate --
+		// -- Extract + validate file before any external calls --
+		const body = await c.req.parseBody();
+		const file = body.file;
+		if (!(file instanceof File)) {
+			return c.json({ error: AssetError.MissingFile().error.message }, 400);
+		}
+
+		const sanitizedFilename = sanitizeFilename(file.name);
+
+		if (!ALLOWED_MIME_TYPES.has(file.type)) {
+			return c.json(
+				{
+					error: AssetError.FileTypeNotAllowed({ contentType: file.type }).error
+						.message,
+					allowed: [...ALLOWED_MIME_TYPES],
+				},
+				415,
+			);
+		}
+
+		if (file.size > MAX_ASSET_BYTES) {
+			return c.json(
+				{ error: AssetError.FileTooLarge({ size: file.size }).error.message },
+				413,
+			);
+		}
+
+		// -- Billing gate (after validation to avoid wasted calls) --
 		const autumn = createAutumn(c.env);
 		await autumn.customers.getOrCreate({
 			customerId: c.var.user.id,
@@ -169,43 +129,16 @@ assetAuthedRoutes.post(
 			email: c.var.user.email ?? undefined,
 		});
 
-		// -- Extract file from multipart body --
-		const body = await c.req.parseBody();
-		const file = body.file;
-		if (!(file instanceof File)) {
-			return c.json({ error: 'Missing file field in multipart body' }, 400);
-		}
-
-		const detectedMimeType = await detectMimeType(file);
-		const sanitizedFilename = sanitizeFilename(file.name);
-
-		// -- Validate MIME type --
-		if (
-			detectedMimeType === null ||
-			!ALLOWED_MIME_TYPES.has(detectedMimeType)
-		) {
-			return c.json(
-				{
-					error: 'File type not allowed',
-					allowed: [...ALLOWED_MIME_TYPES],
-				},
-				415,
-			);
-		}
-
-		// -- Validate size (belt-and-suspenders with bodyLimit) --
-		if (file.size > MAX_ASSET_BYTES) {
-			return c.json({ error: 'File too large' }, 413);
-		}
-
-		// -- Check storage allowance before writing --
 		const { allowed } = await autumn.check({
 			customerId: c.var.user.id,
 			featureId: FEATURE_IDS.storageBytes,
 			requiredBalance: file.size,
 		});
 		if (!allowed) {
-			return c.json({ error: 'Storage limit exceeded' }, 402);
+			return c.json(
+				{ error: AssetError.StorageLimitExceeded().error.message },
+				402,
+			);
 		}
 
 		// -- Store in R2 + Postgres --
@@ -214,7 +147,7 @@ assetAuthedRoutes.post(
 
 		await c.env.ASSETS_BUCKET.put(key, file.stream(), {
 			httpMetadata: {
-				contentType: detectedMimeType,
+				contentType: file.type,
 				contentDisposition: `inline; filename="${sanitizedFilename}"`,
 				cacheControl: 'private, max-age=31536000, immutable',
 			},
@@ -224,7 +157,7 @@ assetAuthedRoutes.post(
 			await c.var.db.insert(schema.asset).values({
 				id: assetId,
 				userId: c.var.user.id,
-				contentType: detectedMimeType,
+				contentType: file.type,
 				sizeBytes: file.size,
 				originalName: sanitizedFilename,
 			});
@@ -249,7 +182,7 @@ assetAuthedRoutes.post(
 			{
 				id: assetId,
 				url: `/api/assets/${c.var.user.id}/${assetId}`,
-				contentType: detectedMimeType,
+				contentType: file.type,
 				size: file.size,
 				originalName: sanitizedFilename,
 			},
@@ -259,7 +192,7 @@ assetAuthedRoutes.post(
 );
 
 // ---------------------------------------------------------------------------
-// GET / — List current user's assets (paginated)
+// GET / — List current user's assets
 // ---------------------------------------------------------------------------
 
 assetAuthedRoutes.get(
@@ -302,12 +235,13 @@ assetAuthedRoutes.get(
 		return c.json({ totalBytes: total });
 	},
 );
+
 // ---------------------------------------------------------------------------
-// DELETE /:userId/:assetId — Delete (authenticated, owner only)
+// DELETE /:assetId — Delete (authenticated, owner only)
 // ---------------------------------------------------------------------------
 
 assetAuthedRoutes.delete(
-	'/:userId/:assetId',
+	'/:assetId',
 	describeRoute({
 		description: 'Delete an asset (owner only)',
 		tags: ['assets'],
@@ -327,7 +261,7 @@ assetAuthedRoutes.delete(
 			.returning({ sizeBytes: schema.asset.sizeBytes });
 
 		if (!deleted) {
-			return c.json({ error: 'Asset not found' }, 404);
+			return c.json({ error: AssetError.NotFound().error.message }, 404);
 		}
 
 		const key = `${c.var.user.id}/${assetId}`;
@@ -346,6 +280,7 @@ assetAuthedRoutes.delete(
 		return c.body(null, 204);
 	},
 );
+
 // ---------------------------------------------------------------------------
 // POST /reconcile — Manual storage billing reconciliation (admin)
 // ---------------------------------------------------------------------------
@@ -357,13 +292,13 @@ assetAuthedRoutes.post(
 		tags: ['assets', 'admin'],
 	}),
 	async (c) => {
-		// Admin gate — only allowed user IDs can trigger reconciliation
+		// Admin gate
 		const adminIds = (c.env.ADMIN_USER_IDS ?? '').split(',').filter(Boolean);
 		if (!adminIds.includes(c.var.user.id)) {
-			return c.json({ error: 'Forbidden' }, 403);
+			return c.json({ error: AssetError.Forbidden().error.message }, 403);
 		}
-		// Left join from user → asset to include users with zero assets.
-		// Without this, users who deleted all assets keep stale billing.
+
+		// Left join user → asset so zero-asset users get corrected too
 		const userTotals = await c.var.db
 			.select({
 				userId: schema.user.id,
@@ -373,31 +308,18 @@ assetAuthedRoutes.post(
 			.leftJoin(schema.asset, eq(schema.user.id, schema.asset.userId))
 			.groupBy(schema.user.id);
 
+		const autumn = createAutumn(c.env);
 		let errors = 0;
-		const secretKey = c.env.AUTUMN_SECRET_KEY;
 		const batchSize = 10;
 
-		// Process in batches of 10 to avoid timeout on large user sets
 		for (let i = 0; i < userTotals.length; i += batchSize) {
 			const batch = userTotals.slice(i, i + batchSize);
 			const results = await Promise.allSettled(
 				batch.map(({ userId, totalBytes }) =>
-					fetch('https://api.useautumn.com/v1/usage', {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-							Authorization: `Bearer ${secretKey}`,
-						},
-						body: JSON.stringify({
-							customer_id: userId,
-							feature_id: FEATURE_IDS.storageBytes,
-							value: totalBytes,
-						}),
-					}).then(async (res) => {
-						if (!res.ok) {
-							const body = await res.text();
-							throw new Error(`Autumn /usage (${res.status}): ${body}`);
-						}
+					autumn.balances.update({
+						customerId: userId,
+						featureId: FEATURE_IDS.storageBytes,
+						usage: totalBytes,
 					}),
 				),
 			);
@@ -422,25 +344,16 @@ assetPublicRoutes.get(
 		const { userId, assetId } = c.req.param();
 		const key = `${userId}/${assetId}`;
 
-		// Only forward cache-revalidation headers so bodyless response
-		// unambiguously means 304 (not 412 from If-Match/If-Unmodified-Since).
-		const onlyIf: Record<string, string> = {};
-		const inm = c.req.raw.headers.get('if-none-match');
-		const ims = c.req.raw.headers.get('if-modified-since');
-		if (inm) onlyIf.etagDoesNotMatch = inm;
-		if (ims) onlyIf.uploadedBefore = ims;
-
 		const object = await c.env.ASSETS_BUCKET.get(key, {
-			onlyIf: Object.keys(onlyIf).length > 0 ? onlyIf : undefined,
+			onlyIf: c.req.raw.headers,
 			range: c.req.raw.headers,
 		});
 
-		// No object at all → 404
 		if (object === null) {
 			return c.body('Not found', 404);
 		}
 
-		// Object exists but no body → precondition failed (ETag matched)
+		// Bodyless object — precondition failed (ETag match → 304)
 		if (!('body' in object)) {
 			const headers = new Headers();
 			object.writeHttpMetadata(headers);
@@ -448,7 +361,7 @@ assetPublicRoutes.get(
 			return new Response(null, { status: 304, headers });
 		}
 
-		// Build response headers from stored httpMetadata
+		// Build response headers
 		const headers = new Headers();
 		object.writeHttpMetadata(headers);
 		headers.set('etag', object.httpEtag);
@@ -458,22 +371,21 @@ assetPublicRoutes.get(
 			headers.set('last-modified', object.uploaded.toUTCString());
 		}
 
-		// Range request → 206 with content-range header
+		// Range request → 206
 		const range = object.range;
 		if (range) {
 			let start: number;
 			let end: number;
 			if ('suffix' in range) {
-				// bytes=-N → last N bytes
 				const len = Math.min(range.suffix, object.size);
 				start = object.size - len;
 				end = object.size - 1;
 			} else {
 				start = range.offset ?? 0;
-				// Clamp to actual object size
-				end = range.length != null
-					? Math.min(start + range.length - 1, object.size - 1)
-					: object.size - 1;
+				end =
+					range.length != null
+						? Math.min(start + range.length - 1, object.size - 1)
+						: object.size - 1;
 			}
 			headers.set('content-range', `bytes ${start}-${end}/${object.size}`);
 			headers.set('content-length', String(end - start + 1));

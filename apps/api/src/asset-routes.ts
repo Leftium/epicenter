@@ -28,6 +28,76 @@ const ALLOWED_MIME_TYPES = new Set([
 	'application/pdf',
 ]);
 
+async function detectMimeType(file: File): Promise<string | null> {
+	const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+
+	if (
+		bytes.length >= 4 &&
+		bytes[0] === 0x89 &&
+		bytes[1] === 0x50 &&
+		bytes[2] === 0x4e &&
+		bytes[3] === 0x47
+	) {
+		return 'image/png';
+	}
+
+	if (
+		bytes.length >= 3 &&
+		bytes[0] === 0xff &&
+		bytes[1] === 0xd8 &&
+		bytes[2] === 0xff
+	) {
+		return 'image/jpeg';
+	}
+
+	if (
+		bytes.length >= 4 &&
+		bytes[0] === 0x47 &&
+		bytes[1] === 0x49 &&
+		bytes[2] === 0x46 &&
+		bytes[3] === 0x38
+	) {
+		return 'image/gif';
+	}
+
+	if (
+		bytes.length >= 12 &&
+		bytes[0] === 0x52 &&
+		bytes[1] === 0x49 &&
+		bytes[2] === 0x46 &&
+		bytes[3] === 0x46 &&
+		bytes[8] === 0x57 &&
+		bytes[9] === 0x45 &&
+		bytes[10] === 0x42 &&
+		bytes[11] === 0x50
+	) {
+		return 'image/webp';
+	}
+
+	if (
+		bytes.length >= 4 &&
+		bytes[0] === 0x25 &&
+		bytes[1] === 0x50 &&
+		bytes[2] === 0x44 &&
+		bytes[3] === 0x46
+	) {
+		return 'application/pdf';
+	}
+
+	return null;
+}
+
+function sanitizeFilename(name: string): string {
+	const withoutControlCharacters = Array.from(name)
+		.filter((character) => {
+			const code = character.charCodeAt(0);
+			return !(code <= 0x1f || code === 0x7f);
+		})
+		.join('');
+
+	return withoutControlCharacters.replaceAll('"', "'").trim().slice(0, 255);
+}
+
 // ---------------------------------------------------------------------------
 // Sub-routers: separate auth'd and public routes
 // ---------------------------------------------------------------------------
@@ -65,8 +135,14 @@ assetAuthedRoutes.post(
 			return c.json({ error: 'Missing file field in multipart body' }, 400);
 		}
 
+		const detectedMimeType = await detectMimeType(file);
+		const sanitizedFilename = sanitizeFilename(file.name);
+
 		// -- Validate MIME type --
-		if (!ALLOWED_MIME_TYPES.has(file.type)) {
+		if (
+			detectedMimeType === null ||
+			!ALLOWED_MIME_TYPES.has(detectedMimeType)
+		) {
 			return c.json(
 				{
 					error: 'File type not allowed',
@@ -97,8 +173,8 @@ assetAuthedRoutes.post(
 
 		await c.env.ASSETS_BUCKET.put(key, file.stream(), {
 			httpMetadata: {
-				contentType: file.type,
-				contentDisposition: `inline; filename="${file.name}"`,
+				contentType: detectedMimeType,
+				contentDisposition: `inline; filename="${sanitizedFilename}"`,
 				cacheControl: 'private, max-age=31536000, immutable',
 			},
 		});
@@ -107,9 +183,9 @@ assetAuthedRoutes.post(
 			await c.var.db.insert(schema.asset).values({
 				id: assetId,
 				userId: c.var.user.id,
-				contentType: file.type,
+				contentType: detectedMimeType,
 				sizeBytes: file.size,
-				originalName: file.name,
+				originalName: sanitizedFilename,
 			});
 		} catch (dbError) {
 			// Compensating delete — don't leave orphaned R2 objects
@@ -132,9 +208,9 @@ assetAuthedRoutes.post(
 			{
 				id: assetId,
 				url: `/api/assets/${c.var.user.id}/${assetId}`,
-				contentType: file.type,
+				contentType: detectedMimeType,
 				size: file.size,
-				originalName: file.name,
+				originalName: sanitizedFilename,
 			},
 			201,
 		);
@@ -327,9 +403,8 @@ assetPublicRoutes.get(
 		const status = range ? 206 : 200;
 		if (range && 'offset' in range) {
 			const start = range.offset ?? 0;
-		const end = range.length != null
-			? start + range.length - 1
-			: object.size - 1;
+			const end =
+				range.length != null ? start + range.length - 1 : object.size - 1;
 			headers.set('content-range', `bytes ${start}-${end}/${object.size}`);
 			headers.set('content-length', String(end - start + 1));
 		}
@@ -337,4 +412,3 @@ assetPublicRoutes.get(
 		return new Response(object.body, { status, headers });
 	},
 );
-

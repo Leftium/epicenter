@@ -13,7 +13,7 @@
 import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import { standardSchemaToJsonSchema } from '../../../shared/standard-schema/to-json-schema.js';
 import type { BaseRow, TableHelper } from '../../../workspace/types.js';
-import { generateDdl } from './ddl.js';
+import { generateDdl, quoteIdentifier } from './ddl.js';
 import type {
 	SearchOptions,
 	SearchResult,
@@ -64,7 +64,6 @@ export function createSqliteMirror(
 
 	return (context: SqliteMirrorContext): SqliteMirrorExports => {
 		const mirroredTables = resolveMirroredTables(context, options.tables);
-		const mirroredTableMap = new Map(mirroredTables);
 		const unsubscribes: Array<() => void> = [];
 		let pendingSync = new Map<string, Set<string>>();
 		let syncTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -151,7 +150,7 @@ export function createSqliteMirror(
 			const changes: SyncChange[] = [];
 
 			for (const [tableName, ids] of currentPending) {
-				const table = mirroredTableMap.get(tableName);
+				const table = mirroredTables.get(tableName);
 				if (table === undefined) {
 					continue;
 				}
@@ -208,17 +207,38 @@ export function createSqliteMirror(
 					.map((column) => `old.${quoteIdentifier(column)}`)
 					.join(', ');
 
+				const qt = quoteIdentifier(tableName);
+				const qfts = quoteIdentifier(ftsTableName);
+
 				await db.exec(
-					`CREATE VIRTUAL TABLE IF NOT EXISTS ${quoteIdentifier(ftsTableName)} USING fts5(${quotedColumns}, content=${quoteString(tableName)}, content_rowid=rowid)`,
+					`CREATE VIRTUAL TABLE IF NOT EXISTS ${qfts}\n` +
+					`USING fts5(${quotedColumns}, content=${quoteString(tableName)}, content_rowid=rowid)`,
 				);
+
 				await db.exec(
-					`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_ai`)} AFTER INSERT ON ${quoteIdentifier(tableName)} BEGIN INSERT INTO ${quoteIdentifier(ftsTableName)}(rowid, ${quotedColumns}) VALUES (new.rowid, ${newValues}); END`,
+					`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_ai`)}\n` +
+					`AFTER INSERT ON ${qt} BEGIN\n` +
+					`  INSERT INTO ${qfts}(rowid, ${quotedColumns})\n` +
+					`  VALUES (new.rowid, ${newValues});\n` +
+					`END`,
 				);
+
 				await db.exec(
-					`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_ad`)} AFTER DELETE ON ${quoteIdentifier(tableName)} BEGIN INSERT INTO ${quoteIdentifier(ftsTableName)}(${quoteIdentifier(ftsTableName)}, rowid, ${quotedColumns}) VALUES('delete', old.rowid, ${oldValues}); END`,
+					`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_ad`)}\n` +
+					`AFTER DELETE ON ${qt} BEGIN\n` +
+					`  INSERT INTO ${qfts}(${qfts}, rowid, ${quotedColumns})\n` +
+					`  VALUES('delete', old.rowid, ${oldValues});\n` +
+					`END`,
 				);
+
 				await db.exec(
-					`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_au`)} AFTER UPDATE ON ${quoteIdentifier(tableName)} BEGIN INSERT INTO ${quoteIdentifier(ftsTableName)}(${quoteIdentifier(ftsTableName)}, rowid, ${quotedColumns}) VALUES('delete', old.rowid, ${oldValues}); INSERT INTO ${quoteIdentifier(ftsTableName)}(rowid, ${quotedColumns}) VALUES (new.rowid, ${newValues}); END`,
+					`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_au`)}\n` +
+					`AFTER UPDATE ON ${qt} BEGIN\n` +
+					`  INSERT INTO ${qfts}(${qfts}, rowid, ${quotedColumns})\n` +
+					`  VALUES('delete', old.rowid, ${oldValues});\n` +
+					`  INSERT INTO ${qfts}(rowid, ${quotedColumns})\n` +
+					`  VALUES (new.rowid, ${newValues});\n` +
+					`END`,
 				);
 			}
 		}
@@ -303,9 +323,17 @@ export function createSqliteMirror(
 				: 0;
 
 			try {
+				const qt = quoteIdentifier(table);
+				const qfts = quoteIdentifier(ftsTableName);
 				const rows = await db
 					.prepare(
-						`SELECT ${quoteIdentifier(table)}.${quoteIdentifier('id')} AS id, snippet(${quoteIdentifier(ftsTableName)}, ${snippetColumnIndex}, '<mark>', '</mark>', '...', 64) AS snippet, rank FROM ${quoteIdentifier(ftsTableName)} JOIN ${quoteIdentifier(table)} ON ${quoteIdentifier(table)}.rowid = ${quoteIdentifier(ftsTableName)}.rowid WHERE ${quoteIdentifier(ftsTableName)} MATCH ? ORDER BY rank LIMIT ?`,
+						`SELECT ${qt}.${quoteIdentifier('id')} AS id,\n` +
+						`  snippet(${qfts}, ${snippetColumnIndex}, '<mark>', '</mark>', '...', 64) AS snippet,\n` +
+						`  rank\n` +
+						`FROM ${qfts}\n` +
+						`JOIN ${qt} ON ${qt}.rowid = ${qfts}.rowid\n` +
+						`WHERE ${qfts} MATCH ?\n` +
+						`ORDER BY rank LIMIT ?`,
 					)
 					.all(trimmed, limit);
 
@@ -345,13 +373,15 @@ export function createSqliteMirror(
 function resolveMirroredTables(
 	context: SqliteMirrorContext,
 	tableNames: SqliteMirrorOptions['tables'],
-): Array<[string, TableHelper<BaseRow>]> {
+): Map<string, TableHelper<BaseRow>> {
 	const selectedTableNames =
 		tableNames === undefined || tableNames === 'all'
 			? Object.keys(context.tables)
 			: [...new Set(tableNames)];
 
-	return selectedTableNames.map((tableName) => {
+	const result = new Map<string, TableHelper<BaseRow>>();
+
+	for (const tableName of selectedTableNames) {
 		const table = context.tables[tableName];
 		if (table === undefined) {
 			throw new Error(
@@ -365,8 +395,10 @@ function resolveMirroredTables(
 			);
 		}
 
-		return [tableName, table];
-	});
+		result.set(tableName, table);
+	}
+
+	return result;
 }
 
 function getTableJsonSchema(
@@ -398,10 +430,6 @@ function serializeValue(value: unknown): unknown {
 	}
 
 	return value;
-}
-
-function quoteIdentifier(identifier: string) {
-	return `"${identifier.replaceAll('"', '""')}"`;
 }
 
 function quoteString(value: string) {

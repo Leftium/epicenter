@@ -350,6 +350,92 @@ describe('createSqliteMirror', () => {
 		});
 	});
 
+	describe('rebuildTable', () => {
+		test('rebuildTable repopulates a single table without touching others', async () => {
+			const testSetup = setup();
+
+			try {
+				testSetup.workspace.tables.posts.set({
+					id: 'post-1',
+					title: 'Post row',
+					_v: 1,
+				});
+				testSetup.workspace.tables.notes.set({
+					id: 'note-1',
+					body: 'Note row',
+					_v: 1,
+				});
+
+				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.db.exec('DELETE FROM "posts"');
+
+				expect(await getRows(testSetup.db, 'posts')).toEqual([]);
+				expect(await getRows(testSetup.db, 'notes')).toHaveLength(1);
+
+				await testSetup.workspace.extensions.sqlite.rebuildTable('posts');
+
+				expect(await getRows(testSetup.db, 'posts')).toEqual([
+					{ id: 'post-1', _v: 1, published: null, title: 'Post row' },
+				]);
+				expect(await getRows(testSetup.db, 'notes')).toHaveLength(1);
+			} finally {
+				await cleanup(testSetup);
+			}
+		});
+
+		test('rebuildTable throws for unknown table name', async () => {
+			const testSetup = setup();
+
+			try {
+				await testSetup.workspace.extensions.sqlite.whenReady;
+
+				expect(
+					testSetup.workspace.extensions.sqlite.rebuildTable('nonexistent'),
+				).rejects.toThrow('not in the mirrored table set');
+			} finally {
+				await cleanup(testSetup);
+			}
+		});
+	});
+
+	describe('count', () => {
+		test('count returns row count for a mirrored table', async () => {
+			const testSetup = setup();
+
+			try {
+				testSetup.workspace.tables.posts.set({
+					id: 'post-1',
+					title: 'First',
+					_v: 1,
+				});
+				testSetup.workspace.tables.posts.set({
+					id: 'post-2',
+					title: 'Second',
+					_v: 1,
+				});
+
+				await testSetup.workspace.extensions.sqlite.whenReady;
+
+				expect(await testSetup.workspace.extensions.sqlite.count('posts')).toBe(2);
+				expect(await testSetup.workspace.extensions.sqlite.count('notes')).toBe(0);
+			} finally {
+				await cleanup(testSetup);
+			}
+		});
+
+		test('count returns 0 for non-existent table', async () => {
+			const testSetup = setup();
+
+			try {
+				await testSetup.workspace.extensions.sqlite.whenReady;
+
+				expect(await testSetup.workspace.extensions.sqlite.count('nonexistent')).toBe(0);
+			} finally {
+				await cleanup(testSetup);
+			}
+		});
+	});
+
 	// ============================================================================
 	// LIFECYCLE Tests
 	// ============================================================================

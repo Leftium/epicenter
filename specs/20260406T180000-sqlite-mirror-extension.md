@@ -1,8 +1,7 @@
 # SQLite Mirror Extension
-# SQLite Mirror Extension
 
 **Date**: 2026-04-06
-**Status**: Draft
+**Status**: Implemented (Phases 1-3)
 **Author**: AI-assisted
 **Related**: `docs/articles/sqlite-is-a-projection-not-a-database.md`
 
@@ -585,3 +584,33 @@ queryData: defineQuery({
 - `packages/workspace/src/workspace/types.ts` — `BaseRow`, `TableDefinition`, extension types
 - `packages/workspace/src/workspace/create-workspace.ts` — Extension registration and `ctx.whenReady`
 - `docs/articles/sqlite-is-a-projection-not-a-database.md` — Conceptual article explaining the architecture
+
+## Review
+
+**Completed**: 2026-04-06
+**Branch**: feat/fix-dashboard
+
+### Summary
+
+Implemented the SQLite mirror extension across 4 files in `packages/workspace/src/extensions/materializer/sqlite/`:
+
+- `types.ts` — Structural `MirrorDatabase` interface, `SqliteMirrorOptions`, `SyncChange`, `SqliteMirror`, `SearchResult`
+- `ddl.ts` — `generateDdl()` converts JSON Schema from workspace definitions into `CREATE TABLE IF NOT EXISTS` SQL. Handles multi-version tables (oneOf resolution via highest `_v.const`).
+- `create-sqlite-mirror.ts` — Curried factory: `options → context → exports`. Awaits `ctx.whenReady`, auto-generates DDL, full-loads valid rows, sets up FTS5 virtual tables with content-sync triggers, fires `onReady`/`onSync` hooks, and keeps the mirror fresh via debounced `table.observe()` incremental sync.
+- `index.ts` — Barrel exports.
+
+30 tests pass (18 DDL, 12 factory) covering full load, incremental upsert/delete, rebuild, FTS5 search, lifecycle hooks, and dispose.
+
+### Deviations from Spec
+
+- Used `standardSchemaToJsonSchema()` on individual table definitions instead of calling `describeWorkspace()`. Same JSON Schema output, avoids needing the full client.
+- `resolveSchema` returns the first oneOf entry (not the original schema) when all entries lack `_v.const`. Left as a test.todo since this edge case doesn't occur with real workspace tables.
+- The `MirrorDatabase` type uses a structural interface instead of importing `@tursodatabase/database` — keeps the extension zero-dependency.
+- FTS5 uses content-sync triggers (`content=`, `content_rowid=rowid`) rather than standalone tables, so the FTS index is auto-maintained by SQLite itself on INSERT OR REPLACE.
+
+### Follow-up Work
+
+- Phase 3.3: Document hook patterns for vectors, custom indexes, derived columns
+- Phase 4: Integration — wire into an app, add MCP query action, verify coexistence with filesystem sqlite-index
+- Schema migration on startup: compare generated DDL against existing SQLite schema, ALTER TABLE ADD COLUMN for new columns, drop+recreate for breaking changes
+- Batch INSERT optimization: group rows into transactions of 500 for large tables

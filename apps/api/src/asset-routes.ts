@@ -11,6 +11,7 @@
 
 import { generateGuid } from '@epicenter/workspace';
 import { and, desc, eq, sql } from 'drizzle-orm';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
@@ -101,6 +102,46 @@ function sanitizeFilename(name: string): string {
 // ---------------------------------------------------------------------------
 // Sub-routers: separate auth'd and public routes
 // ---------------------------------------------------------------------------
+
+/**
+ * Clean up R2 assets for a user. Call before deleting the user row
+ * (ON DELETE CASCADE will handle Postgres rows, but R2 objects remain).
+ *
+ * Lists all assets for the user from Postgres, then batch-deletes from R2.
+ * Also zeros the user's Autumn storage balance.
+ */
+export async function cleanupUserAssets(
+	userId: string,
+	bucket: R2Bucket,
+	db: NodePgDatabase<typeof import('./db/schema.js')>,
+	autumnSecretKey: string,
+) {
+	const assets = await db
+		.select({ id: schema.asset.id })
+		.from(schema.asset)
+		.where(eq(schema.asset.userId, userId));
+
+	if (assets.length === 0) return;
+
+	// R2 supports batch delete
+	const keys = assets.map((a) => `${userId}/${a.id}`);
+	await bucket.delete(keys);
+
+	// Zero Autumn storage balance
+	await fetch('https://api.useautumn.com/v1/usage', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${autumnSecretKey}`,
+		},
+		body: JSON.stringify({
+			customer_id: userId,
+			feature_id: FEATURE_IDS.storageBytes,
+			value: 0,
+		}),
+	}).catch((e) => console.error('[cleanup] Autumn zero failed:', e));
+}
+
 
 /** Authenticated routes (upload + delete). Mounted behind authGuard in app.ts. */
 export const assetAuthedRoutes = new Hono<Env>();

@@ -89,6 +89,14 @@
 		balance.data?.subscriptions?.find((s) => !s.addOn)?.planId ?? 'free',
 	);
 
+	const subscription = $derived(balance.data?.subscriptions?.find((s) => !s.addOn) ?? null);
+	const trialEndsAt = $derived(subscription?.trialEndsAt ?? null);
+	const trialEndDate = $derived(
+		trialEndsAt
+			? new Date(trialEndsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+			: null,
+	);
+
 	const visiblePlanIds = $derived(
 		isAnnual ? VISIBLE_PLAN_IDS.annual : VISIBLE_PLAN_IDS.monthly,
 	);
@@ -195,7 +203,7 @@
 					<Card.Footer>
 						{#if isCurrent}
 							<Button variant="outline" class="w-full" disabled>
-								Current plan
+								Current plan{#if trialEndsAt} (trial){/if}
 							</Button>
 						{:else}
 							<Button
@@ -216,10 +224,12 @@
 		</div>
 
 		<p class="mt-4 text-xs text-muted-foreground text-center">
-			Currently on
-			{currentPlanId === 'free' ? 'Free (50 credits/mo)' : currentPlanId}. All
-			plans include cloud sync, unlimited workspaces, unlimited history, and
-			encryption.
+			{#if trialEndDate}
+				Currently on {PLAN_DISPLAY[currentPlanId]?.name ?? currentPlanId} trial — ends {trialEndDate}.
+			{:else}
+				Currently on {currentPlanId === 'free' ? 'Free (50 credits/mo)' : currentPlanId}.
+			{/if}
+			All plans include cloud sync, unlimited workspaces, unlimited history, and encryption.
 		</p>
 	{/if}
 </section>

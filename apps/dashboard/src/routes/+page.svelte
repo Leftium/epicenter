@@ -1,18 +1,19 @@
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Tabs from '@epicenter/ui/tabs';
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
-	import { api } from '$lib/api';
+	import { api, type AttachResponse } from '$lib/api';
 	import CreditBalance from '$lib/components/CreditBalance.svelte';
 	import UsageChart from '$lib/components/UsageChart.svelte';
 	import TopModels from '$lib/components/TopModels.svelte';
 	import ModelCostGuide from '$lib/components/ModelCostGuide.svelte';
 	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
 	import PlanComparison from '$lib/components/PlanComparison.svelte';
-	import BillingActions from '$lib/components/BillingActions.svelte';
 	import { balanceQueryOptions } from '$lib/query/billing';
+	import { queryClient } from '$lib/query/client';
 
 	const balance = createQuery(() => balanceQueryOptions());
 	const subscription = $derived(balance.data?.subscriptions?.find((s) => !s.addOn) ?? null);
@@ -26,6 +27,21 @@
 			toast.error('Could not open billing portal.');
 		}
 	}
+
+	const topUp = createMutation(() => ({
+		mutationFn: () => api.billing.topUp(window.location.href),
+		onSuccess: (result: AttachResponse) => {
+			if (result.paymentUrl) {
+				window.location.href = result.paymentUrl;
+			} else {
+				toast.success('Credits added to your account');
+				queryClient.invalidateQueries({ queryKey: ['billing'] });
+			}
+		},
+		onError: () => {
+			toast.error('Top-up failed. Please try again.');
+		},
+	}));
 </script>
 
 <CreditBalance />
@@ -61,4 +77,18 @@
 </Tabs.Root>
 
 <PlanComparison />
-<BillingActions />
+
+<section class="flex flex-wrap gap-3">
+	<Button
+		variant="outline"
+		onclick={() => topUp.mutate()}
+		disabled={topUp.isPending}
+	>
+		{#if topUp.isPending}
+			<Spinner class="size-3.5" />
+		{:else}
+			Buy 500 credits — $5
+		{/if}
+	</Button>
+	<Button variant="outline" onclick={openPortal}>Manage billing</Button>
+</section>

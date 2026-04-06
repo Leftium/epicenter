@@ -109,18 +109,23 @@ export type SyncChange = {
 /**
  * Public API returned by the SQLite mirror extension.
  *
- * It exposes the injected database for custom SQL, a full rebuild operation,
- * and optional FTS5 search across configured mirror tables.
+ * Includes the injected database for custom SQL, a full rebuild operation,
+ * optional FTS5 search, and lifecycle hooks consumed by the workspace framework.
  *
  * @example
  * ```typescript
+ * await mirror.whenReady;
  * await mirror.rebuild();
  * const results = await mirror.search('posts', 'local-first');
+ * mirror.dispose();
  * ```
  */
 export type SqliteMirror = {
 	/** Database instance for arbitrary SQL queries. */
 	db: MirrorDatabase;
+
+	/** Resolves after DDL creation, initial load, and FTS setup complete. */
+	whenReady: Promise<void>;
 
 	/** Rebuild all mirrored tables from Yjs. Drops and recreates. */
 	rebuild: () => Promise<void>;
@@ -131,6 +136,9 @@ export type SqliteMirror = {
 		query: string,
 		options?: SearchOptions,
 	) => Promise<SearchResult[]>;
+
+	/** Stop observers and cancel pending sync. */
+	dispose: () => void;
 };
 
 /**

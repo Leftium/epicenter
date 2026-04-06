@@ -188,7 +188,7 @@ function columnDef(
 			return appendNullability(`${quotedName} INTEGER`, isRequired);
 		case 'object':
 		case 'array':
-			return `${quotedName} TEXT`;
+			return appendNullability(`${quotedName} TEXT`, isRequired);
 		default:
 			return appendNullability(`${quotedName} TEXT`, isRequired);
 	}

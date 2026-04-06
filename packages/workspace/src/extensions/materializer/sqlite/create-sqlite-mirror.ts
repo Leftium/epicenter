@@ -28,11 +28,6 @@ type SqliteMirrorContext = {
 	whenReady: Promise<void>;
 };
 
-type SqliteMirrorExports = SqliteMirror & {
-	whenReady: Promise<void>;
-	dispose: () => void;
-};
-
 /**
  * Create a workspace extension that mirrors table rows into SQLite.
  *
@@ -58,11 +53,11 @@ type SqliteMirrorExports = SqliteMirror & {
  */
 export function createSqliteMirror(
 	options: SqliteMirrorOptions,
-): (context: SqliteMirrorContext) => SqliteMirrorExports {
+): (context: SqliteMirrorContext) => SqliteMirror {
 	const { db, onReady, onSync } = options;
 	const debounceMs = options.debounceMs ?? 100;
 
-	return (context: SqliteMirrorContext): SqliteMirrorExports => {
+	return (context: SqliteMirrorContext): SqliteMirror => {
 		const mirroredTables = resolveMirroredTables(context, options.tables);
 		const unsubscribes: Array<() => void> = [];
 		let pendingSync = new Map<string, Set<string>>();
@@ -129,7 +124,8 @@ export function createSqliteMirror(
 					snippet: String(row.snippet ?? ''),
 					rank: Number(row.rank ?? 0),
 				}));
-			} catch {
+			} catch (error: unknown) {
+				console.warn('[createSqliteMirror] FTS search failed.', error);
 				return [];
 			}
 		}
@@ -162,6 +158,11 @@ export function createSqliteMirror(
 			}
 
 			await setupFtsTables();
+
+			if (isDisposed) {
+				return;
+			}
+
 			await rebuildTables();
 
 			if (isDisposed) {
@@ -326,12 +327,18 @@ export function createSqliteMirror(
 		}
 
 		async function rebuildTables() {
-			for (const [tableName] of mirroredTables) {
-				await db.exec(`DELETE FROM ${quoteIdentifier(tableName)}`);
-			}
-
-			for (const [tableName, table] of mirroredTables) {
-				await fullLoadTable(tableName, table);
+			await db.exec('BEGIN');
+			try {
+				for (const [tableName] of mirroredTables) {
+					await db.exec(`DELETE FROM ${quoteIdentifier(tableName)}`);
+				}
+				for (const [tableName, table] of mirroredTables) {
+					await fullLoadTable(tableName, table);
+				}
+				await db.exec('COMMIT');
+			} catch (error: unknown) {
+				await db.exec('ROLLBACK');
+				throw error;
 			}
 		}
 

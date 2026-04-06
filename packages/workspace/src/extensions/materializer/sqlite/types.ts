@@ -109,21 +109,48 @@ export type SyncChange = {
 /**
  * Public API returned by the SQLite mirror extension.
  *
- * It exposes the injected database for custom SQL, a full rebuild operation,
- * and optional FTS5 search across configured mirror tables.
+ * Includes the injected database for custom SQL, a full rebuild operation,
+ * optional FTS5 search, and lifecycle hooks consumed by the workspace framework.
  *
  * @example
  * ```typescript
+ * await mirror.whenReady;
  * await mirror.rebuild();
  * const results = await mirror.search('posts', 'local-first');
+ * mirror.dispose();
  * ```
  */
 export type SqliteMirror = {
 	/** Database instance for arbitrary SQL queries. */
 	db: MirrorDatabase;
 
+	/** Resolves after DDL creation, initial load, and FTS setup complete. */
+	whenReady: Promise<void>;
+
 	/** Rebuild all mirrored tables from Yjs. Drops and recreates. */
 	rebuild: () => Promise<void>;
+
+	/**
+	 * Rebuild a single mirrored table from Yjs without touching others.
+	 *
+	 * Useful when one table drifts or after a schema migration. Throws if
+	 * the table name is not in the mirrored set.
+	 */
+	rebuildTable: (tableName: string) => Promise<void>;
+
+	/**
+	 * Return the row count for a mirrored table.
+	 *
+	 * Convenience wrapper around `SELECT COUNT(*) FROM table`. Returns 0
+	 * for tables that haven't been loaded yet or don't exist.
+	 *
+	 * @example
+	 * ```typescript
+	 * const n = await mirror.count('posts');
+	 * console.log(`${n} posts mirrored`);
+	 * ```
+	 */
+	count: (tableName: string) => Promise<number>;
 
 	/** FTS5 search. Only useful if `fts` config was provided. */
 	search: (
@@ -131,6 +158,9 @@ export type SqliteMirror = {
 		query: string,
 		options?: SearchOptions,
 	) => Promise<SearchResult[]>;
+
+	/** Stop observers and cancel pending sync. */
+	dispose: () => void;
 };
 
 /**

@@ -14,6 +14,71 @@
 
 type JsonSchema = Record<string, unknown>;
 
+// ════════════════════════════════════════════════════════════════════════════
+// PUBLIC API
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Generate a `CREATE TABLE IF NOT EXISTS` statement for a workspace table.
+ *
+ * This mirrors the JSON Schema shape exposed by `describeWorkspace()` into a
+ * SQLite table definition. Required scalar fields become `NOT NULL`, `id`
+ * becomes the primary key, version discriminants use `INTEGER NOT NULL`, and
+ * complex values are stored as JSON text.
+ *
+ * @param tableName - The SQLite table name to create
+ * @param jsonSchema - The JSON Schema from `describeWorkspace().tables[name].schema`
+ * @returns A `CREATE TABLE IF NOT EXISTS` SQL statement
+ *
+ * @example
+ * ```typescript
+ * const sql = generateDdl('posts', {
+ *   type: 'object',
+ *   properties: {
+ *     id: { type: 'string' },
+ *     _v: { const: 2 },
+ *     title: { type: 'string' },
+ *     published: { type: 'boolean' },
+ *   },
+ *   required: ['id', '_v', 'title'],
+ * });
+ *
+ * // CREATE TABLE IF NOT EXISTS "posts" ("id" TEXT PRIMARY KEY, "_v" INTEGER NOT NULL, "title" TEXT NOT NULL, "published" INTEGER)
+ * ```
+ */
+export function generateDdl(
+	tableName: string,
+	jsonSchema: Record<string, unknown>,
+): string {
+	const resolved = resolveSchema(jsonSchema);
+
+	if (!isRecord(resolved.properties)) {
+		throw new Error(
+			'SQLite DDL generation requires an object schema with properties.',
+		);
+	}
+
+	const properties = resolved.properties;
+	const required = new Set(
+		Array.isArray(resolved.required)
+			? (resolved.required as unknown[]).filter(
+					(value): value is string => typeof value === 'string',
+				)
+			: [],
+	);
+
+	const columns = Object.entries(properties).map(([name, propSchema]) => {
+		if (!isRecord(propSchema)) {
+			throw new Error(
+				`SQLite DDL generation requires property "${name}" schema to be an object.`,
+			);
+		}
+		return columnDef(name, propSchema, required.has(name));
+	});
+
+	return `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (${columns.join(', ')})`;
+}
+
 /**
  * Resolve the concrete schema variant used for SQLite DDL generation.
  *
@@ -67,46 +132,27 @@ export function resolveSchema(schema: JsonSchema): JsonSchema {
 	return resolved;
 }
 
-/**
- * Generate a `CREATE TABLE IF NOT EXISTS` statement for a workspace table.
- *
- * This mirrors the JSON Schema shape exposed by `describeWorkspace()` into a
- * SQLite table definition. Required scalar fields become `NOT NULL`, `id`
- * becomes the primary key, version discriminants use `INTEGER NOT NULL`, and
- * complex values are stored as JSON text.
- *
- * @param tableName - The SQLite table name to create
- * @param jsonSchema - The JSON Schema from `describeWorkspace().tables[name].schema`
- * @returns A `CREATE TABLE IF NOT EXISTS` SQL statement
- *
- * @example
- * ```typescript
- * const sql = generateDdl('posts', {
- *   type: 'object',
- *   properties: {
- *     id: { type: 'string' },
- *     _v: { const: 2 },
- *     title: { type: 'string' },
- *     published: { type: 'boolean' },
- *   },
- *   required: ['id', '_v', 'title'],
- * });
- *
- * // CREATE TABLE IF NOT EXISTS "posts" ("id" TEXT PRIMARY KEY, "_v" INTEGER NOT NULL, "title" TEXT NOT NULL, "published" INTEGER)
- * ```
- */
-export function generateDdl(
-	tableName: string,
-	jsonSchema: Record<string, unknown>,
-): string {
-	const resolved = resolveSchema(jsonSchema);
-	const properties = getProperties(resolved);
-	const required = getRequiredSet(resolved);
-	const columns = Object.entries(properties).map(([name, propSchema]) =>
-		columnDef(name, toSchema(propSchema), required.has(name)),
-	);
+/** Double-quote a SQL identifier, escaping embedded quotes. */
+export function quoteIdentifier(identifier: string) {
+	return `"${identifier.replaceAll('"', '""')}"`;
+}
 
-	return `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (${columns.join(', ')})`;
+// ════════════════════════════════════════════════════════════════════════════
+// PRIVATE HELPERS
+// ════════════════════════════════════════════════════════════════════════════
+
+function getSchemaVersion(schema: JsonSchema) {
+	const properties = schema.properties;
+	if (!isRecord(properties)) {
+		return Number.NEGATIVE_INFINITY;
+	}
+
+	const versionSchema = properties._v;
+	if (!isRecord(versionSchema) || typeof versionSchema.const !== 'number') {
+		return Number.NEGATIVE_INFINITY;
+	}
+
+	return versionSchema.const;
 }
 
 function columnDef(
@@ -142,7 +188,7 @@ function columnDef(
 			return appendNullability(`${quotedName} INTEGER`, isRequired);
 		case 'object':
 		case 'array':
-			return `${quotedName} TEXT`;
+			return appendNullability(`${quotedName} TEXT`, isRequired);
 		default:
 			return appendNullability(`${quotedName} TEXT`, isRequired);
 	}
@@ -154,56 +200,6 @@ function appendNullability(column: string, isRequired: boolean) {
 	}
 
 	return `${column} NOT NULL`;
-}
-
-function getSchemaVersion(schema: JsonSchema) {
-	const properties = schema.properties;
-	if (!isRecord(properties)) {
-		return Number.NEGATIVE_INFINITY;
-	}
-
-	const versionSchema = properties._v;
-	if (!isRecord(versionSchema) || typeof versionSchema.const !== 'number') {
-		return Number.NEGATIVE_INFINITY;
-	}
-
-	return versionSchema.const;
-}
-
-function getProperties(schema: JsonSchema) {
-	if (!isRecord(schema.properties)) {
-		throw new Error(
-			'SQLite DDL generation requires an object schema with properties.',
-		);
-	}
-
-	return schema.properties;
-}
-
-function getRequiredSet(schema: JsonSchema) {
-	if (!Array.isArray(schema.required)) {
-		return new Set<string>();
-	}
-
-	return new Set(
-		schema.required.filter(
-			(value): value is string => typeof value === 'string',
-		),
-	);
-}
-
-function quoteIdentifier(identifier: string) {
-	return `"${identifier.replaceAll('"', '""')}"`;
-}
-
-function toSchema(value: unknown): JsonSchema {
-	if (!isRecord(value)) {
-		throw new Error(
-			'SQLite DDL generation requires each property schema to be an object.',
-		);
-	}
-
-	return value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

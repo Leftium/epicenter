@@ -171,22 +171,26 @@ describe('generateDdl', () => {
 		);
 	});
 
-	test('maps object type to TEXT without NOT NULL', () => {
+	test('maps required object type to TEXT NOT NULL', () => {
 		const sql = generateDdl(
 			'posts',
 			objectSchema({ metadata: { type: 'object' } }, ['metadata']),
 		);
 
-		expect(sql).toBe('CREATE TABLE IF NOT EXISTS "posts" ("metadata" TEXT)');
+		expect(sql).toBe(
+			'CREATE TABLE IF NOT EXISTS "posts" ("metadata" TEXT NOT NULL)',
+		);
 	});
 
-	test('maps array type to TEXT without NOT NULL', () => {
+	test('maps required array type to TEXT NOT NULL', () => {
 		const sql = generateDdl(
 			'posts',
 			objectSchema({ tags: { type: 'array' } }, ['tags']),
 		);
 
-		expect(sql).toBe('CREATE TABLE IF NOT EXISTS "posts" ("tags" TEXT)');
+		expect(sql).toBe(
+			'CREATE TABLE IF NOT EXISTS "posts" ("tags" TEXT NOT NULL)',
+		);
 	});
 
 	test('optional fields omit NOT NULL', () => {

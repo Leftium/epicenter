@@ -177,10 +177,11 @@ apps/opensidian/src/lib/components/AppShell.svelte
 
 ### Phase 3: Wire into AppShell
 
-- [ ] **3.1** Replace current `allFiles`/`fileItems` derivation with `searchState.searchResults`
-- [ ] **3.2** Add scope toggle UI (3 radio buttons) via `headerContent` prop
-- [ ] **3.3** Set `shouldFilter={false}` when scope is "content" or "both" (we manage filtering). Set `shouldFilter` to default (true) for "names" mode.
-- [ ] **3.4** Bind `value` to `searchState.searchQuery` for debounced FTS queries
+- [x] **3.1** Replace current `allFiles`/`fileItems` derivation with `searchState.searchResults`
+  > **Note**: Kept `allFileItems` for names-only mode since bits-ui needs all items to filter from internally.
+- [x] **3.2** Add scope toggle UI (segmented control, not radio buttons) via `headerContent` snippet
+- [x] **3.3** Set `shouldFilter={false}` when scope is "content" or "both" (we manage filtering). Set `shouldFilter` to default (true) for "names" mode.
+- [x] **3.4** Bind `value` to `searchState.searchQuery` for debounced FTS queries
 
 ### Phase 4: Polish
 

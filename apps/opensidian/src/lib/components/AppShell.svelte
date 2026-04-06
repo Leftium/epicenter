@@ -1,44 +1,54 @@
 <script lang="ts">
+	import {
+		CommandPalette,
+		type CommandPaletteItem,
+	} from '@epicenter/ui/command-palette';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
-	import { CommandPalette, type CommandPaletteItem } from '@epicenter/ui/command-palette';
-	import type { FileId } from '@epicenter/filesystem';
-	import { terminalState } from '$lib/state/terminal-state.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';
+	import {
+		type SearchScope,
+		searchState,
+	} from '$lib/state/search-state.svelte';
+	import { terminalState } from '$lib/state/terminal-state.svelte';
 	import { getFileIcon } from '$lib/utils/file-icons';
 	import ContentPanel from './editor/ContentPanel.svelte';
+	import StatusBar from './editor/StatusBar.svelte';
 	import Toolbar from './Toolbar.svelte';
 	import TerminalPanel from './terminal/TerminalPanel.svelte';
 	import FileTree from './tree/FileTree.svelte';
-	import StatusBar from './editor/StatusBar.svelte';
 
 	let paletteOpen = $state(false);
 
-	// \u2500\u2500 Collect all files recursively (only when palette is open) \u2500\u2500\u2500\u2500
-	type FileEntry = { id: FileId; name: string; parentDir: string };
+	$effect(() => {
+		if (!paletteOpen) searchState.reset();
+	});
 
-	const allFiles = $derived.by((): FileEntry[] => {
-		if (!paletteOpen) return [];
-		return fsState.walkTree<FileEntry>((id, row) => {
+	const allFileItems = $derived.by((): CommandPaletteItem[] => {
+		if (!paletteOpen || searchState.scope !== 'names') return [];
+		return fsState.walkTree<CommandPaletteItem>((id, row) => {
 			if (row.type === 'file') {
 				const fullPath = fsState.getPath(id) ?? '';
 				const lastSlash = fullPath.lastIndexOf('/');
 				const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
-				return { collect: { id, name: row.name, parentDir }, descend: false };
+				return {
+					collect: {
+						id,
+						label: row.name,
+						description: parentDir || undefined,
+						icon: getFileIcon(row.name),
+						group: 'Files',
+						onSelect: () => fsState.selectFile(id),
+					},
+					descend: false,
+				};
 			}
 			return { descend: true };
 		});
 	});
 
-	const fileItems = $derived<CommandPaletteItem[]>(
-		allFiles.map((file) => ({
-			id: file.id,
-			label: file.name,
-			description: file.parentDir || undefined,
-			icon: getFileIcon(file.name),
-			group: 'Files',
-			onSelect: () => fsState.selectFile(file.id),
-		})),
+	const paletteItems = $derived(
+		searchState.shouldFilter ? allFileItems : searchState.searchResults,
 	);
 
 	let terminalRef: ReturnType<typeof TerminalPanel> | undefined = $state();
@@ -67,7 +77,6 @@
 			}
 		}
 	}
-
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -100,12 +109,27 @@
 	</Resizable.PaneGroup>
 	<StatusBar />
 	<CommandPalette
-		items={fileItems}
+		items={paletteItems}
 		bind:open={paletteOpen}
-		placeholder="Search files..."
-		emptyMessage="No files found."
+		bind:value={searchState.searchQuery}
+		placeholder={searchState.scope === 'names' ? 'Search file names...' : 'Search files...'}
+		emptyMessage={searchState.scope === 'content' ? 'No content matches.' : searchState.scope === 'both' ? 'No results.' : 'No files found.'}
 		title="Search Files"
-		description="Search for a file by name"
-	/>
+		description="Search for files by name or content"
+		shouldFilter={searchState.shouldFilter}
+	>
+		{#snippet headerContent()}
+			<div class="flex items-center gap-1 px-3 pb-2">
+				{#each [['names', 'Names'], ['content', 'Content'], ['both', 'Both']] as [ value, label ]}
+					<button
+						type="button"
+						class="rounded-md px-3 py-1 text-xs font-medium transition-colors {searchState.scope === value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
+						onclick={() => { searchState.scope = value as SearchScope; }}
+					>
+						{label}
+					</button>
+				{/each}
+			</div>
+		{/snippet}
+	</CommandPalette>
 </div>
-

@@ -19,6 +19,7 @@ import { createAutumn } from './autumn.js';
 import { FEATURE_IDS } from './billing-plans.js';
 import { MAX_ASSET_BYTES } from './constants.js';
 import * as schema from './db/schema.js';
+import { reconcileStorageBilling } from './asset-reconciliation.js';
 
 const ALLOWED_MIME_TYPES = new Set([
 	'image/png',
@@ -221,6 +222,25 @@ authedRoutes.delete(
 		);
 
 		return c.body(null, 204);
+	},
+);
+
+// ---------------------------------------------------------------------------
+// POST /reconcile — Manual storage billing reconciliation (admin)
+// ---------------------------------------------------------------------------
+
+authedRoutes.post(
+	'/reconcile',
+	describeRoute({
+		description: 'Reconcile storage billing with Postgres totals',
+		tags: ['assets', 'admin'],
+	}),
+	async (c) => {
+		const result = await reconcileStorageBilling(
+			c.var.db,
+			c.env.AUTUMN_SECRET_KEY,
+		);
+		return c.json(result);
 	},
 );
 

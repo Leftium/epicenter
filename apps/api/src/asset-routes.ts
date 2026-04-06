@@ -19,7 +19,6 @@ import { createAutumn } from './autumn.js';
 import { FEATURE_IDS } from './billing-plans.js';
 import { MAX_ASSET_BYTES } from './constants.js';
 import * as schema from './db/schema.js';
-import { reconcileStorageBilling } from './asset-reconciliation.js';
 
 const ALLOWED_MIME_TYPES = new Set([
 	'image/png',
@@ -34,16 +33,16 @@ const ALLOWED_MIME_TYPES = new Set([
 // ---------------------------------------------------------------------------
 
 /** Authenticated routes (upload + delete). Mounted behind authGuard in app.ts. */
-const authedRoutes = new Hono<Env>();
+const assetAuthedRoutes = new Hono<Env>();
 
 /** Public routes (read). Mounted without authGuard in app.ts. */
-const publicRoutes = new Hono<Env>();
+const assetPublicRoutes = new Hono<Env>();
 
 // ---------------------------------------------------------------------------
 // POST / — Upload
 // ---------------------------------------------------------------------------
 
-authedRoutes.post(
+assetAuthedRoutes.post(
 	'/',
 	describeRoute({
 		description: 'Upload an asset (image or PDF)',
@@ -138,7 +137,7 @@ authedRoutes.post(
 // GET / — List current user's assets (paginated)
 // ---------------------------------------------------------------------------
 
-authedRoutes.get(
+assetAuthedRoutes.get(
 	'/',
 	describeRoute({
 		description: "List the current user's assets",
@@ -160,7 +159,7 @@ authedRoutes.get(
 // GET /usage — Current user's total storage in bytes
 // ---------------------------------------------------------------------------
 
-authedRoutes.get(
+assetAuthedRoutes.get(
 	'/usage',
 	describeRoute({
 		description: "Get the current user's total storage usage in bytes",
@@ -182,7 +181,7 @@ authedRoutes.get(
 // DELETE /:userId/:assetId — Delete (authenticated, owner only)
 // ---------------------------------------------------------------------------
 
-authedRoutes.delete(
+assetAuthedRoutes.delete(
 	'/:userId/:assetId',
 	describeRoute({
 		description: 'Delete an asset (owner only)',
@@ -229,18 +228,49 @@ authedRoutes.delete(
 // POST /reconcile — Manual storage billing reconciliation (admin)
 // ---------------------------------------------------------------------------
 
-authedRoutes.post(
+assetAuthedRoutes.post(
 	'/reconcile',
 	describeRoute({
 		description: 'Reconcile storage billing with Postgres totals',
 		tags: ['assets', 'admin'],
 	}),
 	async (c) => {
-		const result = await reconcileStorageBilling(
-			c.var.db,
-			c.env.AUTUMN_SECRET_KEY,
-		);
-		return c.json(result);
+		const userTotals = await c.var.db
+			.select({
+				userId: schema.asset.userId,
+				totalBytes: sql<number>`COALESCE(SUM(${schema.asset.sizeBytes}), 0)`,
+			})
+			.from(schema.asset)
+			.groupBy(schema.asset.userId);
+
+		let errors = 0;
+		const secretKey = c.env.AUTUMN_SECRET_KEY;
+
+		for (const { userId, totalBytes } of userTotals) {
+			try {
+				const res = await fetch('https://api.useautumn.com/v1/usage', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${secretKey}`,
+					},
+					body: JSON.stringify({
+						customer_id: userId,
+						feature_id: FEATURE_IDS.storageBytes,
+						value: totalBytes,
+					}),
+				});
+				if (!res.ok) {
+					const body = await res.text();
+					throw new Error(`Autumn /usage failed (${res.status}): ${body}`);
+				}
+			} catch (e) {
+				console.error(`[reconciliation] Failed for user ${userId}:`, e);
+				errors++;
+			}
+		}
+
+		return c.json({ usersProcessed: userTotals.length, errors });
 	},
 );
 
@@ -248,7 +278,7 @@ authedRoutes.post(
 // GET /:userId/:assetId — Read (unauthenticated, unguessable URL)
 // ---------------------------------------------------------------------------
 
-publicRoutes.get(
+assetPublicRoutes.get(
 	'/:userId/:assetId',
 	describeRoute({
 		description: 'Read an asset by ID (unauthenticated)',
@@ -283,12 +313,12 @@ publicRoutes.get(
 		headers.set('x-content-type-options', 'nosniff');
 
 		// Range request → 206 with content-range header
-		const hasRange = 'range' in object && object.range;
-		const status = hasRange ? 206 : 200;
-		if (hasRange && 'offset' in object.range!) {
-			const start = object.range!.offset ?? 0;
-			const end = object.range!.length
-				? start + object.range!.length - 1
+		const range = object.range;
+		const status = range ? 206 : 200;
+		if (range && 'offset' in range) {
+			const start = range.offset ?? 0;
+			const end = range.length
+				? start + range.length - 1
 				: object.size - 1;
 			headers.set('content-range', `bytes ${start}-${end}/${object.size}`);
 			headers.set('content-length', String(end - start + 1));
@@ -298,4 +328,4 @@ publicRoutes.get(
 	},
 );
 
-export { authedRoutes as assetAuthedRoutes, publicRoutes as assetPublicRoutes };
+export { assetAuthedRoutes, assetPublicRoutes };

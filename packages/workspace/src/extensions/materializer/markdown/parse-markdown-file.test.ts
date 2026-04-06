@@ -89,4 +89,41 @@ describe('parseMarkdownFile', () => {
 		expect(result!.frontmatter).toEqual({ id: 'abc' });
 		expect(result!.body).toBe('Some text\n---\nMore text');
 	});
+
+	test('handles body immediately after closing delimiter (no blank separator)', () => {
+		const content = '---\nid: abc\n---\nBody immediately\n';
+		const result = parseMarkdownFile(content);
+		expect(result).not.toBeNull();
+		expect(result!.frontmatter).toEqual({ id: 'abc' });
+		expect(result!.body).toBe('Body immediately');
+	});
+
+	test('returns undefined body when only whitespace/newlines follow frontmatter', () => {
+		const content = '---\nid: abc\n---\n\n\n';
+		const result = parseMarkdownFile(content);
+		expect(result).not.toBeNull();
+		expect(result!.frontmatter).toEqual({ id: 'abc' });
+		expect(result!.body).toBeUndefined();
+	});
+
+	test('strips UTF-8 BOM before parsing', () => {
+		const content = '\uFEFF---\nid: abc\ntitle: Hello\n---\n\nSome body content\n';
+		const result = parseMarkdownFile(content);
+		expect(result).not.toBeNull();
+		expect(result!.frontmatter).toEqual({ id: 'abc', title: 'Hello' });
+		expect(result!.body).toBe('Some body content');
+	});
+
+	test('tolerates trailing whitespace on delimiter lines', () => {
+		const content = '---   \nid: abc\n---\t \n\nBody\n';
+		const result = parseMarkdownFile(content);
+		expect(result).not.toBeNull();
+		expect(result!.frontmatter).toEqual({ id: 'abc' });
+		expect(result!.body).toBe('Body');
+	});
+
+	test('returns null for comment-only frontmatter', () => {
+		const content = '---\n# this is a comment\n---\n';
+		expect(parseMarkdownFile(content)).toBeNull();
+	});
 });

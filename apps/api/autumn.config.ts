@@ -48,6 +48,7 @@ export const free = plan({
 			reset: { interval: f.credits.reset },
 		}),
 		item({ featureId: storageBytes.id, included: 0 }),
+	],
 });
 
 const p = PLANS[PLAN_IDS.pro];
@@ -77,6 +78,7 @@ export const pro = plan({
 				interval: p.credits.reset,
 			},
 		}),
+	],
 });
 
 const u = PLANS[PLAN_IDS.ultra];
@@ -109,6 +111,7 @@ export const ultra = plan({
 				interval: u.credits.reset,
 			},
 		}),
+	],
 });
 
 const m = PLANS[PLAN_IDS.max];
@@ -139,6 +142,7 @@ export const max = plan({
 				interval: m.credits.reset,
 			},
 		}),
+	],
 });
 
 const t = PLANS[PLAN_IDS.creditTopUp];
@@ -190,6 +194,7 @@ export const proAnnual = plan({
 				interval: 'month',
 			},
 		}),
+	],
 });
 
 const ua = ANNUAL_PLANS[PLAN_IDS.ultraAnnual];
@@ -220,6 +225,7 @@ export const ultraAnnual = plan({
 				interval: 'month',
 			},
 		}),
+	],
 });
 
 const ma = ANNUAL_PLANS[PLAN_IDS.maxAnnual];
@@ -250,4 +256,5 @@ export const maxAnnual = plan({
 				interval: 'month',
 			},
 		}),
+	],
 });

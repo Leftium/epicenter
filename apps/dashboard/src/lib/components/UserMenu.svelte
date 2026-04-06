@@ -11,10 +11,10 @@
 	import { toast } from 'svelte-sonner';
 	import { api } from '$lib/api';
 	import { auth } from '$lib/auth';
-	import { balanceQueryOptions } from '$lib/query/billing';
+	import { balance as balanceQuery } from '$lib/query/billing';
 	import { capitalize, getInitials } from '$lib/utils';
 
-	const balance = createQuery(() => balanceQueryOptions());
+	const balance = createQuery(() => balanceQuery.options);
 
 	const subscription = $derived(
 		balance.data?.subscriptions?.find((s) => !s.addOn) ?? null,
@@ -32,12 +32,12 @@
 
 	/** Open Stripe billing portal via the API. */
 	async function openBillingPortal() {
-		try {
-			const data = await api.billing.portal();
-			if (data.url) window.location.href = data.url;
-		} catch {
+		const { data, error } = await api.billing.portal();
+		if (error) {
 			toast.error('Could not open billing portal.');
+			return;
 		}
+		if (data.url) window.location.href = data.url;
 	}
 	const isDark = $derived(mode.current === 'dark');
 </script>

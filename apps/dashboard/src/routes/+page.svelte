@@ -5,17 +5,21 @@
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
-	import { type AttachResponse, api } from '$lib/api';
+	import { api } from '$lib/api';
 	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
 	import CreditBalance from '$lib/components/CreditBalance.svelte';
 	import ModelCostGuide from '$lib/components/ModelCostGuide.svelte';
 	import PlanComparison from '$lib/components/PlanComparison.svelte';
 	import TopModels from '$lib/components/TopModels.svelte';
 	import UsageChart from '$lib/components/UsageChart.svelte';
-	import { balanceQueryOptions, billingKeys } from '$lib/query/billing';
+	import {
+		balance as balanceQuery,
+		billingKeys,
+		topUp,
+	} from '$lib/query/billing';
 	import { queryClient } from '$lib/query/client';
 
-	const balance = createQuery(() => balanceQueryOptions());
+	const balance = createQuery(() => balanceQuery.options);
 	const subscription = $derived(
 		balance.data?.subscriptions?.find((s) => !s.addOn) ?? null,
 	);
@@ -23,28 +27,15 @@
 
 	/** Open Stripe billing portal via the API. */
 	async function openBillingPortal() {
-		try {
-			const data = await api.billing.portal();
-			if (data.url) window.location.href = data.url;
-		} catch {
+		const { data, error } = await api.billing.portal();
+		if (error) {
 			toast.error('Could not open billing portal.');
+			return;
 		}
+		if (data.url) window.location.href = data.url;
 	}
 
-	const topUp = createMutation(() => ({
-		mutationFn: () => api.billing.topUp(window.location.href),
-		onSuccess: (result: AttachResponse) => {
-			if (result.paymentUrl) {
-				window.location.href = result.paymentUrl;
-			} else {
-				toast.success('Credits added to your account');
-				queryClient.invalidateQueries({ queryKey: billingKeys.all });
-			}
-		},
-		onError: () => {
-			toast.error('Top-up failed. Please try again.');
-		},
-	}));
+	const topUpMutation = createMutation(() => topUp.options);
 </script>
 
 <CreditBalance />
@@ -82,10 +73,22 @@
 <section class="flex flex-wrap gap-3">
 	<Button
 		variant="outline"
-		onclick={() => topUp.mutate()}
-		disabled={topUp.isPending}
+		onclick={() => {
+			topUpMutation.mutate(window.location.href, {
+				onSuccess: (data) => {
+					if (data.paymentUrl) {
+						window.location.href = data.paymentUrl;
+					} else {
+						toast.success('Credits added to your account');
+						queryClient.invalidateQueries({ queryKey: billingKeys.all });
+					}
+				},
+				onError: () => toast.error('Top-up failed. Please try again.'),
+			});
+		}}
+		disabled={topUpMutation.isPending}
 	>
-		{#if topUp.isPending}
+		{#if topUpMutation.isPending}
 			<Spinner class="size-3.5" />
 		{:else}
 			Buy 500 credits — $5

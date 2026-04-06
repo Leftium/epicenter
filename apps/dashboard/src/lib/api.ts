@@ -4,6 +4,9 @@
  * Uses direct fetch with auth.fetch for Bearer tokens.
  * Same-origin deployment—no CORS config needed.
  *
+ * Every method returns `Result<T, BillingApiError>` so consumers
+ * destructure `{ data, error }` instead of try/catch.
+ *
  * Response types come from the shared billing contract
  * (`@epicenter/api/billing-contract`), which the API routes also
  * satisfy. Neither side derives from the other—both derive from
@@ -12,8 +15,8 @@
  * @see docs/articles/shared-contract-over-derived-types.md
  */
 import type {
-	AttachResponse,
 	AggregateResponse,
+	AttachResponse,
 	CustomerResponse,
 	EventsListResponse,
 	EventsParams,
@@ -23,6 +26,8 @@ import type {
 	PreviewResponse,
 	UsageParams,
 } from '@epicenter/api/billing-contract';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
+import { type Result, tryAsync } from 'wellcrafted/result';
 import { auth } from './auth';
 
 // Re-export only the contract types that components actually import.
@@ -33,26 +38,55 @@ export type {
 	PreviewResponse,
 } from '@epicenter/api/billing-contract';
 
+/**
+ * Tagged errors for the billing API boundary.
+ *
+ * Two variants cover the two failure modes: the HTTP request itself
+ * failed (network, timeout, DNS) or the server returned a non-OK status.
+ */
+export const BillingApiError = defineErrors({
+	RequestFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+		message: `Request to ${path} failed: ${extractErrorMessage(cause)}`,
+		path,
+		cause,
+	}),
+});
+export type BillingApiError = import('wellcrafted/error').InferErrors<
+	typeof BillingApiError
+>;
+
 /** Fetch JSON from an API endpoint with auth. */
-async function get<TResponse>(path: string): Promise<TResponse> {
-	const res = await auth.fetch(path, { credentials: 'include' });
-	if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
-	return res.json() as Promise<TResponse>;
+async function get<TResponse>(
+	path: string,
+): Promise<Result<TResponse, BillingApiError>> {
+	return tryAsync({
+		try: async () => {
+			const res = await auth.fetch(path, { credentials: 'include' });
+			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+			return (await res.json()) as TResponse;
+		},
+		catch: (cause) => BillingApiError.RequestFailed({ path, cause }),
+	});
 }
 
 /** POST JSON to an API endpoint with auth. */
 async function post<TBody, TResponse>(
 	path: string,
 	body: TBody,
-): Promise<TResponse> {
-	const res = await auth.fetch(path, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-		credentials: 'include',
+): Promise<Result<TResponse, BillingApiError>> {
+	return tryAsync({
+		try: async () => {
+			const res = await auth.fetch(path, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+				credentials: 'include',
+			});
+			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+			return (await res.json()) as TResponse;
+		},
+		catch: (cause) => BillingApiError.RequestFailed({ path, cause }),
 	});
-	if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
-	return res.json() as Promise<TResponse>;
 }
 
 export const api = {

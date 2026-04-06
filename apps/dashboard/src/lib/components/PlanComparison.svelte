@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ANNUAL_PLANS, PLAN_IDS, PLANS } from '@epicenter/api/billing-plans';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
@@ -7,10 +8,14 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
-	import { api, type AttachResponse, type PreviewResponse } from '$lib/api';
-	import { balanceQueryOptions, plansQueryOptions } from '$lib/query/billing';
+	import {
+		balance as balanceQuery,
+		billingKeys,
+		plans as plansQuery,
+		previewUpgrade as previewUpgradeDef,
+		upgradePlan as upgradePlanDef,
+	} from '$lib/query/billing';
 	import { queryClient } from '$lib/query/client';
-	import { PLANS, ANNUAL_PLANS, PLAN_IDS } from '@epicenter/api/billing-plans';
 
 	/** Visible plan IDs in display order. Free is NOT shown as a card. */
 	const VISIBLE_PLAN_IDS = {
@@ -22,7 +27,10 @@
 		return `$${amount.toLocaleString()}/${interval === 'month' ? 'mo' : 'yr'}`;
 	}
 
-	function formatOverage(overage: { amount: number; billingUnits: number }): string {
+	function formatOverage(overage: {
+		amount: number;
+		billingUnits: number;
+	}): string {
 		const amt = Number.isInteger(overage.amount)
 			? `${overage.amount}`
 			: overage.amount.toFixed(2);
@@ -36,31 +44,37 @@
 			const annual = Object.values(ANNUAL_PLANS).find(
 				(p) => p.monthlyEquivalent === id,
 			);
-			return [id, {
-				name: plan.name,
-				price: formatPrice(plan.price.amount, plan.price.interval),
-				annualPrice: annual
-					? `$${Math.round(annual.price.amount / 12)}/mo`
-					: formatPrice(plan.price.amount, plan.price.interval),
-				credits: plan.credits.included.toLocaleString(),
-				overage: formatOverage(plan.credits.overage),
-				rollover: id === PLAN_IDS.ultra || id === PLAN_IDS.max,
-				isRecommended: id === PLAN_IDS.ultra,
-			}];
+			return [
+				id,
+				{
+					name: plan.name,
+					price: formatPrice(plan.price.amount, plan.price.interval),
+					annualPrice: annual
+						? `$${Math.round(annual.price.amount / 12)}/mo`
+						: formatPrice(plan.price.amount, plan.price.interval),
+					credits: plan.credits.included.toLocaleString(),
+					overage: formatOverage(plan.credits.overage),
+					rollover: id === PLAN_IDS.ultra || id === PLAN_IDS.max,
+					isRecommended: id === PLAN_IDS.ultra,
+				},
+			];
 		}),
 		...VISIBLE_PLAN_IDS.annual.map((id) => {
 			const plan = ANNUAL_PLANS[id];
-			return [id, {
-				name: plan.name.replace(' (Annual)', ''),
-				price: formatPrice(plan.price.amount, plan.price.interval),
-				annualPrice: formatPrice(plan.price.amount, plan.price.interval),
-				credits: plan.credits.included.toLocaleString(),
-				overage: formatOverage(plan.credits.overage),
-				rollover:
-					plan.monthlyEquivalent === PLAN_IDS.ultra ||
-					plan.monthlyEquivalent === PLAN_IDS.max,
-				isRecommended: plan.monthlyEquivalent === PLAN_IDS.ultra,
-			}];
+			return [
+				id,
+				{
+					name: plan.name.replace(' (Annual)', ''),
+					price: formatPrice(plan.price.amount, plan.price.interval),
+					annualPrice: formatPrice(plan.price.amount, plan.price.interval),
+					credits: plan.credits.included.toLocaleString(),
+					overage: formatOverage(plan.credits.overage),
+					rollover:
+						plan.monthlyEquivalent === PLAN_IDS.ultra ||
+						plan.monthlyEquivalent === PLAN_IDS.max,
+					isRecommended: plan.monthlyEquivalent === PLAN_IDS.ultra,
+				},
+			];
 		}),
 	]);
 
@@ -71,18 +85,23 @@
 		currency?: string;
 	} | null>(null);
 
-	const balance = createQuery(() => balanceQueryOptions());
-	const plans = createQuery(() => plansQueryOptions());
+	const balance = createQuery(() => balanceQuery.options);
+	const plans = createQuery(() => plansQuery.options);
 
 	const currentPlanId = $derived(
 		balance.data?.subscriptions?.find((s) => !s.addOn)?.planId ?? 'free',
 	);
 
-	const subscription = $derived(balance.data?.subscriptions?.find((s) => !s.addOn) ?? null);
+	const subscription = $derived(
+		balance.data?.subscriptions?.find((s) => !s.addOn) ?? null,
+	);
 	const trialEndsAt = $derived(subscription?.trialEndsAt ?? null);
 	const trialEndDate = $derived(
 		trialEndsAt
-			? new Date(trialEndsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+			? new Date(trialEndsAt).toLocaleDateString('en-US', {
+					month: 'short',
+					day: 'numeric',
+				})
 			: null,
 	);
 
@@ -99,44 +118,38 @@
 		),
 	);
 
-	const previewUpgrade = createMutation(() => ({
-		mutationFn: (planId: string) => api.billing.preview(planId),
-	}));
+	const previewMutation = createMutation(() => previewUpgradeDef.options);
 
-	const attachPlan = createMutation(() => ({
-		mutationFn: (planId: string) =>
-			api.billing.upgrade(planId, window.location.href),
-		onSuccess: (result: AttachResponse) => {
-			if (result.paymentUrl) {
-				window.location.href = result.paymentUrl;
-			} else {
-				toast.success('Plan updated successfully');
-				confirmDialog = null;
-				queryClient.invalidateQueries({ queryKey: ['billing'] });
-			}
-		},
-		onError: () => {
-			toast.error('Upgrade failed. Please try again.');
-		},
-	}));
+	const attachPlan = createMutation(() => upgradePlanDef.options);
 
 	async function handleUpgradeClick(planId: string, planName: string) {
 		confirmDialog = { planId, planName };
 		previewData = null;
-		previewUpgrade.mutate(planId, {
-			onSuccess: (data: PreviewResponse) => {
+		previewMutation.mutate(planId, {
+			onSuccess: (data) => {
 				previewData = data;
 			},
 		});
 	}
 </script>
-
 <section class="mt-10 mb-8">
 	<div class="flex items-center justify-between mb-4">
 		<h2 class="text-lg font-semibold">Plans</h2>
 		<div class="flex items-center gap-2 rounded-lg bg-muted p-1 text-xs">
-			<Button variant="ghost" size="sm" class="rounded-md {!isAnnual ? 'bg-background shadow-sm' : 'text-muted-foreground'}" onclick={() => (isAnnual = false)}>Monthly</Button>
-			<Button variant="ghost" size="sm" class="rounded-md {isAnnual ? 'bg-background shadow-sm' : 'text-muted-foreground'}" onclick={() => (isAnnual = true)}>Annual <span class="ml-1 text-emerald-500">Save ~17%</span></Button>
+			<Button
+				variant="ghost"
+				size="sm"
+				class="rounded-md {!isAnnual ? 'bg-background shadow-sm' : 'text-muted-foreground'}"
+				onclick={() => (isAnnual = false)}
+				>Monthly</Button
+			>
+			<Button
+				variant="ghost"
+				size="sm"
+				class="rounded-md {isAnnual ? 'bg-background shadow-sm' : 'text-muted-foreground'}"
+				onclick={() => (isAnnual = true)}
+				>Annual <span class="ml-1 text-emerald-500">Save ~17%</span></Button
+			>
 		</div>
 	</div>
 
@@ -181,7 +194,10 @@
 					<Card.Footer>
 						{#if isCurrent}
 							<Button variant="outline" class="w-full" disabled>
-							Current plan{#if trialEndsAt}&nbsp;(trial){/if}
+								Current plan
+								{#if trialEndsAt}
+									&nbsp;(trial)
+								{/if}
 							</Button>
 						{:else}
 							<Button
@@ -203,11 +219,14 @@
 
 		<p class="mt-4 text-xs text-muted-foreground text-center">
 			{#if trialEndDate}
-				Currently on {PLAN_DISPLAY[currentPlanId]?.name ?? currentPlanId} trial — ends {trialEndDate}.
+				Currently on {PLAN_DISPLAY[currentPlanId]?.name ?? currentPlanId} trial
+				— ends {trialEndDate}.
 			{:else}
-				Currently on {currentPlanId === 'free' ? 'Free (50 credits/mo)' : currentPlanId}.
+				Currently on
+				{currentPlanId === 'free' ? 'Free (50 credits/mo)' : currentPlanId}.
 			{/if}
-			All plans include cloud sync, unlimited workspaces, unlimited history, and encryption.
+			All plans include cloud sync, unlimited workspaces, unlimited history, and
+			encryption.
 		</p>
 	{/if}
 </section>
@@ -221,7 +240,7 @@
 		<Dialog.Header>
 			<Dialog.Title>Upgrade to {confirmDialog?.planName}</Dialog.Title>
 			<Dialog.Description>
-				{#if previewUpgrade.isPending}
+				{#if previewMutation.isPending}
 					Calculating cost...
 				{:else if previewData?.prorationAmount !== undefined}
 					You'll be charged ${(previewData.prorationAmount / 100).toFixed(2)}
@@ -236,7 +255,25 @@
 				Cancel
 			</Button>
 			<Button
-				onclick={() => { if (confirmDialog) attachPlan.mutate(confirmDialog.planId); }}
+				onclick={() => {
+					if (confirmDialog) {
+						attachPlan.mutate(
+							{ planId: confirmDialog.planId, successUrl: window.location.href },
+							{
+								onSuccess: (data) => {
+									if (data.paymentUrl) {
+										window.location.href = data.paymentUrl;
+									} else {
+										toast.success('Plan updated successfully');
+										confirmDialog = null;
+										queryClient.invalidateQueries({ queryKey: billingKeys.all });
+									}
+								},
+								onError: () => toast.error('Upgrade failed. Please try again.'),
+							},
+						);
+					}
+				}}
 				disabled={attachPlan.isPending}
 			>
 				{#if attachPlan.isPending}

@@ -100,11 +100,30 @@ export function generateDdl(
 	jsonSchema: Record<string, unknown>,
 ): string {
 	const resolved = resolveSchema(jsonSchema);
-	const properties = getProperties(resolved);
-	const required = getRequiredSet(resolved);
-	const columns = Object.entries(properties).map(([name, propSchema]) =>
-		columnDef(name, toSchema(propSchema), required.has(name)),
+
+	if (!isRecord(resolved.properties)) {
+		throw new Error(
+			'SQLite DDL generation requires an object schema with properties.',
+		);
+	}
+
+	const properties = resolved.properties;
+	const required = new Set(
+		Array.isArray(resolved.required)
+			? (resolved.required as unknown[]).filter(
+					(value): value is string => typeof value === 'string',
+				)
+			: [],
 	);
+
+	const columns = Object.entries(properties).map(([name, propSchema]) => {
+		if (!isRecord(propSchema)) {
+			throw new Error(
+				`SQLite DDL generation requires property "${name}" schema to be an object.`,
+			);
+		}
+		return columnDef(name, propSchema, required.has(name));
+	});
 
 	return `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (${columns.join(', ')})`;
 }
@@ -170,40 +189,9 @@ function getSchemaVersion(schema: JsonSchema) {
 	return versionSchema.const;
 }
 
-function getProperties(schema: JsonSchema) {
-	if (!isRecord(schema.properties)) {
-		throw new Error(
-			'SQLite DDL generation requires an object schema with properties.',
-		);
-	}
-
-	return schema.properties;
-}
-
-function getRequiredSet(schema: JsonSchema) {
-	if (!Array.isArray(schema.required)) {
-		return new Set<string>();
-	}
-
-	return new Set(
-		schema.required.filter(
-			(value): value is string => typeof value === 'string',
-		),
-	);
-}
-
-function quoteIdentifier(identifier: string) {
+/** Double-quote a SQL identifier, escaping embedded quotes. */
+export function quoteIdentifier(identifier: string) {
 	return `"${identifier.replaceAll('"', '""')}"`;
-}
-
-function toSchema(value: unknown): JsonSchema {
-	if (!isRecord(value)) {
-		throw new Error(
-			'SQLite DDL generation requires each property schema to be an object.',
-		);
-	}
-
-	return value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

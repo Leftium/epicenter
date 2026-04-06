@@ -31,7 +31,6 @@
 			state: EditorState.create({
 				doc: ytext.toString(),
 				extensions: [
-					...editorState.extension(),
 					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
 					drawSelection(),
 					EditorView.lineWrapping,

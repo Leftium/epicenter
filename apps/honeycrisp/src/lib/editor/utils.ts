@@ -2,10 +2,10 @@
  * Editor content extraction utilities for Honeycrisp.
  */
 
-import type { Editor } from '@tiptap/core';
+import type { Node } from 'prosemirror-model';
 
 /**
- * Extract title, preview, and word count from editor content.
+ * Extract title, preview, and word count from the ProseMirror document.
  *
  * Title is the first line (up to 80 chars), preview is the first 100 chars,
  * and word count is computed by splitting on whitespace. Returns zeros/empty
@@ -13,16 +13,16 @@ import type { Editor } from '@tiptap/core';
  *
  * @example
  * ```typescript
- * const { title, preview, wordCount } = extractTitleAndPreview(editor);
+ * const { title, preview, wordCount } = extractTitleAndPreview(view.state.doc);
  * notesState.updateNoteContent({ title, preview, wordCount });
  * ```
  */
-export function extractTitleAndPreview(editor: Editor): {
+export function extractTitleAndPreview(doc: Node): {
 	title: string;
 	preview: string;
 	wordCount: number;
 } {
-	const text = editor.getText();
+	const text = doc.textContent;
 	const firstNewline = text.indexOf('\n');
 	const firstLine = firstNewline === -1 ? text : text.slice(0, firstNewline);
 	const trimmed = text.trim();

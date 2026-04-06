@@ -281,19 +281,21 @@ Fuji's `EntryEditor.svelte` is the simpler target—no toolbar, no task lists, n
 
 Honeycrisp has the full toolbar and additional extensions.
 
-- [ ] **3.1** Replace TipTap `Editor` instantiation with ProseMirror `EditorView` + `EditorState.create()`. Include the full schema (with task list nodes and underline mark) and all plugins.
-- [ ] **3.2** Migrate toolbar commands:
+- [x] **3.1** Replace TipTap `Editor` instantiation with ProseMirror `EditorView` + `EditorState.create()`. Include the full schema (with task list nodes and underline mark) and all plugins.
+- [x] **3.2** Migrate toolbar commands:
   - `editor.chain().focus().toggleBold().run()` → `toggleMark(schema.marks.strong)(view.state, view.dispatch); view.focus()`
   - Same pattern for italic, underline, strike, blockquote
   - Heading toggle → `setBlockType(schema.nodes.heading, { level })` or toggling back to paragraph
   - List toggles → `wrapInList` / `liftListItem` from `prosemirror-schema-list`
-  - Task list toggle → custom command using the task_list NodeSpec
-- [ ] **3.3** Migrate `activeFormats` state: replace `onTransaction` with `dispatchTransaction` that updates `$state` using `markActive()` / `nodeActive()` helpers.
-- [ ] **3.4** Migrate `extractTitleAndPreview` in `utils.ts` to accept `Node` (from `prosemirror-model`) instead of TipTap `Editor`. Update call site in `onUpdate`.
-- [ ] **3.5** Update CSS: `:global(.tiptap)` → `:global(.ProseMirror)`, task list selectors from `[data-type="taskList"]` to whatever class our task_list NodeSpec uses.
-- [ ] **3.6** Import `prosemirror-view/style/prosemirror.css`.
-- [ ] **3.7** Remove TipTap imports and dependencies from `apps/honeycrisp/package.json`.
-- [ ] **3.8** Verify: editor loads, all toolbar buttons work, task lists render with checkboxes, content syncs via Yjs, title/preview extraction works, undo/redo works.
+  - Task list toggle → custom command using the taskList NodeSpec
+- [x] **3.3** Migrate `activeFormats` state: replace `onTransaction` with `dispatchTransaction` that updates `$state` using `markActive()` / `nodeActive()` helpers.
+  > **Note**: Renamed `$from` to `resolvedFrom` in destructuring to avoid Svelte's reserved `$` prefix.
+- [x] **3.4** Migrate `extractTitleAndPreview` in `utils.ts` to accept `Node` (from `prosemirror-model`) instead of TipTap `Editor`. Update call site in `onUpdate`.
+- [x] **3.5** Update CSS: `:global(.tiptap)` → `:global(.ProseMirror)`, task list selectors from `[data-type="taskList"]` to `ul.task-list`.
+- [x] **3.6** Import `prosemirror-view/style/prosemirror.css`.
+- [x] **3.7** Remove TipTap imports and dependencies from `apps/honeycrisp/package.json`.
+- [x] **3.8** Verify: editor loads, all toolbar buttons work, task lists render with checkboxes, content syncs via Yjs, title/preview extraction works, undo/redo works.
+  > **Note**: Added custom `strike` MarkSpec (not in prosemirror-schema-basic). Added `chainCommands` for Enter key to handle both taskItem and list_item splitting. Task checkbox click plugin uses `handleClickOn`.
 
 ### Phase 4: Cleanup
 

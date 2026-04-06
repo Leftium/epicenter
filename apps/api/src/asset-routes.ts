@@ -21,6 +21,14 @@ import { FEATURE_IDS } from './billing-plans.js';
 import { MAX_ASSET_BYTES } from './constants.js';
 import * as schema from './db/schema.js';
 
+const ALLOWED_MIME_TYPES = new Set([
+	'image/png',
+	'image/jpeg',
+	'image/gif',
+	'image/webp',
+	'application/pdf',
+]);
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
@@ -48,18 +56,6 @@ const AssetError = defineErrors({
 		message: 'Forbidden',
 	}),
 });
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const ALLOWED_MIME_TYPES = new Set([
-	'image/png',
-	'image/jpeg',
-	'image/gif',
-	'image/webp',
-	'application/pdf',
-]);
 
 function sanitizeFilename(name: string): string {
 	return Array.from(name)

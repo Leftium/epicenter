@@ -11,6 +11,7 @@
 	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 	import type * as Y from 'yjs';
 	import { editorState } from '$lib/state/editor-state.svelte';
+	import { mode } from 'mode-watcher';
 	import { markdownHighlighting } from './extensions/markdown-highlight';
 
 	let {
@@ -73,6 +74,11 @@
 			view.destroy();
 			editorState.detach();
 		};
+	});
+
+	// Sync CM6 dark theme facet when color mode changes
+	$effect(() => {
+		editorState.syncDarkMode(mode.current === 'dark');
 	});
 </script>
 

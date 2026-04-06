@@ -3,6 +3,7 @@ import { EditorView } from '@codemirror/view';
 import { createPersistedState } from '@epicenter/svelte';
 import { Vim, vim } from '@replit/codemirror-vim';
 import { type } from 'arktype';
+import { mode } from 'mode-watcher';
 
 // ── Persisted preferences ───────────────────────────────────────
 
@@ -69,8 +70,9 @@ function createEditorState() {
 	let selectionLength = $state(0);
 	let lineCount = $state(1);
 
-	// ── Vim compartment ─────────────────────────────────────────
+	// ── Compartments ────────────────────────────────────────────
 	const vimCompartment = new Compartment();
+	const darkModeCompartment = new Compartment();
 
 	// ── Update listener (CM6 → $state bridge) ───────────────────
 	const listener = EditorView.updateListener.of((update) => {
@@ -112,7 +114,7 @@ function createEditorState() {
 		/**
 		 * Build the editor state extensions.
 		 *
-		 * Returns a fresh vim compartment (reading current persisted preference)
+		 * Returns compartments for vim mode and dark theme detection,
 		 * plus the update listener that bridges CM6 → `$state`.
 		 * Call once per `EditorView` creation—do NOT reuse across views.
 		 *
@@ -120,9 +122,14 @@ function createEditorState() {
 		 * keybindings take precedence when enabled.
 		 */
 		extension(): Extension[] {
-			const enabled = vimPreference.current;
-			if (enabled) applyLineWrapRemaps();
-			return [vimCompartment.of(enabled ? vim() : []), listener];
+			const vimEnabled = vimPreference.current;
+			if (vimEnabled) applyLineWrapRemaps();
+			const isDark = mode.current === 'dark';
+			return [
+				vimCompartment.of(vimEnabled ? vim() : []),
+				darkModeCompartment.of(isDark ? EditorView.theme({}, { dark: true }) : []),
+				listener,
+			];
 		},
 
 		/**
@@ -162,6 +169,21 @@ function createEditorState() {
 			if (next) applyLineWrapRemaps();
 			view?.dispatch({
 				effects: vimCompartment.reconfigure(next ? vim() : []),
+			});
+		},
+
+		/**
+		 * Sync CM6's dark theme facet with the current color mode.
+		 *
+		 * Call from an `$effect` that tracks `mode.current`. Reconfigures
+		 * the dark mode compartment so CM6's base theme rules (`&dark`
+		 * selectors for selection, cursor, etc.) activate correctly.
+		 */
+		syncDarkMode(isDark: boolean) {
+			view?.dispatch({
+				effects: darkModeCompartment.reconfigure(
+					isDark ? EditorView.theme({}, { dark: true }) : [],
+				),
 			});
 		},
 	};

@@ -207,6 +207,7 @@
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "mode-watcher": "^1.1.0",
+        "typebox": "catalog:",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {

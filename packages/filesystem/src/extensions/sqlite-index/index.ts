@@ -2,8 +2,8 @@
  * SQLite index extension for the Yjs filesystem.
  *
  * Mirrors the CRDT files table into an in-memory SQLite database
- * (libSQL WASM) wrapped with Drizzle ORM. Provides SQL queries,
- * full-text search, and fast lookups against file metadata and content.
+ * (libSQL WASM). Provides SQL queries, full-text search, and fast
+ * lookups against file metadata and content.
  *
  * The SQLite database is **never** the source of truth—it's a derived,
  * rebuildable cache. On every page load the index is rebuilt from Yjs.
@@ -27,13 +27,33 @@
 import type { Documents, TableHelper } from '@epicenter/workspace';
 import type { Client, InStatement } from '@libsql/client-wasm';
 import { createClient } from '@libsql/client-wasm';
-import { drizzle, type LibSQLDatabase } from 'drizzle-orm/libsql';
 
 import type { FileRow } from '../../table.js';
-import { generateDDL } from './ddl.js';
-import * as schema from './schema.js';
 
 const MAX_PATH_DEPTH = 50;
+
+const FILES_DDL = `CREATE TABLE IF NOT EXISTS files (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  parent_id TEXT,
+  type TEXT NOT NULL,
+  path TEXT,
+  size INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  trashed_at INTEGER,
+  content TEXT
+)`;
+
+const FILES_INDEXES = [
+	'CREATE INDEX IF NOT EXISTS parent_idx ON files(parent_id)',
+	'CREATE INDEX IF NOT EXISTS type_idx ON files(type)',
+	'CREATE INDEX IF NOT EXISTS path_idx ON files(path)',
+	'CREATE INDEX IF NOT EXISTS updated_idx ON files(updated_at)',
+];
+
+const FILES_FTS = `CREATE VIRTUAL TABLE IF NOT EXISTS files_fts
+  USING fts5(file_id UNINDEXED, name, content)`;
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
@@ -63,48 +83,13 @@ export type SearchResult = {
 
 /** The public surface returned by the SQLite index extension. */
 export type SqliteIndex = {
-	/** Drizzle database instance for typed queries against the index. */
-	readonly db: LibSQLDatabase<typeof schema>;
-	/**
-	 * Raw libSQL client for arbitrary SQL queries.
-	 *
-	 * Use this when you need to run user-authored SQL strings directly.
-	 * The database is read-only in intent (writes are overwritten on rebuild).
-	 *
-	 * @example
-	 * ```typescript
-	 * const result = await ws.extensions.sqliteIndex.client.execute(
-	 *   "SELECT name, path FROM files WHERE type = 'file' AND trashed_at IS NULL"
-	 * );
-	 * console.log(result.rows);
-	 * ```
-	 */
+	/** Raw libSQL client for arbitrary SQL queries. */
 	readonly client: Client;
-	/** Drizzle schema (re-exported for query building convenience). */
-	readonly schema: typeof schema;
-	/**
-	 * Full-text search across file names and content.
-	 *
-	 * Uses SQLite FTS5 under the hood. Returns ranked results with
-	 * highlighted snippets. Empty/whitespace queries return `[]`.
-	 *
-	 * @example
-	 * ```typescript
-	 * const hits = await ws.extensions.sqliteIndex.search('meeting notes');
-	 * for (const hit of hits) {
-	 *   console.log(hit.name, hit.path, hit.snippet);
-	 * }
-	 * ```
-	 */
+	/** Full-text search across file names and content. */
 	search: (query: string) => Promise<SearchResult[]>;
-	/**
-	 * Manually nuke and rebuild the entire index from Yjs.
-	 *
-	 * Called automatically on init and after every debounced table mutation.
-	 * Exposed for manual recovery (e.g. suspected corruption).
-	 */
+	/** Manually rebuild the entire index from Yjs. */
 	rebuild: () => Promise<void>;
-	/** Promise that resolves after the initial rebuild completes. */
+	/** Resolves after the initial rebuild completes. */
 	whenReady: Promise<void>;
 	/** Tear down observers and close the SQLite database. */
 	destroy: () => void;
@@ -143,14 +128,14 @@ type SqliteIndexContext = {
  *   .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
  * ```
  */
-export function createSqliteIndex({ debounceMs = 100 }: SqliteIndexOptions = {}) {
-
+export function createSqliteIndex({
+	debounceMs = 100,
+}: SqliteIndexOptions = {}) {
 	return (context: SqliteIndexContext): SqliteIndex => {
 		const filesTable = context.tables.files;
 		const contentDocs = context.documents.files.content;
 
 		const client = createClient({ url: ':memory:' });
-		let db: LibSQLDatabase<typeof schema>;
 		let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 		let pendingIds = new Set<string>();
 		let unobserve: (() => void) | null = null;
@@ -160,19 +145,13 @@ export function createSqliteIndex({ debounceMs = 100 }: SqliteIndexOptions = {})
 			// WAL mode — no-op for in-memory but documents intent
 			await client.execute('PRAGMA journal_mode = WAL');
 
-			// Create files table + indexes from the Drizzle schema (single source of truth)
-			for (const ddl of generateDDL(schema.files)) {
-				await client.execute(ddl);
+			await client.execute(FILES_DDL);
+			for (const idx of FILES_INDEXES) {
+				await client.execute(idx);
 			}
 
 			// FTS5 virtual table — standalone (not external-content)
-			// Drizzle has no virtual table support, so this stays as raw SQL
-			await client.execute(`
-				CREATE VIRTUAL TABLE IF NOT EXISTS files_fts
-				USING fts5(file_id UNINDEXED, name, content)
-			`);
-
-			db = drizzle(client, { schema });
+			await client.execute(FILES_FTS);
 
 			// Initial rebuild from Yjs
 			await rebuild();
@@ -445,13 +424,7 @@ export function createSqliteIndex({ debounceMs = 100 }: SqliteIndexOptions = {})
 
 		// ── Extension exports ─────────────────────────────────────────
 		return {
-			get db() {
-				return db;
-			},
-			get client() {
-				return client;
-			},
-			schema,
+			client,
 			search,
 			rebuild,
 			whenReady,
@@ -481,7 +454,8 @@ function computePaths(rows: FileRow[]): Map<string, string> {
 	const paths = new Map<string, string>();
 
 	function getPath(id: string, visited: Set<string>): string | null {
-		if (paths.has(id)) return paths.get(id)!;
+		const cachedPath = paths.get(id);
+		if (cachedPath !== undefined) return cachedPath;
 		if (visited.has(id)) return null; // Cycle
 		visited.add(id);
 

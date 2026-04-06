@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { type } from 'arktype';
+import type { EncryptionKeys } from '@epicenter/workspace';
 
 /**
  * Validated shape of a single keyring entry.
@@ -62,15 +63,20 @@ const EncryptionKeyring = type('string')
  * as `ArkErrors` instead of thrown as `TraversalError`. This lets us wrap
  * them in a human-readable message with the expected format.
  */
-const keyring = EncryptionKeyring(env.ENCRYPTION_SECRETS);
-if (keyring instanceof type.errors) {
+const keyringResult = EncryptionKeyring(env.ENCRYPTION_SECRETS);
+if (keyringResult instanceof type.errors) {
 	throw new Error(
 		`ENCRYPTION_SECRETS is missing or malformed. ` +
 			`Expected format: "2:base64Secret2,1:base64Secret1" (comma-separated version:secret pairs). ` +
 			`Generate a secret with: openssl rand -base64 32\n\n` +
-			`Validation errors:\n${keyring.summary}`,
+			`Validation errors:\n${keyringResult.summary}`,
 	);
 }
+
+// Arktype's .pipe.try() leaks ArkError into element unions that TS can't narrow
+// through. Both the tuple validation (.to()) and the instanceof check above
+// guarantee these are valid EncryptionEntry objects.
+const keyring = keyringResult as Array<typeof EncryptionEntry.infer>;
 
 /**
  * Derive a per-user 32-byte encryption key via two-step HKDF-SHA256.
@@ -125,11 +131,13 @@ function bytesToBase64(bytes: Uint8Array): string {
  */
 export async function deriveUserEncryptionKeys(
 	userId: string,
-) {
+): Promise<EncryptionKeys> {
+	// keyring is guaranteed non-empty by the EncryptionKeyring tuple validation.
+	// Promise.all returns T[] which TS can't narrow to the non-empty tuple.
 	return Promise.all(
 		keyring.map(async ({ version, secret }) => ({
 			version,
 			userKeyBase64: bytesToBase64(await deriveUserKey(secret, userId)),
 		})),
-	);
+	) as Promise<EncryptionKeys>;
 }

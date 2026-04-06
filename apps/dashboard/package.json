@@ -4,7 +4,9 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "bun run dev:local",
+		"dev:local": "vite dev",
+		"dev:remote": "vite dev --mode production",
 		"build": "NODE_ENV=production vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",

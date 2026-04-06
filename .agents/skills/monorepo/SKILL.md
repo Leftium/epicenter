@@ -38,6 +38,31 @@ Use this pattern when you need to:
 - `:check` suffix = check only (for CI, no modifications)
 - `typecheck` alone = type checking (separate concern, cannot auto-fix)
 
+## Dev Scripts
+
+Every app uses explicit `dev:local` / `dev:remote` naming:
+
+| Script | Meaning |
+| --- | --- |
+| `dev:local` | Local everything—local API, local secrets |
+| `dev:remote` | Local app, remote/prod resources |
+| `dev` | Alias for `dev:local` (convenience) |
+
+Not every app has `dev:remote`—only add it when there's a real use case.
+
+## CLI (`epicenter`)
+
+From the monorepo root, `bun epicenter` runs the local CLI against `localhost:8787`:
+
+```bash
+bun epicenter start playground/opensidian-e2e --verbose
+bun epicenter list files -C playground/opensidian-e2e
+```
+
+The bare `epicenter` command (global install) defaults to `api.epicenter.so`.
+Config files read `process.env.EPICENTER_SERVER` with a prod fallback—the root
+script sets it automatically.
+
 ## After Completing Code Changes
 
 Run type checking to verify:

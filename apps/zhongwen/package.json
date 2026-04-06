@@ -7,7 +7,9 @@
 		"./workspace": "./src/lib/workspace/index.ts"
 	},
 	"scripts": {
-		"dev": "bun --bun vite dev",
+		"dev": "bun run dev:local",
+		"dev:local": "bun --bun vite dev",
+		"dev:remote": "bun --bun vite dev --mode production",
 		"build": "bun --bun vite build",
 		"preview": "bun --bun vite preview",
 		"typecheck": "svelte-check",

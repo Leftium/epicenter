@@ -9,7 +9,10 @@
 	},
 	"scripts": {
 		"dev:web": "vite dev",
-		"dev": "bun tauri dev --config '{\"identifier\": \"com.bradenwong.whispering.dev\"}'",
+		"dev:web:remote": "vite dev --mode production",
+		"dev": "bun run dev:local",
+		"dev:local": "bun tauri dev --config '{\"identifier\": \"com.bradenwong.whispering.dev\"}'",
+		"dev:remote": "bun tauri dev --config '{\"identifier\": \"com.bradenwong.whispering.dev\", \"build\": {\"beforeDevCommand\": \"bun run dev:web:remote\"}}'",
 		"build": "NODE_ENV=production bun --bun vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",

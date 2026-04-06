@@ -17,7 +17,6 @@ declare namespace Cloudflare {
 		ANTHROPIC_API_KEY: string;
 		AUTUMN_SECRET_KEY: string;
 		GEMINI_API_KEY: string;
-		GROK_API_KEY: string;
 		WORKSPACE_ROOM: DurableObjectNamespace<import("./src/app").WorkspaceRoom>;
 		DOCUMENT_ROOM: DurableObjectNamespace<import("./src/app").DocumentRoom>;
 	}
@@ -27,7 +26,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "GOOGLE_CLIENT_ID" | "BETTER_AUTH_SECRET" | "ENCRYPTION_SECRETS" | "GOOGLE_CLIENT_SECRET" | "OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "AUTUMN_SECRET_KEY" | "GEMINI_API_KEY" | "GROK_API_KEY">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "GOOGLE_CLIENT_ID" | "BETTER_AUTH_SECRET" | "ENCRYPTION_SECRETS" | "GOOGLE_CLIENT_SECRET" | "OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "AUTUMN_SECRET_KEY" | "GEMINI_API_KEY">> {}
 }
 
 // Begin runtime types

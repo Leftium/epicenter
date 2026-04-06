@@ -75,6 +75,13 @@
 			"localConnectionString": "postgres://postgres:postgres@localhost:5432/epicenter"
 		}
 	],
+	// --- R2: Asset storage (images, PDFs) ---
+	"r2_buckets": [
+		{
+			"binding": "ASSETS_BUCKET",
+			"bucket_name": "epicenter-assets"
+		}
+	],
 	// Smart Placement: Run your Worker close to your database for lower latency
 	"placement": {
 		"region": "aws:us-east-2"

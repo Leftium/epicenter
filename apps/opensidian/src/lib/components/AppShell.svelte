@@ -5,11 +5,9 @@
 	} from '@epicenter/ui/command-palette';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
+	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import { fsState } from '$lib/state/fs-state.svelte';
-	import {
-		type SearchScope,
-		searchState,
-	} from '$lib/state/search-state.svelte';
+	import { searchState } from '$lib/state/search-state.svelte';
 	import { terminalState } from '$lib/state/terminal-state.svelte';
 	import { getFileIcon } from '$lib/utils/file-icons';
 	import ContentPanel from './editor/ContentPanel.svelte';
@@ -66,14 +64,6 @@
 	});
 
 	function handleKeydown(e: KeyboardEvent) {
-		if (paletteOpen && (e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'f') {
-			e.preventDefault();
-			const scopes: SearchScope[] = ['names', 'content', 'both'];
-			const currentIndex = scopes.indexOf(searchState.scope);
-			searchState.scope = scopes[(currentIndex + 1) % scopes.length]!;
-			return;
-		}
-
 		if ((e.metaKey || e.ctrlKey) && e.key === '`') {
 			e.preventDefault();
 			if (!terminalState.open) {
@@ -127,22 +117,22 @@
 		shouldFilter={searchState.shouldFilter}
 	>
 		{#snippet headerContent()}
-			<div class="flex items-center gap-1 px-3 pb-2">
-				{#each [['names', 'Names'], ['content', 'Content'], ['both', 'Both']] as [ value, label ]}
-					<button
-						type="button"
-						class="rounded-md px-3 py-1 text-xs font-medium transition-colors {searchState.scope === value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
-						onclick={() => { searchState.scope = value as SearchScope; }}
-					>
-						{label}
-					</button>
-				{/each}
+			<div class="px-3 pb-2">
+				<ToggleGroup.Root
+					type="single"
+					bind:value={() => searchState.scope, (v) => { if (v) searchState.scope = v; }}
+					variant="outline"
+					size="sm"
+					class="w-full"
+				>
+					<ToggleGroup.Item value="names">Names</ToggleGroup.Item>
+					<ToggleGroup.Item value="content">Content</ToggleGroup.Item>
+					<ToggleGroup.Item value="both">Both</ToggleGroup.Item>
+				</ToggleGroup.Root>
+				{#if searchState.isSearching}
+					<p class="pt-1 text-xs text-muted-foreground">Searching…</p>
+				{/if}
 			</div>
-			{#if searchState.isSearching}
-				<div class="px-3 pb-1 text-xs text-muted-foreground">
-					Searching…
-				</div>
-			{/if}
 		{/snippet}
 	</CommandPalette>
 </div>

@@ -185,7 +185,8 @@ apps/opensidian/src/lib/components/AppShell.svelte
 
 ### Phase 4: Polish
 
-- [x] **4.1** Keyboard shortcut to cycle scope (Cmd+Shift+F cycles names → content → both)
+- [ ] **4.1** ~~Keyboard shortcut to cycle scope~~ — Removed. Cmd+Shift+F conflicts with standard "Find in Files" convention. The segmented control is more discoverable.
+  > **Note**: Scope toggle UI was upgraded from custom buttons to shadcn-svelte `ToggleGroup` component.
 - [x] **4.2** Empty state messages per scope ("No files found." / "No content matches." / "No results.")
 - [x] **4.3** Loading indicator for content search ("Searching…" text shown during debounce + FTS query)
 

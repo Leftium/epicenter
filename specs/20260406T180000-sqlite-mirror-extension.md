@@ -1,4 +1,5 @@
 # SQLite Mirror Extension
+# SQLite Mirror Extension
 
 **Date**: 2026-04-06
 **Status**: Draft
@@ -467,31 +468,31 @@ queryData: defineQuery({
 
 ### Phase 1: Core Mirror (no FTS, no vectors)
 
-- [ ] **1.1** Create `packages/workspace/src/extensions/materializer/sqlite/` directory
-- [ ] **1.2** Implement `generateDDL(jsonSchema)`: walk JSON Schema per table → `CREATE TABLE IF NOT EXISTS`. Handle `oneOf` (multi-version) by picking the schema with the highest `_v.const`. Use `required[]` to determine NOT NULL vs nullable.
-- [ ] **1.3** Implement `createSqliteMirror(options)` extension factory:
+- [x] **1.1** Create `packages/workspace/src/extensions/materializer/sqlite/` directory
+- [x] **1.2** Implement `generateDDL(jsonSchema)`: walk JSON Schema per table → `CREATE TABLE IF NOT EXISTS`. Handle `oneOf` (multi-version) by picking the schema with the highest `_v.const`. Use `required[]` to determine NOT NULL vs nullable.
+- [x] **1.3** Implement `createSqliteMirror(options)` extension factory:
   - Await `ctx.whenReady` before touching SQLite
   - Generate and execute DDL for each table
   - Full load: `table.getAllValid()` → batch `INSERT OR REPLACE INTO`
   - Return `{ db, rebuild }`
-- [ ] **1.4** Implement observer-based incremental sync:
+- [x] **1.4** Implement observer-based incremental sync:
   - `table.observe((changedIds: ReadonlySet<string>) => ...)` per mirrored table — returns unsubscribe fn
   - Debounced batch: collect changed IDs into a Set, then for each ID: `table.get(id)` → `valid` = `INSERT OR REPLACE`, `not_found` = `DELETE`
   - Call `onSync` hook after each batch with `{ table, upserted, deleted }` arrays
-- [ ] **1.5** Implement `dispose()`: unsubscribe observers, close client if owned
-- [ ] **1.6** Add tests: mirror creation, full load, incremental sync, rebuild
+- [x] **1.5** Implement `dispose()`: unsubscribe observers, close client if owned
+- [x] **1.6** Add tests: mirror creation, full load, incremental sync, rebuild
 
 ### Phase 2: FTS5
 
-- [ ] **2.1** Implement FTS config parsing: `fts: { recordings: ['title', 'transcribedText'] }` → `CREATE VIRTUAL TABLE recordings_fts USING fts5(title, transcribedText, content=recordings, content_rowid=rowid)`
-- [ ] **2.2** Generate INSERT/UPDATE/DELETE triggers to keep FTS in sync with mirror tables
-- [ ] **2.3** Implement `search(table, query, options)` helper using FTS5 `MATCH` + `snippet()` + `rank`
-- [ ] **2.4** Add tests: FTS creation, search, trigger-based sync after upsert/delete
+- [x] **2.1** Implement FTS config parsing: `fts: { recordings: ['title', 'transcribedText'] }` → `CREATE VIRTUAL TABLE recordings_fts USING fts5(title, transcribedText, content=recordings, content_rowid=rowid)`
+- [x] **2.2** Generate INSERT/UPDATE/DELETE triggers to keep FTS in sync with mirror tables
+- [x] **2.3** Implement `search(table, query, options)` helper using FTS5 `MATCH` + `snippet()` + `rank`
+- [x] **2.4** Add tests: FTS creation, search, trigger-based sync after upsert/delete
 
 ### Phase 3: Lifecycle Hooks
 
-- [ ] **3.1** Implement `onReady(db)` — called after DDL + full load + FTS setup
-- [ ] **3.2** Implement `onSync(db, changes)` — called after each debounced sync batch with change details
+- [x] **3.1** Implement `onReady(db)` — called after DDL + full load + FTS setup
+- [x] **3.2** Implement `onSync(db, changes)` — called after each debounced sync batch with change details
 - [ ] **3.3** Document hook patterns: vector columns, custom indexes, derived columns
 
 ### Phase 4: Integration

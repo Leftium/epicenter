@@ -66,6 +66,14 @@
 	});
 
 	function handleKeydown(e: KeyboardEvent) {
+		if (paletteOpen && (e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'f') {
+			e.preventDefault();
+			const scopes: SearchScope[] = ['names', 'content', 'both'];
+			const currentIndex = scopes.indexOf(searchState.scope);
+			searchState.scope = scopes[(currentIndex + 1) % scopes.length]!;
+			return;
+		}
+
 		if ((e.metaKey || e.ctrlKey) && e.key === '`') {
 			e.preventDefault();
 			if (!terminalState.open) {
@@ -130,6 +138,11 @@
 					</button>
 				{/each}
 			</div>
+			{#if searchState.isSearching}
+				<div class="px-3 pb-1 text-xs text-muted-foreground">
+					Searching…
+				</div>
+			{/if}
 		{/snippet}
 	</CommandPalette>
 </div>

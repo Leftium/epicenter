@@ -11,7 +11,11 @@
  */
 
 import { join } from 'node:path';
-import { createSessionStore, resolveEpicenterHome } from '@epicenter/cli';
+import {
+	createCliUnlock,
+	createSessionStore,
+	resolveEpicenterHome,
+} from '@epicenter/cli';
 import { createTabManagerWorkspace } from '@epicenter/tab-manager/workspace';
 import {
 	markdownMaterializer,
@@ -44,15 +48,7 @@ export const tabManager = createTabManagerWorkspace()
 			},
 		}),
 	)
-	.withWorkspaceExtension('unlock', ({ whenReady, applyEncryptionKeys }) => ({
-		whenReady: (async () => {
-			await whenReady;
-			const session = await sessions.load(SERVER_URL);
-			if (session?.encryptionKeys) {
-				applyEncryptionKeys(session.encryptionKeys);
-			}
-		})(),
-	}))
+	.withWorkspaceExtension('unlock', createCliUnlock(sessions, SERVER_URL))
 	.withExtension(
 		'sync',
 		createSyncExtension({

@@ -475,7 +475,7 @@ apps/zhongwen/src/lib/auth.ts
 ### Phase 4: Migrate app entrypoints
 
 - [x] **4.1** Update Honeycrisp auth wiring to use transport + session store + injected side effects
-- [x] **4.2** Update OpenSidian auth wiring
+- [x] **4.2** Update Opensidian auth wiring
 - [x] **4.3** Update Zhongwen auth wiring
 - [x] **4.4** Update Tab Manager auth wiring, preserving custom Google auth behavior
 

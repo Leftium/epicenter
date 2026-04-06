@@ -1,6 +1,7 @@
 export {
 	type MarkdownMaterializerConfig,
 	markdownMaterializer,
+	toMarkdown,
 } from './markdown.js';
 export {
 	bodyFieldSerializer,
@@ -8,3 +9,5 @@ export {
 	type MarkdownSerializer,
 	titleFilenameSerializer,
 } from './serializers.js';
+export { parseMarkdownFile } from './parse-markdown-file.js';
+export { prepareMarkdownFiles } from './prepare-markdown-files.js';

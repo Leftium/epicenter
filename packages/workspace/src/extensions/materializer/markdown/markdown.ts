@@ -1,5 +1,6 @@
 import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { convertInternalLinksToWikilinks } from '@epicenter/filesystem';
 import { YAML } from 'bun';
 import type { ExtensionContext } from '../../../workspace/types.js';
 import { defaultSerializer, type MarkdownSerializer } from './serializers.js';
@@ -15,7 +16,7 @@ import { defaultSerializer, type MarkdownSerializer } from './serializers.js';
  * (missing key); null values are preserved (YAML `null`) so nullable
  * fields survive a future round-trip.
  */
-function toMarkdown(
+export function toMarkdown(
 	frontmatter: Record<string, unknown>,
 	body?: string,
 ): string {
@@ -131,7 +132,10 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 				try {
 					await mkdir(dir, { recursive: true });
 				} catch (error) {
-					console.warn(`[markdown-materializer] failed to create ${dir}:`, error);
+					console.warn(
+						`[markdown-materializer] failed to create ${dir}:`,
+						error,
+					);
 					continue;
 				}
 
@@ -145,19 +149,26 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 				for (const row of table.getAllValid()) {
 					const result = serializer.serialize(row as Record<string, unknown>);
 					try {
+						const processedBody =
+							result.body !== undefined
+								? convertInternalLinksToWikilinks(result.body)
+								: result.body;
 						await Bun.write(
 							join(dir, result.filename),
-							toMarkdown(result.frontmatter, result.body),
+							toMarkdown(result.frontmatter, processedBody),
 						);
 						filenames.set(row.id as string, result.filename);
 					} catch (error) {
-						console.warn(`[markdown-materializer] failed to write ${result.filename}:`, error);
+						console.warn(
+							`[markdown-materializer] failed to write ${result.filename}:`,
+							error,
+						);
 					}
 				}
 
 				// Observe ongoing changes
 				const unsubscribe = table.observe((changedIds) => {
-					const writes: Array<Promise<void>> = [];
+					const writes: Array<Promise<unknown>> = [];
 
 					for (const id of changedIds) {
 						const getResult = table.get(id);
@@ -182,8 +193,14 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 							writes.push(safeUnlink(join(dir, oldFilename)));
 						}
 
+						const processedBody =
+							body !== undefined ? convertInternalLinksToWikilinks(body) : body;
+
 						writes.push(
-							Bun.write(join(dir, filename), toMarkdown(frontmatter, body)),
+							Bun.write(
+								join(dir, filename),
+								toMarkdown(frontmatter, processedBody),
+							),
 						);
 						filenames.set(id, filename);
 					}

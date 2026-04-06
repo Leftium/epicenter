@@ -1,4 +1,4 @@
-# OpenSidian Terminal Panel
+# Opensidian Terminal Panel
 
 **Date:** 2026-03-19
 **Status:** Implemented
@@ -6,7 +6,7 @@
 
 ## Problem
 
-OpenSidian has a complete file management UI (tree, editor, tabs) but no way to run commands against the virtual filesystem. Users who want to batch-create files, search content, or manipulate their workspace with familiar Unix commands have to do everything through the GUI.
+Opensidian has a complete file management UI (tree, editor, tabs) but no way to run commands against the virtual filesystem. Users who want to batch-create files, search content, or manipulate their workspace with familiar Unix commands have to do everything through the GUI.
 
 ## Key Insight
 
@@ -304,7 +304,7 @@ These are nice-to-have. The core terminal works without them.
 
 ## What just-bash Provides (Browser-Compatible)
 
-From the `just-bash` README, these commands work in the browser (which is OpenSidian's runtime):
+From the `just-bash` README, these commands work in the browser (which is Opensidian's runtime):
 
 - **File ops:** `cat`, `cp`, `ls`, `mkdir`, `mv`, `rm`, `rmdir`, `touch`, `tree`, `stat`
 - **Text processing:** `awk`, `grep`, `head`, `tail`, `sed`, `sort`, `uniq`, `wc`, `cut`, `diff`

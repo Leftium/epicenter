@@ -1,11 +1,7 @@
 <script lang="ts">
 	import { defaultKeymap, indentWithTab } from '@codemirror/commands';
 	import { markdown } from '@codemirror/lang-markdown';
-	import {
-		defaultHighlightStyle,
-		syntaxHighlighting,
-	} from '@codemirror/language';
-	import { EditorState } from '@codemirror/state';
+	import { EditorState, type Extension } from '@codemirror/state';
 	import {
 		drawSelection,
 		EditorView,
@@ -14,11 +10,16 @@
 	} from '@codemirror/view';
 	import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 	import type * as Y from 'yjs';
+	import { editorState } from '$lib/state/editor-state.svelte';
+	import { mode } from 'mode-watcher';
+	import { markdownHighlighting } from './extensions/markdown-highlight';
 
 	let {
 		ytext,
+		extensions: extraExtensions = [],
 	}: {
 		ytext: Y.Text;
+		extensions?: Extension[];
 	} = $props();
 
 	let container: HTMLDivElement | undefined = $state();
@@ -30,13 +31,15 @@
 			state: EditorState.create({
 				doc: ytext.toString(),
 				extensions: [
+					...editorState.extension(),
 					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
 					drawSelection(),
 					EditorView.lineWrapping,
-					syntaxHighlighting(defaultHighlightStyle),
+					markdownHighlighting,
 					markdown(),
 					yCollab(ytext, null),
 					placeholder('Empty file'),
+					...extraExtensions,
 					EditorView.theme({
 						'&': {
 							height: '100%',
@@ -65,8 +68,17 @@
 			}),
 			parent: container,
 		});
+		editorState.attach(view);
 
-		return () => view.destroy();
+		return () => {
+			view.destroy();
+			editorState.detach();
+		};
+	});
+
+	// Sync CM6 dark theme facet when color mode changes
+	$effect(() => {
+		editorState.syncDarkMode(mode.current === 'dark');
 	});
 </script>
 

@@ -4,7 +4,8 @@
  * Future sync extensions will add remote replication.
  */
 
+import { createWorkspace } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
-import { createWhispering } from './workspace/workspace';
+import { whisperingDefinition } from './workspace/definition';
 
-export const workspace = createWhispering().withExtension('persistence', indexeddbPersistence);
+export const workspace = createWorkspace(whisperingDefinition).withExtension('persistence', indexeddbPersistence);

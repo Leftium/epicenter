@@ -1,4 +1,4 @@
-# OpenSidian UI Idiomaticity
+# Opensidian UI Idiomaticity
 
 **Date**: 2026-03-13
 **Status**: Implemented
@@ -6,13 +6,13 @@
 
 ## Overview
 
-Fix specific non-idiomatic patterns in OpenSidian's UI where hand-written markup reimplements existing shadcn-svelte primitives from `@epicenter/ui`. These are targeted, mechanical fixes—not new features.
+Fix specific non-idiomatic patterns in Opensidian's UI where hand-written markup reimplements existing shadcn-svelte primitives from `@epicenter/ui`. These are targeted, mechanical fixes—not new features.
 
 ## Motivation
 
 ### Current State
 
-OpenSidian has 10 components built on `@epicenter/ui` primitives (Collapsible, ContextMenu, Dialog, AlertDialog, Breadcrumb, Button, Resizable, ScrollArea, Separator). The overall structure is sound, but several components bypass available primitives with manual implementations.
+Opensidian has 10 components built on `@epicenter/ui` primitives (Collapsible, ContextMenu, Dialog, AlertDialog, Breadcrumb, Button, Resizable, ScrollArea, Separator). The overall structure is sound, but several components bypass available primitives with manual implementations.
 
 **Problem 1: Raw `<input>` with reimplemented styling**
 
@@ -68,7 +68,7 @@ Checked `packages/ui/src/` for components that should be used but aren't:
 
 ### Icon Strategy
 
-The codebase doesn't have a centralized icon library dependency in OpenSidian. shadcn-svelte projects typically use `lucide-svelte`. Icons currently used inline in TreeNode:
+The codebase doesn't have a centralized icon library dependency in Opensidian. shadcn-svelte projects typically use `lucide-svelte`. Icons currently used inline in TreeNode:
 
 - ChevronRight (expand/collapse indicator)
 - Folder (closed folder)
@@ -128,7 +128,7 @@ The current `<textarea>` uses `resize: vertical` and fills the available height.
 ## Open Questions
 
 1. **Should we add `lucide-svelte` directly or create a thin icon wrapper in `@epicenter/ui`?**
-   - Options: (a) Direct `lucide-svelte` import in OpenSidian, (b) Create `@epicenter/ui/icons` that re-exports Lucide icons
+   - Options: (a) Direct `lucide-svelte` import in Opensidian, (b) Create `@epicenter/ui/icons` that re-exports Lucide icons
    - **Recommendation**: (a) — direct import. Icon wrapping adds indirection without clear benefit. Other apps can import lucide-svelte independently.
 
 2. **Should `ContentEditor` remain a `Textarea` or should it use a richer editor?**
@@ -165,7 +165,7 @@ The current `<textarea>` uses `resize: vertical` and fills the available height.
 
 ### Summary
 
-Replaced all hand-written HTML primitives in OpenSidian with their `@epicenter/ui` counterparts across 6 component files. Added `lucide-svelte` as the icon library, replacing ~70 lines of inline SVG markup with 4 Lucide component imports. All changes are mechanical swaps—no behavioral changes.
+Replaced all hand-written HTML primitives in Opensidian with their `@epicenter/ui` counterparts across 6 component files. Added `lucide-svelte` as the icon library, replacing ~70 lines of inline SVG markup with 4 Lucide component imports. All changes are mechanical swaps—no behavioral changes.
 
 ### Changes by File
 

@@ -102,7 +102,7 @@ The `playground/` directory contains standalone `epicenter.config.ts` files that
 # Tab Manager — syncs saved tabs, bookmarks, and devices
 epicenter start playground/tab-manager-e2e --verbose
 
-# OpenSidian — syncs notes with document content as markdown body
+# Opensidian — syncs notes with document content as markdown body
 epicenter start playground/opensidian-e2e --verbose
 ```
 

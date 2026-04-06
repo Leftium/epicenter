@@ -5,7 +5,10 @@
 	} from '@epicenter/ui/command-palette';
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
-	import * as ToggleGroup from '@epicenter/ui/toggle-group';
+	import { Toggle } from '@epicenter/ui/toggle';
+	import * as Tooltip from '@epicenter/ui/tooltip';
+	import FileIcon from '@lucide/svelte/icons/file';
+	import TextIcon from '@lucide/svelte/icons/text';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import { searchState } from '$lib/state/search-state.svelte';
 	import { terminalState } from '$lib/state/terminal-state.svelte';
@@ -110,28 +113,48 @@
 		items={paletteItems}
 		bind:open={paletteOpen}
 		bind:value={searchState.searchQuery}
-		placeholder={searchState.scope === 'names' ? 'Search file names...' : 'Search files...'}
+		placeholder={searchState.scope === 'names' ? 'Search file names...' : searchState.scope === 'content' ? 'Search content...' : 'Search files...'}
 		emptyMessage={searchState.scope === 'content' ? 'No content matches.' : searchState.scope === 'both' ? 'No results.' : 'No files found.'}
 		title="Search Files"
 		description="Search for files by name or content"
 		shouldFilter={searchState.shouldFilter}
 	>
-		{#snippet headerContent()}
-			<div class="px-3 pb-2">
-				<ToggleGroup.Root
-					type="single"
-					bind:value={() => searchState.scope, (v) => { if (v) searchState.scope = v; }}
-					variant="outline"
-					size="sm"
-					class="w-full"
-				>
-					<ToggleGroup.Item value="names">Names</ToggleGroup.Item>
-					<ToggleGroup.Item value="content">Content</ToggleGroup.Item>
-					<ToggleGroup.Item value="both">Both</ToggleGroup.Item>
-				</ToggleGroup.Root>
-				{#if searchState.isSearching}
-					<p class="pt-1 text-xs text-muted-foreground">Searching…</p>
-				{/if}
+		{#snippet inputEndContent()}
+			<div class="flex items-center gap-0.5">
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<Toggle
+								size="sm"
+								pressed={searchState.scope === 'names'}
+								onPressedChange={(v) => { searchState.scope = v ? 'names' : 'both'; }}
+								aria-label="Names only"
+								class="size-6 rounded-sm p-0"
+								{...props}
+							>
+								<FileIcon class="size-3.5" />
+							</Toggle>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content>Names only</Tooltip.Content>
+				</Tooltip.Root>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<Toggle
+								size="sm"
+								pressed={searchState.scope === 'content'}
+								onPressedChange={(v) => { searchState.scope = v ? 'content' : 'both'; }}
+								aria-label="Content only"
+								class="size-6 rounded-sm p-0"
+								{...props}
+							>
+								<TextIcon class="size-3.5" />
+							</Toggle>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content>Content only</Tooltip.Content>
+				</Tooltip.Root>
 			</div>
 		{/snippet}
 	</CommandPalette>

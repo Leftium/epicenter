@@ -1,8 +1,8 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import * as Command from '#command/index.js';
 	import { confirmationDialog } from '#confirmation-dialog/index.js';
 	import type { CommandPaletteItem } from './index.js';
-	import type { Snippet } from 'svelte';
 
 	let {
 		items,
@@ -14,7 +14,7 @@
 		description = 'Search for a command to run',
 		shouldFilter,
 		shortcut = 'k',
-		headerContent,
+		inputEndContent,
 	}: {
 		items: CommandPaletteItem[];
 		open: boolean;
@@ -43,8 +43,8 @@
 		 * ```
 		 */
 		shortcut?: string | null;
-		/** Optional snippet rendered between the dialog top and the search input. */
-		headerContent?: Snippet;
+		/** Optional snippet rendered at the end of the search input row (e.g. scope toggles). */
+		inputEndContent?: Snippet;
 	} = $props();
 
 	// \u2500\u2500 Reset search value when palette closes \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -70,10 +70,11 @@
 />
 
 <Command.Dialog bind:open {title} {description} {shouldFilter}>
-	{#if headerContent}
-		{@render headerContent()}
-	{/if}
-	<Command.Input {placeholder} bind:value />
+	<Command.Input {placeholder} bind:value>
+		{#if inputEndContent}
+			{@render inputEndContent()}
+		{/if}
+	</Command.Input>
 	<Command.List>
 		<Command.Empty>{emptyMessage}</Command.Empty>
 		{#each grouped as [ group, groupItems ]}
@@ -108,7 +109,9 @@
 								</span>
 							{/if}
 							{#if item.snippet}
-								<span class="snippet line-clamp-2 text-xs text-muted-foreground/70">
+								<span
+									class="snippet line-clamp-2 text-xs text-muted-foreground/70"
+								>
 									{@html sanitizeSnippet(item.snippet)}
 								</span>
 							{/if}

@@ -2,6 +2,7 @@
 	import * as Card from '@epicenter/ui/card';
 	import * as Chart from '@epicenter/ui/chart';
 	import * as Select from '@epicenter/ui/select';
+	import * as Empty from '@epicenter/ui/empty';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { scaleUtc } from 'd3-scale';
@@ -127,9 +128,12 @@
 				Failed to load usage data.
 			</p>
 		{:else if chartData.length === 0}
-			<p class="text-sm text-muted-foreground py-12 text-center">
-				No usage data yet.
-			</p>
+			<Empty.Root class="py-8 border-0">
+				<Empty.Content>
+					<Empty.Title>No usage data yet</Empty.Title>
+					<Empty.Description>Credits you use will appear here as a chart.</Empty.Description>
+				</Empty.Content>
+			</Empty.Root>
 		{:else}
 			<Chart.Container config={chartConfig} class="aspect-[3/1] w-full">
 				<AreaChart

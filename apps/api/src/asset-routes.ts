@@ -91,9 +91,10 @@ assetAuthedRoutes.post(
 			return c.json({ error: 'Storage limit exceeded' }, 402);
 		}
 
-		// -- Store in R2 --
+		// -- Store in R2 + Postgres --
 		const assetId = generateGuid();
 		const key = `${c.var.user.id}/${assetId}`;
+
 		await c.env.ASSETS_BUCKET.put(key, file.stream(), {
 			httpMetadata: {
 				contentType: file.type,
@@ -102,14 +103,21 @@ assetAuthedRoutes.post(
 			},
 		});
 
-		// Insert metadata row — Postgres is the source of truth for billing/listing
-		await c.var.db.insert(schema.asset).values({
-			id: assetId,
-			userId: c.var.user.id,
-			contentType: file.type,
-			sizeBytes: file.size,
-			originalName: file.name,
-		});
+		try {
+			await c.var.db.insert(schema.asset).values({
+				id: assetId,
+				userId: c.var.user.id,
+				contentType: file.type,
+				sizeBytes: file.size,
+				originalName: file.name,
+			});
+		} catch (dbError) {
+			// Compensating delete — don't leave orphaned R2 objects
+			await c.env.ASSETS_BUCKET.delete(key).catch((r2Err) =>
+				console.error('[upload] R2 cleanup failed:', r2Err),
+			);
+			throw dbError;
+		}
 
 		// Track storage usage (fire-and-forget after response)
 		c.var.afterResponse.push(

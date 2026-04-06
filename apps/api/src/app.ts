@@ -21,6 +21,7 @@ import {
 } from './auth-pages';
 import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
+import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 
@@ -265,6 +266,10 @@ app.get(
 	(c) => oauthProviderAuthServerMetadata(c.var.auth)(c.req.raw),
 );
 
+// Asset reads — unauthenticated (unguessable URL is the credential).
+// Must be mounted BEFORE authGuard so GET requests aren't blocked.
+app.route('/api/assets', assetPublicRoutes);
+
 // Auth guard for protected routes
 const authGuard = factory.createMiddleware(async (c, next) => {
 	const wsToken = c.req.query('token');
@@ -283,6 +288,7 @@ app.use('/ai/*', authGuard);
 app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
 app.use('/api/billing/*', authGuard);
+app.use('/api/assets/*', authGuard);
 
 // Ensure Autumn customer exists and stash planId for model gating.
 // Runs after authGuard for AI routes so c.var.user is available.
@@ -322,6 +328,9 @@ app.get('/dashboard', async (c) => {
 
 // Billing API routes — typed JSON routes consumed by the dashboard SPA via hc<AppType>
 app.route('/api/billing', billingRoutes);
+
+// Asset routes — upload + delete (authed, mounted after authGuard)
+app.route('/api/assets', assetAuthedRoutes);
 
 // AI chat
 app.post(

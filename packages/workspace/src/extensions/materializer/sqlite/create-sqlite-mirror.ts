@@ -62,6 +62,9 @@ export function createSqliteMirror(
 		const unsubscribes: Array<() => void> = [];
 		let pendingSync = new Map<string, Set<string>>();
 		let syncTimeout: ReturnType<typeof setTimeout> | null = null;
+		// Each flush chains onto the previous via .then() so concurrent observer
+		// callbacks don't trigger parallel SQLite writes. Resolved promises are
+		// GC'd — the chain does not leak.
 		let syncQueue = Promise.resolve();
 		let isDisposed = false;
 
@@ -75,6 +78,50 @@ export function createSqliteMirror(
 			}
 
 			await rebuildTables();
+		}
+
+		async function rebuildTable(tableName: string) {
+			await whenReady;
+
+			if (isDisposed) {
+				return;
+			}
+
+			const table = mirroredTables.get(tableName);
+			if (table === undefined) {
+				throw new Error(
+					`Cannot rebuild "${tableName}" — not in the mirrored table set.`,
+				);
+			}
+
+			await db.exec('BEGIN');
+			try {
+				await db.exec(`DELETE FROM ${quoteIdentifier(tableName)}`);
+				await fullLoadTable(tableName, table);
+				await db.exec('COMMIT');
+			} catch (error: unknown) {
+				await db.exec('ROLLBACK');
+				throw error;
+			}
+		}
+
+		async function count(tableName: string): Promise<number> {
+			await whenReady;
+
+			if (isDisposed) {
+				return 0;
+			}
+
+			try {
+				const row = await db
+					.prepare(
+						`SELECT COUNT(*) AS count FROM ${quoteIdentifier(tableName)}`,
+					)
+					.get();
+				return Number(row?.count ?? 0);
+			} catch {
+				return 0;
+			}
 		}
 
 		async function search(
@@ -157,6 +204,7 @@ export function createSqliteMirror(
 				await db.exec(generateDdl(tableName, jsonSchema));
 			}
 
+			validateFtsConfig();
 			await setupFtsTables();
 
 			if (isDisposed) {
@@ -208,7 +256,6 @@ export function createSqliteMirror(
 
 			syncTimeout = setTimeout(() => {
 				syncTimeout = null;
-				// Chain flushes sequentially to prevent concurrent SQLite writes
 				syncQueue = syncQueue
 					.then(() => flushPendingSync())
 					.catch((error: unknown) => {
@@ -270,6 +317,20 @@ export function createSqliteMirror(
 
 		// ── Init helpers ─────────────────────────────────────────────
 
+		function validateFtsConfig() {
+			if (options.fts === undefined) {
+				return;
+			}
+
+			for (const ftsTableName of Object.keys(options.fts)) {
+				if (!mirroredTables.has(ftsTableName)) {
+					console.warn(
+						`[createSqliteMirror] FTS configured for "${ftsTableName}" but it is not in the mirrored table set. FTS index will not be created.`,
+					);
+				}
+			}
+		}
+
 		async function setupFtsTables() {
 			if (options.fts === undefined) {
 				return;
@@ -327,6 +388,10 @@ export function createSqliteMirror(
 		}
 
 		async function rebuildTables() {
+			if (isDisposed) {
+				return;
+			}
+
 			await db.exec('BEGIN');
 			try {
 				for (const [tableName] of mirroredTables) {
@@ -347,9 +412,21 @@ export function createSqliteMirror(
 			table: TableHelper<BaseRow>,
 		) {
 			const rows = table.getAllValid();
+			if (rows.length === 0) {
+				return;
+			}
+
+			// Prepare statement once from the first row's column shape, reuse for all rows.
+			const keys = Object.keys(rows[0]!);
+			const placeholders = keys.map(() => '?').join(', ');
+			const columns = keys.map(quoteIdentifier).join(', ');
+			const stmt = db.prepare(
+				`INSERT OR REPLACE INTO ${quoteIdentifier(tableName)} (${columns}) VALUES (${placeholders})`,
+			);
 
 			for (const row of rows) {
-				await insertRow(tableName, row);
+				const values = keys.map((key) => serializeValue(row[key]));
+				await stmt.run(...values);
 			}
 		}
 
@@ -383,6 +460,8 @@ export function createSqliteMirror(
 		return {
 			db,
 			rebuild,
+			rebuildTable,
+			count,
 			search,
 			whenReady,
 			dispose,
@@ -430,13 +509,28 @@ function getTableJsonSchema(
 	tableName: string,
 ): Record<string, unknown> {
 	const tableDef = context.definitions.tables[tableName];
-	if (!isRecord(tableDef)) {
+	if (tableDef === null || tableDef === undefined) {
 		throw new Error(
-			`SQLite mirror definition for "${tableName}" must be an object.`,
+			`SQLite mirror definition for "${tableName}" is missing.`,
 		);
 	}
 
-	const schema = 'schema' in tableDef ? tableDef.schema : tableDef;
+	// Table definitions may wrap the schema in a { schema } property or be
+	// the Standard Schema directly (e.g. an arktype Type which is callable).
+	const schema =
+		isRecord(tableDef) && 'schema' in tableDef ? tableDef.schema : tableDef;
+
+	if (
+		schema === null ||
+		schema === undefined ||
+		(typeof schema !== 'object' && typeof schema !== 'function') ||
+		!('~standard' in schema)
+	) {
+		throw new Error(
+			`SQLite mirror definition for "${tableName}" is not a Standard Schema (missing ~standard).`,
+		);
+	}
+
 	return standardSchemaToJsonSchema(schema as StandardJSONSchemaV1);
 }
 

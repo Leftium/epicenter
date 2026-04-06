@@ -13,13 +13,15 @@
 	import { searchState } from '$lib/state/search-state.svelte';
 	import { terminalState } from '$lib/state/terminal-state.svelte';
 	import { getFileIcon } from '$lib/utils/file-icons';
+	import AiChat from './chat/AiChat.svelte';
 	import ContentPanel from './editor/ContentPanel.svelte';
 	import StatusBar from './editor/StatusBar.svelte';
-	import Toolbar from './Toolbar.svelte';
 	import TerminalPanel from './terminal/TerminalPanel.svelte';
+	import Toolbar from './Toolbar.svelte';
 	import FileTree from './tree/FileTree.svelte';
 
 	let paletteOpen = $state(false);
+	let chatOpen = $state(false);
 
 	$effect(() => {
 		if (!paletteOpen) searchState.reset();
@@ -77,13 +79,18 @@
 				terminalState.toggle();
 			}
 		}
+
+		if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'l') {
+			e.preventDefault();
+			chatOpen = !chatOpen;
+		}
 	}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="flex h-screen flex-col">
-	<Toolbar />
+	<Toolbar bind:chatOpen />
 	<Resizable.PaneGroup direction="horizontal" class="flex-1">
 		<Resizable.Pane defaultSize={25} minSize={15} maxSize={50}>
 			<ScrollArea class="h-full">
@@ -91,7 +98,7 @@
 			</ScrollArea>
 		</Resizable.Pane>
 		<Resizable.Handle withHandle />
-		<Resizable.Pane defaultSize={75}>
+		<Resizable.Pane defaultSize={chatOpen ? 45 : 75}>
 			<Resizable.PaneGroup direction="vertical">
 				<Resizable.Pane
 					defaultSize={terminalState.open ? 70 : 100}
@@ -107,6 +114,12 @@
 				{/if}
 			</Resizable.PaneGroup>
 		</Resizable.Pane>
+		{#if chatOpen}
+			<Resizable.Handle withHandle />
+			<Resizable.Pane defaultSize={30} minSize={20} maxSize={50}>
+				<AiChat />
+			</Resizable.Pane>
+		{/if}
 	</Resizable.PaneGroup>
 	<StatusBar />
 	<CommandPalette

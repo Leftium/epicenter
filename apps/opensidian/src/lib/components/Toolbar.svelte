@@ -5,9 +5,12 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { toast } from '@epicenter/ui/sonner';
+	import MessageSquareIcon from '@lucide/svelte/icons/message-square';
 	import { fs } from '$lib/client';
 	import AccountPopover from '$lib/components/AccountPopover.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';
+
+	let { chatOpen = $bindable(false) }: { chatOpen: boolean } = $props();
 
 	let seeding = $state(false);
 
@@ -131,6 +134,22 @@
 			<Tooltip.Content>Delete selected item</Tooltip.Content>
 		</Tooltip.Root>
 		<div class="ml-auto flex items-center gap-1">
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							variant={chatOpen ? 'secondary' : 'ghost'}
+							size="sm"
+							onclick={() => (chatOpen = !chatOpen)}
+						>
+							<MessageSquareIcon class="size-3.5" />
+							AI Chat
+						</Button>
+					{/snippet}
+				</Tooltip.Trigger>
+				<Tooltip.Content>Toggle AI chat (⌘⇧L)</Tooltip.Content>
+			</Tooltip.Root>
 			<Button variant="ghost" size="sm" href="/about">About</Button>
 			<AccountPopover />
 			<Tooltip.Root>

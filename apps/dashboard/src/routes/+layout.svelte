@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { AuthForm } from '@epicenter/svelte/auth-form';
-	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
 	import { auth } from '$lib/auth';
+	import UserMenu from '$lib/components/UserMenu.svelte';
 	import { queryClient } from '$lib/query/client';
 	import '../app.css';
 
@@ -21,10 +21,7 @@
 			<header class="border-b bg-background/95 backdrop-blur">
 				<div class="mx-auto max-w-5xl px-6 flex items-center justify-between h-14">
 					<span class="text-sm font-semibold tracking-tight">Epicenter</span>
-					<div class="flex items-center gap-3">
-						<span class="text-sm text-muted-foreground">{auth.user?.email}</span>
-						<Button variant="ghost" size="sm" onclick={() => auth.signOut()}>Sign out</Button>
-					</div>
+					<UserMenu />
 				</div>
 			</header>
 			<div class="mx-auto max-w-5xl px-6 py-12">

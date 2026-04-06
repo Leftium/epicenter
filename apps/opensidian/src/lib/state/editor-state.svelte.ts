@@ -71,7 +71,6 @@ function createEditorState() {
 
 	// ── Compartments ────────────────────────────────────────────
 	const vimCompartment = new Compartment();
-	const darkModeCompartment = new Compartment();
 
 	// ── Update listener (CM6 → $state bridge) ───────────────────
 	const listener = EditorView.updateListener.of((update) => {
@@ -111,11 +110,11 @@ function createEditorState() {
 		},
 
 		/**
-		 * Build the editor state extensions.
+		 * Build a fresh set of CM6 extensions for a new EditorView.
 		 *
-		 * Returns compartments for vim mode and dark theme detection,
-		 * plus the update listener that bridges CM6 → `$state`.
-		 * Call once per `EditorView` creation—do NOT reuse across views.
+		 * Returns the vim compartment, dark theme, and the update listener
+		 * that bridges CM6 → `$state`. Call once per view creation—do NOT
+		 * reuse across views.
 		 *
 		 * Must be placed **before** other keymap extensions per the
 		 * `@replit/codemirror-vim` README—vim uses ViewPlugin eventHandlers
@@ -124,12 +123,12 @@ function createEditorState() {
 		 * @param isDark Whether the editor is in dark mode. Passed by
 		 * the component that owns the `mode-watcher` dependency.
 		 */
-		extension(isDark: boolean): Extension[] {
+		createExtensions(isDark: boolean): Extension[] {
 			const vimEnabled = vimPreference.current;
 			if (vimEnabled) applyLineWrapRemaps();
 			return [
 				vimCompartment.of(vimEnabled ? vim() : []),
-				darkModeCompartment.of(isDark ? EditorView.theme({}, { dark: true }) : []),
+				isDark ? EditorView.theme({}, { dark: true }) : [],
 				listener,
 			];
 		},
@@ -173,22 +172,6 @@ function createEditorState() {
 				effects: vimCompartment.reconfigure(next ? vim() : []),
 			});
 		},
-
-		/**
-		 * Sync CM6's dark theme facet with the current color mode.
-		 *
-		 * Call from an `$effect` that tracks `mode.current`. Reconfigures
-		 * the dark mode compartment so CM6's base theme rules (`&dark`
-		 * selectors for selection, cursor, etc.) activate correctly.
-		 */
-		syncDarkMode(isDark: boolean) {
-			view?.dispatch({
-				effects: darkModeCompartment.reconfigure(
-					isDark ? EditorView.theme({}, { dark: true }) : [],
-				),
-			});
-		},
-	};
 }
 
 export const editorState = createEditorState();

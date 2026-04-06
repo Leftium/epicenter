@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as Card from '@epicenter/ui/card';
 	import { Skeleton } from '@epicenter/ui/skeleton';
+	import * as Empty from '@epicenter/ui/empty';
 	import * as Table from '@epicenter/ui/table';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { FEATURE_IDS } from '$lib/constants';
@@ -53,9 +54,12 @@
 		{:else if usage.isError}
 			<p class="text-sm text-destructive">Failed to load model data.</p>
 		{:else if sortedModels.length === 0}
-			<p class="text-sm text-muted-foreground py-4 text-center">
-				No usage data yet.
-			</p>
+			<Empty.Root class="py-4 border-0">
+				<Empty.Content>
+					<Empty.Title>No usage data yet</Empty.Title>
+					<Empty.Description>Your most-used models will appear here.</Empty.Description>
+				</Empty.Content>
+			</Empty.Root>
 		{:else}
 			<Table.Root>
 				<Table.Header>

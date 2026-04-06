@@ -4,7 +4,7 @@
 	import { Progress } from '@epicenter/ui/progress';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { FEATURE_IDS } from '$lib/constants';
+	import { FEATURE_IDS } from '@epicenter/api/billing-plans';
 	import { balanceQueryOptions } from '$lib/query/billing';
 
 	const balance = createQuery(() => balanceQueryOptions());
@@ -38,6 +38,24 @@
 			? Math.max(0, Math.ceil((resetTimestamp - Date.now()) / 86_400_000))
 			: null,
 	);
+
+	/** Find the active non-addOn subscription to check for trial status. */
+	const subscription = $derived(
+		balance.data?.subscriptions?.find((s) => !s.addOn) ?? null,
+	);
+	const trialEndsAt = $derived(subscription?.trialEndsAt ?? null);
+	const trialDaysLeft = $derived(
+		trialEndsAt !== null
+			? Math.max(0, Math.ceil((trialEndsAt - Date.now()) / 86_400_000))
+			: null,
+	);
+	const trialPlanName = $derived(
+		subscription?.plan?.name ??
+			(subscription?.planId
+				? subscription.planId.charAt(0).toUpperCase() + subscription.planId.slice(1)
+				: 'Free'),
+	);
+	const trialIsUrgent = $derived(trialDaysLeft !== null && trialDaysLeft <= 3);
 </script>
 
 {#if balance.isPending}
@@ -63,6 +81,16 @@
 			{#if daysUntilReset !== null}
 				<Badge variant="secondary" class="text-xs">
 					Resets in {daysUntilReset} day{daysUntilReset === 1 ? '' : 's'}
+				</Badge>
+			{/if}
+			{#if trialDaysLeft !== null}
+				<Badge
+					variant={trialIsUrgent ? 'destructive' : 'outline'}
+					class={trialIsUrgent
+						? ''
+						: 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400'}
+				>
+					{trialPlanName} Trial — {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left
 				</Badge>
 			{/if}
 		</Card.Header>

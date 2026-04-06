@@ -28,6 +28,7 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@epicenter/api": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",

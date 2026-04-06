@@ -146,19 +146,8 @@
 	<div class="flex items-center justify-between mb-4">
 		<h2 class="text-lg font-semibold">Plans</h2>
 		<div class="flex items-center gap-2 rounded-lg bg-muted p-1 text-xs">
-			<button
-				class="rounded-md px-3 py-1 transition-colors {!isAnnual ? 'bg-background shadow-sm' : 'text-muted-foreground'}"
-				onclick={() => (isAnnual = false)}
-			>
-				Monthly
-			</button>
-			<button
-				class="rounded-md px-3 py-1 transition-colors {isAnnual ? 'bg-background shadow-sm' : 'text-muted-foreground'}"
-				onclick={() => (isAnnual = true)}
-			>
-				Annual
-				<span class="ml-1 text-emerald-500">Save ~17%</span>
-			</button>
+			<Button variant="ghost" size="sm" class="rounded-md {!isAnnual ? 'bg-background shadow-sm' : 'text-muted-foreground'}" onclick={() => (isAnnual = false)}>Monthly</Button>
+			<Button variant="ghost" size="sm" class="rounded-md {isAnnual ? 'bg-background shadow-sm' : 'text-muted-foreground'}" onclick={() => (isAnnual = true)}>Annual <span class="ml-1 text-emerald-500">Save ~17%</span></Button>
 		</div>
 	</div>
 
@@ -203,7 +192,7 @@
 					<Card.Footer>
 						{#if isCurrent}
 							<Button variant="outline" class="w-full" disabled>
-								Current plan{#if trialEndsAt} (trial){/if}
+							Current plan{#if trialEndsAt}&nbsp;(trial){/if}
 							</Button>
 						{:else}
 							<Button

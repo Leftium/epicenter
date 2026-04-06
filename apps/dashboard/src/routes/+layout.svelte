@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { AuthForm } from '@epicenter/svelte/auth-form';
+	import { Button } from '@epicenter/ui/button';
+	import * as Card from '@epicenter/ui/card';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
@@ -16,34 +18,31 @@
 <QueryClientProvider client={queryClient}>
 	<div class="min-h-screen bg-background text-foreground">
 		{#if auth.isAuthenticated}
-			<div class="mx-auto max-w-5xl px-6 py-12">
-				<header class="mb-10 flex items-center justify-between">
-					<div>
-						<h1 class="text-2xl font-semibold tracking-tight">Billing</h1>
-						<p class="mt-1 text-sm text-muted-foreground">
-							Manage your plan, credits, and usage.
-						</p>
+			<header class="border-b bg-background/95 backdrop-blur">
+				<div class="mx-auto max-w-5xl px-6 flex items-center justify-between h-14">
+					<span class="text-sm font-semibold tracking-tight">Epicenter</span>
+					<div class="flex items-center gap-3">
+						<span class="text-sm text-muted-foreground">{auth.user?.email}</span>
+						<Button variant="ghost" size="sm" onclick={() => auth.signOut()}>Sign out</Button>
 					</div>
-					<button
-						class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-						onclick={() => auth.signOut()}
-					>
-						Sign out
-					</button>
-				</header>
+				</div>
+			</header>
+			<div class="mx-auto max-w-5xl px-6 py-12">
 				{@render children()}
 			</div>
 		{:else}
 			<div class="flex min-h-screen items-center justify-center">
-				<AuthForm
-					{auth}
-					syncNoun="billing"
-					onSocialSignIn={() =>
-						auth.signInWithSocialRedirect({
-							provider: 'google',
-							callbackURL: window.location.href,
-						})}
-				/>
+				<Card.Root class="w-full max-w-sm p-6">
+					<AuthForm
+						{auth}
+						syncNoun="billing"
+						onSocialSignIn={() =>
+							auth.signInWithSocialRedirect({
+								provider: 'google',
+								callbackURL: window.location.href,
+							})}
+					/>
+				</Card.Root>
 			</div>
 		{/if}
 	</div>

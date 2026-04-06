@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { defaultKeymap, indentWithTab } from '@codemirror/commands';
-	import { getLanguageExtensions } from './extensions/language-support';
-	import { EditorState, type Extension } from '@codemirror/state';
+	import { getHighlightStyle, getLanguageExtensions } from './extensions/language-support';
+	import { Compartment, EditorState, type Extension } from '@codemirror/state';
 	import {
 		drawSelection,
 		EditorView,
@@ -25,6 +25,7 @@
 	} = $props();
 
 	let container: HTMLDivElement | undefined = $state();
+	const highlightCompartment = new Compartment();
 	let currentView: EditorView | undefined = $state();
 	$effect(() => {
 		if (!container) return;
@@ -41,6 +42,7 @@
 					drawSelection(),
 					EditorView.lineWrapping,
 					...getLanguageExtensions(filename),
+					highlightCompartment.of(getHighlightStyle(filename, mode.current === 'dark')),
 					yCollab(ytext, null),
 					placeholder('Empty file'),
 					...extraExtensions,
@@ -84,29 +86,38 @@
 
 	// Sync CM6 dark theme facet when color mode changes
 	$effect(() => {
-		editorState.syncDarkMode(mode.current === 'dark');
+		const isDark = mode.current === 'dark';
+		editorState.syncDarkMode(isDark);
+		currentView?.dispatch({
+			effects: highlightCompartment.reconfigure(getHighlightStyle(filename, isDark)),
+		});
 	});
 	// Chrome blurs contenteditable when Escape is pressed, moving focus
-	// to <body> before the keydown event dispatches. This means CM6 and
-	// vim never see the Escape key. We intercept it at the window capture
-	// phase, refocus the editor, and forward the key to vim directly.
+	// to <body> before the keydown event dispatches to the editor's DOM.
+	// This means CM6 and vim never see the Escape key.
+	//
+	// Fix: attach a capture-phase keydown listener directly on the
+	// contenteditable element (view.contentDOM). Capture phase on the
+	// target element fires BEFORE Chrome processes the blur. We call
+	// preventDefault() to block the blur, then let vim handle Escape.
 	// See: https://github.com/replit/codemirror-vim/issues/138
 	$effect(() => {
+		const view = currentView;
+		if (!view) return;
+
 		const handler = (e: KeyboardEvent) => {
 			if (e.key !== 'Escape') return;
-			const view = currentView;
-			if (!view) return;
-
 			const cm = getCM(view);
-			console.log('[vim-esc]', { cm: !!cm, vim: !!cm?.state?.vim, insert: cm?.state?.vim?.insertMode });
 			if (!cm?.state?.vim) return;
 
+			// Prevent Chrome from blurring the contenteditable
 			e.preventDefault();
-			view.focus();
+			// Forward to vim
 			Vim.handleKey(cm, '<Esc>', 'user');
 		};
-		window.addEventListener('keydown', handler, true);
-		return () => window.removeEventListener('keydown', handler, true);
+		// Capture phase on the contenteditable itself — fires before blur
+		view.contentDOM.addEventListener('keydown', handler, true);
+		return () => view.contentDOM.removeEventListener('keydown', handler, true);
 	});
 </script>
 

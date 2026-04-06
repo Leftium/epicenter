@@ -1,3 +1,4 @@
+import { autocompletion } from '@codemirror/autocomplete';
 import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { javascript } from '@codemirror/lang-javascript';
@@ -9,12 +10,11 @@ import {
 	syntaxHighlighting,
 } from '@codemirror/language';
 import type { Extension } from '@codemirror/state';
+import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark';
 import { markdownHighlighting } from './markdown-highlight';
 
 type LanguageConfig = {
 	language: () => LanguageSupport;
-	/** Extra extensions to include when this language is active. */
-	extensions?: Extension[];
 };
 
 const LANGUAGE_MAP: Record<string, LanguageConfig> = {
@@ -25,48 +25,75 @@ const LANGUAGE_MAP: Record<string, LanguageConfig> = {
 	'.css': { language: css },
 	'.html': { language: html },
 	'.json': { language: json },
-	'.md': {
-		language: markdown,
-		extensions: [markdownHighlighting],
-	},
+	'.md': { language: markdown },
 };
 
+function getExtension(filename: string): string {
+	const dotIndex = filename.lastIndexOf('.');
+	return dotIndex >= 0 ? filename.slice(dotIndex).toLowerCase() : '';
+}
+
 /**
- * Get the CodeMirror language extension and highlight style for a filename.
+ * Get the CodeMirror language and autocompletion extensions for a filename.
  *
- * Matches the file extension against known languages. Markdown files get
- * the custom `markdownHighlighting` style; all other languages use
- * CodeMirror's `defaultHighlightStyle`. Unknown extensions fall back
- * to plain markdown (since opensidian is primarily a note-taking app).
+ * Matches the file extension against known languages. Code files include
+ * autocompletion; markdown files do not (wikilink autocomplete is added
+ * separately via `ContentEditor`). Unknown extensions fall back to
+ * markdown since opensidian is primarily a note-taking app.
+ *
+ * Highlight style is handled separately via {@link getHighlightStyle}
+ * so it can live in a compartment for live dark/light switching.
  *
  * @example
  * ```typescript
  * const extensions = getLanguageExtensions('index.ts');
- * // → [javascript({ typescript: true }), syntaxHighlighting(defaultHighlightStyle)]
+ * // → [javascript({ typescript: true }), autocompletion()]
  *
  * const mdExtensions = getLanguageExtensions('README.md');
- * // → [markdown(), markdownHighlighting]
+ * // → [markdown()]
  * ```
  */
 export function getLanguageExtensions(filename: string): Extension[] {
-	const dotIndex = filename.lastIndexOf('.');
-	const ext = dotIndex >= 0 ? filename.slice(dotIndex).toLowerCase() : '';
+	const ext = getExtension(filename);
 	const config = LANGUAGE_MAP[ext];
 
-	// Unknown extension → fall back to markdown (opensidian is a note-taking app)
-	if (!config) {
-		return [markdown(), markdownHighlighting];
+	if (!config) return [markdown()];
+	if (ext === '.md') return [config.language()];
+
+	return [config.language(), autocompletion()];
+}
+
+/**
+ * Get the appropriate syntax highlight style for a filename and color mode.
+ *
+ * - Markdown files use the custom `markdownHighlighting` (CSS-var based,
+ *   adapts to both light and dark themes automatically).
+ * - Code files use `oneDarkHighlightStyle` in dark mode and
+ *   `defaultHighlightStyle` in light mode.
+ *
+ * Return value is meant to live inside a `Compartment` so the editor
+ * can switch highlight styles without rebuilding the entire view.
+ *
+ * @example
+ * ```typescript
+ * const highlightCompartment = new Compartment();
+ * // In extensions:
+ * highlightCompartment.of(getHighlightStyle('index.ts', true))
+ * // On theme change:
+ * view.dispatch({ effects: highlightCompartment.reconfigure(getHighlightStyle('index.ts', false)) })
+ * ```
+ */
+export function getHighlightStyle(
+	filename: string,
+	isDark: boolean,
+): Extension {
+	const ext = getExtension(filename);
+
+	// Markdown highlight style uses CSS custom properties—works in both modes
+	if (ext === '.md' || !LANGUAGE_MAP[ext]) {
+		return markdownHighlighting;
 	}
 
-	// Markdown uses its own custom highlight style
-	if (ext === '.md') {
-		return [config.language(), ...(config.extensions ?? [])];
-	}
-
-	// Code files use defaultHighlightStyle for syntax coloring
-	return [
-		config.language(),
-		syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-		...(config.extensions ?? []),
-	];
+	const style = isDark ? oneDarkHighlightStyle : defaultHighlightStyle;
+	return syntaxHighlighting(style, { fallback: true });
 }

@@ -8,10 +8,9 @@
 	import SunIcon from '@lucide/svelte/icons/sun';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { mode, toggleMode } from 'mode-watcher';
-	import { toast } from 'svelte-sonner';
-	import { api } from '$lib/api';
 	import { auth } from '$lib/auth';
 	import { balanceQueryOptions } from '$lib/query/billing';
+	import { capitalize, getInitials, openBillingPortal } from '$lib/utils';
 
 	const balance = createQuery(() => balanceQueryOptions());
 
@@ -20,35 +19,15 @@
 	);
 	const planName = $derived(
 		subscription?.plan?.name ??
-			(subscription?.planId
-				? subscription.planId.charAt(0).toUpperCase() +
-					subscription.planId.slice(1)
-				: 'Free'),
+			(subscription?.planId ? capitalize(subscription.planId) : 'Free'),
 	);
 	const isOnTrial = $derived(subscription?.trialEndsAt != null);
 
 	const email = $derived(auth.user?.email ?? '');
 	const name = $derived(auth.user?.name ?? '');
 
-	/** Derive initials from name or email for the avatar fallback. */
-	const initials = $derived.by(() => {
-		if (name) {
-			const parts = name.split(' ');
-			return parts.length >= 2
-				? (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase()
-				: name.slice(0, 2).toUpperCase();
-		}
-		return email.slice(0, 2).toUpperCase();
-	});
+	const initials = $derived(getInitials(name, email));
 
-	async function openPortal() {
-		try {
-			const data = await api.billing.portal();
-			if (data.url) window.location.href = data.url;
-		} catch {
-			toast.error('Could not open billing portal.');
-		}
-	}
 
 	const isDark = $derived(mode.current === 'dark');
 </script>
@@ -88,7 +67,7 @@
 		<DropdownMenu.Separator />
 
 		<DropdownMenu.Group>
-			<DropdownMenu.Item onclick={openPortal}>
+			<DropdownMenu.Item onclick={openBillingPortal}>
 				<CreditCardIcon class="mr-2 size-4" />
 				Manage billing
 			</DropdownMenu.Item>

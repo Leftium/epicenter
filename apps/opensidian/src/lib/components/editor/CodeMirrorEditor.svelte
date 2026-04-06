@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { defaultKeymap, indentWithTab } from '@codemirror/commands';
-	import { syntaxTree } from '@codemirror/language';
 	import { EditorState, type Extension } from '@codemirror/state';
 	import {
 		drawSelection,
@@ -29,8 +28,6 @@
 	$effect(() => {
 		if (!container) return;
 		const isDark = mode.current === 'dark';
-		const editorExts = getEditorExtensions(filename, isDark);
-		console.log('[CM] creating view', { filename, isDark, editorExts });
 		const view = new EditorView({
 			state: EditorState.create({
 				doc: ytext.toString(),
@@ -40,7 +37,7 @@
 					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
 					drawSelection(),
 					EditorView.lineWrapping,
-					...editorExts,
+					...getEditorExtensions(filename, isDark),
 					yCollab(ytext, null),
 					placeholder('Empty file'),
 					...extraExtensions,
@@ -62,10 +59,6 @@
 			parent: container,
 		});
 		editorState.attach(view);
-		// Diagnostic: check which parser is active
-		const tree = syntaxTree(view.state);
-		console.log('[CM] parser top node:', tree.topNode.name, 'tree length:', tree.length);
-		console.log('[CM] first child nodes:', tree.topNode.firstChild?.name, tree.topNode.lastChild?.name);
 		return () => {
 			view.destroy();
 			editorState.detach();

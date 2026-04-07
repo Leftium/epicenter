@@ -1,20 +1,20 @@
 /**
- * Bridge between Epicenter workspace actions and TanStack AI tool types.
+ * Bridge between workspace actions and TanStack AI's tool system.
  *
- * Converts a workspace `Actions` tree into two representations:
+ * TanStack AI needs tools in two places:
  *
- * - **`tools`** — executable `AnyClientTool[]` for the browser. Passed to
- *   `ChatClientOptions.tools` so the `ChatClient` auto-executes tool calls locally.
- * - **`definitions`** — wire-safe `ToolDefinition[]` for the HTTP request body.
- *   Sent to the server so `chat()` knows what tools exist without needing them
- *   hardcoded. The server passes these directly to `chat({ tools })`.
+ * 1. **In the browser** — `createChat({ tools })` expects an array of
+ *    `AnyClientTool` objects with `execute` functions so the `ChatClient`
+ *    can run tool calls locally without a server round-trip.
  *
- * Each definition includes the action's `title` when declared, so consumers
- * can show human-readable labels without re-walking the action tree.
+ * 2. **On the server** — the HTTP request body needs a JSON-serializable
+ *    description of each tool (name, description, input schema) so the
+ *    server can forward them to the AI provider. Functions like `execute`
+ *    can't travel over the wire.
  *
- * This multi-representation design exists because the app does not control the
- * backend server—tools must travel over the wire as JSON in the request body,
- * while the browser needs executable handlers locally.
+ * This module converts workspace `Actions` (your `defineQuery` /
+ * `defineMutation` tree) into both representations at once, so you don't
+ * have to build them by hand.
  *
  * @module
  */
@@ -52,29 +52,20 @@ type ActionNames<T extends Actions> = {
 }[keyof T & string];
 
 /**
- * Wire-safe tool definition sent to the server as part of the HTTP request body.
+ * JSON-serializable description of a tool, sent to the server in the HTTP
+ * request body. This is what the AI provider sees—it tells the LLM what
+ * tools exist, what arguments they accept, and whether they need user
+ * approval before running.
  *
- * The server receives these and passes them directly to TanStack AI's
- * `chat({ tools })`. Every field the server needs must be included here—anything
- * stripped is lost forever.
+ * This is the "wire" counterpart to TanStack AI's `AnyClientTool`. The
+ * client tool has an `execute` function (not JSON-serializable); this type
+ * has everything EXCEPT `execute`, so it can travel in a `fetch()` body.
  *
- * Compatible with TanStack AI's `Tool` interface minus `execute` (not
- * JSON-serializable) and `__toolSide` (`chat()` uses `execute` presence
- * for routing instead).
+ * Includes `title` when the action declares one, so UI components can show
+ * human-readable labels (e.g. "Close Tabs" instead of "tabs_close")
+ * without needing a separate lookup.
  *
- * ### Field rationale
- *
- * - **`name`** — Identity. The LLM and server use this to route tool calls.
- * - **`title`** — Human-readable display name for UI surfaces and MCP annotations.
- *   Optional because not every action declares a title.
- * - **`description`** — The LLM reads this to decide when to call the tool.
- * - **`inputSchema`** — The LLM uses this to generate valid arguments. Normalized
- *   with `properties` and `required` guaranteed present because some providers
- *   (notably Anthropic) reject schemas without them.
- * - **`needsApproval`** — Present on all mutations (policy: mutations always
- *   require user confirmation). Queries omit it entirely.
- *
- * @see {@link actionsToAiTools} for how actions are converted into these definitions.
+ * @see {@link actionsToAiTools} for how actions are converted into these.
  */
 export type ToolDefinition = {
 	name: string;
@@ -89,31 +80,37 @@ export type ToolDefinition = {
 // ---------------------------------------------------------------------------
 
 /**
- * Convert a workspace action tree into AI tool representations.
+ * Convert a workspace action tree into the two representations TanStack AI
+ * needs for AI-powered chat with tool calling.
  *
- * Returns an object with two properties derived from the same action tree:
+ * ### What you get
  *
- * - **`tools`** — Executable `AnyClientTool[]` with `execute` wired to action
- *   handlers. Pass to `ChatClientOptions.tools` for local auto-execution.
- * - **`definitions`** — Wire-safe `ToolDefinition[]` with schemas normalized
- *   for provider compatibility and `title` included when the action declares one.
- *   Send to the server as JSON in the request body.
+ * - **`.tools`** — Pass these to `createChat({ tools })`. They're TanStack AI
+ *   `AnyClientTool` objects with `execute` wired to your action handlers.
+ *   When the LLM calls a tool, `ChatClient` runs the matching `execute`
+ *   function in the browser automatically—no server round-trip needed.
+ *
+ * - **`.definitions`** — Send these to the server in your HTTP request body.
+ *   They're the same tools minus `execute` (which can't be serialized to
+ *   JSON), plus normalized input schemas. The server forwards them to the AI
+ *   provider so the LLM knows what tools are available. Each definition also
+ *   includes `title` when the action declares one, so UI components can show
+ *   human-readable labels directly.
+ *
+ * ### How it works
+ *
+ * Your workspace actions (`defineQuery` / `defineMutation`) are a nested tree.
+ * This function flattens them into a flat tool list with `_`-separated names:
  *
  * ```
- * workspace.actions (nested tree)
- *       │
- *       ▼  actionsToAiTools()
- * ┌─────────────────────────────────────────────────────────────┐
- * │                                                             │
- * │  .tools        AnyClientTool[] (browser, has execute)    │
- * │  .definitions  ToolDefinition[] (wire-safe JSON + title)  │
- * │                                                             │
- * └─────────────────────────────────────────────────────────────┘
+ * { tabs: { close: defineMutation(...) } }  →  tool named "tabs_close"
+ * { files: { read: defineQuery(...) } }      →  tool named "files_read"
  * ```
  *
- * Tool names are path segments joined with `_` (e.g. `tabs_search`, `files_read`).
- * Mutations get `needsApproval: true`; queries omit it. Input schemas are
- * normalized for Anthropic compatibility (`properties` and `required` guaranteed).
+ * Mutations automatically get `needsApproval: true` so the chat UI can show
+ * a confirmation dialog before executing them. Queries run immediately.
+ *
+ * @param actions - The workspace action tree from `workspace.actions`.
  *
  * @example
  * ```ts
@@ -121,14 +118,22 @@ export type ToolDefinition = {
  *
  * export const workspaceAiTools = actionsToAiTools(workspace.actions);
  *
- * // ChatClient — local execution
- * createChat({ tools: workspaceAiTools.tools });
+ * // Pass .tools to TanStack AI's ChatClient for local execution
+ * const chat = createChat({
+ *   tools: workspaceAiTools.tools,
+ *   connection: fetchServerSentEvents('/ai/chat', () => ({
+ *     body: {
+ *       data: {
+ *         // Pass .definitions to the server so the LLM knows what tools exist
+ *         tools: workspaceAiTools.definitions,
+ *       },
+ *     },
+ *   })),
+ * });
  *
- * // HTTP body — wire payload
- * fetch('/chat', { body: JSON.stringify({ tools: workspaceAiTools.definitions }) });
- *
- * // UI — display title for a tool call
- * workspaceAiTools.definitions.find(d => d.name === 'tabs_close')?.title // → 'Close Tabs'
+ * // Show a friendly title in the UI when a tool call comes back
+ * const title = workspaceAiTools.definitions
+ *   .find(d => d.name === 'tabs_close')?.title; // → 'Close Tabs'
  * ```
  */
 export function actionsToAiTools<TActions extends Actions>(

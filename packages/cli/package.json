@@ -21,7 +21,7 @@
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
 	"bin": {
-		"epicenter": "./src/bin.ts"
+		"epicenter": "./bin/epicenter.mjs"
 	},
 	"dependencies": {
 		"@epicenter/workspace": "workspace:*",

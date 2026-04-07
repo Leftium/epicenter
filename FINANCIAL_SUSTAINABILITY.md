@@ -16,7 +16,7 @@ We have other options if that doesn't work, of course. We could pursue a traditi
 
 ## The split
 
-MIT: `packages/workspace`, `packages/ui`, `packages/svelte-utils`, `packages/constants`, `packages/ai`, `packages/cli`, `packages/filesystem`, `packages/vault`, `packages/sync-client`, and all apps except the sync server.
+MIT: `packages/workspace`, `packages/ui`, `packages/svelte-utils`, `packages/constants`, `packages/ai`, `packages/cli`, `packages/filesystem`, `packages/sync-client`, and all apps except the sync server.
 
 AGPL-3.0: `apps/api` (sync server) and `packages/sync` (sync protocol).
 

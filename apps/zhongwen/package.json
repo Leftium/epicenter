@@ -1,5 +1,6 @@
 {
 	"name": "@epicenter/zhongwen",
+	"description": "Bilingual Chinese-English chat app for learning Mandarin",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",

@@ -1,5 +1,6 @@
 {
 	"name": "@epicenter/fuji",
+	"description": "Local-first personal CMS with collaborative rich-text editing",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",

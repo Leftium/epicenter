@@ -23,10 +23,7 @@
 		...rest
 	}: CopyButtonProps = $props();
 
-	// svelte-ignore state_referenced_locally - intentional one-time size adjustment based on initial children
-	if (size === 'icon' && children) {
-		size = 'default';
-	}
+	let effectiveSize = $derived(size === 'icon' && children ? 'default' : size);
 
 	// svelte-ignore state_referenced_locally - clipboard instance created once with initial copyFn
 	const clipboard = new UseClipboard({ copyFn });
@@ -36,7 +33,7 @@
 	{...rest}
 	bind:ref
 	{variant}
-	{size}
+	size={effectiveSize}
 	{tabindex}
 	class={cn('flex items-center gap-2', className)}
 	type="button"

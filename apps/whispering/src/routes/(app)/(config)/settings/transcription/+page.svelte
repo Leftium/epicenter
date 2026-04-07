@@ -99,8 +99,7 @@
 
 	const elevenlabsModelLabel = $derived(
 		elevenlabsModelItems.find(
-			(i) =>
-				i.value === settings.get('transcription.elevenlabs.model'),
+			(i) => i.value === settings.get('transcription.elevenlabs.model'),
 		)?.label,
 	);
 
@@ -529,7 +528,7 @@
 						title="Parakeet Model"
 						description="Parakeet is an NVIDIA NeMo model optimized for fast local transcription. It automatically detects the language and doesn't support manual language selection."
 						fileSelectionMode="directory"
-					bind:value={() => deviceConfig.get('transcription.parakeet.modelPath'),
+						bind:value={() => deviceConfig.get('transcription.parakeet.modelPath'),
 						(v) => deviceConfig.set('transcription.parakeet.modelPath', v)}
 					>
 						{#snippet prebuiltFooter()}
@@ -636,7 +635,7 @@
 						title="Moonshine Model"
 						description="Moonshine is an efficient ONNX model by UsefulSensors. English-only with fast inference and small model sizes (~30 MB)."
 						fileSelectionMode="directory"
-					bind:value={() => deviceConfig.get('transcription.moonshine.modelPath'),
+						bind:value={() => deviceConfig.get('transcription.moonshine.modelPath'),
 						(v) => deviceConfig.set('transcription.moonshine.modelPath', v)}
 					>
 						{#snippet prebuiltFooter()}
@@ -717,6 +716,7 @@
 												>moonshine-base-en</code
 											>). The variant (tiny/base) determines model architecture.
 										</p>
+									</div>
 								</Card.Content>
 							</Card.Root>
 						{/snippet}

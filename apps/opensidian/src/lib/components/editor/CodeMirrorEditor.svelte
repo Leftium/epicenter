@@ -28,13 +28,12 @@
 	$effect(() => {
 		if (!container) return;
 		const isDark = mode.current === 'dark';
-		console.log('[CM] creating view', { filename, isDark });
 		const view = new EditorView({
 			state: EditorState.create({
 				doc: ytext.toString(),
 				extensions: [
 					// vim() must be BEFORE other keymaps per @replit/codemirror-vim README.
-					...editorState.extension(isDark),
+					...editorState.createExtensions(isDark),
 					keymap.of([...yUndoManagerKeymap, ...defaultKeymap, indentWithTab]),
 					drawSelection(),
 					EditorView.lineWrapping,
@@ -60,7 +59,6 @@
 			parent: container,
 		});
 		editorState.attach(view);
-
 		return () => {
 			view.destroy();
 			editorState.detach();

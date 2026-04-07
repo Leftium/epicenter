@@ -35,7 +35,6 @@
 		"@better-auth/oauth-provider": "catalog:",
 		"@epicenter/sync": "workspace:*",
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/dashboard": "workspace:*",
 		"@hono/standard-validator": "catalog:",
 		"@tanstack/ai": "catalog:",
 		"@tanstack/ai-anthropic": "catalog:",

@@ -47,7 +47,7 @@
 			</Empty.Media>
 		</Empty.Root>
 	{/if}
-{:then}
+{:then _}
 	{@render children()}
 {:catch err}
 	{#if error}

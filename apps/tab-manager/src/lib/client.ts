@@ -2,8 +2,8 @@
  * Workspace client — browser-specific wiring and AI-callable actions.
  *
  * Imports the definition from `definition.ts` and adds IndexedDB persistence,
- * BroadcastChannel sync, WebSocket sync, encryption, and action handlers
- * that call Chrome extension APIs.
+ * WebSocket sync (with built-in BroadcastChannel cross-tab sync), encryption,
+ * and action handlers that call Chrome extension APIs.
  *
  * Live browser state (tabs, windows, tab groups) is NOT stored here—Chrome is
  * the sole authority for ephemeral browser state. See `browser-state.svelte.ts`.
@@ -17,7 +17,6 @@ import {
 	iterateActions,
 } from '@epicenter/workspace';
 import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
-import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import Type from 'typebox';
 import { Ok, tryAsync } from 'wellcrafted/result';
@@ -100,7 +99,6 @@ async function registerDevice(): Promise<void> {
 function buildWorkspaceClient() {
 	const client = createTabManagerWorkspace()
 		.withExtension('persistence', indexeddbPersistence)
-		.withExtension('broadcast', broadcastChannelSync)
 		.withExtension(
 			'sync',
 			createSyncExtension({

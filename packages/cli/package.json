@@ -8,7 +8,6 @@
 	},
 	"dependencies": {
 		"@epicenter/workspace": "workspace:*",
-		"jsrepo": "catalog:",
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
 		"yargs": "catalog:",

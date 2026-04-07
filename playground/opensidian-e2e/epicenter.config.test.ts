@@ -90,12 +90,12 @@ describe('e2e: opensidian workspace', () => {
 
 		const folder = files.find((f) => f.type === 'folder');
 		expect(folder).toBeDefined();
-		expect(folder!.name).toBe('My Notes');
+		expect(folder?.name).toBe('My Notes');
 
 		const file = files.find((f) => f.type === 'file');
 		expect(file).toBeDefined();
-		expect(file!.name).toBe('hello.md');
-		expect(file!.parentId).toBe(folderId);
+		expect(file?.name).toBe('hello.md');
+		expect(file?.parentId).toBe(folderId);
 
 		await client.dispose();
 	});
@@ -121,11 +121,11 @@ describe('e2e: opensidian workspace', () => {
 		expect(files).toHaveLength(2);
 
 		const folder = files.find((f) => f.type === 'folder');
-		expect(folder!.name).toBe('My Notes');
+		expect(folder?.name).toBe('My Notes');
 
 		const file = files.find((f) => f.type === 'file');
-		expect(file!.name).toBe('hello.md');
-		expect(file!.parentId).toBe(folderId);
+		expect(file?.name).toBe('hello.md');
+		expect(file?.parentId).toBe(folderId);
 
 		await client.dispose();
 	});

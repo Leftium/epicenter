@@ -18,27 +18,15 @@ const BC_ORIGIN = Symbol('bc-sync');
  * No-ops gracefully when `BroadcastChannel` is unavailable (Node.js, SSR,
  * older browsers).
  *
- * Works directly as an extension factory — destructures `ydoc` from the
- * workspace client context. Chain after persistence and before WebSocket
- * sync for optimal ordering: local state loads first, then instant local
- * sync, then server sync.
- *
- * @example Persistence + BroadcastChannel + WebSocket (recommended)
- * ```typescript
- * import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
- * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
- * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
- *
- * createWorkspace(definition)
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('broadcast', broadcastChannelSync)
- *   .withWorkspaceExtension('sync', createSyncExtension({
- *     url: (id) => `ws://localhost:3913/rooms/${id}`,
- *   }))
- * ```
+ * Included automatically by `createSyncExtension`—most apps don't need to
+ * register this separately. Use the standalone export only when you want
+ * cross-tab sync without a WebSocket server (e.g., offline-only apps).
  *
  * @example Standalone (no server, local tabs only)
  * ```typescript
+ * import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
+ * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
+ *
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('broadcast', broadcastChannelSync)

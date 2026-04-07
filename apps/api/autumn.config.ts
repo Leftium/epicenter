@@ -6,6 +6,12 @@ import {
 	PLANS,
 } from './src/billing-plans';
 
+/** Asserts a value is non-null at runtime. Used for plan fields that are null on some tiers. */
+function defined<T>(value: T): NonNullable<T> {
+	if (value == null) throw new Error('Expected defined value in billing plan config');
+	return value as NonNullable<T>;
+}
+
 // ---------------------------------------------------------------------------
 // Features
 // ---------------------------------------------------------------------------
@@ -56,7 +62,7 @@ export const pro = plan({
 	id: PLAN_IDS.pro,
 	name: p.name,
 	group: p.group,
-	price: p.price!,
+	price: defined(p.price),
 	items: [
 		item({
 			featureId: aiCredits.id,
@@ -86,7 +92,7 @@ export const ultra = plan({
 	id: PLAN_IDS.ultra,
 	name: u.name,
 	group: u.group,
-	price: u.price!,
+	price: defined(u.price),
 	freeTrial: { durationLength: 14, durationType: 'day', cardRequired: false },
 	autoEnable: true,
 	items: [
@@ -119,7 +125,7 @@ export const max = plan({
 	id: PLAN_IDS.max,
 	name: m.name,
 	group: m.group,
-	price: m.price!,
+	price: defined(m.price),
 	items: [
 		item({
 			featureId: aiCredits.id,
@@ -154,9 +160,9 @@ export const creditTopUp = plan({
 		item({
 			featureId: aiCredits.id,
 			price: {
-				amount: t.credits.overage!.amount,
-				billingUnits: t.credits.overage!.billingUnits,
-				billingMethod: t.credits.overage!.billingMethod,
+				amount: defined(t.credits.overage).amount,
+				billingUnits: defined(t.credits.overage).billingUnits,
+				billingMethod: defined(t.credits.overage).billingMethod,
 				interval: 'month',
 			},
 		}),
@@ -172,7 +178,7 @@ export const proAnnual = plan({
 	id: PLAN_IDS.proAnnual,
 	name: pa.name,
 	group: pa.group,
-	price: pa.price!,
+	price: defined(pa.price),
 	items: [
 		item({
 			featureId: aiCredits.id,
@@ -202,7 +208,7 @@ export const ultraAnnual = plan({
 	id: PLAN_IDS.ultraAnnual,
 	name: ua.name,
 	group: ua.group,
-	price: ua.price!,
+	price: defined(ua.price),
 	items: [
 		item({
 			featureId: aiCredits.id,
@@ -233,7 +239,7 @@ export const maxAnnual = plan({
 	id: PLAN_IDS.maxAnnual,
 	name: ma.name,
 	group: ma.group,
-	price: ma.price!,
+	price: defined(ma.price),
 	items: [
 		item({
 			featureId: aiCredits.id,

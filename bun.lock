@@ -22,7 +22,6 @@
         "@better-auth/drizzle-adapter": "catalog:",
         "@better-auth/oauth-provider": "catalog:",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/dashboard": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "@tanstack/ai": "catalog:",
@@ -88,6 +87,7 @@
       "name": "@epicenter/fuji",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@tanstack/svelte-table": "catalog:",
@@ -194,11 +194,21 @@
       "version": "0.0.1",
       "dependencies": {
         "@codemirror/autocomplete": "^6.20.1",
+        "@epicenter/ai": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
+        "@tanstack/ai": "catalog:",
+        "@tanstack/ai-anthropic": "catalog:",
+        "@tanstack/ai-client": "^0.7.2",
+        "@tanstack/ai-gemini": "catalog:",
+        "@tanstack/ai-grok": "catalog:",
+        "@tanstack/ai-openai": "catalog:",
+        "@tanstack/ai-svelte": "^0.6.7",
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "mode-watcher": "^1.1.0",
+        "typebox": "catalog:",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -208,13 +218,14 @@
         "@codemirror/lang-javascript": "^6.2.5",
         "@codemirror/lang-json": "^6.0.2",
         "@codemirror/lang-markdown": "^6.5.0",
-        "@codemirror/language": "^6.12.2",
+        "@codemirror/language": "^6.12.3",
         "@codemirror/state": "^6.6.0",
         "@codemirror/theme-one-dark": "^6.1.3",
         "@codemirror/view": "^6.41.0",
         "@epicenter/filesystem": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
+        "@lezer/highlight": "^1.2.3",
         "@lucide/svelte": "catalog:",
         "@replit/codemirror-vim": "^6.3.0",
         "@sveltejs/adapter-auto": "catalog:",
@@ -466,7 +477,6 @@
       },
       "dependencies": {
         "@epicenter/workspace": "workspace:*",
-        "jsrepo": "catalog:",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yargs": "catalog:",
@@ -603,25 +613,6 @@
       },
       "peerDependencies": {
         "svelte": ">=5.0.0",
-      },
-    },
-    "packages/vault": {
-      "name": "@epicenter/vault",
-      "version": "0.0.0",
-      "dependencies": {
-        "arktype": "catalog:",
-        "drizzle-arktype": "catalog:",
-        "drizzle-orm": "catalog:",
-        "fflate": "catalog:",
-        "toml": "^3.0.0",
-        "yaml": "^2.8.1",
-      },
-      "devDependencies": {
-        "@standard-schema/spec": "catalog:",
-        "bun-types": "catalog:",
-        "drizzle-kit": "catalog:",
-        "tsx": "^4.20.6",
-        "typescript": "catalog:",
       },
     },
     "packages/workspace": {
@@ -943,8 +934,6 @@
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
 
     "@epicenter/ui": ["@epicenter/ui@workspace:packages/ui"],
-
-    "@epicenter/vault": ["@epicenter/vault@workspace:packages/vault"],
 
     "@epicenter/whispering": ["@epicenter/whispering@workspace:apps/whispering"],
 
@@ -2059,8 +2048,6 @@
     "dotenv": ["dotenv@17.4.0", "", {}, "sha512-kCKF62fwtzwYm0IGBNjRUjtJgMfGapII+FslMHIjMR5KTnwEmBmWLDRSnc3XSNP8bNy34tekgQyDT0hr7pERRQ=="],
 
     "dotenv-expand": ["dotenv-expand@12.0.3", "", { "dependencies": { "dotenv": "^16.4.5" } }, "sha512-uc47g4b+4k/M/SeaW1y4OApx+mtLWl92l5LMPP0GNXctZqELk+YGgOPIIC5elYmUH4OuoK3JLhuRUYegeySiFA=="],
-
-    "drizzle-arktype": ["drizzle-arktype@0.1.3", "", { "peerDependencies": { "arktype": ">=2.0.0", "drizzle-orm": ">=0.36.0" } }, "sha512-X66GB2pz7Nb+NmCZefDXpdoglxjGYnB2yRU5umAK2stVkl4rvV6i6XbMg1+w1HiY/ydC8gJVq4jKAARYazpb3g=="],
 
     "drizzle-kit": ["drizzle-kit@0.31.10", "", { "dependencies": { "@drizzle-team/brocli": "^0.10.2", "@esbuild-kit/esm-loader": "^2.5.5", "esbuild": "^0.25.4", "tsx": "^4.21.0" }, "bin": { "drizzle-kit": "bin.cjs" } }, "sha512-7OZcmQUrdGI+DUNNsKBn1aW8qSoKuTH7d0mYgSP8bAzdFzKoovxEFnoGQp2dVs82EOJeYycqRtciopszwUf8bw=="],
 
@@ -3255,8 +3242,6 @@
     "to-rotated": ["to-rotated@1.0.0", "", {}, "sha512-KsEID8AfgUy+pxVRLsWp0VzCa69wxzUDZnzGbyIST/bcgcrMvTYoFBX/QORH4YApoD89EDuUovx4BTdpOn319Q=="],
 
     "token-types": ["token-types@6.1.2", "", { "dependencies": { "@borewit/text-codec": "^0.2.1", "@tokenizer/token": "^0.3.0", "ieee754": "^1.2.1" } }, "sha512-dRXchy+C0IgK8WPC6xvCHFRIWYUbqqdEIKPaKo/AcTUNzwLTK6AH7RjdLWsEZcAN/TBdtfUw3PYEgPr5VPr6ww=="],
-
-    "toml": ["toml@3.0.0", "", {}, "sha512-y/mWCZinnvxjTKYhJ+pYxwD0mRLVvOtdS2Awbgxln6iEnt4rk0yBxeSBHkGJcPucRiG0e55mwWp+g/05rsrd6w=="],
 
     "totalist": ["totalist@3.0.1", "", {}, "sha512-sf4i37nQ2LBx4m3wB74y+ubopq6W/dIzXg0FDGjsYnZHVa1Da8FH853wlL2gtUhg+xJXjfk3kUZS3BRoQeoQBQ=="],
 

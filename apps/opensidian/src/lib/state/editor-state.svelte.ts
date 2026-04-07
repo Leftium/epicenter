@@ -1,7 +1,8 @@
-import { Compartment, type Extension, type Text } from '@codemirror/state';
+import { Compartment, type EditorState as CMEditorState, type Extension, type Text } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { createPersistedState } from '@epicenter/svelte';
 import { Vim, vim } from '@replit/codemirror-vim';
+import { yUndoManagerKeymap } from 'y-codemirror.next';
 import { type } from 'arktype';
 
 // ── Persisted preferences ───────────────────────────────────────
@@ -43,12 +44,25 @@ const vimPreference = createPersistedState({
  * ```
  */
 function createEditorState() {
-	// ── Private helpers ────────────────────────────────────────
+	// ── Vim global config (idempotent, runs once at construction) ──
 
-	/** Remap j→gj and k→gk so cursor movement respects line wrapping. */
-	function applyLineWrapRemaps(): void {
-		Vim.map('j', 'gj', 'normal');
-		Vim.map('k', 'gk', 'normal');
+	const yUndo = yUndoManagerKeymap.find((k) => k.key === 'Mod-z')?.run;
+	const yRedo = yUndoManagerKeymap.find((k) => k.key === 'Mod-y')?.run;
+
+	// Remap j→gj and k→gk so cursor movement respects line wrapping.
+	Vim.map('j', 'gj', 'normal');
+	Vim.map('k', 'gk', 'normal');
+
+	// Override Vim's built-in undo/redo to route through the Yjs UndoManager.
+	// Without this, Vim's `u` and `Ctrl-R` call CodeMirror's `history()` undo—
+	// which isn't configured because all edits flow through Yjs.
+	if (yUndo && yRedo) {
+		Vim.defineAction('undo', (cm, actionArgs) => {
+			for (let i = 0; i < actionArgs.repeat; i++) yUndo(cm.cm6);
+		});
+		Vim.defineAction('redo', (cm, actionArgs) => {
+			for (let i = 0; i < actionArgs.repeat; i++) yRedo(cm.cm6);
+		});
 	}
 
 	function countWords(doc: Text): number {
@@ -61,6 +75,16 @@ function createEditorState() {
 		return count;
 	}
 
+	/** Sync cursor/selection reactive state from a CM6 EditorState. */
+	function syncCursorFromState(state: CMEditorState): void {
+		const head = state.selection.main.head;
+		const line = state.doc.lineAt(head);
+		cursorLine = line.number;
+		cursorCol = head - line.from;
+		const { from, to } = state.selection.main;
+		selectionLength = to - from;
+	}
+
 	// ── Reactive state ──────────────────────────────────────────
 	let view = $state<EditorView | null>(null);
 	let wordCount = $state(0);
@@ -71,7 +95,6 @@ function createEditorState() {
 
 	// ── Compartments ────────────────────────────────────────────
 	const vimCompartment = new Compartment();
-	const darkModeCompartment = new Compartment();
 
 	// ── Update listener (CM6 → $state bridge) ───────────────────
 	const listener = EditorView.updateListener.of((update) => {
@@ -79,13 +102,8 @@ function createEditorState() {
 			wordCount = countWords(update.state.doc);
 			lineCount = update.state.doc.lines;
 		}
-		if (update.selectionSet || update.docChanged) {
-			const head = update.state.selection.main.head;
-			const line = update.state.doc.lineAt(head);
-			cursorLine = line.number;
-			cursorCol = head - line.from;
-			const { from, to } = update.state.selection.main;
-			selectionLength = to - from;
+		if (update.docChanged || update.selectionSet) {
+			syncCursorFromState(update.state);
 		}
 	});
 
@@ -111,11 +129,11 @@ function createEditorState() {
 		},
 
 		/**
-		 * Build the editor state extensions.
+		 * Build a fresh set of CM6 extensions for a new EditorView.
 		 *
-		 * Returns compartments for vim mode and dark theme detection,
-		 * plus the update listener that bridges CM6 → `$state`.
-		 * Call once per `EditorView` creation—do NOT reuse across views.
+		 * Returns the vim compartment, dark theme, and the update listener
+		 * that bridges CM6 → `$state`. Call once per view creation—do NOT
+		 * reuse across views.
 		 *
 		 * Must be placed **before** other keymap extensions per the
 		 * `@replit/codemirror-vim` README—vim uses ViewPlugin eventHandlers
@@ -124,12 +142,11 @@ function createEditorState() {
 		 * @param isDark Whether the editor is in dark mode. Passed by
 		 * the component that owns the `mode-watcher` dependency.
 		 */
-		extension(isDark: boolean): Extension[] {
+		createExtensions(isDark: boolean): Extension[] {
 			const vimEnabled = vimPreference.current;
-			if (vimEnabled) applyLineWrapRemaps();
 			return [
 				vimCompartment.of(vimEnabled ? vim() : []),
-				darkModeCompartment.of(isDark ? EditorView.theme({}, { dark: true }) : []),
+				isDark ? EditorView.theme({}, { dark: true }) : [],
 				listener,
 			];
 		},
@@ -142,15 +159,9 @@ function createEditorState() {
 		 */
 		attach(v: EditorView) {
 			view = v;
-			// Seed initial values from the editor's current state
 			wordCount = countWords(v.state.doc);
 			lineCount = v.state.doc.lines;
-			const head = v.state.selection.main.head;
-			const line = v.state.doc.lineAt(head);
-			cursorLine = line.number;
-			cursorCol = head - line.from;
-			const { from, to } = v.state.selection.main;
-			selectionLength = to - from;
+			syncCursorFromState(v.state);
 		},
 
 		/** Unregister the active EditorView (call from `$effect` cleanup). */
@@ -162,33 +173,17 @@ function createEditorState() {
 		 * Toggle vim mode on the active editor.
 		 *
 		 * Persists preference via `createPersistedState` (cross-tab sync
-		 * included), reconfigures the compartment, and applies j/k
-		 * line-wrap remaps when enabling.
+		 * included) and reconfigures the compartment.
 		 */
 		toggleVim() {
 			const next = !vimPreference.current;
 			vimPreference.current = next;
-			if (next) applyLineWrapRemaps();
 			view?.dispatch({
 				effects: vimCompartment.reconfigure(next ? vim() : []),
 			});
 		},
-
-		/**
-		 * Sync CM6's dark theme facet with the current color mode.
-		 *
-		 * Call from an `$effect` that tracks `mode.current`. Reconfigures
-		 * the dark mode compartment so CM6's base theme rules (`&dark`
-		 * selectors for selection, cursor, etc.) activate correctly.
-		 */
-		syncDarkMode(isDark: boolean) {
-			view?.dispatch({
-				effects: darkModeCompartment.reconfigure(
-					isDark ? EditorView.theme({}, { dark: true }) : [],
-				),
-			});
-		},
 	};
 }
+
 
 export const editorState = createEditorState();

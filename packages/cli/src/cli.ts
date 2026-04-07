@@ -12,7 +12,7 @@ import {
 } from './commands/data';
 import { describeCommand } from './commands/describe';
 import { kvCommand } from './commands/kv';
-import { initCommand, installCommand, uninstallCommand } from './commands/project';
+import { initCommand } from './commands/project';
 import { runActionCommand } from './commands/run';
 import { sizeCommand } from './commands/size';
 import { startCommand } from './commands/start';
@@ -27,7 +27,7 @@ export function resolveEpicenterHome(flagValue?: string): string {
  * Create the Epicenter CLI instance.
  *
  * Registers all top-level commands: table CRUD (get, list, count, delete),
- * tables, kv, export, init, install, uninstall, run, describe, start, and auth.
+ * tables, kv, export, init, run, describe, start, and auth.
  *
  * @returns An object with a `run` method that parses and executes CLI commands.
  */
@@ -47,8 +47,6 @@ export function createCLI() {
 				.command(kvCommand)
 				.command(exportCommand)
 				.command(initCommand)
-				.command(installCommand)
-				.command(uninstallCommand)
 				.command(runActionCommand)
 				.command(describeCommand)
 				.command(sizeCommand)

@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { FEATURE_IDS } from '@epicenter/api/billing-plans';
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Card from '@epicenter/ui/card';
 	import { Progress } from '@epicenter/ui/progress';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { FEATURE_IDS } from '@epicenter/api/billing-plans';
 	import { balanceQueryOptions } from '$lib/query/billing';
+	import { capitalize } from '$lib/utils';
 
 	const balance = createQuery(() => balanceQueryOptions());
 
@@ -23,13 +24,10 @@
 
 	/** Find the monthly breakdown entry for the reset countdown. */
 	const monthlyEntry = $derived(
-		creditBalance?.breakdown?.find(
-			(e) => e.reset?.interval === 'month',
-		) ?? null,
+		creditBalance?.breakdown?.find((e) => e.reset?.interval === 'month') ??
+			null,
 	);
-	const rolloverEntry = $derived(
-		creditBalance?.rollovers?.[0] ?? null,
-	);
+	const rolloverEntry = $derived(creditBalance?.rollovers?.[0] ?? null);
 
 	/** resetsAt is epoch ms from the Balance level, not breakdown. */
 	const resetTimestamp = $derived(creditBalance?.nextResetAt ?? null);
@@ -51,9 +49,7 @@
 	);
 	const trialPlanName = $derived(
 		subscription?.plan?.name ??
-			(subscription?.planId
-				? subscription.planId.charAt(0).toUpperCase() + subscription.planId.slice(1)
-				: 'Free'),
+			(subscription?.planId ? capitalize(subscription.planId) : 'Free'),
 	);
 	const trialIsUrgent = $derived(trialDaysLeft !== null && trialDaysLeft <= 3);
 </script>
@@ -90,7 +86,9 @@
 						? ''
 						: 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400'}
 				>
-					{trialPlanName} Trial — {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'} left
+					{trialPlanName}
+					Trial — {trialDaysLeft} day{trialDaysLeft === 1 ? '' : 's'}
+					left
 				</Badge>
 			{/if}
 		</Card.Header>

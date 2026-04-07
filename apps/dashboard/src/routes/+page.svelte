@@ -5,21 +5,24 @@
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
-	import { api, type AttachResponse } from '$lib/api';
-	import CreditBalance from '$lib/components/CreditBalance.svelte';
-	import UsageChart from '$lib/components/UsageChart.svelte';
-	import TopModels from '$lib/components/TopModels.svelte';
-	import ModelCostGuide from '$lib/components/ModelCostGuide.svelte';
+	import { type AttachResponse, api } from '$lib/api';
 	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
+	import CreditBalance from '$lib/components/CreditBalance.svelte';
+	import ModelCostGuide from '$lib/components/ModelCostGuide.svelte';
 	import PlanComparison from '$lib/components/PlanComparison.svelte';
-	import { balanceQueryOptions } from '$lib/query/billing';
+	import TopModels from '$lib/components/TopModels.svelte';
+	import UsageChart from '$lib/components/UsageChart.svelte';
+	import { balanceQueryOptions, billingKeys } from '$lib/query/billing';
 	import { queryClient } from '$lib/query/client';
 
 	const balance = createQuery(() => balanceQueryOptions());
-	const subscription = $derived(balance.data?.subscriptions?.find((s) => !s.addOn) ?? null);
+	const subscription = $derived(
+		balance.data?.subscriptions?.find((s) => !s.addOn) ?? null,
+	);
 	const isOnTrial = $derived(subscription?.trialEndsAt != null);
 
-	async function openPortal() {
+	/** Open Stripe billing portal via the API. */
+	async function openBillingPortal() {
 		try {
 			const data = await api.billing.portal();
 			if (data.url) window.location.href = data.url;
@@ -35,7 +38,7 @@
 				window.location.href = result.paymentUrl;
 			} else {
 				toast.success('Credits added to your account');
-				queryClient.invalidateQueries({ queryKey: ['billing'] });
+				queryClient.invalidateQueries({ queryKey: billingKeys.all });
 			}
 		},
 		onError: () => {
@@ -50,7 +53,9 @@
 	<Alert.Root class="mb-6">
 		<Alert.Description class="flex items-center justify-between">
 			<span>Add a payment method to keep Ultra after your trial ends.</span>
-			<Button variant="link" size="sm" onclick={openPortal}>Update billing →</Button>
+			<Button variant="link" size="sm" onclick={openBillingPortal}
+				>Update billing →</Button
+			>
 		</Alert.Description>
 	</Alert.Root>
 {/if}
@@ -67,13 +72,9 @@
 		<TopModels />
 	</Tabs.Content>
 
-	<Tabs.Content value="models" class="pt-6">
-		<ModelCostGuide />
-	</Tabs.Content>
+	<Tabs.Content value="models" class="pt-6"> <ModelCostGuide /> </Tabs.Content>
 
-	<Tabs.Content value="activity" class="pt-6">
-		<ActivityFeed />
-	</Tabs.Content>
+	<Tabs.Content value="activity" class="pt-6"> <ActivityFeed /> </Tabs.Content>
 </Tabs.Root>
 
 <PlanComparison />
@@ -90,5 +91,5 @@
 			Buy 500 credits — $5
 		{/if}
 	</Button>
-	<Button variant="outline" onclick={openPortal}>Manage billing</Button>
+	<Button variant="outline" onclick={openBillingPortal}>Manage billing</Button>
 </section>

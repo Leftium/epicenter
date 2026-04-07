@@ -1,8 +1,0 @@
-{
-	"extends": "../../tsconfig.base.lib.json",
-	"compilerOptions": {
-		"types": ["bun-types"],
-		"noUncheckedSideEffectImports": true,
-		"exactOptionalPropertyTypes": true
-	}
-}

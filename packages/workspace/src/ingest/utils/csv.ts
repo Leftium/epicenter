@@ -1,5 +1,5 @@
 /**
- * CSV Parser - ported from vault-core
+ * CSV Parser
  *
  * Zero-dependency CSV parser with full support for:
  * - Headers (object output) or raw mode (2D array output)

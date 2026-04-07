@@ -60,7 +60,7 @@
 			"nanoid": "latest",
 			"wellcrafted": "^0.34.0",
 			"date-fns": "^4.1.0",
-			"@biomejs/biome": "latest",
+			"@biomejs/biome": "^2.4.10",
 			"turbo": "^2.6.1",
 			"wrangler": "^4.71.0",
 			"yargs": "^18.0.0",
@@ -113,7 +113,7 @@
 		"epicenter": "EPICENTER_SERVER=http://localhost:8787 bun run --bun epicenter"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.8",
+		"@biomejs/biome": "catalog:",
 		"@types/bun": "^1.3.11",
 		"@types/node": "^24.12.0",
 		"turbo": "^2.8.19",

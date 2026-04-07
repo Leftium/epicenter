@@ -1,9 +1,9 @@
 /**
  * TanStack Query definitions for billing data.
  *
- * Uses `defineQuery` from wellcrafted/query so every query accepts
- * a Result-returning queryFn. Components use `.options` for reactive
- * queries, and `.fetch()` / `.execute()` for imperative calls.
+ * Static queries use `defineQuery` for the dual interface (.options + .fetch()).
+ * Parameterized queries return plain option objects since callers only need .options.
+ * Mutations use `defineMutation` for the dual interface (.options + .execute()).
  */
 import type {
 	EventsParams,
@@ -35,7 +35,7 @@ export const billingKeys = {
 };
 
 /** Fetch customer balance, subscription, and credit breakdown. */
-export const balance = defineQuery({
+export const balanceQuery = defineQuery({
 	queryKey: billingKeys.balance,
 	queryFn: () => api.billing.balance(),
 });
@@ -43,52 +43,54 @@ export const balance = defineQuery({
 /**
  * Fetch aggregated usage data for charts.
  *
- * @example
- * ```typescript
- * const usage = createQuery(() => usageQueryOptions({ range: '30d', binSize: 'day' }));
- * ```
+ * Returns plain query options—callers pass these to `createQuery()`.
+ * Uses a factory function because the query key depends on `params`.
  */
 export function usageQueryOptions(params: UsageParams = {}) {
-	return defineQuery({
+	return {
 		queryKey: billingKeys.usage(params),
 		queryFn: () => api.billing.usage(params),
-	}).options;
+	};
 }
 
-/** Fetch paginated event history for the activity feed. */
+/**
+ * Fetch paginated event history for the activity feed.
+ *
+ * Returns plain query options—callers pass these to `createQuery()`.
+ */
 export function eventsQueryOptions(params: EventsParams = {}) {
-	return defineQuery({
+	return {
 		queryKey: billingKeys.events(params),
 		queryFn: () => api.billing.events(params),
-	}).options;
+	};
 }
 
 /** Fetch available plans with customer eligibility. */
-export const plans = defineQuery({
+export const plansQuery = defineQuery({
 	queryKey: billingKeys.plans,
 	queryFn: () => api.billing.plans(),
 });
 
 /** Fetch model credits map and plan metadata. */
-export const models = defineQuery({
+export const modelsQuery = defineQuery({
 	queryKey: billingKeys.models,
 	queryFn: () => api.billing.models(),
 });
 
 /** Buy 500 credits via Stripe checkout. */
-export const topUp = defineMutation({
+export const topUpMutation = defineMutation({
 	mutationKey: [...billingKeys.all, 'top-up'] as const,
 	mutationFn: (successUrl?: string) => api.billing.topUp(successUrl),
 });
 
 /** Preview proration cost before changing plans. */
-export const previewUpgrade = defineMutation({
+export const previewUpgradeMutation = defineMutation({
 	mutationKey: [...billingKeys.all, 'preview'] as const,
 	mutationFn: (planId: string) => api.billing.preview(planId),
 });
 
 /** Upgrade or switch billing plan via Stripe. */
-export const upgradePlan = defineMutation({
+export const upgradePlanMutation = defineMutation({
 	mutationKey: [...billingKeys.all, 'upgrade'] as const,
 	mutationFn: ({
 		planId,

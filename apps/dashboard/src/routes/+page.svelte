@@ -12,11 +12,7 @@
 	import PlanComparison from '$lib/components/PlanComparison.svelte';
 	import TopModels from '$lib/components/TopModels.svelte';
 	import UsageChart from '$lib/components/UsageChart.svelte';
-	import {
-		balance as balanceQuery,
-		billingKeys,
-		topUp,
-	} from '$lib/query/billing';
+	import { balanceQuery, billingKeys, topUpMutation } from '$lib/query/billing';
 	import { queryClient } from '$lib/query/client';
 
 	const balance = createQuery(() => balanceQuery.options);
@@ -35,7 +31,7 @@
 		if (data.url) window.location.href = data.url;
 	}
 
-	const topUpMutation = createMutation(() => topUp.options);
+	const topUp = createMutation(() => topUpMutation.options);
 </script>
 
 <CreditBalance />
@@ -74,7 +70,7 @@
 	<Button
 		variant="outline"
 		onclick={() => {
-			topUpMutation.mutate(window.location.href, {
+			topUp.mutate(window.location.href, {
 				onSuccess: (data) => {
 					if (data.paymentUrl) {
 						window.location.href = data.paymentUrl;
@@ -86,9 +82,9 @@
 				onError: () => toast.error('Top-up failed. Please try again.'),
 			});
 		}}
-		disabled={topUpMutation.isPending}
+		disabled={topUp.isPending}
 	>
-		{#if topUpMutation.isPending}
+		{#if topUp.isPending}
 			<Spinner class="size-3.5" />
 		{:else}
 			Buy 500 credits — $5

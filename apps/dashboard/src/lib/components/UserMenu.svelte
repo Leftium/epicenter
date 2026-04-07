@@ -11,7 +11,7 @@
 	import { toast } from 'svelte-sonner';
 	import { api } from '$lib/api';
 	import { auth } from '$lib/auth';
-	import { balance as balanceQuery } from '$lib/query/billing';
+	import { balanceQuery } from '$lib/query/billing';
 	import { capitalize, getInitials } from '$lib/utils';
 
 	const balance = createQuery(() => balanceQuery.options);

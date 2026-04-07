@@ -5,7 +5,7 @@
 	import { Progress } from '@epicenter/ui/progress';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { balance as balanceQuery } from '$lib/query/billing';
+	import { balanceQuery } from '$lib/query/billing';
 	import { capitalize } from '$lib/utils';
 
 	const balance = createQuery(() => balanceQuery.options);

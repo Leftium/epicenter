@@ -30,19 +30,12 @@ import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { type Result, tryAsync } from 'wellcrafted/result';
 import { auth } from './auth';
 
-// Re-export only the contract types that components actually import.
-// Components needing other types can import from @epicenter/api/billing-contract directly.
-export type {
-	AttachResponse,
-	PortalResponse,
-	PreviewResponse,
-} from '@epicenter/api/billing-contract';
 
 /**
- * Tagged errors for the billing API boundary.
+ * Tagged error for the billing API boundary.
  *
- * Two variants cover the two failure modes: the HTTP request itself
- * failed (network, timeout, DNS) or the server returned a non-OK status.
+ * Covers both network failures (fetch throws) and non-OK HTTP
+ * responses (our status guard throws).
  */
 export const BillingApiError = defineErrors({
 	RequestFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
@@ -107,16 +100,10 @@ export const api = {
 				'/api/billing/upgrade',
 				{ planId, successUrl },
 			),
-		cancel: (planId: string) =>
-			post<{ planId: string }, unknown>('/api/billing/cancel', { planId }),
-		uncancel: (planId: string) =>
-			post<{ planId: string }, unknown>('/api/billing/uncancel', { planId }),
 		topUp: (successUrl?: string) =>
 			post<{ successUrl?: string }, AttachResponse>('/api/billing/top-up', {
 				successUrl,
 			}),
 		portal: () => get<PortalResponse>('/api/billing/portal'),
-		controls: (data: unknown) =>
-			post<unknown, unknown>('/api/billing/controls', data),
 	},
 };

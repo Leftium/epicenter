@@ -2,7 +2,7 @@
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import * as Table from '@epicenter/ui/table';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { models as modelsQuery } from '$lib/query/billing';
+	import { modelsQuery } from '$lib/query/billing';
 
 	const models = createQuery(() => modelsQuery.options);
 

@@ -9,11 +9,11 @@
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import {
-		balance as balanceQuery,
+		balanceQuery,
 		billingKeys,
-		plans as plansQuery,
-		previewUpgrade as previewUpgradeDef,
-		upgradePlan as upgradePlanDef,
+		plansQuery,
+		previewUpgradeMutation,
+		upgradePlanMutation,
 	} from '$lib/query/billing';
 	import { queryClient } from '$lib/query/client';
 
@@ -118,9 +118,9 @@
 		),
 	);
 
-	const previewMutation = createMutation(() => previewUpgradeDef.options);
+	const previewMutation = createMutation(() => previewUpgradeMutation.options);
 
-	const attachPlan = createMutation(() => upgradePlanDef.options);
+	const upgradeMutation = createMutation(() => upgradePlanMutation.options);
 
 	async function handleUpgradeClick(planId: string, planName: string) {
 		confirmDialog = { planId, planName };
@@ -257,7 +257,7 @@
 			<Button
 				onclick={() => {
 					if (confirmDialog) {
-						attachPlan.mutate(
+						upgradeMutation.mutate(
 							{ planId: confirmDialog.planId, successUrl: window.location.href },
 							{
 								onSuccess: (data) => {
@@ -274,9 +274,9 @@
 						);
 					}
 				}}
-				disabled={attachPlan.isPending}
+				disabled={upgradeMutation.isPending}
 			>
-				{#if attachPlan.isPending}
+				{#if upgradeMutation.isPending}
 					<Spinner class="size-3.5" />
 				{:else}
 					Confirm upgrade

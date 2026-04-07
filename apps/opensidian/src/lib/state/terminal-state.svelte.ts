@@ -73,6 +73,24 @@ function createTerminalState() {
 			return { stdout: `Opened ${path}\n`, stderr: '', exitCode: 0 };
 		}),
 	);
+	const WELCOME_MESSAGE = [
+		'Welcome to OpenSidian \u2014 notes on CRDTs with a bash terminal.',
+		'',
+		'Try these:',
+		'  echo "# Hello HN" > /hello.md    create a file',
+		'  ls /                              list files',
+		'  open /hello.md                    open in editor',
+		'  cat /hello.md                     print contents',
+		'',
+		'80+ commands: awk, sed, grep, jq, find, sqlite3, curl, and more.',
+		'Press \u2318` to toggle this terminal.',
+	].join('\n');
+
+	function ensureWelcome() {
+		if (history.length === 0) {
+			history = [{ type: 'output', stdout: WELCOME_MESSAGE + '\n', stderr: '', exitCode: 0 }];
+		}
+	}
 
 	return {
 		get open() {
@@ -88,11 +106,13 @@ function createTerminalState() {
 		/** Toggle the terminal panel open/closed. */
 		toggle() {
 			openState.current = !openState.current;
+			if (openState.current) ensureWelcome();
 		},
 
 		/** Show the terminal panel. */
 		show() {
 			openState.current = true;
+			ensureWelcome();
 		},
 
 		/** Hide the terminal panel. */
@@ -179,8 +199,8 @@ function createTerminalState() {
 		},
 
 		/** Print a welcome message as a single output entry. */
-		printWelcome(lines: string[]) {
-			history = [...history, { type: 'output', stdout: lines.join('\n') + '\n', stderr: '', exitCode: 0 }];
+		printWelcome() {
+			ensureWelcome();
 		},
 	};
 }

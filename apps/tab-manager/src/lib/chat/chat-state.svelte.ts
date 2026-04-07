@@ -45,7 +45,7 @@ import {
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
 import { getDeviceId } from '$lib/device/device-id';
-import { auth, workspace, workspaceDefinitions, workspaceTools } from '$lib/client';
+import { auth, workspace, workspaceAiTools } from '$lib/client';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -141,7 +141,7 @@ function createAiChatState() {
 
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
-			tools: workspaceTools,
+			tools: workspaceAiTools.tools,
 			connection: fetchServerSentEvents(
 				() => `${remoteServerUrl.current}/ai/chat`,
 				async () => {
@@ -157,7 +157,7 @@ function createAiChatState() {
 									buildDeviceConstraints(deviceId),
 									metadata?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
 								],
-								tools: workspaceDefinitions,
+							tools: workspaceAiTools.definitions,
 							},
 						},
 					};

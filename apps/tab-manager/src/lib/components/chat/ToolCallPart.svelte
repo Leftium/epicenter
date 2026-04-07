@@ -7,7 +7,7 @@
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
 	import { toolTrustState } from '$lib/state/tool-trust.svelte';
-	import { type WorkspaceTools, workspaceToolTitles } from '$lib/client';
+	import { type WorkspaceTools, workspaceAiTools } from '$lib/client';
 	import CollapsibleSection from '../CollapsibleSection.svelte';
 
 	let {
@@ -27,7 +27,7 @@
 			'error' in part.output,
 	);
 	const displayName = $derived(
-		workspaceToolTitles[part.name] ??
+		workspaceAiTools.definitions.find(d => d.name === part.name)?.title ??
 			part.name.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()),
 	);
 	const isApprovalRequested = $derived(part.state === 'approval-requested');

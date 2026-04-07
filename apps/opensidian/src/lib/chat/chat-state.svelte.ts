@@ -17,8 +17,7 @@ import { toUiMessage } from '$lib/chat/ui-message';
 import {
 	auth,
 	workspace,
-	workspaceDefinitions,
-	workspaceTools,
+	workspaceAiTools,
 } from '$lib/client';
 import { skillState } from '$lib/state/skill-state.svelte';
 import {
@@ -96,7 +95,7 @@ function createAiChatState() {
 
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
-			tools: workspaceTools,
+			tools: workspaceAiTools.tools,
 			connection: fetchServerSentEvents(
 				() => `${APP_URLS.API}/ai/chat`,
 				async () => ({
@@ -121,7 +120,7 @@ function createAiChatState() {
 									})),
 								),
 							].filter(Boolean),
-							tools: workspaceDefinitions,
+						tools: workspaceAiTools.definitions,
 						},
 					},
 				}),

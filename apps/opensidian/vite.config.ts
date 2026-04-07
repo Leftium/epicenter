@@ -2,9 +2,17 @@ import { APPS } from '@epicenter/constants/apps';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 export default defineConfig({
-	plugins: [sveltekit(), tailwindcss()],
+	plugins: [
+		sveltekit(),
+		tailwindcss(),
+		// just-bash's browser bundle statically imports node:zlib for gzip/gunzip
+		// commands. This is a known upstream issue (vercel-labs/just-bash#81).
+		// The polyfill provides a browser-compatible zlib implementation.
+		nodePolyfills({ include: ['zlib'] }),
+	],
 	resolve: {
 		dedupe: ['yjs'],
 	},

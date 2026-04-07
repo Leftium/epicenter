@@ -14,7 +14,7 @@
 		onCancel: () => void;
 	} = $props();
 
-	let value = $state(defaultValue);
+	let value = $derived(defaultValue);
 	let inputEl = $state<HTMLInputElement | null>(null);
 
 	/**

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import { Button } from '@epicenter/ui/button';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
 	import { aiChatState } from '$lib/chat/chat-state.svelte';
 	import ChatErrorBanner from './ChatErrorBanner.svelte';

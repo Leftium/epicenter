@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 	import { Button } from '@epicenter/ui/button';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import XIcon from '@lucide/svelte/icons/x';
@@ -17,9 +16,6 @@
 	} = $props();
 
 	const visible = $derived(error && error.message !== dismissedError);
-	const displayMessage = $derived(
-		error instanceof AiChatHttpError ? error.detail.message : error?.message,
-	);
 </script>
 
 {#if visible}

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SquarePenIcon from '@lucide/svelte/icons/square-pen';
@@ -89,10 +88,7 @@
 			role="alert"
 			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
 		>
-			<span class="min-w-0 flex-1">
-				{active?.error instanceof AiChatHttpError
-					? active.error.detail.message
-					: active?.error?.message}
+			<span class="min-w-0 flex-1">{active?.error?.message}</span>
 			</span>
 			<div class="flex shrink-0 items-center gap-1">
 				<Button

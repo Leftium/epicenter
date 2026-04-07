@@ -406,11 +406,6 @@ function createAiChatState() {
 			return PROVIDER_MODELS[providerName as Provider] ?? [];
 		},
 
-		get error() {
-			return handles.get(activeConversationId)?.error;
-		},
-
-
 		sendMessage(content: string) {
 			handles.get(activeConversationId)?.sendMessage(content);
 		},

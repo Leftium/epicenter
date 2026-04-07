@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 	import { Button } from '@epicenter/ui/button';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import XIcon from '@lucide/svelte/icons/x';
@@ -16,6 +17,9 @@
 	} = $props();
 
 	const visible = $derived(error && error.message !== dismissedError);
+	const displayMessage = $derived(
+		error instanceof AiChatHttpError ? error.detail.message : error?.message,
+	);
 </script>
 
 {#if visible}
@@ -23,7 +27,7 @@
 		role="alert"
 		class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
 	>
-		<span class="min-w-0 flex-1">{error?.message}</span>
+		<span class="min-w-0 flex-1">{displayMessage}</span>
 		<div class="flex shrink-0 items-center gap-1">
 			<Button variant="ghost-destructive" onclick={onRetry}>
 				<RotateCcwIcon class="size-3" />

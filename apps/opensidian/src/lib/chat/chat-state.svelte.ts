@@ -1,7 +1,7 @@
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { fromTable } from '@epicenter/svelte';
-import { createAiFetchClient } from '@epicenter/svelte-utils/auth';
+import { createAiChatFetch } from '@epicenter/svelte-utils/auth';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import type { JsonValue } from 'wellcrafted/json';
 import {
@@ -101,7 +101,7 @@ function createAiChatState() {
 			connection: fetchServerSentEvents(
 				() => `${APP_URLS.API}/ai/chat`,
 				async () => ({
-					fetchClient: createAiFetchClient(auth.fetch),
+					fetchClient: createAiChatFetch(auth.fetch),
 					body: {
 						data: {
 							provider: metadata?.provider ?? DEFAULT_PROVIDER,
@@ -208,17 +208,17 @@ function createAiChatState() {
 
 			get isCreditsExhausted() {
 				return chat.error instanceof AiChatHttpError
-					&& chat.error.serverError.name === 'InsufficientCredits';
+					&& chat.error.detail.name === 'InsufficientCredits';
 			},
 
 			get isUnauthorized() {
 				return chat.error instanceof AiChatHttpError
-					&& chat.error.serverError.name === 'Unauthorized';
+					&& chat.error.detail.name === 'Unauthorized';
 			},
 
 			get isModelRestricted() {
 				return chat.error instanceof AiChatHttpError
-					&& chat.error.serverError.name === 'ModelRequiresPaidPlan';
+					&& chat.error.detail.name === 'ModelRequiresPaidPlan';
 			},
 
 			sendMessage(content: string) {
@@ -410,17 +410,6 @@ function createAiChatState() {
 			return handles.get(activeConversationId)?.error;
 		},
 
-		get isCreditsExhausted() {
-			return handles.get(activeConversationId)?.isCreditsExhausted ?? false;
-		},
-
-		get isUnauthorized() {
-			return handles.get(activeConversationId)?.isUnauthorized ?? false;
-		},
-
-		get isModelRestricted() {
-			return handles.get(activeConversationId)?.isModelRestricted ?? false;
-		},
 
 		sendMessage(content: string) {
 			handles.get(activeConversationId)?.sendMessage(content);

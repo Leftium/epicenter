@@ -29,7 +29,7 @@
  */
 
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
-import { createAiFetchClient } from '@epicenter/svelte-utils/auth';
+import { createAiChatFetch } from '@epicenter/svelte-utils/auth';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import { fromTable } from '@epicenter/svelte';
@@ -149,7 +149,7 @@ function createAiChatState() {
 				async () => {
 					const deviceId = await getDeviceId();
 					return {
-						fetchClient: createAiFetchClient(auth.fetch),
+						fetchClient: createAiChatFetch(auth.fetch),
 						body: {
 							data: {
 								provider: metadata?.provider ?? DEFAULT_PROVIDER,
@@ -268,17 +268,17 @@ function createAiChatState() {
 			 */
 			get isCreditsExhausted() {
 				return chat.error instanceof AiChatHttpError
-					&& chat.error.serverError.name === 'InsufficientCredits';
+					&& chat.error.detail.name === 'InsufficientCredits';
 			},
 
 			get isUnauthorized() {
 				return chat.error instanceof AiChatHttpError
-					&& chat.error.serverError.name === 'Unauthorized';
+					&& chat.error.detail.name === 'Unauthorized';
 			},
 
 			get isModelRestricted() {
 				return chat.error instanceof AiChatHttpError
-					&& chat.error.serverError.name === 'ModelRequiresPaidPlan';
+					&& chat.error.detail.name === 'ModelRequiresPaidPlan';
 			},
 
 			// ── Ephemeral UI state ──

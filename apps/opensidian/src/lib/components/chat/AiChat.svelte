@@ -47,7 +47,7 @@
 		/>
 	</div>
 
-	<!-- Error states -->
+	<!-- Error states: auth + credits are persistent (no dismiss), others are dismissable -->
 	{#if active?.isUnauthorized}
 		<div
 			role="alert"
@@ -83,34 +83,17 @@
 				Upgrade
 			</Button>
 		</div>
-	{:else if active?.isModelRestricted}
+	{:else if errorVisible}
+		<!-- Dismissable errors: model restriction, generic, etc. -->
 		<div
 			role="alert"
 			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
 		>
 			<span class="min-w-0 flex-1">
-				{active.error instanceof AiChatHttpError
-					? active.error.serverError.message
-					: 'This model requires a paid plan'}
+				{active?.error instanceof AiChatHttpError
+					? active.error.detail.message
+					: active?.error?.message}
 			</span>
-			<Button
-				variant="ghost"
-				size="sm"
-				class="h-6 gap-1 px-2 text-xs text-destructive hover:text-destructive"
-				onclick={() => {
-					dismissedError = active?.error?.message ?? null;
-				}}
-			>
-				Dismiss
-			</Button>
-		</div>
-	{:else if errorVisible}
-		<!-- Generic fallback for unknown errors -->
-		<div
-			role="alert"
-			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-		>
-			<span class="min-w-0 flex-1">{active?.error?.message}</span>
 			<div class="flex shrink-0 items-center gap-1">
 				<Button
 					variant="ghost"

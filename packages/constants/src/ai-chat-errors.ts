@@ -20,9 +20,9 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * // Client — type-only usage
  * import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
  * if (err instanceof AiChatHttpError) {
- *   switch (err.serverError.name) {
+ *   switch (err.detail.name) {
  *     case 'Unauthorized': // show sign-in
- *     case 'InsufficientCredits': // err.serverError.balance
+ *     case 'InsufficientCredits': // err.detail.balance
  *   }
  * }
  * ```
@@ -77,23 +77,26 @@ export const AiChatError = defineErrors({
 export type AiChatError = InferErrors<typeof AiChatError>;
 
 /**
- * Error subclass that carries structured server error data across
- * TanStack AI's throw boundary.
+ * Error subclass that carries structured error data across TanStack AI's
+ * throw boundary.
  *
- * Created by `createAiFetchClient` when the server returns a non-2xx
- * response with a wellcrafted `{ data, error }` JSON envelope. The
- * `Error` propagates unchanged through TanStack AI's `ChatClient`
- * pipeline—`instanceof AiChatHttpError` works in `onError` and
- * when reading `chat.error`.
+ * Created by `createAiChatFetch` when the server returns a non-2xx response
+ * with a wellcrafted `{ data, error }` JSON envelope. The `Error` propagates
+ * unchanged through TanStack AI's `ChatClient` pipeline—`instanceof
+ * AiChatHttpError` works in `onError` and when reading `chat.error`.
+ *
+ * The `detail` property carries the full discriminated union with
+ * variant-specific fields. Use `switch (err.detail.name)` for
+ * exhaustive handling.
  *
  * @example
  * ```ts
  * if (err instanceof AiChatHttpError) {
- *   console.log(err.status);            // 402
- *   console.log(err.serverError.name);  // "InsufficientCredits"
- *   switch (err.serverError.name) {
+ *   console.log(err.status);        // 402
+ *   console.log(err.detail.name);   // "InsufficientCredits"
+ *   switch (err.detail.name) {
  *     case 'InsufficientCredits':
- *       console.log(err.serverError.balance); // narrowed
+ *       console.log(err.detail.balance); // narrowed
  *       break;
  *   }
  * }
@@ -104,8 +107,8 @@ export class AiChatHttpError extends Error {
 
 	constructor(
 		readonly status: number,
-		readonly serverError: AiChatError,
+		readonly detail: AiChatError,
 	) {
-		super(serverError.message);
+		super(detail.message);
 	}
 }

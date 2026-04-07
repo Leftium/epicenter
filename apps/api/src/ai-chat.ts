@@ -11,7 +11,7 @@ import { createGeminiChat, GeminiTextModels } from '@tanstack/ai-gemini';
 import { createOpenaiChat, OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 import { type } from 'arktype';
 import { createFactory } from 'hono/factory';
-import { defineErrors } from 'wellcrafted/error';
+import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import type { Env } from './app';
 import { createAutumn } from './autumn';
 import { FEATURE_IDS, PLAN_IDS } from './billing-plans';
@@ -34,31 +34,6 @@ const chatOptions = type({
 	'tools?': 'object[] | undefined',
 });
 
-const AiChatError = defineErrors({
-	ProviderNotConfigured: ({ provider }: { provider: string }) => ({
-		message: `${provider} not configured`,
-		provider,
-	}),
-	UnknownModel: ({ model }: { model: string }) => ({
-		message: `Unknown model: ${model}`,
-		model,
-	}),
-	InsufficientCredits: ({ balance }: { balance: unknown }) => ({
-		message: 'Insufficient credits',
-		balance,
-	}),
-	ModelRequiresPaidPlan: ({
-		model,
-		credits,
-	}: {
-		model: string;
-		credits: number;
-	}) => ({
-		message: `${model} requires a paid plan (costs ${credits} credits, Free tier limit is ${FREE_TIER_MAX_CREDITS})`,
-		model,
-		credits,
-	}),
-});
 
 const aiChatBody = type({
 	messages: 'object[] >= 1',

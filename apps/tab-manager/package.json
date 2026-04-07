@@ -19,7 +19,6 @@
 		"postinstall": "wxt prepare"
 	},
 	"dependencies": {
-		"@epicenter/ai": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/ui": "workspace:*",

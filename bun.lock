@@ -194,7 +194,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@codemirror/autocomplete": "^6.20.1",
-        "@epicenter/ai": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -293,7 +292,6 @@
       "name": "@epicenter/tab-manager",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/ai": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
@@ -459,17 +457,6 @@
         "vite": "catalog:",
       },
     },
-    "packages/ai": {
-      "name": "@epicenter/ai",
-      "version": "0.1.0",
-      "dependencies": {
-        "@epicenter/workspace": "workspace:*",
-        "@tanstack/ai": "catalog:",
-      },
-      "devDependencies": {
-        "typescript": "catalog:",
-      },
-    },
     "packages/cli": {
       "name": "@epicenter/cli",
       "version": "0.1.0",
@@ -495,6 +482,9 @@
     "packages/constants": {
       "name": "@epicenter/constants",
       "version": "0.1.0",
+      "dependencies": {
+        "wellcrafted": "catalog:",
+      },
       "devDependencies": {
         "@types/node": "catalog:",
         "typescript": "catalog:",
@@ -547,6 +537,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@epicenter/api": "workspace:*",
+        "@epicenter/constants": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
@@ -626,6 +617,7 @@
         "@noble/hashes": "^2.0.1",
         "@sindresorhus/slugify": "catalog:",
         "@standard-schema/spec": "catalog:",
+        "@tanstack/ai": "catalog:",
         "@tursodatabase/database": "^0.3.2",
         "@types/bun": "catalog:",
         "arkregex": "catalog:",
@@ -905,8 +897,6 @@
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w=="],
 
     "@emoji-mart/data": ["@emoji-mart/data@1.2.1", "", {}, "sha512-no2pQMWiBy6gpBEiqGeU77/bFejDqUTRY7KX+0+iur13op3bqUsXdnwoZs6Xb1zbv0gAj5VvS1PWoUUckSr5Dw=="],
-
-    "@epicenter/ai": ["@epicenter/ai@workspace:packages/ai"],
 
     "@epicenter/api": ["@epicenter/api@workspace:apps/api"],
 

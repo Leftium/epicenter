@@ -28,6 +28,8 @@
  * ```
  */
 
+import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
+import { createAiChatFetch } from '@epicenter/svelte-utils/auth';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import { fromTable } from '@epicenter/svelte';
@@ -45,7 +47,7 @@ import {
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
 import { getDeviceId } from '$lib/device/device-id';
-import { auth, workspace, workspaceDefinitions, workspaceTools } from '$lib/client';
+import { auth, workspace, workspaceAiTools } from '$lib/client';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -141,13 +143,13 @@ function createAiChatState() {
 
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
-			tools: workspaceTools,
+			tools: workspaceAiTools.tools,
 			connection: fetchServerSentEvents(
 				() => `${remoteServerUrl.current}/ai/chat`,
 				async () => {
 					const deviceId = await getDeviceId();
 					return {
-						fetchClient: auth.fetch,
+						fetchClient: createAiChatFetch(auth.fetch),
 						body: {
 							data: {
 								provider: metadata?.provider ?? DEFAULT_PROVIDER,
@@ -157,7 +159,7 @@ function createAiChatState() {
 									buildDeviceConstraints(deviceId),
 									metadata?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
 								],
-								tools: workspaceDefinitions,
+							tools: workspaceAiTools.definitions,
 							},
 						},
 					};
@@ -265,8 +267,18 @@ function createAiChatState() {
 			 * UI should show an upgrade prompt when true.
 			 */
 			get isCreditsExhausted() {
-				if (!chat.error) return false;
-				return chat.error.message.includes('status: 402');
+				return chat.error instanceof AiChatHttpError
+					&& chat.error.detail.name === 'InsufficientCredits';
+			},
+
+			get isUnauthorized() {
+				return chat.error instanceof AiChatHttpError
+					&& chat.error.detail.name === 'Unauthorized';
+			},
+
+			get isModelRestricted() {
+				return chat.error instanceof AiChatHttpError
+					&& chat.error.detail.name === 'ModelRequiresPaidPlan';
 			},
 
 			// ── Ephemeral UI state ──

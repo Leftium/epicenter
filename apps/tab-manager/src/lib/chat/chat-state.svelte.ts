@@ -28,6 +28,8 @@
  * ```
  */
 
+import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
+import { createAiFetchClient } from '@epicenter/svelte-utils/auth';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import { fromTable } from '@epicenter/svelte';
@@ -147,7 +149,7 @@ function createAiChatState() {
 				async () => {
 					const deviceId = await getDeviceId();
 					return {
-						fetchClient: auth.fetch,
+						fetchClient: createAiFetchClient(auth.fetch),
 						body: {
 							data: {
 								provider: metadata?.provider ?? DEFAULT_PROVIDER,
@@ -265,8 +267,18 @@ function createAiChatState() {
 			 * UI should show an upgrade prompt when true.
 			 */
 			get isCreditsExhausted() {
-				if (!chat.error) return false;
-				return chat.error.message.includes('status: 402');
+				return chat.error instanceof AiChatHttpError
+					&& chat.error.serverError.name === 'InsufficientCredits';
+			},
+
+			get isUnauthorized() {
+				return chat.error instanceof AiChatHttpError
+					&& chat.error.serverError.name === 'Unauthorized';
+			},
+
+			get isModelRestricted() {
+				return chat.error instanceof AiChatHttpError
+					&& chat.error.serverError.name === 'ModelRequiresPaidPlan';
 			},
 
 			// ── Ephemeral UI state ──

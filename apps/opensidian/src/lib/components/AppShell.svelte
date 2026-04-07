@@ -140,14 +140,14 @@
 		<Resizable.Pane defaultSize={chatOpen ? 45 : 75}>
 			<Resizable.PaneGroup direction="vertical">
 				<Resizable.Pane
-					defaultSize={terminalState.open ? 70 : 100}
+					defaultSize={terminalState.open ? 55 : 100}
 					minSize={30}
 				>
 					<ContentPanel />
 				</Resizable.Pane>
 				{#if terminalState.open}
 					<Resizable.Handle withHandle />
-					<Resizable.Pane defaultSize={30} minSize={10} maxSize={60}>
+					<Resizable.Pane defaultSize={45} minSize={15} maxSize={70}>
 						<TerminalPanel bind:this={terminalRef} />
 					</Resizable.Pane>
 				{/if}

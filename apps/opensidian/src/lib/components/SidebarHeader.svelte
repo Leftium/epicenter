@@ -11,11 +11,8 @@
 
 <Tooltip.Provider>
 	<div
-		class="flex h-8 shrink-0 items-center justify-between border-b px-2"
+		class="flex h-8 shrink-0 items-center justify-end border-b px-2"
 	>
-		<span class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-			Files
-		</span>
 		<div class="flex items-center gap-0.5">
 			<Tooltip.Root>
 				<Tooltip.Trigger>

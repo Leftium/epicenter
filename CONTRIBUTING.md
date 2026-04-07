@@ -201,7 +201,9 @@ This section is for maintainers with npm publish access to the `@epicenter` scop
 
 ### How versioning works
 
-All seven public packages (`@epicenter/workspace`, `@epicenter/cli`, `@epicenter/sync`, `@epicenter/filesystem`, `@epicenter/skills`, `@epicenter/ui`, `@epicenter/svelte`) share a single version number. They move together. Apps (Whispering, the API) are versioned independently.
+All seven public packages (`@epicenter/workspace`, `@epicenter/cli`, `@epicenter/sync`, `@epicenter/filesystem`, `@epicenter/skills`, `@epicenter/ui`, `@epicenter/svelte`) share a single version number. They move together.
+
+**Apps are completely separate from changesets.** Changesets only touches packages that are (a) not marked `"private": true` and (b) listed under `packages/`. Every app in `apps/` is `"private": true` and has its own deploy mechanism—changesets will never version or publish them. Whispering versions come from `tauri.conf.json` and git tags. Web apps deploy on push to `main`. See [App deployments](#app-deployments) below.
 
 We use [changesets](https://github.com/changesets/changesets) to track changes and publish. Never edit `version` fields in `package.json` by hand.
 

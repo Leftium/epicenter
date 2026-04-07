@@ -5,7 +5,7 @@
 	import PathBreadcrumb from './PathBreadcrumb.svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { loadSampleData, seeding } from '$lib/utils/load-sample-data.svelte';
+	import { sampleDataLoader } from '$lib/utils/load-sample-data.svelte';
 	import TabBar from './TabBar.svelte';
 </script>
 
@@ -36,8 +36,8 @@
 				<Empty.Description>Click a file in the tree to view its contents</Empty.Description>
 			</Empty.Header>
 			{#if fsState.rootChildIds.length === 0}
-				<Button variant="outline" size="sm" onclick={() => loadSampleData()} disabled={isSeeding()}>
-					{#if isSeeding()}<Spinner class="size-3.5" />{:else}Load Sample Data{/if}
+				<Button variant="outline" size="sm" onclick={() => sampleDataLoader.load()} disabled={sampleDataLoader.seeding}>
+					{#if sampleDataLoader.seeding}<Spinner class="size-3.5" />{:else}Load Sample Data{/if}
 				</Button>
 			{/if}
 		</Empty.Root>

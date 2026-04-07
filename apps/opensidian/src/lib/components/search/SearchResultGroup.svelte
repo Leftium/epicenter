@@ -16,7 +16,7 @@
 		defaultOpen?: boolean;
 	} = $props();
 
-	let open = $state(defaultOpen);
+	let open = $derived(defaultOpen);
 
 	/**
 	 * Strip all HTML tags except <mark> for safe snippet rendering.

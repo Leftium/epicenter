@@ -2,6 +2,8 @@
 
 The hub server. Handles authentication, real-time sync, and AI inference—everything that needs a single authority across devices.
 
+Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed—if you host a modified version, you share your changes. Self-hosting the unmodified server is encouraged; see the encryption and trust model below.
+
 Runs on Cloudflare Workers with Durable Objects. Each user gets dedicated Durable Objects for their workspaces and documents, providing per-user isolation with WebSocket-based real-time sync.
 
 ## Why a hub exists
@@ -127,3 +129,7 @@ bun run db:studio:remote # Open Drizzle Studio (remote, via Infisical)
 ```
 
 See `wrangler.jsonc` for Durable Object bindings, KV namespaces, and Hyperdrive (Postgres connection pool) configuration.
+
+## License
+
+[AGPL-3.0](../../licenses/LICENSE-AGPL-3.0). The sync server and sync protocol are AGPL so that anyone hosting a modified version shares their changes. Client libraries and apps are MIT. This follows the same pattern as Yjs (MIT core, AGPL y-redis), Liveblocks (Apache clients, AGPL server), and Bitwarden (GPL clients, AGPL server).

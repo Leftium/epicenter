@@ -207,6 +207,7 @@
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "mode-watcher": "^1.1.0",
+        "typebox": "catalog:",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -475,7 +476,6 @@
       },
       "dependencies": {
         "@epicenter/workspace": "workspace:*",
-        "jsrepo": "catalog:",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yargs": "catalog:",

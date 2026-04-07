@@ -12,7 +12,7 @@ import {
 } from './commands/data';
 import { describeCommand } from './commands/describe';
 import { kvCommand } from './commands/kv';
-import { initCommand, installCommand, uninstallCommand } from './commands/project';
+import { initCommand, uninstallCommand } from './commands/project';
 import { runActionCommand } from './commands/run';
 import { sizeCommand } from './commands/size';
 import { startCommand } from './commands/start';
@@ -47,7 +47,6 @@ export function createCLI() {
 				.command(kvCommand)
 				.command(exportCommand)
 				.command(initCommand)
-				.command(installCommand)
 				.command(uninstallCommand)
 				.command(runActionCommand)
 				.command(describeCommand)

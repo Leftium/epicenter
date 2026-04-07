@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/svelte-query';
-
+import { createQueryFactories } from 'wellcrafted/query';
 export const queryClient = new QueryClient({
 	defaultOptions: {
 		queries: {
@@ -8,3 +8,6 @@ export const queryClient = new QueryClient({
 		},
 	},
 });
+
+export const { defineQuery, defineMutation } =
+	createQueryFactories(queryClient);

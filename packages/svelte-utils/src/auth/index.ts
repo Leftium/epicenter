@@ -8,3 +8,4 @@ export {
 	type CreateAuthOptions,
 	createAuth,
 } from './create-auth.svelte.js';
+export { createAiChatFetch } from './create-ai-chat-fetch.js';

@@ -76,9 +76,13 @@ git push --tags
 
 `changeset publish` builds each package and runs `npm publish`. The `git push --tags` pushes the version tags created during publish, which triggers the Tauri release workflow if the tag matches `v*`.
 
-## What stays private
+## What changesets touches (and what it doesn't)
 
-Three packages never publish to npm: `@epicenter/ai`, `@epicenter/constants`, and `@epicenter/vault`. They're internal implementation details—AI provider wrappers, shared constants, and the encryption vault. `"private": true` in their `package.json` is all it takes; changesets ignores them automatically.
+Changesets only publishes packages that are (a) not `"private": true` and (b) under `packages/`. Everything else is invisible to it.
+
+Three packages never publish to npm: `@epicenter/ai`, `@epicenter/constants`, and `@epicenter/vault`. They're internal implementation details. `"private": true` in their `package.json` is all it takes; changesets ignores them automatically.
+
+**Every app in `apps/` is also `"private": true` and completely outside the changeset system.** Whispering versions come from `tauri.conf.json` and `v*` git tags. The API and landing page deploy via Cloudflare Workers on push to `main`. The Chrome extension versions via `manifest.json`. Changesets will never touch any of them—they have their own deploy pipelines documented in `.github/workflows/README.md`.
 
 The public/private split is intentional. `@epicenter/workspace` is the library other developers build on. The private packages are the internals that make Epicenter's own apps work. Keeping them private means we can change them without worrying about semver contracts.
 

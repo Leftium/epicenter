@@ -1,5 +1,7 @@
+import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { fromTable } from '@epicenter/svelte';
+import { createAiChatFetch } from '@epicenter/svelte-utils/auth';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import type { JsonValue } from 'wellcrafted/json';
 import {
@@ -99,7 +101,7 @@ function createAiChatState() {
 			connection: fetchServerSentEvents(
 				() => `${APP_URLS.API}/ai/chat`,
 				async () => ({
-					fetchClient: auth.fetch as typeof fetch,
+					fetchClient: createAiChatFetch(auth.fetch),
 					body: {
 						data: {
 							provider: metadata?.provider ?? DEFAULT_PROVIDER,
@@ -205,8 +207,18 @@ function createAiChatState() {
 			},
 
 			get isCreditsExhausted() {
-				if (!chat.error) return false;
-				return chat.error.message.includes('status: 402');
+				return chat.error instanceof AiChatHttpError
+					&& chat.error.detail.name === 'InsufficientCredits';
+			},
+
+			get isUnauthorized() {
+				return chat.error instanceof AiChatHttpError
+					&& chat.error.detail.name === 'Unauthorized';
+			},
+
+			get isModelRestricted() {
+				return chat.error instanceof AiChatHttpError
+					&& chat.error.detail.name === 'ModelRequiresPaidPlan';
 			},
 
 			sendMessage(content: string) {
@@ -392,14 +404,6 @@ function createAiChatState() {
 
 		modelsForProvider(providerName: string): readonly string[] {
 			return PROVIDER_MODELS[providerName as Provider] ?? [];
-		},
-
-		get error() {
-			return handles.get(activeConversationId)?.error;
-		},
-
-		get isCreditsExhausted() {
-			return handles.get(activeConversationId)?.isCreditsExhausted ?? false;
 		},
 
 		sendMessage(content: string) {

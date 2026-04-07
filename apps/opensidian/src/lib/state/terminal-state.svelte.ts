@@ -74,7 +74,7 @@ function createTerminalState() {
 		}),
 	);
 	const WELCOME_MESSAGE = [
-		'Welcome to OpenSidian \u2014 notes on CRDTs with a bash terminal.',
+		'Welcome to Opensidian\u2014notes on CRDTs with a bash terminal.',
 		'',
 		'Try these:',
 		'  echo "# Hello HN" > /hello.md    create a file',

@@ -34,7 +34,8 @@
 		"./ingest": "./src/ingest/index.ts",
 		"./ingest/reddit": "./src/ingest/reddit/index.ts",
 		"./shared/crypto": "./src/shared/crypto/index.ts",
-		"./extensions/materializer/markdown": "./src/extensions/materializer/markdown/index.ts"
+		"./extensions/materializer/markdown": "./src/extensions/materializer/markdown/index.ts",
+		"./ai": "./src/ai/index.ts"
 	},
 	"license": "MIT",
 	"scripts": {
@@ -42,6 +43,7 @@
 	},
 	"dependencies": {
 		"@ark/json-schema": "^0.0.4",
+		"@tanstack/ai": "catalog:",
 		"@epicenter/sync": "workspace:*",
 		"@noble/ciphers": "^2.1.1",
 		"@noble/hashes": "^2.0.1",

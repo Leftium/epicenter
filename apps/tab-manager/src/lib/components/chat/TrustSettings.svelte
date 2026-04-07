@@ -4,7 +4,7 @@
 	import { Switch } from '@epicenter/ui/switch';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import { toolTrustState } from '$lib/state/tool-trust.svelte';
-	import { workspaceToolTitles } from '$lib/client';
+	import { workspaceAiTools } from '$lib/client';
 
 	const trustedTools = $derived(
 		toolTrustState.entries.filter(([, level]) => level === 'always'),
@@ -26,7 +26,7 @@
 					{#each trustedTools as [ name ] (name)}
 						<div class="flex items-center justify-between gap-2">
 							<span class="text-sm">
-								{workspaceToolTitles[name] ??
+						{workspaceAiTools.definitions.find(d => d.name === name)?.title ??
 									name
 										.replace(/_/g, ' ')
 										.replace(/^\w/, (c) => c.toUpperCase())}

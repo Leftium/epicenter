@@ -9,12 +9,11 @@
  * the sole authority for ephemeral browser state. See `browser-state.svelte.ts`.
  */
 
-import { actionsToClientTools, toToolDefinitions } from '@epicenter/ai';
+import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createAuth } from '@epicenter/svelte/auth';
 import {
 	defineMutation,
 	defineQuery,
-	iterateActions,
 } from '@epicenter/workspace';
 import { createSyncExtension, toWsUrl } from '@epicenter/workspace/extensions/sync/websocket';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
@@ -53,23 +52,11 @@ export const auth = createAuth({
 	},
 });
 
-export const workspaceTools = actionsToClientTools(workspace.actions);
-export const workspaceDefinitions = toToolDefinitions(workspaceTools);
+/** AI tool representations for the tab-manager workspace. */
+export const workspaceAiTools = actionsToAiTools(workspace.actions);
 
-export type WorkspaceTools = typeof workspaceTools;
-export type WorkspaceActionName = WorkspaceTools[number]['name'];
-
-/**
- * Lookup map from tool name to human-readable title.
- *
- * Used by `ToolCallPart.svelte` to display action titles instead of
- * deriving names from underscore-separated tool names.
- */
-export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
-	[...iterateActions(workspace.actions)]
-		.filter(([action]) => action.title !== undefined)
-		.map(([action, path]) => [path.join('_'), action.title!]),
-);
+/** Tool array type for use in TanStack AI generics. */
+export type WorkspaceTools = typeof workspaceAiTools.tools;
 
 /**
  * Register this browser installation as a device in the workspace.

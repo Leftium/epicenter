@@ -2,6 +2,7 @@ import {
 	type AiChatError,
 	AiChatHttpError,
 } from '@epicenter/constants/ai-chat-errors';
+import { tryAsync, Ok } from 'wellcrafted/result';
 
 /**
  * Wrap an authenticated fetch client to read structured error bodies
@@ -50,33 +51,30 @@ type FetchFn = (
 export function createAiChatFetch(authFetch: FetchFn): FetchFn {
 	return async (input, init) => {
 		const response = await authFetch(input, init);
+		if (response.ok) return response;
 
-		if (!response.ok) {
-			let detail: AiChatError | undefined;
-			try {
+		// Read the body before TanStack AI's adapter can throw its generic
+		// "HTTP error! status: 401" without reading it.
+		const { data: detail } = await tryAsync({
+			try: async () => {
 				const body = await response.json();
-				// wellcrafted Err envelope: { data: null, error: { name, message, ... } }
 				if (
 					body?.error &&
 					typeof body.error === 'object' &&
 					'name' in body.error
 				) {
-					detail = body.error as AiChatError;
+					return body.error as AiChatError;
 				}
-			} catch {
-				// Body wasn't JSON — fall through with undefined detail
-			}
+			},
+			catch: () => Ok(undefined),
+		});
 
-			if (detail) {
-				throw new AiChatHttpError(response.status, detail);
-			}
-
-			// Non-JSON or unrecognized error body — throw generic Error
-			throw new Error(
-				`HTTP error! status: ${response.status} ${response.statusText}`,
-			);
+		if (detail) {
+			throw new AiChatHttpError(response.status, detail);
 		}
 
-		return response;
+		throw new Error(
+			`HTTP error! status: ${response.status} ${response.statusText}`,
+		);
 	};
 }

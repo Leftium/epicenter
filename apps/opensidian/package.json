@@ -11,6 +11,7 @@
 		"dev:local": "bun --bun vite dev",
 		"dev:remote": "bun --bun vite dev --mode production",
 		"build": "bun --bun vite build",
+		"deploy": "bun run build && wrangler deploy",
 		"preview": "bun --bun vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
@@ -31,8 +32,8 @@
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
 		"mode-watcher": "^1.1.0",
-		"wellcrafted": "catalog:",
-		"typebox": "catalog:"
+		"typebox": "catalog:",
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@codemirror/commands": "^6.10.3",
@@ -51,7 +52,7 @@
 		"@lezer/highlight": "^1.2.3",
 		"@lucide/svelte": "catalog:",
 		"@replit/codemirror-vim": "^6.3.0",
-		"@sveltejs/adapter-auto": "catalog:",
+		"@sveltejs/adapter-static": "catalog:",
 		"@sveltejs/kit": "catalog:",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "catalog:",
@@ -64,6 +65,7 @@
 		"tailwindcss": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:",
+		"vite-plugin-node-polyfills": "^0.26.0",
 		"y-codemirror.next": "^0.3.5",
 		"y-indexeddb": "catalog:",
 		"yjs": "catalog:"

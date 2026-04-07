@@ -36,8 +36,10 @@
 
 <p align="center">
   <a href="#apps">Apps</a> •
+  <a href="#architecture">Architecture</a> •
+  <a href="#packages">Packages</a> •
   <a href="#for-developers">For Developers</a> •
-  <a href="#where-were-headed">Vision</a> •
+  <a href="#quick-start">Quick Start</a> •
   <a href="#contributing">Contributing</a> •
   <a href="https://go.epicenter.so/discord">Discord</a>
 </p>
@@ -51,6 +53,48 @@ Epicenter is an ecosystem of open-source, local-first apps. All your data—note
 Under the hood, Yjs CRDTs are the single source of truth. They materialize *down* to SQLite (for fast queries) and markdown (for human-readable files). Sync happens over the Yjs protocol; the server is a relay, not an authority—it never sees your content.
 
 The library that powers this, [`@epicenter/workspace`](packages/workspace), is something other developers can build on too. Define a typed schema, get CRDT-backed tables with multi-device sync handled for you.
+
+## Architecture
+
+```
+                              ┌──────────────────────────────────┐
+                              │         @epicenter/api           │
+                              │   Cloudflare Workers + DO hub    │
+                              │   auth · sync relay · AI chat    │
+                              └──────────┬───────────────────────┘
+                                         │ y-websocket protocol
+                    ┌────────────────────┼──────────────────────┐
+                    │                    │                      │
+               ┌────▼──────┐      ┌─────▼───────┐      ┌──────▼──────┐
+               │ Whispering│      │  Opensidian  │      │ Tab Manager │
+               │  (Tauri)  │      │ (SvelteKit)  │      │  (WXT ext)  │
+               └────┬──────┘      └─────┬────────┘      └──────┬──────┘
+                    │                    │                      │
+          ┌─────────┴────────────────────┴──────────────────────┘
+          │              All apps share these layers:
+          │
+    ┌─────▼───────────────────────────────────────────────────────────┐
+    │                     MIDDLEWARE / ADAPTERS                        │
+    │  @epicenter/svelte    — Svelte integration, auth, persistence   │
+    │  @epicenter/filesystem — POSIX file layer over Yjs              │
+    │  @epicenter/skills    — skill/reference tables                  │
+    │  @epicenter/ai        — LLM tool bridging                      │
+    └─────────────────────────────┬───────────────────────────────────┘
+                                  │
+    ┌──────────────────────────────▼───────────────────────────────────┐
+    │                           CORE                                   │
+    │  @epicenter/workspace — typed schemas, Yjs CRDTs, extensions,   │
+    │                         E2E encryption, lifecycle, materializers │
+    │  @epicenter/sync      — protocol encoding/decoding, V2 updates  │
+    │  @epicenter/constants — app URLs, versions, shared config       │
+    │  @epicenter/ui        — shadcn-svelte component library         │
+    │  @epicenter/cli       — TypeBox→yargs CLI, auth/session APIs    │
+    └─────────────────────────────────────────────────────────────────┘
+```
+
+The dependency flow is strict: core has zero upward dependencies, middleware only reaches into core, and apps compose both. [`@epicenter/workspace`](packages/workspace) is the gravitational center—every middleware package and most apps depend on it. The sync server is a relay, not an authority; it never sees your content because encryption happens client-side before anything leaves the device.
+
+[Full architecture walkthrough →](docs/architecture.md) · [Encryption design →](docs/encryption.md)
 
 ## Apps
 
@@ -80,6 +124,20 @@ The library that powers this, [`@epicenter/workspace`](packages/workspace), is s
   </tr>
 </table>
 
+## Packages
+
+| Package | Description | License |
+| --- | --- | --- |
+| [`@epicenter/workspace`](packages/workspace) | Core library. Typed schemas, Yjs CRDTs, extension builder, E2E encryption, materializers. Everything builds on this. | MIT |
+| [`@epicenter/sync`](packages/sync) | Yjs sync protocol encoding/decoding. Dumb server, smart client—protocol framing is separate from transport. | AGPL-3.0 |
+| [`@epicenter/ui`](packages/ui) | shadcn-svelte component library shared across all apps. | MIT |
+| [`@epicenter/svelte`](packages/svelte-utils) | Svelte 5 integration—persisted state, auth, workspace gate, TanStack Query helpers. | MIT |
+| [`@epicenter/filesystem`](packages/filesystem) | POSIX-style virtual filesystem over Yjs workspace tables. `mkdir`, `mv`, `rm`, `stat`. | MIT |
+| [`@epicenter/skills`](packages/skills) | Skill and reference tables for AI-enhanced workspace apps. | MIT |
+| [`@epicenter/ai`](packages/ai) | Bridges workspace actions with LLM tool calling. | MIT |
+| [`@epicenter/cli`](packages/cli) | The `epicenter` command. TypeBox schemas become CLI flags automatically. | MIT |
+| [`@epicenter/constants`](packages/constants) | Shared URLs, ports, and version info across the monorepo. | MIT |
+
 ## For Developers
 
 The hard problem with local-first apps is synchronization. If each device has its own SQLite file, how do you keep them in sync? If each device has its own markdown folder, same question. We ended up using Yjs CRDTs as the single source of truth, then materializing that data *down* to SQLite (for fast SQL reads) and markdown (for human-readable files). Yjs handles the sync; SQLite and markdown handle the reads.
@@ -87,28 +145,28 @@ The hard problem with local-first apps is synchronization. If each device has it
 The [`@epicenter/workspace`](packages/workspace) package wraps this into a single API. Define a schema, get CRDT-backed tables, attach providers to materialize to SQLite or markdown, and add sync when you're ready.
 
 ```typescript
-import { defineWorkspace, createClient, id, text, boolean, select } from '@epicenter/workspace';
+import { type } from 'arktype';
+import { createWorkspace, defineTable, defineWorkspace } from '@epicenter/workspace';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
+  import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 
-const workspace = defineWorkspace({
-  id: 'blog',
-  tables: {
-    posts: {
-      id: id(),
-      title: text(),
-      published: boolean({ default: false }),
-      category: select({ options: ['tech', 'personal'] }),
-    },
-  },
-  kv: {},
-});
+    const posts = defineTable(
+  type({ id: 'string', title: 'string', published: 'boolean', _v: '1' }),
+      );
 
-const client = createClient(workspace.id)
-  .withDefinition(workspace)
-  .withExtension('persistence', setupPersistence)
-  .withExtension('sqlite', (c) => sqliteProvider(c));
+      const definition = defineWorkspace({
+  id: 'epicenter.blog',
+  tables: { posts },
+  });
 
-// Write to the Y.Doc — SQLite updates automatically
-client.tables.get('posts').upsert({ id: '1', title: 'Hello', published: false, category: 'tech' });
+const workspace = createWorkspace(definition)
+  .withExtension('persistence', indexeddbPersistence)
+  .withExtension('sync', createSyncExtension({
+    url: (docId) => `ws://localhost:3913/rooms/${docId}`,
+  }));
+
+await workspace.whenReady;
+workspace.tables.posts.set({ id: '1', title: 'Hello', published: false, _v: 1 });
 ```
 
 Each user gets their own database. Schema definitions are plain JSON, so they work with MCP and OpenAPI out of the box. Write to Yjs and SQLite updates; edit a markdown file and the CRDT merges it in.

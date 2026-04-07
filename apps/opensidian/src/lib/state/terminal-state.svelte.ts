@@ -1,7 +1,9 @@
 import { defineCommand } from 'just-bash';
+	import { createPersistedState } from '@epicenter/svelte';
 import { bash, fs } from '$lib/client';
 import { fsState } from '$lib/state/fs-state.svelte';
 import { Ok, tryAsync } from 'wellcrafted/result';
+import { type } from 'arktype';
 
 /**
  * A single entry in the terminal history.
@@ -36,7 +38,11 @@ type TerminalEntry =
  * ```
  */
 function createTerminalState() {
-	let open = $state(false);
+	const openState = createPersistedState({
+		key: 'opensidian.terminal-open',
+		schema: type('boolean'),
+		defaultValue: false,
+	});
 	let history = $state<TerminalEntry[]>([]);
 	let commandHistory = $state<string[]>([]);
 	let historyIndex = $state(-1);
@@ -70,7 +76,7 @@ function createTerminalState() {
 
 	return {
 		get open() {
-			return open;
+			return openState.current;
 		},
 		get history() {
 			return history;
@@ -81,17 +87,17 @@ function createTerminalState() {
 
 		/** Toggle the terminal panel open/closed. */
 		toggle() {
-			open = !open;
+			openState.current = !openState.current;
 		},
 
 		/** Show the terminal panel. */
 		show() {
-			open = true;
+			openState.current = true;
 		},
 
 		/** Hide the terminal panel. */
 		hide() {
-			open = false;
+			openState.current = false;
 		},
 
 		/**

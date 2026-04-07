@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import { Separator } from '@epicenter/ui/separator';
 	import { X } from '@lucide/svelte';
 	import { terminalState } from '$lib/state/terminal-state.svelte';
@@ -7,7 +8,7 @@
 	import TerminalOutput from './TerminalOutput.svelte';
 
 	let inputRef: ReturnType<typeof TerminalInput> | undefined = $state();
-	let scrollEl: HTMLDivElement | undefined = $state();
+	let viewportRef: HTMLElement | null = $state(null);
 
 	/**
 	 * Focus the input element. Called from AppShell when the
@@ -20,10 +21,9 @@
 	// Auto-scroll to bottom when new entries appear.
 	$effect(() => {
 		void terminalState.history.length;
-		if (scrollEl) {
-			// Tick to let DOM update before scrolling.
+		if (viewportRef) {
 			requestAnimationFrame(() => {
-				scrollEl?.scrollTo({ top: scrollEl.scrollHeight });
+				viewportRef?.scrollTo({ top: viewportRef.scrollHeight });
 			});
 		}
 	});
@@ -37,12 +37,12 @@
 		</Button>
 	</div>
 	<Separator />
-	<div bind:this={scrollEl} class="min-h-0 flex-1 overflow-y-auto">
+	<ScrollArea class="min-h-0 flex-1" bind:viewportRef>
 		<div class="space-y-1 p-3">
 			{#each terminalState.history as entry}
 				<TerminalOutput {entry} />
 			{/each}
 		</div>
-	</div>
+	</ScrollArea>
 	<TerminalInput bind:this={inputRef} />
 </div>

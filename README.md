@@ -189,7 +189,7 @@ Each user gets their own database. Schema definitions are plain JSON, so they wo
 
 ## Where We're Headed
 
-More apps are coming—notes, an AI assistant, and others—all sharing the same workspace. The architecture already supports it; the [`@epicenter/workspace`](packages/workspace) library handles the hard parts (schemas, CRDT sync, materialization), so each new app is mostly UI.
+More apps are in progress—each one shares the same workspace, so data flows between them without import/export. The [`@epicenter/workspace`](packages/workspace) library handles the hard parts (schemas, CRDT sync, materialization), so each new app is mostly UI.
 
 Epicenter Cloud will provide hosted sync for people who don't want to run their own server. Same model as Supabase selling hosted Postgres or Liveblocks selling hosted collaboration. Self-hosting is and will remain first-class—the sync server is open source under AGPL, and when you run it yourself, you control the encryption keys and trust boundary.
 

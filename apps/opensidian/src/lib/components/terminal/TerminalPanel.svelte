@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import { Button } from '@epicenter/ui/button';
 	import { Separator } from '@epicenter/ui/separator';
 	import { X } from '@lucide/svelte';
@@ -38,12 +37,12 @@
 		</Button>
 	</div>
 	<Separator />
-	<ScrollArea class="flex-1">
-		<div bind:this={scrollEl} class="space-y-1 p-3">
+	<div bind:this={scrollEl} class="min-h-0 flex-1 overflow-y-auto">
+		<div class="space-y-1 p-3">
 			{#each terminalState.history as entry}
 				<TerminalOutput {entry} />
 			{/each}
 		</div>
-	</ScrollArea>
+	</div>
 	<TerminalInput bind:this={inputRef} />
 </div>

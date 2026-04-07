@@ -92,6 +92,9 @@ function createTerminalState() {
 		}
 	}
 
+	// If terminal was persisted as open, show welcome on load.
+	if (openState.current) ensureWelcome();
+
 	return {
 		get open() {
 			return openState.current;

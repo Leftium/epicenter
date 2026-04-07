@@ -2,8 +2,12 @@
 	"$schema": "../../node_modules/wrangler/config-schema.json",
 	"name": "opensidian",
 	"compatibility_date": "2025-11-04",
-	// --- Custom domain: opensidian.epicenter.so (auto-creates DNS record on deploy) ---
+	// --- Custom domains: opensidian.com + opensidian.epicenter.so (auto-creates DNS records on deploy) ---
 	"routes": [
+		{
+			"pattern": "opensidian.com",
+			"custom_domain": true
+		},
 		{
 			"pattern": "opensidian.epicenter.so",
 			"custom_domain": true

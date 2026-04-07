@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Popover from '@epicenter/ui/popover';
-	import Cloud from '@lucide/svelte/icons/cloud';
-	import CloudOff from '@lucide/svelte/icons/cloud-off';
+	import LogIn from '@lucide/svelte/icons/log-in';
+	import UserIcon from '@lucide/svelte/icons/user';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import { AuthForm } from '@epicenter/svelte/auth-form';
@@ -20,9 +20,9 @@
 		{#if auth.isBusy}
 			<LoaderCircle class="size-4 animate-spin" />
 		{:else if auth.isAuthenticated}
-			<Cloud class="size-4" />
+			<UserIcon class="size-4" />
 		{:else}
-			<CloudOff class="size-4 text-muted-foreground" />
+			<LogIn class="size-4 text-muted-foreground" />
 		{/if}
 	</Popover.Trigger>
 	<Popover.Content class="w-80 p-0" align="end">

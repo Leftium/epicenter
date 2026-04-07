@@ -18,7 +18,7 @@
 	import ContentPanel from './editor/ContentPanel.svelte';
 	import StatusBar from './editor/StatusBar.svelte';
 	import SearchPanel from './search/SearchPanel.svelte';
-	import Toolbar from './Toolbar.svelte';
+	import SidebarHeader from './SidebarHeader.svelte';
 	import TerminalPanel from './terminal/TerminalPanel.svelte';
 	import FileTree from './tree/FileTree.svelte';
 
@@ -103,16 +103,18 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="flex h-screen flex-col">
-	<Toolbar bind:chatOpen />
 	<Resizable.PaneGroup direction="horizontal" class="flex-1">
 		<Resizable.Pane defaultSize={25} minSize={15} maxSize={50}>
-			{#if sidebarSearchState.leftPaneView === 'search'}
-				<SearchPanel bind:this={searchPanelRef} />
-			{:else}
-				<ScrollArea class="h-full">
-					<div class="p-2"><FileTree /></div>
-				</ScrollArea>
-			{/if}
+			<div class="flex h-full flex-col">
+				<SidebarHeader />
+				{#if sidebarSearchState.leftPaneView === 'search'}
+					<SearchPanel bind:this={searchPanelRef} />
+				{:else}
+					<ScrollArea class="flex-1">
+						<div class="p-2"><FileTree /></div>
+					</ScrollArea>
+				{/if}
+			</div>
 		</Resizable.Pane>
 		<Resizable.Handle withHandle />
 		<Resizable.Pane defaultSize={chatOpen ? 45 : 75}>
@@ -138,7 +140,7 @@
 			</Resizable.Pane>
 		{/if}
 	</Resizable.PaneGroup>
-	<StatusBar />
+	<StatusBar bind:chatOpen />
 	<CommandPalette
 		items={paletteItems}
 		bind:open={paletteOpen}

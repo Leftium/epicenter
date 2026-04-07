@@ -6,6 +6,9 @@
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import FileTreeItem from './FileTreeItem.svelte';
 	import InlineNameInput from './InlineNameInput.svelte';
+	import { Button } from '@epicenter/ui/button';
+	import { Spinner } from '@epicenter/ui/spinner';
+	import { loadSampleData, seeding } from '$lib/utils/load-sample-data.svelte';
 
 	/**
 	 * Flat list of visible item IDs in visual order.
@@ -137,10 +140,11 @@
 	<Empty.Root class="border-0">
 		<Empty.Header>
 			<Empty.Title>No files yet</Empty.Title>
-			<Empty.Description
-				>Use the toolbar to create files and folders</Empty.Description
-			>
+			<Empty.Description>Create files or load sample data to get started</Empty.Description>
 		</Empty.Header>
+		<Button variant="outline" size="sm" onclick={() => loadSampleData()} disabled={isSeeding()}>
+			{#if isSeeding()}<Spinner class="size-3.5" />{:else}Load Sample Data{/if}
+		</Button>
 	</Empty.Root>
 {:else}
 	<TreeView.Root tabindex={0} aria-label="File explorer" onkeydown={handleKeydown}>

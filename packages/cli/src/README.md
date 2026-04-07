@@ -21,7 +21,7 @@ epicenter export                     # export all data as JSON
 epicenter size                       # report workspace sizes and row counts
 
 epicenter init                       # scaffold a new project
-epicenter install <item>             # install a workspace from a registry
+epicenter uninstall <workspace-id>   # remove a workspace
 epicenter uninstall <workspace-id>   # remove a workspace
 
 epicenter start [dir]                # start the workspace daemon

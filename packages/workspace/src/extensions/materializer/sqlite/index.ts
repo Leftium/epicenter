@@ -8,7 +8,7 @@
  * @module
  */
 
-// createSqliteMirror is exported after Wave 2 creates the file
+export { createSqliteMirror } from './create-sqlite-mirror.js';
 export { generateDdl, resolveSchema } from './ddl.js';
 export type {
 	MirrorDatabase,

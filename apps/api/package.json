@@ -1,5 +1,6 @@
 {
 	"name": "@epicenter/api",
+	"description": "Hub server for auth, real-time sync, and AI inference on Cloudflare Workers",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",

@@ -1,5 +1,6 @@
 {
 	"name": "opensidian",
+	"description": "Local-first note-taking app with a built-in bash terminal and real-time sync",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",

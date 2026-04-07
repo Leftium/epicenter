@@ -1,5 +1,6 @@
 {
 	"name": "@epicenter/landing",
+	"description": "Public landing site for Epicenter",
 	"private": true,
 	"type": "module",
 	"version": "0.0.1",

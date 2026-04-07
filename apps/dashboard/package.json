@@ -1,5 +1,6 @@
 {
 	"name": "@epicenter/dashboard",
+	"description": "Billing and credits dashboard for Epicenter customers",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",

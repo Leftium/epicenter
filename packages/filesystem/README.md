@@ -94,6 +94,10 @@ apps like Opensidian   markdown notes, paths, links, indexing
 
 In the monorepo, apps can treat shared workspace content as files without giving up Yjs collaboration. That is the point of this package.
 
+Most Epicenter apps use [`@epicenter/workspace`](../workspace) directly and don't need this package. Workspace tables are the right default when the app knows the shape of every record upfront—notes with titles, bookmarks with URLs, chat messages with timestamps. Reach for `@epicenter/filesystem` when the data model is inherently hierarchical files: a code editor, a note vault with nested folders, anything where users expect a file tree and path-based operations.
+
+Honeycrisp (Apple Notes clone) uses only workspace tables. Opensidian (file-based editor with a bash terminal) uses both—`filesTable` from this package alongside plain workspace tables for chat and settings. See [Your Data Is Probably a Table, Not a File](../../docs/articles/your-data-is-probably-a-table-not-a-file.md) for the full comparison.
+
 ## License
 
 MIT.

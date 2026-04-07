@@ -106,15 +106,27 @@ The dependency flow is strict: core has zero upward dependencies, middleware onl
       <p><strong><a href="apps/whispering">Source</a></strong> · <strong><a href="apps/whispering#install-whispering">Install</a></strong></p>
     </td>
     <td align="center" width="50%">
+      <h3><a href="apps/opensidian">Opensidian</a></h3>
+      <p>Local-first note-taking with a built-in bash terminal, end-to-end encryption, and real-time sync. Your notes live in a CRDT-backed virtual filesystem.</p>
+      <p><strong><a href="apps/opensidian">Source</a></strong> · <strong><a href="https://opensidian.com">Try it</a></strong></p>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
       <h3><a href="apps/tab-manager">Tab Manager</a></h3>
-      <p>Chrome extension for saving tabs as bookmarks and building a read-later list, all stored in the shared workspace.</p>
+      <p>Browser extension side panel for managing tabs with workspace sync and AI chat that can call workspace tools with inline approval.</p>
       <p><strong><a href="apps/tab-manager">Source</a></strong></p>
+    </td>
+    <td align="center" width="50%">
+      <h3><a href="apps/honeycrisp">Honeycrisp</a></h3>
+      <p>Apple Notes-style local-first notes app. Folders, rich-text editing with ProseMirror, and collaborative sync via Yjs.</p>
+      <p><strong><a href="apps/honeycrisp">Source</a></strong></p>
     </td>
   </tr>
   <tr>
     <td align="center" width="50%">
       <h3><a href="apps/api">Epicenter API</a></h3>
-      <p>The hub server. Handles authentication, real-time sync via Durable Objects, and AI inference. Everything that needs a single authority across devices.</p>
+      <p>The hub server. Auth, real-time sync via Durable Objects, and AI inference. Everything that needs a single authority across devices.</p>
       <p><strong><a href="apps/api">Source</a></strong></p>
     </td>
     <td align="center" width="50%">
@@ -123,6 +135,8 @@ The dependency flow is strict: core has zero upward dependencies, middleware onl
     </td>
   </tr>
 </table>
+
+Also in the repo: [Fuji](apps/fuji) (personal CMS), [Zhongwen](apps/zhongwen) (Mandarin learning chat), [Skills Editor](apps/skills) (agent skill manager), [Dashboard](apps/dashboard) (billing UI), and [Landing](apps/landing) (public site).
 
 ## Packages
 
@@ -175,7 +189,7 @@ Each user gets their own database. Schema definitions are plain JSON, so they wo
 
 ## Where We're Headed
 
-More apps are coming—notes, an AI assistant, and others—all sharing the same workspace. The architecture already supports it; the [`@epicenter/workspace`](packages/workspace) library handles the hard parts (schemas, CRDT sync, materialization), so each new app is mostly UI.
+More apps are in progress—each one shares the same workspace, so data flows between them without import/export. The [`@epicenter/workspace`](packages/workspace) library handles the hard parts (schemas, CRDT sync, materialization), so each new app is mostly UI.
 
 Epicenter Cloud will provide hosted sync for people who don't want to run their own server. Same model as Supabase selling hosted Postgres or Liveblocks selling hosted collaboration. Self-hosting is and will remain first-class—the sync server is open source under AGPL, and when you run it yourself, you control the encryption keys and trust boundary.
 
@@ -239,6 +253,20 @@ Contributors coordinate in our [Discord](https://go.epicenter.so/discord).
   <img alt="Cloudflare Workers" src="https://img.shields.io/badge/-Cloudflare%20Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white" />
   <img alt="Tailwind CSS" src="https://img.shields.io/badge/-Tailwind%20CSS-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white" />
 </p>
+
+## Design Decisions
+
+We publish our implementation specs. These are the reasoning behind non-obvious architectural choices—alternatives considered, trade-offs made, and why we landed where we did.
+
+| Spec | What it decided |
+| --- | --- |
+| [Encrypted Workspace Storage](specs/20260213T005300-encrypted-workspace-storage.md) | XChaCha20-Poly1305 at the CRDT value level; server-managed keys with self-hosting as the trust boundary |
+| [Y-Sweet Persistence Architecture](specs/20260212T190000-y-sweet-persistence-architecture.md) | How Yjs documents persist and compact in Durable Objects |
+| [Simple Definition-First Workspace API](specs/20260201T120000-simple-definition-first-workspace.md) | The `defineTable` → `createWorkspace` → `.withExtension()` builder pattern |
+| [Resilient Client Architecture](specs/20260119T231252-resilient-client-architecture.md) | How workspace clients handle offline, reconnect, and extension failures |
+| [Migrate to @epicenter/sync](specs/20260214T120800-migrate-y-sweet-to-epicenter-sync.md) | Custom sync protocol replacing Y-Sweet with our own framing layer |
+
+All 112 implemented specs live in [`specs/`](specs/).
 
 ## License
 

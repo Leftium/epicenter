@@ -1,5 +1,6 @@
 {
 	"name": "@epicenter/honeycrisp",
+	"description": "Local-first notes app with collaborative rich-text editing",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",

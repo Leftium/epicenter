@@ -58,7 +58,9 @@
 		title={tooltip}
 	>
 		<div class="relative">
-			{#if !auth.isAuthenticated}
+			{#if auth.isBusy}
+				<LoaderCircle class="size-4 animate-spin" />
+			{:else if !auth.isAuthenticated}
 				<CloudOff class="size-4 text-muted-foreground" />
 			{:else if syncStatus.current.phase === 'connected'}
 				<Cloud class="size-4" />

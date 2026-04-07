@@ -6,7 +6,6 @@
 	import { buttonVariants } from '@epicenter/ui/button';
 	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';
-	import AccountPopover from '$lib/components/AccountPopover.svelte';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 
 </script>
@@ -56,6 +55,5 @@
 			<GithubIcon class="size-4" />
 		</a>
 		<SyncStatusIndicator />
-		<AccountPopover />
 	</div>
 </div>

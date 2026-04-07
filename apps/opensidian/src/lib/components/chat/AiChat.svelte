@@ -89,7 +89,6 @@
 			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
 		>
 			<span class="min-w-0 flex-1">{active?.error?.message}</span>
-			</span>
 			<div class="flex shrink-0 items-center gap-1">
 				<Button
 					variant="ghost"

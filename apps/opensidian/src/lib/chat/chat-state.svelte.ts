@@ -1,7 +1,7 @@
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { fromTable } from '@epicenter/svelte';
-import { createAiChatFetch } from '@epicenter/svelte-utils/auth';
+import { createAiChatFetch } from '@epicenter/svelte/auth';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import type { JsonValue } from 'wellcrafted/json';
 import {

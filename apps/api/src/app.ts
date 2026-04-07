@@ -100,7 +100,7 @@ const factory = createFactory<Env>({
 		const allowedOrigins = new Set([
 			'tauri://localhost',
 			...Object.values(APPS).flatMap((a) => [
-				a.url,
+				...a.urls,
 				`http://localhost:${a.port}`,
 			]),
 		]);
@@ -156,7 +156,7 @@ const factory = createFactory<Env>({
 		app.use('*', async (c, next) => {
 			const origin = new URL(c.req.url).origin;
 			const baseURL =
-				origin === `http://${new URL(APPS.API.url).host}`
+				origin === `http://${new URL(APPS.API.urls[0]).host}`
 					? `http://localhost:${APPS.API.port}`
 					: origin;
 			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));

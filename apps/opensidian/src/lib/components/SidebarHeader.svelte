@@ -11,8 +11,11 @@
 
 <Tooltip.Provider>
 	<div
-		class="flex h-8 shrink-0 items-center justify-end border-b px-2"
+		class="flex h-8 shrink-0 items-center justify-between border-b px-2"
 	>
+		<div class="flex size-5 items-center justify-center rounded bg-black">
+			<img src="/logo.svg" alt="Epicenter" class="size-3.5" />
+		</div>
 		<div class="flex items-center gap-0.5">
 			<Tooltip.Root>
 				<Tooltip.Trigger>

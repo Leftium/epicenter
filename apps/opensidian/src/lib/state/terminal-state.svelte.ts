@@ -171,6 +171,11 @@ function createTerminalState() {
 		clear() {
 			history = [];
 		},
+
+		/** Print a welcome message as a single output entry. */
+		printWelcome(lines: string[]) {
+			history = [...history, { type: 'output', stdout: lines.join('\n') + '\n', stderr: '', exitCode: 0 }];
+		},
 	};
 }
 

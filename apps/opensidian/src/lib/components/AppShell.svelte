@@ -44,18 +44,6 @@
 			if (readme[0]) fsState.selectFile(readme[0]);
 		});
 		terminalState.show();
-		terminalState.printWelcome([
-			'Welcome to OpenSidian — notes on CRDTs with a bash terminal.',
-			'',
-			'Try these:',
-			'  echo "# Hello HN" > /hello.md    create a file',
-			'  ls /                              list files',
-			'  open /hello.md                    open in editor',
-			'  cat /hello.md                     print contents',
-			'',
-			'80+ commands: awk, sed, grep, jq, find, sqlite3, curl, and more.',
-			'Press ⌘` to toggle this terminal.',
-		]);
 	});
 	$effect(() => {
 		if (!paletteOpen) searchState.reset();

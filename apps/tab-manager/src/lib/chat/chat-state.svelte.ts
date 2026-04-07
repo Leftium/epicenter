@@ -29,7 +29,7 @@
  */
 
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
-import { createAiChatFetch } from '@epicenter/svelte-utils/auth';
+import { createAiChatFetch } from '@epicenter/svelte/auth';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import { fromTable } from '@epicenter/svelte';

@@ -9,16 +9,15 @@
 
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createAuth } from '@epicenter/svelte/auth';
-import { createWorkspace } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import {
 	createSyncExtension,
 	toWsUrl,
 } from '@epicenter/workspace/extensions/sync/websocket';
 import { session } from '$lib/auth';
-import { fujiWorkspace } from './workspace/definition';
+import { createFujiWorkspace } from './workspace/workspace';
 
-export const workspace = createWorkspace(fujiWorkspace)
+export const workspace = createFujiWorkspace()
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',

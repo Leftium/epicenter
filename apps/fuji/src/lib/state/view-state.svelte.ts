@@ -26,6 +26,7 @@ function createViewState() {
 	const selectedEntryIdKv = fromKv(workspace.kv, 'selectedEntryId');
 	const viewModeKv = fromKv(workspace.kv, 'viewMode');
 	const sidebarCollapsedKv = fromKv(workspace.kv, 'sidebarCollapsed');
+	const sortByKv = fromKv(workspace.kv, 'sortBy');
 
 	// ─── Local State ─────────────────────────────────────────────────────
 	let activeTypeFilter = $state<string | null>(null);
@@ -70,6 +71,19 @@ function createViewState() {
 
 		set sidebarCollapsed(value: boolean) {
 			sidebarCollapsedKv.current = value;
+		},
+
+		// ─── Sort ────────────────────────────────────────────────────────
+		get sortBy(): 'dateEdited' | 'dateCreated' | 'title' {
+			return sortByKv.current ?? 'dateEdited';
+		},
+
+		/**
+		 * Set the sort preference. Persisted via workspace KV so it survives
+		 * reloads and syncs across devices.
+		 */
+		set sortBy(value: 'dateEdited' | 'dateCreated' | 'title') {
+			sortByKv.current = value;
 		},
 
 		// ─── Filters ─────────────────────────────────────────────────────

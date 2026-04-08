@@ -70,9 +70,7 @@ export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
 		fixCircularReferences(filesTable, activeRows);
 
 		// Re-read after circular ref fixes — parentIds may have changed
-		activeRows = filesTable
-			.getAllValid()
-			.filter((r) => r.trashedAt === null);
+		activeRows = filesTable.getAllValid().filter((r) => r.trashedAt === null);
 
 		// Build childrenOf from corrected data
 		for (const row of activeRows) {
@@ -83,9 +81,7 @@ export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
 		fixOrphans(filesTable, activeRows, childrenOf);
 
 		// Re-read one more time after orphan fixes
-		activeRows = filesTable
-			.getAllValid()
-			.filter((r) => r.trashedAt === null);
+		activeRows = filesTable.getAllValid().filter((r) => r.trashedAt === null);
 
 		// Build display names (disambiguation) per folder
 		for (const [parentId, childIds] of childrenOf) {
@@ -136,16 +132,11 @@ export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
 				if (prev && result.status !== 'not_found') {
 					// Update snapshot for trashed-to-trashed changes
 					snapshot.set(id, {
-						name:
-							result.status === 'valid' ? result.row.name : prev.name,
+						name: result.status === 'valid' ? result.row.name : prev.name,
 						parentId:
-							result.status === 'valid'
-								? result.row.parentId
-								: prev.parentId,
+							result.status === 'valid' ? result.row.parentId : prev.parentId,
 						trashedAt:
-							result.status === 'valid'
-								? result.row.trashedAt
-								: prev.trashedAt,
+							result.status === 'valid' ? result.row.trashedAt : prev.trashedAt,
 					});
 				}
 				continue;
@@ -192,16 +183,11 @@ export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
 					snapshot.delete(id);
 				} else {
 					snapshot.set(id, {
-						name:
-							result.status === 'valid' ? result.row.name : prev.name,
+						name: result.status === 'valid' ? result.row.name : prev.name,
 						parentId:
-							result.status === 'valid'
-								? result.row.parentId
-								: prev.parentId,
+							result.status === 'valid' ? result.row.parentId : prev.parentId,
 						trashedAt:
-							result.status === 'valid'
-								? result.row.trashedAt
-								: prev.trashedAt,
+							result.status === 'valid' ? result.row.trashedAt : prev.trashedAt,
 					});
 				}
 

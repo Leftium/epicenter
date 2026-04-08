@@ -81,7 +81,7 @@ class EntityRefWidget extends WidgetType {
 		const span = document.createElement('span');
 		const resolvedTitle = this.config.resolveTitle?.(this.ref);
 		span.textContent = resolvedTitle ?? this.displayText;
-		span.className = 'cm-internal-link';
+		span.className = 'cm-entity-ref';
 		span.style.cssText =
 			'text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 2px; cursor: pointer; color: var(--primary, #3b82f6);';
 		span.title = resolvedTitle ?? this.displayText;

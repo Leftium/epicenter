@@ -40,6 +40,11 @@ export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
  * display), type classification, and freeform tags. Both `type` and `tags` are
  * always present—an unclassified entry has empty arrays, not missing fields.
  *
+ * Entries support pinning (pinned entries sort to the top of lists) and soft
+ * deletion via `deletedAt`. Soft-deleted entries move to "Recently Deleted"
+ * rather than being permanently destroyed—critical for CRDT conflict safety
+ * when two devices diverge.
+ *
  * The rich-text content document is attached via `.withDocument('content')` and
  * keyed by entry `id` for a 1:1 mapping. Edits to the document automatically
  * touch `updatedAt`.
@@ -51,6 +56,8 @@ const entriesTable = defineTable(
 		subtitle: 'string',
 		type: 'string[]',
 		tags: 'string[]',
+		pinned: 'boolean',
+		'deletedAt?': DateTimeString.or('undefined'),
 		createdAt: DateTimeString,
 		updatedAt: DateTimeString,
 		_v: '1',

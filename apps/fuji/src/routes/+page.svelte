@@ -35,9 +35,12 @@
 		selectedEntryId.current ? entries.get(selectedEntryId.current) ?? null : null,
 	);
 
+	/** Active entries — excludes soft-deleted. */
+	const activeEntries = $derived(entriesArray.filter((e) => e.deletedAt === undefined));
+
 	/** Entries filtered by sidebar type/tag filters. */
 	const filteredEntries = $derived.by(() => {
-		let result = entriesArray;
+		let result = activeEntries;
 		const typeFilter = activeTypeFilter;
 		const tagFilter = activeTagFilter;
 		if (typeFilter) {
@@ -59,6 +62,8 @@ function createEntry() {
 			subtitle: '',
 			type: [],
 			tags: [],
+			pinned: false,
+			deletedAt: undefined,
 			createdAt: dateTimeStringNow(),
 			updatedAt: dateTimeStringNow(),
 			_v: '1',
@@ -115,7 +120,7 @@ function createEntry() {
 
 <SidebarProvider>
 	<FujiSidebar
-		entries={entriesArray}
+		entries={activeEntries}
 		{activeTypeFilter}
 		{activeTagFilter}
 		{searchQuery}

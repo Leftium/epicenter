@@ -1,6 +1,6 @@
 import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { convertInternalLinksToWikilinks } from '@epicenter/filesystem';
+import { convertEntityRefsToWikilinks } from '@epicenter/filesystem';
 import { YAML } from 'bun';
 import type { ExtensionContext } from '../../../workspace/types.js';
 import { defaultSerializer, type MarkdownSerializer } from './serializers.js';
@@ -151,7 +151,7 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 					try {
 						const processedBody =
 							result.body !== undefined
-								? convertInternalLinksToWikilinks(result.body)
+								? convertEntityRefsToWikilinks(result.body)
 								: result.body;
 						await Bun.write(
 							join(dir, result.filename),
@@ -194,7 +194,7 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 						}
 
 						const processedBody =
-							body !== undefined ? convertInternalLinksToWikilinks(body) : body;
+							body !== undefined ? convertEntityRefsToWikilinks(body) : body;
 
 						writes.push(
 							Bun.write(

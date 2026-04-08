@@ -1,112 +1,172 @@
-import type { FileId } from './ids.js';
-
-const ID_SCHEME = 'id:';
+const EPICENTER_SCHEME = 'epicenter://';
 
 /**
- * Check whether a link href uses the internal `id:` scheme.
+ * Structured reference to an entity stored in an Epicenter workspace.
  *
- * Internal links reference other files in the workspace by their FileId,
- * using the format `id:{GUID}`. This is the discriminator for distinguishing
- * internal links from external URLs.
+ * Entity refs are used when markdown needs to point at a specific row in a
+ * workspace table without depending on a file path. The URI format is always
+ * `epicenter://{workspace}/{table}/{id}`.
  *
  * @example
  * ```typescript
- * isInternalLink('id:01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b'); // true
- * isInternalLink('https://example.com'); // false
- * isInternalLink(''); // false
+ * const ref: EntityRef = {
+ * 	workspace: 'opensidian',
+ * 	table: 'files',
+ * 	id: '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b',
+ * };
  * ```
  */
-export function isInternalLink(href: string): boolean {
-	return href.startsWith(ID_SCHEME);
-}
+export type EntityRef = {
+	workspace: string;
+	table: string;
+	id: string;
+};
 
 /**
- * Extract the target FileId from an internal link href.
+ * Check whether an href uses the Epicenter entity ref scheme.
  *
- * Assumes the href has already been validated with {@link isInternalLink}.
- * Strips the `id:` prefix and returns the remaining string as a branded FileId.
+ * This is intentionally a cheap prefix check. Some call sites only need a fast
+ * discriminator while scanning markdown and do not want full URL parsing yet.
+ * Use {@link parseEntityRef} when you need validated `workspace`, `table`, and
+ * `id` segments.
  *
  * @example
  * ```typescript
- * const fileId = getTargetFileId('id:01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b');
- * // fileId === '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b' as FileId
+ * isEntityRef('epicenter://opensidian/files/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b');
+ * // true
+ *
+ * isEntityRef('https://example.com');
+ * // false
  * ```
  */
-export function getTargetFileId(href: string): FileId {
-	return href.slice(ID_SCHEME.length) as FileId;
+export function isEntityRef(href: string): boolean {
+	return href.startsWith(EPICENTER_SCHEME);
 }
 
 /**
- * Build an internal link href from a FileId.
+ * Parse an Epicenter entity ref URI into its workspace, table, and id parts.
  *
- * Produces the `id:{GUID}` format used in markdown link targets
- * (e.g., `[File Name](id:GUID)`). This is the inverse of {@link getTargetFileId}.
+ * This is the safe entry point when a caller needs to act on a markdown link.
+ * It uses `new URL()` so parsing stays aligned with the platform URL parser,
+ * then validates that the URI matches the expected `/{table}/{id}` pathname
+ * shape. Invalid or non-Epicenter hrefs return `null` instead of throwing.
  *
  * @example
  * ```typescript
- * const href = makeInternalHref('01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b' as FileId);
- * // href === 'id:01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b'
+ * parseEntityRef('epicenter://opensidian/files/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b');
+ * // {
+ * // 	workspace: 'opensidian',
+ * // 	table: 'files',
+ * // 	id: '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b',
+ * // }
+ *
+ * parseEntityRef('https://example.com/posts/1');
+ * // null
  * ```
  */
-export function makeInternalHref(fileId: FileId): string {
-	return `${ID_SCHEME}${fileId}`;
+export function parseEntityRef(href: string): EntityRef | null {
+	if (!isEntityRef(href)) return null;
+
+	try {
+		const url = new URL(href);
+		const [table, id, ...rest] = url.pathname.split('/').filter(Boolean);
+
+		if (!url.hostname || !table || !id || rest.length > 0) return null;
+
+		return {
+			workspace: url.hostname,
+			table,
+			id,
+		};
+	} catch {
+		return null;
+	}
 }
 
-/** Regex matching `[display text](id:GUID)` markdown links. */
-const INTERNAL_LINK_RE = /\[([^\]]+)\]\(id:[^)]+\)/g;
+/**
+ * Build an Epicenter entity ref URI from its workspace, table, and id parts.
+ *
+ * Use this when generating markdown links that should survive file moves and
+ * still point at the same logical record. The returned string is meant to be
+ * embedded directly in markdown, for example `[Notes](epicenter://...)`.
+ *
+ * @example
+ * ```typescript
+ * const href = makeEntityRef(
+ * 	'opensidian',
+ * 	'files',
+ * 	'01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b',
+ * );
+ *
+ * // href === 'epicenter://opensidian/files/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b'
+ * ```
+ */
+export function makeEntityRef(
+	workspace: string,
+	table: string,
+	id: string,
+): string {
+	return `${EPICENTER_SCHEME}${workspace}/${table}/${id}`;
+}
+
+/** Regex matching `[display text](epicenter://workspace/table/id)` markdown links. */
+export const ENTITY_REF_RE = /\[([^\]]+)\]\((epicenter:\/\/[^)]+)\)/g;
 
 /** Regex matching `[[Page Name]]` wikilinks. */
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
 
 /**
- * Convert internal `id:` markdown links to `[[wikilink]]` syntax.
+ * Convert Epicenter entity ref markdown links to `[[wikilink]]` syntax.
  *
  * Used by the markdown materializer when exporting workspace content to `.md`
  * files. This keeps the exported files readable in wikilink-aware editors
- * while preserving the original display text from the internal link.
- * Non-internal links such as `https://` URLs are left untouched.
+ * while preserving the original display text from the entity ref link.
+ * External links such as `https://` URLs are left untouched.
  *
  * @example
  * ```typescript
- * const body = 'See [Meeting Notes](id:abc-123) for details.';
+ * const body =
+ * 	'See [Meeting Notes](epicenter://opensidian/files/abc-123) for details.';
  *
- * convertInternalLinksToWikilinks(body);
+ * convertEntityRefsToWikilinks(body);
  * // 'See [[Meeting Notes]] for details.'
  * ```
  */
-export function convertInternalLinksToWikilinks(body: string): string {
-	return body.replace(INTERNAL_LINK_RE, '[[$1]]');
+export function convertEntityRefsToWikilinks(body: string): string {
+	return body.replace(ENTITY_REF_RE, '[[$1]]');
 }
 
 /**
- * Convert `[[wikilink]]` syntax back to internal `id:` markdown links.
+ * Convert `[[wikilink]]` syntax back to Epicenter entity ref markdown links.
  *
  * Used when importing `.md` files back into the workspace so wikilinks can be
- * resolved against known file names and restored to the internal `id:` scheme.
- * Unresolved wikilinks are left as-is, which avoids silently inventing file
- * identities when a name has no unique match.
+ * resolved against known file names and restored to the canonical
+ * `epicenter://workspace/table/id` form. Unresolved wikilinks are left as-is,
+ * which avoids silently inventing references when a name has no unique match.
  *
  * @param body - The markdown body text containing wikilinks.
- * @param resolveName - Lookup function that returns a FileId for a given page
- * name, or null if no unique file can be resolved.
+ * @param resolveName - Lookup function that returns a full Epicenter entity ref
+ * URI for a given page name, or `null` if no unique entity can be resolved.
  *
  * @example
  * ```typescript
  * const body = 'See [[Meeting Notes]] for details.';
  * const resolve = (name: string) =>
- * 	name === 'Meeting Notes' ? ('abc-123' as FileId) : null;
+ * 	name === 'Meeting Notes'
+ * 		? 'epicenter://opensidian/files/abc-123'
+ * 		: null;
  *
- * convertWikilinksToInternalLinks(body, resolve);
- * // 'See [Meeting Notes](id:abc-123) for details.'
+ * convertWikilinksToEntityRefs(body, resolve);
+ * // 'See [Meeting Notes](epicenter://opensidian/files/abc-123) for details.'
  * ```
  */
-export function convertWikilinksToInternalLinks(
+export function convertWikilinksToEntityRefs(
 	body: string,
-	resolveName: (name: string) => FileId | null,
+	resolveName: (name: string) => string | null,
 ): string {
 	return body.replace(WIKILINK_RE, (match, name: string) => {
-		const fileId = resolveName(name);
-		if (fileId) return `[${name}](${ID_SCHEME}${fileId})`;
+		const entityRef = resolveName(name);
+		if (entityRef) return `[${name}](${entityRef})`;
 		return match;
 	});
 }

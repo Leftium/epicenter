@@ -9,8 +9,12 @@ import {
 	type ViewUpdate,
 	WidgetType,
 } from '@codemirror/view';
-import type { FileId } from '@epicenter/filesystem';
-import { getTargetFileId, isInternalLink } from '@epicenter/filesystem';
+import {
+	ENTITY_REF_RE,
+	type EntityRef,
+	isEntityRef,
+	parseEntityRef,
+} from '@epicenter/filesystem';
 
 /**
  * Configuration for the link decoration plugin.
@@ -18,35 +22,56 @@ import { getTargetFileId, isInternalLink } from '@epicenter/filesystem';
  * @example
  * ```typescript
  * linkDecorations({
- *   onNavigate: (fileId) => fsState.selectFile(fileId),
- *   resolveTitle: (fileId) => fsState.getFile(fileId)?.name ?? null,
+ *   onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
+ *   resolveTitle: (ref) => fsState.getFile(ref.id as FileId)?.name ?? null,
  * })
  * ```
  */
 type LinkDecorationConfig = {
-	/** Called when a decorated link is clicked. */
-	onNavigate: (fileId: FileId) => void;
+	/** Called when a decorated entity ref is clicked. */
+	onNavigate: (ref: EntityRef) => void;
 	/**
-	 * Optional title resolver. When provided and returns non-null,
-	 * the widget displays the resolved title instead of the stored display text.
-	 * Useful for live-rendering renamed pages.
+	 * Optional title resolver for entity refs.
+	 *
+	 * When provided and it returns a non-null value, the widget displays the
+	 * resolved title instead of the stored markdown display text. This is useful
+	 * when the target entity can be renamed after the link was inserted.
+	 *
+	 * @example
+	 * ```typescript
+	 * resolveTitle: (ref) => {
+	 *   if (ref.table !== 'files') return null;
+	 *   return fsState.getFile(ref.id as FileId)?.name ?? null;
+	 * }
+	 * ```
 	 */
-	resolveTitle?: (fileId: FileId) => string | null;
+	resolveTitle?: (ref: EntityRef) => string | null;
 };
 
-/** Regex matching `[display text](id:GUID)` in document text. */
-const INTERNAL_LINK_RE = /\[([^\]]+)\]\((id:[^)]+)\)/g;
-
 /**
- * Widget that renders an internal link as a clickable styled span.
+ * Widget that renders an entity ref as a clickable styled span.
  *
- * Replaces the full `[text](id:GUID)` match in the document with a
- * compact, styled span showing just the display text (or resolved title).
+ * Replaces the full markdown link match in the document with a compact,
+ * styled span showing just the display text or the current resolved title.
+ * This keeps the stored markdown stable while letting the editor show a more
+ * human-friendly label for the target entity.
+ *
+ * @example
+ * ```typescript
+ * const widget = new EntityRefWidget('Daily Notes', {
+ *   workspace: 'opensidian',
+ *   table: 'files',
+ *   id: 'abc123',
+ * }, {
+ *   onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
+ *   resolveTitle: (ref) => fsState.getFile(ref.id as FileId)?.name ?? null,
+ * });
+ * ```
  */
-class InternalLinkWidget extends WidgetType {
+class EntityRefWidget extends WidgetType {
 	constructor(
 		private readonly displayText: string,
-		private readonly fileId: FileId,
+		private readonly ref: EntityRef,
 		private readonly config: LinkDecorationConfig,
 	) {
 		super();
@@ -54,7 +79,7 @@ class InternalLinkWidget extends WidgetType {
 
 	override toDOM(): HTMLElement {
 		const span = document.createElement('span');
-		const resolvedTitle = this.config.resolveTitle?.(this.fileId);
+		const resolvedTitle = this.config.resolveTitle?.(this.ref);
 		span.textContent = resolvedTitle ?? this.displayText;
 		span.className = 'cm-internal-link';
 		span.style.cssText =
@@ -64,20 +89,19 @@ class InternalLinkWidget extends WidgetType {
 		span.addEventListener('click', (e) => {
 			e.preventDefault();
 			e.stopPropagation();
-			this.config.onNavigate(this.fileId);
+			this.config.onNavigate(this.ref);
 		});
 
 		return span;
 	}
 
-	override eq(other: InternalLinkWidget): boolean {
+	override eq(other: EntityRefWidget): boolean {
 		return (
-			this.fileId === other.fileId && this.displayText === other.displayText
+			this.displayText === other.displayText &&
+			this.ref.workspace === other.ref.workspace &&
+			this.ref.table === other.ref.table &&
+			this.ref.id === other.ref.id
 		);
-	}
-
-	override ignoreEvent(): boolean {
-		return false;
 	}
 }
 
@@ -108,10 +132,19 @@ function isInsideCode(view: EditorView, pos: number): boolean {
 }
 
 /**
- * Build decorations for all visible internal links in the editor.
+ * Build decorations for all visible entity refs in the editor.
  *
- * Scans visible ranges for `[text](id:GUID)` patterns, skipping matches
- * inside code blocks, and creates `Decoration.replace` widgets for each.
+ * Scans visible ranges for markdown links that point at `epicenter://`
+ * entity refs, skips matches inside code blocks, and creates
+ * `Decoration.replace` widgets for each.
+ *
+ * @example
+ * ```typescript
+ * const decorations = buildDecorations(view, {
+ *   onNavigate: (ref) => console.log(ref.workspace, ref.table, ref.id),
+ *   resolveTitle: (ref) => ref.table === 'files' ? ref.id : null,
+ * });
+ * ```
  */
 function buildDecorations(
 	view: EditorView,
@@ -122,10 +155,10 @@ function buildDecorations(
 	for (const { from, to } of view.visibleRanges) {
 		const text = view.state.doc.sliceString(from, to);
 		let match: RegExpExecArray | null;
-		INTERNAL_LINK_RE.lastIndex = 0;
+		ENTITY_REF_RE.lastIndex = 0;
 
 		while (true) {
-			match = INTERNAL_LINK_RE.exec(text);
+			match = ENTITY_REF_RE.exec(text);
 			if (match === null) {
 				break;
 			}
@@ -139,11 +172,13 @@ function buildDecorations(
 				continue;
 			}
 
-			if (!isInternalLink(href)) continue;
+			if (!isEntityRef(href)) continue;
 			if (isInsideCode(view, start)) continue;
 
-			const fileId = getTargetFileId(href);
-			const widget = new InternalLinkWidget(displayText, fileId, config);
+			const ref = parseEntityRef(href);
+			if (ref === null) continue;
+
+			const widget = new EntityRefWidget(displayText, ref, config);
 
 			builder.add(start, end, Decoration.replace({ widget }));
 		}
@@ -153,21 +188,23 @@ function buildDecorations(
 }
 
 /**
- * Create a CodeMirror extension that decorates internal `id:` links
- * as clickable styled spans.
+ * Create a CodeMirror extension that decorates markdown entity refs as
+ * clickable styled spans.
  *
- * Scans visible document ranges for `[display text](id:GUID)` patterns,
- * skips matches inside fenced code blocks and inline code, and replaces
- * each match with a styled widget showing just the display text.
+ * Scans visible document ranges for `[display text](epicenter://...)`
+ * patterns, skips matches inside fenced code blocks and inline code, and
+ * replaces each match with a styled widget showing just the display text or
+ * a resolved title for the target entity.
  *
  * @example
  * ```typescript
  * import { linkDecorations } from './extensions/link-decorations';
+ * import type { FileId } from '@epicenter/filesystem';
  *
  * const extensions = [
  *   linkDecorations({
- *     onNavigate: (fileId) => fsState.selectFile(fileId),
- *     resolveTitle: (fileId) => fsState.getFile(fileId)?.name ?? null,
+ *     onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
+ *     resolveTitle: (ref) => fsState.getFile(ref.id as FileId)?.name ?? null,
  *   }),
  * ];
  * ```

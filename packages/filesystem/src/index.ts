@@ -26,11 +26,13 @@ export type { ColumnId, FileId, RowId } from './ids.js';
 export { generateColumnId, generateFileId, generateRowId } from './ids.js';
 // Links
 export {
-	convertInternalLinksToWikilinks,
-	convertWikilinksToInternalLinks,
-	getTargetFileId,
-	isInternalLink,
-	makeInternalHref,
+	convertEntityRefsToWikilinks,
+	convertWikilinksToEntityRefs,
+	ENTITY_REF_RE,
+	type EntityRef,
+	isEntityRef,
+	makeEntityRef,
+	parseEntityRef,
 } from './links.js';
 // Path utilities
 export { posixResolve } from './path.js';

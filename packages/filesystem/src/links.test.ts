@@ -1,140 +1,151 @@
-/**
- * Internal link utilities tests
- *
- * Verifies the package's internal `id:` link helpers preserve the expected
- * relationship between link detection, FileId extraction, and href creation.
- *
- * Key behaviors:
- * - `isInternalLink` recognizes only the internal `id:` scheme
- * - `getTargetFileId` strips the scheme prefix without altering the id
- * - `makeInternalHref` round-trips with the other helpers
- */
 import { describe, expect, test } from 'bun:test';
-import type { FileId } from './ids.js';
 import {
-	convertInternalLinksToWikilinks,
-	convertWikilinksToInternalLinks,
-	getTargetFileId,
-	isInternalLink,
-	makeInternalHref,
+	convertEntityRefsToWikilinks,
+	convertWikilinksToEntityRefs,
+	ENTITY_REF_RE,
+	isEntityRef,
+	makeEntityRef,
+	parseEntityRef,
 } from './links.js';
 
-const SAMPLE_ID = '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b' as FileId;
+const SAMPLE_ID = '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b';
+const SAMPLE_WORKSPACE = 'opensidian';
+const SAMPLE_TABLE = 'files';
+const SAMPLE_REF = `epicenter://opensidian/files/${SAMPLE_ID}`;
 
-describe('isInternalLink', () => {
-	test('returns true for id: scheme', () => {
-		expect(isInternalLink(`id:${SAMPLE_ID}`)).toBe(true);
+describe('isEntityRef', () => {
+	test('returns true for epicenter URIs', () => {
+		expect(isEntityRef(SAMPLE_REF)).toBe(true);
 	});
 
-	test('returns false for https URL', () => {
-		expect(isInternalLink('https://example.com')).toBe(false);
+	test('returns false for https URLs', () => {
+		expect(isEntityRef('https://example.com')).toBe(false);
 	});
 
-	test('returns false for empty string', () => {
-		expect(isInternalLink('')).toBe(false);
+	test('returns false for empty strings', () => {
+		expect(isEntityRef('')).toBe(false);
 	});
 
-	test('returns false for bare GUID without prefix', () => {
-		expect(isInternalLink(SAMPLE_ID)).toBe(false);
-	});
-});
-
-describe('getTargetFileId', () => {
-	test('extracts FileId from id: href', () => {
-		expect(getTargetFileId(`id:${SAMPLE_ID}`)).toBe(SAMPLE_ID);
-	});
-
-	test('returns empty string as FileId when given bare id:', () => {
-		expect(`${getTargetFileId('id:')}`).toBe('');
+	test('returns false for bare ids', () => {
+		expect(isEntityRef(SAMPLE_ID)).toBe(false);
 	});
 });
 
-describe('makeInternalHref', () => {
-	test('produces id: prefixed href', () => {
-		expect(makeInternalHref(SAMPLE_ID)).toBe(`id:${SAMPLE_ID}`);
+describe('parseEntityRef', () => {
+	test('extracts workspace, table, and id', () => {
+		expect(parseEntityRef(SAMPLE_REF)).toEqual({
+			workspace: SAMPLE_WORKSPACE,
+			table: SAMPLE_TABLE,
+			id: SAMPLE_ID,
+		});
 	});
 
-	test('round-trips with getTargetFileId', () => {
-		const href = makeInternalHref(SAMPLE_ID);
-		expect(getTargetFileId(href)).toBe(SAMPLE_ID);
+	test('returns null for non-epicenter URIs', () => {
+		expect(parseEntityRef('https://example.com/files/abc')).toBeNull();
 	});
 
-	test('round-trip: isInternalLink recognizes makeInternalHref output', () => {
-		expect(isInternalLink(makeInternalHref(SAMPLE_ID))).toBe(true);
+	test('handles dots in workspace ids', () => {
+		expect(parseEntityRef('epicenter://epicenter.blog/posts/abc')).toEqual({
+			workspace: 'epicenter.blog',
+			table: 'posts',
+			id: 'abc',
+		});
 	});
 });
 
-describe('convertInternalLinksToWikilinks', () => {
-	test('converts id: link to wikilink', () => {
-		const body = 'See [Meeting Notes](id:abc-123) for details.';
-		expect(convertInternalLinksToWikilinks(body)).toBe(
+describe('makeEntityRef', () => {
+	test('produces the correct URI', () => {
+		expect(makeEntityRef(SAMPLE_WORKSPACE, SAMPLE_TABLE, SAMPLE_ID)).toBe(
+			SAMPLE_REF,
+		);
+	});
+
+	test('round-trips with parseEntityRef', () => {
+		const href = makeEntityRef(SAMPLE_WORKSPACE, SAMPLE_TABLE, SAMPLE_ID);
+
+		expect(parseEntityRef(href)).toEqual({
+			workspace: SAMPLE_WORKSPACE,
+			table: SAMPLE_TABLE,
+			id: SAMPLE_ID,
+		});
+	});
+});
+
+describe('convertEntityRefsToWikilinks', () => {
+	test('converts epicenter links to wikilinks', () => {
+		const body = `See [Meeting Notes](${SAMPLE_REF}) for details.`;
+
+		expect(convertEntityRefsToWikilinks(body)).toBe(
 			'See [[Meeting Notes]] for details.',
 		);
 	});
 
-	test('converts multiple id: links', () => {
-		const body = '[A](id:aaa) and [B](id:bbb)';
-		expect(convertInternalLinksToWikilinks(body)).toBe('[[A]] and [[B]]');
-	});
-
 	test('leaves external links untouched', () => {
 		const body = '[Google](https://google.com)';
-		expect(convertInternalLinksToWikilinks(body)).toBe(body);
+
+		expect(convertEntityRefsToWikilinks(body)).toBe(body);
 	});
 
-	test('handles mixed internal and external links', () => {
-		const body = '[Notes](id:abc) and [Google](https://google.com)';
-		expect(convertInternalLinksToWikilinks(body)).toBe(
+	test('handles mixed entity refs and external links', () => {
+		const body = `[Notes](${SAMPLE_REF}) and [Google](https://google.com)`;
+
+		expect(convertEntityRefsToWikilinks(body)).toBe(
 			'[[Notes]] and [Google](https://google.com)',
 		);
 	});
-
-	test('returns body unchanged when no links present', () => {
-		const body = 'Just plain text.';
-		expect(convertInternalLinksToWikilinks(body)).toBe(body);
-	});
 });
 
-describe('convertWikilinksToInternalLinks', () => {
+describe('convertWikilinksToEntityRefs', () => {
 	const resolve = (name: string) => {
 		const lookup: Record<string, string> = {
-			'Meeting Notes': 'abc-123',
-			'Project Plan': 'def-456',
+			'First Note': SAMPLE_REF,
+			'Project Plan': 'epicenter://opensidian/files/def-456',
 		};
-		return (lookup[name] as FileId) ?? null;
+
+		return lookup[name] ?? null;
 	};
 
-	test('converts wikilink to id: link', () => {
-		const body = 'See [[Meeting Notes]] for details.';
-		expect(convertWikilinksToInternalLinks(body, resolve)).toBe(
-			'See [Meeting Notes](id:abc-123) for details.',
-		);
-	});
+	test('converts wikilinks to epicenter links', () => {
+		const body = 'See [[First Note]] for details.';
 
-	test('converts multiple wikilinks', () => {
-		const body = '[[Meeting Notes]] and [[Project Plan]]';
-		expect(convertWikilinksToInternalLinks(body, resolve)).toBe(
-			'[Meeting Notes](id:abc-123) and [Project Plan](id:def-456)',
+		expect(convertWikilinksToEntityRefs(body, resolve)).toBe(
+			`See [First Note](${SAMPLE_REF}) for details.`,
 		);
 	});
 
 	test('leaves unresolved wikilinks as-is', () => {
 		const body = '[[Unknown Page]]';
-		expect(convertWikilinksToInternalLinks(body, resolve)).toBe(body);
+
+		expect(convertWikilinksToEntityRefs(body, resolve)).toBe(body);
 	});
 
-	test('handles mix of resolved and unresolved', () => {
-		const body = '[[Meeting Notes]] and [[Unknown Page]]';
-		expect(convertWikilinksToInternalLinks(body, resolve)).toBe(
-			'[Meeting Notes](id:abc-123) and [[Unknown Page]]',
-		);
+	test('round-trips with convertEntityRefsToWikilinks', () => {
+		const original = `[First Note](${SAMPLE_REF})`;
+		const asWikilink = convertEntityRefsToWikilinks(original);
+
+		expect(asWikilink).toBe('[[First Note]]');
+		expect(convertWikilinksToEntityRefs(asWikilink, resolve)).toBe(original);
+	});
+});
+
+describe('ENTITY_REF_RE', () => {
+	test('matches markdown entity ref links with both capture groups', () => {
+		const body = `See [First Note](${SAMPLE_REF}) for details.`;
+		ENTITY_REF_RE.lastIndex = 0;
+		const match = ENTITY_REF_RE.exec(body);
+
+		expect(match?.[0]).toBe(`[First Note](${SAMPLE_REF})`);
+		expect(match?.[1]).toBe('First Note');
+		expect(match?.[2]).toBe(SAMPLE_REF);
+
+		ENTITY_REF_RE.lastIndex = 0;
 	});
 
-	test('round-trips with convertInternalLinksToWikilinks', () => {
-		const original = '[Meeting Notes](id:abc-123)';
-		const asWikilink = convertInternalLinksToWikilinks(original);
-		expect(asWikilink).toBe('[[Meeting Notes]]');
-		const backToLink = convertWikilinksToInternalLinks(asWikilink, resolve);
-		expect(backToLink).toBe(original);
+	test('does not match external links', () => {
+		ENTITY_REF_RE.lastIndex = 0;
+		const match = ENTITY_REF_RE.exec('[First Note](https://example.com)');
+
+		expect(match).toBeNull();
+		ENTITY_REF_RE.lastIndex = 0;
 	});
 });

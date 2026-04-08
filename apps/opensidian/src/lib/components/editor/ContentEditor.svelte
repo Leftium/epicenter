@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { autocompletion } from '@codemirror/autocomplete';
-	import type { FileId } from '@epicenter/filesystem';
+	import type { EntityRef, FileId } from '@epicenter/filesystem';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import { workspace } from '$lib/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
+	import { opensidianDefinition } from '$lib/workspace/definition';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
 	import { wikilinkAutocomplete } from './extensions/wikilink-autocomplete';
@@ -20,13 +21,15 @@
 	let handle = $state<DocumentHandle | null>(null);
 
 	const sharedLinkDecorations = linkDecorations({
-		onNavigate: (fileId) => fsState.selectFile(fileId),
-		resolveTitle: (fileId) => fsState.getFile(fileId)?.name ?? null,
+		onNavigate: (ref: EntityRef) => fsState.selectFile(ref.id as FileId),
+		resolveTitle: (ref: EntityRef) => fsState.getFile(ref.id as FileId)?.name ?? null,
 	});
 
 	const extensions = $derived(
 		isMarkdown
 			? [sharedLinkDecorations, wikilinkAutocomplete({
+					workspaceId: opensidianDefinition.id,
+					tableName: 'files',
 					getFiles: () =>
 						workspace.tables.files
 							.getAllValid()

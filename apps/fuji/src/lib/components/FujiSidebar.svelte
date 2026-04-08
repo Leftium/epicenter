@@ -88,11 +88,8 @@
 	}
 </script>
 
-<Sidebar.Root>
+<Sidebar.Root class="h-full">
 	<Sidebar.Header>
-		<div class="flex items-center justify-between px-2 py-1">
-			<span class="text-sm font-semibold">Fuji</span>
-		</div>
 		<div class="px-2 pb-1">
 			<Sidebar.Input
 				placeholder="Search entries…"
@@ -242,5 +239,4 @@
 		{/if}
 	</Sidebar.Content>
 
-	<Sidebar.Rail />
 </Sidebar.Root>

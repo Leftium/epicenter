@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import * as Empty from '@epicenter/ui/empty';
 	import * as Table from '@epicenter/ui/table';
 	import { SortableTableHeader } from '@epicenter/ui/table';
+	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import {
 		createTable as createSvelteTable,
@@ -241,17 +243,24 @@
 				{:else}
 					<Table.Row>
 						<Table.Cell colspan={columns.length}>
-							<div
-								class="flex items-center justify-center py-8 text-muted-foreground"
-							>
-								<p class="text-sm">
-							{#if searchQuery}
-										No entries match your search.
-									{:else}
-										No entries yet. Click + to create one.
-									{/if}
-								</p>
-							</div>
+							<Empty.Root>
+								<Empty.Media>
+									<FileTextIcon class="size-8 text-muted-foreground" />
+								</Empty.Media>
+								{#if searchQuery}
+									<Empty.Title>No entries match your search</Empty.Title>
+									<Empty.Description>Try a different search term or clear your filters.</Empty.Description>
+								{:else}
+									<Empty.Title>No entries yet</Empty.Title>
+									<Empty.Description>Create your first entry to get started.</Empty.Description>
+									<Empty.Content>
+										<Button variant="outline" size="sm" onclick={onAddEntry}>
+											<PlusIcon class="mr-1.5 size-4" />
+											New Entry
+										</Button>
+									</Empty.Content>
+								{/if}
+							</Empty.Root>
 						</Table.Cell>
 					</Table.Row>
 				{/if}

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import * as Empty from '@epicenter/ui/empty';
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
+	import ClockIcon from '@lucide/svelte/icons/clock';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry, EntryId } from '$lib/workspace';
@@ -77,17 +79,19 @@
 	<!-- Timeline -->
 	<ScrollArea.Root class="flex-1">
 		{#if entries.length === 0}
-			<div
-				class="flex h-full items-center justify-center p-8 text-center text-muted-foreground"
-			>
-				<div class="flex flex-col items-center gap-3">
-					<p class="text-sm">No entries yet.</p>
+			<Empty.Root class="flex-1">
+				<Empty.Media>
+					<ClockIcon class="size-8 text-muted-foreground" />
+				</Empty.Media>
+				<Empty.Title>No entries yet</Empty.Title>
+				<Empty.Description>Create your first entry to get started.</Empty.Description>
+				<Empty.Content>
 					<Button variant="outline" size="sm" onclick={onAddEntry}>
-						<PlusIcon class="mr-1 size-4" />
-						Create your first entry
+						<PlusIcon class="mr-1.5 size-4" />
+						New Entry
 					</Button>
-				</div>
-			</div>
+				</Empty.Content>
+			</Empty.Root>
 		{:else}
 			<div class="flex flex-col gap-4 p-4">
 				{#each groupedEntries as group}

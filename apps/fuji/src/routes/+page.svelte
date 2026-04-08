@@ -1,17 +1,23 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import { CommandPalette, type CommandPaletteItem } from '@epicenter/ui/command-palette';
+	import {
+		CommandPalette,
+		type CommandPaletteItem,
+	} from '@epicenter/ui/command-palette';
+	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import TableIcon from '@lucide/svelte/icons/table-2';
 	import type * as Y from 'yjs';
+	import { workspace } from '$lib/client';
+	import AppHeader from '$lib/components/AppHeader.svelte';
 	import EntriesTable from '$lib/components/EntriesTable.svelte';
 	import EntryEditor from '$lib/components/EntryEditor.svelte';
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
-	import { workspace } from '$lib/client';
+	import GlobalStatusBar from '$lib/components/GlobalStatusBar.svelte';
 	import { entriesState, viewState } from '$lib/state';
 
 	// ─── Command Palette ─────────────────────────────────────────────────────────
@@ -38,7 +44,9 @@
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 
 	const selectedEntry = $derived(
-		viewState.selectedEntryId ? entriesState.get(viewState.selectedEntryId) ?? null : null,
+		viewState.selectedEntryId
+			? (entriesState.get(viewState.selectedEntryId) ?? null)
+			: null,
 	);
 
 	/** Entries filtered by sidebar type/tag filters. */
@@ -81,7 +89,8 @@
 	});
 </script>
 
-<svelte:window onkeydown={(event) => {
+<svelte:window
+	onkeydown={(event) => {
 	const isInputFocused =
 		event.target instanceof HTMLInputElement ||
 		event.target instanceof HTMLTextAreaElement ||
@@ -103,78 +112,92 @@
 		event.preventDefault();
 		viewState.selectEntry(null);
 	}
-}} />
+}}
+/>
 
-<SidebarProvider>
-	<FujiSidebar
-		entries={entriesState.activeEntries}
-		activeTypeFilter={viewState.activeTypeFilter}
-		activeTagFilter={viewState.activeTagFilter}
-		searchQuery={viewState.searchQuery}
-		onFilterByType={(type) => viewState.filterByType(type)}
-		onFilterByTag={(tag) => viewState.filterByTag(tag)}
-		onSearchChange={(query) => viewState.setSearchQuery(query)}
-		onSelectEntry={(id) => viewState.selectEntry(id)}
-		onClearFilters={() => viewState.clearFilters()}
+<div class="flex h-screen flex-col">
+	<AppHeader
+		onOpenSearch={() => (paletteOpen = true)}
+		onCreateEntry={() => entriesState.createEntry()}
 	/>
-
-	<main class="flex h-screen flex-1 flex-col overflow-hidden">
-		{#if selectedEntry && currentYText}
-			{#key viewState.selectedEntryId}
-				<EntryEditor
-					entry={selectedEntry}
-					ytext={currentYText}
-					onUpdate={(updates) => {
-						if (!viewState.selectedEntryId) return;
-						entriesState.updateEntry(viewState.selectedEntryId, updates);
-					}}
-					onBack={() => viewState.selectEntry(null)}
+	<Resizable.PaneGroup direction="horizontal" class="flex-1">
+		<Resizable.Pane defaultSize={20} minSize={15} maxSize={40}>
+			<SidebarProvider>
+				<FujiSidebar
+				entries={entriesState.activeEntries}
+				activeTypeFilter={viewState.activeTypeFilter}
+				activeTagFilter={viewState.activeTagFilter}
+				searchQuery={viewState.searchQuery}
+				onFilterByType={(type) => viewState.filterByType(type)}
+				onFilterByTag={(tag) => viewState.filterByTag(tag)}
+				onSearchChange={(query) => viewState.setSearchQuery(query)}
+				onSelectEntry={(id) => viewState.selectEntry(id)}
+				onClearFilters={() => viewState.clearFilters()}
 				/>
-			{/key}
-		{:else if selectedEntry}
-			<div class="flex h-full items-center justify-center">
-				<p class="text-muted-foreground">Loading editor…</p>
-			</div>
-		{:else}
-			<!-- View mode toggle header -->
-			<div class="flex items-center justify-end border-b px-4 py-2">
-				<Button
-					variant="ghost"
-					size="icon"
-					class="size-7"
-					onclick={() => viewState.toggleViewMode()}
-					title={viewState.viewMode === 'table' ? 'Switch to timeline' : 'Switch to table'}
-				>
+			</SidebarProvider>
+		</Resizable.Pane>
+		<Resizable.Handle withHandle />
+		<Resizable.Pane defaultSize={80}>
+			<main class="flex h-full flex-1 flex-col overflow-hidden">
+				{#if selectedEntry && currentYText}
+					{#key viewState.selectedEntryId}
+						<EntryEditor
+							entry={selectedEntry}
+							ytext={currentYText}
+							onUpdate={(updates) => {
+								if (!viewState.selectedEntryId) return;
+								entriesState.updateEntry(viewState.selectedEntryId, updates);
+							}}
+							onBack={() => viewState.selectEntry(null)}
+						/>
+					{/key}
+				{:else if selectedEntry}
+					<div class="flex h-full items-center justify-center">
+						<p class="text-muted-foreground">Loading editor…</p>
+					</div>
+				{:else}
+					<!-- View mode toggle header -->
+					<div class="flex items-center justify-end border-b px-4 py-2">
+						<Button
+							variant="ghost"
+							size="icon"
+							class="size-7"
+							onclick={() => viewState.toggleViewMode()}
+							title={viewState.viewMode === 'table' ? 'Switch to timeline' : 'Switch to table'}
+						>
+							{#if viewState.viewMode === 'table'}
+								<ClockIcon class="size-4" />
+							{:else}
+								<TableIcon class="size-4" />
+							{/if}
+						</Button>
+					</div>
+
 					{#if viewState.viewMode === 'table'}
-						<ClockIcon class="size-4" />
+						<EntriesTable
+							entries={filteredEntries}
+							searchQuery={viewState.searchQuery}
+							sortBy={viewState.sortBy}
+							selectedEntryId={viewState.selectedEntryId}
+							onSelectEntry={(id) => viewState.selectEntry(id)}
+							onAddEntry={() => entriesState.createEntry()}
+							onSortChange={(sort) => (viewState.sortBy = sort)}
+						/>
 					{:else}
-						<TableIcon class="size-4" />
+						<EntryTimeline
+							entries={filteredEntries}
+							sortBy={viewState.sortBy}
+							selectedEntryId={viewState.selectedEntryId}
+							onSelectEntry={(id) => viewState.selectEntry(id)}
+							onAddEntry={() => entriesState.createEntry()}
+						/>
 					{/if}
-				</Button>
-			</div>
-
-			{#if viewState.viewMode === 'table'}
-				<EntriesTable
-					entries={filteredEntries}
-					searchQuery={viewState.searchQuery}
-					sortBy={viewState.sortBy}
-					selectedEntryId={viewState.selectedEntryId}
-					onSelectEntry={(id) => viewState.selectEntry(id)}
-					onAddEntry={() => entriesState.createEntry()}
-					onSortChange={(sort) => (viewState.sortBy = sort)}
-				/>
-			{:else}
-				<EntryTimeline
-					entries={filteredEntries}
-					sortBy={viewState.sortBy}
-					selectedEntryId={viewState.selectedEntryId}
-					onSelectEntry={(id) => viewState.selectEntry(id)}
-					onAddEntry={() => entriesState.createEntry()}
-				/>
-			{/if}
-		{/if}
-	</main>
-</SidebarProvider>
+				{/if}
+			</main>
+		</Resizable.Pane>
+	</Resizable.PaneGroup>
+	<GlobalStatusBar entryCount={entriesState.activeEntries.length} />
+</div>
 
 <CommandPalette
 	items={paletteItems}

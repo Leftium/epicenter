@@ -115,6 +115,7 @@
 		onFilterByTag={(tag) => viewState.filterByTag(tag)}
 		onSearchChange={(query) => viewState.setSearchQuery(query)}
 		onSelectEntry={(id) => viewState.selectEntry(id)}
+		onClearFilters={() => viewState.clearFilters()}
 	/>
 
 	<main class="flex h-screen flex-1 flex-col overflow-hidden">

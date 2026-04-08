@@ -15,6 +15,7 @@
 		onFilterByTag,
 		onSearchChange,
 		onSelectEntry,
+		onClearFilters,
 	}: {
 		entries: Entry[];
 		activeTypeFilter: string | null;
@@ -24,6 +25,7 @@
 		onFilterByTag: (tag: string | null) => void;
 		onSearchChange: (query: string) => void;
 		onSelectEntry: (id: EntryId) => void;
+		onClearFilters: () => void;
 	} = $props();
 
 	const isSearching = $derived(searchQuery.trim().length > 0);
@@ -108,11 +110,7 @@
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
 							isActive={activeTypeFilter === null && activeTagFilter === null && !isSearching}
-							onclick={() => {
-								onFilterByType(null);
-								onFilterByTag(null);
-								onSearchChange('');
-							}}
+						onclick={onClearFilters}
 						>
 							<FileTextIcon class="size-4" />
 							<span>All Entries</span>

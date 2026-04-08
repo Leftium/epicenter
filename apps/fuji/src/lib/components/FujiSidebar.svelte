@@ -88,7 +88,7 @@
 	}
 </script>
 
-<Sidebar.Root class="h-full">
+<Sidebar.Root collapsible="none" class="h-full w-full">
 	<Sidebar.Header>
 		<div class="px-2 pb-1">
 			<Sidebar.Input

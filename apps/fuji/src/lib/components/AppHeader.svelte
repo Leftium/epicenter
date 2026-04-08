@@ -3,9 +3,9 @@
 	import { Kbd } from '@epicenter/ui/kbd';
 	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import * as Tooltip from '@epicenter/ui/tooltip';
-	import GithubIcon from '@lucide/svelte/icons/github';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
+	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
 
 	let { onOpenSearch, onCreateEntry }: {
 		onOpenSearch: () => void;

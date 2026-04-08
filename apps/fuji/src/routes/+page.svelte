@@ -5,7 +5,6 @@
 		type CommandPaletteItem,
 	} from '@epicenter/ui/command-palette';
 	import * as Resizable from '@epicenter/ui/resizable';
-	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
@@ -122,8 +121,7 @@
 	/>
 	<Resizable.PaneGroup direction="horizontal" class="flex-1">
 		<Resizable.Pane defaultSize={20} minSize={15} maxSize={40}>
-			<SidebarProvider>
-				<FujiSidebar
+			<FujiSidebar
 				entries={entriesState.activeEntries}
 				activeTypeFilter={viewState.activeTypeFilter}
 				activeTagFilter={viewState.activeTagFilter}
@@ -133,8 +131,7 @@
 				onSearchChange={(query) => viewState.setSearchQuery(query)}
 				onSelectEntry={(id) => viewState.selectEntry(id)}
 				onClearFilters={() => viewState.clearFilters()}
-				/>
-			</SidebarProvider>
+			/>
 		</Resizable.Pane>
 		<Resizable.Handle withHandle />
 		<Resizable.Pane defaultSize={80}>

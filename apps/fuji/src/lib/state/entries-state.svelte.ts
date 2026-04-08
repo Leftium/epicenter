@@ -2,11 +2,8 @@
  * Reactive entries state for Fuji.
  *
  * Provides reactive entry collections (active, deleted) and UI-layer
- * operations that wrap workspace actions with view-state side-effects
+ * operations that pair table writes with view-state side-effects
  * (e.g. selecting an entry after creation, deselecting after deletion).
- *
- * Pure table CRUD lives in workspace actions (`workspace.actions.entries`).
- * This module adds the Svelte reactivity and selection management on top.
  *
  * @example
  * ```svelte

@@ -156,13 +156,16 @@
 				<EntriesTable
 					entries={filteredEntries}
 					searchQuery={viewState.searchQuery}
+					sortBy={viewState.sortBy}
 					selectedEntryId={viewState.selectedEntryId}
 					onSelectEntry={(id) => viewState.selectEntry(id)}
 					onAddEntry={() => entriesState.createEntry()}
+					onSortChange={(sort) => (viewState.sortBy = sort)}
 				/>
 			{:else}
 				<EntryTimeline
 					entries={filteredEntries}
+					sortBy={viewState.sortBy}
 					selectedEntryId={viewState.selectedEntryId}
 					onSelectEntry={(id) => viewState.selectEntry(id)}
 					onAddEntry={() => entriesState.createEntry()}

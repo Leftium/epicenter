@@ -7,15 +7,20 @@
 
 	let {
 		entries,
+		sortBy,
 		selectedEntryId,
 		onSelectEntry,
 		onAddEntry,
 	}: {
 		entries: Entry[];
+		sortBy: 'dateEdited' | 'dateCreated' | 'title';
 		selectedEntryId: EntryId | null;
 		onSelectEntry: (id: EntryId) => void;
 		onAddEntry: () => void;
 	} = $props();
+
+	/** Which timestamp field to use for sorting and grouping. */
+	const dateField = $derived(sortBy === 'dateCreated' ? 'createdAt' as const : 'updatedAt' as const);
 
 	function parseDateTime(dts: string): Date {
 		return new Date(dts.split('|')[0]!);
@@ -30,8 +35,9 @@
 
 	/** Entries grouped by date label, sorted newest first. */
 	const groupedEntries = $derived.by(() => {
+		const field = dateField;
 		const sorted = [...entries].sort((a, b) =>
-			b.updatedAt.localeCompare(a.updatedAt),
+			b[field].localeCompare(a[field]),
 		);
 
 		const groups: { label: string; entries: Entry[] }[] = [];
@@ -39,7 +45,7 @@
 		let currentGroup: Entry[] = [];
 
 		for (const entry of sorted) {
-			const label = getDateLabel(entry.updatedAt);
+			const label = getDateLabel(entry[field]);
 			if (label !== currentLabel) {
 				if (currentGroup.length > 0) {
 					groups.push({ label: currentLabel, entries: currentGroup });

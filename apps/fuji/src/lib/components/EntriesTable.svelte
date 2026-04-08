@@ -21,16 +21,33 @@
 	let {
 		entries,
 		searchQuery,
+		sortBy,
 		selectedEntryId,
 		onSelectEntry,
 		onAddEntry,
+		onSortChange,
 	}: {
 		entries: Entry[];
 		searchQuery: string;
+		sortBy: 'dateEdited' | 'dateCreated' | 'title';
 		selectedEntryId: EntryId | null;
 		onSelectEntry: (id: EntryId) => void;
 		onAddEntry: () => void;
+		onSortChange: (sortBy: 'dateEdited' | 'dateCreated' | 'title') => void;
 	} = $props();
+
+	/** Map KV sort preference to TanStack Table column ID. */
+	const sortByToColumnId = {
+		dateEdited: 'updatedAt',
+		dateCreated: 'createdAt',
+		title: 'title',
+	} satisfies Record<typeof sortBy, string>;
+
+	const columnIdToSortBy = {
+		updatedAt: 'dateEdited',
+		createdAt: 'dateCreated',
+		title: 'title',
+	} satisfies Record<string, 'dateEdited' | 'dateCreated' | 'title'>;
 
 	function parseDateTime(dts: string): Date {
 		return new Date(dts.split('|')[0]!);
@@ -125,7 +142,7 @@
 		},
 	];
 
-	let sorting = $state([{ id: 'updatedAt', desc: true }]);
+	let sorting = $state([{ id: sortByToColumnId[sortBy], desc: sortBy !== 'title' }]);
 
 	const table = createSvelteTable({
 		getRowId: (row) => row.id,
@@ -141,6 +158,11 @@
 				sorting = updater(sorting);
 			} else {
 				sorting = updater;
+			}
+			// Propagate sort change back to persisted KV
+			const primary = sorting[0];
+			if (primary && primary.id in columnIdToSortBy) {
+				onSortChange(columnIdToSortBy[primary.id as keyof typeof columnIdToSortBy]);
 			}
 		},
 		state: {

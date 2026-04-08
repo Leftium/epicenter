@@ -9,8 +9,8 @@ import { jwt } from 'better-auth/plugins/jwt';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createAutumn } from '../autumn';
-import * as schema from '../db/schema';
 import { FEATURE_IDS } from '../billing-plans';
+import * as schema from '../db/schema';
 import { BASE_AUTH_CONFIG } from './base-config';
 import type { SessionResponse } from './contracts';
 import { deriveUserEncryptionKeys } from './encryption';
@@ -107,13 +107,13 @@ export function createAuth({
 			const origins = [
 				'tauri://localhost',
 				...Object.values(APPS).flatMap((app) => [
-					app.url,
+					...app.urls,
 					`http://localhost:${app.port}`,
 				]),
 				// Wrangler dev serves at the custom domain over plain HTTP (no TLS).
 				// The browser sends Origin: http://api.epicenter.so which doesn't
 				// match https://api.epicenter.so. Add the HTTP variant.
-				`http://${new URL(APPS.API.url).host}`,
+				`http://${new URL(APPS.API.urls[0]).host}`,
 			];
 			const origin = request?.headers.get('origin');
 			if (origin?.startsWith('chrome-extension://')) {

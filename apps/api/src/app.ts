@@ -2,8 +2,8 @@ import {
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
-import { APPS } from '@epicenter/constants/apps';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
+import { APPS } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -13,6 +13,7 @@ import { createFactory } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
+import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { createAuth } from './auth/create-auth';
 import {
 	renderConsentPage,
@@ -22,7 +23,6 @@ import {
 } from './auth-pages';
 import { createAutumn } from './autumn';
 import { billingRoutes } from './billing-routes';
-import { assetAuthedRoutes, assetPublicRoutes } from './asset-routes';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 
@@ -100,7 +100,7 @@ const factory = createFactory<Env>({
 		const allowedOrigins = new Set([
 			'tauri://localhost',
 			...Object.values(APPS).flatMap((a) => [
-				a.url,
+				...a.urls,
 				`http://localhost:${a.port}`,
 			]),
 		]);
@@ -156,7 +156,7 @@ const factory = createFactory<Env>({
 		app.use('*', async (c, next) => {
 			const origin = new URL(c.req.url).origin;
 			const baseURL =
-				origin === `http://${new URL(APPS.API.url).host}`
+				origin === `http://${new URL(APPS.API.urls[0]).host}`
 					? `http://localhost:${APPS.API.port}`
 					: origin;
 			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));
@@ -270,7 +270,6 @@ app.get(
 // Asset reads — unauthenticated (unguessable URL is the credential).
 // Must be mounted BEFORE authGuard so GET requests aren't blocked.
 app.route('/api/assets', assetPublicRoutes);
-
 
 // Auth guard for protected routes
 const authGuard = factory.createMiddleware(async (c, next) => {

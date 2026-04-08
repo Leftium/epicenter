@@ -4,7 +4,7 @@
  * Observes the files table, reads document content from per-file Y.Docs,
  * and writes `.md` files with YAML frontmatter (metadata) and markdown
  * body (document content). Wikilinks in the body are converted from
- * internal `id:` links.
+ * `epicenter://` epicenter links.
  *
  * This is opensidian-specific because the generic `markdownMaterializer`
  * only serializes table row data — it doesn't know about document content.
@@ -12,10 +12,8 @@
 
 import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-	convertInternalLinksToWikilinks,
-	type FileRow,
-} from '@epicenter/filesystem';
+import { type FileRow } from '@epicenter/filesystem';
+import { convertEpicenterLinksToWikilinks } from '@epicenter/workspace';
 import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
 import slugify from '@sindresorhus/slugify';
 import filenamify from 'filenamify';
@@ -135,7 +133,7 @@ export function createOpensidianMaterializer({
 
 			const exportedContent =
 				content !== undefined
-					? convertInternalLinksToWikilinks(content)
+					? convertEpicenterLinksToWikilinks(content)
 					: content;
 
 			await Bun.write(

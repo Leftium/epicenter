@@ -8,9 +8,9 @@ All app metadata lives in `APPS` inside `src/apps.ts`:
 
 ```typescript
 export const APPS = {
-  API:   { port: 8787, url: 'https://api.epicenter.so' },
-  SH:    { port: 5173, url: 'https://epicenter.sh' },
-  AUDIO: { port: 1420, url: 'https://whispering.epicenter.so' },
+  API:   { port: 8787, urls: ['https://api.epicenter.so'] },
+  SH:    { port: 5173, urls: ['https://epicenter.sh'] },
+  AUDIO: { port: 1420, urls: ['https://whispering.epicenter.so'] },
 } as const;
 ```
 
@@ -38,7 +38,7 @@ For non-Vite contexts (Cloudflare Workers, CLI scripts). Use `APPS` directly.
 import { APPS } from '@epicenter/constants/apps';
 
 // CORS origins:
-const prodOrigins = Object.values(APPS).map(a => a.url);
+const prodOrigins = Object.values(APPS).flatMap(a => a.urls);
 const devOrigins = Object.values(APPS).map(a => `http://localhost:${a.port}`);
 
 // Dev server port:
@@ -58,5 +58,5 @@ import { VERSION } from '@epicenter/constants/versions';
 
 ## Adding a new app
 
-1. Add an entry to `APPS` in `src/apps.ts` with `port` and `url`.
+1. Add an entry to `APPS` in `src/apps.ts` with `port` and `urls`.
 2. Every export picks it up automatically — TypeScript enforces completeness.

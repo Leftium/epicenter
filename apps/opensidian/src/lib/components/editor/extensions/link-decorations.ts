@@ -9,8 +9,11 @@ import {
 	type ViewUpdate,
 	WidgetType,
 } from '@codemirror/view';
-import type { FileId } from '@epicenter/filesystem';
-import { getTargetFileId, isInternalLink } from '@epicenter/filesystem';
+import {
+	EPICENTER_LINK_RE,
+	type EpicenterLink,
+	parseEpicenterLink,
+} from '@epicenter/workspace';
 
 /**
  * Configuration for the link decoration plugin.
@@ -18,35 +21,56 @@ import { getTargetFileId, isInternalLink } from '@epicenter/filesystem';
  * @example
  * ```typescript
  * linkDecorations({
- *   onNavigate: (fileId) => fsState.selectFile(fileId),
- *   resolveTitle: (fileId) => fsState.getFile(fileId)?.name ?? null,
+ *   onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
+ *   resolveTitle: (ref) => fsState.getFile(ref.id as FileId)?.name ?? null,
  * })
  * ```
  */
 type LinkDecorationConfig = {
-	/** Called when a decorated link is clicked. */
-	onNavigate: (fileId: FileId) => void;
+	/** Called when a decorated epicenter link is clicked. */
+	onNavigate: (ref: EpicenterLink) => void;
 	/**
-	 * Optional title resolver. When provided and returns non-null,
-	 * the widget displays the resolved title instead of the stored display text.
-	 * Useful for live-rendering renamed pages.
+	 * Optional title resolver for epicenter links.
+	 *
+	 * When provided and it returns a non-null value, the widget displays the
+	 * resolved title instead of the stored markdown display text. This is useful
+	 * when the target entity can be renamed after the link was inserted.
+	 *
+	 * @example
+	 * ```typescript
+	 * resolveTitle: (ref) => {
+	 *   if (ref.table !== 'files') return null;
+	 *   return fsState.getFile(ref.id as FileId)?.name ?? null;
+	 * }
+	 * ```
 	 */
-	resolveTitle?: (fileId: FileId) => string | null;
+	resolveTitle?: (ref: EpicenterLink) => string | null;
 };
 
-/** Regex matching `[display text](id:GUID)` in document text. */
-const INTERNAL_LINK_RE = /\[([^\]]+)\]\((id:[^)]+)\)/g;
-
 /**
- * Widget that renders an internal link as a clickable styled span.
+ * Widget that renders an epicenter link as a clickable styled span.
  *
- * Replaces the full `[text](id:GUID)` match in the document with a
- * compact, styled span showing just the display text (or resolved title).
+ * Replaces the full markdown link match in the document with a compact,
+ * styled span showing just the display text or the current resolved title.
+ * This keeps the stored markdown stable while letting the editor show a more
+ * human-friendly label for the target entity.
+ *
+ * @example
+ * ```typescript
+ * const widget = new EpicenterLinkWidget('Daily Notes', {
+ *   workspace: 'opensidian',
+ *   table: 'files',
+ *   id: 'abc123',
+ * }, {
+ *   onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
+ *   resolveTitle: (ref) => fsState.getFile(ref.id as FileId)?.name ?? null,
+ * });
+ * ```
  */
-class InternalLinkWidget extends WidgetType {
+class EpicenterLinkWidget extends WidgetType {
 	constructor(
 		private readonly displayText: string,
-		private readonly fileId: FileId,
+		private readonly ref: EpicenterLink,
 		private readonly config: LinkDecorationConfig,
 	) {
 		super();
@@ -54,9 +78,9 @@ class InternalLinkWidget extends WidgetType {
 
 	override toDOM(): HTMLElement {
 		const span = document.createElement('span');
-		const resolvedTitle = this.config.resolveTitle?.(this.fileId);
+		const resolvedTitle = this.config.resolveTitle?.(this.ref);
 		span.textContent = resolvedTitle ?? this.displayText;
-		span.className = 'cm-internal-link';
+		span.className = 'cm-epicenter-link';
 		span.style.cssText =
 			'text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 2px; cursor: pointer; color: var(--primary, #3b82f6);';
 		span.title = resolvedTitle ?? this.displayText;
@@ -64,20 +88,19 @@ class InternalLinkWidget extends WidgetType {
 		span.addEventListener('click', (e) => {
 			e.preventDefault();
 			e.stopPropagation();
-			this.config.onNavigate(this.fileId);
+			this.config.onNavigate(this.ref);
 		});
 
 		return span;
 	}
 
-	override eq(other: InternalLinkWidget): boolean {
+	override eq(other: EpicenterLinkWidget): boolean {
 		return (
-			this.fileId === other.fileId && this.displayText === other.displayText
+			this.displayText === other.displayText &&
+			this.ref.workspace === other.ref.workspace &&
+			this.ref.table === other.ref.table &&
+			this.ref.id === other.ref.id
 		);
-	}
-
-	override ignoreEvent(): boolean {
-		return false;
 	}
 }
 
@@ -108,10 +131,19 @@ function isInsideCode(view: EditorView, pos: number): boolean {
 }
 
 /**
- * Build decorations for all visible internal links in the editor.
+ * Build decorations for all visible epicenter links in the editor.
  *
- * Scans visible ranges for `[text](id:GUID)` patterns, skipping matches
- * inside code blocks, and creates `Decoration.replace` widgets for each.
+ * Scans visible ranges for markdown links that point at `epicenter://`
+ * epicenter links, skips matches inside code blocks, and creates
+ * `Decoration.replace` widgets for each.
+ *
+ * @example
+ * ```typescript
+ * const decorations = buildDecorations(view, {
+ *   onNavigate: (ref) => console.log(ref.workspace, ref.table, ref.id),
+ *   resolveTitle: (ref) => ref.table === 'files' ? ref.id : null,
+ * });
+ * ```
  */
 function buildDecorations(
 	view: EditorView,
@@ -122,10 +154,10 @@ function buildDecorations(
 	for (const { from, to } of view.visibleRanges) {
 		const text = view.state.doc.sliceString(from, to);
 		let match: RegExpExecArray | null;
-		INTERNAL_LINK_RE.lastIndex = 0;
+		EPICENTER_LINK_RE.lastIndex = 0;
 
 		while (true) {
-			match = INTERNAL_LINK_RE.exec(text);
+			match = EPICENTER_LINK_RE.exec(text);
 			if (match === null) {
 				break;
 			}
@@ -139,11 +171,12 @@ function buildDecorations(
 				continue;
 			}
 
-			if (!isInternalLink(href)) continue;
 			if (isInsideCode(view, start)) continue;
 
-			const fileId = getTargetFileId(href);
-			const widget = new InternalLinkWidget(displayText, fileId, config);
+			const ref = parseEpicenterLink(href);
+			if (ref === null) continue;
+
+			const widget = new EpicenterLinkWidget(displayText, ref, config);
 
 			builder.add(start, end, Decoration.replace({ widget }));
 		}
@@ -153,21 +186,23 @@ function buildDecorations(
 }
 
 /**
- * Create a CodeMirror extension that decorates internal `id:` links
- * as clickable styled spans.
+ * Create a CodeMirror extension that decorates markdown epicenter links as
+ * clickable styled spans.
  *
- * Scans visible document ranges for `[display text](id:GUID)` patterns,
- * skips matches inside fenced code blocks and inline code, and replaces
- * each match with a styled widget showing just the display text.
+ * Scans visible document ranges for `[display text](epicenter://...)`
+ * patterns, skips matches inside fenced code blocks and inline code, and
+ * replaces each match with a styled widget showing just the display text or
+ * a resolved title for the target entity.
  *
  * @example
  * ```typescript
  * import { linkDecorations } from './extensions/link-decorations';
+ * import type { FileId } from '@epicenter/filesystem';
  *
  * const extensions = [
  *   linkDecorations({
- *     onNavigate: (fileId) => fsState.selectFile(fileId),
- *     resolveTitle: (fileId) => fsState.getFile(fileId)?.name ?? null,
+ *     onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
+ *     resolveTitle: (ref) => fsState.getFile(ref.id as FileId)?.name ?? null,
  *   }),
  * ];
  * ```

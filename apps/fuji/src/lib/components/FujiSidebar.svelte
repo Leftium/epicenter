@@ -2,6 +2,7 @@
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import HashIcon from '@lucide/svelte/icons/hash';
+	import SearchIcon from '@lucide/svelte/icons/search';
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry, EntryId } from '$lib/workspace';
@@ -25,6 +26,21 @@
 		onSearchChange: (query: string) => void;
 		onSelectEntry: (id: EntryId) => void;
 	} = $props();
+
+	const isSearching = $derived(searchQuery.trim().length > 0);
+
+	/** Entries matching the search query across title, subtitle, tags, and type. */
+	const searchResults = $derived.by(() => {
+		if (!isSearching) return [];
+		const q = searchQuery.trim().toLowerCase();
+		return entries.filter((entry) => {
+			const title = entry.title.toLowerCase();
+			const subtitle = entry.subtitle.toLowerCase();
+			const tags = entry.tags.join(' ').toLowerCase();
+			const types = entry.type.join(' ').toLowerCase();
+			return title.includes(q) || subtitle.includes(q) || tags.includes(q) || types.includes(q);
+		});
+	});
 
 	/** Unique types with entry counts, sorted by count descending. */
 	const typeGroups = $derived.by(() => {
@@ -78,7 +94,7 @@
 		</div>
 		<div class="px-2 pb-1">
 			<Sidebar.Input
-				placeholder="Search entries\u2026"
+				placeholder="Search entries…"
 				value={searchQuery}
 				oninput={(e) => onSearchChange(e.currentTarget.value)}
 			/>
@@ -92,10 +108,11 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={activeTypeFilter === null && activeTagFilter === null}
+							isActive={activeTypeFilter === null && activeTagFilter === null && !isSearching}
 							onclick={() => {
 								onFilterByType(null);
 								onFilterByTag(null);
+								onSearchChange('');
 							}}
 						>
 							<FileTextIcon class="size-4" />
@@ -109,85 +126,122 @@
 			</Sidebar.GroupContent>
 		</Sidebar.Group>
 
-		<!-- Type Groups -->
-		{#if typeGroups.length > 0}
+		{#if isSearching}
+			<!-- Search Results -->
 			<Sidebar.Group>
-				<Sidebar.GroupLabel>Type</Sidebar.GroupLabel>
+				<Sidebar.GroupLabel>
+					Search Results ({searchResults.length})
+				</Sidebar.GroupLabel>
 				<Sidebar.GroupContent>
 					<Sidebar.Menu>
-						{#each typeGroups as group (group.name)}
+						{#if searchResults.length > 0}
+							{#each searchResults as entry (entry.id)}
+								<Sidebar.MenuItem>
+									<Sidebar.MenuButton onclick={() => onSelectEntry(entry.id)}>
+										<div class="flex w-full flex-col gap-0.5 overflow-hidden">
+											<span class="truncate text-sm font-medium">
+												{entry.title || 'Untitled'}
+											</span>
+											{#if entry.subtitle}
+												<span class="truncate text-xs text-muted-foreground">
+													{entry.subtitle}
+												</span>
+											{/if}
+										</div>
+									</Sidebar.MenuButton>
+								</Sidebar.MenuItem>
+							{/each}
+						{:else}
 							<Sidebar.MenuItem>
-								<Sidebar.MenuButton
-									isActive={activeTypeFilter === group.name}
-									onclick={() =>
-										onFilterByType(
-											activeTypeFilter === group.name ? null : group.name,
-										)}
-								>
-									<HashIcon class="size-4" />
-									<span>{group.name}</span>
-									<span class="ml-auto text-xs text-muted-foreground">
-										{group.count}
-									</span>
-								</Sidebar.MenuButton>
+								<span class="px-2 py-1 text-xs text-muted-foreground">
+									No entries match "{searchQuery}"
+								</span>
 							</Sidebar.MenuItem>
-						{/each}
+						{/if}
 					</Sidebar.Menu>
 				</Sidebar.GroupContent>
 			</Sidebar.Group>
-		{/if}
-
-		<!-- Tag Groups -->
-		{#if tagGroups.length > 0}
-			<Sidebar.Group>
-				<Sidebar.GroupLabel>Tags</Sidebar.GroupLabel>
-				<Sidebar.GroupContent>
-					<Sidebar.Menu>
-						{#each tagGroups as group (group.name)}
-							<Sidebar.MenuItem>
-								<Sidebar.MenuButton
-									isActive={activeTagFilter === group.name}
-									onclick={() =>
-										onFilterByTag(
-											activeTagFilter === group.name ? null : group.name,
-										)}
-								>
-									<TagIcon class="size-4" />
-									<span>{group.name}</span>
-									<span class="ml-auto text-xs text-muted-foreground">
-										{group.count}
-									</span>
-								</Sidebar.MenuButton>
-							</Sidebar.MenuItem>
-						{/each}
-					</Sidebar.Menu>
-				</Sidebar.GroupContent>
-			</Sidebar.Group>
-		{/if}
-
-		<!-- Recent Entries -->
-		{#if recentEntries.length > 0}
-			<Sidebar.Group>
-				<Sidebar.GroupLabel>Recent</Sidebar.GroupLabel>
-				<Sidebar.GroupContent>
-					<Sidebar.Menu>
-						{#each recentEntries as entry (entry.id)}
-							<Sidebar.MenuItem>
-								<Sidebar.MenuButton onclick={() => onSelectEntry(entry.id)}>
-									<div class="flex w-full flex-col gap-0.5 overflow-hidden">
-										<span class="truncate text-sm font-medium">
-											{entry.title || 'Untitled'}
+		{:else}
+			<!-- Type Groups -->
+			{#if typeGroups.length > 0}
+				<Sidebar.Group>
+					<Sidebar.GroupLabel>Type</Sidebar.GroupLabel>
+					<Sidebar.GroupContent>
+						<Sidebar.Menu>
+							{#each typeGroups as group (group.name)}
+								<Sidebar.MenuItem>
+									<Sidebar.MenuButton
+										isActive={activeTypeFilter === group.name}
+										onclick={() =>
+											onFilterByType(
+												activeTypeFilter === group.name ? null : group.name,
+											)}
+									>
+										<HashIcon class="size-4" />
+										<span>{group.name}</span>
+										<span class="ml-auto text-xs text-muted-foreground">
+											{group.count}
 										</span>
-										<span class="truncate text-xs text-muted-foreground">
-											{getDateLabel(entry.updatedAt)}
+									</Sidebar.MenuButton>
+								</Sidebar.MenuItem>
+							{/each}
+						</Sidebar.Menu>
+					</Sidebar.GroupContent>
+				</Sidebar.Group>
+			{/if}
+
+			<!-- Tag Groups -->
+			{#if tagGroups.length > 0}
+				<Sidebar.Group>
+					<Sidebar.GroupLabel>Tags</Sidebar.GroupLabel>
+					<Sidebar.GroupContent>
+						<Sidebar.Menu>
+							{#each tagGroups as group (group.name)}
+								<Sidebar.MenuItem>
+									<Sidebar.MenuButton
+										isActive={activeTagFilter === group.name}
+										onclick={() =>
+											onFilterByTag(
+												activeTagFilter === group.name ? null : group.name,
+											)}
+									>
+										<TagIcon class="size-4" />
+										<span>{group.name}</span>
+										<span class="ml-auto text-xs text-muted-foreground">
+											{group.count}
 										</span>
-									</div>
-								</Sidebar.MenuButton>
-							</Sidebar.MenuItem>
-						{/each}
-					</Sidebar.Menu>
-				</Sidebar.GroupContent>
-			</Sidebar.Group>
+									</Sidebar.MenuButton>
+								</Sidebar.MenuItem>
+							{/each}
+						</Sidebar.Menu>
+					</Sidebar.GroupContent>
+				</Sidebar.Group>
+			{/if}
+
+			<!-- Recent Entries -->
+			{#if recentEntries.length > 0}
+				<Sidebar.Group>
+					<Sidebar.GroupLabel>Recent</Sidebar.GroupLabel>
+					<Sidebar.GroupContent>
+						<Sidebar.Menu>
+							{#each recentEntries as entry (entry.id)}
+								<Sidebar.MenuItem>
+									<Sidebar.MenuButton onclick={() => onSelectEntry(entry.id)}>
+										<div class="flex w-full flex-col gap-0.5 overflow-hidden">
+											<span class="truncate text-sm font-medium">
+												{entry.title || 'Untitled'}
+											</span>
+											<span class="truncate text-xs text-muted-foreground">
+												{getDateLabel(entry.updatedAt)}
+											</span>
+										</div>
+									</Sidebar.MenuButton>
+								</Sidebar.MenuItem>
+							{/each}
+						</Sidebar.Menu>
+					</Sidebar.GroupContent>
+				</Sidebar.Group>
+			{/if}
 		{/if}
 	</Sidebar.Content>
 

@@ -11,7 +11,7 @@
 		ellipsis,
 	} from 'prosemirror-inputrules';
 	import { keymap } from 'prosemirror-keymap';
-	import { Schema } from 'prosemirror-model';
+	import { Schema, type MarkSpec } from 'prosemirror-model';
 	import { addListNodes, splitListItem, liftListItem, sinkListItem } from 'prosemirror-schema-list';
 	import { schema as basicSchema } from 'prosemirror-schema-basic';
 	import { EditorState, Plugin } from 'prosemirror-state';
@@ -22,6 +22,7 @@
 	import type * as Y from 'yjs';
 	import type { Entry } from '$lib/workspace';
 	import TagInput from './TagInput.svelte';
+	import StatusBar from './StatusBar.svelte';
 
 	let {
 		entry,
@@ -38,14 +39,44 @@
 	} = $props();
 
 	let element: HTMLDivElement | undefined = $state();
+	let wordCount = $state(0);
+
+	function countWords(text: string): number {
+		const trimmed = text.trim();
+		if (!trimmed) return 0;
+		return trimmed.split(/\s+/).length;
+	}
+
+	function createWordCountPlugin() {
+		return new Plugin({
+			view() {
+				return {
+					update(view) {
+						wordCount = countWords(view.state.doc.textContent);
+					},
+				};
+			},
+		});
+	}
 
 	function parseDateTime(dts: string): Date {
 		return new Date(dts.split('|')[0]!);
 	}
 
+	const extraMarks: Record<string, MarkSpec> = {
+		strikethrough: {
+			parseDOM: [{ tag: 's' }, { tag: 'del' }, { style: 'text-decoration=line-through' }],
+			toDOM() { return ['s', 0]; },
+		},
+		underline: {
+			parseDOM: [{ tag: 'u' }, { style: 'text-decoration=underline' }],
+			toDOM() { return ['u', 0]; },
+		},
+	};
+
 	const schema = new Schema({
 		nodes: addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block'),
-		marks: basicSchema.spec.marks,
+		marks: basicSchema.spec.marks.append(extraMarks),
 	});
 
 	function createPlaceholderPlugin(text: string) {
@@ -88,6 +119,8 @@
 						'Mod-Shift-z': redo,
 						'Mod-b': toggleMark(schema.marks.strong!),
 						'Mod-i': toggleMark(schema.marks.em!),
+						'Mod-u': toggleMark(schema.marks.underline!),
+						'Mod-Shift-s': toggleMark(schema.marks.strikethrough!),
 						'Enter': splitListItem(schema.nodes.list_item!),
 						'Mod-]': sinkListItem(schema.nodes.list_item!),
 						'Tab': sinkListItem(schema.nodes.list_item!),
@@ -116,6 +149,7 @@
 							textblockTypeInputRule(/^```$/, schema.nodes.code_block!),
 						],
 					}),
+					createWordCountPlugin(),
 				],
 			}),
 			attributes: {
@@ -187,15 +221,8 @@
 	<!-- Editor body -->
 	<div bind:this={element} class="flex-1 overflow-y-auto px-6 py-4"></div>
 
-	<!-- Timestamps footer -->
-	<div
-		class="flex items-center justify-end border-t px-6 py-2 text-xs text-muted-foreground"
-	>
-		<span>
-			Created {format(parseDateTime(entry.createdAt), 'MMM d \u00b7 h:mm a')}
-			\u00b7 Updated {format(parseDateTime(entry.updatedAt), 'MMM d \u00b7 h:mm a')}
-		</span>
-	</div>
+	<!-- Status bar -->
+	<StatusBar {entry} {wordCount} />
 </div>
 
 <style>

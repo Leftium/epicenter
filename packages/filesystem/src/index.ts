@@ -24,16 +24,6 @@ export {
 // IDs
 export type { ColumnId, FileId, RowId } from './ids.js';
 export { generateColumnId, generateFileId, generateRowId } from './ids.js';
-// Links
-export {
-	convertEpicenterLinksToWikilinks,
-	convertWikilinksToEpicenterLinks,
-	EPICENTER_LINK_RE,
-	type EpicenterLink,
-	isEpicenterLink,
-	makeEpicenterLink,
-	parseEpicenterLink,
-} from './links.js';
 // Path utilities
 export { posixResolve } from './path.js';
 // Table

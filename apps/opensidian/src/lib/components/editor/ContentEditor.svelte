@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { autocompletion } from '@codemirror/autocomplete';
-	import type { EpicenterLink, FileId } from '@epicenter/filesystem';
+	import type { EpicenterLink } from '@epicenter/workspace';
+	import type { FileId } from '@epicenter/filesystem';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import { workspace } from '$lib/client';

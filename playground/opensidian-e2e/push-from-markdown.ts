@@ -11,9 +11,9 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
 	convertWikilinksToEpicenterLinks,
-	type FileRow,
 	makeEpicenterLink,
-} from '@epicenter/filesystem';
+	} from '@epicenter/workspace';
+import { type FileRow } from '@epicenter/filesystem';
 import { parseMarkdownFile } from '@epicenter/workspace/extensions/materializer/markdown';
 import type { opensidian } from './epicenter.config';
 

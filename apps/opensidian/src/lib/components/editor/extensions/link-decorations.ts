@@ -14,7 +14,7 @@ import {
 	type EpicenterLink,
 	isEpicenterLink,
 	parseEpicenterLink,
-} from '@epicenter/filesystem';
+} from '@epicenter/workspace';
 
 /**
  * Configuration for the link decoration plugin.
@@ -199,7 +199,7 @@ function buildDecorations(
  * @example
  * ```typescript
  * import { linkDecorations } from './extensions/link-decorations';
- * import type { FileId } from '@epicenter/filesystem';
+ * import type { FileId } from '@epicenter/workspace';
  *
  * const extensions = [
  *   linkDecorations({

@@ -203,3 +203,17 @@ export {
 	or,
 	sql,
 } from 'drizzle-orm';
+
+// ════════════════════════════════════════════════════════════════════════════
+// EPICENTER LINKS
+// ════════════════════════════════════════════════════════════════════════════
+
+export {
+	convertEpicenterLinksToWikilinks,
+	convertWikilinksToEpicenterLinks,
+	EPICENTER_LINK_RE,
+	type EpicenterLink,
+	isEpicenterLink,
+	makeEpicenterLink,
+	parseEpicenterLink,
+} from './links.js';

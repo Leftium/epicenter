@@ -1,6 +1,6 @@
 import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { convertEpicenterLinksToWikilinks } from '@epicenter/filesystem';
+import { convertEpicenterLinksToWikilinks } from '../../../links.js';
 import { YAML } from 'bun';
 import type { ExtensionContext } from '../../../workspace/types.js';
 import { defaultSerializer, type MarkdownSerializer } from './serializers.js';

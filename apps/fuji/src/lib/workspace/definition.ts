@@ -4,7 +4,7 @@
  * Fuji is a personal CMS with a 1:1 mapping to your blog. Entries are content
  * pieces—articles, thoughts, ideas—organized by tags and type, displayed in a
  * data table with an editor panel. Each entry has a rich-text content document
- * for collaborative editing via Tiptap + y-prosemirror.
+ * for collaborative editing via ProseMirror + y-prosemirror.
  *
  * Contains the branded EntryId type, entries table definition with
  * DateTimeString timestamps, KV settings, and the workspace definition.

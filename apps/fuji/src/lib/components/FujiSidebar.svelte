@@ -2,7 +2,6 @@
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import HashIcon from '@lucide/svelte/icons/hash';
-	import SearchIcon from '@lucide/svelte/icons/search';
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry, EntryId } from '$lib/workspace';

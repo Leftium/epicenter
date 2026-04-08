@@ -18,7 +18,7 @@
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
 	import { ySyncPlugin, yUndoPlugin, undo, redo } from 'y-prosemirror';
-	import { format } from 'date-fns';
+	import type * as Y from 'yjs';
 	import type * as Y from 'yjs';
 	import type { Entry } from '$lib/workspace';
 	import TagInput from './TagInput.svelte';
@@ -59,9 +59,6 @@
 		});
 	}
 
-	function parseDateTime(dts: string): Date {
-		return new Date(dts.split('|')[0]!);
-	}
 
 	const extraMarks: Record<string, MarkSpec> = {
 		strikethrough: {

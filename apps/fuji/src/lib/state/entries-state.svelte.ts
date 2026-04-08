@@ -1,12 +1,12 @@
 /**
  * Reactive entries state for Fuji.
  *
- * Manages entry CRUD operations, soft deletion, pinning, and reactive
- * entry collections. Backed by a Y.Doc CRDT table, so entries sync
- * across devices. Uses a factory function pattern to encapsulate `$state`.
+ * Provides reactive entry collections (active, deleted) and UI-layer
+ * operations that wrap workspace actions with view-state side-effects
+ * (e.g. selecting an entry after creation, deselecting after deletion).
  *
- * Observers are registered once during factory construction and never
- * cleaned up (SPA lifetime).
+ * Pure table CRUD lives in workspace actions (`workspace.actions.entries`).
+ * This module adds the Svelte reactivity and selection management on top.
  *
  * @example
  * ```svelte
@@ -21,7 +21,7 @@
  * ```
  */
 
-import { dateTimeStringNow, generateId } from '@epicenter/workspace';
+import { dateTimeStringNow } from '@epicenter/workspace';
 import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 import type { EntryId } from '$lib/workspace';
@@ -66,34 +66,20 @@ function createEntriesState() {
 		},
 
 		/**
-		 * Create a new entry and select it.
+		 * Create a new entry via workspace action and select it.
 		 *
-		 * The entry starts with an empty title, subtitle, and content.
-		 * It's automatically selected after creation so the editor opens
-		 * immediately.
+		 * Delegates to `workspace.actions.entries.create` for the actual
+		 * table write, then selects the new entry so the editor opens.
 		 */
 		createEntry() {
-			const id = generateId() as unknown as EntryId;
-			workspace.tables.entries.set({
-				id,
-				title: '',
-				subtitle: '',
-				type: [],
-				tags: [],
-				pinned: false,
-				deletedAt: undefined,
-				createdAt: dateTimeStringNow(),
-				updatedAt: dateTimeStringNow(),
-				_v: '1',
-			});
+			const { id } = workspace.actions.entries.create({});
 			viewState.selectEntry(id);
 		},
 
 		/**
 		 * Update entry fields.
 		 *
-		 * Accepts a partial update — only the provided fields are changed.
-		 * Commonly used by the editor to update title, subtitle, type, and tags.
+		 * Thin wrapper over `tables.entries.update` — no side-effects.
 		 */
 		updateEntry(id: EntryId, updates: Partial<{ title: string; subtitle: string; type: string[]; tags: string[] }>) {
 			workspace.tables.entries.update(id, updates);
@@ -102,9 +88,8 @@ function createEntriesState() {
 		/**
 		 * Soft-delete an entry — moves it to Recently Deleted.
 		 *
-		 * The entry is marked with a `deletedAt` timestamp but not permanently
-		 * removed. It can be restored later. If the deleted entry was selected,
-		 * the selection is cleared.
+		 * Marks the entry with a `deletedAt` timestamp. If the deleted
+		 * entry was selected, clears the selection.
 		 */
 		softDeleteEntry(id: EntryId) {
 			workspace.tables.entries.update(id, { deletedAt: dateTimeStringNow() });
@@ -139,7 +124,7 @@ function createEntriesState() {
 		 * Permanently delete an entry — no recovery.
 		 *
 		 * Removes the entry from the CRDT entirely. If the deleted entry was
-		 * selected, the selection is cleared.
+		 * selected, clears the selection.
 		 */
 		permanentlyDeleteEntry(id: EntryId) {
 			workspace.tables.entries.delete(id);

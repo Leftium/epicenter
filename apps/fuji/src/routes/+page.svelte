@@ -2,8 +2,6 @@
 	import { Button } from '@epicenter/ui/button';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
-	import { dateTimeStringNow, generateId } from '@epicenter/workspace';
-	import { fromKv, fromTable } from '@epicenter/svelte';
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import TableIcon from '@lucide/svelte/icons/table-2';
 	import type * as Y from 'yjs';
@@ -12,37 +10,22 @@
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
 	import { workspace } from '$lib/client';
-	import type { Entry, EntryId } from '$lib/workspace';
+	import { entriesState, viewState } from '$lib/state';
 
-	// ─── Reactive State ────────────────────────────────────────────────────────────
+	// ─── Document Handle (Y.Text) ────────────────────────────────────────────────
 
-	const entries = fromTable(workspace.tables.entries);
-	const entriesArray = $derived(entries.values().toArray());
-	const selectedEntryId = fromKv(workspace.kv, 'selectedEntryId');
-	const viewMode = fromKv(workspace.kv, 'viewMode');
 	let currentYText = $state<Y.Text | null>(null);
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 
-	// ─── Filters ─────────────────────────────────────────────────────────────────
-
-	let activeTypeFilter = $state<string | null>(null);
-	let activeTagFilter = $state<string | null>(null);
-	let searchQuery = $state('');
-
-	// ─── Derived State ───────────────────────────────────────────────────────────
-
 	const selectedEntry = $derived(
-		selectedEntryId.current ? entries.get(selectedEntryId.current) ?? null : null,
+		viewState.selectedEntryId ? entriesState.get(viewState.selectedEntryId) ?? null : null,
 	);
-
-	/** Active entries — excludes soft-deleted. */
-	const activeEntries = $derived(entriesArray.filter((e) => e.deletedAt === undefined));
 
 	/** Entries filtered by sidebar type/tag filters. */
 	const filteredEntries = $derived.by(() => {
-		let result = activeEntries;
-		const typeFilter = activeTypeFilter;
-		const tagFilter = activeTagFilter;
+		let result = entriesState.activeEntries;
+		const typeFilter = viewState.activeTypeFilter;
+		const tagFilter = viewState.activeTagFilter;
 		if (typeFilter) {
 			result = result.filter((e) => e.type.includes(typeFilter));
 		}
@@ -52,30 +35,8 @@
 		return result;
 	});
 
-	// ─── Actions ─────────────────────────────────────────────────────────────────
-
-function createEntry() {
-		const id = generateId() as unknown as EntryId;
-		workspace.tables.entries.set({
-			id,
-			title: '',
-			subtitle: '',
-			type: [],
-			tags: [],
-			pinned: false,
-			deletedAt: undefined,
-			createdAt: dateTimeStringNow(),
-			updatedAt: dateTimeStringNow(),
-			_v: '1',
-		});
-		selectedEntryId.current = id;
-	}
-
-
-	// ─── Document Handle (Y.Text) ────────────────────────────────────────────────
-
 	$effect(() => {
-		const entryId = selectedEntryId.current;
+		const entryId = viewState.selectedEntryId;
 		if (!entryId) {
 			currentYText = null;
 			currentDocHandle = null;
@@ -108,44 +69,44 @@ function createEntry() {
 
 	if (event.key === 'n' && event.metaKey) {
 		event.preventDefault();
-		createEntry();
+		entriesState.createEntry();
 		return;
 	}
 
-	if (event.key === 'Escape' && !isInputFocused && selectedEntryId.current) {
+	if (event.key === 'Escape' && !isInputFocused && viewState.selectedEntryId) {
 		event.preventDefault();
-		selectedEntryId.current = null;
+		viewState.selectEntry(null);
 	}
 }} />
 
 <SidebarProvider>
 	<FujiSidebar
-		entries={activeEntries}
-		{activeTypeFilter}
-		{activeTagFilter}
-		{searchQuery}
-		onFilterByType={(type) => (activeTypeFilter = type)}
-		onFilterByTag={(tag) => (activeTagFilter = tag)}
-		onSearchChange={(query) => (searchQuery = query)}
-		onSelectEntry={(id) => (selectedEntryId.current = id)}
+		entries={entriesState.activeEntries}
+		activeTypeFilter={viewState.activeTypeFilter}
+		activeTagFilter={viewState.activeTagFilter}
+		searchQuery={viewState.searchQuery}
+		onFilterByType={(type) => viewState.filterByType(type)}
+		onFilterByTag={(tag) => viewState.filterByTag(tag)}
+		onSearchChange={(query) => viewState.setSearchQuery(query)}
+		onSelectEntry={(id) => viewState.selectEntry(id)}
 	/>
 
 	<main class="flex h-screen flex-1 flex-col overflow-hidden">
 		{#if selectedEntry && currentYText}
-			{#key selectedEntryId.current}
+			{#key viewState.selectedEntryId}
 				<EntryEditor
 					entry={selectedEntry}
 					ytext={currentYText}
 					onUpdate={(updates) => {
-						if (!selectedEntryId.current) return;
-						workspace.tables.entries.update(selectedEntryId.current, updates);
+						if (!viewState.selectedEntryId) return;
+						entriesState.updateEntry(viewState.selectedEntryId, updates);
 					}}
-					onBack={() => (selectedEntryId.current = null)}
+					onBack={() => viewState.selectEntry(null)}
 				/>
 			{/key}
 		{:else if selectedEntry}
 			<div class="flex h-full items-center justify-center">
-				<p class="text-muted-foreground">Loading editor\u2026</p>
+				<p class="text-muted-foreground">Loading editor…</p>
 			</div>
 		{:else}
 			<!-- View mode toggle header -->
@@ -154,10 +115,10 @@ function createEntry() {
 					variant="ghost"
 					size="icon"
 					class="size-7"
-					onclick={() => (viewMode.current = viewMode.current === 'table' ? 'timeline' : 'table')}
-					title={viewMode.current === 'table' ? 'Switch to timeline' : 'Switch to table'}
+					onclick={() => viewState.toggleViewMode()}
+					title={viewState.viewMode === 'table' ? 'Switch to timeline' : 'Switch to table'}
 				>
-					{#if viewMode.current === 'table'}
+					{#if viewState.viewMode === 'table'}
 						<ClockIcon class="size-4" />
 					{:else}
 						<TableIcon class="size-4" />
@@ -165,20 +126,20 @@ function createEntry() {
 				</Button>
 			</div>
 
-			{#if viewMode.current === 'table'}
+			{#if viewState.viewMode === 'table'}
 				<EntriesTable
 					entries={filteredEntries}
-					{searchQuery}
-					selectedEntryId={selectedEntryId.current}
-					onSelectEntry={(id) => (selectedEntryId.current = id)}
-					onAddEntry={createEntry}
+					searchQuery={viewState.searchQuery}
+					selectedEntryId={viewState.selectedEntryId}
+					onSelectEntry={(id) => viewState.selectEntry(id)}
+					onAddEntry={() => entriesState.createEntry()}
 				/>
 			{:else}
 				<EntryTimeline
 					entries={filteredEntries}
-					selectedEntryId={selectedEntryId.current}
-					onSelectEntry={(id) => (selectedEntryId.current = id)}
-					onAddEntry={createEntry}
+					selectedEntryId={viewState.selectedEntryId}
+					onSelectEntry={(id) => viewState.selectEntry(id)}
+					onAddEntry={() => entriesState.createEntry()}
 				/>
 			{/if}
 		{/if}

@@ -152,9 +152,17 @@
 			},
 		},
 		globalFilterFn: (row, _columnId, filterValue) => {
-			const title = String(row.getValue('title')).toLowerCase();
 			const filter = filterValue.toLowerCase();
-			return title.includes(filter);
+			const title = String(row.getValue('title')).toLowerCase();
+			const subtitle = String(row.getValue('subtitle')).toLowerCase();
+			const tags = (row.getValue('tags') as string[]).join(' ').toLowerCase();
+			const types = (row.getValue('type') as string[]).join(' ').toLowerCase();
+			return (
+				title.includes(filter) ||
+				subtitle.includes(filter) ||
+				tags.includes(filter) ||
+				types.includes(filter)
+			);
 		},
 	});
 </script>

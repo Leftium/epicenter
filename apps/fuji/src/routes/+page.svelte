@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { CommandPalette, type CommandPaletteItem } from '@epicenter/ui/command-palette';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import ClockIcon from '@lucide/svelte/icons/clock';
+	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import TableIcon from '@lucide/svelte/icons/table-2';
 	import type * as Y from 'yjs';
 	import EntriesTable from '$lib/components/EntriesTable.svelte';
@@ -11,6 +13,24 @@
 	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
 	import { workspace } from '$lib/client';
 	import { entriesState, viewState } from '$lib/state';
+
+	// ─── Command Palette ─────────────────────────────────────────────────────────
+
+	let paletteOpen = $state(false);
+	let paletteQuery = $state('');
+
+	const paletteItems = $derived.by((): CommandPaletteItem[] => {
+		if (!paletteOpen) return [];
+		return entriesState.activeEntries.map((entry) => ({
+			id: entry.id,
+			label: entry.title || 'Untitled',
+			description: entry.subtitle || undefined,
+			icon: FileTextIcon,
+			keywords: [...entry.tags, ...entry.type],
+			group: entry.type.length > 0 ? entry.type[0] : 'Uncategorized',
+			onSelect: () => viewState.selectEntry(entry.id),
+		}));
+	});
 
 	// ─── Document Handle (Y.Text) ────────────────────────────────────────────────
 
@@ -66,6 +86,12 @@
 		event.target instanceof HTMLInputElement ||
 		event.target instanceof HTMLTextAreaElement ||
 		(event.target instanceof HTMLElement && event.target.isContentEditable);
+
+	if (event.key === 'k' && event.metaKey) {
+		event.preventDefault();
+		paletteOpen = !paletteOpen;
+		return;
+	}
 
 	if (event.key === 'n' && event.metaKey) {
 		event.preventDefault();
@@ -145,3 +171,13 @@
 		{/if}
 	</main>
 </SidebarProvider>
+
+<CommandPalette
+	items={paletteItems}
+	bind:open={paletteOpen}
+	bind:value={paletteQuery}
+	placeholder="Search entries…"
+	emptyMessage="No entries found."
+	title="Search Entries"
+	description="Search entries by title, subtitle, tags, or type"
+/>

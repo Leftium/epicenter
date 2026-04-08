@@ -10,10 +10,10 @@ import {
 	WidgetType,
 } from '@codemirror/view';
 import {
-	ENTITY_REF_RE,
-	type EntityRef,
-	isEntityRef,
-	parseEntityRef,
+	EPICENTER_LINK_RE,
+	type EpicenterLink,
+	isEpicenterLink,
+	parseEpicenterLink,
 } from '@epicenter/filesystem';
 
 /**
@@ -28,10 +28,10 @@ import {
  * ```
  */
 type LinkDecorationConfig = {
-	/** Called when a decorated entity ref is clicked. */
-	onNavigate: (ref: EntityRef) => void;
+	/** Called when a decorated epicenter link is clicked. */
+	onNavigate: (ref: EpicenterLink) => void;
 	/**
-	 * Optional title resolver for entity refs.
+	 * Optional title resolver for epicenter links.
 	 *
 	 * When provided and it returns a non-null value, the widget displays the
 	 * resolved title instead of the stored markdown display text. This is useful
@@ -45,11 +45,11 @@ type LinkDecorationConfig = {
 	 * }
 	 * ```
 	 */
-	resolveTitle?: (ref: EntityRef) => string | null;
+	resolveTitle?: (ref: EpicenterLink) => string | null;
 };
 
 /**
- * Widget that renders an entity ref as a clickable styled span.
+ * Widget that renders an epicenter link as a clickable styled span.
  *
  * Replaces the full markdown link match in the document with a compact,
  * styled span showing just the display text or the current resolved title.
@@ -58,7 +58,7 @@ type LinkDecorationConfig = {
  *
  * @example
  * ```typescript
- * const widget = new EntityRefWidget('Daily Notes', {
+ * const widget = new EpicenterLinkWidget('Daily Notes', {
  *   workspace: 'opensidian',
  *   table: 'files',
  *   id: 'abc123',
@@ -68,10 +68,10 @@ type LinkDecorationConfig = {
  * });
  * ```
  */
-class EntityRefWidget extends WidgetType {
+class EpicenterLinkWidget extends WidgetType {
 	constructor(
 		private readonly displayText: string,
-		private readonly ref: EntityRef,
+		private readonly ref: EpicenterLink,
 		private readonly config: LinkDecorationConfig,
 	) {
 		super();
@@ -81,7 +81,7 @@ class EntityRefWidget extends WidgetType {
 		const span = document.createElement('span');
 		const resolvedTitle = this.config.resolveTitle?.(this.ref);
 		span.textContent = resolvedTitle ?? this.displayText;
-		span.className = 'cm-entity-ref';
+		span.className = 'cm-epicenter-link';
 		span.style.cssText =
 			'text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 2px; cursor: pointer; color: var(--primary, #3b82f6);';
 		span.title = resolvedTitle ?? this.displayText;
@@ -95,7 +95,7 @@ class EntityRefWidget extends WidgetType {
 		return span;
 	}
 
-	override eq(other: EntityRefWidget): boolean {
+	override eq(other: EpicenterLinkWidget): boolean {
 		return (
 			this.displayText === other.displayText &&
 			this.ref.workspace === other.ref.workspace &&
@@ -132,10 +132,10 @@ function isInsideCode(view: EditorView, pos: number): boolean {
 }
 
 /**
- * Build decorations for all visible entity refs in the editor.
+ * Build decorations for all visible epicenter links in the editor.
  *
  * Scans visible ranges for markdown links that point at `epicenter://`
- * entity refs, skips matches inside code blocks, and creates
+ * epicenter links, skips matches inside code blocks, and creates
  * `Decoration.replace` widgets for each.
  *
  * @example
@@ -155,10 +155,10 @@ function buildDecorations(
 	for (const { from, to } of view.visibleRanges) {
 		const text = view.state.doc.sliceString(from, to);
 		let match: RegExpExecArray | null;
-		ENTITY_REF_RE.lastIndex = 0;
+		EPICENTER_LINK_RE.lastIndex = 0;
 
 		while (true) {
-			match = ENTITY_REF_RE.exec(text);
+			match = EPICENTER_LINK_RE.exec(text);
 			if (match === null) {
 				break;
 			}
@@ -172,13 +172,13 @@ function buildDecorations(
 				continue;
 			}
 
-			if (!isEntityRef(href)) continue;
+			if (!isEpicenterLink(href)) continue;
 			if (isInsideCode(view, start)) continue;
 
-			const ref = parseEntityRef(href);
+			const ref = parseEpicenterLink(href);
 			if (ref === null) continue;
 
-			const widget = new EntityRefWidget(displayText, ref, config);
+			const widget = new EpicenterLinkWidget(displayText, ref, config);
 
 			builder.add(start, end, Decoration.replace({ widget }));
 		}
@@ -188,7 +188,7 @@ function buildDecorations(
 }
 
 /**
- * Create a CodeMirror extension that decorates markdown entity refs as
+ * Create a CodeMirror extension that decorates markdown epicenter links as
  * clickable styled spans.
  *
  * Scans visible document ranges for `[display text](epicenter://...)`

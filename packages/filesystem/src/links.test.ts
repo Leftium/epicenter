@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
-	convertEntityRefsToWikilinks,
-	convertWikilinksToEntityRefs,
-	ENTITY_REF_RE,
-	isEntityRef,
-	makeEntityRef,
-	parseEntityRef,
+	convertEpicenterLinksToWikilinks,
+	convertWikilinksToEpicenterLinks,
+	EPICENTER_LINK_RE,
+	isEpicenterLink,
+	makeEpicenterLink,
+	parseEpicenterLink,
 } from './links.js';
 
 const SAMPLE_ID = '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b';
@@ -13,27 +13,27 @@ const SAMPLE_WORKSPACE = 'opensidian';
 const SAMPLE_TABLE = 'files';
 const SAMPLE_REF = `epicenter://opensidian/files/${SAMPLE_ID}`;
 
-describe('isEntityRef', () => {
+describe('isEpicenterLink', () => {
 	test('returns true for epicenter URIs', () => {
-		expect(isEntityRef(SAMPLE_REF)).toBe(true);
+		expect(isEpicenterLink(SAMPLE_REF)).toBe(true);
 	});
 
 	test('returns false for https URLs', () => {
-		expect(isEntityRef('https://example.com')).toBe(false);
+		expect(isEpicenterLink('https://example.com')).toBe(false);
 	});
 
 	test('returns false for empty strings', () => {
-		expect(isEntityRef('')).toBe(false);
+		expect(isEpicenterLink('')).toBe(false);
 	});
 
 	test('returns false for bare ids', () => {
-		expect(isEntityRef(SAMPLE_ID)).toBe(false);
+		expect(isEpicenterLink(SAMPLE_ID)).toBe(false);
 	});
 });
 
-describe('parseEntityRef', () => {
+describe('parseEpicenterLink', () => {
 	test('extracts workspace, table, and id', () => {
-		expect(parseEntityRef(SAMPLE_REF)).toEqual({
+		expect(parseEpicenterLink(SAMPLE_REF)).toEqual({
 			workspace: SAMPLE_WORKSPACE,
 			table: SAMPLE_TABLE,
 			id: SAMPLE_ID,
@@ -41,11 +41,11 @@ describe('parseEntityRef', () => {
 	});
 
 	test('returns null for non-epicenter URIs', () => {
-		expect(parseEntityRef('https://example.com/files/abc')).toBeNull();
+		expect(parseEpicenterLink('https://example.com/files/abc')).toBeNull();
 	});
 
 	test('handles dots in workspace ids', () => {
-		expect(parseEntityRef('epicenter://epicenter.blog/posts/abc')).toEqual({
+		expect(parseEpicenterLink('epicenter://epicenter.blog/posts/abc')).toEqual({
 			workspace: 'epicenter.blog',
 			table: 'posts',
 			id: 'abc',
@@ -53,17 +53,17 @@ describe('parseEntityRef', () => {
 	});
 });
 
-describe('makeEntityRef', () => {
+describe('makeEpicenterLink', () => {
 	test('produces the correct URI', () => {
-		expect(makeEntityRef(SAMPLE_WORKSPACE, SAMPLE_TABLE, SAMPLE_ID)).toBe(
+		expect(makeEpicenterLink(SAMPLE_WORKSPACE, SAMPLE_TABLE, SAMPLE_ID)).toBe(
 			SAMPLE_REF,
 		);
 	});
 
-	test('round-trips with parseEntityRef', () => {
-		const href = makeEntityRef(SAMPLE_WORKSPACE, SAMPLE_TABLE, SAMPLE_ID);
+	test('round-trips with parseEpicenterLink', () => {
+		const href = makeEpicenterLink(SAMPLE_WORKSPACE, SAMPLE_TABLE, SAMPLE_ID);
 
-		expect(parseEntityRef(href)).toEqual({
+		expect(parseEpicenterLink(href)).toEqual({
 			workspace: SAMPLE_WORKSPACE,
 			table: SAMPLE_TABLE,
 			id: SAMPLE_ID,
@@ -71,11 +71,11 @@ describe('makeEntityRef', () => {
 	});
 });
 
-describe('convertEntityRefsToWikilinks', () => {
+describe('convertEpicenterLinksToWikilinks', () => {
 	test('converts epicenter links to wikilinks', () => {
 		const body = `See [Meeting Notes](${SAMPLE_REF}) for details.`;
 
-		expect(convertEntityRefsToWikilinks(body)).toBe(
+		expect(convertEpicenterLinksToWikilinks(body)).toBe(
 			'See [[Meeting Notes]] for details.',
 		);
 	});
@@ -83,19 +83,19 @@ describe('convertEntityRefsToWikilinks', () => {
 	test('leaves external links untouched', () => {
 		const body = '[Google](https://google.com)';
 
-		expect(convertEntityRefsToWikilinks(body)).toBe(body);
+		expect(convertEpicenterLinksToWikilinks(body)).toBe(body);
 	});
 
-	test('handles mixed entity refs and external links', () => {
+	test('handles mixed epicenter links and external links', () => {
 		const body = `[Notes](${SAMPLE_REF}) and [Google](https://google.com)`;
 
-		expect(convertEntityRefsToWikilinks(body)).toBe(
+		expect(convertEpicenterLinksToWikilinks(body)).toBe(
 			'[[Notes]] and [Google](https://google.com)',
 		);
 	});
 });
 
-describe('convertWikilinksToEntityRefs', () => {
+describe('convertWikilinksToEpicenterLinks', () => {
 	const resolve = (name: string) => {
 		const lookup: Record<string, string> = {
 			'First Note': SAMPLE_REF,
@@ -108,7 +108,7 @@ describe('convertWikilinksToEntityRefs', () => {
 	test('converts wikilinks to epicenter links', () => {
 		const body = 'See [[First Note]] for details.';
 
-		expect(convertWikilinksToEntityRefs(body, resolve)).toBe(
+		expect(convertWikilinksToEpicenterLinks(body, resolve)).toBe(
 			`See [First Note](${SAMPLE_REF}) for details.`,
 		);
 	});
@@ -116,36 +116,36 @@ describe('convertWikilinksToEntityRefs', () => {
 	test('leaves unresolved wikilinks as-is', () => {
 		const body = '[[Unknown Page]]';
 
-		expect(convertWikilinksToEntityRefs(body, resolve)).toBe(body);
+		expect(convertWikilinksToEpicenterLinks(body, resolve)).toBe(body);
 	});
 
-	test('round-trips with convertEntityRefsToWikilinks', () => {
+	test('round-trips with convertEpicenterLinksToWikilinks', () => {
 		const original = `[First Note](${SAMPLE_REF})`;
-		const asWikilink = convertEntityRefsToWikilinks(original);
+		const asWikilink = convertEpicenterLinksToWikilinks(original);
 
 		expect(asWikilink).toBe('[[First Note]]');
-		expect(convertWikilinksToEntityRefs(asWikilink, resolve)).toBe(original);
+		expect(convertWikilinksToEpicenterLinks(asWikilink, resolve)).toBe(original);
 	});
 });
 
-describe('ENTITY_REF_RE', () => {
-	test('matches markdown entity ref links with both capture groups', () => {
+describe('EPICENTER_LINK_RE', () => {
+	test('matches markdown epicenter link links with both capture groups', () => {
 		const body = `See [First Note](${SAMPLE_REF}) for details.`;
-		ENTITY_REF_RE.lastIndex = 0;
-		const match = ENTITY_REF_RE.exec(body);
+		EPICENTER_LINK_RE.lastIndex = 0;
+		const match = EPICENTER_LINK_RE.exec(body);
 
 		expect(match?.[0]).toBe(`[First Note](${SAMPLE_REF})`);
 		expect(match?.[1]).toBe('First Note');
 		expect(match?.[2]).toBe(SAMPLE_REF);
 
-		ENTITY_REF_RE.lastIndex = 0;
+		EPICENTER_LINK_RE.lastIndex = 0;
 	});
 
 	test('does not match external links', () => {
-		ENTITY_REF_RE.lastIndex = 0;
-		const match = ENTITY_REF_RE.exec('[First Note](https://example.com)');
+		EPICENTER_LINK_RE.lastIndex = 0;
+		const match = EPICENTER_LINK_RE.exec('[First Note](https://example.com)');
 
 		expect(match).toBeNull();
-		ENTITY_REF_RE.lastIndex = 0;
+		EPICENTER_LINK_RE.lastIndex = 0;
 	});
 });

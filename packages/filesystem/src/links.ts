@@ -3,48 +3,48 @@ const EPICENTER_SCHEME = 'epicenter://';
 /**
  * Structured reference to an entity stored in an Epicenter workspace.
  *
- * Entity refs are used when markdown needs to point at a specific row in a
+ * Epicenter links are used when markdown needs to point at a specific row in a
  * workspace table without depending on a file path. The URI format is always
  * `epicenter://{workspace}/{table}/{id}`.
  *
  * @example
  * ```typescript
- * const ref: EntityRef = {
+ * const ref: EpicenterLink = {
  * 	workspace: 'opensidian',
  * 	table: 'files',
  * 	id: '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b',
  * };
  * ```
  */
-export type EntityRef = {
+export type EpicenterLink = {
 	workspace: string;
 	table: string;
 	id: string;
 };
 
 /**
- * Check whether an href uses the Epicenter entity ref scheme.
+ * Check whether an href uses the Epicenter epicenter link scheme.
  *
  * This is intentionally a cheap prefix check. Some call sites only need a fast
  * discriminator while scanning markdown and do not want full URL parsing yet.
- * Use {@link parseEntityRef} when you need validated `workspace`, `table`, and
+ * Use {@link parseEpicenterLink} when you need validated `workspace`, `table`, and
  * `id` segments.
  *
  * @example
  * ```typescript
- * isEntityRef('epicenter://opensidian/files/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b');
+ * isEpicenterLink('epicenter://opensidian/files/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b');
  * // true
  *
- * isEntityRef('https://example.com');
+ * isEpicenterLink('https://example.com');
  * // false
  * ```
  */
-export function isEntityRef(href: string): boolean {
+export function isEpicenterLink(href: string): boolean {
 	return href.startsWith(EPICENTER_SCHEME);
 }
 
 /**
- * Parse an Epicenter entity ref URI into its workspace, table, and id parts.
+ * Parse an Epicenter epicenter link URI into its workspace, table, and id parts.
  *
  * This is the safe entry point when a caller needs to act on a markdown link.
  * It uses `new URL()` so parsing stays aligned with the platform URL parser,
@@ -53,19 +53,19 @@ export function isEntityRef(href: string): boolean {
  *
  * @example
  * ```typescript
- * parseEntityRef('epicenter://opensidian/files/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b');
+ * parseEpicenterLink('epicenter://opensidian/files/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b');
  * // {
  * // 	workspace: 'opensidian',
  * // 	table: 'files',
  * // 	id: '01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b',
  * // }
  *
- * parseEntityRef('https://example.com/posts/1');
+ * parseEpicenterLink('https://example.com/posts/1');
  * // null
  * ```
  */
-export function parseEntityRef(href: string): EntityRef | null {
-	if (!isEntityRef(href)) return null;
+export function parseEpicenterLink(href: string): EpicenterLink | null {
+	if (!isEpicenterLink(href)) return null;
 
 	try {
 		const url = new URL(href);
@@ -84,7 +84,7 @@ export function parseEntityRef(href: string): EntityRef | null {
 }
 
 /**
- * Build an Epicenter entity ref URI from its workspace, table, and id parts.
+ * Build an Epicenter epicenter link URI from its workspace, table, and id parts.
  *
  * Use this when generating markdown links that should survive file moves and
  * still point at the same logical record. The returned string is meant to be
@@ -92,7 +92,7 @@ export function parseEntityRef(href: string): EntityRef | null {
  *
  * @example
  * ```typescript
- * const href = makeEntityRef(
+ * const href = makeEpicenterLink(
  * 	'opensidian',
  * 	'files',
  * 	'01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b',
@@ -101,7 +101,7 @@ export function parseEntityRef(href: string): EntityRef | null {
  * // href === 'epicenter://opensidian/files/01965a3b-7e2d-7f8a-b3c1-9a4e5f6d7c8b'
  * ```
  */
-export function makeEntityRef(
+export function makeEpicenterLink(
 	workspace: string,
 	table: string,
 	id: string,
@@ -110,17 +110,17 @@ export function makeEntityRef(
 }
 
 /** Regex matching `[display text](epicenter://workspace/table/id)` markdown links. */
-export const ENTITY_REF_RE = /\[([^\]]+)\]\((epicenter:\/\/[^)]+)\)/g;
+export const EPICENTER_LINK_RE = /\[([^\]]+)\]\((epicenter:\/\/[^)]+)\)/g;
 
 /** Regex matching `[[Page Name]]` wikilinks. */
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
 
 /**
- * Convert Epicenter entity ref markdown links to `[[wikilink]]` syntax.
+ * Convert Epicenter epicenter link markdown links to `[[wikilink]]` syntax.
  *
  * Used by the markdown materializer when exporting workspace content to `.md`
  * files. This keeps the exported files readable in wikilink-aware editors
- * while preserving the original display text from the entity ref link.
+ * while preserving the original display text from the epicenter link link.
  * External links such as `https://` URLs are left untouched.
  *
  * @example
@@ -128,16 +128,16 @@ const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
  * const body =
  * 	'See [Meeting Notes](epicenter://opensidian/files/abc-123) for details.';
  *
- * convertEntityRefsToWikilinks(body);
+ * convertEpicenterLinksToWikilinks(body);
  * // 'See [[Meeting Notes]] for details.'
  * ```
  */
-export function convertEntityRefsToWikilinks(body: string): string {
-	return body.replace(ENTITY_REF_RE, '[[$1]]');
+export function convertEpicenterLinksToWikilinks(body: string): string {
+	return body.replace(EPICENTER_LINK_RE, '[[$1]]');
 }
 
 /**
- * Convert `[[wikilink]]` syntax back to Epicenter entity ref markdown links.
+ * Convert `[[wikilink]]` syntax back to Epicenter epicenter link markdown links.
  *
  * Used when importing `.md` files back into the workspace so wikilinks can be
  * resolved against known file names and restored to the canonical
@@ -145,7 +145,7 @@ export function convertEntityRefsToWikilinks(body: string): string {
  * which avoids silently inventing references when a name has no unique match.
  *
  * @param body - The markdown body text containing wikilinks.
- * @param resolveName - Lookup function that returns a full Epicenter entity ref
+ * @param resolveName - Lookup function that returns a full Epicenter epicenter link
  * URI for a given page name, or `null` if no unique entity can be resolved.
  *
  * @example
@@ -156,17 +156,17 @@ export function convertEntityRefsToWikilinks(body: string): string {
  * 		? 'epicenter://opensidian/files/abc-123'
  * 		: null;
  *
- * convertWikilinksToEntityRefs(body, resolve);
+ * convertWikilinksToEpicenterLinks(body, resolve);
  * // 'See [Meeting Notes](epicenter://opensidian/files/abc-123) for details.'
  * ```
  */
-export function convertWikilinksToEntityRefs(
+export function convertWikilinksToEpicenterLinks(
 	body: string,
 	resolveName: (name: string) => string | null,
 ): string {
 	return body.replace(WIKILINK_RE, (match, name: string) => {
-		const entityRef = resolveName(name);
-		if (entityRef) return `[${name}](${entityRef})`;
+		const href = resolveName(name);
+		if (href) return `[${name}](${href})`;
 		return match;
 	});
 }

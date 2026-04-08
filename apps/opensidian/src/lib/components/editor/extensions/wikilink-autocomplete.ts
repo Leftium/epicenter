@@ -4,7 +4,7 @@ import {
 	type CompletionContext,
 	type CompletionResult,
 } from '@codemirror/autocomplete';
-import { makeEntityRef } from '@epicenter/filesystem';
+import { makeEpicenterLink } from '@epicenter/filesystem';
 
 /**
  * Configuration for the wikilink autocomplete extension.
@@ -22,16 +22,16 @@ import { makeEntityRef } from '@epicenter/filesystem';
  * ```
  */
 type WikilinkAutocompleteConfig = {
-	/** Workspace ID used to build `epicenter://` entity refs. */
+	/** Workspace ID used to build `epicenter://` epicenter links. */
 	workspaceId: string;
-	/** Table name used to build `epicenter://` entity refs. */
+	/** Table name used to build `epicenter://` epicenter links. */
 	tableName: string;
 	/** Return all files available for linking. Called on every completion request. */
 	getFiles: () => Array<{ id: string; name: string }>;
 };
 
 /**
-	 * CodeMirror CompletionSource that activates on `[[` and suggests entity refs.
+	 * CodeMirror CompletionSource that activates on `[[` and suggests epicenter links.
 	 *
 	 * When the user types `[[`, queries the configured file list, filters by
 	 * the characters typed after `[[`, and presents matching files. On selection,
@@ -70,9 +70,9 @@ function wikilinkCompletionSource(config: WikilinkAutocompleteConfig) {
 			.filter((f) => f.name.toLowerCase().includes(lowerFilter))
 			.map((f) => ({
 				label: f.name,
-				detail: 'entity ref',
+				detail: 'epicenter link',
 				apply: (view, _completion, from, to) => {
-					const linkText = `[${f.name}](${makeEntityRef(
+					const linkText = `[${f.name}](${makeEpicenterLink(
 						config.workspaceId,
 						config.tableName,
 						f.id,

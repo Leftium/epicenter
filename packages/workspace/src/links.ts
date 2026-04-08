@@ -1,9 +1,9 @@
 const EPICENTER_SCHEME = 'epicenter://';
 
 /**
- * Structured reference to an entity stored in an Epicenter workspace.
+ * Structured representation of an `epicenter://` URI.
  *
- * Epicenter links are used when markdown needs to point at a specific row in a
+ * Used when markdown needs to point at a specific row in a workspace table
  * workspace table without depending on a file path. The URI format is always
  * `epicenter://{workspace}/{table}/{id}`.
  *
@@ -23,7 +23,7 @@ export type EpicenterLink = {
 };
 
 /**
- * Check whether an href uses the Epicenter epicenter link scheme.
+ * Check whether an href uses the `epicenter://` scheme.
  *
  * This is intentionally a cheap prefix check. Some call sites only need a fast
  * discriminator while scanning markdown and do not want full URL parsing yet.
@@ -44,7 +44,7 @@ export function isEpicenterLink(href: string): boolean {
 }
 
 /**
- * Parse an Epicenter epicenter link URI into its workspace, table, and id parts.
+ * Parse an `epicenter://` URI into its workspace, table, and id parts.
  *
  * This is the safe entry point when a caller needs to act on a markdown link.
  * It uses `new URL()` so parsing stays aligned with the platform URL parser,
@@ -84,7 +84,7 @@ export function parseEpicenterLink(href: string): EpicenterLink | null {
 }
 
 /**
- * Build an Epicenter epicenter link URI from its workspace, table, and id parts.
+ * Build an `epicenter://` URI from its workspace, table, and id parts.
  *
  * Use this when generating markdown links that should survive file moves and
  * still point at the same logical record. The returned string is meant to be
@@ -116,11 +116,11 @@ export const EPICENTER_LINK_RE = /\[([^\]]+)\]\((epicenter:\/\/[^)]+)\)/g;
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
 
 /**
- * Convert Epicenter epicenter link markdown links to `[[wikilink]]` syntax.
+ * Convert `epicenter://` markdown links to `[[wikilink]]` syntax.
  *
  * Used by the markdown materializer when exporting workspace content to `.md`
  * files. This keeps the exported files readable in wikilink-aware editors
- * while preserving the original display text from the epicenter link link.
+ * while preserving the original display text from the link.
  * External links such as `https://` URLs are left untouched.
  *
  * @example
@@ -137,7 +137,7 @@ export function convertEpicenterLinksToWikilinks(body: string): string {
 }
 
 /**
- * Convert `[[wikilink]]` syntax back to Epicenter epicenter link markdown links.
+ * Convert `[[wikilink]]` syntax back to `epicenter://` markdown links.
  *
  * Used when importing `.md` files back into the workspace so wikilinks can be
  * resolved against known file names and restored to the canonical
@@ -145,7 +145,7 @@ export function convertEpicenterLinksToWikilinks(body: string): string {
  * which avoids silently inventing references when a name has no unique match.
  *
  * @param body - The markdown body text containing wikilinks.
- * @param resolveName - Lookup function that returns a full Epicenter epicenter link
+ * @param resolveName - Lookup function that returns a full `epicenter://`
  * URI for a given page name, or `null` if no unique entity can be resolved.
  *
  * @example

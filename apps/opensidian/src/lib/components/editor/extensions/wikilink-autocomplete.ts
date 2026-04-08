@@ -70,7 +70,7 @@ function wikilinkCompletionSource(config: WikilinkAutocompleteConfig) {
 			.filter((f) => f.name.toLowerCase().includes(lowerFilter))
 			.map((f) => ({
 				label: f.name,
-				detail: 'epicenter link',
+				detail: 'file',
 				apply: (view, _completion, from, to) => {
 					const linkText = `[${f.name}](${makeEpicenterLink(
 						config.workspaceId,

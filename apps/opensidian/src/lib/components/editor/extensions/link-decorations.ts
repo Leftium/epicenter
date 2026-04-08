@@ -12,7 +12,6 @@ import {
 import {
 	EPICENTER_LINK_RE,
 	type EpicenterLink,
-	isEpicenterLink,
 	parseEpicenterLink,
 } from '@epicenter/workspace';
 
@@ -172,7 +171,6 @@ function buildDecorations(
 				continue;
 			}
 
-			if (!isEpicenterLink(href)) continue;
 			if (isInsideCode(view, start)) continue;
 
 			const ref = parseEpicenterLink(href);
@@ -199,7 +197,7 @@ function buildDecorations(
  * @example
  * ```typescript
  * import { linkDecorations } from './extensions/link-decorations';
- * import type { FileId } from '@epicenter/workspace';
+ * import type { FileId } from '@epicenter/filesystem';
  *
  * const extensions = [
  *   linkDecorations({

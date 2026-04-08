@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { autocompletion } from '@codemirror/autocomplete';
-	import type { EpicenterLink } from '@epicenter/workspace';
 	import type { FileId } from '@epicenter/filesystem';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import type { DocumentHandle } from '@epicenter/workspace';
@@ -22,8 +21,8 @@
 	let handle = $state<DocumentHandle | null>(null);
 
 	const sharedLinkDecorations = linkDecorations({
-		onNavigate: (ref: EpicenterLink) => fsState.selectFile(ref.id as FileId),
-		resolveTitle: (ref: EpicenterLink) => fsState.getFile(ref.id as FileId)?.name ?? null,
+		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
+		resolveTitle: (ref) => fsState.getFile(ref.id as FileId)?.name ?? null,
 	});
 
 	const extensions = $derived(

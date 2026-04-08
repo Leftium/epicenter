@@ -31,21 +31,21 @@ type WikilinkAutocompleteConfig = {
 };
 
 /**
-	 * CodeMirror CompletionSource that activates on `[[` and suggests epicenter links.
-	 *
-	 * When the user types `[[`, queries the configured file list, filters by
-	 * the characters typed after `[[`, and presents matching files. On selection,
-	 * deletes the `[[` trigger and inserts
-	 * `[File Name](epicenter://workspace/table/id)`.
-	 *
-	 * @example
-	 * ```typescript
-	 * const source = wikilinkCompletionSource({
-	 *   workspaceId: 'opensidian',
-	 *   tableName: 'files',
-	 *   getFiles: () => [{ id: 'abc123', name: 'Daily Notes' }],
-	 * });
-	 * ```
+ * CodeMirror CompletionSource that activates on `[[` and suggests epicenter links.
+ *
+ * When the user types `[[`, queries the configured file list, filters by
+ * the characters typed after `[[`, and presents matching files. On selection,
+ * deletes the `[[` trigger and inserts
+ * `[File Name](epicenter://workspace/table/id)`.
+ *
+ * @example
+ * ```typescript
+ * const source = wikilinkCompletionSource({
+ *   workspaceId: 'opensidian',
+ *   tableName: 'files',
+ *   getFiles: () => [{ id: 'abc123', name: 'Daily Notes' }],
+ * });
+ * ```
  */
 function wikilinkCompletionSource(config: WikilinkAutocompleteConfig) {
 	return (context: CompletionContext): CompletionResult | null => {

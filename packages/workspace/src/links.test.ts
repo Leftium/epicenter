@@ -124,7 +124,9 @@ describe('convertWikilinksToEpicenterLinks', () => {
 		const asWikilink = convertEpicenterLinksToWikilinks(original);
 
 		expect(asWikilink).toBe('[[First Note]]');
-		expect(convertWikilinksToEpicenterLinks(asWikilink, resolve)).toBe(original);
+		expect(convertWikilinksToEpicenterLinks(asWikilink, resolve)).toBe(
+			original,
+		);
 	});
 });
 

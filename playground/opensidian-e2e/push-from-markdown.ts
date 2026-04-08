@@ -9,11 +9,11 @@
 
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { type FileRow } from '@epicenter/filesystem';
 import {
 	convertWikilinksToEpicenterLinks,
 	makeEpicenterLink,
-	} from '@epicenter/workspace';
-import { type FileRow } from '@epicenter/filesystem';
+} from '@epicenter/workspace';
 import { parseMarkdownFile } from '@epicenter/workspace/extensions/materializer/markdown';
 import type { opensidian } from './epicenter.config';
 

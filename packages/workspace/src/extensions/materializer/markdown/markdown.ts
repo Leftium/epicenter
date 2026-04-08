@@ -1,7 +1,7 @@
 import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { convertEpicenterLinksToWikilinks } from '../../../links.js';
 import { YAML } from 'bun';
+import { convertEpicenterLinksToWikilinks } from '../../../links.js';
 import type { ExtensionContext } from '../../../workspace/types.js';
 import { defaultSerializer, type MarkdownSerializer } from './serializers.js';
 
@@ -194,7 +194,9 @@ export function markdownMaterializer(config: MarkdownMaterializerConfig) {
 						}
 
 						const processedBody =
-							body !== undefined ? convertEpicenterLinksToWikilinks(body) : body;
+							body !== undefined
+								? convertEpicenterLinksToWikilinks(body)
+								: body;
 
 						writes.push(
 							Bun.write(

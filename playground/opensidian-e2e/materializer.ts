@@ -12,8 +12,8 @@
 
 import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { convertEpicenterLinksToWikilinks } from '@epicenter/workspace';
 import { type FileRow } from '@epicenter/filesystem';
+import { convertEpicenterLinksToWikilinks } from '@epicenter/workspace';
 import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
 import slugify from '@sindresorhus/slugify';
 import filenamify from 'filenamify';

@@ -16,7 +16,9 @@
 		fileId: FileId;
 	} = $props();
 	const filename = $derived(fsState.getFile(fileId)?.name ?? 'untitled.md');
-	const isMarkdown = $derived(filename.endsWith('.md') || !filename.includes('.'));
+	const isMarkdown = $derived(
+		filename.endsWith('.md') || !filename.includes('.'),
+	);
 
 	let handle = $state<DocumentHandle | null>(null);
 
@@ -27,15 +29,18 @@
 
 	const extensions = $derived(
 		isMarkdown
-			? [sharedLinkDecorations, wikilinkAutocomplete({
-					workspaceId: opensidianDefinition.id,
-					tableName: 'files',
-					getFiles: () =>
-						workspace.tables.files
-							.getAllValid()
-							.filter((r) => r.type === 'file')
-							.map((r) => ({ id: r.id, name: r.name })),
-				})]
+			? [
+					sharedLinkDecorations,
+					wikilinkAutocomplete({
+						workspaceId: opensidianDefinition.id,
+						tableName: 'files',
+						getFiles: () =>
+							workspace.tables.files
+								.getAllValid()
+								.filter((r) => r.type === 'file')
+								.map((r) => ({ id: r.id, name: r.name })),
+					}),
+				]
 			: [sharedLinkDecorations, autocompletion()],
 	);
 

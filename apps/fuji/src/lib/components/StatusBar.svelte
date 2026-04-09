@@ -1,14 +1,31 @@
 <script lang="ts">
 	import { format } from 'date-fns';
+	import {
+		localTimezone,
+		NLPDateInput,
+		TimezoneCombobox,
+		toDateTimeString,
+	} from '@epicenter/ui/natural-language-date-input';
+	import * as Popover from '@epicenter/ui/popover';
+	import type { DateTimeString } from '@epicenter/workspace';
 	import type { Entry } from '$lib/workspace';
 
 	let {
 		entry,
 		wordCount,
+		onUpdateCreatedAt,
 	}: {
 		entry: Entry;
 		wordCount: number;
+		onUpdateCreatedAt?: (createdAt: DateTimeString) => void;
 	} = $props();
+
+	let isPopoverOpen = $state(false);
+	let selectedTimezone = $state(localTimezone());
+
+	$effect(() => {
+		selectedTimezone = entry.createdAt.split('|')[1] ?? localTimezone();
+	});
 
 	function parseDateTime(dts: string): Date {
 		return new Date(dts.split('|')[0]!);
@@ -23,7 +40,29 @@
 		{/if}
 	</div>
 	<div class="flex items-center gap-3">
-		<span>Created {format(parseDateTime(entry.createdAt), 'MMM d, yyyy')}</span>
+		<Popover.Root bind:open={isPopoverOpen}>
+			<Popover.Trigger>
+				{#snippet child({ props })}
+					<button
+						{...props}
+						type="button"
+						disabled={!onUpdateCreatedAt}
+						class="cursor-pointer rounded-sm transition hover:underline disabled:cursor-default disabled:hover:no-underline"
+					>
+						Created {format(parseDateTime(entry.createdAt), 'MMM d, yyyy')}
+					</button>
+				{/snippet}
+			</Popover.Trigger>
+			<Popover.Content side="top" align="end" class="w-80 space-y-3 p-3">
+				<NLPDateInput
+					onChoice={({ date }) => {
+						onUpdateCreatedAt?.(toDateTimeString(date, selectedTimezone));
+						isPopoverOpen = false;
+					}}
+				/>
+				<TimezoneCombobox bind:value={selectedTimezone} />
+			</Popover.Content>
+		</Popover.Root>
 		<span>Updated {format(parseDateTime(entry.updatedAt), 'MMM d · h:mm a')}</span>
 	</div>
 </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import type { DateTimeString } from '@epicenter/workspace';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import { baseKeymap, toggleMark } from 'prosemirror-commands';
 	import {
@@ -32,7 +33,13 @@
 		entry: Entry;
 		ytext: Y.Text;
 		onUpdate: (
-			updates: Partial<{ title: string; subtitle: string; type: string[]; tags: string[] }>,
+			updates: Partial<{
+				title: string;
+				subtitle: string;
+				type: string[];
+				tags: string[];
+				createdAt: DateTimeString;
+			}>,
 		) => void;
 		onBack: () => void;
 	} = $props();
@@ -218,7 +225,7 @@
 	<div bind:this={element} class="flex-1 overflow-y-auto px-6 py-4"></div>
 
 	<!-- Status bar -->
-	<StatusBar {entry} {wordCount} />
+	<StatusBar {entry} {wordCount} onUpdateCreatedAt={(createdAt) => onUpdate({ createdAt })} />
 </div>
 
 <style>

@@ -1,5 +1,5 @@
 import type { DateTimeString } from '@epicenter/workspace';
-import * as chrono from 'chrono-node/en';
+import * as chrono from 'chrono-node';
 
 export type DateComponents = {
 	year: number;

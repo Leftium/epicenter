@@ -4,38 +4,19 @@
 	import HashIcon from '@lucide/svelte/icons/hash';
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import { format, isToday, isYesterday } from 'date-fns';
-	import type { Entry, EntryId } from '$lib/workspace/definition';
+	import type { Entry } from '$lib/workspace/definition';
+	import { viewState } from '$lib/state/view-state.svelte';
 	import { parseDateTime } from '$lib/utils/dates';
 	import { matchesEntrySearch } from '$lib/utils/search';
 
-	let {
-		entries,
-		activeTypeFilter,
-		activeTagFilter,
-		searchQuery,
-		onFilterByType,
-		onFilterByTag,
-		onSearchChange,
-		onSelectEntry,
-		onClearFilters,
-	}: {
-		entries: Entry[];
-		activeTypeFilter: string | null;
-		activeTagFilter: string | null;
-		searchQuery: string;
-		onFilterByType: (type: string | null) => void;
-		onFilterByTag: (tag: string | null) => void;
-		onSearchChange: (query: string) => void;
-		onSelectEntry: (id: EntryId) => void;
-		onClearFilters: () => void;
-	} = $props();
+	let { entries }: { entries: Entry[] } = $props();
 
-	const isSearching = $derived(searchQuery.trim().length > 0);
+	const isSearching = $derived(viewState.searchQuery.trim().length > 0);
 
 	/** Entries matching the search query across title, subtitle, tags, and type. */
 	const searchResults = $derived.by(() => {
 		if (!isSearching) return [];
-		return entries.filter((entry) => matchesEntrySearch(entry, searchQuery));
+		return entries.filter((entry) => matchesEntrySearch(entry, viewState.searchQuery));
 	});
 
 	/** Unique types with entry counts, sorted by count descending. */
@@ -84,8 +65,8 @@
 		<div class="px-2 pb-1">
 			<Sidebar.Input
 				placeholder="Search entries…"
-				value={searchQuery}
-				oninput={(e) => onSearchChange(e.currentTarget.value)}
+				value={viewState.searchQuery}
+				oninput={(e) => viewState.setSearchQuery(e.currentTarget.value)}
 			/>
 		</div>
 	</Sidebar.Header>
@@ -97,8 +78,8 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-							isActive={activeTypeFilter === null && activeTagFilter === null && !isSearching}
-						onclick={onClearFilters}
+						isActive={viewState.activeTypeFilter === null && viewState.activeTagFilter === null && !isSearching}
+					onclick={() => viewState.clearFilters()}
 						>
 							<FileTextIcon class="size-4" />
 							<span>All Entries</span>
@@ -122,7 +103,7 @@
 						{#if searchResults.length > 0}
 							{#each searchResults as entry (entry.id)}
 								<Sidebar.MenuItem>
-									<Sidebar.MenuButton onclick={() => onSelectEntry(entry.id)}>
+								<Sidebar.MenuButton onclick={() => viewState.selectEntry(entry.id)}>
 										<div class="flex w-full flex-col gap-0.5 overflow-hidden">
 											<span class="truncate text-sm font-medium">
 												{entry.title || 'Untitled'}
@@ -139,7 +120,7 @@
 						{:else}
 							<Sidebar.MenuItem>
 								<span class="px-2 py-1 text-xs text-muted-foreground">
-									No entries match "{searchQuery}"
+								No entries match "{viewState.searchQuery}"
 								</span>
 							</Sidebar.MenuItem>
 						{/if}
@@ -156,11 +137,11 @@
 							{#each typeGroups as group (group.name)}
 								<Sidebar.MenuItem>
 									<Sidebar.MenuButton
-										isActive={activeTypeFilter === group.name}
-										onclick={() =>
-											onFilterByType(
-												activeTypeFilter === group.name ? null : group.name,
-											)}
+									isActive={viewState.activeTypeFilter === group.name}
+									onclick={() =>
+										viewState.filterByType(
+											viewState.activeTypeFilter === group.name ? null : group.name,
+										)}
 									>
 										<HashIcon class="size-4" />
 										<span>{group.name}</span>
@@ -184,11 +165,11 @@
 							{#each tagGroups as group (group.name)}
 								<Sidebar.MenuItem>
 									<Sidebar.MenuButton
-										isActive={activeTagFilter === group.name}
-										onclick={() =>
-											onFilterByTag(
-												activeTagFilter === group.name ? null : group.name,
-											)}
+									isActive={viewState.activeTagFilter === group.name}
+									onclick={() =>
+										viewState.filterByTag(
+											viewState.activeTagFilter === group.name ? null : group.name,
+										)}
 									>
 										<TagIcon class="size-4" />
 										<span>{group.name}</span>
@@ -211,7 +192,7 @@
 						<Sidebar.Menu>
 							{#each recentEntries as entry (entry.id)}
 								<Sidebar.MenuItem>
-									<Sidebar.MenuButton onclick={() => onSelectEntry(entry.id)}>
+								<Sidebar.MenuButton onclick={() => viewState.selectEntry(entry.id)}>
 										<div class="flex w-full flex-col gap-0.5 overflow-hidden">
 											<span class="truncate text-sm font-medium">
 												{entry.title || 'Untitled'}

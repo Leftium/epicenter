@@ -15,7 +15,7 @@
 	import EntriesTable from '$lib/components/EntriesTable.svelte';
 	import EntryEditor from '$lib/components/EntryEditor.svelte';
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
-	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
+	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
 	import { Kbd } from '@epicenter/ui/kbd';
 	import { entriesState } from '$lib/state/entries-state.svelte';
 	import { viewState } from '$lib/state/view-state.svelte';
@@ -128,17 +128,7 @@
 	/>
 	<Resizable.PaneGroup direction="horizontal" class="flex-1">
 		<Resizable.Pane defaultSize={20} minSize={15} maxSize={40}>
-			<FujiSidebar
-				entries={entriesState.activeEntries}
-				activeTypeFilter={viewState.activeTypeFilter}
-				activeTagFilter={viewState.activeTagFilter}
-				searchQuery={viewState.searchQuery}
-				onFilterByType={(type) => viewState.filterByType(type)}
-				onFilterByTag={(tag) => viewState.filterByTag(tag)}
-				onSearchChange={(query) => viewState.setSearchQuery(query)}
-				onSelectEntry={(id) => viewState.selectEntry(id)}
-				onClearFilters={() => viewState.clearFilters()}
-			/>
+			<EntriesSidebar entries={entriesState.activeEntries} />
 		</Resizable.Pane>
 		<Resizable.Handle withHandle />
 		<Resizable.Pane defaultSize={80}>

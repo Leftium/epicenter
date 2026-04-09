@@ -3,8 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { buttonVariants } from '@epicenter/ui/button';
-	import { GithubIcon } from '@epicenter/ui/github-icon';
+	import { getStars, GitHubButton } from '@epicenter/ui/github-button';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 
@@ -45,15 +44,13 @@
 		</Tabs.Root>
 	{/if}
 	<div class="ml-auto flex shrink-0 items-center gap-1 px-2">
-		<a
-			href="https://github.com/EpicenterHQ/epicenter/tree/main/apps/opensidian"
-			target="_blank"
-			rel="noopener noreferrer"
-			class={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
-			title="View source on GitHub"
-		>
-			<GithubIcon class="size-4" />
-		</a>
+		<GitHubButton
+			repo={{ owner: 'EpicenterHQ', repo: 'epicenter' }}
+			path="/tree/main/apps/opensidian"
+			stars={getStars({ owner: 'EpicenterHQ', repo: 'epicenter', fallback: 500 })}
+			variant="ghost"
+			size="sm"
+		/>
 		<SyncStatusIndicator />
 	</div>
 </div>

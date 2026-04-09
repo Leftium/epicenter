@@ -90,18 +90,18 @@ function createViewState() {
 		},
 
 		/**
-		 * Filter entries by type. Pass null to clear the filter.
+		 * Set the active type filter. Pass null to clear.
 		 * Clicking the same type again clears it (toggle behavior).
 		 */
-		filterByType(type: string | null) {
+		setTypeFilter(type: string | null) {
 			activeTypeFilter = type;
 		},
 
 		/**
-		 * Filter entries by tag. Pass null to clear the filter.
+		 * Set the active tag filter. Pass null to clear.
 		 * Clicking the same tag again clears it (toggle behavior).
 		 */
-		filterByTag(tag: string | null) {
+		setTagFilter(tag: string | null) {
 			activeTagFilter = tag;
 		},
 

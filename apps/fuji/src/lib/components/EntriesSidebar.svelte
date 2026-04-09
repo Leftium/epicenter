@@ -139,7 +139,7 @@
 									<Sidebar.MenuButton
 									isActive={viewState.activeTypeFilter === group.name}
 									onclick={() =>
-										viewState.filterByType(
+										viewState.setTypeFilter(
 											viewState.activeTypeFilter === group.name ? null : group.name,
 										)}
 									>
@@ -167,7 +167,7 @@
 									<Sidebar.MenuButton
 									isActive={viewState.activeTagFilter === group.name}
 									onclick={() =>
-										viewState.filterByTag(
+										viewState.setTagFilter(
 											viewState.activeTagFilter === group.name ? null : group.name,
 										)}
 									>

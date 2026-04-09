@@ -19,13 +19,17 @@ import type { YKeyValueLwwEntry } from '../y-keyvalue/y-keyvalue-lww';
 import { createEncryptedYkvLww } from '../y-keyvalue/y-keyvalue-lww-encrypted';
 import {
 	base64ToBytes,
+	buildEncryptionKeys,
 	bytesToBase64,
 	decryptValue,
+	deriveKeyFromPassword,
 	deriveWorkspaceKey,
 	type EncryptedBlob,
 	encryptValue,
+	generateSalt,
 	getKeyVersion,
 	isEncryptedBlob,
+	PBKDF2_ITERATIONS_DEFAULT,
 } from './index';
 
 async function deriveWorkspaceKeyWithWebCrypto(
@@ -447,5 +451,114 @@ describe('deriveWorkspaceKey', () => {
 
 			expect(syncKey).toEqual(webCryptoKey);
 		}
+	});
+});
+
+describe('deriveKeyFromPassword', () => {
+	test('same inputs produce same key (deterministic)', () => {
+		const salt = randomBytes(32);
+		const key1 = deriveKeyFromPassword('hunter2', salt);
+		const key2 = deriveKeyFromPassword('hunter2', salt);
+		expect(key1).toEqual(key2);
+	});
+
+	test('different passwords produce different keys', () => {
+		const salt = randomBytes(32);
+		const key1 = deriveKeyFromPassword('password1', salt);
+		const key2 = deriveKeyFromPassword('password2', salt);
+		expect(key1).not.toEqual(key2);
+	});
+
+	test('different salts produce different keys', () => {
+		const salt1 = randomBytes(32);
+		const salt2 = randomBytes(32);
+		const key1 = deriveKeyFromPassword('hunter2', salt1);
+		const key2 = deriveKeyFromPassword('hunter2', salt2);
+		expect(key1).not.toEqual(key2);
+	});
+
+	test('output is 32 bytes', () => {
+		const salt = randomBytes(32);
+		const key = deriveKeyFromPassword('hunter2', salt);
+		expect(key).toBeInstanceOf(Uint8Array);
+		expect(key.length).toBe(32);
+	});
+
+	test('default iterations is 600,000', () => {
+		expect(PBKDF2_ITERATIONS_DEFAULT).toBe(600_000);
+		// Omitting iterations param still works
+		const salt = randomBytes(32);
+		const key = deriveKeyFromPassword('hunter2', salt);
+		expect(key.length).toBe(32);
+	});
+
+	test('integrates with deriveWorkspaceKey', () => {
+		const salt = randomBytes(32);
+		const userKey = deriveKeyFromPassword('hunter2', salt);
+		const wsKey = deriveWorkspaceKey(userKey, 'epicenter.redact');
+		expect(wsKey).toBeInstanceOf(Uint8Array);
+		expect(wsKey.length).toBe(32);
+		// Deterministic: same derivation produces same workspace key
+		const wsKey2 = deriveWorkspaceKey(userKey, 'epicenter.redact');
+		expect(wsKey).toEqual(wsKey2);
+	});
+});
+
+describe('generateSalt', () => {
+	test('output is 32 bytes', () => {
+		const salt = generateSalt();
+		expect(salt).toBeInstanceOf(Uint8Array);
+		expect(salt.length).toBe(32);
+	});
+
+	test('two calls produce different salts', () => {
+		const salt1 = generateSalt();
+		const salt2 = generateSalt();
+		expect(salt1).not.toEqual(salt2);
+	});
+});
+
+describe('buildEncryptionKeys', () => {
+	test('returns array with one entry matching shape', () => {
+		const userKey = randomBytes(32);
+		const keys = buildEncryptionKeys(userKey);
+		expect(keys).toHaveLength(1);
+		expect(keys[0]).toHaveProperty('version');
+		expect(keys[0]).toHaveProperty('userKeyBase64');
+	});
+
+	test('default version is 1', () => {
+		const userKey = randomBytes(32);
+		const keys = buildEncryptionKeys(userKey);
+		expect(keys[0]!.version).toBe(1);
+	});
+
+	test('custom version is respected', () => {
+		const userKey = randomBytes(32);
+		const keys = buildEncryptionKeys(userKey, 3);
+		expect(keys[0]!.version).toBe(3);
+	});
+
+	test('userKeyBase64 round-trips through base64ToBytes', () => {
+		const userKey = randomBytes(32);
+		const keys = buildEncryptionKeys(userKey);
+		const decoded = base64ToBytes(keys[0]!.userKeyBase64);
+		expect(decoded).toEqual(userKey);
+	});
+
+	test('end-to-end: deriveKeyFromPassword → buildEncryptionKeys → encrypt/decrypt', () => {
+		const salt = generateSalt();
+		const userKey = deriveKeyFromPassword('hunter2', salt);
+		const keys = buildEncryptionKeys(userKey);
+
+		// Decode the base64 user key and derive a workspace key
+		const decodedUserKey = base64ToBytes(keys[0]!.userKeyBase64);
+		const wsKey = deriveWorkspaceKey(decodedUserKey, 'epicenter.vault');
+
+		// Use the workspace key to encrypt and decrypt
+		const plaintext = 'secret vault data';
+		const encrypted = encryptValue(plaintext, wsKey);
+		const decrypted = decryptValue(encrypted, wsKey);
+		expect(decrypted).toBe(plaintext);
 	});
 });

@@ -2,7 +2,7 @@
 	import { format } from 'date-fns';
 	import {
 		localTimezone,
-		NLPDateInput,
+		NaturalLanguageDateInput,
 		toDateTimeString,
 	} from '@epicenter/ui/natural-language-date-input';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
@@ -52,7 +52,7 @@
 				{/snippet}
 			</Popover.Trigger>
 			<Popover.Content side="top" align="end" class="w-80 space-y-3 p-3">
-				<NLPDateInput
+				<NaturalLanguageDateInput
 					onChoice={({ date }) => {
 						onUpdateCreatedAt?.(toDateTimeString(date, selectedTimezone));
 						isPopoverOpen = false;

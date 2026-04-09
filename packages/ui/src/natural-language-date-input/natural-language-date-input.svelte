@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	export type NLPDateInputProps = {
+	export type NaturalLanguageDateInputProps = {
 		min?: Date;
 		max?: Date;
 		placeholder?: string;
@@ -16,7 +16,7 @@
 		min,
 		max,
 		onChoice
-	}: NLPDateInputProps = $props();
+	}: NaturalLanguageDateInputProps = $props();
 
 	let value = $state('');
 

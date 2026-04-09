@@ -41,7 +41,7 @@
 		onkeydown={(e) => {
 		if (e.key === 'Enter' && inputValue.trim()) {
 			e.preventDefault();
-			const value = inputValue.trim().toLowerCase();
+			const value = inputValue.trim();
 			if (!values.includes(value)) {
 				onAdd(value);
 			}

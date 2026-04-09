@@ -8,8 +8,6 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
-import type { EntryId } from '$lib/workspace/definition';
-import { viewState } from './view-state.svelte';
 
 function createEntriesState() {
 	// ─── Reactive Source ──────────────────────────────────────────────────
@@ -35,17 +33,6 @@ function createEntriesState() {
 		 */
 		get entriesMap() {
 			return allEntriesMap;
-		},
-
-		/**
-		 * Create a new entry via workspace action and select it.
-		 *
-		 * Delegates to `workspace.actions.entries.create` for the actual
-		 * table write, then selects the new entry so the editor opens.
-		 */
-		createEntry() {
-			const { id } = workspace.actions.entries.create({});
-			viewState.selectEntry(id);
 		},
 	};
 }

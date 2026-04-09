@@ -4,7 +4,7 @@
 	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { buttonVariants } from '@epicenter/ui/button';
-	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
+	import { GithubIcon } from '@epicenter/ui/github-icon';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 

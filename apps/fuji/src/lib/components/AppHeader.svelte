@@ -5,7 +5,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
+	import { GithubIcon } from '@epicenter/ui/github-icon';
 
 	let { onOpenSearch, onCreateEntry }: {
 		onOpenSearch: () => void;

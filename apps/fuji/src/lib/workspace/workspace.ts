@@ -69,7 +69,7 @@ export function createFujiWorkspace() {
 						deletedAt: undefined,
 						createdAt: dateTimeStringNow(),
 						updatedAt: dateTimeStringNow(),
-						_v: '1',
+						_v: 1 as const,
 					});
 					return { id };
 				},

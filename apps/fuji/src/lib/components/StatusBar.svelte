@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { format } from 'date-fns';
-	import { NLPDateInput } from '@epicenter/ui/nlp-date-input';
 	import {
 		localTimezone,
-		TimezoneCombobox,
+		NLPDateInput,
 		toDateTimeString,
 	} from '@epicenter/ui/natural-language-date-input';
+	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import * as Popover from '@epicenter/ui/popover';
 	import type { DateTimeString } from '@epicenter/workspace';
 	import type { Entry } from '$lib/workspace/definition';

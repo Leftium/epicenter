@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import { localTimezone, toDateTimeString } from './parse-date.js';
+import { localTimezone, toDateTimeString } from './datetime-string.js';
 
 describe('toDateTimeString', () => {
 	it('formats UTC date and timezone with a pipe separator', () => {

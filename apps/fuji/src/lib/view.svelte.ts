@@ -8,7 +8,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { viewState } from '$lib/state/view-state.svelte';
+ *   import { viewState } from '$lib/view.svelte';
  * </script>
  *
  * <button onclick={() => viewState.toggleViewMode()}>

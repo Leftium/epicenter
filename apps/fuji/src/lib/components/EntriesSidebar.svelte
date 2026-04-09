@@ -5,9 +5,9 @@
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry } from '$lib/workspace/definition';
-	import { viewState } from '$lib/state/view-state.svelte';
-	import { parseDateTime } from '$lib/utils/dates';
-	import { matchesEntrySearch } from '$lib/utils/search';
+	import { viewState } from '$lib/view.svelte';
+	import { parseDateTime } from '$lib/dates';
+	import { matchesEntrySearch } from '$lib/search';
 
 	let { entries }: { entries: Entry[] } = $props();
 

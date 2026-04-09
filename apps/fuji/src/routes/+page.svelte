@@ -17,8 +17,8 @@
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
 	import { Kbd } from '@epicenter/ui/kbd';
-	import { activeEntries, entriesMap } from '$lib/state/entries-state.svelte';
-	import { viewState } from '$lib/state/view-state.svelte';
+	import { activeEntries, entriesMap } from '$lib/entries.svelte';
+	import { viewState } from '$lib/view.svelte';
 
 	// ─── Command Palette ─────────────────────────────────────────────────────────
 

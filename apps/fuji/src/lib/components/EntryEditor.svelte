@@ -26,12 +26,12 @@
 
 	let {
 		entry,
-		ytext,
+		yxmlfragment,
 		onUpdate,
 		onBack,
 	}: {
 		entry: Entry;
-		ytext: Y.Text;
+		yxmlfragment: Y.XmlFragment;
 		onUpdate: (
 			updates: Partial<{
 				title: string;
@@ -112,8 +112,7 @@
 			state: EditorState.create({
 				schema,
 				plugins: [
-					// y-prosemirror ySyncPlugin accepts Y.Text at runtime despite typed for Y.XmlFragment
-					ySyncPlugin(ytext as unknown as Y.XmlFragment),
+					ySyncPlugin(yxmlfragment),
 					yUndoPlugin(),
 					createPlaceholderPlugin('Start writing\u2026'),
 					keymap({

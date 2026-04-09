@@ -19,8 +19,8 @@
 	import { formatDistanceToNowStrict } from 'date-fns';
 	import type { Entry, EntryId } from '$lib/workspace/definition';
 	import BadgeList from './BadgeList.svelte';
-	import { parseDateTime } from '$lib/utils/dates';
-	import { matchesEntrySearch } from '$lib/utils/search';
+	import { parseDateTime } from '$lib/dates';
+	import { matchesEntrySearch } from '$lib/search';
 
 	let {
 		entries,

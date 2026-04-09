@@ -57,10 +57,14 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
+import type { EncryptionKeys } from '../../workspace/encryption-key';
 
 const NONCE_LENGTH = 24;
 const TAG_LENGTH = 16;
 const HEADER_LENGTH = 2;
+const PBKDF2_ITERATIONS_DEFAULT = 600_000;
+const SALT_LENGTH = 32;
 
 /**
  * Minimum valid EncryptedBlob size: 2-byte header + 24-byte nonce + 16-byte auth tag.
@@ -311,6 +315,78 @@ export function deriveWorkspaceKey(
 }
 
 /**
+ * Derive a 32-byte key from a password and salt using PBKDF2-HMAC-SHA256.
+ *
+ * Uses `@noble/hashes`—same Cure53-audited library as `hkdf`, `sha256`,
+ * and `xchacha20poly1305` in this module. Synchronous, matching the
+ * existing crypto pattern.
+ *
+ * The derived key is a user key—pass it to `deriveWorkspaceKey()` or
+ * `buildEncryptionKeys()` to get a workspace-scoped encryption key.
+ *
+ * @param password - The user's password
+ * @param salt - Random 32-byte salt (use `generateSalt()`)
+ * @param iterations - PBKDF2 iterations (default: 600,000 per OWASP 2026)
+ * @returns A 32-byte derived key
+ *
+ * @example
+ * ```typescript
+ * const salt = generateSalt();
+ * const userKey = deriveKeyFromPassword('hunter2', salt);
+ * const wsKey = deriveWorkspaceKey(userKey, 'epicenter.redact');
+ * ```
+ */
+export function deriveKeyFromPassword(
+	password: string,
+	salt: Uint8Array,
+	iterations: number = PBKDF2_ITERATIONS_DEFAULT,
+): Uint8Array {
+	return pbkdf2(sha256, textEncoder.encode(password), salt, { c: iterations, dkLen: 32 });
+}
+
+/**
+ * Generate a random 32-byte salt for PBKDF2 key derivation.
+ *
+ * Uses `randomBytes` from `@noble/ciphers`—same CSPRNG used for
+ * encryption nonces in `encryptValue()`.
+ *
+ * @returns A 32-byte random Uint8Array
+ *
+ * @example
+ * ```typescript
+ * const salt = generateSalt();
+ * const key = deriveKeyFromPassword('password', salt);
+ * ```
+ */
+export function generateSalt(): Uint8Array {
+	return randomBytes(SALT_LENGTH);
+}
+
+/**
+ * Build an `EncryptionKeys` array from a password-derived user key.
+ *
+ * Returns the same shape that `applyEncryptionKeys` expects,
+ * so password-derived keys plug directly into the existing encryption flow
+ * without any changes to the encryption core.
+ *
+ * @param userKey - A 32-byte user key (from `deriveKeyFromPassword`)
+ * @param version - Key version (default: 1)
+ * @returns `EncryptionKeys` array ready for `workspace.applyEncryptionKeys()`
+ *
+ * @example
+ * ```typescript
+ * const userKey = deriveKeyFromPassword('hunter2', salt);
+ * workspace.applyEncryptionKeys(buildEncryptionKeys(userKey));
+ * ```
+ */
+export function buildEncryptionKeys(
+	userKey: Uint8Array,
+	version: number = 1,
+): EncryptionKeys {
+	return [{ version, userKeyBase64: bytesToBase64(userKey) }];
+}
+
+/**
  * Convert a Uint8Array to a base64-encoded string.
  *
  * Builds a binary string via loop instead of `String.fromCharCode(...bytes)`
@@ -359,4 +435,5 @@ export function base64ToBytes(base64: string): Uint8Array {
 	return bytes;
 }
 
-export type { EncryptedBlob };
+export { PBKDF2_ITERATIONS_DEFAULT };
+export type { EncryptedBlob, EncryptionKeys };

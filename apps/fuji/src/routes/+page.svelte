@@ -16,8 +16,9 @@
 	import EntryEditor from '$lib/components/EntryEditor.svelte';
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
-	import GlobalStatusBar from '$lib/components/GlobalStatusBar.svelte';
-	import { entriesState, viewState } from '$lib/state';
+	import { Kbd } from '@epicenter/ui/kbd';
+	import { entriesState } from '$lib/state/entries-state.svelte';
+	import { viewState } from '$lib/state/view-state.svelte';
 
 	// ─── Command Palette ─────────────────────────────────────────────────────────
 
@@ -193,7 +194,14 @@
 			</main>
 		</Resizable.Pane>
 	</Resizable.PaneGroup>
-	<GlobalStatusBar entryCount={entriesState.activeEntries.length} />
+	<div class="flex h-6 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground">
+		<span>{entriesState.activeEntries.length} {entriesState.activeEntries.length === 1 ? 'entry' : 'entries'}</span>
+		<div class="ml-auto flex items-center gap-1.5">
+			<span class="flex items-center gap-1">
+				Search <Kbd>⌘K</Kbd>
+			</span>
+		</div>
+	</div>
 </div>
 
 <CommandPalette

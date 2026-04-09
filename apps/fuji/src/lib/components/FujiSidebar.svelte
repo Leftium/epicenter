@@ -4,7 +4,7 @@
 	import HashIcon from '@lucide/svelte/icons/hash';
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import { format, isToday, isYesterday } from 'date-fns';
-	import type { Entry, EntryId } from '$lib/workspace';
+	import type { Entry, EntryId } from '$lib/workspace/definition';
 	import { parseDateTime } from '$lib/utils/dates';
 	import { matchesEntrySearch } from '$lib/utils/search';
 

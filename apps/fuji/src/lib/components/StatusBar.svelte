@@ -8,7 +8,7 @@
 	} from '@epicenter/ui/natural-language-date-input';
 	import * as Popover from '@epicenter/ui/popover';
 	import type { DateTimeString } from '@epicenter/workspace';
-	import type { Entry } from '$lib/workspace';
+	import type { Entry } from '$lib/workspace/definition';
 	import { parseDateTime } from '$lib/utils/dates';
 
 	let {

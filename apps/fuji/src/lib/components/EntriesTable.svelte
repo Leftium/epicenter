@@ -19,6 +19,8 @@
 	import { formatDistanceToNowStrict } from 'date-fns';
 	import type { Entry, EntryId } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
+	import { parseDateTime } from '$lib/utils/dates';
+	import { matchesEntrySearch } from '$lib/utils/search';
 
 	let {
 		entries,
@@ -50,10 +52,6 @@
 		createdAt: 'dateCreated',
 		title: 'title',
 	} satisfies Record<string, 'dateEdited' | 'dateCreated' | 'title'>;
-
-	function parseDateTime(dts: string): Date {
-		return new Date(dts.split('|')[0]!);
-	}
 
 	function relativeTime(dts: string): string {
 		try {
@@ -176,17 +174,7 @@
 			},
 		},
 		globalFilterFn: (row, _columnId, filterValue) => {
-			const filter = filterValue.toLowerCase();
-			const title = String(row.getValue('title')).toLowerCase();
-			const subtitle = String(row.getValue('subtitle')).toLowerCase();
-			const tags = (row.getValue('tags') as string[]).join(' ').toLowerCase();
-			const types = (row.getValue('type') as string[]).join(' ').toLowerCase();
-			return (
-				title.includes(filter) ||
-				subtitle.includes(filter) ||
-				tags.includes(filter) ||
-				types.includes(filter)
-			);
+			return matchesEntrySearch(row.original, filterValue);
 		},
 	});
 </script>

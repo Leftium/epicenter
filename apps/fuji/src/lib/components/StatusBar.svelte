@@ -1,14 +1,15 @@
 <script lang="ts">
 	import { format } from 'date-fns';
+	import { NLPDateInput } from '@epicenter/ui/nlp-date-input';
 	import {
 		localTimezone,
-		NLPDateInput,
 		TimezoneCombobox,
 		toDateTimeString,
 	} from '@epicenter/ui/natural-language-date-input';
 	import * as Popover from '@epicenter/ui/popover';
 	import type { DateTimeString } from '@epicenter/workspace';
 	import type { Entry } from '$lib/workspace';
+	import { parseDateTime } from '$lib/utils/dates';
 
 	let {
 		entry,
@@ -27,9 +28,6 @@
 		selectedTimezone = entry.createdAt.split('|')[1] ?? localTimezone();
 	});
 
-	function parseDateTime(dts: string): Date {
-		return new Date(dts.split('|')[0]!);
-	}
 </script>
 
 <div class="flex items-center justify-between border-t px-4 py-1.5 text-xs text-muted-foreground">

@@ -6,6 +6,7 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry, EntryId } from '$lib/workspace';
+	import { parseDateTime } from '$lib/utils/dates';
 
 	let {
 		entries,
@@ -23,10 +24,6 @@
 
 	/** Which timestamp field to use for sorting and grouping. */
 	const dateField = $derived(sortBy === 'dateCreated' ? 'createdAt' as const : 'updatedAt' as const);
-
-	function parseDateTime(dts: string): Date {
-		return new Date(dts.split('|')[0]!);
-	}
 
 	function getDateLabel(dts: string): string {
 		const date = parseDateTime(dts);

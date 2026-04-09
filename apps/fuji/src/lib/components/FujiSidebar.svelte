@@ -5,6 +5,8 @@
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry, EntryId } from '$lib/workspace';
+	import { parseDateTime } from '$lib/utils/dates';
+	import { matchesEntrySearch } from '$lib/utils/search';
 
 	let {
 		entries,
@@ -33,14 +35,7 @@
 	/** Entries matching the search query across title, subtitle, tags, and type. */
 	const searchResults = $derived.by(() => {
 		if (!isSearching) return [];
-		const q = searchQuery.trim().toLowerCase();
-		return entries.filter((entry) => {
-			const title = entry.title.toLowerCase();
-			const subtitle = entry.subtitle.toLowerCase();
-			const tags = entry.tags.join(' ').toLowerCase();
-			const types = entry.type.join(' ').toLowerCase();
-			return title.includes(q) || subtitle.includes(q) || tags.includes(q) || types.includes(q);
-		});
+		return entries.filter((entry) => matchesEntrySearch(entry, searchQuery));
 	});
 
 	/** Unique types with entry counts, sorted by count descending. */
@@ -75,10 +70,6 @@
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 			.slice(0, 10),
 	);
-
-	function parseDateTime(dts: string): Date {
-		return new Date(dts.split('|')[0]!);
-	}
 
 	function getDateLabel(dts: string): string {
 		const date = parseDateTime(dts);

@@ -44,7 +44,7 @@
 
 	const selectedEntry = $derived(
 		viewState.selectedEntryId
-			? (entriesState.get(viewState.selectedEntryId) ?? null)
+			? (entriesState.entriesMap.get(viewState.selectedEntryId) ?? null)
 			: null,
 	);
 
@@ -143,7 +143,7 @@
 							ytext={currentYText}
 							onUpdate={(updates) => {
 								if (!viewState.selectedEntryId) return;
-								entriesState.updateEntry(viewState.selectedEntryId, updates);
+							workspace.tables.entries.update(viewState.selectedEntryId, updates);
 							}}
 							onBack={() => viewState.selectEntry(null)}
 						/>

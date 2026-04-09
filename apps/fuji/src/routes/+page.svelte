@@ -17,7 +17,7 @@
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
 	import { Kbd } from '@epicenter/ui/kbd';
-	import { entriesState } from '$lib/state/entries-state.svelte';
+	import { activeEntries, entriesMap } from '$lib/state/entries-state.svelte';
 	import { viewState } from '$lib/state/view-state.svelte';
 
 	// ─── Command Palette ─────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@
 
 	const paletteItems = $derived.by((): CommandPaletteItem[] => {
 		if (!paletteOpen) return [];
-		return entriesState.activeEntries.map((entry) => ({
+		return activeEntries.map((entry) => ({
 			id: entry.id,
 			label: entry.title || 'Untitled',
 			description: entry.subtitle || undefined,
@@ -38,20 +38,20 @@
 		}));
 	});
 
-	// ─── Document Handle (Y.Text) ────────────────────────────────────────────────
+	// ─── Document Handle (Y.XmlFragment) ────────────────────────────────────────────
 
-	let currentYText = $state<Y.Text | null>(null);
+	let currentYXmlFragment = $state<Y.XmlFragment | null>(null);
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 
 	const selectedEntry = $derived(
 		viewState.selectedEntryId
-			? (entriesState.entriesMap.get(viewState.selectedEntryId) ?? null)
+			? (entriesMap.get(viewState.selectedEntryId) ?? null)
 			: null,
 	);
 
 	/** Entries filtered by sidebar type/tag filters. */
 	const filteredEntries = $derived.by(() => {
-		let result = entriesState.activeEntries;
+		let result = activeEntries;
 		const typeFilter = viewState.activeTypeFilter;
 		const tagFilter = viewState.activeTagFilter;
 		if (typeFilter) {
@@ -72,7 +72,7 @@
 	$effect(() => {
 		const entryId = viewState.selectedEntryId;
 		if (!entryId) {
-			currentYText = null;
+			currentYXmlFragment = null;
 			currentDocHandle = null;
 			return;
 		}
@@ -81,7 +81,7 @@
 		workspace.documents.entries.content.open(entryId).then((handle) => {
 			if (cancelled) return;
 			currentDocHandle = handle;
-			currentYText = handle.asText();
+			currentYXmlFragment = handle.asRichText();
 		});
 
 		return () => {
@@ -89,7 +89,7 @@
 			if (currentDocHandle) {
 				workspace.documents.entries.content.close(entryId);
 			}
-			currentYText = null;
+			currentYXmlFragment = null;
 			currentDocHandle = null;
 		};
 	});
@@ -128,16 +128,16 @@
 	/>
 	<Resizable.PaneGroup direction="horizontal" class="flex-1">
 		<Resizable.Pane defaultSize={20} minSize={15} maxSize={40}>
-			<EntriesSidebar entries={entriesState.activeEntries} />
+			<EntriesSidebar entries={activeEntries} />
 		</Resizable.Pane>
 		<Resizable.Handle withHandle />
 		<Resizable.Pane defaultSize={80}>
 			<main class="flex h-full flex-1 flex-col overflow-hidden">
-				{#if selectedEntry && currentYText}
+				{#if selectedEntry && currentYXmlFragment}
 					{#key viewState.selectedEntryId}
 						<EntryEditor
 							entry={selectedEntry}
-							ytext={currentYText}
+							yxmlfragment={currentYXmlFragment}
 							onUpdate={(updates) => {
 								if (!viewState.selectedEntryId) return;
 							workspace.tables.entries.update(viewState.selectedEntryId, updates);
@@ -191,7 +191,7 @@
 		</Resizable.Pane>
 	</Resizable.PaneGroup>
 	<div class="flex h-6 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground">
-		<span>{entriesState.activeEntries.length} {entriesState.activeEntries.length === 1 ? 'entry' : 'entries'}</span>
+		<span>{activeEntries.length} {activeEntries.length === 1 ? 'entry' : 'entries'}</span>
 		<div class="ml-auto flex items-center gap-1.5">
 			<span class="flex items-center gap-1">
 				Search <Kbd>⌘K</Kbd>

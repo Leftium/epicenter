@@ -9,32 +9,15 @@
 import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 
-function createEntriesState() {
-	// ─── Reactive Source ──────────────────────────────────────────────────
-	const allEntriesMap = fromTable(workspace.tables.entries);
+/**
+ * Reactive map of all entries by ID.
+ *
+ * Backed by `fromTable()` SvelteMap—lookups are O(1) and
+ * reactive in Svelte 5 templates and `$derived` expressions.
+ */
+export const entriesMap = fromTable(workspace.tables.entries);
 
-	const allEntries = $derived(allEntriesMap.values().toArray());
+const allEntries = $derived(entriesMap.values().toArray());
 
-	/** Active entries — not soft-deleted. */
-	const activeEntries = $derived(allEntries.filter((e) => e.deletedAt === undefined));
-
-	// ─── Public API ──────────────────────────────────────────────────────────────────────
-
-	return {
-		get activeEntries() {
-			return activeEntries;
-		},
-
-		/**
-		 * Reactive map of all entries by ID.
-		 *
-		 * Backed by `fromTable()` SvelteMap—lookups are O(1) and
-		 * reactive in Svelte 5 templates and `$derived` expressions.
-		 */
-		get entriesMap() {
-			return allEntriesMap;
-		},
-	};
-}
-
-export const entriesState = createEntriesState();
+/** Active entries — not soft-deleted. */
+export const activeEntries = $derived(allEntries.filter((e) => e.deletedAt === undefined));

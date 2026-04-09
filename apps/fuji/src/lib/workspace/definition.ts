@@ -77,7 +77,6 @@ export const fujiWorkspace = defineWorkspace({
 	kv: {
 		selectedEntryId: defineKv(EntryId.or(type('null'))),
 		viewMode: defineKv(type("'table' | 'timeline'")),
-		sidebarCollapsed: defineKv(type('boolean')),
 		sortBy: defineKv(type("'dateEdited' | 'dateCreated' | 'title'")),
 	},
 });

@@ -25,7 +25,6 @@ function createViewState() {
 	// ─── KV-Backed State ──────────────────────────────────────────────────
 	const selectedEntryIdKv = fromKv(workspace.kv, 'selectedEntryId');
 	const viewModeKv = fromKv(workspace.kv, 'viewMode');
-	const sidebarCollapsedKv = fromKv(workspace.kv, 'sidebarCollapsed');
 	const sortByKv = fromKv(workspace.kv, 'sortBy');
 
 	// ─── Local State ─────────────────────────────────────────────────────
@@ -62,15 +61,6 @@ function createViewState() {
 		 */
 		toggleViewMode() {
 			viewModeKv.current = viewModeKv.current === 'table' ? 'timeline' : 'table';
-		},
-
-		// ─── Sidebar ─────────────────────────────────────────────────────
-		get sidebarCollapsed(): boolean {
-			return sidebarCollapsedKv.current ?? false;
-		},
-
-		set sidebarCollapsed(value: boolean) {
-			sidebarCollapsedKv.current = value;
 		},
 
 		// ─── Sort ────────────────────────────────────────────────────────

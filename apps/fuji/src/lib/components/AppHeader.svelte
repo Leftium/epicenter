@@ -13,7 +13,7 @@
 	} = $props();
 </script>
 
-<Tooltip.Provider>
+<div class="flex h-8 shrink-0 items-center justify-between border-b px-2">
 	<div class="flex h-8 shrink-0 items-center justify-between border-b px-2">
 		<!-- Left: branding + actions -->
 		<div class="flex items-center gap-1.5">
@@ -64,5 +64,4 @@
 			</Tooltip.Root>
 			<LightSwitch variant="ghost" />
 		</div>
-	</div>
-</Tooltip.Provider>
+</div>

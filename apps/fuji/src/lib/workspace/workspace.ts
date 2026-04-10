@@ -59,6 +59,7 @@ export function createFujiWorkspace() {
 				}),
 				handler: ({ title, subtitle, type: entryType, tags }) => {
 					const id = generateId() as unknown as EntryId;
+					const now = DateTimeString.now();
 					tables.entries.set({
 						id,
 						title: title ?? '',
@@ -67,8 +68,9 @@ export function createFujiWorkspace() {
 						tags: tags ?? [],
 						pinned: false,
 						deletedAt: undefined,
-						createdAt: DateTimeString.now(),
-						updatedAt: DateTimeString.now(),
+						date: now,
+						createdAt: now,
+						updatedAt: now,
 						_v: 1 as const,
 					});
 					return { id };

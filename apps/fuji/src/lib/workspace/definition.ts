@@ -39,6 +39,11 @@ export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
  * display), type classification, and freeform tags. Both `type` and `tags` are
  * always present—an unclassified entry has empty arrays, not missing fields.
  *
+ * `date` is the user-defined date associated with the entry—the "when" of the
+ * content itself. For a blog post it's the publish date, for a journal entry
+ * it's when it happened, for research notes it's the reference date. Always
+ * present—defaults to `createdAt` on creation, editable by the user afterward.
+ *
  * Entries support pinning (pinned entries sort to the top of lists) and soft
  * deletion via `deletedAt`. Soft-deleted entries move to "Recently Deleted"
  * rather than being permanently destroyed—critical for CRDT conflict safety
@@ -57,6 +62,7 @@ const entriesTable = defineTable(
 		tags: 'string[]',
 		pinned: 'boolean',
 		'deletedAt?': DateTimeString.or('undefined'),
+		date: DateTimeString,
 		createdAt: DateTimeString,
 		updatedAt: DateTimeString,
 		_v: '1',

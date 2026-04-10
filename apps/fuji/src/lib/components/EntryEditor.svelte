@@ -1,6 +1,15 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import type { DateTimeString } from '@epicenter/workspace';
+	import {
+		localTimezone,
+		NaturalLanguageDateInput,
+		toDateTimeString,
+	} from '@epicenter/ui/natural-language-date-input';
+	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
+	import * as Popover from '@epicenter/ui/popover';
+	import { DateTimeString } from '@epicenter/workspace';
+	import type { DateTimeString as DateTimeStringType } from '@epicenter/workspace';
+	import { format } from 'date-fns';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import { baseKeymap, toggleMark } from 'prosemirror-commands';
 	import {
@@ -38,7 +47,7 @@
 				subtitle: string;
 				type: string[];
 				tags: string[];
-				createdAt: DateTimeString;
+				date: DateTimeStringType;
 			}>,
 		) => void;
 		onBack: () => void;
@@ -46,6 +55,9 @@
 
 	let element: HTMLDivElement | undefined = $state();
 	let wordCount = $state(0);
+
+	let isDatePopoverOpen = $state(false);
+	let dateTz = $state(localTimezone());
 
 	function countWords(text: string): number {
 		const trimmed = text.trim();
@@ -218,13 +230,41 @@
 				/>
 			</div>
 		</div>
+
+		<div class="flex flex-wrap items-center gap-4">
+			<div class="flex items-center gap-2">
+				<span class="text-xs font-medium text-muted-foreground">Date</span>
+				<Popover.Root bind:open={isDatePopoverOpen}>
+					<Popover.Trigger>
+						{#snippet child({ props })}
+							<button
+								{...props}
+								type="button"
+								class="cursor-pointer rounded-md border bg-background px-2.5 py-1 text-sm transition hover:bg-accent"
+							>
+								{format(DateTimeString.toDate(entry.date), 'MMM d, yyyy · h:mm a')}
+							</button>
+						{/snippet}
+					</Popover.Trigger>
+					<Popover.Content side="bottom" align="start" class="w-80 space-y-3 p-3">
+						<NaturalLanguageDateInput
+							onChoice={({ date }) => {
+								onUpdate({ date: toDateTimeString(date, dateTz) });
+								isDatePopoverOpen = false;
+							}}
+						/>
+						<TimezoneCombobox bind:value={dateTz} />
+					</Popover.Content>
+				</Popover.Root>
+			</div>
+		</div>
 	</div>
 
 	<!-- Editor body -->
 	<div bind:this={element} class="flex-1 overflow-y-auto px-6 py-4"></div>
 
 	<!-- Status bar -->
-	<StatusBar {entry} {wordCount} onUpdateCreatedAt={(createdAt) => onUpdate({ createdAt })} />
+	<StatusBar {entry} {wordCount} />
 </div>
 
 <style>

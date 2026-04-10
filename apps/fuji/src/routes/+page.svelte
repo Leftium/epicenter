@@ -102,12 +102,6 @@
 		event.target instanceof HTMLTextAreaElement ||
 		(event.target instanceof HTMLElement && event.target.isContentEditable);
 
-	if (event.key === 'k' && event.metaKey) {
-		event.preventDefault();
-		paletteOpen = !paletteOpen;
-		return;
-	}
-
 	if (event.key === 'n' && event.metaKey) {
 		event.preventDefault();
 		createEntry();

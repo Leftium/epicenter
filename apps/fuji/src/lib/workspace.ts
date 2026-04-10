@@ -150,6 +150,42 @@ export function createFujiWorkspace() {
 					return { id };
 				},
 			}),
+			/**
+			 * Update entry metadata fields and auto-bump `updatedAt`.
+			 *
+			 * Every field edit—title, subtitle, tags, type, date—routes through
+			 * this action so `updatedAt` stays consistent whether the change
+			 * comes from the UI, CLI, or AI.
+			 */
+			update: defineMutation({
+				title: 'Update Entry',
+				description:
+					'Update entry metadata fields. Automatically bumps updatedAt.',
+				input: Type.Object({
+					id: Type.String({ description: 'Entry ID to update' }),
+					title: Type.Optional(Type.String({ description: 'Entry title' })),
+					subtitle: Type.Optional(
+						Type.String({ description: 'Subtitle for blog listings' }),
+					),
+					type: Type.Optional(
+						Type.Array(Type.String(), {
+							description: 'Type classifications',
+						}),
+					),
+					tags: Type.Optional(
+						Type.Array(Type.String(), { description: 'Freeform tags' }),
+					),
+					date: Type.Optional(
+						Type.String({ description: 'User-defined date for the entry' }),
+					),
+				}),
+				handler: ({ id, ...fields }) => {
+					return tables.entries.update(id, {
+						...fields,
+						updatedAt: DateTimeString.now(),
+					});
+				},
+			}),
 		},
 	}));
 }

@@ -6,6 +6,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
+	import SyncStatusIndicator from './SyncStatusIndicator.svelte';
 
 	let { onOpenSearch, onCreateEntry }: {
 		onOpenSearch: () => void;
@@ -44,6 +45,7 @@
 	</div>
 	<!-- Right: external links + theme -->
 	<div class="flex items-center gap-0.5">
+		<SyncStatusIndicator />
 		<GitHubButton
 			repo={{ owner: 'EpicenterHQ', repo: 'epicenter' }}
 			path="/tree/main/apps/fuji"

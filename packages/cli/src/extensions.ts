@@ -38,7 +38,7 @@ export function createCliUnlock(sessions: SessionStore, serverUrl: string) {
 	}: {
 		whenReady: Promise<void>;
 		applyEncryptionKeys: (
-			keys: { version: number; userKeyBase64: string }[],
+			keys: [{ version: number; userKeyBase64: string }, ...{ version: number; userKeyBase64: string }[]],
 		) => void;
 	}) => ({
 		whenReady: (async () => {

@@ -19,6 +19,8 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
+import { viewState } from '$lib/view.svelte';
+import type { Entry, EntryId } from '$lib/workspace';
 
 /**
  * Test whether an entry matches a search query.
@@ -46,17 +48,25 @@ function createEntriesState() {
 	const active = $derived(all.filter((e) => e.deletedAt === undefined));
 
 	return {
-		/**
-		 * Reactive map of all entries by ID.
-		 *
-		 * Backed by `fromTable()` SvelteMap—lookups are O(1) and
-		 * reactive in Svelte 5 templates and `$derived` expressions.
-		 */
-		map,
+		/** Look up an entry by ID. Returns `undefined` if not found. */
+		get(id: EntryId) {
+			return map.get(id);
+		},
 
 		/** Active entries—not soft-deleted. Computed once per change cycle. */
 		get active() {
 			return active;
+		},
+
+		/**
+		 * Create a new entry with sensible defaults and select it for editing.
+		 *
+		 * Delegates to the workspace `entries.create` action, then selects
+		 * the new entry so the editor opens immediately.
+		 */
+		createEntry() {
+			const { id } = workspace.actions.entries.create({});
+			viewState.selectEntry(id);
 		},
 	};
 }

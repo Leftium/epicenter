@@ -20,16 +20,11 @@
 	import type { Entry } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
 	import { DateTimeString } from '@epicenter/workspace';
-	import { matchesEntrySearch } from '$lib/entries.svelte';
+	import { entriesState, matchesEntrySearch } from '$lib/entries.svelte';
 	import { viewState } from '$lib/view.svelte';
-	import { workspace } from '$lib/client';
 
 	let { entries }: { entries: Entry[] } = $props();
 
-	function createEntry() {
-		const { id } = workspace.actions.entries.create({});
-		viewState.selectEntry(id);
-	}
 
 	function relativeTime(dts: string): string {
 		try {
@@ -171,7 +166,7 @@
 	<!-- Toolbar -->
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<h2 class="text-sm font-semibold">Entries</h2>
-		<Button variant="ghost" size="icon" class="size-7" onclick={createEntry}>
+		<Button variant="ghost" size="icon" class="size-7" onclick={entriesState.createEntry}>
 			<PlusIcon class="size-4" />
 		</Button>
 	</div>
@@ -230,7 +225,7 @@
 									<Empty.Title>No entries yet</Empty.Title>
 									<Empty.Description>Create your first entry to get started.</Empty.Description>
 									<Empty.Content>
-										<Button variant="outline" size="sm" onclick={createEntry}>
+										<Button variant="outline" size="sm" onclick={entriesState.createEntry}>
 											<PlusIcon class="mr-1.5 size-4" />
 											New Entry
 										</Button>

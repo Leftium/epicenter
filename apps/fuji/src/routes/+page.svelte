@@ -45,7 +45,7 @@
 
 	const selectedEntry = $derived(
 		viewState.selectedEntryId
-			? (entriesState.map.get(viewState.selectedEntryId) ?? null)
+			? (entriesState.get(viewState.selectedEntryId) ?? null)
 			: null,
 	);
 
@@ -63,11 +63,6 @@
 		return result;
 	});
 
-	/** Create a new entry and select it for editing. */
-	function createEntry() {
-		const { id } = workspace.actions.entries.create({});
-		viewState.selectEntry(id);
-	}
 
 	$effect(() => {
 		const entryId = viewState.selectedEntryId;
@@ -105,7 +100,7 @@
 
 	if (event.key === 'n' && event.metaKey) {
 		event.preventDefault();
-		createEntry();
+		entriesState.createEntry();
 		return;
 	}
 
@@ -119,7 +114,7 @@
 <div class="flex h-screen flex-col">
 	<AppHeader
 		onOpenSearch={() => (paletteOpen = true)}
-		onCreateEntry={() => createEntry()}
+		onCreateEntry={() => entriesState.createEntry()}
 	/>
 	<Resizable.PaneGroup direction="horizontal" class="flex-1">
 		<Resizable.Pane defaultSize={20} minSize={15} maxSize={40}>

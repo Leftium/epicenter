@@ -17,7 +17,7 @@
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
 	import { Kbd } from '@epicenter/ui/kbd';
-	import { entries } from '$lib/entries.svelte';
+	import { entriesState } from '$lib/entries.svelte';
 	import { viewState } from '$lib/view.svelte';
 
 	// ─── Command Palette ─────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@
 
 	const paletteItems = $derived.by((): CommandPaletteItem[] => {
 		if (!paletteOpen) return [];
-		return entries.active.map((entry) => ({
+		return entriesState.active.map((entry) => ({
 			id: entry.id,
 			label: entry.title || 'Untitled',
 			description: entry.subtitle || undefined,
@@ -45,13 +45,13 @@
 
 	const selectedEntry = $derived(
 		viewState.selectedEntryId
-			? (entries.map.get(viewState.selectedEntryId) ?? null)
+			? (entriesState.map.get(viewState.selectedEntryId) ?? null)
 			: null,
 	);
 
 	/** Entries filtered by sidebar type/tag filters. */
 	const filteredEntries = $derived.by(() => {
-		let result = entries.active;
+		let result = entriesState.active;
 		const typeFilter = viewState.activeTypeFilter;
 		const tagFilter = viewState.activeTagFilter;
 		if (typeFilter) {
@@ -123,7 +123,7 @@
 	/>
 	<Resizable.PaneGroup direction="horizontal" class="flex-1">
 		<Resizable.Pane defaultSize={20} minSize={15} maxSize={40}>
-			<EntriesSidebar entries={entries.active} />
+			<EntriesSidebar entries={entriesState.active} />
 		</Resizable.Pane>
 		<Resizable.Handle withHandle />
 		<Resizable.Pane defaultSize={80}>
@@ -186,7 +186,7 @@
 		</Resizable.Pane>
 	</Resizable.PaneGroup>
 	<div class="flex h-6 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground">
-		<span>{entries.active.length} {entries.active.length === 1 ? 'entry' : 'entries'}</span>
+		<span>{entriesState.active.length} {entriesState.active.length === 1 ? 'entry' : 'entries'}</span>
 		<div class="ml-auto flex items-center gap-1.5">
 			<span class="flex items-center gap-1">
 				Search <Kbd>⌘K</Kbd>

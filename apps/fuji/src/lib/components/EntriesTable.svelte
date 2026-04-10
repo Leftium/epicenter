@@ -20,7 +20,7 @@
 	import type { Entry, EntryId } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
 	import { DateTimeString } from '@epicenter/workspace';
-	import { matchesEntrySearch } from '$lib/search';
+	import { matchesEntrySearch } from '$lib/entries.svelte';
 
 	let {
 		entries,

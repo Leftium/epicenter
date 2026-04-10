@@ -7,7 +7,7 @@
 	import type { Entry } from '$lib/workspace';
 	import { viewState } from '$lib/view.svelte';
 	import { DateTimeString } from '@epicenter/workspace';
-	import { matchesEntrySearch } from '$lib/search';
+	import { matchesEntrySearch } from '$lib/entries.svelte';
 
 	let { entries }: { entries: Entry[] } = $props();
 

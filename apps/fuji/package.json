@@ -4,6 +4,10 @@
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
+	"exports": {
+		"./workspace": "./src/lib/workspace/workspace.ts",
+		"./materializer": "./src/lib/materializer.ts"
+	},
 	"scripts": {
 		"dev": "bun run dev:local",
 		"dev:local": "vite dev",

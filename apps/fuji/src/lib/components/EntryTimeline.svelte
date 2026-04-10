@@ -6,7 +6,7 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry, EntryId } from '$lib/workspace/definition';
-	import { parseDateTime } from '$lib/dates';
+	import { DateTimeString } from '@epicenter/workspace';
 
 	let {
 		entries,
@@ -26,7 +26,7 @@
 	const dateField = $derived(sortBy === 'dateCreated' ? 'createdAt' as const : 'updatedAt' as const);
 
 	function getDateLabel(dts: string): string {
-		const date = parseDateTime(dts);
+		const date = DateTimeString.toDate(dts);
 		if (isToday(date)) return 'Today';
 		if (isYesterday(date)) return 'Yesterday';
 		return format(date, 'MMMM d');
@@ -111,7 +111,7 @@
 										{entry.title || 'Untitled'}
 									</span>
 									<span class="shrink-0 text-xs text-muted-foreground">
-										{format(parseDateTime(entry.updatedAt), 'h:mm a')}
+										{format(DateTimeString.toDate(entry.updatedAt), 'h:mm a')}
 									</span>
 								</div>
 							{#if entry.subtitle}

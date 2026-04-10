@@ -19,7 +19,7 @@
 	import { formatDistanceToNowStrict } from 'date-fns';
 	import type { Entry, EntryId } from '$lib/workspace/definition';
 	import BadgeList from './BadgeList.svelte';
-	import { parseDateTime } from '$lib/dates';
+	import { DateTimeString } from '@epicenter/workspace';
 	import { matchesEntrySearch } from '$lib/search';
 
 	let {
@@ -55,7 +55,7 @@
 
 	function relativeTime(dts: string): string {
 		try {
-			return formatDistanceToNowStrict(parseDateTime(dts), {
+			return formatDistanceToNowStrict(DateTimeString.toDate(dts), {
 				addSuffix: true,
 			});
 		} catch {

@@ -7,9 +7,8 @@
 	} from '@epicenter/ui/natural-language-date-input';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import * as Popover from '@epicenter/ui/popover';
-	import type { DateTimeString } from '@epicenter/workspace';
+	import { DateTimeString } from '@epicenter/workspace';
 	import type { Entry } from '$lib/workspace/definition';
-	import { parseDateTime } from '$lib/dates';
 
 	let {
 		entry,
@@ -25,7 +24,7 @@
 	let selectedTimezone = $state(localTimezone());
 
 	$effect(() => {
-		selectedTimezone = entry.createdAt.split('|')[1] ?? localTimezone();
+		selectedTimezone = DateTimeString.parse(entry.createdAt).timezone;
 	});
 
 </script>
@@ -47,7 +46,7 @@
 						disabled={!onUpdateCreatedAt}
 						class="cursor-pointer rounded-sm transition hover:underline disabled:cursor-default disabled:hover:no-underline"
 					>
-						Created {format(parseDateTime(entry.createdAt), 'MMM d, yyyy')}
+						Created {format(DateTimeString.toDate(entry.createdAt), 'MMM d, yyyy')}
 					</button>
 				{/snippet}
 			</Popover.Trigger>
@@ -61,6 +60,6 @@
 				<TimezoneCombobox bind:value={selectedTimezone} />
 			</Popover.Content>
 		</Popover.Root>
-		<span>Updated {format(parseDateTime(entry.updatedAt), 'MMM d · h:mm a')}</span>
+		<span>Updated {format(DateTimeString.toDate(entry.updatedAt), 'MMM d · h:mm a')}</span>
 	</div>
 </div>

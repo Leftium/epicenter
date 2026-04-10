@@ -6,7 +6,7 @@
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry } from '$lib/workspace/definition';
 	import { viewState } from '$lib/view.svelte';
-	import { parseDateTime } from '$lib/dates';
+	import { DateTimeString } from '@epicenter/workspace';
 	import { matchesEntrySearch } from '$lib/search';
 
 	let { entries }: { entries: Entry[] } = $props();
@@ -53,7 +53,7 @@
 	);
 
 	function getDateLabel(dts: string): string {
-		const date = parseDateTime(dts);
+		const date = DateTimeString.toDate(dts);
 		if (isToday(date)) return 'Today';
 		if (isYesterday(date)) return 'Yesterday';
 		return format(date, 'MMM d');

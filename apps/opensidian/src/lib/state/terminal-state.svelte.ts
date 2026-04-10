@@ -208,10 +208,6 @@ function createTerminalState() {
 			history = [];
 		},
 
-		/** Print a welcome message as a single output entry. */
-		printWelcome() {
-			ensureWelcome();
-		},
 	};
 }
 

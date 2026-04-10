@@ -176,7 +176,7 @@ export function createFujiWorkspace() {
 						Type.Array(Type.String(), { description: 'Freeform tags' }),
 					),
 					date: Type.Optional(
-						Type.String({ description: 'User-defined date for the entry' }),
+						Type.Unsafe<DateTimeString>({ type: 'string', description: 'User-defined date for the entry' }),
 					),
 				}),
 				handler: ({ id, ...fields }) => {

@@ -17,7 +17,7 @@
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
 	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
 	import { Kbd } from '@epicenter/ui/kbd';
-	import { activeEntries, entriesMap } from '$lib/entries.svelte';
+	import { entries } from '$lib/entries.svelte';
 	import { viewState } from '$lib/view.svelte';
 
 	// ─── Command Palette ─────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@
 
 	const paletteItems = $derived.by((): CommandPaletteItem[] => {
 		if (!paletteOpen) return [];
-		return activeEntries.map((entry) => ({
+		return entries.active.map((entry) => ({
 			id: entry.id,
 			label: entry.title || 'Untitled',
 			description: entry.subtitle || undefined,
@@ -45,13 +45,13 @@
 
 	const selectedEntry = $derived(
 		viewState.selectedEntryId
-			? (entriesMap.get(viewState.selectedEntryId) ?? null)
+			? (entries.map.get(viewState.selectedEntryId) ?? null)
 			: null,
 	);
 
 	/** Entries filtered by sidebar type/tag filters. */
 	const filteredEntries = $derived.by(() => {
-		let result = activeEntries;
+		let result = entries.active;
 		const typeFilter = viewState.activeTypeFilter;
 		const tagFilter = viewState.activeTagFilter;
 		if (typeFilter) {
@@ -102,6 +102,7 @@
 		event.target instanceof HTMLTextAreaElement ||
 		(event.target instanceof HTMLElement && event.target.isContentEditable);
 
+
 	if (event.key === 'n' && event.metaKey) {
 		event.preventDefault();
 		createEntry();
@@ -122,7 +123,7 @@
 	/>
 	<Resizable.PaneGroup direction="horizontal" class="flex-1">
 		<Resizable.Pane defaultSize={20} minSize={15} maxSize={40}>
-			<EntriesSidebar entries={activeEntries} />
+			<EntriesSidebar entries={entries.active} />
 		</Resizable.Pane>
 		<Resizable.Handle withHandle />
 		<Resizable.Pane defaultSize={80}>
@@ -185,7 +186,7 @@
 		</Resizable.Pane>
 	</Resizable.PaneGroup>
 	<div class="flex h-6 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground">
-		<span>{activeEntries.length} {activeEntries.length === 1 ? 'entry' : 'entries'}</span>
+		<span>{entries.active.length} {entries.active.length === 1 ? 'entry' : 'entries'}</span>
 		<div class="ml-auto flex items-center gap-1.5">
 			<span class="flex items-center gap-1">
 				Search <Kbd>⌘K</Kbd>

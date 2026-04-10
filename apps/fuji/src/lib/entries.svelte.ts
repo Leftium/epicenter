@@ -9,15 +9,25 @@
 import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 
-/**
- * Reactive map of all entries by ID.
- *
- * Backed by `fromTable()` SvelteMap—lookups are O(1) and
- * reactive in Svelte 5 templates and `$derived` expressions.
- */
-export const entriesMap = fromTable(workspace.tables.entries);
+function createEntriesState() {
+	const map = fromTable(workspace.tables.entries);
+	const all = $derived(map.values().toArray());
+	const active = $derived(all.filter((e) => e.deletedAt === undefined));
 
-const allEntries = $derived(entriesMap.values().toArray());
+	return {
+		/**
+		 * Reactive map of all entries by ID.
+		 *
+		 * Backed by `fromTable()` SvelteMap—lookups are O(1) and
+		 * reactive in Svelte 5 templates and `$derived` expressions.
+		 */
+		map,
 
-/** Active entries — not soft-deleted. */
-export const activeEntries = $derived(allEntries.filter((e) => e.deletedAt === undefined));
+		/** Active entries—not soft-deleted. Computed once per change cycle. */
+		get active() {
+			return active;
+		},
+	};
+}
+
+export const entries = createEntriesState();

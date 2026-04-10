@@ -45,7 +45,7 @@
 						</Button>
 					{/snippet}
 				</Tooltip.Trigger>
-				<Tooltip.Content>Toggle terminal (\u2318`)</Tooltip.Content>
+				<Tooltip.Content>Toggle terminal (⌘`)</Tooltip.Content>
 			</Tooltip.Root>
 			<Tooltip.Root>
 				<Tooltip.Trigger>
@@ -62,7 +62,7 @@
 						</Button>
 					{/snippet}
 				</Tooltip.Trigger>
-				<Tooltip.Content>Toggle AI chat (\u2318\u21e7L)</Tooltip.Content>
+				<Tooltip.Content>Toggle AI chat (⌘⇧L)</Tooltip.Content>
 			</Tooltip.Root>
 		</Tooltip.Provider>
 
@@ -88,7 +88,7 @@
 				{#if editorState.vimEnabled}
 					<p class="text-xs text-muted-foreground">
 						Browser extensions like Vimium can intercept Escape and break
-						vim keybindings\u2014disable them for this site if keys aren't working.
+						vim keybindings—disable them for this site if keys aren't working.
 					</p>
 				{/if}
 				<div class="flex items-center justify-between">

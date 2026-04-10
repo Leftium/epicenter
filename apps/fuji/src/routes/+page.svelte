@@ -135,7 +135,7 @@
 							yxmlfragment={currentYXmlFragment}
 							onUpdate={(updates) => {
 								if (!viewState.selectedEntryId) return;
-							workspace.tables.entries.update(viewState.selectedEntryId, updates);
+								workspace.actions.entries.update({ id: viewState.selectedEntryId, ...updates });
 							}}
 							onBack={() => viewState.selectEntry(null)}
 						/>
@@ -163,23 +163,9 @@
 					</div>
 
 					{#if viewState.viewMode === 'table'}
-						<EntriesTable
-							entries={filteredEntries}
-							searchQuery={viewState.searchQuery}
-							sortBy={viewState.sortBy}
-							selectedEntryId={viewState.selectedEntryId}
-							onSelectEntry={(id) => viewState.selectEntry(id)}
-							onAddEntry={() => createEntry()}
-							onSortChange={(sort) => (viewState.sortBy = sort)}
-						/>
+						<EntriesTable entries={filteredEntries} />
 					{:else}
-						<EntryTimeline
-							entries={filteredEntries}
-							sortBy={viewState.sortBy}
-							selectedEntryId={viewState.selectedEntryId}
-							onSelectEntry={(id) => viewState.selectEntry(id)}
-							onAddEntry={() => createEntry()}
-						/>
+						<EntryTimeline entries={filteredEntries} />
 					{/if}
 				{/if}
 			</main>

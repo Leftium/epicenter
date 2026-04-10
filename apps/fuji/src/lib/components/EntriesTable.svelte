@@ -17,29 +17,19 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { formatDistanceToNowStrict } from 'date-fns';
-	import type { Entry, EntryId } from '$lib/workspace';
+	import type { Entry } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
 	import { DateTimeString } from '@epicenter/workspace';
 	import { matchesEntrySearch } from '$lib/entries.svelte';
+	import { viewState } from '$lib/view.svelte';
+	import { workspace } from '$lib/client';
 
-	let {
-		entries,
-		searchQuery,
-		sortBy,
-		selectedEntryId,
-		onSelectEntry,
-		onAddEntry,
-		onSortChange,
-	}: {
-		entries: Entry[];
-		searchQuery: string;
-		sortBy: 'date' | 'updatedAt' | 'createdAt' | 'title';
-		selectedEntryId: EntryId | null;
-		onSelectEntry: (id: EntryId) => void;
-		onAddEntry: () => void;
-		onSortChange: (sortBy: 'date' | 'updatedAt' | 'createdAt' | 'title') => void;
-	} = $props();
+	let { entries }: { entries: Entry[] } = $props();
 
+	function createEntry() {
+		const { id } = workspace.actions.entries.create({});
+		viewState.selectEntry(id);
+	}
 
 	function relativeTime(dts: string): string {
 		try {
@@ -140,7 +130,7 @@
 		},
 	];
 
-	let sorting = $state([{ id: sortBy, desc: sortBy !== 'title' }]);
+	let sorting = $state([{ id: viewState.sortBy, desc: viewState.sortBy !== 'title' }]);
 
 	const table = createSvelteTable({
 		getRowId: (row) => row.id,
@@ -160,7 +150,7 @@
 			// Propagate sort change back to persisted KV
 			const primary = sorting[0];
 			if (primary) {
-				onSortChange(primary.id as typeof sortBy);
+				viewState.sortBy = primary.id as typeof viewState.sortBy;
 			}
 		},
 		state: {
@@ -168,7 +158,7 @@
 				return sorting;
 			},
 			get globalFilter() {
-				return searchQuery;
+				return viewState.searchQuery;
 			},
 		},
 		globalFilterFn: (row, _columnId, filterValue) => {
@@ -181,7 +171,7 @@
 	<!-- Toolbar -->
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<h2 class="text-sm font-semibold">Entries</h2>
-		<Button variant="ghost" size="icon" class="size-7" onclick={onAddEntry}>
+		<Button variant="ghost" size="icon" class="size-7" onclick={createEntry}>
 			<PlusIcon class="size-4" />
 		</Button>
 	</div>
@@ -211,10 +201,10 @@
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<Table.Row
-							class="cursor-pointer transition-colors hover:bg-accent/50 {selectedEntryId === row.id
+							class="cursor-pointer transition-colors hover:bg-accent/50 {viewState.selectedEntryId === row.id
 								? 'bg-accent'
 								: ''}"
-							onclick={() => onSelectEntry(row.original.id)}
+							onclick={() => viewState.selectEntry(row.original.id)}
 						>
 							{#each row.getVisibleCells() as cell}
 								<Table.Cell>
@@ -233,14 +223,14 @@
 								<Empty.Media>
 									<FileTextIcon class="size-8 text-muted-foreground" />
 								</Empty.Media>
-								{#if searchQuery}
+								{#if viewState.searchQuery}
 									<Empty.Title>No entries match your search</Empty.Title>
 									<Empty.Description>Try a different search term or clear your filters.</Empty.Description>
 								{:else}
 									<Empty.Title>No entries yet</Empty.Title>
 									<Empty.Description>Create your first entry to get started.</Empty.Description>
 									<Empty.Content>
-										<Button variant="outline" size="sm" onclick={onAddEntry}>
+										<Button variant="outline" size="sm" onclick={createEntry}>
 											<PlusIcon class="mr-1.5 size-4" />
 											New Entry
 										</Button>

@@ -111,6 +111,7 @@ export function createFujiMaterializer({ directory }: { directory: string }) {
 				type: row.type,
 				tags: row.tags,
 				pinned: row.pinned,
+				date: row.date,
 				createdAt: row.createdAt,
 				updatedAt: row.updatedAt,
 			};

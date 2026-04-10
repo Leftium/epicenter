@@ -8,7 +8,6 @@
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import * as Popover from '@epicenter/ui/popover';
 	import { DateTimeString } from '@epicenter/workspace';
-	import type { DateTimeString as DateTimeStringType } from '@epicenter/workspace';
 	import { format } from 'date-fns';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import { baseKeymap, toggleMark } from 'prosemirror-commands';
@@ -22,7 +21,12 @@
 	} from 'prosemirror-inputrules';
 	import { keymap } from 'prosemirror-keymap';
 	import { Schema, type MarkSpec } from 'prosemirror-model';
-	import { addListNodes, splitListItem, liftListItem, sinkListItem } from 'prosemirror-schema-list';
+	import {
+		addListNodes,
+		splitListItem,
+		liftListItem,
+		sinkListItem,
+	} from 'prosemirror-schema-list';
 	import { schema as basicSchema } from 'prosemirror-schema-basic';
 	import { EditorState, Plugin } from 'prosemirror-state';
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
@@ -31,7 +35,6 @@
 	import type * as Y from 'yjs';
 	import type { Entry } from '$lib/workspace/definition';
 	import TagInput from './TagInput.svelte';
-	import StatusBar from './StatusBar.svelte';
 
 	let {
 		entry,
@@ -47,7 +50,7 @@
 				subtitle: string;
 				type: string[];
 				tags: string[];
-				date: DateTimeStringType;
+				date: DateTimeString;
 			}>,
 		) => void;
 		onBack: () => void;
@@ -77,15 +80,22 @@
 		});
 	}
 
-
 	const extraMarks: Record<string, MarkSpec> = {
 		strikethrough: {
-			parseDOM: [{ tag: 's' }, { tag: 'del' }, { style: 'text-decoration=line-through' }],
-			toDOM() { return ['s', 0]; },
+			parseDOM: [
+				{ tag: 's' },
+				{ tag: 'del' },
+				{ style: 'text-decoration=line-through' },
+			],
+			toDOM() {
+				return ['s', 0];
+			},
 		},
 		underline: {
 			parseDOM: [{ tag: 'u' }, { style: 'text-decoration=underline' }],
-			toDOM() { return ['u', 0]; },
+			toDOM() {
+				return ['u', 0];
+			},
 		},
 	};
 
@@ -135,9 +145,9 @@
 						'Mod-i': toggleMark(schema.marks.em!),
 						'Mod-u': toggleMark(schema.marks.underline!),
 						'Mod-Shift-s': toggleMark(schema.marks.strikethrough!),
-						'Enter': splitListItem(schema.nodes.list_item!),
+						Enter: splitListItem(schema.nodes.list_item!),
 						'Mod-]': sinkListItem(schema.nodes.list_item!),
-						'Tab': sinkListItem(schema.nodes.list_item!),
+						Tab: sinkListItem(schema.nodes.list_item!),
 						'Mod-[': liftListItem(schema.nodes.list_item!),
 						'Shift-Tab': liftListItem(schema.nodes.list_item!),
 					}),
@@ -149,15 +159,16 @@
 							ellipsis,
 							textblockTypeInputRule(
 								/^(#{1,3})\s$/,
-							schema.nodes.heading!,
+								schema.nodes.heading!,
 								(match) => ({ level: match[1]!.length }),
 							),
 							wrappingInputRule(/^\s*([-+*])\s$/, schema.nodes.bullet_list!),
 							wrappingInputRule(
 								/^(\d+)\.\s$/,
-							schema.nodes.ordered_list!,
+								schema.nodes.ordered_list!,
 								(match) => ({ order: +match[1]! }),
-								(match, node) => node.childCount + node.attrs.order === +match[1]!,
+								(match, node) =>
+									node.childCount + node.attrs.order === +match[1]!,
 							),
 							wrappingInputRule(/^\s*>\s$/, schema.nodes.blockquote!),
 							textblockTypeInputRule(/^```$/, schema.nodes.code_block!),
@@ -167,7 +178,8 @@
 				],
 			}),
 			attributes: {
-				class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-full',
+				class:
+					'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-full',
 			},
 		});
 
@@ -229,9 +241,7 @@
 						})}
 				/>
 			</div>
-		</div>
 
-		<div class="flex flex-wrap items-center gap-4">
 			<div class="flex items-center gap-2">
 				<span class="text-xs font-medium text-muted-foreground">Date</span>
 				<Popover.Root bind:open={isDatePopoverOpen}>
@@ -246,7 +256,11 @@
 							</button>
 						{/snippet}
 					</Popover.Trigger>
-					<Popover.Content side="bottom" align="start" class="w-80 space-y-3 p-3">
+					<Popover.Content
+						side="bottom"
+						align="start"
+						class="w-80 space-y-3 p-3"
+					>
 						<NaturalLanguageDateInput
 							onChoice={({ date }) => {
 								onUpdate({ date: toDateTimeString(date, dateTz) });
@@ -264,7 +278,21 @@
 	<div bind:this={element} class="flex-1 overflow-y-auto px-6 py-4"></div>
 
 	<!-- Status bar -->
-	<StatusBar {entry} {wordCount} />
+	<div
+		class="flex items-center justify-between border-t px-4 py-1.5 text-xs text-muted-foreground"
+	>
+		<span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
+		<div class="flex items-center gap-3">
+			<span
+				>Created
+				{format(DateTimeString.toDate(entry.createdAt), 'MMM d, yyyy · h:mm a')}</span
+			>
+			<span
+				>Updated
+				{format(DateTimeString.toDate(entry.updatedAt), 'MMM d, yyyy · h:mm a')}</span
+			>
+		</div>
+	</div>
 </div>
 
 <style>

@@ -1,5 +1,5 @@
 import { defineCommand } from 'just-bash';
-	import { createPersistedState } from '@epicenter/svelte';
+import { createPersistedState } from '@epicenter/svelte';
 import { bash, fs } from '$lib/client';
 import { fsState } from '$lib/state/fs-state.svelte';
 import { Ok, tryAsync } from 'wellcrafted/result';
@@ -201,10 +201,6 @@ function createTerminalState() {
 			history = [];
 		},
 
-		/** Print a welcome message as a single output entry. */
-		printWelcome() {
-			ensureWelcome();
-		},
 	};
 }
 

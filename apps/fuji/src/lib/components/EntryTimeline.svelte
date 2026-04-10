@@ -16,14 +16,16 @@
 		onAddEntry,
 	}: {
 		entries: Entry[];
-		sortBy: 'dateEdited' | 'dateCreated' | 'title';
+		sortBy: 'date' | 'updatedAt' | 'createdAt' | 'title';
 		selectedEntryId: EntryId | null;
 		onSelectEntry: (id: EntryId) => void;
 		onAddEntry: () => void;
 	} = $props();
 
 	/** Which timestamp field to use for sorting and grouping. */
-	const dateField = $derived(sortBy === 'dateCreated' ? 'createdAt' as const : 'updatedAt' as const);
+	const dateField = $derived(
+		sortBy === 'title' ? 'date' as const : sortBy as 'date' | 'updatedAt' | 'createdAt',
+	);
 
 	function getDateLabel(dts: string): string {
 		const date = DateTimeString.toDate(dts);

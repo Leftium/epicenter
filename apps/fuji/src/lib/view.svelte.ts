@@ -64,15 +64,15 @@ function createViewState() {
 		},
 
 		// ─── Sort ────────────────────────────────────────────────────────
-		get sortBy(): 'dateEdited' | 'dateCreated' | 'title' {
-			return sortByKv.current ?? 'dateEdited';
+		get sortBy(): 'date' | 'updatedAt' | 'createdAt' | 'title' {
+			return sortByKv.current ?? 'date';
 		},
 
 		/**
 		 * Set the sort preference. Persisted via workspace KV so it survives
 		 * reloads and syncs across devices.
 		 */
-		set sortBy(value: 'dateEdited' | 'dateCreated' | 'title') {
+		set sortBy(value: 'date' | 'updatedAt' | 'createdAt' | 'title') {
 			sortByKv.current = value;
 		},
 

@@ -112,10 +112,7 @@
 />
 
 <div class="flex h-screen flex-col">
-	<AppHeader
-		onOpenSearch={() => (paletteOpen = true)}
-		onCreateEntry={() => entriesState.createEntry()}
-	/>
+	<AppHeader onOpenSearch={() => (paletteOpen = true)} />
 	<Resizable.PaneGroup direction="horizontal" class="flex-1">
 		<Resizable.Pane defaultSize={20} minSize={15} maxSize={40}>
 			<EntriesSidebar entries={entriesState.active} />

@@ -7,11 +7,9 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import SyncStatusIndicator from './SyncStatusIndicator.svelte';
+	import { entriesState } from '$lib/entries.svelte';
 
-	let { onOpenSearch, onCreateEntry }: {
-		onOpenSearch: () => void;
-		onCreateEntry: () => void;
-	} = $props();
+	let { onOpenSearch }: { onOpenSearch: () => void } = $props();
 </script>
 
 <div class="flex h-8 shrink-0 items-center justify-between border-b px-2">
@@ -33,7 +31,7 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				{#snippet child({ props })}
-					<Button {...props} variant="ghost" size="icon-xs" onclick={onCreateEntry}>
+					<Button {...props} variant="ghost" size="icon-xs" onclick={entriesState.createEntry}>
 						<PlusIcon class="size-3.5" />
 					</Button>
 				{/snippet}

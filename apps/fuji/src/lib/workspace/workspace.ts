@@ -22,7 +22,7 @@
 
 import {
 	createWorkspace,
-	dateTimeStringNow,
+	DateTimeString,
 	defineMutation,
 	generateId,
 } from '@epicenter/workspace';
@@ -67,8 +67,8 @@ export function createFujiWorkspace() {
 						tags: tags ?? [],
 						pinned: false,
 						deletedAt: undefined,
-						createdAt: dateTimeStringNow(),
-						updatedAt: dateTimeStringNow(),
+						createdAt: DateTimeString.now(),
+						updatedAt: DateTimeString.now(),
 						_v: 1 as const,
 					});
 					return { id };

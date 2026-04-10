@@ -21,7 +21,7 @@
  * ```
  */
 
-import { dateTimeStringNow, generateId } from '@epicenter/workspace';
+import { DateTimeString, generateId } from '@epicenter/workspace';
 import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 import type { FolderId, Note, NoteId } from '$lib/workspace';
@@ -96,8 +96,8 @@ function createNotesState() {
 				pinned: false,
 				deletedAt: undefined,
 				wordCount: 0,
-				createdAt: dateTimeStringNow(),
-				updatedAt: dateTimeStringNow(),
+				createdAt: DateTimeString.now(),
+				updatedAt: DateTimeString.now(),
 				_v: 2,
 			});
 			workspace.kv.set('selectedNoteId', id);
@@ -118,7 +118,7 @@ function createNotesState() {
 		 */
 		softDeleteNote(noteId: NoteId) {
 			workspace.tables.notes.update(noteId, {
-				deletedAt: dateTimeStringNow(),
+				deletedAt: DateTimeString.now(),
 			});
 			if (workspace.kv.get('selectedNoteId') === noteId) {
 				workspace.kv.set('selectedNoteId', null);

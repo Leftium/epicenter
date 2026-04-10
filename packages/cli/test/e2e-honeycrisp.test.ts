@@ -13,7 +13,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { dateTimeStringNow } from '@epicenter/workspace';
+import { DateTimeString } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { honeycrisp, createHoneycrisp } from '@epicenter/honeycrisp/workspace';
 import { loadConfig } from '../src/load-config';
@@ -60,7 +60,7 @@ describe('e2e: honeycrisp workspace', () => {
 		});
 
 		// Write a note
-		const now = dateTimeStringNow();
+		const now = DateTimeString.now();
 		client.tables.notes.set({
 			id: 'note-1',
 			folderId: 'folder-1',

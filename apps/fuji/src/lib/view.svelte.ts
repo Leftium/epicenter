@@ -19,7 +19,7 @@
 
 import { fromKv } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
-import type { EntryId } from '$lib/workspace/definition';
+import type { EntryId } from '$lib/workspace';
 
 function createViewState() {
 	// ─── KV-Backed State ──────────────────────────────────────────────────

@@ -17,7 +17,7 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { formatDistanceToNowStrict } from 'date-fns';
-	import type { Entry, EntryId } from '$lib/workspace/definition';
+	import type { Entry, EntryId } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
 	import { DateTimeString } from '@epicenter/workspace';
 	import { matchesEntrySearch } from '$lib/search';

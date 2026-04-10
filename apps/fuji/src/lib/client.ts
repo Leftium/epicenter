@@ -15,7 +15,7 @@ import {
 	toWsUrl,
 } from '@epicenter/workspace/extensions/sync/websocket';
 import { session } from '$lib/auth';
-import { createFujiWorkspace } from './workspace/workspace';
+import { createFujiWorkspace } from '$lib/workspace';
 
 export const workspace = createFujiWorkspace()
 	.withExtension('persistence', indexeddbPersistence)

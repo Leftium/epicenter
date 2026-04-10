@@ -5,7 +5,7 @@
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { format, isToday, isYesterday } from 'date-fns';
-	import type { Entry, EntryId } from '$lib/workspace/definition';
+	import type { Entry, EntryId } from '$lib/workspace';
 	import { DateTimeString } from '@epicenter/workspace';
 
 	let {

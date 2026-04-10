@@ -1,23 +1,38 @@
 /**
- * Workspace definition — branded IDs, table definitions, and workspace definition.
+ * Fuji workspace — schema definition, branded IDs, and workspace factory.
  *
  * Fuji is a personal CMS with a 1:1 mapping to your blog. Entries are content
  * pieces—articles, thoughts, ideas—organized by tags and type, displayed in a
  * data table with an editor panel. Each entry has a rich-text content document
  * for collaborative editing via ProseMirror + y-prosemirror.
  *
- * Contains the branded EntryId type, entries table definition with
- * DateTimeString timestamps, KV settings, and the workspace definition.
+ * The factory returns a non-terminal builder. Consumers chain `.withExtension()`
+ * to add persistence, encryption, sync, or other capabilities.
+ *
+ * @example
+ * ```typescript
+ * import { createFujiWorkspace } from '$lib/workspace'
+ *
+ * const ws = createFujiWorkspace()
+ *   .withExtension('persistence', indexeddbPersistence)
+ *
+ * // Create an entry via action (CLI, AI, or UI)
+ * ws.actions.entries.create({ title: 'My Post', tags: ['draft'] })
+ * ```
  */
 
 import {
+	createWorkspace,
 	DateTimeString,
 	defineKv,
+	defineMutation,
 	defineTable,
 	defineWorkspace,
+	generateId,
 	type InferTableRow,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
+import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
 // ─── Branded IDs ──────────────────────────────────────────────────────────────
@@ -76,7 +91,7 @@ export type Entry = InferTableRow<typeof entriesTable>;
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
 
-export const fujiWorkspace = defineWorkspace({
+const fujiWorkspace = defineWorkspace({
 	id: 'epicenter.fuji' as const,
 	tables: { entries: entriesTable },
 	kv: {
@@ -85,3 +100,56 @@ export const fujiWorkspace = defineWorkspace({
 		sortBy: defineKv(type("'date' | 'updatedAt' | 'createdAt' | 'title'")),
 	},
 });
+
+// ─── Factory ──────────────────────────────────────────────────────────────────
+
+export function createFujiWorkspace() {
+	return createWorkspace(fujiWorkspace).withActions(({ tables }) => ({
+		entries: {
+			/**
+			 * Create a new entry with sensible defaults.
+			 *
+			 * Generates a branded ID, sets timestamps, and returns the new ID
+			 * so the caller can select it or navigate to it. Optional fields
+			 * (title, subtitle, type, tags) default to empty values.
+			 */
+			create: defineMutation({
+				title: 'Create Entry',
+				description:
+					'Create a new CMS entry with optional title, subtitle, type, and tags.',
+				input: Type.Object({
+					title: Type.Optional(Type.String({ description: 'Entry title' })),
+					subtitle: Type.Optional(
+						Type.String({ description: 'Subtitle for blog listings' }),
+					),
+					type: Type.Optional(
+						Type.Array(Type.String(), {
+							description: 'Type classifications',
+						}),
+					),
+					tags: Type.Optional(
+						Type.Array(Type.String(), { description: 'Freeform tags' }),
+					),
+				}),
+				handler: ({ title, subtitle, type: entryType, tags }) => {
+					const id = generateId() as unknown as EntryId;
+					const now = DateTimeString.now();
+					tables.entries.set({
+						id,
+						title: title ?? '',
+						subtitle: subtitle ?? '',
+						type: entryType ?? [],
+						tags: tags ?? [],
+						pinned: false,
+						deletedAt: undefined,
+						date: now,
+						createdAt: now,
+						updatedAt: now,
+						_v: 1 as const,
+					});
+					return { id };
+				},
+			}),
+		},
+	}));
+}

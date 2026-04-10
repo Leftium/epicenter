@@ -33,7 +33,7 @@
 	import 'prosemirror-view/style/prosemirror.css';
 	import { ySyncPlugin, yUndoPlugin, undo, redo } from 'y-prosemirror';
 	import type * as Y from 'yjs';
-	import type { Entry } from '$lib/workspace/definition';
+	import type { Entry } from '$lib/workspace';
 	import TagInput from './TagInput.svelte';
 
 	let {

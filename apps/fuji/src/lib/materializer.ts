@@ -9,7 +9,7 @@
 
 import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Entry } from '../workspace/definition';
+import type { Entry } from './workspace';
 import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
 import slugify from '@sindresorhus/slugify';
 import filenamify from 'filenamify';

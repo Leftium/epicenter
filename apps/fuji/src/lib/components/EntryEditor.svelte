@@ -35,26 +35,20 @@
 	import type * as Y from 'yjs';
 	import type { Entry } from '$lib/workspace';
 	import TagInput from './TagInput.svelte';
+	import { viewState } from '$lib/view.svelte';
+	import { workspace } from '$lib/client';
 
 	let {
 		entry,
 		yxmlfragment,
-		onUpdate,
-		onBack,
 	}: {
 		entry: Entry;
 		yxmlfragment: Y.XmlFragment;
-		onUpdate: (
-			updates: Partial<{
-				title: string;
-				subtitle: string;
-				type: string[];
-				tags: string[];
-				date: DateTimeString;
-			}>,
-		) => void;
-		onBack: () => void;
 	} = $props();
+
+	function updateEntry(updates: Partial<{ title: string; subtitle: string; type: string[]; tags: string[]; date: DateTimeString }>) {
+		workspace.actions.entries.update({ id: entry.id, ...updates });
+	}
 
 	let element: HTMLDivElement | undefined = $state();
 	let wordCount = $state(0);
@@ -190,7 +184,7 @@
 <div class="flex h-full flex-col">
 	<!-- Header with back button -->
 	<div class="flex items-center gap-2 border-b px-4 py-2">
-		<Button variant="ghost" size="icon" class="size-7" onclick={onBack}>
+		<Button variant="ghost" size="icon" class="size-7" onclick={() => viewState.selectEntry(null)}>
 			<ArrowLeftIcon class="size-4" />
 		</Button>
 		<span class="text-sm text-muted-foreground">Back to entries</span>
@@ -203,14 +197,14 @@
 			class="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground"
 			placeholder="Entry title"
 			value={entry.title}
-			oninput={(e) => onUpdate({ title: e.currentTarget.value })}
+			oninput={(e) => updateEntry({ title: e.currentTarget.value })}
 		>
 		<input
 			type="text"
 			class="w-full bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/60"
 			placeholder="Subtitle — a one-liner for your blog listing"
 			value={entry.subtitle}
-			oninput={(e) => onUpdate({ subtitle: e.currentTarget.value })}
+			oninput={(e) => updateEntry({ subtitle: e.currentTarget.value })}
 		>
 
 		<div class="flex flex-wrap items-center gap-4">
@@ -220,9 +214,9 @@
 					values={entry.type}
 					placeholder="Add type…"
 					onAdd={(value) =>
-						onUpdate({ type: [...entry.type, value] })}
+						updateEntry({ type: [...entry.type, value] })}
 					onRemove={(value) =>
-						onUpdate({
+						updateEntry({
 							type: entry.type.filter((t) => t !== value),
 						})}
 				/>
@@ -234,9 +228,9 @@
 					values={entry.tags}
 					placeholder="Add tag…"
 					onAdd={(value) =>
-						onUpdate({ tags: [...entry.tags, value] })}
+						updateEntry({ tags: [...entry.tags, value] })}
 					onRemove={(value) =>
-						onUpdate({
+						updateEntry({
 							tags: entry.tags.filter((t) => t !== value),
 						})}
 				/>
@@ -263,7 +257,7 @@
 					>
 						<NaturalLanguageDateInput
 							onChoice={({ date }) => {
-								onUpdate({ date: toDateTimeString(date, dateTz) });
+								updateEntry({ date: toDateTimeString(date, dateTz) });
 								isDatePopoverOpen = false;
 							}}
 						/>

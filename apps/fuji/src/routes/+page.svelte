@@ -125,11 +125,6 @@
 						<EntryEditor
 							entry={selectedEntry}
 							yxmlfragment={currentYXmlFragment}
-							onUpdate={(updates) => {
-								if (!viewState.selectedEntryId) return;
-								workspace.actions.entries.update({ id: viewState.selectedEntryId, ...updates });
-							}}
-							onBack={() => viewState.selectEntry(null)}
 						/>
 					{/key}
 				{:else if selectedEntry}

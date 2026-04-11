@@ -84,7 +84,7 @@ type ActionHandler<
 	TOutput = unknown,
 > = (
 	...args: TInput extends TSchema ? [input: Static<TInput>] : []
-) => TOutput | Promise<TOutput>;
+) => TOutput;
 
 /**
  * Configuration for defining an action (query or mutation).

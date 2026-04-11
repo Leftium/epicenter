@@ -10,15 +10,14 @@
  * - Document content round-trips through write → read
  * - Persistence survives restart (table data + document content)
  * - pushFromMarkdown imports .md files into tables + document content
- * - Wikilinks in imported bodies are resolved to id: links
+ * - Wikilinks in imported bodies are resolved to epicenter:// links
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { generateId } from '@epicenter/workspace';
+import { createWorkspace, generateId } from '@epicenter/workspace';
 import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
-import { createWorkspace } from '@epicenter/workspace';
 import { opensidianDefinition } from 'opensidian/workspace';
 import { pushFromMarkdown } from './push-from-markdown';
 
@@ -235,7 +234,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		await client.dispose();
 	});
 
-	test('converts [[wikilinks]] to id: links on import', async () => {
+	test('converts [[wikilinks]] to epicenter:// links on import', async () => {
 		const targetId = generateId();
 		const sourceId = generateId();
 
@@ -278,10 +277,10 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 		expect(result.errors).toHaveLength(0);
 
-		// [[Target Note]] should have been resolved to [Target Note](id:GUID)
+		// [[Target Note]] should have been resolved to [Target Note](epicenter://opensidian/files/GUID)
 		const handle = await client.documents.files.content.open(sourceId);
 		expect(handle.read()).toBe(
-			`# Source\n\nSee [Target Note](id:${targetId}) for details.`,
+			`# Source\n\nSee [Target Note](epicenter://opensidian/files/${targetId}) for details.`,
 		);
 
 		await client.dispose();

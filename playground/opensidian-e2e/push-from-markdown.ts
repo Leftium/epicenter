@@ -4,15 +4,16 @@
  * Reads every `.md` file in the target directory, parses YAML frontmatter
  * into table row fields, and writes the markdown body into the per-file
  * Y.Doc content. Wikilinks (`[[Page Name]]`) in the body are resolved
- * to internal `id:` links using the current files table.
+ * to `epicenter://` epicenter links using the current files table.
  */
 
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { type FileRow } from '@epicenter/filesystem';
 import {
-	convertWikilinksToInternalLinks,
-	type FileRow,
-} from '@epicenter/filesystem';
+	convertWikilinksToEpicenterLinks,
+	makeEpicenterLink,
+} from '@epicenter/workspace';
 import { parseMarkdownFile } from '@epicenter/workspace/extensions/materializer/markdown';
 import type { opensidian } from './epicenter.config';
 
@@ -80,9 +81,11 @@ export async function pushFromMarkdown(ctx: {
 
 		if (body) {
 			try {
-				const resolvedBody = convertWikilinksToInternalLinks(body, (name) => {
+				const resolvedBody = convertWikilinksToEpicenterLinks(body, (name) => {
 					const match = ctx.tables.files.find((row) => row.name === name);
-					return match?.id ?? null;
+					return match
+						? makeEpicenterLink('opensidian', 'files', match.id)
+						: null;
 				});
 				const handle = await ctx.documents.files.content.open(
 					frontmatter.id as FileRow['id'],

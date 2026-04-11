@@ -4,8 +4,7 @@ import {
 	type CompletionContext,
 	type CompletionResult,
 } from '@codemirror/autocomplete';
-import type { FileId } from '@epicenter/filesystem';
-import { makeInternalHref } from '@epicenter/filesystem';
+import { makeEpicenterLink } from '@epicenter/workspace';
 
 /**
  * Configuration for the wikilink autocomplete extension.
@@ -13,6 +12,8 @@ import { makeInternalHref } from '@epicenter/filesystem';
  * @example
  * ```typescript
  * wikilinkAutocomplete({
+ *   workspaceId: 'opensidian',
+ *   tableName: 'files',
  *   getFiles: () =>
  *     workspace.tables.files.getAllValid()
  *       .filter((r) => r.type === 'file')
@@ -21,16 +22,30 @@ import { makeInternalHref } from '@epicenter/filesystem';
  * ```
  */
 type WikilinkAutocompleteConfig = {
+	/** Workspace ID used to build `epicenter://` epicenter links. */
+	workspaceId: string;
+	/** Table name used to build `epicenter://` epicenter links. */
+	tableName: string;
 	/** Return all files available for linking. Called on every completion request. */
-	getFiles: () => Array<{ id: FileId; name: string }>;
+	getFiles: () => Array<{ id: string; name: string }>;
 };
 
 /**
- * CodeMirror CompletionSource that activates on `[[` and suggests internal links.
+ * CodeMirror CompletionSource that activates on `[[` and suggests epicenter links.
  *
  * When the user types `[[`, queries the configured file list, filters by
  * the characters typed after `[[`, and presents matching files. On selection,
- * deletes the `[[` trigger and inserts `[File Name](id:GUID)`.
+ * deletes the `[[` trigger and inserts
+ * `[File Name](epicenter://workspace/table/id)`.
+ *
+ * @example
+ * ```typescript
+ * const source = wikilinkCompletionSource({
+ *   workspaceId: 'opensidian',
+ *   tableName: 'files',
+ *   getFiles: () => [{ id: 'abc123', name: 'Daily Notes' }],
+ * });
+ * ```
  */
 function wikilinkCompletionSource(config: WikilinkAutocompleteConfig) {
 	return (context: CompletionContext): CompletionResult | null => {
@@ -55,9 +70,13 @@ function wikilinkCompletionSource(config: WikilinkAutocompleteConfig) {
 			.filter((f) => f.name.toLowerCase().includes(lowerFilter))
 			.map((f) => ({
 				label: f.name,
-				detail: 'internal link',
+				detail: 'file',
 				apply: (view, _completion, from, to) => {
-					const linkText = `[${f.name}](${makeInternalHref(f.id)})`;
+					const linkText = `[${f.name}](${makeEpicenterLink(
+						config.workspaceId,
+						config.tableName,
+						f.id,
+					)})`;
 					view.dispatch({
 						changes: { from, to, insert: linkText },
 					});
@@ -80,7 +99,7 @@ function wikilinkCompletionSource(config: WikilinkAutocompleteConfig) {
  *
  * When the user types `[[`, a dropdown appears with matching files from the
  * workspace. Selecting a file deletes the `[[` trigger and inserts a standard
- * markdown link `[File Name](id:GUID)`.
+ * markdown link `[File Name](epicenter://workspace/table/id)`.
  *
  * @example
  * ```typescript
@@ -88,6 +107,8 @@ function wikilinkCompletionSource(config: WikilinkAutocompleteConfig) {
  *
  * const extensions = [
  *   wikilinkAutocomplete({
+ *     workspaceId: 'opensidian',
+ *     tableName: 'files',
  *     getFiles: () =>
  *       workspace.tables.files
  *         .getAllValid()

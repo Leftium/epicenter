@@ -24,14 +24,6 @@ export {
 // IDs
 export type { ColumnId, FileId, RowId } from './ids.js';
 export { generateColumnId, generateFileId, generateRowId } from './ids.js';
-// Links
-export {
-	convertInternalLinksToWikilinks,
-	convertWikilinksToInternalLinks,
-	getTargetFileId,
-	isInternalLink,
-	makeInternalHref,
-} from './links.js';
 // Path utilities
 export { posixResolve } from './path.js';
 // Table

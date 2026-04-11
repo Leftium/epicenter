@@ -15,7 +15,10 @@ export const APPS = {
 	AUDIO: { port: 1420, urls: ['https://whispering.epicenter.so'] },
 	FUJI: { port: 5174, urls: ['https://fuji.epicenter.so'] },
 	HONEYCRISP: { port: 5175, urls: ['https://honeycrisp.epicenter.so'] },
-	OPENSIDIAN: { port: 5176, urls: ['https://opensidian.com', 'https://opensidian.epicenter.so'] },
+	OPENSIDIAN: {
+		port: 5176,
+		urls: ['https://opensidian.com', 'https://opensidian.epicenter.so'],
+	},
 	ZHONGWEN: { port: 8888, urls: ['https://zhongwen.epicenter.so'] },
 	DASHBOARD: { port: 5178, urls: ['https://api.epicenter.so'] },
 } as const;

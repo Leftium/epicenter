@@ -52,12 +52,12 @@
  * @module
  */
 
-import type { Brand } from 'wellcrafted/brand';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
+import type { Brand } from 'wellcrafted/brand';
 import type { EncryptionKeys } from '../../workspace/encryption-key';
 
 const NONCE_LENGTH = 24;

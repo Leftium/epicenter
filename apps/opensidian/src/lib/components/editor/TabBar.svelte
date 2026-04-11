@@ -1,12 +1,11 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
-	import { Button } from '@epicenter/ui/button';
+	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { getStars, GitHubButton } from '@epicenter/ui/github-button';
-	import { fsState } from '$lib/state/fs-state.svelte';
+	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
-
+	import { fsState } from '$lib/state/fs-state.svelte';
 </script>
 
 <div class="flex items-center border-b">
@@ -20,7 +19,7 @@
 				class="w-full justify-start overflow-x-auto rounded-none border-0 bg-transparent p-0"
 			>
 				{#each fsState.openFileIds as fileId (fileId)}
-				{@const row = fsState.getFile(fileId)}
+					{@const row = fsState.getFile(fileId)}
 					{#if row}
 						<Tabs.Trigger
 							value={fileId}
@@ -32,7 +31,7 @@
 								variant="ghost"
 								size="icon-xs"
 								class="absolute right-1 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"
-							onclick={(e: MouseEvent) => { e.stopPropagation(); e.preventDefault(); fsState.closeFile(fileId); }}
+								onclick={(e: MouseEvent) => { e.stopPropagation(); e.preventDefault(); fsState.closeFile(fileId); }}
 								aria-label="Close {row.name}"
 							>
 								<XIcon aria-hidden="true" class="size-3" />
@@ -44,13 +43,15 @@
 		</Tabs.Root>
 	{/if}
 	<div class="ml-auto flex shrink-0 items-center gap-1 px-2">
-		<GitHubButton
-			repo={{ owner: 'EpicenterHQ', repo: 'epicenter' }}
-			path="/tree/main/apps/opensidian"
-			stars={getStars({ owner: 'EpicenterHQ', repo: 'epicenter', fallback: 500 })}
-			variant="ghost"
-			size="sm"
-		/>
+		<a
+			href="https://github.com/EpicenterHQ/epicenter/tree/main/apps/opensidian"
+			target="_blank"
+			rel="noopener noreferrer"
+			class={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
+			title="View source on GitHub"
+		>
+			<GithubIcon class="size-4" />
+		</a>
 		<SyncStatusIndicator />
 	</div>
 </div>

@@ -13,9 +13,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DateTimeString } from '@epicenter/workspace';
+import { createHoneycrisp, honeycrisp } from '@epicenter/honeycrisp/workspace';
+import { dateTimeStringNow } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
-import { honeycrisp, createHoneycrisp } from '@epicenter/honeycrisp/workspace';
 import { loadConfig } from '../src/load-config';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/single-workspace');
@@ -60,7 +60,7 @@ describe('e2e: honeycrisp workspace', () => {
 		});
 
 		// Write a note
-		const now = DateTimeString.now();
+		const now = dateTimeStringNow();
 		client.tables.notes.set({
 			id: 'note-1',
 			folderId: 'folder-1',

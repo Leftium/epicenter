@@ -9,7 +9,7 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { foldersState, notesState } from '$lib/state';
-	import { parseDateTime } from '$lib/utils/date';
+	import { DateTimeString } from '@epicenter/workspace';
 	import type { Note } from '$lib/workspace';
 
 	let {
@@ -46,7 +46,7 @@
 					{note.title || 'Untitled'}
 				</span>
 				<span class="shrink-0 text-xs text-muted-foreground">
-					{format(parseDateTime(note.updatedAt), 'h:mm a')}
+					{format(DateTimeString.toDate(note.updatedAt), 'h:mm a')}
 				</span>
 			</div>
 			<p class="line-clamp-2 text-xs text-muted-foreground">

@@ -70,7 +70,7 @@
 		<Textarea
 			class="min-h-0 max-h-32 flex-1 resize-none overflow-y-auto"
 			rows={1}
-			placeholder="Type a message\u2026"
+			placeholder="Type a message…"
 			bind:value={inputValue}
 			onkeydown={(e: KeyboardEvent) => {
 				if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {

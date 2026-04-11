@@ -160,7 +160,7 @@
 		<input
 			type="text"
 			class="w-full bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/60"
-			placeholder="Subtitle \u2014 a one-liner for your blog listing"
+			placeholder="Subtitle — a one-liner for your blog listing"
 			value={entry.subtitle}
 			oninput={(e) => onUpdate({ subtitle: e.currentTarget.value })}
 		>
@@ -170,7 +170,7 @@
 				<span class="text-xs font-medium text-muted-foreground">Type</span>
 				<TagInput
 					values={entry.type}
-					placeholder="Add type\u2026"
+					placeholder="Add type…"
 					onAdd={(value) =>
 						onUpdate({ type: [...entry.type, value] })}
 					onRemove={(value) =>
@@ -184,7 +184,7 @@
 				<span class="text-xs font-medium text-muted-foreground">Tags</span>
 				<TagInput
 					values={entry.tags}
-					placeholder="Add tag\u2026"
+					placeholder="Add tag…"
 					onAdd={(value) =>
 						onUpdate({ tags: [...entry.tags, value] })}
 					onRemove={(value) =>

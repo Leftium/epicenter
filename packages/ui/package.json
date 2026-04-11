@@ -37,14 +37,14 @@
 	},
 	"dependencies": {
 		"@fontsource-variable/manrope": "^5.2.6",
-		"@lucide/svelte": "catalog:",
+		"@lucide/svelte": "^1.7.0",
 		"@tanstack/svelte-table": "catalog:",
 		"bits-ui": "catalog:",
 		"chrono-node": "2.9.0",
-		"clsx": "catalog:",
+		"clsx": "^2.1.1",
 		"paneforge": "^1.0.2",
-		"tailwind-merge": "catalog:",
-		"tailwind-variants": "catalog:"
+		"tailwind-merge": "^3.5.0",
+		"tailwind-variants": "^3.2.2"
 	},
 	"peerDependencies": {
 		"svelte": ">=5.0.0"

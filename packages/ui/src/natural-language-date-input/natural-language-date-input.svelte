@@ -1,83 +1,62 @@
-<script lang="ts">
-	import type { DateTimeString } from '@epicenter/workspace';
-	import { Button } from '#/button';
-	import { Input } from '#/input';
-	import {
-		localTimezone,
-		parseNaturalLanguageDate,
-		toDateTimeString,
-	} from './parse-date.js';
-	import TimezoneCombobox from './timezone-combobox.svelte';
-
-	let {
-		value = $bindable(),
-		placeholder = 'Type a date...',
-		disabled = false,
-		onconfirm,
-	}: {
-		value: DateTimeString | undefined;
+<script lang="ts" module>
+	export type NaturalLanguageDateInputProps = {
+		min?: Date;
+		max?: Date;
 		placeholder?: string;
-		disabled?: boolean;
-		onconfirm?: (value: DateTimeString) => void;
-	} = $props();
-
-	let inputText = $state('');
-	let selectedTimezone = $state(value?.split('|')[1] || localTimezone());
-	const timezone = $derived(value?.split('|')[1] || localTimezone());
-
-	$effect(() => {
-		if (!inputText && selectedTimezone !== timezone) {
-			selectedTimezone = timezone;
-		}
-	});
-
-	const parsed = $derived(
-		inputText ? parseNaturalLanguageDate(inputText, selectedTimezone) : null,
-	);
-	const preview = $derived(
-		parsed ? formatPreview(parsed.utcDate, parsed.timezone) : null,
-	);
-
-	function formatPreview(date: Date, timezone: string): string {
-		const formattedDate = new Intl.DateTimeFormat('en-US', {
-			timeZone: timezone,
-			weekday: 'long',
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric',
-		}).format(date);
-
-		const formattedTime = new Intl.DateTimeFormat('en-US', {
-			timeZone: timezone,
-			hour: 'numeric',
-			minute: '2-digit',
-			timeZoneName: 'short',
-		}).format(date);
-
-		return `${formattedDate} · ${formattedTime}`;
-	}
+		onChoice?: (opts: { label: string; date: Date }) => void;
+	};
 </script>
 
-<div class="flex flex-col gap-3">
-	<Input bind:value={inputText} {placeholder} {disabled} />
+<script lang="ts">
+	import * as Command from '#/command';
+	import * as chrono from 'chrono-node';
 
-	<TimezoneCombobox bind:value={selectedTimezone} {disabled} />
+	let {
+		placeholder = 'E.g. "tomorrow at 5pm" or "in 2 hours"',
+		min,
+		max,
+		onChoice
+	}: NaturalLanguageDateInputProps = $props();
 
-	{#if parsed && preview}
-		<div class="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-3 py-2">
-			<span class="min-w-0 flex-1 text-sm text-muted-foreground">{preview}</span>
-			<Button
-				size="sm"
-				{disabled}
-				onclick={() => {
-					const result = toDateTimeString(parsed.utcDate, parsed.timezone);
-					value = result;
-					onconfirm?.(result);
-					inputText = '';
-				}}
-			>
-				Confirm
-			</Button>
-		</div>
-	{/if}
-</div>
+	let value = $state('');
+
+	const suggestions = $derived.by(() => {
+		if (!value.trim()) return [];
+		const parsed = chrono.parse(value, new Date());
+		return parsed
+			.map((result) => ({
+				label: result.text,
+				date: result.start.date(),
+			}))
+			.filter(
+				(s) =>
+					(min === undefined || s.date > min) &&
+					(max === undefined || s.date < max),
+			);
+	});
+</script>
+
+<Command.Root shouldFilter={false} class="border-border h-fit border">
+	<Command.Input {placeholder} bind:value />
+	<Command.List>
+		<Command.Group>
+			{#each suggestions as suggestion (suggestion)}
+				<Command.Item
+					onSelect={() => {
+						onChoice?.(suggestion);
+					}}
+				>
+					<div class="flex w-full place-items-center justify-between gap-2">
+						<span>
+							{suggestion.label}
+						</span>
+						<span class="text-muted-foreground">
+							{suggestion.date.toDateString()}
+							{suggestion.date.toLocaleTimeString()}
+						</span>
+					</div>
+				</Command.Item>
+			{/each}
+		</Command.Group>
+	</Command.List>
+</Command.Root>

@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		"./workspace": "./src/lib/workspace/workspace.ts",
+		"./workspace": "./src/lib/workspace/index.ts",
 		"./materializer": "./src/lib/materializer.ts"
 	},
 	"scripts": {
@@ -34,26 +34,25 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@sindresorhus/slugify": "catalog:",
+		"filenamify": "^7.0.1",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
-		"@sindresorhus/slugify": "catalog:",
 		"@tanstack/svelte-table": "catalog:",
 		"@tanstack/table-core": "9.0.0-alpha.10",
-		"arktype": "catalog:",
-		"bits-ui": "catalog:",
-		"date-fns": "catalog:",
-		"filenamify": "^7.0.1",
-		"nanoid": "catalog:",
 		"prosemirror-commands": "^1.6.0",
 		"prosemirror-inputrules": "^1.4.0",
 		"prosemirror-keymap": "^1.2.0",
-		"prosemirror-model": "^1.25.0",
 		"prosemirror-schema-basic": "^1.2.0",
 		"prosemirror-schema-list": "^1.4.0",
+		"arktype": "catalog:",
+		"bits-ui": "catalog:",
+		"date-fns": "catalog:",
+		"nanoid": "catalog:",
+		"prosemirror-model": "^1.25.0",
 		"prosemirror-state": "^1.4.0",
 		"prosemirror-view": "^1.41.0",
-		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
 		"y-prosemirror": "^1.3.7",
 		"yjs": "catalog:"

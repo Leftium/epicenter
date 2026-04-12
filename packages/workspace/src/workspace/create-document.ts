@@ -256,19 +256,14 @@ export function createDocuments<
 
 			// Attach onUpdate observer — fires when content doc changes.
 			// The Y.Doc 'update' handler receives (update, origin, doc, transaction).
-			// We use transaction.local to skip remote sync updates — only local edits
-			// should trigger the callback. Remote devices receive the updated values via
-			// workspace ydoc sync; redundant writes would cause unnecessary churn.
 			const updateHandler = (
 				_update: Uint8Array,
 				origin: unknown,
 				_doc: Y.Doc,
-				transaction: Y.Transaction,
+				_transaction: Y.Transaction,
 			) => {
 				// Skip updates from the documents manager itself to avoid loops
 				if (origin === DOCUMENTS_ORIGIN) return;
-				// Skip remote updates — only local edits trigger onUpdate
-				if (!transaction.local) return;
 
 				// Call the user's onUpdate callback and write the returned fields
 				workspaceYdoc.transact(() => {

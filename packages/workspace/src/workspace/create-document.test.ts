@@ -294,7 +294,7 @@ describe('createDocuments', () => {
 			expect(capturedOrigin).toBe(DOCUMENTS_ORIGIN);
 		});
 
-		test('remote update does NOT invoke onUpdate', async () => {
+		test('remote update also invokes onUpdate', async () => {
 			const { tables, documents } = setup();
 			tables.files.set({
 				id: 'f1',
@@ -316,7 +316,10 @@ describe('createDocuments', () => {
 			const result = tables.files.get('f1');
 			expect(result.status).toBe('valid');
 			if (result.status === 'valid') {
-				expect(result.row.updatedAt).toBe(0);
+				// Remote document changes now invoke onUpdate so that
+				// consumers (materializers, observers) react to content
+				// arriving via sync — not just local edits.
+				expect(result.row.updatedAt).not.toBe(0);
 			}
 
 			remoteDoc.destroy();

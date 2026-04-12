@@ -67,13 +67,57 @@
  * additional overhead is ~22 bytes per unique Yjs clientID that has ever written
  * to the doc. With `gc:false`, this property breaks—storage grows with operation
  * count. See `docs/articles/yjs-storage-efficiency/storage-scales-with-data-not-history.md`.
+ *
+ * ## Performance Architecture: Single vs Bulk Operations
+ *
+ * This class exposes two pairs of write methods:
+ *
+ * | Operation | Single-row | Bulk |
+ * |-----------|------------|------|
+ * | Insert/update | `set()` | `bulkSet()` |
+ * | Delete | `delete()` | `bulkDelete()` |
+ *
+ * Both pairs produce identical results. The difference is internal:
+ *
+ * **`set()` eagerly cleans up the old entry** before pushing the new one.
+ * It calls `deleteEntryByKey()` which scans the Y.Array (O(n)) to find and
+ * remove the old entry. The observer then sees a clean add—no conflicts. This
+ * is fast for individual calls but O(n²) when called 10K times in a loop,
+ * because each call re-scans the (mutating) array.
+ *
+ * **`bulkSet()` defers cleanup to the observer.** It pushes all entries without
+ * deleting old ones, then the observer fires once, builds an entry→index Map from
+ * one `toArray()` call, and resolves all conflicts with O(1) Map lookups. Total:
+ * O(n) instead of O(n²). The observer's cleanup deletion uses `DEDUP_ORIGIN` to
+ * prevent a re-entrant observer call (which would be a no-op anyway).
+ *
+ * **`delete()` eagerly scans** to find and remove one entry. Same O(n) as `set()`.
+ *
+ * **`bulkDelete()` scans once** to collect all matching indices, then batch-deletes
+ * right-to-left. Unlike `bulkSet`, it does NOT defer anything to the observer—
+ * deletions happen directly, no DEDUP_ORIGIN needed. The optimization is purely
+ * scan efficiency: one `toArray()` instead of N.
+ *
+ * ```
+ * Single ops (fine for individual use, O(n²) in a loop):
+ *   set():    deleteEntryByKey O(n) + push O(1) → observer: no conflicts
+ *   delete(): deleteEntryByKey O(n)              → observer: processes deletion
+ *
+ * Bulk ops (O(n) total regardless of batch size):
+ *   bulkSet():    push × N + observer resolves all via Map   [DEDUP_ORIGIN]
+ *   bulkDelete(): scan once + batch delete right-to-left     [no DEDUP_ORIGIN]
+ * ```
+ *
+ * The observer's conflict resolution logic is shared with multi-device sync—when
+ * two clients set the same key while offline, the observer resolves that conflict
+ * using the same entryIndexMap and DEDUP_ORIGIN path that `bulkSet` uses.
+ *
  * ## Limitations
  *
  * - Future clock dominance: If a device's clock is far in the future, its writes dominate
  *   indefinitely. All devices adopt the highest timestamp seen, so writes won't catch up
  *   until wall-clock reaches that point. Rare with NTP, but be aware in environments with
  *   unreliable time sync.
- *
  * @example
  * ```typescript
  * import * as Y from 'yjs';
@@ -109,14 +153,32 @@ export type YKeyValueLwwChangeHandler<T> = (
 ) => void;
 
 /**
- * Transaction origin for observer dedup deletions. When the observer resolves
- * LWW conflicts, it deletes loser entries in a nested transaction. That nested
- * transaction would trigger the observer again — but the re-entrant call is
- * always a no-op (_map already points to the winner, so the reference equality
- * check in the deletion handler fails). Marking the transaction with this origin
- * lets the observer skip it entirely, avoiding useless work.
+ * Transaction origin that marks observer cleanup deletions as "internal."
  *
- * This follows the same pattern as REENCRYPT_ORIGIN in the encrypted wrapper.
+ * ## When this fires
+ *
+ * The observer resolves LWW conflicts by keeping the winner and deleting losers.
+ * That deletion happens in a nested `doc.transact()`. Without this origin, the
+ * nested transaction would trigger the observer AGAIN — but the re-entrant call
+ * is always a no-op:
+ * - `_map` already points to the winner (updated in the first observer pass)
+ * - Reference equality `_map.get(key) === loserEntry` fails → nothing happens
+ * - No change events emitted
+ *
+ * Marking the transaction with DEDUP_ORIGIN lets the observer skip the re-entrant
+ * call entirely (`if (transaction.origin === DEDUP_ORIGIN) return`).
+ *
+ * ## What triggers conflicts
+ *
+ * 1. `bulkSet()` — pushes entries without deleting old ones, observer resolves
+ * 2. Multi-device sync — two clients set the same key offline, observer resolves
+ * 3. Constructor initial dedup — runs before observer is registered, doesn't need this
+ *
+ * Note: `set()` eagerly deletes via `deleteEntryByKey` so the observer sees no
+ * conflicts. `delete()` and `bulkDelete()` only remove entries — no conflicts.
+ * DEDUP_ORIGIN is only relevant for the conflict-resolution path.
+ *
+ * Follows the same pattern as REENCRYPT_ORIGIN in the encrypted wrapper.
  */
 const DEDUP_ORIGIN = Symbol('dedup');
 

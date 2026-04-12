@@ -45,10 +45,6 @@ import type { Brand } from 'wellcrafted/brand';
 export type EntryId = string & Brand<'EntryId'>;
 export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
 
-/** Generate a branded EntryId. Wraps `generateId()` with the proper brand cast. */
-export function generateEntryId(): EntryId {
-	return generateId() as EntryId;
-}
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
@@ -100,7 +96,6 @@ const fujiWorkspace = defineWorkspace({
 	id: 'epicenter.fuji' as const,
 	tables: { entries: entriesTable },
 	kv: {
-		selectedEntryId: defineKv(EntryId.or(type('null'))),
 		viewMode: defineKv(type("'table' | 'timeline'")),
 		sortBy: defineKv(type("'date' | 'updatedAt' | 'createdAt' | 'title'")),
 	},
@@ -137,7 +132,7 @@ export function createFujiWorkspace() {
 					),
 				}),
 				handler: ({ title, subtitle, type: entryType, tags }) => {
-					const id = generateEntryId();
+					const id = generateId() as EntryId;
 					const now = DateTimeString.now();
 					tables.entries.set({
 						id,
@@ -251,7 +246,7 @@ export function createFujiWorkspace() {
 				handler: ({ entries: items }) => {
 					const now = DateTimeString.now();
 					const rows = items.map(({ title, date }) => ({
-						id: generateEntryId(),
+						id: generateId() as EntryId,
 						title,
 						subtitle: '',
 						type: [] as string[],

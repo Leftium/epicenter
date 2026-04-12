@@ -21,8 +21,7 @@
 	import type { Entry } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
 	import { DateTimeString } from '@epicenter/workspace';
-	import { entriesState, matchesEntrySearch } from '$lib/entries.svelte';
-	import { viewState } from '$lib/view.svelte';
+	import { entriesState, matchesEntrySearch, viewState } from '$lib/entries.svelte';
 
 	let { entries }: { entries: Entry[] } = $props();
 

@@ -9,10 +9,7 @@
 	import { VList } from 'virtua/svelte';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry } from '$lib/workspace';
-	import { viewState } from '$lib/view.svelte';
-	import { DateTimeString } from '@epicenter/workspace';
-	import { matchesEntrySearch } from '$lib/search';
-	import { entriesState } from '$lib/entries.svelte';
+	import { entriesState, matchesEntrySearch, viewState } from '$lib/entries.svelte';
 
 	let { entries }: { entries: Entry[] } = $props();
 

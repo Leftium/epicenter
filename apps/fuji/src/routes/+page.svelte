@@ -1,35 +1,6 @@
 <script lang="ts">
-	import { Button } from '@epicenter/ui/button';
-	import ClockIcon from '@lucide/svelte/icons/clock';
-	import TableIcon from '@lucide/svelte/icons/table-2';
-	import EntriesTable from '$lib/components/EntriesTable.svelte';
-	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
+	import EntriesListView from '$lib/components/EntriesListView.svelte';
 	import { entriesState } from '$lib/entries.svelte';
-	import { viewState } from '$lib/view.svelte';
-
 </script>
 
-<main class="flex h-full flex-1 flex-col overflow-hidden">
-	<!-- View mode toggle header -->
-	<div class="flex items-center justify-end border-b px-4 py-2">
-		<Button
-			variant="ghost"
-			size="icon"
-			class="size-7"
-			onclick={() => viewState.toggleViewMode()}
-			title={viewState.viewMode === 'table' ? 'Switch to timeline' : 'Switch to table'}
-		>
-			{#if viewState.viewMode === 'table'}
-				<ClockIcon class="size-4" />
-			{:else}
-				<TableIcon class="size-4" />
-			{/if}
-		</Button>
-	</div>
-
-	{#if viewState.viewMode === 'table'}
-		<EntriesTable entries={entriesState.active} />
-	{:else}
-		<EntryTimeline entries={entriesState.active} />
-	{/if}
-</main>
+<EntriesListView entries={entriesState.active} />

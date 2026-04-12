@@ -8,8 +8,7 @@
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry } from '$lib/workspace';
 	import { DateTimeString } from '@epicenter/workspace';
-	import { viewState } from '$lib/view.svelte';
-	import { entriesState } from '$lib/entries.svelte';
+	import { entriesState, viewState } from '$lib/entries.svelte';
 
 	let { entries }: { entries: Entry[] } = $props();
 

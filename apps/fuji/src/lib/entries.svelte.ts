@@ -1,14 +1,15 @@
 /**
- * Reactive entries state for Fuji.
+ * Reactive state for Fuji—entries, view preferences, and search.
  *
- * Provides the active entry collection from the workspace entries table.
- * Write operations go directly through `workspace.tables.entries` or
- * `workspace.actions.entries`—no wrappers needed.
+ * Three exports:
+ * - `entriesState` — active/deleted entry collections from the workspace table
+ * - `viewState` — persisted view mode, sort preference, and search query
+ * - `matchesEntrySearch` — pure function for filtering entries by query
  *
  * @example
  * ```svelte
  * <script>
- *   import { entriesState } from '$lib/entries.svelte';
+ *   import { entriesState, viewState } from '$lib/entries.svelte';
  * </script>
  *
  * {#each entriesState.active as entry (entry.id)}
@@ -18,10 +19,38 @@
  */
 
 import { goto } from '$app/navigation';
-import { fromTable } from '@epicenter/svelte';
+import { fromKv, fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 import type { Entry, EntryId } from '$lib/workspace';
 
+// ─── Search ──────────────────────────────────────────────────────────────────
+
+/**
+ * Test whether an entry matches a search query.
+ *
+ * Checks title, subtitle, tags, and type fields against a
+ * case-insensitive substring match. Returns true if any field
+ * contains the query.
+ */
+export function matchesEntrySearch(
+	entry: { title: string; subtitle: string; tags: string[]; type: string[] },
+	query: string,
+): boolean {
+	const q = query.trim().toLowerCase();
+	if (!q) return false;
+	const title = entry.title.toLowerCase();
+	const subtitle = entry.subtitle.toLowerCase();
+	const tags = entry.tags.join(' ').toLowerCase();
+	const types = entry.type.join(' ').toLowerCase();
+	return (
+		title.includes(q) ||
+		subtitle.includes(q) ||
+		tags.includes(q) ||
+		types.includes(q)
+	);
+}
+
+// ─── Entries State ───────────────────────────────────────────────────────────
 
 function createEntriesState() {
 	const map = fromTable(workspace.tables.entries);
@@ -59,3 +88,51 @@ function createEntriesState() {
 }
 
 export const entriesState = createEntriesState();
+
+// ─── View State ──────────────────────────────────────────────────────────────
+
+function createViewState() {
+	const viewModeKv = fromKv(workspace.kv, 'viewMode');
+	const sortByKv = fromKv(workspace.kv, 'sortBy');
+	let searchQuery = $state('');
+
+	return {
+		get viewMode(): 'table' | 'timeline' {
+			return viewModeKv.current ?? 'table';
+		},
+
+		/**
+		 * Toggle between table and timeline view modes.
+		 *
+		 * Persisted via workspace KV so the preference survives reloads
+		 * and syncs across devices.
+		 */
+		toggleViewMode() {
+			viewModeKv.current =
+				viewModeKv.current === 'table' ? 'timeline' : 'table';
+		},
+
+		get sortBy(): 'date' | 'updatedAt' | 'createdAt' | 'title' {
+			return sortByKv.current ?? 'date';
+		},
+
+		/**
+		 * Set the sort preference. Persisted via workspace KV so it survives
+		 * reloads and syncs across devices.
+		 */
+		set sortBy(value: 'date' | 'updatedAt' | 'createdAt' | 'title') {
+			sortByKv.current = value;
+		},
+
+		get searchQuery() {
+			return searchQuery;
+		},
+
+		/** Update the search query. Used by the sidebar search input. */
+		setSearchQuery(query: string) {
+			searchQuery = query;
+		},
+	};
+}
+
+export const viewState = createViewState();

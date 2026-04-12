@@ -28,11 +28,8 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./extensions/persistence/indexeddb": "./src/extensions/persistence/indexeddb.ts",
-		"./extensions/persistence/sqlite": "./src/extensions/persistence/sqlite.ts",
 		"./extensions/sync/websocket": "./src/extensions/sync/websocket.ts",
 		"./extensions/sync/broadcast-channel": "./src/extensions/sync/broadcast-channel.ts",
-		"./ingest": "./src/ingest/index.ts",
-		"./ingest/reddit": "./src/ingest/reddit/index.ts",
 		"./shared/crypto": "./src/shared/crypto/index.ts",
 		"./extensions/materializer/markdown": "./src/extensions/materializer/markdown/index.ts",
 		"./ai": "./src/ai/index.ts"

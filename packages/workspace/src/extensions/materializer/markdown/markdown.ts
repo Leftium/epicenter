@@ -128,14 +128,10 @@ export function createMaterializer<
 		/**
 		 * Opt in to KV materialization.
 		 *
-		 * Writes a single file (default: `kv.json`) that accumulates KV changes.
-		 * Custom serialize receives the accumulated state and returns `SerializeResult`.
-		 *
-		 * **Limitation:** KV values that existed before the observer was registered
-		 * (i.e., loaded by persistence before `whenReady`) are not included in the
-		 * initial write. The file reflects only values that change after startup.
-		 * A future `KvHelper.getAll()` method would fix this by seeding the
-		 * snapshot before subscribing to changes.
+		 * Writes a single file (default: `kv.json`) containing all KV values.
+		 * The initial snapshot is seeded via `kv.getAll()`, then kept current
+		 * via `kv.observeAll()`. Custom serialize receives the accumulated
+		 * state and returns `SerializeResult`.
 		 */
 		kv(config?: {
 			serialize?: (data: Record<string, unknown>) => SerializeResult;
@@ -217,13 +213,17 @@ export function createMaterializer<
 	};
 
 	const materializeKv = async () => {
-		const kvState: Record<string, unknown> = {};
+		const kvState: Record<string, unknown> = { ...ctx.kv.getAll() };
 		const serialize =
 			kvConfig?.serialize ??
 			((data: Record<string, unknown>) => ({
 				filename: 'kv.json',
 				content: JSON.stringify(data, null, 2),
 			}));
+
+		// Initial flush with the full snapshot
+		const initial = serialize(kvState);
+		await Bun.write(join(config.dir, initial.filename), initial.content);
 
 		const unsubscribe = ctx.kv.observeAll((changes) => {
 			void (async () => {

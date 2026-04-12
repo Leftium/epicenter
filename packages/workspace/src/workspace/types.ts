@@ -9,7 +9,7 @@ import type { JsonObject } from 'wellcrafted/json';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
+import type { CombinedStandardSchema } from '../shared/standard-schema.js';
 import type { Timeline } from '../timeline/timeline.js';
 import type { EncryptionKeys } from './encryption-key.js';
 import type { Extension, MaybePromise } from './lifecycle.js';
@@ -969,6 +969,26 @@ export type KvHelper<TKvDefinitions extends KvDefinitions> = {
 			origin?: unknown,
 		) => void,
 	): () => void;
+
+	/**
+	 * Get all KV values as a plain record.
+	 *
+	 * Returns every defined key with its current value. Keys that have never
+	 * been set return their `defaultValue` from the KV definition. Invalid
+	 * stored values (schema mismatch) also fall back to `defaultValue`.
+	 *
+	 * Useful for seeding an initial snapshot (e.g., materializer KV export)
+	 * before subscribing to `observeAll()` for incremental changes.
+	 *
+	 * @example
+	 * ```typescript
+	 * const snapshot = kv.getAll();
+	 * // { theme: 'dark', fontSize: 14, sidebarOpen: true }
+	 * ```
+	 */
+	getAll(): {
+		[K in keyof TKvDefinitions & string]: InferKvValue<TKvDefinitions[K]>;
+	};
 };
 
 /**

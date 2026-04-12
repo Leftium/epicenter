@@ -38,7 +38,6 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 
 			const result = definition.schema['~standard'].validate(raw);
 			if (result instanceof Promise)
-				throw new TypeError('Async schemas not supported');
 			if (result.issues) return definition.defaultValue;
 
 			return result.value;
@@ -125,5 +124,21 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 			ykv.observe(handler);
 			return () => ykv.unobserve(handler);
 		},
+
+		/**
+		 * Get all KV values as a plain record.
+		 *
+		 * Iterates every defined key and delegates to `get()`, which handles
+		 * validation and default-value fallback. Useful for snapshotting the
+		 * full KV state (e.g., materializer initial flush).
+		 */
+		getAll() {
+			const result: Record<string, unknown> = {};
+			for (const key of Object.keys(definitions)) {
+				result[key] = this.get(key);
+			}
+			return result;
+		},
+
 	} as KvHelper<TKvDefinitions>;
 }

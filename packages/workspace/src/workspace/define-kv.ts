@@ -23,7 +23,7 @@
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { JsonValue } from 'wellcrafted/json';
-import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
+import type { CombinedStandardSchema } from '../shared/standard-schema.js';
 import type { KvDefinition } from './types.js';
 
 /**

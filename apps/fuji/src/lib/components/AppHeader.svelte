@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import { getStars, GitHubButton } from '@epicenter/ui/github-button';
+	import { GitHubButton, getStars } from '@epicenter/ui/github-button';
 	import { Kbd } from '@epicenter/ui/kbd';
 	import { LightSwitch } from '@epicenter/ui/light-switch';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import SyncStatusIndicator from './SyncStatusIndicator.svelte';
 	import { entriesState } from '$lib/entries.svelte';
+	import BulkAddModal from './BulkAddModal.svelte';
+	import SyncStatusIndicator from './SyncStatusIndicator.svelte';
 
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();
 </script>
@@ -19,27 +20,34 @@
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				{#snippet child({ props })}
-					<Button {...props} variant="ghost" size="icon-xs" onclick={onOpenSearch}>
+					<Button
+						{...props}
+						variant="ghost"
+						size="icon-xs"
+						onclick={onOpenSearch}
+					>
 						<SearchIcon class="size-3.5" />
 					</Button>
 				{/snippet}
 			</Tooltip.Trigger>
-			<Tooltip.Content>
-				Search entries <Kbd>⌘K</Kbd>
-			</Tooltip.Content>
+			<Tooltip.Content> Search entries <Kbd>⌘K</Kbd> </Tooltip.Content>
 		</Tooltip.Root>
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				{#snippet child({ props })}
-					<Button {...props} variant="ghost" size="icon-xs" onclick={entriesState.createEntry}>
+					<Button
+						{...props}
+						variant="ghost"
+						size="icon-xs"
+						onclick={entriesState.createEntry}
+					>
 						<PlusIcon class="size-3.5" />
 					</Button>
 				{/snippet}
 			</Tooltip.Trigger>
-			<Tooltip.Content>
-				New entry <Kbd>⌘N</Kbd>
-			</Tooltip.Content>
+			<Tooltip.Content> New entry <Kbd>⌘N</Kbd> </Tooltip.Content>
 		</Tooltip.Root>
+		<BulkAddModal />
 	</div>
 	<!-- Right: external links + theme -->
 	<div class="flex items-center gap-0.5">

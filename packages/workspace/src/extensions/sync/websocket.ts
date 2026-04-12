@@ -176,6 +176,12 @@ export type SyncExtensionExports = {
 /** Origin sentinel for sync updates — used to skip echoing remote changes back. */
 const SYNC_ORIGIN = Symbol('sync-transport');
 
+// Liveness tuning: the client sends a text "ping" every PING_INTERVAL_MS.
+// The server auto-responds with "pong" via setWebSocketAutoResponse (no DO
+// wake, no duration charge). However, each incoming ping still counts as a
+// billable WebSocket message at Cloudflare's 20:1 ratio. 60s balances cost
+// against dead-connection detection. LIVENESS_TIMEOUT_MS should be ≥ 1.5×
+// the ping interval so a single missed ping doesn't kill the connection.
 const DEFAULT_RPC_TIMEOUT_MS = 5_000;
 const BASE_DELAY_MS = 500;
 const MAX_DELAY_MS = 30_000;

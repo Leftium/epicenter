@@ -40,22 +40,22 @@ export type User = InferTableRow<typeof usersTable>;
 
 Every table schema must include `_v` with a number literal. The type system enforces this — passing a schema without `_v` to `defineTable()` is a compile error.
 
-### Builder (Multiple Versions)
+### Variadic (Multiple Versions)
 
 Use when you need to evolve a schema over time:
 
 ```typescript
-const posts = defineTable()
-	.version(type({ id: 'string', title: 'string', _v: '1' }))
-	.version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
-	.migrate((row) => {
-		switch (row._v) {
-			case 1:
-				return { ...row, views: 0, _v: 2 };
-			case 2:
-				return row;
-		}
-	});
+const posts = defineTable(
+	type({ id: 'string', title: 'string', _v: '1' }),
+	type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+).migrate((row) => {
+	switch (row._v) {
+		case 1:
+			return { ...row, views: 0, _v: 2 };
+		case 2:
+			return row;
+	}
+});
 ```
 
 ## KV Stores

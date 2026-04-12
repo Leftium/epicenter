@@ -130,8 +130,10 @@ Note: ArkType automatically discriminates unions for O(1) performance. For other
 Every table schema includes a `_v` field — a number literal that identifies the schema version. The type system enforces this: passing a schema without `_v` to `defineTable()` is a compile error.
 
 ```typescript
-.version(type({ id: 'string', title: 'string', _v: '1' }))
-.version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
+const posts = defineTable(
+	type({ id: 'string', title: 'string', _v: '1' }),
+	type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+)
 ```
 
 This makes migrations a clean switch statement:

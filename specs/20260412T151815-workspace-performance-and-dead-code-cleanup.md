@@ -1,7 +1,7 @@
 # Workspace Performance Fix & Dead Code Cleanup
 
 **Date**: 2026-04-12
-**Status**: Draft
+**Status**: In Progress
 **Author**: AI-assisted (from deep audit session)
 
 ## Overview
@@ -87,7 +87,7 @@ Storage is not a concern with `gc: true`.
 | Fix O(n²) update | Defer delete to observer | Observer already handles this for sync conflicts; reuse existing dedup |
 | Build entry→index map | In observer, from single `toArray()` | O(n) build once + O(1) per lookup vs O(n) per `indexOf` call |
 | Keep `delete()` as O(n) | Accepted | `delete()` is rare (benchmarks confirm), not worth the complexity |
-| Remove ingest/ | Delete, don't extract | Zero consumers, no evidence anyone wants it as a package |
+| Move ingest/ to Breddit app | Move, don't delete | See `specs/20260412T151815-breddit.md` — ingest code becomes Breddit's data layer |
 | Remove materializer/sqlite/ | Delete | Zero consumers; can be rebuilt if needed |
 | Remove persistence/sqlite.ts | Delete | Zero consumers; indexeddb covers all current apps |
 | Merge standard-schema/ | Single file | 3 files for 2 exports is unnecessary indirection |
@@ -148,47 +148,39 @@ which the observer already handles correctly.
 
 ### Wave 1: Fix O(n²) `deleteEntryByKey` (highest impact)
 
-- [ ] **1.1** Read `y-keyvalue-lww.ts` fully — understand `set()`, `delete()`, observer, `pending` mechanism
-- [ ] **1.2** Modify `set()`: remove the `deleteEntryByKey()` call for existing keys — just push the new entry
-- [ ] **1.3** In the observer's conflict resolution path, replace `getAllEntries().indexOf(existing)` with an entry→index `Map`:
-  ```typescript
-  let entryIndexMap: Map<YKeyValueLwwEntry<T>, number> | null = null;
-  const getEntryIndex = (entry: YKeyValueLwwEntry<T>): number => {
-      if (!entryIndexMap) {
-          const entries = getAllEntries();
-          entryIndexMap = new Map();
-          for (let i = 0; i < entries.length; i++) {
-              entryIndexMap.set(entries[i]!, i);
-          }
-      }
-      return entryIndexMap.get(entry) ?? -1;
-  };
-  ```
-- [ ] **1.4** Run existing tests: `bun test packages/workspace/src/shared/y-keyvalue/`
-- [ ] **1.5** Run benchmark tests and compare bulk update timing (target: ~60ms for 10K vs current 560ms)
-- [ ] **1.6** Run full workspace test suite: `bun test packages/workspace/`
-- [ ] **1.7** Stage and commit
+- [x] **1.1** Read `y-keyvalue-lww.ts` fully — understand `set()`, `delete()`, observer, `pending` mechanism
+- [x] **1.2** Modify `set()`: conditionally skip `deleteEntryByKey()` only when inside an outer transaction (batch case)
+  > **Note**: Originally planned to remove deleteEntryByKey unconditionally. During testing, found this caused a double-observer regression for individual (non-batched) set() calls. The fix: use `hasOuterTransaction = this.isInTransaction()` before the transaction boundary — only skip the eager delete when batched.
+- [x] **1.3** In the observer's conflict resolution path, replace `getAllEntries().indexOf(existing)` with an entry→index `Map`
+- [x] **1.4** Added observer guard for set→delete edge case in batched transactions (deletedCurrentKeys check)
+- [x] **1.5** Run existing tests: `bun test packages/workspace/src/shared/y-keyvalue/` — 149 pass
+- [x] **1.6** Run benchmark tests — all 40 pass, 25.5s (same as baseline)
+- [x] **1.7** Run full workspace test suite
+- [ ] **1.8** Stage and commit
 
-### Wave 2: Remove dead code — `ingest/`
+### Wave 2: Move `ingest/` to Breddit app
 
-- [ ] **2.1** Delete `src/ingest/` directory (7 source files + tests)
-- [ ] **2.2** Delete `scripts/reddit-import-test.ts` if it exists
-- [ ] **2.3** Remove `ingest` and `ingest/reddit` subpath exports from `package.json`
-- [ ] **2.4** Verify no imports break: `bun test`
-- [ ] **2.5** Stage and commit
+See `specs/20260412T151815-breddit.md` Phase 1 for the full plan. Summary:
 
-### Wave 3: Remove dead code — `shared/snakify.ts`
+- [ ] **2.1** Create `apps/breddit/` scaffold
+- [ ] **2.2** Move `src/ingest/reddit/` → `apps/breddit/src/lib/workspace/ingest/`
+- [ ] **2.3** Move `src/ingest/utils/csv.ts` alongside
+- [ ] **2.4** Remove `ingest` and `ingest/reddit` subpath exports from workspace `package.json`
+- [ ] **2.5** Verify workspace package tests still pass
+- [ ] **2.6** Stage and commit
 
-- [ ] **3.1** Delete `src/shared/snakify.ts`
-- [ ] **3.2** Remove `@sindresorhus/slugify` from package.json dependencies if no other consumer
-- [ ] **3.3** `bun install` to update lockfile
-- [ ] **3.4** Stage and commit
+### Wave 3: Move `shared/snakify.ts` to Breddit
+
+- [ ] **3.1** Move `src/shared/snakify.ts` → `apps/breddit/src/lib/workspace/ingest/snakify.ts`
+- [ ] **3.2** ~~Remove `@sindresorhus/slugify` from workspace package.json~~ **SKIP**: `slugify` is imported directly by `materializer/markdown/serializers.ts`, `apps/fuji`, and `playground/opensidian-e2e`
+- [ ] **3.3** Add `@sindresorhus/slugify` to breddit's package.json
+- [ ] **3.4** `bun install` to update lockfile
 
 ### Wave 4: Remove dead code — `materializer/sqlite/`
 
 - [ ] **4.1** Delete `src/extensions/materializer/sqlite/` directory (4 source files + tests)
-- [ ] **4.2** Remove `extensions/materializer/sqlite` subpath export from `package.json`
-- [ ] **4.3** Remove `drizzle-orm` and `@electric-sql/pglite` from dependencies if only used here
+- [ ] **4.2** ~~Remove `extensions/materializer/sqlite` subpath export from `package.json`~~ **SKIP**: No such export exists in package.json
+- [ ] **4.3** Remove `@electric-sql/pglite` from dependencies (unused anywhere). Keep `drizzle-orm` — it's re-exported from the workspace root barrel (`eq`, `and`, `sql`, etc.)
 - [ ] **4.4** Verify no imports break: `bun test`
 - [ ] **4.5** Stage and commit
 
@@ -205,24 +197,36 @@ which the observer already handles correctly.
 - [ ] **6.2** Merge into single `src/shared/standard-schema.ts` with both the `CombinedStandardSchema` type and `standardSchemaToJsonSchema` function
 - [ ] **6.3** Update all internal imports (grep for `shared/standard-schema`)
 - [ ] **6.4** Remove the `shared/standard-schema/` directory
-- [ ] **6.5** Update any package.json subpath export if one exists
+- [ ] **6.5** ~~Update any package.json subpath export if one exists~~ **SKIP**: No such export exists
 - [ ] **6.6** Run tests, verify no breaks
 - [ ] **6.7** Stage and commit
 
-### Wave 7: Bulk import progress-bar API
+### Wave 7: Bulk import/delete progress-bar API
 
-- [ ] **7.1** Add a `bulkSet` method to `TableHelper` that chunks insertions and yields to the event loop:
+Architecture: `bulkDelete` gets a dedicated method on `YKeyValueLww` (optimized one-pass scan + batch delete). `bulkSet` does NOT need a ykv-level method — `set()` is already O(1) after Wave 1, so TableHelper just wraps it in chunked transactions.
+
+- [ ] **7.1** Add `bulkDelete(keys: string[])` method to `YKeyValueLww` in `y-keyvalue-lww.ts`:
+  - One `toArray()` scan to find all matching indices
+  - Sort indices descending, delete right-to-left (preserves indices)
+  - Wraps deletions in `doc.transact()`
+- [ ] **7.2** Add `bulkDelete(keys)` delegation to `EncryptedYKeyValueLww` — just calls `inner.bulkDelete(keys)`
+- [ ] **7.3** Add `bulkSet` and `bulkDelete` methods to `TableHelper` type in `types.ts`:
   ```typescript
   async bulkSet(rows: TRow[], options?: {
       chunkSize?: number;       // default: 1000
       onProgress?: (percent: number) => void;
   }): Promise<void>;
+
+  async bulkDelete(ids: string[], options?: {
+      chunkSize?: number;       // default: 1000
+      onProgress?: (percent: number) => void;
+  }): Promise<void>;
   ```
-- [ ] **7.2** Implement in `create-table.ts` — chunk by `chunkSize`, insert each chunk synchronously, call `onProgress`, then `await new Promise(resolve => setTimeout(resolve, 0))` to yield
-- [ ] **7.3** Add the type to `TableHelper` in `types.ts`
-- [ ] **7.4** Write tests: verify all rows inserted, verify progress callback fires, verify chunking behavior
-- [ ] **7.5** Run benchmarks to confirm each chunk stays under 16ms frame budget at default chunk size
-- [ ] **7.6** Stage and commit
+- [ ] **7.4** Implement both in `create-table.ts` — chunk by `chunkSize`, call operation per chunk, `onProgress`, yield with `setTimeout(0)`
+- [ ] **7.5** Write tests: verify all rows inserted/deleted, verify progress callback fires, verify chunking behavior
+- [ ] **7.6** Run benchmarks to confirm each chunk stays under 16ms frame budget at default chunk size
+- [ ] **7.7** Add detailed JSDoc explaining when to use `bulkSet`/`bulkDelete` vs `workspace.batch()` vs single-row ops
+- [ ] **7.8** Stage and commit
 
 ## Edge Cases
 
@@ -243,29 +247,24 @@ which the observer already handles correctly.
 
 ### Wave 4: Drizzle dependency removal
 
-`drizzle-orm` was re-exported from the root barrel (now removed). But it might still be a dependency for the markdown materializer or other internal code. Must verify before removing from package.json.
+**Resolved**: `drizzle-orm` is re-exported from the workspace root barrel (`eq`, `and`, `sql`, etc.) per the README. Cannot be removed. Only `@electric-sql/pglite` can be removed (unused anywhere in the repo).
 
 ### Wave 6: Standard-schema subpath export
 
-If `@epicenter/workspace/shared/standard-schema` is a package.json subpath export, removing the directory would break the export. Must check and update package.json.
+**Resolved**: No `shared/standard-schema` subpath export exists in package.json. Safe to merge without export changes.
 
-## Open Questions
+## Open Questions (Resolved)
 
 1. **Should `delete()` also defer to the observer?**
-   - Currently `delete()` still does the O(n) `deleteEntryByKey` scan
-   - Option A: Leave as-is (delete is rare, benchmarks show 29.5µs per delete at 10K)
-   - Option B: Defer to observer (same pattern as `set()` fix)
-   - **Recommendation**: Leave as-is (Option A). Delete is infrequent. Optimize only if benchmarks show a problem.
+   - **Decision**: No. Leave as-is (Option A). Single delete is 29.5µs at 10K — negligible.
+   - Bulk delete is handled by the new `bulkDelete()` method which does a one-pass scan.
+   - Consistency lives at the bulk API level, not the single-op level.
 
 2. **Should removed dead code go to an archive branch?**
-   - Option A: Just delete — git history preserves it
-   - Option B: Create `archive/ingest`, `archive/materializer-sqlite` branches
-   - **Recommendation**: Just delete (Option A). Git blame and `git log --all -- path` find anything.
+   - **Decision**: Just delete (Option A). Git history preserves everything.
 
 3. **Should `bulkSet` wrap in `ydoc.transact()`?**
-   - Wrapping the whole bulk in one transaction defers observer until the end — better performance but larger memory spike
-   - Wrapping each chunk in its own transaction fires observer per chunk — more incremental but more overhead
-   - **Recommendation**: One transaction per chunk. Matches the progress-bar pattern (state updates per chunk) and keeps memory bounded.
+   - **Decision**: One transaction per chunk. Matches progress-bar pattern, keeps memory bounded.
 
 ## Success Criteria
 
@@ -275,8 +274,10 @@ If `@epicenter/workspace/shared/standard-schema` is a package.json subpath expor
 - [ ] No `@epicenter/workspace/extensions/materializer/sqlite` subpath exists
 - [ ] No `@epicenter/workspace/extensions/persistence/sqlite` subpath exists
 - [ ] `shared/standard-schema/` directory no longer exists; single file replaces it
-- [ ] `bulkSet` method exists on `TableHelper` with `onProgress` callback
-- [ ] `snakify.ts` no longer exists; `@sindresorhus/slugify` removed if unused elsewhere
+- [ ] `bulkSet` and `bulkDelete` methods exist on `TableHelper` with `onProgress` callback
+- [ ] `bulkDelete` method exists on `YKeyValueLww` (optimized batch algorithm)
+- [ ] `EncryptedYKeyValueLww` delegates `bulkDelete` to inner
+- [ ] `snakify.ts` no longer exists in workspace package; `@sindresorhus/slugify` stays (has other consumers)
 
 ## References
 

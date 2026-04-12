@@ -7,9 +7,7 @@
  */
 
 import { type } from 'arktype';
-import { defineKv } from '../../workspace/define-kv.js';
-import { defineTable } from '../../workspace/define-table.js';
-import { defineWorkspace } from '../../workspace/define-workspace.js';
+import { defineKv, defineTable, defineWorkspace } from '@epicenter/workspace';
 
 export const redditWorkspace = defineWorkspace({
 	id: 'reddit',

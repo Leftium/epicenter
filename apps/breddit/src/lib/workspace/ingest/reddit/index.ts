@@ -12,7 +12,7 @@
  * Usage:
  * ```typescript
  * import { importRedditExport, redditWorkspace } from './ingest/reddit';
- * import { createWorkspace } from 'epicenter/static';
+ * import { createWorkspace } from '@epicenter/workspace';
  *
  * const client = createWorkspace(redditWorkspace);
  * const stats = await importRedditExport(zipFile, client);
@@ -21,8 +21,8 @@
  */
 
 import { type } from 'arktype';
-import { snakify } from '../../shared/snakify.js';
-import { createWorkspace } from '../../workspace/create-workspace.js';
+import { createWorkspace } from '@epicenter/workspace';
+import { snakify } from '../snakify.js';
 import { csvSchemas, type TableName } from './csv-schemas.js';
 import { type ParsedRedditData, parseRedditZip } from './parse.js';
 import { type RedditWorkspace, redditWorkspace } from './workspace.js';

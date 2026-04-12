@@ -19,8 +19,8 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { createWorkspace, defineTable } from '../../../workspace/index.js';
-import { createSqliteMaterializer } from './sqlite.js';
-import type { MirrorDatabase, MirrorStatement } from './types.js';
+import { createSqliteMaterializer, wrapSyncDatabase } from './sqlite.js';
+import type { MirrorDatabase } from './types.js';
 
 const postsTable = defineTable(
 	type({ id: 'string', _v: '1', title: 'string', 'published?': 'boolean' }),
@@ -39,6 +39,7 @@ type TestDb = MirrorDatabase & {
 function createTestDb(): TestDb {
 	const raw = new Database(':memory:');
 	const sqlCalls: string[] = [];
+	const base = wrapSyncDatabase(raw);
 
 	return {
 		raw,
@@ -48,26 +49,11 @@ function createTestDb(): TestDb {
 		},
 		async exec(sql: string) {
 			sqlCalls.push(sql);
-			raw.run(sql);
+			await base.exec(sql);
 		},
 		prepare(sql: string) {
 			sqlCalls.push(sql);
-			const statement = raw.prepare(sql);
-
-			return {
-				async run(...params: unknown[]) {
-					statement.run(...(params as Parameters<typeof statement.run>));
-				},
-				async all(...params: unknown[]) {
-					return statement.all(...(params as Parameters<typeof statement.all>)) as Record<string, unknown>[];
-				},
-				async get(...params: unknown[]) {
-					return (
-						(statement.get(...(params as Parameters<typeof statement.get>)) as Record<string, unknown> | null) ??
-						undefined
-					);
-				},
-			} satisfies MirrorStatement;
+			return base.prepare(sql);
 		},
 	};
 }

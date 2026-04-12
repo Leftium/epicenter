@@ -1,4 +1,8 @@
-export { createSqliteMaterializer, serializeValue } from './sqlite.js';
+export {
+ 	createSqliteMaterializer,
+	serializeValue,
+	wrapSyncDatabase,
+} from './sqlite.js';
 export { generateDdl, quoteIdentifier, resolveSchema } from './ddl.js';
 export type {
 	MirrorDatabase,

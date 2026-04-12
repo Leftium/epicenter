@@ -24,24 +24,21 @@ import type {
 	TableMaterializerConfig,
 } from './types.js';
 
-type SqliteMaterializerContext = {
-	tables: Record<string, TableHelper<BaseRow>>;
-	definitions: { tables: Record<string, unknown> };
-	whenReady: Promise<void>;
-};
+// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
+type AnyTableHelper = TableHelper<any>;
 
 /**
  * Create a one-way materializer that mirrors workspace table rows into SQLite.
  *
  * Nothing materializes by default. Call `.table()` to opt in per table, each
- * with optional FTS5 and custom serialization config. The builder validates
- * table names against the workspace definition context.
+ * with optional FTS5 and custom serialization config. Table names are
+ * type-checked against the workspace definition—typos are caught at compile time.
  *
  * The materializer awaits `ctx.whenReady` before reading data, so persistence
  * and sync have loaded before the initial flush. All `.table()` calls happen
  * synchronously in the factory closure before `whenReady` resolves.
  *
- * @example
+ * @example Basic usage with type-safe table names
  * ```typescript
  * .withWorkspaceExtension('sqlite', (ctx) =>
  *   createSqliteMaterializer(ctx, { db })
@@ -49,9 +46,33 @@ type SqliteMaterializerContext = {
  *     .table('users')
  * )
  * ```
+ *
+ * @example Shared SQLite file for persistence + materializer (desktop/Bun)
+ * ```typescript
+ * import { Database } from 'bun:sqlite';
+ * import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+ * import { createSqliteMaterializer, wrapSyncDatabase } from '@epicenter/workspace/extensions/materializer/sqlite';
+ *
+ * // Persistence opens its own connection internally.
+ * // Materializer uses a second connection to the same WAL-mode file.
+ * const materializerDb = wrapSyncDatabase(new Database('workspace.db'));
+ *
+ * createWorkspace(definition)
+ *   .withExtension('persistence', filesystemPersistence({ filePath: 'workspace.db' }))
+ *   .withWorkspaceExtension('sqlite', (ctx) =>
+ *     createSqliteMaterializer(ctx, { db: materializerDb })
+ *       .table('posts', { fts: ['title'] })
+ *   )
+ * ```
  */
-export function createSqliteMaterializer(
-	ctx: SqliteMaterializerContext,
+export function createSqliteMaterializer<
+	TTables extends Record<string, AnyTableHelper>,
+>(
+	ctx: {
+		tables: TTables;
+		definitions: { tables: Record<string, unknown> };
+		whenReady: Promise<void>;
+	},
 	config: { db: MirrorDatabase; debounceMs?: number },
 ) {
 	const { db } = config;
@@ -358,7 +379,8 @@ export function createSqliteMaterializer(
 		 * Opt in a workspace table for SQLite materialization.
 		 *
 		 * Each call registers one table with optional FTS5 and serialization config.
-		 * Chainable — returns the builder for fluent API usage.
+		 * Chainable — returns the builder for fluent API usage. Table names are
+		 * type-checked against the workspace definition.
 		 *
 		 * @param name - The workspace table name to materialize
 		 * @param tableConfig - Optional per-table configuration (FTS columns, custom serializer)
@@ -370,19 +392,19 @@ export function createSqliteMaterializer(
 		 *   .table('users')
 		 * ```
 		 */
-		table(
-			name: string,
+		table<TName extends keyof TTables & string>(
+			name: TName,
 			tableConfig?: TableMaterializerConfig,
 		): MaterializerBuilder;
 		whenReady: Promise<void>;
 		dispose(): void;
 		search(
-			table: string,
+			table: keyof TTables & string,
 			query: string,
 			options?: SearchOptions,
 		): Promise<SearchResult[]>;
-		count(table: string): Promise<number>;
-		rebuild(table?: string): Promise<void>;
+		count(table: keyof TTables & string): Promise<number>;
+		rebuild(table?: keyof TTables & string): Promise<void>;
 		db: MirrorDatabase;
 	};
 
@@ -407,7 +429,7 @@ export function createSqliteMaterializer(
 // ════════════════════════════════════════════════════════════════════════════
 
 function getTableJsonSchema(
-	context: SqliteMaterializerContext,
+	context: { definitions: { tables: Record<string, unknown> } },
 	tableName: string,
 ): Record<string, unknown> {
 	const tableDef = context.definitions.tables[tableName];
@@ -462,4 +484,78 @@ export function serializeValue(value: unknown): unknown {
 	}
 
 	return value;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SYNC DATABASE ADAPTER
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Structural type for a synchronous SQLite prepared statement.
+ *
+ * Satisfied by `bun:sqlite`'s `Statement` and `better-sqlite3`'s
+ * `Statement` without importing either driver.
+ */
+type SyncStatement = {
+	run(...params: unknown[]): unknown;
+	all(...params: unknown[]): unknown[];
+	get(...params: unknown[]): unknown;
+};
+
+/**
+ * Structural type for a synchronous SQLite database.
+ *
+ * Satisfied by `bun:sqlite`'s `Database` and `better-sqlite3`'s
+ * `Database` without importing either driver.
+ */
+type SyncDatabase = {
+	run(sql: string): unknown;
+	prepare(sql: string): SyncStatement;
+};
+
+/**
+ * Wrap a synchronous SQLite database into the async `MirrorDatabase` interface.
+ *
+ * Eliminates the boilerplate of wrapping every `bun:sqlite` method in
+ * `async`. The materializer's `MirrorDatabase` is async for Turso/WASM
+ * compatibility, but the most common desktop use case is synchronous
+ * `bun:sqlite`. This adapter bridges the two.
+ *
+ * @param db - A synchronous SQLite database (`bun:sqlite`, `better-sqlite3`, etc.)
+ * @returns An async `MirrorDatabase` that delegates to the sync driver
+ *
+ * @example
+ * ```typescript
+ * import { Database } from 'bun:sqlite';
+ * import { createSqliteMaterializer, wrapSyncDatabase } from '@epicenter/workspace/extensions/materializer/sqlite';
+ *
+ * const db = wrapSyncDatabase(new Database('materializer.db'));
+ *
+ * createWorkspace(definition)
+ *   .withWorkspaceExtension('sqlite', (ctx) =>
+ *     createSqliteMaterializer(ctx, { db })
+ *       .table('posts', { fts: ['title'] })
+ *   )
+ * ```
+ */
+export function wrapSyncDatabase(db: SyncDatabase): MirrorDatabase {
+	return {
+		async exec(sql) {
+			db.run(sql);
+		},
+		prepare(sql) {
+			const stmt = db.prepare(sql);
+			return {
+				async run(...params) {
+					stmt.run(...params);
+				},
+				async all(...params) {
+					return stmt.all(...params) as Record<string, unknown>[];
+				},
+				async get(...params) {
+					return (stmt.get(...params) as Record<string, unknown> | null) ?? undefined;
+				},
+			};
+		},
+	};
 }

@@ -20,12 +20,16 @@ import {
 	resolveEpicenterHome,
 } from '@epicenter/cli';
 import { createWorkspace, defineMutation } from '@epicenter/workspace';
-import { prepareMarkdownFiles } from '@epicenter/workspace/extensions/materializer/markdown';
+import {
+	createMaterializer,
+	markdown,
+	prepareMarkdownFiles,
+	toSlugFilename,
+} from '@epicenter/workspace/extensions/materializer/markdown';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import { opensidianDefinition } from 'opensidian/workspace';
 import Type from 'typebox';
-import { createOpensidianMaterializer } from './materializer';
 
 const SERVER_URL = process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so';
 const PERSISTENCE_DIR = join(import.meta.dir, '.epicenter', 'persistence');
@@ -40,9 +44,41 @@ export const opensidian = createWorkspace(opensidianDefinition)
 			filePath: join(PERSISTENCE_DIR, 'opensidian.db'),
 		}),
 	)
-	.withWorkspaceExtension(
-		'markdown',
-		createOpensidianMaterializer({ directory: MARKDOWN_DIR }),
+	.withWorkspaceExtension('materializer', (ctx) =>
+		createMaterializer(ctx, { dir: MARKDOWN_DIR })
+			.table('files', {
+				serialize: async (row) => {
+					if (row.type === 'folder') {
+						return markdown({
+							frontmatter: { id: row.id, name: row.name, type: 'folder' },
+							filename: `${row.id}.md`,
+						});
+					}
+					let content: string | undefined;
+					try {
+						const handle = await ctx.documents.files.content.open(row.id);
+						content = handle.read();
+					} catch {
+						// Content doc not yet available (sync pending)
+					}
+					return markdown({
+						frontmatter: {
+							id: row.id,
+							name: row.name,
+							parentId: row.parentId,
+							size: row.size,
+							createdAt: row.createdAt,
+							updatedAt: row.updatedAt,
+							trashedAt: row.trashedAt,
+						},
+						body: content,
+						filename: toSlugFilename(
+							row.name.replace(/\.md$/i, ''),
+							row.id,
+						),
+					});
+				},
+			}),
 	)
 	.withWorkspaceExtension('unlock', createCliUnlock(sessions, SERVER_URL))
 	.withExtension(

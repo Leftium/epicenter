@@ -466,7 +466,7 @@ All consumers in the monorepo must be migrated in the same commit.
 - [x] Delete `apps/fuji/src/lib/materializer.ts`
 - [x] Delete `playground/opensidian-e2e/materializer.ts`
 - [x] Update `apps/fuji/package.json`: remove `"./materializer"` export, remove deps
-- Migrate all config files
+- [x] Migrate all config files
 - Run `bun test packages/workspace` to verify no regressions
 - Run `bun x epicenter start . --verbose` from `~/Code/vault` after migration
 

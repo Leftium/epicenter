@@ -9,7 +9,14 @@
  * through this Worker, which sets security headers and supports ETag/range.
  */
 
-import { generateGuid } from '@epicenter/workspace';
+import { customAlphabet } from 'nanoid';
+
+/**
+ * 15-char alphanumeric ID generator—same spec as `generateGuid` in @epicenter/workspace.
+ * Inlined here to avoid pulling workspace (and its Yjs dependency tree) into the
+ * Cloudflare Worker bundle, where wrangler can't resolve it.
+ */
+const generateGuid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 15);
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';

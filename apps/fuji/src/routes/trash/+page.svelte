@@ -4,13 +4,12 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as Table from '@epicenter/ui/table';
-	import { DateTimeString } from '@epicenter/workspace';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { formatDistanceToNowStrict } from 'date-fns';
 	import { workspace } from '$lib/client';
 	import { entriesState } from '$lib/entries.svelte';
+	import { relativeTime } from '$lib/format';
 
 	const deletedEntries = $derived(
 		[...entriesState.deleted].sort((a, b) =>
@@ -18,15 +17,6 @@
 		),
 	);
 
-	function relativeTime(dts: string): string {
-		try {
-			return formatDistanceToNowStrict(DateTimeString.toDate(dts), {
-				addSuffix: true,
-			});
-		} catch {
-			return dts;
-		}
-	}
 </script>
 
 <main class="flex h-full flex-1 flex-col overflow-hidden">

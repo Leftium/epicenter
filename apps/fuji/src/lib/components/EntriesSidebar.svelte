@@ -8,24 +8,21 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { VList } from 'virtua/svelte';
 	import { format, isToday, isYesterday } from 'date-fns';
-	import { type Entry } from '$lib/workspace';
 	import { DateTimeString } from '@epicenter/workspace';
 	import { entriesState, matchesEntrySearch, viewState } from '$lib/entries.svelte';
-
-	let { entries }: { entries: Entry[] } = $props();
 
 	const isSearching = $derived(viewState.searchQuery.trim().length > 0);
 
 	/** Entries matching the search query across title, subtitle, tags, and type. */
 	const searchResults = $derived.by(() => {
 		if (!isSearching) return [];
-		return entries.filter((entry) => matchesEntrySearch(entry, viewState.searchQuery));
+		return entriesState.active.filter((entry) => matchesEntrySearch(entry, viewState.searchQuery));
 	});
 
 	/** Unique types with entry counts, sorted by count descending. */
 	const typeGroups = $derived.by(() => {
 		const counts = new Map<string, number>();
-		for (const entry of entries) {
+		for (const entry of entriesState.active) {
 			for (const t of entry.type) {
 				counts.set(t, (counts.get(t) ?? 0) + 1);
 			}
@@ -38,7 +35,7 @@
 	/** Unique tags with entry counts, sorted by count descending. */
 	const tagGroups = $derived.by(() => {
 		const counts = new Map<string, number>();
-		for (const entry of entries) {
+		for (const entry of entriesState.active) {
 			for (const tag of entry.tags) {
 				counts.set(tag, (counts.get(tag) ?? 0) + 1);
 			}
@@ -50,7 +47,7 @@
 
 	/** Recent entries sorted by updatedAt, limited to 10. */
 	const recentEntries = $derived(
-		[...entries]
+		[...entriesState.active]
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 			.slice(0, 10),
 	);
@@ -69,7 +66,7 @@
 			<Sidebar.Input
 				placeholder="Search entries…"
 				value={viewState.searchQuery}
-				oninput={(e) => viewState.setSearchQuery(e.currentTarget.value)}
+				oninput={(e) => (viewState.searchQuery = e.currentTarget.value)}
 			/>
 		</div>
 	</Sidebar.Header>
@@ -87,7 +84,7 @@
 							<FileTextIcon class="size-4" />
 							<span>All Entries</span>
 							<span class="ml-auto text-xs text-muted-foreground">
-								{entries.length}
+						{entriesState.active.length}
 							</span>
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>

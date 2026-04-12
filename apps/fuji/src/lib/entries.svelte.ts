@@ -21,7 +21,7 @@
 import { goto } from '$app/navigation';
 import { fromKv, fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
-import type { Entry, EntryId } from '$lib/workspace';
+import type { EntryId } from '$lib/workspace';
 
 // ─── Search ──────────────────────────────────────────────────────────────────
 
@@ -129,8 +129,8 @@ function createViewState() {
 		},
 
 		/** Update the search query. Used by the sidebar search input. */
-		setSearchQuery(query: string) {
-			searchQuery = query;
+		set searchQuery(value: string) {
+			searchQuery = value;
 		},
 	};
 }

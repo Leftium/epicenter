@@ -74,7 +74,7 @@
 			<AppHeader onOpenSearch={() => (paletteOpen = true)} />
 			<Resizable.PaneGroup direction="horizontal" class="flex-1">
 				<Resizable.Pane defaultSize={20} minSize={15} maxSize={40}>
-					<EntriesSidebar entries={entriesState.active} />
+				<EntriesSidebar />
 				</Resizable.Pane>
 				<Resizable.Handle withHandle />
 				<Resizable.Pane defaultSize={80}>

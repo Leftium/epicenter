@@ -17,24 +17,12 @@
 		getFilteredRowModel,
 		getSortedRowModel,
 	} from '@tanstack/table-core';
-	import { formatDistanceToNowStrict } from 'date-fns';
 	import type { Entry } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
-	import { DateTimeString } from '@epicenter/workspace';
 	import { entriesState, matchesEntrySearch, viewState } from '$lib/entries.svelte';
+	import { relativeTime } from '$lib/format';
 
 	let { entries }: { entries: Entry[] } = $props();
-
-
-	function relativeTime(dts: string): string {
-		try {
-			return formatDistanceToNowStrict(DateTimeString.toDate(dts), {
-				addSuffix: true,
-			});
-		} catch {
-			return dts;
-		}
-	}
 
 	const columns: ColumnDef<Entry>[] = [
 		{

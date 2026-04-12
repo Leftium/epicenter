@@ -28,20 +28,21 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 	ykv: EncryptedYKeyValueLww<unknown>,
 	definitions: TKvDefinitions,
 ): KvHelper<TKvDefinitions> {
+	function readValue(key: string): unknown {
+		const definition = definitions[key];
+		if (!definition) throw new Error(`Unknown KV key: ${key}`);
+
+		const raw = ykv.get(key);
+		if (raw === undefined) return definition.defaultValue;
+
+		const result = definition.schema['~standard'].validate(raw);
+		if (result instanceof Promise) throw new TypeError('Async schemas not supported');
+		return result.issues ? definition.defaultValue : result.value;
+	}
+
 	return {
 		get(key) {
-			const definition = definitions[key];
-			if (!definition) throw new Error(`Unknown KV key: ${key}`);
-
-			const raw = ykv.get(key);
-			if (raw === undefined) return definition.defaultValue;
-
-			const result = definition.schema['~standard'].validate(raw);
-			if (result instanceof Promise)
-				throw new TypeError('Async schemas not supported');
-			if (result.issues) return definition.defaultValue;
-
-			return result.value;
+			return readValue(key);
 		},
 
 		set(key, value) {
@@ -128,15 +129,8 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 
 		getAll() {
 			const result: Record<string, unknown> = {};
-			for (const [key, definition] of Object.entries(definitions)) {
-				const raw = ykv.get(key);
-				if (raw === undefined) {
-					result[key] = definition.defaultValue;
-					continue;
-				}
-				const validated = definition.schema['~standard'].validate(raw);
-				if (validated instanceof Promise) throw new TypeError('Async schemas not supported');
-				result[key] = validated.issues ? definition.defaultValue : validated.value;
+			for (const key of Object.keys(definitions)) {
+				result[key] = readValue(key);
 			}
 			return result;
 		},

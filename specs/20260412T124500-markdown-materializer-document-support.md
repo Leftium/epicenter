@@ -2,7 +2,7 @@
 
 ## Task
 
-Replace the markdown-specific `markdownMaterializer` with a general `createMaterializer` factory that follows the factory function composition pattern. First arg is the resource (`tables`), second is config (`{ directory }`). Returns a builder with `.table()` for per-table overrides. All tables materialize by default. KV materializes to a single JSON file.
+Replace the markdown-specific `markdownMaterializer` with a general `createMaterializer` factory that follows the factory function composition pattern. First arg is the resource (extension context — `{ tables, kv }`), second is config (`{ directory }`). Returns a builder with `.table()` for per-table overrides. All tables materialize by default. KV materializes to a single JSON file.
 
 The serialize contract is general: `{ filename, content }`. A `markdown()` helper handles the common case of frontmatter + body. This eliminates the two app-specific materializers (fuji, opensidian) and generalizes beyond markdown.
 
@@ -70,23 +70,35 @@ export const fuji = createFujiWorkspace()
 
 ### Factory function pattern
 
-Following the factory function composition skill: first arg is the resource (typed `tables`), second arg is config.
+Following the factory function composition skill: first arg is the resource (destructured for multiple dependencies — `{ tables, kv }`), second arg is config.
 
 ```typescript
-function createMaterializer<TTables extends Record<string, TableHelper<any>>>(
-    tables: TTables,
+type MaterializerContext<
+    TTables extends Record<string, TableHelper<any>>,
+    TKv extends Record<string, KvHelper<any>>,
+> = {
+    tables: TTables;
+    kv: TKv;
+};
+
+function createMaterializer<
+    TTables extends Record<string, TableHelper<any>>,
+    TKv extends Record<string, KvHelper<any>>,
+>(
+    ctx: MaterializerContext<TTables, TKv>,
     config: { directory: string },
-): MaterializerBuilder<TTables>;
+): MaterializerBuilder<TTables, TKv>;
 ```
 
-The factory receives the typed `tables` object. This gives it:
+The factory receives the extension context (structurally typed — not importing `ExtensionContext`). Passing `ctx` directly from the `.withWorkspaceExtension` closure works because `ExtensionContext` satisfies `{ tables, kv }` structurally. This gives the factory:
 - `keyof TTables` for validated table name strings
 - `TTables[K]` for row type inference per table
+- `TKv` for typed KV access
 - Table key names for default subdirectory names
 
 ### All tables materialize by default
 
-`createMaterializer(tables, { directory })` immediately materializes every table with defaults:
+`createMaterializer(ctx, { directory })` immediately materializes every table with defaults:
 - Serialize: all fields as frontmatter, `{id}.md` filename (markdown format)
 - Directory: `{directory}/{tableName}/`
 
@@ -132,7 +144,7 @@ function markdown(input: {
 ### `.table()` chain with typed overrides
 
 ```typescript
-interface MaterializerBuilder<TTables> {
+interface MaterializerBuilder<TTables, TKv> {
     /**
      * Override materialization config for a specific table.
      *
@@ -163,7 +175,7 @@ interface MaterializerBuilder<TTables> {
 By default, all KV data materializes to a single `{directory}/kv.json` file containing all key-value pairs as a flat JSON object. Override with `.kv()` if needed.
 
 ```typescript
-interface MaterializerBuilder<TTables> {
+interface MaterializerBuilder<TTables, TKv> {
     // ... table methods above ...
 
     /**
@@ -193,8 +205,8 @@ import {
 
 // Tab manager — override filename strategy, everything else defaults
 export const tabManager = createTabManagerWorkspace()
-    .withWorkspaceExtension('materializer', ({ tables }) =>
-        createMaterializer(tables, {
+    .withWorkspaceExtension('materializer', (ctx) =>
+        createMaterializer(ctx, {
             directory: join(import.meta.dir, 'tab-manager'),
         })
         .table('savedTabs', { serialize: slugFilename('title') })
@@ -204,12 +216,12 @@ export const tabManager = createTabManagerWorkspace()
 
 // Fuji — custom serialize with document content via closure
 export const fuji = createFujiWorkspace()
-    .withWorkspaceExtension('materializer', ({ tables, documents }) =>
-        createMaterializer(tables, { directory: import.meta.dir })
+    .withWorkspaceExtension('materializer', (ctx) =>
+        createMaterializer(ctx, { directory: import.meta.dir })
         .table('entries', {
             dir: 'fuji',
             serialize: async (row) => markdown({
-                // row: Entry — inferred from tables['entries']
+                // row: Entry — inferred from ctx.tables['entries']
                 frontmatter: {
                     id: row.id,
                     title: row.title,
@@ -219,7 +231,7 @@ export const fuji = createFujiWorkspace()
                     createdAt: row.createdAt,
                     updatedAt: row.updatedAt,
                 },
-                body: await documents.entries.content
+                body: await ctx.documents.entries.content
                     .open(row.id)
                     .then((h) => h.read())
                     .catch(() => undefined),
@@ -233,13 +245,13 @@ export const fuji = createFujiWorkspace()
 
 ```typescript
 export const opensidian = createWorkspace(opensidianDefinition)
-    .withWorkspaceExtension('materializer', ({ tables, documents }) =>
-        createMaterializer(tables, {
+    .withWorkspaceExtension('materializer', (ctx) =>
+        createMaterializer(ctx, {
             directory: join(import.meta.dir, 'data'),
         })
         .table('files', {
             serialize: async (row) => {
-                // row: FileRow — inferred from tables['files']
+                // row: FileRow — inferred from ctx.tables['files']
                 if (row.type === 'folder') {
                     return markdown({
                         frontmatter: { id: row.id, name: row.name, type: 'folder' },
@@ -256,7 +268,7 @@ export const opensidian = createWorkspace(opensidianDefinition)
                         updatedAt: row.updatedAt,
                         trashedAt: row.trashedAt,
                     },
-                    body: await documents.files.content
+                    body: await ctx.documents.files.content
                         .open(row.id)
                         .then((h) => h.read())
                         .catch(() => undefined),
@@ -274,7 +286,7 @@ export const opensidian = createWorkspace(opensidianDefinition)
 
 ```typescript
 // Materialize devices as individual JSON files instead of markdown
-createMaterializer(tables, { directory: '...' })
+createMaterializer(ctx, { directory: '...' })
     .table('devices', {
         serialize: (row) => ({
             filename: `${row.id}.json`,
@@ -299,7 +311,7 @@ createMaterializer(tables, { directory: '...' })
 
 ### Factory
 
-- `createMaterializer(tables, config)` — factory: resource first, config second
+- `createMaterializer(ctx, config)` — factory: resource first (extension context), config second
 
 ### Serialize presets (return `SerializeResult`)
 
@@ -353,7 +365,7 @@ The materializer writes files. It doesn't care about format. Markdown-specific l
 
 ### 2. Factory function pattern: resource first, config second
 
-`createMaterializer(tables, { directory })` follows the universal factory function signature. `tables` is the resource (typed, from extension closure). `{ directory }` is the config. Two args max.
+`createMaterializer(ctx, { directory })` follows the universal factory function signature. `ctx` is the resource (structurally typed as `{ tables, kv }` — receives the extension context directly). `{ directory }` is the config. Two args max.
 
 ### 3. Default-materialize-all with `.table()` overrides
 
@@ -396,8 +408,8 @@ All consumers in the monorepo must be migrated in the same commit.
 
 ## MUST DO
 
-- Implement `createMaterializer(tables, config)` factory returning builder with `.table()`, `.skip()`, `.kv()`
-- Generic type parameter on factory for `TTables` — infer from `tables` arg
+- Implement `createMaterializer(ctx, config)` factory where ctx is structurally typed as `{ tables, kv }` — receives extension context directly
+- Generic type parameters on factory for `TTables` and `TKv` — infer from ctx arg
 - `.table(name, config)` validates name as `keyof TTables`, infers row type for serialize callback
 - General serialize contract: `{ filename: string; content: string }`
 - `markdown()` helper: `{ frontmatter, body, filename }` → `{ filename, content }` with wikilink conversion
@@ -419,3 +431,40 @@ All consumers in the monorepo must be migrated in the same commit.
 - Do not add new dependencies to `packages/workspace`
 - Do not modify `packages/workspace/src/workspace/types.ts`
 - Do not remove `toMarkdown` utility — it's still needed by the `markdown()` helper
+
+## Open Questions (flagged during reflection)
+
+### 1. Preset names don't indicate they produce markdown
+
+`slugFilename('title')` and `bodyField('desc')` internally call `markdown()` to produce `SerializeResult`. But nothing in the name tells you the output is markdown. A user seeing `serialize: slugFilename('title')` might think it's format-agnostic.
+
+Options:
+- Rename to `markdownSlugFilename`, `markdownBodyField` — explicit but verbose
+- Keep short names, document as "markdown presets" — relies on docs
+- Have presets return `{ frontmatter, body, filename }` and require the caller to wrap with `markdown()` — more explicit but more verbose at call site
+
+Leaning toward: keep short names, they live in a module clearly about materialization and the default IS markdown. Document it.
+
+### 2. Default-materialize-all assumes all tables produce sensible markdown
+
+Tables with binary data, internal state, or very large rows would produce garbage `.md` files. The default is designed for typical content tables (notes, bookmarks, entries). `.skip()` exists for internal/binary tables. This should be clearly documented.
+
+### 3. KV observation — does it exist?
+
+The spec says KV materializes to `kv.json`. But this requires observing KV changes for live updates. Verify that the workspace API supports `kv.observe()` or equivalent. If not, KV materialization only happens at startup — which might be fine but should be documented.
+
+### 4. `markdown()` bakes in wikilink conversion with no opt-out
+
+`markdown()` always calls `convertEpicenterLinksToWikilinks`. Users who want markdown WITHOUT link conversion can use `toMarkdown()` directly (already exported, pure function, no link processing). This is the escape hatch — mention it in docs.
+
+### 5. `whenReady` timing
+
+The builder has `whenReady` as a property, but `.table()` calls happen synchronously before `whenReady` is accessed by the framework. Implementation must ensure `whenReady` starts materialization lazily (on first access or next microtask) so all `.table()` and `.skip()` calls complete first.
+
+### 6. `.kv({ skip: true })` vs `.skipKv()`
+
+Tables use `.skip('tableName')` method. KV uses `.kv({ skip: true })` flag. Inconsistent pattern. Consider `.skipKv()` for consistency, or accept the difference since KV has other config options (filename) that tables don't.
+
+### 7. `MaybePromise<T>` — check for existing definition
+
+This type may already exist in the codebase. Check before defining a new one to avoid duplication.

@@ -144,6 +144,10 @@ export function createAuth({
 			consentPage: '/consent',
 			requirePKCE: true,
 			allowDynamicClientRegistration: false,
+			// The plugin warns that /.well-known/oauth-authorization-server/auth must exist
+			// because basePath is /auth (not /), so it can't auto-mount at the root.
+			// We already mount both discovery endpoints manually in app.ts.
+			silenceWarnings: { oauthAuthServerConfig: true, openidConfig: true },
 			trustedClients: [
 				{
 					clientId: 'epicenter-desktop',

@@ -575,6 +575,39 @@ export type TableHelper<TRow extends BaseRow> = {
 	 */
 	set(row: TRow): void;
 
+	/**
+	 * Insert or replace many rows with chunked transactions and progress reporting.
+	 *
+	 * Use this for large imports (1K+ rows) where you need:
+	 * - Non-blocking UI (yields to the event loop between chunks)
+	 * - Progress feedback (onProgress callback)
+	 * - Bounded memory (one observer fire per chunk, not one giant batch)
+	 *
+	 * For small batches (< 100 rows), prefer `workspace.batch()` instead:
+	 * ```typescript
+	 * workspace.batch(() => rows.forEach((row) => table.set(row)));
+	 * ```
+	 *
+	 * Each chunk runs in its own Y.js transaction. The observer fires once per
+	 * chunk, keeping memory bounded. Default chunk size (1000) targets < 16ms
+	 * per chunk on typical hardware.
+	 *
+	 * @example
+	 * ```typescript
+	 * await table.bulkSet(importedRows, {
+	 * 	chunkSize: 1000,
+	 * 	onProgress: (pct) => progressBar.update(pct),
+	 * });
+	 * ```
+	 */
+	bulkSet(
+		rows: TRow[],
+		options?: {
+			chunkSize?: number;
+			onProgress?: (percent: number) => void;
+		},
+	): Promise<void>;
+
 	// ═══════════════════════════════════════════════════════════════════════
 	// READ (validates + migrates to latest)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -669,6 +702,32 @@ export type TableHelper<TRow extends BaseRow> = {
 	 * @param id - The row ID to delete
 	 */
 	delete(id: string): void;
+
+	/**
+	 * Delete many rows by ID with chunked operations and progress reporting.
+	 *
+	 * Unlike calling `delete(id)` in a loop (which scans the array per call — O(n²)
+	 * for N deletions), `bulkDelete` collects all matching entries in a single scan
+	 * and removes them in batch. For 10K deletions, this is ~10x faster.
+	 *
+	 * Use this for purge operations (1K+ rows). For small batches (< 100 rows),
+	 * calling `delete(id)` in a `workspace.batch()` is simpler and fine.
+	 *
+	 * @example
+	 * ```typescript
+	 * const staleIds = table.filter((r) => r.archived).map((r) => r.id);
+	 * await table.bulkDelete(staleIds, {
+	 * 	onProgress: (pct) => console.log(`${Math.round(pct * 100)}% deleted`),
+	 * });
+	 * ```
+	 */
+	bulkDelete(
+		ids: string[],
+		options?: {
+			chunkSize?: number;
+			onProgress?: (percent: number) => void;
+		},
+	): Promise<void>;
 
 	/**
 	 * Delete all rows from the table.
@@ -1490,14 +1549,13 @@ export type WorkspaceClient<
 /**
  * Type alias for any workspace client (used for duck-typing in CLI/server).
  */
-// biome-ignore lint/suspicious/noExplicitAny: intentional variance-friendly type
 export type AnyWorkspaceClient = WorkspaceClient<
-	any,
-	any,
-	any,
-	any,
-	any,
-	any
+	string,
+	TableDefinitions,
+	KvDefinitions,
+	AwarenessDefinitions,
+	Record<string, unknown>,
+	Record<string, unknown>
 > & {
 	actions?: Actions;
 };

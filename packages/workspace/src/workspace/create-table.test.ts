@@ -76,6 +76,32 @@ describe('createTable', () => {
 			expect(helper.count()).toBe(3);
 			expect(helper.getAllValid()).toHaveLength(3);
 		});
+
+		test('bulkSet stores rows in chunks and reports progress', async () => {
+			const { ykv } = setup();
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
+			const helper = createTable(ykv, definition);
+			const progress: number[] = [];
+
+			await helper.bulkSet(
+				[
+					{ id: '1', name: 'Alice', _v: 1 },
+					{ id: '2', name: 'Bob', _v: 1 },
+					{ id: '3', name: 'Charlie', _v: 1 },
+					{ id: '4', name: 'Dora', _v: 1 },
+					{ id: '5', name: 'Eve', _v: 1 },
+				],
+				{
+					chunkSize: 2,
+					onProgress: (percent) => progress.push(percent),
+				},
+			);
+
+			expect(helper.getAllValid()).toHaveLength(5);
+			expect(progress).toEqual([0.4, 0.8, 1]);
+		});
 	});
 
 	describe('get operations', () => {
@@ -434,6 +460,36 @@ describe('createTable', () => {
 
 			helper.clear();
 			expect(helper.count()).toBe(0);
+		});
+
+		test('bulkDelete removes rows in chunks and reports progress', async () => {
+			const { ykv } = setup();
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
+			const helper = createTable(ykv, definition);
+			const progress: number[] = [];
+
+			await helper.bulkSet([
+				{ id: '1', name: 'Alice', _v: 1 },
+				{ id: '2', name: 'Bob', _v: 1 },
+				{ id: '3', name: 'Charlie', _v: 1 },
+				{ id: '4', name: 'Dora', _v: 1 },
+				{ id: '5', name: 'Eve', _v: 1 },
+			]);
+
+			await helper.bulkDelete(['1', '3', '5'], {
+				chunkSize: 2,
+				onProgress: (percent) => progress.push(percent),
+			});
+
+			expect(
+				helper
+					.getAllValid()
+					.map((row) => row.id)
+					.sort(),
+			).toEqual(['2', '4']);
+			expect(progress).toEqual([2 / 3, 1]);
 		});
 	});
 

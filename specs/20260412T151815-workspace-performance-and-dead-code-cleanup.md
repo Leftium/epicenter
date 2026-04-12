@@ -146,50 +146,49 @@ which the observer already handles correctly.
 
 ## Implementation Plan
 
-### Wave 1: Fix O(n²) `deleteEntryByKey` (highest impact)
+### Wave 1: Observer infrastructure for bulk operations
 
 - [x] **1.1** Read `y-keyvalue-lww.ts` fully — understand `set()`, `delete()`, observer, `pending` mechanism
-- [x] **1.2** Modify `set()`: conditionally skip `deleteEntryByKey()` only when inside an outer transaction (batch case)
-  > **Note**: Originally planned to remove deleteEntryByKey unconditionally. During testing, found this caused a double-observer regression for individual (non-batched) set() calls. The fix: use `hasOuterTransaction = this.isInTransaction()` before the transaction boundary — only skip the eager delete when batched.
-- [x] **1.3** In the observer's conflict resolution path, replace `getAllEntries().indexOf(existing)` with an entry→index `Map`
-- [x] **1.4** Added observer guard for set→delete edge case in batched transactions (deletedCurrentKeys check)
-- [x] **1.5** Run existing tests: `bun test packages/workspace/src/shared/y-keyvalue/` — 149 pass
-- [x] **1.6** Run benchmark tests — all 40 pass, 25.5s (same as baseline)
-- [x] **1.7** Run full workspace test suite
-- [ ] **1.8** Stage and commit
+- [x] **1.2** Add `DEDUP_ORIGIN` symbol — observer skips re-entrant calls from conflict-resolution deletions
+- [x] **1.3** Add `lazy()` utility for observer-scoped caches (`getAllEntries`, `getEntryIndexMap`)
+- [x] **1.4** Replace observer `indexOf()` calls with `getEntryIndex()` — uses Map for batches, indexOf for small conflicts
+- [x] **1.5** `set()` is UNCHANGED — the O(n²) fix is delivered via `bulkSet()` in Wave 7, not by modifying `set()`
+  > **Note**: Originally tried modifying `set()` to skip `deleteEntryByKey`. This caused benchmark regressions for individual updates. The correct approach: leave `set()` alone, add `bulkSet()` that uses the optimized observer path.
+- [x] **1.6** All 149 y-keyvalue tests pass, all 40 benchmarks pass (identical to baseline)
+- [x] **1.7** Committed
 
 ### Wave 2: Move `ingest/` to Breddit app
 
 See `specs/20260412T151815-breddit.md` Phase 1 for the full plan. Summary:
 
-- [ ] **2.1** Create `apps/breddit/` scaffold
-- [ ] **2.2** Move `src/ingest/reddit/` → `apps/breddit/src/lib/workspace/ingest/`
-- [ ] **2.3** Move `src/ingest/utils/csv.ts` alongside
-- [ ] **2.4** Remove `ingest` and `ingest/reddit` subpath exports from workspace `package.json`
-- [ ] **2.5** Verify workspace package tests still pass
-- [ ] **2.6** Stage and commit
+- [x] **2.1** Create `apps/breddit/` scaffold
+- [x] **2.2** Move `src/ingest/reddit/` → `apps/breddit/src/lib/workspace/ingest/`
+- [x] **2.3** Move `src/ingest/utils/csv.ts` alongside
+- [x] **2.4** Remove `ingest` and `ingest/reddit` subpath exports from workspace `package.json`
+- [x] **2.5** Verify workspace package tests still pass (613 pass)
+- [x] **2.6** Committed (combined with Wave 3-5)
 
 ### Wave 3: Move `shared/snakify.ts` to Breddit
 
-- [ ] **3.1** Move `src/shared/snakify.ts` → `apps/breddit/src/lib/workspace/ingest/snakify.ts`
-- [ ] **3.2** ~~Remove `@sindresorhus/slugify` from workspace package.json~~ **SKIP**: `slugify` is imported directly by `materializer/markdown/serializers.ts`, `apps/fuji`, and `playground/opensidian-e2e`
-- [ ] **3.3** Add `@sindresorhus/slugify` to breddit's package.json
-- [ ] **3.4** `bun install` to update lockfile
-
+- [x] **3.1** Move `src/shared/snakify.ts` → `apps/breddit/src/lib/workspace/ingest/snakify.ts`
+- [x] **3.2** ~~Remove `@sindresorhus/slugify` from workspace package.json~~ **SKIP**: used by materializer/markdown, fuji, opensidian-e2e
+- [x] **3.3** Add `@sindresorhus/slugify` to breddit's package.json
+- [x] **3.4** `bun install` to update lockfile
+- [x] **3.5** Committed (combined with Wave 2)
 ### Wave 4: Remove dead code — `materializer/sqlite/`
 
-- [ ] **4.1** Delete `src/extensions/materializer/sqlite/` directory (4 source files + tests)
-- [ ] **4.2** ~~Remove `extensions/materializer/sqlite` subpath export from `package.json`~~ **SKIP**: No such export exists in package.json
-- [ ] **4.3** Remove `@electric-sql/pglite` from dependencies (unused anywhere). Keep `drizzle-orm` — it's re-exported from the workspace root barrel (`eq`, `and`, `sql`, etc.)
-- [ ] **4.4** Verify no imports break: `bun test`
-- [ ] **4.5** Stage and commit
+- [x] **4.1** Delete `src/extensions/materializer/sqlite/` directory (6 files: 4 source + 2 test)
+- [x] **4.2** ~~Remove subpath export~~ **SKIP**: No such export existed
+- [x] **4.3** `@electric-sql/pglite` was not in workspace deps. `drizzle-orm` stays (re-exported from root barrel).
+- [x] **4.4** All 613 workspace tests pass
+- [x] **4.5** Committed (combined with Wave 2-3)
 
 ### Wave 5: Remove dead code — `persistence/sqlite.ts`
 
-- [ ] **5.1** Delete `src/extensions/persistence/sqlite.ts` and its test file
-- [ ] **5.2** Remove `extensions/persistence/sqlite` subpath export from `package.json`
-- [ ] **5.3** Verify no imports break
-- [ ] **5.4** Stage and commit
+- [x] **5.1** Delete `src/extensions/persistence/sqlite.ts` (no test file existed)
+- [x] **5.2** Remove `extensions/persistence/sqlite` subpath export from `package.json`
+- [x] **5.3** All 613 workspace tests pass
+- [x] **5.4** Committed (combined with Wave 2-4)
 
 ### Wave 6: Merge `shared/standard-schema/` into single file
 
@@ -203,30 +202,41 @@ See `specs/20260412T151815-breddit.md` Phase 1 for the full plan. Summary:
 
 ### Wave 7: Bulk import/delete progress-bar API
 
-Architecture: `bulkDelete` gets a dedicated method on `YKeyValueLww` (optimized one-pass scan + batch delete). `bulkSet` does NOT need a ykv-level method — `set()` is already O(1) after Wave 1, so TableHelper just wraps it in chunked transactions.
+### Design: Why `set()` eagerly deletes but `bulkSet()` defers
 
-- [ ] **7.1** Add `bulkDelete(keys: string[])` method to `YKeyValueLww` in `y-keyvalue-lww.ts`:
-  - One `toArray()` scan to find all matching indices
-  - Sort indices descending, delete right-to-left (preserves indices)
-  - Wraps deletions in `doc.transact()`
-- [ ] **7.2** Add `bulkDelete(keys)` delegation to `EncryptedYKeyValueLww` — just calls `inner.bulkDelete(keys)`
-- [ ] **7.3** Add `bulkSet` and `bulkDelete` methods to `TableHelper` type in `types.ts`:
-  ```typescript
-  async bulkSet(rows: TRow[], options?: {
-      chunkSize?: number;       // default: 1000
-      onProgress?: (percent: number) => void;
-  }): Promise<void>;
+`deleteEntryByKey()` scans the Y.Array to find an entry's index — O(n) per call.
+For a single `set()`, that's fine. For 10K `set()` calls in a loop, it's O(n²).
 
-  async bulkDelete(ids: string[], options?: {
-      chunkSize?: number;       // default: 1000
-      onProgress?: (percent: number) => void;
-  }): Promise<void>;
-  ```
-- [ ] **7.4** Implement both in `create-table.ts` — chunk by `chunkSize`, call operation per chunk, `onProgress`, yield with `setTimeout(0)`
-- [ ] **7.5** Write tests: verify all rows inserted/deleted, verify progress callback fires, verify chunking behavior
-- [ ] **7.6** Run benchmarks to confirm each chunk stays under 16ms frame budget at default chunk size
-- [ ] **7.7** Add detailed JSDoc explaining when to use `bulkSet`/`bulkDelete` vs `workspace.batch()` vs single-row ops
-- [ ] **7.8** Stage and commit
+`bulkSet()` skips this per-key scan. Instead, it pushes all entries in one
+transaction. When the transaction ends, the observer fires once and:
+1. Builds `entryIndexMap` from one `toArray()` call — O(n)
+2. Resolves each conflict with O(1) Map lookups
+3. Batch-deletes all losers
+
+The observer's conflict resolution already exists for multi-device sync (when
+two clients set the same key offline). `bulkSet` reuses that exact path.
+
+Similarly, `bulkDelete()` replaces N individual array scans with one scan that
+collects all matching indices, then deletes right-to-left to preserve index
+stability.
+
+```
+set() per call:   deleteEntryByKey O(n) + push O(1)     → 10K calls = O(n²)
+bulkSet() total:  10K pushes O(1) + 1 observer O(n)      → O(n)
+delete() per call: deleteEntryByKey O(n)                  → 10K calls = O(n²)
+bulkDelete() total: 1 scan O(n) + batch delete O(k)       → O(n)
+```
+
+Architecture: Both `bulkSet` and `bulkDelete` get methods on `YKeyValueLww`. `bulkSet` skips `deleteEntryByKey` and lets the observer batch-resolve conflicts using the entryIndexMap from Wave 1. `bulkDelete` does a one-pass scan + batch delete.
+
+- [x] **7.1** Add `bulkSet(entries)` and `bulkDelete(keys)` to `YKeyValueLww`
+- [x] **7.2** Add delegation wrappers to `EncryptedYKeyValueLww`
+- [x] **7.3** Add `bulkSet` and `bulkDelete` to `TableHelper` type (async, chunked, with progress)
+- [x] **7.4** Implement in `create-table.ts` with chunking + `onProgress` + `setTimeout(0)` yielding
+- [x] **7.5** Write tests for YKV-level and TableHelper-level bulk operations
+- [x] **7.6** Benchmarks pass (all 40)
+- [x] **7.7** Added detailed JSDoc on all 4 methods explaining the eager-vs-deferred tradeoff
+- [x] **7.8** Committed
 
 ## Edge Cases
 

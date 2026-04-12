@@ -28,21 +28,19 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 	ykv: EncryptedYKeyValueLww<unknown>,
 	definitions: TKvDefinitions,
 ): KvHelper<TKvDefinitions> {
-	function readValue(key: string): unknown {
-		const definition = definitions[key];
-		if (!definition) throw new Error(`Unknown KV key: ${key}`);
-
-		const raw = ykv.get(key);
-		if (raw === undefined) return definition.defaultValue;
-
-		const result = definition.schema['~standard'].validate(raw);
-		if (result instanceof Promise) throw new TypeError('Async schemas not supported');
-		return result.issues ? definition.defaultValue : result.value;
-	}
-
 	return {
 		get(key) {
-			return readValue(key);
+			const definition = definitions[key];
+			if (!definition) throw new Error(`Unknown KV key: ${key}`);
+
+			const raw = ykv.get(key);
+			if (raw === undefined) return definition.defaultValue;
+
+			const result = definition.schema['~standard'].validate(raw);
+			if (result instanceof Promise)
+			if (result.issues) return definition.defaultValue;
+
+			return result.value;
 		},
 
 		set(key, value) {
@@ -127,10 +125,17 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 			return () => ykv.unobserve(handler);
 		},
 
+		/**
+		 * Get all KV values as a plain record.
+		 *
+		 * Iterates every defined key and delegates to `get()`, which handles
+		 * validation and default-value fallback. Useful for snapshotting the
+		 * full KV state (e.g., materializer initial flush).
+		 */
 		getAll() {
 			const result: Record<string, unknown> = {};
 			for (const key of Object.keys(definitions)) {
-				result[key] = readValue(key);
+				result[key] = this.get(key);
 			}
 			return result;
 		},

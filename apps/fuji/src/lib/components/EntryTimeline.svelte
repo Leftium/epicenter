@@ -57,7 +57,7 @@
 	});
 </script>
 
-<div class="flex h-full flex-col">
+<div class="flex min-h-0 flex-1 flex-col">
 	<!-- Header -->
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<h2 class="text-sm font-semibold">Timeline</h2>
@@ -104,7 +104,7 @@
 										{entry.title || 'Untitled'}
 									</span>
 									<span class="shrink-0 text-xs text-muted-foreground">
-										{format(DateTimeString.toDate(entry.updatedAt), 'h:mm a')}
+							{format(DateTimeString.toDate(entry[dateField]), 'h:mm a')}
 									</span>
 								</div>
 								{#if entry.subtitle}

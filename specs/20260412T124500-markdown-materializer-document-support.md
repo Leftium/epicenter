@@ -452,17 +452,17 @@ All consumers in the monorepo must be migrated in the same commit.
 
 ## MUST DO
 
-- Implement `createMaterializer(ctx, { dir })` factory where ctx is structurally typed as `{ tables, kv, whenReady }`
-- Generic type parameters on factory for `TTables` and `TKv` — infer from ctx arg
-- `.table(name, config)` validates name as `keyof TTables`, infers row type for serialize callback
-- General serialize contract: `{ filename: string; content: string }`
-- `markdown()` helper: `{ frontmatter, body, filename }` → `{ filename, content }` with wikilink conversion
-- Opt-in materialization: nothing by default, `.table()` opts in per table, `.kv()` opts in KV
-- Await `ctx.whenReady` before initial materialization (ensures persistence/sync have loaded data)
-- Default table serialize (when `.table()` called without serialize): all fields as markdown frontmatter, `{id}.md`
-- `.kv()` default: `{dir}/kv.json` with JSON.stringify. Custom serialize receives typed KV snapshot.
-- Rename serialize presets: `slugFilename(field)`, `bodyField(field)`
-- Export standalone utilities: `toSlugFilename(title, id)`, `toIdFilename(id)`
+- [x] Implement `createMaterializer(ctx, { dir })` factory where ctx is structurally typed as `{ tables, kv, whenReady }`
+- [x] Generic type parameters on factory for `TTables` and `TKv` — infer from ctx arg
+- [x] `.table(name, config)` validates name as `keyof TTables`, infers row type for serialize callback
+- [x] General serialize contract: `{ filename: string; content: string }`
+- [x] `markdown()` helper: `{ frontmatter, body, filename }` → `{ filename, content }` with wikilink conversion
+- [x] Opt-in materialization: nothing by default, `.table()` opts in per table, `.kv()` opts in KV
+- [x] Await `ctx.whenReady` before initial materialization (ensures persistence/sync have loaded data)
+- [x] Default table serialize (when `.table()` called without serialize): all fields as markdown frontmatter, `{id}.md`
+- [x] `.kv()` default: `{dir}/kv.json` with JSON.stringify. Custom serialize receives typed KV snapshot.
+- [x] Rename serialize presets: `slugFilename(field)`, `bodyField(field)`
+- [x] Export standalone utilities: `toSlugFilename(title, id)`, `toIdFilename(id)`
 - Delete `apps/fuji/src/lib/materializer.ts`
 - Delete `playground/opensidian-e2e/materializer.ts`
 - Update `apps/fuji/package.json`: remove `"./materializer"` export, remove deps

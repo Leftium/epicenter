@@ -1,21 +1,23 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
+	import { DateTimeString } from '@epicenter/workspace';
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { VList } from 'virtua/svelte';
+	import TableIcon from '@lucide/svelte/icons/table-2';
 	import { format, isToday, isYesterday } from 'date-fns';
-	import type { Entry } from '$lib/workspace';
-	import { DateTimeString } from '@epicenter/workspace';
+	import { VList } from 'virtua/svelte';
+	import { goto } from '$app/navigation';
 	import { entriesState, viewState } from '$lib/entries.svelte';
+	import type { Entry } from '$lib/workspace';
 
-	let { entries }: { entries: Entry[] } = $props();
-
+	let { entries, title }: { entries: Entry[]; title?: string } = $props();
 
 	/** Which timestamp field to use for sorting and grouping. */
 	const dateField = $derived(
-		viewState.sortBy === 'title' ? 'date' as const : viewState.sortBy as 'date' | 'updatedAt' | 'createdAt',
+		viewState.sortBy === 'title'
+			? ('date' as const)
+			: (viewState.sortBy as 'date' | 'updatedAt' | 'createdAt'),
 	);
 
 	function getDateLabel(dts: string): string {
@@ -55,10 +57,20 @@
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 	<!-- Header -->
 	<div class="flex items-center justify-between border-b px-4 py-3">
-		<h2 class="text-sm font-semibold">Timeline</h2>
-		<Button variant="ghost" size="icon-sm" onclick={entriesState.createEntry}>
-			<PlusIcon class="size-4" />
-		</Button>
+		<h2 class="text-sm font-semibold">{title ?? 'Timeline'}</h2>
+		<div class="flex items-center gap-1">
+			<Button
+				variant="ghost"
+				size="icon-sm"
+				onclick={() => viewState.toggleViewMode()}
+				title="Switch to table"
+			>
+				<TableIcon class="size-4" />
+			</Button>
+			<Button variant="ghost" size="icon-sm" onclick={entriesState.createEntry}>
+				<PlusIcon class="size-4" />
+			</Button>
+		</div>
 	</div>
 
 	<!-- Timeline -->
@@ -69,9 +81,15 @@
 					<ClockIcon class="size-8 text-muted-foreground" />
 				</Empty.Media>
 				<Empty.Title>No entries yet</Empty.Title>
-				<Empty.Description>Create your first entry to get started.</Empty.Description>
+				<Empty.Description
+					>Create your first entry to get started.</Empty.Description
+				>
 				<Empty.Content>
-					<Button variant="outline" size="sm" onclick={entriesState.createEntry}>
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={entriesState.createEntry}
+					>
 						<PlusIcon class="mr-1.5 size-4" />
 						New Entry
 					</Button>

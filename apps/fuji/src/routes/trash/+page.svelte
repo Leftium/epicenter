@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
@@ -7,6 +6,7 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
+	import { goto } from '$app/navigation';
 	import { workspace } from '$lib/client';
 	import { entriesState } from '$lib/entries.svelte';
 	import { relativeTime } from '$lib/format';
@@ -16,7 +16,6 @@
 			(b.deletedAt ?? '').localeCompare(a.deletedAt ?? ''),
 		),
 	);
-
 </script>
 
 <main class="flex h-full flex-1 flex-col overflow-hidden">
@@ -73,20 +72,18 @@
 								<div class="flex items-center justify-end gap-1">
 									<Button
 										variant="ghost"
-										size="icon"
-										class="size-7"
+										size="icon-sm"
 										title="Restore entry"
 										onclick={() => {
-											workspace.actions.entries.restore({ id: entry.id });
-											goto(`/entries/${entry.id}`);
-										}}
+										workspace.actions.entries.restore({ id: entry.id });
+										goto(`/entries/${entry.id}`);
+									}}
 									>
-										<RotateCcwIcon class="size-3.5" />
+										<RotateCcwIcon class="size-4" />
 									</Button>
 									<Button
 										variant="ghost-destructive"
-										size="icon"
-										class="size-7"
+										size="icon-sm"
 										title="Delete permanently"
 										onclick={() => {
 											confirmationDialog.open({
@@ -99,7 +96,7 @@
 											});
 										}}
 									>
-										<XIcon class="size-3.5" />
+										<XIcon class="size-4" />
 									</Button>
 								</div>
 							</Table.Cell>

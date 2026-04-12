@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
+	import * as StarRating from '@epicenter/ui/star-rating';
 	import * as Table from '@epicenter/ui/table';
 	import { SortableTableHeader } from '@epicenter/ui/table';
-	import * as StarRating from '@epicenter/ui/star-rating';
+	import ClockIcon from '@lucide/svelte/icons/clock';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import {
@@ -12,18 +12,23 @@
 		FlexRender,
 		renderComponent,
 	} from '@tanstack/svelte-table';
-	import type { ColumnDef } from '@tanstack/table-core';
+	import type { ColumnDef, SortingState } from '@tanstack/table-core';
 	import {
 		getCoreRowModel,
 		getFilteredRowModel,
 		getSortedRowModel,
 	} from '@tanstack/table-core';
+	import { goto } from '$app/navigation';
+	import {
+		entriesState,
+		matchesEntrySearch,
+		viewState,
+	} from '$lib/entries.svelte';
+	import { relativeTime } from '$lib/format';
 	import type { Entry } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
-	import { entriesState, matchesEntrySearch, viewState } from '$lib/entries.svelte';
-	import { relativeTime } from '$lib/format';
 
-	let { entries }: { entries: Entry[] } = $props();
+	let { entries, title }: { entries: Entry[]; title?: string } = $props();
 
 	const columns: ColumnDef<Entry>[] = [
 		{
@@ -93,7 +98,11 @@
 			cell: ({ getValue }) => {
 				const rating = getValue<number>();
 				if (!rating) return '';
-				return renderComponent(StarRating.Root, { value: rating, readonly: true, class: 'pointer-events-none' });
+				return renderComponent(StarRating.Root, {
+					value: rating,
+					readonly: true,
+					class: 'pointer-events-none',
+				});
 			},
 		},
 		{
@@ -128,7 +137,9 @@
 		},
 	];
 
-	let sorting = $state([{ id: viewState.sortBy, desc: viewState.sortBy !== 'title' }]);
+	let sorting = $state<SortingState>([
+		{ id: viewState.sortBy, desc: viewState.sortBy !== 'title' },
+	]);
 
 	const table = createSvelteTable({
 		getRowId: (row) => row.id,
@@ -175,15 +186,27 @@
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 	<!-- Toolbar -->
 	<div class="flex items-center justify-between border-b px-4 py-3">
-		<h2 class="text-sm font-semibold">Entries</h2>
-		<Button variant="ghost" size="icon-sm" onclick={entriesState.createEntry}>
-			<PlusIcon class="size-4" />
-		</Button>
+		<h2 class="text-sm font-semibold">{title ?? 'Entries'}</h2>
+		<div class="flex items-center gap-1">
+			<Button
+				variant="ghost"
+				size="icon-sm"
+				onclick={() => viewState.toggleViewMode()}
+				title="Switch to timeline"
+			>
+				<ClockIcon class="size-4" />
+			</Button>
+			<Button variant="ghost" size="icon-sm" onclick={entriesState.createEntry}>
+				<PlusIcon class="size-4" />
+			</Button>
+		</div>
 	</div>
 
 	<!-- Table -->
 	<div class="flex-1 overflow-auto">
-		<Table.Root class="[&_th:first-child]:pl-4 [&_td:first-child]:pl-4 [&_th:last-child]:pr-4 [&_td:last-child]:pr-4">
+		<Table.Root
+			class="[&_th:first-child]:pl-4 [&_td:first-child]:pl-4 [&_th:last-child]:pr-4 [&_td:last-child]:pr-4"
+		>
 			<Table.Header>
 				{#each table.getHeaderGroups() as headerGroup}
 					<Table.Row>
@@ -210,12 +233,14 @@
 							onclick={() => goto(`/entries/${row.original.id}`)}
 						>
 							{#each row.getVisibleCells() as cell}
-							<Table.Cell class={cell.column.id === 'title' ? 'max-w-[400px] truncate' : ''}>
-								<FlexRender
-									content={cell.column.columnDef.cell}
-									context={cell.getContext()}
-								/>
-							</Table.Cell>
+								<Table.Cell
+									class={cell.column.id === 'title' ? 'max-w-[400px] truncate' : ''}
+								>
+									<FlexRender
+										content={cell.column.columnDef.cell}
+										context={cell.getContext()}
+									/>
+								</Table.Cell>
 							{/each}
 						</Table.Row>
 					{/each}
@@ -228,12 +253,20 @@
 								</Empty.Media>
 								{#if viewState.searchQuery}
 									<Empty.Title>No entries match your search</Empty.Title>
-									<Empty.Description>Try a different search term or clear your filters.</Empty.Description>
+									<Empty.Description
+										>Try a different search term or clear your filters.</Empty.Description
+									>
 								{:else}
 									<Empty.Title>No entries yet</Empty.Title>
-									<Empty.Description>Create your first entry to get started.</Empty.Description>
+									<Empty.Description
+										>Create your first entry to get started.</Empty.Description
+									>
 									<Empty.Content>
-										<Button variant="outline" size="sm" onclick={entriesState.createEntry}>
+										<Button
+											variant="outline"
+											size="sm"
+											onclick={entriesState.createEntry}
+										>
 											<PlusIcon class="mr-1.5 size-4" />
 											New Entry
 										</Button>

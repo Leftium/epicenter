@@ -3,7 +3,6 @@
 	import * as Modal from '@epicenter/ui/modal';
 	import { localTimezone } from '@epicenter/ui/natural-language-date-input';
 	import { toast } from '@epicenter/ui/sonner';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import * as Tooltip from '@epicenter/ui/tooltip';
@@ -16,7 +15,6 @@
 	let isOpen = $state(false);
 	let rawText = $state('');
 	let timezone = $state(localTimezone());
-	let submitting = $state(false);
 
 	const parsed = $derived.by(() => {
 		if (!rawText.trim()) return { entries: [], skipped: 0 };
@@ -53,10 +51,10 @@
 				<Button
 					{...props}
 					variant="ghost"
-					size="icon-xs"
+					size="icon-sm"
 					onclick={() => (isOpen = true)}
 				>
-					<ClipboardPasteIcon class="size-3.5" />
+					<ClipboardPasteIcon class="size-4" />
 				</Button>
 			{/snippet}
 		</Tooltip.Trigger>
@@ -95,16 +93,9 @@
 				<Button variant="outline" type="button" onclick={() => (isOpen = false)}
 					>Cancel</Button
 				>
-				<Button
-					type="submit"
-					disabled={parsed.entries.length === 0 || submitting}
-				>
-					{#if submitting}
-						<Spinner class="size-3.5" />
-					{:else}
-						Add {parsed.entries.length}
-						{parsed.entries.length === 1 ? 'entry' : 'entries'}
-					{/if}
+				<Button type="submit" disabled={parsed.entries.length === 0}>
+					Add {parsed.entries.length}
+					{parsed.entries.length === 1 ? 'entry' : 'entries'}
 				</Button>
 			</Modal.Footer>
 		</form>

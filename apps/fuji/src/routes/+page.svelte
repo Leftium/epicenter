@@ -1,6 +1,11 @@
 <script lang="ts">
-	import EntriesListView from '$lib/components/EntriesListView.svelte';
-	import { entriesState } from '$lib/entries.svelte';
+	import EntriesTable from '$lib/components/EntriesTable.svelte';
+	import EntriesTimeline from '$lib/components/EntriesTimeline.svelte';
+	import { entriesState, viewState } from '$lib/entries.svelte';
 </script>
 
-<EntriesListView entries={entriesState.active} />
+{#if viewState.viewMode === 'table'}
+	<EntriesTable entries={entriesState.active} />
+{:else}
+	<EntriesTimeline entries={entriesState.active} />
+{/if}

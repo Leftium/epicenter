@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import EntriesListView from '$lib/components/EntriesListView.svelte';
-	import { entriesState } from '$lib/entries.svelte';
+	import EntriesTable from '$lib/components/EntriesTable.svelte';
+	import EntriesTimeline from '$lib/components/EntriesTimeline.svelte';
+	import { entriesState, viewState } from '$lib/entries.svelte';
 
 	const tagParam = $derived(decodeURIComponent(page.params.tag ?? ''));
 	const filteredEntries = $derived(
@@ -9,4 +10,8 @@
 	);
 </script>
 
-<EntriesListView entries={filteredEntries} title={tagParam} />
+{#if viewState.viewMode === 'table'}
+	<EntriesTable entries={filteredEntries} title={tagParam} />
+{:else}
+	<EntriesTimeline entries={filteredEntries} title={tagParam} />
+{/if}

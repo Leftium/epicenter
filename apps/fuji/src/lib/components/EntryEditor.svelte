@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import {
@@ -7,18 +6,19 @@
 		NaturalLanguageDateInput,
 		toDateTimeString,
 	} from '@epicenter/ui/natural-language-date-input';
-	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import * as Popover from '@epicenter/ui/popover';
 	import * as StarRating from '@epicenter/ui/star-rating';
+	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import { DateTimeString } from '@epicenter/workspace';
-	import { format } from 'date-fns';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import { format } from 'date-fns';
 	import type * as Y from 'yjs';
-	import type { Entry } from '$lib/workspace';
-	import TagInput from './TagInput.svelte';
-	import ProseMirrorEditor from './ProseMirrorEditor.svelte';
+	import { goto } from '$app/navigation';
 	import { workspace } from '$lib/client';
+	import type { Entry } from '$lib/workspace';
+	import ProseMirrorEditor from './ProseMirrorEditor.svelte';
+	import TagInput from './TagInput.svelte';
 
 	let {
 		entry,
@@ -50,20 +50,14 @@
 	<!-- Header with back button -->
 	<div class="flex items-center justify-between border-b px-4 py-2">
 		<div class="flex items-center gap-2">
-			<Button
-				variant="ghost"
-				size="icon"
-				class="size-7"
-				onclick={() => goto('/')}
-			>
+			<Button variant="ghost" size="icon-sm" onclick={() => goto('/')}>
 				<ArrowLeftIcon class="size-4" />
 			</Button>
 			<span class="text-sm text-muted-foreground">Back to entries</span>
 		</div>
 		<Button
 			variant="ghost-destructive"
-			size="icon"
-			class="size-7"
+			size="icon-sm"
 			onclick={() => {
 				confirmationDialog.open({
 					title: 'Delete entry?',

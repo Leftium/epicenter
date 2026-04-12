@@ -124,7 +124,7 @@
 								{#snippet children(entry)}
 									<Sidebar.MenuItem>
 										<Sidebar.MenuButton onclick={() => goto(`/entries/${entry.id}`)}>
-											<div class="flex w-full flex-col gap-0.5 overflow-hidden">
+										<div class="flex w-full flex-col gap-1 overflow-hidden">
 												<span class="truncate text-sm font-medium">
 													{entry.title || 'Untitled'}
 												</span>
@@ -209,7 +209,7 @@
 							{#each recentEntries as entry (entry.id)}
 								<Sidebar.MenuItem>
 								<Sidebar.MenuButton onclick={() => goto(`/entries/${entry.id}`)}>
-										<div class="flex w-full flex-col gap-0.5 overflow-hidden">
+										<div class="flex w-full flex-col gap-1 overflow-hidden">
 											<span class="truncate text-sm font-medium">
 												{entry.title || 'Untitled'}
 											</span>

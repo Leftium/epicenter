@@ -143,6 +143,13 @@
 			get globalFilter() {
 				return viewState.searchQuery;
 			},
+			get columnVisibility() {
+				return {
+					subtitle: false,
+					createdAt: false,
+					updatedAt: false,
+				};
+			},
 		},
 		globalFilterFn: (row, _columnId, filterValue) => {
 			return matchesEntrySearch(row.original, filterValue);
@@ -154,14 +161,14 @@
 	<!-- Toolbar -->
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<h2 class="text-sm font-semibold">Entries</h2>
-		<Button variant="ghost" size="icon" class="size-7" onclick={entriesState.createEntry}>
+		<Button variant="ghost" size="icon-sm" onclick={entriesState.createEntry}>
 			<PlusIcon class="size-4" />
 		</Button>
 	</div>
 
 	<!-- Table -->
 	<div class="flex-1 overflow-auto">
-		<Table.Root>
+		<Table.Root class="[&_th:first-child]:pl-4 [&_td:first-child]:pl-4 [&_th:last-child]:pr-4 [&_td:last-child]:pr-4">
 			<Table.Header>
 				{#each table.getHeaderGroups() as headerGroup}
 					<Table.Row>
@@ -188,12 +195,12 @@
 							onclick={() => goto(`/entries/${row.original.id}`)}
 						>
 							{#each row.getVisibleCells() as cell}
-								<Table.Cell>
-									<FlexRender
-										content={cell.column.columnDef.cell}
-										context={cell.getContext()}
-									/>
-								</Table.Cell>
+							<Table.Cell class={cell.column.id === 'title' ? 'max-w-[400px] truncate' : ''}>
+								<FlexRender
+									content={cell.column.columnDef.cell}
+									context={cell.getContext()}
+								/>
+							</Table.Cell>
 							{/each}
 						</Table.Row>
 					{/each}

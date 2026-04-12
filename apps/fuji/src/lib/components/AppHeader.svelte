@@ -13,20 +13,20 @@
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();
 </script>
 
-<div class="flex h-8 shrink-0 items-center justify-between border-b px-2">
+<div class="flex h-10 shrink-0 items-center justify-between border-b px-3">
 	<!-- Left: branding + actions -->
 	<div class="flex items-center gap-1.5">
-		<span class="text-xs font-semibold tracking-tight">Fuji</span>
+		<span class="text-sm font-semibold tracking-tight">Fuji</span>
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				{#snippet child({ props })}
 					<Button
 						{...props}
 						variant="ghost"
-						size="icon-xs"
+						size="icon-sm"
 						onclick={onOpenSearch}
 					>
-						<SearchIcon class="size-3.5" />
+						<SearchIcon class="size-4" />
 					</Button>
 				{/snippet}
 			</Tooltip.Trigger>
@@ -38,10 +38,10 @@
 					<Button
 						{...props}
 						variant="ghost"
-						size="icon-xs"
+						size="icon-sm"
 						onclick={entriesState.createEntry}
 					>
-						<PlusIcon class="size-3.5" />
+						<PlusIcon class="size-4" />
 					</Button>
 				{/snippet}
 			</Tooltip.Trigger>
@@ -50,7 +50,7 @@
 		<BulkAddModal />
 	</div>
 	<!-- Right: external links + theme -->
-	<div class="flex items-center gap-0.5">
+	<div class="flex items-center gap-1">
 		<SyncStatusIndicator />
 		<GitHubButton
 			repo={{ owner: 'EpicenterHQ', repo: 'epicenter' }}

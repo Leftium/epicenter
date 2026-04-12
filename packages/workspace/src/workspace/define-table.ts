@@ -46,7 +46,7 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
+import type { CombinedStandardSchema } from '../shared/standard-schema.js';
 import { createUnionSchema } from './schema-union.js';
 import type {
 	AwarenessDefinitions,

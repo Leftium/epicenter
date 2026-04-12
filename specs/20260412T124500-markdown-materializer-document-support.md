@@ -79,6 +79,7 @@ type MaterializerContext<
 > = {
     tables: TTables;
     kv: TKv;
+    whenReady: Promise<void>;  // must await before reading data
 };
 
 function createMaterializer<
@@ -90,7 +91,7 @@ function createMaterializer<
 ): MaterializerBuilder<TTables, TKv>;
 ```
 
-The factory receives the extension context (structurally typed — not importing `ExtensionContext`). Passing `ctx` directly from the `.withWorkspaceExtension` closure works because `ExtensionContext` satisfies `{ tables, kv }` structurally. This gives the factory:
+The factory receives the extension context (structurally typed—not importing `ExtensionContext`). Passing `ctx` directly from the `.withWorkspaceExtension` closure works because `ExtensionContext` satisfies `{ tables, kv, whenReady }` structurally. The materializer awaits `ctx.whenReady` before initial materialization to ensure persistence/sync have loaded data first. This gives the factory:
 - `keyof TTables` for validated table name strings
 - `TTables[K]` for row type inference per table
 - `TKv` for typed KV access
@@ -451,12 +452,13 @@ All consumers in the monorepo must be migrated in the same commit.
 
 ## MUST DO
 
-- Implement `createMaterializer(ctx, { dir })` factory where ctx is structurally typed as `{ tables, kv }`
+- Implement `createMaterializer(ctx, { dir })` factory where ctx is structurally typed as `{ tables, kv, whenReady }`
 - Generic type parameters on factory for `TTables` and `TKv` — infer from ctx arg
 - `.table(name, config)` validates name as `keyof TTables`, infers row type for serialize callback
 - General serialize contract: `{ filename: string; content: string }`
 - `markdown()` helper: `{ frontmatter, body, filename }` → `{ filename, content }` with wikilink conversion
 - Opt-in materialization: nothing by default, `.table()` opts in per table, `.kv()` opts in KV
+- Await `ctx.whenReady` before initial materialization (ensures persistence/sync have loaded data)
 - Default table serialize (when `.table()` called without serialize): all fields as markdown frontmatter, `{id}.md`
 - `.kv()` default: `{dir}/kv.json` with JSON.stringify. Custom serialize receives typed KV snapshot.
 - Rename serialize presets: `slugFilename(field)`, `bodyField(field)`
@@ -491,3 +493,4 @@ All consumers in the monorepo must be migrated in the same commit.
 | 8 | `directory` vs `dir` | **API fix** — `dir` everywhere. Short, consistent. Context makes base path vs subfolder obvious. |
 | 9 | KV serialize/overrides | **API fix** — `.kv({ serialize })` receives typed KV snapshot, returns `SerializeResult`. |
 | 10 | Global default serialize | **No** — would be `Record<string, unknown>` (untyped), defeating row type inference. Built-in default is always safe. Two-line repetition is fine. |
+| 11 | `ctx.whenReady` ordering | **API fix** — structural type includes `whenReady`. Materializer awaits it before reading data to avoid racing persistence/sync. |

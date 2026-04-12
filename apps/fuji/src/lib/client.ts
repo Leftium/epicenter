@@ -8,17 +8,22 @@
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createAuth } from '@epicenter/svelte/auth';
-import { createWorkspace } from '@epicenter/workspace';
+import { createPersistedState } from '@epicenter/svelte';
+import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import {
 	createSyncExtension,
 	toWsUrl,
 } from '@epicenter/workspace/extensions/sync/websocket';
-import { session } from '$lib/auth';
-import { fujiWorkspace } from './workspace/definition';
+import { createFujiWorkspace } from '$lib/workspace';
 
-export const workspace = createWorkspace(fujiWorkspace)
+const session = createPersistedState({
+	key: 'fuji:authSession',
+	schema: AuthSession.or('null'),
+	defaultValue: null,
+});
+
+export const workspace = createFujiWorkspace()
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',

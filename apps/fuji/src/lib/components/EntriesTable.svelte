@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import * as Empty from '@epicenter/ui/empty';
 	import * as Table from '@epicenter/ui/table';
 	import { SortableTableHeader } from '@epicenter/ui/table';
+	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import {
 		createTable as createSvelteTable,
@@ -15,30 +17,18 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { formatDistanceToNowStrict } from 'date-fns';
-	import type { Entry, EntryId } from '$lib/workspace';
+	import type { Entry } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
+	import { DateTimeString } from '@epicenter/workspace';
+	import { entriesState, matchesEntrySearch } from '$lib/entries.svelte';
+	import { viewState } from '$lib/view.svelte';
 
-	let {
-		entries,
-		searchQuery,
-		selectedEntryId,
-		onSelectEntry,
-		onAddEntry,
-	}: {
-		entries: Entry[];
-		searchQuery: string;
-		selectedEntryId: EntryId | null;
-		onSelectEntry: (id: EntryId) => void;
-		onAddEntry: () => void;
-	} = $props();
+	let { entries }: { entries: Entry[] } = $props();
 
-	function parseDateTime(dts: string): Date {
-		return new Date(dts.split('|')[0]!);
-	}
 
 	function relativeTime(dts: string): string {
 		try {
-			return formatDistanceToNowStrict(parseDateTime(dts), {
+			return formatDistanceToNowStrict(DateTimeString.toDate(dts), {
 				addSuffix: true,
 			});
 		} catch {
@@ -104,6 +94,16 @@
 			enableSorting: false,
 		},
 		{
+			id: 'date',
+			accessorKey: 'date',
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Date',
+				}),
+			cell: ({ getValue }) => relativeTime(getValue<string>()),
+		},
+		{
 			id: 'createdAt',
 			accessorKey: 'createdAt',
 			header: ({ column }) =>
@@ -125,7 +125,7 @@
 		},
 	];
 
-	let sorting = $state([{ id: 'updatedAt', desc: true }]);
+	let sorting = $state([{ id: viewState.sortBy, desc: viewState.sortBy !== 'title' }]);
 
 	const table = createSvelteTable({
 		getRowId: (row) => row.id,
@@ -142,19 +142,22 @@
 			} else {
 				sorting = updater;
 			}
+			// Propagate sort change back to persisted KV
+			const primary = sorting[0];
+			if (primary) {
+				viewState.sortBy = primary.id as typeof viewState.sortBy;
+			}
 		},
 		state: {
 			get sorting() {
 				return sorting;
 			},
 			get globalFilter() {
-				return searchQuery;
+				return viewState.searchQuery;
 			},
 		},
 		globalFilterFn: (row, _columnId, filterValue) => {
-			const title = String(row.getValue('title')).toLowerCase();
-			const filter = filterValue.toLowerCase();
-			return title.includes(filter);
+			return matchesEntrySearch(row.original, filterValue);
 		},
 	});
 </script>
@@ -163,7 +166,7 @@
 	<!-- Toolbar -->
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<h2 class="text-sm font-semibold">Entries</h2>
-		<Button variant="ghost" size="icon" class="size-7" onclick={onAddEntry}>
+		<Button variant="ghost" size="icon" class="size-7" onclick={entriesState.createEntry}>
 			<PlusIcon class="size-4" />
 		</Button>
 	</div>
@@ -193,10 +196,10 @@
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<Table.Row
-							class="cursor-pointer transition-colors hover:bg-accent/50 {selectedEntryId === row.id
+							class="cursor-pointer transition-colors hover:bg-accent/50 {viewState.selectedEntryId === row.id
 								? 'bg-accent'
 								: ''}"
-							onclick={() => onSelectEntry(row.original.id)}
+							onclick={() => viewState.selectEntry(row.original.id)}
 						>
 							{#each row.getVisibleCells() as cell}
 								<Table.Cell>
@@ -211,17 +214,24 @@
 				{:else}
 					<Table.Row>
 						<Table.Cell colspan={columns.length}>
-							<div
-								class="flex items-center justify-center py-8 text-muted-foreground"
-							>
-								<p class="text-sm">
-									{#if searchQuery}
-										No entries match your search.
-									{:else}
-										No entries yet. Click + to create one.
-									{/if}
-								</p>
-							</div>
+							<Empty.Root>
+								<Empty.Media>
+									<FileTextIcon class="size-8 text-muted-foreground" />
+								</Empty.Media>
+								{#if viewState.searchQuery}
+									<Empty.Title>No entries match your search</Empty.Title>
+									<Empty.Description>Try a different search term or clear your filters.</Empty.Description>
+								{:else}
+									<Empty.Title>No entries yet</Empty.Title>
+									<Empty.Description>Create your first entry to get started.</Empty.Description>
+									<Empty.Content>
+										<Button variant="outline" size="sm" onclick={entriesState.createEntry}>
+											<PlusIcon class="mr-1.5 size-4" />
+											New Entry
+										</Button>
+									</Empty.Content>
+								{/if}
+							</Empty.Root>
 						</Table.Cell>
 					</Table.Row>
 				{/if}

@@ -1,47 +1,59 @@
 <script lang="ts">
-	import { fromKv, fromTable } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
-	import { SidebarProvider } from '@epicenter/ui/sidebar';
+	import {
+		CommandPalette,
+		type CommandPaletteItem,
+	} from '@epicenter/ui/command-palette';
+	import * as Resizable from '@epicenter/ui/resizable';
 	import type { DocumentHandle } from '@epicenter/workspace';
-	import { dateTimeStringNow, generateId } from '@epicenter/workspace';
 	import ClockIcon from '@lucide/svelte/icons/clock';
+	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import TableIcon from '@lucide/svelte/icons/table-2';
 	import type * as Y from 'yjs';
 	import { workspace } from '$lib/client';
+	import AppHeader from '$lib/components/AppHeader.svelte';
 	import EntriesTable from '$lib/components/EntriesTable.svelte';
 	import EntryEditor from '$lib/components/EntryEditor.svelte';
 	import EntryTimeline from '$lib/components/EntryTimeline.svelte';
-	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
-	import type { Entry, EntryId } from '$lib/workspace';
+	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
+	import { Kbd } from '@epicenter/ui/kbd';
+	import { entriesState } from '$lib/entries.svelte';
+	import { viewState } from '$lib/view.svelte';
 
-	// ─── Reactive State ────────────────────────────────────────────────────────────
+	// ─── Command Palette ─────────────────────────────────────────────────────────
 
-	const entries = fromTable(workspace.tables.entries);
-	const entriesArray = $derived(entries.values().toArray());
-	const selectedEntryId = fromKv(workspace.kv, 'selectedEntryId');
-	const viewMode = fromKv(workspace.kv, 'viewMode');
-	let currentYText = $state<Y.Text | null>(null);
+	let paletteOpen = $state(false);
+	let paletteQuery = $state('');
+
+	const paletteItems = $derived.by((): CommandPaletteItem[] => {
+		if (!paletteOpen) return [];
+		return entriesState.active.map((entry) => ({
+			id: entry.id,
+			label: entry.title || 'Untitled',
+			description: entry.subtitle || undefined,
+			icon: FileTextIcon,
+			keywords: [...entry.tags, ...entry.type],
+			group: entry.type.length > 0 ? entry.type[0] : 'Uncategorized',
+			onSelect: () => viewState.selectEntry(entry.id),
+		}));
+	});
+
+	// ─── Document Handle (Y.XmlFragment) ────────────────────────────────────────────
+
+	let currentYXmlFragment = $state<Y.XmlFragment | null>(null);
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 
-	// ─── Filters ─────────────────────────────────────────────────────────────────
-
-	let activeTypeFilter = $state<string | null>(null);
-	let activeTagFilter = $state<string | null>(null);
-	let searchQuery = $state('');
-
-	// ─── Derived State ───────────────────────────────────────────────────────────
-
 	const selectedEntry = $derived(
-		selectedEntryId.current
-			? (entries.get(selectedEntryId.current) ?? null)
+		viewState.selectedEntryId
+			? (entriesState.get(viewState.selectedEntryId) ?? null)
 			: null,
 	);
 
 	/** Entries filtered by sidebar type/tag filters. */
 	const filteredEntries = $derived.by(() => {
-		let result = entriesArray;
-		const typeFilter = activeTypeFilter;
-		const tagFilter = activeTagFilter;
+		let result = entriesState.active;
+		const typeFilter = viewState.activeTypeFilter;
+		const tagFilter = viewState.activeTagFilter;
 		if (typeFilter) {
 			result = result.filter((e) => e.type.includes(typeFilter));
 		}
@@ -51,29 +63,11 @@
 		return result;
 	});
 
-	// ─── Actions ─────────────────────────────────────────────────────────────────
-
-	function createEntry() {
-		const id = generateId() as unknown as EntryId;
-		workspace.tables.entries.set({
-			id,
-			title: '',
-			subtitle: '',
-			type: [],
-			tags: [],
-			createdAt: dateTimeStringNow(),
-			updatedAt: dateTimeStringNow(),
-			_v: '1',
-		});
-		selectedEntryId.current = id;
-	}
-
-	// ─── Document Handle (Y.Text) ────────────────────────────────────────────────
 
 	$effect(() => {
-		const entryId = selectedEntryId.current;
+		const entryId = viewState.selectedEntryId;
 		if (!entryId) {
-			currentYText = null;
+			currentYXmlFragment = null;
 			currentDocHandle = null;
 			return;
 		}
@@ -82,7 +76,7 @@
 		workspace.documents.entries.content.open(entryId).then((handle) => {
 			if (cancelled) return;
 			currentDocHandle = handle;
-			currentYText = handle.asText();
+			currentYXmlFragment = handle.asRichText();
 		});
 
 		return () => {
@@ -90,7 +84,7 @@
 			if (currentDocHandle) {
 				workspace.documents.entries.content.close(entryId);
 			}
-			currentYText = null;
+			currentYXmlFragment = null;
 			currentDocHandle = null;
 		};
 	});
@@ -103,82 +97,83 @@
 		event.target instanceof HTMLTextAreaElement ||
 		(event.target instanceof HTMLElement && event.target.isContentEditable);
 
+
 	if (event.key === 'n' && event.metaKey) {
 		event.preventDefault();
-		createEntry();
+		entriesState.createEntry();
 		return;
 	}
 
-	if (event.key === 'Escape' && !isInputFocused && selectedEntryId.current) {
+	if (event.key === 'Escape' && !isInputFocused && viewState.selectedEntryId) {
 		event.preventDefault();
-		selectedEntryId.current = null;
+		viewState.selectEntry(null);
 	}
 }}
 />
 
-<SidebarProvider>
-	<FujiSidebar
-		entries={entriesArray}
-		{activeTypeFilter}
-		{activeTagFilter}
-		{searchQuery}
-		onFilterByType={(type) => (activeTypeFilter = type)}
-		onFilterByTag={(tag) => (activeTagFilter = tag)}
-		onSearchChange={(query) => (searchQuery = query)}
-		onSelectEntry={(id) => (selectedEntryId.current = id)}
-	/>
+<div class="flex h-screen flex-col">
+	<AppHeader onOpenSearch={() => (paletteOpen = true)} />
+	<Resizable.PaneGroup direction="horizontal" class="flex-1">
+		<Resizable.Pane defaultSize={20} minSize={15} maxSize={40}>
+			<EntriesSidebar entries={entriesState.active} />
+		</Resizable.Pane>
+		<Resizable.Handle withHandle />
+		<Resizable.Pane defaultSize={80}>
+			<main class="flex h-full flex-1 flex-col overflow-hidden">
+				{#if selectedEntry && currentYXmlFragment}
+					{#key viewState.selectedEntryId}
+						<EntryEditor
+							entry={selectedEntry}
+							yxmlfragment={currentYXmlFragment}
+						/>
+					{/key}
+				{:else if selectedEntry}
+					<div class="flex h-full items-center justify-center">
+						<p class="text-muted-foreground">Loading editor…</p>
+					</div>
+				{:else}
+					<!-- View mode toggle header -->
+					<div class="flex items-center justify-end border-b px-4 py-2">
+						<Button
+							variant="ghost"
+							size="icon"
+							class="size-7"
+							onclick={() => viewState.toggleViewMode()}
+							title={viewState.viewMode === 'table' ? 'Switch to timeline' : 'Switch to table'}
+						>
+							{#if viewState.viewMode === 'table'}
+								<ClockIcon class="size-4" />
+							{:else}
+								<TableIcon class="size-4" />
+							{/if}
+						</Button>
+					</div>
 
-	<main class="flex h-screen flex-1 flex-col overflow-hidden">
-		{#if selectedEntry && currentYText}
-			{#key selectedEntryId.current}
-				<EntryEditor
-					entry={selectedEntry}
-					ytext={currentYText}
-					onUpdate={(updates) => {
-						if (!selectedEntryId.current) return;
-						workspace.tables.entries.update(selectedEntryId.current, updates);
-					}}
-					onBack={() => (selectedEntryId.current = null)}
-				/>
-			{/key}
-		{:else if selectedEntry}
-			<div class="flex h-full items-center justify-center">
-				<p class="text-muted-foreground">Loading editor\u2026</p>
-			</div>
-		{:else}
-			<!-- View mode toggle header -->
-			<div class="flex items-center justify-end border-b px-4 py-2">
-				<Button
-					variant="ghost"
-					size="icon"
-					class="size-7"
-					onclick={() => (viewMode.current = viewMode.current === 'table' ? 'timeline' : 'table')}
-					title={viewMode.current === 'table' ? 'Switch to timeline' : 'Switch to table'}
-				>
-					{#if viewMode.current === 'table'}
-						<ClockIcon class="size-4" />
+					{#if viewState.viewMode === 'table'}
+						<EntriesTable entries={filteredEntries} />
 					{:else}
-						<TableIcon class="size-4" />
+						<EntryTimeline entries={filteredEntries} />
 					{/if}
-				</Button>
-			</div>
+				{/if}
+			</main>
+		</Resizable.Pane>
+	</Resizable.PaneGroup>
+	<div class="flex h-6 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground">
+		<span>{entriesState.active.length} {entriesState.active.length === 1 ? 'entry' : 'entries'}</span>
+		<div class="ml-auto flex items-center gap-1.5">
+			<span class="flex items-center gap-1">
+				Search <Kbd>⌘K</Kbd>
+			</span>
+		</div>
+	</div>
+</div>
 
-			{#if viewMode.current === 'table'}
-				<EntriesTable
-					entries={filteredEntries}
-					{searchQuery}
-					selectedEntryId={selectedEntryId.current}
-					onSelectEntry={(id) => (selectedEntryId.current = id)}
-					onAddEntry={createEntry}
-				/>
-			{:else}
-				<EntryTimeline
-					entries={filteredEntries}
-					selectedEntryId={selectedEntryId.current}
-					onSelectEntry={(id) => (selectedEntryId.current = id)}
-					onAddEntry={createEntry}
-				/>
-			{/if}
-		{/if}
-	</main>
-</SidebarProvider>
+<CommandPalette
+	items={paletteItems}
+	bind:open={paletteOpen}
+	bind:value={paletteQuery}
+	placeholder="Search entries…"
+	emptyMessage="No entries found."
+	title="Search Entries"
+	description="Search entries by title, subtitle, tags, or type"
+/>

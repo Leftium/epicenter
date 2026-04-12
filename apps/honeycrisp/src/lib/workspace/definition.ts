@@ -11,7 +11,6 @@
 
 import {
 	DateTimeString,
-	dateTimeStringNow,
 	defineKv,
 	defineTable,
 	defineWorkspace,
@@ -107,7 +106,7 @@ const notesTable = defineTable(
 	})
 	.withDocument('body', {
 		guid: 'id',
-		onUpdate: () => ({ updatedAt: dateTimeStringNow() }),
+		onUpdate: () => ({ updatedAt: DateTimeString.now() }),
 	});
 export type Note = InferTableRow<typeof notesTable>;
 

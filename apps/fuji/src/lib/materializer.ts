@@ -9,11 +9,10 @@
 
 import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { Entry } from './workspace';
 import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
 import slugify from '@sindresorhus/slugify';
 import filenamify from 'filenamify';
-
-import type { Entry } from './workspace';
 
 const MAX_SLUG_LENGTH = 50;
 
@@ -87,12 +86,22 @@ export function createFujiMaterializer({ directory }: { directory: string }) {
 		 * metadata as YAML frontmatter, and writes a `.md` file.
 		 */
 		async function materializeEntry(row: Entry): Promise<void> {
+			// Skip soft-deleted entries — clean up the file if one exists
+			if (row.deletedAt) {
+				const oldFilename = filenames.get(row.id);
+				if (oldFilename) {
+					await safeUnlink(join(fujiDir, oldFilename));
+					filenames.delete(row.id);
+				}
+				return;
+			}
+
 			let content: string | undefined;
 			try {
 				const handle = await documents.entries.content.open(row.id);
 				content = handle.read();
 			} catch {
-				// Content doc not yet available (sync pending)—write metadata only
+				// Content doc not yet available (sync pending) — write metadata only
 			}
 
 			const frontmatter: Record<string, unknown> = {
@@ -101,6 +110,8 @@ export function createFujiMaterializer({ directory }: { directory: string }) {
 				subtitle: row.subtitle,
 				type: row.type,
 				tags: row.tags,
+				pinned: row.pinned,
+				date: row.date,
 				createdAt: row.createdAt,
 				updatedAt: row.updatedAt,
 			};
@@ -133,7 +144,7 @@ export function createFujiMaterializer({ directory }: { directory: string }) {
 				}
 			}
 
-			// Observe ongoing changes—document content changes trigger updatedAt
+			// Observe ongoing changes — document content changes trigger updatedAt
 			// on the row (via onUpdate), which fires this observer.
 			const unsubscribe = tables.entries.observe((changedIds) => {
 				const writes: Array<Promise<void>> = [];

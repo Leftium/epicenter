@@ -62,12 +62,6 @@ function createMigrationDialog() {
 		set isOpen(value: boolean) {
 			isOpen = value;
 		},
-		openDialog() {
-			if (typeof window !== 'undefined') {
-				persistedState = getDatabaseMigrationState();
-			}
-			isOpen = true;
-		},
 		get phase() {
 			return phase;
 		},

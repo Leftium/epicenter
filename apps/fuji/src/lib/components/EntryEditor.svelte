@@ -1,61 +1,101 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import {
+		localTimezone,
+		NaturalLanguageDateInput,
+		toDateTimeString,
+	} from '@epicenter/ui/natural-language-date-input';
+	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
+	import * as Popover from '@epicenter/ui/popover';
+	import { DateTimeString } from '@epicenter/workspace';
+	import { format } from 'date-fns';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import { baseKeymap, toggleMark } from 'prosemirror-commands';
 	import {
-		ellipsis,
-		emDash,
 		inputRules,
-		smartQuotes,
-		textblockTypeInputRule,
 		wrappingInputRule,
+		textblockTypeInputRule,
+		smartQuotes,
+		emDash,
+		ellipsis,
 	} from 'prosemirror-inputrules';
 	import { keymap } from 'prosemirror-keymap';
-	import { Schema } from 'prosemirror-model';
-	import { schema as basicSchema } from 'prosemirror-schema-basic';
+	import { Schema, type MarkSpec } from 'prosemirror-model';
 	import {
 		addListNodes,
+		splitListItem,
 		liftListItem,
 		sinkListItem,
-		splitListItem,
 	} from 'prosemirror-schema-list';
+	import { schema as basicSchema } from 'prosemirror-schema-basic';
 	import { EditorState, Plugin } from 'prosemirror-state';
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
-	import { format } from 'date-fns';
-	import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
+	import { ySyncPlugin, yUndoPlugin, undo, redo } from 'y-prosemirror';
 	import type * as Y from 'yjs';
 	import type { Entry } from '$lib/workspace';
 	import TagInput from './TagInput.svelte';
+	import { viewState } from '$lib/view.svelte';
+	import { workspace } from '$lib/client';
 
 	let {
 		entry,
-		ytext,
-		onUpdate,
-		onBack,
+		yxmlfragment,
 	}: {
 		entry: Entry;
-		ytext: Y.Text;
-		onUpdate: (
-			updates: Partial<{
-				title: string;
-				subtitle: string;
-				type: string[];
-				tags: string[];
-			}>,
-		) => void;
-		onBack: () => void;
+		yxmlfragment: Y.XmlFragment;
 	} = $props();
 
-	let element: HTMLDivElement | undefined = $state();
-
-	function parseDateTime(dts: string): Date {
-		return new Date(dts.split('|')[0]!);
+	function updateEntry(updates: Partial<{ title: string; subtitle: string; type: string[]; tags: string[]; date: DateTimeString }>) {
+		workspace.actions.entries.update({ id: entry.id, ...updates });
 	}
+
+	let element: HTMLDivElement | undefined = $state();
+	let wordCount = $state(0);
+
+	let isDatePopoverOpen = $state(false);
+	let dateTz = $state(localTimezone());
+
+	function countWords(text: string): number {
+		const trimmed = text.trim();
+		if (!trimmed) return 0;
+		return trimmed.split(/\s+/).length;
+	}
+
+	function createWordCountPlugin() {
+		return new Plugin({
+			view() {
+				return {
+					update(view) {
+						wordCount = countWords(view.state.doc.textContent);
+					},
+				};
+			},
+		});
+	}
+
+	const extraMarks: Record<string, MarkSpec> = {
+		strikethrough: {
+			parseDOM: [
+				{ tag: 's' },
+				{ tag: 'del' },
+				{ style: 'text-decoration=line-through' },
+			],
+			toDOM() {
+				return ['s', 0];
+			},
+		},
+		underline: {
+			parseDOM: [{ tag: 'u' }, { style: 'text-decoration=underline' }],
+			toDOM() {
+				return ['u', 0];
+			},
+		},
+	};
 
 	const schema = new Schema({
 		nodes: addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block'),
-		marks: basicSchema.spec.marks,
+		marks: basicSchema.spec.marks.append(extraMarks),
 	});
 
 	function createPlaceholderPlugin(text: string) {
@@ -88,8 +128,7 @@
 			state: EditorState.create({
 				schema,
 				plugins: [
-					// y-prosemirror ySyncPlugin accepts Y.Text at runtime despite typed for Y.XmlFragment
-					ySyncPlugin(ytext as unknown as Y.XmlFragment),
+					ySyncPlugin(yxmlfragment),
 					yUndoPlugin(),
 					createPlaceholderPlugin('Start writing\u2026'),
 					keymap({
@@ -98,6 +137,8 @@
 						'Mod-Shift-z': redo,
 						'Mod-b': toggleMark(schema.marks.strong!),
 						'Mod-i': toggleMark(schema.marks.em!),
+						'Mod-u': toggleMark(schema.marks.underline!),
+						'Mod-Shift-s': toggleMark(schema.marks.strikethrough!),
 						Enter: splitListItem(schema.nodes.list_item!),
 						'Mod-]': sinkListItem(schema.nodes.list_item!),
 						Tab: sinkListItem(schema.nodes.list_item!),
@@ -127,6 +168,7 @@
 							textblockTypeInputRule(/^```$/, schema.nodes.code_block!),
 						],
 					}),
+					createWordCountPlugin(),
 				],
 			}),
 			attributes: {
@@ -142,7 +184,7 @@
 <div class="flex h-full flex-col">
 	<!-- Header with back button -->
 	<div class="flex items-center gap-2 border-b px-4 py-2">
-		<Button variant="ghost" size="icon" class="size-7" onclick={onBack}>
+		<Button variant="ghost" size="icon" class="size-7" onclick={() => viewState.selectEntry(null)}>
 			<ArrowLeftIcon class="size-4" />
 		</Button>
 		<span class="text-sm text-muted-foreground">Back to entries</span>
@@ -155,14 +197,14 @@
 			class="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground"
 			placeholder="Entry title"
 			value={entry.title}
-			oninput={(e) => onUpdate({ title: e.currentTarget.value })}
+			oninput={(e) => updateEntry({ title: e.currentTarget.value })}
 		>
 		<input
 			type="text"
 			class="w-full bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/60"
-			placeholder="Subtitle \u2014 a one-liner for your blog listing"
+			placeholder="Subtitle — a one-liner for your blog listing"
 			value={entry.subtitle}
-			oninput={(e) => onUpdate({ subtitle: e.currentTarget.value })}
+			oninput={(e) => updateEntry({ subtitle: e.currentTarget.value })}
 		>
 
 		<div class="flex flex-wrap items-center gap-4">
@@ -170,11 +212,11 @@
 				<span class="text-xs font-medium text-muted-foreground">Type</span>
 				<TagInput
 					values={entry.type}
-					placeholder="Add type\u2026"
+					placeholder="Add type…"
 					onAdd={(value) =>
-						onUpdate({ type: [...entry.type, value] })}
+						updateEntry({ type: [...entry.type, value] })}
 					onRemove={(value) =>
-						onUpdate({
+						updateEntry({
 							type: entry.type.filter((t) => t !== value),
 						})}
 				/>
@@ -184,14 +226,44 @@
 				<span class="text-xs font-medium text-muted-foreground">Tags</span>
 				<TagInput
 					values={entry.tags}
-					placeholder="Add tag\u2026"
+					placeholder="Add tag…"
 					onAdd={(value) =>
-						onUpdate({ tags: [...entry.tags, value] })}
+						updateEntry({ tags: [...entry.tags, value] })}
 					onRemove={(value) =>
-						onUpdate({
+						updateEntry({
 							tags: entry.tags.filter((t) => t !== value),
 						})}
 				/>
+			</div>
+
+			<div class="flex items-center gap-2">
+				<span class="text-xs font-medium text-muted-foreground">Date</span>
+				<Popover.Root bind:open={isDatePopoverOpen}>
+					<Popover.Trigger>
+						{#snippet child({ props })}
+							<button
+								{...props}
+								type="button"
+								class="cursor-pointer rounded-md border bg-background px-2.5 py-1 text-sm transition hover:bg-accent"
+							>
+								{format(DateTimeString.toDate(entry.date), 'MMM d, yyyy · h:mm a')}
+							</button>
+						{/snippet}
+					</Popover.Trigger>
+					<Popover.Content
+						side="bottom"
+						align="start"
+						class="w-80 space-y-3 p-3"
+					>
+						<NaturalLanguageDateInput
+							onChoice={({ date }) => {
+								updateEntry({ date: toDateTimeString(date, dateTz) });
+								isDatePopoverOpen = false;
+							}}
+						/>
+						<TimezoneCombobox bind:value={dateTz} />
+					</Popover.Content>
+				</Popover.Root>
 			</div>
 		</div>
 	</div>
@@ -199,15 +271,21 @@
 	<!-- Editor body -->
 	<div bind:this={element} class="flex-1 overflow-y-auto px-6 py-4"></div>
 
-	<!-- Timestamps footer -->
+	<!-- Status bar -->
 	<div
-		class="flex items-center justify-end border-t px-6 py-2 text-xs text-muted-foreground"
+		class="flex items-center justify-between border-t px-4 py-1.5 text-xs text-muted-foreground"
 	>
-		<span>
-			Created {format(parseDateTime(entry.createdAt), 'MMM d \u00b7 h:mm a')}
-			\u00b7 Updated
-			{format(parseDateTime(entry.updatedAt), 'MMM d \u00b7 h:mm a')}
-		</span>
+		<span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
+		<div class="flex items-center gap-3">
+			<span
+				>Created
+				{format(DateTimeString.toDate(entry.createdAt), 'MMM d, yyyy · h:mm a')}</span
+			>
+			<span
+				>Updated
+				{format(DateTimeString.toDate(entry.updatedAt), 'MMM d, yyyy · h:mm a')}</span
+			>
+		</div>
 	</div>
 </div>
 

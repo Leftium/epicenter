@@ -1,9 +1,9 @@
 /**
  * Reactive view state for Fuji.
  *
- * Manages the current view mode, selected entry, sidebar filters, and
- * search query. All persisted values use workspace KV so they survive
- * reloads and sync across devices.
+ * Manages the current view mode, sidebar filters, and search query.
+ * All persisted values use workspace KV so they survive reloads
+ * and sync across devices.
  *
  * @example
  * ```svelte
@@ -19,11 +19,9 @@
 
 import { fromKv } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
-import type { EntryId } from '$lib/workspace';
 
 function createViewState() {
 	// ─── KV-Backed State ──────────────────────────────────────────────────
-	const selectedEntryIdKv = fromKv(workspace.kv, 'selectedEntryId');
 	const viewModeKv = fromKv(workspace.kv, 'viewMode');
 	const sortByKv = fromKv(workspace.kv, 'sortBy');
 
@@ -33,21 +31,6 @@ function createViewState() {
 	let searchQuery = $state('');
 
 	return {
-		// ─── Selected Entry ──────────────────────────────────────────────
-		get selectedEntryId(): EntryId | null {
-			return selectedEntryIdKv.current ?? null;
-		},
-
-		/**
-		 * Select an entry by ID, or pass null to deselect.
-		 *
-		 * The selected entry determines which entry is shown in the editor
-		 * panel. Persisted via workspace KV.
-		 */
-		selectEntry(id: EntryId | null) {
-			selectedEntryIdKv.current = id;
-		},
-
 		// ─── View Mode ───────────────────────────────────────────────────
 		get viewMode(): 'table' | 'timeline' {
 			return viewModeKv.current ?? 'table';

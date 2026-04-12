@@ -59,10 +59,10 @@ function createEntriesState() {
 		},
 
 		/**
-		 * Create a new entry with sensible defaults and select it for editing.
+		 * Create a new entry with sensible defaults and navigate to it.
 		 *
-		 * Delegates to the workspace `entries.create` action, then selects
-		 * the new entry so the editor opens immediately.
+		 * Delegates to the workspace `entries.create` action, then
+		 * navigates to `/entries/{id}` so the editor opens immediately.
 		 */
 		createEntry() {
 			const { id } = workspace.actions.entries.create({});

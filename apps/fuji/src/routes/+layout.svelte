@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Button } from '@epicenter/ui/button';
+	import { page } from '$app/state';
 	import {
 		CommandPalette,
 		type CommandPaletteItem,
@@ -17,7 +17,6 @@
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
 	import { entriesState } from '$lib/entries.svelte';
-	import { viewState } from '$lib/view.svelte';
 	import '@epicenter/ui/app.css';
 
 	let { children } = $props();
@@ -62,7 +61,7 @@
 			return;
 		}
 
-		if (event.key === 'Escape' && !isInputFocused) {
+		if (event.key === 'Escape' && !isInputFocused && page.url.pathname !== '/') {
 			event.preventDefault();
 			goto('/');
 		}

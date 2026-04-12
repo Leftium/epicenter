@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import * as Empty from '@epicenter/ui/empty';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import FileXIcon from '@lucide/svelte/icons/file-x';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import type * as Y from 'yjs';
 	import { workspace } from '$lib/client';
@@ -15,21 +16,8 @@
 	let currentYXmlFragment = $state<Y.XmlFragment | null>(null);
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 
-	// Redirect to list if entry doesn't exist (deleted, bad URL, etc.)
 	$effect(() => {
-		if (entryId && !entry) {
-			// Wait a tick for CRDT data to hydrate before redirecting
-			const timeout = setTimeout(() => {
-				if (!entriesState.get(entryId)) {
-					goto('/');
-				}
-			}, 500);
-			return () => clearTimeout(timeout);
-		}
-	});
-
-	$effect(() => {
-		if (!entryId) {
+		if (!entryId || !entry) {
 			currentYXmlFragment = null;
 			currentDocHandle = null;
 			return;
@@ -54,7 +42,15 @@
 </script>
 
 <main class="flex h-full flex-1 flex-col overflow-hidden">
-	{#if entry && currentYXmlFragment}
+	{#if !entry}
+		<Empty.Root class="flex-1">
+			<Empty.Media>
+				<FileXIcon class="size-8 text-muted-foreground" />
+			</Empty.Media>
+			<Empty.Title>Entry not found</Empty.Title>
+			<Empty.Description>This entry may have been deleted or the URL is invalid.</Empty.Description>
+		</Empty.Root>
+	{:else if currentYXmlFragment}
 		{#key entryId}
 			<EntryEditor {entry} yxmlfragment={currentYXmlFragment} />
 		{/key}

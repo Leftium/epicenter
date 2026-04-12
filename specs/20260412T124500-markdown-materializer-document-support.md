@@ -463,12 +463,13 @@ All consumers in the monorepo must be migrated in the same commit.
 - [x] `.kv()` default: `{dir}/kv.json` with JSON.stringify. Custom serialize receives typed KV snapshot.
 - [x] Rename serialize presets: `slugFilename(field)`, `bodyField(field)`
 - [x] Export standalone utilities: `toSlugFilename(title, id)`, `toIdFilename(id)`
-- Delete `apps/fuji/src/lib/materializer.ts`
-- Delete `playground/opensidian-e2e/materializer.ts`
-- Update `apps/fuji/package.json`: remove `"./materializer"` export, remove deps
-- Migrate all config files
-- Run `bun test packages/workspace` to verify no regressions
-- Run `bun x epicenter start . --verbose` from `~/Code/vault` after migration
+- [x] Delete `apps/fuji/src/lib/materializer.ts`
+- [x] Delete `playground/opensidian-e2e/materializer.ts`
+- [x] Update `apps/fuji/package.json`: remove `"./materializer"` export, remove deps
+- [x] Migrate all config files
+- [x] Run `bun test packages/workspace` to verify no regressions (647 pass, 0 fail)
+- [x] Run `bun x epicenter start . --verbose` from `~/Code/vault` after migration
+  > **Note**: Blocked by pre-existing branch issues (missing `definition.ts` from prior refactor, removed sqlite export). Materializer exports verified independently.
 
 ## MUST NOT DO
 
@@ -494,3 +495,25 @@ All consumers in the monorepo must be migrated in the same commit.
 | 9 | KV serialize/overrides | **API fix** — `.kv({ serialize })` receives typed KV snapshot, returns `SerializeResult`. |
 | 10 | Global default serialize | **No** — would be `Record<string, unknown>` (untyped), defeating row type inference. Built-in default is always safe. Two-line repetition is fine. |
 | 11 | `ctx.whenReady` ordering | **API fix** — structural type includes `whenReady`. Materializer awaits it before reading data to avoid racing persistence/sync. |
+
+## Review
+
+**Completed**: 2026-04-12
+**Branch**: `feat/workspace-api-surface`
+
+### Summary
+
+Replaced the markdown-specific `markdownMaterializer` with a general `createMaterializer(ctx, { dir })` factory. The new API uses a builder pattern with `.table()` and `.kv()` opt-in chains, generic type parameters for type-safe table names and row inference, and a general `SerializeResult` contract (`{ filename, content }`). The `markdown()` helper handles frontmatter + wikilink conversion as a composable utility rather than baked-in behavior.
+
+### Deviations from Spec
+
+- `TKv` generic is `KvHelper<any>` (single helper), not `Record<string, KvHelper<any>>` as the spec suggested. The actual workspace type has `kv` as a single `KvHelper`, not a record of helpers.
+- Initial KV materialization writes nothing (no key enumeration API). The file appears on first `observeAll` change. Spec implied initial snapshot but `KvHelper` doesn't expose bulk-read.
+- Observer writes are sequential (not `Promise.allSettled`). This prevents rename races where a parallel delete could remove a file another write targets.
+- `writeSerializedFile` helper was added then inlined during code review — the indirection didn't earn its keep.
+
+### Follow-up Work
+
+- `KvHelper` could expose `getAll()` or `keys()` to enable initial KV snapshot materialization.
+- The fuji workspace on the current branch has a broken import (`definition.ts` was refactored into `workspace.ts` in a prior commit). The vault `epicenter start` test is blocked by this pre-existing issue.
+- Consider whether `createMaterializer` should live in a format-agnostic location (`materializer/index.ts`) rather than under `materializer/markdown/`, since the factory itself is format-agnostic — only the serialize presets and `markdown()` helper are markdown-specific.

@@ -108,6 +108,18 @@ export type YKeyValueLwwChangeHandler<T> = (
 	transaction: Y.Transaction,
 ) => void;
 
+/**
+ * Transaction origin for observer dedup deletions. When the observer resolves
+ * LWW conflicts, it deletes loser entries in a nested transaction. That nested
+ * transaction would trigger the observer again — but the re-entrant call is
+ * always a no-op (_map already points to the winner, so the reference equality
+ * check in the deletion handler fails). Marking the transaction with this origin
+ * lets the observer skip it entirely, avoiding useless work.
+ *
+ * This follows the same pattern as REENCRYPT_ORIGIN in the encrypted wrapper.
+ */
+const DEDUP_ORIGIN = Symbol('dedup');
+
 export class YKeyValueLww<T> {
 	/** The underlying Y.Array that stores `{key, val, ts}` entries. */
 	readonly yarray: Y.Array<YKeyValueLwwEntry<T>>;
@@ -284,6 +296,9 @@ export class YKeyValueLww<T> {
 
 		// Set up observer for future changes
 		this._observer = (event, transaction) => {
+			// Dedup deletions are always no-ops — _map already has the winner.
+			// Skip entirely to avoid useless work on re-entrant observer calls.
+			if (transaction.origin === DEDUP_ORIGIN) return;
 			const changes = new Map<string, YKeyValueLwwChange<T>>();
 			const addedEntries: YKeyValueLwwEntry<T>[] = [];
 			const deletedCurrentKeys = new Set<string>();
@@ -346,8 +361,15 @@ export class YKeyValueLww<T> {
 				}
 				return map;
 			});
-			const getEntryIndex = (entry: YKeyValueLwwEntry<T>): number =>
-				getEntryIndexMap().get(entry) ?? -1;
+			const getEntryIndex = (entry: YKeyValueLwwEntry<T>): number => {
+				// For individual updates (1-4 added entries), indexOf with reference
+				// equality is faster than building a Map. The Map's O(n) build cost
+				// only amortizes over many lookups (batched updates).
+				if (addedEntries.length <= 4) {
+					return getAllEntries().indexOf(entry);
+				}
+				return getEntryIndexMap().get(entry) ?? -1;
+			};
 
 			for (const newEntry of addedEntries) {
 				const existing = this._map.get(newEntry.key);
@@ -435,7 +457,7 @@ export class YKeyValueLww<T> {
 					for (const index of indicesToDelete) {
 						yarray.delete(index);
 					}
-				});
+				}, DEDUP_ORIGIN);
 			}
 
 			// Emit change events
@@ -532,23 +554,12 @@ export class YKeyValueLww<T> {
 		this.pending.set(key, entry);
 		this.pendingDeletes.delete(key);
 
-		// When inside an outer transaction (batch), skip the eager delete — the
-		// observer will batch-resolve all conflicts in one pass when the outer
-		// transaction commits. This turns N×O(n) into O(n) for bulk updates.
-		// When NOT in a transaction, keep the eager delete to avoid a double
-		// observer invocation (set triggers observer → observer deletes old →
-		// triggers observer again).
-		const hasOuterTransaction = this.isInTransaction();
-
 		const doWork = () => {
-			if (!hasOuterTransaction && this._map.has(key)) {
-				this.deleteEntryByKey(key);
-			}
 			this.yarray.push([entry]);
 		};
 
 		// Avoid nested transactions - if already in one, just do the work
-		if (hasOuterTransaction) {
+		if (this.isInTransaction()) {
 			doWork();
 		} else {
 			this.doc.transact(doWork);

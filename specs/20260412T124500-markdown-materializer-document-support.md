@@ -338,7 +338,7 @@ createMaterializer(ctx, { dir: '...' })
 | Source | Target | Default |
 |---|---|---|
 | Table row | One file per row | Markdown: frontmatter + `{id}.md` |
-| KV | One JSON file for all KV | `{directory}/kv.json` |
+| KV | One JSON file for all KV | `{dir}/kv.json` |
 | Table (all rows) | NOT SUPPORTED | Use custom extension if needed |
 
 **Row → file** is the core use case (browsable content: notes, bookmarks, entries).

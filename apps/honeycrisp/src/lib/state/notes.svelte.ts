@@ -22,9 +22,9 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import { dateTimeStringNow, generateId } from '@epicenter/workspace';
+import { DateTimeString, generateId } from '@epicenter/workspace';
 import { workspace } from '$lib/client';
-import type { FolderId, Note, NoteId } from '$lib/workspace';
+import type { FolderId, NoteId } from '$lib/workspace';
 import { foldersState } from './folders.svelte';
 
 function createNotesState() {
@@ -59,6 +59,13 @@ function createNotesState() {
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
+		/**
+		 * Look up a note by ID. Returns `undefined` if not found.
+		 */
+		get(id: NoteId) {
+			return allNotesMap.get(id);
+		},
+
 		get allNotes() {
 			return allNotes;
 		},
@@ -95,8 +102,8 @@ function createNotesState() {
 				pinned: false,
 				deletedAt: undefined,
 				wordCount: 0,
-				createdAt: dateTimeStringNow(),
-				updatedAt: dateTimeStringNow(),
+				createdAt: DateTimeString.now(),
+				updatedAt: DateTimeString.now(),
 				_v: 2,
 			});
 			return { id };
@@ -117,7 +124,7 @@ function createNotesState() {
 		 */
 		softDeleteNote(noteId: NoteId) {
 			workspace.tables.notes.update(noteId, {
-				deletedAt: dateTimeStringNow(),
+				deletedAt: DateTimeString.now(),
 			});
 			if (workspace.kv.get('selectedNoteId') === noteId) {
 				workspace.kv.set('selectedNoteId', null);

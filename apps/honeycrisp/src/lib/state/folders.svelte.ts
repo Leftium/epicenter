@@ -36,6 +36,13 @@ function createFoldersState() {
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
+		/**
+		 * Look up a folder by ID. Returns `undefined` if not found.
+		 */
+		get(id: FolderId) {
+			return foldersMap.get(id);
+		},
+
 		get folders() {
 			return folders;
 		},

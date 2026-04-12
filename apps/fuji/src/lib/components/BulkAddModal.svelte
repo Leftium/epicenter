@@ -22,19 +22,11 @@
 		if (!rawText.trim()) return { entries: [], skipped: 0 };
 
 		const lines = rawText.split('\n').filter((l) => l.trim());
-		let skipped = 0;
-		const entries: Array<{ iso: string; text: string }> = [];
-
-		for (const line of lines) {
-			const match = LINE_REGEX.exec(line);
-			if (match) {
-				entries.push({ iso: match[1]!, text: match[2]! });
-			} else {
-				skipped++;
-			}
-		}
-
-		return { entries, skipped };
+		const matched = lines
+			.map((line) => LINE_REGEX.exec(line))
+			.filter((m) => m !== null);
+		const entries = matched.map((m) => ({ iso: m[1]!, text: m[2]! }));
+		return { entries, skipped: lines.length - entries.length };
 	});
 
 	function handleSubmit(e: SubmitEvent) {
@@ -46,7 +38,9 @@
 			date: DateTimeString.stringify(iso, timezone),
 		}));
 		workspace.actions.entries.bulkCreate({ entries: items });
-		toast.success(`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`);
+		toast.success(
+			`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`,
+		);
 		isOpen = false;
 		rawText = '';
 	}

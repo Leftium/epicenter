@@ -56,7 +56,7 @@
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 	<!-- Header -->
-	<div class="flex items-center justify-between border-b px-4 py-3">
+	<div class="flex items-center justify-between px-4 py-2">
 		<h2 class="text-sm font-semibold">{title ?? 'Timeline'}</h2>
 		<div class="flex items-center gap-1">
 			<Button

@@ -62,7 +62,7 @@
 
 <Sidebar.Root collapsible="none" class="h-full w-full">
 	<Sidebar.Header>
-		<div class="px-2 pb-1">
+		<div>
 			<Sidebar.Input
 				placeholder="Search entries…"
 				value={viewState.searchQuery}

@@ -113,17 +113,17 @@
 
 		{#if isSearching}
 			<!-- Search Results -->
-			<Sidebar.Group>
+			<Sidebar.Group class="flex min-h-0 flex-1 flex-col">
 				<Sidebar.GroupLabel>
 					Search Results ({searchResults.length})
 				</Sidebar.GroupLabel>
 				<Sidebar.GroupContent>
 					<Sidebar.Menu>
 					{#if searchResults.length > 0}
-						<div class="flex-1" style="min-height: 0; height: 300px;">
+					<div class="min-h-0 flex-1">
 							<VList
 								data={searchResults}
-								style="height: 100%;"
+							style="height: 100%; overflow: hidden;"
 								getKey={(entry) => entry.id}
 							>
 								{#snippet children(entry)}

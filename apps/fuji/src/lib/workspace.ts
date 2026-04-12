@@ -45,6 +45,11 @@ import type { Brand } from 'wellcrafted/brand';
 export type EntryId = string & Brand<'EntryId'>;
 export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
 
+/** Generate a branded EntryId. Wraps `generateId()` with the proper brand cast. */
+export function generateEntryId(): EntryId {
+	return generateId() as EntryId;
+}
+
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
 /**
@@ -132,7 +137,7 @@ export function createFujiWorkspace() {
 					),
 				}),
 				handler: ({ title, subtitle, type: entryType, tags }) => {
-					const id = generateId() as unknown as EntryId;
+					const id = generateEntryId();
 					const now = DateTimeString.now();
 					tables.entries.set({
 						id,
@@ -224,6 +229,42 @@ export function createFujiWorkspace() {
 						deletedAt: undefined,
 						updatedAt: DateTimeString.now(),
 					});
+				},
+			}),
+			/**
+			 * Bulk-create entries from pre-parsed data.
+			 *
+			 * Each item needs a title and an ISO date string. Generates IDs
+			 * and timestamps, then writes all rows in a single `bulkSet` call.
+			 */
+			bulkCreate: defineMutation({
+				title: 'Bulk Create Entries',
+				description: 'Create multiple entries at once from title + date pairs.',
+				input: Type.Object({
+					entries: Type.Array(
+						Type.Object({
+							title: Type.String({ description: 'Entry title' }),
+							date: Type.String({ description: 'ISO date string in workspace DateTimeString format' }),
+						}),
+					),
+				}),
+				handler: ({ entries: items }) => {
+					const now = DateTimeString.now();
+					const rows = items.map(({ title, date }) => ({
+						id: generateEntryId(),
+						title,
+						subtitle: '',
+						type: [] as string[],
+						tags: [] as string[],
+						pinned: false,
+						deletedAt: undefined,
+						date: date as DateTimeString,
+						createdAt: now,
+						updatedAt: now,
+						_v: 1 as const,
+					}));
+					tables.entries.bulkSet(rows);
+					return { count: rows.length };
 				},
 			}),
 		},

@@ -7,10 +7,10 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import * as Tooltip from '@epicenter/ui/tooltip';
-	import { DateTimeString, generateId } from '@epicenter/workspace';
+	import { DateTimeString } from '@epicenter/workspace';
 	import ClipboardPasteIcon from '@lucide/svelte/icons/clipboard-paste';
+	import { tryAsync, Ok } from 'wellcrafted/result';
 	import { workspace } from '$lib/client';
-	import type { EntryId } from '$lib/workspace';
 
 	const LINE_REGEX = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(.+)$/;
 
@@ -38,37 +38,30 @@
 		return { entries, skipped };
 	});
 
-	/** Parse lines into entry rows, bulk-insert via workspace, then close. */
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		if (parsed.entries.length === 0) return;
 
 		submitting = true;
-		try {
-			const now = DateTimeString.now();
-			const rows = parsed.entries.map(({ iso, text }) => ({
-				id: generateId() as unknown as EntryId,
-				title: text,
-				subtitle: '',
-				type: [] as string[],
-				tags: [] as string[],
-				pinned: false,
-				deletedAt: undefined,
-				date: DateTimeString.stringify(iso, timezone),
-				createdAt: now,
-				updatedAt: now,
-				_v: 1 as const,
-			}));
-
-			await workspace.tables.entries.bulkSet(rows);
-			toast.success(
-				`Added ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`,
-			);
-			isOpen = false;
-			rawText = '';
-		} finally {
-			submitting = false;
-		}
+		await tryAsync({
+			try: async () => {
+				const items = parsed.entries.map(({ iso, text }) => ({
+					title: text,
+					date: DateTimeString.stringify(iso, timezone),
+				}));
+				workspace.actions.entries.bulkCreate({ entries: items });
+				toast.success(`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`);
+				isOpen = false;
+				rawText = '';
+			},
+			catch: (e) => {
+				toast.error('Failed to add entries', {
+					description: e instanceof Error ? e.message : 'An unknown error occurred',
+				});
+				return Ok(undefined);
+			},
+		});
+		submitting = false;
 	}
 </script>
 

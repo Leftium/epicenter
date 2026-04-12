@@ -88,6 +88,7 @@
  * ```
  */
 import type * as Y from 'yjs';
+import { lazy } from '../lazy.js';
 
 /**
  * Entry stored in the Y.Array. The `ts` field enables last-write-wins conflict resolution.
@@ -285,6 +286,7 @@ export class YKeyValueLww<T> {
 		this._observer = (event, transaction) => {
 			const changes = new Map<string, YKeyValueLwwChange<T>>();
 			const addedEntries: YKeyValueLwwEntry<T>[] = [];
+			const deletedCurrentKeys = new Set<string>();
 
 			// Collect added entries
 			for (const addedItem of event.changes.added) {
@@ -308,6 +310,7 @@ export class YKeyValueLww<T> {
 
 						// Reference equality: only process if this is the entry we have cached
 						if (this._map.get(entry.key) === entry) {
+							deletedCurrentKeys.add(entry.key);
 							this._map.delete(entry.key);
 							changes.set(entry.key, { action: 'delete' });
 						}
@@ -318,30 +321,48 @@ export class YKeyValueLww<T> {
 			const indicesToDelete: number[] = [];
 
 			/**
-			 * Lazy array snapshot for conflict resolution.
+			 * Lazy array snapshot and entry-to-index map for conflict resolution.
 			 *
-			 * Why lazy? The `toArray()` call is O(n), copying every entry. For bulk inserts
-			 * of NEW keys (the common case), we never need to find indices because there's
-			 * nothing to delete. By deferring `toArray()` until the first `indexOf()` call,
-			 * we skip the O(n) copy entirely when there are no conflicts.
+			 * Both use the `lazy()` helper—a function that computes its value on
+			 * first call, then returns the cached result on subsequent calls. This
+			 * avoids the O(n) `toArray()` copy entirely when there are no conflicts
+			 * (the common case for bulk inserts of new keys).
 			 *
-			 * Performance impact:
-			 *   Before: 10k inserts took ~240ms (toArray called, then indexOf never used)
-			 *   After:  10k inserts take ~68ms (toArray never called)
+			 * `getEntryIndexMap` builds on `getAllEntries`—calling it triggers the
+			 * `toArray()` if it hasn't happened yet, then builds a Map<entry, index>
+			 * for O(1) index lookups. This replaces the old `.indexOf()` calls that
+			 * were O(n) each, which caused O(n²) behavior during bulk updates.
 			 *
-			 * When IS toArray called? Only when a key already exists in the map, meaning
-			 * we have a conflict that requires finding the old entry's index to delete it.
+			 * Both caches are scoped to this single observer invocation—they're
+			 * garbage collected when the callback returns. No manual cleanup needed.
 			 */
-			let allEntries: YKeyValueLwwEntry<T>[] | null = null;
-			const getAllEntries = () => {
-				allEntries ??= yarray.toArray();
-				return allEntries;
-			};
+			const getAllEntries = lazy(() => yarray.toArray());
+			const getEntryIndexMap = lazy(() => {
+				const entries = getAllEntries();
+				const map = new Map<YKeyValueLwwEntry<T>, number>();
+				for (let i = 0; i < entries.length; i++) {
+					const entry = entries[i];
+					if (entry) map.set(entry, i);
+				}
+				return map;
+			});
+			const getEntryIndex = (entry: YKeyValueLwwEntry<T>): number =>
+				getEntryIndexMap().get(entry) ?? -1;
 
 			for (const newEntry of addedEntries) {
 				const existing = this._map.get(newEntry.key);
 
 				if (!existing) {
+					if (
+						transaction.local &&
+						deletedCurrentKeys.has(newEntry.key) &&
+						this.pending.get(newEntry.key) !== newEntry
+					) {
+						const newIndex = getEntryIndex(newEntry);
+						if (newIndex !== -1) indicesToDelete.push(newIndex);
+						continue;
+					}
+
 					// New key: just update the map. No array operations needed.
 					const deleteEvent = changes.get(newEntry.key);
 					if (deleteEvent && deleteEvent.action === 'delete') {
@@ -370,19 +391,19 @@ export class YKeyValueLww<T> {
 						});
 
 						// Mark old entry for deletion
-						const oldIndex = getAllEntries().indexOf(existing);
+						const oldIndex = getEntryIndex(existing);
 						if (oldIndex !== -1) indicesToDelete.push(oldIndex);
 
 						this._map.set(newEntry.key, newEntry);
 						this.pendingDeletes.delete(newEntry.key);
 					} else if (newEntry.ts < existing.ts) {
 						// Old entry wins: delete new from array
-						const newIndex = getAllEntries().indexOf(newEntry);
+						const newIndex = getEntryIndex(newEntry);
 						if (newIndex !== -1) indicesToDelete.push(newIndex);
 					} else {
 						// Equal timestamps: positional tiebreaker (rightmost wins)
-						const oldIndex = getAllEntries().indexOf(existing);
-						const newIndex = getAllEntries().indexOf(newEntry);
+						const oldIndex = getEntryIndex(existing);
+						const newIndex = getEntryIndex(newEntry);
 
 						if (newIndex > oldIndex) {
 							// New is rightmost, it wins
@@ -511,14 +532,23 @@ export class YKeyValueLww<T> {
 		this.pending.set(key, entry);
 		this.pendingDeletes.delete(key);
 
+		// When inside an outer transaction (batch), skip the eager delete — the
+		// observer will batch-resolve all conflicts in one pass when the outer
+		// transaction commits. This turns N×O(n) into O(n) for bulk updates.
+		// When NOT in a transaction, keep the eager delete to avoid a double
+		// observer invocation (set triggers observer → observer deletes old →
+		// triggers observer again).
+		const hasOuterTransaction = this.isInTransaction();
+
 		const doWork = () => {
-			// Check map for existing entry (pending entries aren't in yarray yet)
-			if (this._map.has(key)) this.deleteEntryByKey(key);
+			if (!hasOuterTransaction && this._map.has(key)) {
+				this.deleteEntryByKey(key);
+			}
 			this.yarray.push([entry]);
 		};
 
 		// Avoid nested transactions - if already in one, just do the work
-		if (this.isInTransaction()) {
+		if (hasOuterTransaction) {
 			doWork();
 		} else {
 			this.doc.transact(doWork);

@@ -73,10 +73,31 @@ export function markdown({
 	};
 }
 
+/**
+ * Create a one-way materializer that writes workspace data to files on disk.
+ *
+ * Nothing materializes by default. Call `.table()` to opt in per table and
+ * `.kv()` to opt in KV. Each `.table()` call validates the table name against
+ * the workspace definition and infers the row type for the serialize callback.
+ *
+ * The materializer awaits `ctx.whenReady` before reading data, so persistence
+ * and sync have loaded before the initial flush. All `.table()` and `.kv()`
+ * calls happen synchronously in the factory closure before `whenReady` resolves.
+ *
+ * @example
+ * ```typescript
+ * .withWorkspaceExtension('materializer', (ctx) =>
+ *   createMaterializer(ctx, { dir: './data' })
+ *     .table('posts', { serialize: slugFilename('title') })
+ *     .table('settings')
+ *     .kv(),
+ * )
+ * ```
+ */
 export function createMaterializer<
-	// biome-ignore lint/suspicious/noExplicitAny: required generic shape for heterogenous table helpers
+	// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
 	TTables extends Record<string, TableHelper<any>>,
-	// biome-ignore lint/suspicious/noExplicitAny: required generic shape for heterogenous kv helpers
+	// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv helpers
 	TKv extends KvHelper<any>,
 >(
 	ctx: { tables: TTables; kv: TKv; whenReady: Promise<void> },
@@ -121,13 +142,6 @@ export function createMaterializer<
 	let shouldMaterializeKv = false;
 	const unsubscribers: Array<() => void> = [];
 
-	const writeSerializedFile = async (
-		directory: string,
-		result: SerializeResult,
-	) => {
-		await Bun.write(join(directory, result.filename), result.content);
-	};
-
 	const materializeTable = async <TName extends keyof TTables & string>(
 		name: TName,
 	) => {
@@ -148,10 +162,12 @@ export function createMaterializer<
 
 		for (const row of table.getAllValid()) {
 			const result = await serialize(row);
-			await writeSerializedFile(directory, result);
+			await Bun.write(join(directory, result.filename), result.content);
 			filenames.set(row.id, result.filename);
 		}
 
+		// Sequential writes inside the observer avoid rename races — a parallel
+		// approach (Promise.allSettled) could delete a file another write needs.
 		const unsubscribe = table.observe((changedIds) => {
 			void (async () => {
 				for (const id of changedIds) {
@@ -177,7 +193,7 @@ export function createMaterializer<
 						await safeUnlink(join(directory, previousFilename));
 					}
 
-					await writeSerializedFile(directory, result);
+					await Bun.write(join(directory, result.filename), result.content);
 					filenames.set(id, result.filename);
 				}
 			})().catch((error) => {
@@ -197,8 +213,6 @@ export function createMaterializer<
 				content: JSON.stringify(data, null, 2),
 			}));
 
-		await writeSerializedFile(config.dir, serialize(kvState));
-
 		const unsubscribe = ctx.kv.observeAll((changes) => {
 			void (async () => {
 				for (const [key, change] of changes) {
@@ -210,7 +224,8 @@ export function createMaterializer<
 					delete kvState[key];
 				}
 
-				await writeSerializedFile(config.dir, serialize(kvState));
+				const result = serialize(kvState);
+				await Bun.write(join(config.dir, result.filename), result.content);
 			})().catch((error) => {
 				console.warn('[markdown-materializer] kv write failed:', error);
 			});

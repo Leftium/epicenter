@@ -89,8 +89,6 @@ export type {
 } from './timeline';
 export {
 	computeMidpoint,
-	createTimeline,
-	generateInitialOrders,
 	type Timeline,
 } from './timeline';
 // ════════════════════════════════════════════════════════════════════════════
@@ -125,13 +123,6 @@ export type {
 	WorkspaceDescriptor,
 } from './workspace/describe-workspace';
 export { describeWorkspace } from './workspace/describe-workspace';
-
-// ════════════════════════════════════════════════════════════════════════════
-// VALIDATION UTILITIES
-// ════════════════════════════════════════════════════════════════════════════
-
-export { standardSchemaToJsonSchema } from './shared/standard-schema';
-export { createUnionSchema } from './workspace/schema-union';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -178,30 +169,6 @@ export type {
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
 } from './workspace/types';
-
-// ════════════════════════════════════════════════════════════════════════════
-// DRIZZLE RE-EXPORTS
-// ════════════════════════════════════════════════════════════════════════════
-
-// Commonly used Drizzle utilities for querying extensions
-export {
-	and,
-	asc,
-	desc,
-	eq,
-	gt,
-	gte,
-	inArray,
-	isNotNull,
-	isNull,
-	like,
-	lt,
-	lte,
-	ne,
-	not,
-	or,
-	sql,
-} from 'drizzle-orm';
 
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS

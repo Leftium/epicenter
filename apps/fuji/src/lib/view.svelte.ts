@@ -1,7 +1,7 @@
 /**
  * Reactive view state for Fuji.
  *
- * Manages the current view mode, sidebar filters, and search query.
+ * Manages the current view mode, search query, and sort preference.
  * All persisted values use workspace KV so they survive reloads
  * and sync across devices.
  *
@@ -26,8 +26,6 @@ function createViewState() {
 	const sortByKv = fromKv(workspace.kv, 'sortBy');
 
 	// ─── Local State ─────────────────────────────────────────────────────
-	let activeTypeFilter = $state<string | null>(null);
-	let activeTagFilter = $state<string | null>(null);
 	let searchQuery = $state('');
 
 	return {
@@ -59,50 +57,16 @@ function createViewState() {
 			sortByKv.current = value;
 		},
 
-		// ─── Filters ─────────────────────────────────────────────────────
-		get activeTypeFilter() {
-			return activeTypeFilter;
-		},
-
-		get activeTagFilter() {
-			return activeTagFilter;
-		},
 
 		get searchQuery() {
 			return searchQuery;
 		},
 
 		/**
-		 * Set the active type filter. Pass null to clear.
-		 * Clicking the same type again clears it (toggle behavior).
-		 */
-		setTypeFilter(type: string | null) {
-			activeTypeFilter = type;
-		},
-
-		/**
-		 * Set the active tag filter. Pass null to clear.
-		 * Clicking the same tag again clears it (toggle behavior).
-		 */
-		setTagFilter(tag: string | null) {
-			activeTagFilter = tag;
-		},
-
-		/**
-		 * Update the search query. Used by the sidebar search input and
-		 * the command palette.
+		 * Update the search query. Used by the sidebar search input.
 		 */
 		setSearchQuery(query: string) {
 			searchQuery = query;
-		},
-
-		/**
-		 * Clear all active filters and search query.
-		 */
-		clearFilters() {
-			activeTypeFilter = null;
-			activeTagFilter = null;
-			searchQuery = '';
 		},
 	};
 }

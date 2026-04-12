@@ -83,8 +83,8 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-						isActive={page.url.pathname === '/' && viewState.activeTypeFilter === null && viewState.activeTagFilter === null && !isSearching}
-						onclick={() => { viewState.clearFilters(); goto('/'); }}
+						isActive={page.url.pathname === '/' && !isSearching}
+						onclick={() => goto('/')}
 					>
 							<FileTextIcon class="size-4" />
 							<span>All Entries</span>
@@ -163,13 +163,10 @@
 						<Sidebar.Menu>
 							{#each typeGroups as group (group.name)}
 								<Sidebar.MenuItem>
-									<Sidebar.MenuButton
-									isActive={viewState.activeTypeFilter === group.name}
-									onclick={() =>
-										viewState.setTypeFilter(
-											viewState.activeTypeFilter === group.name ? null : group.name,
-										)}
-									>
+							<Sidebar.MenuButton
+								isActive={page.url.pathname === `/type/${encodeURIComponent(group.name)}`}
+								onclick={() => goto(`/type/${encodeURIComponent(group.name)}`)}
+							>
 										<HashIcon class="size-4" />
 										<span>{group.name}</span>
 										<span class="ml-auto text-xs text-muted-foreground">
@@ -191,13 +188,10 @@
 						<Sidebar.Menu>
 							{#each tagGroups as group (group.name)}
 								<Sidebar.MenuItem>
-									<Sidebar.MenuButton
-									isActive={viewState.activeTagFilter === group.name}
-									onclick={() =>
-										viewState.setTagFilter(
-											viewState.activeTagFilter === group.name ? null : group.name,
-										)}
-									>
+							<Sidebar.MenuButton
+								isActive={page.url.pathname === `/tag/${encodeURIComponent(group.name)}`}
+								onclick={() => goto(`/tag/${encodeURIComponent(group.name)}`)}
+							>
 										<TagIcon class="size-4" />
 										<span>{group.name}</span>
 										<span class="ml-auto text-xs text-muted-foreground">

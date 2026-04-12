@@ -37,7 +37,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 			if (raw === undefined) return definition.defaultValue;
 
 			const result = definition.schema['~standard'].validate(raw);
-			if (result instanceof Promise)
+			if (result instanceof Promise) return definition.defaultValue;
 			if (result.issues) return definition.defaultValue;
 
 			return result.value;

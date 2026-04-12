@@ -527,24 +527,33 @@ export class YKeyValueLww<T> {
 	 * Set a key-value pair with automatic timestamp.
 	 * The timestamp enables LWW conflict resolution during sync.
 	 *
-	 * ## Single-Writer Architecture
+	 * For existing keys, eagerly deletes the old entry before pushing the new one.
+	 * This keeps the observer's job simple—it sees a clean add with no conflicts.
 	 *
-	 * This method writes to `pending` and `Y.Array`, but NEVER directly to `map`.
-	 * The observer is the sole writer to `map`. This prevents race conditions when
-	 * `set()` is called inside an outer transaction (e.g., batch operations).
+	 * For bulk updates (1K+ rows), use {@link bulkSet} instead. It skips the
+	 * per-key delete and lets the observer batch-resolve all conflicts in one pass,
+	 * turning O(n²) into O(n). See `bulkSet` JSDoc for the full explanation.
+	 *
+	 * ## Why `set()` eagerly deletes but `bulkSet()` defers
+	 *
+	 * `deleteEntryByKey()` scans the Y.Array to find the old entry — O(n) per call.
+	 * For a single `set()`, that O(n) is fine. For 10K `set()` calls in a loop,
+	 * it's 10K × O(n) = O(n²). `bulkSet` avoids this by pushing all entries first,
+	 * then letting the observer find and remove old entries using a pre-built index
+	 * Map (one O(n) scan + O(1) per lookup = O(n) total).
 	 *
 	 * ```
-	 * set()
-	 *   │
-	 *   ├───► pending.set(key, entry)    ← For immediate reads via get()
-	 *   │
-	 *   └───► yarray.push(entry)         ← Source of truth
-	 *               │
-	 *               ▼
-	 *         Observer fires (after transaction ends)
-	 *               │
-	 *               ├───► map.set(key, entry)
-	 *               └───► pending.delete(key)
+	 * set() for existing key:
+	 *   deleteEntryByKey(key)    ← O(n) scan, removes old entry
+	 *   yarray.push([entry])     ← O(1)
+	 *   observer fires            ← no conflicts (old entry already gone)
+	 *
+	 * bulkSet() for 10K existing keys:
+	 *   for each: yarray.push([entry])      ← O(1) × 10K, NO delete
+	 *   observer fires ONCE:
+	 *     builds entryIndexMap               ← O(n) — one scan
+	 *     resolves 10K conflicts             ← O(1) each via Map.get
+	 *     batch deletes losers               ← O(k)
 	 * ```
 	 */
 	set(key: string, val: T): void {
@@ -572,9 +581,34 @@ export class YKeyValueLww<T> {
 	/**
 	 * Set many key-value pairs in one transaction.
 	 *
-	 * Unlike calling `set()` repeatedly, this intentionally skips
-	 * `deleteEntryByKey()` for existing keys. The observer runs once after the
-	 * transaction ends and resolves all duplicate-key conflicts in a single pass.
+	 * Unlike {@link set}, this intentionally skips `deleteEntryByKey()` for existing
+	 * keys. Instead, all entries are pushed to the Y.Array, and the observer resolves
+	 * duplicate-key conflicts in a single pass when the transaction ends.
+	 *
+	 * ## Why this is faster than calling `set()` in a loop
+	 *
+	 * `set()` calls `deleteEntryByKey()` per key — an O(n) array scan. In a loop:
+	 * N calls × O(n) scan = O(n²). `bulkSet` defers all cleanup to the observer,
+	 * which builds an `entryIndexMap` (Map<Entry, index>) from one `toArray()` call
+	 * and resolves each conflict with an O(1) Map lookup. Total: O(n).
+	 *
+	 * The observer's conflict resolution already exists for multi-device sync — when
+	 * two clients set the same key offline. `bulkSet` reuses that exact same path.
+	 *
+	 * ## When to use
+	 *
+	 * - Importing 1K+ rows: `ykv.bulkSet(entries)` in a transaction
+	 * - For chunked imports with progress, use `TableHelper.bulkSet()` which wraps
+	 *   this method with chunking, `onProgress`, and event-loop yielding
+	 * - For < 100 rows, `set()` in a `doc.transact()` is simpler and equivalent
+	 *
+	 * @example
+	 * ```typescript
+	 * ykv.bulkSet([
+	 *   { key: 'row-1', val: { title: 'First' } },
+	 *   { key: 'row-2', val: { title: 'Second' } },
+	 * ]);
+	 * ```
 	 */
 	bulkSet(entries: Array<{ key: string; val: T }>): void {
 		this.doc.transact(() => {
@@ -594,6 +628,10 @@ export class YKeyValueLww<T> {
 
 	/**
 	 * Delete a key. No-op if key doesn't exist.
+	 *
+	 * Scans the Y.Array to find and remove the entry — O(n) per call.
+	 * For bulk deletions (1K+ keys), use {@link bulkDelete} which does
+	 * one scan for all keys instead of one scan per key.
 	 *
 	 * Removes from `pending` immediately and triggers Y.Array deletion.
 	 * The observer will update `map` when the deletion is processed.
@@ -618,9 +656,20 @@ export class YKeyValueLww<T> {
 	/**
 	 * Delete many keys in one scan plus one batched transaction.
 	 *
-	 * This avoids the repeated O(n) array scans you get from calling `delete()` in
-	 * a loop. Matching entries are collected once, then deleted right-to-left so
-	 * indices stay stable.
+	 * Unlike calling {@link delete} in a loop (which scans the array per call —
+	 * O(n²) for N deletions), this collects all matching entry indices in a single
+	 * `toArray()` scan, then deletes them right-to-left so indices stay stable.
+	 *
+	 * ## Why right-to-left?
+	 *
+	 * Deleting at index 9000 doesn't change the position of index 50. By processing
+	 * indices in descending order, all pre-computed indices remain valid throughout
+	 * the batch. No re-scanning needed.
+	 *
+	 * @example
+	 * ```typescript
+	 * ykv.bulkDelete(['key-1', 'key-2', 'key-3']);
+	 * ```
 	 */
 	bulkDelete(keys: string[]): void {
 		const keySet = new Set(keys);

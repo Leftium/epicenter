@@ -202,30 +202,41 @@ See `specs/20260412T151815-breddit.md` Phase 1 for the full plan. Summary:
 
 ### Wave 7: Bulk import/delete progress-bar API
 
+### Design: Why `set()` eagerly deletes but `bulkSet()` defers
+
+`deleteEntryByKey()` scans the Y.Array to find an entry's index — O(n) per call.
+For a single `set()`, that's fine. For 10K `set()` calls in a loop, it's O(n²).
+
+`bulkSet()` skips this per-key scan. Instead, it pushes all entries in one
+transaction. When the transaction ends, the observer fires once and:
+1. Builds `entryIndexMap` from one `toArray()` call — O(n)
+2. Resolves each conflict with O(1) Map lookups
+3. Batch-deletes all losers
+
+The observer's conflict resolution already exists for multi-device sync (when
+two clients set the same key offline). `bulkSet` reuses that exact path.
+
+Similarly, `bulkDelete()` replaces N individual array scans with one scan that
+collects all matching indices, then deletes right-to-left to preserve index
+stability.
+
+```
+set() per call:   deleteEntryByKey O(n) + push O(1)     → 10K calls = O(n²)
+bulkSet() total:  10K pushes O(1) + 1 observer O(n)      → O(n)
+delete() per call: deleteEntryByKey O(n)                  → 10K calls = O(n²)
+bulkDelete() total: 1 scan O(n) + batch delete O(k)       → O(n)
+```
+
 Architecture: Both `bulkSet` and `bulkDelete` get methods on `YKeyValueLww`. `bulkSet` skips `deleteEntryByKey` and lets the observer batch-resolve conflicts using the entryIndexMap from Wave 1. `bulkDelete` does a one-pass scan + batch delete.
 
-- [ ] **7.1** Add `bulkDelete(keys: string[])` method to `YKeyValueLww` in `y-keyvalue-lww.ts`:
-  - One `toArray()` scan to find all matching indices
-  - Sort indices descending, delete right-to-left (preserves indices)
-  - Wraps deletions in `doc.transact()`
-- [ ] **7.2** Add `bulkDelete(keys)` delegation to `EncryptedYKeyValueLww` — just calls `inner.bulkDelete(keys)`
-- [ ] **7.3** Add `bulkSet` and `bulkDelete` methods to `TableHelper` type in `types.ts`:
-  ```typescript
-  async bulkSet(rows: TRow[], options?: {
-      chunkSize?: number;       // default: 1000
-      onProgress?: (percent: number) => void;
-  }): Promise<void>;
-
-  async bulkDelete(ids: string[], options?: {
-      chunkSize?: number;       // default: 1000
-      onProgress?: (percent: number) => void;
-  }): Promise<void>;
-  ```
-- [ ] **7.4** Implement both in `create-table.ts` — chunk by `chunkSize`, call operation per chunk, `onProgress`, yield with `setTimeout(0)`
-- [ ] **7.5** Write tests: verify all rows inserted/deleted, verify progress callback fires, verify chunking behavior
-- [ ] **7.6** Run benchmarks to confirm each chunk stays under 16ms frame budget at default chunk size
-- [ ] **7.7** Add detailed JSDoc explaining when to use `bulkSet`/`bulkDelete` vs `workspace.batch()` vs single-row ops
-- [ ] **7.8** Stage and commit
+- [x] **7.1** Add `bulkSet(entries)` and `bulkDelete(keys)` to `YKeyValueLww`
+- [x] **7.2** Add delegation wrappers to `EncryptedYKeyValueLww`
+- [x] **7.3** Add `bulkSet` and `bulkDelete` to `TableHelper` type (async, chunked, with progress)
+- [x] **7.4** Implement in `create-table.ts` with chunking + `onProgress` + `setTimeout(0)` yielding
+- [x] **7.5** Write tests for YKV-level and TableHelper-level bulk operations
+- [x] **7.6** Benchmarks pass (all 40)
+- [x] **7.7** Added detailed JSDoc on all 4 methods explaining the eager-vs-deferred tradeoff
+- [x] **7.8** Committed
 
 ## Edge Cases
 

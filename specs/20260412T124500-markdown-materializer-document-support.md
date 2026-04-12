@@ -2,7 +2,7 @@
 
 ## Task
 
-Replace the markdown-specific `markdownMaterializer` with a general `createMaterializer` factory that follows the factory function composition pattern. First arg is the resource (extension context — `{ tables, kv }`), second is config (`{ directory }`). Returns a builder with `.table()` for per-table overrides. All tables materialize by default. KV materializes to a single JSON file.
+Replace the markdown-specific `markdownMaterializer` with a general `createMaterializer` factory that follows the factory function composition pattern. First arg is the resource (extension context—`{ tables, kv }`), second is config (`{ dir }`). Returns a builder with `.table()` for opt-in per-table materialization and `.kv()` for opt-in KV materialization. Nothing materializes by default—explicit `.table()` and `.kv()` calls opt in.
 
 The serialize contract is general: `{ filename, content }`. A `markdown()` helper handles the common case of frontmatter + body. This eliminates the two app-specific materializers (fuji, opensidian) and generalizes beyond markdown.
 
@@ -86,7 +86,7 @@ function createMaterializer<
     TKv extends Record<string, KvHelper<any>>,
 >(
     ctx: MaterializerContext<TTables, TKv>,
-    config: { directory: string },
+    config: { dir: string },
 ): MaterializerBuilder<TTables, TKv>;
 ```
 
@@ -96,13 +96,18 @@ The factory receives the extension context (structurally typed — not importing
 - `TKv` for typed KV access
 - Table key names for default subdirectory names
 
-### All tables materialize by default
+### Opt-in materialization via `.table()` and `.kv()`
 
-`createMaterializer(ctx, { directory })` materializes every table with sensible defaults:
-- Serialize: all fields as markdown frontmatter, `{id}.md` filename
-- Directory: `{directory}/{tableName}/`
+Nothing materializes by default. Call `.table(name)` to opt in a table. Call `.kv()` to opt in KV.
 
-Chain `.table()` only for tables that need customization. Chain `.skip()` to exclude tables that shouldn't produce files (internal state, binary data, etc.).
+**Why opt-in, not default-materialize-all:**
+- **No surprise files.** Adding a table to the workspace definition doesn't silently produce `.md` files on disk.
+- **No `.skip()` needed.** The API surface shrinks—no negation mixed into the chain.
+- **Explicit > implicit** for an extension that writes to the filesystem.
+- **Every line is additive.** Each `.table()` call opts in one table. The chain is purely constructive.
+- **In practice you customize most tables anyway** (filename strategy, document content), so you're writing `.table()` calls regardless.
+
+The built-in default serialize (when `.table()` is called without a `serialize` option) is: all row fields as markdown frontmatter, `{id}.md` filename, written to `{dir}/{tableName}/`.
 
 ### General serialize contract
 
@@ -155,34 +160,49 @@ function markdown(input: {
 ```typescript
 interface MaterializerBuilder<TTables, TKv> {
     /**
-     * Override materialization config for a specific table.
+     * Opt in a table for materialization.
      *
-     * Table name is validated against TTables keys.
-     * Serialize callback receives typed row inferred from the table.
+     * Each row produces one file in `{dir}/{tableName}/` (or `{dir}/{config.dir}/`).
+     * Table name is validated against TTables keys. Serialize callback receives
+     * typed row inferred from the table.
+     *
+     * @remarks Without a serialize option, defaults to markdown: all row fields as
+     * YAML frontmatter, `{id}.md` filename.
      */
     table<K extends keyof TTables & string>(
         name: K,
-        config: {
+        config?: {
+            /** Subdirectory name. Defaults to the table key name. */
             dir?: string;
+            /** Custom serialize. Defaults to markdown frontmatter + {id}.md. */
             serialize?: TTables[K] extends TableHelper<infer TRow>
                 ? (row: TRow) => MaybePromise<SerializeResult>
                 : never;
         },
     ): this;
 
-    /** Exclude tables from materialization (internal state, binary data, etc). */
-    skip(...names: (keyof TTables & string)[]): this;
-
-    /** Exclude KV from materialization. */
-    skipKv(): this;
+    /**
+     * Opt in KV materialization.
+     *
+     * Writes all KV data to a single file. Live updates via `kv.observeAll()`.
+     * Default: `{dir}/kv.json` with `JSON.stringify`.
+     *
+     * @remarks For custom format, provide a serialize callback that receives the
+     * full KV snapshot (all key-value pairs as a typed object) and returns
+     * `{ filename, content }`.
+     */
+    kv(config?: {
+        /** Custom serialize. Receives full KV snapshot, returns { filename, content }. */
+        serialize?: (data: { [K in keyof TKv & string]: TKv[K] extends KvHelper<infer V> ? V : never }) => SerializeResult;
+    }): this;
 
     /**
      * Extension lifecycle.
      *
-     * `whenReady` resolves after initial materialization completes.
+     * `whenReady` resolves after initial materialization of all opted-in tables and KV.
      * Materialization starts lazily when the framework accesses `whenReady`,
-     * which is after all `.table()`, `.skip()`, and `.skipKv()` calls have
-     * completed (they run synchronously in the factory closure).
+     * which is after all `.table()` and `.kv()` calls have completed
+     * (they run synchronously in the factory closure).
      */
     whenReady: Promise<void>;
     dispose(): void;
@@ -191,15 +211,19 @@ interface MaterializerBuilder<TTables, TKv> {
 
 ### KV materialization
 
-By default, all KV data materializes to a single `{directory}/kv.json` file containing all key-value pairs as a flat JSON object. KV changes are observed live via `kv.observeAll()` — the file re-writes on every change. Use `.skipKv()` to disable.
+KV materializes only when `.kv()` is called (opt-in). Default: all KV data as `{dir}/kv.json` with `JSON.stringify`. KV changes are observed live via `kv.observeAll()`. Custom format via `serialize` option:
 
 ```typescript
-interface MaterializerBuilder<TTables, TKv> {
-    // ... table methods above ...
+// Default: kv.json with JSON
+.kv()
 
-    /** Exclude KV from materialization. */
-    skipKv(): this;
-}
+// Custom: YAML format
+.kv({
+    serialize: (data) => ({
+        filename: 'settings.yaml',
+        content: YAML.stringify(data),
+    }),
+})
 ```
 
 ## Desired End State
@@ -218,17 +242,18 @@ import {
 export const tabManager = createTabManagerWorkspace()
     .withWorkspaceExtension('materializer', (ctx) =>
         createMaterializer(ctx, {
-            directory: join(import.meta.dir, 'tab-manager'),
+            dir: join(import.meta.dir, 'tab-manager'),
         })
         .table('savedTabs', { serialize: slugFilename('title') })
         .table('bookmarks', { serialize: slugFilename('title') })
-        // devices: default (all fields as markdown frontmatter, devices/{id}.md)
+        .table('devices')
+        .kv()
     );
 
 // Fuji — custom serialize with document content via closure
 export const fuji = createFujiWorkspace()
     .withWorkspaceExtension('materializer', (ctx) =>
-        createMaterializer(ctx, { directory: import.meta.dir })
+        createMaterializer(ctx, { dir: import.meta.dir })
         .table('entries', {
             dir: 'fuji',
             serialize: async (row) => markdown({
@@ -249,6 +274,7 @@ export const fuji = createFujiWorkspace()
                 filename: toSlugFilename(row.title, row.id),
             }),
         })
+        .kv()
     );
 ```
 
@@ -258,7 +284,7 @@ export const fuji = createFujiWorkspace()
 export const opensidian = createWorkspace(opensidianDefinition)
     .withWorkspaceExtension('materializer', (ctx) =>
         createMaterializer(ctx, {
-            directory: join(import.meta.dir, 'data'),
+            dir: join(import.meta.dir, 'data'),
         })
         .table('files', {
             serialize: async (row) => {
@@ -297,7 +323,7 @@ export const opensidian = createWorkspace(opensidianDefinition)
 
 ```typescript
 // Materialize devices as individual JSON files instead of markdown
-createMaterializer(ctx, { directory: '...' })
+createMaterializer(ctx, { dir: '...' })
     .table('devices', {
         serialize: (row) => ({
             filename: `${row.id}.json`,
@@ -322,7 +348,7 @@ createMaterializer(ctx, { directory: '...' })
 
 ### Factory
 
-- `createMaterializer(ctx, config)` — factory: resource first (extension context), config second
+- `createMaterializer(ctx, { dir })` — factory: resource first (extension context), config second
 
 ### Serialize presets (markdown — return `SerializeResult`)
 
@@ -378,11 +404,15 @@ The materializer writes files. It doesn't care about format. Markdown-specific l
 
 ### 2. Factory function pattern: resource first, config second
 
-`createMaterializer(ctx, { directory })` follows the universal factory function signature. `ctx` is the resource (structurally typed as `{ tables, kv }` — receives the extension context directly). `{ directory }` is the config. Two args max.
+`createMaterializer(ctx, { dir })` follows the universal factory function signature. `ctx` is the resource (structurally typed as `{ tables, kv }`—receives the extension context directly). `{ dir }` is the config. Two args max. `dir` is used consistently for both base path and table subdirectory—context makes the meaning clear.
 
-### 3. Default-materialize-all with `.table()` overrides
+### 3. Opt-in materialization, not default-materialize-all
 
-All tables materialize with sensible defaults (markdown frontmatter, `{id}.md`). Chain `.table(name, config)` only for tables that need customization. `.skip(name)` for tables that shouldn't materialize (internal state, binary data). This minimizes config for simple cases.
+Nothing materializes until you call `.table()` or `.kv()`. This is the right default for an extension that writes to the filesystem:
+- No surprise files when adding tables to a workspace definition
+- No `.skip()` / `.skipKv()` needed—the API surface is purely additive
+- Explicit enumeration: every `.table()` line is a conscious decision
+- In practice, most tables need serialize customization anyway
 
 ### 4. Typed table names via generic + `keyof`
 
@@ -396,9 +426,9 @@ All tables materialize with sensible defaults (markdown frontmatter, `{id}.md`).
 
 Each row materializes as one file. There is no "dump entire table to one file" mode. That's an export concern, not a materialization concern. KV is the exception because it's naturally a flat structure.
 
-### 7. KV → one JSON file
+### 7. KV → one JSON file (opt-in)
 
-All KV data materializes to `{directory}/kv.json` by default. Live updates via `kv.observeAll()` (verified — exists in workspace API). `.skipKv()` to disable.
+KV materializes only when `.kv()` is called. Default: `{dir}/kv.json` with JSON.stringify. Custom serialize for other formats. Live updates via `kv.observeAll()`.
 
 ### 8. `markdown()` helper applies wikilink conversion
 
@@ -421,13 +451,14 @@ All consumers in the monorepo must be migrated in the same commit.
 
 ## MUST DO
 
-- Implement `createMaterializer(ctx, config)` factory where ctx is structurally typed as `{ tables, kv }` — receives extension context directly
+- Implement `createMaterializer(ctx, { dir })` factory where ctx is structurally typed as `{ tables, kv }`
 - Generic type parameters on factory for `TTables` and `TKv` — infer from ctx arg
 - `.table(name, config)` validates name as `keyof TTables`, infers row type for serialize callback
 - General serialize contract: `{ filename: string; content: string }`
 - `markdown()` helper: `{ frontmatter, body, filename }` → `{ filename, content }` with wikilink conversion
-- Default materialization: all tables, markdown frontmatter, `{id}.md`, `{directory}/{tableName}/`
-- KV materialization: `{directory}/kv.json` by default, live updates via `kv.observeAll()`, `.skipKv()` to disable
+- Opt-in materialization: nothing by default, `.table()` opts in per table, `.kv()` opts in KV
+- Default table serialize (when `.table()` called without serialize): all fields as markdown frontmatter, `{id}.md`
+- `.kv()` default: `{dir}/kv.json` with JSON.stringify. Custom serialize receives typed KV snapshot.
 - Rename serialize presets: `slugFilename(field)`, `bodyField(field)`
 - Export standalone utilities: `toSlugFilename(title, id)`, `toIdFilename(id)`
 - Delete `apps/fuji/src/lib/materializer.ts`
@@ -443,16 +474,20 @@ All consumers in the monorepo must be migrated in the same commit.
 - Do not support table → one file (all rows in single file)
 - Do not add new dependencies to `packages/workspace`
 - Do not modify `packages/workspace/src/workspace/types.ts`
-- Do not remove `toMarkdown` utility — it's still needed by the `markdown()` helper
+- Do not remove `toMarkdown` utility—it's still needed by the `markdown()` helper
+- Do not add `.skip()` or `.skipKv()`—opt-in model makes them unnecessary
 
 ## Resolved Open Questions
 
 | # | Issue | Resolution |
 |---|---|---|
-| 1 | Preset names don't indicate markdown | **JSDoc** — add `@remarks Produces markdown output via markdown() internally` to each preset. Short names are fine for call-site readability since the default IS markdown. |
-| 2 | Default-materialize-all assumptions | **JSDoc** on `createMaterializer` + `.skip()` — document that `.skip()` should be used for non-content tables (internal state, binary data). |
-| 3 | KV observation | **Resolved** — `kv.observe(key, cb)` and `kv.observeAll(cb)` both exist in workspace API. Live KV materialization works. |
-| 4 | `markdown()` link conversion opt-out | **JSDoc** — document `toMarkdown()` as the escape hatch for markdown without link conversion. Already exported. |
-| 5 | `whenReady` timing | **JSDoc** on builder's `whenReady` — note lazy start. All `.table()`, `.skip()`, `.skipKv()` calls complete synchronously before framework accesses `whenReady`. |
-| 6 | `.kv({ skip: true })` inconsistency | **API fix** — replaced with `.skipKv()` for consistency with `.skip('tableName')` pattern. |
-| 7 | `MaybePromise<T>` duplication | **Resolved** — already defined in `packages/workspace/src/workspace/lifecycle.ts`, exported from `index.ts`. Import it, don't redefine. |
+| 1 | Preset names don't indicate markdown | **JSDoc** — `@remarks Produces markdown output via markdown() internally`. Short names fine for readability. |
+| 2 | Default-materialize-all assumptions | **API fix** — switched to opt-in. No defaults, no assumptions about table content. |
+| 3 | KV observation | **Resolved** — `kv.observeAll(cb)` exists. Live materialization works. |
+| 4 | `markdown()` link conversion opt-out | **JSDoc** — `toMarkdown()` is the escape hatch (pure, no links). |
+| 5 | `whenReady` timing | **JSDoc** — lazy start after all `.table()`/`.kv()` calls complete synchronously. |
+| 6 | `.kv({ skip })` vs `.skipKv()` | **API fix** — eliminated both. Opt-in model means no skip needed. |
+| 7 | `MaybePromise<T>` | **Resolved** — import from `lifecycle.ts`. |
+| 8 | `directory` vs `dir` | **API fix** — `dir` everywhere. Short, consistent. Context makes base path vs subfolder obvious. |
+| 9 | KV serialize/overrides | **API fix** — `.kv({ serialize })` receives typed KV snapshot, returns `SerializeResult`. |
+| 10 | Global default serialize | **No** — would be `Record<string, unknown>` (untyped), defeating row type inference. Built-in default is always safe. Two-line repetition is fine. |

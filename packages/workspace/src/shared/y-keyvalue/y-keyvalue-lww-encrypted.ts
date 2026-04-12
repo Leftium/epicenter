@@ -101,9 +101,11 @@ type EncryptionState = {
  */
 export type EncryptedYKeyValueLww<T> = {
 	set(key: string, val: T): void;
+	bulkSet(entries: Array<{ key: string; val: T }>): void;
 	get(key: string): T | undefined;
 	has(key: string): boolean;
 	delete(key: string): void;
+	bulkDelete(keys: string[]): void;
 	entries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
 	observe(handler: EncryptedKvObserver<T>): void;
 	unobserve(handler: EncryptedKvObserver<T>): void;
@@ -345,6 +347,24 @@ export function createEncryptedYkvLww<T>(
 				),
 			);
 		},
+		bulkSet(entries) {
+			if (!encryption) {
+				inner.bulkSet(entries);
+				return;
+			}
+
+			inner.bulkSet(
+				entries.map(({ key, val }) => ({
+					key,
+					val: encryptValue(
+						JSON.stringify(val),
+						encryption.currentKey,
+						textEncoder.encode(key),
+						encryption.currentVersion,
+					),
+				})),
+			);
+		},
 		/**
 		 * Get a decrypted value by key. Reads from the inner store and decrypts
 		 * on the fly (~0.01ms for XChaCha20-Poly1305 on a small JSON blob).
@@ -361,6 +381,9 @@ export function createEncryptedYkvLww<T>(
 		},
 		delete(key) {
 			inner.delete(key);
+		},
+		bulkDelete(keys) {
+			inner.bulkDelete(keys);
 		},
 		*entries() {
 			yield* iterateDecrypted(inner.entries());

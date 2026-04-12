@@ -67,6 +67,24 @@ export function createTable<
 			ykv.set(row.id, row);
 		},
 
+		async bulkSet(
+			rows: TRow[],
+			options?: {
+				chunkSize?: number;
+				onProgress?: (percent: number) => void;
+			},
+		): Promise<void> {
+			const { chunkSize = 1000, onProgress } = options ?? {};
+			const total = rows.length;
+
+			for (let i = 0; i < total; i += chunkSize) {
+				const chunk = rows.slice(i, i + chunkSize);
+				ykv.bulkSet(chunk.map((row) => ({ key: row.id, val: row })));
+				onProgress?.(Math.min((i + chunkSize) / total, 1));
+				await new Promise((resolve) => setTimeout(resolve, 0));
+			}
+		},
+
 		// ═══════════════════════════════════════════════════════════════════════
 		// UPDATE
 		// ═══════════════════════════════════════════════════════════════════════
@@ -157,6 +175,24 @@ export function createTable<
 
 		delete(id: string): void {
 			ykv.delete(id);
+		},
+
+		async bulkDelete(
+			ids: string[],
+			options?: {
+				chunkSize?: number;
+				onProgress?: (percent: number) => void;
+			},
+		): Promise<void> {
+			const { chunkSize = 1000, onProgress } = options ?? {};
+			const total = ids.length;
+
+			for (let i = 0; i < total; i += chunkSize) {
+				const chunk = ids.slice(i, i + chunkSize);
+				ykv.bulkDelete(chunk);
+				onProgress?.(Math.min((i + chunkSize) / total, 1));
+				await new Promise((resolve) => setTimeout(resolve, 0));
+			}
 		},
 
 		clear(): void {

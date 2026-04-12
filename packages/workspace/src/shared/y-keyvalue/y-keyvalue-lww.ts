@@ -570,6 +570,29 @@ export class YKeyValueLww<T> {
 	}
 
 	/**
+	 * Set many key-value pairs in one transaction.
+	 *
+	 * Unlike calling `set()` repeatedly, this intentionally skips
+	 * `deleteEntryByKey()` for existing keys. The observer runs once after the
+	 * transaction ends and resolves all duplicate-key conflicts in a single pass.
+	 */
+	bulkSet(entries: Array<{ key: string; val: T }>): void {
+		this.doc.transact(() => {
+			for (const { key, val } of entries) {
+				const entry: YKeyValueLwwEntry<T> = {
+					key,
+					val,
+					ts: this.getTimestamp(),
+				};
+
+				this.pending.set(key, entry);
+				this.pendingDeletes.delete(key);
+				this.yarray.push([entry]);
+			}
+		});
+	}
+
+	/**
 	 * Delete a key. No-op if key doesn't exist.
 	 *
 	 * Removes from `pending` immediately and triggers Y.Array deletion.
@@ -590,6 +613,37 @@ export class YKeyValueLww<T> {
 		this.pendingDeletes.add(key);
 		this.deleteEntryByKey(key);
 		// DO NOT update this.map here - observer is the sole writer to map
+	}
+
+	/**
+	 * Delete many keys in one scan plus one batched transaction.
+	 *
+	 * This avoids the repeated O(n) array scans you get from calling `delete()` in
+	 * a loop. Matching entries are collected once, then deleted right-to-left so
+	 * indices stay stable.
+	 */
+	bulkDelete(keys: string[]): void {
+		const keySet = new Set(keys);
+		const entries = this.yarray.toArray();
+		const indicesToDelete: number[] = [];
+
+		for (let i = 0; i < entries.length; i++) {
+			const entry = entries[i];
+			if (!entry || !keySet.has(entry.key)) continue;
+
+			indicesToDelete.push(i);
+			this.pendingDeletes.add(entry.key);
+			this.pending.delete(entry.key);
+		}
+
+		if (indicesToDelete.length === 0) return;
+
+		this.doc.transact(() => {
+			for (let i = indicesToDelete.length - 1; i >= 0; i--) {
+				const index = indicesToDelete[i];
+				if (index !== undefined) this.yarray.delete(index);
+			}
+		});
 	}
 
 	/**

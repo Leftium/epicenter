@@ -112,7 +112,7 @@ function createViewState() {
 				viewModeKv.current === 'table' ? 'timeline' : 'table';
 		},
 
-		get sortBy(): 'date' | 'updatedAt' | 'createdAt' | 'title' {
+		get sortBy(): 'date' | 'updatedAt' | 'createdAt' | 'title' | 'rating' {
 			return sortByKv.current ?? 'date';
 		},
 
@@ -120,7 +120,7 @@ function createViewState() {
 		 * Set the sort preference. Persisted via workspace KV so it survives
 		 * reloads and syncs across devices.
 		 */
-		set sortBy(value: 'date' | 'updatedAt' | 'createdAt' | 'title') {
+		set sortBy(value: 'date' | 'updatedAt' | 'createdAt' | 'title' | 'rating') {
 			sortByKv.current = value;
 		},
 

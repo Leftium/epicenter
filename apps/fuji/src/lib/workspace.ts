@@ -83,7 +83,28 @@ const entriesTable = defineTable(
 		updatedAt: DateTimeString,
 		_v: '1',
 	}),
-).withDocument('content', {
+	type({
+		id: EntryId,
+		title: 'string',
+		subtitle: 'string',
+		type: 'string[]',
+		tags: 'string[]',
+		pinned: 'boolean',
+		rating: 'number',
+		'deletedAt?': DateTimeString.or('undefined'),
+		date: DateTimeString,
+		createdAt: DateTimeString,
+		updatedAt: DateTimeString,
+		_v: '2',
+	}),
+).migrate((row) => {
+	switch (row._v) {
+		case 1:
+			return { ...row, rating: 0, _v: 2 };
+		case 2:
+			return row;
+	}
+}).withDocument('content', {
 	guid: 'id',
 	onUpdate: () => ({ updatedAt: DateTimeString.now() }),
 });
@@ -97,7 +118,7 @@ const fujiWorkspace = defineWorkspace({
 	tables: { entries: entriesTable },
 	kv: {
 		viewMode: defineKv(type("'table' | 'timeline'")),
-		sortBy: defineKv(type("'date' | 'updatedAt' | 'createdAt' | 'title'")),
+		sortBy: defineKv(type("'date' | 'updatedAt' | 'createdAt' | 'title' | 'rating'")),
 	},
 });
 
@@ -116,7 +137,7 @@ export function createFujiWorkspace() {
 			create: defineMutation({
 				title: 'Create Entry',
 				description:
-					'Create a new CMS entry with optional title, subtitle, type, and tags.',
+				'Create a new CMS entry with optional title, subtitle, type, tags, and rating.',
 				input: Type.Object({
 					title: Type.Optional(Type.String({ description: 'Entry title' })),
 					subtitle: Type.Optional(
@@ -130,8 +151,11 @@ export function createFujiWorkspace() {
 					tags: Type.Optional(
 						Type.Array(Type.String(), { description: 'Freeform tags' }),
 					),
+					rating: Type.Optional(
+						Type.Number({ description: 'Rating from 0–5 (0 = unrated)' }),
+					),
 				}),
-				handler: ({ title, subtitle, type: entryType, tags }) => {
+				handler: ({ title, subtitle, type: entryType, tags, rating }) => {
 					const id = generateId() as EntryId;
 					const now = DateTimeString.now();
 					tables.entries.set({
@@ -141,11 +165,12 @@ export function createFujiWorkspace() {
 						type: entryType ?? [],
 						tags: tags ?? [],
 						pinned: false,
+						rating: rating ?? 0,
 						deletedAt: undefined,
 						date: now,
 						createdAt: now,
 						updatedAt: now,
-						_v: 1 as const,
+						_v: 2 as const,
 					});
 					return { id };
 				},
@@ -174,6 +199,9 @@ export function createFujiWorkspace() {
 					),
 					tags: Type.Optional(
 						Type.Array(Type.String(), { description: 'Freeform tags' }),
+					),
+					rating: Type.Optional(
+						Type.Number({ description: 'Rating from 0–5 (0 = unrated)' }),
 					),
 					date: Type.Optional(
 						Type.Unsafe<DateTimeString>({ type: 'string', description: 'User-defined date for the entry' }),
@@ -252,11 +280,12 @@ export function createFujiWorkspace() {
 						type: [] as string[],
 						tags: [] as string[],
 						pinned: false,
+						rating: 0,
 						deletedAt: undefined,
 						date: date as DateTimeString,
 						createdAt: now,
 						updatedAt: now,
-						_v: 1 as const,
+						_v: 2 as const,
 					}));
 					tables.entries.bulkSet(rows);
 					return { count: rows.length };

@@ -4,6 +4,7 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import * as Table from '@epicenter/ui/table';
 	import { SortableTableHeader } from '@epicenter/ui/table';
+	import * as StarRating from '@epicenter/ui/star-rating';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import {
@@ -80,6 +81,20 @@
 				return renderComponent(BadgeList, { items: tags });
 			},
 			enableSorting: false,
+		},
+		{
+			id: 'rating',
+			accessorKey: 'rating',
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Rating',
+				}),
+			cell: ({ getValue }) => {
+				const rating = getValue<number>();
+				if (!rating) return '';
+				return renderComponent(StarRating.Root, { value: rating, readonly: true, class: 'pointer-events-none' });
+			},
 		},
 		{
 			id: 'date',

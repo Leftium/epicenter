@@ -595,7 +595,7 @@
         "@fontsource-variable/manrope": "^5.2.6",
         "@lucide/svelte": "^1.7.0",
         "@tanstack/svelte-table": "catalog:",
-        "bits-ui": "catalog:",
+        "bits-ui": "^2.16.5",
         "chrono-node": "2.9.0",
         "clsx": "^2.1.1",
         "paneforge": "^1.0.2",

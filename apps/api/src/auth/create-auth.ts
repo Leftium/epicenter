@@ -63,6 +63,39 @@ export function createAuth({
 				strategy: 'jwe',
 			},
 		},
+		// Cross-origin cookie config for OAuth and sessions.
+		//
+		// The auth server (api.epicenter.so) serves multiple client apps:
+		//   - Production subdomains: fuji.epicenter.so, opensidian.com
+		//   - Desktop: tauri://localhost
+		//   - Dev: localhost:5173, localhost:5174, etc.
+		//
+		// OAuth state cookies are set during a cross-origin POST (client → API),
+		// then read back on a top-level GET (Google → API callback). With the
+		// default SameSite=lax, browsers may drop cookies set via cross-origin
+		// POST responses, causing "state_mismatch" errors on the callback.
+		//
+		// SameSite=none tells the browser to send cookies on all cross-origin
+		// requests. This trades browser-level CSRF protection for app-level
+		// protection (trustedOrigins + origin header checking, which Better Auth
+		// already enforces on every request). Standard practice for auth servers
+		// on a separate domain—same model as Auth0, Clerk, and Supabase Auth.
+		//
+		// NOTE: We intentionally omit `partitioned: true` (CHIPS). Partitioned
+		// cookies are keyed by the top-level site at creation time. During OAuth,
+		// the top-level site changes mid-flow (client → Google → API callback),
+		// so the cookie becomes invisible at the callback step. Partitioned is
+		// designed for embedded iframes/subresources, not redirect-based OAuth.
+		advanced: {
+			crossSubDomainCookies: {
+				enabled: true,
+				domain: '.epicenter.so',
+			},
+			defaultCookieAttributes: {
+				sameSite: 'none',
+				secure: true,
+			},
+		},
 		databaseHooks: {
 			user: {
 				create: {

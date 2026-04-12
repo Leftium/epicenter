@@ -8,7 +8,8 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { VList } from 'virtua/svelte';
 	import { format, isToday, isYesterday } from 'date-fns';
-	import type { Entry } from '$lib/workspace';
+	import { type Entry } from '$lib/workspace';
+	import { DateTimeString } from '@epicenter/workspace';
 	import { entriesState, matchesEntrySearch, viewState } from '$lib/entries.svelte';
 
 	let { entries }: { entries: Entry[] } = $props();

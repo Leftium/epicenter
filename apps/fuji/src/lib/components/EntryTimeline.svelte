@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
-	import * as ScrollArea from '@epicenter/ui/scroll-area';
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { format, isToday, isYesterday } from 'date-fns';
@@ -57,7 +56,7 @@
 	});
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col">
+<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 	<!-- Header -->
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<h2 class="text-sm font-semibold">Timeline</h2>
@@ -67,7 +66,7 @@
 	</div>
 
 	<!-- Timeline -->
-	<ScrollArea.Root class="flex-1">
+	<div class="flex-1 overflow-y-auto">
 		{#if entries.length === 0}
 			<Empty.Root class="flex-1">
 				<Empty.Media>
@@ -118,5 +117,5 @@
 				{/each}
 			</div>
 		{/if}
-	</ScrollArea.Root>
+	</div>
 </div>

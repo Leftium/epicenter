@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { Toaster } from '@epicenter/ui/sonner';
+	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { ModeWatcher } from 'mode-watcher';
 	import { workspace } from '$lib/client';
 	import '@epicenter/ui/app.css';
@@ -16,4 +17,5 @@
 </WorkspaceGate>
 
 <Toaster offset={16} closeButton />
+<ConfirmationDialog />
 <ModeWatcher defaultMode="dark" track={false} />

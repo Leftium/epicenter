@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import {
 		localTimezone,
 		NaturalLanguageDateInput,
@@ -10,6 +11,7 @@
 	import { DateTimeString } from '@epicenter/workspace';
 	import { format } from 'date-fns';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { baseKeymap, toggleMark } from 'prosemirror-commands';
 	import {
 		inputRules,
@@ -183,11 +185,31 @@
 
 <div class="flex h-full flex-col">
 	<!-- Header with back button -->
-	<div class="flex items-center gap-2 border-b px-4 py-2">
-		<Button variant="ghost" size="icon" class="size-7" onclick={() => viewState.selectEntry(null)}>
-			<ArrowLeftIcon class="size-4" />
+	<div class="flex items-center justify-between border-b px-4 py-2">
+		<div class="flex items-center gap-2">
+			<Button variant="ghost" size="icon" class="size-7" onclick={() => viewState.selectEntry(null)}>
+				<ArrowLeftIcon class="size-4" />
+			</Button>
+			<span class="text-sm text-muted-foreground">Back to entries</span>
+		</div>
+		<Button
+			variant="ghost-destructive"
+			size="icon"
+			class="size-7"
+			onclick={() => {
+				confirmationDialog.open({
+					title: 'Delete entry?',
+					description: `"${entry.title || 'Untitled'}" will be moved to recently deleted.`,
+					confirm: { text: 'Delete', variant: 'destructive' },
+					onConfirm: () => {
+						workspace.actions.entries.delete({ id: entry.id });
+						viewState.selectEntry(null);
+					},
+				});
+			}}
+		>
+			<Trash2Icon class="size-4" />
 		</Button>
-		<span class="text-sm text-muted-foreground">Back to entries</span>
 	</div>
 
 	<!-- Entry metadata -->

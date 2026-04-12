@@ -186,6 +186,27 @@ export function createFujiWorkspace() {
 					});
 				},
 			}),
+
+			/**
+			 * Soft-delete an entry by setting `deletedAt` to now.
+			 *
+			 * The entry stays in the CRDT for conflict safety—two devices that
+			 * diverge can merge without data loss. Filtered out of active views
+			 * by `deletedAt !== undefined`.
+			 */
+			delete: defineMutation({
+				title: 'Delete Entry',
+				description: 'Soft-delete an entry by setting deletedAt to now.',
+				input: Type.Object({
+					id: Type.String({ description: 'Entry ID to soft-delete' }),
+				}),
+				handler: ({ id }) => {
+					return tables.entries.update(id, {
+						deletedAt: DateTimeString.now(),
+						updatedAt: DateTimeString.now(),
+					});
+				},
+			}),
 		},
 	}));
 }

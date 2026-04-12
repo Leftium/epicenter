@@ -78,8 +78,8 @@
 		<Command.Group heading="Actions">
 			<Command.Item
 				onSelect={() => {
-				notesState.createNote();
-					open = false;
+					const { id } = notesState.createNote(viewState.selectedFolderId);
+					viewState.selectNote(id);
 				}}
 			>
 				<PlusIcon class="mr-2 size-4" />

@@ -53,7 +53,8 @@
 			foldersState.createFolder();
 		} else if (e.key === 'n') {
 			e.preventDefault();
-			notesState.createNote();
+			const { id } = notesState.createNote(viewState.selectedFolderId);
+			viewState.selectNote(id);
 		}
 	}}
 />

@@ -73,24 +73,23 @@ function createNotesState() {
 		},
 
 		/**
-		 * Create a new note in the currently selected folder.
+		 * Create a new note in the given folder and return its ID.
 		 *
-		 * The note starts with an empty title and preview. It's automatically
-		 * selected after creation so the editor opens immediately. If no folder
-		 * is selected, the note is created as unfiled.
+		 * The note starts with an empty title and preview. Pass a folderId
+		 * to file the note, or omit/pass `undefined` to create it unfiled.
+		 * The caller is responsible for selecting the note afterward.
 		 *
 		 * @example
 		 * ```typescript
-		 * notesState.createNote();
-		 * // New note appears in the list and editor opens
+		 * const { id } = notesState.createNote(viewState.selectedFolderId);
+		 * viewState.selectNote(id);
 		 * ```
 		 */
-		createNote() {
-			const id = generateId() as string as NoteId;
-			const selectedFolderId = workspace.kv.get('selectedFolderId');
+		createNote(folderId?: FolderId | null) {
+			const id = generateId() as NoteId;
 			workspace.tables.notes.set({
 				id,
-				folderId: selectedFolderId ?? undefined,
+				folderId: folderId ?? undefined,
 				title: '',
 				preview: '',
 				pinned: false,
@@ -100,7 +99,7 @@ function createNotesState() {
 				updatedAt: dateTimeStringNow(),
 				_v: 2,
 			});
-			workspace.kv.set('selectedNoteId', id);
+			return { id };
 		},
 
 		/**

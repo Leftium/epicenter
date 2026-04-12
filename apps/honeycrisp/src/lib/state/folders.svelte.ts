@@ -53,7 +53,7 @@ function createFoldersState() {
 		 * ```
 		 */
 		createFolder() {
-			const id = generateId() as string as FolderId;
+			const id = generateId() as FolderId;
 			workspace.tables.folders.set({
 				id,
 				name: 'New Folder',

@@ -125,5 +125,15 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 			ykv.observe(handler);
 			return () => ykv.unobserve(handler);
 		},
+
+		getAll() {
+			const result: Record<string, unknown> = {};
+			for (const key of Object.keys(definitions)) {
+				// Reuse get() which handles validation + defaultValue fallback
+				result[key] = (this as KvHelper<TKvDefinitions>).get(key as keyof TKvDefinitions & string);
+			}
+			return result;
+		},
+
 	} as KvHelper<TKvDefinitions>;
 }

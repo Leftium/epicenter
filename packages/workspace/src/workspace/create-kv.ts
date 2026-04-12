@@ -128,9 +128,15 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 
 		getAll() {
 			const result: Record<string, unknown> = {};
-			for (const key of Object.keys(definitions)) {
-				// Reuse get() which handles validation + defaultValue fallback
-				result[key] = (this as KvHelper<TKvDefinitions>).get(key as keyof TKvDefinitions & string);
+			for (const [key, definition] of Object.entries(definitions)) {
+				const raw = ykv.get(key);
+				if (raw === undefined) {
+					result[key] = definition.defaultValue;
+					continue;
+				}
+				const validated = definition.schema['~standard'].validate(raw);
+				if (validated instanceof Promise) throw new TypeError('Async schemas not supported');
+				result[key] = validated.issues ? definition.defaultValue : validated.value;
 			}
 			return result;
 		},

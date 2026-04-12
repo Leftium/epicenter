@@ -9,6 +9,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { DateTimeString } from '@epicenter/workspace';
 	import ClipboardPasteIcon from '@lucide/svelte/icons/clipboard-paste';
+	import { extractErrorMessage } from 'wellcrafted/error';
 	import { tryAsync, Ok } from 'wellcrafted/result';
 	import { workspace } from '$lib/client';
 
@@ -56,7 +57,7 @@
 			},
 			catch: (e) => {
 				toast.error('Failed to add entries', {
-					description: e instanceof Error ? e.message : 'An unknown error occurred',
+					description: extractErrorMessage(e),
 				});
 				return Ok(undefined);
 			},

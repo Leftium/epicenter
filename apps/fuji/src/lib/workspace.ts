@@ -207,6 +207,25 @@ export function createFujiWorkspace() {
 					});
 				},
 			}),
+			/**
+			 * Restore a soft-deleted entry by clearing `deletedAt`.
+			 *
+			 * Returns the entry to the active list. The entry retains all
+			 * its content and metadata from before deletion.
+			 */
+			restore: defineMutation({
+				title: 'Restore Entry',
+				description: 'Restore a soft-deleted entry by clearing deletedAt.',
+				input: Type.Object({
+					id: Type.String({ description: 'Entry ID to restore' }),
+				}),
+				handler: ({ id }) => {
+					return tables.entries.update(id, {
+						deletedAt: undefined,
+						updatedAt: DateTimeString.now(),
+					});
+				},
+			}),
 		},
 	}));
 }

@@ -1,15 +1,18 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import HashIcon from '@lucide/svelte/icons/hash';
 	import TagIcon from '@lucide/svelte/icons/tag';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { VList } from 'virtua/svelte';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry } from '$lib/workspace';
 	import { viewState } from '$lib/view.svelte';
 	import { DateTimeString } from '@epicenter/workspace';
-	import { matchesEntrySearch } from '$lib/entries.svelte';
+	import { matchesEntrySearch } from '$lib/search';
+	import { entriesState } from '$lib/entries.svelte';
 
 	let { entries }: { entries: Entry[] } = $props();
 
@@ -80,14 +83,28 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-						isActive={viewState.activeTypeFilter === null && viewState.activeTagFilter === null && !isSearching}
-					onclick={() => viewState.clearFilters()}
-						>
+						isActive={page.url.pathname === '/' && viewState.activeTypeFilter === null && viewState.activeTagFilter === null && !isSearching}
+						onclick={() => { viewState.clearFilters(); goto('/'); }}
+					>
 							<FileTextIcon class="size-4" />
 							<span>All Entries</span>
 							<span class="ml-auto text-xs text-muted-foreground">
 								{entries.length}
 							</span>
+						</Sidebar.MenuButton>
+					</Sidebar.MenuItem>
+					<Sidebar.MenuItem>
+						<Sidebar.MenuButton
+							isActive={page.url.pathname === '/trash'}
+							onclick={() => goto('/trash')}
+						>
+							<Trash2Icon class="size-4" />
+							<span>Recently Deleted</span>
+							{#if entriesState.deleted.length > 0}
+								<span class="ml-auto text-xs text-muted-foreground">
+									{entriesState.deleted.length}
+								</span>
+							{/if}
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
 				</Sidebar.Menu>

@@ -125,6 +125,18 @@ export function createMaterializer<
 					: never;
 			},
 		): MaterializerBuilder;
+		/**
+		 * Opt in to KV materialization.
+		 *
+		 * Writes a single file (default: `kv.json`) that accumulates KV changes.
+		 * Custom serialize receives the accumulated state and returns `SerializeResult`.
+		 *
+		 * **Limitation:** KV values that existed before the observer was registered
+		 * (i.e., loaded by persistence before `whenReady`) are not included in the
+		 * initial write. The file reflects only values that change after startup.
+		 * A future `KvHelper.getAll()` method would fix this by seeding the
+		 * snapshot before subscribing to changes.
+		 */
 		kv(config?: {
 			serialize?: (data: Record<string, unknown>) => SerializeResult;
 		}): MaterializerBuilder;
@@ -237,7 +249,7 @@ export function createMaterializer<
 	const builder: MaterializerBuilder = {
 		table(name, tableConfig) {
 			tableNames.add(name);
-			tableConfigs[name] = tableConfig ?? {};
+			if (tableConfig) tableConfigs[name] = tableConfig;
 			return builder;
 		},
 		kv(nextKvConfig) {

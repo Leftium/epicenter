@@ -543,17 +543,20 @@ export class YKeyValueLww<T> {
 	 * Map (one O(n) scan + O(1) per lookup = O(n) total).
 	 *
 	 * ```
-	 * set() for existing key:
-	 *   deleteEntryByKey(key)    ← O(n) scan, removes old entry
-	 *   yarray.push([entry])     ← O(1)
-	 *   observer fires            ← no conflicts (old entry already gone)
+	 * set('foo', newVal) where 'foo' exists:
+	 *   ┌─ same transaction ───────────────────────────────────┐
+	 *   │  deleteEntryByKey('foo')  ← O(n) scan, removes old entry  │
+	 *   │  yarray.push([newEntry])  ← O(1)                         │
+	 *   └────────────────────────────────────────────────┘
+	 *   observer fires ONCE → sees 1 delete + 1 add → emits 'update'
+	 *   no conflicts, no DEDUP_ORIGIN needed
 	 *
-	 * bulkSet() for 10K existing keys:
-	 *   for each: yarray.push([entry])      ← O(1) × 10K, NO delete
-	 *   observer fires ONCE:
-	 *     builds entryIndexMap               ← O(n) — one scan
-	 *     resolves 10K conflicts             ← O(1) each via Map.get
-	 *     batch deletes losers               ← O(k)
+	 * bulkSet(10K entries) where keys exist:
+	 *   ┌─ single transaction ─────────────────────────────────┐
+	 *   │  for each: yarray.push([entry])  ← O(1) × 10K, NO delete  │
+	 *   └────────────────────────────────────────────────┘
+	 *   observer fires (1st) → 10K conflicts → entryIndexMap → batch delete losers
+	 *   observer fires (2nd) → DEDUP_ORIGIN → skipped (free)
 	 * ```
 	 */
 	set(key: string, val: T): void {
@@ -659,6 +662,15 @@ export class YKeyValueLww<T> {
 	 * Unlike calling {@link delete} in a loop (which scans the array per call —
 	 * O(n²) for N deletions), this collects all matching entry indices in a single
 	 * `toArray()` scan, then deletes them right-to-left so indices stay stable.
+	 *
+	 * ## How this differs from `bulkSet`
+	 *
+	 * `bulkSet` defers cleanup to the observer (which triggers a second, skipped
+	 * observer call via DEDUP_ORIGIN). `bulkDelete` does NOT defer anything — it
+	 * performs the deletions directly in one transaction. The observer fires once,
+	 * sees the deletions, and updates `_map`. No conflicts, no DEDUP_ORIGIN needed.
+	 *
+	 * The optimization here is purely scan efficiency: one `toArray()` instead of N.
 	 *
 	 * ## Why right-to-left?
 	 *

@@ -9,8 +9,6 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { DateTimeString } from '@epicenter/workspace';
 	import ClipboardPasteIcon from '@lucide/svelte/icons/clipboard-paste';
-	import { extractErrorMessage } from 'wellcrafted/error';
-	import { tryAsync, Ok } from 'wellcrafted/result';
 	import { workspace } from '$lib/client';
 
 	const LINE_REGEX = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(.+)$/;
@@ -39,30 +37,18 @@
 		return { entries, skipped };
 	});
 
-	async function handleSubmit(e: SubmitEvent) {
+	function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		if (parsed.entries.length === 0) return;
 
-		submitting = true;
-		await tryAsync({
-			try: async () => {
-				const items = parsed.entries.map(({ iso, text }) => ({
-					title: text,
-					date: DateTimeString.stringify(iso, timezone),
-				}));
-				workspace.actions.entries.bulkCreate({ entries: items });
-				toast.success(`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`);
-				isOpen = false;
-				rawText = '';
-			},
-			catch: (e) => {
-				toast.error('Failed to add entries', {
-					description: extractErrorMessage(e),
-				});
-				return Ok(undefined);
-			},
-		});
-		submitting = false;
+		const items = parsed.entries.map(({ iso, text }) => ({
+			title: text,
+			date: DateTimeString.stringify(iso, timezone),
+		}));
+		workspace.actions.entries.bulkCreate({ entries: items });
+		toast.success(`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`);
+		isOpen = false;
+		rawText = '';
 	}
 </script>
 

@@ -1,1 +1,2 @@
-export { type Entry, EntryId } from './definition';
+export { type Entry, EntryId, fujiWorkspace } from './definition';
+export { createFujiWorkspace } from './workspace';

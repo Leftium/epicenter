@@ -5,7 +5,8 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		"./workspace": "./src/lib/workspace/index.ts"
+		"./workspace": "./src/lib/workspace/index.ts",
+		"./materializer": "./src/lib/materializer.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",
@@ -33,6 +34,8 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@sindresorhus/slugify": "catalog:",
+		"filenamify": "^7.0.1",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",

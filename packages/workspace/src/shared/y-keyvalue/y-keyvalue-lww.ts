@@ -555,6 +555,7 @@ export class YKeyValueLww<T> {
 		this.pendingDeletes.delete(key);
 
 		const doWork = () => {
+			if (this._map.has(key)) this.deleteEntryByKey(key);
 			this.yarray.push([entry]);
 		};
 

@@ -87,7 +87,7 @@ Storage is not a concern with `gc: true`.
 | Fix O(n²) update | Defer delete to observer | Observer already handles this for sync conflicts; reuse existing dedup |
 | Build entry→index map | In observer, from single `toArray()` | O(n) build once + O(1) per lookup vs O(n) per `indexOf` call |
 | Keep `delete()` as O(n) | Accepted | `delete()` is rare (benchmarks confirm), not worth the complexity |
-| Remove ingest/ | Delete, don't extract | Zero consumers, no evidence anyone wants it as a package |
+| Move ingest/ to Breddit app | Move, don't delete | See `specs/20260412T151815-breddit.md` — ingest code becomes Breddit's data layer |
 | Remove materializer/sqlite/ | Delete | Zero consumers; can be rebuilt if needed |
 | Remove persistence/sqlite.ts | Delete | Zero consumers; indexeddb covers all current apps |
 | Merge standard-schema/ | Single file | 3 files for 2 exports is unnecessary indirection |
@@ -169,20 +169,24 @@ which the observer already handles correctly.
 - [ ] **1.6** Run full workspace test suite: `bun test packages/workspace/`
 - [ ] **1.7** Stage and commit
 
-### Wave 2: Remove dead code — `ingest/`
+### Wave 2: Move `ingest/` to Breddit app
 
-- [ ] **2.1** Delete `src/ingest/` directory (7 source files + tests)
-- [ ] **2.2** Delete `scripts/reddit-import-test.ts` if it exists
-- [ ] **2.3** Remove `ingest` and `ingest/reddit` subpath exports from `package.json`
-- [ ] **2.4** Verify no imports break: `bun test`
-- [ ] **2.5** Stage and commit
+See `specs/20260412T151815-breddit.md` Phase 1 for the full plan. Summary:
 
-### Wave 3: Remove dead code — `shared/snakify.ts`
+- [ ] **2.1** Create `apps/breddit/` scaffold
+- [ ] **2.2** Move `src/ingest/reddit/` → `apps/breddit/src/lib/workspace/ingest/`
+- [ ] **2.3** Move `src/ingest/utils/csv.ts` alongside
+- [ ] **2.4** Remove `ingest` and `ingest/reddit` subpath exports from workspace `package.json`
+- [ ] **2.5** Verify workspace package tests still pass
+- [ ] **2.6** Stage and commit
 
-- [ ] **3.1** Delete `src/shared/snakify.ts`
-- [ ] **3.2** Remove `@sindresorhus/slugify` from package.json dependencies if no other consumer
-- [ ] **3.3** `bun install` to update lockfile
-- [ ] **3.4** Stage and commit
+### Wave 3: Move `shared/snakify.ts` to Breddit
+
+- [ ] **3.1** Move `src/shared/snakify.ts` → `apps/breddit/src/lib/workspace/ingest/snakify.ts`
+- [ ] **3.2** Remove `@sindresorhus/slugify` from workspace package.json dependencies if no other consumer
+- [ ] **3.3** Add `@sindresorhus/slugify` to breddit's package.json
+- [ ] **3.4** `bun install` to update lockfile
+- [ ] **3.5** Stage and commit
 
 ### Wave 4: Remove dead code — `materializer/sqlite/`
 

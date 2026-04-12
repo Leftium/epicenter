@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as Table from '@epicenter/ui/table';
@@ -196,10 +197,8 @@
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<Table.Row
-							class="cursor-pointer transition-colors hover:bg-accent/50 {viewState.selectedEntryId === row.id
-								? 'bg-accent'
-								: ''}"
-							onclick={() => viewState.selectEntry(row.original.id)}
+							class="cursor-pointer transition-colors hover:bg-accent/50"
+							onclick={() => goto(`/entries/${row.original.id}`)}
 						>
 							{#each row.getVisibleCells() as cell}
 								<Table.Cell>

@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import { VList } from 'virtua/svelte';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry } from '$lib/workspace';
 	import { DateTimeString } from '@epicenter/workspace';
@@ -24,35 +26,30 @@
 		return format(date, 'MMMM d');
 	}
 
-	/** Entries grouped by date label, sorted newest first. */
-	const groupedEntries = $derived.by(() => {
+	type TimelineDateHeader = { kind: 'date-header'; label: string };
+	type TimelineEntry = { kind: 'entry'; entry: Entry };
+	type TimelineItem = TimelineDateHeader | TimelineEntry;
+
+	/** Entries grouped by date label, sorted newest first, flattened for virtualization. */
+	const flatItems = $derived.by((): TimelineItem[] => {
 		const field = dateField;
 		const sorted = [...entries].sort((a, b) =>
 			b[field].localeCompare(a[field]),
 		);
 
-		const groups: { label: string; entries: Entry[] }[] = [];
+		const items: TimelineItem[] = [];
 		let currentLabel = '';
-		let currentGroup: Entry[] = [];
 
 		for (const entry of sorted) {
 			const label = getDateLabel(entry[field]);
 			if (label !== currentLabel) {
-				if (currentGroup.length > 0) {
-					groups.push({ label: currentLabel, entries: currentGroup });
-				}
 				currentLabel = label;
-				currentGroup = [entry];
-			} else {
-				currentGroup.push(entry);
+				items.push({ kind: 'date-header', label });
 			}
+			items.push({ kind: 'entry', entry });
 		}
 
-		if (currentGroup.length > 0) {
-			groups.push({ label: currentLabel, entries: currentGroup });
-		}
-
-		return groups;
+		return items;
 	});
 </script>
 
@@ -66,8 +63,8 @@
 	</div>
 
 	<!-- Timeline -->
-	<div class="flex-1 overflow-y-auto">
-		{#if entries.length === 0}
+	{#if entries.length === 0}
+		<div class="flex-1 overflow-y-auto">
 			<Empty.Root class="flex-1">
 				<Empty.Media>
 					<ClockIcon class="size-8 text-muted-foreground" />
@@ -81,41 +78,43 @@
 					</Button>
 				</Empty.Content>
 			</Empty.Root>
-		{:else}
-			<div class="flex flex-col gap-4 p-4">
-				{#each groupedEntries as group}
-					<div class="flex flex-col gap-1">
-						<h3 class="px-2 text-xs font-medium text-muted-foreground">
-							{group.label}
+		</div>
+	{:else}
+		<VList
+			data={flatItems}
+			style="height: 100%; flex: 1;"
+			getKey={(item) => item.kind === 'date-header' ? `header-${item.label}` : item.entry.id}
+		>
+			{#snippet children(item)}
+				{#if item.kind === 'date-header'}
+					<div class="sticky top-0 z-10 bg-background px-6 pb-1 pt-4">
+						<h3 class="text-xs font-medium text-muted-foreground">
+							{item.label}
 						</h3>
-						{#each group.entries as entry (entry.id)}
-							<!-- svelte-ignore a11y_click_events_have_key_events -->
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div
-								class="group flex cursor-pointer flex-col gap-0.5 rounded-lg p-3 text-sm transition-colors hover:bg-accent/50 {viewState.selectedEntryId ===
-								entry.id
-									? 'bg-accent'
-									: ''}"
-								onclick={() => viewState.selectEntry(entry.id)}
-							>
-								<div class="flex items-start justify-between gap-2">
-									<span class="font-medium line-clamp-1">
-										{entry.title || 'Untitled'}
-									</span>
-									<span class="shrink-0 text-xs text-muted-foreground">
-							{format(DateTimeString.toDate(entry[dateField]), 'h:mm a')}
-									</span>
-								</div>
-								{#if entry.subtitle}
-									<p class="line-clamp-1 text-xs text-muted-foreground">
-										{entry.subtitle}
-									</p>
-								{/if}
-							</div>
-						{/each}
 					</div>
-				{/each}
-			</div>
-		{/if}
-	</div>
+				{:else}
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class="group mx-4 flex cursor-pointer flex-col gap-0.5 rounded-lg p-3 text-sm transition-colors hover:bg-accent/50"
+						onclick={() => goto(`/entries/${item.entry.id}`)}
+					>
+						<div class="flex items-start justify-between gap-2">
+							<span class="font-medium line-clamp-1">
+								{item.entry.title || 'Untitled'}
+							</span>
+							<span class="shrink-0 text-xs text-muted-foreground">
+								{format(DateTimeString.toDate(item.entry[dateField]), 'h:mm a')}
+							</span>
+						</div>
+						{#if item.entry.subtitle}
+							<p class="line-clamp-1 text-xs text-muted-foreground">
+								{item.entry.subtitle}
+							</p>
+						{/if}
+					</div>
+				{/if}
+			{/snippet}
+		</VList>
+	{/if}
 </div>

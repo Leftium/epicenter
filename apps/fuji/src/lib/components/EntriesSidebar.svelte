@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import HashIcon from '@lucide/svelte/icons/hash';
@@ -103,7 +104,7 @@
 						{#if searchResults.length > 0}
 							{#each searchResults as entry (entry.id)}
 								<Sidebar.MenuItem>
-								<Sidebar.MenuButton onclick={() => viewState.selectEntry(entry.id)}>
+								<Sidebar.MenuButton onclick={() => goto(`/entries/${entry.id}`)}>
 										<div class="flex w-full flex-col gap-0.5 overflow-hidden">
 											<span class="truncate text-sm font-medium">
 												{entry.title || 'Untitled'}
@@ -192,7 +193,7 @@
 						<Sidebar.Menu>
 							{#each recentEntries as entry (entry.id)}
 								<Sidebar.MenuItem>
-								<Sidebar.MenuButton onclick={() => viewState.selectEntry(entry.id)}>
+								<Sidebar.MenuButton onclick={() => goto(`/entries/${entry.id}`)}>
 										<div class="flex w-full flex-col gap-0.5 overflow-hidden">
 											<span class="truncate text-sm font-medium">
 												{entry.title || 'Untitled'}

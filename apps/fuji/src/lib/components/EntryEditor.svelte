@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import {
@@ -37,7 +38,6 @@
 	import type * as Y from 'yjs';
 	import type { Entry } from '$lib/workspace';
 	import TagInput from './TagInput.svelte';
-	import { viewState } from '$lib/view.svelte';
 	import { workspace } from '$lib/client';
 
 	let {
@@ -187,7 +187,7 @@
 	<!-- Header with back button -->
 	<div class="flex items-center justify-between border-b px-4 py-2">
 		<div class="flex items-center gap-2">
-			<Button variant="ghost" size="icon" class="size-7" onclick={() => viewState.selectEntry(null)}>
+			<Button variant="ghost" size="icon" class="size-7" onclick={() => goto('/')}>
 				<ArrowLeftIcon class="size-4" />
 			</Button>
 			<span class="text-sm text-muted-foreground">Back to entries</span>
@@ -203,7 +203,7 @@
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
 						workspace.actions.entries.delete({ id: entry.id });
-						viewState.selectEntry(null);
+						goto('/');
 					},
 				});
 			}}

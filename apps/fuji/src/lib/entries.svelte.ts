@@ -17,9 +17,9 @@
  * ```
  */
 
+import { goto } from '$app/navigation';
 import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
-import { viewState } from '$lib/view.svelte';
 import type { Entry, EntryId } from '$lib/workspace';
 
 /**
@@ -66,7 +66,7 @@ function createEntriesState() {
 		 */
 		createEntry() {
 			const { id } = workspace.actions.entries.create({});
-			viewState.selectEntry(id);
+			goto(`/entries/${id}`);
 		},
 	};
 }

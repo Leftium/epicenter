@@ -98,11 +98,11 @@ The factory receives the extension context (structurally typed — not importing
 
 ### All tables materialize by default
 
-`createMaterializer(ctx, { directory })` immediately materializes every table with defaults:
-- Serialize: all fields as frontmatter, `{id}.md` filename (markdown format)
+`createMaterializer(ctx, { directory })` materializes every table with sensible defaults:
+- Serialize: all fields as markdown frontmatter, `{id}.md` filename
 - Directory: `{directory}/{tableName}/`
 
-Chain `.table()` only for tables that need customization. Chain `.skip()` to exclude tables.
+Chain `.table()` only for tables that need customization. Chain `.skip()` to exclude tables that shouldn't produce files (internal state, binary data, etc.).
 
 ### General serialize contract
 
@@ -112,7 +112,8 @@ type SerializeResult = {
     content: string;
 };
 
-type MaybePromise<T> = T | Promise<T>;
+// Already exists in packages/workspace/src/workspace/lifecycle.ts — import, don't redefine
+import type { MaybePromise } from './lifecycle.js';
 ```
 
 The materializer writes `{ filename, content }`. It doesn't know or care about markdown, JSON, or any format.
@@ -125,6 +126,14 @@ The materializer writes `{ filename, content }`. It doesn't know or care about m
  *
  * Applies epicenter link → wikilink conversion to body content.
  * Handles undefined body (frontmatter-only output).
+ *
+ * For markdown WITHOUT link conversion, use `toMarkdown()` directly:
+ * ```typescript
+ * serialize: (row) => ({
+ *     filename: `${row.id}.md`,
+ *     content: toMarkdown({ id: row.id, title: row.title }, body),
+ * })
+ * ```
  */
 function markdown(input: {
     frontmatter: Record<string, unknown>;
@@ -161,10 +170,20 @@ interface MaterializerBuilder<TTables, TKv> {
         },
     ): this;
 
-    /** Exclude tables from materialization. */
+    /** Exclude tables from materialization (internal state, binary data, etc). */
     skip(...names: (keyof TTables & string)[]): this;
 
-    /** Extension lifecycle. */
+    /** Exclude KV from materialization. */
+    skipKv(): this;
+
+    /**
+     * Extension lifecycle.
+     *
+     * `whenReady` resolves after initial materialization completes.
+     * Materialization starts lazily when the framework accesses `whenReady`,
+     * which is after all `.table()`, `.skip()`, and `.skipKv()` calls have
+     * completed (they run synchronously in the factory closure).
+     */
     whenReady: Promise<void>;
     dispose(): void;
 }
@@ -172,22 +191,14 @@ interface MaterializerBuilder<TTables, TKv> {
 
 ### KV materialization
 
-By default, all KV data materializes to a single `{directory}/kv.json` file containing all key-value pairs as a flat JSON object. Override with `.kv()` if needed.
+By default, all KV data materializes to a single `{directory}/kv.json` file containing all key-value pairs as a flat JSON object. KV changes are observed live via `kv.observeAll()` — the file re-writes on every change. Use `.skipKv()` to disable.
 
 ```typescript
 interface MaterializerBuilder<TTables, TKv> {
     // ... table methods above ...
 
-    /**
-     * Override KV materialization.
-     * Default: all KV → {directory}/kv.json
-     */
-    kv(config: {
-        /** Custom filename. Default: 'kv.json'. */
-        filename?: string;
-        /** Disable KV materialization. */
-        skip?: boolean;
-    }): this;
+    /** Exclude KV from materialization. */
+    skipKv(): this;
 }
 ```
 
@@ -313,10 +324,12 @@ createMaterializer(ctx, { directory: '...' })
 
 - `createMaterializer(ctx, config)` — factory: resource first (extension context), config second
 
-### Serialize presets (return `SerializeResult`)
+### Serialize presets (markdown — return `SerializeResult`)
 
-- `slugFilename(field)` — all fields as markdown frontmatter, slugified `{title}-{id}.md`
-- `bodyField(field)` — extracts one field as markdown body, rest as frontmatter, `{id}.md`
+These produce markdown output. The names are short for call-site readability; JSDoc documents the format.
+
+- `slugFilename(field)` — all fields as markdown frontmatter, slugified `{title}-{id}.md`. JSDoc: `@remarks Produces markdown output via markdown() internally.`
+- `bodyField(field)` — extracts one field as markdown body, rest as frontmatter, `{id}.md`. JSDoc: `@remarks Produces markdown output via markdown() internally.`
 - Default (when serialize omitted): all fields as markdown frontmatter, `{id}.md`
 
 ### Helpers
@@ -329,7 +342,7 @@ createMaterializer(ctx, { directory: '...' })
 ### Types
 
 - `SerializeResult` — `{ filename: string; content: string }`
-- `MaybePromise<T>` — `T | Promise<T>`
+- `MaybePromise<T>` — import from `packages/workspace/src/workspace/lifecycle.ts` (already exists)
 
 ## Files to Modify
 
@@ -369,7 +382,7 @@ The materializer writes files. It doesn't care about format. Markdown-specific l
 
 ### 3. Default-materialize-all with `.table()` overrides
 
-All tables materialize with sensible defaults (markdown frontmatter, `{id}.md`). Chain `.table(name, config)` only for tables that need customization. `.skip(name)` for tables that shouldn't materialize. This minimizes config for simple cases.
+All tables materialize with sensible defaults (markdown frontmatter, `{id}.md`). Chain `.table(name, config)` only for tables that need customization. `.skip(name)` for tables that shouldn't materialize (internal state, binary data). This minimizes config for simple cases.
 
 ### 4. Typed table names via generic + `keyof`
 
@@ -385,11 +398,11 @@ Each row materializes as one file. There is no "dump entire table to one file" m
 
 ### 7. KV → one JSON file
 
-All KV data materializes to `{directory}/kv.json` by default. Simple, obvious, sufficient for the small amount of data KV typically holds.
+All KV data materializes to `{directory}/kv.json` by default. Live updates via `kv.observeAll()` (verified — exists in workspace API). `.skipKv()` to disable.
 
 ### 8. `markdown()` helper applies wikilink conversion
 
-The `markdown()` helper calls `convertEpicenterLinksToWikilinks` on body content. This is the only place epicenter-specific link processing happens. Custom serialize callbacks that don't use `markdown()` don't get link conversion — that's intentional.
+The `markdown()` helper calls `convertEpicenterLinksToWikilinks` on body content. This is the only place epicenter-specific link processing happens. Custom serialize callbacks that don't use `markdown()` don't get link conversion — that's intentional. For markdown without link conversion, use `toMarkdown()` directly (already exported, pure function).
 
 ## Breaking Changes
 
@@ -414,7 +427,7 @@ All consumers in the monorepo must be migrated in the same commit.
 - General serialize contract: `{ filename: string; content: string }`
 - `markdown()` helper: `{ frontmatter, body, filename }` → `{ filename, content }` with wikilink conversion
 - Default materialization: all tables, markdown frontmatter, `{id}.md`, `{directory}/{tableName}/`
-- KV materialization: `{directory}/kv.json` by default
+- KV materialization: `{directory}/kv.json` by default, live updates via `kv.observeAll()`, `.skipKv()` to disable
 - Rename serialize presets: `slugFilename(field)`, `bodyField(field)`
 - Export standalone utilities: `toSlugFilename(title, id)`, `toIdFilename(id)`
 - Delete `apps/fuji/src/lib/materializer.ts`
@@ -432,39 +445,14 @@ All consumers in the monorepo must be migrated in the same commit.
 - Do not modify `packages/workspace/src/workspace/types.ts`
 - Do not remove `toMarkdown` utility — it's still needed by the `markdown()` helper
 
-## Open Questions (flagged during reflection)
+## Resolved Open Questions
 
-### 1. Preset names don't indicate they produce markdown
-
-`slugFilename('title')` and `bodyField('desc')` internally call `markdown()` to produce `SerializeResult`. But nothing in the name tells you the output is markdown. A user seeing `serialize: slugFilename('title')` might think it's format-agnostic.
-
-Options:
-- Rename to `markdownSlugFilename`, `markdownBodyField` — explicit but verbose
-- Keep short names, document as "markdown presets" — relies on docs
-- Have presets return `{ frontmatter, body, filename }` and require the caller to wrap with `markdown()` — more explicit but more verbose at call site
-
-Leaning toward: keep short names, they live in a module clearly about materialization and the default IS markdown. Document it.
-
-### 2. Default-materialize-all assumes all tables produce sensible markdown
-
-Tables with binary data, internal state, or very large rows would produce garbage `.md` files. The default is designed for typical content tables (notes, bookmarks, entries). `.skip()` exists for internal/binary tables. This should be clearly documented.
-
-### 3. KV observation — does it exist?
-
-The spec says KV materializes to `kv.json`. But this requires observing KV changes for live updates. Verify that the workspace API supports `kv.observe()` or equivalent. If not, KV materialization only happens at startup — which might be fine but should be documented.
-
-### 4. `markdown()` bakes in wikilink conversion with no opt-out
-
-`markdown()` always calls `convertEpicenterLinksToWikilinks`. Users who want markdown WITHOUT link conversion can use `toMarkdown()` directly (already exported, pure function, no link processing). This is the escape hatch — mention it in docs.
-
-### 5. `whenReady` timing
-
-The builder has `whenReady` as a property, but `.table()` calls happen synchronously before `whenReady` is accessed by the framework. Implementation must ensure `whenReady` starts materialization lazily (on first access or next microtask) so all `.table()` and `.skip()` calls complete first.
-
-### 6. `.kv({ skip: true })` vs `.skipKv()`
-
-Tables use `.skip('tableName')` method. KV uses `.kv({ skip: true })` flag. Inconsistent pattern. Consider `.skipKv()` for consistency, or accept the difference since KV has other config options (filename) that tables don't.
-
-### 7. `MaybePromise<T>` — check for existing definition
-
-This type may already exist in the codebase. Check before defining a new one to avoid duplication.
+| # | Issue | Resolution |
+|---|---|---|
+| 1 | Preset names don't indicate markdown | **JSDoc** — add `@remarks Produces markdown output via markdown() internally` to each preset. Short names are fine for call-site readability since the default IS markdown. |
+| 2 | Default-materialize-all assumptions | **JSDoc** on `createMaterializer` + `.skip()` — document that `.skip()` should be used for non-content tables (internal state, binary data). |
+| 3 | KV observation | **Resolved** — `kv.observe(key, cb)` and `kv.observeAll(cb)` both exist in workspace API. Live KV materialization works. |
+| 4 | `markdown()` link conversion opt-out | **JSDoc** — document `toMarkdown()` as the escape hatch for markdown without link conversion. Already exported. |
+| 5 | `whenReady` timing | **JSDoc** on builder's `whenReady` — note lazy start. All `.table()`, `.skip()`, `.skipKv()` calls complete synchronously before framework accesses `whenReady`. |
+| 6 | `.kv({ skip: true })` inconsistency | **API fix** — replaced with `.skipKv()` for consistency with `.skip('tableName')` pattern. |
+| 7 | `MaybePromise<T>` duplication | **Resolved** — already defined in `packages/workspace/src/workspace/lifecycle.ts`, exported from `index.ts`. Import it, don't redefine. |

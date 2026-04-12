@@ -125,7 +125,12 @@ export type CreateDocumentsConfig<
 	documentName: string;
 	/** Column name storing the Y.Doc GUID. */
 	guidKey: keyof TRow & string;
-	/** Called when the content Y.Doc changes. Return the fields to write to the row. */
+	/**
+	 * Called on every content Y.Doc change (local and remote). Return the
+	 * fields to write to the table row. The row write fires `table.observe`,
+	 * which is how materializers and other consumers react to content changes.
+	 * Return at least one field -- returning `{}` is a silent no-op.
+	 */
 	onUpdate: () => Partial<Omit<TRow, 'id'>>;
 	/** The table helper — needed to update the row and observe row deletions. */
 	tableHelper: TableHelper<TRow>;
@@ -254,8 +259,10 @@ export function createDocuments<
 				throw err;
 			}
 
-			// Attach onUpdate observer — fires when content doc changes.
-			// The Y.Doc 'update' handler receives (update, origin, doc, transaction).
+			// Attach onUpdate observer — fires on ALL content doc changes (local
+			// and remote). This ensures table observers (materializers, indexes)
+			// react when document content arrives via sync, not just local edits.
+			// The DOCUMENTS_ORIGIN guard prevents self-loops.
 			const updateHandler = (
 				_update: Uint8Array,
 				origin: unknown,

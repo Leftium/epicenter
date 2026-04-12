@@ -4,6 +4,7 @@
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import HashIcon from '@lucide/svelte/icons/hash';
 	import TagIcon from '@lucide/svelte/icons/tag';
+	import { VList } from 'virtua/svelte';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Entry } from '$lib/workspace';
 	import { viewState } from '$lib/view.svelte';
@@ -101,23 +102,31 @@
 				</Sidebar.GroupLabel>
 				<Sidebar.GroupContent>
 					<Sidebar.Menu>
-						{#if searchResults.length > 0}
-							{#each searchResults as entry (entry.id)}
-								<Sidebar.MenuItem>
-								<Sidebar.MenuButton onclick={() => goto(`/entries/${entry.id}`)}>
-										<div class="flex w-full flex-col gap-0.5 overflow-hidden">
-											<span class="truncate text-sm font-medium">
-												{entry.title || 'Untitled'}
-											</span>
-											{#if entry.subtitle}
-												<span class="truncate text-xs text-muted-foreground">
-													{entry.subtitle}
+					{#if searchResults.length > 0}
+						<div class="flex-1" style="min-height: 0; height: 300px;">
+							<VList
+								data={searchResults}
+								style="height: 100%;"
+								getKey={(entry) => entry.id}
+							>
+								{#snippet children(entry)}
+									<Sidebar.MenuItem>
+										<Sidebar.MenuButton onclick={() => goto(`/entries/${entry.id}`)}>
+											<div class="flex w-full flex-col gap-0.5 overflow-hidden">
+												<span class="truncate text-sm font-medium">
+													{entry.title || 'Untitled'}
 												</span>
-											{/if}
-										</div>
-									</Sidebar.MenuButton>
-								</Sidebar.MenuItem>
-							{/each}
+												{#if entry.subtitle}
+													<span class="truncate text-xs text-muted-foreground">
+														{entry.subtitle}
+													</span>
+												{/if}
+											</div>
+										</Sidebar.MenuButton>
+									</Sidebar.MenuItem>
+								{/snippet}
+							</VList>
+						</div>
 						{:else}
 							<Sidebar.MenuItem>
 								<span class="px-2 py-1 text-xs text-muted-foreground">

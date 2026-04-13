@@ -16,7 +16,7 @@
 	import { workspace } from '$lib/client';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
-	import { entriesState } from '$lib/entries.svelte';
+	import { entriesState } from '$lib/entries-state.svelte';
 	import '@epicenter/ui/app.css';
 
 	let { children } = $props();
@@ -74,19 +74,20 @@
 			<AppHeader onOpenSearch={() => (paletteOpen = true)} />
 			<Resizable.PaneGroup direction="horizontal" class="flex-1">
 				<Resizable.Pane defaultSize={20} minSize={15} maxSize={40}>
-				<EntriesSidebar />
+					<EntriesSidebar />
 				</Resizable.Pane>
 				<Resizable.Handle withHandle />
-				<Resizable.Pane defaultSize={80}>
-					{@render children()}
-				</Resizable.Pane>
+				<Resizable.Pane defaultSize={80}> {@render children()} </Resizable.Pane>
 			</Resizable.PaneGroup>
-			<div class="flex h-7 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground">
-				<span>{entriesState.active.length} {entriesState.active.length === 1 ? 'entry' : 'entries'}</span>
+			<div
+				class="flex h-7 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground"
+			>
+				<span
+					>{entriesState.active.length}
+					{entriesState.active.length === 1 ? 'entry' : 'entries'}</span
+				>
 				<div class="ml-auto flex items-center gap-1.5">
-					<span class="flex items-center gap-1">
-						Search <Kbd>⌘K</Kbd>
-					</span>
+					<span class="flex items-center gap-1"> Search <Kbd>⌘K</Kbd> </span>
 				</div>
 			</div>
 		</div>

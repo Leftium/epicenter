@@ -2,7 +2,8 @@
 	import { page } from '$app/state';
 	import EntriesTable from '$lib/components/EntriesTable.svelte';
 	import EntriesTimeline from '$lib/components/EntriesTimeline.svelte';
-	import { entriesState, viewState } from '$lib/entries.svelte';
+	import { entriesState } from '$lib/entries-state.svelte';
+	import { viewState } from '$lib/view-state.svelte';
 
 	const typeParam = $derived(decodeURIComponent(page.params.type ?? ''));
 	const filteredEntries = $derived(

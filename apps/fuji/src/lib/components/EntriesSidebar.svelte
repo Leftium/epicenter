@@ -9,14 +9,17 @@
 	import { VList } from 'virtua/svelte';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import { DateTimeString } from '@epicenter/workspace';
-	import { entriesState, matchesEntrySearch, viewState } from '$lib/entries.svelte';
+	import { entriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
+	import { viewState } from '$lib/view-state.svelte';
 
 	const isSearching = $derived(viewState.searchQuery.trim().length > 0);
 
 	/** Entries matching the search query across title, subtitle, tags, and type. */
 	const searchResults = $derived.by(() => {
 		if (!isSearching) return [];
-		return entriesState.active.filter((entry) => matchesEntrySearch(entry, viewState.searchQuery));
+		return entriesState.active.filter((entry) =>
+			matchesEntrySearch(entry, viewState.searchQuery),
+		);
 	});
 
 	/** Unique types with entry counts, sorted by count descending. */
@@ -78,13 +81,13 @@
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton
-						isActive={page.url.pathname === '/' && !isSearching}
-						onclick={() => goto('/')}
-					>
+							isActive={page.url.pathname === '/' && !isSearching}
+							onclick={() => goto('/')}
+						>
 							<FileTextIcon class="size-4" />
 							<span>All Entries</span>
 							<span class="ml-auto text-xs text-muted-foreground">
-						{entriesState.active.length}
+								{entriesState.active.length}
 							</span>
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
@@ -114,35 +117,40 @@
 				</Sidebar.GroupLabel>
 				<Sidebar.GroupContent>
 					<Sidebar.Menu>
-					{#if searchResults.length > 0}
-					<div class="min-h-0 flex-1">
-							<VList
-								data={searchResults}
-							style="height: 100%; overflow: hidden;"
-								getKey={(entry) => entry.id}
-							>
-								{#snippet children(entry)}
-									<Sidebar.MenuItem>
-										<Sidebar.MenuButton size="lg" onclick={() => goto(`/entries/${entry.id}`)}>
-										<div class="flex w-full flex-col gap-1 overflow-hidden">
-												<span class="truncate text-sm font-medium">
-													{entry.title || 'Untitled'}
-												</span>
-												{#if entry.subtitle}
-													<span class="truncate text-xs text-muted-foreground">
-														{entry.subtitle}
+						{#if searchResults.length > 0}
+							<div class="min-h-0 flex-1">
+								<VList
+									data={searchResults}
+									style="height: 100%; overflow: hidden;"
+									getKey={(entry) => entry.id}
+								>
+									{#snippet children(entry)}
+										<Sidebar.MenuItem>
+											<Sidebar.MenuButton
+												size="lg"
+												onclick={() => goto(`/entries/${entry.id}`)}
+											>
+												<div class="flex w-full flex-col gap-1 overflow-hidden">
+													<span class="truncate text-sm font-medium">
+														{entry.title || 'Untitled'}
 													</span>
-												{/if}
-											</div>
-										</Sidebar.MenuButton>
-									</Sidebar.MenuItem>
-								{/snippet}
-							</VList>
-						</div>
+													{#if entry.subtitle}
+														<span
+															class="truncate text-xs text-muted-foreground"
+														>
+															{entry.subtitle}
+														</span>
+													{/if}
+												</div>
+											</Sidebar.MenuButton>
+										</Sidebar.MenuItem>
+									{/snippet}
+								</VList>
+							</div>
 						{:else}
 							<Sidebar.MenuItem>
 								<span class="px-2 py-1 text-xs text-muted-foreground">
-								No entries match "{viewState.searchQuery}"
+									No entries match "{viewState.searchQuery}"
 								</span>
 							</Sidebar.MenuItem>
 						{/if}
@@ -158,10 +166,10 @@
 						<Sidebar.Menu>
 							{#each typeGroups as group (group.name)}
 								<Sidebar.MenuItem>
-							<Sidebar.MenuButton
-								isActive={page.url.pathname === `/type/${encodeURIComponent(group.name)}`}
-								onclick={() => goto(`/type/${encodeURIComponent(group.name)}`)}
-							>
+									<Sidebar.MenuButton
+										isActive={page.url.pathname === `/type/${encodeURIComponent(group.name)}`}
+										onclick={() => goto(`/type/${encodeURIComponent(group.name)}`)}
+									>
 										<HashIcon class="size-4" />
 										<span>{group.name}</span>
 										<span class="ml-auto text-xs text-muted-foreground">
@@ -183,10 +191,10 @@
 						<Sidebar.Menu>
 							{#each tagGroups as group (group.name)}
 								<Sidebar.MenuItem>
-							<Sidebar.MenuButton
-								isActive={page.url.pathname === `/tag/${encodeURIComponent(group.name)}`}
-								onclick={() => goto(`/tag/${encodeURIComponent(group.name)}`)}
-							>
+									<Sidebar.MenuButton
+										isActive={page.url.pathname === `/tag/${encodeURIComponent(group.name)}`}
+										onclick={() => goto(`/tag/${encodeURIComponent(group.name)}`)}
+									>
 										<TagIcon class="size-4" />
 										<span>{group.name}</span>
 										<span class="ml-auto text-xs text-muted-foreground">
@@ -208,7 +216,10 @@
 						<Sidebar.Menu>
 							{#each recentEntries as entry (entry.id)}
 								<Sidebar.MenuItem>
-								<Sidebar.MenuButton size="lg" onclick={() => goto(`/entries/${entry.id}`)}>
+									<Sidebar.MenuButton
+										size="lg"
+										onclick={() => goto(`/entries/${entry.id}`)}
+									>
 										<div class="flex w-full flex-col gap-1 overflow-hidden">
 											<span class="truncate text-sm font-medium">
 												{entry.title || 'Untitled'}
@@ -226,5 +237,4 @@
 			{/if}
 		{/if}
 	</Sidebar.Content>
-
 </Sidebar.Root>

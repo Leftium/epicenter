@@ -19,11 +19,8 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { goto } from '$app/navigation';
-	import {
-		entriesState,
-		matchesEntrySearch,
-		viewState,
-	} from '$lib/entries.svelte';
+	import { entriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
+	import { viewState } from '$lib/view-state.svelte';
 	import { relativeTime } from '$lib/format';
 	import type { Entry } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
@@ -247,7 +244,7 @@
 				{:else}
 					<Table.Row>
 						<Table.Cell colspan={columns.length}>
-						<Empty.Root class="min-h-[50vh]">
+							<Empty.Root class="min-h-[50vh]">
 								<Empty.Media>
 									<FileTextIcon class="size-8 text-muted-foreground" />
 								</Empty.Media>

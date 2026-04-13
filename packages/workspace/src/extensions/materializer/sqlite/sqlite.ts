@@ -51,16 +51,14 @@ type AnyTableHelper = TableHelper<any>;
  * ```typescript
  * import { Database } from 'bun:sqlite';
  * import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
- * import { createSqliteMaterializer, wrapSyncDatabase } from '@epicenter/workspace/extensions/materializer/sqlite';
+ * import { createSqliteMaterializer } from '@epicenter/workspace/extensions/materializer/sqlite';
  *
  * // Persistence opens its own connection internally.
  * // Materializer uses a second connection to the same WAL-mode file.
- * const materializerDb = wrapSyncDatabase(new Database('workspace.db'));
- *
  * createWorkspace(definition)
  *   .withExtension('persistence', filesystemPersistence({ filePath: 'workspace.db' }))
  *   .withWorkspaceExtension('sqlite', (ctx) =>
- *     createSqliteMaterializer(ctx, { db: materializerDb })
+ *     createSqliteMaterializer(ctx, { db: new Database('workspace.db') })
  *       .table('posts', { fts: ['title'] })
  *   )
  * ```
@@ -87,31 +85,27 @@ export function createSqliteMaterializer<
 
 	// ── SQL primitives ───────────────────────────────────────────
 
-	async function insertRow(tableName: string, row: BaseRow) {
+	function insertRow(tableName: string, row: BaseRow) {
 		const serialize = tableConfigs.get(tableName)?.serialize ?? serializeValue;
 		const keys = Object.keys(row);
 		const placeholders = keys.map(() => '?').join(', ');
 		const values = keys.map((key) => serialize(row[key]));
 		const columns = keys.map(quoteIdentifier).join(', ');
 
-		await db
-			.prepare(
-				`INSERT OR REPLACE INTO ${quoteIdentifier(tableName)} (${columns}) VALUES (${placeholders})`,
-			)
-			.run(...values);
+		db.prepare(
+			`INSERT OR REPLACE INTO ${quoteIdentifier(tableName)} (${columns}) VALUES (${placeholders})`,
+		).run(...values);
 	}
 
-	async function deleteRow(tableName: string, id: string) {
-		await db
-			.prepare(
-				`DELETE FROM ${quoteIdentifier(tableName)} WHERE ${quoteIdentifier('id')} = ?`,
-			)
-			.run(id);
+	function deleteRow(tableName: string, id: string) {
+		db.prepare(
+			`DELETE FROM ${quoteIdentifier(tableName)} WHERE ${quoteIdentifier('id')} = ?`,
+		).run(id);
 	}
 
 	// ── Full load ────────────────────────────────────────────────
 
-	async function fullLoadTable(
+	function fullLoadTable(
 		tableName: string,
 		table: TableHelper<BaseRow>,
 	) {
@@ -130,7 +124,7 @@ export function createSqliteMaterializer<
 
 		for (const row of rows) {
 			const values = keys.map((key) => serialize(row[key]));
-			await stmt.run(...values);
+			stmt.run(...values);
 		}
 	}
 
@@ -168,7 +162,7 @@ export function createSqliteMaterializer<
 		}, debounceMs);
 	}
 
-	async function flushPendingSync() {
+	function flushPendingSync() {
 		if (isDisposed) {
 			return;
 		}
@@ -187,13 +181,13 @@ export function createSqliteMaterializer<
 
 				switch (result.status) {
 					case 'valid': {
-						await insertRow(tableName, result.row);
+						insertRow(tableName, result.row);
 						break;
 					}
 
 					case 'invalid':
 					case 'not_found': {
-						await deleteRow(tableName, id);
+						deleteRow(tableName, id);
 						break;
 					}
 				}
@@ -209,11 +203,11 @@ export function createSqliteMaterializer<
 	 * Only works for tables with `fts` configured in their `.table()` config.
 	 * Returns empty array if FTS is not configured for the given table.
 	 */
-	async function search(
+	function search(
 		tableName: string,
 		query: string,
 		options?: SearchOptions,
-	): Promise<SearchResult[]> {
+	): SearchResult[] {
 		if (isDisposed) {
 			return [];
 		}
@@ -233,13 +227,13 @@ export function createSqliteMaterializer<
 	 * Convenience wrapper around `SELECT COUNT(*) FROM table`. Returns 0
 	 * for tables that haven't been loaded yet or don't exist.
 	 */
-	async function count(tableName: string): Promise<number> {
+	function count(tableName: string): number {
 		if (isDisposed) {
 			return 0;
 		}
 
 		try {
-			const row = await db
+			const row = db
 				.prepare(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(tableName)}`)
 				.get();
 			return Number(row?.count ?? 0);
@@ -254,7 +248,7 @@ export function createSqliteMaterializer<
 	 * Drops existing data and performs a fresh full load for every
 	 * registered table. Useful after schema changes or suspected drift.
 	 */
-	async function rebuild(tableName?: string): Promise<void> {
+	function rebuild(tableName?: string): void {
 		if (isDisposed) {
 			return;
 		}
@@ -271,33 +265,33 @@ export function createSqliteMaterializer<
 				return;
 			}
 
-			await db.exec('BEGIN');
+			db.run('BEGIN');
 			try {
-				await db.exec(`DELETE FROM ${quoteIdentifier(tableName)}`);
-				await fullLoadTable(tableName, table);
-				await db.exec('COMMIT');
+				db.run(`DELETE FROM ${quoteIdentifier(tableName)}`);
+				fullLoadTable(tableName, table);
+				db.run('COMMIT');
 			} catch (error: unknown) {
-				await db.exec('ROLLBACK');
+				db.run('ROLLBACK');
 				throw error;
 			}
 			return;
 		}
 
-		await db.exec('BEGIN');
+		db.run('BEGIN');
 		try {
 			for (const [name] of tableConfigs) {
-				await db.exec(`DELETE FROM ${quoteIdentifier(name)}`);
+				db.run(`DELETE FROM ${quoteIdentifier(name)}`);
 			}
 			for (const [name] of tableConfigs) {
 				const table = ctx.tables[name];
 				if (table === undefined) {
 					continue;
 				}
-				await fullLoadTable(name, table);
+				fullLoadTable(name, table);
 			}
-			await db.exec('COMMIT');
+			db.run('COMMIT');
 		} catch (error: unknown) {
-			await db.exec('ROLLBACK');
+			db.run('ROLLBACK');
 			throw error;
 		}
 	}
@@ -327,7 +321,7 @@ export function createSqliteMaterializer<
 		// Create tables and FTS indexes
 		for (const [tableName, tableConfig] of tableConfigs) {
 			const jsonSchema = getTableJsonSchema(ctx, tableName);
-			await db.exec(generateDdl(tableName, jsonSchema));
+			db.run(generateDdl(tableName, jsonSchema));
 
 			if (tableConfig.fts && tableConfig.fts.length > 0) {
 				await setupFtsTable(db, tableName, tableConfig.fts);
@@ -339,18 +333,18 @@ export function createSqliteMaterializer<
 		}
 
 		// Full load all tables in a transaction
-		await db.exec('BEGIN');
+		db.run('BEGIN');
 		try {
 			for (const [tableName] of tableConfigs) {
 				const table = ctx.tables[tableName];
 				if (table === undefined) {
 					continue;
 				}
-				await fullLoadTable(tableName, table);
+				fullLoadTable(tableName, table);
 			}
-			await db.exec('COMMIT');
+			db.run('COMMIT');
 		} catch (error: unknown) {
-			await db.exec('ROLLBACK');
+			db.run('ROLLBACK');
 			throw error;
 		}
 
@@ -402,9 +396,9 @@ export function createSqliteMaterializer<
 			table: keyof TTables & string,
 			query: string,
 			options?: SearchOptions,
-		): Promise<SearchResult[]>;
-		count(table: keyof TTables & string): Promise<number>;
-		rebuild(table?: keyof TTables & string): Promise<void>;
+		): SearchResult[];
+		count(table: keyof TTables & string): number;
+		rebuild(table?: keyof TTables & string): void;
 		db: MirrorDatabase;
 	};
 
@@ -486,76 +480,3 @@ export function serializeValue(value: unknown): unknown {
 	return value;
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// SYNC DATABASE ADAPTER
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Structural type for a synchronous SQLite prepared statement.
- *
- * Satisfied by `bun:sqlite`'s `Statement` and `better-sqlite3`'s
- * `Statement` without importing either driver.
- */
-type SyncStatement = {
-	run(...params: unknown[]): unknown;
-	all(...params: unknown[]): unknown[];
-	get(...params: unknown[]): unknown;
-};
-
-/**
- * Structural type for a synchronous SQLite database.
- *
- * Satisfied by `bun:sqlite`'s `Database` and `better-sqlite3`'s
- * `Database` without importing either driver.
- */
-type SyncDatabase = {
-	run(sql: string): unknown;
-	prepare(sql: string): SyncStatement;
-};
-
-/**
- * Wrap a synchronous SQLite database into the async `MirrorDatabase` interface.
- *
- * Eliminates the boilerplate of wrapping every `bun:sqlite` method in
- * `async`. The materializer's `MirrorDatabase` is async for Turso/WASM
- * compatibility, but the most common desktop use case is synchronous
- * `bun:sqlite`. This adapter bridges the two.
- *
- * @param db - A synchronous SQLite database (`bun:sqlite`, `better-sqlite3`, etc.)
- * @returns An async `MirrorDatabase` that delegates to the sync driver
- *
- * @example
- * ```typescript
- * import { Database } from 'bun:sqlite';
- * import { createSqliteMaterializer, wrapSyncDatabase } from '@epicenter/workspace/extensions/materializer/sqlite';
- *
- * const db = wrapSyncDatabase(new Database('materializer.db'));
- *
- * createWorkspace(definition)
- *   .withWorkspaceExtension('sqlite', (ctx) =>
- *     createSqliteMaterializer(ctx, { db })
- *       .table('posts', { fts: ['title'] })
- *   )
- * ```
- */
-export function wrapSyncDatabase(db: SyncDatabase): MirrorDatabase {
-	return {
-		async exec(sql) {
-			db.run(sql);
-		},
-		prepare(sql) {
-			const stmt = db.prepare(sql);
-			return {
-				async run(...params) {
-					stmt.run(...params);
-				},
-				async all(...params) {
-					return stmt.all(...params) as Record<string, unknown>[];
-				},
-				async get(...params) {
-					return (stmt.get(...params) as Record<string, unknown> | null) ?? undefined;
-				},
-			};
-		},
-	};
-}

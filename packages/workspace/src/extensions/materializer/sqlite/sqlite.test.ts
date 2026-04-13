@@ -19,7 +19,7 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { createWorkspace, defineTable } from '../../../workspace/index.js';
-import { createSqliteMaterializer, wrapSyncDatabase } from './sqlite.js';
+import { createSqliteMaterializer } from './sqlite.js';
 import type { MirrorDatabase } from './types.js';
 
 const postsTable = defineTable(
@@ -39,7 +39,6 @@ type TestDb = MirrorDatabase & {
 function createTestDb(): TestDb {
 	const raw = new Database(':memory:');
 	const sqlCalls: string[] = [];
-	const base = wrapSyncDatabase(raw);
 
 	return {
 		raw,
@@ -47,13 +46,13 @@ function createTestDb(): TestDb {
 		close() {
 			raw.close();
 		},
-		async exec(sql: string) {
+		run(sql: string) {
 			sqlCalls.push(sql);
-			await base.exec(sql);
+			return raw.run(sql);
 		},
 		prepare(sql: string) {
 			sqlCalls.push(sql);
-			return base.prepare(sql);
+			return raw.prepare(sql);
 		},
 	};
 }
@@ -119,20 +118,15 @@ async function waitForSyncCycle() {
 	await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
-async function getRows(db: TestDb, tableName: string) {
-	const rows = await db
-		.prepare(`SELECT * FROM "${tableName}" ORDER BY "id"`)
-		.all();
-
-	return rows;
+function getRows(db: TestDb, tableName: string) {
+	return db.prepare(`SELECT * FROM "${tableName}" ORDER BY "id"`).all() as Record<string, unknown>[];
 }
 
-async function hasTable(db: TestDb, tableName: string) {
-	const row = await db
+function hasTable(db: TestDb, tableName: string) {
+	const row = db
 		.prepare('SELECT name FROM sqlite_master WHERE type = ? AND name = ?')
 		.get('table', tableName);
-
-	return row !== undefined;
+	return row != null;
 }
 
 async function cleanup(setupResult: ReturnType<typeof setup>) {
@@ -166,7 +160,7 @@ describe('createSqliteMaterializer', () => {
 				await workspace.extensions.sqlite.whenReady;
 
 				expect(db.sqlCalls.length).toBeGreaterThan(0);
-				expect(await hasTable(db, 'posts')).toBe(true);
+				expect(hasTable(db, 'posts')).toBe(true);
 			} finally {
 				gate.resolve();
 				await workspace.dispose();
@@ -198,7 +192,7 @@ describe('createSqliteMaterializer', () => {
 
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
-				expect(await getRows(testSetup.db, 'posts')).toEqual([
+				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: 1, title: 'Hello mirror' },
 					{ id: 'post-2', _v: 1, published: null, title: 'Second row' },
 				]);
@@ -224,9 +218,9 @@ describe('createSqliteMaterializer', () => {
 
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
-				expect(await hasTable(testSetup.db, 'posts')).toBe(true);
-				expect(await hasTable(testSetup.db, 'notes')).toBe(false);
-				expect(await getRows(testSetup.db, 'posts')).toEqual([
+				expect(hasTable(testSetup.db, 'posts')).toBe(true);
+				expect(hasTable(testSetup.db, 'notes')).toBe(false);
+				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: null, title: 'Mirrored post' },
 				]);
 			} finally {
@@ -255,7 +249,7 @@ describe('createSqliteMaterializer', () => {
 
 				await waitForSyncCycle();
 
-				expect(await getRows(testSetup.db, 'posts')).toEqual([
+				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: 1, title: 'Added later' },
 				]);
 			} finally {
@@ -278,7 +272,7 @@ describe('createSqliteMaterializer', () => {
 
 				await waitForSyncCycle();
 
-				expect(await getRows(testSetup.db, 'posts')).toEqual([]);
+				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -303,7 +297,7 @@ describe('createSqliteMaterializer', () => {
 
 				await waitForSyncCycle();
 
-				expect(await getRows(testSetup.db, 'posts')).toEqual([
+				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: 0, title: 'After update' },
 				]);
 			} finally {
@@ -328,13 +322,13 @@ describe('createSqliteMaterializer', () => {
 				});
 
 				await testSetup.workspace.extensions.sqlite.whenReady;
-				await testSetup.db.exec('DELETE FROM "posts"');
+				testSetup.db.run('DELETE FROM "posts"');
 
-				expect(await getRows(testSetup.db, 'posts')).toEqual([]);
+				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 
-				await testSetup.workspace.extensions.sqlite.rebuild();
+				testSetup.workspace.extensions.sqlite.rebuild();
 
-				expect(await getRows(testSetup.db, 'posts')).toEqual([
+				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: null, title: 'Persisted in Yjs' },
 				]);
 			} finally {
@@ -358,17 +352,17 @@ describe('createSqliteMaterializer', () => {
 				});
 
 				await testSetup.workspace.extensions.sqlite.whenReady;
-				await testSetup.db.exec('DELETE FROM "posts"');
+				testSetup.db.run('DELETE FROM "posts"');
 
-				expect(await getRows(testSetup.db, 'posts')).toEqual([]);
-				expect(await getRows(testSetup.db, 'notes')).toHaveLength(1);
+				expect(getRows(testSetup.db, 'posts')).toEqual([]);
+				expect(getRows(testSetup.db, 'notes')).toHaveLength(1);
 
-				await testSetup.workspace.extensions.sqlite.rebuild('posts');
+				testSetup.workspace.extensions.sqlite.rebuild('posts');
 
-				expect(await getRows(testSetup.db, 'posts')).toEqual([
+				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: null, title: 'Post row' },
 				]);
-				expect(await getRows(testSetup.db, 'notes')).toHaveLength(1);
+				expect(getRows(testSetup.db, 'notes')).toHaveLength(1);
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -380,9 +374,12 @@ describe('createSqliteMaterializer', () => {
 			try {
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
-				expect(
-					testSetup.workspace.extensions.sqlite.rebuild('nonexistent'),
-				).rejects.toThrow('not in the materialized table set');
+				expect(() =>
+					testSetup.workspace.extensions.sqlite.rebuild(
+						// @ts-expect-error -- testing runtime guard for invalid table name
+						'nonexistent',
+					),
+				).toThrow('not in the materialized table set');
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -407,12 +404,8 @@ describe('createSqliteMaterializer', () => {
 
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
-				expect(await testSetup.workspace.extensions.sqlite.count('posts')).toBe(
-					2,
-				);
-				expect(await testSetup.workspace.extensions.sqlite.count('notes')).toBe(
-					0,
-				);
+				expect(testSetup.workspace.extensions.sqlite.count('posts')).toBe(2);
+				expect(testSetup.workspace.extensions.sqlite.count('notes')).toBe(0);
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -425,7 +418,10 @@ describe('createSqliteMaterializer', () => {
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
 				expect(
-					await testSetup.workspace.extensions.sqlite.count('nonexistent'),
+					testSetup.workspace.extensions.sqlite.count(
+						// @ts-expect-error -- testing runtime guard for invalid table name
+						'nonexistent',
+					),
 				).toBe(0);
 			} finally {
 				await cleanup(testSetup);
@@ -461,7 +457,7 @@ describe('createSqliteMaterializer', () => {
 
 				await waitForSyncCycle();
 
-				expect(await getRows(testSetup.db, 'posts')).toEqual([]);
+				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -480,7 +476,7 @@ describe('createSqliteMaterializer', () => {
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
 				expect(
-					await testSetup.workspace.extensions.sqlite.search('posts', 'hello'),
+					testSetup.workspace.extensions.sqlite.search('posts', 'hello'),
 				).toEqual([]);
 			} finally {
 				await cleanup(testSetup);
@@ -510,7 +506,7 @@ describe('createSqliteMaterializer', () => {
 
 					await testSetup.workspace.extensions.sqlite.whenReady;
 
-					const results = await testSetup.workspace.extensions.sqlite.search(
+					const results = testSetup.workspace.extensions.sqlite.search(
 						'posts',
 						'mirror',
 						{ snippetColumn: 'title', limit: 10 },

@@ -11,19 +11,19 @@
 /**
  * Minimal database interface for the SQLite materializer.
  *
- * Structurally compatible with `@tursodatabase/database` (native) and
- * `@tursodatabase/database-wasm` (browser). The materializer never imports a
- * specific driver—consumers inject whichever they need.
+ * Structurally compatible with `bun:sqlite`'s `Database` and
+ * `better-sqlite3`'s `Database`. Consumers pass their driver directly—
+ * no wrapping needed.
  *
  * @example
  * ```typescript
- * const db: MirrorDatabase = createClientDatabase();
- * await db.exec('PRAGMA journal_mode = WAL');
+ * import { Database } from 'bun:sqlite';
+ * const db: MirrorDatabase = new Database('materializer.db');
  * ```
  */
 export type MirrorDatabase = {
 	/** Execute raw SQL that does not return rows. */
-	exec(sql: string): Promise<void>;
+	run(sql: string): unknown;
 
 	/** Prepare a reusable statement for repeated reads or writes. */
 	prepare(sql: string): MirrorStatement;
@@ -32,25 +32,24 @@ export type MirrorDatabase = {
 /**
  * Minimal prepared statement interface used by the SQLite materializer.
  *
- * The materializer only needs async write, many-row read, and single-row read
- * primitives. Keeping this structural lets callers use native or WASM-backed
- * Turso drivers with the same extension API.
+ * Structurally compatible with `bun:sqlite`'s `Statement` and
+ * `better-sqlite3`'s `Statement` without importing either driver.
  *
  * @example
  * ```typescript
- * const statement = db.prepare('SELECT * FROM posts WHERE id = ?');
- * const row = await statement.get('post_123');
+ * const stmt = db.prepare('SELECT * FROM posts WHERE id = ?');
+ * const row = stmt.get('post_123');
  * ```
  */
 export type MirrorStatement = {
 	/** Run a statement that writes data or otherwise returns no rows. */
-	run(...params: unknown[]): Promise<void>;
+	run(...params: unknown[]): unknown;
 
 	/** Fetch all matching rows as plain objects. */
-	all(...params: unknown[]): Promise<Record<string, unknown>[]>;
+	all(...params: unknown[]): Record<string, unknown>[];
 
-	/** Fetch the first matching row, if one exists. */
-	get(...params: unknown[]): Promise<Record<string, unknown> | undefined>;
+	/** Fetch the first matching row, or null if none found. */
+	get(...params: unknown[]): Record<string, unknown> | null;
 };
 
 /**
@@ -61,10 +60,10 @@ export type MirrorStatement = {
  *
  * @example
  * ```typescript
- * createSqliteMaterializer(ctx, { db })
+ * createSqliteMaterializer(ctx, { db: new Database(':memory:') })
  *   .table('posts', {
  *     fts: ['title', 'body'],
- *     serialize: (value) => customTransform(value),
+	 *     serialize: (value) => customTransform(value),
  *   })
  * ```
  */

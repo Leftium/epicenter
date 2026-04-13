@@ -1,6 +1,7 @@
 export { createSqliteMaterializer, serializeValue } from './sqlite.js';
 export { generateDdl, quoteIdentifier, resolveSchema } from './ddl.js';
 export type {
+	Awaitable,
 	MirrorDatabase,
 	MirrorStatement,
 	SearchOptions,

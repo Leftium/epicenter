@@ -326,7 +326,7 @@ describe('createSqliteMaterializer', () => {
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 
-				testSetup.workspace.extensions.sqlite.rebuild();
+				await testSetup.workspace.extensions.sqlite.rebuild();
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: null, title: 'Persisted in Yjs' },
@@ -357,7 +357,7 @@ describe('createSqliteMaterializer', () => {
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 				expect(getRows(testSetup.db, 'notes')).toHaveLength(1);
 
-				testSetup.workspace.extensions.sqlite.rebuild('posts');
+				await testSetup.workspace.extensions.sqlite.rebuild('posts');
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: null, title: 'Post row' },
@@ -374,12 +374,12 @@ describe('createSqliteMaterializer', () => {
 			try {
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
-				expect(() =>
+				await expect(
 					testSetup.workspace.extensions.sqlite.rebuild(
 						// @ts-expect-error -- testing runtime guard for invalid table name
 						'nonexistent',
 					),
-				).toThrow('not in the materialized table set');
+				).rejects.toThrow('not in the materialized table set');
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -404,8 +404,8 @@ describe('createSqliteMaterializer', () => {
 
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
-				expect(testSetup.workspace.extensions.sqlite.count('posts')).toBe(2);
-				expect(testSetup.workspace.extensions.sqlite.count('notes')).toBe(0);
+				expect(await testSetup.workspace.extensions.sqlite.count('posts')).toBe(2);
+				expect(await testSetup.workspace.extensions.sqlite.count('notes')).toBe(0);
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -418,7 +418,7 @@ describe('createSqliteMaterializer', () => {
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
 				expect(
-					testSetup.workspace.extensions.sqlite.count(
+					await testSetup.workspace.extensions.sqlite.count(
 						// @ts-expect-error -- testing runtime guard for invalid table name
 						'nonexistent',
 					),
@@ -476,7 +476,7 @@ describe('createSqliteMaterializer', () => {
 				await testSetup.workspace.extensions.sqlite.whenReady;
 
 				expect(
-					testSetup.workspace.extensions.sqlite.search('posts', 'hello'),
+					await testSetup.workspace.extensions.sqlite.search('posts', 'hello'),
 				).toEqual([]);
 			} finally {
 				await cleanup(testSetup);
@@ -506,7 +506,7 @@ describe('createSqliteMaterializer', () => {
 
 					await testSetup.workspace.extensions.sqlite.whenReady;
 
-					const results = testSetup.workspace.extensions.sqlite.search(
+					const results = await testSetup.workspace.extensions.sqlite.search(
 						'posts',
 						'mirror',
 						{ snippetColumn: 'title', limit: 10 },

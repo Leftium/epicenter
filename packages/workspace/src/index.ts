@@ -114,7 +114,6 @@ export { defineWorkspace } from './workspace/define-workspace';
 // WORKSPACE CREATION
 // ════════════════════════════════════════════════════════════════════════════
 
-export { DOCUMENTS_ORIGIN } from './workspace/create-documents';
 export { createWorkspace } from './workspace/create-workspace';
 
 // ════════════════════════════════════════════════════════════════════════════

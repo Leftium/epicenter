@@ -147,10 +147,13 @@ export type InferTableRow<T> = T extends {
  * A named document declared via `.withDocument()`.
  *
  * Maps a document concept (e.g., 'content') to a GUID column and an `onUpdate` callback
- * that fires when the content Y.Doc changes:
+ * that fires whenever the content Y.Doc changes -- both local edits and remote sync updates.
+ *
  * - `guid`: The column storing the Y.Doc GUID (must be a string column)
- * - `onUpdate`: Zero-argument callback returning `Partial<Omit<TRow, 'id'>>` — the fields
- *   to write when the doc changes. Callers control both the value and which columns to update.
+ * - `onUpdate`: Zero-argument callback returning `Partial<Omit<TRow, 'id'>>` -- the fields
+ *   to write when the doc changes. Must return at least one field so the table row actually
+ *   changes and `table.observe` fires. Returning `{}` is a no-op that silently breaks
+ *   downstream observers (materializers, indexes) that depend on the table observer.
  *
  * @typeParam TGuid - Literal string type of the guid column name
  * @typeParam TRow - The row type of the table (used to type-check `onUpdate` return)
@@ -161,7 +164,12 @@ export type DocumentConfig<
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
 > = {
 	guid: TGuid;
-	/** Called when the content Y.Doc changes. Return the fields to write to the row. */
+	/**
+	 * Called on every content Y.Doc change (local and remote). Return the
+	 * fields to write to the table row -- typically `{ updatedAt: now() }`.
+	 * The row write fires `table.observe`, which is how materializers and
+	 * other consumers learn that content changed. Return at least one field.
+	 */
 	onUpdate: () => Partial<Omit<TRow, 'id'>>;
 	/** Optional awareness schemas for this document scope. */
 	awareness?: TAwarenessDefs;

@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
+	import * as StarRating from '@epicenter/ui/star-rating';
 	import * as Table from '@epicenter/ui/table';
 	import { SortableTableHeader } from '@epicenter/ui/table';
+	import ClockIcon from '@lucide/svelte/icons/clock';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import {
@@ -10,31 +12,23 @@
 		FlexRender,
 		renderComponent,
 	} from '@tanstack/svelte-table';
-	import type { ColumnDef } from '@tanstack/table-core';
+	import type { ColumnDef, SortingState } from '@tanstack/table-core';
 	import {
 		getCoreRowModel,
 		getFilteredRowModel,
 		getSortedRowModel,
 	} from '@tanstack/table-core';
-	import { formatDistanceToNowStrict } from 'date-fns';
+	import { goto } from '$app/navigation';
+	import {
+		entriesState,
+		matchesEntrySearch,
+		viewState,
+	} from '$lib/entries.svelte';
+	import { relativeTime } from '$lib/format';
 	import type { Entry } from '$lib/workspace';
 	import BadgeList from './BadgeList.svelte';
-	import { DateTimeString } from '@epicenter/workspace';
-	import { entriesState, matchesEntrySearch } from '$lib/entries.svelte';
-	import { viewState } from '$lib/view.svelte';
 
-	let { entries }: { entries: Entry[] } = $props();
-
-
-	function relativeTime(dts: string): string {
-		try {
-			return formatDistanceToNowStrict(DateTimeString.toDate(dts), {
-				addSuffix: true,
-			});
-		} catch {
-			return dts;
-		}
-	}
+	let { entries, title }: { entries: Entry[]; title?: string } = $props();
 
 	const columns: ColumnDef<Entry>[] = [
 		{
@@ -94,6 +88,24 @@
 			enableSorting: false,
 		},
 		{
+			id: 'rating',
+			accessorKey: 'rating',
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Rating',
+				}),
+			cell: ({ getValue }) => {
+				const rating = getValue<number>();
+				if (!rating) return '';
+				return renderComponent(StarRating.Root, {
+					value: rating,
+					readonly: true,
+					class: 'pointer-events-none',
+				});
+			},
+		},
+		{
 			id: 'date',
 			accessorKey: 'date',
 			header: ({ column }) =>
@@ -125,7 +137,9 @@
 		},
 	];
 
-	let sorting = $state([{ id: viewState.sortBy, desc: viewState.sortBy !== 'title' }]);
+	let sorting = $state<SortingState>([
+		{ id: viewState.sortBy, desc: viewState.sortBy !== 'title' },
+	]);
 
 	const table = createSvelteTable({
 		getRowId: (row) => row.id,
@@ -155,6 +169,13 @@
 			get globalFilter() {
 				return viewState.searchQuery;
 			},
+			get columnVisibility() {
+				return {
+					subtitle: false,
+					createdAt: false,
+					updatedAt: false,
+				};
+			},
 		},
 		globalFilterFn: (row, _columnId, filterValue) => {
 			return matchesEntrySearch(row.original, filterValue);
@@ -162,18 +183,30 @@
 	});
 </script>
 
-<div class="flex h-full flex-col">
+<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 	<!-- Toolbar -->
-	<div class="flex items-center justify-between border-b px-4 py-3">
-		<h2 class="text-sm font-semibold">Entries</h2>
-		<Button variant="ghost" size="icon" class="size-7" onclick={entriesState.createEntry}>
-			<PlusIcon class="size-4" />
-		</Button>
+	<div class="flex items-center justify-between px-4 py-2">
+		<h2 class="text-sm font-semibold">{title ?? 'Entries'}</h2>
+		<div class="flex items-center gap-1">
+			<Button
+				variant="ghost"
+				size="icon-sm"
+				onclick={() => viewState.toggleViewMode()}
+				title="Switch to timeline"
+			>
+				<ClockIcon class="size-4" />
+			</Button>
+			<Button variant="ghost" size="icon-sm" onclick={entriesState.createEntry}>
+				<PlusIcon class="size-4" />
+			</Button>
+		</div>
 	</div>
 
 	<!-- Table -->
 	<div class="flex-1 overflow-auto">
-		<Table.Root>
+		<Table.Root
+			class="[&_th:first-child]:pl-4 [&_td:first-child]:pl-4 [&_th:last-child]:pr-4 [&_td:last-child]:pr-4"
+		>
 			<Table.Header>
 				{#each table.getHeaderGroups() as headerGroup}
 					<Table.Row>
@@ -196,13 +229,13 @@
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<Table.Row
-							class="cursor-pointer transition-colors hover:bg-accent/50 {viewState.selectedEntryId === row.id
-								? 'bg-accent'
-								: ''}"
-							onclick={() => viewState.selectEntry(row.original.id)}
+							class="cursor-pointer transition-colors hover:bg-accent/50"
+							onclick={() => goto(`/entries/${row.original.id}`)}
 						>
 							{#each row.getVisibleCells() as cell}
-								<Table.Cell>
+								<Table.Cell
+									class={cell.column.id === 'title' ? 'max-w-[400px] truncate' : ''}
+								>
 									<FlexRender
 										content={cell.column.columnDef.cell}
 										context={cell.getContext()}
@@ -214,18 +247,26 @@
 				{:else}
 					<Table.Row>
 						<Table.Cell colspan={columns.length}>
-							<Empty.Root>
+						<Empty.Root class="min-h-[50vh]">
 								<Empty.Media>
 									<FileTextIcon class="size-8 text-muted-foreground" />
 								</Empty.Media>
 								{#if viewState.searchQuery}
 									<Empty.Title>No entries match your search</Empty.Title>
-									<Empty.Description>Try a different search term or clear your filters.</Empty.Description>
+									<Empty.Description
+										>Try a different search term or clear your filters.</Empty.Description
+									>
 								{:else}
 									<Empty.Title>No entries yet</Empty.Title>
-									<Empty.Description>Create your first entry to get started.</Empty.Description>
+									<Empty.Description
+										>Create your first entry to get started.</Empty.Description
+									>
 									<Empty.Content>
-										<Button variant="outline" size="sm" onclick={entriesState.createEntry}>
+										<Button
+											variant="outline"
+											size="sm"
+											onclick={entriesState.createEntry}
+										>
 											<PlusIcon class="mr-1.5 size-4" />
 											New Entry
 										</Button>

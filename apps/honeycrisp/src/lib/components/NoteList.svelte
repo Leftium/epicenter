@@ -130,7 +130,10 @@
 					variant="ghost"
 					size="icon"
 					class="size-7"
-					onclick={() => notesState.createNote()}
+					onclick={() => {
+						const { id } = notesState.createNote(viewState.selectedFolderId);
+						viewState.selectNote(id);
+					}}
 				>
 					<PlusIcon class="size-4" />
 				</Button>

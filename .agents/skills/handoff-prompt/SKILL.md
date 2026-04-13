@@ -3,61 +3,55 @@ name: handoff-prompt
 description: Draft a self-contained implementation prompt that an agent can execute with zero prior context. Use when the user says "draft a prompt", "write a handoff", "make a prompt I can copy-paste", "create a delegation brief", or wants to hand off a task to another agent, tool, or conversation.
 metadata:
   author: epicenter
-  version: '1.0'
+  version: '2.0'
 ---
 
 # Handoff Prompt
 
 Follow [writing-voice](../writing-voice/SKILL.md) for prose tone.
 
-A handoff prompt is a self-contained delegation brief. The recipient agent has never seen this codebase, this conversation, or this context. Everything they need to execute must be in the prompt itself.
-
-## When to Apply This Skill
-
-Use this pattern when you need to:
-
-- Draft a prompt the user will copy-paste into another agent, tool, or fresh conversation.
-- Package codebase context so an agent can execute without exploration.
-- Hand off a well-scoped task with explicit guardrails.
-- Create a reusable prompt template for a recurring type of work.
+A handoff prompt is a cold execution brief. The recipient has never seen this codebase, this conversation, or this context. Everything they need to execute must be in the prompt itself.
 
 ## How It Differs from Specs
 
 | Spec (`specification-writing`) | Handoff Prompt |
 | --- | --- |
 | Planning document, lives in `specs/*.md` | Communication artifact, lives in clipboard |
-| Tracks progress with checkboxes | Single-shot execution |
+| Tracks progress with checkboxes | Single-shot fire-and-forget |
 | Assumes the reader has repo access and can explore | Assumes the reader has zero context |
 | Leaves open questions for the implementer | Closes all questions—the recipient shouldn't need to ask |
-| Written before work starts | Written when handing off work to another context |
+| Iterative—you come back and update it | One shot—you won't get to clarify |
 
 A spec says "here's the plan." A handoff prompt says "here's everything you need to do it right now."
 
-## The Prompt Structure
+## Structure
 
-Every handoff prompt has six sections. Order matters—context before requirements, requirements before guardrails.
+There's no rigid template. The sections you need depend on the type of handoff. Every prompt needs a task statement and guardrails. Everything else is judgment.
 
-### 1. Task Statement (1-2 sentences)
+### Task Statement
 
-What to build and where. Be specific about file paths.
+One or two sentences. What to build and where. Be specific about file paths.
 
 ```
-Create an About page for Opensidian at `apps/opensidian/src/routes/about/+page.svelte`.
+Create an About page at `apps/opensidian/src/routes/about/+page.svelte`.
 This page explains the technical architecture to visitors and is linkable from the app toolbar.
 ```
 
 Not: "Build a page that explains the app." The recipient needs exact locations.
 
-### 2. Context Dump
+### Context
 
 Everything the recipient needs to understand the codebase without reading it. This is the most important section—it's what makes the prompt self-contained.
 
-Include:
+What to include depends on the handoff type:
 
-- **Relevant source code** — paste actual code snippets, not descriptions. If the data layer is 10 lines, paste those 10 lines.
-- **Architecture summary** — how the pieces fit together, in 2-3 sentences.
-- **File inventory** — what exists that the recipient will interact with (components, routes, state files).
-- **Tech stack** — framework, UI library, styling approach, key dependencies.
+**For implementation tasks** (building UI, adding features): paste actual code. If the data layer is 10 lines, paste those 10 lines. Include file paths for every snippet. Name the components that exist with their paths. List what's available in the UI library.
+
+**For architectural tasks** (refactoring, migrations, design decisions): describe the current structure, the constraints, and the trade-offs already made. Code snippets matter less than the shape of the system and the decisions already locked in.
+
+**For debugging handoffs** (fixing broken behavior): include the error output, reproduction steps, what was already tried and why it didn't work. The recipient needs to pick up where you left off, not re-diagnose from scratch.
+
+**For all types**: never paraphrase when you can paste. "The workspace uses Yjs" is useless. The actual `createWorkspace()` call is useful.
 
 ```
 ## Context
@@ -68,80 +62,51 @@ The entire app's data layer is this one file (`src/lib/workspace.ts`):
 // paste the actual code
 \`\`\`
 
-That's it. 10 lines. The workspace API provides: Yjs CRDT table storage, per-file Y.Doc
-content documents, IndexedDB persistence, and an in-browser SQLite index.
+The workspace API provides: Yjs CRDT table storage, per-file Y.Doc content documents,
+IndexedDB persistence, and an in-browser SQLite index.
 ```
 
-Rules for context dumps:
+### Requirements
 
-- **Paste real code, not paraphrases.** "The workspace uses Yjs" is useless. The actual `createWorkspace()` call is useful.
-- **Include file paths.** Every code snippet gets its source path.
-- **Name the components that exist.** If there's a Toolbar, a FileTree, a TabBar—list them with paths.
-- **State what's available.** If the UI library has Card, Badge, Separator—say so explicitly.
+What to build. Be exhaustive—the recipient can't ask clarifying questions.
 
-### 3. Design Requirements
+For UI work: describe each section with what it contains, what components to use, what data it displays, and how it behaves.
 
-Structured description of what to build. Use numbered sections or a clear hierarchy. Be exhaustive—the recipient can't ask clarifying questions.
+For logic work: describe input/output contracts, edge cases to handle, and integration points with existing code.
 
-For UI work, describe each section of the page/component with:
-- What it contains
-- What components to use
-- What data it displays
-- How it behaves
+If there's a choice to make (which component, which layout, which approach), make it here. Don't leave it open.
 
-For logic work, describe:
-- Input/output contracts
-- Edge cases to handle
-- Integration points with existing code
+### MUST DO
 
-### 4. Available Tools and Components
-
-Explicit inventory of what the recipient can use. Don't assume they know what's in the project.
-
-```
-## Available shadcn-svelte components
-
-Import from `@epicenter/ui/{component}`. Available: `card`, `badge`, `separator`,
-`accordion`, `tabs`, `button`, `alert`. Also `@lucide/svelte` for icons.
-```
-
-### 5. MUST DO
-
-Non-negotiable requirements. Frame as explicit constraints, not suggestions.
+Non-negotiable requirements. Keep this short—only things that genuinely can't be left to judgment.
 
 ```
 ## MUST DO
-- Use only components from `@epicenter/ui/*` and `@lucide/svelte`
 - Follow existing Svelte 5 runes patterns (`$props()`, `$derived`, `$state`)
-- Use em dashes (closed, no spaces) per the project writing conventions
-- Create no more than 3 files total
+- Use components from `@epicenter/ui/*` and `@lucide/svelte`
 ```
 
-### 6. MUST NOT DO
+### MUST NOT DO
 
-Explicit anti-requirements. Block the most common ways agents go off-rails for this type of task.
+Hard blocks only. Things that are genuinely never acceptable for this task—not soft preferences, not style guidance. Litmus test: would this be wrong regardless of context? If yes, hard block. If "it depends," leave it out. The agent uses judgment for everything else.
 
 ```
 ## MUST NOT DO
-- Do not install any new dependencies
-- Do not modify any files outside of `apps/opensidian/`
-- Do not use images or external assets
-- Do not make the page feel like a SaaS landing page
+- Do not suppress TypeScript errors with `@ts-ignore` or `as any`
+- Do not delete or skip existing tests to make the build pass
 ```
 
-Think about what the recipient might do wrong and preempt it.
+Think about what the recipient might do wrong and preempt it. But only the things that would actually break something or violate a hard constraint.
 
 ## Drafting Process
 
-When asked to create a handoff prompt:
-
-1. **Gather context first.** Read the relevant files, understand the codebase patterns, check what components/tools are available. You can't write a self-contained prompt without knowing the details.
+1. **Gather context first.** Read the relevant files, understand the codebase patterns, check what components and tools are available. You can't write a self-contained prompt without knowing the details.
 
 2. **Identify the recipient's blind spots.** What does someone need to know that isn't obvious? The tech stack, the import conventions, the existing patterns, the file structure.
 
-3. **Paste, don't paraphrase.** Real code > descriptions of code. Real file paths > vague references. Real component names > "use the UI library."
+3. **Paste, don't paraphrase.** Real code beats descriptions of code. Real file paths beat vague references. Real component names beat "use the UI library."
 
-4. **Close all decisions.** A spec can leave open questions. A handoff prompt cannot. If there's a choice to make (which component, which layout, which approach), make it in the prompt.
+4. **Close all decisions.** A spec can leave open questions. A handoff prompt cannot. If there's a choice to make, make it.
 
 5. **Scope aggressively.** The tighter the scope, the better the output. "Create 3 files" beats "build the feature." "Modify only these 2 existing files" beats "update as needed."
 
@@ -182,15 +147,17 @@ You could use either a Card grid or an Accordion for this section—pick whichev
 
 Pick one. The recipient will waste time deliberating instead of building.
 
-### Forgetting guardrails
+### Overloading MUST NOT DO
 
-Without MUST NOT DO, agents will:
-- Install new dependencies
-- Modify unrelated files
-- Add features you didn't ask for
-- Use patterns inconsistent with the codebase
+```
+## MUST NOT DO
+- Do not install any new dependencies
+- Do not use images or external assets
+- Do not make the page feel like a SaaS landing page
+- Do not use inline styles
+```
 
-Preempt this explicitly.
+The first item might be a hard block. The rest are preferences. Mixing them dilutes the signal. Hard blocks only.
 
 ## Good vs Bad
 
@@ -206,7 +173,7 @@ export const ws = createWorkspace({ id: 'opensidian', tables: { files: filesTabl
   .withExtension('persistence', indexeddbPersistence)
 \`\`\`
 
-MUST NOT: install dependencies, modify files outside apps/opensidian/, use images.
+MUST NOT: suppress TypeScript errors, delete existing tests to pass build.
 ```
 
 ### Bad (vague, open-ended, assumes context)

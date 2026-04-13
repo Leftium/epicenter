@@ -125,7 +125,7 @@ function createAiChatState() {
 			),
 			onFinish: (message) => {
 				workspace.tables.chatMessages.set({
-					id: message.id as string as ChatMessageId,
+					id: message.id as ChatMessageId,
 					conversationId,
 					role: 'assistant',
 					parts: message.parts as JsonValue[],
@@ -255,9 +255,7 @@ function createAiChatState() {
 			reload() {
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					workspace.tables.chatMessages.delete(
-						lastMessage.id as string as ChatMessageId,
-					);
+					workspace.tables.chatMessages.delete(lastMessage.id as ChatMessageId);
 				}
 
 				void chat.reload();

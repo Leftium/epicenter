@@ -1,42 +1,24 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import {
 		localTimezone,
 		NaturalLanguageDateInput,
 		toDateTimeString,
 	} from '@epicenter/ui/natural-language-date-input';
-	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import * as Popover from '@epicenter/ui/popover';
+	import * as StarRating from '@epicenter/ui/star-rating';
+	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import { DateTimeString } from '@epicenter/workspace';
-	import { format } from 'date-fns';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import { baseKeymap, toggleMark } from 'prosemirror-commands';
-	import {
-		inputRules,
-		wrappingInputRule,
-		textblockTypeInputRule,
-		smartQuotes,
-		emDash,
-		ellipsis,
-	} from 'prosemirror-inputrules';
-	import { keymap } from 'prosemirror-keymap';
-	import { Schema, type MarkSpec } from 'prosemirror-model';
-	import {
-		addListNodes,
-		splitListItem,
-		liftListItem,
-		sinkListItem,
-	} from 'prosemirror-schema-list';
-	import { schema as basicSchema } from 'prosemirror-schema-basic';
-	import { EditorState, Plugin } from 'prosemirror-state';
-	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
-	import 'prosemirror-view/style/prosemirror.css';
-	import { ySyncPlugin, yUndoPlugin, undo, redo } from 'y-prosemirror';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import { format } from 'date-fns';
 	import type * as Y from 'yjs';
-	import type { Entry } from '$lib/workspace';
-	import TagInput from './TagInput.svelte';
-	import { viewState } from '$lib/view.svelte';
+	import { goto } from '$app/navigation';
 	import { workspace } from '$lib/client';
+	import type { Entry } from '$lib/workspace';
+	import ProseMirrorEditor from './ProseMirrorEditor.svelte';
+	import TagInput from './TagInput.svelte';
 
 	let {
 		entry,
@@ -46,148 +28,50 @@
 		yxmlfragment: Y.XmlFragment;
 	} = $props();
 
-	function updateEntry(updates: Partial<{ title: string; subtitle: string; type: string[]; tags: string[]; date: DateTimeString }>) {
+	function updateEntry(
+		updates: Partial<{
+			title: string;
+			subtitle: string;
+			type: string[];
+			tags: string[];
+			date: DateTimeString;
+			rating: number;
+		}>,
+	) {
 		workspace.actions.entries.update({ id: entry.id, ...updates });
 	}
 
-	let element: HTMLDivElement | undefined = $state();
 	let wordCount = $state(0);
-
 	let isDatePopoverOpen = $state(false);
 	let dateTz = $state(localTimezone());
-
-	function countWords(text: string): number {
-		const trimmed = text.trim();
-		if (!trimmed) return 0;
-		return trimmed.split(/\s+/).length;
-	}
-
-	function createWordCountPlugin() {
-		return new Plugin({
-			view() {
-				return {
-					update(view) {
-						wordCount = countWords(view.state.doc.textContent);
-					},
-				};
-			},
-		});
-	}
-
-	const extraMarks: Record<string, MarkSpec> = {
-		strikethrough: {
-			parseDOM: [
-				{ tag: 's' },
-				{ tag: 'del' },
-				{ style: 'text-decoration=line-through' },
-			],
-			toDOM() {
-				return ['s', 0];
-			},
-		},
-		underline: {
-			parseDOM: [{ tag: 'u' }, { style: 'text-decoration=underline' }],
-			toDOM() {
-				return ['u', 0];
-			},
-		},
-	};
-
-	const schema = new Schema({
-		nodes: addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block'),
-		marks: basicSchema.spec.marks.append(extraMarks),
-	});
-
-	function createPlaceholderPlugin(text: string) {
-		return new Plugin({
-			props: {
-				decorations(state) {
-					const { doc } = state;
-					if (
-						doc.childCount === 1 &&
-						doc.firstChild?.isTextblock &&
-						doc.firstChild.content.size === 0
-					) {
-						return DecorationSet.create(doc, [
-							Decoration.node(0, doc.firstChild.nodeSize, {
-								class: 'is-editor-empty',
-								'data-placeholder': text,
-							}),
-						]);
-					}
-					return DecorationSet.empty;
-				},
-			},
-		});
-	}
-
-	$effect(() => {
-		if (!element) return;
-
-		const view = new EditorView(element, {
-			state: EditorState.create({
-				schema,
-				plugins: [
-					ySyncPlugin(yxmlfragment),
-					yUndoPlugin(),
-					createPlaceholderPlugin('Start writing\u2026'),
-					keymap({
-						'Mod-z': undo,
-						'Mod-y': redo,
-						'Mod-Shift-z': redo,
-						'Mod-b': toggleMark(schema.marks.strong!),
-						'Mod-i': toggleMark(schema.marks.em!),
-						'Mod-u': toggleMark(schema.marks.underline!),
-						'Mod-Shift-s': toggleMark(schema.marks.strikethrough!),
-						Enter: splitListItem(schema.nodes.list_item!),
-						'Mod-]': sinkListItem(schema.nodes.list_item!),
-						Tab: sinkListItem(schema.nodes.list_item!),
-						'Mod-[': liftListItem(schema.nodes.list_item!),
-						'Shift-Tab': liftListItem(schema.nodes.list_item!),
-					}),
-					keymap(baseKeymap),
-					inputRules({
-						rules: [
-							...smartQuotes,
-							emDash,
-							ellipsis,
-							textblockTypeInputRule(
-								/^(#{1,3})\s$/,
-								schema.nodes.heading!,
-								(match) => ({ level: match[1]!.length }),
-							),
-							wrappingInputRule(/^\s*([-+*])\s$/, schema.nodes.bullet_list!),
-							wrappingInputRule(
-								/^(\d+)\.\s$/,
-								schema.nodes.ordered_list!,
-								(match) => ({ order: +match[1]! }),
-								(match, node) =>
-									node.childCount + node.attrs.order === +match[1]!,
-							),
-							wrappingInputRule(/^\s*>\s$/, schema.nodes.blockquote!),
-							textblockTypeInputRule(/^```$/, schema.nodes.code_block!),
-						],
-					}),
-					createWordCountPlugin(),
-				],
-			}),
-			attributes: {
-				class:
-					'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-full',
-			},
-		});
-
-		return () => view.destroy();
-	});
 </script>
 
 <div class="flex h-full flex-col">
 	<!-- Header with back button -->
-	<div class="flex items-center gap-2 border-b px-4 py-2">
-		<Button variant="ghost" size="icon" class="size-7" onclick={() => viewState.selectEntry(null)}>
-			<ArrowLeftIcon class="size-4" />
+	<div class="flex items-center justify-between border-b px-4 py-2">
+		<div class="flex items-center gap-2">
+			<Button variant="ghost" size="icon-sm" onclick={() => goto('/')}>
+				<ArrowLeftIcon class="size-4" />
+			</Button>
+			<span class="text-sm text-muted-foreground">Back to entries</span>
+		</div>
+		<Button
+			variant="ghost-destructive"
+			size="icon-sm"
+			onclick={() => {
+				confirmationDialog.open({
+					title: 'Delete entry?',
+					description: `"${entry.title || 'Untitled'}" will be moved to recently deleted.`,
+					confirm: { text: 'Delete', variant: 'destructive' },
+					onConfirm: () => {
+						workspace.actions.entries.delete({ id: entry.id });
+						goto('/');
+					},
+				});
+			}}
+		>
+			<Trash2Icon class="size-4" />
 		</Button>
-		<span class="text-sm text-muted-foreground">Back to entries</span>
 	</div>
 
 	<!-- Entry metadata -->
@@ -265,11 +149,22 @@
 					</Popover.Content>
 				</Popover.Root>
 			</div>
+
+			<div class="flex items-center gap-2">
+				<span class="text-xs font-medium text-muted-foreground">Rating</span>
+				<StarRating.Root
+					value={entry.rating}
+					onValueChange={(value) => updateEntry({ rating: value })}
+				/>
+			</div>
 		</div>
 	</div>
 
 	<!-- Editor body -->
-	<div bind:this={element} class="flex-1 overflow-y-auto px-6 py-4"></div>
+	<ProseMirrorEditor
+		{yxmlfragment}
+		onWordCountChange={(count) => (wordCount = count)}
+	/>
 
 	<!-- Status bar -->
 	<div
@@ -288,16 +183,3 @@
 		</div>
 	</div>
 </div>
-
-<style>
-	:global(.ProseMirror) {
-		min-height: 100%;
-	}
-	:global(.ProseMirror p.is-editor-empty:first-child::before) {
-		color: hsl(var(--muted-foreground));
-		content: attr(data-placeholder);
-		float: left;
-		height: 0;
-		pointer-events: none;
-	}
-</style>

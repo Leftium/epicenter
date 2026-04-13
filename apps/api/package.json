@@ -19,18 +19,18 @@
 		"dev": "bun run dev:local",
 		"dev:local": "mkdir -p ../dashboard/build/dashboard && infisical export --path=/api --format=dotenv > .dev.vars && wrangler dev",
 		"dev:dashboard": "bun --cwd ../dashboard run build && bun run dev:local",
-		"dev:remote": "mkdir -p ../dashboard/build/dashboard && infisical run --watch --path=/api -- wrangler dev",
+		"dev:remote": "mkdir -p ../dashboard/build/dashboard && infisical run --env=prod --watch --path=/api -- wrangler dev",
 		"deploy": "bun --cwd ../dashboard run build && wrangler deploy",
 		"typegen": "wrangler types",
-		"auth:generate": "infisical run --path=/api -- bun x @better-auth/cli generate --yes --config ./better-auth.config.ts --output ./src/db/schema.ts",
+		"auth:generate": "infisical run --env=prod --path=/api -- bun x @better-auth/cli generate --yes --config ./better-auth.config.ts --output ./src/db/schema.ts",
 		"db:generate": "drizzle-kit generate",
 		"db:drop": "drizzle-kit drop",
 		"db:push:local": "drizzle-kit push",
-		"db:push:remote": "infisical run --path=/api -- drizzle-kit push",
+		"db:push:remote": "infisical run --env=prod --path=/api -- drizzle-kit push",
 		"db:migrate:local": "drizzle-kit migrate",
-		"db:migrate:remote": "infisical run --path=/api -- drizzle-kit migrate",
+		"db:migrate:remote": "infisical run --env=prod --path=/api -- drizzle-kit migrate",
 		"db:studio:local": "drizzle-kit studio",
-		"db:studio:remote": "infisical run --path=/api -- drizzle-kit studio"
+		"db:studio:remote": "infisical run --env=prod --path=/api -- drizzle-kit studio"
 	},
 	"dependencies": {
 		"@better-auth/drizzle-adapter": "catalog:",

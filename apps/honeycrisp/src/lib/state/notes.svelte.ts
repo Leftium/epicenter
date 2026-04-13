@@ -22,9 +22,9 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import { dateTimeStringNow, generateId } from '@epicenter/workspace';
+import { DateTimeString, generateId } from '@epicenter/workspace';
 import { workspace } from '$lib/client';
-import type { FolderId, Note, NoteId } from '$lib/workspace';
+import type { FolderId, NoteId } from '$lib/workspace';
 import { foldersState } from './folders.svelte';
 
 function createNotesState() {
@@ -59,6 +59,13 @@ function createNotesState() {
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
+		/**
+		 * Look up a note by ID. Returns `undefined` if not found.
+		 */
+		get(id: NoteId) {
+			return allNotesMap.get(id);
+		},
+
 		get allNotes() {
 			return allNotes;
 		},
@@ -73,34 +80,33 @@ function createNotesState() {
 		},
 
 		/**
-		 * Create a new note in the currently selected folder.
+		 * Create a new note in the given folder and return its ID.
 		 *
-		 * The note starts with an empty title and preview. It's automatically
-		 * selected after creation so the editor opens immediately. If no folder
-		 * is selected, the note is created as unfiled.
+		 * The note starts with an empty title and preview. Pass a folderId
+		 * to file the note, or omit/pass `undefined` to create it unfiled.
+		 * The caller is responsible for selecting the note afterward.
 		 *
 		 * @example
 		 * ```typescript
-		 * notesState.createNote();
-		 * // New note appears in the list and editor opens
+		 * const { id } = notesState.createNote(viewState.selectedFolderId);
+		 * viewState.selectNote(id);
 		 * ```
 		 */
-		createNote() {
-			const id = generateId() as string as NoteId;
-			const selectedFolderId = workspace.kv.get('selectedFolderId');
+		createNote(folderId?: FolderId | null) {
+			const id = generateId() as NoteId;
 			workspace.tables.notes.set({
 				id,
-				folderId: selectedFolderId ?? undefined,
+				folderId: folderId ?? undefined,
 				title: '',
 				preview: '',
 				pinned: false,
 				deletedAt: undefined,
 				wordCount: 0,
-				createdAt: dateTimeStringNow(),
-				updatedAt: dateTimeStringNow(),
+				createdAt: DateTimeString.now(),
+				updatedAt: DateTimeString.now(),
 				_v: 2,
 			});
-			workspace.kv.set('selectedNoteId', id);
+			return { id };
 		},
 
 		/**
@@ -118,7 +124,7 @@ function createNotesState() {
 		 */
 		softDeleteNote(noteId: NoteId) {
 			workspace.tables.notes.update(noteId, {
-				deletedAt: dateTimeStringNow(),
+				deletedAt: DateTimeString.now(),
 			});
 			if (workspace.kv.get('selectedNoteId') === noteId) {
 				workspace.kv.set('selectedNoteId', null);

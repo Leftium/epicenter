@@ -125,7 +125,12 @@ export type CreateDocumentsConfig<
 	documentName: string;
 	/** Column name storing the Y.Doc GUID. */
 	guidKey: keyof TRow & string;
-	/** Called when the content Y.Doc changes. Return the fields to write to the row. */
+	/**
+	 * Called on every content Y.Doc change (local and remote). Return the
+	 * fields to write to the table row. The row write fires `table.observe`,
+	 * which is how materializers and other consumers react to content changes.
+	 * Return at least one field -- returning `{}` is a silent no-op.
+	 */
 	onUpdate: () => Partial<Omit<TRow, 'id'>>;
 	/** The table helper — needed to update the row and observe row deletions. */
 	tableHelper: TableHelper<TRow>;
@@ -254,21 +259,32 @@ export function createDocuments<
 				throw err;
 			}
 
-			// Attach onUpdate observer — fires when content doc changes.
-			// The Y.Doc 'update' handler receives (update, origin, doc, transaction).
-			// We use transaction.local to skip remote sync updates — only local edits
-			// should trigger the callback. Remote devices receive the updated values via
-			// workspace ydoc sync; redundant writes would cause unnecessary churn.
+			// Attach onUpdate observer — fires on LOCAL content doc changes only.
+			//
+			// When a user types in ProseMirror, this fires and bumps metadata
+			// (e.g., updatedAt). That change syncs to other tabs via the workspace
+			// Y.Doc. Remote edits arriving via sync/broadcast are skipped — the
+			// originating tab already bumped metadata, and we receive it via
+			// workspace table sync.
+			//
+			// Without this guard, every tab independently calls onUpdate() with
+			// DateTimeString.now(), producing distinct timestamps that ping-pong
+			// between tabs and never converge.
 			const updateHandler = (
 				_update: Uint8Array,
 				origin: unknown,
 				_doc: Y.Doc,
-				transaction: Y.Transaction,
+				_transaction: Y.Transaction,
 			) => {
 				// Skip updates from the documents manager itself to avoid loops
 				if (origin === DOCUMENTS_ORIGIN) return;
-				// Skip remote updates — only local edits trigger onUpdate
-				if (!transaction.local) return;
+
+				// Skip transport-originated updates (sync, broadcast channel).
+				// Convention: all transport origins are Symbols (SYNC_ORIGIN,
+				// BC_ORIGIN). Local edits use non-Symbol origins (e.g., y-prosemirror's
+				// ySyncPluginKey is a PluginKey object; direct mutations use null).
+				// If a new transport is added, it MUST use a Symbol origin.
+				if (typeof origin === 'symbol') return;
 
 				// Call the user's onUpdate callback and write the returned fields
 				workspaceYdoc.transact(() => {

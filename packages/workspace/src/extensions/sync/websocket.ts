@@ -27,7 +27,7 @@ import {
 import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
 import { type Actions, isAction } from '../../shared/actions.js';
 import type { SharedExtensionContext } from '../../workspace/types.js';
-import { broadcastChannelSync } from './broadcast-channel.js';
+import { BC_ORIGIN, broadcastChannelSync } from './broadcast-channel.js';
 
 // ============================================================================
 // Types
@@ -176,11 +176,17 @@ export type SyncExtensionExports = {
 /** Origin sentinel for sync updates — used to skip echoing remote changes back. */
 const SYNC_ORIGIN = Symbol('sync-transport');
 
+// Liveness tuning: the client sends a text "ping" every PING_INTERVAL_MS.
+// The server auto-responds with "pong" via setWebSocketAutoResponse (no DO
+// wake, no duration charge). However, each incoming ping still counts as a
+// billable WebSocket message at Cloudflare's 20:1 ratio. 60s balances cost
+// against dead-connection detection. LIVENESS_TIMEOUT_MS should be ≥ 1.5×
+// the ping interval so a single missed ping doesn't kill the connection.
 const DEFAULT_RPC_TIMEOUT_MS = 5_000;
 const BASE_DELAY_MS = 500;
 const MAX_DELAY_MS = 30_000;
-const PING_INTERVAL_MS = 30_000;
-const LIVENESS_TIMEOUT_MS = 45_000;
+const PING_INTERVAL_MS = 60_000;
+const LIVENESS_TIMEOUT_MS = 90_000;
 const LIVENESS_CHECK_INTERVAL_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 15_000;
 
@@ -236,8 +242,9 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		const awareness = ctxAwareness.raw;
 
 		// BroadcastChannel cross-tab sync — instant convergence between same-origin tabs.
-		// Runs independently of WebSocket. No-ops when BroadcastChannel is unavailable.
-		const bc = broadcastChannelSync({ ydoc: doc });
+		// Runs independently of WebSocket. Passes SYNC_ORIGIN so BC won't re-broadcast
+		// server-delivered updates (each tab has its own WebSocket connection).
+		const bc = broadcastChannelSync({ ydoc: doc, transportOrigin: SYNC_ORIGIN });
 
 		// ── Zone 2: Mutable state ──
 
@@ -368,11 +375,16 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		// ── Doc + awareness handlers ──
 
 		/**
-		 * Y.Doc `'updateV2'` handler — broadcasts local mutations to the server.
-		 * Skips remote updates (origin === SYNC_ORIGIN) to avoid echoing.
+		 * Y.Doc `'updateV2'` handler — sends local mutations to the server.
+		 *
+		 * Skips updates that arrived from the server (`SYNC_ORIGIN`) or from
+		 * BroadcastChannel (`BC_ORIGIN`). Without the BC guard, an update
+		 * received from another tab via BroadcastChannel would be re-sent to
+		 * the server, which already has it from the originating tab.
 		 */
 		function handleDocUpdate(update: Uint8Array, origin: unknown) {
 			if (origin === SYNC_ORIGIN) return;
+			if (origin === BC_ORIGIN) return;
 			send(encodeSyncUpdate({ update }));
 			localVersion++;
 			// Debounce: send probe after 100ms quiet period, not per-update.
@@ -384,18 +396,33 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		}
 
 		/**
-		 * Awareness `'update'` handler — broadcasts local presence changes
-		 * (cursor position, user name, selection, etc.) to all connected peers.
+		 * Awareness `'update'` handler — sends local presence changes
+		 * (cursor position, user name, selection, etc.) to the server.
+		 *
+		 * y-protocols emits `awareness.on('update', (changes, origin))` where
+		 * `origin` is `'local'` for `setLocalState` calls and the value passed
+		 * to `applyAwarenessUpdate` for remote updates. We skip SYNC_ORIGIN
+		 * to avoid echoing server-delivered awareness back to the server.
+		 *
+		 * Note: y-websocket has the same gap (ignores origin in its awareness
+		 * handler). We fix it here to avoid unnecessary server round-trips.
 		 */
 		function handleAwarenessUpdate({
-			added,
-			updated,
-			removed,
-		}: {
-			added: number[];
-			updated: number[];
-			removed: number[];
-		}) {
+				added,
+				updated,
+				removed,
+			}: {
+				added: number[];
+				updated: number[];
+				removed: number[];
+			},
+			origin: unknown,
+		) {
+			// Server-delivered awareness arrives via applyAwarenessUpdate with
+			// SYNC_ORIGIN. Re-sending it would waste a round-trip (the server
+			// already has this state). The awareness clock prevents infinite
+			// loops, but the extra traffic is unnecessary.
+			if (origin === SYNC_ORIGIN) return;
 			const changedClients = added.concat(updated).concat(removed);
 			send(
 				encodeAwareness({

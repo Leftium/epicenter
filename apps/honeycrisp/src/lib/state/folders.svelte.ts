@@ -36,6 +36,13 @@ function createFoldersState() {
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
+		/**
+		 * Look up a folder by ID. Returns `undefined` if not found.
+		 */
+		get(id: FolderId) {
+			return foldersMap.get(id);
+		},
+
 		get folders() {
 			return folders;
 		},
@@ -53,7 +60,7 @@ function createFoldersState() {
 		 * ```
 		 */
 		createFolder() {
-			const id = generateId() as string as FolderId;
+			const id = generateId() as FolderId;
 			workspace.tables.folders.set({
 				id,
 				name: 'New Folder',

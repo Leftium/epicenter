@@ -39,41 +39,39 @@ function createViewState() {
 
 	// ─── Derived State ───────────────────────────────────────────────────
 
-	/** Notes filtered by selected folder and search query. */
+	/** Notes filtered by selected folder and search query, then sorted. */
 	const filteredNotes = $derived.by(() => {
-		let result =
-			selectedFolderId.current === null
-				? notesState.notes
-				: notesState.notes.filter(
-						(n) => n.folderId === selectedFolderId.current,
-					);
-		if (searchQuery.trim()) {
-			const q = searchQuery.trim().toLowerCase();
-			result = result.filter(
+		const folderId = selectedFolderId.current;
+		const q = searchQuery.trim().toLowerCase();
+
+		return notesState.notes
+			.filter((n) => folderId === null || n.folderId === folderId)
+			.filter(
 				(n) =>
+					!q ||
 					n.title.toLowerCase().includes(q) ||
 					n.preview.toLowerCase().includes(q),
-			);
-		}
-		return [...result].sort((a, b) => {
-			if (sortBy.current === 'title') return a.title.localeCompare(b.title);
-			if (sortBy.current === 'dateCreated')
-				return b.createdAt.localeCompare(a.createdAt);
-			return b.updatedAt.localeCompare(a.updatedAt);
-		});
+			)
+			.toSorted((a, b) => {
+				if (sortBy.current === 'title') return a.title.localeCompare(b.title);
+				if (sortBy.current === 'dateCreated')
+					return b.createdAt.localeCompare(a.createdAt);
+				return b.updatedAt.localeCompare(a.updatedAt);
+			});
 	});
 
 	/** Human-readable name for the current folder (used as NoteList title). */
 	const folderName = $derived(
 		selectedFolderId.current
-			? (foldersState.folders.find((f) => f.id === selectedFolderId.current)
-					?.name ?? 'Notes')
+			? (foldersState.get(selectedFolderId.current)?.name ?? 'Notes')
 			: 'All Notes',
 	);
 
 	/** The currently selected note (can be active or deleted). */
 	const selectedNote = $derived(
-		notesState.allNotes.find((n) => n.id === selectedNoteId.current) ?? null,
+		selectedNoteId.current
+			? (notesState.get(selectedNoteId.current) ?? null)
+			: null,
 	);
 
 	// ─── Public API ──────────────────────────────────────────────────────

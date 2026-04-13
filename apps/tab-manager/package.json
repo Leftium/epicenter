@@ -42,7 +42,7 @@
 		"svelte-sonner": "^1.1.0",
 		"tailwind-merge": "catalog:",
 		"typebox": "catalog:",
-		"virtua": "^0.48.5",
+		"virtua": "catalog:",
 		"wellcrafted": "catalog:",
 		"y-indexeddb": "catalog:",
 		"yjs": "catalog:"

@@ -32,7 +32,9 @@
 		"./extensions/sync/broadcast-channel": "./src/extensions/sync/broadcast-channel.ts",
 		"./shared/crypto": "./src/shared/crypto/index.ts",
 		"./extensions/materializer/markdown": "./src/extensions/materializer/markdown/index.ts",
-		"./ai": "./src/ai/index.ts"
+		"./ai": "./src/ai/index.ts",
+		"./extensions/persistence/sqlite": "./src/extensions/persistence/sqlite.ts",
+		"./extensions/materializer/sqlite": "./src/extensions/materializer/sqlite/index.ts"
 	},
 	"license": "MIT",
 	"scripts": {

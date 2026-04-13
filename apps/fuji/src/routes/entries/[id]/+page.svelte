@@ -17,9 +17,16 @@
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 
 	// Document lifecycle depends ONLY on entryId — not on entry metadata.
-	// Reading the full entry object here would cause close/open cycles on
-	// every metadata change (e.g., updatedAt bumps from content edits),
-	// which destroys and recreates the ProseMirror editor.
+	//
+	// Why: content edits bump `updatedAt` via the document's onUpdate callback,
+	// which replaces the entry object in the SvelteMap. If this $effect tracked
+	// `entry`, every keystroke in the OTHER tab would: change entry → re-run
+	// effect → close document → null out fragment (flash spinner) → reopen
+	// document → recreate ProseMirror. Two tabs amplify this into a loop because
+	// each tab generates its own timestamp.
+	//
+	// The template still reads `entry` for display and the "not found" gate —
+	// that's template reactivity, not effect reactivity, so it's safe.
 	$effect(() => {
 		if (!entryId) {
 			currentYXmlFragment = null;

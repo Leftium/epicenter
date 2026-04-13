@@ -260,10 +260,16 @@ export function createDocuments<
 			}
 
 			// Attach onUpdate observer — fires on LOCAL content doc changes only.
-			// Remote edits are skipped because the originating tab already bumped
-			// metadata, and we receive that change via workspace table sync.
-			// Firing onUpdate for remote edits would generate a new timestamp on
-			// every tab, creating a cross-tab metadata ping-pong loop.
+			//
+			// When a user types in ProseMirror, this fires and bumps metadata
+			// (e.g., updatedAt). That change syncs to other tabs via the workspace
+			// Y.Doc. Remote edits arriving via sync/broadcast are skipped — the
+			// originating tab already bumped metadata, and we receive it via
+			// workspace table sync.
+			//
+			// Without this guard, every tab independently calls onUpdate() with
+			// DateTimeString.now(), producing distinct timestamps that ping-pong
+			// between tabs and never converge.
 			const updateHandler = (
 				_update: Uint8Array,
 				origin: unknown,
@@ -273,9 +279,11 @@ export function createDocuments<
 				// Skip updates from the documents manager itself to avoid loops
 				if (origin === DOCUMENTS_ORIGIN) return;
 
-				// Skip transport-originated updates (sync, broadcast). All transport
-				// origins use Symbols by convention. The originating tab already
-				// bumped metadata; we receive that via workspace sync.
+				// Skip transport-originated updates (sync, broadcast channel).
+				// Convention: all transport origins are Symbols (SYNC_ORIGIN,
+				// BC_ORIGIN). Local edits use non-Symbol origins (e.g., y-prosemirror's
+				// ySyncPluginKey is a PluginKey object; direct mutations use null).
+				// If a new transport is added, it MUST use a Symbol origin.
 				if (typeof origin === 'symbol') return;
 
 				// Call the user's onUpdate callback and write the returned fields

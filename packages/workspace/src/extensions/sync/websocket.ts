@@ -242,7 +242,8 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		const awareness = ctxAwareness.raw;
 
 		// BroadcastChannel cross-tab sync — instant convergence between same-origin tabs.
-		// Runs independently of WebSocket. No-ops when BroadcastChannel is unavailable.
+		// Runs independently of WebSocket. Passes SYNC_ORIGIN so BC won't re-broadcast
+		// server-delivered updates (each tab has its own WebSocket connection).
 		const bc = broadcastChannelSync({ ydoc: doc, transportOrigin: SYNC_ORIGIN });
 
 		// ── Zone 2: Mutable state ──
@@ -374,9 +375,12 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		// ── Doc + awareness handlers ──
 
 		/**
-		 * Y.Doc `'updateV2'` handler — broadcasts local mutations to the server.
-		 * Skips transport-originated updates (WebSocket, BroadcastChannel) to
-		 * prevent echo loops between transports.
+		 * Y.Doc `'updateV2'` handler — sends local mutations to the server.
+		 *
+		 * Skips updates that arrived from the server (`SYNC_ORIGIN`) or from
+		 * BroadcastChannel (`BC_ORIGIN`). Without the BC guard, an update
+		 * received from another tab via BroadcastChannel would be re-sent to
+		 * the server, which already has it from the originating tab.
 		 */
 		function handleDocUpdate(update: Uint8Array, origin: unknown) {
 			if (origin === SYNC_ORIGIN) return;

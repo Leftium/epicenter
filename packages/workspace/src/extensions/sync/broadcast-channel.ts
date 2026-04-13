@@ -11,9 +11,16 @@ export const BC_ORIGIN = Symbol('bc-sync');
  * updates from other tabs. Uses `ydoc.guid` (= workspace ID) as the channel
  * name so only docs for the same workspace communicate.
  *
- * Yjs deduplicates internally—if the WebSocket provider delivers the same
- * update, `applyUpdateV2` with an already-applied state vector is a no-op.
- * Running BroadcastChannel alongside WebSocket is safe and intended.
+ * Skips re-broadcasting updates that arrived from BroadcastChannel itself
+ * (via `BC_ORIGIN`) and, when paired with WebSocket, updates that arrived
+ * from the server (via `transportOrigin`). Without the second guard,
+ * server-delivered updates would be re-broadcast to other tabs, and those
+ * tabs would re-send them to the server—creating an echo loop.
+ *
+ * Yjs deduplicates internally—if an already-applied update is re-applied,
+ * it's a no-op and no `updateV2` event fires. But `onUpdate` callbacks
+ * that generate fresh timestamps (e.g., `DateTimeString.now()`) produce
+ * NEW updates that bypass dedup, so origin-based guards are essential.
  *
  * No-ops gracefully when `BroadcastChannel` is unavailable (Node.js, SSR,
  * older browsers).
@@ -21,6 +28,12 @@ export const BC_ORIGIN = Symbol('bc-sync');
  * Included automatically by `createSyncExtension`—most apps don't need to
  * register this separately. Use the standalone export only when you want
  * cross-tab sync without a WebSocket server (e.g., offline-only apps).
+ *
+ * @param ydoc - The Y.Doc to sync across tabs
+ * @param transportOrigin - Optional origin Symbol from another transport
+ *   (e.g., `SYNC_ORIGIN` from the WebSocket extension). Updates with this
+ *   origin are not re-broadcast, preventing cross-transport echo loops.
+ *   Omit when using BroadcastChannel standalone (no WebSocket).
  *
  * @example Standalone (no server, local tabs only)
  * ```typescript
@@ -37,8 +50,9 @@ export function broadcastChannelSync({ ydoc, transportOrigin }: { ydoc: Y.Doc; t
 
 	const channel = new BroadcastChannel(`yjs:${ydoc.guid}`);
 
-	/** Broadcast local changes to other tabs. Skips BC-originated and
-	 *  transport-originated (e.g., WebSocket) updates to prevent echo loops. */
+	/** Broadcast local changes to other tabs.
+	 *  Skips updates from BroadcastChannel itself (echo prevention) and from
+	 *  the paired transport (e.g., WebSocket) to avoid cross-transport echo. */
 	const handleUpdate = (update: Uint8Array, origin: unknown) => {
 		if (origin === BC_ORIGIN) return;
 		if (transportOrigin && origin === transportOrigin) return;

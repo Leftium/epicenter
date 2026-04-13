@@ -27,7 +27,8 @@ import {
 import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
 import { type Actions, isAction } from '../../shared/actions.js';
 import type { SharedExtensionContext } from '../../workspace/types.js';
-import { BC_ORIGIN, broadcastChannelSync } from './broadcast-channel.js';
+import { broadcastChannelSync } from './broadcast-channel.js';
+import { BC_ORIGIN, SYNC_ORIGIN } from './origins.js';
 
 // ============================================================================
 // Types
@@ -173,8 +174,6 @@ export type SyncExtensionExports = {
 // Constants
 // ============================================================================
 
-/** Origin sentinel for sync updates — used to skip echoing remote changes back. */
-const SYNC_ORIGIN = Symbol('sync-transport');
 
 // Liveness tuning: the client sends a text "ping" every PING_INTERVAL_MS.
 // The server auto-responds with "pong" via setWebSocketAutoResponse (no DO

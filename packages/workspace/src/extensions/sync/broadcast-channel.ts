@@ -1,8 +1,7 @@
 import * as Y from 'yjs';
+import { BC_ORIGIN } from './origins.js';
 
-/** Origin sentinel — updates applied from the BroadcastChannel carry this
- *  so the `updateV2` handler skips re-broadcasting them (prevents echo loops). */
-export const BC_ORIGIN = Symbol('bc-sync');
+export { BC_ORIGIN };
 
 /**
  * BroadcastChannel cross-tab sync for a Yjs document.

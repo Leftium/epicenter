@@ -16,8 +16,12 @@
 	let currentYXmlFragment = $state<Y.XmlFragment | null>(null);
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 
+	// Document lifecycle depends ONLY on entryId — not on entry metadata.
+	// Reading the full entry object here would cause close/open cycles on
+	// every metadata change (e.g., updatedAt bumps from content edits),
+	// which destroys and recreates the ProseMirror editor.
 	$effect(() => {
-		if (!entryId || !entry) {
+		if (!entryId) {
 			currentYXmlFragment = null;
 			currentDocHandle = null;
 			return;

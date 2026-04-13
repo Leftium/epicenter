@@ -27,7 +27,7 @@ import {
 import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
 import { type Actions, isAction } from '../../shared/actions.js';
 import type { SharedExtensionContext } from '../../workspace/types.js';
-import { broadcastChannelSync } from './broadcast-channel.js';
+import { BC_ORIGIN, broadcastChannelSync } from './broadcast-channel.js';
 
 // ============================================================================
 // Types
@@ -243,7 +243,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 
 		// BroadcastChannel cross-tab sync — instant convergence between same-origin tabs.
 		// Runs independently of WebSocket. No-ops when BroadcastChannel is unavailable.
-		const bc = broadcastChannelSync({ ydoc: doc });
+		const bc = broadcastChannelSync({ ydoc: doc, transportOrigin: SYNC_ORIGIN });
 
 		// ── Zone 2: Mutable state ──
 
@@ -375,10 +375,12 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 
 		/**
 		 * Y.Doc `'updateV2'` handler — broadcasts local mutations to the server.
-		 * Skips remote updates (origin === SYNC_ORIGIN) to avoid echoing.
+		 * Skips transport-originated updates (WebSocket, BroadcastChannel) to
+		 * prevent echo loops between transports.
 		 */
 		function handleDocUpdate(update: Uint8Array, origin: unknown) {
 			if (origin === SYNC_ORIGIN) return;
+			if (origin === BC_ORIGIN) return;
 			send(encodeSyncUpdate({ update }));
 			localVersion++;
 			// Debounce: send probe after 100ms quiet period, not per-update.

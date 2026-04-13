@@ -259,10 +259,11 @@ export function createDocuments<
 				throw err;
 			}
 
-			// Attach onUpdate observer — fires on ALL content doc changes (local
-			// and remote). This ensures table observers (materializers, indexes)
-			// react when document content arrives via sync, not just local edits.
-			// The DOCUMENTS_ORIGIN guard prevents self-loops.
+			// Attach onUpdate observer — fires on LOCAL content doc changes only.
+			// Remote edits are skipped because the originating tab already bumped
+			// metadata, and we receive that change via workspace table sync.
+			// Firing onUpdate for remote edits would generate a new timestamp on
+			// every tab, creating a cross-tab metadata ping-pong loop.
 			const updateHandler = (
 				_update: Uint8Array,
 				origin: unknown,
@@ -271,6 +272,11 @@ export function createDocuments<
 			) => {
 				// Skip updates from the documents manager itself to avoid loops
 				if (origin === DOCUMENTS_ORIGIN) return;
+
+				// Skip transport-originated updates (sync, broadcast). All transport
+				// origins use Symbols by convention. The originating tab already
+				// bumped metadata; we receive that via workspace sync.
+				if (typeof origin === 'symbol') return;
 
 				// Call the user's onUpdate callback and write the returned fields
 				workspaceYdoc.transact(() => {

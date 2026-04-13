@@ -294,7 +294,7 @@ describe('createDocuments', () => {
 			expect(capturedOrigin).toBe(DOCUMENTS_ORIGIN);
 		});
 
-		test('remote update also invokes onUpdate', async () => {
+		test('non-transport remote update invokes onUpdate', async () => {
 			const { tables, documents } = setup();
 			tables.files.set({
 				id: 'f1',
@@ -305,8 +305,7 @@ describe('createDocuments', () => {
 
 			const handle = await documents.open('f1');
 
-			// Capture the state update from a local edit on a separate Y.Doc,
-			// then apply it as a "remote" update via Y.applyUpdate
+			// Apply a remote update with no origin (e.g., IndexedDB load)
 			const remoteDoc = new Y.Doc({ guid: 'f1', gc: false });
 			remoteDoc.getText('content').insert(0, 'remote edit');
 			const remoteUpdate = Y.encodeStateAsUpdate(remoteDoc);
@@ -316,16 +315,43 @@ describe('createDocuments', () => {
 			const result = tables.files.get('f1');
 			expect(result.status).toBe('valid');
 			if (result.status === 'valid') {
-				// Remote document changes now invoke onUpdate so that
-				// consumers (materializers, observers) react to content
-				// arriving via sync — not just local edits.
 				expect(result.row.updatedAt).not.toBe(0);
 			}
 
 			remoteDoc.destroy();
 		});
-	});
 
+		test('transport-originated update does NOT invoke onUpdate', async () => {
+			const { tables, documents } = setup();
+			tables.files.set({
+				id: 'f1',
+				name: 'test.txt',
+				updatedAt: 0,
+				_v: 1,
+			});
+
+			const handle = await documents.open('f1');
+
+			// Apply a remote update with a Symbol origin (simulating sync/broadcast)
+			const FAKE_TRANSPORT = Symbol('fake-transport');
+			const remoteDoc = new Y.Doc({ guid: 'f1', gc: false });
+			remoteDoc.getText('content').insert(0, 'synced edit');
+			const remoteUpdate = Y.encodeStateAsUpdate(remoteDoc);
+
+			Y.applyUpdate(handle.ydoc, remoteUpdate, FAKE_TRANSPORT);
+
+			const result = tables.files.get('f1');
+			expect(result.status).toBe('valid');
+			if (result.status === 'valid') {
+				// Transport-originated updates skip onUpdate — the originating
+				// tab already bumped metadata via workspace sync.
+				expect(result.row.updatedAt).toBe(0);
+			}
+
+			remoteDoc.destroy();
+		});
+
+	});
 	describe('close', () => {
 		test('document awareness is destroyed when document is closed', async () => {
 			const { documents } = setup({

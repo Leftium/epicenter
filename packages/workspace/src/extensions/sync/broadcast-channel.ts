@@ -2,7 +2,7 @@ import * as Y from 'yjs';
 
 /** Origin sentinel — updates applied from the BroadcastChannel carry this
  *  so the `updateV2` handler skips re-broadcasting them (prevents echo loops). */
-const BC_ORIGIN = Symbol('bc-sync');
+export const BC_ORIGIN = Symbol('bc-sync');
 
 /**
  * BroadcastChannel cross-tab sync for a Yjs document.
@@ -32,14 +32,16 @@ const BC_ORIGIN = Symbol('bc-sync');
  *   .withExtension('broadcast', broadcastChannelSync)
  * ```
  */
-export function broadcastChannelSync({ ydoc }: { ydoc: Y.Doc }) {
+export function broadcastChannelSync({ ydoc, transportOrigin }: { ydoc: Y.Doc; transportOrigin?: symbol }) {
 	if (typeof BroadcastChannel === 'undefined') return {};
 
 	const channel = new BroadcastChannel(`yjs:${ydoc.guid}`);
 
-	/** Broadcast local changes to other tabs. */
+	/** Broadcast local changes to other tabs. Skips BC-originated and
+	 *  transport-originated (e.g., WebSocket) updates to prevent echo loops. */
 	const handleUpdate = (update: Uint8Array, origin: unknown) => {
 		if (origin === BC_ORIGIN) return;
+		if (transportOrigin && origin === transportOrigin) return;
 		channel.postMessage(update);
 	};
 	ydoc.on('updateV2', handleUpdate);

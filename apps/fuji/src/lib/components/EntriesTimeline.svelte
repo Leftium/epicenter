@@ -5,19 +5,79 @@
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TableIcon from '@lucide/svelte/icons/table-2';
+	import { createTable as createSvelteTable } from '@tanstack/svelte-table';
+	import type { ColumnDef, SortingState } from '@tanstack/table-core';
+	import {
+		getCoreRowModel,
+		getFilteredRowModel,
+		getSortedRowModel,
+	} from '@tanstack/table-core';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import { VList } from 'virtua/svelte';
 	import { goto } from '$app/navigation';
-	import { entriesState, viewState } from '$lib/entries.svelte';
+	import {
+		entriesState,
+		matchesEntrySearch,
+		viewState,
+	} from '$lib/entries.svelte';
 	import type { Entry } from '$lib/workspace';
 
 	let { entries, title }: { entries: Entry[]; title?: string } = $props();
 
-	/** Which timestamp field to use for sorting and grouping. */
-	const dateField = $derived(
-		viewState.sortBy === 'title'
-			? ('date' as const)
-			: (viewState.sortBy as 'date' | 'updatedAt' | 'createdAt'),
+	// ─── TanStack Table (sort + filter model) ──────────────────────────────
+
+	const columns: ColumnDef<Entry>[] = [
+		{ id: 'title', accessorKey: 'title' },
+		{ id: 'rating', accessorKey: 'rating' },
+		{ id: 'date', accessorKey: 'date' },
+		{ id: 'createdAt', accessorKey: 'createdAt' },
+		{ id: 'updatedAt', accessorKey: 'updatedAt' },
+	];
+
+	/** Multi-sort: non-date fields sort within date groups. */
+	const sorting = $derived(
+		({
+			date: [{ id: 'date', desc: true }],
+			updatedAt: [{ id: 'updatedAt', desc: true }],
+			createdAt: [{ id: 'createdAt', desc: true }],
+			title: [{ id: 'date', desc: true }, { id: 'title', desc: false }],
+			rating: [{ id: 'date', desc: true }, { id: 'rating', desc: true }],
+		} satisfies Record<typeof viewState.sortBy, SortingState>)[viewState.sortBy],
+	);
+
+	const table = createSvelteTable({
+		getRowId: (row) => row.id,
+		get data() {
+			return entries;
+		},
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getSortedRowModel: getSortedRowModel(),
+		getFilteredRowModel: getFilteredRowModel(),
+		state: {
+			get sorting() {
+				return sorting;
+			},
+			get globalFilter() {
+				return viewState.searchQuery;
+			},
+		},
+		globalFilterFn: (row, _columnId, filterValue) => {
+			return matchesEntrySearch(row.original, filterValue);
+		},
+	});
+
+	// ─── Date grouping (presentation only) ──────────────────────────────────
+
+	/** Which date field to use for timeline headers. */
+	const groupField = $derived(
+		({
+			date: 'date',
+			updatedAt: 'updatedAt',
+			createdAt: 'createdAt',
+			title: 'date',
+			rating: 'date',
+		} satisfies Record<typeof viewState.sortBy, 'date' | 'updatedAt' | 'createdAt'>)[viewState.sortBy],
 	);
 
 	function getDateLabel(dts: string): string {
@@ -31,23 +91,20 @@
 	type TimelineEntry = { kind: 'entry'; entry: Entry };
 	type TimelineItem = TimelineDateHeader | TimelineEntry;
 
-	/** Entries grouped by date label, sorted newest first, flattened for virtualization. */
+	/** Sorted entries with date headers inserted for the timeline. */
 	const flatItems = $derived.by((): TimelineItem[] => {
-		const field = dateField;
-		const sorted = [...entries].sort((a, b) =>
-			b[field].localeCompare(a[field]),
-		);
-
+		const rows = table.getRowModel().rows;
+		const field = groupField;
 		const items: TimelineItem[] = [];
 		let currentLabel = '';
 
-		for (const entry of sorted) {
-			const label = getDateLabel(entry[field]);
+		for (const row of rows) {
+			const label = getDateLabel(row.original[field]);
 			if (label !== currentLabel) {
 				currentLabel = label;
 				items.push({ kind: 'date-header', label });
 			}
-			items.push({ kind: 'entry', entry });
+			items.push({ kind: 'entry', entry: row.original });
 		}
 
 		return items;
@@ -74,12 +131,18 @@
 	</div>
 
 	<!-- Timeline -->
-	{#if entries.length === 0}
+	{#if table.getRowModel().rows.length === 0}
 		<div class="flex-1 overflow-y-auto">
 			<Empty.Root class="flex-1">
 				<Empty.Media>
 					<ClockIcon class="size-8 text-muted-foreground" />
 				</Empty.Media>
+			{#if viewState.searchQuery}
+				<Empty.Title>No entries match your search</Empty.Title>
+				<Empty.Description
+					>Try a different search term or clear your filters.</Empty.Description
+				>
+			{:else}
 				<Empty.Title>No entries yet</Empty.Title>
 				<Empty.Description
 					>Create your first entry to get started.</Empty.Description
@@ -94,6 +157,7 @@
 						New Entry
 					</Button>
 				</Empty.Content>
+			{/if}
 			</Empty.Root>
 		</div>
 	{:else}
@@ -121,7 +185,7 @@
 								{item.entry.title || 'Untitled'}
 							</span>
 							<span class="shrink-0 text-xs text-muted-foreground">
-								{format(DateTimeString.toDate(item.entry[dateField]), 'h:mm a')}
+							{format(DateTimeString.toDate(item.entry[groupField]), 'h:mm a')}
 							</span>
 						</div>
 						{#if item.entry.subtitle}

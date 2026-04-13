@@ -8,7 +8,7 @@ metadata:
 
 # defineErrors
 
-> **Related Skills**: See `error-handling` for trySync/tryAsync usage. See `services-layer` for service architecture and namespace exports.
+> **Related Skills**: See `error-handling` for trySync/tryAsync usage and toast-on-error patterns. See `services-layer` for service architecture and namespace exports.
 
 ## When to Apply This Skill
 
@@ -42,6 +42,15 @@ import {
 7. Use `InferError<typeof FooError.Variant>` to extract a single variant's type when needed
 8. **Variant names describe the specific failure mode** — never use generic names like `Service`, `Error`, or `Failed`
 9. Aim for 2–5 variants per domain, each named by failure mode
+10. **Write `.message` for end-user readability** — `toastOnError` shows `.message` as the muted toast description below the bold title. Write messages that make sense to users, not just developers. Avoid raw paths, status codes, or stack traces as the primary message. Include them after a human-readable prefix:
+
+```typescript
+// ✅ GOOD — human-readable prefix, technical detail after
+message: `Could not save recording: ${extractErrorMessage(cause)}`
+
+// ❌ BAD — raw technical output as the entire message
+message: `POST /api/recordings 500: ${extractErrorMessage(cause)}`
+```
 
 ## Patterns
 

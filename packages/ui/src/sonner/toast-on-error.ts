@@ -19,16 +19,12 @@ import type { Result } from 'wellcrafted/result';
  *
  * @example
  * ```typescript
- * // Wrapping before destructure
- * const { data, error } = toastOnError(await api.billing.portal(), 'Could not open billing portal');
- * if (error) return;
- *
- * // Already destructured—toast and return in one expression
+ * // Destructure first, toast and return in one expression (preferred)
  * const { data, error } = await api.billing.portal();
  * if (error) return toastOnError(error, 'Could not open billing portal');
  *
- * // Fire-and-forget
- * bookmarkState.toggle(tab).then(r => toastOnError(r, 'Failed to toggle bookmark'));
+ * // Fire-and-forget in onclick handlers
+ * bookmarkState.toggle(tab).then((r) => toastOnError(r, 'Failed to toggle bookmark'));
  * ```
  */
 export function toastOnError<TInput extends Result<unknown, AnyTaggedError> | AnyTaggedError>(

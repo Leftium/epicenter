@@ -8,6 +8,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
+	import { extractErrorMessage } from 'wellcrafted/error';
 	import {
 		balanceQuery,
 		billingKeys,
@@ -269,7 +270,7 @@
 										queryClient.invalidateQueries({ queryKey: billingKeys.all });
 									}
 								},
-								onError: () => toast.error('Upgrade failed. Please try again.'),
+							onError: (error) => toast.error('Upgrade failed', { description: extractErrorMessage(error) }),
 							},
 						);
 					}

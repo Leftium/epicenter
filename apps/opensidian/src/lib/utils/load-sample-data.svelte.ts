@@ -1,4 +1,5 @@
 import { toast } from '@epicenter/ui/sonner';
+import { extractErrorMessage } from 'wellcrafted/error';
 import { fs } from '$lib/client';
 
 function createSampleDataLoader() {
@@ -36,9 +37,9 @@ function createSampleDataLoader() {
 				);
 				toast.success('Loaded sample data');
 			} catch (err) {
-				toast.error(
-					err instanceof Error ? err.message : 'Failed to load sample data',
-				);
+				toast.error('Failed to load sample data', {
+					description: extractErrorMessage(err),
+				});
 				console.error(err);
 			} finally {
 				seeding = false;

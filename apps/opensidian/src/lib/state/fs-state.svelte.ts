@@ -1,6 +1,7 @@
 import type { FileId, FileRow } from '@epicenter/filesystem';
 import { fromTable } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
+import { extractErrorMessage } from 'wellcrafted/error';
 import { SvelteSet } from 'svelte/reactivity';
 import { fs, workspace } from '$lib/client';
 
@@ -165,7 +166,7 @@ function createFsState() {
 		try {
 			await fn();
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : fallbackMessage);
+			toast.error(fallbackMessage, { description: extractErrorMessage(err) });
 			console.error(err);
 		}
 	}

@@ -733,7 +733,7 @@ That means this:
 createWorkspace(definition)
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('sync', createSyncExtension({ ... }))
-	.withWorkspaceExtension('markdown', markdownMaterializer({ ... }));
+	.withWorkspaceExtension('markdown', (ctx) => createMarkdownMaterializer(ctx, { dir: '...' }).table('notes'));
 ```
 
 Not this:
@@ -837,8 +837,8 @@ import { type } from 'arktype';
 import { createWorkspace, defineTable } from '@epicenter/workspace';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import {
-	markdownMaterializer,
-	titleFilenameSerializer,
+	createMarkdownMaterializer,
+	slugFilename,
 } from '@epicenter/workspace/extensions/materializer/markdown';
 
 const notes = defineTable(
@@ -860,23 +860,53 @@ const workspace = createWorkspace({
 			filePath: '/tmp/epicenter/notes-workspace.db',
 		}),
 	)
-	.withWorkspaceExtension('markdown', (context) =>
-		markdownMaterializer({
-			directory: '/tmp/epicenter/markdown',
-			tables: {
-				notes: {
-					serializer: titleFilenameSerializer('title'),
-				},
-			},
-		})(context),
+	.withWorkspaceExtension('markdown', (ctx) =>
+		createMarkdownMaterializer(ctx, { dir: '/tmp/epicenter/markdown' })
+			.table('notes', { serialize: slugFilename('title') }),
 	);
 
 void workspace;
+
+### SQLite materializer
+
+The SQLite materializer is exported at `@epicenter/workspace/extensions/materializer/sqlite`. It mirrors workspace table rows into queryable SQLite tables with optional FTS5 full-text search. Like the markdown materializer, it uses a builder pattern with `.table()` opt-in.
+
+```typescript
+import { Database } from 'bun:sqlite';
+import { createWorkspace, defineTable } from '@epicenter/workspace';
+import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+import { createSqliteMaterializer } from '@epicenter/workspace/extensions/materializer/sqlite';
+
+const posts = defineTable(
+	type({
+		id: 'string',
+		title: 'string',
+		body: 'string',
+		published: 'boolean',
+		_v: '1',
+	}),
+);
+
+const workspace = createWorkspace({
+	id: 'epicenter.blog',
+	tables: { posts },
+})
+	.withExtension(
+		'persistence',
+		filesystemPersistence({ filePath: '/tmp/epicenter/blog.db' }),
+	)
+	.withWorkspaceExtension('sqlite', (ctx) =>
+		createSqliteMaterializer(ctx, { db: new Database('/tmp/epicenter/blog.db') })
+			.table('posts', { fts: ['title', 'body'] }),
+	);
+
+// After whenReady, query the materialized data:
+// workspace.extensions.sqlite.search('posts', 'hello');
+// workspace.extensions.sqlite.count('posts');
+// workspace.extensions.sqlite.rebuild('posts');
 ```
 
-### Honest note about SQLite materialization
-
-There is SQLite mirror code in `src/extensions/materializer/sqlite`, but it is not in the current `package.json` exports map for `@epicenter/workspace`. This README sticks to public APIs you can actually import today. If that export changes later, the README should change with it—not before.
+The `MirrorDatabase` interface is structurally compatible with `bun:sqlite`'s `Database` and `better-sqlite3`'s `Database`—no wrapper needed. Pass your driver directly.
 
 ## Workspace Dependencies
 
@@ -1145,8 +1175,8 @@ Historically, Epicenter called many of these things “providers.” In the curr
 | `@epicenter/workspace/extensions/persistence/sqlite` | `filesystemPersistence` | Yes |
 | `@epicenter/workspace/extensions/sync/websocket` | `createSyncExtension`, `toWsUrl`, sync types | Yes |
 | `@epicenter/workspace/extensions/sync/broadcast-channel` | BroadcastChannel sync extension | Yes |
-| `@epicenter/workspace/extensions/materializer/markdown` | `markdownMaterializer`, serializers | Yes |
-| `src/extensions/materializer/sqlite/*` | SQLite mirror internals | Not exported from package.json |
+| `@epicenter/workspace/extensions/materializer/markdown` | `createMarkdownMaterializer`, serializers | Yes |
+| `@epicenter/workspace/extensions/materializer/sqlite` | `createSqliteMaterializer`, `serializeValue`, DDL helpers, types | Yes |
 
 ### Create workspace
 

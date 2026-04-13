@@ -3,26 +3,41 @@ import type { AnyTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
 /**
- * Show an error toast when a Result contains an error, then pass the Result through.
+ * Show an error toast and pass through the value unchanged.
  *
- * Works as both a `.then()` callback and a direct wrapper—the Result is
- * returned untouched so callers can still destructure `{ data, error }`.
+ * Accepts either a full `Result` or a bare tagged error. When given a Result,
+ * it toasts only if the error branch is present. When given a bare error, it
+ * always toasts. Either way the input is returned unchanged—so you can wrap
+ * expressions or slot it into `return` statements without disrupting control flow.
+ *
+ * The title appears as the bold headline. The error's `.message`—typically the
+ * detailed output from `defineErrors`—is shown as the muted description below.
+ *
+ * @param resultOrError - A `Result` to inspect, or a bare tagged error to toast
+ * @param title - Human-readable headline shown in the toast
+ * @returns The same `resultOrError`, unchanged
  *
  * @example
  * ```typescript
- * // Chainable — fire-and-forget in onclick handlers
- * bookmarkState.toggle(tab).then(toastOnError);
+ * // Wrapping before destructure
+ * const { data, error } = toastOnError(await api.billing.portal(), 'Could not open billing portal');
+ * if (error) return;
  *
- * // Wrapping — when you need the result afterward
- * const { data, error } = toastOnError(await bookmarkState.toggle(tab));
- * if (error) return; // already toasted
+ * // Already destructured—toast and return in one expression
+ * const { data, error } = await api.billing.portal();
+ * if (error) return toastOnError(error, 'Could not open billing portal');
+ *
+ * // Fire-and-forget
+ * bookmarkState.toggle(tab).then(r => toastOnError(r, 'Failed to toggle bookmark'));
  * ```
  */
-export function toastOnError<TResult extends Result<unknown, AnyTaggedError>>(
-	result: TResult,
-): TResult {
-	if (result.error) {
-		toast.error(result.error.message);
+export function toastOnError<TInput extends Result<unknown, AnyTaggedError> | AnyTaggedError>(
+	resultOrError: TInput,
+	title: string,
+): TInput {
+	const error = 'data' in resultOrError ? resultOrError.error : resultOrError;
+	if (error) {
+		toast.error(title, { description: error.message });
 	}
-	return result;
+	return resultOrError;
 }

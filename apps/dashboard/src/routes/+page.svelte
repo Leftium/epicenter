@@ -5,6 +5,8 @@
 	import * as Tabs from '@epicenter/ui/tabs';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
+	import { extractErrorMessage } from 'wellcrafted/error';
+	import { toastOnError } from '@epicenter/ui/sonner';
 	import { api } from '$lib/api';
 	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
 	import CreditBalance from '$lib/components/CreditBalance.svelte';
@@ -24,10 +26,7 @@
 	/** Open Stripe billing portal via the API. */
 	async function openBillingPortal() {
 		const { data, error } = await api.billing.portal();
-		if (error) {
-			toast.error('Could not open billing portal.');
-			return;
-		}
+		if (error) return toastOnError(error, 'Could not open billing portal');
 		if (data.url) window.location.href = data.url;
 	}
 
@@ -79,7 +78,7 @@
 						queryClient.invalidateQueries({ queryKey: billingKeys.all });
 					}
 				},
-				onError: () => toast.error('Top-up failed. Please try again.'),
+				onError: (error) => toast.error('Top-up failed', { description: extractErrorMessage(error) }),
 			});
 		}}
 		disabled={topUp.isPending}

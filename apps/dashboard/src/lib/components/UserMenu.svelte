@@ -8,7 +8,7 @@
 	import SunIcon from '@lucide/svelte/icons/sun';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { mode, toggleMode } from 'mode-watcher';
-	import { toast } from 'svelte-sonner';
+	import { toastOnError } from '@epicenter/ui/sonner';
 	import { api } from '$lib/api';
 	import { auth } from '$lib/auth';
 	import { balanceQuery } from '$lib/query/billing';
@@ -33,10 +33,7 @@
 	/** Open Stripe billing portal via the API. */
 	async function openBillingPortal() {
 		const { data, error } = await api.billing.portal();
-		if (error) {
-			toast.error('Could not open billing portal.');
-			return;
-		}
+		if (error) return toastOnError(error, 'Could not open billing portal');
 		if (data.url) window.location.href = data.url;
 	}
 	const isDark = $derived(mode.current === 'dark');

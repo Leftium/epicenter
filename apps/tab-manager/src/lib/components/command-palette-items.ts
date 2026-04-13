@@ -198,7 +198,7 @@ export const items: CommandPaletteItem[] = [
 					const tabsWithUrls = allTabs.filter((tab) => tab.url);
 					await Promise.allSettled(
 						tabsWithUrls.map((tab) =>
-							savedTabState.save(tab).then(toastOnError),
+						savedTabState.save(tab).then((r) => toastOnError(r, 'Failed to save tab')),
 						),
 					);
 				},

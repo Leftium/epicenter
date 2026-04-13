@@ -396,18 +396,33 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		}
 
 		/**
-		 * Awareness `'update'` handler — broadcasts local presence changes
-		 * (cursor position, user name, selection, etc.) to all connected peers.
+		 * Awareness `'update'` handler — sends local presence changes
+		 * (cursor position, user name, selection, etc.) to the server.
+		 *
+		 * y-protocols emits `awareness.on('update', (changes, origin))` where
+		 * `origin` is `'local'` for `setLocalState` calls and the value passed
+		 * to `applyAwarenessUpdate` for remote updates. We skip SYNC_ORIGIN
+		 * to avoid echoing server-delivered awareness back to the server.
+		 *
+		 * Note: y-websocket has the same gap (ignores origin in its awareness
+		 * handler). We fix it here to avoid unnecessary server round-trips.
 		 */
 		function handleAwarenessUpdate({
-			added,
-			updated,
-			removed,
-		}: {
-			added: number[];
-			updated: number[];
-			removed: number[];
-		}) {
+				added,
+				updated,
+				removed,
+			}: {
+				added: number[];
+				updated: number[];
+				removed: number[];
+			},
+			origin: unknown,
+		) {
+			// Server-delivered awareness arrives via applyAwarenessUpdate with
+			// SYNC_ORIGIN. Re-sending it would waste a round-trip (the server
+			// already has this state). The awareness clock prevents infinite
+			// loops, but the extra traffic is unnecessary.
+			if (origin === SYNC_ORIGIN) return;
 			const changedClients = added.concat(updated).concat(removed);
 			send(
 				encodeAwareness({

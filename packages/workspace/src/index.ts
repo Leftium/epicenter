@@ -72,7 +72,11 @@ export { generateGuid, generateId, Id as createId } from './shared/id';
 // DATE UTILITIES
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { DateIsoString, ParsedDateTimeString, TimezoneId } from './shared/datetime-string';
+export type {
+	DateIsoString,
+	ParsedDateTimeString,
+	TimezoneId,
+} from './shared/datetime-string';
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -110,7 +114,7 @@ export { defineWorkspace } from './workspace/define-workspace';
 // WORKSPACE CREATION
 // ════════════════════════════════════════════════════════════════════════════
 
-export { DOCUMENTS_ORIGIN } from './workspace/create-document';
+export { DOCUMENTS_ORIGIN } from './workspace/create-documents';
 export { createWorkspace } from './workspace/create-workspace';
 
 // ════════════════════════════════════════════════════════════════════════════

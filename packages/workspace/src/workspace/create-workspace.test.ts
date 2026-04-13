@@ -16,7 +16,7 @@ import { type } from 'arktype';
 import * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { bytesToBase64 } from '../shared/crypto/index.js';
-import { createDocuments } from './create-document.js';
+import { createDocuments } from './create-documents.js';
 import { createTables } from './create-tables.js';
 import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';

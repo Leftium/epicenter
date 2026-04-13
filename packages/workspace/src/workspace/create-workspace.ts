@@ -60,7 +60,7 @@ import {
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { createAwareness } from './create-awareness.js';
-import { createDocuments } from './create-document.js';
+import { createDocuments } from './create-documents.js';
 import { createKv } from './create-kv.js';
 import { createTable } from './create-table.js';
 import {

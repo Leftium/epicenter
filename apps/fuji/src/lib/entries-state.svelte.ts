@@ -12,8 +12,8 @@
  * ```
  */
 
-import { goto } from '$app/navigation';
 import { fromTable } from '@epicenter/svelte';
+import { goto } from '$app/navigation';
 import { workspace } from '$lib/client';
 import type { EntryId } from '$lib/workspace';
 

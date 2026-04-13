@@ -1,53 +1,72 @@
 /**
- * Reactive Fuji view preferences.
+ * Reactive Fuji view preferences backed by URL search params.
  *
- * Holds persisted UI choices like view mode, sort order, and search query.
+ * View mode, sort order, and search query live in the URL so they're
+ * bookmarkable, shareable, and work with browser back/forward.
+ * Default values are elided from the URL to keep it clean—`/` means
+ * table view, sorted by date, no search.
+ *
  * The entry collection and search helpers live in `entries-state.svelte.ts`.
  */
 
-import { fromKv } from '@epicenter/svelte';
-import { workspace } from '$lib/client';
+import { goto } from '$app/navigation';
+import { page } from '$app/state';
+
+type ViewMode = 'table' | 'timeline';
+type SortBy = 'date' | 'updatedAt' | 'createdAt' | 'title' | 'rating';
+
+/** Update a single URL search param, removing it when null to keep URLs clean. */
+function setSearchParam(key: string, value: string | null) {
+	const params = new URLSearchParams(page.url.searchParams);
+	if (value === null) {
+		params.delete(key);
+	} else {
+		params.set(key, value);
+	}
+	const search = params.toString();
+	goto(`${page.url.pathname}${search ? `?${search}` : ''}${page.url.hash}`, {
+		replaceState: true,
+		noScroll: true,
+		keepFocus: true,
+	});
+}
 
 function createViewState() {
-	const viewModeKv = fromKv(workspace.kv, 'viewMode');
-	const sortByKv = fromKv(workspace.kv, 'sortBy');
-	let searchQuery = $state('');
-
 	return {
-		get viewMode(): 'table' | 'timeline' {
-			return viewModeKv.current ?? 'table';
+		get viewMode(): ViewMode {
+			return (page.url.searchParams.get('view') as ViewMode) ?? 'table';
 		},
 
 		/**
 		 * Toggle between table and timeline view modes.
 		 *
-		 * Persisted via workspace KV so the preference survives reloads
-		 * and syncs across devices.
+		 * Updates the `view` search param. Default ('table') is elided
+		 * from the URL so `/` always means table view.
 		 */
 		toggleViewMode() {
-			viewModeKv.current =
-				viewModeKv.current === 'table' ? 'timeline' : 'table';
+			const next: ViewMode = this.viewMode === 'table' ? 'timeline' : 'table';
+			setSearchParam('view', next === 'table' ? null : next);
 		},
 
-		get sortBy(): 'date' | 'updatedAt' | 'createdAt' | 'title' | 'rating' {
-			return sortByKv.current ?? 'date';
+		get sortBy(): SortBy {
+			return (page.url.searchParams.get('sort') as SortBy) ?? 'date';
 		},
 
 		/**
-		 * Set the sort preference. Persisted via workspace KV so it survives
-		 * reloads and syncs across devices.
+		 * Set the sort preference via the `sort` search param.
+		 * Default ('date') is elided to keep URLs clean.
 		 */
-		set sortBy(value: 'date' | 'updatedAt' | 'createdAt' | 'title' | 'rating') {
-			sortByKv.current = value;
+		set sortBy(value: SortBy) {
+			setSearchParam('sort', value === 'date' ? null : value);
 		},
 
 		get searchQuery() {
-			return searchQuery;
+			return page.url.searchParams.get('q') ?? '';
 		},
 
-		/** Update the search query. Used by the sidebar search input. */
+		/** Update the search query via the `q` search param. Empty values are elided. */
 		set searchQuery(value: string) {
-			searchQuery = value;
+			setSearchParam('q', value || null);
 		},
 	};
 }

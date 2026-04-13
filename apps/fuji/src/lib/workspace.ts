@@ -24,7 +24,6 @@
 import {
 	createWorkspace,
 	DateTimeString,
-	defineKv,
 	defineMutation,
 	defineTable,
 	defineWorkspace,
@@ -116,10 +115,6 @@ export type Entry = InferTableRow<typeof entriesTable>;
 const fujiWorkspace = defineWorkspace({
 	id: 'epicenter.fuji' as const,
 	tables: { entries: entriesTable },
-	kv: {
-		viewMode: defineKv(type("'table' | 'timeline'")),
-		sortBy: defineKv(type("'date' | 'updatedAt' | 'createdAt' | 'title' | 'rating'")),
-	},
 });
 
 // ─── Factory ──────────────────────────────────────────────────────────────────

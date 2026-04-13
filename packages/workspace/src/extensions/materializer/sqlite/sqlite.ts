@@ -2,8 +2,9 @@
  * SQLite materializer—mirrors workspace table rows into queryable SQLite tables.
  *
  * Follows the same builder pattern as the markdown materializer:
- * `createSqliteMaterializer(ctx, config)` returns a chainable builder where
- * `.table(name, config?)` opts in per table. Nothing materializes by default.
+ * `createSqliteMaterializer({ tables, definitions, whenReady }, { db })` returns
+ * a chainable builder where `.table(name, config?)` opts in per table. Nothing
+ * materializes by default.
  *
  * The materializer awaits `whenReady` before touching SQLite, so persistence
  * and sync have loaded before the initial flush. All `.table()` calls happen

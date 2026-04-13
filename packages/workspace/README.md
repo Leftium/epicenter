@@ -1176,7 +1176,7 @@ Historically, Epicenter called many of these things “providers.” In the curr
 | `@epicenter/workspace/extensions/sync/websocket` | `createSyncExtension`, `toWsUrl`, sync types | Yes |
 | `@epicenter/workspace/extensions/sync/broadcast-channel` | BroadcastChannel sync extension | Yes |
 | `@epicenter/workspace/extensions/materializer/markdown` | `createMarkdownMaterializer`, serializers | Yes |
-| `@epicenter/workspace/extensions/materializer/sqlite` | `createSqliteMaterializer`, `serializeValue`, DDL helpers, types | Yes |
+| `@epicenter/workspace/extensions/materializer/sqlite` | `createSqliteMaterializer`, `generateDdl`, types | Yes |
 
 ### Create workspace
 

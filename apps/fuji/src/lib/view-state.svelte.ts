@@ -15,6 +15,9 @@ import { page } from '$app/state';
 type ViewMode = 'table' | 'timeline';
 type SortBy = 'date' | 'updatedAt' | 'createdAt' | 'title' | 'rating';
 
+const VIEW_MODES: ViewMode[] = ['table', 'timeline'];
+const SORT_KEYS: SortBy[] = ['date', 'updatedAt', 'createdAt', 'title', 'rating'];
+
 /** Update a single URL search param, removing it when null to keep URLs clean. */
 function setSearchParam(key: string, value: string | null) {
 	const params = new URLSearchParams(page.url.searchParams);
@@ -34,7 +37,8 @@ function setSearchParam(key: string, value: string | null) {
 function createViewState() {
 	return {
 		get viewMode(): ViewMode {
-			return (page.url.searchParams.get('view') as ViewMode) ?? 'table';
+			const raw = page.url.searchParams.get('view');
+			return VIEW_MODES.includes(raw as ViewMode) ? (raw as ViewMode) : 'table';
 		},
 
 		/**
@@ -49,7 +53,8 @@ function createViewState() {
 		},
 
 		get sortBy(): SortBy {
-			return (page.url.searchParams.get('sort') as SortBy) ?? 'date';
+			const raw = page.url.searchParams.get('sort');
+			return SORT_KEYS.includes(raw as SortBy) ? (raw as SortBy) : 'date';
 		},
 
 		/**

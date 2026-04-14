@@ -184,11 +184,12 @@
 						</h3>
 					</div>
 				{:else}
-					<!-- svelte-ignore a11y_click_events_have_key_events -->
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
+						role="button"
+						tabindex="0"
 						class="group mx-4 flex cursor-pointer flex-col gap-0.5 rounded-lg p-3 text-sm transition-colors hover:bg-accent/50"
 						onclick={() => goto(`/entries/${item.entry.id}`)}
+						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goto(`/entries/${item.entry.id}`); } }}
 					>
 						<div class="flex items-start justify-between gap-2">
 							<span class="font-medium line-clamp-1">

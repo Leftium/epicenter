@@ -443,6 +443,29 @@ export function createWorkspace<
 		// The builder methods use generics at the type level for progressive accumulation,
 		// but the runtime implementations use wider types for storage (registrations array).
 		// The cast at the end bridges the gap — type safety is enforced at call sites.
+
+		/**
+		 * Register an extension for both the workspace Y.Doc and every document Y.Doc.
+		 *
+		 * Extensions initialize in registration order. The factory receives a `whenReady`
+		 * promise that resolves when all previously registered extensions have finished
+		 * initializing. Extensions that await this promise create a sequential dependency;
+		 * extensions that ignore it run in parallel with earlier ones.
+		 *
+		 * The typical chain is persistence → encryption/unlock → sync. Persistence loads
+		 * local state first, so sync only exchanges the delta with the server.
+		 *
+		 * The factory only receives `SharedExtensionContext` (`ydoc`, `awareness`, `whenReady`)
+		 * since the same factory runs for both workspace and document Y.Docs. Use
+		 * `withWorkspaceExtension` if you need tables, KV, or other workspace-specific context.
+		 *
+		 * @example
+		 * ```typescript
+		 * createWorkspace(definition)
+		 *   .withExtension('persistence', filesystemPersistence({ filePath: '...' }))
+		 *   .withExtension('sync', createSyncExtension({ url: ... }))
+		 * ```
+		 */
 		const builder = Object.assign(client, {
 			withExtension<
 				TKey extends string,
@@ -469,6 +492,22 @@ export function createWorkspace<
 				return applyWorkspaceExtension(key, factory);
 			},
 
+			/**
+			 * Register an extension for the workspace Y.Doc only.
+			 *
+			 * Same initialization ordering as `withExtension`—the factory receives a `whenReady`
+			 * promise from all prior extensions. Use this when the factory needs workspace-specific
+			 * context (tables, KV, awareness, documents) that `withExtension` doesn't provide.
+			 *
+			 * @example
+			 * ```typescript
+			 * createWorkspace(definition)
+			 *   .withExtension('persistence', filesystemPersistence({ filePath: '...' }))
+			 *   .withWorkspaceExtension('materializer', (ctx) =>
+			 *     createMarkdownMaterializer(ctx, { dir: './data' })
+			 *       .table('notes', { serialize: slugFilename('title') }))
+			 * ```
+			 */
 			withWorkspaceExtension<
 				TKey extends string,
 				TExports extends Record<string, unknown>,

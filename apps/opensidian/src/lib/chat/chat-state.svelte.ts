@@ -25,6 +25,8 @@ import {
 	generateChatMessageId,
 	generateConversationId,
 } from '$lib/workspace/definition';
+import { page } from '$app/state';
+import { setSearchParam } from '$lib/url-state';
 
 function getStringValue(value: JsonValue | undefined, fallback: string) {
 	return typeof value === 'string' ? value : fallback;
@@ -298,19 +300,22 @@ function createAiChatState() {
 
 		const firstConversation = conversations[0];
 		if (!firstConversation) return;
-		if (handles.has(activeConversationId)) return;
+		if (handles.has(getActiveConversationId())) return;
 
-		activeConversationId = firstConversation.id as ConversationId;
-		refreshFns.get(activeConversationId)?.();
+		const newActiveId = firstConversation.id as ConversationId;
+		setSearchParam('chat', newActiveId);
+		refreshFns.get(newActiveId)?.();
 	}
 
-	let activeConversationId = $state<ConversationId>('' as ConversationId);
+	function getActiveConversationId(): ConversationId {
+		return (page.url.searchParams.get('chat') ?? '') as ConversationId;
+	}
 
 	const _unobserveConversations = workspace.tables.conversations.observe(() => {
 		reconcileHandles();
 	});
 	const _unobserveChatMessages = workspace.tables.chatMessages.observe(() => {
-		refreshFns.get(activeConversationId)?.();
+		refreshFns.get(getActiveConversationId())?.();
 	});
 
 	void workspace.whenReady.then(() => {
@@ -319,16 +324,17 @@ function createAiChatState() {
 
 		const newId = ensureDefaultConversation();
 		if (newId) {
-			activeConversationId = newId;
-			refreshFns.get(activeConversationId)?.();
+			setSearchParam('chat', newId);
+			refreshFns.get(newId)?.();
 			return;
 		}
 
 		const firstConversation = conversations[0];
 		if (!firstConversation) return;
 
-		activeConversationId = firstConversation.id as ConversationId;
-		refreshFns.get(activeConversationId)?.();
+		const activeId = firstConversation.id as ConversationId;
+		setSearchParam('chat', activeId);
+		refreshFns.get(activeId)?.();
 	});
 
 	reconcileHandles();
@@ -336,7 +342,7 @@ function createAiChatState() {
 	function newConversation() {
 		const id = generateConversationId();
 		const now = Date.now();
-		const active = handles.get(activeConversationId);
+		const active = handles.get(getActiveConversationId());
 
 		workspace.tables.conversations.set({
 			id,
@@ -348,7 +354,7 @@ function createAiChatState() {
 			_v: 1,
 		});
 
-		activeConversationId = id;
+		setSearchParam('chat', id);
 		refreshFns.get(id)?.();
 
 		return id;
@@ -365,7 +371,7 @@ function createAiChatState() {
 
 	return {
 		get active() {
-			return handles.get(activeConversationId);
+			return handles.get(getActiveConversationId());
 		},
 
 		get conversations() {
@@ -377,27 +383,27 @@ function createAiChatState() {
 		},
 
 		get messages() {
-			return handles.get(activeConversationId)?.messages ?? [];
+			return handles.get(getActiveConversationId())?.messages ?? [];
 		},
 
 		get isLoading() {
-			return handles.get(activeConversationId)?.isLoading ?? false;
+			return handles.get(getActiveConversationId())?.isLoading ?? false;
 		},
 
 		get provider() {
-			return handles.get(activeConversationId)?.provider ?? DEFAULT_PROVIDER;
+			return handles.get(getActiveConversationId())?.provider ?? DEFAULT_PROVIDER;
 		},
 		set provider(value: Provider) {
-			const active = handles.get(activeConversationId);
+			const active = handles.get(getActiveConversationId());
 			if (!active) return;
 			active.provider = value;
 		},
 
 		get model() {
-			return handles.get(activeConversationId)?.model ?? DEFAULT_MODEL;
+			return handles.get(getActiveConversationId())?.model ?? DEFAULT_MODEL;
 		},
 		set model(value: string) {
-			const active = handles.get(activeConversationId);
+			const active = handles.get(getActiveConversationId());
 			if (!active) return;
 			active.model = value;
 		},
@@ -407,23 +413,23 @@ function createAiChatState() {
 		},
 
 		sendMessage(content: string) {
-			handles.get(activeConversationId)?.sendMessage(content);
+			handles.get(getActiveConversationId())?.sendMessage(content);
 		},
 
 		approveToolCall(approvalId: string) {
-			handles.get(activeConversationId)?.approveToolCall(approvalId);
+			handles.get(getActiveConversationId())?.approveToolCall(approvalId);
 		},
 
 		denyToolCall(approvalId: string) {
-			handles.get(activeConversationId)?.denyToolCall(approvalId);
+			handles.get(getActiveConversationId())?.denyToolCall(approvalId);
 		},
 
 		stop() {
-			handles.get(activeConversationId)?.stop();
+			handles.get(getActiveConversationId())?.stop();
 		},
 
 		reload() {
-			handles.get(activeConversationId)?.reload();
+			handles.get(getActiveConversationId())?.reload();
 		},
 
 		newConversation,

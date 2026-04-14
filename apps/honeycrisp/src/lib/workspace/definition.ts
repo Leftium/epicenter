@@ -6,12 +6,11 @@
  * bodies for collaborative editing via Tiptap + y-prosemirror.
  *
  * Contains branded NoteId/FolderId types, folders and notes table definitions
- * with DateTimeString timestamps, KV settings, and the workspace definition.
+ * with DateTimeString timestamps, and the workspace definition.
  */
 
 import {
 	DateTimeString,
-	defineKv,
 	defineTable,
 	defineWorkspace,
 	type InferTableRow,
@@ -115,13 +114,4 @@ export type Note = InferTableRow<typeof notesTable>;
 export const honeycrisp = defineWorkspace({
 	id: 'epicenter.honeycrisp' as const,
 	tables: { folders: foldersTable, notes: notesTable },
-	kv: {
-		selectedFolderId: defineKv(FolderId.or(type('null')), null),
-		selectedNoteId: defineKv(NoteId.or(type('null')), null),
-		sortBy: defineKv(
-			type("'dateEdited' | 'dateCreated' | 'title'"),
-			'dateEdited',
-		),
-		sidebarCollapsed: defineKv(type('boolean'), false),
-	},
 });

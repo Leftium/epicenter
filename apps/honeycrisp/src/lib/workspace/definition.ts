@@ -111,7 +111,7 @@ export type Note = InferTableRow<typeof notesTable>;
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
 
-export const honeycrisp = defineWorkspace({
+export const definition = defineWorkspace({
 	id: 'epicenter.honeycrisp' as const,
 	tables: { folders: foldersTable, notes: notesTable },
 });

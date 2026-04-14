@@ -5,7 +5,7 @@
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import { workspace } from '$lib/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
-	import { opensidianDefinition } from '$lib/workspace/definition';
+	import { definition } from '$lib/workspace/definition';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
 	import { wikilinkAutocomplete } from './extensions/wikilink-autocomplete';
@@ -32,7 +32,7 @@
 			? [
 					sharedLinkDecorations,
 					wikilinkAutocomplete({
-						workspaceId: opensidianDefinition.id,
+					workspaceId: definition.id,
 						tableName: 'files',
 						getFiles: () =>
 							workspace.tables.files

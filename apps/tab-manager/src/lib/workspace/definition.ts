@@ -299,7 +299,7 @@ export const definition = defineWorkspace<
 	KvDefinitions,
 	typeof awareness
 >({
-	id: 'epicenter.tab-manager',
+	id: 'epicenter.tab-manager' as const,
 	tables,
 	kv: {},
 	awareness,

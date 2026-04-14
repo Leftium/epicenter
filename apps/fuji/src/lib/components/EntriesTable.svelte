@@ -134,7 +134,7 @@
 		},
 	];
 
-	let sorting = $state<SortingState>([
+	const sorting = $derived<SortingState>([
 		{ id: viewState.sortBy, desc: viewState.sortBy !== 'title' },
 	]);
 
@@ -148,13 +148,8 @@
 		getSortedRowModel: getSortedRowModel(),
 		getFilteredRowModel: getFilteredRowModel(),
 		onSortingChange: (updater) => {
-			if (typeof updater === 'function') {
-				sorting = updater(sorting);
-			} else {
-				sorting = updater;
-			}
-			// Propagate sort change back to persisted KV
-			const primary = sorting[0];
+			const next = typeof updater === 'function' ? updater(sorting) : updater;
+			const primary = next[0];
 			if (primary) {
 				viewState.sortBy = primary.id as typeof viewState.sortBy;
 			}
@@ -223,12 +218,13 @@
 			<Table.Body>
 				{#if table.getRowModel().rows?.length}
 					{#each table.getRowModel().rows as row (row.id)}
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<Table.Row
-							class="cursor-pointer transition-colors hover:bg-accent/50"
-							onclick={() => goto(`/entries/${row.original.id}`)}
-						>
+					<Table.Row
+						role="button"
+						tabindex="0"
+						class="cursor-pointer transition-colors hover:bg-accent/50"
+						onclick={() => goto(`/entries/${row.original.id}`)}
+						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goto(`/entries/${row.original.id}`); } }}
+					>
 							{#each row.getVisibleCells() as cell}
 								<Table.Cell
 									class={cell.column.id === 'title' ? 'max-w-[400px] truncate' : ''}

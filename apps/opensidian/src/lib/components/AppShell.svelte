@@ -9,7 +9,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TextIcon from '@lucide/svelte/icons/text';
-	import { session } from '$lib/auth';
+	import { auth } from '$lib/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import { searchState } from '$lib/state/search-state.svelte';
 	import { sidebarSearchState } from '$lib/state/sidebar-search-state.svelte';
@@ -38,7 +38,7 @@
 			onboarded = true;
 			return;
 		}
-		if (session.current) {
+		if (auth.isAuthenticated) {
 			onboarded = true;
 			return;
 		}

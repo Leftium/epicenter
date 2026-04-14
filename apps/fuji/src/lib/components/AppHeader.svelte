@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { SyncStatusPopover } from '@epicenter/svelte/sync-status-popover';
 	import { Button } from '@epicenter/ui/button';
 	import { GitHubButton, getStars } from '@epicenter/ui/github-button';
 	import { Kbd } from '@epicenter/ui/kbd';
@@ -6,9 +7,9 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
+	import { auth, workspace } from '$lib/client';
 	import { entriesState } from '$lib/entries-state.svelte';
 	import BulkAddModal from './BulkAddModal.svelte';
-	import SyncStatusIndicator from './SyncStatusIndicator.svelte';
 
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();
 </script>
@@ -51,7 +52,16 @@
 	</div>
 	<!-- Right: external links + theme -->
 	<div class="flex items-center gap-1">
-		<SyncStatusIndicator />
+		<SyncStatusPopover
+			{auth}
+			{workspace}
+			syncNoun="entries"
+			onSocialSignIn={() =>
+				auth.signInWithSocialRedirect({
+					provider: 'google',
+					callbackURL: window.location.origin,
+				})}
+		/>
 		<GitHubButton
 			repo={{ owner: 'EpicenterHQ', repo: 'epicenter' }}
 			path="/tree/main/apps/fuji"

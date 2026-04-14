@@ -1,10 +1,11 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
+	import { SyncStatusPopover } from '@epicenter/svelte/sync-status-popover';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
+	import { auth, workspace } from '$lib/client';
 	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
-	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';
 </script>
 
@@ -52,6 +53,15 @@
 		>
 			<GithubIcon class="size-4" />
 		</a>
-		<SyncStatusIndicator />
+		<SyncStatusPopover
+			{auth}
+			{workspace}
+			syncNoun="notes"
+			onSocialSignIn={() =>
+				auth.signInWithSocialRedirect({
+					provider: 'google',
+					callbackURL: window.location.origin,
+				})}
+		/>
 	</div>
 </div>

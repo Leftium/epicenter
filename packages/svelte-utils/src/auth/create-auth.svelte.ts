@@ -187,17 +187,22 @@ export type CreateAuthOptions = {
 	 *
 	 * NOT called on cold start when no prior session exists—only when a
 	 * previously authenticated session ends (explicit sign-out or server
-	 * revocation). Use this to clear local data and disconnect sync.
+	 * revocation).
+	 *
+	 * **Not awaited.** This fires from Better Auth's `useSession.subscribe()`
+	 * callback, which doesn't support async handlers. If the function is async,
+	 * it sequences internally (e.g. `await clearLocalData()` then `reload()`)
+	 * but the caller does not wait for it to complete.
 	 *
 	 * @example
 	 * ```typescript
-	 * onLogout() {
-	 *   workspace.clearLocalData();
-	 *   workspace.extensions.sync.reconnect();
+	 * async onLogout() {
+	 *   await workspace.clearLocalData();
+	 *   window.location.reload();
 	 * }
 	 * ```
 	 */
-	onLogout?: () => void;
+	onLogout?: () => void | Promise<void>;
 	/**
 	 * Platform-specific credential provider for social ID token sign-in.
 	 *

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { SyncStatusPopover } from '@epicenter/svelte/sync-status-popover';
 	import { Button } from '@epicenter/ui/button';
 	import { CommandPalette } from '@epicenter/ui/command-palette';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
@@ -19,9 +20,9 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import { ModeWatcher } from 'mode-watcher';
+	import { auth, workspace } from '$lib/client';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { items } from '$lib/components/command-palette-items';
-	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
@@ -172,7 +173,12 @@
 				>
 					<ZapIcon />
 				</Button>
-				<SyncStatusIndicator />
+				<SyncStatusPopover
+					{auth}
+					{workspace}
+					syncNoun="tabs"
+					onSocialSignIn={() => auth.signInWithSocialPopup()}
+				/>
 			</div>
 		</header>
 		<!-- Gate on browser state seed so child components can read data synchronously -->

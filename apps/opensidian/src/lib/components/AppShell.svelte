@@ -9,6 +9,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TextIcon from '@lucide/svelte/icons/text';
+	import { session } from '$lib/auth';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import { searchState } from '$lib/state/search-state.svelte';
 	import { sidebarSearchState } from '$lib/state/sidebar-search-state.svelte';
@@ -27,6 +28,9 @@
 	let chatOpen = $state(false);
 
 	// ── First-visit onboarding ──────────────────────────────────────
+	// Only auto-seed for anonymous visitors. Authenticated users get
+	// their data from sync — seeding before sync finishes would create
+	// duplicates (new CRDT IDs locally + old IDs from the server).
 	let onboarded = false;
 	$effect(() => {
 		if (onboarded) return;
@@ -34,7 +38,11 @@
 			onboarded = true;
 			return;
 		}
-		// Empty file tree on first render — seed data, open terminal, show welcome.
+		if (session.current) {
+			onboarded = true;
+			return;
+		}
+		// Empty file tree + anonymous — seed demo data, open terminal, show welcome.
 		onboarded = true;
 		sampleDataLoader.load().then(() => {
 			const readme = fsState.walkTree((id, row) => {

@@ -24,7 +24,7 @@
 
 import { page } from '$app/state';
 import type { FolderId, NoteId } from '$lib/workspace';
-import { setSearchParam } from '$lib/url-state';
+import { setSearchParam } from '$lib/search-params';
 import { foldersState } from './folders.svelte';
 import { notesState } from './notes.svelte';
 

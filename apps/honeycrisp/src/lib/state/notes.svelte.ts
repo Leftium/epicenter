@@ -2,11 +2,8 @@
  * Reactive notes state for Honeycrisp.
  *
  * Manages note CRUD operations and reactive note collections. Backed by
- * a Y.Doc CRDT table, so notes sync across devices. Uses a factory
- * function pattern to encapsulate `$state`.
- *
- * Observers are registered once during factory construction and never
- * cleaned up (SPA lifetime).
+ * a Y.Doc CRDT table, so notes sync across devices. Clears URL search
+ * param selection when a selected note is deleted.
  *
  * @example
  * ```svelte
@@ -27,7 +24,7 @@ import { workspace } from '$lib/client';
 import type { FolderId, NoteId } from '$lib/workspace';
 import { foldersState } from './folders.svelte';
 import { page } from '$app/state';
-import { setSearchParam } from '$lib/url-state';
+import { setSearchParam } from '$lib/search-params';
 
 function createNotesState() {
 	// ─── Reactive State ──────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createSqliteIndex, createYjsFileSystem } from '@epicenter/filesystem';
-import { createSkillsWorkspace } from '@epicenter/skills';
-import { createAuth } from '@epicenter/svelte/auth';
+import { createPersistedState } from '@epicenter/svelte';
+import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import {
 	createWorkspace,
 	defineMutation,
@@ -15,8 +15,13 @@ import {
 } from '@epicenter/workspace/extensions/sync/websocket';
 import { Bash } from 'just-bash';
 import Type from 'typebox';
-import { session } from '$lib/auth';
 import { opensidianDefinition } from './workspace/definition';
+
+const session = createPersistedState({
+	key: 'opensidian:authSession',
+	schema: AuthSession.or('null'),
+	defaultValue: null,
+});
 
 /**
  * Opensidian workspace infrastructure.

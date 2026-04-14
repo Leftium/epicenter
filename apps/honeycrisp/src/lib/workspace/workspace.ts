@@ -2,7 +2,7 @@
  * Honeycrisp workspace factory — creates a workspace client with domain actions.
  *
  * Includes cross-table mutations (e.g. folder deletion with note re-parenting)
- * that touch multiple tables and KV in a single logical operation. Simple
+ * that touch multiple tables in a single logical operation. Simple
  * single-table CRUD stays in the Svelte state files.
  *
  * Returns a non-terminal builder. Consumers chain `.withExtension()` to add
@@ -25,19 +25,17 @@ import Type from 'typebox';
 import { type FolderId, honeycrisp } from './definition';
 
 export function createHoneycrisp() {
-	return createWorkspace(honeycrisp).withActions(({ tables, kv }) => ({
+	return createWorkspace(honeycrisp).withActions(({ tables }) => ({
 		folders: {
 			/**
 			 * Delete a folder and move all its notes to unfiled.
 			 *
-			 * Re-parents every note in the folder (sets `folderId` to undefined),
-			 * deletes the folder row, and clears the KV selection if the deleted
-			 * folder was selected. This is the only cross-table mutation in
-			 * Honeycrisp — notes + folders + KV in one operation.
+			 * Re-parents every note in the folder (sets `folderId` to undefined)
+			 * and deletes the folder row. Selection clearing is handled by the
+			 * Svelte state layer (foldersState) via URL search params.
 			 */
 			delete: defineMutation({
-				description:
-					'Delete a folder, re-parent its notes to unfiled, and clear selection',
+				description: 'Delete a folder and re-parent its notes to unfiled',
 				input: Type.Object({ folderId: Type.String() }),
 				handler: ({ folderId: rawId }) => {
 					const folderId = rawId as FolderId;
@@ -48,9 +46,6 @@ export function createHoneycrisp() {
 						tables.notes.update(note.id, { folderId: undefined });
 					}
 					tables.folders.delete(folderId);
-					if (kv.get('selectedFolderId') === folderId) {
-						kv.set('selectedFolderId', null);
-					}
 				},
 			}),
 		},

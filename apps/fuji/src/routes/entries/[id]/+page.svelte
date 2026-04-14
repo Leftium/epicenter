@@ -36,7 +36,10 @@
 
 		let cancelled = false;
 		workspace.documents.entries.content.open(entryId).then((handle) => {
-			if (cancelled) return;
+			if (cancelled) {
+				workspace.documents.entries.content.close(entryId);
+				return;
+			}
 			currentDocHandle = handle;
 			currentYXmlFragment = handle.asRichText();
 		});

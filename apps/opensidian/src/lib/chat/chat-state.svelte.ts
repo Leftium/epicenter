@@ -26,7 +26,7 @@ import {
 	generateConversationId,
 } from '$lib/workspace/definition';
 import { page } from '$app/state';
-import { setSearchParam } from '$lib/url-state';
+import { setSearchParam } from '$lib/search-params';
 
 function getStringValue(value: JsonValue | undefined, fallback: string) {
 	return typeof value === 'string' ? value : fallback;
@@ -300,22 +300,22 @@ function createAiChatState() {
 
 		const firstConversation = conversations[0];
 		if (!firstConversation) return;
-		if (handles.has(getActiveConversationId())) return;
+		if (handles.has(activeConversationId)) return;
 
 		const newActiveId = firstConversation.id as ConversationId;
 		setSearchParam('chat', newActiveId);
 		refreshFns.get(newActiveId)?.();
 	}
 
-	function getActiveConversationId(): ConversationId {
-		return (page.url.searchParams.get('chat') ?? '') as ConversationId;
-	}
+	const activeConversationId = $derived(
+		(page.url.searchParams.get('chat') ?? '') as ConversationId,
+	);
 
 	const _unobserveConversations = workspace.tables.conversations.observe(() => {
 		reconcileHandles();
 	});
 	const _unobserveChatMessages = workspace.tables.chatMessages.observe(() => {
-		refreshFns.get(getActiveConversationId())?.();
+		refreshFns.get(activeConversationId)?.();
 	});
 
 	void workspace.whenReady.then(() => {
@@ -342,7 +342,7 @@ function createAiChatState() {
 	function newConversation() {
 		const id = generateConversationId();
 		const now = Date.now();
-		const active = handles.get(getActiveConversationId());
+		const active = handles.get(activeConversationId);
 
 		workspace.tables.conversations.set({
 			id,
@@ -371,7 +371,7 @@ function createAiChatState() {
 
 	return {
 		get active() {
-			return handles.get(getActiveConversationId());
+			return handles.get(activeConversationId);
 		},
 
 		get conversations() {
@@ -383,27 +383,27 @@ function createAiChatState() {
 		},
 
 		get messages() {
-			return handles.get(getActiveConversationId())?.messages ?? [];
+			return handles.get(activeConversationId)?.messages ?? [];
 		},
 
 		get isLoading() {
-			return handles.get(getActiveConversationId())?.isLoading ?? false;
+			return handles.get(activeConversationId)?.isLoading ?? false;
 		},
 
 		get provider() {
-			return handles.get(getActiveConversationId())?.provider ?? DEFAULT_PROVIDER;
+			return handles.get(activeConversationId)?.provider ?? DEFAULT_PROVIDER;
 		},
 		set provider(value: Provider) {
-			const active = handles.get(getActiveConversationId());
+			const active = handles.get(activeConversationId);
 			if (!active) return;
 			active.provider = value;
 		},
 
 		get model() {
-			return handles.get(getActiveConversationId())?.model ?? DEFAULT_MODEL;
+			return handles.get(activeConversationId)?.model ?? DEFAULT_MODEL;
 		},
 		set model(value: string) {
-			const active = handles.get(getActiveConversationId());
+			const active = handles.get(activeConversationId);
 			if (!active) return;
 			active.model = value;
 		},
@@ -413,23 +413,23 @@ function createAiChatState() {
 		},
 
 		sendMessage(content: string) {
-			handles.get(getActiveConversationId())?.sendMessage(content);
+			handles.get(activeConversationId)?.sendMessage(content);
 		},
 
 		approveToolCall(approvalId: string) {
-			handles.get(getActiveConversationId())?.approveToolCall(approvalId);
+			handles.get(activeConversationId)?.approveToolCall(approvalId);
 		},
 
 		denyToolCall(approvalId: string) {
-			handles.get(getActiveConversationId())?.denyToolCall(approvalId);
+			handles.get(activeConversationId)?.denyToolCall(approvalId);
 		},
 
 		stop() {
-			handles.get(getActiveConversationId())?.stop();
+			handles.get(activeConversationId)?.stop();
 		},
 
 		reload() {
-			handles.get(getActiveConversationId())?.reload();
+			handles.get(activeConversationId)?.reload();
 		},
 
 		newConversation,

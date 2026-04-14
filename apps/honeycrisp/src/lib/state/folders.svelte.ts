@@ -2,11 +2,8 @@
  * Reactive folder state for Honeycrisp.
  *
  * Manages folder CRUD operations and the reactive folder list. Backed by
- * a Y.Doc CRDT table, so folders sync across devices. Uses a factory
- * function pattern to encapsulate `$state`.
- *
- * Observers are registered once during factory construction and never
- * cleaned up (SPA lifetime).
+ * a Y.Doc CRDT table, so folders sync across devices. Clears URL search
+ * param selections when the active folder is deleted.
  *
  * @example
  * ```svelte
@@ -26,7 +23,7 @@ import { generateId } from '@epicenter/workspace';
 import { workspace } from '$lib/client';
 import type { FolderId } from '$lib/workspace';
 import { page } from '$app/state';
-import { setSearchParam } from '$lib/url-state';
+import { setSearchParam } from '$lib/search-params';
 
 function createFoldersState() {
 	// ─── Reactive State ──────────────────────────────────────────────────

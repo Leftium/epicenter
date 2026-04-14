@@ -5,7 +5,7 @@ import { extractErrorMessage } from 'wellcrafted/error';
 import { SvelteSet } from 'svelte/reactivity';
 import { fs, workspace } from '$lib/client';
 import { page } from '$app/state';
-import { setSearchParam } from '$lib/url-state';
+import { setSearchParam } from '$lib/search-params';
 
 /**
  * Interaction mode discriminated union.

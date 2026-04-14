@@ -22,10 +22,10 @@
 
 import { createWorkspace, defineMutation } from '@epicenter/workspace';
 import Type from 'typebox';
-import { definition, type FolderId } from './definition';
+import { type FolderId, honeycrisp } from './definition';
 
 export function createHoneycrisp() {
-	return createWorkspace(definition).withActions(({ tables }) => ({
+	return createWorkspace(honeycrisp).withActions(({ tables }) => ({
 		folders: {
 			/**
 			 * Delete a folder and move all its notes to unfiled.

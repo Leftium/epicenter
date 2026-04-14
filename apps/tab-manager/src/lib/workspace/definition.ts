@@ -293,13 +293,13 @@ const awareness = {
 	client: type('"extension" | "desktop" | "cli"'),
 };
 
-export const definition = defineWorkspace<
+export const tabManager = defineWorkspace<
 	'epicenter.tab-manager',
 	typeof tables,
 	KvDefinitions,
 	typeof awareness
 >({
-	id: 'epicenter.tab-manager' as const,
+	id: 'epicenter.tab-manager',
 	tables,
 	kv: {},
 	awareness,

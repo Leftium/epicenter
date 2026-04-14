@@ -22,7 +22,8 @@ export const auth = createAuth({
 	onLogin(session) {
 		workspace.applyEncryptionKeys(session.encryptionKeys);
 	},
-	onLogout() {
-		workspace.clearLocalData();
+	async onLogout() {
+		await workspace.clearLocalData();
+		window.location.reload();
 	},
 });

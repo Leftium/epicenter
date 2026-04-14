@@ -41,8 +41,8 @@ export const auth = createAuth({
 		workspace.applyEncryptionKeys(session.encryptionKeys);
 		workspace.extensions.sync.reconnect();
 	},
-	onLogout() {
-		workspace.clearLocalData();
-		workspace.extensions.sync.reconnect();
+	async onLogout() {
+		await workspace.clearLocalData();
+		window.location.reload();
 	},
 });

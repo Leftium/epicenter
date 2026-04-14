@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { Button, buttonVariants } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
 	import Cloud from '@lucide/svelte/icons/cloud';
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
-	import { auth } from '$lib/client';
+	import { auth, workspace } from '$lib/client';
 	import AuthForm from '$lib/components/AuthForm.svelte';
 
 	let popoverOpen = $state(false);
@@ -36,8 +37,27 @@
 						variant="ghost"
 						size="sm"
 						class="w-full"
-						onclick={async () => {
-						await auth.signOut();
+						onclick={() => {
+							const status = workspace.extensions.sync.status;
+							const isSynced =
+								status.phase === 'connected' && !status.hasLocalChanges;
+							const doSignOut = async () => {
+								await auth.signOut();
+								await workspace.clearLocalData();
+								window.location.reload();
+							};
+							if (isSynced) {
+								doSignOut();
+							} else {
+								confirmationDialog.open({
+									title: 'Sign out with unsynced changes?',
+									description:
+										"Some changes haven't synced to the cloud yet. Signing out will lose them.",
+									confirm: { text: 'Sign out anyway', variant: 'destructive' },
+									cancel: { text: 'Stay signed in' },
+									onConfirm: doSignOut,
+								});
+							}
 							popoverOpen = false;
 						}}
 					>

@@ -46,9 +46,9 @@ export const auth = createAuth({
 		workspace.extensions.sync.reconnect();
 		void registerDevice();
 	},
-	onLogout() {
-		workspace.clearLocalData();
-		workspace.extensions.sync.reconnect();
+	async onLogout() {
+		await workspace.clearLocalData();
+		window.location.reload();
 	},
 });
 
@@ -91,7 +91,7 @@ function buildWorkspaceClient() {
 			createSyncExtension({
 				url: (workspaceId) =>
 					toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
-				getToken: async () => (await session.get())?.token ?? null,
+				getToken: async () => auth.token,
 			}),
 		)
 		.withActions(({ tables, batch }) => ({

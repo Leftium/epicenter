@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
+	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
@@ -21,5 +22,6 @@
 </QueryClientProvider>
 
 <Toaster offset={16} closeButton />
+<ConfirmationDialog />
 <ModeWatcher defaultMode="dark" track={false} />
 <SvelteQueryDevtools client={queryClient} buttonPosition="bottom-right" />

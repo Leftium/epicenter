@@ -9,6 +9,7 @@
 	import * as Popover from '@epicenter/ui/popover';
 	import * as StarRating from '@epicenter/ui/star-rating';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import { DateTimeString } from '@epicenter/workspace';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
@@ -20,13 +21,7 @@
 	import ProseMirrorEditor from './ProseMirrorEditor.svelte';
 	import TagInput from './TagInput.svelte';
 
-	let {
-		entry,
-		yxmlfragment,
-	}: {
-		entry: Entry;
-		yxmlfragment: Y.XmlFragment;
-	} = $props();
+	let { entry }: { entry: Entry } = $props();
 
 	function updateEntry(
 		updates: Partial<{
@@ -40,6 +35,31 @@
 	) {
 		workspace.actions.entries.update({ id: entry.id, ...updates });
 	}
+
+	// Stable for this component's lifetime — parent uses {#key entryId}
+	// to remount on navigation, so entry.id never changes within an instance.
+	const id = entry.id;
+
+	let yxmlfragment = $state<Y.XmlFragment | null>(null);
+
+	$effect(() => {
+		let cancelled = false;
+		workspace.documents.entries.content.open(id).then((handle) => {
+			if (cancelled) {
+				workspace.documents.entries.content.close(id);
+				return;
+			}
+			yxmlfragment = handle.asRichText();
+		});
+
+		return () => {
+			cancelled = true;
+			if (yxmlfragment) {
+				workspace.documents.entries.content.close(id);
+			}
+			yxmlfragment = null;
+		};
+	});
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);
@@ -161,10 +181,16 @@
 	</div>
 
 	<!-- Editor body -->
-	<ProseMirrorEditor
-		{yxmlfragment}
-		onWordCountChange={(count) => (wordCount = count)}
-	/>
+	{#if yxmlfragment}
+		<ProseMirrorEditor
+			{yxmlfragment}
+			onWordCountChange={(count) => (wordCount = count)}
+		/>
+	{:else}
+		<div class="flex flex-1 items-center justify-center">
+			<Spinner class="size-5 text-muted-foreground" />
+		</div>
+	{/if}
 
 	<!-- Status bar -->
 	<div

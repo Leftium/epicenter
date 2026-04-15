@@ -22,7 +22,6 @@ import { createWorkspace, defineTable } from '../../../workspace/index.js';
 import { createSqliteMaterializer } from './sqlite.js';
 import type { MirrorDatabase } from './types.js';
 import { isAction, isQuery, isMutation } from '../../../shared/actions.js';
-import type { MirrorDatabase } from './types.js';
 
 const postsTable = defineTable(
 	type({ id: 'string', _v: '1', title: 'string', 'published?': 'boolean' }),
@@ -510,7 +509,7 @@ describe('createSqliteMaterializer', () => {
 						table: 'posts',
 						query: 'mirror',
 						limit: 10,
-					});
+					}) as Array<{ id: string; snippet: string; rank: number }>;
 
 					expect(results).toHaveLength(1);
 					expect(results[0]?.id).toBe('post-1');

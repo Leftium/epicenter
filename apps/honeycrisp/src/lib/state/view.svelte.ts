@@ -1,13 +1,13 @@
 /**
- * Reactive view state for Honeycrisp.
+ * Reactive view state for Honeycrisp, backed by URL search params.
  *
  * Manages navigation, selection, search, sort, and view mode. Cross-cutting
  * derivations (filteredNotes, folderName, selectedNote) live here because
  * they combine data from multiple domains.
  *
- * Uses a factory function pattern to encapsulate `$state`. Observers are
- * registered once during factory construction and never cleaned up (SPA
- * lifetime).
+ * State lives in the URL so it's bookmarkable, shareable, and works with
+ * browser back/forward. Default values are elided from the URL to keep it
+ * clean—`/` means all defaults (all notes, sorted by date edited, no search).
  *
  * @example
  * ```svelte
@@ -22,27 +22,26 @@
  * ```
  */
 
-import { fromKv } from '@epicenter/svelte';
-import { workspace } from '$lib/client';
+import { page } from '$app/state';
 import type { FolderId, NoteId } from '$lib/workspace';
+import { setSearchParam } from '$lib/search-params';
 import { foldersState } from './folders.svelte';
 import { notesState } from './notes.svelte';
 
+type SortBy = 'dateEdited' | 'dateCreated' | 'title';
+const SORT_KEYS: SortBy[] = ['dateEdited', 'dateCreated', 'title'];
+
 function createViewState() {
-	// ─── Reactive State ──────────────────────────────────────────────────
-
-	const selectedFolderId = fromKv(workspace.kv, 'selectedFolderId');
-	const selectedNoteId = fromKv(workspace.kv, 'selectedNoteId');
-	const sortBy = fromKv(workspace.kv, 'sortBy');
-	let searchQuery = $state('');
-	let isRecentlyDeletedView = $state(false);
-
 	// ─── Derived State ───────────────────────────────────────────────────
 
 	/** Notes filtered by selected folder and search query, then sorted. */
 	const filteredNotes = $derived.by(() => {
-		const folderId = selectedFolderId.current;
-		const q = searchQuery.trim().toLowerCase();
+		const folderId = (page.url.searchParams.get('folder') as FolderId) ?? null;
+		const q = (page.url.searchParams.get('q') ?? '').trim().toLowerCase();
+		const raw = page.url.searchParams.get('sort');
+		const sort: SortBy = SORT_KEYS.includes(raw as SortBy)
+			? (raw as SortBy)
+			: 'dateEdited';
 
 		return notesState.notes
 			.filter((n) => folderId === null || n.folderId === folderId)
@@ -53,47 +52,48 @@ function createViewState() {
 					n.preview.toLowerCase().includes(q),
 			)
 			.toSorted((a, b) => {
-				if (sortBy.current === 'title') return a.title.localeCompare(b.title);
-				if (sortBy.current === 'dateCreated')
+				if (sort === 'title') return a.title.localeCompare(b.title);
+				if (sort === 'dateCreated')
 					return b.createdAt.localeCompare(a.createdAt);
 				return b.updatedAt.localeCompare(a.updatedAt);
 			});
 	});
 
 	/** Human-readable name for the current folder (used as NoteList title). */
-	const folderName = $derived(
-		selectedFolderId.current
-			? (foldersState.get(selectedFolderId.current)?.name ?? 'Notes')
-			: 'All Notes',
-	);
+	const folderName = $derived.by(() => {
+		const folderId = (page.url.searchParams.get('folder') as FolderId) ?? null;
+		return folderId
+			? (foldersState.get(folderId)?.name ?? 'Notes')
+			: 'All Notes';
+	});
 
 	/** The currently selected note (can be active or deleted). */
-	const selectedNote = $derived(
-		selectedNoteId.current
-			? (notesState.get(selectedNoteId.current) ?? null)
-			: null,
-	);
+	const selectedNote = $derived.by(() => {
+		const noteId = (page.url.searchParams.get('note') as NoteId) ?? null;
+		return noteId ? (notesState.get(noteId) ?? null) : null;
+	});
 
 	// ─── Public API ──────────────────────────────────────────────────────
 
 	return {
-		get selectedFolderId() {
-			return selectedFolderId.current;
+		get selectedFolderId(): FolderId | null {
+			return (page.url.searchParams.get('folder') as FolderId) ?? null;
 		},
-		get selectedNoteId() {
-			return selectedNoteId.current;
+		get selectedNoteId(): NoteId | null {
+			return (page.url.searchParams.get('note') as NoteId) ?? null;
 		},
 		get selectedNote() {
 			return selectedNote;
 		},
 		get searchQuery() {
-			return searchQuery;
+			return page.url.searchParams.get('q') ?? '';
 		},
-		get sortBy() {
-			return sortBy.current;
+		get sortBy(): SortBy {
+			const raw = page.url.searchParams.get('sort');
+			return SORT_KEYS.includes(raw as SortBy) ? (raw as SortBy) : 'dateEdited';
 		},
 		get isRecentlyDeletedView() {
-			return isRecentlyDeletedView;
+			return page.url.searchParams.get('view') === 'deleted';
 		},
 		get folderName() {
 			return folderName;
@@ -118,9 +118,9 @@ function createViewState() {
 		 * ```
 		 */
 		selectFolder(folderId: FolderId | null) {
-			isRecentlyDeletedView = false;
-			selectedFolderId.current = folderId;
-			selectedNoteId.current = null;
+			setSearchParam('view', null);
+			setSearchParam('note', null);
+			setSearchParam('folder', folderId);
 		},
 
 		/**
@@ -135,9 +135,9 @@ function createViewState() {
 		 * ```
 		 */
 		selectRecentlyDeleted() {
-			isRecentlyDeletedView = true;
-			selectedFolderId.current = null;
-			selectedNoteId.current = null;
+			setSearchParam('folder', null);
+			setSearchParam('note', null);
+			setSearchParam('view', 'deleted');
 		},
 
 		/**
@@ -149,14 +149,14 @@ function createViewState() {
 		 * ```
 		 */
 		selectNote(noteId: NoteId) {
-			selectedNoteId.current = noteId;
+			setSearchParam('note', noteId);
 		},
 
 		/**
 		 * Change the note sort order.
 		 *
-		 * Sorts the note list by the specified criteria. The sort preference
-		 * is persisted to the workspace KV store.
+		 * Sorts the note list by the specified criteria. The default
+		 * ('dateEdited') is elided from the URL to keep it clean.
 		 *
 		 * @example
 		 * ```typescript
@@ -164,8 +164,8 @@ function createViewState() {
 		 * viewState.setSortBy('dateEdited');
 		 * ```
 		 */
-		setSortBy(value: 'dateEdited' | 'dateCreated' | 'title') {
-			sortBy.current = value;
+		setSortBy(value: SortBy) {
+			setSearchParam('sort', value === 'dateEdited' ? null : value);
 		},
 
 		/**
@@ -182,7 +182,7 @@ function createViewState() {
 		 * ```
 		 */
 		setSearchQuery(query: string) {
-			searchQuery = query;
+			setSearchParam('q', query || null);
 		},
 	};
 }

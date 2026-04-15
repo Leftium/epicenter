@@ -25,6 +25,8 @@ import {
 	generateChatMessageId,
 	generateConversationId,
 } from '$lib/workspace/definition';
+import { page } from '$app/state';
+import { setSearchParam } from '$lib/search-params';
 
 function getStringValue(value: JsonValue | undefined, fallback: string) {
 	return typeof value === 'string' ? value : fallback;
@@ -300,11 +302,14 @@ function createAiChatState() {
 		if (!firstConversation) return;
 		if (handles.has(activeConversationId)) return;
 
-		activeConversationId = firstConversation.id as ConversationId;
-		refreshFns.get(activeConversationId)?.();
+		const newActiveId = firstConversation.id as ConversationId;
+		setSearchParam('chat', newActiveId);
+		refreshFns.get(newActiveId)?.();
 	}
 
-	let activeConversationId = $state<ConversationId>('' as ConversationId);
+	const activeConversationId = $derived(
+		(page.url.searchParams.get('chat') ?? '') as ConversationId,
+	);
 
 	const _unobserveConversations = workspace.tables.conversations.observe(() => {
 		reconcileHandles();
@@ -319,16 +324,17 @@ function createAiChatState() {
 
 		const newId = ensureDefaultConversation();
 		if (newId) {
-			activeConversationId = newId;
-			refreshFns.get(activeConversationId)?.();
+			setSearchParam('chat', newId);
+			refreshFns.get(newId)?.();
 			return;
 		}
 
 		const firstConversation = conversations[0];
 		if (!firstConversation) return;
 
-		activeConversationId = firstConversation.id as ConversationId;
-		refreshFns.get(activeConversationId)?.();
+		const activeId = firstConversation.id as ConversationId;
+		setSearchParam('chat', activeId);
+		refreshFns.get(activeId)?.();
 	});
 
 	reconcileHandles();
@@ -348,7 +354,7 @@ function createAiChatState() {
 			_v: 1,
 		});
 
-		activeConversationId = id;
+		setSearchParam('chat', id);
 		refreshFns.get(id)?.();
 
 		return id;

@@ -26,22 +26,6 @@
 		const entries = matched.map((m) => ({ iso: m[1]!, text: m[2]! }));
 		return { entries, skipped: lines.length - entries.length };
 	});
-
-	function handleSubmit(e: SubmitEvent) {
-		e.preventDefault();
-		if (parsed.entries.length === 0) return;
-
-		const items = parsed.entries.map(({ iso, text }) => ({
-			title: text,
-			date: DateTimeString.stringify(iso, timezone),
-		}));
-		workspace.actions.entries.bulkCreate({ entries: items });
-		toast.success(
-			`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`,
-		);
-		isOpen = false;
-		rawText = '';
-	}
 </script>
 
 <Modal.Root bind:open={isOpen}>
@@ -68,7 +52,21 @@
 				then text.
 			</Modal.Description>
 		</Modal.Header>
-		<form onsubmit={handleSubmit} class="flex flex-col gap-4">
+		<form
+			onsubmit={(e) => {
+			e.preventDefault();
+			if (parsed.entries.length === 0) return;
+			const items = parsed.entries.map(({ iso, text }) => ({
+				title: text,
+				date: DateTimeString.stringify(iso, timezone),
+			}));
+			workspace.actions.entries.bulkCreate({ entries: items });
+			toast.success(`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`);
+			isOpen = false;
+			rawText = '';
+		}}
+			class="flex flex-col gap-4"
+		>
 			<Textarea
 				bind:value={rawText}
 				placeholder={"2026-04-08T12:39:54.844Z Your text here\n2026-04-08T13:01:22.000Z Another entry"}

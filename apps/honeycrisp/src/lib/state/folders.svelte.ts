@@ -2,11 +2,8 @@
  * Reactive folder state for Honeycrisp.
  *
  * Manages folder CRUD operations and the reactive folder list. Backed by
- * a Y.Doc CRDT table, so folders sync across devices. Uses a factory
- * function pattern to encapsulate `$state`.
- *
- * Observers are registered once during factory construction and never
- * cleaned up (SPA lifetime).
+ * a Y.Doc CRDT table, so folders sync across devices. Clears URL search
+ * param selections when the active folder is deleted.
  *
  * @example
  * ```svelte
@@ -25,6 +22,8 @@ import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
 import { workspace } from '$lib/client';
 import type { FolderId } from '$lib/workspace';
+import { page } from '$app/state';
+import { setSearchParam } from '$lib/search-params';
 
 function createFoldersState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
@@ -89,7 +88,7 @@ function createFoldersState() {
 		 *
 		 * The folder is removed from the sidebar. All notes that were in this
 		 * folder are moved to the unfiled section (folderId set to undefined).
-		 * If the deleted folder was selected, the selection is cleared.
+ * If the deleted folder was selected, the folder and note selections are cleared.
 		 *
 		 * @example
 		 * ```typescript
@@ -99,6 +98,10 @@ function createFoldersState() {
 		 */
 		deleteFolder(folderId: FolderId) {
 			workspace.actions.folders.delete({ folderId });
+			if (page.url.searchParams.get('folder') === folderId) {
+				setSearchParam('folder', null);
+				setSearchParam('note', null);
+			}
 		},
 	};
 }

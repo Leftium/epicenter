@@ -2,11 +2,8 @@
  * Reactive notes state for Honeycrisp.
  *
  * Manages note CRUD operations and reactive note collections. Backed by
- * a Y.Doc CRDT table, so notes sync across devices. Uses a factory
- * function pattern to encapsulate `$state`.
- *
- * Observers are registered once during factory construction and never
- * cleaned up (SPA lifetime).
+ * a Y.Doc CRDT table, so notes sync across devices. Clears URL search
+ * param selection when a selected note is deleted.
  *
  * @example
  * ```svelte
@@ -26,6 +23,8 @@ import { DateTimeString, generateId } from '@epicenter/workspace';
 import { workspace } from '$lib/client';
 import type { FolderId, NoteId } from '$lib/workspace';
 import { foldersState } from './folders.svelte';
+import { page } from '$app/state';
+import { setSearchParam } from '$lib/search-params';
 
 function createNotesState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
@@ -126,8 +125,8 @@ function createNotesState() {
 			workspace.tables.notes.update(noteId, {
 				deletedAt: DateTimeString.now(),
 			});
-			if (workspace.kv.get('selectedNoteId') === noteId) {
-				workspace.kv.set('selectedNoteId', null);
+			if (page.url.searchParams.get('note') === noteId) {
+				setSearchParam('note', null);
 			}
 		},
 
@@ -169,8 +168,8 @@ function createNotesState() {
 		 */
 		permanentlyDeleteNote(noteId: NoteId) {
 			workspace.tables.notes.delete(noteId);
-			if (workspace.kv.get('selectedNoteId') === noteId) {
-				workspace.kv.set('selectedNoteId', null);
+			if (page.url.searchParams.get('note') === noteId) {
+				setSearchParam('note', null);
 			}
 		},
 
@@ -236,7 +235,7 @@ function createNotesState() {
 			preview: string;
 			wordCount: number;
 		}) {
-			const selectedNoteId = workspace.kv.get('selectedNoteId');
+			const selectedNoteId = page.url.searchParams.get('note') as NoteId | null;
 			if (!selectedNoteId) return;
 			workspace.tables.notes.update(selectedNoteId, {
 				title,

@@ -25,6 +25,7 @@
 
 export type { Action, Actions, Mutation, Query } from './shared/actions';
 export {
+	ACTION_BRAND,
 	defineMutation,
 	defineQuery,
 	isAction,

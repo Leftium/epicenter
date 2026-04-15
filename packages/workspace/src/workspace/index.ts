@@ -61,6 +61,7 @@
 // Action system
 export type { Action, Actions, Mutation, Query } from '../shared/actions.js';
 export {
+	ACTION_BRAND,
 	defineMutation,
 	defineQuery,
 	isAction,

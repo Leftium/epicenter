@@ -97,8 +97,6 @@ export { defineWorkspace } from './define-workspace.js';
 // Workspace Creation
 // ════════════════════════════════════════════════════════════════════════════
 
-// Document origin sentinel (for filtering auto-bumps in table observers)
-export { DOCUMENTS_ORIGIN } from './create-document.js';
 export { createWorkspace } from './create-workspace.js';
 
 // ════════════════════════════════════════════════════════════════════════════

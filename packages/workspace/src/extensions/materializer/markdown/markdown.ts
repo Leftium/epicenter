@@ -87,14 +87,14 @@ export function markdown({
  * @example
  * ```typescript
  * .withWorkspaceExtension('materializer', (ctx) =>
- *   createMaterializer(ctx, { dir: './data' })
+ *   createMarkdownMaterializer(ctx, { dir: './data' })
  *     .table('posts', { serialize: slugFilename('title') })
  *     .table('settings')
  *     .kv(),
  * )
  * ```
  */
-export function createMaterializer<
+export function createMarkdownMaterializer<
 	// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
 	TTables extends Record<string, TableHelper<any>>,
 	// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv helpers

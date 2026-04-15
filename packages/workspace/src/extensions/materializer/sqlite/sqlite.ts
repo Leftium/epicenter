@@ -2,10 +2,11 @@
  * SQLite materializer—mirrors workspace table rows into queryable SQLite tables.
  *
  * Follows the same builder pattern as the markdown materializer:
- * `createSqliteMaterializer(ctx, config)` returns a chainable builder where
- * `.table(name, config?)` opts in per table. Nothing materializes by default.
+ * `createSqliteMaterializer({ tables, definitions, whenReady }, { db })` returns
+ * a chainable builder where `.table(name, config?)` opts in per table. Nothing
+ * materializes by default.
  *
- * The materializer awaits `ctx.whenReady` before touching SQLite, so persistence
+ * The materializer awaits `whenReady` before touching SQLite, so persistence
  * and sync have loaded before the initial flush. All `.table()` calls happen
  * synchronously in the factory closure before `whenReady` resolves.
  *
@@ -34,7 +35,7 @@ type AnyTableHelper = TableHelper<any>;
  * with optional FTS5 and custom serialization config. Table names are
  * type-checked against the workspace definition—typos are caught at compile time.
  *
- * The materializer awaits `ctx.whenReady` before reading data, so persistence
+ * The materializer awaits `whenReady` before reading data, so persistence
  * and sync have loaded before the initial flush. All `.table()` calls happen
  * synchronously in the factory closure before `whenReady` resolves.
  *
@@ -66,15 +67,13 @@ type AnyTableHelper = TableHelper<any>;
 export function createSqliteMaterializer<
 	TTables extends Record<string, AnyTableHelper>,
 >(
-	ctx: {
+	{ tables, definitions, whenReady }: {
 		tables: TTables;
 		definitions: { tables: Record<string, unknown> };
 		whenReady: Promise<void>;
 	},
-	config: { db: MirrorDatabase; debounceMs?: number },
+	{ db, debounceMs = 100 }: { db: MirrorDatabase; debounceMs?: number },
 ) {
-	const { db } = config;
-	const debounceMs = config.debounceMs ?? 100;
 
 	const tableConfigs = new Map<string, TableMaterializerConfig>();
 	const unsubscribes: Array<() => void> = [];
@@ -85,27 +84,27 @@ export function createSqliteMaterializer<
 
 	// ── SQL primitives ───────────────────────────────────────────
 
-	function insertRow(tableName: string, row: BaseRow) {
+	async function insertRow(tableName: string, row: BaseRow) {
 		const serialize = tableConfigs.get(tableName)?.serialize ?? serializeValue;
 		const keys = Object.keys(row);
 		const placeholders = keys.map(() => '?').join(', ');
 		const values = keys.map((key) => serialize(row[key]));
 		const columns = keys.map(quoteIdentifier).join(', ');
 
-		db.prepare(
+		await db.prepare(
 			`INSERT OR REPLACE INTO ${quoteIdentifier(tableName)} (${columns}) VALUES (${placeholders})`,
 		).run(...values);
 	}
 
-	function deleteRow(tableName: string, id: string) {
-		db.prepare(
+	async function deleteRow(tableName: string, id: string) {
+		await db.prepare(
 			`DELETE FROM ${quoteIdentifier(tableName)} WHERE ${quoteIdentifier('id')} = ?`,
 		).run(id);
 	}
 
 	// ── Full load ────────────────────────────────────────────────
 
-	function fullLoadTable(
+	async function fullLoadTable(
 		tableName: string,
 		table: TableHelper<BaseRow>,
 	) {
@@ -124,7 +123,7 @@ export function createSqliteMaterializer<
 
 		for (const row of rows) {
 			const values = keys.map((key) => serialize(row[key]));
-			stmt.run(...values);
+			await stmt.run(...values);
 		}
 	}
 
@@ -162,7 +161,7 @@ export function createSqliteMaterializer<
 		}, debounceMs);
 	}
 
-	function flushPendingSync() {
+	async function flushPendingSync() {
 		if (isDisposed) {
 			return;
 		}
@@ -171,7 +170,7 @@ export function createSqliteMaterializer<
 		pendingSync = new Map<string, Set<string>>();
 
 		for (const [tableName, ids] of currentPending) {
-			const table = ctx.tables[tableName];
+			const table = tables[tableName];
 			if (table === undefined) {
 				continue;
 			}
@@ -181,13 +180,13 @@ export function createSqliteMaterializer<
 
 				switch (result.status) {
 					case 'valid': {
-						insertRow(tableName, result.row);
+						await insertRow(tableName, result.row);
 						break;
 					}
 
 					case 'invalid':
 					case 'not_found': {
-						deleteRow(tableName, id);
+						await deleteRow(tableName, id);
 						break;
 					}
 				}
@@ -203,11 +202,11 @@ export function createSqliteMaterializer<
 	 * Only works for tables with `fts` configured in their `.table()` config.
 	 * Returns empty array if FTS is not configured for the given table.
 	 */
-	function search(
+	async function search(
 		tableName: string,
 		query: string,
 		options?: SearchOptions,
-	): SearchResult[] {
+	): Promise<SearchResult[]> {
 		if (isDisposed) {
 			return [];
 		}
@@ -227,13 +226,13 @@ export function createSqliteMaterializer<
 	 * Convenience wrapper around `SELECT COUNT(*) FROM table`. Returns 0
 	 * for tables that haven't been loaded yet or don't exist.
 	 */
-	function count(tableName: string): number {
+	async function count(tableName: string): Promise<number> {
 		if (isDisposed) {
 			return 0;
 		}
 
 		try {
-			const row = db
+			const row = await db
 				.prepare(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(tableName)}`)
 				.get();
 			return Number(row?.count ?? 0);
@@ -248,7 +247,7 @@ export function createSqliteMaterializer<
 	 * Drops existing data and performs a fresh full load for every
 	 * registered table. Useful after schema changes or suspected drift.
 	 */
-	function rebuild(tableName?: string): void {
+	async function rebuild(tableName?: string): Promise<void> {
 		if (isDisposed) {
 			return;
 		}
@@ -256,42 +255,42 @@ export function createSqliteMaterializer<
 		if (tableName !== undefined) {
 			if (!tableConfigs.has(tableName)) {
 				throw new Error(
-					`Cannot rebuild "${tableName}" — not in the materialized table set.`,
+					`Cannot rebuild "${tableName}" \u2014 not in the materialized table set.`,
 				);
 			}
 
-			const table = ctx.tables[tableName];
+			const table = tables[tableName];
 			if (table === undefined) {
 				return;
 			}
 
-			db.run('BEGIN');
+			await db.run('BEGIN');
 			try {
-				db.run(`DELETE FROM ${quoteIdentifier(tableName)}`);
-				fullLoadTable(tableName, table);
-				db.run('COMMIT');
+				await db.run(`DELETE FROM ${quoteIdentifier(tableName)}`);
+				await fullLoadTable(tableName, table);
+				await db.run('COMMIT');
 			} catch (error: unknown) {
-				db.run('ROLLBACK');
+				await db.run('ROLLBACK');
 				throw error;
 			}
 			return;
 		}
 
-		db.run('BEGIN');
+		await db.run('BEGIN');
 		try {
 			for (const [name] of tableConfigs) {
-				db.run(`DELETE FROM ${quoteIdentifier(name)}`);
+				await db.run(`DELETE FROM ${quoteIdentifier(name)}`);
 			}
 			for (const [name] of tableConfigs) {
-				const table = ctx.tables[name];
+				const table = tables[name];
 				if (table === undefined) {
 					continue;
 				}
-				fullLoadTable(name, table);
+				await fullLoadTable(name, table);
 			}
-			db.run('COMMIT');
+			await db.run('COMMIT');
 		} catch (error: unknown) {
-			db.run('ROLLBACK');
+			await db.run('ROLLBACK');
 			throw error;
 		}
 	}
@@ -312,7 +311,7 @@ export function createSqliteMaterializer<
 	// ── Lifecycle ────────────────────────────────────────────────
 
 	async function initialize() {
-		await ctx.whenReady;
+		await whenReady;
 
 		if (isDisposed) {
 			return;
@@ -320,8 +319,8 @@ export function createSqliteMaterializer<
 
 		// Create tables and FTS indexes
 		for (const [tableName, tableConfig] of tableConfigs) {
-			const jsonSchema = getTableJsonSchema(ctx, tableName);
-			db.run(generateDdl(tableName, jsonSchema));
+			const jsonSchema = getTableJsonSchema({ definitions }, tableName);
+			await db.run(generateDdl(tableName, jsonSchema));
 
 			if (tableConfig.fts && tableConfig.fts.length > 0) {
 				await setupFtsTable(db, tableName, tableConfig.fts);
@@ -333,18 +332,18 @@ export function createSqliteMaterializer<
 		}
 
 		// Full load all tables in a transaction
-		db.run('BEGIN');
+		await db.run('BEGIN');
 		try {
 			for (const [tableName] of tableConfigs) {
-				const table = ctx.tables[tableName];
+				const table = tables[tableName];
 				if (table === undefined) {
 					continue;
 				}
-				fullLoadTable(tableName, table);
+				await fullLoadTable(tableName, table);
 			}
-			db.run('COMMIT');
+			await db.run('COMMIT');
 		} catch (error: unknown) {
-			db.run('ROLLBACK');
+			await db.run('ROLLBACK');
 			throw error;
 		}
 
@@ -354,7 +353,7 @@ export function createSqliteMaterializer<
 
 		// Register observers for incremental sync
 		for (const [tableName] of tableConfigs) {
-			const table = ctx.tables[tableName];
+			const table = tables[tableName];
 			if (table === undefined) {
 				continue;
 			}
@@ -396,9 +395,9 @@ export function createSqliteMaterializer<
 			table: keyof TTables & string,
 			query: string,
 			options?: SearchOptions,
-		): SearchResult[];
-		count(table: keyof TTables & string): number;
-		rebuild(table?: keyof TTables & string): void;
+		): Promise<SearchResult[]>;
+		count(table: keyof TTables & string): Promise<number>;
+		rebuild(table?: keyof TTables & string): Promise<void>;
 		db: MirrorDatabase;
 	};
 

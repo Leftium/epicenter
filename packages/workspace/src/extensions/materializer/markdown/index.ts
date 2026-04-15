@@ -1,5 +1,5 @@
 export {
-	createMaterializer,
+	createMarkdownMaterializer,
 	markdown,
 	type SerializeResult,
 	toMarkdown,

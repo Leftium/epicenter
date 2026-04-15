@@ -67,22 +67,11 @@ import type {
 } from './types.js';
 
 /**
- * Sentinel symbol used as the Y.js transaction origin when the documents manager
- * bumps `updatedAt` on a row. Consumers can check `origin === DOCUMENTS_ORIGIN`
- * to distinguish auto-bumps from user-initiated row changes.
+ * Sentinel symbol used as the Y.js transaction origin when the documents
+ * manager writes metadata (e.g., updatedAt) to the table. The update handler
+ * checks `origin === DOCUMENTS_ORIGIN` to avoid re-triggering itself.
  *
- * @example
- * ```typescript
- * import { DOCUMENTS_ORIGIN } from '@epicenter/workspace';
- *
- * client.tables.files.observe((changedIds, origin) => {
- *   if (origin === DOCUMENTS_ORIGIN) {
- *     // This was an auto-bump from a content doc edit
- *     return;
- *   }
- *   // This was a direct row change
- * });
- * ```
+ * Not part of the public API—internal to the workspace package.
  */
 export const DOCUMENTS_ORIGIN = Symbol('documents');
 

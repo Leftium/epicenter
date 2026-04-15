@@ -17,7 +17,7 @@ import {
 	type CreateDocumentsConfig,
 	createDocuments,
 	DOCUMENTS_ORIGIN,
-} from './create-document.js';
+} from './create-documents.js';
 import { createTables } from './create-tables.js';
 import { createWorkspace } from './create-workspace.js';
 import { defineTable } from './define-table.js';
@@ -350,7 +350,6 @@ describe('createDocuments', () => {
 
 			remoteDoc.destroy();
 		});
-
 	});
 	describe('close', () => {
 		test('document awareness is destroyed when document is closed', async () => {

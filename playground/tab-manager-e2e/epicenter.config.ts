@@ -18,7 +18,7 @@ import {
 } from '@epicenter/cli';
 import { createTabManagerWorkspace } from '@epicenter/tab-manager/workspace';
 import {
-	createMaterializer,
+	createMarkdownMaterializer,
 	slugFilename,
 } from '@epicenter/workspace/extensions/materializer/markdown';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
@@ -38,7 +38,7 @@ export const tabManager = createTabManagerWorkspace()
 		}),
 	)
 	.withWorkspaceExtension('materializer', (ctx) =>
-		createMaterializer(ctx, { dir: MARKDOWN_DIR })
+		createMarkdownMaterializer(ctx, { dir: MARKDOWN_DIR })
 			.table('savedTabs', { serialize: slugFilename('title') })
 			.table('bookmarks', { serialize: slugFilename('title') })
 			.table('devices')

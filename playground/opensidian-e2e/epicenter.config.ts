@@ -21,7 +21,7 @@ import {
 } from '@epicenter/cli';
 import { createWorkspace, defineMutation } from '@epicenter/workspace';
 import {
-	createMaterializer,
+	createMarkdownMaterializer,
 	markdown,
 	prepareMarkdownFiles,
 	toSlugFilename,
@@ -45,7 +45,7 @@ export const opensidian = createWorkspace(opensidianDefinition)
 		}),
 	)
 	.withWorkspaceExtension('materializer', (ctx) =>
-		createMaterializer(ctx, { dir: MARKDOWN_DIR })
+		createMarkdownMaterializer(ctx, { dir: MARKDOWN_DIR })
 			.table('files', {
 				serialize: async (row) => {
 					if (row.type === 'folder') {

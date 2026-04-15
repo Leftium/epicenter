@@ -9,21 +9,38 @@
  */
 
 /**
+ * A value that may or may not be wrapped in a Promise.
+ *
+ * Used throughout the materializer's database contract so that both synchronous
+ * drivers (`bun:sqlite`, `better-sqlite3`) and asynchronous drivers
+ * (`@tursodatabase/database-wasm`, `@libsql/client-wasm`) satisfy the same
+ * interface. The materializer `await`s every call internally, which is a no-op
+ * for sync return values.
+ */
+export type Awaitable<T> = T | Promise<T>;
+
+/**
  * Minimal database interface for the SQLite materializer.
  *
- * Structurally compatible with `bun:sqlite`'s `Database` and
- * `better-sqlite3`'s `Database`. Consumers pass their driver directly—
- * no wrapping needed.
+ * Structurally compatible with sync drivers (`bun:sqlite`, `better-sqlite3`)
+ * and async WASM drivers (`@tursodatabase/database-wasm`). The materializer
+ * `await`s every call, so sync drivers work without any adapter.
  *
- * @example
+ * @example Sync driver (Bun/Node)
  * ```typescript
  * import { Database } from 'bun:sqlite';
  * const db: MirrorDatabase = new Database('materializer.db');
  * ```
+ *
+ * @example Async WASM driver (browser)
+ * ```typescript
+ * import { connect } from '@tursodatabase/database-wasm';
+ * const db: MirrorDatabase = await connect(':memory:');
+ * ```
  */
 export type MirrorDatabase = {
 	/** Execute raw SQL that does not return rows. */
-	run(sql: string): unknown;
+	run(sql: string): Awaitable<unknown>;
 
 	/** Prepare a reusable statement for repeated reads or writes. */
 	prepare(sql: string): MirrorStatement;
@@ -32,24 +49,25 @@ export type MirrorDatabase = {
 /**
  * Minimal prepared statement interface used by the SQLite materializer.
  *
- * Structurally compatible with `bun:sqlite`'s `Statement` and
- * `better-sqlite3`'s `Statement` without importing either driver.
+ * Structurally compatible with both sync (`bun:sqlite`) and async
+ * (`@tursodatabase/database-wasm`) statement objects. The materializer
+ * `await`s every method call internally.
  *
  * @example
  * ```typescript
  * const stmt = db.prepare('SELECT * FROM posts WHERE id = ?');
- * const row = stmt.get('post_123');
+ * const row = await stmt.get('post_123');
  * ```
  */
 export type MirrorStatement = {
 	/** Run a statement that writes data or otherwise returns no rows. */
-	run(...params: unknown[]): unknown;
+	run(...params: unknown[]): Awaitable<unknown>;
 
 	/** Fetch all matching rows as plain objects. */
-	all(...params: unknown[]): Record<string, unknown>[];
+	all(...params: unknown[]): Awaitable<Record<string, unknown>[]>;
 
 	/** Fetch the first matching row, or null if none found. */
-	get(...params: unknown[]): Record<string, unknown> | null;
+	get(...params: unknown[]): Awaitable<Record<string, unknown> | null>;
 };
 
 /**

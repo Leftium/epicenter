@@ -28,11 +28,11 @@ import type { MirrorDatabase, SearchOptions, SearchResult } from './types.js';
  * @param tableName - The source table name
  * @param columns - Column names to include in the FTS index
  */
-export function setupFtsTable(
+export async function setupFtsTable(
 	db: MirrorDatabase,
 	tableName: string,
 	columns: string[],
-): void {
+): Promise<void> {
 	const ftsTableName = `${tableName}_fts`;
 	const quotedColumns = columns.map(quoteIdentifier).join(', ');
 	const newValues = columns
@@ -45,12 +45,12 @@ export function setupFtsTable(
 	const qt = quoteIdentifier(tableName);
 	const qfts = quoteIdentifier(ftsTableName);
 
-	db.run(
+	await db.run(
 		`CREATE VIRTUAL TABLE IF NOT EXISTS ${qfts}\n` +
 			`USING fts5(${quotedColumns}, content=${quoteString(tableName)}, content_rowid=rowid)`,
 	);
 
-	db.run(
+	await db.run(
 		`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_ai`)}\n` +
 			`AFTER INSERT ON ${qt} BEGIN\n` +
 			`  INSERT INTO ${qfts}(rowid, ${quotedColumns})\n` +
@@ -58,7 +58,7 @@ export function setupFtsTable(
 			`END`,
 	);
 
-	db.run(
+	await db.run(
 		`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_ad`)}\n` +
 			`AFTER DELETE ON ${qt} BEGIN\n` +
 			`  INSERT INTO ${qfts}(${qfts}, rowid, ${quotedColumns})\n` +
@@ -66,7 +66,7 @@ export function setupFtsTable(
 			`END`,
 	);
 
-	db.run(
+	await db.run(
 		`CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(`${tableName}_fts_au`)}\n` +
 			`AFTER UPDATE ON ${qt} BEGIN\n` +
 			`  INSERT INTO ${qfts}(${qfts}, rowid, ${quotedColumns})\n` +
@@ -95,13 +95,13 @@ export function setupFtsTable(
  * @param options - Optional search configuration (limit, snippet column)
  * @returns Array of search results sorted by relevance
  */
-export function ftsSearch(
+export async function ftsSearch(
 	db: MirrorDatabase,
 	tableName: string,
 	ftsColumns: string[],
 	query: string,
 	options?: SearchOptions,
-): SearchResult[] {
+): Promise<SearchResult[]> {
 	const trimmed = query.trim();
 	if (!trimmed) {
 		return [];
@@ -116,7 +116,7 @@ export function ftsSearch(
 	try {
 		const qt = quoteIdentifier(tableName);
 		const qfts = quoteIdentifier(ftsTableName);
-		const rows = db
+		const rows = await db
 			.prepare(
 				`SELECT ${qt}.${quoteIdentifier('id')} AS id,\n` +
 					`  snippet(${qfts}, ${snippetColumnIndex}, '<mark>', '</mark>', '...', 64) AS snippet,\n` +

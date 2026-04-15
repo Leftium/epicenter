@@ -103,7 +103,7 @@ There are three layers, each with a different URL source:
 |---|---|---|
 | Local dev (runtime) | `wrangler.jsonc` Hyperdrive `localConnectionString` | `bun dev:local` (wrangler) |
 | Local dev (drizzle-kit) | `DATABASE_URL` from `.dev.vars` (generated from Infisical dev env) | `db:push:local`, `db:studio:local` |
-| Remote | `DATABASE_URL` injected by `infisical run` | `db:push:remote`, `db:studio:remote` |
+| Remote | `DATABASE_URL` injected by `infisical run` | `db:migrate:remote`, `db:studio:remote` |
 
 `dev:local` regenerates `.dev.vars` from Infisical's dev environment on every run. Infisical dev has `DATABASE_URL` set to the local Postgres URL, so `.dev.vars` always points to local. The `:remote` scripts use `infisical run` which injects the production `DATABASE_URL` at runtime without touching `.dev.vars`.
 
@@ -122,8 +122,8 @@ bun test             # Run tests
 ```bash
 bun run auth:generate    # Generate Better Auth schema
 bun run db:generate      # Generate Drizzle migrations
-bun run db:push:local    # Push schema to local Postgres
-bun run db:push:remote   # Push schema to remote (via Infisical)
+bun run db:push:local     # Push schema to local Postgres (dev only—use migrations for remote)
+bun run db:migrate:remote # Run migrations against remote (via Infisical)
 bun run db:studio:local  # Open Drizzle Studio (local)
 bun run db:studio:remote # Open Drizzle Studio (remote, via Infisical)
 ```

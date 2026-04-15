@@ -118,7 +118,8 @@ export function createMarkdownMaterializer<
 >(
 	ctx: { tables: TTables; kv: TKv; whenReady: Promise<void> },
 	config: {
-		dir: string;
+		/** Base output directory. Accepts a string or async getter for runtimes where the path isn't known until initialization (e.g. Tauri's `appDataDir()`). */
+		dir: string | (() => MaybePromise<string>);
 		/** Filesystem adapter. Defaults to Node `fs/promises` + `path.join` (works in Bun). */
 		io?: MaterializerIO;
 		/** YAML serializer. Defaults to `YAML.stringify` from the `bun` global. */
@@ -177,10 +178,11 @@ export function createMarkdownMaterializer<
 
 	const materializeTable = async <TName extends keyof TTables & string>(
 		name: TName,
+		dir: string,
 	) => {
 		const table = ctx.tables[name];
 		const tableConfig = tableConfigs[name];
-		const directory = await io.joinPath(config.dir, tableConfig?.dir ?? name);
+		const directory = await io.joinPath(dir, tableConfig?.dir ?? name);
 		const filenames = new Map<string, string>();
 
 		const serialize: (row: TableRow<TName>) => MaybePromise<SerializeResult> =
@@ -236,7 +238,7 @@ export function createMarkdownMaterializer<
 		unsubscribers.push(unsubscribe);
 	};
 
-	const materializeKv = async () => {
+	const materializeKv = async (dir: string) => {
 		const kvState: Record<string, unknown> = { ...ctx.kv.getAll() };
 		const serialize =
 			kvConfig?.serialize ??
@@ -247,7 +249,7 @@ export function createMarkdownMaterializer<
 
 		// Initial flush with the full snapshot
 		const initial = serialize(kvState);
-		await io.writeFile(await io.joinPath(config.dir, initial.filename), initial.content);
+		await io.writeFile(await io.joinPath(dir, initial.filename), initial.content);
 
 		const unsubscribe = ctx.kv.observeAll((changes) => {
 			void (async () => {
@@ -261,7 +263,7 @@ export function createMarkdownMaterializer<
 				}
 
 				const result = serialize(kvState);
-				await io.writeFile(await io.joinPath(config.dir, result.filename), result.content);
+				await io.writeFile(await io.joinPath(dir, result.filename), result.content);
 			})().catch((error) => {
 				console.warn('[markdown-materializer] kv write failed:', error);
 			});
@@ -283,14 +285,18 @@ export function createMarkdownMaterializer<
 		},
 		whenReady: (async () => {
 			await ctx.whenReady;
-			await io.mkdir(config.dir);
+			const dir =
+				typeof config.dir === 'function'
+					? await config.dir()
+					: config.dir;
+			await io.mkdir(dir);
 
 			for (const name of tableNames) {
-				await materializeTable(name);
+				await materializeTable(name, dir);
 			}
 
 			if (shouldMaterializeKv) {
-				await materializeKv();
+				await materializeKv(dir);
 			}
 		})(),
 		dispose() {

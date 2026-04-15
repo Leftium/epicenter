@@ -141,3 +141,50 @@ pub async fn bulk_delete_files(paths: Vec<String>) -> Result<u32, String> {
     .await
     .map_err(|e| format!("Task join error: {}", e))?
 }
+
+#[derive(serde::Deserialize)]
+pub struct MarkdownFile {
+    filename: String,
+    content: String,
+}
+
+/// Writes markdown files to disk atomically (tmp + rename).
+/// Ensures the target directory exists before writing.
+///
+/// Each file is written to `{directory}/{filename}.tmp` first, then renamed
+/// to `{directory}/{filename}`. This prevents partial reads from observers
+/// or external tools watching the directory.
+///
+/// # Arguments
+/// * `directory` - Absolute path to the output directory
+/// * `files` - Array of `{ filename, content }` pairs to write
+///
+/// # Returns
+/// * `Ok(u32)` - Number of files successfully written
+/// * `Err(String)` - Error message if any write fails
+#[tauri::command]
+pub async fn write_markdown_files(
+    directory: String,
+    files: Vec<MarkdownFile>,
+) -> Result<u32, String> {
+    tokio::task::spawn_blocking(move || {
+        let dir_path = PathBuf::from(&directory);
+        fs::create_dir_all(&dir_path)
+            .map_err(|e| format!("Failed to create directory {}: {}", directory, e))?;
+
+        let mut written = 0u32;
+        for file in &files {
+            let path = dir_path.join(&file.filename);
+            let tmp = path.with_extension("md.tmp");
+
+            fs::write(&tmp, &file.content)
+                .map_err(|e| format!("Failed to write {}: {}", file.filename, e))?;
+            fs::rename(&tmp, &path)
+                .map_err(|e| format!("Failed to rename {}: {}", file.filename, e))?;
+            written += 1;
+        }
+        Ok::<u32, String>(written)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}

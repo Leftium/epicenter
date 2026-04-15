@@ -154,6 +154,15 @@ export function createAuth({
 			}
 			return origins;
 		},
+		// secondaryStorage = Cloudflare KV read cache for sessions/verification.
+		// Postgres (Germany) is always the source of truth—KV just avoids the
+		// ~150ms round-trip on repeated session reads from distant edges.
+		//
+		// IMPORTANT: When secondaryStorage is configured, Better Auth defaults
+		// to KV-only writes for sessions and verification unless you explicitly
+		// opt back into Postgres with storeSessionInDatabase / storeInDatabase.
+		// Missing either flag causes silent data loss (state_mismatch, lost
+		// sessions). If you remove secondaryStorage, remove both flags too.
 		secondaryStorage: {
 			get: (key: string) => env.SESSION_KV.get(key),
 			set: (key: string, value: string, ttl?: number) =>
@@ -161,6 +170,14 @@ export function createAuth({
 					expirationTtl: ttl ?? 60 * 5,
 				}),
 			delete: (key: string) => env.SESSION_KV.delete(key),
+		},
+		// Ensure OAuth state verification records are written to Postgres,
+		// not just KV. Without this, secondaryStorage causes Better Auth to
+		// skip the DB write for verification records. KV is eventually
+		// consistent, so the OAuth callback often can't find the record
+		// written moments earlier at a different edge → state_mismatch.
+		verification: {
+			storeInDatabase: true,
 		},
 	} satisfies Omit<BetterAuthOptions, 'plugins'>;
 

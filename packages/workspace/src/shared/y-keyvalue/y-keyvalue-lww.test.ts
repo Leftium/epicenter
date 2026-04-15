@@ -11,11 +11,12 @@
  *
  * See also:
  * - `y-keyvalue.ts` for positional (rightmost-wins) alternative
- * - `y-keyvalue-comparison.test.ts` for side-by-side behavioral comparison
+ * - `__benchmarks__/conflict-resolution.bench.test.ts` for side-by-side behavioral comparison
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { YKeyValueLww, type YKeyValueLwwEntry } from './y-keyvalue-lww';
+import { YKeyValue, type YKeyValueEntry } from './y-keyvalue';
 
 describe('YKeyValueLww', () => {
 	describe('Basic Operations', () => {
@@ -1113,5 +1114,79 @@ describe('YKeyValueLww', () => {
 				expect(kv1.get('foo')).toBe('updated');
 			});
 		});
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// API Compatibility: YKeyValue vs YKeyValueLww
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Verifies that YKeyValue (positional) and YKeyValueLww (timestamp) expose
+ * the same consumer-facing API surface. Moved here from the benchmark suite
+ * because these are behavioral correctness tests, not performance measurements.
+ */
+describe('API compatibility: YKeyValue vs YKeyValueLww', () => {
+	test('both implementations have identical API surface', () => {
+		const doc1 = new Y.Doc();
+		const doc2 = new Y.Doc();
+		const arr1 = doc1.getArray<YKeyValueEntry<string>>('data');
+		const arr2 = doc2.getArray<YKeyValueLwwEntry<string>>('data');
+		const kv1 = new YKeyValue(arr1);
+		const kv2 = new YKeyValueLww(arr2);
+
+		// Same methods exist
+		expect(typeof kv1.get).toBe('function');
+		expect(typeof kv2.get).toBe('function');
+
+		expect(typeof kv1.set).toBe('function');
+		expect(typeof kv2.set).toBe('function');
+
+		expect(typeof kv1.delete).toBe('function');
+		expect(typeof kv2.delete).toBe('function');
+
+		expect(typeof kv1.has).toBe('function');
+		expect(typeof kv2.has).toBe('function');
+
+		expect(typeof kv1.observe).toBe('function');
+		expect(typeof kv2.observe).toBe('function');
+
+		expect(typeof kv1.unobserve).toBe('function');
+		expect(typeof kv2.unobserve).toBe('function');
+
+		// Same properties
+		expect(kv1.map).toBeInstanceOf(Map);
+		expect(kv2.map).toBeInstanceOf(Map);
+
+		expect(kv1.yarray).toBeDefined();
+		expect(kv2.yarray).toBeDefined();
+
+		expect(kv1.doc).toBeDefined();
+		expect(kv2.doc).toBeDefined();
+	});
+
+	test('both implementations satisfy the same consumer contract', () => {
+		function useKV(kv: {
+			get: (k: string) => string | undefined;
+			set: (k: string, v: string) => void;
+			has: (k: string) => boolean;
+		}) {
+			kv.set('a', '1');
+			kv.set('b', '2');
+			expect(kv.get('a')).toBe('1');
+			expect(kv.has('b')).toBe(true);
+			kv.set('a', '3');
+			expect(kv.get('a')).toBe('3');
+		}
+
+		const doc1 = new Y.Doc();
+		const doc2 = new Y.Doc();
+		const arr1 = doc1.getArray<YKeyValueEntry<string>>('data');
+		const arr2 = doc2.getArray<YKeyValueLwwEntry<string>>('data');
+		const kv1 = new YKeyValue(arr1);
+		const kv2 = new YKeyValueLww(arr2);
+
+		useKV(kv1);
+		useKV(kv2);
 	});
 });

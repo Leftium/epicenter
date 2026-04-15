@@ -1,18 +1,23 @@
 /**
- * YKeyValue vs YKeyValueLww - Comparison Tests
+ * Conflict Resolution Comparison: YKeyValue vs YKeyValueLww
  *
- * These tests compare positional conflict resolution and timestamp-based LWW
- * conflict resolution under the same concurrent edit scenarios. They also measure
- * storage overhead and confirm API parity for migration safety.
+ * Answers: "How do the two YKeyValue implementations differ in conflict behavior?"
  *
- * Key behaviors:
- * - Equal scenarios produce different winners depending on conflict strategy.
- * - LWW adds predictable storage overhead while preserving the same public API.
+ * Compares positional conflict resolution (clientID-based, unpredictable winner)
+ * against timestamp-based LWW (later edit always wins) under identical concurrent
+ * edit scenarios. Also measures storage overhead and confirms API parity.
  */
+
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { YKeyValue, type YKeyValueEntry } from './y-keyvalue';
-import { YKeyValueLww, type YKeyValueLwwEntry } from './y-keyvalue-lww';
+import {
+	YKeyValue,
+	type YKeyValueEntry,
+} from '../shared/y-keyvalue/y-keyvalue.js';
+import {
+	YKeyValueLww,
+	type YKeyValueLwwEntry,
+} from '../shared/y-keyvalue/y-keyvalue-lww.js';
 
 /** Helper to create a YKeyValue with fresh doc */
 function createKv<T>() {
@@ -28,7 +33,11 @@ function createKvLww<T>() {
 	return { doc, array, kv: new YKeyValueLww(array) };
 }
 
-describe('Conflict Resolution: YKeyValue vs YKeyValueLww', () => {
+// ═══════════════════════════════════════════════════════════════════════════════
+// Conflict Resolution
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('conflict resolution: YKeyValue vs YKeyValueLww', () => {
 	/**
 	 * THE KEY DIFFERENCE: Same concurrent edits, different winners.
 	 *
@@ -144,7 +153,11 @@ describe('Conflict Resolution: YKeyValue vs YKeyValueLww', () => {
 	});
 });
 
-describe('Storage Comparison', () => {
+// ═══════════════════════════════════════════════════════════════════════════════
+// Storage Comparison
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('storage comparison', () => {
 	test('LWW entries serialize larger than positional entries', () => {
 		const { array: arr } = createKv<string>();
 		const { array: arrLww } = createKvLww<string>();
@@ -193,63 +206,5 @@ describe('Storage Comparison', () => {
 		// LWW will be slightly larger due to timestamp field
 		expect(size2).toBeGreaterThan(size1);
 		expect(size2).toBeLessThan(size1 * 2); // But not dramatically larger
-	});
-});
-
-describe('API Compatibility', () => {
-	test('both implementations have identical API surface', () => {
-		const { kv: kv1 } = createKv<string>();
-		const { kv: kv2 } = createKvLww<string>();
-
-		// Same methods exist
-		expect(typeof kv1.get).toBe('function');
-		expect(typeof kv2.get).toBe('function');
-
-		expect(typeof kv1.set).toBe('function');
-		expect(typeof kv2.set).toBe('function');
-
-		expect(typeof kv1.delete).toBe('function');
-		expect(typeof kv2.delete).toBe('function');
-
-		expect(typeof kv1.has).toBe('function');
-		expect(typeof kv2.has).toBe('function');
-
-		expect(typeof kv1.observe).toBe('function');
-		expect(typeof kv2.observe).toBe('function');
-
-		expect(typeof kv1.unobserve).toBe('function');
-		expect(typeof kv2.unobserve).toBe('function');
-
-		// Same properties
-		expect(kv1.map).toBeInstanceOf(Map);
-		expect(kv2.map).toBeInstanceOf(Map);
-
-		expect(kv1.yarray).toBeDefined();
-		expect(kv2.yarray).toBeDefined();
-
-		expect(kv1.doc).toBeDefined();
-		expect(kv2.doc).toBeDefined();
-	});
-
-	test('both implementations satisfy the same consumer contract', () => {
-		// Code that works with YKeyValue should work with YKeyValueLww
-		function useKV(kv: {
-			get: (k: string) => string | undefined;
-			set: (k: string, v: string) => void;
-			has: (k: string) => boolean;
-		}) {
-			kv.set('a', '1');
-			kv.set('b', '2');
-			expect(kv.get('a')).toBe('1');
-			expect(kv.has('b')).toBe(true);
-			kv.set('a', '3');
-			expect(kv.get('a')).toBe('3');
-		}
-
-		const { kv: kv1 } = createKv<string>();
-		const { kv: kv2 } = createKvLww<string>();
-
-		useKV(kv1);
-		useKV(kv2);
 	});
 });

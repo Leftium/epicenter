@@ -1,4 +1,4 @@
-import { defineKv, defineTable, defineWorkspace } from '@epicenter/workspace';
+import { defineKv, defineTable, defineWorkspace, type InferTableRow } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
@@ -62,6 +62,9 @@ const recordings = defineTable(
 			return row;
 	}
 });
+
+/** Recording row type inferred from the latest workspace table schema version. */
+export type Recording = InferTableRow<typeof recordings>;
 
 /** User-defined transformation pipelines. Each transformation has ordered steps. */
 const transformations = defineTable(

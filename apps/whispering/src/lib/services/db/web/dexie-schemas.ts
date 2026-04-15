@@ -7,7 +7,7 @@
  *
  * @see {@link ../models/recordings.ts} for the domain type used by UI and services
  */
-import type { Recording } from '../models/recordings';
+import type { DbRecording } from '../models/recordings';
 
 /**
  * Serialized audio format for IndexedDB storage.
@@ -46,7 +46,7 @@ type RecordingStoredInIndexedDbLegacy = {
  * both shapes.
  */
 export type RecordingStoredInIndexedDB =
-	| (Recording & {
+	| (DbRecording & {
 			serializedAudio: SerializedAudio | undefined;
 	  })
 	| RecordingStoredInIndexedDbLegacy;

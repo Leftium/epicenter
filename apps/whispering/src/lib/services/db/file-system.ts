@@ -16,7 +16,7 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
 import { FsServiceLive } from '$lib/services/desktop/fs';
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter';
-import type { Recording } from './models';
+import type { DbRecording } from './models';
 import { Transformation, TransformationRun } from './models';
 import type { DbService } from './types';
 import { DbError } from './types';
@@ -77,17 +77,17 @@ function normalizeRecordingFrontMatter(
 }
 
 /**
- * Convert Recording to markdown format (frontmatter + body)
+ * Convert DbRecording to markdown format (frontmatter + body)
  */
 function recordingToMarkdown({
 	transcript,
 	...frontMatter
-}: Recording): string {
+}: DbRecording): string {
 	return stringifyFrontmatter(transcript, frontMatter);
 }
 
 /**
- * Convert markdown file (YAML frontmatter + body) to Recording
+ * Convert markdown file (YAML frontmatter + body) to DbRecording
  */
 function markdownToRecording({
 	frontMatter,
@@ -95,7 +95,7 @@ function markdownToRecording({
 }: {
 	frontMatter: RecordingFrontMatter;
 	body: string;
-}): Recording {
+}): DbRecording {
 	return {
 		...frontMatter,
 		transcript: body.trimEnd(),
@@ -176,7 +176,7 @@ export function createFileSystemDb(): DbService {
 
 						// Filter out any null entries and sort by recordedAt (newest first)
 						const validRecordings = recordings.filter(
-							(r): r is Recording => r !== null,
+						(r): r is DbRecording => r !== null,
 						);
 						validRecordings.sort(
 							(a, b) =>
@@ -293,7 +293,7 @@ export function createFileSystemDb(): DbService {
 				const recordingWithTimestamp = {
 					...recording,
 					updatedAt: now,
-				} satisfies Recording;
+				} satisfies DbRecording;
 
 				return tryAsync({
 					try: async () => {

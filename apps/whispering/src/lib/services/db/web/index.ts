@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid/non-secure';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { DownloadService } from '$lib/services/download';
 import type {
-	Recording,
+	DbRecording,
 	Transformation,
 	TransformationRun,
 	TransformationRunCompleted,
@@ -32,7 +32,7 @@ function serializedAudioToBlob(serializedAudio: SerializedAudio): Blob {
 
 function storedRecordingToRecording(
 	recording: RecordingStoredInIndexedDB,
-): Recording {
+): DbRecording {
 	return {
 		id: recording.id,
 		title: recording.title,
@@ -52,7 +52,7 @@ function recordingToStoredRecording({
 	recording,
 	serializedAudio,
 }: {
-	recording: Recording;
+	recording: DbRecording;
 	serializedAudio: SerializedAudio | undefined;
 }): RecordingsDbSchemaV5['recordings'] {
 	return {
@@ -61,7 +61,7 @@ function recordingToStoredRecording({
 	};
 }
 
-function sortByRecordedAtDesc(recordings: Recording[]): Recording[] {
+function sortByRecordedAtDesc(recordings: DbRecording[]): DbRecording[] {
 	return [...recordings].sort(
 		(a, b) =>
 			new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime(),
@@ -112,7 +112,7 @@ export function createDbServiceWeb({
 					try: () =>
 						db.recordings
 							.where('transcriptionStatus')
-							.equals('TRANSCRIBING' satisfies Recording['transcriptionStatus'])
+							.equals('TRANSCRIBING' satisfies DbRecording['transcriptionStatus'])
 							.primaryKeys(),
 					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
@@ -157,7 +157,7 @@ export function createDbServiceWeb({
 				const recordingWithTimestamp = {
 					...recording,
 					updatedAt: now,
-				} satisfies Recording;
+				} satisfies DbRecording;
 
 				// Get existing record to preserve serializedAudio (audio is immutable)
 				const existingRecord = await db.recordings.get(recording.id);

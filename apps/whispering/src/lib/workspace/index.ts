@@ -1,1 +1,1 @@
-export { whisperingDefinition } from './definition';
+export { whisperingDefinition, type Recording } from './definition';

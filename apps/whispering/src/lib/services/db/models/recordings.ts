@@ -1,18 +1,14 @@
 /**
- * Recording intermediate representation.
+ * DB service's recording storage shape.
  *
- * This is the DB service's normalized recording shape. Storage adapters read their
- * native format and convert into this type before the rest of the app touches it.
+ * This is NOT the domain Recording type (that lives in `$lib/workspace`). This type
+ * describes what the storage adapters (file-system, IndexedDB) persist alongside audio
+ * blobs. It exists because storage formats embed metadata for human readability (markdown
+ * frontmatter) and backward compatibility (IndexedDB rows).
  *
- * - Desktop stores recording metadata in markdown frontmatter, with the markdown body
- *   holding the transcript and a sibling audio file holding the blob.
- * - Web stores recording metadata in IndexedDB, alongside serialized audio data.
- *
- * Audio bytes are intentionally excluded from this type. Use the recording DB service
- * methods to fetch or create playback URLs on demand instead of passing blobs around
- * in the intermediate representation.
+ * Once the DB service is slimmed to audio-blob-only operations, this type can be removed.
  */
-export type Recording = {
+export type DbRecording = {
 	id: string;
 	title: string;
 	recordedAt: string;

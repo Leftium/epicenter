@@ -23,10 +23,8 @@
 import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 
-/** Recording row type inferred from the workspace table schema. */
-export type Recording = ReturnType<
-	typeof workspace.tables.recordings.getAllValid
->[number];
+/** Re-exported from the workspace definition for consumer convenience. */
+export type { Recording } from '$lib/workspace';
 
 function createRecordings() {
 	const map = fromTable(workspace.tables.recordings);

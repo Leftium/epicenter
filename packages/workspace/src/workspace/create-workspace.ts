@@ -391,11 +391,13 @@ export function createWorkspace<
 					TAwarenessDefinitions,
 					TExtensions
 				>,
-			) => TExports & {
-				whenReady?: Promise<unknown>;
-				dispose?: () => MaybePromise<void>;
-				clearLocalData?: () => MaybePromise<void>;
-			},
+			) => MaybePromise<
+				TExports & {
+					whenReady?: Promise<unknown>;
+					dispose?: () => MaybePromise<void>;
+					clearLocalData?: () => MaybePromise<void>;
+				}
+			>,
 		) {
 			const {
 				dispose: _dispose,
@@ -412,12 +414,51 @@ export function createWorkspace<
 			};
 
 			try {
-				const raw = factory(ctx);
+				const rawOrPromise = factory(ctx);
 
 				// Void return means "not installed" — skip registration
-				if (!raw) return buildClient({ extensions, state, actions });
+				if (!rawOrPromise) return buildClient({ extensions, state, actions });
 
-				const resolved = defineExtension(raw);
+				// Async factory: defer resolution into whenReady. The chaining stays
+				// synchronous; the factory's result is resolved before the extension's
+				// own whenReady runs.
+				if (rawOrPromise instanceof Promise) {
+					let resolvedDispose: (() => MaybePromise<void>) | undefined;
+					let resolvedClearLocalData: (() => MaybePromise<void>) | undefined;
+
+					const asyncWhenReady = rawOrPromise.then(async (raw) => {
+						if (!raw) return;
+						const ext = defineExtension(raw);
+						resolvedDispose = ext.dispose;
+						resolvedClearLocalData = ext.clearLocalData;
+						await ext.whenReady;
+					});
+
+					return buildClient({
+						extensions: {
+							...extensions,
+							[key]: {},
+						} as TExtensions & Record<TKey, TExports>,
+						state: {
+							extensionCleanups: [
+								...state.extensionCleanups,
+								() => resolvedDispose?.(),
+							],
+							clearLocalDataCallbacks: [
+								...state.clearLocalDataCallbacks,
+								() => resolvedClearLocalData?.(),
+							],
+							whenReadyPromises: [
+								...state.whenReadyPromises,
+								asyncWhenReady,
+							],
+						},
+						actions,
+					});
+				}
+
+				// Sync factory: existing path
+				const resolved = defineExtension(rawOrPromise);
 
 				return buildClient({
 					extensions: {
@@ -430,7 +471,10 @@ export function createWorkspace<
 							...state.clearLocalDataCallbacks,
 							...(resolved.clearLocalData ? [resolved.clearLocalData] : []),
 						],
-						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
+						whenReadyPromises: [
+							...state.whenReadyPromises,
+							resolved.whenReady,
+						],
 					},
 					actions,
 				});
@@ -521,11 +565,13 @@ export function createWorkspace<
 						TAwarenessDefinitions,
 						TExtensions
 					>,
-				) => TExports & {
-					whenReady?: Promise<unknown>;
-					dispose?: () => MaybePromise<void>;
-					clearLocalData?: () => MaybePromise<void>;
-				},
+				) => MaybePromise<
+					TExports & {
+						whenReady?: Promise<unknown>;
+						dispose?: () => MaybePromise<void>;
+						clearLocalData?: () => MaybePromise<void>;
+					}
+				>,
 			) {
 				return applyWorkspaceExtension(key, factory);
 			},

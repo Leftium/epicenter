@@ -6,7 +6,7 @@ import {
 import type { Result } from 'wellcrafted/result';
 
 import type {
-	Recording,
+	DbRecording,
 	Transformation,
 	TransformationRun,
 	TransformationRunCompleted,
@@ -33,19 +33,19 @@ export const DbError = defineErrors({
 });
 export type DbError = InferErrors<typeof DbError>;
 
-type RecordingWithAudio = { recording: Recording; audio: Blob };
+type RecordingWithAudio = { recording: DbRecording; audio: Blob };
 
 export type DbService = {
 	recordings: {
-		getAll(): Promise<Result<Recording[], DbError>>;
-		getLatest(): Promise<Result<Recording | null, DbError>>;
+		getAll(): Promise<Result<DbRecording[], DbError>>;
+		getLatest(): Promise<Result<DbRecording | null, DbError>>;
 		getTranscribingIds(): Promise<Result<string[], DbError>>;
-		getById(id: string): Promise<Result<Recording | null, DbError>>;
+		getById(id: string): Promise<Result<DbRecording | null, DbError>>;
 		create(
 			params: RecordingWithAudio | RecordingWithAudio[],
 		): Promise<Result<void, DbError>>;
-		update(recording: Recording): Promise<Result<Recording, DbError>>;
-		delete(recording: Recording | Recording[]): Promise<Result<void, DbError>>;
+		update(recording: DbRecording): Promise<Result<DbRecording, DbError>>;
+		delete(recording: DbRecording | DbRecording[]): Promise<Result<void, DbError>>;
 		cleanupExpired(params: {
 			recordingRetentionStrategy: 'keep-forever' | 'limit-count';
 			maxRecordingCount: number;

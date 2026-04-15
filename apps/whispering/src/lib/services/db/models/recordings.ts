@@ -1,28 +1,26 @@
 /**
- * Recording intermediate representation.
+ * DB service's recording storage shape.
  *
- * This type represents the unified interface for recordings across the application.
- * It is NOT the storage format - different storage implementations use different formats:
+ * This is NOT the domain Recording type (that lives in `$lib/workspace`). This type
+ * describes what the storage adapters (file-system, IndexedDB) persist alongside audio
+ * blobs. It exists because storage formats embed metadata for human readability (markdown
+ * frontmatter) and backward compatibility (IndexedDB rows).
  *
- * - Desktop: Stores metadata in markdown files (.md) and audio in separate files (.webm, .mp3)
- * - Web: Stores in IndexedDB with serialized audio (see web/dexie-schemas.ts)
- *
- * Both implementations read their storage format and convert it to this intermediate
- * representation for use in the UI layer.
- *
- * Audio access: Audio data is NOT stored in this intermediate representation. Instead, use:
- * - `db.recordings.getAudioBlob(id)` to fetch audio as a Blob
- * - `db.recordings.ensureAudioPlaybackUrl(id)` to get a playback URL
- * - `db.recordings.revokeAudioUrl(id)` to clean up cached URLs
+ * Once the DB service is slimmed to audio-blob-only operations, this type can be removed.
  */
-export type Recording = {
+export type DbRecording = {
 	id: string;
 	title: string;
-	subtitle: string;
-	timestamp: string;
-	createdAt: string;
+	recordedAt: string;
 	updatedAt: string;
-	transcribedText: string;
+	transcript: string;
+	/**
+	 * Optional recording duration in milliseconds.
+	 *
+	 * Older recordings will not have this populated, so callers must handle it being
+	 * absent.
+	 */
+	duration?: number;
 	/**
 	 * Recording lifecycle status:
 	 * 1. Begins in 'UNPROCESSED' state

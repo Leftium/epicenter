@@ -168,7 +168,7 @@ export const transformer = {
 
 			const { data: transformationRun, error: transformationRunError } =
 				await runTransformation({
-					input: recording.transcribedText,
+					input: recording.transcript,
 					transformation,
 					steps,
 					recordingId,

@@ -7,7 +7,7 @@
  *
  * @see {@link ../models/recordings.ts} for the domain type used by UI and services
  */
-import type { Recording } from '../models/recordings';
+import type { DbRecording } from '../models/recordings';
 
 /**
  * Serialized audio format for IndexedDB storage.
@@ -26,18 +26,30 @@ export type SerializedAudio = {
 	blobType: string;
 };
 
+type RecordingStoredInIndexedDbLegacy = {
+	id: string;
+	title: string;
+	subtitle: string;
+	timestamp: string;
+	createdAt: string;
+	updatedAt: string;
+	transcribedText: string;
+	transcriptionStatus: 'UNPROCESSED' | 'TRANSCRIBING' | 'DONE' | 'FAILED';
+	serializedAudio: SerializedAudio | undefined;
+};
+
 /**
  * How a recording is actually stored in IndexedDB (storage format).
  *
- * This is NOT the intermediate representation used by the UI (see Recording type).
- *
- * Extends Recording with:
- * - `serializedAudio` field for storing audio data (see SerializedAudio type)
- * - Audio is stored in serialized format to work around iOS Safari Blob storage issues
+ * New writes use the V2 recording field names. Existing IndexedDB rows may still carry
+ * legacy V1/V4-style names until they are read and rewritten, so the storage type accepts
+ * both shapes.
  */
-export type RecordingStoredInIndexedDB = Recording & {
-	serializedAudio: SerializedAudio | undefined;
-};
+export type RecordingStoredInIndexedDB =
+	| (DbRecording & {
+			serializedAudio: SerializedAudio | undefined;
+	  })
+	| RecordingStoredInIndexedDbLegacy;
 
 export type RecordingsDbSchemaV5 = {
 	recordings: RecordingStoredInIndexedDB;

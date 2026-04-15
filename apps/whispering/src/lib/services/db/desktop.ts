@@ -59,11 +59,11 @@ export function createDbServiceDesktop({
 					merged.set(rec.id, rec);
 				}
 
-				// Convert back to array and sort by timestamp (newest first)
+				// Convert back to array and sort by recordedAt (newest first)
 				const result = Array.from(merged.values());
 				result.sort(
 					(a, b) =>
-						new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+						new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime(),
 				);
 
 				return Ok(result);

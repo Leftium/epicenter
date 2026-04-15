@@ -1,4 +1,4 @@
-import { defineKv, defineTable, defineWorkspace } from '@epicenter/workspace';
+import { defineKv, defineTable, defineWorkspace, type InferTableRow } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
@@ -30,7 +30,41 @@ const recordings = defineTable(
 		transcriptionStatus: "'UNPROCESSED' | 'TRANSCRIBING' | 'DONE' | 'FAILED'",
 		_v: '1',
 	}),
-);
+	type({
+		id: 'string',
+		title: 'string',
+		recordedAt: 'string',
+		updatedAt: 'string',
+		transcript: 'string',
+		transcriptionStatus: "'UNPROCESSED' | 'TRANSCRIBING' | 'DONE' | 'FAILED'",
+		'duration?': 'number | undefined',
+		_v: '2',
+	}),
+).migrate((row) => {
+	switch (row._v) {
+		case 1: {
+			const title =
+				row.transcribedText.slice(0, 60).trim() ||
+				row.title ||
+				'Untitled Recording';
+			return {
+				id: row.id,
+				title,
+				recordedAt: row.timestamp,
+				updatedAt: row.updatedAt,
+				transcript: row.transcribedText,
+				transcriptionStatus: row.transcriptionStatus,
+				duration: undefined,
+				_v: 2,
+			};
+		}
+		case 2:
+			return row;
+	}
+});
+
+/** Recording row type inferred from the latest workspace table schema version. */
+export type Recording = InferTableRow<typeof recordings>;
 
 /** User-defined transformation pipelines. Each transformation has ordered steps. */
 const transformations = defineTable(

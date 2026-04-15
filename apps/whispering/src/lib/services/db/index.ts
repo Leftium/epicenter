@@ -3,7 +3,7 @@ import { createDbServiceDesktop } from './desktop';
 import { createDbServiceWeb } from './web';
 
 export type {
-	Recording,
+	DbRecording,
 	Transformation,
 	TransformationRun,
 	TransformationRunCompleted,

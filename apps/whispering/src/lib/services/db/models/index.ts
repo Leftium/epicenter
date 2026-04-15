@@ -1,5 +1,5 @@
 // Recordings
-export type { Recording } from './recordings';
+export type { DbRecording } from './recordings';
 
 // Transformation Runs
 export {

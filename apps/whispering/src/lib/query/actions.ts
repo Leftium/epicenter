@@ -612,11 +612,10 @@ async function processRecordingPipeline({
 	const recording = {
 		id: newRecordingId,
 		title: '',
-		subtitle: '',
-		timestamp: now,
-		createdAt: now,
+		recordedAt: now,
 		updatedAt: now,
-		transcribedText: '',
+		transcript: '',
+		duration: undefined,
 		transcriptionStatus: 'UNPROCESSED',
 	} as const;
 
@@ -681,9 +680,11 @@ async function processRecordingPipeline({
 		description: completionDescription,
 	});
 
+	const title = transcribedText.slice(0, 60).trim() || 'Untitled Recording';
 	recordings.update(recording.id, {
-		transcribedText,
+		transcript: transcribedText,
 		transcriptionStatus: 'DONE',
+		title,
 	});
 
 	// Determine if we need to chain to transformation

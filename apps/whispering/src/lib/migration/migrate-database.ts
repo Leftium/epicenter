@@ -112,12 +112,17 @@ export async function migrateDatabaseToWorkspace({
 					}
 
 					const row: WorkspaceRecordingRow = {
-						...recording,
+						id: recording.id,
+						title: recording.title,
+						recordedAt: recording.recordedAt,
+						updatedAt: recording.updatedAt,
+						transcript: recording.transcript,
 						transcriptionStatus:
 							recording.transcriptionStatus === 'TRANSCRIBING'
 								? 'FAILED'
 								: recording.transcriptionStatus,
-						_v: 1 as const,
+						duration: recording.duration ?? undefined,
+						_v: 2 as const,
 					};
 
 					ws.tables.recordings.set(row);
@@ -170,7 +175,8 @@ export async function migrateDatabaseToWorkspace({
 		});
 
 		for (let index = 0; index < transformation.steps.length; index += 1) {
-			const step = transformation.steps[index]!;
+			const step = transformation.steps[index];
+			if (!step) continue;
 
 			trySync({
 				try: () => {

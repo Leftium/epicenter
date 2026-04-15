@@ -23,10 +23,8 @@
 import { fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 
-/** Recording row type inferred from the workspace table schema. */
-export type Recording = ReturnType<
-	typeof workspace.tables.recordings.getAllValid
->[number];
+/** Re-exported from the workspace definition for consumer convenience. */
+export type { Recording } from '$lib/workspace';
 
 function createRecordings() {
 	const map = fromTable(workspace.tables.recordings);
@@ -35,11 +33,10 @@ function createRecordings() {
 	// Without this, every access creates a new array → TanStack Table's $derived
 	// sees "new data" → updates internal $state → re-triggers $derived → infinite loop.
 	const sorted = $derived(
-		[...map.values()]
-			.sort(
-				(a, b) =>
-					new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-			),
+		[...map.values()].sort(
+			(a, b) =>
+				new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime(),
+		),
 	);
 
 	return {
@@ -65,7 +62,7 @@ function createRecordings() {
 		},
 
 		/**
-		 * All recordings as a sorted array (newest first by timestamp).
+		 * All recordings as a sorted array (newest first by recordedAt).
 		 *
 		 * Memoized via `$derived`—returns a stable reference until the
 		 * SvelteMap actually changes. This is critical for TanStack Table,
@@ -82,7 +79,7 @@ function createRecordings() {
 		 * No manual cache invalidation needed—the observer handles UI updates.
 		 */
 		set(recording: Omit<Recording, '_v'>) {
-			workspace.tables.recordings.set({ ...recording, _v: 1 } as Recording);
+			workspace.tables.recordings.set({ ...recording, _v: 2 } as Recording);
 		},
 
 		/**

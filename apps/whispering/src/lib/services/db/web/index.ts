@@ -1,9 +1,8 @@
 import { nanoid } from 'nanoid/non-secure';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { DownloadService } from '$lib/services/download';
-
 import type {
-	Recording,
+	DbRecording,
 	Transformation,
 	TransformationRun,
 	TransformationRunCompleted,
@@ -12,10 +11,13 @@ import type {
 	TransformationStepRunFailed,
 	TransformationStepRunRunning,
 } from '../models';
-import type { DbService } from '../types';
-import { DbError } from '../types';
+import { DbError, type DbService } from '../types';
 import { blobToSerializedAudio, WhisperingDatabase } from './dexie-database';
-import type { RecordingsDbSchemaV5, SerializedAudio } from './dexie-schemas';
+import type {
+	RecordingsDbSchemaV5,
+	RecordingStoredInIndexedDB,
+	SerializedAudio,
+} from './dexie-schemas';
 
 // const downloadIndexedDbBlobWithToast = useDownloadIndexedDbBlobWithToast();
 
@@ -26,6 +28,44 @@ function serializedAudioToBlob(serializedAudio: SerializedAudio): Blob {
 	return new Blob([serializedAudio.arrayBuffer], {
 		type: serializedAudio.blobType,
 	});
+}
+
+function storedRecordingToRecording(
+	recording: RecordingStoredInIndexedDB,
+): DbRecording {
+	return {
+		id: recording.id,
+		title: recording.title,
+		recordedAt:
+			'recordedAt' in recording ? recording.recordedAt : recording.timestamp,
+		updatedAt: recording.updatedAt,
+		transcript:
+			'transcript' in recording
+				? recording.transcript
+				: recording.transcribedText,
+		transcriptionStatus: recording.transcriptionStatus,
+		duration: 'duration' in recording ? recording.duration : undefined,
+	};
+}
+
+function recordingToStoredRecording({
+	recording,
+	serializedAudio,
+}: {
+	recording: DbRecording;
+	serializedAudio: SerializedAudio | undefined;
+}): RecordingsDbSchemaV5['recordings'] {
+	return {
+		...recording,
+		serializedAudio,
+	};
+}
+
+function sortByRecordedAtDesc(recordings: DbRecording[]): DbRecording[] {
+	return [...recordings].sort(
+		(a, b) =>
+			new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime(),
+	);
 }
 
 /**
@@ -45,13 +85,9 @@ export function createDbServiceWeb({
 			getAll: async () => {
 				return tryAsync({
 					try: async () => {
-						const recordings = await db.recordings
-							.orderBy('timestamp')
-							.reverse()
-							.toArray();
-						// Strip serializedAudio field to return Recording type
-						return recordings.map(
-							({ serializedAudio, ...recording }) => recording,
+						const recordings = await db.recordings.toArray();
+						return sortByRecordedAtDesc(
+							recordings.map(storedRecordingToRecording),
 						);
 					},
 					catch: (error) => DbError.QueryFailed({ cause: error }),
@@ -61,14 +97,11 @@ export function createDbServiceWeb({
 			getLatest: async () => {
 				return tryAsync({
 					try: async () => {
-						const latestRecording = await db.recordings
-							.orderBy('timestamp')
-							.reverse()
-							.first();
-						if (!latestRecording) return null;
-						// Strip serializedAudio field to return Recording type
-						const { serializedAudio, ...recording } = latestRecording;
-						return recording;
+						const recordings = await db.recordings.toArray();
+						const [latestRecording] = sortByRecordedAtDesc(
+							recordings.map(storedRecordingToRecording),
+						);
+						return latestRecording ?? null;
 					},
 					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
@@ -79,7 +112,7 @@ export function createDbServiceWeb({
 					try: () =>
 						db.recordings
 							.where('transcriptionStatus')
-							.equals('TRANSCRIBING' satisfies Recording['transcriptionStatus'])
+							.equals('TRANSCRIBING' satisfies DbRecording['transcriptionStatus'])
 							.primaryKeys(),
 					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
@@ -90,9 +123,7 @@ export function createDbServiceWeb({
 					try: async () => {
 						const maybeRecording = await db.recordings.get(id);
 						if (!maybeRecording) return null;
-						// Strip serializedAudio field to return Recording type
-						const { serializedAudio, ...recording } = maybeRecording;
-						return recording;
+						return storedRecordingToRecording(maybeRecording);
 					},
 					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
@@ -105,10 +136,12 @@ export function createDbServiceWeb({
 
 				const dbRecordings: RecordingsDbSchemaV5['recordings'][] =
 					await Promise.all(
-						paramsArray.map(async ({ recording, audio }) => ({
-							...recording,
-							serializedAudio: await blobToSerializedAudio(audio),
-						})),
+						paramsArray.map(async ({ recording, audio }) =>
+							recordingToStoredRecording({
+								recording,
+								serializedAudio: await blobToSerializedAudio(audio),
+							}),
+						),
 					);
 
 				return tryAsync({
@@ -124,17 +157,17 @@ export function createDbServiceWeb({
 				const recordingWithTimestamp = {
 					...recording,
 					updatedAt: now,
-				} satisfies Recording;
+				} satisfies DbRecording;
 
 				// Get existing record to preserve serializedAudio (audio is immutable)
 				const existingRecord = await db.recordings.get(recording.id);
 				const serializedAudio = existingRecord?.serializedAudio;
 
 				// Create updated IndexedDB record with preserved audio
-				const dbRecording = {
-					...recordingWithTimestamp,
+				const dbRecording = recordingToStoredRecording({
+					recording: recordingWithTimestamp,
 					serializedAudio,
-				};
+				});
 
 				const { error: updateRecordingError } = await tryAsync({
 					try: async () => {
@@ -187,10 +220,14 @@ export function createDbServiceWeb({
 
 						return tryAsync({
 							try: async () => {
-								const idsToDelete = await db.recordings
-									.orderBy('createdAt')
-									.limit(count - maxRecordingCount)
-									.primaryKeys();
+								const idsToDelete = sortByRecordedAtDesc(
+									(await db.recordings.toArray()).map(
+										storedRecordingToRecording,
+									),
+								)
+									.reverse()
+									.slice(0, count - maxRecordingCount)
+									.map((recording) => recording.id);
 								await db.recordings.bulkDelete(idsToDelete);
 							},
 							catch: (error) => DbError.MutationFailed({ cause: error }),

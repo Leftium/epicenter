@@ -23,8 +23,8 @@ use graceful_shutdown::send_sigint;
 pub mod command;
 use command::{execute_command, spawn_command};
 
-pub mod markdown_reader;
-use markdown_reader::{bulk_delete_files, count_markdown_files, read_markdown_files};
+pub mod markdown;
+use markdown::{bulk_delete_files, count_markdown_files, read_markdown_files, write_markdown_files};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
@@ -171,6 +171,7 @@ pub async fn run() {
         read_markdown_files,
         count_markdown_files,
         bulk_delete_files,
+        write_markdown_files,
     ]);
 
     let app = builder

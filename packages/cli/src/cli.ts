@@ -1,5 +1,3 @@
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import yargs from 'yargs';
 import { createAuthCommand } from './commands/auth';
 import {
@@ -18,11 +16,6 @@ import { runActionCommand } from './commands/run';
 import { sizeCommand } from './commands/size';
 import { startCommand } from './commands/start';
 
-/** Resolution order: EPICENTER_HOME env > ~/.epicenter/ */
-export function resolveEpicenterHome(flagValue?: string): string {
-	return flagValue ?? Bun.env.EPICENTER_HOME ?? join(homedir(), '.epicenter');
-}
-
 /**
  * Create the Epicenter CLI instance.
  *
@@ -34,8 +27,6 @@ export function resolveEpicenterHome(flagValue?: string): string {
 export function createCLI() {
 	return {
 		run: async (argv: string[]) => {
-			const home = resolveEpicenterHome();
-
 			const cli = yargs()
 				.scriptName('epicenter')
 				.command(startCommand)
@@ -51,7 +42,7 @@ export function createCLI() {
 				.command(describeCommand)
 				.command(sizeCommand)
 				.command(rpcCommand)
-				.command(createAuthCommand(home))
+				.command(createAuthCommand())
 				.demandCommand(1)
 				.strict()
 				.exitProcess(false)

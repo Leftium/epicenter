@@ -8,16 +8,7 @@
  * @packageDocumentation
  */
 
-/**
- * A value that may or may not be wrapped in a Promise.
- *
- * Used throughout the materializer's database contract so that both synchronous
- * drivers (`bun:sqlite`, `better-sqlite3`) and asynchronous drivers
- * (`@tursodatabase/database-wasm`, `@libsql/client-wasm`) satisfy the same
- * interface. The materializer `await`s every call internally, which is a no-op
- * for sync return values.
- */
-export type Awaitable<T> = T | Promise<T>;
+import type { MaybePromise } from '../../../workspace/lifecycle.js';
 
 /**
  * Minimal database interface for the SQLite materializer.
@@ -40,7 +31,7 @@ export type Awaitable<T> = T | Promise<T>;
  */
 export type MirrorDatabase = {
 	/** Execute raw SQL that does not return rows. */
-	run(sql: string): Awaitable<unknown>;
+	run(sql: string): MaybePromise<unknown>;
 
 	/** Prepare a reusable statement for repeated reads or writes. */
 	prepare(sql: string): MirrorStatement;
@@ -61,13 +52,13 @@ export type MirrorDatabase = {
  */
 export type MirrorStatement = {
 	/** Run a statement that writes data or otherwise returns no rows. */
-	run(...params: unknown[]): Awaitable<unknown>;
+	run(...params: unknown[]): MaybePromise<unknown>;
 
 	/** Fetch all matching rows as plain objects. */
-	all(...params: unknown[]): Awaitable<Record<string, unknown>[]>;
+	all(...params: unknown[]): MaybePromise<Record<string, unknown>[]>;
 
 	/** Fetch the first matching row, or null if none found. */
-	get(...params: unknown[]): Awaitable<Record<string, unknown> | null>;
+	get(...params: unknown[]): MaybePromise<Record<string, unknown> | null>;
 };
 
 /**

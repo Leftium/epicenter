@@ -4,8 +4,7 @@ import { toast } from '@epicenter/ui/sonner';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { SvelteSet } from 'svelte/reactivity';
 import { fs, workspace } from '$lib/client';
-import { page } from '$app/state';
-import { setSearchParam } from '$lib/search-params';
+import { searchParams } from '$lib/search-params.svelte';
 
 /**
  * Interaction mode discriminated union.
@@ -125,10 +124,9 @@ function createFsState() {
 	 * Unrelated row changes don't trigger recomputation.
 	 */
 	const selectedNode = $derived.by(() => {
-		const fileId = page.url.searchParams.get('file') as FileId | null;
+		const fileId = searchParams.file;
 		return fileId ? (filesMap.get(fileId) ?? null) : null;
 	});
-
 	/**
 	 * Active file's full POSIX path.
 	 *
@@ -137,7 +135,7 @@ function createFsState() {
 	 * won't trigger recomputation—only name/ancestry changes matter.
 	 */
 	const selectedPath = $derived.by(() => {
-		const fileId = page.url.searchParams.get('file') as FileId | null;
+		const fileId = searchParams.file;
 		return fileId ? computePath(fileId) : null;
 	});
 
@@ -177,7 +175,7 @@ function createFsState() {
 	const state = {
 		// ── Read-only getters ───────────────────────────────────────
 		get activeFileId(): FileId | null {
-			return (page.url.searchParams.get('file') as FileId) ?? null;
+			return searchParams.file;
 		},
 		get openFileIds() {
 			return openFileIds as ReadonlySet<FileId>;
@@ -296,7 +294,7 @@ function createFsState() {
 		 * If nothing is focused, creates at root.
 		 */
 		startCreate(fileType: 'file' | 'folder') {
-			const focused = focusedId ?? ((page.url.searchParams.get('file') as FileId) ?? null);
+			const focused = focusedId ?? searchParams.file;
 			if (!focused) {
 				interactionMode = { type: 'creating', parentId: null, fileType };
 				return;
@@ -355,15 +353,15 @@ function createFsState() {
 		// ── Actions ──────────────────────────────────────────────────
 
 		selectFile(id: FileId) {
-			setSearchParam('file', id);
+			searchParams.update({ file: id });
 			openFileIds.add(id);
 		},
 
 		closeFile(id: FileId) {
 			openFileIds.delete(id);
-			if (page.url.searchParams.get('file') === id) {
+			if (searchParams.file === id) {
 				const next = [...openFileIds].at(-1) ?? null;
-				setSearchParam('file', next);
+				searchParams.update({ file: next });
 			}
 		},
 
@@ -400,7 +398,7 @@ function createFsState() {
 				const path = state.getPath(id);
 				if (!path) return;
 				await fs.rm(path, { recursive: true });
-				if (page.url.searchParams.get('file') === id) setSearchParam('file', null);
+				if (searchParams.file === id) searchParams.update({ file: null });
 				openFileIds.delete(id);
 				toast.success(`Deleted ${path}`);
 			}, 'Failed to delete');

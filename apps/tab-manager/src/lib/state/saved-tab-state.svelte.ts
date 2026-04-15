@@ -67,9 +67,7 @@ function createSavedTabState() {
 
 	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
 	const tabs = $derived(
-		tabsMap
-			.values()
-			.toArray()
+		[...tabsMap.values()]
 			.sort((a, b) => b.savedAt - a.savedAt),
 	);
 

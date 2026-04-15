@@ -37,9 +37,7 @@ function createTransformations() {
 
 	// Memoize sorted array with $derived for referential stability.
 	const sorted = $derived(
-		map
-			.values()
-			.toArray()
+		[...map.values()]
 			.sort((a, b) => a.title.localeCompare(b.title)),
 	);
 

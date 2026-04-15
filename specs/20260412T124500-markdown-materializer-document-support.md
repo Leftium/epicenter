@@ -439,7 +439,7 @@ The `markdown()` helper calls `convertEpicenterLinksToWikilinks` on body content
 
 Clean break. No backward compatibility.
 
-- `markdownMaterializer` → `createMaterializer`
+- `markdownMaterializer` → `createMarkdownMaterializer` (kept markdown-specific name; `createMaterializer` was proposed but rejected)
 - `MarkdownSerializer` type → deleted
 - `MarkdownMaterializerConfig` type → deleted
 - `serializer` config property → `.table(name, { serialize })` chain method
@@ -452,7 +452,7 @@ All consumers in the monorepo must be migrated in the same commit.
 
 ## MUST DO
 
-- [x] Implement `createMaterializer(ctx, { dir })` factory where ctx is structurally typed as `{ tables, kv, whenReady }`
+- [x] Implement `createMarkdownMaterializer(ctx, { dir })` factory where ctx is structurally typed as `{ tables, kv, whenReady }`
 - [x] Generic type parameters on factory for `TTables` and `TKv` — infer from ctx arg
 - [x] `.table(name, config)` validates name as `keyof TTables`, infers row type for serialize callback
 - [x] General serialize contract: `{ filename: string; content: string }`
@@ -503,7 +503,7 @@ All consumers in the monorepo must be migrated in the same commit.
 
 ### Summary
 
-Replaced the markdown-specific `markdownMaterializer` with a general `createMaterializer(ctx, { dir })` factory. The new API uses a builder pattern with `.table()` and `.kv()` opt-in chains, generic type parameters for type-safe table names and row inference, and a general `SerializeResult` contract (`{ filename, content }`). The `markdown()` helper handles frontmatter + wikilink conversion as a composable utility rather than baked-in behavior.
+Replaced the markdown-specific `markdownMaterializer` with `createMarkdownMaterializer(ctx, { dir })`. The new API uses a builder pattern with `.table()` and `.kv()` opt-in chains, generic type parameters for type-safe table names and row inference, and a general `SerializeResult` contract (`{ filename, content }`). The `markdown()` helper handles frontmatter + wikilink conversion as a composable utility rather than baked-in behavior.
 
 ### Deviations from Spec
 
@@ -516,4 +516,4 @@ Replaced the markdown-specific `markdownMaterializer` with a general `createMate
 
 - `KvHelper` could expose `getAll()` or `keys()` to enable initial KV snapshot materialization.
 - The fuji workspace on the current branch has a broken import (`definition.ts` was refactored into `workspace.ts` in a prior commit). The vault `epicenter start` test is blocked by this pre-existing issue.
-- Consider whether `createMaterializer` should live in a format-agnostic location (`materializer/index.ts`) rather than under `materializer/markdown/`, since the factory itself is format-agnostic — only the serialize presets and `markdown()` helper are markdown-specific.
+- ~~Consider whether `createMaterializer` should live in a format-agnostic location~~ — rejected. The name stays `createMarkdownMaterializer` and lives under `materializer/markdown/`. The factory was split into its own `materializer.ts` file, separate from the pure formatting helpers in `markdown.ts`.

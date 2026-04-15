@@ -2,7 +2,8 @@
 
 export { type AuthApi, createAuthApi } from './auth/api';
 export { type AuthSession, createSessionStore } from './auth/store';
-export { createCLI, resolveEpicenterHome } from './cli';
+export { createCLI } from './cli';
 export { createCliUnlock } from './extensions';
 export { type LoadConfigResult, loadConfig } from './load-config';
 export { connectWorkspace } from './connect';
+export { EPICENTER_PATHS } from './paths';

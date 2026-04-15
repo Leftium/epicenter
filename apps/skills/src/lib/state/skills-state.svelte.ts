@@ -26,9 +26,7 @@ function createSkillsState() {
 	const referencesMap = fromTable(workspace.tables.references);
 
 	const skills = $derived(
-		skillsMap
-			.values()
-			.toArray()
+		[...skillsMap.values()]
 			.sort((a, b) => a.name.localeCompare(b.name)),
 	);
 
@@ -41,9 +39,7 @@ function createSkillsState() {
 
 	const selectedReferences = $derived.by(() => {
 		if (!selectedSkillId) return [];
-		return referencesMap
-			.values()
-			.toArray()
+		return [...referencesMap.values()]
 			.filter((r) => r.skillId === selectedSkillId)
 			.sort((a, b) => a.path.localeCompare(b.path));
 	});

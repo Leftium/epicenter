@@ -15,26 +15,40 @@ import { page } from '$app/state';
 const VIEW_MODES = ['table', 'timeline'] as const;
 type ViewMode = (typeof VIEW_MODES)[number];
 
-const SORT_KEYS = ['date', 'updatedAt', 'createdAt', 'title', 'rating'] as const;
+const SORT_KEYS = [
+	'date',
+	'updatedAt',
+	'createdAt',
+	'title',
+	'rating',
+] as const;
 type SortBy = (typeof SORT_KEYS)[number];
 
-const VIEW_MODES: ViewMode[] = ['table', 'timeline'];
-const SORT_KEYS: SortBy[] = ['date', 'updatedAt', 'createdAt', 'title', 'rating'];
+/** Defaults—elided from the URL to keep it clean. */
+type SearchParams = {
+	view: ViewMode;
+	sort: SortBy;
+	q: string;
+};
 
-/** Update a single URL search param, removing it when null to keep URLs clean. */
-function setSearchParam(key: string, value: string | null) {
-	const params = new URLSearchParams(page.url.searchParams);
-	if (value === null) {
-		params.delete(key);
-	} else {
-		params.set(key, value);
+const DEFAULTS: SearchParams = {
+	view: 'table',
+	sort: 'date',
+	q: '',
+};
+
+/** Batch-update URL search params in a single navigation. */
+function update(changes: Partial<SearchParams>) {
+	const url = new URL(page.url);
+	for (const [key, value] of Object.entries(changes)) {
+		const def = DEFAULTS[key as keyof SearchParams];
+		if (value === null || value === '' || value === def) {
+			url.searchParams.delete(key);
+		} else {
+			url.searchParams.set(key, String(value));
+		}
 	}
-	const search = params.toString();
-	goto(`${page.url.pathname}${search ? `?${search}` : ''}${page.url.hash}`, {
-		replaceState: true,
-		noScroll: true,
-		keepFocus: true,
-	});
+	goto(url, { replaceState: true, noScroll: true, keepFocus: true });
 }
 
 function createViewState() {
@@ -52,7 +66,7 @@ function createViewState() {
 		 */
 		toggleViewMode() {
 			const next: ViewMode = this.viewMode === 'table' ? 'timeline' : 'table';
-			setSearchParam('view', next === 'table' ? null : next);
+			update({ view: next });
 		},
 
 		get sortBy(): SortBy {
@@ -65,7 +79,7 @@ function createViewState() {
 		 * Default ('date') is elided to keep URLs clean.
 		 */
 		set sortBy(value: SortBy) {
-			setSearchParam('sort', value === 'date' ? null : value);
+			update({ sort: value });
 		},
 
 		get searchQuery() {
@@ -74,7 +88,7 @@ function createViewState() {
 
 		/** Update the search query via the `q` search param. Empty values are elided. */
 		set searchQuery(value: string) {
-			setSearchParam('q', value || null);
+			update({ q: value });
 		},
 	};
 }

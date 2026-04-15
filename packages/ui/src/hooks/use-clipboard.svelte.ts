@@ -3,7 +3,7 @@
 	Modified to support injectable copy function for cross-platform compatibility
 */
 
-type CopyFn = (text: string) => Promise<void>;
+import type { CopyFn } from '#/copy-button/types';
 
 type Options = {
 	/** The time before the copied status is reset. */

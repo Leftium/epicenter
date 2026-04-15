@@ -1,9 +1,11 @@
 /**
- * Opensidian workspace config — one-way materialization to markdown files.
+ * Opensidian workspace config — one-way materialization to markdown files
+ * and queryable SQLite mirror with FTS5 full-text search.
  *
  * Syncs the Opensidian workspace from the Epicenter API, persists the files
- * table to SQLite, and materializes each file as a `.md` on disk with YAML
- * frontmatter (metadata) and markdown body (document content).
+ * table to SQLite, materializes each file as a `.md` on disk with YAML
+ * frontmatter (metadata) and markdown body (document content), and mirrors
+ * the files table into a queryable SQLite database with FTS5 indexing.
  *
  * Reads auth credentials from the CLI session store at
  * `~/.epicenter/auth/sessions.json` — run `epicenter auth login` first.
@@ -14,10 +16,12 @@
  */
 
 import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { Database } from 'bun:sqlite';
 import {
 	createCliUnlock,
 	createSessionStore,
-	resolveEpicenterHome,
+	EPICENTER_PATHS,
 } from '@epicenter/cli';
 import { createWorkspace, defineMutation } from '@epicenter/workspace';
 import {
@@ -26,22 +30,24 @@ import {
 	prepareMarkdownFiles,
 	toSlugFilename,
 } from '@epicenter/workspace/extensions/materializer/markdown';
+import { createSqliteMaterializer } from '@epicenter/workspace/extensions/materializer/sqlite';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import { opensidianDefinition } from 'opensidian/workspace';
 import Type from 'typebox';
 
 const SERVER_URL = process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so';
-const PERSISTENCE_DIR = join(import.meta.dir, '.epicenter', 'persistence');
 const MARKDOWN_DIR = join(import.meta.dir, 'data');
+const MATERIALIZER_DIR = join(import.meta.dir, '.epicenter', 'materializer');
+mkdirSync(MATERIALIZER_DIR, { recursive: true });
 
-const sessions = createSessionStore(resolveEpicenterHome());
+const sessions = createSessionStore();
 
 export const opensidian = createWorkspace(opensidianDefinition)
 	.withExtension(
 		'persistence',
 		filesystemPersistence({
-			filePath: join(PERSISTENCE_DIR, 'opensidian.db'),
+			filePath: EPICENTER_PATHS.persistence(opensidianDefinition.id),
 		}),
 	)
 	.withWorkspaceExtension('materializer', (ctx) =>
@@ -79,6 +85,12 @@ export const opensidian = createWorkspace(opensidianDefinition)
 					});
 				},
 			}),
+	)
+	.withWorkspaceExtension('sqlite', (ctx) =>
+		createSqliteMaterializer(ctx, {
+			db: new Database(join(MATERIALIZER_DIR, 'opensidian.db')),
+		})
+			.table('files', { fts: ['name'] }),
 	)
 	.withWorkspaceExtension('unlock', createCliUnlock(sessions, SERVER_URL))
 	.withExtension(

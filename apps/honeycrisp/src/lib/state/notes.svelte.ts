@@ -22,9 +22,8 @@ import { fromTable } from '@epicenter/svelte';
 import { DateTimeString, generateId } from '@epicenter/workspace';
 import { workspace } from '$lib/client';
 import type { FolderId, NoteId } from '$lib/workspace';
+import { searchParams } from '$lib/search-params.svelte';
 import { foldersState } from './folders.svelte';
-import { page } from '$app/state';
-import { setSearchParam } from '$lib/search-params';
 
 function createNotesState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
@@ -32,7 +31,7 @@ function createNotesState() {
 	const allNotesMap = fromTable(workspace.tables.notes);
 
 	/** All valid notes (including deleted). Cached — only recomputes when table changes. */
-	const allNotes = $derived(allNotesMap.values().toArray());
+	const allNotes = $derived([...allNotesMap.values()]);
 
 	// ─── Derived State ───────────────────────────────────────────────────
 
@@ -125,8 +124,8 @@ function createNotesState() {
 			workspace.tables.notes.update(noteId, {
 				deletedAt: DateTimeString.now(),
 			});
-			if (page.url.searchParams.get('note') === noteId) {
-				setSearchParam('note', null);
+			if (searchParams.note === noteId) {
+				searchParams.update({ note: null });
 			}
 		},
 
@@ -168,8 +167,8 @@ function createNotesState() {
 		 */
 		permanentlyDeleteNote(noteId: NoteId) {
 			workspace.tables.notes.delete(noteId);
-			if (page.url.searchParams.get('note') === noteId) {
-				setSearchParam('note', null);
+			if (searchParams.note === noteId) {
+				searchParams.update({ note: null });
 			}
 		},
 
@@ -235,7 +234,7 @@ function createNotesState() {
 			preview: string;
 			wordCount: number;
 		}) {
-			const selectedNoteId = page.url.searchParams.get('note') as NoteId | null;
+			const selectedNoteId = searchParams.note;
 			if (!selectedNoteId) return;
 			workspace.tables.notes.update(selectedNoteId, {
 				title,

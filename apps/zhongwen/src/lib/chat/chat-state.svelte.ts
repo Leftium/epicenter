@@ -37,9 +37,7 @@ function createChatState() {
 
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
-		conversationsMap
-			.values()
-			.toArray()
+		[...conversationsMap.values()]
 			.sort((a, b) => b.updatedAt - a.updatedAt),
 	);
 

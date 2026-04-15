@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * const sessions = createSessionStore(home);
+ * const sessions = createSessionStore();
  *
  * await sessions.save('https://api.epicenter.so', tokenData, sessionData);
  * const s = await sessions.load('https://api.epicenter.so');
@@ -14,8 +14,9 @@
  */
 
 import { mkdir } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import type { SessionResponse } from '@epicenter/api/types';
+import { EPICENTER_PATHS } from '../paths.js';
 
 /**
  * A persisted auth session for a single server.
@@ -49,14 +50,14 @@ function normalizeUrl(url: string): string {
 }
 
 /**
- * Create a session store bound to a home directory.
+ * Create a session store backed by `~/.epicenter/auth/sessions.json`.
  *
  * All methods normalize server URLs internally—callers never need
  * to think about URL canonicalization.
  *
  * @example
  * ```typescript
- * const sessions = createSessionStore('~/.epicenter');
+ * const sessions = createSessionStore();
  *
  * await sessions.save('https://api.epicenter.so', tokenData, sessionData);
  *
@@ -70,8 +71,8 @@ function normalizeUrl(url: string): string {
  * await sessions.clear('https://api.epicenter.so');
  * ```
  */
-export function createSessionStore(home: string) {
-	const path = join(home, 'auth', 'sessions.json');
+export function createSessionStore() {
+	const path = EPICENTER_PATHS.authSessions();
 
 	type Store = Record<string, AuthSession>;
 

@@ -1,6 +1,6 @@
 /**
  * E2E test config: syncs the tab-manager workspace from the Epicenter API
- * down to local persistence (SQLite .db file) with encryption.
+ * down to local persistence (SQLite) and materializes to markdown files.
  *
  * Reads auth credentials (token + encryption keys) from the CLI session store
  * at `~/.epicenter/auth/sessions.json`—run `epicenter auth login` first.
@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import {
 	createCliUnlock,
 	createSessionStore,
-	resolveEpicenterHome,
+	EPICENTER_PATHS,
 } from '@epicenter/cli';
 import { createTabManagerWorkspace } from '@epicenter/tab-manager/workspace';
 import {
@@ -25,16 +25,15 @@ import { filesystemPersistence } from '@epicenter/workspace/extensions/persisten
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 
 const SERVER_URL = 'https://api.epicenter.so';
-const PERSISTENCE_DIR = join(import.meta.dir, '.epicenter', 'persistence');
 const MARKDOWN_DIR = join(import.meta.dir, 'data');
 
-const sessions = createSessionStore(resolveEpicenterHome());
+const sessions = createSessionStore();
 
 export const tabManager = createTabManagerWorkspace()
 	.withExtension(
 		'persistence',
 		filesystemPersistence({
-			filePath: join(PERSISTENCE_DIR, 'epicenter.tab-manager.db'),
+			filePath: EPICENTER_PATHS.persistence('epicenter.tab-manager'),
 		}),
 	)
 	.withWorkspaceExtension('materializer', (ctx) =>

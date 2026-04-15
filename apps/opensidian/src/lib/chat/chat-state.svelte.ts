@@ -330,7 +330,7 @@ function createAiChatState() {
 		if (!firstConversation) return;
 
 		const activeId = firstConversation.id as ConversationId;
-			searchParams.update({ chat: activeId });
+		searchParams.update({ chat: activeId });
 		refreshFns.get(activeId)?.();
 	});
 

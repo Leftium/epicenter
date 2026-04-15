@@ -119,11 +119,11 @@ async function waitForSyncCycle() {
 }
 
 function getRows(db: TestDb, tableName: string) {
-	return db.prepare(`SELECT * FROM "${tableName}" ORDER BY "id"`).all() as Record<string, unknown>[];
+	return db.raw.prepare(`SELECT * FROM "${tableName}" ORDER BY "id"`).all() as Record<string, unknown>[];
 }
 
 function hasTable(db: TestDb, tableName: string) {
-	const row = db
+	const row = db.raw
 		.prepare('SELECT name FROM sqlite_master WHERE type = ? AND name = ?')
 		.get('table', tableName);
 	return row != null;

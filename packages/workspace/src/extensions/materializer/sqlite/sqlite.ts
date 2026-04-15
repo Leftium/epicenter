@@ -91,15 +91,17 @@ export function createSqliteMaterializer<
 		const values = keys.map((key) => serialize(row[key]));
 		const columns = keys.map(quoteIdentifier).join(', ');
 
-		await db.prepare(
+		const stmt = await db.prepare(
 			`INSERT OR REPLACE INTO ${quoteIdentifier(tableName)} (${columns}) VALUES (${placeholders})`,
-		).run(...values);
+		);
+		await stmt.run(...values);
 	}
 
 	async function deleteRow(tableName: string, id: string) {
-		await db.prepare(
+		const stmt = await db.prepare(
 			`DELETE FROM ${quoteIdentifier(tableName)} WHERE ${quoteIdentifier('id')} = ?`,
-		).run(id);
+		);
+		await stmt.run(id);
 	}
 
 	// ── Full load ────────────────────────────────────────────────
@@ -117,7 +119,7 @@ export function createSqliteMaterializer<
 		const keys = Object.keys(rows[0]!);
 		const placeholders = keys.map(() => '?').join(', ');
 		const columns = keys.map(quoteIdentifier).join(', ');
-		const stmt = db.prepare(
+		const stmt = await db.prepare(
 			`INSERT OR REPLACE INTO ${quoteIdentifier(tableName)} (${columns}) VALUES (${placeholders})`,
 		);
 
@@ -232,9 +234,10 @@ export function createSqliteMaterializer<
 		}
 
 		try {
-			const row = await db
-				.prepare(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(tableName)}`)
-				.get();
+			const stmt = await db.prepare(
+				`SELECT COUNT(*) AS count FROM ${quoteIdentifier(tableName)}`,
+			);
+			const row = await stmt.get() as Record<string, unknown> | null;
 			return Number(row?.count ?? 0);
 		} catch {
 			return 0;

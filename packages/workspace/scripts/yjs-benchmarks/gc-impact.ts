@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import * as Y from 'yjs';
+import { formatBytes } from './helpers.js';
 
 type BenchmarkResult = {
 	name: string;
@@ -7,12 +8,6 @@ type BenchmarkResult = {
 	sizeBytes: number;
 	operations: number;
 };
-
-function formatBytes(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
 
 function createDoc(gc: boolean): Y.Doc {
 	return new Y.Doc({ gc });

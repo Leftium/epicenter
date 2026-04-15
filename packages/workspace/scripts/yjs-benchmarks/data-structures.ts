@@ -40,6 +40,7 @@
  */
 
 import * as Y from 'yjs';
+import { formatBytes, formatPercent, formatTime } from './helpers.js';
 
 // ============================================================================
 // Configuration
@@ -538,21 +539,6 @@ function benchmarkArrayYMap(
 // Reporting
 // ============================================================================
 
-function formatBytes(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-function formatTime(ms: number): string {
-	if (ms < 1) return `${(ms * 1000).toFixed(0)} µs`;
-	if (ms < 1000) return `${ms.toFixed(1)} ms`;
-	return `${(ms / 1000).toFixed(2)} s`;
-}
-
-function formatPercent(ratio: number): string {
-	return `${(ratio * 100).toFixed(1)}%`;
-}
 
 function printStrategyResults(
 	results: BenchmarkResult[],

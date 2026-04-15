@@ -421,7 +421,7 @@ export function* iterateActions(
 		const currentPath = [...path, key];
 		if (isAction(value)) {
 			yield [value, currentPath];
-		} else {
+		} else if (value != null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Promise)) {
 			yield* iterateActions(value as Actions, currentPath);
 		}
 	}

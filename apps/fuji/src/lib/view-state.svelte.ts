@@ -12,8 +12,11 @@
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 
-type ViewMode = 'table' | 'timeline';
-type SortBy = 'date' | 'updatedAt' | 'createdAt' | 'title' | 'rating';
+const VIEW_MODES = ['table', 'timeline'] as const;
+type ViewMode = (typeof VIEW_MODES)[number];
+
+const SORT_KEYS = ['date', 'updatedAt', 'createdAt', 'title', 'rating'] as const;
+type SortBy = (typeof SORT_KEYS)[number];
 
 const VIEW_MODES: ViewMode[] = ['table', 'timeline'];
 const SORT_KEYS: SortBy[] = ['date', 'updatedAt', 'createdAt', 'title', 'rating'];

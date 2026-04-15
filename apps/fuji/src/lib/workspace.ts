@@ -112,15 +112,15 @@ export type Entry = InferTableRow<typeof entriesTable>;
 
 // ─── Workspace ────────────────────────────────────────────────────────────────
 
-const fujiWorkspace = defineWorkspace({
-	id: 'epicenter.fuji' as const,
+export const fuji = defineWorkspace({
+	id: 'epicenter.fuji',
 	tables: { entries: entriesTable },
 });
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 export function createFujiWorkspace() {
-	return createWorkspace(fujiWorkspace).withActions(({ tables }) => ({
+	return createWorkspace(fuji).withActions(({ tables }) => ({
 		entries: {
 			/**
 			 * Create a new entry with sensible defaults.

@@ -15,10 +15,10 @@
  */
 
 import { createWorkspace, defineQuery } from '@epicenter/workspace';
-import { definition } from './definition';
+import { tabManager } from './definition';
 
 export function createTabManagerWorkspace() {
-	return createWorkspace(definition).withActions(({ tables }) => ({
+	return createWorkspace(tabManager).withActions(({ tables }) => ({
 		devices: {
 			/**
 			 * List all synced devices with their names, browsers, and online status.

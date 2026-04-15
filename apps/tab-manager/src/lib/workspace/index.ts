@@ -7,13 +7,13 @@ export {
 	ConversationId,
 	type Device,
 	DeviceId,
-	definition,
 	generateBookmarkId,
 	generateChatMessageId,
 	generateConversationId,
 	generateSavedTabId,
 	type SavedTab,
 	SavedTabId,
+	tabManager,
 	type ToolTrust,
 } from './definition';
 export { createTabManagerWorkspace } from './workspace';

@@ -8,14 +8,20 @@
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createAuth } from '@epicenter/svelte/auth';
+import { createPersistedState } from '@epicenter/svelte';
+import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import {
 	createSyncExtension,
 	toWsUrl,
 } from '@epicenter/workspace/extensions/sync/websocket';
-import { session } from '$lib/auth';
 import { createHoneycrisp } from './workspace/workspace';
+
+const session = createPersistedState({
+	key: 'honeycrisp:authSession',
+	schema: AuthSession.or('null'),
+	defaultValue: null,
+});
 
 export const workspace = createHoneycrisp()
 	.withExtension('persistence', indexeddbPersistence)
@@ -35,8 +41,8 @@ export const auth = createAuth({
 		workspace.applyEncryptionKeys(session.encryptionKeys);
 		workspace.extensions.sync.reconnect();
 	},
-	onLogout() {
-		workspace.clearLocalData();
-		workspace.extensions.sync.reconnect();
+	async onLogout() {
+		await workspace.clearLocalData();
+		window.location.reload();
 	},
 });

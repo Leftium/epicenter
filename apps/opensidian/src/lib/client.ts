@@ -15,7 +15,7 @@ import {
 } from '@epicenter/workspace/extensions/sync/websocket';
 import { Bash } from 'just-bash';
 import Type from 'typebox';
-import { opensidianDefinition } from './workspace/definition';
+import { opensidian } from './workspace/definition';
 
 const session = createPersistedState({
 	key: 'opensidian:authSession',
@@ -33,7 +33,7 @@ const session = createPersistedState({
 export const workspace = buildWorkspaceClient();
 
 function buildWorkspaceClient() {
-	return createWorkspace(opensidianDefinition)
+	return createWorkspace(opensidian)
 		.withExtension('persistence', indexeddbPersistence)
 		.withExtension(
 			'sync',
@@ -212,9 +212,9 @@ export const auth = createAuth({
 		workspace.applyEncryptionKeys(session.encryptionKeys);
 		workspace.extensions.sync.reconnect();
 	},
-	onLogout() {
-		workspace.clearLocalData();
-		workspace.extensions.sync.reconnect();
+	async onLogout() {
+		await workspace.clearLocalData();
+		window.location.reload();
 	},
 });
 

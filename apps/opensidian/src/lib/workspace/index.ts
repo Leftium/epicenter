@@ -1,1 +1,0 @@
-export { opensidianDefinition } from './definition';

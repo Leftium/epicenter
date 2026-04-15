@@ -116,8 +116,8 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
  * Combines the filesystem-backed notes table with the chat tables so the app
  * can store notes, conversations, messages, and tool approvals in one schema.
  */
-export const opensidianDefinition = defineWorkspace({
-	id: 'opensidian',
+export const opensidian = defineWorkspace({
+	id: 'epicenter.opensidian',
 	tables: {
 		files: filesTable,
 		conversations: conversationsTable,

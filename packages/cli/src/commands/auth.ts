@@ -9,13 +9,10 @@
 
 import type { Argv, CommandModule } from 'yargs';
 import { createAuthApi } from '../auth/api';
-import { createSessionStore } from '../auth/store';
 import { defineCommand } from '../util/command';
 
 /**
  * Create the `auth` command group.
- *
- * This is a function (not a const) because it needs `home` for the auth store path.
  *
  * @example
  * ```bash
@@ -24,8 +21,8 @@ import { defineCommand } from '../util/command';
  * epicenter auth status
  * ```
  */
-export function createAuthCommand(home: string) {
-	const sessions = createSessionStore(home);
+export function createAuthCommand() {
+	const sessions = createSessionStore();
 
 	return defineCommand({
 		command: 'auth <subcommand>',

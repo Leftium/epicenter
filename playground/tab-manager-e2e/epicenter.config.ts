@@ -27,7 +27,7 @@ import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websoc
 const SERVER_URL = 'https://api.epicenter.so';
 const MARKDOWN_DIR = join(import.meta.dir, 'data');
 
-const sessions = createSessionStore(EPICENTER_PATHS.home());
+const sessions = createSessionStore();
 
 export const tabManager = createTabManagerWorkspace()
 	.withExtension(

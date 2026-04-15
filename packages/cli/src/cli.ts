@@ -15,7 +15,6 @@ import { rpcCommand } from './commands/rpc';
 import { runActionCommand } from './commands/run';
 import { sizeCommand } from './commands/size';
 import { startCommand } from './commands/start';
-import { EPICENTER_PATHS } from './paths.js';
 
 /**
  * Create the Epicenter CLI instance.
@@ -28,8 +27,6 @@ import { EPICENTER_PATHS } from './paths.js';
 export function createCLI() {
 	return {
 		run: async (argv: string[]) => {
-			const home = EPICENTER_PATHS.home();
-
 			const cli = yargs()
 				.scriptName('epicenter')
 				.command(startCommand)
@@ -45,7 +42,7 @@ export function createCLI() {
 				.command(describeCommand)
 				.command(sizeCommand)
 				.command(rpcCommand)
-				.command(createAuthCommand(home))
+				.command(createAuthCommand())
 				.demandCommand(1)
 				.strict()
 				.exitProcess(false)

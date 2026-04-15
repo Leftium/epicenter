@@ -2,8 +2,6 @@ import { filesystemPersistence } from '@epicenter/workspace/extensions/persisten
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import { createSessionStore } from './auth/store.js';
 import { createCliUnlock } from './extensions.js';
-import { EPICENTER_PATHS } from './paths.js';
-
 import type {
 	AwarenessDefinitions,
 	KvDefinitions,
@@ -55,7 +53,7 @@ export async function connectWorkspace<
 		server = process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so',
 	}: { server?: string } = {},
 ) {
-	const sessions = createSessionStore(EPICENTER_PATHS.home());
+	const sessions = createSessionStore();
 	const base = factory();
 
 	const client = base

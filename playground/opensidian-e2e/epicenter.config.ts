@@ -41,7 +41,7 @@ const MARKDOWN_DIR = join(import.meta.dir, 'data');
 const MATERIALIZER_DIR = join(import.meta.dir, '.epicenter', 'materializer');
 mkdirSync(MATERIALIZER_DIR, { recursive: true });
 
-const sessions = createSessionStore(EPICENTER_PATHS.home());
+const sessions = createSessionStore();
 
 export const opensidian = createWorkspace(opensidianDefinition)
 	.withExtension(

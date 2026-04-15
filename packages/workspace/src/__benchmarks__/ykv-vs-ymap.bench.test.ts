@@ -1,20 +1,28 @@
 /**
- * YMap Simplicity Case Tests
+ * YKV (Y.Array LWW) vs Native Y.Map Comparison
  *
- * These tests evaluate whether a native `Y.Map` of `Y.Map` records is a practical
- * default for collaborative table-like data. They focus on realistic usage patterns,
- * conflict behavior, and implementation complexity tradeoffs.
+ * Answers: "Which storage approach is better—and is the custom LWW worth the complexity?"
  *
- * Key behaviors:
- * - Simulated workloads show storage and merge behavior across common usage scenarios.
- * - Cell-level collaboration converges consistently, even with concurrent edits.
+ * Compares the Workspace API's YKeyValue-LWW (opaque ContentAny blobs in Y.Array)
+ * against native Y.Map (nested Y.Maps with cell-level granularity) across size,
+ * tombstones, repeated updates, and realistic usage patterns.
+ *
+ * Includes the "simplicity argument"—an honest assessment of tradeoffs between
+ * the battle-tested Y.Map approach and custom LWW conflict resolution.
  */
+
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
+import { createTables } from '../workspace/create-tables.js';
+import {
+	formatBytes,
+	generateHeavyContent,
+	heavyNoteDefinition,
+} from './helpers.js';
 
-// ============================================================================
-// HELPER: Native Y.Map Table (dead simple)
-// ============================================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+// Helper: Native Y.Map Table (dead simple)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 function createSimpleTable(ydoc: Y.Doc, name: string) {
 	const table = ydoc.getMap<Y.Map<unknown>>(name);
@@ -57,11 +65,219 @@ function createSimpleTable(ydoc: Y.Doc, name: string) {
 	};
 }
 
-// ============================================================================
-// REALISTIC USAGE PATTERNS
-// ============================================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+// Size & Tombstone Comparison
+// ═══════════════════════════════════════════════════════════════════════════════
 
-describe('Realistic Storage Comparison', () => {
+describe('YKV vs Y.Map: size and tombstones', () => {
+	test('50K chars/row: insert 5, delete 2, add 2 new', () => {
+		const contentChars = 50_000;
+
+		function makeRowData(id: string) {
+			return {
+				id,
+				title: `Document: ${id} - A Very Important Title`,
+				content: generateHeavyContent(contentChars),
+				summary: generateHeavyContent(Math.floor(contentChars / 10)),
+				tags: ['research', 'important', 'draft', 'long-form'],
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+				_v: 1 as const,
+			};
+		}
+
+		// ── Approach 1: YKeyValueLww (Workspace API) ──
+		const ykvDoc = new Y.Doc();
+		const tables = createTables(ykvDoc, { notes: heavyNoteDefinition });
+
+		for (let i = 0; i < 5; i++) tables.notes.set(makeRowData(`doc-${i}`));
+		const ykvSize5 = Y.encodeStateAsUpdate(ykvDoc).byteLength;
+
+		tables.notes.delete('doc-1');
+		tables.notes.delete('doc-3');
+		const ykvAfterDelete = Y.encodeStateAsUpdate(ykvDoc).byteLength;
+
+		tables.notes.set(makeRowData('doc-5'));
+		tables.notes.set(makeRowData('doc-6'));
+		const ykvAfterReplace = Y.encodeStateAsUpdate(ykvDoc).byteLength;
+
+		// ── Approach 2: Native Y.Map (map of nested Y.Maps) ──
+		const ymapDoc = new Y.Doc();
+		const root = ymapDoc.getMap('notes');
+
+		for (let i = 0; i < 5; i++) {
+			const data = makeRowData(`doc-${i}`);
+			const row = new Y.Map();
+			for (const [k, v] of Object.entries(data)) {
+				if (Array.isArray(v)) {
+					const arr = new Y.Array();
+					arr.push(v);
+					row.set(k, arr);
+				} else {
+					row.set(k, v);
+				}
+			}
+			root.set(data.id, row);
+		}
+		const ymapSize5 = Y.encodeStateAsUpdate(ymapDoc).byteLength;
+
+		root.delete('doc-1');
+		root.delete('doc-3');
+		const ymapAfterDelete = Y.encodeStateAsUpdate(ymapDoc).byteLength;
+
+		for (const id of ['doc-5', 'doc-6']) {
+			const data = makeRowData(id);
+			const row = new Y.Map();
+			for (const [k, v] of Object.entries(data)) {
+				if (Array.isArray(v)) {
+					const arr = new Y.Array();
+					arr.push(v);
+					row.set(k, arr);
+				} else {
+					row.set(k, v);
+				}
+			}
+			root.set(data.id, row);
+		}
+		const ymapAfterReplace = Y.encodeStateAsUpdate(ymapDoc).byteLength;
+
+		console.log('\n=== YKV (Y.Array LWW) vs NATIVE Y.Map — 50K chars/row ===');
+		console.log(`                          YKV          Y.Map        Diff`);
+		console.log(
+			`  5 rows:                 ${formatBytes(ykvSize5).padEnd(12)} ${formatBytes(ymapSize5).padEnd(12)} ${ymapSize5 > ykvSize5 ? '+' : ''}${formatBytes(ymapSize5 - ykvSize5)}`,
+		);
+		console.log(
+			`  After delete 2:         ${formatBytes(ykvAfterDelete).padEnd(12)} ${formatBytes(ymapAfterDelete).padEnd(12)} ${ymapAfterDelete > ykvAfterDelete ? '+' : ''}${formatBytes(ymapAfterDelete - ykvAfterDelete)}`,
+		);
+		console.log(
+			`  After add 2 new:        ${formatBytes(ykvAfterReplace).padEnd(12)} ${formatBytes(ymapAfterReplace).padEnd(12)} ${ymapAfterReplace > ykvAfterReplace ? '+' : ''}${formatBytes(ymapAfterReplace - ykvAfterReplace)}`,
+		);
+		console.log(`  ──────────────────────────────────────────────────────`);
+		console.log(`  Tombstone (delete+add vs original):`);
+		console.log(
+			`    YKV:   ${formatBytes(ykvAfterReplace - ykvSize5)} (${((ykvAfterReplace / ykvSize5 - 1) * 100).toFixed(3)}%)`,
+		);
+		console.log(
+			`    Y.Map: ${formatBytes(ymapAfterReplace - ymapSize5)} (${((ymapAfterReplace / ymapSize5 - 1) * 100).toFixed(3)}%)`,
+		);
+	});
+
+	test('repeated updates: where YKV and Y.Map diverge', () => {
+		/**
+		 * The key structural difference:
+		 *
+		 * YKV (Y.Array of plain objects):
+		 *   - Each row is a single Item with ContentAny (opaque blob)
+		 *   - "Update" = delete old Item + push new Item
+		 *   - Deleted Item becomes 1 tombstone (ContentDeleted or GC struct)
+		 *   - GC can merge adjacent tombstones
+		 *
+		 * Native Y.Map (nested Y.Maps):
+		 *   - Each row is a Y.Map with N Items (one per field)
+		 *   - "Update via replace" = delete parent Item (cascading N child deletions)
+		 *   - Creates N+1 tombstones per replace
+		 *   - "Update via field set" = only the changed field's Item is replaced
+		 *   - Creates 1 tombstone per field update
+		 *
+		 * This test measures what happens after many updates to the same rows.
+		 */
+
+		const contentChars = 10_000;
+
+		function makeRowData(id: string, version: number) {
+			return {
+				id,
+				title: `Document ${id} v${version}`,
+				content: generateHeavyContent(contentChars),
+				summary: `Summary v${version}`,
+				tags: ['tag1', 'tag2'],
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+				_v: 1 as const,
+			};
+		}
+
+		const updateRounds = [1, 5, 10, 25, 50];
+
+		console.log(
+			'\n=== REPEATED UPDATES: YKV vs Y.Map (replace) vs Y.Map (field update) ===',
+		);
+		console.log(`  5 rows × 10K chars content, measured after N update rounds`);
+		console.log(
+			`  ───────────────────────────────────────────────────────────`,
+		);
+		console.log(`  Updates │ YKV (Array)  │ Y.Map Replace │ Y.Map Field  │`);
+		console.log(`  ────────┼──────────────┼───────────────┼──────────────┤`);
+
+		for (const rounds of updateRounds) {
+			// ── YKV approach ──
+			const ykvDoc = new Y.Doc();
+			const tables = createTables(ykvDoc, { notes: heavyNoteDefinition });
+			for (let i = 0; i < 5; i++) tables.notes.set(makeRowData(`doc-${i}`, 0));
+			for (let r = 1; r <= rounds; r++) {
+				for (let i = 0; i < 5; i++)
+					tables.notes.set(makeRowData(`doc-${i}`, r));
+			}
+			const ykvSize = Y.encodeStateAsUpdate(ykvDoc).byteLength;
+
+			// ── Y.Map: replace entire nested Y.Map each update ──
+			const ymapReplaceDoc = new Y.Doc();
+			const replaceRoot = ymapReplaceDoc.getMap('notes');
+			for (let i = 0; i < 5; i++) {
+				const data = makeRowData(`doc-${i}`, 0);
+				const row = new Y.Map();
+				for (const [k, v] of Object.entries(data)) row.set(k, v);
+				replaceRoot.set(data.id, row);
+			}
+			for (let r = 1; r <= rounds; r++) {
+				for (let i = 0; i < 5; i++) {
+					const data = makeRowData(`doc-${i}`, r);
+					const row = new Y.Map();
+					for (const [k, v] of Object.entries(data)) row.set(k, v);
+					replaceRoot.set(data.id, row);
+				}
+			}
+			const ymapReplaceSize = Y.encodeStateAsUpdate(ymapReplaceDoc).byteLength;
+
+			// ── Y.Map: reuse existing nested Y.Map, update fields in-place ──
+			const ymapFieldDoc = new Y.Doc();
+			const fieldRoot = ymapFieldDoc.getMap('notes');
+			for (let i = 0; i < 5; i++) {
+				const data = makeRowData(`doc-${i}`, 0);
+				const row = new Y.Map();
+				for (const [k, v] of Object.entries(data)) row.set(k, v);
+				fieldRoot.set(data.id, row);
+			}
+			for (let r = 1; r <= rounds; r++) {
+				for (let i = 0; i < 5; i++) {
+					const data = makeRowData(`doc-${i}`, r);
+					const row = fieldRoot.get(`doc-${i}`) as Y.Map<unknown>;
+					for (const [k, v] of Object.entries(data)) row.set(k, v);
+				}
+			}
+			const ymapFieldSize = Y.encodeStateAsUpdate(ymapFieldDoc).byteLength;
+
+			console.log(
+				`  ${String(rounds).padStart(7)} │ ${formatBytes(ykvSize).padEnd(12)} │ ${formatBytes(ymapReplaceSize).padEnd(13)} │ ${formatBytes(ymapFieldSize).padEnd(12)} │`,
+			);
+		}
+
+		console.log(
+			`  ───────────────────────────────────────────────────────────`,
+		);
+		console.log(
+			`  YKV = Workspace API (Y.Array + LWW, opaque ContentAny blobs)`,
+		);
+		console.log(`  Y.Map Replace = new Y.Map() per update (orphans old Y.Map)`);
+		console.log(`  Y.Map Field = reuse Y.Map, set() individual fields`);
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Realistic Usage Patterns (Native Y.Map)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('realistic storage patterns (native Y.Map)', () => {
 	test('SCENARIO 1: Blog posts - write once, rarely update', () => {
 		console.log(
 			'\n=== SCENARIO 1: Blog Posts (Write Once, Rarely Update) ===\n',
@@ -222,11 +438,11 @@ describe('Realistic Storage Comparison', () => {
 	});
 });
 
-// ============================================================================
-// THE SIMPLICITY ARGUMENT
-// ============================================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+// The Simplicity Argument
+// ═══════════════════════════════════════════════════════════════════════════════
 
-describe('The Simplicity Argument', () => {
+describe('the simplicity argument', () => {
 	test('Y.Map implementation: ZERO custom code', () => {
 		console.log('\n=== Implementation Comparison ===\n');
 
@@ -282,11 +498,11 @@ describe('The Simplicity Argument', () => {
 	});
 });
 
-// ============================================================================
-// CONFLICT RESOLUTION: IS IT ACTUALLY A PROBLEM?
-// ============================================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+// Conflict Resolution: Cell-Level Merge with Y.Map
+// ═══════════════════════════════════════════════════════════════════════════════
 
-describe('Conflict Resolution: Does It Matter?', () => {
+describe('conflict resolution with native Y.Map', () => {
 	test('How often do SAME-CELL conflicts actually happen?', () => {
 		console.log('\n=== Same-Cell Conflict Frequency ===\n');
 
@@ -394,11 +610,11 @@ describe('Conflict Resolution: Does It Matter?', () => {
 	});
 });
 
-// ============================================================================
-// FINAL VERDICT
-// ============================================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+// Verdict
+// ═══════════════════════════════════════════════════════════════════════════════
 
-describe('The Verdict', () => {
+describe('the verdict', () => {
 	test('summary: when to use which approach', () => {
 		console.log('\n');
 		console.log(

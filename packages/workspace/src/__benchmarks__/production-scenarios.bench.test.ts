@@ -138,7 +138,7 @@ describe('all-day editing scenario', () => {
 		const totalSaves = 2000;
 		const baseContent = generateHeavyContent(contentChars);
 
-		function makeRow(id: string, v: number) {
+		function makeRowAtRevision(id: string, v: number) {
 			const extra = ` [revision ${v}]`;
 			return {
 				id,
@@ -155,10 +155,10 @@ describe('all-day editing scenario', () => {
 		// ── YKV ──
 		const ykvDoc = new Y.Doc();
 		const tables = createTables(ykvDoc, { notes: heavyNoteDefinition });
-		for (let i = 0; i < 5; i++) tables.notes.set(makeRow(`doc-${i}`, 0));
+		for (let i = 0; i < 5; i++) tables.notes.set(makeRowAtRevision(`doc-${i}`, 0));
 		for (let s = 1; s <= totalSaves; s++) {
 			const docIdx = s % 3; // rotate across 3 active documents
-			tables.notes.set(makeRow(`doc-${docIdx}`, s));
+			tables.notes.set(makeRowAtRevision(`doc-${docIdx}`, s));
 		}
 		const ykvSize = Y.encodeStateAsUpdate(ykvDoc).byteLength;
 
@@ -167,14 +167,14 @@ describe('all-day editing scenario', () => {
 		const fieldRoot = fieldDoc.getMap('notes');
 		for (let i = 0; i < 5; i++) {
 			const row = new Y.Map();
-			for (const [k, v] of Object.entries(makeRow(`doc-${i}`, 0)))
+			for (const [k, v] of Object.entries(makeRowAtRevision(`doc-${i}`, 0)))
 				row.set(k, v);
 			fieldRoot.set(`doc-${i}`, row);
 		}
 		for (let s = 1; s <= totalSaves; s++) {
 			const docIdx = s % 3;
 			const row = fieldRoot.get(`doc-${docIdx}`) as Y.Map<unknown>;
-			for (const [k, v] of Object.entries(makeRow(`doc-${docIdx}`, s)))
+			for (const [k, v] of Object.entries(makeRowAtRevision(`doc-${docIdx}`, s)))
 				row.set(k, v);
 		}
 		const fieldSize = Y.encodeStateAsUpdate(fieldDoc).byteLength;

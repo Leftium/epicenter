@@ -6,8 +6,6 @@
  * Compares the Workspace API's YKeyValue-LWW (opaque ContentAny blobs in Y.Array)
  * against native Y.Map (nested Y.Maps with cell-level granularity) across size,
  * tombstones, repeated updates, and realistic usage patterns.
- *
- * Includes the "simplicity argument" data from a prior architecture decision.
  */
 
 import { describe, expect, test } from 'bun:test';

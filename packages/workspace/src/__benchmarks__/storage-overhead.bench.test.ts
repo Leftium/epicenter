@@ -157,44 +157,10 @@ Let's add a bit more to make it realistic. The quick brown fox jumps over the la
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Encoded Size at Scale
+// Update Growth
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe('encoded size at scale', () => {
-	test('Y.Doc encoded size with 1,000 / 10,000 rows', () => {
-		const ydoc1 = new Y.Doc();
-		const tables1 = createTables(ydoc1, { posts: postDefinition });
-
-		for (let i = 0; i < 1_000; i++) {
-			tables1.posts.set({
-				id: generateId(i),
-				title: `Post ${i}`,
-				views: i,
-				_v: 1,
-			});
-		}
-		const size1k = Y.encodeStateAsUpdate(ydoc1).byteLength;
-
-		const ydoc2 = new Y.Doc();
-		const tables2 = createTables(ydoc2, { posts: postDefinition });
-
-		for (let i = 0; i < 10_000; i++) {
-			tables2.posts.set({
-				id: generateId(i),
-				title: `Post ${i}`,
-				views: i,
-				_v: 1,
-			});
-		}
-		const size10k = Y.encodeStateAsUpdate(ydoc2).byteLength;
-
-		console.log(`Y.Doc size with 1,000 rows: ${(size1k / 1024).toFixed(2)} KB`);
-		console.log(
-			`Y.Doc size with 10,000 rows: ${(size10k / 1024).toFixed(2)} KB`,
-		);
-		console.log(`Bytes per row (1k): ${(size1k / 1_000).toFixed(2)}`);
-		console.log(`Bytes per row (10k): ${(size10k / 10_000).toFixed(2)}`);
-	});
+describe('update growth', () => {
 
 	test('Y.Doc size growth after updates (same rows updated 5 times)', () => {
 		const ydoc = new Y.Doc();
@@ -237,68 +203,29 @@ describe('encoded size at scale', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('heavy text baseline sizes', () => {
-	test('5 rows with 10K chars each: baseline size', () => {
-		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { notes: heavyNoteDefinition });
+	for (const contentChars of [10_000, 50_000, 100_000]) {
+		test(`5 rows with ${formatBytes(contentChars)} chars each`, () => {
+			const ydoc = new Y.Doc();
+			const tables = createTables(ydoc, { notes: heavyNoteDefinition });
 
-		const rows = Array.from({ length: 5 }, (_, i) =>
-			makeHeavyRow(`doc-${i}`, 10_000),
-		);
-		for (const row of rows) tables.notes.set(row);
+			const rows = Array.from({ length: 5 }, (_, i) =>
+				makeHeavyRow(`doc-${i}`, contentChars),
+			);
+			for (const row of rows) tables.notes.set(row);
 
-		const encoded = Y.encodeStateAsUpdate(ydoc);
-		const jsonSize = rows.reduce((s, r) => s + JSON.stringify(r).length, 0);
+			const encoded = Y.encodeStateAsUpdate(ydoc);
+			const jsonSize = rows.reduce((s, r) => s + JSON.stringify(r).length, 0);
 
-		console.log('\n=== 5 ROWS × 10K CHARS EACH ===');
-		console.log(`  Pure JSON size:    ${formatBytes(jsonSize)}`);
-		console.log(`  Y.Doc binary size: ${formatBytes(encoded.byteLength)}`);
-		console.log(
-			`  CRDT overhead:     ${((encoded.byteLength / jsonSize - 1) * 100).toFixed(1)}%`,
-		);
-		console.log(`  Per row:           ${formatBytes(encoded.byteLength / 5)}`);
-	});
-
-	test('5 rows with 50K chars each: baseline size', () => {
-		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { notes: heavyNoteDefinition });
-
-		const rows = Array.from({ length: 5 }, (_, i) =>
-			makeHeavyRow(`doc-${i}`, 50_000),
-		);
-		for (const row of rows) tables.notes.set(row);
-
-		const encoded = Y.encodeStateAsUpdate(ydoc);
-		const jsonSize = rows.reduce((s, r) => s + JSON.stringify(r).length, 0);
-
-		console.log('\n=== 5 ROWS × 50K CHARS EACH ===');
-		console.log(`  Pure JSON size:    ${formatBytes(jsonSize)}`);
-		console.log(`  Y.Doc binary size: ${formatBytes(encoded.byteLength)}`);
-		console.log(
-			`  CRDT overhead:     ${((encoded.byteLength / jsonSize - 1) * 100).toFixed(1)}%`,
-		);
-		console.log(`  Per row:           ${formatBytes(encoded.byteLength / 5)}`);
-	});
-
-	test('5 rows with 100K chars each: baseline size', () => {
-		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { notes: heavyNoteDefinition });
-
-		const rows = Array.from({ length: 5 }, (_, i) =>
-			makeHeavyRow(`doc-${i}`, 100_000),
-		);
-		for (const row of rows) tables.notes.set(row);
-
-		const encoded = Y.encodeStateAsUpdate(ydoc);
-		const jsonSize = rows.reduce((s, r) => s + JSON.stringify(r).length, 0);
-
-		console.log('\n=== 5 ROWS × 100K CHARS EACH ===');
-		console.log(`  Pure JSON size:    ${formatBytes(jsonSize)}`);
-		console.log(`  Y.Doc binary size: ${formatBytes(encoded.byteLength)}`);
-		console.log(
-			`  CRDT overhead:     ${((encoded.byteLength / jsonSize - 1) * 100).toFixed(1)}%`,
-		);
-		console.log(`  Per row:           ${formatBytes(encoded.byteLength / 5)}`);
-	});
+			const label = formatBytes(contentChars).toUpperCase();
+			console.log(`\n=== 5 ROWS × ${label} CHARS EACH ===`);
+			console.log(`  Pure JSON size:    ${formatBytes(jsonSize)}`);
+			console.log(`  Y.Doc binary size: ${formatBytes(encoded.byteLength)}`);
+			console.log(
+				`  CRDT overhead:     ${((encoded.byteLength / jsonSize - 1) * 100).toFixed(1)}%`,
+			);
+			console.log(`  Per row:           ${formatBytes(encoded.byteLength / 5)}`);
+		});
+	}
 
 	test('raw text size scaling: how content size dominates', () => {
 		console.log('\n=== TEXT SIZE SCALING (single row) ===');

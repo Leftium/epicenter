@@ -7,11 +7,14 @@
  */
 
 import { createWorkspace } from '@epicenter/workspace';
-import { createMarkdownMaterializer } from '@epicenter/workspace/extensions/materializer/markdown';
+import {
+	createMarkdownMaterializer,
+	type SerializeResult,
+} from '@epicenter/workspace/extensions/materializer/markdown';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { PATHS } from '$lib/constants/paths';
+import type { Recording } from './workspace';
 import { whisperingDefinition } from './workspace/definition';
-import { serializeRecording } from './workspace/recording-serializer';
 import { tauriIO, tauriYaml } from './workspace/tauri-materializer-io';
 
 const base = createWorkspace(whisperingDefinition).withExtension(
@@ -25,6 +28,16 @@ export const workspace = window.__TAURI_INTERNALS__
 				dir: () => PATHS.DB.RECORDINGS(),
 				io: tauriIO,
 				yaml: tauriYaml,
-			}).table('recordings', { serialize: serializeRecording }),
+			}).table('recordings', {
+				serialize: (row: Recording): SerializeResult => {
+					const { transcript, _v, ...frontmatter } = row;
+					const yamlStr = tauriYaml.stringify(frontmatter);
+					const yamlBlock = yamlStr.endsWith('\n') ? yamlStr : `${yamlStr}\n`;
+					return {
+						filename: `${row.id}.md`,
+						content: `---\n${yamlBlock}---\n${transcript || ''}\n`,
+					};
+				},
+			}),
 		)
 	: base;

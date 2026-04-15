@@ -22,8 +22,7 @@ import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
 import { workspace } from '$lib/client';
 import type { FolderId } from '$lib/workspace';
-import { page } from '$app/state';
-import { setSearchParam } from '$lib/search-params';
+import { searchParams } from '$lib/search-params.svelte';
 
 function createFoldersState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
@@ -88,7 +87,7 @@ function createFoldersState() {
 		 *
 		 * The folder is removed from the sidebar. All notes that were in this
 		 * folder are moved to the unfiled section (folderId set to undefined).
- * If the deleted folder was selected, the folder and note selections are cleared.
+		 * If the deleted folder was selected, the folder and note selections are cleared.
 		 *
 		 * @example
 		 * ```typescript
@@ -98,9 +97,8 @@ function createFoldersState() {
 		 */
 		deleteFolder(folderId: FolderId) {
 			workspace.actions.folders.delete({ folderId });
-			if (page.url.searchParams.get('folder') === folderId) {
-				setSearchParam('folder', null);
-				setSearchParam('note', null);
+			if (searchParams.folder === folderId) {
+				searchParams.update({ folder: null, note: null });
 			}
 		},
 	};

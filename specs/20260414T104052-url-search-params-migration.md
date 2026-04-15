@@ -1,388 +1,183 @@
-# Migrate View State to URL Search Params (Honeycrisp + Opensidian)
+# Typed URL Search Params (Honeycrisp + Opensidian + Fuji)
 
-Replicate the Fuji pattern: replace workspace KV (`fromKv`) and ephemeral `$state` with URL search params via `page.url.searchParams` + `goto()`.
+Replace stringly-typed `setSearchParam(key, value)` with typed `searchParams` singletons per app. Each app defines a `SearchParams` type, a `DEFAULTS` record, and a batch `update()` that writes all changes in a single `goto()` call.
 
 ---
 
-## Pattern (from Fuji)
+## Design decisions
+
+### Why typed singletons over the old `setSearchParam(key, value)`
+
+| | Old (`setSearchParam`) | New (`searchParams.update()`) |
+|---|---|---|
+| **Typing** | `key: string` — typos compile | `Partial<SearchParams>` — typos are type errors |
+| **Batching** | 3 separate `goto()` calls for `selectFolder` | 1 `goto()` via object literal |
+| **URL construction** | Manual string: `` `${pathname}${search ? '?' + search : ''}` `` | `new URL(page.url)` clone + `goto(url)` |
+| **Default elision** | Caller decides per call site | Centralized in `DEFAULTS` record |
+| **Schema definition** | Implicit across multiple files | Single `SearchParams` type per app |
+
+### Why separate from domain state
+
+`view.svelte.ts` imports `notesState`. `notesState` needs to clear `?note` on delete. If URL state lived inside `viewState`, `notesState` would import `viewState` → circular dep. Extracting `searchParams` as a leaf dependency (only imports `$app/*`) breaks the cycle.
 
 ```
-URL is the source of truth for view preferences.
-Defaults are elided — clean URL = all defaults.
-goto() with replaceState: true, noScroll: true, keepFocus: true.
-setSearchParam() utility shared within each app.
+search-params.svelte.ts          ← leaf (only imports $app/*)
+    ▲           ▲           ▲
+    │           │           │
+view.svelte.ts  notes.svelte.ts  folders.svelte.ts
+    │               │
+    ▼               │
+notesState ◄────────┘
 ```
 
-### Shared utility shape (per-app, not cross-app)
+### Why `goto()` and not `replaceState()`
+
+SvelteKit's `replaceState(url, state)` from `$app/navigation` is for shallow routing with `$page.state`. Our use case is search params, not page state. `goto(url, { replaceState: true })` is the documented pattern (per SvelteKit's state management docs).
+
+### Why no shared package
+
+Each app has 2–5 params with different schemas. A generic `createSearchParams<T>()` factory adds a layer of abstraction over 40 lines of app-specific code. Not worth it.
+
+### What shadcn-svelte does
+
+shadcn-svelte's data table examples keep pagination/sorting/filtering in local `$state`, not URL params. URL persistence is entirely the app's responsibility. The boundary: our `searchParams` singleton feeds shadcn components via props.
+
+---
+
+## Pattern
 
 ```ts
+// Per-app: apps/{app}/src/lib/search-params.svelte.ts
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 
-function setSearchParam(key: string, value: string | null) {
-  const params = new URLSearchParams(page.url.searchParams);
-  if (value === null) params.delete(key);
-  else params.set(key, value);
-  const search = params.toString();
-  goto(`${page.url.pathname}${search ? `?${search}` : ''}${page.url.hash}`, {
-    replaceState: true, noScroll: true, keepFocus: true,
-  });
+type SearchParams = { /* app-specific schema */ };
+const DEFAULTS: SearchParams = { /* default values — elided from URL */ };
+
+function createSearchParams() {
+  function update(changes: Partial<SearchParams>) {
+    const url = new URL(page.url);
+    for (const [key, value] of Object.entries(changes)) {
+      const def = DEFAULTS[key as keyof SearchParams];
+      if (value === null || value === '' || value === def) {
+        url.searchParams.delete(key);
+      } else {
+        url.searchParams.set(key, String(value));
+      }
+    }
+    goto(url, { replaceState: true, noScroll: true, keepFocus: true });
+  }
+
+  return {
+    get someParam() { /* read from page.url.searchParams */ },
+    update,
+  };
 }
+
+export const searchParams = createSearchParams();
 ```
 
 ---
 
 ## App 1: Honeycrisp
 
-### URL param mapping
+### URL param schema
 
-| State | Param | Default (elided) | Type |
+| Getter | Param | Default (elided) | Type |
 |---|---|---|---|
-| `selectedFolderId` | `?folder=<id>` | `null` (all notes) | `FolderId \| null` |
-| `selectedNoteId` | `?note=<id>` | `null` (no note open) | `NoteId \| null` |
-| `sortBy` | `?sort=dateCreated\|title` | `dateEdited` | `'dateEdited' \| 'dateCreated' \| 'title'` |
-| `searchQuery` | `?q=<text>` | `''` (empty) | `string` |
-| `isRecentlyDeletedView` | `?view=deleted` | not present (false) | `boolean` via presence |
-| `sidebarCollapsed` | **STAYS** — not linkable | — | — |
+| `searchParams.folder` | `?folder=<id>` | `null` (all notes) | `FolderId \| null` |
+| `searchParams.note` | `?note=<id>` | `null` (no note open) | `NoteId \| null` |
+| `searchParams.sort` | `?sort=dateCreated\|title` | `dateEdited` | `SortBy` |
+| `searchParams.q` | `?q=<text>` | `''` (empty) | `string` |
+| `searchParams.isDeletedView` | `?view=deleted` | `false` | `boolean` |
 
-### Files to change
+### Files changed
 
-#### 1. `apps/honeycrisp/src/lib/state/view.svelte.ts` — Main migration
-
-Replace `fromKv` + `$state` with URL search params.
-
-**Before:**
-```ts
-import { fromKv } from '@epicenter/svelte';
-import { workspace } from '$lib/client';
-
-const selectedFolderId = fromKv(workspace.kv, 'selectedFolderId');
-const selectedNoteId = fromKv(workspace.kv, 'selectedNoteId');
-const sortBy = fromKv(workspace.kv, 'sortBy');
-let searchQuery = $state('');
-let isRecentlyDeletedView = $state(false);
-```
-
-**After:**
-```ts
-import { goto } from '$app/navigation';
-import { page } from '$app/state';
-
-type SortBy = 'dateEdited' | 'dateCreated' | 'title';
-const SORT_KEYS: SortBy[] = ['dateEdited', 'dateCreated', 'title'];
-
-function setSearchParam(key: string, value: string | null) { /* shared utility */ }
-
-// All reads go through page.url.searchParams (reactive in .svelte.ts)
-// All writes go through setSearchParam() → goto()
-```
-
-**Public API changes (same getters, different backing store):**
-
-```ts
-get selectedFolderId() {
-  return (page.url.searchParams.get('folder') as FolderId) ?? null;
-},
-get selectedNoteId() {
-  return (page.url.searchParams.get('note') as NoteId) ?? null;
-},
-get sortBy(): SortBy {
-  const raw = page.url.searchParams.get('sort');
-  return SORT_KEYS.includes(raw as SortBy) ? (raw as SortBy) : 'dateEdited';
-},
-get searchQuery() {
-  return page.url.searchParams.get('q') ?? '';
-},
-get isRecentlyDeletedView() {
-  return page.url.searchParams.get('view') === 'deleted';
-},
-```
-
-**Methods update (write via setSearchParam):**
-
-```ts
-selectFolder(folderId: FolderId | null) {
-  // Clear note, clear deleted view, set folder
-  setSearchParam('view', null);
-  setSearchParam('note', null);
-  setSearchParam('folder', folderId);
-},
-selectRecentlyDeleted() {
-  setSearchParam('view', 'deleted');
-  setSearchParam('folder', null);
-  setSearchParam('note', null);
-},
-selectNote(noteId: NoteId) {
-  setSearchParam('note', noteId);
-},
-setSortBy(value: SortBy) {
-  setSearchParam('sort', value === 'dateEdited' ? null : value);
-},
-setSearchQuery(query: string) {
-  setSearchParam('q', query || null);
-},
-```
-
-**Derived state** (`filteredNotes`, `folderName`, `selectedNote`) stays as `$derived` — these read the getters which now read `page.url.searchParams`. Reactivity preserved because `page` is reactive in `.svelte.ts`.
-
-**Remove imports:** `fromKv` from `@epicenter/svelte`, `workspace` from `$lib/client`.
-**Remove imports (if unused):** `FolderId`, `NoteId` from `$lib/workspace` — keep if used in type annotations.
-
-#### 2. `apps/honeycrisp/src/lib/state/notes.svelte.ts` — Cross-cutting KV calls
-
-Three call sites read/write `workspace.kv` for `selectedNoteId`:
-
-**Line 129–131 (`softDeleteNote`):**
-```ts
-// Before:
-if (workspace.kv.get('selectedNoteId') === noteId) {
-  workspace.kv.set('selectedNoteId', null);
-}
-
-// After:
-if (page.url.searchParams.get('note') === noteId) {
-  setSearchParam('note', null);
-}
-```
-
-**Line 172–174 (`permanentlyDeleteNote`):** Same pattern.
-
-**Line 239 (`updateNoteContent`):**
-```ts
-// Before:
-const selectedNoteId = workspace.kv.get('selectedNoteId');
-
-// After:
-const selectedNoteId = page.url.searchParams.get('note') as NoteId | null;
-```
-
-**New imports needed:** `page` from `$app/state`, `goto` from `$app/navigation` (for `setSearchParam`).
-
-**Note on avoiding circular deps:** `notes.svelte.ts` imports the `setSearchParam` utility directly (or defines its own copy) — it does NOT import `viewState` because `view.svelte.ts` already imports `notesState`.
-
-To avoid duplicating `setSearchParam`, extract it to a shared file:
-```
-apps/honeycrisp/src/lib/url-state.ts
-```
-Both `view.svelte.ts` and `notes.svelte.ts` import from there.
-
-#### 3. `apps/honeycrisp/src/lib/workspace/workspace.ts` — Folder delete action
-
-The `defineMutation` handler clears selection via KV:
-```ts
-if (kv.get('selectedFolderId') === folderId) {
-  kv.set('selectedFolderId', null);
-}
-```
-
-**Problem:** Mutation handlers run in workspace context, not Svelte context. `page` from `$app/state` is not available in plain `.ts` files.
-
-**Solution:** Remove the selection clearing from the mutation handler. Move it to `foldersState.deleteFolder()`:
-
-```ts
-// workspace.ts — remove KV selection logic, keep only data ops:
-handler: ({ folderId: rawId }) => {
-  const folderId = rawId as FolderId;
-  const folderNotes = tables.notes.getAllValid().filter(n => n.folderId === folderId);
-  for (const note of folderNotes) {
-    tables.notes.update(note.id, { folderId: undefined });
-  }
-  tables.folders.delete(folderId);
-  // Selection clearing moved to foldersState.deleteFolder()
-},
-```
-
-```ts
-// folders.svelte.ts — add selection clearing after action:
-import { page } from '$app/state';
-import { setSearchParam } from '$lib/url-state';
-
-deleteFolder(folderId: FolderId) {
-  workspace.actions.folders.delete({ folderId });
-  if (page.url.searchParams.get('folder') === folderId) {
-    setSearchParam('folder', null);
-    setSearchParam('note', null);
-  }
-},
-```
-
-Also remove `kv` from the `withActions` destructuring if no longer needed. If only `tables` is used, simplify:
-```ts
-.withActions(({ tables }) => ({ ... }))
-```
-
-#### 4. `apps/honeycrisp/src/lib/workspace/definition.ts` — Remove dead KV
-
-Remove `selectedFolderId`, `selectedNoteId`, `sortBy` from KV definition. `sidebarCollapsed` has zero consumers (confirmed via grep) — remove it too. Remove entire `kv` block:
-
-```ts
-// Before:
-export const honeycrisp = defineWorkspace({
-  id: 'epicenter.honeycrisp' as const,
-  tables: { folders: foldersTable, notes: notesTable },
-  kv: {
-    selectedFolderId: defineKv(FolderId.or(type('null')), null),
-    selectedNoteId: defineKv(NoteId.or(type('null')), null),
-    sortBy: defineKv(type("'dateEdited' | 'dateCreated' | 'title'"), 'dateEdited'),
-    sidebarCollapsed: defineKv(type('boolean'), false),
-  },
-});
-
-// After:
-export const honeycrisp = defineWorkspace({
-  id: 'epicenter.honeycrisp' as const,
-  tables: { folders: foldersTable, notes: notesTable },
-});
-```
-
-Remove `defineKv` import if unused.
-
-#### 5. `apps/honeycrisp/src/lib/client.ts` — No changes needed
-
-The workspace client still uses `workspace.tables`, `workspace.actions`, `workspace.kv` (if kv still exists). After removing kv from definition, `workspace.kv` no longer exists — any remaining references would be caught by TypeScript.
-
-#### 6. Consumer components — No changes needed
-
-All consumers read/write through `viewState.*` methods. Since the public API is preserved (same getter/setter names, same method signatures), components don't need changes. The backing store is transparent to them.
+- [x] **`search-params.svelte.ts`** — New typed singleton with `SearchParams` type, `DEFAULTS`, batch `update()`, reactive getters.
+- [x] **`state/view.svelte.ts`** — Reads from `searchParams.*` getters. State transitions use `searchParams.update({ ... })` for atomic multi-param changes. Removed `page` import and all `setSearchParam` calls.
+- [x] **`state/notes.svelte.ts`** — Replaced `page.url.searchParams.get('note')` + `setSearchParam('note', null)` with `searchParams.note` and `searchParams.update({ note: null })`.
+- [x] **`state/folders.svelte.ts`** — Replaced `page.url.searchParams.get('folder')` + two `setSearchParam` calls with `searchParams.folder === folderId` + `searchParams.update({ folder: null, note: null })`.
+- [x] **`search-params.ts`** — Deleted (replaced by `.svelte.ts` version).
 
 ---
 
 ## App 2: Opensidian
 
-### URL param mapping
+### URL param schema
 
-| State | Param | Default (elided) | Type |
+| Getter | Param | Default (elided) | Type |
 |---|---|---|---|
-| `activeFileId` | `?file=<id>` | `null` (no file) | `FileId \| null` |
-| `activeConversationId` | `?chat=<id>` | `''` (first conversation) | `ConversationId` |
+| `searchParams.file` | `?file=<id>` | `null` (no file) | `FileId \| null` |
+| `searchParams.chat` | `?chat=<id>` | `null` (no chat) | `ConversationId \| null` |
 
-**NOT moving (evaluation results):**
-- `search-state.svelte.ts` — Command palette search. Ephemeral, has `reset()` on close. Not bookmarkable.
-- `sidebar-search-state.svelte.ts` — Sidebar FTS. Preferences are persisted via `createPersistedState`. The search query is ephemeral. Panel view toggle (`leftPaneView`) is a layout preference. None of these benefit from URL params.
-- `editor-state.svelte.ts` — Editor preferences (vim, cursor). Layout/runtime state.
-- `terminal-state.svelte.ts` — Terminal session state. Not linkable.
-- `skill-state.svelte.ts` — Runtime skill loader. Not linkable.
+### Files changed
 
-### Files to change
+- [x] **`search-params.svelte.ts`** — New typed singleton.
+- [x] **`state/fs-state.svelte.ts`** — Replaced `setSearchParam('file', ...)` with `searchParams.update({ file: ... })`. Replaced `page.url.searchParams.get('file')` reads with `searchParams.file`. Updated `selectedNode`, `selectedPath` derived state, and `startCreate` to use `searchParams.file`.
+- [x] **`chat/chat-state.svelte.ts`** — Replaced all `setSearchParam('chat', ...)` with `searchParams.update({ chat: ... })`. `activeConversationId` now derives from `searchParams.chat` instead of `page.url.searchParams.get('chat')`.
+- [x] **`search-params.ts`** — Deleted (replaced by `.svelte.ts` version).
 
-#### 1. `apps/opensidian/src/lib/url-state.ts` — New shared utility
-
-Same `setSearchParam` utility as Honeycrisp, extracted to its own file:
-```ts
-import { goto } from '$app/navigation';
-import { page } from '$app/state';
-
-export function setSearchParam(key: string, value: string | null) { ... }
-```
-
-#### 2. `apps/opensidian/src/lib/state/fs-state.svelte.ts` — activeFileId migration
-
-**Remove:** `let activeFileId = $state<FileId | null>(null);`
-
-**Add imports:** `page` from `$app/state`, `setSearchParam` from `$lib/url-state`.
-
-**Getter change:**
-```ts
-get activeFileId() {
-  return (page.url.searchParams.get('file') as FileId) ?? null;
-},
-```
-
-**Action changes:**
-```ts
-selectFile(id: FileId) {
-  setSearchParam('file', id);
-  openFileIds.add(id);
-},
-
-closeFile(id: FileId) {
-  openFileIds.delete(id);
-  if (page.url.searchParams.get('file') === id) {
-    const next = [...openFileIds].at(-1) ?? null;
-    setSearchParam('file', next);
-  }
-},
-```
-
-**deleteFile:** Replace `if (activeFileId === id) activeFileId = null;` with URL param clearing.
-
-**Derived state updates** — replace references to the now-removed `activeFileId` variable:
-```ts
-const selectedNode = $derived.by(() => {
-  const fileId = page.url.searchParams.get('file') as FileId | null;
-  return fileId ? (filesMap.get(fileId) ?? null) : null;
-});
-
-const selectedPath = $derived.by(() => {
-  const fileId = page.url.searchParams.get('file') as FileId | null;
-  return fileId ? computePath(fileId) : null;
-});
-```
-
-**startCreate** — replace `focusedId ?? activeFileId` with `focusedId ?? (page.url.searchParams.get('file') as FileId | null)`.
-
-**Consumer components:** No changes needed — they all read `fsState.activeFileId` (the getter) and call `fsState.selectFile(id)`.
-
-#### 3. `apps/opensidian/src/lib/chat/chat-state.svelte.ts` — activeConversationId migration
-
-**Remove:** `let activeConversationId = $state<ConversationId>('' as ConversationId);`
-
-**Add imports:** `page` from `$app/state`, `setSearchParam` from `$lib/url-state`.
-
-**Read pattern:**
-```ts
-function getActiveConversationId(): ConversationId {
-  return (page.url.searchParams.get('chat') ?? '') as ConversationId;
-}
-```
-
-**Replace all reads of `activeConversationId` with `getActiveConversationId()`:**
-- `reconcileHandles()` — read
-- `workspace.whenReady.then(...)` — read
-- `newConversation()` — read
-- All `handles.get(activeConversationId)` — replace with `handles.get(getActiveConversationId())`
-
-**Replace all writes of `activeConversationId = id` with `setSearchParam('chat', id)`:**
-- `reconcileHandles()` line 303
-- `workspace.whenReady.then(...)` lines 322, 330
-- `newConversation()` line 351
-
-**The `_unobserveChatMessages` observer** reads `activeConversationId` — replace with `getActiveConversationId()`.
-
-**Consumer components:** No changes — they read `aiChatState.active` (which internally calls `handles.get(getActiveConversationId())`), never `activeConversationId` directly.
+**NOT moved** (same evaluation as before):
+- `search-state.svelte.ts` — ephemeral command palette search
+- `sidebar-search-state.svelte.ts` — persisted via `createPersistedState`
+- `editor-state.svelte.ts` — layout/runtime state
+- `terminal-state.svelte.ts` — not linkable
+- `skill-state.svelte.ts` — runtime skill loader
 
 ---
 
-## Commit Strategy
+## App 3: Fuji
 
-Surgical, atomic commits per logical change:
+### URL param schema
 
-### Honeycrisp (3 commits)
-- [ ] **Commit 1:** `feat(honeycrisp): extract setSearchParam URL state utility` — Create `apps/honeycrisp/src/lib/url-state.ts`
-- [ ] **Commit 2:** `feat(honeycrisp): migrate view state from KV/$state to URL search params` — Rewrite `view.svelte.ts`, update `notes.svelte.ts` and `folders.svelte.ts` KV calls, update `workspace.ts` mutation handler
-- [ ] **Commit 3:** `chore(honeycrisp): remove dead KV definitions from workspace schema` — Clean up `definition.ts`, remove unused imports
+| Getter | Param | Default (elided) | Type |
+|---|---|---|---|
+| `viewState.viewMode` | `?view=timeline` | `table` | `ViewMode` |
+| `viewState.sortBy` | `?sort=updatedAt\|...` | `date` | `SortBy` |
+| `viewState.searchQuery` | `?q=<text>` | `''` | `string` |
 
-### Opensidian (3 commits)
-- [ ] **Commit 4:** `feat(opensidian): extract setSearchParam URL state utility` — Create `apps/opensidian/src/lib/url-state.ts`
-- [ ] **Commit 5:** `feat(opensidian): migrate activeFileId to URL search params` — Update `fs-state.svelte.ts`
-- [ ] **Commit 6:** `feat(opensidian): migrate activeConversationId to URL search params` — Update `chat-state.svelte.ts`
+### Files changed
+
+- [x] **`view-state.svelte.ts`** — Replaced inline `setSearchParam()` with a local typed `update()` function. No separate file needed—Fuji's URL state is only consumed by this module.
 
 ---
 
 ## Risks and edge cases
 
-1. **`goto()` is async** — In SvelteKit with `replaceState: true` and no server load, the URL update is near-instant. But code that writes then immediately reads may see stale params. Mitigate by reading the value you just set from local scope, not from `page.url.searchParams`, within the same synchronous block.
+1. **`goto()` is async** — URL update is near-instant with `replaceState: true` and no server load. Code that writes then immediately reads should use the value it just set from local scope, not re-read from `page.url.searchParams`.
 
-2. **Circular deps** — `view.svelte.ts` imports `notesState` and `foldersState`. Those files must NOT import `viewState`. Use the shared `url-state.ts` utility instead.
+2. **Circular deps** — `searchParams` is a leaf dependency. `view.svelte.ts` and `notes.svelte.ts`/`folders.svelte.ts` both import it without cycles.
 
-3. **Workspace action context** — `defineMutation` handlers don't have access to SvelteKit's `page`. Selection clearing must happen in the Svelte layer, not in the mutation handler.
+3. **Workspace action context** — `defineMutation` handlers run outside Svelte context. Selection clearing stays in the Svelte layer (`foldersState.deleteFolder()`), not in the mutation handler.
 
-4. **Initial load** — When the page loads with `?note=abc123`, the note ID is immediately available via `page.url.searchParams`. No async init needed. But the workspace data might not be ready yet. Components already guard on `workspace.whenReady` / null checks.
+4. **Initial load** — `?note=abc123` is immediately available via `page.url.searchParams`. Workspace data may not be ready yet, but components already guard on `workspace.whenReady`.
 
-5. **Chat reconciliation** — `reconcileHandles()` runs synchronously from observers. `setSearchParam()` calls `goto()` which may schedule a microtask. The handle lookup immediately after setting the param might not find the new conversation. Mitigate by using the ID value directly rather than re-reading from URL within the same function.
+5. **Chat reconciliation** — `reconcileHandles()` runs synchronously from observers. `searchParams.update()` calls `goto()` which may schedule a microtask. Handle lookup immediately after setting the param uses the ID value directly rather than re-reading from URL.
 
 ---
 
 ## Review
 
-_To be filled after implementation._
+### What changed
+
+Replaced the stringly-typed `setSearchParam(key: string, value: string | null)` utility (copy-pasted across 3 apps) with per-app typed `searchParams` singletons. Each app now has:
+
+1. A `SearchParams` type defining the complete URL contract
+2. A `DEFAULTS` record for automatic default-elision
+3. A batch `update(changes)` function that writes multiple params in one `goto()` call
+4. Reactive getters that read from `page.url.searchParams` with proper type casting
+
+### Key improvements
+
+- **Type safety**: `searchParams.update({ foler: null })` → TypeScript error. No more magic strings.
+- **Atomic transitions**: `selectFolder()` is now one `goto()` call, not three sequential ones racing against SvelteKit's navigation.
+- **Single schema**: Every param, its type, and its default defined in one place per app.
+- **Cleaner URL construction**: `new URL(page.url)` clone + mutate + `goto(url)` instead of manual string building.
+
+### Files touched
+
+| App | Files | Change |
+|---|---|---|
+| Honeycrisp | 5 files (1 new, 3 modified, 1 deleted) | Typed singleton + consumer updates |
+| Opensidian | 4 files (1 new, 2 modified, 1 deleted) | Typed singleton + consumer updates |
+| Fuji | 1 file (modified) | Inline typed `update()` replacing `setSearchParam` |

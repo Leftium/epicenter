@@ -22,26 +22,20 @@
  * ```
  */
 
-import { page } from '$app/state';
+import { searchParams, type SortBy } from '$lib/search-params.svelte';
 import type { FolderId, NoteId } from '$lib/workspace';
-import { setSearchParam } from '$lib/search-params';
 import { foldersState } from './folders.svelte';
 import { notesState } from './notes.svelte';
 
-type SortBy = 'dateEdited' | 'dateCreated' | 'title';
-const SORT_KEYS: SortBy[] = ['dateEdited', 'dateCreated', 'title'];
 
 function createViewState() {
 	// ─── Derived State ───────────────────────────────────────────────────
 
 	/** Notes filtered by selected folder and search query, then sorted. */
 	const filteredNotes = $derived.by(() => {
-		const folderId = (page.url.searchParams.get('folder') as FolderId) ?? null;
-		const q = (page.url.searchParams.get('q') ?? '').trim().toLowerCase();
-		const raw = page.url.searchParams.get('sort');
-		const sort: SortBy = SORT_KEYS.includes(raw as SortBy)
-			? (raw as SortBy)
-			: 'dateEdited';
+		const folderId = searchParams.folder;
+		const q = searchParams.q.trim().toLowerCase();
+		const sort = searchParams.sort;
 
 		return notesState.notes
 			.filter((n) => folderId === null || n.folderId === folderId)
@@ -61,7 +55,7 @@ function createViewState() {
 
 	/** Human-readable name for the current folder (used as NoteList title). */
 	const folderName = $derived.by(() => {
-		const folderId = (page.url.searchParams.get('folder') as FolderId) ?? null;
+		const folderId = searchParams.folder;
 		return folderId
 			? (foldersState.get(folderId)?.name ?? 'Notes')
 			: 'All Notes';
@@ -69,7 +63,7 @@ function createViewState() {
 
 	/** The currently selected note (can be active or deleted). */
 	const selectedNote = $derived.by(() => {
-		const noteId = (page.url.searchParams.get('note') as NoteId) ?? null;
+		const noteId = searchParams.note;
 		return noteId ? (notesState.get(noteId) ?? null) : null;
 	});
 
@@ -77,23 +71,22 @@ function createViewState() {
 
 	return {
 		get selectedFolderId(): FolderId | null {
-			return (page.url.searchParams.get('folder') as FolderId) ?? null;
+			return searchParams.folder;
 		},
 		get selectedNoteId(): NoteId | null {
-			return (page.url.searchParams.get('note') as NoteId) ?? null;
+			return searchParams.note;
 		},
 		get selectedNote() {
 			return selectedNote;
 		},
 		get searchQuery() {
-			return page.url.searchParams.get('q') ?? '';
+			return searchParams.q;
 		},
 		get sortBy(): SortBy {
-			const raw = page.url.searchParams.get('sort');
-			return SORT_KEYS.includes(raw as SortBy) ? (raw as SortBy) : 'dateEdited';
+			return searchParams.sort;
 		},
 		get isRecentlyDeletedView() {
-			return page.url.searchParams.get('view') === 'deleted';
+			return searchParams.isDeletedView;
 		},
 		get folderName() {
 			return folderName;
@@ -118,9 +111,7 @@ function createViewState() {
 		 * ```
 		 */
 		selectFolder(folderId: FolderId | null) {
-			setSearchParam('view', null);
-			setSearchParam('note', null);
-			setSearchParam('folder', folderId);
+			searchParams.update({ view: null, note: null, folder: folderId });
 		},
 
 		/**
@@ -135,9 +126,7 @@ function createViewState() {
 		 * ```
 		 */
 		selectRecentlyDeleted() {
-			setSearchParam('folder', null);
-			setSearchParam('note', null);
-			setSearchParam('view', 'deleted');
+			searchParams.update({ folder: null, note: null, view: 'deleted' });
 		},
 
 		/**
@@ -149,7 +138,7 @@ function createViewState() {
 		 * ```
 		 */
 		selectNote(noteId: NoteId) {
-			setSearchParam('note', noteId);
+			searchParams.update({ note: noteId });
 		},
 
 		/**
@@ -165,7 +154,7 @@ function createViewState() {
 		 * ```
 		 */
 		setSortBy(value: SortBy) {
-			setSearchParam('sort', value === 'dateEdited' ? null : value);
+			searchParams.update({ sort: value });
 		},
 
 		/**
@@ -182,7 +171,7 @@ function createViewState() {
 		 * ```
 		 */
 		setSearchQuery(query: string) {
-			setSearchParam('q', query || null);
+			searchParams.update({ q: query });
 		},
 	};
 }

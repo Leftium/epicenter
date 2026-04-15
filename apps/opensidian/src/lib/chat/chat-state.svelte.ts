@@ -25,8 +25,7 @@ import {
 	generateChatMessageId,
 	generateConversationId,
 } from '$lib/workspace/definition';
-import { page } from '$app/state';
-import { setSearchParam } from '$lib/search-params';
+import { searchParams } from '$lib/search-params.svelte';
 
 function getStringValue(value: JsonValue | undefined, fallback: string) {
 	return typeof value === 'string' ? value : fallback;
@@ -301,12 +300,12 @@ function createAiChatState() {
 		if (handles.has(activeConversationId)) return;
 
 		const newActiveId = firstConversation.id as ConversationId;
-		setSearchParam('chat', newActiveId);
+		searchParams.update({ chat: newActiveId });
 		refreshFns.get(newActiveId)?.();
 	}
 
 	const activeConversationId = $derived(
-		(page.url.searchParams.get('chat') ?? '') as ConversationId,
+		(searchParams.chat ?? '') as ConversationId,
 	);
 
 	const _unobserveConversations = workspace.tables.conversations.observe(() => {
@@ -322,7 +321,7 @@ function createAiChatState() {
 
 		const newId = ensureDefaultConversation();
 		if (newId) {
-			setSearchParam('chat', newId);
+			searchParams.update({ chat: newId });
 			refreshFns.get(newId)?.();
 			return;
 		}
@@ -331,7 +330,7 @@ function createAiChatState() {
 		if (!firstConversation) return;
 
 		const activeId = firstConversation.id as ConversationId;
-		setSearchParam('chat', activeId);
+			searchParams.update({ chat: activeId });
 		refreshFns.get(activeId)?.();
 	});
 
@@ -352,7 +351,7 @@ function createAiChatState() {
 			_v: 1,
 		});
 
-		setSearchParam('chat', id);
+		searchParams.update({ chat: id });
 		refreshFns.get(id)?.();
 
 		return id;

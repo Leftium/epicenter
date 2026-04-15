@@ -1,9 +1,8 @@
-import { join } from 'node:path';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import { createSessionStore } from './auth/store.js';
 import { createCliUnlock } from './extensions.js';
-import { resolveEpicenterHome } from './cli.js';
+import { EPICENTER_PATHS } from './paths.js';
 
 import type {
 	AwarenessDefinitions,
@@ -56,14 +55,14 @@ export async function connectWorkspace<
 		server = process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so',
 	}: { server?: string } = {},
 ) {
-	const sessions = createSessionStore(resolveEpicenterHome());
+	const sessions = createSessionStore(EPICENTER_PATHS.home());
 	const base = factory();
 
 	const client = base
 		.withExtension(
 			'persistence',
 			filesystemPersistence({
-				filePath: join(resolveEpicenterHome(), 'persistence', `${base.id}.db`),
+				filePath: EPICENTER_PATHS.persistence(base.id),
 			}),
 		)
 		.withWorkspaceExtension('unlock', createCliUnlock(sessions, server))

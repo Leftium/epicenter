@@ -21,8 +21,7 @@ import { Database } from 'bun:sqlite';
 import {
 	createCliUnlock,
 	createSessionStore,
-	resolveEpicenterHome,
-	resolvePersistencePath,
+	EPICENTER_PATHS,
 } from '@epicenter/cli';
 import { createWorkspace, defineMutation } from '@epicenter/workspace';
 import {
@@ -42,13 +41,13 @@ const MARKDOWN_DIR = join(import.meta.dir, 'data');
 const MATERIALIZER_DIR = join(import.meta.dir, '.epicenter', 'materializer');
 mkdirSync(MATERIALIZER_DIR, { recursive: true });
 
-const sessions = createSessionStore(resolveEpicenterHome());
+const sessions = createSessionStore(EPICENTER_PATHS.home());
 
 export const opensidian = createWorkspace(opensidianDefinition)
 	.withExtension(
 		'persistence',
 		filesystemPersistence({
-			filePath: resolvePersistencePath(opensidianDefinition.id),
+			filePath: EPICENTER_PATHS.persistence(opensidianDefinition.id),
 		}),
 	)
 	.withWorkspaceExtension('materializer', (ctx) =>

@@ -23,9 +23,9 @@ type SessionStore = ReturnType<typeof createSessionStore>;
  *
  * @example
  * ```typescript
- * import { createSessionStore, resolveEpicenterHome, createCliUnlock } from '@epicenter/cli';
+ * import { createSessionStore, EPICENTER_PATHS, createCliUnlock } from '@epicenter/cli';
  *
- * const sessions = createSessionStore(resolveEpicenterHome());
+ * const sessions = createSessionStore(EPICENTER_PATHS.home());
  *
  * const workspace = createWorkspace(definition)
  *   .withWorkspaceExtension('unlock', createCliUnlock(sessions, SERVER_URL));

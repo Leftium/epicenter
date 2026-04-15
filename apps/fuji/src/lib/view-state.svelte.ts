@@ -18,6 +18,9 @@ type ViewMode = (typeof VIEW_MODES)[number];
 const SORT_KEYS = ['date', 'updatedAt', 'createdAt', 'title', 'rating'] as const;
 type SortBy = (typeof SORT_KEYS)[number];
 
+const VIEW_MODES: ViewMode[] = ['table', 'timeline'];
+const SORT_KEYS: SortBy[] = ['date', 'updatedAt', 'createdAt', 'title', 'rating'];
+
 /** Update a single URL search param, removing it when null to keep URLs clean. */
 function setSearchParam(key: string, value: string | null) {
 	const params = new URLSearchParams(page.url.searchParams);

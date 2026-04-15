@@ -151,7 +151,7 @@
 					tooltip="Save for later"
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						savedTabState.save(tab).then(toastOnError);
+						savedTabState.save(tab).then((r) => toastOnError(r, 'Failed to save tab'));
 					}}
 				>
 					<ArchiveIcon />
@@ -163,7 +163,7 @@
 					tooltip={isBookmarked ? 'Remove bookmark' : 'Bookmark'}
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						bookmarkState.toggle(tab).then(toastOnError);
+						bookmarkState.toggle(tab).then((r) => toastOnError(r, 'Failed to toggle bookmark'));
 					}}
 				>
 					<StarIcon

@@ -14,7 +14,7 @@ metadata:
 
 The query layer is the reactive bridge between UI components and the service layer. It wraps pure service functions with caching, reactivity, and state management using TanStack Query and WellCrafted factories.
 
-> **Related Skills**: See `services-layer` for the service layer these queries consume. See `svelte` for Svelte-specific TanStack Query patterns.
+> **Related Skills**: See `services-layer` for the service layer these queries consume. See `svelte` for Svelte-specific TanStack Query patterns. See `error-handling` for toast-on-error patterns—how errors from Results surface to users via `toastOnError` and `extractErrorMessage`.
 
 ## When to Apply This Skill
 
@@ -114,24 +114,24 @@ Use in event handlers and workflows without reactive overhead:
 ```typescript
 // In an event handler or workflow
 async function handleTransform(recordingId: string, transformation: Transformation) {
-	const { error } = await rpc.transformer.transformRecording.execute({
+	const { error } = await rpc.transformer.transformRecording({
 		recordingId,
 		transformation,
 	});
 	if (error) {
-		notify.error.execute(error);
+		notify.error(error);
 		return;
 	}
-	notify.success.execute({ title: 'Transformation complete' });
+	notify.success({ title: 'Transformation complete' });
 }
 
 // In a sequential workflow
 async function stopAndTranscribe(toastId: string) {
 	const { data: blobData, error: stopError } =
-		await rpc.recorder.stopRecording.execute({ toastId });
+		await rpc.recorder.stopRecording({ toastId });
 
 	if (stopError) {
-		notify.error.execute(stopError);
+		notify.error(stopError);
 		return;
 	}
 
@@ -155,7 +155,7 @@ async function stopAndTranscribe(toastId: string) {
 2. **Use `.options` (no parentheses)** - It's a static object, wrap in accessor for Svelte
 3. **Never double-wrap errors** - Each error is wrapped exactly once
 4. **Services are pure, queries inject settings** - Services take explicit params
-5. **Use `.execute()` in `.ts` files** - `createMutation` requires component context
+5. **Use imperative calls in `.ts` files** - `createMutation` requires component context
 6. **Update cache optimistically** - Better UX for mutations
 
 ## References
@@ -168,4 +168,4 @@ Load these on demand based on what you're working on:
 
 - See `apps/whispering/src/lib/query/README.md` for detailed architecture
 - See the `services-layer` skill for how services are implemented
-- See the `error-handling` skill for trySync/tryAsync patterns
+- See the `error-handling` skill for trySync/tryAsync patterns and toast-on-error conventions

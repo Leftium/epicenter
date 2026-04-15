@@ -8,7 +8,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
 	import { workspace } from '$lib/client';
-	import { entriesState } from '$lib/entries.svelte';
+	import { entriesState } from '$lib/entries-state.svelte';
 	import { relativeTime } from '$lib/format';
 
 	const deletedEntries = $derived(

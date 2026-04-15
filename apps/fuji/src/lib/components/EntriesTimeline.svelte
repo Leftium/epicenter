@@ -15,11 +15,8 @@
 	import { format, isToday, isYesterday } from 'date-fns';
 	import { VList } from 'virtua/svelte';
 	import { goto } from '$app/navigation';
-	import {
-		entriesState,
-		matchesEntrySearch,
-		viewState,
-	} from '$lib/entries.svelte';
+	import { entriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
+	import { viewState } from '$lib/view-state.svelte';
 	import type { Entry } from '$lib/workspace';
 
 	let { entries, title }: { entries: Entry[]; title?: string } = $props();
@@ -36,13 +33,21 @@
 
 	/** Multi-sort: non-date fields sort within date groups. */
 	const sorting = $derived(
-		({
-			date: [{ id: 'date', desc: true }],
-			updatedAt: [{ id: 'updatedAt', desc: true }],
-			createdAt: [{ id: 'createdAt', desc: true }],
-			title: [{ id: 'date', desc: true }, { id: 'title', desc: false }],
-			rating: [{ id: 'date', desc: true }, { id: 'rating', desc: true }],
-		} satisfies Record<typeof viewState.sortBy, SortingState>)[viewState.sortBy],
+		(
+			{
+				date: [{ id: 'date', desc: true }],
+				updatedAt: [{ id: 'updatedAt', desc: true }],
+				createdAt: [{ id: 'createdAt', desc: true }],
+				title: [
+					{ id: 'date', desc: true },
+					{ id: 'title', desc: false },
+				],
+				rating: [
+					{ id: 'date', desc: true },
+					{ id: 'rating', desc: true },
+				],
+			} satisfies Record<typeof viewState.sortBy, SortingState>
+		)[viewState.sortBy],
 	);
 
 	const table = createSvelteTable({
@@ -71,13 +76,18 @@
 
 	/** Which date field to use for timeline headers. */
 	const groupField = $derived(
-		({
-			date: 'date',
-			updatedAt: 'updatedAt',
-			createdAt: 'createdAt',
-			title: 'date',
-			rating: 'date',
-		} satisfies Record<typeof viewState.sortBy, 'date' | 'updatedAt' | 'createdAt'>)[viewState.sortBy],
+		(
+			{
+				date: 'date',
+				updatedAt: 'updatedAt',
+				createdAt: 'createdAt',
+				title: 'date',
+				rating: 'date',
+			} satisfies Record<
+				typeof viewState.sortBy,
+				'date' | 'updatedAt' | 'createdAt'
+			>
+		)[viewState.sortBy],
 	);
 
 	function getDateLabel(dts: string): string {
@@ -137,27 +147,27 @@
 				<Empty.Media>
 					<ClockIcon class="size-8 text-muted-foreground" />
 				</Empty.Media>
-			{#if viewState.searchQuery}
-				<Empty.Title>No entries match your search</Empty.Title>
-				<Empty.Description
-					>Try a different search term or clear your filters.</Empty.Description
-				>
-			{:else}
-				<Empty.Title>No entries yet</Empty.Title>
-				<Empty.Description
-					>Create your first entry to get started.</Empty.Description
-				>
-				<Empty.Content>
-					<Button
-						variant="outline"
-						size="sm"
-						onclick={entriesState.createEntry}
+				{#if viewState.searchQuery}
+					<Empty.Title>No entries match your search</Empty.Title>
+					<Empty.Description
+						>Try a different search term or clear your filters.</Empty.Description
 					>
-						<PlusIcon class="mr-1.5 size-4" />
-						New Entry
-					</Button>
-				</Empty.Content>
-			{/if}
+				{:else}
+					<Empty.Title>No entries yet</Empty.Title>
+					<Empty.Description
+						>Create your first entry to get started.</Empty.Description
+					>
+					<Empty.Content>
+						<Button
+							variant="outline"
+							size="sm"
+							onclick={entriesState.createEntry}
+						>
+							<PlusIcon class="mr-1.5 size-4" />
+							New Entry
+						</Button>
+					</Empty.Content>
+				{/if}
 			</Empty.Root>
 		</div>
 	{:else}
@@ -174,18 +184,19 @@
 						</h3>
 					</div>
 				{:else}
-					<!-- svelte-ignore a11y_click_events_have_key_events -->
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
+						role="button"
+						tabindex="0"
 						class="group mx-4 flex cursor-pointer flex-col gap-0.5 rounded-lg p-3 text-sm transition-colors hover:bg-accent/50"
 						onclick={() => goto(`/entries/${item.entry.id}`)}
+						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goto(`/entries/${item.entry.id}`); } }}
 					>
 						<div class="flex items-start justify-between gap-2">
 							<span class="font-medium line-clamp-1">
 								{item.entry.title || 'Untitled'}
 							</span>
 							<span class="shrink-0 text-xs text-muted-foreground">
-							{format(DateTimeString.toDate(item.entry[groupField]), 'h:mm a')}
+								{format(DateTimeString.toDate(item.entry[groupField]), 'h:mm a')}
 							</span>
 						</div>
 						{#if item.entry.subtitle}

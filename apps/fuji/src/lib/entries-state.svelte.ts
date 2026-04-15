@@ -1,25 +1,19 @@
 /**
- * Reactive state for Fuji—entries, view preferences, and search.
+ * Reactive Fuji entry state and search helpers.
  *
- * Three exports:
- * - `entriesState` — active/deleted entry collections from the workspace table
- * - `viewState` — persisted view mode, sort preference, and search query
- * - `matchesEntrySearch` — pure function for filtering entries by query
+ * Keeps the workspace-backed entry collection and search predicate together,
+ * while view preferences live in `view-state.svelte.ts`.
  *
  * @example
  * ```svelte
  * <script>
- *   import { entriesState, viewState } from '$lib/entries.svelte';
+ *   import { entriesState, matchesEntrySearch } from '$lib/entries-state.svelte';
  * </script>
- *
- * {#each entriesState.active as entry (entry.id)}
- *   <p>{entry.title}</p>
- * {/each}
  * ```
  */
 
+import { fromTable } from '@epicenter/svelte';
 import { goto } from '$app/navigation';
-import { fromKv, fromTable } from '@epicenter/svelte';
 import { workspace } from '$lib/client';
 import type { EntryId } from '$lib/workspace';
 
@@ -88,51 +82,3 @@ function createEntriesState() {
 }
 
 export const entriesState = createEntriesState();
-
-// ─── View State ──────────────────────────────────────────────────────────────
-
-function createViewState() {
-	const viewModeKv = fromKv(workspace.kv, 'viewMode');
-	const sortByKv = fromKv(workspace.kv, 'sortBy');
-	let searchQuery = $state('');
-
-	return {
-		get viewMode(): 'table' | 'timeline' {
-			return viewModeKv.current ?? 'table';
-		},
-
-		/**
-		 * Toggle between table and timeline view modes.
-		 *
-		 * Persisted via workspace KV so the preference survives reloads
-		 * and syncs across devices.
-		 */
-		toggleViewMode() {
-			viewModeKv.current =
-				viewModeKv.current === 'table' ? 'timeline' : 'table';
-		},
-
-		get sortBy(): 'date' | 'updatedAt' | 'createdAt' | 'title' | 'rating' {
-			return sortByKv.current ?? 'date';
-		},
-
-		/**
-		 * Set the sort preference. Persisted via workspace KV so it survives
-		 * reloads and syncs across devices.
-		 */
-		set sortBy(value: 'date' | 'updatedAt' | 'createdAt' | 'title' | 'rating') {
-			sortByKv.current = value;
-		},
-
-		get searchQuery() {
-			return searchQuery;
-		},
-
-		/** Update the search query. Used by the sidebar search input. */
-		set searchQuery(value: string) {
-			searchQuery = value;
-		},
-	};
-}
-
-export const viewState = createViewState();

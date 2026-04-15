@@ -1,6 +1,6 @@
 ---
 name: error-handling
-description: Error handling patterns using wellcrafted trySync and tryAsync. Use when writing or reviewing try-catch blocks, refactoring try-catch to linear control flow, working with Result types, or returning HTTP error responses from route handlers.
+description: Error handling patterns using wellcrafted trySync and tryAsync, and toastOnError for surfacing errors to users. Use when writing or reviewing try-catch blocks, refactoring try-catch to linear control flow, working with Result types, showing error toasts, or returning HTTP error responses from route handlers.
 metadata:
   author: epicenter
   version: '2.0'
@@ -23,6 +23,7 @@ Use this pattern when you need to:
 Load these on demand based on what you're working on:
 
 - If working with **wrapping boundaries, minimal vs extended wrapping, or immediate-return control flow**, read [references/wrapping-patterns.md](references/wrapping-patterns.md)
+- If working with **toast notifications for errors** (`toastOnError`, `extractErrorMessage` in UI), read [references/toast-on-error.md](references/toast-on-error.md)
 - If working with **real-world codebase examples and wrapping scenario guidelines**, read [references/real-world-examples.md](references/real-world-examples.md)
 - If working with **HTTP route handlers and status-response error conversion**, read [references/http-handlers.md](references/http-handlers.md)
 

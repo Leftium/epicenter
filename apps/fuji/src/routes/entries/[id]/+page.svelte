@@ -7,7 +7,7 @@
 	import type * as Y from 'yjs';
 	import { workspace } from '$lib/client';
 	import EntryEditor from '$lib/components/EntryEditor.svelte';
-	import { entriesState } from '$lib/entries.svelte';
+	import { entriesState } from '$lib/entries-state.svelte';
 	import type { EntryId } from '$lib/workspace';
 
 	const entryId = $derived(page.params.id as EntryId);
@@ -36,7 +36,10 @@
 
 		let cancelled = false;
 		workspace.documents.entries.content.open(entryId).then((handle) => {
-			if (cancelled) return;
+			if (cancelled) {
+				workspace.documents.entries.content.close(entryId);
+				return;
+			}
 			currentDocHandle = handle;
 			currentYXmlFragment = handle.asRichText();
 		});
@@ -59,7 +62,9 @@
 				<FileXIcon class="size-8 text-muted-foreground" />
 			</Empty.Media>
 			<Empty.Title>Entry not found</Empty.Title>
-			<Empty.Description>This entry may have been deleted or the URL is invalid.</Empty.Description>
+			<Empty.Description
+				>This entry may have been deleted or the URL is invalid.</Empty.Description
+			>
 		</Empty.Root>
 	{:else if currentYXmlFragment}
 		{#key entryId}

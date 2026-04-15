@@ -26,6 +26,7 @@
 			<button
 				type="button"
 				class="rounded-full p-0.5 hover:bg-muted"
+				aria-label={`Remove ${value}`}
 				onclick={() => onRemove(value)}
 			>
 				<XIcon class="size-3" />

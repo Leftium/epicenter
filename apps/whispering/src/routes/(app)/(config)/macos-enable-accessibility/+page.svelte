@@ -19,8 +19,7 @@
 
 		if (error) {
 			toast.error('Failed to open accessibility settings', {
-				description:
-					'Please enable Accessibility in System Settings > Privacy & Security > Accessibility manually',
+				description: error.message,
 				action: {
 					label: 'Open Accessibility Settings',
 					onClick: () => openSystemSettings(),

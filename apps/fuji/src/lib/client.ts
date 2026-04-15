@@ -2,9 +2,8 @@
  * Fuji workspace client — single Y.Doc instance with IndexedDB persistence,
  * encryption, and WebSocket sync (with built-in BroadcastChannel cross-tab sync).
  *
- * Access tables via `workspace.tables.entries` and KV settings via
- * `workspace.kv`. The client is ready when `workspace.whenReady`
- * resolves.
+ * Access tables via `workspace.tables.entries`. The client is ready when
+ * `workspace.whenReady` resolves.
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';

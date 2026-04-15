@@ -1,4 +1,4 @@
-import { toast } from '@epicenter/ui/sonner';
+import { toast, toastOnError } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import { goto } from '$app/navigation';
 import { IS_MACOS } from '$lib/constants/platform';
@@ -73,12 +73,7 @@ export function registerMicrophonePermission() {
 						const { error: requestError } =
 							await desktopServices.permissions.microphone.request();
 
-						if (requestError) {
-							toast.error('Failed to request microphone permission', {
-								description: 'Please check your system settings',
-							});
-							return;
-						}
+						if (requestError) return toastOnError(requestError, 'Failed to request microphone permission');
 						// Dismiss the toast after requesting
 						toast.dismiss(microphoneToastId);
 					},

@@ -85,7 +85,7 @@ describe('table operations', () => {
 			}
 		});
 
-		console.log(`Insert 1,000 rows: ${durationMs.toFixed(2)}ms`);
+		console.log(`Insert 1,000 rows: ${durationMs.toFixed(2)}ms (${Math.round(1_000 / (durationMs / 1_000))} ops/sec)`);
 		console.log(`Average per insert: ${(durationMs / 1_000).toFixed(4)}ms`);
 		expect(tables.posts.count()).toBe(1_000);
 	});
@@ -105,7 +105,7 @@ describe('table operations', () => {
 			}
 		});
 
-		console.log(`Insert 10,000 rows: ${durationMs.toFixed(2)}ms`);
+		console.log(`Insert 10,000 rows: ${durationMs.toFixed(2)}ms (${Math.round(10_000 / (durationMs / 1_000))} ops/sec)`);
 		console.log(`Average per insert: ${(durationMs / 10_000).toFixed(4)}ms`);
 		expect(tables.posts.count()).toBe(10_000);
 	});

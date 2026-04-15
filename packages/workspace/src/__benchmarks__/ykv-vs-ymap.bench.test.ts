@@ -7,8 +7,7 @@
  * against native Y.Map (nested Y.Maps with cell-level granularity) across size,
  * tombstones, repeated updates, and realistic usage patterns.
  *
- * Includes the "simplicity argument"—an honest assessment of tradeoffs between
- * the battle-tested Y.Map approach and custom LWW conflict resolution.
+ * Includes the "simplicity argument" data from a prior architecture decision.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -439,95 +438,10 @@ describe('realistic storage patterns (native Y.Map)', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// The Simplicity Argument
-// ═══════════════════════════════════════════════════════════════════════════════
-
-describe('the simplicity argument', () => {
-	test('Y.Map implementation: ZERO custom code', () => {
-		console.log('\n=== Implementation Comparison ===\n');
-
-		console.log('Y.Map of Y.Maps:');
-		console.log('────────────────');
-		console.log('• Lines of code: ~30 (just wrappers)');
-		console.log('• Custom CRDT logic: NONE');
-		console.log('• Compaction needed: NO');
-		console.log('• Clock synchronization: NO');
-		console.log('• Battle-tested: YES (core YJS)');
-		console.log('');
-
-		console.log('YKeyValue-LWW:');
-		console.log('──────────────');
-		console.log('• Lines of code: ~200+');
-		console.log('• Custom CRDT logic: isNewer(), processRecord()');
-		console.log('• Compaction needed: YES (or unbounded growth)');
-		console.log('• Clock synchronization: YES (monotonic clock)');
-		console.log('• Battle-tested: NO (custom implementation)');
-
-		expect(true).toBe(true);
-	});
-
-	test('What can go wrong with custom LWW?', () => {
-		console.log('\n=== Potential LWW Bugs ===\n');
-
-		console.log('1. COMPACTION RACE CONDITIONS');
-		console.log('   What if compaction runs while sync is in progress?');
-		console.log('   You could delete a record before its dependencies arrive.');
-		console.log('');
-
-		console.log('2. CLOCK SKEW EDGE CASES');
-		console.log("   What if a user's clock is 1 year in the future?");
-		console.log('   They dominate ALL writes until others catch up.');
-		console.log('');
-
-		console.log('3. TOMBSTONE RESURRECTION');
-		console.log('   User A deletes at T=100');
-		console.log('   User B (offline since T=50) edits at T=60');
-		console.log('   User B syncs... does the delete win? Should it?');
-		console.log('');
-
-		console.log('4. OBSERVER ORDERING');
-		console.log('   processRecord() called in what order during sync?');
-		console.log('   Does transaction batching affect winner selection?');
-		console.log('');
-
-		console.log(
-			'Y.Map: None of these are YOUR problem. Kevin Jahns solved them.',
-		);
-
-		expect(true).toBe(true);
-	});
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // Conflict Resolution: Cell-Level Merge with Y.Map
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('conflict resolution with native Y.Map', () => {
-	test('How often do SAME-CELL conflicts actually happen?', () => {
-		console.log('\n=== Same-Cell Conflict Frequency ===\n');
-
-		console.log('For a conflict to occur, TWO users must:');
-		console.log('  1. Edit the SAME row');
-		console.log('  2. Edit the SAME column');
-		console.log('  3. While OFFLINE from each other');
-		console.log('  4. Then SYNC');
-		console.log('');
-
-		console.log('In practice:');
-		console.log('  • Different rows: No conflict (most common)');
-		console.log('  • Same row, different columns: MERGE works! ✓');
-		console.log(
-			'  • Same row, same column, online: Last write wins naturally ✓',
-		);
-		console.log('  • Same row, same column, offline: RARE conflict case');
-		console.log('');
-
-		console.log('Cell-level merging handles 99% of real collaboration.');
-		console.log('The "unpredictable winner" only matters for that 1%.');
-
-		expect(true).toBe(true);
-	});
-
 	test('cell-level merging works perfectly with Y.Map', () => {
 		console.log('\n=== Cell-Level Merge Demo ===\n');
 
@@ -607,105 +521,5 @@ describe('conflict resolution with native Y.Map', () => {
 		console.log('  • There\'s no universally "correct" answer');
 
 		expect(tableA.get('post-1')).toEqual(tableB.get('post-1'));
-	});
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Verdict
-// ═══════════════════════════════════════════════════════════════════════════════
-
-describe('the verdict', () => {
-	test('summary: when to use which approach', () => {
-		console.log('\n');
-		console.log(
-			'╔═══════════════════════════════════════════════════════════════════╗',
-		);
-		console.log(
-			'║                        RECOMMENDATION                             ║',
-		);
-		console.log(
-			'╠═══════════════════════════════════════════════════════════════════╣',
-		);
-		console.log(
-			'║                                                                   ║',
-		);
-		console.log(
-			'║  USE Y.Map of Y.Maps (NATIVE) WHEN:                               ║',
-		);
-		console.log(
-			'║  ────────────────────────────────────                             ║',
-		);
-		console.log(
-			'║  • You want ZERO custom CRDT code                                 ║',
-		);
-		console.log(
-			'║  • Your data is write-once or low-update-frequency                ║',
-		);
-		console.log(
-			'║  • Cell-level merge is sufficient (different cols merge)          ║',
-		);
-		console.log(
-			"║  • You trust YJS's battle-tested conflict resolution              ║",
-		);
-		console.log(
-			'║  • Storage size is not a critical constraint                      ║',
-		);
-		console.log(
-			'║                                                                   ║',
-		);
-		console.log(
-			'║  USE YKeyValue-LWW WHEN:                                          ║',
-		);
-		console.log(
-			'║  ────────────────────────────                                     ║',
-		);
-		console.log(
-			'║  • Users EXPECT "later edit wins" behavior                        ║',
-		);
-		console.log(
-			'║  • Same-cell conflicts are common in your app                     ║',
-		);
-		console.log(
-			'║  • You need predictable, debuggable conflict resolution           ║',
-		);
-		console.log(
-			"║  • You're willing to maintain compaction logic                    ║",
-		);
-		console.log(
-			'║  • Storage optimization is critical                               ║',
-		);
-		console.log(
-			'║                                                                   ║',
-		);
-		console.log(
-			'╠═══════════════════════════════════════════════════════════════════╣',
-		);
-		console.log(
-			'║                                                                   ║',
-		);
-		console.log(
-			"║  MY TAKE: Start with Y.Map. It's simpler, battle-tested, and      ║",
-		);
-		console.log(
-			'║  handles 99% of collaboration. Add LWW timestamps LATER if users  ║',
-		);
-		console.log(
-			'║  actually complain about conflict resolution.                     ║',
-		);
-		console.log(
-			'║                                                                   ║',
-		);
-		console.log(
-			'║  "Premature optimization is the root of all evil" - Knuth         ║',
-		);
-		console.log(
-			'║                                                                   ║',
-		);
-		console.log(
-			'╚═══════════════════════════════════════════════════════════════════╝',
-		);
-		console.log('');
-
-		expect(true).toBe(true);
 	});
 });

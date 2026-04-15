@@ -110,25 +110,50 @@ Let's add a bit more to make it realistic. The quick brown fox jumps over the la
 		console.log(`  Per row: ${(encoded.byteLength / 1_000).toFixed(0)} bytes`);
 	});
 
-	test('upper ceiling estimates', () => {
-		console.log('\n=== PRACTICAL LIMITS ===');
-		console.log(
-			'Based on benchmarks (~75 bytes/small row, ~700 bytes/note):\n',
-		);
+	test('actual ceiling measurements at 1K / 10K / 50K rows', () => {
+		console.log('\n=== PRACTICAL LIMITS (measured) ===');
+		console.log('| Rows     | Small Posts  | Notes (~500 chars) | Insert Time  |');
+		console.log('|----------|--------------|--------------------| -------------|');
 
-		console.log('| Rows     | Small Rows  | Notes (~500 chars) |');
-		console.log('|----------|-------------|---------------------|');
-		console.log('| 1,000    | ~75 KB      | ~700 KB             |');
-		console.log('| 10,000   | ~750 KB     | ~7 MB               |');
-		console.log('| 50,000   | ~3.7 MB     | ~35 MB              |');
-		console.log('| 100,000  | ~7.5 MB     | ~70 MB              |');
+		const sampleContent = 'x'.repeat(400);
 
-		console.log('\nRecommendations:');
-		console.log('  ✓ 10K rows: Sweet spot for local-first (fast, <10MB)');
-		console.log('  ⚠ 50K rows: Still works, slower inserts (~5s)');
-		console.log('  ✗ 100K+ rows: Consider pagination/archiving');
-		console.log('  Note: Deletes are O(n) - avoid repeated bulk delete cycles');
-	});
+		for (const count of [1_000, 10_000, 50_000]) {
+			// Small rows
+			const smallDoc = new Y.Doc();
+			const smallTables = createTables(smallDoc, { posts: postDefinition });
+			const smallStart = performance.now();
+			for (let i = 0; i < count; i++) {
+				smallTables.posts.set({
+					id: generateId(i),
+					title: `Post ${i}`,
+					views: i,
+					_v: 1,
+				});
+			}
+			const smallMs = performance.now() - smallStart;
+			const smallSize = Y.encodeStateAsUpdate(smallDoc).byteLength;
+
+			// Notes with content
+			const noteDoc = new Y.Doc();
+			const noteTables = createTables(noteDoc, { notes: noteDefinition });
+			for (let i = 0; i < count; i++) {
+				noteTables.notes.set({
+					id: generateId(i),
+					title: `Note ${i}`,
+					content: sampleContent,
+					tags: ['tag1', 'tag2'],
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					_v: 1,
+				});
+			}
+			const noteSize = Y.encodeStateAsUpdate(noteDoc).byteLength;
+
+			console.log(
+				`| ${String(count).padStart(8)} | ${formatBytes(smallSize).padEnd(12)} | ${formatBytes(noteSize).padEnd(18)} | ${smallMs.toFixed(0).padStart(8)}ms    |`,
+			);
+		}
+	}, 120_000);  // 50K rows takes a while
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

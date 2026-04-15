@@ -149,16 +149,16 @@
 							workspace.ydoc.transact(() => {
 								for (let i = 0; i < count; i++) {
 									const now = new Date().toISOString();
+									const transcript = content;
 									workspace.tables.recordings.set({
 										id: nanoid(),
-										title: `Test Recording #${i + 1}`,
-										subtitle: 'Generated for stress testing',
-										timestamp: now,
-										createdAt: now,
+										title: transcript,
+										recordedAt: now,
 										updatedAt: now,
-										transcribedText: content,
+										transcript,
 										transcriptionStatus: 'DONE',
-										_v: 1,
+										duration: undefined,
+										_v: 2,
 									});
 								}
 							});

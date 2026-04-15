@@ -364,11 +364,11 @@
 		<div class="xxs:flex hidden w-full flex-col gap-2">
 			<TranscriptDialog
 				recordingId={latestRecording.id}
-				transcribedText={latestRecording.transcriptionStatus === 'TRANSCRIBING'
+				transcript={latestRecording.transcriptionStatus === 'TRANSCRIBING'
 					? '...'
-					: latestRecording.transcribedText}
+					: latestRecording.transcript}
 				rows={1}
-				disabled={!latestRecording.transcribedText.trim()}
+				disabled={!latestRecording.transcript.trim()}
 				loading={latestRecording.transcriptionStatus === 'TRANSCRIBING'}
 				onDelete={() => {
 					confirmationDialog.open({

@@ -98,12 +98,10 @@
 			enableHiding: false,
 			filterFn: (row, _columnId, filterValue) => {
 				const title = String(row.getValue('title'));
-				const subtitle = String(row.getValue('subtitle'));
-				const transcribedText = String(row.getValue('transcribedText'));
+				const transcript = String(row.getValue('transcript'));
 				return (
 					title.toLowerCase().includes(filterValue.toLowerCase()) ||
-					subtitle.toLowerCase().includes(filterValue.toLowerCase()) ||
-					transcribedText.toLowerCase().includes(filterValue.toLowerCase())
+					transcript.toLowerCase().includes(filterValue.toLowerCase())
 				);
 			},
 		},
@@ -132,31 +130,12 @@
 				}),
 		},
 		{
-			accessorKey: 'subtitle',
-			meta: { label: 'Subtitle' },
+			accessorKey: 'recordedAt',
+			meta: { label: 'Recorded' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
-					headerText: 'Subtitle',
-				}),
-		},
-		{
-			accessorKey: 'timestamp',
-			meta: { label: 'Timestamp' },
-			header: ({ column }) =>
-				renderComponent(SortableTableHeader, {
-					column,
-					headerText: 'Timestamp',
-				}),
-			cell: formattedCell(DATE_FORMAT),
-		},
-		{
-			accessorKey: 'createdAt',
-			meta: { label: 'Created At' },
-			header: ({ column }) =>
-				renderComponent(SortableTableHeader, {
-					column,
-					headerText: 'Created At',
+					headerText: 'Recorded',
 				}),
 			cell: formattedCell(DATE_FORMAT),
 		},
@@ -171,7 +150,7 @@
 			cell: formattedCell(DATE_FORMAT),
 		},
 		{
-			accessorKey: 'transcribedText',
+			accessorKey: 'transcript',
 			meta: { label: 'Transcript' },
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
@@ -179,11 +158,11 @@
 					headerText: 'Transcript',
 				}),
 			cell: ({ getValue, row }) => {
-				const transcribedText = getValue<string>();
-				if (!transcribedText) return;
+				const transcript = getValue<string>();
+				if (!transcript) return;
 				return renderComponent(TranscriptDialog, {
 					recordingId: row.id,
-					transcribedText,
+					transcript: transcript,
 					onDelete: () => {
 						confirmationDialog.open({
 							title: 'Delete recording',
@@ -252,25 +231,22 @@
 
 	let sorting = createPersistedState({
 		key: 'whispering-recordings-data-table-sorting',
-		onParseError: (_error) => [{ id: 'timestamp', desc: true }],
 		schema: type({ desc: 'boolean', id: 'string' }).array(),
+		defaultValue: [{ id: 'recordedAt', desc: true }],
 	});
 	let columnFilters = $state<ColumnFiltersState>([]);
 	let columnVisibility = createPersistedState({
 		key: 'whispering-recordings-data-table-column-visibility',
-		onParseError: (_error) => ({
-			id: false,
-			title: false,
-			subtitle: false,
-			createdAt: false,
-			updatedAt: false,
-		}),
 		schema: type('Record<string, boolean>'),
+		defaultValue: {
+			id: false,
+			updatedAt: false,
+		},
 	});
 	let rowSelection = createPersistedState({
 		key: 'whispering-recordings-data-table-row-selection',
-		onParseError: (_error) => ({}),
 		schema: type('Record<string, boolean>'),
+		defaultValue: {},
 	});
 	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });
 	let globalFilter = $state('');
@@ -287,9 +263,9 @@
 		getPaginationRowModel: getPaginationRowModel(),
 		onSortingChange: (updater) => {
 			if (typeof updater === 'function') {
-				sorting.value = updater(sorting.value);
+				sorting.current = updater(sorting.current);
 			} else {
-				sorting.value = updater;
+				sorting.current = updater;
 			}
 		},
 		onColumnFiltersChange: (updater) => {
@@ -301,16 +277,16 @@
 		},
 		onColumnVisibilityChange: (updater) => {
 			if (typeof updater === 'function') {
-				columnVisibility.value = updater(columnVisibility.value);
+				columnVisibility.current = updater(columnVisibility.current);
 			} else {
-				columnVisibility.value = updater;
+				columnVisibility.current = updater;
 			}
 		},
 		onRowSelectionChange: (updater) => {
 			if (typeof updater === 'function') {
-				rowSelection.value = updater(rowSelection.value);
+				rowSelection.current = updater(rowSelection.current);
 			} else {
-				rowSelection.value = updater;
+				rowSelection.current = updater;
 			}
 		},
 		onPaginationChange: (updater) => {
@@ -329,16 +305,16 @@
 		},
 		state: {
 			get sorting() {
-				return sorting.value;
+				return sorting.current;
 			},
 			get columnFilters() {
 				return columnFilters;
 			},
 			get columnVisibility() {
-				return columnVisibility.value;
+				return columnVisibility.current;
 			},
 			get rowSelection() {
-				return rowSelection.value;
+				return rowSelection.current;
 			},
 			get pagination() {
 				return pagination;
@@ -353,7 +329,7 @@
 		table.getFilteredSelectedRowModel().rows,
 	);
 
-	let template = $state('{{timestamp}} {{transcribedText}}');
+	let template = $state('{{recordedAt}} {{transcript}}');
 	let delimiter = $state('\n\n');
 
 	let isDialogOpen = $state(false);
@@ -361,7 +337,7 @@
 	const joinedTranscriptionsText = $derived.by(() => {
 		const transcriptions = selectedRecordingRows
 			.map(({ original }) => original)
-			.filter((recording) => recording.transcribedText !== '')
+			.filter((recording) => recording.transcript !== '')
 			.map((recording) =>
 				template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
 					if (key in recording) {

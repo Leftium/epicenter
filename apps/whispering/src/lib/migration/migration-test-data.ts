@@ -23,11 +23,10 @@ function createMockRecording(index: number): {
 	const recording: Recording = {
 		id,
 		title: `Mock Recording ${index + 1}`,
-		subtitle: 'Generated for workspace migration testing',
-		timestamp: now,
-		createdAt: now,
+		recordedAt: now,
 		updatedAt: now,
-		transcribedText: index % 5 === 0 ? '' : `Mock transcript ${index + 1}`,
+		transcript: index % 5 === 0 ? '' : `Mock transcript ${index + 1}`,
+		duration: undefined,
 		transcriptionStatus,
 	};
 

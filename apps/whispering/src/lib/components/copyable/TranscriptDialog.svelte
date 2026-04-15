@@ -12,7 +12,7 @@
 	 * ```svelte
 	 * <TranscriptDialog
 	 *   recordingId={recording.id}
-	 *   transcribedText={recording.transcribedText}
+ *   transcript={recording.transcript}
 	 *   rows={1}
 	 * />
 	 * ```
@@ -22,7 +22,7 @@
 	 * <!-- With loading state -->
 	 * <TranscriptDialog
 	 *   recordingId={recording.id}
-	 *   transcribedText="..."
+ *   transcript="..."
 	 *   loading={true}
 	 * />
 	 * ```
@@ -32,7 +32,7 @@
 	 * <!-- With delete button -->
 	 * <TranscriptDialog
 	 *   recordingId={recording.id}
-	 *   transcribedText={recording.transcribedText}
+ *   transcript={recording.transcript}
 	 *   onDelete={() => handleDelete(recording)}
 	 * />
 	 * ```
@@ -41,7 +41,7 @@
 		/** The ID of the recording whose transcript is being displayed */
 		recordingId,
 		/** The transcript content to display */
-		transcribedText,
+		transcript,
 		/** Number of rows for the preview textarea (default: 2) */
 		rows = 2,
 		/** Whether the dialog trigger is disabled */
@@ -52,7 +52,7 @@
 		onDelete,
 	}: {
 		recordingId: string;
-		transcribedText: string;
+		transcript: string;
 		rows?: number;
 		disabled?: boolean;
 		loading?: boolean;
@@ -64,7 +64,7 @@
 	id={viewTransition.recording(recordingId).transcript}
 	title="Transcript"
 	label="transcript"
-	text={transcribedText}
+	text={transcript}
 	{rows}
 	{disabled}
 	{loading}

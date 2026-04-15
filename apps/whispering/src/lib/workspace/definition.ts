@@ -30,7 +30,38 @@ const recordings = defineTable(
 		transcriptionStatus: "'UNPROCESSED' | 'TRANSCRIBING' | 'DONE' | 'FAILED'",
 		_v: '1',
 	}),
-);
+	type({
+		id: 'string',
+		title: 'string',
+		recordedAt: 'string',
+		updatedAt: 'string',
+		transcript: 'string',
+		transcriptionStatus: "'UNPROCESSED' | 'TRANSCRIBING' | 'DONE' | 'FAILED'",
+		'duration?': 'number | undefined',
+		_v: '2',
+	}),
+).migrate((row) => {
+	switch (row._v) {
+		case 1: {
+			const title =
+				row.transcribedText.slice(0, 60).trim() ||
+				row.title ||
+				'Untitled Recording';
+			return {
+				id: row.id,
+				title,
+				recordedAt: row.timestamp,
+				updatedAt: row.updatedAt,
+				transcript: row.transcribedText,
+				transcriptionStatus: row.transcriptionStatus,
+				duration: undefined,
+				_v: 2,
+			};
+		}
+		case 2:
+			return row;
+	}
+});
 
 /** User-defined transformation pipelines. Each transformation has ordered steps. */
 const transformations = defineTable(

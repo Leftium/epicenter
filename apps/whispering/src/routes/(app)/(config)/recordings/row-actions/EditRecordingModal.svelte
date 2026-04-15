@@ -149,38 +149,26 @@
 				/>
 			</div>
 			<div class="grid grid-cols-4 items-center gap-4">
-				<Label for="subtitle" class="text-right">Subtitle</Label>
+				<Label for="recordedAt" class="text-right">Recorded At</Label>
 				<Input
-					id="subtitle"
-					value={workingCopy.subtitle}
+					id="recordedAt"
+					value={workingCopy.recordedAt}
 					oninput={(e) => {
-						workingCopy = { ...workingCopy, subtitle: e.currentTarget.value };
+						workingCopy = { ...workingCopy, recordedAt: e.currentTarget.value };
 						isWorkingCopyDirty = true;
 					}}
 					class="col-span-3"
 				/>
 			</div>
 			<div class="grid grid-cols-4 items-center gap-4">
-				<Label for="timestamp" class="text-right">Created At</Label>
-				<Input
-					id="timestamp"
-					value={workingCopy.timestamp}
-					oninput={(e) => {
-						workingCopy = { ...workingCopy, timestamp: e.currentTarget.value };
-						isWorkingCopyDirty = true;
-					}}
-					class="col-span-3"
-				/>
-			</div>
-			<div class="grid grid-cols-4 items-center gap-4">
-				<Label for="transcribedText" class="text-right">Transcript</Label>
+				<Label for="transcript" class="text-right">Transcript</Label>
 				<Textarea
-					id="transcribedText"
-					value={workingCopy.transcribedText}
+					id="transcript"
+					value={workingCopy.transcript}
 					oninput={(e) => {
 						workingCopy = {
 							...workingCopy,
-							transcribedText: e.currentTarget.value,
+							transcript: e.currentTarget.value,
 						};
 						isWorkingCopyDirty = true;
 					}}

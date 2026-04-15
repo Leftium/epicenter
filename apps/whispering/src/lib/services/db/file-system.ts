@@ -22,28 +22,68 @@ import type { DbService } from './types';
 import { DbError } from './types';
 
 /**
- * Schema validator for Recording front matter (everything except transcribedText)
+ * Schema validator for normalized Recording front matter.
+ *
+ * The transcript lives in the markdown body, not the YAML frontmatter.
  */
 const RecordingFrontMatter = type({
 	id: 'string',
 	title: 'string',
-	subtitle: 'string',
-	timestamp: 'string',
-	createdAt: 'string',
+	recordedAt: 'string',
 	updatedAt: 'string',
 	transcriptionStatus: '"UNPROCESSED" | "TRANSCRIBING" | "DONE" | "FAILED"',
+	'duration?': 'number | undefined',
+});
+
+const RecordingFrontMatterRaw = type({
+	id: 'string',
+	title: 'string',
+	'recordedAt?': 'string | undefined',
+	'timestamp?': 'string | undefined',
+	'updatedAt?': 'string | undefined',
+	'updated_at?': 'string | undefined',
+	'transcriptionStatus?':
+		'"UNPROCESSED" | "TRANSCRIBING" | "DONE" | "FAILED" | undefined',
+	'transcription_status?':
+		'"UNPROCESSED" | "TRANSCRIBING" | "DONE" | "FAILED" | undefined',
+	'duration?': 'number | undefined',
+	'subtitle?': 'string | undefined',
+	'createdAt?': 'string | undefined',
+	'created_at?': 'string | undefined',
 });
 
 type RecordingFrontMatter = typeof RecordingFrontMatter.infer;
+type RecordingFrontMatterRaw = typeof RecordingFrontMatterRaw.infer;
+
+function normalizeRecordingFrontMatter(
+	rawFrontMatter: RecordingFrontMatterRaw,
+): RecordingFrontMatter | null {
+	const normalized = {
+		id: rawFrontMatter.id,
+		title: rawFrontMatter.title,
+		recordedAt: rawFrontMatter.recordedAt ?? rawFrontMatter.timestamp,
+		updatedAt: rawFrontMatter.updatedAt ?? rawFrontMatter.updated_at,
+		transcriptionStatus:
+			rawFrontMatter.transcriptionStatus ?? rawFrontMatter.transcription_status,
+		duration: rawFrontMatter.duration,
+	};
+
+	const frontMatter = RecordingFrontMatter(normalized);
+	if (frontMatter instanceof type.errors) {
+		return null;
+	}
+
+	return frontMatter;
+}
 
 /**
  * Convert Recording to markdown format (frontmatter + body)
  */
 function recordingToMarkdown({
-	transcribedText,
+	transcript,
 	...frontMatter
 }: Recording): string {
-	return stringifyFrontmatter(transcribedText ?? '', frontMatter);
+	return stringifyFrontmatter(transcript, frontMatter);
 }
 
 /**
@@ -58,7 +98,7 @@ function markdownToRecording({
 }): Recording {
 	return {
 		...frontMatter,
-		transcribedText: body.trimEnd(),
+		transcript: body.trimEnd(),
 	};
 }
 
@@ -121,23 +161,27 @@ export function createFileSystemDb(): DbService {
 						const recordings = contents.map((content) => {
 							const { data, content: body } = parseFrontmatter(content);
 
-							// Validate the front matter schema
-							const frontMatter = RecordingFrontMatter(data);
-							if (frontMatter instanceof type.errors) {
+							const rawFrontMatter = RecordingFrontMatterRaw(data);
+							if (rawFrontMatter instanceof type.errors) {
+								return null; // Skip invalid recording, don't crash the app
+							}
+
+							const frontMatter = normalizeRecordingFrontMatter(rawFrontMatter);
+							if (!frontMatter) {
 								return null; // Skip invalid recording, don't crash the app
 							}
 
 							return markdownToRecording({ frontMatter, body });
 						});
 
-						// Filter out any null entries and sort by timestamp (newest first)
+						// Filter out any null entries and sort by recordedAt (newest first)
 						const validRecordings = recordings.filter(
 							(r): r is Recording => r !== null,
 						);
 						validRecordings.sort(
 							(a, b) =>
-								new Date(b.timestamp).getTime() -
-								new Date(a.timestamp).getTime(),
+								new Date(b.recordedAt).getTime() -
+								new Date(a.recordedAt).getTime(),
 						);
 
 						return validRecordings;
@@ -185,11 +229,17 @@ export function createFileSystemDb(): DbService {
 						const content = await readTextFile(mdPath);
 						const { data, content: body } = parseFrontmatter(content);
 
-						// Validate the front matter schema
-						const frontMatter = RecordingFrontMatter(data);
-						if (frontMatter instanceof type.errors) {
+						const rawFrontMatter = RecordingFrontMatterRaw(data);
+						if (rawFrontMatter instanceof type.errors) {
 							throw new Error(
-								`Invalid recording front matter: ${frontMatter.summary}`,
+								`Invalid recording front matter: ${rawFrontMatter.summary}`,
+							);
+						}
+
+						const frontMatter = normalizeRecordingFrontMatter(rawFrontMatter);
+						if (!frontMatter) {
+							throw new Error(
+								'Invalid recording front matter: failed to normalize legacy fields',
 							);
 						}
 

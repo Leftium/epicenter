@@ -32,9 +32,7 @@ function createToolTrustState() {
 
 	/** Cached projection of trust entries — stable reference via $derived. */
 	const trustEntries = $derived(
-		trustMap
-			.values()
-			.toArray()
+		[...trustMap.values()]
 			.map((t): [string, TrustLevel] => [t.id, t.trust]),
 	);
 	return {

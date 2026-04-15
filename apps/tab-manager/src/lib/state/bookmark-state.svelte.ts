@@ -65,9 +65,7 @@ function createBookmarkState() {
 
 	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
 	const bookmarks = $derived(
-		bookmarksMap
-			.values()
-			.toArray()
+		[...bookmarksMap.values()]
 			.sort((a, b) => b.createdAt - a.createdAt),
 	);
 

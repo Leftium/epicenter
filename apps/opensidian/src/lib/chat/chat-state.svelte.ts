@@ -39,9 +39,7 @@ function getNumberValue(value: JsonValue | undefined, fallback = 0) {
 function createAiChatState() {
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
-		conversationsMap
-			.values()
-			.toArray()
+		[...conversationsMap.values()]
 			.sort(
 				(a, b) => getNumberValue(b.updatedAt) - getNumberValue(a.updatedAt),
 			),

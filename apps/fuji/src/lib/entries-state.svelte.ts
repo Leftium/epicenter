@@ -48,7 +48,7 @@ export function matchesEntrySearch(
 
 function createEntriesState() {
 	const map = fromTable(workspace.tables.entries);
-	const all = $derived(map.values().toArray());
+	const all = $derived([...map.values()]);
 	const active = $derived(all.filter((e) => e.deletedAt === undefined));
 	const deleted = $derived(all.filter((e) => e.deletedAt !== undefined));
 

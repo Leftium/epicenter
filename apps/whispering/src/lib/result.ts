@@ -97,10 +97,3 @@ export const WhisperingWarningErr = (args: WhisperingErrorInput) =>
  */
 export type WhisperingResult<T> = Ok<T> | Err<WhisperingError>;
 
-/**
- * Utility type for values that may or may not be wrapped in a Promise.
- * Useful for functions that can be either synchronous or asynchronous.
- *
- * @template T - The type that may or may not be wrapped in a Promise
- */
-export type MaybePromise<T> = T | Promise<T>;

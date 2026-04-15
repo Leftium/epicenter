@@ -1,4 +1,8 @@
-export { createMarkdownMaterializer } from './materializer.js';
+export {
+	createMarkdownMaterializer,
+	type MaterializerIO,
+	type MaterializerYaml,
+} from './materializer.js';
 	export {
 	markdown,
 	type SerializeResult,

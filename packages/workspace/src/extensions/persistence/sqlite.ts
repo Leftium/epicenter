@@ -58,6 +58,12 @@ function compactUpdateLog(db: Database, ydoc: Y.Doc): boolean {
  * append-only update log pattern as the Cloudflare Durable Object sync server.
  * Each update is a tiny INSERT (O(update_size)), not a full doc re-encode.
  *
+ * **Chain before sync.** This extension does not await prior extensions—it
+ * starts loading immediately. The sync extension, when registered after this
+ * one, awaits persistence's `whenReady` before connecting. That way the
+ * WebSocket handshake only exchanges the delta between local state and the
+ * server, instead of downloading the full document on every cold start.
+ *
  * Compaction runs at three points:
  * 1. **Cold start** — replay + compact on initialization
  * 2. **Byte threshold** — when accumulated bytes since last compaction exceed
@@ -72,6 +78,7 @@ function compactUpdateLog(db: Database, ydoc: Y.Doc): boolean {
  * import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
  * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
  *
+ * // Persistence first, then sync — so sync waits for local state to load.
  * createWorkspace(definition)
  *   .withExtension('persistence', filesystemPersistence({
  *     filePath: join(epicenterDir, 'persistence', `workspace.db`),

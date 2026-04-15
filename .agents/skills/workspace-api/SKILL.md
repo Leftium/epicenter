@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), and withActions. Use when the user mentions workspace, defineTable, defineKv, createWorkspace, withActions, defineQuery, defineMutation, or when defining schemas, reading/writing table data, observing changes, writing migrations, or attaching actions to a workspace client.
+description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), withActions, and extension ordering. Use when the user mentions workspace, defineTable, defineKv, createWorkspace, withActions, withExtension, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, chaining extensions, or attaching actions to a workspace client.
 metadata:
   author: epicenter
   version: '6.0'
@@ -23,7 +23,8 @@ Type-safe schema definitions for tables and KV stores.
 - Writing table migration functions
 - Reading, writing, or observing table/KV data
 - Attaching actions to a workspace client via `.withActions()`
-
+- Chaining extensions with `.withExtension()` or `.withWorkspaceExtension()`
+- Writing server-side Bun scripts with `connectWorkspace()`
 ## Tables
 
 ### Shorthand (Single Version)
@@ -304,6 +305,61 @@ export const workspace = createMyApp()
     },
   }));
 ```
+
+## Extension Ordering
+
+Extensions initialize in registration order. Each extension's factory receives a `whenReady` promise that resolves when all previously registered extensions have finished initializing. Whether this creates a waterfall depends on whether each extension awaits it:
+
+| Extension | Awaits prior `whenReady`? | Behavior |
+|---|---|---|
+| `filesystemPersistence` | No | Starts loading SQLite immediately |
+| `indexeddbPersistence` | No | Starts loading IndexedDB immediately |
+| `createCliUnlock` | Yes | Waits for persistence, then applies encryption keys |
+| `createSyncExtension` | Yes | Waits for everything before it, then opens WebSocket |
+| `createMarkdownMaterializer` | Yes | Waits for persistence + sync, then materializes |
+
+The standard chain is **persistence → unlock → sync**:
+
+```
+persistence starts loading ────────────────────→ done
+                                                   ↓
+                        unlock waits... ──────────→ applies keys → done
+                                                                    ↓
+                        sync waits... ─────────────────────────────→ connects
+```
+
+This ordering matters because sync only exchanges the delta between local state and the server. Without persistence loading first, every cold start downloads the full document.
+
+```typescript
+// ✅ Correct — persistence loads first, sync exchanges delta only
+createWorkspace(definition)
+  .withExtension('persistence', filesystemPersistence({ filePath: '...' }))
+  .withWorkspaceExtension('unlock', createCliUnlock(sessions, SERVER_URL))
+  .withExtension('sync', createSyncExtension({ url: ..., getToken: ... }))
+
+// ❌ Wrong — sync starts before local state is loaded, downloads full document
+createWorkspace(definition)
+  .withExtension('sync', createSyncExtension({ url: ..., getToken: ... }))
+  .withExtension('persistence', filesystemPersistence({ filePath: '...' }))
+```
+
+### `connectWorkspace` (CLI/Script Shortcut)
+
+For server-side Bun scripts, `connectWorkspace` from `@epicenter/cli` handles the entire persistence → unlock → sync chain automatically:
+
+```typescript
+import { connectWorkspace } from '@epicenter/cli';
+import { createFujiWorkspace } from '@epicenter/fuji/workspace';
+
+const workspace = await connectWorkspace(createFujiWorkspace);
+// Ready. Authenticated. Syncing. Persistence loaded.
+
+const entries = workspace.tables.entries.getAllValid();
+await workspace.dispose();
+```
+
+Use `connectWorkspace` for one-off scripts and agent-written automation. Use `epicenter.config.ts` for long-running daemons and materializers that need custom workspace-specific extensions.
+
 
 ## The `_v` Convention
 

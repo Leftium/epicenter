@@ -213,8 +213,20 @@ export function toWsUrl(httpUrl: string): string {
  * Creates a sync extension that connects a Y.Doc to a WebSocket sync server.
  *
  * Handles Y.Doc sync, awareness, liveness detection, reconnection with
- * exponential backoff, and RPC between peers. Waits for prior extensions
- * (`whenReady`) before connecting, so local state is loaded first.
+ * exponential backoff, and RPC between peers.
+ *
+ * **Extension ordering**: Register persistence and encryption extensions before
+ * this one. The sync extension awaits all prior extensions' `whenReady` before
+ * opening a WebSocket connection. When persistence loads the local Y.Doc first,
+ * the sync handshake only exchanges the delta between local state and the
+ * server—not the full document. Without persistence, every cold start downloads
+ * the entire document from scratch.
+ *
+ * ```
+ * persistence.whenReady ───→ unlock.whenReady ───→ sync.whenReady
+ * (load local state)         (decrypt)              (connect WebSocket,
+ *                                                    exchange delta only)
+ * ```
  *
  * Automatically includes BroadcastChannel cross-tab sync so multiple tabs
  * converge instantly without waiting for the server round-trip. BroadcastChannel
@@ -233,6 +245,9 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 	dispose: () => void;
 } {
 	return ({ ydoc: doc, awareness: ctxAwareness, whenReady: priorReady }) => {
+		// priorReady resolves when all extensions registered before this one have
+		// initialized. If persistence is registered first, we wait for local state
+		// to load before opening the WebSocket—so sync only transfers the delta.
 		const docId = doc.guid;
 		const getToken = config.getToken
 			? () => config.getToken!(docId)

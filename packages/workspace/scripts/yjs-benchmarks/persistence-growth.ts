@@ -203,6 +203,7 @@ function main() {
 
 		const afterAddDocSize = Y.encodeStateAsUpdate(ydoc).byteLength;
 		const afterAddIdb = idb.snapshot();
+		const afterAddRows = tables.events.count();
 
 		// ── Delete the rows we just added ─────────────────────────────────
 		for (const id of addedIds) {
@@ -220,7 +221,7 @@ function main() {
 		results.push({
 			cycle: cycle + 1,
 			afterAdd: {
-				rows: tables.events.count(),
+				rows: afterAddRows,
 				docSize: afterAddDocSize,
 				idb: afterAddIdb,
 			},

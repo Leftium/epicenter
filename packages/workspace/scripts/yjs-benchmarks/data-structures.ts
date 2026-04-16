@@ -76,7 +76,7 @@ function createPlainRow(id: string, suffix = ''): PlainRow {
 	};
 }
 
-function createYMapRow(_doc: Y.Doc, id: string, suffix = ''): Y.Map<unknown> {
+function createYMapRow(id: string, suffix = ''): Y.Map<unknown> {
 	const row = new Y.Map<unknown>();
 	row.set('id', id);
 	row.set('name', `User ${id}${suffix}`);
@@ -94,6 +94,11 @@ function getDocSize(doc: Y.Doc): number {
 	return Y.encodeStateAsUpdate(doc).byteLength;
 }
 
+/**
+ * Access Yjs internal store to count structs/tombstones.
+ * WARNING: Relies on Yjs internals (store.clients). Tested with yjs@13.x.
+ * If Yjs changes its internal structure, this will silently break.
+ */
 function countStructs(doc: Y.Doc): {
 	total: number;
 	deleted: number;
@@ -365,7 +370,7 @@ function benchmarkMapYMap(
 	let start = performance.now();
 	doc.transact(() => {
 		for (let i = 0; i < CONFIG.NUM_ROWS; i++) {
-			ymap.set(`row-${i}`, createYMapRow(doc, `${i}`));
+			ymap.set(`row-${i}`, createYMapRow(`${i}`));
 		}
 	});
 	result.timings.insert = performance.now() - start;
@@ -428,7 +433,7 @@ function benchmarkMapYMap(
 	start = performance.now();
 	doc.transact(() => {
 		for (let i = 0; i < CONFIG.NUM_RECREATIONS; i++) {
-			ymap.set(`row-${i}`, createYMapRow(doc, `${i}`, '-v2'));
+			ymap.set(`row-${i}`, createYMapRow(`${i}`, '-v2'));
 		}
 	});
 	result.timings.recreate = performance.now() - start;
@@ -462,7 +467,7 @@ function benchmarkArrayYMap(
 	let start = performance.now();
 	doc.transact(() => {
 		for (let i = 0; i < CONFIG.NUM_ROWS; i++) {
-			yarray.push([createYMapRow(doc, `${i}`)]);
+			yarray.push([createYMapRow(`${i}`)]);
 		}
 	});
 	result.timings.insert = performance.now() - start;
@@ -521,7 +526,6 @@ function benchmarkArrayYMap(
 		for (let i = 0; i < CONFIG.NUM_RECREATIONS; i++) {
 			yarray.push([
 				createYMapRow(
-					doc,
 					`${CONFIG.NUM_ROWS - CONFIG.NUM_DELETIONS + i}`,
 					'-v2',
 				),
@@ -538,8 +542,6 @@ function benchmarkArrayYMap(
 // ============================================================================
 // Reporting
 // ============================================================================
-
-
 function printStrategyResults(
 	results: BenchmarkResult[],
 	strategy: UpdateStrategy,

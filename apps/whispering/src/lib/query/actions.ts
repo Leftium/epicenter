@@ -684,11 +684,9 @@ async function processRecordingPipeline({
 		description: completionDescription,
 	});
 
-	const title = transcribedText.slice(0, 60).trim() || 'Untitled Recording';
 	recordings.update(recording.id, {
 		transcript: transcribedText,
 		transcriptionStatus: 'DONE',
-		title,
 	});
 
 	// Determine if we need to chain to transformation

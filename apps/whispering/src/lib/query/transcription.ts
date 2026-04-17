@@ -60,11 +60,9 @@ export const transcription = {
 				return Err(transcribeError);
 			}
 
-			const title = transcribedText.slice(0, 60).trim() || 'Untitled Recording';
 			recordings.update(recording.id, {
 				transcript: transcribedText,
 				transcriptionStatus: 'DONE',
-				title,
 			});
 			return Ok(transcribedText);
 		},

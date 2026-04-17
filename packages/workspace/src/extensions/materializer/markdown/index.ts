@@ -1,5 +1,5 @@
 export { createMarkdownMaterializer } from './materializer.js';
-	export {
+export {
 	markdown,
 	type SerializeResult,
 	toMarkdown,

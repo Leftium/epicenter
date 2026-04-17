@@ -1,32 +1,10 @@
 import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { YAML } from 'bun';
 import type { MaybePromise } from '../../../workspace/lifecycle.js';
 import type { KvHelper, TableHelper } from '../../../workspace/types.js';
 import type { SerializeResult } from './markdown.js';
-
-/**
- * Build a markdown string from YAML frontmatter and an optional body.
- *
- * Pure function—no I/O. Uses Bun's `YAML.stringify` for spec-compliant
- * serialization. Undefined values are stripped; null values are preserved.
- */
-function buildMarkdown(
-	frontmatter: Record<string, unknown>,
-	body?: string,
-): string {
-	const cleaned: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(frontmatter)) {
-		if (value !== undefined) {
-			cleaned[key] = value;
-		}
-	}
-	const yamlStr = YAML.stringify(cleaned, null, 2) as string;
-	const yamlBlock = yamlStr.endsWith('\n') ? yamlStr : `${yamlStr}\n`;
-	return body !== undefined
-		? `---\n${yamlBlock}---\n\n${body}\n`
-		: `---\n${yamlBlock}---\n`;
-}
+import { toMarkdown } from './markdown.js';
+import { parseMarkdownFile } from './parse-markdown-file.js';
 
 /**
  * Create a bidirectional markdown materializer for workspace data.
@@ -56,7 +34,7 @@ export function createMarkdownMaterializer<
 >(
 	ctx: { tables: TTables; kv: TKv; whenReady: Promise<void> },
 	config: {
-		/** Base output directory. Accepts a string or async getter for runtimes where the path isn't known until initialization (e.g. Tauri's `appDataDir()`). */
+		/** Base output directory. Accepts a string or async getter for lazy path resolution. */
 		dir: string | (() => MaybePromise<string>);
 	},
 ) {
@@ -154,7 +132,7 @@ export function createMarkdownMaterializer<
 			tableConfig?.serialize ??
 			((row) => ({
 				filename: `${row.id}.md`,
-				content: buildMarkdown({ ...row }),
+				content: toMarkdown({ ...row }),
 			}));
 
 		await mkdir(directory, { recursive: true });
@@ -237,32 +215,6 @@ export function createMarkdownMaterializer<
 		unsubscribers.push(unsubscribe);
 	};
 
-	/** Regex for extracting YAML frontmatter from markdown content. */
-	const FRONTMATTER_PATTERN =
-		/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
-
-	/** Parse frontmatter + body from a markdown string. */
-	function parseFrontmatter(content: string): {
-		frontmatter: Record<string, unknown>;
-		body: string | undefined;
-	} | null {
-		const input = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
-		const match = input.match(FRONTMATTER_PATTERN);
-		if (!match) return null;
-
-		const frontmatter = YAML.parse(match[1]);
-		if (typeof frontmatter !== 'object' || frontmatter === null) return null;
-
-		const rawBody = input
-			.slice(match[0].length)
-			.replace(/^\r?\n/, '')
-			.replace(/\r?\n$/, '');
-
-		return {
-			frontmatter: frontmatter as Record<string, unknown>,
-			body: rawBody.length > 0 ? rawBody : undefined,
-		};
-	}
 
 	/** Resolve the base directory, handling string or async getter. */
 	const resolveDir = async () =>
@@ -308,7 +260,7 @@ export function createMarkdownMaterializer<
 						continue;
 					}
 
-					const parsed = parseFrontmatter(content);
+					const parsed = parseMarkdownFile(content);
 					if (!parsed) {
 						skipped++;
 						continue;
@@ -344,7 +296,7 @@ export function createMarkdownMaterializer<
 					tableConfig?.serialize ??
 					((row) => ({
 						filename: `${row.id}.md`,
-						content: buildMarkdown({ ...row }),
+					content: toMarkdown({ ...row }),
 					}));
 
 				await mkdir(directory, { recursive: true });

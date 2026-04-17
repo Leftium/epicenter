@@ -85,16 +85,19 @@
 	}
 
 	$effect(() => {
-		getRecorderStateQuery.data;
-		vadRecorder.state; // Reactive VAD state access
 		const strategy = settings.get('retention.strategy');
-		if (strategy === 'limit-count') {
-			const maxCount = settings.get('retention.maxCount');
-			const allRecordingIds = recordings.sorted.map((r) => r.id);
-			if (allRecordingIds.length > maxCount) {
-				const idsToDelete = allRecordingIds.slice(maxCount);
-				services.db.audio.delete(idsToDelete);
-			}
+		if (strategy !== 'limit-count') return;
+
+		const maxCount = settings.get('retention.maxCount');
+		const allRecordingIds = recordings.sorted.map((r) => r.id);
+		if (allRecordingIds.length <= maxCount) return;
+
+		const idsToDelete = allRecordingIds.slice(maxCount);
+		// Delete audio blobs from storage
+		services.db.audio.delete(idsToDelete);
+		// Delete recording metadata from workspace
+		for (const id of idsToDelete) {
+			recordings.delete(id);
 		}
 	});
 

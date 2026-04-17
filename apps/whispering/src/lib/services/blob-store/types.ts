@@ -18,8 +18,8 @@ export const BlobError = defineErrors({
 export type BlobError = InferErrors<typeof BlobError>;
 
 export type BlobStore = {
-	save(recordingId: string, audio: Blob): Promise<Result<void, BlobError>>;
-	delete(id: string | string[]): Promise<Result<void, BlobError>>;
+	save(key: string, blob: Blob): Promise<Result<void, BlobError>>;
+	delete(key: string | string[]): Promise<Result<void, BlobError>>;
 	clear(): Promise<Result<void, BlobError>>;
 
 	/**
@@ -27,19 +27,19 @@ export type BlobStore = {
 	 * - Desktop: Reads file from predictable path using services.fs.pathToBlob()
 	 * - Web: Fetches from IndexedDB by ID, converts serialized data to Blob
 	 */
-	getBlob(recordingId: string): Promise<Result<Blob, BlobError>>;
+	getBlob(key: string): Promise<Result<Blob, BlobError>>;
 
 	/**
 	 * Get playback URL for blob. Creates and caches URL.
 	 * - Desktop: Uses convertFileSrc() to create asset:// URL
 	 * - Web: Creates and caches object URL, manages lifecycle
 	 */
-	ensurePlaybackUrl(recordingId: string): Promise<Result<string, BlobError>>;
+	ensurePlaybackUrl(key: string): Promise<Result<string, BlobError>>;
 
 	/**
 	 * Revoke cached URL if present. Cleanup method.
 	 * - Desktop: No-op (asset:// URLs managed by Tauri)
 	 * - Web: Calls URL.revokeObjectURL() and removes from cache
 	 */
-	revokeUrl(recordingId: string): void;
+	revokeUrl(key: string): void;
 };

@@ -31,15 +31,15 @@ function serializedAudioToBlob(serializedAudio: SerializedAudio): Blob {
 
 export function createBlobStoreWeb(): BlobStore {
 	const db = new WhisperingDatabase();
-	/** Cache for audio object URLs to avoid recreating them. */
-	const audioUrlCache = new Map<string, string>();
+	/** Cache for blob object URLs to avoid recreating them. */
+	const urlCache = new Map<string, string>();
 
 	return {
-		async save(recordingId, audio) {
-			const serializedAudio = await blobToSerializedAudio(audio);
+		async save(key, blob) {
+			const serializedAudio = await blobToSerializedAudio(blob);
 			return tryAsync({
 				try: async () => {
-					await db.recordings.put({ id: recordingId, serializedAudio });
+					await db.recordings.put({ id: key, serializedAudio });
 				},
 				catch: (error) => BlobError.WriteFailed({ cause: error }),
 			});
@@ -53,17 +53,17 @@ export function createBlobStoreWeb(): BlobStore {
 			});
 		},
 
-		getBlob: async (recordingId) => {
+		getBlob: async (key) => {
 			return tryAsync({
 				try: async () => {
-					const recordingWithAudio = await db.recordings.get(recordingId);
+					const recordingWithAudio = await db.recordings.get(key);
 
 					if (!recordingWithAudio) {
-						throw new Error(`Recording ${recordingId} not found`);
+						throw new Error(`Blob ${key} not found`);
 					}
 
 					if (!recordingWithAudio.serializedAudio) {
-						throw new Error(`No audio found for recording ${recordingId}`);
+						throw new Error(`No blob data found for ${key}`);
 					}
 
 					const blob = serializedAudioToBlob(
@@ -75,31 +75,31 @@ export function createBlobStoreWeb(): BlobStore {
 			});
 		},
 
-		ensurePlaybackUrl: async (recordingId) => {
+		ensurePlaybackUrl: async (key) => {
 			return tryAsync({
 				try: async () => {
 					// Check cache first
-					const cachedUrl = audioUrlCache.get(recordingId);
+					const cachedUrl = urlCache.get(key);
 					if (cachedUrl) {
 						return cachedUrl;
 					}
 
 					// Fetch blob from IndexedDB
-					const recordingWithAudio = await db.recordings.get(recordingId);
+					const recordingWithAudio = await db.recordings.get(key);
 
 					if (!recordingWithAudio) {
-						throw new Error(`Recording ${recordingId} not found`);
+						throw new Error(`Blob ${key} not found`);
 					}
 
 					if (!recordingWithAudio.serializedAudio) {
-						throw new Error(`No audio found for recording ${recordingId}`);
+						throw new Error(`No blob data found for ${key}`);
 					}
 
 					const blob = serializedAudioToBlob(
 						recordingWithAudio.serializedAudio,
 					);
 					const objectUrl = URL.createObjectURL(blob);
-					audioUrlCache.set(recordingId, objectUrl);
+					urlCache.set(key, objectUrl);
 
 					return objectUrl;
 				},
@@ -107,11 +107,11 @@ export function createBlobStoreWeb(): BlobStore {
 			});
 		},
 
-		revokeUrl: (recordingId) => {
-			const url = audioUrlCache.get(recordingId);
+		revokeUrl: (key) => {
+			const url = urlCache.get(key);
 			if (url) {
 				URL.revokeObjectURL(url);
-				audioUrlCache.delete(recordingId);
+				urlCache.delete(key);
 			}
 		},
 

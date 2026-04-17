@@ -43,7 +43,7 @@ export const transcription = {
 		): Promise<Result<string, WhisperingError>> => {
 			// Fetch audio blob by ID
 			const { data: audioBlob, error: getAudioBlobError } =
-				await services.db.audio.getBlob(recording.id);
+				await services.blobs.audio.getBlob(recording.id);
 
 			if (getAudioBlobError) {
 				return WhisperingErr({
@@ -75,7 +75,7 @@ export const transcription = {
 				recordings.map(async (recording) => {
 					// Fetch audio blob by ID
 					const { data: audioBlob, error: getAudioBlobError } =
-						await services.db.audio.getBlob(recording.id);
+						await services.blobs.audio.getBlob(recording.id);
 
 					if (getAudioBlobError) {
 						return WhisperingErr({

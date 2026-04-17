@@ -1,14 +1,47 @@
-/**
- * Platform-agnostic blob storage interface.
- *
- * Audio files stay local — they never enter the Yjs CRDT layer.
- * Both desktop (filesystem) and web (IndexedDB) implement this interface.
- * The rest of the app calls `blobStore.get(recordingId)` without knowing
- * which backend is in use.
- */
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
+
+export const BlobError = defineErrors({
+	QueryFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to query database: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	MutationFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to write to database: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type BlobError = InferErrors<typeof BlobError>;
+
 export type BlobStore = {
-	get(id: string): Promise<{ blob: Blob; mimeType: string } | null>;
-	put(id: string, blob: Blob, mimeType: string): Promise<void>;
-	delete(id: string): Promise<void>;
-	has(id: string): Promise<boolean>;
+	audio: {
+		save(recordingId: string, audio: Blob): Promise<Result<void, BlobError>>;
+		delete(id: string | string[]): Promise<Result<void, BlobError>>;
+		clear(): Promise<Result<void, BlobError>>;
+
+		/**
+		 * Get audio blob by recording ID. Fetches audio on-demand.
+		 * - Desktop: Reads file from predictable path using services.fs.pathToBlob()
+		 * - Web: Fetches from IndexedDB by ID, converts serializedAudio to Blob
+		 */
+		getBlob(recordingId: string): Promise<Result<Blob, BlobError>>;
+
+		/**
+		 * Get audio playback URL. Creates and caches URL.
+		 * - Desktop: Uses convertFileSrc() to create asset:// URL
+		 * - Web: Creates and caches object URL, manages lifecycle
+		 */
+		ensurePlaybackUrl(recordingId: string): Promise<Result<string, BlobError>>;
+
+		/**
+		 * Revoke audio URL if cached. Cleanup method.
+		 * - Desktop: No-op (asset:// URLs managed by Tauri)
+		 * - Web: Calls URL.revokeObjectURL() and removes from cache
+		 */
+		revokeUrl(recordingId: string): void;
+	};
 };

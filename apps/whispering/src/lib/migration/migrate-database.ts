@@ -40,7 +40,7 @@ export function setDatabaseMigrationState(state: DbMigrationState): void {
 
 export async function probeForOldData(_dbService: unknown): Promise<boolean> {
 	// All data (recordings, transformations, runs) is now workspace-backed.
-	// No old DbService data remains to migrate.
+	// No old BlobStore data remains to migrate.
 	return false;
 }
 

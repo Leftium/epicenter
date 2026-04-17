@@ -1,6 +1,6 @@
 import { tryAsync } from 'wellcrafted/result';
 import type { DownloadService } from '$lib/services/download';
-import { DbError, type DbService } from '../types';
+import { BlobError, type BlobStore } from '../types';
 import { blobToSerializedAudio, WhisperingDatabase } from './dexie-database';
 import type { SerializedAudio } from './dexie-schemas';
 
@@ -19,11 +19,11 @@ function serializedAudioToBlob(serializedAudio: SerializedAudio): Blob {
  */
 const audioUrlCache = new Map<string, string>();
 
-export function createDbServiceWeb({
+export function createBlobStoreWeb({
 	DownloadService,
 }: {
 	DownloadService: DownloadService;
-}): DbService {
+}): BlobStore {
 	const db = new WhisperingDatabase({ DownloadService });
 	return {
 		audio: {
@@ -33,7 +33,7 @@ export function createDbServiceWeb({
 					try: async () => {
 						await db.recordings.put({ id: recordingId, serializedAudio });
 					},
-					catch: (error) => DbError.MutationFailed({ cause: error }),
+					catch: (error) => BlobError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -41,7 +41,7 @@ export function createDbServiceWeb({
 				const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
 				return tryAsync({
 					try: () => db.recordings.bulkDelete(ids),
-					catch: (error) => DbError.MutationFailed({ cause: error }),
+					catch: (error) => BlobError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -63,7 +63,7 @@ export function createDbServiceWeb({
 						);
 						return blob;
 					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
+					catch: (error) => BlobError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -95,7 +95,7 @@ export function createDbServiceWeb({
 
 						return objectUrl;
 					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
+					catch: (error) => BlobError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -110,7 +110,7 @@ export function createDbServiceWeb({
 			clear: async () => {
 				return tryAsync({
 					try: () => db.recordings.clear(),
-					catch: (error) => DbError.MutationFailed({ cause: error }),
+					catch: (error) => BlobError.MutationFailed({ cause: error }),
 				});
 			},
 		}, // End of audio namespace

@@ -1,26 +1,26 @@
 import { Ok } from 'wellcrafted/result';
 import type { DownloadService } from '$lib/services/download';
-import { createFileSystemDbService } from './file-system';
-import type { DbService } from './types';
-import { DbError } from './types';
-import { createDbServiceWeb } from './web';
+import { createFileSystemBlobStore } from './file-system';
+import type { BlobStore } from './types';
+import { BlobError } from './types';
+import { createBlobStoreWeb } from './web';
 
 /**
- * Desktop DB Service — audio blob store with dual-source fallback.
+ * Desktop blob store service — audio blob store with dual-source fallback.
  *
- * Recording metadata lives in the workspace (Yjs CRDT). The DB service
+ * Recording metadata lives in the workspace (Yjs CRDT). The blob store
  * only manages audio blobs. Audio reads check file system first, then
  * fall back to IndexedDB for unmigrated data.
  *
  */
 
-export function createDbServiceDesktop({
+export function createBlobStoreDesktop({
 	DownloadService,
 }: {
 	DownloadService: DownloadService;
-}): DbService {
-	const fileSystemDb = createFileSystemDbService();
-	const indexedDb = createDbServiceWeb({ DownloadService });
+}): BlobStore {
+	const fileSystemDb = createFileSystemBlobStore();
+	const indexedDb = createBlobStoreWeb({ DownloadService });
 
 	return {
 		audio: {
@@ -39,7 +39,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.MutationFailed({ cause: fsResult.error });
+					return BlobError.MutationFailed({ cause: fsResult.error });
 				}
 
 				// Success if at least one succeeded
@@ -65,7 +65,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.QueryFailed({ cause: fsResult.error });
+					return BlobError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Not found in either source (but no errors)
@@ -92,7 +92,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.QueryFailed({ cause: fsResult.error });
+					return BlobError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Not found in either source (but no errors)
@@ -114,7 +114,7 @@ export function createDbServiceDesktop({
 
 				// Return error only if both failed
 				if (fsResult.error && idbResult.error) {
-					return DbError.MutationFailed({ cause: fsResult.error });
+					return BlobError.MutationFailed({ cause: fsResult.error });
 				}
 
 				return Ok(undefined);

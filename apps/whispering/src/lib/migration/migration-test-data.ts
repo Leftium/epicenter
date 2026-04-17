@@ -1,11 +1,11 @@
 import { nanoid } from 'nanoid/non-secure';
-import { createDbServiceWeb } from '$lib/services/db/web';
+import { createBlobStoreWeb } from '$lib/services/blob-store/web';
 import { DownloadServiceLive } from '$lib/services/download';
 
 export const MOCK_RECORDING_COUNT = 12;
 
 export function createMigrationTestData() {
-	const indexedDb = createDbServiceWeb({
+	const indexedDb = createBlobStoreWeb({
 		DownloadService: DownloadServiceLive,
 	});
 

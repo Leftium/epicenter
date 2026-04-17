@@ -123,9 +123,6 @@ export const richText: (ydoc: Y.Doc) => RichTextHandle = (ydoc) => {
  * that toggle between source markdown and rich text editing, or spreadsheet
  * files that can also be viewed as CSV text.
  *
- * > **Note**: Timeline also exposes a `ydoc` property. This is a follow-up
- * > candidate for removal — consumers should use the strategy's own methods
- * > rather than reaching into the raw Y.Doc.
  *
  * @example
  * ```typescript

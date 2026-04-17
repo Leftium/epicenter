@@ -52,6 +52,7 @@ import type {
 	AwarenessDefinitions,
 	BaseRow,
 	ClaimedDocumentColumns,
+	ContentHandle,
 	ContentStrategy,
 	DocumentConfig,
 	LastSchema,
@@ -116,7 +117,7 @@ type TableDefinitionWithDocBuilder<
 			ClaimedDocumentColumns<TDocuments>
 		>,
 		const TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
-		TBinding = unknown,
+		TBinding extends ContentHandle = ContentHandle,
 	>(
 		name: TName,
 		config: {

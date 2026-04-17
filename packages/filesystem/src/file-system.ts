@@ -37,7 +37,12 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  */
 export function createYjsFileSystem(
 	filesTable: TableHelper<FileRow>,
-	contentDocuments: Documents<FileRow, Record<string, unknown>, Record<string, never>, Timeline>,
+	contentDocuments: Documents<
+		FileRow,
+		Record<string, unknown>,
+		Record<string, never>,
+		Timeline
+	>,
 	cwd: string = '/',
 ) {
 	const tree = createFileTree(filesTable);
@@ -152,8 +157,8 @@ export function createYjsFileSystem(
 			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
-			const handle = await contentDocuments.open(id);
-			return handle.content.read();
+			const content = await contentDocuments.open(id);
+			return content.read();
 		},
 
 		async readFileBuffer(path) {
@@ -182,8 +187,8 @@ export function createYjsFileSystem(
 				id = tree.create({ name, parentId, type: 'file', size });
 			}
 
-			const handle = await contentDocuments.open(id);
-			handle.content.write(textData);
+			const content = await contentDocuments.open(id);
+			content.write(textData);
 			tree.touch(id, size);
 		},
 
@@ -197,9 +202,9 @@ export function createYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
-			const handle = await contentDocuments.open(id);
-			handle.content.appendText(text);
-			const newSize = new TextEncoder().encode(handle.content.read()).byteLength;
+			const content = await contentDocuments.open(id);
+			content.appendText(text);
+			const newSize = new TextEncoder().encode(content.read()).byteLength;
 			tree.touch(id, newSize);
 		},
 
@@ -289,8 +294,8 @@ export function createYjsFileSystem(
 					);
 				}
 			} else {
-				const handle = await contentDocuments.open(srcId);
-				const srcText = handle.content.read();
+				const content = await contentDocuments.open(srcId);
+				const srcText = content.read();
 				await this.writeFile(resolvedDest, srcText);
 			}
 		},

@@ -161,7 +161,43 @@ export type InferTableRow<T> = T extends {
  * });
  * ```
  */
-export type ContentStrategy<TBinding = unknown> = (ydoc: Y.Doc) => TBinding;
+export type ContentStrategy<TBinding extends ContentHandle = ContentHandle> = (ydoc: Y.Doc) => TBinding;
+
+/**
+ * Base contract every content strategy must satisfy.
+ *
+ * Consumers can always `read()` and `write()` regardless of strategy.
+ * This ensures no consumer ever needs direct `ydoc` access for basic
+ * content operations — the strategy encapsulates `transact()` internally.
+ */
+export type ContentHandle = {
+	read(): string;
+	write(text: string): void;
+};
+
+/**
+ * Plain text content handle — wraps Y.Text with read/write and a binding getter.
+ *
+ * The `binding` property exposes the raw Y.Text for editor integration
+ * (CodeMirror via y-codemirror, Monaco, etc.). Use `read()`/`write()`
+ * for programmatic access; use `binding` when wiring up an editor.
+ */
+export type PlainTextHandle = ContentHandle & {
+	/** The raw Y.Text for editor binding (CodeMirror, Monaco, etc.). */
+	binding: Y.Text;
+};
+
+/**
+ * Rich text content handle — wraps Y.XmlFragment with read/write and a binding getter.
+ *
+ * The `binding` property exposes the raw Y.XmlFragment for ProseMirror/TipTap
+ * integration via y-prosemirror. Use `read()`/`write()` for programmatic access;
+ * use `binding` when wiring up a block editor.
+ */
+export type RichTextHandle = ContentHandle & {
+	/** The raw Y.XmlFragment for editor binding (ProseMirror, TipTap, etc.). */
+	binding: Y.XmlFragment;
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT CONFIG TYPES
@@ -186,9 +222,9 @@ export type DocumentConfig<
 	TGuid extends string = string,
 	TRow extends BaseRow = BaseRow,
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
-	TBinding = unknown,
+	TBinding extends ContentHandle = ContentHandle,
 > = {
-	/** Content strategy — receives the document Y.Doc, returns a typed binding for `handle.content`. */
+	/** Content strategy — receives the document Y.Doc, returns the content object from `open()`. */
 	content: ContentStrategy<TBinding>;
 	guid: TGuid;
 	/**
@@ -253,15 +289,14 @@ export type ClaimedDocumentColumns<
 /**
  * The full API surface of an open content document.
  *
- * The document's core type that `DocumentContext` derives from via `Pick`
- * and `DocumentHandle` derives from via `Omit`.
+ * The document's core type that `DocumentContext` derives from via `Pick`.
  *
  * @typeParam TDocExtensions - Accumulated document extension exports
  * @typeParam TBinding - The content binding type returned by the content strategy
  */
 export type DocumentClient<
 	TDocExtensions extends Record<string, unknown> = Record<string, never>,
-	TBinding = unknown,
+	TBinding extends ContentHandle = ContentHandle,
 > = {
 	/** The typed content binding returned by the content strategy. */
 	content: TBinding;
@@ -328,35 +363,6 @@ export type DocumentContext<
 	awareness: { raw: Awareness };
 };
 
-/**
- * A handle to an open content Y.Doc, returned by `documents.open()`.
- *
- * Content is accessed via `handle.content` — fully typed by the content strategy.
- * Extension exports are accessed via `handle.extensions`.
- *
- * @typeParam TDocExtensions - Accumulated document extension exports.
- * @typeParam TAwarenessDefs - Awareness field definitions for this document.
- * @typeParam TBinding - The content binding type from the content strategy.
- *
- * @example
- * ```typescript
- * // plainText strategy — content is Y.Text
- * const handle = await documents.open(id);
- * editor.bind(handle.content); // Y.Text
- *
- * // timeline strategy — content is Timeline
- * handle.content.read();
- * handle.content.write('hello');
- * ```
- */
-export type DocumentHandle<
-	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
-	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
-	TBinding = unknown,
-> = Omit<DocumentClient<TDocExtensions, TBinding>, 'dispose'> & {
-	/** Typed awareness helper scoped to this document. */
-	awareness: AwarenessHelper<TAwarenessDefs>;
-};
 
 /**
  * Runtime manager for a table's associated content Y.Docs.
@@ -365,6 +371,9 @@ export type DocumentHandle<
  * and cleanup on row deletion. Most users access this via
  * `client.documents.files.content`.
  *
+ * `open()` returns the content object directly — fully typed by the content
+ * strategy. Infrastructure (ydoc, awareness, extensions) is managed internally.
+ *
  * @typeParam TRow - The row type of the bound table
  * @typeParam TBinding - The content binding type from the content strategy
  */
@@ -372,20 +381,23 @@ export type Documents<
 	TRow extends BaseRow,
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
-	TBinding = unknown,
+	TBinding = ContentHandle,
 > = {
 	/**
-	 * Open a content Y.Doc for a row.
+	 * Open a content Y.Doc for a row and return the content object directly.
 	 *
 	 * Creates the Y.Doc if it doesn't exist, wires up providers, and attaches
 	 * the updatedAt observer. Idempotent — calling open() twice for the same
-	 * row returns the same handle (same Y.Doc).
+	 * row returns the same content reference (same Y.Doc underneath).
+	 *
+	 * The returned object is fully typed by the content strategy:
+	 * - `plainText` → `PlainTextHandle` with `read()`, `write()`, `binding`
+	 * - `richText` → `RichTextHandle` with `read()`, `write()`, `binding`
+	 * - `timeline` → `Timeline` with `read()`, `write()`, `asText()`, etc.
 	 *
 	 * @param input - A row (extracts GUID from the bound column) or a GUID string
 	 */
-	open(
-		input: TRow | string,
-	): Promise<DocumentHandle<TDocExtensions, TAwarenessDefs, TBinding>>;
+	open(input: TRow | string): Promise<TBinding>;
 
 	/**
 	 * Close a document — free memory, disconnect providers.
@@ -905,12 +917,12 @@ export type AwarenessHelper<TDefs extends AwarenessDefinitions> = {
 	 *
 	 * @example
 	 * ```typescript
-	 * // Workspace: find all connected desktop clients
+	 * // Find all connected desktop clients
 	 * const desktops = [...client.awareness.peers()]
 	 *   .filter(([, state]) => state.client === 'desktop');
 	 *
-	 * // Document: show collaborator cursors
-	 * for (const [clientId, state] of handle.awareness.peers()) {
+	 * // Show collaborator cursors
+	 * for (const [clientId, state] of client.awareness.peers()) {
 	 *   if (state.cursor) renderCursor(clientId, state.cursor, state.color);
 	 * }
 	 * ```

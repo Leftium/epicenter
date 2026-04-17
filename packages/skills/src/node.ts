@@ -132,13 +132,9 @@ export function createSkillsWorkspace() {
 						await writeFile(join(skillPath, 'SKILL.md'), updatedMd, 'utf-8');
 					}
 
-					const instructionsHandle =
+					const content =
 						await client.documents.skills.instructions.open(skillId);
-					instructionsHandle.ydoc.transact(() => {
-						const ytext = instructionsHandle.content;
-						ytext.delete(0, ytext.length);
-						ytext.insert(0, instructions);
-					});
+					content.write(instructions);
 
 					// Import references in parallel
 					const refsPath = join(skillPath, 'references');
@@ -165,13 +161,9 @@ export function createSkillsWorkspace() {
 									_v: 1,
 								});
 
-								const contentHandle =
+								const refDoc =
 									await client.documents.references.content.open(refId);
-								contentHandle.ydoc.transact(() => {
-									const ytext = contentHandle.content;
-									ytext.delete(0, ytext.length);
-									ytext.insert(0, refContent);
-								});
+								refDoc.write(refContent);
 							}),
 						);
 					}
@@ -198,9 +190,9 @@ export function createSkillsWorkspace() {
 						const skillDir = join(dir, skill.name);
 						await mkdir(skillDir, { recursive: true });
 
-						const instructionsHandle =
+						const content =
 							await client.documents.skills.instructions.open(skill.id);
-						const instructions = instructionsHandle.content.toString();
+						const instructions = content.read();
 						const skillMd = serializeSkillMd(skill, instructions);
 						await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
 
@@ -214,10 +206,10 @@ export function createSkillsWorkspace() {
 
 							await Promise.all(
 								refs.map(async (ref) => {
-									const contentHandle =
+									const refContent =
 										await client.documents.references.content.open(ref.id);
-									const content = contentHandle.content.toString();
-									await writeFile(join(refsDir, ref.path), content, 'utf-8');
+									const text = refContent.read();
+									await writeFile(join(refsDir, ref.path), text, 'utf-8');
 								}),
 							);
 						}

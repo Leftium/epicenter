@@ -50,9 +50,7 @@ export const opensidian = createWorkspace(opensidianDefinition)
 			filePath: EPICENTER_PATHS.persistence(opensidianDefinition.id),
 		}),
 	)
-	.withWorkspaceExtension('materializer', (ctx) =>
-		createMarkdownMaterializer(ctx, { dir: MARKDOWN_DIR })
-			.table('files', {
+		createMarkdownMaterializer(ctx, { dir: MARKDOWN_DIR }).table('files', {
 				serialize: async (row) => {
 					if (row.type === 'folder') {
 						return {
@@ -62,8 +60,10 @@ export const opensidian = createWorkspace(opensidianDefinition)
 					}
 					let content: string | undefined;
 					try {
-						const handle = await ctx.documents.files.content.open(row.id);
-						content = handle.content.read();
+						const documentContent = await ctx.documents.files.content.open(
+							row.id,
+						);
+						content = documentContent.read();
 					} catch {
 						// Content doc not yet available (sync pending)
 					}
@@ -91,8 +91,7 @@ export const opensidian = createWorkspace(opensidianDefinition)
 	.withWorkspaceExtension('sqlite', (ctx) =>
 		createSqliteMaterializer(ctx, {
 			db: new Database(join(MATERIALIZER_DIR, 'opensidian.db')),
-		})
-			.table('files', { fts: ['name'] }),
+		}).table('files', { fts: ['name'] }),
 	)
 	.withWorkspaceExtension('unlock', createCliUnlock(sessions, SERVER_URL))
 	.withExtension(

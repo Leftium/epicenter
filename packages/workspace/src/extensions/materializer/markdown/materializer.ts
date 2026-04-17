@@ -294,10 +294,10 @@ export function createMarkdownMaterializer<
 					row: TableRow<typeof name>,
 				) => MaybePromise<SerializeResult> =
 					tableConfig?.serialize ??
-					((row) => ({
-						filename: `${row.id}.md`,
+				((row) => ({
+					filename: `${row.id}.md`,
 					content: toMarkdown({ ...row }),
-					}));
+				}));
 
 				await mkdir(directory, { recursive: true });
 

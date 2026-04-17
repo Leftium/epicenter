@@ -20,7 +20,7 @@ import { BlobError } from './types';
  * @param directoryPath - Absolute path to the directory containing .md files
  * @returns Array of markdown file contents as strings
  */
-export async function readMarkdownFiles(
+async function readMarkdownFiles(
 	directoryPath: string,
 ): Promise<string[]> {
 	return invoke('read_markdown_files', { directoryPath });
@@ -43,16 +43,12 @@ async function deleteFilesInDirectory(
 
 /**
  * File system-based blob store implementation for desktop.
- * Stores data as markdown files with YAML front matter.
+ * Stores audio files on the Tauri filesystem.
  *
  * Directory structure:
  * - recordings/
  *   - {id}.{ext} (audio file: .wav, .opus, .mp3, etc.)
  *   - {id}.md (metadata materialized by workspace, NOT written by this service)
- * - transformations/
- *   - {id}.md (transformation configuration)
- * - transformation-runs/
- *   - {id}.md (execution history)
  */
 export function createFileSystemBlobStore(): BlobStore {
 	return {
@@ -71,7 +67,7 @@ export function createFileSystemBlobStore(): BlobStore {
 						const arrayBuffer = await audio.arrayBuffer();
 						await tauriWriteFile(audioPath, new Uint8Array(arrayBuffer));
 					},
-					catch: (error) => BlobError.MutationFailed({ cause: error }),
+					catch: (error) => BlobError.WriteFailed({ cause: error }),
 				});
 			},
 
@@ -90,7 +86,7 @@ export function createFileSystemBlobStore(): BlobStore {
 							.map((file) => file.name);
 						await deleteFilesInDirectory(recordingsPath, filenames);
 					},
-					catch: (error) => BlobError.MutationFailed({ cause: error }),
+					catch: (error) => BlobError.WriteFailed({ cause: error }),
 				});
 			},
 
@@ -118,7 +114,7 @@ export function createFileSystemBlobStore(): BlobStore {
 
 						return blob;
 					},
-					catch: (error) => BlobError.QueryFailed({ cause: error }),
+					catch: (error) => BlobError.ReadFailed({ cause: error }),
 				});
 			},
 
@@ -144,7 +140,7 @@ export function createFileSystemBlobStore(): BlobStore {
 						// The Tauri backend handles URL decoding automatically
 						return assetUrl;
 					},
-					catch: (error) => BlobError.QueryFailed({ cause: error }),
+					catch: (error) => BlobError.ReadFailed({ cause: error }),
 				});
 			},
 
@@ -163,7 +159,7 @@ export function createFileSystemBlobStore(): BlobStore {
 						const filenames = allFiles.map((file) => file.name);
 						await deleteFilesInDirectory(recordingsPath, filenames);
 					},
-					catch: (error) => BlobError.MutationFailed({ cause: error }),
+					catch: (error) => BlobError.WriteFailed({ cause: error }),
 				});
 			},
 		},

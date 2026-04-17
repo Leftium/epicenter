@@ -6,12 +6,12 @@ import {
 import type { Result } from 'wellcrafted/result';
 
 export const BlobError = defineErrors({
-	QueryFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to query database: ${extractErrorMessage(cause)}`,
+	ReadFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to read from blob store: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	MutationFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to write to database: ${extractErrorMessage(cause)}`,
+	WriteFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to write to blob store: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });

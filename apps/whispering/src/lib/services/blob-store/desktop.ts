@@ -39,7 +39,7 @@ export function createBlobStoreDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return BlobError.MutationFailed({ cause: fsResult.error });
+					return BlobError.WriteFailed({ cause: fsResult.error });
 				}
 
 				// Success if at least one succeeded
@@ -65,7 +65,7 @@ export function createBlobStoreDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return BlobError.QueryFailed({ cause: fsResult.error });
+					return BlobError.ReadFailed({ cause: fsResult.error });
 				}
 
 				// Not found in either source (but no errors)
@@ -92,7 +92,7 @@ export function createBlobStoreDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return BlobError.QueryFailed({ cause: fsResult.error });
+					return BlobError.ReadFailed({ cause: fsResult.error });
 				}
 
 				// Not found in either source (but no errors)
@@ -114,7 +114,7 @@ export function createBlobStoreDesktop({
 
 				// Return error only if both failed
 				if (fsResult.error && idbResult.error) {
-					return BlobError.MutationFailed({ cause: fsResult.error });
+					return BlobError.WriteFailed({ cause: fsResult.error });
 				}
 
 				return Ok(undefined);

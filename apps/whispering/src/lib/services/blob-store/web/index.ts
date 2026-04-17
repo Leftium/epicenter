@@ -33,7 +33,7 @@ export function createBlobStoreWeb({
 					try: async () => {
 						await db.recordings.put({ id: recordingId, serializedAudio });
 					},
-					catch: (error) => BlobError.MutationFailed({ cause: error }),
+					catch: (error) => BlobError.WriteFailed({ cause: error }),
 				});
 			},
 
@@ -41,7 +41,7 @@ export function createBlobStoreWeb({
 				const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
 				return tryAsync({
 					try: () => db.recordings.bulkDelete(ids),
-					catch: (error) => BlobError.MutationFailed({ cause: error }),
+					catch: (error) => BlobError.WriteFailed({ cause: error }),
 				});
 			},
 
@@ -63,7 +63,7 @@ export function createBlobStoreWeb({
 						);
 						return blob;
 					},
-					catch: (error) => BlobError.QueryFailed({ cause: error }),
+					catch: (error) => BlobError.ReadFailed({ cause: error }),
 				});
 			},
 
@@ -95,7 +95,7 @@ export function createBlobStoreWeb({
 
 						return objectUrl;
 					},
-					catch: (error) => BlobError.QueryFailed({ cause: error }),
+					catch: (error) => BlobError.ReadFailed({ cause: error }),
 				});
 			},
 
@@ -110,7 +110,7 @@ export function createBlobStoreWeb({
 			clear: async () => {
 				return tryAsync({
 					try: () => db.recordings.clear(),
-					catch: (error) => BlobError.MutationFailed({ cause: error }),
+					catch: (error) => BlobError.WriteFailed({ cause: error }),
 				});
 			},
 		}, // End of audio namespace

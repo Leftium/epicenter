@@ -1,5 +1,4 @@
 import { Ok } from 'wellcrafted/result';
-import type { DownloadService } from '$lib/services/download';
 import { createFileSystemBlobStore } from './file-system';
 import type { BlobStore } from './types';
 import { BlobError } from './types';
@@ -14,13 +13,9 @@ import { createBlobStoreWeb } from './web';
  *
  */
 
-export function createBlobStoreDesktop({
-	DownloadService,
-}: {
-	DownloadService: DownloadService;
-}): BlobStore {
+export function createBlobStoreDesktop(): BlobStore {
 	const fileSystemDb = createFileSystemBlobStore();
-	const indexedDb = createBlobStoreWeb({ DownloadService });
+	const indexedDb = createBlobStoreWeb();
 
 	return {
 		audio: {
@@ -69,7 +64,9 @@ export function createBlobStoreDesktop({
 				}
 
 				// Not found in either source (but no errors)
-				throw new Error(`Audio not found for recording ${recordingId}`);
+				return BlobError.ReadFailed({
+					cause: new Error(`Audio not found for recording ${recordingId}`),
+				});
 			},
 
 			ensurePlaybackUrl: async (recordingId) => {
@@ -96,7 +93,9 @@ export function createBlobStoreDesktop({
 				}
 
 				// Not found in either source (but no errors)
-				throw new Error(`Audio not found for recording ${recordingId}`);
+				return BlobError.ReadFailed({
+					cause: new Error(`Audio not found for recording ${recordingId}`),
+				});
 			},
 
 			revokeUrl: (recordingId) => {

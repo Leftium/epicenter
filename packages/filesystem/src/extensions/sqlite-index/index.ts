@@ -24,7 +24,7 @@
  * @module
  */
 
-import type { Documents, TableHelper } from '@epicenter/workspace';
+import type { Documents, TableHelper, Timeline } from '@epicenter/workspace';
 import type { Client, InStatement } from '@libsql/client-wasm';
 import { createClient } from '@libsql/client-wasm';
 
@@ -107,7 +107,7 @@ export type SqliteIndex = {
  */
 type SqliteIndexContext = {
 	tables: { files: TableHelper<FileRow> };
-	documents: { files: { content: Documents<FileRow> } };
+	documents: { files: { content: Documents<FileRow, Record<string, unknown>, Record<string, never>, Timeline> } };
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -186,7 +186,7 @@ export function createSqliteIndex({
 				}
 				try {
 					const handle = await contentDocs.open(row.id);
-					const text = handle.read();
+					const text = handle.content.read();
 					contentMap.set(row.id, text || null);
 				} catch {
 					contentMap.set(row.id, null);
@@ -340,7 +340,7 @@ export function createSqliteIndex({
 				let content: string | null = null;
 				try {
 					const handle = await contentDocs.open(row.id);
-					const text = handle.read();
+					const text = handle.content.read();
 					content = text || null;
 				} catch {
 					content = null;

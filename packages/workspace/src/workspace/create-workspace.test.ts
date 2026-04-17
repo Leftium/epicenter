@@ -17,6 +17,7 @@ import * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { bytesToBase64 } from '../shared/crypto/index.js';
 import { createDocuments } from './create-documents.js';
+import { timeline } from './strategies.js';
 import { createTables } from './create-tables.js';
 import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
@@ -498,6 +499,7 @@ describe('createWorkspace', () => {
 					_v: '1',
 				}),
 			).withDocument('content', {
+				content: timeline,
 				guid: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 			});
@@ -532,6 +534,7 @@ describe('createWorkspace', () => {
 					_v: '1',
 				}),
 			).withDocument('content', {
+				content: timeline,
 				guid: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 			});
@@ -560,6 +563,7 @@ describe('createWorkspace', () => {
 					_v: '1',
 				}),
 			).withDocument('content', {
+				content: timeline,
 				guid: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 			});
@@ -599,6 +603,7 @@ describe('createWorkspace', () => {
 					_v: '1',
 				}),
 			).withDocument('content', {
+				content: timeline,
 				guid: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 			});
@@ -634,6 +639,7 @@ describe('createWorkspace', () => {
 					_v: '1',
 				}),
 			).withDocument('content', {
+				content: timeline,
 				guid: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 			});
@@ -661,6 +667,7 @@ describe('createWorkspace', () => {
 					_v: '1',
 				}),
 			).withDocument('content', {
+				content: timeline,
 				guid: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 			});
@@ -673,6 +680,7 @@ describe('createWorkspace', () => {
 					_v: '1',
 				}),
 			).withDocument('body', {
+				content: timeline,
 				guid: 'bodyDocId',
 				onUpdate: () => ({ bodyUpdatedAt: Date.now() }),
 			});
@@ -770,6 +778,7 @@ describe('createWorkspace', () => {
 				tableName: 'files',
 				documentName: 'content',
 				guidKey: 'id',
+				content: timeline,
 				onUpdate: () => ({ updatedAt: Date.now() }),
 				tableHelper: tables.files,
 				ydoc: mockYdoc,
@@ -841,6 +850,7 @@ describe('createWorkspace', () => {
 				tableName: 'files',
 				documentName: 'content',
 				guidKey: 'id',
+				content: timeline,
 				onUpdate: () => ({ updatedAt: Date.now() }),
 				tableHelper: tables.files,
 				ydoc: mockYdoc,

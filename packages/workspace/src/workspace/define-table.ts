@@ -52,6 +52,7 @@ import type {
 	AwarenessDefinitions,
 	BaseRow,
 	ClaimedDocumentColumns,
+	ContentStrategy,
 	DocumentConfig,
 	LastSchema,
 	StringKeysOf,
@@ -115,9 +116,11 @@ type TableDefinitionWithDocBuilder<
 			ClaimedDocumentColumns<TDocuments>
 		>,
 		const TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
+		TBinding = unknown,
 	>(
 		name: TName,
 		config: {
+			content: ContentStrategy<TBinding>;
 			guid: TGuid;
 			onUpdate: () => Partial<
 				Omit<StandardSchemaV1.InferOutput<LastSchema<TVersions>>, 'id'>
@@ -132,7 +135,8 @@ type TableDefinitionWithDocBuilder<
 				DocumentConfig<
 					TGuid,
 					StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
-					TAwarenessDefs
+					TAwarenessDefs,
+					TBinding
 				>
 			>
 	>;
@@ -257,6 +261,7 @@ function attachDocumentBuilder<
 				documents: {
 					...def.documents,
 					[name]: {
+						content: config.content,
 						guid: config.guid,
 						onUpdate: config.onUpdate,
 						awareness: config.awareness,

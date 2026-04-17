@@ -92,6 +92,7 @@ export { KV_KEY, TableKey } from './ydoc-keys.js';
 export { defineKv } from './define-kv.js';
 export { defineTable } from './define-table.js';
 export { defineWorkspace } from './define-workspace.js';
+export { plainText, richText, timeline } from './strategies.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Workspace Creation
@@ -130,6 +131,7 @@ export type {
 	// Base row type
 	BaseRow,
 	// Document types
+	ContentStrategy,
 	DocumentClient,
 	DocumentConfig,
 	DocumentHandle,

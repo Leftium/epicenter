@@ -39,8 +39,8 @@
  * const handle = await contentDocuments.open(someRow);
  * handle.tableName;    // 'files'
  * handle.documentName; // 'content'
- * handle.read();       // read content
- * handle.write('new content');
+ * handle.content.read();       // read content
+ * handle.content.write('new content');
  * ```
  *
  * @module
@@ -48,7 +48,6 @@
 
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { createTimeline } from '../timeline/timeline.js';
 import { createAwareness } from './create-awareness.js';
 import {
 	defineExtension,
@@ -60,6 +59,7 @@ import {
 import type {
 	AwarenessDefinitions,
 	BaseRow,
+	ContentStrategy,
 	DocumentExtensionRegistration,
 	DocumentHandle,
 	Documents,
@@ -83,12 +83,13 @@ export const DOCUMENTS_ORIGIN = Symbol('documents');
 type DocEntry<
 	TDocExtensions extends Record<string, unknown>,
 	TAwarenessDefinitions extends AwarenessDefinitions,
+	TBinding = unknown,
 > = {
 	ydoc: Y.Doc;
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Extension<any>>;
 	unobserve: () => void;
-	whenReady: Promise<DocumentHandle<TDocExtensions, TAwarenessDefinitions>>;
+	whenReady: Promise<DocumentHandle<TDocExtensions, TAwarenessDefinitions, TBinding>>;
 };
 
 /**
@@ -99,6 +100,7 @@ type DocEntry<
 export type CreateDocumentsConfig<
 	TRow extends BaseRow,
 	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
+	TBinding = unknown,
 > = {
 	/**
 	 * The workspace identifier. Passed through to `DocumentContext.id`.
@@ -114,6 +116,8 @@ export type CreateDocumentsConfig<
 	documentName: string;
 	/** Column name storing the Y.Doc GUID. */
 	guidKey: keyof TRow & string;
+	/** Content strategy — receives the document Y.Doc, returns a typed binding for `handle.content`. */
+	content: ContentStrategy<TBinding>;
 	/**
 	 * Called on every content Y.Doc change (local and remote). Return the
 	 * fields to write to the table row. The row write fires `table.observe`,
@@ -151,14 +155,16 @@ export function createDocuments<
 	TRow extends BaseRow,
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
+	TBinding = unknown,
 >(
-	config: CreateDocumentsConfig<TRow, TAwarenessDefinitions>,
-): Documents<TRow, TDocExtensions, TAwarenessDefinitions> {
+	config: CreateDocumentsConfig<TRow, TAwarenessDefinitions, TBinding>,
+): Documents<TRow, TDocExtensions, TAwarenessDefinitions, TBinding> {
 	const {
 		id,
 		tableName,
 		documentName,
 		guidKey,
+		content,
 		onUpdate,
 		tableHelper,
 		ydoc: workspaceYdoc,
@@ -168,7 +174,7 @@ export function createDocuments<
 
 	const openDocuments = new Map<
 		string,
-		DocEntry<TDocExtensions, TAwarenessDefinitions>
+		DocEntry<TDocExtensions, TAwarenessDefinitions, TBinding>
 	>();
 
 	/**
@@ -191,10 +197,10 @@ export function createDocuments<
 		}
 	});
 
-	const documents: Documents<TRow, TDocExtensions, TAwarenessDefinitions> = {
+	const documents: Documents<TRow, TDocExtensions, TAwarenessDefinitions, TBinding> = {
 		async open(
 			input: TRow | string,
-		): Promise<DocumentHandle<TDocExtensions, TAwarenessDefinitions>> {
+		): Promise<DocumentHandle<TDocExtensions, TAwarenessDefinitions, TBinding>> {
 			const guid = typeof input === 'string' ? input : String(input[guidKey]);
 
 			const existing = openDocuments.get(guid);
@@ -206,7 +212,7 @@ export function createDocuments<
 				contentAwareness,
 				(awarenessDefinitions ?? {}) as TAwarenessDefinitions,
 			);
-			const timeline = createTimeline(contentYdoc);
+			const contentBinding = content(contentYdoc);
 
 			// Call document extension factories synchronously.
 			// IMPORTANT: No await between openDocuments.get() and openDocuments.set() — ensures
@@ -225,7 +231,6 @@ export function createDocuments<
 						tableName,
 						documentName,
 						ydoc: contentYdoc,
-						timeline,
 						awareness: { raw: contentAwareness },
 						whenReady:
 							whenReadyPromises.length === 0
@@ -289,15 +294,16 @@ export function createDocuments<
 				whenReadyPromises.length === 0
 					? Promise.resolve()
 					: Promise.all(whenReadyPromises).then(() => {});
-			const handle = Object.assign(timeline, {
+			const handle = {
+				content: contentBinding,
+				ydoc: contentYdoc,
 				id,
 				tableName,
 				documentName,
-				timeline,
 				awareness,
 				extensions: resolvedExtensions,
 				whenReady: compositeWhenReady,
-			}) as DocumentHandle<TDocExtensions, TAwarenessDefinitions>;
+			} as DocumentHandle<TDocExtensions, TAwarenessDefinitions, TBinding>;
 			const whenReady =
 				whenReadyPromises.length === 0
 					? Promise.resolve(handle)

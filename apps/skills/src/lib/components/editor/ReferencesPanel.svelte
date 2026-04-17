@@ -89,7 +89,7 @@
 										<p class="text-sm text-destructive">{refError}</p>
 									</div>
 								{:else if refHandle}
-									<CodeMirrorEditor ytext={refHandle.asText()} />
+								<CodeMirrorEditor ytext={refHandle.content} />
 								{:else}
 									<div class="flex h-full items-center justify-center">
 										<Spinner class="size-4 text-muted-foreground" />

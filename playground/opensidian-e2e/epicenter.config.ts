@@ -63,7 +63,7 @@ export const opensidian = createWorkspace(opensidianDefinition)
 					let content: string | undefined;
 					try {
 						const handle = await ctx.documents.files.content.open(row.id);
-						content = handle.read();
+						content = handle.content.read();
 					} catch {
 						// Content doc not yet available (sync pending)
 					}

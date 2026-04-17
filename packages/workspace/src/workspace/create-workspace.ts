@@ -216,12 +216,14 @@ export function createWorkspace<
 		const tableDocumentsNamespace: Record<string, Documents<BaseRow>> = {};
 
 		for (const [docName, rawConfig] of Object.entries(tableDef.documents)) {
-			const { guid, onUpdate, awareness } = rawConfig as DocumentConfig;
+			const { content, guid, onUpdate, awareness } =
+				rawConfig as DocumentConfig;
 
 			const documents = createDocuments({
 				id,
 				tableName,
 				documentName: docName,
+				content,
 				guidKey: guid as keyof BaseRow & string,
 				onUpdate,
 				tableHelper,

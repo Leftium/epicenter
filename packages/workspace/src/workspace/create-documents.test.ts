@@ -18,6 +18,7 @@ import {
 	createDocuments,
 	DOCUMENTS_ORIGIN,
 } from './create-documents.js';
+import { timeline } from './strategies.js';
 import { createTables } from './create-tables.js';
 import { createWorkspace } from './create-workspace.js';
 import { defineTable } from './define-table.js';
@@ -51,6 +52,7 @@ function setup(
 		tableName: 'files',
 		documentName: 'content',
 		guidKey: 'id',
+		content: timeline,
 		onUpdate: () => ({ updatedAt: Date.now() }),
 		tableHelper: tables.files,
 		ydoc,
@@ -151,7 +153,7 @@ describe('createDocuments', () => {
 			const { documents } = setup();
 
 			const handle = await documents.open('f1');
-			const text = handle.read();
+			const text = handle.content.read();
 			expect(text).toBe('');
 		});
 
@@ -159,8 +161,8 @@ describe('createDocuments', () => {
 			const { documents } = setup();
 
 			const handle = await documents.open('f1');
-			handle.write('hello world');
-			const text = handle.read();
+			handle.content.write('hello world');
+			const text = handle.content.read();
 			expect(text).toBe('hello world');
 		});
 
@@ -168,9 +170,9 @@ describe('createDocuments', () => {
 			const { documents } = setup();
 
 			const handle = await documents.open('f1');
-			handle.write('first');
-			handle.write('second');
-			const text = handle.read();
+			handle.content.write('first');
+			handle.content.write('second');
+			const text = handle.content.read();
 			expect(text).toBe('second');
 		});
 	});
@@ -186,7 +188,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.write('hello');
+			handle.content.write('hello');
 
 			// Give the update observer a tick
 			const result = tables.files.get('f1');
@@ -214,6 +216,7 @@ describe('createDocuments', () => {
 				tableName: 'files',
 				documentName: 'content',
 				guidKey: 'id',
+				content: timeline,
 				onUpdate: () => ({
 					updatedAt: 999,
 					lastEditedBy: 'test-user',
@@ -231,7 +234,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.write('hello');
+			handle.content.write('hello');
 
 			const result = tables.files.get('f1');
 			expect(result.status).toBe('valid');
@@ -252,6 +255,7 @@ describe('createDocuments', () => {
 				tableName: 'files',
 				documentName: 'content',
 				guidKey: 'id',
+				content: timeline,
 				onUpdate: () => ({}),
 				tableHelper: tables.files,
 				ydoc,
@@ -265,7 +269,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.write('hello');
+			handle.content.write('hello');
 
 			const result = tables.files.get('f1');
 			expect(result.status).toBe('valid');
@@ -289,7 +293,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.write('hello');
+			handle.content.write('hello');
 
 			expect(capturedOrigin).toBe(DOCUMENTS_ORIGIN);
 		});
@@ -671,6 +675,7 @@ describe('createDocuments', () => {
 			const filesTable = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			).withDocument('content', {
+				content: timeline,
 				guid: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 				awareness: {
@@ -701,6 +706,7 @@ describe('createDocuments', () => {
 			const filesTable = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			).withDocument('content', {
+				content: timeline,
 				guid: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 				awareness: {
@@ -740,6 +746,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 			tableName: 'files',
 			documentName: 'content',
 			guidKey: 'id',
+			content: timeline,
 			onUpdate: () => ({ updatedAt: Date.now() }),
 			tableHelper: tables.files,
 			ydoc,
@@ -754,52 +761,52 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const text = handle.asText();
+		const text = handle.content.asText();
 		expect(text).toBeInstanceOf(Y.Text);
-		expect(handle.currentType).toBe('text');
+		expect(handle.content.currentType).toBe('text');
 	});
 
 	test('asText on text entry returns existing Y.Text', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.write('hello');
+		handle.content.write('hello');
 
-		const text = handle.asText();
+		const text = handle.content.asText();
 		expect(text.toString()).toBe('hello');
-		expect(handle.length).toBe(1);
+		expect(handle.content.length).toBe(1);
 	});
 
 	test('asText on richtext entry converts (lossy)', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const fragment = handle.asRichText();
+		const fragment = handle.content.asRichText();
 		const p = new Y.XmlElement('paragraph');
 		const t = new Y.XmlText();
 		t.insert(0, 'Rich content');
 		p.insert(0, [t]);
 		fragment.insert(0, [p]);
 
-		expect(handle.currentType).toBe('richtext');
+		expect(handle.content.currentType).toBe('richtext');
 
-		const text = handle.asText();
+		const text = handle.content.asText();
 		expect(text.toString()).toBe('Rich content');
-		expect(handle.currentType).toBe('text');
-		expect(handle.length).toBe(2);
+		expect(handle.content.currentType).toBe('text');
+		expect(handle.content.length).toBe(2);
 	});
 
 	test('asText on sheet entry converts to CSV', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		handle.write('Name,Age\nAlice,30\n');
-		handle.asSheet();
-		expect(handle.currentType).toBe('sheet');
+		handle.content.write('Name,Age\nAlice,30\n');
+		handle.content.asSheet();
+		expect(handle.content.currentType).toBe('sheet');
 
-		const text = handle.asText();
+		const text = handle.content.asText();
 		expect(text.toString()).toBe('Name,Age\nAlice,30\n');
-		expect(handle.currentType).toBe('text');
-		expect(handle.length).toBe(3);
+		expect(handle.content.currentType).toBe('text');
+		expect(handle.content.length).toBe(3);
 	});
 
 	// ─── asRichText ────────────────────────────────────────────────────
@@ -808,43 +815,43 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const fragment = handle.asRichText();
+		const fragment = handle.content.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.currentType).toBe('richtext');
+		expect(handle.content.currentType).toBe('richtext');
 	});
 
 	test('asRichText on richtext entry returns existing fragment', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.asRichText();
+		handle.content.asRichText();
 
-		const fragment = handle.asRichText();
+		const fragment = handle.content.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.length).toBe(1);
+		expect(handle.content.length).toBe(1);
 	});
 
 	test('asRichText on text entry converts to paragraphs', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.write('Line 1\nLine 2');
+		handle.content.write('Line 1\nLine 2');
 
-		const fragment = handle.asRichText();
+		const fragment = handle.content.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.currentType).toBe('richtext');
-		expect(handle.length).toBe(2);
-		expect(handle.read()).toBe('Line 1\nLine 2');
+		expect(handle.content.currentType).toBe('richtext');
+		expect(handle.content.length).toBe(2);
+		expect(handle.content.read()).toBe('Line 1\nLine 2');
 	});
 
 	test('asRichText on sheet entry converts CSV to paragraphs', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.write('A,B\n1,2\n');
-		handle.asSheet();
+		handle.content.write('A,B\n1,2\n');
+		handle.content.asSheet();
 
-		const fragment = handle.asRichText();
+		const fragment = handle.content.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.currentType).toBe('richtext');
-		expect(handle.length).toBe(3);
+		expect(handle.content.currentType).toBe('richtext');
+		expect(handle.content.length).toBe(3);
 	});
 
 	// ─── asSheet ──────────────────────────────────────────────────────
@@ -853,41 +860,41 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const sheet = handle.asSheet();
+		const sheet = handle.content.asSheet();
 		expect(sheet.columns).toBeInstanceOf(Y.Map);
 		expect(sheet.rows).toBeInstanceOf(Y.Map);
-		expect(handle.currentType).toBe('sheet');
+		expect(handle.content.currentType).toBe('sheet');
 	});
 
 	test('asSheet on sheet entry returns existing binding', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.write('X,Y\n1,2\n');
-		handle.asSheet();
+		handle.content.write('X,Y\n1,2\n');
+		handle.content.asSheet();
 
-		const sheet = handle.asSheet();
+		const sheet = handle.content.asSheet();
 		expect(sheet.columns.size).toBe(2);
 		expect(sheet.rows.size).toBe(1);
-		expect(handle.length).toBe(2);
+		expect(handle.content.length).toBe(2);
 	});
 
 	test('asSheet on text entry parses as CSV', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.write('Col1,Col2\nA,B\n');
+		handle.content.write('Col1,Col2\nA,B\n');
 
-		const sheet = handle.asSheet();
+		const sheet = handle.content.asSheet();
 		expect(sheet.columns.size).toBe(2);
 		expect(sheet.rows.size).toBe(1);
-		expect(handle.currentType).toBe('sheet');
-		expect(handle.length).toBe(2);
+		expect(handle.content.currentType).toBe('sheet');
+		expect(handle.content.length).toBe(2);
 	});
 
 	test('asSheet on richtext entry extracts text then parses CSV', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const fragment = handle.asRichText();
+		const fragment = handle.content.asRichText();
 		const p1 = new Y.XmlElement('paragraph');
 		const t1 = new Y.XmlText();
 		t1.insert(0, 'Name,Age');
@@ -898,10 +905,10 @@ describe('handle.asText / asRichText / asSheet', () => {
 		p2.insert(0, [t2]);
 		fragment.insert(0, [p1, p2]);
 
-		const sheet = handle.asSheet();
+		const sheet = handle.content.asSheet();
 		expect(sheet.columns.size).toBe(2);
-		expect(handle.currentType).toBe('sheet');
-		expect(handle.length).toBe(2);
+		expect(handle.content.currentType).toBe('sheet');
+		expect(handle.content.length).toBe(2);
 	});
 
 	// ─── mode getter ──────────────────────────────────────────────────
@@ -910,9 +917,9 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		expect(handle.currentType).toBeUndefined(); // empty
-		handle.write('text');
-		expect(handle.currentType).toBe('text');
+		expect(handle.content.currentType).toBeUndefined(); // empty
+		handle.content.write('text');
+		expect(handle.content.currentType).toBe('text');
 	});
 
 	// ─── consecutive conversions ──────────────────────────────────────
@@ -921,20 +928,20 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		handle.write('hello');
-		expect(handle.currentType).toBe('text');
-		expect(handle.length).toBe(1);
+		handle.content.write('hello');
+		expect(handle.content.currentType).toBe('text');
+		expect(handle.content.length).toBe(1);
 
-		handle.asRichText();
-		expect(handle.currentType).toBe('richtext');
-		expect(handle.length).toBe(2);
+		handle.content.asRichText();
+		expect(handle.content.currentType).toBe('richtext');
+		expect(handle.content.length).toBe(2);
 
-		handle.asSheet();
-		expect(handle.currentType).toBe('sheet');
-		expect(handle.length).toBe(3);
+		handle.content.asSheet();
+		expect(handle.content.currentType).toBe('sheet');
+		expect(handle.content.length).toBe(3);
 
-		handle.asText();
-		expect(handle.currentType).toBe('text');
-		expect(handle.length).toBe(4);
+		handle.content.asText();
+		expect(handle.content.currentType).toBe('text');
+		expect(handle.content.length).toBe(4);
 	});
 });

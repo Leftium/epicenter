@@ -92,7 +92,7 @@ export function createSkillsWorkspace() {
 				const skill = client.tables.skills.find((s) => s.id === id);
 				if (!skill) return null;
 				const handle = await client.documents.skills.instructions.open(id);
-				return { skill, instructions: handle.read() };
+				return { skill, instructions: handle.content.toString() };
 			},
 		}),
 
@@ -120,12 +120,12 @@ export function createSkillsWorkspace() {
 					refs.map(async (ref) => {
 						const contentHandle =
 							await client.documents.references.content.open(ref.id);
-						return { path: ref.path, content: contentHandle.read() };
+						return { path: ref.path, content: contentHandle.content.toString() };
 					}),
 				);
 				return {
 					skill,
-					instructions: instructionsHandle.read(),
+					instructions: instructionsHandle.content.toString(),
 					references: references.sort((a, b) => a.path.localeCompare(b.path)),
 				};
 			},

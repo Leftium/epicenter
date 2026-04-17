@@ -10,7 +10,6 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema.js';
-import type { Timeline } from '../timeline/timeline.js';
 import type { EncryptionKeys } from './encryption-key.js';
 import type { Extension, MaybePromise } from './lifecycle.js';
 
@@ -139,6 +138,31 @@ export type InferTableRow<T> = T extends {
 	? TLatest
 	: never;
 
+/**
+ * A content strategy factory — receives a content Y.Doc and returns a typed binding.
+ *
+ * The binding is whatever the strategy wants to expose: a Y.Text for plain text,
+ * a Y.XmlFragment for rich text, or a custom object with methods for complex
+ * content types like chat trees.
+ *
+ * Called once per document open. Each call gets a fresh Y.Doc.
+ *
+ * @example
+ * ```typescript
+ * // Simple: return a Y.Text
+ * const myStrategy: ContentStrategy<Y.Text> = (ydoc) => ydoc.getText('content');
+ *
+ * // Complex: return a custom binding object
+ * const chatTree: ContentStrategy<ChatTreeBinding> = (ydoc) => ({
+ *   nodes: ydoc.getMap('nodes'),
+ *   addMessage(msg) {
+ *     // ...
+ *   },
+ * });
+ * ```
+ */
+export type ContentStrategy<TBinding = unknown> = (ydoc: Y.Doc) => TBinding;
+
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT CONFIG TYPES
 // ════════════════════════════════════════════════════════════════════════════
@@ -162,7 +186,10 @@ export type DocumentConfig<
 	TGuid extends string = string,
 	TRow extends BaseRow = BaseRow,
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
+	TBinding = unknown,
 > = {
+	/** Content strategy — receives the document Y.Doc, returns a typed binding for `handle.content`. */
+	content: ContentStrategy<TBinding>;
 	guid: TGuid;
 	/**
 	 * Called on every content Y.Doc change (local and remote). Return the
@@ -226,29 +253,26 @@ export type ClaimedDocumentColumns<
 /**
  * The full API surface of an open content document.
  *
- * Mirrors `WorkspaceClient` for consistency: the document's core type that
- * `DocumentContext` derives from via `Pick` and `DocumentHandle` derives from
- * via `Omit`. Extends `Timeline` so all content operations (read, write, mode
- * conversion) are available directly.
+ * The document's core type that `DocumentContext` derives from via `Pick`
+ * and `DocumentHandle` derives from via `Omit`.
  *
  * @typeParam TDocExtensions - Accumulated document extension exports
+ * @typeParam TBinding - The content binding type returned by the content strategy
  */
 export type DocumentClient<
 	TDocExtensions extends Record<string, unknown> = Record<string, never>,
-> = Timeline & {
+	TBinding = unknown,
+> = {
+	/** The typed content binding returned by the content strategy. */
+	content: TBinding;
 	/** The workspace identifier. */
 	id: string;
 	/** The table this document belongs to (e.g., 'files', 'notes'). */
 	tableName: string;
 	/** The document name declared via `.withDocument()` (e.g., 'content', 'body'). */
 	documentName: string;
-	/**
-	 * Self-reference for destructuring convenience.
-	 *
-	 * The document client IS the timeline (via intersection). This property
-	 * allows factories to destructure `({ timeline })` and get the same object.
-	 */
-	timeline: Timeline;
+	/** The content Y.Doc this document is bound to. */
+	ydoc: Y.Doc;
 	/**
 	 * Accumulated document extension exports with lifecycle hooks.
 	 *
@@ -271,17 +295,14 @@ export type DocumentClient<
 /**
  * Context passed to document extension factories registered via `withDocumentExtension()`.
  *
- * Picks the fields factories need from `DocumentClient` without inheriting the
- * `Timeline` intersection. This preserves the HAS-A relationship (`ctx.timeline`)
- * rather than IS-A (`ctx.read()`), matching how factories actually destructure:
+ * Picks the fields factories need from `DocumentClient`. Factories inspect
+ * `tableName` and `documentName` to decide whether to activate.
+ * Return `void` to skip a specific document.
  *
  * ```typescript
  * .withDocumentExtension('persistence', ({ ydoc }) => { ... })
  * .withDocumentExtension('sync', ({ id, tableName, documentName, ydoc }) => { ... })
  * ```
- *
- * Factories inspect `tableName` and `documentName` to decide whether to activate.
- * Return `void` to skip a specific document.
  *
  * @typeParam TDocExtensions - Accumulated document extension exports from prior calls.
  *   Defaults to `Record<string, unknown>` so `DocumentExtensionRegistration` can
@@ -295,7 +316,6 @@ export type DocumentContext<
 	| 'tableName'
 	| 'documentName'
 	| 'ydoc'
-	| 'timeline'
 	| 'extensions'
 	| 'whenReady'
 > & {
@@ -311,30 +331,29 @@ export type DocumentContext<
 /**
  * A handle to an open content Y.Doc, returned by `documents.open()`.
  *
- * Computed from `DocumentClient` minus lifecycle control. The handle IS the
- * timeline—all read, write, and mode conversion methods are available directly.
+ * Content is accessed via `handle.content` — fully typed by the content strategy.
  * Extension exports are accessed via `handle.extensions`.
  *
- * When `TDocExtensions` is specified (after generic threading), extension access
- * is fully typed. Without generics, extensions are accessible but untyped.
- *
  * @typeParam TDocExtensions - Accumulated document extension exports.
- *   Defaults to `Record<string, unknown>` for untyped access.
+ * @typeParam TAwarenessDefs - Awareness field definitions for this document.
+ * @typeParam TBinding - The content binding type from the content strategy.
  *
  * @example
  * ```typescript
+ * // plainText strategy — content is Y.Text
  * const handle = await documents.open(id);
- * handle.read();                          // read from timeline (always string)
- * handle.write('hello');                   // write to timeline (mode-aware)
- * handle.asText();                         // Y.Text for editor binding
- * handle.currentType;                      // current content type
- * handle.extensions.persistence?.whenReady; // extension access
+ * editor.bind(handle.content); // Y.Text
+ *
+ * // timeline strategy — content is Timeline
+ * handle.content.read();
+ * handle.content.write('hello');
  * ```
  */
 export type DocumentHandle<
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
-> = Omit<DocumentClient<TDocExtensions>, 'dispose'> & {
+	TBinding = unknown,
+> = Omit<DocumentClient<TDocExtensions, TBinding>, 'dispose'> & {
 	/** Typed awareness helper scoped to this document. */
 	awareness: AwarenessHelper<TAwarenessDefs>;
 };
@@ -347,22 +366,13 @@ export type DocumentHandle<
  * `client.documents.files.content`.
  *
  * @typeParam TRow - The row type of the bound table
- *
- * @example
- * ```typescript
- * const handle = await documents.open(row);
- * handle.write('hello');
- * // updatedAt on the row is bumped automatically
- *
- * const text = handle.read();
- * handle.write('new content');
- * await documents.close(row);
- * ```
+ * @typeParam TBinding - The content binding type from the content strategy
  */
 export type Documents<
 	TRow extends BaseRow,
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
+	TBinding = unknown,
 > = {
 	/**
 	 * Open a content Y.Doc for a row.
@@ -375,7 +385,7 @@ export type Documents<
 	 */
 	open(
 		input: TRow | string,
-	): Promise<DocumentHandle<TDocExtensions, TAwarenessDefs>>;
+	): Promise<DocumentHandle<TDocExtensions, TAwarenessDefs, TBinding>>;
 
 	/**
 	 * Close a document — free memory, disconnect providers.
@@ -424,6 +434,28 @@ export type AllDocumentNames<TTableDefs extends TableDefinitions> = {
 		: never;
 }[keyof TTableDefs];
 
+/** Extract the awareness definitions from a DocumentConfig. */
+type InferDocumentAwareness<T> = T extends DocumentConfig<
+	string,
+	BaseRow,
+	infer TAwarenessDefs,
+	// biome-ignore lint/suspicious/noExplicitAny: inference position
+	any
+>
+	? TAwarenessDefs
+	: Record<string, never>;
+
+/** Extract the content binding type from a DocumentConfig. */
+type InferDocumentBinding<T> = T extends DocumentConfig<
+	string,
+	BaseRow,
+	// biome-ignore lint/suspicious/noExplicitAny: inference position
+	any,
+	infer TBinding
+>
+	? TBinding
+	: unknown;
+
 /**
  * Extract the document map for a single table definition.
  *
@@ -442,13 +474,8 @@ export type DocumentsOf<
 				[K in keyof TDocuments]: Documents<
 					TLatest,
 					TDocExtensions,
-					TDocuments[K] extends DocumentConfig<
-						string,
-						BaseRow,
-						infer TAwarenessDefs
-					>
-						? TAwarenessDefs
-						: Record<string, never>
+					InferDocumentAwareness<TDocuments[K]>,
+					InferDocumentBinding<TDocuments[K]>
 				>;
 			}
 		: never

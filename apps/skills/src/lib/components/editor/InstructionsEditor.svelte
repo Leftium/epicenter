@@ -32,7 +32,7 @@
 		<p class="text-sm text-destructive">{error}</p>
 	</div>
 {:else if handle}
-	<CodeMirrorEditor ytext={handle.asText()} />
+	<CodeMirrorEditor ytext={handle.content} />
 {:else}
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />

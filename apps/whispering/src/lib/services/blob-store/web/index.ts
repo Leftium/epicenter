@@ -35,93 +35,91 @@ export function createBlobStoreWeb(): BlobStore {
 	const audioUrlCache = new Map<string, string>();
 
 	return {
-		audio: {
-			async save(recordingId, audio) {
-				const serializedAudio = await blobToSerializedAudio(audio);
-				return tryAsync({
-					try: async () => {
-						await db.recordings.put({ id: recordingId, serializedAudio });
-					},
-					catch: (error) => BlobError.WriteFailed({ cause: error }),
-				});
-			},
+		async save(recordingId, audio) {
+			const serializedAudio = await blobToSerializedAudio(audio);
+			return tryAsync({
+				try: async () => {
+					await db.recordings.put({ id: recordingId, serializedAudio });
+				},
+				catch: (error) => BlobError.WriteFailed({ cause: error }),
+			});
+		},
 
-			delete: async (idOrIds) => {
-				const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
-				return tryAsync({
-					try: () => db.recordings.bulkDelete(ids),
-					catch: (error) => BlobError.WriteFailed({ cause: error }),
-				});
-			},
+		delete: async (idOrIds) => {
+			const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+			return tryAsync({
+				try: () => db.recordings.bulkDelete(ids),
+				catch: (error) => BlobError.WriteFailed({ cause: error }),
+			});
+		},
 
-			getBlob: async (recordingId) => {
-				return tryAsync({
-					try: async () => {
-						const recordingWithAudio = await db.recordings.get(recordingId);
+		getBlob: async (recordingId) => {
+			return tryAsync({
+				try: async () => {
+					const recordingWithAudio = await db.recordings.get(recordingId);
 
-						if (!recordingWithAudio) {
-							throw new Error(`Recording ${recordingId} not found`);
-						}
+					if (!recordingWithAudio) {
+						throw new Error(`Recording ${recordingId} not found`);
+					}
 
-						if (!recordingWithAudio.serializedAudio) {
-							throw new Error(`No audio found for recording ${recordingId}`);
-						}
+					if (!recordingWithAudio.serializedAudio) {
+						throw new Error(`No audio found for recording ${recordingId}`);
+					}
 
-						const blob = serializedAudioToBlob(
-							recordingWithAudio.serializedAudio,
-						);
-						return blob;
-					},
-					catch: (error) => BlobError.ReadFailed({ cause: error }),
-				});
-			},
+					const blob = serializedAudioToBlob(
+						recordingWithAudio.serializedAudio,
+					);
+					return blob;
+				},
+				catch: (error) => BlobError.ReadFailed({ cause: error }),
+			});
+		},
 
-			ensurePlaybackUrl: async (recordingId) => {
-				return tryAsync({
-					try: async () => {
-						// Check cache first
-						const cachedUrl = audioUrlCache.get(recordingId);
-						if (cachedUrl) {
-							return cachedUrl;
-						}
+		ensurePlaybackUrl: async (recordingId) => {
+			return tryAsync({
+				try: async () => {
+					// Check cache first
+					const cachedUrl = audioUrlCache.get(recordingId);
+					if (cachedUrl) {
+						return cachedUrl;
+					}
 
-						// Fetch blob from IndexedDB
-						const recordingWithAudio = await db.recordings.get(recordingId);
+					// Fetch blob from IndexedDB
+					const recordingWithAudio = await db.recordings.get(recordingId);
 
-						if (!recordingWithAudio) {
-							throw new Error(`Recording ${recordingId} not found`);
-						}
+					if (!recordingWithAudio) {
+						throw new Error(`Recording ${recordingId} not found`);
+					}
 
-						if (!recordingWithAudio.serializedAudio) {
-							throw new Error(`No audio found for recording ${recordingId}`);
-						}
+					if (!recordingWithAudio.serializedAudio) {
+						throw new Error(`No audio found for recording ${recordingId}`);
+					}
 
-						const blob = serializedAudioToBlob(
-							recordingWithAudio.serializedAudio,
-						);
-						const objectUrl = URL.createObjectURL(blob);
-						audioUrlCache.set(recordingId, objectUrl);
+					const blob = serializedAudioToBlob(
+						recordingWithAudio.serializedAudio,
+					);
+					const objectUrl = URL.createObjectURL(blob);
+					audioUrlCache.set(recordingId, objectUrl);
 
-						return objectUrl;
-					},
-					catch: (error) => BlobError.ReadFailed({ cause: error }),
-				});
-			},
+					return objectUrl;
+				},
+				catch: (error) => BlobError.ReadFailed({ cause: error }),
+			});
+		},
 
-			revokeUrl: (recordingId) => {
-				const url = audioUrlCache.get(recordingId);
-				if (url) {
-					URL.revokeObjectURL(url);
-					audioUrlCache.delete(recordingId);
-				}
-			},
+		revokeUrl: (recordingId) => {
+			const url = audioUrlCache.get(recordingId);
+			if (url) {
+				URL.revokeObjectURL(url);
+				audioUrlCache.delete(recordingId);
+			}
+		},
 
-			clear: async () => {
-				return tryAsync({
-					try: () => db.recordings.clear(),
-					catch: (error) => BlobError.WriteFailed({ cause: error }),
-				});
-			},
-		}, // End of audio namespace
+		clear: async () => {
+			return tryAsync({
+				try: () => db.recordings.clear(),
+				catch: (error) => BlobError.WriteFailed({ cause: error }),
+			});
+		},
 	};
 }

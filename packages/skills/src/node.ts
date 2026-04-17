@@ -161,9 +161,9 @@ export function createSkillsWorkspace() {
 									_v: 1,
 								});
 
-								const content =
+								const refDoc =
 									await client.documents.references.content.open(refId);
-								content.write(refContent);
+								refDoc.write(refContent);
 							}),
 						);
 					}

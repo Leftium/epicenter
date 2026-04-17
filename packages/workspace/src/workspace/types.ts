@@ -161,7 +161,7 @@ export type InferTableRow<T> = T extends {
  * });
  * ```
  */
-export type ContentStrategy<TBinding = unknown> = (ydoc: Y.Doc) => TBinding;
+export type ContentStrategy<TBinding extends ContentHandle = ContentHandle> = (ydoc: Y.Doc) => TBinding;
 
 /**
  * Base contract every content strategy must satisfy.
@@ -224,7 +224,7 @@ export type DocumentConfig<
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
 	TBinding = unknown,
 > = {
-	/** Content strategy — receives the document Y.Doc, returns a typed binding for `handle.content`. */
+	/** Content strategy — receives the document Y.Doc, returns the content object from `open()`. */
 	content: ContentStrategy<TBinding>;
 	guid: TGuid;
 	/**
@@ -289,8 +289,7 @@ export type ClaimedDocumentColumns<
 /**
  * The full API surface of an open content document.
  *
- * The document's core type that `DocumentContext` derives from via `Pick`
- * and `DocumentHandle` derives from via `Omit`.
+ * The document's core type that `DocumentContext` derives from via `Pick`.
  *
  * @typeParam TDocExtensions - Accumulated document extension exports
  * @typeParam TBinding - The content binding type returned by the content strategy
@@ -364,26 +363,6 @@ export type DocumentContext<
 	awareness: { raw: Awareness };
 };
 
-/**
- * Internal type for the full open-document shape.
- *
- * Not exported publicly — consumers receive `TBinding` directly from `open()`.
- * This type is used internally by `createDocuments()` to track the full lifecycle
- * state of an open document (ydoc, awareness, extensions, content).
- *
- * @internal
- * @typeParam TDocExtensions - Accumulated document extension exports.
- * @typeParam TAwarenessDefs - Awareness field definitions for this document.
- * @typeParam TBinding - The content binding type from the content strategy.
- */
-export type DocumentHandle<
-	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
-	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
-	TBinding = unknown,
-> = Omit<DocumentClient<TDocExtensions, TBinding>, 'dispose'> & {
-	/** Typed awareness helper scoped to this document. */
-	awareness: AwarenessHelper<TAwarenessDefs>;
-};
 
 /**
  * Runtime manager for a table's associated content Y.Docs.

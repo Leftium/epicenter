@@ -546,17 +546,16 @@ describe('document integration', () => {
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /test.txt to exist');
 
-		// Open the content doc — should get a handle
-		const handle1 = await documents.open(fileId);
-		expect(handle1.ydoc.guid).toBe(fileId);
+		// Open the content doc
+		const content1 = await documents.open(fileId);
 
 		// Hard-delete the row directly from the table.
 		// The documents manager's table observer should automatically close the content doc.
 		ws.tables.files.delete(fileId);
 
-		// Re-opening should create a FRESH Y.Doc (different instance)
+		// Re-opening should create a FRESH instance
 		// because the documents manager's row-deletion observer called close()
-		const handle2 = await documents.open(fileId);
-		expect(handle2.ydoc).not.toBe(handle1.ydoc);
+		const content2 = await documents.open(fileId);
+		expect(content2).not.toBe(content1);
 	});
 });

@@ -113,7 +113,7 @@ export type CreateDocumentsConfig<
 	documentName: string;
 	/** Column name storing the Y.Doc GUID. */
 	guidKey: keyof TRow & string;
-	/** Content strategy — receives the document Y.Doc, returns a typed binding for `handle.content`. */
+	/** Content strategy — receives the document Y.Doc, returns the content object from `open()`. */
 	content: ContentStrategy<TBinding>;
 	/**
 	 * Called on every content Y.Doc change (local and remote). Return the

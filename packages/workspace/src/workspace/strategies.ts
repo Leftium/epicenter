@@ -2,9 +2,9 @@
  * Built-in content strategies for `.withDocument()`.
  *
  * Each strategy is a `ContentStrategy` — a function that receives the document's
- * Y.Doc and returns a typed content handle that becomes `handle.content`.
+ * Y.Doc and returns a typed content object directly from `open()`.
  *
- * Every handle satisfies `ContentHandle` — consumers can always `read()` and
+ * Every strategy satisfies `ContentHandle` — consumers can always `read()` and
  * `write()` without touching Y.Doc internals. Editor-specific bindings are
  * available via `.binding` (PlainTextHandle, RichTextHandle) or mode-switching
  * methods (Timeline).
@@ -13,6 +13,7 @@
  */
 import * as Y from 'yjs';
 import { createTimeline, type Timeline } from '../timeline/timeline.js';
+import { xmlFragmentToPlaintext } from '../timeline/richtext.js';
 import type { PlainTextHandle, RichTextHandle } from './types.js';
 /**
  * Plain text content strategy.
@@ -95,7 +96,7 @@ export const richText: (ydoc: Y.Doc) => RichTextHandle = (ydoc) => {
 			return fragment;
 		},
 		read() {
-			return fragment.toDOM().textContent ?? '';
+			return xmlFragmentToPlaintext(fragment);
 		},
 		write(text: string) {
 			ydoc.transact(() => {

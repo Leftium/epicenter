@@ -1,9 +1,10 @@
 /**
  * Markdown Materializer Bidirectional Sync Tests
  *
- * Tests the `pushFromMarkdown` and `pullToMarkdown` methods added to
- * `createMarkdownMaterializer`. Uses an in-memory IO adapter and real
- * Yjs workspace so the materializer exercises actual table set/get paths.
+ * Tests the `pushFromMarkdown` and `pullToMarkdown` methods on
+ * `createMarkdownMaterializer`. Uses real temp directories and Yjs
+ * workspaces so the materializer exercises actual table set/get and
+ * filesystem paths.
  *
  * Key behaviors:
  * - pushFromMarkdown reads `.md` files, parses frontmatter, and calls table.set()
@@ -16,11 +17,13 @@
  * - Round-trip: pullToMarkdown → pushFromMarkdown preserves data
  */
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { type } from 'arktype';
 import { createWorkspace, defineTable } from '../../../workspace/index.js';
 import { createMarkdownMaterializer } from './materializer.js';
-import type { MaterializerIO, MaterializerYaml } from './materializer.js';
+import { parseMarkdownFile } from './parse-markdown-file.js';
 
 // ============================================================================
 // Test Table Definitions
@@ -33,66 +36,36 @@ const postsTable = defineTable(
 const notesTable = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
 // ============================================================================
-// In-Memory IO + YAML Adapters
+// Test Directory Setup
 // ============================================================================
 
-type MemoryFS = Map<string, string | string[]>;
+const TEST_DIR = join(import.meta.dir, '__test-materializer__');
 
-function createMemoryIO(fs: MemoryFS): MaterializerIO {
-	return {
-		async mkdir(dir) {
-			if (!fs.has(dir)) fs.set(dir, []);
-		},
-		async writeFile(path, content) {
-			fs.set(path, content);
-			// Track filename in parent directory listing
-			const lastSlash = path.lastIndexOf('/');
-			const parentDir = path.slice(0, lastSlash);
-			const filename = path.slice(lastSlash + 1);
-			const entries = fs.get(parentDir);
-			if (Array.isArray(entries) && !entries.includes(filename)) {
-				entries.push(filename);
-			}
-		},
-		async readFile(path) {
-			const content = fs.get(path);
-			if (typeof content !== 'string') throw new Error(`ENOENT: ${path}`);
-			return content;
-		},
-		async readdir(dir) {
-			const entries = fs.get(dir);
-			if (!Array.isArray(entries)) throw new Error(`ENOENT: ${dir}`);
-			return [...entries];
-		},
-		async removeFile(path) {
-			fs.delete(path);
-			// Clean up parent directory listing
-			const lastSlash = path.lastIndexOf('/');
-			const parentDir = path.slice(0, lastSlash);
-			const filename = path.slice(lastSlash + 1);
-			const entries = fs.get(parentDir);
-			if (Array.isArray(entries)) {
-				const idx = entries.indexOf(filename);
-				if (idx !== -1) entries.splice(idx, 1);
-			}
-		},
-		joinPath(...segments) {
-			return segments.join('/');
-		},
-	};
+beforeEach(async () => {
+	await mkdir(TEST_DIR, { recursive: true });
+});
+
+afterEach(async () => {
+	await rm(TEST_DIR, { recursive: true, force: true });
+});
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+async function writeTestFile(relativePath: string, content: string) {
+	const fullPath = join(TEST_DIR, relativePath);
+	await mkdir(join(fullPath, '..'), { recursive: true });
+	await writeFile(fullPath, content, 'utf-8');
 }
 
-function createTestYaml(): MaterializerYaml {
-	const { YAML } = require('bun') as typeof import('bun');
-	return {
-		stringify: (obj) => YAML.stringify(obj, null, 2) as string,
-		parse: (str) => YAML.parse(str) as unknown,
-	};
+async function readTestFile(relativePath: string) {
+	return readFile(join(TEST_DIR, relativePath), 'utf-8');
 }
 
-// ============================================================================
-// Setup
-// ============================================================================
+async function listTestDir(relativePath: string) {
+	return readdir(join(TEST_DIR, relativePath));
+}
 
 function setup(options?: {
 	tables?: Array<{
@@ -102,18 +75,12 @@ function setup(options?: {
 		>[1];
 	}>;
 }) {
-	const fs: MemoryFS = new Map();
-	const io = createMemoryIO(fs);
-	const yaml = createTestYaml();
-
 	const workspace = createWorkspace({
 		id: 'test.materializer',
 		tables: { posts: postsTable, notes: notesTable },
 	}).withWorkspaceExtension('materializer', (ctx) => {
 		const materializer = createMarkdownMaterializer(ctx, {
-			dir: '/test-data',
-			io,
-			yaml,
+			dir: TEST_DIR,
 		});
 
 		const tablesToRegister = options?.tables ?? [
@@ -127,20 +94,7 @@ function setup(options?: {
 		return materializer;
 	});
 
-	return { fs, workspace };
-}
-
-/**
- * Seed in-memory filesystem with markdown files for a table directory.
- * Each entry is `[filename, content]`.
- */
-function seedFiles(fs: MemoryFS, dir: string, files: Array<[string, string]>) {
-	const filenames: string[] = [];
-	for (const [filename, content] of files) {
-		fs.set(`${dir}/${filename}`, content);
-		filenames.push(filename);
-	}
-	fs.set(dir, filenames);
+	return { workspace };
 }
 
 // ============================================================================
@@ -149,19 +103,17 @@ function seedFiles(fs: MemoryFS, dir: string, files: Array<[string, string]>) {
 
 describe('pushFromMarkdown', () => {
 	test('imports markdown files into workspace tables', async () => {
-		const { fs, workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
-		seedFiles(fs, '/test-data/posts', [
-			[
-				'hello.md',
-				'---\nid: post-1\ntitle: Hello World\npublished: true\n_v: 1\n---\n',
-			],
-			[
-				'draft.md',
-				'---\nid: post-2\ntitle: Draft Post\npublished: false\n_v: 1\n---\n',
-			],
-		]);
+		await writeTestFile(
+			'posts/hello.md',
+			'---\nid: post-1\ntitle: Hello World\npublished: true\n_v: 1\n---\n',
+		);
+		await writeTestFile(
+			'posts/draft.md',
+			'---\nid: post-2\ntitle: Draft Post\npublished: false\n_v: 1\n---\n',
+		);
 
 		const result = await workspace.extensions.materializer.pushFromMarkdown();
 
@@ -184,14 +136,15 @@ describe('pushFromMarkdown', () => {
 	});
 
 	test('skips non-.md files', async () => {
-		const { fs, workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
-		seedFiles(fs, '/test-data/posts', [
-			['valid.md', '---\nid: p1\ntitle: Valid\npublished: false\n_v: 1\n---\n'],
-			['readme.txt', 'not a markdown file'],
-			['data.json', '{"id": "test"}'],
-		]);
+		await writeTestFile(
+			'posts/valid.md',
+			'---\nid: p1\ntitle: Valid\npublished: false\n_v: 1\n---\n',
+		);
+		await writeTestFile('posts/readme.txt', 'not a markdown file');
+		await writeTestFile('posts/data.json', '{"id": "test"}');
 
 		const result = await workspace.extensions.materializer.pushFromMarkdown();
 
@@ -200,13 +153,17 @@ describe('pushFromMarkdown', () => {
 	});
 
 	test('skips files without valid frontmatter', async () => {
-		const { fs, workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
-		seedFiles(fs, '/test-data/posts', [
-			['valid.md', '---\nid: p1\ntitle: Valid\npublished: false\n_v: 1\n---\n'],
-			['no-frontmatter.md', '# Just a heading\n\nSome content\n'],
-		]);
+		await writeTestFile(
+			'posts/valid.md',
+			'---\nid: p1\ntitle: Valid\npublished: false\n_v: 1\n---\n',
+		);
+		await writeTestFile(
+			'posts/no-frontmatter.md',
+			'# Just a heading\n\nSome content\n',
+		);
 
 		const result = await workspace.extensions.materializer.pushFromMarkdown();
 
@@ -214,25 +171,11 @@ describe('pushFromMarkdown', () => {
 		expect(result.skipped).toBe(1);
 	});
 
-	test('reports errors for unreadable files', async () => {
-		const { fs, workspace } = setup({ tables: [{ name: 'posts' }] });
-		await workspace.whenReady;
-
-		// Seed directory listing with a file that doesn't exist in fs
-		fs.set('/test-data/posts', ['ghost.md']);
-
-		const result = await workspace.extensions.materializer.pushFromMarkdown();
-
-		expect(result.imported).toBe(0);
-		expect(result.errors.length).toBe(1);
-		expect(result.errors[0]).toContain('ghost.md');
-	});
-
 	test('silently skips tables whose directories do not exist', async () => {
 		const { workspace } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
-		// Don't seed any filesystem entries — directory doesn't exist
+		// Don't create the posts directory — it should not exist
 		const result = await workspace.extensions.materializer.pushFromMarkdown();
 
 		expect(result.imported).toBe(0);
@@ -241,7 +184,7 @@ describe('pushFromMarkdown', () => {
 	});
 
 	test('uses custom deserialize callback', async () => {
-		const { fs, workspace } = setup({
+		const { workspace } = setup({
 			tables: [
 				{
 					name: 'notes',
@@ -257,9 +200,10 @@ describe('pushFromMarkdown', () => {
 		});
 		await workspace.whenReady;
 
-		seedFiles(fs, '/test-data/notes', [
-			['my-note.md', '---\nid: note-1\n---\n\nThis is the body content\n'],
-		]);
+		await writeTestFile(
+			'notes/my-note.md',
+			'---\nid: note-1\n---\n\nThis is the body content\n',
+		);
 
 		const result = await workspace.extensions.materializer.pushFromMarkdown();
 
@@ -273,14 +217,15 @@ describe('pushFromMarkdown', () => {
 	});
 
 	test('uses custom table directory', async () => {
-		const { fs, workspace } = setup({
+		const { workspace } = setup({
 			tables: [{ name: 'posts', config: { dir: 'blog' } }],
 		});
 		await workspace.whenReady;
 
-		seedFiles(fs, '/test-data/blog', [
-			['hello.md', '---\nid: p1\ntitle: Hello\npublished: false\n_v: 1\n---\n'],
-		]);
+		await writeTestFile(
+			'blog/hello.md',
+			'---\nid: p1\ntitle: Hello\npublished: false\n_v: 1\n---\n',
+		);
 
 		const result = await workspace.extensions.materializer.pushFromMarkdown();
 
@@ -289,13 +234,14 @@ describe('pushFromMarkdown', () => {
 	});
 
 	test('overwrites existing rows (set is insert-or-replace)', async () => {
-		const { fs, workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
-		// First import: seed a file and import it
-		seedFiles(fs, '/test-data/posts', [
-			['p1.md', '---\nid: p1\ntitle: Original\npublished: false\n_v: 1\n---\n'],
-		]);
+		// First import
+		await writeTestFile(
+			'posts/p1.md',
+			'---\nid: p1\ntitle: Original\npublished: false\n_v: 1\n---\n',
+		);
 
 		const first = await workspace.extensions.materializer.pushFromMarkdown();
 		expect(first.imported).toBe(1);
@@ -310,7 +256,10 @@ describe('pushFromMarkdown', () => {
 		await Bun.sleep(0);
 
 		// Second import: overwrite the same file with different data
-		fs.set('/test-data/posts/p1.md', '---\nid: p1\ntitle: Updated From Disk\npublished: true\n_v: 1\n---\n');
+		await writeTestFile(
+			'posts/p1.md',
+			'---\nid: p1\ntitle: Updated From Disk\npublished: true\n_v: 1\n---\n',
+		);
 
 		const second = await workspace.extensions.materializer.pushFromMarkdown();
 		expect(second.imported).toBe(1);
@@ -324,15 +273,17 @@ describe('pushFromMarkdown', () => {
 	});
 
 	test('imports across multiple tables', async () => {
-		const { fs, workspace } = setup();
+		const { workspace } = setup();
 		await workspace.whenReady;
 
-		seedFiles(fs, '/test-data/posts', [
-			['post.md', '---\nid: p1\ntitle: Post\npublished: false\n_v: 1\n---\n'],
-		]);
-		seedFiles(fs, '/test-data/notes', [
-			['note.md', '---\nid: n1\nbody: Note body\n_v: 1\n---\n'],
-		]);
+		await writeTestFile(
+			'posts/post.md',
+			'---\nid: p1\ntitle: Post\npublished: false\n_v: 1\n---\n',
+		);
+		await writeTestFile(
+			'notes/note.md',
+			'---\nid: n1\nbody: Note body\n_v: 1\n---\n',
+		);
 
 		const result = await workspace.extensions.materializer.pushFromMarkdown();
 
@@ -348,7 +299,7 @@ describe('pushFromMarkdown', () => {
 
 describe('pullToMarkdown', () => {
 	test('writes all valid rows to disk', async () => {
-		const { fs, workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
 		workspace.tables.posts.set({
@@ -368,18 +319,16 @@ describe('pullToMarkdown', () => {
 
 		expect(result.written).toBe(2);
 
-		// Verify files were written
-		const content1 = fs.get('/test-data/posts/p1.md');
-		expect(typeof content1).toBe('string');
-		expect(content1 as string).toContain('title: First');
+		// Verify files were written with correct content
+		const content1 = await readTestFile('posts/p1.md');
+		expect(content1).toContain('title: First');
 
-		const content2 = fs.get('/test-data/posts/p2.md');
-		expect(typeof content2).toBe('string');
-		expect(content2 as string).toContain('title: Second');
+		const content2 = await readTestFile('posts/p2.md');
+		expect(content2).toContain('title: Second');
 	});
 
 	test('creates table directory before writing', async () => {
-		const { fs, workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
 		workspace.tables.posts.set({
@@ -391,12 +340,12 @@ describe('pullToMarkdown', () => {
 
 		await workspace.extensions.materializer.pullToMarkdown();
 
-		// Directory should exist
-		expect(fs.has('/test-data/posts')).toBe(true);
+		const entries = await listTestDir('posts');
+		expect(entries).toContain('p1.md');
 	});
 
 	test('uses custom serialize callback', async () => {
-		const { fs, workspace } = setup({
+		const { workspace } = setup({
 			tables: [
 				{
 					name: 'notes',
@@ -416,14 +365,13 @@ describe('pullToMarkdown', () => {
 		const result = await workspace.extensions.materializer.pullToMarkdown();
 
 		expect(result.written).toBe(1);
-		expect(fs.has('/test-data/notes/n1-custom.md')).toBe(true);
 
-		const content = fs.get('/test-data/notes/n1-custom.md') as string;
+		const content = await readTestFile('notes/n1-custom.md');
 		expect(content).toContain('Custom body');
 	});
 
 	test('uses custom table directory', async () => {
-		const { fs, workspace } = setup({
+		const { workspace } = setup({
 			tables: [{ name: 'posts', config: { dir: 'blog' } }],
 		});
 		await workspace.whenReady;
@@ -437,7 +385,8 @@ describe('pullToMarkdown', () => {
 
 		await workspace.extensions.materializer.pullToMarkdown();
 
-		expect(fs.has('/test-data/blog/p1.md')).toBe(true);
+		const entries = await listTestDir('blog');
+		expect(entries).toContain('p1.md');
 	});
 
 	test('writes nothing when table is empty', async () => {
@@ -450,7 +399,7 @@ describe('pullToMarkdown', () => {
 	});
 
 	test('writes across multiple tables', async () => {
-		const { fs, workspace } = setup();
+		const { workspace } = setup();
 		await workspace.whenReady;
 
 		workspace.tables.posts.set({
@@ -464,8 +413,12 @@ describe('pullToMarkdown', () => {
 		const result = await workspace.extensions.materializer.pullToMarkdown();
 
 		expect(result.written).toBe(2);
-		expect(fs.has('/test-data/posts/p1.md')).toBe(true);
-		expect(fs.has('/test-data/notes/n1.md')).toBe(true);
+
+		const postsEntries = await listTestDir('posts');
+		expect(postsEntries).toContain('p1.md');
+
+		const notesEntries = await listTestDir('notes');
+		expect(notesEntries).toContain('n1.md');
 	});
 });
 
@@ -475,31 +428,43 @@ describe('pullToMarkdown', () => {
 
 describe('round-trip', () => {
 	test('pullToMarkdown then pushFromMarkdown on fresh workspace preserves row data', async () => {
-		const fs: MemoryFS = new Map();
-		const io = createMemoryIO(fs);
-		const yaml = createTestYaml();
-
 		// First workspace: populate and pull to disk
 		const workspace1 = createWorkspace({
 			id: 'test.roundtrip.1',
 			tables: { posts: postsTable, notes: notesTable },
 		}).withWorkspaceExtension('materializer', (ctx) =>
-			createMarkdownMaterializer(ctx, { dir: '/test-data', io, yaml }).table('posts'),
+			createMarkdownMaterializer(ctx, { dir: TEST_DIR }).table('posts'),
 		);
 		await workspace1.whenReady;
 
-		workspace1.tables.posts.set({ id: 'p1', title: 'Round Trip', published: true, _v: 1 });
-		workspace1.tables.posts.set({ id: 'p2', title: 'Another', published: false, _v: 1 });
+		workspace1.tables.posts.set({
+			id: 'p1',
+			title: 'Round Trip',
+			published: true,
+			_v: 1,
+		});
+		workspace1.tables.posts.set({
+			id: 'p2',
+			title: 'Another',
+			published: false,
+			_v: 1,
+		});
 
 		await workspace1.extensions.materializer.pullToMarkdown();
 		workspace1.extensions.materializer.dispose();
 
-		// Second workspace: fresh instance, push from the same FS
+		// Verify files on disk have valid frontmatter
+		const p1Content = await readTestFile('posts/p1.md');
+		const p1Parsed = parseMarkdownFile(p1Content);
+		expect(p1Parsed).not.toBeNull();
+		expect(p1Parsed!.frontmatter.title).toBe('Round Trip');
+
+		// Second workspace: fresh instance, push from the same directory
 		const workspace2 = createWorkspace({
 			id: 'test.roundtrip.2',
 			tables: { posts: postsTable, notes: notesTable },
 		}).withWorkspaceExtension('materializer', (ctx) =>
-			createMarkdownMaterializer(ctx, { dir: '/test-data', io, yaml }).table('posts'),
+			createMarkdownMaterializer(ctx, { dir: TEST_DIR }).table('posts'),
 		);
 		await workspace2.whenReady;
 

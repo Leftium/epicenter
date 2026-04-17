@@ -1,82 +1,10 @@
+import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { MaybePromise } from '../../../workspace/lifecycle.js';
 import type { KvHelper, TableHelper } from '../../../workspace/types.js';
 import type { SerializeResult } from './markdown.js';
-
-/**
- * Filesystem operations the materializer needs. Inject a custom adapter to run
- * in runtimes other than Node/Bun (e.g. Tauri's `@tauri-apps/plugin-fs`).
- *
- * When omitted, defaults to Node's `fs/promises` + `path.join` which also
- * work in Bun.
- */
-export type MaterializerIO = {
-	mkdir(dir: string): Promise<void>;
-	writeFile(path: string, content: string): Promise<void>;
-	readFile(path: string): Promise<string>;
-	readdir(dir: string): Promise<string[]>;
-	removeFile(path: string): Promise<void>;
-	joinPath(...segments: string[]): MaybePromise<string>;
-};
-
-/**
- * YAML serialization adapter. Inject a custom implementation to avoid the
- * `bun` global (e.g. `js-yaml` or `yaml` npm package).
- *
- * When omitted, defaults to `YAML.stringify` from the `bun` global.
- */
-export type MaterializerYaml = {
-	stringify(obj: Record<string, unknown>): string;
-	parse(yaml: string): unknown;
-};
-
-/** Lazily resolve Node/Bun default IO. Only imported when actually used. */
-function createDefaultIO(): MaterializerIO {
-	// Dynamic require avoids top-level import that would fail in browser runtimes.
-	const fs = require('node:fs/promises') as typeof import('node:fs/promises');
-	const path = require('node:path') as typeof import('node:path');
-
-	return {
-		mkdir: (dir) => fs.mkdir(dir, { recursive: true }),
-		writeFile: (filePath, content) => fs.writeFile(filePath, content),
-		readFile: (filePath) => fs.readFile(filePath, 'utf-8'),
-		readdir: (dir) => fs.readdir(dir),
-		removeFile: (filePath) => fs.unlink(filePath).catch(() => {}),
-		joinPath: (...segments) => path.join(...segments),
-	};
-}
-
-/** Lazily resolve Bun YAML default. Only called when no yaml adapter is provided. */
-function createDefaultYaml(): MaterializerYaml {
-	const { YAML } = require('bun') as typeof import('bun');
-	return {
-		stringify: (obj) => YAML.stringify(obj, null, 2) as string,
-		parse: (str) => YAML.parse(str) as unknown,
-	};
-}
-
-/**
- * Build a markdown string from YAML frontmatter and an optional body.
- *
- * Pure function—no I/O. Uses the provided YAML stringifier.
- * Undefined values are stripped; null values are preserved.
- */
-function buildMarkdown(
-	yaml: MaterializerYaml,
-	frontmatter: Record<string, unknown>,
-	body?: string,
-): string {
-	const cleaned: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(frontmatter)) {
-		if (value !== undefined) {
-			cleaned[key] = value;
-		}
-	}
-	const yamlStr = yaml.stringify(cleaned);
-	const yamlBlock = yamlStr.endsWith('\n') ? yamlStr : `${yamlStr}\n`;
-	return body !== undefined
-		? `---\n${yamlBlock}---\n\n${body}\n`
-		: `---\n${yamlBlock}---\n`;
-}
+import { toMarkdown } from './markdown.js';
+import { parseMarkdownFile } from './parse-markdown-file.js';
 
 /**
  * Create a bidirectional markdown materializer for workspace data.
@@ -88,8 +16,6 @@ function buildMarkdown(
  * The materializer awaits `ctx.whenReady` before reading data, so persistence
  * and sync have loaded before the initial flush. All `.table()` and `.kv()`
  * calls happen synchronously in the factory closure before `whenReady` resolves.
- *
- * Custom `io` and `yaml` adapters can be injected for non-Node/Bun runtimes or testing.
  *
  * @example
  * ```typescript
@@ -108,17 +34,10 @@ export function createMarkdownMaterializer<
 >(
 	ctx: { tables: TTables; kv: TKv; whenReady: Promise<void> },
 	config: {
-		/** Base output directory. Accepts a string or async getter for runtimes where the path isn't known until initialization (e.g. Tauri's `appDataDir()`). */
+		/** Base output directory. Accepts a string or async getter for lazy path resolution. */
 		dir: string | (() => MaybePromise<string>);
-		/** Filesystem adapter. Defaults to Node `fs/promises` + `path.join` (works in Bun). */
-		io?: MaterializerIO;
-		/** YAML serializer. Defaults to `YAML.stringify` from the `bun` global. */
-		yaml?: MaterializerYaml;
 	},
 ) {
-	const io = config.io ?? createDefaultIO();
-	const yaml = config.yaml ?? createDefaultYaml();
-
 	type TableConfigByName = {
 		[TName in keyof TTables & string]?: {
 			dir?: string;
@@ -128,7 +47,9 @@ export function createMarkdownMaterializer<
 			deserialize?: (parsed: {
 				frontmatter: Record<string, unknown>;
 				body: string | undefined;
-			}) => MaybePromise<TTables[TName] extends TableHelper<infer TRow> ? TRow : never>;
+			}) => MaybePromise<
+				TTables[TName] extends TableHelper<infer TRow> ? TRow : never
+			>;
 		};
 	};
 
@@ -147,7 +68,9 @@ export function createMarkdownMaterializer<
 				deserialize?: (parsed: {
 					frontmatter: Record<string, unknown>;
 					body: string | undefined;
-				}) => MaybePromise<TTables[TName] extends TableHelper<infer TRow> ? TRow : never>;
+				}) => MaybePromise<
+					TTables[TName] extends TableHelper<infer TRow> ? TRow : never
+				>;
 			},
 		): MaterializerBuilder;
 		/**
@@ -170,7 +93,11 @@ export function createMarkdownMaterializer<
 		 *
 		 * **This overwrites existing rows**—`table.set()` is insert-or-replace.
 		 */
-		pushFromMarkdown(): Promise<{ imported: number; skipped: number; errors: string[] }>;
+		pushFromMarkdown(): Promise<{
+			imported: number;
+			skipped: number;
+			errors: string[];
+		}>;
 		/**
 		 * Re-materialize all Yjs table data to markdown files on disk.
 		 *
@@ -198,21 +125,21 @@ export function createMarkdownMaterializer<
 	) => {
 		const table = ctx.tables[name];
 		const tableConfig = tableConfigs[name];
-		const directory = await io.joinPath(dir, tableConfig?.dir ?? name);
+		const directory = join(dir, tableConfig?.dir ?? name);
 		const filenames = new Map<string, string>();
 
 		const serialize: (row: TableRow<TName>) => MaybePromise<SerializeResult> =
 			tableConfig?.serialize ??
 			((row) => ({
 				filename: `${row.id}.md`,
-				content: buildMarkdown(yaml, { ...row }),
+				content: toMarkdown({ ...row }),
 			}));
 
-		await io.mkdir(directory);
+		await mkdir(directory, { recursive: true });
 
 		for (const row of table.getAllValid()) {
 			const result = await serialize(row);
-			await io.writeFile(await io.joinPath(directory, result.filename), result.content);
+			await writeFile(join(directory, result.filename), result.content);
 			filenames.set(row.id, result.filename);
 		}
 
@@ -226,7 +153,7 @@ export function createMarkdownMaterializer<
 					if (getResult.status === 'not_found') {
 						const previousFilename = filenames.get(id);
 						if (previousFilename) {
-							await io.removeFile(await io.joinPath(directory, previousFilename));
+							await unlink(join(directory, previousFilename)).catch(() => {});
 							filenames.delete(id);
 						}
 						continue;
@@ -240,10 +167,10 @@ export function createMarkdownMaterializer<
 					const previousFilename = filenames.get(id);
 
 					if (previousFilename && previousFilename !== result.filename) {
-						await io.removeFile(await io.joinPath(directory, previousFilename));
+						await unlink(join(directory, previousFilename)).catch(() => {});
 					}
 
-					await io.writeFile(await io.joinPath(directory, result.filename), result.content);
+					await writeFile(join(directory, result.filename), result.content);
 					filenames.set(id, result.filename);
 				}
 			})().catch((error) => {
@@ -265,7 +192,7 @@ export function createMarkdownMaterializer<
 
 		// Initial flush with the full snapshot
 		const initial = serialize(kvState);
-		await io.writeFile(await io.joinPath(dir, initial.filename), initial.content);
+		await writeFile(join(dir, initial.filename), initial.content);
 
 		const unsubscribe = ctx.kv.observeAll((changes) => {
 			void (async () => {
@@ -279,7 +206,7 @@ export function createMarkdownMaterializer<
 				}
 
 				const result = serialize(kvState);
-				await io.writeFile(await io.joinPath(dir, result.filename), result.content);
+				await writeFile(join(dir, result.filename), result.content);
 			})().catch((error) => {
 				console.warn('[markdown-materializer] kv write failed:', error);
 			});
@@ -288,32 +215,6 @@ export function createMarkdownMaterializer<
 		unsubscribers.push(unsubscribe);
 	};
 
-	/** Regex for extracting YAML frontmatter from markdown content. */
-	const FRONTMATTER_PATTERN =
-		/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
-
-	/** Parse frontmatter + body from a markdown string using the injected yaml adapter. */
-	function parseFrontmatter(content: string): {
-		frontmatter: Record<string, unknown>;
-		body: string | undefined;
-	} | null {
-		const input = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
-		const match = input.match(FRONTMATTER_PATTERN);
-		if (!match) return null;
-
-		const frontmatter = yaml.parse(match[1]);
-		if (typeof frontmatter !== 'object' || frontmatter === null) return null;
-
-		const rawBody = input
-			.slice(match[0].length)
-			.replace(/^\r?\n/, '')
-			.replace(/\r?\n$/, '');
-
-		return {
-			frontmatter: frontmatter as Record<string, unknown>,
-			body: rawBody.length > 0 ? rawBody : undefined,
-		};
-	}
 
 	/** Resolve the base directory, handling string or async getter. */
 	const resolveDir = async () =>
@@ -339,11 +240,11 @@ export function createMarkdownMaterializer<
 			for (const name of tableNames) {
 				const table = ctx.tables[name];
 				const tableConfig = tableConfigs[name];
-				const directory = await io.joinPath(dir, tableConfig?.dir ?? name);
+				const directory = join(dir, tableConfig?.dir ?? name);
 
 				let entries: string[];
 				try {
-					entries = await io.readdir(directory);
+					entries = await readdir(directory);
 				} catch {
 					continue;
 				}
@@ -353,21 +254,22 @@ export function createMarkdownMaterializer<
 
 					let content: string;
 					try {
-						content = await io.readFile(await io.joinPath(directory, filename));
+						content = await readFile(join(directory, filename), 'utf-8');
 					} catch (error) {
 						errors.push(`Failed to read ${filename}: ${error}`);
 						continue;
 					}
 
-					const parsed = parseFrontmatter(content);
+					const parsed = parseMarkdownFile(content);
 					if (!parsed) {
 						skipped++;
 						continue;
 					}
 
 					try {
-						const deserialize = tableConfig?.deserialize
-							?? ((p: { frontmatter: Record<string, unknown> }) => p.frontmatter);
+						const deserialize =
+							tableConfig?.deserialize ??
+							((p: { frontmatter: Record<string, unknown> }) => p.frontmatter);
 						const row = await deserialize(parsed);
 						table.set(row);
 						imported++;
@@ -386,20 +288,22 @@ export function createMarkdownMaterializer<
 			for (const name of tableNames) {
 				const table = ctx.tables[name];
 				const tableConfig = tableConfigs[name];
-				const directory = await io.joinPath(dir, tableConfig?.dir ?? name);
+				const directory = join(dir, tableConfig?.dir ?? name);
 
-				const serialize: (row: TableRow<typeof name>) => MaybePromise<SerializeResult> =
+				const serialize: (
+					row: TableRow<typeof name>,
+				) => MaybePromise<SerializeResult> =
 					tableConfig?.serialize ??
-					((row) => ({
-						filename: `${row.id}.md`,
-						content: buildMarkdown(yaml, { ...row }),
-					}));
+				((row) => ({
+					filename: `${row.id}.md`,
+					content: toMarkdown({ ...row }),
+				}));
 
-				await io.mkdir(directory);
+				await mkdir(directory, { recursive: true });
 
 				for (const row of table.getAllValid()) {
 					const result = await serialize(row);
-					await io.writeFile(await io.joinPath(directory, result.filename), result.content);
+					await writeFile(join(directory, result.filename), result.content);
 					written++;
 				}
 			}
@@ -409,7 +313,7 @@ export function createMarkdownMaterializer<
 		whenReady: (async () => {
 			await ctx.whenReady;
 			const dir = await resolveDir();
-			await io.mkdir(dir);
+			await mkdir(dir, { recursive: true });
 
 			for (const name of tableNames) {
 				await materializeTable(name, dir);

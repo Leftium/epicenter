@@ -2,10 +2,8 @@
  * IndexedDB-specific type definitions for Dexie schema migrations.
  *
  * These types represent historical and current storage formats used exclusively
- * by the web (IndexedDB) storage layer. They are NOT domain types — the app-wide
- * intermediate representation is the `Recording` type in `../models/recordings.ts`.
- *
- * @see {@link ../models/recordings.ts} for the domain type used by UI and services
+ * by the web (IndexedDB) storage layer. The app-wide domain type is the
+ * `Recording` type from the workspace definition.
  */
 /**
  * Serialized audio format for IndexedDB storage.

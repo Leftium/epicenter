@@ -1,11 +1,10 @@
-import { Err, Ok } from 'wellcrafted/result';
+import { Ok } from 'wellcrafted/result';
 import type { DownloadService } from '$lib/services/download';
 import { createFileSystemDb } from './file-system';
 import type { DbService } from './types';
 import { DbError } from './types';
 import { createDbServiceWeb } from './web';
 
-void Err;
 
 /**
  * Desktop DB Service — audio blob store with dual-source fallback.
@@ -50,21 +49,6 @@ export function createDbServiceDesktop({
 				return Ok(undefined);
 			},
 
-			cleanupExpired: async (idsToDelete) => {
-				// Clean up from BOTH sources
-				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.recordings.cleanupExpired(idsToDelete),
-					indexedDb.recordings.cleanupExpired(idsToDelete),
-				]);
-
-				// If both failed, return an error
-				if (fsResult.error && idbResult.error) {
-					return DbError.MutationFailed({ cause: fsResult.error });
-				}
-
-				// Success if at least one succeeded
-				return Ok(undefined);
-			},
 
 			getAudioBlob: async (recordingId) => {
 				// DUAL READ: Check file system first, fallback to IndexedDB

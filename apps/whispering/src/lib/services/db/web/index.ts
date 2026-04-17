@@ -14,7 +14,6 @@ import { DbError, type DbService } from '../types';
 import { blobToSerializedAudio, WhisperingDatabase } from './dexie-database';
 import type { SerializedAudio } from './dexie-schemas';
 
-// const downloadIndexedDbBlobWithToast = useDownloadIndexedDbBlobWithToast();
 
 /**
  * Convert serialized audio back to Blob for use in the application.
@@ -57,13 +56,6 @@ export function createDbServiceWeb({
 				});
 			},
 
-			cleanupExpired: async (idsToDelete) => {
-				if (idsToDelete.length === 0) return Ok(undefined);
-				return tryAsync({
-					try: () => db.recordings.bulkDelete(idsToDelete),
-					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-			},
 
 			getAudioBlob: async (recordingId) => {
 				return tryAsync({

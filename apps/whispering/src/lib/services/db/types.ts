@@ -22,10 +22,6 @@ export const DbError = defineErrors({
 		message: `Failed to write to database: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	MigrationFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Database migration failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 	NoValidFiles: () => ({
 		message: 'No valid audio or video files found',
 	}),
@@ -36,7 +32,6 @@ export type DbService = {
 	recordings: {
 		saveAudio(recordingId: string, audio: Blob): Promise<Result<void, DbError>>;
 		delete(id: string | string[]): Promise<Result<void, DbError>>;
-		cleanupExpired(idsToDelete: string[]): Promise<Result<void, DbError>>;
 		clear(): Promise<Result<void, DbError>>;
 
 		/**

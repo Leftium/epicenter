@@ -12,7 +12,7 @@ import {
 import { type } from 'arktype';
 import mime from 'mime';
 import { nanoid } from 'nanoid/non-secure';
-import { Ok, tryAsync } from 'wellcrafted/result';
+import { tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
 import { FsServiceLive } from '$lib/services/desktop/fs';
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter';
@@ -53,8 +53,8 @@ async function deleteFilesInDirectory(
  *
  * Directory structure:
  * - recordings/
- *   - {id}.md (metadata with YAML front matter + transcribed text)
  *   - {id}.{ext} (audio file: .wav, .opus, .mp3, etc.)
+ *   - {id}.md (metadata materialized by workspace, NOT written by this service)
  * - transformations/
  *   - {id}.md (transformation configuration)
  * - transformation-runs/
@@ -100,10 +100,6 @@ export function createFileSystemDb(): DbService {
 				});
 			},
 
-			async cleanupExpired(idsToDelete) {
-				if (idsToDelete.length === 0) return Ok(undefined);
-				return this.delete(idsToDelete);
-			},
 
 			async getAudioBlob(recordingId: string) {
 				return tryAsync({

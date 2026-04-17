@@ -18,30 +18,28 @@ export const BlobError = defineErrors({
 export type BlobError = InferErrors<typeof BlobError>;
 
 export type BlobStore = {
-	audio: {
-		save(recordingId: string, audio: Blob): Promise<Result<void, BlobError>>;
-		delete(id: string | string[]): Promise<Result<void, BlobError>>;
-		clear(): Promise<Result<void, BlobError>>;
+	save(key: string, blob: Blob): Promise<Result<void, BlobError>>;
+	delete(key: string | string[]): Promise<Result<void, BlobError>>;
+	clear(): Promise<Result<void, BlobError>>;
 
-		/**
-		 * Get audio blob by recording ID. Fetches audio on-demand.
-		 * - Desktop: Reads file from predictable path using services.fs.pathToBlob()
-		 * - Web: Fetches from IndexedDB by ID, converts serializedAudio to Blob
-		 */
-		getBlob(recordingId: string): Promise<Result<Blob, BlobError>>;
+	/**
+	 * Get blob by key. Fetches on-demand.
+	 * - Desktop: Reads file from predictable path using services.fs.pathToBlob()
+	 * - Web: Fetches from IndexedDB by ID, converts serialized data to Blob
+	 */
+	getBlob(key: string): Promise<Result<Blob, BlobError>>;
 
-		/**
-		 * Get audio playback URL. Creates and caches URL.
-		 * - Desktop: Uses convertFileSrc() to create asset:// URL
-		 * - Web: Creates and caches object URL, manages lifecycle
-		 */
-		ensurePlaybackUrl(recordingId: string): Promise<Result<string, BlobError>>;
+	/**
+	 * Get playback URL for blob. Creates and caches URL.
+	 * - Desktop: Uses convertFileSrc() to create asset:// URL
+	 * - Web: Creates and caches object URL, manages lifecycle
+	 */
+	ensurePlaybackUrl(key: string): Promise<Result<string, BlobError>>;
 
-		/**
-		 * Revoke audio URL if cached. Cleanup method.
-		 * - Desktop: No-op (asset:// URLs managed by Tauri)
-		 * - Web: Calls URL.revokeObjectURL() and removes from cache
-		 */
-		revokeUrl(recordingId: string): void;
-	};
+	/**
+	 * Revoke cached URL if present. Cleanup method.
+	 * - Desktop: No-op (asset:// URLs managed by Tauri)
+	 * - Web: Calls URL.revokeObjectURL() and removes from cache
+	 */
+	revokeUrl(key: string): void;
 };

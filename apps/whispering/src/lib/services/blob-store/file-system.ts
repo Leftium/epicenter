@@ -13,20 +13,6 @@ import type { BlobStore } from './types';
 import { BlobError } from './types';
 
 /**
- * Reads all markdown files from a directory using the Rust command.
- * This is a single FFI call that reads all .md files natively in Rust,
- * avoiding thousands of individual async calls for path joining and file reading.
- *
- * @param directoryPath - Absolute path to the directory containing .md files
- * @returns Array of markdown file contents as strings
- */
-async function readMarkdownFiles(
-	directoryPath: string,
-): Promise<string[]> {
-	return invoke('read_markdown_files', { directoryPath });
-}
-
-/**
  * Deletes files inside a directory by filename.
  * Validates that filenames are single path components (no traversal).
  *
@@ -52,116 +38,114 @@ async function deleteFilesInDirectory(
  */
 export function createFileSystemBlobStore(): BlobStore {
 	return {
-		audio: {
-			async save(recordingId, audio) {
-				return tryAsync({
-					try: async () => {
-						const recordingsPath = await PATHS.DB.RECORDINGS();
-						await mkdir(recordingsPath, { recursive: true });
+		async save(key, blob) {
+			return tryAsync({
+				try: async () => {
+					const recordingsPath = await PATHS.DB.RECORDINGS();
+					await mkdir(recordingsPath, { recursive: true });
 
-						const extension = mime.getExtension(audio.type) ?? 'bin';
-						const audioPath = await PATHS.DB.RECORDING_AUDIO(
-							recordingId,
-							extension,
+					const extension = mime.getExtension(blob.type) ?? 'bin';
+					const audioPath = await PATHS.DB.RECORDING_AUDIO(
+						key,
+						extension,
+					);
+					const arrayBuffer = await blob.arrayBuffer();
+					await tauriWriteFile(audioPath, new Uint8Array(arrayBuffer));
+				},
+				catch: (error) => BlobError.WriteFailed({ cause: error }),
+			});
+		},
+
+		async delete(idOrIds) {
+			const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+			return tryAsync({
+				try: async () => {
+					const recordingsPath = await PATHS.DB.RECORDINGS();
+					const idsToDelete = new Set(ids);
+					const allFiles = await readDir(recordingsPath);
+					const filenames = allFiles
+						.filter((file) => {
+							const id = file.name.split('.')[0] ?? '';
+							return idsToDelete.has(id);
+						})
+						.map((file) => file.name);
+					await deleteFilesInDirectory(recordingsPath, filenames);
+				},
+				catch: (error) => BlobError.WriteFailed({ cause: error }),
+			});
+		},
+
+		async getBlob(key: string) {
+			return tryAsync({
+				try: async () => {
+					const recordingsPath = await PATHS.DB.RECORDINGS();
+					const audioFilename = await findAudioFile(
+						recordingsPath,
+						key,
+					);
+
+					if (!audioFilename) {
+						throw new Error(
+						`Audio file not found for key ${key}`,
 						);
-						const arrayBuffer = await audio.arrayBuffer();
-						await tauriWriteFile(audioPath, new Uint8Array(arrayBuffer));
-					},
-					catch: (error) => BlobError.WriteFailed({ cause: error }),
-				});
-			},
+					}
 
-			async delete(idOrIds) {
-				const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
-				return tryAsync({
-					try: async () => {
-						const recordingsPath = await PATHS.DB.RECORDINGS();
-						const idsToDelete = new Set(ids);
-						const allFiles = await readDir(recordingsPath);
-						const filenames = allFiles
-							.filter((file) => {
-								const id = file.name.split('.')[0] ?? '';
-								return idsToDelete.has(id);
-							})
-							.map((file) => file.name);
-						await deleteFilesInDirectory(recordingsPath, filenames);
-					},
-					catch: (error) => BlobError.WriteFailed({ cause: error }),
-				});
-			},
+					const audioPath = await PATHS.DB.RECORDING_FILE(audioFilename);
 
-			async getBlob(recordingId: string) {
-				return tryAsync({
-					try: async () => {
-						const recordingsPath = await PATHS.DB.RECORDINGS();
-						const audioFilename = await findAudioFile(
-							recordingsPath,
-							recordingId,
+					// Use existing fsService.pathToBlob utility
+					const { data: blob, error } =
+						await FsServiceLive.pathToBlob(audioPath);
+					if (error) throw error;
+
+					return blob;
+				},
+				catch: (error) => BlobError.ReadFailed({ cause: error }),
+			});
+		},
+
+		async ensurePlaybackUrl(key: string) {
+			return tryAsync({
+				try: async () => {
+					const recordingsPath = await PATHS.DB.RECORDINGS();
+					const audioFilename = await findAudioFile(
+						recordingsPath,
+						key,
+					);
+
+					if (!audioFilename) {
+						throw new Error(
+						`Audio file not found for key ${key}`,
 						);
+					}
 
-						if (!audioFilename) {
-							throw new Error(
-								`Audio file not found for recording ${recordingId}`,
-							);
-						}
+					const audioPath = await PATHS.DB.RECORDING_FILE(audioFilename);
+					const assetUrl = convertFileSrc(audioPath);
 
-						const audioPath = await PATHS.DB.RECORDING_FILE(audioFilename);
+					// Return the URL as-is from convertFileSrc()
+					// The Tauri backend handles URL decoding automatically
+					return assetUrl;
+				},
+				catch: (error) => BlobError.ReadFailed({ cause: error }),
+			});
+		},
 
-						// Use existing fsService.pathToBlob utility
-						const { data: blob, error } =
-							await FsServiceLive.pathToBlob(audioPath);
-						if (error) throw error;
+		revokeUrl(_key: string) {
+			// No-op on desktop, URLs are asset:// protocol managed by Tauri
+		},
 
-						return blob;
-					},
-					catch: (error) => BlobError.ReadFailed({ cause: error }),
-				});
-			},
+		async clear() {
+			return tryAsync({
+				try: async () => {
+					const recordingsPath = await PATHS.DB.RECORDINGS();
+					const dirExists = await exists(recordingsPath);
+					if (!dirExists) return undefined;
 
-			async ensurePlaybackUrl(recordingId: string) {
-				return tryAsync({
-					try: async () => {
-						const recordingsPath = await PATHS.DB.RECORDINGS();
-						const audioFilename = await findAudioFile(
-							recordingsPath,
-							recordingId,
-						);
-
-						if (!audioFilename) {
-							throw new Error(
-								`Audio file not found for recording ${recordingId}`,
-							);
-						}
-
-						const audioPath = await PATHS.DB.RECORDING_FILE(audioFilename);
-						const assetUrl = convertFileSrc(audioPath);
-
-						// Return the URL as-is from convertFileSrc()
-						// The Tauri backend handles URL decoding automatically
-						return assetUrl;
-					},
-					catch: (error) => BlobError.ReadFailed({ cause: error }),
-				});
-			},
-
-			revokeUrl(_recordingId: string) {
-				// No-op on desktop, URLs are asset:// protocol managed by Tauri
-			},
-
-			async clear() {
-				return tryAsync({
-					try: async () => {
-						const recordingsPath = await PATHS.DB.RECORDINGS();
-						const dirExists = await exists(recordingsPath);
-						if (!dirExists) return undefined;
-
-						const allFiles = await readDir(recordingsPath);
-						const filenames = allFiles.map((file) => file.name);
-						await deleteFilesInDirectory(recordingsPath, filenames);
-					},
-					catch: (error) => BlobError.WriteFailed({ cause: error }),
-				});
-			},
+					const allFiles = await readDir(recordingsPath);
+					const filenames = allFiles.map((file) => file.name);
+					await deleteFilesInDirectory(recordingsPath, filenames);
+				},
+				catch: (error) => BlobError.WriteFailed({ cause: error }),
+			});
 		},
 	};
 }

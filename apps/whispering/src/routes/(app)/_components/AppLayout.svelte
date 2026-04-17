@@ -95,10 +95,8 @@
 		const idsToDelete = allRecordingIds.slice(maxCount);
 		// Delete audio blobs from storage
 		services.db.audio.delete(idsToDelete);
-		// Delete recording metadata from workspace
-		for (const id of idsToDelete) {
-			recordings.delete(id);
-		}
+		// Delete recording metadata from workspace (single-scan bulk)
+		recordings.bulkDelete(idsToDelete);
 	});
 
 	let { children } = $props();

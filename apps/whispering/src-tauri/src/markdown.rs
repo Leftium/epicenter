@@ -1,7 +1,11 @@
 use rayon::prelude::*;
+use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::fs;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
+use tempfile::NamedTempFile;
 
 /// Counts markdown files in a directory without reading their contents.
 /// This is extremely fast as it only checks file extensions without I/O.
@@ -148,12 +152,32 @@ pub struct MarkdownFile {
     content: String,
 }
 
-/// Writes markdown files to disk atomically (tmp + rename).
+fn validate_markdown_filename(filename: &str) -> Result<&str, String> {
+    if filename.is_empty() {
+        return Err("Filename cannot be empty".to_string());
+    }
+
+    let path = Path::new(filename);
+    let mut components = path.components();
+
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(_)), None) => {}
+        _ => return Err(format!("Invalid filename: {}", filename)),
+    }
+
+    if path.extension() != Some(OsStr::new("md")) {
+        return Err(format!("Filename must end with .md: {}", filename));
+    }
+
+    Ok(filename)
+}
+
+/// Writes markdown files to disk atomically using a temporary file plus persist.
 /// Ensures the target directory exists before writing.
 ///
-/// Each file is written to `{directory}/{filename}.tmp` first, then renamed
-/// to `{directory}/{filename}`. This prevents partial reads from observers
-/// or external tools watching the directory.
+/// Each file is written to a temporary file in the target directory, then
+/// persisted to `{directory}/{filename}`. This prevents partial reads from
+/// observers or external tools watching the directory.
 ///
 /// # Arguments
 /// * `directory` - Absolute path to the output directory
@@ -169,20 +193,38 @@ pub async fn write_markdown_files(
 ) -> Result<u32, String> {
     tokio::task::spawn_blocking(move || {
         let dir_path = PathBuf::from(&directory);
+
+        if !dir_path.is_absolute() {
+            return Err(format!("Directory must be absolute: {}", directory));
+        }
+
+        let mut seen = HashSet::with_capacity(files.len());
+        for file in &files {
+            let filename = validate_markdown_filename(&file.filename)?;
+
+            if !seen.insert(filename.to_owned()) {
+                return Err(format!("Duplicate filename in request: {}", filename));
+            }
+        }
+
         fs::create_dir_all(&dir_path)
             .map_err(|e| format!("Failed to create directory {}: {}", directory, e))?;
 
         let mut written = 0u32;
         for file in &files {
-            let path = dir_path.join(&file.filename);
-            let tmp = path.with_extension("md.tmp");
+            let filename = validate_markdown_filename(&file.filename)?;
+            let path = dir_path.join(filename);
+            let mut temp = NamedTempFile::new_in(&dir_path)
+                .map_err(|e| format!("Failed to create temp file for {}: {}", filename, e))?;
 
-            fs::write(&tmp, &file.content)
-                .map_err(|e| format!("Failed to write {}: {}", file.filename, e))?;
-            fs::rename(&tmp, &path)
-                .map_err(|e| format!("Failed to rename {}: {}", file.filename, e))?;
+            temp.write_all(file.content.as_bytes())
+                .map_err(|e| format!("Failed to write {}: {}", filename, e))?;
+            temp.persist(&path)
+                .map_err(|e| format!("Failed to persist {}: {}", filename, e.error))?;
+
             written += 1;
         }
+
         Ok::<u32, String>(written)
     })
     .await

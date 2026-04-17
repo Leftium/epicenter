@@ -149,7 +149,6 @@ export type {
 	ContentStrategy,
 	DocumentClient,
 	DocumentConfig,
-	DocumentHandle,
 	Documents,
 	DocumentsHelper,
 	PlainTextHandle,

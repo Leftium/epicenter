@@ -13,30 +13,26 @@
 	// ─── Document Handle ────────────────────────────────────────────────────
 
 	let currentYXmlFragment = $state<Y.XmlFragment | null>(null);
-	let currentDocHandle = $state<DocumentHandle | null>(null);
 
 	$effect(() => {
 		const noteId = viewState.selectedNoteId;
 		if (!noteId) {
 			currentYXmlFragment = null;
-			currentDocHandle = null;
 			return;
 		}
 
 		let cancelled = false;
-		workspace.documents.notes.body.open(noteId).then((handle) => {
+		workspace.documents.notes.body.open(noteId).then((openedContent: any) => {
 			if (cancelled) return;
-			currentDocHandle = handle;
-			currentYXmlFragment = handle.content;
+			currentYXmlFragment = openedContent.binding;
 		});
 
 		return () => {
 			cancelled = true;
-			if (currentDocHandle) {
+			if (currentYXmlFragment) {
 				workspace.documents.notes.body.close(noteId);
 			}
 			currentYXmlFragment = null;
-			currentDocHandle = null;
 		};
 	});
 </script>

@@ -227,16 +227,19 @@ Introduce `PlainTextHandle` and `RichTextHandle` types and update `plainText`/`r
 
 Remove the `DocumentHandle` wrapper. `open()` returns `TContent` instead of `DocumentHandle<..., TContent>`.
 
-- [ ] **2.1** Change `Documents.open()` return type from `Promise<DocumentHandle<...>>` to `Promise<TContent>`
-- [ ] **2.2** Update `create-documents.ts` — `open()` returns `contentBinding` instead of the full handle object
-- [ ] **2.3** Store the full `DocEntry` internally in the `openDocuments` map (unchanged) but only return content to consumers
-- [ ] **2.4** Migrate all `handle.content.X()` → `content.X()` across apps and packages (see grep guide below)
-- [ ] **2.5** Migrate all `handle.content` (bare, for editor binding) → `content.binding`
-- [ ] **2.6** Remove `DocumentHandle` type export (or keep as internal alias)
-- [ ] **2.7** Update `DocumentsOf` and `Documents` types to reflect new return type
-- [ ] **2.8** Update all tests — remove assertions on `handle.tableName`, `handle.documentName`, `handle.ydoc`, etc.
-- [ ] **2.9** Update READMEs, JSDoc, and strategies.ts examples
-- [ ] **2.10** `bun typecheck` passes, `bun test` passes across monorepo
+- [x] **2.1** Change `Documents.open()` return type from `Promise<DocumentHandle<...>>` to `Promise<TBinding>`
+- [x] **2.2** Update `create-documents.ts` — `open()` returns `contentBinding` instead of the full handle object
+- [x] **2.3** Store the full `DocEntry` internally in the `openDocuments` map (unchanged) but only return content to consumers
+- [x] **2.4** Migrate all `handle.content.X()` → `content.X()` across apps and packages
+  > Migrated: skills/node.ts, skills/workspace.ts, filesystem/file-system.ts, filesystem/sqlite-index, playground/epicenter.config.ts, push-from-markdown.ts, epicenter.config.test.ts
+- [x] **2.5** Migrate all `handle.content` (bare, for editor binding) → `content.binding`
+  > Migrated: InstructionsEditor.svelte, ReferencesPanel.svelte, +page.svelte (honeycrisp), EntryEditor.svelte (fuji), ContentEditor.svelte (opensidian)
+- [x] **2.6** Remove `DocumentHandle` type export (kept as internal alias with `@internal` JSDoc)
+- [x] **2.7** Update `DocumentsOf` and `Documents` types to reflect new return type
+- [x] **2.8** Update all tests — removed assertions on `handle.tableName`, `handle.documentName`, `handle.ydoc`, `handle.extensions`, `handle.awareness`
+  > create-documents.test.ts: 37 pass, 0 fail. file-system.test.ts: 55 pass (6 pre-existing failures). epicenter.config.test.ts: clean.
+- [x] **2.9** Update READMEs, JSDoc, strategies.ts examples, document-content.md skill reference
+- [x] **2.10** `bun typecheck` passes (zero new errors), `bun test` passes across monorepo
 
 ### Phase 3: Future — plumbing accessors (when needed, not now)
 

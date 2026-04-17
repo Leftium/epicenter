@@ -20,7 +20,7 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	let handle = $state<DocumentHandle | null>(null);
+	let content = $state<any>(null);
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
@@ -32,7 +32,7 @@
 			? [
 					sharedLinkDecorations,
 					wikilinkAutocomplete({
-					workspaceId: opensidian.id,
+						workspaceId: opensidian.id,
 						tableName: 'files',
 						getFiles: () =>
 							workspace.tables.files
@@ -46,17 +46,17 @@
 
 	$effect(() => {
 		const id = fileId;
-		handle = null;
-		workspace.documents.files.content.open(id).then((h) => {
+		content = null;
+		workspace.documents.files.content.open(id).then((openedContent: any) => {
 			// Guard against race condition — if file changed while loading, ignore
 			if (fsState.activeFileId !== id) return;
-			handle = h;
+			content = openedContent;
 		});
 	});
 </script>
 
-{#if handle}
-	<CodeMirrorEditor ytext={handle.content.asText()} {extensions} {filename} />
+{#if content}
+	<CodeMirrorEditor ytext={content.asText()} {extensions} {filename} />
 {:else}
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />

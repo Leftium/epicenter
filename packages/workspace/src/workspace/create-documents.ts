@@ -36,11 +36,9 @@
  *   ydoc,
  * });
  *
- * const handle = await contentDocuments.open(someRow);
- * handle.tableName;    // 'files'
- * handle.documentName; // 'content'
- * handle.content.read();       // read content
- * handle.content.write('new content');
+ * const content = await contentDocuments.open(someRow);
+ * content.read();          // read content as string
+ * content.write('new content');  // replace content
  * ```
  *
  * @module
@@ -61,7 +59,6 @@ import type {
 	BaseRow,
 	ContentStrategy,
 	DocumentExtensionRegistration,
-	DocumentHandle,
 	Documents,
 	TableHelper,
 } from './types.js';
@@ -89,7 +86,7 @@ type DocEntry<
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Extension<any>>;
 	unobserve: () => void;
-	whenReady: Promise<DocumentHandle<TDocExtensions, TAwarenessDefinitions, TBinding>>;
+	whenReady: Promise<TBinding>;
 };
 
 /**
@@ -200,7 +197,7 @@ export function createDocuments<
 	const documents: Documents<TRow, TDocExtensions, TAwarenessDefinitions, TBinding> = {
 		async open(
 			input: TRow | string,
-		): Promise<DocumentHandle<TDocExtensions, TAwarenessDefinitions, TBinding>> {
+		): Promise<TBinding> {
 			const guid = typeof input === 'string' ? input : String(input[guidKey]);
 
 			const existing = openDocuments.get(guid);
@@ -294,21 +291,12 @@ export function createDocuments<
 				whenReadyPromises.length === 0
 					? Promise.resolve()
 					: Promise.all(whenReadyPromises).then(() => {});
-			const handle = {
-				content: contentBinding,
-				ydoc: contentYdoc,
-				id,
-				tableName,
-				documentName,
-				awareness,
-				extensions: resolvedExtensions,
-				whenReady: compositeWhenReady,
-			} as DocumentHandle<TDocExtensions, TAwarenessDefinitions, TBinding>;
-			const whenReady =
+			// Build the internal entry — consumers get contentBinding only
+			const whenReady: Promise<TBinding> =
 				whenReadyPromises.length === 0
-					? Promise.resolve(handle)
+					? Promise.resolve(contentBinding)
 					: compositeWhenReady
-							.then(() => handle)
+							.then(() => contentBinding)
 							.catch(async (err) => {
 								const errors = await disposeLifo(disposers);
 								unobserve();

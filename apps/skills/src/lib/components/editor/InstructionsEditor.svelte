@@ -7,17 +7,17 @@
 
 	let { skillId }: { skillId: string } = $props();
 
-	let handle = $state<DocumentHandle | null>(null);
+	let content = $state<any>(null);
 	let error = $state<string | null>(null);
 
 	$effect(() => {
 		const id = skillId;
-		handle = null;
+		content = null;
 		error = null;
 		workspace.documents.skills.instructions.open(id).then(
-			(h) => {
+			(openedContent: any) => {
 				if (skillsState.selectedSkillId !== id) return;
-				handle = h;
+				content = openedContent.binding;
 			},
 			(err) => {
 				console.error('Failed to open instructions document:', err);
@@ -31,8 +31,8 @@
 	<div class="flex h-full items-center justify-center">
 		<p class="text-sm text-destructive">{error}</p>
 	</div>
-{:else if handle}
-	<CodeMirrorEditor ytext={handle.content} />
+{:else if content}
+	<CodeMirrorEditor ytext={content} />
 {:else}
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />

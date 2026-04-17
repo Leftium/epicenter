@@ -107,7 +107,16 @@ export type SqliteIndex = {
  */
 type SqliteIndexContext = {
 	tables: { files: TableHelper<FileRow> };
-	documents: { files: { content: Documents<FileRow, Record<string, unknown>, Record<string, never>, Timeline> } };
+	documents: {
+		files: {
+			content: Documents<
+				FileRow,
+				Record<string, unknown>,
+				Record<string, never>,
+				Timeline
+			>;
+		};
+	};
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -185,8 +194,8 @@ export function createSqliteIndex({
 					continue;
 				}
 				try {
-					const handle = await contentDocs.open(row.id);
-					const text = handle.content.read();
+					const content = await contentDocs.open(row.id);
+					const text = content.read();
 					contentMap.set(row.id, text || null);
 				} catch {
 					contentMap.set(row.id, null);
@@ -337,13 +346,13 @@ export function createSqliteIndex({
 				const row = result.row;
 				const path = computePathForRow(id, filesTable);
 
-				let content: string | null = null;
+				let fileContent: string | null = null;
 				try {
-					const handle = await contentDocs.open(row.id);
-					const text = handle.content.read();
-					content = text || null;
+					const content = await contentDocs.open(row.id);
+					const text = content.read();
+					fileContent = text || null;
 				} catch {
-					content = null;
+					fileContent = null;
 				}
 
 				statements.push({
@@ -368,12 +377,12 @@ export function createSqliteIndex({
 						row.createdAt,
 						row.updatedAt,
 						row.trashedAt,
-						content,
+						fileContent,
 					],
 				});
 				statements.push({
 					sql: 'INSERT INTO files_fts (file_id, name, content) VALUES (?, ?, ?)',
-					args: [row.id, row.name, content ?? ''],
+					args: [row.id, row.name, fileContent ?? ''],
 				});
 			}
 

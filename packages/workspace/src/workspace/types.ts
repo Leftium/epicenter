@@ -365,25 +365,16 @@ export type DocumentContext<
 };
 
 /**
- * A handle to an open content Y.Doc, returned by `documents.open()`.
+ * Internal type for the full open-document shape.
  *
- * Content is accessed via `handle.content` — fully typed by the content strategy.
- * Extension exports are accessed via `handle.extensions`.
+ * Not exported publicly — consumers receive `TBinding` directly from `open()`.
+ * This type is used internally by `createDocuments()` to track the full lifecycle
+ * state of an open document (ydoc, awareness, extensions, content).
  *
+ * @internal
  * @typeParam TDocExtensions - Accumulated document extension exports.
  * @typeParam TAwarenessDefs - Awareness field definitions for this document.
  * @typeParam TBinding - The content binding type from the content strategy.
- *
- * @example
- * ```typescript
- * // plainText strategy — content is Y.Text
- * const handle = await documents.open(id);
- * editor.bind(handle.content); // Y.Text
- *
- * // timeline strategy — content is Timeline
- * handle.content.read();
- * handle.content.write('hello');
- * ```
  */
 export type DocumentHandle<
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
@@ -401,6 +392,9 @@ export type DocumentHandle<
  * and cleanup on row deletion. Most users access this via
  * `client.documents.files.content`.
  *
+ * `open()` returns the content object directly — fully typed by the content
+ * strategy. Infrastructure (ydoc, awareness, extensions) is managed internally.
+ *
  * @typeParam TRow - The row type of the bound table
  * @typeParam TBinding - The content binding type from the content strategy
  */
@@ -411,17 +405,20 @@ export type Documents<
 	TBinding = unknown,
 > = {
 	/**
-	 * Open a content Y.Doc for a row.
+	 * Open a content Y.Doc for a row and return the content object directly.
 	 *
 	 * Creates the Y.Doc if it doesn't exist, wires up providers, and attaches
 	 * the updatedAt observer. Idempotent — calling open() twice for the same
-	 * row returns the same handle (same Y.Doc).
+	 * row returns the same content reference (same Y.Doc underneath).
+	 *
+	 * The returned object is fully typed by the content strategy:
+	 * - `plainText` → `PlainTextHandle` with `read()`, `write()`, `binding`
+	 * - `richText` → `RichTextHandle` with `read()`, `write()`, `binding`
+	 * - `timeline` → `Timeline` with `read()`, `write()`, `asText()`, etc.
 	 *
 	 * @param input - A row (extracts GUID from the bound column) or a GUID string
 	 */
-	open(
-		input: TRow | string,
-	): Promise<DocumentHandle<TDocExtensions, TAwarenessDefs, TBinding>>;
+	open(input: TRow | string): Promise<TBinding>;
 
 	/**
 	 * Close a document — free memory, disconnect providers.

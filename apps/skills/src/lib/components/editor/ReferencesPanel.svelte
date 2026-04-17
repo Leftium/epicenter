@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import type { DocumentHandle } from '@epicenter/workspace';
+	import type { PlainTextHandle } from '@epicenter/workspace';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { workspace } from '$lib/client';
@@ -9,23 +9,23 @@
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let expandedRefId = $state<string | null>(null);
-	let refHandle = $state<DocumentHandle | null>(null);
+	let refContent = $state<PlainTextHandle | null>(null);
 
 	let refError = $state<string | null>(null);
 
 	$effect(() => {
 		const id = expandedRefId;
 		if (!id) {
-			refHandle = null;
+			refContent = null;
 			refError = null;
 			return;
 		}
-		refHandle = null;
+		refContent = null;
 		refError = null;
 		workspace.documents.references.content.open(id).then(
 			(h) => {
 				if (expandedRefId !== id) return;
-				refHandle = h;
+				refContent = h;
 			},
 			(err) => {
 				console.error('Failed to open reference document:', err);
@@ -88,8 +88,8 @@
 									<div class="flex h-full items-center justify-center">
 										<p class="text-sm text-destructive">{refError}</p>
 									</div>
-								{:else if refHandle}
-								<CodeMirrorEditor ytext={refHandle.content} />
+							{:else if refContent}
+							<CodeMirrorEditor ytext={refContent.binding} />
 								{:else}
 									<div class="flex h-full items-center justify-center">
 										<Spinner class="size-4 text-muted-foreground" />

@@ -44,12 +44,12 @@
 
 	$effect(() => {
 		let cancelled = false;
-		workspace.documents.entries.content.open(id).then((handle) => {
+		workspace.documents.entries.content.open(id).then((openedContent: any) => {
 			if (cancelled) {
 				workspace.documents.entries.content.close(id);
 				return;
 			}
-			yxmlfragment = handle.content;
+			yxmlfragment = openedContent.binding;
 		});
 
 		return () => {

@@ -634,9 +634,9 @@ async function processRecordingPipeline({
 		description: 'Your recording is being transcribed...',
 	});
 
-	// Save metadata to workspace (instant) and audio blob to DbService (async)
+	// Save metadata to workspace (instant) and audio blob to BlobStore (async)
 	recordings.set(recording);
-	const saveAudioPromise = services.db.audio.save(recording.id, blob);
+	const saveAudioPromise = services.blobs.audio.save(recording.id, blob);
 	const transcribePromise = transcribeBlob(blob);
 
 	// Await transcription first (latency-critical path)
@@ -684,11 +684,9 @@ async function processRecordingPipeline({
 		description: completionDescription,
 	});
 
-	const title = transcribedText.slice(0, 60).trim() || 'Untitled Recording';
 	recordings.update(recording.id, {
 		transcript: transcribedText,
 		transcriptionStatus: 'DONE',
-		title,
 	});
 
 	// Determine if we need to chain to transformation

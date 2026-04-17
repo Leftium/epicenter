@@ -1,7 +1,7 @@
 # Recording Architecture—Remaining Phases
 
 **Date**: 2026-04-15
-**Status**: Draft
+**Status**: Partially complete
 **Depends on**: `fix/materializer-review-fixes` branch (merged)
 
 ## Overview
@@ -10,64 +10,41 @@ Follow-up work from the recording schema migration and materializer implementati
 
 ---
 
-## Phase B: Slim DB service to audio-only
+## Phase B+C: Slim DB service to audio-only ✅
 
-**Goal**: Remove all metadata-only methods from `DbService.recordings`. The workspace is the sole source of truth for metadata. The DB service becomes an audio blob store.
+**Merged**: PR #1679
 
-### What to remove
+The `DbService.recordings` namespace was stripped down to an audio-only blob store and renamed to `DbService.audio`. The workspace CRDT is now the sole source of truth for recording metadata.
 
-From `services/db/types.ts` (`DbService.recordings`):
-- `getAll()` — workspace has this
-- `getLatest()` — workspace has this
-- `getById()` — workspace has this
-- `getTranscribingIds()` — workspace has this
-- `getCount()` — workspace has this
-- `update()` — never called from app code (confirmed)
+### What was done
+- Deleted `DbRecording` type, `models/recordings.ts`, frontmatter validators, markdown helpers
+- Renamed `recordings` → `audio` namespace on `DbService`
+- Shortened methods: `saveAudio` → `save`, `getAudioBlob` → `getBlob`, `ensureAudioPlaybackUrl` → `ensurePlaybackUrl`, `revokeAudioUrl` → `revokeUrl`
+- Removed `cleanupExpired` (was just `delete` + empty-array guard)
+- Removed dead `DbError.MigrationFailed` variant
+- Moved `NoValidFiles` out of `DbError` into `ImportError` in `actions.ts`
+- Renamed `RecordingStoredInIndexedDB` → `AudioStoredInIndexedDB`, `RecordingsDbSchemaV5` → `AudioDbSchemaV5`
+- Renamed `createFileSystemDb` → `createFileSystemDbService`
+- Fixed retention cleanup to delete workspace rows AND audio blobs
+- Added `recordings.bulkDelete(ids)` to state module for O(n) batch operations
 
-### What to keep (audio operations)
-- `create()` → rename to `saveAudio(recordingId: string, audio: Blob)`
-- `getAudioBlob()`
-- `ensureAudioPlaybackUrl()`
-- `revokeAudioUrl()`
-- `delete()` → simplify to accept `string | string[]` (IDs, not full objects)
-- `cleanupExpired()` → read from workspace instead of DB service `getAll()`
+### Convention established: prefer bulkDelete for batch operations
 
-### What to delete
-- `DbRecording` type (`models/recordings.ts`) — no longer needed
-- `storedRecordingToRecording` in `web/index.ts`
-- `RecordingFrontMatter`, `RecordingFrontMatterRaw`, `normalizeRecordingFrontMatter` in `file-system.ts` — the materializer handles markdown writes now
-- `recordingToMarkdown`, `markdownToRecording` in `file-system.ts`
+When deleting multiple workspace rows, always use `bulkDelete(ids)` instead of looping `delete(id)`:
 
-### Callers to update
-- `actions.ts` line ~625: `services.db.recordings.create({ recording, audio })` → `services.db.recordings.saveAudio(recording.id, audio)`
-- `cleanupExpired`: read recording IDs from workspace, not from DB service
-- Anywhere that imports `DbRecording`
+```typescript
+// GOOD: O(n) single scan
+await workspace.tables.recordings.bulkDelete(ids);
+// or via state module:
+recordings.bulkDelete(ids);
 
-### Files touched
-- `services/db/types.ts`
-- `services/db/models/recordings.ts` (delete)
-- `services/db/models/index.ts`
-- `services/db/file-system.ts`
-- `services/db/web/index.ts`
-- `services/db/web/dexie-schemas.ts`
-- `services/db/index.ts`
-- `query/actions.ts`
+// BAD: O(n²) — scans the array per delete call
+for (const id of ids) {
+    recordings.delete(id);
+}
+```
 
----
-
-## Phase C: Clean up web IndexedDB path
-
-**Goal**: Web `create` becomes audio-only. Simplify `RecordingStoredInIndexedDB`.
-
-### Changes
-- `RecordingStoredInIndexedDB` → `{ id: string; serializedAudio: SerializedAudio }`
-- Remove `RecordingStoredInIndexedDbLegacy` type
-- Web `create` drops metadata from IndexedDB row
-- Web `delete` accepts IDs only
-
-### Files touched
-- `services/db/web/dexie-schemas.ts`
-- `services/db/web/index.ts`
+The workspace table API's `bulkDelete` collects all matching entries in a single scan and removes them in batch. For 10K deletions this is ~10x faster. For small batches (< 100 rows), individual deletes in a `workspace.batch()` are acceptable but `bulkDelete` is still preferred for clarity.
 
 ---
 
@@ -116,3 +93,25 @@ After any observer failure, schedule a full reconcile that re-syncs all recordin
 
 ### Risk
 Low—`isTauri()` is a drop-in replacement. It returns `false` on web, `true` on desktop. Same behavior as `!!window.__TAURI_INTERNALS__`.
+
+---
+
+## Phase F: BlobStore API (future)
+
+**Goal**: Once transformations and runs migrate to workspace (same trajectory as recordings), rename `DbService` → `BlobStore` and design a pluggable blob interface.
+
+**Blocked by**: Transformations/runs must first migrate their metadata to workspace tables. Until then, `DbService` still needs full CRUD for those sections.
+
+### Target interface
+```typescript
+type BlobStore = {
+  save(key: string, blob: Blob): Promise<Result<void, BlobError>>;
+  getBlob(key: string): Promise<Result<Blob, BlobError>>;
+  delete(key: string | string[]): Promise<Result<void, BlobError>>;
+  ensurePlaybackUrl(key: string): Promise<Result<string, BlobError>>;
+  revokeUrl(key: string): void;
+  clear(): Promise<Result<void, BlobError>>;
+};
+```
+
+Namespaced by content type (`audio`, `attachments`, `thumbnails`) at the consumer level. One blob store interface, platform-specific implementations (filesystem, IndexedDB, S3, etc.).

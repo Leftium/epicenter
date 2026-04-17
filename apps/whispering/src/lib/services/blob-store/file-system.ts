@@ -13,20 +13,6 @@ import type { BlobStore } from './types';
 import { BlobError } from './types';
 
 /**
- * Reads all markdown files from a directory using the Rust command.
- * This is a single FFI call that reads all .md files natively in Rust,
- * avoiding thousands of individual async calls for path joining and file reading.
- *
- * @param directoryPath - Absolute path to the directory containing .md files
- * @returns Array of markdown file contents as strings
- */
-async function readMarkdownFiles(
-	directoryPath: string,
-): Promise<string[]> {
-	return invoke('read_markdown_files', { directoryPath });
-}
-
-/**
  * Deletes files inside a directory by filename.
  * Validates that filenames are single path components (no traversal).
  *
@@ -52,18 +38,18 @@ async function deleteFilesInDirectory(
  */
 export function createFileSystemBlobStore(): BlobStore {
 	return {
-		async save(recordingId, audio) {
+		async save(key, blob) {
 			return tryAsync({
 				try: async () => {
 					const recordingsPath = await PATHS.DB.RECORDINGS();
 					await mkdir(recordingsPath, { recursive: true });
 
-					const extension = mime.getExtension(audio.type) ?? 'bin';
+					const extension = mime.getExtension(blob.type) ?? 'bin';
 					const audioPath = await PATHS.DB.RECORDING_AUDIO(
-						recordingId,
+						key,
 						extension,
 					);
-					const arrayBuffer = await audio.arrayBuffer();
+					const arrayBuffer = await blob.arrayBuffer();
 					await tauriWriteFile(audioPath, new Uint8Array(arrayBuffer));
 				},
 				catch: (error) => BlobError.WriteFailed({ cause: error }),
@@ -89,18 +75,18 @@ export function createFileSystemBlobStore(): BlobStore {
 			});
 		},
 
-		async getBlob(recordingId: string) {
+		async getBlob(key: string) {
 			return tryAsync({
 				try: async () => {
 					const recordingsPath = await PATHS.DB.RECORDINGS();
 					const audioFilename = await findAudioFile(
 						recordingsPath,
-						recordingId,
+						key,
 					);
 
 					if (!audioFilename) {
 						throw new Error(
-							`Audio file not found for recording ${recordingId}`,
+						`Audio file not found for key ${key}`,
 						);
 					}
 
@@ -117,18 +103,18 @@ export function createFileSystemBlobStore(): BlobStore {
 			});
 		},
 
-		async ensurePlaybackUrl(recordingId: string) {
+		async ensurePlaybackUrl(key: string) {
 			return tryAsync({
 				try: async () => {
 					const recordingsPath = await PATHS.DB.RECORDINGS();
 					const audioFilename = await findAudioFile(
 						recordingsPath,
-						recordingId,
+						key,
 					);
 
 					if (!audioFilename) {
 						throw new Error(
-							`Audio file not found for recording ${recordingId}`,
+						`Audio file not found for key ${key}`,
 						);
 					}
 
@@ -143,7 +129,7 @@ export function createFileSystemBlobStore(): BlobStore {
 			});
 		},
 
-		revokeUrl(_recordingId: string) {
+		revokeUrl(_key: string) {
 			// No-op on desktop, URLs are asset:// protocol managed by Tauri
 		},
 

@@ -18,9 +18,9 @@ export function createBlobStoreDesktop(): BlobStore {
 	const indexedDb = createBlobStoreWeb();
 
 	return {
-		save: async (recordingId, audio) => {
+		save: async (key, blob) => {
 			// SINGLE WRITE: Only to file system
-			return fileSystemDb.save(recordingId, audio);
+			return fileSystemDb.save(key, blob);
 		},
 
 		delete: async (idOrIds) => {
@@ -40,9 +40,9 @@ export function createBlobStoreDesktop(): BlobStore {
 			return Ok(undefined);
 		},
 
-		getBlob: async (recordingId) => {
+		getBlob: async (key) => {
 			// DUAL READ: Check file system first, fallback to IndexedDB
-			const fsResult = await fileSystemDb.getBlob(recordingId);
+			const fsResult = await fileSystemDb.getBlob(key);
 
 			// If found in file system, return it
 			if (fsResult.data) {
@@ -50,7 +50,7 @@ export function createBlobStoreDesktop(): BlobStore {
 			}
 
 			// Not in file system, check IndexedDB
-			const idbResult = await indexedDb.getBlob(recordingId);
+			const idbResult = await indexedDb.getBlob(key);
 
 			// If found in IndexedDB, return it
 			if (idbResult.data) {
@@ -64,14 +64,14 @@ export function createBlobStoreDesktop(): BlobStore {
 
 			// Not found in either source (but no errors)
 			return BlobError.ReadFailed({
-				cause: new Error(`Audio not found for recording ${recordingId}`),
+				cause: new Error(`Blob not found for key ${key}`),
 			});
 		},
 
-		ensurePlaybackUrl: async (recordingId) => {
+		ensurePlaybackUrl: async (key) => {
 			// DUAL READ: Check file system first, fallback to IndexedDB
 			const fsResult =
-				await fileSystemDb.ensurePlaybackUrl(recordingId);
+				await fileSystemDb.ensurePlaybackUrl(key);
 
 			// If found in file system, return it
 			if (fsResult.data) {
@@ -79,7 +79,7 @@ export function createBlobStoreDesktop(): BlobStore {
 			}
 
 			// Not in file system, check IndexedDB
-			const idbResult = await indexedDb.ensurePlaybackUrl(recordingId);
+			const idbResult = await indexedDb.ensurePlaybackUrl(key);
 
 			// If found in IndexedDB, return it
 			if (idbResult.data) {
@@ -93,14 +93,14 @@ export function createBlobStoreDesktop(): BlobStore {
 
 			// Not found in either source (but no errors)
 			return BlobError.ReadFailed({
-				cause: new Error(`Audio not found for recording ${recordingId}`),
+				cause: new Error(`Blob not found for key ${key}`),
 			});
 		},
 
-		revokeUrl: (recordingId) => {
+		revokeUrl: (key) => {
 			// Revoke from BOTH sources
-			fileSystemDb.revokeUrl(recordingId);
-			indexedDb.revokeUrl(recordingId);
+			fileSystemDb.revokeUrl(key);
+			indexedDb.revokeUrl(key);
 		},
 
 		clear: async () => {

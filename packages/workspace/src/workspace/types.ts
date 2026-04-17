@@ -349,7 +349,7 @@ export type DocumentContext<
  * handle.content.write('hello');
  * ```
  */
- export type DocumentHandle<
+export type DocumentHandle<
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
 	TBinding = unknown,

@@ -24,13 +24,11 @@
 		}
 
 		let cancelled = false;
-		workspace.documents.notes.body
-			.open(noteId)
-			.then((handle: DocumentHandle) => {
-				if (cancelled) return;
-				currentDocHandle = handle;
-				currentYXmlFragment = handle.content;
-			});
+		workspace.documents.notes.body.open(noteId).then((handle) => {
+			if (cancelled) return;
+			currentDocHandle = handle;
+			currentYXmlFragment = handle.content;
+		});
 
 		return () => {
 			cancelled = true;

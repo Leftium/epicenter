@@ -8,29 +8,29 @@
 
 import { createWorkspace } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
-import { isTauri } from '@tauri-apps/api/core';
 import yaml from 'js-yaml';
 
 import { PATHS } from '$lib/constants/paths';
 import type { Recording } from './workspace';
 import { whisperingDefinition } from './workspace/definition';
 
-function serializeRecording(row: Recording) {
+function toRecordingMarkdownFile(row: Recording) {
 	const { transcript, _v, ...frontmatter } = row;
 	const yamlStr = yaml.dump(frontmatter, { lineWidth: -1 });
-	const yamlBlock = yamlStr.endsWith('\n') ? yamlStr : `${yamlStr}\n`;
 	return {
 		filename: `${row.id}.md`,
-		content: `---\n${yamlBlock}---\n${transcript || ''}\n`,
+		content: `---\n${yamlStr}---\n${transcript || ''}\n`,
 	};
-}
+		}
 
 const base = createWorkspace(whisperingDefinition).withExtension(
 	'persistence',
 	indexeddbPersistence,
-);
+	);
 
-export const workspace = isTauri()
+const IS_DESKTOP = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+export const workspace = IS_DESKTOP
 	? base.withWorkspaceExtension('materializer', (ctx) => {
 			let unsub: (() => void) | undefined;
 			let syncQueue = Promise.resolve();
@@ -39,18 +39,10 @@ export const workspace = isTauri()
 				whenReady: (async () => {
 					await ctx.whenReady;
 					const { invoke } = await import('@tauri-apps/api/core');
-					const dir = await PATHS.DB.RECORDINGS();
 					const { join } = await import('@tauri-apps/api/path');
+					const dir = await PATHS.DB.RECORDINGS();
 
-					// Initial flush—write all recordings to disk
-					const files = ctx.tables.recordings
-						.getAllValid()
-						.map(serializeRecording);
-					if (files.length) {
-						await invoke('write_markdown_files', { directory: dir, files });
-					}
-
-					// Incremental sync—observe changes and write/delete as needed
+					// Subscribe BEFORE flush so changes during flush aren't missed
 					unsub = ctx.tables.recordings.observe((changedIds) => {
 						syncQueue = syncQueue
 							.then(async () => {
@@ -60,10 +52,9 @@ export const workspace = isTauri()
 								for (const id of changedIds) {
 									const result = ctx.tables.recordings.get(id);
 									if (result.status === 'valid') {
-										toWrite.push(serializeRecording(result.row));
+										toWrite.push(toRecordingMarkdownFile(result.row));
 									} else if (result.status === 'not_found') {
-										const mdPath = await join(dir, `${id}.md`);
-										toDelete.push(mdPath);
+										toDelete.push(await join(dir, `${id}.md`));
 									}
 								}
 
@@ -81,9 +72,18 @@ export const workspace = isTauri()
 								console.warn('[recording-materializer] write failed:', error);
 							});
 					});
+
+					// Initial flush—write all recordings to disk
+					const files = ctx.tables.recordings
+						.getAllValid()
+						.map(toRecordingMarkdownFile);
+					if (files.length) {
+						await invoke('write_markdown_files', { directory: dir, files });
+					}
 				})(),
-				dispose() {
+				async dispose() {
 					unsub?.();
+					await syncQueue;
 				},
 			};
 		})

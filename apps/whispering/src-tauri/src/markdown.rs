@@ -184,13 +184,13 @@ fn validate_markdown_filename(filename: &str) -> Result<&str, String> {
 /// * `files` - Array of `{ filename, content }` pairs to write
 ///
 /// # Returns
-/// * `Ok(u32)` - Number of files successfully written
-/// * `Err(String)` - Error message if any write fails
+/// * `Ok(())` - All files written successfully
+/// * `Err(String)` - Error message if any write fails (earlier files may already be on disk)
 #[tauri::command]
 pub async fn write_markdown_files(
     directory: String,
     files: Vec<MarkdownFile>,
-) -> Result<u32, String> {
+) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let dir_path = PathBuf::from(&directory);
 
@@ -198,21 +198,24 @@ pub async fn write_markdown_files(
             return Err(format!("Directory must be absolute: {}", directory));
         }
 
-        let mut seen = HashSet::with_capacity(files.len());
-        for file in &files {
-            let filename = validate_markdown_filename(&file.filename)?;
-
-            if !seen.insert(filename.to_owned()) {
-                return Err(format!("Duplicate filename in request: {}", filename));
+        // Validate all filenames upfront so no files are written if any name is invalid
+        let validated: Vec<&str> = {
+            let mut seen = HashSet::with_capacity(files.len());
+            let mut names = Vec::with_capacity(files.len());
+            for file in &files {
+                let name = validate_markdown_filename(&file.filename)?;
+                if !seen.insert(name) {
+                    return Err(format!("Duplicate filename in request: {}", name));
+                }
+                names.push(name);
             }
-        }
+            names
+        };
 
         fs::create_dir_all(&dir_path)
             .map_err(|e| format!("Failed to create directory {}: {}", directory, e))?;
 
-        let mut written = 0u32;
-        for file in &files {
-            let filename = validate_markdown_filename(&file.filename)?;
+        for (file, filename) in files.iter().zip(validated.iter()) {
             let path = dir_path.join(filename);
             let mut temp = NamedTempFile::new_in(&dir_path)
                 .map_err(|e| format!("Failed to create temp file for {}: {}", filename, e))?;
@@ -221,11 +224,9 @@ pub async fn write_markdown_files(
                 .map_err(|e| format!("Failed to write {}: {}", filename, e))?;
             temp.persist(&path)
                 .map_err(|e| format!("Failed to persist {}: {}", filename, e.error))?;
-
-            written += 1;
         }
 
-        Ok::<u32, String>(written)
+        Ok(())
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?

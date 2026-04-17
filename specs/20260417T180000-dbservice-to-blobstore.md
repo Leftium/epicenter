@@ -1,7 +1,7 @@
 # DbService → BlobStore Migration
 
 **Date**: 2026-04-17
-**Status**: Draft
+**Status**: Implemented
 **Branch**: `refactor/whispering-bulkdelete-and-blobstore`
 
 ## Overview

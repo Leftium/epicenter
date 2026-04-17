@@ -123,7 +123,6 @@ export const richText: (ydoc: Y.Doc) => RichTextHandle = (ydoc) => {
  * that toggle between source markdown and rich text editing, or spreadsheet
  * files that can also be viewed as CSV text.
  *
- *
  * @example
  * ```typescript
  * const filesTable = defineTable(

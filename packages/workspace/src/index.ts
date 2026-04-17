@@ -4,7 +4,6 @@
  * This root export provides the full workspace API and shared utilities.
  *
  * - `@epicenter/workspace` - Full API (workspace creation, tables, KV, extensions)
- * - `@epicenter/workspace/static` - Alias (kept for backward compatibility)
  * - `@epicenter/workspace/extensions` - Extension plugins (persistence, sync)
  *
  * @example

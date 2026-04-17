@@ -84,13 +84,18 @@ export const workspace = isTauri()
 							});
 					});
 
-					// Initial flush—write all recordings to disk
-					const files = ctx.tables.recordings
-						.getAllValid()
-						.map(toRecordingMarkdownFile);
-					if (files.length) {
-						await invoke('write_markdown_files', { directory: dir, files });
-					}
+					// Initial flush—write all recordings to disk.
+					// Routed through syncQueue so observer writes that fire during
+					// flush don't overlap with it.
+					syncQueue = syncQueue.then(async () => {
+						const files = ctx.tables.recordings
+							.getAllValid()
+							.map(toRecordingMarkdownFile);
+						if (files.length) {
+							await invoke('write_markdown_files', { directory: dir, files });
+						}
+					});
+					await syncQueue;
 				})(),
 				// Unsubscribe immediately, then wait for any in-flight write to finish
 				async dispose() {

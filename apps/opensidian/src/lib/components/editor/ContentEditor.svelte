@@ -56,7 +56,7 @@
 </script>
 
 {#if handle}
-	<CodeMirrorEditor ytext={handle.asText()} {extensions} {filename} />
+	<CodeMirrorEditor ytext={handle.content.asText()} {extensions} {filename} />
 {:else}
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />

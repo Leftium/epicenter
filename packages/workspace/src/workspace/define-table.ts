@@ -116,10 +116,11 @@ type TableDefinitionWithDocBuilder<
 			ClaimedDocumentColumns<TDocuments>
 		>,
 		const TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
+		TBinding = unknown,
 	>(
 		name: TName,
 		config: {
-			content: ContentStrategy;
+			content: ContentStrategy<TBinding>;
 			guid: TGuid;
 			onUpdate: () => Partial<
 				Omit<StandardSchemaV1.InferOutput<LastSchema<TVersions>>, 'id'>
@@ -134,7 +135,8 @@ type TableDefinitionWithDocBuilder<
 				DocumentConfig<
 					TGuid,
 					StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
-					TAwarenessDefs
+					TAwarenessDefs,
+					TBinding
 				>
 			>
 	>;

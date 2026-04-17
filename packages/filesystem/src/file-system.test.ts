@@ -381,13 +381,13 @@ describe('mv preserves content (no conversion)', () => {
 
 async function getTimelineLength(
 	fs: YjsFileSystem,
-	documents: { open(input: string): Promise<{ length: number }> },
+	documents: { open(input: string): Promise<{ content: { length: number } }> },
 	path: string,
 ): Promise<number> {
 	const id = fs.lookupId(path);
 	if (!id) throw new Error(`No file at ${path}`);
 	const handle = await documents.open(id);
-	return handle.length;
+	return handle.content.length;
 }
 
 describe('timeline content storage', () => {
@@ -440,9 +440,9 @@ describe('sheet file support', () => {
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
-		handle.batch(() => {
-			handle.write('Name,Age\nAlice,30\n');
-			handle.asSheet();
+		handle.content.batch(() => {
+			handle.content.write('Name,Age\nAlice,30\n');
+			handle.content.asSheet();
 		});
 		expect(await fs.readFile('/data.csv')).toBe('Name,Age\nAlice,30\n');
 	});
@@ -455,9 +455,9 @@ describe('sheet file support', () => {
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
-		handle.batch(() => {
-			handle.write('A,B\n1,2\n');
-			handle.asSheet();
+		handle.content.batch(() => {
+			handle.content.write('A,B\n1,2\n');
+			handle.content.asSheet();
 		});
 		await fs.writeFile('/data.csv', 'X,Y\n3,4\n');
 		expect(await fs.readFile('/data.csv')).toBe('X,Y\n3,4\n');

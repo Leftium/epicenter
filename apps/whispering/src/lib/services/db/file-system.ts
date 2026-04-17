@@ -166,8 +166,8 @@ export function createFileSystemDbService(): DbService {
 						const dirExists = await exists(recordingsPath);
 						if (!dirExists) return undefined;
 
-						const files = await readDir(recordingsPath);
-						const filenames = files.map((file) => file.name);
+						const allFiles = await readDir(recordingsPath);
+						const filenames = allFiles.map((file) => file.name);
 						await deleteFilesInDirectory(recordingsPath, filenames);
 					},
 					catch: (error) => DbError.MutationFailed({ cause: error }),

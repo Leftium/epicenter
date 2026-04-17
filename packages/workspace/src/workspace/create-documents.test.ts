@@ -268,13 +268,17 @@ describe('createDocuments', () => {
 			});
 
 			const content = await documents.open('f1');
+			// Get the underlying Y.Doc via a shared type — Timeline no longer exposes ydoc directly.
+			// asText() creates a timeline entry which triggers onUpdate, so reset updatedAt after.
+			const contentYdoc = content.asText().doc!;
+			tables.files.update('f1', { updatedAt: 0 });
 
 			// Apply a remote update with no origin (e.g., IndexedDB load)
 			const remoteDoc = new Y.Doc({ guid: 'f1', gc: false });
 			remoteDoc.getText('content').insert(0, 'remote edit');
 			const remoteUpdate = Y.encodeStateAsUpdate(remoteDoc);
 
-			Y.applyUpdate(content.ydoc, remoteUpdate);
+			Y.applyUpdate(contentYdoc, remoteUpdate);
 
 			const result = tables.files.get('f1');
 			expect(result.status).toBe('valid');
@@ -295,6 +299,10 @@ describe('createDocuments', () => {
 			});
 
 			const content = await documents.open('f1');
+			// Get the underlying Y.Doc via a shared type — Timeline no longer exposes ydoc directly.
+			// asText() creates a timeline entry which triggers onUpdate, so reset updatedAt after.
+			const contentYdoc = content.asText().doc!;
+			tables.files.update('f1', { updatedAt: 0 });
 
 			// Apply a remote update with a Symbol origin (simulating sync/broadcast)
 			const FAKE_TRANSPORT = Symbol('fake-transport');
@@ -302,7 +310,7 @@ describe('createDocuments', () => {
 			remoteDoc.getText('content').insert(0, 'synced edit');
 			const remoteUpdate = Y.encodeStateAsUpdate(remoteDoc);
 
-			Y.applyUpdate(content.ydoc, remoteUpdate, FAKE_TRANSPORT);
+			Y.applyUpdate(contentYdoc, remoteUpdate, FAKE_TRANSPORT);
 
 			const result = tables.files.get('f1');
 			expect(result.status).toBe('valid');

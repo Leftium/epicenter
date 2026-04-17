@@ -12,6 +12,8 @@ import type { SerializeResult } from './markdown.js';
 export type MaterializerIO = {
 	mkdir(dir: string): Promise<void>;
 	writeFile(path: string, content: string): Promise<void>;
+	readFile(path: string): Promise<string>;
+	readdir(dir: string): Promise<string[]>;
 	removeFile(path: string): Promise<void>;
 	joinPath(...segments: string[]): MaybePromise<string>;
 };
@@ -24,6 +26,7 @@ export type MaterializerIO = {
  */
 export type MaterializerYaml = {
 	stringify(obj: Record<string, unknown>): string;
+	parse(yaml: string): unknown;
 };
 
 /** Lazily resolve Node/Bun default IO. Only imported when actually used. */
@@ -35,6 +38,8 @@ function createDefaultIO(): MaterializerIO {
 	return {
 		mkdir: (dir) => fs.mkdir(dir, { recursive: true }),
 		writeFile: (filePath, content) => fs.writeFile(filePath, content),
+		readFile: (filePath) => fs.readFile(filePath, 'utf-8'),
+		readdir: (dir) => fs.readdir(dir),
 		removeFile: (filePath) => fs.unlink(filePath).catch(() => {}),
 		joinPath: (...segments) => path.join(...segments),
 	};
@@ -45,6 +50,7 @@ function createDefaultYaml(): MaterializerYaml {
 	const { YAML } = require('bun') as typeof import('bun');
 	return {
 		stringify: (obj) => YAML.stringify(obj, null, 2) as string,
+		parse: (str) => YAML.parse(str) as unknown,
 	};
 }
 
@@ -73,7 +79,7 @@ function buildMarkdown(
 }
 
 /**
- * Create a one-way materializer that writes workspace data to files on disk.
+ * Create a bidirectional markdown materializer for workspace data.
  *
  * Nothing materializes by default. Call `.table()` to opt in per table and
  * `.kv()` to opt in KV. Each `.table()` call validates the table name against
@@ -101,10 +107,12 @@ function buildMarkdown(
  *     io: {
  *       mkdir: (dir) => tauriMkdir(dir, { recursive: true }),
  *       writeFile: tauriWriteTextFile,
+ *       readFile: (path) => tauriReadTextFile(path),
+ *       readdir: (dir) => tauriReadDir(dir).then(entries => entries.map(e => e.name)),
  *       removeFile: (path) => tauriRemove(path).catch(() => {}),
  *       joinPath: (...s) => tauriJoin(...s),
  *     },
- *     yaml: { stringify: (obj) => jsYaml.dump(obj, { lineWidth: -1 }) },
+ *     yaml: { stringify: (obj) => jsYaml.dump(obj, { lineWidth: -1 }), parse: (str) => jsYaml.load(str) },
  *   })
  *     .table('recordings', { serialize: mySerializer }),
  * )
@@ -135,6 +143,10 @@ export function createMarkdownMaterializer<
 			serialize?: TTables[TName] extends TableHelper<infer TRow>
 				? (row: TRow) => MaybePromise<SerializeResult>
 				: never;
+			deserialize?: (parsed: {
+				frontmatter: Record<string, unknown>;
+				body: string | undefined;
+			}) => MaybePromise<TTables[TName] extends TableHelper<infer TRow> ? TRow : never>;
 		};
 	};
 
@@ -149,6 +161,11 @@ export function createMarkdownMaterializer<
 				serialize?: TTables[TName] extends TableHelper<infer TRow>
 					? (row: TRow) => MaybePromise<SerializeResult>
 					: never;
+				/** Parse a markdown file back into a table row. Required for `pushFromMarkdown`. Default: uses frontmatter fields directly. */
+				deserialize?: (parsed: {
+					frontmatter: Record<string, unknown>;
+					body: string | undefined;
+				}) => MaybePromise<TTables[TName] extends TableHelper<infer TRow> ? TRow : never>;
 			},
 		): MaterializerBuilder;
 		/**
@@ -162,6 +179,23 @@ export function createMarkdownMaterializer<
 		kv(config?: {
 			serialize?: (data: Record<string, unknown>) => SerializeResult;
 		}): MaterializerBuilder;
+		/**
+		 * Read `.md` files from disk and import them into the Yjs workspace via `table.set()`.
+		 *
+		 * Each file is parsed for YAML frontmatter and an optional body. The `deserialize`
+		 * callback (if provided per table) converts the parsed result to a row. When no
+		 * `deserialize` is configured, frontmatter fields are used as the row directly.
+		 *
+		 * **This overwrites existing rows**—`table.set()` is insert-or-replace.
+		 */
+		pushFromMarkdown(): Promise<{ imported: number; skipped: number; errors: string[] }>;
+		/**
+		 * Re-materialize all Yjs table data to markdown files on disk.
+		 *
+		 * Reads every valid row from each registered table, serializes it,
+		 * and writes the result to disk. Does not remove orphaned files.
+		 */
+		pullToMarkdown(): Promise<{ written: number }>;
 		whenReady: Promise<void>;
 		dispose(): void;
 	};
@@ -272,6 +306,37 @@ export function createMarkdownMaterializer<
 		unsubscribers.push(unsubscribe);
 	};
 
+	/** Regex for extracting YAML frontmatter from markdown content. */
+	const FRONTMATTER_PATTERN =
+		/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
+
+	/** Parse frontmatter + body from a markdown string using the injected yaml adapter. */
+	function parseFrontmatter(content: string): {
+		frontmatter: Record<string, unknown>;
+		body: string | undefined;
+	} | null {
+		const input = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+		const match = input.match(FRONTMATTER_PATTERN);
+		if (!match) return null;
+
+		const frontmatter = yaml.parse(match[1]);
+		if (typeof frontmatter !== 'object' || frontmatter === null) return null;
+
+		const rawBody = input
+			.slice(match[0].length)
+			.replace(/^\r?\n/, '')
+			.replace(/\r?\n$/, '');
+
+		return {
+			frontmatter: frontmatter as Record<string, unknown>,
+			body: rawBody.length > 0 ? rawBody : undefined,
+		};
+	}
+
+	/** Resolve the base directory, handling string or async getter. */
+	const resolveDir = async () =>
+		typeof config.dir === 'function' ? await config.dir() : config.dir;
+
 	const builder: MaterializerBuilder = {
 		table(name, tableConfig) {
 			tableNames.add(name);
@@ -283,12 +348,85 @@ export function createMarkdownMaterializer<
 			kvConfig = nextKvConfig;
 			return builder;
 		},
+		async pushFromMarkdown() {
+			const dir = await resolveDir();
+			let imported = 0;
+			let skipped = 0;
+			const errors: string[] = [];
+
+			for (const name of tableNames) {
+				const table = ctx.tables[name];
+				const tableConfig = tableConfigs[name];
+				const directory = await io.joinPath(dir, tableConfig?.dir ?? name);
+
+				let entries: string[];
+				try {
+					entries = await io.readdir(directory);
+				} catch {
+					continue;
+				}
+
+				for (const filename of entries) {
+					if (!filename.endsWith('.md')) continue;
+
+					let content: string;
+					try {
+						content = await io.readFile(await io.joinPath(directory, filename));
+					} catch (error) {
+						errors.push(`Failed to read ${filename}: ${error}`);
+						continue;
+					}
+
+					const parsed = parseFrontmatter(content);
+					if (!parsed) {
+						skipped++;
+						continue;
+					}
+
+					try {
+						const deserialize = tableConfig?.deserialize
+							?? ((p: { frontmatter: Record<string, unknown> }) => p.frontmatter);
+						const row = await deserialize(parsed);
+						table.set(row);
+						imported++;
+					} catch (error) {
+						errors.push(`Failed to import ${filename}: ${error}`);
+					}
+				}
+			}
+
+			return { imported, skipped, errors };
+		},
+		async pullToMarkdown() {
+			const dir = await resolveDir();
+			let written = 0;
+
+			for (const name of tableNames) {
+				const table = ctx.tables[name];
+				const tableConfig = tableConfigs[name];
+				const directory = await io.joinPath(dir, tableConfig?.dir ?? name);
+
+				const serialize: (row: TableRow<typeof name>) => MaybePromise<SerializeResult> =
+					tableConfig?.serialize ??
+					((row) => ({
+						filename: `${row.id}.md`,
+						content: buildMarkdown(yaml, { ...row }),
+					}));
+
+				await io.mkdir(directory);
+
+				for (const row of table.getAllValid()) {
+					const result = await serialize(row);
+					await io.writeFile(await io.joinPath(directory, result.filename), result.content);
+					written++;
+				}
+			}
+
+			return { written };
+		},
 		whenReady: (async () => {
 			await ctx.whenReady;
-			const dir =
-				typeof config.dir === 'function'
-					? await config.dir()
-					: config.dir;
+			const dir = await resolveDir();
 			await io.mkdir(dir);
 
 			for (const name of tableNames) {

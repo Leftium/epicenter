@@ -29,7 +29,7 @@
 			.then((handle: DocumentHandle) => {
 				if (cancelled) return;
 				currentDocHandle = handle;
-				currentYXmlFragment = handle.asRichText();
+				currentYXmlFragment = handle.content;
 			});
 
 		return () => {

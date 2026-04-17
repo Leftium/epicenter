@@ -90,7 +90,7 @@ export async function pushFromMarkdown(ctx: {
 				const handle = await ctx.documents.files.content.open(
 					frontmatter.id as FileRow['id'],
 				);
-				handle.write(resolvedBody);
+				handle.content.write(resolvedBody);
 			} catch (error) {
 				errors.push(`Failed to write content for ${frontmatter.id}: ${error}`);
 			}

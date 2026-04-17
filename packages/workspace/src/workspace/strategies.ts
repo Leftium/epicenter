@@ -30,7 +30,7 @@ import { createTimeline, type Timeline } from '../timeline/timeline.js';
  *
  * // At runtime:
  * const handle = await workspace.documents.files.content.open(file);
- * const ytext = handle.content as Y.Text;
+ * const ytext = handle.content; // Y.Text — fully typed
  * editor.bind(ytext);
  * ```
  */
@@ -58,7 +58,7 @@ export const plainText: (ydoc: Y.Doc) => Y.Text = (ydoc) =>
  *
  * // At runtime:
  * const handle = await workspace.documents.notes.body.open(note);
- * const fragment = handle.content as Y.XmlFragment;
+ * const fragment = handle.content; // Y.XmlFragment — fully typed
  * const plugins = [ySyncPlugin(fragment)];
  * ```
  */
@@ -87,12 +87,11 @@ export const richText: (ydoc: Y.Doc) => Y.XmlFragment = (ydoc) =>
  *
  * // At runtime:
  * const handle = await workspace.documents.files.content.open(file);
- * const tl = handle.content as Timeline;
- * tl.asText();
- * tl.asRichText();
- * tl.asSheet();
- * tl.read();
- * ```
+ * handle.content.asText();      // content is Timeline — fully typed
+ * handle.content.asRichText();
+ * handle.content.asSheet();
+ * handle.content.read();
+ * handle.content.write('hello');
  */
 export const timeline: (ydoc: Y.Doc) => Timeline = (ydoc) =>
 	createTimeline(ydoc);

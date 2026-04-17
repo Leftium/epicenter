@@ -49,7 +49,7 @@
 				workspace.documents.entries.content.close(id);
 				return;
 			}
-			yxmlfragment = handle.asRichText();
+			yxmlfragment = handle.content;
 		});
 
 		return () => {

@@ -134,7 +134,9 @@ export function createSkillsWorkspace() {
 
 					const instructionsHandle =
 						await client.documents.skills.instructions.open(skillId);
-					instructionsHandle.write(instructions);
+					const ytext = instructionsHandle.content;
+					ytext.delete(0, ytext.length);
+					ytext.insert(0, instructions);
 
 					// Import references in parallel
 					const refsPath = join(skillPath, 'references');
@@ -163,7 +165,9 @@ export function createSkillsWorkspace() {
 
 								const contentHandle =
 									await client.documents.references.content.open(refId);
-								contentHandle.write(refContent);
+							const ytext = contentHandle.content;
+							ytext.delete(0, ytext.length);
+							ytext.insert(0, refContent);
 							}),
 						);
 					}
@@ -192,7 +196,7 @@ export function createSkillsWorkspace() {
 
 						const instructionsHandle =
 							await client.documents.skills.instructions.open(skill.id);
-						const instructions = instructionsHandle.read();
+						const instructions = instructionsHandle.content.toString();
 						const skillMd = serializeSkillMd(skill, instructions);
 						await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
 
@@ -208,7 +212,7 @@ export function createSkillsWorkspace() {
 								refs.map(async (ref) => {
 									const contentHandle =
 										await client.documents.references.content.open(ref.id);
-									const content = contentHandle.read();
+								const content = contentHandle.content.toString();
 									await writeFile(join(refsDir, ref.path), content, 'utf-8');
 								}),
 							);

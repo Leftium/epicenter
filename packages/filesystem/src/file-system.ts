@@ -1,4 +1,4 @@
-import type { Documents, TableHelper } from '@epicenter/workspace';
+import type { Documents, TableHelper, Timeline } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
 import { FS_ERRORS } from './errors.js';
 import type { FileId } from './ids.js';
@@ -37,7 +37,7 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  */
 export function createYjsFileSystem(
 	filesTable: TableHelper<FileRow>,
-	contentDocuments: Documents<FileRow>,
+	contentDocuments: Documents<FileRow, Record<string, unknown>, Record<string, never>, Timeline>,
 	cwd: string = '/',
 ) {
 	const tree = createFileTree(filesTable);
@@ -153,7 +153,7 @@ export function createYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 			const handle = await contentDocuments.open(id);
-			return handle.read();
+			return handle.content.read();
 		},
 
 		async readFileBuffer(path) {
@@ -183,7 +183,7 @@ export function createYjsFileSystem(
 			}
 
 			const handle = await contentDocuments.open(id);
-			handle.write(textData);
+			handle.content.write(textData);
 			tree.touch(id, size);
 		},
 
@@ -198,8 +198,8 @@ export function createYjsFileSystem(
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
 			const handle = await contentDocuments.open(id);
-			handle.appendText(text);
-			const newSize = new TextEncoder().encode(handle.read()).byteLength;
+			handle.content.appendText(text);
+			const newSize = new TextEncoder().encode(handle.content.read()).byteLength;
 			tree.touch(id, newSize);
 		},
 
@@ -290,7 +290,7 @@ export function createYjsFileSystem(
 				}
 			} else {
 				const handle = await contentDocuments.open(srcId);
-				const srcText = handle.read();
+				const srcText = handle.content.read();
 				await this.writeFile(resolvedDest, srcText);
 			}
 		},

@@ -94,6 +94,7 @@ export type {
 } from './timeline';
 export {
 	computeMidpoint,
+	generateInitialOrders,
 	type Timeline,
 } from './timeline';
 // ════════════════════════════════════════════════════════════════════════════

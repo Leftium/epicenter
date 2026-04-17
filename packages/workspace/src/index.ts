@@ -148,7 +148,6 @@ export type {
 	BaseRow,
 	ContentHandle,
 	ContentStrategy,
-	DocumentClient,
 	DocumentConfig,
 	Documents,
 	DocumentsHelper,

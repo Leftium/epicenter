@@ -19,7 +19,7 @@ export type BlobError = InferErrors<typeof BlobError>;
 
 export type BlobStore = {
 	save(key: string, blob: Blob): Promise<Result<void, BlobError>>;
-	delete(id: string | string[]): Promise<Result<void, BlobError>>;
+	delete(key: string | string[]): Promise<Result<void, BlobError>>;
 	clear(): Promise<Result<void, BlobError>>;
 
 	/**

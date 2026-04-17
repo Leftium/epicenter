@@ -283,23 +283,31 @@ export type ClaimedDocumentColumns<
 > = TDocuments[keyof TDocuments]['guid'];
 
 // ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT CLIENT — The document's API surface (mirrors WorkspaceClient)
+// DOCUMENT CONTEXT — What extension factories receive at document open time
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * The full API surface of an open content document.
+ * Context passed to document extension factories registered via `withDocumentExtension()`.
  *
- * The document's core type that `DocumentContext` derives from via `Pick`.
+ * Contains the fields extension factories need to inspect and operate on an open
+ * content document. Factories inspect `tableName` and `documentName` to decide
+ * whether to activate. Return `void` to skip a specific document.
  *
- * @typeParam TDocExtensions - Accumulated document extension exports
- * @typeParam TBinding - The content binding type returned by the content strategy
+ * Excludes `content` (the typed binding consumers use) and `dispose()` (lifecycle
+ * managed by the runtime) — factories don't need either.
+ *
+ * ```typescript
+ * .withDocumentExtension('persistence', ({ ydoc }) => { ... })
+ * .withDocumentExtension('sync', ({ id, tableName, documentName, ydoc }) => { ... })
+ * ```
+ *
+ * @typeParam TDocExtensions - Accumulated document extension exports from prior calls.
+ *   Defaults to `Record<string, unknown>` so `DocumentExtensionRegistration` can
+ *   store factories with the wide type.
  */
-export type DocumentClient<
-	TDocExtensions extends Record<string, unknown> = Record<string, never>,
-	TBinding extends ContentHandle = ContentHandle,
+export type DocumentContext<
+	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = {
-	/** The typed content binding returned by the content strategy. */
-	content: TBinding;
 	/** The workspace identifier. */
 	id: string;
 	/** The table this document belongs to (e.g., 'files', 'notes'). */
@@ -323,37 +331,6 @@ export type DocumentClient<
 	};
 	/** Composite whenReady of all document extensions. */
 	whenReady: Promise<void>;
-	/** Cleanup all document extension resources. */
-	dispose(): Promise<void>;
-};
-
-/**
- * Context passed to document extension factories registered via `withDocumentExtension()`.
- *
- * Picks the fields factories need from `DocumentClient`. Factories inspect
- * `tableName` and `documentName` to decide whether to activate.
- * Return `void` to skip a specific document.
- *
- * ```typescript
- * .withDocumentExtension('persistence', ({ ydoc }) => { ... })
- * .withDocumentExtension('sync', ({ id, tableName, documentName, ydoc }) => { ... })
- * ```
- *
- * @typeParam TDocExtensions - Accumulated document extension exports from prior calls.
- *   Defaults to `Record<string, unknown>` so `DocumentExtensionRegistration` can
- *   store factories with the wide type.
- */
-export type DocumentContext<
-	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = Pick<
-	DocumentClient<TDocExtensions>,
-	| 'id'
-	| 'tableName'
-	| 'documentName'
-	| 'ydoc'
-	| 'extensions'
-	| 'whenReady'
-> & {
 	/**
 	 * Raw awareness instance for this document scope.
 	 *

@@ -134,7 +134,6 @@ export type {
 	// Content handle types
 	ContentHandle,
 	ContentStrategy,
-	DocumentClient,
 	DocumentConfig,
 	Documents,
 	DocumentsHelper,

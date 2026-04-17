@@ -2,13 +2,9 @@
  * IndexedDB-specific type definitions for Dexie schema migrations.
  *
  * These types represent historical and current storage formats used exclusively
- * by the web (IndexedDB) storage layer. They are NOT domain types — the app-wide
- * intermediate representation is the `Recording` type in `../models/recordings.ts`.
- *
- * @see {@link ../models/recordings.ts} for the domain type used by UI and services
+ * by the web (IndexedDB) storage layer. The app-wide domain type is the
+ * `Recording` type from the workspace definition.
  */
-import type { DbRecording } from '../models/recordings';
-
 /**
  * Serialized audio format for IndexedDB storage.
  *
@@ -26,33 +22,22 @@ export type SerializedAudio = {
 	blobType: string;
 };
 
-type RecordingStoredInIndexedDbLegacy = {
+/**
+ * How a recording is stored in IndexedDB (audio-only storage format).
+ *
+ * The workspace (Yjs CRDT) is the sole source of truth for recording metadata.
+ * IndexedDB only stores the audio blob alongside the recording ID.
+ *
+ * Legacy rows may still carry metadata fields from older schema versions.
+ * These are ignored on read—only `id` and `serializedAudio` are used.
+ */
+export type AudioStoredInIndexedDB = {
 	id: string;
-	title: string;
-	subtitle: string;
-	timestamp: string;
-	createdAt: string;
-	updatedAt: string;
-	transcribedText: string;
-	transcriptionStatus: 'UNPROCESSED' | 'TRANSCRIBING' | 'DONE' | 'FAILED';
 	serializedAudio: SerializedAudio | undefined;
 };
 
-/**
- * How a recording is actually stored in IndexedDB (storage format).
- *
- * New writes use the V2 recording field names. Existing IndexedDB rows may still carry
- * legacy V1/V4-style names until they are read and rewritten, so the storage type accepts
- * both shapes.
- */
-export type RecordingStoredInIndexedDB =
-	| (DbRecording & {
-			serializedAudio: SerializedAudio | undefined;
-	  })
-	| RecordingStoredInIndexedDbLegacy;
-
-export type RecordingsDbSchemaV5 = {
-	recordings: RecordingStoredInIndexedDB;
+export type AudioDbSchemaV5 = {
+	recordings: AudioStoredInIndexedDB;
 };
 
 export type RecordingsDbSchemaV4 = {

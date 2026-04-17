@@ -12,95 +12,13 @@ import {
 import { type } from 'arktype';
 import mime from 'mime';
 import { nanoid } from 'nanoid/non-secure';
-import { Ok, tryAsync } from 'wellcrafted/result';
+import { tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
 import { FsServiceLive } from '$lib/services/desktop/fs';
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter';
-import type { DbRecording } from './models';
 import { Transformation, TransformationRun } from './models';
 import type { DbService } from './types';
 import { DbError } from './types';
-
-/**
- * Schema validator for normalized Recording front matter.
- *
- * The transcript lives in the markdown body, not the YAML frontmatter.
- */
-const RecordingFrontMatter = type({
-	id: 'string',
-	title: 'string',
-	recordedAt: 'string',
-	updatedAt: 'string',
-	transcriptionStatus: '"UNPROCESSED" | "TRANSCRIBING" | "DONE" | "FAILED"',
-	'duration?': 'number | undefined',
-});
-
-const RecordingFrontMatterRaw = type({
-	id: 'string',
-	title: 'string',
-	'recordedAt?': 'string | undefined',
-	'timestamp?': 'string | undefined',
-	'updatedAt?': 'string | undefined',
-	'updated_at?': 'string | undefined',
-	'transcriptionStatus?':
-		'"UNPROCESSED" | "TRANSCRIBING" | "DONE" | "FAILED" | undefined',
-	'transcription_status?':
-		'"UNPROCESSED" | "TRANSCRIBING" | "DONE" | "FAILED" | undefined',
-	'duration?': 'number | undefined',
-	'subtitle?': 'string | undefined',
-	'createdAt?': 'string | undefined',
-	'created_at?': 'string | undefined',
-});
-
-type RecordingFrontMatter = typeof RecordingFrontMatter.infer;
-type RecordingFrontMatterRaw = typeof RecordingFrontMatterRaw.infer;
-
-function normalizeRecordingFrontMatter(
-	rawFrontMatter: RecordingFrontMatterRaw,
-): RecordingFrontMatter | null {
-	const normalized = {
-		id: rawFrontMatter.id,
-		title: rawFrontMatter.title,
-		recordedAt: rawFrontMatter.recordedAt ?? rawFrontMatter.timestamp,
-		updatedAt: rawFrontMatter.updatedAt ?? rawFrontMatter.updated_at,
-		transcriptionStatus:
-			rawFrontMatter.transcriptionStatus ?? rawFrontMatter.transcription_status,
-		duration: rawFrontMatter.duration,
-	};
-
-	const frontMatter = RecordingFrontMatter(normalized);
-	if (frontMatter instanceof type.errors) {
-		return null;
-	}
-
-	return frontMatter;
-}
-
-/**
- * Convert DbRecording to markdown format (frontmatter + body)
- */
-function recordingToMarkdown({
-	transcript,
-	...frontMatter
-}: DbRecording): string {
-	return stringifyFrontmatter(transcript, frontMatter);
-}
-
-/**
- * Convert markdown file (YAML frontmatter + body) to DbRecording
- */
-function markdownToRecording({
-	frontMatter,
-	body,
-}: {
-	frontMatter: RecordingFrontMatter;
-	body: string;
-}): DbRecording {
-	return {
-		...frontMatter,
-		transcript: body.trimEnd(),
-	};
-}
 
 /**
  * Reads all markdown files from a directory using the Rust command.
@@ -122,7 +40,10 @@ async function readMarkdownFiles(directoryPath: string): Promise<string[]> {
  * @param filenames - Array of leaf filenames to delete
  * @returns Number of files successfully deleted
  */
-async function deleteFilesInDirectory(directory: string, filenames: string[]): Promise<number> {
+async function deleteFilesInDirectory(
+	directory: string,
+	filenames: string[],
+): Promise<number> {
 	return invoke('delete_files_in_directory', { directory, filenames });
 }
 
@@ -132,210 +53,40 @@ async function deleteFilesInDirectory(directory: string, filenames: string[]): P
  *
  * Directory structure:
  * - recordings/
- *   - {id}.md (metadata with YAML front matter + transcribed text)
  *   - {id}.{ext} (audio file: .wav, .opus, .mp3, etc.)
+ *   - {id}.md (metadata materialized by workspace, NOT written by this service)
  * - transformations/
  *   - {id}.md (transformation configuration)
  * - transformation-runs/
  *   - {id}.md (execution history)
  */
-export function createFileSystemDb(): DbService {
+export function createFileSystemDbService(): DbService {
 	return {
-		recordings: {
-			async getAll() {
+		audio: {
+			async save(recordingId, audio) {
 				return tryAsync({
 					try: async () => {
 						const recordingsPath = await PATHS.DB.RECORDINGS();
-
-						// Ensure directory exists
-						const dirExists = await exists(recordingsPath);
-						if (!dirExists) {
-							await mkdir(recordingsPath, { recursive: true });
-							return [];
-						}
-
-						// Use Rust command to read all markdown files at once
-						const contents = await readMarkdownFiles(recordingsPath);
-
-						// Parse all files
-						const recordings = contents.map((content) => {
-							const { data, content: body } = parseFrontmatter(content);
-
-							const rawFrontMatter = RecordingFrontMatterRaw(data);
-							if (rawFrontMatter instanceof type.errors) {
-								return null; // Skip invalid recording, don't crash the app
-							}
-
-							const frontMatter = normalizeRecordingFrontMatter(rawFrontMatter);
-							if (!frontMatter) {
-								return null; // Skip invalid recording, don't crash the app
-							}
-
-							return markdownToRecording({ frontMatter, body });
-						});
-
-						// Filter out any null entries and sort by recordedAt (newest first)
-						const validRecordings = recordings.filter(
-						(r): r is DbRecording => r !== null,
-						);
-						validRecordings.sort(
-							(a, b) =>
-								new Date(b.recordedAt).getTime() -
-								new Date(a.recordedAt).getTime(),
-						);
-
-						return validRecordings;
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			async getLatest() {
-				return tryAsync({
-					try: async () => {
-						const { data: recordings, error } = await this.getAll();
-						if (error) throw error;
-
-						if (recordings.length === 0) return null;
-						// biome-ignore lint/style/noNonNullAssertion: length check above guarantees at least one element
-						return recordings.at(0)!;
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			async getTranscribingIds() {
-				return tryAsync({
-					try: async () => {
-						const { data: recordings, error } = await this.getAll();
-						if (error) throw error;
-
-						return recordings
-							.filter((r) => r.transcriptionStatus === 'TRANSCRIBING')
-							.map((r) => r.id);
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			async getById(id: string) {
-				return tryAsync({
-					try: async () => {
-						const mdPath = await PATHS.DB.RECORDING_MD(id);
-
-						const fileExists = await exists(mdPath);
-						if (!fileExists) return null;
-
-						const content = await readTextFile(mdPath);
-						const { data, content: body } = parseFrontmatter(content);
-
-						const rawFrontMatter = RecordingFrontMatterRaw(data);
-						if (rawFrontMatter instanceof type.errors) {
-							throw new Error(
-								`Invalid recording front matter: ${rawFrontMatter.summary}`,
-							);
-						}
-
-						const frontMatter = normalizeRecordingFrontMatter(rawFrontMatter);
-						if (!frontMatter) {
-							throw new Error(
-								'Invalid recording front matter: failed to normalize legacy fields',
-							);
-						}
-
-						return markdownToRecording({ frontMatter, body });
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			async create(paramsOrParamsArray) {
-				const paramsArray = Array.isArray(paramsOrParamsArray)
-					? paramsOrParamsArray
-					: [paramsOrParamsArray];
-				return tryAsync({
-					try: async () => {
-						const recordingsPath = await PATHS.DB.RECORDINGS();
-
-						// Ensure directory exists
 						await mkdir(recordingsPath, { recursive: true });
 
-						await Promise.all(
-							paramsArray.map(async ({ recording, audio }) => {
-								// 1. Write audio file
-								// Fallback to 'bin' for unknown MIME types - we're just saving raw bytes to disk,
-								// the actual format doesn't matter for storage purposes
-								const extension = mime.getExtension(audio.type) ?? 'bin';
-								const audioPath = await PATHS.DB.RECORDING_AUDIO(
-									recording.id,
-									extension,
-								);
-								const arrayBuffer = await audio.arrayBuffer();
-								await tauriWriteFile(audioPath, new Uint8Array(arrayBuffer));
-
-								// 2. Create .md file with front matter
-								const mdContent = recordingToMarkdown(recording);
-								const mdPath = await PATHS.DB.RECORDING_MD(recording.id);
-
-								// Write to temp file first, then rename (atomic operation)
-								const tmpPath = `${mdPath}.tmp`;
-								await writeTextFile(tmpPath, mdContent);
-								await tauriRename(tmpPath, mdPath);
-							}),
+						const extension = mime.getExtension(audio.type) ?? 'bin';
+						const audioPath = await PATHS.DB.RECORDING_AUDIO(
+							recordingId,
+							extension,
 						);
+						const arrayBuffer = await audio.arrayBuffer();
+						await tauriWriteFile(audioPath, new Uint8Array(arrayBuffer));
 					},
 					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
-			async update(recording) {
-				const now = new Date().toISOString();
-				const recordingWithTimestamp = {
-					...recording,
-					updatedAt: now,
-				} satisfies DbRecording;
-
-				return tryAsync({
-					try: async () => {
-						const mdPath = await PATHS.DB.RECORDING_MD(recording.id);
-
-						// Check if file exists
-						const fileExists = await exists(mdPath);
-						if (!fileExists) {
-							throw new Error(
-								`Cannot update recording ${recording.id}: file does not exist. Use create() to create new recordings.`,
-							);
-						}
-
-						// Update .md file
-						const mdContent = recordingToMarkdown(recordingWithTimestamp);
-
-						// Atomic write
-						const tmpPath = `${mdPath}.tmp`;
-						await writeTextFile(tmpPath, mdContent);
-						await tauriRename(tmpPath, mdPath);
-
-						// Note: We don't update audio files on update
-						// Audio files are immutable once created
-
-						return recordingWithTimestamp;
-					},
-					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-			},
-
-			async delete(recordingOrRecordings) {
-				const recordings = Array.isArray(recordingOrRecordings)
-					? recordingOrRecordings
-					: [recordingOrRecordings];
+			async delete(idOrIds) {
+				const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
 				return tryAsync({
 					try: async () => {
 						const recordingsPath = await PATHS.DB.RECORDINGS();
-
-						// Build a set of IDs to delete for fast lookup
-						const idsToDelete = new Set(recordings.map((r) => r.id));
-
-						// Read directory once and find all matching files
+						const idsToDelete = new Set(ids);
 						const allFiles = await readDir(recordingsPath);
 						const filenames = allFiles
 							.filter((file) => {
@@ -349,30 +100,8 @@ export function createFileSystemDb(): DbService {
 				});
 			},
 
-			async cleanupExpired({ recordingRetentionStrategy, maxRecordingCount }) {
-				switch (recordingRetentionStrategy) {
-					case 'keep-forever': {
-						return Ok(undefined);
-					}
-					case 'limit-count': {
-						return tryAsync({
-							try: async () => {
-								const { data: recordings, error } = await this.getAll();
-								if (error) throw error;
 
-								if (recordings.length <= maxRecordingCount) return;
-
-								// Delete oldest recordings (already sorted newest first)
-								const toDelete = recordings.slice(maxRecordingCount);
-								await this.delete(toDelete);
-							},
-							catch: (error) => DbError.MutationFailed({ cause: error }),
-						});
-					}
-				}
-			},
-
-			async getAudioBlob(recordingId: string) {
+			async getBlob(recordingId: string) {
 				return tryAsync({
 					try: async () => {
 						const recordingsPath = await PATHS.DB.RECORDINGS();
@@ -400,7 +129,7 @@ export function createFileSystemDb(): DbService {
 				});
 			},
 
-			async ensureAudioPlaybackUrl(recordingId: string) {
+			async ensurePlaybackUrl(recordingId: string) {
 				return tryAsync({
 					try: async () => {
 						const recordingsPath = await PATHS.DB.RECORDINGS();
@@ -426,7 +155,7 @@ export function createFileSystemDb(): DbService {
 				});
 			},
 
-			revokeAudioUrl(_recordingId: string) {
+			revokeUrl(_recordingId: string) {
 				// No-op on desktop, URLs are asset:// protocol managed by Tauri
 			},
 
@@ -442,19 +171,6 @@ export function createFileSystemDb(): DbService {
 						await deleteFilesInDirectory(recordingsPath, filenames);
 					},
 					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-			},
-
-			async getCount() {
-				return tryAsync({
-					try: async () => {
-						const recordingsPath = await PATHS.DB.RECORDINGS();
-						const count = await invoke<number>('count_markdown_files', {
-							directoryPath: recordingsPath,
-						});
-						return count;
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 		},

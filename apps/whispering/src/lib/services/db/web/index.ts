@@ -2,7 +2,6 @@ import { nanoid } from 'nanoid/non-secure';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { DownloadService } from '$lib/services/download';
 import type {
-	DbRecording,
 	Transformation,
 	TransformationRun,
 	TransformationRunCompleted,
@@ -13,13 +12,8 @@ import type {
 } from '../models';
 import { DbError, type DbService } from '../types';
 import { blobToSerializedAudio, WhisperingDatabase } from './dexie-database';
-import type {
-	RecordingsDbSchemaV5,
-	RecordingStoredInIndexedDB,
-	SerializedAudio,
-} from './dexie-schemas';
+import type { SerializedAudio } from './dexie-schemas';
 
-// const downloadIndexedDbBlobWithToast = useDownloadIndexedDbBlobWithToast();
 
 /**
  * Convert serialized audio back to Blob for use in the application.
@@ -28,44 +22,6 @@ function serializedAudioToBlob(serializedAudio: SerializedAudio): Blob {
 	return new Blob([serializedAudio.arrayBuffer], {
 		type: serializedAudio.blobType,
 	});
-}
-
-function storedRecordingToRecording(
-	recording: RecordingStoredInIndexedDB,
-): DbRecording {
-	return {
-		id: recording.id,
-		title: recording.title,
-		recordedAt:
-			'recordedAt' in recording ? recording.recordedAt : recording.timestamp,
-		updatedAt: recording.updatedAt,
-		transcript:
-			'transcript' in recording
-				? recording.transcript
-				: recording.transcribedText,
-		transcriptionStatus: recording.transcriptionStatus,
-		duration: 'duration' in recording ? recording.duration : undefined,
-	};
-}
-
-function recordingToStoredRecording({
-	recording,
-	serializedAudio,
-}: {
-	recording: DbRecording;
-	serializedAudio: SerializedAudio | undefined;
-}): RecordingsDbSchemaV5['recordings'] {
-	return {
-		...recording,
-		serializedAudio,
-	};
-}
-
-function sortByRecordedAtDesc(recordings: DbRecording[]): DbRecording[] {
-	return [...recordings].sort(
-		(a, b) =>
-			new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime(),
-	);
 }
 
 /**
@@ -81,162 +37,27 @@ export function createDbServiceWeb({
 }): DbService {
 	const db = new WhisperingDatabase({ DownloadService });
 	return {
-		recordings: {
-			getAll: async () => {
+		audio: {
+			async save(recordingId, audio) {
+				const serializedAudio = await blobToSerializedAudio(audio);
 				return tryAsync({
 					try: async () => {
-						const recordings = await db.recordings.toArray();
-						return sortByRecordedAtDesc(
-							recordings.map(storedRecordingToRecording),
-						);
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			getLatest: async () => {
-				return tryAsync({
-					try: async () => {
-						const recordings = await db.recordings.toArray();
-						const [latestRecording] = sortByRecordedAtDesc(
-							recordings.map(storedRecordingToRecording),
-						);
-						return latestRecording ?? null;
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			getTranscribingIds: async () => {
-				return tryAsync({
-					try: () =>
-						db.recordings
-							.where('transcriptionStatus')
-							.equals('TRANSCRIBING' satisfies DbRecording['transcriptionStatus'])
-							.primaryKeys(),
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			getById: async (id) => {
-				return tryAsync({
-					try: async () => {
-						const maybeRecording = await db.recordings.get(id);
-						if (!maybeRecording) return null;
-						return storedRecordingToRecording(maybeRecording);
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			async create(paramsOrParamsArray) {
-				const paramsArray = Array.isArray(paramsOrParamsArray)
-					? paramsOrParamsArray
-					: [paramsOrParamsArray];
-
-				const dbRecordings: RecordingsDbSchemaV5['recordings'][] =
-					await Promise.all(
-						paramsArray.map(async ({ recording, audio }) =>
-							recordingToStoredRecording({
-								recording,
-								serializedAudio: await blobToSerializedAudio(audio),
-							}),
-						),
-					);
-
-				return tryAsync({
-					try: async () => {
-						await db.recordings.bulkAdd(dbRecordings);
+						await db.recordings.put({ id: recordingId, serializedAudio });
 					},
 					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
-			update: async (recording) => {
-				const now = new Date().toISOString();
-				const recordingWithTimestamp = {
-					...recording,
-					updatedAt: now,
-				} satisfies DbRecording;
-
-				// Get existing record to preserve serializedAudio (audio is immutable)
-				const existingRecord = await db.recordings.get(recording.id);
-				const serializedAudio = existingRecord?.serializedAudio;
-
-				// Create updated IndexedDB record with preserved audio
-				const dbRecording = recordingToStoredRecording({
-					recording: recordingWithTimestamp,
-					serializedAudio,
-				});
-
-				const { error: updateRecordingError } = await tryAsync({
-					try: async () => {
-						await db.recordings.put(dbRecording);
-					},
-					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-				if (updateRecordingError) return Err(updateRecordingError);
-				return Ok(recordingWithTimestamp);
-			},
-
-			delete: async (recordingOrRecordings) => {
-				const recordings = Array.isArray(recordingOrRecordings)
-					? recordingOrRecordings
-					: [recordingOrRecordings];
-				const ids = recordings.map((r) => r.id);
+			delete: async (idOrIds) => {
+				const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
 				return tryAsync({
 					try: () => db.recordings.bulkDelete(ids),
 					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
-			/**
-			 * Checks and deletes expired recordings based on current settings.
-			 * This should be called:
-			 * 1. On initial load
-			 * 2. Before adding new recordings
-			 * 3. When retention settings change
-			 */
-			cleanupExpired: async ({
-				recordingRetentionStrategy,
-				maxRecordingCount,
-			}: {
-				recordingRetentionStrategy: 'keep-forever' | 'limit-count';
-				maxRecordingCount: number;
-			}) => {
-				switch (recordingRetentionStrategy) {
-					case 'keep-forever': {
-						return Ok(undefined);
-					}
-					case 'limit-count': {
-						const { data: count, error: countError } = await tryAsync({
-							try: () => db.recordings.count(),
-							catch: (error) => DbError.QueryFailed({ cause: error }),
-						});
-						if (countError) return Err(countError);
-						if (count === 0) return Ok(undefined);
 
-						if (count <= maxRecordingCount) return Ok(undefined);
-
-						return tryAsync({
-							try: async () => {
-								const idsToDelete = sortByRecordedAtDesc(
-									(await db.recordings.toArray()).map(
-										storedRecordingToRecording,
-									),
-								)
-									.reverse()
-									.slice(0, count - maxRecordingCount)
-									.map((recording) => recording.id);
-								await db.recordings.bulkDelete(idsToDelete);
-							},
-							catch: (error) => DbError.MutationFailed({ cause: error }),
-						});
-					}
-				}
-			},
-
-			getAudioBlob: async (recordingId) => {
+			getBlob: async (recordingId) => {
 				return tryAsync({
 					try: async () => {
 						const recordingWithAudio = await db.recordings.get(recordingId);
@@ -258,7 +79,7 @@ export function createDbServiceWeb({
 				});
 			},
 
-			ensureAudioPlaybackUrl: async (recordingId) => {
+			ensurePlaybackUrl: async (recordingId) => {
 				return tryAsync({
 					try: async () => {
 						// Check cache first
@@ -290,7 +111,7 @@ export function createDbServiceWeb({
 				});
 			},
 
-			revokeAudioUrl: (recordingId) => {
+			revokeUrl: (recordingId) => {
 				const url = audioUrlCache.get(recordingId);
 				if (url) {
 					URL.revokeObjectURL(url);
@@ -304,14 +125,7 @@ export function createDbServiceWeb({
 					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
-
-			getCount: async () => {
-				return tryAsync({
-					try: () => db.recordings.count(),
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-		}, // End of recordings namespace
+		}, // End of audio namespace
 
 		transformations: {
 			getAll: async () => {

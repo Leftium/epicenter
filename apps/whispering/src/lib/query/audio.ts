@@ -15,6 +15,6 @@ export const audio = {
 	getPlaybackUrl: (id: Accessor<string>) =>
 		defineQuery({
 			queryKey: audioKeys.playbackUrl(id()),
-			queryFn: () => services.db.recordings.ensureAudioPlaybackUrl(id()),
+			queryFn: () => services.db.audio.ensurePlaybackUrl(id()),
 		}),
 };

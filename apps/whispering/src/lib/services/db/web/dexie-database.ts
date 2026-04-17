@@ -14,7 +14,7 @@ import type {
 	RecordingsDbSchemaV2,
 	RecordingsDbSchemaV3,
 	RecordingsDbSchemaV4,
-	RecordingsDbSchemaV5,
+	AudioDbSchemaV5,
 	SerializedAudio,
 } from './dexie-schemas';
 
@@ -38,7 +38,7 @@ export async function blobToSerializedAudio(
 }
 
 export class WhisperingDatabase extends Dexie {
-	recordings!: Dexie.Table<RecordingsDbSchemaV5['recordings'], string>;
+	recordings!: Dexie.Table<AudioDbSchemaV5['recordings'], string>;
 	transformations!: Dexie.Table<TransformationV2, string>;
 	transformationRuns!: Dexie.Table<
 		import('../models').TransformationRun,
@@ -286,7 +286,7 @@ export class WhisperingDatabase extends Dexie {
 						const newRecordings = await Dexie.waitFor(
 							Promise.all(
 								oldRecordings.map(async (record) => {
-									// Convert V4 (Recording with blob) to V5 (RecordingStoredInIndexedDB)
+									// Convert V4 (Recording with blob) to V5 (AudioStoredInIndexedDB)
 									const { blob, ...recordWithoutBlob } = record;
 									const serializedAudio = blob
 										? await blobToSerializedAudio(blob)
@@ -294,15 +294,14 @@ export class WhisperingDatabase extends Dexie {
 									return {
 										...recordWithoutBlob,
 										serializedAudio,
-									} satisfies RecordingsDbSchemaV5['recordings'];
+									} satisfies AudioDbSchemaV5['recordings'];
 								}),
 							),
 						);
 
 						await Dexie.waitFor(tx.table('recordings').clear());
 						await Dexie.waitFor(
-							tx
-								.table<RecordingsDbSchemaV5['recordings']>('recordings')
+								tx.table<AudioDbSchemaV5['recordings']>('recordings')
 								.bulkAdd(newRecordings),
 						);
 					},

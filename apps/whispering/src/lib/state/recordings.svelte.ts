@@ -102,6 +102,17 @@ function createRecordings() {
 			workspace.tables.recordings.delete(id);
 		},
 
+		/**
+		 * Delete multiple recordings by ID in a single optimized scan.
+		 *
+		 * Uses the workspace table's bulkDelete (O(n) single scan) instead of
+		 * looping delete calls (O(n²)). Callers should clean up audio URLs
+		 * and audio blobs separately via `services.db.audio.delete(ids)`.
+		 */
+		async bulkDelete(ids: string[]) {
+			await workspace.tables.recordings.bulkDelete(ids);
+		},
+
 		/** Total number of recordings. */
 		get count() {
 			return map.size;

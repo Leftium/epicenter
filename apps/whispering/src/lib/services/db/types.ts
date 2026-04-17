@@ -6,7 +6,6 @@ import {
 import type { Result } from 'wellcrafted/result';
 
 import type {
-	DbRecording,
 	Transformation,
 	TransformationRun,
 	TransformationRunCompleted,
@@ -23,49 +22,28 @@ export const DbError = defineErrors({
 		message: `Failed to write to database: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	MigrationFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Database migration failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	NoValidFiles: () => ({
-		message: 'No valid audio or video files found',
-	}),
 });
 export type DbError = InferErrors<typeof DbError>;
 
-type RecordingWithAudio = { recording: DbRecording; audio: Blob };
-
 export type DbService = {
-	recordings: {
-		getAll(): Promise<Result<DbRecording[], DbError>>;
-		getLatest(): Promise<Result<DbRecording | null, DbError>>;
-		getTranscribingIds(): Promise<Result<string[], DbError>>;
-		getById(id: string): Promise<Result<DbRecording | null, DbError>>;
-		create(
-			params: RecordingWithAudio | RecordingWithAudio[],
-		): Promise<Result<void, DbError>>;
-		update(recording: DbRecording): Promise<Result<DbRecording, DbError>>;
-		delete(recording: DbRecording | DbRecording[]): Promise<Result<void, DbError>>;
-		cleanupExpired(params: {
-			recordingRetentionStrategy: 'keep-forever' | 'limit-count';
-			maxRecordingCount: number;
-		}): Promise<Result<void, DbError>>;
+	audio: {
+		save(recordingId: string, audio: Blob): Promise<Result<void, DbError>>;
+		delete(id: string | string[]): Promise<Result<void, DbError>>;
 		clear(): Promise<Result<void, DbError>>;
-		getCount(): Promise<Result<number, DbError>>;
 
 		/**
 		 * Get audio blob by recording ID. Fetches audio on-demand.
 		 * - Desktop: Reads file from predictable path using services.fs.pathToBlob()
 		 * - Web: Fetches from IndexedDB by ID, converts serializedAudio to Blob
 		 */
-		getAudioBlob(recordingId: string): Promise<Result<Blob, DbError>>;
+		getBlob(recordingId: string): Promise<Result<Blob, DbError>>;
 
 		/**
 		 * Get audio playback URL. Creates and caches URL.
 		 * - Desktop: Uses convertFileSrc() to create asset:// URL
 		 * - Web: Creates and caches object URL, manages lifecycle
 		 */
-		ensureAudioPlaybackUrl(
+		ensurePlaybackUrl(
 			recordingId: string,
 		): Promise<Result<string, DbError>>;
 
@@ -74,7 +52,7 @@ export type DbService = {
 		 * - Desktop: No-op (asset:// URLs managed by Tauri)
 		 * - Web: Calls URL.revokeObjectURL() and removes from cache
 		 */
-		revokeAudioUrl(recordingId: string): void;
+		revokeUrl(recordingId: string): void;
 	};
 	transformations: {
 		getAll(): Promise<Result<Transformation[], DbError>>;

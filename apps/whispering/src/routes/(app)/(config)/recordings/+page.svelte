@@ -169,7 +169,7 @@
 							description: 'Are you sure you want to delete this recording?',
 							confirm: { text: 'Delete', variant: 'destructive' },
 							onConfirm: () => {
-								services.db.recordings.revokeAudioUrl(row.original.id);
+								services.db.audio.revokeUrl(row.original.id);
 								recordings.delete(row.original.id);
 								rpc.notify.success({
 									title: 'Deleted recording!',

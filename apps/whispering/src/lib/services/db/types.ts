@@ -6,7 +6,6 @@ import {
 import type { Result } from 'wellcrafted/result';
 
 import type {
-	DbRecording,
 	Transformation,
 	TransformationRun,
 	TransformationRunCompleted,
@@ -33,25 +32,12 @@ export const DbError = defineErrors({
 });
 export type DbError = InferErrors<typeof DbError>;
 
-type RecordingWithAudio = { recording: DbRecording; audio: Blob };
-
 export type DbService = {
 	recordings: {
-		getAll(): Promise<Result<DbRecording[], DbError>>;
-		getLatest(): Promise<Result<DbRecording | null, DbError>>;
-		getTranscribingIds(): Promise<Result<string[], DbError>>;
-		getById(id: string): Promise<Result<DbRecording | null, DbError>>;
-		create(
-			params: RecordingWithAudio | RecordingWithAudio[],
-		): Promise<Result<void, DbError>>;
-		update(recording: DbRecording): Promise<Result<DbRecording, DbError>>;
-		delete(recording: DbRecording | DbRecording[]): Promise<Result<void, DbError>>;
-		cleanupExpired(params: {
-			recordingRetentionStrategy: 'keep-forever' | 'limit-count';
-			maxRecordingCount: number;
-		}): Promise<Result<void, DbError>>;
+		saveAudio(recordingId: string, audio: Blob): Promise<Result<void, DbError>>;
+		delete(id: string | string[]): Promise<Result<void, DbError>>;
+		cleanupExpired(idsToDelete: string[]): Promise<Result<void, DbError>>;
 		clear(): Promise<Result<void, DbError>>;
-		getCount(): Promise<Result<number, DbError>>;
 
 		/**
 		 * Get audio blob by recording ID. Fetches audio on-demand.

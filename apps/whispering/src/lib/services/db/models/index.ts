@@ -1,6 +1,3 @@
-// Recordings
-export type { DbRecording } from './recordings';
-
 // Transformation Runs
 export {
 	TransformationRun,

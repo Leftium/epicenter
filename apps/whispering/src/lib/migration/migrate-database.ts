@@ -10,9 +10,6 @@ import type { DbService } from '$lib/services/db/types';
 const MIGRATION_KEY = 'whispering:db-migration';
 export type DbMigrationState = 'pending' | 'done';
 
-type WorkspaceRecordingRow = Parameters<
-	(typeof workspace.tables.recordings)['set']
->[0];
 type WorkspaceTransformationRow = Parameters<
 	(typeof workspace.tables.transformations)['set']
 >[0];
@@ -50,11 +47,13 @@ export function setDatabaseMigrationState(state: DbMigrationState): void {
 }
 
 export async function probeForOldData(dbService: DbService): Promise<boolean> {
-	const { data: recordingsCount } = await dbService.recordings.getCount();
+	// Recording metadata is no longer available through DbService (audio-only now).
+	// Transformations count is a sufficient proxy—if any old data exists,
+	// transformations are almost always present alongside recordings.
 	const { data: transformationsCount } =
 		await dbService.transformations.getCount();
 
-	return (recordingsCount ?? 0) > 0 || (transformationsCount ?? 0) > 0;
+	return (transformationsCount ?? 0) > 0;
 }
 
 export async function migrateDatabaseToWorkspace({
@@ -82,64 +81,20 @@ export async function migrateDatabaseToWorkspace({
 
 	if (readyError) return Err(readyError);
 
-	const recordingsResult = await dbService.recordings.getAll();
-	const transformationsResult = await dbService.transformations.getAll();
+	// Recording migration is no longer needed here.
+	// Recording metadata now lives exclusively in the workspace (Yjs CRDT).
+	// Audio blobs remain accessible through the audio-only DbService.
+	// Desktop users: the materializer syncs workspace ↔ .md files on disk.
+	// Web users: recording metadata was migrated during earlier app versions.
+	onProgress('Skipping recording migration (workspace is source of truth).');
 
-	const recordings = recordingsResult.data ?? [];
+	const transformationsResult = await dbService.transformations.getAll();
 	const transformations = transformationsResult.data ?? [];
 
-	result.recordings.total = recordings.length;
 	result.transformations.total = transformations.length;
 	result.steps.total = transformations.reduce((count, transformation) => {
 		return count + transformation.steps.length;
 	}, 0);
-
-	onProgress(`Migrating ${recordings.length} recordings...`);
-	const batchSize = 100;
-
-	for (let start = 0; start < recordings.length; start += batchSize) {
-		const batch = recordings.slice(start, start + batchSize);
-		const batchNum = Math.floor(start / batchSize) + 1;
-		const totalBatches = Math.ceil(recordings.length / batchSize);
-		onProgress(`Recordings batch ${batchNum}/${totalBatches}...`);
-
-		for (const recording of batch) {
-			trySync({
-				try: () => {
-					if (ws.tables.recordings.has(recording.id)) {
-						result.recordings.skipped += 1;
-						return;
-					}
-
-					const row: WorkspaceRecordingRow = {
-						id: recording.id,
-						title: recording.title,
-						recordedAt: recording.recordedAt,
-						updatedAt: recording.updatedAt,
-						transcript: recording.transcript,
-						transcriptionStatus:
-							recording.transcriptionStatus === 'TRANSCRIBING'
-								? 'FAILED'
-								: recording.transcriptionStatus,
-						duration: recording.duration ?? undefined,
-						_v: 2 as const,
-					};
-
-					ws.tables.recordings.set(row);
-					result.recordings.migrated += 1;
-				},
-				catch: (cause) => {
-					result.recordings.failed += 1;
-					onProgress(`Failed recording ${recording.id}: ${String(cause)}`);
-					return Ok(undefined);
-				},
-			});
-		}
-	}
-
-	onProgress(
-		`Recordings done: ${result.recordings.migrated} migrated, ${result.recordings.skipped} skipped, ${result.recordings.failed} failed`,
-	);
 
 	onProgress(
 		`Migrating ${transformations.length} transformations (${result.steps.total} steps)...`,

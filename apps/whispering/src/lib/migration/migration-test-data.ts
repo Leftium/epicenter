@@ -2,7 +2,6 @@ import { nanoid } from 'nanoid/non-secure';
 import {
 	generateDefaultTransformation,
 	generateDefaultTransformationStep,
-	type Recording,
 	type Transformation,
 } from '$lib/services/db';
 import { createDbServiceWeb } from '$lib/services/db/web';
@@ -12,27 +11,12 @@ export const MOCK_RECORDING_COUNT = 12;
 export const MOCK_TRANSFORMATION_COUNT = 10;
 
 function createMockRecording(index: number): {
-	recording: Recording;
+	id: string;
 	audio: Blob;
 } {
 	const id = nanoid();
-	const now = new Date().toISOString();
-	const statuses = ['DONE', 'UNPROCESSED', 'FAILED', 'TRANSCRIBING'] as const;
-	const transcriptionStatus = statuses[index % statuses.length] ?? 'DONE';
-
-	const recording: Recording = {
-		id,
-		title: `Mock Recording ${index + 1}`,
-		recordedAt: now,
-		updatedAt: now,
-		transcript: index % 5 === 0 ? '' : `Mock transcript ${index + 1}`,
-		duration: undefined,
-		transcriptionStatus,
-	};
-
 	const audio = new Blob([`mock-audio-${index}`], { type: 'audio/webm' });
-
-	return { recording, audio };
+	return { id, audio };
 }
 
 /**
@@ -88,12 +72,14 @@ export function createMigrationTestData() {
 				createMockRecording(index),
 			);
 
-			const { error: recordingsError } =
-				await indexedDb.recordings.create(recordings);
-			if (recordingsError) {
-				throw new Error(
-					`Failed to seed recordings: ${recordingsError.message}`,
-				);
+			for (const { id, audio } of recordings) {
+				const { error: recordingError } =
+					await indexedDb.recordings.saveAudio(id, audio);
+				if (recordingError) {
+					throw new Error(
+						`Failed to seed recording ${id}: ${recordingError.message}`,
+					);
+				}
 			}
 
 			const transformations = Array.from(

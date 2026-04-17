@@ -7,8 +7,6 @@
  *
  * @see {@link ../models/recordings.ts} for the domain type used by UI and services
  */
-import type { DbRecording } from '../models/recordings';
-
 /**
  * Serialized audio format for IndexedDB storage.
  *
@@ -26,30 +24,19 @@ export type SerializedAudio = {
 	blobType: string;
 };
 
-type RecordingStoredInIndexedDbLegacy = {
+/**
+ * How a recording is stored in IndexedDB (audio-only storage format).
+ *
+ * The workspace (Yjs CRDT) is the sole source of truth for recording metadata.
+ * IndexedDB only stores the audio blob alongside the recording ID.
+ *
+ * Legacy rows may still carry metadata fields from older schema versions.
+ * These are ignored on read—only `id` and `serializedAudio` are used.
+ */
+export type RecordingStoredInIndexedDB = {
 	id: string;
-	title: string;
-	subtitle: string;
-	timestamp: string;
-	createdAt: string;
-	updatedAt: string;
-	transcribedText: string;
-	transcriptionStatus: 'UNPROCESSED' | 'TRANSCRIBING' | 'DONE' | 'FAILED';
 	serializedAudio: SerializedAudio | undefined;
 };
-
-/**
- * How a recording is actually stored in IndexedDB (storage format).
- *
- * New writes use the V2 recording field names. Existing IndexedDB rows may still carry
- * legacy V1/V4-style names until they are read and rewritten, so the storage type accepts
- * both shapes.
- */
-export type RecordingStoredInIndexedDB =
-	| (DbRecording & {
-			serializedAudio: SerializedAudio | undefined;
-	  })
-	| RecordingStoredInIndexedDbLegacy;
 
 export type RecordingsDbSchemaV5 = {
 	recordings: RecordingStoredInIndexedDB;

@@ -5,19 +5,17 @@ import type { DbService } from './types';
 import { DbError } from './types';
 import { createDbServiceWeb } from './web';
 
+void Err;
+
 /**
- * Desktop DB Service with dual read/single write pattern.
+ * Desktop DB Service — audio blob store with dual-source fallback.
  *
- * Phase 2 Migration Strategy:
- * - READS: Merge data from BOTH IndexedDB and file system (file system takes precedence)
- * - WRITES: Only write to file system (new recordings)
- * - Old recordings remain in IndexedDB until naturally migrated
- * - When updating an old recording, it's automatically moved to file system
+ * Recording metadata lives in the workspace (Yjs CRDT). The DB service
+ * only manages audio blobs. Audio reads check file system first, then
+ * fall back to IndexedDB for unmigrated data.
  *
- * This ensures:
- * - No data loss during migration
- * - Gradual, automatic migration as users interact with recordings
- * - File system becomes the source of truth over time
+ * Transformations and runs still use the dual read/single write pattern
+ * during their migration period.
  */
 
 export function createDbServiceDesktop({
@@ -30,122 +28,17 @@ export function createDbServiceDesktop({
 
 	return {
 		recordings: {
-			getAll: async () => {
-				// DUAL READ: Merge from both sources (file system takes precedence)
-				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.recordings.getAll(),
-					indexedDb.recordings.getAll(),
-				]);
-
-				// If both failed, return an error
-				if (fsResult.error && idbResult.error) {
-					return DbError.QueryFailed({ cause: fsResult.error });
-				}
-
-				// Use data from successful sources (empty array for failed ones)
-				const fsRecordings = fsResult.data ?? [];
-				const idbRecordings = idbResult.data ?? [];
-
-				// Merge, preferring file system (newer) over IndexedDB
-				const merged = new Map();
-
-				// Add IndexedDB recordings first
-				for (const rec of idbRecordings) {
-					merged.set(rec.id, rec);
-				}
-
-				// Overwrite with file system recordings (takes precedence)
-				for (const rec of fsRecordings) {
-					merged.set(rec.id, rec);
-				}
-
-				// Convert back to array and sort by recordedAt (newest first)
-				const result = Array.from(merged.values());
-				result.sort(
-					(a, b) =>
-						new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime(),
-				);
-
-				return Ok(result);
-			},
-
-			getLatest: async () => {
-				// DUAL READ: Check both sources via getAll
-				const { data: recordings, error } = await createDbServiceDesktop({
-					DownloadService,
-				}).recordings.getAll();
-
-				if (error) return Err(error);
-
-				if (recordings.length === 0) return Ok(null);
-				// biome-ignore lint/style/noNonNullAssertion: length check above guarantees at least one element
-				return Ok(recordings.at(0)!);
-			},
-
-			getTranscribingIds: async () => {
-				// DUAL READ: Merge from both sources
-				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.recordings.getTranscribingIds(),
-					indexedDb.recordings.getTranscribingIds(),
-				]);
-
-				// If both failed, return an error
-				if (fsResult.error && idbResult.error) {
-					return DbError.QueryFailed({ cause: fsResult.error });
-				}
-
-				// Use data from successful sources (empty array for failed ones)
-				const fsIds = fsResult.data ?? [];
-				const idbIds = idbResult.data ?? [];
-
-				// Combine and deduplicate
-				const combined = new Set([...fsIds, ...idbIds]);
-				return Ok(Array.from(combined));
-			},
-
-			getById: async (id: string) => {
-				// DUAL READ: Check file system first, fallback to IndexedDB
-				const fsResult = await fileSystemDb.recordings.getById(id);
-
-				// If found in file system, return it
-				if (fsResult.data) {
-					return Ok(fsResult.data);
-				}
-
-				// Not in file system, check IndexedDB
-				const idbResult = await indexedDb.recordings.getById(id);
-
-				// If found in IndexedDB, return it
-				if (idbResult.data) {
-					return Ok(idbResult.data);
-				}
-
-				// If both failed, return an error only if both actually errored
-				// (not just returned null/undefined)
-				if (fsResult.error && idbResult.error) {
-					return DbError.QueryFailed({ cause: fsResult.error });
-				}
-
-				// Not found in either source (but no errors)
-				return Ok(null);
-			},
-
-			create: async (paramsOrParamsArray) => {
+			saveAudio: async (recordingId, audio) => {
 				// SINGLE WRITE: Only to file system
-				return fileSystemDb.recordings.create(paramsOrParamsArray);
+				return fileSystemDb.recordings.saveAudio(recordingId, audio);
 			},
 
-			update: async (recording) => {
-				// SINGLE WRITE: Only to file system
-				// This automatically migrates recordings from IndexedDB to file system
-				return fileSystemDb.recordings.update(recording);
-			},
-
-			delete: async (recordingOrRecordings) => {
+			delete: async (idOrIds) => {
+				const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
 				// Delete from BOTH sources to ensure complete removal
 				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.recordings.delete(recordingOrRecordings),
-					indexedDb.recordings.delete(recordingOrRecordings),
+					fileSystemDb.recordings.delete(ids),
+					indexedDb.recordings.delete(ids),
 				]);
 
 				// If both failed, return an error
@@ -157,11 +50,11 @@ export function createDbServiceDesktop({
 				return Ok(undefined);
 			},
 
-			cleanupExpired: async (params) => {
+			cleanupExpired: async (idsToDelete) => {
 				// Clean up from BOTH sources
 				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.recordings.cleanupExpired(params),
-					indexedDb.recordings.cleanupExpired(params),
+					fileSystemDb.recordings.cleanupExpired(idsToDelete),
+					indexedDb.recordings.cleanupExpired(idsToDelete),
 				]);
 
 				// If both failed, return an error
@@ -247,20 +140,6 @@ export function createDbServiceDesktop({
 				}
 
 				return Ok(undefined);
-			},
-
-			getCount: async () => {
-				// DUAL READ: Sum both sources to avoid missing unmigrated IndexedDB data
-				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.recordings.getCount(),
-					indexedDb.recordings.getCount(),
-				]);
-
-				if (fsResult.error && idbResult.error) {
-					return DbError.QueryFailed({ cause: fsResult.error });
-				}
-
-				return Ok((fsResult.data ?? 0) + (idbResult.data ?? 0));
 			},
 		},
 

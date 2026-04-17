@@ -139,6 +139,31 @@ export type InferTableRow<T> = T extends {
 	? TLatest
 	: never;
 
+/**
+ * A content strategy factory — receives a content Y.Doc and returns a typed binding.
+ *
+ * The binding is whatever the strategy wants to expose: a Y.Text for plain text,
+ * a Y.XmlFragment for rich text, or a custom object with methods for complex
+ * content types like chat trees.
+ *
+ * Called once per document open. Each call gets a fresh Y.Doc.
+ *
+ * @example
+ * ```typescript
+ * // Simple: return a Y.Text
+ * const myStrategy: ContentStrategy<Y.Text> = (ydoc) => ydoc.getText('content');
+ *
+ * // Complex: return a custom binding object
+ * const chatTree: ContentStrategy<ChatTreeBinding> = (ydoc) => ({
+ *   nodes: ydoc.getMap('nodes'),
+ *   addMessage(msg) {
+ *     // ...
+ *   },
+ * });
+ * ```
+ */
+export type ContentStrategy<TBinding = unknown> = (ydoc: Y.Doc) => TBinding;
+
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT CONFIG TYPES
 // ════════════════════════════════════════════════════════════════════════════
@@ -163,6 +188,8 @@ export type DocumentConfig<
 	TRow extends BaseRow = BaseRow,
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
 > = {
+	/** Content strategy — receives the document Y.Doc, returns a typed binding for `handle.content`. */
+	content: ContentStrategy;
 	guid: TGuid;
 	/**
 	 * Called on every content Y.Doc change (local and remote). Return the
@@ -236,6 +263,8 @@ export type ClaimedDocumentColumns<
 export type DocumentClient<
 	TDocExtensions extends Record<string, unknown> = Record<string, never>,
 > = Timeline & {
+	/** The content binding returned by the content strategy. Falls back to the timeline if no strategy was provided. */
+	content: unknown;
 	/** The workspace identifier. */
 	id: string;
 	/** The table this document belongs to (e.g., 'files', 'notes'). */

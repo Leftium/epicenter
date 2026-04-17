@@ -109,6 +109,7 @@ export { KV_KEY, TableKey } from './workspace/ydoc-keys';
 export { defineKv } from './workspace/define-kv';
 export { defineTable } from './workspace/define-table';
 export { defineWorkspace } from './workspace/define-workspace';
+export { plainText, richText, timeline } from './workspace/strategies';
 
 // ════════════════════════════════════════════════════════════════════════════
 // WORKSPACE CREATION
@@ -143,6 +144,7 @@ export type {
 	AwarenessHelper,
 	AwarenessState,
 	BaseRow,
+	ContentStrategy,
 	DocumentClient,
 	DocumentConfig,
 	DocumentHandle,

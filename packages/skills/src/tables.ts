@@ -9,7 +9,11 @@
  * @module
  */
 
-import { defineTable, type InferTableRow } from '@epicenter/workspace';
+import {
+	defineTable,
+	type InferTableRow,
+	plainText,
+} from '@epicenter/workspace';
 import { type } from 'arktype';
 
 /**
@@ -55,6 +59,7 @@ export const skillsTable = defineTable(
 		_v: '1',
 	}),
 ).withDocument('instructions', {
+	content: plainText,
 	guid: 'id',
 	onUpdate: () => ({ updatedAt: Date.now() }),
 });
@@ -90,6 +95,7 @@ export const referencesTable = defineTable(
 		_v: '1',
 	}),
 ).withDocument('content', {
+	content: plainText,
 	guid: 'id',
 	onUpdate: () => ({ updatedAt: Date.now() }),
 });

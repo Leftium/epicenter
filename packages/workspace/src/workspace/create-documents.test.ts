@@ -18,6 +18,7 @@ import {
 	createDocuments,
 	DOCUMENTS_ORIGIN,
 } from './create-documents.js';
+import { timeline } from './strategies.js';
 import { createTables } from './create-tables.js';
 import { createWorkspace } from './create-workspace.js';
 import { defineTable } from './define-table.js';
@@ -51,6 +52,7 @@ function setup(
 		tableName: 'files',
 		documentName: 'content',
 		guidKey: 'id',
+		content: timeline,
 		onUpdate: () => ({ updatedAt: Date.now() }),
 		tableHelper: tables.files,
 		ydoc,
@@ -214,6 +216,7 @@ describe('createDocuments', () => {
 				tableName: 'files',
 				documentName: 'content',
 				guidKey: 'id',
+				content: timeline,
 				onUpdate: () => ({
 					updatedAt: 999,
 					lastEditedBy: 'test-user',
@@ -252,6 +255,7 @@ describe('createDocuments', () => {
 				tableName: 'files',
 				documentName: 'content',
 				guidKey: 'id',
+				content: timeline,
 				onUpdate: () => ({}),
 				tableHelper: tables.files,
 				ydoc,
@@ -671,6 +675,7 @@ describe('createDocuments', () => {
 			const filesTable = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			).withDocument('content', {
+				content: timeline,
 				guid: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 				awareness: {
@@ -701,6 +706,7 @@ describe('createDocuments', () => {
 			const filesTable = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			).withDocument('content', {
+				content: timeline,
 				guid: 'id',
 				onUpdate: () => ({ updatedAt: Date.now() }),
 				awareness: {
@@ -740,6 +746,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 			tableName: 'files',
 			documentName: 'content',
 			guidKey: 'id',
+			content: timeline,
 			onUpdate: () => ({ updatedAt: Date.now() }),
 			tableHelper: tables.files,
 			ydoc,

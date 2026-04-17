@@ -60,6 +60,7 @@ import {
 import type {
 	AwarenessDefinitions,
 	BaseRow,
+	ContentStrategy,
 	DocumentExtensionRegistration,
 	DocumentHandle,
 	Documents,
@@ -114,6 +115,8 @@ export type CreateDocumentsConfig<
 	documentName: string;
 	/** Column name storing the Y.Doc GUID. */
 	guidKey: keyof TRow & string;
+	/** Content strategy — receives the document Y.Doc, returns a typed binding for `handle.content`. */
+	content: ContentStrategy;
 	/**
 	 * Called on every content Y.Doc change (local and remote). Return the
 	 * fields to write to the table row. The row write fires `table.observe`,
@@ -159,6 +162,7 @@ export function createDocuments<
 		tableName,
 		documentName,
 		guidKey,
+		content,
 		onUpdate,
 		tableHelper,
 		ydoc: workspaceYdoc,
@@ -207,6 +211,7 @@ export function createDocuments<
 				(awarenessDefinitions ?? {}) as TAwarenessDefinitions,
 			);
 			const timeline = createTimeline(contentYdoc);
+			const contentBinding = content(contentYdoc);
 
 			// Call document extension factories synchronously.
 			// IMPORTANT: No await between openDocuments.get() and openDocuments.set() — ensures
@@ -290,6 +295,7 @@ export function createDocuments<
 					? Promise.resolve()
 					: Promise.all(whenReadyPromises).then(() => {});
 			const handle = Object.assign(timeline, {
+				content: contentBinding,
 				id,
 				tableName,
 				documentName,

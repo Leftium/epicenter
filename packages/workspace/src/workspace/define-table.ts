@@ -52,6 +52,7 @@ import type {
 	AwarenessDefinitions,
 	BaseRow,
 	ClaimedDocumentColumns,
+	ContentStrategy,
 	DocumentConfig,
 	LastSchema,
 	StringKeysOf,
@@ -118,6 +119,7 @@ type TableDefinitionWithDocBuilder<
 	>(
 		name: TName,
 		config: {
+			content: ContentStrategy;
 			guid: TGuid;
 			onUpdate: () => Partial<
 				Omit<StandardSchemaV1.InferOutput<LastSchema<TVersions>>, 'id'>
@@ -257,6 +259,7 @@ function attachDocumentBuilder<
 				documents: {
 					...def.documents,
 					[name]: {
+						content: config.content,
 						guid: config.guid,
 						onUpdate: config.onUpdate,
 						awareness: config.awareness,

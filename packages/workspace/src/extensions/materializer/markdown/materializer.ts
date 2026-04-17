@@ -124,6 +124,7 @@ export function createMarkdownMaterializer<
 		dir: string,
 	) => {
 		const table = ctx.tables[name];
+		if (!table) throw new Error(`Table "${name}" not found in workspace`);
 		const tableConfig = tableConfigs[name];
 		const directory = join(dir, tableConfig?.dir ?? name);
 		const filenames = new Map<string, string>();
@@ -238,6 +239,7 @@ export function createMarkdownMaterializer<
 
 			for (const name of tableNames) {
 				const table = ctx.tables[name];
+				if (!table) continue;
 				const tableConfig = tableConfigs[name];
 				const directory = join(dir, tableConfig?.dir ?? name);
 
@@ -286,6 +288,7 @@ export function createMarkdownMaterializer<
 
 			for (const name of tableNames) {
 				const table = ctx.tables[name];
+				if (!table) continue;
 				const tableConfig = tableConfigs[name];
 				const directory = join(dir, tableConfig?.dir ?? name);
 

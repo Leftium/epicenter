@@ -385,7 +385,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 			}
 
 			const { data, error } = await tryAsync({
-				try: () => target(rpc.input),
+				try: async () => target(rpc.input),
 				catch: (err) =>
 					RpcError.ActionFailed({ action: rpc.action, cause: err }),
 			});

@@ -2,7 +2,6 @@ import { nanoid } from 'nanoid/non-secure';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { DownloadService } from '$lib/services/download';
 import type {
-	Transformation,
 	TransformationRun,
 	TransformationRunCompleted,
 	TransformationRunFailed,
@@ -13,7 +12,6 @@ import type {
 import { DbError, type DbService } from '../types';
 import { blobToSerializedAudio, WhisperingDatabase } from './dexie-database';
 import type { SerializedAudio } from './dexie-schemas';
-
 
 /**
  * Convert serialized audio back to Blob for use in the application.
@@ -55,7 +53,6 @@ export function createDbServiceWeb({
 					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
-
 
 			getBlob: async (recordingId) => {
 				return tryAsync({
@@ -126,79 +123,6 @@ export function createDbServiceWeb({
 				});
 			},
 		}, // End of audio namespace
-
-		transformations: {
-			getAll: async () => {
-				return tryAsync({
-					try: () => db.transformations.toArray(),
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			getById: async (id) => {
-				return tryAsync({
-					try: async () => {
-						const maybeTransformation =
-							(await db.transformations.get(id)) ?? null;
-						return maybeTransformation;
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			create: async (transformationOrTransformations) => {
-				const transformations = Array.isArray(transformationOrTransformations)
-					? transformationOrTransformations
-					: [transformationOrTransformations];
-				return tryAsync({
-					try: async () => {
-						await db.transformations.bulkAdd(transformations);
-					},
-					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-			},
-
-			update: async (transformation) => {
-				const now = new Date().toISOString();
-				const transformationWithTimestamp = {
-					...transformation,
-					updatedAt: now,
-				} satisfies Transformation;
-				const { error: updateTransformationError } = await tryAsync({
-					try: () => db.transformations.put(transformationWithTimestamp),
-					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-				if (updateTransformationError) return Err(updateTransformationError);
-				return Ok(transformationWithTimestamp);
-			},
-
-			delete: async (transformationOrTransformations) => {
-				const transformations = Array.isArray(transformationOrTransformations)
-					? transformationOrTransformations
-					: [transformationOrTransformations];
-				return tryAsync({
-					try: async () => {
-						const ids = transformations.map((t) => t.id);
-						await db.transformations.bulkDelete(ids);
-					},
-					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-			},
-
-			clear: async () => {
-				return tryAsync({
-					try: () => db.transformations.clear(),
-					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-			},
-
-			getCount: async () => {
-				return tryAsync({
-					try: () => db.transformations.count(),
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-		}, // End of transformations namespace
 
 		runs: {
 			getAll: async () => {

@@ -15,8 +15,8 @@ import { nanoid } from 'nanoid/non-secure';
 import { tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
 import { FsServiceLive } from '$lib/services/desktop/fs';
-import { parseFrontmatter, stringifyFrontmatter } from './frontmatter';
-import { Transformation, TransformationRun } from './models';
+import { parseFrontmatter } from './frontmatter';
+import { TransformationRun } from './models';
 import type { DbService } from './types';
 import { DbError } from './types';
 
@@ -100,7 +100,6 @@ export function createFileSystemDbService(): DbService {
 				});
 			},
 
-
 			async getBlob(recordingId: string) {
 				return tryAsync({
 					try: async () => {
@@ -171,159 +170,6 @@ export function createFileSystemDbService(): DbService {
 						await deleteFilesInDirectory(recordingsPath, filenames);
 					},
 					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-			},
-		},
-
-		transformations: {
-			async getAll() {
-				return tryAsync({
-					try: async () => {
-						const transformationsPath = await PATHS.DB.TRANSFORMATIONS();
-
-						// Ensure directory exists
-						const dirExists = await exists(transformationsPath);
-						if (!dirExists) {
-							await mkdir(transformationsPath, { recursive: true });
-							return [];
-						}
-
-						// Use Rust command to read all markdown files at once
-						const contents = await readMarkdownFiles(transformationsPath);
-
-						// Parse all files
-						const transformations = contents.map((content) => {
-							const { data } = parseFrontmatter(content);
-
-							// Validate with migrating schema (accepts V1 or V2, outputs V2)
-							const validated = Transformation(data);
-							if (validated instanceof type.errors) {
-								console.error(`Invalid transformation:`, validated.summary);
-								return null; // Skip invalid transformation
-							}
-
-							return validated;
-						});
-
-						return transformations.filter(
-							(t): t is Transformation => t !== null,
-						);
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			async getById(id: string) {
-				return tryAsync({
-					try: async () => {
-						const mdPath = await PATHS.DB.TRANSFORMATION_MD(id);
-
-						const fileExists = await exists(mdPath);
-						if (!fileExists) return null;
-
-						const content = await readTextFile(mdPath);
-						const { data } = parseFrontmatter(content);
-
-						// Validate with migrating schema (accepts V1 or V2, outputs V2)
-						const validated = Transformation(data);
-						if (validated instanceof type.errors) {
-							throw new Error(`Invalid transformation: ${validated.summary}`);
-						}
-
-						return validated;
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
-				});
-			},
-
-			async create(transformationOrTransformations) {
-				const transformations = Array.isArray(transformationOrTransformations)
-					? transformationOrTransformations
-					: [transformationOrTransformations];
-				return tryAsync({
-					try: async () => {
-						const transformationsPath = await PATHS.DB.TRANSFORMATIONS();
-						await mkdir(transformationsPath, { recursive: true });
-						await Promise.all(
-							transformations.map(async (transformation) => {
-								const mdContent = stringifyFrontmatter('', transformation);
-								const mdPath = await PATHS.DB.TRANSFORMATION_MD(
-									transformation.id,
-								);
-								const tmpPath = `${mdPath}.tmp`;
-								await writeTextFile(tmpPath, mdContent);
-								await tauriRename(tmpPath, mdPath);
-							}),
-						);
-					},
-					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-			},
-
-			async update(transformation: Transformation) {
-				const now = new Date().toISOString();
-				const transformationWithTimestamp = {
-					...transformation,
-					updatedAt: now,
-				} satisfies Transformation;
-
-				return tryAsync({
-					try: async () => {
-						const mdPath = await PATHS.DB.TRANSFORMATION_MD(transformation.id);
-
-						// Create .md file with front matter
-						const mdContent = stringifyFrontmatter(
-							'',
-							transformationWithTimestamp,
-						);
-
-						// Atomic write
-						const tmpPath = `${mdPath}.tmp`;
-						await writeTextFile(tmpPath, mdContent);
-						await tauriRename(tmpPath, mdPath);
-
-						return transformationWithTimestamp;
-					},
-					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-			},
-
-			async delete(transformationOrTransformations) {
-				const transformations = Array.isArray(transformationOrTransformations)
-					? transformationOrTransformations
-					: [transformationOrTransformations];
-				return tryAsync({
-					try: async () => {
-						const transformationsDir = await PATHS.DB.TRANSFORMATIONS();
-						const filenames = transformations.map((t) => `${t.id}.md`);
-						await deleteFilesInDirectory(transformationsDir, filenames);
-					},
-					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-			},
-
-			async clear() {
-				return tryAsync({
-					try: async () => {
-						const transformationsPath = await PATHS.DB.TRANSFORMATIONS();
-						const dirExists = await exists(transformationsPath);
-						if (dirExists) {
-							await remove(transformationsPath, { recursive: true });
-							await mkdir(transformationsPath, { recursive: true });
-						}
-					},
-					catch: (error) => DbError.MutationFailed({ cause: error }),
-				});
-			},
-
-			async getCount() {
-				return tryAsync({
-					try: async () => {
-						const { data: transformations, error } = await this.getAll();
-						if (error) throw error;
-						return transformations.length;
-					},
-					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 		},

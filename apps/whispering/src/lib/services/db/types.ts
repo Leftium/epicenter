@@ -6,7 +6,6 @@ import {
 import type { Result } from 'wellcrafted/result';
 
 import type {
-	Transformation,
 	TransformationRun,
 	TransformationRunCompleted,
 	TransformationRunFailed,
@@ -53,21 +52,6 @@ export type DbService = {
 		 * - Web: Calls URL.revokeObjectURL() and removes from cache
 		 */
 		revokeUrl(recordingId: string): void;
-	};
-	transformations: {
-		getAll(): Promise<Result<Transformation[], DbError>>;
-		getById(id: string): Promise<Result<Transformation | null, DbError>>;
-		create(
-			transformation: Transformation | Transformation[],
-		): Promise<Result<void, DbError>>;
-		update(
-			transformation: Transformation,
-		): Promise<Result<Transformation, DbError>>;
-		delete(
-			transformation: Transformation | Transformation[],
-		): Promise<Result<void, DbError>>;
-		clear(): Promise<Result<void, DbError>>;
-		getCount(): Promise<Result<number, DbError>>;
 	};
 	runs: {
 		getAll(): Promise<Result<TransformationRun[], DbError>>;

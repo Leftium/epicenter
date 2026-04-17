@@ -5,7 +5,6 @@ import type { DbService } from './types';
 import { DbError } from './types';
 import { createDbServiceWeb } from './web';
 
-
 /**
  * Desktop DB Service — audio blob store with dual-source fallback.
  *
@@ -49,11 +48,9 @@ export function createDbServiceDesktop({
 				return Ok(undefined);
 			},
 
-
 			getBlob: async (recordingId) => {
 				// DUAL READ: Check file system first, fallback to IndexedDB
-				const fsResult =
-					await fileSystemDb.audio.getBlob(recordingId);
+				const fsResult = await fileSystemDb.audio.getBlob(recordingId);
 
 				// If found in file system, return it
 				if (fsResult.data) {
@@ -88,8 +85,7 @@ export function createDbServiceDesktop({
 				}
 
 				// Not in file system, check IndexedDB
-				const idbResult =
-					await indexedDb.audio.ensurePlaybackUrl(recordingId);
+				const idbResult = await indexedDb.audio.ensurePlaybackUrl(recordingId);
 
 				// If found in IndexedDB, return it
 				if (idbResult.data) {
@@ -124,122 +120,6 @@ export function createDbServiceDesktop({
 				}
 
 				return Ok(undefined);
-			},
-		},
-
-		transformations: {
-			getAll: async () => {
-				// DUAL READ: Merge from both sources
-				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.transformations.getAll(),
-					indexedDb.transformations.getAll(),
-				]);
-
-				// If both failed, return an error
-				if (fsResult.error && idbResult.error) {
-					return DbError.QueryFailed({ cause: fsResult.error });
-				}
-
-				// Use data from successful sources (empty array for failed ones)
-				const fsTransformations = fsResult.data ?? [];
-				const idbTransformations = idbResult.data ?? [];
-
-				// Merge, preferring file system (newer) over IndexedDB
-				const merged = new Map();
-
-				for (const t of idbTransformations) {
-					merged.set(t.id, t);
-				}
-
-				for (const t of fsTransformations) {
-					merged.set(t.id, t);
-				}
-
-				return Ok(Array.from(merged.values()));
-			},
-
-			getById: async (id: string) => {
-				// DUAL READ: Check file system first, fallback to IndexedDB
-				const fsResult = await fileSystemDb.transformations.getById(id);
-
-				// If found in file system, return it
-				if (fsResult.data) {
-					return Ok(fsResult.data);
-				}
-
-				// Not in file system, check IndexedDB
-				const idbResult = await indexedDb.transformations.getById(id);
-
-				// If found in IndexedDB, return it
-				if (idbResult.data) {
-					return Ok(idbResult.data);
-				}
-
-				// If both failed, return an error only if both actually errored
-				if (fsResult.error && idbResult.error) {
-					return DbError.QueryFailed({ cause: fsResult.error });
-				}
-
-				// Not found in either source (but no errors)
-				return Ok(null);
-			},
-
-			create: async (transformationOrTransformations) => {
-				// SINGLE WRITE: Only to file system
-				return fileSystemDb.transformations.create(
-					transformationOrTransformations,
-				);
-			},
-
-			update: async (transformation) => {
-				// SINGLE WRITE: Only to file system
-				return fileSystemDb.transformations.update(transformation);
-			},
-
-			delete: async (transformationOrTransformations) => {
-				// Delete from BOTH sources
-				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.transformations.delete(transformationOrTransformations),
-					indexedDb.transformations.delete(transformationOrTransformations),
-				]);
-
-				// If both failed, return an error
-				if (fsResult.error && idbResult.error) {
-					return DbError.MutationFailed({ cause: fsResult.error });
-				}
-
-				// Success if at least one succeeded
-				return Ok(undefined);
-			},
-
-			clear: async () => {
-				// Clear from BOTH sources
-				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.transformations.clear(),
-					indexedDb.transformations.clear(),
-				]);
-
-				// If both failed, return an error
-				if (fsResult.error && idbResult.error) {
-					return DbError.MutationFailed({ cause: fsResult.error });
-				}
-
-				// Success if at least one succeeded
-				return Ok(undefined);
-			},
-
-			getCount: async () => {
-				// DUAL READ: Sum both sources to avoid missing unmigrated IndexedDB data
-				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.transformations.getCount(),
-					indexedDb.transformations.getCount(),
-				]);
-
-				if (fsResult.error && idbResult.error) {
-					return DbError.QueryFailed({ cause: fsResult.error });
-				}
-
-				return Ok((fsResult.data ?? 0) + (idbResult.data ?? 0));
 			},
 		},
 

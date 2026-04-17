@@ -8,8 +8,8 @@
 
 import { createWorkspace } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
+import { isTauri } from '@tauri-apps/api/core';
 import yaml from 'js-yaml';
-
 import { PATHS } from '$lib/constants/paths';
 import type { Recording } from './workspace';
 import { whisperingDefinition } from './workspace/definition';
@@ -21,14 +21,14 @@ function toRecordingMarkdownFile(row: Recording) {
 		filename: `${row.id}.md`,
 		content: `---\n${yamlStr}---\n${transcript || ''}\n`,
 	};
-		}
+}
 
 const base = createWorkspace(whisperingDefinition).withExtension(
 	'persistence',
 	indexeddbPersistence,
-	);
+);
 
-export const workspace = window.__TAURI_INTERNALS__
+export const workspace = isTauri()
 	? base.withWorkspaceExtension('materializer', (ctx) => {
 			let unsub: (() => void) | undefined;
 			let syncQueue = Promise.resolve();
@@ -50,9 +50,9 @@ export const workspace = window.__TAURI_INTERNALS__
 									const result = ctx.tables.recordings.get(id);
 									if (result.status === 'valid') {
 										toWrite.push(toRecordingMarkdownFile(result.row));
-								} else if (result.status === 'not_found') {
-									toDelete.push(`${id}.md`);
-								}
+									} else if (result.status === 'not_found') {
+										toDelete.push(`${id}.md`);
+									}
 								}
 
 								if (toWrite.length) {

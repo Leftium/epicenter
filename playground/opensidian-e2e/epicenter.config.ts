@@ -26,8 +26,8 @@ import {
 import { createWorkspace, defineMutation } from '@epicenter/workspace';
 import {
 	createMarkdownMaterializer,
-	markdown,
 	prepareMarkdownFiles,
+	toMarkdown,
 	toSlugFilename,
 } from '@epicenter/workspace/extensions/materializer/markdown';
 import { createSqliteMaterializer } from '@epicenter/workspace/extensions/materializer/sqlite';
@@ -55,10 +55,10 @@ export const opensidian = createWorkspace(opensidianDefinition)
 			.table('files', {
 				serialize: async (row) => {
 					if (row.type === 'folder') {
-						return markdown({
-							frontmatter: { id: row.id, name: row.name, type: 'folder' },
+						return {
 							filename: `${row.id}.md`,
-						});
+							content: toMarkdown({ id: row.id, name: row.name, type: 'folder' }),
+						};
 					}
 					let content: string | undefined;
 					try {
@@ -67,22 +67,24 @@ export const opensidian = createWorkspace(opensidianDefinition)
 					} catch {
 						// Content doc not yet available (sync pending)
 					}
-					return markdown({
-						frontmatter: {
-							id: row.id,
-							name: row.name,
-							parentId: row.parentId,
-							size: row.size,
-							createdAt: row.createdAt,
-							updatedAt: row.updatedAt,
-							trashedAt: row.trashedAt,
-						},
-						body: content,
+					return {
 						filename: toSlugFilename(
 							row.name.replace(/\.md$/i, ''),
 							row.id,
 						),
-					});
+						content: toMarkdown(
+							{
+								id: row.id,
+								name: row.name,
+								parentId: row.parentId,
+								size: row.size,
+								createdAt: row.createdAt,
+								updatedAt: row.updatedAt,
+								trashedAt: row.trashedAt,
+							},
+							content,
+						),
+					};
 				},
 			}),
 	)

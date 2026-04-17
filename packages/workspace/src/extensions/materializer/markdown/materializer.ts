@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { MaybePromise } from '../../../workspace/lifecycle.js';
 import type { KvHelper, TableHelper } from '../../../workspace/types.js';
@@ -215,7 +215,6 @@ export function createMarkdownMaterializer<
 		unsubscribers.push(unsubscribe);
 	};
 
-
 	/** Resolve the base directory, handling string or async getter. */
 	const resolveDir = async () =>
 		typeof config.dir === 'function' ? await config.dir() : config.dir;
@@ -294,10 +293,10 @@ export function createMarkdownMaterializer<
 					row: TableRow<typeof name>,
 				) => MaybePromise<SerializeResult> =
 					tableConfig?.serialize ??
-				((row) => ({
-					filename: `${row.id}.md`,
-					content: toMarkdown({ ...row }),
-				}));
+					((row) => ({
+						filename: `${row.id}.md`,
+						content: toMarkdown({ ...row }),
+					}));
 
 				await mkdir(directory, { recursive: true });
 

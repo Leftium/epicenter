@@ -1,7 +1,24 @@
 import { tryAsync } from 'wellcrafted/result';
 import { BlobError, type BlobStore } from '../types';
-import { blobToSerializedAudio, WhisperingDatabase } from './dexie-database';
+import { WhisperingDatabase } from './dexie-database';
 import type { SerializedAudio } from './dexie-schemas';
+
+/**
+ * Convert Blob to serialized format for IndexedDB storage.
+ * Returns undefined if conversion fails.
+ */
+async function blobToSerializedAudio(
+	blob: Blob,
+): Promise<SerializedAudio | undefined> {
+	const arrayBuffer = await blob.arrayBuffer().catch((error) => {
+		console.error('Error getting array buffer from blob', blob, error);
+		return undefined;
+	});
+
+	if (!arrayBuffer) return undefined;
+
+	return { arrayBuffer, blobType: blob.type };
+}
 
 /**
  * Convert serialized audio back to Blob for use in the application.
@@ -12,14 +29,11 @@ function serializedAudioToBlob(serializedAudio: SerializedAudio): Blob {
 	});
 }
 
-/**
- * Cache for audio object URLs to avoid recreating them.
- * Maps recordingId -> object URL
- */
-const audioUrlCache = new Map<string, string>();
-
 export function createBlobStoreWeb(): BlobStore {
 	const db = new WhisperingDatabase();
+	/** Cache for audio object URLs to avoid recreating them. */
+	const audioUrlCache = new Map<string, string>();
+
 	return {
 		audio: {
 			async save(recordingId, audio) {

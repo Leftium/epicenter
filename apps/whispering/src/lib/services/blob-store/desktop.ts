@@ -64,7 +64,9 @@ export function createBlobStoreDesktop(): BlobStore {
 				}
 
 				// Not found in either source (but no errors)
-				throw new Error(`Audio not found for recording ${recordingId}`);
+				return BlobError.ReadFailed({
+					cause: new Error(`Audio not found for recording ${recordingId}`),
+				});
 			},
 
 			ensurePlaybackUrl: async (recordingId) => {
@@ -91,7 +93,9 @@ export function createBlobStoreDesktop(): BlobStore {
 				}
 
 				// Not found in either source (but no errors)
-				throw new Error(`Audio not found for recording ${recordingId}`);
+				return BlobError.ReadFailed({
+					cause: new Error(`Audio not found for recording ${recordingId}`),
+				});
 			},
 
 			revokeUrl: (recordingId) => {

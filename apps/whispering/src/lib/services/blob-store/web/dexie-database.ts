@@ -1,24 +1,7 @@
 import Dexie from 'dexie';
-import type { AudioStoredInIndexedDB, SerializedAudio } from './dexie-schemas';
+import type { AudioStoredInIndexedDB } from './dexie-schemas';
 
 const DB_NAME = 'RecordingDB';
-
-/**
- * Convert Blob to serialized format for IndexedDB storage.
- * Returns undefined if conversion fails.
- */
-export async function blobToSerializedAudio(
-	blob: Blob,
-): Promise<SerializedAudio | undefined> {
-	const arrayBuffer = await blob.arrayBuffer().catch((error) => {
-		console.error('Error getting array buffer from blob', blob, error);
-		return undefined;
-	});
-
-	if (!arrayBuffer) return undefined;
-
-	return { arrayBuffer, blobType: blob.type };
-}
 
 export class WhisperingDatabase extends Dexie {
 	recordings!: Dexie.Table<AudioStoredInIndexedDB, string>;

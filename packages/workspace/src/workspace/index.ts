@@ -131,13 +131,16 @@ export type {
 	AwarenessState,
 	// Base row type
 	BaseRow,
-	// Document types
+	// Content handle types
+	ContentHandle,
 	ContentStrategy,
 	DocumentClient,
 	DocumentConfig,
 	DocumentHandle,
 	Documents,
 	DocumentsHelper,
+	PlainTextHandle,
+	RichTextHandle,
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,

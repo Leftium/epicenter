@@ -212,15 +212,16 @@ const text = content.read();
 
 Introduce `PlainTextHandle` and `RichTextHandle` types and update `plainText`/`richText` strategies to return them instead of raw Yjs types. Timeline already satisfies `ContentHandle`.
 
-- [ ] **1.1** Define `ContentHandle` base type in `types.ts`: `{ read(): string; write(text: string): void }`
-- [ ] **1.2** Define `PlainTextHandle` type: `ContentHandle & { binding: Y.Text }`
-- [ ] **1.3** Define `RichTextHandle` type: `ContentHandle & { binding: Y.XmlFragment }`
-- [ ] **1.4** Update `plainText` strategy in `strategies.ts` to return `PlainTextHandle` — wraps Y.Text with `read()`, `write()`, and `binding` getter
-- [ ] **1.5** Update `richText` strategy in `strategies.ts` to return `RichTextHandle` — wraps Y.XmlFragment with `read()`, `write()`, and `binding` getter
-- [ ] **1.6** Verify `timeline` strategy's return type satisfies `ContentHandle` (it should — Timeline has `read()` and `write()`)
-- [ ] **1.7** Update `skills/node.ts` — replace `handle.ydoc.transact()` pattern with `content.write()`
-- [ ] **1.8** Update `skills/workspace.ts` — replace `handle.content.toString()` with `content.read()`
-- [ ] **1.9** `bun typecheck` passes, existing tests pass
+- [x] **1.1** Define `ContentHandle` base type in `types.ts`: `{ read(): string; write(text: string): void }`
+- [x] **1.2** Define `PlainTextHandle` type: `ContentHandle & { binding: Y.Text }`
+- [x] **1.3** Define `RichTextHandle` type: `ContentHandle & { binding: Y.XmlFragment }`
+- [x] **1.4** Update `plainText` strategy in `strategies.ts` to return `PlainTextHandle` — wraps Y.Text with `read()`, `write()`, and `binding` getter
+- [x] **1.5** Update `richText` strategy in `strategies.ts` to return `RichTextHandle` — wraps Y.XmlFragment with `read()`, `write()`, and `binding` getter
+- [x] **1.6** Verify `timeline` strategy's return type satisfies `ContentHandle` (it should — Timeline has `read()` and `write()`)
+- [x] **1.7** Update `skills/node.ts` — replace `handle.ydoc.transact()` pattern with `handle.content.write()`
+  > **Note**: Phase 1 keeps the DocumentHandle wrapper, so consumers use `handle.content.write()` not `content.write()` directly. Phase 2 removes the wrapper.
+- [x] **1.8** Update `skills/workspace.ts` — replace `handle.content.toString()` with `handle.content.read()`
+- [x] **1.9** `bun typecheck` passes (zero new errors), existing tests pass (47/47 document tests)
 
 ### Phase 2: Flatten handle — open() returns content directly (breaking)
 

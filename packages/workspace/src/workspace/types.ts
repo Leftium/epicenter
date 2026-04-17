@@ -221,7 +221,6 @@ export type RichTextHandle = ContentHandle & {
 export type DocumentConfig<
 	TGuid extends string = string,
 	TRow extends BaseRow = BaseRow,
-	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
 	TBinding extends ContentHandle = ContentHandle,
 > = {
 	/** Content strategy — receives the document Y.Doc, returns the content object from `open()`. */
@@ -234,8 +233,6 @@ export type DocumentConfig<
 	 * other consumers learn that content changed. Return at least one field.
 	 */
 	onUpdate: () => Partial<Omit<TRow, 'id'>>;
-	/** Optional awareness schemas for this document scope. */
-	awareness?: TAwarenessDefs;
 };
 
 /**
@@ -425,8 +422,6 @@ export type AllDocumentNames<TTableDefs extends TableDefinitions> = {
 type InferDocumentBinding<T> = T extends DocumentConfig<
 	string,
 	BaseRow,
-	// biome-ignore lint/suspicious/noExplicitAny: inference position
-	any,
 	infer TBinding
 >
 	? TBinding

@@ -54,7 +54,6 @@ import {
 	startDisposeLifo,
 } from './lifecycle.js';
 import type {
-	AwarenessDefinitions,
 	BaseRow,
 	ContentHandle,
 	ContentStrategy,
@@ -92,7 +91,6 @@ type DocEntry<TBinding extends ContentHandle = ContentHandle> = {
  */
 export type CreateDocumentsConfig<
 	TRow extends BaseRow,
-	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
 	TBinding extends ContentHandle = ContentHandle,
 > = {
 	/**
@@ -127,9 +125,8 @@ export type CreateDocumentsConfig<
 	 * Each registration has a key and factory.
 	 */
 	documentExtensions?: DocumentExtensionRegistration[];
-	/** Optional typed awareness schemas for this document scope. */
-	awarenessDefinitions?: TAwarenessDefinitions;
 };
+
 
 /**
  * Create a runtime documents manager — a bidirectional link between table rows
@@ -146,10 +143,9 @@ export type CreateDocumentsConfig<
  */
 export function createDocuments<
 	TRow extends BaseRow,
-	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
 	TBinding extends ContentHandle = ContentHandle,
 >(
-	config: CreateDocumentsConfig<TRow, TAwarenessDefinitions, TBinding>,
+	config: CreateDocumentsConfig<TRow, TBinding>,
 ): Documents<TRow, TBinding> {
 	const {
 		id,

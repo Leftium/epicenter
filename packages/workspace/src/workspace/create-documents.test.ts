@@ -20,7 +20,6 @@ import {
 import { createTables } from './create-tables.js';
 import { defineTable } from './define-table.js';
 import { timeline } from './strategies.js';
-import type { AwarenessDefinitions } from './types.js';
 
 const fileSchema = type({
 	id: 'string',
@@ -39,9 +38,7 @@ function setup(
 	overrides?: Pick<
 		CreateDocumentsConfig<typeof fileSchema.infer>,
 		'documentExtensions'
-	> & {
-		awarenessDefinitions?: AwarenessDefinitions;
-	},
+	>,
 ) {
 	const { ydoc, tables } = setupTables();
 	const documents = createDocuments({

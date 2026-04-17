@@ -222,7 +222,7 @@ export type DocumentConfig<
 	TGuid extends string = string,
 	TRow extends BaseRow = BaseRow,
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
-	TBinding = unknown,
+	TBinding extends ContentHandle = ContentHandle,
 > = {
 	/** Content strategy — receives the document Y.Doc, returns the content object from `open()`. */
 	content: ContentStrategy<TBinding>;
@@ -296,7 +296,7 @@ export type ClaimedDocumentColumns<
  */
 export type DocumentClient<
 	TDocExtensions extends Record<string, unknown> = Record<string, never>,
-	TBinding = unknown,
+	TBinding extends ContentHandle = ContentHandle,
 > = {
 	/** The typed content binding returned by the content strategy. */
 	content: TBinding;
@@ -381,7 +381,7 @@ export type Documents<
 	TRow extends BaseRow,
 	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
-	TBinding = unknown,
+	TBinding = ContentHandle,
 > = {
 	/**
 	 * Open a content Y.Doc for a row and return the content object directly.
@@ -917,12 +917,12 @@ export type AwarenessHelper<TDefs extends AwarenessDefinitions> = {
 	 *
 	 * @example
 	 * ```typescript
-	 * // Workspace: find all connected desktop clients
+	 * // Find all connected desktop clients
 	 * const desktops = [...client.awareness.peers()]
 	 *   .filter(([, state]) => state.client === 'desktop');
 	 *
-	 * // Document: show collaborator cursors
-	 * for (const [clientId, state] of handle.awareness.peers()) {
+	 * // Show collaborator cursors
+	 * for (const [clientId, state] of client.awareness.peers()) {
 	 *   if (state.cursor) renderCursor(clientId, state.cursor, state.color);
 	 * }
 	 * ```

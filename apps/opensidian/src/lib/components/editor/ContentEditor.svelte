@@ -2,7 +2,7 @@
 	import { autocompletion } from '@codemirror/autocomplete';
 	import type { FileId } from '@epicenter/filesystem';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import type { DocumentHandle } from '@epicenter/workspace';
+	import type { Timeline } from '@epicenter/workspace';
 	import { workspace } from '$lib/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import { opensidian } from '$lib/workspace/definition';
@@ -20,7 +20,7 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	let content = $state<any>(null);
+	let content = $state<Timeline | null>(null);
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
@@ -46,12 +46,22 @@
 
 	$effect(() => {
 		const id = fileId;
+		let cancelled = false;
 		content = null;
-		workspace.documents.files.content.open(id).then((openedContent: any) => {
+		workspace.documents.files.content.open(id).then((openedContent) => {
+			if (cancelled) return;
 			// Guard against race condition — if file changed while loading, ignore
 			if (fsState.activeFileId !== id) return;
 			content = openedContent;
 		});
+
+		return () => {
+			cancelled = true;
+			if (content) {
+				workspace.documents.files.content.close(id);
+			}
+			content = null;
+		};
 	});
 </script>
 

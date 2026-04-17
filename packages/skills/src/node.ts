@@ -206,10 +206,10 @@ export function createSkillsWorkspace() {
 
 							await Promise.all(
 								refs.map(async (ref) => {
-								const content =
-									await client.documents.references.content.open(ref.id);
-								const text = content.read();
-								await writeFile(join(refsDir, ref.path), text, 'utf-8');
+									const refContent =
+										await client.documents.references.content.open(ref.id);
+									const text = refContent.read();
+									await writeFile(join(refsDir, ref.path), text, 'utf-8');
 								}),
 							);
 						}

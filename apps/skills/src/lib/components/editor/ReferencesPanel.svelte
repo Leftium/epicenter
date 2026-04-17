@@ -20,19 +20,30 @@
 			refError = null;
 			return;
 		}
+		let cancelled = false;
 		refContent = null;
 		refError = null;
 		workspace.documents.references.content.open(id).then(
-			(h) => {
+			(openedContent) => {
+				if (cancelled) return;
 				if (expandedRefId !== id) return;
-				refContent = h;
+				refContent = openedContent;
 			},
 			(err) => {
+				if (cancelled) return;
 				console.error('Failed to open reference document:', err);
 				refError =
 					err instanceof Error ? err.message : 'Failed to open document';
 			},
 		);
+
+		return () => {
+			cancelled = true;
+			if (refContent) {
+				workspace.documents.references.content.close(id);
+			}
+			refContent = null;
+		};
 	});
 </script>
 
@@ -88,8 +99,8 @@
 									<div class="flex h-full items-center justify-center">
 										<p class="text-sm text-destructive">{refError}</p>
 									</div>
-							{:else if refContent}
-							<CodeMirrorEditor ytext={refContent.binding} />
+								{:else if refContent}
+									<CodeMirrorEditor ytext={refContent.binding} />
 								{:else}
 									<div class="flex h-full items-center justify-center">
 										<Spinner class="size-4 text-muted-foreground" />

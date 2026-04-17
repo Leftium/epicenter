@@ -12,18 +12,29 @@
 
 	$effect(() => {
 		const id = skillId;
+		let cancelled = false;
 		content = null;
 		error = null;
 		workspace.documents.skills.instructions.open(id).then(
 			(openedContent) => {
+				if (cancelled) return;
 				if (skillsState.selectedSkillId !== id) return;
 				content = openedContent;
 			},
 			(err) => {
+				if (cancelled) return;
 				console.error('Failed to open instructions document:', err);
 				error = err instanceof Error ? err.message : 'Failed to open document';
 			},
 		);
+
+		return () => {
+			cancelled = true;
+			if (content) {
+				workspace.documents.skills.instructions.close(id);
+			}
+			content = null;
+		};
 	});
 </script>
 

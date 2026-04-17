@@ -89,32 +89,14 @@ function buildMarkdown(
  * and sync have loaded before the initial flush. All `.table()` and `.kv()`
  * calls happen synchronously in the factory closure before `whenReady` resolves.
  *
- * Pass `io` and `yaml` to run in non-Node/Bun runtimes (e.g. Tauri):
+ * Custom `io` and `yaml` adapters can be injected for non-Node/Bun runtimes or testing.
  *
  * @example
  * ```typescript
- * // Bun/Node — defaults just work
  * .withWorkspaceExtension('materializer', (ctx) =>
  *   createMarkdownMaterializer(ctx, { dir: './data' })
  *     .table('posts', { serialize: slugFilename('title') })
  *     .kv(),
- * )
- *
- * // Tauri — inject filesystem + YAML adapters
- * .withWorkspaceExtension('materializer', (ctx) =>
- *   createMarkdownMaterializer(ctx, {
- *     dir: recordingsPath,
- *     io: {
- *       mkdir: (dir) => tauriMkdir(dir, { recursive: true }),
- *       writeFile: tauriWriteTextFile,
- *       readFile: (path) => tauriReadTextFile(path),
- *       readdir: (dir) => tauriReadDir(dir).then(entries => entries.map(e => e.name)),
- *       removeFile: (path) => tauriRemove(path).catch(() => {}),
- *       joinPath: (...s) => tauriJoin(...s),
- *     },
- *     yaml: { stringify: (obj) => jsYaml.dump(obj, { lineWidth: -1 }), parse: (str) => jsYaml.load(str) },
- *   })
- *     .table('recordings', { serialize: mySerializer }),
  * )
  * ```
  */

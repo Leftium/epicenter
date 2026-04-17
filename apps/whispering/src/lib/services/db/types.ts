@@ -5,13 +5,6 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
-import type {
-	TransformationRun,
-	TransformationRunCompleted,
-	TransformationRunFailed,
-	TransformationStepRun,
-} from './models';
-
 export const DbError = defineErrors({
 	QueryFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to query database: ${extractErrorMessage(cause)}`,
@@ -52,44 +45,5 @@ export type DbService = {
 		 * - Web: Calls URL.revokeObjectURL() and removes from cache
 		 */
 		revokeUrl(recordingId: string): void;
-	};
-	runs: {
-		getAll(): Promise<Result<TransformationRun[], DbError>>;
-		getById(id: string): Promise<Result<TransformationRun | null, DbError>>;
-		getByTransformationId(
-			transformationId: string,
-		): Promise<Result<TransformationRun[], DbError>>;
-		getByRecordingId(
-			recordingId: string,
-		): Promise<Result<TransformationRun[], DbError>>;
-		create(
-			run: TransformationRun | TransformationRun[],
-		): Promise<Result<void, DbError>>;
-		addStep(
-			run: TransformationRun,
-			step: {
-				id: string;
-				input: string;
-			},
-		): Promise<Result<TransformationStepRun, DbError>>;
-		failStep(
-			run: TransformationRun,
-			stepRunId: string,
-			error: string,
-		): Promise<Result<TransformationRunFailed, DbError>>;
-		completeStep(
-			run: TransformationRun,
-			stepRunId: string,
-			output: string,
-		): Promise<Result<TransformationRun, DbError>>;
-		complete(
-			run: TransformationRun,
-			output: string,
-		): Promise<Result<TransformationRunCompleted, DbError>>;
-		delete(
-			run: TransformationRun | TransformationRun[],
-		): Promise<Result<void, DbError>>;
-		clear(): Promise<Result<void, DbError>>;
-		getCount(): Promise<Result<number, DbError>>;
 	};
 };

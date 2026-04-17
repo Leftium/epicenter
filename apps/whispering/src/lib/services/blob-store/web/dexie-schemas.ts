@@ -1,9 +1,8 @@
 /**
- * IndexedDB-specific type definitions for Dexie schema migrations.
+ * IndexedDB storage types for the web blob store.
  *
- * These types represent historical and current storage formats used exclusively
- * by the web (IndexedDB) storage layer. The app-wide domain type is the
- * `Recording` type from the workspace definition.
+ * The workspace (Yjs CRDT) owns recording metadata. IndexedDB only
+ * stores audio blobs keyed by recording ID.
  */
 /**
  * Serialized audio format for IndexedDB storage.
@@ -36,42 +35,3 @@ export type AudioStoredInIndexedDB = {
 	serializedAudio: SerializedAudio | undefined;
 };
 
-export type AudioDbSchemaV5 = {
-	recordings: AudioStoredInIndexedDB;
-};
-
-export type RecordingsDbSchemaV4 = {
-	recordings: RecordingsDbSchemaV3['recordings'] & {
-		// V4 added 'createdAt' and 'updatedAt' fields
-		createdAt: string;
-		updatedAt: string;
-	};
-};
-
-export type RecordingsDbSchemaV3 = {
-	recordings: RecordingsDbSchemaV1['recordings'];
-};
-
-export type RecordingsDbSchemaV2 = {
-	recordingMetadata: Omit<RecordingsDbSchemaV1['recordings'], 'blob'>;
-	recordingBlobs: { id: string; blob: Blob | undefined };
-};
-
-export type RecordingsDbSchemaV1 = {
-	recordings: {
-		id: string;
-		title: string;
-		subtitle: string;
-		timestamp: string;
-		transcribedText: string;
-		blob: Blob | undefined;
-		/**
-		 * A recording
-		 * 1. Begins in an 'UNPROCESSED' state
-		 * 2. Moves to 'TRANSCRIBING' while the audio is being transcribed
-		 * 3. Finally is marked as 'DONE' when the transcription is complete.
-		 * 4. If the transcription fails, it is marked as 'FAILED'
-		 */
-		transcriptionStatus: 'UNPROCESSED' | 'TRANSCRIBING' | 'DONE' | 'FAILED';
-	};
-};

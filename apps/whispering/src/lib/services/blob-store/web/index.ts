@@ -1,5 +1,4 @@
 import { tryAsync } from 'wellcrafted/result';
-import type { DownloadService } from '$lib/services/download';
 import { BlobError, type BlobStore } from '../types';
 import { blobToSerializedAudio, WhisperingDatabase } from './dexie-database';
 import type { SerializedAudio } from './dexie-schemas';
@@ -19,12 +18,8 @@ function serializedAudioToBlob(serializedAudio: SerializedAudio): Blob {
  */
 const audioUrlCache = new Map<string, string>();
 
-export function createBlobStoreWeb({
-	DownloadService,
-}: {
-	DownloadService: DownloadService;
-}): BlobStore {
-	const db = new WhisperingDatabase({ DownloadService });
+export function createBlobStoreWeb(): BlobStore {
+	const db = new WhisperingDatabase();
 	return {
 		audio: {
 			async save(recordingId, audio) {

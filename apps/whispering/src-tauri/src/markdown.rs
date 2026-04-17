@@ -110,29 +110,40 @@ pub async fn read_markdown_files(directory_path: String) -> Result<Vec<String>, 
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-/// Deletes multiple files in parallel given their absolute paths.
-/// This is a single FFI call that handles bulk deletion natively in Rust,
-/// avoiding thousands of individual async calls for file removal.
+/// Deletes files inside a directory by filename.
+/// Validates that filenames are single path components (no traversal).
 ///
-/// Performance characteristics:
-/// - Uses Rayon for parallel file deletion (utilizes all CPU cores)
-/// - Wrapped in spawn_blocking for proper async handling
-/// - Silently skips files that don't exist or can't be deleted
+/// Uses Rayon for parallel deletion. Silently skips files that don't exist.
 ///
 /// # Arguments
-/// * `paths` - Array of absolute file paths to delete
+/// * `directory` - Absolute path to the directory containing the files
+/// * `filenames` - Array of leaf filenames to delete (e.g. `["abc.md", "abc.webm"]`)
 ///
 /// # Returns
 /// * `Ok(u32)` - Number of files successfully deleted
-/// * `Err(String)` - Error message if the operation fails catastrophically
+/// * `Err(String)` - If directory is not absolute or a filename is invalid
 #[tauri::command]
-pub async fn bulk_delete_files(paths: Vec<String>) -> Result<u32, String> {
+pub async fn delete_files_in_directory(
+    directory: String,
+    filenames: Vec<String>,
+) -> Result<u32, String> {
     tokio::task::spawn_blocking(move || {
+        let dir_path = PathBuf::from(&directory);
+
+        if !dir_path.is_absolute() {
+            return Err(format!("Directory must be absolute: {}", directory));
+        }
+
+        // Validate all filenames before deleting any
+        let validated: Vec<&str> = filenames
+            .iter()
+            .map(|f| validate_leaf_filename(f))
+            .collect::<Result<Vec<_>, _>>()?;
+
         let deleted = AtomicU32::new(0);
 
-        // Delete all files in parallel using Rayon
-        paths.par_iter().for_each(|path| {
-            let path = PathBuf::from(path);
+        validated.par_iter().for_each(|filename| {
+            let path = dir_path.join(filename);
             if path.exists() && path.is_file() {
                 if fs::remove_file(&path).is_ok() {
                     deleted.fetch_add(1, Ordering::Relaxed);
@@ -152,24 +163,27 @@ pub struct MarkdownFile {
     content: String,
 }
 
-fn validate_markdown_filename(filename: &str) -> Result<&str, String> {
+/// Validates a filename is a single path component (no directory traversal).
+fn validate_leaf_filename(filename: &str) -> Result<&str, String> {
     if filename.is_empty() {
         return Err("Filename cannot be empty".to_string());
     }
-
     let path = Path::new(filename);
     let mut components = path.components();
-
     match (components.next(), components.next()) {
         (Some(Component::Normal(_)), None) => {}
         _ => return Err(format!("Invalid filename: {}", filename)),
     }
-
-    if path.extension() != Some(OsStr::new("md")) {
-        return Err(format!("Filename must end with .md: {}", filename));
-    }
-
     Ok(filename)
+}
+
+/// Validates a filename is a single `.md` path component.
+fn validate_markdown_filename(filename: &str) -> Result<&str, String> {
+    let name = validate_leaf_filename(filename)?;
+    if Path::new(name).extension() != Some(OsStr::new("md")) {
+        return Err(format!("Filename must end with .md: {}", name));
+    }
+    Ok(name)
 }
 
 /// Writes markdown files to disk atomically using a temporary file plus persist.

@@ -28,9 +28,7 @@ const base = createWorkspace(whisperingDefinition).withExtension(
 	indexeddbPersistence,
 	);
 
-const IS_DESKTOP = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-
-export const workspace = IS_DESKTOP
+export const workspace = window.__TAURI_INTERNALS__
 	? base.withWorkspaceExtension('materializer', (ctx) => {
 			let unsub: (() => void) | undefined;
 			let syncQueue = Promise.resolve();
@@ -39,7 +37,6 @@ export const workspace = IS_DESKTOP
 				whenReady: (async () => {
 					await ctx.whenReady;
 					const { invoke } = await import('@tauri-apps/api/core');
-					const { join } = await import('@tauri-apps/api/path');
 					const dir = await PATHS.DB.RECORDINGS();
 
 					// Subscribe BEFORE flush so changes during flush aren't missed
@@ -53,9 +50,9 @@ export const workspace = IS_DESKTOP
 									const result = ctx.tables.recordings.get(id);
 									if (result.status === 'valid') {
 										toWrite.push(toRecordingMarkdownFile(result.row));
-									} else if (result.status === 'not_found') {
-										toDelete.push(await join(dir, `${id}.md`));
-									}
+								} else if (result.status === 'not_found') {
+									toDelete.push(`${id}.md`);
+								}
 								}
 
 								if (toWrite.length) {
@@ -65,7 +62,10 @@ export const workspace = IS_DESKTOP
 									});
 								}
 								if (toDelete.length) {
-									await invoke('bulk_delete_files', { paths: toDelete });
+									await invoke('delete_files_in_directory', {
+										directory: dir,
+										filenames: toDelete,
+									});
 								}
 							})
 							.catch((error) => {

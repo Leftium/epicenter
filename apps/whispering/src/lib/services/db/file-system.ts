@@ -115,15 +115,15 @@ async function readMarkdownFiles(directoryPath: string): Promise<string[]> {
 }
 
 /**
- * Deletes multiple files in parallel using the Rust command.
- * This is a single FFI call that handles bulk deletion natively in Rust,
- * avoiding thousands of individual async calls for file removal.
+ * Deletes files inside a directory by filename.
+ * Validates that filenames are single path components (no traversal).
  *
- * @param paths - Array of absolute file paths to delete
+ * @param directory - Absolute path to the directory containing the files
+ * @param filenames - Array of leaf filenames to delete
  * @returns Number of files successfully deleted
  */
-async function bulkDeleteFiles(paths: string[]): Promise<number> {
-	return invoke('bulk_delete_files', { paths });
+async function deleteFilesInDirectory(directory: string, filenames: string[]): Promise<number> {
+	return invoke('delete_files_in_directory', { directory, filenames });
 }
 
 /**
@@ -337,18 +337,13 @@ export function createFileSystemDb(): DbService {
 
 						// Read directory once and find all matching files
 						const allFiles = await readDir(recordingsPath);
-						const pathsToDelete = await Promise.all(
-							allFiles
-								.filter((file) => {
-									// Extract ID from filename (everything before the first dot)
-									const id = file.name.split('.')[0] ?? '';
-									return idsToDelete.has(id);
-								})
-								.map((file) => PATHS.DB.RECORDING_FILE(file.name)),
-						);
-
-						// Single FFI call to delete all files in parallel
-						await bulkDeleteFiles(pathsToDelete);
+						const filenames = allFiles
+							.filter((file) => {
+								const id = file.name.split('.')[0] ?? '';
+								return idsToDelete.has(id);
+							})
+							.map((file) => file.name);
+						await deleteFilesInDirectory(recordingsPath, filenames);
 					},
 					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
@@ -442,14 +437,8 @@ export function createFileSystemDb(): DbService {
 						const dirExists = await exists(recordingsPath);
 						if (!dirExists) return undefined;
 
-						// Get all files and build paths
-						const files = await readDir(recordingsPath);
-						const pathsToDelete = await Promise.all(
-							files.map((file) => PATHS.DB.RECORDING_FILE(file.name)),
-						);
-
-						// Single FFI call to delete all files in parallel
-						await bulkDeleteFiles(pathsToDelete);
+						const filenames = files.map((file) => file.name);
+						await deleteFilesInDirectory(recordingsPath, filenames);
 					},
 					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
@@ -588,10 +577,9 @@ export function createFileSystemDb(): DbService {
 					: [transformationOrTransformations];
 				return tryAsync({
 					try: async () => {
-						const pathsToDelete = await Promise.all(
-							transformations.map((t) => PATHS.DB.TRANSFORMATION_MD(t.id)),
-						);
-						await bulkDeleteFiles(pathsToDelete);
+						const transformationsDir = await PATHS.DB.TRANSFORMATIONS();
+						const filenames = transformations.map((t) => `${t.id}.md`);
+						await deleteFilesInDirectory(transformationsDir, filenames);
 					},
 					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
@@ -935,10 +923,9 @@ export function createFileSystemDb(): DbService {
 				const runs = Array.isArray(runOrRuns) ? runOrRuns : [runOrRuns];
 				return tryAsync({
 					try: async () => {
-						const pathsToDelete = await Promise.all(
-							runs.map((run) => PATHS.DB.TRANSFORMATION_RUN_MD(run.id)),
-						);
-						await bulkDeleteFiles(pathsToDelete);
+						const runsDir = await PATHS.DB.TRANSFORMATION_RUNS();
+						const filenames = runs.map((run) => `${run.id}.md`);
+						await deleteFilesInDirectory(runsDir, filenames);
 					},
 					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});

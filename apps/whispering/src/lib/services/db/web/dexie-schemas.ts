@@ -31,13 +31,13 @@ export type SerializedAudio = {
  * Legacy rows may still carry metadata fields from older schema versions.
  * These are ignored on read—only `id` and `serializedAudio` are used.
  */
-export type RecordingStoredInIndexedDB = {
+export type AudioStoredInIndexedDB = {
 	id: string;
 	serializedAudio: SerializedAudio | undefined;
 };
 
-export type RecordingsDbSchemaV5 = {
-	recordings: RecordingStoredInIndexedDB;
+export type AudioDbSchemaV5 = {
+	recordings: AudioStoredInIndexedDB;
 };
 
 export type RecordingsDbSchemaV4 = {

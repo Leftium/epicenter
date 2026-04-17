@@ -1,6 +1,6 @@
 import { Ok } from 'wellcrafted/result';
 import type { DownloadService } from '$lib/services/download';
-import { createFileSystemDb } from './file-system';
+import { createFileSystemDbService } from './file-system';
 import type { DbService } from './types';
 import { DbError } from './types';
 import { createDbServiceWeb } from './web';
@@ -22,22 +22,22 @@ export function createDbServiceDesktop({
 }: {
 	DownloadService: DownloadService;
 }): DbService {
-	const fileSystemDb = createFileSystemDb();
+	const fileSystemDb = createFileSystemDbService();
 	const indexedDb = createDbServiceWeb({ DownloadService });
 
 	return {
-		recordings: {
-			saveAudio: async (recordingId, audio) => {
+		audio: {
+			save: async (recordingId, audio) => {
 				// SINGLE WRITE: Only to file system
-				return fileSystemDb.recordings.saveAudio(recordingId, audio);
+				return fileSystemDb.audio.save(recordingId, audio);
 			},
 
 			delete: async (idOrIds) => {
 				const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
 				// Delete from BOTH sources to ensure complete removal
 				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.recordings.delete(ids),
-					indexedDb.recordings.delete(ids),
+					fileSystemDb.audio.delete(ids),
+					indexedDb.audio.delete(ids),
 				]);
 
 				// If both failed, return an error
@@ -50,10 +50,10 @@ export function createDbServiceDesktop({
 			},
 
 
-			getAudioBlob: async (recordingId) => {
+			getBlob: async (recordingId) => {
 				// DUAL READ: Check file system first, fallback to IndexedDB
 				const fsResult =
-					await fileSystemDb.recordings.getAudioBlob(recordingId);
+					await fileSystemDb.audio.getBlob(recordingId);
 
 				// If found in file system, return it
 				if (fsResult.data) {
@@ -61,7 +61,7 @@ export function createDbServiceDesktop({
 				}
 
 				// Not in file system, check IndexedDB
-				const idbResult = await indexedDb.recordings.getAudioBlob(recordingId);
+				const idbResult = await indexedDb.audio.getBlob(recordingId);
 
 				// If found in IndexedDB, return it
 				if (idbResult.data) {
@@ -77,10 +77,10 @@ export function createDbServiceDesktop({
 				throw new Error(`Audio not found for recording ${recordingId}`);
 			},
 
-			ensureAudioPlaybackUrl: async (recordingId) => {
+			ensurePlaybackUrl: async (recordingId) => {
 				// DUAL READ: Check file system first, fallback to IndexedDB
 				const fsResult =
-					await fileSystemDb.recordings.ensureAudioPlaybackUrl(recordingId);
+					await fileSystemDb.audio.ensurePlaybackUrl(recordingId);
 
 				// If found in file system, return it
 				if (fsResult.data) {
@@ -89,7 +89,7 @@ export function createDbServiceDesktop({
 
 				// Not in file system, check IndexedDB
 				const idbResult =
-					await indexedDb.recordings.ensureAudioPlaybackUrl(recordingId);
+					await indexedDb.audio.ensurePlaybackUrl(recordingId);
 
 				// If found in IndexedDB, return it
 				if (idbResult.data) {
@@ -105,17 +105,17 @@ export function createDbServiceDesktop({
 				throw new Error(`Audio not found for recording ${recordingId}`);
 			},
 
-			revokeAudioUrl: (recordingId) => {
+			revokeUrl: (recordingId) => {
 				// Revoke from BOTH sources
-				fileSystemDb.recordings.revokeAudioUrl(recordingId);
-				indexedDb.recordings.revokeAudioUrl(recordingId);
+				fileSystemDb.audio.revokeUrl(recordingId);
+				indexedDb.audio.revokeUrl(recordingId);
 			},
 
 			clear: async () => {
 				// Clear from BOTH sources
 				const [fsResult, idbResult] = await Promise.all([
-					fileSystemDb.recordings.clear(),
-					indexedDb.recordings.clear(),
+					fileSystemDb.audio.clear(),
+					indexedDb.audio.clear(),
 				]);
 
 				// Return error only if both failed

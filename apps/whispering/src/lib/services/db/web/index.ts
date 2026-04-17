@@ -37,8 +37,8 @@ export function createDbServiceWeb({
 }): DbService {
 	const db = new WhisperingDatabase({ DownloadService });
 	return {
-		recordings: {
-			async saveAudio(recordingId, audio) {
+		audio: {
+			async save(recordingId, audio) {
 				const serializedAudio = await blobToSerializedAudio(audio);
 				return tryAsync({
 					try: async () => {
@@ -57,7 +57,7 @@ export function createDbServiceWeb({
 			},
 
 
-			getAudioBlob: async (recordingId) => {
+			getBlob: async (recordingId) => {
 				return tryAsync({
 					try: async () => {
 						const recordingWithAudio = await db.recordings.get(recordingId);
@@ -79,7 +79,7 @@ export function createDbServiceWeb({
 				});
 			},
 
-			ensureAudioPlaybackUrl: async (recordingId) => {
+			ensurePlaybackUrl: async (recordingId) => {
 				return tryAsync({
 					try: async () => {
 						// Check cache first
@@ -111,7 +111,7 @@ export function createDbServiceWeb({
 				});
 			},
 
-			revokeAudioUrl: (recordingId) => {
+			revokeUrl: (recordingId) => {
 				const url = audioUrlCache.get(recordingId);
 				if (url) {
 					URL.revokeObjectURL(url);
@@ -125,7 +125,7 @@ export function createDbServiceWeb({
 					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
-		}, // End of recordings namespace
+		}, // End of audio namespace
 
 		transformations: {
 			getAll: async () => {

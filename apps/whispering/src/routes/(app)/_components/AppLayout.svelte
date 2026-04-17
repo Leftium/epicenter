@@ -93,7 +93,7 @@
 			const allRecordingIds = recordings.sorted.map((r) => r.id);
 			if (allRecordingIds.length > maxCount) {
 				const idsToDelete = allRecordingIds.slice(maxCount);
-				services.db.recordings.delete(idsToDelete);
+				services.db.audio.delete(idsToDelete);
 			}
 		}
 	});

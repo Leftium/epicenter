@@ -60,10 +60,10 @@ async function deleteFilesInDirectory(
  * - transformation-runs/
  *   - {id}.md (execution history)
  */
-export function createFileSystemDb(): DbService {
+export function createFileSystemDbService(): DbService {
 	return {
-		recordings: {
-			async saveAudio(recordingId, audio) {
+		audio: {
+			async save(recordingId, audio) {
 				return tryAsync({
 					try: async () => {
 						const recordingsPath = await PATHS.DB.RECORDINGS();
@@ -101,7 +101,7 @@ export function createFileSystemDb(): DbService {
 			},
 
 
-			async getAudioBlob(recordingId: string) {
+			async getBlob(recordingId: string) {
 				return tryAsync({
 					try: async () => {
 						const recordingsPath = await PATHS.DB.RECORDINGS();
@@ -129,7 +129,7 @@ export function createFileSystemDb(): DbService {
 				});
 			},
 
-			async ensureAudioPlaybackUrl(recordingId: string) {
+			async ensurePlaybackUrl(recordingId: string) {
 				return tryAsync({
 					try: async () => {
 						const recordingsPath = await PATHS.DB.RECORDINGS();
@@ -155,7 +155,7 @@ export function createFileSystemDb(): DbService {
 				});
 			},
 
-			revokeAudioUrl(_recordingId: string) {
+			revokeUrl(_recordingId: string) {
 				// No-op on desktop, URLs are asset:// protocol managed by Tauri
 			},
 

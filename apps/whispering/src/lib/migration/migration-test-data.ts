@@ -73,8 +73,7 @@ export function createMigrationTestData() {
 			);
 
 			for (const { id, audio } of recordings) {
-				const { error: recordingError } =
-					await indexedDb.recordings.saveAudio(id, audio);
+				const { error: recordingError } = await indexedDb.audio.save(id, audio);
 				if (recordingError) {
 					throw new Error(
 						`Failed to seed recording ${id}: ${recordingError.message}`,
@@ -118,7 +117,7 @@ export function createMigrationTestData() {
 
 			const [recordingsResult, transformationsResult, runsResult] =
 				await Promise.all([
-					indexedDb.recordings.clear(),
+					indexedDb.audio.clear(),
 					indexedDb.transformations.clear(),
 					indexedDb.runs.clear(),
 				]);

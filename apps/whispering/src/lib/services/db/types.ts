@@ -22,15 +22,12 @@ export const DbError = defineErrors({
 		message: `Failed to write to database: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	NoValidFiles: () => ({
-		message: 'No valid audio or video files found',
-	}),
 });
 export type DbError = InferErrors<typeof DbError>;
 
 export type DbService = {
-	recordings: {
-		saveAudio(recordingId: string, audio: Blob): Promise<Result<void, DbError>>;
+	audio: {
+		save(recordingId: string, audio: Blob): Promise<Result<void, DbError>>;
 		delete(id: string | string[]): Promise<Result<void, DbError>>;
 		clear(): Promise<Result<void, DbError>>;
 
@@ -39,14 +36,14 @@ export type DbService = {
 		 * - Desktop: Reads file from predictable path using services.fs.pathToBlob()
 		 * - Web: Fetches from IndexedDB by ID, converts serializedAudio to Blob
 		 */
-		getAudioBlob(recordingId: string): Promise<Result<Blob, DbError>>;
+		getBlob(recordingId: string): Promise<Result<Blob, DbError>>;
 
 		/**
 		 * Get audio playback URL. Creates and caches URL.
 		 * - Desktop: Uses convertFileSrc() to create asset:// URL
 		 * - Web: Creates and caches object URL, manages lifecycle
 		 */
-		ensureAudioPlaybackUrl(
+		ensurePlaybackUrl(
 			recordingId: string,
 		): Promise<Result<string, DbError>>;
 
@@ -55,7 +52,7 @@ export type DbService = {
 		 * - Desktop: No-op (asset:// URLs managed by Tauri)
 		 * - Web: Calls URL.revokeObjectURL() and removes from cache
 		 */
-		revokeAudioUrl(recordingId: string): void;
+		revokeUrl(recordingId: string): void;
 	};
 	transformations: {
 		getAll(): Promise<Result<Transformation[], DbError>>;

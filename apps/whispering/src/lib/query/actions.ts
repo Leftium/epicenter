@@ -1,16 +1,23 @@
 import { nanoid } from 'nanoid/non-secure';
+import { defineErrors } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
 import { rpc } from '$lib/query';
 import { defineMutation } from '$lib/query/client';
 import { WhisperingErr } from '$lib/result';
 import { services } from '$lib/services';
-import { DbError } from '$lib/services/db';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
+
+const ImportError = defineErrors({
+	NoImportableFiles: () => ({
+		message: 'No valid audio or video files found',
+	}),
+});
+
 import { delivery } from './delivery';
 import { notify } from './notify';
 import { recorder } from './recorder';
@@ -440,7 +447,7 @@ export const actions = {
 			);
 
 			if (validFiles.length === 0) {
-				return DbError.NoValidFiles();
+				return ImportError.NoImportableFiles();
 			}
 
 			if (invalidFiles.length > 0) {
@@ -629,7 +636,7 @@ async function processRecordingPipeline({
 
 	// Save metadata to workspace (instant) and audio blob to DbService (async)
 	recordings.set(recording);
-	const saveAudioPromise = services.db.recordings.saveAudio(recording.id, blob);
+	const saveAudioPromise = services.db.audio.save(recording.id, blob);
 	const transcribePromise = transcribeBlob(blob);
 
 	// Await transcription first (latency-critical path)

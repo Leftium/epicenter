@@ -103,7 +103,7 @@
 	}
 
 	onDestroy(() => {
-		services.db.recordings.revokeAudioUrl(recordingIdForCleanup);
+		services.db.audio.revokeUrl(recordingIdForCleanup);
 	});
 </script>
 

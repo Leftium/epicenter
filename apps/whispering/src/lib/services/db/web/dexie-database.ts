@@ -301,7 +301,6 @@ export class WhisperingDatabase extends Dexie {
 
 						await Dexie.waitFor(tx.table('recordings').clear());
 						await Dexie.waitFor(
-							tx
 								tx.table<AudioDbSchemaV5['recordings']>('recordings')
 								.bulkAdd(newRecordings),
 						);

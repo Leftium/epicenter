@@ -235,9 +235,7 @@ export function createTable<
 
 		clear(): void {
 			const keys = Array.from(ykv.readableEntries()).map(([k]) => k);
-			for (const key of keys) {
-				ykv.delete(key);
-			}
+			ykv.bulkDelete(keys);
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════

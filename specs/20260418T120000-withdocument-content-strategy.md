@@ -58,8 +58,8 @@ handle.content.toString() // read
 | `content` is a required field | Required | Forces explicit content type. No magic "every doc is everything." |
 | `guid` stays explicit | Required field | All current sites use `'id'` but the indirection is proven and cheap. |
 | `onUpdate` stays explicit | Required field | Bridge between Y.Doc changes and table row observation. Can't be defaulted safely. |
-| Keep backward compat in Phase 1 | Old handle methods preserved | Allows incremental migration. `handle.content` coexists with `handle.read()` etc. |
-| Built-in strategies as functions | `plainText()`, `richText()`, `timeline()` | Ship common cases. `timeline()` wraps the existing Timeline for multi-mode docs. Users can write custom strategies for chatTree etc. |
+| ~~Keep backward compat in Phase 1~~ | Old handle methods removed (Phase 2 done) | Phase 2 completed in the same PR. `handle.content` is now the only content access path. |
+| Built-in strategies as values | `plainText`, `richText`, `timeline` | Ship common cases. `timeline` wraps the existing Timeline for multi-mode docs. Users can write custom strategies for chatTree etc. |
 
 ## Architecture
 
@@ -83,24 +83,24 @@ At open time:                               │
 
 ## Implementation Plan
 
-### Phase 1: Add content strategy (additive, no breaking changes)
+### ~~Phase 1: Add content strategy (additive, no breaking changes)~~
 
-- [ ] **1.1** Define `ContentStrategy<TBinding>` type in `types.ts`
-- [ ] **1.2** Add `content` field to `DocumentConfig` type
-- [ ] **1.3** Update `withDocument()` in `define-table.ts` to accept and store `content`
-- [ ] **1.4** Ship `plainText()`, `richText()`, and `timeline()` strategy factories in a new `strategies.ts`
-- [ ] **1.5** Update `create-documents.ts` to call the content strategy at open time and attach to handle
-- [ ] **1.6** Add `content: TBinding` to `DocumentHandle` type
-- [ ] **1.7** Update all 5 production `.withDocument()` call sites to add `content` field
-- [ ] **1.8** Update representative handle consumers to use `handle.content`
-- [ ] **1.9** Verify: `bun typecheck` passes, existing tests pass
+- [x] **1.1** Define `ContentStrategy<TBinding>` type in `types.ts`
+- [x] **1.2** Add `content` field to `DocumentConfig` type
+- [x] **1.3** Update `withDocument()` in `define-table.ts` to accept and store `content`
+- [x] **1.4** Ship `plainText`, `richText`, and `timeline` strategy values in a new `strategies.ts`
+- [x] **1.5** Update `create-documents.ts` to call the content strategy at open time and attach to handle
+- [x] **1.6** Add `content: TBinding` to `DocumentHandle` type
+- [x] **1.7** Update all 5 production `.withDocument()` call sites to add `content` field
+- [x] **1.8** Update all handle consumers to use `handle.content`
+- [x] **1.9** Verify: `bun typecheck` passes, existing tests pass
 
-### Phase 2: Remove Timeline (separate PR, not in this spec)
+### ~~Phase 2: Remove Timeline from handle (completed in same PR)~~
 
-- [ ] **2.1** Remove `asText()`, `asRichText()`, `asSheet()`, `read()`, `write()` from handle
-- [ ] **2.2** Migrate all remaining consumers to `handle.content`
-- [ ] **2.3** Remove `timeline.ts` and `createTimeline()`
-- [ ] **2.4** Remove Timeline from `DocumentContext`
+- [x] **2.1** Remove `asText()`, `asRichText()`, `asSheet()`, `read()`, `write()` from handle
+- [x] **2.2** Migrate all remaining consumers to `handle.content`
+- [x] **2.3** Timeline kept as library — `timeline` strategy returns it
+- [x] **2.4** Remove `timeline` from `DocumentContext`
 
 ## Call site changes
 
@@ -108,20 +108,22 @@ At open time:                               │
 
 | File | Before | After |
 |---|---|---|
-| `packages/filesystem/src/table.ts` | `{ guid, onUpdate }` | `{ content: timeline(), guid, onUpdate }` |
-| `packages/skills/src/tables.ts` (instructions) | `{ guid, onUpdate }` | `{ content: plainText(), guid, onUpdate }` |
-| `packages/skills/src/tables.ts` (content) | `{ guid, onUpdate }` | `{ content: plainText(), guid, onUpdate }` |
-| `apps/fuji/src/lib/workspace.ts` | `{ guid, onUpdate }` | `{ content: richText(), guid, onUpdate }` |
-| `apps/honeycrisp/.../definition.ts` | `{ guid, onUpdate }` | `{ content: richText(), guid, onUpdate }` |
+| `packages/filesystem/src/table.ts` | `{ guid, onUpdate }` | `{ content: timeline, guid, onUpdate }` |
+| `packages/skills/src/tables.ts` (instructions) | `{ guid, onUpdate }` | `{ content: plainText, guid, onUpdate }` |
+| `packages/skills/src/tables.ts` (content) | `{ guid, onUpdate }` | `{ content: plainText, guid, onUpdate }` |
+| `apps/fuji/src/lib/workspace.ts` | `{ guid, onUpdate }` | `{ content: richText, guid, onUpdate }` |
+| `apps/honeycrisp/.../definition.ts` | `{ guid, onUpdate }` | `{ content: richText, guid, onUpdate }` |
 
-### Handle consumption sites (Phase 1 — demonstrate the new API alongside old)
+### Handle consumption sites (completed)
 
 | Pattern | Before | After (via `handle.content`) |
 |---|---|---|
-| Read text | `handle.read()` | `handle.content.toString()` |
-| Get Y.Text | `handle.asText()` | `handle.content` (plainText) |
-| Get Y.XmlFragment | `handle.asRichText()` | `handle.content` (richText) |
-| Write text | `handle.writeText('x')` | `handle.content.delete(0, len); handle.content.insert(0, 'x')` |
+| Read text (timeline) | `handle.read()` | `handle.content.read()` |
+| Read text (plainText) | `handle.read()` | `handle.content.toString()` |
+| Get Y.Text | `handle.asText()` | `handle.content` (plainText) or `handle.content.asText()` (timeline) |
+| Get Y.XmlFragment | `handle.asRichText()` | `handle.content` (richText) or `handle.content.asRichText()` (timeline) |
+| Write text (timeline) | `handle.write('x')` | `handle.content.write('x')` |
+| Write text (plainText) | `handle.write('x')` | Y.Text: `ydoc.transact(() => { ytext.delete(0, len); ytext.insert(0, 'x') })` |
 
 ## Success Criteria
 

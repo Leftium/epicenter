@@ -39,8 +39,8 @@
  * const handle = await contentDocuments.open(someRow);
  * handle.tableName;    // 'files'
  * handle.documentName; // 'content'
- * handle.read();       // read content
- * handle.write('new content');
+ * handle.content.read();       // read content
+ * handle.content.write('new content');
  * ```
  *
  * @module

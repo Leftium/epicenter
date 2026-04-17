@@ -37,12 +37,12 @@ import { type } from 'arktype';
  * const skill = ws.tables.skills.find(s => s.name === 'writing-voice')
  * if (skill) {
  *   const handle = await ws.documents.skills.instructions.open(skill.id)
- *   systemPrompt += handle.read()
+ *   systemPrompt += handle.content.toString()
  * }
  *
  * // Editor binding—collaborative Y.Text editing
  * const handle = await ws.documents.skills.instructions.open(skill.id)
- * const ytext = handle.asText()
+ * const ytext = handle.content
  * editor.bind(ytext)
  * ```
  */
@@ -82,7 +82,7 @@ export const skillsTable = defineTable(
  * // Read reference content
  * for (const ref of refs) {
  *   const handle = await ws.documents.references.content.open(ref.id)
- *   const markdown = handle.read()
+ *   const markdown = handle.content.toString()
  * }
  * ```
  */

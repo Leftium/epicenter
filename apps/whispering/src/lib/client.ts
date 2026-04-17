@@ -14,6 +14,12 @@ import { PATHS } from '$lib/constants/paths';
 import type { Recording } from './workspace';
 import { whisperingDefinition } from './workspace/definition';
 
+/**
+ * Serialize a recording row to a markdown file.
+ *
+ * Puts `transcript` in the body and all other metadata in YAML frontmatter.
+ * Strips `_v` (workspace internal, not useful in human-readable files).
+ */
 function toRecordingMarkdownFile(row: Recording) {
 	const { transcript, _v, ...frontmatter } = row;
 	const yamlStr = yaml.dump(frontmatter, { lineWidth: -1 });
@@ -31,11 +37,16 @@ const base = createWorkspace(whisperingDefinition).withExtension(
 export const workspace = isTauri()
 	? base.withWorkspaceExtension('materializer', (ctx) => {
 			let unsub: (() => void) | undefined;
+			// Serialized promise chain—ensures observer batches complete sequentially
+			// so rapid changes don't produce overlapping Rust invoke calls.
 			let syncQueue = Promise.resolve();
 
 			return {
 				whenReady: (async () => {
 					await ctx.whenReady;
+					// Dynamic import: invoke is only available in Tauri runtime.
+					// Static import of isTauri() is fine (returns false on web),
+					// but invoke would fail if called on web.
 					const { invoke } = await import('@tauri-apps/api/core');
 					const dir = await PATHS.DB.RECORDINGS();
 
@@ -81,6 +92,7 @@ export const workspace = isTauri()
 						await invoke('write_markdown_files', { directory: dir, files });
 					}
 				})(),
+				// Unsubscribe immediately, then wait for any in-flight write to finish
 				async dispose() {
 					unsub?.();
 					await syncQueue;

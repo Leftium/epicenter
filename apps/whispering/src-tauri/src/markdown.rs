@@ -17,6 +17,7 @@ pub struct MarkdownFile {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Validates a filename is a single path component (no directory traversal).
+/// Rejects empty strings, paths with separators (`foo/bar`), and parent refs (`..`).
 fn validate_leaf_filename(filename: &str) -> Result<&str, String> {
     if filename.is_empty() {
         return Err("Filename cannot be empty".to_string());
@@ -126,6 +127,8 @@ pub async fn write_markdown_files(
             return Err(format!("Directory must be absolute: {}", directory));
         }
 
+        // Two-pass approach: validate all filenames first, then write.
+        // If any filename is invalid or duplicated, no files touch disk.
         let validated: Vec<&str> = {
             let mut seen = HashSet::with_capacity(files.len());
             let mut names = Vec::with_capacity(files.len());

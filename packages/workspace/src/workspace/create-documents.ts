@@ -150,7 +150,7 @@ export function createDocuments<
 	TBinding extends ContentHandle = ContentHandle,
 >(
 	config: CreateDocumentsConfig<TRow, TAwarenessDefinitions, TBinding>,
-): Documents<TRow, Record<string, unknown>, TAwarenessDefinitions, TBinding> {
+): Documents<TRow, TBinding> {
 	const {
 		id,
 		tableName,
@@ -188,7 +188,7 @@ export function createDocuments<
 		}
 	});
 
-	const documents: Documents<TRow, Record<string, unknown>, TAwarenessDefinitions, TBinding> = {
+	const documents: Documents<TRow, TBinding> = {
 		async open(
 			input: TRow | string,
 		): Promise<TBinding> {

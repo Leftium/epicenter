@@ -352,15 +352,16 @@ export function createEncryptedYkvLww<T>(
 				inner.bulkSet(entries);
 				return;
 			}
+			const enc = encryption;
 
 			inner.bulkSet(
 				entries.map(({ key, val }) => ({
 					key,
 					val: encryptValue(
 						JSON.stringify(val),
-						encryption.currentKey,
+						enc.currentKey,
 						textEncoder.encode(key),
-						encryption.currentVersion,
+						enc.currentVersion,
 					),
 				})),
 			);

@@ -379,8 +379,6 @@ export type DocumentContext<
  */
 export type Documents<
 	TRow extends BaseRow,
-	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
-	TAwarenessDefs extends AwarenessDefinitions = Record<string, never>,
 	TBinding = ContentHandle,
 > = {
 	/**
@@ -446,17 +444,6 @@ export type AllDocumentNames<TTableDefs extends TableDefinitions> = {
 		: never;
 }[keyof TTableDefs];
 
-/** Extract the awareness definitions from a DocumentConfig. */
-type InferDocumentAwareness<T> = T extends DocumentConfig<
-	string,
-	BaseRow,
-	infer TAwarenessDefs,
-	// biome-ignore lint/suspicious/noExplicitAny: inference position
-	any
->
-	? TAwarenessDefs
-	: Record<string, never>;
-
 /** Extract the content binding type from a DocumentConfig. */
 type InferDocumentBinding<T> = T extends DocumentConfig<
 	string,
@@ -474,10 +461,7 @@ type InferDocumentBinding<T> = T extends DocumentConfig<
  * Maps each doc name to a `Documents<TLatest>` where `TLatest` is the
  * table's latest row type (inferred from the `migrate` function's return type).
  */
-export type DocumentsOf<
-	T,
-	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = T extends {
+export type DocumentsOf<T> = T extends {
 	documents: infer TDocuments;
 	migrate: (...args: never[]) => infer TLatest;
 }
@@ -485,8 +469,6 @@ export type DocumentsOf<
 		? {
 				[K in keyof TDocuments]: Documents<
 					TLatest,
-					TDocExtensions,
-					InferDocumentAwareness<TDocuments[K]>,
 					InferDocumentBinding<TDocuments[K]>
 				>;
 			}
@@ -510,13 +492,12 @@ export type DocumentsOf<
  */
 export type DocumentsHelper<
 	TTableDefinitions extends TableDefinitions,
-	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = {
 	[K in keyof TTableDefinitions as HasDocuments<
 		TTableDefinitions[K]
 	> extends true
 		? K
-		: never]: DocumentsOf<TTableDefinitions[K], TDocExtensions>;
+		: never]: DocumentsOf<TTableDefinitions[K]>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1160,8 +1141,7 @@ export type WorkspaceClientBuilder<
 	TTableDefinitions,
 	TKvDefinitions,
 	TAwarenessDefinitions,
-	TExtensions,
-	TDocExtensions
+	TExtensions
 > & {
 	/** Accumulated actions from `.withActions()` calls. Empty object when none declared. */
 	actions: TActions;
@@ -1327,8 +1307,7 @@ export type WorkspaceClientBuilder<
 				TTableDefinitions,
 				TKvDefinitions,
 				TAwarenessDefinitions,
-				TExtensions,
-				TDocExtensions
+				TExtensions
 			>,
 		) => TNewActions,
 	): WorkspaceClientBuilder<
@@ -1442,7 +1421,6 @@ export type WorkspaceClient<
 	TKvDefinitions extends KvDefinitions,
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown>,
-	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = {
 	/** Workspace identifier */
 	id: TId;
@@ -1457,7 +1435,7 @@ export type WorkspaceClient<
 	/** Typed table helpers — pure CRUD, no document management */
 	tables: TablesHelper<TTableDefinitions>;
 	/** Document managers — only tables with `.withDocument()` appear here */
-	documents: DocumentsHelper<TTableDefinitions, TDocExtensions>;
+	documents: DocumentsHelper<TTableDefinitions>;
 	/** Typed KV helper */
 	kv: KvHelper<TKvDefinitions>;
 	/** Typed awareness helper — always present, like tables and kv */
@@ -1601,7 +1579,6 @@ export type AnyWorkspaceClient = WorkspaceClient<
 	TableDefinitions,
 	KvDefinitions,
 	AwarenessDefinitions,
-	Record<string, unknown>,
 	Record<string, unknown>
 > & {
 	actions?: Actions;

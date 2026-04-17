@@ -79,6 +79,7 @@
 		"drizzle-kit": "catalog:",
 		"filenamify": "^7.0.1",
 		"typescript": "catalog:",
-		"yjs": "catalog:"
+		"yjs": "catalog:",
+		"@types/mdast": "^4.0.4"
 	}
 }

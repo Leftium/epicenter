@@ -115,7 +115,7 @@ export function filesystemPersistence({ filePath }: { filePath: string }) {
 			}
 		};
 
-		const whenReady = (async () => {
+		const whenLoaded = (async () => {
 			await mkdir(path.dirname(filePath), { recursive: true });
 
 			db = new Database(filePath);
@@ -135,7 +135,8 @@ export function filesystemPersistence({ filePath }: { filePath: string }) {
 		})();
 
 		return {
-			whenReady,
+			whenLoaded,
+			whenReady: whenLoaded,
 			clearLocalData: () => {
 				if (db) {
 					db.run('DELETE FROM updates');

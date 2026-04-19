@@ -41,7 +41,7 @@ function entryContentDoc(rowId: EntryId) {
 			const sync = attachSync(ydoc, {
 				url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
 				getToken: async () => auth.token,
-				waitFor: idb.whenSynced,
+				waitFor: idb.whenLoaded,
 			});
 
 			const bumpUpdatedAt = () => {
@@ -52,11 +52,12 @@ function entryContentDoc(rowId: EntryId) {
 			ydoc.on('update', bumpUpdatedAt);
 			// No explicit off() needed — ydoc.destroy() clears its own listeners.
 
+			// Expose atoms — callers compose "both" at the call site if they need it.
+			// The editor only needs whenLoaded to render; sync is an enhancement.
 			return {
 				content,
-				whenSynced: Promise.all([idb.whenSynced, sync.whenConnected]).then(
-					() => {},
-				),
+				whenLoaded: idb.whenLoaded,
+				whenConnected: sync.whenConnected,
 				whenDisposed: Promise.all([idb.disposed, sync.disposed]).then(() => {}),
 				clearLocal: idb.clearLocal,
 				reconnect: sync.reconnect,

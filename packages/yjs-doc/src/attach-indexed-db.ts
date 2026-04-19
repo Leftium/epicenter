@@ -2,7 +2,8 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import type * as Y from 'yjs';
 
 export type IndexedDbAttachment = {
-	whenSynced: Promise<IndexeddbPersistence>;
+	/** Resolves when local IndexedDB state has loaded into the Y.Doc. */
+	whenSynced: Promise<void>;
 	clearLocal: () => Promise<void>;
 	/**
 	 * Resolves after the Y.Doc is destroyed AND IndexedDB's async teardown
@@ -23,7 +24,7 @@ export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 		}
 	});
 	return {
-		whenSynced: idb.whenSynced,
+		whenSynced: idb.whenSynced.then(() => {}),
 		clearLocal: () => idb.clearData(),
 		disposed,
 	};

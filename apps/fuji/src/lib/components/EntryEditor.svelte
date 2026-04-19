@@ -14,9 +14,12 @@
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import type { RichTextHandle } from '@epicenter/workspace';
 	import { goto } from '$app/navigation';
 	import { workspace } from '$lib/client';
+	import {
+		openEntryContentDoc,
+		type EntryContentDocHandle,
+	} from '$lib/entry-content-doc';
 	import type { Entry } from '$lib/workspace';
 	import ProseMirrorEditor from './ProseMirrorEditor.svelte';
 	import TagInput from './TagInput.svelte';
@@ -40,24 +43,14 @@
 	// to remount on navigation, so entry.id never changes within an instance.
 	const id = entry.id;
 
-	let richTextContent = $state<RichTextHandle | null>(null);
+	let contentDoc = $state<EntryContentDocHandle | null>(null);
 
 	$effect(() => {
-		let cancelled = false;
-		workspace.documents.entries.content.open(id).then((openedContent) => {
-			if (cancelled) {
-				workspace.documents.entries.content.close(id);
-				return;
-			}
-			richTextContent = openedContent;
-		});
-
+		const opened = openEntryContentDoc(id);
+		contentDoc = opened;
 		return () => {
-			cancelled = true;
-			if (richTextContent) {
-				workspace.documents.entries.content.close(id);
-			}
-			richTextContent = null;
+			opened.dispose();
+			contentDoc = null;
 		};
 	});
 
@@ -181,9 +174,9 @@
 	</div>
 
 	<!-- Editor body -->
-	{#if richTextContent}
+	{#if contentDoc}
 		<ProseMirrorEditor
-			yxmlfragment={richTextContent.binding}
+			yxmlfragment={contentDoc.content.binding}
 			onWordCountChange={(count) => (wordCount = count)}
 		/>
 	{:else}

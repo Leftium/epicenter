@@ -18,12 +18,20 @@ import {
 	attachRichText,
 	attachSync,
 	defineDocument,
+	openDocument,
 	toWsUrl,
 } from '@epicenter/yjs-doc';
 import { auth, workspace } from './client';
 import type { EntryId } from './workspace';
 
-export function entryContentDoc(rowId: EntryId) {
+/** Opens the per-entry rich-text Y.Doc. Editor component owns lifecycle. */
+export function openEntryContentDoc(rowId: EntryId) {
+	return openDocument(entryContentDoc(rowId));
+}
+
+export type EntryContentDocHandle = ReturnType<typeof openEntryContentDoc>;
+
+function entryContentDoc(rowId: EntryId) {
 	return defineDocument(
 		`epicenter.fuji.entries.${rowId}.content`,
 		(ydoc) => {

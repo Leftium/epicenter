@@ -44,13 +44,23 @@
 	const id = entry.id;
 
 	let contentDoc = $state<EntryContentDocHandle | null>(null);
+	let isLoaded = $state(false);
 
 	$effect(() => {
 		const opened = openEntryContentDoc(id);
 		contentDoc = opened;
+		// Wait for IDB hydration before revealing the editor — avoids a brief
+		// empty-content flash where ProseMirror renders against an unhydrated
+		// Y.XmlFragment before local data loads.
+		let cancelled = false;
+		opened.whenLoaded.then(() => {
+			if (!cancelled) isLoaded = true;
+		});
 		return () => {
+			cancelled = true;
 			opened.dispose();
 			contentDoc = null;
+			isLoaded = false;
 		};
 	});
 
@@ -174,7 +184,7 @@
 	</div>
 
 	<!-- Editor body -->
-	{#if contentDoc}
+	{#if contentDoc && isLoaded}
 		<ProseMirrorEditor
 			yxmlfragment={contentDoc.content.binding}
 			onWordCountChange={(count) => (wordCount = count)}

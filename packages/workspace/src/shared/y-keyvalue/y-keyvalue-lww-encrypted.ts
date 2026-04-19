@@ -69,7 +69,7 @@ import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
-} from './y-keyvalue-lww.js';
+} from '@epicenter/yjs-doc/y-keyvalue';
 
 const textEncoder = new TextEncoder();
 /** Transaction origin for re-encryption writes. Observer skips events with this origin. */

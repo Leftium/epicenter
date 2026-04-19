@@ -13,11 +13,11 @@ import * as Y from 'yjs';
 import {
 	YKeyValue,
 	type YKeyValueEntry,
-} from '../shared/y-keyvalue/y-keyvalue.js';
+} from '@epicenter/yjs-doc/y-keyvalue';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
-} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+} from '@epicenter/yjs-doc/y-keyvalue';
 
 /** Helper to create a YKeyValue with fresh doc */
 function createKv<T>() {

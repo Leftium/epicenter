@@ -15,7 +15,8 @@
 		"./attach-indexed-db": "./src/attach-indexed-db.ts",
 		"./attach-rich-text": "./src/attach-rich-text.ts",
 		"./attach-plain-text": "./src/attach-plain-text.ts",
-		"./attach-sync": "./src/attach-sync.ts"
+		"./attach-sync": "./src/attach-sync.ts",
+		"./y-keyvalue": "./src/y-keyvalue/index.ts"
 	},
 	"license": "MIT",
 	"scripts": {
@@ -26,7 +27,9 @@
 	},
 	"dependencies": {
 		"@epicenter/sync": "workspace:*",
+		"@standard-schema/spec": "catalog:",
 		"lib0": "catalog:",
+		"wellcrafted": "catalog:",
 		"y-indexeddb": "catalog:",
 		"y-protocols": "catalog:"
 	},

@@ -44,6 +44,7 @@
 		"@ark/json-schema": "^0.0.4",
 		"@tanstack/ai": "catalog:",
 		"@epicenter/sync": "workspace:*",
+		"@epicenter/yjs-doc": "workspace:*",
 		"@noble/ciphers": "^2.1.1",
 		"@noble/hashes": "^2.0.1",
 		"@sindresorhus/slugify": "catalog:",

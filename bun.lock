@@ -632,6 +632,7 @@
       "dependencies": {
         "@ark/json-schema": "^0.0.4",
         "@epicenter/sync": "workspace:*",
+        "@epicenter/yjs-doc": "workspace:*",
         "@noble/ciphers": "^2.1.1",
         "@noble/hashes": "^2.0.1",
         "@sindresorhus/slugify": "catalog:",
@@ -677,7 +678,9 @@
       "version": "0.0.0",
       "dependencies": {
         "@epicenter/sync": "workspace:*",
+        "@standard-schema/spec": "catalog:",
         "lib0": "catalog:",
+        "wellcrafted": "catalog:",
         "y-indexeddb": "catalog:",
         "y-protocols": "catalog:",
       },

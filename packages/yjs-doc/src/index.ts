@@ -27,3 +27,36 @@ export {
 	type SyncAttachmentConfig,
 	type SyncStatus,
 } from './attach-sync.js';
+
+export { attachTable, tableHelperOver } from './attach-table.js';
+export { attachKv, kvHelperOver, KV_ARRAY_KEY } from './attach-kv.js';
+export {
+	attachAwareness,
+	awarenessHelperOver,
+} from './attach-awareness.js';
+
+export type {
+	AwarenessDefinitions,
+	AwarenessHelper,
+	AwarenessState,
+	BaseRow,
+	CombinedStandardSchema,
+	GetResult,
+	InferAwarenessValue,
+	InferKvValue,
+	InferTableRow,
+	InvalidRowResult,
+	KvChange,
+	KvDefinition,
+	KvDefinitions,
+	KvHelper,
+	LastSchema,
+	NotFoundResult,
+	RowResult,
+	TableDefinition,
+	TableDefinitions,
+	TableHelper,
+	TablesHelper,
+	UpdateResult,
+	ValidRowResult,
+} from './types.js';

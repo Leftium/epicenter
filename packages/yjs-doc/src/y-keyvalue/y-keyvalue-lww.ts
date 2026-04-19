@@ -149,7 +149,7 @@
  * ```
  */
 import type * as Y from 'yjs';
-import { lazy } from '../lazy.js';
+import { lazy } from './lazy.js';
 
 /**
  * Entry stored in the Y.Array. The `ts` field enables last-write-wins conflict resolution.

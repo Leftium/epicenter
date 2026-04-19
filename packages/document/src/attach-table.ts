@@ -62,6 +62,7 @@ export function attachTable<
 ): TableHelper<InferTableRow<TTableDefinition>> {
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(tableArrayKey(name));
 	const ykv = new YKeyValueLww<unknown>(yarray);
+	ydoc.on('destroy', () => ykv.dispose());
 	return tableHelperOver(ykv, definition);
 }
 

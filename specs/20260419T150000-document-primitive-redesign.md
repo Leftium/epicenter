@@ -1,25 +1,84 @@
 # Document Primitive Redesign: `defineDocument` as the Lower-Level Substrate
 
 **Date**: 2026-04-19
-**Status**: Draft
+**Status**: Draft — final design (post round 12)
 **Author**: AI-assisted (Braden + Claude)
 
 ## Overview
 
-Introduce a lower-level primitive — `defineDocument` — that owns Y.Doc lifecycle and nothing else. `createWorkspace` and its `.withExtension` builder chain stay exactly as they are today at the call site; internally, they become sugar built on top of `defineDocument`. `.withDocument()` (the per-row subdoc declaration attached to a table) is **removed entirely** — per-row content docs become child `defineDocument`s, opened by a small helper, with their closures free to reference the parent workspace's tables.
+Introduce a lower-level primitive — `defineDocument` — that owns Y.Doc lifecycle and nothing else. `createWorkspace` becomes sugar built on top of `defineDocument`, and its existing extensions become trivially-thin `(ctx) => attachX(ctx.ydoc, ...)` shims over the new `yjs-doc` attach helpers. `.withDocument()` (the per-row subdoc declaration attached to a table) is **removed entirely** — per-row content docs become child `defineDocument`s opened by a small helper, with their closures free to reference the parent workspace's tables.
+
+The pyramid:
+
+```
+            apps (fuji, whispering, opensidian, honeycrisp, …)
+           /                                                  \
+createWorkspace                                      standalone defineDocument
+(.withExtension chain,                               (skills, per-row content,
+ single Y.Doc scope)                                  settings split, …)
+           \                                                  /
+            packages/yjs-doc
+            (defineDocument, openDocument, attachX helpers)
+                              │
+                             yjs
+```
 
 Two layers, one primitive, zero hooks object:
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│  packages/workspace — createWorkspace + .withExtension(*)  │  ← unchanged surface
-│  Sugar layer for the 90% single-doc app case.              │
+│  packages/workspace — createWorkspace + .withExtension(*)  │  ← call sites unchanged
+│  Builder chain accumulates (ctx) => attachX(ctx.ydoc, …)   │     (sans .withDocument)
+│  factories. One scope (workspace Y.Doc). Single variant.   │
 ├────────────────────────────────────────────────────────────┤
-│  packages/yjs-doc — defineDocument + openDocument          │  ← new package
-│  Async bootstrap closure. Cleanup via ydoc.on('destroy').  │
-│  No hooks object, no registry, no providers array.         │
+│  packages/yjs-doc — defineDocument + openDocument + attachX│  ← new package
+│  Sync bootstrap closure. Cleanup via ydoc.on('destroy').   │
+│  Attach helpers return typed atoms (whenLoaded,        │
+│  whenConnected, reconnect, …). No precomposed readiness.   │
 └────────────────────────────────────────────────────────────┘
 ```
+
+## Chosen Strategy: A+B (Builder + Thin Shims)
+
+Three shapes were considered for how `createWorkspace` should consume the new primitives:
+
+| Strategy | Shape | Verdict |
+|---|---|---|
+| **A** — Explicit ctx arrows | `.withExtension('sync', (ctx) => attachSync(ctx.ydoc, {...}))` | **Chosen foundation.** Honest, typed, zero magic. Every `waitFor` dependency is a plain JS reference with IDE autocomplete. |
+| **B** — Pre-baked factories wrapping A | `.withExtension('sync', websocketSync({url, getToken}))` where the factory returns a `(ctx) => attachSync(...)` closure internally. | **Convenience layer on top of A.** Same underlying types; fewer keystrokes at call sites. Existing apps get this for free — `indexeddbPersistence` and `createSyncExtension` become thin shims with unchanged external signatures. |
+| **C** — Drop the builder; pass one bootstrap closure | `createWorkspace({ id, tables, bootstrap: (ydoc) => ({...}) })` | **Rejected.** Ergonomic edge over A collapsed once the three-variant foot-gun disappeared. Departs from the codebase's builder idiom (`.withActions`, `defineTable`, `defineKv`). Breaks cross-package extension composition. Migration cost not justified. |
+
+Net: the builder chain stays. It just becomes one method (`.withExtension`) over one scope (the workspace Y.Doc), with extensions that are trivial closures over `yjs-doc` attach helpers.
+
+## Readiness Signals: Split, Don't Precompose
+
+Earlier drafts returned a single `whenSynced` composed as `Promise.all([idb.whenSynced, sync.whenConnected])`. That's over-eager:
+
+- `sync.whenConnected` is transport-level handshake, not CRDT convergence. Calling the composite `whenSynced` propagates `y-indexeddb`'s misnaming upward.
+- Most callers (especially offline-first UIs) want "local data is loaded, edits are safe" — waiting on the network is unnecessary and slows first paint.
+- Precomposing hides which signal a caller actually depends on.
+
+The rule: **each attach helper returns what it actually knows.** The bootstrap returns the atoms. Callers compose at the call site.
+
+```ts
+// attach helpers expose atoms
+attachIndexedDb(ydoc)  →  { whenLoaded, clearLocal, disposed }
+attachSync(ydoc, opts) →  { whenConnected, status, onStatusChange, reconnect, disposed }
+
+// a doc returns atoms, not composites
+return {
+  content,
+  whenLoaded: idb.whenLoaded,   // "my draft is loaded"
+  whenConnected:  sync.whenConnected,   // "server reachable"
+}
+
+// callers pick the signal they actually need
+await doc.whenLoaded           // offline-first render (typical UI)
+await doc.whenConnected            // CLI that needs remote data
+await Promise.all([...])           // strict "both" when it matters
+```
+
+If a convenience composite turns out to be common, it can be added later as an opt-in helper. Precomposing in the primitive is a one-way door; exposing atoms is not.
 
 ## Motivation
 
@@ -98,16 +157,18 @@ The key insight: Y.Doc is usable immediately. Edits queue and merge when persist
 export const settingsDoc = defineDocument('fuji.settings', (ydoc) => {
   const kv   = attachKv(ydoc, schema)
   const idb  = attachIndexedDb(ydoc)
-  const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenSynced })
+  const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenLoaded })
   return {
     kv,
-    whenSynced: Promise.all([idb.whenSynced, sync.whenConnected]).then(() => {}),
+    whenLoaded: idb.whenLoaded,
+    whenConnected:  sync.whenConnected,
   }
 })
 
 export const settings = openDocument(settingsDoc)       // SYNC — no top-level await
 settings.kv.apiKey.set('sk-...')                        // usable immediately
-await settings.whenSynced                               // opt-in ready signal
+await settings.whenLoaded                           // typical UI path
+// or: await settings.whenConnected                     // CLI path
 ```
 
 The handle is a plain synchronous value: trivially mockable in tests, no top-level-await propagation, errors caught by ordinary `try/catch`. Ordering is still visible in code — `sync` names `idb.whenSynced` as its dependency.
@@ -138,7 +199,7 @@ export function entryContentDoc(rowId: string) {
   return defineDocument(`fuji.entries.${rowId}.content`, (ydoc) => {
     const content = attachRichText(ydoc)
     const idb     = attachIndexedDb(ydoc)
-    const sync    = attachSync(ydoc, { url, getToken, waitFor: idb.whenSynced })
+    const sync    = attachSync(ydoc, { url, getToken, waitFor: idb.whenLoaded })
 
     ydoc.on('update', () => {
       workspace.tables.entries.update(rowId, { updatedAt: DateTimeString.now() })
@@ -146,7 +207,8 @@ export function entryContentDoc(rowId: string) {
 
     return {
       content,
-      whenSynced: Promise.all([idb.whenSynced, sync.whenConnected]).then(() => {}),
+      whenLoaded: idb.whenLoaded,
+      whenConnected:  sync.whenConnected,
     }
   })
 }
@@ -193,12 +255,13 @@ Conclusion: attach helpers use `ydoc.on('destroy', …)` directly, exactly as th
 ```ts
 const settingsDoc = defineDocument('fuji.settings', (ydoc) => {
   const kv   = attachKv(ydoc, schema)
-  const idb  = attachIndexedDb(ydoc)       // returns { whenSynced, clearLocal, disposed }
-  const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenSynced })
+  const idb  = attachIndexedDb(ydoc)       // returns { whenLoaded, clearLocal, disposed }
+  const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenLoaded })
   return {
     kv,
-    whenSynced:   Promise.all([idb.whenSynced, sync.whenConnected]).then(() => {}),
-    whenDisposed: Promise.all([idb.disposed,   sync.disposed     ]).then(() => {}),
+    whenLoaded: idb.whenLoaded,
+    whenConnected:  sync.whenConnected,
+    whenDisposed:   Promise.all([idb.disposed, sync.disposed]).then(() => {}),
   }
 })
 
@@ -215,7 +278,7 @@ The two other originally-proposed hooks remain rejected:
 
 | Hook | Native thing that's already better |
 |---|---|
-| `onReady(fn)` | `await` on a returned `whenSynced: Promise<void>`. |
+| `onReady(fn)` | `await` on a returned `whenLoaded` / `whenConnected` promise. |
 | `onUpdate(fn)` | `ydoc.on('update', fn)`. Destroy auto-cleans Y.Doc's own listeners. |
 
 ### Internals of `openDocument`
@@ -269,16 +332,17 @@ export function attachSync(ydoc: Y.Doc, opts: {
 }
 ```
 
-Two shapes worth noticing. `waitFor` is *optional* — docs without persistence can skip it and connect immediately (rare, but useful for ephemeral awareness-only docs). And the helper exposes `whenConnected`, not `whenSynced`, because at the doc level `whenSynced` means *"everything is settled, what I see is real"* — which is the conjunction of `idb.whenSynced` and `sync.whenConnected`. The bootstrap composes that:
+Two shapes worth noticing. `waitFor` is *optional* — docs without persistence can skip it and connect immediately (rare, but useful for ephemeral awareness-only docs). And the helper exposes `whenConnected`, not `whenSynced` — transport-level handshake, not CRDT convergence.
 
 ```ts
 return {
   kv,
-  whenSynced: Promise.all([idb.whenSynced, sync.whenConnected]).then(() => {}),
+  whenLoaded: idb.whenLoaded,
+  whenConnected:  sync.whenConnected,
 }
 ```
 
-Each helper returns what it actually knows. The doc composes what the consumer actually wants.
+Each helper returns what it actually knows. The doc exposes those atoms. Callers compose at the call site when they genuinely need "both" (most don't).
 
 Y.Doc's `'destroy'` event fires LIFO naturally in V8 (listener list, pushed in registration order, iterated in insertion order — but `attachIndexedDb` runs before `attachSync` so sync destroys first if registered last). If strict LIFO becomes important later, `openDocument` can maintain its own destroy list. For now, registration-order destruction is sufficient.
 
@@ -392,24 +456,26 @@ import {
 const settingsDoc = defineDocument('epicenter.whispering.settings', (ydoc) => {
   const kv   = attachKv(ydoc, settingsSchema)
   const idb  = attachIndexedDb(ydoc)
-  const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenSynced })
+  const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenLoaded })
   return {
     kv,
     reconnect: sync.reconnect,
     clearLocal: idb.clearLocal,
-    whenSynced: Promise.all([idb.whenSynced, sync.whenConnected]).then(() => {}),
+    whenLoaded: idb.whenLoaded,
+    whenConnected:  sync.whenConnected,
   }
 })
 
 const recordingsDoc = defineDocument('epicenter.whispering.recordings', (ydoc) => {
   const tables = { recordings: attachTable(ydoc, recordingsSchema) }
   const idb    = attachIndexedDb(ydoc)
-  const sync   = attachSync(ydoc, { url, getToken, waitFor: idb.whenSynced })
+  const sync   = attachSync(ydoc, { url, getToken, waitFor: idb.whenLoaded })
   return {
     tables,
     reconnect: sync.reconnect,
     clearLocal: idb.clearLocal,
-    whenSynced: Promise.all([idb.whenSynced, sync.whenConnected]).then(() => {}),
+    whenLoaded: idb.whenLoaded,
+    whenConnected:  sync.whenConnected,
   }
 })
 
@@ -422,7 +488,7 @@ settings.kv.apiKey.set('sk-...')
 recordings.tables.recordings.set({ id, title, blob })
 
 // Opt-in readiness:
-await settings.whenSynced
+await settings.whenLoaded
 ```
 
 The localStorage-for-roamable-settings hack (`apps/whispering/…/kv.ts:188`) goes away. API keys and hardware IDs live in `settingsDoc`, which syncs.
@@ -437,10 +503,11 @@ function skillsDocFor(config: { url: (id: string) => string; getToken: () => Pro
   return defineDocument('epicenter.skills', (ydoc) => {
     const tables = { skills: attachTable(ydoc, skillsSchema) }
     const idb    = attachIndexedDb(ydoc)
-    const sync   = attachSync(ydoc, { ...config, waitFor: idb.whenSynced })
+    const sync   = attachSync(ydoc, { ...config, waitFor: idb.whenLoaded })
     return {
       tables,
-      whenSynced: Promise.all([idb.whenSynced, sync.whenConnected]).then(() => {}),
+      whenLoaded: idb.whenLoaded,
+      whenConnected:  sync.whenConnected,
     }
   })
 }
@@ -489,33 +556,67 @@ This is what SyncedStore ships — but with explicit lifecycle and no schema cou
 
 ## How `createWorkspace` Builds on `defineDocument`
 
-The existing builder chain stays. Internally, `createWorkspace(def)` is a thin wrapper that produces a `defineDocument` under the hood:
+The existing builder chain stays. Internally, `createWorkspace(def)` is a thin wrapper that produces a `defineDocument` under the hood, and every extension factory becomes a trivially-thin closure over an attach helper from `yjs-doc`.
+
+### Internal shape
 
 ```ts
 // packages/workspace/src/workspace/create-workspace.ts — internal sketch
 export function createWorkspace<T extends WorkspaceDefinition>(def: T) {
-  const docDef = defineDocument(def.id, async (ydoc) => {
-    const tables    = buildTables(ydoc, def.tables)           // existing logic
-    const kv        = buildKv(ydoc, def.kv)
-    const awareness = buildAwareness(ydoc, def.awareness)
+  const docDef = defineDocument(def.id, (ydoc) => {
+    const tables    = attachTable(ydoc, def.tables)       // from @epicenter/yjs-doc
+    const kv        = attachKv(ydoc, def.kv)
+    const awareness = attachAwareness(ydoc, def.awareness)
     return { tables, kv, awareness }
   })
 
   return createBuilder(docDef)  // returns today's WorkspaceClientBuilder
 }
 
-// .withExtension('sync', factory) is implemented as:
-//   1. Extend the underlying bootstrap so it also runs factory(ydoc, priorCtx) after priors
-//   2. Add the factory's return value to the output object under the key
-//   3. Preserve progressive ctx typing by threading T through the chain type signatures
+// .withExtension('key', factory) where factory: (ctx) => attachment
+//   1. Extends the underlying bootstrap to also run factory(ctx) after priors
+//   2. Merges the factory's return value into the handle under `key`
+//   3. Threads the key+return type through the chain for progressive ctx typing
 ```
 
-This means:
+### External shape (extensions as thin shims)
 
-- **Zero API surface change for existing apps.** Fuji, honeycrisp, and other single-doc apps don't change their call sites (except removing `.withDocument`, which they migrate off in Phase 2).
-- **`.withExtension`, `.withWorkspaceExtension`, `.withDocumentExtension`, `.withActions` all keep working identically.** The three-variant foot-gun is tolerated for now; Phase 3 can consolidate.
-- **Progressive extension typing is preserved** because the builder's type parameters accumulate across calls exactly as they do today.
-- **Encryption, `clearLocalData`, and `applyEncryptionKeys` work unchanged** because they live in the builder layer, not the primitive.
+Existing extension factories become one-line closures over `yjs-doc` attach helpers. External signatures stay identical — existing apps compile unchanged.
+
+```ts
+// packages/workspace/src/extensions/persistence/indexeddb.ts — after
+import { attachIndexedDb } from '@epicenter/yjs-doc'
+export function indexeddbPersistence({ ydoc }: SharedExtensionContext) {
+  return attachIndexedDb(ydoc)
+}
+
+// packages/workspace/src/extensions/sync/websocket.ts — after
+import { attachSync } from '@epicenter/yjs-doc'
+export function createSyncExtension(config: SyncExtensionConfig) {
+  return (ctx: SharedExtensionContext) =>
+    attachSync(ctx.ydoc, {
+      ...config,
+      awareness: ctx.awareness.raw,
+      waitFor:   ctx.whenReady,          // chain onto priors (persistence first)
+    })
+}
+```
+
+At the call site, nothing changes:
+
+```ts
+export const workspace = createWorkspace(fuji)
+  .withExtension('persistence', indexeddbPersistence)
+  .withExtension('sync', createSyncExtension({ url, getToken }))
+  .withActions((client) => ({ … }))
+```
+
+### What this unlocks
+
+- **Zero API surface change for existing apps.** `.withExtension`, `.withActions`, `defineTable`, `defineKv`, `defineAwareness` all keep working identically. The three-variant foot-gun collapses to a single `.withExtension` once `.withDocument`/`.withDocumentExtension` are gone — same method name, one scope, less to document.
+- **Progressive extension typing preserved** because the builder's type parameters accumulate across calls exactly as today. `ctx.persistence.whenLoaded` becomes typed autocomplete in the `sync` factory.
+- **Encryption, `clearLocalData`, `applyEncryptionKeys`** stay in the builder layer — they're cross-cutting concerns over the encrypted store set, not Y.Doc lifecycle.
+- **Per-row content docs** are no longer entangled in the builder. They're separate `defineDocument` calls opened by the editor component. Extension wiring for them is local to each content doc, not inherited implicitly from the workspace.
 
 ## What Gets Deleted
 
@@ -655,11 +756,10 @@ STEP 4: Consumer calls dispose (or the library unmounts)
 
 ```ts
 const idb = attachIndexedDb(ydoc)
-await idb.whenSynced                     // explicit
-const sync = attachSync(ydoc, {...})     // starts after idb is hydrated
+const sync = attachSync(ydoc, { ..., waitFor: idb.whenLoaded })
 ```
 
-If the bootstrap author forgets `await idb.whenSynced`, sync connects before local state hydrates. This is visible in code review — no hidden `onReady` ordering to get wrong.
+`waitFor` on `attachSync` is the typed, visible way to express this ordering. The alternative — `await idb.whenLoaded` mid-bootstrap — would force the bootstrap async; keeping the bootstrap synchronous and pushing the wait into the helper is simpler and more mockable. Forgetting `waitFor` means sync connects before local hydrates — visible in code review, impossible to hide behind a framework hook.
 
 ### Dispose during async hydration
 
@@ -683,16 +783,16 @@ Opensidian and whispering both open `skillsDoc`. If `skillsDoc` hardcodes `url` 
 
 ```ts
 export function createSkillsDoc(config: { url: string; getToken: () => Promise<string> }) {
-  return defineDocument('epicenter.skills', async (ydoc) => {
+  return defineDocument('epicenter.skills', (ydoc) => {
     const tables = { skills: attachTable(ydoc, skillsSchema) }
-    const idb = attachIndexedDb(ydoc); await idb.whenSynced
-    const sync = attachSync(ydoc, config)
+    const idb    = attachIndexedDb(ydoc)
+    const sync   = attachSync(ydoc, { ...config, waitFor: idb.whenLoaded })
     return { tables, idb, sync }
   })
 }
 
 // apps/opensidian:
-export const skills = await openDocument(createSkillsDoc({ url, getToken }))
+export const skills = openDocument(createSkillsDoc({ url, getToken }))
 ```
 
 Shared docs that need per-app configuration become factories. This is a convention, not a primitive change.
@@ -701,9 +801,11 @@ Shared docs that need per-app configuration become factories. This is a conventi
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Substrate primitive | `defineDocument(id, async (ydoc) => T)` | Closure captures ordering via `await`; typed API returned; no builder needed at this layer. |
+| Substrate primitive | `defineDocument(id, (ydoc) => T)` | Sync closure; typed API returned; ordering expressed via `waitFor` on helpers. |
 | Lifecycle mechanism | `ydoc.on('destroy', fn)` | Native Y.Doc event. No hooks object, no registry, no reinvention. |
-| Bootstrap sync or async | **Async** | Lets `await` express ordering (idb before sync). Sync bootstrap would force a hooks-style registry. |
+| Bootstrap sync or async | **Sync** | Avoids top-level-await propagation. Y.Doc is usable immediately; ordering goes into helpers' `waitFor` param. |
+| Readiness signal shape | **Split atoms (`whenLoaded` + `whenConnected`)** | Precomposing `whenSynced` conflates transport and CRDT convergence; hides what callers actually depend on. |
+| Extension composition | **Strategy A+B (builder + thin shims)** | Builder chain stays; factories become `(ctx) => attachX(ctx.ydoc, …)`. Strategy C (drop the builder) rejected: marginal ergonomic gain didn't justify departing from codebase idiom or breaking cross-package composition. |
 | Hooks object | **Rejected** | Every hook was wrapping a native Y.Doc mechanism. Removing it removes a concept. |
 | Providers array | **Rejected** | Attach helpers are just function calls. No array to index, no names to collide. |
 | `createWorkspace` at call sites | **Unchanged** | Sugar for the 90% case. Progressive extension typing preserved via existing builder type machinery. |

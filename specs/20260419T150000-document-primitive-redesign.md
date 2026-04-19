@@ -6,7 +6,7 @@
 
 ## Overview
 
-Introduce a lower-level primitive — `defineDocument` — that owns Y.Doc lifecycle and nothing else. `createWorkspace` becomes sugar built on top of `defineDocument`, and its existing extensions become trivially-thin `(ctx) => attachX(ctx.ydoc, ...)` shims over the new `yjs-doc` attach helpers. `.withDocument()` (the per-row subdoc declaration attached to a table) is **removed entirely** — per-row content docs become child `defineDocument`s opened by a small helper, with their closures free to reference the parent workspace's tables.
+Introduce a lower-level primitive — `defineDocument` — that owns Y.Doc lifecycle and nothing else. `createWorkspace` becomes sugar built on top of `defineDocument`, and its existing extensions become trivially-thin `(ctx) => attachX(ctx.ydoc, ...)` shims over the new `document` attach helpers. `.withDocument()` (the per-row subdoc declaration attached to a table) is **removed entirely** — per-row content docs become child `defineDocument`s opened by a small helper, with their closures free to reference the parent workspace's tables.
 
 The pyramid:
 
@@ -17,7 +17,7 @@ createWorkspace                                      standalone defineDocument
 (.withExtension chain,                               (skills, per-row content,
  single Y.Doc scope)                                  settings split, …)
            \                                                  /
-            packages/yjs-doc
+            packages/document
             (defineDocument, openDocument, attachX helpers)
                               │
                              yjs
@@ -31,7 +31,7 @@ Two layers, one primitive, zero hooks object:
 │  Builder chain accumulates (ctx) => attachX(ctx.ydoc, …)   │     (sans .withDocument)
 │  factories. One scope (workspace Y.Doc). Single variant.   │
 ├────────────────────────────────────────────────────────────┤
-│  packages/yjs-doc — defineDocument + openDocument + attachX│  ← new package
+│  packages/document — defineDocument + openDocument + attachX│  ← new package
 │  Sync bootstrap closure. Cleanup via ydoc.on('destroy').   │
 │  Attach helpers return typed atoms (whenLoaded,        │
 │  whenConnected, reconnect, …). No precomposed readiness.   │
@@ -48,7 +48,7 @@ Three shapes were considered for how `createWorkspace` should consume the new pr
 | **B** — Pre-baked factories wrapping A | `.withExtension('sync', websocketSync({url, getToken}))` where the factory returns a `(ctx) => attachSync(...)` closure internally. | **Convenience layer on top of A.** Same underlying types; fewer keystrokes at call sites. Existing apps get this for free — `indexeddbPersistence` and `createSyncExtension` become thin shims with unchanged external signatures. |
 | **C** — Drop the builder; pass one bootstrap closure | `createWorkspace({ id, tables, bootstrap: (ydoc) => ({...}) })` | **Rejected.** Ergonomic edge over A collapsed once the three-variant foot-gun disappeared. Departs from the codebase's builder idiom (`.withActions`, `defineTable`, `defineKv`). Breaks cross-package extension composition. Migration cost not justified. |
 
-Net: the builder chain stays. It just becomes one method (`.withExtension`) over one scope (the workspace Y.Doc), with extensions that are trivial closures over `yjs-doc` attach helpers.
+Net: the builder chain stays. It just becomes one method (`.withExtension`) over one scope (the workspace Y.Doc), with extensions that are trivial closures over `document` attach helpers.
 
 ## Readiness Signals: Split, Don't Precompose
 
@@ -126,14 +126,14 @@ Users must read JSDoc to know which scope each covers. `.withDocumentExtension` 
 
 ### Standalone external consumers
 
-Yjs apps outside epicenter don't want `tables`, `kv`, or `awareness`. They want "I have a Y.Doc, compose providers against it with typed API and clean disposal." No such package exists in the ecosystem — SyncedStore is the closest public shape (a factory that takes a Y.Doc and returns a typed proxy), but it owns the data schema. `packages/yjs-doc` fills that gap.
+Yjs apps outside epicenter don't want `tables`, `kv`, or `awareness`. They want "I have a Y.Doc, compose providers against it with typed API and clean disposal." No such package exists in the ecosystem — SyncedStore is the closest public shape (a factory that takes a Y.Doc and returns a typed proxy), but it owns the data schema. `packages/document` fills that gap.
 
 ## The Primitive
 
 ### Shape
 
 ```ts
-// packages/yjs-doc
+// packages/document
 
 export function defineDocument<T>(
   id: string,
@@ -381,7 +381,7 @@ import {
   attachSync,
   defineDocument,
   toWsUrl,
-} from '@epicenter/yjs-doc'
+} from '@epicenter/document'
 import { auth, workspace } from './client'
 
 export function entryContentDoc(rowId: string) {
@@ -414,7 +414,7 @@ export function entryContentDoc(rowId: string) {
 ```svelte
 <!-- apps/fuji/src/lib/components/Editor.svelte -->
 <script lang="ts">
-  import { openDocument } from '@epicenter/yjs-doc'
+  import { openDocument } from '@epicenter/document'
   import { entryContentDoc } from '$lib/entry-content-doc'
 
   let { row } = $props<{ row: { id: string } }>()
@@ -451,7 +451,7 @@ import {
   attachTable,
   defineDocument,
   openDocument,
-} from '@epicenter/yjs-doc'
+} from '@epicenter/document'
 
 const settingsDoc = defineDocument('epicenter.whispering.settings', (ydoc) => {
   const kv   = attachKv(ydoc, settingsSchema)
@@ -536,7 +536,7 @@ Factory-returns-definition is the pattern for shared docs that need per-app conf
 For a Yjs app that doesn't want tables/KV at all:
 
 ```ts
-import { defineDocument, openDocument } from '@epicenter/yjs-doc'
+import { defineDocument, openDocument } from '@epicenter/document'
 
 const counterDoc = defineDocument('my-counter', (ydoc) => {
   const state = ydoc.getMap<number>('state')
@@ -556,7 +556,7 @@ This is what SyncedStore ships — but with explicit lifecycle and no schema cou
 
 ## How `createWorkspace` Builds on `defineDocument`
 
-The existing builder chain stays. Internally, `createWorkspace(def)` is a thin wrapper that produces a `defineDocument` under the hood, and every extension factory becomes a trivially-thin closure over an attach helper from `yjs-doc`.
+The existing builder chain stays. Internally, `createWorkspace(def)` is a thin wrapper that produces a `defineDocument` under the hood, and every extension factory becomes a trivially-thin closure over an attach helper from `document`.
 
 ### Internal shape
 
@@ -564,7 +564,7 @@ The existing builder chain stays. Internally, `createWorkspace(def)` is a thin w
 // packages/workspace/src/workspace/create-workspace.ts — internal sketch
 export function createWorkspace<T extends WorkspaceDefinition>(def: T) {
   const docDef = defineDocument(def.id, (ydoc) => {
-    const tables    = attachTable(ydoc, def.tables)       // from @epicenter/yjs-doc
+    const tables    = attachTable(ydoc, def.tables)       // from @epicenter/document
     const kv        = attachKv(ydoc, def.kv)
     const awareness = attachAwareness(ydoc, def.awareness)
     return { tables, kv, awareness }
@@ -581,17 +581,17 @@ export function createWorkspace<T extends WorkspaceDefinition>(def: T) {
 
 ### External shape (extensions as thin shims)
 
-Existing extension factories become one-line closures over `yjs-doc` attach helpers. External signatures stay identical — existing apps compile unchanged.
+Existing extension factories become one-line closures over `document` attach helpers. External signatures stay identical — existing apps compile unchanged.
 
 ```ts
 // packages/workspace/src/extensions/persistence/indexeddb.ts — after
-import { attachIndexedDb } from '@epicenter/yjs-doc'
+import { attachIndexedDb } from '@epicenter/document'
 export function indexeddbPersistence({ ydoc }: SharedExtensionContext) {
   return attachIndexedDb(ydoc)
 }
 
 // packages/workspace/src/extensions/sync/websocket.ts — after
-import { attachSync } from '@epicenter/yjs-doc'
+import { attachSync } from '@epicenter/document'
 export function createSyncExtension(config: SyncExtensionConfig) {
   return (ctx: SharedExtensionContext) =>
     attachSync(ctx.ydoc, {
@@ -663,7 +663,7 @@ export const workspace = createWorkspace(fuji)
                              │  builds on
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ packages/yjs-doc (NEW, standalone)                           │
+│ packages/document (NEW, standalone)                           │
 │ ──────────────────────────────────────────────────────────── │
 │ defineDocument(id, async (ydoc) => T): DocumentDefinition<T> │
 │ openDocument(def): Promise<T & { ydoc, dispose }>            │
@@ -717,7 +717,7 @@ STEP 4: Consumer calls dispose (or the library unmounts)
 
 ### Phase 1: Ship the primitive
 
-- [ ] **1.1** Create `packages/yjs-doc` with `defineDocument`, `openDocument` — under 50 lines of production code.
+- [ ] **1.1** Create `packages/document` with `defineDocument`, `openDocument` — under 50 lines of production code.
 - [ ] **1.2** Extract `attachTable(ydoc, schema)` from `create-workspace.ts:138-147`.
 - [ ] **1.3** Extract `attachKv(ydoc, schema)` from `create-workspace.ts:150-152`.
 - [ ] **1.4** Extract `attachAwareness(ydoc, schema)` from `create-awareness.ts`.
@@ -747,7 +747,7 @@ STEP 4: Consumer calls dispose (or the library unmounts)
 ### Phase 4: Cleanup
 
 - [ ] **4.1** Consider consolidating `.withWorkspaceExtension` into `.withExtension` (now that scope is unambiguous — there's only the workspace Y.Doc to target).
-- [ ] **4.2** Ship `packages/yjs-doc` as a standalone npm package for external consumers.
+- [ ] **4.2** Ship `packages/document` as a standalone npm package for external consumers.
 - [ ] **4.3** Write migration guide documenting the `.withDocument` → `attachChildDocs` path.
 
 ## Edge Cases
@@ -815,7 +815,7 @@ Shared docs that need per-app configuration become factories. This is a conventi
 | `.withWorkspaceExtension` | Tolerated (Phase 4 consolidation) | Not blocking. |
 | Child-doc lifecycle | `attachChildDocs` userland helper | Not part of the primitive. Opens/closes per row via parent-table observation. |
 | Cross-app shared docs | `defineDocument` imported from shared package | Per-app config via factory functions when needed. |
-| Standalone package | `packages/yjs-doc` | Enables external consumption. Keeps `packages/workspace` as a pure consumer. |
+| Standalone package | `packages/document` | Enables external consumption. Keeps `packages/workspace` as a pure consumer. |
 | LIFO dispose order | Registration order on `'destroy'` event | Sufficient for now. If strict LIFO needed, `openDocument` maintains its own list. |
 | `clearLocalData` | Attach-helper-returned method | `doc.idb.clearLocal()`. Coordinated wipe via a `clearAllLocal(doc)` helper that walks known cleanup surfaces. |
 | Encryption placement | Stays in builder layer | Phase-4 work; the core redesign ships first. |
@@ -828,15 +828,15 @@ Shared docs that need per-app configuration become factories. This is a conventi
 
 3. **Should attach helpers return `{ api, whenReady, clearLocal, dispose }` uniformly?** Some (idb) expose `whenSynced`; some (sync) expose `reconnect`. No enforced shape. Pro: matches what each thing actually provides. Con: no generic "wait for all ready" helper. Lean: no uniform shape — user awaits what they need.
 
-4. **Does `attachChildDocs` belong in `packages/yjs-doc` or `packages/workspace`?** It depends on `parentTable` being a table helper, which only `packages/workspace` ships. Lean: `packages/workspace`. `packages/yjs-doc` stays pure Y.Doc lifecycle.
+4. **Does `attachChildDocs` belong in `packages/document` or `packages/workspace`?** It depends on `parentTable` being a table helper, which only `packages/workspace` ships. Lean: `packages/workspace`. `packages/document` stays pure Y.Doc lifecycle.
 
 5. **Can `.withExtension` disappear if external factories move to attach helpers?** Probably, eventually. Not in this spec — existing apps depend on it. Phase 4 consolidation question.
 
-6. **What happens when two `openDocument(def)` calls hit the same id concurrently?** Two Y.Docs allocated, two sets of providers. Yjs itself handles the sync/persistence layer correctly but the JS-side state is duplicated. Need either an open-doc registry inside `openDocument` or accept the footgun. Lean: registry, keyed by id, ref-counted. Not in the primitive — ships as `packages/yjs-doc`'s default.
+6. **What happens when two `openDocument(def)` calls hit the same id concurrently?** Two Y.Docs allocated, two sets of providers. Yjs itself handles the sync/persistence layer correctly but the JS-side state is duplicated. Need either an open-doc registry inside `openDocument` or accept the footgun. Lean: registry, keyed by id, ref-counted. Not in the primitive — ships as `packages/document`'s default.
 
 ## Success Criteria
 
-- [ ] `packages/yjs-doc` ships `defineDocument`, `openDocument` — under 50 lines of production code, zero external dependencies beyond `yjs`.
+- [ ] `packages/document` ships `defineDocument`, `openDocument` — under 50 lines of production code, zero external dependencies beyond `yjs`.
 - [ ] `attachTable`, `attachKv`, `attachIndexedDb`, `attachSync`, `attachBroadcastChannel`, `attachRichText`, `attachPlainText`, `attachTimeline` all functional and unit-tested.
 - [ ] `createWorkspace` builds on `defineDocument` internally. Existing app call sites (fuji, honeycrisp, tab-manager, whispering, opensidian, skills) compile unchanged.
 - [ ] `.withDocument`, `.withDocumentExtension`, `DocumentConfig`, `DocumentContext`, and `create-documents.ts` are deleted from `packages/workspace`.

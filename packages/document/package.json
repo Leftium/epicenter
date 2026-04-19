@@ -1,12 +1,12 @@
 {
-	"name": "@epicenter/yjs-doc",
+	"name": "@epicenter/document",
 	"version": "0.0.0",
 	"description": "Lower-level Y.Doc lifecycle primitive — defineDocument + attach helpers.",
 	"keywords": ["yjs", "crdt", "local-first", "epicenter"],
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/EpicenterHQ/epicenter.git",
-		"directory": "packages/yjs-doc"
+		"directory": "packages/document"
 	},
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",

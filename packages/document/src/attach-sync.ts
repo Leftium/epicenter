@@ -23,7 +23,7 @@ import type * as Y from 'yjs';
 /**
  * Minimal Y.Doc sync attachment — connects a Y.Doc to a WebSocket sync server.
  *
- * This is a low-level primitive for `packages/yjs-doc`. It handles the
+ * This is a low-level primitive for `packages/document`. It handles the
  * Y.Doc sync protocol (STEP1/STEP2/UPDATE), optional awareness, supervisor
  * loop with exponential backoff, liveness detection, and graceful shutdown.
  *
@@ -39,7 +39,7 @@ import type * as Y from 'yjs';
  */
 
 // SYNC_ORIGIN is imported from @epicenter/sync so every sync layer (workspace
-// WebSocket, BroadcastChannel, yjs-doc attachSync) agrees on the same symbol
+// WebSocket, BroadcastChannel, document attachSync) agrees on the same symbol
 // and echo guards work across layers.
 
 // ============================================================================

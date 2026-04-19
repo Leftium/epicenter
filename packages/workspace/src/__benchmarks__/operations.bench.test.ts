@@ -10,7 +10,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { type } from 'arktype';
-import type { YKeyValueLwwEntry } from '@epicenter/yjs-doc/y-keyvalue';
+import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { createKv } from '../workspace/create-kv.js';
 import { createTables } from '../workspace/create-tables.js';

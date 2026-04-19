@@ -10,7 +10,7 @@
  * and by tests.
  */
 
-import type { YKeyValueLwwChange } from '@epicenter/yjs-doc/y-keyvalue';
+import type { YKeyValueLwwChange } from '@epicenter/document/y-keyvalue';
 import type { EncryptedYKeyValueLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type { KvChange, KvDefinitions, KvHelper } from './types.js';
 

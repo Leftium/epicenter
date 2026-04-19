@@ -2,7 +2,7 @@
  * Transport origin sentinels for Yjs sync.
  *
  * Canonical definitions now live in `@epicenter/sync` so every layer that
- * touches a shared Y.Doc (workspace sync, yjs-doc attachSync, BroadcastChannel)
+ * touches a shared Y.Doc (workspace sync, document attachSync, BroadcastChannel)
  * agrees on the same symbols. This file re-exports them for existing
  * workspace-internal imports.
  *

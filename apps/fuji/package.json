@@ -36,7 +36,7 @@
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
-		"@epicenter/yjs-doc": "workspace:*",
+		"@epicenter/document": "workspace:*",
 		"@tanstack/svelte-table": "catalog:",
 		"@tanstack/table-core": "9.0.0-alpha.10",
 		"arktype": "catalog:",

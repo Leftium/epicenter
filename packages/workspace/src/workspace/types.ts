@@ -5,7 +5,7 @@
  *
  * The lower-level CRDT primitive types (`TableDefinition`, `TableHelper`,
  * `KvDefinition`, `KvHelper`, `AwarenessDefinitions`, `AwarenessHelper`,
- * `BaseRow`, etc.) live in `@epicenter/yjs-doc` and are re-exported below.
+ * `BaseRow`, etc.) live in `@epicenter/document` and are re-exported below.
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
@@ -18,7 +18,7 @@ import type {
 	KvHelper,
 	LastSchema,
 	TablesHelper,
-} from '@epicenter/yjs-doc';
+} from '@epicenter/document';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
@@ -28,12 +28,12 @@ import type { Extension, MaybePromise } from './lifecycle.js';
 // Re-export JSON types for consumers
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
 
-// Re-export primitive types from yjs-doc so downstream imports keep working.
+// Re-export primitive types from document so downstream imports keep working.
 //
-// `TableDefinition` and `TableDefinitions` are NOT re-exported from yjs-doc:
+// `TableDefinition` and `TableDefinitions` are NOT re-exported from document:
 // workspace's `TableDefinition` has a wider `documents` field constrained to
 // `Record<string, DocumentConfig>` (with the workspace-specific DocumentConfig
-// type). Workspace's wider type is structurally assignable to yjs-doc's
+// type). Workspace's wider type is structurally assignable to document's
 // narrower `Record<string, unknown>` definition, so attachTable/etc. accept
 // it transparently.
 export type {
@@ -58,7 +58,7 @@ export type {
 	TablesHelper,
 	UpdateResult,
 	ValidRowResult,
-} from '@epicenter/yjs-doc';
+} from '@epicenter/document';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE DEFINITION TYPES
@@ -70,7 +70,7 @@ export type {
  * Workspace's variant of `TableDefinition` constrains `TDocuments` to
  * `Record<string, DocumentConfig>` so `.withDocument()` accumulates
  * fully-typed document configs. Structurally compatible with the wider
- * `TableDefinition` exported from `@epicenter/yjs-doc` (which uses
+ * `TableDefinition` exported from `@epicenter/document` (which uses
  * `Record<string, unknown>` since it has no notion of DocumentConfig).
  *
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
@@ -431,7 +431,7 @@ export type DocumentsHelper<
 // ════════════════════════════════════════════════════════════════════════════
 // KV TYPES
 // ════════════════════════════════════════════════════════════════════════════
-// `KvDefinition` and `InferKvValue` live in @epicenter/yjs-doc and are
+// `KvDefinition` and `InferKvValue` live in @epicenter/document and are
 // re-exported above. `KvDefinitions` and `KvHelper` follow below.
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -439,7 +439,7 @@ export type DocumentsHelper<
 // ════════════════════════════════════════════════════════════════════════════
 // `TableHelper`, `TablesHelper`, `KvHelper`, `AwarenessHelper`, `KvDefinition`,
 // `InferKvValue`, `InferAwarenessValue`, `AwarenessState`, `BaseRow`, etc., live in
-// @epicenter/yjs-doc and are re-exported above. The local definitions below
+// @epicenter/document and are re-exported above. The local definitions below
 // were removed when those primitives moved to the lower-level package.
 
 

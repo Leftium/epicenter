@@ -7,7 +7,7 @@ import * as Y from 'yjs';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
-} from '@epicenter/yjs-doc/y-keyvalue';
+} from '@epicenter/document/y-keyvalue';
 
 type Row = { id: string; name: string; value: number };
 

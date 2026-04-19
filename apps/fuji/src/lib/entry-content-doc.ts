@@ -1,5 +1,5 @@
 /**
- * Per-entry rich-text content document, built on `@epicenter/yjs-doc`.
+ * Per-entry rich-text content document, built on `@epicenter/document`.
  *
  * Replaces the `.withDocument('content', { content: richText, guid: 'id', onUpdate })`
  * declaration on `entriesTable`. Each entry gets its own Y.Doc named
@@ -20,7 +20,7 @@ import {
 	defineDocument,
 	openDocument,
 	toWsUrl,
-} from '@epicenter/yjs-doc';
+} from '@epicenter/document';
 import { auth, workspace } from './client';
 import type { EntryId } from './workspace';
 

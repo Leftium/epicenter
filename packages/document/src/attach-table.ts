@@ -11,7 +11,7 @@
  * @example
  * ```typescript
  * import * as Y from 'yjs';
- * import { defineTable, attachTable } from '@epicenter/yjs-doc';
+ * import { defineTable, attachTable } from '@epicenter/document';
  * import { type } from 'arktype';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));

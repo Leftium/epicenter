@@ -12,7 +12,7 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import type { YKeyValueLwwEntry } from '@epicenter/yjs-doc/y-keyvalue';
+import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { createTables } from './create-tables.js';
 import { defineTable } from './define-table.js';
 

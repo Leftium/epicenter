@@ -1,5 +1,5 @@
 /**
- * Shared types for the table/kv/awareness primitives in `@epicenter/yjs-doc`.
+ * Shared types for the table/kv/awareness primitives in `@epicenter/document`.
  *
  * These were previously defined in `@epicenter/workspace`. They live here now
  * because `attachTable`, `attachKv`, and `attachAwareness` are the canonical
@@ -101,7 +101,7 @@ export type LastSchema<T extends readonly CombinedStandardSchema[]> =
  * A table definition created by `defineTable(schema)` or `defineTable(v1, v2, ...).migrate(fn)`.
  *
  * Note: workspace's `defineTable()` adds a `documents` field via `.withDocument()`.
- * That field is preserved by the wider workspace type — yjs-doc only cares about
+ * That field is preserved by the wider workspace type — document only cares about
  * `schema` and `migrate`.
  *
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)

@@ -13,7 +13,7 @@
 import { expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import type { YKeyValueLwwEntry } from '@epicenter/yjs-doc/y-keyvalue';
+import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { createKv } from './create-kv.js';
 import { defineKv } from './define-kv.js';

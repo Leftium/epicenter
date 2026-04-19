@@ -54,7 +54,7 @@ import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
-import type { YKeyValueLwwEntry } from '@epicenter/yjs-doc/y-keyvalue';
+import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import {
 	createEncryptedYkvLww,
 	type EncryptedYKeyValueLww,

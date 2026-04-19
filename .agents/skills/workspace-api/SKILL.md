@@ -378,7 +378,7 @@ Load these on demand based on what you're working on:
 
 - If working with **table migrations** (migration function rules, direct-to-latest strategy, migration anti-patterns, `as const` note), read [references/table-migrations.md](references/table-migrations.md)
 - If working with **table/KV CRUD or observation** (`get`, `set`, `update`, `observe`, Svelte observer guidance), read [references/table-kv-crud-observation.md](references/table-kv-crud-observation.md)
-- If working with **document content APIs** (`withDocument`, `handle.read/write`, mode bindings, `handle.batch`, `handle.ydoc` anti-pattern), read [references/document-content.md](references/document-content.md)
+- If working with **per-row or standalone Y.Docs** (`defineDocument`, `openDocument`, `attachRichText`/`attachPlainText`, `attachIndexedDb`, `attachSync`, `whenLoaded` vs `whenConnected`), read [references/document-primitive.md](references/document-primitive.md)
 
 Code references:
 

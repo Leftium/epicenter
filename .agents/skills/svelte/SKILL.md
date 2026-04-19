@@ -786,7 +786,7 @@ Always use the `Spinner` component from `@epicenter/ui/spinner` instead of plain
 
 ## Full-Page Loading (Async Gate)
 
-When gating UI on an async promise (e.g. `whenReady`, `whenSynced`), use `Empty.*` for both loading and error states. This keeps the structure symmetric:
+When gating UI on an async promise (e.g. `whenReady`, `whenLoaded`), use `Empty.*` for both loading and error states. This keeps the structure symmetric:
 
 ```svelte
 <script lang="ts">

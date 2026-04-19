@@ -37,3 +37,6 @@ export {
 
 // RPC error variants and type guard (used by both server and client)
 export { isRpcError, RpcError } from './rpc-errors';
+
+// Transport origin sentinels (shared across all sync layers)
+export { BC_ORIGIN, SYNC_ORIGIN } from './origins';

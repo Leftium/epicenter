@@ -8,6 +8,7 @@ import {
 	handleSyncPayload,
 	MESSAGE_TYPE,
 	SYNC_MESSAGE_TYPE,
+	SYNC_ORIGIN,
 	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
@@ -37,7 +38,9 @@ import type * as Y from 'yjs';
  * the handshake then exchanges only the delta, not the full document.
  */
 
-const SYNC_ORIGIN: unique symbol = Symbol.for('@epicenter/yjs-doc/sync-origin');
+// SYNC_ORIGIN is imported from @epicenter/sync so every sync layer (workspace
+// WebSocket, BroadcastChannel, yjs-doc attachSync) agrees on the same symbol
+// and echo guards work across layers.
 
 // ============================================================================
 // Types

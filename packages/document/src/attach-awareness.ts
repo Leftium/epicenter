@@ -21,8 +21,9 @@ import type {
 /**
  * Bind a record of awareness field definitions to a Y.Doc.
  *
- * Constructs a new `Awareness` instance over the doc and registers cleanup
- * on `ydoc.on('destroy')`. Each field is independently validated on read.
+ * Each field is independently validated on read. The underlying
+ * `Awareness` instance tears itself down on `ydoc.destroy()` via a handler
+ * registered by `y-protocols` in its constructor.
  *
  * @param ydoc - The Y.Doc to attach awareness to
  * @param definitions - Map of field name to StandardSchema
@@ -32,7 +33,6 @@ export function attachAwareness<TDefs extends AwarenessDefinitions>(
 	definitions: TDefs,
 ): AwarenessHelper<TDefs> {
 	const awareness = new Awareness(ydoc);
-	ydoc.on('destroy', () => awareness.destroy());
 	return awarenessHelperOver(awareness, definitions);
 }
 

@@ -1,8 +1,6 @@
-import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import { createSessionStore } from './auth/store.js';
 import { createCliUnlock } from './extensions.js';
-import { EPICENTER_PATHS } from './paths.js';
 import type {
 	AwarenessDefinitions,
 	KvDefinitions,
@@ -11,21 +9,19 @@ import type {
 } from '@epicenter/workspace';
 
 /**
- * Connect a workspace factory to the Epicenter API with authentication,
- * persistence, and sync — ready to use in one `await`.
+ * Connect a workspace factory to the Epicenter API with authentication
+ * and sync—ready to use in one `await`.
  *
- * Chains extensions in the correct order (persistence → unlock → sync),
- * waits for local persistence to load, then waits for the WebSocket sync
- * to reach `connected` phase. The returned workspace has both local and
- * remote data.
- *
- * Persistence is stored at `~/.epicenter/persistence/<workspace-id>.db`.
+ * Designed for ephemeral scripts: chains unlock and sync (no local persistence),
+ * downloads the full workspace state from the server, and returns a live client.
+ * Safe to run while an `epicenter start` daemon is running against the same
+ * workspace—there is no shared SQLite file to conflict over.
  *
  * Requires a prior `epicenter auth login` to store session credentials at
  * `~/.epicenter/auth/sessions.json`.
  *
  * @param factory - Workspace factory function (e.g. `createFujiWorkspace`).
- *   Must return a workspace builder — typically `createWorkspace(def).withActions(...)`.
+ *   Must return a workspace builder—typically `createWorkspace(def).withActions(...)`.
  * @param opts.server - Epicenter API server URL. Defaults to
  *   `process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so'`.
  *
@@ -36,7 +32,7 @@ import type {
  *
  * const workspace = await connectWorkspace(createFujiWorkspace);
  *
- * // Safe to read — has both local persistence and remote sync data
+ * // Safe to read—full state downloaded from server via sync
  * const entries = workspace.tables.entries.filter(e => !e.deletedAt);
  * for (const entry of entries) {
  *   workspace.tables.entries.update(entry.id, { tags: [...entry.tags, 'Journal'] });
@@ -62,12 +58,6 @@ export async function connectWorkspace<
 	const base = factory();
 
 	const client = base
-		.withExtension(
-			'persistence',
-			filesystemPersistence({
-				filePath: EPICENTER_PATHS.persistence(base.id),
-			}),
-		)
 		.withWorkspaceExtension('unlock', createCliUnlock(sessions, server))
 		.withExtension(
 			'sync',

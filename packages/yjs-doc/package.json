@@ -25,7 +25,10 @@
 		"yjs": "catalog:"
 	},
 	"dependencies": {
-		"y-indexeddb": "catalog:"
+		"@epicenter/sync": "workspace:*",
+		"lib0": "catalog:",
+		"y-indexeddb": "catalog:",
+		"y-protocols": "catalog:"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",

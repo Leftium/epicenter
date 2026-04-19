@@ -1,0 +1,58 @@
+/**
+ * Per-entry rich-text content document, built on `@epicenter/yjs-doc`.
+ *
+ * Replaces the `.withDocument('content', { content: richText, guid: 'id', onUpdate })`
+ * declaration on `entriesTable`. Each entry gets its own Y.Doc named
+ * `epicenter.fuji.entries.${id}.content`, with rich-text content, IndexedDB
+ * persistence, and WebSocket sync. Edits bump the parent row's `updatedAt`
+ * via a plain closure — no framework-mediated `onUpdate` convention.
+ *
+ * Lifecycle is caller-owned: the editor component calls `openDocument` on
+ * mount and `dispose()` on unmount. Two tabs editing the same entry reconcile
+ * at the Yjs layer via IndexedDB + sync — no JS-side deduplication.
+ */
+import { APP_URLS } from '@epicenter/constants/vite';
+import { DateTimeString } from '@epicenter/workspace';
+import {
+	attachIndexedDb,
+	attachRichText,
+	attachSync,
+	defineDocument,
+	toWsUrl,
+} from '@epicenter/yjs-doc';
+import { auth, workspace } from './client';
+import type { EntryId } from './workspace';
+
+export function entryContentDoc(rowId: EntryId) {
+	return defineDocument(
+		`epicenter.fuji.entries.${rowId}.content`,
+		(ydoc) => {
+			const content = attachRichText(ydoc);
+
+			const idb = attachIndexedDb(ydoc);
+			const sync = attachSync(ydoc, {
+				url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
+				getToken: async () => auth.token,
+				waitFor: idb.whenSynced,
+			});
+
+			const bumpUpdatedAt = () => {
+				workspace.tables.entries.update(rowId, {
+					updatedAt: DateTimeString.now(),
+				});
+			};
+			ydoc.on('update', bumpUpdatedAt);
+			// No explicit off() needed — ydoc.destroy() clears its own listeners.
+
+			return {
+				content,
+				whenSynced: Promise.all([idb.whenSynced, sync.whenConnected]).then(
+					() => {},
+				),
+				whenDisposed: Promise.all([idb.disposed, sync.disposed]).then(() => {}),
+				clearLocal: idb.clearLocal,
+				reconnect: sync.reconnect,
+			};
+		},
+	);
+}

@@ -1023,14 +1023,14 @@ describe('applyEncryptionKeys', () => {
 		const { client } = setupEncryptedWorkspace();
 		const keyV1 = randomBytes(32);
 		const keyV2 = randomBytes(32);
-		const keysAsc: EncryptionKeys = [
+		const keysAsc = [
 			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
 			{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
-		];
-		const keysDesc: EncryptionKeys = [
+		] satisfies EncryptionKeys;
+		const keysDesc = [
 			{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
 			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
-		];
+		] satisfies EncryptionKeys;
 
 		client.applyEncryptionKeys(keysAsc);
 		client.tables.posts.set({ id: '1', title: 'Order test', _v: 1 });

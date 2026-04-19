@@ -50,19 +50,23 @@
  * ```
  */
 
+import {
+	awarenessHelperOver,
+	defineDocument,
+	kvHelperOver,
+	openDocument,
+	tableHelperOver,
+} from '@epicenter/document';
+import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
-import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import {
 	createEncryptedYkvLww,
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { createAwareness } from './create-awareness.js';
 import { createDocuments } from './create-documents.js';
-import { createKv } from './create-kv.js';
-import { createTable } from './create-table.js';
 import {
 	type EncryptionKeys,
 	encryptionKeysFingerprint,
@@ -75,6 +79,7 @@ import {
 } from './lifecycle.js';
 import type {
 	AwarenessDefinitions,
+	AwarenessHelper,
 	BaseRow,
 	DocumentConfig,
 	DocumentContext,
@@ -83,6 +88,7 @@ import type {
 	DocumentsHelper,
 	ExtensionContext,
 	KvDefinitions,
+	KvHelper,
 	TableDefinitions,
 	TablesHelper,
 	WorkspaceClient,
@@ -127,45 +133,58 @@ export function createWorkspace<
 	TAwarenessDefinitions,
 	Record<string, never>
 > {
-	// ── Data doc ────────────────────────────────────────────────────────
-	const ydoc = new Y.Doc({ guid: id });
-
 	const tableDefs = (tablesDef ?? {}) as TTableDefinitions;
 	const kvDefs = (kvDef ?? {}) as TKvDefinitions;
 	const awarenessDefs = (awarenessDef ?? {}) as TAwarenessDefinitions;
 
-	// ── Tables ───────────────────────────────────────────────────────────────
-	const tableEntries = Object.entries(tableDefs).map(([name, definition]) => {
-		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
-		const store = createEncryptedYkvLww(yarray);
-		const helper = createTable(store, definition);
-		return { name, store, helper };
-	});
-
-	const tables = Object.fromEntries(
-		tableEntries.map(({ name, helper }) => [name, helper]),
-	) as TablesHelper<TTableDefinitions>;
-
-	// ── KV ──────────────────────────────────────────────────────────────────
-	const kvYarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const kvStore = createEncryptedYkvLww(kvYarray);
-	const kvHelper = createKv(kvStore, kvDefs);
-
-	// ── Encrypted stores (all table stores + KV store) ─────────────────────
-	// The workspace owns this list so it can coordinate activateEncryption
+	// ── Data doc (via @epicenter/document) ──────────────────────────────────
+	// Encrypted stores are constructed inline inside the bootstrap. The
+	// workspace owns this list so it can coordinate activateEncryption
 	// across all stores simultaneously via applyEncryptionKeys().
-	const encryptedStores: readonly EncryptedYKeyValueLww<unknown>[] = [
-		...tableEntries.map(({ store }) => store),
-		kvStore,
-	];
+	let encryptedStores: readonly EncryptedYKeyValueLww<unknown>[] = [];
+	let tables!: TablesHelper<TTableDefinitions>;
+	let kvHelper!: KvHelper<TKvDefinitions>;
+	let awareness!: AwarenessHelper<TAwarenessDefinitions>;
+
+	const handle = openDocument(
+		defineDocument(id, (ydoc) => {
+			const tableEntries = Object.entries(tableDefs).map(
+				([name, definition]) => {
+					const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(
+						TableKey(name),
+					);
+					const store = createEncryptedYkvLww(yarray);
+					return { name, store, helper: tableHelperOver(store, definition) };
+				},
+			);
+
+			const kvYarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+			const kvStore = createEncryptedYkvLww(kvYarray);
+
+			const rawAwareness = new Awareness(ydoc);
+			ydoc.on('destroy', () => rawAwareness.destroy());
+
+			encryptedStores = [
+				...tableEntries.map(({ store }) => store),
+				kvStore,
+			];
+			tables = Object.fromEntries(
+				tableEntries.map(({ name, helper }) => [name, helper]),
+			) as TablesHelper<TTableDefinitions>;
+			kvHelper = kvHelperOver(kvStore, kvDefs);
+			awareness = awarenessHelperOver(rawAwareness, awarenessDefs);
+
+			return {};
+		}),
+	);
+
+	const ydoc = handle.ydoc;
 
 	// Fingerprint of the last-applied encryption keys for same-key dedup.
 	// Token refreshes fire onLogin repeatedly with identical keys — this
 	// skips the expensive base64 decode → HKDF → per-store scan path.
 	let lastKeysFingerprint: string | undefined;
 
-	const rawAwareness = new Awareness(ydoc);
-	const awareness = createAwareness(rawAwareness, awarenessDefs);
 	const definitions = {
 		tables: tableDefs,
 		kv: kvDefs,
@@ -271,8 +290,7 @@ export function createWorkspace<
 				await cleanup();
 			}
 			const errors = await disposeLifo(state.extensionCleanups);
-			awareness.raw.destroy();
-			ydoc.destroy();
+			handle.dispose();
 
 			if (errors.length > 0) {
 				throw new AggregateError(

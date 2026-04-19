@@ -2,8 +2,9 @@
  * attachAwareness() — Bind awareness definitions to a Y.Doc.
  *
  * Constructs a fresh `Awareness` instance over `ydoc` and wraps it with a
- * typed `AwarenessHelper`. Registers a `ydoc.on('destroy')` listener so the
- * Awareness instance is destroyed alongside the doc.
+ * typed `AwarenessHelper`. Awareness cleanup is handled by `y-protocols` —
+ * its constructor registers `doc.on('destroy', () => this.destroy())`, so
+ * destroying the ydoc tears down the Awareness automatically.
  *
  * For workspace-level awareness with extension wiring, use `createWorkspace`
  * from `@epicenter/workspace`.

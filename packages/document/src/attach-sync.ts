@@ -36,11 +36,11 @@ import type * as Y from 'yjs';
  * Register persistence (`attachIndexedDb`) first and pass its `whenLocalReady`
  * as `waitFor` so the supervisor connects only after local state hydrates —
  * the handshake then exchanges only the delta, not the full document.
+ *
+ * `SYNC_ORIGIN` is imported from `@epicenter/sync` so every sync layer
+ * (workspace WebSocket, BroadcastChannel, document attachSync) agrees on the
+ * same symbol and echo guards work across layers.
  */
-
-// SYNC_ORIGIN is imported from @epicenter/sync so every sync layer (workspace
-// WebSocket, BroadcastChannel, document attachSync) agrees on the same symbol
-// and echo guards work across layers.
 
 // ============================================================================
 // Types

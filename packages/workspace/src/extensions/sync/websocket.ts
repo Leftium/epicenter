@@ -28,7 +28,7 @@ import type { DefaultRpcMap, RpcActionMap } from '../../rpc/types.js';
 import { type Actions, isAction } from '../../shared/actions.js';
 import type { SharedExtensionContext } from '../../workspace/types.js';
 import { broadcastChannelSync } from './broadcast-channel.js';
-import { BC_ORIGIN, SYNC_ORIGIN } from './origins.js';
+import { BC_ORIGIN, SYNC_ORIGIN } from '@epicenter/sync';
 
 // ============================================================================
 // Types

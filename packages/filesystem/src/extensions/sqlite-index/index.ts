@@ -93,8 +93,8 @@ export type SqliteIndex = {
 	whenReady: Promise<void>;
 	/** Framework chain signal (same promise as `whenReady`). */
 	init: Promise<void>;
-	/** Tear down observers and close the SQLite database. */
-	destroy: () => void;
+	/** Dispose observers and close the SQLite database. */
+	dispose: () => void;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -440,7 +440,7 @@ export function createSqliteIndex({
 			rebuild,
 			whenReady,
 			init: whenReady,
-			destroy() {
+			dispose() {
 				if (syncTimeout) clearTimeout(syncTimeout);
 				unobserve?.();
 				client.close();

@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { BC_ORIGIN } from './origins.js';
+import { BC_ORIGIN } from '@epicenter/sync';
 
 export { BC_ORIGIN };
 

@@ -428,22 +428,6 @@ export type DocumentsHelper<
 		: never]: DocumentsOf<TTableDefinitions[K]>;
 };
 
-// ════════════════════════════════════════════════════════════════════════════
-// KV TYPES
-// ════════════════════════════════════════════════════════════════════════════
-// `KvDefinition` and `InferKvValue` live in @epicenter/document and are
-// re-exported above. `KvDefinitions` and `KvHelper` follow below.
-
-// ════════════════════════════════════════════════════════════════════════════
-// HELPER TYPES
-// ════════════════════════════════════════════════════════════════════════════
-// `TableHelper`, `TablesHelper`, `KvHelper`, `AwarenessHelper`, `KvDefinition`,
-// `InferKvValue`, `InferAwarenessValue`, `AwarenessState`, `BaseRow`, etc., live in
-// @epicenter/document and are re-exported above. The local definitions below
-// were removed when those primitives moved to the lower-level package.
-
-
-
 /**
  * Map of table definitions keyed by table name.
  *
@@ -690,11 +674,10 @@ export type WorkspaceClient<
 	clearLocalData(): Promise<void>;
 
 	/**
-	 * Resolves when all extensions have finished initializing.
-	 *
-	 * This is a composite promise—it resolves when every extension's individual
-	 * `whenReady` has resolved. Use it as a render gate in UI frameworks to
-	 * avoid showing the app before data is loaded.
+	 * Resolves when every extension's `init` chain signal has resolved. Use as
+	 * a render gate — after this resolves, all persistence has loaded, all
+	 * materializers have flushed, and all sync transports have connected (per
+	 * each extension's contract).
 	 *
 	 * @example
 	 * ```svelte

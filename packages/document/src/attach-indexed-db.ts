@@ -21,6 +21,10 @@ export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 	const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
 	const { promise: disposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
+	// `IndexeddbPersistence` already registers its own `doc.on('destroy')` to
+	// tear itself down. We still register here to surface an *awaitable* signal
+	// for the async IDB close — calling `idb.destroy()` a second time is safe
+	// (idempotent after `_destroyed = true`) and returns the same close promise.
 	ydoc.once('destroy', async () => {
 		try {
 			await idb.destroy();

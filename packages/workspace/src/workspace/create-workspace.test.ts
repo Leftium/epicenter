@@ -286,8 +286,8 @@ describe('createWorkspace', () => {
 		});
 	});
 
-	describe('extension whenReady', () => {
-		test('withExtension injects whenReady into extension exports', () => {
+	describe('extension init signal', () => {
+		test('withExtension preserves extension exports', () => {
 			const filesTable = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			);
@@ -318,7 +318,7 @@ describe('createWorkspace', () => {
 						dispose: () => {},
 					};
 				})
-				.withExtension('second', ({ extensions }) => {
+				.withWorkspaceExtension('second', ({ extensions }) => {
 					receivedFirstExtension = extensions.first.value === 'first';
 					return { dispose: () => {} };
 				});
@@ -326,14 +326,14 @@ describe('createWorkspace', () => {
 			expect(receivedFirstExtension).toBe(true);
 		});
 
-		test('composite whenReady waits for all extensions to resolve', async () => {
+		test('composite whenReady waits for all extension init signals to resolve', async () => {
 			const filesTable = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			);
-			let resolveFirstWhenReady: (() => void) | undefined;
+			let resolveFirstInit: (() => void) | undefined;
 
-			const firstWhenReady = new Promise<void>((resolve) => {
-				resolveFirstWhenReady = resolve;
+			const firstInit = new Promise<void>((resolve) => {
+				resolveFirstInit = resolve;
 			});
 
 			const client = createWorkspace({
@@ -343,14 +343,14 @@ describe('createWorkspace', () => {
 				.withExtension('first', () => {
 					return {
 						value: 'first',
-						whenReady: firstWhenReady,
+						init: firstInit,
 						dispose: () => {},
 					};
 				})
 				.withExtension('second', () => {
 					return {
 						value: 'second',
-						whenReady: Promise.resolve(),
+						init: Promise.resolve(),
 						dispose: () => {},
 					};
 				});
@@ -363,7 +363,7 @@ describe('createWorkspace', () => {
 			await Promise.resolve();
 			expect(compositeResolved).toBe(false);
 
-			resolveFirstWhenReady?.();
+			resolveFirstInit?.();
 			await client.whenReady;
 			expect(compositeResolved).toBe(true);
 		});
@@ -372,14 +372,14 @@ describe('createWorkspace', () => {
 			const filesTable = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			);
-			let resolveFirstWhenReady: (() => void) | undefined;
-			let resolveSecondWhenReady: (() => void) | undefined;
+			let resolveFirstInit: (() => void) | undefined;
+			let resolveSecondInit: (() => void) | undefined;
 
-			const firstWhenReady = new Promise<void>((resolve) => {
-				resolveFirstWhenReady = resolve;
+			const firstInit = new Promise<void>((resolve) => {
+				resolveFirstInit = resolve;
 			});
-			const secondWhenReady = new Promise<void>((resolve) => {
-				resolveSecondWhenReady = resolve;
+			const secondInit = new Promise<void>((resolve) => {
+				resolveSecondInit = resolve;
 			});
 
 			const client = createWorkspace({
@@ -388,13 +388,13 @@ describe('createWorkspace', () => {
 			})
 				.withExtension('first', () => {
 					return {
-						whenReady: firstWhenReady,
+						init: firstInit,
 						dispose: () => {},
 					};
 				})
 				.withExtension('second', () => {
 					return {
-						whenReady: secondWhenReady,
+						init: secondInit,
 						dispose: () => {},
 					};
 				});
@@ -407,11 +407,11 @@ describe('createWorkspace', () => {
 			await Promise.resolve();
 			expect(compositeResolved).toBe(false);
 
-			resolveFirstWhenReady?.();
+			resolveFirstInit?.();
 			await Promise.resolve();
 			expect(compositeResolved).toBe(false);
 
-			resolveSecondWhenReady?.();
+			resolveSecondInit?.();
 			await client.whenReady;
 			expect(compositeResolved).toBe(true);
 		});
@@ -431,16 +431,6 @@ describe('createWorkspace', () => {
 			expect(client.extensions.myExt.foo).toBe(42);
 		});
 
-		test('extensions.X.whenReady is always a Promise even without explicit whenReady', () => {
-			const client = createWorkspace({
-				id: 'ext-whenready-default',
-			}).withExtension('bare', () => {
-				return { tag: 'no-lifecycle' };
-			});
-
-			expect(client.extensions.bare.whenReady).toBeInstanceOf(Promise);
-		});
-
 		test('extensions.X.dispose is always a function even without explicit dispose', () => {
 			const client = createWorkspace({
 				id: 'ext-dispose-default',
@@ -451,7 +441,7 @@ describe('createWorkspace', () => {
 			expect(typeof client.extensions.bare.dispose).toBe('function');
 		});
 
-		test('surgical await: extension B chains off extensions.A.whenReady', async () => {
+		test('surgical await: extension B chains off ctx.init from prior extensions', async () => {
 			const order: string[] = [];
 			let resolveA: (() => void) | undefined;
 			const aReady = new Promise<void>((r) => {
@@ -463,26 +453,19 @@ describe('createWorkspace', () => {
 			})
 				.withExtension('a', () => ({
 					tag: 'a',
-					whenReady: aReady.then(() => {
+					init: aReady.then(() => {
 						order.push('a-ready');
 					}),
 				}))
-				.withExtension('b', ({ extensions }) => {
-					const whenReadyPromise = (async () => {
-						await extensions.a.whenReady;
+				.withExtension('b', ({ init }) => {
+					const bInit = (async () => {
+						await init;
 						order.push('b-ready');
 					})();
-					return { tag: 'b', whenReady: whenReadyPromise };
+					return { tag: 'b', init: bInit };
 				});
 
-			// B should not resolve until A does
-			let bResolved = false;
-			client.extensions.b.whenReady.then(() => {
-				bResolved = true;
-			});
-			await Promise.resolve();
-			expect(bResolved).toBe(false);
-
+			void client;
 			resolveA?.();
 			await client.whenReady;
 			expect(order).toEqual(['a-ready', 'b-ready']);
@@ -795,11 +778,11 @@ describe('createWorkspace', () => {
 			expect(disposeOrder).toEqual(['third', 'second', 'first']); // LIFO
 		});
 
-		test('whenReady rejection in workspace triggers cleanup', async () => {
+		test('init rejection in workspace triggers cleanup', async () => {
 			const cleanupCalled = new Set<string>();
-			let rejectWhenReady: (() => void) | undefined;
-			const whenReadyPromise = new Promise<void>((_, reject) => {
-				rejectWhenReady = () => reject(new Error('provider failed'));
+			let rejectInit: (() => void) | undefined;
+			const initPromise = new Promise<void>((_, reject) => {
+				rejectInit = () => reject(new Error('provider failed'));
 			});
 
 			const client = createWorkspace(def)
@@ -809,14 +792,14 @@ describe('createWorkspace', () => {
 					},
 				}))
 				.withExtension('second', () => ({
-					whenReady: whenReadyPromise,
+					init: initPromise,
 					dispose: async () => {
 						cleanupCalled.add('second');
 					},
 				}));
 
 			// Trigger rejection
-			rejectWhenReady?.();
+			rejectInit?.();
 
 			try {
 				await client.whenReady;
@@ -828,11 +811,11 @@ describe('createWorkspace', () => {
 			expect(cleanupCalled.has('second')).toBe(true);
 		});
 
-		test('document extension whenReady rejection triggers cleanup', async () => {
+		test('document extension init rejection triggers cleanup', async () => {
 			const cleanupCalled = new Set<string>();
-			let rejectWhenReady: (() => void) | undefined;
-			const whenReadyPromise = new Promise<void>((_, reject) => {
-				rejectWhenReady = () => reject(new Error('provider failed'));
+			let rejectInit: (() => void) | undefined;
+			const initPromise = new Promise<void>((_, reject) => {
+				rejectInit = () => reject(new Error('provider failed'));
 			});
 
 			const mockYdoc = new Y.Doc({ guid: 'doc-reject-test' });
@@ -866,7 +849,7 @@ describe('createWorkspace', () => {
 					{
 						key: 'second',
 						factory: () => ({
-							whenReady: whenReadyPromise,
+							init: initPromise,
 							dispose: async () => {
 								cleanupCalled.add('second');
 							},
@@ -876,7 +859,7 @@ describe('createWorkspace', () => {
 			});
 
 			const handlePromise = documents.open('doc-1');
-			rejectWhenReady?.();
+			rejectInit?.();
 
 			try {
 				await handlePromise;

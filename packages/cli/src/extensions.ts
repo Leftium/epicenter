@@ -33,16 +33,16 @@ type SessionStore = ReturnType<typeof createSessionStore>;
  */
 export function createCliUnlock(sessions: SessionStore, serverUrl: string) {
 	return ({
-		whenReady,
+		init,
 		applyEncryptionKeys,
 	}: {
-		whenReady: Promise<void>;
+		init: Promise<void>;
 		applyEncryptionKeys: (
 			keys: [{ version: number; userKeyBase64: string }, ...{ version: number; userKeyBase64: string }[]],
 		) => void;
 	}) => ({
-		whenReady: (async () => {
-			await whenReady;
+		init: (async () => {
+			await init;
 			const session = await sessions.load(serverUrl);
 			if (session?.encryptionKeys) {
 				applyEncryptionKeys(session.encryptionKeys);

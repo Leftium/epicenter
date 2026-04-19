@@ -249,7 +249,7 @@ export type DocumentExtensionRegistration = {
 	key: string;
 	factory: (context: DocumentContext) =>
 		| (Record<string, unknown> & {
-				whenReady?: Promise<unknown>;
+				init?: Promise<unknown>;
 				dispose?: () => MaybePromise<void>;
 				clearLocalData?: () => MaybePromise<void>;
 		  })
@@ -326,8 +326,12 @@ export type DocumentContext<
 				: Record<string, unknown>
 		>;
 	};
-	/** Composite whenReady of all document extensions. */
-	whenReady: Promise<void>;
+	/**
+	 * Framework chain signal — resolves once all prior document extensions'
+	 * `init` promises have resolved. Use to sequence extensions that must run
+	 * after a prior one finishes initializing.
+	 */
+	init: Promise<void>;
 	/**
 	 * Raw awareness instance for this document scope.
 	 *
@@ -1141,7 +1145,7 @@ export type WorkspaceClientBuilder<
 	withExtension<TKey extends string, TExports extends Record<string, unknown>>(
 		key: TKey,
 		factory: (context: SharedExtensionContext) => TExports & {
-			whenReady?: Promise<unknown>;
+			init?: Promise<unknown>;
 			dispose?: () => MaybePromise<void>;
 			clearLocalData?: () => MaybePromise<void>;
 		},
@@ -1153,10 +1157,10 @@ export type WorkspaceClientBuilder<
 		TExtensions &
 			Record<
 				TKey,
-				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>>
+				Extension<Omit<TExports, 'init' | 'dispose' | 'clearLocalData'>>
 			>,
 		TDocExtensions &
-			Record<TKey, Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>>,
+			Record<TKey, Omit<TExports, 'init' | 'dispose' | 'clearLocalData'>>,
 		TActions
 	>;
 
@@ -1191,7 +1195,7 @@ export type WorkspaceClientBuilder<
 				TExtensions
 			>,
 		) => TExports & {
-			whenReady?: Promise<unknown>;
+			init?: Promise<unknown>;
 			dispose?: () => MaybePromise<void>;
 			clearLocalData?: () => MaybePromise<void>;
 		},
@@ -1203,7 +1207,7 @@ export type WorkspaceClientBuilder<
 		TExtensions &
 			Record<
 				TKey,
-				Extension<Omit<TExports, 'whenReady' | 'dispose' | 'clearLocalData'>>
+				Extension<Omit<TExports, 'init' | 'dispose' | 'clearLocalData'>>
 			>,
 		TDocExtensions,
 		TActions
@@ -1243,7 +1247,7 @@ export type WorkspaceClientBuilder<
 			},
 		) =>
 			| (TDocExports & {
-					whenReady?: Promise<unknown>;
+					init?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
 					clearLocalData?: () => MaybePromise<void>;
 			  })
@@ -1255,7 +1259,7 @@ export type WorkspaceClientBuilder<
 		TAwarenessDefinitions,
 		TExtensions,
 		TDocExtensions &
-			Record<K, Omit<TDocExports, 'whenReady' | 'dispose' | 'clearLocalData'>>,
+			Record<K, Omit<TDocExports, 'init' | 'dispose' | 'clearLocalData'>>,
 		TActions
 	>;
 
@@ -1300,17 +1304,18 @@ export type WorkspaceClientBuilder<
 /**
  * Context passed to workspace extension factories.
  *
- * This is a `WorkspaceClient` minus lifecycle methods (`dispose`,
- * extension factories receive the full client surface but don't control
- * the workspace's lifecycle. They return their own lifecycle hooks instead.
+ * This is a `WorkspaceClient` minus lifecycle methods (`dispose`, the composite
+ * `whenReady`) plus the framework-internal `init` chain signal — extension
+ * factories receive the full client surface but don't control the workspace's
+ * lifecycle. They return their own lifecycle hooks instead.
  *
  * ```typescript
  * .withExtension('persistence', ({ ydoc }) => { ... })
- * .withExtension('sync', ({ ydoc, awareness, whenReady }) => { ... })
+ * .withExtension('sync', ({ ydoc, awareness, init }) => { ... })
  * .withExtension('sqlite', ({ id, tables }) => { ... })
  * ```
  *
- * `whenReady` is the composite promise from all PRIOR extensions — use it to
+ * `init` is the composite chain signal from all PRIOR extensions — use it to
  * sequence initialization (e.g., wait for persistence before connecting sync).
  *
  * `extensions` provides typed access to prior extensions' exports.
@@ -1329,8 +1334,14 @@ export type ExtensionContext<
 		TAwarenessDefinitions,
 		TExtensions
 	>,
-	'dispose' | typeof Symbol.asyncDispose
->;
+	'dispose' | 'whenReady' | typeof Symbol.asyncDispose
+> & {
+	/**
+	 * Framework chain signal — resolves once every prior extension's `init`
+	 * promise has resolved. Use to sequence initialization across the chain.
+	 */
+	init: Promise<void>;
+};
 
 /**
  * Context shared by workspace and document extension scopes.
@@ -1347,31 +1358,36 @@ export type ExtensionContext<
  *
  * ```typescript
  * // Sync needs ydoc + raw awareness — works for both scopes:
- * .withExtension('sync', ({ ydoc, awareness, whenReady }) => {
- *   return createProvider({ doc: ydoc, awareness: awareness.raw, whenReady });
+ * .withExtension('sync', ({ ydoc, awareness, init }) => {
+ *   return createProvider({ doc: ydoc, awareness: awareness.raw, waitFor: init });
  * })
  * ```
  */
 export type SharedExtensionContext = {
 	ydoc: Y.Doc;
 	awareness: { raw: Awareness };
-	whenReady: Promise<void>;
+	/**
+	 * Framework chain signal — resolves once every prior extension's `init`
+	 * promise has resolved. Use to sequence initialization across the chain.
+	 */
+	init: Promise<void>;
 };
 
 /**
  * Factory function that creates an extension.
  *
- * Returns a flat object with custom exports + optional `whenReady` and `dispose`.
- * The framework normalizes defaults via `defineExtension()`.
+ * Returns a flat object with custom exports + optional `init` (framework chain
+ * signal), `dispose`, and `clearLocalData`. The framework normalizes defaults
+ * via `defineExtension()`.
  *
  * @example Simple extension (works with any workspace)
  * ```typescript
  * const persistence: ExtensionFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return {
- *     provider,
- *     whenReady: provider.whenReady,
- *     dispose: () => provider.dispose(),
+ *     whenLoaded: provider.whenSynced,
+ *     init: provider.whenSynced,
+ *     dispose: () => provider.destroy(),
  *   };
  * };
  * ```
@@ -1381,7 +1397,7 @@ export type SharedExtensionContext = {
 export type ExtensionFactory<
 	TExports extends Record<string, unknown> = Record<string, unknown>,
 > = (context: ExtensionContext) => TExports & {
-	whenReady?: Promise<unknown>;
+	init?: Promise<unknown>;
 	dispose?: () => MaybePromise<void>;
 	clearLocalData?: () => MaybePromise<void>;
 };

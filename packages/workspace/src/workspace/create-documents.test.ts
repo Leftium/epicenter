@@ -411,22 +411,22 @@ describe('createDocuments', () => {
 			expect(order).toEqual([1, 2, 3]);
 		});
 
-		test('second hook receives whenReady from first', async () => {
-			let secondReceivedWhenReady = false;
+		test('second hook receives init from first', async () => {
+			let secondReceivedInit = false;
 
 			const { documents } = setup({
 				documentExtensions: [
 					{
 						key: 'first',
 						factory: () => ({
-							whenReady: Promise.resolve(),
+							init: Promise.resolve(),
 							dispose: () => {},
 						}),
 					},
 					{
 						key: 'second',
-						factory: ({ whenReady }) => {
-							secondReceivedWhenReady = whenReady instanceof Promise;
+						factory: ({ init }) => {
+							secondReceivedInit = init instanceof Promise;
 							return { dispose: () => {} };
 						},
 					},
@@ -434,7 +434,7 @@ describe('createDocuments', () => {
 			});
 
 			await documents.open('f1');
-			expect(secondReceivedWhenReady).toBe(true);
+			expect(secondReceivedInit).toBe(true);
 		});
 
 		test('hook returning void is skipped', async () => {

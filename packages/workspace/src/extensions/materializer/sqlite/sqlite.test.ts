@@ -148,7 +148,7 @@ describe('createSqliteMaterializer', () => {
 				id: 'ready-gated',
 				tables: { posts: postsTable, notes: notesTable },
 			})
-				.withWorkspaceExtension('gate', () => ({ whenReady: gate.promise }))
+				.withWorkspaceExtension('gate', () => ({ init: gate.promise }))
 				.withWorkspaceExtension('sqlite', (ctx) =>
 					createSqliteMaterializer(ctx, { db }).table('posts').table('notes'),
 				);
@@ -158,7 +158,7 @@ describe('createSqliteMaterializer', () => {
 				expect(db.sqlCalls).toHaveLength(0);
 
 				gate.resolve();
-				await workspace.extensions.sqlite.whenReady;
+				await workspace.extensions.sqlite.whenFlushed;
 
 				expect(db.sqlCalls.length).toBeGreaterThan(0);
 				expect(hasTable(db, 'posts')).toBe(true);
@@ -191,7 +191,7 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: 1, title: 'Hello mirror' },
@@ -217,7 +217,7 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 
 				expect(hasTable(testSetup.db, 'posts')).toBe(true);
 				expect(hasTable(testSetup.db, 'notes')).toBe(false);
@@ -239,7 +239,7 @@ describe('createSqliteMaterializer', () => {
 			const testSetup = setup();
 
 			try {
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 
 				testSetup.workspace.tables.posts.set({
 					id: 'post-1',
@@ -268,7 +268,7 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 				testSetup.workspace.tables.posts.delete('post-1');
 
 				await waitForSyncCycle();
@@ -290,7 +290,7 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 				testSetup.workspace.tables.posts.update('post-1', {
 					title: 'After update',
 					published: false,
@@ -322,7 +322,7 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 				testSetup.db.run('DELETE FROM "posts"');
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
@@ -352,7 +352,7 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 				testSetup.db.run('DELETE FROM "posts"');
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
@@ -373,7 +373,7 @@ describe('createSqliteMaterializer', () => {
 			const testSetup = setup();
 
 			try {
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 
 				await expect(
 					testSetup.workspace.extensions.sqlite.rebuild({
@@ -402,7 +402,7 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 
 				expect(await testSetup.workspace.extensions.sqlite.count({ table: 'posts' })).toBe(2);
 				expect(await testSetup.workspace.extensions.sqlite.count({ table: 'notes' })).toBe(0);
@@ -415,7 +415,7 @@ describe('createSqliteMaterializer', () => {
 			const testSetup = setup();
 
 			try {
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 
 				expect(
 					await testSetup.workspace.extensions.sqlite.count({
@@ -437,7 +437,7 @@ describe('createSqliteMaterializer', () => {
 			const testSetup = setup();
 
 			try {
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 
 				testSetup.workspace.tables.posts.set({
 					id: 'post-1',
@@ -472,7 +472,7 @@ describe('createSqliteMaterializer', () => {
 			const testSetup = setup();
 
 			try {
-				await testSetup.workspace.extensions.sqlite.whenReady;
+				await testSetup.workspace.extensions.sqlite.whenFlushed;
 
 				expect(
 					await testSetup.workspace.extensions.sqlite.search({ table: 'posts', query: 'hello' }),
@@ -503,7 +503,7 @@ describe('createSqliteMaterializer', () => {
 						_v: 1,
 					});
 
-					await testSetup.workspace.extensions.sqlite.whenReady;
+					await testSetup.workspace.extensions.sqlite.whenFlushed;
 
 					const results = await testSetup.workspace.extensions.sqlite.search({
 						table: 'posts',

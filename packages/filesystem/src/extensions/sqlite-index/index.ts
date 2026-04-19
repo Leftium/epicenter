@@ -91,6 +91,8 @@ export type SqliteIndex = {
 	rebuild: () => Promise<void>;
 	/** Resolves after the initial rebuild completes. */
 	whenReady: Promise<void>;
+	/** Framework chain signal (same promise as `whenReady`). */
+	init: Promise<void>;
 	/** Tear down observers and close the SQLite database. */
 	destroy: () => void;
 };
@@ -437,6 +439,7 @@ export function createSqliteIndex({
 			search,
 			rebuild,
 			whenReady,
+			init: whenReady,
 			destroy() {
 				if (syncTimeout) clearTimeout(syncTimeout);
 				unobserve?.();

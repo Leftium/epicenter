@@ -42,8 +42,8 @@ export const workspace = isTauri()
 			let syncQueue = Promise.resolve();
 
 			return {
-				whenReady: (async () => {
-					await ctx.whenReady;
+				init: (async () => {
+					await ctx.init;
 					// Dynamic import: invoke is only available in Tauri runtime.
 					// Static import of isTauri() is fine (returns false on web),
 					// but invoke would fail if called on web.

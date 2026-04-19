@@ -306,7 +306,7 @@ describe('defineWorkspace', () => {
 		expect(result.status).toBe('valid');
 	});
 
-	test('context.whenReady resolves after prior extensions', async () => {
+	test('context.init resolves after prior extensions', async () => {
 		const order: string[] = [];
 
 		const client = createWorkspace({
@@ -317,25 +317,25 @@ describe('defineWorkspace', () => {
 		})
 			.withExtension('slow', () => ({
 				tag: 'slow',
-				whenReady: new Promise<void>((resolve) =>
+				init: new Promise<void>((resolve) =>
 					setTimeout(() => {
 						order.push('slow-ready');
 						resolve();
 					}, 50),
 				),
 			}))
-			.withExtension('dependent', ({ whenReady }) => {
-				// whenReady should be a promise representing all prior extensions
-				expect(whenReady).toBeInstanceOf(Promise);
+			.withExtension('dependent', ({ init }) => {
+				// init should be a promise representing all prior extensions
+				expect(init).toBeInstanceOf(Promise);
 
-				const whenReadyPromise = (async () => {
-					await whenReady;
+				const initPromise = (async () => {
+					await init;
 					order.push('dependent-ready');
 				})();
 
 				return {
 					tag: 'dependent',
-					whenReady: whenReadyPromise,
+					init: initPromise,
 				};
 			});
 
@@ -344,22 +344,22 @@ describe('defineWorkspace', () => {
 		expect(order).toEqual(['slow-ready', 'dependent-ready']);
 	});
 
-	test('first extension gets immediately-resolving context.whenReady', async () => {
-		let contextWhenReady: Promise<void> | undefined;
+	test('first extension gets immediately-resolving context.init', async () => {
+		let contextInit: Promise<void> | undefined;
 
 		createWorkspace({
 			id: 'first-ext-test',
-		}).withExtension('first', ({ whenReady }) => {
-			contextWhenReady = whenReady;
+		}).withExtension('first', ({ init }) => {
+			contextInit = init;
 			return { tag: 'first' };
 		});
 
-		// First extension's whenReady = Promise.all([]) which resolves immediately
-		expect(contextWhenReady).toBeInstanceOf(Promise);
-		await contextWhenReady; // should not hang
+		// First extension's init = Promise.all([]) which resolves immediately
+		expect(contextInit).toBeInstanceOf(Promise);
+		await contextInit; // should not hang
 	});
 
-	test('context includes client, whenReady, and extensions', () => {
+	test('context includes client, init, and extensions', () => {
 		const tableDef = defineTable(
 			type({ id: 'string', title: 'string', _v: '1' }),
 		);
@@ -367,10 +367,10 @@ describe('defineWorkspace', () => {
 		createWorkspace({
 			id: 'full-context-test',
 			tables: { posts: tableDef },
-		}).withExtension('inspector', ({ ydoc, whenReady }) => {
-			// SharedExtensionContext only has ydoc + whenReady
+		}).withExtension('inspector', ({ ydoc, init }) => {
+			// SharedExtensionContext only has ydoc + init
 			expect(ydoc).toBeDefined();
-			expect(whenReady).toBeInstanceOf(Promise);
+			expect(init).toBeInstanceOf(Promise);
 			return {};
 		});
 	});

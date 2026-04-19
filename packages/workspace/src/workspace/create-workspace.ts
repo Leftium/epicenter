@@ -182,12 +182,12 @@ export function createWorkspace<
 	 * Three arrays track three distinct lifecycle moments:
 	 * - `extensionCleanups` — `dispose()` shutdown: close connections, stop observers (irreversible)
 	 * - `clearLocalDataCallbacks` — `workspace.clearLocalData()` data wipe: delete IndexedDB (reversible, repeatable)
-	 * - `whenReadyPromises` — construction: composite `whenReady` waits for all extensions to init
+	 * - `initPromises` — construction: composite `whenReady` waits for every extension's `init` to resolve
 	 */
 	type BuilderState = {
 		extensionCleanups: (() => MaybePromise<void>)[];
 		clearLocalDataCallbacks: (() => MaybePromise<void>)[];
-		whenReadyPromises: Promise<unknown>[];
+		initPromises: Promise<unknown>[];
 	};
 
 	// Accumulated document extension registrations (in chain order).
@@ -282,10 +282,10 @@ export function createWorkspace<
 			}
 		};
 
-		const whenReady = Promise.all(state.whenReadyPromises)
+		const whenReady = Promise.all(state.initPromises)
 			.then(() => {})
 			.catch(async (err) => {
-				// If any extension's whenReady rejects, clean up everything
+				// If any extension's init rejects, clean up everything
 				await dispose().catch(() => {}); // idempotent
 				throw err;
 			});
@@ -393,7 +393,7 @@ export function createWorkspace<
 					TExtensions
 				>,
 			) => TExports & {
-				whenReady?: Promise<unknown>;
+				init?: Promise<unknown>;
 				dispose?: () => MaybePromise<void>;
 				clearLocalData?: () => MaybePromise<void>;
 			},
@@ -406,10 +406,10 @@ export function createWorkspace<
 			} = client;
 			const ctx = {
 				...clientContext,
-				whenReady:
-					state.whenReadyPromises.length === 0
+				init:
+					state.initPromises.length === 0
 						? Promise.resolve()
-						: Promise.all(state.whenReadyPromises).then(() => {}),
+						: Promise.all(state.initPromises).then(() => {}),
 			};
 
 			try {
@@ -418,20 +418,20 @@ export function createWorkspace<
 				// Void return means "not installed" — skip registration
 				if (!raw) return buildClient({ extensions, state, actions });
 
-				const resolved = defineExtension(raw);
+				const { extension, init } = defineExtension(raw);
 
 				return buildClient({
 					extensions: {
 						...extensions,
-						[key]: resolved,
+						[key]: extension,
 					} as TExtensions & Record<TKey, TExports>,
 					state: {
-						extensionCleanups: [...state.extensionCleanups, resolved.dispose],
+						extensionCleanups: [...state.extensionCleanups, extension.dispose],
 						clearLocalDataCallbacks: [
 							...state.clearLocalDataCallbacks,
-							...(resolved.clearLocalData ? [resolved.clearLocalData] : []),
+							...(extension.clearLocalData ? [extension.clearLocalData] : []),
 						],
-						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
+						initPromises: [...state.initPromises, init],
 					},
 					actions,
 				});
@@ -476,9 +476,9 @@ export function createWorkspace<
 				factory: (context: {
 					ydoc: Y.Doc;
 					awareness: { raw: Awareness };
-					whenReady: Promise<void>;
+					init: Promise<void>;
 				}) => TExports & {
-					whenReady?: Promise<unknown>;
+					init?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
 					clearLocalData?: () => MaybePromise<void>;
 				},
@@ -523,7 +523,7 @@ export function createWorkspace<
 						TExtensions
 					>,
 				) => TExports & {
-					whenReady?: Promise<unknown>;
+					init?: Promise<unknown>;
 					dispose?: () => MaybePromise<void>;
 					clearLocalData?: () => MaybePromise<void>;
 				},
@@ -535,7 +535,7 @@ export function createWorkspace<
 				key: string,
 				factory: (context: DocumentContext) =>
 					| (Record<string, unknown> & {
-							whenReady?: Promise<unknown>;
+							init?: Promise<unknown>;
 							dispose?: () => MaybePromise<void>;
 							clearLocalData?: () => MaybePromise<void>;
 					  })
@@ -592,7 +592,7 @@ export function createWorkspace<
 		state: {
 			extensionCleanups: [],
 			clearLocalDataCallbacks: [],
-			whenReadyPromises: [],
+			initPromises: [],
 		},
 		actions: {},
 	});

@@ -13,9 +13,9 @@ import { parseMarkdownFile } from './parse-markdown-file.js';
  * `.kv()` to opt in KV. Each `.table()` call validates the table name against
  * the workspace definition and infers the row type for the serialize callback.
  *
- * The materializer awaits `ctx.whenReady` before reading data, so persistence
+ * The materializer awaits `ctx.init` before reading data, so persistence
  * and sync have loaded before the initial flush. All `.table()` and `.kv()`
- * calls happen synchronously in the factory closure before `whenReady` resolves.
+ * calls happen synchronously in the factory closure before `whenFlushed` resolves.
  *
  * @example
  * ```typescript
@@ -32,7 +32,7 @@ export function createMarkdownMaterializer<
 	// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv helpers
 	TKv extends KvHelper<any>,
 >(
-	ctx: { tables: TTables; kv: TKv; whenReady: Promise<void> },
+	ctx: { tables: TTables; kv: TKv; init: Promise<void> },
 	config: {
 		/** Base output directory. Accepts a string or async getter for lazy path resolution. */
 		dir: string | (() => MaybePromise<string>);
@@ -105,7 +105,8 @@ export function createMarkdownMaterializer<
 		 * and writes the result to disk. Does not remove orphaned files.
 		 */
 		pullToMarkdown(): Promise<{ written: number }>;
-		whenReady: Promise<void>;
+		whenFlushed: Promise<void>;
+		init: Promise<void>;
 		dispose(): void;
 	};
 
@@ -220,6 +221,20 @@ export function createMarkdownMaterializer<
 	const resolveDir = async () =>
 		typeof config.dir === 'function' ? await config.dir() : config.dir;
 
+	const whenFlushed = (async () => {
+		await ctx.init;
+		const dir = await resolveDir();
+		await mkdir(dir, { recursive: true });
+
+		for (const name of tableNames) {
+			await materializeTable(name, dir);
+		}
+
+		if (shouldMaterializeKv) {
+			await materializeKv(dir);
+		}
+	})();
+
 	const builder: MaterializerBuilder = {
 		table(name, tableConfig) {
 			tableNames.add(name);
@@ -312,19 +327,8 @@ export function createMarkdownMaterializer<
 
 			return { written };
 		},
-		whenReady: (async () => {
-			await ctx.whenReady;
-			const dir = await resolveDir();
-			await mkdir(dir, { recursive: true });
-
-			for (const name of tableNames) {
-				await materializeTable(name, dir);
-			}
-
-			if (shouldMaterializeKv) {
-				await materializeKv(dir);
-			}
-		})(),
+		whenFlushed,
+		init: whenFlushed,
 		dispose() {
 			for (const unsubscribe of unsubscribers.splice(0)) {
 				unsubscribe();

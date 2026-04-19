@@ -53,7 +53,7 @@ const client = createWorkspace({
 	tables: { posts },
 })
 	// Dual-scope: registers for BOTH the workspace Y.Doc and every content Y.Doc.
-	// The factory only receives { ydoc, whenReady }—the minimal shared contract.
+	// The factory only receives { ydoc, init }—the minimal shared contract.
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('broadcast', broadcastChannelSync)
 
@@ -67,17 +67,17 @@ const client = createWorkspace({
 
 `withExtension` is sugar—it calls both `withWorkspaceExtension` and `withDocumentExtension` with the same factory. If a factory needs scope-specific fields (tables, awareness, timeline), register it with the scoped method instead.
 
-Each factory returns a flat object with custom exports alongside optional `whenReady` and `destroy`. The framework normalizes defaults internally.
+Each factory returns a flat object with custom exports alongside an optional `init` chain signal and `dispose`. The framework chains `init` promises so each extension's context sees the prior extensions' init completion. Extensions can additionally expose semantic readiness names like `whenLoaded` or `whenFlushed` for callers.
 
 ```typescript
 // What each scope receives:
 //
-// withExtension          → { ydoc, whenReady }  (SharedExtensionContext)
+// withExtension          → { ydoc, init }  (SharedExtensionContext)
 // withWorkspaceExtension → { id, ydoc, tables, kv, awareness, documents,
-//                          definitions, extensions, whenReady, batch,
+//                          definitions, extensions, init, batch,
 //                          loadSnapshot }  (ExtensionContext)
 // withDocumentExtension  → { id, ydoc, timeline, extensions,
-//                          whenReady }  (DocumentContext)
+//                          init }  (DocumentContext)
 ```
 
 ### Internal Building Blocks

@@ -2,13 +2,13 @@
  * SQLite materializer—mirrors workspace table rows into queryable SQLite tables.
  *
  * Follows the same builder pattern as the markdown materializer:
- * `createSqliteMaterializer({ tables, definitions, whenReady }, { db })` returns
+ * `createSqliteMaterializer({ tables, definitions, init }, { db })` returns
  * a chainable builder where `.table(name, config?)` opts in per table. Nothing
  * materializes by default.
  *
- * The materializer awaits `whenReady` before touching SQLite, so persistence
+ * The materializer awaits `init` before touching SQLite, so persistence
  * and sync have loaded before the initial flush. All `.table()` calls happen
- * synchronously in the factory closure before `whenReady` resolves.
+ * synchronously in the factory closure before `whenFlushed` resolves.
  *
  * @module
  */
@@ -37,9 +37,9 @@ type AnyTableHelper = TableHelper<any>;
  * with optional FTS5 and custom serialization config. Table names are
  * type-checked against the workspace definition—typos are caught at compile time.
  *
- * The materializer awaits `whenReady` before reading data, so persistence
+ * The materializer awaits `init` before reading data, so persistence
  * and sync have loaded before the initial flush. All `.table()` calls happen
- * synchronously in the factory closure before `whenReady` resolves.
+ * synchronously in the factory closure before `whenFlushed` resolves.
  *
  * @example Basic usage with type-safe table names
  * ```typescript
@@ -69,10 +69,10 @@ type AnyTableHelper = TableHelper<any>;
 export function createSqliteMaterializer<
 	TTables extends Record<string, AnyTableHelper>,
 >(
-	{ tables, definitions, whenReady }: {
+	{ tables, definitions, init }: {
 		tables: TTables;
 		definitions: { tables: Record<string, unknown> };
-		whenReady: Promise<void>;
+		init: Promise<void>;
 	},
 	{ db, debounceMs = 100 }: { db: MirrorDatabase; debounceMs?: number },
 ) {
@@ -316,7 +316,7 @@ export function createSqliteMaterializer<
 	// ── Lifecycle ────────────────────────────────────────────────
 
 	async function initialize() {
-		await whenReady;
+		await init;
 
 		if (isDisposed) {
 			return;
@@ -394,7 +394,8 @@ export function createSqliteMaterializer<
 			name: TName,
 			tableConfig?: TableMaterializerConfig,
 		): MaterializerBuilder;
-		whenReady: Promise<void>;
+		whenFlushed: Promise<void>;
+		init: Promise<void>;
 		dispose(): void;
 		db: MirrorDatabase;
 		/** FTS5 search across a materialized table. Only present when at least one table has `fts` configured. */
@@ -405,12 +406,15 @@ export function createSqliteMaterializer<
 		rebuild: ReturnType<typeof defineMutation>;
 	};
 
+	const whenFlushed = initialize();
+
 	const builder: MaterializerBuilder = {
 		table(name, tableConfig) {
 			tableConfigs.set(name, tableConfig ?? {});
 			return builder;
 		},
-		whenReady: initialize(),
+		whenFlushed,
+		init: whenFlushed,
 		dispose,
 		db,
 		search: defineQuery({

@@ -60,9 +60,9 @@ function compactUpdateLog(db: Database, ydoc: Y.Doc): boolean {
  *
  * **Chain before sync.** This extension does not await prior extensions—it
  * starts loading immediately. The sync extension, when registered after this
- * one, awaits persistence's `whenReady` before connecting. That way the
- * WebSocket handshake only exchanges the delta between local state and the
- * server, instead of downloading the full document on every cold start.
+ * one, awaits persistence's `init` chain signal before connecting. That way
+ * the WebSocket handshake only exchanges the delta between local state and
+ * the server, instead of downloading the full document on every cold start.
  *
  * Compaction runs at three points:
  * 1. **Cold start** — replay + compact on initialization
@@ -136,7 +136,7 @@ export function filesystemPersistence({ filePath }: { filePath: string }) {
 
 		return {
 			whenLoaded,
-			whenReady: whenLoaded,
+			init: whenLoaded,
 			clearLocalData: () => {
 				if (db) {
 					db.run('DELETE FROM updates');

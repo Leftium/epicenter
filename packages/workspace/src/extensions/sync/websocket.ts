@@ -123,13 +123,13 @@ export type SyncExtensionExports = {
 	/**
 	 * Promise that resolves when the sync extension first reaches `connected` phase.
 	 *
-	 * Unlike `whenReady` (which resolves after the supervisor loop starts),
-	 * `whenConnected` waits for the WebSocket handshake to complete and the
-	 * first sync exchange to finish. Use this in CLI scripts and tools that
-	 * need remote data before proceeding.
+	 * Waits for the WebSocket handshake to complete and the first sync exchange
+	 * to finish. Use this in CLI scripts and tools that need remote data before
+	 * proceeding.
 	 *
-	 * Browser apps should use `whenReady` instead—it resolves instantly from
-	 * local persistence and doesn't block on network availability.
+	 * Browser apps should prefer `workspace.whenReady` or a semantic field like
+	 * `persistence.whenLoaded` — they resolve instantly from local state and
+	 * don't block on network availability.
 	 *
 	 * @example
 	 * ```typescript
@@ -235,16 +235,16 @@ export function toWsUrl(httpUrl: string): string {
  * exponential backoff, and RPC between peers.
  *
  * **Extension ordering**: Register persistence and encryption extensions before
- * this one. The sync extension awaits all prior extensions' `whenReady` before
- * opening a WebSocket connection. When persistence loads the local Y.Doc first,
- * the sync handshake only exchanges the delta between local state and the
- * server—not the full document. Without persistence, every cold start downloads
- * the entire document from scratch.
+ * this one. The sync extension awaits all prior extensions' `init` chain
+ * signal before opening a WebSocket connection. When persistence loads the
+ * local Y.Doc first, the sync handshake only exchanges the delta between
+ * local state and the server—not the full document. Without persistence,
+ * every cold start downloads the entire document from scratch.
  *
  * ```
- * persistence.whenReady ───→ unlock.whenReady ───→ sync.whenReady
- * (load local state)         (decrypt)              (connect WebSocket,
- *                                                    exchange delta only)
+ * persistence.init ───→ unlock.init ───→ sync.init
+ * (load local state)    (decrypt)        (connect WebSocket,
+ *                                         exchange delta only)
  * ```
  *
  * Automatically includes BroadcastChannel cross-tab sync so multiple tabs
@@ -260,12 +260,12 @@ export function toWsUrl(httpUrl: string): string {
 export function createSyncExtension(config: SyncExtensionConfig): (
 	context: SharedExtensionContext,
 ) => SyncExtensionExports & {
-	whenReady: Promise<unknown>;
+	init: Promise<unknown>;
 	whenConnected: Promise<void>;
 	dispose: () => void;
 } {
-	return ({ ydoc: doc, awareness: ctxAwareness, whenReady: priorReady }) => {
-		// priorReady resolves when all extensions registered before this one have
+	return ({ ydoc: doc, awareness: ctxAwareness, init: priorInit }) => {
+		// priorInit resolves when all extensions registered before this one have
 		// initialized. If persistence is registered first, we wait for local state
 		// to load before opening the WebSocket—so sync only transfers the delta.
 		const docId = doc.guid;
@@ -775,8 +775,8 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		doc.on('updateV2', handleDocUpdate);
 		awareness.on('update', handleAwarenessUpdate);
 
-		const whenReady = (async () => {
-			await priorReady;
+		const init = (async () => {
+			await priorInit;
 			desired = 'online';
 			manageWindowListeners('add');
 			runLoop();
@@ -868,7 +868,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				});
 			},
 
-			whenReady,
+			init,
 
 			dispose() {
 				clearPendingRequests();

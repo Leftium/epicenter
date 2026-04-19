@@ -6,7 +6,7 @@
  *
  * Key behaviors:
  * - Reconnect does not break the extension's public API
- * - URL configuration and whenReady lifecycle resolve in the expected order
+ * - URL configuration and init lifecycle resolve in the expected order
  */
 import { describe, expect, test } from 'bun:test';
 import { Awareness } from 'y-protocols/awareness';
@@ -22,7 +22,7 @@ function createMockContext(ydoc: Y.Doc): SyncExtensionFactoryClient {
 	return {
 		ydoc,
 		awareness: { raw: new Awareness(ydoc) },
-		whenReady: Promise.resolve(),
+		init: Promise.resolve(),
 	};
 }
 
@@ -80,12 +80,12 @@ describe('createSyncExtension', () => {
 		ydoc.destroy();
 	});
 
-	test('whenReady awaits client.whenReady before connecting', async () => {
+	test('init awaits prior ctx.init before connecting', async () => {
 		const ydoc = new Y.Doc({ guid: 'await-test' });
 		const order: string[] = [];
 
 		let resolveClientReady!: () => void;
-		const clientWhenReady = new Promise<void>((resolve) => {
+		const clientInit = new Promise<void>((resolve) => {
 			resolveClientReady = resolve;
 		});
 
@@ -96,14 +96,14 @@ describe('createSyncExtension', () => {
 		const result = factory({
 			ydoc,
 			awareness: { raw: new Awareness(ydoc) },
-			whenReady: clientWhenReady.then(() => {
+			init: clientInit.then(() => {
 				order.push('client-ready');
 			}),
 		} as SyncExtensionFactoryClient);
 
-		// whenReady should not have resolved yet
+		// init should not have resolved yet
 		let resolved = false;
-		void result.whenReady.then(() => {
+		void result.init.then(() => {
 			resolved = true;
 			order.push('sync-ready');
 		});
@@ -112,9 +112,9 @@ describe('createSyncExtension', () => {
 		await new Promise((r) => setTimeout(r, 10));
 		expect(resolved).toBe(false);
 
-		// Resolve the client's whenReady
+		// Resolve the prior init signal
 		resolveClientReady();
-		await result.whenReady;
+		await result.init;
 
 		expect(order).toEqual(['client-ready', 'sync-ready']);
 

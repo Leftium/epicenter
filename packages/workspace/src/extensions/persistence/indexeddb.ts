@@ -33,13 +33,12 @@ import type * as Y from 'yjs';
 export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
 	const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
 	// `whenLoaded` is the public semantic: "local data hydrated, edits safe."
-	// `whenReady` is the framework-internal chain signal (same promise); the
-	// workspace's composite awaits it so later extensions see loaded state.
-	// Callers should prefer `whenLoaded` — it says what it means.
+	// `init` is the framework-internal chain signal — the workspace composite
+	// awaits it so later extensions see loaded state.
 	return {
-		clearLocalData: () => idb.clearData(),
 		whenLoaded: idb.whenSynced,
-		whenReady: idb.whenSynced,
+		init: idb.whenSynced,
+		clearLocalData: () => idb.clearData(),
 		dispose: () => idb.destroy(),
 	};
 }

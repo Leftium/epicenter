@@ -295,7 +295,7 @@ describe('describeWorkspace', () => {
 				handler: () => {},
 			}),
 			// Non-action properties should be ignored
-			whenReady: Promise.resolve(),
+			init: Promise.resolve(),
 			dispose() {},
 		}));
 

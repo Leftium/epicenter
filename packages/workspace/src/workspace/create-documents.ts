@@ -73,8 +73,8 @@ export const DOCUMENTS_ORIGIN = Symbol('documents');
 
 /**
  * Internal entry for an open document.
- * Tracks the Y.Doc, resolved extensions (with required whenReady/dispose),
- * the updatedAt observer teardown, and the composite whenReady promise.
+ * Tracks the Y.Doc, resolved extensions (with required `dispose`), the
+ * updatedAt observer teardown, and the composite-ready binding promise.
  */
 type DocEntry<TBinding extends ContentHandle = ContentHandle> = {
 	ydoc: Y.Doc;
@@ -205,7 +205,7 @@ export function createDocuments<
 			// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 			const resolvedExtensions: Record<string, Extension<any>> = {};
 			const disposers: (() => MaybePromise<void>)[] = [];
-			const whenReadyPromises: Promise<unknown>[] = [];
+			const initPromises: Promise<unknown>[] = [];
 
 			try {
 				for (const { key, factory } of documentExtensions) {
@@ -215,19 +215,19 @@ export function createDocuments<
 						documentName,
 						ydoc: contentYdoc,
 						awareness: { raw: contentAwareness },
-						whenReady:
-							whenReadyPromises.length === 0
+						init:
+							initPromises.length === 0
 								? Promise.resolve()
-								: Promise.all(whenReadyPromises).then(() => {}),
+								: Promise.all(initPromises).then(() => {}),
 						extensions: { ...resolvedExtensions },
 					};
 					const raw = factory(ctx);
 					if (!raw) continue;
 
-					const resolved = defineExtension(raw);
-					resolvedExtensions[key] = resolved;
-					disposers.push(resolved.dispose);
-					whenReadyPromises.push(resolved.whenReady);
+					const { extension, init } = defineExtension(raw);
+					resolvedExtensions[key] = extension;
+					disposers.push(extension.dispose);
+					initPromises.push(init);
 				}
 			} catch (err) {
 				startDisposeLifo(disposers);
@@ -273,15 +273,15 @@ export function createDocuments<
 			const unobserve = () => contentYdoc.off('update', updateHandler);
 
 			// Cache entry SYNCHRONOUSLY before any promise resolution
-			const compositeWhenReady: Promise<void> =
-				whenReadyPromises.length === 0
+			const compositeReady: Promise<void> =
+				initPromises.length === 0
 					? Promise.resolve()
-					: Promise.all(whenReadyPromises).then(() => {});
+					: Promise.all(initPromises).then(() => {});
 			// Build the internal entry — consumers get contentBinding only
 			const whenReady: Promise<TBinding> =
-				whenReadyPromises.length === 0
+				initPromises.length === 0
 					? Promise.resolve(contentBinding)
-					: compositeWhenReady
+					: compositeReady
 							.then(() => contentBinding)
 							.catch(async (err) => {
 								const errors = await disposeLifo(disposers);

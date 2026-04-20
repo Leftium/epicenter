@@ -1,15 +1,29 @@
 import { describe, expect, test } from 'bun:test';
-import { type } from 'arktype';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { awarenessHelperOver } from '@epicenter/document';
-import type { AwarenessDefinitions } from './types.js';
+import { awarenessHelperOver } from './attach-awareness.js';
+import type { CombinedStandardSchema } from './types.js';
+
+function schema<T>(check: (v: unknown) => v is T): CombinedStandardSchema<T, T> {
+	return {
+		'~standard': {
+			version: 1,
+			vendor: 'test',
+			validate: (value: unknown) =>
+				check(value) ? { value } : { issues: [{ message: 'invalid' }] },
+			jsonSchema: {
+				input: () => ({}),
+				output: () => ({}),
+			},
+		},
+	};
+}
 
 const awarenessDefs = {
-	cursorX: type('number'),
-	cursorY: type('number'),
-	name: type('string'),
-} as AwarenessDefinitions;
+	cursorX: schema((v): v is number => typeof v === 'number'),
+	cursorY: schema((v): v is number => typeof v === 'number'),
+	name: schema((v): v is string => typeof v === 'string'),
+};
 
 function setup() {
 	const ydoc = new Y.Doc({ guid: 'awareness-test' });

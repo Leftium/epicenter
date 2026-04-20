@@ -711,11 +711,10 @@ export type WorkspaceDefinition<
 	/** Record of awareness field schemas. Each field has its own StandardSchemaV1 schema. */
 	awareness?: TAwarenessDefinitions;
 	/**
-	 * Yjs garbage collection for the workspace Y.Doc. Forwarded to
-	 * `defineDocument` — omit to use its sync-safe default (`false`), which
-	 * keeps deletion markers so peers that haven't seen the deletes yet can
-	 * still reconcile. Set `true` for purely local workspaces where memory
-	 * pressure matters more than sync safety.
+	 * Yjs garbage collection for the workspace Y.Doc. Omit to use the
+	 * sync-safe default (`false`), which keeps deletion markers so peers that
+	 * haven't seen the deletes yet can still reconcile. Set `true` for purely
+	 * local workspaces where memory pressure matters more than sync safety.
 	 */
 	gc?: boolean;
 };

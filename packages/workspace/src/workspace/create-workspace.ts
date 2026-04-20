@@ -50,7 +50,6 @@
  * ```
  */
 
-import { defineDocument, openDocument } from '@epicenter/document';
 import {
 	createAwarenessHelper,
 	createKvHelper,
@@ -138,51 +137,39 @@ export function createWorkspace<
 	const kvDefs = (kvDef ?? {}) as TKvDefinitions;
 	const awarenessDefs = (awarenessDef ?? {}) as TAwarenessDefinitions;
 
-	// ── Data doc (via @epicenter/document) ──────────────────────────────────
-	// Encrypted stores are constructed inline inside the bootstrap. The
-	// workspace owns the encrypted-store list so it can coordinate
+	// ── Data doc ────────────────────────────────────────────────────────────
+	// The workspace owns the encrypted-store list so it can coordinate
 	// activateEncryption across all stores simultaneously via
 	// applyEncryptionKeys(). y-protocols' Awareness self-registers a
-	// ydoc 'destroy' listener, so handle.dispose() tears it down.
-	const handle = openDocument(
-		defineDocument(
-			id,
-			(ydoc) => {
-				const tableEntries = Object.entries(tableDefs).map(
-					([name, definition]) => {
-						const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(
-							TableKey(name),
-						);
-						const store = createEncryptedYkvLww(yarray);
-						return { name, store, helper: createTableHelper(store, definition) };
-					},
-				);
+	// ydoc 'destroy' listener, so ydoc.destroy() tears it down.
+	// gc defaults to false — GC of deletion markers breaks sync with peers
+	// that haven't seen the deletes yet.
+	const ydoc = new Y.Doc({ guid: id, gc: gc ?? false });
 
-				const kvStore = createEncryptedYkvLww(
-					ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY),
-				);
+	const tableEntries = Object.entries(tableDefs).map(([name, definition]) => {
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
+		const store = createEncryptedYkvLww(yarray);
+		return { name, store, helper: createTableHelper(store, definition) };
+	});
 
-				const encryptedStores: readonly EncryptedYKeyValueLww<unknown>[] = [
-					...tableEntries.map(({ store }) => store),
-					kvStore,
-				];
-				ydoc.on('destroy', () => {
-					for (const store of encryptedStores) store.dispose();
-				});
-				const tables = Object.fromEntries(
-					tableEntries.map(({ name, helper }) => [name, helper]),
-				) as TablesHelper<TTableDefinitions>;
-				const kv: KvHelper<TKvDefinitions> = createKvHelper(kvStore, kvDefs);
-				const awareness: AwarenessHelper<TAwarenessDefinitions> =
-					createAwarenessHelper(new Awareness(ydoc), awarenessDefs);
-
-				return { encryptedStores, tables, kv, awareness };
-			},
-			{ gc },
-		),
+	const kvStore = createEncryptedYkvLww(
+		ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY),
 	);
 
-	const { ydoc, encryptedStores, tables, kv: kvHelper, awareness } = handle;
+	const encryptedStores: readonly EncryptedYKeyValueLww<unknown>[] = [
+		...tableEntries.map(({ store }) => store),
+		kvStore,
+	];
+	ydoc.on('destroy', () => {
+		for (const store of encryptedStores) store.dispose();
+	});
+
+	const tables = Object.fromEntries(
+		tableEntries.map(({ name, helper }) => [name, helper]),
+	) as TablesHelper<TTableDefinitions>;
+	const kvHelper: KvHelper<TKvDefinitions> = createKvHelper(kvStore, kvDefs);
+	const awareness: AwarenessHelper<TAwarenessDefinitions> =
+		createAwarenessHelper(new Awareness(ydoc), awarenessDefs);
 
 	// Fingerprint of the last-applied encryption keys for same-key dedup.
 	// Token refreshes fire onLogin repeatedly with identical keys — this
@@ -294,7 +281,7 @@ export function createWorkspace<
 				await cleanup();
 			}
 			const errors = await disposeLifo(state.extensionCleanups);
-			handle.dispose();
+			ydoc.destroy();
 
 			if (errors.length > 0) {
 				throw new AggregateError(

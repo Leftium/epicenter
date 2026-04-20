@@ -37,12 +37,7 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  */
 export function createYjsFileSystem(
 	filesTable: TableHelper<FileRow>,
-	contentDocuments: Documents<
-		FileRow,
-		Record<string, unknown>,
-		Record<string, never>,
-		Timeline
-	>,
+	contentDocuments: Documents<FileRow, Timeline>,
 	cwd: string = '/',
 ) {
 	const tree = createFileTree(filesTable);

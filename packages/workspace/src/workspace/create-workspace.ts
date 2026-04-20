@@ -75,6 +75,7 @@ import {
 	defineExtension,
 	disposeLifo,
 	type MaybePromise,
+	type RawExtension,
 	startDisposeLifo,
 } from './lifecycle.js';
 import type {
@@ -414,11 +415,7 @@ export function createWorkspace<
 					TAwarenessDefinitions,
 					TExtensions
 				>,
-			) => TExports & {
-				init?: Promise<unknown>;
-				dispose?: () => MaybePromise<void>;
-				clearLocalData?: () => MaybePromise<void>;
-			},
+			) => RawExtension<TExports> | void,
 		) {
 			const {
 				dispose: _dispose,
@@ -440,18 +437,19 @@ export function createWorkspace<
 				// Void return means "not installed" — skip registration
 				if (!raw) return buildClient({ extensions, state, actions });
 
-				const { extension, init } = defineExtension(raw);
+				const { exports, init, dispose, clearLocalData } =
+					defineExtension(raw);
 
 				return buildClient({
 					extensions: {
 						...extensions,
-						[key]: extension,
+						[key]: exports,
 					} as TExtensions & Record<TKey, TExports>,
 					state: {
-						extensionCleanups: [...state.extensionCleanups, extension.dispose],
+						extensionCleanups: [...state.extensionCleanups, dispose],
 						clearLocalDataCallbacks: [
 							...state.clearLocalDataCallbacks,
-							...(extension.clearLocalData ? [extension.clearLocalData] : []),
+							...(clearLocalData ? [clearLocalData] : []),
 						],
 						initPromises: [...state.initPromises, init],
 					},
@@ -499,11 +497,7 @@ export function createWorkspace<
 					ydoc: Y.Doc;
 					awareness: { raw: Awareness };
 					init: Promise<void>;
-				}) => TExports & {
-					init?: Promise<unknown>;
-					dispose?: () => MaybePromise<void>;
-					clearLocalData?: () => MaybePromise<void>;
-				},
+				}) => RawExtension<TExports>,
 			) {
 				// Registers for both workspace and document scopes.
 				// The factory only receives SharedExtensionContext (ydoc + awareness + whenReady),
@@ -544,24 +538,16 @@ export function createWorkspace<
 						TAwarenessDefinitions,
 						TExtensions
 					>,
-				) => TExports & {
-					init?: Promise<unknown>;
-					dispose?: () => MaybePromise<void>;
-					clearLocalData?: () => MaybePromise<void>;
-				},
+				) => RawExtension<TExports>,
 			) {
 				return applyWorkspaceExtension(key, factory);
 			},
 
 			withDocumentExtension(
 				key: string,
-				factory: (context: DocumentContext) =>
-					| (Record<string, unknown> & {
-							init?: Promise<unknown>;
-							dispose?: () => MaybePromise<void>;
-							clearLocalData?: () => MaybePromise<void>;
-					  })
-					| void,
+				factory: (
+					context: DocumentContext,
+				) => RawExtension<Record<string, unknown>> | void,
 			) {
 				documentExtensionRegistrations.push({
 					key,

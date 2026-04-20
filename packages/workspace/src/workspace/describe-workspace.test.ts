@@ -285,16 +285,17 @@ describe('describeWorkspace', () => {
 			id: 'with-extensions',
 			tables: { posts },
 		}).withWorkspaceExtension('myExt', () => ({
-			searchStuff: defineQuery({
-				title: 'Search Stuff',
-				description: 'Search for stuff',
-				handler: () => [],
-			}),
-			rebuildStuff: defineMutation({
-				title: 'Rebuild Stuff',
-				handler: () => {},
-			}),
-			// Non-action properties should be ignored
+			exports: {
+				searchStuff: defineQuery({
+					title: 'Search Stuff',
+					description: 'Search for stuff',
+					handler: () => [],
+				}),
+				rebuildStuff: defineMutation({
+					title: 'Rebuild Stuff',
+					handler: () => {},
+				}),
+			},
 			init: Promise.resolve(),
 			dispose() {},
 		}));

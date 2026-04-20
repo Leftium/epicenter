@@ -36,7 +36,7 @@ export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
 	// `init` is the framework-internal chain signal — the workspace composite
 	// awaits it so later extensions see loaded state.
 	return {
-		whenLoaded: idb.whenSynced,
+		exports: { whenLoaded: idb.whenSynced },
 		init: idb.whenSynced,
 		clearLocalData: () => idb.clearData(),
 		dispose: () => idb.destroy(),

@@ -451,7 +451,7 @@ describe('round-trip', () => {
 		});
 
 		await workspace1.extensions.materializer.pullToMarkdown();
-		workspace1.extensions.materializer.dispose();
+		await workspace1.dispose();
 
 		// Verify files on disk have valid frontmatter
 		const p1Content = await readTestFile('posts/p1.md');

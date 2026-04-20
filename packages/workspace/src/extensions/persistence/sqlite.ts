@@ -135,7 +135,7 @@ export function filesystemPersistence({ filePath }: { filePath: string }) {
 		})();
 
 		return {
-			whenLoaded,
+			exports: { whenLoaded },
 			init: whenLoaded,
 			clearLocalData: () => {
 				if (db) {

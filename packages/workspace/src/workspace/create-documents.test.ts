@@ -387,21 +387,21 @@ describe('createDocuments', () => {
 						key: 'first',
 						factory: () => {
 							order.push(1);
-							return { dispose: () => {} };
+							return { exports: {}, dispose: () => {} };
 						},
 					},
 					{
 						key: 'second',
 						factory: () => {
 							order.push(2);
-							return { dispose: () => {} };
+							return { exports: {}, dispose: () => {} };
 						},
 					},
 					{
 						key: 'third',
 						factory: () => {
 							order.push(3);
-							return { dispose: () => {} };
+							return { exports: {}, dispose: () => {} };
 						},
 					},
 				],
@@ -419,6 +419,7 @@ describe('createDocuments', () => {
 					{
 						key: 'first',
 						factory: () => ({
+							exports: {},
 							init: Promise.resolve(),
 							dispose: () => {},
 						}),
@@ -427,7 +428,7 @@ describe('createDocuments', () => {
 						key: 'second',
 						factory: ({ init }) => {
 							secondReceivedInit = init instanceof Promise;
-							return { dispose: () => {} };
+							return { exports: {}, dispose: () => {} };
 						},
 					},
 				],
@@ -453,7 +454,7 @@ describe('createDocuments', () => {
 						key: 'normal-hook',
 						factory: () => {
 							hooksCalled++;
-							return { dispose: () => {} };
+							return { exports: {}, dispose: () => {} };
 						},
 					},
 				],
@@ -480,7 +481,7 @@ describe('createDocuments', () => {
 					{
 						key: 'first',
 						factory: () => ({
-							someValue: 42,
+							exports: { someValue: 42 },
 							dispose: () => {},
 						}),
 					},
@@ -488,7 +489,7 @@ describe('createDocuments', () => {
 						key: 'second',
 						factory: (context) => {
 							capturedFirstExtension = context.extensions.first;
-							return { dispose: () => {} };
+							return { exports: {}, dispose: () => {} };
 						},
 					},
 				],
@@ -509,6 +510,7 @@ describe('createDocuments', () => {
 					{
 						key: 'first',
 						factory: () => ({
+							exports: {},
 							dispose: () => {},
 						}),
 					},
@@ -516,7 +518,7 @@ describe('createDocuments', () => {
 						key: 'second',
 						factory: (context) => {
 							firstExtensionSeen = context.extensions.first !== undefined;
-							return { dispose: () => {} };
+							return { exports: {}, dispose: () => {} };
 						},
 					},
 				],

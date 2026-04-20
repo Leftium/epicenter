@@ -81,8 +81,8 @@ export type SearchResult = {
 	snippet: string;
 };
 
-/** The public surface returned by the SQLite index extension. */
-export type SqliteIndex = {
+/** Public exports surfaced on `client.extensions.sqliteIndex`. */
+export type SqliteIndexExports = {
 	/** Raw libSQL client for arbitrary SQL queries. */
 	readonly client: Client;
 	/** Full-text search across file names and content. */
@@ -91,7 +91,12 @@ export type SqliteIndex = {
 	rebuild: () => Promise<void>;
 	/** Resolves after the initial rebuild completes. */
 	whenReady: Promise<void>;
-	/** Framework chain signal (same promise as `whenReady`). */
+};
+
+/** The raw extension factory return — exports plus lifecycle metadata. */
+export type SqliteIndex = {
+	exports: SqliteIndexExports;
+	/** Framework chain signal (same promise as `exports.whenReady`). */
 	init: Promise<void>;
 	/** Dispose observers and close the SQLite database. */
 	dispose: () => void;
@@ -111,12 +116,7 @@ type SqliteIndexContext = {
 	tables: { files: TableHelper<FileRow> };
 	documents: {
 		files: {
-			content: Documents<
-				FileRow,
-				Record<string, unknown>,
-				Record<string, never>,
-				Timeline
-			>;
+			content: Documents<FileRow, Timeline>;
 		};
 	};
 };
@@ -435,10 +435,12 @@ export function createSqliteIndex({
 
 		// ── Extension exports ─────────────────────────────────────────
 		return {
-			client,
-			search,
-			rebuild,
-			whenReady,
+			exports: {
+				client,
+				search,
+				rebuild,
+				whenReady,
+			},
 			init: whenReady,
 			dispose() {
 				if (syncTimeout) clearTimeout(syncTimeout);

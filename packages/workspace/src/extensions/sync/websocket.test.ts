@@ -38,12 +38,12 @@ describe('createSyncExtension', () => {
 			const result = factory(createMockContext(ydoc));
 
 			// Status accessible before reconnect
-			expect(result.status.phase).toBe('offline');
+			expect(result.exports.status.phase).toBe('offline');
 
-			result.reconnect();
+			result.exports.reconnect();
 
 			// Status still accessible after reconnect
-			expect(result.status).toBeDefined();
+			expect(result.exports.status).toBeDefined();
 
 			result.dispose();
 			ydoc.destroy();
@@ -60,7 +60,7 @@ describe('createSyncExtension', () => {
 
 			result.dispose();
 
-			expect(result.status.phase).toBe('offline');
+			expect(result.exports.status.phase).toBe('offline');
 			ydoc.destroy();
 		});
 	});
@@ -74,7 +74,7 @@ describe('createSyncExtension', () => {
 
 		const result = factory(createMockContext(ydoc));
 
-		expect(result.status.phase).toBe('offline');
+		expect(result.exports.status.phase).toBe('offline');
 
 		result.dispose();
 		ydoc.destroy();

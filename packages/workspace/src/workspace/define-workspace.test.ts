@@ -82,7 +82,7 @@ describe('defineWorkspace', () => {
 			tables?: unknown;
 			kv?: unknown;
 		}) => ({
-			customMethod: () => 'hello',
+			exports: { customMethod: () => 'hello' },
 		});
 
 		const client = createWorkspace({
@@ -99,18 +99,22 @@ describe('defineWorkspace', () => {
 	test('extension exports are fully typed', () => {
 		// Extension with rich exports
 		const persistenceExtension = () => ({
-			db: {
-				query: (sql: string) => sql.toUpperCase(),
-				execute: (sql: string) => ({ rows: [sql] }),
+			exports: {
+				db: {
+					query: (sql: string) => sql.toUpperCase(),
+					execute: (sql: string) => ({ rows: [sql] }),
+				},
+				stats: { writes: 0, reads: 0 },
 			},
-			stats: { writes: 0, reads: 0 },
 		});
 
 		// Another extension with different exports
 		const syncExtension = () => ({
-			connect: (url: string) => `connected to ${url}`,
-			disconnect: () => 'disconnected',
-			status: 'idle' as 'idle' | 'syncing' | 'synced',
+			exports: {
+				connect: (url: string) => `connected to ${url}`,
+				disconnect: () => 'disconnected',
+				status: 'idle' as 'idle' | 'syncing' | 'synced',
+			},
 		});
 
 		const client = createWorkspace({
@@ -151,6 +155,7 @@ describe('defineWorkspace', () => {
 	test('client.dispose() cleans up', async () => {
 		let disposed = false;
 		const mockExtension = () => ({
+			exports: {},
 			dispose: async () => {
 				disposed = true;
 			},
@@ -238,20 +243,22 @@ describe('defineWorkspace', () => {
 			},
 		})
 			.withWorkspaceExtension('first', () => ({
-				value: 42,
-				helper: () => 'from-first',
+				exports: {
+					value: 42,
+					helper: () => 'from-first',
+				},
 			}))
 			.withWorkspaceExtension('second', ({ extensions }) => {
 				// extensions.first is fully typed here — no casts needed
 				const doubled = extensions.first.value * 2;
 				const msg = extensions.first.helper();
-				return { doubled, msg };
+				return { exports: { doubled, msg } };
 			})
 			.withWorkspaceExtension('third', ({ extensions }) => {
 				// extensions.first AND extensions.second are both fully typed
 				const tripled = extensions.first.value * 3;
 				const fromSecond = extensions.second.doubled;
-				return { tripled, fromSecond };
+				return { exports: { tripled, fromSecond } };
 			});
 
 		// All extensions accessible and typed on the final client
@@ -280,7 +287,7 @@ describe('defineWorkspace', () => {
 			},
 		})
 			.withExtension('analytics', () => ({
-				getCount: () => 5,
+				exports: { getCount: () => 5 },
 			}))
 			.withActions((c) => ({
 				getAnalyticsCount: defineQuery({
@@ -316,7 +323,7 @@ describe('defineWorkspace', () => {
 			},
 		})
 			.withExtension('slow', () => ({
-				tag: 'slow',
+				exports: { tag: 'slow' },
 				init: new Promise<void>((resolve) =>
 					setTimeout(() => {
 						order.push('slow-ready');
@@ -334,7 +341,7 @@ describe('defineWorkspace', () => {
 				})();
 
 				return {
-					tag: 'dependent',
+					exports: { tag: 'dependent' },
 					init: initPromise,
 				};
 			});
@@ -351,7 +358,7 @@ describe('defineWorkspace', () => {
 			id: 'first-ext-test',
 		}).withExtension('first', ({ init }) => {
 			contextInit = init;
-			return { tag: 'first' };
+			return { exports: { tag: 'first' } };
 		});
 
 		// First extension's init = Promise.all([]) which resolves immediately
@@ -371,7 +378,7 @@ describe('defineWorkspace', () => {
 			// SharedExtensionContext only has ydoc + init
 			expect(ydoc).toBeDefined();
 			expect(init).toBeInstanceOf(Promise);
-			return {};
+			return { exports: {} };
 		});
 	});
 
@@ -382,16 +389,19 @@ describe('defineWorkspace', () => {
 			id: 'dispose-order',
 		})
 			.withExtension('a', () => ({
+				exports: {},
 				dispose: () => {
 					order.push('a');
 				},
 			}))
 			.withExtension('b', () => ({
+				exports: {},
 				dispose: () => {
 					order.push('b');
 				},
 			}))
 			.withExtension('c', () => ({
+				exports: {},
 				dispose: () => {
 					order.push('c');
 				},

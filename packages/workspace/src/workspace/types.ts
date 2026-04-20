@@ -23,7 +23,7 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { EncryptionKeys } from './encryption-key.js';
-import type { Extension, MaybePromise } from './lifecycle.js';
+import type { RawExtension } from './lifecycle.js';
 
 // Re-export JSON types for consumers
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
@@ -199,13 +199,7 @@ export type DocumentConfig<
  */
 export type DocumentExtensionRegistration = {
 	key: string;
-	factory: (context: DocumentContext) =>
-		| (Record<string, unknown> & {
-				init?: Promise<unknown>;
-				dispose?: () => MaybePromise<void>;
-				clearLocalData?: () => MaybePromise<void>;
-		  })
-		| void;
+	factory: (context: DocumentContext) => RawExtension<Record<string, unknown>> | void;
 };
 
 /**
@@ -272,11 +266,12 @@ export type DocumentContext<
 	 * to skip specific documents. Guard access with optional chaining.
 	 */
 	extensions: {
-		[K in keyof TDocExtensions]?: Extension<
-			TDocExtensions[K] extends Record<string, unknown>
-				? TDocExtensions[K]
-				: Record<string, unknown>
-		>;
+		[K in keyof TDocExtensions]?: TDocExtensions[K] extends Record<
+			string,
+			unknown
+		>
+			? TDocExtensions[K]
+			: Record<string, unknown>;
 	};
 	/**
 	 * Framework chain signal — resolves once all prior document extensions'
@@ -442,10 +437,6 @@ export type TableDefinitions = Record<
 >;
 
 // ════════════════════════════════════════════════════════════════════════════
-// WORKSPACE TYPES
-// ════════════════════════════════════════════════════════════════════════════
-
-// ════════════════════════════════════════════════════════════════════════════
 // EXTENSION TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -533,7 +524,7 @@ export type SharedExtensionContext = {
  * const persistence: ExtensionFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return {
- *     whenLoaded: provider.whenSynced,
+ *     exports: { whenLoaded: provider.whenSynced },
  *     init: provider.whenSynced,
  *     dispose: () => provider.destroy(),
  *   };
@@ -544,11 +535,7 @@ export type SharedExtensionContext = {
  */
 export type ExtensionFactory<
 	TExports extends Record<string, unknown> = Record<string, unknown>,
-> = (context: ExtensionContext) => TExports & {
-	init?: Promise<unknown>;
-	dispose?: () => MaybePromise<void>;
-	clearLocalData?: () => MaybePromise<void>;
-};
+> = (context: ExtensionContext) => RawExtension<TExports>;
 
 /** The workspace client returned by createWorkspace() */
 export type WorkspaceClient<
@@ -764,23 +751,14 @@ export type WorkspaceClientBuilder<
 	 */
 	withExtension<TKey extends string, TExports extends Record<string, unknown>>(
 		key: TKey,
-		factory: (context: SharedExtensionContext) => TExports & {
-			init?: Promise<unknown>;
-			dispose?: () => MaybePromise<void>;
-			clearLocalData?: () => MaybePromise<void>;
-		},
+		factory: (context: SharedExtensionContext) => RawExtension<TExports>,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
 		TAwarenessDefinitions,
-		TExtensions &
-			Record<
-				TKey,
-				Extension<Omit<TExports, 'init' | 'dispose' | 'clearLocalData'>>
-			>,
-		TDocExtensions &
-			Record<TKey, Omit<TExports, 'init' | 'dispose' | 'clearLocalData'>>,
+		TExtensions & Record<TKey, TExports>,
+		TDocExtensions & Record<TKey, TExports>,
 		TActions
 	>;
 
@@ -800,21 +778,13 @@ export type WorkspaceClientBuilder<
 				TAwarenessDefinitions,
 				TExtensions
 			>,
-		) => TExports & {
-			init?: Promise<unknown>;
-			dispose?: () => MaybePromise<void>;
-			clearLocalData?: () => MaybePromise<void>;
-		},
+		) => RawExtension<TExports>,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
 		TAwarenessDefinitions,
-		TExtensions &
-			Record<
-				TKey,
-				Extension<Omit<TExports, 'init' | 'dispose' | 'clearLocalData'>>
-			>,
+		TExtensions & Record<TKey, TExports>,
 		TDocExtensions,
 		TActions
 	>;
@@ -832,21 +802,14 @@ export type WorkspaceClientBuilder<
 				tableName: keyof TTableDefinitions & string;
 				documentName: AllDocumentNames<TTableDefinitions>;
 			},
-		) =>
-			| (TDocExports & {
-					init?: Promise<unknown>;
-					dispose?: () => MaybePromise<void>;
-					clearLocalData?: () => MaybePromise<void>;
-			  })
-			| void,
+		) => RawExtension<TDocExports> | void,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions,
-		TDocExtensions &
-			Record<K, Omit<TDocExports, 'init' | 'dispose' | 'clearLocalData'>>,
+		TDocExtensions & Record<K, TDocExports>,
 		TActions
 	>;
 

@@ -49,7 +49,6 @@ import * as Y from 'yjs';
 import {
 	defineExtension,
 	disposeLifo,
-	type Extension,
 	type MaybePromise,
 	startDisposeLifo,
 } from './lifecycle.js';
@@ -79,7 +78,9 @@ export const DOCUMENTS_ORIGIN = Symbol('documents');
 type DocEntry<TBinding extends ContentHandle = ContentHandle> = {
 	ydoc: Y.Doc;
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
-	extensions: Record<string, Extension<any>>;
+	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
+	extensions: Record<string, Record<string, any>>;
+	extensionDisposers: (() => MaybePromise<void>)[];
 	unobserve: () => void;
 	whenReady: Promise<TBinding>;
 };
@@ -203,7 +204,7 @@ export function createDocuments<
 			// Build the extensions map incrementally so each factory sees prior
 			// extensions' resolved form.
 			// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
-			const resolvedExtensions: Record<string, Extension<any>> = {};
+			const resolvedExtensions: Record<string, Record<string, any>> = {};
 			const disposers: (() => MaybePromise<void>)[] = [];
 			const initPromises: Promise<unknown>[] = [];
 
@@ -224,9 +225,9 @@ export function createDocuments<
 					const raw = factory(ctx);
 					if (!raw) continue;
 
-					const { extension, init } = defineExtension(raw);
-					resolvedExtensions[key] = extension;
-					disposers.push(extension.dispose);
+					const { exports, init, dispose } = defineExtension(raw);
+					resolvedExtensions[key] = exports;
+					disposers.push(dispose);
 					initPromises.push(init);
 				}
 			} catch (err) {
@@ -299,6 +300,7 @@ export function createDocuments<
 			openDocuments.set(guid, {
 				ydoc: contentYdoc,
 				extensions: resolvedExtensions,
+				extensionDisposers: disposers,
 				unobserve,
 				whenReady,
 			});
@@ -315,9 +317,7 @@ export function createDocuments<
 			openDocuments.delete(guid);
 			entry.unobserve();
 
-			const errors = await disposeLifo(
-				Object.values(entry.extensions).map((e) => e.dispose),
-			);
+			const errors = await disposeLifo(entry.extensionDisposers);
 
 			// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
 			entry.ydoc.destroy();
@@ -336,9 +336,7 @@ export function createDocuments<
 			for (const [, entry] of entries) {
 				entry.unobserve();
 
-				const errors = await disposeLifo(
-					Object.values(entry.extensions).map((e) => e.dispose),
-				);
+				const errors = await disposeLifo(entry.extensionDisposers);
 
 				// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
 				entry.ydoc.destroy();

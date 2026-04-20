@@ -41,6 +41,7 @@ export function createCliUnlock(sessions: SessionStore, serverUrl: string) {
 			keys: [{ version: number; userKeyBase64: string }, ...{ version: number; userKeyBase64: string }[]],
 		) => void;
 	}) => ({
+		exports: {},
 		init: (async () => {
 			await init;
 			const session = await sessions.load(serverUrl);

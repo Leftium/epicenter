@@ -259,9 +259,9 @@ export function toWsUrl(httpUrl: string): string {
  */
 export function createSyncExtension(config: SyncExtensionConfig): (
 	context: SharedExtensionContext,
-) => SyncExtensionExports & {
+) => {
+	exports: SyncExtensionExports;
 	init: Promise<unknown>;
-	whenConnected: Promise<void>;
 	dispose: () => void;
 } {
 	return ({ ydoc: doc, awareness: ctxAwareness, init: priorInit }) => {
@@ -784,7 +784,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 
 		// ── Zone 4: Public API ──
 
-		return {
+		const exports: SyncExtensionExports = {
 			get status() {
 				return status.get();
 			},
@@ -867,9 +867,11 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 					});
 				});
 			},
+		};
 
+		return {
+			exports,
 			init,
-
 			dispose() {
 				clearPendingRequests();
 				if (syncStatusTimer) {

@@ -42,6 +42,7 @@ export const workspace = isTauri()
 			let syncQueue = Promise.resolve();
 
 			return {
+				exports: {},
 				init: (async () => {
 					await ctx.init;
 					// Dynamic import: invoke is only available in Tauri runtime.

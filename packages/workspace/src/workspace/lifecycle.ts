@@ -3,9 +3,9 @@
  *
  * This module defines:
  *
- * - **`Extension<T>`** — Resolved form: custom exports + required `dispose`
+ * - **`RawExtension<T>`** — The factory return shape: `{ exports, init?, dispose?, clearLocalData? }`
  * - **`defineExtension()`** — Normalizes raw factory returns, separating the
- *   framework-internal chain signal (`init`) from public exports
+ *   public exports from framework lifecycle metadata (`init`, `dispose`, `clearLocalData`)
  * - **`disposeLifo()` / `startDisposeLifo()`** — LIFO teardown for ordered cleanup
  *
  * Extension factories are **always synchronous**. Async initialization is tracked
@@ -13,35 +13,32 @@
  * composite `whenReady`), separate from any semantic readiness fields the
  * extension may expose publicly (`whenLoaded`, `whenConnected`, etc).
  *
- * ## Two Lifecycle Hooks + one framework-internal chain signal
+ * ## Factory return shape
  *
- * | Hook | Purpose | Default |
- * |------|---------|---------|
- * | `init` | Framework chain input: workspace composite `whenReady` waits on every extension's `init` | `Promise.resolve()` |
- * | `dispose` | Release resources on shutdown (connections, observers) | No-op `() => {}` |
- * | `clearLocalData` | Wipe persisted data on sign-out (IndexedDB, SQLite) | `undefined` (omit if no persistence) |
- *
- * `init` is framework-internal — extensions author it but callers never reach
- * for `extension.init`. Anything an extension wants to expose publicly uses a
- * semantic field name (`whenLoaded`, `whenConnected`, …).
+ * Extension factories return a two-layer object — public exports under
+ * `exports`, framework lifecycle metadata (`init`, `dispose`, `clearLocalData`)
+ * at the top level:
  *
  * ```typescript
- * // Extension with semantic readiness + framework chain signal
  * const persistence: ExtensionFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return {
- *     whenLoaded: provider.whenSynced,    // public: "local data is loaded"
- *     init: provider.whenSynced,          // framework: chain signal
+ *     exports: { whenLoaded: provider.whenSynced },   // public: "local data is loaded"
+ *     init: provider.whenSynced,                       // framework: chain signal
  *     dispose: () => provider.destroy(),
  *   };
  * };
  *
- * // Lifecycle-only extension (no custom exports)
+ * // Lifecycle-only extension (no public exports)
  * const broadcast = ({ ydoc }) => {
  *   const channel = new BroadcastChannel(ydoc.guid);
- *   return { dispose: () => channel.close() };
+ *   return { exports: {}, dispose: () => channel.close() };
  * };
  * ```
+ *
+ * The framework spreads `exports` onto `client.extensions[key]`. Lifecycle
+ * metadata stays framework-internal — consumers never reach for
+ * `client.extensions[key].dispose`.
  */
 
 /**
@@ -50,20 +47,12 @@
 export type MaybePromise<T> = T | Promise<T>;
 
 // ════════════════════════════════════════════════════════════════════════════
-// EXTENSION — Flat resolved type with required lifecycle hooks
+// EXTENSION — Factory return shape
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * The resolved form of an extension — a flat object with custom exports
- * alongside a required `dispose` hook and optional `clearLocalData`.
- *
- * Extension factories return a raw flat object with optional `init`,
- * `dispose`, and `clearLocalData`. The framework normalizes defaults via
- * `defineExtension()` and strips `init` off the resolved form — `init` is a
- * framework-internal chain signal, not a public export.
- *
- * `init`, `dispose`, and `clearLocalData` are reserved property names —
- * extension authors should not use them for custom exports.
+ * Raw factory return shape — `exports` holds the public surface; `init`,
+ * `dispose`, and `clearLocalData` are framework lifecycle metadata.
  *
  * ## Framework Guarantees
  *
@@ -72,101 +61,54 @@ export type MaybePromise<T> = T | Promise<T>;
  * - Multiple `dispose()` calls should be safe (idempotent)
  * - `clearLocalData()` is called before `dispose()` during sign-out (never alone)
  *
- * @typeParam T - Custom exports (everything except `init`, `dispose`, `clearLocalData`).
+ * @typeParam T - Public exports object type.
  *   Defaults to `Record<string, never>` for lifecycle-only extensions.
- *
- * @example
- * ```typescript
- * // What the consumer sees — only semantic fields + dispose:
- * client.extensions.persistence.whenLoaded;   // extension's public API
- * client.extensions.sqlite.db.query('...');
- *
- * // The composite readiness lives at the workspace level:
- * await client.whenReady;
- * ```
  */
-export type Extension<
+export type RawExtension<
 	T extends Record<string, unknown> = Record<string, never>,
-> = T & {
-	/**
-	 * Clean up resources. Always present (defaults to no-op).
-	 *
-	 * Called when the parent workspace or document is disposed. Should:
-	 * - Stop observers and event listeners
-	 * - Close database connections
-	 * - Disconnect network providers (WebSocket, WebRTC)
-	 * - Release file handles
-	 *
-	 * **Important**: This may be called while the extension's `init` is still
-	 * pending. Implementations should handle graceful cancellation — don't
-	 * assume initialization finished.
-	 *
-	 * Must be idempotent — the framework may call it more than once.
-	 */
-	dispose: () => MaybePromise<void>;
-	/**
-	 * Wipe persisted data on sign-out. Only present on persistence extensions.
-	 *
-	 * Semantics vs `dispose()`:
-	 * - `dispose()` releases resources but **keeps data** (normal cleanup)
-	 * - `clearLocalData()` **wipes data** but does not release resources
-	 *
-	 * The framework calls `clearLocalData()` during `workspace.clearLocalData()`
-	 * in LIFO order.
-	 * Extensions without persistent state should omit this (leave `undefined`).
-	 */
+> = {
+	exports: T;
+	init?: Promise<unknown>;
+	dispose?: () => MaybePromise<void>;
 	clearLocalData?: () => MaybePromise<void>;
 };
 
 /**
- * Normalize a raw flat extension return, separating the framework-internal
- * `init` chain signal from the extension's public exports.
+ * Normalize a raw extension return, separating the public exports from
+ * framework lifecycle metadata.
  *
  * Applies defaults:
  * - `init` defaults to `Promise.resolve()` (instantly ready) and is coerced to
  *   `Promise<void>` via `.then(() => {})`
  * - `dispose` defaults to `() => {}` (no-op cleanup)
  *
- * The returned shape splits the two concerns: the composite workspace-level
- * `whenReady` chains on the extracted `init`; consumers see `extension` (custom
- * exports + `dispose` + optional `clearLocalData`).
- *
  * Called by the framework inside `withExtension()` and the document extension
- * `open()` loop. Extension authors never import this — they return plain objects
- * and the framework normalizes.
+ * `open()` loop. Extension authors never import this — they return plain
+ * `{ exports, ... }` objects and the framework normalizes.
  *
  * @example
  * ```typescript
- * // Framework usage (inside withExtension):
+ * // Framework usage:
  * const raw = factory(context);
- * const { extension, init } = defineExtension(raw ?? {});
- * extensionMap[key] = extension;
- * disposers.push(extension.dispose);
+ * const { exports, init, dispose, clearLocalData } = defineExtension(raw);
+ * extensionMap[key] = exports;
+ * disposers.push(dispose);
  * initPromises.push(init);
  * ```
  */
 export function defineExtension<T extends Record<string, unknown>>(
-	input: T & {
-		init?: Promise<unknown>;
-		dispose?: () => MaybePromise<void>;
-		clearLocalData?: () => MaybePromise<void>;
-	},
+	input: RawExtension<T>,
 ): {
-	extension: Extension<Omit<T, 'init' | 'dispose' | 'clearLocalData'>>;
+	exports: T;
 	init: Promise<void>;
+	dispose: () => MaybePromise<void>;
+	clearLocalData?: () => MaybePromise<void>;
 } {
-	const { init, dispose, clearLocalData, ...exports } = input as T & {
-		init?: Promise<unknown>;
-		dispose?: () => MaybePromise<void>;
-		clearLocalData?: () => MaybePromise<void>;
-	};
 	return {
-		extension: {
-			...(exports as unknown as Omit<T, 'init' | 'dispose' | 'clearLocalData'>),
-			dispose: dispose ?? (() => {}),
-			clearLocalData,
-		} as Extension<Omit<T, 'init' | 'dispose' | 'clearLocalData'>>,
-		init: init?.then(() => {}) ?? Promise.resolve(),
+		exports: input.exports,
+		init: input.init?.then(() => {}) ?? Promise.resolve(),
+		dispose: input.dispose ?? (() => {}),
+		clearLocalData: input.clearLocalData,
 	};
 }
 

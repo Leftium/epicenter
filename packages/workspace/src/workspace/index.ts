@@ -72,10 +72,7 @@ export {
 // Error types
 export { ExtensionError } from '../shared/errors.js';
 // Lifecycle protocol
-export type {
-	Extension,
-	MaybePromise,
-} from './lifecycle.js';
+export type { MaybePromise, RawExtension } from './lifecycle.js';
 export type { DocumentContext } from './types.js';
 
 // ════════════════════════════════════════════════════════════════════════════

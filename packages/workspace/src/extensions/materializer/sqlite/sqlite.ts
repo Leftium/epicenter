@@ -372,7 +372,21 @@ export function createSqliteMaterializer<
 
 	// ── Builder ──────────────────────────────────────────────────
 
+	type MaterializerExports = {
+		whenFlushed: Promise<void>;
+		db: MirrorDatabase;
+		/** FTS5 search across a materialized table. Only present when at least one table has `fts` configured. */
+		search: ReturnType<typeof defineQuery>;
+		/** Row count for a materialized table. */
+		count: ReturnType<typeof defineQuery>;
+		/** Rebuild all materialized tables from Yjs source of truth. */
+		rebuild: ReturnType<typeof defineMutation>;
+	};
+
 	type MaterializerBuilder = {
+		exports: MaterializerExports;
+		init: Promise<void>;
+		dispose(): void;
 		/**
 		 * Opt in a workspace table for SQLite materialization.
 		 *
@@ -394,28 +408,12 @@ export function createSqliteMaterializer<
 			name: TName,
 			tableConfig?: TableMaterializerConfig,
 		): MaterializerBuilder;
-		whenFlushed: Promise<void>;
-		init: Promise<void>;
-		dispose(): void;
-		db: MirrorDatabase;
-		/** FTS5 search across a materialized table. Only present when at least one table has `fts` configured. */
-		search: ReturnType<typeof defineQuery>;
-		/** Row count for a materialized table. */
-		count: ReturnType<typeof defineQuery>;
-		/** Rebuild all materialized tables from Yjs source of truth. */
-		rebuild: ReturnType<typeof defineMutation>;
 	};
 
 	const whenFlushed = initialize();
 
-	const builder: MaterializerBuilder = {
-		table(name, tableConfig) {
-			tableConfigs.set(name, tableConfig ?? {});
-			return builder;
-		},
+	const exports: MaterializerExports = {
 		whenFlushed,
-		init: whenFlushed,
-		dispose,
 		db,
 		search: defineQuery({
 			title: 'Full-text search',
@@ -444,6 +442,16 @@ export function createSqliteMaterializer<
 			}),
 			handler: ({ table: tableName }) => rebuild(tableName),
 		}),
+	};
+
+	const builder: MaterializerBuilder = {
+		exports,
+		init: whenFlushed,
+		dispose,
+		table(name, tableConfig) {
+			tableConfigs.set(name, tableConfig ?? {});
+			return builder;
+		},
 	};
 
 	return builder;

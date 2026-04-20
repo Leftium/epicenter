@@ -296,7 +296,7 @@ describe('createWorkspace', () => {
 				id: 'ext-await-test-1',
 				tables: { files: filesTable },
 			}).withExtension('myExt', () => {
-				return { someValue: 42, dispose: () => {} };
+				return { exports: { someValue: 42 }, dispose: () => {} };
 			});
 
 			expect(client.extensions.myExt.someValue).toBe(42);
@@ -314,13 +314,13 @@ describe('createWorkspace', () => {
 			})
 				.withExtension('first', () => {
 					return {
-						value: 'first',
+						exports: { value: 'first' },
 						dispose: () => {},
 					};
 				})
 				.withWorkspaceExtension('second', ({ extensions }) => {
 					receivedFirstExtension = extensions.first.value === 'first';
-					return { dispose: () => {} };
+					return { exports: {}, dispose: () => {} };
 				});
 
 			expect(receivedFirstExtension).toBe(true);
@@ -342,14 +342,14 @@ describe('createWorkspace', () => {
 			})
 				.withExtension('first', () => {
 					return {
-						value: 'first',
+						exports: { value: 'first' },
 						init: firstInit,
 						dispose: () => {},
 					};
 				})
 				.withExtension('second', () => {
 					return {
-						value: 'second',
+						exports: { value: 'second' },
 						init: Promise.resolve(),
 						dispose: () => {},
 					};
@@ -388,12 +388,14 @@ describe('createWorkspace', () => {
 			})
 				.withExtension('first', () => {
 					return {
+						exports: {},
 						init: firstInit,
 						dispose: () => {},
 					};
 				})
 				.withExtension('second', () => {
 					return {
+						exports: {},
 						init: secondInit,
 						dispose: () => {},
 					};
@@ -425,20 +427,21 @@ describe('createWorkspace', () => {
 				id: 'ext-await-test-5',
 				tables: { files: filesTable },
 			}).withExtension('myExt', () => {
-				return { foo: 42 };
+				return { exports: { foo: 42 } };
 			});
 
 			expect(client.extensions.myExt.foo).toBe(42);
 		});
 
-		test('extensions.X.dispose is always a function even without explicit dispose', () => {
+		test('extension without dispose still works (framework defaults to noop)', async () => {
 			const client = createWorkspace({
 				id: 'ext-dispose-default',
 			}).withExtension('bare', () => {
-				return { tag: 'no-lifecycle' };
+				return { exports: { tag: 'no-lifecycle' } };
 			});
 
-			expect(typeof client.extensions.bare.dispose).toBe('function');
+			await client.whenReady;
+			expect(client.extensions.bare.tag).toBe('no-lifecycle');
 		});
 
 		test('surgical await: extension B chains off ctx.init from prior extensions', async () => {
@@ -452,7 +455,7 @@ describe('createWorkspace', () => {
 				id: 'surgical-await-test',
 			})
 				.withExtension('a', () => ({
-					tag: 'a',
+					exports: { tag: 'a' },
 					init: aReady.then(() => {
 						order.push('a-ready');
 					}),
@@ -462,7 +465,7 @@ describe('createWorkspace', () => {
 						await init;
 						order.push('b-ready');
 					})();
-					return { tag: 'b', init: bInit };
+					return { exports: { tag: 'b' }, init: bInit };
 				});
 
 			void client;
@@ -527,7 +530,7 @@ describe('createWorkspace', () => {
 				tables: { files: filesTable },
 			}).withDocumentExtension('test', () => {
 				hookCalled = true;
-				return { dispose: () => {} };
+				return { exports: {}, dispose: () => {} };
 			});
 
 			await client.documents.files.content.open('f1');
@@ -559,7 +562,7 @@ describe('createWorkspace', () => {
 			}).withExtension('myExt', () => {
 				factoryCallCount++;
 				return {
-					tag: 'ext',
+					exports: { tag: 'ext' },
 					dispose: () => {},
 				};
 			});
@@ -597,7 +600,7 @@ describe('createWorkspace', () => {
 			}).withWorkspaceExtension('wsOnly', () => {
 				factoryCallCount++;
 				return {
-					tag: 'ws-only',
+					exports: { tag: 'ws-only' },
 					dispose: () => {},
 				};
 			});
@@ -690,10 +693,10 @@ describe('createWorkspace', () => {
 
 		test('builder branching creates isolated extension sets', () => {
 			const base = createWorkspace(def).withExtension('a', () => ({
-				value: 'a',
+				exports: { value: 'a' },
 			}));
-			const b1 = base.withExtension('b', () => ({ value: 'b' }));
-			const b2 = base.withExtension('c', () => ({ value: 'c' }));
+			const b1 = base.withExtension('b', () => ({ exports: { value: 'b' } }));
+			const b2 = base.withExtension('c', () => ({ exports: { value: 'c' } }));
 
 			expect(Object.keys(base.extensions)).toEqual(['a']);
 			expect(Object.keys(b1.extensions)).toEqual(['a', 'b']);
@@ -704,9 +707,9 @@ describe('createWorkspace', () => {
 			const client = createWorkspace(def)
 				.withExtension(
 					'noop',
-					() => undefined as unknown as Record<string, unknown>,
+					() => undefined as unknown as { exports: Record<string, unknown> },
 				)
-				.withExtension('real', () => ({ value: 42 }));
+				.withExtension('real', () => ({ exports: { value: 42 } }));
 
 			expect(client.extensions.noop).toBeUndefined();
 			expect(client.extensions.real).toBeDefined();
@@ -720,6 +723,7 @@ describe('createWorkspace', () => {
 				() => {
 					if (shouldThrow) throw new Error(`${name} factory failed`);
 					return {
+						exports: {},
 						dispose: async () => {
 							cleanupOrder.push(name);
 						},
@@ -741,6 +745,7 @@ describe('createWorkspace', () => {
 		test('document extension dispose order is LIFO', async () => {
 			const disposeOrder: string[] = [];
 			const factory = (name: string) => () => ({
+				exports: {},
 				dispose: async () => {
 					disposeOrder.push(name);
 				},
@@ -787,11 +792,13 @@ describe('createWorkspace', () => {
 
 			const client = createWorkspace(def)
 				.withExtension('first', () => ({
+					exports: {},
 					dispose: async () => {
 						cleanupCalled.add('first');
 					},
 				}))
 				.withExtension('second', () => ({
+					exports: {},
 					init: initPromise,
 					dispose: async () => {
 						cleanupCalled.add('second');
@@ -841,6 +848,7 @@ describe('createWorkspace', () => {
 					{
 						key: 'first',
 						factory: () => ({
+							exports: {},
 							dispose: async () => {
 								cleanupCalled.add('first');
 							},
@@ -849,6 +857,7 @@ describe('createWorkspace', () => {
 					{
 						key: 'second',
 						factory: () => ({
+							exports: {},
 							init: initPromise,
 							dispose: async () => {
 								cleanupCalled.add('second');
@@ -1052,7 +1061,7 @@ describe('withActions (non-terminal)', () => {
 				}),
 			}))
 			.withExtension('dummy', ({ ydoc }) => ({
-				testValue: 42,
+				exports: { testValue: 42 },
 			}));
 
 		// Actions survive the extension chain
@@ -1092,7 +1101,7 @@ describe('withActions (non-terminal)', () => {
 					noop: defineQuery({ handler: () => {} }),
 				};
 			})
-			.withExtension('dummy', ({ ydoc }) => ({ flag: true }));
+			.withExtension('dummy', ({ ydoc }) => ({ exports: { flag: true } }));
 
 		// At the time withActions was called, no extensions existed
 		expect(Object.keys(capturedExtensions)).toHaveLength(0);
@@ -1106,7 +1115,7 @@ describe('withActions (non-terminal)', () => {
 		let capturedExtensions: Record<string, unknown> = {};
 
 		const ws = createWorkspace(definition)
-			.withExtension('dummy', ({ ydoc }) => ({ flag: true }))
+			.withExtension('dummy', ({ ydoc }) => ({ exports: { flag: true } }))
 			.withActions((client) => {
 				capturedExtensions = client.extensions;
 				return {
@@ -1143,11 +1152,11 @@ describe('withActions (non-terminal)', () => {
 		const { definition } = actionsSetup();
 
 		const ws = createWorkspace(definition)
-			.withExtension('ext1', ({ ydoc }) => ({ a: 1 }))
+			.withExtension('ext1', ({ ydoc }) => ({ exports: { a: 1 } }))
 			.withActions(() => ({
 				noop: defineQuery({ handler: () => {} }),
 			}))
-			.withExtension('ext2', ({ ydoc }) => ({ b: 2 }));
+			.withExtension('ext2', ({ ydoc }) => ({ exports: { b: 2 } }));
 
 		expect(ws.extensions.ext1.a).toBe(1);
 		expect(ws.extensions.ext2.b).toBe(2);

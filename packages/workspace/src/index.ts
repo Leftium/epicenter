@@ -43,10 +43,7 @@ export type { InferRpcMap, RpcActionMap } from './rpc/types';
 // LIFECYCLE PROTOCOL
 // ════════════════════════════════════════════════════════════════════════════
 
-export type {
-	Extension,
-	MaybePromise,
-} from './workspace/lifecycle';
+export type { MaybePromise, RawExtension } from './workspace/lifecycle';
 export type { DocumentContext } from './workspace/types';
 
 // ════════════════════════════════════════════════════════════════════════════

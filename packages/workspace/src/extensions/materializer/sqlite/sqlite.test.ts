@@ -148,7 +148,10 @@ describe('createSqliteMaterializer', () => {
 				id: 'ready-gated',
 				tables: { posts: postsTable, notes: notesTable },
 			})
-				.withWorkspaceExtension('gate', () => ({ init: gate.promise }))
+				.withWorkspaceExtension('gate', () => ({
+					exports: {},
+					init: gate.promise,
+				}))
 				.withWorkspaceExtension('sqlite', (ctx) =>
 					createSqliteMaterializer(ctx, { db }).table('posts').table('notes'),
 				);
@@ -444,7 +447,7 @@ describe('createSqliteMaterializer', () => {
 					title: 'Queued row',
 					_v: 1,
 				});
-				testSetup.workspace.extensions.sqlite.dispose();
+				await testSetup.workspace.dispose();
 
 				await waitForSyncCycle();
 
@@ -539,9 +542,6 @@ describe('createSqliteMaterializer', () => {
 				expect(isQuery(sqlite.search)).toBe(true);
 				expect(isQuery(sqlite.count)).toBe(true);
 				expect(isMutation(sqlite.rebuild)).toBe(true);
-
-				// Lifecycle hooks are NOT actions
-				expect(isAction(sqlite.dispose)).toBe(false);
 			} finally {
 				await cleanup(testSetup);
 			}

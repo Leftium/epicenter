@@ -56,7 +56,35 @@ export function createMarkdownMaterializer<
 	type TableRow<TName extends keyof TTables & string> =
 		TTables[TName] extends TableHelper<infer TRow> ? TRow : never;
 
+	type MaterializerExports = {
+		whenFlushed: Promise<void>;
+		/**
+		 * Read `.md` files from disk and import them into the Yjs workspace via `table.set()`.
+		 *
+		 * Each file is parsed for YAML frontmatter and an optional body. The `deserialize`
+		 * callback (if provided per table) converts the parsed result to a row. When no
+		 * `deserialize` is configured, frontmatter fields are used as the row directly.
+		 *
+		 * **This overwrites existing rows**—`table.set()` is insert-or-replace.
+		 */
+		pushFromMarkdown(): Promise<{
+			imported: number;
+			skipped: number;
+			errors: string[];
+		}>;
+		/**
+		 * Re-materialize all Yjs table data to markdown files on disk.
+		 *
+		 * Reads every valid row from each registered table, serializes it,
+		 * and writes the result to disk. Does not remove orphaned files.
+		 */
+		pullToMarkdown(): Promise<{ written: number }>;
+	};
+
 	type MaterializerBuilder = {
+		exports: MaterializerExports;
+		init: Promise<void>;
+		dispose(): void;
 		table<TName extends keyof TTables & string>(
 			name: TName,
 			config?: {
@@ -84,30 +112,6 @@ export function createMarkdownMaterializer<
 		kv(config?: {
 			serialize?: (data: Record<string, unknown>) => SerializeResult;
 		}): MaterializerBuilder;
-		/**
-		 * Read `.md` files from disk and import them into the Yjs workspace via `table.set()`.
-		 *
-		 * Each file is parsed for YAML frontmatter and an optional body. The `deserialize`
-		 * callback (if provided per table) converts the parsed result to a row. When no
-		 * `deserialize` is configured, frontmatter fields are used as the row directly.
-		 *
-		 * **This overwrites existing rows**—`table.set()` is insert-or-replace.
-		 */
-		pushFromMarkdown(): Promise<{
-			imported: number;
-			skipped: number;
-			errors: string[];
-		}>;
-		/**
-		 * Re-materialize all Yjs table data to markdown files on disk.
-		 *
-		 * Reads every valid row from each registered table, serializes it,
-		 * and writes the result to disk. Does not remove orphaned files.
-		 */
-		pullToMarkdown(): Promise<{ written: number }>;
-		whenFlushed: Promise<void>;
-		init: Promise<void>;
-		dispose(): void;
 	};
 
 	const tableConfigs: TableConfigByName = {};
@@ -235,17 +239,8 @@ export function createMarkdownMaterializer<
 		}
 	})();
 
-	const builder: MaterializerBuilder = {
-		table(name, tableConfig) {
-			tableNames.add(name);
-			if (tableConfig) tableConfigs[name] = tableConfig;
-			return builder;
-		},
-		kv(nextKvConfig) {
-			shouldMaterializeKv = true;
-			kvConfig = nextKvConfig;
-			return builder;
-		},
+	const exports: MaterializerExports = {
+		whenFlushed,
 		async pushFromMarkdown() {
 			const dir = await resolveDir();
 			let imported = 0;
@@ -327,12 +322,25 @@ export function createMarkdownMaterializer<
 
 			return { written };
 		},
-		whenFlushed,
+	};
+
+	const builder: MaterializerBuilder = {
+		exports,
 		init: whenFlushed,
 		dispose() {
 			for (const unsubscribe of unsubscribers.splice(0)) {
 				unsubscribe();
 			}
+		},
+		table(name, tableConfig) {
+			tableNames.add(name);
+			if (tableConfig) tableConfigs[name] = tableConfig;
+			return builder;
+		},
+		kv(nextKvConfig) {
+			shouldMaterializeKv = true;
+			kvConfig = nextKvConfig;
+			return builder;
 		},
 	};
 

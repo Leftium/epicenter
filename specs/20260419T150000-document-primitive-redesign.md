@@ -1,8 +1,16 @@
 # Document Primitive Redesign: `defineDocument` as the Lower-Level Substrate
 
 **Date**: 2026-04-19
-**Status**: Draft — final design (post round 12)
+**Status**: Superseded by follow-up — see addendum at the top of this file.
 **Author**: AI-assisted (Braden + Claude)
+
+## Addendum (post-landing)
+
+The `defineDocument` / `openDocument` wrapper described below was **removed** shortly after landing. The real primitive is just `Y.Doc` + the `attach*` functions; wrapping Yjs's own constructor added no value and created an options-bag drift risk (every new `Y.Doc` option would need mirroring through `defineDocument`'s options).
+
+Current API: construct `new Y.Doc({ guid, gc })` directly, call `attach*(ydoc, ...)`, dispose with `ydoc.destroy()`. `createWorkspace` builds on this directly. Per-row content docs (Fuji entries) use the same raw pattern.
+
+See `.agents/skills/workspace-api/references/document-primitive.md` for the current guidance. The rest of this spec remains as a record of the design process and the motivating pyramid — `attach*` helpers, split readiness signals, no-framework `onUpdate`, component-owned lifecycle — all of which survived.
 
 ## Overview
 

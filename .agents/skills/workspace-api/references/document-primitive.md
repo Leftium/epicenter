@@ -4,26 +4,42 @@
 
 Read when composing standalone Y.Docs (per-row content, settings, skills, anything outside `createWorkspace`), or when wiring persistence + sync against a raw `Y.Doc`.
 
-`.withDocument()` on tables was removed. Per-row content docs are now regular `defineDocument`s opened by the component that owns the lifecycle.
+`.withDocument()` on tables was removed. Per-row content docs are now plain `Y.Doc`s opened by the component that owns the lifecycle.
 
-## The Primitive
+## The Primitive: Just Y.Doc + attach\*
+
+There is no wrapper. You construct a `Y.Doc` yourself and call `attach*` functions on it. `ydoc.destroy()` is the teardown.
 
 ```typescript
-import { defineDocument, openDocument } from '@epicenter/document';
+import { attachIndexedDb, attachRichText, attachSync } from '@epicenter/document';
+import * as Y from 'yjs';
 
-const def = defineDocument('my.doc.id', (ydoc) => {
-  // bootstrap runs once when openDocument() is called
-  return { /* public API */ };
-});
+export function openMyDoc(id: string) {
+  // gc: false because the doc syncs. GC'd deletion markers break peers that
+  // haven't seen the deletes. Only set true for purely local, ephemeral docs.
+  const ydoc = new Y.Doc({ guid: id, gc: false });
 
-const handle = openDocument(def);  // SYNC — no top-level await
-handle.dispose();                  // fires ydoc.destroy()
+  const content = attachRichText(ydoc);
+  const idb = attachIndexedDb(ydoc);
+  const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenLoaded });
+
+  return {
+    ydoc,
+    content,
+    whenLoaded: idb.whenLoaded,
+    whenConnected: sync.whenConnected,
+    dispose: () => ydoc.destroy(),
+  };
+}
 ```
 
-- `defineDocument(id, bootstrap, { gc? })` — inert definition. No Y.Doc allocated.
-- `openDocument(def)` — allocates the Y.Doc (`guid: def.id`, `gc: false` by default), runs `bootstrap`, returns `bootstrap`'s return value plus `{ ydoc, dispose }`.
-- `gc` defaults to `false` — GC of deletion markers breaks sync with peers that haven't seen the deletes. Only flip to `true` for purely local, short-lived docs.
-- Bootstrap errors auto-destroy the Y.Doc (fires `'destroy'` so anything registered cleans up), then rethrow.
+Everything you need is in Yjs itself:
+
+- `new Y.Doc({ guid, gc })` — allocate.
+- `ydoc.destroy()` — teardown (fires `'destroy'`; every `attach*` self-registers cleanup via `ydoc.on('destroy', ...)`).
+- `ydoc.on('update', fn)` — side effects (e.g. bumping a parent row's `updatedAt`). No framework `onUpdate` convention.
+
+No `defineDocument` / `openDocument` wrapper. No options bag re-exposing Y.Doc config. If Yjs adds new `Y.Doc` options tomorrow, callers get them for free.
 
 ## Attach Helpers
 
@@ -56,41 +72,40 @@ Replaces the old `.withDocument('content', { content: richText, guid: 'id', onUp
 
 ```typescript
 // apps/fuji/src/lib/entry-content-doc.ts
-import {
-  attachIndexedDb, attachRichText, attachSync,
-  defineDocument, openDocument, toWsUrl,
-} from '@epicenter/document';
+import { attachIndexedDb, attachRichText, attachSync, toWsUrl } from '@epicenter/document';
+import * as Y from 'yjs';
 import { workspace, auth } from './client';
 
 export function openEntryContentDoc(rowId: EntryId) {
-  return openDocument(entryContentDoc(rowId));
-}
-
-function entryContentDoc(rowId: EntryId) {
-  return defineDocument(`epicenter.fuji.entries.${rowId}.content`, (ydoc) => {
-    const content = attachRichText(ydoc);
-    const idb  = attachIndexedDb(ydoc);
-    const sync = attachSync(ydoc, {
-      url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
-      getToken: async () => auth.token,
-      waitFor: idb.whenLoaded,
-    });
-
-    // Plain closure — no framework-mediated onUpdate. Bumps parent row.
-    ydoc.on('update', () => {
-      workspace.tables.entries.update(rowId, { updatedAt: DateTimeString.now() });
-    });
-    // No explicit off() — ydoc.destroy() clears its own listeners.
-
-    return {
-      content,
-      whenLoaded:    idb.whenLoaded,
-      whenConnected: sync.whenConnected,
-      whenDisposed:  Promise.all([idb.disposed, sync.disposed]).then(() => {}),
-      clearLocal:    idb.clearLocal,
-      reconnect:     sync.reconnect,
-    };
+  const ydoc = new Y.Doc({
+    guid: `epicenter.fuji.entries.${rowId}.content`,
+    gc: false,
   });
+
+  const content = attachRichText(ydoc);
+  const idb = attachIndexedDb(ydoc);
+  const sync = attachSync(ydoc, {
+    url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
+    getToken: async () => auth.token,
+    waitFor: idb.whenLoaded,
+  });
+
+  // Plain closure — no framework-mediated onUpdate. Bumps parent row.
+  ydoc.on('update', () => {
+    workspace.tables.entries.update(rowId, { updatedAt: DateTimeString.now() });
+  });
+  // No explicit off() — ydoc.destroy() clears its own listeners.
+
+  return {
+    ydoc,
+    content,
+    whenLoaded:    idb.whenLoaded,
+    whenConnected: sync.whenConnected,
+    whenDisposed:  Promise.all([idb.disposed, sync.disposed]).then(() => {}),
+    clearLocal:    idb.clearLocal,
+    reconnect:     sync.reconnect,
+    dispose:       () => ydoc.destroy(),
+  };
 }
 ```
 
@@ -120,14 +135,14 @@ Two tabs editing the same entry reconcile at the Yjs layer (IndexedDB + sync). N
 
 ## Module-Scope Singleton Pattern
 
-`openDocument` evaluated at module scope becomes a singleton via ES module caching — no registry needed:
+A factory function evaluated at module scope becomes a singleton via ES module caching — no registry needed:
 
 ```typescript
 // packages/skills/src/doc.ts
-export const skills = openDocument(skillsDoc);  // evaluated once per graph
+export const skills = openSkillsDoc();  // evaluated once per graph
 ```
 
-Synchronous open means no top-level-await propagation, trivially mockable in tests.
+Synchronous construction means no top-level-await propagation, trivially mockable in tests.
 
 ## Anti-Patterns
 
@@ -152,19 +167,20 @@ await Promise.all([doc.whenLoaded, doc.whenConnected]);       // CLI needing rem
 
 ```typescript
 // ❌ Don't pass gc: true on a synced doc
-defineDocument('...', bootstrap, { gc: true });  // peers lose deletion markers
+new Y.Doc({ guid, gc: true });  // peers lose deletion markers
 
-// ✅ Default (gc: false) — only opt in for purely local ephemeral docs
+// ✅ Default to gc: false — only opt in for purely local ephemeral docs
+new Y.Doc({ guid, gc: false });
 ```
 
 ## Relationship to `createWorkspace`
 
-`createWorkspace` is the single-Y.Doc sugar: one workspace def, one Y.Doc, one `.withExtension` chain. Under the hood, workspace extensions are thin closures over the same attach helpers. If your app fits in one Y.Doc, keep using `createWorkspace` — it hasn't changed. Reach for `defineDocument` when you need a second scope: per-row content, split settings, skills, or any non-workspace Yjs doc.
+`createWorkspace` is the single-Y.Doc sugar: one workspace def, one Y.Doc, one `.withExtension` chain. Under the hood, `createWorkspace` does exactly what you'd write by hand — `new Y.Doc(...)`, then `createTableHelper`, `createKvHelper`, `createAwarenessHelper` (the workspace-flavored equivalents of `attachTable`/`attachKv`/`attachAwareness`). If your app fits in one Y.Doc, keep using `createWorkspace` — it hasn't changed. Reach for raw `Y.Doc` + `attach*` when you need a second scope: per-row content, split settings, skills, or any non-workspace Yjs doc.
 
 ## Code References
 
-- `packages/document/src/define-document.ts` — primitive + test
 - `packages/document/src/attach-indexed-db.ts` — persistence attach
 - `packages/document/src/attach-sync.ts` — sync attach (supervisor, backoff, awareness)
 - `packages/document/src/attach-rich-text.ts`, `attach-plain-text.ts`
 - `apps/fuji/src/lib/entry-content-doc.ts` — canonical per-row example
+- `packages/workspace/src/workspace/create-workspace.ts` — `createWorkspace` built on raw Y.Doc + helpers

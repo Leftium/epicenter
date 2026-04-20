@@ -17,7 +17,10 @@ import { filesTable } from './table.js';
 
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
+	const fs = createYjsFileSystem(
+		ws.tables.files,
+		ws.tables.files.documents.content,
+	);
 	return { fs, ws };
 }
 
@@ -392,7 +395,7 @@ function getTimelineLength(
 describe('timeline content storage', () => {
 	test('text append (appendFile on text entry)', async () => {
 		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
+		const documents = ws.tables.files.documents.content;
 		await fs.writeFile('/log.txt', 'line1\n');
 		await fs.appendFile('/log.txt', 'line2\n');
 		expect(await fs.readFile('/log.txt')).toBe('line1\nline2\n');
@@ -402,7 +405,7 @@ describe('timeline content storage', () => {
 
 	test('Uint8Array writes are treated as text (no mode switch)', async () => {
 		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
+		const documents = ws.tables.files.documents.content;
 		await fs.writeFile('/file.dat', 'text v1');
 		expect(getTimelineLength(fs, documents,'/file.dat')).toBe(1);
 
@@ -414,7 +417,7 @@ describe('timeline content storage', () => {
 
 	test('same-mode text overwrite does NOT grow timeline', async () => {
 		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
+		const documents = ws.tables.files.documents.content;
 		await fs.writeFile('/file.txt', 'first');
 		await fs.writeFile('/file.txt', 'second');
 		await fs.writeFile('/file.txt', 'third');
@@ -433,7 +436,7 @@ describe('timeline content storage', () => {
 describe('sheet file support', () => {
 	test('readFile returns CSV for sheet-mode file', async () => {
 		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
+		const documents = ws.tables.files.documents.content;
 		await fs.writeFile('/data.csv', 'placeholder');
 		const fileId = fs.lookupId('/data.csv');
 		expect(fileId).toBeDefined();
@@ -448,7 +451,7 @@ describe('sheet file support', () => {
 
 	test('writeFile on sheet-mode re-parses CSV in place', async () => {
 		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
+		const documents = ws.tables.files.documents.content;
 		await fs.writeFile('/data.csv', 'placeholder');
 		const fileId = fs.lookupId('/data.csv');
 		expect(fileId).toBeDefined();

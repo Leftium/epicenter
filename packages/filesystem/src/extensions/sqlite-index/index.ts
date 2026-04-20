@@ -113,10 +113,11 @@ export type SqliteIndex = {
  * (using `filesTable` from `@epicenter/filesystem`) satisfies this.
  */
 type SqliteIndexContext = {
-	tables: { files: Table<FileRow> };
-	documents: {
-		files: {
-			content: Documents<FileRow, Timeline>;
+	tables: {
+		files: Table<FileRow> & {
+			documents: {
+				content: Documents<FileRow, Timeline>;
+			};
 		};
 	};
 };
@@ -144,7 +145,7 @@ export function createSqliteIndex({
 }: SqliteIndexOptions = {}) {
 	return (context: SqliteIndexContext): SqliteIndex => {
 		const filesTable = context.tables.files;
-		const contentDocs = context.documents.files.content;
+		const contentDocs = context.tables.files.documents.content;
 
 		const client = createClient({ url: ':memory:' });
 		let syncTimeout: ReturnType<typeof setTimeout> | null = null;

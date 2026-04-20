@@ -155,7 +155,10 @@ describe('XmlFragment serialization', () => {
 describe('markdown integration with YjsFileSystem', () => {
 	function setup() {
 		const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-		return createYjsFileSystem(ws.tables.files, ws.documents.files.content);
+		return createYjsFileSystem(
+			ws.tables.files,
+			ws.tables.files.documents.content,
+		);
 	}
 
 	test('write and read .md file with front matter', async () => {

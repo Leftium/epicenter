@@ -132,7 +132,7 @@ export function createSkillsWorkspace() {
 						await writeFile(join(skillPath, 'SKILL.md'), updatedMd, 'utf-8');
 					}
 
-					await client.documents.skills.instructions.write(
+					await client.tables.skills.documents.instructions.write(
 						skillId,
 						instructions,
 					);
@@ -162,7 +162,7 @@ export function createSkillsWorkspace() {
 									_v: 1,
 								});
 
-								await client.documents.references.content.write(
+								await client.tables.references.documents.content.write(
 									refId,
 									refContent,
 								);
@@ -193,7 +193,7 @@ export function createSkillsWorkspace() {
 						await mkdir(skillDir, { recursive: true });
 
 						const instructions =
-							await client.documents.skills.instructions.read(skill.id);
+							await client.tables.skills.documents.instructions.read(skill.id);
 						const skillMd = serializeSkillMd(skill, instructions);
 						await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
 
@@ -208,7 +208,9 @@ export function createSkillsWorkspace() {
 							await Promise.all(
 								refs.map(async (ref) => {
 									const text =
-										await client.documents.references.content.read(ref.id);
+										await client.tables.references.documents.content.read(
+											ref.id,
+										);
 									await writeFile(join(refsDir, ref.path), text, 'utf-8');
 								}),
 							);

@@ -92,7 +92,7 @@ export function createSkillsWorkspace() {
 				const skill = client.tables.skills.find((s) => s.id === id);
 				if (!skill) return null;
 				const instructions =
-					await client.documents.skills.instructions.read(id);
+					await client.tables.skills.documents.instructions.read(id);
 				return { skill, instructions };
 			},
 		}),
@@ -115,12 +115,14 @@ export function createSkillsWorkspace() {
 				const skill = client.tables.skills.find((s) => s.id === id);
 				if (!skill) return null;
 				const instructions =
-					await client.documents.skills.instructions.read(id);
+					await client.tables.skills.documents.instructions.read(id);
 				const refs = client.tables.references.filter((r) => r.skillId === id);
 				const references = await Promise.all(
 					refs.map(async (ref) => ({
 						path: ref.path,
-						content: await client.documents.references.content.read(ref.id),
+						content: await client.tables.references.documents.content.read(
+							ref.id,
+						),
 					})),
 				);
 				return {

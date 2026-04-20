@@ -103,8 +103,9 @@ import type {
  * typed access to all previously added extensions.
  *
  * Single code path — no overloads, no branches. Awareness is always created
- * (like tables and KV). When no awareness fields are defined, the helper has
- * zero accessible field keys but `raw` is still available for sync providers.
+ * as a single instance regardless of how many fields are defined. When no
+ * awareness fields are defined, the helper has zero accessible field keys
+ * but `raw` is still available for sync providers.
  *
  * @param config - Workspace config (or WorkspaceDefinition from defineWorkspace())
  * @returns WorkspaceClientBuilder - a client that can be used directly or chained with .withExtension()
@@ -560,6 +561,13 @@ export function createWorkspace<
 				// Wire actions into the sync extension for inbound RPC dispatch.
 				// The sync extension is registered before actions (it needs to connect
 				// first), so we push actions to it after the fact.
+				//
+				// TODO: This is an invisible contract — workspace assumes a sync
+				// extension is registered under the key `'sync'` with a
+				// `registerActions(actions)` method. If either is renamed, actions
+				// silently never reach the sync layer. Replace with a generic
+				// `onActions(actions)` hook on the RawExtension shape so any
+				// extension can opt in without string coupling.
 				const sync = (extensions as Record<string, any>).sync;
 				if (typeof sync?.registerActions === 'function') {
 					sync.registerActions(allActions);

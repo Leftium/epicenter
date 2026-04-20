@@ -1,8 +1,6 @@
+import { xmlFragmentToPlaintext } from '@epicenter/document';
 import * as Y from 'yjs';
-import {
-	populateFragmentFromText,
-	xmlFragmentToPlaintext,
-} from './richtext.js';
+import { populateFragmentFromText } from './richtext.js';
 import {
 	parseSheetFromCsv,
 	type SheetBinding,

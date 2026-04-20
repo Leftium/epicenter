@@ -5,9 +5,9 @@
  * mode conversion, and snapshot restore.
  */
 
+import { xmlFragmentToPlaintext } from '@epicenter/document';
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { xmlFragmentToPlaintext } from './richtext.js';
 import { createTimeline } from './timeline.js';
 
 function setup() {

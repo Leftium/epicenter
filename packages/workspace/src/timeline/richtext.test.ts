@@ -1,9 +1,9 @@
+import { xmlFragmentToPlaintext } from '@epicenter/document';
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import {
 	populateFragmentFromMarkdown,
 	populateFragmentFromText,
-	xmlFragmentToPlaintext,
 } from './richtext.js';
 import { createTimeline } from './timeline.js';
 

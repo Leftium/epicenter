@@ -263,6 +263,10 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 	exports: SyncExtensionExports;
 	init: Promise<void>;
 	dispose: () => void;
+	/** Connect the WebSocket supervisor loop. Framework calls on bind transition 0 → 1. */
+	onActive: () => void;
+	/** Disconnect the WebSocket. Framework calls after grace when bind transition 1 → 0. */
+	onIdle: () => void;
 } {
 	return ({ ydoc: doc, awareness: ctxAwareness, init: priorInit }) => {
 		// priorInit resolves when all extensions registered before this one have

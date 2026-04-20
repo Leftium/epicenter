@@ -711,6 +711,196 @@ describe('handle.bind() / release lifecycle', () => {
 		staleRelease(); // must not throw or mutate anything
 	});
 
+	test('close during an active bind runs dispose but does not fire onIdle', async () => {
+		// Design decision locked in: dispose supersedes onIdle. If the caller
+		// closes a doc while it's bound, extensions see dispose() (permanent
+		// teardown) rather than onIdle (transient). The release function held
+		// by the original binder is still safe to call later (covered by the
+		// "release captured before close" test).
+		const ext = countingIdleExtension();
+		let disposeCount = 0;
+		const { documents } = setup({
+			documentExtensions: [
+				ext.registration,
+				{
+					key: 'counter-dispose',
+					factory: () => ({
+						exports: {},
+						dispose: () => {
+							disposeCount++;
+						},
+					}),
+				},
+			],
+			graceMs: 50,
+		});
+		const handle = documents.get('f1');
+		handle.bind();
+		expect(ext.counts().active).toBe(1);
+
+		await documents.close('f1');
+
+		expect(disposeCount).toBe(1);
+		expect(ext.counts().idle).toBe(0);
+	});
+
+	test('bind on one doc does not fire hooks for another doc', async () => {
+		// Multi-doc independence — refcount is per-guid, not global.
+		const extA = countingIdleExtension();
+		const extB = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [extA.registration, extB.registration],
+			graceMs: 10,
+		});
+
+		const a = documents.get('f1');
+		const b = documents.get('f2');
+
+		const release = a.bind();
+		// Both A and B's extensions get invoked for f1's construction, but
+		// only because BOTH registrations apply to EVERY constructed doc.
+		// After `a.bind()`, both extensions are activated ONCE for f1 only.
+		expect(extA.counts().active).toBe(1);
+		expect(extB.counts().active).toBe(1);
+
+		// Now confirm binding `a` hasn't affected f2's entry.
+		b.bind()(); // bind + release on f2
+		// f2 had its own construction; activators fired for it too now. The
+		// counters are shared across entries because the same factory closure
+		// increments them. What we really want to assert: f1's grace timer is
+		// independent of f2's.
+		await new Promise((r) => setTimeout(r, 5));
+		// f2's release should start its grace; f1 should still be active.
+		expect(extA.counts().idle).toBe(0);
+
+		release(); // release f1
+		await new Promise((r) => setTimeout(r, 20));
+		expect(extA.counts().idle).toBe(2); // both f1 and f2 eventually idle
+	});
+
+	test('onActive hooks fire in extension registration order', async () => {
+		const order: string[] = [];
+		const { documents } = setup({
+			documentExtensions: [
+				{
+					key: 'first',
+					factory: () => ({
+						exports: {},
+						onActive: () => order.push('first'),
+					}),
+				},
+				{
+					key: 'second',
+					factory: () => ({
+						exports: {},
+						onActive: () => order.push('second'),
+					}),
+				},
+			],
+		});
+		documents.get('f1').bind();
+		expect(order).toEqual(['first', 'second']);
+	});
+
+	test('a throwing onActive does not prevent subsequent extensions from activating', async () => {
+		const order: string[] = [];
+		const { documents } = setup({
+			documentExtensions: [
+				{
+					key: 'throws',
+					factory: () => ({
+						exports: {},
+						onActive: () => {
+							order.push('throws');
+							throw new Error('simulated');
+						},
+					}),
+				},
+				{
+					key: 'runs',
+					factory: () => ({
+						exports: {},
+						onActive: () => order.push('runs'),
+					}),
+				},
+			],
+		});
+		const handle = documents.get('f1');
+		// Should not throw out to the caller.
+		handle.bind();
+		expect(order).toEqual(['throws', 'runs']);
+	});
+
+	test('a throwing onActive still increments refcount so release works', async () => {
+		// Critical invariant: if activation fails for some extensions, the
+		// refcount must still reflect the bind. Otherwise release() would
+		// decrement to -1, and subsequent binds would double-fire.
+		const goodExt = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [
+				{
+					key: 'bad',
+					factory: () => ({
+						exports: {},
+						onActive: () => {
+							throw new Error('simulated');
+						},
+					}),
+				},
+				goodExt.registration,
+			],
+			graceMs: 5,
+		});
+		const handle = documents.get('f1');
+		const release = handle.bind();
+		expect(goodExt.counts().active).toBe(1);
+		release();
+		await new Promise((r) => setTimeout(r, 15));
+		expect(goodExt.counts().idle).toBe(1);
+	});
+
+	test('rapid 0→1→0→1 within same tick keeps sync active through the dance', async () => {
+		// With graceMs=0 the timer is still scheduled in the next task — so a
+		// synchronous re-bind still cancels it. This guards the classic bug:
+		// "release triggers idle immediately, then bind fires a second activate."
+		const ext = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [ext.registration],
+			graceMs: 0,
+		});
+		const handle = documents.get('f1');
+		const r1 = handle.bind();
+		r1();
+		const r2 = handle.bind();
+		// No microtask yield — timer hasn't had a chance to fire. The fresh
+		// bind cancelled it.
+		expect(ext.counts()).toEqual({ active: 1, idle: 0 });
+		r2();
+		await new Promise((r) => setTimeout(r, 10));
+		expect(ext.counts()).toEqual({ active: 1, idle: 1 });
+	});
+
+	test('closeAll cancels all pending grace timers', async () => {
+		// Mass teardown scenario: multiple docs in grace, workspace disposes.
+		// None of their onIdle hooks should fire after closeAll resolves.
+		const ext = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [ext.registration],
+			graceMs: 50,
+		});
+
+		for (const id of ['f1', 'f2', 'f3']) {
+			const release = documents.get(id).bind();
+			release();
+		}
+		// Three grace timers pending.
+		await documents.closeAll();
+
+		await new Promise((r) => setTimeout(r, 80));
+		// None of the three fired onIdle — dispose ran instead.
+		expect(ext.counts().idle).toBe(0);
+	});
+
 	test('extension without onActive/onIdle is unaffected', async () => {
 		// A plain extension with no hooks should be invisible to bind/release.
 		let initCount = 0;

@@ -1173,3 +1173,99 @@ describe('withActions (non-terminal)', () => {
 		expect(ws.actions.noop).toBeDefined();
 	});
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// Workspace-scope onActive/onIdle semantics
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('workspace-scope onActive / onIdle', () => {
+	test('workspace extensions receive onActive exactly once after init resolves', async () => {
+		let onActiveCount = 0;
+		let onActiveAfterInit = false;
+		let initResolved = false;
+
+		const ws = createWorkspace({ id: 'ws-on-active' }).withExtension(
+			'tracker',
+			() => ({
+				exports: {},
+				init: (async () => {
+					await Promise.resolve();
+					initResolved = true;
+				})(),
+				onActive: () => {
+					onActiveAfterInit = initResolved;
+					onActiveCount++;
+				},
+			}),
+		);
+
+		await ws.whenReady;
+		expect(onActiveCount).toBe(1);
+		expect(onActiveAfterInit).toBe(true);
+		await ws.dispose();
+	});
+
+	test('workspace extensions never receive onIdle', async () => {
+		// At the workspace scope there is no bind/release — the workspace Y.Doc
+		// is always considered active. onIdle should stay unreached even
+		// through the full dispose path.
+		let onIdleCount = 0;
+
+		const ws = createWorkspace({ id: 'ws-no-idle' }).withExtension(
+			'tracker',
+			() => ({
+				exports: {},
+				onActive: () => {},
+				onIdle: () => {
+					onIdleCount++;
+				},
+			}),
+		);
+
+		await ws.whenReady;
+		await ws.dispose();
+		expect(onIdleCount).toBe(0);
+	});
+
+	test('throwing workspace onActive does not abort bootstrap; later extensions still register', async () => {
+		// Error containment at workspace scope — a buggy extension's onActive
+		// should log + continue, not take down the whole workspace. Later
+		// extensions still get their onActive call and their exports are
+		// available on client.extensions.
+		const originalConsoleError = console.error;
+		const errors: unknown[] = [];
+		console.error = (...args) => {
+			errors.push(args);
+		};
+
+		try {
+			let laterActivated = false;
+
+			const ws = createWorkspace({ id: 'ws-onactive-throws' })
+				.withExtension('bad', () => ({
+					exports: {},
+					onActive: () => {
+						throw new Error('simulated');
+					},
+				}))
+				.withExtension('good', () => ({
+					exports: { marker: 'ok' },
+					onActive: () => {
+						laterActivated = true;
+					},
+				}));
+
+			// whenReady should resolve despite the throwing onActive.
+			await ws.whenReady;
+
+			expect(laterActivated).toBe(true);
+			expect(ws.extensions.good.marker).toBe('ok');
+			// The framework logged the error rather than swallowing silently.
+			expect(errors.length).toBeGreaterThan(0);
+
+			await ws.dispose();
+		} finally {
+			console.error = originalConsoleError;
+		}
+	});
+});

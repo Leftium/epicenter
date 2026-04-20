@@ -35,7 +35,7 @@
  * // With extensions (chained)
  * const client = createWorkspace({ id: 'my-app', tables: { posts } })
  *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sync', ySweetSync({ auth: directAuth('...') }));
+ *   .withExtension('sync', createSyncExtension({ url, getToken }));
  *
  * // With actions (terminal)
  * const client = createWorkspace({ id: 'my-app', tables: { posts } })

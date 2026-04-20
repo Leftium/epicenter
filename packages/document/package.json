@@ -1,7 +1,7 @@
 {
 	"name": "@epicenter/document",
 	"version": "0.0.0",
-	"description": "Lower-level Y.Doc lifecycle primitive — defineDocument + attach helpers.",
+	"description": "Y.Doc composition helpers — attachIndexedDb, attachSync, attachRichText, attachTable, attachKv, attachAwareness.",
 	"keywords": ["yjs", "crdt", "local-first", "epicenter"],
 	"repository": {
 		"type": "git",

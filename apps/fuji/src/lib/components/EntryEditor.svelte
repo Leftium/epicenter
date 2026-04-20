@@ -58,7 +58,7 @@
 		});
 		return () => {
 			cancelled = true;
-			opened.dispose();
+			opened.ydoc.destroy();
 			contentDoc = null;
 			isLoaded = false;
 		};

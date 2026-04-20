@@ -670,6 +670,47 @@ describe('handle.bind() / release lifecycle', () => {
 		expect(ext.counts().idle).toBe(0);
 	});
 
+	test('release captured before close is safe to call after close', async () => {
+		// If a consumer holds a release function, then close() happens, then
+		// they call release — we must not schedule an idle timer against the
+		// disposed entry (extensions have already been torn down).
+		const ext = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [ext.registration],
+			graceMs: 50,
+		});
+		const handle = documents.get('f1');
+		const release = handle.bind();
+		expect(ext.counts().active).toBe(1);
+
+		await documents.close('f1');
+		// Now the consumer finally releases the stale handle.
+		release();
+
+		// Wait longer than graceMs — no idle callback should fire because
+		// the entry was disposed before release ran.
+		await new Promise((r) => setTimeout(r, 80));
+		expect(ext.counts().idle).toBe(0);
+	});
+
+	test('bind on a stale handle after close is a safe no-op', async () => {
+		// Same guard from the opposite direction: stale bind() on a disposed
+		// entry shouldn't re-fire onActive or leak resources. (In practice,
+		// callers should re-.get() to get a fresh entry — this just keeps the
+		// framework defensive against misuse.)
+		const ext = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [ext.registration],
+			graceMs: 50,
+		});
+		const handle = documents.get('f1');
+		await documents.close('f1');
+
+		const staleRelease = handle.bind();
+		expect(ext.counts().active).toBe(0); // onActive must not fire
+		staleRelease(); // must not throw or mutate anything
+	});
+
 	test('extension without onActive/onIdle is unaffected', async () => {
 		// A plain extension with no hooks should be invisible to bind/release.
 		let initCount = 0;

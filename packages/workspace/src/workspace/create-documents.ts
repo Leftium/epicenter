@@ -12,13 +12,15 @@
  *
  * @example
  * ```typescript
- * import { createDocuments, createTables, defineTable } from '@epicenter/workspace';
+ * import { createDocuments, createTables, defineTable, timeline }
+ *   from '@epicenter/workspace';
  * import * as Y from 'yjs';
  * import { type } from 'arktype';
  *
  * const filesTable = defineTable(
  *   type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
  * ).withDocument('content', {
+ *   content: timeline,
  *   guid: 'id',
  *   onUpdate: () => ({ updatedAt: Date.now() }),
  * });
@@ -31,14 +33,23 @@
  *   tableName: 'files',
  *   documentName: 'content',
  *   guidKey: 'id',
+ *   content: timeline,
  *   onUpdate: () => ({ updatedAt: Date.now() }),
  *   tableHelper: tables.files,
  *   ydoc,
  * });
  *
- * const content = await contentDocuments.open(someRow);
- * content.read();          // read content as string
- * content.write('new content');  // replace content
+ * // Preferred — sync .get() returning a `DocumentHandle`
+ * const handle = contentDocuments.get('row-id');
+ * const release = handle.bind();       // retain sync transport
+ * await handle.whenLoaded;             // persistence hydrated
+ * console.log(handle.read());          // read content as string
+ * handle.write('new content');         // replace content
+ * release();                           // sync disconnects after grace
+ *
+ * // High-level sugar for string I/O (does NOT bind — local state only)
+ * await contentDocuments.read('row-id');
+ * await contentDocuments.write('row-id', 'new content');
  * ```
  *
  * @module
@@ -95,6 +106,12 @@ type DocEntry<TBinding extends ContentHandle = ContentHandle> = {
 	unobserve: () => void;
 	bindCount: number;
 	disconnectTimer: ReturnType<typeof setTimeout> | null;
+	/**
+	 * Set to `true` by `releaseEntry()` once extensions have been disposed and
+	 * the Y.Doc destroyed. Release closures captured before disposal check this
+	 * flag so a late release doesn't schedule `onIdle` against disposed state.
+	 */
+	disposed: boolean;
 };
 
 /**
@@ -318,9 +335,17 @@ export function createDocuments<
 			unobserve,
 			bindCount: 0,
 			disconnectTimer: null,
+			disposed: false,
 		};
 
 		const bind = (): (() => void) => {
+			// Guarding against bind() on a disposed entry is defensive — this
+			// shouldn't happen in practice because `close()` evicts the entry
+			// from the cache, so new `.get()` calls would construct a fresh one.
+			// But if a caller holds a stale handle reference from before the
+			// close, we refuse to reactivate extensions that have been disposed.
+			if (entry.disposed) return () => {};
+
 			if (entry.disconnectTimer !== null) {
 				// In grace period — cancel the pending idle, stay active.
 				clearTimeout(entry.disconnectTimer);
@@ -341,10 +366,17 @@ export function createDocuments<
 			return () => {
 				if (released) return;
 				released = true;
+				// If the entry was disposed after this bind was taken, the
+				// extensions have already been torn down. Don't schedule an
+				// idle callback against them — onIdle would fire on stale
+				// state and third-party extensions aren't guaranteed to be
+				// idempotent.
+				if (entry.disposed) return;
 				entry.bindCount--;
 				if (entry.bindCount === 0) {
 					entry.disconnectTimer = setTimeout(() => {
 						entry.disconnectTimer = null;
+						if (entry.disposed) return;
 						for (const idle of entry.extensionIdlers) {
 							try {
 								idle();
@@ -368,7 +400,10 @@ export function createDocuments<
 	}
 
 	async function releaseEntry(entry: DocEntry<TBinding>): Promise<void> {
-		// Cancel any pending idle timer so it can't fire after dispose.
+		// Mark disposed FIRST — any release closures still held by callers
+		// will see this flag and short-circuit instead of scheduling idle
+		// callbacks against extensions we're about to dispose.
+		entry.disposed = true;
 		if (entry.disconnectTimer !== null) {
 			clearTimeout(entry.disconnectTimer);
 			entry.disconnectTimer = null;

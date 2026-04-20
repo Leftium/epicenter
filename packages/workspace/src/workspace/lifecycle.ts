@@ -3,9 +3,10 @@
  *
  * This module defines:
  *
- * - **`RawExtension<T>`** — The factory return shape: `{ exports, init?, dispose?, clearLocalData? }`
+ * - **`RawExtension<T>`** — The factory return shape: `{ exports, init?, dispose?, clearLocalData?, onActive?, onIdle? }`
  * - **`defineExtension()`** — Normalizes raw factory returns, separating the
- *   public exports from framework lifecycle metadata (`init`, `dispose`, `clearLocalData`)
+ *   public exports from framework lifecycle metadata (`init`, `dispose`,
+ *   `clearLocalData`, `onActive`, `onIdle`)
  * - **`disposeLifo()` / `startDisposeLifo()`** — LIFO teardown for ordered cleanup
  *
  * Extension factories are **always synchronous**. Async initialization is tracked

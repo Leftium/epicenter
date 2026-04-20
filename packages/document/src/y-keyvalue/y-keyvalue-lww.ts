@@ -170,6 +170,26 @@ export type YKeyValueLwwChangeHandler<T> = (
 ) => void;
 
 /**
+ * Shared contract for LWW key-value stores.
+ *
+ * Implemented by `YKeyValueLww` (unencrypted) and the encrypted wrapper in
+ * `@epicenter/workspace`. `tableHelperOver` / `kvHelperOver` consume this
+ * interface so they can wrap either store without branching.
+ */
+export interface LwwStore<T> {
+	get(key: string): T | undefined;
+	set(key: string, val: T): void;
+	has(key: string): boolean;
+	delete(key: string): void;
+	bulkSet(entries: Array<{ key: string; val: T }>): void;
+	bulkDelete(keys: string[]): void;
+	observe(handler: YKeyValueLwwChangeHandler<T>): void;
+	unobserve(handler: YKeyValueLwwChangeHandler<T>): void;
+	entries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
+	readonly size: number;
+}
+
+/**
  * Transaction origin that marks observer cleanup deletions as "internal."
  *
  * ## When this fires
@@ -199,7 +219,7 @@ export type YKeyValueLwwChangeHandler<T> = (
  */
 const DEDUP_ORIGIN = Symbol('dedup');
 
-export class YKeyValueLww<T> {
+export class YKeyValueLww<T> implements LwwStore<T> {
 	/** The underlying Y.Array that stores `{key, val, ts}` entries. */
 	readonly yarray: Y.Array<YKeyValueLwwEntry<T>>;
 
@@ -287,18 +307,8 @@ export class YKeyValueLww<T> {
 		transaction: Y.Transaction,
 	) => void;
 
-	/**
-	 * Alias for `entries()` — mirrors `EncryptedYKeyValueLww`'s `readableEntries`.
-	 * Unencrypted stores never have unreadable entries, so the two are equivalent.
-	 * Exposed so a single consumer (e.g. `tableHelperOver`) can iterate either
-	 * store structurally without branching.
-	 */
-	*readableEntries(): IterableIterator<[string, YKeyValueLwwEntry<T>]> {
-		yield* this.entries();
-	}
-
-	/** Count of readable entries — equivalent to `map.size` for unencrypted stores. */
-	get readableEntryCount(): number {
+	/** Number of entries in the map. */
+	get size(): number {
 		return this._map.size;
 	}
 

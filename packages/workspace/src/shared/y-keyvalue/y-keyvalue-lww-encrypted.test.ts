@@ -152,7 +152,7 @@ describe('createEncryptedYkvLww', () => {
 
 			expect(kv.get('x')).toBe('10');
 			expect(kv.get('y')).toBe('20');
-			expect(kv.readableEntryCount).toBe(2);
+			expect(kv.size).toBe(2);
 		});
 	});
 

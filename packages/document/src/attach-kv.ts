@@ -11,14 +11,13 @@
 import type * as Y from 'yjs';
 import type { KvChange, KvDefinitions, KvHelper } from './types.js';
 import {
+	type LwwStore,
 	YKeyValueLww,
 	type YKeyValueLwwChange,
-	type YKeyValueLwwChangeHandler,
 	type YKeyValueLwwEntry,
 } from './y-keyvalue/index.js';
 
-/** The Y.Array key for the KV store. */
-export const KV_ARRAY_KEY = 'kv';
+const KV_ARRAY_KEY = 'kv';
 
 /**
  * Bind a record of KV definitions to a Y.Doc and return a typed KvHelper.
@@ -37,25 +36,11 @@ export function attachKv<TKvDefinitions extends KvDefinitions>(
 }
 
 /**
- * Minimal KV-store surface consumed by `kvHelperOver`. Both `YKeyValueLww`
- * (unencrypted) and `EncryptedYKeyValueLww` (workspace wrapper) satisfy
- * this structurally — no adapter needed.
- */
-export type KvStoreLike = {
-	get(key: string): unknown;
-	set(key: string, val: unknown): void;
-	delete(key: string): void;
-	observe(handler: YKeyValueLwwChangeHandler<unknown>): void;
-	unobserve(handler: YKeyValueLwwChangeHandler<unknown>): void;
-};
-
-/**
- * Build a KvHelper over any LWW-shaped store. Exported so
- * `@epicenter/workspace` can reuse the same helper logic over its encrypted
- * store wrapper.
+ * Build a KvHelper over any `LwwStore`. Exported so `@epicenter/workspace`
+ * can reuse the same helper logic over its encrypted store wrapper.
  */
 export function kvHelperOver<TKvDefinitions extends KvDefinitions>(
-	ykv: KvStoreLike,
+	ykv: LwwStore<unknown>,
 	definitions: TKvDefinitions,
 ): KvHelper<TKvDefinitions> {
 	return {

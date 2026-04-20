@@ -168,7 +168,7 @@ That prevents a simple ciphertext transplant from one entry key to another.
 Reads decrypt on the fly.
 The wrapper does not maintain a separate plaintext cache.
 That trade is explicit in the implementation comments: decrypting a small XChaCha20-Poly1305 blob is cheap, while a dual cache would add complexity around observers, resync, and missed transactions.
-`entries()` and `readableEntries()` decrypt as they iterate.
+`entries()` decrypts values as it iterates.
 Undecryptable entries are skipped.
 
 ## One-way activation
@@ -222,7 +222,7 @@ What it does not get is plaintext application values.
 ## Error handling and unreadable data
 Decryption failures do not take down the whole observer stream.
 The wrapper catches failures, logs a warning, skips the unreadable entry, and keeps going.
-It also exposes `unreadableEntryCount` and `readableEntryCount`.
+It also exposes `unreadableEntryCount` alongside `size` (the count of decryptable entries).
 That makes corruption or missing key versions visible without forcing a hard crash on every read.
 
 ## What this means for a security review

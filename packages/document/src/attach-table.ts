@@ -32,15 +32,11 @@ import type {
 	UpdateResult,
 } from './types.js';
 import {
+	type LwwStore,
 	YKeyValueLww,
 	type YKeyValueLwwChangeHandler,
 	type YKeyValueLwwEntry,
 } from './y-keyvalue/index.js';
-
-/** Build the Y.Array key for a table by name. */
-function tableArrayKey(name: string): `table:${string}` {
-	return `table:${name}`;
-}
 
 /**
  * Bind a single TableDefinition to a Y.Doc and return a typed TableHelper.
@@ -60,32 +56,14 @@ export function attachTable<
 	name: string,
 	definition: TTableDefinition,
 ): TableHelper<InferTableRow<TTableDefinition>> {
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(tableArrayKey(name));
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(`table:${name}`);
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.on('destroy', () => ykv.dispose());
 	return tableHelperOver(ykv, definition);
 }
 
 /**
- * Minimal LWW-store surface consumed by `tableHelperOver`. Both
- * `YKeyValueLww` (unencrypted) and `EncryptedYKeyValueLww` (workspace
- * wrapper) satisfy this structurally — no adapter needed.
- */
-export type LwwStoreLike = {
-	set(key: string, val: unknown): void;
-	get(key: string): unknown;
-	has(key: string): boolean;
-	delete(key: string): void;
-	bulkSet(entries: Array<{ key: string; val: unknown }>): void;
-	bulkDelete(keys: string[]): void;
-	observe(handler: YKeyValueLwwChangeHandler<unknown>): void;
-	unobserve(handler: YKeyValueLwwChangeHandler<unknown>): void;
-	readableEntries(): IterableIterator<[string, YKeyValueLwwEntry<unknown>]>;
-	readonly readableEntryCount: number;
-};
-
-/**
- * Construct a TableHelper from any LWW-shaped store and a TableDefinition.
+ * Construct a TableHelper from any `LwwStore` and a TableDefinition.
  *
  * Exported so `@epicenter/workspace` can reuse the exact same helper logic
  * over its encrypted store wrapper.
@@ -94,7 +72,7 @@ export function tableHelperOver<
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
 	TTableDefinition extends TableDefinition<any>,
 >(
-	ykv: LwwStoreLike,
+	ykv: LwwStore<unknown>,
 	definition: TTableDefinition,
 ): TableHelper<InferTableRow<TTableDefinition>> {
 	type TRow = InferTableRow<TTableDefinition>;
@@ -162,7 +140,7 @@ export function tableHelperOver<
 
 		getAll(): RowResult<TRow>[] {
 			const results: RowResult<TRow>[] = [];
-			for (const [key, entry] of ykv.readableEntries()) {
+			for (const [key, entry] of ykv.entries()) {
 				const result = parseRow(key, entry.val);
 				results.push(result);
 			}
@@ -171,7 +149,7 @@ export function tableHelperOver<
 
 		getAllValid(): TRow[] {
 			const rows: TRow[] = [];
-			for (const [key, entry] of ykv.readableEntries()) {
+			for (const [key, entry] of ykv.entries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'valid') {
 					rows.push(result.row);
@@ -182,7 +160,7 @@ export function tableHelperOver<
 
 		getAllInvalid(): InvalidRowResult[] {
 			const invalid: InvalidRowResult[] = [];
-			for (const [key, entry] of ykv.readableEntries()) {
+			for (const [key, entry] of ykv.entries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'invalid') {
 					invalid.push(result);
@@ -193,7 +171,7 @@ export function tableHelperOver<
 
 		filter(predicate: (row: TRow) => boolean): TRow[] {
 			const rows: TRow[] = [];
-			for (const [key, entry] of ykv.readableEntries()) {
+			for (const [key, entry] of ykv.entries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'valid' && predicate(result.row)) {
 					rows.push(result.row);
@@ -203,7 +181,7 @@ export function tableHelperOver<
 		},
 
 		find(predicate: (row: TRow) => boolean): TRow | undefined {
-			for (const [key, entry] of ykv.readableEntries()) {
+			for (const [key, entry] of ykv.entries()) {
 				const result = parseRow(key, entry.val);
 				if (result.status === 'valid' && predicate(result.row)) {
 					return result.row;
@@ -235,7 +213,7 @@ export function tableHelperOver<
 		},
 
 		clear(): void {
-			const keys = Array.from(ykv.readableEntries()).map(([k]) => k);
+			const keys = Array.from(ykv.entries()).map(([k]) => k);
 			ykv.bulkDelete(keys);
 		},
 
@@ -251,7 +229,7 @@ export function tableHelperOver<
 		},
 
 		count(): number {
-			return ykv.readableEntryCount;
+			return ykv.size;
 		},
 
 		has(id: string): boolean {

@@ -16,6 +16,7 @@ export {
 
 export {
 	YKeyValueLww,
+	type LwwStore,
 	type YKeyValueLwwChange,
 	type YKeyValueLwwChangeHandler,
 	type YKeyValueLwwEntry,

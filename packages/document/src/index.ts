@@ -29,7 +29,7 @@ export {
 } from './attach-sync.js';
 
 export { attachTable, tableHelperOver } from './attach-table.js';
-export { attachKv, kvHelperOver, KV_ARRAY_KEY } from './attach-kv.js';
+export { attachKv, kvHelperOver } from './attach-kv.js';
 export {
 	attachAwareness,
 	awarenessHelperOver,

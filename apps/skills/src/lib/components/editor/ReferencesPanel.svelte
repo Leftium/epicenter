@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import { Spinner } from '@epicenter/ui/spinner';
-	import type { PlainTextHandle } from '@epicenter/workspace';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { workspace } from '$lib/client';
@@ -9,42 +7,12 @@
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let expandedRefId = $state<string | null>(null);
-	let refContent = $state<PlainTextHandle | null>(null);
 
-	let refError = $state<string | null>(null);
-
-	$effect(() => {
-		const id = expandedRefId;
-		if (!id) {
-			refContent = null;
-			refError = null;
-			return;
-		}
-		let cancelled = false;
-		refContent = null;
-		refError = null;
-		workspace.documents.references.content.open(id).then(
-			(openedContent) => {
-				if (cancelled) return;
-				if (expandedRefId !== id) return;
-				refContent = openedContent;
-			},
-			(err) => {
-				if (cancelled) return;
-				console.error('Failed to open reference document:', err);
-				refError =
-					err instanceof Error ? err.message : 'Failed to open document';
-			},
-		);
-
-		return () => {
-			cancelled = true;
-			if (refContent) {
-				workspace.documents.references.content.close(id);
-			}
-			refContent = null;
-		};
-	});
+	const refHandle = $derived(
+		expandedRefId
+			? workspace.documents.references.content.get(expandedRefId)
+			: null,
+	);
 </script>
 
 {#if skillsState.selectedSkillId}
@@ -93,19 +61,9 @@
 								<TrashIcon class="size-3.5 text-muted-foreground" />
 							</Button>
 						</div>
-						{#if expandedRefId === ref.id}
+						{#if expandedRefId === ref.id && refHandle}
 							<div class="h-48 border-t">
-								{#if refError}
-									<div class="flex h-full items-center justify-center">
-										<p class="text-sm text-destructive">{refError}</p>
-									</div>
-								{:else if refContent}
-									<CodeMirrorEditor ytext={refContent.binding} />
-								{:else}
-									<div class="flex h-full items-center justify-center">
-										<Spinner class="size-4 text-muted-foreground" />
-									</div>
-								{/if}
+								<CodeMirrorEditor ytext={refHandle.binding} />
 							</div>
 						{/if}
 					</div>

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
-	import type { RichTextHandle } from '@epicenter/workspace';
 	import { workspace } from '$lib/client';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
@@ -9,31 +8,11 @@
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
 
-	// ─── Document Content ───────────────────────────────────────────────────────────────────────────
-
-	let richTextContent = $state<RichTextHandle | null>(null);
-
-	$effect(() => {
-		const noteId = viewState.selectedNoteId;
-		if (!noteId) {
-			richTextContent = null;
-			return;
-		}
-
-		let cancelled = false;
-		workspace.documents.notes.body.open(noteId).then((openedContent) => {
-			if (cancelled) return;
-			richTextContent = openedContent;
-		});
-
-		return () => {
-			cancelled = true;
-			if (richTextContent) {
-				workspace.documents.notes.body.close(noteId);
-			}
-			richTextContent = null;
-		};
-	});
+	const bodyHandle = $derived(
+		viewState.selectedNoteId
+			? workspace.documents.notes.body.get(viewState.selectedNoteId)
+			: null,
+	);
 </script>
 
 <svelte:window
@@ -74,17 +53,13 @@
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if viewState.selectedNote && richTextContent}
+				{#if viewState.selectedNote && bodyHandle}
 					{#key viewState.selectedNoteId}
 						<HoneycripEditor
-							yxmlfragment={richTextContent.binding}
+							yxmlfragment={bodyHandle.binding}
 							onContentChange={(change) => notesState.updateNoteContent(change)}
 						/>
 					{/key}
-				{:else if viewState.selectedNote}
-					<div class="flex h-full items-center justify-center">
-						<p class="text-muted-foreground">Loading editor…</p>
-					</div>
 				{:else}
 					<div class="flex h-full flex-col items-center justify-center gap-2">
 						<p class="text-muted-foreground">No note selected</p>

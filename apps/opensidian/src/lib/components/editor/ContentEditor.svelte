@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { autocompletion } from '@codemirror/autocomplete';
 	import type { FileId } from '@epicenter/filesystem';
-	import { Spinner } from '@epicenter/ui/spinner';
-	import type { Timeline } from '@epicenter/workspace';
 	import { workspace } from '$lib/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import { opensidian } from '$lib/workspace/definition';
@@ -20,7 +18,7 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	let content = $state<Timeline | null>(null);
+	const handle = $derived(workspace.documents.files.content.get(fileId));
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
@@ -43,32 +41,6 @@
 				]
 			: [sharedLinkDecorations, autocompletion()],
 	);
-
-	$effect(() => {
-		const id = fileId;
-		let cancelled = false;
-		content = null;
-		workspace.documents.files.content.open(id).then((openedContent) => {
-			if (cancelled) return;
-			// Guard against race condition — if file changed while loading, ignore
-			if (fsState.activeFileId !== id) return;
-			content = openedContent;
-		});
-
-		return () => {
-			cancelled = true;
-			if (content) {
-				workspace.documents.files.content.close(id);
-			}
-			content = null;
-		};
-	});
 </script>
 
-{#if content}
-	<CodeMirrorEditor ytext={content.asText()} {extensions} {filename} />
-{:else}
-	<div class="flex h-full items-center justify-center">
-		<Spinner class="size-5 text-muted-foreground" />
-	</div>
-{/if}
+<CodeMirrorEditor ytext={handle.asText()} {extensions} {filename} />

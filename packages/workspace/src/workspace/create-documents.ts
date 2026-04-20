@@ -44,7 +44,7 @@
  * @module
  */
 
-import { Awareness } from 'y-protocols/awareness';
+import { attachAwareness } from '@epicenter/document';
 import * as Y from 'yjs';
 import {
 	defineExtension,
@@ -180,7 +180,11 @@ export function createDocuments<
 	 */
 	function construct(guid: string): DocEntry<TBinding> {
 		const contentYdoc = new Y.Doc({ guid, gc: false });
-		const contentAwareness = new Awareness(contentYdoc);
+		// `attachAwareness` constructs a y-protocols Awareness — its constructor
+		// self-registers `doc.on('destroy', () => this.destroy())`, so disposal
+		// is tied to the Y.Doc automatically. We only need `.raw` here since
+		// per-document awareness has no typed field schema.
+		const contentAwareness = attachAwareness(contentYdoc, {}).raw;
 		const contentBinding = content(contentYdoc);
 
 		// Call document extension factories synchronously.

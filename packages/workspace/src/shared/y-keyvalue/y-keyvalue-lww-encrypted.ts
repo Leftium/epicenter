@@ -147,18 +147,26 @@ export type EncryptedYKeyValueLww<T> = ObservableKvStore<T> & {
  * @example
  * ```typescript
  * // Start in plaintext, transition to encrypted when key arrives
- * const kv = createEncryptedYkvLww<TabData>(yarray);
+ * const kv = createEncryptedYkvLww<TabData>(ydoc, 'tabs');
  * kv.set('tab-1', { url: '...' }); // stored as plaintext
  *
  * kv.activateEncryption(new Map([[1, encryptionKey]]));
  * kv.set('tab-2', { url: '...' }); // stored as EncryptedBlob
  * // tab-1 was re-encrypted during activation
  * ```
+ *
+ * @param ydoc - The Y.Doc that owns the underlying Y.Array
+ * @param arrayKey - Name of the Y.Array under `ydoc.getArray(arrayKey)`
+ * @param initialKeyring - Optional versioned keyring for construction-time
+ *   encryption. If omitted, the store starts in passthrough mode — call
+ *   `activateEncryption()` later to enable encryption.
  */
 export function createEncryptedYkvLww<T>(
-	yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>,
+	ydoc: Y.Doc,
+	arrayKey: string,
 	initialKeyring?: ReadonlyMap<number, Uint8Array>,
 ): EncryptedYKeyValueLww<T> {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | T>>(arrayKey);
 	/**
 	 * The inner LWW store. It sees `EncryptedBlob | T` as its value type—it
 	 * doesn't know or care that some values are ciphertext. Timestamps, conflict

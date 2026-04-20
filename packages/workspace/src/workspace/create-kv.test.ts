@@ -16,15 +16,13 @@ import { expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import { createKv } from '@epicenter/document/internal';
-import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { defineKv } from './define-kv.js';
 import { KV_KEY } from '@epicenter/document';
 
 test('set stores a value that get returns', () => {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedYkvLww(yarray);
+	const ykv = createEncryptedYkvLww<unknown>(ydoc, KV_KEY);
 	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
@@ -35,8 +33,7 @@ test('set stores a value that get returns', () => {
 
 test('get returns defaultValue for unset key', () => {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedYkvLww(yarray);
+	const ykv = createEncryptedYkvLww<unknown>(ydoc, KV_KEY);
 	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
@@ -46,8 +43,7 @@ test('get returns defaultValue for unset key', () => {
 
 test('delete causes get to return defaultValue', () => {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedYkvLww(yarray);
+	const ykv = createEncryptedYkvLww<unknown>(ydoc, KV_KEY);
 	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
@@ -61,22 +57,20 @@ test('delete causes get to return defaultValue', () => {
 
 test('get returns defaultValue for invalid stored data', () => {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedYkvLww(yarray);
+	const ykv = createEncryptedYkvLww<unknown>(ydoc, KV_KEY);
 	const kv = createKv(ykv, {
 		count: defineKv(type('number'), 0),
 	});
 
 	// Write garbage directly to the Y.Array
-	yarray.push([{ key: 'count', val: 'not-a-number', ts: 0 }]);
+	ykv.yarray.push([{ key: 'count', val: 'not-a-number', ts: 0 }]);
 
 	expect(kv.get('count')).toBe(0);
 });
 
 test('observeAll fires for set changes with correct key and value', () => {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedYkvLww(yarray);
+	const ykv = createEncryptedYkvLww<unknown>(ydoc, KV_KEY);
 	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
@@ -101,8 +95,7 @@ test('observeAll fires for set changes with correct key and value', () => {
 
 test('observeAll fires for delete changes', () => {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedYkvLww(yarray);
+	const ykv = createEncryptedYkvLww<unknown>(ydoc, KV_KEY);
 	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
@@ -128,8 +121,7 @@ test('observeAll fires for delete changes', () => {
 
 test('observeAll batches multiple changes in a single callback', () => {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedYkvLww(yarray);
+	const ykv = createEncryptedYkvLww<unknown>(ydoc, KV_KEY);
 	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 		fontSize: defineKv(type('number'), 14),
@@ -167,8 +159,7 @@ test('observeAll batches multiple changes in a single callback', () => {
 
 test('observeAll skips invalid values', () => {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedYkvLww(yarray);
+	const ykv = createEncryptedYkvLww<unknown>(ydoc, KV_KEY);
 	const kv = createKv(ykv, {
 		count: defineKv(type('number'), 0),
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
@@ -181,7 +172,7 @@ test('observeAll skips invalid values', () => {
 
 	// Write garbage directly to the Y.Array (simulating corruption)
 	ydoc.transact(() => {
-		yarray.push([{ key: 'count', val: 'not-a-number', ts: Date.now() }]);
+		ykv.yarray.push([{ key: 'count', val: 'not-a-number', ts: Date.now() }]);
 		// Also set a valid value to trigger the observer
 		kv.set('theme', { mode: 'dark' });
 	});
@@ -198,8 +189,7 @@ test('observeAll skips invalid values', () => {
 
 test('observeAll skips unknown keys', () => {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedYkvLww(yarray);
+	const ykv = createEncryptedYkvLww<unknown>(ydoc, KV_KEY);
 	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
@@ -211,7 +201,7 @@ test('observeAll skips unknown keys', () => {
 
 	// Write directly to Y.Array with a key not in definitions
 	ydoc.transact(() => {
-		yarray.push([{ key: 'unknownKey', val: 'some-value', ts: Date.now() }]);
+		ykv.yarray.push([{ key: 'unknownKey', val: 'some-value', ts: Date.now() }]);
 		// Also set a valid value to trigger the observer
 		kv.set('theme', { mode: 'dark' });
 	});
@@ -228,8 +218,7 @@ test('observeAll skips unknown keys', () => {
 
 test('observeAll returns an unsubscribe function that works', () => {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedYkvLww(yarray);
+	const ykv = createEncryptedYkvLww<unknown>(ydoc, KV_KEY);
 	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});

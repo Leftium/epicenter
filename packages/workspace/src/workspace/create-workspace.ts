@@ -52,7 +52,6 @@
 
 import { attachAwareness, KV_KEY, TableKey } from '@epicenter/document';
 import { createKv, createTable } from '@epicenter/document/internal';
-import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import type { Awareness as YAwareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
@@ -144,14 +143,11 @@ export function createWorkspace<
 	const ydoc = new Y.Doc({ guid: id, gc: gc ?? false });
 
 	const tableEntries = Object.entries(tableDefs).map(([name, definition]) => {
-		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
-		const store = createEncryptedYkvLww(yarray);
+		const store = createEncryptedYkvLww(ydoc, TableKey(name));
 		return { name, store, helper: createTable(store, definition) };
 	});
 
-	const kvStore = createEncryptedYkvLww(
-		ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY),
-	);
+	const kvStore = createEncryptedYkvLww(ydoc, KV_KEY);
 
 	const encryptedStores: readonly EncryptedYKeyValueLww<unknown>[] = [
 		...tableEntries.map(({ store }) => store),

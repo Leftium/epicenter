@@ -16,16 +16,14 @@ import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import { createTable } from '@epicenter/document/internal';
-import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { defineTable } from './define-table.js';
 
 /** Creates Yjs infrastructure for testing */
 function setup() {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('test-table');
-	const ykv = createEncryptedYkvLww(yarray);
-	return { ydoc, yarray, ykv };
+	const ykv = createEncryptedYkvLww<unknown>(ydoc, 'test-table');
+	return { ydoc, yarray: ykv.yarray, ykv };
 }
 
 describe('createTable', () => {

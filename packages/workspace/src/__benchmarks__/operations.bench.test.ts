@@ -10,7 +10,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { type } from 'arktype';
-import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { attachTable } from '@epicenter/document';
 import { createKv } from '@epicenter/document/internal';
@@ -227,8 +226,7 @@ describe('table operations', () => {
 describe('KV operations', () => {
 	test('repeated set on same key (10,000 times)', () => {
 		const ydoc = new Y.Doc();
-		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
-		const ykv = createEncryptedYkvLww(yarray);
+		const ykv = createEncryptedYkvLww<unknown>(ydoc, 'kv');
 		const kv = createKv(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
@@ -248,8 +246,7 @@ describe('KV operations', () => {
 
 	test('set + get alternating (10,000 cycles)', () => {
 		const ydoc = new Y.Doc();
-		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
-		const ykv = createEncryptedYkvLww(yarray);
+		const ykv = createEncryptedYkvLww<unknown>(ydoc, 'kv');
 		const kv = createKv(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
@@ -267,8 +264,7 @@ describe('KV operations', () => {
 
 	test('set + delete cycle (1,000 times)', () => {
 		const ydoc = new Y.Doc();
-		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
-		const ykv = createEncryptedYkvLww(yarray);
+		const ykv = createEncryptedYkvLww<unknown>(ydoc, 'kv');
 		const kv = createKv(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});

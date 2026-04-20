@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import * as Y from 'yjs';
 import { type EncryptedBlob, getKeyVersion, isEncryptedBlob } from '../crypto';
-import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import {
 	createEncryptedYkvLww,
 	type EncryptedYKeyValueLww,
@@ -11,12 +10,12 @@ import {
 /** Create a single-doc encrypted KV for tests. Skips the 4-line Y.Doc ceremony. */
 function setup<T = string>(keyring?: ReadonlyMap<number, Uint8Array>) {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | T>>('data');
 	const kv: EncryptedYKeyValueLww<T> = createEncryptedYkvLww<T>(
-		yarray,
+		ydoc,
+		'data',
 		keyring,
 	);
-	return { ydoc, yarray, kv };
+	return { ydoc, yarray: kv.yarray, kv };
 }
 
 type PlainChange<T> =
@@ -39,13 +38,15 @@ function createEncryptedBlob<T>(
 	entryKey: string,
 ): EncryptedBlob {
 	const helperDoc = new Y.Doc({ guid: 'helper-blob' });
-	const helperArray =
-		helperDoc.getArray<YKeyValueLwwEntry<EncryptedBlob | T>>('helper-data');
-	const helperKv = createEncryptedYkvLww<T>(helperArray, new Map([[1, key]]));
+	const helperKv = createEncryptedYkvLww<T>(
+		helperDoc,
+		'helper-data',
+		new Map([[1, key]]),
+	);
 
 	helperKv.set(entryKey, value);
 
-	const entry = helperArray.toArray()[0];
+	const entry = helperKv.yarray.toArray()[0];
 	if (!entry || !isEncryptedBlob(entry.val)) {
 		throw new Error('Expected helper entry to be encrypted');
 	}
@@ -237,28 +238,28 @@ describe('createEncryptedYkvLww', () => {
 	describe('Mixed plaintext/encrypted (migration)', () => {
 		test('reads plaintext entries as-is when key exists', () => {
 			const key = randomBytes(32);
-			const { yarray } = setup();
+			const { ydoc, yarray } = setup();
 
 			yarray.push([{ key: 'plaintext', val: 'plaintext-value', ts: 1000 }]);
 
-			const kv = createEncryptedYkvLww<string>(yarray, new Map([[1, key]]));
+			const kv = createEncryptedYkvLww<string>(ydoc, 'data', new Map([[1, key]]));
 			expect(kv.get('plaintext')).toBe('plaintext-value');
 		});
 
 		test('reads encrypted entries correctly', () => {
 			const key = randomBytes(32);
-			const { yarray } = setup();
+			const { ydoc, yarray } = setup();
 
 			const encrypted = createEncryptedBlob('encrypted-value', key, 'enc');
 			yarray.push([{ key: 'enc', val: encrypted, ts: 1000 }]);
 
-			const kv = createEncryptedYkvLww<string>(yarray, new Map([[1, key]]));
+			const kv = createEncryptedYkvLww<string>(ydoc, 'data', new Map([[1, key]]));
 			expect(kv.get('enc')).toBe('encrypted-value');
 		});
 
 		test('mixed entries: some plaintext, some encrypted', () => {
 			const key = randomBytes(32);
-			const { yarray } = setup();
+			const { ydoc, yarray } = setup();
 
 			const encrypted = createEncryptedBlob('new-secret', key, 'new');
 			yarray.push([
@@ -266,7 +267,7 @@ describe('createEncryptedYkvLww', () => {
 				{ key: 'new', val: encrypted, ts: 1001 },
 			]);
 
-			const kv = createEncryptedYkvLww<string>(yarray, new Map([[1, key]]));
+			const kv = createEncryptedYkvLww<string>(ydoc, 'data', new Map([[1, key]]));
 
 			expect(kv.get('old')).toBe('old-plaintext');
 			expect(kv.get('new')).toBe('new-secret');
@@ -290,13 +291,8 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const yarray1 =
-				doc1.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const yarray2 =
-				doc2.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-
-			const kv1 = createEncryptedYkvLww<string>(yarray1, new Map([[1, key]]));
-			const kv2 = createEncryptedYkvLww<string>(yarray2, new Map([[1, key]]));
+			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', new Map([[1, key]]));
+			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', new Map([[1, key]]));
 
 			kv1.set('shared-key', 'from-doc1');
 			syncDocs(doc1, doc2);
@@ -313,19 +309,14 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const yarray1 =
-				doc1.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const yarray2 =
-				doc2.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-
-			const kv1 = createEncryptedYkvLww<string>(yarray1, new Map([[1, key]]));
-			const kv2 = createEncryptedYkvLww<string>(yarray2, new Map([[1, key]]));
+			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', new Map([[1, key]]));
+			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', new Map([[1, key]]));
 
 			kv1.set('token', 'abc-123');
 			syncDocs(doc1, doc2);
 
 			expect(kv2.get('token')).toBe('abc-123');
-			expect(isEncryptedBlob(yarray2.toArray()[0]?.val)).toBe(true);
+			expect(isEncryptedBlob(kv2.yarray.toArray()[0]?.val)).toBe(true);
 		});
 
 		test('LWW conflict resolution works through encryption', () => {
@@ -334,19 +325,17 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const yarray1 =
-				doc1.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const yarray2 =
-				doc2.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
+			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', new Map([[1, key]]));
+			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', new Map([[1, key]]));
 
-			yarray1.push([
+			kv1.yarray.push([
 				{
 					key: 'x',
 					val: createEncryptedBlob('from-client-1-earlier', key, 'x'),
 					ts: 1000,
 				},
 			]);
-			yarray2.push([
+			kv2.yarray.push([
 				{
 					key: 'x',
 					val: createEncryptedBlob('from-client-2-later', key, 'x'),
@@ -355,9 +344,6 @@ describe('createEncryptedYkvLww', () => {
 			]);
 
 			syncBoth(doc1, doc2);
-
-			const kv1 = createEncryptedYkvLww<string>(yarray1, new Map([[1, key]]));
-			const kv2 = createEncryptedYkvLww<string>(yarray2, new Map([[1, key]]));
 
 			expect(kv1.get('x')).toBe('from-client-2-later');
 			expect(kv2.get('x')).toBe('from-client-2-later');
@@ -369,13 +355,8 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const yarray1 =
-				doc1.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const yarray2 =
-				doc2.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-
-			const kv1 = createEncryptedYkvLww<string>(yarray1, new Map([[1, key]]));
-			const kv2 = createEncryptedYkvLww<string>(yarray2, new Map([[1, key]]));
+			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', new Map([[1, key]]));
+			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', new Map([[1, key]]));
 
 			kv1.set('shared', 'value-from-doc1');
 			kv2.set('shared', 'value-from-doc2');

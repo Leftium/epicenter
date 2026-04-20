@@ -346,10 +346,9 @@ describe('binary storage overhead', () => {
 
 		// Create Y.Doc with binary blobs (current format)
 		const binaryDoc = new Y.Doc({ guid: 'bench-binary' });
-		const binaryArray =
-			binaryDoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 		const binaryKv = createEncryptedYkvLww<string>(
-			binaryArray,
+			binaryDoc,
+			'data',
 			new Map([[1, key]]),
 		);
 
@@ -362,7 +361,7 @@ describe('binary storage overhead', () => {
 		const base64Array = base64Doc.getArray<YKeyValueLwwEntry<string>>('data');
 
 		// Extract binary entries and convert to base64 string representation
-		const binaryEntries = binaryArray.toArray();
+		const binaryEntries = binaryKv.yarray.toArray();
 		const base64Entries: YKeyValueLwwEntry<string>[] = binaryEntries.map(
 			(entry) => {
 				const val = entry.val;

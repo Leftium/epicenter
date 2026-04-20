@@ -113,10 +113,14 @@ export type CreateDocumentsConfig<
 	/** Content strategy — receives the document Y.Doc, returns the content object from `open()`. */
 	content: ContentStrategy<TBinding>;
 	/**
-	 * Called on every content Y.Doc change (local and remote). Return the
-	 * fields to write to the table row. The row write fires `table.observe`,
-	 * which is how materializers and other consumers react to content changes.
-	 * Return at least one field -- returning `{}` is a silent no-op.
+	 * Fires when the content Y.Doc changes from a local edit. Remote updates
+	 * from sync are filtered out inside {@link createDocuments} — see the
+	 * `DOCUMENTS_ORIGIN` / Symbol-origin guard in the update observer.
+	 *
+	 * Return the fields to write to the table row — typically
+	 * `{ updatedAt: now() }`. The row write fires `table.observe`, which is
+	 * how materializers and other consumers react to content changes.
+	 * Return at least one field; `{}` is a silent no-op.
 	 */
 	onUpdate: () => Partial<Omit<TRow, 'id'>>;
 	/** The table helper — needed to write `onUpdate` fields to the row. */

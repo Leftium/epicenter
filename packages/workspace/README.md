@@ -322,11 +322,28 @@ Tables can declare document-backed content via `.withDocument(...)`. That create
 
 If you define a `files` table with `.withDocument('content', ...)`, you get this shape at runtime:
 
-- `client.documents.files.content.open(rowOrGuid)`
-- `client.documents.files.content.close(rowOrGuid)`
-- `client.documents.files.content.closeAll()`
+- `client.documents.files.content.get(rowOrGuid)` — **sync**, returns a cached handle keyed by GUID. Construct once, reuse for the lifetime of the workspace.
+- `client.documents.files.content.read(rowOrGuid)` — high-level sugar: awaits `whenLoaded`, returns the content as a string.
+- `client.documents.files.content.write(rowOrGuid, text)` — replaces content.
+- `client.documents.files.content.append(rowOrGuid, text)` — appends text (uses `appendText` when the strategy exposes one, else read-concat-write).
+- `client.documents.files.content.open(rowOrGuid)` — legacy async accessor; equivalent to `get(id)` + `await handle.whenLoaded`.
+- `client.documents.files.content.close(rowOrGuid)` / `.closeAll()` — rarely needed; the framework auto-closes on row delete and workspace dispose.
 
-An open handle is a timeline API with methods such as `read()`, `write(...)`, `asText()`, `asRichText()`, and `asSheet()`.
+The handle returned from `.get()` is the strategy binding plus framework extras: `handle.read() / .write(...) / .binding / .asText() / .asRichText()` (strategy methods) and `handle.whenLoaded / .ydoc` (framework extras). For UI components, the idiomatic shape is:
+
+```svelte
+<script lang="ts">
+  const handle = $derived(workspace.documents.files.content.get(fileId));
+</script>
+
+<Editor ytext={handle.asText()} />
+```
+
+No `$effect`, no race guards, no close — the cache owns lifetime and the editor binds the Y type directly (tolerating empty-until-loaded).
+
+### When to skip `.withDocument` and build your own opener
+
+Framework-managed documents are the right fit when the doc has **multiple consumers** (editor + filesystem + actions + materializer) that need to share a single Y.Doc instance per guid. One of Epicenter's apps — Fuji — uses the opposite pattern: per-entry content docs with **component-owned lifecycle**, constructed via `attach*` primitives from `@epicenter/document`. See `apps/fuji/src/lib/entry-content-doc.ts` for the reference shape: `new Y.Doc` + `attachRichText` + `attachIndexedDb` + `attachSync` + explicit `dispose()` on unmount. That pattern is better when there's only one consumer and you want disposal to coincide with component unmount.
 
 ## Column Types
 
@@ -484,12 +501,21 @@ async function documentExample() {
 		_v: 1,
 	});
 
-	const handle = await workspace.documents.files.content.open('doc-1');
-	handle.content.write('# Hello from a document');
-	console.log(handle.content.read());
-	console.log(handle.content.currentType);
-	await workspace.documents.files.content.close('doc-1');
-	await workspace.dispose();
+	// Sync access — returns a cached handle keyed by GUID. The handle IS the
+	// strategy binding (Timeline, PlainTextHandle, RichTextHandle) plus
+	// framework extras (`whenLoaded`, `ydoc`).
+	const handle = workspace.documents.files.content.get('doc-1');
+	handle.write('# Hello from a document');
+	console.log(handle.read());
+	console.log(handle.currentType);
+
+	// Or use the high-level sugar — string in, string out. Awaits `whenLoaded`
+	// internally so callers don't need to think about load order.
+	await workspace.documents.files.content.write('doc-1', '# Updated');
+	const text = await workspace.documents.files.content.read('doc-1');
+	console.log(text);
+
+	await workspace.dispose();   // closes all cached handles
 	return handle;
 }
 

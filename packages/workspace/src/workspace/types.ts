@@ -158,14 +158,19 @@ export type RichTextHandle = ContentHandle & {
 /**
  * A named document declared via `.withDocument()`.
  *
- * Maps a document concept (e.g., 'content') to a GUID column and an `onUpdate` callback
- * that fires whenever the content Y.Doc changes -- both local edits and remote sync updates.
+ * Maps a document concept (e.g., 'content') to a GUID column and an `onUpdate`
+ * callback that fires whenever the content Y.Doc changes from a local edit.
+ * Remote updates arriving via sync are skipped — the tab that originated the
+ * edit has already bumped metadata, and it arrives here via workspace table
+ * sync. Without this filtering, every tab would independently call `onUpdate`
+ * with a fresh timestamp and they would ping-pong forever without converging.
  *
  * - `guid`: The column storing the Y.Doc GUID (must be a string column)
- * - `onUpdate`: Zero-argument callback returning `Partial<Omit<TRow, 'id'>>` -- the fields
- *   to write when the doc changes. Must return at least one field so the table row actually
- *   changes and `table.observe` fires. Returning `{}` is a no-op that silently breaks
- *   downstream observers (materializers, indexes) that depend on the table observer.
+ * - `onUpdate`: Zero-argument callback returning `Partial<Omit<TRow, 'id'>>` —
+ *   fields to write to the row when the doc changes locally. Must return at
+ *   least one field so the row actually changes and `table.observe` fires.
+ *   Returning `{}` is a no-op that silently breaks downstream observers
+ *   (materializers, indexes) depending on the table observer.
  *
  * @typeParam TGuid - Literal string type of the guid column name
  * @typeParam TRow - The row type of the table (used to type-check `onUpdate` return)
@@ -179,10 +184,13 @@ export type DocumentConfig<
 	content: ContentStrategy<TBinding>;
 	guid: TGuid;
 	/**
-	 * Called on every content Y.Doc change (local and remote). Return the
-	 * fields to write to the table row -- typically `{ updatedAt: now() }`.
-	 * The row write fires `table.observe`, which is how materializers and
-	 * other consumers learn that content changed. Return at least one field.
+	 * Fires when the content Y.Doc changes from a local edit. Remote updates
+	 * arriving via sync are skipped (see {@link DocumentConfig} for the why).
+	 *
+	 * Return the fields to write to the table row — typically
+	 * `{ updatedAt: now() }`. The row write fires `table.observe`, which is
+	 * how materializers and other consumers learn that content changed.
+	 * Return at least one field; `{}` is a silent no-op.
 	 */
 	onUpdate: () => Partial<Omit<TRow, 'id'>>;
 };

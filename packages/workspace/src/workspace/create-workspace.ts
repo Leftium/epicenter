@@ -50,13 +50,13 @@
  * ```
  */
 
+import { attachAwareness, KV_KEY, TableKey } from '@epicenter/document';
 import {
-	createAwarenessHelper,
 	createKvHelper,
 	createTableHelper,
 } from '@epicenter/document/internal';
 import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
-import { Awareness } from 'y-protocols/awareness';
+import type { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
@@ -94,7 +94,6 @@ import type {
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
 } from './types.js';
-import { KV_KEY, TableKey } from '@epicenter/document';
 
 /**
  * Create a workspace client with chainable extension support.
@@ -168,8 +167,10 @@ export function createWorkspace<
 		tableEntries.map(({ name, helper }) => [name, helper]),
 	) as TablesHelper<TTableDefinitions>;
 	const kvHelper: KvHelper<TKvDefinitions> = createKvHelper(kvStore, kvDefs);
-	const awareness: AwarenessHelper<TAwarenessDefinitions> =
-		createAwarenessHelper(new Awareness(ydoc), awarenessDefs);
+	const awareness: AwarenessHelper<TAwarenessDefinitions> = attachAwareness(
+		ydoc,
+		awarenessDefs,
+	);
 
 	// Fingerprint of the last-applied encryption keys for same-key dedup.
 	// Token refreshes fire onLogin repeatedly with identical keys — this

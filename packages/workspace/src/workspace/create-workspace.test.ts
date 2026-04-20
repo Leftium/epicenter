@@ -691,6 +691,16 @@ describe('createWorkspace', () => {
 	describe('lifecycle baseline', () => {
 		const def = defineWorkspace({ id: 'lifecycle-test' });
 
+		test('gc defaults to false to preserve deletion markers for sync', () => {
+			const client = createWorkspace({ id: 'gc-default' });
+			expect(client.ydoc.gc).toBe(false);
+		});
+
+		test('gc option overrides the default', () => {
+			const client = createWorkspace({ id: 'gc-on', gc: true });
+			expect(client.ydoc.gc).toBe(true);
+		});
+
 		test('builder branching creates isolated extension sets', () => {
 			const base = createWorkspace(def).withExtension('a', () => ({
 				exports: { value: 'a' },

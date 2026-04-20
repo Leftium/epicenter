@@ -78,7 +78,6 @@ export const DOCUMENTS_ORIGIN = Symbol('documents');
 type DocEntry<TBinding extends ContentHandle = ContentHandle> = {
 	ydoc: Y.Doc;
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
-	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Record<string, any>>;
 	extensionDisposers: (() => MaybePromise<void>)[];
 	unobserve: () => void;

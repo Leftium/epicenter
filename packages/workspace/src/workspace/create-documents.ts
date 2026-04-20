@@ -98,8 +98,6 @@ export const DOCUMENTS_ORIGIN = Symbol('documents');
  */
 type DocEntry<TBinding extends ContentHandle = ContentHandle> = {
 	handle: DocumentHandle<TBinding>;
-	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
-	extensions: Record<string, Record<string, any>>;
 	extensionDisposers: (() => MaybePromise<void>)[];
 	extensionActivators: (() => void)[];
 	extensionIdlers: (() => void)[];
@@ -328,7 +326,6 @@ export function createDocuments<
 		// invoked before the entry is installed in the cache.
 		const entry: DocEntry<TBinding> = {
 			handle,
-			extensions: resolvedExtensions,
 			extensionDisposers: disposers,
 			extensionActivators: activators,
 			extensionIdlers: idlers,

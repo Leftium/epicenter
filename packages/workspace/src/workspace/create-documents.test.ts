@@ -37,7 +37,7 @@ function setupTables() {
 function setup(
 	overrides?: Pick<
 		CreateDocumentsConfig<typeof fileSchema.infer>,
-		'documentExtensions'
+		'documentExtensions' | 'graceMs'
 	>,
 ) {
 	const { ydoc, tables } = setupTables();
@@ -509,6 +509,199 @@ describe('createDocuments', () => {
 			await documents.open('f1');
 			expect(firstExtensionSeen).toBe(true);
 		});
+	});
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// bind() / release — idle-able extension lifecycle
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('handle.bind() / release lifecycle', () => {
+	/**
+	 * Build a counting idle-able extension that records every onActive /
+	 * onIdle call. Also exposes its init promise so we can await it from the
+	 * outside.
+	 */
+	function countingIdleExtension() {
+		let active = 0;
+		let idle = 0;
+		return {
+			counts: () => ({ active, idle }),
+			registration: {
+				key: 'counter',
+				factory: () => ({
+					exports: {},
+					onActive: () => {
+						active++;
+					},
+					onIdle: () => {
+						idle++;
+					},
+				}),
+			},
+		};
+	}
+
+	test('construct alone does not activate (refcount 0)', async () => {
+		const ext = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [ext.registration],
+		});
+		documents.get('f1');
+		// No bind → onActive must not have fired.
+		expect(ext.counts()).toEqual({ active: 0, idle: 0 });
+	});
+
+	test('first bind activates; last release + grace idles', async () => {
+		const ext = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [ext.registration],
+			graceMs: 10,
+		});
+		const handle = documents.get('f1');
+
+		const release = handle.bind();
+		expect(ext.counts()).toEqual({ active: 1, idle: 0 });
+
+		release();
+		// Still in grace period; onIdle has not fired yet.
+		expect(ext.counts().idle).toBe(0);
+
+		await new Promise((r) => setTimeout(r, 20));
+		expect(ext.counts()).toEqual({ active: 1, idle: 1 });
+	});
+
+	test('multiple binds refcount; last release schedules idle', async () => {
+		const ext = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [ext.registration],
+			graceMs: 10,
+		});
+		const handle = documents.get('f1');
+
+		const r1 = handle.bind();
+		const r2 = handle.bind();
+		expect(ext.counts()).toEqual({ active: 1, idle: 0 }); // only 0→1 activates
+
+		r1();
+		// refcount 1 > 0 → no idle scheduled
+		await new Promise((r) => setTimeout(r, 20));
+		expect(ext.counts().idle).toBe(0);
+
+		r2();
+		await new Promise((r) => setTimeout(r, 20));
+		expect(ext.counts()).toEqual({ active: 1, idle: 1 });
+	});
+
+	test('re-bind during grace cancels the pending idle', async () => {
+		const ext = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [ext.registration],
+			graceMs: 20,
+		});
+		const handle = documents.get('f1');
+
+		const r1 = handle.bind();
+		r1();
+		// Grace started. Bind again before it fires.
+		await new Promise((r) => setTimeout(r, 5));
+		const r2 = handle.bind();
+
+		await new Promise((r) => setTimeout(r, 30));
+		// Still bound — no idle fired.
+		expect(ext.counts().idle).toBe(0);
+
+		r2();
+		await new Promise((r) => setTimeout(r, 30));
+		expect(ext.counts()).toEqual({ active: 1, idle: 1 });
+	});
+
+	test('release() is idempotent (double-release does not double-decrement)', async () => {
+		const ext = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [ext.registration],
+			graceMs: 10,
+		});
+		const handle = documents.get('f1');
+
+		const r1 = handle.bind();
+		const r2 = handle.bind();
+
+		r1();
+		r1(); // double-release
+		// refcount should still be 1 — r2 still holds.
+		await new Promise((r) => setTimeout(r, 20));
+		expect(ext.counts().idle).toBe(0);
+
+		r2();
+		await new Promise((r) => setTimeout(r, 20));
+		expect(ext.counts()).toEqual({ active: 1, idle: 1 });
+	});
+
+	test('0 → 1 → 0 → 1 cycles onActive again', async () => {
+		const ext = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [ext.registration],
+			graceMs: 5,
+		});
+		const handle = documents.get('f1');
+
+		handle.bind()();
+		await new Promise((r) => setTimeout(r, 15));
+		expect(ext.counts()).toEqual({ active: 1, idle: 1 });
+
+		handle.bind();
+		expect(ext.counts().active).toBe(2);
+	});
+
+	test('close cancels pending idle timer', async () => {
+		const ext = countingIdleExtension();
+		const { documents } = setup({
+			documentExtensions: [ext.registration],
+			graceMs: 50,
+		});
+		const handle = documents.get('f1');
+		const release = handle.bind();
+		release();
+		// Grace pending. Close before it fires.
+		await documents.close('f1');
+		await new Promise((r) => setTimeout(r, 80));
+		// onIdle must NOT have fired — dispose ran instead.
+		expect(ext.counts().idle).toBe(0);
+	});
+
+	test('extension without onActive/onIdle is unaffected', async () => {
+		// A plain extension with no hooks should be invisible to bind/release.
+		let initCount = 0;
+		let disposeCount = 0;
+		const { documents } = setup({
+			documentExtensions: [
+				{
+					key: 'plain',
+					factory: () => ({
+						exports: {},
+						init: (async () => {
+							initCount++;
+						})(),
+						dispose: () => {
+							disposeCount++;
+						},
+					}),
+				},
+			],
+			graceMs: 5,
+		});
+		const handle = documents.get('f1');
+		await handle.whenLoaded;
+		expect(initCount).toBe(1);
+
+		handle.bind()();
+		await new Promise((r) => setTimeout(r, 15));
+		// Idle fired, but plain extension has no onIdle so nothing happens.
+		expect(disposeCount).toBe(0);
+
+		await documents.close('f1');
+		expect(disposeCount).toBe(1);
 	});
 });
 

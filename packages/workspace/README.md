@@ -329,17 +329,32 @@ If you define a `files` table with `.withDocument('content', ...)`, you get this
 - `client.documents.files.content.open(rowOrGuid)` — legacy async accessor; equivalent to `get(id)` + `await handle.whenLoaded`.
 - `client.documents.files.content.close(rowOrGuid)` / `.closeAll()` — call `close()` when you delete the underlying row; `closeAll()` runs automatically at workspace dispose.
 
-The handle returned from `.get()` is the strategy binding plus framework extras: `handle.read() / .write(...) / .binding / .asText() / .asRichText()` (strategy methods) and `handle.whenLoaded / .ydoc` (framework extras). For UI components, the idiomatic shape is:
+The handle returned from `.get()` is the strategy binding plus framework extras: `handle.read() / .write(...) / .binding / .asText() / .asRichText()` (strategy methods) and `handle.whenLoaded / .ydoc / .bind()` (framework extras). For UI components, the idiomatic shape is:
 
 ```svelte
 <script lang="ts">
   const handle = $derived(workspace.documents.files.content.get(fileId));
+  $effect(() => {
+    return handle.bind();   // sync transport lives while this editor is mounted
+  });
 </script>
 
-<Editor ytext={handle.asText()} />
+<Editor ytext={handle.binding} />
 ```
 
-No `$effect`, no race guards, no close — the cache owns lifetime and the editor binds the Y type directly (tolerating empty-until-loaded).
+One `$effect`, no race guards, no close. The `$derived` swaps handles when the selection changes; the `$effect` cleanup releases the old bind and re-runs to bind the new one atomically.
+
+#### Bind / release — why the extra line
+
+The Y.Doc and its IndexedDB persistence are framework-owned and stay alive for the workspace's lifetime — opening a doc is cheap and we never evict. Network sync is different: an open WebSocket per cached doc scales poorly. So sync is gated on active consumers via `handle.bind()`.
+
+- `handle.bind()` retains the sync transport and returns a release function.
+- The framework refcounts binds per guid. Extensions' `onActive` hooks fire on the 0 → 1 transition; `onIdle` hooks fire after a grace period (30 s default) once the last bind is released.
+- A fresh bind during the grace window cancels the pending idle, so rapid nav doesn't flap the socket.
+- **Idle docs keep local state.** The Y.Doc, IndexedDB persistence, and buffered updates all stay live. When something re-binds, the sync provider reconnects and the CRDT delta-syncs — no cold start, no lost edits.
+- `.read()` / `.write()` / `.append()` do **not** auto-bind. They operate on local state. If you need sync-fresh programmatic reads, bind explicitly (and await connection status via `client.extensions.sync.onStatusChange` or similar).
+
+Workspace-scoped sync (the top-level `.withExtension('sync', …)` on the workspace Y.Doc) is always-active — the framework calls `onActive` automatically after init. Only per-document sync participates in bind/release. The grace window defaults to 30 seconds; extension authors that want a different default can override it when calling `createDocuments` directly.
 
 ### When to skip `.withDocument` and build your own opener
 

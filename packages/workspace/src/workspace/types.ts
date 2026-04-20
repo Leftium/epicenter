@@ -53,6 +53,8 @@ export type {
 	KvDefinitions,
 	LastSchema,
 	NotFoundResult,
+	PlainTextAttachment,
+	RichTextAttachment,
 	RowResult,
 	Table,
 	Tables,
@@ -127,29 +129,10 @@ export type ContentHandle = {
 	write(text: string): void;
 };
 
-/**
- * Plain text content handle — wraps Y.Text with read/write and a binding getter.
- *
- * The `binding` property exposes the raw Y.Text for editor integration
- * (CodeMirror via y-codemirror, Monaco, etc.). Use `read()`/`write()`
- * for programmatic access; use `binding` when wiring up an editor.
- */
-export type PlainTextHandle = ContentHandle & {
-	/** The raw Y.Text for editor binding (CodeMirror, Monaco, etc.). */
-	binding: Y.Text;
-};
-
-/**
- * Rich text content handle — wraps Y.XmlFragment with read/write and a binding getter.
- *
- * The `binding` property exposes the raw Y.XmlFragment for ProseMirror/TipTap
- * integration via y-prosemirror. Use `read()`/`write()` for programmatic access;
- * use `binding` when wiring up a block editor.
- */
-export type RichTextHandle = ContentHandle & {
-	/** The raw Y.XmlFragment for editor binding (ProseMirror, TipTap, etc.). */
-	binding: Y.XmlFragment;
-};
+// `PlainTextAttachment` / `RichTextAttachment` are re-exported above from
+// `@epicenter/document`. They're the canonical shapes returned by
+// `attachPlainText` / `attachRichText` and by the `plainText` / `richText`
+// strategies (which delegate to them). Both satisfy `ContentHandle`.
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT CONFIG TYPES

@@ -134,8 +134,8 @@ export type {
 	DocumentConfig,
 	Documents,
 	DocumentsHelper,
-	PlainTextHandle,
-	RichTextHandle,
+	PlainTextAttachment,
+	RichTextAttachment,
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,

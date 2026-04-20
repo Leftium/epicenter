@@ -770,16 +770,36 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 			return handshakeComplete ? 'connected' : 'failed';
 		}
 
-		// ── Attach listeners + start ──
+		// ── Attach listeners ──
 
 		doc.on('updateV2', handleDocUpdate);
 		awareness.on('update', handleAwarenessUpdate);
 
-		const init = (async () => {
-			await priorInit;
+		/**
+		 * Start the supervisor loop. Called by the framework on first
+		 * `onActive` — at the workspace scope that's immediately after `init`;
+		 * at a per-document scope it's on first `handle.bind()` (and again on
+		 * every 0 → 1 transition after an idle period).
+		 *
+		 * Idempotent: if already `'online'`, this is a no-op so repeated
+		 * activations during the grace window don't double-run the loop.
+		 */
+		function goOnline() {
+			if (desired === 'online') return;
 			desired = 'online';
 			manageWindowListeners('add');
 			runLoop();
+		}
+
+		/**
+		 * init stays passive — the sync extension opts into the bind/release
+		 * lifecycle by implementing `onActive` / `onIdle`, so the framework
+		 * (not init) decides when to connect. At the workspace scope the
+		 * framework calls `onActive` immediately after this init resolves; at
+		 * the per-doc scope it waits for `handle.bind()`.
+		 */
+		const init = (async () => {
+			await priorInit;
 		})();
 
 		// ── Zone 4: Public API ──
@@ -884,6 +904,12 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				bc.dispose?.();
 				status.clear();
 			},
+			// Opt into the framework's bind/release lifecycle. `onActive` fires
+			// when a consumer binds the handle (or immediately after init at the
+			// workspace scope); `onIdle` fires after the grace period once the
+			// last bind has been released.
+			onActive: goOnline,
+			onIdle: goOffline,
 		};
 	};
 }

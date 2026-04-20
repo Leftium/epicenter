@@ -58,7 +58,6 @@ export function createKvHelper<TKvDefinitions extends KvDefinitions>(
 		},
 
 		set(key, value) {
-			if (!definitions[key]) throw new Error(`Unknown KV key: ${key}`);
 			ykv.set(key, value);
 		},
 

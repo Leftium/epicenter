@@ -13,6 +13,43 @@ import type {
 } from '@standard-schema/spec';
 import type { JsonObject } from 'wellcrafted/json';
 import type { Awareness as YAwareness } from 'y-protocols/awareness';
+import type * as Y from 'yjs';
+
+// ════════════════════════════════════════════════════════════════════════════
+// CONTENT HANDLE PRIMITIVES
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Base contract every content attachment must satisfy.
+ *
+ * `PlainTextAttachment`, `RichTextAttachment`, and `Timeline` all satisfy
+ * this shape — consumers can always `read()` and `write()` without
+ * touching Y.Doc internals. Attachments encapsulate `transact()` and
+ * whatever serialization their underlying shared type needs.
+ */
+export type ContentHandle = {
+	read(): string;
+	write(text: string): void;
+};
+
+/**
+ * A content strategy factory — receives a content Y.Doc and returns a typed binding.
+ *
+ * The binding is whatever the strategy wants to expose: a Y.Text for plain text,
+ * a Y.XmlFragment for rich text, or a custom object for complex content types
+ * (e.g., a timeline with mode switching).
+ *
+ * Called once per document open. Each call gets a fresh Y.Doc.
+ *
+ * @example
+ * ```typescript
+ * const plainText: ContentStrategy<PlainTextAttachment> = (ydoc) =>
+ *   attachPlainText(ydoc);
+ * ```
+ */
+export type ContentStrategy<
+	TBinding extends ContentHandle = ContentHandle,
+> = (ydoc: Y.Doc) => TBinding;
 
 // ════════════════════════════════════════════════════════════════════════════
 // STANDARD SCHEMA HELPERS

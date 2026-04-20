@@ -14,6 +14,8 @@ import type {
 	AwarenessDefinitions,
 	BaseRow,
 	CombinedStandardSchema,
+	ContentHandle,
+	ContentStrategy,
 	Kv,
 	KvDefinitions,
 	LastSchema,
@@ -42,6 +44,8 @@ export type {
 	AwarenessState,
 	BaseRow,
 	CombinedStandardSchema,
+	ContentHandle,
+	ContentStrategy,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,
@@ -92,47 +96,13 @@ export type TableDefinition<
 	documents: TDocuments;
 };
 
-/**
- * A content strategy factory — receives a content Y.Doc and returns a typed binding.
- *
- * The binding is whatever the strategy wants to expose: a Y.Text for plain text,
- * a Y.XmlFragment for rich text, or a custom object with methods for complex
- * content types like chat trees.
- *
- * Called once per document open. Each call gets a fresh Y.Doc.
- *
- * @example
- * ```typescript
- * // Simple: return a Y.Text
- * const myStrategy: ContentStrategy<Y.Text> = (ydoc) => ydoc.getText('content');
- *
- * // Complex: return a custom binding object
- * const chatTree: ContentStrategy<ChatTreeBinding> = (ydoc) => ({
- *   nodes: ydoc.getMap('nodes'),
- *   addMessage(msg) {
- *     // ...
- *   },
- * });
- * ```
- */
-export type ContentStrategy<TBinding extends ContentHandle = ContentHandle> = (ydoc: Y.Doc) => TBinding;
-
-/**
- * Base contract every content strategy must satisfy.
- *
- * Consumers can always `read()` and `write()` regardless of strategy.
- * This ensures no consumer ever needs direct `ydoc` access for basic
- * content operations — the strategy encapsulates `transact()` internally.
- */
-export type ContentHandle = {
-	read(): string;
-	write(text: string): void;
-};
-
-// `PlainTextAttachment` / `RichTextAttachment` are re-exported above from
-// `@epicenter/document`. They're the canonical shapes returned by
-// `attachPlainText` / `attachRichText` and by the `plainText` / `richText`
-// strategies (which delegate to them). Both satisfy `ContentHandle`.
+// `ContentHandle`, `ContentStrategy`, `PlainTextAttachment`, and
+// `RichTextAttachment` are re-exported above from `@epicenter/document`.
+// They live there because they're primitive shapes — any `attach*` function
+// that returns `{ read, write }` satisfies ContentHandle, and any factory
+// producing such a value matches ContentStrategy. The `plainText` / `richText`
+// strategies in strategies.ts delegate to attachPlainText / attachRichText
+// directly.
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT CONFIG TYPES

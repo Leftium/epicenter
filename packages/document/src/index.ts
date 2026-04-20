@@ -50,6 +50,8 @@ export type {
 	AwarenessState,
 	BaseRow,
 	CombinedStandardSchema,
+	ContentHandle,
+	ContentStrategy,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,

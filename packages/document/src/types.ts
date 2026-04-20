@@ -100,15 +100,14 @@ export type LastSchema<T extends readonly CombinedStandardSchema[]> =
 /**
  * A table definition created by `defineTable(schema)` or `defineTable(v1, v2, ...).migrate(fn)`.
  *
- * Note: workspace's `defineTable()` adds a `documents` field via `.withDocument()`.
- * That field is preserved by the wider workspace type — document only cares about
- * `schema` and `migrate`.
+ * Workspace's `TableDefinition` is a structural superset — it adds a
+ * `documents` field via `.withDocument()`. Values from workspace's wider
+ * type satisfy this one by subtyping.
  *
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
  */
 export type TableDefinition<
 	TVersions extends readonly CombinedStandardSchema<BaseRow>[] = readonly CombinedStandardSchema<BaseRow>[],
-	TDocuments extends Record<string, unknown> = Record<string, never>,
 > = {
 	schema: CombinedStandardSchema<
 		unknown,
@@ -117,7 +116,6 @@ export type TableDefinition<
 	migrate: (
 		row: StandardSchemaV1.InferOutput<TVersions[number]>,
 	) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
-	documents: TDocuments;
 };
 
 /** Extract the row type from a TableDefinition */
@@ -131,7 +129,7 @@ export type InferTableRow<T> = T extends {
 export type TableDefinitions = Record<
 	string,
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
-	TableDefinition<any, any>
+	TableDefinition<any>
 >;
 
 // ════════════════════════════════════════════════════════════════════════════

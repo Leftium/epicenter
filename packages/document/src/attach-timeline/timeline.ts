@@ -169,8 +169,8 @@ export type Timeline = {
 	observe(callback: () => void): () => void;
 };
 
-export function attachTimeline(ydoc: Y.Doc): Timeline {
-	const timeline = ydoc.getArray<TimelineYMap>('timeline');
+export function attachTimeline(ydoc: Y.Doc, key = 'timeline'): Timeline {
+	const timeline = ydoc.getArray<TimelineYMap>(key);
 
 	// ── State ─────────────────────────────────────────────────────────────
 

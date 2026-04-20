@@ -1,8 +1,9 @@
 /**
  * # YKeyValue - Efficient Key-Value Store for Yjs
  *
- * **Not used in production.** The workspace uses `YKeyValueLww` (timestamp-based)
- * exclusively. This positional (rightmost-wins) implementation is kept for:
+ * @internal Not used in production. The workspace uses `YKeyValueLww`
+ * (timestamp-based) exclusively. This positional (rightmost-wins)
+ * implementation is kept for:
  * - Comparison benchmarks (`__benchmarks__/conflict-resolution.bench.test.ts`) that document WHY LWW was chosen
  * - Reference implementation showing the simpler conflict resolution model
  *

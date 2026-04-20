@@ -12,9 +12,7 @@ export function attachPlainText(
 ): PlainTextAttachment {
 	const ytext = ydoc.getText(key);
 	return {
-		get binding() {
-			return ytext;
-		},
+		binding: ytext,
 		read() {
 			return ytext.toString();
 		},

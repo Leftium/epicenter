@@ -45,9 +45,7 @@ export function createKvHelper<TKvDefinitions extends KvDefinitions>(
 ): KvHelper<TKvDefinitions> {
 	return {
 		get(key) {
-			const definition = definitions[key];
-			if (!definition) throw new Error(`Unknown KV key: ${key}`);
-
+			const definition = definitions[key]!;
 			const raw = ykv.get(key);
 			if (raw === undefined) return definition.defaultValue;
 
@@ -65,13 +63,11 @@ export function createKvHelper<TKvDefinitions extends KvDefinitions>(
 		},
 
 		delete(key) {
-			if (!definitions[key]) throw new Error(`Unknown KV key: ${key}`);
 			ykv.delete(key);
 		},
 
 		observe(key, callback) {
-			const definition = definitions[key];
-			if (!definition) throw new Error(`Unknown KV key: ${key}`);
+			const definition = definitions[key]!;
 
 			const handler = (
 				changes: Map<string, YKeyValueLwwChange<unknown>>,

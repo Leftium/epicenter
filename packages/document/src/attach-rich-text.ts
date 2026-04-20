@@ -12,9 +12,7 @@ export function attachRichText(
 ): RichTextAttachment {
 	const fragment = ydoc.getXmlFragment(key);
 	return {
-		get binding() {
-			return fragment;
-		},
+		binding: fragment,
 		read() {
 			return fragmentToPlaintext(fragment);
 		},

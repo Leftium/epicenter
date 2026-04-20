@@ -13,9 +13,9 @@
  *   `await` between `Map.get` and `Map.set`).
  * - Guid-stability check — catches nondeterministic `guid` templates
  *   (e.g., `Math.random()`) on the second `.get(sameId)`.
- * - Ref-count + grace-period disposal. `bind()` returns an idempotent
+ * - Ref-count + grace-period disposal. `retain()` returns an idempotent
  *   release closure; last release schedules disposal after `graceMs`;
- *   a fresh bind before grace elapses cancels the pending disposal.
+ *   a fresh retain before grace elapses cancels the pending disposal.
  * - Aggregated `whenLoaded`: scans top-level attachments for a
  *   `whenLoaded: Promise<void>` property and `Promise.all`s them.
  * - `close(id)` forces immediate disposal; `closeAll()` coordinates app
@@ -29,9 +29,13 @@
  */
 
 import type * as Y from 'yjs';
-import type { DocumentFactory, DocumentHandle } from './types.js';
+import type {
+	DocumentFactory,
+	DocumentHandle,
+} from './define-document.types.js';
 
 const DEFAULT_GRACE_MS = 30_000;
+const RESERVED_KEYS = ['retain', 'whenLoaded'] as const;
 
 type DocEntry<TAttach extends { ydoc: Y.Doc }> = {
 	handle: DocumentHandle<TAttach>;
@@ -55,9 +59,11 @@ type DocEntry<TAttach extends { ydoc: Y.Doc }> = {
  * @param build - Closure invoked on cache miss. Must return `{ ydoc, ... }`.
  *                `ydoc.guid` should be a deterministic function of `id` —
  *                the framework asserts stability on the second construction.
+ *                Must NOT return top-level `retain` or `whenLoaded` — those
+ *                names are reserved by the framework.
  * @param opts  - `graceMs` (default 30_000): milliseconds to wait after the
- *                last bind release before destroying the Y.Doc. A fresh
- *                bind during grace cancels the pending disposal.
+ *                last retain release before destroying the Y.Doc. A fresh
+ *                retain during grace cancels the pending disposal.
  */
 export function defineDocument<
 	Id extends string,
@@ -97,6 +103,23 @@ export function defineDocument<
 		// cache entry). The caller sees the thrown error.
 		const attach = build(id);
 
+		// Reserved-key collision: framework adds `retain` and `whenLoaded` to
+		// the handle. If the user's attach already has them, the framework
+		// would silently overwrite — fail loudly instead.
+		for (const reserved of RESERVED_KEYS) {
+			if (reserved in attach) {
+				try {
+					attach.ydoc.destroy();
+				} catch {
+					// best-effort — surface the key-collision error
+				}
+				throw new Error(
+					`[defineDocument] build closure for id=${String(id)} returned reserved key "${reserved}". ` +
+						`"retain" and "whenLoaded" are added by the framework — pick a different attachment name.`,
+				);
+			}
+		}
+
 		const recorded = recordedGuids.get(id);
 		if (recorded !== undefined && recorded !== attach.ydoc.guid) {
 			// Don't leak the half-built Y.Doc — destroy before throwing so
@@ -119,7 +142,7 @@ export function defineDocument<
 		const whenLoaded = aggregatePromise(attach, 'whenLoaded');
 		const attachmentDisposed = aggregatePromise(attach, 'disposed');
 
-		// The handle IS the attach object with `whenLoaded` and `bind` added
+		// The handle IS the attach object with `whenLoaded` and `retain` added
 		// in-place. We mutate (rather than `Object.assign({}, …)`) to preserve
 		// live getters that some attachments expose (e.g. Timeline's
 		// `currentType`).
@@ -143,11 +166,11 @@ export function defineDocument<
 			},
 		};
 
-		const bind = (): (() => void) => {
-			// Defensive: a bind() on a disposed entry shouldn't resurrect it.
+		const retain = (): (() => void) => {
+			// Defensive: a retain() on a disposed entry shouldn't resurrect it.
 			// In practice, a `close()` evicts the entry from the cache, so a
 			// fresh `.get()` constructs a new one. But stale handle references
-			// can reach `bind` here.
+			// can reach `retain` here.
 			if (entry.disposed) return () => {};
 
 			if (entry.disposeTimer !== null) {
@@ -166,7 +189,7 @@ export function defineDocument<
 					entry.disposeTimer = setTimeout(() => {
 						entry.disposeTimer = null;
 						if (entry.disposed) return;
-						// Grace elapsed with no fresh bind — dispose.
+						// Grace elapsed with no fresh retain — dispose.
 						disposeEntry(id, entry);
 					}, graceMs);
 				}
@@ -175,7 +198,7 @@ export function defineDocument<
 
 		Object.defineProperties(handle, {
 			whenLoaded: { value: whenLoaded, enumerable: true, configurable: true },
-			bind: { value: bind, enumerable: true, configurable: true },
+			retain: { value: retain, enumerable: true, configurable: true },
 		});
 
 		openDocuments.set(id, entry);

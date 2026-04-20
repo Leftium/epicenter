@@ -98,6 +98,28 @@ describe('throwing build closure', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// Reserved keys
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('reserved attachment keys', () => {
+	test('throws if build returns top-level "retain"', () => {
+		const factory = defineDocument((id: string) => {
+			const ydoc = new Y.Doc({ guid: id });
+			return { ydoc, retain: 'oops' } as never;
+		});
+		expect(() => factory.get('a')).toThrow(/reserved key "retain"/);
+	});
+
+	test('throws if build returns top-level "whenLoaded"', () => {
+		const factory = defineDocument((id: string) => {
+			const ydoc = new Y.Doc({ guid: id });
+			return { ydoc, whenLoaded: Promise.resolve() } as never;
+		});
+		expect(() => factory.get('a')).toThrow(/reserved key "whenLoaded"/);
+	});
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // Guid stability
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -366,10 +388,10 @@ describe('close / closeAll', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// bind / release — ref-count and grace-period disposal
+// retain / release — ref-count and grace-period disposal
 // ════════════════════════════════════════════════════════════════════════════
 
-describe('bind / release lifecycle', () => {
+describe('retain / release lifecycle', () => {
 	test('construct alone does not schedule disposal (refcount starts at 0)', async () => {
 		const factory = makeSimpleFactory({ graceMs: 10 });
 		const handle = factory.get('a');
@@ -381,7 +403,7 @@ describe('bind / release lifecycle', () => {
 	test('last release + grace elapsed disposes the ydoc', async () => {
 		const factory = makeSimpleFactory({ graceMs: 10 });
 		const handle = factory.get('a');
-		const release = handle.bind();
+		const release = handle.retain();
 		release();
 		expect(handle.ydoc.isDestroyed).toBe(false);
 		await new Promise((r) => setTimeout(r, 30));
@@ -394,8 +416,8 @@ describe('bind / release lifecycle', () => {
 	test('multiple binds refcount; only last release schedules disposal', async () => {
 		const factory = makeSimpleFactory({ graceMs: 15 });
 		const handle = factory.get('a');
-		const r1 = handle.bind();
-		const r2 = handle.bind();
+		const r1 = handle.retain();
+		const r2 = handle.retain();
 		r1();
 		await new Promise((r) => setTimeout(r, 30));
 		expect(handle.ydoc.isDestroyed).toBe(false);
@@ -407,10 +429,10 @@ describe('bind / release lifecycle', () => {
 	test('re-bind during grace cancels the pending disposal', async () => {
 		const factory = makeSimpleFactory({ graceMs: 20 });
 		const handle = factory.get('a');
-		const r1 = handle.bind();
+		const r1 = handle.retain();
 		r1();
 		await new Promise((r) => setTimeout(r, 5));
-		const r2 = handle.bind();
+		const r2 = handle.retain();
 
 		await new Promise((r) => setTimeout(r, 35));
 		expect(handle.ydoc.isDestroyed).toBe(false);
@@ -423,8 +445,8 @@ describe('bind / release lifecycle', () => {
 	test('release() is idempotent (double-release does not double-decrement)', async () => {
 		const factory = makeSimpleFactory({ graceMs: 10 });
 		const handle = factory.get('a');
-		const r1 = handle.bind();
-		const r2 = handle.bind();
+		const r1 = handle.retain();
+		const r2 = handle.retain();
 		r1();
 		r1(); // double release — refcount must stay at 1
 		await new Promise((r) => setTimeout(r, 25));
@@ -440,9 +462,9 @@ describe('bind / release lifecycle', () => {
 		// a synchronous re-bind must clear it before it fires.
 		const factory = makeSimpleFactory({ graceMs: 0 });
 		const handle = factory.get('a');
-		const r1 = handle.bind();
+		const r1 = handle.retain();
 		r1();
-		const r2 = handle.bind();
+		const r2 = handle.retain();
 		// No microtask yield yet — timer hasn't had a chance to fire.
 		expect(handle.ydoc.isDestroyed).toBe(false);
 		r2();
@@ -453,7 +475,7 @@ describe('bind / release lifecycle', () => {
 	test('close() during grace fires disposal synchronously and cancels the pending timer', async () => {
 		const factory = makeSimpleFactory({ graceMs: 100 });
 		const handle = factory.get('a');
-		const release = handle.bind();
+		const release = handle.retain();
 		release();
 		// Grace pending. close() must fire disposal now, not later.
 		await factory.close('a');
@@ -463,7 +485,7 @@ describe('bind / release lifecycle', () => {
 	test('release captured before close is a safe no-op after close', async () => {
 		const factory = makeSimpleFactory({ graceMs: 100 });
 		const handle = factory.get('a');
-		const release = handle.bind();
+		const release = handle.retain();
 		await factory.close('a');
 		// Stale release must not throw and must not resurrect any timer.
 		release();
@@ -476,7 +498,7 @@ describe('bind / release lifecycle', () => {
 		const factory = makeSimpleFactory({ graceMs: 100 });
 		const handle = factory.get('a');
 		await factory.close('a');
-		const staleRelease = handle.bind();
+		const staleRelease = handle.retain();
 		// No error, no side effects.
 		staleRelease();
 		expect(handle.ydoc.isDestroyed).toBe(true);
@@ -486,8 +508,8 @@ describe('bind / release lifecycle', () => {
 		const factory = makeSimpleFactory({ graceMs: 15 });
 		const a = factory.get('a');
 		const b = factory.get('b');
-		const ra = a.bind();
-		const rb = b.bind();
+		const ra = a.retain();
+		const rb = b.retain();
 
 		ra();
 		await new Promise((r) => setTimeout(r, 25));
@@ -502,7 +524,7 @@ describe('bind / release lifecycle', () => {
 	test('0 → 1 → 0 → 1 after dispose: new construction after grace', async () => {
 		const factory = makeSimpleFactory({ graceMs: 5 });
 		const a1 = factory.get('a');
-		a1.bind()();
+		a1.retain()();
 		await new Promise((r) => setTimeout(r, 15));
 		expect(a1.ydoc.isDestroyed).toBe(true);
 
@@ -515,7 +537,7 @@ describe('bind / release lifecycle', () => {
 		const factory = makeSimpleFactory({ graceMs: 50 });
 		const docs = ['a', 'b', 'c'].map((id) => {
 			const h = factory.get(id);
-			h.bind()();
+			h.retain()();
 			return h;
 		});
 

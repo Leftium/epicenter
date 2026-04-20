@@ -359,24 +359,6 @@ describe('createDocuments', () => {
 		});
 	});
 
-	describe('row deletion', () => {
-		test('deleting a row closes its open document', async () => {
-			const { tables, documents } = setup();
-			tables.files.set({
-				id: 'f1',
-				name: 'test.txt',
-				updatedAt: 0,
-				_v: 1,
-			});
-
-			const content1 = await documents.open('f1');
-			tables.files.delete('f1');
-
-			// After deletion, re-opening should create new content
-			const content2 = await documents.open('f1');
-			expect(content2).not.toBe(content1);
-		});
-	});
 	describe('document extension hooks', () => {
 		test('hooks are called in order', async () => {
 			const order: number[] = [];

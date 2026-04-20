@@ -116,7 +116,7 @@ export type CreateDocumentsConfig<
 	 * Return at least one field -- returning `{}` is a silent no-op.
 	 */
 	onUpdate: () => Partial<Omit<TRow, 'id'>>;
-	/** The table helper — needed to update the row and observe row deletions. */
+	/** The table helper — needed to write `onUpdate` fields to the row. */
 	tableHelper: Table<TRow>;
 	/** The workspace Y.Doc — needed for transact() when bumping updatedAt. */
 	ydoc: Y.Doc;
@@ -136,7 +136,9 @@ export type CreateDocumentsConfig<
  * - Y.Doc creation with `gc: false` (required for Yjs provider compatibility)
  * - Provider lifecycle (persistence, sync) via document extension hooks
  * - Automatic `updatedAt` bumping when content documents change
- * - Automatic cleanup when rows are deleted from the table
+ *
+ * Callers own doc lifecycle on row deletion — call `close(rowOrGuid)` when
+ * you delete a row. The manager does not observe the table to auto-close.
  *
  * @param config - Documents configuration
  * @returns A `Documents<TRow>` with open/close/closeAll/guidOf methods
@@ -163,26 +165,6 @@ export function createDocuments<
 		string,
 		DocEntry<TBinding>
 	>();
-
-	/**
-	 * Set up the table observer for row deletion cleanup.
-	 * Closes the associated document when a row is deleted from the table.
-	 *
-	 * When guidKey is 'id' (common case), the document GUID is the row ID,
-	 * so a direct Map lookup finds it. When guidKey is a different column,
-	 * the row is already deleted so we can't reverse-map row ID → GUID.
-	 * The fallback check (openDocuments.has(deletedId)) only catches the
-	 * case where the GUID happens to equal the row ID.
-	 */
-	const unobserveTable = tableHelper.observe((changedIds) => {
-		for (const deletedId of changedIds) {
-			const result = tableHelper.get(deletedId);
-			if (result.status !== 'not_found') continue;
-			if (!openDocuments.has(deletedId)) continue;
-
-			documents.close(deletedId);
-		}
-	});
 
 	const documents: Documents<TRow, TBinding> = {
 		async open(
@@ -330,7 +312,6 @@ export function createDocuments<
 			const entries = Array.from(openDocuments.entries());
 			// Clear map synchronously first
 			openDocuments.clear();
-			unobserveTable();
 
 			for (const [, entry] of entries) {
 				entry.unobserve();

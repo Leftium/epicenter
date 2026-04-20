@@ -152,8 +152,7 @@ export function createYjsFileSystem(
 			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
-			const content = await contentDocuments.open(id);
-			return content.read();
+			return await contentDocuments.read(id);
 		},
 
 		async readFileBuffer(path) {
@@ -182,8 +181,7 @@ export function createYjsFileSystem(
 				id = tree.create({ name, parentId, type: 'file', size });
 			}
 
-			const content = await contentDocuments.open(id);
-			content.write(textData);
+			await contentDocuments.write(id, textData);
 			tree.touch(id, size);
 		},
 
@@ -197,9 +195,9 @@ export function createYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
-			const content = await contentDocuments.open(id);
-			content.appendText(text);
-			const newSize = new TextEncoder().encode(content.read()).byteLength;
+			await contentDocuments.append(id, text);
+			const body = await contentDocuments.read(id);
+			const newSize = new TextEncoder().encode(body).byteLength;
 			tree.touch(id, newSize);
 		},
 
@@ -289,8 +287,7 @@ export function createYjsFileSystem(
 					);
 				}
 			} else {
-				const content = await contentDocuments.open(srcId);
-				const srcText = content.read();
+				const srcText = await contentDocuments.read(srcId);
 				await this.writeFile(resolvedDest, srcText);
 			}
 		},

@@ -196,8 +196,7 @@ export function createSqliteIndex({
 					continue;
 				}
 				try {
-					const content = await contentDocs.open(row.id);
-					const text = content.read();
+					const text = await contentDocs.read(row.id);
 					contentMap.set(row.id, text || null);
 				} catch {
 					contentMap.set(row.id, null);
@@ -350,8 +349,7 @@ export function createSqliteIndex({
 
 				let fileContent: string | null = null;
 				try {
-					const content = await contentDocs.open(row.id);
-					const text = content.read();
+					const text = await contentDocs.read(row.id);
 					fileContent = text || null;
 				} catch {
 					fileContent = null;

@@ -22,7 +22,8 @@
 
 import { describe, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTables } from '../workspace/create-tables.js';
+import { attachTable } from '@epicenter/document';
+import { createTables } from '../__tests__/create-tables.js';
 import {
 	formatBytes,
 	generateId,
@@ -100,7 +101,7 @@ describe('scaling ceiling: small rows (posts)', () => {
 
 		for (const N of ROW_COUNTS) {
 			const ydoc = new Y.Doc();
-			const tables = createTables(ydoc, { posts: postDefinition });
+			const tables = { posts: attachTable(ydoc, "posts", postDefinition) };
 
 			// ── Insert N rows ──
 			const { durationMs: insertMs } = measureTime(() => {
@@ -196,7 +197,7 @@ describe('scaling ceiling: realistic rows (notes)', () => {
 
 		for (const N of ROW_COUNTS) {
 			const ydoc = new Y.Doc();
-			const tables = createTables(ydoc, { notes: noteDefinition });
+			const tables = { notes: attachTable(ydoc, "notes", noteDefinition) };
 
 			const { durationMs: insertMs } = measureTime(() => {
 				for (let i = 0; i < N; i++) {
@@ -442,7 +443,7 @@ describe('scaling ceiling: per-operation degradation', () => {
 		);
 
 		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { posts: postDefinition });
+		const tables = { posts: attachTable(ydoc, "posts", postDefinition) };
 
 		const milestones = [0, 10_000, 20_000, 30_000, 40_000, 50_000];
 		let totalInserted = 0;

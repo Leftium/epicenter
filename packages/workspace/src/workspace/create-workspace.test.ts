@@ -18,7 +18,7 @@ import { defineMutation, defineQuery } from '../shared/actions.js';
 import { bytesToBase64 } from '../shared/crypto/index.js';
 import { createDocuments } from './create-documents.js';
 import { timeline } from './strategies.js';
-import { createTables } from './create-tables.js';
+import { createTables } from '../__tests__/create-tables.js';
 import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';

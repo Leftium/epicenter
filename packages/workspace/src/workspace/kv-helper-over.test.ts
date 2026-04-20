@@ -1,8 +1,10 @@
 /**
- * createKv Tests
+ * kvHelperOver Tests (over workspace's encrypted YKeyValueLww wrapper)
  *
- * Verifies key-value helpers over a store for set/get/delete behavior.
- * KV uses validate-or-default semantics—invalid or missing data returns the default.
+ * Verifies key-value helpers over a store for set/get/delete behavior when
+ * `kvHelperOver` is fed the workspace's `EncryptedYKeyValueLww` wrapper (as
+ * `createWorkspace` does internally). KV uses validate-or-default semantics —
+ * invalid or missing data returns the default.
  *
  * Key behaviors:
  * - `get` returns typed values directly (stored value or default)
@@ -13,9 +15,9 @@
 import { expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
+import { kvHelperOver } from '@epicenter/document';
 import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { createKv } from './create-kv.js';
 import { defineKv } from './define-kv.js';
 import { KV_KEY } from './ydoc-keys.js';
 
@@ -23,7 +25,7 @@ test('set stores a value that get returns', () => {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = createEncryptedYkvLww(yarray);
-	const kv = createKv(ykv, {
+	const kv = kvHelperOver(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -35,7 +37,7 @@ test('get returns defaultValue for unset key', () => {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = createEncryptedYkvLww(yarray);
-	const kv = createKv(ykv, {
+	const kv = kvHelperOver(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -46,7 +48,7 @@ test('delete causes get to return defaultValue', () => {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = createEncryptedYkvLww(yarray);
-	const kv = createKv(ykv, {
+	const kv = kvHelperOver(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -61,7 +63,7 @@ test('get returns defaultValue for invalid stored data', () => {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = createEncryptedYkvLww(yarray);
-	const kv = createKv(ykv, {
+	const kv = kvHelperOver(ykv, {
 		count: defineKv(type('number'), 0),
 	});
 
@@ -75,7 +77,7 @@ test('observeAll fires for set changes with correct key and value', () => {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = createEncryptedYkvLww(yarray);
-	const kv = createKv(ykv, {
+	const kv = kvHelperOver(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -101,7 +103,7 @@ test('observeAll fires for delete changes', () => {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = createEncryptedYkvLww(yarray);
-	const kv = createKv(ykv, {
+	const kv = kvHelperOver(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -128,7 +130,7 @@ test('observeAll batches multiple changes in a single callback', () => {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = createEncryptedYkvLww(yarray);
-	const kv = createKv(ykv, {
+	const kv = kvHelperOver(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 		fontSize: defineKv(type('number'), 14),
 	});
@@ -167,7 +169,7 @@ test('observeAll skips invalid values', () => {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = createEncryptedYkvLww(yarray);
-	const kv = createKv(ykv, {
+	const kv = kvHelperOver(ykv, {
 		count: defineKv(type('number'), 0),
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
@@ -198,7 +200,7 @@ test('observeAll skips unknown keys', () => {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = createEncryptedYkvLww(yarray);
-	const kv = createKv(ykv, {
+	const kv = kvHelperOver(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -228,7 +230,7 @@ test('observeAll returns an unsubscribe function that works', () => {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = createEncryptedYkvLww(yarray);
-	const kv = createKv(ykv, {
+	const kv = kvHelperOver(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 

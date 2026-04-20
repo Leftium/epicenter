@@ -17,7 +17,7 @@
 
 import { describe, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTables } from '../workspace/create-tables.js';
+import { createTables } from '../__tests__/create-tables.js';
 import { createTimeline } from '../timeline/timeline.js';
 import {
 	formatBytes,

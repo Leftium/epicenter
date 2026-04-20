@@ -9,7 +9,7 @@
 
 import { describe, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTables } from '../workspace/create-tables.js';
+import { attachTable } from '@epicenter/document';
 import { formatBytes, heavyNoteDefinition, makeHeavyRow } from './helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -20,7 +20,7 @@ describe('tombstone residue after delete + replace', () => {
 	for (const contentChars of [10_000, 50_000, 100_000]) {
 		test(`${formatBytes(contentChars)}/row: delete 2 of 5, add 2 new`, () => {
 			const ydoc = new Y.Doc();
-			const tables = createTables(ydoc, { notes: heavyNoteDefinition });
+			const tables = { notes: attachTable(ydoc, "notes", heavyNoteDefinition) };
 
 			// Step 1: Insert 5 heavy rows
 			for (let i = 0; i < 5; i++) {

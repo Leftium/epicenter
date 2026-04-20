@@ -10,7 +10,7 @@
 
 import { describe, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTables } from '../workspace/create-tables.js';
+import { attachTable } from '@epicenter/document';
 import {
 	formatBytes,
 	generateHeavyContent,
@@ -54,7 +54,7 @@ describe('autosave scenario', () => {
 
 		// ── YKV ──
 		const ykvDoc = new Y.Doc();
-		const tables = createTables(ykvDoc, { notes: heavyNoteDefinition });
+		const tables = { notes: attachTable(ykvDoc, "notes", heavyNoteDefinition) };
 		for (let i = 0; i < 5; i++) {
 			tables.notes.set(makeRow(`doc-${i}`, baseContent));
 		}
@@ -154,7 +154,7 @@ describe('all-day editing scenario', () => {
 
 		// ── YKV ──
 		const ykvDoc = new Y.Doc();
-		const tables = createTables(ykvDoc, { notes: heavyNoteDefinition });
+		const tables = { notes: attachTable(ykvDoc, "notes", heavyNoteDefinition) };
 		for (let i = 0; i < 5; i++) tables.notes.set(makeRowAtRevision(`doc-${i}`, 0));
 		for (let s = 1; s <= totalSaves; s++) {
 			const docIdx = s % 3; // rotate across 3 active documents

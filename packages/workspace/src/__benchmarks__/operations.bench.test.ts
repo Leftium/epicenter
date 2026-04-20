@@ -12,8 +12,8 @@ import * as Y from 'yjs';
 import { type } from 'arktype';
 import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { createKv } from '../workspace/create-kv.js';
-import { createTables } from '../workspace/create-tables.js';
+import { kvHelperOver } from '@epicenter/document';
+import { attachTable } from '@epicenter/document';
 import { createWorkspace } from '../workspace/create-workspace.js';
 import { defineKv } from '../workspace/define-kv.js';
 import { defineWorkspace } from '../workspace/define-workspace.js';
@@ -72,7 +72,7 @@ describe('workspace creation', () => {
 describe('table operations', () => {
 	test('insert 1,000 rows', () => {
 		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { posts: postDefinition });
+		const tables = { posts: attachTable(ydoc, "posts", postDefinition) };
 
 		const { durationMs } = measureTime(() => {
 			for (let i = 0; i < 1_000; i++) {
@@ -92,7 +92,7 @@ describe('table operations', () => {
 
 	test('insert 10,000 rows', () => {
 		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { posts: postDefinition });
+		const tables = { posts: attachTable(ydoc, "posts", postDefinition) };
 
 		const { durationMs } = measureTime(() => {
 			for (let i = 0; i < 10_000; i++) {
@@ -112,7 +112,7 @@ describe('table operations', () => {
 
 	test('get 10,000 rows by ID', () => {
 		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { posts: postDefinition });
+		const tables = { posts: attachTable(ydoc, "posts", postDefinition) };
 
 		for (let i = 0; i < 10_000; i++) {
 			tables.posts.set({
@@ -135,7 +135,7 @@ describe('table operations', () => {
 
 	test('getAll / getAllValid / filter with 10,000 rows', () => {
 		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { posts: postDefinition });
+		const tables = { posts: attachTable(ydoc, "posts", postDefinition) };
 
 		for (let i = 0; i < 10_000; i++) {
 			tables.posts.set({
@@ -161,7 +161,7 @@ describe('table operations', () => {
 
 	test('delete 1,000 rows', () => {
 		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { posts: postDefinition });
+		const tables = { posts: attachTable(ydoc, "posts", postDefinition) };
 
 		for (let i = 0; i < 1_000; i++) {
 			tables.posts.set({
@@ -185,7 +185,7 @@ describe('table operations', () => {
 
 	test('batch insert vs individual insert (1,000 rows)', () => {
 		const ydoc1 = new Y.Doc();
-		const tables1 = createTables(ydoc1, { posts: postDefinition });
+		const tables1 = { posts: attachTable(ydoc1, "posts", postDefinition) };
 
 		const { durationMs: individualMs } = measureTime(() => {
 			for (let i = 0; i < 1_000; i++) {
@@ -199,7 +199,7 @@ describe('table operations', () => {
 		});
 
 		const ydoc2 = new Y.Doc();
-		const tables2 = createTables(ydoc2, { posts: postDefinition });
+		const tables2 = { posts: attachTable(ydoc2, "posts", postDefinition) };
 
 		const { durationMs: batchMs } = measureTime(() => {
 			ydoc2.transact(() => {
@@ -229,7 +229,7 @@ describe('KV operations', () => {
 		const ydoc = new Y.Doc();
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
 		const ykv = createEncryptedYkvLww(yarray);
-		const kv = createKv(ykv, {
+		const kv = kvHelperOver(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 
@@ -250,7 +250,7 @@ describe('KV operations', () => {
 		const ydoc = new Y.Doc();
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
 		const ykv = createEncryptedYkvLww(yarray);
-		const kv = createKv(ykv, {
+		const kv = kvHelperOver(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 
@@ -269,7 +269,7 @@ describe('KV operations', () => {
 		const ydoc = new Y.Doc();
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
 		const ykv = createEncryptedYkvLww(yarray);
-		const kv = createKv(ykv, {
+		const kv = kvHelperOver(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 

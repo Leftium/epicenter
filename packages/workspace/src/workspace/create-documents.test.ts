@@ -17,7 +17,7 @@ import {
 	createDocuments,
 	DOCUMENTS_ORIGIN,
 } from './create-documents.js';
-import { createTables } from './create-tables.js';
+import { createTables } from '../__tests__/create-tables.js';
 import { defineTable } from './define-table.js';
 import { timeline } from './strategies.js';
 

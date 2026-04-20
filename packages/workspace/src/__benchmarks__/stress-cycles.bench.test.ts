@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTables } from '../workspace/create-tables.js';
+import { attachTable } from '@epicenter/document';
 import {
 	eventDefinition,
 	generateId,
@@ -25,7 +25,7 @@ import {
 describe('repeated add/remove cycles', () => {
 	test('1,000 items: add and remove 5 cycles', () => {
 		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { posts: postDefinition });
+		const tables = { posts: attachTable(ydoc, "posts", postDefinition) };
 
 		const cycleTimes: number[] = [];
 
@@ -62,7 +62,7 @@ describe('repeated add/remove cycles', () => {
 
 	test('1,000 items: Y.Doc size growth over 5 cycles', () => {
 		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { posts: postDefinition });
+		const tables = { posts: attachTable(ydoc, "posts", postDefinition) };
 
 		const docSizes: number[] = [];
 
@@ -98,7 +98,7 @@ describe('repeated add/remove cycles', () => {
 describe('event log stress', () => {
 	test('1,000 events: add, delete, measure binary size over 5 cycles', () => {
 		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { events: eventDefinition });
+		const tables = { events: attachTable(ydoc, "events", eventDefinition) };
 
 		const sizes: number[] = [];
 
@@ -136,7 +136,7 @@ describe('event log stress', () => {
 
 	test('binary size: 1,000 events retained vs after deletion', () => {
 		const ydoc = new Y.Doc();
-		const tables = createTables(ydoc, { events: eventDefinition });
+		const tables = { events: attachTable(ydoc, "events", eventDefinition) };
 
 		for (let i = 0; i < 1_000; i++) {
 			tables.events.set({

@@ -10,7 +10,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTables } from '../workspace/create-tables.js';
+import { attachTable } from '@epicenter/document';
 import {
 	formatBytes,
 	generateHeavyContent,
@@ -85,7 +85,7 @@ describe('YKV vs Y.Map: size and tombstones', () => {
 
 		// ── Approach 1: YKeyValueLww (Workspace API) ──
 		const ykvDoc = new Y.Doc();
-		const tables = createTables(ykvDoc, { notes: heavyNoteDefinition });
+		const tables = { notes: attachTable(ykvDoc, "notes", heavyNoteDefinition) };
 
 		for (let i = 0; i < 5; i++) tables.notes.set(makeRowData(`doc-${i}`));
 		const ykvSize5 = Y.encodeStateAsUpdate(ykvDoc).byteLength;
@@ -209,7 +209,7 @@ describe('YKV vs Y.Map: size and tombstones', () => {
 		for (const rounds of updateRounds) {
 			// ── YKV approach ──
 			const ykvDoc = new Y.Doc();
-			const tables = createTables(ykvDoc, { notes: heavyNoteDefinition });
+			const tables = { notes: attachTable(ykvDoc, "notes", heavyNoteDefinition) };
 			for (let i = 0; i < 5; i++) tables.notes.set(makeRowData(`doc-${i}`, 0));
 			for (let r = 1; r <= rounds; r++) {
 				for (let i = 0; i < 5; i++)

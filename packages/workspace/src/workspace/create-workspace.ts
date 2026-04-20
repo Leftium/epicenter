@@ -418,8 +418,31 @@ export function createWorkspace<
 				// Void return means "not installed" — skip registration
 				if (!raw) return buildClient({ extensions, state, actions });
 
-				const { exports, init, dispose, clearLocalData } =
+				const { exports, init, dispose, clearLocalData, onActive } =
 					defineExtension(raw);
+
+				// At the workspace scope the extension is always considered
+				// active — there is no bind/release lifecycle here, so call
+				// `onActive` once after `init` resolves. Idle-able extensions
+				// (sync) use this signal to start their work; extensions
+				// without the hook are unaffected.
+				//
+				// Failures in `onActive` are logged rather than propagated so
+				// they don't abort workspace bootstrap. If the extension
+				// actually can't start, it'll surface that via its own status
+				// API (e.g., `sync.status.phase === 'connecting'` hanging).
+				const readyInit = onActive
+					? init.then(() => {
+							try {
+								onActive();
+							} catch (err) {
+								console.error(
+									`Workspace extension '${key}' onActive error:`,
+									err,
+								);
+							}
+						})
+					: init;
 
 				return buildClient({
 					extensions: {
@@ -432,7 +455,7 @@ export function createWorkspace<
 							...state.clearLocalDataCallbacks,
 							...(clearLocalData ? [clearLocalData] : []),
 						],
-						initPromises: [...state.initPromises, init],
+						initPromises: [...state.initPromises, readyInit],
 					},
 					actions,
 				});

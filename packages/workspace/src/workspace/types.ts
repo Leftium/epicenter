@@ -254,22 +254,55 @@ export type DocumentContext<
  * Sync handle for a per-row content document.
  *
  * Returned by `Documents.get(id)`. Exposes the content binding inline (so
- * `handle.read()`, `handle.write()`, `handle.binding` all work the same as the
- * raw strategy return), plus framework metadata:
+ * `handle.read()`, `handle.write()`, `handle.binding` all work the same as
+ * the raw strategy return), plus framework metadata:
  *
  * - `whenLoaded` — resolves once persistence (IndexedDB) has hydrated the doc.
- *   Await before calling `read()`/`write()` from programmatic code. Editors
+ *   Await before calling `read()` / `write()` from programmatic code. Editors
  *   bind `handle.binding` and tolerate empty-until-loaded fine.
  * - `ydoc` — the underlying Y.Doc, for escape-hatch cases.
+ * - `bind()` — retain the sync transport while a consumer is active. Returns
+ *   a release function.
  *
- * Lifetime is framework-owned: the workspace keeps one handle per guid until
- * the row is deleted or the workspace is disposed. Callers should not dispose
- * the handle themselves. For per-component lifecycle, construct your own
- * Y.Doc using `attach*` primitives from `@epicenter/document` instead.
+ * ## Y.Doc lifetime vs. sync transport lifetime
+ *
+ * The Y.Doc and its IndexedDB persistence are framework-owned and stay alive
+ * for the workspace's lifetime — opening a doc is cheap and we never evict.
+ * Network sync is different: an open WebSocket per cached doc scales poorly.
+ * So sync is gated on active consumers via `bind()`.
+ *
+ * When a consumer (e.g., an editor component) wants live remote updates, it
+ * calls `handle.bind()` and holds the returned release function for the
+ * lifetime of its interest. When every consumer has released, the framework
+ * schedules the sync provider for disconnect after a grace period (cancelled
+ * if someone binds again). Local state is preserved — the Y.Doc stays live,
+ * IDB stays attached, and reconnect is a delta sync.
+ *
+ * Reads and writes through `handle.read()` / `handle.binding` / the
+ * high-level `Documents.read()` / `.write()` / `.append()` do NOT auto-bind.
+ * They operate on local state. If you need sync-fresh reads, bind first.
+ *
+ * In Svelte, the idiomatic pattern is:
+ *
+ * ```svelte
+ * const handle = $derived(workspace.documents.files.content.get(fileId));
+ * $effect(() => {
+ *   return handle.bind();   // auto-release on effect cleanup
+ * });
+ * ```
  */
 export type DocumentHandle<TBinding = ContentHandle> = TBinding & {
+	/** Resolves once persistence has hydrated the doc. Same promise across `.get()` calls for a given guid. */
 	whenLoaded: Promise<void>;
+	/** Underlying Y.Doc — escape hatch for advanced consumers (subdocs, custom observers, etc.). */
 	ydoc: Y.Doc;
+	/**
+	 * Retain the sync transport (e.g., WebSocket) while this consumer is
+	 * active. Returns a release function that decrements the internal
+	 * refcount; the transport idles after the last release plus a grace
+	 * period. The release function is idempotent — calling it twice is safe.
+	 */
+	bind(): () => void;
 };
 
 /**

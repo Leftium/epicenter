@@ -76,15 +76,25 @@ export const DOCUMENTS_ORIGIN = Symbol('documents');
  *
  * The `handle` field is the public sync accessor — `.get(id)` returns this.
  * It's the strategy's binding spread with framework extras (`whenLoaded`,
- * `ydoc`), so `handle.read()` / `handle.binding` / `handle.whenLoaded` all
- * work on the same object.
+ * `ydoc`, `bind`), so `handle.read()` / `handle.binding` / `handle.whenLoaded`
+ * / `handle.bind()` all work on the same object.
+ *
+ * `bindCount` + `disconnectTimer` implement the idle lifecycle: when a
+ * consumer calls `handle.bind()`, extensions' `onActive` hooks fire on the
+ * 0→1 transition. When the last bind releases, `disconnectTimer` schedules
+ * the `onIdle` hooks to fire after `graceMs`; a fresh bind during grace
+ * cancels the timer.
  */
 type DocEntry<TBinding extends ContentHandle = ContentHandle> = {
 	handle: DocumentHandle<TBinding>;
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Record<string, any>>;
 	extensionDisposers: (() => MaybePromise<void>)[];
+	extensionActivators: (() => void)[];
+	extensionIdlers: (() => void)[];
 	unobserve: () => void;
+	bindCount: number;
+	disconnectTimer: ReturnType<typeof setTimeout> | null;
 };
 
 /**
@@ -132,7 +142,15 @@ export type CreateDocumentsConfig<
 	 * Each registration has a key and factory.
 	 */
 	documentExtensions?: DocumentExtensionRegistration[];
+	/**
+	 * How long to keep the sync transport alive after the last `handle.bind()`
+	 * release, in milliseconds. Defaults to 30_000 (30 seconds). A fresh bind
+	 * during the grace window cancels the pending idle.
+	 */
+	graceMs?: number;
 };
+
+const DEFAULT_GRACE_MS = 30_000;
 
 
 /**
@@ -166,6 +184,7 @@ export function createDocuments<
 		tableHelper,
 		ydoc: workspaceYdoc,
 		documentExtensions = [],
+		graceMs = DEFAULT_GRACE_MS,
 	} = config;
 
 	const openDocuments = new Map<string, DocEntry<TBinding>>();
@@ -194,6 +213,8 @@ export function createDocuments<
 		const resolvedExtensions: Record<string, Record<string, any>> = {};
 		const disposers: (() => MaybePromise<void>)[] = [];
 		const initPromises: Promise<unknown>[] = [];
+		const activators: (() => void)[] = [];
+		const idlers: (() => void)[] = [];
 
 		try {
 			for (const { key, factory } of documentExtensions) {
@@ -212,10 +233,13 @@ export function createDocuments<
 				const raw = factory(ctx);
 				if (!raw) continue;
 
-				const { exports, init, dispose } = defineExtension(raw);
+				const { exports, init, dispose, onActive, onIdle } =
+					defineExtension(raw);
 				resolvedExtensions[key] = exports;
 				disposers.push(dispose);
 				initPromises.push(init);
+				if (onActive) activators.push(onActive);
+				if (onIdle) idlers.push(onIdle);
 			}
 		} catch (err) {
 			startDisposeLifo(disposers);
@@ -281,22 +305,74 @@ export function createDocuments<
 		// because `Object.assign` invokes getters and snapshots the returned value,
 		// which would break live getters like Timeline's `currentType`.
 		const handle = contentBinding as DocumentHandle<TBinding>;
-		Object.defineProperties(handle, {
-			whenLoaded: { value: whenLoaded, enumerable: true, configurable: true },
-			ydoc: { value: contentYdoc, enumerable: true, configurable: true },
-		});
 
+		// Forward-declare the entry so `bind` can close over it. The entry is
+		// fully populated right after this `handle` setup block; `bind` is never
+		// invoked before the entry is installed in the cache.
 		const entry: DocEntry<TBinding> = {
 			handle,
 			extensions: resolvedExtensions,
 			extensionDisposers: disposers,
+			extensionActivators: activators,
+			extensionIdlers: idlers,
 			unobserve,
+			bindCount: 0,
+			disconnectTimer: null,
 		};
+
+		const bind = (): (() => void) => {
+			if (entry.disconnectTimer !== null) {
+				// In grace period — cancel the pending idle, stay active.
+				clearTimeout(entry.disconnectTimer);
+				entry.disconnectTimer = null;
+			} else if (entry.bindCount === 0) {
+				// Fully idle — activate extensions.
+				for (const activate of entry.extensionActivators) {
+					try {
+						activate();
+					} catch (err) {
+						console.error('Document extension onActive error:', err);
+					}
+				}
+			}
+			entry.bindCount++;
+
+			let released = false;
+			return () => {
+				if (released) return;
+				released = true;
+				entry.bindCount--;
+				if (entry.bindCount === 0) {
+					entry.disconnectTimer = setTimeout(() => {
+						entry.disconnectTimer = null;
+						for (const idle of entry.extensionIdlers) {
+							try {
+								idle();
+							} catch (err) {
+								console.error('Document extension onIdle error:', err);
+							}
+						}
+					}, graceMs);
+				}
+			};
+		};
+
+		Object.defineProperties(handle, {
+			whenLoaded: { value: whenLoaded, enumerable: true, configurable: true },
+			ydoc: { value: contentYdoc, enumerable: true, configurable: true },
+			bind: { value: bind, enumerable: true, configurable: true },
+		});
+
 		openDocuments.set(guid, entry);
 		return entry;
 	}
 
 	async function releaseEntry(entry: DocEntry<TBinding>): Promise<void> {
+		// Cancel any pending idle timer so it can't fire after dispose.
+		if (entry.disconnectTimer !== null) {
+			clearTimeout(entry.disconnectTimer);
+			entry.disconnectTimer = null;
+		}
 		entry.unobserve();
 		const errors = await disposeLifo(entry.extensionDisposers);
 		entry.handle.ydoc.destroy();

@@ -52,7 +52,8 @@ export type MaybePromise<T> = T | Promise<T>;
 
 /**
  * Raw factory return shape — `exports` holds the public surface; `init`,
- * `dispose`, and `clearLocalData` are framework lifecycle metadata.
+ * `dispose`, `clearLocalData`, `onActive`, and `onIdle` are framework
+ * lifecycle metadata.
  *
  * ## Framework Guarantees
  *
@@ -60,6 +61,26 @@ export type MaybePromise<T> = T | Promise<T>;
  * - `dispose()` may be called while `init` is still pending
  * - Multiple `dispose()` calls should be safe (idempotent)
  * - `clearLocalData()` is called before `dispose()` during sign-out (never alone)
+ *
+ * ## Idle-able extensions (onActive / onIdle)
+ *
+ * Extensions that manage expensive transport (e.g., a WebSocket) can opt into
+ * an idle lifecycle by implementing `onActive` and `onIdle`. When the
+ * extension is registered on a per-document scope (via `.withExtension()` at
+ * the workspace level, which also registers it for content Y.Docs), the
+ * framework calls:
+ *
+ * - `onActive()` on first consumer `handle.bind()` (or refcount 0 → 1 after idle)
+ * - `onIdle()` after the last consumer releases and the grace period elapses
+ *
+ * At the workspace scope, the framework calls `onActive()` once after `init`
+ * resolves — the workspace Y.Doc is always considered active. `onIdle()` is
+ * never called at the workspace scope; only `dispose()` runs at teardown.
+ *
+ * Extensions with `onActive` / `onIdle` should keep `init` passive — set up
+ * observers and internal state, but DO NOT open sockets or start loops there.
+ * Those belong in `onActive`. Otherwise, per-doc usage will connect
+ * prematurely and the idle pattern becomes meaningless.
  *
  * @typeParam T - Public exports object type.
  *   Defaults to `Record<string, never>` for lifecycle-only extensions.
@@ -71,6 +92,10 @@ export type RawExtension<
 	init?: Promise<unknown>;
 	dispose?: () => MaybePromise<void>;
 	clearLocalData?: () => MaybePromise<void>;
+	/** Activate idle-able work (e.g., open a WebSocket). Called by the framework on first bind. */
+	onActive?: () => void;
+	/** Idle the extension (e.g., close a WebSocket). Called after grace period once the last bind is released. */
+	onIdle?: () => void;
 };
 
 /**
@@ -103,12 +128,16 @@ export function defineExtension<T extends Record<string, unknown>>(
 	init: Promise<void>;
 	dispose: () => MaybePromise<void>;
 	clearLocalData?: () => MaybePromise<void>;
+	onActive?: () => void;
+	onIdle?: () => void;
 } {
 	return {
 		exports: input.exports,
 		init: input.init?.then(() => {}) ?? Promise.resolve(),
 		dispose: input.dispose ?? (() => {}),
 		clearLocalData: input.clearLocalData,
+		onActive: input.onActive,
+		onIdle: input.onIdle,
 	};
 }
 

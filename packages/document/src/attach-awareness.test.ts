@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { Awareness as YAwareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { createAwareness } from './attach-awareness.js';
+import { attachAwareness, createAwareness } from './attach-awareness.js';
 
 const awarenessDefs = {
 	cursorX: type('number'),
@@ -140,5 +140,47 @@ describe('createAwareness', () => {
 		awareness.setLocal({ name: 'alice' });
 
 		expect(calls).toBe(0);
+	});
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// attachAwareness (full entry point used by createDocuments)
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('attachAwareness', () => {
+	test('constructs a fresh y-protocols Awareness bound to the ydoc', () => {
+		const ydoc = new Y.Doc();
+		const { raw } = attachAwareness(ydoc, { name: type('string') });
+
+		expect(raw).toBeInstanceOf(YAwareness);
+		expect(raw.doc).toBe(ydoc);
+	});
+
+	test('empty defs — works as a structural slot for extension wiring', () => {
+		// createDocuments uses `attachAwareness(contentYdoc, {}).raw` when a
+		// per-row content doc has no typed awareness schema but still needs an
+		// Awareness instance to hand to sync extensions.
+		const ydoc = new Y.Doc();
+		const awareness = attachAwareness(ydoc, {});
+
+		// `.raw` is usable regardless of defs.
+		expect(awareness.raw).toBeInstanceOf(YAwareness);
+
+		// With no defs, `getAll()` of a remote state surfaces zero valid fields.
+		awareness.raw.getStates().set(777, { anything: 'goes' });
+		expect(awareness.getAll().has(777)).toBe(false);
+	});
+
+	test('ydoc.destroy() tears down the Awareness via its self-registered hook', () => {
+		const ydoc = new Y.Doc();
+		const { raw } = attachAwareness(ydoc, {});
+
+		let destroyed = 0;
+		raw.on('destroy', () => {
+			destroyed++;
+		});
+
+		ydoc.destroy();
+		expect(destroyed).toBe(1);
 	});
 });

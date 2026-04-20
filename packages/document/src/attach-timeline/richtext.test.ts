@@ -4,15 +4,6 @@ import * as Y from 'yjs';
 import { populateFragmentFromText } from './richtext.js';
 import { attachTimeline } from './timeline.js';
 
-/** Helper: build a paragraph XmlElement with text content (standalone, for insertion). */
-function makeParagraph(content: string): Y.XmlElement {
-	const p = new Y.XmlElement('paragraph');
-	const t = new Y.XmlText();
-	t.insert(0, content);
-	p.insert(0, [t]);
-	return p;
-}
-
 /** Helper: create a doc-backed XmlFragment via builder callback. */
 function createDocFragment(
 	build?: (fragment: Y.XmlFragment) => void,
@@ -22,64 +13,6 @@ function createDocFragment(
 	build?.(fragment);
 	return fragment;
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// xmlFragmentToPlaintext
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('xmlFragmentToPlaintext', () => {
-	test('empty fragment returns empty string', () => {
-		const fragment = createDocFragment();
-		expect(xmlFragmentToPlaintext(fragment)).toBe('');
-	});
-
-	test('single paragraph', () => {
-		const fragment = createDocFragment((f) => {
-			f.insert(0, [makeParagraph('Hello world')]);
-		});
-		expect(xmlFragmentToPlaintext(fragment)).toBe('Hello world');
-	});
-
-	test('multiple paragraphs get newlines between them', () => {
-		const fragment = createDocFragment((f) => {
-			f.insert(0, [makeParagraph('First'), makeParagraph('Second')]);
-		});
-		expect(xmlFragmentToPlaintext(fragment)).toBe('First\nSecond');
-	});
-
-	test('heading elements get newlines', () => {
-		const fragment = createDocFragment((f) => {
-			const h = new Y.XmlElement('heading');
-			const ht = new Y.XmlText();
-			ht.insert(0, 'Title');
-			h.insert(0, [ht]);
-			f.insert(0, [h, makeParagraph('Body text')]);
-		});
-		expect(xmlFragmentToPlaintext(fragment)).toBe('Title\nBody text');
-	});
-
-	test('inline elements do not add newlines', () => {
-		const fragment = createDocFragment((f) => {
-			const p = new Y.XmlElement('paragraph');
-			const t1 = new Y.XmlText();
-			t1.insert(0, 'Hello ');
-			const bold = new Y.XmlElement('bold');
-			const t2 = new Y.XmlText();
-			t2.insert(0, 'world');
-			bold.insert(0, [t2]);
-			p.insert(0, [t1, bold]);
-			f.insert(0, [p]);
-		});
-		expect(xmlFragmentToPlaintext(fragment)).toBe('Hello world');
-	});
-
-	test('three paragraphs get correct newlines', () => {
-		const fragment = createDocFragment((f) => {
-			f.insert(0, [makeParagraph('A'), makeParagraph('B'), makeParagraph('C')]);
-		});
-		expect(xmlFragmentToPlaintext(fragment)).toBe('A\nB\nC');
-	});
-});
 
 // ════════════════════════════════════════════════════════════════════════════
 // populateFragmentFromText

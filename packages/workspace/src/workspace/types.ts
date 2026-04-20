@@ -309,23 +309,25 @@ export type DocumentHandle<TBinding = ContentHandle> = TBinding & {
  * Runtime manager for a table's associated content Y.Docs.
  *
  * Manages Y.Doc creation, provider lifecycle, and `updatedAt` auto-bumping
- * on local content edits. Cleanup on row deletion is caller-owned — invoke
- * `close()` explicitly when you delete a row. Most users access this via
+ * on local content edits. Most users access this via
  * `client.documents.files.content`.
  *
- * ## Preferred API
+ * ## Access
  *
- * - `get(id)` — sync, returns a `DocumentHandle` (cached, one per guid)
- * - `read(id)` — high-level, awaits `whenLoaded`, returns string
- * - `write(id, text)` — high-level, awaits `whenLoaded`, replaces content
- * - `append(id, text)` — high-level, awaits `whenLoaded`, appends text
+ * - `get(id)` — sync, returns a cached `DocumentHandle` (constructs on miss).
+ *   Await `handle.whenLoaded` before calling `handle.read()` from programmatic
+ *   code; editor bindings tolerate empty-until-loaded fine.
+ * - `read(id)` — high-level sugar: awaits `whenLoaded`, returns string
+ * - `write(id, text)` — high-level sugar: awaits `whenLoaded`, replaces content
+ * - `append(id, text)` — high-level sugar: awaits `whenLoaded`, appends text
  *
- * ## Legacy API (still works, may be removed)
+ * ## Lifecycle
  *
- * - `open(id)` — async, same as `get(id) + await whenLoaded`
- * - `close(id)` — force-release a cached handle. Call when you delete the
- *   underlying row so the doc can be garbage-collected; otherwise `closeAll()`
- *   via workspace dispose handles cleanup.
+ * Cleanup on row deletion is caller-owned — invoke `close()` explicitly when
+ * you delete a row so the cache entry is evicted. Otherwise all handles stay
+ * live until `closeAll()` runs at workspace dispose.
+ *
+ * - `close(id)` — force-release a cached handle (does not delete persisted data)
  * - `closeAll()` — release all cached handles (workspace dispose uses this)
  *
  * @typeParam TRow - The row type of the bound table
@@ -370,15 +372,6 @@ export type Documents<
 	 * otherwise falls back to read-concat-write.
 	 */
 	append(input: TRow | string, text: string): Promise<void>;
-
-	/**
-	 * Legacy async accessor — equivalent to `get(id)` + `await whenLoaded`.
-	 *
-	 * Preserved for callers that haven't migrated to `get()`. Prefer `get()` for
-	 * sync construction with opt-in `whenLoaded`, or `read()`/`write()` for the
-	 * common string-in-string-out case.
-	 */
-	open(input: TRow | string): Promise<DocumentHandle<TBinding>>;
 
 	/**
 	 * Force-release a cached handle. Persisted data is not deleted.
@@ -468,7 +461,7 @@ export type DocumentsOf<T> = T extends {
  * @example
  * ```typescript
  * // Table with .withDocument('content', ...)
- * client.documents.files.content.open(row)
+ * client.documents.files.content.get(row)
  *
  * // Table without .withDocument() — TypeScript error
  * client.documents.tags // Property 'tags' does not exist

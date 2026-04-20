@@ -497,7 +497,9 @@ describe('createWorkspace', () => {
 
 			const content = client.documents.files.content;
 			expect(content).toBeDefined();
-			expect(typeof content.open).toBe('function');
+			expect(typeof content.get).toBe('function');
+			expect(typeof content.read).toBe('function');
+			expect(typeof content.write).toBe('function');
 			expect(typeof content.close).toBe('function');
 			expect(typeof content.closeAll).toBe('function');
 		});
@@ -877,11 +879,14 @@ describe('createWorkspace', () => {
 				],
 			});
 
-			const handlePromise = documents.open('doc-1');
+			// Construct synchronously, then reject the extension init promise.
+			// `handle.whenLoaded` surfaces the composite init rejection so we can
+			// assert both extensions' dispose paths ran during cleanup.
+			const whenLoaded = documents.get('doc-1').whenLoaded;
 			rejectInit?.();
 
 			try {
-				await handlePromise;
+				await whenLoaded;
 			} catch {
 				// expected
 			}

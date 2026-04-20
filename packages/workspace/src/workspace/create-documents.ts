@@ -187,7 +187,7 @@ const DEFAULT_GRACE_MS = 30_000;
  * you delete a row. The manager does not observe the table to auto-close.
  *
  * @param config - Documents configuration
- * @returns A `Documents<TRow>` with open/close/closeAll/guidOf methods
+ * @returns A `Documents<TRow>` with `get`/`read`/`write`/`append`/`close`/`closeAll` methods
  */
 export function createDocuments<
 	TRow extends BaseRow,
@@ -464,12 +464,6 @@ export function createDocuments<
 			} else {
 				handle.write(handle.read() + text);
 			}
-		},
-
-		async open(input) {
-			const handle = documents.get(input);
-			await handle.whenLoaded;
-			return handle;
 		},
 
 		async close(input) {

@@ -58,7 +58,8 @@ export function createYjsFileSystem(
 		 * ```typescript
 		 * const fileId = fs.lookupId('/docs/readme.md');
 		 * if (fileId) {
-		 *   const doc = await documents.open(fileId);
+		 *   const doc = documents.get(fileId);
+		 *   await doc.whenLoaded;
 		 * }
 		 * ```
 		 */

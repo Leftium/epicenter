@@ -2,11 +2,11 @@
  * createDocuments Tests
  *
  * Validates documents lifecycle, content read/write behavior, and integration with table row metadata.
- * The suite protects contracts around open/close idempotency, direct content access, cleanup semantics, and hook orchestration.
+ * The suite protects contracts around get idempotency, direct content access, cleanup semantics, and hook orchestration.
  *
  * Key behaviors:
  * - Document operations keep row metadata in sync and honor documents origins.
- * - Lifecycle methods (`close`, `closeAll`) safely clean up open documents.
+ * - Lifecycle methods (`close`, `closeAll`) safely clean up cached documents.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -56,7 +56,7 @@ function setup(
 }
 
 describe('createDocuments', () => {
-	describe('open', () => {
+	describe('get', () => {
 		test('document extension factory receives tableName and documentName in context', async () => {
 			let receivedTableName: string | undefined;
 			let receivedDocumentName: string | undefined;
@@ -84,7 +84,7 @@ describe('createDocuments', () => {
 			expect(content1).toBe(content2);
 		});
 
-		test('open accepts a row object and returns content', async () => {
+		test('get accepts a row object and returns content', () => {
 			const { tables, documents } = setup();
 			const row = {
 				id: 'f1',
@@ -99,7 +99,7 @@ describe('createDocuments', () => {
 			expect(content.read()).toBe('hello from row');
 		});
 
-		test('open accepts a string guid directly and returns content', async () => {
+		test('get accepts a string guid directly and returns content', () => {
 			const { documents } = setup();
 
 			const content = documents.get('f1');

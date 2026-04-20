@@ -66,16 +66,13 @@
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
 		"y-indexeddb": "catalog:",
-		"y-protocols": "catalog:",
-		"remark-parse": "^11.0.0",
-		"unified": "^11.0.5"
+		"y-protocols": "catalog:"
 	},
 	"peerDependencies": {
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
 		"@types/diff": "^8.0.0",
-		"@types/mdast": "^4.0.4",
 		"@types/node": "catalog:",
 		"better-sqlite3": "^12.4.1",
 		"drizzle-kit": "catalog:",

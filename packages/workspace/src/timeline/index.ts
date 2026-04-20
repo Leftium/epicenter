@@ -2,7 +2,6 @@ export {
 	computeMidpoint,
 	generateInitialOrders,
 } from '../shared/fractional-index.js';
-export { populateFragmentFromMarkdown } from './richtext.js';
 export {
 	parseSheetFromCsv,
 	type SheetBinding,

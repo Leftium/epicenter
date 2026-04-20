@@ -379,15 +379,14 @@ describe('mv preserves content (no conversion)', () => {
 	});
 });
 
-async function getTimelineLength(
+function getTimelineLength(
 	fs: YjsFileSystem,
-	documents: { open(input: string): Promise<{ length: number }> },
+	documents: { get(input: string): { length: number } },
 	path: string,
-): Promise<number> {
+): number {
 	const id = fs.lookupId(path);
 	if (!id) throw new Error(`No file at ${path}`);
-	const content = await documents.open(id);
-	return content.length;
+	return documents.get(id).length;
 }
 
 describe('timeline content storage', () => {
@@ -398,18 +397,18 @@ describe('timeline content storage', () => {
 		await fs.appendFile('/log.txt', 'line2\n');
 		expect(await fs.readFile('/log.txt')).toBe('line1\nline2\n');
 		// Append to text should not grow timeline
-		expect(await getTimelineLength(fs, documents, '/log.txt')).toBe(1);
+		expect(getTimelineLength(fs, documents,'/log.txt')).toBe(1);
 	});
 
 	test('Uint8Array writes are treated as text (no mode switch)', async () => {
 		const { fs, ws } = setup();
 		const documents = ws.documents.files.content;
 		await fs.writeFile('/file.dat', 'text v1');
-		expect(await getTimelineLength(fs, documents, '/file.dat')).toBe(1);
+		expect(getTimelineLength(fs, documents,'/file.dat')).toBe(1);
 
 		// Uint8Array is decoded to text — same mode, overwrites in-place
 		await fs.writeFile('/file.dat', new Uint8Array([0x48, 0x69])); // "Hi"
-		expect(await getTimelineLength(fs, documents, '/file.dat')).toBe(1);
+		expect(getTimelineLength(fs, documents,'/file.dat')).toBe(1);
 		expect(await fs.readFile('/file.dat')).toBe('Hi');
 	});
 
@@ -420,7 +419,7 @@ describe('timeline content storage', () => {
 		await fs.writeFile('/file.txt', 'second');
 		await fs.writeFile('/file.txt', 'third');
 		expect(await fs.readFile('/file.txt')).toBe('third');
-		expect(await getTimelineLength(fs, documents, '/file.txt')).toBe(1);
+		expect(getTimelineLength(fs, documents,'/file.txt')).toBe(1);
 	});
 
 	test('readFileBuffer returns correct bytes for text entry', async () => {
@@ -439,7 +438,7 @@ describe('sheet file support', () => {
 		const fileId = fs.lookupId('/data.csv');
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
-		const content = await documents.open(fileId);
+		const content = documents.get(fileId);
 		content.batch(() => {
 			content.write('Name,Age\nAlice,30\n');
 			content.asSheet();
@@ -454,7 +453,7 @@ describe('sheet file support', () => {
 		const fileId = fs.lookupId('/data.csv');
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
-		const content = await documents.open(fileId);
+		const content = documents.get(fileId);
 		content.batch(() => {
 			content.write('A,B\n1,2\n');
 			content.asSheet();

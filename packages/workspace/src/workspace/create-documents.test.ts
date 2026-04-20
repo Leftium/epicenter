@@ -71,7 +71,7 @@ describe('createDocuments', () => {
 					},
 				],
 			});
-			await documents.open('f1');
+			documents.get('f1');
 			expect(receivedTableName).toBe('files');
 			expect(receivedDocumentName).toBe('content');
 		});
@@ -79,8 +79,8 @@ describe('createDocuments', () => {
 		test('is idempotent — same GUID returns the same content instance', async () => {
 			const { documents } = setup();
 
-			const content1 = await documents.open('f1');
-			const content2 = await documents.open('f1');
+			const content1 = documents.get('f1');
+			const content2 = documents.get('f1');
 			expect(content1).toBe(content2);
 		});
 
@@ -94,7 +94,7 @@ describe('createDocuments', () => {
 			} as const;
 			tables.files.set(row);
 
-			const content = await documents.open(row);
+			const content = documents.get(row);
 			content.write('hello from row');
 			expect(content.read()).toBe('hello from row');
 		});
@@ -102,7 +102,7 @@ describe('createDocuments', () => {
 		test('open accepts a string guid directly and returns content', async () => {
 			const { documents } = setup();
 
-			const content = await documents.open('f1');
+			const content = documents.get('f1');
 			content.write('hello from guid');
 			expect(content.read()).toBe('hello from guid');
 		});
@@ -112,7 +112,7 @@ describe('createDocuments', () => {
 		test('read returns empty string for new doc', async () => {
 			const { documents } = setup();
 
-			const content = await documents.open('f1');
+			const content = documents.get('f1');
 			const text = content.read();
 			expect(text).toBe('');
 		});
@@ -120,7 +120,7 @@ describe('createDocuments', () => {
 		test('write replaces text content, then read returns it', async () => {
 			const { documents } = setup();
 
-			const content = await documents.open('f1');
+			const content = documents.get('f1');
 			content.write('hello world');
 			const text = content.read();
 			expect(text).toBe('hello world');
@@ -129,7 +129,7 @@ describe('createDocuments', () => {
 		test('write replaces existing content', async () => {
 			const { documents } = setup();
 
-			const content = await documents.open('f1');
+			const content = documents.get('f1');
 			content.write('first');
 			content.write('second');
 			const text = content.read();
@@ -147,7 +147,7 @@ describe('createDocuments', () => {
 				_v: 1,
 			});
 
-			const content = await documents.open('f1');
+			const content = documents.get('f1');
 			content.write('hello');
 
 			// Give the update observer a tick
@@ -193,7 +193,7 @@ describe('createDocuments', () => {
 				_v: 1,
 			});
 
-			const content = await documents.open('f1');
+			const content = documents.get('f1');
 			content.write('hello');
 
 			const result = tables.files.get('f1');
@@ -228,7 +228,7 @@ describe('createDocuments', () => {
 				_v: 1,
 			});
 
-			const content = await documents.open('f1');
+			const content = documents.get('f1');
 			content.write('hello');
 
 			const result = tables.files.get('f1');
@@ -252,7 +252,7 @@ describe('createDocuments', () => {
 				capturedOrigin = origin;
 			});
 
-			const content = await documents.open('f1');
+			const content = documents.get('f1');
 			content.write('hello');
 
 			expect(capturedOrigin).toBe(DOCUMENTS_ORIGIN);
@@ -267,7 +267,7 @@ describe('createDocuments', () => {
 				_v: 1,
 			});
 
-			const content = await documents.open('f1');
+			const content = documents.get('f1');
 			// Get the underlying Y.Doc via a shared type — Timeline no longer exposes ydoc directly.
 			// asText() creates a timeline entry which triggers onUpdate, so reset updatedAt after.
 			const contentYdoc = content.asText().doc!;
@@ -298,7 +298,7 @@ describe('createDocuments', () => {
 				_v: 1,
 			});
 
-			const content = await documents.open('f1');
+			const content = documents.get('f1');
 			// Get the underlying Y.Doc via a shared type — Timeline no longer exposes ydoc directly.
 			// asText() creates a timeline entry which triggers onUpdate, so reset updatedAt after.
 			const contentYdoc = content.asText().doc!;
@@ -327,10 +327,10 @@ describe('createDocuments', () => {
 		test('frees memory — doc can be re-opened as new instance', async () => {
 			const { documents } = setup();
 
-			const content1 = await documents.open('f1');
+			const content1 = documents.get('f1');
 			await documents.close('f1');
 
-			const content2 = await documents.open('f1');
+			const content2 = documents.get('f1');
 			expect(content2).not.toBe(content1);
 		});
 
@@ -346,14 +346,14 @@ describe('createDocuments', () => {
 		test('closes all open documents', async () => {
 			const { documents } = setup();
 
-			const content1 = await documents.open('f1');
-			const content2 = await documents.open('f2');
+			const content1 = documents.get('f1');
+			const content2 = documents.get('f2');
 
 			await documents.closeAll();
 
 			// Re-opening should create new content instances
-			const content1b = await documents.open('f1');
-			const content2b = await documents.open('f2');
+			const content1b = documents.get('f1');
+			const content2b = documents.get('f2');
 			expect(content1b).not.toBe(content1);
 			expect(content2b).not.toBe(content2);
 		});
@@ -389,7 +389,7 @@ describe('createDocuments', () => {
 				],
 			});
 
-			await documents.open('f1');
+			documents.get('f1');
 			expect(order).toEqual([1, 2, 3]);
 		});
 
@@ -416,7 +416,7 @@ describe('createDocuments', () => {
 				],
 			});
 
-			await documents.open('f1');
+			documents.get('f1');
 			expect(secondReceivedInit).toBe(true);
 		});
 
@@ -442,14 +442,14 @@ describe('createDocuments', () => {
 				],
 			});
 
-			await documents.open('f1');
+			documents.get('f1');
 			expect(hooksCalled).toBe(2);
 		});
 
 		test('no hooks → bare content opens with instant resolution', async () => {
 			const { documents } = setup({ documentExtensions: [] });
 
-			const content = await documents.open('f1');
+			const content = documents.get('f1');
 			expect(content.read()).toBe('');
 		});
 	});
@@ -477,7 +477,7 @@ describe('createDocuments', () => {
 				],
 			});
 
-			await documents.open('f1');
+			documents.get('f1');
 			expect(capturedFirstExtension).toBeDefined();
 			expect(
 				(capturedFirstExtension as Record<string, unknown>).someValue,
@@ -506,7 +506,7 @@ describe('createDocuments', () => {
 				],
 			});
 
-			await documents.open('f1');
+			documents.get('f1');
 			expect(firstExtensionSeen).toBe(true);
 		});
 	});
@@ -965,7 +965,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asText on empty timeline auto-creates text entry', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 
 		const text = content.asText();
 		expect(text).toBeInstanceOf(Y.Text);
@@ -974,7 +974,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asText on text entry returns existing Y.Text', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 		content.write('hello');
 
 		const text = content.asText();
@@ -984,7 +984,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asText on richtext entry converts (lossy)', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 
 		const fragment = content.asRichText();
 		const p = new Y.XmlElement('paragraph');
@@ -1003,7 +1003,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asText on sheet entry converts to CSV', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 
 		content.write('Name,Age\nAlice,30\n');
 		content.asSheet();
@@ -1019,7 +1019,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asRichText on empty timeline auto-creates richtext entry', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 
 		const fragment = content.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
@@ -1028,7 +1028,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asRichText on richtext entry returns existing fragment', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 		content.asRichText();
 
 		const fragment = content.asRichText();
@@ -1038,7 +1038,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asRichText on text entry converts to paragraphs', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 		content.write('Line 1\nLine 2');
 
 		const fragment = content.asRichText();
@@ -1050,7 +1050,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asRichText on sheet entry converts CSV to paragraphs', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 		content.write('A,B\n1,2\n');
 		content.asSheet();
 
@@ -1064,7 +1064,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asSheet on empty timeline auto-creates sheet entry', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 
 		const sheet = content.asSheet();
 		expect(sheet.columns).toBeInstanceOf(Y.Map);
@@ -1074,7 +1074,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asSheet on sheet entry returns existing binding', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 		content.write('X,Y\n1,2\n');
 		content.asSheet();
 
@@ -1086,7 +1086,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asSheet on text entry parses as CSV', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 		content.write('Col1,Col2\nA,B\n');
 
 		const sheet = content.asSheet();
@@ -1098,7 +1098,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('asSheet on richtext entry extracts text then parses CSV', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 
 		const fragment = content.asRichText();
 		const p1 = new Y.XmlElement('paragraph');
@@ -1121,7 +1121,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('mode reflects current timeline state', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 
 		expect(content.currentType).toBeUndefined(); // empty
 		content.write('text');
@@ -1132,7 +1132,7 @@ describe('content.asText / asRichText / asSheet', () => {
 
 	test('consecutive conversions: text → richtext → sheet → text', async () => {
 		const { documents } = setupSimple();
-		const content = await documents.open('f1');
+		const content = documents.get('f1');
 
 		content.write('hello');
 		expect(content.currentType).toBe('text');

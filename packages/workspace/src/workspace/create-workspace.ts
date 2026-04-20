@@ -198,7 +198,7 @@ export function createWorkspace<
 	// Accumulated document extension registrations (in chain order).
 	// Mutable array — grows as .withDocumentExtension() is called. Document
 	// bindings reference this array by closure, so by the time user code
-	// calls .open(), all extensions are registered.
+	// calls .get(), all extensions are registered.
 	const documentExtensionRegistrations: DocumentExtensionRegistration[] = [];
 
 	// Create documents for tables that have .withDocument() declarations.
@@ -381,7 +381,7 @@ export function createWorkspace<
 		 *
 		 * Shared by `withExtension` and `withWorkspaceExtension` — the only
 		 * difference is whether `withExtension` also registers the factory for
-		 * document Y.Docs (fired lazily at `documents.open()` time).
+		 * document Y.Docs (fired lazily at `documents.get()` time).
 		 */
 		function applyWorkspaceExtension<
 			TKey extends string,

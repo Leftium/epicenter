@@ -807,7 +807,7 @@ export type WorkspaceClientBuilder<
 	 * Register an extension for BOTH the workspace Y.Doc AND all content document Y.Docs.
 	 *
 	 * The factory fires once for the workspace doc (at build time, synchronously) and
-	 * once per content doc (at `documents.open()` time).
+	 * once per content doc (at `documents.get()` time).
 	 */
 	withExtension<TKey extends string, TExports extends Record<string, unknown>>(
 		key: TKey,

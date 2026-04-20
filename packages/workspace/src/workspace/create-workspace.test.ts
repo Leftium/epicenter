@@ -533,7 +533,7 @@ describe('createWorkspace', () => {
 				return { exports: {}, dispose: () => {} };
 			});
 
-			await client.documents.files.content.open('f1');
+			client.documents.files.content.get('f1');
 
 			expect(hookCalled).toBe(true);
 		});
@@ -572,7 +572,7 @@ describe('createWorkspace', () => {
 			expect(client.extensions.myExt.tag).toBe('ext');
 
 			// Open a document — the same factory should fire again as a document extension
-			await client.documents.files.content.open('f1');
+			client.documents.files.content.get('f1');
 
 			// Factory called twice: once for workspace, once for document
 			expect(factoryCallCount).toBe(2);
@@ -610,7 +610,7 @@ describe('createWorkspace', () => {
 			expect(client.extensions.wsOnly.tag).toBe('ws-only');
 
 			// Opening a document should NOT trigger this extension
-			await client.documents.files.content.open('f1');
+			client.documents.files.content.get('f1');
 
 			// Still exactly 1 call — withWorkspaceExtension does not register for documents
 			expect(factoryCallCount).toBe(1);
@@ -635,7 +635,7 @@ describe('createWorkspace', () => {
 				tables: { files: filesTable },
 			});
 
-			const doc1 = await client.documents.files.content.open('f1');
+			const doc1 = client.documents.files.content.get('f1');
 
 			await client.dispose();
 
@@ -787,7 +787,7 @@ describe('createWorkspace', () => {
 				],
 			});
 
-			await documents.open('doc-1');
+			documents.get('doc-1');
 			await documents.close('doc-1');
 
 			expect(disposeOrder).toEqual(['third', 'second', 'first']); // LIFO

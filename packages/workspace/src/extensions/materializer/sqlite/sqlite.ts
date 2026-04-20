@@ -17,7 +17,7 @@ import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import { standardSchemaToJsonSchema } from '../../../shared/standard-schema.js';
 import Type from 'typebox';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
-import type { BaseRow, TableHelper } from '../../../workspace/types.js';
+import type { BaseRow, Table } from '../../../workspace/types.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
 import { ftsSearch, setupFtsTable } from './fts.js';
 import type {
@@ -28,7 +28,7 @@ import type {
 } from './types.js';
 
 // biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
-type AnyTableHelper = TableHelper<any>;
+type AnyTable = Table<any>;
 
 /**
  * Create a one-way materializer that mirrors workspace table rows into SQLite.
@@ -67,7 +67,7 @@ type AnyTableHelper = TableHelper<any>;
  * ```
  */
 export function createSqliteMaterializer<
-	TTables extends Record<string, AnyTableHelper>,
+	TTables extends Record<string, AnyTable>,
 >(
 	{ tables, definitions, init }: {
 		tables: TTables;
@@ -110,7 +110,7 @@ export function createSqliteMaterializer<
 
 	async function fullLoadTable(
 		tableName: string,
-		table: TableHelper<BaseRow>,
+		table: Table<BaseRow>,
 	) {
 		const serialize = tableConfigs.get(tableName)?.serialize ?? serializeValue;
 		const rows = table.getAllValid();

@@ -1,4 +1,4 @@
-import type { TableHelper } from '@epicenter/workspace';
+import type { Table } from '@epicenter/workspace';
 import type { FileId } from '../ids.js';
 import type { FileRow } from '../table.js';
 import { disambiguateNames } from './naming.js';
@@ -20,7 +20,7 @@ type RowSnapshot = {
  * Touch-only changes (size/updatedAt) are detected via a snapshot of
  * path-relevant fields and skipped entirely—O(1) per editing mutation.
  */
-export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
+export function createFileSystemIndex(filesTable: Table<FileRow>) {
 	/** "/docs/api.md" → FileId */
 	const pathToId = new Map<string, FileId>();
 	/** FileId → "/docs/api.md" (reverse lookup) */
@@ -469,7 +469,7 @@ export type FileSystemIndex = ReturnType<typeof createFileSystemIndex>;
  * If a cycle is found, break it by setting the later-timestamped node's parentId to null.
  */
 function fixCircularReferences(
-	filesTable: TableHelper<FileRow>,
+	filesTable: Table<FileRow>,
 	activeRows: FileRow[],
 ) {
 	const visited = new Set<FileId>();
@@ -483,7 +483,7 @@ function fixCircularReferences(
 
 function detectCycle(
 	startId: FileId,
-	filesTable: TableHelper<FileRow>,
+	filesTable: Table<FileRow>,
 	visited: Set<FileId>,
 	inStack: Set<FileId>,
 ) {
@@ -536,7 +536,7 @@ function detectCycle(
  * Move orphans to root by setting parentId to null.
  */
 function fixOrphans(
-	filesTable: TableHelper<FileRow>,
+	filesTable: Table<FileRow>,
 	activeRows: FileRow[],
 	childrenOf: Map<FileId | null, FileId[]>,
 ) {

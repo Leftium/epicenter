@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { MaybePromise } from '../../../workspace/lifecycle.js';
-import type { KvHelper, TableHelper } from '../../../workspace/types.js';
+import type { Kv, Table } from '../../../workspace/types.js';
 import type { SerializeResult } from './markdown.js';
 import { toMarkdown } from './markdown.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';
@@ -28,9 +28,9 @@ import { parseMarkdownFile } from './parse-markdown-file.js';
  */
 export function createMarkdownMaterializer<
 	// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
-	TTables extends Record<string, TableHelper<any>>,
+	TTables extends Record<string, Table<any>>,
 	// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv helpers
-	TKv extends KvHelper<any>,
+	TKv extends Kv<any>,
 >(
 	ctx: { tables: TTables; kv: TKv; init: Promise<void> },
 	config: {
@@ -41,20 +41,20 @@ export function createMarkdownMaterializer<
 	type TableConfigByName = {
 		[TName in keyof TTables & string]?: {
 			dir?: string;
-			serialize?: TTables[TName] extends TableHelper<infer TRow>
+			serialize?: TTables[TName] extends Table<infer TRow>
 				? (row: TRow) => MaybePromise<SerializeResult>
 				: never;
 			deserialize?: (parsed: {
 				frontmatter: Record<string, unknown>;
 				body: string | undefined;
 			}) => MaybePromise<
-				TTables[TName] extends TableHelper<infer TRow> ? TRow : never
+				TTables[TName] extends Table<infer TRow> ? TRow : never
 			>;
 		};
 	};
 
 	type TableRow<TName extends keyof TTables & string> =
-		TTables[TName] extends TableHelper<infer TRow> ? TRow : never;
+		TTables[TName] extends Table<infer TRow> ? TRow : never;
 
 	type MaterializerExports = {
 		whenFlushed: Promise<void>;
@@ -89,7 +89,7 @@ export function createMarkdownMaterializer<
 			name: TName,
 			config?: {
 				dir?: string;
-				serialize?: TTables[TName] extends TableHelper<infer TRow>
+				serialize?: TTables[TName] extends Table<infer TRow>
 					? (row: TRow) => MaybePromise<SerializeResult>
 					: never;
 				/** Parse a markdown file back into a table row. Required for `pushFromMarkdown`. Default: uses frontmatter fields directly. */
@@ -97,7 +97,7 @@ export function createMarkdownMaterializer<
 					frontmatter: Record<string, unknown>;
 					body: string | undefined;
 				}) => MaybePromise<
-					TTables[TName] extends TableHelper<infer TRow> ? TRow : never
+					TTables[TName] extends Table<infer TRow> ? TRow : never
 				>;
 			},
 		): MaterializerBuilder;

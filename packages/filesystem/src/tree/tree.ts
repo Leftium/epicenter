@@ -1,4 +1,4 @@
-import type { TableHelper } from '@epicenter/workspace';
+import type { Table } from '@epicenter/workspace';
 import { FS_ERRORS } from '../errors.js';
 import type { FileId } from '../ids.js';
 import { generateFileId } from '../ids.js';
@@ -14,7 +14,7 @@ import { createFileSystemIndex } from './path-index.js';
  * All methods work with absolute paths (never sees `cwd`).
  * Has no knowledge of file content — only structure and metadata.
  */
-export function createFileTree(filesTable: TableHelper<FileRow>) {
+export function createFileTree(filesTable: Table<FileRow>) {
 	const index = createFileSystemIndex(filesTable);
 
 	return {

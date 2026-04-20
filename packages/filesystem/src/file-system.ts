@@ -1,4 +1,4 @@
-import type { Documents, TableHelper, Timeline } from '@epicenter/workspace';
+import type { Documents, Table, Timeline } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
 import { FS_ERRORS } from './errors.js';
 import type { FileId } from './ids.js';
@@ -36,7 +36,7 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  * ```
  */
 export function createYjsFileSystem(
-	filesTable: TableHelper<FileRow>,
+	filesTable: Table<FileRow>,
 	contentDocuments: Documents<FileRow, Timeline>,
 	cwd: string = '/',
 ) {

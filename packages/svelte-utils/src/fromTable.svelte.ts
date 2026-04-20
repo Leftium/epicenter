@@ -1,4 +1,4 @@
-import type { BaseRow, TableHelper } from '@epicenter/workspace';
+import type { BaseRow, Table } from '@epicenter/workspace';
 import { SvelteMap } from 'svelte/reactivity';
 
 /**
@@ -29,7 +29,7 @@ import { SvelteMap } from 'svelte/reactivity';
  * ```
  */
 export function fromTable<TRow extends BaseRow>(
-	table: TableHelper<TRow>,
+	table: Table<TRow>,
 ): SvelteMap<string, TRow> & { destroy: () => void } {
 	const map = new SvelteMap<string, TRow>();
 

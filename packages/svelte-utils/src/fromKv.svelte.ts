@@ -1,7 +1,7 @@
 import type {
 	InferKvValue,
 	KvDefinitions,
-	KvHelper,
+	Kv,
 } from '@epicenter/workspace';
 
 /**
@@ -29,7 +29,7 @@ export function fromKv<
 	TDefs extends KvDefinitions,
 	K extends keyof TDefs & string,
 >(
-	kv: KvHelper<TDefs>,
+	kv: Kv<TDefs>,
 	key: K,
 ): { current: InferKvValue<TDefs[K]>; destroy: () => void } {
 	let value = $state(kv.get(key));

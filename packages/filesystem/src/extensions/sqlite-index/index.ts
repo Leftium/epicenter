@@ -24,7 +24,7 @@
  * @module
  */
 
-import type { Documents, TableHelper, Timeline } from '@epicenter/workspace';
+import type { Documents, Table, Timeline } from '@epicenter/workspace';
 import type { Client, InStatement } from '@libsql/client-wasm';
 import { createClient } from '@libsql/client-wasm';
 
@@ -113,7 +113,7 @@ export type SqliteIndex = {
  * (using `filesTable` from `@epicenter/filesystem`) satisfies this.
  */
 type SqliteIndexContext = {
-	tables: { files: TableHelper<FileRow> };
+	tables: { files: Table<FileRow> };
 	documents: {
 		files: {
 			content: Documents<FileRow, Timeline>;
@@ -514,7 +514,7 @@ function computePaths(rows: FileRow[]): Map<string, string> {
  */
 function computePathForRow(
 	id: string,
-	filesTable: TableHelper<FileRow>,
+	filesTable: Table<FileRow>,
 ): string | null {
 	const visited = new Set<string>();
 

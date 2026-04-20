@@ -327,7 +327,7 @@ If you define a `files` table with `.withDocument('content', ...)`, you get this
 - `client.documents.files.content.write(rowOrGuid, text)` — replaces content.
 - `client.documents.files.content.append(rowOrGuid, text)` — appends text (uses `appendText` when the strategy exposes one, else read-concat-write).
 - `client.documents.files.content.open(rowOrGuid)` — legacy async accessor; equivalent to `get(id)` + `await handle.whenLoaded`.
-- `client.documents.files.content.close(rowOrGuid)` / `.closeAll()` — rarely needed; the framework auto-closes on row delete and workspace dispose.
+- `client.documents.files.content.close(rowOrGuid)` / `.closeAll()` — call `close()` when you delete the underlying row; `closeAll()` runs automatically at workspace dispose.
 
 The handle returned from `.get()` is the strategy binding plus framework extras: `handle.read() / .write(...) / .binding / .asText() / .asRichText()` (strategy methods) and `handle.whenLoaded / .ydoc` (framework extras). For UI components, the idiomatic shape is:
 
@@ -502,7 +502,7 @@ async function documentExample() {
 	});
 
 	// Sync access — returns a cached handle keyed by GUID. The handle IS the
-	// strategy binding (Timeline, PlainTextHandle, RichTextHandle) plus
+	// strategy binding (Timeline, PlainTextAttachment, RichTextAttachment) plus
 	// framework extras (`whenLoaded`, `ydoc`).
 	const handle = workspace.documents.files.content.get('doc-1');
 	handle.write('# Hello from a document');

@@ -534,28 +534,3 @@ describe('just-bash integration', () => {
 		expect(result.stdout.trim()).toContain('3');
 	});
 });
-
-describe('document integration', () => {
-	test('hard row deletion triggers automatic content doc cleanup', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
-
-		// Write a file to create both the row and the content doc
-		await fs.writeFile('/test.txt', 'hello world');
-		const fileId = fs.lookupId('/test.txt');
-		expect(fileId).toBeDefined();
-		if (!fileId) throw new Error('Expected /test.txt to exist');
-
-		// Open the content doc
-		const content1 = await documents.open(fileId);
-
-		// Hard-delete the row directly from the table.
-		// The documents manager's table observer should automatically close the content doc.
-		ws.tables.files.delete(fileId);
-
-		// Re-opening should create a FRESH instance
-		// because the documents manager's row-deletion observer called close()
-		const content2 = await documents.open(fileId);
-		expect(content2).not.toBe(content1);
-	});
-});

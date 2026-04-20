@@ -336,8 +336,9 @@ export type DocumentHandle<TBinding = ContentHandle> = TBinding & {
  * ## Legacy API (still works, may be removed)
  *
  * - `open(id)` — async, same as `get(id) + await whenLoaded`
- * - `close(id)` — force-release a cached handle (rarely needed; framework
- *   auto-closes on row delete and workspace dispose)
+ * - `close(id)` — force-release a cached handle. Call when you delete the
+ *   underlying row so the doc can be garbage-collected; otherwise `closeAll()`
+ *   via workspace dispose handles cleanup.
  * - `closeAll()` — release all cached handles (workspace dispose uses this)
  *
  * @typeParam TRow - The row type of the bound table
@@ -395,8 +396,9 @@ export type Documents<
 	/**
 	 * Force-release a cached handle. Persisted data is not deleted.
 	 *
-	 * Rarely needed — the framework auto-closes on row delete and workspace
-	 * dispose. Use only for explicit eviction (e.g., memory pressure, tests).
+	 * Call this when you delete the underlying row — otherwise the handle stays
+	 * cached until `closeAll()` runs at workspace dispose. Also useful for
+	 * explicit eviction (memory pressure, tests).
 	 *
 	 * @param input - A row or GUID string
 	 */

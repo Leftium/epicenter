@@ -34,10 +34,9 @@ export type DocumentSnapshot<TAttach> = TAttach & {
  * // release fires on scope exit
  * ```
  *
- * Reserved top-level keys on the user's build-closure return value: `retain`,
- * `release`, `whenLoaded`, `[Symbol.dispose]`, `[Symbol.asyncDispose]`. The
- * framework attaches those — if the build closure returns one, `defineDocument`
- * throws.
+ * Reserved top-level keys on the user's build-closure return value: `release`,
+ * `whenLoaded`. The framework attaches those — if the build closure returns
+ * one, `defineDocument` throws.
  */
 export type DocumentHandle<TAttach> = DocumentSnapshot<TAttach> &
 	Disposable &
@@ -48,12 +47,6 @@ export type DocumentHandle<TAttach> = DocumentSnapshot<TAttach> &
 		 * sharing the same id) schedules disposal after the factory's `graceMs`.
 		 */
 		release(): void;
-		/**
-		 * @deprecated Use `factory.open(id)` and `handle.release()` instead.
-		 * `retain()` on a handle from `factory.get(id)` still works for one
-		 * release cycle but will be removed.
-		 */
-		retain(): () => void;
 	};
 
 /**
@@ -80,12 +73,6 @@ export type DocumentFactory<Id extends string, TAttach> = {
 	peek(id: Id): DocumentSnapshot<TAttach> | undefined;
 	/** `open(id)` + `await handle.whenLoaded`. Returns the retaining handle. */
 	read(id: Id): Promise<DocumentHandle<TAttach>>;
-	/**
-	 * @deprecated Use `factory.open(id)` + `handle.release()`, or
-	 * `factory.peek(id)` for non-retaining reads. `get` does not retain —
-	 * callers who forgot to call `retain()` leaked the doc until `close`.
-	 */
-	get(id: Id): DocumentHandle<TAttach>;
 	/**
 	 * Explicit eviction. Cancels any pending grace-period disposal. `ydoc.destroy()`
 	 * fires synchronously; the returned promise resolves once every top-level

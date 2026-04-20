@@ -34,33 +34,45 @@ function makeSimpleFactory(opts?: {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// get / cache identity
+// open / cache identity
 // ════════════════════════════════════════════════════════════════════════════
 
-describe('get', () => {
-	test('returns the same handle instance for the same id', () => {
+describe('open / cache identity', () => {
+	test('returns distinct wrappers for the same id, sharing the underlying ydoc', () => {
 		const factory = makeSimpleFactory();
-		const h1 = factory.get('a');
-		const h2 = factory.get('a');
-		expect(h1).toBe(h2);
+		const h1 = factory.open('a');
+		const h2 = factory.open('a');
+		expect(h1).not.toBe(h2);
+		expect(h1.ydoc).toBe(h2.ydoc);
+		h1.release();
+		h2.release();
 	});
 
 	test('returns independent handles for different ids', () => {
 		const factory = makeSimpleFactory();
-		const h1 = factory.get('a');
-		const h2 = factory.get('b');
-		expect(h1).not.toBe(h2);
+		const h1 = factory.open('a');
+		const h2 = factory.open('b');
+		expect(h1.ydoc).not.toBe(h2.ydoc);
 		expect(h1.ydoc.guid).toBe('a');
 		expect(h2.ydoc.guid).toBe('b');
+		h1.release();
+		h2.release();
 	});
 
-	test('concurrent .get(sameId) is race-safe (construction is synchronous)', () => {
+	test('concurrent .open(sameId) is race-safe (construction is synchronous)', () => {
 		// No await between Map.get and Map.set — three calls in the same tick
-		// must share the same handle.
+		// must share the same underlying ydoc.
 		const factory = makeSimpleFactory();
-		const [a, b, c] = [factory.get('x'), factory.get('x'), factory.get('x')];
-		expect(a).toBe(b);
-		expect(b).toBe(c);
+		const [a, b, c] = [
+			factory.open('x'),
+			factory.open('x'),
+			factory.open('x'),
+		];
+		expect(a.ydoc).toBe(b.ydoc);
+		expect(b.ydoc).toBe(c.ydoc);
+		a.release();
+		b.release();
+		c.release();
 	});
 
 	test('build closure runs without coupling to a parent workspace', () => {
@@ -69,9 +81,10 @@ describe('get', () => {
 			const ydoc = new Y.Doc({ guid: id });
 			return { ydoc, createdAt: Date.now() };
 		});
-		const handle = factory.get('solo');
+		const handle = factory.open('solo');
 		expect(handle.ydoc).toBeInstanceOf(Y.Doc);
 		expect(typeof handle.createdAt).toBe('number');
+		handle.release();
 	});
 });
 
@@ -89,11 +102,12 @@ describe('throwing build closure', () => {
 			return { ydoc };
 		});
 
-		expect(() => factory.get('foo')).toThrow('boom');
+		expect(() => factory.open('foo')).toThrow('boom');
 		// The second attempt must run the closure again, not hit a poisoned cache entry.
-		const handle = factory.get('foo');
+		const handle = factory.open('foo');
 		expect(calls).toBe(2);
 		expect(handle.ydoc.guid).toBe('foo');
+		handle.release();
 	});
 });
 
@@ -102,12 +116,12 @@ describe('throwing build closure', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('reserved attachment keys', () => {
-	test('throws if build returns top-level "retain"', () => {
+	test('throws if build returns top-level "release"', () => {
 		const factory = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
-			return { ydoc, retain: 'oops' } as never;
+			return { ydoc, release: 'oops' } as never;
 		});
-		expect(() => factory.get('a')).toThrow(/reserved key "retain"/);
+		expect(() => factory.open('a')).toThrow(/reserved key "release"/);
 	});
 
 	test('throws if build returns top-level "whenLoaded"', () => {
@@ -115,7 +129,7 @@ describe('reserved attachment keys', () => {
 			const ydoc = new Y.Doc({ guid: id });
 			return { ydoc, whenLoaded: Promise.resolve() } as never;
 		});
-		expect(() => factory.get('a')).toThrow(/reserved key "whenLoaded"/);
+		expect(() => factory.open('a')).toThrow(/reserved key "whenLoaded"/);
 	});
 });
 
@@ -131,11 +145,12 @@ describe('guid stability', () => {
 			return { ydoc };
 		});
 
-		const h1 = factory.get('foo');
+		const h1 = factory.open('foo');
 		expect(h1.ydoc.guid).toBe('foo-0');
-		// Evict so the next get() reruns the closure.
+		// Evict so the next open() reruns the closure.
+		h1.release();
 		await factory.close('foo');
-		expect(() => factory.get('foo')).toThrow(/guid instability/);
+		expect(() => factory.open('foo')).toThrow(/guid instability/);
 	});
 
 	test('accepts stable guids across reconstructions', async () => {
@@ -143,12 +158,14 @@ describe('guid stability', () => {
 			const ydoc = new Y.Doc({ guid: `stable-${id}` });
 			return { ydoc };
 		});
-		const h1 = factory.get('foo');
+		const h1 = factory.open('foo');
 		const guid1 = h1.ydoc.guid;
+		h1.release();
 		await factory.close('foo');
-		const h2 = factory.get('foo');
+		const h2 = factory.open('foo');
 		expect(h2.ydoc.guid).toBe(guid1);
-		expect(h2).not.toBe(h1); // fresh handle after close
+		expect(h2.ydoc).not.toBe(h1.ydoc); // fresh ydoc after close
+		h2.release();
 	});
 });
 
@@ -159,9 +176,10 @@ describe('guid stability', () => {
 describe('whenLoaded', () => {
 	test('resolves immediately when no attachment exposes whenLoaded', async () => {
 		const factory = makeSimpleFactory();
-		const handle = factory.get('a');
+		const handle = factory.open('a');
 		await handle.whenLoaded; // should not hang
 		expect(true).toBe(true);
+		handle.release();
 	});
 
 	test('aggregates multiple attachments exposing whenLoaded', async () => {
@@ -182,7 +200,7 @@ describe('whenLoaded', () => {
 			return { ydoc, idbLike, syncLike };
 		});
 
-		const handle = factory.get('a');
+		const handle = factory.open('a');
 		let resolved = false;
 		void handle.whenLoaded.then(() => {
 			resolved = true;
@@ -198,6 +216,7 @@ describe('whenLoaded', () => {
 		resolveB();
 		await handle.whenLoaded;
 		expect(resolved).toBe(true);
+		handle.release();
 	});
 });
 
@@ -208,16 +227,17 @@ describe('whenLoaded', () => {
 describe('onLocalUpdate', () => {
 	test('fires for local edits (null origin)', () => {
 		const factory = makeSimpleFactory();
-		const handle = factory.get('a');
+		const handle = factory.open('a');
 		let calls = 0;
 		onLocalUpdate(handle.ydoc, () => calls++);
 		handle.ydoc.getText('content').insert(0, 'hi');
 		expect(calls).toBe(1);
+		handle.release();
 	});
 
 	test('skips transport-origin updates (Symbol origin)', () => {
 		const factory = makeSimpleFactory();
-		const handle = factory.get('a');
+		const handle = factory.open('a');
 		let calls = 0;
 		onLocalUpdate(handle.ydoc, () => calls++);
 
@@ -229,11 +249,12 @@ describe('onLocalUpdate', () => {
 
 		expect(calls).toBe(0);
 		remote.destroy();
+		handle.release();
 	});
 
 	test('skips DOCUMENTS_ORIGIN-tagged transactions', () => {
 		const factory = makeSimpleFactory();
-		const handle = factory.get('a');
+		const handle = factory.open('a');
 		let calls = 0;
 		onLocalUpdate(handle.ydoc, () => calls++);
 
@@ -242,11 +263,12 @@ describe('onLocalUpdate', () => {
 		}, DOCUMENTS_ORIGIN);
 
 		expect(calls).toBe(0);
+		handle.release();
 	});
 
 	test('fires for non-transport remote replays (null origin on applyUpdate)', () => {
 		const factory = makeSimpleFactory();
-		const handle = factory.get('a');
+		const handle = factory.open('a');
 		let calls = 0;
 		onLocalUpdate(handle.ydoc, () => calls++);
 
@@ -258,11 +280,12 @@ describe('onLocalUpdate', () => {
 
 		expect(calls).toBe(1);
 		remote.destroy();
+		handle.release();
 	});
 
 	test('throwing callback is isolated (logged, does not crash caller)', () => {
 		const factory = makeSimpleFactory();
-		const handle = factory.get('a');
+		const handle = factory.open('a');
 		const prevError = console.error;
 		const errors: unknown[] = [];
 		console.error = (...args: unknown[]) => errors.push(args);
@@ -278,17 +301,19 @@ describe('onLocalUpdate', () => {
 		} finally {
 			console.error = prevError;
 		}
+		handle.release();
 	});
 
 	test('unsubscribe stops future callbacks', () => {
 		const factory = makeSimpleFactory();
-		const handle = factory.get('a');
+		const handle = factory.open('a');
 		let calls = 0;
 		const off = onLocalUpdate(handle.ydoc, () => calls++);
 		handle.ydoc.getText('t').insert(0, 'a');
 		off();
 		handle.ydoc.getText('t').insert(0, 'b');
 		expect(calls).toBe(1);
+		handle.release();
 	});
 });
 
@@ -297,12 +322,14 @@ describe('onLocalUpdate', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('close / closeAll', () => {
-	test('close evicts the entry; next .get() constructs fresh', async () => {
+	test('close evicts the entry; next .open() constructs fresh', async () => {
 		const factory = makeSimpleFactory();
-		const h1 = factory.get('a');
+		const h1 = factory.open('a');
+		const ydoc1 = h1.ydoc;
 		await factory.close('a');
-		const h2 = factory.get('a');
-		expect(h2).not.toBe(h1);
+		const h2 = factory.open('a');
+		expect(h2.ydoc).not.toBe(ydoc1);
+		h2.release();
 	});
 
 	test('close on unknown id is a no-op', async () => {
@@ -312,7 +339,7 @@ describe('close / closeAll', () => {
 
 	test('close destroys the ydoc', async () => {
 		const factory = makeSimpleFactory();
-		const handle = factory.get('a');
+		const handle = factory.open('a');
 		let destroyed = false;
 		handle.ydoc.once('destroy', () => {
 			destroyed = true;
@@ -321,7 +348,7 @@ describe('close / closeAll', () => {
 		expect(destroyed).toBe(true);
 	});
 
-	test('close awaits attachments\' async disposed promises', async () => {
+	test("close awaits attachments' async disposed promises", async () => {
 		let resolveDisposed!: () => void;
 		const factory = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
@@ -332,7 +359,7 @@ describe('close / closeAll', () => {
 			};
 			return { ydoc, idbLike };
 		});
-		factory.get('a');
+		factory.open('a');
 
 		let settled = false;
 		const closePromise = factory.close('a').then(() => {
@@ -348,7 +375,7 @@ describe('close / closeAll', () => {
 		expect(settled).toBe(true);
 	});
 
-	test('closeAll awaits every attachment\'s disposed promise', async () => {
+	test("closeAll awaits every attachment's disposed promise", async () => {
 		const resolvers: Array<() => void> = [];
 		const factory = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
@@ -359,8 +386,8 @@ describe('close / closeAll', () => {
 			};
 			return { ydoc, idbLike };
 		});
-		factory.get('a');
-		factory.get('b');
+		factory.open('a');
+		factory.open('b');
 
 		let settled = false;
 		const p = factory.closeAll().then(() => {
@@ -377,177 +404,19 @@ describe('close / closeAll', () => {
 		expect(settled).toBe(true);
 	});
 
-	test('closeAll disposes every open entry and re-get creates fresh handles', async () => {
+	test('closeAll disposes every open entry and re-open creates fresh ydocs', async () => {
 		const factory = makeSimpleFactory();
-		const a1 = factory.get('a');
-		const b1 = factory.get('b');
+		const a1 = factory.open('a');
+		const b1 = factory.open('b');
+		const ydocA = a1.ydoc;
+		const ydocB = b1.ydoc;
 		await factory.closeAll();
-		expect(factory.get('a')).not.toBe(a1);
-		expect(factory.get('b')).not.toBe(b1);
-	});
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// retain / release — ref-count and grace-period disposal
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('deprecated: retain + get', () => {
-	test('construct alone does not schedule disposal (refcount starts at 0)', async () => {
-		const factory = makeSimpleFactory({ graceMs: 10 });
-		const handle = factory.get('a');
-		// No bind() → no scheduled disposal.
-		await new Promise((r) => setTimeout(r, 25));
-		expect(handle.ydoc.isDestroyed).toBe(false);
-	});
-
-	test('last release + grace elapsed disposes the ydoc', async () => {
-		const factory = makeSimpleFactory({ graceMs: 10 });
-		const handle = factory.get('a');
-		const release = handle.retain();
-		release();
-		expect(handle.ydoc.isDestroyed).toBe(false);
-		await new Promise((r) => setTimeout(r, 30));
-		expect(handle.ydoc.isDestroyed).toBe(true);
-		// And the cache has evicted: a fresh .get() returns a new handle.
-		const fresh = factory.get('a');
-		expect(fresh).not.toBe(handle);
-	});
-
-	test('multiple binds refcount; only last release schedules disposal', async () => {
-		const factory = makeSimpleFactory({ graceMs: 15 });
-		const handle = factory.get('a');
-		const r1 = handle.retain();
-		const r2 = handle.retain();
-		r1();
-		await new Promise((r) => setTimeout(r, 30));
-		expect(handle.ydoc.isDestroyed).toBe(false);
-		r2();
-		await new Promise((r) => setTimeout(r, 30));
-		expect(handle.ydoc.isDestroyed).toBe(true);
-	});
-
-	test('re-bind during grace cancels the pending disposal', async () => {
-		const factory = makeSimpleFactory({ graceMs: 20 });
-		const handle = factory.get('a');
-		const r1 = handle.retain();
-		r1();
-		await new Promise((r) => setTimeout(r, 5));
-		const r2 = handle.retain();
-
-		await new Promise((r) => setTimeout(r, 35));
-		expect(handle.ydoc.isDestroyed).toBe(false);
-
-		r2();
-		await new Promise((r) => setTimeout(r, 35));
-		expect(handle.ydoc.isDestroyed).toBe(true);
-	});
-
-	test('release() is idempotent (double-release does not double-decrement)', async () => {
-		const factory = makeSimpleFactory({ graceMs: 10 });
-		const handle = factory.get('a');
-		const r1 = handle.retain();
-		const r2 = handle.retain();
-		r1();
-		r1(); // double release — refcount must stay at 1
-		await new Promise((r) => setTimeout(r, 25));
-		expect(handle.ydoc.isDestroyed).toBe(false);
-		r2();
-		await new Promise((r) => setTimeout(r, 25));
-		expect(handle.ydoc.isDestroyed).toBe(true);
-	});
-
-	test('rapid 0→1→0→1 within the same tick does not fire stale disposal', async () => {
-		// Classic bug: release schedules a timer; an immediate re-bind must
-		// cancel it. Since the timer is scheduled in the next task queue,
-		// a synchronous re-bind must clear it before it fires.
-		const factory = makeSimpleFactory({ graceMs: 0 });
-		const handle = factory.get('a');
-		const r1 = handle.retain();
-		r1();
-		const r2 = handle.retain();
-		// No microtask yield yet — timer hasn't had a chance to fire.
-		expect(handle.ydoc.isDestroyed).toBe(false);
-		r2();
-		await new Promise((r) => setTimeout(r, 15));
-		expect(handle.ydoc.isDestroyed).toBe(true);
-	});
-
-	test('close() during grace fires disposal synchronously and cancels the pending timer', async () => {
-		const factory = makeSimpleFactory({ graceMs: 100 });
-		const handle = factory.get('a');
-		const release = handle.retain();
-		release();
-		// Grace pending. close() must fire disposal now, not later.
-		await factory.close('a');
-		expect(handle.ydoc.isDestroyed).toBe(true);
-	});
-
-	test('release captured before close is a safe no-op after close', async () => {
-		const factory = makeSimpleFactory({ graceMs: 100 });
-		const handle = factory.get('a');
-		const release = handle.retain();
-		await factory.close('a');
-		// Stale release must not throw and must not resurrect any timer.
-		release();
-		await new Promise((r) => setTimeout(r, 20));
-		// Already destroyed; not re-destroyed — no crash.
-		expect(handle.ydoc.isDestroyed).toBe(true);
-	});
-
-	test('bind on a stale handle after close is a safe no-op', async () => {
-		const factory = makeSimpleFactory({ graceMs: 100 });
-		const handle = factory.get('a');
-		await factory.close('a');
-		const staleRelease = handle.retain();
-		// No error, no side effects.
-		staleRelease();
-		expect(handle.ydoc.isDestroyed).toBe(true);
-	});
-
-	test('bind lifecycle is per-id — releasing one doc does not affect another', async () => {
-		const factory = makeSimpleFactory({ graceMs: 15 });
-		const a = factory.get('a');
-		const b = factory.get('b');
-		const ra = a.retain();
-		const rb = b.retain();
-
-		ra();
-		await new Promise((r) => setTimeout(r, 25));
-		expect(a.ydoc.isDestroyed).toBe(true);
-		expect(b.ydoc.isDestroyed).toBe(false);
-
-		rb();
-		await new Promise((r) => setTimeout(r, 25));
-		expect(b.ydoc.isDestroyed).toBe(true);
-	});
-
-	test('0 → 1 → 0 → 1 after dispose: new construction after grace', async () => {
-		const factory = makeSimpleFactory({ graceMs: 5 });
-		const a1 = factory.get('a');
-		a1.retain()();
-		await new Promise((r) => setTimeout(r, 15));
-		expect(a1.ydoc.isDestroyed).toBe(true);
-
-		const a2 = factory.get('a');
-		expect(a2).not.toBe(a1);
-		expect(a2.ydoc.isDestroyed).toBe(false);
-	});
-
-	test('closeAll cancels all pending grace timers', async () => {
-		const factory = makeSimpleFactory({ graceMs: 50 });
-		const docs = ['a', 'b', 'c'].map((id) => {
-			const h = factory.get(id);
-			h.retain()();
-			return h;
-		});
-
-		await factory.closeAll();
-		// All must be destroyed immediately, not after the pending 50ms timer.
-		for (const h of docs) expect(h.ydoc.isDestroyed).toBe(true);
-
-		// Waiting longer must not revive or re-run anything.
-		await new Promise((r) => setTimeout(r, 80));
-		for (const h of docs) expect(h.ydoc.isDestroyed).toBe(true);
+		const a2 = factory.open('a');
+		const b2 = factory.open('b');
+		expect(a2.ydoc).not.toBe(ydocA);
+		expect(b2.ydoc).not.toBe(ydocB);
+		a2.release();
+		b2.release();
 	});
 });
 
@@ -579,14 +448,15 @@ describe('factory.read', () => {
 		const handle = await p;
 		expect(done).toBe(true);
 		expect(handle.ydoc.guid).toBe('a');
+		handle.release();
 	});
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// open / release via disposable
+// open / release — ref-count, grace-period disposal, disposable protocol
 // ════════════════════════════════════════════════════════════════════════════
 
-describe('open / release via disposable', () => {
+describe('open / release', () => {
 	test('open() retains — ref-count increments, no disposal pending', async () => {
 		const factory = makeSimpleFactory({ graceMs: 10 });
 		const h = factory.open('a');
@@ -728,5 +598,84 @@ describe('open / release via disposable', () => {
 		h2.release();
 		await new Promise((r) => setTimeout(r, 35));
 		expect(h2.ydoc.isDestroyed).toBe(true);
+	});
+
+	test('rapid open→release→open within the same tick does not fire stale disposal', async () => {
+		// release() schedules the grace timer as a setTimeout; a synchronous
+		// re-open() must cancel the pending timer before it fires.
+		const factory = makeSimpleFactory({ graceMs: 0 });
+		const h1 = factory.open('a');
+		h1.release();
+		const h2 = factory.open('a');
+		// No microtask yield yet — timer hasn't had a chance to fire.
+		expect(h2.ydoc.isDestroyed).toBe(false);
+		h2.release();
+		await new Promise((r) => setTimeout(r, 15));
+		expect(h2.ydoc.isDestroyed).toBe(true);
+	});
+
+	test('close() during grace fires disposal synchronously and cancels the pending timer', async () => {
+		const factory = makeSimpleFactory({ graceMs: 100 });
+		const h = factory.open('a');
+		h.release();
+		// Grace pending. close() must fire disposal now, not later.
+		await factory.close('a');
+		expect(h.ydoc.isDestroyed).toBe(true);
+	});
+
+	test('release captured before close is a safe no-op after close', async () => {
+		const factory = makeSimpleFactory({ graceMs: 100 });
+		const h = factory.open('a');
+		await factory.close('a');
+		// Stale release on a disposed wrapper must not throw or resurrect.
+		h.release();
+		await new Promise((r) => setTimeout(r, 20));
+		expect(h.ydoc.isDestroyed).toBe(true);
+	});
+
+	test('release lifecycle is per-id — releasing one doc does not affect another', async () => {
+		const factory = makeSimpleFactory({ graceMs: 15 });
+		const a = factory.open('a');
+		const b = factory.open('b');
+
+		a.release();
+		await new Promise((r) => setTimeout(r, 25));
+		expect(a.ydoc.isDestroyed).toBe(true);
+		expect(b.ydoc.isDestroyed).toBe(false);
+
+		b.release();
+		await new Promise((r) => setTimeout(r, 25));
+		expect(b.ydoc.isDestroyed).toBe(true);
+	});
+
+	test('open → release → dispose → open after grace produces a fresh construction', async () => {
+		const factory = makeSimpleFactory({ graceMs: 5 });
+		const a1 = factory.open('a');
+		const ydoc1 = a1.ydoc;
+		a1.release();
+		await new Promise((r) => setTimeout(r, 15));
+		expect(ydoc1.isDestroyed).toBe(true);
+
+		const a2 = factory.open('a');
+		expect(a2.ydoc).not.toBe(ydoc1);
+		expect(a2.ydoc.isDestroyed).toBe(false);
+		a2.release();
+	});
+
+	test('closeAll cancels all pending grace timers', async () => {
+		const factory = makeSimpleFactory({ graceMs: 50 });
+		const docs = ['a', 'b', 'c'].map((id) => {
+			const h = factory.open(id);
+			h.release();
+			return h;
+		});
+
+		await factory.closeAll();
+		// All must be destroyed immediately, not after the pending 50ms timer.
+		for (const h of docs) expect(h.ydoc.isDestroyed).toBe(true);
+
+		// Waiting longer must not revive or re-run anything.
+		await new Promise((r) => setTimeout(r, 80));
+		for (const h of docs) expect(h.ydoc.isDestroyed).toBe(true);
 	});
 });

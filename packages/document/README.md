@@ -37,6 +37,8 @@ A `Y.Doc` has two surfaces:
 
 This split is the whole design. Yjs's update stream is oblivious to which shared type emitted a change — every mutation is an opaque `Uint8Array`. That means providers are fully decoupled from handles: add `attachPlainText` next to your existing `attachRichText` and neither `attachIndexedDb` nor `attachSync` changes.
 
+> **Note on `attachAwareness`.** It's grouped with providers because it sits *alongside* the doc rather than inside it, but it's the odd one out: awareness state (cursors, presence, typing indicators) is ephemeral and travels on a separate `y-protocols` channel, not the doc's update stream. `attachIndexedDb` and `attachSync` do not persist or sync awareness — sync providers may opt in to forwarding it as a separate message type.
+
 ## Quick start
 
 ```ts
@@ -98,6 +100,8 @@ const sync = attachSync(ydoc, {
 | `attachIndexedDb(ydoc)` | `y-indexeddb` keyed by `ydoc.guid` | `{ whenLoaded, clearLocal, disposed }` |
 | `attachSync(ydoc, cfg)` | WebSocket via `@epicenter/sync` | `{ whenConnected, status, onStatusChange, reconnect, disposed }` |
 
+Also exported: `toWsUrl(httpUrl)` — a small utility that rewrites `http(s):` to `ws(s):`. Handy when the app knows its API as an HTTP origin and wants to derive the WebSocket URL for `attachSync`.
+
 ## Lifecycle
 
 Every attachment hooks into `ydoc.destroy()`. You own the `Y.Doc`; tear it down once and everything unwinds:
@@ -113,6 +117,12 @@ await Promise.all([idb.disposed, sync.disposed]); // optional — CLIs/tests
 ```
 
 Handles have no async teardown. Providers return `disposed` promises for code paths that need to flush before exit.
+
+## Gotchas
+
+**`gc: false` when the doc syncs to peers.** Yjs garbage-collects deletion markers by default. If peer A deletes something and its local Yjs compacts the tombstone away before peer B has seen the delete, B's edit can resurrect the deleted content (or fail to converge). Any doc that goes over the wire — every example in this README, including Fuji's per-entry doc — should be constructed with `new Y.Doc({ guid, gc: false })`. Local-only docs can leave GC on.
+
+**Encryption lives one layer up (in `@epicenter/workspace`), and it's narrower than you'd think.** Workspace's encryption wraps the `YKeyValueLww` store — the thing that backs `attachTable` and `attachKv` — by encrypting each value before it hits the Y.Array. It does **not** encrypt the `Y.Doc` update stream, and it does **not** cover `Y.XmlFragment` or `Y.Text` content. A rich-text editor built on workspace with `attachRichText` has encrypted tables/KV but plaintext document content. If you need end-to-end-encrypted rich text, you'll need a different approach (e.g. a separate encrypted blob store keyed by row, with the content doc holding only an opaque pointer). This asymmetry exists because encrypting arbitrary Yjs updates breaks CRDT merging — the server can't merge opaque bytes — whereas encrypting discrete values in a KV store preserves the store's LWW semantics.
 
 ## When to use this vs `@epicenter/workspace`
 

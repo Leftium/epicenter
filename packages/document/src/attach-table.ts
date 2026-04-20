@@ -59,7 +59,7 @@ export function attachTable<
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(`table:${name}`);
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.on('destroy', () => ykv.dispose());
-	return tableHelperOver(ykv, definition);
+	return createTableHelper(ykv, definition);
 }
 
 /**
@@ -68,7 +68,7 @@ export function attachTable<
  * Exported so `@epicenter/workspace` can reuse the exact same helper logic
  * over its encrypted store wrapper.
  */
-export function tableHelperOver<
+export function createTableHelper<
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
 	TTableDefinition extends TableDefinition<any>,
 >(

@@ -16,7 +16,8 @@
 		"./attach-rich-text": "./src/attach-rich-text.ts",
 		"./attach-plain-text": "./src/attach-plain-text.ts",
 		"./attach-sync": "./src/attach-sync.ts",
-		"./y-keyvalue": "./src/y-keyvalue/index.ts"
+		"./y-keyvalue": "./src/y-keyvalue/index.ts",
+		"./internal": "./src/internal.ts"
 	},
 	"license": "MIT",
 	"scripts": {

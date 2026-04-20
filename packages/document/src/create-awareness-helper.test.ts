@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { awarenessHelperOver } from './attach-awareness.js';
+import { createAwarenessHelper } from './attach-awareness.js';
 import type { CombinedStandardSchema } from './types.js';
 
 function schema<T>(check: (v: unknown) => v is T): CombinedStandardSchema<T, T> {
@@ -28,11 +28,11 @@ const awarenessDefs = {
 function setup() {
 	const ydoc = new Y.Doc({ guid: 'awareness-test' });
 	const raw = new Awareness(ydoc);
-	const awareness = awarenessHelperOver(raw, awarenessDefs);
+	const awareness = createAwarenessHelper(raw, awarenessDefs);
 	return { ydoc, raw, awareness };
 }
 
-describe('awarenessHelperOver', () => {
+describe('createAwarenessHelper', () => {
 	test('setLocal() and getLocal() round-trip', () => {
 		const { awareness } = setup();
 		awareness.setLocal({ cursorX: 10, cursorY: 20, name: 'alice' });

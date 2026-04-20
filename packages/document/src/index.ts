@@ -28,12 +28,9 @@ export {
 	type SyncStatus,
 } from './attach-sync.js';
 
-export { attachTable, tableHelperOver } from './attach-table.js';
-export { attachKv, kvHelperOver } from './attach-kv.js';
-export {
-	attachAwareness,
-	awarenessHelperOver,
-} from './attach-awareness.js';
+export { attachTable } from './attach-table.js';
+export { attachKv } from './attach-kv.js';
+export { attachAwareness } from './attach-awareness.js';
 
 export type {
 	AwarenessDefinitions,

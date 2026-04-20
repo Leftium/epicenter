@@ -33,7 +33,7 @@ export function attachAwareness<TDefs extends AwarenessDefinitions>(
 	definitions: TDefs,
 ): AwarenessHelper<TDefs> {
 	const awareness = new Awareness(ydoc);
-	return awarenessHelperOver(awareness, definitions);
+	return createAwarenessHelper(awareness, definitions);
 }
 
 /**
@@ -42,7 +42,7 @@ export function attachAwareness<TDefs extends AwarenessDefinitions>(
  * Exported so `@epicenter/workspace` can reuse the same logic — the
  * workspace owns its own Awareness instance for sync extension wiring.
  */
-export function awarenessHelperOver<TDefs extends AwarenessDefinitions>(
+export function createAwarenessHelper<TDefs extends AwarenessDefinitions>(
 	awareness: Awareness,
 	definitions: TDefs,
 ): AwarenessHelper<TDefs> {

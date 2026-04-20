@@ -32,14 +32,14 @@ export function attachKv<TKvDefinitions extends KvDefinitions>(
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_KEY);
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.on('destroy', () => ykv.dispose());
-	return kvHelperOver(ykv, definitions);
+	return createKvHelper(ykv, definitions);
 }
 
 /**
  * Build a KvHelper over any `LwwStore`. Exported so `@epicenter/workspace`
  * can reuse the same helper logic over its encrypted store wrapper.
  */
-export function kvHelperOver<TKvDefinitions extends KvDefinitions>(
+export function createKvHelper<TKvDefinitions extends KvDefinitions>(
 	ykv: LwwStore<unknown>,
 	definitions: TKvDefinitions,
 ): KvHelper<TKvDefinitions> {

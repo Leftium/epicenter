@@ -173,7 +173,7 @@ export type YKeyValueLwwChangeHandler<T> = (
  * Shared contract for LWW key-value stores.
  *
  * Implemented by `YKeyValueLww` (unencrypted) and the encrypted wrapper in
- * `@epicenter/workspace`. `tableHelperOver` / `kvHelperOver` consume this
+ * `@epicenter/workspace`. `createTableHelper` / `createKvHelper` consume this
  * interface so they can wrap either store without branching.
  */
 export interface LwwStore<T> {

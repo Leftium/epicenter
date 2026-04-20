@@ -1,8 +1,8 @@
 /**
- * tableHelperOver Tests (over workspace's encrypted YKeyValueLww wrapper)
+ * createTableHelper Tests (over workspace's encrypted YKeyValueLww wrapper)
  *
  * Exercises the table CRUD, query, observation, and migration paths when
- * `tableHelperOver` is fed the workspace's `EncryptedYKeyValueLww` wrapper
+ * `createTableHelper` is fed the workspace's `EncryptedYKeyValueLww` wrapper
  * (as `createWorkspace` does internally). These tests ensure row validation
  * and migration behavior remain consistent for both valid and corrupted data
  * through the encrypted store surface.
@@ -15,7 +15,7 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { tableHelperOver } from '@epicenter/document';
+import { createTableHelper } from '@epicenter/document/internal';
 import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { defineTable } from './define-table.js';
@@ -28,14 +28,14 @@ function setup() {
 	return { ydoc, yarray, ykv };
 }
 
-describe('tableHelperOver', () => {
+describe('createTableHelper', () => {
 	describe('set operations', () => {
 		test('set stores a row that get returns as valid', () => {
 			const { ykv } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
 
@@ -51,7 +51,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
 			helper.set({ id: '1', name: 'Bob', _v: 1 });
@@ -68,7 +68,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
 				helper.set({ id: '1', name: 'Alice', _v: 1 });
@@ -85,7 +85,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 			const progress: number[] = [];
 
 			await helper.bulkSet(
@@ -113,7 +113,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			const result = helper.get('nonexistent');
 			expect(result.status).toBe('not_found');
@@ -127,7 +127,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			// Insert invalid data directly
 			yarray.push([{ key: '1', val: { id: '1', name: 123, _v: 1 }, ts: 0 }]); // name should be string
@@ -146,7 +146,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Valid', _v: 1 });
 			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid
@@ -165,7 +165,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Valid', _v: 1 });
 			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid
@@ -180,7 +180,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Valid', _v: 1 });
 			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid
@@ -198,7 +198,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', active: 'boolean', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
 				helper.set({ id: '1', active: true, _v: 1 });
@@ -216,7 +216,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', active: 'boolean', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
 				helper.set({ id: '1', active: false, _v: 1 });
@@ -232,7 +232,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', active: 'boolean', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', active: true, _v: 1 });
 			yarray.push([
@@ -248,7 +248,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
 				helper.set({ id: '1', name: 'Alice', _v: 1 });
@@ -264,7 +264,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
 
@@ -277,7 +277,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			yarray.push([{ key: '1', val: { id: '1', name: 123, _v: 1 }, ts: 0 }]); // invalid
 			helper.set({ id: '2', name: 'Valid', _v: 1 });
@@ -293,7 +293,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', age: 'number', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Alice', age: 25, _v: 1 });
 			const result = helper.update('1', { age: 30 });
@@ -321,7 +321,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			const result = helper.update('nonexistent', { name: 'Bob' });
 
@@ -336,7 +336,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			// Insert invalid data directly
 			yarray.push([{ key: '1', val: { id: '1', name: 123, _v: 1 }, ts: 0 }]); // name should be string
@@ -356,7 +356,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
 
@@ -383,7 +383,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
 			helper.delete('1');
@@ -396,7 +396,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			// Should not throw
 			helper.delete('nonexistent');
@@ -408,7 +408,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
 				helper.set({ id: '1', name: 'A', _v: 1 });
@@ -430,7 +430,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
 				helper.set({ id: '1', name: 'A', _v: 1 });
@@ -453,7 +453,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
 				helper.set({ id: '1', name: 'A', _v: 1 });
@@ -470,7 +470,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 			const progress: number[] = [];
 
 			await helper.bulkSet([
@@ -502,7 +502,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			const changes: ReadonlySet<string>[] = [];
 			const unsubscribe = helper.observe((changedIds) => {
@@ -526,7 +526,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			const changes: Set<string>[] = [];
 			const unsubscribe = helper.observe((changedIds) => {
@@ -554,7 +554,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			let callCount = 0;
 			const unsubscribe = helper.observe(() => {
@@ -577,7 +577,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			expect(helper.count()).toBe(0);
 
@@ -596,7 +596,7 @@ describe('tableHelperOver', () => {
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
 
@@ -615,7 +615,7 @@ describe('tableHelperOver', () => {
 				if (row._v === 1) return { ...row, age: 0, _v: 2 };
 				return row;
 			});
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			// Insert v1 data directly
 			yarray.push([
@@ -638,7 +638,7 @@ describe('tableHelperOver', () => {
 				if (row._v === 1) return { ...row, age: 0, _v: 2 };
 				return row;
 			});
-			const helper = tableHelperOver(ykv, definition);
+			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Alice', age: 30, _v: 2 });
 

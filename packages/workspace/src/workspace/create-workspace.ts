@@ -50,13 +50,12 @@
  * ```
  */
 
+import { defineDocument, openDocument } from '@epicenter/document';
 import {
-	awarenessHelperOver,
-	defineDocument,
-	kvHelperOver,
-	openDocument,
-	tableHelperOver,
-} from '@epicenter/document';
+	createAwarenessHelper,
+	createKvHelper,
+	createTableHelper,
+} from '@epicenter/document/internal';
 import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
@@ -155,7 +154,7 @@ export function createWorkspace<
 							TableKey(name),
 						);
 						const store = createEncryptedYkvLww(yarray);
-						return { name, store, helper: tableHelperOver(store, definition) };
+						return { name, store, helper: createTableHelper(store, definition) };
 					},
 				);
 
@@ -173,9 +172,9 @@ export function createWorkspace<
 				const tables = Object.fromEntries(
 					tableEntries.map(({ name, helper }) => [name, helper]),
 				) as TablesHelper<TTableDefinitions>;
-				const kv: KvHelper<TKvDefinitions> = kvHelperOver(kvStore, kvDefs);
+				const kv: KvHelper<TKvDefinitions> = createKvHelper(kvStore, kvDefs);
 				const awareness: AwarenessHelper<TAwarenessDefinitions> =
-					awarenessHelperOver(new Awareness(ydoc), awarenessDefs);
+					createAwarenessHelper(new Awareness(ydoc), awarenessDefs);
 
 				return { encryptedStores, tables, kv, awareness };
 			},

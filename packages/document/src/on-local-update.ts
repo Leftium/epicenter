@@ -1,14 +1,16 @@
 /**
  * onLocalUpdate — register a Y.Doc update listener that ignores transport echoes.
  *
- * The framework filter rule: callback fires only when the update's origin is
- * `null`/`undefined` OR the internal `DOCUMENTS_ORIGIN` symbol. Any other
- * Symbol origin is treated as a transport echo (sync, broadcast) and skipped
- * — those updates don't represent a local edit.
+ * Filter rule: callback fires only when the update's origin is a non-Symbol
+ * value (typically `null` for direct mutations, or a `PluginKey`-like object
+ * from y-prosemirror). Symbol origins — `SYNC_ORIGIN`, `BC_ORIGIN`, and the
+ * internal `DOCUMENTS_ORIGIN` — represent transport echoes or framework
+ * writebacks and are skipped, so a collaborator's edit arriving via sync
+ * doesn't re-trigger a local metadata bump.
  *
  * `DOCUMENTS_ORIGIN` is exposed so user-owned metadata writebacks can tag
- * their transactions with it (via `ydoc.transact(fn, DOCUMENTS_ORIGIN)`) and
- * round-trip through the same filter without re-triggering themselves.
+ * their transactions with it (`ydoc.transact(fn, DOCUMENTS_ORIGIN)`) and
+ * match the same filtering convention as the sync / broadcast layers.
  */
 import type * as Y from 'yjs';
 
@@ -16,7 +18,8 @@ export const DOCUMENTS_ORIGIN: unique symbol = Symbol('documents');
 
 export function onLocalUpdate(ydoc: Y.Doc, fn: () => void): () => void {
 	const handler = (_update: Uint8Array, origin: unknown) => {
-		if (origin === DOCUMENTS_ORIGIN) return;
+		// Any Symbol origin is a transport echo or tagged writeback — skip.
+		// Non-Symbol origins (null, PluginKey objects, etc.) are local edits.
 		if (typeof origin === 'symbol') return;
 		try {
 			fn();

@@ -299,6 +299,62 @@ describe('close / closeAll', () => {
 		expect(destroyed).toBe(true);
 	});
 
+	test('close awaits attachments\' async disposed promises', async () => {
+		let resolveDisposed!: () => void;
+		const factory = defineDocument((id: string) => {
+			const ydoc = new Y.Doc({ guid: id });
+			const idbLike = {
+				disposed: new Promise<void>((r) => {
+					resolveDisposed = r;
+				}),
+			};
+			return { ydoc, idbLike };
+		});
+		factory.get('a');
+
+		let settled = false;
+		const closePromise = factory.close('a').then(() => {
+			settled = true;
+		});
+		// Even after ydoc.destroy() fires, close() should not resolve until
+		// the attachment's async teardown resolves.
+		await new Promise((r) => setTimeout(r, 10));
+		expect(settled).toBe(false);
+
+		resolveDisposed();
+		await closePromise;
+		expect(settled).toBe(true);
+	});
+
+	test('closeAll awaits every attachment\'s disposed promise', async () => {
+		const resolvers: Array<() => void> = [];
+		const factory = defineDocument((id: string) => {
+			const ydoc = new Y.Doc({ guid: id });
+			const idbLike = {
+				disposed: new Promise<void>((r) => {
+					resolvers.push(r);
+				}),
+			};
+			return { ydoc, idbLike };
+		});
+		factory.get('a');
+		factory.get('b');
+
+		let settled = false;
+		const p = factory.closeAll().then(() => {
+			settled = true;
+		});
+
+		await new Promise((r) => setTimeout(r, 10));
+		expect(settled).toBe(false);
+		resolvers[0]!();
+		await new Promise((r) => setTimeout(r, 10));
+		expect(settled).toBe(false); // still waiting on b
+		resolvers[1]!();
+		await p;
+		expect(settled).toBe(true);
+	});
+
 	test('closeAll disposes every open entry and re-get creates fresh handles', async () => {
 		const factory = makeSimpleFactory();
 		const a1 = factory.get('a');

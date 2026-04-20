@@ -38,6 +38,15 @@ type DocEntry<TAttach extends { ydoc: Y.Doc }> = {
 	bindCount: number;
 	disposeTimer: ReturnType<typeof setTimeout> | null;
 	disposed: boolean;
+	/**
+	 * Aggregated `disposed` promises from attachments whose teardown is async
+	 * (e.g., `attachIndexedDb` resolves after IDB close completes). Resolves
+	 * once every attachment has finished its async teardown. `close(id)` and
+	 * `closeAll()` await this so callers can rely on "await factory.close(…)"
+	 * as a real teardown barrier.
+	 */
+	whenDisposed: Promise<void>;
+	resolveDisposed: () => void;
 };
 
 /**
@@ -61,15 +70,20 @@ export function defineDocument<
 	const openDocuments = new Map<Id, DocEntry<TAttach>>();
 	const recordedGuids = new Map<Id, string>();
 
-	function aggregateWhenLoaded(attach: TAttach): Promise<void> {
-		// Scan attachments (not the Y.Doc itself — Y.Doc exposes a
-		// `whenLoaded` for subdoc loading that never resolves in the normal
-		// standalone case) for a `whenLoaded: Promise<void>` field.
+	/**
+	 * Scan top-level attachments for a `Promise` at `key`, excluding the
+	 * Y.Doc itself (Y.Doc exposes a `whenLoaded` for subdoc loading that
+	 * never resolves in the standalone case).
+	 */
+	function aggregatePromise(
+		attach: TAttach,
+		key: 'whenLoaded' | 'disposed',
+	): Promise<void> {
 		const promises: Promise<unknown>[] = [];
-		for (const [key, value] of Object.entries(attach)) {
-			if (key === 'ydoc') continue;
-			if (value && typeof value === 'object' && 'whenLoaded' in value) {
-				const p = (value as { whenLoaded: unknown }).whenLoaded;
+		for (const [k, value] of Object.entries(attach)) {
+			if (k === 'ydoc') continue;
+			if (value && typeof value === 'object' && key in value) {
+				const p = (value as unknown as Record<string, unknown>)[key];
 				if (p instanceof Promise) promises.push(p);
 			}
 		}
@@ -82,15 +96,6 @@ export function defineDocument<
 		// the cache — next `.get(sameId)` re-runs the closure (no poisoned
 		// cache entry). The caller sees the thrown error.
 		const attach = build(id);
-
-		// Runtime ydoc presence check (TS constraint `TAttach extends {
-		// ydoc: Y.Doc }` already enforces this at compile time; the runtime
-		// check catches TS escape hatches).
-		if (!attach || !attach.ydoc || typeof attach.ydoc.destroy !== 'function') {
-			throw new Error(
-				`[defineDocument] build closure for id=${String(id)} did not return a { ydoc: Y.Doc, ... } object`,
-			);
-		}
 
 		const recorded = recordedGuids.get(id);
 		if (recorded !== undefined && recorded !== attach.ydoc.guid) {
@@ -111,7 +116,8 @@ export function defineDocument<
 			recordedGuids.set(id, attach.ydoc.guid);
 		}
 
-		const whenLoaded = aggregateWhenLoaded(attach);
+		const whenLoaded = aggregatePromise(attach, 'whenLoaded');
+		const attachmentDisposed = aggregatePromise(attach, 'disposed');
 
 		// The handle IS the attach object with `whenLoaded` and `bind` added
 		// in-place. We mutate (rather than `Object.assign({}, …)`) to preserve
@@ -119,11 +125,22 @@ export function defineDocument<
 		// `currentType`).
 		const handle = attach as DocumentHandle<TAttach>;
 
+		const { promise: whenDisposed, resolve: resolveDisposed } =
+			Promise.withResolvers<void>();
+
 		const entry: DocEntry<TAttach> = {
 			handle,
 			bindCount: 0,
 			disposeTimer: null,
 			disposed: false,
+			whenDisposed,
+			resolveDisposed: () => {
+				// Gate the factory-level "disposed" on attachment-level disposed
+				// promises so callers awaiting close()/closeAll() see IDB, sync,
+				// etc. fully torn down — not just the synchronous ydoc.destroy()
+				// that triggered them.
+				void attachmentDisposed.then(resolveDisposed, resolveDisposed);
+			},
 		};
 
 		const bind = (): (() => void) => {
@@ -186,6 +203,9 @@ export function defineDocument<
 		} catch (err) {
 			console.error('[defineDocument] ydoc.destroy() threw:', err);
 		}
+		// Kick off the factory-level disposed resolution. Resolves once every
+		// attachment's own `.disposed` promise has settled (success or not).
+		entry.resolveDisposed();
 	}
 
 	const factory: DocumentFactory<Id, TAttach> = {
@@ -205,18 +225,14 @@ export function defineDocument<
 			const entry = openDocuments.get(id);
 			if (!entry) return;
 			disposeEntry(id, entry);
+			await entry.whenDisposed;
 		},
 
 		async closeAll() {
 			const entries = Array.from(openDocuments.entries());
 			openDocuments.clear();
-			for (const [id, entry] of entries) {
-				try {
-					disposeEntry(id, entry);
-				} catch (err) {
-					console.error('[defineDocument] closeAll dispose error:', err);
-				}
-			}
+			for (const [id, entry] of entries) disposeEntry(id, entry);
+			await Promise.all(entries.map(([, entry]) => entry.whenDisposed));
 		},
 	};
 

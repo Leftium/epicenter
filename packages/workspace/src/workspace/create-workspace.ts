@@ -166,6 +166,9 @@ export function createWorkspace<
 					...tableEntries.map(({ store }) => store),
 					kvStore,
 				];
+				ydoc.on('destroy', () => {
+					for (const store of encryptedStores) store.dispose();
+				});
 				const tables = Object.fromEntries(
 					tableEntries.map(({ name, helper }) => [name, helper]),
 				) as TablesHelper<TTableDefinitions>;
@@ -179,8 +182,7 @@ export function createWorkspace<
 		),
 	);
 
-	const { ydoc, encryptedStores, tables, awareness } = handle;
-	const kvHelper = handle.kv;
+	const { ydoc, encryptedStores, tables, kv: kvHelper, awareness } = handle;
 
 	// Fingerprint of the last-applied encryption keys for same-key dedup.
 	// Token refreshes fire onLogin repeatedly with identical keys — this

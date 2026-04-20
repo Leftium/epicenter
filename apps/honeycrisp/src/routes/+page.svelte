@@ -13,6 +13,13 @@
 			? workspace.documents.notes.body.get(viewState.selectedNoteId)
 			: null,
 	);
+
+	// Keep sync live for the currently-selected note; release on switch so
+	// backgrounded notes stop syncing after the grace period.
+	$effect(() => {
+		if (!bodyHandle) return;
+		return bodyHandle.bind();
+	});
 </script>
 
 <svelte:window

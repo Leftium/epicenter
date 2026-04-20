@@ -13,6 +13,14 @@
 			? workspace.documents.references.content.get(expandedRefId)
 			: null,
 	);
+
+	// Keep the sync transport live for the currently-expanded reference.
+	// The `refHandle && ...` guard is a no-op when nothing is expanded; when
+	// expansion flips, the effect re-runs and swaps binds atomically.
+	$effect(() => {
+		if (!refHandle) return;
+		return refHandle.bind();
+	});
 </script>
 
 {#if skillsState.selectedSkillId}

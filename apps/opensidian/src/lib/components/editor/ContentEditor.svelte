@@ -35,6 +35,13 @@
 		});
 	});
 
+	// Keep the sync transport live while this editor is mounted. We bind the
+	// outer `handle` (not `loadedHandle`) so sync starts hydrating remote
+	// state in parallel with the local IDB load — both finish faster that way.
+	$effect(() => {
+		return handle.bind();
+	});
+
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
 		resolveTitle: (ref) => fsState.getFile(ref.id as FileId)?.name ?? null,

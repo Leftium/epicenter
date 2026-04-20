@@ -3,23 +3,23 @@
  *
  * This module contains all type definitions for versioned tables and KV stores.
  *
- * The lower-level CRDT primitive types (`TableDefinition`, `TableHelper`,
- * `KvDefinition`, `KvHelper`, `AwarenessDefinitions`, `AwarenessHelper`,
+ * The lower-level CRDT primitive types (`TableDefinition`, `Table`,
+ * `KvDefinition`, `Kv`, `AwarenessDefinitions`, `Awareness`,
  * `BaseRow`, etc.) live in `@epicenter/document` and are re-exported below.
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type {
+	Awareness,
 	AwarenessDefinitions,
-	AwarenessHelper,
 	BaseRow,
 	CombinedStandardSchema,
+	Kv,
 	KvDefinitions,
-	KvHelper,
 	LastSchema,
-	TablesHelper,
+	Tables,
 } from '@epicenter/document';
-import type { Awareness } from 'y-protocols/awareness';
+import type { Awareness as YAwareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { EncryptionKeys } from './encryption-key.js';
@@ -37,8 +37,8 @@ export type { JsonObject, JsonValue } from 'wellcrafted/json';
 // narrower `Record<string, unknown>` definition, so attachTable/etc. accept
 // it transparently.
 export type {
+	Awareness,
 	AwarenessDefinitions,
-	AwarenessHelper,
 	AwarenessState,
 	BaseRow,
 	CombinedStandardSchema,
@@ -47,15 +47,15 @@ export type {
 	InferKvValue,
 	InferTableRow,
 	InvalidRowResult,
+	Kv,
 	KvChange,
 	KvDefinition,
 	KvDefinitions,
-	KvHelper,
 	LastSchema,
 	NotFoundResult,
 	RowResult,
-	TableHelper,
-	TablesHelper,
+	Table,
+	Tables,
 	UpdateResult,
 	ValidRowResult,
 } from '@epicenter/document';
@@ -285,7 +285,7 @@ export type DocumentContext<
 	 * Uses a minimal wrapper (`{ raw }`) so document and workspace scopes
 	 * share the same structural contract for `withExtension()` factories.
 	 */
-	awareness: { raw: Awareness };
+	awareness: { raw: YAwareness };
 };
 
 
@@ -399,7 +399,7 @@ export type DocumentsOf<T> = T extends {
 	: never;
 
 /**
- * Top-level document namespace — parallel to `TablesHelper`.
+ * Top-level document namespace — parallel to `Tables`.
  *
  * Only includes tables that have document configs declared via `.withDocument()`.
  * Tables without documents are filtered out via key remapping.
@@ -487,9 +487,9 @@ export type ExtensionContext<
  *
  * Used by `withExtension()`, which registers the same factory for both scopes.
  * This type is intentionally standalone (not `Pick<ExtensionContext, ...>`) because
- * workspace awareness is strongly typed (`AwarenessHelper<TDefs>`) while document
+ * workspace awareness is strongly typed (`Awareness<TDefs>`) while document
  * awareness uses a scope-specific helper. The only guarantee both scopes share is
- * a raw awareness instance (`{ raw: Awareness }`).
+ * a raw y-protocols awareness instance (`{ raw: YAwareness }`).
  *
  * If a factory needs workspace-specific fields (tables, full typed awareness, etc.),
  * use `withWorkspaceExtension()`. For document-specific fields (timeline),
@@ -504,7 +504,7 @@ export type ExtensionContext<
  */
 export type SharedExtensionContext = {
 	ydoc: Y.Doc;
-	awareness: { raw: Awareness };
+	awareness: { raw: YAwareness };
 	/**
 	 * Framework chain signal — resolves once every prior extension's `init`
 	 * promise has resolved. Use to sequence initialization across the chain.
@@ -556,13 +556,13 @@ export type WorkspaceClient<
 		awareness: TAwarenessDefinitions;
 	};
 	/** Typed table helpers — pure CRUD, no document management */
-	tables: TablesHelper<TTableDefinitions>;
+	tables: Tables<TTableDefinitions>;
 	/** Document managers — only tables with `.withDocument()` appear here */
 	documents: DocumentsHelper<TTableDefinitions>;
 	/** Typed KV helper */
-	kv: KvHelper<TKvDefinitions>;
+	kv: Kv<TKvDefinitions>;
 	/** Typed awareness helper — always present, like tables and kv */
-	awareness: AwarenessHelper<TAwarenessDefinitions>;
+	awareness: Awareness<TAwarenessDefinitions>;
 	/**
 	 * Extension exports (accumulated via `.withExtension()` calls).
 	 *

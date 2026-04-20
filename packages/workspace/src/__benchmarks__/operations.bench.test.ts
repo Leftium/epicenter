@@ -13,7 +13,7 @@ import { type } from 'arktype';
 import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { attachTable } from '@epicenter/document';
-import { createKvHelper } from '@epicenter/document/internal';
+import { createKv } from '@epicenter/document/internal';
 import { createWorkspace } from '../workspace/create-workspace.js';
 import { defineKv } from '../workspace/define-kv.js';
 import { defineWorkspace } from '../workspace/define-workspace.js';
@@ -229,7 +229,7 @@ describe('KV operations', () => {
 		const ydoc = new Y.Doc();
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
 		const ykv = createEncryptedYkvLww(yarray);
-		const kv = createKvHelper(ykv, {
+		const kv = createKv(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 
@@ -250,7 +250,7 @@ describe('KV operations', () => {
 		const ydoc = new Y.Doc();
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
 		const ykv = createEncryptedYkvLww(yarray);
-		const kv = createKvHelper(ykv, {
+		const kv = createKv(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 
@@ -269,7 +269,7 @@ describe('KV operations', () => {
 		const ydoc = new Y.Doc();
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
 		const ykv = createEncryptedYkvLww(yarray);
-		const kv = createKvHelper(ykv, {
+		const kv = createKv(ykv, {
 			counter: defineKv(type({ value: 'number' }), { value: 0 }),
 		});
 

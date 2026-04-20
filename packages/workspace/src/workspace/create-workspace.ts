@@ -51,12 +51,9 @@
  */
 
 import { attachAwareness, KV_KEY, TableKey } from '@epicenter/document';
-import {
-	createKvHelper,
-	createTableHelper,
-} from '@epicenter/document/internal';
+import { createKv, createTable } from '@epicenter/document/internal';
 import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
-import type { Awareness } from 'y-protocols/awareness';
+import type { Awareness as YAwareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
@@ -77,8 +74,8 @@ import {
 	startDisposeLifo,
 } from './lifecycle.js';
 import type {
+	Awareness,
 	AwarenessDefinitions,
-	AwarenessHelper,
 	BaseRow,
 	DocumentConfig,
 	DocumentContext,
@@ -86,10 +83,10 @@ import type {
 	Documents,
 	DocumentsHelper,
 	ExtensionContext,
+	Kv,
 	KvDefinitions,
-	KvHelper,
 	TableDefinitions,
-	TablesHelper,
+	Tables,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
@@ -149,7 +146,7 @@ export function createWorkspace<
 	const tableEntries = Object.entries(tableDefs).map(([name, definition]) => {
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 		const store = createEncryptedYkvLww(yarray);
-		return { name, store, helper: createTableHelper(store, definition) };
+		return { name, store, helper: createTable(store, definition) };
 	});
 
 	const kvStore = createEncryptedYkvLww(
@@ -166,9 +163,9 @@ export function createWorkspace<
 
 	const tables = Object.fromEntries(
 		tableEntries.map(({ name, helper }) => [name, helper]),
-	) as TablesHelper<TTableDefinitions>;
-	const kvHelper: KvHelper<TKvDefinitions> = createKvHelper(kvStore, kvDefs);
-	const awareness: AwarenessHelper<TAwarenessDefinitions> = attachAwareness(
+	) as Tables<TTableDefinitions>;
+	const kvHelper: Kv<TKvDefinitions> = createKv(kvStore, kvDefs);
+	const awareness: Awareness<TAwarenessDefinitions> = attachAwareness(
 		ydoc,
 		awarenessDefs,
 	);
@@ -483,7 +480,7 @@ export function createWorkspace<
 				key: TKey,
 				factory: (context: {
 					ydoc: Y.Doc;
-					awareness: { raw: Awareness };
+					awareness: { raw: YAwareness };
 					init: Promise<void>;
 				}) => RawExtension<TExports>,
 			) {

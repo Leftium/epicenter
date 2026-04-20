@@ -1,38 +1,23 @@
 import { describe, expect, test } from 'bun:test';
-import { Awareness } from 'y-protocols/awareness';
+import { type } from 'arktype';
+import { Awareness as YAwareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { createAwarenessHelper } from './attach-awareness.js';
-import type { CombinedStandardSchema } from './types.js';
-
-function schema<T>(check: (v: unknown) => v is T): CombinedStandardSchema<T, T> {
-	return {
-		'~standard': {
-			version: 1,
-			vendor: 'test',
-			validate: (value: unknown) =>
-				check(value) ? { value } : { issues: [{ message: 'invalid' }] },
-			jsonSchema: {
-				input: () => ({}),
-				output: () => ({}),
-			},
-		},
-	};
-}
+import { createAwareness } from './attach-awareness.js';
 
 const awarenessDefs = {
-	cursorX: schema((v): v is number => typeof v === 'number'),
-	cursorY: schema((v): v is number => typeof v === 'number'),
-	name: schema((v): v is string => typeof v === 'string'),
+	cursorX: type('number'),
+	cursorY: type('number'),
+	name: type('string'),
 };
 
 function setup() {
 	const ydoc = new Y.Doc({ guid: 'awareness-test' });
-	const raw = new Awareness(ydoc);
-	const awareness = createAwarenessHelper(raw, awarenessDefs);
+	const raw = new YAwareness(ydoc);
+	const awareness = createAwareness(raw, awarenessDefs);
 	return { ydoc, raw, awareness };
 }
 
-describe('createAwarenessHelper', () => {
+describe('createAwareness', () => {
 	test('setLocal() and getLocal() round-trip', () => {
 		const { awareness } = setup();
 		awareness.setLocal({ cursorX: 10, cursorY: 20, name: 'alice' });

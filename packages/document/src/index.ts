@@ -28,8 +28,8 @@ export { attachAwareness } from './attach-awareness.js';
 export { KV_KEY, TableKey, type KvKey } from './keys.js';
 
 export type {
+	Awareness,
 	AwarenessDefinitions,
-	AwarenessHelper,
 	AwarenessState,
 	BaseRow,
 	CombinedStandardSchema,
@@ -38,17 +38,17 @@ export type {
 	InferKvValue,
 	InferTableRow,
 	InvalidRowResult,
+	Kv,
 	KvChange,
 	KvDefinition,
 	KvDefinitions,
-	KvHelper,
 	LastSchema,
 	NotFoundResult,
 	RowResult,
+	Table,
 	TableDefinition,
 	TableDefinitions,
-	TableHelper,
-	TablesHelper,
+	Tables,
 	UpdateResult,
 	ValidRowResult,
 } from './types.js';

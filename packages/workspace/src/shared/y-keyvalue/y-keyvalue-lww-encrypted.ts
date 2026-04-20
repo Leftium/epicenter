@@ -66,26 +66,16 @@ import {
 	isEncryptedBlob,
 } from '../crypto/index.js';
 import {
+	type KvStoreChange,
+	type KvStoreChangeHandler,
+	type ObservableKvStore,
 	YKeyValueLww,
-	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
 } from '@epicenter/document/y-keyvalue';
 
 const textEncoder = new TextEncoder();
 /** Transaction origin for re-encryption writes. Observer skips events with this origin. */
 const REENCRYPT_ORIGIN = Symbol('re-encrypt');
-
-/**
- * Change handler for the encrypted KV wrapper.
- *
- * Receives the Yjs transaction origin for real CRDT changes, or `undefined`
- * for synthetic events emitted during `activateEncryption()` (which have
- * no backing Yjs transaction).
- */
-export type EncryptedKvObserver<T> = (
-	changes: Map<string, YKeyValueLwwChange<T>>,
-	origin: unknown,
-) => void;
 
 type EncryptionState = {
 	keyring: ReadonlyMap<number, Uint8Array>;
@@ -94,22 +84,16 @@ type EncryptionState = {
 };
 
 /**
- * Return type of `createEncryptedYkvLww`. Same API surface as `YKeyValueLww<T>`
- * plus encryption-specific members (`unreadableEntryCount`, `activateEncryption`).
- * All values exposed through this type are **plaintext**—encryption is fully
- * transparent to consumers.
+ * Return type of `createEncryptedYkvLww`.
+ *
+ * IS-A `ObservableKvStore<T>` (the shared contract) plus encryption lifecycle
+ * (`activateEncryption`, `unreadableEntryCount`), disposal, and direct access
+ * to the underlying `yarray` / `doc` for sync providers.
+ *
+ * All values exposed through the `ObservableKvStore` surface are **plaintext** —
+ * encryption is transparent to consumers.
  */
-export type EncryptedYKeyValueLww<T> = {
-	set(key: string, val: T): void;
-	bulkSet(entries: Array<{ key: string; val: T }>): void;
-	get(key: string): T | undefined;
-	has(key: string): boolean;
-	delete(key: string): void;
-	bulkDelete(keys: string[]): void;
-	entries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
-	observe(handler: EncryptedKvObserver<T>): void;
-	unobserve(handler: EncryptedKvObserver<T>): void;
-
+export type EncryptedYKeyValueLww<T> = ObservableKvStore<T> & {
 	/**
 	 * Activate encryption with a versioned keyring. The highest-version key
 	 * becomes the current key for new encryptions. Decryption reads
@@ -143,9 +127,6 @@ export type EncryptedYKeyValueLww<T> = {
 	 * Computed by iterating `inner.map` and counting undecryptable entries.
 	 */
 	readonly unreadableEntryCount: number;
-
-	/** Count of decryptable entries. TableHelper uses this for `count()`. */
-	readonly size: number;
 
 	/** The underlying Y.Array. Contains **ciphertext** when a key is active. */
 	readonly yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>;
@@ -184,7 +165,7 @@ export function createEncryptedYkvLww<T>(
 	 * resolution, and observer mechanics all live here.
 	 */
 	const inner = new YKeyValueLww<EncryptedBlob | T>(yarray);
-	const changeHandlers = new Set<EncryptedKvObserver<T>>();
+	const changeHandlers = new Set<KvStoreChangeHandler<T>>();
 
 	/** Active encryption state. `undefined` = passthrough mode. */
 	let encryption: EncryptionState | undefined;
@@ -297,7 +278,7 @@ export function createEncryptedYkvLww<T>(
 	 */
 	const observer: Parameters<typeof inner.observe>[0] = (changes, origin) => {
 		if (origin === REENCRYPT_ORIGIN) return;
-		const decryptedChanges = new Map<string, YKeyValueLwwChange<T>>();
+		const decryptedChanges = new Map<string, KvStoreChange<T>>();
 		for (const [key, change] of changes) {
 			if (change.action === 'delete') {
 				decryptedChanges.set(key, { action: 'delete' });
@@ -432,7 +413,7 @@ export function createEncryptedYkvLww<T>(
 			}, REENCRYPT_ORIGIN);
 
 			if (newlyReadable.size === 0) return;
-			const syntheticChanges = new Map<string, YKeyValueLwwChange<T>>();
+			const syntheticChanges = new Map<string, KvStoreChange<T>>();
 			for (const [key, val] of newlyReadable)
 				syntheticChanges.set(key, { action: 'add', newValue: val });
 			for (const handler of changeHandlers)

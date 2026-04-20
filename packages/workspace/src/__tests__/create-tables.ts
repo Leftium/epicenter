@@ -1,6 +1,6 @@
 import { attachTable } from '@epicenter/document';
 import type * as Y from 'yjs';
-import type { TableDefinitions, TablesHelper } from '../workspace/types.js';
+import type { TableDefinitions, Tables } from '../workspace/types.js';
 
 /**
  * Test-only convenience: attach every table in a definitions map to a Y.Doc.
@@ -10,10 +10,10 @@ import type { TableDefinitions, TablesHelper } from '../workspace/types.js';
 export function createTables<T extends TableDefinitions>(
 	ydoc: Y.Doc,
 	definitions: T,
-): TablesHelper<T> {
+): Tables<T> {
 	const entries = Object.entries(definitions).map(([name, def]) => [
 		name,
 		attachTable(ydoc, name, def),
 	]);
-	return Object.fromEntries(entries) as TablesHelper<T>;
+	return Object.fromEntries(entries) as Tables<T>;
 }

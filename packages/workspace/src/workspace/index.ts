@@ -123,8 +123,8 @@ export type {
 	// Any-typed client (for duck-typing in CLI/server)
 	AnyWorkspaceClient,
 	// Awareness types
+	Awareness,
 	AwarenessDefinitions,
-	AwarenessHelper,
 	AwarenessState,
 	// Base row type
 	BaseRow,
@@ -147,21 +147,19 @@ export type {
 	// JSON types (re-exported from wellcrafted/json)
 	JsonObject,
 	JsonValue,
+	Kv,
 	KvChange,
 	KvDefinition,
 	KvDefinitions,
-	KvHelper,
 	NotFoundResult,
 	// Result types - composed
 	RowResult,
 	SharedExtensionContext,
-	// Definition types
+	// Table types
+	Table,
 	TableDefinition,
-	// Map types
 	TableDefinitions,
-	// Helper types
-	TableHelper,
-	TablesHelper,
+	Tables,
 	UpdateResult,
 	// Result types - building blocks
 	ValidRowResult,

@@ -2,7 +2,7 @@
  * attachTable() — Bind a TableDefinition to a Y.Doc.
  *
  * Constructs an unencrypted `YKeyValueLww` on `ydoc.getArray('table:<name>')`
- * and wraps it with a typed `TableHelper`. Provides CRUD operations with
+ * and wraps it with a typed `Table`. Provides CRUD operations with
  * schema validation and migration on read.
  *
  * For encrypted storage and full workspace lifecycle (extensions, KV,
@@ -28,19 +28,19 @@ import type {
 	InferTableRow,
 	InvalidRowResult,
 	RowResult,
+	Table,
 	TableDefinition,
-	TableHelper,
 	UpdateResult,
 } from './types.js';
 import {
-	type LwwStore,
+	type KvStoreChangeHandler,
+	type ObservableKvStore,
 	YKeyValueLww,
-	type YKeyValueLwwChangeHandler,
 	type YKeyValueLwwEntry,
 } from './y-keyvalue/index.js';
 
 /**
- * Bind a single TableDefinition to a Y.Doc and return a typed TableHelper.
+ * Bind a single TableDefinition to a Y.Doc and return a typed Table.
  *
  * Creates (or reuses) a Y.Array at `table:<name>` and wraps it with an
  * unencrypted `YKeyValueLww` store.
@@ -56,26 +56,26 @@ export function attachTable<
 	ydoc: Y.Doc,
 	name: string,
 	definition: TTableDefinition,
-): TableHelper<InferTableRow<TTableDefinition>> {
+): Table<InferTableRow<TTableDefinition>> {
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.on('destroy', () => ykv.dispose());
-	return createTableHelper(ykv, definition);
+	return createTable(ykv, definition);
 }
 
 /**
- * Construct a TableHelper from any `LwwStore` and a TableDefinition.
+ * Construct a Table from any `ObservableKvStore` and a TableDefinition.
  *
  * Exported so `@epicenter/workspace` can reuse the exact same helper logic
  * over its encrypted store wrapper.
  */
-export function createTableHelper<
+export function createTable<
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
 	TTableDefinition extends TableDefinition<any>,
 >(
-	ykv: LwwStore<unknown>,
+	ykv: ObservableKvStore<unknown>,
 	definition: TTableDefinition,
-): TableHelper<InferTableRow<TTableDefinition>> {
+): Table<InferTableRow<TTableDefinition>> {
 	type TRow = InferTableRow<TTableDefinition>;
 
 	/**
@@ -221,7 +221,7 @@ export function createTableHelper<
 		observe(
 			callback: (changedIds: ReadonlySet<TRow['id']>, origin?: unknown) => void,
 		): () => void {
-			const handler: YKeyValueLwwChangeHandler<unknown> = (changes, origin) => {
+			const handler: KvStoreChangeHandler<unknown> = (changes, origin) => {
 				callback(new Set(changes.keys()) as ReadonlySet<TRow['id']>, origin);
 			};
 

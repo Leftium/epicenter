@@ -12,7 +12,7 @@ import type {
 	StandardSchemaV1,
 } from '@standard-schema/spec';
 import type { JsonObject } from 'wellcrafted/json';
-import type { Awareness } from 'y-protocols/awareness';
+import type { Awareness as YAwareness } from 'y-protocols/awareness';
 
 // ════════════════════════════════════════════════════════════════════════════
 // STANDARD SCHEMA HELPERS
@@ -137,13 +137,13 @@ export type TableDefinitions = Record<
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Type-safe table helper for a single workspace table.
+ * Type-safe runtime handle for a single workspace table.
  *
  * Provides CRUD operations with schema validation and migration on read.
  *
  * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
  */
-export type TableHelper<TRow extends BaseRow> = {
+export type Table<TRow extends BaseRow> = {
 	/**
 	 * Parse unknown input against the table schema and migrate to the latest version.
 	 *
@@ -211,11 +211,9 @@ export type TableHelper<TRow extends BaseRow> = {
 	has(id: string): boolean;
 };
 
-/** Map keyed by table name to TableHelper for that table's row type. */
-export type TablesHelper<TTableDefinitions extends TableDefinitions> = {
-	[K in keyof TTableDefinitions]: TableHelper<
-		InferTableRow<TTableDefinitions[K]>
-	>;
+/** Map keyed by table name to Table for that table's row type. */
+export type Tables<TTableDefinitions extends TableDefinitions> = {
+	[K in keyof TTableDefinitions]: Table<InferTableRow<TTableDefinitions[K]>>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -244,9 +242,9 @@ export type KvDefinitions = Record<
 >;
 
 /**
- * KV helper with dictionary-style access to typed key-value entries.
+ * Dictionary-style typed handle over a KV store.
  */
-export type KvHelper<TKvDefinitions extends KvDefinitions> = {
+export type Kv<TKvDefinitions extends KvDefinitions> = {
 	get<K extends keyof TKvDefinitions & string>(
 		key: K,
 	): InferKvValue<TKvDefinitions[K]>;
@@ -297,10 +295,13 @@ export type AwarenessState<TDefs extends AwarenessDefinitions> = {
 };
 
 /**
- * Helper for typed awareness access.
- * Wraps the raw y-protocols Awareness instance with schema-validated methods.
+ * Typed handle over a y-protocols `Awareness` instance.
+ *
+ * The y-protocols class is aliased as `YAwareness` inside this module so the
+ * exported type name `Awareness<TDefs>` doesn't shadow it. Consumers that
+ * import both should alias the y-protocols import similarly.
  */
-export type AwarenessHelper<TDefs extends AwarenessDefinitions> = {
+export type Awareness<TDefs extends AwarenessDefinitions> = {
 	setLocal(state: AwarenessState<TDefs>): void;
 
 	setLocalField<K extends keyof TDefs & string>(
@@ -322,5 +323,5 @@ export type AwarenessHelper<TDefs extends AwarenessDefinitions> = {
 		callback: (changes: Map<number, 'added' | 'updated' | 'removed'>) => void,
 	): () => void;
 
-	raw: Awareness;
+	raw: YAwareness;
 };

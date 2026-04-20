@@ -2,7 +2,7 @@
  * attachKv() — Bind KV definitions to a Y.Doc.
  *
  * Constructs an unencrypted `YKeyValueLww` on `ydoc.getArray('kv')` and
- * wraps it with a typed `KvHelper`. KV uses validate-or-default semantics:
+ * wraps it with a typed `Kv`. KV uses validate-or-default semantics:
  * invalid or missing values return the default value from the KV definition.
  *
  * For encrypted storage, use `createWorkspace` from `@epicenter/workspace`.
@@ -10,16 +10,16 @@
 
 import type * as Y from 'yjs';
 import { KV_KEY } from './keys.js';
-import type { KvChange, KvDefinitions, KvHelper } from './types.js';
+import type { Kv, KvDefinitions, KvChange } from './types.js';
 import {
-	type LwwStore,
+	type KvStoreChange,
+	type ObservableKvStore,
 	YKeyValueLww,
-	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
 } from './y-keyvalue/index.js';
 
 /**
- * Bind a record of KV definitions to a Y.Doc and return a typed KvHelper.
+ * Bind a record of KV definitions to a Y.Doc and return a typed Kv.
  *
  * @param ydoc - The Y.Doc to attach to
  * @param definitions - Map of KV key name to KvDefinition
@@ -27,21 +27,22 @@ import {
 export function attachKv<TKvDefinitions extends KvDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TKvDefinitions,
-): KvHelper<TKvDefinitions> {
+): Kv<TKvDefinitions> {
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.on('destroy', () => ykv.dispose());
-	return createKvHelper(ykv, definitions);
+	return createKv(ykv, definitions);
 }
 
 /**
- * Build a KvHelper over any `LwwStore`. Exported so `@epicenter/workspace`
- * can reuse the same helper logic over its encrypted store wrapper.
+ * Build a Kv helper over any `ObservableKvStore`. Exported so
+ * `@epicenter/workspace` can reuse the same helper logic over its encrypted
+ * store wrapper.
  */
-export function createKvHelper<TKvDefinitions extends KvDefinitions>(
-	ykv: LwwStore<unknown>,
+export function createKv<TKvDefinitions extends KvDefinitions>(
+	ykv: ObservableKvStore<unknown>,
 	definitions: TKvDefinitions,
-): KvHelper<TKvDefinitions> {
+): Kv<TKvDefinitions> {
 	return {
 		get(key) {
 			const definition = definitions[key]!;
@@ -68,7 +69,7 @@ export function createKvHelper<TKvDefinitions extends KvDefinitions>(
 			const definition = definitions[key]!;
 
 			const handler = (
-				changes: Map<string, YKeyValueLwwChange<unknown>>,
+				changes: Map<string, KvStoreChange<unknown>>,
 				origin: unknown,
 			) => {
 				const change = changes.get(key);
@@ -108,7 +109,7 @@ export function createKvHelper<TKvDefinitions extends KvDefinitions>(
 			) => void,
 		) {
 			const handler = (
-				changes: Map<string, YKeyValueLwwChange<unknown>>,
+				changes: Map<string, KvStoreChange<unknown>>,
 				origin: unknown,
 			) => {
 				const parsed = new Map<string, KvChange<unknown>>();
@@ -142,6 +143,5 @@ export function createKvHelper<TKvDefinitions extends KvDefinitions>(
 			}
 			return result;
 		},
-	} as KvHelper<TKvDefinitions>;
+	} as Kv<TKvDefinitions>;
 }
-

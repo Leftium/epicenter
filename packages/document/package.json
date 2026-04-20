@@ -36,6 +36,7 @@
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
+		"arktype": "catalog:",
 		"typescript": "catalog:",
 		"yjs": "catalog:"
 	}

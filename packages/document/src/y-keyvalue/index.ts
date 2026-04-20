@@ -6,6 +6,9 @@
  *
  * Both are unencrypted Yjs primitives. The encrypted wrapper composes
  * over `YKeyValueLww` and lives in `@epicenter/workspace`.
+ *
+ * Both implement the shared {@link ObservableKvStore} interface, which is what
+ * consumers like `createTable` / `createKv` depend on.
  */
 export {
 	YKeyValue,
@@ -14,10 +17,11 @@ export {
 	type YKeyValueEntry,
 } from './_reference/y-keyvalue.js';
 
-export {
-	YKeyValueLww,
-	type LwwStore,
-	type YKeyValueLwwChange,
-	type YKeyValueLwwChangeHandler,
-	type YKeyValueLwwEntry,
-} from './y-keyvalue-lww.js';
+export { YKeyValueLww, type YKeyValueLwwEntry } from './y-keyvalue-lww.js';
+
+export type {
+	KvEntry,
+	KvStoreChange,
+	KvStoreChangeHandler,
+	ObservableKvStore,
+} from './observable-kv-store.js';

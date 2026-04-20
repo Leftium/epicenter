@@ -58,7 +58,7 @@ import type {
 	ContentStrategy,
 	DocumentExtensionRegistration,
 	Documents,
-	TableHelper,
+	Table,
 } from './types.js';
 
 /**
@@ -118,7 +118,7 @@ export type CreateDocumentsConfig<
 	 */
 	onUpdate: () => Partial<Omit<TRow, 'id'>>;
 	/** The table helper — needed to update the row and observe row deletions. */
-	tableHelper: TableHelper<TRow>;
+	tableHelper: Table<TRow>;
 	/** The workspace Y.Doc — needed for transact() when bumping updatedAt. */
 	ydoc: Y.Doc;
 	/**

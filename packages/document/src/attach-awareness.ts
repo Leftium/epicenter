@@ -1,20 +1,20 @@
 /**
  * attachAwareness() — Bind awareness definitions to a Y.Doc.
  *
- * Constructs a fresh `Awareness` instance over `ydoc` and wraps it with a
- * typed `AwarenessHelper`. Awareness cleanup is handled by `y-protocols` —
- * its constructor registers `doc.on('destroy', () => this.destroy())`, so
- * destroying the ydoc tears down the Awareness automatically.
+ * Constructs a fresh y-protocols `Awareness` instance over `ydoc` and wraps
+ * it with a typed `Awareness<TDefs>` helper. Awareness cleanup is handled by
+ * y-protocols — its constructor registers `doc.on('destroy', () => this.destroy())`,
+ * so destroying the ydoc tears down the Awareness automatically.
  *
  * For workspace-level awareness with extension wiring, use `createWorkspace`
  * from `@epicenter/workspace`.
  */
 
-import { Awareness } from 'y-protocols/awareness';
+import { Awareness as YAwareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type {
+	Awareness,
 	AwarenessDefinitions,
-	AwarenessHelper,
 	AwarenessState,
 } from './types.js';
 
@@ -31,21 +31,20 @@ import type {
 export function attachAwareness<TDefs extends AwarenessDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TDefs,
-): AwarenessHelper<TDefs> {
-	const awareness = new Awareness(ydoc);
-	return createAwarenessHelper(awareness, definitions);
+): Awareness<TDefs> {
+	return createAwareness(new YAwareness(ydoc), definitions);
 }
 
 /**
- * Wrap an existing Awareness instance with a typed helper.
+ * Wrap an existing y-protocols `Awareness` instance with a typed helper.
  *
  * Exported so `@epicenter/workspace` can reuse the same logic — the
  * workspace owns its own Awareness instance for sync extension wiring.
  */
-export function createAwarenessHelper<TDefs extends AwarenessDefinitions>(
-	awareness: Awareness,
+export function createAwareness<TDefs extends AwarenessDefinitions>(
+	awareness: YAwareness,
 	definitions: TDefs,
-): AwarenessHelper<TDefs> {
+): Awareness<TDefs> {
 	const defEntries = Object.entries(definitions);
 
 	/** Validate awareness state fields against schemas. */
@@ -82,7 +81,7 @@ export function createAwarenessHelper<TDefs extends AwarenessDefinitions>(
 			const state = awareness.getLocalState();
 			if (state === null) return undefined;
 			return (state as Record<string, unknown>)[key] as ReturnType<
-				AwarenessHelper<TDefs>['getLocalField']
+				Awareness<TDefs>['getLocalField']
 			>;
 		},
 

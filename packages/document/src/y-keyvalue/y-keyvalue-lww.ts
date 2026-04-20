@@ -120,7 +120,7 @@
  * - **For `bulkSet`**: Inserting 25K items in one call forces the observer to build
  *   one massive entryIndexMap. Chunking into groups of 1000 is ~10x faster.
  *
- * Because of this, the `TableHelper` layer (in `create-table.ts`) wraps these
+ * Because of this, the `Table` layer (in `create-table.ts`) wraps these
  * methods with chunked async loops. The optimal chunk sizes differ:
  * - `bulkSet`: 1000 (observer conflict resolution is the bottleneck)
  * - `bulkDelete`: 2500 (Yjs linked-list deletion is the bottleneck)
@@ -150,44 +150,22 @@
  */
 import type * as Y from 'yjs';
 import { lazy } from './lazy.js';
+import type {
+	KvStoreChange,
+	KvStoreChangeHandler,
+	ObservableKvStore,
+} from './observable-kv-store.js';
 
 /**
  * Entry stored in the Y.Array. The `ts` field enables last-write-wins conflict resolution.
  *
  * Field names are intentionally short (`val`, `ts`) to minimize serialized storage size -
  * these entries are persisted and synced.
+ *
+ * Storage-only type — `ts` is internal. The public `ObservableKvStore.entries()`
+ * surfaces the narrower `KvEntry<T> = { key, val }` instead.
  */
 export type YKeyValueLwwEntry<T> = { key: string; val: T; ts: number };
-
-export type YKeyValueLwwChange<T> =
-	| { action: 'add'; newValue: T }
-	| { action: 'update'; newValue: T }
-	| { action: 'delete' };
-
-export type YKeyValueLwwChangeHandler<T> = (
-	changes: Map<string, YKeyValueLwwChange<T>>,
-	origin: unknown,
-) => void;
-
-/**
- * Shared contract for LWW key-value stores.
- *
- * Implemented by `YKeyValueLww` (unencrypted) and the encrypted wrapper in
- * `@epicenter/workspace`. `createTableHelper` / `createKvHelper` consume this
- * interface so they can wrap either store without branching.
- */
-export interface LwwStore<T> {
-	get(key: string): T | undefined;
-	set(key: string, val: T): void;
-	has(key: string): boolean;
-	delete(key: string): void;
-	bulkSet(entries: Array<{ key: string; val: T }>): void;
-	bulkDelete(keys: string[]): void;
-	observe(handler: YKeyValueLwwChangeHandler<T>): void;
-	unobserve(handler: YKeyValueLwwChangeHandler<T>): void;
-	entries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
-	readonly size: number;
-}
 
 /**
  * Transaction origin that marks observer cleanup deletions as "internal."
@@ -219,7 +197,7 @@ export interface LwwStore<T> {
  */
 const DEDUP_ORIGIN = Symbol('dedup');
 
-export class YKeyValueLww<T> implements LwwStore<T> {
+export class YKeyValueLww<T> implements ObservableKvStore<T> {
 	/** The underlying Y.Array that stores `{key, val, ts}` entries. */
 	readonly yarray: Y.Array<YKeyValueLwwEntry<T>>;
 
@@ -299,7 +277,7 @@ export class YKeyValueLww<T> implements LwwStore<T> {
 	private pendingDeletes: Set<string> = new Set();
 
 	/** Registered change handlers. */
-	private changeHandlers: Set<YKeyValueLwwChangeHandler<T>> = new Set();
+	private changeHandlers: Set<KvStoreChangeHandler<T>> = new Set();
 
 	/** Stored observer reference for cleanup in dispose(). */
 	private _observer!: (
@@ -403,7 +381,7 @@ export class YKeyValueLww<T> implements LwwStore<T> {
 			// Dedup deletions are always no-ops — _map already has the winner.
 			// Skip entirely to avoid useless work on re-entrant observer calls.
 			if (transaction.origin === DEDUP_ORIGIN) return;
-			const changes = new Map<string, YKeyValueLwwChange<T>>();
+			const changes = new Map<string, KvStoreChange<T>>();
 			const addedEntries: YKeyValueLwwEntry<T>[] = [];
 			const deletedCurrentKeys = new Set<string>();
 
@@ -705,7 +683,7 @@ export class YKeyValueLww<T> implements LwwStore<T> {
 	 * ## When to use
 	 *
 	 * - Importing 1K+ rows: `ykv.bulkSet(entries)` in a transaction
-	 * - For chunked imports with progress, use `TableHelper.bulkSet()` which wraps
+	 * - For chunked imports with progress, use `Table.bulkSet()` which wraps
 	 *   this method with chunking, `onProgress`, and event-loop yielding
 	 * - For < 100 rows, `set()` in a `doc.transact()` is simpler and equivalent
 	 *
@@ -777,7 +755,7 @@ export class YKeyValueLww<T> implements LwwStore<T> {
 	 * Note: despite what Big-O analysis might suggest, the `toArray()` scan is NOT
 	 * the bottleneck (~0.04ms at 25K entries). The real cost is the `yarray.delete()`
 	 * calls inside the transaction—each one walks Yjs's internal linked list. This is
-	 * why the `TableHelper` layer chunks calls to this method rather than passing all
+	 * why the `Table` layer chunks calls to this method rather than passing all
 	 * IDs at once (large single transactions are slower due to linked-list fragmentation).
 	 *
 	 * ## Why right-to-left?
@@ -876,12 +854,12 @@ export class YKeyValueLww<T> implements LwwStore<T> {
 	}
 
 	/** Register an observer. Called when keys are added, updated, or deleted. */
-	observe(handler: YKeyValueLwwChangeHandler<T>): void {
+	observe(handler: KvStoreChangeHandler<T>): void {
 		this.changeHandlers.add(handler);
 	}
 
 	/** Unregister an observer. */
-	unobserve(handler: YKeyValueLwwChangeHandler<T>): void {
+	unobserve(handler: KvStoreChangeHandler<T>): void {
 		this.changeHandlers.delete(handler);
 	}
 

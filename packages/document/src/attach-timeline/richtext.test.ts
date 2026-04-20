@@ -1,8 +1,8 @@
-import { xmlFragmentToPlaintext } from '@epicenter/document';
+import { xmlFragmentToPlaintext } from '../attach-rich-text.js';
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { populateFragmentFromText } from './richtext.js';
-import { createTimeline } from './timeline.js';
+import { attachTimeline } from './timeline.js';
 
 /** Helper: build a paragraph XmlElement with text content (standalone, for insertion). */
 function makeParagraph(content: string): Y.XmlElement {
@@ -123,9 +123,9 @@ describe('populateFragmentFromText', () => {
 // pushRichtext on Timeline
 // ════════════════════════════════════════════════════════════════════════════
 
-describe('createTimeline - asRichText', () => {
+describe('attachTimeline - asRichText', () => {
 	function setup() {
-		return createTimeline(new Y.Doc());
+		return attachTimeline(new Y.Doc());
 	}
 
 	test('asRichText on empty timeline creates richtext entry', () => {

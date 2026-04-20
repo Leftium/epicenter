@@ -515,6 +515,7 @@
         "@epicenter/sync": "workspace:*",
         "@standard-schema/spec": "catalog:",
         "lib0": "catalog:",
+        "nanoid": "catalog:",
         "wellcrafted": "catalog:",
         "y-indexeddb": "catalog:",
         "y-protocols": "catalog:",

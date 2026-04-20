@@ -1,5 +1,5 @@
-import { xmlFragmentToPlaintext } from '@epicenter/document';
 import * as Y from 'yjs';
+import { xmlFragmentToPlaintext } from '../attach-rich-text.js';
 import { populateFragmentFromText } from './richtext.js';
 import {
 	parseSheetFromCsv,
@@ -169,7 +169,7 @@ export type Timeline = {
 	observe(callback: () => void): () => void;
 };
 
-export function createTimeline(ydoc: Y.Doc): Timeline {
+export function attachTimeline(ydoc: Y.Doc): Timeline {
 	const timeline = ydoc.getArray<TimelineYMap>('timeline');
 
 	// ── State ─────────────────────────────────────────────────────────────
@@ -376,7 +376,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				// Extract the last timeline entry from the snapshot. This tells us
 				// what content type (text/sheet/richtext) the snapshot was in
 				// and gives access to the snapshot's CRDT content types.
-				const snapshotTl = createTimeline(tempDoc);
+				const snapshotTl = attachTimeline(tempDoc);
 				const entry = snapshotTl.currentEntry;
 
 				// Snapshot had no timeline entries (e.g., pre-migration doc). No-op.

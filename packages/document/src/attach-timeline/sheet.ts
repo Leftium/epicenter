@@ -1,6 +1,10 @@
+import { customAlphabet } from 'nanoid';
 import * as Y from 'yjs';
-import { generateInitialOrders } from '../shared/fractional-index.js';
-import { generateId } from '../shared/id.js';
+import { generateInitialOrders } from './fractional-index.js';
+
+// Short unique identifier for column/row keys inside a sheet. Scoped to a
+// single sheet's lifetime — not a workspace-wide row id.
+const generateId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 10);
 
 /** The result of binding a sheet—columns and rows Y.Maps. */
 export type SheetBinding = {

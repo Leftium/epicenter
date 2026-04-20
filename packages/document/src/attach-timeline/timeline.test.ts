@@ -5,16 +5,16 @@
  * mode conversion, and snapshot restore.
  */
 
-import { xmlFragmentToPlaintext } from '@epicenter/document';
+import { xmlFragmentToPlaintext } from '../attach-rich-text.js';
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTimeline } from './timeline.js';
+import { attachTimeline } from './timeline.js';
 
 function setup() {
-	return createTimeline(new Y.Doc());
+	return attachTimeline(new Y.Doc());
 }
 
-describe('createTimeline - sheet entries', () => {
+describe('attachTimeline - sheet entries', () => {
 	test('asSheet on empty timeline creates sheet entry', () => {
 		const tl = setup();
 		tl.asSheet();
@@ -105,10 +105,10 @@ describe('createTimeline - sheet entries', () => {
 
 /** Create a snapshot binary from a Y.Doc with content set up by the callback. */
 function createSnapshotBinary(
-	fn: (tl: ReturnType<typeof createTimeline>) => void,
+	fn: (tl: ReturnType<typeof attachTimeline>) => void,
 ): Uint8Array {
 	const doc = new Y.Doc({ gc: false });
-	fn(createTimeline(doc));
+	fn(attachTimeline(doc));
 	const binary = Y.encodeStateAsUpdateV2(doc);
 	doc.destroy();
 	return binary;
@@ -117,7 +117,7 @@ function createSnapshotBinary(
 describe('restoreFromSnapshot', () => {
 	test('text → text (same mode): content matches, timeline length unchanged', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.write('original content');
 		expect(tl.length).toBe(1);
 
@@ -133,7 +133,7 @@ describe('restoreFromSnapshot', () => {
 
 	test('sheet → text (different mode): new entry pushed', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.asSheet();
 		const lengthAfterSetup = tl.length;
 
@@ -149,7 +149,7 @@ describe('restoreFromSnapshot', () => {
 
 	test('sheet snapshot: restores sheet entry with columns and rows', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.write('some text');
 
 		const csv = 'Name,Age\nAlice,30\nBob,25\n';
@@ -173,7 +173,7 @@ describe('restoreFromSnapshot', () => {
 
 	test('empty snapshot: no-op, no crash', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.write('should stay');
 
 		tl.restoreFromSnapshot(createSnapshotBinary(() => {}));
@@ -185,7 +185,7 @@ describe('restoreFromSnapshot', () => {
 
 	test('corrupted binary throws but does not corrupt live doc', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.write('original');
 
 		expect(() => tl.restoreFromSnapshot(new Uint8Array([1, 2, 3]))).toThrow();
@@ -196,7 +196,7 @@ describe('restoreFromSnapshot', () => {
 
 	test('richtext snapshot: preserves formatting (bold, headings)', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.write('placeholder');
 
 		const binary = createSnapshotBinary((s) => {
@@ -242,7 +242,7 @@ describe('restoreFromSnapshot', () => {
 
 	test('sheet snapshot: preserves column metadata (kind, width) via deep clone', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.write('placeholder');
 
 		// Build a snapshot with custom column metadata that CSV round-trip would lose
@@ -303,7 +303,7 @@ describe('restoreFromSnapshot', () => {
 
 	test('sheet → sheet (same type): pushes new entry (length increases)', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.write('A,B\n1,2\n');
 		tl.asSheet();
 		const before = tl.length;
@@ -323,7 +323,7 @@ describe('restoreFromSnapshot', () => {
 
 	test('richtext → richtext (same type): pushes new entry (length increases)', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.asRichText();
 		const before = tl.length;
 
@@ -345,7 +345,7 @@ describe('restoreFromSnapshot', () => {
 	});
 });
 
-describe('createTimeline - observe', () => {
+describe('attachTimeline - observe', () => {
 	test('fires when a new entry is pushed via write()', () => {
 		const tl = setup();
 		let callCount = 0;
@@ -414,7 +414,7 @@ describe('createTimeline - observe', () => {
 
 	test('fires when restoreFromSnapshot pushes new sheet entry', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.write('original');
 		let callCount = 0;
 		tl.observe(() => callCount++);
@@ -431,7 +431,7 @@ describe('createTimeline - observe', () => {
 
 	test('fires when restoreFromSnapshot pushes richtext entry', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.write('original');
 		let callCount = 0;
 		tl.observe(() => callCount++);
@@ -443,7 +443,7 @@ describe('createTimeline - observe', () => {
 
 	test('does NOT fire when restoreFromSnapshot replaces text in-place', () => {
 		const doc = new Y.Doc({ gc: false });
-		const tl = createTimeline(doc);
+		const tl = attachTimeline(doc);
 		tl.write('original');
 		let callCount = 0;
 		tl.observe(() => callCount++);
@@ -454,7 +454,7 @@ describe('createTimeline - observe', () => {
 	});
 });
 
-describe('createTimeline - mode conversion content', () => {
+describe('attachTimeline - mode conversion content', () => {
 	test('asRichText from text preserves content as paragraphs', () => {
 		const tl = setup();
 		tl.write('Line 1\nLine 2');
@@ -493,7 +493,7 @@ describe('createTimeline - mode conversion content', () => {
 	});
 });
 
-describe('createTimeline - cross-mode conversions', () => {
+describe('attachTimeline - cross-mode conversions', () => {
 	test('asRichText from sheet converts via CSV plaintext', () => {
 		const tl = setup();
 		tl.write('Name,Age\nAlice,30\n');
@@ -529,7 +529,7 @@ describe('createTimeline - cross-mode conversions', () => {
 	});
 });
 
-describe('createTimeline - write (sheet mode)', () => {
+describe('attachTimeline - write (sheet mode)', () => {
 	test('write on sheet mode replaces sheet content', () => {
 		const tl = setup();
 		tl.asSheet();
@@ -579,7 +579,7 @@ describe('createTimeline - write (sheet mode)', () => {
 	});
 });
 
-describe('createTimeline - batch', () => {
+describe('attachTimeline - batch', () => {
 	test('mutations in batch trigger observe once per transaction', () => {
 		const tl = setup();
 		let callCount = 0;
@@ -616,7 +616,7 @@ describe('createTimeline - batch', () => {
 	});
 });
 
-describe('createTimeline - appendText', () => {
+describe('attachTimeline - appendText', () => {
 	test('appendText on empty timeline creates text entry', () => {
 		const tl = setup();
 		tl.appendText('hello');

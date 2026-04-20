@@ -26,6 +26,22 @@ export { attachTable } from './attach-table.js';
 export { attachKv } from './attach-kv.js';
 export { attachAwareness } from './attach-awareness.js';
 
+export {
+	attachTimeline,
+	computeMidpoint,
+	generateInitialOrders,
+	parseSheetFromCsv,
+	populateFragmentFromText,
+	serializeSheetToCsv,
+	type ContentType,
+	type RichTextEntry,
+	type SheetBinding,
+	type SheetEntry,
+	type TextEntry,
+	type Timeline,
+	type TimelineEntry,
+} from './attach-timeline/index.js';
+
 export { KV_KEY, TableKey, type KvKey } from './keys.js';
 
 export type {

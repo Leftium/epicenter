@@ -19,11 +19,12 @@
 import {
 	attachPlainText,
 	attachRichText,
+	attachTimeline,
 	type PlainTextAttachment,
 	type RichTextAttachment,
+	type Timeline,
 } from '@epicenter/document';
 import type * as Y from 'yjs';
-import { createTimeline, type Timeline } from '../timeline/timeline.js';
 
 /**
  * Plain text content strategy.
@@ -125,4 +126,4 @@ export const richText: (ydoc: Y.Doc) => RichTextAttachment = (ydoc) =>
  * ```
  */
 export const timeline: (ydoc: Y.Doc) => Timeline = (ydoc) =>
-	createTimeline(ydoc);
+	attachTimeline(ydoc);

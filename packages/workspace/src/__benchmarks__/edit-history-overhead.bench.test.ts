@@ -18,7 +18,7 @@
 import { describe, test } from 'bun:test';
 import * as Y from 'yjs';
 import { createTables } from '../__tests__/create-tables.js';
-import { createTimeline } from '../timeline/timeline.js';
+import { attachTimeline } from '@epicenter/document';
 import {
 	formatBytes,
 	generateHeavyContent,
@@ -179,7 +179,7 @@ describe('document content edit overhead (Y.Text)', () => {
 
 		// ── Incremental: type sentence by sentence with occasional rewrites ─
 		const incrDoc = new Y.Doc();
-		const incrTimeline = createTimeline(incrDoc);
+		const incrTimeline = attachTimeline(incrDoc);
 
 		const { durationMs: incrMs } = measureTime(() => {
 			const ytext = incrTimeline.asText();
@@ -207,7 +207,7 @@ describe('document content edit overhead (Y.Text)', () => {
 
 		// ── Pristine: write the final text in one shot ──────────────────────
 		const pristineDoc = new Y.Doc();
-		const pristineTimeline = createTimeline(pristineDoc);
+		const pristineTimeline = attachTimeline(pristineDoc);
 
 		const { durationMs: pristineMs } = measureTime(() => {
 			pristineTimeline.write(finalText);
@@ -246,7 +246,7 @@ describe('document content edit overhead (Y.Text)', () => {
 
 		// ── Incremental: start with full content, then mutate repeatedly ────
 		const incrDoc = new Y.Doc();
-		const incrTimeline = createTimeline(incrDoc);
+		const incrTimeline = attachTimeline(incrDoc);
 
 		const { durationMs: incrMs } = measureTime(() => {
 			const ytext = incrTimeline.asText();
@@ -289,7 +289,7 @@ describe('document content edit overhead (Y.Text)', () => {
 
 		// ── Pristine: write the same final text in one shot ─────────────────
 		const pristineDoc = new Y.Doc();
-		const pristineTimeline = createTimeline(pristineDoc);
+		const pristineTimeline = attachTimeline(pristineDoc);
 
 		const { durationMs: pristineMs } = measureTime(() => {
 			pristineTimeline.write(finalContent);
@@ -372,7 +372,7 @@ describe('realistic writing session (table + document)', () => {
 
 		// Document Y.Docs (content) — one per note that has content
 		const incrContentDocs: Y.Doc[] = [];
-		const incrTimelines: ReturnType<typeof createTimeline>[] = [];
+		const incrTimelines: ReturnType<typeof attachTimeline>[] = [];
 
 		const { durationMs: incrMs } = measureTime(() => {
 			// Create 10 existing notes with content
@@ -391,7 +391,7 @@ describe('realistic writing session (table + document)', () => {
 				// Each note gets a content Y.Doc with the base content
 				// Note 0 starts empty (it's the "new note" scenario)
 				const contentDoc = new Y.Doc();
-				const tl = createTimeline(contentDoc);
+				const tl = attachTimeline(contentDoc);
 				if (i !== 0) tl.write(baseContent);
 				incrContentDocs.push(contentDoc);
 				incrTimelines.push(tl);
@@ -522,7 +522,7 @@ describe('realistic writing session (table + document)', () => {
 
 				// Content doc — written once with final content
 				const contentDoc = new Y.Doc();
-				const tl = createTimeline(contentDoc);
+				const tl = attachTimeline(contentDoc);
 				if (i === 0) {
 					tl.write(finalNoteAContent);
 				} else if (i === 1) {

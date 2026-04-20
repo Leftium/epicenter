@@ -1,11 +1,4 @@
 export {
-	defineDocument,
-	openDocument,
-	type DocumentDefinition,
-	type DocumentHandle,
-} from './define-document.js';
-
-export {
 	attachIndexedDb,
 	type IndexedDbAttachment,
 } from './attach-indexed-db.js';

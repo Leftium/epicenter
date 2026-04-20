@@ -495,7 +495,7 @@ describe('createWorkspace', () => {
 				tables: { files: filesTable },
 			});
 
-			const content = client.documents.files.content;
+			const content = client.tables.files.documents.content;
 			expect(content).toBeDefined();
 			expect(typeof content.get).toBe('function');
 			expect(typeof content.read).toBe('function');
@@ -507,8 +507,8 @@ describe('createWorkspace', () => {
 		test('table without withDocument does not appear in documents namespace', () => {
 			const { client } = setup();
 
-			expect(Object.keys(client.documents)).not.toContain('posts');
-			expect(Object.keys(client.documents)).not.toContain('tags');
+			expect('documents' in client.tables.posts).toBe(false);
+			expect('documents' in client.tables.tags).toBe(false);
 		});
 
 		test('withDocumentExtension is wired into document bindings', async () => {
@@ -535,7 +535,7 @@ describe('createWorkspace', () => {
 				return { exports: {}, dispose: () => {} };
 			});
 
-			client.documents.files.content.get('f1');
+			client.tables.files.documents.content.get('f1');
 
 			expect(hookCalled).toBe(true);
 		});
@@ -574,7 +574,7 @@ describe('createWorkspace', () => {
 			expect(client.extensions.myExt.tag).toBe('ext');
 
 			// Open a document — the same factory should fire again as a document extension
-			client.documents.files.content.get('f1');
+			client.tables.files.documents.content.get('f1');
 
 			// Factory called twice: once for workspace, once for document
 			expect(factoryCallCount).toBe(2);
@@ -612,7 +612,7 @@ describe('createWorkspace', () => {
 			expect(client.extensions.wsOnly.tag).toBe('ws-only');
 
 			// Opening a document should NOT trigger this extension
-			client.documents.files.content.get('f1');
+			client.tables.files.documents.content.get('f1');
 
 			// Still exactly 1 call — withWorkspaceExtension does not register for documents
 			expect(factoryCallCount).toBe(1);
@@ -637,7 +637,7 @@ describe('createWorkspace', () => {
 				tables: { files: filesTable },
 			});
 
-			const doc1 = client.documents.files.content.get('f1');
+			const doc1 = client.tables.files.documents.content.get('f1');
 
 			await client.dispose();
 
@@ -678,10 +678,10 @@ describe('createWorkspace', () => {
 				tables: { files: filesTable, notes: notesTable },
 			});
 
-			expect(client.documents.files.content).toBeDefined();
-			expect(client.documents.notes.body).toBeDefined();
-			expect(client.documents.files.content).not.toBe(
-				client.documents.notes.body,
+			expect(client.tables.files.documents.content).toBeDefined();
+			expect(client.tables.notes.documents.body).toBeDefined();
+			expect(client.tables.files.documents.content).not.toBe(
+				client.tables.notes.documents.body,
 			);
 		});
 	});

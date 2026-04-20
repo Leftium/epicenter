@@ -16,10 +16,11 @@ import type {
 	CombinedStandardSchema,
 	ContentHandle,
 	ContentStrategy,
+	InferTableRow,
 	Kv,
 	KvDefinitions,
 	LastSchema,
-	Tables,
+	Table,
 } from '@epicenter/document';
 import type { Awareness as YAwareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
@@ -285,7 +286,7 @@ export type DocumentContext<
  * In Svelte, the idiomatic pattern is:
  *
  * ```svelte
- * const handle = $derived(workspace.documents.files.content.get(fileId));
+ * const handle = $derived(workspace.tables.files.documents.content.get(fileId));
  * $effect(() => {
  *   return handle.bind();   // auto-release on effect cleanup
  * });
@@ -310,7 +311,7 @@ export type DocumentHandle<TBinding = ContentHandle> = TBinding & {
  *
  * Manages Y.Doc creation, provider lifecycle, and `updatedAt` auto-bumping
  * on local content edits. Most users access this via
- * `client.documents.files.content`.
+ * `client.tables.files.documents.content`.
  *
  * ## Access
  *
@@ -393,8 +394,9 @@ export type Documents<
 /**
  * Does this table definition have a non-empty `documents` record?
  *
- * Used by `DocumentsHelper` to filter the `documents` namespace — only tables
- * with `.withDocument()` declarations appear in `client.documents`.
+ * Used by `WorkspaceTables` to decide whether a table helper gets a
+ * `.documents` sub-namespace — only tables with `.withDocument()` declarations
+ * expose `client.tables.<name>.documents`.
  */
 export type HasDocuments<T> = T extends { documents: infer TDocuments }
 	? keyof TDocuments extends never
@@ -453,28 +455,31 @@ export type DocumentsOf<T> = T extends {
 	: never;
 
 /**
- * Top-level document namespace — parallel to `Tables`.
+ * Workspace's richer variant of `Tables<TTableDefinitions>`.
  *
- * Only includes tables that have document configs declared via `.withDocument()`.
- * Tables without documents are filtered out via key remapping.
+ * Each table helper is `Table<TRow>` as before, plus a `.documents`
+ * sub-namespace when the table has one or more `.withDocument()` declarations.
+ * Tables without documents get no `.documents` key — accessing it is a
+ * compile-time error.
  *
  * @example
  * ```typescript
  * // Table with .withDocument('content', ...)
- * client.documents.files.content.get(row)
+ * client.tables.files.findById(id)             // Table CRUD
+ * client.tables.files.documents.content.get(row) // Document access
  *
- * // Table without .withDocument() — TypeScript error
- * client.documents.tags // Property 'tags' does not exist
+ * // Table without .withDocument() — no .documents
+ * client.tables.tags.documents // Property 'documents' does not exist
  * ```
  */
-export type DocumentsHelper<
-	TTableDefinitions extends TableDefinitions,
-> = {
-	[K in keyof TTableDefinitions as HasDocuments<
+export type WorkspaceTables<TTableDefinitions extends TableDefinitions> = {
+	[K in keyof TTableDefinitions]: HasDocuments<
 		TTableDefinitions[K]
 	> extends true
-		? K
-		: never]: DocumentsOf<TTableDefinitions[K]>;
+		? Table<InferTableRow<TTableDefinitions[K]>> & {
+				documents: DocumentsOf<TTableDefinitions[K]>;
+			}
+		: Table<InferTableRow<TTableDefinitions[K]>>;
 };
 
 /**
@@ -482,7 +487,7 @@ export type DocumentsHelper<
  *
  * Uses the workspace's wider `TableDefinition` (with `Record<string,
  * DocumentConfig>` document constraint) so `.withDocument()` configs
- * survive through the helpers and `DocumentsHelper` mapping.
+ * survive through the helpers and `WorkspaceTables` mapping.
  */
 export type TableDefinitions = Record<
 	string,
@@ -609,10 +614,8 @@ export type WorkspaceClient<
 		kv: TKvDefinitions;
 		awareness: TAwarenessDefinitions;
 	};
-	/** Typed table helpers — pure CRUD, no document management */
-	tables: Tables<TTableDefinitions>;
-	/** Document managers — only tables with `.withDocument()` appear here */
-	documents: DocumentsHelper<TTableDefinitions>;
+	/** Typed table helpers — CRUD plus a `.documents` sub-namespace when the table has `.withDocument()` declarations */
+	tables: WorkspaceTables<TTableDefinitions>;
 	/** Typed KV helper */
 	kv: Kv<TKvDefinitions>;
 	/** Typed awareness helper — always present, like tables and kv */

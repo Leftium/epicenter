@@ -76,13 +76,13 @@ type TableDefinitionWithDocBuilder<
 	 * Declare a named document on this table.
 	 *
 	 * Maps a document concept (e.g., 'content') to a GUID column and an `onUpdate` callback.
-	 * The name becomes a property under `client.documents.{tableName}` at runtime.
+	 * The name becomes a property under `client.tables.{tableName}.documents` at runtime.
 	 *
 	 * Chainable — call multiple times for tables with multiple documents.
 	 * Each call claims its `guid` column exclusively — subsequent calls cannot reuse
 	 * a GUID column already bound to a prior document (prevents storage collisions).
 	 *
-	 * @param name - The document name (becomes `client.documents.{tableName}[name]`)
+	 * @param name - The document name (becomes `client.tables.{tableName}.documents[name]`)
 	 * @param config - `guid` (string column) and `onUpdate` (callback returning partial row)
 	 *
 	 * @example

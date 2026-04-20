@@ -133,7 +133,6 @@ export type {
 	ContentStrategy,
 	DocumentConfig,
 	Documents,
-	DocumentsHelper,
 	PlainTextAttachment,
 	RichTextAttachment,
 	// Extension types
@@ -167,4 +166,5 @@ export type {
 	WorkspaceClientBuilder,
 	// Workspace types
 	WorkspaceDefinition,
+	WorkspaceTables,
 } from './types.js';

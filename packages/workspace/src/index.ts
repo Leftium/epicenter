@@ -147,7 +147,6 @@ export type {
 	DocumentConfig,
 	DocumentHandle,
 	Documents,
-	DocumentsHelper,
 	PlainTextAttachment,
 	RichTextAttachment,
 	ExtensionContext,
@@ -173,6 +172,7 @@ export type {
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
+	WorkspaceTables,
 } from './workspace/types';
 
 // ════════════════════════════════════════════════════════════════════════════

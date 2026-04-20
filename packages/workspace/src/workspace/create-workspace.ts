@@ -80,7 +80,6 @@ import type {
 	DocumentContext,
 	DocumentExtensionRegistration,
 	Documents,
-	DocumentsHelper,
 	ExtensionContext,
 	Kv,
 	KvDefinitions,
@@ -89,6 +88,7 @@ import type {
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
+	WorkspaceTables,
 } from './types.js';
 
 /**
@@ -204,13 +204,9 @@ export function createWorkspace<
 	// Create documents for tables that have .withDocument() declarations.
 	// Documents are created eagerly but reference documentExtensionRegistrations by closure,
 	// so they pick up extensions added later via .withDocumentExtension().
+	// Each per-table documents map is attached in place to `tables[tableName].documents`
+	// so consumers access them as `client.tables.files.documents.content`.
 	const documentCleanups: (() => Promise<void>)[] = [];
-	// Runtime type is Record<string, Record<string, Documents<BaseRow>>> —
-	// cast to DocumentsHelper at the end so it satisfies WorkspaceClient/ExtensionContext.
-	const documentsNamespace: Record<
-		string,
-		Record<string, Documents<BaseRow>>
-	> = {};
 
 	for (const [tableName, tableDef] of Object.entries(tableDefs)) {
 		if (Object.keys(tableDef.documents).length === 0) continue;
@@ -218,11 +214,10 @@ export function createWorkspace<
 		const tableHelper = tables[tableName];
 		if (!tableHelper) continue;
 
-		const tableDocumentsNamespace: Record<string, Documents<BaseRow>> = {};
+		const perTableDocuments: Record<string, Documents<BaseRow>> = {};
 
 		for (const [docName, rawConfig] of Object.entries(tableDef.documents)) {
-			const { content, guid, onUpdate } =
-				rawConfig as DocumentConfig;
+			const { content, guid, onUpdate } = rawConfig as DocumentConfig;
 
 			const documents = createDocuments({
 				id,
@@ -236,15 +231,21 @@ export function createWorkspace<
 				documentExtensions: documentExtensionRegistrations,
 			});
 
-			tableDocumentsNamespace[docName] = documents;
+			perTableDocuments[docName] = documents;
 			documentCleanups.push(() => documents.closeAll());
 		}
 
-		documentsNamespace[tableName] = tableDocumentsNamespace;
+		// Attach the documents namespace directly onto the table helper.
+		// Runtime-only assignment; the type is surfaced via `WorkspaceTables`
+		// at the client assembly site below.
+		(
+			tableHelper as unknown as {
+				documents: Record<string, Documents<BaseRow>>;
+			}
+		).documents = perTableDocuments;
 	}
 
-	const typedDocuments =
-		documentsNamespace as unknown as DocumentsHelper<TTableDefinitions>;
+	const typedTables = tables as unknown as WorkspaceTables<TTableDefinitions>;
 
 	/**
 	 * Build a workspace client with the given extensions and lifecycle state.
@@ -298,8 +299,7 @@ export function createWorkspace<
 			id,
 			ydoc,
 			definitions,
-			tables,
-			documents: typedDocuments,
+			tables: typedTables,
 			kv: kvHelper,
 			awareness,
 			// Each extension entry is the exports object stored by reference.

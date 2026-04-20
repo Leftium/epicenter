@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { createAwareness } from './create-awareness.js';
+import { awarenessHelperOver } from '@epicenter/document';
 import type { AwarenessDefinitions } from './types.js';
 
 const awarenessDefs = {
@@ -14,11 +14,11 @@ const awarenessDefs = {
 function setup() {
 	const ydoc = new Y.Doc({ guid: 'awareness-test' });
 	const raw = new Awareness(ydoc);
-	const awareness = createAwareness(raw, awarenessDefs);
+	const awareness = awarenessHelperOver(raw, awarenessDefs);
 	return { ydoc, raw, awareness };
 }
 
-describe('createAwareness', () => {
+describe('awarenessHelperOver', () => {
 	test('setLocal() and getLocal() round-trip', () => {
 		const { awareness } = setup();
 		awareness.setLocal({ cursorX: 10, cursorY: 20, name: 'alice' });

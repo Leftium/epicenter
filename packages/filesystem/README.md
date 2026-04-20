@@ -25,7 +25,10 @@ import { createWorkspace } from '@epicenter/workspace';
 import { createYjsFileSystem, filesTable } from '@epicenter/filesystem';
 
 const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
+const fs = createYjsFileSystem(
+  ws.tables.files,
+  ws.tables.files.documents.content,
+);
 
 await fs.mkdir('/docs');
 await fs.writeFile('/docs/hello.txt', 'Hello World');

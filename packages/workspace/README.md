@@ -240,7 +240,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 3. Chain extensions with `.withExtension(...)`, `.withWorkspaceExtension(...)`, and `.withDocumentExtension(...)`.
 4. Attach actions with `.withActions(...)`.
 5. Wait for `client.whenReady` if your extensions load persisted state or open connections.
-6. Read and write through `client.tables`, `client.kv`, `client.documents`, and `client.awareness`.
+6. Read and write through `client.tables`, `client.kv`, `client.tables.<name>.documents`, and `client.awareness`.
 7. Use `iterateActions(...)`, `describeWorkspace(...)`, and action metadata if you want to build adapters such as HTTP, CLI, or MCP.
 8. Dispose the client with `await client.dispose()` when you're done.
 
@@ -318,22 +318,22 @@ Handlers close over the client through normal JavaScript closure. They do not re
 
 ### Documents
 
-Tables can declare document-backed content via `.withDocument(...)`. That creates typed document managers under `client.documents`.
+Tables can declare document-backed content via `.withDocument(...)`. That creates typed document managers under `client.tables.<name>.documents`.
 
 If you define a `files` table with `.withDocument('content', ...)`, you get this shape at runtime:
 
-- `client.documents.files.content.get(rowOrGuid)` — **sync**, returns a cached handle keyed by GUID. Construct once, reuse for the lifetime of the workspace.
-- `client.documents.files.content.read(rowOrGuid)` — high-level sugar: awaits `whenLoaded`, returns the content as a string.
-- `client.documents.files.content.write(rowOrGuid, text)` — replaces content.
-- `client.documents.files.content.append(rowOrGuid, text)` — appends text (uses `appendText` when the strategy exposes one, else read-concat-write).
-- `client.documents.files.content.open(rowOrGuid)` — legacy async accessor; equivalent to `get(id)` + `await handle.whenLoaded`.
-- `client.documents.files.content.close(rowOrGuid)` / `.closeAll()` — call `close()` when you delete the underlying row; `closeAll()` runs automatically at workspace dispose.
+- `client.tables.files.documents.content.get(rowOrGuid)` — **sync**, returns a cached handle keyed by GUID. Construct once, reuse for the lifetime of the workspace.
+- `client.tables.files.documents.content.read(rowOrGuid)` — high-level sugar: awaits `whenLoaded`, returns the content as a string.
+- `client.tables.files.documents.content.write(rowOrGuid, text)` — replaces content.
+- `client.tables.files.documents.content.append(rowOrGuid, text)` — appends text (uses `appendText` when the strategy exposes one, else read-concat-write).
+- `client.tables.files.documents.content.open(rowOrGuid)` — legacy async accessor; equivalent to `get(id)` + `await handle.whenLoaded`.
+- `client.tables.files.documents.content.close(rowOrGuid)` / `.closeAll()` — call `close()` when you delete the underlying row; `closeAll()` runs automatically at workspace dispose.
 
 The handle returned from `.get()` is the strategy binding plus framework extras: `handle.read() / .write(...) / .binding / .asText() / .asRichText()` (strategy methods) and `handle.whenLoaded / .ydoc / .bind()` (framework extras). For UI components, the idiomatic shape is:
 
 ```svelte
 <script lang="ts">
-  const handle = $derived(workspace.documents.files.content.get(fileId));
+  const handle = $derived(workspace.tables.files.documents.content.get(fileId));
   $effect(() => {
     return handle.bind();   // sync transport lives while this editor is mounted
   });
@@ -519,15 +519,15 @@ async function documentExample() {
 	// Sync access — returns a cached handle keyed by GUID. The handle IS the
 	// strategy binding (Timeline, PlainTextAttachment, RichTextAttachment) plus
 	// framework extras (`whenLoaded`, `ydoc`).
-	const handle = workspace.documents.files.content.get('doc-1');
+	const handle = workspace.tables.files.documents.content.get('doc-1');
 	handle.write('# Hello from a document');
 	console.log(handle.read());
 	console.log(handle.currentType);
 
 	// Or use the high-level sugar — string in, string out. Awaits `whenLoaded`
 	// internally so callers don't need to think about load order.
-	await workspace.documents.files.content.write('doc-1', '# Updated');
-	const text = await workspace.documents.files.content.read('doc-1');
+	await workspace.tables.files.documents.content.write('doc-1', '# Updated');
+	const text = await workspace.tables.files.documents.content.read('doc-1');
 	console.log(text);
 
 	await workspace.dispose();   // closes all cached handles
@@ -1422,8 +1422,7 @@ The important runtime properties are:
 - `client.id`
 - `client.ydoc`
 - `client.definitions`
-- `client.tables`
-- `client.documents`
+- `client.tables` (document managers live at `client.tables.<name>.documents`)
 - `client.kv`
 - `client.awareness`
 - `client.extensions`
@@ -1457,7 +1456,7 @@ For timeline strategy (`content: timeline`):
 For plainText strategy (`content: plainText`), `handle.content` is `Y.Text`.
 For richText strategy (`content: richText`), `handle.content` is `Y.XmlFragment`.
 
-Document managers live at `client.documents.{tableName}.{documentName}` and expose:
+Document managers live at `client.tables.{tableName}.documents.{documentName}` and expose:
 
 - `open(rowOrGuid)`
 - `close(rowOrGuid)`

@@ -105,9 +105,9 @@ const workspace = createWorkspace(appDefinition)
 
 `.withExtension()` is broad on purpose. It registers the same factory for the root workspace doc and for per-document docs, which is what you want for capabilities like persistence or sync that should follow both the workspace and any attached document timelines.
 
-`.withWorkspaceExtension()` is narrower and richer. Its factory receives the full workspace context—`tables`, `kv`, `documents`, `definitions`, `awareness`, `extensions`, `batch`, `loadSnapshot`, and `whenReady`—so it is the right place for indexes, materializers, or any adapter that needs the typed workspace surface.
+`.withWorkspaceExtension()` is narrower and richer. Its factory receives the full workspace context—`tables`, `kv`, `definitions`, `awareness`, `extensions`, `batch`, `loadSnapshot`, and `whenReady`—so it is the right place for indexes, materializers, or any adapter that needs the typed workspace surface. Per-table documents live under `tables.<name>.documents`.
 
-`.withDocumentExtension()` is the per-document hook. That one attaches behavior to content documents opened through `workspace.documents`, which is how file content, note bodies, or other rich per-row docs get their own sync or transformation layers.
+`.withDocumentExtension()` is the per-document hook. That one attaches behavior to content documents opened through `workspace.tables.<name>.documents`, which is how file content, note bodies, or other rich per-row docs get their own sync or transformation layers.
 
 Extensions compose progressively. Later extensions see earlier exports through `context.extensions`, because each builder step accumulates the extension map before the next one runs.
 
@@ -259,7 +259,7 @@ export const workspace = createWorkspace(opensidianDefinition)
 	}));
 ```
 
-That workspace then feeds other middleware packages. `createYjsFileSystem(workspace.tables.files, workspace.documents.files.content)` turns the files table plus content docs into a real virtual filesystem; `actionsToClientTools(workspace.actions)` from `@epicenter/ai` turns workspace actions into chat tools; `createSkillsWorkspace()` mounts a second skills-focused workspace; `createAuth()` from `@epicenter/svelte` coordinates auth with encryption and sync reconnects.
+That workspace then feeds other middleware packages. `createYjsFileSystem(workspace.tables.files, workspace.tables.files.documents.content)` turns the files table plus content docs into a real virtual filesystem; `actionsToClientTools(workspace.actions)` from `@epicenter/ai` turns workspace actions into chat tools; `createSkillsWorkspace()` mounts a second skills-focused workspace; `createAuth()` from `@epicenter/svelte` coordinates auth with encryption and sync reconnects.
 The dependency chain looks like this.
 ```text
 opensidianDefinition

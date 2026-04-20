@@ -103,12 +103,12 @@ describe('e2e: opensidian workspace', () => {
 		const client = createTestClient();
 		await client.whenReady;
 
-		await client.documents.files.content.write(
+		await client.tables.files.documents.content.write(
 			fileId,
 			'# Hello World\n\nThis is a test note.',
 		);
 
-		expect(await client.documents.files.content.read(fileId)).toBe(
+		expect(await client.tables.files.documents.content.read(fileId)).toBe(
 			'# Hello World\n\nThis is a test note.',
 		);
 
@@ -195,7 +195,6 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 		const result = await pushFromMarkdown({
 			tables: client.tables,
-			documents: client.documents,
 			filesDir: IMPORT_FILES_DIR,
 		});
 
@@ -213,7 +212,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		}
 
 		// Verify document content
-		expect(await client.documents.files.content.read(fileId)).toBe(
+		expect(await client.tables.files.documents.content.read(fileId)).toBe(
 			'# Test Note\n\nHello from import.',
 		);
 
@@ -228,7 +227,6 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 		const result = await pushFromMarkdown({
 			tables: client.tables,
-			documents: client.documents,
 			filesDir: IMPORT_FILES_DIR,
 		});
 
@@ -275,14 +273,13 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 		const result = await pushFromMarkdown({
 			tables: client.tables,
-			documents: client.documents,
 			filesDir: IMPORT_FILES_DIR,
 		});
 
 		expect(result.errors).toHaveLength(0);
 
 		// [[Target Note]] should have been resolved to [Target Note](epicenter://opensidian/files/GUID)
-		expect(await client.documents.files.content.read(sourceId)).toBe(
+		expect(await client.tables.files.documents.content.read(sourceId)).toBe(
 			`# Source\n\nSee [Target Note](epicenter://opensidian/files/${targetId}) for details.`,
 		);
 

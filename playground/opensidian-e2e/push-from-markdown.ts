@@ -21,7 +21,6 @@ const MARKDOWN_DIR = join(import.meta.dir, 'data');
 
 export async function pushFromMarkdown(ctx: {
 	tables: (typeof opensidian)['tables'];
-	documents: (typeof opensidian)['documents'];
 	filesDir?: string;
 }): Promise<{ imported: number; skipped: number; errors: string[] }> {
 	const dir = ctx.filesDir ?? join(MARKDOWN_DIR, 'files');
@@ -87,7 +86,7 @@ export async function pushFromMarkdown(ctx: {
 						? makeEpicenterLink('opensidian', 'files', match.id)
 						: null;
 				});
-				await ctx.documents.files.content.write(
+				await ctx.tables.files.documents.content.write(
 					frontmatter.id as FileRow['id'],
 					resolvedBody,
 				);

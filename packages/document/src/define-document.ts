@@ -5,17 +5,43 @@
  * wraps it with a cache, ref-count + grace-period lifecycle, aggregated
  * `whenLoaded` readiness, and coordinated teardown.
  *
+ * The primary idiom is `factory.open(id)`: construct-if-missing + retain, with
+ * a handle that implements `Symbol.dispose` for scope-bound usage:
+ *
+ * ```ts
+ * // Manual
+ * const h = docs.open('abc');
+ * h.content.write('hi');
+ * h.release();
+ *
+ * // Scope-bound (preferred)
+ * {
+ *   using h = docs.open('abc');
+ *   h.content.write('hi');
+ * }  // release fires here
+ *
+ * // Async — wait for whenLoaded before using
+ * {
+ *   await using h = await docs.read('abc');
+ *   const text = h.content.read();
+ * }
+ *
+ * // Non-retaining cache lookup
+ * const snap = docs.peek('abc');
+ * ```
+ *
  * The user owns `new Y.Doc(...)` (full control over `guid`, `gc`, `meta`, …)
  * and any attachments (`attachIndexedDb`, `attachSync`, content bindings, and
  * local `onLocalUpdate` writebacks). The framework's job is:
  *
- * - One Y.Doc per id (cache keyed by `id`, concurrent-get race-safe — no
+ * - One Y.Doc per id (cache keyed by `id`, concurrent-open race-safe — no
  *   `await` between `Map.get` and `Map.set`).
  * - Guid-stability check — catches nondeterministic `guid` templates
- *   (e.g., `Math.random()`) on the second `.get(sameId)`.
- * - Ref-count + grace-period disposal. `retain()` returns an idempotent
- *   release closure; last release schedules disposal after `graceMs`;
- *   a fresh retain before grace elapses cancels the pending disposal.
+ *   (e.g., `Math.random()`) on the second construction.
+ * - Ref-count + grace-period disposal. Each `open()` increments the count and
+ *   mints a fresh disposable wrapper; `release()` (or scope exit via `using`)
+ *   decrements. Last release schedules disposal after `graceMs`; a fresh
+ *   `open()` during grace cancels the pending disposal.
  * - Aggregated `whenLoaded`: scans top-level attachments for a
  *   `whenLoaded: Promise<void>` property and `Promise.all`s them.
  * - `close(id)` forces immediate disposal; `closeAll()` coordinates app
@@ -32,13 +58,24 @@ import type * as Y from 'yjs';
 import type {
 	DocumentFactory,
 	DocumentHandle,
+	DocumentSnapshot,
 } from './define-document.types.js';
 
 const DEFAULT_GRACE_MS = 30_000;
-const RESERVED_KEYS = ['retain', 'whenLoaded'] as const;
+const RESERVED_KEYS: ReadonlyArray<string | symbol> = [
+	'retain',
+	'release',
+	'whenLoaded',
+	Symbol.dispose,
+	Symbol.asyncDispose,
+];
+
+type CachedHandle<TAttach extends { ydoc: Y.Doc }> = DocumentSnapshot<TAttach> & {
+	retain(): () => void;
+};
 
 type DocEntry<TAttach extends { ydoc: Y.Doc }> = {
-	handle: DocumentHandle<TAttach>;
+	handle: CachedHandle<TAttach>;
 	bindCount: number;
 	disposeTimer: ReturnType<typeof setTimeout> | null;
 	disposed: boolean;
@@ -59,7 +96,8 @@ type DocEntry<TAttach extends { ydoc: Y.Doc }> = {
  * @param build - Closure invoked on cache miss. Must return `{ ydoc, ... }`.
  *                `ydoc.guid` should be a deterministic function of `id` —
  *                the framework asserts stability on the second construction.
- *                Must NOT return top-level `retain` or `whenLoaded` — those
+ *                Must NOT return top-level `retain`, `release`, `whenLoaded`,
+ *                or the `Symbol.dispose`/`Symbol.asyncDispose` keys — those
  *                names are reserved by the framework.
  * @param opts  - `graceMs` (default 30_000): milliseconds to wait after the
  *                last retain release before destroying the Y.Doc. A fresh
@@ -75,6 +113,8 @@ export function defineDocument<
 	const graceMs = opts?.graceMs ?? DEFAULT_GRACE_MS;
 	const openDocuments = new Map<Id, DocEntry<TAttach>>();
 	const recordedGuids = new Map<Id, string>();
+	let warnedGet = false;
+	let warnedRetain = false;
 
 	/**
 	 * Scan top-level attachments for a `Promise` at `key`, excluding the
@@ -99,13 +139,14 @@ export function defineDocument<
 
 	function construct(id: Id): DocEntry<TAttach> {
 		// User closure runs synchronously. If it throws, we DON'T insert into
-		// the cache — next `.get(sameId)` re-runs the closure (no poisoned
+		// the cache — next `.open(sameId)` re-runs the closure (no poisoned
 		// cache entry). The caller sees the thrown error.
 		const attach = build(id);
 
-		// Reserved-key collision: framework adds `retain` and `whenLoaded` to
-		// the handle. If the user's attach already has them, the framework
-		// would silently overwrite — fail loudly instead.
+		// Reserved-key collision: framework adds `retain`/`whenLoaded` to the
+		// cached handle and `release`/`Symbol.dispose`/`Symbol.asyncDispose`
+		// to each `open()` wrapper. If the user's attach already has any of
+		// them, the framework would silently overwrite — fail loudly instead.
 		for (const reserved of RESERVED_KEYS) {
 			if (reserved in attach) {
 				try {
@@ -114,8 +155,8 @@ export function defineDocument<
 					// best-effort — surface the key-collision error
 				}
 				throw new Error(
-					`[defineDocument] build closure for id=${String(id)} returned reserved key "${reserved}". ` +
-						`"retain" and "whenLoaded" are added by the framework — pick a different attachment name.`,
+					`[defineDocument] build closure for id=${String(id)} returned reserved key "${String(reserved)}". ` +
+						`"retain", "release", "whenLoaded", and the Symbol.dispose/Symbol.asyncDispose keys are added by the framework — pick a different attachment name.`,
 				);
 			}
 		}
@@ -142,11 +183,13 @@ export function defineDocument<
 		const whenLoaded = aggregatePromise(attach, 'whenLoaded');
 		const attachmentDisposed = aggregatePromise(attach, 'disposed');
 
-		// The handle IS the attach object with `whenLoaded` and `retain` added
-		// in-place. We mutate (rather than `Object.assign({}, …)`) to preserve
-		// live getters that some attachments expose (e.g. Timeline's
-		// `currentType`).
-		const handle = attach as DocumentHandle<TAttach>;
+		// The cached handle IS the attach object with `whenLoaded` and the
+		// deprecated `retain` added in-place. We mutate (rather than
+		// `Object.assign({}, …)`) to preserve live getters that some
+		// attachments expose (e.g. Timeline's `currentType`). `open()`
+		// wrappers wear `release`/`Symbol.dispose` on fresh objects created
+		// with `Object.create(handle)` — the cached handle never gets those.
+		const handle = attach as CachedHandle<TAttach>;
 
 		const { promise: whenDisposed, resolve: resolveDisposed } =
 			Promise.withResolvers<void>();
@@ -167,9 +210,15 @@ export function defineDocument<
 		};
 
 		const retain = (): (() => void) => {
+			if (!warnedRetain) {
+				warnedRetain = true;
+				console.warn(
+					'[defineDocument] handle.retain() is deprecated — use factory.open(id) and handle.release() instead.',
+				);
+			}
 			// Defensive: a retain() on a disposed entry shouldn't resurrect it.
 			// In practice, a `close()` evicts the entry from the cache, so a
-			// fresh `.get()` constructs a new one. But stale handle references
+			// fresh `.open()` constructs a new one. But stale handle references
 			// can reach `retain` here.
 			if (entry.disposed) return () => {};
 
@@ -211,7 +260,7 @@ export function defineDocument<
 			clearTimeout(entry.disposeTimer);
 			entry.disposeTimer = null;
 		}
-		// Remove from cache synchronously so a concurrent `.get()` constructs
+		// Remove from cache synchronously so a concurrent `.open()` constructs
 		// a fresh entry rather than handing out the about-to-be-destroyed one.
 		if (openDocuments.get(id) === entry) {
 			openDocuments.delete(id);
@@ -231,17 +280,87 @@ export function defineDocument<
 		entry.resolveDisposed();
 	}
 
+	/**
+	 * Mint a fresh disposable wrapper for an open entry. Each wrapper holds
+	 * its own `released` flag and release closure, so N `open()` calls require
+	 * N releases before the grace timer starts. The wrapper inherits all
+	 * attach properties (ydoc, whenLoaded, …) from the cached handle via
+	 * `Object.create`.
+	 */
+	function makeOpenWrapper(
+		id: Id,
+		entry: DocEntry<TAttach>,
+	): DocumentHandle<TAttach> {
+		if (entry.disposeTimer !== null) {
+			clearTimeout(entry.disposeTimer);
+			entry.disposeTimer = null;
+		}
+		entry.bindCount++;
+
+		let released = false;
+		const release = (): void => {
+			if (released) return;
+			released = true;
+			if (entry.disposed) return;
+			entry.bindCount--;
+			if (entry.bindCount === 0) {
+				entry.disposeTimer = setTimeout(() => {
+					entry.disposeTimer = null;
+					if (entry.disposed) return;
+					disposeEntry(id, entry);
+				}, graceMs);
+			}
+		};
+
+		const wrapper = Object.create(entry.handle) as DocumentHandle<TAttach>;
+		Object.defineProperties(wrapper, {
+			release: { value: release, enumerable: false, configurable: true },
+			[Symbol.dispose]: {
+				value: release,
+				enumerable: false,
+				configurable: true,
+			},
+			[Symbol.asyncDispose]: {
+				value: () => {
+					release();
+					return Promise.resolve();
+				},
+				enumerable: false,
+				configurable: true,
+			},
+		});
+		return wrapper;
+	}
+
 	const factory: DocumentFactory<Id, TAttach> = {
-		get(id) {
-			const existing = openDocuments.get(id);
-			if (existing) return existing.handle;
-			return construct(id).handle;
+		open(id) {
+			let entry = openDocuments.get(id);
+			if (!entry) entry = construct(id);
+			return makeOpenWrapper(id, entry);
+		},
+
+		peek(id) {
+			const entry = openDocuments.get(id);
+			if (!entry) return undefined;
+			return entry.handle as unknown as DocumentSnapshot<TAttach>;
 		},
 
 		async read(id) {
-			const handle = factory.get(id);
+			const handle = factory.open(id);
 			await handle.whenLoaded;
 			return handle;
+		},
+
+		get(id) {
+			if (!warnedGet) {
+				warnedGet = true;
+				console.warn(
+					'[defineDocument] factory.get() is deprecated — use factory.open() + handle.release(), or factory.peek() for non-retaining reads.',
+				);
+			}
+			const existing = openDocuments.get(id);
+			if (existing) return existing.handle as unknown as DocumentHandle<TAttach>;
+			return construct(id).handle as unknown as DocumentHandle<TAttach>;
 		},
 
 		async close(id) {

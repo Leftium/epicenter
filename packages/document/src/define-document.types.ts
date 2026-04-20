@@ -6,43 +6,86 @@
  */
 
 /**
- * A managed document handle returned by `factory.get(id)`.
+ * Non-retaining snapshot of a cached document. Returned by `factory.peek(id)`.
  *
- * The user's attachments are flattened onto the handle alongside framework
- * extras (`whenLoaded`, `retain`). `handle.content.binding` reads better than
- * `handle.attachments.content.binding`.
- *
- * Reserved top-level keys: `retain` and `whenLoaded`. If the build closure
- * returns an object containing either, `defineDocument` throws — pick a
- * different attachment name.
+ * Exposes the user's attachments and the aggregated `whenLoaded` promise, but
+ * carries no `release` or `Symbol.dispose` — reading from a snapshot does not
+ * keep the doc alive. If no one else retains it, the snapshot may reference a
+ * doc on the grace-period path.
  */
-export type DocumentHandle<TAttach> = TAttach & {
+export type DocumentSnapshot<TAttach> = TAttach & {
 	/**
 	 * Resolves once every attachment's own `whenLoaded` promise has resolved.
 	 * Attachments without one count as "loaded immediately."
 	 */
 	whenLoaded: Promise<void>;
-	/**
-	 * Ref-counted retention. Returns an idempotent release closure.
-	 * Last release schedules disposal after the factory's `graceMs`; a fresh
-	 * retain during the grace window cancels the pending disposal.
-	 *
-	 * Named `retain` rather than `bind` to avoid collision with
-	 * `Function.prototype.bind` at call sites (`handle.bind()` reads like a
-	 * `this` bind).
-	 */
-	retain(): () => void;
 };
+
+/**
+ * A managed, retaining document handle. Returned by `factory.open(id)` and
+ * `factory.read(id)`. Each call returns a distinct disposable wrapper over
+ * the same underlying `ydoc`/attachments — N opens require N releases.
+ *
+ * Use with TS 5.2 `using` / `await using` for scope-bound retention:
+ *
+ * ```ts
+ * using h = docs.open('abc');
+ * h.content.write('hi');
+ * // release fires on scope exit
+ * ```
+ *
+ * Reserved top-level keys on the user's build-closure return value: `retain`,
+ * `release`, `whenLoaded`, `[Symbol.dispose]`, `[Symbol.asyncDispose]`. The
+ * framework attaches those — if the build closure returns one, `defineDocument`
+ * throws.
+ */
+export type DocumentHandle<TAttach> = DocumentSnapshot<TAttach> &
+	Disposable &
+	AsyncDisposable & {
+		/**
+		 * Release this handle's retain. Idempotent per-wrapper — calling twice
+		 * on the same handle is a no-op. Last release (across all wrappers
+		 * sharing the same id) schedules disposal after the factory's `graceMs`.
+		 */
+		release(): void;
+		/**
+		 * @deprecated Use `factory.open(id)` and `handle.release()` instead.
+		 * `retain()` on a handle from `factory.get(id)` still works for one
+		 * release cycle but will be removed.
+		 */
+		retain(): () => void;
+	};
 
 /**
  * Factory created by `defineDocument(build, opts?)`. Exposes cached,
  * ref-counted handles by id and coordinated teardown.
  */
 export type DocumentFactory<Id extends string, TAttach> = {
-	/** Cached, ref-counted handle. Concurrent `.get(sameId)` returns the same instance. */
-	get(id: Id): DocumentHandle<TAttach>;
-	/** Sugar: `.get(id)` + `await handle.whenLoaded`, returns the handle. */
+	/**
+	 * Construct-if-missing + retain. Returns a fresh disposable handle.
+	 * Pair with `handle.release()` or bind to scope via `using`.
+	 *
+	 * ```ts
+	 * using h = factory.open('abc');
+	 * h.content.write('hi');
+	 * ```
+	 */
+	open(id: Id): DocumentHandle<TAttach>;
+	/**
+	 * Non-retaining cache lookup. Returns a snapshot if the id is currently
+	 * open, `undefined` otherwise. Does NOT construct. Does NOT increment
+	 * the retain count. The snapshot has no `release` or `Symbol.dispose` —
+	 * callers do not need to release it.
+	 */
+	peek(id: Id): DocumentSnapshot<TAttach> | undefined;
+	/** `open(id)` + `await handle.whenLoaded`. Returns the retaining handle. */
 	read(id: Id): Promise<DocumentHandle<TAttach>>;
+	/**
+	 * @deprecated Use `factory.open(id)` + `handle.release()`, or
+	 * `factory.peek(id)` for non-retaining reads. `get` does not retain —
+	 * callers who forgot to call `retain()` leaked the doc until `close`.
+	 */
+	get(id: Id): DocumentHandle<TAttach>;
 	/**
 	 * Explicit eviction. Cancels any pending grace-period disposal. `ydoc.destroy()`
 	 * fires synchronously; the returned promise resolves once every top-level

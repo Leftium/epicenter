@@ -36,13 +36,14 @@ import { type } from 'arktype';
  * // Activate (tier 2)—inject instructions into context
  * const skill = ws.tables.skills.find(s => s.name === 'writing-voice')
  * if (skill) {
- *   const content = await ws.documents.skills.instructions.open(skill.id)
- *   systemPrompt += content.read()
+ *   systemPrompt += await ws.documents.skills.instructions.read(skill.id)
  * }
  *
  * // Editor binding—collaborative Y.Text editing
- * const content = await ws.documents.skills.instructions.open(skill.id)
- * editor.bind(content.binding)
+ * const handle = ws.documents.skills.instructions.get(skill.id)
+ * const release = handle.bind()         // retain sync while editor is mounted
+ * editor.bind(handle.binding)
+ * // ...on unmount: release()
  * ```
  */
 export const skillsTable = defineTable(
@@ -80,8 +81,7 @@ export const skillsTable = defineTable(
  *
  * // Read reference content
  * for (const ref of refs) {
- *   const content = await ws.documents.references.content.open(ref.id)
- *   const markdown = content.read()
+ *   const markdown = await ws.documents.references.content.read(ref.id)
  * }
  * ```
  */

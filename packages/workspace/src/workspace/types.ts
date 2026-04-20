@@ -308,8 +308,9 @@ export type DocumentHandle<TBinding = ContentHandle> = TBinding & {
 /**
  * Runtime manager for a table's associated content Y.Docs.
  *
- * Manages Y.Doc creation, provider lifecycle, `updatedAt` auto-bumping,
- * and cleanup on row deletion. Most users access this via
+ * Manages Y.Doc creation, provider lifecycle, and `updatedAt` auto-bumping
+ * on local content edits. Cleanup on row deletion is caller-owned — invoke
+ * `close()` explicitly when you delete a row. Most users access this via
  * `client.documents.files.content`.
  *
  * ## Preferred API

@@ -1,14 +1,20 @@
 /**
  * createDocuments() — runtime document manager factory.
  *
- * Creates a bidirectional link between a table and its associated content Y.Docs.
- * It:
- * 1. Manages Y.Doc creation and provider lifecycle for each content document
- * 2. Watches content documents → calls `onUpdate` callback and writes returned fields to the row
- * 3. Watches the table → automatically cleans up documents when rows are deleted
+ * Creates a link between a table and its associated content Y.Docs. It:
  *
- * Most users never call this directly — `createWorkspace()` wires it automatically
- * when tables have `.withDocument()` declarations. Advanced users can use it standalone.
+ * 1. Manages Y.Doc creation and provider lifecycle for each content document
+ * 2. Watches content documents → calls `onUpdate` callback and writes returned
+ *    fields back to the row (local edits only; transport-origin updates are
+ *    filtered to prevent timestamp ping-pong across tabs)
+ *
+ * The manager does NOT observe the table for row deletions — callers must
+ * invoke `close(rowOrGuid)` when they delete a row so the doc can be torn
+ * down. Workspace dispose calls `closeAll()` automatically.
+ *
+ * Most users never call this directly — `createWorkspace()` wires it
+ * automatically when tables have `.withDocument()` declarations. Advanced
+ * users can use it standalone.
  *
  * @example
  * ```typescript
@@ -409,7 +415,15 @@ export function createDocuments<
 		const errors = await disposeLifo(entry.extensionDisposers);
 		entry.handle.ydoc.destroy();
 		if (errors.length > 0) {
-			throw new Error(`Document extension cleanup errors: ${errors.length}`);
+			// Preserve the first error's stack via `cause`, and surface any
+			// additional errors as context so they aren't silently lost.
+			const [first, ...rest] = errors;
+			throw new Error(
+				`Document extension cleanup: ${errors.length} error(s)${
+					rest.length > 0 ? ` (additional: ${rest.length})` : ''
+				}`,
+				{ cause: first },
+			);
 		}
 	}
 

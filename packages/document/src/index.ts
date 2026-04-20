@@ -42,6 +42,9 @@ export {
 	type TimelineEntry,
 } from './attach-timeline/index.js';
 
+export { defineDocument } from './define-document.js';
+export { DOCUMENTS_ORIGIN, onLocalUpdate } from './on-local-update.js';
+
 export { KV_KEY, TableKey, type KvKey } from './keys.js';
 
 export type {
@@ -52,6 +55,8 @@ export type {
 	CombinedStandardSchema,
 	ContentHandle,
 	ContentStrategy,
+	DocumentFactory,
+	DocumentHandle,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,

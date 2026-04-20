@@ -12,6 +12,8 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
+		"./define-document": "./src/define-document.ts",
+		"./on-local-update": "./src/on-local-update.ts",
 		"./attach-indexed-db": "./src/attach-indexed-db.ts",
 		"./attach-rich-text": "./src/attach-rich-text.ts",
 		"./attach-plain-text": "./src/attach-plain-text.ts",

@@ -19,7 +19,7 @@ import { createKvHelper } from '@epicenter/document/internal';
 import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { defineKv } from './define-kv.js';
-import { KV_KEY } from './ydoc-keys.js';
+import { KV_KEY } from '@epicenter/document';
 
 test('set stores a value that get returns', () => {
 	const ydoc = new Y.Doc();

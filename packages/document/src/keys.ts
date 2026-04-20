@@ -1,12 +1,12 @@
 /**
  * Y.Doc Array Key Conventions
  *
- * Workspace data is stored in Y.Arrays with these key patterns:
+ * The document API stores data in Y.Arrays with these key patterns:
  * - Tables: `table:{tableName}` (one array per table)
  * - KV: `'kv'` (single array for all settings)
  *
  * These prefixes are reserved. Do not create Y.Doc arrays with
- * keys matching these patterns outside of the workspace system.
+ * keys matching these patterns outside of the document API.
  *
  * @example
  * ```typescript
@@ -17,11 +17,11 @@
  * ```
  */
 
-/** Key type for the KV settings array. */
-export type KvKey = 'kv';
-
 /** The KV settings array key. */
-export const KV_KEY: KvKey = 'kv';
+export const KV_KEY = 'kv';
+
+/** Key type for the KV settings array. */
+export type KvKey = typeof KV_KEY;
 
 /** Key type for table arrays: `table:{tableName}`. */
 export type TableKey<T extends string = string> = `table:${T}`;

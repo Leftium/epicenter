@@ -94,7 +94,7 @@ import type {
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
 } from './types.js';
-import { KV_KEY, TableKey } from './ydoc-keys.js';
+import { KV_KEY, TableKey } from '@epicenter/document';
 
 /**
  * Create a workspace client with chainable extension support.

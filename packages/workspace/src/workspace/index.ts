@@ -79,9 +79,9 @@ export type { DocumentContext } from './types.js';
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { KvKey, TableKey as TableKeyType } from './ydoc-keys.js';
+export type { KvKey, TableKey as TableKeyType } from '@epicenter/document';
 // Y.Doc array key conventions (for direct Y.Doc access / custom providers)
-export { KV_KEY, TableKey } from './ydoc-keys.js';
+export { KV_KEY, TableKey } from '@epicenter/document';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Schema Definitions (Pure)

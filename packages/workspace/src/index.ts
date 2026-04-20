@@ -97,8 +97,8 @@ export {
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { KvKey, TableKey as TableKeyType } from './workspace/ydoc-keys';
-export { KV_KEY, TableKey } from './workspace/ydoc-keys';
+export type { KvKey, TableKey as TableKeyType } from '@epicenter/document';
+export { KV_KEY, TableKey } from '@epicenter/document';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SCHEMA DEFINITIONS (Pure)

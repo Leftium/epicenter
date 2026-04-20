@@ -87,12 +87,12 @@ export type {
 	SheetEntry,
 	TextEntry,
 	TimelineEntry,
-} from './timeline';
+} from '@epicenter/document';
 export {
 	computeMidpoint,
 	generateInitialOrders,
 	type Timeline,
-} from './timeline';
+} from '@epicenter/document';
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════

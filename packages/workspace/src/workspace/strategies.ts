@@ -2,12 +2,17 @@
  * Built-in content strategies for `.withDocument()`.
  *
  * Each strategy is a `ContentStrategy` — a function that receives the document's
- * Y.Doc and returns a typed content object directly from `open()`.
+ * Y.Doc and returns a typed content object directly from `open()`. All three
+ * delegate to `@epicenter/document` attach primitives:
  *
- * `plainText` and `richText` delegate to `attachPlainText` / `attachRichText`
- * from `@epicenter/document` — those are the canonical primitives for binding
- * a Y.Text or Y.XmlFragment slot on a Y.Doc. Timeline is workspace-specific
- * (multi-mode text/richtext/sheet with append-only entry log) and stays here.
+ * - `plainText` → `attachPlainText`
+ * - `richText`  → `attachRichText`
+ * - `timeline`  → `attachTimeline`
+ *
+ * The wrappers exist for JSDoc examples scoped to `.withDocument` usage and to
+ * narrow the signature to `(ydoc: Y.Doc) => TBinding`. The strategies are kept
+ * as named exports so call sites read `content: plainText` instead of reaching
+ * into the primitives package.
  *
  * Every strategy satisfies `ContentHandle` — consumers can always `read()` and
  * `write()` without touching Y.Doc internals. Editor-specific bindings are
@@ -92,15 +97,16 @@ export const richText: (ydoc: Y.Doc) => RichTextAttachment = (ydoc) =>
 /**
  * Timeline content strategy — multi-mode document with format switching.
  *
- * Returns the existing Timeline object, which already satisfies `ContentHandle`
- * (`read()` and `write()` are built in). Supports runtime switching between
- * text, richtext, and sheet modes via `asText()` / `asRichText()` / `asSheet()`.
+ * Delegates to `attachTimeline` — reserves `ydoc.getArray('timeline')` as an
+ * append-only log of typed entries (text, richtext, sheet) and returns a
+ * handle with `read()`, `write()`, and mode-switching methods (`asText()`,
+ * `asRichText()`, `asSheet()`). "Current mode" is the last entry in the log.
  *
  * Unlike `plainText` and `richText` — which bind a single shared type at a
- * fixed doc slot — Timeline stores an append-only log of typed entries in one
- * Y.Array slot, and "current mode" is the last entry. It therefore can't be
- * expressed as a composition of `attachPlainText` + `attachRichText` and has
- * no attach* analog in `@epicenter/document` yet.
+ * fixed doc slot — Timeline stores all content types inside Y.Array entries,
+ * so mode switches append a new entry instead of mutating a shared slot in
+ * place. That's why Timeline has its own primitive rather than composing over
+ * the simpler attach* helpers.
  *
  * Use for documents that need runtime mode switching — e.g., opensidian files
  * that toggle between source markdown and rich text editing, or spreadsheet

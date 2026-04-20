@@ -164,10 +164,9 @@ describe('restoreFromSnapshot', () => {
 		expect(tl.read()).toBe(csv);
 
 		const entry = tl.currentEntry;
-		if (entry.type === 'sheet') {
-			expect(entry.columns.size).toBe(2);
-			expect(entry.rows.size).toBe(2);
-		}
+		if (!entry || entry.type !== 'sheet') throw new Error('expected sheet');
+		expect(entry.columns.size).toBe(2);
+		expect(entry.rows.size).toBe(2);
 		doc.destroy();
 	});
 
@@ -218,7 +217,9 @@ describe('restoreFromSnapshot', () => {
 
 		expect(tl.currentType).toBe('richtext');
 		const entry = tl.currentEntry;
-		if (entry.type !== 'richtext') throw new Error('expected richtext');
+		if (!entry || entry.type !== 'richtext') {
+			throw new Error('expected richtext');
+		}
 
 		// Verify structure: 2 children (heading + paragraph)
 		const children = entry.content.toArray();
@@ -276,7 +277,7 @@ describe('restoreFromSnapshot', () => {
 		tl.restoreFromSnapshot(binary);
 
 		const entry = tl.currentEntry;
-		if (entry.type !== 'sheet') throw new Error('expected sheet');
+		if (!entry || entry.type !== 'sheet') throw new Error('expected sheet');
 
 		// Verify column metadata preserved (not hardcoded to 'text'/'120')
 		const cols = Array.from(entry.columns.values());
@@ -663,5 +664,47 @@ describe('attachTimeline - appendText', () => {
 		tl.appendText('c');
 		expect(tl.read()).toBe('abc');
 		expect(tl.length).toBe(1);
+	});
+});
+
+describe('attachTimeline - key parameter', () => {
+	test('default key is "timeline"', () => {
+		const ydoc = new Y.Doc();
+		const tl = attachTimeline(ydoc);
+		tl.write('seed');
+
+		// The default timeline array is reachable at key 'timeline'.
+		expect(ydoc.getArray('timeline').length).toBe(1);
+	});
+
+	test('custom key reserves a different Y.Array slot', () => {
+		const ydoc = new Y.Doc();
+		const tl = attachTimeline(ydoc, 'log');
+		tl.write('seed');
+
+		expect(ydoc.getArray('log').length).toBe(1);
+		// The default 'timeline' slot is untouched.
+		expect(ydoc.getArray('timeline').length).toBe(0);
+	});
+
+	test('two timelines on the same doc with different keys are independent', () => {
+		const ydoc = new Y.Doc();
+		const a = attachTimeline(ydoc, 'a');
+		const b = attachTimeline(ydoc, 'b');
+
+		a.write('in a');
+		b.write('in b');
+
+		expect(a.read()).toBe('in a');
+		expect(b.read()).toBe('in b');
+	});
+
+	test('repeat attach on same (ydoc, key) reads the same underlying state', () => {
+		const ydoc = new Y.Doc();
+		const first = attachTimeline(ydoc, 'shared');
+		first.write('hello');
+
+		const second = attachTimeline(ydoc, 'shared');
+		expect(second.read()).toBe('hello');
 	});
 });

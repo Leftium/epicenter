@@ -33,7 +33,7 @@ import type {
 } from './types.js';
 import {
 	YKeyValueLww,
-	type YKeyValueLwwChange,
+	type YKeyValueLwwChangeHandler,
 	type YKeyValueLwwEntry,
 } from './y-keyvalue/index.js';
 
@@ -67,70 +67,22 @@ export function attachTable<
 }
 
 /**
- * Build a TableHelper over any LWW-shaped store. Shared between
- * `attachTable` (unencrypted) and `@epicenter/workspace`'s `createTable`
- * (encrypted wrapper). Both stores expose the same surface: `set`, `get`,
- * `delete`, `bulkSet`, `bulkDelete`, `observe`, `unobserve`, plus a
- * `readableEntries()`/`readableEntryCount` for iteration.
- *
- * For the unencrypted path, `readableEntries`/`readableEntryCount` map
- * directly to the underlying YKeyValueLww `entries()` / `_map.size`.
+ * Minimal LWW-store surface consumed by `tableHelperOver`. Both
+ * `YKeyValueLww` (unencrypted) and `EncryptedYKeyValueLww` (workspace
+ * wrapper) satisfy this structurally — no adapter needed.
  */
-type LwwStoreLike = {
+export type LwwStoreLike = {
 	set(key: string, val: unknown): void;
 	get(key: string): unknown;
 	has(key: string): boolean;
 	delete(key: string): void;
 	bulkSet(entries: Array<{ key: string; val: unknown }>): void;
 	bulkDelete(keys: string[]): void;
-	observe(handler: LwwObserver): void;
-	unobserve(handler: LwwObserver): void;
+	observe(handler: YKeyValueLwwChangeHandler<unknown>): void;
+	unobserve(handler: YKeyValueLwwChangeHandler<unknown>): void;
 	readableEntries(): IterableIterator<[string, YKeyValueLwwEntry<unknown>]>;
 	readonly readableEntryCount: number;
 };
-
-type LwwObserver = (
-	changes: Map<string, YKeyValueLwwChange<unknown>>,
-	origin: unknown,
-) => void;
-
-/** Adapt an unencrypted YKeyValueLww to the LwwStoreLike contract. */
-function adaptYkvLww(ykv: YKeyValueLww<unknown>): LwwStoreLike {
-	// Wrappers around outer handlers so unobserve() finds the same identity.
-	const handlerMap = new WeakMap<
-		LwwObserver,
-		Parameters<typeof ykv.observe>[0]
-	>();
-	return {
-		set: (key, val) => ykv.set(key, val),
-		get: (key) => ykv.get(key),
-		has: (key) => ykv.has(key),
-		delete: (key) => ykv.delete(key),
-		bulkSet: (entries) => ykv.bulkSet(entries),
-		bulkDelete: (keys) => ykv.bulkDelete(keys),
-		observe: (handler) => {
-			// Forward `transaction.origin` (not the full transaction) so the surface
-			// matches the encrypted wrapper used by `@epicenter/workspace`.
-			const inner: Parameters<typeof ykv.observe>[0] = (changes, transaction) =>
-				handler(changes, transaction.origin);
-			handlerMap.set(handler, inner);
-			ykv.observe(inner);
-		},
-		unobserve: (handler) => {
-			const inner = handlerMap.get(handler);
-			if (inner) {
-				ykv.unobserve(inner);
-				handlerMap.delete(handler);
-			}
-		},
-		*readableEntries() {
-			yield* ykv.entries();
-		},
-		get readableEntryCount() {
-			return ykv.map.size;
-		},
-	};
-}
 
 /**
  * Construct a TableHelper from any LWW-shaped store and a TableDefinition.
@@ -142,12 +94,10 @@ export function tableHelperOver<
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
 	TTableDefinition extends TableDefinition<any>,
 >(
-	store: YKeyValueLww<unknown> | LwwStoreLike,
+	ykv: LwwStoreLike,
 	definition: TTableDefinition,
 ): TableHelper<InferTableRow<TTableDefinition>> {
 	type TRow = InferTableRow<TTableDefinition>;
-	const ykv: LwwStoreLike =
-		store instanceof YKeyValueLww ? adaptYkvLww(store) : store;
 
 	/**
 	 * Parse and migrate a raw row value. Injects `id` into the input before validation.
@@ -292,7 +242,7 @@ export function tableHelperOver<
 		observe(
 			callback: (changedIds: ReadonlySet<TRow['id']>, origin?: unknown) => void,
 		): () => void {
-			const handler: LwwObserver = (changes, origin) => {
+			const handler: YKeyValueLwwChangeHandler<unknown> = (changes, origin) => {
 				callback(new Set(changes.keys()) as ReadonlySet<TRow['id']>, origin);
 			};
 

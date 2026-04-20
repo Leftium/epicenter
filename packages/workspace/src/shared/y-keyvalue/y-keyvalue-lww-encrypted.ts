@@ -304,11 +304,8 @@ export function createEncryptedYkvLww<T>(
 	 * plaintext change events to registered handlers. Skips REENCRYPT_ORIGIN writes
 	 * (those are internal re-encryption during activation, not user changes).
 	 */
-	const observer: Parameters<typeof inner.observe>[0] = (
-		changes,
-		transaction,
-	) => {
-		if (transaction.origin === REENCRYPT_ORIGIN) return;
+	const observer: Parameters<typeof inner.observe>[0] = (changes, origin) => {
+		if (origin === REENCRYPT_ORIGIN) return;
 		const decryptedChanges = new Map<string, YKeyValueLwwChange<T>>();
 		for (const [key, change] of changes) {
 			if (change.action === 'delete') {
@@ -326,7 +323,7 @@ export function createEncryptedYkvLww<T>(
 		}
 		if (decryptedChanges.size === 0) return;
 		for (const handler of changeHandlers)
-			handler(decryptedChanges, transaction.origin);
+			handler(decryptedChanges, origin);
 	};
 
 	inner.observe(observer);

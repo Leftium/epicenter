@@ -13,6 +13,7 @@ import type { KvChange, KvDefinitions, KvHelper } from './types.js';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
+	type YKeyValueLwwChangeHandler,
 	type YKeyValueLwwEntry,
 } from './y-keyvalue/index.js';
 
@@ -36,39 +37,27 @@ export function attachKv<TKvDefinitions extends KvDefinitions>(
 }
 
 /**
- * Construct a KvHelper from any LWW-shaped store and a record of KV definitions.
- *
- * Exported so `@epicenter/workspace` can reuse the same helper logic over
- * its encrypted store wrapper.
+ * Minimal KV-store surface consumed by `kvHelperOver`. Both `YKeyValueLww`
+ * (unencrypted) and `EncryptedYKeyValueLww` (workspace wrapper) satisfy
+ * this structurally — no adapter needed.
  */
-type KvStoreLike = {
+export type KvStoreLike = {
 	get(key: string): unknown;
 	set(key: string, val: unknown): void;
 	delete(key: string): void;
-	observe(
-		handler: (
-			changes: Map<string, YKeyValueLwwChange<unknown>>,
-			origin: unknown,
-		) => void,
-	): void;
-	unobserve(
-		handler: (
-			changes: Map<string, YKeyValueLwwChange<unknown>>,
-			origin: unknown,
-		) => void,
-	): void;
+	observe(handler: YKeyValueLwwChangeHandler<unknown>): void;
+	unobserve(handler: YKeyValueLwwChangeHandler<unknown>): void;
 };
 
 /**
- * Internal: build a KvHelper over any LWW-shaped store.
+ * Build a KvHelper over any LWW-shaped store. Exported so
+ * `@epicenter/workspace` can reuse the same helper logic over its encrypted
+ * store wrapper.
  */
 export function kvHelperOver<TKvDefinitions extends KvDefinitions>(
-	store: YKeyValueLww<unknown> | KvStoreLike,
+	ykv: KvStoreLike,
 	definitions: TKvDefinitions,
 ): KvHelper<TKvDefinitions> {
-	const ykv: KvStoreLike =
-		store instanceof YKeyValueLww ? adaptYkvLww(store) : store;
-
 	return {
 		get(key) {
 			const definition = definitions[key];
@@ -177,31 +166,3 @@ export function kvHelperOver<TKvDefinitions extends KvDefinitions>(
 	} as KvHelper<TKvDefinitions>;
 }
 
-/** Adapt an unencrypted YKeyValueLww to the KvStoreLike contract. */
-function adaptYkvLww(ykv: YKeyValueLww<unknown>): KvStoreLike {
-	const handlerMap = new WeakMap<
-		(
-			changes: Map<string, YKeyValueLwwChange<unknown>>,
-			origin: unknown,
-		) => void,
-		Parameters<typeof ykv.observe>[0]
-	>();
-	return {
-		get: (key) => ykv.get(key),
-		set: (key, val) => ykv.set(key, val),
-		delete: (key) => ykv.delete(key),
-		observe: (handler) => {
-			const inner: Parameters<typeof ykv.observe>[0] = (changes, transaction) =>
-				handler(changes, transaction.origin);
-			handlerMap.set(handler, inner);
-			ykv.observe(inner);
-		},
-		unobserve: (handler) => {
-			const inner = handlerMap.get(handler);
-			if (inner) {
-				ykv.unobserve(inner);
-				handlerMap.delete(handler);
-			}
-		},
-	};
-}

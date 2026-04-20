@@ -166,7 +166,7 @@ export type YKeyValueLwwChange<T> =
 
 export type YKeyValueLwwChangeHandler<T> = (
 	changes: Map<string, YKeyValueLwwChange<T>>,
-	transaction: Y.Transaction,
+	origin: unknown,
 ) => void;
 
 /**
@@ -286,6 +286,21 @@ export class YKeyValueLww<T> {
 		event: Y.YArrayEvent<YKeyValueLwwEntry<T>>,
 		transaction: Y.Transaction,
 	) => void;
+
+	/**
+	 * Alias for `entries()` — mirrors `EncryptedYKeyValueLww`'s `readableEntries`.
+	 * Unencrypted stores never have unreadable entries, so the two are equivalent.
+	 * Exposed so a single consumer (e.g. `tableHelperOver`) can iterate either
+	 * store structurally without branching.
+	 */
+	*readableEntries(): IterableIterator<[string, YKeyValueLwwEntry<T>]> {
+		yield* this.entries();
+	}
+
+	/** Count of readable entries — equivalent to `map.size` for unencrypted stores. */
+	get readableEntryCount(): number {
+		return this._map.size;
+	}
 
 	/**
 	 * Last timestamp used for monotonic clock.
@@ -542,7 +557,7 @@ export class YKeyValueLww<T> {
 			// Emit change events
 			if (changes.size > 0) {
 				for (const handler of this.changeHandlers) {
-					handler(changes, transaction);
+					handler(changes, transaction.origin);
 				}
 			}
 		};

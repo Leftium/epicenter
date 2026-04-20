@@ -154,11 +154,11 @@ describe('YKeyValueLww', () => {
 
 			const entries = yarray.toArray();
 			const [firstEntry, secondEntry, thirdEntry] = entries;
-			expect(firstEntry).toBeDefined();
-			expect(secondEntry).toBeDefined();
-			expect(thirdEntry).toBeDefined();
-			expect(firstEntry?.ts).toBeLessThan(secondEntry?.ts);
-			expect(secondEntry?.ts).toBeLessThan(thirdEntry?.ts);
+			if (!firstEntry || !secondEntry || !thirdEntry) {
+				throw new Error('expected three entries');
+			}
+			expect(firstEntry.ts).toBeLessThan(secondEntry.ts);
+			expect(secondEntry.ts).toBeLessThan(thirdEntry.ts);
 		});
 	});
 

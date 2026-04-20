@@ -281,7 +281,7 @@ Tables are versioned row collections. Each row must include:
 - `id: string`
 - `_v: number`
 
-At runtime, each table becomes a `TableHelper` exposed as a direct property:
+At runtime, each table becomes a `Table` exposed as a direct property:
 
 - `client.tables.posts.set(row)`
 - `client.tables.posts.get(id)`
@@ -1446,13 +1446,13 @@ import {
 	type GetResult,
 	type InvalidRowResult,
 	type RowResult,
-	type TableHelper,
+	type Table,
 	type UpdateResult,
 	type ValidRowResult,
 } from '@epicenter/workspace';
 ```
 
-Public table helper methods:
+Public table methods:
 
 - `parse(id, input)`
 - `set(row)`
@@ -1472,10 +1472,10 @@ Public table helper methods:
 ### KV operations
 
 ```typescript
-import { type KvChange, type KvHelper } from '@epicenter/workspace';
+import { type Kv, type KvChange } from '@epicenter/workspace';
 ```
 
-Public KV helper methods:
+Public KV methods:
 
 - `get(key)`
 - `set(key, value)`
@@ -1487,14 +1487,14 @@ Public KV helper methods:
 
 ```typescript
 import {
+	type Awareness,
 	type AwarenessDefinitions,
-	type AwarenessHelper,
 	type AwarenessState,
 	type InferAwarenessValue,
 } from '@epicenter/workspace';
 ```
 
-Public awareness helper methods:
+Public awareness methods:
 
 - `setLocal(state)`
 - `setLocalField(key, value)`

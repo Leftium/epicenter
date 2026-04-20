@@ -16,10 +16,6 @@
 	import { format } from 'date-fns';
 	import { goto } from '$app/navigation';
 	import { workspace } from '$lib/client';
-	import {
-		openEntryContentDoc,
-		type EntryContentDocHandle,
-	} from '$lib/entry-content-doc';
 	import type { Entry } from '$lib/workspace';
 	import ProseMirrorEditor from './ProseMirrorEditor.svelte';
 	import TagInput from './TagInput.svelte';
@@ -43,24 +39,26 @@
 	// to remount on navigation, so entry.id never changes within an instance.
 	const id = entry.id;
 
-	let contentDoc = $state<EntryContentDocHandle | null>(null);
+	const contentDoc = workspace.tables.entries.documents.content.get(id);
 	let isLoaded = $state(false);
 
 	$effect(() => {
-		const opened = openEntryContentDoc(id);
-		contentDoc = opened;
-		// Wait for IDB hydration before revealing the editor — avoids a brief
-		// empty-content flash where ProseMirror renders against an unhydrated
-		// Y.XmlFragment before local data loads.
+		// Refcount sync while this editor is mounted. Framework handles IDB +
+		// WebSocket lifecycle; release on unmount lets the grace-period idle
+		// the socket if nothing else is bound.
+		return contentDoc.bind();
+	});
+
+	// Wait for IDB hydration before revealing the editor — avoids a brief
+	// empty-content flash where ProseMirror renders against an unhydrated
+	// Y.XmlFragment before local data loads.
+	$effect(() => {
 		let cancelled = false;
-		opened.whenLoaded.then(() => {
+		contentDoc.whenLoaded.then(() => {
 			if (!cancelled) isLoaded = true;
 		});
 		return () => {
 			cancelled = true;
-			opened.dispose();
-			contentDoc = null;
-			isLoaded = false;
 		};
 	});
 
@@ -184,9 +182,9 @@
 	</div>
 
 	<!-- Editor body -->
-	{#if contentDoc && isLoaded}
+	{#if isLoaded}
 		<ProseMirrorEditor
-			yxmlfragment={contentDoc.content.binding}
+			yxmlfragment={contentDoc.binding}
 			onWordCountChange={(count) => (wordCount = count)}
 		/>
 	{:else}

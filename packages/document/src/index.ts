@@ -5,6 +5,7 @@ export {
 
 export {
 	attachRichText,
+	xmlFragmentToPlaintext,
 	type RichTextAttachment,
 } from './attach-rich-text.js';
 

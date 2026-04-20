@@ -10,7 +10,7 @@
 
 	const bodyHandle = $derived(
 		viewState.selectedNoteId
-			? workspace.documents.notes.body.get(viewState.selectedNoteId)
+			? workspace.tables.notes.documents.body.get(viewState.selectedNoteId)
 			: null,
 	);
 

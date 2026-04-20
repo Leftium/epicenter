@@ -24,7 +24,7 @@
 	// and can corrupt the timeline (phantom text entry alongside the real
 	// stored entries). Gate on `whenLoaded` so we only read mode after the
 	// doc has its real state.
-	const handle = $derived(workspace.documents.files.content.get(fileId));
+	const handle = $derived(workspace.tables.files.documents.content.get(fileId));
 	let loadedHandle = $state<typeof handle | null>(null);
 	$effect(() => {
 		const h = handle;

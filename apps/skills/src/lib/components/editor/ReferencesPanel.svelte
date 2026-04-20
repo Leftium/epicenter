@@ -10,7 +10,7 @@
 
 	const refHandle = $derived(
 		expandedRefId
-			? workspace.documents.references.content.get(expandedRefId)
+			? workspace.tables.references.documents.content.get(expandedRefId)
 			: null,
 	);
 

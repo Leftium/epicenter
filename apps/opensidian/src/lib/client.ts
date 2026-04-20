@@ -227,7 +227,7 @@ export type WorkspaceTools = typeof workspaceAiTools.tools;
 /** Yjs-backed virtual filesystem with path-based operations. */
 export const fs = createYjsFileSystem(
 	workspace.tables.files,
-	workspace.documents.files.content,
+	workspace.tables.files.documents.content,
 );
 
 /**

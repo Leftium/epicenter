@@ -4,7 +4,9 @@
 
 	let { skillId }: { skillId: string } = $props();
 
-	const handle = $derived(workspace.documents.skills.instructions.get(skillId));
+	const handle = $derived(
+		workspace.tables.skills.documents.instructions.get(skillId),
+	);
 
 	// Keep the sync transport live while this editor is mounted. The framework
 	// refcounts binds per guid and disconnects after a grace period once the

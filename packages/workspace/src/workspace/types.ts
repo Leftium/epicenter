@@ -290,14 +290,47 @@ export type DocumentContext<
 
 
 /**
+ * Sync handle for a per-row content document.
+ *
+ * Returned by `Documents.get(id)`. Exposes the content binding inline (so
+ * `handle.read()`, `handle.write()`, `handle.binding` all work the same as the
+ * raw strategy return), plus framework metadata:
+ *
+ * - `whenLoaded` — resolves once persistence (IndexedDB) has hydrated the doc.
+ *   Await before calling `read()`/`write()` from programmatic code. Editors
+ *   bind `handle.binding` and tolerate empty-until-loaded fine.
+ * - `ydoc` — the underlying Y.Doc, for escape-hatch cases.
+ *
+ * Lifetime is framework-owned: the workspace keeps one handle per guid until
+ * the row is deleted or the workspace is disposed. Callers should not dispose
+ * the handle themselves. For per-component lifecycle, construct your own
+ * Y.Doc using `attach*` primitives from `@epicenter/document` instead.
+ */
+export type DocumentHandle<TBinding = ContentHandle> = TBinding & {
+	whenLoaded: Promise<void>;
+	ydoc: Y.Doc;
+};
+
+/**
  * Runtime manager for a table's associated content Y.Docs.
  *
  * Manages Y.Doc creation, provider lifecycle, `updatedAt` auto-bumping,
  * and cleanup on row deletion. Most users access this via
  * `client.documents.files.content`.
  *
- * `open()` returns the content object directly — fully typed by the content
- * strategy. Infrastructure (ydoc, awareness, extensions) is managed internally.
+ * ## Preferred API
+ *
+ * - `get(id)` — sync, returns a `DocumentHandle` (cached, one per guid)
+ * - `read(id)` — high-level, awaits `whenLoaded`, returns string
+ * - `write(id, text)` — high-level, awaits `whenLoaded`, replaces content
+ * - `append(id, text)` — high-level, awaits `whenLoaded`, appends text
+ *
+ * ## Legacy API (still works, may be removed)
+ *
+ * - `open(id)` — async, same as `get(id) + await whenLoaded`
+ * - `close(id)` — force-release a cached handle (rarely needed; framework
+ *   auto-closes on row delete and workspace dispose)
+ * - `closeAll()` — release all cached handles (workspace dispose uses this)
  *
  * @typeParam TRow - The row type of the bound table
  * @typeParam TBinding - The content binding type from the content strategy
@@ -307,24 +340,55 @@ export type Documents<
 	TBinding = ContentHandle,
 > = {
 	/**
-	 * Open a content Y.Doc for a row and return the content object directly.
+	 * Sync accessor — returns a cached `DocumentHandle` for the row.
 	 *
-	 * Creates the Y.Doc if it doesn't exist, wires up providers, and attaches
-	 * the updatedAt observer. Idempotent — calling open() twice for the same
-	 * row returns the same content reference (same Y.Doc underneath).
+	 * On first call, constructs the Y.Doc + binding synchronously and kicks off
+	 * extension init in the background (surfaced via `handle.whenLoaded`).
+	 * Subsequent calls with the same guid return the same handle.
 	 *
-	 * The returned object is fully typed by the content strategy:
-	 * - `plainText` → `PlainTextHandle` with `read()`, `write()`, `binding`
-	 * - `richText` → `RichTextHandle` with `read()`, `write()`, `binding`
-	 * - `timeline` → `Timeline` with `read()`, `write()`, `asText()`, etc.
+	 * The handle is a superset of the strategy return type — `handle.read()`,
+	 * `handle.write()`, `handle.binding` all work identically. Extras:
+	 * `handle.whenLoaded`, `handle.ydoc`.
 	 *
 	 * @param input - A row (extracts GUID from the bound column) or a GUID string
 	 */
-	open(input: TRow | string): Promise<TBinding>;
+	get(input: TRow | string): DocumentHandle<TBinding>;
 
 	/**
-	 * Close a document — free memory, disconnect providers.
-	 * Persisted data is NOT deleted. The doc can be re-opened later.
+	 * High-level read — awaits `whenLoaded`, returns the current text.
+	 *
+	 * Sugar over `await get(id).whenLoaded; get(id).read()`. Use for programmatic
+	 * read paths (filesystem, materializers, actions). Editor code should use
+	 * `get(id).binding` directly.
+	 */
+	read(input: TRow | string): Promise<string>;
+
+	/**
+	 * High-level write — awaits `whenLoaded`, then replaces the content with `text`.
+	 */
+	write(input: TRow | string, text: string): Promise<void>;
+
+	/**
+	 * High-level append — awaits `whenLoaded`, then appends `text` to the end of
+	 * the content. Uses the strategy's `appendText` method if available (Timeline),
+	 * otherwise falls back to read-concat-write.
+	 */
+	append(input: TRow | string, text: string): Promise<void>;
+
+	/**
+	 * Legacy async accessor — equivalent to `get(id)` + `await whenLoaded`.
+	 *
+	 * Preserved for callers that haven't migrated to `get()`. Prefer `get()` for
+	 * sync construction with opt-in `whenLoaded`, or `read()`/`write()` for the
+	 * common string-in-string-out case.
+	 */
+	open(input: TRow | string): Promise<DocumentHandle<TBinding>>;
+
+	/**
+	 * Force-release a cached handle. Persisted data is not deleted.
+	 *
+	 * Rarely needed — the framework auto-closes on row delete and workspace
+	 * dispose. Use only for explicit eviction (e.g., memory pressure, tests).
 	 *
 	 * @param input - A row or GUID string
 	 */

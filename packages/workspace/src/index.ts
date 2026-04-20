@@ -145,6 +145,7 @@ export type {
 	ContentHandle,
 	ContentStrategy,
 	DocumentConfig,
+	DocumentHandle,
 	Documents,
 	DocumentsHelper,
 	PlainTextHandle,

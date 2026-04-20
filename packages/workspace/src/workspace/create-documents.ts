@@ -57,6 +57,7 @@ import type {
 	ContentHandle,
 	ContentStrategy,
 	DocumentExtensionRegistration,
+	DocumentHandle,
 	Documents,
 	Table,
 } from './types.js';
@@ -72,16 +73,18 @@ export const DOCUMENTS_ORIGIN = Symbol('documents');
 
 /**
  * Internal entry for an open document.
- * Tracks the Y.Doc, resolved extensions (with required `dispose`), the
- * updatedAt observer teardown, and the composite-ready binding promise.
+ *
+ * The `handle` field is the public sync accessor — `.get(id)` returns this.
+ * It's the strategy's binding spread with framework extras (`whenLoaded`,
+ * `ydoc`), so `handle.read()` / `handle.binding` / `handle.whenLoaded` all
+ * work on the same object.
  */
 type DocEntry<TBinding extends ContentHandle = ContentHandle> = {
-	ydoc: Y.Doc;
+	handle: DocumentHandle<TBinding>;
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Record<string, any>>;
 	extensionDisposers: (() => MaybePromise<void>)[];
 	unobserve: () => void;
-	whenReady: Promise<TBinding>;
 };
 
 /**
@@ -161,168 +164,202 @@ export function createDocuments<
 		documentExtensions = [],
 	} = config;
 
-	const openDocuments = new Map<
-		string,
-		DocEntry<TBinding>
-	>();
+	const openDocuments = new Map<string, DocEntry<TBinding>>();
+
+	const resolveGuid = (input: TRow | string): string =>
+		typeof input === 'string' ? input : String(input[guidKey]);
+
+	/**
+	 * Synchronously construct the Y.Doc + binding + extensions for a guid and
+	 * stash it in the cache. Subsequent `get()` calls with the same guid hit
+	 * the cache.
+	 */
+	function construct(guid: string): DocEntry<TBinding> {
+		const contentYdoc = new Y.Doc({ guid, gc: false });
+		const contentAwareness = new Awareness(contentYdoc);
+		const contentBinding = content(contentYdoc);
+
+		// Call document extension factories synchronously.
+		// IMPORTANT: No await between openDocuments.get() and openDocuments.set() — ensures
+		// concurrent open() calls for the same guid are safe.
+		// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
+		const resolvedExtensions: Record<string, Record<string, any>> = {};
+		const disposers: (() => MaybePromise<void>)[] = [];
+		const initPromises: Promise<unknown>[] = [];
+
+		try {
+			for (const { key, factory } of documentExtensions) {
+				const ctx = {
+					id,
+					tableName,
+					documentName,
+					ydoc: contentYdoc,
+					awareness: { raw: contentAwareness },
+					init:
+						initPromises.length === 0
+							? Promise.resolve()
+							: Promise.all(initPromises).then(() => {}),
+					extensions: { ...resolvedExtensions },
+				};
+				const raw = factory(ctx);
+				if (!raw) continue;
+
+				const { exports, init, dispose } = defineExtension(raw);
+				resolvedExtensions[key] = exports;
+				disposers.push(dispose);
+				initPromises.push(init);
+			}
+		} catch (err) {
+			startDisposeLifo(disposers);
+			// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
+			contentYdoc.destroy();
+			throw err;
+		}
+
+		// Attach onUpdate observer — fires on LOCAL content doc changes only.
+		//
+		// When a user types in ProseMirror, this fires and bumps metadata
+		// (e.g., updatedAt). That change syncs to other tabs via the workspace
+		// Y.Doc. Remote edits arriving via sync/broadcast are skipped — the
+		// originating tab already bumped metadata, and we receive it via
+		// workspace table sync.
+		//
+		// Without this guard, every tab independently calls onUpdate() with
+		// DateTimeString.now(), producing distinct timestamps that ping-pong
+		// between tabs and never converge.
+		const updateHandler = (
+			_update: Uint8Array,
+			origin: unknown,
+			_doc: Y.Doc,
+			_transaction: Y.Transaction,
+		) => {
+			// Skip updates from the documents manager itself to avoid loops
+			if (origin === DOCUMENTS_ORIGIN) return;
+
+			// Skip transport-originated updates (sync, broadcast channel).
+			// Convention: all transport origins are Symbols (SYNC_ORIGIN,
+			// BC_ORIGIN). Local edits use non-Symbol origins (e.g., y-prosemirror's
+			// ySyncPluginKey is a PluginKey object; direct mutations use null).
+			// If a new transport is added, it MUST use a Symbol origin.
+			if (typeof origin === 'symbol') return;
+
+			// Call the user's onUpdate callback and write the returned fields
+			workspaceYdoc.transact(() => {
+				tableHelper.update(guid, onUpdate());
+			}, DOCUMENTS_ORIGIN);
+		};
+
+		contentYdoc.on('update', updateHandler);
+		const unobserve = () => contentYdoc.off('update', updateHandler);
+
+		const whenLoaded: Promise<void> =
+			initPromises.length === 0
+				? Promise.resolve()
+				: Promise.all(initPromises)
+						.then(() => {})
+						.catch(async (err) => {
+							const errors = await disposeLifo(disposers);
+							unobserve();
+							contentYdoc.destroy();
+							openDocuments.delete(guid);
+							if (errors.length > 0) {
+								console.error('Document extension cleanup errors:', errors);
+							}
+							throw err;
+						});
+
+		// The handle IS the strategy's binding, with framework extras added in-place.
+		// We mutate the binding directly (rather than `Object.assign({}, ...)`)
+		// because `Object.assign` invokes getters and snapshots the returned value,
+		// which would break live getters like Timeline's `currentType`.
+		const handle = contentBinding as DocumentHandle<TBinding>;
+		Object.defineProperties(handle, {
+			whenLoaded: { value: whenLoaded, enumerable: true, configurable: true },
+			ydoc: { value: contentYdoc, enumerable: true, configurable: true },
+		});
+
+		const entry: DocEntry<TBinding> = {
+			handle,
+			extensions: resolvedExtensions,
+			extensionDisposers: disposers,
+			unobserve,
+		};
+		openDocuments.set(guid, entry);
+		return entry;
+	}
+
+	async function releaseEntry(entry: DocEntry<TBinding>): Promise<void> {
+		entry.unobserve();
+		const errors = await disposeLifo(entry.extensionDisposers);
+		entry.handle.ydoc.destroy();
+		if (errors.length > 0) {
+			throw new Error(`Document extension cleanup errors: ${errors.length}`);
+		}
+	}
 
 	const documents: Documents<TRow, TBinding> = {
-		async open(
-			input: TRow | string,
-		): Promise<TBinding> {
-			const guid = typeof input === 'string' ? input : String(input[guidKey]);
-
+		get(input) {
+			const guid = resolveGuid(input);
 			const existing = openDocuments.get(guid);
-			if (existing) return existing.whenReady;
-
-			const contentYdoc = new Y.Doc({ guid, gc: false });
-			const contentAwareness = new Awareness(contentYdoc);
-			const contentBinding = content(contentYdoc);
-
-			// Call document extension factories synchronously.
-			// IMPORTANT: No await between openDocuments.get() and openDocuments.set() — ensures
-			// concurrent open() calls for the same guid are safe.
-			// Build the extensions map incrementally so each factory sees prior
-			// extensions' resolved form.
-			// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
-			const resolvedExtensions: Record<string, Record<string, any>> = {};
-			const disposers: (() => MaybePromise<void>)[] = [];
-			const initPromises: Promise<unknown>[] = [];
-
-			try {
-				for (const { key, factory } of documentExtensions) {
-					const ctx = {
-						id,
-						tableName,
-						documentName,
-						ydoc: contentYdoc,
-						awareness: { raw: contentAwareness },
-						init:
-							initPromises.length === 0
-								? Promise.resolve()
-								: Promise.all(initPromises).then(() => {}),
-						extensions: { ...resolvedExtensions },
-					};
-					const raw = factory(ctx);
-					if (!raw) continue;
-
-					const { exports, init, dispose } = defineExtension(raw);
-					resolvedExtensions[key] = exports;
-					disposers.push(dispose);
-					initPromises.push(init);
-				}
-			} catch (err) {
-				startDisposeLifo(disposers);
-				// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
-				contentYdoc.destroy();
-				throw err;
-			}
-
-			// Attach onUpdate observer — fires on LOCAL content doc changes only.
-			//
-			// When a user types in ProseMirror, this fires and bumps metadata
-			// (e.g., updatedAt). That change syncs to other tabs via the workspace
-			// Y.Doc. Remote edits arriving via sync/broadcast are skipped — the
-			// originating tab already bumped metadata, and we receive it via
-			// workspace table sync.
-			//
-			// Without this guard, every tab independently calls onUpdate() with
-			// DateTimeString.now(), producing distinct timestamps that ping-pong
-			// between tabs and never converge.
-			const updateHandler = (
-				_update: Uint8Array,
-				origin: unknown,
-				_doc: Y.Doc,
-				_transaction: Y.Transaction,
-			) => {
-				// Skip updates from the documents manager itself to avoid loops
-				if (origin === DOCUMENTS_ORIGIN) return;
-
-				// Skip transport-originated updates (sync, broadcast channel).
-				// Convention: all transport origins are Symbols (SYNC_ORIGIN,
-				// BC_ORIGIN). Local edits use non-Symbol origins (e.g., y-prosemirror's
-				// ySyncPluginKey is a PluginKey object; direct mutations use null).
-				// If a new transport is added, it MUST use a Symbol origin.
-				if (typeof origin === 'symbol') return;
-
-				// Call the user's onUpdate callback and write the returned fields
-				workspaceYdoc.transact(() => {
-					tableHelper.update(guid, onUpdate());
-				}, DOCUMENTS_ORIGIN);
-			};
-
-			contentYdoc.on('update', updateHandler);
-			const unobserve = () => contentYdoc.off('update', updateHandler);
-
-			// Cache entry SYNCHRONOUSLY before any promise resolution
-			const compositeReady: Promise<void> =
-				initPromises.length === 0
-					? Promise.resolve()
-					: Promise.all(initPromises).then(() => {});
-			// Build the internal entry — consumers get contentBinding only
-			const whenReady: Promise<TBinding> =
-				initPromises.length === 0
-					? Promise.resolve(contentBinding)
-					: compositeReady
-							.then(() => contentBinding)
-							.catch(async (err) => {
-								const errors = await disposeLifo(disposers);
-								unobserve();
-								// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
-								contentYdoc.destroy();
-								openDocuments.delete(guid);
-
-								if (errors.length > 0) {
-									console.error('Document extension cleanup errors:', errors);
-								}
-								throw err;
-							});
-
-			openDocuments.set(guid, {
-				ydoc: contentYdoc,
-				extensions: resolvedExtensions,
-				extensionDisposers: disposers,
-				unobserve,
-				whenReady,
-			});
-			return whenReady;
+			if (existing) return existing.handle;
+			return construct(guid).handle;
 		},
 
-		async close(input: TRow | string): Promise<void> {
-			const guid = typeof input === 'string' ? input : String(input[guidKey]);
+		async read(input) {
+			const handle = documents.get(input);
+			await handle.whenLoaded;
+			return handle.read();
+		},
+
+		async write(input, text) {
+			const handle = documents.get(input);
+			await handle.whenLoaded;
+			handle.write(text);
+		},
+
+		async append(input, text) {
+			const handle = documents.get(input);
+			await handle.whenLoaded;
+			// Prefer the strategy's own appendText if it exposes one (Timeline does).
+			// Otherwise fall back to read-concat-write — correct for PlainText and
+			// RichText, which have no dedicated append primitive.
+			if (
+				'appendText' in handle &&
+				typeof (handle as unknown as { appendText: unknown }).appendText ===
+					'function'
+			) {
+				(handle as unknown as { appendText: (t: string) => void }).appendText(
+					text,
+				);
+			} else {
+				handle.write(handle.read() + text);
+			}
+		},
+
+		async open(input) {
+			const handle = documents.get(input);
+			await handle.whenLoaded;
+			return handle;
+		},
+
+		async close(input) {
+			const guid = resolveGuid(input);
 			const entry = openDocuments.get(guid);
 			if (!entry) return;
-
-			// Remove from map SYNCHRONOUSLY so concurrent open() calls
+			// Remove from map SYNCHRONOUSLY so concurrent get() calls
 			// create a fresh Y.Doc. Async cleanup follows.
 			openDocuments.delete(guid);
-			entry.unobserve();
-
-			const errors = await disposeLifo(entry.extensionDisposers);
-
-			// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
-			entry.ydoc.destroy();
-
-			if (errors.length > 0) {
-				throw new Error(`Document extension cleanup errors: ${errors.length}`);
-			}
+			await releaseEntry(entry);
 		},
 
-		async closeAll(): Promise<void> {
-			const entries = Array.from(openDocuments.entries());
-			// Clear map synchronously first
+		async closeAll() {
+			const entries = Array.from(openDocuments.values());
 			openDocuments.clear();
-
-			for (const [, entry] of entries) {
-				entry.unobserve();
-
-				const errors = await disposeLifo(entry.extensionDisposers);
-
-				// ydoc.destroy() auto-destroys the Awareness via doc.on('destroy')
-				entry.ydoc.destroy();
-
-				if (errors.length > 0) {
-					console.error('Document extension cleanup error:', errors);
+			for (const entry of entries) {
+				try {
+					await releaseEntry(entry);
+				} catch (err) {
+					console.error('Document extension cleanup error:', err);
 				}
 			}
 		},

@@ -25,6 +25,8 @@ export { attachTable } from './attach-table.js';
 export { attachKv } from './attach-kv.js';
 export { attachAwareness } from './attach-awareness.js';
 
+export { KV_KEY, TableKey, type KvKey } from './keys.js';
+
 export type {
 	AwarenessDefinitions,
 	AwarenessHelper,

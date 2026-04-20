@@ -12,7 +12,7 @@ export {
 	type YKeyValueChange,
 	type YKeyValueChangeHandler,
 	type YKeyValueEntry,
-} from './y-keyvalue.js';
+} from './_reference/y-keyvalue.js';
 
 export {
 	YKeyValueLww,

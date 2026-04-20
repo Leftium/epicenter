@@ -9,6 +9,7 @@
  */
 
 import type * as Y from 'yjs';
+import { KV_KEY } from './keys.js';
 import type { KvChange, KvDefinitions, KvHelper } from './types.js';
 import {
 	type LwwStore,
@@ -16,8 +17,6 @@ import {
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
 } from './y-keyvalue/index.js';
-
-const KV_ARRAY_KEY = 'kv';
 
 /**
  * Bind a record of KV definitions to a Y.Doc and return a typed KvHelper.
@@ -29,7 +28,7 @@ export function attachKv<TKvDefinitions extends KvDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TKvDefinitions,
 ): KvHelper<TKvDefinitions> {
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_KEY);
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.on('destroy', () => ykv.dispose());
 	return createKvHelper(ykv, definitions);

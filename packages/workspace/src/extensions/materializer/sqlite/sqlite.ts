@@ -372,49 +372,12 @@ export function createSqliteMaterializer<
 
 	// ── Builder ──────────────────────────────────────────────────
 
-	type MaterializerExports = {
-		whenFlushed: Promise<void>;
-		db: MirrorDatabase;
-		/** FTS5 search across a materialized table. Only present when at least one table has `fts` configured. */
-		search: ReturnType<typeof defineQuery>;
-		/** Row count for a materialized table. */
-		count: ReturnType<typeof defineQuery>;
-		/** Rebuild all materialized tables from Yjs source of truth. */
-		rebuild: ReturnType<typeof defineMutation>;
-	};
-
-	type MaterializerBuilder = {
-		exports: MaterializerExports;
-		init: Promise<void>;
-		dispose(): void;
-		/**
-		 * Opt in a workspace table for SQLite materialization.
-		 *
-		 * Each call registers one table with optional FTS5 and serialization config.
-		 * Chainable — returns the builder for fluent API usage. Table names are
-		 * type-checked against the workspace definition.
-		 *
-		 * @param name - The workspace table name to materialize
-		 * @param tableConfig - Optional per-table configuration (FTS columns, custom serializer)
-		 *
-		 * @example
-		 * ```typescript
-		 * createSqliteMaterializer(ctx, { db })
-		 *   .table('posts', { fts: ['title', 'body'] })
-		 *   .table('users')
-		 * ```
-		 */
-		table<TName extends keyof TTables & string>(
-			name: TName,
-			tableConfig?: TableMaterializerConfig,
-		): MaterializerBuilder;
-	};
-
 	const whenFlushed = initialize();
 
-	const exports: MaterializerExports = {
+	const exports = {
 		whenFlushed,
 		db,
+		/** FTS5 search across a materialized table. Only present when at least one table has `fts` configured. */
 		search: defineQuery({
 			title: 'Full-text search',
 			description: 'FTS5 search across materialized table rows',
@@ -442,6 +405,33 @@ export function createSqliteMaterializer<
 			}),
 			handler: ({ table: tableName }) => rebuild(tableName),
 		}),
+	};
+
+	type MaterializerBuilder = {
+		exports: typeof exports;
+		init: Promise<void>;
+		dispose(): void;
+		/**
+		 * Opt in a workspace table for SQLite materialization.
+		 *
+		 * Each call registers one table with optional FTS5 and serialization config.
+		 * Chainable — returns the builder for fluent API usage. Table names are
+		 * type-checked against the workspace definition.
+		 *
+		 * @param name - The workspace table name to materialize
+		 * @param tableConfig - Optional per-table configuration (FTS columns, custom serializer)
+		 *
+		 * @example
+		 * ```typescript
+		 * createSqliteMaterializer(ctx, { db })
+		 *   .table('posts', { fts: ['title', 'body'] })
+		 *   .table('users')
+		 * ```
+		 */
+		table<TName extends keyof TTables & string>(
+			name: TName,
+			tableConfig?: TableMaterializerConfig,
+		): MaterializerBuilder;
 	};
 
 	const builder: MaterializerBuilder = {

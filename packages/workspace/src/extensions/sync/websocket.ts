@@ -261,7 +261,7 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 	context: SharedExtensionContext,
 ) => {
 	exports: SyncExtensionExports;
-	init: Promise<unknown>;
+	init: Promise<void>;
 	dispose: () => void;
 } {
 	return ({ ydoc: doc, awareness: ctxAwareness, init: priorInit }) => {

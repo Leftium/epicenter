@@ -4,9 +4,9 @@ export {
 } from './attach-indexed-db.js';
 
 export {
-	attachFilesystemPersistence,
-	type FilesystemPersistenceAttachment,
-} from './attach-filesystem-persistence.js';
+	attachSqlite,
+	type SqliteAttachment,
+} from './attach-sqlite.js';
 
 export {
 	attachBroadcastChannel,

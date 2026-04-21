@@ -51,7 +51,7 @@ function compactUpdateLog(db: Database, ydoc: Y.Doc): boolean {
 	return true;
 }
 
-export type FilesystemPersistenceAttachment = {
+export type SqliteAttachment = {
 	/**
 	 * Resolves when local SQLite state has replayed into the Y.Doc — "your
 	 * draft is in memory, edits are safe." Not CRDT convergence. Pair with
@@ -67,10 +67,10 @@ export type FilesystemPersistenceAttachment = {
 	whenDisposed: Promise<void>;
 };
 
-export function attachFilesystemPersistence(
+export function attachSqlite(
 	ydoc: Y.Doc,
 	{ filePath }: { filePath: string },
-): FilesystemPersistenceAttachment {
+): SqliteAttachment {
 	let db: Database | null = null;
 	let bytesSinceCompaction = 0;
 	let compactionTimer: ReturnType<typeof setTimeout> | null = null;

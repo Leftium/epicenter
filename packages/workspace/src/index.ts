@@ -112,7 +112,15 @@ export {
 	type WorkspaceFactory,
 	type WorkspaceHandle,
 } from './workspace/define-workspace';
-export type { EncryptionAttachment } from './shared/attach-encryption';
+export {
+	attachEncryption,
+	type EncryptionAttachment,
+} from './shared/attach-encryption';
+export {
+	attachTables,
+	type TablesAttachment,
+} from './workspace/attach-tables';
+export { attachKv, type KvAttachment } from './workspace/attach-kv';
 
 // ════════════════════════════════════════════════════════════════════════════
 // WORKSPACE CREATION

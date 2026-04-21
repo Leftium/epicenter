@@ -11,9 +11,9 @@ import {
 	DateTimeString,
 	defineMutation,
 	defineTable,
-	defineWorkspace,
 	generateId,
 	type InferTableRow,
+	type Tables,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 import Type from 'typebox';
@@ -94,16 +94,17 @@ const entriesTable = defineTable(
 
 export type Entry = InferTableRow<typeof entriesTable>;
 
-// ─── Workspace ────────────────────────────────────────────────────────────────
+// ─── Table map ─────────────────────────────────────────────────────────────────
 
-export const fuji = defineWorkspace({
-	id: 'epicenter.fuji',
-	tables: { entries: entriesTable },
-});
+/**
+ * Table definitions for the fuji workspace. Composed directly in `client.ts`
+ * via `attachTables(ydoc, fujiTables)`. Kept separate so actions and future
+ * consumers can derive their input types from one source of truth.
+ */
+export const fujiTables = { entries: entriesTable };
+export type FujiTables = Tables<typeof fujiTables>;
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
-
-type FujiTables = ReturnType<typeof fuji.open>['tables'];
 
 export function createFujiActions(tables: FujiTables) {
 	return {

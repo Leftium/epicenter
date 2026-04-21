@@ -133,28 +133,12 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 			if (!prev) continue;
 
 			if (wasActive && !isActive) {
-				// TRASHED or DELETED
+				// TRASHED or DELETED. Leave childrenOf.get(id) intact: callers
+				// doing recursive cleanup (fs.rm -rf) read descendants from the
+				// index after soft-deleting the parent, and restoring a trashed
+				// folder should bring its descendants back with it.
 				clearPathsRecursive(id);
 				removeChild(prev.parentId, id);
-
-				// Children of this node become orphans at the index level.
-				// Move them to root in the index (don't mutate table — rebuild handles that).
-				const orphanedChildren = childrenOf.get(id);
-				if (orphanedChildren && orphanedChildren.size > 0) {
-					// Copy required: removeChild mutates this very set.
-					for (const childId of [...orphanedChildren]) {
-						removeChild(id, childId);
-						addChild(null, childId);
-						const childSnap = snapshot.get(childId);
-						if (childSnap) {
-							snapshot.set(childId, { ...childSnap, parentId: null });
-						}
-						clearPathsRecursive(childId);
-						foldersToDisambiguate.add(null);
-						idsNeedingPaths.add(childId);
-						collectDescendantIds(childId, idsNeedingPaths);
-					}
-				}
 
 				if (result.status === 'not_found') {
 					snapshot.delete(id);

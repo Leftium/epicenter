@@ -1,18 +1,25 @@
 /// <reference lib="dom" />
 
 import {
+	decodeRpcPayload,
 	encodeAwareness,
 	encodeAwarenessStates,
+	encodeRpcRequest,
+	encodeRpcResponse,
 	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncPayload,
+	isRpcError,
 	MESSAGE_TYPE,
+	RpcError,
 	SYNC_MESSAGE_TYPE,
 	SYNC_ORIGIN,
 	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
+import type { Result } from 'wellcrafted/result';
+import { tryAsync } from 'wellcrafted/result';
 import type { Awareness } from 'y-protocols/awareness';
 import {
 	applyAwarenessUpdate,
@@ -29,9 +36,11 @@ import type * as Y from 'yjs';
  * loop with exponential backoff, liveness detection, and graceful shutdown.
  *
  * **Not included** (workspace-layer concerns):
- * - RPC between peers (use `@epicenter/workspace` sync extension for that)
- * - Action registration (ditto)
  * - BroadcastChannel cross-tab sync (separate `attachBroadcastChannel` helper)
+ *
+ * Optional RPC between peers is supported via the callback-based `rpc` config.
+ * Provide `rpc.dispatch(action, input)` to handle inbound requests; outbound
+ * calls are made via the returned `rpc()` method.
  *
  * Register persistence (`attachIndexedDb`) first and pass its `whenLocalReady`
  * as `waitFor` so the supervisor connects only after local state hydrates —
@@ -55,6 +64,49 @@ export type SyncStatus =
 	| { phase: 'connecting'; attempt: number; lastError?: SyncError }
 	| { phase: 'connected'; hasLocalChanges: boolean };
 
+/**
+ * Default RPC action map when no type parameter is provided.
+ * Accepts any string action with unknown input/output.
+ */
+export type DefaultRpcMap = Record<string, { input: unknown; output: unknown }>;
+
+/**
+ * Constraint for the TMap generic parameter on `rpc()`.
+ *
+ * Uses `any` (not `unknown`) for input/output because generic constraints
+ * need covariant compatibility — `{ input: string }` must extend
+ * `{ input: any }` but does NOT extend `{ input: unknown }`.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: see docstring above
+export type RpcActionMap = Record<string, { input: any; output: any }>;
+
+/**
+ * Inbound RPC dispatcher provided by the caller.
+ *
+ * Return a Result-ish shape: `{ data, error }` where `error` is an RpcError
+ * payload (or any serializable error) or null. `action` is a dot-path string
+ * (e.g. `'tabs.close'`).
+ *
+ * Defined here (not imported from `@epicenter/workspace`) to avoid a circular
+ * dep — `attachSync` stays at the primitive layer and delegates action lookup
+ * and invocation to the caller.
+ */
+export type RpcDispatch = (
+	action: string,
+	input: unknown,
+) => Promise<{ data: unknown; error: unknown }>;
+
+/**
+ * Optional RPC feature block on the config.
+ *
+ * When omitted, `attachSync` responds to inbound RPC requests with
+ * `RpcError.ActionNotFound` — remote callers receive a typed error rather
+ * than a timeout.
+ */
+export type RpcConfig = {
+	dispatch: RpcDispatch;
+};
+
 export type SyncAttachment = {
 	/**
 	 * Resolves after the WebSocket handshake completes and the first sync
@@ -76,6 +128,26 @@ export type SyncAttachment = {
 	 * Named symmetrically with `whenConnected` — both are promises.
 	 */
 	whenDisposed: Promise<void>;
+	/**
+	 * Invoke an action on a remote peer in this room.
+	 *
+	 * Pass a type map (e.g. from workspace's `InferRpcMap`) for full type
+	 * safety, or omit it for untyped calls.
+	 *
+	 * @param target - Awareness clientId of the target peer
+	 * @param action - Dot-path action name (e.g. `'tabs.close'`)
+	 * @param input - Action input (serialized as JSON)
+	 * @param options - Optional timeout override (default 5000ms)
+	 */
+	rpc<
+		TMap extends RpcActionMap = DefaultRpcMap,
+		TAction extends string & keyof TMap = string & keyof TMap,
+	>(
+		target: number,
+		action: TAction,
+		input?: TMap[TAction]['input'],
+		options?: { timeout?: number },
+	): Promise<Result<TMap[TAction]['output'], RpcError>>;
 };
 
 export type SyncAttachmentConfig = {
@@ -102,12 +174,22 @@ export type SyncAttachmentConfig = {
 	 * docs typically skip this; workspace-level docs provide it.
 	 */
 	awareness?: Awareness;
+	/**
+	 * Optional inbound RPC handler. When provided, incoming RPC requests are
+	 * forwarded to `dispatch(action, input)`; when omitted, `attachSync`
+	 * responds with `RpcError.ActionNotFound`.
+	 *
+	 * Outbound RPC (the `rpc()` method on the attachment) works regardless
+	 * of whether this is set.
+	 */
+	rpc?: RpcConfig;
 };
 
 // ============================================================================
 // Constants
 // ============================================================================
 
+const DEFAULT_RPC_TIMEOUT_MS = 5_000;
 const BASE_DELAY_MS = 500;
 const MAX_DELAY_MS = 30_000;
 const PING_INTERVAL_MS = 60_000;
@@ -171,6 +253,76 @@ export function attachSync(
 	let localVersion = 0;
 	let ackedVersion = 0;
 	let syncStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// ── RPC state ──
+	//
+	// `pendingRequests` tracks outbound RPCs awaiting a response. Cleared on
+	// disconnect (the next connection is a fresh server-side context, so any
+	// in-flight request from the prior connection will never resolve).
+	const pendingRequests = new Map<
+		number,
+		{
+			action: string;
+			resolve: (result: { data: unknown; error: unknown }) => void;
+			timer: ReturnType<typeof setTimeout>;
+		}
+	>();
+	let nextRequestId = 0;
+
+	/** Resolve all pending RPC requests with Disconnected and clear state. */
+	function clearPendingRequests() {
+		const { error } = RpcError.Disconnected();
+		for (const [, pending] of pendingRequests) {
+			clearTimeout(pending.timer);
+			pending.resolve({ data: null, error });
+		}
+		pendingRequests.clear();
+		nextRequestId = 0;
+	}
+
+	/**
+	 * Handle an inbound RPC request: delegate action lookup to the caller
+	 * via `config.rpc.dispatch`, and send the response back to the requester.
+	 *
+	 * When no dispatcher is configured, respond with `ActionNotFound` so the
+	 * caller sees a typed error instead of a timeout.
+	 */
+	async function handleRpcRequest(rpc: {
+		requestId: number;
+		requesterClientId: number;
+		action: string;
+		input: unknown;
+	}) {
+		const sendResponse = (result: { data: unknown; error: unknown }) =>
+			send(
+				encodeRpcResponse({
+					requestId: rpc.requestId,
+					requesterClientId: rpc.requesterClientId,
+					result,
+				}),
+			);
+
+		if (!config.rpc) {
+			sendResponse({
+				data: null,
+				error: RpcError.ActionNotFound({ action: rpc.action }).error,
+			});
+			return;
+		}
+
+		const { data, error } = await tryAsync({
+			try: () => config.rpc!.dispatch(rpc.action, rpc.input),
+			catch: (err) =>
+				RpcError.ActionFailed({ action: rpc.action, cause: err }),
+		});
+
+		if (error) {
+			sendResponse({ data: null, error });
+			return;
+		}
+		// dispatch returns `{ data, error }` directly — forward it unchanged.
+		sendResponse(data as { data: unknown; error: unknown });
+	}
 
 	// ── Message senders ──
 
@@ -250,6 +402,11 @@ export function attachSync(
 
 		while (desired === 'online') {
 			const myRunId = runId;
+
+			// Pending RPCs from the previous connection will never resolve —
+			// clear them before starting a new attempt.
+			clearPendingRequests();
+
 			status.set({ phase: 'connecting', attempt, lastError });
 
 			let token: string | null = null;
@@ -456,7 +613,20 @@ export function attachSync(
 					break;
 				}
 
-				// RPC — ignored at this primitive layer.
+				case MESSAGE_TYPE.RPC: {
+					const rpc = decodeRpcPayload(decoder);
+					if (rpc.type === 'response') {
+						const pending = pendingRequests.get(rpc.requestId);
+						if (pending) {
+							clearTimeout(pending.timer);
+							pendingRequests.delete(rpc.requestId);
+							pending.resolve(rpc.result);
+						}
+					} else if (rpc.type === 'request') {
+						void handleRpcRequest(rpc);
+					}
+					break;
+				}
 			}
 		};
 
@@ -529,6 +699,7 @@ export function attachSync(
 				awareness.off('update', handleAwarenessUpdate);
 			}
 			const ws = websocket;
+			clearPendingRequests();
 			goOffline();
 			status.clear();
 			await whenSupervisorExited;
@@ -552,6 +723,68 @@ export function attachSync(
 			websocket?.close();
 		},
 		whenDisposed,
+		async rpc<
+			TMap extends RpcActionMap = DefaultRpcMap,
+			TAction extends string & keyof TMap = string & keyof TMap,
+		>(
+			target: number,
+			action: TAction,
+			input?: TMap[TAction]['input'],
+			options?: { timeout?: number },
+		): Promise<Result<TMap[TAction]['output'], RpcError>> {
+			if (target === ydoc.clientID) {
+				return RpcError.ActionFailed({
+					action,
+					cause: 'Cannot RPC to self — call the action directly',
+				});
+			}
+
+			const timeoutMs = options?.timeout ?? DEFAULT_RPC_TIMEOUT_MS;
+
+			return new Promise((resolve) => {
+				const requestId = nextRequestId++;
+				send(
+					encodeRpcRequest({
+						requestId,
+						targetClientId: target,
+						requesterClientId: ydoc.clientID,
+						action,
+						input,
+					}),
+				);
+
+				const timer = setTimeout(() => {
+					pendingRequests.delete(requestId);
+					resolve(RpcError.Timeout({ ms: timeoutMs }));
+				}, timeoutMs);
+
+				pendingRequests.set(requestId, {
+					action,
+					resolve: (result) => {
+						clearTimeout(timer);
+						if (isRpcError(result.error)) {
+							resolve({ data: null, error: result.error });
+						} else if (result.error != null) {
+							resolve(
+								RpcError.ActionFailed({
+									action,
+									cause: result.error,
+								}),
+							);
+						} else {
+							// Trust-the-wire cast: both RPC sides are in the same monorepo.
+							// Same pattern as tRPC/Eden Treaty — structural type safety, not
+							// runtime. Unavoidable without output schemas on actions.
+							resolve({
+								data: result.data as TMap[TAction]['output'],
+								error: null,
+							});
+						}
+					},
+					timer,
+				});
+			});
+		},
 	};
 }
 

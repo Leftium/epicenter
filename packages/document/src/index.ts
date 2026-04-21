@@ -4,6 +4,17 @@ export {
 } from './attach-indexed-db.js';
 
 export {
+	attachFilesystemPersistence,
+	type FilesystemPersistenceAttachment,
+} from './attach-filesystem-persistence.js';
+
+export {
+	attachBroadcastChannel,
+	BC_ORIGIN,
+	type BroadcastChannelAttachment,
+} from './attach-broadcast-channel.js';
+
+export {
 	attachRichText,
 	xmlFragmentToPlaintext,
 	type RichTextAttachment,
@@ -17,6 +28,10 @@ export {
 export {
 	attachSync,
 	toWsUrl,
+	type DefaultRpcMap,
+	type RpcActionMap,
+	type RpcConfig,
+	type RpcDispatch,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
 	type SyncStatus,

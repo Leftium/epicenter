@@ -92,6 +92,8 @@ export {
 
 export {
 	defineDocument,
+	DOCUMENT_HANDLE,
+	isDocumentHandle,
 	type DocumentBundle,
 	type DocumentFactory,
 	type DocumentHandle,

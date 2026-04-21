@@ -210,6 +210,14 @@ export type DocumentBundle = {
  * `dispose` and `[Symbol.dispose]` on the handle — pick bundle property names
  * that don't collide with those two.
  */
+/**
+ * Brand symbol for handles returned by `defineDocument(...).open(id)`.
+ * Use `isDocumentHandle(value)` to check; don't read the property directly.
+ */
+export const DOCUMENT_HANDLE: unique symbol = Symbol.for(
+	'epicenter.document.handle',
+);
+
 export type DocumentHandle<T> = T & {
 	/**
 	 * Decrement this handle's refcount. Idempotent per-handle — calling twice
@@ -221,7 +229,23 @@ export type DocumentHandle<T> = T & {
 	 */
 	dispose(): void;
 	[Symbol.dispose](): void;
+	/** Brand marker — identifies handles minted by `defineDocument.open()`. */
+	[DOCUMENT_HANDLE]: true;
 };
+
+/**
+ * Type guard: `true` iff `value` was minted by `defineDocument(...).open(id)`.
+ * Checks a `Symbol.for`-branded marker — survives module duplication.
+ */
+export function isDocumentHandle(
+	value: unknown,
+): value is DocumentHandle<DocumentBundle> {
+	return (
+		value != null &&
+		typeof value === 'object' &&
+		(value as Record<symbol, unknown>)[DOCUMENT_HANDLE] === true
+	);
+}
 
 /**
  * Factory created by `defineDocument(build, opts?)`. Exposes cached,
@@ -400,6 +424,7 @@ export function defineDocument<
 			Object.defineProperties(handle, {
 				dispose: { value: dispose },
 				[Symbol.dispose]: { value: dispose },
+				[DOCUMENT_HANDLE]: { value: true },
 			});
 			return handle;
 		},

@@ -21,7 +21,11 @@
  * ```
  */
 
-import type { DocumentBundle, DocumentHandle } from '@epicenter/workspace';
+import {
+	isDocumentHandle,
+	type DocumentBundle,
+	type DocumentHandle,
+} from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
 
 const CONFIG_FILENAME = 'epicenter.config.ts';
@@ -78,8 +82,7 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 		dispose: async () => {
 			const barriers: Promise<void>[] = [];
 			for (const { handle } of entries) {
-				const bundle = Object.getPrototypeOf(handle) as DocumentBundle;
-				if (bundle?.whenDisposed) barriers.push(bundle.whenDisposed);
+				if (handle.whenDisposed) barriers.push(handle.whenDisposed);
 				handle.dispose();
 			}
 			await Promise.all(barriers);
@@ -87,19 +90,3 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	};
 }
 
-/**
- * A `DocumentHandle` exposes `ydoc` (via its bundle prototype), an own
- * `dispose()` and an own `[Symbol.dispose]`. A bare factory fails all three
- * checks, keeping factories out of the loader.
- */
-function isDocumentHandle(
-	value: unknown,
-): value is DocumentHandle<DocumentBundle> {
-	if (value == null || typeof value !== 'object') return false;
-	const record = value as Record<string | symbol, unknown>;
-	return (
-		'ydoc' in record &&
-		typeof record.dispose === 'function' &&
-		typeof record[Symbol.dispose] === 'function'
-	);
-}

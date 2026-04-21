@@ -9,7 +9,7 @@ import {
 	enumerateDevices,
 	getRecordingStream,
 } from '$lib/services/device-stream';
-import { asDeviceIdentifier } from '$lib/services/types';
+import { asDeviceIdentifier } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
 /**

@@ -27,7 +27,7 @@ import {
 	type Device,
 	type DeviceAcquisitionOutcome,
 	type DeviceIdentifier,
-} from '$lib/services/types';
+} from '$lib/services/recorder/types';
 
 /**
  * Default FFmpeg global options.

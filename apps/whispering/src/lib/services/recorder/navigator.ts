@@ -12,7 +12,7 @@ import {
 import type {
 	DeviceAcquisitionOutcome,
 	DeviceIdentifier,
-} from '$lib/services/types';
+} from '$lib/services/recorder/types';
 import type { NavigatorRecordingParams, RecorderService } from './types';
 import { RecorderError } from './types';
 

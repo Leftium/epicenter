@@ -431,6 +431,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/constants": "workspace:*",
+        "@epicenter/document": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",

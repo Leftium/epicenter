@@ -214,17 +214,17 @@ deleted.
 
 In rough order of complexity:
 
-1. **breddit** — test-only usage; grep and delete.
-2. **zhongwen** — smallest runtime app; uses broadcast, not
+1. [x] **breddit** — test-only usage; grep and delete.
+2. [x] **zhongwen** — smallest runtime app; uses broadcast, not
    websocket. Template for the "no sync extension" case.
-3. **fuji** — mid-complexity, straightforward tables + sync.
+3. [ ] **fuji** — mid-complexity, straightforward tables + sync.
    Template for the standard "IDB + sync" composition.
-4. **honeycrisp** — similar to fuji. Straightforward.
-5. **whispering** — has a custom materializer extension. Materializer
+4. [ ] **honeycrisp** — similar to fuji. Straightforward.
+5. [ ] **whispering** — has a custom materializer extension. Materializer
    becomes a user-owned wrapper around the base handle.
-6. **tab-manager** — sync with RPC dispatch. Actions compose
+6. [ ] **tab-manager** — sync with RPC dispatch. Actions compose
    specially.
-7. **opensidian** — most complex; sqlite-index extension plus sync.
+7. [ ] **opensidian** — most complex; sqlite-index extension plus sync.
    Sqlite index becomes a user-owned wrapper.
 
 Each app migrates in its own commit with its own PR if useful. The
@@ -326,6 +326,16 @@ that cost more than the sum of the parts.
 - `packages/workspace/src/workspace/create-workspace.test.ts`
 - `packages/workspace/src/workspace/lifecycle.ts`
 - `packages/svelte-utils/src/sync-status-popover/sync-status-popover.svelte`
+
+### Follow-ups to revisit after Phase 3
+
+- If `SyncView` has zero external consumers after the 4-app popover
+  migration, inline it into `account-popover.svelte` and drop
+  `packages/svelte-utils/src/account-popover/types.ts`.
+- If at that point the only thing in
+  `packages/svelte-utils/src/account-popover/index.ts` is the default
+  export, consider consolidating (drop the barrel or collapse the
+  folder).
 
 ### Prior art
 

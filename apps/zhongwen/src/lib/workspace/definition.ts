@@ -63,7 +63,7 @@ export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 // Workspace Definition
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const definition = defineWorkspace({
+export const zhongwen = defineWorkspace({
 	id: 'epicenter.zhongwen' as const,
 	tables: {
 		conversations: conversationsTable,

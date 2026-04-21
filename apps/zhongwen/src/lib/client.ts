@@ -1,29 +1,35 @@
 /**
  * Workspace client — browser-specific wiring.
  *
- * IndexedDB persistence + BroadcastChannel sync.
+ * IndexedDB persistence + BroadcastChannel cross-tab sync.
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createAuth } from '@epicenter/svelte/auth';
-import { createWorkspace } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
-import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
+import {
+	attachBroadcastChannel,
+	attachIndexedDb,
+} from '@epicenter/document';
 import { session } from '$lib/auth';
-import { definition } from './workspace/definition';
+import { zhongwen } from './workspace/definition';
 
-export const workspace = createWorkspace(definition)
-	.withExtension('persistence', indexeddbPersistence)
-	.withExtension('broadcast', broadcastChannelSync);
+const base = zhongwen.open('epicenter.zhongwen');
+const idb = attachIndexedDb(base.ydoc);
+attachBroadcastChannel(base.ydoc);
+
+export const workspace = Object.assign(base, {
+	idb,
+	whenReady: idb.whenLoaded,
+});
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
 	onLogin(session) {
-		workspace.applyEncryptionKeys(session.encryptionKeys);
+		workspace.enc.applyKeys(session.encryptionKeys);
 	},
 	async onLogout() {
-		await workspace.clearLocalData();
+		await workspace.idb.clearLocal();
 		window.location.reload();
 	},
 });

@@ -219,7 +219,7 @@ In rough order of complexity:
    websocket. Template for the "no sync extension" case.
 3. [x] **fuji** — mid-complexity, straightforward tables + sync.
    Template for the standard "IDB + sync" composition.
-4. [ ] **honeycrisp** — similar to fuji. Straightforward.
+4. [x] **honeycrisp** — similar to fuji. Straightforward.
 5. [ ] **whispering** — has a custom materializer extension. Materializer
    becomes a user-owned wrapper around the base handle.
 6. [ ] **tab-manager** — sync with RPC dispatch. Actions compose

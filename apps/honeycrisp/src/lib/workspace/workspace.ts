@@ -1,31 +1,19 @@
 /**
- * Honeycrisp workspace factory — creates a workspace client with domain actions.
+ * Honeycrisp actions factory — domain mutations layered on workspace tables.
  *
  * Includes cross-table mutations (e.g. folder deletion with note re-parenting)
  * that touch multiple tables in a single logical operation. Simple
  * single-table CRUD stays in the Svelte state files.
- *
- * Returns a non-terminal builder. Consumers chain `.withExtension()` to add
- * persistence, encryption, sync, or other capabilities.
- *
- * @example
- * ```typescript
- * import { createHoneycrisp } from '@epicenter/honeycrisp/workspace'
- *
- * const ws = createHoneycrisp()
- *   .withExtension('persistence', indexeddbPersistence)
- *
- * // Multi-table mutation via actions
- * ws.actions.folders.delete({ folderId: 'abc' })
- * ```
  */
 
-import { createWorkspace, defineMutation } from '@epicenter/workspace';
+import { defineMutation } from '@epicenter/workspace';
 import Type from 'typebox';
 import { type FolderId, honeycrisp } from './definition';
 
-export function createHoneycrisp() {
-	return createWorkspace(honeycrisp).withActions(({ tables }) => ({
+type HoneycrispTables = ReturnType<typeof honeycrisp.open>['tables'];
+
+export function createHoneycrispActions(tables: HoneycrispTables) {
+	return {
 		folders: {
 			/**
 			 * Delete a folder and move all its notes to unfiled.
@@ -49,5 +37,5 @@ export function createHoneycrisp() {
 				},
 			}),
 		},
-	}));
+	};
 }

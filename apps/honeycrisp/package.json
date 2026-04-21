@@ -50,6 +50,7 @@
 		"date-fns": "catalog:",
 		"nanoid": "catalog:",
 		"prosemirror-model": "^1.25.0",
+		"typebox": "catalog:",
 		"prosemirror-state": "^1.4.0",
 		"prosemirror-view": "^1.41.0",
 		"wellcrafted": "catalog:",

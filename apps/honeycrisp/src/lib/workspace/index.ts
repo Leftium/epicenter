@@ -5,4 +5,4 @@ export {
 	type Note,
 	NoteId,
 } from './definition';
-export { createHoneycrisp } from './workspace';
+export { createHoneycrispActions } from './workspace';

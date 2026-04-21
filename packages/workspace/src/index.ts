@@ -27,6 +27,7 @@ export {
 	ACTION_BRAND,
 	defineMutation,
 	defineQuery,
+	dispatchAction,
 	isAction,
 	isMutation,
 	isQuery,

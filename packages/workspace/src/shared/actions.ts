@@ -426,3 +426,29 @@ export function* iterateActions(
 		}
 	}
 }
+
+/**
+ * Resolve a dotted action path against an action tree and invoke it with
+ * `input`. Used to adapt workspace actions into the generic
+ * `{ dispatch(action, input) }` surface that sync RPC expects.
+ *
+ * Throws if the path doesn't resolve to a branded action.
+ */
+export async function dispatchAction(
+	actions: Actions,
+	path: string,
+	input: unknown,
+): Promise<{ data: unknown; error: unknown }> {
+	const segments = path.split('.');
+	let target: unknown = actions;
+	for (const segment of segments) {
+		if (target == null || typeof target !== 'object') {
+			throw new Error(`Action not found: ${path}`);
+		}
+		target = (target as Record<string, unknown>)[segment];
+	}
+	if (!isAction(target)) {
+		throw new Error(`Action not found: ${path}`);
+	}
+	return (await target(input as never)) as { data: unknown; error: unknown };
+}

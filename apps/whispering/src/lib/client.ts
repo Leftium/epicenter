@@ -1,27 +1,62 @@
 /**
- * Whispering workspace client — single Y.Doc with IndexedDB persistence and
- * cross-tab BroadcastChannel sync.
+ * Whispering workspace client — a single `defineDocument` closure that owns
+ * the Y.Doc construction and composes every attachment inline.
  *
  * On desktop (Tauri), the recording materializer mirrors the `recordings`
- * table into `{id}.md` files on disk. See `./recording-materializer.ts`.
+ * table into `{id}.md` files on disk. The materializer is an orthogonal
+ * side-effect on top of the workspace — it starts AFTER `factory.open()`
+ * returns, outside the closure, so the closure stays pure workspace
+ * construction. See `./recording-materializer.ts`.
  */
 
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
+	defineDocument,
 } from '@epicenter/document';
+import {
+	attachEncryption,
+	attachKv,
+	attachTables,
+} from '@epicenter/workspace';
 import { isTauri } from '@tauri-apps/api/core';
+import * as Y from 'yjs';
 import { startRecordingMaterializer } from './recording-materializer';
-import { whispering } from './workspace';
+import { whisperingKv, whisperingTables } from './workspace';
 
-const base = whispering.open('whispering');
-const idb = attachIndexedDb(base.ydoc);
-attachBroadcastChannel(base.ydoc);
+const whisperingFactory = defineDocument(
+	(id: string) => {
+		const ydoc = new Y.Doc({ guid: id, gc: false });
 
-export const workspace = Object.assign(base, {
-	idb,
-	whenReady: idb.whenLoaded,
-});
+		const tables = attachTables(ydoc, whisperingTables);
+		const kv = attachKv(ydoc, whisperingKv);
+		const enc = attachEncryption(ydoc, { tables, kv });
+
+		const idb = attachIndexedDb(ydoc);
+		attachBroadcastChannel(ydoc);
+
+		return {
+			id,
+			ydoc,
+			tables: tables.helpers,
+			kv: kv.helper,
+			enc,
+			idb,
+			batch: (fn: () => void) => ydoc.transact(fn),
+			whenReady: idb.whenLoaded,
+			whenDisposed: Promise.all([
+				idb.whenDisposed,
+				enc.whenDisposed,
+			]).then(() => {}),
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
+	},
+	{ gcTime: Number.POSITIVE_INFINITY },
+);
+
+export const workspace = whisperingFactory.open('whispering');
 
 if (isTauri()) {
 	void startRecordingMaterializer({

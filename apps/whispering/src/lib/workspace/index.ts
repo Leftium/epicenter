@@ -1,1 +1,1 @@
-export { whispering, type Recording } from './definition';
+export { whisperingTables, whisperingKv, type Recording } from './definition';

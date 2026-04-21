@@ -1,4 +1,4 @@
-import { defineKv, defineTable, defineWorkspace, type InferTableRow } from '@epicenter/workspace';
+import { defineKv, defineTable, type InferTableRow } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
@@ -326,27 +326,29 @@ const shortcuts = {
 } as const;
 
 /**
- * The Whispering workspace factory — 5 normalized tables for domain data
- * and ~40 KV entries for synced preferences. Call `.open(id)` to get a bundle.
+ * Whispering table schemas — 5 normalized tables for domain data.
+ * Consumed by `attachTables` in `client.ts`.
  */
-export const whispering = defineWorkspace({
-	id: 'whispering',
-	tables: {
-		recordings,
-		transformations,
-		transformationSteps,
-		transformationRuns,
-		transformationStepRuns,
-	},
-	kv: {
-		...sound,
-		...output,
-		...ui,
-		...dataRetention,
-		...recording,
-		...transcription,
-		...transformation,
-		...analytics,
-		...shortcuts,
-	},
-});
+export const whisperingTables = {
+	recordings,
+	transformations,
+	transformationSteps,
+	transformationRuns,
+	transformationStepRuns,
+};
+
+/**
+ * Whispering KV schemas — ~40 entries for synced preferences.
+ * Consumed by `attachKv` in `client.ts`.
+ */
+export const whisperingKv = {
+	...sound,
+	...output,
+	...ui,
+	...dataRetention,
+	...recording,
+	...transcription,
+	...transformation,
+	...analytics,
+	...shortcuts,
+};

@@ -18,11 +18,7 @@
  */
 
 import { TableKey } from '@epicenter/document';
-import {
-	AttachPrimitive,
-	createTable,
-	guardSlot,
-} from '@epicenter/document/internal';
+import { createTable } from '@epicenter/document/internal';
 import type * as Y from 'yjs';
 import type { EncryptionAttachment } from '../shared/attach-encryption.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
@@ -36,10 +32,6 @@ import type {
 
 /**
  * Bind a single encrypted `TableDefinition` to a Y.Doc.
- *
- * Shares `AttachPrimitive.Table` with the plaintext `attachTable` from
- * `@epicenter/document` — mixing the two for the same name on one Y.Doc
- * throws.
  */
 export function attachEncryptedTable<
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
@@ -50,7 +42,6 @@ export function attachEncryptedTable<
 	name: string,
 	definition: TTableDefinition,
 ): Table<InferTableRow<TTableDefinition>> {
-	guardSlot(ydoc, AttachPrimitive.Table, name);
 	const store = createEncryptedYkvLww(ydoc, TableKey(name));
 	encryption.register(store);
 	return createTable(store, definition);

@@ -50,7 +50,6 @@
  * @module
  */
 
-import { AttachPrimitive, guardSingleton } from '@epicenter/document/internal';
 import type * as Y from 'yjs';
 import { base64ToBytes, deriveWorkspaceKey } from './crypto/index.js';
 import type { EncryptedYKeyValueLww } from './y-keyvalue/y-keyvalue-lww-encrypted.js';
@@ -98,8 +97,6 @@ EncryptedYKeyValueLww<any>): void;
  * registered store.
  */
 export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
-	guardSingleton(ydoc, AttachPrimitive.Encryption);
-
 	const stores: // biome-ignore lint/suspicious/noExplicitAny: variance-friendly — coordinator treats stores uniformly regardless of value type
 EncryptedYKeyValueLww<any>[] = [];
 	const workspaceId = ydoc.guid;

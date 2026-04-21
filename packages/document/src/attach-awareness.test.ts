@@ -190,15 +190,6 @@ describe('attachAwareness', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('attachAwareness — reentrance guard', () => {
-	test('second attach to the same Y.Doc throws with a clear message naming the awareness slot', () => {
-		const ydoc = new Y.Doc({ guid: 'attach-awareness-reentrance' });
-		attachAwareness(ydoc, { name: type('string') });
-
-		expect(() => attachAwareness(ydoc, { name: type('string') })).toThrow(
-			/awareness/i,
-		);
-	});
-
 	test('destroy then reattach on the same Y.Doc does not throw', () => {
 		const ydoc = new Y.Doc({ guid: 'attach-awareness-destroy-reattach' });
 		attachAwareness(ydoc, { name: type('string') });
@@ -219,19 +210,4 @@ describe('attachAwareness — reentrance guard', () => {
 		).not.toThrow();
 	});
 
-	test('silent-data-loss scenario is loud: second attach throws BEFORE any mutation on the second wrapper', () => {
-		const ydoc = new Y.Doc({ guid: 'attach-awareness-loud' });
-		const first = attachAwareness(ydoc, { name: type('string') });
-		first.setLocal({ name: 'alice' });
-
-		let secondWrapperReached = false;
-		expect(() => {
-			const second = attachAwareness(ydoc, { name: type('string') });
-			secondWrapperReached = true;
-			second.setLocal({ name: 'clobbered' });
-		}).toThrow(/awareness/i);
-
-		expect(secondWrapperReached).toBe(false);
-		expect(first.getLocal()).toEqual({ name: 'alice' });
-	});
 });

@@ -12,7 +12,6 @@
 
 import { Awareness as YAwareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
-import { AttachPrimitive, guardSingleton } from './reentrance-guard.js';
 import type {
 	Awareness,
 	AwarenessDefinitions,
@@ -33,7 +32,6 @@ export function attachAwareness<TDefs extends AwarenessDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TDefs,
 ): Awareness<TDefs> {
-	guardSingleton(ydoc, AttachPrimitive.Awareness);
 	return createAwareness(new YAwareness(ydoc), definitions);
 }
 

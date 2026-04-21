@@ -23,14 +23,6 @@ function makeDefs() {
 }
 
 describe('attachEncryptedKv — reentrance guard', () => {
-	test('second attach to the same Y.Doc throws with a clear message naming the KV slot', () => {
-		const ydoc = new Y.Doc({ guid: 'attach-kv-reentrance' });
-		const enc = attachEncryption(ydoc);
-		attachEncryptedKv(ydoc, enc, makeDefs());
-
-		expect(() => attachEncryptedKv(ydoc, enc, makeDefs())).toThrow(/kv/i);
-	});
-
 	test('destroy then reattach on the same Y.Doc does not throw', () => {
 		const ydoc = new Y.Doc({ guid: 'attach-kv-destroy-reattach' });
 		const enc = attachEncryption(ydoc);
@@ -52,20 +44,4 @@ describe('attachEncryptedKv — reentrance guard', () => {
 		expect(() => attachEncryptedKv(docB, encB, makeDefs())).not.toThrow();
 	});
 
-	test('silent-data-loss scenario is loud: second attach throws BEFORE any mutation on the second wrapper', () => {
-		const ydoc = new Y.Doc({ guid: 'attach-kv-loud' });
-		const enc = attachEncryption(ydoc);
-		const first = attachEncryptedKv(ydoc, enc, makeDefs());
-		first.set('theme', { mode: 'dark' });
-
-		let secondWrapperReached = false;
-		expect(() => {
-			const second = attachEncryptedKv(ydoc, enc, makeDefs());
-			secondWrapperReached = true;
-			second.set('theme', { mode: 'light' });
-		}).toThrow(/kv/i);
-
-		expect(secondWrapperReached).toBe(false);
-		expect(first.get('theme')).toEqual({ mode: 'dark' });
-	});
 });

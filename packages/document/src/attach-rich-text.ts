@@ -20,7 +20,6 @@
  * ```
  */
 import * as Y from 'yjs';
-import { AttachPrimitive, guardSlot } from './reentrance-guard.js';
 
 export type RichTextAttachment = {
 	/** `Y.XmlFragment` — pass this to a ProseMirror/Tiptap Yjs binding. */
@@ -41,7 +40,6 @@ export function attachRichText(
 	ydoc: Y.Doc,
 	key = 'content',
 ): RichTextAttachment {
-	guardSlot(ydoc, AttachPrimitive.RichText, key);
 	const fragment = ydoc.getXmlFragment(key);
 	return {
 		binding: fragment,

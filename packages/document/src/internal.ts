@@ -12,8 +12,3 @@
  */
 export { createTable } from './attach-table.js';
 export { createKv } from './attach-kv.js';
-export {
-	AttachPrimitive,
-	guardSingleton,
-	guardSlot,
-} from './reentrance-guard.js';

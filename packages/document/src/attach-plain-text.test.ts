@@ -49,12 +49,6 @@ describe('attachPlainText', () => {
 		expect(txCount).toBe(1);
 	});
 
-	test('repeat attach on same (ydoc, key) throws — reentrance is rejected', () => {
-		const ydoc = new Y.Doc();
-		attachPlainText(ydoc, 'content');
-		expect(() => attachPlainText(ydoc, 'content')).toThrow(/content/);
-	});
-
 	test('different keys on the same ydoc produce different bindings', () => {
 		const ydoc = new Y.Doc();
 		const a = attachPlainText(ydoc, 'a');
@@ -69,13 +63,6 @@ describe('attachPlainText', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('attachPlainText — reentrance guard', () => {
-	test('second attach to same (ydoc, key) throws with a clear message naming the key', () => {
-		const ydoc = new Y.Doc({ guid: 'attach-plain-text-reentrance' });
-		attachPlainText(ydoc, 'notes');
-
-		expect(() => attachPlainText(ydoc, 'notes')).toThrow(/notes/);
-	});
-
 	test('destroy then reattach on the same Y.Doc does not throw', () => {
 		const ydoc = new Y.Doc({ guid: 'attach-plain-text-destroy-reattach' });
 		attachPlainText(ydoc, 'notes');
@@ -99,19 +86,4 @@ describe('attachPlainText — reentrance guard', () => {
 		expect(() => attachPlainText(ydoc, 'b')).not.toThrow();
 	});
 
-	test('silent-data-loss scenario is loud: second attach throws BEFORE any mutation on the second wrapper', () => {
-		const ydoc = new Y.Doc({ guid: 'attach-plain-text-loud' });
-		const first = attachPlainText(ydoc, 'notes');
-		first.write('hello from first');
-
-		let secondWrapperReached = false;
-		expect(() => {
-			const second = attachPlainText(ydoc, 'notes');
-			secondWrapperReached = true;
-			second.write('clobbered!');
-		}).toThrow(/notes/);
-
-		expect(secondWrapperReached).toBe(false);
-		expect(first.read()).toBe('hello from first');
-	});
 });

@@ -134,12 +134,21 @@ A real app uses both: workspace for the main data store, document for per-row co
 
 ## Real call site
 
-From Fuji's per-entry rich-text editor (`apps/fuji/src/lib/entry-content-doc.ts`):
+From Fuji's per-entry rich-text editor (`apps/fuji/src/lib/entry-content-doc.ts`) — a `buildEntryContentDoc` closure wrapped in `defineDocument` for shared, refcounted handles:
 
 ```ts
-export function openEntryContentDoc(rowId: EntryId) {
+import {
+  attachIndexedDb,
+  attachRichText,
+  attachSync,
+  defineDocument,
+  onLocalUpdate,
+  toWsUrl,
+} from '@epicenter/document';
+
+function buildEntryContentDoc(entryId: EntryId) {
   const ydoc = new Y.Doc({
-    guid: `epicenter.fuji.entries.${rowId}.content`,
+    guid: `epicenter.fuji.entries.${entryId}.content`,
     gc: false,
   });
 
@@ -151,18 +160,29 @@ export function openEntryContentDoc(rowId: EntryId) {
     waitFor: idb.whenLoaded,
   });
 
-  ydoc.on('update', () => workspace.tables.entries.update(rowId, {
+  // Local-only: filters out remote sync updates so we don't loop.
+  onLocalUpdate(ydoc, () => workspace.tables.entries.update(entryId, {
     updatedAt: DateTimeString.now(),
   }));
 
   return {
     ydoc,
     content,
-    whenLoaded: idb.whenLoaded,
-    whenConnected: sync.whenConnected,
-    dispose: () => ydoc.destroy(),
+    idb,
+    sync,
+    whenReady:    idb.whenLoaded,
+    whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(() => {}),
+    [Symbol.dispose]() { ydoc.destroy(); },
   };
 }
+
+export const entryContentDocs = defineDocument(buildEntryContentDoc, {
+  gcTime: 30_000,
+});
 ```
 
-Five lines, five independent concerns — doc, rich-text slot, local persistence, network sync, side-effect on edit. The only coupling between them is the `ydoc` variable they all share.
+Five attachments, five independent concerns — doc, rich-text slot, local persistence, network sync, local-update side effect. The only coupling between them is the `ydoc` variable they share. `defineDocument` adds identity + refcounting on top without changing the builder.
+
+### GUID convention
+
+Content-doc GUIDs follow a 4-part dotted form: `${workspaceId}.${collection}.${rowId}.${field}`. The `workspaceId` segment is owned by the caller (and must be globally unique — no package-level defaults, since IDB namespaces collide across apps). The `collection` and `field` segments are owned by the producer and are independent of the caller's workspace schema names. See the workspace-api skill's `document-primitive` reference for the full rules.

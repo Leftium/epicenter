@@ -8,13 +8,18 @@ Read when composing standalone Y.Docs (per-row content, settings, skills, anythi
 
 ## The Primitive: Just Y.Doc + attach\*
 
-There is no wrapper. You construct a `Y.Doc` yourself and call `attach*` functions on it. `ydoc.destroy()` is the teardown.
+You construct a `Y.Doc` yourself and call `attach*` functions on it. `ydoc.destroy()` is the teardown. A builder closure returns the bundle:
 
 ```typescript
-import { attachIndexedDb, attachRichText, attachSync } from '@epicenter/document';
+import {
+  attachIndexedDb,
+  attachRichText,
+  attachSync,
+  onLocalUpdate,
+} from '@epicenter/document';
 import * as Y from 'yjs';
 
-export function openMyDoc(id: string) {
+function buildMyDoc(id: string) {
   // gc: false because the doc syncs. GC'd deletion markers break peers that
   // haven't seen the deletes. Only set true for purely local, ephemeral docs.
   const ydoc = new Y.Doc({ guid: id, gc: false });
@@ -23,12 +28,16 @@ export function openMyDoc(id: string) {
   const idb = attachIndexedDb(ydoc);
   const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenLoaded });
 
+  onLocalUpdate(ydoc, () => { /* bump parent row updatedAt, etc. */ });
+
   return {
     ydoc,
     content,
-    whenLoaded: idb.whenLoaded,
-    whenConnected: sync.whenConnected,
-    dispose: () => ydoc.destroy(),
+    idb,
+    sync,
+    whenReady:    idb.whenLoaded,
+    whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(() => {}),
+    [Symbol.dispose]() { ydoc.destroy(); },
   };
 }
 ```
@@ -37,9 +46,9 @@ Everything you need is in Yjs itself:
 
 - `new Y.Doc({ guid, gc })` — allocate.
 - `ydoc.destroy()` — teardown (fires `'destroy'`; every `attach*` self-registers cleanup via `ydoc.on('destroy', ...)`).
-- `ydoc.on('update', fn)` — side effects (e.g. bumping a parent row's `updatedAt`). No framework `onUpdate` convention.
+- `onLocalUpdate(ydoc, fn)` — side effects triggered only by **local** transactions (e.g. bumping a parent row's `updatedAt`). Filters out remote sync updates so you don't loop.
 
-No `defineDocument` / `openDocument` wrapper. No options bag re-exposing Y.Doc config. If Yjs adds new `Y.Doc` options tomorrow, callers get them for free.
+The builder is a plain function. For a cached, refcounted factory (shared handles, grace-period teardown), wrap it with `defineDocument` — see below.
 
 ## Attach Helpers
 
@@ -68,17 +77,24 @@ There is no `whenSynced` composite. If you need both, `Promise.all([idb.whenLoad
 
 ## Canonical Per-Row Content Doc
 
-Replaces the old `.withDocument('content', { content: richText, guid: 'id', onUpdate })` on a table:
+Replaces the old `.withDocument('content', { content: richText, guid: 'id', onUpdate })` on a table. An app-owned builder + `defineDocument` cache:
 
 ```typescript
-// apps/fuji/src/lib/entry-content-doc.ts
-import { attachIndexedDb, attachRichText, attachSync, toWsUrl } from '@epicenter/document';
+// apps/fuji/src/lib/entry-content-docs.ts
+import {
+  attachIndexedDb,
+  attachRichText,
+  attachSync,
+  defineDocument,
+  onLocalUpdate,
+  toWsUrl,
+} from '@epicenter/document';
 import * as Y from 'yjs';
-import { workspace, auth } from './client';
+import { auth, workspace } from '$lib/client';
 
-export function openEntryContentDoc(rowId: EntryId) {
+function buildEntryContentDoc(entryId: EntryId) {
   const ydoc = new Y.Doc({
-    guid: `epicenter.fuji.entries.${rowId}.content`,
+    guid: `epicenter.fuji.entries.${entryId}.content`,
     gc: false,
   });
 
@@ -90,59 +106,93 @@ export function openEntryContentDoc(rowId: EntryId) {
     waitFor: idb.whenLoaded,
   });
 
-  // Plain closure — no framework-mediated onUpdate. Bumps parent row.
-  ydoc.on('update', () => {
-    workspace.tables.entries.update(rowId, { updatedAt: DateTimeString.now() });
+  // Local-only side effect: bump parent row when the user edits.
+  // Filters out remote sync updates so we don't loop.
+  onLocalUpdate(ydoc, () => {
+    workspace.tables.entries.update(entryId, { updatedAt: DateTimeString.now() });
   });
-  // No explicit off() — ydoc.destroy() clears its own listeners.
 
   return {
     ydoc,
     content,
-    whenLoaded:    idb.whenLoaded,
-    whenConnected: sync.whenConnected,
-    whenDisposed:  Promise.all([idb.whenDisposed, sync.whenDisposed]).then(() => {}),
-    clearLocal:    idb.clearLocal,
-    reconnect:     sync.reconnect,
-    dispose:       () => ydoc.destroy(),
+    idb,
+    sync,
+    whenReady:    idb.whenLoaded,
+    whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(() => {}),
+    [Symbol.dispose]() { ydoc.destroy(); },
   };
 }
+
+export const entryContentDocs = defineDocument(buildEntryContentDoc, {
+  gcTime: 30_000,
+});
 ```
 
-Component owns the lifecycle:
+Component owns the handle; the cache owns identity and the grace-period timer:
 
 ```svelte
 <script lang="ts">
-  import { openEntryContentDoc } from '$lib/entry-content-doc';
+  import { entryContentDocs } from '$lib/entry-content-docs';
   let { row } = $props();
-  let doc: ReturnType<typeof openEntryContentDoc> | null = $state(null);
   $effect(() => {
-    doc = openEntryContentDoc(row.id);
-    return () => doc?.dispose();
+    using handle = entryContentDocs.open(row.id);  // openCount++
+    // [Symbol.dispose] fires on block exit → openCount--; gcTime timer arms
   });
 </script>
 
-{#if doc}
-  {#await doc.whenLoaded}
-    <Spinner />
-  {:then}
-    <RichEditor binding={doc.content.binding} />
-  {/await}
-{/if}
+{#await handle.whenReady}
+  <Spinner />
+{:then}
+  <RichEditor binding={handle.content.binding} />
+{/await}
 ```
 
-Two tabs editing the same entry reconcile at the Yjs layer (IndexedDB + sync). No JS-side deduplication.
+Two tabs editing the same entry reconcile at the Yjs layer (IndexedDB + sync). The `defineDocument` cache dedupes in-process handles to the same `entryId`.
 
-## Module-Scope Singleton Pattern
+## GUID Convention
 
-A factory function evaluated at module scope becomes a singleton via ES module caching — no registry needed:
+Every content-doc `Y.Doc` GUID follows a **4-part dotted form**:
+
+```
+${workspaceId}.${collection}.${rowId}.${field}
+```
+
+| Segment | Owner | Purpose | Example |
+|---|---|---|---|
+| `workspaceId` | **caller** | globally-unique workspace identity | `epicenter-fuji` |
+| `collection` | **package/app** | namespace inside the workspace (not tied to the table name in the workspace schema) | `entries`, `notes`, `files`, `skills`, `references` |
+| `rowId` | caller | identifies the row this doc hangs off | `entry_01H…` |
+| `field` | **package/app** | which collaborative field this doc holds | `content`, `body`, `instructions` |
+
+Rules:
+
+- **`workspaceId` is required** at the factory level — no defaults. A default collapses IDB namespaces across apps that share a package, so two callers defaulting to the same literal would collide on disk.
+- **`collection` is owned by the producer**, not a parameter. `createFileContentDocs` always writes `files` as the collection segment regardless of what the caller named their table. That's the point — the GUID namespace is independent of the workspace schema name.
+- **`field` matches the returned key.** If the GUID ends in `.body`, the bundle should expose `{ body }`, not `{ content }`. Keeps domain vocabulary consistent from GUID to call site.
+- **Separator is `.`** everywhere. No hyphens, no slashes. Workspace-level docs should follow the same dotted shape (e.g. `${workspaceId}.workspace.${epoch}`) rather than inventing their own separator.
+
+For a package factory shared across apps, the shape is:
 
 ```typescript
-// packages/skills/src/doc.ts
-export const skills = openSkillsDoc();  // evaluated once per graph
+export function createFileContentDocs({
+  workspaceId,   // required — caller's workspace identity
+  filesTable,    // caller injects the table to write back to
+  persistence = 'indexeddb',
+}: {
+  workspaceId: string;
+  filesTable: Table<FileRow>;
+  persistence?: 'indexeddb' | 'none';
+}) {
+  function buildFileContentDoc(fileId: FileId) {
+    const ydoc = new Y.Doc({
+      guid: `${workspaceId}.files.${fileId}.content`,  // package owns `files` + `content`
+      gc: false,
+    });
+    // …
+  }
+  return defineDocument(buildFileContentDoc, { gcTime: 30_000 });
+}
 ```
-
-Synchronous construction means no top-level-await propagation, trivially mockable in tests.
 
 ## Anti-Patterns
 

@@ -63,11 +63,7 @@ export type {
 	DocumentFactory,
 	DocumentHandle,
 } from './define-document.types.js';
-export {
-	buildPerRowDoc,
-	type DocPersistence,
-	type PerRowDocBase,
-} from './build-per-row-doc.js';
+export { buildPerRowDoc, type DocPersistence } from './build-per-row-doc.js';
 export { DOCUMENTS_ORIGIN, onLocalUpdate } from './on-local-update.js';
 
 export { KV_KEY, TableKey, type KvKey } from './keys.js';

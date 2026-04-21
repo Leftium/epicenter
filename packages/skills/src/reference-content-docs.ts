@@ -1,8 +1,8 @@
 /**
  * Per-reference content Y.Doc factory. References are tier-3 documentation
- * loaded on demand — each reference file gets its own Y.Doc with
- * `attachPlainText`. Persistence is caller-owned via the `attach` callback
- * — see `createFileContentDocs` for the shape.
+ * loaded on demand — each gets its own Y.Doc with `attachPlainText`.
+ * Persistence is caller-owned via `attach`; see `buildPerRowDoc` /
+ * `DocPersistence` in `@epicenter/document` for the contract.
  */
 
 import {

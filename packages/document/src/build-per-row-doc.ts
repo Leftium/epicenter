@@ -18,13 +18,8 @@
  *     return { ...base, content: attachTimeline(base.ydoc) };
  *   });
  *
- * Persistence is caller-owned via the `attach` callback. Any function
- * returning `{ whenLoaded, whenDisposed }` works — `attachIndexedDb` and
- * `attachSqlite` both structurally satisfy `DocPersistence`:
- *
- *   attach: (ydoc) => attachIndexedDb(ydoc)                         // browser
- *   attach: (ydoc) => attachSqlite(ydoc, { filePath })              // desktop
- *   // omit for in-memory (tests, Node stubs) — falls back to NO_PERSISTENCE
+ * Persistence is caller-owned via the `attach` callback — see `DocPersistence`
+ * below for the contract.
  */
 
 import * as Y from 'yjs';
@@ -53,7 +48,7 @@ const NO_PERSISTENCE: DocPersistence = {
 	whenDisposed: Promise.resolve(),
 };
 
-export type PerRowDocBase = {
+type PerRowDocBase = {
 	ydoc: Y.Doc;
 	whenReady: Promise<void>;
 	whenDisposed: Promise<void>;

@@ -1,23 +1,8 @@
 /**
- * Per-file content Y.Doc factory. Apps call `createFileContentDocs({
- * workspaceId, filesTable, attach })` once per workspace and retain the
- * result for its lifetime.
- *
- * The factory owns Y.Doc construction + timeline attachment + `updatedAt`
- * writeback. Persistence is caller-owned via the `attach` callback —
- *
- *   // browser
- *   attach: (ydoc) => attachIndexedDb(ydoc),
- *
- *   // desktop / CLI — caller closes over a directory
- *   attach: (ydoc) => attachSqlite(ydoc, {
- *     filePath: join(contentDir, `${ydoc.guid}.db`),
- *   }),
- *
- *   // omit for in-memory (tests, Node stubs)
- *
- * The callback's return value is threaded: `whenLoaded` surfaces on
- * `handle.whenReady`, `whenDisposed` feeds the cache teardown.
+ * Per-file content Y.Doc factory. Owns Y.Doc construction + timeline
+ * attachment + `updatedAt` writeback; persistence is caller-owned via the
+ * `attach` callback. See `buildPerRowDoc` / `DocPersistence` in
+ * `@epicenter/document` for the contract.
  */
 
 import {

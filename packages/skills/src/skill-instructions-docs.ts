@@ -1,7 +1,8 @@
 /**
- * Per-skill instructions Y.Doc factory. Each skill's markdown instruction body
- * lives in its own Y.Doc with `attachPlainText`. Persistence is caller-owned
- * via the `attach` callback — see `createFileContentDocs` for the shape.
+ * Per-skill instructions Y.Doc factory. Each skill's markdown instruction
+ * body lives in its own Y.Doc with `attachPlainText`. Persistence is
+ * caller-owned via `attach`; see `buildPerRowDoc` / `DocPersistence` in
+ * `@epicenter/document` for the contract.
  */
 
 import {

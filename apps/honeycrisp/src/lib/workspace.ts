@@ -1,21 +1,25 @@
 /**
- * Workspace schema — branded IDs, table definitions, and workspace definition.
+ * Honeycrisp workspace — schema definition, branded IDs, and actions factory.
  *
  * Honeycrisp is an Apple Notes clone with three-column layout: sidebar folders,
- * note list, and rich-text editor. Folders organize notes; notes have Y.Text
+ * note list, and rich-text editor. Folders organize notes; notes have Y.XmlFragment
  * bodies for collaborative editing via Tiptap + y-prosemirror.
  *
  * Contains branded NoteId/FolderId types, folders and notes table definitions
- * with DateTimeString timestamps, and the workspace definition.
+ * with DateTimeString timestamps, and the cross-table actions factory. The Y.Doc
+ * is constructed in `client.ts` via a `defineDocument` closure that composes
+ * these tables with `attachTables`.
  */
 
 import {
 	DateTimeString,
+	defineMutation,
 	defineTable,
-	defineWorkspace,
 	type InferTableRow,
+	type Tables,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
+import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
 // ─── Branded IDs ──────────────────────────────────────────────────────────────
@@ -105,9 +109,50 @@ const notesTable = defineTable(
 	});
 export type Note = InferTableRow<typeof notesTable>;
 
-// ─── Workspace ────────────────────────────────────────────────────────────────
+// ─── Table map ─────────────────────────────────────────────────────────────────
 
-export const honeycrisp = defineWorkspace({
-	id: 'epicenter.honeycrisp',
-	tables: { folders: foldersTable, notes: notesTable },
-});
+/**
+ * Table definitions for the honeycrisp workspace. Composed directly in
+ * `client.ts` via `attachTables(ydoc, honeycrispTables)`. Kept separate so
+ * actions and future consumers can derive their input types from one source
+ * of truth.
+ */
+export const honeycrispTables = { folders: foldersTable, notes: notesTable };
+export type HoneycrispTables = Tables<typeof honeycrispTables>;
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
+
+/**
+ * Cross-table mutations layered on workspace tables.
+ *
+ * Includes operations that touch multiple tables in a single logical action
+ * (e.g. folder deletion with note re-parenting). Simple single-table CRUD
+ * stays in the Svelte state files.
+ */
+export function createHoneycrispActions(tables: HoneycrispTables) {
+	return {
+		folders: {
+			/**
+			 * Delete a folder and move all its notes to unfiled.
+			 *
+			 * Re-parents every note in the folder (sets `folderId` to undefined)
+			 * and deletes the folder row. Selection clearing is handled by the
+			 * Svelte state layer (foldersState) via URL search params.
+			 */
+			delete: defineMutation({
+				description: 'Delete a folder and re-parent its notes to unfiled',
+				input: Type.Object({ folderId: Type.String() }),
+				handler: ({ folderId: rawId }) => {
+					const folderId = rawId as FolderId;
+					const folderNotes = tables.notes
+						.getAllValid()
+						.filter((n) => n.folderId === folderId);
+					for (const note of folderNotes) {
+						tables.notes.update(note.id, { folderId: undefined });
+					}
+					tables.folders.delete(folderId);
+				},
+			}),
+		},
+	};
+}

@@ -1,6 +1,6 @@
 /**
- * Honeycrisp workspace client — single Y.Doc instance with IndexedDB
- * persistence, encryption, and WebSocket sync.
+ * Honeycrisp workspace client — a single `defineDocument` closure that owns
+ * the Y.Doc construction and composes every attachment inline.
  *
  * Access tables via `workspace.tables.folders` / `workspace.tables.notes`
  * and KV settings via `workspace.kv`. The client is ready when
@@ -12,11 +12,18 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
+	defineDocument,
 	toWsUrl,
 } from '@epicenter/document';
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
-import { createHoneycrispActions, honeycrisp } from './workspace';
+import {
+	attachEncryption,
+	attachKv,
+	attachTables,
+} from '@epicenter/workspace';
+import * as Y from 'yjs';
+import { createHoneycrispActions, honeycrispTables } from '$lib/workspace';
 
 const session = createPersistedState({
 	key: 'honeycrisp:authSession',
@@ -24,22 +31,47 @@ const session = createPersistedState({
 	defaultValue: null,
 });
 
-const base = honeycrisp.open('epicenter.honeycrisp');
-const idb = attachIndexedDb(base.ydoc);
-attachBroadcastChannel(base.ydoc);
-const sync = attachSync(base.ydoc, {
-	url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
-	getToken: async () => auth.token,
-	waitFor: idb.whenLoaded,
-});
+const honeycrisp = defineDocument(
+	(id: string) => {
+		const ydoc = new Y.Doc({ guid: id, gc: false });
 
-export const workspace = Object.assign(base, {
-	id: 'epicenter.honeycrisp',
-	idb,
-	sync,
-	actions: createHoneycrispActions(base.tables),
-	whenReady: idb.whenLoaded,
-});
+		const tables = attachTables(ydoc, honeycrispTables);
+		const kv = attachKv(ydoc, {});
+		const enc = attachEncryption(ydoc, { tables, kv });
+
+		const idb = attachIndexedDb(ydoc);
+		attachBroadcastChannel(ydoc);
+		const sync = attachSync(ydoc, {
+			url: (docId) => toWsUrl(`${APP_URLS.API}/workspaces/${docId}`),
+			getToken: async () => auth.token,
+			waitFor: idb.whenLoaded,
+		});
+
+		return {
+			id,
+			ydoc,
+			tables: tables.helpers,
+			kv: kv.helper,
+			enc,
+			idb,
+			sync,
+			actions: createHoneycrispActions(tables.helpers),
+			batch: (fn: () => void) => ydoc.transact(fn),
+			whenReady: idb.whenLoaded,
+			whenDisposed: Promise.all([
+				idb.whenDisposed,
+				sync.whenDisposed,
+				enc.whenDisposed,
+			]).then(() => {}),
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
+	},
+	{ gcTime: Number.POSITIVE_INFINITY },
+);
+
+export const workspace = honeycrisp.open('epicenter.honeycrisp');
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

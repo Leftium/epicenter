@@ -11,10 +11,12 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@epicenter/document": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@sindresorhus/slugify": "catalog:",
 		"arktype": "catalog:",
-		"fflate": "catalog:"
+		"fflate": "catalog:",
+		"yjs": "catalog:"
 	},
 	"devDependencies": {
 		"bun-types": "catalog:",

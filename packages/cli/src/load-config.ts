@@ -1,56 +1,58 @@
 /**
  * Workspace config loader.
  *
- * Loads `epicenter.config.ts` and collects all named `WorkspaceClient` exports
- * (results of `createWorkspace()`). Default exports are ignored—use named exports
- * so multi-workspace configs are unambiguous and export names appear in error messages.
+ * Loads `epicenter.config.ts` and collects every named export that is an
+ * opened `DocumentHandle` (returned by `defineDocument(...).open(id)`).
+ * The export name becomes the root of the dot-path used by `epicenter list`
+ * and `epicenter run`.
  *
  * @example
  * ```typescript
  * // epicenter.config.ts:
- * //   export const notes = createNotesWorkspace();
- * //   export const tasks = createTasksWorkspace();
+ * //   const notesFactory = defineDocument((id) => ({ ydoc, tables, ... }));
+ * //   export const notes = notesFactory.open('notes');
  *
- * const { clients } = await loadConfig('/path/to/project');
+ * const { entries, dispose } = await loadConfig('/path/to/project');
+ * try {
+ *   // ... walk entries, invoke actions ...
+ * } finally {
+ *   await dispose();
+ * }
  * ```
  */
 
+import type { DocumentBundle, DocumentHandle } from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
-import type * as Y from 'yjs';
-
-/**
- * Transitional type — the shape this loader currently accepts.
- *
- * Phase 2 of `specs/20260421T155436-cli-scripting-first-redesign.md` replaces
- * this with a proper `DocumentHandle<DocumentBundle>` check imported from
- * `@epicenter/workspace`. Keep this inline until then.
- */
-type DocumentClient = {
-	id: string;
-	ydoc: Y.Doc;
-	tables: Record<string, any>;
-	[Symbol.dispose]?: () => void;
-	whenReady?: Promise<void>;
-	kv?: Record<string, any>;
-	actions?: unknown;
-};
 
 const CONFIG_FILENAME = 'epicenter.config.ts';
+
+export type ConfigEntry = {
+	/** Export name in `epicenter.config.ts` — root of the dot-path. */
+	name: string;
+	/** Opened document handle. */
+	handle: DocumentHandle<DocumentBundle>;
+};
 
 export type LoadConfigResult = {
 	/** Absolute path to the directory containing epicenter.config.ts. */
 	configDir: string;
-	/** Workspace clients loaded from the config. */
-	clients: DocumentClient[];
+	/** Handles keyed by export name. */
+	entries: ConfigEntry[];
+	/**
+	 * Release every handle. Calls `.dispose()` on each and awaits any
+	 * `whenDisposed` barrier exposed on the underlying bundle, so the CLI
+	 * exits cleanly after flushing persistence / closing sync sockets.
+	 */
+	dispose(): Promise<void>;
 };
 
 /**
- * Load workspace clients from an epicenter.config.ts file.
- * Collects all named exports that pass the workspace client duck-type check.
- * Default exports are skipped. Deduplicates by workspace ID.
+ * Load opened document handles from an `epicenter.config.ts` file.
+ * Default exports are skipped; use named exports so the CLI can address
+ * them by name.
  *
  * @param targetDir - Directory containing epicenter.config.ts.
- * @throws If no config file found or no valid exports detected.
+ * @throws If no config file is found or no valid handle exports are detected.
  */
 export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	const configDir = resolve(targetDir);
@@ -62,42 +64,56 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 
 	const module = await import(Bun.pathToFileURL(configPath).href);
 
-	const clients: DocumentClient[] = [];
-	const seenIds = new Set<string>();
+	const entries: ConfigEntry[] = [];
 
 	for (const [name, value] of Object.entries(module)) {
 		if (name === 'default') continue;
-		if (!isWorkspaceClient(value)) continue;
-
-		if (seenIds.has(value.id)) {
-			throw new Error(
-				`Duplicate workspace ID "${value.id}" found in ${CONFIG_FILENAME} (export "${name}")`,
-			);
-		}
-		seenIds.add(value.id);
-		clients.push(value);
+		if (!isDocumentHandle(value)) continue;
+		entries.push({ name, handle: value });
 	}
 
-	if (clients.length === 0) {
-		const hasDefault = isWorkspaceClient(module.default);
-		const hint = hasDefault
-			? `\nFound a default export—use a named export instead:\n  export const myApp = createMyWorkspace()`
-			: `\nExport createWorkspace() results as named exports:\n  export const myApp = createMyWorkspace()`;
-		throw new Error(`No workspace clients found in ${CONFIG_FILENAME}.${hint}`);
+	if (entries.length === 0) {
+		throw new Error(
+			`No document handles found in ${CONFIG_FILENAME}.\n` +
+				`Export an opened handle — not the factory:\n` +
+				`  const notesFactory = defineDocument((id) => ({ ydoc, tables, ... }));\n` +
+				`  export const notes = notesFactory.open('notes');`,
+		);
 	}
 
-	return { configDir, clients };
+	return {
+		configDir,
+		entries,
+		dispose: () => disposeEntries(entries),
+	};
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
-/** A DocumentBundle-shaped client exposes `id`, a `ydoc`, and a `tables` map. */
-function isWorkspaceClient(value: unknown): value is DocumentClient {
-	if (typeof value !== 'object' || value === null) return false;
-	const record = value as Record<string, unknown>;
+/**
+ * A `DocumentHandle` exposes `ydoc` (via its bundle prototype), an own
+ * `dispose()` function and an own `[Symbol.dispose]`. A bare factory fails
+ * all three checks; this keeps factories out of the loader with a helpful
+ * error path upstream.
+ */
+function isDocumentHandle(
+	value: unknown,
+): value is DocumentHandle<DocumentBundle> {
+	if (value == null || typeof value !== 'object') return false;
+	const record = value as Record<string | symbol, unknown>;
 	return (
-		typeof record.id === 'string' &&
 		'ydoc' in record &&
-		'tables' in record
+		typeof record.dispose === 'function' &&
+		typeof record[Symbol.dispose] === 'function'
 	);
+}
+
+async function disposeEntries(entries: ConfigEntry[]): Promise<void> {
+	const barriers: Promise<void>[] = [];
+	for (const { handle } of entries) {
+		const bundle = Object.getPrototypeOf(handle) as DocumentBundle;
+		if (bundle?.whenDisposed) barriers.push(bundle.whenDisposed);
+		handle.dispose();
+	}
+	await Promise.all(barriers);
 }

@@ -125,16 +125,18 @@ Apps writing the `whenReady` aggregation manually will pick different nouns. Som
 
 **Reentrance safety is not uniform:**
 
+> **Update (2026-04-21):** The reentrance-guard mechanism described below was removed. `attach*` is NOT idempotent — callers are expected to hold the reference from the first call. Double-attach no longer throws; for observer-installing primitives it silently installs duplicate observers. That's a caller bug the framework no longer catches.
+
 | Primitive | Double-attach behavior |
 | --- | --- |
-| `attachTable` | Silent data loss — two wrappers over same Y.Array |
-| `attachKv` | Silent data loss — two wrappers over same KV store |
-| `attachPlainText` / `attachRichText` | Same — duplicate wrappers |
-| `attachAwareness` | Creates a second Awareness instance (both write to same fields, LWW-ish — not fatal but wrong) |
+| `attachTable` | Caller responsibility — hold the reference from the first call |
+| `attachKv` | Caller responsibility — hold the reference from the first call |
+| `attachPlainText` / `attachRichText` | Caller responsibility — hold the reference from the first call |
+| `attachAwareness` | Caller responsibility — hold the reference from the first call |
 | `attachIndexedDb` | OK — second call creates a second IndexeddbPersistence; both read/write via Y.Doc which is fine |
 | `attachSync` | OK — two supervisor loops compete but convergence is fine |
 | `attachBroadcastChannel` | OK — idempotent no-op |
-| `attachEncryption` | Unsafe — duplicate key-application handlers |
+| `attachEncryption` | Caller responsibility — hold the reference from the first call |
 
 The content-data-layer primitives (Table, Kv, PlainText, RichText) are the dangerous ones. They hand out wrappers around the same Y.Doc slot, and the wrapper caches internal state (last-write-wins timestamps, parse caches).
 
@@ -171,7 +173,7 @@ Removing `defineWorkspace` is net-positive for composability and symmetry, but *
 | Delete `defineWorkspace` | Yes, after fixes land | Wrapper is 2/3 convention and 1/3 substance. Symmetry with content docs + one-file workspaces wins. |
 | `attachEncryption` signature | Change to `attachEncryption(ydoc, { tables, kv })` | Callers pass the attachment objects they already have. Function introspects `.stores` / `.store`. No manual array concat. |
 | Unify lifecycle naming | All primitives use `whenReady` + `whenDisposed` | `whenLoaded` / `whenConnected` become aliases or renames. One noun to compose. |
-| Reentrance guards | Cache per (`ydoc`, key) on content-data primitives | Table/Kv/PlainText/RichText return the same wrapper on second call with same args. Throws or warns on conflicting definitions. |
+| Reentrance guards | Removed (2026-04-21) | Not applicable. `attach*` is not idempotent; callers hold the reference from the first call. |
 | `@epicenter/skills` package shape | Export table definitions + a `defineDocument` factory from `@epicenter/skills` | Shared-schema packages stay package-owned but expose a `defineDocument` factory, not a `defineWorkspace` factory. Consumers still get cache convergence via shared factory. |
 | `id` field on workspace | User returns it explicitly | Framework no longer injects `id`; if the caller wants it on the bundle, they put it there. |
 | `batch` helper | User returns it explicitly | Sugar over `ydoc.transact`. Either include it in the return or call `ydoc.transact` directly. Not framework-provided. |
@@ -282,20 +284,18 @@ After (one noun):
 > - [ ] ~~**2.3** Rename `attachSync` return~~
 > - [ ] ~~**2.4** Update docs and examples~~
 
-### Phase 3: Reentrance guards on content-data primitives
+### Phase 3: Reentrance guards on content-data primitives — **REMOVED (2026-04-21)**
 
-> **Design change (2026-04-21)**: Replaced the spec's "cache the wrapper" design with **throw on second attach**. Config equality checks on second call are fragile (reference vs structural equality on functions/schemas), and the caller's natural structure has exactly one attach site per slot anyway. Throw-loudly is strictly safer and simpler — ~15 lines of shared helper vs ~80 lines of caching logic per primitive.
+> **Update (2026-04-21):** The reentrance-guard mechanism was landed and then removed. `attach*` is NOT idempotent. Callers are expected to hold the reference from the first call. Double-attach no longer throws; for observer-installing primitives (Table/Kv/Awareness/Encryption) it silently installs duplicate observers — a caller bug the framework no longer catches.
 >
-> Guards clear on `ydoc.destroy()` so destroy-then-reattach works. Storage is `WeakMap<Y.Doc, Set<slot>>` for per-slot primitives and `WeakSet<Y.Doc>` for singletons — see `packages/document/src/reentrance-guard.ts`.
->
-> Extended scope to **six** primitives (added `attachEncryption`; audit flagged it as reentrance-unsafe).
+> The `reentrance-guard` module, `guardSlot`, `guardSingleton`, and `AttachPrimitive` constant have been deleted. See commit for the removal.
 
-- [x] **3.1** `attachTable(ydoc, name, def)` — throw on second attach for `(ydoc, name)`. `attachTables` shares the same slot namespace so `attachTable` + `attachTables` double-attach also throws.
-- [x] **3.2** `attachKv` (workspace-level, singleton) + `attachPlainText` (per key) + `attachRichText` (per key) — same pattern.
-- [x] **3.3** `attachAwareness` — singleton throw. No "merge definitions" mode.
-- [x] **3.4** Tests: TDD — failing tests written first, then guards. Each primitive covers: second-attach-throws (headline), silent-data-loss-loud (before/after mutation), destroy-then-reattach-works, separate-Y.Docs-dont-interfere, different-slots-on-same-Y.Doc (for per-slot primitives).
-- [x] **3.5** (added) Extended to `attachEncryption`. Audit flagged duplicate key-application handlers as unsafe.
-- [x] **3.6** (added) Two pre-existing tests in `attach-plain-text.test.ts` / `attach-rich-text.test.ts` asserted the OLD bug (repeat attach returns same wrapper). Inverted to assert throw.
+- [x] ~~**3.1** `attachTable` reentrance guard~~ — removed
+- [x] ~~**3.2** `attachKv` / `attachPlainText` / `attachRichText` reentrance guards~~ — removed
+- [x] ~~**3.3** `attachAwareness` reentrance guard~~ — removed
+- [x] ~~**3.4** Guard tests~~ — removed
+- [x] ~~**3.5** `attachEncryption` reentrance guard~~ — removed
+- [x] ~~**3.6** Inverted `attach-plain-text.test.ts` / `attach-rich-text.test.ts` assertions~~ — removed
 
 ### Phase 4: Rewrite app client files as direct closures
 
@@ -398,8 +398,7 @@ Current `@epicenter/skills/node` already does (c). Keep it.
 - [ ] Every app's `client.ts` is a single `defineDocument` closure that returns the final workspace shape.
 - [ ] `attachEncryption` takes `{ tables, kv }` rather than a manual `stores: [...]` array.
 - [ ] All persistence/sync primitives expose `whenReady` and `whenDisposed` under those exact names.
-- [ ] Content-data primitives (`attachTable`, `attachKv`, `attachPlainText`, `attachRichText`, `attachAwareness`) return cached wrappers on repeat calls with same config, and throw on conflicting config.
-- [ ] New reentrance tests cover the silent-data-loss scenarios.
+- [ ] `attach*` primitives are documented as non-idempotent; callers hold the reference from the first call. (Reentrance-guard mechanism was considered, landed, and then removed — see Phase 3.)
 - [ ] All existing app-level tests pass without modification except for naming changes.
 - [ ] No call site in `apps/**` or `packages/skills/src/**` references `defineWorkspace`, `WorkspaceBundle`, or `WorkspaceFactory`.
 

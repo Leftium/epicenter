@@ -118,6 +118,8 @@ await Promise.all([idb.whenDisposed, sync.whenDisposed]); // optional — CLIs/t
 
 Handles have no async teardown. Providers return `whenDisposed` promises for code paths that need to flush before exit.
 
+**`attach*` is not idempotent.** Hold the reference from the first call. Calling `attachTable` / `attachKv` / `attachAwareness` / `attachEncryption` twice on the same `Y.Doc` + slot installs duplicate observers and causes undefined behavior. The framework does not catch this.
+
 ## Gotchas
 
 **`gc: false` when the doc syncs to peers.** Yjs garbage-collects deletion markers by default. If peer A deletes something and its local Yjs compacts the tombstone away before peer B has seen the delete, B's edit can resurrect the deleted content (or fail to converge). Any doc that goes over the wire — every example in this README, including Fuji's per-entry doc — should be constructed with `new Y.Doc({ guid, gc: false })`. Local-only docs can leave GC on.

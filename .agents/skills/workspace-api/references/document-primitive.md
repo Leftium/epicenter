@@ -66,6 +66,8 @@ Each helper takes a `Y.Doc` and registers cleanup on `ydoc.on('destroy')`. Each 
 
 `attachSync`'s `waitFor` gates the first connection attempt on another promise — typically `idb.whenLoaded` — so the first handshake exchanges only a delta, not the full document.
 
+> **`attach*` is NOT idempotent.** Hold the reference from the first call. Calling any `attach*` helper twice against the same `Y.Doc` + slot is a caller bug — the framework does not catch it. For observer-installing primitives (`attachTable`, `attachKv`, `attachAwareness`, `attachEncryption`) double-attach silently installs duplicate observers, causing undefined behavior. One attach site per slot, one reference, held for the life of the `Y.Doc`.
+
 ## Readiness Signals: Split, Don't Precompose
 
 Each helper returns what it actually knows. Callers compose at the call site.

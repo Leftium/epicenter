@@ -51,7 +51,7 @@ export const runActionCommand = defineCommand({
 				}
 
 				// Fall through to extensions if not found in actions
-				if (!found && client.extensions) {
+				if (!found) {
 					for (const [extKey, extValue] of Object.entries(client.extensions)) {
 						if (extValue == null || typeof extValue !== 'object') continue;
 						for (const [action, path] of iterateActions(extValue as Actions)) {
@@ -70,12 +70,10 @@ export const runActionCommand = defineCommand({
 					for (const [, path] of iterateActions(client.actions)) {
 						available.push(path.join('.'));
 					}
-					if (client.extensions) {
-						for (const [extKey, extValue] of Object.entries(client.extensions)) {
-							if (extValue == null || typeof extValue !== 'object') continue;
-							for (const [, path] of iterateActions(extValue as Actions)) {
-								available.push([extKey, ...path].join('.'));
-							}
+					for (const [extKey, extValue] of Object.entries(client.extensions)) {
+						if (extValue == null || typeof extValue !== 'object') continue;
+						for (const [, path] of iterateActions(extValue as Actions)) {
+							available.push([extKey, ...path].join('.'));
 						}
 					}
 					const msg =

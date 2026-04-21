@@ -219,6 +219,14 @@ export type WorkspaceClient<
 	loadSnapshot(update: Uint8Array): void;
 
 	/**
+	 * Get the encoded size of the current data doc in bytes.
+	 *
+	 * Useful for monitoring doc growth. This is the total CRDT state
+	 * including history, not just the active data.
+	 */
+	encodedSize(): number;
+
+	/**
 	 * Apply encryption keys to all stores.
 	 *
 	 * Decodes base64 user keys, derives per-workspace keys via HKDF-SHA256,

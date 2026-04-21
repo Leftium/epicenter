@@ -330,7 +330,7 @@ export type WorkspaceClientBuilder<
 				TAwarenessDefinitions,
 				TExtensions
 			>,
-		) => RawExtension<TExports> | void,
+		) => RawExtension<TExports>,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
@@ -590,7 +590,7 @@ export function createWorkspace<
 					TAwarenessDefinitions,
 					TExtensions
 				>,
-			) => RawExtension<TExports> | void,
+			) => RawExtension<TExports>,
 		) {
 			const {
 				dispose: _dispose,
@@ -608,10 +608,6 @@ export function createWorkspace<
 
 			try {
 				const raw = factory(ctx);
-
-				// Void return means "not installed" — skip registration
-				if (!raw) return buildClient({ extensions, state, actions });
-
 				const { exports, init, dispose, clearLocalData, onActive } =
 					defineExtension(raw);
 
@@ -693,7 +689,7 @@ export function createWorkspace<
 						TAwarenessDefinitions,
 						TExtensions
 					>,
-				) => RawExtension<TExports> | void,
+				) => RawExtension<TExports>,
 			) {
 				return applyExtension(key, factory);
 			},

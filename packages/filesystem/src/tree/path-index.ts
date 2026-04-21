@@ -197,12 +197,13 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 			}
 
 			// wasActive && isActive — row is still active, check what changed.
-			// wasActive implies prev !== undefined; narrow for TS.
-			if (!prev) continue;
+			// wasActive was computed as `prev !== undefined && prev.trashedAt
+			// === null`, so prev is defined here; TS can't narrow through the
+			// derived boolean, hence the non-null assertions below.
 			const row = (result as { status: 'valid'; row: FileRow }).row;
 
-			const parentChanged = prev.parentId !== row.parentId;
-			const nameChanged = prev.name !== row.name;
+			const parentChanged = prev!.parentId !== row.parentId;
+			const nameChanged = prev!.name !== row.name;
 
 			if (!parentChanged && !nameChanged) {
 				// TOUCHED — only size/updatedAt changed. No index work needed.
@@ -211,9 +212,9 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 
 			if (parentChanged) {
 				// MOVED
-				removeChild(prev.parentId, id);
+				removeChild(prev!.parentId, id);
 				addChild(row.parentId, id);
-				foldersToDisambiguate.add(prev.parentId);
+				foldersToDisambiguate.add(prev!.parentId);
 				foldersToDisambiguate.add(row.parentId);
 			} else {
 				// RENAMED (same parent, different name)

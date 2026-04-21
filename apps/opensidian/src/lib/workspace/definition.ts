@@ -8,7 +8,6 @@
 import { filesTable } from '@epicenter/filesystem';
 import {
 	defineTable,
-	defineWorkspace,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -111,17 +110,15 @@ const toolTrustTable = defineTable(
 export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 
 /**
- * Opensidian workspace definition.
+ * Opensidian workspace table schema.
  *
  * Combines the filesystem-backed notes table with the chat tables so the app
  * can store notes, conversations, messages, and tool approvals in one schema.
+ * Passed to `attachTables(ydoc, opensidianTables)` inside the client closure.
  */
-export const opensidian = defineWorkspace({
-	id: 'epicenter.opensidian',
-	tables: {
-		files: filesTable,
-		conversations: conversationsTable,
-		chatMessages: chatMessagesTable,
-		toolTrust: toolTrustTable,
-	},
-});
+export const opensidianTables = {
+	files: filesTable,
+	conversations: conversationsTable,
+	chatMessages: chatMessagesTable,
+	toolTrust: toolTrustTable,
+};

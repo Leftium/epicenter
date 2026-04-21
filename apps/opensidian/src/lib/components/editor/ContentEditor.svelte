@@ -4,7 +4,6 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { fileContentDocs, workspace } from '$lib/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
-	import { opensidian } from '$lib/workspace/definition';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
 	import { wikilinkAutocomplete } from './extensions/wikilink-autocomplete';
@@ -50,7 +49,7 @@
 			? [
 					sharedLinkDecorations,
 					wikilinkAutocomplete({
-						workspaceId: opensidian.id,
+						workspaceId: workspace.id,
 						tableName: 'files',
 						getFiles: () =>
 							workspace.tables.files

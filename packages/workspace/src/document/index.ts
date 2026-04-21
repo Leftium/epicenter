@@ -92,6 +92,7 @@ export {
 
 export {
 	defineDocument,
+	type DocumentBundle,
 	type DocumentFactory,
 	type DocumentHandle,
 } from './define-document.js';

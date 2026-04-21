@@ -147,6 +147,32 @@
 import type * as Y from 'yjs';
 
 /**
+ * The contract every `defineDocument` builder must satisfy.
+ *
+ * Formalizes the implicit shape `defineDocument` has always required:
+ *
+ * - `ydoc: Y.Doc` — the underlying CRDT document the cache identifies the
+ *   bundle by (guid verified across re-constructions).
+ * - `[Symbol.dispose]()` — synchronous teardown; called by `close(id)` /
+ *   `closeAll()` and by refcount→0 after `gcTime` elapses.
+ * - `whenReady?: Promise<void>` — user convention for "the bundle is usable."
+ *   Composed by the builder (e.g., `Promise.all([idb.whenLoaded, sync.whenConnected])`).
+ *   The cache never reads it; handles pass-through via the prototype chain.
+ * - `whenDisposed?: Promise<void>` — async teardown barrier the cache awaits
+ *   inside `close(id)` / `closeAll()`. Omit for synchronous-only bundles.
+ *
+ * This is the vocabulary-tier shape for documents, same stratum as `Table`,
+ * `Kv`, and `Awareness`. Exported for authors writing custom builders or
+ * typing bundles outside a `defineDocument` call.
+ */
+export type DocumentBundle = {
+	ydoc: Y.Doc;
+	[Symbol.dispose](): void;
+	whenReady?: Promise<void>;
+	whenDisposed?: Promise<void>;
+};
+
+/**
  * A reference-counted document handle. Returned by `factory.open(id)`. Each
  * call returns a distinct disposable handle over the same underlying bundle
  * (the user's `build(id)` return value — `{ ydoc, ...attachments }`). N opens
@@ -242,7 +268,7 @@ export type DocumentFactory<Id extends string, T> = {
 	closeAll(): Promise<void>;
 };
 
-type DocEntry<T extends { ydoc: Y.Doc } & Disposable> = {
+type DocEntry<T extends DocumentBundle> = {
 	/** The user's pristine `build()` return value. Never mutated. */
 	bundle: T;
 	openCount: number;
@@ -266,7 +292,7 @@ type DocEntry<T extends { ydoc: Y.Doc } & Disposable> = {
  */
 export function defineDocument<
 	Id extends string,
-	T extends { ydoc: Y.Doc; whenDisposed?: Promise<void> } & Disposable,
+	T extends DocumentBundle,
 >(
 	build: (id: Id) => T,
 	{ gcTime = Number.POSITIVE_INFINITY }: { gcTime?: number } = {},

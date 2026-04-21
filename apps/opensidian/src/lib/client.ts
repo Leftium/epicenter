@@ -21,7 +21,7 @@ import {
 	createSqliteIndex,
 	createYjsFileSystem,
 } from '@epicenter/filesystem';
-import { createSkillsWorkspace } from '@epicenter/skills';
+import { skillsDocument } from '@epicenter/skills';
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import {
@@ -261,14 +261,9 @@ export const bash = workspace.bash;
  * - `getSkill({ id })` — metadata + instructions — opens one Y.Doc
  * - `getSkillWithReferences({ id })` — full skill with all references
  */
-const skillsBase = createSkillsWorkspace();
-const skillsIdb = attachIndexedDb(skillsBase.ydoc);
-export const skillsWorkspace = Object.assign(skillsBase, {
-	idb: skillsIdb,
-	whenReady: skillsIdb.whenLoaded,
-});
-export const skillInstructionsDocs = skillsBase.instructionsDocs;
-export const skillReferenceDocs = skillsBase.referenceDocs;
+export const skillsWorkspace = skillsDocument.open('epicenter.skills');
+export const skillInstructionsDocs = skillsWorkspace.instructionsDocs;
+export const skillReferenceDocs = skillsWorkspace.referenceDocs;
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

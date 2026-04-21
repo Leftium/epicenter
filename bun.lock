@@ -56,10 +56,12 @@
       "name": "@epicenter/breddit",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/document": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@sindresorhus/slugify": "catalog:",
         "arktype": "catalog:",
         "fflate": "catalog:",
+        "yjs": "catalog:",
       },
       "devDependencies": {
         "bun-types": "catalog:",
@@ -454,6 +456,7 @@
         "pinyin-pro": "^3.28.0",
         "svelte-sonner": "catalog:",
         "wellcrafted": "catalog:",
+        "yjs": "catalog:",
       },
       "devDependencies": {
         "@sveltejs/adapter-static": "catalog:",

@@ -1,10 +1,10 @@
 /**
  * Skills app workspace client — browser entry with IndexedDB persistence.
  *
- * `createSkillsWorkspace()` returns the shared skills workspace bundle
- * (ydoc, tables, actions, instructionsDocs, referenceDocs). This file
- * attaches IDB persistence on top and re-exports the doc factories for
- * editor components.
+ * `skillsDocument.open('epicenter.skills')` returns the full skills bundle
+ * (ydoc, tables, actions, instructionsDocs, referenceDocs, idb, batch).
+ * IndexedDB persistence and broadcast-channel fan-out are attached by the
+ * factory itself — consumers don't wire them here.
  *
  * Editors open per-skill handles via `instructionsDocs.open(id)` /
  * `referenceDocs.open(id)` and rely on the shared cache so action-side
@@ -12,15 +12,8 @@
  * Y.Doc.
  */
 
-import { attachIndexedDb } from '@epicenter/document';
-import { createSkillsWorkspace } from '@epicenter/skills';
+import { skillsDocument } from '@epicenter/skills';
 
-const base = createSkillsWorkspace();
-const idb = attachIndexedDb(base.ydoc);
-
-export const workspace = Object.assign(base, {
-	idb,
-	whenReady: idb.whenLoaded,
-});
-export const instructionsDocs = base.instructionsDocs;
-export const referenceDocs = base.referenceDocs;
+export const workspace = skillsDocument.open('epicenter.skills');
+export const instructionsDocs = workspace.instructionsDocs;
+export const referenceDocs = workspace.referenceDocs;

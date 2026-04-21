@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SyncStatusPopover } from '@epicenter/svelte/sync-status-popover';
+	import { AccountPopover } from '@epicenter/svelte/account-popover';
 	import { Button } from '@epicenter/ui/button';
 	import { GitHubButton, getStars } from '@epicenter/ui/github-button';
 	import { Kbd } from '@epicenter/ui/kbd';
@@ -52,9 +52,10 @@
 	</div>
 	<!-- Right: external links + theme -->
 	<div class="flex items-center gap-1">
-		<SyncStatusPopover
+		<AccountPopover
 			{auth}
-			{workspace}
+			sync={workspace.sync}
+			clearLocalData={() => workspace.idb.clearLocal()}
 			syncNoun="entries"
 			onSocialSignIn={() =>
 				auth.signInWithSocialRedirect({

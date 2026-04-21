@@ -1,28 +1,13 @@
 /**
- * Fuji workspace — schema definition, branded IDs, and workspace factory.
+ * Fuji workspace — schema definition, branded IDs, and actions factory.
  *
  * Fuji is a personal CMS with a 1:1 mapping to your blog. Entries are content
  * pieces—articles, thoughts, ideas—organized by tags and type, displayed in a
  * data table with an editor panel. Each entry has a rich-text content document
  * for collaborative editing via ProseMirror + y-prosemirror.
- *
- * The factory returns a non-terminal builder. Consumers chain `.withExtension()`
- * to add persistence, encryption, sync, or other capabilities.
- *
- * @example
- * ```typescript
- * import { createFujiWorkspace } from '$lib/workspace'
- *
- * const ws = createFujiWorkspace()
- *   .withExtension('persistence', indexeddbPersistence)
- *
- * // Create an entry via action (CLI, AI, or UI)
- * ws.actions.entries.create({ title: 'My Post', tags: ['draft'] })
- * ```
  */
 
 import {
-	createWorkspace,
 	DateTimeString,
 	defineMutation,
 	defineTable,
@@ -116,10 +101,12 @@ export const fuji = defineWorkspace({
 	tables: { entries: entriesTable },
 });
 
-// ─── Factory ──────────────────────────────────────────────────────────────────
+// ─── Actions ──────────────────────────────────────────────────────────────────
 
-export function createFujiWorkspace() {
-	return createWorkspace(fuji).withActions(({ tables }) => ({
+type FujiTables = ReturnType<typeof fuji.open>['tables'];
+
+export function createFujiActions(tables: FujiTables) {
+	return {
 		entries: {
 			/**
 			 * Create a new entry with sensible defaults.
@@ -150,7 +137,7 @@ export function createFujiWorkspace() {
 					),
 				}),
 				handler: ({ title, subtitle, type: entryType, tags, rating }) => {
-					const id = generateId() as EntryId;
+					const id = generateId() as unknown as EntryId;
 					const now = DateTimeString.now();
 					tables.entries.set({
 						id,
@@ -274,7 +261,7 @@ export function createFujiWorkspace() {
 				handler: ({ entries: items }) => {
 					const now = DateTimeString.now();
 					const rows = items.map(({ title, date }) => ({
-						id: generateId() as EntryId,
+						id: generateId() as unknown as EntryId,
 						title,
 						subtitle: '',
 						type: [] as string[],
@@ -292,5 +279,5 @@ export function createFujiWorkspace() {
 				},
 			}),
 		},
-	}));
+	};
 }

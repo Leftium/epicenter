@@ -217,7 +217,7 @@ In rough order of complexity:
 1. [x] **breddit** — test-only usage; grep and delete.
 2. [x] **zhongwen** — smallest runtime app; uses broadcast, not
    websocket. Template for the "no sync extension" case.
-3. [ ] **fuji** — mid-complexity, straightforward tables + sync.
+3. [x] **fuji** — mid-complexity, straightforward tables + sync.
    Template for the standard "IDB + sync" composition.
 4. [ ] **honeycrisp** — similar to fuji. Straightforward.
 5. [ ] **whispering** — has a custom materializer extension. Materializer

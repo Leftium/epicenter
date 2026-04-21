@@ -7,14 +7,15 @@
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
+import {
+	attachBroadcastChannel,
+	attachIndexedDb,
+	attachSync,
+	toWsUrl,
+} from '@epicenter/document';
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
-import {
-	createSyncExtension,
-	toWsUrl,
-} from '@epicenter/workspace/extensions/sync/websocket';
-import { createFujiWorkspace } from '$lib/workspace';
+import { createFujiActions, fuji } from '$lib/workspace';
 
 const session = createPersistedState({
 	key: 'fuji:authSession',
@@ -22,26 +23,32 @@ const session = createPersistedState({
 	defaultValue: null,
 });
 
-export const workspace = createFujiWorkspace()
-	.withExtension('persistence', indexeddbPersistence)
-	.withExtension(
-		'sync',
-		createSyncExtension({
-			url: (workspaceId) =>
-				toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
-			getToken: async () => auth.token,
-		}),
-	);
+const base = fuji.open('epicenter.fuji');
+const idb = attachIndexedDb(base.ydoc);
+attachBroadcastChannel(base.ydoc);
+const sync = attachSync(base.ydoc, {
+	url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
+	getToken: async () => auth.token,
+	waitFor: idb.whenLoaded,
+});
+
+export const workspace = Object.assign(base, {
+	id: 'epicenter.fuji',
+	idb,
+	sync,
+	actions: createFujiActions(base.tables),
+	whenReady: idb.whenLoaded,
+});
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
 	onLogin(session) {
-		workspace.applyEncryptionKeys(session.encryptionKeys);
-		workspace.extensions.sync.reconnect();
+		workspace.enc.applyKeys(session.encryptionKeys);
+		workspace.sync.reconnect();
 	},
 	async onLogout() {
-		await workspace.clearLocalData();
+		await workspace.idb.clearLocal();
 		window.location.reload();
 	},
 });

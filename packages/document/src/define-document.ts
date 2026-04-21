@@ -64,10 +64,8 @@ import type {
 const DEFAULT_GRACE_MS = 30_000;
 const RESERVED_KEYS: ReadonlyArray<string> = ['release', 'whenLoaded'];
 
-type CachedHandle<TAttach extends { ydoc: Y.Doc }> = DocumentSnapshot<TAttach>;
-
 type DocEntry<TAttach extends { ydoc: Y.Doc }> = {
-	handle: CachedHandle<TAttach>;
+	handle: DocumentSnapshot<TAttach>;
 	retainCount: number;
 	disposeTimer: ReturnType<typeof setTimeout> | null;
 	disposed: boolean;
@@ -177,7 +175,7 @@ export function defineDocument<
 		// that some attachments expose (e.g. Timeline's `currentType`). `open()`
 		// wrappers wear `release`/`Symbol.dispose` on fresh objects created with
 		// `Object.create(handle)` — the cached handle never gets those.
-		const handle = attach as CachedHandle<TAttach>;
+		const handle = attach as DocumentSnapshot<TAttach>;
 
 		const { promise: whenDisposed, resolve: resolveDisposed } =
 			Promise.withResolvers<void>();

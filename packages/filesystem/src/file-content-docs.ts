@@ -22,13 +22,12 @@
 
 import {
 	attachTimeline,
-	type ContentAttachment,
+	buildPerRowDoc,
 	defineDocument,
-	docGuid,
-	onLocalUpdate,
+	type DocPersistence,
 } from '@epicenter/document';
 import type { Table } from '@epicenter/workspace';
-import * as Y from 'yjs';
+import type * as Y from 'yjs';
 import type { FileId } from './ids.js';
 import type { FileRow } from './table.js';
 
@@ -39,35 +38,19 @@ export function createFileContentDocs({
 }: {
 	workspaceId: string;
 	filesTable: Table<FileRow>;
-	attach?: (ydoc: Y.Doc) => ContentAttachment | void;
+	attach?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	return defineDocument((fileId: FileId) => {
-		const ydoc = new Y.Doc({
-			guid: docGuid({
-				workspaceId,
-				collection: 'files',
-				rowId: fileId,
-				field: 'content',
-			}),
-			gc: false,
+		const base = buildPerRowDoc({
+			workspaceId,
+			collection: 'files',
+			field: 'content',
+			id: fileId,
+			onUpdate: () =>
+				filesTable.update(fileId, { updatedAt: Date.now() }),
+			attach,
 		});
-		const content = attachTimeline(ydoc);
-
-		onLocalUpdate(ydoc, () => {
-			filesTable.update(fileId, { updatedAt: Date.now() });
-		});
-
-		const attached = attach?.(ydoc);
-
-		return {
-			ydoc,
-			content,
-			whenReady: attached?.whenLoaded ?? Promise.resolve(),
-			whenDisposed: attached?.whenDisposed ?? Promise.resolve(),
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
+		return { ...base, content: attachTimeline(base.ydoc) };
 	});
 }
 

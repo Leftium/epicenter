@@ -6,13 +6,12 @@
 
 import {
 	attachPlainText,
-	type ContentAttachment,
+	buildPerRowDoc,
 	defineDocument,
-	docGuid,
-	onLocalUpdate,
+	type DocPersistence,
 } from '@epicenter/document';
 import type { Table } from '@epicenter/workspace';
-import * as Y from 'yjs';
+import type * as Y from 'yjs';
 import type { Skill } from './tables.js';
 
 export function createSkillInstructionsDocs({
@@ -22,34 +21,18 @@ export function createSkillInstructionsDocs({
 }: {
 	workspaceId: string;
 	skillsTable: Table<Skill>;
-	attach?: (ydoc: Y.Doc) => ContentAttachment | void;
+	attach?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	return defineDocument((skillId: string) => {
-		const ydoc = new Y.Doc({
-			guid: docGuid({
-				workspaceId,
-				collection: 'skills',
-				rowId: skillId,
-				field: 'instructions',
-			}),
-			gc: false,
+		const base = buildPerRowDoc({
+			workspaceId,
+			collection: 'skills',
+			field: 'instructions',
+			id: skillId,
+			onUpdate: () =>
+				skillsTable.update(skillId, { updatedAt: Date.now() }),
+			attach,
 		});
-		const instructions = attachPlainText(ydoc);
-
-		onLocalUpdate(ydoc, () => {
-			skillsTable.update(skillId, { updatedAt: Date.now() });
-		});
-
-		const attached = attach?.(ydoc);
-
-		return {
-			ydoc,
-			instructions,
-			whenReady: attached?.whenLoaded ?? Promise.resolve(),
-			whenDisposed: attached?.whenDisposed ?? Promise.resolve(),
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
+		return { ...base, instructions: attachPlainText(base.ydoc) };
 	});
 }

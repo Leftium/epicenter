@@ -7,13 +7,12 @@
 
 import {
 	attachPlainText,
-	type ContentAttachment,
+	buildPerRowDoc,
 	defineDocument,
-	docGuid,
-	onLocalUpdate,
+	type DocPersistence,
 } from '@epicenter/document';
 import type { Table } from '@epicenter/workspace';
-import * as Y from 'yjs';
+import type * as Y from 'yjs';
 import type { Reference } from './tables.js';
 
 export function createReferenceContentDocs({
@@ -23,34 +22,18 @@ export function createReferenceContentDocs({
 }: {
 	workspaceId: string;
 	referencesTable: Table<Reference>;
-	attach?: (ydoc: Y.Doc) => ContentAttachment | void;
+	attach?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	return defineDocument((referenceId: string) => {
-		const ydoc = new Y.Doc({
-			guid: docGuid({
-				workspaceId,
-				collection: 'references',
-				rowId: referenceId,
-				field: 'content',
-			}),
-			gc: false,
+		const base = buildPerRowDoc({
+			workspaceId,
+			collection: 'references',
+			field: 'content',
+			id: referenceId,
+			onUpdate: () =>
+				referencesTable.update(referenceId, { updatedAt: Date.now() }),
+			attach,
 		});
-		const content = attachPlainText(ydoc);
-
-		onLocalUpdate(ydoc, () => {
-			referencesTable.update(referenceId, { updatedAt: Date.now() });
-		});
-
-		const attached = attach?.(ydoc);
-
-		return {
-			ydoc,
-			content,
-			whenReady: attached?.whenLoaded ?? Promise.resolve(),
-			whenDisposed: attached?.whenDisposed ?? Promise.resolve(),
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
+		return { ...base, content: attachPlainText(base.ydoc) };
 	});
 }

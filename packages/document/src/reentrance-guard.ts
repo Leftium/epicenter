@@ -23,6 +23,24 @@
 
 import type * as Y from 'yjs';
 
+/**
+ * Shared primitive names for the guard namespace.
+ *
+ * `attachTable` (singular) and `attachTables` (batch) deliberately share the
+ * SAME namespace here — the conceptual slot is "a table named <name>", and
+ * mixing the two on one Y.Doc should still throw on the second attach
+ * regardless of which function ran first. Importing this constant keeps
+ * the coupling compile-checked instead of string-literal-matched.
+ */
+export const AttachPrimitive = {
+	Table: 'attachTable',
+	PlainText: 'attachPlainText',
+	RichText: 'attachRichText',
+	Kv: 'attachKv',
+	Awareness: 'attachAwareness',
+	Encryption: 'attachEncryption',
+} as const;
+
 const perSlotGuards = new Map<string, WeakMap<Y.Doc, Set<string>>>();
 const singletonGuards = new Map<string, WeakSet<Y.Doc>>();
 

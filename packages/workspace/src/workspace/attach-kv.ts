@@ -7,7 +7,11 @@
  */
 
 import { KV_KEY } from '@epicenter/document';
-import { createKv, guardSingleton } from '@epicenter/document/internal';
+import {
+	AttachPrimitive,
+	createKv,
+	guardSingleton,
+} from '@epicenter/document/internal';
 import type * as Y from 'yjs';
 import {
 	createEncryptedYkvLww,
@@ -24,7 +28,7 @@ export function attachKv<T extends KvDefinitions>(
 	ydoc: Y.Doc,
 	definitions: T,
 ): KvAttachment<T> {
-	guardSingleton(ydoc, 'attachKv');
+	guardSingleton(ydoc, AttachPrimitive.Kv);
 	const store = createEncryptedYkvLww(ydoc, KV_KEY);
 	const helper = createKv(store, definitions) as Kv<T>;
 	return { helper, store };

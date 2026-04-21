@@ -44,7 +44,7 @@
  * @module
  */
 
-import { guardSingleton } from '@epicenter/document/internal';
+import { AttachPrimitive, guardSingleton } from '@epicenter/document/internal';
 import type * as Y from 'yjs';
 import { base64ToBytes, deriveWorkspaceKey } from './crypto/index.js';
 import type { EncryptedYKeyValueLww } from './y-keyvalue/y-keyvalue-lww-encrypted.js';
@@ -106,7 +106,7 @@ export function attachEncryption(
 		| { tables?: TablesLike; kv?: KvLike }
 		| { stores: readonly EncryptedYKeyValueLww<any>[] },
 ): EncryptionAttachment {
-	guardSingleton(ydoc, 'attachEncryption');
+	guardSingleton(ydoc, AttachPrimitive.Encryption);
 	const stores: readonly EncryptedYKeyValueLww<any>[] =
 		'stores' in source
 			? source.stores

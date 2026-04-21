@@ -23,7 +23,7 @@
 
 import type * as Y from 'yjs';
 import { TableKey } from './keys.js';
-import { guardSlot } from './reentrance-guard.js';
+import { AttachPrimitive, guardSlot } from './reentrance-guard.js';
 import type {
 	GetResult,
 	InferTableRow,
@@ -58,7 +58,7 @@ export function attachTable<
 	name: string,
 	definition: TTableDefinition,
 ): Table<InferTableRow<TTableDefinition>> {
-	guardSlot(ydoc, 'attachTable', name);
+	guardSlot(ydoc, AttachPrimitive.Table, name);
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.on('destroy', () => ykv.dispose());

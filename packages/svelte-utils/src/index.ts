@@ -1,3 +1,4 @@
+export { fromDocument } from './from-document.svelte.js';
 export { fromKv } from './fromKv.svelte.js';
 export { fromTable } from './fromTable.svelte.js';
 export {

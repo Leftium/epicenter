@@ -2,23 +2,21 @@
  * File content documents — per-file Y.Doc factory for the filesystem package.
  *
  * Because the filesystem package is shared between apps, the factory takes
- * the host workspace as a parameter — each app constructs its own factory
- * bound to its own workspace instance. Apps call `createFileContentDocs(ws)`
- * once and retain the result for the workspace lifetime.
+ * the host workspace's id and files table as inputs — each app constructs
+ * its own factory bound to its own workspace instance. Apps call
+ * `createFileContentDocs({ workspaceId, filesTable })` once and retain the
+ * result for the workspace lifetime.
  *
- * Apps opt into IndexedDB persistence via `{ persistence: 'indexeddb' }`
- * (default). In Node tests or environments without IDB, pass `persistence:
- * 'none'` to skip the attachment.
- *
- * NOTE: Sync is deferred to a follow-up. The framework-collapse spec
- * (20260420T230100) lands IDB-only in the first pass and threads sync
- * config through in a later pass.
+ * Apps opt into IndexedDB persistence via `persistence: 'indexeddb'`
+ * (default). In Node tests or environments without IDB, pass
+ * `persistence: 'none'` to skip the attachment.
  */
 
 import {
 	attachIndexedDb,
 	attachTimeline,
 	defineDocument,
+	docGuid,
 	onLocalUpdate,
 } from '@epicenter/document';
 import type { Table } from '@epicenter/workspace';
@@ -31,22 +29,30 @@ type PersistenceMode = 'indexeddb' | 'none';
 /**
  * Create a per-workspace file-content document factory.
  *
+ * @param workspaceId - the host workspace's id, used as the first segment of
+ *   the Y.Doc guid. Required — no default — because a shared default would
+ *   collapse IndexedDB namespaces across apps that both import this package.
  * @param filesTable - the workspace's files table helper. Used for the
- *                     `onLocalUpdate` writeback that bumps `updatedAt`.
- * @param workspaceId - optional workspace identifier, used to scope the
- *                      Y.Doc guid so two workspaces never collide.
- * @param opts.persistence - `'indexeddb'` (default) to attach IDB; `'none'` to skip.
+ *   `onLocalUpdate` writeback that bumps `updatedAt`.
+ * @param persistence - `'indexeddb'` (default) to attach IDB; `'none'` to skip.
  */
-export function createFileContentDocs(
-	filesTable: Table<FileRow>,
-	workspaceId = 'filesystem',
-	opts: { persistence?: PersistenceMode } = {},
-) {
-	const persistence = opts.persistence ?? 'indexeddb';
-
+export function createFileContentDocs({
+	workspaceId,
+	filesTable,
+	persistence = 'indexeddb',
+}: {
+	workspaceId: string;
+	filesTable: Table<FileRow>;
+	persistence?: PersistenceMode;
+}) {
 	function buildFileContentDoc(fileId: FileId) {
 		const ydoc = new Y.Doc({
-			guid: `${workspaceId}.files.${fileId}.content`,
+			guid: docGuid({
+				workspaceId,
+				collection: 'files',
+				rowId: fileId,
+				field: 'content',
+			}),
 			gc: false,
 		});
 		const content = attachTimeline(ydoc);

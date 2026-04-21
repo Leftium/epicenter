@@ -4,16 +4,15 @@
  * Each skill has a markdown instruction body stored in its own Y.Doc with
  * `attachPlainText`, enabling collaborative Y.Text editing in browser-based
  * editors. The factory is workspace-scoped — apps call
- * `createSkillInstructionsDocs(ws)` once and reuse the result.
- *
- * NOTE: Sync is deferred to a follow-up. The framework-collapse spec
- * (20260420T230100) lands IDB-only in the first pass.
+ * `createSkillInstructionsDocs({ workspaceId, skillsTable })` once and reuse
+ * the result.
  */
 
 import {
 	attachIndexedDb,
 	attachPlainText,
 	defineDocument,
+	docGuid,
 	onLocalUpdate,
 } from '@epicenter/document';
 import type { Table } from '@epicenter/workspace';
@@ -22,16 +21,23 @@ import type { Skill } from './tables.js';
 
 type PersistenceMode = 'indexeddb' | 'none';
 
-export function createSkillInstructionsDocs(
-	skillsTable: Table<Skill>,
-	workspaceId = 'skills',
-	opts: { persistence?: PersistenceMode } = {},
-) {
-	const persistence = opts.persistence ?? 'indexeddb';
-
+export function createSkillInstructionsDocs({
+	workspaceId,
+	skillsTable,
+	persistence = 'indexeddb',
+}: {
+	workspaceId: string;
+	skillsTable: Table<Skill>;
+	persistence?: PersistenceMode;
+}) {
 	function buildSkillInstructionsDoc(skillId: string) {
 		const ydoc = new Y.Doc({
-			guid: `${workspaceId}.skills.${skillId}.instructions`,
+			guid: docGuid({
+				workspaceId,
+				collection: 'skills',
+				rowId: skillId,
+				field: 'instructions',
+			}),
 			gc: false,
 		});
 		const content = attachPlainText(ydoc);

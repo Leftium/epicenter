@@ -85,12 +85,12 @@ export const opensidian = createWorkspace(opensidianDefinition)
 				},
 			}),
 	)
-	.withWorkspaceExtension('sqlite', (ctx) =>
+	.withExtension('sqlite', (ctx) =>
 		createSqliteMaterializer(ctx, {
 			db: new Database(join(MATERIALIZER_DIR, 'opensidian.db')),
 		}).table('files', { fts: ['name'] }),
 	)
-	.withWorkspaceExtension('unlock', createCliUnlock(sessions, SERVER_URL))
+	.withExtension('unlock', createCliUnlock(sessions, SERVER_URL))
 	.withExtension(
 		'sync',
 		createSyncExtension({

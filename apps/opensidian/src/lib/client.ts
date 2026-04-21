@@ -1,5 +1,9 @@
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createSqliteIndex, createYjsFileSystem } from '@epicenter/filesystem';
+import {
+	createFileContentDocs,
+	createSqliteIndex,
+	createYjsFileSystem,
+} from '@epicenter/filesystem';
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import {
@@ -30,20 +34,28 @@ const session = createPersistedState({
  * Imported by both fs-state.svelte.ts (for reactive wrappers) and
  * components that need direct infra access (Toolbar, ContentEditor).
  */
+const baseWorkspace = createWorkspace(opensidian)
+	.withExtension('persistence', indexeddbPersistence)
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: (workspaceId) =>
+				toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
+			getToken: async () => auth.token,
+		}),
+	);
+
+/** Per-file content Y.Doc factory — apps own content-doc construction directly. */
+export const fileContentDocs = createFileContentDocs(
+	baseWorkspace.tables.files,
+	baseWorkspace.id,
+);
+
 export const workspace = buildWorkspaceClient();
 
 function buildWorkspaceClient() {
-	return createWorkspace(opensidian)
-		.withExtension('persistence', indexeddbPersistence)
-		.withExtension(
-			'sync',
-			createSyncExtension({
-				url: (workspaceId) =>
-					toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
-				getToken: async () => auth.token,
-			}),
-		)
-		.withWorkspaceExtension('sqliteIndex', createSqliteIndex())
+	return baseWorkspace
+		.withExtension('sqliteIndex', createSqliteIndex(fileContentDocs))
 		.withActions((client) => ({
 			files: {
 				search: defineQuery({
@@ -225,10 +237,7 @@ export const workspaceAiTools = actionsToAiTools(workspace.actions);
 export type WorkspaceTools = typeof workspaceAiTools.tools;
 
 /** Yjs-backed virtual filesystem with path-based operations. */
-export const fs = createYjsFileSystem(
-	workspace.tables.files,
-	workspace.tables.files.documents.content,
-);
+export const fs = createYjsFileSystem(workspace.tables.files, fileContentDocs);
 
 /**
  * Shell emulator backed by the Yjs virtual filesystem.

@@ -29,13 +29,6 @@ import type { RawExtension } from './lifecycle.js';
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
 
 // Re-export primitive types from document so downstream imports keep working.
-//
-// `TableDefinition` and `TableDefinitions` are NOT re-exported from document:
-// workspace's `TableDefinition` has a wider `documents` field constrained to
-// `Record<string, DocumentConfig>` (with the workspace-specific DocumentConfig
-// type). Workspace's wider type is structurally assignable to document's
-// narrower `Record<string, unknown>` definition, so attachTable/etc. accept
-// it transparently.
 export type {
 	Awareness,
 	AwarenessDefinitions,
@@ -223,7 +216,7 @@ export type WorkspaceClient<
 		kv: TKvDefinitions;
 		awareness: TAwarenessDefinitions;
 	};
-	/** Typed table helpers — CRUD plus a `.documents` sub-namespace when the table has `.withDocument()` declarations */
+	/** Typed table helpers — CRUD operations per table. */
 	tables: WorkspaceTables<TTableDefinitions>;
 	/** Typed KV helper */
 	kv: Kv<TKvDefinitions>;

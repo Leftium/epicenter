@@ -59,8 +59,16 @@ export { skillsDefinition } from './definition.js';
 export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none' } = {}) {
 	const base = createWorkspace(skillsDefinition);
 	const persistence = opts.persistence;
-	const instructionsDocs = createSkillInstructionsDocs(base.tables.skills, base.id, { persistence });
-	const referenceDocs = createReferenceContentDocs(base.tables.references, base.id, { persistence });
+	const instructionsDocs = createSkillInstructionsDocs({
+		workspaceId: base.id,
+		skillsTable: base.tables.skills,
+		persistence,
+	});
+	const referenceDocs = createReferenceContentDocs({
+		workspaceId: base.id,
+		referencesTable: base.tables.references,
+		persistence,
+	});
 
 	async function readInstructions(id: string): Promise<string> {
 		using h = instructionsDocs.open(id);

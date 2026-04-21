@@ -58,7 +58,7 @@ export async function connectWorkspace<
 	const base = factory();
 
 	const client = base
-		.withWorkspaceExtension('unlock', createCliUnlock(sessions, server))
+		.withExtension('unlock', createCliUnlock(sessions, server))
 		.withExtension(
 			'sync',
 			createSyncExtension({

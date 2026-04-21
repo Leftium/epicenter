@@ -35,7 +35,7 @@ const base = createWorkspace(whisperingDefinition).withExtension(
 );
 
 export const workspace = isTauri()
-	? base.withWorkspaceExtension('materializer', (ctx) => {
+	? base.withExtension('materializer', (ctx) => {
 			let unsub: (() => void) | undefined;
 			// Serialized promise chain—ensures observer batches complete sequentially
 			// so rapid changes don't produce overlapping Rust invoke calls.

@@ -36,14 +36,14 @@ export const tabManager = createTabManagerWorkspace()
 			filePath: EPICENTER_PATHS.persistence('epicenter.tab-manager'),
 		}),
 	)
-	.withWorkspaceExtension('materializer', (ctx) =>
+	.withExtension('materializer', (ctx) =>
 		createMarkdownMaterializer(ctx, { dir: MARKDOWN_DIR })
 			.table('savedTabs', { serialize: slugFilename('title') })
 			.table('bookmarks', { serialize: slugFilename('title') })
 			.table('devices')
 			.kv(),
 	)
-	.withWorkspaceExtension('unlock', createCliUnlock(sessions, SERVER_URL))
+	.withExtension('unlock', createCliUnlock(sessions, SERVER_URL))
 	.withExtension(
 		'sync',
 		createSyncExtension({

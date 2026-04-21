@@ -4,16 +4,15 @@
  * References are additional documentation loaded on demand (tier 3 in the
  * progressive disclosure model). Each reference file gets its own Y.Doc
  * for collaborative editing. The factory is workspace-scoped — apps call
- * `createReferenceContentDocs(ws)` once and reuse the result.
- *
- * NOTE: Sync is deferred to a follow-up. The framework-collapse spec
- * (20260420T230100) lands IDB-only in the first pass.
+ * `createReferenceContentDocs({ workspaceId, referencesTable })` once and
+ * reuse the result.
  */
 
 import {
 	attachIndexedDb,
 	attachPlainText,
 	defineDocument,
+	docGuid,
 	onLocalUpdate,
 } from '@epicenter/document';
 import type { Table } from '@epicenter/workspace';
@@ -22,16 +21,23 @@ import type { Reference } from './tables.js';
 
 type PersistenceMode = 'indexeddb' | 'none';
 
-export function createReferenceContentDocs(
-	referencesTable: Table<Reference>,
-	workspaceId = 'skills',
-	opts: { persistence?: PersistenceMode } = {},
-) {
-	const persistence = opts.persistence ?? 'indexeddb';
-
+export function createReferenceContentDocs({
+	workspaceId,
+	referencesTable,
+	persistence = 'indexeddb',
+}: {
+	workspaceId: string;
+	referencesTable: Table<Reference>;
+	persistence?: PersistenceMode;
+}) {
 	function buildReferenceContentDoc(referenceId: string) {
 		const ydoc = new Y.Doc({
-			guid: `${workspaceId}.references.${referenceId}.content`,
+			guid: docGuid({
+				workspaceId,
+				collection: 'references',
+				rowId: referenceId,
+				field: 'content',
+			}),
 			gc: false,
 		});
 		const content = attachPlainText(ydoc);

@@ -128,7 +128,7 @@ export function createWorkspace<
 	const factory = defineWorkspace(def);
 	const { id } = def;
 	const handle = factory.open(id);
-	const { ydoc, tables, kv, awareness, enc } = handle;
+	const { ydoc, tables, kv, awareness, encryption } = handle;
 
 	const definitions = {
 		tables: def.tables ?? ({} as TTableDefinitions),
@@ -257,7 +257,7 @@ export function createWorkspace<
 			 * ```
 			 */
 			applyEncryptionKeys(keys: EncryptionKeys): void {
-				enc.applyKeys(keys);
+				encryption.applyKeys(keys);
 			},
 			async clearLocalData(): Promise<void> {
 				for (let i = state.clearLocalDataCallbacks.length - 1; i >= 0; i--) {

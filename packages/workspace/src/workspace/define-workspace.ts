@@ -117,7 +117,7 @@ export type WorkspaceBundle<
 	tables: Tables<TTableDefinitions>;
 	kv: Kv<TKvDefinitions>;
 	awareness: Awareness<TAwarenessDefinitions>;
-	enc: EncryptionAttachment;
+	encryption: EncryptionAttachment;
 	/** Sugar for `ydoc.transact(fn)`. Coalesces a sequence of mutations into one Yjs transaction. */
 	batch(fn: () => void): void;
 	whenReady: Promise<void>;
@@ -211,7 +211,7 @@ export function defineWorkspace<
 				tables,
 				kv,
 				awareness,
-				enc: encryption,
+				encryption,
 				batch(fn: () => void): void {
 					ydoc.transact(fn);
 				},

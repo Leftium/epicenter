@@ -43,6 +43,7 @@ export {
 } from './attach-timeline/index.js';
 
 export { defineDocument } from './define-document.js';
+export { docGuid } from './doc-guid.js';
 export type {
 	DocumentFactory,
 	DocumentHandle,

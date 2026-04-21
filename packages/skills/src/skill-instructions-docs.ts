@@ -40,7 +40,7 @@ export function createSkillInstructionsDocs({
 			}),
 			gc: false,
 		});
-		const content = attachPlainText(ydoc);
+		const instructions = attachPlainText(ydoc);
 		const idb = persistence === 'indexeddb' ? attachIndexedDb(ydoc) : null;
 
 		onLocalUpdate(ydoc, () => {
@@ -49,7 +49,7 @@ export function createSkillInstructionsDocs({
 
 		return {
 			ydoc,
-			content,
+			instructions,
 			idb,
 			whenReady: idb ? idb.whenLoaded : Promise.resolve(),
 			whenDisposed: idb ? idb.whenDisposed : Promise.resolve(),

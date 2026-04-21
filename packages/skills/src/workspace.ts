@@ -73,7 +73,7 @@ export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none'
 	async function readInstructions(id: string): Promise<string> {
 		using h = instructionsDocs.open(id);
 		await h.whenReady;
-		return h.content.read();
+		return h.instructions.read();
 	}
 
 	async function readReference(id: string): Promise<string> {

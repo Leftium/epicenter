@@ -1,24 +1,29 @@
 <script lang="ts">
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
-	import { workspace } from '$lib/client';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
+	import { noteBodyDocs } from '$lib/note-body-docs';
 	import { foldersState, notesState, viewState } from '$lib/state';
 
-	const bodyHandle = $derived(
-		viewState.selectedNoteId
-			? workspace.tables.notes.documents.body.get(viewState.selectedNoteId)
-			: null,
-	);
+	// Open a fresh handle for the selected note; dispose the previous one on
+	// switch so backgrounded notes stop syncing after the grace period.
+	let bodyHandle = $state<ReturnType<typeof noteBodyDocs.open> | null>(null);
 
-	// Keep sync live for the currently-selected note; release on switch so
-	// backgrounded notes stop syncing after the grace period.
 	$effect(() => {
-		if (!bodyHandle) return;
-		return bodyHandle.bind();
+		const id = viewState.selectedNoteId;
+		if (!id) {
+			bodyHandle = null;
+			return;
+		}
+		const handle = noteBodyDocs.open(id);
+		bodyHandle = handle;
+		return () => {
+			handle.dispose();
+			bodyHandle = null;
+		};
 	});
 </script>
 
@@ -63,7 +68,7 @@
 				{#if viewState.selectedNote && bodyHandle}
 					{#key viewState.selectedNoteId}
 						<HoneycripEditor
-							yxmlfragment={bodyHandle.binding}
+							yxmlfragment={bodyHandle.body.binding}
 							onContentChange={(change) => notesState.updateNoteContent(change)}
 						/>
 					{/key}

@@ -28,7 +28,7 @@ function buildNoteBodyDoc(noteId: NoteId) {
 		guid: `epicenter.honeycrisp.notes.${noteId}.body`,
 		gc: false,
 	});
-	const content = attachRichText(ydoc);
+	const body = attachRichText(ydoc);
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachSync(ydoc, {
 		url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
@@ -44,7 +44,7 @@ function buildNoteBodyDoc(noteId: NoteId) {
 
 	return {
 		ydoc,
-		content,
+		body,
 		idb,
 		sync,
 		whenReady: idb.whenLoaded,

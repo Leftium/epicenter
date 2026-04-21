@@ -85,13 +85,13 @@ export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none'
 	async function writeInstructions(id: string, text: string): Promise<void> {
 		using h = instructionsDocs.open(id);
 		await h.whenReady;
-		h.content.write(text);
+		h.instructions.write(text);
 	}
 
 	async function readInstructions(id: string): Promise<string> {
 		using h = instructionsDocs.open(id);
 		await h.whenReady;
-		return h.content.read();
+		return h.instructions.read();
 	}
 
 	async function writeReference(id: string, text: string): Promise<void> {

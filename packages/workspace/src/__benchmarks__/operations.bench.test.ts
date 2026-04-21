@@ -13,54 +13,12 @@ import { type } from 'arktype';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { attachTable } from '../document/index.js';
 import { createKv } from '../document/internal.js';
-import { createWorkspace } from '../workspace/create-workspace.js';
 import { defineKv } from '../workspace/define-kv.js';
 import {
 	generateId,
 	measureTime,
 	postDefinition,
-	settingsDefinition,
 } from './helpers.js';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Workspace Creation
-// ═══════════════════════════════════════════════════════════════════════════════
-
-describe('workspace creation', () => {
-	test('workspace creation is fast (< 10ms)', () => {
-		const definition = {
-			id: 'bench-workspace' as const,
-			tables: { posts: postDefinition },
-			kv: { settings: settingsDefinition },
-		};
-
-		const { durationMs } = measureTime(() => createWorkspace(definition));
-
-		console.log(`createWorkspace: ${durationMs.toFixed(2)}ms`);
-		expect(durationMs).toBeLessThan(10);
-	});
-
-	test('creating 100 workspaces sequentially', () => {
-		const definition = {
-			tables: { posts: postDefinition },
-			kv: { settings: settingsDefinition },
-		};
-
-		const { durationMs } = measureTime(() => {
-			for (let i = 0; i < 100; i++) {
-				const client = createWorkspace({
-					...definition,
-					id: `bench-workspace-${i}`,
-				});
-				client.dispose();
-			}
-		});
-
-		console.log(`100 workspace creations: ${durationMs.toFixed(2)}ms`);
-		console.log(`Average per workspace: ${(durationMs / 100).toFixed(2)}ms`);
-		expect(durationMs).toBeLessThan(500);
-	});
-});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Table Operations

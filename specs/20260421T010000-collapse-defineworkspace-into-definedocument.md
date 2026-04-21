@@ -284,10 +284,18 @@ After (one noun):
 
 ### Phase 3: Reentrance guards on content-data primitives
 
-- [ ] **3.1** `attachTable(ydoc, name, def)` — cache wrapper on Y.Doc via a `WeakMap<Y.Doc, Map<string, Table>>`. Second call with same `name` returns cached. Second call with different `def` throws.
-- [ ] **3.2** Same pattern for `attachKv` (singleton per Y.Doc), `attachPlainText` (cache by key), `attachRichText` (cache by key).
-- [ ] **3.3** `attachAwareness` — cache on Y.Doc; second call merges definitions or rejects conflicts.
-- [ ] **3.4** Tests: each primitive gets a "second attach returns same instance, mutates visible through both" test.
+> **Design change (2026-04-21)**: Replaced the spec's "cache the wrapper" design with **throw on second attach**. Config equality checks on second call are fragile (reference vs structural equality on functions/schemas), and the caller's natural structure has exactly one attach site per slot anyway. Throw-loudly is strictly safer and simpler — ~15 lines of shared helper vs ~80 lines of caching logic per primitive.
+>
+> Guards clear on `ydoc.destroy()` so destroy-then-reattach works. Storage is `WeakMap<Y.Doc, Set<slot>>` for per-slot primitives and `WeakSet<Y.Doc>` for singletons — see `packages/document/src/reentrance-guard.ts`.
+>
+> Extended scope to **six** primitives (added `attachEncryption`; audit flagged it as reentrance-unsafe).
+
+- [x] **3.1** `attachTable(ydoc, name, def)` — throw on second attach for `(ydoc, name)`. `attachTables` shares the same slot namespace so `attachTable` + `attachTables` double-attach also throws.
+- [x] **3.2** `attachKv` (workspace-level, singleton) + `attachPlainText` (per key) + `attachRichText` (per key) — same pattern.
+- [x] **3.3** `attachAwareness` — singleton throw. No "merge definitions" mode.
+- [x] **3.4** Tests: TDD — failing tests written first, then guards. Each primitive covers: second-attach-throws (headline), silent-data-loss-loud (before/after mutation), destroy-then-reattach-works, separate-Y.Docs-dont-interfere, different-slots-on-same-Y.Doc (for per-slot primitives).
+- [x] **3.5** (added) Extended to `attachEncryption`. Audit flagged duplicate key-application handlers as unsafe.
+- [x] **3.6** (added) Two pre-existing tests in `attach-plain-text.test.ts` / `attach-rich-text.test.ts` asserted the OLD bug (repeat attach returns same wrapper). Inverted to assert throw.
 
 ### Phase 4: Rewrite app client files as direct closures
 

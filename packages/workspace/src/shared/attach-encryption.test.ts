@@ -142,3 +142,71 @@ describe('attachEncryption', () => {
 		expect(enc.stores.length).toBe(3);
 	});
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// attachEncryption — reentrance guard (TDD: failing before Phase 3 lands)
+// ════════════════════════════════════════════════════════════════════════════
+
+function makeStoresFor(ydoc: Y.Doc) {
+	const storeA = createEncryptedYkvLww<{ title: string }>(ydoc, 'a');
+	const storeB = createEncryptedYkvLww<{ title: string }>(ydoc, 'b');
+	return [storeA, storeB] as const;
+}
+
+describe('attachEncryption — reentrance guard', () => {
+	test('second attach to the same Y.Doc throws with a clear message naming encryption', () => {
+		const ydoc = new Y.Doc({ guid: 'enc-reentrance', gc: false });
+		const stores = makeStoresFor(ydoc);
+		attachEncryption(ydoc, { stores: stores as any });
+
+		expect(() =>
+			attachEncryption(ydoc, { stores: stores as any }),
+		).toThrow(/encryption/i);
+	});
+
+	test('destroy then reattach on the same Y.Doc does not throw', () => {
+		const ydoc = new Y.Doc({ guid: 'enc-destroy-reattach', gc: false });
+		const stores = makeStoresFor(ydoc);
+		attachEncryption(ydoc, { stores: stores as any });
+		ydoc.destroy();
+
+		const freshStores = makeStoresFor(ydoc);
+		expect(() =>
+			attachEncryption(ydoc, { stores: freshStores as any }),
+		).not.toThrow();
+	});
+
+	test('separate Y.Docs do not interfere', () => {
+		const docA = new Y.Doc({ guid: 'enc-doc-a', gc: false });
+		const docB = new Y.Doc({ guid: 'enc-doc-b', gc: false });
+		const storesA = makeStoresFor(docA);
+		const storesB = makeStoresFor(docB);
+		attachEncryption(docA, { stores: storesA as any });
+
+		expect(() =>
+			attachEncryption(docB, { stores: storesB as any }),
+		).not.toThrow();
+	});
+
+	test('silent-data-loss scenario is loud: second attach throws BEFORE any applyKeys on the second wrapper', () => {
+		const ydoc = new Y.Doc({ guid: 'enc-loud', gc: false });
+		const stores = makeStoresFor(ydoc);
+		const first = attachEncryption(ydoc, { stores: stores as any });
+		first.applyKeys(toEncryptionKeys(randomBytes(32)));
+		stores[0].set('1', { title: 'committed under first keyring' });
+
+		let secondWrapperReached = false;
+		expect(() => {
+			const second = attachEncryption(ydoc, { stores: stores as any });
+			secondWrapperReached = true;
+			// A phantom second attachment would let the caller swap keyrings
+			// out from under the first wrapper's owners.
+			second.applyKeys(toEncryptionKeys(randomBytes(32)));
+		}).toThrow(/encryption/i);
+
+		expect(secondWrapperReached).toBe(false);
+		expect(stores[0].get('1')).toEqual({
+			title: 'committed under first keyring',
+		});
+	});
+});

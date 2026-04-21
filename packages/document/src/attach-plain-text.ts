@@ -18,6 +18,7 @@
  * ```
  */
 import type * as Y from 'yjs';
+import { guardSlot } from './reentrance-guard.js';
 
 export type PlainTextAttachment = {
 	/** `Y.Text` — pass this to a CodeMirror/Monaco Yjs binding. */
@@ -38,6 +39,7 @@ export function attachPlainText(
 	ydoc: Y.Doc,
 	key = 'content',
 ): PlainTextAttachment {
+	guardSlot(ydoc, 'attachPlainText', 'plain-text slot', key);
 	const ytext = ydoc.getText(key);
 	return {
 		binding: ytext,

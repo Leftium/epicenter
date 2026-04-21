@@ -87,12 +87,14 @@ describe('attachRichText', () => {
 		expect(txCount).toBe(1);
 	});
 
-	test('repeat attach on same (ydoc, key) returns the same Y.XmlFragment', () => {
+	test('repeat attach on same (ydoc, key) throws — reentrance is rejected', () => {
+		// First wrapper wins; a second attach is a programming error because the
+		// wrapper caches state that would diverge from the first. The reentrance
+		// guard surfaces this loudly rather than silently handing out a fresh
+		// wrapper over the same slot.
 		const ydoc = new Y.Doc();
-		const a = attachRichText(ydoc);
-		const b = attachRichText(ydoc);
-
-		expect(a.binding).toBe(b.binding);
+		attachRichText(ydoc, 'content');
+		expect(() => attachRichText(ydoc, 'content')).toThrow(/content/);
 	});
 
 	test('different keys on the same ydoc produce different bindings', () => {
@@ -101,6 +103,58 @@ describe('attachRichText', () => {
 		const b = attachRichText(ydoc, 'b');
 
 		expect(a.binding).not.toBe(b.binding);
+	});
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// attachRichText — reentrance guard (TDD: failing before Phase 3 lands)
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('attachRichText — reentrance guard', () => {
+	test('second attach to same (ydoc, key) throws with a clear message naming the key', () => {
+		const ydoc = new Y.Doc({ guid: 'attach-rich-text-reentrance' });
+		attachRichText(ydoc, 'body');
+
+		expect(() => attachRichText(ydoc, 'body')).toThrow(/body/);
+	});
+
+	test('destroy then reattach on the same Y.Doc does not throw', () => {
+		const ydoc = new Y.Doc({ guid: 'attach-rich-text-destroy-reattach' });
+		attachRichText(ydoc, 'body');
+		ydoc.destroy();
+
+		expect(() => attachRichText(ydoc, 'body')).not.toThrow();
+	});
+
+	test('separate Y.Docs do not interfere', () => {
+		const docA = new Y.Doc({ guid: 'attach-rich-text-doc-a' });
+		const docB = new Y.Doc({ guid: 'attach-rich-text-doc-b' });
+		attachRichText(docA, 'body');
+
+		expect(() => attachRichText(docB, 'body')).not.toThrow();
+	});
+
+	test('different keys on the same Y.Doc do not throw', () => {
+		const ydoc = new Y.Doc({ guid: 'attach-rich-text-different-keys' });
+		attachRichText(ydoc, 'a');
+
+		expect(() => attachRichText(ydoc, 'b')).not.toThrow();
+	});
+
+	test('silent-data-loss scenario is loud: second attach throws BEFORE any mutation on the second wrapper', () => {
+		const ydoc = new Y.Doc({ guid: 'attach-rich-text-loud' });
+		const first = attachRichText(ydoc, 'body');
+		first.write('hello from first');
+
+		let secondWrapperReached = false;
+		expect(() => {
+			const second = attachRichText(ydoc, 'body');
+			secondWrapperReached = true;
+			second.write('clobbered!');
+		}).toThrow(/body/);
+
+		expect(secondWrapperReached).toBe(false);
+		expect(first.read()).toBe('hello from first');
 	});
 });
 

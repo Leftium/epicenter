@@ -18,9 +18,9 @@ import {
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import {
+	attachEncryptedKv,
+	attachEncryptedTables,
 	attachEncryption,
-	attachKv,
-	attachTables,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createHoneycrispActions, honeycrispTables } from '$lib/workspace';
@@ -35,9 +35,9 @@ const honeycrisp = defineDocument(
 	(id: string) => {
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
-		const tables = attachTables(ydoc, honeycrispTables);
-		const kv = attachKv(ydoc, {});
-		const enc = attachEncryption(ydoc, { tables, kv });
+		const encryption = attachEncryption(ydoc);
+		const tables = attachEncryptedTables(ydoc, encryption, honeycrispTables);
+		const kv = attachEncryptedKv(ydoc, encryption, {});
 
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);
@@ -50,18 +50,18 @@ const honeycrisp = defineDocument(
 		return {
 			id,
 			ydoc,
-			tables: tables.helpers,
-			kv: kv.helper,
-			enc,
+			tables,
+			kv,
+			encryption,
 			idb,
 			sync,
-			actions: createHoneycrispActions(tables.helpers),
+			actions: createHoneycrispActions(tables),
 			batch: (fn: () => void) => ydoc.transact(fn),
 			whenReady: idb.whenLoaded,
 			whenDisposed: Promise.all([
 				idb.whenDisposed,
 				sync.whenDisposed,
-				enc.whenDisposed,
+				encryption.whenDisposed,
 			]).then(() => {}),
 			[Symbol.dispose]() {
 				ydoc.destroy();
@@ -77,7 +77,7 @@ export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
 	onLogin(session) {
-		workspace.enc.applyKeys(session.encryptionKeys);
+		workspace.encryption.applyKeys(session.encryptionKeys);
 		workspace.sync.reconnect();
 	},
 	async onLogout() {

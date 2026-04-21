@@ -15,9 +15,9 @@ import {
 	defineDocument,
 } from '@epicenter/document';
 import {
+	attachEncryptedKv,
+	attachEncryptedTables,
 	attachEncryption,
-	attachKv,
-	attachTables,
 } from '@epicenter/workspace';
 import { isTauri } from '@tauri-apps/api/core';
 import * as Y from 'yjs';
@@ -28,9 +28,9 @@ const whisperingFactory = defineDocument(
 	(id: string) => {
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
-		const tables = attachTables(ydoc, whisperingTables);
-		const kv = attachKv(ydoc, whisperingKv);
-		const enc = attachEncryption(ydoc, { tables, kv });
+		const encryption = attachEncryption(ydoc);
+		const tables = attachEncryptedTables(ydoc, encryption, whisperingTables);
+		const kv = attachEncryptedKv(ydoc, encryption, whisperingKv);
 
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);
@@ -38,15 +38,15 @@ const whisperingFactory = defineDocument(
 		return {
 			id,
 			ydoc,
-			tables: tables.helpers,
-			kv: kv.helper,
-			enc,
+			tables,
+			kv,
+			encryption,
 			idb,
 			batch: (fn: () => void) => ydoc.transact(fn),
 			whenReady: idb.whenLoaded,
 			whenDisposed: Promise.all([
 				idb.whenDisposed,
-				enc.whenDisposed,
+				encryption.whenDisposed,
 			]).then(() => {}),
 			[Symbol.dispose]() {
 				ydoc.destroy();

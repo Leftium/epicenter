@@ -7,13 +7,12 @@
  */
 
 import { type } from 'arktype';
-import { defineDocument } from '@epicenter/document';
 import {
 	attachKv,
 	attachTables,
-	defineKv,
-	defineTable,
-} from '@epicenter/workspace';
+	defineDocument,
+} from '@epicenter/document';
+import { defineKv, defineTable } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
 const redditTables = {
@@ -340,12 +339,12 @@ const redditFactory = defineDocument(
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 		const tables = attachTables(ydoc, redditTables);
 		const kv = attachKv(ydoc, redditKv);
-		// no persistence/sync — in-memory-only importer target
+		// no persistence/sync/encryption — in-memory-only importer target
 		return {
 			id,
 			ydoc,
-			tables: tables.helpers,
-			kv: kv.helper,
+			tables,
+			kv,
 			batch: (fn: () => void) => ydoc.transact(fn),
 			[Symbol.dispose]() {
 				ydoc.destroy();

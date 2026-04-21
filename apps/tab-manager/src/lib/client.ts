@@ -17,9 +17,9 @@ import {
 } from '@epicenter/document';
 import { createAuth } from '@epicenter/svelte/auth';
 import {
+	attachEncryptedKv,
+	attachEncryptedTables,
 	attachEncryption,
-	attachKv,
-	attachTables,
 	dispatchAction,
 } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
@@ -41,16 +41,13 @@ const tabManager = defineDocument(
 	(id: string) => {
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
-		const tables = attachTables(ydoc, tabManagerTables);
-		const kv = attachKv(ydoc, {});
+		const encryption = attachEncryption(ydoc);
+		const tables = attachEncryptedTables(ydoc, encryption, tabManagerTables);
+		const kv = attachEncryptedKv(ydoc, encryption, {});
 		const awareness = attachAwareness(ydoc, tabManagerAwarenessDefs);
-		const enc = attachEncryption(ydoc, { tables, kv });
 
 		const batch = (fn: () => void) => ydoc.transact(fn);
-		const actions = createTabManagerActions({
-			tables: tables.helpers,
-			batch,
-		});
+		const actions = createTabManagerActions({ tables, batch });
 
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);
@@ -68,10 +65,10 @@ const tabManager = defineDocument(
 		return {
 			id,
 			ydoc,
-			tables: tables.helpers,
-			kv: kv.helper,
+			tables,
+			kv,
 			awareness,
-			enc,
+			encryption,
 			idb,
 			sync,
 			actions,
@@ -80,7 +77,7 @@ const tabManager = defineDocument(
 			whenDisposed: Promise.all([
 				idb.whenDisposed,
 				sync.whenDisposed,
-				enc.whenDisposed,
+				encryption.whenDisposed,
 			]).then(() => {}),
 			[Symbol.dispose]() {
 				ydoc.destroy();
@@ -100,7 +97,7 @@ export const auth = createAuth({
 		return { provider: 'google', idToken, nonce };
 	},
 	onLogin(session) {
-		workspace.enc.applyKeys(session.encryptionKeys);
+		workspace.encryption.applyKeys(session.encryptionKeys);
 		workspace.sync.reconnect();
 		void registerDevice();
 	},

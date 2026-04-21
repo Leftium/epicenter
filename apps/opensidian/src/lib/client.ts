@@ -25,9 +25,9 @@ import { skillsDocument } from '@epicenter/skills';
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import {
+	attachEncryptedKv,
+	attachEncryptedTables,
 	attachEncryption,
-	attachKv,
-	attachTables,
 	defineMutation,
 	defineQuery,
 } from '@epicenter/workspace';
@@ -47,19 +47,17 @@ const opensidianFactory = defineDocument(
 	(id: string) => {
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
-		const tables = attachTables(ydoc, opensidianTables);
-		const kv = attachKv(ydoc, {});
-		const enc = attachEncryption(ydoc, { tables, kv });
+		const encryption = attachEncryption(ydoc);
+		const tables = attachEncryptedTables(ydoc, encryption, opensidianTables);
+		const kv = attachEncryptedKv(ydoc, encryption, {});
 
 		const fileContentDocs = createFileContentDocs({
 			workspaceId: id,
-			filesTable: tables.helpers.files,
+			filesTable: tables.files,
 			attach: (doc) => attachIndexedDb(doc),
 		});
-		const sqliteIndex = createSqliteIndex(fileContentDocs)({
-			tables: tables.helpers,
-		});
-		const fs = createYjsFileSystem(tables.helpers.files, fileContentDocs);
+		const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
+		const fs = createYjsFileSystem(tables.files, fileContentDocs);
 		const bash = new Bash({ fs, cwd: '/' });
 
 		const actions = {
@@ -207,9 +205,9 @@ const opensidianFactory = defineDocument(
 		return {
 			id,
 			ydoc,
-			tables: tables.helpers,
-			kv: kv.helper,
-			enc,
+			tables,
+			kv,
+			encryption,
 			idb,
 			sync,
 			fileContentDocs,
@@ -222,7 +220,7 @@ const opensidianFactory = defineDocument(
 			whenDisposed: Promise.all([
 				idb.whenDisposed,
 				sync.whenDisposed,
-				enc.whenDisposed,
+				encryption.whenDisposed,
 			]).then(() => {}),
 			[Symbol.dispose]() {
 				ydoc.destroy();
@@ -270,7 +268,7 @@ export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
 	onLogin(session) {
-		workspace.enc.applyKeys(session.encryptionKeys);
+		workspace.encryption.applyKeys(session.encryptionKeys);
 		workspace.sync.reconnect();
 	},
 	async onLogout() {

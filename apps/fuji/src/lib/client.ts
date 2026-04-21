@@ -19,9 +19,9 @@ import {
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import {
+	attachEncryptedKv,
+	attachEncryptedTables,
 	attachEncryption,
-	attachKv,
-	attachTables,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createFujiActions, fujiTables } from '$lib/workspace';
@@ -36,10 +36,10 @@ const fuji = defineDocument(
 	(id: string) => {
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
-		const tables = attachTables(ydoc, fujiTables);
-		const kv = attachKv(ydoc, {});
+		const encryption = attachEncryption(ydoc);
+		const tables = attachEncryptedTables(ydoc, encryption, fujiTables);
+		const kv = attachEncryptedKv(ydoc, encryption, {});
 		const awareness = attachAwareness(ydoc, {});
-		const enc = attachEncryption(ydoc, { tables, kv });
 
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);
@@ -53,19 +53,19 @@ const fuji = defineDocument(
 		return {
 			id,
 			ydoc,
-			tables: tables.helpers,
-			kv: kv.helper,
+			tables,
+			kv,
 			awareness,
-			enc,
+			encryption,
 			idb,
 			sync,
-			actions: createFujiActions(tables.helpers),
+			actions: createFujiActions(tables),
 			batch: (fn: () => void) => ydoc.transact(fn),
 			whenReady: idb.whenLoaded,
 			whenDisposed: Promise.all([
 				idb.whenDisposed,
 				sync.whenDisposed,
-				enc.whenDisposed,
+				encryption.whenDisposed,
 			]).then(() => {}),
 			[Symbol.dispose]() {
 				ydoc.destroy();
@@ -81,7 +81,7 @@ export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
 	onLogin(session) {
-		workspace.enc.applyKeys(session.encryptionKeys);
+		workspace.encryption.applyKeys(session.encryptionKeys);
 		workspace.sync.reconnect();
 	},
 	async onLogout() {

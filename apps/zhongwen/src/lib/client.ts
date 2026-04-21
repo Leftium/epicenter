@@ -14,9 +14,9 @@ import {
 } from '@epicenter/document';
 import { createAuth } from '@epicenter/svelte/auth';
 import {
+	attachEncryptedKv,
+	attachEncryptedTables,
 	attachEncryption,
-	attachKv,
-	attachTables,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { session } from '$lib/auth';
@@ -26,9 +26,9 @@ const zhongwen = defineDocument(
 	(id: string) => {
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
-		const tables = attachTables(ydoc, zhongwenTables);
-		const kv = attachKv(ydoc, zhongwenKv);
-		const enc = attachEncryption(ydoc, { tables, kv });
+		const encryption = attachEncryption(ydoc);
+		const tables = attachEncryptedTables(ydoc, encryption, zhongwenTables);
+		const kv = attachEncryptedKv(ydoc, encryption, zhongwenKv);
 
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);
@@ -36,15 +36,15 @@ const zhongwen = defineDocument(
 		return {
 			id,
 			ydoc,
-			tables: tables.helpers,
-			kv: kv.helper,
-			enc,
+			tables,
+			kv,
+			encryption,
 			idb,
 			batch: (fn: () => void) => ydoc.transact(fn),
 			whenReady: idb.whenLoaded,
 			whenDisposed: Promise.all([
 				idb.whenDisposed,
-				enc.whenDisposed,
+				encryption.whenDisposed,
 			]).then(() => {}),
 			[Symbol.dispose]() {
 				ydoc.destroy();
@@ -60,7 +60,7 @@ export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
 	onLogin(session) {
-		workspace.enc.applyKeys(session.encryptionKeys);
+		workspace.encryption.applyKeys(session.encryptionKeys);
 	},
 	async onLogout() {
 		await workspace.idb.clearLocal();

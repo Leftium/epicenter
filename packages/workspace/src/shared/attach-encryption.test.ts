@@ -12,10 +12,16 @@
 
 import { describe, expect, test } from 'bun:test';
 import { randomBytes } from '@noble/ciphers/utils.js';
+import { type } from 'arktype';
 import * as Y from 'yjs';
+import { attachTable } from '@epicenter/document';
 import { attachEncryption } from './attach-encryption.js';
 import { bytesToBase64 } from './crypto/index.js';
 import { createEncryptedYkvLww } from './y-keyvalue/y-keyvalue-lww-encrypted.js';
+import { attachEncryptedKv } from '../workspace/attach-kv.js';
+import { attachEncryptedTable } from '../workspace/attach-tables.js';
+import { defineKv } from '../workspace/define-kv.js';
+import { defineTable } from '../workspace/define-table.js';
 import type { EncryptionKeys } from '../workspace/encryption-key.js';
 
 function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
@@ -128,22 +134,69 @@ describe('attachEncryption', () => {
 	});
 });
 
-describe('attachEncryption — reentrance guard', () => {
-	test('destroy then reattach on the same Y.Doc does not throw', () => {
-		const ydoc = new Y.Doc({ guid: 'enc-destroy-reattach', gc: false });
-		attachEncryption(ydoc);
-		ydoc.destroy();
+describe('attachEncryption.assertAllStoresRegistered', () => {
+	const tableDef = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+	const kvDef = {
+		flag: defineKv(type({ on: 'boolean' }), { on: false }),
+	};
 
-		const ydoc2 = new Y.Doc({ guid: 'enc-destroy-reattach-2', gc: false });
-		expect(() => attachEncryption(ydoc2)).not.toThrow();
+	test('passes when every encryption-capable slot is registered', () => {
+		const ydoc = new Y.Doc({ guid: 'assert-ok', gc: false });
+		const enc = attachEncryption(ydoc);
+		attachEncryptedTable(ydoc, enc, 'posts', tableDef);
+		attachEncryptedKv(ydoc, enc, kvDef);
+
+		expect(() => enc.assertAllStoresRegistered(ydoc)).not.toThrow();
 	});
 
-	test('separate Y.Docs do not interfere', () => {
-		const docA = new Y.Doc({ guid: 'enc-doc-a', gc: false });
-		const docB = new Y.Doc({ guid: 'enc-doc-b', gc: false });
-		attachEncryption(docA);
+	test('throws when a table was attached with the plaintext primitive', () => {
+		const ydoc = new Y.Doc({ guid: 'assert-plaintext-table', gc: false });
+		const enc = attachEncryption(ydoc);
+		attachEncryptedTable(ydoc, enc, 'posts', tableDef);
+		// Accident: plaintext primitive used for a slot that should be encrypted.
+		attachTable(ydoc, 'secrets', tableDef);
 
-		expect(() => attachEncryption(docB)).not.toThrow();
+		expect(() => enc.assertAllStoresRegistered(ydoc)).toThrow(
+			/table:secrets/,
+		);
 	});
 
+	test('allowPlaintext opts a slot out of the check', () => {
+		const ydoc = new Y.Doc({ guid: 'assert-allowed', gc: false });
+		const enc = attachEncryption(ydoc);
+		attachEncryptedTable(ydoc, enc, 'posts', tableDef);
+		attachTable(ydoc, 'cache', tableDef);
+
+		expect(() =>
+			enc.assertAllStoresRegistered(ydoc, {
+				allowPlaintext: ['table:cache'],
+			}),
+		).not.toThrow();
+	});
+
+	test('ignores non-encryption-capable slots (rich text, timelines, etc.)', () => {
+		const ydoc = new Y.Doc({ guid: 'assert-ignore', gc: false });
+		const enc = attachEncryption(ydoc);
+		attachEncryptedTable(ydoc, enc, 'posts', tableDef);
+		// Unrelated Yjs type on a slot that is neither 'kv' nor 'table:*'.
+		ydoc.getText('someRichText');
+
+		expect(() => enc.assertAllStoresRegistered(ydoc)).not.toThrow();
+	});
+
+	test('error message lists every unregistered slot', () => {
+		const ydoc = new Y.Doc({ guid: 'assert-multi', gc: false });
+		const enc = attachEncryption(ydoc);
+		attachTable(ydoc, 'first', tableDef);
+		attachTable(ydoc, 'second', tableDef);
+
+		let caught: Error | undefined;
+		try {
+			enc.assertAllStoresRegistered(ydoc);
+		} catch (err) {
+			caught = err as Error;
+		}
+		expect(caught?.message).toMatch(/table:first/);
+		expect(caught?.message).toMatch(/table:second/);
+	});
 });

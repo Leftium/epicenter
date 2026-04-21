@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Kv, Table } from '../../../document/index.js';
+import type { Kv, Table, TableDefinitions } from '../../index.js';
 import type { MaybePromise } from '../../../workspace/lifecycle.js';
 import type { SerializeResult } from './markdown.js';
 import { toMarkdown } from './markdown.js';
@@ -13,26 +13,36 @@ import { parseMarkdownFile } from './parse-markdown-file.js';
  * `.kv()` to opt in KV. Each `.table()` call validates the table name against
  * the workspace definition and infers the row type for the serialize callback.
  *
- * The materializer awaits `ctx.init` before reading data, so persistence
+ * The materializer awaits `ctx.whenReady` before reading data, so persistence
  * and sync have loaded before the initial flush. All `.table()` and `.kv()`
  * calls happen synchronously in the factory closure before `whenFlushed` resolves.
  *
+ * Use `Symbol.dispose` (or `[Symbol.dispose]()`) for teardown. The caller
+ * composes its own disposal — usually chained with other attachments.
+ *
  * @example
  * ```typescript
- * .withExtension('materializer', (ctx) =>
- *   createMarkdownMaterializer(ctx, { dir: './data' })
- *     .table('posts', { serialize: slugFilename('title') })
- *     .kv(),
+ * const markdown = createMarkdownMaterializer(
+ *   { tables, definitions, whenReady },
+ *   { dir: './data' },
  * )
+ *   .table('posts', { serialize: slugFilename('title') })
+ *   .kv();
  * ```
  */
 export function createMarkdownMaterializer<
 	// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
 	TTables extends Record<string, Table<any>>,
-	// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv helpers
-	TKv extends Kv<any>,
 >(
-	ctx: { tables: TTables; kv: TKv; init: Promise<void> },
+	ctx: {
+		tables: TTables;
+		/** Unused for markdown but accepted for API symmetry with the sqlite materializer. */
+		definitions?: TableDefinitions;
+		/** Optional KV helper — pass if `.kv()` will be called. */
+		// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv helpers
+		kv?: Kv<any>;
+		whenReady: Promise<void>;
+	},
 	config: {
 		/** Base output directory. Accepts a string or async getter for lazy path resolution. */
 		dir: string | (() => MaybePromise<string>);
@@ -56,7 +66,7 @@ export function createMarkdownMaterializer<
 	type TableRow<TName extends keyof TTables & string> =
 		TTables[TName] extends Table<infer TRow> ? TRow : never;
 
-	type MaterializerExports = {
+	type MaterializerApi = {
 		whenFlushed: Promise<void>;
 		/**
 		 * Read `.md` files from disk and import them into the Yjs workspace via `table.set()`.
@@ -81,10 +91,8 @@ export function createMarkdownMaterializer<
 		pullToMarkdown(): Promise<{ written: number }>;
 	};
 
-	type MaterializerBuilder = {
-		exports: MaterializerExports;
-		init: Promise<void>;
-		dispose(): void;
+	type MaterializerBuilder = MaterializerApi & {
+		[Symbol.dispose](): void;
 		table<TName extends keyof TTables & string>(
 			name: TName,
 			config?: {
@@ -188,7 +196,13 @@ export function createMarkdownMaterializer<
 	};
 
 	const materializeKv = async (dir: string) => {
-		const kvState: Record<string, unknown> = { ...ctx.kv.getAll() };
+		if (!ctx.kv) {
+			throw new Error(
+				'createMarkdownMaterializer: `.kv()` was called but `ctx.kv` was not provided.',
+			);
+		}
+		const kv = ctx.kv;
+		const kvState: Record<string, unknown> = { ...kv.getAll() };
 		const serialize =
 			kvConfig?.serialize ??
 			((data: Record<string, unknown>) => ({
@@ -200,7 +214,7 @@ export function createMarkdownMaterializer<
 		const initial = serialize(kvState);
 		await writeFile(join(dir, initial.filename), initial.content);
 
-		const unsubscribe = ctx.kv.observeAll((changes) => {
+		const unsubscribe = kv.observeAll((changes) => {
 			void (async () => {
 				for (const [key, change] of changes) {
 					if (change.type === 'set') {
@@ -226,7 +240,7 @@ export function createMarkdownMaterializer<
 		typeof config.dir === 'function' ? await config.dir() : config.dir;
 
 	const whenFlushed = (async () => {
-		await ctx.init;
+		await ctx.whenReady;
 		const dir = await resolveDir();
 		await mkdir(dir, { recursive: true });
 
@@ -239,7 +253,7 @@ export function createMarkdownMaterializer<
 		}
 	})();
 
-	const exports: MaterializerExports = {
+	const api: MaterializerApi = {
 		whenFlushed,
 		async pushFromMarkdown() {
 			const dir = await resolveDir();
@@ -325,9 +339,8 @@ export function createMarkdownMaterializer<
 	};
 
 	const builder: MaterializerBuilder = {
-		exports,
-		init: whenFlushed,
-		dispose() {
+		...api,
+		[Symbol.dispose]() {
 			for (const unsubscribe of unsubscribers.splice(0)) {
 				unsubscribe();
 			}

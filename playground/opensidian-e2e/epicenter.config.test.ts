@@ -15,13 +15,20 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { attachSqlite } from '@epicenter/workspace';
+import {
+	attachEncryptedKv,
+	attachEncryptedTables,
+	attachEncryption,
+	attachSqlite,
+	generateId,
+} from '@epicenter/workspace';
 import { createFileContentDocs } from '@epicenter/filesystem';
-import { createWorkspace, generateId } from '@epicenter/workspace';
-import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
-import { sqlitePersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
-import { opensidianDefinition } from 'opensidian/workspace';
+import { toMarkdown } from '@epicenter/workspace/document/materializer/markdown';
+import { opensidianTables } from 'opensidian/workspace';
+import * as Y from 'yjs';
 import { pushFromMarkdown } from './push-from-markdown';
+
+const WORKSPACE_ID = 'opensidian';
 
 const PERSISTENCE_DIR = join(
 	import.meta.dir,
@@ -34,18 +41,32 @@ function dbPath(id: string) {
 
 /** Create a workspace client with filesystem persistence for testing. */
 function createTestClient() {
-	const client = createWorkspace(opensidianDefinition).withExtension(
-		'persistence',
-		sqlitePersistence({ filePath: dbPath(opensidianDefinition.id) }),
-	);
+	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
+	const encryption = attachEncryption(ydoc);
+	const tables = attachEncryptedTables(ydoc, encryption, opensidianTables);
+	const kv = attachEncryptedKv(ydoc, encryption, {});
+	const persistence = attachSqlite(ydoc, { filePath: dbPath(WORKSPACE_ID) });
+
 	const contentDocs = createFileContentDocs({
-		workspaceId: client.id,
-		filesTable: client.tables.files,
-		attach: (ydoc) =>
-			attachSqlite(ydoc, {
-				filePath: join(PERSISTENCE_DIR, 'content', `${ydoc.guid}.db`),
+		workspaceId: WORKSPACE_ID,
+		filesTable: tables.files,
+		attach: (contentDoc) =>
+			attachSqlite(contentDoc, {
+				filePath: join(PERSISTENCE_DIR, 'content', `${contentDoc.guid}.db`),
 			}),
 	});
+
+	const client = {
+		id: WORKSPACE_ID,
+		ydoc,
+		tables,
+		kv,
+		whenReady: persistence.whenLoaded,
+		async dispose() {
+			ydoc.destroy();
+			await persistence.whenDisposed;
+		},
+	};
 	return { client, contentDocs };
 }
 
@@ -81,7 +102,7 @@ describe('e2e: opensidian workspace', () => {
 	});
 
 	test('workspace has correct ID', () => {
-		expect(opensidianDefinition.id).toBe('opensidian');
+		expect(WORKSPACE_ID).toBe('opensidian');
 	});
 
 	test('table CRUD: create folder and file', async () => {
@@ -176,20 +197,38 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 	const IMPORT_FILES_DIR = join(IMPORT_DIR, 'files');
 
 	function createImportClient() {
-		const client = createWorkspace(opensidianDefinition).withExtension(
-			'persistence',
-			sqlitePersistence({
-				filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
-			}),
-		);
+		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
+		const encryption = attachEncryption(ydoc);
+		const tables = attachEncryptedTables(ydoc, encryption, opensidianTables);
+		const kv = attachEncryptedKv(ydoc, encryption, {});
+		const persistence = attachSqlite(ydoc, {
+			filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
+		});
+
 		const contentDocs = createFileContentDocs({
-			workspaceId: client.id,
-			filesTable: client.tables.files,
-			attach: (ydoc) =>
-				attachSqlite(ydoc, {
-					filePath: join(IMPORT_PERSISTENCE, 'content', `${ydoc.guid}.db`),
+			workspaceId: WORKSPACE_ID,
+			filesTable: tables.files,
+			attach: (contentDoc) =>
+				attachSqlite(contentDoc, {
+					filePath: join(
+						IMPORT_PERSISTENCE,
+						'content',
+						`${contentDoc.guid}.db`,
+					),
 				}),
 		});
+
+		const client = {
+			id: WORKSPACE_ID,
+			ydoc,
+			tables,
+			kv,
+			whenReady: persistence.whenLoaded,
+			async dispose() {
+				ydoc.destroy();
+				await persistence.whenDisposed;
+			},
+		};
 		return { client, contentDocs };
 	}
 

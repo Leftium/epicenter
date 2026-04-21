@@ -17,7 +17,7 @@ import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import { standardSchemaToJsonSchema } from '../../../shared/standard-schema.js';
 import Type from 'typebox';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
-import type { BaseRow, Table } from '../../../document/index.js';
+import type { BaseRow, Table, TableDefinitions } from '../../index.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
 import { ftsSearch, setupFtsTable } from './fts.js';
 import type {
@@ -69,10 +69,12 @@ type AnyTable = Table<any>;
 export function createSqliteMaterializer<
 	TTables extends Record<string, AnyTable>,
 >(
-	{ tables, definitions, init }: {
+	{ tables, definitions, whenReady }: {
 		tables: TTables;
-		definitions: { tables: Record<string, unknown> };
-		init: Promise<void>;
+		/** Table schema record (plain `TableDefinitions`). Used for DDL generation. */
+		definitions: TableDefinitions;
+		/** Gate: the materializer awaits this before initial flush. */
+		whenReady: Promise<void>;
 	},
 	{ db, debounceMs = 100 }: { db: MirrorDatabase; debounceMs?: number },
 ) {
@@ -316,7 +318,7 @@ export function createSqliteMaterializer<
 	// ── Lifecycle ────────────────────────────────────────────────
 
 	async function initialize() {
-		await init;
+		await whenReady;
 
 		if (isDisposed) {
 			return;
@@ -324,7 +326,7 @@ export function createSqliteMaterializer<
 
 		// Create tables and FTS indexes
 		for (const [tableName, tableConfig] of tableConfigs) {
-			const jsonSchema = getTableJsonSchema({ definitions }, tableName);
+			const jsonSchema = getTableJsonSchema(definitions, tableName);
 			await db.run(generateDdl(tableName, jsonSchema));
 
 			if (tableConfig.fts && tableConfig.fts.length > 0) {
@@ -374,7 +376,7 @@ export function createSqliteMaterializer<
 
 	const whenFlushed = initialize();
 
-	const exports = {
+	const api = {
 		whenFlushed,
 		db,
 		/** FTS5 search across a materialized table. Only present when at least one table has `fts` configured. */
@@ -407,10 +409,8 @@ export function createSqliteMaterializer<
 		}),
 	};
 
-	type MaterializerBuilder = {
-		exports: typeof exports;
-		init: Promise<void>;
-		dispose(): void;
+	type MaterializerBuilder = typeof api & {
+		[Symbol.dispose](): void;
 		/**
 		 * Opt in a workspace table for SQLite materialization.
 		 *
@@ -435,9 +435,8 @@ export function createSqliteMaterializer<
 	};
 
 	const builder: MaterializerBuilder = {
-		exports,
-		init: whenFlushed,
-		dispose,
+		...api,
+		[Symbol.dispose]: dispose,
 		table(name, tableConfig) {
 			tableConfigs.set(name, tableConfig ?? {});
 			return builder;
@@ -452,10 +451,10 @@ export function createSqliteMaterializer<
 // ════════════════════════════════════════════════════════════════════════════
 
 function getTableJsonSchema(
-	context: { definitions: { tables: Record<string, unknown> } },
+	definitions: TableDefinitions,
 	tableName: string,
 ): Record<string, unknown> {
-	const tableDef = context.definitions.tables[tableName];
+	const tableDef = definitions[tableName];
 	if (tableDef === null || tableDef === undefined) {
 		throw new Error(
 			`SQLite materializer definition for "${tableName}" is missing.`,

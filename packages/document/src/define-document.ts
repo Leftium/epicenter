@@ -110,7 +110,7 @@ const DEFAULT_GC_TIME = 30_000;
 
 type DocEntry<T extends { ydoc: Y.Doc } & Disposable> = {
 	/** The user's pristine `build()` return value. Never mutated. */
-	attach: T;
+	bundle: T;
 	openCount: number;
 	gcTimer: ReturnType<typeof setTimeout> | null;
 	disposed: boolean;
@@ -144,29 +144,29 @@ export function defineDocument<
 		// User closure runs synchronously. If it throws, we DON'T insert into
 		// the cache — next `.open(sameId)` re-runs the closure (no poisoned
 		// cache entry). The caller sees the thrown error.
-		const attach = build(id);
+		const bundle = build(id);
 
 		const recorded = recordedGuids.get(id);
-		if (recorded !== undefined && recorded !== attach.ydoc.guid) {
+		if (recorded !== undefined && recorded !== bundle.ydoc.guid) {
 			// Don't leak the half-built bundle — dispose before throwing so the
 			// user's own `[Symbol.dispose]` can clean up its providers.
 			try {
-				attach[Symbol.dispose]();
+				bundle[Symbol.dispose]();
 			} catch {
 				// best-effort — surface the stability error, not the dispose error
 			}
 			throw new Error(
 				`[defineDocument] guid instability for id=${String(id)}: ` +
-					`expected ${recorded}, got ${attach.ydoc.guid}. ` +
+					`expected ${recorded}, got ${bundle.ydoc.guid}. ` +
 					`Ensure your build closure produces a deterministic guid.`,
 			);
 		}
 		if (recorded === undefined) {
-			recordedGuids.set(id, attach.ydoc.guid);
+			recordedGuids.set(id, bundle.ydoc.guid);
 		}
 
 		const entry: DocEntry<T> = {
-			attach,
+			bundle,
 			openCount: 0,
 			gcTimer: null,
 			disposed: false,
@@ -190,9 +190,9 @@ export function defineDocument<
 		}
 		// Builder owns what disposal means. Any async teardown settles in the
 		// background; callers awaiting a full teardown barrier do so via
-		// `close(id)`, which awaits `attach.whenDisposed` if present.
+		// `close(id)`, which awaits `bundle.whenDisposed` if present.
 		try {
-			entry.attach[Symbol.dispose]();
+			entry.bundle[Symbol.dispose]();
 		} catch (err) {
 			console.error('[defineDocument] bundle [Symbol.dispose]() threw:', err);
 		}
@@ -202,7 +202,7 @@ export function defineDocument<
 		open(id) {
 			// Each open() mints a fresh disposable handle with its own
 			// `disposed` flag, so N opens require N disposes before the gc
-			// timer starts. The handle prototype-chains to `entry.attach` — so
+			// timer starts. The handle prototype-chains to `entry.bundle` — so
 			// `h.ydoc` and any user bundle properties read through without
 			// mutating the user's object.
 			const entry = openDocuments.get(id) ?? construct(id);
@@ -236,7 +236,7 @@ export function defineDocument<
 				}, gcTime);
 			};
 
-			const handle = Object.create(entry.attach) as DocumentHandle<T>;
+			const handle = Object.create(entry.bundle) as DocumentHandle<T>;
 			Object.defineProperties(handle, {
 				dispose: { value: dispose },
 				[Symbol.dispose]: { value: dispose },
@@ -248,8 +248,8 @@ export function defineDocument<
 			const entry = openDocuments.get(id);
 			if (!entry) return;
 			disposeEntry(id, entry);
-			if ('whenDisposed' in entry.attach) {
-				await (entry.attach as { whenDisposed?: Promise<void> }).whenDisposed;
+			if ('whenDisposed' in entry.bundle) {
+				await (entry.bundle as { whenDisposed?: Promise<void> }).whenDisposed;
 			}
 		},
 
@@ -259,8 +259,8 @@ export function defineDocument<
 			for (const [id, entry] of entries) disposeEntry(id, entry);
 			await Promise.all(
 				entries.map(([, entry]) => {
-					if ('whenDisposed' in entry.attach) {
-						return (entry.attach as { whenDisposed?: Promise<void> })
+					if ('whenDisposed' in entry.bundle) {
+						return (entry.bundle as { whenDisposed?: Promise<void> })
 							.whenDisposed;
 					}
 					return undefined;

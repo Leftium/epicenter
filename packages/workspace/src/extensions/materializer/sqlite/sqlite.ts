@@ -17,7 +17,7 @@ import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import { standardSchemaToJsonSchema } from '../../../shared/standard-schema.js';
 import Type from 'typebox';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
-import type { BaseRow, Table } from '../../../workspace/types.js';
+import type { BaseRow, Table } from '@epicenter/document';
 import { generateDdl, quoteIdentifier } from './ddl.js';
 import { ftsSearch, setupFtsTable } from './fts.js';
 import type {

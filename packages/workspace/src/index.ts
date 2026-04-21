@@ -44,7 +44,11 @@ export type { InferRpcMap, RpcActionMap } from './rpc/types';
 // LIFECYCLE PROTOCOL
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { MaybePromise, RawExtension } from './workspace/lifecycle';
+export type {
+	MaybePromise,
+	RawExtension,
+	SharedExtensionContext,
+} from './workspace/lifecycle';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERROR TYPES
@@ -144,13 +148,10 @@ export {
 	encryptionKeysFingerprint,
 } from './workspace/encryption-key';
 export type {
-	AnyWorkspaceClient,
 	Awareness,
 	AwarenessDefinitions,
 	AwarenessState,
 	BaseRow,
-	ExtensionContext,
-	ExtensionFactory,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,
@@ -162,17 +163,20 @@ export type {
 	KvDefinitions,
 	NotFoundResult,
 	RowResult,
-	SharedExtensionContext,
 	Table,
 	TableDefinition,
 	TableDefinitions,
 	Tables,
 	UpdateResult,
 	ValidRowResult,
+} from '@epicenter/document';
+export type {
+	AnyWorkspaceClient,
+	ExtensionContext,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
-} from './workspace/types';
+} from './workspace/create-workspace';
 
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS

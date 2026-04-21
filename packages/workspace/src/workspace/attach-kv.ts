@@ -8,12 +8,11 @@
  * @module
  */
 
-import { KV_KEY } from '@epicenter/document';
+import { KV_KEY, type Kv, type KvDefinitions } from '@epicenter/document';
 import { createKv } from '@epicenter/document/internal';
 import type * as Y from 'yjs';
 import type { EncryptionAttachment } from '../shared/attach-encryption.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import type { Kv, KvDefinitions } from './types.js';
 
 export function attachEncryptedKv<T extends KvDefinitions>(
 	ydoc: Y.Doc,

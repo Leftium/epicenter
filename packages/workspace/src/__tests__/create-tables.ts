@@ -1,6 +1,9 @@
-import { attachTable } from '@epicenter/document';
+import {
+	attachTable,
+	type TableDefinitions,
+	type Tables,
+} from '@epicenter/document';
 import type * as Y from 'yjs';
-import type { TableDefinitions, Tables } from '../workspace/types.js';
 
 /**
  * Test-only convenience: attach every table in a definitions map to a Y.Doc.

@@ -50,7 +50,15 @@
  * ```
  */
 
-import { attachAwareness } from '@epicenter/document';
+import {
+	attachAwareness,
+	type Awareness,
+	type AwarenessDefinitions,
+	type Kv,
+	type KvDefinitions,
+	type TableDefinitions,
+	type Tables,
+} from '@epicenter/document';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import { attachEncryption } from '../shared/attach-encryption.js';
@@ -64,15 +72,282 @@ import {
 	type RawExtension,
 	startDisposeLifo,
 } from './lifecycle.js';
-import type {
-	AwarenessDefinitions,
-	ExtensionContext,
-	KvDefinitions,
+
+// ════════════════════════════════════════════════════════════════════════════
+// TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Context passed to workspace extension factories.
+ *
+ * This is a `WorkspaceClient` minus lifecycle methods (`dispose`, the composite
+ * `whenReady`) plus the framework-internal `init` chain signal — extension
+ * factories receive the full client surface but don't control the workspace's
+ * lifecycle. They return their own lifecycle hooks instead.
+ *
+ * ```typescript
+ * .withExtension('persistence', ({ ydoc }) => { ... })
+ * .withExtension('sync', ({ ydoc, awareness, init }) => { ... })
+ * .withExtension('sqlite', ({ id, tables }) => { ... })
+ * ```
+ *
+ * `init` is the composite chain signal from all PRIOR extensions — use it to
+ * sequence initialization (e.g., wait for persistence before connecting sync).
+ *
+ * `extensions` provides typed access to prior extensions' exports.
+ */
+export type ExtensionContext<
+	TId extends string = string,
+	TTableDefinitions extends TableDefinitions = TableDefinitions,
+	TKvDefinitions extends KvDefinitions = KvDefinitions,
+	TAwarenessDefinitions extends AwarenessDefinitions = AwarenessDefinitions,
+	TExtensions extends Record<string, unknown> = Record<string, unknown>,
+> = Omit<
+	WorkspaceClient<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions
+	>,
+	'dispose' | 'whenReady' | typeof Symbol.asyncDispose
+> & {
+	/**
+	 * Framework chain signal — resolves once every prior extension's `init`
+	 * promise has resolved. Use to sequence initialization across the chain.
+	 */
+	init: Promise<void>;
+};
+
+/** The workspace client returned by createWorkspace() */
+export type WorkspaceClient<
+	TId extends string,
+	TTableDefinitions extends TableDefinitions,
+	TKvDefinitions extends KvDefinitions,
+	TAwarenessDefinitions extends AwarenessDefinitions,
+	TExtensions extends Record<string, unknown>,
+> = {
+	/** Workspace identifier */
+	id: TId;
+	/** The underlying Y.Doc instance */
+	ydoc: Y.Doc;
+	/** Workspace definitions for introspection */
+	definitions: {
+		tables: TTableDefinitions;
+		kv: TKvDefinitions;
+		awareness: TAwarenessDefinitions;
+	};
+	/** Typed table helpers — CRUD operations per table. */
+	tables: Tables<TTableDefinitions>;
+	/** Typed KV helper */
+	kv: Kv<TKvDefinitions>;
+	/** Typed awareness helper — always present, like tables and kv */
+	awareness: Awareness<TAwarenessDefinitions>;
+	/**
+	 * Extension exports (accumulated via `.withExtension()` calls).
+	 *
+	 * Each entry is the exports object returned by the extension factory.
+	 * Access exports directly — no wrapper:
+	 *
+	 * ```typescript
+	 * client.extensions.persistence.clearLocalData();
+	 * client.extensions.sqlite.db.query('SELECT ...');
+	 * ```
+	 *
+	 * Use `client.whenReady` to wait for all extensions to initialize.
+	 */
+	extensions: TExtensions;
+
+	/**
+	 * Execute multiple operations atomically in a single Y.js transaction.
+	 *
+	 * Groups all table and KV mutations inside the callback into one transaction.
+	 * This means:
+	 * - Observers fire once (not per-operation)
+	 * - Creates a single undo/redo step
+	 * - All changes are applied together
+	 *
+	 * The callback receives nothing because `tables` and `kv` are the same objects
+	 * whether you're inside `batch()` or not — `ydoc.transact()` makes ALL operations
+	 * on the shared doc atomic automatically. No special transactional wrapper needed.
+	 *
+	 * **Note**: Yjs transactions do NOT roll back on error. If the callback throws,
+	 * any mutations that already executed within the callback are still applied.
+	 *
+	 * Nested `batch()` calls are safe — Yjs transact is reentrant, so inner calls
+	 * are absorbed by the outer transaction.
+	 *
+	 * @param fn - Callback containing table/KV operations to batch
+	 */
+	batch(fn: () => void): void;
+
+	/**
+	 * Apply a binary Y.js update to the underlying document.
+	 *
+	 * Use this to hydrate the workspace from a persisted snapshot (e.g. a `.yjs`
+	 * file on disk) without exposing the raw Y.Doc to consumer code.
+	 *
+	 * @param update - A Uint8Array produced by `Y.encodeStateAsUpdate()` or equivalent
+	 */
+	loadSnapshot(update: Uint8Array): void;
+
+	/**
+	 * Apply encryption keys to all stores.
+	 *
+	 * Decodes base64 user keys, derives per-workspace keys via HKDF-SHA256,
+	 * and activates encryption on all stores. Once activated, stores permanently
+	 * refuse plaintext writes — the only reset path is `clearLocalData()`.
+	 *
+	 * This method is synchronous — HKDF via @noble/hashes and XChaCha20 via
+	 * @noble/ciphers are both sync. Call it after persistence is ready but
+	 * before connecting sync.
+	 *
+	 * @param keys - Non-empty array of versioned user keys from the auth session
+	 */
+	applyEncryptionKeys(keys: EncryptionKeys): void;
+
+	/**
+	 * Wipe local workspace data.
+	 *
+	 * Calls extension `clearLocalData()` hooks in LIFO order.
+	 */
+	clearLocalData(): Promise<void>;
+
+	/**
+	 * Resolves when every extension's `init` chain signal has resolved. Use as
+	 * a render gate — after this resolves, all persistence has loaded, all
+	 * materializers have flushed, and all sync transports have connected (per
+	 * each extension's contract).
+	 */
+	whenReady: Promise<void>;
+
+	/**
+	 * Release all resources—data is preserved on disk.
+	 *
+	 * Calls `dispose()` on every extension in LIFO order (last registered, first disposed).
+	 * Stops observers, closes database connections, disconnects sync providers.
+	 *
+	 * After calling, the client is unusable.
+	 *
+	 * Safe to call multiple times (idempotent).
+	 */
+	dispose(): Promise<void>;
+
+	/** Async dispose support */
+	[Symbol.asyncDispose](): Promise<void>;
+};
+
+/**
+ * Definition for a workspace, separated from instantiation.
+ *
+ * This is a pure data structure for composability and type inference.
+ * Pass to createWorkspace() to instantiate.
+ */
+export type WorkspaceDefinition<
+	TId extends string,
+	TTableDefinitions extends TableDefinitions = Record<string, never>,
+	TKvDefinitions extends KvDefinitions = Record<string, never>,
+	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
+> = {
+	id: TId;
+	tables?: TTableDefinitions;
+	kv?: TKvDefinitions;
+	/** Record of awareness field schemas. Each field has its own StandardSchemaV1 schema. */
+	awareness?: TAwarenessDefinitions;
+	/**
+	 * Yjs garbage collection for the workspace Y.Doc. Omit to use the
+	 * sync-safe default (`false`), which keeps deletion markers so peers that
+	 * haven't seen the deletes yet can still reconcile. Set `true` for purely
+	 * local workspaces where memory pressure matters more than sync safety.
+	 */
+	gc?: boolean;
+};
+
+/**
+ * Builder returned by `createWorkspace()` and by each `.withExtension()` call.
+ *
+ * IS a usable client AND has `.withExtension()` + `.withActions()`.
+ */
+export type WorkspaceClientBuilder<
+	TId extends string,
+	TTableDefinitions extends TableDefinitions,
+	TKvDefinitions extends KvDefinitions,
+	TAwarenessDefinitions extends AwarenessDefinitions,
+	TExtensions extends Record<string, unknown> = Record<string, never>,
+	TActions extends Actions = Record<string, never>,
+> = WorkspaceClient<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	TAwarenessDefinitions,
+	TExtensions
+> & {
+	/** Accumulated actions from `.withActions()` calls. Empty object when none declared. */
+	actions: TActions;
+
+	/**
+	 * Register a workspace extension.
+	 *
+	 * The factory receives the full workspace context (tables, KV, awareness,
+	 * prior extensions). Extensions initialize in registration order; each
+	 * factory sees a `whenReady` promise that resolves when all previously
+	 * registered extensions have finished their own init.
+	 */
+	withExtension<TKey extends string, TExports extends Record<string, unknown>>(
+		key: TKey,
+		factory: (
+			context: ExtensionContext<
+				TId,
+				TTableDefinitions,
+				TKvDefinitions,
+				TAwarenessDefinitions,
+				TExtensions
+			>,
+		) => RawExtension<TExports> | void,
+	): WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions & Record<TKey, TExports>,
+		TActions
+	>;
+
+	/**
+	 * Attach actions to the workspace client.
+	 */
+	withActions<TNewActions extends Actions>(
+		factory: (
+			client: WorkspaceClient<
+				TId,
+				TTableDefinitions,
+				TKvDefinitions,
+				TAwarenessDefinitions,
+				TExtensions
+			>,
+		) => TNewActions,
+	): WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions,
+		TActions & TNewActions
+	>;
+};
+
+/**
+ * Type alias for any workspace client (used for duck-typing in CLI/server).
+ */
+export type AnyWorkspaceClient = WorkspaceClient<
+	string,
 	TableDefinitions,
-	WorkspaceClient,
-	WorkspaceClientBuilder,
-	WorkspaceDefinition,
-} from './types.js';
+	KvDefinitions,
+	AwarenessDefinitions,
+	Record<string, unknown>
+> & {
+	actions?: Actions;
+};
 
 /**
  * Create a workspace client with chainable extension support.

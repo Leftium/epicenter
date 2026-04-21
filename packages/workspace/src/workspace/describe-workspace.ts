@@ -28,7 +28,7 @@ import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import type { TSchema } from 'typebox';
 import { type Actions, iterateActions } from '../shared/actions.js';
 import { standardSchemaToJsonSchema } from '../shared/standard-schema.js';
-import type { AnyWorkspaceClient } from './types.js';
+import type { AnyWorkspaceClient } from './create-workspace.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DESCRIPTOR TYPES

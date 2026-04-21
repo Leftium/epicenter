@@ -73,7 +73,11 @@ export {
 // Error types
 export { ExtensionError } from '../shared/errors.js';
 // Lifecycle protocol
-export type { MaybePromise, RawExtension } from './lifecycle.js';
+export type {
+	MaybePromise,
+	RawExtension,
+	SharedExtensionContext,
+} from './lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
@@ -119,43 +123,33 @@ export { createUnionSchema } from './schema-union.js';
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
-	// Any-typed client (for duck-typing in CLI/server)
-	AnyWorkspaceClient,
-	// Awareness types
 	Awareness,
 	AwarenessDefinitions,
 	AwarenessState,
-	// Base row type
 	BaseRow,
-	// Extension types
-	ExtensionContext,
-	ExtensionFactory,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,
 	InferTableRow,
 	InvalidRowResult,
-	// JSON types (re-exported from wellcrafted/json)
-	JsonObject,
-	JsonValue,
 	Kv,
 	KvChange,
 	KvDefinition,
 	KvDefinitions,
 	NotFoundResult,
-	// Result types - composed
 	RowResult,
-	SharedExtensionContext,
-	// Table types
 	Table,
 	TableDefinition,
 	TableDefinitions,
 	Tables,
 	UpdateResult,
-	// Result types - building blocks
 	ValidRowResult,
+} from '@epicenter/document';
+export type { JsonObject, JsonValue } from 'wellcrafted/json';
+export type {
+	AnyWorkspaceClient,
+	ExtensionContext,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
-	// Workspace types
 	WorkspaceDefinition,
-} from './types.js';
+} from './create-workspace.js';

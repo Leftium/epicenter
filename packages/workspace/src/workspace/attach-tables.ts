@@ -17,18 +17,18 @@
  * @module
  */
 
-import { TableKey } from '@epicenter/document';
+import {
+	TableKey,
+	type InferTableRow,
+	type Table,
+	type TableDefinition,
+	type TableDefinitions,
+	type Tables,
+} from '@epicenter/document';
 import { createTable } from '@epicenter/document/internal';
 import type * as Y from 'yjs';
 import type { EncryptionAttachment } from '../shared/attach-encryption.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import type {
-	InferTableRow,
-	Table,
-	TableDefinition,
-	TableDefinitions,
-	Tables,
-} from './types.js';
 
 /**
  * Bind a single encrypted `TableDefinition` to a Y.Doc.

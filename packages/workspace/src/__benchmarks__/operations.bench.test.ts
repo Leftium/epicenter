@@ -15,7 +15,6 @@ import { attachTable } from '@epicenter/document';
 import { createKv } from '@epicenter/document/internal';
 import { createWorkspace } from '../workspace/create-workspace.js';
 import { defineKv } from '../workspace/define-kv.js';
-import { defineWorkspace } from '../workspace/define-workspace.js';
 import {
 	generateId,
 	measureTime,
@@ -29,11 +28,11 @@ import {
 
 describe('workspace creation', () => {
 	test('workspace creation is fast (< 10ms)', () => {
-		const definition = defineWorkspace({
-			id: 'bench-workspace',
+		const definition = {
+			id: 'bench-workspace' as const,
 			tables: { posts: postDefinition },
 			kv: { settings: settingsDefinition },
-		});
+		};
 
 		const { durationMs } = measureTime(() => createWorkspace(definition));
 
@@ -42,11 +41,10 @@ describe('workspace creation', () => {
 	});
 
 	test('creating 100 workspaces sequentially', () => {
-		const definition = defineWorkspace({
-			id: 'bench-workspace',
+		const definition = {
 			tables: { posts: postDefinition },
 			kv: { settings: settingsDefinition },
-		});
+		};
 
 		const { durationMs } = measureTime(() => {
 			for (let i = 0; i < 100; i++) {

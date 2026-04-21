@@ -7,15 +7,21 @@
 
 /**
  * A managed, retaining document handle. Returned by `factory.open(id)`. Each
- * call returns a distinct disposable handle over the same underlying
- * `ydoc`/attachments — N opens require N disposes.
+ * call returns a distinct disposable handle over the same underlying bundle
+ * (the user's `build(id)` return value — `{ ydoc, ...attachments }`). N opens
+ * require N disposes.
+ *
+ * The handle is created via `Object.create(bundle)` — all user-defined
+ * properties on the bundle (including conventional ones like `whenReady` or
+ * `whenDisposed`) are accessible through the prototype chain. Only the three
+ * dispose methods below are injected by the cache.
  *
  * Pair every `open()` with a `dispose()`:
  *
  * ```ts
  * // Manual
  * const h = docs.open('abc');
- * await h.whenLoaded;
+ * await h.whenReady;  // user-owned convention on the bundle
  * h.dispose();
  *
  * // Framework-scoped
@@ -25,59 +31,62 @@
  * });
  *
  * // TS 5.2 `using` — dispose fires on block exit
- * { using h = docs.open('abc'); await h.whenLoaded; }
+ * { using h = docs.open('abc'); await h.whenReady; }
  * ```
  *
- * Reserved top-level keys on the user's build-closure return value: `dispose`,
- * `whenLoaded`. The framework attaches those — if the build closure returns
- * one, `defineDocument` throws.
+ * No top-level keys are reserved on the bundle. The cache injects only
+ * `dispose`, `[Symbol.dispose]`, and `[Symbol.asyncDispose]` on the handle —
+ * pick bundle property names that don't collide with those three.
  */
-export type DocumentHandle<TAttach> = TAttach &
-	Disposable &
-	AsyncDisposable & {
-		/**
-		 * Resolves once every attachment's own `whenLoaded` promise has resolved.
-		 * Attachments without one count as "loaded immediately."
-		 */
-		whenLoaded: Promise<void>;
-		/**
-		 * Drop this handle's retain. Idempotent per-handle — calling twice on
-		 * the same handle is a no-op. Last dispose (across all handles sharing
-		 * the same id) schedules teardown after the factory's `graceMs`.
-		 * Equivalent to `handle[Symbol.dispose]()` — use `using` blocks when
-		 * scope-bound release suffices.
-		 */
-		dispose(): void;
-	};
+export type DocumentHandle<T> = T & {
+	/**
+	 * Drop this handle's retain. Idempotent per-handle — calling twice on
+	 * the same handle is a no-op. Last dispose (across all handles sharing
+	 * the same id) schedules teardown after the factory's `gcTime`.
+	 * Equivalent to `handle[Symbol.dispose]()` — use `using` blocks when
+	 * scope-bound release suffices.
+	 */
+	dispose(): void;
+	[Symbol.dispose](): void;
+	[Symbol.asyncDispose](): Promise<void>;
+};
 
 /**
  * Factory created by `defineDocument(build, opts?)`. Exposes cached,
  * ref-counted handles by id and coordinated teardown.
+ *
+ * The builder fully owns bundle construction and disposal. The cache owns
+ * identity (keyed by `id`, verified by `ydoc.guid`), refcount, and the
+ * `gcTime` grace period between last-dispose and actual teardown.
  */
-export type DocumentFactory<Id extends string, TAttach> = {
+export type DocumentFactory<Id extends string, T> = {
 	/**
-	 * Construct-if-missing + retain. Returns a fresh disposable handle. Pair
-	 * with `handle.dispose()`. For callers that need to wait for hydration,
-	 * `await handle.whenLoaded` after opening.
+	 * Construct-if-missing + retain. Returns a fresh disposable handle that
+	 * prototype-chains to the underlying bundle. Pair with `handle.dispose()`.
+	 *
+	 * If the builder exposes a `whenReady` promise on the bundle, callers may
+	 * `await handle.whenReady` after opening — but the name is a user-owned
+	 * convention, not a framework-enforced key.
 	 *
 	 * ```ts
 	 * const h = factory.open('abc');
-	 * await h.whenLoaded;
+	 * await h.whenReady;
 	 * h.content.write('hi');
 	 * h.dispose();
 	 * ```
 	 */
-	open(id: Id): DocumentHandle<TAttach>;
+	open(id: Id): DocumentHandle<T>;
 	/**
-	 * Explicit eviction. Cancels any pending grace-period disposal. `ydoc.destroy()`
-	 * fires synchronously; the returned promise resolves once every top-level
-	 * attachment's `whenDisposed: Promise<void>` field has resolved (if any).
+	 * Explicit eviction. Cancels any pending `gcTime` disposal and fires the
+	 * bundle's `[Symbol.dispose]()` synchronously. If the bundle exposes a
+	 * `whenDisposed: Promise<void>` property, the returned promise resolves
+	 * once it settles — giving callers a real teardown barrier.
 	 */
 	close(id: Id): Promise<void>;
 	/**
 	 * Tear down every open document — for app teardown / workspace dispose.
-	 * Destroys all ydocs synchronously; awaits every attachment's `whenDisposed`
-	 * promise before resolving.
+	 * Disposes all bundles synchronously; awaits every bundle's optional
+	 * `whenDisposed` promise before resolving.
 	 */
 	closeAll(): Promise<void>;
 };

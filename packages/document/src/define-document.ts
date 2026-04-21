@@ -1,71 +1,101 @@
 /**
- * `defineDocument` — the single primitive for constructing a managed Y.Doc.
+ * `defineDocument` — a minimal refcounted cache for Y.Doc bundles.
  *
- * Accepts a user-owned `build(id) => { ydoc, ...attachments }` closure and
- * wraps it with a cache, ref-count + grace-period lifecycle, aggregated
- * `whenLoaded` readiness, and coordinated teardown.
+ * The user owns construction and disposal. The cache owns identity, refcount,
+ * and the `gcTime` grace period between last-dispose and actual teardown.
  *
- * The only construction path is `factory.open(id)`: construct-if-missing +
- * retain. The returned handle carries a `dispose()` method for manual
- * teardown and also implements `Symbol.dispose` for TS 5.2 `using` blocks.
+ * ```text
+ *  builder (user)                     cache (this module)
+ *  ─────────────────                  ───────────────────
+ *  new Y.Doc + providers              keyed by id, verified by ydoc.guid
+ *  composes whenReady / whenDisposed  refcounts retain/release
+ *  implements [Symbol.dispose]        arms gcTime timer on last release
+ * ```
+ *
+ * ## Three usage levels
+ *
+ * ### Level 0 — plain builder, no cache
  *
  * ```ts
- * // Manual — pair every open() with a dispose()
- * const h = docs.open('abc');
- * await h.whenLoaded;
- * h.content.write('hi');
- * h.dispose();
+ * const doc = buildDoc('x');
+ * doc.ydoc.transact(() => ..., ORIGIN);
+ * doc[Symbol.dispose]();
+ * ```
  *
- * // Framework-scoped — register dispose with the component lifecycle
- * $effect(() => {
- *   const h = docs.open(id);
- *   return () => h.dispose();
- * });
+ * ### Level 1 — scope-bound with TS 5.2 `using`
  *
- * // Scope-bound (TS 5.2 `using`) — dispose fires on block exit
+ * ```ts
  * {
- *   using h = docs.open('abc');
- *   await h.whenLoaded;
- *   h.content.write('hi');
- * }
+ *   using doc = buildDoc('x');
+ *   await doc.whenReady;
+ *   doc.ydoc.transact(() => ..., ORIGIN);
+ * } // [Symbol.dispose] fires on block exit
+ * ```
  *
- * // Async scope — same as `using`, for symmetry with async teardown
- * {
- *   await using h = docs.open('abc');
- *   await h.whenLoaded;
- *   h.content.read();
+ * ### Level 2 — shared + lifecycle via `defineDocument`
+ *
+ * ```ts
+ * const docs = defineDocument(buildDoc, { gcTime: 30_000 });
+ *
+ * using h = docs.open('abc');  // retainCount++
+ * await h.whenReady;           // read through prototype chain to bundle
+ * h.ydoc.transact(() => ..., ORIGIN);
+ * // [Symbol.dispose] fires on block exit — retainCount--
+ * // refcount→0 arms the gcTime timer; a fresh open() cancels it
+ * ```
+ *
+ * ## Builder contract
+ *
+ * The builder returns a bundle typed `T extends { ydoc: Y.Doc } & Disposable`:
+ *
+ * ```ts
+ * function buildDoc(id: string) {
+ *   const ydoc = new Y.Doc({ guid: id });
+ *   const idb  = attachIndexedDb(ydoc);
+ *   const sync = attachSync(ydoc, { url });
+ *
+ *   return {
+ *     ydoc,
+ *     idb,
+ *     sync,
+ *     whenReady:    Promise.all([idb.whenLoaded, sync.whenSynced]).then(() => {}),
+ *     whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(() => {}),
+ *     [Symbol.dispose]() {
+ *       sync.destroy();   // MUST be explicit — see y-websocket note below
+ *       idb.destroy();
+ *       ydoc.destroy();
+ *     },
+ *   };
  * }
  * ```
  *
- * The user owns `new Y.Doc(...)` (full control over `guid`, `gc`, `meta`, …)
- * and any attachments (`attachIndexedDb`, `attachSync`, content bindings, and
- * local `onLocalUpdate` writebacks). The framework's job is:
+ * `whenReady` and `whenDisposed` are user-owned conventions, not
+ * framework-enforced keys. The cache never scans the bundle for them. `open()`
+ * doesn't read `whenReady`; callers `await handle.whenReady` through the
+ * prototype chain if the builder exposed one. `close(id)` awaits
+ * `bundle.whenDisposed` if present (detected via `in`), giving callers a real
+ * teardown barrier. `whenReady` deliberately differs from Y.Doc's native
+ * `whenLoaded` property — avoid the shadow collision.
  *
- * - One Y.Doc per id (cache keyed by `id`, concurrent-open race-safe — no
- *   `await` between `Map.get` and `Map.set`).
- * - Guid-stability check — catches nondeterministic `guid` templates
- *   (e.g., `Math.random()`) on the second construction. Silent IDB data
- *   corruption is the bug this guards against.
- * - Ref-count + grace-period disposal. Each `open()` increments the count and
- *   mints a fresh disposable handle; `dispose()` decrements. Last dispose
- *   schedules teardown after `graceMs`; a fresh `open()` during grace cancels
- *   the pending disposal. The grace period is load-bearing for correctness
- *   with async-teardown attachments like `attachIndexedDb`: `db.close()` is
- *   deferred until pending transactions settle, so immediate destroy+rebuild
- *   on the same id can race.
- * - Aggregated `whenLoaded`: scans top-level attachments for a
- *   `whenLoaded: Promise<void>` property and `Promise.all`s them.
- * - `close(id)` forces immediate disposal and awaits attachments'
- *   `whenDisposed: Promise<void>` fields — `await factory.close(id)` is a real
- *   teardown barrier callers can rely on before reusing the id.
+ * ## y-websocket teardown gotcha
  *
- * Disposal destroys the user's Y.Doc via `ydoc.destroy()`. Attachments that
- * register `ydoc.on('destroy', …)` (as `attachIndexedDb` and `attachSync` do)
- * tear down automatically.
+ * `ydoc.destroy()` fires `ydoc.on('destroy')` listeners. `IndexeddbPersistence`
+ * registers one; `WebsocketProvider` does **not**. Your `[Symbol.dispose]`
+ * must call `sync.destroy()` explicitly — relying on the `ydoc.destroy()`
+ * cascade leaves sockets dangling.
  *
- * The user's `attach` object is never mutated. Framework-injected properties
- * (`whenLoaded`, `release`, `Symbol.dispose`/`asyncDispose`) live on the
- * per-handle wrapper that prototype-chains to the user's attach for reads.
+ * ## Cache semantics
+ *
+ * - **Identity**: keyed by `id`; `ydoc.guid` is recorded on first construction
+ *   and verified on every subsequent one (catches nondeterministic builders).
+ * - **Refcount**: each `open()` mints a fresh disposable handle and
+ *   increments. `handle.dispose()` is idempotent per-handle. Last dispose
+ *   across all handles for an id arms the gcTime timer.
+ * - **`gcTime: 0`** — synchronous teardown on refcount→0, no timer.
+ * - **`gcTime: Infinity`** — never evict automatically; only `close(id)` or
+ *   `closeAll()` can force teardown.
+ * - **Default**: `30_000` ms. A fresh `open()` during the grace window cancels
+ *   the pending teardown.
  *
  * @module
  */
@@ -76,104 +106,54 @@ import type {
 	DocumentHandle,
 } from './define-document.types.js';
 
-const DEFAULT_GRACE_MS = 30_000;
-const RESERVED_KEYS: ReadonlyArray<string> = ['dispose', 'whenLoaded'];
+const DEFAULT_GC_TIME = 30_000;
 
-type DocEntry<TAttach extends { ydoc: Y.Doc }> = {
+type DocEntry<T extends { ydoc: Y.Doc } & Disposable> = {
 	/** The user's pristine `build()` return value. Never mutated. */
-	attach: TAttach;
-	/** Aggregated across all attachments' `whenLoaded` promises. */
-	whenLoaded: Promise<void>;
-	/**
-	 * Aggregated `whenDisposed` promises from attachments whose teardown is
-	 * async (e.g., `attachIndexedDb` resolves after IDB close completes).
-	 * `close(id)` and `closeAll()` await this so callers can rely on
-	 * "await factory.close(…)" as a real teardown barrier.
-	 */
-	attachmentWhenDisposed: Promise<void>;
+	attach: T;
 	retainCount: number;
-	disposeTimer: ReturnType<typeof setTimeout> | null;
+	gcTimer: ReturnType<typeof setTimeout> | null;
 	disposed: boolean;
 };
 
 /**
  * Create a document factory from a user-owned build closure.
  *
- * @param build - Closure invoked on cache miss. Must return `{ ydoc, ... }`.
- *                `ydoc.guid` should be a deterministic function of `id` —
- *                the framework asserts stability on the second construction.
- *                Must NOT return top-level `dispose` or `whenLoaded` — those
- *                names are reserved by the framework.
- * @param opts  - `graceMs` (default 30_000): milliseconds to wait after the
- *                last handle dispose before destroying the Y.Doc. A fresh
- *                open during grace cancels the pending teardown.
+ * @param build - Closure invoked on cache miss. Must return a bundle
+ *                `{ ydoc, ... } & Disposable` — i.e., an object with a
+ *                `ydoc: Y.Doc` and a `[Symbol.dispose]()` method. `ydoc.guid`
+ *                should be a deterministic function of `id` — the cache
+ *                asserts stability on the second construction.
+ * @param opts  - `gcTime` (default 30_000): milliseconds to wait after the
+ *                last handle dispose before tearing down the bundle. `0` =
+ *                synchronous teardown. `Infinity` = never auto-evict. A fresh
+ *                open during the grace window cancels the pending teardown.
  */
 export function defineDocument<
 	Id extends string,
-	TAttach extends { ydoc: Y.Doc },
+	T extends { ydoc: Y.Doc } & Disposable,
 >(
-	build: (id: Id) => TAttach,
-	opts?: { graceMs?: number },
-): DocumentFactory<Id, TAttach> {
-	const graceMs = opts?.graceMs ?? DEFAULT_GRACE_MS;
-	const openDocuments = new Map<Id, DocEntry<TAttach>>();
+	build: (id: Id) => T,
+	opts?: { gcTime?: number },
+): DocumentFactory<Id, T> {
+	const gcTime = opts?.gcTime ?? DEFAULT_GC_TIME;
+	const openDocuments = new Map<Id, DocEntry<T>>();
 	const recordedGuids = new Map<Id, string>();
 
-	/**
-	 * Scan top-level attachments for a `Promise` at `key`, excluding the
-	 * Y.Doc itself (Y.Doc exposes a `whenLoaded` for subdoc loading that
-	 * never resolves in the standalone case).
-	 */
-	function aggregatePromise(
-		attach: TAttach,
-		key: 'whenLoaded' | 'whenDisposed',
-	): Promise<void> {
-		const promises: Promise<unknown>[] = [];
-		for (const [k, value] of Object.entries(attach)) {
-			if (k === 'ydoc') continue;
-			if (value && typeof value === 'object' && key in value) {
-				const p = (value as unknown as Record<string, unknown>)[key];
-				if (p instanceof Promise) promises.push(p);
-			}
-		}
-		if (promises.length === 0) return Promise.resolve();
-		return Promise.all(promises).then(() => {});
-	}
-
-	function construct(id: Id): DocEntry<TAttach> {
+	function construct(id: Id): DocEntry<T> {
 		// User closure runs synchronously. If it throws, we DON'T insert into
 		// the cache — next `.open(sameId)` re-runs the closure (no poisoned
 		// cache entry). The caller sees the thrown error.
 		const attach = build(id);
 
-		// Reserved-key collision: framework adds `whenLoaded`, `dispose`, and
-		// the dispose symbols to each handle via `Object.create(attach)` +
-		// `defineProperties`. A user property with the same name on `attach`
-		// would be silently shadowed via the prototype chain — fail loudly.
-		// (Symbol keys can't be returned from an object literal in practice;
-		// skipped.)
-		for (const reserved of RESERVED_KEYS) {
-			if (reserved in attach) {
-				try {
-					attach.ydoc.destroy();
-				} catch {
-					// best-effort — surface the key-collision error
-				}
-				throw new Error(
-					`[defineDocument] build closure for id=${String(id)} returned reserved key "${reserved}". ` +
-						`"dispose" and "whenLoaded" are added by the framework — pick a different attachment name.`,
-				);
-			}
-		}
-
 		const recorded = recordedGuids.get(id);
 		if (recorded !== undefined && recorded !== attach.ydoc.guid) {
-			// Don't leak the half-built Y.Doc — destroy before throwing so
-			// the caller's attachments can clean up via their destroy hooks.
+			// Don't leak the half-built bundle — dispose before throwing so the
+			// user's own `[Symbol.dispose]` can clean up its providers.
 			try {
-				attach.ydoc.destroy();
+				attach[Symbol.dispose]();
 			} catch {
-				// best-effort — surface the stability error, not the destroy error
+				// best-effort — surface the stability error, not the dispose error
 			}
 			throw new Error(
 				`[defineDocument] guid instability for id=${String(id)}: ` +
@@ -185,12 +165,10 @@ export function defineDocument<
 			recordedGuids.set(id, attach.ydoc.guid);
 		}
 
-		const entry: DocEntry<TAttach> = {
+		const entry: DocEntry<T> = {
 			attach,
-			whenLoaded: aggregatePromise(attach, 'whenLoaded'),
-			attachmentWhenDisposed: aggregatePromise(attach, 'whenDisposed'),
 			retainCount: 0,
-			disposeTimer: null,
+			gcTimer: null,
 			disposed: false,
 		};
 
@@ -198,11 +176,11 @@ export function defineDocument<
 		return entry;
 	}
 
-	function disposeEntry(id: Id, entry: DocEntry<TAttach>): void {
+	function disposeEntry(id: Id, entry: DocEntry<T>): void {
 		entry.disposed = true;
-		if (entry.disposeTimer !== null) {
-			clearTimeout(entry.disposeTimer);
-			entry.disposeTimer = null;
+		if (entry.gcTimer !== null) {
+			clearTimeout(entry.gcTimer);
+			entry.gcTimer = null;
 		}
 		// Remove from cache synchronously so a concurrent `.open()` constructs
 		// a fresh entry rather than handing out the about-to-be-destroyed one.
@@ -210,30 +188,28 @@ export function defineDocument<
 		if (openDocuments.get(id) === entry) {
 			openDocuments.delete(id);
 		}
-		// `ydoc.destroy()` fires `ydoc.on('destroy')` — attachments that
-		// registered teardown there (IndexedDB, sync) run their cleanup. Any
-		// async close settles in the background; callers awaiting a full
-		// teardown barrier do so via `close(id)`, which awaits
-		// `entry.attachmentWhenDisposed`.
+		// Builder owns what disposal means. Any async teardown settles in the
+		// background; callers awaiting a full teardown barrier do so via
+		// `close(id)`, which awaits `attach.whenDisposed` if present.
 		try {
-			entry.attach.ydoc.destroy();
+			entry.attach[Symbol.dispose]();
 		} catch (err) {
-			console.error('[defineDocument] ydoc.destroy() threw:', err);
+			console.error('[defineDocument] bundle [Symbol.dispose]() threw:', err);
 		}
 	}
 
-	const factory: DocumentFactory<Id, TAttach> = {
+	const factory: DocumentFactory<Id, T> = {
 		open(id) {
 			// Each open() mints a fresh disposable handle with its own
-			// `disposed` flag, so N opens require N disposes before the grace
+			// `disposed` flag, so N opens require N disposes before the gc
 			// timer starts. The handle prototype-chains to `entry.attach` — so
-			// `h.ydoc` and any user attachment properties read through without
+			// `h.ydoc` and any user bundle properties read through without
 			// mutating the user's object.
 			const entry = openDocuments.get(id) ?? construct(id);
 
-			if (entry.disposeTimer !== null) {
-				clearTimeout(entry.disposeTimer);
-				entry.disposeTimer = null;
+			if (entry.gcTimer !== null) {
+				clearTimeout(entry.gcTimer);
+				entry.gcTimer = null;
 			}
 			entry.retainCount++;
 
@@ -243,17 +219,25 @@ export function defineDocument<
 				handleDisposed = true;
 				if (entry.disposed) return;
 				entry.retainCount--;
-				if (entry.retainCount === 0) {
-					entry.disposeTimer = setTimeout(() => {
-						entry.disposeTimer = null;
-						disposeEntry(id, entry);
-					}, graceMs);
+				if (entry.retainCount !== 0) return;
+
+				if (gcTime === 0) {
+					// Synchronous teardown — no timer.
+					disposeEntry(id, entry);
+					return;
 				}
+				if (gcTime === Infinity) {
+					// Never auto-evict; entry stays live until close(id)/closeAll().
+					return;
+				}
+				entry.gcTimer = setTimeout(() => {
+					entry.gcTimer = null;
+					disposeEntry(id, entry);
+				}, gcTime);
 			};
 
-			const handle = Object.create(entry.attach) as DocumentHandle<TAttach>;
+			const handle = Object.create(entry.attach) as DocumentHandle<T>;
 			Object.defineProperties(handle, {
-				whenLoaded: { value: entry.whenLoaded, enumerable: true },
 				dispose: { value: dispose },
 				[Symbol.dispose]: { value: dispose },
 				[Symbol.asyncDispose]: {
@@ -270,7 +254,9 @@ export function defineDocument<
 			const entry = openDocuments.get(id);
 			if (!entry) return;
 			disposeEntry(id, entry);
-			await entry.attachmentWhenDisposed;
+			if ('whenDisposed' in entry.attach) {
+				await (entry.attach as { whenDisposed?: Promise<void> }).whenDisposed;
+			}
 		},
 
 		async closeAll() {
@@ -278,7 +264,13 @@ export function defineDocument<
 			openDocuments.clear();
 			for (const [id, entry] of entries) disposeEntry(id, entry);
 			await Promise.all(
-				entries.map(([, entry]) => entry.attachmentWhenDisposed),
+				entries.map(([, entry]) => {
+					if ('whenDisposed' in entry.attach) {
+						return (entry.attach as { whenDisposed?: Promise<void> })
+							.whenDisposed;
+					}
+					return undefined;
+				}),
 			);
 		},
 	};

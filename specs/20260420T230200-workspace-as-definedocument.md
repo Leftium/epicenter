@@ -1,9 +1,10 @@
 # Workspace as `defineDocument` — collapse the last asymmetry
 
 **Date**: 2026-04-20
-**Status**: Draft
+**Status**: Partial — architectural core landed, consumer migration deferred to successor
 **Depends on**: `specs/20260420T230100-collapse-document-framework.md`
 **Follows**: `specs/20260420T220000-simplify-definedocument-primitive.md`, `specs/20260420T152026-definedocument-primitive.md`
+**Followed by**: `specs/20260420T234500-consumer-migration-to-defineworkspace.md`
 
 ## TL;DR
 
@@ -355,8 +356,22 @@ forces either:
   `onBeforeSignOut`) — a cleaner coupling, but a separate cross-app
   refactor
 
-Recommended follow-up: refactor the popover to callback props first,
-then migrate apps. Out of Spec C scope.
+On reflection during spec closure, "callback props" is also not quite
+right — it unwraps a coherent bag into N loose atoms. Better: the
+popover takes a `SyncView`-shaped prop (the sync surface it actually
+consumes, as a single grouped object). Apps with the old client pass
+`workspace.extensions.sync`; apps with the new client pass
+`workspace.sync`. Both satisfy the same structural type.
+
+The component is also misnamed — `SyncStatusPopover` foregrounds one
+of three things it does (display). It's really an account popover
+that surfaces sync health alongside identity. Rename is orthogonal to
+the shape fix and captured in the successor spec.
+
+Recommended follow-up: land `hasLocalChanges` in `attachSync` (Blocker
+2), redesign the popover around a `SyncView`-bag prop, then migrate
+apps. All out of Spec C scope and captured in
+`specs/20260420T234500-consumer-migration-to-defineworkspace.md`.
 
 ### Blocker 2 — `hasLocalChanges` is missing from `attachSync`'s `SyncStatus`
 
@@ -414,16 +429,37 @@ after the two blockers above are resolved in their own specs.
 
 ## Success Criteria
 
+Status as of spec closure: **3 full, 3 partial, 4 moved to successor.**
+
+Delivered by this spec:
+- [x] `attach-encryption.ts` exports `attachEncryption`.
+- [x] `defineWorkspace(def, opts?)` returns a `DocumentFactory<Id, WorkspaceBundle>`.
+- [x] `bun test` clean across the workspace package (417/417).
+
+Partially delivered — core in place, call-site migration deferred:
+- [~] `ws.enc.applyKeys(k)` replaces `ws.applyEncryptionKeys(k)` — the
+  `enc` attachment exists on the bundle, but the seven consumer apps
+  still call `.applyEncryptionKeys` through the `createWorkspace`
+  shim. Flipped to `[x]` once Phase 6 lands in the successor spec.
+- [~] Bundle has no `loadSnapshot` or `encodedSize` — the new bundle
+  from `defineWorkspace` doesn't carry them, but the shim client
+  still exposes them for legacy callers. Flipped once the shim is
+  deleted.
+- [~] One lifecycle pattern (`defineDocument`) visible to new
+  contributors — it's the primary pattern in the workspace package,
+  but `createWorkspace` + extension chain remains as a secondary
+  alternative until consumers migrate.
+
+Moved to the successor spec — blocked on consumer migration:
 - [ ] `create-workspace.ts` and `lifecycle.ts` deleted.
-- [ ] `defineWorkspace(def, opts?)` returns a `DocumentFactory<Id, WorkspaceBundle>`.
-- [ ] `attach-encryption.ts` exports `attachEncryption`.
-- [ ] `ws.enc.applyKeys(k)` replaces `ws.applyEncryptionKeys(k)`.
-- [ ] `ws.enc.clearLocalData()` replaces `ws.clearLocalData()`.
-- [ ] Bundle has no `loadSnapshot` or `encodedSize`.
-- [ ] fuji and honeycrisp build and run; persistence + sync + encryption work.
-- [ ] `bun test` and `bun run build` clean across repo.
-- [ ] No references to `createWorkspace`, `WorkspaceClientBuilder`, `withExtension*`, `ExtensionContext`, `SharedExtensionContext`, `RawExtension`, `ExtensionFactory` outside archived specs.
-- [ ] One lifecycle pattern (`defineDocument`) visible to new contributors.
+- [ ] `ws.enc.clearLocalData()` replaces `ws.clearLocalData()` (also
+  under-specified at the time of this spec; the successor designs it
+  with consumer requirements in hand).
+- [ ] fuji and honeycrisp build and run with migrated code;
+  persistence + sync + encryption work through user-owned wrappers.
+- [ ] No references to `createWorkspace`, `WorkspaceClientBuilder`,
+  `withExtension*`, `ExtensionContext`, `SharedExtensionContext`,
+  `RawExtension`, `ExtensionFactory` outside archived specs.
 
 ## Non-Goals
 

@@ -126,11 +126,6 @@ export type {
 	AwarenessState,
 	// Base row type
 	BaseRow,
-	// Content handle types
-	ContentHandle,
-	ContentStrategy,
-	PlainTextAttachment,
-	RichTextAttachment,
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,
@@ -162,5 +157,4 @@ export type {
 	WorkspaceClientBuilder,
 	// Workspace types
 	WorkspaceDefinition,
-	WorkspaceTables,
 } from './types.js';

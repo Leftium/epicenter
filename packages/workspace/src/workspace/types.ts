@@ -29,14 +29,14 @@ import type { RawExtension } from './lifecycle.js';
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
 
 // Re-export primitive types from document so downstream imports keep working.
+// Attachment/strategy types are *not* re-exported — apps that build content
+// docs import them directly from `@epicenter/document`.
 export type {
 	Awareness,
 	AwarenessDefinitions,
 	AwarenessState,
 	BaseRow,
 	CombinedStandardSchema,
-	ContentHandle,
-	ContentStrategy,
 	GetResult,
 	InferAwarenessValue,
 	InferKvValue,
@@ -48,8 +48,6 @@ export type {
 	KvDefinitions,
 	LastSchema,
 	NotFoundResult,
-	PlainTextAttachment,
-	RichTextAttachment,
 	RowResult,
 	Table,
 	Tables,
@@ -84,15 +82,6 @@ export type TableDefinition<
 export type StringKeysOf<TRow> = {
 	[K in keyof TRow & string]: TRow[K] extends string ? K : never;
 }[keyof TRow & string];
-
-/**
- * Workspace's `Tables<TTableDefinitions>`, now equivalent to the document-package Tables helper.
- *
- * Kept as a re-export alias so downstream code that imports `WorkspaceTables`
- * continues to compile. Equivalent to `Tables<TTableDefinitions>`.
- */
-export type WorkspaceTables<TTableDefinitions extends TableDefinitions> =
-	Tables<TTableDefinitions>;
 
 /**
  * Map of table definitions keyed by table name.
@@ -217,7 +206,7 @@ export type WorkspaceClient<
 		awareness: TAwarenessDefinitions;
 	};
 	/** Typed table helpers — CRUD operations per table. */
-	tables: WorkspaceTables<TTableDefinitions>;
+	tables: Tables<TTableDefinitions>;
 	/** Typed KV helper */
 	kv: Kv<TKvDefinitions>;
 	/** Typed awareness helper — always present, like tables and kv */

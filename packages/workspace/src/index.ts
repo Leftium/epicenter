@@ -140,10 +140,6 @@ export type {
 	AwarenessDefinitions,
 	AwarenessState,
 	BaseRow,
-	ContentHandle,
-	ContentStrategy,
-	PlainTextAttachment,
-	RichTextAttachment,
 	ExtensionContext,
 	ExtensionFactory,
 	GetResult,
@@ -167,7 +163,6 @@ export type {
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
-	WorkspaceTables,
 } from './workspace/types';
 
 // ════════════════════════════════════════════════════════════════════════════

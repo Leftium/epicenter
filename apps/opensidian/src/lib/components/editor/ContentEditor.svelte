@@ -25,21 +25,19 @@
 	// stored entries). Gate on `whenReady` so we only read mode after the
 	// doc has its real state.
 	let handle = $state<ReturnType<typeof fileContentDocs.open> | null>(null);
-	let loadedHandle = $state<ReturnType<typeof fileContentDocs.open> | null>(
-		null,
-	);
+	let isLoaded = $state(false);
 
 	$effect(() => {
 		const h = fileContentDocs.open(fileId);
 		handle = h;
-		loadedHandle = null;
+		isLoaded = false;
 		h.whenReady.then(() => {
-			if (handle === h) loadedHandle = h;
+			if (handle === h) isLoaded = true;
 		});
 		return () => {
 			h.dispose();
 			handle = null;
-			loadedHandle = null;
+			isLoaded = false;
 		};
 	});
 
@@ -66,9 +64,9 @@
 	);
 </script>
 
-{#if loadedHandle}
+{#if handle && isLoaded}
 	<CodeMirrorEditor
-		ytext={loadedHandle.content.asText()}
+		ytext={handle.content.asText()}
 		{extensions}
 		{filename}
 	/>

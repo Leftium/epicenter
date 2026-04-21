@@ -68,9 +68,9 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * await ws.actions.exportToDisk({ dir: '.agents/skills' })
  * ```
  */
-export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none' } = {}) {
+export function createSkillsWorkspace(opts: { docPersistence?: 'indexeddb' | 'none' } = {}) {
 	const base = createWorkspace(skillsDefinition);
-	const persistence = opts.persistence;
+	const persistence = opts.docPersistence;
 	const instructionsDocs = createSkillInstructionsDocs({
 		workspaceId: base.id,
 		skillsTable: base.tables.skills,

@@ -38,6 +38,14 @@
  *   `attachEncryptedTable` / `attachEncryptedKv` (or by test setup) and
  *   registered here. This attachment only coordinates the encryption
  *   lifecycle across whatever stores get registered.
+ * - It does not validate that every encryption-capable slot on the Y.Doc
+ *   got registered. The caller owns the composition — if you pair a
+ *   plaintext `attachTable` from `@epicenter/document` with an
+ *   `attachEncryptedTable` targeting the *same slot name*, Yjs hands both
+ *   calls the same underlying `Y.Array` and you get a silent
+ *   plaintext-over-ciphertext race. The verb (`attachEncryptedTable` vs
+ *   `attachTable`) is the primary defense; review call sites accordingly.
+ *   One slot name, one attach site, one intent.
  *
  * ## Why `workspaceId` is read from `ydoc.guid`
  *
@@ -82,26 +90,6 @@ export type EncryptionAttachment = {
 	 */
 	register(store: // biome-ignore lint/suspicious/noExplicitAny: variance-friendly — coordinator treats stores uniformly regardless of value type
 EncryptedYKeyValueLww<any>): void;
-
-	/**
-	 * Dev-only audit: throws if the Y.Doc has encryption-capable slots
-	 * (the singleton `kv` slot or any `table:*` slot) that are not registered
-	 * with this coordinator. Call at the end of a `defineDocument` closure to
-	 * catch "used `attachTable` when you meant `attachEncryptedTable`" at
-	 * construction time instead of at data-at-rest exfiltration time.
-	 *
-	 * Slots that are intentionally plaintext (ephemeral caches, local-only
-	 * indexes) must be listed in `allowPlaintext` to opt out of the check.
-	 * The allowlist takes raw slot names: `'kv'` for the KV singleton,
-	 * `'table:<name>'` for tables (e.g. `'table:cache'`).
-	 *
-	 * No-op in production builds — inspects `ydoc.share` only, no ciphertext
-	 * is touched.
-	 */
-	assertAllStoresRegistered(
-		ydoc: Y.Doc,
-		options?: { allowPlaintext?: readonly string[] },
-	): void;
 
 	/** Resolves when the Y.Doc is destroyed and every store has been disposed. */
 	readonly whenDisposed: Promise<void>;
@@ -153,25 +141,6 @@ EncryptedYKeyValueLww<any>[] = [];
 		register(store) {
 			stores.push(store);
 			if (cachedKeyring !== undefined) store.activateEncryption(cachedKeyring);
-		},
-		assertAllStoresRegistered(ydoc, options) {
-			const allow = new Set(options?.allowPlaintext ?? []);
-			const registered = new Set(stores.map((s) => s.yarray));
-			const unregistered: string[] = [];
-			for (const [slotName, shared] of ydoc.share) {
-				if (slotName !== 'kv' && !slotName.startsWith('table:')) continue;
-				if (allow.has(slotName)) continue;
-				if (registered.has(shared as typeof stores[number]['yarray'])) continue;
-				unregistered.push(slotName);
-			}
-			if (unregistered.length === 0) return;
-			throw new Error(
-				`[attachEncryption] ${unregistered.length} encryption-capable ` +
-					`slot(s) on ydoc '${workspaceId}' were attached with the plaintext ` +
-					`primitives: ${unregistered.map((s) => `'${s}'`).join(', ')}. ` +
-					`Use attachEncryptedTable / attachEncryptedKv, or list the slot ` +
-					`name in assertAllStoresRegistered({ allowPlaintext }) to opt out.`,
-			);
 		},
 		whenDisposed,
 	};

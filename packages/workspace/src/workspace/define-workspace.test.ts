@@ -20,8 +20,8 @@ import { defineTable } from './define-table.js';
 import { defineWorkspace } from './define-workspace.js';
 
 describe('defineWorkspace', () => {
-	test('creates workspace with tables and kv', () => {
-		const workspace = defineWorkspace({
+	test('returns a factory with the original definition attached', () => {
+		const factory = defineWorkspace({
 			id: 'test-app',
 			tables: {
 				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
@@ -31,9 +31,44 @@ describe('defineWorkspace', () => {
 			},
 		});
 
-		expect(workspace.id).toBe('test-app');
-		expect(workspace.tables).toHaveProperty('posts');
-		expect(workspace.kv).toHaveProperty('theme');
+		expect(factory.definition.id).toBe('test-app');
+		expect(factory.definition.tables).toHaveProperty('posts');
+		expect(factory.definition.kv).toHaveProperty('theme');
+		expect(typeof factory.open).toBe('function');
+		expect(typeof factory.close).toBe('function');
+	});
+
+	test('factory.open returns a handle that exposes the bundle surface', async () => {
+		const factory = defineWorkspace({
+			id: 'handle-test',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
+			},
+			kv: {
+				theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
+			},
+		});
+
+		const handle = factory.open('handle-test');
+		expect(handle.ydoc).toBeInstanceOf(Y.Doc);
+		expect(handle.tables.posts).toBeDefined();
+		expect(handle.kv.get('theme')).toEqual({ mode: 'light' });
+		expect(handle.enc).toBeDefined();
+		await handle.whenReady;
+
+		handle.dispose();
+		await factory.close('handle-test');
+	});
+
+	test('gcTime: Infinity is the default — refcount→0 does not auto-evict', async () => {
+		const factory = defineWorkspace({ id: 'never-evict' });
+		const h1 = factory.open('never-evict');
+		h1.dispose();
+		// Reopen should hit the same cached bundle (same ydoc).
+		const h2 = factory.open('never-evict');
+		expect(h2.ydoc).toBe(h1.ydoc);
+		h2.dispose();
+		await factory.close('never-evict');
 	});
 
 	test('createWorkspace() returns client with tables and kv', () => {

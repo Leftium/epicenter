@@ -33,6 +33,24 @@ Use this pattern when you need to:
 
 When a component opens a disposable resource (Yjs doc handle from `*Docs.open()`, subscription, socket, timer) whose identity depends on a prop or piece of state, **do not** store the handle in `$state<Handle | null>(null)` and re-open it inside an `$effect`. That's re-implementing mount/unmount in user-space. Let the component tree own the boundary.
 
+## Spot the smell in 5 seconds
+
+Grep for `$state<ReturnType<typeof .*\.open>`. Every hit is a candidate. Then ask:
+
+1. Is the id a prop that the parent already `{#key}`s on? → **Pattern A, delete the state.**
+2. Could the parent wrap the component in `{#if id}<Child {id} />{/if}`? → **Pattern A, extract a child.**
+3. Does the component have meaningful local UI state (selection, zoom, scroll) that must survive an id swap? → rare, keep Pattern B.
+
+In ~95% of cases, one of the first two applies.
+
+## Receipts
+
+This pattern replaced five callsites in our codebase (April 2026, commits `d183f8a8` + `f689ae86`): `InstructionsEditor`, `ContentEditor`, `ReferencesPanel` → `ExpandedReference`, `honeycrisp/+page` → `NoteBodyPane`, plus the pre-existing `EntryEditor` that already followed it. Net: 54 insertions, 75 deletions. Zero behavior changes.
+
+Deepwiki, asked for the idiomatic Svelte 5 answer, returned Pattern B with a double-dispose bug in the sample code — the effect body disposed the previous resource *and* the cleanup closure disposed the newly-assigned one. Pattern A cannot write that bug because the effect body is `() => handle.dispose()` — there's nothing to desynchronize.
+
+Full rationale: `docs/articles/20260420T160000-state-handle-null-is-the-component-lifecycle-in-disguise.md`.
+
 ## The smell
 
 ```svelte

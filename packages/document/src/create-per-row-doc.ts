@@ -24,7 +24,7 @@
  *
  *   attach: (ydoc) => attachIndexedDb(ydoc)                         // browser
  *   attach: (ydoc) => attachSqlite(ydoc, { filePath })              // desktop
- *   // omit for in-memory (tests, Node stubs) — falls back to NO_PERSISTENCE
+ *   // omit for in-memory (tests, Node stubs) — falls back to a no-op
  */
 
 import * as Y from 'yjs';
@@ -60,7 +60,7 @@ type PerRowDocBase = {
 	[Symbol.dispose](): void;
 };
 
-export function createPerRowDoc<Id extends string>({
+export function createPerRowDoc({
 	workspaceId,
 	collection,
 	field,
@@ -71,7 +71,7 @@ export function createPerRowDoc<Id extends string>({
 	workspaceId: string;
 	collection: string;
 	field: string;
-	id: Id;
+	id: string;
 	onUpdate: () => void;
 	attach?: (ydoc: Y.Doc) => DocPersistence;
 }): PerRowDocBase {

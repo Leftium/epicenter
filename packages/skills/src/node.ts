@@ -23,7 +23,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defineMutation, generateId } from '@epicenter/workspace';
-import { Type } from 'typebox';
+import Type from 'typebox';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -58,21 +58,16 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * ```typescript
  * import { createSkillsWorkspace } from '@epicenter/skills/node'
  *
- * const ws = createSkillsWorkspace()
- *   .withExtension('persistence', indexeddbPersistence)
- *
- * await ws.actions.importFromDisk({ dir: '.agents/skills' })
- * await ws.actions.exportToDisk({ dir: '.agents/skills' })
+ * const ws = createSkillsWorkspace();
+ * await ws.actions.importFromDisk({ dir: '.agents/skills' });
+ * await ws.actions.exportToDisk({ dir: '.agents/skills' });
  * ```
  */
 export function createSkillsWorkspace() {
-	// Node has no IndexedDB — skip the attachment. Workspace-level persistence
-	// (sqlite) is attached separately by the caller via `.withExtension()`.
-	const {
-		workspace: base,
-		instructionsDocs,
-		referenceDocs,
-	} = createBrowserSkillsWorkspace({ docPersistence: 'none' });
+	// Node has no IndexedDB — skip the content-doc attachment. Callers wire
+	// their own persistence on top if they need it.
+	const base = createBrowserSkillsWorkspace({ docPersistence: 'none' });
+	const { instructionsDocs, referenceDocs } = base;
 
 	async function writeInstructions(id: string, text: string): Promise<void> {
 		using h = instructionsDocs.open(id);
@@ -98,7 +93,7 @@ export function createSkillsWorkspace() {
 		return h.content.read();
 	}
 
-	const workspace = base.withActions((client) => ({
+	const nodeActions = {
 		/**
 		 * Scan a directory of SKILL.md files and upsert them into the workspace.
 		 *
@@ -146,7 +141,9 @@ export function createSkillsWorkspace() {
 
 					const hasUniqueId =
 						parsedSkill.id !== undefined && !seenIds.has(parsedSkill.id);
-					const skillId = hasUniqueId ? parsedSkill.id : generateId();
+					const skillId: string = hasUniqueId
+						? (parsedSkill.id as string)
+						: generateId();
 					seenIds.add(skillId);
 
 					const skill = {
@@ -154,7 +151,7 @@ export function createSkillsWorkspace() {
 						id: skillId,
 						updatedAt: Date.now(),
 					} satisfies Skill;
-					client.tables.skills.set(skill);
+					base.tables.skills.set(skill);
 
 					// Write back SKILL.md with the id baked into metadata so
 					// future imports on any machine get the same id
@@ -182,7 +179,7 @@ export function createSkillsWorkspace() {
 								);
 								const refId = deriveReferenceId(skillId, fileName);
 
-								client.tables.references.set({
+								base.tables.references.set({
 									id: refId,
 									skillId,
 									path: fileName,
@@ -208,7 +205,7 @@ export function createSkillsWorkspace() {
 			description: 'Export all skills to an agentskills.io-compliant directory',
 			input: DirInput,
 			handler: async ({ dir }) => {
-				const skills = client.tables.skills.getAllValid();
+				const skills = base.tables.skills.getAllValid();
 				const skillNames = new Set(skills.map((s) => s.name));
 
 				// Export all skills in parallel
@@ -222,7 +219,7 @@ export function createSkillsWorkspace() {
 						await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
 
 						// Write references in parallel
-						const refs = client.tables.references.filter(
+						const refs = base.tables.references.filter(
 							(r) => r.skillId === skill.id,
 						);
 						if (refs.length > 0) {
@@ -263,7 +260,13 @@ export function createSkillsWorkspace() {
 				);
 			},
 		}),
-	}));
+	};
+
+	const workspace = Object.assign(base, {
+		actions: { ...base.actions, ...nodeActions },
+		instructionsDocs,
+		referenceDocs,
+	});
 
 	return { workspace, instructionsDocs, referenceDocs };
 }

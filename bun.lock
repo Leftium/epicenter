@@ -214,6 +214,7 @@
       "dependencies": {
         "@codemirror/autocomplete": "^6.20.1",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/document": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@tanstack/ai": "catalog:",
@@ -277,6 +278,7 @@
       "name": "skills",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/document": "workspace:*",
         "mode-watcher": "^1.1.0",
       },
       "devDependencies": {
@@ -312,6 +314,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/constants": "workspace:*",
+        "@epicenter/document": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -360,6 +363,7 @@
         "@aptabase/tauri": "^0.4.1",
         "@aptabase/web": "^0.4.3",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/document": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@google/generative-ai": "^0.24.1",
@@ -564,6 +568,7 @@
         "@epicenter/document": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "arktype": "catalog:",
+        "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yaml": "^2.8.0",
       },

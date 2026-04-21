@@ -1,60 +1,64 @@
 /**
- * @fileoverview Isomorphic workspace factory for agent skills.
+ * @fileoverview Isomorphic skills workspace factory.
  *
- * `createSkillsWorkspace()` returns the workspace builder alongside the
- * shared per-skill document factories (`instructionsDocs`, `referenceDocs`).
- * This is safe to import in any runtime (browser, Node, Bun).
+ * `createSkillsWorkspace()` opens the shared `epicenter.skills` Y.Doc,
+ * creates per-skill instruction and reference content-doc factories, and
+ * attaches the three read actions for progressive skill disclosure. The
+ * returned bundle is the standard `WorkspaceBundle` plus `actions`,
+ * `instructionsDocs`, and `referenceDocs`.
+ *
+ * Apps layer persistence and sync on top via `attachIndexedDb` (browser) or
+ * their chosen persistence. Safe to import in any runtime (browser, Node,
+ * Bun) — persistence is the caller's responsibility.
  *
  * For disk I/O actions (importFromDisk, exportToDisk), import from
- * `@epicenter/skills/node` instead — that subpath returns a pre-built
- * workspace with server-side actions attached.
+ * `@epicenter/skills/node` instead.
  *
  * @module
  */
 
-import { createWorkspace, defineQuery } from '@epicenter/workspace';
+import { defineQuery } from '@epicenter/workspace';
 import Type from 'typebox';
-import { skillsDefinition } from './definition.js';
+import { skillsWorkspace as skillsFactory } from './definition.js';
 import { createReferenceContentDocs } from './reference-content-docs.js';
 import { createSkillInstructionsDocs } from './skill-instructions-docs.js';
 
-export { skillsDefinition } from './definition.js';
+export { skillsWorkspace } from './definition.js';
 
 /**
- * Create an isomorphic skills workspace with shared document factories.
+ * Open the shared skills workspace, wire the per-skill document factories,
+ * and attach the three read actions. Returns the `WorkspaceBundle` augmented
+ * with `actions`, `instructionsDocs`, and `referenceDocs`.
  *
- * Returns `{ workspace, instructionsDocs, referenceDocs }`. Apps chain
- * `.withExtension()` on `workspace` to add persistence/sync, and open
- * per-skill Y.Docs via `instructionsDocs.open(id)` / `referenceDocs.open(id)`.
- * Both factories are already wired into the workspace's read actions, so
- * components and actions share the same handle cache.
- *
- * Includes three read actions for progressive skill disclosure:
- * - `listSkills()` — catalog entries (cheap, no docs opened)
- * - `getSkill({ id })` — metadata + instructions (opens one Y.Doc)
- * - `getSkillWithReferences({ id })` — full skill with all references (opens 1 + N Y.Docs)
+ * @param opts.docPersistence
+ *   Whether per-skill content docs attach IndexedDB automatically.
+ *   Defaults to `'indexeddb'`. Pass `'none'` for Node / tests.
  *
  * @example Browser
  * ```typescript
- * import { createSkillsWorkspace } from '@epicenter/skills'
+ * import { attachIndexedDb } from '@epicenter/document';
+ * import { createSkillsWorkspace } from '@epicenter/skills';
  *
- * const { workspace, instructionsDocs, referenceDocs } = createSkillsWorkspace();
- * const ws = workspace.withExtension('persistence', indexeddbPersistence);
- * using h = instructionsDocs.open(skillId);
+ * const base = createSkillsWorkspace();
+ * const idb = attachIndexedDb(base.ydoc);
+ * export const workspace = Object.assign(base, {
+ *   idb,
+ *   whenReady: idb.whenLoaded,
+ * });
  * ```
  */
 export function createSkillsWorkspace(
 	opts: { docPersistence?: 'indexeddb' | 'none' } = {},
 ) {
-	const base = createWorkspace(skillsDefinition);
-	const persistence = opts.docPersistence;
+	const base = skillsFactory.open('epicenter.skills');
+	const persistence = opts.docPersistence ?? 'indexeddb';
 	const instructionsDocs = createSkillInstructionsDocs({
-		workspaceId: base.id,
+		workspaceId: base.ydoc.guid,
 		skillsTable: base.tables.skills,
 		persistence,
 	});
 	const referenceDocs = createReferenceContentDocs({
-		workspaceId: base.id,
+		workspaceId: base.ydoc.guid,
 		referencesTable: base.tables.references,
 		persistence,
 	});
@@ -71,54 +75,40 @@ export function createSkillsWorkspace(
 		return h.content.read();
 	}
 
-	const workspace = base.withActions((client) => ({
+	const actions = {
 		/**
-		 * List all skills as lightweight catalog entries.
-		 *
-		 * Returns id, name, and description for every valid skill row.
-		 * No documents are opened — cheap enough to call on every render
-		 * cycle or at agent session startup.
+		 * List all skills as lightweight catalog entries — no docs opened.
 		 */
 		listSkills: defineQuery({
 			description: 'List all skills (id, name, description)',
 			handler: () =>
-				client.tables.skills
+				base.tables.skills
 					.getAllValid()
 					.map((s) => ({ id: s.id, name: s.name, description: s.description }))
 					.sort((a, b) => a.name.localeCompare(b.name)),
 		}),
 
-		/**
-		 * Get a single skill's metadata and instructions.
-		 *
-		 * Opens the skill's instructions document (one Y.Doc) and reads
-		 * the full markdown content.
-		 */
+		/** Get a single skill's metadata and instructions. Opens one Y.Doc. */
 		getSkill: defineQuery({
 			description: 'Get skill metadata and instructions by ID',
 			input: Type.Object({ id: Type.String() }),
 			handler: async ({ id }) => {
-				const skill = client.tables.skills.find((s) => s.id === id);
+				const skill = base.tables.skills.find((s) => s.id === id);
 				if (!skill) return null;
 				const instructions = await readInstructions(id);
 				return { skill, instructions };
 			},
 		}),
 
-		/**
-		 * Get a skill with its full instructions and all reference content.
-		 *
-		 * Opens the instructions document plus one content document per
-		 * reference — expensive for skills with many references.
-		 */
+		/** Get a skill with full instructions and all reference content. */
 		getSkillWithReferences: defineQuery({
 			description: 'Get skill with instructions and all reference content',
 			input: Type.Object({ id: Type.String() }),
 			handler: async ({ id }) => {
-				const skill = client.tables.skills.find((s) => s.id === id);
+				const skill = base.tables.skills.find((s) => s.id === id);
 				if (!skill) return null;
 				const instructions = await readInstructions(id);
-				const refs = client.tables.references.filter((r) => r.skillId === id);
+				const refs = base.tables.references.filter((r) => r.skillId === id);
 				const references = await Promise.all(
 					refs.map(async (ref) => ({
 						path: ref.path,
@@ -132,7 +122,7 @@ export function createSkillsWorkspace(
 				};
 			},
 		}),
-	}));
+	};
 
-	return { workspace, instructionsDocs, referenceDocs };
+	return Object.assign(base, { actions, instructionsDocs, referenceDocs });
 }

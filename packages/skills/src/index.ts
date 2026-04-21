@@ -4,29 +4,31 @@
  * This entry point is safe to import in any runtime (browser, Node, Bun).
  * For server-side disk I/O actions, use `@epicenter/skills/node` instead.
  *
- * @example Browser — tables only
+ * @example Browser
  * ```typescript
- * import { createSkillsWorkspace } from '@epicenter/skills'
+ * import { attachIndexedDb } from '@epicenter/document';
+ * import { createSkillsWorkspace } from '@epicenter/skills';
  *
- * const ws = createSkillsWorkspace()
- *   .withExtension('persistence', indexeddbPersistence)
+ * const base = createSkillsWorkspace();
+ * const idb = attachIndexedDb(base.ydoc);
+ * export const workspace = Object.assign(base, {
+ *   idb,
+ *   whenReady: idb.whenLoaded,
+ * });
  * ```
  *
  * @example Server — with disk I/O
  * ```typescript
- * import { createSkillsWorkspace } from '@epicenter/skills/node'
+ * import { createSkillsWorkspace } from '@epicenter/skills/node';
  *
- * const ws = createSkillsWorkspace()
- * await ws.actions.importFromDisk({ dir: '.agents/skills' })
+ * const ws = createSkillsWorkspace();
+ * await ws.actions.importFromDisk({ dir: '.agents/skills' });
  * ```
  *
  * @module
  */
 
-export { skillsDefinition } from './definition.js';
+export { skillsWorkspace } from './definition.js';
 export type { Reference, Skill } from './tables.js';
-
-// Tables + types (for embedding in custom workspaces)
 export { referencesTable, skillsTable } from './tables.js';
-// Workspace factory + definition
 export { createSkillsWorkspace } from './workspace.js';

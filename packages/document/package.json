@@ -16,6 +16,7 @@
 		"./on-local-update": "./src/on-local-update.ts",
 		"./attach-indexed-db": "./src/attach-indexed-db.ts",
 		"./attach-sqlite": "./src/attach-sqlite.ts",
+		"./sqlite-update-log": "./src/sqlite-update-log.ts",
 		"./attach-rich-text": "./src/attach-rich-text.ts",
 		"./attach-plain-text": "./src/attach-plain-text.ts",
 		"./attach-sync": "./src/attach-sync.ts",

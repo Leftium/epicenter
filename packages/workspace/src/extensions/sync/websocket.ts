@@ -263,10 +263,8 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 	exports: SyncExtensionExports;
 	init: Promise<void>;
 	dispose: () => void;
-	/** Connect the WebSocket supervisor loop. Framework calls on bind transition 0 → 1. */
+	/** Connect the WebSocket supervisor loop. Framework calls once after `init`. */
 	onActive: () => void;
-	/** Disconnect the WebSocket. Framework calls after grace when bind transition 1 → 0. */
-	onIdle: () => void;
 } {
 	return ({ ydoc: doc, awareness: ctxAwareness, init: priorInit }) => {
 		// priorInit resolves when all extensions registered before this one have
@@ -780,13 +778,11 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		awareness.on('update', handleAwarenessUpdate);
 
 		/**
-		 * Start the supervisor loop. Called by the framework on first
-		 * `onActive` — at the workspace scope that's immediately after `init`;
-		 * at a per-document scope it's on first `handle.bind()` (and again on
-		 * every 0 → 1 transition after an idle period).
+		 * Start the supervisor loop. Called by the framework from `onActive`
+		 * immediately after `init` resolves.
 		 *
-		 * Idempotent: if already `'online'`, this is a no-op so repeated
-		 * activations during the grace window don't double-run the loop.
+		 * Idempotent: if already `'online'`, this is a no-op so callers like
+		 * `reconnect()` can safely invoke it.
 		 */
 		function goOnline() {
 			if (desired === 'online') return;
@@ -796,11 +792,9 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 		}
 
 		/**
-		 * init stays passive — the sync extension opts into the bind/release
-		 * lifecycle by implementing `onActive` / `onIdle`, so the framework
-		 * (not init) decides when to connect. At the workspace scope the
-		 * framework calls `onActive` immediately after this init resolves; at
-		 * the per-doc scope it waits for `handle.bind()`.
+		 * init stays passive — the sync extension opts into `onActive` so the
+		 * framework (not init) decides when to connect. The framework calls
+		 * `onActive` immediately after this init resolves.
 		 */
 		const init = (async () => {
 			await priorInit;
@@ -908,12 +902,9 @@ export function createSyncExtension(config: SyncExtensionConfig): (
 				bc.dispose?.();
 				status.clear();
 			},
-			// Opt into the framework's bind/release lifecycle. `onActive` fires
-			// when a consumer binds the handle (or immediately after init at the
-			// workspace scope); `onIdle` fires after the grace period once the
-			// last bind has been released.
+			// Start the supervisor loop once `init` resolves. Teardown runs
+			// from `dispose` above (which calls `goOffline`).
 			onActive: goOnline,
-			onIdle: goOffline,
 		};
 	};
 }

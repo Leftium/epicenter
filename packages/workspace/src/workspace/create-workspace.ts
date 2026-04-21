@@ -50,15 +50,12 @@
  * ```
  */
 
-import { attachAwareness, defineDocument } from '@epicenter/document';
+import { attachAwareness } from '@epicenter/document';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import {
-	attachEncryption,
-	type EncryptionAttachment,
-} from '../shared/attach-encryption.js';
-import { attachKv, type KvAttachment } from './attach-kv.js';
-import { attachTables, type TablesAttachment } from './attach-tables.js';
+import { attachEncryption } from '../shared/attach-encryption.js';
+import { attachKv } from './attach-kv.js';
+import { attachTables } from './attach-tables.js';
 import type { EncryptionKeys } from './encryption-key.js';
 import {
 	defineExtension,

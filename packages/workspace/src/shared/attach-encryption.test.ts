@@ -102,26 +102,6 @@ describe('attachEncryption', () => {
 		expect(storeA.get('1')).toEqual({ title: 'Plaintext' });
 	});
 
-	test('clearLocalData wipes every store in a single transaction', () => {
-		const { ydoc, storeA, storeB, enc } = setup();
-		storeA.set('1', { title: 'a1' });
-		storeA.set('2', { title: 'a2' });
-		storeB.set('1', { title: 'b1' });
-
-		let observedTransactions = 0;
-		ydoc.on('afterTransaction', () => {
-			observedTransactions++;
-		});
-
-		enc.clearLocalData();
-
-		expect(storeA.get('1')).toBeUndefined();
-		expect(storeA.get('2')).toBeUndefined();
-		expect(storeB.get('1')).toBeUndefined();
-		// One combined transaction, not one per store.
-		expect(observedTransactions).toBe(1);
-	});
-
 	test('whenDisposed resolves once ydoc.destroy() fires', async () => {
 		const { ydoc, enc } = setup();
 		ydoc.destroy();

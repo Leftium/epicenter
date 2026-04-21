@@ -21,6 +21,18 @@
  * encryption by calling `ydoc.destroy()` — the attachment does not expose a
  * standalone `dispose()` method.
  *
+ * ## What this attachment does NOT do
+ *
+ * - It does not wipe CRDT state. The old `createWorkspace.clearLocalData()`
+ *   iterated extension callbacks (IndexedDB wipe + similar); that semantic
+ *   lives in persistence attachments, not here. Any future "wipe encrypted
+ *   blobs" API needs to coordinate with persistence to be useful — design it
+ *   alongside the consumer migration.
+ * - It does not own store creation. Stores are created by `attachTables` /
+ *   `attachKv` (for workspace) or by test setup (for standalone encryption
+ *   tests). This attachment only coordinates the encryption lifecycle across
+ *   whatever stores it's handed.
+ *
  * ## Why `workspaceId` is read from `ydoc.guid`
  *
  * By construction, the workspace Y.Doc's `guid` equals the workspace id
@@ -52,13 +64,6 @@ export type EncryptionAttachment = {
 	 * reset path is `clearLocalData()` followed by a fresh workspace.
 	 */
 	applyKeys(keys: EncryptionKeys): void;
-
-	/**
-	 * Wipe every encrypted store in place. Callers that also persist data
-	 * (IndexedDB, SQLite) are responsible for their own local data wipes —
-	 * this only clears the in-memory CRDT state owned by the stores.
-	 */
-	clearLocalData(): void;
 
 	/** The encrypted stores this attachment coordinates. */
 	readonly stores: readonly EncryptedYKeyValueLww<any>[];
@@ -102,17 +107,6 @@ export function attachEncryption(
 			for (const store of stores) {
 				store.activateEncryption(keyring);
 			}
-		},
-		clearLocalData(): void {
-			// Wipe the CRDT state of every encrypted store in a single
-			// transaction so observers see one combined change. This does NOT
-			// wipe persisted backing (IndexedDB, SQLite) — persistence
-			// attachments own their own data and must be cleared separately.
-			ydoc.transact(() => {
-				for (const store of stores) {
-					store.yarray.delete(0, store.yarray.length);
-				}
-			});
 		},
 		stores,
 		whenDisposed,

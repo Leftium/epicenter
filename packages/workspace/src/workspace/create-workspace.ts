@@ -118,58 +118,21 @@ export function createWorkspace<
 	const awarenessDefs = (awarenessDef ?? {}) as TAwarenessDefinitions;
 
 	// ── Data doc ────────────────────────────────────────────────────────────
-	// Construction flows through `defineDocument` so the workspace Y.Doc lives
-	// in the same refcounted cache as content docs — one lifecycle machine for
-	// the whole system. `gcTime: Infinity` means refcount→0 never auto-evicts;
-	// only an explicit `factory.close(id)` tears the bundle down. The per-call
-	// factory is private to this createWorkspace invocation; it intentionally
-	// does NOT share across calls (current semantics: two createWorkspace calls
-	// with the same id build two independent Y.Docs). A future pass will lift
-	// the factory to a public `defineWorkspace()` surface for sharing.
-	//
 	// gc defaults to false — GC of deletion markers breaks sync with peers
 	// that haven't seen the deletes yet. y-protocols' Awareness self-registers
 	// a ydoc 'destroy' listener, so the cascade through ydoc.destroy() reaches
-	// every attached provider.
-	type WorkspaceBundle = {
-		ydoc: Y.Doc;
-		tables: TablesAttachment<TTableDefinitions>;
-		kv: KvAttachment<TKvDefinitions>;
-		awareness: Awareness<TAwarenessDefinitions>;
-		enc: EncryptionAttachment;
-		whenDisposed: Promise<void>;
-		[Symbol.dispose]: () => void;
-	};
-
-	const factory = defineDocument<TId, WorkspaceBundle>(
-		(bundleId) => {
-			const ydoc = new Y.Doc({ guid: bundleId, gc: gc ?? false });
-			const tables = attachTables(ydoc, tableDefs);
-			const kv = attachKv(ydoc, kvDefs);
-			const awareness: Awareness<TAwarenessDefinitions> = attachAwareness(
-				ydoc,
-				awarenessDefs,
-			);
-			const enc = attachEncryption(ydoc, {
-				stores: [...tables.stores, kv.store],
-			});
-			return {
-				ydoc,
-				tables,
-				kv,
-				awareness,
-				enc,
-				whenDisposed: enc.whenDisposed,
-				[Symbol.dispose]() {
-					ydoc.destroy();
-				},
-			};
-		},
-		{ gcTime: Infinity },
+	// every attached provider. `enc.whenDisposed` is the teardown barrier —
+	// it resolves once every encrypted store has been disposed.
+	const ydoc = new Y.Doc({ guid: id, gc: gc ?? false });
+	const tables = attachTables(ydoc, tableDefs);
+	const kv = attachKv(ydoc, kvDefs);
+	const awareness: Awareness<TAwarenessDefinitions> = attachAwareness(
+		ydoc,
+		awarenessDefs,
 	);
-
-	const handle = factory.open(id);
-	const { ydoc, tables, kv, awareness, enc } = handle;
+	const enc = attachEncryption(ydoc, {
+		stores: [...tables.stores, kv.store],
+	});
 
 	const definitions = {
 		tables: tableDefs,
@@ -221,11 +184,12 @@ export function createWorkspace<
 	> {
 		const dispose = async (): Promise<void> => {
 			const errors = await disposeLifo(state.extensionCleanups);
-			// Release our handle — the cache refcounts to 0 and (because
-			// gcTime is Infinity) we explicitly close the bundle so its
-			// [Symbol.dispose] runs and ydoc.destroy() cascades.
-			handle.dispose();
-			await factory.close(id);
+			ydoc.destroy();
+			// Wait for the encryption attachment's destroy listener to fire and
+			// every encrypted store to settle before resolving. Awareness
+			// teardown cascades via y-protocols' own 'destroy' listener with no
+			// async barrier of its own.
+			await enc.whenDisposed;
 
 			if (errors.length > 0) {
 				throw new AggregateError(

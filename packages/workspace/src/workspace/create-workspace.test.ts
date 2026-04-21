@@ -18,7 +18,6 @@ import { bytesToBase64 } from '../shared/crypto/index.js';
 import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
-import { defineWorkspace } from './define-workspace.js';
 import type { EncryptionKeys } from './encryption-key.js';
 
 /** Wrap a raw Uint8Array key into a single-entry EncryptionKeys for tests. */
@@ -37,13 +36,11 @@ function setup() {
 		mode: 'light',
 	});
 
-	const definition = defineWorkspace({
+	const client = createWorkspace({
 		id: 'test-workspace',
 		tables: { posts: postsTable, tags: tagsTable },
 		kv: { theme: themeDef },
 	});
-
-	const client = createWorkspace(definition);
 	return { client };
 }
 
@@ -476,7 +473,7 @@ describe('createWorkspace', () => {
 	// ════════════════════════════════════════════════════════════════════════════
 
 	describe('lifecycle baseline', () => {
-		const def = defineWorkspace({ id: 'lifecycle-test' });
+		const def = { id: 'lifecycle-test' as const };
 
 		test('gc defaults to false to preserve deletion markers for sync', () => {
 			const client = createWorkspace({ id: 'gc-default' });
@@ -584,9 +581,7 @@ describe('createWorkspace', () => {
 describe('applyEncryptionKeys', () => {
 	function setupEncryptedWorkspace() {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
-		const client = createWorkspace(
-			defineWorkspace({ id: 'enc-test', tables: { posts } }),
-		);
+		const client = createWorkspace({ id: 'enc-test', tables: { posts } });
 		return { client, key: randomBytes(32) };
 	}
 
@@ -619,9 +614,10 @@ describe('applyEncryptionKeys', () => {
 
 	test('key rotation: old data readable after applying new keyring', () => {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
-		const client = createWorkspace(
-			defineWorkspace({ id: 'rotation-test', tables: { posts } }),
-		);
+		const client = createWorkspace({
+			id: 'rotation-test',
+			tables: { posts },
+		});
 
 		const keyV1 = randomBytes(32);
 		const keyV2 = randomBytes(32);
@@ -738,11 +734,11 @@ describe('withActions (non-terminal)', () => {
 		const postsTable = defineTable(
 			type({ id: 'string', title: 'string', _v: '1' }),
 		);
-		const definition = defineWorkspace({
-			id: 'actions-test',
+		const definition = {
+			id: 'actions-test' as const,
 			tables: { posts: postsTable },
 			kv: {},
-		});
+		};
 		return { definition };
 	}
 

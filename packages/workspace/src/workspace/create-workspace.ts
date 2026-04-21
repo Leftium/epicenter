@@ -44,15 +44,18 @@
  *     createPost: defineMutation({ ... }),
  *   }));
  *
- * // From reusable definition
- * const def = defineWorkspace({ id: 'my-app', tables: { posts } });
+ * // From a reusable definition object
+ * const def: WorkspaceDefinition<'my-app', ...> = { id: 'my-app', tables: { posts } };
  * const client = createWorkspace(def);
  * ```
  */
 
+import { attachAwareness } from '@epicenter/document';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import { defineWorkspace, type WorkspaceFactory } from './define-workspace.js';
+import { attachEncryption } from '../shared/attach-encryption.js';
+import { attachEncryptedKv } from './attach-kv.js';
+import { attachEncryptedTables } from './attach-tables.js';
 import type { EncryptionKeys } from './encryption-key.js';
 import {
 	defineExtension,
@@ -83,7 +86,7 @@ import type {
  * awareness fields are defined, the helper has zero accessible field keys
  * but `raw` is still available for sync providers.
  *
- * @param config - Workspace config (or WorkspaceDefinition from defineWorkspace())
+ * @param def - Workspace definition (id + schemas).
  * @returns WorkspaceClientBuilder - a client that can be used directly or chained with .withExtension()
  */
 export function createWorkspace<
@@ -92,19 +95,12 @@ export function createWorkspace<
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
 	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
 >(
-	arg:
-		| WorkspaceDefinition<
-				TId,
-				TTableDefinitions,
-				TKvDefinitions,
-				TAwarenessDefinitions
-		  >
-		| WorkspaceFactory<
-				TId,
-				TTableDefinitions,
-				TKvDefinitions,
-				TAwarenessDefinitions
-		  >,
+	def: WorkspaceDefinition<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions
+	>,
 ): WorkspaceClientBuilder<
 	TId,
 	TTableDefinitions,
@@ -112,28 +108,28 @@ export function createWorkspace<
 	TAwarenessDefinitions,
 	Record<string, never>
 > {
-	// Accept either a raw WorkspaceDefinition (legacy) or the new
-	// `defineWorkspace()` factory output. The factory carries `.definition`
-	// as metadata so we can recover the original schema either way.
-	const def: WorkspaceDefinition<
-		TId,
-		TTableDefinitions,
-		TKvDefinitions,
-		TAwarenessDefinitions
-	> = 'definition' in arg ? arg.definition : arg;
+	const {
+		id,
+		tables: tableDefs = {} as TTableDefinitions,
+		kv: kvDefs = {} as TKvDefinitions,
+		awareness: awarenessDefs = {} as TAwarenessDefinitions,
+		// gc defaults to false — deletion-marker GC breaks sync with peers that
+		// haven't seen the deletes yet. Opt in only for purely local docs.
+		gc = false,
+	} = def;
 
-	// Per-call factory: each createWorkspace invocation builds its own Y.Doc,
-	// matching the pre-refactor semantics. Apps that want shared-doc behavior
-	// call `defineWorkspace(def).open(id)` directly.
-	const factory = defineWorkspace(def);
-	const { id } = def;
-	const handle = factory.open(id);
-	const { ydoc, tables, kv, awareness, encryption } = handle;
+	// Each createWorkspace invocation builds its own Y.Doc, so no cache or
+	// refcounting is needed — dispose tears down the doc directly.
+	const ydoc = new Y.Doc({ guid: id, gc });
+	const encryption = attachEncryption(ydoc);
+	const tables = attachEncryptedTables(ydoc, encryption, tableDefs);
+	const kv = attachEncryptedKv(ydoc, encryption, kvDefs);
+	const awareness = attachAwareness(ydoc, awarenessDefs);
 
 	const definitions = {
-		tables: def.tables ?? ({} as TTableDefinitions),
-		kv: def.kv ?? ({} as TKvDefinitions),
-		awareness: (def.awareness ?? {}) as TAwarenessDefinitions,
+		tables: tableDefs,
+		kv: kvDefs,
+		awareness: awarenessDefs,
 	};
 
 	/**
@@ -180,12 +176,11 @@ export function createWorkspace<
 	> {
 		const dispose = async (): Promise<void> => {
 			const errors = await disposeLifo(state.extensionCleanups);
-			// Release our handle and force the factory to tear the bundle
-			// down — gcTime is Infinity so refcount→0 alone doesn't evict.
-			// factory.close awaits `bundle.whenDisposed`, which resolves once
-			// every encrypted store has settled.
-			handle.dispose();
-			await factory.close(id);
+			// Destroy the Y.Doc — cascades to every attached provider and
+			// resolves `encryption.whenDisposed` once every encrypted store
+			// has settled.
+			ydoc.destroy();
+			await encryption.whenDisposed;
 
 			if (errors.length > 0) {
 				throw new AggregateError(

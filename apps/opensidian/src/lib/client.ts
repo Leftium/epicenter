@@ -46,10 +46,10 @@ const baseWorkspace = createWorkspace(opensidian)
 	);
 
 /** Per-file content Y.Doc factory — apps own content-doc construction directly. */
-export const fileContentDocs = createFileContentDocs(
-	baseWorkspace.tables.files,
-	baseWorkspace.id,
-);
+export const fileContentDocs = createFileContentDocs({
+	workspaceId: baseWorkspace.id,
+	filesTable: baseWorkspace.tables.files,
+});
 
 export const workspace = buildWorkspaceClient();
 

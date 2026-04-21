@@ -10,7 +10,7 @@
  * by the caller:
  *
  *   return defineDocument((fileId: FileId) => {
- *     const base = buildPerRowDoc({
+ *     const base = createPerRowDoc({
  *       workspaceId, collection: 'files', field: 'content', id: fileId,
  *       onUpdate: () => filesTable.update(fileId, { updatedAt: Date.now() }),
  *       attach,
@@ -60,7 +60,7 @@ type PerRowDocBase = {
 	[Symbol.dispose](): void;
 };
 
-export function buildPerRowDoc<Id extends string>({
+export function createPerRowDoc<Id extends string>({
 	workspaceId,
 	collection,
 	field,

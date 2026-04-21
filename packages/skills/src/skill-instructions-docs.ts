@@ -6,7 +6,7 @@
 
 import {
 	attachPlainText,
-	buildPerRowDoc,
+	createPerRowDoc,
 	defineDocument,
 	type DocPersistence,
 } from '@epicenter/document';
@@ -24,7 +24,7 @@ export function createSkillInstructionsDocs({
 	attach?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	return defineDocument((skillId: string) => {
-		const base = buildPerRowDoc({
+		const base = createPerRowDoc({
 			workspaceId,
 			collection: 'skills',
 			field: 'instructions',

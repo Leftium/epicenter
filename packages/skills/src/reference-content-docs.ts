@@ -7,7 +7,7 @@
 
 import {
 	attachPlainText,
-	buildPerRowDoc,
+	createPerRowDoc,
 	defineDocument,
 	type DocPersistence,
 } from '@epicenter/document';
@@ -25,7 +25,7 @@ export function createReferenceContentDocs({
 	attach?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	return defineDocument((referenceId: string) => {
-		const base = buildPerRowDoc({
+		const base = createPerRowDoc({
 			workspaceId,
 			collection: 'references',
 			field: 'content',

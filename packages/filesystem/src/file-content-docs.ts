@@ -22,7 +22,7 @@
 
 import {
 	attachTimeline,
-	buildPerRowDoc,
+	createPerRowDoc,
 	defineDocument,
 	type DocPersistence,
 } from '@epicenter/document';
@@ -41,7 +41,7 @@ export function createFileContentDocs({
 	attach?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	return defineDocument((fileId: FileId) => {
-		const base = buildPerRowDoc({
+		const base = createPerRowDoc({
 			workspaceId,
 			collection: 'files',
 			field: 'content',

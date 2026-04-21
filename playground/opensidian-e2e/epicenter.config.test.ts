@@ -15,6 +15,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createFileContentDocs } from '@epicenter/filesystem';
 import { createWorkspace, generateId } from '@epicenter/workspace';
 import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
 import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
@@ -32,10 +33,31 @@ function dbPath(id: string) {
 
 /** Create a workspace client with filesystem persistence for testing. */
 function createTestClient() {
-	return createWorkspace(opensidianDefinition).withExtension(
+	const client = createWorkspace(opensidianDefinition).withExtension(
 		'persistence',
 		filesystemPersistence({ filePath: dbPath(opensidianDefinition.id) }),
 	);
+	const contentDocs = createFileContentDocs(client, { persistence: 'none' });
+	return { client, contentDocs };
+}
+
+async function writeContent(
+	contentDocs: ReturnType<typeof createFileContentDocs>,
+	id: string,
+	text: string,
+) {
+	using handle = contentDocs.open(id);
+	await handle.whenReady;
+	handle.content.write(text);
+}
+
+async function readContent(
+	contentDocs: ReturnType<typeof createFileContentDocs>,
+	id: string,
+) {
+	using handle = contentDocs.open(id);
+	await handle.whenReady;
+	return handle.content.read();
 }
 
 describe('e2e: opensidian workspace', () => {
@@ -55,7 +77,7 @@ describe('e2e: opensidian workspace', () => {
 	});
 
 	test('table CRUD: create folder and file', async () => {
-		const client = createTestClient();
+		const { client, contentDocs } = createTestClient();
 		await client.whenReady;
 
 		// Create a folder
@@ -100,15 +122,16 @@ describe('e2e: opensidian workspace', () => {
 	});
 
 	test('document content: write and read', async () => {
-		const client = createTestClient();
+		const { client, contentDocs } = createTestClient();
 		await client.whenReady;
 
-		await client.tables.files.documents.content.write(
+		await writeContent(
+			contentDocs,
 			fileId,
 			'# Hello World\n\nThis is a test note.',
 		);
 
-		expect(await client.tables.files.documents.content.read(fileId)).toBe(
+		expect(await readContent(contentDocs, fileId)).toBe(
 			'# Hello World\n\nThis is a test note.',
 		);
 
@@ -116,7 +139,7 @@ describe('e2e: opensidian workspace', () => {
 	});
 
 	test('persistence: table data survives restart', async () => {
-		const client = createTestClient();
+		const { client, contentDocs } = createTestClient();
 		await client.whenReady;
 
 		const files = client.tables.files.getAllValid();
@@ -145,12 +168,14 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 	const IMPORT_FILES_DIR = join(IMPORT_DIR, 'files');
 
 	function createImportClient() {
-		return createWorkspace(opensidianDefinition).withExtension(
+		const client = createWorkspace(opensidianDefinition).withExtension(
 			'persistence',
 			filesystemPersistence({
 				filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
 			}),
 		);
+		const contentDocs = createFileContentDocs(client, { persistence: 'none' });
+		return { client, contentDocs };
 	}
 
 	/** Write a markdown file with YAML frontmatter and optional body. */
@@ -190,11 +215,12 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 			'# Test Note\n\nHello from import.',
 		);
 
-		const client = createImportClient();
+		const { client, contentDocs } = createImportClient();
 		await client.whenReady;
 
 		const result = await pushFromMarkdown({
 			tables: client.tables,
+			contentDocs,
 			filesDir: IMPORT_FILES_DIR,
 		});
 
@@ -212,7 +238,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		}
 
 		// Verify document content
-		expect(await client.tables.files.documents.content.read(fileId)).toBe(
+		expect(await readContent(contentDocs, fileId)).toBe(
 			'# Test Note\n\nHello from import.',
 		);
 
@@ -222,11 +248,12 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 	test('skips files without id in frontmatter', async () => {
 		await writeTestMd('no-id.md', { name: 'orphan', size: 0 });
 
-		const client = createImportClient();
+		const { client, contentDocs } = createImportClient();
 		await client.whenReady;
 
 		const result = await pushFromMarkdown({
 			tables: client.tables,
+			contentDocs,
 			filesDir: IMPORT_FILES_DIR,
 		});
 
@@ -240,7 +267,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		const targetId = generateId();
 		const sourceId = generateId();
 
-		const client = createImportClient();
+		const { client, contentDocs } = createImportClient();
 		await client.whenReady;
 
 		// Pre-seed the target row so the wikilink can resolve regardless of file processing order
@@ -273,13 +300,14 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 		const result = await pushFromMarkdown({
 			tables: client.tables,
+			contentDocs,
 			filesDir: IMPORT_FILES_DIR,
 		});
 
 		expect(result.errors).toHaveLength(0);
 
 		// [[Target Note]] should have been resolved to [Target Note](epicenter://opensidian/files/GUID)
-		expect(await client.tables.files.documents.content.read(sourceId)).toBe(
+		expect(await readContent(contentDocs, sourceId)).toBe(
 			`# Source\n\nSee [Target Note](epicenter://opensidian/files/${targetId}) for details.`,
 		);
 

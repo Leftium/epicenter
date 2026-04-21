@@ -9,7 +9,7 @@
 
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type FileRow } from '@epicenter/filesystem';
+import type { createFileContentDocs, FileRow } from '@epicenter/filesystem';
 import {
 	convertWikilinksToEpicenterLinks,
 	makeEpicenterLink,
@@ -21,6 +21,7 @@ const MARKDOWN_DIR = join(import.meta.dir, 'data');
 
 export async function pushFromMarkdown(ctx: {
 	tables: (typeof opensidian)['tables'];
+	contentDocs: ReturnType<typeof createFileContentDocs>;
 	filesDir?: string;
 }): Promise<{ imported: number; skipped: number; errors: string[] }> {
 	const dir = ctx.filesDir ?? join(MARKDOWN_DIR, 'files');
@@ -86,10 +87,11 @@ export async function pushFromMarkdown(ctx: {
 						? makeEpicenterLink('opensidian', 'files', match.id)
 						: null;
 				});
-				await ctx.tables.files.documents.content.write(
+				using handle = ctx.contentDocs.open(
 					frontmatter.id as FileRow['id'],
-					resolvedBody,
 				);
+				await handle.whenReady;
+				handle.content.write(resolvedBody);
 			} catch (error) {
 				errors.push(`Failed to write content for ${frontmatter.id}: ${error}`);
 			}

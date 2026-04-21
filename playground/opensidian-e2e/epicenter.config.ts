@@ -15,14 +15,15 @@
  *   epicenter list files -C playground/opensidian-e2e
  */
 
-import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { Database } from 'bun:sqlite';
 import {
 	createCliUnlock,
 	createSessionStore,
 	EPICENTER_PATHS,
 } from '@epicenter/cli';
+import { createFileContentDocs } from '@epicenter/filesystem';
 import { createWorkspace, defineMutation } from '@epicenter/workspace';
 import {
 	createMarkdownMaterializer,
@@ -43,47 +44,56 @@ mkdirSync(MATERIALIZER_DIR, { recursive: true });
 
 const sessions = createSessionStore();
 
-export const opensidian = createWorkspace(opensidianDefinition)
-	.withExtension(
-		'persistence',
-		filesystemPersistence({
-			filePath: EPICENTER_PATHS.persistence(opensidianDefinition.id),
-		}),
-	)
+const base = createWorkspace(opensidianDefinition).withExtension(
+	'persistence',
+	filesystemPersistence({
+		filePath: EPICENTER_PATHS.persistence(opensidianDefinition.id),
+	}),
+);
+
+// No IDB in Bun — content docs live in memory and re-hydrate from sync on
+// each run.
+const fileContentDocs = createFileContentDocs(base, { persistence: 'none' });
+
+async function readContent(id: string): Promise<string | undefined> {
+	using handle = fileContentDocs.open(id);
+	await handle.whenReady;
+	return handle.content.read();
+}
+
+export const opensidian = base
+	.withExtension('materializer', (ctx) =>
 		createMarkdownMaterializer(ctx, { dir: MARKDOWN_DIR }).table('files', {
-				serialize: async (row) => {
-					if (row.type === 'folder') {
-						return {
-							filename: `${row.id}.md`,
-							content: toMarkdown({ id: row.id, name: row.name, type: 'folder' }),
-						};
-					}
-					let content: string | undefined;
-					try {
-						content = await ctx.tables.files.documents.content.read(row.id);
-					} catch {
-						// Content doc not yet available (sync pending)
-					}
+			serialize: async (row) => {
+				if (row.type === 'folder') {
 					return {
-						filename: toSlugFilename(
-							row.name.replace(/\.md$/i, ''),
-							row.id,
-						),
-						content: toMarkdown(
-							{
-								id: row.id,
-								name: row.name,
-								parentId: row.parentId,
-								size: row.size,
-								createdAt: row.createdAt,
-								updatedAt: row.updatedAt,
-								trashedAt: row.trashedAt,
-							},
-							content,
-						),
+						filename: `${row.id}.md`,
+						content: toMarkdown({ id: row.id, name: row.name, type: 'folder' }),
 					};
-				},
-			}),
+				}
+				let content: string | undefined;
+				try {
+					content = await readContent(row.id);
+				} catch {
+					// Content doc not yet available (sync pending)
+				}
+				return {
+					filename: toSlugFilename(row.name.replace(/\.md$/i, ''), row.id),
+					content: toMarkdown(
+						{
+							id: row.id,
+							name: row.name,
+							parentId: row.parentId,
+							size: row.size,
+							createdAt: row.createdAt,
+							updatedAt: row.updatedAt,
+							trashedAt: row.trashedAt,
+						},
+						content,
+					),
+				};
+			},
+		}),
 	)
 	.withExtension('sqlite', (ctx) =>
 		createSqliteMaterializer(ctx, {
@@ -117,3 +127,5 @@ export const opensidian = createWorkspace(opensidianDefinition)
 			}),
 		},
 	}));
+
+export { fileContentDocs };

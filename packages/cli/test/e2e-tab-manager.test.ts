@@ -21,7 +21,7 @@ import {
 	definition,
 } from '@epicenter/tab-manager/workspace';
 import { generateId } from '@epicenter/workspace';
-import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+import { sqlitePersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { loadConfig } from '../src/load-config';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/multi-workspace');
@@ -67,7 +67,7 @@ describe('e2e: tab-manager workspace', () => {
 	test('table CRUD: write and read devices + bookmarks', async () => {
 		const client = createTabManagerWorkspace().withExtension(
 			'persistence',
-			filesystemPersistence({ filePath: dbPath(definition.id) }),
+			sqlitePersistence({ filePath: dbPath(definition.id) }),
 		);
 
 		await client.whenReady;
@@ -109,7 +109,7 @@ describe('e2e: tab-manager workspace', () => {
 	test('portable actions: devices.list returns data', async () => {
 		const client = createTabManagerWorkspace().withExtension(
 			'persistence',
-			filesystemPersistence({ filePath: dbPath(definition.id) }),
+			sqlitePersistence({ filePath: dbPath(definition.id) }),
 		);
 
 		await client.whenReady;
@@ -125,7 +125,7 @@ describe('e2e: tab-manager workspace', () => {
 	test('persistence: data survives restart', async () => {
 		const client = createTabManagerWorkspace().withExtension(
 			'persistence',
-			filesystemPersistence({ filePath: dbPath(definition.id) }),
+			sqlitePersistence({ filePath: dbPath(definition.id) }),
 		);
 
 		await client.whenReady;

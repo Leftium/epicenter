@@ -21,7 +21,7 @@ import {
 	createMarkdownMaterializer,
 	slugFilename,
 } from '@epicenter/workspace/extensions/materializer/markdown';
-import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+import { sqlitePersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 
 const SERVER_URL = 'https://api.epicenter.so';
@@ -32,7 +32,7 @@ const sessions = createSessionStore();
 export const tabManager = createTabManagerWorkspace()
 	.withExtension(
 		'persistence',
-		filesystemPersistence({
+		sqlitePersistence({
 			filePath: EPICENTER_PATHS.persistence('epicenter.tab-manager'),
 		}),
 	)

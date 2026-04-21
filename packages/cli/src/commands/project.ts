@@ -17,7 +17,7 @@ const CONFIG_TEMPLATE = `// Epicenter workspace configuration.
 // Example:
 //   import { createTabManagerWorkspace } from '@epicenter/tab-manager/workspace';
 //   export const tabManager = createTabManagerWorkspace()
-//     .withExtension('persistence', filesystemPersistence({ filePath: './data/tab-manager.db' }));
+//     .withExtension('persistence', sqlitePersistence({ filePath: './data/tab-manager.db' }));
 
 `;
 

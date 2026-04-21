@@ -6,8 +6,14 @@
  * The factory owns Y.Doc construction + timeline attachment + `updatedAt`
  * writeback. Persistence is caller-owned via the `attach` callback —
  *
- *   attach: (ydoc) => attachIndexedDb(ydoc)          // browser
- *   attach: (ydoc) => attachSqlite(ydoc, { filePath })  // desktop/CLI
+ *   // browser
+ *   attach: (ydoc) => attachIndexedDb(ydoc),
+ *
+ *   // desktop / CLI — caller closes over a directory
+ *   attach: (ydoc) => attachSqlite(ydoc, {
+ *     filePath: join(contentDir, `${ydoc.guid}.db`),
+ *   }),
+ *
  *   // omit for in-memory (tests, Node stubs)
  *
  * The callback's return value is threaded: `whenLoaded` surfaces on
@@ -16,6 +22,7 @@
 
 import {
 	attachTimeline,
+	type ContentAttachment,
 	defineDocument,
 	docGuid,
 	onLocalUpdate,
@@ -24,11 +31,6 @@ import type { Table } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { FileId } from './ids.js';
 import type { FileRow } from './table.js';
-
-export type ContentAttachment = {
-	whenLoaded?: Promise<void>;
-	whenDisposed?: Promise<void>;
-};
 
 export function createFileContentDocs({
 	workspaceId,

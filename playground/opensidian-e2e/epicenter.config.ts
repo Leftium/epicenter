@@ -33,7 +33,7 @@ import {
 	toSlugFilename,
 } from '@epicenter/workspace/extensions/materializer/markdown';
 import { createSqliteMaterializer } from '@epicenter/workspace/extensions/materializer/sqlite';
-import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+import { sqlitePersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import { opensidianDefinition } from 'opensidian/workspace';
 import Type from 'typebox';
@@ -47,7 +47,7 @@ const sessions = createSessionStore();
 
 const base = createWorkspace(opensidianDefinition).withExtension(
 	'persistence',
-	filesystemPersistence({
+	sqlitePersistence({
 		filePath: EPICENTER_PATHS.persistence(opensidianDefinition.id),
 	}),
 );

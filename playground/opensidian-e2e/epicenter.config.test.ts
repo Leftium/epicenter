@@ -19,7 +19,7 @@ import { attachSqlite } from '@epicenter/document';
 import { createFileContentDocs } from '@epicenter/filesystem';
 import { createWorkspace, generateId } from '@epicenter/workspace';
 import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
-import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+import { sqlitePersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { opensidianDefinition } from 'opensidian/workspace';
 import { pushFromMarkdown } from './push-from-markdown';
 
@@ -36,7 +36,7 @@ function dbPath(id: string) {
 function createTestClient() {
 	const client = createWorkspace(opensidianDefinition).withExtension(
 		'persistence',
-		filesystemPersistence({ filePath: dbPath(opensidianDefinition.id) }),
+		sqlitePersistence({ filePath: dbPath(opensidianDefinition.id) }),
 	);
 	const contentDocs = createFileContentDocs({
 		workspaceId: client.id,
@@ -178,7 +178,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 	function createImportClient() {
 		const client = createWorkspace(opensidianDefinition).withExtension(
 			'persistence',
-			filesystemPersistence({
+			sqlitePersistence({
 				filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
 			}),
 		);

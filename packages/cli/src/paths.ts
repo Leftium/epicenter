@@ -83,9 +83,9 @@ export const EPICENTER_PATHS = {
 	 *
 	 * @example
 	 * ```typescript
-	 * import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+	 * import { sqlitePersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 	 *
-	 * filesystemPersistence({ filePath: EPICENTER_PATHS.persistence('epicenter.fuji') })
+	 * sqlitePersistence({ filePath: EPICENTER_PATHS.persistence('epicenter.fuji') })
 	 * // → '~/.epicenter/persistence/epicenter.fuji.db'
 	 * ```
 	 */

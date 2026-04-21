@@ -8,6 +8,8 @@ export {
 	type SqliteAttachment,
 } from './attach-sqlite.js';
 
+export type { ContentAttachment } from './content-attachment.js';
+
 export {
 	attachBroadcastChannel,
 	BC_ORIGIN,

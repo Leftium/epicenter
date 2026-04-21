@@ -6,6 +6,7 @@
 
 import {
 	attachPlainText,
+	type ContentAttachment,
 	defineDocument,
 	docGuid,
 	onLocalUpdate,
@@ -13,11 +14,6 @@ import {
 import type { Table } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { Skill } from './tables.js';
-
-export type ContentAttachment = {
-	whenLoaded?: Promise<void>;
-	whenDisposed?: Promise<void>;
-};
 
 export function createSkillInstructionsDocs({
 	workspaceId,

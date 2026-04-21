@@ -15,7 +15,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHoneycrisp, honeycrisp } from '@epicenter/honeycrisp/workspace';
 import { dateTimeStringNow } from '@epicenter/workspace';
-import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+import { sqlitePersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 import { loadConfig } from '../src/load-config';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/single-workspace');
@@ -45,7 +45,7 @@ describe('e2e: honeycrisp workspace', () => {
 	test('table CRUD: write and read folders + notes', async () => {
 		const client = createHoneycrisp().withExtension(
 			'persistence',
-			filesystemPersistence({ filePath: dbPath(honeycrisp.id) }),
+			sqlitePersistence({ filePath: dbPath(honeycrisp.id) }),
 		);
 
 		await client.whenReady;
@@ -91,7 +91,7 @@ describe('e2e: honeycrisp workspace', () => {
 		// Re-open same workspace — should load persisted state from SQLite
 		const client = createHoneycrisp().withExtension(
 			'persistence',
-			filesystemPersistence({ filePath: dbPath(honeycrisp.id) }),
+			sqlitePersistence({ filePath: dbPath(honeycrisp.id) }),
 		);
 
 		await client.whenReady;
@@ -111,7 +111,7 @@ describe('e2e: honeycrisp workspace', () => {
 		// Open, set KV values, destroy
 		const client1 = createHoneycrisp().withExtension(
 			'persistence',
-			filesystemPersistence({ filePath: dbPath(honeycrisp.id) }),
+			sqlitePersistence({ filePath: dbPath(honeycrisp.id) }),
 		);
 		await client1.whenReady;
 
@@ -123,7 +123,7 @@ describe('e2e: honeycrisp workspace', () => {
 		// Re-open and verify
 		const client2 = createHoneycrisp().withExtension(
 			'persistence',
-			filesystemPersistence({ filePath: dbPath(honeycrisp.id) }),
+			sqlitePersistence({ filePath: dbPath(honeycrisp.id) }),
 		);
 		await client2.whenReady;
 

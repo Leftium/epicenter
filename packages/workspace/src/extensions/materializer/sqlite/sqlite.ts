@@ -53,13 +53,13 @@ type AnyTable = Table<any>;
  * @example Shared SQLite file for persistence + materializer (desktop/Bun)
  * ```typescript
  * import { Database } from 'bun:sqlite';
- * import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+ * import { sqlitePersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
  * import { createSqliteMaterializer } from '@epicenter/workspace/extensions/materializer/sqlite';
  *
  * // Persistence opens its own connection internally.
  * // Materializer uses a second connection to the same WAL-mode file.
  * createWorkspace(definition)
- *   .withExtension('persistence', filesystemPersistence({ filePath: 'workspace.db' }))
+ *   .withExtension('persistence', sqlitePersistence({ filePath: 'workspace.db' }))
  *   .withExtension('sqlite', (ctx) =>
  *     createSqliteMaterializer(ctx, { db: new Database('workspace.db') })
  *       .table('posts', { fts: ['title'] })

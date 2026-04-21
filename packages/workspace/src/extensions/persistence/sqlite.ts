@@ -32,12 +32,12 @@ import {
  *
  * @example
  * ```typescript
- * import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+ * import { sqlitePersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
  * import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
  *
  * // Persistence first, then sync — so sync waits for local state to load.
  * createWorkspace(definition)
- *   .withExtension('persistence', filesystemPersistence({
+ *   .withExtension('persistence', sqlitePersistence({
  *     filePath: join(epicenterDir, 'persistence', `workspace.db`),
  *   }))
  *   .withExtension('sync', createSyncExtension({
@@ -45,7 +45,7 @@ import {
  *   }))
  * ```
  */
-export function filesystemPersistence({ filePath }: { filePath: string }) {
+export function sqlitePersistence({ filePath }: { filePath: string }) {
 	return ({ ydoc }: { ydoc: Y.Doc }) => {
 		let db: Database | null = null;
 		let bytesSinceCompaction = 0;

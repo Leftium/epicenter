@@ -3,6 +3,7 @@
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
+	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncPayload,
@@ -31,7 +32,6 @@ import type * as Y from 'yjs';
  * - RPC between peers (use `@epicenter/workspace` sync extension for that)
  * - Action registration (ditto)
  * - BroadcastChannel cross-tab sync (separate `attachBroadcastChannel` helper)
- * - SYNC_STATUS version acknowledgement (`hasLocalChanges` indicator)
  *
  * Register persistence (`attachIndexedDb`) first and pass its `whenLocalReady`
  * as `waitFor` so the supervisor connects only after local state hydrates —
@@ -53,7 +53,7 @@ export type SyncError =
 export type SyncStatus =
 	| { phase: 'offline' }
 	| { phase: 'connecting'; attempt: number; lastError?: SyncError }
-	| { phase: 'connected' };
+	| { phase: 'connected'; hasLocalChanges: boolean };
 
 export type SyncAttachment = {
 	/**
@@ -156,6 +156,22 @@ export function attachSync(
 	/** Gate: flip to true once supervisor exits; prevents double-teardown. */
 	let torn = false;
 
+	/**
+	 * SYNC_STATUS version tracking.
+	 *
+	 * `localVersion` increments on every local doc update. After a debounce
+	 * quiet period, the client sends `encodeSyncStatus(localVersion)`; the
+	 * server echoes the same payload back. The echoed value lands in
+	 * `ackedVersion` — when `localVersion > ackedVersion`, there's local work
+	 * the server hasn't confirmed yet.
+	 *
+	 * Both counters reset to 0 on each fresh connection (the server has no
+	 * memory of our prior counters).
+	 */
+	let localVersion = 0;
+	let ackedVersion = 0;
+	let syncStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
 	// ── Message senders ──
 
 	function send(message: Uint8Array) {
@@ -169,6 +185,14 @@ export function attachSync(
 	function handleDocUpdate(update: Uint8Array, origin: unknown) {
 		if (origin === SYNC_ORIGIN) return;
 		send(encodeSyncUpdate({ update }));
+		localVersion++;
+		// Debounce: probe after a 100ms quiet period rather than per-update, so
+		// a burst of edits costs one SYNC_STATUS round-trip, not N.
+		if (syncStatusTimer) clearTimeout(syncStatusTimer);
+		syncStatusTimer = setTimeout(() => {
+			send(encodeSyncStatus(localVersion));
+			syncStatusTimer = null;
+		}, 100);
 	}
 
 	function handleAwarenessUpdate(
@@ -302,6 +326,14 @@ export function attachSync(
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
 
+		// Fresh connection → server has no memory of our prior counters.
+		localVersion = 0;
+		ackedVersion = 0;
+		if (syncStatusTimer) {
+			clearTimeout(syncStatusTimer);
+			syncStatusTimer = null;
+		}
+
 		const { promise: openPromise, resolve: resolveOpen } =
 			Promise.withResolvers<boolean>();
 		const { promise: closePromise, resolve: resolveClose } =
@@ -378,7 +410,10 @@ export function attachSync(
 							syncType === SYNC_MESSAGE_TYPE.UPDATE)
 					) {
 						handshakeComplete = true;
-						status.set({ phase: 'connected' });
+						status.set({
+							phase: 'connected',
+							hasLocalChanges: localVersion > ackedVersion,
+						});
 						resolveConnected();
 					}
 					break;
@@ -407,7 +442,21 @@ export function attachSync(
 					break;
 				}
 
-				// SYNC_STATUS, RPC — ignored at this primitive layer.
+				case MESSAGE_TYPE.SYNC_STATUS: {
+					const version = decoding.readVarUint(decoder);
+					const prevHasChanges = localVersion > ackedVersion;
+					ackedVersion = Math.max(ackedVersion, version);
+					const nowHasChanges = localVersion > ackedVersion;
+					if (prevHasChanges !== nowHasChanges && handshakeComplete) {
+						status.set({
+							phase: 'connected',
+							hasLocalChanges: nowHasChanges,
+						});
+					}
+					break;
+				}
+
+				// RPC — ignored at this primitive layer.
 			}
 		};
 

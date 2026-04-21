@@ -68,6 +68,35 @@ Each helper takes a `Y.Doc` and registers cleanup on `ydoc.on('destroy')`. Each 
 
 > **`attach*` is NOT idempotent.** Hold the reference from the first call. Calling any `attach*` helper twice against the same `Y.Doc` + slot is a caller bug — the framework does not catch it. For observer-installing primitives (`attachTable`, `attachKv`, `attachAwareness`, `attachEncryption`) double-attach silently installs duplicate observers, causing undefined behavior. One attach site per slot, one reference, held for the life of the `Y.Doc`.
 
+## Encrypted Variants (from `@epicenter/workspace`)
+
+For workspaces that need at-rest encryption, the encrypted primitives live in `@epicenter/workspace`:
+
+| Helper | Purpose |
+|---|---|
+| `attachEncryption(ydoc)` | Per-ydoc encryption coordinator. Returns `{ applyKeys, register, whenDisposed }`. |
+| `attachEncryptedTable(ydoc, encryption, name, def)` | Singular encrypted table; self-registers with the coordinator. |
+| `attachEncryptedTables(ydoc, encryption, defs)` | Batch sugar over `attachEncryptedTable`. |
+| `attachEncryptedKv(ydoc, encryption, defs)` | Encrypted KV singleton. |
+
+Standard composition:
+
+```ts
+const ydoc       = new Y.Doc({ guid: id, gc: false });
+const encryption = attachEncryption(ydoc);
+const tables     = attachEncryptedTables(ydoc, encryption, myTables);
+const kv         = attachEncryptedKv(ydoc, encryption, myKv);
+
+// Later, after login:
+encryption.applyKeys(session.encryptionKeys);
+```
+
+Encryption is opt-in per slot — the verb carries the intent. `attachTable` (plaintext) and `attachEncryptedTable` are both available; pick one per slot.
+
+> **Never mix plaintext and encrypted wrappers on the same slot name.** Yjs returns the same underlying `Y.Array` to `attachTable(ydoc, 'posts', ...)` and `attachEncryptedTable(ydoc, enc, 'posts', ...)` because `ydoc.getArray('table:posts')` is idempotent. If both run, the plaintext wrapper writes plaintext into the same yarray the encrypted wrapper thinks it owns — a silent data-at-rest leak. The framework does not catch this; the grep-able verb (`attachEncrypted*`) is the defense. One slot name, one variant, one intent.
+
+IDB / broadcast / sync / sqlite transitively see already-encrypted bytes after `applyKeys` runs — the Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
+
 ## Readiness Signals: Split, Don't Precompose
 
 Each helper returns what it actually knows. Callers compose at the call site.

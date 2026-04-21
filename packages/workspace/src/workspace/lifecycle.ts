@@ -21,7 +21,7 @@
  * at the top level:
  *
  * ```typescript
- * const persistence: ExtensionFactory = ({ ydoc }) => {
+ * const persistence = ({ ydoc }: SharedExtensionContext) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return {
  *     exports: { whenLoaded: provider.whenSynced },   // public: "local data is loaded"
@@ -42,37 +42,10 @@
  * `client.extensions[key].dispose`.
  */
 
-import type { Awareness as YAwareness } from 'y-protocols/awareness';
-import type * as Y from 'yjs';
-
 /**
  * A value that may be synchronous or wrapped in a Promise.
  */
 export type MaybePromise<T> = T | Promise<T>;
-
-/**
- * Minimal context shape needed by extensions that only use ydoc + awareness + init.
- *
- * Structural subset of `ExtensionContext`. Extensions like sync/persistence
- * only need these three fields; typing their factory argument with this
- * narrower shape keeps them generic across workspace definitions.
- *
- * ```typescript
- * // Sync needs ydoc + raw awareness + init:
- * .withExtension('sync', ({ ydoc, awareness, init }) => {
- *   return createProvider({ doc: ydoc, awareness: awareness.raw, waitFor: init });
- * })
- * ```
- */
-export type SharedExtensionContext = {
-	ydoc: Y.Doc;
-	awareness: { raw: YAwareness };
-	/**
-	 * Framework chain signal — resolves once every prior extension's `init`
-	 * promise has resolved. Use to sequence initialization across the chain.
-	 */
-	init: Promise<void>;
-};
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION — Factory return shape

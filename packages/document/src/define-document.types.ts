@@ -6,14 +6,14 @@
  */
 
 /**
- * A managed, retaining document handle. Returned by `factory.open(id)`. Each
+ * A reference-counted document handle. Returned by `factory.open(id)`. Each
  * call returns a distinct disposable handle over the same underlying bundle
  * (the user's `build(id)` return value — `{ ydoc, ...attachments }`). N opens
  * require N disposes.
  *
  * The handle is created via `Object.create(bundle)` — all user-defined
  * properties on the bundle (including conventional ones like `whenReady` or
- * `whenDisposed`) are accessible through the prototype chain. Only the three
+ * `whenDisposed`) are accessible through the prototype chain. Only the two
  * dispose methods below are injected by the cache.
  *
  * Pair every `open()` with a `dispose()`:
@@ -34,21 +34,26 @@
  * { using h = docs.open('abc'); await h.whenReady; }
  * ```
  *
+ * `dispose()` is always synchronous — it just decrements the refcount. Async
+ * teardown (awaiting `whenDisposed`) is a factory-level concern: use
+ * `factory.close(id)` or `factory.closeAll()` when you need a real teardown
+ * barrier.
+ *
  * No top-level keys are reserved on the bundle. The cache injects only
- * `dispose`, `[Symbol.dispose]`, and `[Symbol.asyncDispose]` on the handle —
- * pick bundle property names that don't collide with those three.
+ * `dispose` and `[Symbol.dispose]` on the handle — pick bundle property names
+ * that don't collide with those two.
  */
 export type DocumentHandle<T> = T & {
 	/**
-	 * Drop this handle's retain. Idempotent per-handle — calling twice on
-	 * the same handle is a no-op. Last dispose (across all handles sharing
+	 * Decrement this handle's refcount. Idempotent per-handle — calling twice
+	 * on the same handle is a no-op. Last dispose (across all handles sharing
 	 * the same id) schedules teardown after the factory's `gcTime`.
 	 * Equivalent to `handle[Symbol.dispose]()` — use `using` blocks when
-	 * scope-bound release suffices.
+	 * scope-bound release suffices. For an async teardown barrier, use
+	 * `factory.close(id)` instead.
 	 */
 	dispose(): void;
 	[Symbol.dispose](): void;
-	[Symbol.asyncDispose](): Promise<void>;
 };
 
 /**
@@ -61,7 +66,7 @@ export type DocumentHandle<T> = T & {
  */
 export type DocumentFactory<Id extends string, T> = {
 	/**
-	 * Construct-if-missing + retain. Returns a fresh disposable handle that
+	 * Construct-if-missing + refcount++. Returns a fresh disposable handle that
 	 * prototype-chains to the underlying bundle. Pair with `handle.dispose()`.
 	 *
 	 * If the builder exposes a `whenReady` promise on the bundle, callers may

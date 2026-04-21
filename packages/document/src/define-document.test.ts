@@ -105,7 +105,7 @@ describe('open / cache identity', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('throwing build closure', () => {
-	test('error propagates and the cache does not retain the id', () => {
+	test('error propagates and the cache does not store the id', () => {
 		let calls = 0;
 		const factory = defineDocument((id: string) => {
 			calls++;
@@ -512,7 +512,7 @@ describe('close / closeAll', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('open / dispose', () => {
-	test('open() retains — ref-count increments, no disposal pending', async () => {
+	test('open() — ref-count increments, no disposal pending', async () => {
 		const factory = makeSimpleFactory({ gcTime: 10 });
 		const h = factory.open('a');
 		// Pure open() with no dispose: count > 0, no timer scheduled.
@@ -611,7 +611,7 @@ describe('open / dispose', () => {
 		const h2 = factory.open('a');
 		h1.dispose();
 		await new Promise((r) => setTimeout(r, 30));
-		// h2 still retaining — not destroyed.
+		// h2 still holds a ref — not destroyed.
 		expect(h2.ydoc.isDestroyed).toBe(false);
 		// And h2 can still be used.
 		h2.ydoc.getText('t').insert(0, 'ok');
@@ -725,7 +725,7 @@ describe('open / dispose', () => {
 		const h1 = factory.open('a');
 		const h2 = factory.open('a');
 		h1.dispose();
-		// Still retained by h2 — not destroyed yet.
+		// Still held by h2 — not destroyed yet.
 		expect(h1.ydoc.isDestroyed).toBe(false);
 		h2.dispose();
 		// Last dispose with gcTime: 0 — no await required.

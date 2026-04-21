@@ -8,8 +8,8 @@
  *  builder (user)                     cache (this module)
  *  ─────────────────                  ───────────────────
  *  new Y.Doc + providers              keyed by id, verified by ydoc.guid
- *  composes whenReady / whenDisposed  refcounts retain/release
- *  implements [Symbol.dispose]        arms gcTime timer on last release
+ *  composes whenReady / whenDisposed  refcounts open/dispose
+ *  implements [Symbol.dispose]        arms gcTime timer on last dispose
  * ```
  *
  * ## Three usage levels
@@ -37,10 +37,10 @@
  * ```ts
  * const docs = defineDocument(buildDoc, { gcTime: 30_000 });
  *
- * using h = docs.open('abc');  // retainCount++
+ * using h = docs.open('abc');  // openCount++
  * await h.whenReady;           // read through prototype chain to bundle
  * h.ydoc.transact(() => ..., ORIGIN);
- * // [Symbol.dispose] fires on block exit — retainCount--
+ * // [Symbol.dispose] fires on block exit — openCount--
  * // refcount→0 arms the gcTime timer; a fresh open() cancels it
  * ```
  *
@@ -111,7 +111,7 @@ const DEFAULT_GC_TIME = 30_000;
 type DocEntry<T extends { ydoc: Y.Doc } & Disposable> = {
 	/** The user's pristine `build()` return value. Never mutated. */
 	attach: T;
-	retainCount: number;
+	openCount: number;
 	gcTimer: ReturnType<typeof setTimeout> | null;
 	disposed: boolean;
 };
@@ -167,7 +167,7 @@ export function defineDocument<
 
 		const entry: DocEntry<T> = {
 			attach,
-			retainCount: 0,
+			openCount: 0,
 			gcTimer: null,
 			disposed: false,
 		};
@@ -211,15 +211,15 @@ export function defineDocument<
 				clearTimeout(entry.gcTimer);
 				entry.gcTimer = null;
 			}
-			entry.retainCount++;
+			entry.openCount++;
 
 			let handleDisposed = false;
 			const dispose = (): void => {
 				if (handleDisposed) return;
 				handleDisposed = true;
 				if (entry.disposed) return;
-				entry.retainCount--;
-				if (entry.retainCount !== 0) return;
+				entry.openCount--;
+				if (entry.openCount !== 0) return;
 
 				if (gcTime === 0) {
 					// Synchronous teardown — no timer.
@@ -240,12 +240,6 @@ export function defineDocument<
 			Object.defineProperties(handle, {
 				dispose: { value: dispose },
 				[Symbol.dispose]: { value: dispose },
-				[Symbol.asyncDispose]: {
-					value: () => {
-						dispose();
-						return Promise.resolve();
-					},
-				},
 			});
 			return handle;
 		},

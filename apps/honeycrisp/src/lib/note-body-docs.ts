@@ -15,6 +15,7 @@ import {
 	attachRichText,
 	attachSync,
 	defineDocument,
+	docGuid,
 	onLocalUpdate,
 	toWsUrl,
 } from '@epicenter/document';
@@ -25,7 +26,12 @@ import type { NoteId } from '$lib/workspace';
 
 function buildNoteBodyDoc(noteId: NoteId) {
 	const ydoc = new Y.Doc({
-		guid: `epicenter.honeycrisp.notes.${noteId}.body`,
+		guid: docGuid({
+			workspaceId: workspace.id,
+			collection: 'notes',
+			rowId: noteId,
+			field: 'body',
+		}),
 		gc: false,
 	});
 	const body = attachRichText(ydoc);

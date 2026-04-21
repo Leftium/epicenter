@@ -86,6 +86,7 @@ import {
   attachRichText,
   attachSync,
   defineDocument,
+  docGuid,
   onLocalUpdate,
   toWsUrl,
 } from '@epicenter/document';
@@ -94,7 +95,12 @@ import { auth, workspace } from '$lib/client';
 
 function buildEntryContentDoc(entryId: EntryId) {
   const ydoc = new Y.Doc({
-    guid: `epicenter.fuji.entries.${entryId}.content`,
+    guid: docGuid({
+      workspaceId: workspace.id,  // no literal prefix — comes from the workspace
+      collection: 'entries',
+      rowId: entryId,
+      field: 'content',
+    }),
     gc: false,
   });
 

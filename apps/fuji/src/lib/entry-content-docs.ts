@@ -7,11 +7,6 @@
  *
  * Consumers open a handle via `entryContentDocs.open(entryId)`, await
  * `handle.whenReady` before reading, and let `using` handle disposal.
- *
- * NOTE: Sync (WebSocket + BroadcastChannel) is currently deferred — framework
- * collapse spec (20260420T230100) lands IDB-only in the first pass and adds
- * sync threading in a follow-up. Editors still get local persistence + local
- * edits; cross-device sync for content docs is temporarily offline.
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -20,6 +15,7 @@ import {
 	attachRichText,
 	attachSync,
 	defineDocument,
+	docGuid,
 	onLocalUpdate,
 	toWsUrl,
 } from '@epicenter/document';
@@ -30,7 +26,12 @@ import type { EntryId } from '$lib/workspace';
 
 function buildEntryContentDoc(entryId: EntryId) {
 	const ydoc = new Y.Doc({
-		guid: `epicenter.fuji.entries.${entryId}.content`,
+		guid: docGuid({
+			workspaceId: workspace.id,
+			collection: 'entries',
+			rowId: entryId,
+			field: 'content',
+		}),
 		gc: false,
 	});
 	const content = attachRichText(ydoc);

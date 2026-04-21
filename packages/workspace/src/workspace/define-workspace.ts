@@ -1,15 +1,36 @@
 /**
- * `defineWorkspace` — declare a workspace schema and get a factory-of-factories
- * that constructs the workspace Y.Doc on demand, cached by id through the same
- * refcounted machinery that content docs use (`defineDocument`).
+ * `defineWorkspace` — sugar over `defineDocument` + `attachTables` +
+ * `attachKv` + `attachAwareness` + `attachEncryption` for the common case:
+ * a schema-only workspace with the default bundle shape.
+ *
+ * The body of this function is literally the five-line attach sequence
+ * wrapped in a `defineDocument` closure. There is no hidden logic — it's a
+ * typed convenience that saves ~15 lines of ceremony for workspaces that
+ * don't need custom bundle fields.
+ *
+ * ## When to use which
+ *
+ * - **Use `defineWorkspace`** when you want the default bundle (tables, kv,
+ *   awareness, enc, batch, whenReady, whenDisposed, Symbol.dispose) and
+ *   nothing else. Typical callers: tests, benchmarks, importer targets,
+ *   demos, small in-memory workspaces.
+ *
+ * - **Use `defineDocument` + primitives directly** when you need to compose
+ *   app-specific attachments into the bundle — sync, indexedDB, actions,
+ *   filesystem helpers, shell emulators, etc. All the real apps in this
+ *   monorepo do this; see any `apps/<app>/src/lib/client.ts`.
+ *
+ * The two tools have non-overlapping use cases. Sugar pays off when the
+ * default shape fits; primitives pay off when you need custom fields in
+ * the handle.
  *
  * ## Return shape
  *
  * A `WorkspaceFactory<Id, Bundle>` — a `DocumentFactory` with the workspace
- * `definition` attached as metadata (so the transitional `createWorkspace`
- * shim can read tables/kv/awareness defs back out for its legacy surface).
- * Apps call `.open(id)` to get a `WorkspaceHandle` that prototype-chains to
- * the bundle and has `dispose()` / `[Symbol.dispose]()` for explicit teardown.
+ * `definition` attached as metadata (so the `createWorkspace` extension
+ * builder can read tables/kv/awareness defs back out). Apps call `.open(id)`
+ * to get a `WorkspaceHandle` that prototype-chains to the bundle and has
+ * `dispose()` / `[Symbol.dispose]()` for explicit teardown.
  *
  * ## `gcTime: Infinity`
  *
@@ -33,24 +54,36 @@
  *   [Symbol.dispose] : () => void              (destroys ydoc, cascades to every provider)
  * ```
  *
- * Persistence and sync are NOT in the bundle — they're user-owned composition
- * on top. An app wraps `defineWorkspace(def).open(id)` with its own helper
- * that attaches IndexedDB / WebSocket / SQLite index, aggregates their ready
- * promises into a composite `whenReady`, and layers actions on top.
+ * Persistence and sync are NOT in the bundle — if you need them, drop to
+ * `defineDocument` and compose directly. Trying to wrap `defineWorkspace`
+ * output with additional fields usually ends up more awkward than just
+ * writing the primitive sequence explicitly.
  *
  * @example
  * ```ts
- * const fujiWorkspaces = defineWorkspace({ id: 'epicenter.fuji', tables: { entries } });
+ * // Schema-only workspace (no persistence, no sync) — sugar earns its keep.
+ * export const redditWorkspace = defineWorkspace({
+ *   id: 'reddit-ingest',
+ *   tables: redditTables,
+ *   kv: redditKv,
+ * });
  *
- * export function createFujiWorkspace() {
- *   const base = fujiWorkspaces.open('epicenter.fuji');
- *   const idb  = attachIndexedDb(base.ydoc);
- *   const sync = attachSync(base.ydoc, { url, getToken, waitFor: idb.whenLoaded });
- *   return Object.assign(base, {
- *     idb, sync,
- *     whenReady: Promise.all([idb.whenLoaded, sync.whenConnected]).then(() => {}),
- *   });
- * }
+ * using ws = redditWorkspace.open('reddit-ingest');
+ * ws.tables.posts.set({ id: 'abc', ... });
+ * ```
+ *
+ * @example
+ * ```ts
+ * // If you need custom bundle fields, use defineDocument instead:
+ * const factory = defineDocument((id) => {
+ *   const ydoc = new Y.Doc({ guid: id, gc: false });
+ *   const tables = attachTables(ydoc, myTables);
+ *   const kv = attachKv(ydoc, myKv);
+ *   const enc = attachEncryption(ydoc, { tables, kv });
+ *   const idb = attachIndexedDb(ydoc);
+ *   const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenLoaded });
+ *   return { id, ydoc, tables: tables.helpers, kv: kv.helper, enc, idb, sync, ... };
+ * });
  * ```
  *
  * @module

@@ -8,10 +8,26 @@
  * - `resolveTable` — table lookup by name
  */
 
-import type { AnyWorkspaceClient } from '@epicenter/workspace';
+import type * as Y from 'yjs';
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig } from '../load-config';
 import { formatYargsOptions, output, outputError } from './format-output';
+
+/**
+ * Minimal client shape the CLI operates on — a DocumentBundle-compatible
+ * surface: identifier, underlying `Y.Doc`, a table map, and an optional
+ * disposer. Any result of `defineDocument()` or a hand-composed bundle
+ * with a `tables` record satisfies this shape.
+ */
+export type DocumentClient = {
+	id: string;
+	ydoc: Y.Doc;
+	tables: Record<string, any>;
+	[Symbol.dispose]?: () => void;
+	whenReady?: Promise<void>;
+	kv?: Record<string, any>;
+	actions?: unknown;
+};
 
 // ─── defineCommand ───────────────────────────────────────────────────────────
 
@@ -88,19 +104,19 @@ export function withWorkspaceOptions<T>(y: Argv<T>) {
  */
 export async function runCommand<T>(
 	opts: { dir: string; workspaceId?: string },
-	fn: (client: AnyWorkspaceClient) => T | Promise<T>,
+	fn: (client: DocumentClient) => T | Promise<T>,
 	format?: 'json' | 'jsonl',
 ): Promise<void> {
 	try {
 		const { clients } = await loadConfig(opts.dir);
 		const client = resolveWorkspace(clients, opts.workspaceId);
-		await client.whenReady;
+		if (client.whenReady) await client.whenReady;
 
 		try {
 			const result = await fn(client);
 			output(result, { format });
 		} finally {
-			await Promise.all(clients.map((c) => c.dispose()));
+			for (const c of clients) c[Symbol.dispose]?.();
 		}
 	} catch (err) {
 		outputError(err instanceof Error ? err.message : String(err));
@@ -119,7 +135,7 @@ export async function runCommand<T>(
  * const rows = table.getAllValid();
  * ```
  */
-export function resolveTable(client: AnyWorkspaceClient, name: string) {
+export function resolveTable(client: DocumentClient, name: string) {
 	const table = client.tables[name];
 	if (!table) throw new Error(`Table "${name}" not found`);
 	return table;
@@ -134,9 +150,9 @@ export function resolveTable(client: AnyWorkspaceClient, name: string) {
  * Most commands should use `runCommand` instead.
  */
 export function resolveWorkspace(
-	clients: AnyWorkspaceClient[],
+	clients: DocumentClient[],
 	workspaceId?: string,
-): AnyWorkspaceClient {
+): DocumentClient {
 	if (workspaceId) {
 		const found = clients.find((c) => c.id === workspaceId);
 		if (!found) {

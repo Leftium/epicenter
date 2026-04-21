@@ -43,7 +43,7 @@ export const runActionCommand = defineCommand({
 			async (client) => {
 				// Find action by dot-path — check client.actions first, then extensions
 				let found: Action | undefined;
-				for (const [action, path] of iterateActions(client.actions)) {
+				for (const [action, path] of iterateActions(client.actions as Actions)) {
 					if (path.join('.') === actionPath.join('.')) {
 						found = action;
 						break;
@@ -52,7 +52,7 @@ export const runActionCommand = defineCommand({
 
 				// Fall through to extensions if not found in actions
 				if (!found) {
-					for (const [extKey, extValue] of Object.entries(client.extensions)) {
+					for (const [extKey, extValue] of Object.entries((client as any).extensions ?? {})) {
 						if (extValue == null || typeof extValue !== 'object') continue;
 						for (const [action, path] of iterateActions(extValue as Actions)) {
 							const extPath = [extKey, ...path].join('.');
@@ -67,10 +67,10 @@ export const runActionCommand = defineCommand({
 
 				if (!found) {
 					const available: string[] = [];
-					for (const [, path] of iterateActions(client.actions)) {
+					for (const [, path] of iterateActions(client.actions as Actions)) {
 						available.push(path.join('.'));
 					}
-					for (const [extKey, extValue] of Object.entries(client.extensions)) {
+					for (const [extKey, extValue] of Object.entries((client as any).extensions ?? {})) {
 						if (extValue == null || typeof extValue !== 'object') continue;
 						for (const [, path] of iterateActions(extValue as Actions)) {
 							available.push([extKey, ...path].join('.'));

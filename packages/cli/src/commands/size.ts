@@ -5,10 +5,14 @@
  * `runCommand` because it needs to iterate ALL workspace clients, not just one.
  */
 
-import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import type { Argv } from 'yargs';
+import * as Y from 'yjs';
 import { loadConfig } from '../load-config';
-import { defineCommand, withWorkspaceOptions } from '../util/command';
+import {
+	defineCommand,
+	type DocumentClient,
+	withWorkspaceOptions,
+} from '../util/command';
 import { output, outputError } from '../util/format-output';
 
 /** Format a byte count as a human-readable string with 1 decimal place. */
@@ -48,7 +52,7 @@ export const sizeCommand = defineCommand({
 			const { clients } = await loadConfig(argv.dir);
 
 			try {
-				let targets: AnyWorkspaceClient[] = clients;
+				let targets: DocumentClient[] = clients;
 				if (argv.workspace) {
 					const found = clients.find((c) => c.id === argv.workspace);
 					if (!found) {
@@ -62,16 +66,18 @@ export const sizeCommand = defineCommand({
 
 				const results: WorkspaceSizeResult[] = [];
 				for (const client of targets) {
-					await client.whenReady;
-					const tableNames = Object.keys(client.definitions.tables);
+					if (client.whenReady) await client.whenReady;
+					const tableNames = Object.keys(client.tables);
 					const tables: Record<string, { rows: number }> = {};
 					for (const name of tableNames) {
 						const table = client.tables[name];
-						if (table) tables[name] = { rows: table.count() };
+						if (table && typeof table.count === 'function') {
+							tables[name] = { rows: table.count() };
+						}
 					}
 					results.push({
 						id: client.id,
-						encodedSize: client.encodedSize(),
+						encodedSize: Y.encodeStateAsUpdate(client.ydoc).byteLength,
 						tables,
 					});
 				}
@@ -100,7 +106,7 @@ export const sizeCommand = defineCommand({
 					}
 				}
 			} finally {
-				await Promise.all(clients.map((c) => c.dispose()));
+				for (const c of clients) c[Symbol.dispose]?.();
 			}
 		} catch (err) {
 			outputError(err instanceof Error ? err.message : String(err));

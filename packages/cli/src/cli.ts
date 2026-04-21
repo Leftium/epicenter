@@ -8,7 +8,6 @@ import {
 	listCommand,
 	tablesCommand,
 } from './commands/data';
-import { describeCommand } from './commands/describe';
 import { kvCommand } from './commands/kv';
 import { initCommand } from './commands/project';
 import { rpcCommand } from './commands/rpc';
@@ -20,7 +19,7 @@ import { startCommand } from './commands/start';
  * Create the Epicenter CLI instance.
  *
  * Registers all top-level commands: table CRUD (get, list, count, delete),
- * tables, kv, export, init, run, describe, start, and auth.
+ * tables, kv, export, init, run, size, rpc, start, and auth.
  *
  * @returns An object with a `run` method that parses and executes CLI commands.
  */
@@ -39,7 +38,6 @@ export function createCLI() {
 				.command(exportCommand)
 				.command(initCommand)
 				.command(runActionCommand)
-				.command(describeCommand)
 				.command(sizeCommand)
 				.command(rpcCommand)
 				.command(createAuthCommand())

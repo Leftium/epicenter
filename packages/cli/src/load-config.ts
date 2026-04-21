@@ -16,7 +16,7 @@
  */
 
 import { join, resolve } from 'node:path';
-import type { AnyWorkspaceClient } from '@epicenter/workspace';
+import type { DocumentClient } from './util/command';
 
 const CONFIG_FILENAME = 'epicenter.config.ts';
 
@@ -24,7 +24,7 @@ export type LoadConfigResult = {
 	/** Absolute path to the directory containing epicenter.config.ts. */
 	configDir: string;
 	/** Workspace clients loaded from the config. */
-	clients: AnyWorkspaceClient[];
+	clients: DocumentClient[];
 };
 
 /**
@@ -45,7 +45,7 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 
 	const module = await import(Bun.pathToFileURL(configPath).href);
 
-	const clients: AnyWorkspaceClient[] = [];
+	const clients: DocumentClient[] = [];
 	const seenIds = new Set<string>();
 
 	for (const [name, value] of Object.entries(module)) {
@@ -74,13 +74,13 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
-/** A pre-wired client has `definitions` and `tables` (set by createWorkspace). */
-function isWorkspaceClient(value: unknown): value is AnyWorkspaceClient {
+/** A DocumentBundle-shaped client exposes `id`, a `ydoc`, and a `tables` map. */
+function isWorkspaceClient(value: unknown): value is DocumentClient {
 	if (typeof value !== 'object' || value === null) return false;
 	const record = value as Record<string, unknown>;
 	return (
 		typeof record.id === 'string' &&
-		'definitions' in record &&
+		'ydoc' in record &&
 		'tables' in record
 	);
 }

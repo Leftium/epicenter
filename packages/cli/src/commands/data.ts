@@ -143,7 +143,7 @@ export const tablesCommand = defineCommand({
 	handler: async (argv: any) => {
 		await runCommand(
 			{ dir: argv.dir, workspaceId: argv.workspace },
-			(client) => Object.keys(client.definitions.tables),
+			(client) => Object.keys(client.tables),
 			argv.format,
 		);
 	},
@@ -177,7 +177,7 @@ export const exportCommand = defineCommand({
 				const data: Record<string, unknown[]> = {};
 				const tableNames = argv.table
 					? [argv.table as string]
-					: Object.keys(client.definitions.tables);
+					: Object.keys(client.tables);
 
 				for (const tableName of tableNames) {
 					const table = client.tables[tableName];

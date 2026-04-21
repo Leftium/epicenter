@@ -30,7 +30,9 @@ async function startDaemon(options: StartDaemonOptions = {}) {
 	const targetDir = options.dir ?? process.cwd();
 	const { configDir, clients } = await loadConfig(targetDir);
 
-	await Promise.all(clients.map((c) => c.whenReady));
+	await Promise.all(
+		clients.map((c) => c.whenReady ?? Promise.resolve()),
+	);
 
 	// ─── Log status ──────────────────────────────────────────────────────
 
@@ -38,10 +40,9 @@ async function startDaemon(options: StartDaemonOptions = {}) {
 	console.log(`  Config: ${configDir}`);
 
 	for (const client of clients) {
-		const extensionNames = Object.keys(client.extensions ?? {});
-		const extLabel =
-			extensionNames.length > 0 ? extensionNames.join(', ') : '(none)';
-		console.log(`  ${client.id}: extensions=[${extLabel}]`);
+		const tableNames = Object.keys(client.tables);
+		const label = tableNames.length > 0 ? tableNames.join(', ') : '(none)';
+		console.log(`  ${client.id}: tables=[${label}]`);
 	}
 
 	console.log('');
@@ -67,7 +68,7 @@ async function startDaemon(options: StartDaemonOptions = {}) {
 	async function shutdown() {
 		if (heartbeatInterval) clearInterval(heartbeatInterval);
 		console.log('\nShutting down...');
-		await Promise.all(clients.map((c) => c.dispose()));
+		for (const c of clients) c[Symbol.dispose]?.();
 		console.log('✓ Graceful shutdown complete');
 	}
 

@@ -143,8 +143,8 @@ export const rpcCommand = defineCommand({
 		try {
 			const loaded = await loadConfig(argv.dir ?? '.');
 			clients = loaded.clients;
-			const client = resolveWorkspace(clients, argv.workspace);
-			await client.whenReady;
+			const client = resolveWorkspace(clients, argv.workspace) as any;
+			if (client.whenReady) await client.whenReady;
 
 			const sync = (client.extensions as Record<string, any>)?.sync;
 			if (!sync?.rpc) {
@@ -228,7 +228,7 @@ export const rpcCommand = defineCommand({
 			outputError(err instanceof Error ? err.message : String(err));
 			process.exitCode = 1;
 		} finally {
-			if (clients) await Promise.all(clients.map((c: any) => c.dispose()));
+			if (clients) for (const c of clients) c[Symbol.dispose]?.();
 		}
 	},
 });

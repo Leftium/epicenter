@@ -75,7 +75,7 @@ export const kvCommand = defineCommand({
 				handler: async (argv: any) => {
 					await runCommand(
 						{ dir: argv.dir, workspaceId: argv.workspace },
-						(client) => client.kv.get(argv.key),
+						(client) => (client.kv as any).get(argv.key),
 						argv.format,
 					);
 				},
@@ -104,7 +104,7 @@ export const kvCommand = defineCommand({
 					await runCommand(
 						{ dir: argv.dir, workspaceId: argv.workspace },
 						(client) => {
-							client.kv.set(argv.key, parsed);
+							(client.kv as any).set(argv.key, parsed);
 							return {
 								status: 'set',
 								key: argv.key,
@@ -130,7 +130,7 @@ export const kvCommand = defineCommand({
 					await runCommand(
 						{ dir: argv.dir, workspaceId: argv.workspace },
 						(client) => {
-							client.kv.delete(argv.key);
+							(client.kv as any).delete(argv.key);
 							return { status: 'deleted', key: argv.key };
 						},
 						argv.format,

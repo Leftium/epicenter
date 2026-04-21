@@ -11,7 +11,7 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	defineDocument,
-} from '@epicenter/document';
+} from '@epicenter/workspace';
 import { createAuth } from '@epicenter/svelte/auth';
 import {
 	attachEncryptedKv,

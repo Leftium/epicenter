@@ -10,7 +10,7 @@ import {
 	createPerRowDoc,
 	defineDocument,
 	type DocPersistence,
-} from '@epicenter/document';
+} from '@epicenter/workspace';
 import type { Table } from '@epicenter/workspace';
 import type * as Y from 'yjs';
 import type { Reference } from './tables.js';

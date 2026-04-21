@@ -11,7 +11,7 @@ import {
 	attachKv,
 	attachTables,
 	defineDocument,
-} from '@epicenter/document';
+} from '@epicenter/workspace';
 import { defineKv, defineTable } from '@epicenter/workspace';
 import * as Y from 'yjs';
 

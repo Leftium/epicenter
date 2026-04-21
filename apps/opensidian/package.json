@@ -20,7 +20,6 @@
 	"dependencies": {
 		"@codemirror/autocomplete": "^6.20.1",
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/document": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@tanstack/ai": "catalog:",

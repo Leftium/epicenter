@@ -23,7 +23,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { defineDocument } from '@epicenter/document';
+import { defineDocument } from '@epicenter/workspace';
 import {
 	attachEncryptedKv,
 	attachEncryptedTables,

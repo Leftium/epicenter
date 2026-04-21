@@ -13,7 +13,7 @@ import {
 	docGuid,
 	onLocalUpdate,
 	toWsUrl,
-} from '@epicenter/document';
+} from '@epicenter/workspace';
 import { DateTimeString } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { auth, workspace } from '$lib/client';

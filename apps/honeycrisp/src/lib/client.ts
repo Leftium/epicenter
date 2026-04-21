@@ -14,7 +14,7 @@ import {
 	attachSync,
 	defineDocument,
 	toWsUrl,
-} from '@epicenter/document';
+} from '@epicenter/workspace';
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import {

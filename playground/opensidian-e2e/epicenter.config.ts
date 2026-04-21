@@ -23,7 +23,7 @@ import {
 	createSessionStore,
 	EPICENTER_PATHS,
 } from '@epicenter/cli';
-import { attachSqlite } from '@epicenter/document';
+import { attachSqlite } from '@epicenter/workspace';
 import { createFileContentDocs } from '@epicenter/filesystem';
 import { createWorkspace, defineMutation } from '@epicenter/workspace';
 import {

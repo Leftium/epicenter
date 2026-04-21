@@ -1,7 +1,7 @@
 import type {
 	DocumentFactory,
 	DocumentHandle,
-} from '@epicenter/document';
+} from '@epicenter/workspace';
 
 /**
  * Reactive binding to a `DocumentFactory`. Opens the handle for the current

@@ -26,7 +26,7 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	defineDocument,
-} from '@epicenter/document';
+} from '@epicenter/workspace';
 import {
 	attachEncryptedKv,
 	attachEncryptedTables,

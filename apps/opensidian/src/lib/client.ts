@@ -16,7 +16,7 @@ import {
 	attachSync,
 	defineDocument,
 	toWsUrl,
-} from '@epicenter/document';
+} from '@epicenter/workspace';
 import {
 	createFileContentDocs,
 	createSqliteIndex,

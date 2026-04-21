@@ -59,11 +59,14 @@ import {
 	type TableDefinitions,
 	type Tables,
 } from '@epicenter/document';
+import type { Awareness as YAwareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import { attachEncryption } from '../shared/attach-encryption.js';
-import { attachEncryptedKv } from './attach-kv.js';
-import { attachEncryptedTables } from './attach-tables.js';
+import {
+	attachEncryptedKv,
+	attachEncryptedTables,
+} from './attach-encrypted.js';
+import { attachEncryption } from './attach-encryption.js';
 import type { EncryptionKeys } from './encryption-key.js';
 import {
 	defineExtension,
@@ -76,6 +79,30 @@ import {
 // ════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Minimal context shape needed by extensions that only use ydoc + awareness + init.
+ *
+ * Structural subset of `ExtensionContext`. Extensions like sync/persistence
+ * only need these three fields; typing their factory argument with this
+ * narrower shape keeps them generic across workspace definitions.
+ *
+ * ```typescript
+ * // Sync needs ydoc + raw awareness + init:
+ * .withExtension('sync', ({ ydoc, awareness, init }) => {
+ *   return createProvider({ doc: ydoc, awareness: awareness.raw, waitFor: init });
+ * })
+ * ```
+ */
+export type SharedExtensionContext = {
+	ydoc: Y.Doc;
+	awareness: { raw: YAwareness };
+	/**
+	 * Framework chain signal — resolves once every prior extension's `init`
+	 * promise has resolved. Use to sequence initialization across the chain.
+	 */
+	init: Promise<void>;
+};
 
 /**
  * Context passed to workspace extension factories.

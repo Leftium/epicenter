@@ -73,11 +73,7 @@ export {
 // Error types
 export { ExtensionError } from '../shared/errors.js';
 // Lifecycle protocol
-export type {
-	MaybePromise,
-	RawExtension,
-	SharedExtensionContext,
-} from './lifecycle.js';
+export type { MaybePromise, RawExtension } from './lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
@@ -93,7 +89,7 @@ export { KV_KEY, TableKey } from '@epicenter/document';
 
 export { defineKv } from './define-kv.js';
 export { defineTable } from './define-table.js';
-export type { EncryptionAttachment } from '../shared/attach-encryption.js';
+export type { EncryptionAttachment } from './attach-encryption.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Workspace Creation
@@ -149,6 +145,7 @@ export type { JsonObject, JsonValue } from 'wellcrafted/json';
 export type {
 	AnyWorkspaceClient,
 	ExtensionContext,
+	SharedExtensionContext,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,

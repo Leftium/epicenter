@@ -44,11 +44,7 @@ export type { InferRpcMap, RpcActionMap } from './rpc/types';
 // LIFECYCLE PROTOCOL
 // ════════════════════════════════════════════════════════════════════════════
 
-export type {
-	MaybePromise,
-	RawExtension,
-	SharedExtensionContext,
-} from './workspace/lifecycle';
+export type { MaybePromise, RawExtension } from './workspace/lifecycle';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERROR TYPES
@@ -113,12 +109,12 @@ export { defineTable } from './workspace/define-table';
 export {
 	attachEncryption,
 	type EncryptionAttachment,
-} from './shared/attach-encryption';
+} from './workspace/attach-encryption';
 export {
+	attachEncryptedKv,
 	attachEncryptedTable,
 	attachEncryptedTables,
-} from './workspace/attach-tables';
-export { attachEncryptedKv } from './workspace/attach-kv';
+} from './workspace/attach-encrypted';
 
 // ════════════════════════════════════════════════════════════════════════════
 // WORKSPACE CREATION
@@ -173,6 +169,7 @@ export type {
 export type {
 	AnyWorkspaceClient,
 	ExtensionContext,
+	SharedExtensionContext,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,

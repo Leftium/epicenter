@@ -1,7 +1,7 @@
 import type { Table } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
 import { FS_ERRORS } from './errors.js';
-import type { FileContentDocs } from './file-content-doc.js';
+import type { FileContentDocs } from './file-content-docs.js';
 import type { FileId } from './ids.js';
 import { posixResolve } from './path.js';
 import type { FileRow } from './table.js';

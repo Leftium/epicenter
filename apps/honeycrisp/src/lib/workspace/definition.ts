@@ -68,7 +68,7 @@ export type Folder = InferTableRow<typeof foldersTable>;
  * (computed on each editor update, `undefined` for legacy notes).
  *
  * The Y.XmlFragment document (`body`) lives in a separate Y.Doc per note,
- * constructed by `buildNoteBodyDoc` in `note-body-doc.ts`. Local edits bump
+ * constructed by `buildNoteBodyDoc` in `note-body-docs.ts`. Local edits bump
  * `updatedAt` via `onLocalUpdate`.
  */
 const notesTable = defineTable(

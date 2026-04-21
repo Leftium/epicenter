@@ -33,9 +33,9 @@ import {
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { skillsDefinition } from './definition.js';
 import { parseSkillMd } from './parse.js';
-import { createReferenceContentDocs } from './reference-content-doc.js';
+import { createReferenceContentDocs } from './reference-content-docs.js';
 import { serializeSkillMd } from './serialize.js';
-import { createSkillInstructionsDocs } from './skill-instructions-doc.js';
+import { createSkillInstructionsDocs } from './skill-instructions-docs.js';
 import type { Skill } from './tables.js';
 
 const DirInput = Type.Object({ dir: Type.String() });

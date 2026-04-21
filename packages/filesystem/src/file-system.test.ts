@@ -12,7 +12,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
-import { createFileContentDocs } from './file-content-doc.js';
+import { createFileContentDocs } from './file-content-docs.js';
 import { createYjsFileSystem, type YjsFileSystem } from './file-system.js';
 import { filesTable } from './table.js';
 

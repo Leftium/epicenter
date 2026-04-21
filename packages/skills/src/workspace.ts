@@ -15,8 +15,8 @@
 import { createWorkspace, defineQuery } from '@epicenter/workspace';
 import Type from 'typebox';
 import { skillsDefinition } from './definition.js';
-import { createReferenceContentDocs } from './reference-content-doc.js';
-import { createSkillInstructionsDocs } from './skill-instructions-doc.js';
+import { createReferenceContentDocs } from './reference-content-docs.js';
+import { createSkillInstructionsDocs } from './skill-instructions-docs.js';
 
 export { skillsDefinition } from './definition.js';
 

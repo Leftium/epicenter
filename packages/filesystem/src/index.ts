@@ -11,7 +11,7 @@ export {
 export {
 	createFileContentDocs,
 	type FileContentDocs,
-} from './file-content-doc.js';
+} from './file-content-docs.js';
 // File system (orchestrator)
 export { createYjsFileSystem, type YjsFileSystem } from './file-system.js';
 // Formats

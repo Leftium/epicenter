@@ -64,7 +64,7 @@ export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
  * when two devices diverge.
  *
  * The rich-text content document is a separate Y.Doc per entry. Apps own
- * content-doc construction via `buildEntryContentDoc` in `entry-content-doc.ts`,
+ * content-doc construction via `buildEntryContentDoc` in `entry-content-docs.ts`,
  * which wires IndexedDB persistence and bumps `updatedAt` via
  * `onLocalUpdate`. Editor components bind through
  * `entryContentDocs.open(id)`.

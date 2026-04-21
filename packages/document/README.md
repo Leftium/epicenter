@@ -134,7 +134,7 @@ A real app uses both: workspace for the main data store, document for per-row co
 
 ## Real call site
 
-From Fuji's per-entry rich-text editor (`apps/fuji/src/lib/entry-content-doc.ts`) — a `buildEntryContentDoc` closure wrapped in `defineDocument` for shared, refcounted handles:
+From Fuji's per-entry rich-text editor (`apps/fuji/src/lib/entry-content-docs.ts`) — a `buildEntryContentDoc` closure wrapped in `defineDocument` for shared, refcounted handles:
 
 ```ts
 import {

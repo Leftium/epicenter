@@ -232,5 +232,5 @@ new Y.Doc({ guid, gc: false });
 - `packages/document/src/attach-indexed-db.ts` — persistence attach
 - `packages/document/src/attach-sync.ts` — sync attach (supervisor, backoff, awareness)
 - `packages/document/src/attach-rich-text.ts`, `attach-plain-text.ts`
-- `apps/fuji/src/lib/entry-content-doc.ts` — canonical per-row example
+- `apps/fuji/src/lib/entry-content-docs.ts` — canonical per-row example
 - `packages/workspace/src/workspace/create-workspace.ts` — `createWorkspace` built on raw Y.Doc + helpers

@@ -28,7 +28,7 @@ import type { Table } from '@epicenter/workspace';
 import type { Client, InStatement } from '@libsql/client-wasm';
 import { createClient } from '@libsql/client-wasm';
 
-import type { FileContentDocs } from '../../file-content-doc.js';
+import type { FileContentDocs } from '../../file-content-docs.js';
 import type { FileId } from '../../ids.js';
 import type { FileRow } from '../../table.js';
 

@@ -46,8 +46,6 @@ export const entryContentDocs = defineDocument((entryId: EntryId) => {
 	return {
 		ydoc,
 		content,
-		idb,
-		sync,
 		whenReady: idb.whenLoaded,
 		whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(
 			() => {},

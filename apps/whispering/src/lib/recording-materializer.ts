@@ -11,6 +11,7 @@
  */
 
 import type { Table } from '@epicenter/workspace';
+import { invoke } from '@tauri-apps/api/core';
 import yaml from 'js-yaml';
 import { PATHS } from '$lib/constants/paths';
 import type { Recording } from './workspace';
@@ -43,10 +44,6 @@ export function createRecordingMaterializer(ctx: {
 		exports: {},
 		init: (async () => {
 			await ctx.init;
-			// Dynamic import: invoke is only available in Tauri runtime.
-			// Static import of isTauri() is fine (returns false on web),
-			// but invoke would fail if called on web.
-			const { invoke } = await import('@tauri-apps/api/core');
 			const dir = await PATHS.DB.RECORDINGS();
 
 			// Subscribe BEFORE flush so changes during flush aren't missed

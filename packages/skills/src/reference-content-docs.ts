@@ -45,7 +45,6 @@ export function createReferenceContentDocs({
 		return {
 			ydoc,
 			content,
-			idb,
 			whenReady: idb ? idb.whenLoaded : Promise.resolve(),
 			whenDisposed: idb ? idb.whenDisposed : Promise.resolve(),
 			[Symbol.dispose]() {

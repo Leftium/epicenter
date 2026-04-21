@@ -46,8 +46,6 @@ export const noteBodyDocs = defineDocument((noteId: NoteId) => {
 	return {
 		ydoc,
 		body,
-		idb,
-		sync,
 		whenReady: idb.whenLoaded,
 		whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(
 			() => {},

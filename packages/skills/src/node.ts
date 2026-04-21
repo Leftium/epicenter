@@ -65,14 +65,14 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * await ws.actions.exportToDisk({ dir: '.agents/skills' })
  * ```
  */
-export function createSkillsWorkspace(
-	opts: { docPersistence?: 'indexeddb' | 'none' } = {},
-) {
+export function createSkillsWorkspace() {
+	// Node has no IndexedDB — skip the attachment. Workspace-level persistence
+	// (sqlite) is attached separately by the caller via `.withExtension()`.
 	const {
 		workspace: base,
 		instructionsDocs,
 		referenceDocs,
-	} = createBrowserSkillsWorkspace(opts);
+	} = createBrowserSkillsWorkspace({ docPersistence: 'none' });
 
 	async function writeInstructions(id: string, text: string): Promise<void> {
 		using h = instructionsDocs.open(id);

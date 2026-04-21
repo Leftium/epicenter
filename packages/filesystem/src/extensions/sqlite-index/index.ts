@@ -14,11 +14,18 @@
  *
  * @example
  * ```typescript
- * const ws = createWorkspace({ id: 'app', tables: { files: filesTable } })
- *   .withExtension('sqliteIndex', createSqliteIndex());
+ * const ws = createWorkspace({ id: 'app', tables: { files: filesTable } });
+ * const fileContentDocs = createFileContentDocs({
+ *   workspaceId: ws.id,
+ *   filesTable: ws.tables.files,
+ * });
+ * const workspace = ws.withExtension(
+ *   'sqliteIndex',
+ *   createSqliteIndex(fileContentDocs),
+ * );
  *
- * await ws.whenReady;
- * const results = await ws.extensions.sqliteIndex.search('meeting notes');
+ * await workspace.whenReady;
+ * const results = workspace.extensions.sqliteIndex.search('meeting notes');
  * ```
  *
  * @module
@@ -135,7 +142,7 @@ type SqliteIndexContext = {
  * ```typescript
  * createWorkspace({ id: 'opensidian', tables: { files: filesTable } })
  *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sqliteIndex', createSqliteIndex());
+ *   .withExtension('sqliteIndex', createSqliteIndex(fileContentDocs));
  * ```
  */
 export function createSqliteIndex(

@@ -40,7 +40,6 @@ function createTestClient() {
 	const contentDocs = createFileContentDocs({
 		workspaceId: client.id,
 		filesTable: client.tables.files,
-		persistence: 'none',
 	});
 	return { client, contentDocs };
 }
@@ -181,7 +180,6 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		const contentDocs = createFileContentDocs({
 		workspaceId: client.id,
 		filesTable: client.tables.files,
-		persistence: 'none',
 	});
 		return { client, contentDocs };
 	}

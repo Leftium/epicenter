@@ -1,12 +1,11 @@
 /**
  * Per-reference content Y.Doc factory. References are tier-3 documentation
  * loaded on demand — each reference file gets its own Y.Doc with
- * `attachPlainText`. Apps call
- * `createReferenceContentDocs({ workspaceId, referencesTable })` once and reuse.
+ * `attachPlainText`. Persistence is caller-owned via the `attach` callback
+ * — see `createFileContentDocs` for the shape.
  */
 
 import {
-	attachIndexedDb,
 	attachPlainText,
 	defineDocument,
 	docGuid,
@@ -16,14 +15,19 @@ import type { Table } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { Reference } from './tables.js';
 
+export type ContentAttachment = {
+	whenLoaded?: Promise<void>;
+	whenDisposed?: Promise<void>;
+};
+
 export function createReferenceContentDocs({
 	workspaceId,
 	referencesTable,
-	persistence = 'indexeddb',
+	attach,
 }: {
 	workspaceId: string;
 	referencesTable: Table<Reference>;
-	persistence?: 'indexeddb' | 'none';
+	attach?: (ydoc: Y.Doc) => ContentAttachment | void;
 }) {
 	return defineDocument((referenceId: string) => {
 		const ydoc = new Y.Doc({
@@ -36,17 +40,18 @@ export function createReferenceContentDocs({
 			gc: false,
 		});
 		const content = attachPlainText(ydoc);
-		const idb = persistence === 'indexeddb' ? attachIndexedDb(ydoc) : null;
 
 		onLocalUpdate(ydoc, () => {
 			referencesTable.update(referenceId, { updatedAt: Date.now() });
 		});
 
+		const attached = attach?.(ydoc);
+
 		return {
 			ydoc,
 			content,
-			whenReady: idb ? idb.whenLoaded : Promise.resolve(),
-			whenDisposed: idb ? idb.whenDisposed : Promise.resolve(),
+			whenReady: attached?.whenLoaded ?? Promise.resolve(),
+			whenDisposed: attached?.whenDisposed ?? Promise.resolve(),
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},

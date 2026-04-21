@@ -1,11 +1,20 @@
 /**
- * Per-file content Y.Doc factory. Apps call `createFileContentDocs({ workspaceId, filesTable })`
- * once per workspace and retain the result for its lifetime. Pass
- * `persistence: 'none'` to skip IndexedDB (Node tests, environments without IDB).
+ * Per-file content Y.Doc factory. Apps call `createFileContentDocs({
+ * workspaceId, filesTable, attach })` once per workspace and retain the
+ * result for its lifetime.
+ *
+ * The factory owns Y.Doc construction + timeline attachment + `updatedAt`
+ * writeback. Persistence is caller-owned via the `attach` callback —
+ *
+ *   attach: (ydoc) => attachIndexedDb(ydoc)          // browser
+ *   attach: (ydoc) => attachSqlite(ydoc, { filePath })  // desktop/CLI
+ *   // omit for in-memory (tests, Node stubs)
+ *
+ * The callback's return value is threaded: `whenLoaded` surfaces on
+ * `handle.whenReady`, `whenDisposed` feeds the cache teardown.
  */
 
 import {
-	attachIndexedDb,
 	attachTimeline,
 	defineDocument,
 	docGuid,
@@ -16,22 +25,19 @@ import * as Y from 'yjs';
 import type { FileId } from './ids.js';
 import type { FileRow } from './table.js';
 
-/**
- * @param workspaceId - Caller's workspace identity; becomes the first GUID
- *   segment. Required — a shared default would collapse IDB namespaces across
- *   apps that both import this package.
- * @param filesTable - The files table this factory writes back to (bumps
- *   `updatedAt` on local edits).
- * @param persistence - `'indexeddb'` (default) or `'none'`.
- */
+export type ContentAttachment = {
+	whenLoaded?: Promise<void>;
+	whenDisposed?: Promise<void>;
+};
+
 export function createFileContentDocs({
 	workspaceId,
 	filesTable,
-	persistence = 'indexeddb',
+	attach,
 }: {
 	workspaceId: string;
 	filesTable: Table<FileRow>;
-	persistence?: 'indexeddb' | 'none';
+	attach?: (ydoc: Y.Doc) => ContentAttachment | void;
 }) {
 	return defineDocument((fileId: FileId) => {
 		const ydoc = new Y.Doc({
@@ -44,17 +50,18 @@ export function createFileContentDocs({
 			gc: false,
 		});
 		const content = attachTimeline(ydoc);
-		const idb = persistence === 'indexeddb' ? attachIndexedDb(ydoc) : null;
 
 		onLocalUpdate(ydoc, () => {
 			filesTable.update(fileId, { updatedAt: Date.now() });
 		});
 
+		const attached = attach?.(ydoc);
+
 		return {
 			ydoc,
 			content,
-			whenReady: idb ? idb.whenLoaded : Promise.resolve(),
-			whenDisposed: idb ? idb.whenDisposed : Promise.resolve(),
+			whenReady: attached?.whenLoaded ?? Promise.resolve(),
+			whenDisposed: attached?.whenDisposed ?? Promise.resolve(),
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},

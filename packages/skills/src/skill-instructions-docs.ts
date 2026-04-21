@@ -1,11 +1,10 @@
 /**
  * Per-skill instructions Y.Doc factory. Each skill's markdown instruction body
- * lives in its own Y.Doc with `attachPlainText`. Apps call
- * `createSkillInstructionsDocs({ workspaceId, skillsTable })` once and reuse.
+ * lives in its own Y.Doc with `attachPlainText`. Persistence is caller-owned
+ * via the `attach` callback — see `createFileContentDocs` for the shape.
  */
 
 import {
-	attachIndexedDb,
 	attachPlainText,
 	defineDocument,
 	docGuid,
@@ -15,14 +14,19 @@ import type { Table } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { Skill } from './tables.js';
 
+export type ContentAttachment = {
+	whenLoaded?: Promise<void>;
+	whenDisposed?: Promise<void>;
+};
+
 export function createSkillInstructionsDocs({
 	workspaceId,
 	skillsTable,
-	persistence = 'indexeddb',
+	attach,
 }: {
 	workspaceId: string;
 	skillsTable: Table<Skill>;
-	persistence?: 'indexeddb' | 'none';
+	attach?: (ydoc: Y.Doc) => ContentAttachment | void;
 }) {
 	return defineDocument((skillId: string) => {
 		const ydoc = new Y.Doc({
@@ -35,17 +39,18 @@ export function createSkillInstructionsDocs({
 			gc: false,
 		});
 		const instructions = attachPlainText(ydoc);
-		const idb = persistence === 'indexeddb' ? attachIndexedDb(ydoc) : null;
 
 		onLocalUpdate(ydoc, () => {
 			skillsTable.update(skillId, { updatedAt: Date.now() });
 		});
 
+		const attached = attach?.(ydoc);
+
 		return {
 			ydoc,
 			instructions,
-			whenReady: idb ? idb.whenLoaded : Promise.resolve(),
-			whenDisposed: idb ? idb.whenDisposed : Promise.resolve(),
+			whenReady: attached?.whenLoaded ?? Promise.resolve(),
+			whenDisposed: attached?.whenDisposed ?? Promise.resolve(),
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},

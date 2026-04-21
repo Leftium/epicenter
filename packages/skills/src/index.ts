@@ -64,12 +64,12 @@ export const skillsDocument = defineDocument(
 		const instructionsDocs = createSkillInstructionsDocs({
 			workspaceId: id,
 			skillsTable: tables.helpers.skills,
-			persistence: 'indexeddb',
+			attach: (ydoc) => attachIndexedDb(ydoc),
 		});
 		const referenceDocs = createReferenceContentDocs({
 			workspaceId: id,
 			referencesTable: tables.helpers.references,
-			persistence: 'indexeddb',
+			attach: (ydoc) => attachIndexedDb(ydoc),
 		});
 
 		const actions = createSkillsActions({

@@ -21,7 +21,6 @@ function setup() {
 	const contentDocs = createFileContentDocs({
 		workspaceId: ws.id,
 		filesTable: ws.tables.files,
-		persistence: 'none',
 	});
 	const fs = createYjsFileSystem(ws.tables.files, contentDocs);
 	return { fs, ws, contentDocs };

@@ -51,12 +51,11 @@ const base = createWorkspace(opensidianDefinition).withExtension(
 	}),
 );
 
-// No IDB in Bun — content docs live in memory and re-hydrate from sync on
-// each run.
+// No attach callback → in-memory content docs, re-hydrate from sync on
+// each run. Phase 4 flips this to `attachSqlite` for durable persistence.
 const fileContentDocs = createFileContentDocs({
 	workspaceId: base.id,
 	filesTable: base.tables.files,
-	persistence: 'none',
 });
 
 async function readContent(id: string): Promise<string | undefined> {

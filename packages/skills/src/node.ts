@@ -88,12 +88,10 @@ export const skillsDocument = defineDocument(
 		const instructionsDocs = createSkillInstructionsDocs({
 			workspaceId: id,
 			skillsTable: tables.helpers.skills,
-			persistence: 'none',
 		});
 		const referenceDocs = createReferenceContentDocs({
 			workspaceId: id,
 			referencesTable: tables.helpers.references,
-			persistence: 'none',
 		});
 
 		const readActions = createSkillsActions({

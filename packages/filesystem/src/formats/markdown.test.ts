@@ -159,7 +159,6 @@ describe('markdown integration with YjsFileSystem', () => {
 		const contentDocs = createFileContentDocs({
 			workspaceId: ws.id,
 			filesTable: ws.tables.files,
-			persistence: 'none',
 		});
 		return createYjsFileSystem(ws.tables.files, contentDocs);
 	}

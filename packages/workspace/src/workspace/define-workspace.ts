@@ -166,14 +166,22 @@ export function defineWorkspace<
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
 	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
 >(
-	config: {
+	{
+		id,
+		tables: tableDefs = {} as TTableDefinitions,
+		kv: kvDefs = {} as TKvDefinitions,
+		awareness: awarenessDefs = {} as TAwarenessDefinitions,
+		// gc defaults to false — deletion-marker GC breaks sync with peers that
+		// haven't seen the deletes yet. Opt in only for purely local docs.
+		gc = false,
+	}: {
 		id: TId;
 		tables?: TTableDefinitions;
 		kv?: TKvDefinitions;
 		awareness?: TAwarenessDefinitions;
 		gc?: boolean;
 	},
-	opts?: { gcTime?: number },
+	{ gcTime = Infinity }: { gcTime?: number } = {},
 ): WorkspaceFactory<
 	TId,
 	TTableDefinitions,
@@ -185,35 +193,17 @@ export function defineWorkspace<
 		TTableDefinitions,
 		TKvDefinitions,
 		TAwarenessDefinitions
-	> = {
-		id: config.id,
-		tables: (config.tables ?? {}) as TTableDefinitions,
-		kv: (config.kv ?? {}) as TKvDefinitions,
-		awareness: config.awareness,
-		gc: config.gc,
-	};
+	> = { id, tables: tableDefs, kv: kvDefs, awareness: awarenessDefs, gc };
 
 	const factory = defineDocument<
 		TId,
 		WorkspaceBundle<TTableDefinitions, TKvDefinitions, TAwarenessDefinitions>
 	>(
 		(id) => {
-			// gc defaults to false — deletion-marker GC breaks sync with peers
-			// that haven't seen the deletes yet. Per-workspace opt-in for purely
-			// local docs where memory matters more than sync safety.
-			const ydoc = new Y.Doc({ guid: id, gc: definition.gc ?? false });
-			const tables = attachTables(
-				ydoc,
-				(definition.tables ?? {}) as TTableDefinitions,
-			);
-			const kv = attachKv(
-				ydoc,
-				(definition.kv ?? {}) as TKvDefinitions,
-			);
-			const awareness = attachAwareness(
-				ydoc,
-				(definition.awareness ?? {}) as TAwarenessDefinitions,
-			);
+			const ydoc = new Y.Doc({ guid: id, gc });
+			const tables = attachTables(ydoc, tableDefs);
+			const kv = attachKv(ydoc, kvDefs);
+			const awareness = attachAwareness(ydoc, awarenessDefs);
 			const enc = attachEncryption(ydoc, { tables, kv });
 
 			return {
@@ -235,7 +225,7 @@ export function defineWorkspace<
 				},
 			};
 		},
-		{ gcTime: opts?.gcTime ?? Infinity },
+		{ gcTime },
 	);
 
 	return Object.assign(factory, { definition });

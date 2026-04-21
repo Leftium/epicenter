@@ -102,36 +102,6 @@ export const skillsDocument = defineDocument(
 			referenceDocs,
 		});
 
-		async function writeInstructions(
-			skillId: string,
-			text: string,
-		): Promise<void> {
-			using h = instructionsDocs.open(skillId);
-			await h.whenReady;
-			h.instructions.write(text);
-		}
-
-		async function readInstructions(skillId: string): Promise<string> {
-			using h = instructionsDocs.open(skillId);
-			await h.whenReady;
-			return h.instructions.read();
-		}
-
-		async function writeReference(
-			refId: string,
-			text: string,
-		): Promise<void> {
-			using h = referenceDocs.open(refId);
-			await h.whenReady;
-			h.content.write(text);
-		}
-
-		async function readReference(refId: string): Promise<string> {
-			using h = referenceDocs.open(refId);
-			await h.whenReady;
-			return h.content.read();
-		}
-
 		const nodeActions = {
 			/**
 			 * Scan a directory of SKILL.md files and upsert them into the workspace.
@@ -199,7 +169,11 @@ export const skillsDocument = defineDocument(
 							await writeFile(join(skillPath, 'SKILL.md'), updatedMd, 'utf-8');
 						}
 
-						await writeInstructions(skillId, instructions);
+						{
+							using h = instructionsDocs.open(skillId);
+							await h.whenReady;
+							h.instructions.write(instructions);
+						}
 
 						// Import references in parallel
 						const refsPath = join(skillPath, 'references');
@@ -226,7 +200,9 @@ export const skillsDocument = defineDocument(
 										_v: 1,
 									});
 
-									await writeReference(refId, refContent);
+									using h = referenceDocs.open(refId);
+									await h.whenReady;
+									h.content.write(refContent);
 								}),
 							);
 						}
@@ -253,8 +229,9 @@ export const skillsDocument = defineDocument(
 							const skillDir = join(dir, skill.name);
 							await mkdir(skillDir, { recursive: true });
 
-							const instructions = await readInstructions(skill.id);
-							const skillMd = serializeSkillMd(skill, instructions);
+							using h = instructionsDocs.open(skill.id);
+							await h.whenReady;
+							const skillMd = serializeSkillMd(skill, h.instructions.read());
 							await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
 
 							// Write references in parallel
@@ -267,7 +244,9 @@ export const skillsDocument = defineDocument(
 
 								await Promise.all(
 									refs.map(async (ref) => {
-										const text = await readReference(ref.id);
+										using h = referenceDocs.open(ref.id);
+										await h.whenReady;
+										const text = h.content.read();
 										await writeFile(join(refsDir, ref.path), text, 'utf-8');
 									}),
 								);

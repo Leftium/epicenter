@@ -12,7 +12,6 @@
 
 import { describe, expect, test } from 'bun:test';
 import { zipSync } from 'fflate';
-import { createWorkspace } from '@epicenter/workspace';
 import { importRedditExport } from './index.js';
 import { redditWorkspace } from './workspace.js';
 
@@ -26,7 +25,7 @@ function createZip(entries: Record<string, string>): Blob {
 }
 
 function setup() {
-	const workspace = createWorkspace(redditWorkspace);
+	const workspace = redditWorkspace.open('reddit');
 	return { workspace };
 }
 

@@ -1,6 +1,6 @@
 export { fromDocument } from './from-document.svelte.js';
-export { fromKv } from './fromKv.svelte.js';
-export { fromTable } from './fromTable.svelte.js';
+export { fromKv } from './from-kv.svelte.js';
+export { fromTable } from './from-table.svelte.js';
 export {
 	createPersistedMap,
 	defineEntry,

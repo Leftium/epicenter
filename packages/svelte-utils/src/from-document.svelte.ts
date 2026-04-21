@@ -44,6 +44,9 @@ export function fromDocument<Id extends string, T>(
 		return () => h.dispose();
 	});
 	return {
+		// Getter, not a plain property — `handle` is a `$derived` local and
+		// must be re-read on every access to stay reactive. Returning `handle`
+		// directly would snapshot the initial value and never update.
 		get current() {
 			return handle;
 		},

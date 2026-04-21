@@ -389,8 +389,8 @@ Load these on demand based on what you're working on:
 
 Code references:
 
-- `packages/workspace/src/workspace/define-table.ts`
-- `packages/workspace/src/workspace/define-kv.ts`
+- `packages/workspace/src/document/define-table.ts`
+- `packages/workspace/src/document/define-kv.ts`
 - `packages/workspace/src/document/define-document.ts`
 - `packages/workspace/src/document/attach-table.ts`
 - `packages/workspace/src/document/attach-kv.ts`

@@ -21,7 +21,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '../../../workspace/index.js';
+import { createWorkspace, defineTable } from '../../../index.js';
 import { createMarkdownMaterializer } from './materializer.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';
 

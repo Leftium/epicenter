@@ -13,7 +13,7 @@ import { type } from 'arktype';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { attachTable } from '../document/index.js';
 import { createKv } from '../document/internal.js';
-import { defineKv } from '../workspace/define-kv.js';
+import { defineKv } from '../document/define-kv.js';
 import {
 	generateId,
 	measureTime,

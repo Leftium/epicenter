@@ -89,17 +89,17 @@ export * from './document/index.js';
 // SCHEMA DEFINITIONS (Pure)
 // ════════════════════════════════════════════════════════════════════════════
 
-export { defineKv } from './workspace/define-kv';
-export { defineTable } from './workspace/define-table';
+export { defineKv } from './document/define-kv';
+export { defineTable } from './document/define-table';
 export {
 	attachEncryption,
 	type EncryptionAttachment,
-} from './workspace/attach-encryption';
+} from './document/attach-encryption';
 export {
 	attachEncryptedKv,
 	attachEncryptedTable,
 	attachEncryptedTables,
-} from './workspace/attach-encrypted';
+} from './document/attach-encrypted';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -110,7 +110,7 @@ export {
 	EncryptionKey,
 	EncryptionKeys,
 	encryptionKeysFingerprint,
-} from './workspace/encryption-key';
+} from './document/encryption-key';
 export type {
 	Awareness,
 	AwarenessDefinitions,

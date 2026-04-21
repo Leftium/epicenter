@@ -18,7 +18,7 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '../../../workspace/index.js';
+import { createWorkspace, defineTable } from '../../../index.js';
 import { createSqliteMaterializer } from './sqlite.js';
 import type { MirrorDatabase } from './types.js';
 import { isAction, isQuery, isMutation } from '../../../shared/actions.js';

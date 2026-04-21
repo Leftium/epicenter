@@ -34,7 +34,7 @@ import type {
 	CombinedStandardSchema,
 	LastSchema,
 	TableDefinition,
-} from '../document/index.js';
+} from './index.js';
 import { createUnionSchema } from './schema-union.js';
 
 /**

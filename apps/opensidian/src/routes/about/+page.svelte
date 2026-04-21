@@ -71,7 +71,7 @@ const definition = defineWorkspace({
 
 export const workspace = createWorkspace(definition)
   .withExtension('persistence', indexeddbPersistence)
-  .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
+  .withExtension('sqliteIndex', createSqliteIndex());
 
 export const fs = createYjsFileSystem(workspace.tables.files, workspace.tables.files.documents.content);`;
 
@@ -96,7 +96,7 @@ export const fs = createYjsFileSystem(workspace.tables.files, workspace.tables.f
 		},
 		{
 			id: 'sqlite-index',
-			line: ".withWorkspaceExtension('sqliteIndex', createSqliteIndex())",
+			line: ".withExtension('sqliteIndex', createSqliteIndex())",
 			explanation:
 				'Spins up a WASM SQLite database that mirrors the Yjs table into SQL rows for fast tree queries.',
 		},

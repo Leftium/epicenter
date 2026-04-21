@@ -2,24 +2,27 @@
 	import { Button } from '@epicenter/ui/button';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { workspace } from '$lib/client';
+	import { referenceDocs } from '$lib/client';
 	import { skillsState } from '$lib/state/skills-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let expandedRefId = $state<string | null>(null);
 
-	const refHandle = $derived(
-		expandedRefId
-			? workspace.tables.references.documents.content.get(expandedRefId)
-			: null,
-	);
+	// Open a handle when a reference expands; dispose when it collapses or
+	// switches, so the grace-period idles the socket for backgrounded refs.
+	let refHandle = $state<ReturnType<typeof referenceDocs.open> | null>(null);
 
-	// Keep the sync transport live for the currently-expanded reference.
-	// The `refHandle && ...` guard is a no-op when nothing is expanded; when
-	// expansion flips, the effect re-runs and swaps binds atomically.
 	$effect(() => {
-		if (!refHandle) return;
-		return refHandle.bind();
+		if (!expandedRefId) {
+			refHandle = null;
+			return;
+		}
+		const h = referenceDocs.open(expandedRefId);
+		refHandle = h;
+		return () => {
+			h.dispose();
+			refHandle = null;
+		};
 	});
 </script>
 
@@ -71,7 +74,7 @@
 						</div>
 						{#if expandedRefId === ref.id && refHandle}
 							<div class="h-48 border-t">
-								<CodeMirrorEditor ytext={refHandle.binding} />
+								<CodeMirrorEditor ytext={refHandle.content.binding} />
 							</div>
 						{/if}
 					</div>

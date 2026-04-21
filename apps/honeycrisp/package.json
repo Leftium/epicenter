@@ -33,6 +33,7 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@epicenter/document": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@epicenter/constants": "workspace:*",

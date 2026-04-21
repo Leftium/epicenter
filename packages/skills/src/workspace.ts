@@ -1,13 +1,13 @@
 /**
  * @fileoverview Isomorphic workspace factory for agent skills.
  *
- * `createSkillsWorkspace()` returns a workspace client with read actions
- * for progressive skill disclosure (catalog → instructions → resources).
+ * `createSkillsWorkspace()` returns the workspace builder alongside the
+ * shared per-skill document factories (`instructionsDocs`, `referenceDocs`).
  * This is safe to import in any runtime (browser, Node, Bun).
  *
  * For disk I/O actions (importFromDisk, exportToDisk), import from
- * `@epicenter/skills/node` instead—that subpath re-exports a pre-built
- * `createSkillsWorkspace()` with server-side actions attached.
+ * `@epicenter/skills/node` instead — that subpath returns a pre-built
+ * workspace with server-side actions attached.
  *
  * @module
  */
@@ -21,42 +21,31 @@ import { createSkillInstructionsDocs } from './skill-instructions-docs.js';
 export { skillsDefinition } from './definition.js';
 
 /**
- * Create an isomorphic skills workspace client with read actions.
+ * Create an isomorphic skills workspace with shared document factories.
  *
- * Returns a non-terminal builder—chain `.withExtension()` to add persistence,
- * sync, or other capabilities. Chain `.withActions()` to attach custom actions.
+ * Returns `{ workspace, instructionsDocs, referenceDocs }`. Apps chain
+ * `.withExtension()` on `workspace` to add persistence/sync, and open
+ * per-skill Y.Docs via `instructionsDocs.open(id)` / `referenceDocs.open(id)`.
+ * Both factories are already wired into the workspace's read actions, so
+ * components and actions share the same handle cache.
  *
  * Includes three read actions for progressive skill disclosure:
  * - `listSkills()` — catalog entries (cheap, no docs opened)
  * - `getSkill({ id })` — metadata + instructions (opens one Y.Doc)
  * - `getSkillWithReferences({ id })` — full skill with all references (opens 1 + N Y.Docs)
  *
- * For a pre-built workspace with disk I/O actions, import from
- * `@epicenter/skills/disk` instead.
- *
- * @example Browser — with read actions
+ * @example Browser
  * ```typescript
  * import { createSkillsWorkspace } from '@epicenter/skills'
  *
- * const ws = createSkillsWorkspace()
- *   .withExtension('persistence', indexeddbPersistence)
- *
- * const skills = ws.actions.listSkills()
- * const result = await ws.actions.getSkill({ id: 'abc123' })
- * if (result) systemPrompt += result.instructions
- * ```
- *
- * @example Server — with disk I/O (use the /node subpath)
- * ```typescript
- * import { createSkillsWorkspace } from '@epicenter/skills/node'
- *
- * const ws = createSkillsWorkspace()
- *   .withExtension('persistence', indexeddbPersistence)
- *
- * await ws.actions.importFromDisk({ dir: '.agents/skills' })
+ * const { workspace, instructionsDocs, referenceDocs } = createSkillsWorkspace();
+ * const ws = workspace.withExtension('persistence', indexeddbPersistence);
+ * using h = instructionsDocs.open(skillId);
  * ```
  */
-export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none' } = {}) {
+export function createSkillsWorkspace(
+	opts: { persistence?: 'indexeddb' | 'none' } = {},
+) {
 	const base = createWorkspace(skillsDefinition);
 	const persistence = opts.persistence;
 	const instructionsDocs = createSkillInstructionsDocs({
@@ -82,16 +71,13 @@ export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none'
 		return h.content.read();
 	}
 
-	return Object.assign(base, { instructionsDocs, referenceDocs }).withActions((client) => ({
+	const workspace = base.withActions((client) => ({
 		/**
 		 * List all skills as lightweight catalog entries.
 		 *
 		 * Returns id, name, and description for every valid skill row.
-		 * No documents are opened—this is cheap enough to call on every
-		 * render cycle or at agent session startup.
-		 *
-		 * Mirrors tier 1 (Catalog) of the agentskills.io progressive
-		 * disclosure model: ~50–100 tokens per skill.
+		 * No documents are opened — cheap enough to call on every render
+		 * cycle or at agent session startup.
 		 */
 		listSkills: defineQuery({
 			description: 'List all skills (id, name, description)',
@@ -106,11 +92,7 @@ export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none'
 		 * Get a single skill's metadata and instructions.
 		 *
 		 * Opens the skill's instructions document (one Y.Doc) and reads
-		 * the full markdown content. Returns the skill row alongside the
-		 * instructions text—callers almost always need both.
-		 *
-		 * Mirrors tier 2 (Instructions) of the agentskills.io progressive
-		 * disclosure model: <5000 tokens recommended.
+		 * the full markdown content.
 		 */
 		getSkill: defineQuery({
 			description: 'Get skill metadata and instructions by ID',
@@ -127,12 +109,7 @@ export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none'
 		 * Get a skill with its full instructions and all reference content.
 		 *
 		 * Opens the instructions document plus one content document per
-		 * reference—expensive for skills with many references. Use this
-		 * at agent prompt assembly time when the full skill context is
-		 * needed, not for catalog browsing.
-		 *
-		 * Mirrors tier 3 (Resources) of the agentskills.io progressive
-		 * disclosure model.
+		 * reference — expensive for skills with many references.
 		 */
 		getSkillWithReferences: defineQuery({
 			description: 'Get skill with instructions and all reference content',
@@ -156,4 +133,6 @@ export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none'
 			},
 		}),
 	}));
+
+	return { workspace, instructionsDocs, referenceDocs };
 }

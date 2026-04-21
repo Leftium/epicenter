@@ -1,20 +1,23 @@
 <script lang="ts">
-	import { workspace } from '$lib/client';
+	import { instructionsDocs } from '$lib/client';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { skillId }: { skillId: string } = $props();
 
-	const handle = $derived(
-		workspace.tables.skills.documents.instructions.get(skillId),
-	);
+	// Open a handle per skillId; dispose on switch so backgrounded skills stop
+	// syncing after the grace period.
+	let handle = $state<ReturnType<typeof instructionsDocs.open> | null>(null);
 
-	// Keep the sync transport live while this editor is mounted. The framework
-	// refcounts binds per guid and disconnects after a grace period once the
-	// last bind is released — so switching skills releases the old one and
-	// binds the new atomically.
 	$effect(() => {
-		return handle.bind();
+		const h = instructionsDocs.open(skillId);
+		handle = h;
+		return () => {
+			h.dispose();
+			handle = null;
+		};
 	});
 </script>
 
-<CodeMirrorEditor ytext={handle.binding} />
+{#if handle}
+	<CodeMirrorEditor ytext={handle.instructions.binding} />
+{/if}

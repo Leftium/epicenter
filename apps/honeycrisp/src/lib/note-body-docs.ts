@@ -1,12 +1,7 @@
 /**
- * Note body document — per-note Y.Doc with IndexedDB persistence.
- *
- * Apps own content-doc construction directly. The `buildNoteBodyDoc`
- * closure produces the Y.Doc bundle; `noteBodyDocs` is the cached factory
- * returned by `defineDocument`.
- *
- * Consumers open a handle via `noteBodyDocs.open(noteId)`, await
- * `handle.whenReady` before reading, and let `using` handle disposal.
+ * Per-note body Y.Doc factory with IndexedDB persistence and WebSocket sync.
+ * Consumers open a handle via `noteBodyDocs.open(noteId)`, await `whenReady`
+ * before reading, and let `using` handle disposal.
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -24,7 +19,7 @@ import * as Y from 'yjs';
 import { auth, workspace } from '$lib/client';
 import type { NoteId } from '$lib/workspace';
 
-function buildNoteBodyDoc(noteId: NoteId) {
+export const noteBodyDocs = defineDocument((noteId: NoteId) => {
 	const ydoc = new Y.Doc({
 		guid: docGuid({
 			workspaceId: workspace.id,
@@ -61,8 +56,4 @@ function buildNoteBodyDoc(noteId: NoteId) {
 			ydoc.destroy();
 		},
 	};
-}
-
-export const noteBodyDocs = defineDocument(buildNoteBodyDoc, {
-	gcTime: 30_000,
 });

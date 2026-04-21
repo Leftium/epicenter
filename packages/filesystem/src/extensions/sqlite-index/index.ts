@@ -15,7 +15,7 @@
  * @example
  * ```typescript
  * const ws = createWorkspace({ id: 'app', tables: { files: filesTable } })
- *   .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
+ *   .withExtension('sqliteIndex', createSqliteIndex());
  *
  * await ws.whenReady;
  * const results = await ws.extensions.sqliteIndex.search('meeting notes');
@@ -128,14 +128,14 @@ type SqliteIndexContext = {
  * Create a SQLite index workspace extension.
  *
  * Returns a curried factory: call with options, then pass to
- * `.withWorkspaceExtension()`. The inner factory receives the
+ * `.withExtension()`. The inner factory receives the
  * workspace context and returns the extension exports.
  *
  * @example
  * ```typescript
  * createWorkspace({ id: 'opensidian', tables: { files: filesTable } })
  *   .withExtension('persistence', indexeddbPersistence)
- *   .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
+ *   .withExtension('sqliteIndex', createSqliteIndex());
  * ```
  */
 export function createSqliteIndex(

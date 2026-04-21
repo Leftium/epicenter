@@ -1,12 +1,7 @@
 /**
- * Entry content document — per-entry Y.Doc with IndexedDB persistence.
- *
- * Apps own content-doc construction directly. The `buildEntryContentDoc`
- * closure produces the Y.Doc bundle; `entryContentDocs` is the cached factory
- * returned by `defineDocument`.
- *
- * Consumers open a handle via `entryContentDocs.open(entryId)`, await
- * `handle.whenReady` before reading, and let `using` handle disposal.
+ * Per-entry content Y.Doc factory with IndexedDB persistence and WebSocket
+ * sync. Consumers open a handle via `entryContentDocs.open(entryId)`, await
+ * `whenReady` before reading, and let `using` handle disposal.
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -24,7 +19,7 @@ import * as Y from 'yjs';
 import { auth, workspace } from '$lib/client';
 import type { EntryId } from '$lib/workspace';
 
-function buildEntryContentDoc(entryId: EntryId) {
+export const entryContentDocs = defineDocument((entryId: EntryId) => {
 	const ydoc = new Y.Doc({
 		guid: docGuid({
 			workspaceId: workspace.id,
@@ -61,8 +56,4 @@ function buildEntryContentDoc(entryId: EntryId) {
 			ydoc.destroy();
 		},
 	};
-}
-
-export const entryContentDocs = defineDocument(buildEntryContentDoc, {
-	gcTime: 30_000,
 });

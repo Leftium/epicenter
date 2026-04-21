@@ -2,7 +2,7 @@
 	import { autocompletion } from '@codemirror/autocomplete';
 	import type { FileId } from '@epicenter/filesystem';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { workspace } from '$lib/client';
+	import { fileContentDocs, workspace } from '$lib/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import { opensidian } from '$lib/workspace/definition';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
@@ -22,24 +22,25 @@
 	// `asText()` on Timeline mutates when the doc is empty — it pushes an
 	// entry. If called before persistence hydrates, it races the IDB replay
 	// and can corrupt the timeline (phantom text entry alongside the real
-	// stored entries). Gate on `whenLoaded` so we only read mode after the
+	// stored entries). Gate on `whenReady` so we only read mode after the
 	// doc has its real state.
-	const handle = $derived(workspace.tables.files.documents.content.get(fileId));
-	let loadedHandle = $state<typeof handle | null>(null);
-	$effect(() => {
-		const h = handle;
-		loadedHandle = null;
-		h.whenLoaded.then(() => {
-			// Ignore the result if the user navigated away mid-load.
-			if (h === handle) loadedHandle = h;
-		});
-	});
+	let handle = $state<ReturnType<typeof fileContentDocs.open> | null>(null);
+	let loadedHandle = $state<ReturnType<typeof fileContentDocs.open> | null>(
+		null,
+	);
 
-	// Keep the sync transport live while this editor is mounted. We bind the
-	// outer `handle` (not `loadedHandle`) so sync starts hydrating remote
-	// state in parallel with the local IDB load — both finish faster that way.
 	$effect(() => {
-		return handle.bind();
+		const h = fileContentDocs.open(fileId);
+		handle = h;
+		loadedHandle = null;
+		h.whenReady.then(() => {
+			if (handle === h) loadedHandle = h;
+		});
+		return () => {
+			h.dispose();
+			handle = null;
+			loadedHandle = null;
+		};
 	});
 
 	const sharedLinkDecorations = linkDecorations({
@@ -66,7 +67,11 @@
 </script>
 
 {#if loadedHandle}
-	<CodeMirrorEditor ytext={loadedHandle.asText()} {extensions} {filename} />
+	<CodeMirrorEditor
+		ytext={loadedHandle.content.asText()}
+		{extensions}
+		{filename}
+	/>
 {:else}
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />

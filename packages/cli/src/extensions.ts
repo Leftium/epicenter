@@ -16,7 +16,7 @@ type SessionStore = ReturnType<typeof createSessionStore>;
  *
  * Waits for all prior extensions to initialize, then loads the session for
  * the given server URL and applies encryption keys if present. Register with
- * `.withWorkspaceExtension('unlock', ...)`.
+ * `.withExtension('unlock', ...)`.
  *
  * @param sessions - Session store created by `createSessionStore()`
  * @param serverUrl - Server URL to load the session for
@@ -28,7 +28,7 @@ type SessionStore = ReturnType<typeof createSessionStore>;
  * const sessions = createSessionStore();
  *
  * const workspace = createWorkspace(definition)
- *   .withWorkspaceExtension('unlock', createCliUnlock(sessions, SERVER_URL));
+ *   .withExtension('unlock', createCliUnlock(sessions, SERVER_URL));
  * ```
  */
 export function createCliUnlock(sessions: SessionStore, serverUrl: string) {

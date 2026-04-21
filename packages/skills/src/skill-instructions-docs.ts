@@ -1,11 +1,7 @@
 /**
- * Skill instructions documents — per-skill Y.Doc factory.
- *
- * Each skill has a markdown instruction body stored in its own Y.Doc with
- * `attachPlainText`, enabling collaborative Y.Text editing in browser-based
- * editors. The factory is workspace-scoped — apps call
- * `createSkillInstructionsDocs({ workspaceId, skillsTable })` once and reuse
- * the result.
+ * Per-skill instructions Y.Doc factory. Each skill's markdown instruction body
+ * lives in its own Y.Doc with `attachPlainText`. Apps call
+ * `createSkillInstructionsDocs({ workspaceId, skillsTable })` once and reuse.
  */
 
 import {
@@ -19,8 +15,6 @@ import type { Table } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { Skill } from './tables.js';
 
-type PersistenceMode = 'indexeddb' | 'none';
-
 export function createSkillInstructionsDocs({
 	workspaceId,
 	skillsTable,
@@ -28,9 +22,9 @@ export function createSkillInstructionsDocs({
 }: {
 	workspaceId: string;
 	skillsTable: Table<Skill>;
-	persistence?: PersistenceMode;
+	persistence?: 'indexeddb' | 'none';
 }) {
-	function buildSkillInstructionsDoc(skillId: string) {
+	return defineDocument((skillId: string) => {
 		const ydoc = new Y.Doc({
 			guid: docGuid({
 				workspaceId,
@@ -57,11 +51,5 @@ export function createSkillInstructionsDocs({
 				ydoc.destroy();
 			},
 		};
-	}
-
-	return defineDocument(buildSkillInstructionsDoc, { gcTime: 30_000 });
+	});
 }
-
-export type SkillInstructionsDocs = ReturnType<
-	typeof createSkillInstructionsDocs
->;

@@ -1,11 +1,8 @@
 /**
- * Reference content documents — per-reference Y.Doc factory.
- *
- * References are additional documentation loaded on demand (tier 3 in the
- * progressive disclosure model). Each reference file gets its own Y.Doc
- * for collaborative editing. The factory is workspace-scoped — apps call
- * `createReferenceContentDocs({ workspaceId, referencesTable })` once and
- * reuse the result.
+ * Per-reference content Y.Doc factory. References are tier-3 documentation
+ * loaded on demand — each reference file gets its own Y.Doc with
+ * `attachPlainText`. Apps call
+ * `createReferenceContentDocs({ workspaceId, referencesTable })` once and reuse.
  */
 
 import {
@@ -19,8 +16,6 @@ import type { Table } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { Reference } from './tables.js';
 
-type PersistenceMode = 'indexeddb' | 'none';
-
 export function createReferenceContentDocs({
 	workspaceId,
 	referencesTable,
@@ -28,9 +23,9 @@ export function createReferenceContentDocs({
 }: {
 	workspaceId: string;
 	referencesTable: Table<Reference>;
-	persistence?: PersistenceMode;
+	persistence?: 'indexeddb' | 'none';
 }) {
-	function buildReferenceContentDoc(referenceId: string) {
+	return defineDocument((referenceId: string) => {
 		const ydoc = new Y.Doc({
 			guid: docGuid({
 				workspaceId,
@@ -57,11 +52,5 @@ export function createReferenceContentDocs({
 				ydoc.destroy();
 			},
 		};
-	}
-
-	return defineDocument(buildReferenceContentDoc, { gcTime: 30_000 });
+	});
 }
-
-export type ReferenceContentDocs = ReturnType<
-	typeof createReferenceContentDocs
->;

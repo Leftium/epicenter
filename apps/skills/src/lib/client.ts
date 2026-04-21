@@ -1,7 +1,8 @@
 import { createSkillsWorkspace } from '@epicenter/skills';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 
-export const workspace = createSkillsWorkspace().withExtension(
-	'persistence',
-	indexeddbPersistence,
-);
+const { workspace: base, instructionsDocs, referenceDocs } =
+	createSkillsWorkspace();
+
+export const workspace = base.withExtension('persistence', indexeddbPersistence);
+export { instructionsDocs, referenceDocs };

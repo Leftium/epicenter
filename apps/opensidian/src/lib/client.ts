@@ -4,6 +4,7 @@ import {
 	createSqliteIndex,
 	createYjsFileSystem,
 } from '@epicenter/filesystem';
+import { createSkillsWorkspace } from '@epicenter/skills';
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import {
@@ -212,10 +213,13 @@ function buildWorkspaceClient() {
  *
  * @see {@link file://./state/skill-state.svelte.ts} for the two-layer skill loader
  */
-export const skillsWorkspace = createSkillsWorkspace().withExtension(
+const skills = createSkillsWorkspace();
+export const skillsWorkspace = skills.workspace.withExtension(
 	'persistence',
 	indexeddbPersistence,
 );
+export const skillInstructionsDocs = skills.instructionsDocs;
+export const skillReferenceDocs = skills.referenceDocs;
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

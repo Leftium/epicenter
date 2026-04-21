@@ -106,7 +106,7 @@ export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none'
 		return h.content.read();
 	}
 
-	return Object.assign(base, { instructionsDocs, referenceDocs }).withActions((client) => ({
+	const workspace = base.withActions((client) => ({
 		/**
 		 * Scan a directory of SKILL.md files and upsert them into the workspace.
 		 *
@@ -272,6 +272,8 @@ export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none'
 			},
 		}),
 	}));
+
+	return { workspace, instructionsDocs, referenceDocs };
 }
 
 const REFERENCE_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';

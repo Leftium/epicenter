@@ -1,15 +1,8 @@
 /**
- * File content documents — per-file Y.Doc factory for the filesystem package.
- *
- * Because the filesystem package is shared between apps, the factory takes
- * the host workspace's id and files table as inputs — each app constructs
- * its own factory bound to its own workspace instance. Apps call
- * `createFileContentDocs({ workspaceId, filesTable })` once and retain the
- * result for the workspace lifetime.
- *
- * Apps opt into IndexedDB persistence via `persistence: 'indexeddb'`
- * (default). In Node tests or environments without IDB, pass
- * `persistence: 'none'` to skip the attachment.
+ * Per-file content Y.Doc factory. Apps call
+ * `createFileContentDocs({ workspaceId, filesTable })` once per workspace and
+ * retain the result for the workspace lifetime. Pass `persistence: 'none'` to
+ * skip IndexedDB (Node tests, environments without IDB).
  */
 
 import {
@@ -24,17 +17,11 @@ import * as Y from 'yjs';
 import type { FileId } from './ids.js';
 import type { FileRow } from './table.js';
 
-type PersistenceMode = 'indexeddb' | 'none';
-
 /**
- * Create a per-workspace file-content document factory.
- *
- * @param workspaceId - the host workspace's id, used as the first segment of
- *   the Y.Doc guid. Required — no default — because a shared default would
- *   collapse IndexedDB namespaces across apps that both import this package.
- * @param filesTable - the workspace's files table helper. Used for the
- *   `onLocalUpdate` writeback that bumps `updatedAt`.
- * @param persistence - `'indexeddb'` (default) to attach IDB; `'none'` to skip.
+ * @param workspaceId - host workspace's id, used as the first GUID segment.
+ *   Required — a shared default would collapse IDB namespaces across apps.
+ * @param filesTable - files table helper, written back on local updates.
+ * @param persistence - `'indexeddb'` (default) or `'none'`.
  */
 export function createFileContentDocs({
 	workspaceId,
@@ -43,9 +30,9 @@ export function createFileContentDocs({
 }: {
 	workspaceId: string;
 	filesTable: Table<FileRow>;
-	persistence?: PersistenceMode;
+	persistence?: 'indexeddb' | 'none';
 }) {
-	function buildFileContentDoc(fileId: FileId) {
+	return defineDocument((fileId: FileId) => {
 		const ydoc = new Y.Doc({
 			guid: docGuid({
 				workspaceId,
@@ -72,9 +59,7 @@ export function createFileContentDocs({
 				ydoc.destroy();
 			},
 		};
-	}
-
-	return defineDocument(buildFileContentDoc, { gcTime: 30_000 });
+	});
 }
 
 export type FileContentDocs = ReturnType<typeof createFileContentDocs>;

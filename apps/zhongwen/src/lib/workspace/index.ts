@@ -5,5 +5,6 @@ export {
 	ConversationId,
 	generateChatMessageId,
 	generateConversationId,
-	zhongwen,
+	zhongwenKv,
+	zhongwenTables,
 } from './definition';

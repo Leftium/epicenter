@@ -1,13 +1,14 @@
 /**
- * Workspace schema — branded IDs, table definitions, and workspace definition.
+ * Workspace schema — branded IDs and table/kv definitions.
  *
- * Browser-agnostic: no IndexedDB, no Svelte imports.
+ * Browser-agnostic: no IndexedDB, no Svelte imports, no Y.Doc construction.
+ * The Y.Doc and attachments live in `client.ts` via a single
+ * `defineDocument` closure.
  */
 
 import {
 	defineKv,
 	defineTable,
-	defineWorkspace,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -60,16 +61,14 @@ const chatMessagesTable = defineTable(
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Workspace Definition
+// Schema Records
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const zhongwen = defineWorkspace({
-	id: 'epicenter.zhongwen' as const,
-	tables: {
-		conversations: conversationsTable,
-		chatMessages: chatMessagesTable,
-	},
-	kv: {
-		showPinyin: defineKv(type('boolean'), true),
-	},
-});
+export const zhongwenTables = {
+	conversations: conversationsTable,
+	chatMessages: chatMessagesTable,
+};
+
+export const zhongwenKv = {
+	showPinyin: defineKv(type('boolean'), true),
+};

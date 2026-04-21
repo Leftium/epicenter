@@ -107,12 +107,6 @@ export { KV_KEY, TableKey } from '@epicenter/document';
 export { defineKv } from './workspace/define-kv';
 export { defineTable } from './workspace/define-table';
 export {
-	defineWorkspace,
-	type WorkspaceBundle,
-	type WorkspaceFactory,
-	type WorkspaceHandle,
-} from './workspace/define-workspace';
-export {
 	attachEncryption,
 	type EncryptionAttachment,
 } from './shared/attach-encryption';

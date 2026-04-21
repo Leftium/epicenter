@@ -5,29 +5,36 @@
  * wraps it with a cache, ref-count + grace-period lifecycle, aggregated
  * `whenLoaded` readiness, and coordinated teardown.
  *
- * The primary idiom is `factory.open(id)`: construct-if-missing + retain, with
- * a handle that implements `Symbol.dispose` for scope-bound usage:
+ * The only construction path is `factory.open(id)`: construct-if-missing +
+ * retain. The returned handle carries a `release()` method for manual
+ * teardown and also implements `Symbol.dispose` for TS 5.2 `using` blocks.
  *
  * ```ts
- * // Manual
+ * // Manual — pair every open() with a release()
  * const h = docs.open('abc');
+ * await h.whenLoaded;
  * h.content.write('hi');
  * h.release();
  *
- * // Scope-bound (preferred)
+ * // Framework-scoped — register release with the component lifecycle
+ * $effect(() => {
+ *   const h = docs.open(id);
+ *   return () => h.release();
+ * });
+ *
+ * // Scope-bound (TS 5.2 `using`) — release fires on block exit
  * {
  *   using h = docs.open('abc');
+ *   await h.whenLoaded;
  *   h.content.write('hi');
- * }  // release fires here
- *
- * // Async — wait for whenLoaded before using
- * {
- *   await using h = await docs.read('abc');
- *   const text = h.content.read();
  * }
  *
- * // Non-retaining cache lookup
- * const snap = docs.peek('abc');
+ * // Async scope — same as `using`, for symmetry with async teardown
+ * {
+ *   await using h = docs.open('abc');
+ *   await h.whenLoaded;
+ *   h.content.read();
+ * }
  * ```
  *
  * The user owns `new Y.Doc(...)` (full control over `guid`, `gc`, `meta`, …)
@@ -37,19 +44,28 @@
  * - One Y.Doc per id (cache keyed by `id`, concurrent-open race-safe — no
  *   `await` between `Map.get` and `Map.set`).
  * - Guid-stability check — catches nondeterministic `guid` templates
- *   (e.g., `Math.random()`) on the second construction.
+ *   (e.g., `Math.random()`) on the second construction. Silent IDB data
+ *   corruption is the bug this guards against.
  * - Ref-count + grace-period disposal. Each `open()` increments the count and
- *   mints a fresh disposable wrapper; `release()` (or scope exit via `using`)
- *   decrements. Last release schedules disposal after `graceMs`; a fresh
- *   `open()` during grace cancels the pending disposal.
+ *   mints a fresh disposable handle; `release()` decrements. Last release
+ *   schedules disposal after `graceMs`; a fresh `open()` during grace cancels
+ *   the pending disposal. The grace period is load-bearing for correctness
+ *   with async-teardown attachments like `attachIndexedDb`: `db.close()` is
+ *   deferred until pending transactions settle, so immediate destroy+rebuild
+ *   on the same id can race.
  * - Aggregated `whenLoaded`: scans top-level attachments for a
  *   `whenLoaded: Promise<void>` property and `Promise.all`s them.
- * - `close(id)` forces immediate disposal; `closeAll()` coordinates app
- *   teardown.
+ * - `close(id)` forces immediate disposal and awaits attachments'
+ *   `disposed: Promise<void>` fields — `await factory.close(id)` is a real
+ *   teardown barrier callers can rely on before reusing the id.
  *
  * Disposal destroys the user's Y.Doc via `ydoc.destroy()`. Attachments that
  * register `ydoc.on('destroy', …)` (as `attachIndexedDb` and `attachSync` do)
  * tear down automatically.
+ *
+ * The user's `attach` object is never mutated. Framework-injected properties
+ * (`whenLoaded`, `release`, `Symbol.dispose`/`asyncDispose`) live on the
+ * per-handle wrapper that prototype-chains to the user's attach for reads.
  *
  * @module
  */
@@ -58,26 +74,26 @@ import type * as Y from 'yjs';
 import type {
 	DocumentFactory,
 	DocumentHandle,
-	DocumentSnapshot,
 } from './define-document.types.js';
 
 const DEFAULT_GRACE_MS = 30_000;
 const RESERVED_KEYS: ReadonlyArray<string> = ['release', 'whenLoaded'];
 
 type DocEntry<TAttach extends { ydoc: Y.Doc }> = {
-	handle: DocumentSnapshot<TAttach>;
+	/** The user's pristine `build()` return value. Never mutated. */
+	attach: TAttach;
+	/** Aggregated across all attachments' `whenLoaded` promises. */
+	whenLoaded: Promise<void>;
+	/**
+	 * Aggregated `disposed` promises from attachments whose teardown is async
+	 * (e.g., `attachIndexedDb` resolves after IDB close completes). `close(id)`
+	 * and `closeAll()` await this so callers can rely on "await factory.close(…)"
+	 * as a real teardown barrier.
+	 */
+	attachmentDisposed: Promise<void>;
 	retainCount: number;
 	disposeTimer: ReturnType<typeof setTimeout> | null;
 	disposed: boolean;
-	/**
-	 * Aggregated `disposed` promises from attachments whose teardown is async
-	 * (e.g., `attachIndexedDb` resolves after IDB close completes). Resolves
-	 * once every attachment has finished its async teardown. `close(id)` and
-	 * `closeAll()` await this so callers can rely on "await factory.close(…)"
-	 * as a real teardown barrier.
-	 */
-	whenDisposed: Promise<void>;
-	resolveDisposed: () => void;
 };
 
 /**
@@ -130,10 +146,12 @@ export function defineDocument<
 		// cache entry). The caller sees the thrown error.
 		const attach = build(id);
 
-		// Reserved-key collision: framework adds `whenLoaded` to the cached
-		// handle and `release`/`Symbol.dispose`/`Symbol.asyncDispose` to each
-		// `open()` wrapper. If the user's attach already has one of those
-		// string keys, the framework would silently overwrite — fail loudly.
+		// Reserved-key collision: framework adds `whenLoaded`, `release`, and
+		// the dispose symbols to each handle via `Object.create(attach)` +
+		// `defineProperties`. A user property with the same name on `attach`
+		// would be silently shadowed via the prototype chain — fail loudly.
+		// (Symbol keys can't be returned from an object literal in practice;
+		// skipped.)
 		for (const reserved of RESERVED_KEYS) {
 			if (reserved in attach) {
 				try {
@@ -167,37 +185,14 @@ export function defineDocument<
 			recordedGuids.set(id, attach.ydoc.guid);
 		}
 
-		const whenLoaded = aggregatePromise(attach, 'whenLoaded');
-		const attachmentDisposed = aggregatePromise(attach, 'disposed');
-
-		// The cached handle IS the attach object with `whenLoaded` added in-place.
-		// We mutate (rather than `Object.assign({}, …)`) to preserve live getters
-		// that some attachments expose (e.g. Timeline's `currentType`). `open()`
-		// wrappers wear `release`/`Symbol.dispose` on fresh objects created with
-		// `Object.create(handle)` — the cached handle never gets those.
-		const handle = attach as DocumentSnapshot<TAttach>;
-
-		const { promise: whenDisposed, resolve: resolveDisposed } =
-			Promise.withResolvers<void>();
-
 		const entry: DocEntry<TAttach> = {
-			handle,
+			attach,
+			whenLoaded: aggregatePromise(attach, 'whenLoaded'),
+			attachmentDisposed: aggregatePromise(attach, 'disposed'),
 			retainCount: 0,
 			disposeTimer: null,
 			disposed: false,
-			whenDisposed,
-			resolveDisposed: () => {
-				// Gate the factory-level "disposed" on attachment-level disposed
-				// promises so callers awaiting close()/closeAll() see IDB, sync,
-				// etc. fully torn down — not just the synchronous ydoc.destroy()
-				// that triggered them.
-				void attachmentDisposed.then(resolveDisposed, resolveDisposed);
-			},
 		};
-
-		Object.defineProperties(handle, {
-			whenLoaded: { value: whenLoaded, enumerable: true, configurable: true },
-		});
 
 		openDocuments.set(id, entry);
 		return entry;
@@ -211,92 +206,63 @@ export function defineDocument<
 		}
 		// Remove from cache synchronously so a concurrent `.open()` constructs
 		// a fresh entry rather than handing out the about-to-be-destroyed one.
+		// `closeAll` pre-clears the map; this guard makes that path a no-op.
 		if (openDocuments.get(id) === entry) {
 			openDocuments.delete(id);
 		}
-		// Destroying the Y.Doc fires `ydoc.on('destroy')` — attachments that
+		// `ydoc.destroy()` fires `ydoc.on('destroy')` — attachments that
 		// registered teardown there (IndexedDB, sync) run their cleanup. Any
-		// async close (IDB, WebSocket) settles in the background; callers who
-		// care can await attachment-specific `.disposed` promises exposed in
-		// their returns.
+		// async close settles in the background; callers awaiting a full
+		// teardown barrier do so via `close(id)`, which awaits
+		// `entry.attachmentDisposed`.
 		try {
-			entry.handle.ydoc.destroy();
+			entry.attach.ydoc.destroy();
 		} catch (err) {
 			console.error('[defineDocument] ydoc.destroy() threw:', err);
 		}
-		// Kick off the factory-level disposed resolution. Resolves once every
-		// attachment's own `.disposed` promise has settled (success or not).
-		entry.resolveDisposed();
-	}
-
-	/**
-	 * Mint a fresh disposable wrapper for an open entry. Each wrapper holds
-	 * its own `released` flag and release closure, so N `open()` calls require
-	 * N releases before the grace timer starts. The wrapper inherits all
-	 * attach properties (ydoc, whenLoaded, …) from the cached handle via
-	 * `Object.create`.
-	 */
-	function makeOpenWrapper(
-		id: Id,
-		entry: DocEntry<TAttach>,
-	): DocumentHandle<TAttach> {
-		if (entry.disposeTimer !== null) {
-			clearTimeout(entry.disposeTimer);
-			entry.disposeTimer = null;
-		}
-		entry.retainCount++;
-
-		let released = false;
-		const release = (): void => {
-			if (released) return;
-			released = true;
-			if (entry.disposed) return;
-			entry.retainCount--;
-			if (entry.retainCount === 0) {
-				entry.disposeTimer = setTimeout(() => {
-					entry.disposeTimer = null;
-					if (entry.disposed) return;
-					disposeEntry(id, entry);
-				}, graceMs);
-			}
-		};
-
-		const wrapper = Object.create(entry.handle) as DocumentHandle<TAttach>;
-		Object.defineProperties(wrapper, {
-			release: { value: release, enumerable: false, configurable: true },
-			[Symbol.dispose]: {
-				value: release,
-				enumerable: false,
-				configurable: true,
-			},
-			[Symbol.asyncDispose]: {
-				value: () => {
-					release();
-					return Promise.resolve();
-				},
-				enumerable: false,
-				configurable: true,
-			},
-		});
-		return wrapper;
 	}
 
 	const factory: DocumentFactory<Id, TAttach> = {
 		open(id) {
-			let entry = openDocuments.get(id);
-			if (!entry) entry = construct(id);
-			return makeOpenWrapper(id, entry);
-		},
+			// Each open() mints a fresh disposable handle with its own
+			// `released` flag, so N opens require N releases before the grace
+			// timer starts. The handle prototype-chains to `entry.attach` — so
+			// `h.ydoc` and any user attachment properties read through without
+			// mutating the user's object.
+			const entry = openDocuments.get(id) ?? construct(id);
 
-		peek(id) {
-			const entry = openDocuments.get(id);
-			if (!entry) return undefined;
-			return entry.handle as unknown as DocumentSnapshot<TAttach>;
-		},
+			if (entry.disposeTimer !== null) {
+				clearTimeout(entry.disposeTimer);
+				entry.disposeTimer = null;
+			}
+			entry.retainCount++;
 
-		async read(id) {
-			const handle = factory.open(id);
-			await handle.whenLoaded;
+			let released = false;
+			const release = (): void => {
+				if (released) return;
+				released = true;
+				if (entry.disposed) return;
+				entry.retainCount--;
+				if (entry.retainCount === 0) {
+					entry.disposeTimer = setTimeout(() => {
+						entry.disposeTimer = null;
+						disposeEntry(id, entry);
+					}, graceMs);
+				}
+			};
+
+			const handle = Object.create(entry.attach) as DocumentHandle<TAttach>;
+			Object.defineProperties(handle, {
+				whenLoaded: { value: entry.whenLoaded, enumerable: true },
+				release: { value: release },
+				[Symbol.dispose]: { value: release },
+				[Symbol.asyncDispose]: {
+					value: () => {
+						release();
+						return Promise.resolve();
+					},
+				},
+			});
 			return handle;
 		},
 
@@ -304,14 +270,16 @@ export function defineDocument<
 			const entry = openDocuments.get(id);
 			if (!entry) return;
 			disposeEntry(id, entry);
-			await entry.whenDisposed;
+			await entry.attachmentDisposed;
 		},
 
 		async closeAll() {
 			const entries = Array.from(openDocuments.entries());
 			openDocuments.clear();
 			for (const [id, entry] of entries) disposeEntry(id, entry);
-			await Promise.all(entries.map(([, entry]) => entry.whenDisposed));
+			await Promise.all(
+				entries.map(([, entry]) => entry.attachmentDisposed),
+			);
 		},
 	};
 

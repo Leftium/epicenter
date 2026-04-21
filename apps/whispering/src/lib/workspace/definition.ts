@@ -326,10 +326,10 @@ const shortcuts = {
 } as const;
 
 /**
- * The Whispering workspace definition — 5 normalized tables for domain data
- * and ~40 KV entries for synced preferences.
+ * The Whispering workspace factory — 5 normalized tables for domain data
+ * and ~40 KV entries for synced preferences. Call `.open(id)` to get a bundle.
  */
-export const whisperingDefinition = defineWorkspace({
+export const whispering = defineWorkspace({
 	id: 'whispering',
 	tables: {
 		recordings,

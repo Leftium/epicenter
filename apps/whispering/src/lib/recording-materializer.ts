@@ -1,8 +1,8 @@
 /**
- * Recording materializer — desktop-only workspace extension that mirrors the
+ * Recording materializer — desktop-only subscription that mirrors the
  * `recordings` table into `{id}.md` files on disk.
  *
- * The factory observes the recordings table and invokes Tauri Rust commands
+ * Observes the recordings table and invokes Tauri Rust commands
  * (`write_markdown_files`, `delete_files_in_directory`) through a serialized
  * promise chain, so rapid changes never produce overlapping writes.
  *
@@ -31,72 +31,59 @@ function toRecordingMarkdownFile(row: Recording) {
 	};
 }
 
-export function createRecordingMaterializer(ctx: {
-	tables: { recordings: Table<Recording> };
-	init: Promise<void>;
-}) {
-	let unsub: (() => void) | undefined;
-	// Serialized promise chain — ensures observer batches complete sequentially
-	// so rapid changes don't produce overlapping Rust invoke calls.
+/**
+ * Start the recording materializer. Subscribes to the table immediately (so
+ * writes during the initial flush aren't missed), awaits `whenReady`, then
+ * flushes existing rows to disk. Returns once the initial flush completes.
+ */
+export async function startRecordingMaterializer(ctx: {
+	recordings: Table<Recording>;
+	whenReady: Promise<void>;
+}): Promise<void> {
+	// Serialized promise chain — observer batches complete sequentially so
+	// rapid changes don't produce overlapping Rust invoke calls.
 	let syncQueue = Promise.resolve();
+	const dirPromise = PATHS.DB.RECORDINGS();
 
-	return {
-		exports: {},
-		init: (async () => {
-			await ctx.init;
-			const dir = await PATHS.DB.RECORDINGS();
+	ctx.recordings.observe((changedIds) => {
+		syncQueue = syncQueue
+			.then(async () => {
+				const dir = await dirPromise;
+				const toWrite: { filename: string; content: string }[] = [];
+				const toDelete: string[] = [];
 
-			// Subscribe BEFORE flush so changes during flush aren't missed
-			unsub = ctx.tables.recordings.observe((changedIds) => {
-				syncQueue = syncQueue
-					.then(async () => {
-						const toWrite: { filename: string; content: string }[] = [];
-						const toDelete: string[] = [];
-
-						for (const id of changedIds) {
-							const result = ctx.tables.recordings.get(id);
-							if (result.status === 'valid') {
-								toWrite.push(toRecordingMarkdownFile(result.row));
-							} else if (result.status === 'not_found') {
-								toDelete.push(`${id}.md`);
-							}
-						}
-
-						if (toWrite.length) {
-							await invoke('write_markdown_files', {
-								directory: dir,
-								files: toWrite,
-							});
-						}
-						if (toDelete.length) {
-							await invoke('delete_files_in_directory', {
-								directory: dir,
-								filenames: toDelete,
-							});
-						}
-					})
-					.catch((error) => {
-						console.warn('[recording-materializer] write failed:', error);
-					});
-			});
-
-			// Initial flush — write all recordings to disk.
-			// Routed through syncQueue so observer writes that fire during
-			// flush don't overlap with it.
-			syncQueue = syncQueue.then(async () => {
-				const files = ctx.tables.recordings
-					.getAllValid()
-					.map(toRecordingMarkdownFile);
-				if (files.length) {
-					await invoke('write_markdown_files', { directory: dir, files });
+				for (const id of changedIds) {
+					const result = ctx.recordings.get(id);
+					if (result.status === 'valid') {
+						toWrite.push(toRecordingMarkdownFile(result.row));
+					} else if (result.status === 'not_found') {
+						toDelete.push(`${id}.md`);
+					}
 				}
+
+				if (toWrite.length) {
+					await invoke('write_markdown_files', { directory: dir, files: toWrite });
+				}
+				if (toDelete.length) {
+					await invoke('delete_files_in_directory', {
+						directory: dir,
+						filenames: toDelete,
+					});
+				}
+			})
+			.catch((error) => {
+				console.warn('[recording-materializer] write failed:', error);
 			});
-			await syncQueue;
-		})(),
-		// Unsubscribe immediately, then wait for any in-flight write to finish
-		async dispose() {
-			unsub?.();
-			await syncQueue;
-		},
-	};
+	});
+
+	await ctx.whenReady;
+
+	syncQueue = syncQueue.then(async () => {
+		const dir = await dirPromise;
+		const files = ctx.recordings.getAllValid().map(toRecordingMarkdownFile);
+		if (files.length) {
+			await invoke('write_markdown_files', { directory: dir, files });
+		}
+	});
+	await syncQueue;
 }

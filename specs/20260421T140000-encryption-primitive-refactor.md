@@ -1,9 +1,11 @@
 # Encryption Primitive Refactor — Explicit Encrypted Variants
 
 **Date**: 2026-04-21
-**Status**: Draft
+**Status**: Completed (2026-04-21)
 **Author**: AI-assisted (design discussion with Braden)
 **Branch**: `braden-w/document-primitive`
+
+> **Completion note (2026-04-21):** Shipped as designed. Current code matches the Desired State below: `attachEncryption(ydoc)` with internal `register()`, and positional `attachEncryptedTable` / `attachEncryptedTables` / `attachEncryptedKv` variants. All seven app `client.ts` files compose using this shape. Retained as a completed record because the Variant A vs B vs C analysis under "Research Findings" is the rationale for future readers asking "why not `enc.attachTable(...)`?".
 
 ## Overview
 

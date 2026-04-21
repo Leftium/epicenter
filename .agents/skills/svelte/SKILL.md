@@ -29,106 +29,91 @@ Use this pattern when you need to:
 - Avoid template gotchas (unicode escapes in HTML vs JS context).
 - Extract repetitive markup into data-driven `{#each}` or `{#snippet}` patterns.
 
-# External Resource Handles: Parent Owns the Lifecycle
+# Prop-Keyed Resources: Let the Tree Own the Lifecycle
 
-When a component opens a disposable resource (Yjs doc handle from `*Docs.open()`, subscription, socket, timer) whose identity depends on a prop or piece of state, **do not** store the handle in `$state<Handle | null>(null)` and re-open it inside an `$effect`. That's re-implementing mount/unmount in user-space. Let the component tree own the boundary.
+When a component owns a disposable resource (subscription, socket, timer, any handle with a `dispose()`/`close()`/`unsubscribe()` method) whose identity depends on a prop, open it synchronously and let the parent control mount/unmount with `{#key}` or `{#if}`. Don't store the resource in nullable `$state` and re-open it inside an `$effect` — that reimplements component mount/unmount in user-space.
 
-## Spot the smell in 5 seconds
-
-Grep for `$state<ReturnType<typeof .*\.open>`. Every hit is a candidate. Then ask:
-
-1. Is the id a prop that the parent already `{#key}`s on? → **Pattern A, delete the state.**
-2. Could the parent wrap the component in `{#if id}<Child {id} />{/if}`? → **Pattern A, extract a child.**
-3. Does the component have meaningful local UI state (selection, zoom, scroll) that must survive an id swap? → rare, keep Pattern B.
-
-In ~95% of cases, one of the first two applies.
-
-## Receipts
-
-This pattern replaced five callsites in our codebase (April 2026, commits `d183f8a8` + `f689ae86`): `InstructionsEditor`, `ContentEditor`, `ReferencesPanel` → `ExpandedReference`, `honeycrisp/+page` → `NoteBodyPane`, plus the pre-existing `EntryEditor` that already followed it. Net: 54 insertions, 75 deletions. Zero behavior changes.
-
-Deepwiki, asked for the idiomatic Svelte 5 answer, returned Pattern B with a double-dispose bug in the sample code — the effect body disposed the previous resource *and* the cleanup closure disposed the newly-assigned one. Pattern A cannot write that bug because the effect body is `() => handle.dispose()` — there's nothing to desynchronize.
-
-Full rationale: `docs/articles/20260420T160000-state-handle-null-is-the-component-lifecycle-in-disguise.md`.
-
-## The smell
+## The rule
 
 ```svelte
-<!-- BAD: re-implements component lifecycle via $state + $effect -->
-<script lang="ts">
-	let { fileId }: { fileId: string } = $props();
+<!-- Parent: one lifecycle boundary, structurally visible -->
+{#if resourceId}
+	{#key resourceId}
+		<ResourceView id={resourceId} />
+	{/key}
+{/if}
 
-	let handle = $state<ReturnType<typeof fileContentDocs.open> | null>(null);
+<!-- Child: id is stable for this instance; open sync, dispose on unmount -->
+<script lang="ts">
+	let { id }: { id: string } = $props();
+
+	const resource = openResource(id);
+	$effect(() => () => resource.dispose());
+</script>
+
+<SomeView data={resource.data} />
+```
+
+The child's handle is non-nullable. No `{#if handle}` guard leaks into markup. The effect has one line because its only job is cleanup.
+
+## The anti-pattern
+
+```svelte
+<!-- Reimplements mount/unmount by hand -->
+<script lang="ts">
+	let { id }: { id: string } = $props();
+	let handle = $state<Resource | null>(null);
 
 	$effect(() => {
-		const h = fileContentDocs.open(fileId);
+		const h = openResource(id);
 		handle = h;
 		return () => { h.dispose(); handle = null; };
 	});
 </script>
 
 {#if handle}
-	<Editor ytext={handle.content.binding} />
+	<SomeView data={handle.data} />
 {/if}
 ```
 
-Symptoms: nullable handle state, `{#if handle}` guards bleeding into markup, disposal logic written by hand every time.
+It's easy to write a double-dispose or leak here. The version above can't — the body is the cleanup.
 
-## Pattern A (default): stable prop + dispose-only effect
+## Decision check
 
-The parent makes the prop stable for the component's lifetime — via `{#key id}` to remount on change, or `{#if id}<Child {id} />{/if}` to mount only when present. The child opens once, synchronously, and the effect's only job is disposal.
+1. Is the id a prop? → Parent keys on it with `{#key}`; child opens sync.
+2. Can the id be absent? → Parent wraps in `{#if id}<Child {id} />{/if}`; child opens sync.
+3. Does the component have local UI state (selection, zoom, scroll) that must survive an id swap without persistence? → rare exception; the nullable-state pattern is justified.
 
-```svelte
-<!-- Parent: lifecycle boundary is explicit -->
-{#if activeFileId}
-	{#key activeFileId}
-		<ContentEditor fileId={activeFileId} />
-	{/key}
-{/if}
+## Async-gate variant
 
-<!-- Child -->
-<script lang="ts">
-	let { fileId }: { fileId: string } = $props();
-
-	// Parent keys on activeFileId, so fileId is stable for this instance.
-	const handle = fileContentDocs.open(fileId);
-	$effect(() => () => handle.dispose());
-</script>
-
-<Editor ytext={handle.content.binding} />
-```
-
-No nullable state. No `{#if handle}` guard. The `{#key}` / `{#if}` in the parent is the lifecycle boundary — one place, structurally obvious.
-
-### When an async gate is needed
-
-If you must wait on `whenReady` before rendering, keep the handle non-nullable and gate on a separate `isLoaded` boolean:
+When the resource has a `whenReady` promise you need to wait on, keep the handle non-nullable and gate rendering on a separate boolean:
 
 ```svelte
 <script lang="ts">
-	const handle = fileContentDocs.open(fileId);
+	const resource = openResource(id);
 	let isLoaded = $state(false);
 
 	$effect(() => {
 		let cancelled = false;
-		handle.whenReady.then(() => { if (!cancelled) isLoaded = true; });
-		return () => { cancelled = true; handle.dispose(); };
+		resource.whenReady.then(() => { if (!cancelled) isLoaded = true; });
+		return () => { cancelled = true; resource.dispose(); };
 	});
 </script>
 ```
 
-## When Pattern A doesn't fit
-
-Rare. Reach for a nullable `$state<Handle | null>` + re-opening `$effect` only when the id genuinely toggles in place *and* extracting a child component would lose meaningful context (e.g., the handle must be read at the same level as multiple siblings that can't move). In practice, introducing a small wrapper component is almost always cleaner than absorbing the lifecycle inside an effect.
-
 ## `$state.raw` for non-proxyable handles
 
-If a handle's methods rely on `this` being the original instance, or it holds internal non-reactive state, Svelte's deep proxy can break it. Prefer Pattern A (don't put the handle in `$state` at all). If you must, use `$state.raw(handle)` to skip proxying.
+Svelte's deep proxy can break handles whose methods rely on `this` being the original instance, or that hold internal non-reactive state. Prefer keeping handles out of `$state` entirely (the rule above). If a handle must live in state, use `$state.raw(handle)` to skip proxying.
+
+## Project-specific application
+
+In this codebase, the rule applies to any component calling `*Docs.open()` (Yjs doc handles from `defineDocument`). Search: `$state<ReturnType<typeof .*\.open>`. Every hit is a candidate for the rule above.
 
 ## Related
 
-- The `sync-construction-async-property-ui-render-gate-pattern` skill covers the service-layer equivalent (a client with an async-ready property).
-- `docs/articles/svelte-5-createsubscriber-pattern.md` covers `createSubscriber` from `svelte/reactivity` for wrapping external event sources — use that when you need a *reactive* view of an external source, not a component-scoped handle.
+- The `sync-construction-async-property-ui-render-gate-pattern` skill covers the service-layer equivalent for clients with async-ready properties.
+- `docs/articles/svelte-5-createsubscriber-pattern.md` covers `createSubscriber` for wrapping external event sources into reactive values — a different job than component-scoped handles.
+- `docs/articles/20260420T160000-state-handle-null-is-the-component-lifecycle-in-disguise.md` walks through why this rule exists and when Pattern B is still correct.
 
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 

@@ -580,6 +580,7 @@
       "dependencies": {
         "@epicenter/api": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/document": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",

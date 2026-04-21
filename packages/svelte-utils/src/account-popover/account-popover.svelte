@@ -2,18 +2,7 @@
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
-	/**
-	 * @deprecated Use `AccountPopover` from `@epicenter/svelte/account-popover`.
-	 *
-	 * This component is kept for the migration window only — it is structurally
-	 * coupled to the legacy extension-chain workspace shape
-	 * (`workspace.extensions.sync.*`, `workspace.clearLocalData()`). Migrated
-	 * apps pass `sync={workspace.sync}` + `clearLocalData={() => workspace.idb.clearLocal()}`
-	 * to `AccountPopover` directly. Deleted once every app migrates.
-	 *
-	 * Shared account + sync status popover used across all workspace apps.
-	 */
-	import type { SyncStatus } from '@epicenter/workspace/extensions/sync/websocket';
+	import type { SyncStatus } from '@epicenter/document/attach-sync';
 	import Cloud from '@lucide/svelte/icons/cloud';
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
@@ -21,49 +10,58 @@
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import type { AuthClient } from '../auth/create-auth.svelte.js';
 	import { AuthForm } from '../auth-form/index.js';
+	import type { SyncView } from './types.js';
 
-	type SyncStatusPopoverProps = {
-		/** The auth client instance from `createAuth()`. */
+	/**
+	 * Shared account popover.
+	 *
+	 * The popover is the user-pill in each app's header. It surfaces auth
+	 * identity, sync health, reconnect, and sign-out — gating sign-out with
+	 * a confirmation when unsynced work exists.
+	 *
+	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
+	 */
+	type AccountPopoverProps = {
+		/** The auth client from `createAuth()`. */
 		auth: AuthClient;
-		/** Workspace with sync extension—used for status checks and cleanup. */
-		workspace: {
-			extensions: {
-				sync: {
-					status: SyncStatus;
-					onStatusChange: (
-						listener: (status: SyncStatus) => void,
-					) => () => void;
-					reconnect: () => void;
-				};
-			};
-			clearLocalData: () => Promise<void>;
-		};
+		/**
+		 * The workspace's sync attachment — structurally satisfied by both
+		 * `workspace.extensions.sync` (legacy) and `workspace.sync` (new
+		 * bundle), so the migration window needs no compat shim here.
+		 */
+		sync: SyncView;
+		/**
+		 * Wipe local persistence (IndexedDB). Called as part of sign-out;
+		 * typically `() => workspace.idb.clearLocal()`.
+		 */
+		clearLocalData: () => Promise<void>;
 		/** Noun describing what gets synced, e.g. "tabs" or "notes". */
 		syncNoun: string;
-		/**
-		 * Social sign-in handler called when the user clicks "Continue with Google".
-		 * Return shape matches `auth.signInWithSocialRedirect()`.
-		 */
+		/** Handler called when the user clicks "Continue with Google". */
 		onSocialSignIn: () => Promise<{ error: { message: string } | null }>;
 	};
 
-	let { auth, workspace, syncNoun, onSocialSignIn }: SyncStatusPopoverProps =
-		$props();
+	let {
+		auth,
+		sync,
+		clearLocalData,
+		syncNoun,
+		onSocialSignIn,
+	}: AccountPopoverProps = $props();
 
-	let syncStatus = $state<SyncStatus>(workspace.extensions.sync.status);
+	let syncStatus = $state<SyncStatus>(sync.status);
 	let popoverOpen = $state(false);
 
 	$effect(() => {
-		syncStatus = workspace.extensions.sync.status;
-		const unsubscribe = workspace.extensions.sync.onStatusChange((status) => {
+		syncStatus = sync.status;
+		const unsubscribe = sync.onStatusChange((status) => {
 			syncStatus = status;
 		});
 		return unsubscribe;
 	});
 
 	/**
-	 * Compute the tooltip string for the popover trigger based on
-	 * sync connection phase and auth state.
+	 * Tooltip string for the trigger pill, derived from sync phase + auth.
 	 */
 	function getSyncTooltip(s: SyncStatus, isAuthenticated: boolean): string {
 		if (!isAuthenticated) return 'Sign in to sync across devices';
@@ -83,23 +81,21 @@
 	const tooltip = $derived(getSyncTooltip(syncStatus, auth.isAuthenticated));
 
 	/**
-	 * Safe sign-out flow that checks sync status before proceeding.
+	 * Safe sign-out gate. Connected + fully synced → sign out immediately.
+	 * Otherwise warn about unsynced work first.
 	 *
-	 * If all local changes have been acknowledged by the server
-	 * (`phase === 'connected' && !hasLocalChanges`), signs out immediately.
-	 * Otherwise, shows a confirmation dialog warning about unsynced changes.
-	 *
-	 * The sign-out sequence: `auth.signOut()` → `workspace.clearLocalData()`
-	 * → `window.location.reload()`. The page reload atomically clears all
-	 * in-memory state (Y.Doc, encryption keys, Svelte stores, BroadcastChannel).
+	 * Sequence: `auth.signOut()` → `clearLocalData()` → `reload()`. The
+	 * reload atomically resets Y.Doc, encryption keys, Svelte stores, and
+	 * BroadcastChannel — simpler than teardown coordination.
 	 */
 	function handleSignOut() {
-		const status = workspace.extensions.sync.status;
-		const isSynced = status.phase === 'connected' && !status.hasLocalChanges;
+		const current = sync.status;
+		const isSynced =
+			current.phase === 'connected' && !current.hasLocalChanges;
 
 		const doSignOut = async () => {
 			await auth.signOut();
-			await workspace.clearLocalData();
+			await clearLocalData();
 			window.location.reload();
 		};
 
@@ -167,8 +163,7 @@
 							variant="outline"
 							size="sm"
 							class="flex-1"
-							onclick={() =>
-								workspace.extensions.sync.reconnect()}
+							onclick={() => sync.reconnect()}
 						>
 							<RefreshCw class="size-3.5" />
 							Reconnect

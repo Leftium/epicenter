@@ -18,11 +18,13 @@
 		"./auth": "./src/auth/index.ts",
 		"./auth-form": "./src/auth-form/index.ts",
 		"./workspace-gate": "./src/workspace-gate/index.ts",
-		"./sync-status-popover": "./src/sync-status-popover/index.ts"
+		"./sync-status-popover": "./src/sync-status-popover/index.ts",
+		"./account-popover": "./src/account-popover/index.ts"
 	},
 	"dependencies": {
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/api": "workspace:*",
+		"@epicenter/document": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@lucide/svelte": "catalog:",

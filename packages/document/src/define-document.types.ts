@@ -11,10 +11,10 @@
  * (the user's `build(id)` return value — `{ ydoc, ...attachments }`). N opens
  * require N disposes.
  *
- * The handle is created via `Object.create(bundle)` — all user-defined
- * properties on the bundle (including conventional ones like `whenReady` or
- * `whenDisposed`) are accessible through the prototype chain. Only the two
- * dispose methods below are injected by the cache.
+ * The handle is created via `Object.create(bundle)` — all bundle properties
+ * (including `whenDisposed` and user conventions like `whenReady`) are
+ * accessible through the prototype chain. Only the two dispose methods below
+ * are injected by the cache.
  *
  * Pair every `open()` with a `dispose()`:
  *
@@ -86,12 +86,17 @@ export type DocumentFactory<Id extends string, T> = {
 	 * bundle's `[Symbol.dispose]()` synchronously. If the bundle exposes a
 	 * `whenDisposed: Promise<void>` property, the returned promise resolves
 	 * once it settles — giving callers a real teardown barrier.
+	 *
+	 * Force-closes even if handles are outstanding; those handles become
+	 * unusable (the underlying Y.Doc is destroyed). Prefer letting refcount→0
+	 * drive disposal in steady-state code.
 	 */
 	close(id: Id): Promise<void>;
 	/**
 	 * Tear down every open document — for app teardown / workspace dispose.
 	 * Disposes all bundles synchronously; awaits every bundle's optional
-	 * `whenDisposed` promise before resolving.
+	 * `whenDisposed` promise before resolving. Same outstanding-handle caveat
+	 * as `close(id)`.
 	 */
 	closeAll(): Promise<void>;
 };

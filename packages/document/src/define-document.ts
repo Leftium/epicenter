@@ -46,7 +46,8 @@
  *
  * ## Builder contract
  *
- * The builder returns a bundle typed `T extends { ydoc: Y.Doc } & Disposable`:
+ * The builder returns a bundle typed
+ * `T extends { ydoc: Y.Doc; whenDisposed?: Promise<void> } & Disposable`:
  *
  * ```ts
  * function buildDoc(id: string) {
@@ -65,13 +66,41 @@
  * }
  * ```
  *
- * `whenReady` and `whenDisposed` are user-owned conventions, not
- * framework-enforced keys. The cache never scans the bundle for them. `open()`
- * doesn't read `whenReady`; callers `await handle.whenReady` through the
- * prototype chain if the builder exposed one. `close(id)` awaits
- * `bundle.whenDisposed` if present (detected via `in`), giving callers a real
- * teardown barrier. `whenReady` deliberately differs from Y.Doc's native
- * `whenLoaded` property — avoid the shadow collision.
+ * `whenDisposed` is the only factory-known property besides `ydoc` and
+ * `[Symbol.dispose]`: `close(id)` and `closeAll()` `await bundle.whenDisposed`
+ * to give callers a real teardown barrier. It's optional — bundles with
+ * synchronous teardown can omit it. `whenReady` is a pure user convention; the
+ * cache never reads it. Callers `await handle.whenReady` through the prototype
+ * chain if the builder exposed one. `whenReady` deliberately differs from
+ * Y.Doc's native `whenLoaded` property — avoid the shadow collision.
+ *
+ * ## Two layers of `when*` barriers
+ *
+ * Attachments and bundles both expose `when*` promises, but they play
+ * different roles. Names aren't interchangeable — each describes a distinct
+ * real event.
+ *
+ * ```text
+ *  ATTACHMENT LAYER (for builders — descriptive event names)
+ *  ────────────────────────────────────────────────────────
+ *  idb.whenLoaded      — local storage replayed into the Y.Doc
+ *  sync.whenConnected  — WebSocket up + first remote exchange done
+ *  idb.whenDisposed    — this provider's teardown settled
+ *  sync.whenDisposed   — ditto, per provider
+ *                        ↓  Promise.all(...)
+ *  BUNDLE LAYER (for consumers — semantic aggregates)
+ *  ────────────────────────────────────────────────────────
+ *  bundle.whenReady     — whatever "ready" means for this doc type
+ *                         (local-only apps: idb.whenLoaded;
+ *                          collab apps: both; read-only: sync only)
+ *  bundle.whenDisposed  — every provider's teardown settled
+ *                         (awaited by factory.close / closeAll)
+ * ```
+ *
+ * Rule of thumb: consumers of a `handle` only await bundle-layer barriers
+ * (`whenReady`, and indirectly `whenDisposed` via `close()`). Attachment-layer
+ * names exist so builders can compose precisely — don't leak them to handle
+ * consumers unless you have a specific reason.
  *
  * ## Provider teardown
  *
@@ -92,10 +121,25 @@
  *   increments. `handle.dispose()` is idempotent per-handle. Last dispose
  *   across all handles for an id arms the gcTime timer.
  * - **`gcTime: 0`** — synchronous teardown on refcount→0, no timer.
- * - **`gcTime: Infinity`** — never evict automatically; only `close(id)` or
- *   `closeAll()` can force teardown.
- * - **Default**: `30_000` ms. A fresh `open()` during the grace window cancels
- *   the pending teardown.
+ * - **`gcTime: Infinity`** (default) — never evict automatically; only
+ *   `close(id)` or `closeAll()` can force teardown.
+ * - **Finite `gcTime`** — arm a timer on refcount→0; a fresh `open()` during
+ *   the grace window cancels the pending teardown.
+ *
+ * Why `Infinity` is the default: a Y.Doc bundle isn't a query result — it's a
+ * handle to live, synced state. Re-opening costs a full IDB reload + websocket
+ * reconnect + resync handshake, and during the gap remote updates are missed.
+ * Explicit `close(id)` is the right teardown signal for docs; idle timeout is
+ * opt-in for high-churn cases.
+ *
+ * ## Force close semantics
+ *
+ * `close(id)` and `closeAll()` tear down the bundle **even if handles are
+ * still outstanding**. Those outstanding handles become unusable — reads
+ * through the prototype chain still reach the bundle, but operations like
+ * `h.ydoc.transact(...)` will hit Y.Doc's "destroyed doc" behavior. Force
+ * close is for caller-initiated teardown (logout, workspace unmount, app
+ * shutdown); in steady-state use, let refcount→0 drive disposal instead.
  *
  * @module
  */
@@ -105,8 +149,6 @@ import type {
 	DocumentFactory,
 	DocumentHandle,
 } from './define-document.types.js';
-
-const DEFAULT_GC_TIME = 30_000;
 
 type DocEntry<T extends { ydoc: Y.Doc } & Disposable> = {
 	/** The user's pristine `build()` return value. Never mutated. */
@@ -124,19 +166,19 @@ type DocEntry<T extends { ydoc: Y.Doc } & Disposable> = {
  *                `ydoc: Y.Doc` and a `[Symbol.dispose]()` method. `ydoc.guid`
  *                should be a deterministic function of `id` — the cache
  *                asserts stability on the second construction.
- * @param opts  - `gcTime` (default 30_000): milliseconds to wait after the
+ * @param opts  - `gcTime` (default `Infinity`): milliseconds to wait after the
  *                last handle dispose before tearing down the bundle. `0` =
- *                synchronous teardown. `Infinity` = never auto-evict. A fresh
- *                open during the grace window cancels the pending teardown.
+ *                synchronous teardown. `Infinity` = never auto-evict (the
+ *                default — see module doc for rationale). A fresh open during
+ *                the grace window cancels the pending teardown.
  */
 export function defineDocument<
 	Id extends string,
-	T extends { ydoc: Y.Doc } & Disposable,
+	T extends { ydoc: Y.Doc; whenDisposed?: Promise<void> } & Disposable,
 >(
 	build: (id: Id) => T,
-	opts?: { gcTime?: number },
+	{ gcTime = Number.POSITIVE_INFINITY }: { gcTime?: number } = {},
 ): DocumentFactory<Id, T> {
-	const gcTime = opts?.gcTime ?? DEFAULT_GC_TIME;
 	const openDocuments = new Map<Id, DocEntry<T>>();
 	const recordedGuids = new Map<Id, string>();
 
@@ -248,24 +290,14 @@ export function defineDocument<
 			const entry = openDocuments.get(id);
 			if (!entry) return;
 			disposeEntry(id, entry);
-			if ('whenDisposed' in entry.bundle) {
-				await (entry.bundle as { whenDisposed?: Promise<void> }).whenDisposed;
-			}
+			await entry.bundle.whenDisposed;
 		},
 
 		async closeAll() {
 			const entries = Array.from(openDocuments.entries());
 			openDocuments.clear();
 			for (const [id, entry] of entries) disposeEntry(id, entry);
-			await Promise.all(
-				entries.map(([, entry]) => {
-					if ('whenDisposed' in entry.bundle) {
-						return (entry.bundle as { whenDisposed?: Promise<void> })
-							.whenDisposed;
-					}
-					return undefined;
-				}),
-			);
+			await Promise.all(entries.map(([, entry]) => entry.bundle.whenDisposed));
 		},
 	};
 

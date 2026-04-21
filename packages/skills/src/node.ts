@@ -71,16 +71,8 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
 export function createSkillsWorkspace(opts: { docPersistence?: 'indexeddb' | 'none' } = {}) {
 	const base = createWorkspace(skillsDefinition);
 	const persistence = opts.docPersistence;
-	const instructionsDocs = createSkillInstructionsDocs({
-		workspaceId: base.id,
-		skillsTable: base.tables.skills,
-		persistence,
-	});
-	const referenceDocs = createReferenceContentDocs({
-		workspaceId: base.id,
-		referencesTable: base.tables.references,
-		persistence,
-	});
+	const instructionsDocs = createSkillInstructionsDocs(base, { persistence });
+	const referenceDocs = createReferenceContentDocs(base, { persistence });
 
 	async function writeInstructions(id: string, text: string): Promise<void> {
 		using h = instructionsDocs.open(id);

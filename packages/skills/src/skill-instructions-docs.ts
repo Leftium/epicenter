@@ -1,7 +1,7 @@
 /**
  * Per-skill instructions Y.Doc factory. Each skill's markdown instruction body
  * lives in its own Y.Doc with `attachPlainText`. Apps call
- * `createSkillInstructionsDocs({ workspaceId, skillsTable })` once and reuse.
+ * `createSkillInstructionsDocs(workspace)` once and reuse.
  */
 
 import {
@@ -15,19 +15,15 @@ import type { Table } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { Skill } from './tables.js';
 
-export function createSkillInstructionsDocs({
-	workspaceId,
-	skillsTable,
-	persistence = 'indexeddb',
-}: {
-	workspaceId: string;
-	skillsTable: Table<Skill>;
-	persistence?: 'indexeddb' | 'none';
-}) {
+export function createSkillInstructionsDocs(
+	workspace: { id: string; tables: { skills: Table<Skill> } },
+	{ persistence = 'indexeddb' }: { persistence?: 'indexeddb' | 'none' } = {},
+) {
+	const skillsTable = workspace.tables.skills;
 	return defineDocument((skillId: string) => {
 		const ydoc = new Y.Doc({
 			guid: docGuid({
-				workspaceId,
+				workspaceId: workspace.id,
 				collection: 'skills',
 				rowId: skillId,
 				field: 'instructions',

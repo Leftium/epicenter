@@ -33,7 +33,7 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  * @example
  * ```typescript
  * const ws = createWorkspace({ id: 'app', tables: { files: filesTable } });
- * const contentDocs = createFileContentDocs(ws.tables.files, ws.id);
+ * const contentDocs = createFileContentDocs(ws);
  * const fs = createYjsFileSystem(ws.tables.files, contentDocs);
  * ```
  */

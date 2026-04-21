@@ -2,7 +2,9 @@
 	import { autocompletion } from '@codemirror/autocomplete';
 	import type { FileId } from '@epicenter/filesystem';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { fileContentDocs, workspace } from '$lib/client';
+	import { workspace } from '$lib/client';
+
+	const { fileContentDocs } = workspace;
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';

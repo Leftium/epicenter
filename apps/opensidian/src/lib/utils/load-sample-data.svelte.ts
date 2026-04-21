@@ -1,6 +1,8 @@
 import { toast } from '@epicenter/ui/sonner';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { fs } from '$lib/client';
+import { workspace } from '$lib/client';
+
+const { fs } = workspace;
 
 function createSampleDataLoader() {
 	let seeding = $state(false);

@@ -1,5 +1,7 @@
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { fs, skillsWorkspace } from '$lib/client';
+import { skillsWorkspace, workspace } from '$lib/client';
+
+const { fs } = workspace;
 
 /** A global skill loaded from the @epicenter/skills workspace. */
 type GlobalSkill = { name: string; instructions: string };

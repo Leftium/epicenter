@@ -196,7 +196,9 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 				continue;
 			}
 
-			// wasActive && isActive — row is still active, check what changed
+			// wasActive && isActive — row is still active, check what changed.
+			// wasActive implies prev !== undefined; narrow for TS.
+			if (!prev) continue;
 			const row = (result as { status: 'valid'; row: FileRow }).row;
 
 			const parentChanged = prev.parentId !== row.parentId;

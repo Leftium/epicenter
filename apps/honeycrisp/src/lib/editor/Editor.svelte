@@ -375,22 +375,22 @@
 	});
 </script>
 
-{#snippet toggleButton(pressed: boolean, onToggle: () => void, icon: typeof BoldIcon, label: string)}
+{#snippet toggleButton(pressed: boolean, onToggle: () => void, Icon: typeof BoldIcon, label: string)}
 	<Tooltip.Root>
 		<Tooltip.Trigger>
 			<Toggle size="sm" {pressed} onPressedChange={onToggle}>
-				<svelte:component this={icon} class="size-4" />
+				<Icon class="size-4" />
 			</Toggle>
 		</Tooltip.Trigger>
 		<Tooltip.Content>{label}</Tooltip.Content>
 	</Tooltip.Root>
 {/snippet}
 
-{#snippet groupItem(value: string, icon: typeof BoldIcon, label: string)}
+{#snippet groupItem(value: string, Icon: typeof BoldIcon, label: string)}
 	<Tooltip.Root>
 		<Tooltip.Trigger>
 			<ToggleGroup.Item {value}>
-				<svelte:component this={icon} class="size-4" />
+				<Icon class="size-4" />
 			</ToggleGroup.Item>
 		</Tooltip.Trigger>
 		<Tooltip.Content>{label}</Tooltip.Content>

@@ -3,7 +3,7 @@ name: svelte
 description: Svelte 5 patterns including runes ($state, $derived, $props), TanStack Query, SvelteMap reactive state, shadcn-svelte components, and component composition. Use when the user mentions .svelte files, Svelte components, or when using TanStack Query, fromTable/fromKv, or shadcn-svelte UI.
 metadata:
   author: epicenter
-  version: '2.0'
+  version: '2.1'
 ---
 
 # Svelte Guidelines
@@ -28,6 +28,89 @@ Use this pattern when you need to:
 - Convert SvelteMap data to arrays for derived state or component props.
 - Avoid template gotchas (unicode escapes in HTML vs JS context).
 - Extract repetitive markup into data-driven `{#each}` or `{#snippet}` patterns.
+
+# External Resource Handles: Parent Owns the Lifecycle
+
+When a component opens a disposable resource (Yjs doc handle from `*Docs.open()`, subscription, socket, timer) whose identity depends on a prop or piece of state, **do not** store the handle in `$state<Handle | null>(null)` and re-open it inside an `$effect`. That's re-implementing mount/unmount in user-space. Let the component tree own the boundary.
+
+## The smell
+
+```svelte
+<!-- BAD: re-implements component lifecycle via $state + $effect -->
+<script lang="ts">
+	let { fileId }: { fileId: string } = $props();
+
+	let handle = $state<ReturnType<typeof fileContentDocs.open> | null>(null);
+
+	$effect(() => {
+		const h = fileContentDocs.open(fileId);
+		handle = h;
+		return () => { h.dispose(); handle = null; };
+	});
+</script>
+
+{#if handle}
+	<Editor ytext={handle.content.binding} />
+{/if}
+```
+
+Symptoms: nullable handle state, `{#if handle}` guards bleeding into markup, disposal logic written by hand every time.
+
+## Pattern A (default): stable prop + dispose-only effect
+
+The parent makes the prop stable for the component's lifetime — via `{#key id}` to remount on change, or `{#if id}<Child {id} />{/if}` to mount only when present. The child opens once, synchronously, and the effect's only job is disposal.
+
+```svelte
+<!-- Parent: lifecycle boundary is explicit -->
+{#if activeFileId}
+	{#key activeFileId}
+		<ContentEditor fileId={activeFileId} />
+	{/key}
+{/if}
+
+<!-- Child -->
+<script lang="ts">
+	let { fileId }: { fileId: string } = $props();
+
+	// Parent keys on activeFileId, so fileId is stable for this instance.
+	const handle = fileContentDocs.open(fileId);
+	$effect(() => () => handle.dispose());
+</script>
+
+<Editor ytext={handle.content.binding} />
+```
+
+No nullable state. No `{#if handle}` guard. The `{#key}` / `{#if}` in the parent is the lifecycle boundary — one place, structurally obvious.
+
+### When an async gate is needed
+
+If you must wait on `whenReady` before rendering, keep the handle non-nullable and gate on a separate `isLoaded` boolean:
+
+```svelte
+<script lang="ts">
+	const handle = fileContentDocs.open(fileId);
+	let isLoaded = $state(false);
+
+	$effect(() => {
+		let cancelled = false;
+		handle.whenReady.then(() => { if (!cancelled) isLoaded = true; });
+		return () => { cancelled = true; handle.dispose(); };
+	});
+</script>
+```
+
+## When Pattern A doesn't fit
+
+Rare. Reach for a nullable `$state<Handle | null>` + re-opening `$effect` only when the id genuinely toggles in place *and* extracting a child component would lose meaningful context (e.g., the handle must be read at the same level as multiple siblings that can't move). In practice, introducing a small wrapper component is almost always cleaner than absorbing the lifecycle inside an effect.
+
+## `$state.raw` for non-proxyable handles
+
+If a handle's methods rely on `this` being the original instance, or it holds internal non-reactive state, Svelte's deep proxy can break it. Prefer Pattern A (don't put the handle in `$state` at all). If you must, use `$state.raw(handle)` to skip proxying.
+
+## Related
+
+- The `sync-construction-async-property-ui-render-gate-pattern` skill covers the service-layer equivalent (a client with an async-ready property).
+- `docs/articles/svelte-5-createsubscriber-pattern.md` covers `createSubscriber` from `svelte/reactivity` for wrapping external event sources — use that when you need a *reactive* view of an external source, not a component-scoped handle.
 
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 
@@ -700,11 +783,11 @@ When **3 or more sequential sibling elements** follow an identical pattern with 
 For more complex repeated patterns (e.g., toolbar buttons with tooltips), use `{#snippet}` to define the shared structure once:
 
 ```svelte
-{#snippet toggleButton(pressed: boolean, onToggle: () => void, icon: typeof BoldIcon, label: string)}
+{#snippet toggleButton(pressed: boolean, onToggle: () => void, Icon: typeof BoldIcon, label: string)}
 	<Tooltip.Root>
 		<Tooltip.Trigger>
 			<Toggle size="sm" {pressed} onPressedChange={onToggle}>
-				<svelte:component this={icon} class="size-4" />
+				<Icon class="size-4" />
 			</Toggle>
 		</Tooltip.Trigger>
 		<Tooltip.Content>{label}</Tooltip.Content>

@@ -365,6 +365,10 @@ export type WorkspaceClientBuilder<
 
 /**
  * Type alias for any workspace client (used for duck-typing in CLI/server).
+ *
+ * The `actions` field is always present at runtime — `createWorkspace()`
+ * initializes it to `{}`, and `.withActions()` replaces it — so downstream
+ * code never has to guard on its existence.
  */
 export type AnyWorkspaceClient = WorkspaceClient<
 	string,
@@ -373,7 +377,7 @@ export type AnyWorkspaceClient = WorkspaceClient<
 	AwarenessDefinitions,
 	Record<string, unknown>
 > & {
-	actions?: Actions;
+	actions: Actions;
 };
 
 /**

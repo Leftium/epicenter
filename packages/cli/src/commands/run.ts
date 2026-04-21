@@ -43,12 +43,10 @@ export const runActionCommand = defineCommand({
 			async (client) => {
 				// Find action by dot-path — check client.actions first, then extensions
 				let found: Action | undefined;
-				if (client.actions) {
-					for (const [action, path] of iterateActions(client.actions)) {
-						if (path.join('.') === actionPath.join('.')) {
-							found = action;
-							break;
-						}
+				for (const [action, path] of iterateActions(client.actions)) {
+					if (path.join('.') === actionPath.join('.')) {
+						found = action;
+						break;
 					}
 				}
 
@@ -69,10 +67,8 @@ export const runActionCommand = defineCommand({
 
 				if (!found) {
 					const available: string[] = [];
-					if (client.actions) {
-						for (const [, path] of iterateActions(client.actions)) {
-							available.push(path.join('.'));
-						}
+					for (const [, path] of iterateActions(client.actions)) {
+						available.push(path.join('.'));
 					}
 					if (client.extensions) {
 						for (const [extKey, extValue] of Object.entries(client.extensions)) {

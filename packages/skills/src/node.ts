@@ -1,16 +1,19 @@
 /**
- * @fileoverview Server-side skills workspace with Node.js disk I/O actions.
+ * @fileoverview Server-side skills workspace — layers disk I/O actions on top
+ * of the browser entry point.
  *
- * Requires `node:crypto`, `node:fs/promises`, and `node:path`—do NOT import
- * this in browser bundles. Use the base `@epicenter/skills` import instead.
+ * Returns the same `{ workspace, instructionsDocs, referenceDocs }` shape,
+ * with `importFromDisk` + `exportToDisk` added alongside the browser's read
+ * actions. Requires `node:crypto`, `node:fs/promises`, and `node:path` — do
+ * NOT import from browser bundles. Use `@epicenter/skills` instead.
  *
  * @example
  * ```typescript
  * import { createSkillsWorkspace } from '@epicenter/skills/node'
  *
- * const ws = createSkillsWorkspace()
- * await ws.actions.importFromDisk({ dir: '.agents/skills' })
- * await ws.actions.exportToDisk({ dir: '.agents/skills' })
+ * const { workspace } = createSkillsWorkspace();
+ * await workspace.actions.importFromDisk({ dir: '.agents/skills' });
+ * await workspace.actions.exportToDisk({ dir: '.agents/skills' });
  * ```
  *
  * @module
@@ -19,11 +22,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import {
-	createWorkspace,
-	defineMutation,
-	generateId,
-} from '@epicenter/workspace';
+import { defineMutation, generateId } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import {
 	defineErrors,
@@ -31,12 +30,10 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { skillsDefinition } from './definition.js';
 import { parseSkillMd } from './parse.js';
-import { createReferenceContentDocs } from './reference-content-docs.js';
 import { serializeSkillMd } from './serialize.js';
-import { createSkillInstructionsDocs } from './skill-instructions-docs.js';
 import type { Skill } from './tables.js';
+import { createSkillsWorkspace as createBrowserSkillsWorkspace } from './workspace.js';
 
 const DirInput = Type.Object({ dir: Type.String() });
 
@@ -68,11 +65,14 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * await ws.actions.exportToDisk({ dir: '.agents/skills' })
  * ```
  */
-export function createSkillsWorkspace(opts: { docPersistence?: 'indexeddb' | 'none' } = {}) {
-	const base = createWorkspace(skillsDefinition);
-	const persistence = opts.docPersistence;
-	const instructionsDocs = createSkillInstructionsDocs(base, { persistence });
-	const referenceDocs = createReferenceContentDocs(base, { persistence });
+export function createSkillsWorkspace(
+	opts: { docPersistence?: 'indexeddb' | 'none' } = {},
+) {
+	const {
+		workspace: base,
+		instructionsDocs,
+		referenceDocs,
+	} = createBrowserSkillsWorkspace(opts);
 
 	async function writeInstructions(id: string, text: string): Promise<void> {
 		using h = instructionsDocs.open(id);

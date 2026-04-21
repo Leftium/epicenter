@@ -37,7 +37,11 @@ function createTestClient() {
 		'persistence',
 		filesystemPersistence({ filePath: dbPath(opensidianDefinition.id) }),
 	);
-	const contentDocs = createFileContentDocs(client, { persistence: 'none' });
+	const contentDocs = createFileContentDocs({
+		workspaceId: client.id,
+		filesTable: client.tables.files,
+		persistence: 'none',
+	});
 	return { client, contentDocs };
 }
 
@@ -174,7 +178,11 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 				filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
 			}),
 		);
-		const contentDocs = createFileContentDocs(client, { persistence: 'none' });
+		const contentDocs = createFileContentDocs({
+		workspaceId: client.id,
+		filesTable: client.tables.files,
+		persistence: 'none',
+	});
 		return { client, contentDocs };
 	}
 

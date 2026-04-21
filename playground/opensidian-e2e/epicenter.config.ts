@@ -53,7 +53,11 @@ const base = createWorkspace(opensidianDefinition).withExtension(
 
 // No IDB in Bun — content docs live in memory and re-hydrate from sync on
 // each run.
-const fileContentDocs = createFileContentDocs(base, { persistence: 'none' });
+const fileContentDocs = createFileContentDocs({
+	workspaceId: base.id,
+	filesTable: base.tables.files,
+	persistence: 'none',
+});
 
 async function readContent(id: string): Promise<string | undefined> {
 	using handle = fileContentDocs.open(id);

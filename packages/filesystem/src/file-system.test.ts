@@ -18,7 +18,11 @@ import { filesTable } from './table.js';
 
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	const contentDocs = createFileContentDocs(ws, { persistence: 'none' });
+	const contentDocs = createFileContentDocs({
+		workspaceId: ws.id,
+		filesTable: ws.tables.files,
+		persistence: 'none',
+	});
 	const fs = createYjsFileSystem(ws.tables.files, contentDocs);
 	return { fs, ws, contentDocs };
 }

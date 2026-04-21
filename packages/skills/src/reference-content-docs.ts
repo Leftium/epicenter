@@ -1,8 +1,8 @@
 /**
  * Per-reference content Y.Doc factory. References are tier-3 documentation
  * loaded on demand — each reference file gets its own Y.Doc with
- * `attachPlainText`. Apps call `createReferenceContentDocs(workspace)` once
- * and reuse.
+ * `attachPlainText`. Apps call
+ * `createReferenceContentDocs({ workspaceId, referencesTable })` once and reuse.
  */
 
 import {
@@ -16,15 +16,19 @@ import type { Table } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { Reference } from './tables.js';
 
-export function createReferenceContentDocs(
-	workspace: { id: string; tables: { references: Table<Reference> } },
-	{ persistence = 'indexeddb' }: { persistence?: 'indexeddb' | 'none' } = {},
-) {
-	const referencesTable = workspace.tables.references;
+export function createReferenceContentDocs({
+	workspaceId,
+	referencesTable,
+	persistence = 'indexeddb',
+}: {
+	workspaceId: string;
+	referencesTable: Table<Reference>;
+	persistence?: 'indexeddb' | 'none';
+}) {
 	return defineDocument((referenceId: string) => {
 		const ydoc = new Y.Doc({
 			guid: docGuid({
-				workspaceId: workspace.id,
+				workspaceId,
 				collection: 'references',
 				rowId: referenceId,
 				field: 'content',

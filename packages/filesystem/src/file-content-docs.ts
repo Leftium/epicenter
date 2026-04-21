@@ -1,5 +1,5 @@
 /**
- * Per-file content Y.Doc factory. Apps call `createFileContentDocs(workspace)`
+ * Per-file content Y.Doc factory. Apps call `createFileContentDocs({ workspaceId, filesTable })`
  * once per workspace and retain the result for its lifetime. Pass
  * `persistence: 'none'` to skip IndexedDB (Node tests, environments without IDB).
  */
@@ -17,20 +17,26 @@ import type { FileId } from './ids.js';
 import type { FileRow } from './table.js';
 
 /**
- * @param workspace - host workspace; `{ id, tables.files }` structural shape.
- *   The id becomes the first GUID segment; a shared default would collapse
- *   IDB namespaces across apps that both import this package.
- * @param opts.persistence - `'indexeddb'` (default) or `'none'`.
+ * @param workspaceId - Caller's workspace identity; becomes the first GUID
+ *   segment. Required — a shared default would collapse IDB namespaces across
+ *   apps that both import this package.
+ * @param filesTable - The files table this factory writes back to (bumps
+ *   `updatedAt` on local edits).
+ * @param persistence - `'indexeddb'` (default) or `'none'`.
  */
-export function createFileContentDocs(
-	workspace: { id: string; tables: { files: Table<FileRow> } },
-	{ persistence = 'indexeddb' }: { persistence?: 'indexeddb' | 'none' } = {},
-) {
-	const filesTable = workspace.tables.files;
+export function createFileContentDocs({
+	workspaceId,
+	filesTable,
+	persistence = 'indexeddb',
+}: {
+	workspaceId: string;
+	filesTable: Table<FileRow>;
+	persistence?: 'indexeddb' | 'none';
+}) {
 	return defineDocument((fileId: FileId) => {
 		const ydoc = new Y.Doc({
 			guid: docGuid({
-				workspaceId: workspace.id,
+				workspaceId,
 				collection: 'files',
 				rowId: fileId,
 				field: 'content',

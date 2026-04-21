@@ -48,8 +48,16 @@ export function createSkillsWorkspace(
 ) {
 	const base = createWorkspace(skillsDefinition);
 	const persistence = opts.docPersistence;
-	const instructionsDocs = createSkillInstructionsDocs(base, { persistence });
-	const referenceDocs = createReferenceContentDocs(base, { persistence });
+	const instructionsDocs = createSkillInstructionsDocs({
+		workspaceId: base.id,
+		skillsTable: base.tables.skills,
+		persistence,
+	});
+	const referenceDocs = createReferenceContentDocs({
+		workspaceId: base.id,
+		referencesTable: base.tables.references,
+		persistence,
+	});
 
 	async function readInstructions(id: string): Promise<string> {
 		using h = instructionsDocs.open(id);

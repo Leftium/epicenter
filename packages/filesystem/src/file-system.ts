@@ -57,21 +57,6 @@ export function createYjsFileSystem(
 		handle.content.write(text);
 	}
 
-	async function appendContent(id: FileId, text: string): Promise<void> {
-		using handle = contentDocuments.open(id);
-		await handle.whenReady;
-		// Timeline exposes appendText; fall back to read-concat-write otherwise.
-		const tl = handle.content as unknown as {
-			appendText?: (t: string) => void;
-			read(): string;
-			write(t: string): void;
-		};
-		if (typeof tl.appendText === 'function') {
-			tl.appendText(text);
-		} else {
-			tl.write(tl.read() + text);
-		}
-	}
 	const tree = createFileTree(filesTable);
 
 	return FileSystem({
@@ -228,9 +213,10 @@ export function createYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
-			await appendContent(id, text);
-			const body = await readContent(id);
-			const newSize = new TextEncoder().encode(body).byteLength;
+			using handle = contentDocuments.open(id);
+			await handle.whenReady;
+			handle.content.appendText(text);
+			const newSize = new TextEncoder().encode(handle.content.read()).byteLength;
 			tree.touch(id, newSize);
 		},
 

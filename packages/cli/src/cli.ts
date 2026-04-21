@@ -1,7 +1,7 @@
 import yargs from 'yargs';
 import { createAuthCommand } from './commands/auth';
-import { createListCommand } from './commands/list';
-import { createRunCommand } from './commands/run';
+import { listCommand } from './commands/list';
+import { runCommand } from './commands/run';
 
 /**
  * Create the Epicenter CLI instance.
@@ -17,8 +17,8 @@ export function createCLI() {
 			const cli = yargs()
 				.scriptName('epicenter')
 				.command(createAuthCommand())
-				.command(createListCommand())
-				.command(createRunCommand())
+				.command(listCommand)
+				.command(runCommand)
 				.demandCommand(1)
 				.strict()
 				.exitProcess(false)

@@ -1,61 +1,57 @@
 /**
- * `epicenter run <dot.path> [args...]` — invoke a `defineQuery` / `defineMutation`
- * by dot-path through an opened document handle.
+ * `epicenter run <dot.path> [args...]` — invoke a `defineQuery` /
+ * `defineMutation` by dot-path through an opened document handle.
  *
  * Resolution: `path[0]` is the export name from `epicenter.config.ts`; the
  * remaining segments walk into the underlying bundle (the handle's prototype).
  */
 
+import type { DocumentBundle } from '@epicenter/workspace';
+import { iterateActions } from '@epicenter/workspace';
 import type { Argv, CommandModule } from 'yargs';
-import { loadConfig, type ConfigEntry } from '../load-config';
+import { loadConfig, type LoadConfigResult } from '../load-config';
 import {
 	formatYargsOptions,
 	output,
 	outputError,
 } from '../util/format-output';
 import { parseJsonInput, readStdinSync } from '../util/parse-input';
-import {
-	bundleOf,
-	discoverActions,
-	resolvePath,
-} from '../util/discover-actions';
+import { resolvePath } from '../util/resolve-path';
 import { typeboxToYargsOptions } from '../util/typebox-to-yargs';
 
-export function createRunCommand(): CommandModule {
-	return {
-		command: 'run <action> [input]',
-		describe: 'Invoke a defineQuery / defineMutation by dot-path',
-		builder: (yargs: Argv) =>
-			yargs
-				.positional('action', {
-					type: 'string',
-					demandOption: true,
-					describe: 'Action path, e.g. tabManager.savedTabs.create',
-				})
-				.positional('input', {
-					type: 'string',
-					describe: 'Inline JSON or @file.json',
-				})
-				.option('file', {
-					type: 'string',
-					description: 'Path to a JSON file containing the action input',
-				})
-				.options(formatYargsOptions())
-				.strict(false),
-		handler: async (argv: any) => {
-			const { entries, dispose } = await loadConfig(process.cwd());
-			try {
-				await invoke(argv, entries);
-			} finally {
-				await dispose();
-			}
-		},
-	};
-}
+export const runCommand: CommandModule = {
+	command: 'run <action> [input]',
+	describe: 'Invoke a defineQuery / defineMutation by dot-path',
+	builder: (yargs: Argv) =>
+		yargs
+			.positional('action', {
+				type: 'string',
+				demandOption: true,
+				describe: 'Action path, e.g. tabManager.savedTabs.create',
+			})
+			.positional('input', {
+				type: 'string',
+				describe: 'Inline JSON or @file.json',
+			})
+			.option('file', {
+				type: 'string',
+				description: 'Path to a JSON file containing the action input',
+			})
+			.options(formatYargsOptions())
+			.strict(false),
+	handler: async (argv: any) => {
+		const { entries, dispose } = await loadConfig(process.cwd());
+		try {
+			await invoke(argv, entries);
+		} finally {
+			await dispose();
+		}
+	},
+};
 
 async function invoke(
 	argv: Record<string, unknown>,
-	entries: ConfigEntry[],
+	entries: LoadConfigResult['entries'],
 ): Promise<void> {
 	const actionPath = String(argv.action ?? '');
 	const segments = actionPath.split('.').filter(Boolean);
@@ -75,8 +71,7 @@ async function invoke(
 		);
 	}
 
-	// Wait for persistence / sync readiness before reading.
-	const bundle = bundleOf(entry.handle);
+	const bundle = Object.getPrototypeOf(entry.handle) as DocumentBundle;
 	if (bundle.whenReady) await bundle.whenReady;
 
 	const resolved = resolvePath(bundle, rest);
@@ -110,8 +105,7 @@ async function resolveInput(
 ): Promise<unknown> {
 	if (action.input === undefined) return undefined;
 
-	// Complex input escape hatch: positional `@file.json`, inline JSON,
-	// `--file`, or piped stdin.
+	// Escape hatch: positional `@file.json`, inline JSON, `--file`, or stdin.
 	const positional =
 		typeof argv.input === 'string' && argv.input.length > 0
 			? (argv.input as string)
@@ -150,12 +144,14 @@ function suggestSiblings(
 		if (node == null || typeof node !== 'object') return;
 		node = (node as Record<string, unknown>)[seg];
 	}
-	const siblings = discoverActions(node);
+	if (node == null || typeof node !== 'object') return;
+
+	const siblings = [...iterateActions(node as any)];
 	if (siblings.length === 0) return;
 
 	outputError('');
 	outputError('Exposed actions at this path:');
-	for (const { path, action } of siblings) {
+	for (const [action, path] of siblings) {
 		const full = [exportName, ...parentPath, ...path].join('.');
 		outputError(`  ${full}  (${action.type})`);
 	}

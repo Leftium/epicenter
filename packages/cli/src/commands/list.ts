@@ -7,48 +7,44 @@
  *   3. Leaf (action) path  → action detail with flag help.
  */
 
-import type { Action } from '@epicenter/workspace';
+import type { Action, DocumentBundle } from '@epicenter/workspace';
+import { iterateActions } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule } from 'yargs';
-import { type ConfigEntry, loadConfig } from '../load-config';
-import {
-	bundleOf,
-	discoverActions,
-	resolvePath,
-} from '../util/discover-actions';
+import { loadConfig, type LoadConfigResult } from '../load-config';
 import { outputError } from '../util/format-output';
+import { resolvePath } from '../util/resolve-path';
 
-export function createListCommand(): CommandModule {
-	return {
-		command: 'list [path]',
-		describe: 'Tree view of exposed queries and mutations',
-		builder: (yargs: Argv) =>
-			yargs.positional('path', {
-				type: 'string',
-				describe: 'Optional dot-path to narrow the view',
-			}),
-		handler: async (argv: any) => {
-			const { entries, dispose } = await loadConfig(process.cwd());
-			try {
-				render(argv.path as string | undefined, entries);
-			} finally {
-				await dispose();
-			}
-		},
-	};
-}
+export const listCommand: CommandModule = {
+	command: 'list [path]',
+	describe: 'Tree view of exposed queries and mutations',
+	builder: (yargs: Argv) =>
+		yargs.positional('path', {
+			type: 'string',
+			describe: 'Optional dot-path to narrow the view',
+		}),
+	handler: async (argv: any) => {
+		const { entries, dispose } = await loadConfig(process.cwd());
+		try {
+			render(argv.path as string | undefined, entries);
+		} finally {
+			await dispose();
+		}
+	},
+};
 
-function render(pathArg: string | undefined, entries: ConfigEntry[]): void {
+function render(
+	pathArg: string | undefined,
+	entries: LoadConfigResult['entries'],
+): void {
 	const segments = pathArg ? pathArg.split('.').filter(Boolean) : [];
 
 	if (segments.length === 0) {
-		let first = true;
-		for (const entry of entries) {
-			if (!first) console.log('');
-			first = false;
+		entries.forEach((entry, i) => {
+			if (i > 0) console.log('');
 			console.log(entry.name);
-			printTree(discoverActions(bundleOf(entry.handle)));
-		}
+			printTree(Object.getPrototypeOf(entry.handle));
+		});
 		return;
 	}
 
@@ -63,7 +59,7 @@ function render(pathArg: string | undefined, entries: ConfigEntry[]): void {
 		throw new Error('Export not found');
 	}
 
-	const bundle = bundleOf(entry.handle);
+	const bundle = Object.getPrototypeOf(entry.handle) as DocumentBundle;
 	const resolved = resolvePath(bundle, rest);
 
 	if (resolved.kind === 'missing') {
@@ -81,22 +77,23 @@ function render(pathArg: string | undefined, entries: ConfigEntry[]): void {
 	}
 
 	console.log(segments.join('.'));
-	const actions = discoverActions(resolved.node);
-	printTree(actions);
+	printTree(resolved.node);
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
 
 type TreeNode = { name: string; children: Map<string, TreeNode>; action?: Action };
 
-function printTree(items: { path: string[]; action: Action }[]): void {
-	if (items.length === 0) {
+function printTree(root: unknown): void {
+	if (root == null || typeof root !== 'object') {
 		console.log('  (no actions exposed)');
 		return;
 	}
-	const root: TreeNode = { name: '', children: new Map() };
-	for (const { path, action } of items) {
-		let node = root;
+	const tree: TreeNode = { name: '', children: new Map() };
+	let count = 0;
+	for (const [action, path] of iterateActions(root as any)) {
+		count++;
+		let node = tree;
 		for (let i = 0; i < path.length; i++) {
 			const seg = path[i]!;
 			let child = node.children.get(seg);
@@ -108,13 +105,17 @@ function printTree(items: { path: string[]; action: Action }[]): void {
 			if (i === path.length - 1) node.action = action;
 		}
 	}
-	printChildren(root, '');
+	if (count === 0) {
+		console.log('  (no actions exposed)');
+		return;
+	}
+	printChildren(tree, '');
 }
 
 function printChildren(node: TreeNode, prefix: string): void {
-	const entries = [...node.children.values()];
-	entries.forEach((child, idx) => {
-		const isLast = idx === entries.length - 1;
+	const children = [...node.children.values()];
+	children.forEach((child, idx) => {
+		const isLast = idx === children.length - 1;
 		const branch = isLast ? '└── ' : '├── ';
 		const label = child.action
 			? `${child.name}  (${child.action.type})${

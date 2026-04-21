@@ -27,7 +27,11 @@ import {
 	attachIndexedDb,
 	defineDocument,
 } from '@epicenter/document';
-import { attachEncryption, attachKv, attachTables } from '@epicenter/workspace';
+import {
+	attachEncryptedKv,
+	attachEncryptedTables,
+	attachEncryption,
+} from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createReferenceContentDocs } from './reference-content-docs.js';
 import { createSkillInstructionsDocs } from './skill-instructions-docs.js';
@@ -51,29 +55,29 @@ export const skillsDocument = defineDocument(
 	(id: string) => {
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
-		const tables = attachTables(ydoc, {
+		const encryption = attachEncryption(ydoc);
+		const tables = attachEncryptedTables(ydoc, encryption, {
 			skills: skillsTable,
 			references: referencesTable,
 		});
-		const kv = attachKv(ydoc, {});
-		const enc = attachEncryption(ydoc, { tables, kv });
+		const kv = attachEncryptedKv(ydoc, encryption, {});
 
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);
 
 		const instructionsDocs = createSkillInstructionsDocs({
 			workspaceId: id,
-			skillsTable: tables.helpers.skills,
+			skillsTable: tables.skills,
 			attach: (ydoc) => attachIndexedDb(ydoc),
 		});
 		const referenceDocs = createReferenceContentDocs({
 			workspaceId: id,
-			referencesTable: tables.helpers.references,
+			referencesTable: tables.references,
 			attach: (ydoc) => attachIndexedDb(ydoc),
 		});
 
 		const actions = createSkillsActions({
-			tables: tables.helpers,
+			tables,
 			instructionsDocs,
 			referenceDocs,
 		});
@@ -81,18 +85,19 @@ export const skillsDocument = defineDocument(
 		return {
 			id,
 			ydoc,
-			tables: tables.helpers,
-			kv: kv.helper,
-			enc,
+			tables,
+			kv,
+			encryption,
 			idb,
 			instructionsDocs,
 			referenceDocs,
 			actions,
 			batch: (fn: () => void) => ydoc.transact(fn),
 			whenReady: idb.whenLoaded,
-			whenDisposed: Promise.all([idb.whenDisposed, enc.whenDisposed]).then(
-				() => {},
-			),
+			whenDisposed: Promise.all([
+				idb.whenDisposed,
+				encryption.whenDisposed,
+			]).then(() => {}),
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},

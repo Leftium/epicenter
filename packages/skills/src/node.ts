@@ -25,9 +25,9 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defineDocument } from '@epicenter/document';
 import {
+	attachEncryptedKv,
+	attachEncryptedTables,
 	attachEncryption,
-	attachKv,
-	attachTables,
 	defineMutation,
 	generateId,
 } from '@epicenter/workspace';
@@ -78,24 +78,24 @@ export const skillsDocument = defineDocument(
 	(id: string) => {
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
-		const tables = attachTables(ydoc, {
+		const encryption = attachEncryption(ydoc);
+		const tables = attachEncryptedTables(ydoc, encryption, {
 			skills: skillsTable,
 			references: referencesTable,
 		});
-		const kv = attachKv(ydoc, {});
-		const enc = attachEncryption(ydoc, { tables, kv });
+		const kv = attachEncryptedKv(ydoc, encryption, {});
 
 		const instructionsDocs = createSkillInstructionsDocs({
 			workspaceId: id,
-			skillsTable: tables.helpers.skills,
+			skillsTable: tables.skills,
 		});
 		const referenceDocs = createReferenceContentDocs({
 			workspaceId: id,
-			referencesTable: tables.helpers.references,
+			referencesTable: tables.references,
 		});
 
 		const readActions = createSkillsActions({
-			tables: tables.helpers,
+			tables,
 			instructionsDocs,
 			referenceDocs,
 		});
@@ -158,7 +158,7 @@ export const skillsDocument = defineDocument(
 							id: skillId,
 							updatedAt: Date.now(),
 						} satisfies Skill;
-						tables.helpers.skills.set(skill);
+						tables.skills.set(skill);
 
 						// Write back SKILL.md with the id baked into metadata so
 						// future imports on any machine get the same id
@@ -190,7 +190,7 @@ export const skillsDocument = defineDocument(
 									);
 									const refId = deriveReferenceId(skillId, fileName);
 
-									tables.helpers.references.set({
+									tables.references.set({
 										id: refId,
 										skillId,
 										path: fileName,
@@ -218,7 +218,7 @@ export const skillsDocument = defineDocument(
 				description: 'Export all skills to an agentskills.io-compliant directory',
 				input: DirInput,
 				handler: async ({ dir }) => {
-					const skills = tables.helpers.skills.getAllValid();
+					const skills = tables.skills.getAllValid();
 					const skillNames = new Set(skills.map((s) => s.name));
 
 					// Export all skills in parallel
@@ -233,7 +233,7 @@ export const skillsDocument = defineDocument(
 							await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
 
 							// Write references in parallel
-							const refs = tables.helpers.references.filter(
+							const refs = tables.references.filter(
 								(r) => r.skillId === skill.id,
 							);
 							if (refs.length > 0) {
@@ -283,15 +283,15 @@ export const skillsDocument = defineDocument(
 		return {
 			id,
 			ydoc,
-			tables: tables.helpers,
-			kv: kv.helper,
-			enc,
+			tables,
+			kv,
+			encryption,
 			instructionsDocs,
 			referenceDocs,
 			actions,
 			batch: (fn: () => void) => ydoc.transact(fn),
 			whenReady: Promise.resolve(),
-			whenDisposed: enc.whenDisposed,
+			whenDisposed: encryption.whenDisposed,
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},

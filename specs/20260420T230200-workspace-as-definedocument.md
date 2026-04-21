@@ -114,7 +114,7 @@ TanStack stores queries, mutations, and infinite queries in one unified `QueryCa
 | 3 | `createWorkspace` — keep? | **Drop.** `defineWorkspace(def).open(id)` replaces it. | Two entry points was already awkward. |
 | 4 | Factory-of-factories vs closure | **Factory-of-factories.** | Preserves "declare schema once, use many times." |
 | 5 | Default `gcTime` | **`Infinity`.** | Workspaces are session-long. Apps override for idle teardown. |
-| 6 | Encryption | **`attachEncryption(ydoc, { stores, workspaceId })`.** | Extract from inline. Exposes `applyKeys`, `clearLocalData`, `stores`, `whenDisposed`. |
+| 6 | Encryption | **`attachEncryption(ydoc, { stores })`.** Derives workspace id from `ydoc.guid`. | Extract from inline. Exposes `applyKeys`, `clearLocalData`, `stores`, `whenDisposed`. `ydoc.guid === workspaceId` is an invariant of construction, so a separate `workspaceId` param would invite drift. |
 | 7 | `applyEncryptionKeys` → | **`bundle.enc.applyKeys(keys)`.** | Mid-life rotation works without Y.Doc reconstruction. |
 | 8 | `clearLocalData` | **`bundle.enc.clearLocalData()`.** | Clearing = wiping encrypted blobs; that's encryption's concern. |
 | 9 | `loadSnapshot` | **Dropped. Callers write `Y.applyUpdate(ws.ydoc, update)`.** | One line; ceremony. |
@@ -299,6 +299,28 @@ Stays lazy + per-row (`table.get(id)` triggers `migrate` if `_v` old). No change
 ### Awareness disposal
 
 y-protocols registers its own `doc.on('destroy')` — cascades automatically through `ydoc.destroy()` in `Symbol.dispose`.
+
+## Execution Notes (added 2026-04-20, Option A)
+
+This spec is being executed in two passes:
+
+- **Pass A (this session)** — Phases 1-4. Extracts `attachEncryption` / `attachTables` / `attachKv`, rewrites `defineWorkspace` as a factory-of-factories on top of `defineDocument`, and keeps `create-workspace.ts` as a thin compatibility shim that delegates to `defineWorkspace(def).open(id)` and re-wraps the bundle with the legacy surface (`.applyEncryptionKeys`, `.clearLocalData`, `.loadSnapshot`, `.withExtension`, `.withActions`). Nothing in app code changes; all seven consumer apps (fuji, honeycrisp, opensidian, zhongwen, breddit, whispering, tab-manager) keep building.
+- **Pass B (follow-up session)** — Phases 5-7. Deletes the shim, migrates every consumer to `ws.enc.applyKeys(...)`, deletes `lifecycle.ts`, runs smoke tests in fuji + honeycrisp.
+
+### Findings from encryption audit
+
+Before Pass A, an audit answered "does encryption belong in `packages/workspace`?"
+
+- `createEncryptedYkvLww` is already used outside `create-workspace.ts` (benchmarks, `y-keyvalue-lww-encrypted.test.ts`, `create-kv.test.ts`, `create-table.test.ts`). It is a generic Y.Doc composition primitive in practice.
+- `YKeyValueLww` (the underlying CRDT) lives in `@epicenter/document`; the encrypted wrapper lives in `@epicenter/workspace`. That asymmetry is accidental — the wrapper could live in `@epicenter/document` next to the primitive it composes over.
+- `deriveWorkspaceKey(userKey, workspaceId)` uses the id only as an HKDF domain-separation label. Any string works; there's no coupling to workspace semantics.
+- `packages/sync` has zero encryption dependencies — sync operates on raw post-encryption Y.Doc updates.
+
+**Decision:** Per Spec C's scope guard ("scope is workspace builder only"), `attachEncryption` stays in `packages/workspace/src/shared/` for this spec. Promoting the encrypted KV-LWW wrapper and `attachEncryption` to `@epicenter/document` is a natural follow-up spec, not part of this one.
+
+### `workspaceId` parameter dropped
+
+The spec originally proposed `attachEncryption(ydoc, { stores, workspaceId })`. Implementation uses `attachEncryption(ydoc, { stores })` and reads `ydoc.guid` internally. `workspaceId === ydoc.guid` is an invariant of construction (the guid is set from the id in `buildWorkspace`), so accepting it separately only invites drift between the two.
 
 ## Open Questions
 

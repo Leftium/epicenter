@@ -1,0 +1,120 @@
+/**
+ * attachEncryption — bind a shared encryption lifecycle to a set of encrypted stores on a Y.Doc.
+ *
+ * A workspace owns several `EncryptedYKeyValueLww` stores (one per table plus
+ * the KV store). This attachment coordinates key application across all of
+ * them: it decodes the base64 user keys, derives a per-workspace HKDF keyring,
+ * and calls `activateEncryption(keyring)` on every store in lockstep.
+ *
+ * ## Fingerprint dedup
+ *
+ * Auth token refreshes fire `onLogin` repeatedly with identical key material.
+ * The attachment holds a `lastKeysFingerprint` so subsequent calls with the
+ * same keys short-circuit before HKDF and per-store activation run. The
+ * fingerprint is order-independent — reversed key arrays produce the same
+ * fingerprint (see `encryptionKeysFingerprint`).
+ *
+ * ## Disposal
+ *
+ * The attachment registers a single `ydoc.on('destroy')` listener that
+ * disposes every store it owns and resolves `whenDisposed`. Callers tear down
+ * encryption by calling `ydoc.destroy()` — the attachment does not expose a
+ * standalone `dispose()` method.
+ *
+ * ## Why `workspaceId` is read from `ydoc.guid`
+ *
+ * By construction, the workspace Y.Doc's `guid` equals the workspace id
+ * (`new Y.Doc({ guid: id })`). Taking a separate `workspaceId` parameter would
+ * invite drift between the two. `deriveWorkspaceKey` uses the id as an HKDF
+ * domain-separation label — it doesn't care whether the string is the guid or
+ * an explicit id, only that the two agree.
+ *
+ * @module
+ */
+
+import type * as Y from 'yjs';
+import { base64ToBytes, deriveWorkspaceKey } from './crypto/index.js';
+import type { EncryptedYKeyValueLww } from './y-keyvalue/y-keyvalue-lww-encrypted.js';
+import {
+	type EncryptionKeys,
+	encryptionKeysFingerprint,
+} from '../workspace/encryption-key.js';
+
+export type EncryptionAttachment = {
+	/**
+	 * Apply encryption keys to every store. Synchronous — HKDF via @noble/hashes
+	 * and XChaCha20 via @noble/ciphers are both sync.
+	 *
+	 * Dedup: a second call with a fingerprint-identical keyring is a no-op.
+	 * Order of the input array does not affect the fingerprint.
+	 *
+	 * Once activated, stores permanently refuse plaintext writes. The only
+	 * reset path is `clearLocalData()` followed by a fresh workspace.
+	 */
+	applyKeys(keys: EncryptionKeys): void;
+
+	/**
+	 * Wipe every encrypted store in place. Callers that also persist data
+	 * (IndexedDB, SQLite) are responsible for their own local data wipes —
+	 * this only clears the in-memory CRDT state owned by the stores.
+	 */
+	clearLocalData(): void;
+
+	/** The encrypted stores this attachment coordinates. */
+	readonly stores: readonly EncryptedYKeyValueLww<any>[];
+
+	/** Resolves when the Y.Doc is destroyed and every store has been disposed. */
+	readonly whenDisposed: Promise<void>;
+};
+
+export function attachEncryption(
+	ydoc: Y.Doc,
+	{ stores }: { stores: readonly EncryptedYKeyValueLww<any>[] },
+): EncryptionAttachment {
+	const workspaceId = ydoc.guid;
+
+	// Fingerprint of the last-applied encryption keys for same-key dedup.
+	// Token refreshes fire applyKeys repeatedly with identical keys — this
+	// skips the expensive base64 decode → HKDF → per-store scan path.
+	let lastKeysFingerprint: string | undefined;
+
+	let resolveDisposed!: () => void;
+	const whenDisposed = new Promise<void>((resolve) => {
+		resolveDisposed = resolve;
+	});
+
+	ydoc.on('destroy', () => {
+		for (const store of stores) store.dispose();
+		resolveDisposed();
+	});
+
+	return {
+		applyKeys(keys: EncryptionKeys): void {
+			const fingerprint = encryptionKeysFingerprint(keys);
+			if (fingerprint === lastKeysFingerprint) return;
+			lastKeysFingerprint = fingerprint;
+
+			const keyring = new Map<number, Uint8Array>();
+			for (const { version, userKeyBase64 } of keys) {
+				const userKey = base64ToBytes(userKeyBase64);
+				keyring.set(version, deriveWorkspaceKey(userKey, workspaceId));
+			}
+			for (const store of stores) {
+				store.activateEncryption(keyring);
+			}
+		},
+		clearLocalData(): void {
+			// Wipe the CRDT state of every encrypted store in a single
+			// transaction so observers see one combined change. This does NOT
+			// wipe persisted backing (IndexedDB, SQLite) — persistence
+			// attachments own their own data and must be cleared separately.
+			ydoc.transact(() => {
+				for (const store of stores) {
+					store.yarray.delete(0, store.yarray.length);
+				}
+			});
+		},
+		stores,
+		whenDisposed,
+	};
+}

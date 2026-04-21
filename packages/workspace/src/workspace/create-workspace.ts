@@ -54,15 +54,9 @@ import { attachAwareness, KV_KEY, TableKey } from '@epicenter/document';
 import { createKv, createTable } from '@epicenter/document/internal';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
-import {
-	createEncryptedYkvLww,
-	type EncryptedYKeyValueLww,
-} from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import {
-	type EncryptionKeys,
-	encryptionKeysFingerprint,
-} from './encryption-key.js';
+import { attachEncryption } from '../shared/attach-encryption.js';
+import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import type { EncryptionKeys } from './encryption-key.js';
 import {
 	defineExtension,
 	disposeLifo,
@@ -141,12 +135,8 @@ export function createWorkspace<
 
 	const kvStore = createEncryptedYkvLww(ydoc, KV_KEY);
 
-	const encryptedStores: readonly EncryptedYKeyValueLww<unknown>[] = [
-		...tableEntries.map(({ store }) => store),
-		kvStore,
-	];
-	ydoc.on('destroy', () => {
-		for (const store of encryptedStores) store.dispose();
+	const enc = attachEncryption(ydoc, {
+		stores: [...tableEntries.map(({ store }) => store), kvStore],
 	});
 
 	const tables = Object.fromEntries(
@@ -157,11 +147,6 @@ export function createWorkspace<
 		ydoc,
 		awarenessDefs,
 	);
-
-	// Fingerprint of the last-applied encryption keys for same-key dedup.
-	// Token refreshes fire onLogin repeatedly with identical keys — this
-	// skips the expensive base64 decode → HKDF → per-store scan path.
-	let lastKeysFingerprint: string | undefined;
 
 	const definitions = {
 		tables: tableDefs,
@@ -287,18 +272,7 @@ export function createWorkspace<
 			 * ```
 			 */
 			applyEncryptionKeys(keys: EncryptionKeys): void {
-				const fingerprint = encryptionKeysFingerprint(keys);
-				if (fingerprint === lastKeysFingerprint) return;
-				lastKeysFingerprint = fingerprint;
-
-				const keyring = new Map<number, Uint8Array>();
-				for (const { version, userKeyBase64 } of keys) {
-					const userKey = base64ToBytes(userKeyBase64);
-					keyring.set(version, deriveWorkspaceKey(userKey, id));
-				}
-				for (const store of encryptedStores) {
-					store.activateEncryption(keyring);
-				}
+				enc.applyKeys(keys);
 			},
 			async clearLocalData(): Promise<void> {
 				for (let i = state.clearLocalDataCallbacks.length - 1; i >= 0; i--) {

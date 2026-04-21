@@ -260,17 +260,27 @@ After (one noun):
 
 ### Phase 1: Fix `attachEncryption` signature
 
-- [ ] **1.1** Change `attachEncryption(ydoc, { stores: EncryptedStore[] })` → `attachEncryption(ydoc, { tables?: TablesAttachment, kv?: KvAttachment })`. Backward-compat by keeping `stores` as an escape hatch for now.
-- [ ] **1.2** Introspect `.stores` off `tables` and `.store` off `kv`. Aggregate internally.
-- [ ] **1.3** Update `packages/workspace/src/workspace/define-workspace.ts` (the body that will soon be deleted) to use the new form as a smoke test.
-- [ ] **1.4** Update tests in `packages/workspace/src/workspace/` and any extension tests that call `attachEncryption` directly.
+- [x] **1.1** Change `attachEncryption(ydoc, { stores: EncryptedStore[] })` → `attachEncryption(ydoc, { tables?: TablesAttachment, kv?: KvAttachment })`. Backward-compat by keeping `stores` as an escape hatch for now.
+- [x] **1.2** Introspect `.stores` off `tables` and `.store` off `kv`. Aggregate internally.
+- [x] **1.3** Update `packages/workspace/src/workspace/define-workspace.ts` (the body that will soon be deleted) to use the new form as a smoke test.
+- [x] **1.4** Update tests in `packages/workspace/src/workspace/` and any extension tests that call `attachEncryption` directly.
+  > **Note**: Used structural types (`TablesLike` / `KvLike`) inside `attach-encryption.ts` rather than importing `TablesAttachment` / `KvAttachment` from `../workspace/`. Avoids a `shared/` → `workspace/` layer inversion. Real types are assignable to the structural shapes.
+  > Test additions: two new aggregation tests (`{ tables }` and `{ tables, kv }`) that exercise the introspection path using real `attachTables` / `attachKv`. Existing tests keep the `{ stores }` escape hatch since they construct stores directly.
 
-### Phase 2: Unify lifecycle promise names
+### Phase 2: Unify lifecycle promise names — **SKIPPED**
 
-- [ ] **2.1** Rename `attachIndexedDb` return: `whenLoaded` → `whenReady`. Keep `whenLoaded` as deprecated alias for one release.
-- [ ] **2.2** Rename `attachFilesystemPersistence` return: `whenLoaded` → `whenReady`.
-- [ ] **2.3** Rename `attachSync` return: `whenConnected` → `whenReady`. (Check call sites — some components surface connection state in UI; those keep reading `status.phase === 'connected'`.)
-- [ ] **2.4** Update docs and in-file examples.
+> **Decision (2026-04-21)**: Skipping Phase 2 entirely. The distinct names (`whenLoaded`, `whenConnected`) carry semantic meaning that `whenReady` loses:
+> - `idb.whenLoaded` — local replay done, safe to render UI
+> - `sync.whenConnected` — websocket handshake done, collaborative writes visible
+>
+> Offline-first composition is `whenReady = idb.whenLoaded` — specifically not waiting on sync. Collapsing to a single noun makes `Promise.all([idb.whenReady, sync.whenReady])` read natural but actually compose "block initial paint on network," which is the opposite of offline-first.
+>
+> The bundle-level `whenReady` (an app-specific aggregation) is a convention apps can still adopt. But the primitives keep their semantic names. Skipped tasks:
+>
+> - [ ] ~~**2.1** Rename `attachIndexedDb` return~~
+> - [ ] ~~**2.2** Rename `attachFilesystemPersistence` return~~
+> - [ ] ~~**2.3** Rename `attachSync` return~~
+> - [ ] ~~**2.4** Update docs and examples~~
 
 ### Phase 3: Reentrance guards on content-data primitives
 

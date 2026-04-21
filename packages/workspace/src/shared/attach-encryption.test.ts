@@ -8,10 +8,15 @@
 
 import { describe, expect, test } from 'bun:test';
 import { randomBytes } from '@noble/ciphers/utils.js';
+import { type } from 'arktype';
 import * as Y from 'yjs';
 import { bytesToBase64 } from './crypto/index.js';
 import { attachEncryption } from './attach-encryption.js';
 import { createEncryptedYkvLww } from './y-keyvalue/y-keyvalue-lww-encrypted.js';
+import { attachKv } from '../workspace/attach-kv.js';
+import { attachTables } from '../workspace/attach-tables.js';
+import { defineKv } from '../workspace/define-kv.js';
+import { defineTable } from '../workspace/define-table.js';
 import type { EncryptionKeys } from '../workspace/encryption-key.js';
 
 function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
@@ -111,5 +116,29 @@ describe('attachEncryption', () => {
 	test('stores is the same array the caller provided', () => {
 		const { storeA, storeB, enc } = setup();
 		expect(enc.stores).toEqual([storeA, storeB]);
+	});
+
+	test('attachEncryption({ tables }) aggregates tables.stores', () => {
+		const ydoc = new Y.Doc({ guid: 'enc-tables-test', gc: false });
+		const tableDef = defineTable(
+			type({ id: 'string', title: 'string', _v: '1' }),
+		);
+		const tables = attachTables(ydoc, { foo: tableDef, bar: tableDef });
+		const enc = attachEncryption(ydoc, { tables });
+		expect(enc.stores.length).toBe(2);
+	});
+
+	test('attachEncryption({ tables, kv }) aggregates both', () => {
+		const ydoc = new Y.Doc({ guid: 'enc-tables-kv-test', gc: false });
+		const tableDef = defineTable(
+			type({ id: 'string', title: 'string', _v: '1' }),
+		);
+		const tables = attachTables(ydoc, { foo: tableDef, bar: tableDef });
+		const themeDef = defineKv(type({ mode: "'light' | 'dark'" }), {
+			mode: 'light',
+		});
+		const kv = attachKv(ydoc, { theme: themeDef });
+		const enc = attachEncryption(ydoc, { tables, kv });
+		expect(enc.stores.length).toBe(3);
 	});
 });

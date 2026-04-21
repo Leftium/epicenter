@@ -181,9 +181,7 @@ export function defineWorkspace<
 				ydoc,
 				(definition.awareness ?? {}) as TAwarenessDefinitions,
 			);
-			const enc = attachEncryption(ydoc, {
-				stores: [...tables.stores, kv.store],
-			});
+			const enc = attachEncryption(ydoc, { tables, kv });
 
 			return {
 				ydoc,

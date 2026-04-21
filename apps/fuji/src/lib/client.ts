@@ -39,9 +39,7 @@ const fuji = defineDocument(
 		const tables = attachTables(ydoc, fujiTables);
 		const kv = attachKv(ydoc, {});
 		const awareness = attachAwareness(ydoc, {});
-		const enc = attachEncryption(ydoc, {
-			stores: [...tables.stores, kv.store],
-		});
+		const enc = attachEncryption(ydoc, { tables, kv });
 
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);

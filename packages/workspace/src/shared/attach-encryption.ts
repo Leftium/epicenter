@@ -72,10 +72,47 @@ export type EncryptionAttachment = {
 	readonly whenDisposed: Promise<void>;
 };
 
+/**
+ * Minimal structural shape of a `TablesAttachment` — typed locally to avoid
+ * an import cycle from `shared/` into `workspace/`. The real
+ * `TablesAttachment<T>` in `../workspace/attach-tables.js` is assignable to
+ * this shape.
+ */
+type TablesLike = { stores: readonly EncryptedYKeyValueLww<any>[] };
+
+/**
+ * Minimal structural shape of a `KvAttachment` — typed locally to avoid an
+ * import cycle from `shared/` into `workspace/`. The real `KvAttachment<T>`
+ * in `../workspace/attach-kv.js` is assignable to this shape.
+ */
+type KvLike = { store: EncryptedYKeyValueLww<any> };
+
+/**
+ * Attach encryption to the encrypted stores owned by a workspace's tables
+ * and KV.
+ *
+ * Preferred shape: pass the attachment objects (`{ tables, kv }`) and let the
+ * function aggregate their stores. This prevents the bug where a caller
+ * forgets to include a store in a manual array — which would silently leave
+ * that store writing plaintext.
+ *
+ * Escape hatch: pass `{ stores }` directly when constructing stores outside
+ * of `attachTables` / `attachKv` (standalone encryption tests do this).
+ */
 export function attachEncryption(
 	ydoc: Y.Doc,
-	{ stores }: { stores: readonly EncryptedYKeyValueLww<any>[] },
+	source:
+		| { tables?: TablesLike; kv?: KvLike }
+		| { stores: readonly EncryptedYKeyValueLww<any>[] },
 ): EncryptionAttachment {
+	const stores: readonly EncryptedYKeyValueLww<any>[] =
+		'stores' in source
+			? source.stores
+			: [
+					...(source.tables?.stores ?? []),
+					...(source.kv ? [source.kv.store] : []),
+				];
+
 	const workspaceId = ydoc.guid;
 
 	// Fingerprint of the last-applied encryption keys for same-key dedup.

@@ -146,7 +146,7 @@ function suggestSiblings(
 	}
 	if (node == null || typeof node !== 'object') return;
 
-	const siblings = [...iterateActions(node as any)];
+	const siblings = [...iterateActions(node)];
 	if (siblings.length === 0) return;
 
 	outputError('');

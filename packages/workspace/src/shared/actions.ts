@@ -414,7 +414,7 @@ export function isMutation(value: unknown): value is Mutation {
  * ```
  */
 export function* iterateActions(
-	actions: Actions,
+	actions: object,
 	path: string[] = [],
 ): Generator<[Action, string[]]> {
 	for (const [key, value] of Object.entries(actions)) {
@@ -422,7 +422,7 @@ export function* iterateActions(
 		if (isAction(value)) {
 			yield [value, currentPath];
 		} else if (value != null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Promise)) {
-			yield* iterateActions(value as Actions, currentPath);
+			yield* iterateActions(value, currentPath);
 		}
 	}
 }

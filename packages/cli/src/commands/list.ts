@@ -91,7 +91,7 @@ function printTree(root: unknown): void {
 	}
 	const tree: TreeNode = { name: '', children: new Map() };
 	let count = 0;
-	for (const [action, path] of iterateActions(root as any)) {
+	for (const [action, path] of iterateActions(root)) {
 		count++;
 		let node = tree;
 		for (let i = 0; i < path.length; i++) {

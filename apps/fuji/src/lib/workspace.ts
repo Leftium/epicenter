@@ -138,7 +138,7 @@ export function createFujiActions(tables: FujiTables) {
 					),
 				}),
 				handler: ({ title, subtitle, type: entryType, tags, rating }) => {
-					const id = generateId() as unknown as EntryId;
+					const id = generateId<EntryId>();
 					const now = DateTimeString.now();
 					tables.entries.set({
 						id,
@@ -262,7 +262,7 @@ export function createFujiActions(tables: FujiTables) {
 				handler: ({ entries: items }) => {
 					const now = DateTimeString.now();
 					const rows = items.map(({ title, date }) => ({
-						id: generateId() as unknown as EntryId,
+						id: generateId<EntryId>(),
 						title,
 						subtitle: '',
 						type: [] as string[],

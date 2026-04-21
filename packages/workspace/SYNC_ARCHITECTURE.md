@@ -138,25 +138,20 @@ Phone has no local server, so it connects directly to all available sync nodes:
 
 ```typescript
 // phone/src/workspace.ts
-import { defineWorkspace } from '@epicenter/workspace/dynamic';
+import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import { SYNC_NODES } from './config/sync-nodes';
 
-export const blogWorkspace = defineWorkspace({
+export const blogWorkspace = createWorkspace({
 	id: 'blog',
 	tables: {
 		/* ... */
 	},
-	providers: {
-		// Connect to ALL sync nodes for maximum resilience
-		syncDesktop: createSyncExtension({ url: SYNC_NODES.desktop }),
-		syncLaptop: createSyncExtension({ url: SYNC_NODES.laptop }),
-		syncCloud: createSyncExtension({ url: SYNC_NODES.cloud }),
-	},
-	actions: ({ tables }) => ({
-		/* ... */
-	}),
-});
+})
+	// Connect to ALL sync nodes for maximum resilience
+	.withExtension('syncDesktop', createSyncExtension({ url: SYNC_NODES.desktop }))
+	.withExtension('syncLaptop', createSyncExtension({ url: SYNC_NODES.laptop }))
+	.withExtension('syncCloud', createSyncExtension({ url: SYNC_NODES.cloud }));
 ```
 
 ### Laptop/Desktop Browser Configuration
@@ -165,24 +160,19 @@ Browser connects to its own local server (localhost). The server handles cross-d
 
 ```typescript
 // desktop/browser/src/workspace.ts
-import { defineWorkspace } from '@epicenter/workspace/dynamic';
+import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import { SYNC_NODES } from './config/sync-nodes';
 
-export const blogWorkspace = defineWorkspace({
+export const blogWorkspace = createWorkspace({
 	id: 'blog',
 	tables: {
 		/* ... */
 	},
-	providers: {
-		// Browser only needs to connect to its local server
-		// The server handles syncing with other devices
-		sync: createSyncExtension({ url: SYNC_NODES.localhost }),
-	},
-	actions: ({ tables }) => ({
-		/* ... */
-	}),
-});
+})
+	// Browser only needs to connect to its local server
+	// The server handles syncing with other devices
+	.withExtension('sync', createSyncExtension({ url: SYNC_NODES.localhost }));
 ```
 
 ### Desktop Server Configuration (Server-to-Server Sync)
@@ -194,49 +184,39 @@ The server acts as BOTH:
 
 ```typescript
 // desktop/server/src/workspace.ts
-import { defineWorkspace } from '@epicenter/workspace/dynamic';
+import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import { SYNC_NODES } from './config/sync-nodes';
 
-export const blogWorkspace = defineWorkspace({
+export const blogWorkspace = createWorkspace({
 	id: 'blog',
 	tables: {
 		/* ... */
 	},
-	providers: {
-		// Connect to OTHER sync nodes (not itself!)
-		// Desktop connects to: laptop + cloud
-		syncToLaptop: createSyncExtension({ url: SYNC_NODES.laptop }),
-		syncToCloud: createSyncExtension({ url: SYNC_NODES.cloud }),
-	},
-	actions: ({ tables }) => ({
-		/* ... */
-	}),
-});
+})
+	// Connect to OTHER sync nodes (not itself!)
+	// Desktop connects to: laptop + cloud
+	.withExtension('syncToLaptop', createSyncExtension({ url: SYNC_NODES.laptop }))
+	.withExtension('syncToCloud', createSyncExtension({ url: SYNC_NODES.cloud }));
 ```
 
 ### Laptop Server Configuration
 
 ```typescript
 // laptop/server/src/workspace.ts
-import { defineWorkspace } from '@epicenter/workspace/dynamic';
+import { createWorkspace } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 import { SYNC_NODES } from './config/sync-nodes';
 
-export const blogWorkspace = defineWorkspace({
+export const blogWorkspace = createWorkspace({
 	id: 'blog',
 	tables: {
 		/* ... */
 	},
-	providers: {
-		// Laptop connects to: desktop + cloud
-		syncToDesktop: createSyncExtension({ url: SYNC_NODES.desktop }),
-		syncToCloud: createSyncExtension({ url: SYNC_NODES.cloud }),
-	},
-	actions: ({ tables }) => ({
-		/* ... */
-	}),
-});
+})
+	// Laptop connects to: desktop + cloud
+	.withExtension('syncToDesktop', createSyncExtension({ url: SYNC_NODES.desktop }))
+	.withExtension('syncToCloud', createSyncExtension({ url: SYNC_NODES.cloud }));
 ```
 
 ### Cloud Server Configuration
@@ -245,20 +225,15 @@ Cloud server typically only accepts connections (doesn't initiate):
 
 ```typescript
 // cloud/src/workspace.ts
-import { defineWorkspace } from '@epicenter/workspace/dynamic';
+import { createWorkspace } from '@epicenter/workspace';
 
-export const blogWorkspace = defineWorkspace({
+// Cloud server has no outgoing sync providers.
+// It only accepts incoming connections via createSyncPlugin.
+export const blogWorkspace = createWorkspace({
 	id: 'blog',
 	tables: {
 		/* ... */
 	},
-	providers: {
-		// Cloud server has no outgoing sync providers
-		// It only accepts incoming connections via createSyncPlugin
-	},
-	actions: ({ tables }) => ({
-		/* ... */
-	}),
 });
 ```
 
@@ -309,16 +284,11 @@ Each device should also use local persistence:
 import { persistence } from '@epicenter/workspace/extensions/persistence';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 
-const workspace = defineWorkspace({
-	id: 'blog',
-	providers: {
-		// Local persistence (IndexedDB in browser, filesystem in Node.js)
-		persistence,
-
-		// Network sync
-		sync: createSyncExtension({ url: SYNC_NODES.desktop }),
-	},
-});
+const workspace = createWorkspace({ id: 'blog' })
+	// Local persistence (IndexedDB in browser, filesystem in Node.js)
+	.withExtension('persistence', persistence)
+	// Network sync
+	.withExtension('sync', createSyncExtension({ url: SYNC_NODES.desktop }));
 ```
 
 When offline:

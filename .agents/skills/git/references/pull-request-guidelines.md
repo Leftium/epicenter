@@ -150,7 +150,7 @@ Show how components stack:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  defineWorkspace() + workspace.create()                     │  ← High-level
+│  createWorkspace({ id, tables, kv })                        │  ← High-level
 │    Creates Y.Doc internally, binds tables/kv/capabilities   │
 ├─────────────────────────────────────────────────────────────┤
 │  createTables(ydoc, {...}) / createKv(ydoc, {...})          │  ← Mid-level

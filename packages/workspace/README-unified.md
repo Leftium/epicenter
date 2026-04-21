@@ -6,11 +6,11 @@ Everything is a workspace. The epicenter is just a workspace that aggregates oth
 
 ```typescript
 // Before: Two concepts (workspaces and epicenter)
-const workspace = defineWorkspace({...});
+const workspace = /* old workspace client */;
 const epicenter = createEpicenter({ workspaces: [...], path: '...', database: '...' });
 
 // After: One concept (just workspaces)
-const epicenter = defineWorkspace({
+const epicenter = createWorkspace({
   id: 'epicenter',
   tables: {},
   exports: (api) => ({}),
@@ -26,13 +26,13 @@ Each workspace defines its tables and actions:
 
 ```typescript
 import {
-	defineWorkspace,
+	createWorkspace,
 	defineQuery,
 	defineMutation,
 } from '@epicenter/epicenter';
 import { type } from 'arktype';
 
-const usersWorkspace = defineWorkspace({
+const usersWorkspace = createWorkspace({
 	id: 'users',
 
 	tables: {
@@ -71,7 +71,7 @@ const usersWorkspace = defineWorkspace({
 The "epicenter" is just a workspace that lists others as dependencies:
 
 ```typescript
-const epicenter = defineWorkspace({
+const epicenter = createWorkspace({
 	id: 'epicenter',
 	tables: {}, // No tables of its own
 	providers: {},
@@ -139,7 +139,7 @@ Every table automatically gets:
 Workspaces declare dependencies and access them through the api parameter:
 
 ```typescript
-const postsWorkspace = defineWorkspace({
+const postsWorkspace = createWorkspace({
 	id: 'posts',
 	tables: {
 		posts: {
@@ -202,10 +202,10 @@ await app.ready;
 ### After
 
 ```typescript
-import { defineWorkspace } from '@epicenter/core';
+import { createWorkspace } from '@epicenter/core';
 import { runWorkspace } from '@epicenter/runtime';
 
-const epicenter = defineWorkspace({
+const epicenter = createWorkspace({
 	id: 'epicenter',
 	dependencies: [usersWorkspace, postsWorkspace],
 	tables: {},
@@ -224,7 +224,7 @@ const app = await runWorkspace(epicenter, {
 
 ```typescript
 // workspaces/users.ts
-export const usersWorkspace = defineWorkspace({
+export const usersWorkspace = createWorkspace({
 	id: 'users',
 	tables: {
 		users: {
@@ -254,7 +254,7 @@ export const usersWorkspace = defineWorkspace({
 });
 
 // workspaces/posts.ts
-export const postsWorkspace = defineWorkspace({
+export const postsWorkspace = createWorkspace({
 	id: 'posts',
 	dependencies: [usersWorkspace],
 	tables: {
@@ -290,7 +290,7 @@ export const postsWorkspace = defineWorkspace({
 });
 
 // epicenter.config.ts
-export default defineWorkspace({
+export default createWorkspace({
 	id: 'app',
 	dependencies: [usersWorkspace, postsWorkspace],
 	tables: {},

@@ -109,7 +109,7 @@ Use ASCII diagrams liberally. They're more scannable than prose.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  defineWorkspace() + workspace.create()                          │  ← High-level
+│  createWorkspace({ id, tables, kv })                             │  ← High-level
 │    Creates Y.Doc internally, binds tables/kv/capabilities        │
 ├─────────────────────────────────────────────────────────────────┤
 │  createTables(ydoc, {...}) / createKv(ydoc, {...})               │  ← Mid-level

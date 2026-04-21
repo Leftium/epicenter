@@ -2,7 +2,8 @@
  * Opensidian workspace client — a single `defineDocument` closure that owns
  * the Y.Doc construction and composes every attachment inline.
  *
- * Mirrors the fuji prototype: no `defineWorkspace` / `Object.assign` dance.
+ * Mirrors the fuji prototype: no schema/composition split, no `Object.assign`
+ * dance.
  * App-specific wiring (file-content docs, sqlite index, virtual filesystem,
  * bash emulator, and all actions) is constructed inside the closure so every
  * piece binds to the same `ydoc` / `tables` instance.

@@ -160,20 +160,18 @@ The [`@epicenter/workspace`](packages/workspace) package wraps this into a singl
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable, defineWorkspace } from '@epicenter/workspace';
+import { createWorkspace, defineTable } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
-  import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 
-    const posts = defineTable(
+const posts = defineTable(
   type({ id: 'string', title: 'string', published: 'boolean', _v: '1' }),
-      );
+);
 
-      const definition = defineWorkspace({
+const workspace = createWorkspace({
   id: 'epicenter.blog',
   tables: { posts },
-  });
-
-const workspace = createWorkspace(definition)
+})
   .withExtension('persistence', indexeddbPersistence)
   .withExtension('sync', createSyncExtension({
     url: (docId) => `ws://localhost:3913/rooms/${docId}`,

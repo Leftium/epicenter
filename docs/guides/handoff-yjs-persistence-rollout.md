@@ -110,7 +110,7 @@ project-root/
 **Important**: Use the workspace `id` to create a unique filename for each workspace.
 
 ```typescript
-const blogWorkspace = defineWorkspace({
+const blogWorkspace = createWorkspace({
 	id: 'blog', // ← This ID determines the .yjs filename
 	version: 1,
 	name: 'blog',
@@ -154,7 +154,7 @@ const blogWorkspace = defineWorkspace({
 
 ```typescript
 // Pages workspace
-const pages = defineWorkspace({
+const pages = createWorkspace({
 	id: 'pages', // → .epicenter/pages.yjs
 	setupYDoc: (ydoc) => {
 		const filePath = path.join('./.epicenter', 'pages.yjs');
@@ -163,7 +163,7 @@ const pages = defineWorkspace({
 });
 
 // Content-hub workspace
-const contentHub = defineWorkspace({
+const contentHub = createWorkspace({
 	id: 'content-hub', // → .epicenter/content-hub.yjs
 	setupYDoc: (ydoc) => {
 		const filePath = path.join('./.epicenter', 'content-hub.yjs');
@@ -534,7 +534,7 @@ Both workspaces are completely isolated. The dependency relationship is at the A
 
 ```typescript
 // Pages workspace (dependency)
-const pages = defineWorkspace({
+const pages = createWorkspace({
 	id: 'pages', // → .epicenter/pages.yjs
 	setupYDoc: (ydoc) => {
 		const filePath = path.join('./.epicenter', 'pages.yjs');
@@ -543,7 +543,7 @@ const pages = defineWorkspace({
 });
 
 // Content-hub workspace (depends on pages)
-const contentHub = defineWorkspace({
+const contentHub = createWorkspace({
 	id: 'content-hub', // → .epicenter/content-hub.yjs
 	dependencies: [pages],
 	setupYDoc: (ydoc) => {

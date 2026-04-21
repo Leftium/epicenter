@@ -17,7 +17,7 @@ test('creates workspace with tables', () => {
 
 	const theme = defineKv(type("'light' | 'dark'"), 'light');
 
-	const workspace = defineWorkspace({
+	const workspace = createWorkspace({
 		id: 'test-app',
 		tables: { posts },
 		kv: { theme },
@@ -31,7 +31,7 @@ test('creates workspace with tables', () => {
 
 ```typescript
 test('creates workspace with tables', () => {
-	const workspace = defineWorkspace({
+	const workspace = createWorkspace({
 		id: 'test-app',
 		tables: {
 			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
@@ -63,7 +63,7 @@ Extract to a variable when:
 
 ### Applies To
 
-- `defineTable()`, `defineKv()`, `defineWorkspace()` builders
+- `defineTable()`, `defineKv()`, `createWorkspace()` builders
 - `createTables()`, `createKV()` factory calls
 - Schema definitions (arktype, zod, etc.)
 - Configuration objects passed to factories

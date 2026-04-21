@@ -7,14 +7,14 @@ The epicenter workspace system provides a clean API where actions are directly c
 ```typescript
 import { type } from 'arktype';
 import {
-	defineWorkspace,
+	createWorkspace,
 	defineQuery,
 	defineMutation,
 	runWorkspace,
 } from '@epicenter/workspace';
 
 // Define your workspace
-const todosWorkspace = defineWorkspace({
+const todosWorkspace = createWorkspace({
 	id: 'todos',
 	tables: {
 		todos: {

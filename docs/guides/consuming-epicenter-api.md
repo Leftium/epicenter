@@ -20,7 +20,7 @@ The full list of imports used in this guide:
 
 | Package | What it provides |
 |---------|-----------------|
-| `@epicenter/workspace` | `defineWorkspace`, `defineTable`, `createWorkspace` |
+| `@epicenter/workspace` | `defineTable`, `createWorkspace` |
 | `@epicenter/workspace/extensions/sync` | `createSyncExtension` |
 | `@epicenter/workspace/extensions/sync/web` | `indexeddbPersistence` |
 | `@epicenter/workspace/extensions/sync/broadcast-channel` | `broadcastChannelSync` |
@@ -30,10 +30,10 @@ The full list of imports used in this guide:
 
 ## Step 1: Define Your Workspace
 
-Use `defineWorkspace` and `defineTable` with arktype's `type()` to declare your schema. This definition is shared between the client builder and the type system—it's the single source of truth for your data shape.
+Use `createWorkspace` and `defineTable` with arktype's `type()` to declare your schema. Tables and KV entries are declared once and passed directly to `createWorkspace`—it's the single source of truth for your data shape.
 
 ```typescript
-import { defineWorkspace, defineTable } from '@epicenter/workspace';
+import { createWorkspace, defineTable } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 const postsTable = defineTable(
@@ -46,7 +46,7 @@ const postsTable = defineTable(
   }),
 );
 
-const definition = defineWorkspace({
+const client = createWorkspace({
   id: 'epicenter.my-app',
   tables: { posts: postsTable },
   kv: {},
@@ -55,7 +55,7 @@ const definition = defineWorkspace({
 
 The `_v` field is required on every table. It's the schema version marker and must be the string literal `'1'`. Table definitions use arktype's `type()` directly—not the old column helper functions (`id()`, `text()`, `boolean()`).
 
-The `id` field in `defineWorkspace` should be namespaced to your app (e.g., `epicenter.my-app`) to avoid collisions when multiple workspaces share the same IndexedDB origin.
+The `id` field passed to `createWorkspace` should be namespaced to your app (e.g., `epicenter.my-app`) to avoid collisions when multiple workspaces share the same IndexedDB origin.
 
 ## Step 2: Set Up Auth
 

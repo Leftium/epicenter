@@ -77,7 +77,6 @@ See `specs/20260312T180000-branded-id-convention.md` for the full inventory and 
 import {
 	createWorkspace,
 	defineTable,
-	defineWorkspace,
 	type InferTableRow,
 } from '@epicenter/workspace';
 
@@ -104,42 +103,41 @@ export type Post = InferTableRow<typeof postsTable>;
 
 // ─── Workspace client ───────────────────────────────────────────────────
 
-export const workspaceClient = createWorkspace(
-	defineWorkspace({
-		id: 'my-workspace',
-		tables: {
-			users: usersTable,
-			posts: postsTable,
-		},
-	}),
-);
+export const workspaceClient = createWorkspace({
+	id: 'my-workspace',
+	tables: {
+		users: usersTable,
+		posts: postsTable,
+	},
+});
 ```
 
 ### Why This Structure
 
 - **Co-located types**: Each `export type` sits right below its `defineTable` — easy to verify 1:1 correspondence, easy to remove both together.
-- **Error co-location**: If you forget `_v` or `id`, the error shows on the `defineTable()` call right next to the schema — not buried inside `defineWorkspace`.
+- **Error co-location**: If you forget `_v` or `id`, the error shows on the `defineTable()` call right next to the schema — not buried inside the `createWorkspace` call.
 - **Schema-agnostic inference**: `InferTableRow` works with any Standard Schema (arktype, zod, etc.) and handles migrations correctly (always infers the latest version's type).
-- **Fast type inference**: `InferTableRow<typeof usersTable>` resolves against a standalone const. Avoids the expensive `InferTableRow<NonNullable<(typeof definition)['tables']>['key']>` chain that forces TS to resolve the entire `defineWorkspace` return type.
-- **No intermediate `definition` const**: `defineWorkspace({...})` is inlined directly into `createWorkspace()` since it's only used once.
+- **Fast type inference**: `InferTableRow<typeof usersTable>` resolves against a standalone const. Avoids the expensive `InferTableRow<NonNullable<(typeof definition)['tables']>['key']>` chain that forces TS to resolve the entire workspace return type.
 
 ### Anti-Pattern: Inline Tables + Deep Indirection
 
 ```typescript
-// BAD: Tables inline in defineWorkspace, types derived through deep indirection
-const definition = defineWorkspace({
+// BAD: Tables inline, types derived through deep indirection off the client
+const client = createWorkspace({
+	id: 'my-workspace',
 	tables: {
 		users: defineTable(type({ id: 'string', email: 'string', _v: '1' })),
 	},
 });
-type Tables = NonNullable<(typeof definition)['tables']>;
+type Tables = NonNullable<(typeof client)['definitions']['tables']>;
 export type User = InferTableRow<Tables['users']>;
 
-// GOOD: Extract table, co-locate type, inline defineWorkspace
+// GOOD: Extract table, co-locate type, reference it in createWorkspace
 const usersTable = defineTable(type({ id: UserId, email: 'string', _v: '1' }));
 export type User = InferTableRow<typeof usersTable>;
 
-export const workspaceClient = createWorkspace(
-	defineWorkspace({ tables: { users: usersTable } }),
-);
+export const workspaceClient = createWorkspace({
+	id: 'my-workspace',
+	tables: { users: usersTable },
+});
 ```

@@ -42,14 +42,13 @@ The apps are thin by comparison. Each app picks a definition, creates a client, 
 The four verbs are the architecture. If you remember nothing else, remember that Epicenter keeps those stages separate on purpose.
 
 ### 1. Define is pure
-`defineTable`, `defineKv`, and `defineWorkspace` are pure declarations. They do not create a `Y.Doc`, open IndexedDB, start a WebSocket, or touch the network.
+`defineTable` and `defineKv` are pure declarations. They do not create a `Y.Doc`, open IndexedDB, start a WebSocket, or touch the network.
 
 ```ts
 import { type } from 'arktype';
 import {
 	defineKv,
 	defineTable,
-	defineWorkspace,
 } from '@epicenter/workspace';
 
 const files = defineTable(
@@ -61,15 +60,9 @@ const files = defineTable(
 );
 
 const themeMode = defineKv(type("'light' | 'dark' | 'system'"), 'system');
-
-export const appDefinition = defineWorkspace({
-	id: 'example.app',
-	tables: { files },
-	kv: { themeMode },
-});
 ```
 
-That purity is what makes cross-package reuse work. The same definition can be imported by an app, a CLI tool, a migration utility, a test, or another package without dragging runtime side effects along for the ride.
+That purity is what makes cross-package reuse work. The same table and KV declarations can be imported by an app, a CLI tool, a migration utility, a test, or another package without dragging runtime side effects along for the ride.
 
 ### 2. Create is where the live client appears
 `createWorkspace()` is the boundary where static meaning turns into live state. This is where the root `Y.Doc` gets created, the guid is set from the workspace id, table helpers and KV helpers get wired up, awareness is created, and document managers are prepared for any `.withDocument()` tables.
@@ -77,7 +70,11 @@ That purity is what makes cross-package reuse work. The same definition can be i
 ```ts
 import { createWorkspace } from '@epicenter/workspace';
 
-const workspace = createWorkspace(appDefinition);
+const workspace = createWorkspace({
+	id: 'example.app',
+	tables: { files },
+	kv: { themeMode },
+});
 
 workspace.tables.files.set({
 	id: 'readme.md',
@@ -96,7 +93,7 @@ import { createWorkspace } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 
-const workspace = createWorkspace(appDefinition)
+const workspace = createWorkspace({ id: 'example.app', tables: { files }, kv: { themeMode } })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('sync', createSyncExtension({
 		url: (id) => `wss://sync.example.com/workspaces/${id}`,
@@ -112,7 +109,7 @@ const workspace = createWorkspace(appDefinition)
 Extensions compose progressively. Later extensions see earlier exports through `context.extensions`, because each builder step accumulates the extension map before the next one runs.
 
 ```ts
-const workspace = createWorkspace(appDefinition)
+const workspace = createWorkspace({ id: 'example.app', tables: { files }, kv: { themeMode } })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('sync', createSyncExtension({ url }))
 	.withWorkspaceExtension('search', ({ extensions, tables }) => {
@@ -134,7 +131,7 @@ That ordering is not trivia. It lets apps build capability stacks instead of mon
 Sync does not own the workspace. It attaches to a workspace that already exists and starts moving CRDT updates between clients.
 
 ```ts
-const workspace = createWorkspace(appDefinition)
+const workspace = createWorkspace({ id: 'example.app', tables: { files }, kv: { themeMode } })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('sync', createSyncExtension({
 		url: (workspaceId) => `wss://host/workspaces/${workspaceId}`,
@@ -148,7 +145,7 @@ That ordering is deliberate. Local state exists first, then optional durability,
 `createWorkspace()` is synchronous, but extension setup is not. The workspace object exists right away; `workspace.whenReady` is the promise that says all registered extension `whenReady` hooks have settled.
 
 ```ts
-const workspace = createWorkspace(appDefinition)
+const workspace = createWorkspace({ id: 'example.app', tables: { files }, kv: { themeMode } })
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('sync', createSyncExtension({ url }));
 
@@ -223,13 +220,13 @@ Opensidian composes nearly every layer at once. Its schema starts with `filesTab
 
 ```ts
 import { filesTable } from '@epicenter/filesystem';
-import { defineTable, defineWorkspace } from '@epicenter/workspace';
+import { createWorkspace, defineTable } from '@epicenter/workspace';
 
 const conversationsTable = defineTable(/* ... */);
 const chatMessagesTable = defineTable(/* ... */);
 const toolTrustTable = defineTable(/* ... */);
 
-export const opensidianDefinition = defineWorkspace({
+export const workspace = createWorkspace({
 	id: 'opensidian',
 	tables: {
 		files: filesTable,
@@ -237,13 +234,7 @@ export const opensidianDefinition = defineWorkspace({
 		chatMessages: chatMessagesTable,
 		toolTrust: toolTrustTable,
 	},
-});
-```
-
-Its runtime client then layers persistence, sync, and a workspace-only SQLite search index. This comes straight from `apps/opensidian/src/lib/client.ts`.
-
-```ts
-export const workspace = createWorkspace(opensidianDefinition)
+})
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('sync', createSyncExtension({
 		url: (workspaceId) => toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
@@ -262,10 +253,7 @@ export const workspace = createWorkspace(opensidianDefinition)
 That workspace then feeds other middleware packages. `createYjsFileSystem(workspace.tables.files, workspace.tables.files.documents.content)` turns the files table plus content docs into a real virtual filesystem; `actionsToClientTools(workspace.actions)` from `@epicenter/ai` turns workspace actions into chat tools; `createSkillsWorkspace()` mounts a second skills-focused workspace; `createAuth()` from `@epicenter/svelte` coordinates auth with encryption and sync reconnects.
 The dependency chain looks like this.
 ```text
-opensidianDefinition
-    │
-    ▼
-createWorkspace(...)
+createWorkspace({ id, tables })
     │
     ├─ persistence extension
     ├─ sync extension

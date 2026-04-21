@@ -111,7 +111,7 @@ const ecosystem = [
 	},
 ];
 
-const quickstartCodeHtml = `<span class="text-violet-400">import</span> { defineTable, defineWorkspace, createWorkspace } <span class="text-violet-400">from</span> <span class="text-emerald-400">'@epicenter/workspace'</span>
+const quickstartCodeHtml = `<span class="text-violet-400">import</span> { defineTable, createWorkspace } <span class="text-violet-400">from</span> <span class="text-emerald-400">'@epicenter/workspace'</span>
 
 <span class="text-violet-400">const</span> posts = <span class="text-amber-300">defineTable</span>({
   _v: <span class="text-amber-300">1</span>,
@@ -119,12 +119,10 @@ const quickstartCodeHtml = `<span class="text-violet-400">import</span> { define
   published: { schema: <span class="text-emerald-400">'boolean'</span>, default: <span class="text-amber-300">false</span> },
 })
 
-<span class="text-violet-400">const</span> workspace = <span class="text-amber-300">defineWorkspace</span>({
+<span class="text-violet-400">const</span> client = <span class="text-amber-300">createWorkspace</span>({
   id: <span class="text-emerald-400">'my-app'</span>,
   tables: { posts },
 })
-
-<span class="text-violet-400">const</span> client = <span class="text-amber-300">createWorkspace</span>(workspace)
 client.tables.posts.<span class="text-amber-300">set</span>({ id: <span class="text-emerald-400">'hello'</span>, title: <span class="text-emerald-400">'Hello World'</span>, published: <span class="text-amber-300">true</span> })`;
 ---
 

@@ -47,11 +47,11 @@ For desktop applications (Tauri, Electron, Bun), use the built-in `setupPersiste
 **Example**: Using the built-in provider
 
 ```typescript
-import { defineWorkspace } from '@epicenter/workspace';
+import { createWorkspace } from '@epicenter/workspace';
 import { setupPersistence } from '@epicenter/workspace/providers/desktop';
 import { text, ytext } from '@epicenter/workspace';
 
-const blogWorkspace = defineWorkspace({
+const blogWorkspace = createWorkspace({
 	id: 'blog',
 
 	tables: {
@@ -77,7 +77,7 @@ const blogWorkspace = defineWorkspace({
 For web applications, you'll need to create a custom provider using `y-indexeddb`:
 
 ```typescript
-import { defineWorkspace } from '@epicenter/workspace';
+import { createWorkspace } from '@epicenter/workspace';
 import { text, ytext } from '@epicenter/workspace';
 import type { Provider } from '@epicenter/workspace';
 import { IndexeddbPersistence } from 'y-indexeddb';
@@ -93,7 +93,7 @@ const setupWebPersistence: Provider = ({ ydoc }) => {
 	};
 };
 
-const blogWorkspace = defineWorkspace({
+const blogWorkspace = createWorkspace({
 	id: 'blog',
 
 	tables: {
@@ -146,13 +146,13 @@ export const setupPersistence: Provider = ({ ydoc }) => {
 
 ```typescript
 // epicenter.config.ts
-import { defineWorkspace } from '@epicenter/workspace';
+import { createWorkspace } from '@epicenter/workspace';
 // Import the right one based on your platform
 import { setupPersistence } from './persistence.desktop';
 // or
 import { setupPersistence } from './persistence.web';
 
-const workspace = defineWorkspace({
+const workspace = createWorkspace({
 	id: 'blog',
 	tables: {
 		/* ... */
@@ -197,11 +197,11 @@ The provider pattern in Epicenter offers several advantages:
 Each workspace gets its own file, automatically named by workspace ID:
 
 ```typescript
-import { defineWorkspace } from '@epicenter/workspace';
+import { createWorkspace } from '@epicenter/workspace';
 import { setupPersistence } from '@epicenter/workspace/providers/desktop';
 
 // Workspace A → saves to .epicenter/providers/persistence/workspace-a.yjs
-const workspaceA = defineWorkspace({
+const workspaceA = createWorkspace({
 	id: 'workspace-a',
 	tables: {
 		/* ... */
@@ -210,7 +210,7 @@ const workspaceA = defineWorkspace({
 });
 
 // Workspace B → saves to .epicenter/providers/persistence/workspace-b.yjs
-const workspaceB = defineWorkspace({
+const workspaceB = createWorkspace({
 	id: 'workspace-b',
 	tables: {
 		/* ... */
@@ -226,7 +226,7 @@ Both workspaces share the `.epicenter/providers/persistence/` directory but have
 You can use multiple providers on the same workspace:
 
 ```typescript
-import { defineWorkspace } from '@epicenter/workspace';
+import { createWorkspace } from '@epicenter/workspace';
 import { setupPersistence } from '@epicenter/workspace/providers/desktop';
 import type { Provider } from '@epicenter/workspace';
 import { WebrtcProvider } from 'y-webrtc';
@@ -240,7 +240,7 @@ const setupSync: Provider = ({ ydoc }) => {
 	};
 };
 
-const workspace = defineWorkspace({
+const workspace = createWorkspace({
 	id: 'blog',
 	tables: {
 		/* ... */
@@ -308,12 +308,12 @@ const customPersistence: Provider = async ({ id, ydoc }) => {
 For tests, you can conditionally exclude persistence providers:
 
 ```typescript
-import { defineWorkspace } from '@epicenter/workspace';
+import { createWorkspace } from '@epicenter/workspace';
 import { setupPersistence } from '@epicenter/workspace/providers/desktop';
 
 const isTest = process.env.NODE_ENV === 'test';
 
-const workspace = defineWorkspace({
+const workspace = createWorkspace({
 	id: 'blog',
 	tables: {
 		/* ... */

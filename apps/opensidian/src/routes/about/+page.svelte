@@ -61,15 +61,13 @@
 	] as const;
 
 	const workspaceCode = `import { createSqliteIndex, createYjsFileSystem, filesTable } from '@epicenter/filesystem';
-import { defineWorkspace, createWorkspace } from '@epicenter/workspace';
+import { createWorkspace } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 
-const definition = defineWorkspace({
+export const workspace = createWorkspace({
   id: 'opensidian',
   tables: { files: filesTable },
-});
-
-export const workspace = createWorkspace(definition)
+})
   .withExtension('persistence', indexeddbPersistence)
   .withExtension('sqliteIndex', createSqliteIndex());
 
@@ -77,16 +75,10 @@ export const fs = createYjsFileSystem(workspace.tables.files, fileContentDocs);`
 
 	const codeAnnotations = [
 		{
-			id: 'define-workspace',
-			line: 'defineWorkspace({ id, tables })',
-			explanation:
-				'Declares the workspace schema—a unique ID and typed tables. Each table becomes a Y.Map of rows inside a shared Y.Doc.',
-		},
-		{
 			id: 'create-workspace',
-			line: 'createWorkspace(definition)',
+			line: 'createWorkspace({ id, tables })',
 			explanation:
-				'Instantiates the workspace from the definition. Returns a builder—chain .withExtension() to add persistence, sync, or other capabilities.',
+				'Declares the workspace schema and instantiates it in one step—a unique ID, typed tables, and a live client. Each table becomes a Y.Map of rows inside a shared Y.Doc. Returns a builder; chain .withExtension() to add persistence, sync, or other capabilities.',
 		},
 		{
 			id: 'persistence',

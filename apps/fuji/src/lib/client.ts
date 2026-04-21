@@ -2,9 +2,9 @@
  * Fuji workspace client — a single `defineDocument` closure that owns the
  * Y.Doc construction and composes every attachment inline.
  *
- * This app collapses the old split between `defineWorkspace(schema)` and
- * `client.ts` composition into one closure. The bundle shape is whatever
- * we return — no framework convention, no `Object.assign` dance.
+ * This app collapses schema-and-composition into one closure. The bundle
+ * shape is whatever we return — no framework convention, no `Object.assign`
+ * dance.
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';

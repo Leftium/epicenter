@@ -12,7 +12,7 @@ It's structured in two layers. Start at the top, drop down when you need control
 ┌────────────────────────────────────────────────┐
 │  Your App                                      │
 ├────────────────────────────────────────────────┤
-│  defineWorkspace() → createWorkspace()         │ ← Public API
+│  createWorkspace({ id, tables, kv })           │ ← Public API
 │  ↓ Result: WorkspaceClient                     │
 │  { tables, kv, documents, awareness, extensions } │
 ├────────────────────────────────────────────────┤
@@ -33,13 +33,11 @@ This codebase uses two prefixes consistently. `define*` is pure, no Y.Doc, no si
 // Pure schema definitions
 const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
-const workspace = defineWorkspace({ id: 'my-app', tables: { posts } });
-
 // Creates Y.Doc and returns a typed client
-const client = createWorkspace(workspace);
+const client = createWorkspace({ id: 'my-app', tables: { posts } });
 ```
 
-For most apps, just call `createWorkspace(definition)` and you're done. It's synchronous, returns immediately, and everything is typed.
+For most apps, just call `createWorkspace({...})` and you're done. It's synchronous, returns immediately, and everything is typed.
 
 ## If You Need More
 

@@ -131,10 +131,10 @@ const newId = generateConversationId();  // Good
 Actions wrap workspace operations as `defineMutation` (writes) or `defineQuery` (reads). Attach them via `.withActions()` on a workspace builder—the call is non-terminal, so you can chain `.withExtension()` after it.
 
 ```typescript
-import { createWorkspace, defineMutation, defineQuery, defineWorkspace } from '@epicenter/workspace';
+import { createWorkspace, defineMutation, defineQuery } from '@epicenter/workspace';
 
 export function createBlogWorkspace() {
-	return createWorkspace(blogDefinition).withActions(({ tables }) => ({
+	return createWorkspace({ id: 'blog', tables: { posts } }).withActions(({ tables }) => ({
 		/**
 		 * Mark a post as published and record the publication timestamp.
 		 *
@@ -184,8 +184,8 @@ Each app splits workspace code into an **isomorphic `workspace/` folder** and a 
 src/lib/
 │
 ├── workspace/                          ← 100% isomorphic (safe for Node, Bun, browser)
-│   ├── definition.ts                   ← Schema: defineWorkspace, defineTable, branded IDs
-│   ├── workspace.ts                    ← Factory: createWorkspace(definition) + isomorphic actions
+│   ├── definition.ts                   ← Schema: defineTable, defineKv, branded IDs
+│   ├── workspace.ts                    ← Factory: createWorkspace({...}) + isomorphic actions
 │   └── index.ts                        ← Barrel: re-exports definition + workspace only
 │
 └── client.ts                           ← Runtime singleton: extensions, encryption, sync,
@@ -218,8 +218,8 @@ src/lib/
 
 ### Layering Rules
 
-1. **`definition.ts`** — Pure schema. `defineWorkspace()`, `defineTable()`, `defineKv()`, branded ID types and generators. Isomorphic.
-2. **`workspace.ts`** — Factory function that calls `createWorkspace(definition)`. May chain `.withActions()` for **isomorphic** actions (table reads/writes only). Isomorphic.
+1. **`definition.ts`** — Pure schema. `defineTable()`, `defineKv()`, branded ID types and generators. Isomorphic.
+2. **`workspace.ts`** — Factory function that calls `createWorkspace({...})` with the inlined definition. May chain `.withActions()` for **isomorphic** actions (table reads/writes only). Isomorphic.
 3. **`index.ts`** — Barrel that re-exports from `definition.ts` and `workspace.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
 4. **`client.ts`** — Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Calls the factory, chains `.withEncryption()`, `.withExtension()`, and runtime-specific `.withActions()`. Exports the singleton as a named export (`export const workspace = ...`).
 

@@ -4,7 +4,7 @@ The hard problem with local-first apps is synchronization. If each device has it
 
 `@epicenter/workspace` solves that by making Yjs the source of truth. Tables, KV entries, document content, and awareness all live in a `Y.Doc`; persistence, sync, and materializers hang off that core through the extension builder. Write to the workspace, and everything else reacts.
 
-If you're coming from the old README, the API really did change. Older docs showed a different client/bootstrap surface than the one this package exports today. The public path now is `defineWorkspace(...)` or `createWorkspace(...)`, direct property access like `client.tables.posts`, `table.set(...)`, and extension subpaths such as `@epicenter/workspace/extensions/persistence/indexeddb`.
+If you're coming from the old README, the API really did change. Older docs showed a different client/bootstrap surface than the one this package exports today. The public path now is `createWorkspace(...)`, direct property access like `client.tables.posts`, `table.set(...)`, and extension subpaths such as `@epicenter/workspace/extensions/persistence/indexeddb`.
 
 ## Quick Start
 
@@ -20,7 +20,6 @@ import {
 	defineMutation,
 	defineQuery,
 	defineTable,
-	defineWorkspace,
 	generateId,
 } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
@@ -36,12 +35,10 @@ const posts = defineTable(
 	}),
 );
 
-const blogDefinition = defineWorkspace({
+export const blogWorkspace = createWorkspace({
 	id: 'epicenter.blog',
 	tables: { posts },
-});
-
-export const blogWorkspace = createWorkspace(blogDefinition)
+})
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',
@@ -121,7 +118,6 @@ void quickStart;
 That example uses the current public API end to end:
 
 - `defineTable(...)` with a real schema
-- `defineWorkspace(...)` for a reusable definition
 - `createWorkspace(...)` for the client
 - `.withExtension(...)` for persistence and sync
 - direct property access via `client.tables.posts`
@@ -138,7 +134,7 @@ That matters because conflict resolution only has to happen once. Yjs handles me
 
 ### Definitions are pure; clients are live
 
-`defineTable`, `defineKv`, and `defineWorkspace` are pure. They do not create a `Y.Doc`, open a socket, or touch IndexedDB. `createWorkspace` is the boundary where the live client appears.
+`defineTable` and `defineKv` are pure. They do not create a `Y.Doc`, open a socket, or touch IndexedDB. `createWorkspace` is the boundary where the live client appears.
 
 That split is not cosmetic. It lets you share definitions across modules, infer types once, and instantiate different clients in different runtimes without rewriting the schema layer.
 
@@ -235,8 +231,8 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 
 ### How It All Fits Together
 
-1. Define tables, KV entries, and awareness with `defineTable`, `defineKv`, and `defineWorkspace`.
-2. Create a live client with `createWorkspace(definition)`.
+1. Define tables and KV entries with `defineTable` and `defineKv`.
+2. Create a live client with `createWorkspace({ id, tables, kv })`.
 3. Chain extensions with `.withExtension(...)`, `.withWorkspaceExtension(...)`, and `.withDocumentExtension(...)`.
 4. Attach actions with `.withActions(...)`.
 5. Wait for `client.whenReady` if your extensions load persisted state or open connections.
@@ -453,7 +449,7 @@ KV is validate-or-default. There is no migration function.
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable, defineWorkspace } from '@epicenter/workspace';
+import { createWorkspace, defineTable } from '@epicenter/workspace';
 
 const notes = defineTable(
 	type({
@@ -463,7 +459,7 @@ const notes = defineTable(
 	}),
 );
 
-const definition = defineWorkspace({
+const workspace = createWorkspace({
 	id: 'epicenter.notes',
 	tables: { notes },
 	awareness: {
@@ -472,8 +468,6 @@ const definition = defineWorkspace({
 		cursor: type({ line: 'number', column: 'number' }),
 	},
 });
-
-const workspace = createWorkspace(definition);
 
 workspace.awareness.setLocal({ name: 'Braden', color: '#ff4d4f' });
 workspace.awareness.setLocalField('cursor', { line: 12, column: 3 });
@@ -485,7 +479,7 @@ void workspace;
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable, defineWorkspace } from '@epicenter/workspace';
+import { createWorkspace, defineTable } from '@epicenter/workspace';
 
 const files = defineTable(
 	type({
@@ -500,12 +494,10 @@ const files = defineTable(
 	onUpdate: () => ({ updatedAt: Date.now() }),
 });
 
-const definition = defineWorkspace({
+const workspace = createWorkspace({
 	id: 'epicenter.files',
 	tables: { files },
 });
-
-const workspace = createWorkspace(definition);
 
 async function documentExample() {
 	workspace.tables.files.set({
@@ -1391,7 +1383,6 @@ If you want HTTP, CLI, or MCP on top, build or import an adapter around those pr
 import {
 	defineKv,
 	defineTable,
-	defineWorkspace,
 	type WorkspaceDefinition,
 } from '@epicenter/workspace';
 ```
@@ -1401,7 +1392,6 @@ Core definition helpers:
 - `defineTable(schema)`
 - `defineTable(v1, v2, ...).migrate(fn)`
 - `defineKv(schema, defaultValue)`
-- `defineWorkspace({ id, tables, kv, awareness })`
 
 ### Client creation
 

@@ -12,6 +12,10 @@ type RowSnapshot = {
 	trashedAt: number | null;
 };
 
+function snapFrom(row: FileRow): RowSnapshot {
+	return { name: row.name, parentId: row.parentId, trashedAt: row.trashedAt };
+}
+
 /**
  * Create runtime indexes for O(1) path lookups from a files table.
  *
@@ -25,8 +29,8 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 	const pathToId = new Map<string, FileId>();
 	/** FileId → "/docs/api.md" (reverse lookup) */
 	const idToPath = new Map<FileId, string>();
-	/** parentId (null = root) → [childId, ...] */
-	const childrenOf = new Map<FileId | null, FileId[]>();
+	/** parentId (null = root) → set of childIds */
+	const childrenOf = new Map<FileId | null, Set<FileId>>();
 
 	/** Previous path-relevant state for change detection. */
 	const snapshot = new Map<FileId, RowSnapshot>();
@@ -61,43 +65,35 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 		snapshot.clear();
 		displayName.clear();
 
-		let activeRows = filesTable
+		// getAllValid() returns fresh objects (parseRow spreads input), so we
+		// can safely mutate parentId on these locals to track fix-up changes
+		// without re-scanning the whole table.
+		const activeRows = filesTable
 			.getAllValid()
 			.filter((r) => r.trashedAt === null);
 
-		// Fix data integrity issues first (these mutate the table).
-		// Run before building indexes so indexes reflect corrected state.
-		fixCircularReferences(filesTable, activeRows);
+		for (const id of fixCircularReferences(filesTable, activeRows)) {
+			const row = activeRows.find((r) => r.id === id);
+			if (row) row.parentId = null;
+		}
 
-		// Re-read after circular ref fixes — parentIds may have changed
-		activeRows = filesTable.getAllValid().filter((r) => r.trashedAt === null);
-
-		// Build childrenOf from corrected data
 		for (const row of activeRows) {
 			addChild(row.parentId, row.id);
 		}
 
-		// Fix orphans (uses and mutates childrenOf)
-		fixOrphans(filesTable, activeRows, childrenOf);
-
-		// Re-read one more time after orphan fixes
-		activeRows = filesTable.getAllValid().filter((r) => r.trashedAt === null);
-
-		// Build display names (disambiguation) per folder
-		for (const [parentId, childIds] of childrenOf) {
-			disambiguateFolder(parentId, childIds);
+		for (const id of fixOrphans(filesTable, activeRows, childrenOf)) {
+			const row = activeRows.find((r) => r.id === id);
+			if (row) row.parentId = null;
 		}
 
-		// Build path indexes
+		for (const [, childIds] of childrenOf) {
+			disambiguateFolder(childIds);
+		}
+
 		buildPathsFromRoot();
 
-		// Populate snapshot for incremental change detection
 		for (const row of activeRows) {
-			snapshot.set(row.id, {
-				name: row.name,
-				parentId: row.parentId,
-				trashedAt: row.trashedAt,
-			});
+			snapshot.set(row.id, snapFrom(row));
 		}
 		rebuilding = false;
 	}
@@ -127,17 +123,10 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 			const wasActive = prev !== undefined && prev.trashedAt === null;
 
 			if (!wasActive && !isActive) {
-				// Was inactive, still inactive — nothing to do.
-				// Could be a trashed row getting updated, or an invalid row.
-				if (prev && result.status !== 'not_found') {
-					// Update snapshot for trashed-to-trashed changes
-					snapshot.set(id, {
-						name: result.status === 'valid' ? result.row.name : prev.name,
-						parentId:
-							result.status === 'valid' ? result.row.parentId : prev.parentId,
-						trashedAt:
-							result.status === 'valid' ? result.row.trashedAt : prev.trashedAt,
-					});
+				// Was inactive, still inactive. Keep the snapshot current for
+				// inactive rows so transitions later classify correctly.
+				if (prev && result.status === 'valid') {
+					snapshot.set(id, snapFrom(result.row));
 				}
 				continue;
 			}
@@ -146,15 +135,16 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 				// CREATED or RESTORED
 				const row = (result as { status: 'valid'; row: FileRow }).row;
 				addChild(row.parentId, id);
-				snapshot.set(id, {
-					name: row.name,
-					parentId: row.parentId,
-					trashedAt: row.trashedAt,
-				});
+				snapshot.set(id, snapFrom(row));
 				foldersToDisambiguate.add(row.parentId);
 				idsNeedingPaths.add(id);
 				continue;
 			}
+
+			// Both remaining branches require prev — this is unreachable since
+			// wasActive implies prev !== undefined, but the guard gives TS
+			// narrowing without non-null assertions.
+			if (!prev) continue;
 
 			if (wasActive && !isActive) {
 				// TRASHED or DELETED
@@ -164,7 +154,8 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 				// Children of this node become orphans at the index level.
 				// Move them to root in the index (don't mutate table — rebuild handles that).
 				const orphanedChildren = childrenOf.get(id);
-				if (orphanedChildren && orphanedChildren.length > 0) {
+				if (orphanedChildren && orphanedChildren.size > 0) {
+					// Copy required: removeChild mutates this very set.
 					for (const childId of [...orphanedChildren]) {
 						removeChild(id, childId);
 						addChild(null, childId);
@@ -181,14 +172,8 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 
 				if (result.status === 'not_found') {
 					snapshot.delete(id);
-				} else {
-					snapshot.set(id, {
-						name: result.status === 'valid' ? result.row.name : prev.name,
-						parentId:
-							result.status === 'valid' ? result.row.parentId : prev.parentId,
-						trashedAt:
-							result.status === 'valid' ? result.row.trashedAt : prev.trashedAt,
-					});
+				} else if (result.status === 'valid') {
+					snapshot.set(id, snapFrom(result.row));
 				}
 
 				displayName.delete(id);
@@ -197,13 +182,10 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 			}
 
 			// wasActive && isActive — row is still active, check what changed.
-			// wasActive was computed as `prev !== undefined && prev.trashedAt
-			// === null`, so prev is defined here; TS can't narrow through the
-			// derived boolean, hence the non-null assertions below.
 			const row = (result as { status: 'valid'; row: FileRow }).row;
 
-			const parentChanged = prev!.parentId !== row.parentId;
-			const nameChanged = prev!.name !== row.name;
+			const parentChanged = prev.parentId !== row.parentId;
+			const nameChanged = prev.name !== row.name;
 
 			if (!parentChanged && !nameChanged) {
 				// TOUCHED — only size/updatedAt changed. No index work needed.
@@ -212,9 +194,9 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 
 			if (parentChanged) {
 				// MOVED
-				removeChild(prev!.parentId, id);
+				removeChild(prev.parentId, id);
 				addChild(row.parentId, id);
-				foldersToDisambiguate.add(prev!.parentId);
+				foldersToDisambiguate.add(prev.parentId);
 				foldersToDisambiguate.add(row.parentId);
 			} else {
 				// RENAMED (same parent, different name)
@@ -222,19 +204,16 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 			}
 
 			clearPathsRecursive(id);
-			snapshot.set(id, {
-				name: row.name,
-				parentId: row.parentId,
-				trashedAt: row.trashedAt,
-			});
+			snapshot.set(id, snapFrom(row));
 			idsNeedingPaths.add(id);
 			collectDescendantIds(id, idsNeedingPaths);
 		}
 
 		// Disambiguate affected folders
 		for (const parentId of foldersToDisambiguate) {
-			const childIds = childrenOf.get(parentId) ?? [];
-			const namesChanged = disambiguateFolder(parentId, childIds);
+			const childIds = childrenOf.get(parentId);
+			if (!childIds) continue;
+			const namesChanged = disambiguateFolder(childIds);
 
 			// If any display name changed, those IDs need path recomputation
 			for (const id of namesChanged) {
@@ -255,20 +234,16 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	function addChild(parentId: FileId | null, childId: FileId): void {
-		const children = childrenOf.get(parentId) ?? [];
-		if (!children.includes(childId)) {
-			children.push(childId);
+		let children = childrenOf.get(parentId);
+		if (!children) {
+			children = new Set();
 			childrenOf.set(parentId, children);
 		}
+		children.add(childId);
 	}
 
 	function removeChild(parentId: FileId | null, childId: FileId): void {
-		const children = childrenOf.get(parentId);
-		if (!children) return;
-		const idx = children.indexOf(childId);
-		if (idx !== -1) {
-			children.splice(idx, 1);
-		}
+		childrenOf.get(parentId)?.delete(childId);
 	}
 
 	/** Remove path entries for an ID and all its descendants. */
@@ -301,10 +276,7 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 	 *
 	 * @returns IDs whose display name changed (need path recomputation).
 	 */
-	function disambiguateFolder(
-		_parentId: FileId | null,
-		childIds: FileId[],
-	): FileId[] {
+	function disambiguateFolder(childIds: Iterable<FileId>): FileId[] {
 		const changed: FileId[] = [];
 		const childRows: FileRow[] = [];
 
@@ -325,9 +297,6 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 				changed.push(fid);
 			}
 		}
-
-		// Clean up display names for IDs no longer in this folder
-		// (already handled by the caller removing from childrenOf)
 
 		return changed;
 	}
@@ -398,8 +367,11 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 		const queue: Array<{ id: FileId; parentPath: string }> = [];
 
 		// Start with root-level children
-		for (const id of childrenOf.get(null) ?? []) {
-			queue.push({ id, parentPath: '' });
+		const roots = childrenOf.get(null);
+		if (roots) {
+			for (const id of roots) {
+				queue.push({ id, parentPath: '' });
+			}
 		}
 
 		let depth = 0;
@@ -449,11 +421,8 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 		},
 		/** Get child IDs of a parent (null = root). Returns [] if none. */
 		getChildIds(parentId: FileId | null): FileId[] {
-			return childrenOf.get(parentId) ?? [];
-		},
-		/** O(1) reverse lookup: FileId → path string, or undefined if not indexed. */
-		getPathById(id: FileId): string | undefined {
-			return idToPath.get(id);
+			const children = childrenOf.get(parentId);
+			return children ? Array.from(children) : [];
 		},
 		/** Stop observing the files table. */
 		dispose: unobserve,
@@ -470,18 +439,23 @@ export type FileSystemIndex = ReturnType<typeof createFileSystemIndex>;
 /**
  * Detect circular references in parentId chains.
  * If a cycle is found, break it by setting the later-timestamped node's parentId to null.
+ *
+ * @returns Set of IDs whose parentId was mutated to null.
  */
 function fixCircularReferences(
 	filesTable: Table<FileRow>,
 	activeRows: FileRow[],
-) {
+): Set<FileId> {
 	const visited = new Set<FileId>();
 	const inStack = new Set<FileId>();
+	const mutated = new Set<FileId>();
 
 	for (const row of activeRows) {
 		if (visited.has(row.id)) continue;
-		detectCycle(row.id, filesTable, visited, inStack);
+		detectCycle(row.id, filesTable, visited, inStack, mutated);
 	}
+
+	return mutated;
 }
 
 function detectCycle(
@@ -489,6 +463,7 @@ function detectCycle(
 	filesTable: Table<FileRow>,
 	visited: Set<FileId>,
 	inStack: Set<FileId>,
+	mutated: Set<FileId>,
 ) {
 	const path: FileId[] = [];
 	let currentId: FileId | null = startId;
@@ -516,6 +491,7 @@ function detectCycle(
 
 			// Break cycle by moving latest-updated node to root
 			filesTable.update(latestId, { parentId: null });
+			mutated.add(latestId);
 			return;
 		}
 
@@ -537,13 +513,18 @@ function detectCycle(
 /**
  * Detect orphaned files (parentId references a deleted or non-existent row).
  * Move orphans to root by setting parentId to null.
+ *
+ * Mutates childrenOf to reflect the reparenting.
+ *
+ * @returns Set of IDs whose parentId was mutated to null.
  */
 function fixOrphans(
 	filesTable: Table<FileRow>,
 	activeRows: FileRow[],
-	childrenOf: Map<FileId | null, FileId[]>,
-) {
+	childrenOf: Map<FileId | null, Set<FileId>>,
+): Set<FileId> {
 	const activeIds = new Set(activeRows.map((r) => r.id));
+	const mutated = new Set<FileId>();
 
 	for (const row of activeRows) {
 		if (row.parentId === null) continue;
@@ -551,15 +532,17 @@ function fixOrphans(
 
 		// Parent doesn't exist among active rows — orphan
 		filesTable.update(row.id, { parentId: null });
+		mutated.add(row.id);
 
-		// Update childrenOf index
-		const oldChildren = childrenOf.get(row.parentId) ?? [];
-		childrenOf.set(
-			row.parentId,
-			oldChildren.filter((id) => id !== row.id),
-		);
-		const rootChildren = childrenOf.get(null) ?? [];
-		rootChildren.push(row.id);
-		childrenOf.set(null, rootChildren);
+		// Update childrenOf: remove from ghost parent bucket, add to root
+		childrenOf.get(row.parentId)?.delete(row.id);
+		let rootChildren = childrenOf.get(null);
+		if (!rootChildren) {
+			rootChildren = new Set();
+			childrenOf.set(null, rootChildren);
+		}
+		rootChildren.add(row.id);
 	}
+
+	return mutated;
 }

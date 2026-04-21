@@ -7,9 +7,12 @@
  * CLI equivalent of the browser's `onLogin → applyEncryptionKeys` pattern.
  */
 
+import type { ExtensionContext } from '@epicenter/workspace';
 import type { createSessionStore } from './auth/store.js';
 
 type SessionStore = ReturnType<typeof createSessionStore>;
+
+type UnlockContext = Pick<ExtensionContext, 'init' | 'applyEncryptionKeys'>;
 
 /**
  * Create an encryption unlock extension that loads keys from the CLI session store.
@@ -32,21 +35,13 @@ type SessionStore = ReturnType<typeof createSessionStore>;
  * ```
  */
 export function createCliUnlock(sessions: SessionStore, serverUrl: string) {
-	return ({
-		init,
-		applyEncryptionKeys,
-	}: {
-		init: Promise<void>;
-		applyEncryptionKeys: (
-			keys: [{ version: number; userKeyBase64: string }, ...{ version: number; userKeyBase64: string }[]],
-		) => void;
-	}) => ({
+	return (ctx: UnlockContext) => ({
 		exports: {},
 		init: (async () => {
-			await init;
+			await ctx.init;
 			const session = await sessions.load(serverUrl);
 			if (session?.encryptionKeys) {
-				applyEncryptionKeys(session.encryptionKeys);
+				ctx.applyEncryptionKeys(session.encryptionKeys);
 			}
 		})(),
 	});

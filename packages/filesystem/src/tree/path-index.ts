@@ -292,8 +292,9 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 	 *
 	 * Processes root-level nodes first (their parent path is known: ""),
 	 * then their children become computable, and so on. Converges in
-	 * O(maxDepth) iterations. Remaining IDs after convergence are orphans
-	 * at the index level — placed at root.
+	 * O(maxDepth) iterations. IDs that fail to resolve within that bound
+	 * (unreachable parent chains, depth > MAX_DEPTH) are left without a
+	 * path — matching the silent-drop behavior of buildPathsFromRoot.
 	 */
 	function computePathsConvergent(ids: Set<FileId>): void {
 		const pending = new Set(ids);
@@ -332,16 +333,6 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 					}
 				}
 			}
-		}
-
-		// Remaining IDs are orphans at the index level — place at root
-		for (const id of pending) {
-			const snap = snapshot.get(id);
-			if (!snap || snap.trashedAt !== null) continue;
-			const name = displayName.get(id) ?? snap.name;
-			const path = `/${name}`;
-			pathToId.set(path, id);
-			idToPath.set(id, path);
 		}
 	}
 

@@ -3,16 +3,19 @@
  *
  * This root export provides the full workspace API and shared utilities.
  *
- * - `@epicenter/workspace` - Full API (workspace creation, tables, KV, extensions)
- * - `@epicenter/workspace/extensions` - Extension plugins (persistence, sync)
+ * - `@epicenter/workspace` - Full API (documents, tables, KV, attachments)
  *
  * @example
  * ```typescript
- * import { createWorkspace, defineTable } from '@epicenter/workspace';
+ * import { defineDocument, defineTable, attachTables } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
- * const client = createWorkspace({ id: 'my-app', tables: { posts } });
+ * const notesDoc = defineDocument('notes', () => {
+ *   const ydoc = new Y.Doc({ guid: 'notes' });
+ *   const tables = attachTables(ydoc, { posts });
+ *   return { id: 'notes', ydoc, tables };
+ * });
  * ```
  *
  * @packageDocumentation
@@ -41,10 +44,10 @@ export {
 export type { InferRpcMap, RpcActionMap } from './rpc/types';
 
 // ════════════════════════════════════════════════════════════════════════════
-// LIFECYCLE PROTOCOL
+// SHARED TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { MaybePromise, RawExtension } from './workspace/lifecycle';
+export type { MaybePromise } from './shared/types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERROR TYPES
@@ -99,23 +102,6 @@ export {
 } from './workspace/attach-encrypted';
 
 // ════════════════════════════════════════════════════════════════════════════
-// WORKSPACE CREATION
-// ════════════════════════════════════════════════════════════════════════════
-
-export { createWorkspace } from './workspace/create-workspace';
-
-// ════════════════════════════════════════════════════════════════════════════
-// INTROSPECTION
-// ════════════════════════════════════════════════════════════════════════════
-
-export type {
-	ActionDescriptor,
-	SchemaDescriptor,
-	WorkspaceDescriptor,
-} from './workspace/describe-workspace';
-export { describeWorkspace } from './workspace/describe-workspace';
-
-// ════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -148,15 +134,6 @@ export type {
 	UpdateResult,
 	ValidRowResult,
 } from './document/index.js';
-export type {
-	AnyWorkspaceClient,
-	ExtensionContext,
-	SharedExtensionContext,
-	WorkspaceClient,
-	WorkspaceClientBuilder,
-	WorkspaceDefinition,
-} from './workspace/create-workspace';
-
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS
 // ════════════════════════════════════════════════════════════════════════════

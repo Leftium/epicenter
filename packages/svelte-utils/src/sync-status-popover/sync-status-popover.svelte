@@ -13,7 +13,7 @@
 	 *
 	 * Shared account + sync status popover used across all workspace apps.
 	 */
-	import type { SyncStatus } from '@epicenter/workspace/extensions/sync/websocket';
+	import type { SyncStatus } from '@epicenter/workspace';
 	import Cloud from '@lucide/svelte/icons/cloud';
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';

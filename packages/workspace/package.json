@@ -27,13 +27,9 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
-		"./extensions/persistence/indexeddb": "./src/extensions/persistence/indexeddb.ts",
-		"./extensions/sync/websocket": "./src/extensions/sync/websocket.ts",
-		"./extensions/sync/broadcast-channel": "./src/extensions/sync/broadcast-channel.ts",
 		"./shared/crypto": "./src/shared/crypto/index.ts",
 		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",
 		"./ai": "./src/ai/index.ts",
-		"./extensions/persistence/sqlite": "./src/extensions/persistence/sqlite.ts",
 		"./document/materializer/sqlite": "./src/document/materializer/sqlite/index.ts"
 	},
 	"license": "MIT",

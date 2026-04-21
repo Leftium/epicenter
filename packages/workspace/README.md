@@ -1587,7 +1587,6 @@ import {
 	KV_KEY,
 	TableKey,
 	type KvKey,
-	type TableKeyType,
 } from '@epicenter/workspace';
 ```
 

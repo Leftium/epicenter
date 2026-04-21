@@ -27,6 +27,7 @@ import {
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
+import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
 
 /**
  * Minimal Y.Doc sync attachment — connects a Y.Doc to a WebSocket sync server.
@@ -64,21 +65,7 @@ export type SyncStatus =
 	| { phase: 'connecting'; attempt: number; lastError?: SyncError }
 	| { phase: 'connected'; hasLocalChanges: boolean };
 
-/**
- * Default RPC action map when no type parameter is provided.
- * Accepts any string action with unknown input/output.
- */
-export type DefaultRpcMap = Record<string, { input: unknown; output: unknown }>;
-
-/**
- * Constraint for the TMap generic parameter on `rpc()`.
- *
- * Uses `any` (not `unknown`) for input/output because generic constraints
- * need covariant compatibility — `{ input: string }` must extend
- * `{ input: any }` but does NOT extend `{ input: unknown }`.
- */
-// biome-ignore lint/suspicious/noExplicitAny: see docstring above
-export type RpcActionMap = Record<string, { input: any; output: any }>;
+export type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
 
 /**
  * Inbound RPC dispatcher provided by the caller.

@@ -77,84 +77,10 @@ export type {
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT PRIMITIVES (plaintext Y.Doc composition)
+// DOCUMENT PRIMITIVES — attach*, defineDocument, timeline, storage keys, types
 // ════════════════════════════════════════════════════════════════════════════
 
-export {
-	attachIndexedDb,
-	type IndexedDbAttachment,
-} from './document/index.js';
-export { attachSqlite, type SqliteAttachment } from './document/index.js';
-export {
-	attachBroadcastChannel,
-	BC_ORIGIN,
-	type BroadcastChannelAttachment,
-} from './document/index.js';
-export {
-	attachRichText,
-	xmlFragmentToPlaintext,
-	type RichTextAttachment,
-} from './document/index.js';
-export {
-	attachPlainText,
-	type PlainTextAttachment,
-} from './document/index.js';
-export {
-	attachSync,
-	toWsUrl,
-	type DefaultRpcMap,
-	type RpcConfig,
-	type RpcDispatch,
-	type SyncAttachment,
-	type SyncAttachmentConfig,
-	type SyncStatus,
-} from './document/index.js';
-export { attachTable, attachTables, type LastSchema } from './document/index.js';
-export { attachKv } from './document/index.js';
-export { attachAwareness } from './document/index.js';
-export type { CombinedStandardSchema } from './document/index.js';
-
-// ════════════════════════════════════════════════════════════════════════════
-// TIMELINE
-// ════════════════════════════════════════════════════════════════════════════
-
-export type {
-	ContentType,
-	RichTextEntry,
-	SheetBinding,
-	SheetEntry,
-	TextEntry,
-	TimelineEntry,
-} from './document/index.js';
-export {
-	attachTimeline,
-	computeMidpoint,
-	generateInitialOrders,
-	parseSheetFromCsv,
-	populateFragmentFromText,
-	serializeSheetToCsv,
-	type Timeline,
-} from './document/index.js';
-
-// ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT FACTORY
-// ════════════════════════════════════════════════════════════════════════════
-
-export {
-	defineDocument,
-	type DocumentFactory,
-	type DocumentHandle,
-} from './document/index.js';
-export { docGuid } from './document/index.js';
-export { createPerRowDoc, type DocPersistence } from './document/index.js';
-export { DOCUMENTS_ORIGIN, onLocalUpdate } from './document/index.js';
-
-// ════════════════════════════════════════════════════════════════════════════
-// Y.DOC STORAGE KEYS
-// ════════════════════════════════════════════════════════════════════════════
-
-export type { KvKey, TableKey as TableKeyType } from './document/index.js';
-export { KV_KEY, TableKey } from './document/index.js';
+export * from './document/index.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SCHEMA DEFINITIONS (Pure)

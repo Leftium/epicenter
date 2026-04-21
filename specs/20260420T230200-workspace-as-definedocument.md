@@ -304,8 +304,8 @@ y-protocols registers its own `doc.on('destroy')` — cascades automatically thr
 
 This spec is being executed in two passes:
 
-- **Pass A (this session)** — Phases 1-4. Extracts `attachEncryption` / `attachTables` / `attachKv`, rewrites `defineWorkspace` as a factory-of-factories on top of `defineDocument`, and keeps `create-workspace.ts` as a thin compatibility shim that delegates to `defineWorkspace(def).open(id)` and re-wraps the bundle with the legacy surface (`.applyEncryptionKeys`, `.clearLocalData`, `.loadSnapshot`, `.withExtension`, `.withActions`). Nothing in app code changes; all seven consumer apps (fuji, honeycrisp, opensidian, zhongwen, breddit, whispering, tab-manager) keep building.
-- **Pass B (follow-up session)** — Phases 5-7. Deletes the shim, migrates every consumer to `ws.enc.applyKeys(...)`, deletes `lifecycle.ts`, runs smoke tests in fuji + honeycrisp.
+- **Pass A (this session)** — Phases 1-3 (adapted). Extracts `attachEncryption` / `attachTables` / `attachKv`. Wires `defineDocument` into `createWorkspace` internally so the workspace Y.Doc's construction/disposal flows through the same refcounted cache as content docs, with `gcTime: Infinity`. **`defineWorkspace`'s public passthrough signature is preserved** — repurposing it into a factory-of-factories would break `createWorkspace(config)` call sites that never go through `defineWorkspace` first (tests, a few app sites). That rename is deferred to Pass B. Legacy surface (`.applyEncryptionKeys`, `.clearLocalData`, `.loadSnapshot`, `.withExtension`, `.withActions`) stays on the workspace client unchanged; all seven consumer apps keep building.
+- **Pass B (follow-up session)** — Phases 4-7. Repurposes `defineWorkspace` as factory-of-factories, deletes the `createWorkspace` builder shim, migrates every consumer to `ws.enc.applyKeys(...)` / `factory.open(id)`, deletes `lifecycle.ts`, runs smoke tests in fuji + honeycrisp.
 
 ### Findings from encryption audit
 

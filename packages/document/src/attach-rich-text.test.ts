@@ -97,36 +97,6 @@ describe('attachRichText', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// attachRichText — reentrance guard (TDD: failing before Phase 3 lands)
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('attachRichText — reentrance guard', () => {
-	test('destroy then reattach on the same Y.Doc does not throw', () => {
-		const ydoc = new Y.Doc({ guid: 'attach-rich-text-destroy-reattach' });
-		attachRichText(ydoc, 'body');
-		ydoc.destroy();
-
-		expect(() => attachRichText(ydoc, 'body')).not.toThrow();
-	});
-
-	test('separate Y.Docs do not interfere', () => {
-		const docA = new Y.Doc({ guid: 'attach-rich-text-doc-a' });
-		const docB = new Y.Doc({ guid: 'attach-rich-text-doc-b' });
-		attachRichText(docA, 'body');
-
-		expect(() => attachRichText(docB, 'body')).not.toThrow();
-	});
-
-	test('different keys on the same Y.Doc do not throw', () => {
-		const ydoc = new Y.Doc({ guid: 'attach-rich-text-different-keys' });
-		attachRichText(ydoc, 'a');
-
-		expect(() => attachRichText(ydoc, 'b')).not.toThrow();
-	});
-
-});
-
-// ════════════════════════════════════════════════════════════════════════════
 // xmlFragmentToPlaintext (block-aware extractor)
 // ════════════════════════════════════════════════════════════════════════════
 

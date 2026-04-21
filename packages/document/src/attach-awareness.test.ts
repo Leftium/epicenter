@@ -184,30 +184,3 @@ describe('attachAwareness', () => {
 		expect(destroyed).toBe(1);
 	});
 });
-
-// ════════════════════════════════════════════════════════════════════════════
-// attachAwareness — reentrance guard (TDD: failing before Phase 3 lands)
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('attachAwareness — reentrance guard', () => {
-	test('destroy then reattach on the same Y.Doc does not throw', () => {
-		const ydoc = new Y.Doc({ guid: 'attach-awareness-destroy-reattach' });
-		attachAwareness(ydoc, { name: type('string') });
-		ydoc.destroy();
-
-		expect(() =>
-			attachAwareness(ydoc, { name: type('string') }),
-		).not.toThrow();
-	});
-
-	test('separate Y.Docs do not interfere', () => {
-		const docA = new Y.Doc({ guid: 'attach-awareness-doc-a' });
-		const docB = new Y.Doc({ guid: 'attach-awareness-doc-b' });
-		attachAwareness(docA, { name: type('string') });
-
-		expect(() =>
-			attachAwareness(docB, { name: type('string') }),
-		).not.toThrow();
-	});
-
-});

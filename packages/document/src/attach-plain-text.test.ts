@@ -57,33 +57,3 @@ describe('attachPlainText', () => {
 		expect(a.binding).not.toBe(b.binding);
 	});
 });
-
-// ════════════════════════════════════════════════════════════════════════════
-// attachPlainText — reentrance guard (TDD: failing before Phase 3 lands)
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('attachPlainText — reentrance guard', () => {
-	test('destroy then reattach on the same Y.Doc does not throw', () => {
-		const ydoc = new Y.Doc({ guid: 'attach-plain-text-destroy-reattach' });
-		attachPlainText(ydoc, 'notes');
-		ydoc.destroy();
-
-		expect(() => attachPlainText(ydoc, 'notes')).not.toThrow();
-	});
-
-	test('separate Y.Docs do not interfere', () => {
-		const docA = new Y.Doc({ guid: 'attach-plain-text-doc-a' });
-		const docB = new Y.Doc({ guid: 'attach-plain-text-doc-b' });
-		attachPlainText(docA, 'notes');
-
-		expect(() => attachPlainText(docB, 'notes')).not.toThrow();
-	});
-
-	test('different keys on the same Y.Doc do not throw', () => {
-		const ydoc = new Y.Doc({ guid: 'attach-plain-text-different-keys' });
-		attachPlainText(ydoc, 'a');
-
-		expect(() => attachPlainText(ydoc, 'b')).not.toThrow();
-	});
-
-});

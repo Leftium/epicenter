@@ -21,5 +21,5 @@ export function attachEncryptedKv<T extends KvDefinitions>(
 ): Kv<T> {
 	const store = createEncryptedYkvLww(ydoc, KV_KEY);
 	encryption.register(store);
-	return createKv(store, definitions) as Kv<T>;
+	return createKv(store, definitions);
 }

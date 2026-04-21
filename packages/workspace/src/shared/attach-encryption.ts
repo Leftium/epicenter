@@ -66,6 +66,14 @@ import {
 	encryptionKeysFingerprint,
 } from '../workspace/encryption-key.js';
 
+/**
+ * The coordinator treats every registered store uniformly — it only calls
+ * `activateEncryption(keyring)` and `dispose()`, neither of which depends on
+ * the store's value type. `any` is the variance-friendly alias here.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: variance
+type AnyEncryptedStore = EncryptedYKeyValueLww<any>;
+
 export type EncryptionAttachment = {
 	/**
 	 * Apply encryption keys to every registered store. Synchronous — HKDF via
@@ -88,8 +96,7 @@ export type EncryptionAttachment = {
 	 * with the cached keyring. Otherwise it is queued for the next
 	 * `applyKeys` call.
 	 */
-	register(store: // biome-ignore lint/suspicious/noExplicitAny: variance-friendly — coordinator treats stores uniformly regardless of value type
-EncryptedYKeyValueLww<any>): void;
+	register(store: AnyEncryptedStore): void;
 
 	/** Resolves when the Y.Doc is destroyed and every store has been disposed. */
 	readonly whenDisposed: Promise<void>;
@@ -105,8 +112,7 @@ EncryptedYKeyValueLww<any>): void;
  * registered store.
  */
 export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
-	const stores: // biome-ignore lint/suspicious/noExplicitAny: variance-friendly — coordinator treats stores uniformly regardless of value type
-EncryptedYKeyValueLww<any>[] = [];
+	const stores: AnyEncryptedStore[] = [];
 	const workspaceId = ydoc.guid;
 
 	/** Cache the last-applied keyring so late-registered stores can activate. */

@@ -1,6 +1,6 @@
 {
 	"name": "@epicenter/workspace",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Local-first workspace library. CRDT-backed tables, key-value stores, and sync — built on Yjs.",
 	"keywords": [
 		"local-first",
@@ -34,7 +34,10 @@
 		"./extensions/materializer/markdown": "./src/extensions/materializer/markdown/index.ts",
 		"./ai": "./src/ai/index.ts",
 		"./extensions/persistence/sqlite": "./src/extensions/persistence/sqlite.ts",
-		"./extensions/materializer/sqlite": "./src/extensions/materializer/sqlite/index.ts"
+		"./extensions/materializer/sqlite": "./src/extensions/materializer/sqlite/index.ts",
+		"./internal": "./src/document/internal.ts",
+		"./y-keyvalue": "./src/document/y-keyvalue/index.ts",
+		"./sqlite-update-log": "./src/document/sqlite-update-log.ts"
 	},
 	"license": "MIT",
 	"scripts": {

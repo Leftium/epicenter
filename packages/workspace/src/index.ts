@@ -77,6 +77,44 @@ export type {
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
+// DOCUMENT PRIMITIVES (plaintext Y.Doc composition)
+// ════════════════════════════════════════════════════════════════════════════
+
+export {
+	attachIndexedDb,
+	type IndexedDbAttachment,
+} from '@epicenter/document';
+export { attachSqlite, type SqliteAttachment } from '@epicenter/document';
+export {
+	attachBroadcastChannel,
+	BC_ORIGIN,
+	type BroadcastChannelAttachment,
+} from '@epicenter/document';
+export {
+	attachRichText,
+	xmlFragmentToPlaintext,
+	type RichTextAttachment,
+} from '@epicenter/document';
+export {
+	attachPlainText,
+	type PlainTextAttachment,
+} from '@epicenter/document';
+export {
+	attachSync,
+	toWsUrl,
+	type DefaultRpcMap,
+	type RpcConfig,
+	type RpcDispatch,
+	type SyncAttachment,
+	type SyncAttachmentConfig,
+	type SyncStatus,
+} from '@epicenter/document';
+export { attachTable, attachTables, type LastSchema } from '@epicenter/document';
+export { attachKv } from '@epicenter/document';
+export { attachAwareness } from '@epicenter/document';
+export type { CombinedStandardSchema } from '@epicenter/document';
+
+// ════════════════════════════════════════════════════════════════════════════
 // TIMELINE
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -89,10 +127,28 @@ export type {
 	TimelineEntry,
 } from '@epicenter/document';
 export {
+	attachTimeline,
 	computeMidpoint,
 	generateInitialOrders,
+	parseSheetFromCsv,
+	populateFragmentFromText,
+	serializeSheetToCsv,
 	type Timeline,
 } from '@epicenter/document';
+
+// ════════════════════════════════════════════════════════════════════════════
+// DOCUMENT FACTORY
+// ════════════════════════════════════════════════════════════════════════════
+
+export {
+	defineDocument,
+	type DocumentFactory,
+	type DocumentHandle,
+} from '@epicenter/document';
+export { docGuid } from '@epicenter/document';
+export { createPerRowDoc, type DocPersistence } from '@epicenter/document';
+export { DOCUMENTS_ORIGIN, onLocalUpdate } from '@epicenter/document';
+
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════

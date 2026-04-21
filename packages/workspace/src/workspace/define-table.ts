@@ -29,7 +29,7 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { CombinedStandardSchema } from '../shared/standard-schema.js';
+import type { CombinedStandardSchema } from '@epicenter/document';
 import { createUnionSchema } from './schema-union.js';
 import type { BaseRow, LastSchema, TableDefinition } from './types.js';
 

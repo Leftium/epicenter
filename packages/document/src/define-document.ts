@@ -60,11 +60,7 @@
  *     sync,
  *     whenReady:    Promise.all([idb.whenLoaded, sync.whenSynced]).then(() => {}),
  *     whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(() => {}),
- *     [Symbol.dispose]() {
- *       sync.destroy();   // MUST be explicit — see y-websocket note below
- *       idb.destroy();
- *       ydoc.destroy();
- *     },
+ *     [Symbol.dispose]() { ydoc.destroy(); },
  *   };
  * }
  * ```
@@ -77,12 +73,16 @@
  * teardown barrier. `whenReady` deliberately differs from Y.Doc's native
  * `whenLoaded` property — avoid the shadow collision.
  *
- * ## y-websocket teardown gotcha
+ * ## Provider teardown
  *
- * `ydoc.destroy()` fires `ydoc.on('destroy')` listeners. `IndexeddbPersistence`
- * registers one; `WebsocketProvider` does **not**. Your `[Symbol.dispose]`
- * must call `sync.destroy()` explicitly — relying on the `ydoc.destroy()`
- * cascade leaves sockets dangling.
+ * Attachments like `attachIndexedDb` and `attachSync` register
+ * `ydoc.once('destroy')` internally, so `ydoc.destroy()` in your
+ * `[Symbol.dispose]` cascades teardown to every provider. Each provider's
+ * `whenDisposed` promise resolves only after its real cleanup completes
+ * (IDB awaits `db.close()`; sync awaits the supervisor's exit and the
+ * WebSocket's `onclose`, with a 1 s fallback for stalled close handshakes).
+ * Aggregate them into your bundle's `whenDisposed` for a real teardown
+ * barrier.
  *
  * ## Cache semantics
  *

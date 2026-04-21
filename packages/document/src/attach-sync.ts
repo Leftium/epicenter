@@ -136,6 +136,8 @@ export function attachSync(
 		Promise.withResolvers<void>();
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
+	const { promise: whenSupervisorExited, resolve: resolveSupervisorExited } =
+		Promise.withResolvers<void>();
 	const backoff = createBackoff();
 
 	/** User intent: should we be connected? */
@@ -450,14 +452,26 @@ export function attachSync(
 		} catch (e) {
 			console.warn('[attachSync] waitFor rejected; starting sync anyway', e);
 		}
-		if (torn) return;
+		if (torn) {
+			resolveSupervisorExited();
+			return;
+		}
 		desired = 'online';
 		manageWindowListeners('add');
-		void runLoop();
+		try {
+			await runLoop();
+		} finally {
+			resolveSupervisorExited();
+		}
 	})();
 
 	// ── Teardown ──
 
+	// `whenDisposed` must be a real barrier: it resolves only after the
+	// supervisor loop has fully exited (which itself awaits `ws.onclose`) and
+	// any still-open socket has hit CLOSED (or a 1s safety timeout elapses).
+	// The earlier implementation resolved synchronously in `finally`, which
+	// meant callers awaiting `whenDisposed` saw a socket still in CLOSING.
 	ydoc.once('destroy', async () => {
 		torn = true;
 		try {
@@ -465,8 +479,11 @@ export function attachSync(
 			if (awareness) {
 				awareness.off('update', handleAwarenessUpdate);
 			}
+			const ws = websocket;
 			goOffline();
 			status.clear();
+			await whenSupervisorExited;
+			await waitForWsClose(ws, 1000);
 		} finally {
 			resolveDisposed();
 		}
@@ -546,6 +563,35 @@ function createLivenessMonitor(ws: WebSocket) {
 		},
 		stop,
 	};
+}
+
+/**
+ * Await a WebSocket's `close` event, with a timeout safeguard.
+ *
+ * Resolves immediately if the socket is null or already CLOSED. Otherwise
+ * attaches a one-shot `close` listener and races it against `timeoutMs` —
+ * a misbehaving server that never sends a close frame shouldn't block
+ * teardown indefinitely.
+ */
+function waitForWsClose(
+	ws: WebSocket | null,
+	timeoutMs: number,
+): Promise<void> {
+	if (!ws || ws.readyState === WebSocket.CLOSED) return Promise.resolve();
+	return new Promise<void>((resolve) => {
+		const onClose = () => {
+			clearTimeout(timer);
+			resolve();
+		};
+		ws.addEventListener('close', onClose, { once: true });
+		const timer = setTimeout(() => {
+			ws.removeEventListener('close', onClose);
+			console.warn(
+				`[attachSync] WebSocket did not fire onclose within ${timeoutMs}ms; resolving whenDisposed anyway`,
+			);
+			resolve();
+		}, timeoutMs);
+	});
 }
 
 function createBackoff() {

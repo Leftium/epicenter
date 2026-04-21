@@ -2,11 +2,8 @@
  * Whispering workspace client — a single `defineDocument` closure that owns
  * the Y.Doc construction and composes every attachment inline.
  *
- * On desktop (Tauri), the recording materializer mirrors the `recordings`
- * table into `{id}.md` files on disk. The materializer is an orthogonal
- * side-effect on top of the workspace — it starts AFTER `factory.open()`
- * returns, outside the closure, so the closure stays pure workspace
- * construction. See `./recording-materializer.ts`.
+ * On desktop (Tauri), `attachRecordingMarkdownFiles` mirrors the `recordings`
+ * table into `{id}.md` files on disk. It's a no-op in the browser.
  */
 
 import {
@@ -19,9 +16,9 @@ import {
 	attachEncryptedTables,
 	attachEncryption,
 } from '@epicenter/workspace';
-import { isTauri } from '@tauri-apps/api/core';
 import * as Y from 'yjs';
-import { startRecordingMaterializer } from './recording-materializer';
+import { PATHS } from '$lib/constants/paths';
+import { attachRecordingMarkdownFiles } from './recording-materializer';
 import { whisperingKv, whisperingTables } from './workspace';
 
 const whisperingFactory = defineDocument(
@@ -35,6 +32,11 @@ const whisperingFactory = defineDocument(
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);
 
+		const recordingsFs = attachRecordingMarkdownFiles(ydoc, tables.recordings, {
+			dir: PATHS.DB.RECORDINGS(),
+			whenReady: idb.whenLoaded,
+		});
+
 		return {
 			id,
 			ydoc,
@@ -43,10 +45,13 @@ const whisperingFactory = defineDocument(
 			encryption,
 			idb,
 			batch: (fn: () => void) => ydoc.transact(fn),
-			whenReady: idb.whenLoaded,
+			whenReady: Promise.all([idb.whenLoaded, recordingsFs.whenFlushed]).then(
+				() => {},
+			),
 			whenDisposed: Promise.all([
 				idb.whenDisposed,
 				encryption.whenDisposed,
+				recordingsFs.whenDisposed,
 			]).then(() => {}),
 			[Symbol.dispose]() {
 				ydoc.destroy();
@@ -57,10 +62,3 @@ const whisperingFactory = defineDocument(
 );
 
 export const workspace = whisperingFactory.open('whispering');
-
-if (isTauri()) {
-	void startRecordingMaterializer({
-		recordings: workspace.tables.recordings,
-		whenReady: workspace.whenReady,
-	});
-}

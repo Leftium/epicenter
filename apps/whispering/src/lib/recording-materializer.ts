@@ -1,20 +1,24 @@
 /**
- * Recording materializer — desktop-only subscription that mirrors the
- * `recordings` table into `{id}.md` files on disk.
+ * Attach a desktop-only materializer that mirrors the `recordings` table into
+ * `{id}.md` files on disk. No-op in the browser.
  *
- * Observes the recordings table and invokes Tauri Rust commands
- * (`write_markdown_files`, `delete_files_in_directory`) through a serialized
- * promise chain, so rapid changes never produce overlapping writes.
- *
- * Only import from Tauri runtimes — uses `@tauri-apps/api/core.invoke`, which
- * throws in the browser.
+ * Observes the table and invokes Tauri Rust commands (`write_markdown_files`,
+ * `delete_files_in_directory`) through a serialized promise chain so rapid
+ * changes never produce overlapping writes.
  */
 
-import type { Table } from '@epicenter/workspace';
-import { invoke } from '@tauri-apps/api/core';
+import type { MaybePromise, Table } from '@epicenter/workspace';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import yaml from 'js-yaml';
-import { PATHS } from '$lib/constants/paths';
+import type * as Y from 'yjs';
 import type { Recording } from './workspace';
+
+type RecordingMarkdownFilesAttachment = {
+	/** Resolves after the initial flush of existing rows completes. */
+	whenFlushed: Promise<void>;
+	/** Resolves after the Y.Doc is destroyed and the write queue drains. */
+	whenDisposed: Promise<void>;
+};
 
 /**
  * Serialize a recording row to a markdown file.
@@ -31,21 +35,27 @@ function toRecordingMarkdownFile(row: Recording) {
 	};
 }
 
-/**
- * Start the recording materializer. Subscribes to the table immediately (so
- * writes during the initial flush aren't missed), awaits `whenReady`, then
- * flushes existing rows to disk. Returns once the initial flush completes.
- */
-export async function startRecordingMaterializer(ctx: {
-	recordings: Table<Recording>;
-	whenReady: Promise<void>;
-}): Promise<void> {
+export function attachRecordingMarkdownFiles(
+	ydoc: Y.Doc,
+	recordings: Table<Recording>,
+	config: {
+		dir: MaybePromise<string>;
+		whenReady: Promise<void>;
+	},
+): RecordingMarkdownFilesAttachment {
+	if (!isTauri()) {
+		return {
+			whenFlushed: Promise.resolve(),
+			whenDisposed: Promise.resolve(),
+		};
+	}
+
 	// Serialized promise chain — observer batches complete sequentially so
 	// rapid changes don't produce overlapping Rust invoke calls.
 	let syncQueue = Promise.resolve();
-	const dirPromise = PATHS.DB.RECORDINGS();
+	const dirPromise = Promise.resolve(config.dir);
 
-	ctx.recordings.observe((changedIds) => {
+	const unsubscribe = recordings.observe((changedIds) => {
 		syncQueue = syncQueue
 			.then(async () => {
 				const dir = await dirPromise;
@@ -53,7 +63,7 @@ export async function startRecordingMaterializer(ctx: {
 				const toDelete: string[] = [];
 
 				for (const id of changedIds) {
-					const result = ctx.recordings.get(id);
+					const result = recordings.get(id);
 					if (result.status === 'valid') {
 						toWrite.push(toRecordingMarkdownFile(result.row));
 					} else if (result.status === 'not_found') {
@@ -76,14 +86,25 @@ export async function startRecordingMaterializer(ctx: {
 			});
 	});
 
-	await ctx.whenReady;
+	const whenFlushed = (async () => {
+		await config.whenReady;
+		syncQueue = syncQueue.then(async () => {
+			const dir = await dirPromise;
+			const files = recordings.getAllValid().map(toRecordingMarkdownFile);
+			if (files.length) {
+				await invoke('write_markdown_files', { directory: dir, files });
+			}
+		});
+		await syncQueue;
+	})();
 
-	syncQueue = syncQueue.then(async () => {
-		const dir = await dirPromise;
-		const files = ctx.recordings.getAllValid().map(toRecordingMarkdownFile);
-		if (files.length) {
-			await invoke('write_markdown_files', { directory: dir, files });
-		}
+	const { promise: whenDisposed, resolve: resolveDisposed } =
+		Promise.withResolvers<void>();
+
+	ydoc.once('destroy', () => {
+		unsubscribe();
+		void syncQueue.finally(() => resolveDisposed());
 	});
-	await syncQueue;
+
+	return { whenFlushed, whenDisposed };
 }

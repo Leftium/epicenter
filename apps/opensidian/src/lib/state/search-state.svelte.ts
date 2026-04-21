@@ -73,7 +73,7 @@ function createSearchState() {
 				const scope = scopeState.current;
 				// Add column filter for content-only mode
 				const ftsQuery = scope === 'content' ? `content:${trimmed}` : trimmed;
-				const results = await workspace.extensions.sqliteIndex.search(ftsQuery);
+				const results = await workspace.sqliteIndex.search(ftsQuery);
 
 				contentResults = results.map((r) => ({
 					id: r.id,

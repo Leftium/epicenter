@@ -107,7 +107,7 @@ function createSidebarSearchState() {
 	}
 
 	async function executeSearch(query: string, offset: number) {
-		const client = workspace.extensions.sqliteIndex.client;
+		const client = workspace.sqliteIndex.client;
 		const trimmed = query.trim();
 
 		try {

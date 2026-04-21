@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
-	import { SyncStatusPopover } from '@epicenter/svelte/sync-status-popover';
+	import { AccountPopover } from '@epicenter/svelte/account-popover';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
@@ -53,9 +53,10 @@
 		>
 			<GithubIcon class="size-4" />
 		</a>
-		<SyncStatusPopover
+		<AccountPopover
 			{auth}
-			{workspace}
+			sync={workspace.sync}
+			clearLocalData={() => workspace.idb.clearLocal()}
 			syncNoun="notes"
 			onSocialSignIn={() =>
 				auth.signInWithSocialRedirect({

@@ -10,7 +10,18 @@
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import type { AuthClient } from '../auth/create-auth.svelte.js';
 	import { AuthForm } from '../auth-form/index.js';
-	import type { SyncView } from './types.js';
+
+	/**
+	 * Sync surface the popover consumes. Intersection of what both the legacy
+	 * extension-chain client (`workspace.extensions.sync`) and a direct
+	 * `defineDocument` closure bundle (`workspace.sync`) expose, so apps can
+	 * migrate incrementally without a compat shim.
+	 */
+	type SyncView = {
+		readonly status: SyncStatus;
+		reconnect: () => void;
+		onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
+	};
 
 	/**
 	 * Shared account popover.

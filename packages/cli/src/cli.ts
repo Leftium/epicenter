@@ -1,45 +1,19 @@
 import yargs from 'yargs';
 import { createAuthCommand } from './commands/auth';
-import {
-	countCommand,
-	deleteCommand,
-	exportCommand,
-	getCommand,
-	listCommand,
-	tablesCommand,
-} from './commands/data';
-import { kvCommand } from './commands/kv';
-import { initCommand } from './commands/project';
-import { rpcCommand } from './commands/rpc';
-import { runActionCommand } from './commands/run';
-import { sizeCommand } from './commands/size';
-import { startCommand } from './commands/start';
 
 /**
  * Create the Epicenter CLI instance.
  *
- * Registers all top-level commands: table CRUD (get, list, count, delete),
- * tables, kv, export, init, run, size, rpc, start, and auth.
- *
- * @returns An object with a `run` method that parses and executes CLI commands.
+ * Post-redesign surface (see `specs/20260421T155436-cli-scripting-first-redesign.md`):
+ *   - `auth` — manage Epicenter server sessions
+ *   - `list` — tree view of runnable actions (TODO: Phase 4)
+ *   - `run`  — invoke a `defineQuery` / `defineMutation` node by dot-path (TODO: Phase 3)
  */
 export function createCLI() {
 	return {
 		run: async (argv: string[]) => {
 			const cli = yargs()
 				.scriptName('epicenter')
-				.command(startCommand)
-				.command(getCommand)
-				.command(listCommand)
-				.command(countCommand)
-				.command(deleteCommand)
-				.command(tablesCommand)
-				.command(kvCommand)
-				.command(exportCommand)
-				.command(initCommand)
-				.command(runActionCommand)
-				.command(sizeCommand)
-				.command(rpcCommand)
 				.command(createAuthCommand())
 				.demandCommand(1)
 				.strict()

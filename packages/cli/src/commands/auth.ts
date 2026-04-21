@@ -9,7 +9,7 @@
 
 import type { Argv, CommandModule } from 'yargs';
 import { createAuthApi } from '../auth/api';
-import { defineCommand } from '../util/command';
+import { createSessionStore } from '../auth/store';
 
 /**
  * Create the `auth` command group.
@@ -21,10 +21,10 @@ import { defineCommand } from '../util/command';
  * epicenter auth status
  * ```
  */
-export function createAuthCommand() {
+export function createAuthCommand(): CommandModule {
 	const sessions = createSessionStore();
 
-	return defineCommand({
+	return {
 		command: 'auth <subcommand>',
 		describe: 'Manage authentication with Epicenter servers',
 		builder: (yargs: Argv) =>
@@ -167,5 +167,5 @@ export function createAuthCommand() {
 				} as unknown as CommandModule)
 				.demandCommand(1, 'Specify a subcommand: login, logout, or status'),
 		handler: () => {},
-	});
+	};
 }

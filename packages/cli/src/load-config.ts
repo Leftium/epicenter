@@ -16,7 +16,24 @@
  */
 
 import { join, resolve } from 'node:path';
-import type { DocumentClient } from './util/command';
+import type * as Y from 'yjs';
+
+/**
+ * Transitional type — the shape this loader currently accepts.
+ *
+ * Phase 2 of `specs/20260421T155436-cli-scripting-first-redesign.md` replaces
+ * this with a proper `DocumentHandle<DocumentBundle>` check imported from
+ * `@epicenter/workspace`. Keep this inline until then.
+ */
+type DocumentClient = {
+	id: string;
+	ydoc: Y.Doc;
+	tables: Record<string, any>;
+	[Symbol.dispose]?: () => void;
+	whenReady?: Promise<void>;
+	kv?: Record<string, any>;
+	actions?: unknown;
+};
 
 const CONFIG_FILENAME = 'epicenter.config.ts';
 

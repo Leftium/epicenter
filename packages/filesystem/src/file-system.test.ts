@@ -10,14 +10,18 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createWorkspace } from '@epicenter/workspace';
+import { attachTables } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
+import * as Y from 'yjs';
 import { createFileContentDocs } from './file-content-docs.js';
 import { createYjsFileSystem, type YjsFileSystem } from './file-system.js';
 import { filesTable } from './table.js';
 
 function setup() {
-	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
+	const id = 'test';
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { files: filesTable });
+	const ws = { id, ydoc, tables };
 	const contentDocs = createFileContentDocs({
 		workspaceId: ws.id,
 		filesTable: ws.tables.files,

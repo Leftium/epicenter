@@ -11,14 +11,17 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createWorkspace } from '@epicenter/workspace';
+import { attachTables } from '@epicenter/workspace';
+import * as Y from 'yjs';
 import type { FileId } from '../ids.js';
 import { filesTable } from '../table.js';
 import { createFileTree } from './tree.js';
 
 function setup() {
-	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	return createFileTree(ws.tables.files);
+	const id = 'test';
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { files: filesTable });
+	return createFileTree(tables.files);
 }
 
 describe('createFileTree', () => {

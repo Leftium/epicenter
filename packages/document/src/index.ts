@@ -37,9 +37,42 @@ export {
 	type SyncStatus,
 } from './attach-sync.js';
 
-export { attachTable, attachTables } from './attach-table.js';
-export { attachKv } from './attach-kv.js';
-export { attachAwareness } from './attach-awareness.js';
+export {
+	attachTable,
+	attachTables,
+	type BaseRow,
+	type GetResult,
+	type InferTableRow,
+	type InvalidRowResult,
+	type LastSchema,
+	type NotFoundResult,
+	type RowResult,
+	type Table,
+	type TableDefinition,
+	type TableDefinitions,
+	type Tables,
+	type UpdateResult,
+	type ValidRowResult,
+} from './attach-table.js';
+
+export {
+	attachKv,
+	type InferKvValue,
+	type Kv,
+	type KvChange,
+	type KvDefinition,
+	type KvDefinitions,
+} from './attach-kv.js';
+
+export {
+	attachAwareness,
+	type Awareness,
+	type AwarenessDefinitions,
+	type AwarenessState,
+	type InferAwarenessValue,
+} from './attach-awareness.js';
+
+export type { CombinedStandardSchema } from './standard-schema.js';
 
 export {
 	attachTimeline,
@@ -57,41 +90,13 @@ export {
 	type TimelineEntry,
 } from './attach-timeline/index.js';
 
-export { defineDocument } from './define-document.js';
+export {
+	defineDocument,
+	type DocumentFactory,
+	type DocumentHandle,
+} from './define-document.js';
 export { docGuid } from './doc-guid.js';
-export type {
-	DocumentFactory,
-	DocumentHandle,
-} from './define-document.types.js';
 export { buildPerRowDoc, type DocPersistence } from './build-per-row-doc.js';
 export { DOCUMENTS_ORIGIN, onLocalUpdate } from './on-local-update.js';
 
 export { KV_KEY, TableKey, type KvKey } from './keys.js';
-
-export type {
-	Awareness,
-	AwarenessDefinitions,
-	AwarenessState,
-	BaseRow,
-	CombinedStandardSchema,
-	ContentHandle,
-	ContentStrategy,
-	GetResult,
-	InferAwarenessValue,
-	InferKvValue,
-	InferTableRow,
-	InvalidRowResult,
-	Kv,
-	KvChange,
-	KvDefinition,
-	KvDefinitions,
-	LastSchema,
-	NotFoundResult,
-	RowResult,
-	Table,
-	TableDefinition,
-	TableDefinitions,
-	Tables,
-	UpdateResult,
-	ValidRowResult,
-} from './types.js';

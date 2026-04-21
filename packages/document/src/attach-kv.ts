@@ -8,15 +8,85 @@
  * For encrypted storage, use `createWorkspace` from `@epicenter/workspace`.
  */
 
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type * as Y from 'yjs';
 import { KV_KEY } from './keys.js';
-import type { Kv, KvDefinitions, KvChange } from './types.js';
+import type { CombinedStandardSchema } from './standard-schema.js';
 import {
 	type KvStoreChange,
 	type ObservableKvStore,
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
 } from './y-keyvalue/index.js';
+
+// ════════════════════════════════════════════════════════════════════════════
+// KV RESULT TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Change event for KV observation */
+export type KvChange<TValue> =
+	| { type: 'set'; value: TValue }
+	| { type: 'delete' };
+
+// ════════════════════════════════════════════════════════════════════════════
+// KV DEFINITION & HELPER TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * A KV definition created by `defineKv(schema, defaultValue)`.
+ */
+export type KvDefinition<TSchema extends CombinedStandardSchema> = {
+	schema: TSchema;
+	defaultValue: StandardSchemaV1.InferOutput<TSchema>;
+};
+
+/** Extract the value type from a KvDefinition */
+export type InferKvValue<T> =
+	T extends KvDefinition<infer TSchema>
+		? StandardSchemaV1.InferOutput<TSchema>
+		: never;
+
+/** Map of KV definitions (uses `any` to allow variance in generic parameters) */
+export type KvDefinitions = Record<
+	string,
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
+	KvDefinition<any>
+>;
+
+/**
+ * Dictionary-style typed handle over a KV store.
+ */
+export type Kv<TKvDefinitions extends KvDefinitions> = {
+	get<K extends keyof TKvDefinitions & string>(
+		key: K,
+	): InferKvValue<TKvDefinitions[K]>;
+
+	set<K extends keyof TKvDefinitions & string>(
+		key: K,
+		value: InferKvValue<TKvDefinitions[K]>,
+	): void;
+
+	delete<K extends keyof TKvDefinitions & string>(key: K): void;
+
+	observe<K extends keyof TKvDefinitions & string>(
+		key: K,
+		callback: (
+			change: KvChange<InferKvValue<TKvDefinitions[K]>>,
+			origin?: unknown,
+		) => void,
+	): () => void;
+
+	observeAll(
+		callback: (
+			changes: Map<keyof TKvDefinitions & string, KvChange<unknown>>,
+			origin?: unknown,
+		) => void,
+	): () => void;
+
+	getAll(): {
+		[K in keyof TKvDefinitions & string]: InferKvValue<TKvDefinitions[K]>;
+	};
+};
 
 /**
  * Bind a record of KV definitions to a Y.Doc and return a typed Kv.

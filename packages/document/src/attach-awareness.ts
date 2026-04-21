@@ -12,11 +12,57 @@
 
 import { Awareness as YAwareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
-import type {
-	Awareness,
-	AwarenessDefinitions,
-	AwarenessState,
-} from './types.js';
+import type { CombinedStandardSchema } from './standard-schema.js';
+
+// ════════════════════════════════════════════════════════════════════════════
+// AWARENESS TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Map of awareness field definitions. Each field has its own CombinedStandardSchema schema. */
+export type AwarenessDefinitions = Record<string, CombinedStandardSchema>;
+
+/** Extract the output type of an awareness field's schema. */
+export type InferAwarenessValue<T> =
+	T extends CombinedStandardSchema<unknown, infer TOutput> ? TOutput : never;
+
+/**
+ * The composed state type — all fields optional since peers may not have set every field.
+ */
+export type AwarenessState<TDefs extends AwarenessDefinitions> = {
+	[K in keyof TDefs]?: InferAwarenessValue<TDefs[K]>;
+};
+
+/**
+ * Typed handle over a y-protocols `Awareness` instance.
+ *
+ * The y-protocols class is aliased as `YAwareness` inside this module so the
+ * exported type name `Awareness<TDefs>` doesn't shadow it. Consumers that
+ * import both should alias the y-protocols import similarly.
+ */
+export type Awareness<TDefs extends AwarenessDefinitions> = {
+	setLocal(state: AwarenessState<TDefs>): void;
+
+	setLocalField<K extends keyof TDefs & string>(
+		key: K,
+		value: InferAwarenessValue<TDefs[K]>,
+	): void;
+
+	getLocal(): AwarenessState<TDefs> | null;
+
+	getLocalField<K extends keyof TDefs & string>(
+		key: K,
+	): InferAwarenessValue<TDefs[K]> | undefined;
+
+	getAll(): Map<number, AwarenessState<TDefs>>;
+
+	peers(): Map<number, AwarenessState<TDefs>>;
+
+	observe(
+		callback: (changes: Map<number, 'added' | 'updated' | 'removed'>) => void,
+	): () => void;
+
+	raw: YAwareness;
+};
 
 /**
  * Bind a record of awareness field definitions to a Y.Doc.

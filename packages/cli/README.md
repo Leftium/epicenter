@@ -1,6 +1,12 @@
 # @epicenter/cli
 
-`@epicenter/cli` is the package behind the `epicenter` command. It loads `epicenter.config.ts`, opens one or more workspace clients, runs a command, prints the result, and gets out of the way. Monorepo apps, playgrounds, and local debugging scripts use it when they need the same workspace data model outside the browser or desktop app.
+A thin shell around your `epicenter.config.ts`. Three responsibilities:
+
+1. Manage authentication sessions with Epicenter servers (`auth`).
+2. Render a tree of the queries and mutations your config exposes (`list`).
+3. Invoke one of them by dot-path (`run`).
+
+Anything bigger than that — bulk operations, exports, ad-hoc transforms — is a user-authored `.ts` script that imports the config and runs under `bun run`. The config self-loads at import time, so there is nothing for the CLI to bootstrap.
 
 ## Installation
 
@@ -8,103 +14,110 @@ Inside this monorepo:
 
 ```json
 {
-	"dependencies": {
-		"@epicenter/cli": "workspace:*"
-	}
+    "dependencies": {
+        "@epicenter/cli": "workspace:*"
+    }
 }
 ```
 
-The package also exposes the `epicenter` binary through `src/bin.ts`.
+The package exposes the `epicenter` binary via `src/bin.ts`.
 
-## Quick usage
-
-From the terminal, the normal entry points are the built-in commands:
+## The three commands
 
 ```bash
-bun epicenter start
-bun epicenter start ./my-project --verbose
+# auth
+epicenter auth login --server https://api.epicenter.so
+epicenter auth status
+epicenter auth logout
 
-bun epicenter list posts
-bun epicenter list posts --format jsonl
+# introspect
+epicenter list                                      # every export + full tree
+epicenter list tabManager.savedTabs                 # subtree
+epicenter list tabManager.savedTabs.create          # action detail with flag help
+
+# invoke
+epicenter run tabManager.savedTabs.list
+epicenter run tabManager.savedTabs.create --title "Hi" --url "https://..."
+epicenter run tabManager.savedTabs.create @payload.json
+cat payload.json | epicenter run tabManager.savedTabs.create
 ```
 
-Inside the package, the binary is intentionally thin:
+`run` resolves the first path segment against the exports of `epicenter.config.ts`; everything after walks into the underlying bundle (the `DocumentHandle`'s prototype) until it hits a branded `defineQuery` / `defineMutation` node.
 
-```typescript
-import { hideBin } from 'yargs/helpers';
-import { createCLI } from './cli';
+## What your `epicenter.config.ts` must export
 
-await createCLI().run(hideBin(process.argv));
-```
+An **opened handle** — not a factory. A factory has no id to call on its own; a handle already has refcount `+1`, sync connected, persistence open.
 
-Command definitions follow the same pattern everywhere. `defineCommand` is just a typed identity helper, so each command stays close to plain yargs:
+```ts
+// epicenter.config.ts
+import * as Y from 'yjs';
+import {
+    defineDocument,
+    defineTable,
+    attachTables,
+    defineQuery,
+    defineMutation,
+} from '@epicenter/workspace';
+import { type } from 'arktype';
 
-```typescript
-export const listCommand = defineCommand({
-	command: 'list <table>',
-	describe: 'List all valid rows in a table',
-	builder: (y: Argv) =>
-		withWorkspaceOptions(y).positional('table', {
-			type: 'string',
-			demandOption: true,
-		}),
-	handler: async (argv: any) => {
-		await runCommand(
-			{ dir: argv.dir, workspaceId: argv.workspace },
-			(client) => resolveTable(client, argv.table).getAllValid(),
-			argv.format,
-		);
-	},
+const SavedTab = defineTable(type({ id: 'string', title: 'string', url: 'string', _v: '1' }));
+
+const tabManagerFactory = defineDocument((id) => {
+    const ydoc = new Y.Doc({ guid: id });
+    const tables = attachTables(ydoc, { savedTabs: SavedTab });
+
+    return {
+        ydoc,
+        tables,
+        savedTabs: {
+            list: defineQuery({ handler: () => tables.savedTabs.getAllValid() }),
+            create: defineMutation({
+                input: /* TypeBox schema */ undefined as any,
+                handler: (input) => tables.savedTabs.upsert(input),
+            }),
+        },
+        [Symbol.dispose]() { ydoc.destroy(); },
+    };
 });
+
+// The opened handle is what the CLI and scripts consume.
+export const tabManager = tabManagerFactory.open('epicenter.tab-manager');
 ```
 
-## API overview
+## Scripting
 
-Public exports from `src/index.ts`:
+Skip the CLI entirely for anything non-trivial:
 
-- `createCLI()` — build the yargs-based CLI runner
-- `resolveEpicenterHome()` — resolve the session/config home directory
-- `createAuthApi()` and `createSessionStore()` — auth helpers for CLI login state
-- `createCliUnlock()` — workspace extension that loads encryption keys from the CLI session store
-- `loadConfig()` — import `epicenter.config.ts` and collect named workspace exports
+```ts
+// scripts/export-tabs.ts
+import { tabManager } from '../epicenter.config';
+import { writeFile } from 'node:fs/promises';
 
-Those are the pieces meant for reuse. Most command wiring stays internal.
-
-## How commands are defined
-
-The package keeps command authoring boring on purpose.
-
-- `createCLI()` registers top-level commands like `start`, `list`, `get`, `count`, `run`, `describe`, `size`, `rpc`, and `auth`.
-- `defineCommand()` gives command modules type inference without adding runtime behavior.
-- `runCommand()` handles the common lifecycle: load config, resolve the workspace, wait for readiness, print output, dispose clients.
-- `withWorkspaceOptions()` adds the standard `--dir`, `--workspace`, and `--format` flags.
-
-That split matters because it keeps each command file short. The command author writes the operation; the package handles the boilerplate once.
-
-## TypeBox to yargs
-
-Action input schemas already exist in the workspace layer, so the CLI reuses them. `src/util/typebox-to-yargs.ts` converts a TypeBox object schema into a yargs options record, carrying over things like descriptions, defaults, required fields, and simple enum-like choices.
-
-The conversion is permissive by design. If a schema field does not map cleanly to a yargs primitive, the option still exists and the action can do stricter validation after parsing.
-
-## Relationship to other packages
-
-`@epicenter/cli` is a consumer-facing shell on top of the workspace package.
-
-```text
-epicenter command
-        │
-@epicenter/cli         yargs commands, config loading, auth/session helpers
-        │
-@epicenter/workspace   tables, actions, sync, persistence, documents
+try {
+    await tabManager.whenReady;
+    const tabs = await tabManager.tables.savedTabs.list();
+    await writeFile('./tabs.json', JSON.stringify(tabs, null, 2));
+} finally {
+    tabManager.dispose();
+}
 ```
 
-In the monorepo:
+```bash
+bun run scripts/export-tabs.ts
+```
 
-- playground projects use the binary to start workspace daemons and inspect data
-- workspace packages reuse `createCliUnlock()` when they need CLI-stored auth and encryption keys
-- the CLI does not reimplement sync or storage; it drives the APIs exposed by `@epicenter/workspace`
+## Public API
 
-## License
+```ts
+import {
+    createCLI,              // binary entry (used by bin.ts)
+    loadConfig,             // { configDir, entries: [{ name, handle }], dispose() }
+    createSessionStore,     // device-code session persistence
+    createAuthApi,          // typed Better Auth client
+    EPICENTER_PATHS,        // home, authSessions, persistence(id)
+} from '@epicenter/cli';
+```
 
-MIT.
+## Design doc
+
+See `specs/20260421T155436-cli-scripting-first-redesign.md` for the full rationale — why 11 commands collapsed to 3, the `DocumentBundle` / `DocumentHandle` contract, and the prototype-chain gotcha in `iterateActions`.

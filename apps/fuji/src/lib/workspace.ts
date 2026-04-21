@@ -29,7 +29,6 @@ import {
 	defineWorkspace,
 	generateId,
 	type InferTableRow,
-	richText,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 import Type from 'typebox';
@@ -64,11 +63,11 @@ export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
  * rather than being permanently destroyed—critical for CRDT conflict safety
  * when two devices diverge.
  *
- * The rich-text content document is a separate Y.Doc per entry, declared
- * via `.withDocument('content', { content: richText, guid: 'id' })`. The
- * framework wires IndexedDB persistence, WebSocket sync, and bumps
- * `updatedAt` via `onUpdate` on every content edit. Editor components
- * bind through `workspace.tables.entries.documents.content.get(id)`.
+ * The rich-text content document is a separate Y.Doc per entry. Apps own
+ * content-doc construction via `buildEntryContentDoc` in `entry-content-doc.ts`,
+ * which wires IndexedDB persistence and bumps `updatedAt` via
+ * `onLocalUpdate`. Editor components bind through
+ * `entryContentDocs.open(id)`.
  */
 const entriesTable = defineTable(
 	type({
@@ -106,11 +105,6 @@ const entriesTable = defineTable(
 			case 2:
 				return row;
 		}
-	})
-	.withDocument('content', {
-		content: richText,
-		guid: 'id',
-		onUpdate: () => ({ updatedAt: DateTimeString.now() }),
 	});
 
 export type Entry = InferTableRow<typeof entriesTable>;

@@ -43,7 +43,7 @@ type AnyTable = Table<any>;
  *
  * @example Basic usage with type-safe table names
  * ```typescript
- * .withWorkspaceExtension('sqlite', (ctx) =>
+ * .withExtension('sqlite', (ctx) =>
  *   createSqliteMaterializer(ctx, { db })
  *     .table('posts', { fts: ['title', 'body'] })
  *     .table('users')
@@ -60,7 +60,7 @@ type AnyTable = Table<any>;
  * // Materializer uses a second connection to the same WAL-mode file.
  * createWorkspace(definition)
  *   .withExtension('persistence', filesystemPersistence({ filePath: 'workspace.db' }))
- *   .withWorkspaceExtension('sqlite', (ctx) =>
+ *   .withExtension('sqlite', (ctx) =>
  *     createSqliteMaterializer(ctx, { db: new Database('workspace.db') })
  *       .table('posts', { fts: ['title'] })
  *   )

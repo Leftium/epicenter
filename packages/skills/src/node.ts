@@ -33,7 +33,9 @@ import {
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { skillsDefinition } from './definition.js';
 import { parseSkillMd } from './parse.js';
+import { createReferenceContentDocs } from './reference-content-doc.js';
 import { serializeSkillMd } from './serialize.js';
+import { createSkillInstructionsDocs } from './skill-instructions-doc.js';
 import type { Skill } from './tables.js';
 
 const DirInput = Type.Object({ dir: Type.String() });
@@ -66,8 +68,37 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * await ws.actions.exportToDisk({ dir: '.agents/skills' })
  * ```
  */
-export function createSkillsWorkspace() {
-	return createWorkspace(skillsDefinition).withActions((client) => ({
+export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none' } = {}) {
+	const base = createWorkspace(skillsDefinition);
+	const persistence = opts.persistence;
+	const instructionsDocs = createSkillInstructionsDocs(base.tables.skills, base.id, { persistence });
+	const referenceDocs = createReferenceContentDocs(base.tables.references, base.id, { persistence });
+
+	async function writeInstructions(id: string, text: string): Promise<void> {
+		using h = instructionsDocs.open(id);
+		await h.whenReady;
+		h.content.write(text);
+	}
+
+	async function readInstructions(id: string): Promise<string> {
+		using h = instructionsDocs.open(id);
+		await h.whenReady;
+		return h.content.read();
+	}
+
+	async function writeReference(id: string, text: string): Promise<void> {
+		using h = referenceDocs.open(id);
+		await h.whenReady;
+		h.content.write(text);
+	}
+
+	async function readReference(id: string): Promise<string> {
+		using h = referenceDocs.open(id);
+		await h.whenReady;
+		return h.content.read();
+	}
+
+	return Object.assign(base, { instructionsDocs, referenceDocs }).withActions((client) => ({
 		/**
 		 * Scan a directory of SKILL.md files and upsert them into the workspace.
 		 *
@@ -132,10 +163,7 @@ export function createSkillsWorkspace() {
 						await writeFile(join(skillPath, 'SKILL.md'), updatedMd, 'utf-8');
 					}
 
-					await client.tables.skills.documents.instructions.write(
-						skillId,
-						instructions,
-					);
+					await writeInstructions(skillId, instructions);
 
 					// Import references in parallel
 					const refsPath = join(skillPath, 'references');
@@ -162,10 +190,7 @@ export function createSkillsWorkspace() {
 									_v: 1,
 								});
 
-								await client.tables.references.documents.content.write(
-									refId,
-									refContent,
-								);
+								await writeReference(refId, refContent);
 							}),
 						);
 					}
@@ -192,8 +217,7 @@ export function createSkillsWorkspace() {
 						const skillDir = join(dir, skill.name);
 						await mkdir(skillDir, { recursive: true });
 
-						const instructions =
-							await client.tables.skills.documents.instructions.read(skill.id);
+						const instructions = await readInstructions(skill.id);
 						const skillMd = serializeSkillMd(skill, instructions);
 						await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
 
@@ -207,10 +231,7 @@ export function createSkillsWorkspace() {
 
 							await Promise.all(
 								refs.map(async (ref) => {
-									const text =
-										await client.tables.references.documents.content.read(
-											ref.id,
-										);
+									const text = await readReference(ref.id);
 									await writeFile(join(refsDir, ref.path), text, 'utf-8');
 								}),
 							);

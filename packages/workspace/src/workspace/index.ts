@@ -73,7 +73,6 @@ export {
 export { ExtensionError } from '../shared/errors.js';
 // Lifecycle protocol
 export type { MaybePromise, RawExtension } from './lifecycle.js';
-export type { DocumentContext } from './types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
@@ -90,7 +89,6 @@ export { KV_KEY, TableKey } from '@epicenter/document';
 export { defineKv } from './define-kv.js';
 export { defineTable } from './define-table.js';
 export { defineWorkspace } from './define-workspace.js';
-export { plainText, richText, timeline } from './strategies.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Workspace Creation
@@ -131,8 +129,6 @@ export type {
 	// Content handle types
 	ContentHandle,
 	ContentStrategy,
-	DocumentConfig,
-	Documents,
 	PlainTextAttachment,
 	RichTextAttachment,
 	// Extension types

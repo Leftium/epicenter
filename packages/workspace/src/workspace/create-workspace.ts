@@ -52,7 +52,6 @@
 
 import { attachAwareness, KV_KEY, TableKey } from '@epicenter/document';
 import { createKv, createTable } from '@epicenter/document/internal';
-import type { Awareness as YAwareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
@@ -60,7 +59,6 @@ import {
 	createEncryptedYkvLww,
 	type EncryptedYKeyValueLww,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { createDocuments } from './create-documents.js';
 import {
 	type EncryptionKeys,
 	encryptionKeysFingerprint,
@@ -75,11 +73,6 @@ import {
 import type {
 	Awareness,
 	AwarenessDefinitions,
-	BaseRow,
-	DocumentConfig,
-	DocumentContext,
-	DocumentExtensionRegistration,
-	Documents,
 	ExtensionContext,
 	Kv,
 	KvDefinitions,
@@ -88,7 +81,6 @@ import type {
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
-	WorkspaceTables,
 } from './types.js';
 
 /**
@@ -195,63 +187,13 @@ export function createWorkspace<
 		initPromises: Promise<unknown>[];
 	};
 
-	// Accumulated document extension registrations (in chain order).
-	// Mutable array — grows as .withDocumentExtension() is called. Document
-	// bindings reference this array by closure, so by the time user code
-	// calls .get(), all extensions are registered.
-	const documentExtensionRegistrations: DocumentExtensionRegistration[] = [];
-
-	// Create documents for tables that have .withDocument() declarations.
-	// Documents are created eagerly but reference documentExtensionRegistrations by closure,
-	// so they pick up extensions added later via .withDocumentExtension().
-	// Each per-table documents map is attached in place to `tables[tableName].documents`
-	// so consumers access them as `client.tables.files.documents.content`.
-	const documentCleanups: (() => Promise<void>)[] = [];
-
-	for (const [tableName, tableDef] of Object.entries(tableDefs)) {
-		if (Object.keys(tableDef.documents).length === 0) continue;
-
-		const tableHelper = tables[tableName];
-		if (!tableHelper) continue;
-
-		const perTableDocuments: Record<string, Documents<BaseRow>> = {};
-
-		for (const [docName, rawConfig] of Object.entries(tableDef.documents)) {
-			const { content, guid, onUpdate } = rawConfig as DocumentConfig;
-
-			const documents = createDocuments({
-				id,
-				tableName,
-				documentName: docName,
-				content,
-				guidKey: guid as keyof BaseRow & string,
-				onUpdate,
-				tableHelper,
-				ydoc,
-				documentExtensions: documentExtensionRegistrations,
-			});
-
-			perTableDocuments[docName] = documents;
-			documentCleanups.push(() => documents.closeAll());
-		}
-
-		// Attach the documents namespace directly onto the table helper.
-		// Runtime-only assignment; the type is surfaced via `WorkspaceTables`
-		// at the client assembly site below.
-		(
-			tableHelper as unknown as {
-				documents: Record<string, Documents<BaseRow>>;
-			}
-		).documents = perTableDocuments;
-	}
-
-	const typedTables = tables as unknown as WorkspaceTables<TTableDefinitions>;
+	const typedTables = tables;
 
 	/**
 	 * Build a workspace client with the given extensions and lifecycle state.
 	 *
 	 * Called once at the bottom of `createWorkspace` (empty state), then once per
-	 * `withExtension`/`withWorkspaceExtension` call (accumulated state). Each call
+	 * `withExtension` call (accumulated state). Each call
 	 * returns a fresh builder object — the client object itself is shared across all
 	 * builders (same `ydoc`, `tables`, `kv`), but the builder methods and extensions
 	 * map are new.
@@ -272,10 +214,6 @@ export function createWorkspace<
 		TExtensions
 	> {
 		const dispose = async (): Promise<void> => {
-			// Close all documents first (before extensions they depend on)
-			for (const cleanup of documentCleanups) {
-				await cleanup();
-			}
 			const errors = await disposeLifo(state.extensionCleanups);
 			ydoc.destroy();
 
@@ -379,11 +317,11 @@ export function createWorkspace<
 		/**
 		 * Apply an extension factory to the workspace Y.Doc.
 		 *
-		 * Shared by `withExtension` and `withWorkspaceExtension` — the only
-		 * difference is whether `withExtension` also registers the factory for
-		 * document Y.Docs (fired lazily at `documents.get()` time).
+		 * Each factory receives the full workspace context (tables, KV, awareness,
+		 * prior extensions). The framework accumulates dispose, clearLocalData, and
+		 * init hooks into the builder state.
 		 */
-		function applyWorkspaceExtension<
+		function applyExtension<
 			TKey extends string,
 			TExports extends Record<string, unknown>,
 		>(
@@ -465,71 +403,28 @@ export function createWorkspace<
 			}
 		}
 
-		// The builder methods use generics at the type level for progressive accumulation,
-		// but the runtime implementations use wider types for storage (registrations array).
-		// The cast at the end bridges the gap — type safety is enforced at call sites.
-
-		/**
-		 * Register an extension for both the workspace Y.Doc and every document Y.Doc.
-		 *
-		 * Extensions initialize in registration order. The factory receives a `whenReady`
-		 * promise that resolves when all previously registered extensions have finished
-		 * initializing. Extensions that await this promise create a sequential dependency;
-		 * extensions that ignore it run in parallel with earlier ones.
-		 *
-		 * The typical chain is persistence → encryption/unlock → sync. Persistence loads
-		 * local state first, so sync only exchanges the delta with the server.
-		 *
-		 * The factory only receives `SharedExtensionContext` (`ydoc`, `awareness`, `whenReady`)
-		 * since the same factory runs for both workspace and document Y.Docs. Use
-		 * `withWorkspaceExtension` if you need tables, KV, or other workspace-specific context.
-		 *
-		 * @example
-		 * ```typescript
-		 * createWorkspace(definition)
-		 *   .withExtension('persistence', filesystemPersistence({ filePath: '...' }))
-		 *   .withExtension('sync', createSyncExtension({ url: ... }))
-		 * ```
-		 */
 		const builder = Object.assign(client, {
-			withExtension<
-				TKey extends string,
-				TExports extends Record<string, unknown>,
-			>(
-				key: TKey,
-				factory: (context: {
-					ydoc: Y.Doc;
-					awareness: { raw: YAwareness };
-					init: Promise<void>;
-				}) => RawExtension<TExports>,
-			) {
-				// Registers for both workspace and document scopes.
-				// The factory only receives SharedExtensionContext (ydoc + awareness + whenReady),
-				// which is a structural subset of both ExtensionContext and DocumentContext.
-				documentExtensionRegistrations.push({
-					key,
-					factory,
-				});
-				return applyWorkspaceExtension(key, factory);
-			},
-
 			/**
-			 * Register an extension for the workspace Y.Doc only.
+			 * Register a workspace extension.
 			 *
-			 * Same initialization ordering as `withExtension`—the factory receives a `whenReady`
-			 * promise from all prior extensions. Use this when the factory needs workspace-specific
-			 * context (tables, KV, awareness, documents) that `withExtension` doesn't provide.
+			 * Extensions initialize in registration order. The factory receives a
+			 * `whenReady` promise that resolves when all previously registered
+			 * extensions have finished initializing. Extensions that await this
+			 * promise create a sequential dependency; extensions that ignore it
+			 * run in parallel with earlier ones.
+			 *
+			 * The typical chain is persistence → encryption/unlock → sync.
+			 * Persistence loads local state first, so sync only exchanges the
+			 * delta with the server.
 			 *
 			 * @example
 			 * ```typescript
 			 * createWorkspace(definition)
-			 *   .withExtension('persistence', filesystemPersistence({ filePath: '...' }))
-			 *   .withWorkspaceExtension('materializer', (ctx) =>
-			 *     createMarkdownMaterializer(ctx, { dir: './data' })
-			 *       .table('notes', { serialize: slugFilename('title') }))
+			 *   .withExtension('persistence', indexeddbPersistence)
+			 *   .withExtension('sync', createSyncExtension({ url: ... }))
 			 * ```
 			 */
-			withWorkspaceExtension<
+			withExtension<
 				TKey extends string,
 				TExports extends Record<string, unknown>,
 			>(
@@ -542,22 +437,9 @@ export function createWorkspace<
 						TAwarenessDefinitions,
 						TExtensions
 					>,
-				) => RawExtension<TExports>,
+				) => RawExtension<TExports> | void,
 			) {
-				return applyWorkspaceExtension(key, factory);
-			},
-
-			withDocumentExtension(
-				key: string,
-				factory: (
-					context: DocumentContext,
-				) => RawExtension<Record<string, unknown>> | void,
-			) {
-				documentExtensionRegistrations.push({
-					key,
-					factory,
-				});
-				return buildClient({ extensions, state, actions });
+				return applyExtension(key, factory);
 			},
 
 			withActions(

@@ -14,13 +14,10 @@ import type {
 	AwarenessDefinitions,
 	BaseRow,
 	CombinedStandardSchema,
-	ContentHandle,
-	ContentStrategy,
-	InferTableRow,
 	Kv,
 	KvDefinitions,
 	LastSchema,
-	Table,
+	Tables,
 } from '@epicenter/document';
 import type { Awareness as YAwareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
@@ -74,18 +71,10 @@ export type {
 /**
  * A table definition created by `defineTable(schema)` or `defineTable(v1, v2, ...).migrate(fn)`.
  *
- * Workspace's variant of `TableDefinition` constrains `TDocuments` to
- * `Record<string, DocumentConfig>` so `.withDocument()` accumulates
- * fully-typed document configs. Structurally compatible with the wider
- * `TableDefinition` exported from `@epicenter/document` (which uses
- * `Record<string, unknown>` since it has no notion of DocumentConfig).
- *
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
- * @typeParam TDocuments - Record of named document configs declared via `.withDocument()`
  */
 export type TableDefinition<
 	TVersions extends readonly CombinedStandardSchema<BaseRow>[],
-	TDocuments extends Record<string, DocumentConfig> = Record<string, never>,
 > = {
 	schema: CombinedStandardSchema<
 		unknown,
@@ -94,405 +83,31 @@ export type TableDefinition<
 	migrate: (
 		row: StandardSchemaV1.InferOutput<TVersions[number]>,
 	) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
-	documents: TDocuments;
-};
-
-// `ContentHandle`, `ContentStrategy`, `PlainTextAttachment`, and
-// `RichTextAttachment` are re-exported above from `@epicenter/document`.
-// They live there because they're primitive shapes — any `attach*` function
-// that returns `{ read, write }` satisfies ContentHandle, and any factory
-// producing such a value matches ContentStrategy. The `plainText` / `richText`
-// strategies in strategies.ts delegate to attachPlainText / attachRichText
-// directly.
-
-// ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT CONFIG TYPES
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * A named document declared via `.withDocument()`.
- *
- * Maps a document concept (e.g., 'content') to a GUID column and an `onUpdate`
- * callback that fires whenever the content Y.Doc changes from a local edit.
- * Remote updates arriving via sync are skipped — the tab that originated the
- * edit has already bumped metadata, and it arrives here via workspace table
- * sync. Without this filtering, every tab would independently call `onUpdate`
- * with a fresh timestamp and they would ping-pong forever without converging.
- *
- * - `guid`: The column storing the Y.Doc GUID (must be a string column)
- * - `onUpdate`: Zero-argument callback returning `Partial<Omit<TRow, 'id'>>` —
- *   fields to write to the row when the doc changes locally. Must return at
- *   least one field so the row actually changes and `table.observe` fires.
- *   Returning `{}` is a no-op that silently breaks downstream observers
- *   (materializers, indexes) depending on the table observer.
- *
- * @typeParam TGuid - Literal string type of the guid column name
- * @typeParam TRow - The row type of the table (used to type-check `onUpdate` return)
- */
-export type DocumentConfig<
-	TGuid extends string = string,
-	TRow extends BaseRow = BaseRow,
-	TBinding extends ContentHandle = ContentHandle,
-> = {
-	/** Content strategy — receives the document Y.Doc, returns the content object from `open()`. */
-	content: ContentStrategy<TBinding>;
-	guid: TGuid;
-	/**
-	 * Fires when the content Y.Doc changes from a local edit. Remote updates
-	 * arriving via sync are skipped (see {@link DocumentConfig} for the why).
-	 *
-	 * Return the fields to write to the table row — typically
-	 * `{ updatedAt: now() }`. The row write fires `table.observe`, which is
-	 * how materializers and other consumers learn that content changed.
-	 * Return at least one field; `{}` is a silent no-op.
-	 */
-	onUpdate: () => Partial<Omit<TRow, 'id'>>;
-};
-
-/**
- * Internal registration for a document extension.
- *
- * Stored in an array by `withDocumentExtension()`. Each entry contains
- * the extension key and factory function.
- *
- * At document open time, the runtime calls every registered factory.
- * Factories receive `DocumentContext` with `tableName` and `documentName`
- * and can return `void` to opt out for specific documents.
- */
-export type DocumentExtensionRegistration = {
-	key: string;
-	factory: (context: DocumentContext) => RawExtension<Record<string, unknown>> | void;
 };
 
 /**
  * Extract keys of `TRow` whose value type extends `string`.
- * Used to constrain the `guid` parameter of `.withDocument()`.
  */
 export type StringKeysOf<TRow> = {
 	[K in keyof TRow & string]: TRow[K] extends string ? K : never;
 }[keyof TRow & string];
 
 /**
- * Collect all column names already claimed as `guid` by prior `.withDocument()` calls.
- * Subsequent calls cannot reuse these columns, preventing two documents from sharing
- * a GUID (which would cause storage collisions).
+ * Workspace's `Tables<TTableDefinitions>`, now equivalent to the document-package Tables helper.
  *
- * With the `onUpdate` callback model, updatedAt columns are no longer claimed —
- * multiple documents can write to the same column via their callbacks (last write wins).
- *
- * Requires `{}` (not `Record<string, never>`) as the initial empty `TDocuments`,
- * so that `keyof {}` = `never` and the union resolves cleanly.
+ * Kept as a re-export alias so downstream code that imports `WorkspaceTables`
+ * continues to compile. Equivalent to `Tables<TTableDefinitions>`.
  */
-export type ClaimedDocumentColumns<
-	TDocuments extends Record<string, DocumentConfig>,
-> = TDocuments[keyof TDocuments]['guid'];
-
-// ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT CONTEXT — What extension factories receive at document open time
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Context passed to document extension factories registered via `withDocumentExtension()`.
- *
- * Contains the fields extension factories need to inspect and operate on an open
- * content document. Factories inspect `tableName` and `documentName` to decide
- * whether to activate. Return `void` to skip a specific document.
- *
- * Excludes `content` (the typed binding consumers use) and `dispose()` (lifecycle
- * managed by the runtime) — factories don't need either.
- *
- * ```typescript
- * .withDocumentExtension('persistence', ({ ydoc }) => { ... })
- * .withDocumentExtension('sync', ({ id, tableName, documentName, ydoc }) => { ... })
- * ```
- *
- * @typeParam TDocExtensions - Accumulated document extension exports from prior calls.
- *   Defaults to `Record<string, unknown>` so `DocumentExtensionRegistration` can
- *   store factories with the wide type.
- */
-export type DocumentContext<
-	TDocExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = {
-	/** The workspace identifier. */
-	id: string;
-	/** The table this document belongs to (e.g., 'files', 'notes'). */
-	tableName: string;
-	/** The document name declared via `.withDocument()` (e.g., 'content', 'body'). */
-	documentName: string;
-	/** The content Y.Doc this document is bound to. */
-	ydoc: Y.Doc;
-	/**
-	 * Accumulated document extension exports with lifecycle hooks.
-	 *
-	 * Each entry is optional because extension factories may return `void`
-	 * to skip specific documents. Guard access with optional chaining.
-	 */
-	extensions: {
-		[K in keyof TDocExtensions]?: TDocExtensions[K] extends Record<
-			string,
-			unknown
-		>
-			? TDocExtensions[K]
-			: Record<string, unknown>;
-	};
-	/**
-	 * Framework chain signal — resolves once all prior document extensions'
-	 * `init` promises have resolved. Use to sequence extensions that must run
-	 * after a prior one finishes initializing.
-	 */
-	init: Promise<void>;
-	/**
-	 * Raw awareness instance for this document scope.
-	 *
-	 * Uses a minimal wrapper (`{ raw }`) so document and workspace scopes
-	 * share the same structural contract for `withExtension()` factories.
-	 */
-	awareness: { raw: YAwareness };
-};
-
-
-/**
- * Sync handle for a per-row content document.
- *
- * Returned by `Documents.get(id)`. Exposes the content binding inline (so
- * `handle.read()`, `handle.write()`, `handle.binding` all work the same as
- * the raw strategy return), plus framework metadata:
- *
- * - `whenLoaded` — resolves once persistence (IndexedDB) has hydrated the doc.
- *   Await before calling `read()` / `write()` from programmatic code. Editors
- *   bind `handle.binding` and tolerate empty-until-loaded fine.
- * - `ydoc` — the underlying Y.Doc, for escape-hatch cases.
- * - `bind()` — retain the sync transport while a consumer is active. Returns
- *   a release function.
- *
- * ## Y.Doc lifetime vs. sync transport lifetime
- *
- * The Y.Doc and its IndexedDB persistence are framework-owned and stay alive
- * for the workspace's lifetime — opening a doc is cheap and we never evict.
- * Network sync is different: an open WebSocket per cached doc scales poorly.
- * So sync is gated on active consumers via `bind()`.
- *
- * When a consumer (e.g., an editor component) wants live remote updates, it
- * calls `handle.bind()` and holds the returned release function for the
- * lifetime of its interest. When every consumer has released, the framework
- * schedules the sync provider for disconnect after a grace period (cancelled
- * if someone binds again). Local state is preserved — the Y.Doc stays live,
- * IDB stays attached, and reconnect is a delta sync.
- *
- * Reads and writes through `handle.read()` / `handle.binding` / the
- * high-level `Documents.read()` / `.write()` / `.append()` do NOT auto-bind.
- * They operate on local state. If you need sync-fresh reads, bind first.
- *
- * In Svelte, the idiomatic pattern is:
- *
- * ```svelte
- * const handle = $derived(workspace.tables.files.documents.content.get(fileId));
- * $effect(() => {
- *   return handle.bind();   // auto-release on effect cleanup
- * });
- * ```
- */
-export type DocumentHandle<TBinding = ContentHandle> = TBinding & {
-	/** Resolves once persistence has hydrated the doc. Same promise across `.get()` calls for a given guid. */
-	whenLoaded: Promise<void>;
-	/** Underlying Y.Doc — escape hatch for advanced consumers (subdocs, custom observers, etc.). */
-	ydoc: Y.Doc;
-	/**
-	 * Retain the sync transport (e.g., WebSocket) while this consumer is
-	 * active. Returns a release function that decrements the internal
-	 * refcount; the transport idles after the last release plus a grace
-	 * period. The release function is idempotent — calling it twice is safe.
-	 */
-	bind(): () => void;
-};
-
-/**
- * Runtime manager for a table's associated content Y.Docs.
- *
- * Manages Y.Doc creation, provider lifecycle, and `updatedAt` auto-bumping
- * on local content edits. Most users access this via
- * `client.tables.files.documents.content`.
- *
- * ## Access
- *
- * - `get(id)` — sync, returns a cached `DocumentHandle` (constructs on miss).
- *   Await `handle.whenLoaded` before calling `handle.read()` from programmatic
- *   code; editor bindings tolerate empty-until-loaded fine.
- * - `read(id)` — high-level sugar: awaits `whenLoaded`, returns string
- * - `write(id, text)` — high-level sugar: awaits `whenLoaded`, replaces content
- * - `append(id, text)` — high-level sugar: awaits `whenLoaded`, appends text
- *
- * ## Lifecycle
- *
- * Cleanup on row deletion is caller-owned — invoke `close()` explicitly when
- * you delete a row so the cache entry is evicted. Otherwise all handles stay
- * live until `closeAll()` runs at workspace dispose.
- *
- * - `close(id)` — force-release a cached handle (does not delete persisted data)
- * - `closeAll()` — release all cached handles (workspace dispose uses this)
- *
- * @typeParam TRow - The row type of the bound table
- * @typeParam TBinding - The content binding type from the content strategy
- */
-export type Documents<
-	TRow extends BaseRow,
-	TBinding = ContentHandle,
-> = {
-	/**
-	 * Sync accessor — returns a cached `DocumentHandle` for the row.
-	 *
-	 * On first call, constructs the Y.Doc + binding synchronously and kicks off
-	 * extension init in the background (surfaced via `handle.whenLoaded`).
-	 * Subsequent calls with the same guid return the same handle.
-	 *
-	 * The handle is a superset of the strategy return type — `handle.read()`,
-	 * `handle.write()`, `handle.binding` all work identically. Extras:
-	 * `handle.whenLoaded`, `handle.ydoc`.
-	 *
-	 * @param input - A row (extracts GUID from the bound column) or a GUID string
-	 */
-	get(input: TRow | string): DocumentHandle<TBinding>;
-
-	/**
-	 * High-level read — awaits `whenLoaded`, returns the current text.
-	 *
-	 * Sugar over `await get(id).whenLoaded; get(id).read()`. Use for programmatic
-	 * read paths (filesystem, materializers, actions). Editor code should use
-	 * `get(id).binding` directly.
-	 */
-	read(input: TRow | string): Promise<string>;
-
-	/**
-	 * High-level write — awaits `whenLoaded`, then replaces the content with `text`.
-	 */
-	write(input: TRow | string, text: string): Promise<void>;
-
-	/**
-	 * High-level append — awaits `whenLoaded`, then appends `text` to the end of
-	 * the content. Uses the strategy's `appendText` method if available (Timeline),
-	 * otherwise falls back to read-concat-write.
-	 */
-	append(input: TRow | string, text: string): Promise<void>;
-
-	/**
-	 * Force-release a cached handle. Persisted data is not deleted.
-	 *
-	 * Call this when you delete the underlying row — otherwise the handle stays
-	 * cached until `closeAll()` runs at workspace dispose. Also useful for
-	 * explicit eviction (memory pressure, tests).
-	 *
-	 * @param input - A row or GUID string
-	 */
-	close(input: TRow | string): Promise<void>;
-
-	/**
-	 * Close all open documents. Called automatically by workspace dispose().
-	 */
-	closeAll(): Promise<void>;
-};
-
-/**
- * Does this table definition have a non-empty `documents` record?
- *
- * Used by `WorkspaceTables` to decide whether a table helper gets a
- * `.documents` sub-namespace — only tables with `.withDocument()` declarations
- * expose `client.tables.<name>.documents`.
- */
-export type HasDocuments<T> = T extends { documents: infer TDocuments }
-	? keyof TDocuments extends never
-		? false
-		: true
-	: false;
-
-/**
- * Extract all document names across all tables.
- *
- * Collects all document names (from `.withDocument()` calls) into a union
- * for type-safe autocomplete in `withDocumentExtension()` factory context.
- *
- * @example
- * ```typescript
- * // Given tables with .withDocument('content') and .withDocument('body'):
- * type Names = AllDocumentNames<typeof tables>;
- * // => 'content' | 'body'
- * ```
- */
-export type AllDocumentNames<TTableDefs extends TableDefinitions> = {
-	[K in keyof TTableDefs]: TTableDefs[K] extends {
-		documents: infer TDocuments;
-	}
-		? keyof TDocuments & string
-		: never;
-}[keyof TTableDefs];
-
-/** Extract the content binding type from a DocumentConfig. */
-type InferDocumentBinding<T> = T extends DocumentConfig<
-	string,
-	BaseRow,
-	infer TBinding
->
-	? TBinding
-	: unknown;
-
-/**
- * Extract the document map for a single table definition.
- *
- * Maps each doc name to a `Documents<TLatest>` where `TLatest` is the
- * table's latest row type (inferred from the `migrate` function's return type).
- */
-export type DocumentsOf<T> = T extends {
-	documents: infer TDocuments;
-	migrate: (...args: never[]) => infer TLatest;
-}
-	? TLatest extends BaseRow
-		? {
-				[K in keyof TDocuments]: Documents<
-					TLatest,
-					InferDocumentBinding<TDocuments[K]>
-				>;
-			}
-		: never
-	: never;
-
-/**
- * Workspace's richer variant of `Tables<TTableDefinitions>`.
- *
- * Each table helper is `Table<TRow>` as before, plus a `.documents`
- * sub-namespace when the table has one or more `.withDocument()` declarations.
- * Tables without documents get no `.documents` key — accessing it is a
- * compile-time error.
- *
- * @example
- * ```typescript
- * // Table with .withDocument('content', ...)
- * client.tables.files.findById(id)             // Table CRUD
- * client.tables.files.documents.content.get(row) // Document access
- *
- * // Table without .withDocument() — no .documents
- * client.tables.tags.documents // Property 'documents' does not exist
- * ```
- */
-export type WorkspaceTables<TTableDefinitions extends TableDefinitions> = {
-	[K in keyof TTableDefinitions]: HasDocuments<
-		TTableDefinitions[K]
-	> extends true
-		? Table<InferTableRow<TTableDefinitions[K]>> & {
-				documents: DocumentsOf<TTableDefinitions[K]>;
-			}
-		: Table<InferTableRow<TTableDefinitions[K]>>;
-};
+export type WorkspaceTables<TTableDefinitions extends TableDefinitions> =
+	Tables<TTableDefinitions>;
 
 /**
  * Map of table definitions keyed by table name.
- *
- * Uses the workspace's wider `TableDefinition` (with `Record<string,
- * DocumentConfig>` document constraint) so `.withDocument()` configs
- * survive through the helpers and `WorkspaceTables` mapping.
  */
 export type TableDefinitions = Record<
 	string,
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
-	TableDefinition<any, any>
+	TableDefinition<any>
 >;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -542,20 +157,14 @@ export type ExtensionContext<
 };
 
 /**
- * Context shared by workspace and document extension scopes.
+ * Minimal context shape needed by extensions that only use ydoc + awareness + init.
  *
- * Used by `withExtension()`, which registers the same factory for both scopes.
- * This type is intentionally standalone (not `Pick<ExtensionContext, ...>`) because
- * workspace awareness is strongly typed (`Awareness<TDefs>`) while document
- * awareness uses a scope-specific helper. The only guarantee both scopes share is
- * a raw y-protocols awareness instance (`{ raw: YAwareness }`).
- *
- * If a factory needs workspace-specific fields (tables, full typed awareness, etc.),
- * use `withWorkspaceExtension()`. For document-specific fields (timeline),
- * use `withDocumentExtension()`.
+ * Structural subset of `ExtensionContext`. Extensions like sync/persistence
+ * only need these three fields; typing their factory argument with this
+ * narrower shape keeps them generic across workspace definitions.
  *
  * ```typescript
- * // Sync needs ydoc + raw awareness — works for both scopes:
+ * // Sync needs ydoc + raw awareness + init:
  * .withExtension('sync', ({ ydoc, awareness, init }) => {
  *   return createProvider({ doc: ydoc, awareness: awareness.raw, waitFor: init });
  * })
@@ -787,7 +396,6 @@ export type WorkspaceClientBuilder<
 	TKvDefinitions extends KvDefinitions,
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown> = Record<string, never>,
-	TDocExtensions extends Record<string, unknown> = Record<string, never>,
 	TActions extends Actions = Record<string, never>,
 > = WorkspaceClient<
 	TId,
@@ -800,31 +408,14 @@ export type WorkspaceClientBuilder<
 	actions: TActions;
 
 	/**
-	 * Register an extension for BOTH the workspace Y.Doc AND all content document Y.Docs.
+	 * Register a workspace extension.
 	 *
-	 * The factory fires once for the workspace doc (at build time, synchronously) and
-	 * once per content doc (at `documents.get()` time).
+	 * The factory receives the full workspace context (tables, KV, awareness,
+	 * prior extensions). Extensions initialize in registration order; each
+	 * factory sees a `whenReady` promise that resolves when all previously
+	 * registered extensions have finished their own init.
 	 */
 	withExtension<TKey extends string, TExports extends Record<string, unknown>>(
-		key: TKey,
-		factory: (context: SharedExtensionContext) => RawExtension<TExports>,
-	): WorkspaceClientBuilder<
-		TId,
-		TTableDefinitions,
-		TKvDefinitions,
-		TAwarenessDefinitions,
-		TExtensions & Record<TKey, TExports>,
-		TDocExtensions & Record<TKey, TExports>,
-		TActions
-	>;
-
-	/**
-	 * Register an extension for the workspace Y.Doc ONLY.
-	 */
-	withWorkspaceExtension<
-		TKey extends string,
-		TExports extends Record<string, unknown>,
-	>(
 		key: TKey,
 		factory: (
 			context: ExtensionContext<
@@ -834,38 +425,13 @@ export type WorkspaceClientBuilder<
 				TAwarenessDefinitions,
 				TExtensions
 			>,
-		) => RawExtension<TExports>,
+		) => RawExtension<TExports> | void,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions & Record<TKey, TExports>,
-		TDocExtensions,
-		TActions
-	>;
-
-	/**
-	 * Register a document extension that fires when content Y.Docs are opened.
-	 */
-	withDocumentExtension<
-		K extends string,
-		TDocExports extends Record<string, unknown>,
-	>(
-		key: K,
-		factory: (
-			context: DocumentContext<TDocExtensions> & {
-				tableName: keyof TTableDefinitions & string;
-				documentName: AllDocumentNames<TTableDefinitions>;
-			},
-		) => RawExtension<TDocExports> | void,
-	): WorkspaceClientBuilder<
-		TId,
-		TTableDefinitions,
-		TKvDefinitions,
-		TAwarenessDefinitions,
-		TExtensions,
-		TDocExtensions & Record<K, TDocExports>,
 		TActions
 	>;
 
@@ -888,7 +454,6 @@ export type WorkspaceClientBuilder<
 		TKvDefinitions,
 		TAwarenessDefinitions,
 		TExtensions,
-		TDocExtensions,
 		TActions & TNewActions
 	>;
 };

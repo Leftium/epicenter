@@ -13,12 +13,8 @@
 import { describe, expect, test } from 'bun:test';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { type } from 'arktype';
-import * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { bytesToBase64 } from '../shared/crypto/index.js';
-import { createDocuments } from './create-documents.js';
-import { timeline } from './strategies.js';
-import { createTables } from '../__tests__/create-tables.js';
 import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
@@ -318,7 +314,7 @@ describe('createWorkspace', () => {
 						dispose: () => {},
 					};
 				})
-				.withWorkspaceExtension('second', ({ extensions }) => {
+				.withExtension('second', ({ extensions }) => {
 					receivedFirstExtension = extensions.first.value === 'first';
 					return { exports: {}, dispose: () => {} };
 				});
@@ -475,217 +471,6 @@ describe('createWorkspace', () => {
 		});
 	});
 
-	describe('document wiring', () => {
-		test('table using withDocument exposes documents in documents namespace', () => {
-			const filesTable = defineTable(
-				type({
-					id: 'string',
-					name: 'string',
-					updatedAt: 'number',
-					_v: '1',
-				}),
-			).withDocument('content', {
-				content: timeline,
-				guid: 'id',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-			});
-
-			const client = createWorkspace({
-				id: 'doc-test',
-				tables: { files: filesTable },
-			});
-
-			const content = client.tables.files.documents.content;
-			expect(content).toBeDefined();
-			expect(typeof content.get).toBe('function');
-			expect(typeof content.read).toBe('function');
-			expect(typeof content.write).toBe('function');
-			expect(typeof content.close).toBe('function');
-			expect(typeof content.closeAll).toBe('function');
-		});
-
-		test('table without withDocument does not appear in documents namespace', () => {
-			const { client } = setup();
-
-			expect('documents' in client.tables.posts).toBe(false);
-			expect('documents' in client.tables.tags).toBe(false);
-		});
-
-		test('withDocumentExtension is wired into document bindings', async () => {
-			let hookCalled = false;
-
-			const filesTable = defineTable(
-				type({
-					id: 'string',
-					name: 'string',
-					updatedAt: 'number',
-					_v: '1',
-				}),
-			).withDocument('content', {
-				content: timeline,
-				guid: 'id',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-			});
-
-			const client = createWorkspace({
-				id: 'doc-ext-test',
-				tables: { files: filesTable },
-			}).withDocumentExtension('test', () => {
-				hookCalled = true;
-				return { exports: {}, dispose: () => {} };
-			});
-
-			client.tables.files.documents.content.get('f1');
-
-			expect(hookCalled).toBe(true);
-		});
-
-		test('withExtension registers for both workspace and document Y.Docs', async () => {
-			let factoryCallCount = 0;
-
-			const filesTable = defineTable(
-				type({
-					id: 'string',
-					name: 'string',
-					updatedAt: 'number',
-					_v: '1',
-				}),
-			).withDocument('content', {
-				content: timeline,
-				guid: 'id',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-			});
-
-			// withExtension fires factory for workspace Y.Doc AND registers
-			// it as a document extension
-			const client = createWorkspace({
-				id: 'three-tier-both-test',
-				tables: { files: filesTable },
-			}).withExtension('myExt', () => {
-				factoryCallCount++;
-				return {
-					exports: { tag: 'ext' },
-					dispose: () => {},
-				};
-			});
-
-			// Factory fires once synchronously for the workspace Y.Doc
-			expect(factoryCallCount).toBe(1);
-			expect(client.extensions.myExt.tag).toBe('ext');
-
-			// Open a document — the same factory should fire again as a document extension
-			client.tables.files.documents.content.get('f1');
-
-			// Factory called twice: once for workspace, once for document
-			expect(factoryCallCount).toBe(2);
-		});
-
-		test('withWorkspaceExtension fires only for workspace Y.Doc, not documents', async () => {
-			let factoryCallCount = 0;
-
-			const filesTable = defineTable(
-				type({
-					id: 'string',
-					name: 'string',
-					updatedAt: 'number',
-					_v: '1',
-				}),
-			).withDocument('content', {
-				content: timeline,
-				guid: 'id',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-			});
-
-			const client = createWorkspace({
-				id: 'three-tier-ws-only-test',
-				tables: { files: filesTable },
-			}).withWorkspaceExtension('wsOnly', () => {
-				factoryCallCount++;
-				return {
-					exports: { tag: 'ws-only' },
-					dispose: () => {},
-				};
-			});
-
-			// Factory should fire once for workspace Y.Doc
-			expect(factoryCallCount).toBe(1);
-			expect(client.extensions.wsOnly.tag).toBe('ws-only');
-
-			// Opening a document should NOT trigger this extension
-			client.tables.files.documents.content.get('f1');
-
-			// Still exactly 1 call — withWorkspaceExtension does not register for documents
-			expect(factoryCallCount).toBe(1);
-		});
-
-		test('workspace dispose cascades to closeAll on bindings', async () => {
-			const filesTable = defineTable(
-				type({
-					id: 'string',
-					name: 'string',
-					updatedAt: 'number',
-					_v: '1',
-				}),
-			).withDocument('content', {
-				content: timeline,
-				guid: 'id',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-			});
-
-			const client = createWorkspace({
-				id: 'doc-dispose-test',
-				tables: { files: filesTable },
-			});
-
-			const doc1 = client.tables.files.documents.content.get('f1');
-
-			await client.dispose();
-
-			// After dispose, open should create a new Y.Doc (since documents were disposed)
-			// But we can't open after workspace dispose — just verify no error occurred
-			expect(doc1).toBeDefined();
-		});
-
-		test('multiple tables with document bindings each get their own namespace', () => {
-			const filesTable = defineTable(
-				type({
-					id: 'string',
-					name: 'string',
-					updatedAt: 'number',
-					_v: '1',
-				}),
-			).withDocument('content', {
-				content: timeline,
-				guid: 'id',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-			});
-
-			const notesTable = defineTable(
-				type({
-					id: 'string',
-					bodyDocId: 'string',
-					bodyUpdatedAt: 'number',
-					_v: '1',
-				}),
-			).withDocument('body', {
-				content: timeline,
-				guid: 'bodyDocId',
-				onUpdate: () => ({ bodyUpdatedAt: Date.now() }),
-			});
-
-			const client = createWorkspace({
-				id: 'multi-doc-test',
-				tables: { files: filesTable, notes: notesTable },
-			});
-
-			expect(client.tables.files.documents.content).toBeDefined();
-			expect(client.tables.notes.documents.body).toBeDefined();
-			expect(client.tables.files.documents.content).not.toBe(
-				client.tables.notes.documents.body,
-			);
-		});
-	});
-
 	// ════════════════════════════════════════════════════════════════════════════
 	// BASELINE TESTS (Phase 0) — Verify lifecycle correctness
 	// ════════════════════════════════════════════════════════════════════════════
@@ -754,47 +539,6 @@ describe('createWorkspace', () => {
 			expect(cleanupOrder).toEqual(['second', 'first']); // LIFO, skips 'third'
 		});
 
-		test('document extension dispose order is LIFO', async () => {
-			const disposeOrder: string[] = [];
-			const factory = (name: string) => () => ({
-				exports: {},
-				dispose: async () => {
-					disposeOrder.push(name);
-				},
-			});
-
-			const mockYdoc = new Y.Doc({ guid: 'doc-lifo-test' });
-			const fileSchema = type({
-				id: 'string',
-				updatedAt: 'number',
-				_v: '1',
-			});
-			const tables = createTables(mockYdoc, {
-				files: defineTable(fileSchema),
-			});
-
-			const documents = createDocuments({
-				id: 'test-lifo',
-				tableName: 'files',
-				documentName: 'content',
-				guidKey: 'id',
-				content: timeline,
-				onUpdate: () => ({ updatedAt: Date.now() }),
-				tableHelper: tables.files,
-				ydoc: mockYdoc,
-				documentExtensions: [
-					{ key: 'first', factory: factory('first') },
-					{ key: 'second', factory: factory('second') },
-					{ key: 'third', factory: factory('third') },
-				],
-			});
-
-			documents.get('doc-1');
-			await documents.close('doc-1');
-
-			expect(disposeOrder).toEqual(['third', 'second', 'first']); // LIFO
-		});
-
 		test('init rejection in workspace triggers cleanup', async () => {
 			const cleanupCalled = new Set<string>();
 			let rejectInit: (() => void) | undefined;
@@ -830,70 +574,6 @@ describe('createWorkspace', () => {
 			expect(cleanupCalled.has('second')).toBe(true);
 		});
 
-		test('document extension init rejection triggers cleanup', async () => {
-			const cleanupCalled = new Set<string>();
-			let rejectInit: (() => void) | undefined;
-			const initPromise = new Promise<void>((_, reject) => {
-				rejectInit = () => reject(new Error('provider failed'));
-			});
-
-			const mockYdoc = new Y.Doc({ guid: 'doc-reject-test' });
-			const fileSchema = type({
-				id: 'string',
-				updatedAt: 'number',
-				_v: '1',
-			});
-			const tables = createTables(mockYdoc, {
-				files: defineTable(fileSchema),
-			});
-
-			const documents = createDocuments({
-				id: 'test-whenready-rejection',
-				tableName: 'files',
-				documentName: 'content',
-				guidKey: 'id',
-				content: timeline,
-				onUpdate: () => ({ updatedAt: Date.now() }),
-				tableHelper: tables.files,
-				ydoc: mockYdoc,
-				documentExtensions: [
-					{
-						key: 'first',
-						factory: () => ({
-							exports: {},
-							dispose: async () => {
-								cleanupCalled.add('first');
-							},
-						}),
-					},
-					{
-						key: 'second',
-						factory: () => ({
-							exports: {},
-							init: initPromise,
-							dispose: async () => {
-								cleanupCalled.add('second');
-							},
-						}),
-					},
-				],
-			});
-
-			// Construct synchronously, then reject the extension init promise.
-			// `handle.whenLoaded` surfaces the composite init rejection so we can
-			// assert both extensions' dispose paths ran during cleanup.
-			const whenLoaded = documents.get('doc-1').whenLoaded;
-			rejectInit?.();
-
-			try {
-				await whenLoaded;
-			} catch {
-				// expected
-			}
-
-			expect(cleanupCalled.has('first')).toBe(true);
-			expect(cleanupCalled.has('second')).toBe(true);
-		});
 	});
 });
 

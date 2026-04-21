@@ -24,10 +24,12 @@
  * @module
  */
 
-import type { Documents, Table, Timeline } from '@epicenter/workspace';
+import type { Table } from '@epicenter/workspace';
 import type { Client, InStatement } from '@libsql/client-wasm';
 import { createClient } from '@libsql/client-wasm';
 
+import type { FileContentDocs } from '../../file-content-doc.js';
+import type { FileId } from '../../ids.js';
 import type { FileRow } from '../../table.js';
 
 const MAX_PATH_DEPTH = 50;
@@ -114,11 +116,7 @@ export type SqliteIndex = {
  */
 type SqliteIndexContext = {
 	tables: {
-		files: Table<FileRow> & {
-			documents: {
-				content: Documents<FileRow, Timeline>;
-			};
-		};
+		files: Table<FileRow>;
 	};
 };
 
@@ -140,12 +138,18 @@ type SqliteIndexContext = {
  *   .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
  * ```
  */
-export function createSqliteIndex({
-	debounceMs = 100,
-}: SqliteIndexOptions = {}) {
+export function createSqliteIndex(
+	contentDocs: FileContentDocs,
+	{ debounceMs = 100 }: SqliteIndexOptions = {},
+) {
 	return (context: SqliteIndexContext): SqliteIndex => {
 		const filesTable = context.tables.files;
-		const contentDocs = context.tables.files.documents.content;
+
+		async function readFileContent(id: FileId): Promise<string> {
+			using handle = contentDocs.open(id);
+			await handle.whenReady;
+			return handle.content.read();
+		}
 
 		const client = createClient({ url: ':memory:' });
 		let syncTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -197,7 +201,7 @@ export function createSqliteIndex({
 					continue;
 				}
 				try {
-					const text = await contentDocs.read(row.id);
+					const text = await readFileContent(row.id);
 					contentMap.set(row.id, text || null);
 				} catch {
 					contentMap.set(row.id, null);
@@ -350,7 +354,7 @@ export function createSqliteIndex({
 
 				let fileContent: string | null = null;
 				try {
-					const text = await contentDocs.read(row.id);
+					const text = await readFileContent(row.id);
 					fileContent = text || null;
 				} catch {
 					fileContent = null;

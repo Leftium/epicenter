@@ -13,7 +13,6 @@ import {
 	DateTimeString,
 	defineTable,
 	defineWorkspace,
-	richText,
 	type InferTableRow,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
@@ -68,9 +67,9 @@ export type Folder = InferTableRow<typeof foldersTable>;
  * notes and a `DateTimeString` for deleted ones. Also adds optional `wordCount`
  * (computed on each editor update, `undefined` for legacy notes).
  *
- * The Y.XmlFragment document (`body`) provides collaborative rich-text editing.
- * The document GUID matches the note `id` for 1:1 mapping. Updates to the
- * document automatically touch `updatedAt`.
+ * The Y.XmlFragment document (`body`) lives in a separate Y.Doc per note,
+ * constructed by `buildNoteBodyDoc` in `note-body-doc.ts`. Local edits bump
+ * `updatedAt` via `onLocalUpdate`.
  */
 const notesTable = defineTable(
 	type({
@@ -103,11 +102,6 @@ const notesTable = defineTable(
 			case 2:
 				return row;
 		}
-	})
-	.withDocument('body', {
-		content: richText,
-		guid: 'id',
-		onUpdate: () => ({ updatedAt: DateTimeString.now() }),
 	});
 export type Note = InferTableRow<typeof notesTable>;
 

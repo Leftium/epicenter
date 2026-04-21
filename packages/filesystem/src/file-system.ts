@@ -1,6 +1,7 @@
-import type { Documents, Table, Timeline } from '@epicenter/workspace';
+import type { Table } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
 import { FS_ERRORS } from './errors.js';
+import type { FileContentDocs } from './file-content-doc.js';
 import type { FileId } from './ids.js';
 import { posixResolve } from './path.js';
 import type { FileRow } from './table.js';
@@ -16,8 +17,8 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  * Create a POSIX-like virtual filesystem backed by Yjs CRDTs.
  *
  * Thin orchestrator that delegates metadata operations to {@link FileTree}
- * and content I/O to document handles (backed by a
- * {@link Documents}). Every method applies `cwd` via
+ * and content I/O to a per-file content-doc factory (produced by
+ * {@link createFileContentDocs}). Every method applies `cwd` via
  * {@link posixResolve}, then calls the appropriate sub-service.
  *
  * The returned object satisfies the `IFileSystem` interface from `just-bash`,
@@ -32,14 +33,45 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  * @example
  * ```typescript
  * const ws = createWorkspace({ id: 'app', tables: { files: filesTable } });
- * const fs = createYjsFileSystem(ws.tables.files, ws.tables.files.documents.content);
+ * const contentDocs = createFileContentDocs(ws.tables.files, ws.id);
+ * const fs = createYjsFileSystem(ws.tables.files, contentDocs);
  * ```
  */
 export function createYjsFileSystem(
 	filesTable: Table<FileRow>,
-	contentDocuments: Documents<FileRow, Timeline>,
+	contentDocuments: FileContentDocs,
 	cwd: string = '/',
 ) {
+	// Internal helpers bridge the new factory API to the old read/write/append
+	// semantics the filesystem methods expect. Each call opens a short-lived
+	// handle, awaits IDB load, performs the op, and disposes.
+	async function readContent(id: FileId): Promise<string> {
+		using handle = contentDocuments.open(id);
+		await handle.whenReady;
+		return handle.content.read();
+	}
+
+	async function writeContent(id: FileId, text: string): Promise<void> {
+		using handle = contentDocuments.open(id);
+		await handle.whenReady;
+		handle.content.write(text);
+	}
+
+	async function appendContent(id: FileId, text: string): Promise<void> {
+		using handle = contentDocuments.open(id);
+		await handle.whenReady;
+		// Timeline exposes appendText; fall back to read-concat-write otherwise.
+		const tl = handle.content as unknown as {
+			appendText?: (t: string) => void;
+			read(): string;
+			write(t: string): void;
+		};
+		if (typeof tl.appendText === 'function') {
+			tl.appendText(text);
+		} else {
+			tl.write(tl.read() + text);
+		}
+	}
 	const tree = createFileTree(filesTable);
 
 	return FileSystem({
@@ -153,7 +185,7 @@ export function createYjsFileSystem(
 			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
-			return await contentDocuments.read(id);
+			return await readContent(id);
 		},
 
 		async readFileBuffer(path) {
@@ -182,7 +214,7 @@ export function createYjsFileSystem(
 				id = tree.create({ name, parentId, type: 'file', size });
 			}
 
-			await contentDocuments.write(id, textData);
+			await writeContent(id, textData);
 			tree.touch(id, size);
 		},
 
@@ -196,8 +228,8 @@ export function createYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
-			await contentDocuments.append(id, text);
-			const body = await contentDocuments.read(id);
+			await appendContent(id, text);
+			const body = await readContent(id);
 			const newSize = new TextEncoder().encode(body).byteLength;
 			tree.touch(id, newSize);
 		},
@@ -288,7 +320,7 @@ export function createYjsFileSystem(
 					);
 				}
 			} else {
-				const srcText = await contentDocuments.read(srcId);
+				const srcText = await readContent(srcId);
 				await this.writeFile(resolvedDest, srcText);
 			}
 		},

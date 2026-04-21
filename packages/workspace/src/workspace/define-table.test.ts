@@ -12,7 +12,6 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { defineTable } from './define-table.js';
-import { timeline } from './strategies.js';
 
 describe('defineTable', () => {
 	describe('shorthand syntax', () => {
@@ -246,97 +245,6 @@ describe('defineTable', () => {
 		});
 	});
 
-	describe('withDocument', () => {
-		test('shorthand path adds documents to definition', () => {
-			const files = defineTable(
-				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
-			).withDocument('content', {
-				content: timeline,
-				guid: 'id',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-			});
-
-			expect(files.documents.content.guid).toBe('id');
-			expect(typeof files.documents.content.onUpdate).toBe('function');
-		});
-
-		test('builder path adds documents to definition', () => {
-			const notes = defineTable(
-				type({
-					id: 'string',
-					docId: 'string',
-					modifiedAt: 'number',
-					_v: '1',
-				}),
-			).withDocument('content', {
-				content: timeline,
-				guid: 'docId',
-				onUpdate: () => ({ modifiedAt: Date.now() }),
-			});
-
-			expect(notes.documents.content.guid).toBe('docId');
-			expect(typeof notes.documents.content.onUpdate).toBe('function');
-		});
-
-		test('multiple withDocument chains accumulate documents', () => {
-			const notes = defineTable(
-				type({
-					id: 'string',
-					bodyDocId: 'string',
-					coverDocId: 'string',
-					updatedAt: 'number',
-					_v: '1',
-				}),
-			)
-				.withDocument('body', {
-					content: timeline,
-					guid: 'bodyDocId',
-					onUpdate: () => ({ updatedAt: Date.now() }),
-				})
-				.withDocument('cover', {
-					content: timeline,
-					guid: 'coverDocId',
-					onUpdate: () => ({ updatedAt: Date.now() }),
-				});
-
-			expect(notes.documents.body.guid).toBe('bodyDocId');
-			expect(typeof notes.documents.body.onUpdate).toBe('function');
-			expect(notes.documents.cover.guid).toBe('coverDocId');
-			expect(typeof notes.documents.cover.onUpdate).toBe('function');
-		});
-
-		test('table without withDocument keeps documents map empty', () => {
-			const tags = defineTable(
-				type({ id: 'string', label: 'string', _v: '1' }),
-			);
-
-			expect(Object.keys(tags.documents)).toHaveLength(0);
-		});
-
-		test('withDocument preserves schema validation and migrate behavior', () => {
-			const files = defineTable(
-				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
-			).withDocument('content', {
-				content: timeline,
-				guid: 'id',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-			});
-
-			// Schema still works
-			const result = files.schema['~standard'].validate({
-				id: '1',
-				name: 'test.txt',
-				updatedAt: 123,
-				_v: 1,
-			});
-			expect(result).not.toHaveProperty('issues');
-
-			// Migrate still works
-			const row = { id: '1', name: 'test.txt', updatedAt: 123, _v: 1 as const };
-			expect(files.migrate(row)).toBe(row);
-		});
-	});
-
 	describe('type errors', () => {
 		test('rejects migrate input missing required fields', () => {
 			const posts = defineTable(
@@ -349,51 +257,6 @@ describe('defineTable', () => {
 				_v: 1,
 			};
 			void _invalidRow;
-		});
-
-		test('rejects withDocument mappings that reference missing guid keys', () => {
-			const files = defineTable(
-				type({ id: 'string', updatedAt: 'number', _v: '1' }),
-			);
-			files.withDocument('content', {
-				content: timeline,
-				// @ts-expect-error guid key must exist on the row schema
-				guid: 'missing',
-				onUpdate: () => ({}),
-			});
-		});
-
-		test('rejects reusing a guid column claimed by a prior withDocument', () => {
-			const notes = defineTable(
-				type({
-					id: 'string',
-					bodyDocId: 'string',
-					coverDocId: 'string',
-					updatedAt: 'number',
-					_v: '1',
-				}),
-			).withDocument('body', {
-				content: timeline,
-				guid: 'bodyDocId',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-			});
-			notes.withDocument('cover', {
-				content: timeline,
-				guid: 'bodyDocId',
-				onUpdate: () => ({ updatedAt: Date.now() }),
-			});
-		});
-
-		test('onUpdate return type is checked against the row schema', () => {
-			const files = defineTable(
-				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
-			);
-			files.withDocument('content', {
-				content: timeline,
-				guid: 'id',
-				// @ts-expect-error nonExistent is not a column on the row
-				onUpdate: () => ({ nonExistent: 123 }),
-			});
 		});
 	});
 });

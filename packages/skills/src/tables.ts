@@ -9,11 +9,7 @@
  * @module
  */
 
-import {
-	defineTable,
-	type InferTableRow,
-	plainText,
-} from '@epicenter/workspace';
+import { defineTable, type InferTableRow } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 /**
@@ -58,11 +54,7 @@ export const skillsTable = defineTable(
 		updatedAt: 'number',
 		_v: '1',
 	}),
-).withDocument('instructions', {
-	content: plainText,
-	guid: 'id',
-	onUpdate: () => ({ updatedAt: Date.now() }),
-});
+);
 
 /**
  * References table—one row per markdown file in a skill's `references/` directory.
@@ -93,11 +85,7 @@ export const referencesTable = defineTable(
 		updatedAt: 'number',
 		_v: '1',
 	}),
-).withDocument('content', {
-	content: plainText,
-	guid: 'id',
-	onUpdate: () => ({ updatedAt: Date.now() }),
-});
+);
 
 export type Skill = InferTableRow<typeof skillsTable>;
 export type Reference = InferTableRow<typeof referencesTable>;

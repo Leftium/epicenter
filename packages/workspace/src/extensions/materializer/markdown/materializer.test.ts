@@ -78,7 +78,7 @@ function setup(options?: {
 	const workspace = createWorkspace({
 		id: 'test.materializer',
 		tables: { posts: postsTable, notes: notesTable },
-	}).withWorkspaceExtension('materializer', (ctx) => {
+	}).withExtension('materializer', (ctx) => {
 		const materializer = createMarkdownMaterializer(ctx, {
 			dir: TEST_DIR,
 		});
@@ -432,7 +432,7 @@ describe('round-trip', () => {
 		const workspace1 = createWorkspace({
 			id: 'test.roundtrip.1',
 			tables: { posts: postsTable, notes: notesTable },
-		}).withWorkspaceExtension('materializer', (ctx) =>
+		}).withExtension('materializer', (ctx) =>
 			createMarkdownMaterializer(ctx, { dir: TEST_DIR }).table('posts'),
 		);
 		await workspace1.whenReady;
@@ -463,7 +463,7 @@ describe('round-trip', () => {
 		const workspace2 = createWorkspace({
 			id: 'test.roundtrip.2',
 			tables: { posts: postsTable, notes: notesTable },
-		}).withWorkspaceExtension('materializer', (ctx) =>
+		}).withExtension('materializer', (ctx) =>
 			createMarkdownMaterializer(ctx, { dir: TEST_DIR }).table('posts'),
 		);
 		await workspace2.whenReady;

@@ -284,7 +284,7 @@ describe('describeWorkspace', () => {
 		const client = createWorkspace({
 			id: 'with-extensions',
 			tables: { posts },
-		}).withWorkspaceExtension('myExt', () => ({
+		}).withExtension('myExt', () => ({
 			exports: {
 				searchStuff: defineQuery({
 					title: 'Search Stuff',

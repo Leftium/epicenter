@@ -26,6 +26,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@epicenter/document": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@libsql/client": "^0.14.0",
 		"@libsql/client-wasm": "^0.14.0",

@@ -534,6 +534,7 @@
       "name": "@epicenter/filesystem",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/document": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@libsql/client": "^0.14.0",
         "@libsql/client-wasm": "^0.14.0",
@@ -557,6 +558,7 @@
       "name": "@epicenter/skills",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/document": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "arktype": "catalog:",
         "wellcrafted": "catalog:",

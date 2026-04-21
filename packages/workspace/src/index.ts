@@ -44,7 +44,6 @@ export type { InferRpcMap, RpcActionMap } from './rpc/types';
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { MaybePromise, RawExtension } from './workspace/lifecycle';
-export type { DocumentContext } from './workspace/types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERROR TYPES
@@ -107,7 +106,6 @@ export { KV_KEY, TableKey } from '@epicenter/document';
 export { defineKv } from './workspace/define-kv';
 export { defineTable } from './workspace/define-table';
 export { defineWorkspace } from './workspace/define-workspace';
-export { plainText, richText, timeline } from './workspace/strategies';
 
 // ════════════════════════════════════════════════════════════════════════════
 // WORKSPACE CREATION
@@ -144,9 +142,6 @@ export type {
 	BaseRow,
 	ContentHandle,
 	ContentStrategy,
-	DocumentConfig,
-	DocumentHandle,
-	Documents,
 	PlainTextAttachment,
 	RichTextAttachment,
 	ExtensionContext,

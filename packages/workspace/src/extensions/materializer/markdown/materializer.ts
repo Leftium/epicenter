@@ -19,7 +19,7 @@ import { parseMarkdownFile } from './parse-markdown-file.js';
  *
  * @example
  * ```typescript
- * .withWorkspaceExtension('materializer', (ctx) =>
+ * .withExtension('materializer', (ctx) =>
  *   createMarkdownMaterializer(ctx, { dir: './data' })
  *     .table('posts', { serialize: slugFilename('title') })
  *     .kv(),

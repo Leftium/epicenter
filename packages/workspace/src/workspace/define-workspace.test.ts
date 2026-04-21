@@ -242,19 +242,19 @@ describe('defineWorkspace', () => {
 				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 		})
-			.withWorkspaceExtension('first', () => ({
+			.withExtension('first', () => ({
 				exports: {
 					value: 42,
 					helper: () => 'from-first',
 				},
 			}))
-			.withWorkspaceExtension('second', ({ extensions }) => {
+			.withExtension('second', ({ extensions }) => {
 				// extensions.first is fully typed here — no casts needed
 				const doubled = extensions.first.value * 2;
 				const msg = extensions.first.helper();
 				return { exports: { doubled, msg } };
 			})
-			.withWorkspaceExtension('third', ({ extensions }) => {
+			.withExtension('third', ({ extensions }) => {
 				// extensions.first AND extensions.second are both fully typed
 				const tripled = extensions.first.value * 3;
 				const fromSecond = extensions.second.doubled;

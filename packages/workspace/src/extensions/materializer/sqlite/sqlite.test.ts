@@ -71,7 +71,7 @@ function setup(options: SetupOptions = {}) {
 	const workspace = createWorkspace({
 		id: 'test',
 		tables: { posts: postsTable, notes: notesTable },
-	}).withWorkspaceExtension('sqlite', (ctx) => {
+	}).withExtension('sqlite', (ctx) => {
 		const materializer = createSqliteMaterializer(ctx, {
 			db,
 			debounceMs: options.debounceMs,
@@ -148,11 +148,11 @@ describe('createSqliteMaterializer', () => {
 				id: 'ready-gated',
 				tables: { posts: postsTable, notes: notesTable },
 			})
-				.withWorkspaceExtension('gate', () => ({
+				.withExtension('gate', () => ({
 					exports: {},
 					init: gate.promise,
 				}))
-				.withWorkspaceExtension('sqlite', (ctx) =>
+				.withExtension('sqlite', (ctx) =>
 					createSqliteMaterializer(ctx, { db }).table('posts').table('notes'),
 				);
 

@@ -15,6 +15,8 @@
 import { createWorkspace, defineQuery } from '@epicenter/workspace';
 import Type from 'typebox';
 import { skillsDefinition } from './definition.js';
+import { createReferenceContentDocs } from './reference-content-doc.js';
+import { createSkillInstructionsDocs } from './skill-instructions-doc.js';
 
 export { skillsDefinition } from './definition.js';
 
@@ -54,8 +56,25 @@ export { skillsDefinition } from './definition.js';
  * await ws.actions.importFromDisk({ dir: '.agents/skills' })
  * ```
  */
-export function createSkillsWorkspace() {
-	return createWorkspace(skillsDefinition).withActions((client) => ({
+export function createSkillsWorkspace(opts: { persistence?: 'indexeddb' | 'none' } = {}) {
+	const base = createWorkspace(skillsDefinition);
+	const persistence = opts.persistence;
+	const instructionsDocs = createSkillInstructionsDocs(base.tables.skills, base.id, { persistence });
+	const referenceDocs = createReferenceContentDocs(base.tables.references, base.id, { persistence });
+
+	async function readInstructions(id: string): Promise<string> {
+		using h = instructionsDocs.open(id);
+		await h.whenReady;
+		return h.content.read();
+	}
+
+	async function readReference(id: string): Promise<string> {
+		using h = referenceDocs.open(id);
+		await h.whenReady;
+		return h.content.read();
+	}
+
+	return Object.assign(base, { instructionsDocs, referenceDocs }).withActions((client) => ({
 		/**
 		 * List all skills as lightweight catalog entries.
 		 *
@@ -91,8 +110,7 @@ export function createSkillsWorkspace() {
 			handler: async ({ id }) => {
 				const skill = client.tables.skills.find((s) => s.id === id);
 				if (!skill) return null;
-				const instructions =
-					await client.tables.skills.documents.instructions.read(id);
+				const instructions = await readInstructions(id);
 				return { skill, instructions };
 			},
 		}),
@@ -114,15 +132,12 @@ export function createSkillsWorkspace() {
 			handler: async ({ id }) => {
 				const skill = client.tables.skills.find((s) => s.id === id);
 				if (!skill) return null;
-				const instructions =
-					await client.tables.skills.documents.instructions.read(id);
+				const instructions = await readInstructions(id);
 				const refs = client.tables.references.filter((r) => r.skillId === id);
 				const references = await Promise.all(
 					refs.map(async (ref) => ({
 						path: ref.path,
-						content: await client.tables.references.documents.content.read(
-							ref.id,
-						),
+						content: await readReference(ref.id),
 					})),
 				);
 				return {

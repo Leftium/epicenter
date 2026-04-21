@@ -14,6 +14,7 @@ import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
+import { createFileContentDocs } from '../file-content-doc.js';
 import { createYjsFileSystem } from '../file-system.js';
 import { filesTable } from '../table.js';
 import {
@@ -155,10 +156,10 @@ describe('XmlFragment serialization', () => {
 describe('markdown integration with YjsFileSystem', () => {
 	function setup() {
 		const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-		return createYjsFileSystem(
-			ws.tables.files,
-			ws.tables.files.documents.content,
-		);
+		const contentDocs = createFileContentDocs(ws.tables.files, ws.id, {
+			persistence: 'none',
+		});
+		return createYjsFileSystem(ws.tables.files, contentDocs);
 	}
 
 	test('write and read .md file with front matter', async () => {

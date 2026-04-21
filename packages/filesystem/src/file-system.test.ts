@@ -12,16 +12,17 @@
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
+import { createFileContentDocs } from './file-content-doc.js';
 import { createYjsFileSystem, type YjsFileSystem } from './file-system.js';
 import { filesTable } from './table.js';
 
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	const fs = createYjsFileSystem(
-		ws.tables.files,
-		ws.tables.files.documents.content,
-	);
-	return { fs, ws };
+	const contentDocs = createFileContentDocs(ws.tables.files, ws.id, {
+		persistence: 'none',
+	});
+	const fs = createYjsFileSystem(ws.tables.files, contentDocs);
+	return { fs, ws, contentDocs };
 }
 
 describe('YjsFileSystem', () => {
@@ -384,45 +385,43 @@ describe('mv preserves content (no conversion)', () => {
 
 function getTimelineLength(
 	fs: YjsFileSystem,
-	documents: { get(input: string): { length: number } },
+	contentDocs: ReturnType<typeof createFileContentDocs>,
 	path: string,
 ): number {
 	const id = fs.lookupId(path);
 	if (!id) throw new Error(`No file at ${path}`);
-	return documents.get(id).length;
+	using handle = contentDocs.open(id);
+	return handle.content.length;
 }
 
 describe('timeline content storage', () => {
 	test('text append (appendFile on text entry)', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.tables.files.documents.content;
+		const { fs, contentDocs } = setup();
 		await fs.writeFile('/log.txt', 'line1\n');
 		await fs.appendFile('/log.txt', 'line2\n');
 		expect(await fs.readFile('/log.txt')).toBe('line1\nline2\n');
 		// Append to text should not grow timeline
-		expect(getTimelineLength(fs, documents,'/log.txt')).toBe(1);
+		expect(getTimelineLength(fs, contentDocs, '/log.txt')).toBe(1);
 	});
 
 	test('Uint8Array writes are treated as text (no mode switch)', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.tables.files.documents.content;
+		const { fs, contentDocs } = setup();
 		await fs.writeFile('/file.dat', 'text v1');
-		expect(getTimelineLength(fs, documents,'/file.dat')).toBe(1);
+		expect(getTimelineLength(fs, contentDocs, '/file.dat')).toBe(1);
 
 		// Uint8Array is decoded to text — same mode, overwrites in-place
 		await fs.writeFile('/file.dat', new Uint8Array([0x48, 0x69])); // "Hi"
-		expect(getTimelineLength(fs, documents,'/file.dat')).toBe(1);
+		expect(getTimelineLength(fs, contentDocs, '/file.dat')).toBe(1);
 		expect(await fs.readFile('/file.dat')).toBe('Hi');
 	});
 
 	test('same-mode text overwrite does NOT grow timeline', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.tables.files.documents.content;
+		const { fs, contentDocs } = setup();
 		await fs.writeFile('/file.txt', 'first');
 		await fs.writeFile('/file.txt', 'second');
 		await fs.writeFile('/file.txt', 'third');
 		expect(await fs.readFile('/file.txt')).toBe('third');
-		expect(getTimelineLength(fs, documents,'/file.txt')).toBe(1);
+		expect(getTimelineLength(fs, contentDocs, '/file.txt')).toBe(1);
 	});
 
 	test('readFileBuffer returns correct bytes for text entry', async () => {
@@ -435,31 +434,31 @@ describe('timeline content storage', () => {
 
 describe('sheet file support', () => {
 	test('readFile returns CSV for sheet-mode file', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.tables.files.documents.content;
+		const { fs, contentDocs } = setup();
 		await fs.writeFile('/data.csv', 'placeholder');
 		const fileId = fs.lookupId('/data.csv');
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
-		const content = documents.get(fileId);
-		content.batch(() => {
-			content.write('Name,Age\nAlice,30\n');
-			content.asSheet();
+		using handle = contentDocs.open(fileId);
+		await handle.whenReady;
+		handle.content.batch(() => {
+			handle.content.write('Name,Age\nAlice,30\n');
+			handle.content.asSheet();
 		});
 		expect(await fs.readFile('/data.csv')).toBe('Name,Age\nAlice,30\n');
 	});
 
 	test('writeFile on sheet-mode re-parses CSV in place', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.tables.files.documents.content;
+		const { fs, contentDocs } = setup();
 		await fs.writeFile('/data.csv', 'placeholder');
 		const fileId = fs.lookupId('/data.csv');
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
-		const content = documents.get(fileId);
-		content.batch(() => {
-			content.write('A,B\n1,2\n');
-			content.asSheet();
+		using handle = contentDocs.open(fileId);
+		await handle.whenReady;
+		handle.content.batch(() => {
+			handle.content.write('A,B\n1,2\n');
+			handle.content.asSheet();
 		});
 		await fs.writeFile('/data.csv', 'X,Y\n3,4\n');
 		expect(await fs.readFile('/data.csv')).toBe('X,Y\n3,4\n');

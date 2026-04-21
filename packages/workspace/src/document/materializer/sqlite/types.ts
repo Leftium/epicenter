@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 
-import type { MaybePromise } from '../../../workspace/lifecycle.js';
+import type { MaybePromise } from '../../../shared/types.js';
 
 /**
  * Minimal database interface for the SQLite materializer.

@@ -42,10 +42,9 @@
  * `client.extensions[key].dispose`.
  */
 
-/**
- * A value that may be synchronous or wrapped in a Promise.
- */
-export type MaybePromise<T> = T | Promise<T>;
+export type { MaybePromise } from '../shared/types.js';
+
+import type { MaybePromise } from '../shared/types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION — Factory return shape

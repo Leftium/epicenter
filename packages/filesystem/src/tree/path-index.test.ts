@@ -10,7 +10,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createWorkspace } from '@epicenter/workspace';
+import { attachTables } from '@epicenter/workspace';
+import * as Y from 'yjs';
 import type { FileId } from '../ids.js';
 import { filesTable } from '../table.js';
 import { createFileSystemIndex } from './path-index.js';
@@ -18,8 +19,9 @@ import { createFileSystemIndex } from './path-index.js';
 const fid = (s: string) => s as FileId;
 
 function setup() {
-	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	return { files: ws.tables.files, ws };
+	const ydoc = new Y.Doc({ guid: 'test' });
+	const tables = attachTables(ydoc, { files: filesTable });
+	return { files: tables.files, ydoc };
 }
 
 function makeRow(
@@ -577,10 +579,10 @@ describe('createFileSystemIndex', () => {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	test('batch mutations trigger rebuild', () => {
-		const { files, ws } = setup();
+		const { files, ydoc } = setup();
 		const index = createFileSystemIndex(files);
 
-		ws.batch(() => {
+		ydoc.transact(() => {
 			files.set(makeRow('d1', 'folder', null, 'folder'));
 			files.set(makeRow('f1', 'inside.txt', 'd1'));
 			files.set(makeRow('f2', 'root.txt'));

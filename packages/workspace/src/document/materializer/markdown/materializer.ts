@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Kv, Table, TableDefinitions } from '../../index.js';
-import type { MaybePromise } from '../../../workspace/lifecycle.js';
+import type { MaybePromise } from '../../../shared/types.js';
 import type { SerializeResult } from './markdown.js';
 import { toMarkdown } from './markdown.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';

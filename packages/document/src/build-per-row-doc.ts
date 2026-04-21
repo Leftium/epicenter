@@ -17,12 +17,41 @@
  *     });
  *     return { ...base, content: attachTimeline(base.ydoc) };
  *   });
+ *
+ * Persistence is caller-owned via the `attach` callback. Any function
+ * returning `{ whenLoaded, whenDisposed }` works — `attachIndexedDb` and
+ * `attachSqlite` both structurally satisfy `DocPersistence`:
+ *
+ *   attach: (ydoc) => attachIndexedDb(ydoc)                         // browser
+ *   attach: (ydoc) => attachSqlite(ydoc, { filePath })              // desktop
+ *   // omit for in-memory (tests, Node stubs) — falls back to NO_PERSISTENCE
  */
 
 import * as Y from 'yjs';
 import { docGuid } from './doc-guid.js';
-import { NO_PERSISTENCE, type DocPersistence } from './doc-persistence.js';
 import { onLocalUpdate } from './on-local-update.js';
+
+/**
+ * Consumer contract for `attach` callbacks. Both fields are required — every
+ * real persistence attachment signals initial-load readiness and final
+ * teardown, and requiring them here catches missing providers at the
+ * callback's definition site instead of at runtime. Attachments without async
+ * teardown can set `whenDisposed: Promise.resolve()`.
+ *
+ * This is a *consumer contract*, not a produced attachment — there is no
+ * `attachPersistence()` function. Real producers (`attachIndexedDb`,
+ * `attachSqlite`) return richer types that structurally satisfy this shape.
+ */
+export type DocPersistence = {
+	whenLoaded: Promise<void>;
+	whenDisposed: Promise<void>;
+};
+
+/** No-op fallback when no `attach` callback is provided (pure in-memory). */
+const NO_PERSISTENCE: DocPersistence = {
+	whenLoaded: Promise.resolve(),
+	whenDisposed: Promise.resolve(),
+};
 
 export type PerRowDocBase = {
 	ydoc: Y.Doc;

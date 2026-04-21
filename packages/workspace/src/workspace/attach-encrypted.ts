@@ -13,9 +13,9 @@
  * the encryption coordinator, and returns the typed helper. The caller never
  * handles the store directly.
  *
- * Plaintext counterparts (`attachTable`, `attachTables`, `attachKv`) live in
- * `@epicenter/document`. Do not mix plaintext and encrypted wrappers on the
- * same slot name — see `attach-encryption.ts` for why.
+ * Plaintext counterparts (`attachTable`, `attachTables`, `attachKv`) ship
+ * alongside these in `@epicenter/workspace`. Do not mix plaintext and
+ * encrypted wrappers on the same slot name — see `attach-encryption.ts` for why.
  *
  * @module
  */

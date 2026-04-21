@@ -4,8 +4,8 @@ import { Ok, trySync } from 'wellcrafted/result';
 /**
  * Arktype-aware JSON Schema conversion for Standard Schemas.
  *
- * The shared `CombinedStandardSchema` type lives in `@epicenter/document` —
- * import it from there when you need the constraint.
+ * The shared `CombinedStandardSchema` type is re-exported from
+ * `@epicenter/workspace` — import it from there when you need the constraint.
  *
  * @see https://standardschema.dev
  * @see https://github.com/standard-schema/standard-schema

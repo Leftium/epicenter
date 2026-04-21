@@ -40,7 +40,7 @@
  *   lifecycle across whatever stores get registered.
  * - It does not validate that every encryption-capable slot on the Y.Doc
  *   got registered. The caller owns the composition — if you pair a
- *   plaintext `attachTable` from `@epicenter/document` with an
+ *   plaintext `attachTable` with an
  *   `attachEncryptedTable` targeting the *same slot name*, Yjs hands both
  *   calls the same underlying `Y.Array` and you get a silent
  *   plaintext-over-ciphertext race. The verb (`attachEncryptedTable` vs

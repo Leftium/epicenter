@@ -6,8 +6,8 @@
  * so all Y type creation happens inside the transaction (user preference,
  * no functional difference but simpler mental model).
  *
- * Plaintext *extraction* lives in `@epicenter/document` as
- * `xmlFragmentToPlaintext` — import it directly from there.
+ * Plaintext *extraction* is exposed as `xmlFragmentToPlaintext` from
+ * `@epicenter/workspace` — import it from there.
  *
  * @module
  */

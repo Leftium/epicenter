@@ -138,7 +138,7 @@
  * @example
  * ```typescript
  * import * as Y from 'yjs';
- * import { YKeyValue } from '@epicenter/document/y-keyvalue';
+ * import { YKeyValue } from '@epicenter/workspace/y-keyvalue';
  *
  * const doc = new Y.Doc();
  * const yarray = doc.getArray<{ key: string; val: { name: string; age: number } }>('users');

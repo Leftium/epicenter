@@ -5,13 +5,13 @@
  * and wraps it with a typed `Table`. Provides CRUD operations with
  * schema validation and migration on read.
  *
- * For encrypted storage and full workspace lifecycle (extensions, KV,
- * awareness, documents), use `createWorkspace` from `@epicenter/workspace`.
+ * For encrypted storage, use `attachEncryptedTable` / `attachEncryptedKv`
+ * from `@epicenter/workspace`.
  *
  * @example
  * ```typescript
  * import * as Y from 'yjs';
- * import { defineTable, attachTable } from '@epicenter/document';
+ * import { defineTable, attachTable } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));

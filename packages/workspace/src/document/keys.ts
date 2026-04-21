@@ -10,7 +10,7 @@
  *
  * @example
  * ```typescript
- * import { KV_KEY, TableKey } from '@epicenter/document';
+ * import { KV_KEY, TableKey } from '@epicenter/workspace';
  *
  * const kvArray = ydoc.getArray(KV_KEY);                 // 'kv'
  * const postsArray = ydoc.getArray(TableKey('posts'));    // 'table:posts'

@@ -159,7 +159,7 @@ Separate but adjacent question the user raised. Investigation:
 
 **Implication**: `createWorkspace` is used by extensions and by tests, not by apps. Its extension builder pattern (`.withExtension`, `.withActions`) has no production consumers in app code. Removing it would also remove the entire `extensions/` directory as a separate concept — apps already compose those behaviors inline.
 
-**Recommendation**: keep `createWorkspace` untouched in the merge. Removing it is a **separate, larger** refactor (the extensions directory, filesystem tests, benchmarks all need migration). Scope this merge narrowly to the package boundary; evaluate `createWorkspace` removal in a follow-up spec once we see the merged package's surface.
+**Recommendation**: keep `createWorkspace` untouched in the merge. Removing it is a **separate, larger** refactor (the extensions directory, filesystem tests, benchmarks all need migration). Scope this merge narrowly to the package boundary; `createWorkspace` removal is scoped in the follow-up spec `20260421T170000-collapse-document-and-workspace-primitives.md`, which sequences after this merge lands.
 
 ### `@epicenter/document`'s own dependencies
 
@@ -378,7 +378,7 @@ For each consumer package, in dependency order (sibling packages first, apps las
 
 4. **`createWorkspace` removal**
    - Orthogonal to this spec. Zero apps call it, but extensions + filesystem tests do.
-   - **Recommendation**: evaluate in a separate spec after the merge lands.
+   - **Resolved**: scoped in `specs/20260421T170000-collapse-document-and-workspace-primitives.md`, which sequences after this merge lands. That spec migrates the 10 remaining consumers (CLI + playgrounds + tests + bench) to direct `defineDocument` composition and deletes `createWorkspace` plus the extensions scaffolding.
 
 5. **Rename `document/` subdir to something else after merge?**
    - Options: (a) `src/document/`, (b) `src/primitives/`, (c) `src/core/`, (d) flatten into existing dirs.
@@ -463,6 +463,7 @@ For each consumer package, in dependency order (sibling packages first, apps las
 
 ### Related specs / history
 
+- `specs/20260421T170000-collapse-document-and-workspace-primitives.md` — **the sequenced follow-up**: deletes `createWorkspace` + extensions chain, adds `DocumentBundle` type. Runs after this merge lands.
 - `specs/20260421T140000-encryption-primitive-refactor.md` — the shipped predecessor work that created the current encrypted-variant API surface. This merge does not change that API; it only collapses where it lives.
 - `specs/20260420T230100-collapse-document-framework.md` — earlier exploration around document/workspace boundaries (context for current state).
 - Commit `65221f1b0 refactor(document): remove reentrance guards from attach primitives` — relevant to why the plaintext-vs-encrypted warning matters: with no runtime guards, the verb is the only defense.

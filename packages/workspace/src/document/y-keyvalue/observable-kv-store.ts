@@ -1,8 +1,8 @@
 /**
  * # ObservableKvStore
  *
- * The shared contract between `YKeyValueLww` (in `@epicenter/document`) and
- * the encrypted wrapper in `@epicenter/workspace`. Consumers like
+ * The shared contract between `YKeyValueLww` and the encrypted wrapper —
+ * both live in `@epicenter/workspace`. Consumers like
  * `createTable` / `createKv` depend on this interface — not on any specific
  * store implementation — so the same helper logic runs over plaintext and
  * encrypted stores alike.

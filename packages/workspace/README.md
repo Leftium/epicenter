@@ -126,19 +126,19 @@ That example uses the current public API end to end:
 
 ## Prefix vocabulary
 
-Every exported function in this package (and its sibling `@epicenter/document`) falls into one of three verbs. The prefix tells you what the function *does to state*:
+Every exported function in this package falls into one of three verbs. The prefix tells you what the function *does to state*:
 
 | Verb | Side effect | Input | Output | Examples |
 |---|---|---|---|---|
-| `define*` | **None** — pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineMutation`, `defineQuery` |
-| `attach*` | **Mutates a Y.Doc** — binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle (non-idempotent — hold the reference) | `attachEncryption`, `attachEncryptedTable`, `attachEncryptedTables`, `attachEncryptedKv` |
-| `create*` | **Instantiates a runtime** — may allocate a `Y.Doc` or wrap an existing store | Config or an existing store | A usable instance | `createWorkspace`, `createUnionSchema` |
+| `define*` | **None** — pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineDocument`, `defineMutation`, `defineQuery` |
+| `attach*` | **Mutates a Y.Doc** — binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle (non-idempotent — hold the reference) | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachSync`, `attachEncryption`, `attachEncryptedTable`, `attachEncryptedTables`, `attachEncryptedKv` |
+| `create*` | **Instantiates a runtime** — may allocate a `Y.Doc` or wrap an existing store | Config or an existing store | A usable instance | `createWorkspace`, `createPerRowDoc`, `createUnionSchema` |
 
 ### Plaintext vs encrypted
 
-This package ships the **encrypted** variants (`attachEncryptedTable`, `attachEncryptedTables`, `attachEncryptedKv`) — they register their backing stores with an `EncryptionAttachment` coordinator so keys applied via `encryption.applyKeys(...)` flow to every registered store atomically.
+Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted (`attachEncryptedTable`, `attachEncryptedTables`, `attachEncryptedKv`) additionally registers its backing store with an `EncryptionAttachment` coordinator so keys applied via `encryption.applyKeys(...)` flow to every registered store atomically.
 
-The plaintext counterparts (`attachTable`, `attachTables`, `attachKv`) live in `@epicenter/document`. The layer split is deliberate: `workspace` assumes encryption is the norm and makes plaintext require a cross-package import (loud, intentional). Don't mix plaintext and encrypted wrappers on the same slot name — Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`attachEncryptedTable` vs `attachTable`) is the primary defense; review call sites accordingly.
+Don't mix plaintext and encrypted wrappers on the same slot name — Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`attachEncryptedTable` vs `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
 
 ## Core Philosophy
 
@@ -370,7 +370,7 @@ Workspace-scoped sync (the top-level `.withExtension('sync', …)` on the worksp
 
 ### When to skip `.withDocument` and build your own opener
 
-Framework-managed documents are the right fit when the doc has **multiple consumers** (editor + filesystem + actions + materializer) that need to share a single Y.Doc instance per guid. One of Epicenter's apps — Fuji — uses the opposite pattern: per-entry content docs with **component-owned lifecycle**, constructed via `attach*` primitives from `@epicenter/document`. See `apps/fuji/src/lib/entry-content-doc.ts` for the reference shape: `new Y.Doc` + `attachRichText` + `attachIndexedDb` + `attachSync` + explicit `dispose()` on unmount. That pattern is better when there's only one consumer and you want disposal to coincide with component unmount.
+Framework-managed documents are the right fit when the doc has **multiple consumers** (editor + filesystem + actions + materializer) that need to share a single Y.Doc instance per guid. One of Epicenter's apps — Fuji — uses the opposite pattern: per-entry content docs with **component-owned lifecycle**, constructed via `attach*` primitives from `@epicenter/workspace`. See `apps/fuji/src/lib/entry-content-doc.ts` for the reference shape: `new Y.Doc` + `attachRichText` + `attachIndexedDb` + `attachSync` + explicit `dispose()` on unmount. That pattern is better when there's only one consumer and you want disposal to coincide with component unmount.
 
 ## Column Types
 

@@ -1,4 +1,4 @@
-# Document Primitive (`@epicenter/document`)
+# Primitive API (`@epicenter/workspace`)
 
 ## When to Read This
 
@@ -16,7 +16,7 @@ import {
   attachRichText,
   attachSync,
   onLocalUpdate,
-} from '@epicenter/document';
+} from '@epicenter/workspace';
 import * as Y from 'yjs';
 
 function buildMyDoc(id: string) {
@@ -120,7 +120,7 @@ import {
   docGuid,
   onLocalUpdate,
   toWsUrl,
-} from '@epicenter/document';
+} from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { auth, workspace } from '$lib/client';
 

@@ -61,36 +61,54 @@
 	] as const;
 
 	const workspaceCode = `import { createSqliteIndex, createYjsFileSystem, filesTable } from '@epicenter/filesystem';
-import { createWorkspace } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
+import { attachIndexedDb, attachTables, defineDocument } from '@epicenter/workspace';
+import * as Y from 'yjs';
 
-export const workspace = createWorkspace({
-  id: 'opensidian',
-  tables: { files: filesTable },
-})
-  .withExtension('persistence', indexeddbPersistence)
-  .withExtension('sqliteIndex', createSqliteIndex());
+export const workspaceDoc = defineDocument('opensidian', () => {
+  const ydoc = new Y.Doc({ guid: 'opensidian' });
+  const tables = attachTables(ydoc, { files: filesTable });
+  const idb = attachIndexedDb(ydoc);
+  const sqliteIndex = createSqliteIndex(tables.files);
 
+  return {
+    id: 'opensidian',
+    ydoc,
+    tables,
+    whenReady: idb.whenLoaded,
+    [Symbol.dispose]() {
+      sqliteIndex.dispose();
+      idb[Symbol.dispose]();
+    },
+  };
+});
+
+export const workspace = workspaceDoc.open();
 export const fs = createYjsFileSystem(workspace.tables.files, fileContentDocs);`;
 
 	const codeAnnotations = [
 		{
-			id: 'create-workspace',
-			line: 'createWorkspace({ id, tables })',
+			id: 'define-document',
+			line: "defineDocument('opensidian', () => { ... })",
 			explanation:
-				'Declares the workspace schema and instantiates it in one step—a unique ID, typed tables, and a live client. Each table becomes a Y.Map of rows inside a shared Y.Doc. Returns a builder; chain .withExtension() to add persistence, sync, or other capabilities.',
+				'Declares the document factory—the function runs once per open() call and returns a DocumentBundle: an id, a Y.Doc, attached tables, and lifecycle hooks. Cached by guid so the same open() yields the same bundle.',
+		},
+		{
+			id: 'attach-tables',
+			line: 'attachTables(ydoc, { files: filesTable })',
+			explanation:
+				'Binds the typed table schemas to the shared Y.Doc. Each table becomes a Y.Map of rows with a typed, reactive surface.',
 		},
 		{
 			id: 'persistence',
-			line: ".withExtension('persistence', indexeddbPersistence)",
+			line: 'attachIndexedDb(ydoc)',
 			explanation:
 				"Attaches IndexedDB persistence\u2014every Y.Doc update is written to the browser's local storage automatically.",
 		},
 		{
 			id: 'sqlite-index',
-			line: ".withExtension('sqliteIndex', createSqliteIndex())",
+			line: 'createSqliteIndex(tables.files)',
 			explanation:
-				'Spins up a WASM SQLite database that mirrors the Yjs table into SQL rows for fast tree queries.',
+				'Spins up a WASM SQLite database that mirrors the Yjs files table into SQL rows for fast tree queries.',
 		},
 		{
 			id: 'filesystem',

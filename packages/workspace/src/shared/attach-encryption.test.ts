@@ -1,22 +1,21 @@
 /**
- * attachEncryption tests — fingerprint dedup, key application, key rotation,
- * re-encryption of plaintext, disposal cascade.
+ * attachEncryption tests — registration, fingerprint dedup, key application,
+ * key rotation, re-encryption of plaintext, late-register auto-activation,
+ * disposal cascade, reentrance guard.
  *
  * These tests exercise the attachment directly (without a workspace client)
- * to pin its contract independently of the workspace builder.
+ * to pin its contract independently of the workspace builder. Stores are
+ * constructed with `createEncryptedYkvLww` and registered via
+ * `encryption.register(store)` — the same pathway used by
+ * `attachEncryptedTable` / `attachEncryptedKv`.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { randomBytes } from '@noble/ciphers/utils.js';
-import { type } from 'arktype';
 import * as Y from 'yjs';
-import { bytesToBase64 } from './crypto/index.js';
 import { attachEncryption } from './attach-encryption.js';
+import { bytesToBase64 } from './crypto/index.js';
 import { createEncryptedYkvLww } from './y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { attachKv } from '../workspace/attach-kv.js';
-import { attachTables } from '../workspace/attach-tables.js';
-import { defineKv } from '../workspace/define-kv.js';
-import { defineTable } from '../workspace/define-table.js';
 import type { EncryptionKeys } from '../workspace/encryption-key.js';
 
 function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
@@ -25,14 +24,16 @@ function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
 
 function setup() {
 	const ydoc = new Y.Doc({ guid: 'enc-test', gc: false });
+	const enc = attachEncryption(ydoc);
 	const storeA = createEncryptedYkvLww<{ title: string }>(ydoc, 'a');
 	const storeB = createEncryptedYkvLww<{ title: string }>(ydoc, 'b');
-	const enc = attachEncryption(ydoc, { stores: [storeA, storeB] as any });
+	enc.register(storeA);
+	enc.register(storeB);
 	return { ydoc, storeA, storeB, enc };
 }
 
 describe('attachEncryption', () => {
-	test('applyKeys enables encrypted writes on every attached store', () => {
+	test('applyKeys enables encrypted writes on every registered store', () => {
 		const { storeA, storeB, enc } = setup();
 		enc.applyKeys(toEncryptionKeys(randomBytes(32)));
 		storeA.set('1', { title: 'Secret A' });
@@ -59,7 +60,6 @@ describe('attachEncryption', () => {
 		const key = randomBytes(32);
 		enc.applyKeys(toEncryptionKeys(key));
 		storeA.set('1', { title: 'Before second apply' });
-		// Second call with identical keys must not corrupt state.
 		enc.applyKeys(toEncryptionKeys(key));
 		expect(storeA.get('1')).toEqual({ title: 'Before second apply' });
 	});
@@ -107,97 +107,63 @@ describe('attachEncryption', () => {
 		expect(storeA.get('1')).toEqual({ title: 'Plaintext' });
 	});
 
+	test('late-registered store auto-activates with cached keyring', () => {
+		const ydoc = new Y.Doc({ guid: 'enc-late-register', gc: false });
+		const enc = attachEncryption(ydoc);
+		enc.applyKeys(toEncryptionKeys(randomBytes(32)));
+
+		// Register after applyKeys — the store must receive the cached keyring
+		// so subsequent writes are encrypted from the start.
+		const lateStore = createEncryptedYkvLww<{ title: string }>(ydoc, 'late');
+		enc.register(lateStore);
+
+		lateStore.set('1', { title: 'Written after late register' });
+		expect(lateStore.get('1')).toEqual({ title: 'Written after late register' });
+	});
+
 	test('whenDisposed resolves once ydoc.destroy() fires', async () => {
 		const { ydoc, enc } = setup();
 		ydoc.destroy();
 		await enc.whenDisposed;
 	});
-
-	test('stores is the same array the caller provided', () => {
-		const { storeA, storeB, enc } = setup();
-		expect(enc.stores).toEqual([storeA, storeB]);
-	});
-
-	test('attachEncryption({ tables }) aggregates tables.stores', () => {
-		const ydoc = new Y.Doc({ guid: 'enc-tables-test', gc: false });
-		const tableDef = defineTable(
-			type({ id: 'string', title: 'string', _v: '1' }),
-		);
-		const tables = attachTables(ydoc, { foo: tableDef, bar: tableDef });
-		const enc = attachEncryption(ydoc, { tables });
-		expect(enc.stores.length).toBe(2);
-	});
-
-	test('attachEncryption({ tables, kv }) aggregates both', () => {
-		const ydoc = new Y.Doc({ guid: 'enc-tables-kv-test', gc: false });
-		const tableDef = defineTable(
-			type({ id: 'string', title: 'string', _v: '1' }),
-		);
-		const tables = attachTables(ydoc, { foo: tableDef, bar: tableDef });
-		const themeDef = defineKv(type({ mode: "'light' | 'dark'" }), {
-			mode: 'light',
-		});
-		const kv = attachKv(ydoc, { theme: themeDef });
-		const enc = attachEncryption(ydoc, { tables, kv });
-		expect(enc.stores.length).toBe(3);
-	});
 });
-
-// ════════════════════════════════════════════════════════════════════════════
-// attachEncryption — reentrance guard (TDD: failing before Phase 3 lands)
-// ════════════════════════════════════════════════════════════════════════════
-
-function makeStoresFor(ydoc: Y.Doc) {
-	const storeA = createEncryptedYkvLww<{ title: string }>(ydoc, 'a');
-	const storeB = createEncryptedYkvLww<{ title: string }>(ydoc, 'b');
-	return [storeA, storeB] as const;
-}
 
 describe('attachEncryption — reentrance guard', () => {
 	test('second attach to the same Y.Doc throws with a clear message naming encryption', () => {
 		const ydoc = new Y.Doc({ guid: 'enc-reentrance', gc: false });
-		const stores = makeStoresFor(ydoc);
-		attachEncryption(ydoc, { stores: stores as any });
+		attachEncryption(ydoc);
 
-		expect(() =>
-			attachEncryption(ydoc, { stores: stores as any }),
-		).toThrow(/encryption/i);
+		expect(() => attachEncryption(ydoc)).toThrow(/encryption/i);
 	});
 
 	test('destroy then reattach on the same Y.Doc does not throw', () => {
 		const ydoc = new Y.Doc({ guid: 'enc-destroy-reattach', gc: false });
-		const stores = makeStoresFor(ydoc);
-		attachEncryption(ydoc, { stores: stores as any });
+		attachEncryption(ydoc);
 		ydoc.destroy();
 
-		const freshStores = makeStoresFor(ydoc);
-		expect(() =>
-			attachEncryption(ydoc, { stores: freshStores as any }),
-		).not.toThrow();
+		const ydoc2 = new Y.Doc({ guid: 'enc-destroy-reattach-2', gc: false });
+		expect(() => attachEncryption(ydoc2)).not.toThrow();
 	});
 
 	test('separate Y.Docs do not interfere', () => {
 		const docA = new Y.Doc({ guid: 'enc-doc-a', gc: false });
 		const docB = new Y.Doc({ guid: 'enc-doc-b', gc: false });
-		const storesA = makeStoresFor(docA);
-		const storesB = makeStoresFor(docB);
-		attachEncryption(docA, { stores: storesA as any });
+		attachEncryption(docA);
 
-		expect(() =>
-			attachEncryption(docB, { stores: storesB as any }),
-		).not.toThrow();
+		expect(() => attachEncryption(docB)).not.toThrow();
 	});
 
 	test('silent-data-loss scenario is loud: second attach throws BEFORE any applyKeys on the second wrapper', () => {
 		const ydoc = new Y.Doc({ guid: 'enc-loud', gc: false });
-		const stores = makeStoresFor(ydoc);
-		const first = attachEncryption(ydoc, { stores: stores as any });
+		const first = attachEncryption(ydoc);
+		const storeA = createEncryptedYkvLww<{ title: string }>(ydoc, 'a');
+		first.register(storeA);
 		first.applyKeys(toEncryptionKeys(randomBytes(32)));
-		stores[0].set('1', { title: 'committed under first keyring' });
+		storeA.set('1', { title: 'committed under first keyring' });
 
 		let secondWrapperReached = false;
 		expect(() => {
-			const second = attachEncryption(ydoc, { stores: stores as any });
+			const second = attachEncryption(ydoc);
 			secondWrapperReached = true;
 			// A phantom second attachment would let the caller swap keyrings
 			// out from under the first wrapper's owners.
@@ -205,7 +171,7 @@ describe('attachEncryption — reentrance guard', () => {
 		}).toThrow(/encryption/i);
 
 		expect(secondWrapperReached).toBe(false);
-		expect(stores[0].get('1')).toEqual({
+		expect(storeA.get('1')).toEqual({
 			title: 'committed under first keyring',
 		});
 	});

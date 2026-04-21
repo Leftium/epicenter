@@ -117,10 +117,10 @@ export {
 	type EncryptionAttachment,
 } from './shared/attach-encryption';
 export {
-	attachTables,
-	type TablesAttachment,
+	attachEncryptedTable,
+	attachEncryptedTables,
 } from './workspace/attach-tables';
-export { attachKv, type KvAttachment } from './workspace/attach-kv';
+export { attachEncryptedKv } from './workspace/attach-kv';
 
 // ════════════════════════════════════════════════════════════════════════════
 // WORKSPACE CREATION

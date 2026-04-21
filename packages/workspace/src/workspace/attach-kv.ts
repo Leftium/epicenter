@@ -1,7 +1,9 @@
 /**
- * attachKv — internal helper that wires KV field definitions onto a Y.Doc,
- * returning the typed helper plus the single encrypted store for the
- * encryption attachment to coordinate.
+ * attachEncryptedKv — bind KV definitions to a Y.Doc with encryption
+ * coordination through an `EncryptionAttachment`.
+ *
+ * Returns the typed `Kv<T>` helper directly. The backing store self-registers
+ * with `encryption`, so the caller never handles it.
  *
  * @module
  */
@@ -13,23 +15,17 @@ import {
 	guardSingleton,
 } from '@epicenter/document/internal';
 import type * as Y from 'yjs';
-import {
-	createEncryptedYkvLww,
-	type EncryptedYKeyValueLww,
-} from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import type { EncryptionAttachment } from '../shared/attach-encryption.js';
+import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type { Kv, KvDefinitions } from './types.js';
 
-export type KvAttachment<T extends KvDefinitions> = {
-	helper: Kv<T>;
-	store: EncryptedYKeyValueLww<any>;
-};
-
-export function attachKv<T extends KvDefinitions>(
+export function attachEncryptedKv<T extends KvDefinitions>(
 	ydoc: Y.Doc,
+	encryption: EncryptionAttachment,
 	definitions: T,
-): KvAttachment<T> {
+): Kv<T> {
 	guardSingleton(ydoc, AttachPrimitive.Kv);
 	const store = createEncryptedYkvLww(ydoc, KV_KEY);
-	const helper = createKv(store, definitions) as Kv<T>;
-	return { helper, store };
+	encryption.register(store);
+	return createKv(store, definitions) as Kv<T>;
 }

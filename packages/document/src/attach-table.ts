@@ -31,6 +31,8 @@ import type {
 	RowResult,
 	Table,
 	TableDefinition,
+	TableDefinitions,
+	Tables,
 	UpdateResult,
 } from './types.js';
 import {
@@ -63,6 +65,26 @@ export function attachTable<
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.on('destroy', () => ykv.dispose());
 	return createTable(ykv, definition);
+}
+
+/**
+ * Bind a record of plaintext `TableDefinition`s to a Y.Doc. Sugar over
+ * `attachTable` — calls it for each entry and returns the helpers keyed by
+ * table name.
+ *
+ * For encrypted storage, use `attachEncryptedTables` from
+ * `@epicenter/workspace`.
+ */
+export function attachTables<T extends TableDefinitions>(
+	ydoc: Y.Doc,
+	definitions: T,
+): Tables<T> {
+	return Object.fromEntries(
+		Object.entries(definitions).map(([name, def]) => [
+			name,
+			attachTable(ydoc, name, def),
+		]),
+	) as Tables<T>;
 }
 
 /**

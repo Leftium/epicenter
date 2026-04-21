@@ -96,8 +96,8 @@ import {
 	attachEncryption,
 	type EncryptionAttachment,
 } from '../shared/attach-encryption.js';
-import { attachKv } from './attach-kv.js';
-import { attachTables } from './attach-tables.js';
+import { attachEncryptedKv } from './attach-kv.js';
+import { attachEncryptedTables } from './attach-tables.js';
 import type {
 	Awareness,
 	AwarenessDefinitions,
@@ -201,17 +201,17 @@ export function defineWorkspace<
 	>(
 		(id) => {
 			const ydoc = new Y.Doc({ guid: id, gc });
-			const tables = attachTables(ydoc, tableDefs);
-			const kv = attachKv(ydoc, kvDefs);
+			const encryption = attachEncryption(ydoc);
+			const tables = attachEncryptedTables(ydoc, encryption, tableDefs);
+			const kv = attachEncryptedKv(ydoc, encryption, kvDefs);
 			const awareness = attachAwareness(ydoc, awarenessDefs);
-			const enc = attachEncryption(ydoc, { tables, kv });
 
 			return {
 				ydoc,
-				tables: tables.helpers,
-				kv: kv.helper,
+				tables,
+				kv,
 				awareness,
-				enc,
+				enc: encryption,
 				batch(fn: () => void): void {
 					ydoc.transact(fn);
 				},
@@ -219,7 +219,7 @@ export function defineWorkspace<
 				// top aggregate their own whenReady. Consumers awaiting only the
 				// base see an already-resolved promise.
 				whenReady: Promise.resolve(),
-				whenDisposed: enc.whenDisposed,
+				whenDisposed: encryption.whenDisposed,
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},

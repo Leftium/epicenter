@@ -37,34 +37,21 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 	/** FileId → display name (may differ from row.name when disambiguated). */
 	const displayName = new Map<FileId, string>();
 
-	/** Suppresses the observer during rebuild to avoid processing partial state. */
-	let rebuilding = false;
+	buildInitialState();
 
-	rebuild();
-
-	const unobserve = filesTable.observe((changedIds) => {
-		if (rebuilding) return;
-		processChanges(changedIds);
-	});
+	const unobserve = filesTable.observe(processChanges);
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// FULL REBUILD — initial load and recovery
+	// INITIAL BUILD — runs once before the observer is registered
 	// ═══════════════════════════════════════════════════════════════════════
 
 	/**
-	 * Recompute all indexes from scratch: childrenOf, path mappings,
-	 * and self-healing fixes for circular refs and orphans.
-	 *
-	 * Called once at construction. Can be called manually for recovery.
+	 * Build all indexes from scratch with self-healing for circular refs
+	 * and orphans. Runs once during construction, before the observer
+	 * subscribes — so table mutations from the fix helpers don't re-enter
+	 * processChanges.
 	 */
-	function rebuild() {
-		rebuilding = true;
-		pathToId.clear();
-		idToPath.clear();
-		childrenOf.clear();
-		snapshot.clear();
-		displayName.clear();
-
+	function buildInitialState() {
 		// getAllValid() returns fresh objects (parseRow spreads input), so we
 		// can safely mutate parentId on these locals to track fix-up changes
 		// without re-scanning the whole table.
@@ -72,7 +59,7 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 			.getAllValid()
 			.filter((r) => r.trashedAt === null);
 
-		for (const id of fixCircularReferences(filesTable, activeRows)) {
+		for (const id of fixCircularReferences(activeRows)) {
 			const row = activeRows.find((r) => r.id === id);
 			if (row) row.parentId = null;
 		}
@@ -81,7 +68,7 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 			addChild(row.parentId, row.id);
 		}
 
-		for (const id of fixOrphans(filesTable, activeRows, childrenOf)) {
+		for (const id of fixOrphans(activeRows)) {
 			const row = activeRows.find((r) => r.id === id);
 			if (row) row.parentId = null;
 		}
@@ -95,7 +82,6 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 		for (const row of activeRows) {
 			snapshot.set(row.id, snapFrom(row));
 		}
-		rebuilding = false;
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -399,7 +385,98 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PUBLIC API (unchanged interface)
+	// TABLE-MUTATING FIX HELPERS (used only by buildInitialState)
+	// ═══════════════════════════════════════════════════════════════════════
+
+	/**
+	 * Walk parentId chains from each active row, detect cycles, and break
+	 * them by moving the latest-updated node in the cycle to root.
+	 *
+	 * @returns Set of IDs whose parentId was mutated to null.
+	 */
+	function fixCircularReferences(activeRows: FileRow[]): Set<FileId> {
+		const visited = new Set<FileId>();
+		const inStack = new Set<FileId>();
+		const mutated = new Set<FileId>();
+
+		for (const row of activeRows) {
+			if (visited.has(row.id)) continue;
+			breakCycleFromId(row.id, visited, inStack, mutated);
+		}
+
+		return mutated;
+	}
+
+	function breakCycleFromId(
+		startId: FileId,
+		visited: Set<FileId>,
+		inStack: Set<FileId>,
+		mutated: Set<FileId>,
+	) {
+		const path: FileId[] = [];
+		let currentId: FileId | null = startId;
+
+		while (currentId !== null) {
+			if (visited.has(currentId)) break;
+
+			if (inStack.has(currentId)) {
+				// Cycle detected — move the latest-updated node in the cycle to root.
+				const cycleIds = path.slice(path.indexOf(currentId));
+				let latestId: FileId | null = null;
+				let latestTime = -1;
+				for (const cid of cycleIds) {
+					const result = filesTable.get(cid);
+					if (result.status === 'valid' && result.row.updatedAt > latestTime) {
+						latestTime = result.row.updatedAt;
+						latestId = cid;
+					}
+				}
+				if (latestId !== null) {
+					filesTable.update(latestId, { parentId: null });
+					mutated.add(latestId);
+				}
+				return;
+			}
+
+			inStack.add(currentId);
+			path.push(currentId);
+
+			const result = filesTable.get(currentId);
+			if (result.status !== 'valid') break;
+			currentId = result.row.parentId;
+		}
+
+		for (const id of path) {
+			visited.add(id);
+			inStack.delete(id);
+		}
+	}
+
+	/**
+	 * Detect orphaned rows (parentId references a deleted or non-existent
+	 * row). Move orphans to root and sync childrenOf.
+	 *
+	 * @returns Set of IDs whose parentId was mutated to null.
+	 */
+	function fixOrphans(activeRows: FileRow[]): Set<FileId> {
+		const activeIds = new Set(activeRows.map((r) => r.id));
+		const mutated = new Set<FileId>();
+
+		for (const row of activeRows) {
+			if (row.parentId === null) continue;
+			if (activeIds.has(row.parentId)) continue;
+
+			filesTable.update(row.id, { parentId: null });
+			mutated.add(row.id);
+			removeChild(row.parentId, row.id);
+			addChild(null, row.id);
+		}
+
+		return mutated;
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PUBLIC API
 	// ═══════════════════════════════════════════════════════════════════════
 
 	return {
@@ -431,118 +508,3 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 
 /** Runtime indexes for O(1) path lookups (ephemeral, not stored in Yjs) */
 export type FileSystemIndex = ReturnType<typeof createFileSystemIndex>;
-
-// ═══════════════════════════════════════════════════════════════════════════
-// REBUILD-ONLY HELPERS (circular refs + orphans — mutate the table)
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Detect circular references in parentId chains.
- * If a cycle is found, break it by setting the later-timestamped node's parentId to null.
- *
- * @returns Set of IDs whose parentId was mutated to null.
- */
-function fixCircularReferences(
-	filesTable: Table<FileRow>,
-	activeRows: FileRow[],
-): Set<FileId> {
-	const visited = new Set<FileId>();
-	const inStack = new Set<FileId>();
-	const mutated = new Set<FileId>();
-
-	for (const row of activeRows) {
-		if (visited.has(row.id)) continue;
-		detectCycle(row.id, filesTable, visited, inStack, mutated);
-	}
-
-	return mutated;
-}
-
-function detectCycle(
-	startId: FileId,
-	filesTable: Table<FileRow>,
-	visited: Set<FileId>,
-	inStack: Set<FileId>,
-	mutated: Set<FileId>,
-) {
-	const path: FileId[] = [];
-	let currentId: FileId | null = startId;
-
-	while (currentId !== null) {
-		if (visited.has(currentId)) break; // Known safe — clean up and return
-
-		if (inStack.has(currentId)) {
-			// Cycle detected — break it by moving the current node to root
-			// Find the node in the cycle with the latest updatedAt
-			const cycleStart = path.indexOf(currentId);
-			const cycleIds = path.slice(cycleStart);
-			if (cycleIds.length === 0) return;
-
-			let latestId = cycleIds[0];
-			if (!latestId) return;
-			let latestTime = 0;
-			for (const cid of cycleIds) {
-				const result = filesTable.get(cid);
-				if (result.status === 'valid' && result.row.updatedAt > latestTime) {
-					latestTime = result.row.updatedAt;
-					latestId = cid;
-				}
-			}
-
-			// Break cycle by moving latest-updated node to root
-			filesTable.update(latestId, { parentId: null });
-			mutated.add(latestId);
-			return;
-		}
-
-		inStack.add(currentId);
-		path.push(currentId);
-
-		const result = filesTable.get(currentId);
-		if (result.status !== 'valid') break;
-		currentId = result.row.parentId;
-	}
-
-	// Mark all nodes in this path as visited
-	for (const id of path) {
-		visited.add(id);
-		inStack.delete(id);
-	}
-}
-
-/**
- * Detect orphaned files (parentId references a deleted or non-existent row).
- * Move orphans to root by setting parentId to null.
- *
- * Mutates childrenOf to reflect the reparenting.
- *
- * @returns Set of IDs whose parentId was mutated to null.
- */
-function fixOrphans(
-	filesTable: Table<FileRow>,
-	activeRows: FileRow[],
-	childrenOf: Map<FileId | null, Set<FileId>>,
-): Set<FileId> {
-	const activeIds = new Set(activeRows.map((r) => r.id));
-	const mutated = new Set<FileId>();
-
-	for (const row of activeRows) {
-		if (row.parentId === null) continue;
-		if (activeIds.has(row.parentId)) continue;
-
-		// Parent doesn't exist among active rows — orphan
-		filesTable.update(row.id, { parentId: null });
-		mutated.add(row.id);
-
-		// Update childrenOf: remove from ghost parent bucket, add to root
-		childrenOf.get(row.parentId)?.delete(row.id);
-		let rootChildren = childrenOf.get(null);
-		if (!rootChildren) {
-			rootChildren = new Set();
-			childrenOf.set(null, rootChildren);
-		}
-		rootChildren.add(row.id);
-	}
-
-	return mutated;
-}

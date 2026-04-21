@@ -302,13 +302,13 @@ defineDocument<Id, T extends { ydoc: Y.Doc } & Disposable>(
 
 ### Phase 4 — Adapt tests (`define-document.test.ts`)
 
-- [ ] **4.1** Rewrite every test factory to return `{ ydoc, …, [Symbol.dispose]() { ydoc.destroy(); } }`. Drop scenarios that exercise `RESERVED_KEYS` collisions (feature removed).
-- [ ] **4.2** Rename test bundles' `whenLoaded` → `whenReady` where they're user-owned promises. Keep `whenDisposed` naming (no Yjs collision).
-- [ ] **4.3** Rename all `graceMs` references in test setup to `gcTime`. Keep all grace-behavior tests — they validate the timer semantics and are still relevant.
-- [ ] **4.4** Add new tests for `gcTime: 0` (immediate teardown) and `gcTime: Infinity` (never evict).
-- [ ] **4.5** Add a test that verifies the handle no longer injects `whenLoaded` — reading `h.whenReady` must come from the prototype chain (i.e., the user's bundle).
-- [ ] **4.6** Verify guid-stability tests still pass unchanged — the cache still maintains `Map<Id, string>` and throws on drift.
-- [ ] **4.7** Add or expand a test verifying that if the builder's `[Symbol.dispose]` throws, the cache logs and continues (does not throw out of `dispose()`).
+- [x] **4.1** Rewrite every test factory to return `{ ydoc, …, [Symbol.dispose]() { ydoc.destroy(); } }`. Drop scenarios that exercise `RESERVED_KEYS` collisions (feature removed).
+- [x] **4.2** Rename test bundles' `whenLoaded` → `whenReady` where they're user-owned promises. Keep `whenDisposed` naming (no Yjs collision).
+- [x] **4.3** Rename all `graceMs` references in test setup to `gcTime`. Keep all grace-behavior tests — they validate the timer semantics and are still relevant.
+- [x] **4.4** Add new tests for `gcTime: 0` (immediate teardown) and `gcTime: Infinity` (never evict).
+- [x] **4.5** Add a test that verifies the handle no longer injects `whenLoaded` — reading `h.whenReady` must come from the prototype chain (i.e., the user's bundle).
+- [x] **4.6** Verify guid-stability tests still pass unchanged — the cache still maintains `Map<Id, string>` and throws on drift.
+- [x] **4.7** Add or expand a test verifying that if the builder's `[Symbol.dispose]` throws, the cache logs and continues (does not throw out of `dispose()`).
 
 ### Phase 5 — Barrel & exports
 

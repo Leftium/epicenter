@@ -15,21 +15,27 @@ import { defineDocument } from './define-document.js';
 import { DOCUMENTS_ORIGIN, onLocalUpdate } from './on-local-update.js';
 
 /**
- * Build a factory whose closure returns `{ ydoc, whenLoaded? }`. The optional
- * `whenLoadedImpl` factory lets tests control a per-id `whenLoaded` promise
- * exposed via a fake attachment.
+ * Build a factory whose closure returns a bundle with `{ ydoc, [Symbol.dispose] }`
+ * plus any extras the test provides. Every returned bundle satisfies
+ * `{ ydoc: Y.Doc } & Disposable`.
  */
 function makeSimpleFactory(opts?: {
-	graceMs?: number;
+	gcTime?: number;
 	buildExtra?: (ydoc: Y.Doc, id: string) => Record<string, unknown>;
 }) {
 	return defineDocument(
 		(id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			const extra = opts?.buildExtra?.(ydoc, id) ?? {};
-			return { ydoc, ...extra };
+			return {
+				ydoc,
+				...extra,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
 		},
-		{ graceMs: opts?.graceMs },
+		{ gcTime: opts?.gcTime },
 	);
 }
 
@@ -79,7 +85,13 @@ describe('open / cache identity', () => {
 		// No workspace, no tables — just the primitive.
 		const factory = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
-			return { ydoc, createdAt: Date.now() };
+			return {
+				ydoc,
+				createdAt: Date.now(),
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
 		});
 		const handle = factory.open('solo');
 		expect(handle.ydoc).toBeInstanceOf(Y.Doc);
@@ -99,7 +111,12 @@ describe('throwing build closure', () => {
 			calls++;
 			if (calls === 1) throw new Error('boom');
 			const ydoc = new Y.Doc({ guid: id });
-			return { ydoc };
+			return {
+				ydoc,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
 		});
 
 		expect(() => factory.open('foo')).toThrow('boom');
@@ -112,28 +129,6 @@ describe('throwing build closure', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// Reserved keys
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('reserved attachment keys', () => {
-	test('throws if build returns top-level "dispose"', () => {
-		const factory = defineDocument((id: string) => {
-			const ydoc = new Y.Doc({ guid: id });
-			return { ydoc, dispose: 'oops' } as never;
-		});
-		expect(() => factory.open('a')).toThrow(/reserved key "dispose"/);
-	});
-
-	test('throws if build returns top-level "whenLoaded"', () => {
-		const factory = defineDocument((id: string) => {
-			const ydoc = new Y.Doc({ guid: id });
-			return { ydoc, whenLoaded: Promise.resolve() } as never;
-		});
-		expect(() => factory.open('a')).toThrow(/reserved key "whenLoaded"/);
-	});
-});
-
-// ════════════════════════════════════════════════════════════════════════════
 // Guid stability
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -142,7 +137,12 @@ describe('guid stability', () => {
 		let seed = 0;
 		const factory = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: `${id}-${seed++}` });
-			return { ydoc };
+			return {
+				ydoc,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
 		});
 
 		const h1 = factory.open('foo');
@@ -156,7 +156,12 @@ describe('guid stability', () => {
 	test('accepts stable guids across reconstructions', async () => {
 		const factory = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: `stable-${id}` });
-			return { ydoc };
+			return {
+				ydoc,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
 		});
 		const h1 = factory.open('foo');
 		const guid1 = h1.ydoc.guid;
@@ -170,19 +175,28 @@ describe('guid stability', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// whenLoaded aggregation
+// whenReady — user-owned convention on the bundle
 // ════════════════════════════════════════════════════════════════════════════
 
-describe('whenLoaded', () => {
-	test('resolves immediately when no attachment exposes whenLoaded', async () => {
-		const factory = makeSimpleFactory();
+describe('whenReady', () => {
+	test('resolves immediately when the bundle exposes a pre-resolved whenReady', async () => {
+		const factory = defineDocument((id: string) => {
+			const ydoc = new Y.Doc({ guid: id });
+			return {
+				ydoc,
+				whenReady: Promise.resolve(),
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		});
 		const handle = factory.open('a');
-		await handle.whenLoaded; // should not hang
+		await handle.whenReady; // should not hang
 		expect(true).toBe(true);
 		handle.dispose();
 	});
 
-	test('aggregates multiple attachments exposing whenLoaded', async () => {
+	test('composes multiple attachment ready-promises inside the builder', async () => {
 		let resolveA!: () => void;
 		let resolveB!: () => void;
 		const factory = defineDocument((id: string) => {
@@ -197,12 +211,22 @@ describe('whenLoaded', () => {
 					resolveB = r;
 				}),
 			};
-			return { ydoc, idbLike, syncLike };
+			return {
+				ydoc,
+				idbLike,
+				syncLike,
+				whenReady: Promise.all([idbLike.whenLoaded, syncLike.whenLoaded]).then(
+					() => {},
+				),
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
 		});
 
 		const handle = factory.open('a');
 		let resolved = false;
-		void handle.whenLoaded.then(() => {
+		void handle.whenReady.then(() => {
 			resolved = true;
 		});
 
@@ -214,9 +238,32 @@ describe('whenLoaded', () => {
 		expect(resolved).toBe(false); // still waiting on B
 
 		resolveB();
-		await handle.whenLoaded;
+		await handle.whenReady;
 		expect(resolved).toBe(true);
 		handle.dispose();
+	});
+
+	test('handle does not inject whenReady — it comes from the prototype chain', () => {
+		const factory = defineDocument((id: string) => {
+			const ydoc = new Y.Doc({ guid: id });
+			return {
+				ydoc,
+				whenReady: Promise.resolve(),
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		});
+		const h = factory.open('a');
+		// whenReady is accessible (via prototype)...
+		expect(h.whenReady).toBeInstanceOf(Promise);
+		// ...but is NOT an own property on the handle.
+		expect(Object.prototype.hasOwnProperty.call(h, 'whenReady')).toBe(false);
+		// whenLoaded (Yjs-native shadow) must also not be injected.
+		expect(Object.prototype.hasOwnProperty.call(h, 'whenLoaded')).toBe(false);
+		// Only the dispose methods should be own properties on the handle.
+		expect(Object.prototype.hasOwnProperty.call(h, 'dispose')).toBe(true);
+		h.dispose();
 	});
 });
 
@@ -352,12 +399,16 @@ describe('close / closeAll', () => {
 		let resolveDisposed!: () => void;
 		const factory = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
-			const idbLike = {
-				whenDisposed: new Promise<void>((r) => {
-					resolveDisposed = r;
-				}),
+			const whenDisposed = new Promise<void>((r) => {
+				resolveDisposed = r;
+			});
+			return {
+				ydoc,
+				whenDisposed,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
 			};
-			return { ydoc, idbLike };
 		});
 		factory.open('a');
 
@@ -379,12 +430,16 @@ describe('close / closeAll', () => {
 		const resolvers: Array<() => void> = [];
 		const factory = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
-			const idbLike = {
-				whenDisposed: new Promise<void>((r) => {
-					resolvers.push(r);
-				}),
+			const whenDisposed = new Promise<void>((r) => {
+				resolvers.push(r);
+			});
+			return {
+				ydoc,
+				whenDisposed,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
 			};
-			return { ydoc, idbLike };
 		});
 		factory.open('a');
 		factory.open('b');
@@ -418,6 +473,38 @@ describe('close / closeAll', () => {
 		a2.dispose();
 		b2.dispose();
 	});
+
+	test('a throwing [Symbol.dispose] is logged and does not propagate out of close()', async () => {
+		let calls = 0;
+		const factory = defineDocument((id: string) => {
+			calls++;
+			const ydoc = new Y.Doc({ guid: id });
+			return {
+				ydoc,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+					throw new Error('dispose boom');
+				},
+			};
+		});
+
+		const prevError = console.error;
+		const errors: unknown[] = [];
+		console.error = (...args: unknown[]) => errors.push(args);
+		try {
+			factory.open('a');
+			// close() must swallow the throw.
+			await factory.close('a');
+			expect(errors.length).toBeGreaterThanOrEqual(1);
+
+			// Entry removed from cache — next open() constructs fresh.
+			const h2 = factory.open('a');
+			expect(calls).toBe(2);
+			h2.dispose();
+		} finally {
+			console.error = prevError;
+		}
+	});
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -426,7 +513,7 @@ describe('close / closeAll', () => {
 
 describe('open / dispose', () => {
 	test('open() retains — ref-count increments, no disposal pending', async () => {
-		const factory = makeSimpleFactory({ graceMs: 10 });
+		const factory = makeSimpleFactory({ gcTime: 10 });
 		const h = factory.open('a');
 		// Pure open() with no dispose: count > 0, no timer scheduled.
 		await new Promise((r) => setTimeout(r, 25));
@@ -435,7 +522,7 @@ describe('open / dispose', () => {
 	});
 
 	test('open() + dispose() — grace timer fires, ydoc destroyed', async () => {
-		const factory = makeSimpleFactory({ graceMs: 10 });
+		const factory = makeSimpleFactory({ gcTime: 10 });
 		const h = factory.open('a');
 		h.dispose();
 		expect(h.ydoc.isDestroyed).toBe(false);
@@ -454,7 +541,7 @@ describe('open / dispose', () => {
 	});
 
 	test('two open() calls require two disposes before grace timer starts', async () => {
-		const factory = makeSimpleFactory({ graceMs: 15 });
+		const factory = makeSimpleFactory({ gcTime: 15 });
 		const h1 = factory.open('a');
 		const h2 = factory.open('a');
 		h1.dispose();
@@ -466,7 +553,7 @@ describe('open / dispose', () => {
 	});
 
 	test('using h = docs.open(id) — disposes on scope exit', async () => {
-		const factory = makeSimpleFactory({ graceMs: 10 });
+		const factory = makeSimpleFactory({ gcTime: 10 });
 		let ydocRef: Y.Doc;
 		{
 			using h = factory.open('a');
@@ -480,11 +567,23 @@ describe('open / dispose', () => {
 	});
 
 	test('await using h = docs.open(id) — disposes on scope exit', async () => {
-		const factory = makeSimpleFactory({ graceMs: 10 });
+		const factory = defineDocument(
+			(id: string) => {
+				const ydoc = new Y.Doc({ guid: id });
+				return {
+					ydoc,
+					whenReady: Promise.resolve(),
+					[Symbol.dispose]() {
+						ydoc.destroy();
+					},
+				};
+			},
+			{ gcTime: 10 },
+		);
 		let ydocRef: Y.Doc;
 		{
 			await using h = factory.open('a');
-			await h.whenLoaded;
+			await h.whenReady;
 			ydocRef = h.ydoc;
 			expect(h.ydoc.isDestroyed).toBe(false);
 		}
@@ -494,7 +593,7 @@ describe('open / dispose', () => {
 	});
 
 	test('dispose() is idempotent per handle', async () => {
-		const factory = makeSimpleFactory({ graceMs: 10 });
+		const factory = makeSimpleFactory({ gcTime: 10 });
 		const h1 = factory.open('a');
 		const h2 = factory.open('a');
 		h1.dispose();
@@ -507,7 +606,7 @@ describe('open / dispose', () => {
 	});
 
 	test('dispose() on one handle does not affect others', async () => {
-		const factory = makeSimpleFactory({ graceMs: 10 });
+		const factory = makeSimpleFactory({ gcTime: 10 });
 		const h1 = factory.open('a');
 		const h2 = factory.open('a');
 		h1.dispose();
@@ -521,7 +620,7 @@ describe('open / dispose', () => {
 	});
 
 	test('open() during grace cancels the pending disposal', async () => {
-		const factory = makeSimpleFactory({ graceMs: 20 });
+		const factory = makeSimpleFactory({ gcTime: 20 });
 		const h1 = factory.open('a');
 		h1.dispose();
 		await new Promise((r) => setTimeout(r, 5));
@@ -537,21 +636,23 @@ describe('open / dispose', () => {
 	});
 
 	test('rapid open→dispose→open within the same tick does not fire stale disposal', async () => {
-		// dispose() schedules the grace timer as a setTimeout; a synchronous
-		// re-open() must cancel the pending timer before it fires.
-		const factory = makeSimpleFactory({ graceMs: 0 });
+		// With gcTime: 0 disposal is synchronous. So once we dispose h1 the
+		// entry is already torn down — the next open() constructs a fresh
+		// ydoc. This test confirms no timer lingers across the boundary.
+		const factory = makeSimpleFactory({ gcTime: 0 });
 		const h1 = factory.open('a');
+		const ydoc1 = h1.ydoc;
 		h1.dispose();
+		expect(ydoc1.isDestroyed).toBe(true);
 		const h2 = factory.open('a');
-		// No microtask yield yet — timer hasn't had a chance to fire.
+		expect(h2.ydoc).not.toBe(ydoc1);
 		expect(h2.ydoc.isDestroyed).toBe(false);
 		h2.dispose();
-		await new Promise((r) => setTimeout(r, 15));
 		expect(h2.ydoc.isDestroyed).toBe(true);
 	});
 
 	test('close() during grace fires disposal synchronously and cancels the pending timer', async () => {
-		const factory = makeSimpleFactory({ graceMs: 100 });
+		const factory = makeSimpleFactory({ gcTime: 100 });
 		const h = factory.open('a');
 		h.dispose();
 		// Grace pending. close() must fire disposal now, not later.
@@ -560,7 +661,7 @@ describe('open / dispose', () => {
 	});
 
 	test('dispose captured before close is a safe no-op after close', async () => {
-		const factory = makeSimpleFactory({ graceMs: 100 });
+		const factory = makeSimpleFactory({ gcTime: 100 });
 		const h = factory.open('a');
 		await factory.close('a');
 		// Stale dispose on an already-disposed handle must not throw or resurrect.
@@ -570,7 +671,7 @@ describe('open / dispose', () => {
 	});
 
 	test('dispose lifecycle is per-id — disposing one doc does not affect another', async () => {
-		const factory = makeSimpleFactory({ graceMs: 15 });
+		const factory = makeSimpleFactory({ gcTime: 15 });
 		const a = factory.open('a');
 		const b = factory.open('b');
 
@@ -585,7 +686,7 @@ describe('open / dispose', () => {
 	});
 
 	test('open → dispose → teardown → open after grace produces a fresh construction', async () => {
-		const factory = makeSimpleFactory({ graceMs: 5 });
+		const factory = makeSimpleFactory({ gcTime: 5 });
 		const a1 = factory.open('a');
 		const ydoc1 = a1.ydoc;
 		a1.dispose();
@@ -599,7 +700,7 @@ describe('open / dispose', () => {
 	});
 
 	test('closeAll cancels all pending grace timers', async () => {
-		const factory = makeSimpleFactory({ graceMs: 50 });
+		const factory = makeSimpleFactory({ gcTime: 50 });
 		const docs = ['a', 'b', 'c'].map((id) => {
 			const h = factory.open(id);
 			h.dispose();
@@ -613,5 +714,42 @@ describe('open / dispose', () => {
 		// Waiting longer must not revive or re-run anything.
 		await new Promise((r) => setTimeout(r, 80));
 		for (const h of docs) expect(h.ydoc.isDestroyed).toBe(true);
+	});
+
+	// ──────────────────────────────────────────────────────────────────────
+	// gcTime: 0 / gcTime: Infinity
+	// ──────────────────────────────────────────────────────────────────────
+
+	test('gcTime: 0 — last dispose tears down synchronously (no setTimeout)', () => {
+		const factory = makeSimpleFactory({ gcTime: 0 });
+		const h1 = factory.open('a');
+		const h2 = factory.open('a');
+		h1.dispose();
+		// Still retained by h2 — not destroyed yet.
+		expect(h1.ydoc.isDestroyed).toBe(false);
+		h2.dispose();
+		// Last dispose with gcTime: 0 — no await required.
+		expect(h1.ydoc.isDestroyed).toBe(true);
+	});
+
+	test('gcTime: Infinity — entry stays live indefinitely; close() forces teardown', async () => {
+		const factory = makeSimpleFactory({ gcTime: Infinity });
+		const h = factory.open('a');
+		const ydoc = h.ydoc;
+		h.dispose();
+		// Even after a long wait, the entry is still live.
+		await new Promise((r) => setTimeout(r, 50));
+		expect(ydoc.isDestroyed).toBe(false);
+
+		// Re-open returns the same ydoc — confirms the entry wasn't evicted.
+		const h2 = factory.open('a');
+		expect(h2.ydoc).toBe(ydoc);
+		h2.dispose();
+		await new Promise((r) => setTimeout(r, 50));
+		expect(ydoc.isDestroyed).toBe(false);
+
+		// Explicit close() forces eviction.
+		await factory.close('a');
+		expect(ydoc.isDestroyed).toBe(true);
 	});
 });

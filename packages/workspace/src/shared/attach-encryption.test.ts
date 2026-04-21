@@ -30,18 +30,18 @@ function toEncryptionKeys(key: Uint8Array): EncryptionKeys {
 
 function setup() {
 	const ydoc = new Y.Doc({ guid: 'enc-test', gc: false });
-	const enc = attachEncryption(ydoc);
+	const encryption = attachEncryption(ydoc);
 	const storeA = createEncryptedYkvLww<{ title: string }>(ydoc, 'a');
 	const storeB = createEncryptedYkvLww<{ title: string }>(ydoc, 'b');
-	enc.register(storeA);
-	enc.register(storeB);
-	return { ydoc, storeA, storeB, enc };
+	encryption.register(storeA);
+	encryption.register(storeB);
+	return { ydoc, storeA, storeB, encryption };
 }
 
 describe('attachEncryption', () => {
 	test('applyKeys enables encrypted writes on every registered store', () => {
-		const { storeA, storeB, enc } = setup();
-		enc.applyKeys(toEncryptionKeys(randomBytes(32)));
+		const { storeA, storeB, encryption } = setup();
+		encryption.applyKeys(toEncryptionKeys(randomBytes(32)));
 		storeA.set('1', { title: 'Secret A' });
 		storeB.set('1', { title: 'Secret B' });
 		expect(storeA.get('1')).toEqual({ title: 'Secret A' });
@@ -49,29 +49,29 @@ describe('attachEncryption', () => {
 	});
 
 	test('applyKeys is synchronous (returns undefined)', () => {
-		const { enc } = setup();
-		const result = enc.applyKeys(toEncryptionKeys(randomBytes(32)));
+		const { encryption } = setup();
+		const result = encryption.applyKeys(toEncryptionKeys(randomBytes(32)));
 		expect(result).toBeUndefined();
 	});
 
 	test('applyKeys re-encrypts existing plaintext entries', () => {
-		const { storeA, enc } = setup();
+		const { storeA, encryption } = setup();
 		storeA.set('1', { title: 'Was plaintext' });
-		enc.applyKeys(toEncryptionKeys(randomBytes(32)));
+		encryption.applyKeys(toEncryptionKeys(randomBytes(32)));
 		expect(storeA.get('1')).toEqual({ title: 'Was plaintext' });
 	});
 
 	test('fingerprint dedup: identical keys short-circuit the second call', () => {
-		const { storeA, enc } = setup();
+		const { storeA, encryption } = setup();
 		const key = randomBytes(32);
-		enc.applyKeys(toEncryptionKeys(key));
+		encryption.applyKeys(toEncryptionKeys(key));
 		storeA.set('1', { title: 'Before second apply' });
-		enc.applyKeys(toEncryptionKeys(key));
+		encryption.applyKeys(toEncryptionKeys(key));
 		expect(storeA.get('1')).toEqual({ title: 'Before second apply' });
 	});
 
 	test('fingerprint dedup: reversed key order is treated as the same keyring', () => {
-		const { storeA, enc } = setup();
+		const { storeA, encryption } = setup();
 		const keyV1 = randomBytes(32);
 		const keyV2 = randomBytes(32);
 		const asc: EncryptionKeys = [
@@ -82,21 +82,21 @@ describe('attachEncryption', () => {
 			{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
 			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
 		];
-		enc.applyKeys(asc);
+		encryption.applyKeys(asc);
 		storeA.set('1', { title: 'Order test' });
-		enc.applyKeys(desc);
+		encryption.applyKeys(desc);
 		expect(storeA.get('1')).toEqual({ title: 'Order test' });
 	});
 
 	test('key rotation: data written with old key remains readable after rotation', () => {
-		const { storeA, enc } = setup();
+		const { storeA, encryption } = setup();
 		const keyV1 = randomBytes(32);
 		const keyV2 = randomBytes(32);
 
-		enc.applyKeys([{ version: 1, userKeyBase64: bytesToBase64(keyV1) }]);
+		encryption.applyKeys([{ version: 1, userKeyBase64: bytesToBase64(keyV1) }]);
 		storeA.set('old', { title: 'Written with v1' });
 
-		enc.applyKeys([
+		encryption.applyKeys([
 			{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
 			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
 		]);
@@ -115,22 +115,22 @@ describe('attachEncryption', () => {
 
 	test('late-registered store auto-activates with cached keyring', () => {
 		const ydoc = new Y.Doc({ guid: 'enc-late-register', gc: false });
-		const enc = attachEncryption(ydoc);
-		enc.applyKeys(toEncryptionKeys(randomBytes(32)));
+		const encryption = attachEncryption(ydoc);
+		encryption.applyKeys(toEncryptionKeys(randomBytes(32)));
 
 		// Register after applyKeys — the store must receive the cached keyring
 		// so subsequent writes are encrypted from the start.
 		const lateStore = createEncryptedYkvLww<{ title: string }>(ydoc, 'late');
-		enc.register(lateStore);
+		encryption.register(lateStore);
 
 		lateStore.set('1', { title: 'Written after late register' });
 		expect(lateStore.get('1')).toEqual({ title: 'Written after late register' });
 	});
 
 	test('whenDisposed resolves once ydoc.destroy() fires', async () => {
-		const { ydoc, enc } = setup();
+		const { ydoc, encryption } = setup();
 		ydoc.destroy();
-		await enc.whenDisposed;
+		await encryption.whenDisposed;
 	});
 });
 
@@ -142,33 +142,33 @@ describe('attachEncryption.assertAllStoresRegistered', () => {
 
 	test('passes when every encryption-capable slot is registered', () => {
 		const ydoc = new Y.Doc({ guid: 'assert-ok', gc: false });
-		const enc = attachEncryption(ydoc);
-		attachEncryptedTable(ydoc, enc, 'posts', tableDef);
-		attachEncryptedKv(ydoc, enc, kvDef);
+		const encryption = attachEncryption(ydoc);
+		attachEncryptedTable(ydoc, encryption, 'posts', tableDef);
+		attachEncryptedKv(ydoc, encryption, kvDef);
 
-		expect(() => enc.assertAllStoresRegistered(ydoc)).not.toThrow();
+		expect(() => encryption.assertAllStoresRegistered(ydoc)).not.toThrow();
 	});
 
 	test('throws when a table was attached with the plaintext primitive', () => {
 		const ydoc = new Y.Doc({ guid: 'assert-plaintext-table', gc: false });
-		const enc = attachEncryption(ydoc);
-		attachEncryptedTable(ydoc, enc, 'posts', tableDef);
+		const encryption = attachEncryption(ydoc);
+		attachEncryptedTable(ydoc, encryption, 'posts', tableDef);
 		// Accident: plaintext primitive used for a slot that should be encrypted.
 		attachTable(ydoc, 'secrets', tableDef);
 
-		expect(() => enc.assertAllStoresRegistered(ydoc)).toThrow(
+		expect(() => encryption.assertAllStoresRegistered(ydoc)).toThrow(
 			/table:secrets/,
 		);
 	});
 
 	test('allowPlaintext opts a slot out of the check', () => {
 		const ydoc = new Y.Doc({ guid: 'assert-allowed', gc: false });
-		const enc = attachEncryption(ydoc);
-		attachEncryptedTable(ydoc, enc, 'posts', tableDef);
+		const encryption = attachEncryption(ydoc);
+		attachEncryptedTable(ydoc, encryption, 'posts', tableDef);
 		attachTable(ydoc, 'cache', tableDef);
 
 		expect(() =>
-			enc.assertAllStoresRegistered(ydoc, {
+			encryption.assertAllStoresRegistered(ydoc, {
 				allowPlaintext: ['table:cache'],
 			}),
 		).not.toThrow();
@@ -176,23 +176,23 @@ describe('attachEncryption.assertAllStoresRegistered', () => {
 
 	test('ignores non-encryption-capable slots (rich text, timelines, etc.)', () => {
 		const ydoc = new Y.Doc({ guid: 'assert-ignore', gc: false });
-		const enc = attachEncryption(ydoc);
-		attachEncryptedTable(ydoc, enc, 'posts', tableDef);
+		const encryption = attachEncryption(ydoc);
+		attachEncryptedTable(ydoc, encryption, 'posts', tableDef);
 		// Unrelated Yjs type on a slot that is neither 'kv' nor 'table:*'.
 		ydoc.getText('someRichText');
 
-		expect(() => enc.assertAllStoresRegistered(ydoc)).not.toThrow();
+		expect(() => encryption.assertAllStoresRegistered(ydoc)).not.toThrow();
 	});
 
 	test('error message lists every unregistered slot', () => {
 		const ydoc = new Y.Doc({ guid: 'assert-multi', gc: false });
-		const enc = attachEncryption(ydoc);
+		const encryption = attachEncryption(ydoc);
 		attachTable(ydoc, 'first', tableDef);
 		attachTable(ydoc, 'second', tableDef);
 
 		let caught: Error | undefined;
 		try {
-			enc.assertAllStoresRegistered(ydoc);
+			encryption.assertAllStoresRegistered(ydoc);
 		} catch (err) {
 			caught = err as Error;
 		}

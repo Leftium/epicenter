@@ -52,3 +52,6 @@ reddit_export.zip
 
 # Temporary search clones (development only)
 tmp-search/
+
+# y-sweet server data (created when running the sync server locally)
+y-sweet-data/

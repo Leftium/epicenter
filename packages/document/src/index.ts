@@ -46,7 +46,6 @@ export { defineDocument } from './define-document.js';
 export type {
 	DocumentFactory,
 	DocumentHandle,
-	DocumentSnapshot,
 } from './define-document.types.js';
 export { DOCUMENTS_ORIGIN, onLocalUpdate } from './on-local-update.js';
 

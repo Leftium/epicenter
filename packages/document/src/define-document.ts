@@ -6,23 +6,23 @@
  * `whenLoaded` readiness, and coordinated teardown.
  *
  * The only construction path is `factory.open(id)`: construct-if-missing +
- * retain. The returned handle carries a `release()` method for manual
+ * retain. The returned handle carries a `dispose()` method for manual
  * teardown and also implements `Symbol.dispose` for TS 5.2 `using` blocks.
  *
  * ```ts
- * // Manual — pair every open() with a release()
+ * // Manual — pair every open() with a dispose()
  * const h = docs.open('abc');
  * await h.whenLoaded;
  * h.content.write('hi');
- * h.release();
+ * h.dispose();
  *
- * // Framework-scoped — register release with the component lifecycle
+ * // Framework-scoped — register dispose with the component lifecycle
  * $effect(() => {
  *   const h = docs.open(id);
- *   return () => h.release();
+ *   return () => h.dispose();
  * });
  *
- * // Scope-bound (TS 5.2 `using`) — release fires on block exit
+ * // Scope-bound (TS 5.2 `using`) — dispose fires on block exit
  * {
  *   using h = docs.open('abc');
  *   await h.whenLoaded;
@@ -47,8 +47,8 @@
  *   (e.g., `Math.random()`) on the second construction. Silent IDB data
  *   corruption is the bug this guards against.
  * - Ref-count + grace-period disposal. Each `open()` increments the count and
- *   mints a fresh disposable handle; `release()` decrements. Last release
- *   schedules disposal after `graceMs`; a fresh `open()` during grace cancels
+ *   mints a fresh disposable handle; `dispose()` decrements. Last dispose
+ *   schedules teardown after `graceMs`; a fresh `open()` during grace cancels
  *   the pending disposal. The grace period is load-bearing for correctness
  *   with async-teardown attachments like `attachIndexedDb`: `db.close()` is
  *   deferred until pending transactions settle, so immediate destroy+rebuild
@@ -77,7 +77,7 @@ import type {
 } from './define-document.types.js';
 
 const DEFAULT_GRACE_MS = 30_000;
-const RESERVED_KEYS: ReadonlyArray<string> = ['release', 'whenLoaded'];
+const RESERVED_KEYS: ReadonlyArray<string> = ['dispose', 'whenLoaded'];
 
 type DocEntry<TAttach extends { ydoc: Y.Doc }> = {
 	/** The user's pristine `build()` return value. Never mutated. */
@@ -102,11 +102,11 @@ type DocEntry<TAttach extends { ydoc: Y.Doc }> = {
  * @param build - Closure invoked on cache miss. Must return `{ ydoc, ... }`.
  *                `ydoc.guid` should be a deterministic function of `id` —
  *                the framework asserts stability on the second construction.
- *                Must NOT return top-level `release` or `whenLoaded` — those
+ *                Must NOT return top-level `dispose` or `whenLoaded` — those
  *                names are reserved by the framework.
  * @param opts  - `graceMs` (default 30_000): milliseconds to wait after the
- *                last retain release before destroying the Y.Doc. A fresh
- *                retain during grace cancels the pending disposal.
+ *                last handle dispose before destroying the Y.Doc. A fresh
+ *                open during grace cancels the pending teardown.
  */
 export function defineDocument<
 	Id extends string,
@@ -146,7 +146,7 @@ export function defineDocument<
 		// cache entry). The caller sees the thrown error.
 		const attach = build(id);
 
-		// Reserved-key collision: framework adds `whenLoaded`, `release`, and
+		// Reserved-key collision: framework adds `whenLoaded`, `dispose`, and
 		// the dispose symbols to each handle via `Object.create(attach)` +
 		// `defineProperties`. A user property with the same name on `attach`
 		// would be silently shadowed via the prototype chain — fail loudly.
@@ -161,7 +161,7 @@ export function defineDocument<
 				}
 				throw new Error(
 					`[defineDocument] build closure for id=${String(id)} returned reserved key "${reserved}". ` +
-						`"release" and "whenLoaded" are added by the framework — pick a different attachment name.`,
+						`"dispose" and "whenLoaded" are added by the framework — pick a different attachment name.`,
 				);
 			}
 		}
@@ -225,7 +225,7 @@ export function defineDocument<
 	const factory: DocumentFactory<Id, TAttach> = {
 		open(id) {
 			// Each open() mints a fresh disposable handle with its own
-			// `released` flag, so N opens require N releases before the grace
+			// `disposed` flag, so N opens require N disposes before the grace
 			// timer starts. The handle prototype-chains to `entry.attach` — so
 			// `h.ydoc` and any user attachment properties read through without
 			// mutating the user's object.
@@ -237,10 +237,10 @@ export function defineDocument<
 			}
 			entry.retainCount++;
 
-			let released = false;
-			const release = (): void => {
-				if (released) return;
-				released = true;
+			let handleDisposed = false;
+			const dispose = (): void => {
+				if (handleDisposed) return;
+				handleDisposed = true;
 				if (entry.disposed) return;
 				entry.retainCount--;
 				if (entry.retainCount === 0) {
@@ -254,11 +254,11 @@ export function defineDocument<
 			const handle = Object.create(entry.attach) as DocumentHandle<TAttach>;
 			Object.defineProperties(handle, {
 				whenLoaded: { value: entry.whenLoaded, enumerable: true },
-				release: { value: release },
-				[Symbol.dispose]: { value: release },
+				dispose: { value: dispose },
+				[Symbol.dispose]: { value: dispose },
 				[Symbol.asyncDispose]: {
 					value: () => {
-						release();
+						dispose();
 						return Promise.resolve();
 					},
 				},

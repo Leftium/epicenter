@@ -7,28 +7,28 @@
 
 /**
  * A managed, retaining document handle. Returned by `factory.open(id)`. Each
- * call returns a distinct disposable wrapper over the same underlying
- * `ydoc`/attachments — N opens require N releases.
+ * call returns a distinct disposable handle over the same underlying
+ * `ydoc`/attachments — N opens require N disposes.
  *
- * Pair every `open()` with a `release()`:
+ * Pair every `open()` with a `dispose()`:
  *
  * ```ts
  * // Manual
  * const h = docs.open('abc');
  * await h.whenLoaded;
- * h.release();
+ * h.dispose();
  *
  * // Framework-scoped
  * $effect(() => {
  *   const h = docs.open(id);
- *   return () => h.release();
+ *   return () => h.dispose();
  * });
  *
- * // TS 5.2 `using` — release fires on block exit
+ * // TS 5.2 `using` — dispose fires on block exit
  * { using h = docs.open('abc'); await h.whenLoaded; }
  * ```
  *
- * Reserved top-level keys on the user's build-closure return value: `release`,
+ * Reserved top-level keys on the user's build-closure return value: `dispose`,
  * `whenLoaded`. The framework attaches those — if the build closure returns
  * one, `defineDocument` throws.
  */
@@ -41,11 +41,13 @@ export type DocumentHandle<TAttach> = TAttach &
 		 */
 		whenLoaded: Promise<void>;
 		/**
-		 * Release this handle's retain. Idempotent per-wrapper — calling twice
-		 * on the same handle is a no-op. Last release (across all wrappers
-		 * sharing the same id) schedules disposal after the factory's `graceMs`.
+		 * Drop this handle's retain. Idempotent per-handle — calling twice on
+		 * the same handle is a no-op. Last dispose (across all handles sharing
+		 * the same id) schedules teardown after the factory's `graceMs`.
+		 * Equivalent to `handle[Symbol.dispose]()` — use `using` blocks when
+		 * scope-bound release suffices.
 		 */
-		release(): void;
+		dispose(): void;
 	};
 
 /**
@@ -55,14 +57,14 @@ export type DocumentHandle<TAttach> = TAttach &
 export type DocumentFactory<Id extends string, TAttach> = {
 	/**
 	 * Construct-if-missing + retain. Returns a fresh disposable handle. Pair
-	 * with `handle.release()`. For callers that need to wait for hydration,
+	 * with `handle.dispose()`. For callers that need to wait for hydration,
 	 * `await handle.whenLoaded` after opening.
 	 *
 	 * ```ts
 	 * const h = factory.open('abc');
 	 * await h.whenLoaded;
 	 * h.content.write('hi');
-	 * h.release();
+	 * h.dispose();
 	 * ```
 	 */
 	open(id: Id): DocumentHandle<TAttach>;

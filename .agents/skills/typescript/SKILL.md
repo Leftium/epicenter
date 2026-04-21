@@ -22,7 +22,7 @@ Use this pattern when you need to:
 
 Load these on demand based on what you're working on:
 
-- If working with **type placement and constants organization** (`types.ts` location, co-location rules, options/IDs naming), read [references/type-organization.md](references/type-organization.md)
+- If working with **type placement and constants organization** (`types.ts` location, co-location rules, inline-vs-extract hop test, options/IDs naming), read [references/type-organization.md](references/type-organization.md)
 - If working with **factory-focused refactors** (parameter destructuring, extracting coupled `let` state into sub-factories), read [references/factory-patterns.md](references/factory-patterns.md)
 - If working with **arktype + branded IDs** (optional property syntax, brand constructors, workspace table IDs), read [references/runtime-schema-patterns.md](references/runtime-schema-patterns.md)
 - If working with **test writing and test file layout** (inline single-use setup, source-shadowing tests), read [references/testing-patterns.md](references/testing-patterns.md)

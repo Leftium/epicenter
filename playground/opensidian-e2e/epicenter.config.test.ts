@@ -15,6 +15,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { attachSqlite } from '@epicenter/document';
 import { createFileContentDocs } from '@epicenter/filesystem';
 import { createWorkspace, generateId } from '@epicenter/workspace';
 import { toMarkdown } from '@epicenter/workspace/extensions/materializer/markdown';
@@ -40,6 +41,10 @@ function createTestClient() {
 	const contentDocs = createFileContentDocs({
 		workspaceId: client.id,
 		filesTable: client.tables.files,
+		attach: (ydoc) =>
+			attachSqlite(ydoc, {
+				filePath: join(PERSISTENCE_DIR, 'content', `${ydoc.guid}.db`),
+			}),
 	});
 	return { client, contentDocs };
 }
@@ -178,9 +183,13 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 			}),
 		);
 		const contentDocs = createFileContentDocs({
-		workspaceId: client.id,
-		filesTable: client.tables.files,
-	});
+			workspaceId: client.id,
+			filesTable: client.tables.files,
+			attach: (ydoc) =>
+				attachSqlite(ydoc, {
+					filePath: join(IMPORT_PERSISTENCE, 'content', `${ydoc.guid}.db`),
+				}),
+		});
 		return { client, contentDocs };
 	}
 

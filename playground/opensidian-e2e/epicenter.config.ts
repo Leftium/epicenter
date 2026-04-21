@@ -23,6 +23,7 @@ import {
 	createSessionStore,
 	EPICENTER_PATHS,
 } from '@epicenter/cli';
+import { attachSqlite } from '@epicenter/document';
 import { createFileContentDocs } from '@epicenter/filesystem';
 import { createWorkspace, defineMutation } from '@epicenter/workspace';
 import {
@@ -51,11 +52,22 @@ const base = createWorkspace(opensidianDefinition).withExtension(
 	}),
 );
 
-// No attach callback → in-memory content docs, re-hydrate from sync on
-// each run. Phase 4 flips this to `attachSqlite` for durable persistence.
+/**
+ * Per-file content persistence via `attachSqlite`. Each content Y.Doc writes
+ * its own `{guid}.db` under `~/.epicenter/persistence/{workspaceId}/content/`.
+ * Survives restarts without relying on sync hydration.
+ */
+const CONTENT_DIR = join(
+	EPICENTER_PATHS.home(),
+	'persistence',
+	base.id,
+	'content',
+);
 const fileContentDocs = createFileContentDocs({
 	workspaceId: base.id,
 	filesTable: base.tables.files,
+	attach: (ydoc) =>
+		attachSqlite(ydoc, { filePath: join(CONTENT_DIR, `${ydoc.guid}.db`) }),
 });
 
 async function readContent(id: string): Promise<string | undefined> {

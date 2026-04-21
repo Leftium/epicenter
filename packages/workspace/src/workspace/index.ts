@@ -88,7 +88,13 @@ export { KV_KEY, TableKey } from '@epicenter/document';
 
 export { defineKv } from './define-kv.js';
 export { defineTable } from './define-table.js';
-export { defineWorkspace } from './define-workspace.js';
+export {
+	defineWorkspace,
+	type WorkspaceBundle,
+	type WorkspaceFactory,
+	type WorkspaceHandle,
+} from './define-workspace.js';
+export type { EncryptionAttachment } from '../shared/attach-encryption.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Workspace Creation

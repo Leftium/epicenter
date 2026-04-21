@@ -322,6 +322,73 @@ Before Pass A, an audit answered "does encryption belong in `packages/workspace`
 
 The spec originally proposed `attachEncryption(ydoc, { stores, workspaceId })`. Implementation uses `attachEncryption(ydoc, { stores })` and reads `ydoc.guid` internally. `workspaceId === ydoc.guid` is an invariant of construction (the guid is set from the id in `buildWorkspace`), so accepting it separately only invites drift between the two.
 
+## Phase 6 Deferred — Blockers Discovered During Fuji Attempt
+
+During the Pass B session, fuji was selected as the first Phase 6
+migration to validate the new API end-to-end. The attempt surfaced two
+dependencies that aren't in Spec C's file list and that block *clean*
+per-app migration across all seven consumers. Partial fuji migration
+was reverted.
+
+### Blocker 1 — `SyncStatusPopover` is structurally coupled to the old client shape
+
+`packages/svelte-utils/src/sync-status-popover/sync-status-popover.svelte`
+takes a `workspace` prop typed as:
+
+```ts
+workspace: {
+  extensions: { sync: { status, onStatusChange, reconnect } };
+  clearLocalData: () => Promise<void>;
+};
+```
+
+This shape is produced by the old extension-chain client. Migrated
+apps expose `.sync` (flat) and `.idb.clearLocal()` instead. The
+popover is shared by all seven apps, so migrating any *one* app
+forces either:
+
+- A per-app compat shim that reinvents the legacy surface
+  (`extensions: { sync }`, `clearLocalData: () => idb.clearLocal()`) —
+  debt that precedes and slows the full migration
+- Or refactoring the popover to accept explicit callback props
+  (`syncStatus`, `onSyncStatusChange`, `onReconnect`,
+  `onBeforeSignOut`) — a cleaner coupling, but a separate cross-app
+  refactor
+
+Recommended follow-up: refactor the popover to callback props first,
+then migrate apps. Out of Spec C scope.
+
+### Blocker 2 — `hasLocalChanges` is missing from `attachSync`'s `SyncStatus`
+
+`@epicenter/workspace`'s old `createSyncExtension` exposed
+`{ phase: 'connected'; hasLocalChanges: boolean }`. `@epicenter/document`'s
+`attachSync` exposes only `{ phase: 'connected' }`. The popover's
+safe-sign-out check reads `!status.hasLocalChanges`; with the new
+attachment it's always `undefined`, silently flipping the check to
+"always safe."
+
+A migration that casts the type to paper over the field loss is a
+silent UX regression across every app that migrates. Fixing properly
+means wiring sync-ack metadata through `attachSync` in
+`@epicenter/document` (~30–50 LOC plus tests, touches the sync
+protocol layer). Out of Spec C scope.
+
+### Net position after Pass B
+
+- `attachEncryption`, `attachTables`, `attachKv` extracted and tested
+- `defineWorkspace` repurposed as `DocumentFactory`-based
+  factory-of-factories with `gcTime: Infinity`
+- `createWorkspace` remains as a transitional shim that accepts either
+  a raw def or the new factory, preserves the legacy surface
+  verbatim, and keeps all seven apps building unchanged
+- `WorkspaceBundle`, `WorkspaceFactory`, `WorkspaceHandle`,
+  `EncryptionAttachment` exported from the workspace barrel
+- `createWorkspace`, `lifecycle.ts`, and the extension-chain types
+  remain in place until Phase 6 completes
+
+Phase 6 (migrate apps) and Phase 5 (delete shim + lifecycle) resume
+after the two blockers above are resolved in their own specs.
+
 ## Open Questions
 
 1. **`defineWorkspace` as alias or distinct function?**

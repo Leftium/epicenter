@@ -50,12 +50,12 @@
  * ```
  */
 
-import { attachAwareness, KV_KEY, TableKey } from '@epicenter/document';
-import { createKv, createTable } from '@epicenter/document/internal';
+import { attachAwareness } from '@epicenter/document';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import { attachEncryption } from '../shared/attach-encryption.js';
-import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import { attachKv } from './attach-kv.js';
+import { attachTables } from './attach-tables.js';
 import type { EncryptionKeys } from './encryption-key.js';
 import {
 	defineExtension,
@@ -68,10 +68,8 @@ import type {
 	Awareness,
 	AwarenessDefinitions,
 	ExtensionContext,
-	Kv,
 	KvDefinitions,
 	TableDefinitions,
-	Tables,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceDefinition,
@@ -128,25 +126,15 @@ export function createWorkspace<
 	// that haven't seen the deletes yet.
 	const ydoc = new Y.Doc({ guid: id, gc: gc ?? false });
 
-	const tableEntries = Object.entries(tableDefs).map(([name, definition]) => {
-		const store = createEncryptedYkvLww(ydoc, TableKey(name));
-		return { name, store, helper: createTable(store, definition) };
-	});
-
-	const kvStore = createEncryptedYkvLww(ydoc, KV_KEY);
-
-	const enc = attachEncryption(ydoc, {
-		stores: [...tableEntries.map(({ store }) => store), kvStore],
-	});
-
-	const tables = Object.fromEntries(
-		tableEntries.map(({ name, helper }) => [name, helper]),
-	) as Tables<TTableDefinitions>;
-	const kvHelper: Kv<TKvDefinitions> = createKv(kvStore, kvDefs);
+	const tables = attachTables(ydoc, tableDefs);
+	const kv = attachKv(ydoc, kvDefs);
 	const awareness: Awareness<TAwarenessDefinitions> = attachAwareness(
 		ydoc,
 		awarenessDefs,
 	);
+	const enc = attachEncryption(ydoc, {
+		stores: [...tables.stores, kv.store],
+	});
 
 	const definitions = {
 		tables: tableDefs,
@@ -171,8 +159,6 @@ export function createWorkspace<
 		clearLocalDataCallbacks: (() => MaybePromise<void>)[];
 		initPromises: Promise<unknown>[];
 	};
-
-	const typedTables = tables;
 
 	/**
 	 * Build a workspace client with the given extensions and lifecycle state.
@@ -222,8 +208,8 @@ export function createWorkspace<
 			id,
 			ydoc,
 			definitions,
-			tables: typedTables,
-			kv: kvHelper,
+			tables: tables.helpers,
+			kv: kv.helper,
 			awareness,
 			// Each extension entry is the exports object stored by reference.
 			extensions,

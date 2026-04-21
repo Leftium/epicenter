@@ -41,7 +41,7 @@ export function attachRichText(
 	ydoc: Y.Doc,
 	key = 'content',
 ): RichTextAttachment {
-	guardSlot(ydoc, 'attachRichText', 'rich-text slot', key);
+	guardSlot(ydoc, 'attachRichText', key);
 	const fragment = ydoc.getXmlFragment(key);
 	return {
 		binding: fragment,

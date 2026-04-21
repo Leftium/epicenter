@@ -33,7 +33,7 @@ export function attachAwareness<TDefs extends AwarenessDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TDefs,
 ): Awareness<TDefs> {
-	guardSingleton(ydoc, 'attachAwareness', 'an Awareness');
+	guardSingleton(ydoc, 'attachAwareness');
 	return createAwareness(new YAwareness(ydoc), definitions);
 }
 

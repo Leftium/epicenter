@@ -106,7 +106,7 @@ export function attachEncryption(
 		| { tables?: TablesLike; kv?: KvLike }
 		| { stores: readonly EncryptedYKeyValueLww<any>[] },
 ): EncryptionAttachment {
-	guardSingleton(ydoc, 'attachEncryption', 'encryption');
+	guardSingleton(ydoc, 'attachEncryption');
 	const stores: readonly EncryptedYKeyValueLww<any>[] =
 		'stores' in source
 			? source.stores

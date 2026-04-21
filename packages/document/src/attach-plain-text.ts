@@ -39,7 +39,7 @@ export function attachPlainText(
 	ydoc: Y.Doc,
 	key = 'content',
 ): PlainTextAttachment {
-	guardSlot(ydoc, 'attachPlainText', 'plain-text slot', key);
+	guardSlot(ydoc, 'attachPlainText', key);
 	const ytext = ydoc.getText(key);
 	return {
 		binding: ytext,

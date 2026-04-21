@@ -58,7 +58,7 @@ export function attachTable<
 	name: string,
 	definition: TTableDefinition,
 ): Table<InferTableRow<TTableDefinition>> {
-	guardSlot(ydoc, 'attachTable', 'table', name);
+	guardSlot(ydoc, 'attachTable', name);
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.on('destroy', () => ykv.dispose());

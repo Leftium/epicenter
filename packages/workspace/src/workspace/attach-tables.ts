@@ -27,7 +27,7 @@ export function attachTables<T extends TableDefinitions>(
 		// and `attachTables` for the same table name on a single Y.Doc throws
 		// regardless of which function attached first. The conceptual slot is
 		// "table named <name>"; the remediation is the same either way.
-		guardSlot(ydoc, 'attachTable', 'table', name);
+		guardSlot(ydoc, 'attachTable', name);
 		const store = createEncryptedYkvLww(ydoc, TableKey(name));
 		return { name, store, helper: createTable(store, def) };
 	});

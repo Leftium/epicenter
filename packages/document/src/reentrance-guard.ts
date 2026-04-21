@@ -54,7 +54,6 @@ function getSingletonSet(primitive: string): WeakSet<Y.Doc> {
 export function guardSlot(
 	ydoc: Y.Doc,
 	primitive: string,
-	slotLabel: string,
 	slot: string,
 ): void {
 	const map = getPerSlotMap(primitive);
@@ -68,8 +67,8 @@ export function guardSlot(
 	}
 	if (slots.has(slot)) {
 		throw new Error(
-			`${primitive}: a ${slotLabel} named '${slot}' is already attached to this Y.Doc. ` +
-				`Each ${slotLabel} may be attached at most once per Y.Doc. ` +
+			`${primitive}: slot '${slot}' is already attached to this Y.Doc. ` +
+				`Each slot may be attached at most once per Y.Doc. ` +
 				`Keep the reference from the first ${primitive} call — don't re-attach.`,
 		);
 	}
@@ -80,17 +79,13 @@ export function guardSlot(
  * Guard a singleton primitive (e.g. `attachKv`, `attachAwareness`,
  * `attachEncryption`). Throws if `(ydoc, primitive)` is already attached.
  */
-export function guardSingleton(
-	ydoc: Y.Doc,
-	primitive: string,
-	slotLabel: string,
-): void {
+export function guardSingleton(ydoc: Y.Doc, primitive: string): void {
 	const set = getSingletonSet(primitive);
 	if (set.has(ydoc)) {
 		throw new Error(
-			`${primitive}: this Y.Doc already has ${slotLabel} attached. ` +
-				`Each Y.Doc may have at most one ${slotLabel} attached. ` +
-				`Keep the reference from the first ${primitive} call — don't re-attach.`,
+			`${primitive}: this Y.Doc already has ${primitive} attached. ` +
+				`Each Y.Doc may have at most one ${primitive} attachment. ` +
+				`Keep the reference from the first call — don't re-attach.`,
 		);
 	}
 	set.add(ydoc);

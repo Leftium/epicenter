@@ -24,7 +24,7 @@ export function attachKv<T extends KvDefinitions>(
 	ydoc: Y.Doc,
 	definitions: T,
 ): KvAttachment<T> {
-	guardSingleton(ydoc, 'attachKv', 'a Kv');
+	guardSingleton(ydoc, 'attachKv');
 	const store = createEncryptedYkvLww(ydoc, KV_KEY);
 	const helper = createKv(store, definitions) as Kv<T>;
 	return { helper, store };

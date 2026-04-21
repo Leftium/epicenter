@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button, buttonVariants } from '@epicenter/ui/button';
+	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
 	import type { SyncStatus } from '@epicenter/document/attach-sync';
@@ -117,28 +117,34 @@
 </script>
 
 <Popover.Root bind:open={popoverOpen}>
-	<Popover.Trigger
-		class={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
-		title={tooltip}
-	>
-		<div class="relative">
-			{#if auth.isBusy}
-				<LoaderCircle class="size-4 animate-spin" />
-			{:else if !auth.isAuthenticated}
-				<CloudOff class="size-4 text-muted-foreground" />
-			{:else if syncStatus.phase === 'connected'}
-				<Cloud class="size-4" />
-			{:else if syncStatus.phase === 'connecting'}
-				<LoaderCircle class="size-4 animate-spin" />
-			{:else}
-				<CloudOff class="size-4 text-destructive" />
-			{/if}
-			{#if !auth.isAuthenticated}
-				<span
-					class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary"
-				></span>
-			{/if}
-		</div>
+	<Popover.Trigger>
+		{#snippet child({ props })}
+			<Button
+				{...props}
+				variant="ghost"
+				size="icon-sm"
+				{tooltip}
+			>
+				<div class="relative">
+					{#if auth.isBusy}
+						<LoaderCircle class="size-4 animate-spin" />
+					{:else if !auth.isAuthenticated}
+						<CloudOff class="size-4 text-muted-foreground" />
+					{:else if syncStatus.phase === 'connected'}
+						<Cloud class="size-4" />
+					{:else if syncStatus.phase === 'connecting'}
+						<LoaderCircle class="size-4 animate-spin" />
+					{:else}
+						<CloudOff class="size-4 text-destructive" />
+					{/if}
+					{#if !auth.isAuthenticated}
+						<span
+							class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary"
+						></span>
+					{/if}
+				</div>
+			</Button>
+		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-80 p-0" align="end">
 		{#if auth.isAuthenticated}

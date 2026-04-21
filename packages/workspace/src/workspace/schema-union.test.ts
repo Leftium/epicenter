@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
-import type { CombinedStandardSchema } from '@epicenter/document';
+import type { CombinedStandardSchema } from '../document/index.js';
 import { createUnionSchema } from './schema-union.js';
 
 describe('createUnionSchema', () => {

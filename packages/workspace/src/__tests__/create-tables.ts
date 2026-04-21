@@ -2,7 +2,7 @@ import {
 	attachTable,
 	type TableDefinitions,
 	type Tables,
-} from '@epicenter/document';
+} from '../document/index.js';
 import type * as Y from 'yjs';
 
 /**

@@ -16,7 +16,7 @@
 
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { attachTable } from '@epicenter/document';
+import { attachTable } from '../../src/document/index.js';
 import { defineTable } from '../../src/workspace/index.js';
 import { formatBytes } from './helpers.js';
 

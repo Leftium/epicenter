@@ -34,7 +34,7 @@ import type {
 	CombinedStandardSchema,
 	LastSchema,
 	TableDefinition,
-} from '@epicenter/document';
+} from '../document/index.js';
 import { createUnionSchema } from './schema-union.js';
 
 /**

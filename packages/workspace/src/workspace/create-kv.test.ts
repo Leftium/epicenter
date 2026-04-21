@@ -15,10 +15,10 @@
 import { expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { createKv } from '@epicenter/document/internal';
+import { createKv } from '../document/internal.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { defineKv } from './define-kv.js';
-import { KV_KEY } from '@epicenter/document';
+import { KV_KEY } from '../document/index.js';
 
 test('set stores a value that get returns', () => {
 	const ydoc = new Y.Doc();

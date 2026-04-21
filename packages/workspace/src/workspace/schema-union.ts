@@ -6,7 +6,7 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { CombinedStandardSchema } from '@epicenter/document';
+import type { CombinedStandardSchema } from '../document/index.js';
 
 /**
  * Creates a Standard Schema that validates against a union of schemas.

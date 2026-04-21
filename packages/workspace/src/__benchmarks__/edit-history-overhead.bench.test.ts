@@ -18,7 +18,7 @@
 import { describe, test } from 'bun:test';
 import * as Y from 'yjs';
 import { createTables } from '../__tests__/create-tables.js';
-import { attachTimeline } from '@epicenter/document';
+import { attachTimeline } from '../document/index.js';
 import {
 	formatBytes,
 	generateHeavyContent,

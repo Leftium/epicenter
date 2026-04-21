@@ -6,7 +6,7 @@ import {
 	COMPACTION_BYTE_THRESHOLD,
 	COMPACTION_DEBOUNCE_MS,
 	compactUpdateLog,
-} from '@epicenter/document/sqlite-update-log';
+} from '../../document/sqlite-update-log.js';
 
 /**
  * Filesystem persistence factory using SQLite append-log.

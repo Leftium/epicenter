@@ -83,22 +83,22 @@ export { DateTimeString } from './shared/datetime-string';
 export {
 	attachIndexedDb,
 	type IndexedDbAttachment,
-} from '@epicenter/document';
-export { attachSqlite, type SqliteAttachment } from '@epicenter/document';
+} from './document/index.js';
+export { attachSqlite, type SqliteAttachment } from './document/index.js';
 export {
 	attachBroadcastChannel,
 	BC_ORIGIN,
 	type BroadcastChannelAttachment,
-} from '@epicenter/document';
+} from './document/index.js';
 export {
 	attachRichText,
 	xmlFragmentToPlaintext,
 	type RichTextAttachment,
-} from '@epicenter/document';
+} from './document/index.js';
 export {
 	attachPlainText,
 	type PlainTextAttachment,
-} from '@epicenter/document';
+} from './document/index.js';
 export {
 	attachSync,
 	toWsUrl,
@@ -108,11 +108,11 @@ export {
 	type SyncAttachment,
 	type SyncAttachmentConfig,
 	type SyncStatus,
-} from '@epicenter/document';
-export { attachTable, attachTables, type LastSchema } from '@epicenter/document';
-export { attachKv } from '@epicenter/document';
-export { attachAwareness } from '@epicenter/document';
-export type { CombinedStandardSchema } from '@epicenter/document';
+} from './document/index.js';
+export { attachTable, attachTables, type LastSchema } from './document/index.js';
+export { attachKv } from './document/index.js';
+export { attachAwareness } from './document/index.js';
+export type { CombinedStandardSchema } from './document/index.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TIMELINE
@@ -125,7 +125,7 @@ export type {
 	SheetEntry,
 	TextEntry,
 	TimelineEntry,
-} from '@epicenter/document';
+} from './document/index.js';
 export {
 	attachTimeline,
 	computeMidpoint,
@@ -134,7 +134,7 @@ export {
 	populateFragmentFromText,
 	serializeSheetToCsv,
 	type Timeline,
-} from '@epicenter/document';
+} from './document/index.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT FACTORY
@@ -144,17 +144,17 @@ export {
 	defineDocument,
 	type DocumentFactory,
 	type DocumentHandle,
-} from '@epicenter/document';
-export { docGuid } from '@epicenter/document';
-export { createPerRowDoc, type DocPersistence } from '@epicenter/document';
-export { DOCUMENTS_ORIGIN, onLocalUpdate } from '@epicenter/document';
+} from './document/index.js';
+export { docGuid } from './document/index.js';
+export { createPerRowDoc, type DocPersistence } from './document/index.js';
+export { DOCUMENTS_ORIGIN, onLocalUpdate } from './document/index.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { KvKey, TableKey as TableKeyType } from '@epicenter/document';
-export { KV_KEY, TableKey } from '@epicenter/document';
+export type { KvKey, TableKey as TableKeyType } from './document/index.js';
+export { KV_KEY, TableKey } from './document/index.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SCHEMA DEFINITIONS (Pure)
@@ -221,7 +221,7 @@ export type {
 	Tables,
 	UpdateResult,
 	ValidRowResult,
-} from '@epicenter/document';
+} from './document/index.js';
 export type {
 	AnyWorkspaceClient,
 	ExtensionContext,

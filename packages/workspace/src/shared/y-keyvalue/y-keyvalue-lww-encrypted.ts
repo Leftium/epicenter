@@ -71,7 +71,7 @@ import {
 	type ObservableKvStore,
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
-} from '@epicenter/document/y-keyvalue';
+} from '../../document/y-keyvalue/index.js';
 
 const textEncoder = new TextEncoder();
 /** Transaction origin for re-encryption writes. Observer skips events with this origin. */

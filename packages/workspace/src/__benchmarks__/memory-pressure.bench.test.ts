@@ -13,7 +13,7 @@
 
 import { describe, test } from 'bun:test';
 import * as Y from 'yjs';
-import { attachTable } from '@epicenter/document';
+import { attachTable } from '../document/index.js';
 import {
 	formatBytes,
 	generateId,

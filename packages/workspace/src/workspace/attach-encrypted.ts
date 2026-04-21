@@ -30,8 +30,8 @@ import {
 	type TableDefinition,
 	type TableDefinitions,
 	type Tables,
-} from '@epicenter/document';
-import { createKv, createTable } from '@epicenter/document/internal';
+} from '../document/index.js';
+import { createKv, createTable } from '../document/internal.js';
 import type * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type { EncryptionAttachment } from './attach-encryption.js';

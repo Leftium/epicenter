@@ -23,7 +23,7 @@
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { JsonValue } from 'wellcrafted/json';
-import type { CombinedStandardSchema, KvDefinition } from '@epicenter/document';
+import type { CombinedStandardSchema, KvDefinition } from '../document/index.js';
 
 /**
  * Create a KV definition with a schema and required default value.

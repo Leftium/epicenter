@@ -58,7 +58,7 @@ import {
 	type KvDefinitions,
 	type TableDefinitions,
 	type Tables,
-} from '@epicenter/document';
+} from '../document/index.js';
 import type { Awareness as YAwareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';

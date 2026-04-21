@@ -11,7 +11,7 @@
 import { unlinkSync } from 'node:fs';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { attachTable } from '@epicenter/document';
+import { attachTable } from '../../src/document/index.js';
 import { defineTable } from '../../src/index.js';
 import { formatBytes, measureTime } from './helpers.js';
 

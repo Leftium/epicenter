@@ -15,7 +15,7 @@
 import { describe, expect, test } from 'bun:test';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import * as Y from 'yjs';
-import type { YKeyValueLwwEntry } from '@epicenter/document/y-keyvalue';
+import type { YKeyValueLwwEntry } from '../../document/y-keyvalue/index.js';
 import { createEncryptedYkvLww } from '../y-keyvalue/y-keyvalue-lww-encrypted';
 import {
 	base64ToBytes,

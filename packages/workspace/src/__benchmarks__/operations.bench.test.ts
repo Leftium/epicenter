@@ -11,8 +11,8 @@ import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { type } from 'arktype';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { attachTable } from '@epicenter/document';
-import { createKv } from '@epicenter/document/internal';
+import { attachTable } from '../document/index.js';
+import { createKv } from '../document/internal.js';
 import { createWorkspace } from '../workspace/create-workspace.js';
 import { defineKv } from '../workspace/define-kv.js';
 import {

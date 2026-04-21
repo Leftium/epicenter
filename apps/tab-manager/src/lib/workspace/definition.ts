@@ -1,20 +1,19 @@
 /**
- * Workspace schema — branded IDs, table definitions, and workspace definition.
+ * Workspace schema — branded IDs, table definitions, and awareness shape.
  *
  * Browser-agnostic: no Chrome APIs, no IndexedDB, no Svelte imports.
  * This file can be safely imported by the CLI daemon or any Node/Bun process.
  *
  * The browser-specific client wiring lives in `client.ts`, which imports
- * this schema and adds IndexedDB persistence, WebSocket sync, and actions.
+ * this schema and composes every attachment inline inside a single
+ * `defineDocument` closure.
  */
 
 import {
 	defineTable,
-	defineWorkspace,
 	generateId,
 	type Id,
 	type InferTableRow,
-	type KvDefinitions,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
@@ -276,10 +275,15 @@ const toolTrustTable = defineTable(
 export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Workspace Definition
+// Schema Exports
 // ─────────────────────────────────────────────────────────────────────────────
 
-const tables = {
+/**
+ * Table definitions for the tab-manager workspace. Composed in `client.ts`
+ * via `attachTables(ydoc, tabManagerTables)`. Kept separate so actions and
+ * future consumers can derive their input types from one source of truth.
+ */
+export const tabManagerTables = {
 	devices: devicesTable,
 	savedTabs: savedTabsTable,
 	bookmarks: bookmarksTable,
@@ -288,19 +292,11 @@ const tables = {
 	toolTrust: toolTrustTable,
 };
 
-const awareness = {
+/**
+ * Awareness field definitions — published per-client identity for
+ * multi-device presence.
+ */
+export const tabManagerAwarenessDefs = {
 	deviceId: type('string'),
 	client: type('"extension" | "desktop" | "cli"'),
 };
-
-export const tabManager = defineWorkspace<
-	'epicenter.tab-manager',
-	typeof tables,
-	KvDefinitions,
-	typeof awareness
->({
-	id: 'epicenter.tab-manager',
-	tables,
-	kv: {},
-	awareness,
-});

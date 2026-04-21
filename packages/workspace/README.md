@@ -124,6 +124,22 @@ That example uses the current public API end to end:
 - `set`, `get`, `update`, `delete`, `getAllValid`, and `observe`
 - `.withActions(...)` plus `defineQuery(...)` and `defineMutation(...)`
 
+## Prefix vocabulary
+
+Every exported function in this package (and its sibling `@epicenter/document`) falls into one of three verbs. The prefix tells you what the function *does to state*:
+
+| Verb | Side effect | Input | Output | Examples |
+|---|---|---|---|---|
+| `define*` | **None** — pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineMutation`, `defineQuery` |
+| `attach*` | **Mutates a Y.Doc** — binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle (non-idempotent — hold the reference) | `attachEncryption`, `attachEncryptedTable`, `attachEncryptedTables`, `attachEncryptedKv` |
+| `create*` | **Instantiates a runtime** — may allocate a `Y.Doc` or wrap an existing store | Config or an existing store | A usable instance | `createWorkspace`, `createUnionSchema` |
+
+### Plaintext vs encrypted
+
+This package ships the **encrypted** variants (`attachEncryptedTable`, `attachEncryptedTables`, `attachEncryptedKv`) — they register their backing stores with an `EncryptionAttachment` coordinator so keys applied via `encryption.applyKeys(...)` flow to every registered store atomically.
+
+The plaintext counterparts (`attachTable`, `attachTables`, `attachKv`) live in `@epicenter/document`. The layer split is deliberate: `workspace` assumes encryption is the norm and makes plaintext require a cross-package import (loud, intentional). Don't mix plaintext and encrypted wrappers on the same slot name — Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`attachEncryptedTable` vs `attachTable`) is the primary defense; review call sites accordingly.
+
 ## Core Philosophy
 
 ### Yjs is the source of truth

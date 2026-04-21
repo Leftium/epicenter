@@ -39,6 +39,24 @@ This split is the whole design. Yjs's update stream is oblivious to which shared
 
 > **Note on `attachAwareness`.** It's grouped with providers because it sits *alongside* the doc rather than inside it, but it's the odd one out: awareness state (cursors, presence, typing indicators) is ephemeral and travels on a separate `y-protocols` channel, not the doc's update stream. `attachIndexedDb` and `attachSync` do not persist or sync awareness — sync providers may opt in to forwarding it as a separate message type.
 
+## Prefix vocabulary
+
+Every exported function in this package (and its sibling `@epicenter/workspace`) falls into one of three verbs. The prefix tells you what the function *does to state*:
+
+| Verb | Side effect | Input | Output | Examples |
+|---|---|---|---|---|
+| `define*` | **None** — pure data | Schemas, defaults | Plain config object | `defineDocument`, `defineTable`, `defineKv`, `defineMutation` |
+| `attach*` | **Mutates a Y.Doc** — binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle (non-idempotent — hold the reference) | `attachTable`, `attachKv`, `attachRichText`, `attachIndexedDb`, `attachSync`, `attachEncryption` |
+| `create*` | **Instantiates a runtime** — may allocate a `Y.Doc` or wrap an existing store | Config or an existing store | A usable instance or factory | `createWorkspace`, `createPerRowDoc`, `createTable` / `createKv` (internal) |
+
+A few consequences fall out of this:
+
+- `defineTable(schema)` is a **schema**, not a helper — you can declare it at module scope, share it across tests, serialize it, etc. `attachTable(ydoc, name, def)` is what makes it live.
+- `attach*` is not idempotent. Two calls against the same `Y.Doc` + slot install duplicate observers and corrupt state silently. Hold the first reference for the lifetime of the `Y.Doc`.
+- `create*` that allocates (`createWorkspace`, `createPerRowDoc`) returns something with its own disposal surface. `create*` that wraps (internal `createTable`, `createKv`) is a pure factory over a pre-constructed store.
+
+When you see a verb that doesn't fit one of these three, that's a naming bug — flag it.
+
 ## Quick start
 
 ```ts

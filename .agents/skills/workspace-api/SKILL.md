@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), withActions, and extension ordering. Use when the user mentions workspace, defineTable, defineKv, createWorkspace, withActions, withExtension, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, chaining extensions, or attaching actions to a workspace client.
+description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), defineDocument, attach* primitives, and action composition. Use when the user mentions workspace, defineTable, defineKv, defineDocument, attachTables, attachSync, attachIndexedDb, attachSqlite, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, composing attachments inline, or attaching actions to a document bundle.
 metadata:
   author: epicenter
   version: '6.0'
@@ -22,8 +22,8 @@ Type-safe schema definitions for tables and KV stores.
 - Adding a new version to an existing table definition
 - Writing table migration functions
 - Reading, writing, or observing table/KV data
-- Attaching actions to a workspace client via `.withActions()`
-- Chaining extensions with `.withExtension()` or `.withWorkspaceExtension()`
+- Composing a live document with `defineDocument(builder)` + `attach*` primitives
+- Attaching persistence (`attachIndexedDb`, `attachSqlite`), sync (`attachSync`), or materializers inline
 - Writing server-side Bun scripts with `connectWorkspace()`
 ## Tables
 
@@ -126,15 +126,15 @@ const newId = generateConversationId();  // Good
 // const newId = generateId() as string as ConversationId;  // Bad
 ```
 
-## Actions (`.withActions()`)
+## Actions
 
-Actions wrap workspace operations as `defineMutation` (writes) or `defineQuery` (reads). Attach them via `.withActions()` on a workspace builder—the call is non-terminal, so you can chain `.withExtension()` after it.
+Actions wrap table operations as `defineMutation` (writes) or `defineQuery` (reads). Build them in a small factory that closes over `tables` and `batch`, then attach the result to the bundle returned from your `defineDocument` builder.
 
 ```typescript
-import { createWorkspace, defineMutation, defineQuery } from '@epicenter/workspace';
+import { defineMutation, defineQuery } from '@epicenter/workspace';
 
-export function createBlogWorkspace() {
-	return createWorkspace({ id: 'blog', tables: { posts } }).withActions(({ tables }) => ({
+export function createBlogActions({ tables, batch }) {
+	return {
 		/**
 		 * Mark a post as published and record the publication timestamp.
 		 *
@@ -146,11 +146,17 @@ export function createBlogWorkspace() {
 			description: 'Publish a draft post',
 			input: type({ id: PostId }),
 			handler: ({ id }) => {
-				tables.posts.update({ id, published: true, publishedAt: Date.now() });
+				batch(() => {
+					tables.posts.update({ id, published: true, publishedAt: Date.now() });
+				});
 			},
 		}),
-	}));
+	};
 }
+
+// Inside defineDocument(...):
+//   const actions = createBlogActions({ tables, batch });
+//   return { id, ydoc, tables, actions, batch, /* ... */ };
 ```
 
 ### JSDoc on Action Methods
@@ -185,11 +191,12 @@ src/lib/
 │
 ├── workspace/                          ← 100% isomorphic (safe for Node, Bun, browser)
 │   ├── definition.ts                   ← Schema: defineTable, defineKv, branded IDs
-│   ├── workspace.ts                    ← Factory: createWorkspace({...}) + isomorphic actions
-│   └── index.ts                        ← Barrel: re-exports definition + workspace only
+│   ├── actions.ts                      ← Isomorphic action factory: createXActions({ tables, batch })
+│   └── index.ts                        ← Barrel: re-exports definition + actions only
 │
-└── client.ts                           ← Runtime singleton: extensions, encryption, sync,
-                                           runtime-specific actions (browser APIs, Node fs, etc.)
+└── client.ts                           ← Runtime singleton: defineDocument(builder) composing
+                                           attachTables, attachIndexedDb/Sqlite, attachSync,
+                                           attachEncryption, and runtime-specific actions
 ```
 
 ```
@@ -199,9 +206,9 @@ src/lib/
                     └────────────┬────────────┘
                                  │ imports
                     ┌────────────▼────────────┐
-                    │     workspace.ts         │
-                    │  createX() factory       │
-                    │  + isomorphic actions    │
+                    │     actions.ts           │
+                    │  createXActions factory  │
+                    │  ({ tables, batch })     │
                     └────────────┬────────────┘
                                  │ imports
    ┌─────────────────────────────┼─────────────────────────────┐
@@ -210,8 +217,8 @@ src/lib/
 ┌──────────────┐   ┌──────────────────┐   ┌──────────────────┐
 │ client.ts    │   │ server-client.ts │   │ cli-client.ts    │
 │ (browser)    │   │ (Node/Bun)       │   │ (CLI)            │
-│ IndexedDB    │   │ SQLite           │   │ filesystem       │
-│ WebSocket    │   │ TCP sync         │   │ persistence      │
+│ attachIndex… │   │ attachSqlite     │   │ attachSqlite     │
+│ attachSync   │   │ attachSync       │   │ (no sync)        │
 │ Chrome APIs  │   │ Node fs APIs     │   │                  │
 └──────────────┘   └──────────────────┘   └──────────────────┘
 ```
@@ -219,9 +226,9 @@ src/lib/
 ### Layering Rules
 
 1. **`definition.ts`** — Pure schema. `defineTable()`, `defineKv()`, branded ID types and generators. Isomorphic.
-2. **`workspace.ts`** — Factory function that calls `createWorkspace({...})` with the inlined definition. May chain `.withActions()` for **isomorphic** actions (table reads/writes only). Isomorphic.
-3. **`index.ts`** — Barrel that re-exports from `definition.ts` and `workspace.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
-4. **`client.ts`** — Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Calls the factory, chains `.withEncryption()`, `.withExtension()`, and runtime-specific `.withActions()`. Exports the singleton as a named export (`export const workspace = ...`).
+2. **`actions.ts`** — Factory that takes `{ tables, batch }` and returns an action tree of `defineQuery`/`defineMutation`. Isomorphic — no browser/Node APIs.
+3. **`index.ts`** — Barrel that re-exports from `definition.ts` and `actions.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
+4. **`client.ts`** — Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Wraps `defineDocument(builder)` where the builder composes runtime-specific attachments (IndexedDB vs SQLite, browser vs Node APIs) and assembles the full bundle (including runtime-specific actions). Exports the singleton via `.open(id)` as a named export (`export const workspace = xDoc.open('epicenter.x')`).
 
 ### Import Convention
 
@@ -253,12 +260,12 @@ The barrel is 100% isomorphic, so this single subpath is safe for any consumer (
 
 ### Isomorphic vs Runtime-Specific Actions
 
-Isomorphic actions (table reads/writes, portable logic) belong in the exported `workspace.ts` factory. Runtime-specific actions—whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands—are chained via `.withActions()` in the client file closest to that runtime.
+Isomorphic actions (table reads/writes, portable logic) belong in the exported `actions.ts` factory. Runtime-specific actions—whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands—live in the `client.ts` builder where the relevant attachments and APIs are in scope.
 
 ```typescript
-// workspace.ts — isomorphic actions (exported via barrel)
-export function createMyApp() {
-  return createWorkspace(definition).withActions(({ tables }) => ({
+// workspace/actions.ts — isomorphic actions (exported via barrel)
+export function createMyAppActions({ tables, batch }) {
+  return {
     devices: {
       list: defineQuery({
         title: 'List Devices',
@@ -267,14 +274,19 @@ export function createMyApp() {
         handler: () => ({ devices: tables.devices.getAllValid() }),
       }),
     },
-  }));
+  };
 }
 
-// src/lib/client.ts — browser-specific actions chained at the runtime boundary
-export const workspace = createMyApp()
-  .withExtension('persistence', indexeddbPersistence)
-  .withExtension('sync', createSyncExtension({ ... }))
-  .withActions(({ tables }) => ({
+// src/lib/client.ts — browser-specific attachments + runtime actions
+const myApp = defineDocument((id: string) => {
+  const ydoc = new Y.Doc({ guid: id });
+  const tables = attachTables(ydoc, myAppTables);
+  const idb = attachIndexedDb(ydoc);
+  const sync = attachSync(ydoc, { url, waitFor: idb.whenLoaded });
+  const batch = (fn) => ydoc.transact(fn);
+
+  const actions = {
+    ...createMyAppActions({ tables, batch }),
     tabs: {
       close: defineMutation({
         title: 'Close Tabs',
@@ -286,61 +298,56 @@ export const workspace = createMyApp()
         },
       }),
     },
-  }));
+  };
 
-// OR: src/lib/server-client.ts — Node/Bun-specific at the server boundary
-export const workspace = createMyApp()
-  .withExtension('persistence', sqlitePersistence)
-  .withActions(({ tables }) => ({
-    files: {
-      importFromDisk: defineMutation({
-        title: 'Import Files',
-        description: 'Import files from a local directory.',
-        input: Type.Object({ dirPath: Type.String() }),
-        handler: async ({ dirPath }) => {
-          const entries = await readdir(dirPath);  // Node fs API
-          // ...
-        },
-      }),
-    },
-  }));
+  return { id, ydoc, tables, idb, sync, actions, batch, /* whenReady, … */ };
+});
+
+export const workspace = myApp.open('epicenter.myapp');
 ```
 
-## Extension Ordering
+## Attachment Ordering
 
-Extensions initialize in registration order. Each extension's factory receives a `whenReady` promise that resolves when all previously registered extensions have finished initializing. Whether this creates a waterfall depends on whether each extension awaits it:
+Attachments compose through plain lexical scope, so ordering is explicit: if `sync` needs to wait for local state, its `waitFor` option reads `idb.whenLoaded` — and `idb` must be defined first.
 
-| Extension | Awaits prior `whenReady`? | Behavior |
+| Attachment | Typical `waitFor` | Behavior |
 |---|---|---|
-| `filesystemPersistence` | No | Starts loading SQLite immediately |
-| `indexeddbPersistence` | No | Starts loading IndexedDB immediately |
-| `createCliUnlock` | Yes | Waits for persistence, then applies encryption keys |
-| `createSyncExtension` | Yes | Waits for everything before it, then opens WebSocket |
-| `createMarkdownMaterializer` | Yes | Waits for persistence + sync, then materializes |
+| `attachSqlite` | — | Starts loading SQLite immediately |
+| `attachIndexedDb` | — | Starts loading IndexedDB immediately |
+| `attachEncryption` + `applyKeys` | after auth | Applied after auth resolves encryption keys |
+| `attachSync` | `idb.whenLoaded` (or `sqlite.whenLoaded`) | Opens WebSocket after local replay |
 
-The standard chain is **persistence → unlock → sync**:
+The standard shape is **persistence first, then sync with `waitFor`**:
 
 ```
-persistence starts loading ────────────────────→ done
-                                                   ↓
-                        unlock waits... ──────────→ applies keys → done
-                                                                    ↓
-                        sync waits... ─────────────────────────────→ connects
+attachIndexedDb  ────────────→ idb.whenLoaded resolves
+                                       ↓
+attachSync({ waitFor: idb.whenLoaded }) ────→ WebSocket opens → synced
 ```
 
 This ordering matters because sync only exchanges the delta between local state and the server. Without persistence loading first, every cold start downloads the full document.
 
 ```typescript
-// ✅ Correct — persistence loads first, sync exchanges delta only
-createWorkspace(definition)
-  .withExtension('persistence', filesystemPersistence({ filePath: '...' }))
-  .withWorkspaceExtension('unlock', createCliUnlock(sessions, SERVER_URL))
-  .withExtension('sync', createSyncExtension({ url: ..., getToken: ... }))
+// ✅ Correct — persistence loads first, sync waits for idb, exchanges delta only
+defineDocument((id) => {
+  const ydoc = new Y.Doc({ guid: id });
+  const tables = attachTables(ydoc, myTables);
+  const sqlite = attachSqlite(ydoc, { filePath: '...' });
+  const sync = attachSync(ydoc, {
+    url: (docId) => toWsUrl(`${serverUrl}/workspaces/${docId}`),
+    getToken,
+    waitFor: sqlite.whenLoaded,
+  });
+  return { id, ydoc, tables, sqlite, sync, /* ... */ };
+});
 
 // ❌ Wrong — sync starts before local state is loaded, downloads full document
-createWorkspace(definition)
-  .withExtension('sync', createSyncExtension({ url: ..., getToken: ... }))
-  .withExtension('persistence', filesystemPersistence({ filePath: '...' }))
+defineDocument((id) => {
+  const ydoc = new Y.Doc({ guid: id });
+  const sync = attachSync(ydoc, { url, getToken }); // no waitFor
+  const sqlite = attachSqlite(ydoc, { filePath: '...' });
+  return { id, ydoc, sqlite, sync, /* ... */ };
+});
 ```
 
 ### `connectWorkspace` (CLI/Script Shortcut)
@@ -384,7 +391,9 @@ Code references:
 
 - `packages/workspace/src/workspace/define-table.ts`
 - `packages/workspace/src/workspace/define-kv.ts`
-- `packages/workspace/src/workspace/index.ts`
-- `packages/workspace/src/workspace/create-tables.ts`
-- `packages/workspace/src/workspace/create-kv.ts`
-- `packages/workspace/src/workspace/create-workspace.ts`
+- `packages/workspace/src/document/define-document.ts`
+- `packages/workspace/src/document/attach-table.ts`
+- `packages/workspace/src/document/attach-kv.ts`
+- `packages/workspace/src/document/attach-sync.ts`
+- `packages/workspace/src/document/attach-indexed-db.ts`
+- `packages/workspace/src/document/attach-sqlite.ts`

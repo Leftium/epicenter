@@ -2,9 +2,9 @@
 
 The hard problem with local-first apps is synchronization. If each device has its own SQLite file, how do you keep them in sync? If each device has its own markdown folder, same question.
 
-`@epicenter/workspace` solves that by making Yjs the source of truth. Tables, KV entries, document content, and awareness all live in a `Y.Doc`; persistence, sync, and materializers hang off that core through the extension builder. Write to the workspace, and everything else reacts.
+`@epicenter/workspace` solves that by making Yjs the source of truth. Tables, KV entries, document content, and awareness all live in a `Y.Doc`; persistence, sync, and materializers hang off that core as attachment primitives. Write to the workspace, and everything else reacts.
 
-If you're coming from the old README, the API really did change. Older docs showed a different client/bootstrap surface than the one this package exports today. The public path now is `createWorkspace(...)`, direct property access like `client.tables.posts`, `table.set(...)`, and extension subpaths such as `@epicenter/workspace/extensions/persistence/indexeddb`.
+The public path is `defineDocument(buildBundle)` — a small refcounted cache around a user-owned builder that composes `new Y.Doc`, `attachTables`, `attachKv`, `attachIndexedDb`, `attachSync`, and so on. Everything below — tables, KV, documents, sync — is just what you return from that builder.
 
 ## Quick Start
 
@@ -14,16 +14,16 @@ bun add @epicenter/workspace
 
 ```typescript
 import { type } from 'arktype';
-import Type from 'typebox';
+import * as Y from 'yjs';
 import {
-	createWorkspace,
-	defineMutation,
-	defineQuery,
+	attachIndexedDb,
+	attachKv,
+	attachSync,
+	attachTables,
+	defineDocument,
 	defineTable,
-	generateId,
+	toWsUrl,
 } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
 
 const posts = defineTable(
 	type({
@@ -35,47 +35,39 @@ const posts = defineTable(
 	}),
 );
 
-export const blogWorkspace = createWorkspace({
-	id: 'epicenter.blog',
-	tables: { posts },
-})
-	.withExtension('persistence', indexeddbPersistence)
-	.withExtension(
-		'sync',
-		createSyncExtension({
-			url: (docId) => `ws://localhost:3913/rooms/${docId}`,
-		}),
-	)
-	.withActions(({ tables }) => ({
-		posts: {
-			list: defineQuery({
-				title: 'List Posts',
-				description: 'List all posts in the workspace.',
-				handler: () => tables.posts.getAllValid(),
-			}),
+const blog = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { posts });
+	const kv = attachKv(ydoc, {});
+	const idb = attachIndexedDb(ydoc);
+	const sync = attachSync(ydoc, {
+		url: (docId) => toWsUrl(`http://localhost:3913/rooms/${docId}`),
+		waitFor: idb.whenLoaded,
+	});
 
-			create: defineMutation({
-				title: 'Create Post',
-				description: 'Create a new post row.',
-				input: Type.Object({
-					title: Type.String(),
-					body: Type.String(),
-				}),
-				handler: ({ title, body }) => {
-					const id = generateId();
-					tables.posts.set({
-						id,
-						title,
-						body,
-						published: false,
-						_v: 1,
-					});
-
-					return { id };
-				},
-			}),
+	return {
+		id,
+		ydoc,
+		tables,
+		kv,
+		idb,
+		sync,
+		whenReady: idb.whenLoaded,
+		whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(
+			() => {},
+		),
+		[Symbol.dispose]() {
+			ydoc.destroy();
 		},
-	}));
+	};
+});
+
+// Singleton style: open once at module scope, use everywhere.
+export const blogWorkspace = blog.open('epicenter.blog');
+
+// Multi-doc style: open by id, dispose when done.
+// using draft = blog.open(`draft:${id}`);
+// await draft.whenReady;
 
 async function quickStart() {
 	await blogWorkspace.whenReady;
@@ -92,24 +84,6 @@ async function quickStart() {
 	if (result.status === 'valid') {
 		blogWorkspace.tables.posts.update(result.row.id, { published: true });
 	}
-
-	const unsubscribe = blogWorkspace.tables.posts.observe((changedIds) => {
-		for (const id of changedIds) {
-			console.log('changed:', id);
-		}
-	});
-
-	const allPosts = blogWorkspace.tables.posts.getAllValid();
-	console.log(allPosts.length);
-
-	blogWorkspace.tables.posts.delete('welcome');
-	unsubscribe();
-
-	const created = await blogWorkspace.actions.posts.create({
-		title: 'Created through an action',
-		body: 'Actions close over the client via closure.',
-	});
-	console.log(created.id);
 }
 
 void quickStart;
@@ -118,11 +92,12 @@ void quickStart;
 That example uses the current public API end to end:
 
 - `defineTable(...)` with a real schema
-- `createWorkspace(...)` for the client
-- `.withExtension(...)` for persistence and sync
-- direct property access via `client.tables.posts`
+- `defineDocument(builder)` + `.open(id)` for the live handle
+- `attachTables` / `attachKv` / `attachIndexedDb` / `attachSync` composed inline
+- direct property access via `workspace.tables.posts`
 - `set`, `get`, `update`, `delete`, `getAllValid`, and `observe`
-- `.withActions(...)` plus `defineQuery(...)` and `defineMutation(...)`
+
+`defineDocument` serves both cases with one primitive. A singleton like the blog above is just `.open(id)` called once; a multi-document app (per-row content docs, per-room ephemeral docs) calls `.open(id)` N times — the cache refcounts handles and disposes them after a `gcTime` grace period once the last handle is released.
 
 ## Prefix vocabulary
 
@@ -130,9 +105,11 @@ Every exported function in this package falls into one of three verbs. The prefi
 
 | Verb | Side effect | Input | Output | Examples |
 |---|---|---|---|---|
-| `define*` | **None** — pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineDocument`, `defineMutation`, `defineQuery` |
+| `define*` | **None** — pure data | Schemas, defaults | Plain config object / refcounted cache | `defineTable`, `defineKv`, `defineDocument`, `defineMutation`, `defineQuery` |
 | `attach*` | **Mutates a Y.Doc** — binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle (non-idempotent — hold the reference) | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachSync`, `attachEncryption`, `attachEncryptedTable`, `attachEncryptedTables`, `attachEncryptedKv` |
-| `create*` | **Instantiates a runtime** — may allocate a `Y.Doc` or wrap an existing store | Config or an existing store | A usable instance | `createWorkspace`, `createPerRowDoc`, `createUnionSchema` |
+| `create*` | **Instantiates a runtime** — may allocate a `Y.Doc` or wrap an existing store | Config or an existing store | A usable instance | `createPerRowDoc`, `createUnionSchema` |
+
+`defineDocument(builder)` is the top-level entry point. The user owns `new Y.Doc` and every `attach*` call inside the builder; the cache owns identity (keyed by id), refcount, and the `gcTime` grace period between last-dispose and teardown. `.open(id)` returns a disposable handle.
 
 ### Plaintext vs encrypted
 
@@ -150,20 +127,25 @@ That matters because conflict resolution only has to happen once. Yjs handles me
 
 ### Definitions are pure; clients are live
 
-`defineTable` and `defineKv` are pure. They do not create a `Y.Doc`, open a socket, or touch IndexedDB. `createWorkspace` is the boundary where the live client appears.
+`defineTable` and `defineKv` are pure. They do not create a `Y.Doc`, open a socket, or touch IndexedDB. The builder you pass to `defineDocument(...)` is the boundary where the live bundle appears.
 
-That split is not cosmetic. It lets you share definitions across modules, infer types once, and instantiate different clients in different runtimes without rewriting the schema layer.
+That split is not cosmetic. It lets you share definitions across modules, infer types once, and instantiate different bundles in different runtimes without rewriting the schema layer.
 
-### The builder is the extension system
+### Inline composition is the extension system
 
-The old provider map is gone. The current model is a builder:
+There is no builder chain. The user-owned builder inside `defineDocument` composes attachments inline:
 
-- `.withExtension(...)` registers an extension for the workspace doc and all document docs
-- `.withWorkspaceExtension(...)` registers a workspace-only extension
-- `.withDocumentExtension(...)` registers a document-only extension
-- `.withActions(...)` attaches callable action functions to the live client
+```typescript
+defineDocument((id) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { posts });
+	const idb = attachIndexedDb(ydoc);
+	const sync = attachSync(ydoc, { url, waitFor: idb.whenLoaded });
+	return { id, ydoc, tables, idb, sync, /* ... */ };
+});
+```
 
-Extensions compose progressively. Each later extension sees the exports from earlier extensions through typed `client.extensions` access.
+Ordering is obvious (later `attach*` calls see earlier ones through plain lexical scope) and there is no magic `client.extensions` namespace — each attachment is whatever you named it in the returned bundle.
 
 ### Read-time validation beats write-time ceremony
 
@@ -248,13 +230,13 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 ### How It All Fits Together
 
 1. Define tables and KV entries with `defineTable` and `defineKv`.
-2. Create a live client with `createWorkspace({ id, tables, kv })`.
-3. Chain extensions with `.withExtension(...)`, `.withWorkspaceExtension(...)`, and `.withDocumentExtension(...)`.
-4. Attach actions with `.withActions(...)`.
-5. Wait for `client.whenReady` if your extensions load persisted state or open connections.
-6. Read and write through `client.tables`, `client.kv`, `client.tables.<name>.documents`, and `client.awareness`.
+2. Write a builder that takes an `id`, constructs `new Y.Doc({ guid: id })`, and composes `attachTables` / `attachKv` / `attachIndexedDb` / `attachSync` / etc. inline.
+3. Wrap the builder with `defineDocument(builder)` to get a refcounted cache.
+4. Call `.open(id)` to get a live handle — once at module scope for a singleton, or N times for multi-doc apps.
+5. Wait for `handle.whenReady` if your attachments load persisted state or open connections.
+6. Read and write through `handle.tables`, `handle.kv`, `handle.awareness`, and (for per-row content docs) whatever you exposed in the returned bundle.
 7. Use `iterateActions(...)`, `describeWorkspace(...)`, and action metadata if you want to build adapters such as HTTP, CLI, or MCP.
-8. Dispose the client with `await client.dispose()` when you're done.
+8. Dispose with `handle[Symbol.dispose]()` (or let a `using` block do it) when you're done — the cache waits `gcTime` before tearing the bundle down in case another caller re-opens it.
 
 The architecture stays local-first: the workspace works offline, synchronizes opportunistically, and treats external systems as helpers around the document—not the other way around.
 
@@ -271,6 +253,13 @@ The ID becomes `ydoc.guid` for the workspace doc, so it is not a throwaway strin
 
 ## Core Concepts
 
+> **Note on examples below.** Many of the small snippets in this section show
+> `const workspace = createWorkspace({ id, tables })` to keep the focus on the
+> API being demonstrated (table CRUD, KV, actions). The current primitive is
+> `defineDocument(builder).open(id)` — see the **Quick Start** above for the
+> canonical shape. Everything else (`workspace.tables.*`, `workspace.kv.*`,
+> `workspace.actions.*`) is identical once you have the handle.
+
 ### Workspaces
 
 A workspace definition is plain data:
@@ -280,11 +269,11 @@ A workspace definition is plain data:
 - `kv`
 - `awareness`
 
-A workspace client is that definition plus a live `Y.Doc`, typed helpers, optional documents, optional extensions, and optional actions.
+A workspace handle is that definition plus a live `Y.Doc`, typed helpers, attachments, and actions — whatever your `defineDocument` builder returns.
 
 ### Yjs document
 
-The raw `Y.Doc` is still available at `client.ydoc`. That is the escape hatch, not the primary API. Most consumers should stay at the workspace layer unless they are building a new extension or debugging storage internals.
+The raw `Y.Doc` is available at `handle.ydoc`. That is the escape hatch, not the primary API. Most consumers should stay at the typed-helper layer unless they are writing a new attachment or debugging storage internals.
 
 ### Tables
 
@@ -314,9 +303,9 @@ KV entries are for settings and scalar preferences. They are keyed by string and
 
 Extensions are opt-in capabilities layered onto the workspace builder.
 
-- Use `.withExtension(...)` when the same factory should apply to the workspace doc and every document doc.
-- Use `.withWorkspaceExtension(...)` when the factory needs `tables`, `kv`, `definitions`, or other workspace-only fields.
-- Use `.withDocumentExtension(...)` when the factory needs `timeline`, `tableName`, or `documentName`.
+- Call the relevant `attach*` function (e.g. `attachIndexedDb`, `attachSync`, `attachSqlite`, `attachEncryption`) inside your `defineDocument` builder and return the handle in the bundle.
+- Order matters only through lexical scope — later `attach*` calls see earlier ones directly.
+- For per-row content docs, build a separate `defineDocument(...)` whose `id` is the row's content guid.
 
 ### Actions
 
@@ -324,7 +313,7 @@ Actions are callable functions with metadata.
 
 - `defineQuery(...)` creates a read action
 - `defineMutation(...)` creates a write action
-- `.withActions(...)` attaches them to `client.actions`
+- Attach them by returning an `actions` object from your `defineDocument` builder (e.g. via a `createMyAppActions({ tables, batch })` helper)
 
 Handlers close over the client through normal JavaScript closure. They do not receive a framework context object.
 
@@ -364,9 +353,9 @@ The Y.Doc and its IndexedDB persistence are framework-owned and stay alive for t
 - The framework refcounts binds per guid. Extensions' `onActive` hooks fire on the 0 → 1 transition; `onIdle` hooks fire after a grace period (30 s default) once the last bind is released.
 - A fresh bind during the grace window cancels the pending idle, so rapid nav doesn't flap the socket.
 - **Idle docs keep local state.** The Y.Doc, IndexedDB persistence, and buffered updates all stay live. When something re-binds, the sync provider reconnects and the CRDT delta-syncs — no cold start, no lost edits.
-- `.read()` / `.write()` / `.append()` do **not** auto-bind. They operate on local state. If you need sync-fresh programmatic reads, bind explicitly (and await connection status via `client.extensions.sync.onStatusChange` or similar).
+- `.read()` / `.write()` / `.append()` do **not** auto-bind. They operate on local state. If you need sync-fresh programmatic reads, bind explicitly (and await connection status via `workspace.sync.onStatusChange` or similar).
 
-Workspace-scoped sync (the top-level `.withExtension('sync', …)` on the workspace Y.Doc) is always-active — the framework calls `onActive` automatically after init. Only per-document sync participates in bind/release. The grace window defaults to 30 seconds; extension authors that want a different default can override it when calling `createDocuments` directly.
+Workspace-scoped sync (the top-level `attachSync(ydoc, ...)` inside the main document's builder) is always-active — it opens as soon as the builder runs. Only per-document sync participates in bind/release. The grace window defaults to 30 seconds.
 
 ### When to skip `.withDocument` and build your own opener
 
@@ -772,159 +761,173 @@ unsubscribe();
 void workspace;
 ```
 
-## Provider System
+## Attachments
 
-The old provider map is gone. The current public API is the extension chain.
-
-That means this:
-
-```text
-createWorkspace(definition)
-	.withExtension('persistence', indexeddbPersistence)
-	.withExtension('sync', createSyncExtension({ ... }))
-	.withWorkspaceExtension('markdown', (ctx) => createMarkdownMaterializer(ctx, { dir: '...' }).table('notes'));
-```
-
-Not this:
-
-```text
-// This API does not exist anymore.
-// providers: { persistence: ..., sync: ... }
-```
-
-### Builder methods
-
-| Method | Scope | Use when |
-| --- | --- | --- |
-| `.withExtension(key, factory)` | Workspace doc + all document docs | Same factory should run everywhere |
-| `.withWorkspaceExtension(key, factory)` | Workspace doc only | Factory needs `tables`, `kv`, or `definitions` |
-| `.withDocumentExtension(key, factory)` | Document docs only | Factory needs `timeline`, `tableName`, or `documentName` |
-| `.withActions(factory)` | Live client only | Attach callable queries and mutations |
-
-### Persistence extensions
-
-The current public persistence subpaths are:
-
-- `@epicenter/workspace/extensions/persistence/indexeddb`
-- `@epicenter/workspace/extensions/persistence/sqlite`
-
-The first exports `indexeddbPersistence`. The second exports `filesystemPersistence({ filePath })`, which returns an extension factory.
+Attachments are the opt-in capabilities you compose inside a `defineDocument` builder. They all ship from the package root — there are no `@epicenter/workspace/extensions/*` subpaths anymore.
 
 ```typescript
-import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
-import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
-
-const notes = defineTable(
-	type({
-		id: 'string',
-		title: 'string',
-		_v: '1',
-	}),
-);
-
-const workspace = createWorkspace({
-	id: 'epicenter.notes.desktop',
-	tables: { notes },
-}).withExtension(
-	'persistence',
-	filesystemPersistence({
-		filePath: '/tmp/epicenter/notes.db',
-	}),
-);
-
-void workspace;
-```
-
-### Sync extension
-
-The public sync subpaths are:
-
-- `@epicenter/workspace/extensions/sync/websocket`
-- `@epicenter/workspace/extensions/sync/broadcast-channel`
-
-In practice, `createSyncExtension(...)` is the main entry point. It already includes BroadcastChannel cross-tab sync.
-
-```typescript
-import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 import {
-	createSyncExtension,
+	attachBroadcastChannel,
+	attachIndexedDb,
+	attachSqlite,
+	attachSync,
+	attachTables,
 	toWsUrl,
-} from '@epicenter/workspace/extensions/sync/websocket';
-
-const tabs = defineTable(
-	type({
-		id: 'string',
-		url: 'string',
-		_v: '1',
-	}),
-);
-
-const workspace = createWorkspace({
-	id: 'epicenter.tabs',
-	tables: { tabs },
-})
-	.withExtension('persistence', indexeddbPersistence)
-	.withExtension(
-		'sync',
-		createSyncExtension({
-			url: (docId) => toWsUrl(`https://sync.epicenter.so/rooms/${docId}`),
-		}),
-	);
-
-void workspace;
+} from '@epicenter/workspace';
 ```
+
+### Persistence
+
+`attachIndexedDb(ydoc)` runs in the browser. `attachSqlite(ydoc, { filePath })` runs on Node/Bun. Both return a handle with `whenLoaded`, `whenDisposed`, and `clearLocal()`.
+
+```typescript
+import * as Y from 'yjs';
+import {
+	attachSqlite,
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '@epicenter/workspace';
+import { type } from 'arktype';
+
+const notes = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+
+const notesDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { notes });
+	const sqlite = attachSqlite(ydoc, { filePath: '/tmp/epicenter/notes.db' });
+
+	return {
+		id,
+		ydoc,
+		tables,
+		sqlite,
+		whenReady: sqlite.whenLoaded,
+		whenDisposed: sqlite.whenDisposed,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+});
+
+void notesDoc;
+```
+
+### Sync
+
+`attachSync(ydoc, config)` is the websocket transport; it already composes with `attachBroadcastChannel(ydoc)` for cross-tab sync.
+
+```typescript
+import * as Y from 'yjs';
+import {
+	attachBroadcastChannel,
+	attachIndexedDb,
+	attachSync,
+	attachTables,
+	defineDocument,
+	defineTable,
+	toWsUrl,
+} from '@epicenter/workspace';
+import { type } from 'arktype';
+
+const tabs = defineTable(type({ id: 'string', url: 'string', _v: '1' }));
+
+const tabsDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { tabs });
+	const idb = attachIndexedDb(ydoc);
+	attachBroadcastChannel(ydoc);
+	const sync = attachSync(ydoc, {
+		url: (docId) => toWsUrl(`https://sync.epicenter.so/rooms/${docId}`),
+		waitFor: idb.whenLoaded,
+	});
+
+	return {
+		id,
+		ydoc,
+		tables,
+		idb,
+		sync,
+		whenReady: idb.whenLoaded,
+		whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(
+			() => {},
+		),
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+});
+
+void tabsDoc;
+```
+
+Ordering is just lexical: `sync` reads `idb.whenLoaded` as `waitFor` because `idb` is defined first. No builder chain, no priority flag.
 
 ### Markdown materializer
 
-The markdown materializer is exported at `@epicenter/workspace/extensions/materializer/markdown`. It is a workspace-only extension because it needs access to `tables`.
+The markdown materializer is exported from `@epicenter/workspace/document/materializer/markdown`. Compose it inside a `defineDocument` builder alongside the other attachments — it needs `tables` and `ydoc`, both of which are already in lexical scope.
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
-import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
+import * as Y from 'yjs';
+import {
+	attachSqlite,
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '@epicenter/workspace';
 import {
 	createMarkdownMaterializer,
 	slugFilename,
-} from '@epicenter/workspace/extensions/materializer/markdown';
+} from '@epicenter/workspace/document/materializer/markdown';
 
 const notes = defineTable(
-	type({
-		id: 'string',
-		title: 'string',
-		body: 'string',
-		_v: '1',
-	}),
+	type({ id: 'string', title: 'string', body: 'string', _v: '1' }),
 );
 
-const workspace = createWorkspace({
-	id: 'epicenter.notes',
-	tables: { notes },
-})
-	.withExtension(
-		'persistence',
-		filesystemPersistence({
-			filePath: '/tmp/epicenter/notes-workspace.db',
-		}),
-	)
-	.withWorkspaceExtension('markdown', (ctx) =>
-		createMarkdownMaterializer(ctx, { dir: '/tmp/epicenter/markdown' })
-			.table('notes', { serialize: slugFilename('title') }),
-	);
+const notesDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { notes });
+	const sqlite = attachSqlite(ydoc, {
+		filePath: '/tmp/epicenter/notes-workspace.db',
+	});
+	const markdown = createMarkdownMaterializer(
+		{ ydoc, tables },
+		{ dir: '/tmp/epicenter/markdown' },
+	).table('notes', { serialize: slugFilename('title') });
 
-void workspace;
+	return {
+		id,
+		ydoc,
+		tables,
+		sqlite,
+		markdown,
+		whenReady: sqlite.whenLoaded,
+		whenDisposed: sqlite.whenDisposed,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+});
+
+void notesDoc;
+```
 
 ### SQLite materializer
 
-The SQLite materializer is exported at `@epicenter/workspace/extensions/materializer/sqlite`. It mirrors workspace table rows into queryable SQLite tables with optional FTS5 full-text search. Like the markdown materializer, it uses a builder pattern with `.table()` opt-in.
+The SQLite materializer is exported from `@epicenter/workspace/document/materializer/sqlite`. It mirrors table rows into queryable SQLite tables with optional FTS5 full-text search, using a builder pattern with `.table()` opt-in.
 
 ```typescript
 import { Database } from 'bun:sqlite';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
-import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
-import { createSqliteMaterializer } from '@epicenter/workspace/extensions/materializer/sqlite';
+import * as Y from 'yjs';
+import {
+	attachSqlite,
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '@epicenter/workspace';
+import { createSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
+import { type } from 'arktype';
 
 const posts = defineTable(
 	type({
@@ -936,23 +939,34 @@ const posts = defineTable(
 	}),
 );
 
-const workspace = createWorkspace({
-	id: 'epicenter.blog',
-	tables: { posts },
-})
-	.withExtension(
-		'persistence',
-		filesystemPersistence({ filePath: '/tmp/epicenter/blog.db' }),
-	)
-	.withWorkspaceExtension('sqlite', (ctx) =>
-		createSqliteMaterializer(ctx, { db: new Database('/tmp/epicenter/blog.db') })
-			.table('posts', { fts: ['title', 'body'] }),
-	);
+const blogDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { posts });
+	const sqlite = attachSqlite(ydoc, { filePath: '/tmp/epicenter/blog.db' });
+	const mirror = createSqliteMaterializer(
+		{ ydoc, tables },
+		{ db: new Database('/tmp/epicenter/blog.db') },
+	).table('posts', { fts: ['title', 'body'] });
 
-// After whenReady, query the materialized data:
-// workspace.extensions.sqlite.search('posts', 'hello');
-// workspace.extensions.sqlite.count('posts');
-// workspace.extensions.sqlite.rebuild('posts');
+	return {
+		id,
+		ydoc,
+		tables,
+		sqlite,
+		mirror,
+		whenReady: sqlite.whenLoaded,
+		whenDisposed: sqlite.whenDisposed,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+});
+
+// After whenReady:
+// blog.mirror.search('posts', 'hello');
+// blog.mirror.count('posts');
+// blog.mirror.rebuild('posts');
+void blogDoc;
 ```
 
 The `MirrorDatabase` interface is structurally compatible with `bun:sqlite`'s `Database` and `better-sqlite3`'s `Database`—no wrapper needed. Pass your driver directly.
@@ -1213,88 +1227,61 @@ if (isMutation(createAction)) {
 }
 ```
 
-## Providers
+## Package entry points
 
-Historically, Epicenter called many of these things “providers.” In the current package surface, the better mental model is “extensions.” This section lists the public extension entry points the package actually exports.
+All attachments and the `defineDocument` factory live at the package root. The only subpath exports today are the materializers (which pull in heavier dependencies) and a few utility surfaces.
 
 | Import path | What it exports | Public today |
 | --- | --- | --- |
-| `@epicenter/workspace` | Core workspace API, actions, ids, dates, types | Yes |
-| `@epicenter/workspace/extensions/persistence/indexeddb` | `indexeddbPersistence` | Yes |
-| `@epicenter/workspace/extensions/persistence/sqlite` | `filesystemPersistence` | Yes |
-| `@epicenter/workspace/extensions/sync/websocket` | `createSyncExtension`, `toWsUrl`, sync types | Yes |
-| `@epicenter/workspace/extensions/sync/broadcast-channel` | BroadcastChannel sync extension | Yes |
-| `@epicenter/workspace/extensions/materializer/markdown` | `createMarkdownMaterializer`, serializers | Yes |
-| `@epicenter/workspace/extensions/materializer/sqlite` | `createSqliteMaterializer`, `generateDdl`, types | Yes |
-
-### Create workspace
-
-The builder is usable immediately. You do not need a separate “finalize” step.
-
-```typescript
-import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
-
-const notes = defineTable(
-	type({
-		id: 'string',
-		title: 'string',
-		_v: '1',
-	}),
-);
-
-const workspace = createWorkspace({
-	id: 'epicenter.examples.builder',
-	tables: { notes },
-});
-
-workspace.tables.notes.set({ id: '1', title: 'Ready immediately', _v: 1 });
-
-void workspace;
-```
-
-If you add extensions, use `whenReady` as the async boundary.
+| `@epicenter/workspace` | `defineDocument`, `defineTable`, `defineKv`, every `attach*` (tables, kv, indexeddb, sqlite, sync, broadcast-channel, awareness, encryption, rich-text, plain-text, timeline), action helpers, ids, dates, types | Yes |
+| `@epicenter/workspace/document/materializer/markdown` | `createMarkdownMaterializer`, serializers | Yes |
+| `@epicenter/workspace/document/materializer/sqlite` | `createSqliteMaterializer`, `generateDdl`, types | Yes |
+| `@epicenter/workspace/ai` | `actionsToAiTools` (TanStack AI bindings) | Yes |
+| `@epicenter/workspace/shared/crypto` | Lower-level crypto primitives for encryption attachments | Yes |
 
 ## Architecture & Lifecycle
 
-### Client initialization lifecycle
+### Document initialization lifecycle
 
-When you call `createWorkspace(...)`, here is the actual lifecycle:
+When you call `defineDocument(builder).open(id)`, here is the actual lifecycle:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. CREATE Y.Doc                                            │
-│    • guid = workspace id                                   │
-│    • tables, kv, and awareness helpers are created         │
+│ 1. CACHE LOOKUP                                            │
+│    • keyed by id                                           │
+│    • first open runs the builder; subsequent opens reuse   │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 2. CREATE DOCUMENT MANAGERS                                │
-│    • Only for tables that called .withDocument()           │
-│    • Managers are eager; document Y.Docs open lazily       │
+│ 2. BUILDER RUNS                                            │
+│    • new Y.Doc({ guid: id })                               │
+│    • attachTables / attachKv / attachAwareness             │
+│    • attachIndexedDb or attachSqlite                       │
+│    • attachSync (waitFor: idb.whenLoaded, …)               │
+│    • builder returns the bundle                            │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. APPLY BUILDER CHAIN                                     │
-│    • withExtension / withWorkspaceExtension /              │
-│      withDocumentExtension / withActions                   │
-│    • each step returns a fresh builder                     │
+│ 3. HANDLE MINTED                                           │
+│    • refcount++                                            │
+│    • [Symbol.dispose] bound for refcount-- on release      │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. RESOLVE whenReady                                       │
-│    • composite promise across all registered extensions    │
-│    • persistence loads first, sync can wait on it          │
+│ 4. AWAIT whenReady                                         │
+│    • bundle-defined: usually idb.whenLoaded                │
+│    • sync starts in background via its own waitFor         │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 5. LIVE CLIENT                                             │
-│    • tables / kv / documents / awareness / extensions      │
-│    • actions callable directly through client.actions      │
+│ 5. LIVE HANDLE                                             │
+│    • tables / kv / awareness / sync / actions              │
+│    • use until [Symbol.dispose] — cache waits gcTime       │
+│      before tearing down in case another caller re-opens   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -1409,39 +1396,30 @@ Core definition helpers:
 - `defineTable(v1, v2, ...).migrate(fn)`
 - `defineKv(schema, defaultValue)`
 
-### Client creation
+### Document creation
 
 ```typescript
-import {
-	createWorkspace,
-	type WorkspaceClient,
-	type WorkspaceClientBuilder,
-} from '@epicenter/workspace';
+import { defineDocument } from '@epicenter/workspace';
 ```
 
-The builder returned by `createWorkspace(...)` is already a usable client.
+`defineDocument(builder)` returns a refcounted factory. `.open(id)` mints a live handle. The shape of that handle is whatever the builder returns — so `id`, `tables`, `kv`, `awareness`, `sync`, `actions`, `batch`, etc. are all things you explicitly put in the bundle.
 
-### Client properties
+### Typical handle properties
 
-The important runtime properties are:
+Everything below is a *convention* — the builder is free to expose more or less. Most epicenter apps return at least:
 
-- `client.id`
-- `client.ydoc`
-- `client.definitions`
-- `client.tables` (document managers live at `client.tables.<name>.documents`)
-- `client.kv`
-- `client.awareness`
-- `client.extensions`
-- `client.actions` when attached through `.withActions(...)`
-- `client.whenReady`
-
-Lifecycle and utility methods:
-
-- `client.batch(fn)`
-- `client.loadSnapshot(update)`
-- `client.applyEncryptionKeys(keys)`
-- `client.clearLocalData()`
-- `client.dispose()`
+- `handle.id`
+- `handle.ydoc`
+- `handle.tables`
+- `handle.kv`
+- `handle.awareness`
+- `handle.idb` (or `handle.sqlite`)
+- `handle.sync`
+- `handle.encryption` (when encrypted)
+- `handle.actions`
+- `handle.batch(fn)`
+- `handle.whenReady` and `handle.whenDisposed`
+- `handle[Symbol.dispose]()`
 
 ### Document content model
 

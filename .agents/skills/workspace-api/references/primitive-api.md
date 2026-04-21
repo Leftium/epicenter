@@ -2,9 +2,9 @@
 
 ## When to Read This
 
-Read when composing standalone Y.Docs (per-row content, settings, skills, anything outside `createWorkspace`), or when wiring persistence + sync against a raw `Y.Doc`.
+Read when composing any Y.Doc in the app — the top-level workspace doc *and* per-row content docs, settings, skills, or any other standalone Y.Doc. Every live document goes through `defineDocument(builder)` where the builder owns `new Y.Doc(...)` and every `attach*` call.
 
-`.withDocument()` on tables was removed. Per-row content docs are now plain `Y.Doc`s opened by the component that owns the lifecycle.
+`.withDocument()` on tables was removed. Per-row content docs are now their own `defineDocument` factory, keyed on the row's content guid.
 
 ## The Primitive: Just Y.Doc + attach\*
 
@@ -255,14 +255,15 @@ new Y.Doc({ guid, gc: true });  // peers lose deletion markers
 new Y.Doc({ guid, gc: false });
 ```
 
-## Relationship to `createWorkspace`
+## One primitive for every doc
 
-`createWorkspace` is the single-Y.Doc sugar: one workspace def, one Y.Doc, one `.withExtension` chain. Under the hood, `createWorkspace` does exactly what you'd write by hand — `new Y.Doc(...)`, then `createTableHelper`, `createKvHelper`, `createAwarenessHelper` (the workspace-flavored equivalents of `attachTable`/`attachKv`/`attachAwareness`). If your app fits in one Y.Doc, keep using `createWorkspace` — it hasn't changed. Reach for raw `Y.Doc` + `attach*` when you need a second scope: per-row content, split settings, skills, or any non-workspace Yjs doc.
+There is no separate workspace/document split anymore. The app's top-level workspace doc is a `defineDocument(builder)` with `attachTables` + `attachKv` + `attachAwareness` + persistence + sync in the builder; per-row content docs are another `defineDocument` with `attachRichText` / `attachPlainText` / `attachTimeline` + their own persistence + sync. Both are keyed by id and refcounted by the cache.
 
 ## Code References
 
-- `packages/document/src/attach-indexed-db.ts` — persistence attach
-- `packages/document/src/attach-sync.ts` — sync attach (supervisor, backoff, awareness)
-- `packages/document/src/attach-rich-text.ts`, `attach-plain-text.ts`
-- `apps/fuji/src/lib/entry-content-docs.ts` — canonical per-row example
-- `packages/workspace/src/workspace/create-workspace.ts` — `createWorkspace` built on raw Y.Doc + helpers
+- `packages/workspace/src/document/define-document.ts` — the cache + refcount primitive
+- `packages/workspace/src/document/attach-indexed-db.ts` — persistence attach
+- `packages/workspace/src/document/attach-sync.ts` — sync attach (supervisor, backoff, awareness)
+- `packages/workspace/src/document/attach-rich-text.ts`, `attach-plain-text.ts`
+- `apps/fuji/src/lib/entry-content-doc.ts` — canonical per-row example
+- `apps/tab-manager/src/lib/client.ts` — canonical workspace-scale example

@@ -6,56 +6,59 @@ The epicenter workspace system provides a clean API where actions are directly c
 
 ```typescript
 import { type } from 'arktype';
+import * as Y from 'yjs';
 import {
-	createWorkspace,
-	defineQuery,
+	attachTables,
+	defineDocument,
 	defineMutation,
-	runWorkspace,
+	defineQuery,
+	defineTable,
+	generateId,
 } from '@epicenter/workspace';
 
-// Define your workspace
-const todosWorkspace = createWorkspace({
-	id: 'todos',
-	tables: {
-		todos: {
-			id: id(),
-			title: text(),
-			completed: integer(),
-		},
-	},
-	actions: () => ({
+const todosTable = defineTable(
+	type({ id: 'string', title: 'string', completed: 'boolean', _v: '1' }),
+);
+
+const todosDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { todos: todosTable });
+
+	const actions = {
 		getTodos: defineQuery({
-			input: type({}),
-			handler: async () => {
-				// Your logic here
-				return todos;
-			},
+			handler: () => tables.todos.getAllValid(),
 		}),
 
 		createTodo: defineMutation({
-			input: type({
-				title: 'string>0',
-			}),
-			handler: async (input) => {
-				// Input is validated and typed!
-				const newTodo = { id: '...', title: input.title, completed: false };
-				todos.push(newTodo);
+			input: type({ title: 'string>0' }),
+			handler: ({ title }) => {
+				const newTodo = { id: generateId(), title, completed: false, _v: 1 as const };
+				tables.todos.set(newTodo);
 				return newTodo;
 			},
 		}),
-	}),
+	};
+
+	return {
+		id,
+		ydoc,
+		tables,
+		actions,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 });
 
-// Use your workspace - clean, direct API!
-const todos = await runWorkspace(todosWorkspace);
+const todos = todosDoc.open('todos');
 
-// Actions are directly callable - no .execute() needed!
-await todos.createTodo({ title: 'Learn Epicenter' });
-const allTodos = await todos.getTodos({});
+// Actions are directly callable — no .execute() needed!
+todos.actions.createTodo({ title: 'Learn Epicenter' });
+const allTodos = todos.actions.getTodos();
 
 // Actions still have properties for introspection
-console.log(todos.createTodo.type); // 'mutation'
-console.log(todos.getTodos.type); // 'query'
+console.log(todos.actions.createTodo.type); // 'mutation'
+console.log(todos.actions.getTodos.type);   // 'query'
 ```
 
 ## Key Features

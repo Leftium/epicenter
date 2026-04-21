@@ -5,11 +5,12 @@ This page only makes claims visible in the current code:
 - `packages/workspace/src/shared/crypto/index.ts`
 - `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`
 - `packages/workspace/src/workspace/encryption-key.ts`
-- `packages/workspace/src/workspace/create-workspace.ts`
+- `packages/workspace/src/document/attach-encryption.ts`
+- `packages/workspace/src/workspace/attach-encrypted.ts`
 - `apps/api/src/auth/encryption.ts`
 - `apps/api/src/auth/create-auth.ts`
 - `packages/svelte-utils/src/auth/create-auth.svelte.ts`
-- `packages/workspace/src/extensions/persistence/indexeddb.ts`
+- `packages/workspace/src/document/attach-indexed-db.ts`
 - `apps/api/src/base-sync-room.ts`
 If something is not visible there, it is not presented as fact here.
 
@@ -47,7 +48,7 @@ encrypted CRDT value
 ```
 On the server, `apps/api/src/auth/encryption.ts` hashes each configured secret with SHA-256, imports that digest into Web Crypto HKDF, and derives 256 bits with `info = user:{userId}`.
 It returns one `{ version, userKeyBase64 }` entry per configured secret version.
-On the client, `createWorkspace().applyEncryptionKeys()` decodes each `userKeyBase64`, runs `deriveWorkspaceKey(userKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`.
+On the client, `workspace.encryption.applyKeys(...)` (the `EncryptionAttachment` exposed from the document bundle) decodes each `userKeyBase64`, runs `deriveWorkspaceKey(userKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`.
 The highest version becomes the current key for new writes.
 
 ## How keys reach the client
@@ -179,8 +180,7 @@ Before activation, the wrapper is a passthrough store and `set()` writes plainte
 After activation, `set()` always encrypts.
 The active state holds the full keyring, the current key, and the current key version.
 Calling `activateEncryption()` again updates that state to a new keyring, but it does not switch the store back to plaintext mode.
-`createWorkspace()` reinforces that shape.
-All table stores and the KV store are created as encrypted wrappers from the start, and `applyEncryptionKeys()` later activates encryption across all of them.
+The document builder reinforces that shape: `attachEncryption(ydoc)` plus `attachEncryptedTables` / `attachEncryptedKv` register every table and KV store as encrypted wrappers from the start, and `encryption.applyKeys(...)` later activates encryption across all of them.
 
 ## What activation re-encrypts
 Activation does not rewrite everything.

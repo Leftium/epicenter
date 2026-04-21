@@ -75,10 +75,12 @@ See `specs/20260312T180000-branded-id-convention.md` for the full inventory and 
 
 ```typescript
 import {
-	createWorkspace,
+	attachTables,
+	defineDocument,
 	defineTable,
 	type InferTableRow,
 } from '@epicenter/workspace';
+import * as Y from 'yjs';
 
 // ─── Tables (each followed by its type export) ──────────────────────────
 
@@ -101,43 +103,52 @@ const postsTable = defineTable(
 );
 export type Post = InferTableRow<typeof postsTable>;
 
-// ─── Workspace client ───────────────────────────────────────────────────
+// ─── Document factory + singleton ───────────────────────────────────────
 
-export const workspaceClient = createWorkspace({
-	id: 'my-workspace',
-	tables: {
-		users: usersTable,
-		posts: postsTable,
-	},
+const myDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { users: usersTable, posts: postsTable });
+	return {
+		id,
+		ydoc,
+		tables,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 });
+
+export const workspace = myDoc.open('my-workspace');
 ```
 
 ### Why This Structure
 
 - **Co-located types**: Each `export type` sits right below its `defineTable` — easy to verify 1:1 correspondence, easy to remove both together.
-- **Error co-location**: If you forget `_v` or `id`, the error shows on the `defineTable()` call right next to the schema — not buried inside the `createWorkspace` call.
+- **Error co-location**: If you forget `_v` or `id`, the error shows on the `defineTable()` call right next to the schema — not buried inside the `attachTables` call.
 - **Schema-agnostic inference**: `InferTableRow` works with any Standard Schema (arktype, zod, etc.) and handles migrations correctly (always infers the latest version's type).
-- **Fast type inference**: `InferTableRow<typeof usersTable>` resolves against a standalone const. Avoids the expensive `InferTableRow<NonNullable<(typeof definition)['tables']>['key']>` chain that forces TS to resolve the entire workspace return type.
+- **Fast type inference**: `InferTableRow<typeof usersTable>` resolves against a standalone const. Avoids expensive indirection through the document handle type.
 
 ### Anti-Pattern: Inline Tables + Deep Indirection
 
 ```typescript
-// BAD: Tables inline, types derived through deep indirection off the client
-const client = createWorkspace({
-	id: 'my-workspace',
-	tables: {
+// BAD: Tables inline, types derived through deep indirection off the handle
+const myDoc = defineDocument((id) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, {
 		users: defineTable(type({ id: 'string', email: 'string', _v: '1' })),
-	},
+	});
+	return { id, ydoc, tables };
 });
-type Tables = NonNullable<(typeof client)['definitions']['tables']>;
+type Tables = ReturnType<typeof myDoc.open>['tables'];
 export type User = InferTableRow<Tables['users']>;
 
-// GOOD: Extract table, co-locate type, reference it in createWorkspace
+// GOOD: Extract table, co-locate type, reference it in attachTables
 const usersTable = defineTable(type({ id: UserId, email: 'string', _v: '1' }));
 export type User = InferTableRow<typeof usersTable>;
 
-export const workspaceClient = createWorkspace({
-	id: 'my-workspace',
-	tables: { users: usersTable },
+const myDoc = defineDocument((id) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { users: usersTable });
+	return { id, ydoc, tables };
 });
 ```

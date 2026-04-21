@@ -134,45 +134,50 @@ Different devices need different provider configurations.
 
 ### Phone Browser Configuration
 
-Phone has no local server, so it connects directly to all available sync nodes:
+Phone has no local server, so it connects directly to all available sync nodes. Each `attachSync` opens its own WebSocket to a different node.
 
 ```typescript
-// phone/src/workspace.ts
-import { createWorkspace } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
+// phone/src/client.ts
+import {
+	attachIndexedDb,
+	attachSync,
+	attachTables,
+	defineDocument,
+} from '@epicenter/workspace';
+import * as Y from 'yjs';
 import { SYNC_NODES } from './config/sync-nodes';
+import { blogTables } from './workspace/definition';
 
-export const blogWorkspace = createWorkspace({
-	id: 'blog',
-	tables: {
-		/* ... */
-	},
-})
+const blog = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, blogTables);
+	const idb = attachIndexedDb(ydoc);
 	// Connect to ALL sync nodes for maximum resilience
-	.withExtension('syncDesktop', createSyncExtension({ url: SYNC_NODES.desktop }))
-	.withExtension('syncLaptop', createSyncExtension({ url: SYNC_NODES.laptop }))
-	.withExtension('syncCloud', createSyncExtension({ url: SYNC_NODES.cloud }));
+	const syncDesktop = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: idb.whenLoaded });
+	const syncLaptop = attachSync(ydoc, { url: SYNC_NODES.laptop, waitFor: idb.whenLoaded });
+	const syncCloud = attachSync(ydoc, { url: SYNC_NODES.cloud, waitFor: idb.whenLoaded });
+	return { id, ydoc, tables, idb, syncDesktop, syncLaptop, syncCloud, /* ... */ };
+});
+
+export const blogWorkspace = blog.open('blog');
 ```
 
 ### Laptop/Desktop Browser Configuration
 
-Browser connects to its own local server (localhost). The server handles cross-device sync.
+Browser connects only to its own local server (localhost). The server handles cross-device sync.
 
 ```typescript
-// desktop/browser/src/workspace.ts
-import { createWorkspace } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
-import { SYNC_NODES } from './config/sync-nodes';
-
-export const blogWorkspace = createWorkspace({
-	id: 'blog',
-	tables: {
-		/* ... */
-	},
-})
+// desktop/browser/src/client.ts
+const blog = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, blogTables);
+	const idb = attachIndexedDb(ydoc);
 	// Browser only needs to connect to its local server
-	// The server handles syncing with other devices
-	.withExtension('sync', createSyncExtension({ url: SYNC_NODES.localhost }));
+	const sync = attachSync(ydoc, { url: SYNC_NODES.localhost, waitFor: idb.whenLoaded });
+	return { id, ydoc, tables, idb, sync, /* ... */ };
+});
+
+export const blogWorkspace = blog.open('blog');
 ```
 
 ### Desktop Server Configuration (Server-to-Server Sync)
@@ -180,61 +185,54 @@ export const blogWorkspace = createWorkspace({
 The server acts as BOTH:
 
 1. A sync server (accepts connections via `createSyncPlugin`)
-2. A sync client (connects to other servers)
+2. A sync client (connects to other servers via `attachSync`)
 
 ```typescript
-// desktop/server/src/workspace.ts
-import { createWorkspace } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
-import { SYNC_NODES } from './config/sync-nodes';
+// desktop/server/src/client.ts
+const blog = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, blogTables);
+	const sqlite = attachSqlite(ydoc, { filePath: '...' });
+	// Connect to OTHER sync nodes (not itself!) — Desktop connects to laptop + cloud
+	const syncToLaptop = attachSync(ydoc, { url: SYNC_NODES.laptop, waitFor: sqlite.whenLoaded });
+	const syncToCloud  = attachSync(ydoc, { url: SYNC_NODES.cloud,  waitFor: sqlite.whenLoaded });
+	return { id, ydoc, tables, sqlite, syncToLaptop, syncToCloud, /* ... */ };
+});
 
-export const blogWorkspace = createWorkspace({
-	id: 'blog',
-	tables: {
-		/* ... */
-	},
-})
-	// Connect to OTHER sync nodes (not itself!)
-	// Desktop connects to: laptop + cloud
-	.withExtension('syncToLaptop', createSyncExtension({ url: SYNC_NODES.laptop }))
-	.withExtension('syncToCloud', createSyncExtension({ url: SYNC_NODES.cloud }));
+export const blogWorkspace = blog.open('blog');
 ```
 
 ### Laptop Server Configuration
 
 ```typescript
-// laptop/server/src/workspace.ts
-import { createWorkspace } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
-import { SYNC_NODES } from './config/sync-nodes';
-
-export const blogWorkspace = createWorkspace({
-	id: 'blog',
-	tables: {
-		/* ... */
-	},
-})
+// laptop/server/src/client.ts
+const blog = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, blogTables);
+	const sqlite = attachSqlite(ydoc, { filePath: '...' });
 	// Laptop connects to: desktop + cloud
-	.withExtension('syncToDesktop', createSyncExtension({ url: SYNC_NODES.desktop }))
-	.withExtension('syncToCloud', createSyncExtension({ url: SYNC_NODES.cloud }));
+	const syncToDesktop = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: sqlite.whenLoaded });
+	const syncToCloud   = attachSync(ydoc, { url: SYNC_NODES.cloud,   waitFor: sqlite.whenLoaded });
+	return { id, ydoc, tables, sqlite, syncToDesktop, syncToCloud, /* ... */ };
+});
+
+export const blogWorkspace = blog.open('blog');
 ```
 
 ### Cloud Server Configuration
 
-Cloud server typically only accepts connections (doesn't initiate):
+Cloud server typically only accepts connections (doesn't initiate) — no `attachSync` calls at all, only `createSyncPlugin` on the Elysia side.
 
 ```typescript
-// cloud/src/workspace.ts
-import { createWorkspace } from '@epicenter/workspace';
-
-// Cloud server has no outgoing sync providers.
-// It only accepts incoming connections via createSyncPlugin.
-export const blogWorkspace = createWorkspace({
-	id: 'blog',
-	tables: {
-		/* ... */
-	},
+// cloud/src/client.ts
+const blog = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, blogTables);
+	const sqlite = attachSqlite(ydoc, { filePath: '...' });
+	return { id, ydoc, tables, sqlite, /* ... */ };
 });
+
+export const blogWorkspace = blog.open('blog');
 ```
 
 ## Data Flow Examples
@@ -281,14 +279,23 @@ export const blogWorkspace = createWorkspace({
 Each device should also use local persistence:
 
 ```typescript
-import { persistence } from '@epicenter/workspace/extensions/persistence';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
+import {
+	attachIndexedDb,
+	attachSync,
+	attachTables,
+	defineDocument,
+} from '@epicenter/workspace';
+import * as Y from 'yjs';
 
-const workspace = createWorkspace({ id: 'blog' })
-	// Local persistence (IndexedDB in browser, filesystem in Node.js)
-	.withExtension('persistence', persistence)
-	// Network sync
-	.withExtension('sync', createSyncExtension({ url: SYNC_NODES.desktop }));
+const blog = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, blogTables);
+	// Local persistence (use attachSqlite on Node.js)
+	const idb = attachIndexedDb(ydoc);
+	// Network sync — waits for local replay so the first exchange is a delta
+	const sync = attachSync(ydoc, { url: SYNC_NODES.desktop, waitFor: idb.whenLoaded });
+	return { id, ydoc, tables, idb, sync, /* ... */ };
+});
 ```
 
 When offline:

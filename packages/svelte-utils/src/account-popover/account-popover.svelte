@@ -2,7 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
-	import type { SyncStatus } from '@epicenter/workspace';
+	import type { SyncAttachment, SyncStatus } from '@epicenter/workspace';
 	import Cloud from '@lucide/svelte/icons/cloud';
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
@@ -12,35 +12,20 @@
 	import { AuthForm } from '../auth-form/index.js';
 
 	/**
-	 * Sync surface the popover consumes. Intersection of what both the legacy
-	 * extension-chain client (`workspace.extensions.sync`) and a direct
-	 * `defineDocument` closure bundle (`workspace.sync`) expose, so apps can
-	 * migrate incrementally without a compat shim.
-	 */
-	type SyncView = {
-		readonly status: SyncStatus;
-		reconnect: () => void;
-		onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
-	};
-
-	/**
 	 * Shared account popover.
 	 *
-	 * The popover is the user-pill in each app's header. It surfaces auth
-	 * identity, sync health, reconnect, and sign-out — gating sign-out with
-	 * a confirmation when unsynced work exists.
+	 * Renders sync status from a `SyncAttachment` (the concrete `attachSync`
+	 * return type exposed as `workspace.sync`) alongside auth identity,
+	 * reconnect, and sign-out — gating sign-out with a confirmation when
+	 * unsynced work exists.
 	 *
 	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
 	 */
 	type AccountPopoverProps = {
 		/** The auth client from `createAuth()`. */
 		auth: AuthClient;
-		/**
-		 * The workspace's sync attachment — structurally satisfied by both
-		 * `workspace.extensions.sync` (legacy) and `workspace.sync` (new
-		 * bundle), so the migration window needs no compat shim here.
-		 */
-		sync: SyncView;
+		/** The workspace's `attachSync` result, typically `workspace.sync`. */
+		sync: SyncAttachment;
 		/**
 		 * Wipe local persistence (IndexedDB). Called as part of sign-out;
 		 * typically `() => workspace.idb.clearLocal()`.

@@ -77,7 +77,7 @@ There is no `whenSynced` composite. If you need both, `Promise.all([idb.whenLoad
 
 ## Canonical Per-Row Content Doc
 
-Replaces the old `.withDocument('content', { content: richText, guid: 'id', onUpdate })` on a table. An app-owned builder + `defineDocument` cache:
+Replaces the old `.withDocument('content', { content: richText, guid: 'id', onUpdate })` on a table. The builder closure passes directly to `defineDocument` — no named intermediate function, no explicit `gcTime` (30 s is the cache default):
 
 ```typescript
 // apps/fuji/src/lib/entry-content-docs.ts
@@ -93,7 +93,7 @@ import {
 import * as Y from 'yjs';
 import { auth, workspace } from '$lib/client';
 
-function buildEntryContentDoc(entryId: EntryId) {
+export const entryContentDocs = defineDocument((entryId: EntryId) => {
   const ydoc = new Y.Doc({
     guid: docGuid({
       workspaceId: workspace.id,  // no literal prefix — comes from the workspace
@@ -127,10 +127,6 @@ function buildEntryContentDoc(entryId: EntryId) {
     whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(() => {}),
     [Symbol.dispose]() { ydoc.destroy(); },
   };
-}
-
-export const entryContentDocs = defineDocument(buildEntryContentDoc, {
-  gcTime: 30_000,
 });
 ```
 
@@ -189,14 +185,13 @@ export function createFileContentDocs({
   filesTable: Table<FileRow>;
   persistence?: 'indexeddb' | 'none';
 }) {
-  function buildFileContentDoc(fileId: FileId) {
+  return defineDocument((fileId: FileId) => {
     const ydoc = new Y.Doc({
-      guid: `${workspaceId}.files.${fileId}.content`,  // package owns `files` + `content`
+      guid: docGuid({ workspaceId, collection: 'files', rowId: fileId, field: 'content' }),
       gc: false,
     });
     // …
-  }
-  return defineDocument(buildFileContentDoc, { gcTime: 30_000 });
+  });
 }
 ```
 

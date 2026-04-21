@@ -71,8 +71,11 @@ export type SyncAttachment = {
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
 	/** Force a fresh connection with new credentials (supervisor restarts iteration). */
 	reconnect: () => void;
-	/** Resolves after the ydoc is destroyed and the websocket teardown completes. */
-	disposed: Promise<void>;
+	/**
+	 * Resolves after the ydoc is destroyed and the websocket teardown completes.
+	 * Named symmetrically with `whenConnected` — both are promises.
+	 */
+	whenDisposed: Promise<void>;
 };
 
 export type SyncAttachmentConfig = {
@@ -131,7 +134,7 @@ export function attachSync(
 	const status = createStatusEmitter<SyncStatus>({ phase: 'offline' });
 	const { promise: whenConnected, resolve: resolveConnected } =
 		Promise.withResolvers<void>();
-	const { promise: disposed, resolve: resolveDisposed } =
+	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
 	const backoff = createBackoff();
 
@@ -482,7 +485,7 @@ export function attachSync(
 			backoff.wake();
 			websocket?.close();
 		},
-		disposed,
+		whenDisposed,
 	};
 }
 

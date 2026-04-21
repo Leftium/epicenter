@@ -97,8 +97,8 @@ const sync = attachSync(ydoc, {
 
 | Function | Transport | Returns |
 |---|---|---|
-| `attachIndexedDb(ydoc)` | `y-indexeddb` keyed by `ydoc.guid` | `{ whenLoaded, clearLocal, disposed }` |
-| `attachSync(ydoc, cfg)` | WebSocket via `@epicenter/sync` | `{ whenConnected, status, onStatusChange, reconnect, disposed }` |
+| `attachIndexedDb(ydoc)` | `y-indexeddb` keyed by `ydoc.guid` | `{ whenLoaded, clearLocal, whenDisposed }` |
+| `attachSync(ydoc, cfg)` | WebSocket via `@epicenter/sync` | `{ whenConnected, status, onStatusChange, reconnect, whenDisposed }` |
 
 Also exported: `toWsUrl(httpUrl)` — a small utility that rewrites `http(s):` to `ws(s):`. Handy when the app knows its API as an HTTP origin and wants to derive the WebSocket URL for `attachSync`.
 
@@ -113,10 +113,10 @@ const sync = attachSync(ydoc, ...);
 
 // Later:
 ydoc.destroy();
-await Promise.all([idb.disposed, sync.disposed]); // optional — CLIs/tests
+await Promise.all([idb.whenDisposed, sync.whenDisposed]); // optional — CLIs/tests
 ```
 
-Handles have no async teardown. Providers return `disposed` promises for code paths that need to flush before exit.
+Handles have no async teardown. Providers return `whenDisposed` promises for code paths that need to flush before exit.
 
 ## Gotchas
 

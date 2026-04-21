@@ -348,12 +348,12 @@ describe('close / closeAll', () => {
 		expect(destroyed).toBe(true);
 	});
 
-	test("close awaits attachments' async disposed promises", async () => {
+	test("close awaits attachments' async whenDisposed promises", async () => {
 		let resolveDisposed!: () => void;
 		const factory = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			const idbLike = {
-				disposed: new Promise<void>((r) => {
+				whenDisposed: new Promise<void>((r) => {
 					resolveDisposed = r;
 				}),
 			};
@@ -375,12 +375,12 @@ describe('close / closeAll', () => {
 		expect(settled).toBe(true);
 	});
 
-	test("closeAll awaits every attachment's disposed promise", async () => {
+	test("closeAll awaits every attachment's whenDisposed promise", async () => {
 		const resolvers: Array<() => void> = [];
 		const factory = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			const idbLike = {
-				disposed: new Promise<void>((r) => {
+				whenDisposed: new Promise<void>((r) => {
 					resolvers.push(r);
 				}),
 			};

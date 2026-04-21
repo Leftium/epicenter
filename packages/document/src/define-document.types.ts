@@ -71,12 +71,12 @@ export type DocumentFactory<Id extends string, TAttach> = {
 	/**
 	 * Explicit eviction. Cancels any pending grace-period disposal. `ydoc.destroy()`
 	 * fires synchronously; the returned promise resolves once every top-level
-	 * attachment's `disposed: Promise<void>` field has resolved (if any).
+	 * attachment's `whenDisposed: Promise<void>` field has resolved (if any).
 	 */
 	close(id: Id): Promise<void>;
 	/**
 	 * Tear down every open document — for app teardown / workspace dispose.
-	 * Destroys all ydocs synchronously; awaits every attachment's `disposed`
+	 * Destroys all ydocs synchronously; awaits every attachment's `whenDisposed`
 	 * promise before resolving.
 	 */
 	closeAll(): Promise<void>;

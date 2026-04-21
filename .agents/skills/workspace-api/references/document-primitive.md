@@ -101,7 +101,7 @@ export function openEntryContentDoc(rowId: EntryId) {
     content,
     whenLoaded:    idb.whenLoaded,
     whenConnected: sync.whenConnected,
-    whenDisposed:  Promise.all([idb.disposed, sync.disposed]).then(() => {}),
+    whenDisposed:  Promise.all([idb.whenDisposed, sync.whenDisposed]).then(() => {}),
     clearLocal:    idb.clearLocal,
     reconnect:     sync.reconnect,
     dispose:       () => ydoc.destroy(),

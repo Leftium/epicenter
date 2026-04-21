@@ -56,7 +56,7 @@
  * - Aggregated `whenLoaded`: scans top-level attachments for a
  *   `whenLoaded: Promise<void>` property and `Promise.all`s them.
  * - `close(id)` forces immediate disposal and awaits attachments'
- *   `disposed: Promise<void>` fields — `await factory.close(id)` is a real
+ *   `whenDisposed: Promise<void>` fields — `await factory.close(id)` is a real
  *   teardown barrier callers can rely on before reusing the id.
  *
  * Disposal destroys the user's Y.Doc via `ydoc.destroy()`. Attachments that
@@ -85,12 +85,12 @@ type DocEntry<TAttach extends { ydoc: Y.Doc }> = {
 	/** Aggregated across all attachments' `whenLoaded` promises. */
 	whenLoaded: Promise<void>;
 	/**
-	 * Aggregated `disposed` promises from attachments whose teardown is async
-	 * (e.g., `attachIndexedDb` resolves after IDB close completes). `close(id)`
-	 * and `closeAll()` await this so callers can rely on "await factory.close(…)"
-	 * as a real teardown barrier.
+	 * Aggregated `whenDisposed` promises from attachments whose teardown is
+	 * async (e.g., `attachIndexedDb` resolves after IDB close completes).
+	 * `close(id)` and `closeAll()` await this so callers can rely on
+	 * "await factory.close(…)" as a real teardown barrier.
 	 */
-	attachmentDisposed: Promise<void>;
+	attachmentWhenDisposed: Promise<void>;
 	retainCount: number;
 	disposeTimer: ReturnType<typeof setTimeout> | null;
 	disposed: boolean;
@@ -126,7 +126,7 @@ export function defineDocument<
 	 */
 	function aggregatePromise(
 		attach: TAttach,
-		key: 'whenLoaded' | 'disposed',
+		key: 'whenLoaded' | 'whenDisposed',
 	): Promise<void> {
 		const promises: Promise<unknown>[] = [];
 		for (const [k, value] of Object.entries(attach)) {
@@ -188,7 +188,7 @@ export function defineDocument<
 		const entry: DocEntry<TAttach> = {
 			attach,
 			whenLoaded: aggregatePromise(attach, 'whenLoaded'),
-			attachmentDisposed: aggregatePromise(attach, 'disposed'),
+			attachmentWhenDisposed: aggregatePromise(attach, 'whenDisposed'),
 			retainCount: 0,
 			disposeTimer: null,
 			disposed: false,
@@ -214,7 +214,7 @@ export function defineDocument<
 		// registered teardown there (IndexedDB, sync) run their cleanup. Any
 		// async close settles in the background; callers awaiting a full
 		// teardown barrier do so via `close(id)`, which awaits
-		// `entry.attachmentDisposed`.
+		// `entry.attachmentWhenDisposed`.
 		try {
 			entry.attach.ydoc.destroy();
 		} catch (err) {
@@ -270,7 +270,7 @@ export function defineDocument<
 			const entry = openDocuments.get(id);
 			if (!entry) return;
 			disposeEntry(id, entry);
-			await entry.attachmentDisposed;
+			await entry.attachmentWhenDisposed;
 		},
 
 		async closeAll() {
@@ -278,7 +278,7 @@ export function defineDocument<
 			openDocuments.clear();
 			for (const [id, entry] of entries) disposeEntry(id, entry);
 			await Promise.all(
-				entries.map(([, entry]) => entry.attachmentDisposed),
+				entries.map(([, entry]) => entry.attachmentWhenDisposed),
 			);
 		},
 	};

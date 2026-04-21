@@ -13,13 +13,14 @@ export type IndexedDbAttachment = {
 	/**
 	 * Resolves after the Y.Doc is destroyed AND IndexedDB's async teardown
 	 * completes. Opt-in — tests and CLIs flushing before exit await this.
+	 * Named symmetrically with `whenLoaded` — both are promises.
 	 */
-	disposed: Promise<void>;
+	whenDisposed: Promise<void>;
 };
 
 export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 	const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
-	const { promise: disposed, resolve: resolveDisposed } =
+	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
 	// `IndexeddbPersistence` already registers its own `doc.on('destroy')` to
 	// tear itself down. We still register here to surface an *awaitable* signal
@@ -35,6 +36,6 @@ export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 	return {
 		whenLoaded: idb.whenSynced.then(() => {}),
 		clearLocal: () => idb.clearData(),
-		disposed,
+		whenDisposed,
 	};
 }

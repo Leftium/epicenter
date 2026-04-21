@@ -276,9 +276,8 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 	 *
 	 * Processes root-level nodes first (their parent path is known: ""),
 	 * then their children become computable, and so on. Converges in
-	 * O(maxDepth) iterations. IDs that fail to resolve within that bound
-	 * (unreachable parent chains, depth > MAX_DEPTH) are left without a
-	 * path — matching the silent-drop behavior of buildPathsFromRoot.
+	 * O(MAX_DEPTH) iterations. IDs that fail to resolve within that bound
+	 * (unreachable parent chains, depth > MAX_DEPTH) are left without a path.
 	 */
 	function computePathsConvergent(ids: Set<FileId>): void {
 		const pending = new Set(ids);
@@ -322,12 +321,15 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 
 	/**
 	 * Build all paths from root downward using childrenOf and displayNames.
-	 * Used by rebuild() after disambiguation.
+	 * Used by buildInitialState after disambiguation. BFS level-by-level,
+	 * which makes the MAX_DEPTH cap a true depth cap (iteration N processes
+	 * exactly the nodes at depth N) — unlike computePathsConvergent, whose
+	 * iteration cap doesn't bound tree depth when pending is seeded in
+	 * parent-before-child order.
 	 */
 	function buildPathsFromRoot(): void {
 		const queue: Array<{ id: FileId; parentPath: string }> = [];
 
-		// Start with root-level children
 		const roots = childrenOf.get(null);
 		if (roots) {
 			for (const id of roots) {
@@ -348,7 +350,6 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 				pathToId.set(path, id);
 				idToPath.set(id, path);
 
-				// Enqueue children of folders
 				const children = childrenOf.get(id);
 				if (children) {
 					for (const childId of children) {
@@ -410,7 +411,8 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 					filesTable.update(latestId, { parentId: null });
 					mutated.add(latestId);
 				}
-				return;
+				// Fall through to the cleanup loop so inStack/visited stay consistent.
+				break;
 			}
 
 			inStack.add(currentId);
@@ -466,10 +468,6 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 		/** Get all indexed paths. */
 		allPaths(): string[] {
 			return Array.from(pathToId.keys());
-		},
-		/** Number of indexed paths. */
-		get pathCount(): number {
-			return pathToId.size;
 		},
 		/** Get child IDs of a parent (null = root). Returns [] if none. */
 		getChildIds(parentId: FileId | null): FileId[] {

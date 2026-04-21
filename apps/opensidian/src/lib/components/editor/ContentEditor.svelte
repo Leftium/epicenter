@@ -19,25 +19,24 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
+	// Parent (ContentPanel) wraps in {#key activeFileId}, so fileId is stable
+	// for this instance's lifetime. Open once, dispose on unmount.
+	const handle = fileContentDocs.open(fileId);
+	let isLoaded = $state(false);
+
 	// `asText()` on Timeline mutates when the doc is empty — it pushes an
 	// entry. If called before persistence hydrates, it races the IDB replay
 	// and can corrupt the timeline (phantom text entry alongside the real
 	// stored entries). Gate on `whenReady` so we only read mode after the
 	// doc has its real state.
-	let handle = $state<ReturnType<typeof fileContentDocs.open> | null>(null);
-	let isLoaded = $state(false);
-
 	$effect(() => {
-		const h = fileContentDocs.open(fileId);
-		handle = h;
-		isLoaded = false;
-		h.whenReady.then(() => {
-			if (handle === h) isLoaded = true;
+		let cancelled = false;
+		handle.whenReady.then(() => {
+			if (!cancelled) isLoaded = true;
 		});
 		return () => {
-			h.dispose();
-			handle = null;
-			isLoaded = false;
+			cancelled = true;
+			handle.dispose();
 		};
 	});
 
@@ -64,7 +63,7 @@
 	);
 </script>
 
-{#if handle && isLoaded}
+{#if isLoaded}
 	<CodeMirrorEditor
 		ytext={handle.content.asText()}
 		{extensions}

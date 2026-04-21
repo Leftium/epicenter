@@ -2,29 +2,10 @@
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import NoteBodyPane from '$lib/components/NoteBodyPane.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
-	import HoneycripEditor from '$lib/editor/Editor.svelte';
-	import { noteBodyDocs } from '$lib/note-body-docs';
 	import { foldersState, notesState, viewState } from '$lib/state';
-
-	// Open a fresh handle for the selected note; dispose the previous one on
-	// switch so backgrounded notes stop syncing after the grace period.
-	let bodyHandle = $state<ReturnType<typeof noteBodyDocs.open> | null>(null);
-
-	$effect(() => {
-		const id = viewState.selectedNoteId;
-		if (!id) {
-			bodyHandle = null;
-			return;
-		}
-		const handle = noteBodyDocs.open(id);
-		bodyHandle = handle;
-		return () => {
-			handle.dispose();
-			bodyHandle = null;
-		};
-	});
 </script>
 
 <svelte:window
@@ -65,12 +46,9 @@
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if viewState.selectedNote && bodyHandle}
+				{#if viewState.selectedNote && viewState.selectedNoteId}
 					{#key viewState.selectedNoteId}
-						<HoneycripEditor
-							yxmlfragment={bodyHandle.body.binding}
-							onContentChange={(change) => notesState.updateNoteContent(change)}
-						/>
+						<NoteBodyPane noteId={viewState.selectedNoteId} />
 					{/key}
 				{:else}
 					<div class="flex h-full flex-col items-center justify-center gap-2">

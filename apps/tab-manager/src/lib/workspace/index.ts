@@ -16,4 +16,4 @@ export {
 	tabManager,
 	type ToolTrust,
 } from './definition';
-export { createTabManagerWorkspace } from './workspace';
+export { createTabManagerActions } from './actions';

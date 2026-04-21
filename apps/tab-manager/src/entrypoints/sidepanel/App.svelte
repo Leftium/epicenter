@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SyncStatusPopover } from '@epicenter/svelte/sync-status-popover';
+	import { AccountPopover } from '@epicenter/svelte/account-popover';
 	import { Button } from '@epicenter/ui/button';
 	import { CommandPalette } from '@epicenter/ui/command-palette';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
@@ -173,9 +173,10 @@
 				>
 					<ZapIcon />
 				</Button>
-				<SyncStatusPopover
+				<AccountPopover
 					{auth}
-					{workspace}
+					sync={workspace.sync}
+					clearLocalData={() => workspace.idb.clearLocal()}
 					syncNoun="tabs"
 					onSocialSignIn={() => auth.signInWithSocialPopup()}
 				/>

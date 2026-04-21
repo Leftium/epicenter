@@ -8,7 +8,7 @@
  * ```typescript
  * import type { TabManagerRpc } from '@epicenter/tab-manager/rpc';
  *
- * const { data, error } = await workspace.extensions.sync.rpc<TabManagerRpc>(
+ * const { data, error } = await workspace.sync.rpc<TabManagerRpc>(
  *   peer.clientId, 'tabs.close', { tabIds: [1, 2, 3] },
  * );
  * // data is { closedCount: number } | null — fully inferred

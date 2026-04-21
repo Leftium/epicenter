@@ -73,7 +73,7 @@ export const workspace = createWorkspace(definition)
   .withExtension('persistence', indexeddbPersistence)
   .withExtension('sqliteIndex', createSqliteIndex());
 
-export const fs = createYjsFileSystem(workspace.tables.files, workspace.tables.files.documents.content);`;
+export const fs = createYjsFileSystem(workspace.tables.files, fileContentDocs);`;
 
 	const codeAnnotations = [
 		{
@@ -102,7 +102,7 @@ export const fs = createYjsFileSystem(workspace.tables.files, workspace.tables.f
 		},
 		{
 			id: 'filesystem',
-			line: 'createYjsFileSystem(workspace.tables.files, workspace.tables.files.documents.content)',
+			line: 'createYjsFileSystem(workspace.tables.files, fileContentDocs)',
 			explanation:
 				'Wraps the raw table and document APIs into a familiar filesystem interface\u2014writeFile, mkdir, rm, mv.',
 		},

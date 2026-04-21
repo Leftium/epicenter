@@ -150,9 +150,9 @@ export function defineExtension<T extends Record<string, unknown>>(
  * Run cleanups in LIFO order (last registered = first destroyed).
  * Continues on error and returns accumulated errors.
  *
- * Used by both `createWorkspace()` and `createDocuments()` to tear down
- * extensions in reverse creation order. Call sites handle the returned
- * errors array in their own way (throw, log, or rethrow).
+ * Used by `createWorkspace()` to tear down extensions in reverse creation
+ * order. Call sites handle the returned errors array in their own way
+ * (throw, log, or rethrow).
  *
  *
  * @param cleanups - Array of cleanup functions to run in reverse order

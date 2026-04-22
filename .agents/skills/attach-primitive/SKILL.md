@@ -1,24 +1,24 @@
 ---
 name: attach-primitive
-description: Contract and invariants for `attach*` / `create*` composition primitives — the building blocks composed inside `defineDocument`.
+description: Contract and invariants for `attach*` composition primitives — the side-effectful building blocks composed inside `defineDocument`. Also covers when to use `create*` (pure construction).
 ---
 
 # Attach Primitives
 
-Every persistence, sync, materializer, and binding in `packages/workspace` (plus session-shaped primitives in `packages/cli`) follows one of four shapes. Pick the narrowest shape that describes what you're attaching to and match the invariants exactly.
+Every persistence, sync, materializer, and binding in `packages/workspace` (plus session-shaped primitives in `packages/cli`) follows one of three shapes. Pick the narrowest shape that describes what you're attaching to and match the invariants exactly.
 
 ## Naming
 
-| Prefix     | Shape                                | Use when                                                         |
-| ---------- | ------------------------------------ | ---------------------------------------------------------------- |
-| `attach*`  | `attachX(subject, opts) → XAttachment` | One-shot capability mount. Fixed surface, no chainable config.   |
-| `create*`  | `createX(ctx, config) → XBuilder`      | Chainable builder (`.table()/.kv()/...`). Configuration is incremental. |
+| Prefix     | Meaning                                                                                                                      |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `attach*`  | Side-effectful. Registers observers, destroy listeners, or subscription state. Return shape is free — fixed surface *or* chainable builder, both are `attach*`. |
+| `create*`  | Pure construction. No listeners, no subscriptions, no destroy registration at call time. Factory-of-factories qualifies (e.g. `createFileContentDocs`, `createPerRowDoc` — the returned handle attaches later). |
 
-Both return plain objects. `attach*` is overwhelmingly the common case. Reach for `create*` only when the API needs incremental per-entity configuration (materializers are the only current example).
+Both return plain objects. The distinction is **what happens at call time**, not what the return value looks like. A chainable builder with `.table()/.kv()` that registers `table.observe(...)` is still `attach*` — chainability is a return-shape concern, orthogonal to naming.
 
-## The four attach variants
+## The three attach variants
 
-All four obey the invariants below. Pick the one whose first argument actually describes the subject being modified.
+All three obey the invariants below. Pick the one whose first argument actually describes the subject being modified. Each variant can be fixed-surface or chainable — see the materializer example under Variant 1.
 
 ### Variant 1 — ydoc-bound (canonical)
 
@@ -27,6 +27,17 @@ export function attachX(ydoc: Y.Doc, opts: XOptions): XAttachment;
 ```
 
 Most primitives: `attachIndexedDb`, `attachSqlite`, `attachSync`, `attachBroadcastChannel`, `attachEncryption`, `attachTable(s)`, `attachKv`, `attachAwareness`, `attachRichText`, `attachPlainText`, `attachTimeline`. Teardown via `ydoc.once('destroy', ...)`.
+
+**Chainable variant:** materializers ride on the same shape but take a richer `ctx` (tables/kv/whenReady) and return a builder that accepts per-entity config:
+
+```ts
+export function attachMarkdownMaterializer(
+  ctx: { tables; kv?; whenReady },
+  config: { dir },
+): MaterializerBuilder; // { whenFlushed, table(), kv(), pushFrom..., pullTo..., [Symbol.dispose]() }
+```
+
+Examples: `attachMarkdownMaterializer`, `attachSqliteMaterializer`. Teardown via `[Symbol.dispose]()` on the builder (unsubscribes table observers). `whenFlushed` = "initial materialize complete." The chainable return is the only difference from the non-chainable form above — same prefix, same invariants.
 
 ### Variant 2 — ydoc + coordinator
 
@@ -51,24 +62,13 @@ export function attachX(
 
 Modifies an existing attachment without touching the ydoc directly. Example: `attachSessionUnlock(encryption, { sessions, serverUrl, waitFor })` — applies the stored CLI session's keys to an `EncryptionAttachment`. No teardown needed because there are no event listeners or resources to free; the op is one-shot async (returns a `whenApplied` barrier and nothing else).
 
-### Variant 4 — builder (create\*)
-
-```ts
-export function createX(
-  ctx: { tables; definitions?; kv?; whenReady: Promise<void> },
-  config: XConfig,
-): XBuilder; // { whenFlushed, table(), kv(), pushFrom..., pullTo..., [Symbol.dispose]() }
-```
-
-Materializers: `attachMarkdownMaterializer`, `attachSqliteMaterializer`. The ctx provides the pieces they observe (tables, kv, readiness barrier), not the ydoc — they don't own the doc lifecycle, they ride on one. Teardown via a `[Symbol.dispose]()` method on the builder (unsubscribes table observers). `whenFlushed` replaces `whenLoaded` — "initial materialize complete."
-
-## Invariants (all four variants)
+## Invariants (all three variants)
 
 1. **Synchronous return.** Construction never awaits. Async work goes into `when*` promises on the returned object.
 2. **Teardown hooked to the correct lifecycle.**
    - Variants 1, 2: `ydoc.once('destroy', ...)`. Never expose a `.destroy()` method on the attachment.
    - Variant 3: usually no teardown. If the primitive does hold listeners, use the subject attachment's own disposal signal.
-   - Variant 4: `[Symbol.dispose]()` method on the builder, unsubscribes observers.
+   - Chainable attach* (materializers): `[Symbol.dispose]()` method on the builder, unsubscribes observers.
 3. **Idempotent cleanup.** If the underlying library also registers a destroy handler (like `y-indexeddb`), your handler must be safe to run alongside it.
 4. **Plain data returned.** The attachment is a record of promises, functions, and occasionally mutable state. No ES classes, no getters that lazy-init.
 5. **No id option.** For ydoc-bound variants, `ydoc.guid` is the identity — read it off the doc, don't take it again as an option.
@@ -97,7 +97,7 @@ const factory = defineDocument((id: string) => {
     url, getToken,
     waitFor: Promise.all([idb.whenLoaded, unlock.whenApplied]),
   });
-  const markdown   = attachMarkdownMaterializer(                            // variant 4
+  const markdown   = attachMarkdownMaterializer(                            // variant 1, chainable
     { tables, kv, whenReady: sync.whenConnected },
     { dir },
   ).table('posts', { serialize });
@@ -131,8 +131,8 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - **Don't expose `dispose()` on a variant-1/2 attachment.** Destroy the Y.Doc.
 - **Don't duck-type an attachment.** If you need to brand it, use a `Symbol.for` marker. See `skills/typescript` — runtime shape-checking is a code smell.
 - **Don't take an `id` on a ydoc-bound primitive.** Use `ydoc.guid`.
-- **Don't use `createX` for a fixed-surface attachment.** The `create*` prefix signals chainable configuration. If there's nothing to chain, use `attach*`.
-- **Don't use `attachX` for a builder.** If you return `.table()/.kv()/.kvScope()`, that's a builder — name it `create*`.
+- **Don't use `createX` for something side-effectful.** If it registers observers, destroy listeners, or subscription state at call time, it's `attach*` — even if the return value is a chainable builder. Chainability is orthogonal to the prefix.
+- **Don't use `attachX` for pure construction.** A factory that only builds plain objects (no listeners, no subscriptions) stays `create*`. Factory-of-factories where the returned handle attaches later (`createFileContentDocs`, `createPerRowDoc`) is also `create*` — nothing subscribes until the handle opens.
 
 ## Reference implementations
 
@@ -141,5 +141,6 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - `packages/workspace/src/document/attach-encryption.ts` — variant 1 with internal state (keyring cache).
 - `packages/workspace/src/document/attach-encrypted.ts` — variant 2 (`attachEncryptedTable(s)` + `attachEncryptedKv`).
 - `packages/cli/src/primitives/attach-session-unlock.ts` — variant 3 (no teardown, single `whenApplied` barrier).
-- `packages/workspace/src/document/materializer/markdown/materializer.ts` — variant 4 (builder with `.table()/.kv()` chain).
+- `packages/workspace/src/document/materializer/markdown/materializer.ts` — variant 1, chainable (builder with `.table()/.kv()` chain; still `attach*` because `.table()` registers observers).
+- `packages/workspace/src/document/materializer/sqlite/sqlite.ts` — same shape as the markdown materializer.
 - `apps/whispering/src/lib/client.ts` — full composition inside `defineDocument`.

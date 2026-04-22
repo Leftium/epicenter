@@ -26,8 +26,12 @@ import {
 	defineDocument,
 	defineTable,
 } from '../../../index.js';
-import { attachMarkdownMaterializer } from './materializer.js';
+import {
+	attachMarkdownMaterializer,
+	type MarkdownShape,
+} from './materializer.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';
+import { bodyAsField, fieldAsBody } from './serializers.js';
 
 // ============================================================================
 // Test Table Definitions
@@ -637,5 +641,83 @@ describe('round-trip', () => {
 		}
 
 		await factory2.close('test.roundtrip.2');
+	});
+
+	test('fromMarkdown(toMarkdown(row)) preserves row — MarkdownShape round-trip', async () => {
+		// Explicit toMarkdown / fromMarkdown pair over the shared MarkdownShape
+		// type, so the compiler guarantees one is the inverse of the other.
+		const toMarkdownFn = (row: {
+			id: string;
+			body: string;
+			_v: 1;
+		}): MarkdownShape => ({
+			frontmatter: { id: row.id, _v: row._v },
+			body: row.body,
+		});
+		const fromMarkdownFn = (parsed: MarkdownShape) => ({
+			id: parsed.frontmatter.id as string,
+			body: parsed.body ?? '',
+			_v: 1 as const,
+		});
+
+		const { workspace, factory } = await setup({
+			tables: (t) =>
+				[
+					{
+						table: t.notes,
+						config: { toMarkdown: toMarkdownFn, fromMarkdown: fromMarkdownFn },
+					},
+				] as unknown as TableRegistration[],
+		});
+
+		const original = { id: 'n1', body: 'Hello, round trip!', _v: 1 as const };
+		workspace.tables.notes.set(original);
+
+		// Pull to disk, then push from disk into a fresh workspace.
+		await workspace.materializer.pull({});
+
+		// Also assert the pure inverse identity: fromMarkdown(toMarkdown(x)) ≡ x
+		expect(fromMarkdownFn(toMarkdownFn(original))).toEqual(original);
+
+		// And verify the end-to-end disk round trip.
+		const disk = await readTestFile('notes/n1.md');
+		const parsed = parseMarkdownFile(disk);
+		expect(parsed).not.toBeNull();
+		expect(fromMarkdownFn(parsed!)).toEqual(original);
+
+		await factory.close('test.materializer');
+	});
+
+	test('fieldAsBody + bodyAsField helpers round-trip over MarkdownShape', async () => {
+		const { workspace, factory } = await setup({
+			tables: (t) => [
+				{
+					table: t.notes,
+					config: {
+						toMarkdown: fieldAsBody('body'),
+						fromMarkdown: bodyAsField('body'),
+					},
+				},
+			],
+		});
+
+		const original = { id: 'n1', body: 'Body content here', _v: 1 as const };
+		workspace.tables.notes.set(original);
+
+		await workspace.materializer.pull({});
+
+		const disk = await readTestFile('notes/n1.md');
+		const parsed = parseMarkdownFile(disk);
+		expect(parsed).not.toBeNull();
+		// Body ended up in the markdown body section, not frontmatter.
+		expect(parsed!.body).toBe('Body content here');
+		expect(parsed!.frontmatter.body).toBeUndefined();
+
+		// Round-trip back via the helper.
+		const recovered = bodyAsField('body')(parsed!);
+		expect(recovered.id).toBe(original.id);
+		expect(recovered.body).toBe(original.body);
+
+		await factory.close('test.materializer');
 	});
 });

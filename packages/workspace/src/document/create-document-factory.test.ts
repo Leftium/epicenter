@@ -12,7 +12,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { createDocumentFactory } from './create-document-factory.js';
-import { DOCUMENTS_ORIGIN, onLocalUpdate } from './on-local-update.js';
+import { onLocalUpdate } from './on-local-update.js';
 
 /**
  * Build a factory whose closure returns a minimal bundle
@@ -306,7 +306,7 @@ describe('onLocalUpdate', () => {
 		handle.dispose();
 	});
 
-	test('skips transport-origin updates (Symbol origin)', () => {
+	test('skips applyUpdate with symbol origin (transport)', () => {
 		const factory = makeSimpleFactory();
 		const handle = factory.open('a');
 		let calls = 0;
@@ -323,33 +323,40 @@ describe('onLocalUpdate', () => {
 		handle.dispose();
 	});
 
-	test('skips DOCUMENTS_ORIGIN-tagged transactions', () => {
+	test('skips applyUpdate with no origin (IndexedDB-style replay)', () => {
+		// tx.local is false for any applyUpdate regardless of origin shape,
+		// so IDB hydration (which uses an instance origin, not a symbol) is
+		// correctly filtered — this is the bug the old symbol-shape filter
+		// missed.
 		const factory = makeSimpleFactory();
 		const handle = factory.open('a');
 		let calls = 0;
 		onLocalUpdate(handle.ydoc, () => calls++);
 
-		handle.ydoc.transact(() => {
-			handle.ydoc.getText('content').insert(0, 'tagged');
-		}, DOCUMENTS_ORIGIN);
-
-		expect(calls).toBe(0);
-		handle.dispose();
-	});
-
-	test('fires for non-transport remote replays (null origin on applyUpdate)', () => {
-		const factory = makeSimpleFactory();
-		const handle = factory.open('a');
-		let calls = 0;
-		onLocalUpdate(handle.ydoc, () => calls++);
-
-		// Simulate IndexedDB replay: applyUpdate with no origin.
 		const remote = new Y.Doc({ guid: 'remote' });
 		remote.getText('content').insert(0, 'replay');
 		const update = Y.encodeStateAsUpdate(remote);
 		Y.applyUpdate(handle.ydoc, update);
 
-		expect(calls).toBe(1);
+		expect(calls).toBe(0);
+		remote.destroy();
+		handle.dispose();
+	});
+
+	test('skips applyUpdate with instance origin (IndexedDB provider shape)', () => {
+		const factory = makeSimpleFactory();
+		const handle = factory.open('a');
+		let calls = 0;
+		onLocalUpdate(handle.ydoc, () => calls++);
+
+		const remote = new Y.Doc({ guid: 'remote' });
+		remote.getText('content').insert(0, 'replay');
+		const update = Y.encodeStateAsUpdate(remote);
+		// y-indexeddb passes its persistence instance as origin, not a symbol.
+		const fakeProvider = { kind: 'indexeddb' };
+		Y.applyUpdate(handle.ydoc, update, fakeProvider);
+
+		expect(calls).toBe(0);
 		remote.destroy();
 		handle.dispose();
 	});

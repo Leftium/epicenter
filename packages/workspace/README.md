@@ -854,7 +854,6 @@ import {
 	attachTables,
 	defineDocument,
 	defineTable,
-	DOCUMENTS_ORIGIN,
 } from '@epicenter/workspace';
 
 const files = defineTable(
@@ -881,10 +880,6 @@ const filesDoc = defineDocument((id: string) => {
 const workspace = filesDoc.open('epicenter.examples.observe');
 
 const unsubscribe = workspace.tables.files.observe((changedIds, origin) => {
-	if (origin === DOCUMENTS_ORIGIN) {
-		return;
-	}
-
 	for (const id of changedIds) {
 		const result = workspace.tables.files.get(id);
 		if (result.status === 'not_found') {

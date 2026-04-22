@@ -15,9 +15,9 @@
  * explicit and unambiguous.
  *
  * **Not here**: self-loop guards that never leave their defining module
- * (`DOCUMENTS_ORIGIN` in create-documents.ts, `DEDUP_ORIGIN` in
- * y-keyvalue-lww.ts, `REENCRYPT_ORIGIN` in y-keyvalue-lww-encrypted.ts).
- * Those are genuinely private and don't benefit from sharing.
+ * (`DEDUP_ORIGIN` in y-keyvalue-lww.ts, `REENCRYPT_ORIGIN` in
+ * y-keyvalue-lww-encrypted.ts). Those are genuinely private and don't
+ * benefit from sharing.
  */
 
 /** Origin for updates applied from the WebSocket sync transport. */

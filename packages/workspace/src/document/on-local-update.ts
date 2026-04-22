@@ -1,33 +1,31 @@
 /**
- * onLocalUpdate — register a Y.Doc update listener that ignores transport echoes.
+ * onLocalUpdate — register a Y.Doc listener for local mutations only.
  *
- * Filter rule: callback fires only when the update's origin is a non-Symbol
- * value (typically `null` for direct mutations, or a `PluginKey`-like object
- * from y-prosemirror). Symbol origins — `SYNC_ORIGIN`, `BC_ORIGIN`, and the
- * internal `DOCUMENTS_ORIGIN` — represent transport echoes or framework
- * writebacks and are skipped, so a collaborator's edit arriving via sync
- * doesn't re-trigger a local metadata bump.
+ * Filters on `transaction.local`, Yjs's own invariant: `true` iff the update
+ * originated from a direct mutation on this Y.Doc, `false` for anything
+ * applied via `Y.applyUpdate` (sync transports, IndexedDB hydration, broadcast
+ * channel replay). This is semantic — it doesn't depend on origin-shape
+ * conventions and can't be fooled by a third-party provider that uses a
+ * symbol origin.
  *
- * `DOCUMENTS_ORIGIN` is internal to this module and the test that verifies
- * the filter. It's reserved for a future "framework tags its own writebacks"
- * use case — not currently exported from the package barrel, because no
- * consumer tags transactions with it today.
+ * Empty transactions (no Y types changed) are skipped so `ydoc.transact(() => {})`
+ * marker calls don't trigger callbacks.
+ *
+ * Typical use: bump a parent row's `updatedAt` when its content doc is
+ * edited locally, without re-triggering on remote/persisted updates.
  */
 import type * as Y from 'yjs';
 
-export const DOCUMENTS_ORIGIN: unique symbol = Symbol('documents');
-
 export function onLocalUpdate(ydoc: Y.Doc, fn: () => void): () => void {
-	const handler = (_update: Uint8Array, origin: unknown) => {
-		// Any Symbol origin is a transport echo or tagged writeback — skip.
-		// Non-Symbol origins (null, PluginKey objects, etc.) are local edits.
-		if (typeof origin === 'symbol') return;
+	const handler = (tx: Y.Transaction) => {
+		if (!tx.local) return;
+		if (tx.changed.size === 0) return;
 		try {
 			fn();
 		} catch (err) {
 			console.error('[onLocalUpdate] callback threw:', err);
 		}
 	};
-	ydoc.on('update', handler);
-	return () => ydoc.off('update', handler);
+	ydoc.on('afterTransaction', handler);
+	return () => ydoc.off('afterTransaction', handler);
 }

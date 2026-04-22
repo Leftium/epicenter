@@ -10,7 +10,6 @@ import { type } from 'arktype';
 import {
 	attachKv,
 	attachTables,
-	defineDocument,
 } from '@epicenter/workspace';
 import { defineKv, defineTable } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -334,26 +333,23 @@ const redditKv = {
 	preferences: defineKv(type('Record<string, string> | null'), null),
 };
 
-const redditFactory = defineDocument(
-	(id: string) => {
-		const ydoc = new Y.Doc({ guid: id, gc: false });
-		const tables = attachTables(ydoc, redditTables);
-		const kv = attachKv(ydoc, redditKv);
-		// no persistence/sync/encryption — in-memory-only importer target
-		return {
-			id,
-			ydoc,
-			tables,
-			kv,
-			batch: (fn: () => void) => ydoc.transact(fn),
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	},
-	{ gcTime: Number.POSITIVE_INFINITY },
-);
+export function buildReddit(id: string) {
+	const ydoc = new Y.Doc({ guid: id, gc: false });
+	const tables = attachTables(ydoc, redditTables);
+	const kv = attachKv(ydoc, redditKv);
+	// no persistence/sync/encryption — in-memory-only importer target
+	return {
+		id,
+		ydoc,
+		tables,
+		kv,
+		batch: (fn: () => void) => ydoc.transact(fn),
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+}
 
-export const redditWorkspace = redditFactory;
+export const redditWorkspace = buildReddit('reddit');
 
 export type RedditWorkspace = typeof redditWorkspace;

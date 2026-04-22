@@ -1,6 +1,6 @@
 /**
- * Honeycrisp workspace client — a single `defineDocument` closure that owns
- * the Y.Doc construction and composes every attachment inline.
+ * Honeycrisp workspace client — a direct `buildHoneycrisp(id)` call that
+ * owns the Y.Doc construction and composes every attachment inline.
  *
  * Access tables via `workspace.tables.folders` / `workspace.tables.notes`
  * and KV settings via `workspace.kv`. The client is ready when
@@ -12,7 +12,6 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	defineDocument,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createPersistedState } from '@epicenter/svelte';
@@ -27,47 +26,39 @@ const session = createPersistedState({
 	defaultValue: null,
 });
 
-const honeycrisp = defineDocument(
-	(id: string) => {
-		const ydoc = new Y.Doc({ guid: id, gc: false });
+export function buildHoneycrisp(id: string) {
+	const ydoc = new Y.Doc({ guid: id, gc: false });
 
-		const encryption = attachEncryption(ydoc);
-		const tables = encryption.attachTables(ydoc, honeycrispTables);
-		const kv = encryption.attachKv(ydoc, {});
+	const encryption = attachEncryption(ydoc);
+	const tables = encryption.attachTables(ydoc, honeycrispTables);
+	const kv = encryption.attachKv(ydoc, {});
 
-		const idb = attachIndexedDb(ydoc);
-		attachBroadcastChannel(ydoc);
-		const sync = attachSync(ydoc, {
-			url: (docId) => toWsUrl(`${APP_URLS.API}/workspaces/${docId}`),
-			getToken: async () => auth.token,
-			waitFor: idb.whenLoaded,
-		});
+	const idb = attachIndexedDb(ydoc);
+	attachBroadcastChannel(ydoc);
+	const sync = attachSync(ydoc, {
+		url: (docId) => toWsUrl(`${APP_URLS.API}/workspaces/${docId}`),
+		getToken: async () => auth.token,
+		waitFor: idb.whenLoaded,
+	});
 
-		return {
-			id,
-			ydoc,
-			tables,
-			kv,
-			encryption,
-			idb,
-			sync,
-			actions: createHoneycrispActions(tables),
-			batch: (fn: () => void) => ydoc.transact(fn),
-			whenReady: idb.whenLoaded,
-			whenDisposed: Promise.all([
-				idb.whenDisposed,
-				sync.whenDisposed,
-				encryption.whenDisposed,
-			]).then(() => {}),
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	},
-	{ gcTime: Number.POSITIVE_INFINITY },
-);
+	return {
+		id,
+		ydoc,
+		tables,
+		kv,
+		encryption,
+		idb,
+		sync,
+		actions: createHoneycrispActions(tables),
+		batch: (fn: () => void) => ydoc.transact(fn),
+		whenReady: idb.whenLoaded,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+}
 
-export const workspace = honeycrisp.open('epicenter.honeycrisp');
+export const workspace = buildHoneycrisp('epicenter.honeycrisp');
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

@@ -1,6 +1,6 @@
 /**
- * Tab-manager workspace client — a single `defineDocument` closure that owns
- * the Y.Doc construction and composes every attachment inline.
+ * Tab-manager workspace client — a direct `buildTabManager(id)` call that
+ * owns the Y.Doc construction and composes every attachment inline.
  *
  * Live browser state (tabs, windows, tab groups) is NOT stored here — Chrome
  * is the sole authority for ephemeral browser state. See
@@ -12,7 +12,6 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	defineDocument,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createAuth } from '@epicenter/svelte/auth';
@@ -35,57 +34,49 @@ import {
 	tabManagerTables,
 } from './workspace/definition';
 
-const tabManager = defineDocument(
-	(id: string) => {
-		const ydoc = new Y.Doc({ guid: id, gc: false });
+export function buildTabManager(id: string) {
+	const ydoc = new Y.Doc({ guid: id, gc: false });
 
-		const encryption = attachEncryption(ydoc);
-		const tables = encryption.attachTables(ydoc, tabManagerTables);
-		const kv = encryption.attachKv(ydoc, {});
-		const awareness = attachAwareness(ydoc, tabManagerAwarenessDefs);
+	const encryption = attachEncryption(ydoc);
+	const tables = encryption.attachTables(ydoc, tabManagerTables);
+	const kv = encryption.attachKv(ydoc, {});
+	const awareness = attachAwareness(ydoc, tabManagerAwarenessDefs);
 
-		const batch = (fn: () => void) => ydoc.transact(fn);
-		const actions = createTabManagerActions({ tables, batch });
+	const batch = (fn: () => void) => ydoc.transact(fn);
+	const actions = createTabManagerActions({ tables, batch });
 
-		const idb = attachIndexedDb(ydoc);
-		attachBroadcastChannel(ydoc);
-		const sync = attachSync(ydoc, {
-			url: (workspaceId) =>
-				toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
-			getToken: async () => auth.token,
-			waitFor: idb.whenLoaded,
-			awareness: awareness.raw,
-			rpc: {
-				dispatch: (action, input) => dispatchAction(actions, action, input),
-			},
-		});
+	const idb = attachIndexedDb(ydoc);
+	attachBroadcastChannel(ydoc);
+	const sync = attachSync(ydoc, {
+		url: (workspaceId) =>
+			toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
+		getToken: async () => auth.token,
+		waitFor: idb.whenLoaded,
+		awareness: awareness.raw,
+		rpc: {
+			dispatch: (action, input) => dispatchAction(actions, action, input),
+		},
+	});
 
-		return {
-			id,
-			ydoc,
-			tables,
-			kv,
-			awareness,
-			encryption,
-			idb,
-			sync,
-			actions,
-			batch,
-			whenReady: idb.whenLoaded,
-			whenDisposed: Promise.all([
-				idb.whenDisposed,
-				sync.whenDisposed,
-				encryption.whenDisposed,
-			]).then(() => {}),
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	},
-	{ gcTime: Number.POSITIVE_INFINITY },
-);
+	return {
+		id,
+		ydoc,
+		tables,
+		kv,
+		awareness,
+		encryption,
+		idb,
+		sync,
+		actions,
+		batch,
+		whenReady: idb.whenLoaded,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+}
 
-export const workspace = tabManager.open('epicenter.tab-manager');
+export const workspace = buildTabManager('epicenter.tab-manager');
 
 export const auth = createAuth({
 	baseURL: () => remoteServerUrl.current,

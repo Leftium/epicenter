@@ -1,20 +1,23 @@
 /**
  * @fileoverview Browser entry for the shared skills workspace.
  *
- * Exports `skillsDocument` — a `defineDocument` factory that, on `.open(id)`,
- * returns the full skills bundle (tables, KV, encryption, IndexedDB,
- * broadcast channel, actions, per-skill instruction/reference doc factories,
- * batch helper). Consumers call `skillsDocument.open('epicenter.skills')`
- * and use the returned handle directly.
+ * Exports `buildSkills(id)` — a direct builder that returns the full skills
+ * bundle (tables, KV, encryption, IndexedDB, broadcast channel, actions,
+ * per-skill instruction/reference doc factories, batch helper) — and
+ * `skillsWorkspace`, the singleton instance opened at `'epicenter.skills'`.
+ *
+ * Nested per-id factories (`instructionsDocs`, `referenceDocs`) still live
+ * on `defineDocument` — the ref-counted cache earns its keep there because
+ * the same skill/reference id can be opened from multiple components.
  *
  * For server-side disk I/O (importFromDisk / exportToDisk), use
  * `@epicenter/skills/node` instead.
  *
  * @example
  * ```typescript
- * import { skillsDocument } from '@epicenter/skills';
+ * import { skillsWorkspace } from '@epicenter/skills';
  *
- * export const workspace = skillsDocument.open('epicenter.skills');
+ * export const workspace = skillsWorkspace;
  * export const instructionsDocs = workspace.instructionsDocs;
  * export const referenceDocs = workspace.referenceDocs;
  * ```
@@ -25,7 +28,6 @@
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	defineDocument,
 } from '@epicenter/workspace';
 import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -38,66 +40,62 @@ export type { Reference, Skill } from './tables.js';
 export { referencesTable, skillsTable } from './tables.js';
 
 /**
- * Skills workspace factory. The guid passed to `.open()` is used as the
- * Y.Doc guid — all Epicenter apps should call `.open('epicenter.skills')`
- * so they share the same cached Y.Doc instance within a single process.
+ * Build a skills workspace bundle. The guid passed in is used as the Y.Doc
+ * guid — all Epicenter apps in the same process should share the singleton
+ * `skillsWorkspace` export below rather than calling `buildSkills` again.
  *
  * Note: in a hybrid browser+node process (e.g. Tauri), importing this AND
  * `@epicenter/skills/node` in the same process would give you two separate
- * factories with two separate caches. That isn't a supported configuration
- * today — TODO if we ever need it.
+ * bundles. That isn't a supported configuration today — TODO if we ever
+ * need it.
  */
-export const skillsDocument = defineDocument(
-	(id: string) => {
-		const ydoc = new Y.Doc({ guid: id, gc: false });
+export function buildSkills(id: string) {
+	const ydoc = new Y.Doc({ guid: id, gc: false });
 
-		const encryption = attachEncryption(ydoc);
-		const tables = encryption.attachTables(ydoc, {
-			skills: skillsTable,
-			references: referencesTable,
-		});
-		const kv = encryption.attachKv(ydoc, {});
+	const encryption = attachEncryption(ydoc);
+	const tables = encryption.attachTables(ydoc, {
+		skills: skillsTable,
+		references: referencesTable,
+	});
+	const kv = encryption.attachKv(ydoc, {});
 
-		const idb = attachIndexedDb(ydoc);
-		attachBroadcastChannel(ydoc);
+	const idb = attachIndexedDb(ydoc);
+	attachBroadcastChannel(ydoc);
 
-		const instructionsDocs = createSkillInstructionsDocs({
-			workspaceId: id,
-			skillsTable: tables.skills,
-			attachPersistence: (ydoc) => attachIndexedDb(ydoc),
-		});
-		const referenceDocs = createReferenceContentDocs({
-			workspaceId: id,
-			referencesTable: tables.references,
-			attachPersistence: (ydoc) => attachIndexedDb(ydoc),
-		});
+	const instructionsDocs = createSkillInstructionsDocs({
+		workspaceId: id,
+		skillsTable: tables.skills,
+		attachPersistence: (ydoc) => attachIndexedDb(ydoc),
+	});
+	const referenceDocs = createReferenceContentDocs({
+		workspaceId: id,
+		referencesTable: tables.references,
+		attachPersistence: (ydoc) => attachIndexedDb(ydoc),
+	});
 
-		const actions = createSkillsActions({
-			tables,
-			instructionsDocs,
-			referenceDocs,
-		});
+	const actions = createSkillsActions({
+		tables,
+		instructionsDocs,
+		referenceDocs,
+	});
 
-		return {
-			id,
-			ydoc,
-			tables,
-			kv,
-			encryption,
-			idb,
-			instructionsDocs,
-			referenceDocs,
-			actions,
-			batch: (fn: () => void) => ydoc.transact(fn),
-			whenReady: idb.whenLoaded,
-			whenDisposed: Promise.all([
-				idb.whenDisposed,
-				encryption.whenDisposed,
-			]).then(() => {}),
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	},
-	{ gcTime: Number.POSITIVE_INFINITY },
-);
+	return {
+		id,
+		ydoc,
+		tables,
+		kv,
+		encryption,
+		idb,
+		instructionsDocs,
+		referenceDocs,
+		actions,
+		batch: (fn: () => void) => ydoc.transact(fn),
+		whenReady: idb.whenLoaded,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+}
+
+/** Singleton skills workspace. Construct once at module scope. */
+export const skillsWorkspace = buildSkills('epicenter.skills');

@@ -13,8 +13,7 @@
  * ```typescript
  * import { importRedditExport, redditWorkspace } from './ingest/reddit';
  *
- * using workspace = redditWorkspace.open('reddit');
- * const stats = await importRedditExport(zipFile, workspace);
+ * const stats = await importRedditExport(zipFile, redditWorkspace);
  * console.log(`Imported ${stats.totalRows} rows`);
  * ```
  */
@@ -52,8 +51,9 @@ export type ImportProgress = {
 	table?: string;
 };
 
-// Derive workspace handle type (not exported — callers use redditWorkspace.open(id) directly)
-type RedditWorkspaceClient = ReturnType<typeof redditWorkspace.open>;
+// Workspace bundle type — the `redditWorkspace` singleton or any other
+// `buildReddit(id)` instance.
+type RedditWorkspaceClient = RedditWorkspace;
 
 /** Import rows for a single table with per-row error recovery */
 function importTableRows(
@@ -130,7 +130,7 @@ function transformKv(raw: ParsedRedditData): KvData {
  * Import a Reddit GDPR export ZIP file into the workspace.
  *
  * @param input - ZIP file as Blob, File, or ArrayBuffer
- * @param workspace - Reddit workspace handle from `redditWorkspace.open(id)`
+ * @param workspace - Reddit workspace bundle (singleton `redditWorkspace` or `buildReddit(id)`)
  * @param options - Optional progress callback
  * @returns Import statistics
  */

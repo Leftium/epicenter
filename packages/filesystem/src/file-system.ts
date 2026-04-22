@@ -50,19 +50,6 @@ export function attachYjsFileSystem(
 	contentDocuments: FileContentDocs,
 	cwd: string = '/',
 ) {
-	// Internal helpers bridge the new factory API to the old read/write/append
-	// semantics the filesystem methods expect. Each call opens a short-lived
-	// handle, awaits IDB load, performs the op, and disposes.
-	async function readContent(id: FileId): Promise<string> {
-		await using handle = await contentDocuments.load(id);
-		return handle.content.read();
-	}
-
-	async function writeContent(id: FileId, text: string): Promise<void> {
-		await using handle = await contentDocuments.load(id);
-		handle.content.write(text);
-	}
-
 	const tree = attachFileTree(filesTable);
 
 	return FileSystem({
@@ -176,7 +163,8 @@ export function attachYjsFileSystem(
 			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
-			return await readContent(id);
+			await using handle = await contentDocuments.load(id);
+			return handle.content.read();
 		},
 
 		async readFileBuffer(path) {
@@ -205,7 +193,10 @@ export function attachYjsFileSystem(
 				id = tree.create({ name, parentId, type: 'file', size });
 			}
 
-			await writeContent(id, textData);
+			{
+				await using handle = await contentDocuments.load(id);
+				handle.content.write(textData);
+			}
 			tree.touch(id, size);
 		},
 
@@ -311,7 +302,11 @@ export function attachYjsFileSystem(
 					);
 				}
 			} else {
-				const srcText = await readContent(srcId);
+				let srcText: string;
+				{
+					await using handle = await contentDocuments.load(srcId);
+					srcText = handle.content.read();
+				}
 				await this.writeFile(resolvedDest, srcText);
 			}
 		},

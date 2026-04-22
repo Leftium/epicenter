@@ -30,6 +30,7 @@ function makeSimpleFactory(opts?: {
 			return {
 				ydoc,
 				...extra,
+				whenReady: Promise.resolve(),
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},
@@ -88,6 +89,7 @@ describe('open / cache identity', () => {
 			return {
 				ydoc,
 				createdAt: Date.now(),
+				whenReady: Promise.resolve(),
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},
@@ -113,6 +115,7 @@ describe('throwing build closure', () => {
 			const ydoc = new Y.Doc({ guid: id });
 			return {
 				ydoc,
+				whenReady: Promise.resolve(),
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},
@@ -139,6 +142,7 @@ describe('guid stability', () => {
 			const ydoc = new Y.Doc({ guid: `${id}-${seed++}` });
 			return {
 				ydoc,
+				whenReady: Promise.resolve(),
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},
@@ -158,6 +162,7 @@ describe('guid stability', () => {
 			const ydoc = new Y.Doc({ guid: `stable-${id}` });
 			return {
 				ydoc,
+				whenReady: Promise.resolve(),
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},
@@ -404,6 +409,7 @@ describe('close / closeAll', () => {
 			});
 			return {
 				ydoc,
+				whenReady: Promise.resolve(),
 				whenDisposed,
 				[Symbol.dispose]() {
 					ydoc.destroy();
@@ -435,6 +441,7 @@ describe('close / closeAll', () => {
 			});
 			return {
 				ydoc,
+				whenReady: Promise.resolve(),
 				whenDisposed,
 				[Symbol.dispose]() {
 					ydoc.destroy();
@@ -481,6 +488,7 @@ describe('close / closeAll', () => {
 			const ydoc = new Y.Doc({ guid: id });
 			return {
 				ydoc,
+				whenReady: Promise.resolve(),
 				[Symbol.dispose]() {
 					ydoc.destroy();
 					throw new Error('dispose boom');

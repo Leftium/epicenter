@@ -70,13 +70,15 @@
  * }
  * ```
  *
- * `whenDisposed` is the only factory-known property besides `ydoc` and
- * `[Symbol.dispose]`: `close(id)` and `closeAll()` `await bundle.whenDisposed`
- * to give callers a real teardown barrier. It's optional — bundles with
- * synchronous teardown can omit it. `whenReady` is a pure user convention; the
- * cache never reads it. Callers `await handle.whenReady` through the prototype
- * chain if the builder exposed one. `whenReady` deliberately differs from
- * Y.Doc's native `whenLoaded` property — avoid the shadow collision.
+ * `whenReady` is required — `factory.load(id)` awaits it to hand back a
+ * loaded handle. Sync-ready bundles set `whenReady: Promise.resolve()`
+ * explicitly so every bundle declares its readiness model. `whenReady`
+ * deliberately differs from Y.Doc's native `whenLoaded` property — avoid
+ * the shadow collision.
+ *
+ * `whenDisposed` is optional: `close(id)` and `closeAll()` await it to give
+ * callers a real teardown barrier. Bundles with synchronous teardown can
+ * omit it.
  *
  * ## Two layers of `when*` barriers
  *
@@ -159,9 +161,10 @@ import type * as Y from 'yjs';
  *   bundle by (guid verified across re-constructions).
  * - `[Symbol.dispose]()` — synchronous teardown; called by `close(id)` /
  *   `closeAll()` and by refcount→0 after `gcTime` elapses.
- * - `whenReady?: Promise<void>` — user convention for "the bundle is usable."
- *   Composed by the builder (e.g., `Promise.all([idb.whenLoaded, sync.whenConnected])`).
- *   The cache never reads it; handles pass-through via the prototype chain.
+ * - `whenReady: Promise<void>` — resolves when the bundle is usable (e.g.
+ *   `Promise.all([idb.whenLoaded, sync.whenConnected])`). Sync-ready bundles
+ *   use `Promise.resolve()`. `factory.load(id)` awaits this before returning
+ *   a loaded handle.
  * - `whenDisposed?: Promise<void>` — async teardown barrier the cache awaits
  *   inside `close(id)` / `closeAll()`. Omit for synchronous-only bundles.
  *
@@ -172,7 +175,7 @@ import type * as Y from 'yjs';
 export type DocumentBundle = {
 	ydoc: Y.Doc;
 	[Symbol.dispose](): void;
-	whenReady?: Promise<void>;
+	whenReady: Promise<void>;
 	whenDisposed?: Promise<void>;
 };
 
@@ -188,23 +191,20 @@ const DOCUMENT_HANDLE: unique symbol = Symbol.for('epicenter.document.handle');
  * own enumerable properties, plus `dispose`, `[Symbol.dispose]`, and a
  * `[DOCUMENT_HANDLE]` brand. N opens require N disposes.
  *
- * Pair every `open()` with a `dispose()`. Imperative callers that want
- * loaded data should use `load()` instead (see {@link DocumentFactory.load})
- * — the examples below are for reactive/subscription patterns where you
- * want the handle *before* readiness.
+ * Pair every `open()` with a `dispose()`. Two idiomatic patterns:
  *
  * ```ts
- * // Framework-scoped — dispose on effect cleanup
+ * // Imperative — `load()` awaits whenReady; `await using` scopes disposal.
+ * await using h = await docs.load('abc');
+ * h.content.write('hi');
+ * // dispose fires on block exit
+ *
+ * // Reactive — `open()` returns the handle before readiness so reactive
+ * // code can subscribe; manual dispose on unmount.
  * $effect(() => {
  *   const h = docs.open(id);
  *   return () => h.dispose();
  * });
- *
- * // TS 5.2 `using` — dispose fires on block exit
- * {
- *   using h = docs.open('abc');
- *   // subscribe to h.whenReady here
- * }
  * ```
  *
  * `dispose()` is always synchronous — it just decrements the refcount. Async

@@ -102,6 +102,7 @@ function setup(options: SetupOptions = {}) {
 			ydoc,
 			tables,
 			sqlite: materializer,
+			whenReady: Promise.resolve(),
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},
@@ -181,6 +182,7 @@ describe('attachSqliteMaterializer', () => {
 					ydoc,
 					tables,
 					sqlite: materializer,
+					whenReady: Promise.resolve(),
 					[Symbol.dispose]() {
 						ydoc.destroy();
 					},

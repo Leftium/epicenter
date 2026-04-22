@@ -15,7 +15,7 @@ import Type from 'typebox';
 import type * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
 import { standardSchemaToJsonSchema } from '../../../shared/standard-schema.js';
-import type { BaseRow, Table, TableDefinition } from '../../index.js';
+import type { BaseRow, Table, TableDefinition } from '../../attach-table.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
 import { ftsSearch, setupFtsTable } from './fts.js';
 import type { MirrorDatabase, SearchOptions, SearchResult } from './types.js';

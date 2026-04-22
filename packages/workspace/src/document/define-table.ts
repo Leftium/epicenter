@@ -31,11 +31,11 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type {
 	BaseRow,
-	CombinedStandardSchema,
 	LastSchema,
 	TableDefinition,
-} from './index.js';
+} from './attach-table.js';
 import { createUnionSchema } from './schema-union.js';
+import type { CombinedStandardSchema } from './standard-schema.js';
 
 /**
  * Creates a table definition with a single schema version.

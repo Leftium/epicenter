@@ -23,7 +23,8 @@
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { JsonValue } from 'wellcrafted/json';
-import type { CombinedStandardSchema, KvDefinition } from './index.js';
+import type { KvDefinition } from './attach-kv.js';
+import type { CombinedStandardSchema } from './standard-schema.js';
 
 /**
  * Create a KV definition with a schema and required default value.

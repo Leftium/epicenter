@@ -2,7 +2,7 @@ import {
 	attachTable,
 	type TableDefinitions,
 	type Tables,
-} from '../document/index.js';
+} from '../index.js';
 import type * as Y from 'yjs';
 
 /**

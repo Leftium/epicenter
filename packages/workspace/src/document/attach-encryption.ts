@@ -81,13 +81,12 @@ import {
 } from './encryption-key.js';
 import {
 	type InferTableRow,
-	type Kv,
-	type KvDefinitions,
 	type Table,
 	type TableDefinition,
 	type TableDefinitions,
 	type Tables,
-} from './index.js';
+} from './attach-table.js';
+import { type Kv, type KvDefinitions } from './attach-kv.js';
 import { createKv, createTable } from './internal.js';
 import { KV_KEY, TableKey } from './keys.js';
 
@@ -113,13 +112,14 @@ export type EncryptionAttachment = {
 	applyKeys(keys: EncryptionKeys): void;
 
 	/**
-	 * Register a store for encryption coordination. Internal entry point —
-	 * called by the coordinator's own `attachTable` / `attachKv` methods and
-	 * by test setup, not by application code.
+	 * Register a store for encryption coordination.
 	 *
 	 * If keys have already been applied, the store is activated immediately
 	 * with the cached keyring. Otherwise it is queued for the next
 	 * `applyKeys` call.
+	 *
+	 * @internal Called by the coordinator's own `attachTable` / `attachKv`
+	 * methods and by test setup, not by application code.
 	 */
 	register(store: AnyEncryptedStore): void;
 

@@ -6,7 +6,8 @@ export {
 export { parseMarkdownFile } from './parse-markdown-file.js';
 export { prepareMarkdownFiles } from './prepare-markdown-files.js';
 export {
-	bodyField,
+	bodyAsField,
+	fieldAsBody,
 	slugFilename,
 	toIdFilename,
 	toSlugFilename,

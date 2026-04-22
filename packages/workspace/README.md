@@ -65,9 +65,8 @@ const blog = defineDocument((id: string) => {
 // Singleton style: open once at module scope, use everywhere.
 export const blogWorkspace = blog.open('epicenter.blog');
 
-// Multi-doc style: open by id, dispose when done.
-// using draft = blog.open(`draft:${id}`);
-// await draft.whenReady;
+// Multi-doc style: load by id, dispose when done.
+// await using draft = await blog.load(`draft:${id}`);
 
 async function quickStart() {
 	await blogWorkspace.whenReady;
@@ -107,7 +106,7 @@ Every exported function in this package falls into one of three verbs. The prefi
 |---|---|---|---|---|
 | `define*` | **None** — pure data | Schemas, defaults | Plain config object / refcounted cache | `defineTable`, `defineKv`, `defineDocument`, `defineMutation`, `defineQuery` |
 | `attach*` | **Mutates a Y.Doc** — binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle (non-idempotent — hold the reference) | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods) |
-| `create*` | **Pure construction** — no listeners, no subscriptions, no destroy registration at call time | Config or an existing store | A usable instance | `createUnionSchema` |
+| `create*` | **Pure construction** — no listeners, no subscriptions, no destroy registration at call time. Paired with an `attach*` sibling: the `create*` makes a slot definition, the `attach*` wires it into a ydoc. | Definitions or schemas | A usable definition / instance | `createTable`, `createKv`, `createAwareness`, `createUnionSchema` |
 
 `defineDocument(builder)` is the top-level entry point. The user owns `new Y.Doc` and every `attach*` call inside the builder; the cache owns identity (keyed by id), refcount, and the `gcTime` grace period between last-dispose and teardown. `.open(id)` returns a disposable handle.
 
@@ -116,6 +115,56 @@ Every exported function in this package falls into one of three verbs. The prefi
 Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted — the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc)` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) — additionally registers its backing store with that coordinator so keys applied via `encryption.applyKeys(...)` flow to every registered store atomically.
 
 Don't mix plaintext and encrypted wrappers on the same slot name — Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
+
+Minimal encrypted workspace — encryption + IndexedDB + cross-tab + sync wired end-to-end:
+
+```typescript
+import {
+	attachBroadcastChannel,
+	attachEncryption,
+	attachIndexedDb,
+	attachSync,
+	defineDocument,
+	toWsUrl,
+} from '@epicenter/workspace';
+import * as Y from 'yjs';
+import { appTables } from '$lib/workspace/definition';
+
+const app = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id, gc: false });
+
+	const encryption = attachEncryption(ydoc);
+	const tables = encryption.attachTables(ydoc, appTables);
+
+	const idb = attachIndexedDb(ydoc);
+	attachBroadcastChannel(ydoc);
+	const sync = attachSync(ydoc, {
+		url: (docId) => toWsUrl(`https://api.epicenter.so/workspaces/${docId}`),
+		getToken: async () => auth.token,
+		waitFor: idb.whenLoaded,
+	});
+
+	return {
+		id, ydoc, tables, encryption, idb, sync,
+		whenReady: idb.whenLoaded,
+		whenDisposed: Promise.all([
+			idb.whenDisposed,
+			sync.whenDisposed,
+			encryption.whenDisposed,
+		]).then(() => {}),
+		[Symbol.dispose]() { ydoc.destroy(); },
+	};
+});
+
+export const workspace = app.open('epicenter.my-app');
+
+// On login: workspace.encryption.applyKeys(session.encryptionKeys); workspace.sync.reconnect();
+// On logout: await workspace.idb.clearLocal();
+```
+
+The `id` passed to `app.open(...)` becomes `ydoc.guid`, which becomes the sync room name. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin.
+
+For a production-shaped wiring (with device registration, auth integration, etc.), see `apps/tab-manager/src/lib/client.ts`.
 
 ## Core Philosophy
 
@@ -232,8 +281,8 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 1. Define tables and KV entries with `defineTable` and `defineKv`.
 2. Write a builder that takes an `id`, constructs `new Y.Doc({ guid: id })`, and composes `attachTables` / `attachKv` / `attachIndexedDb` / `attachSync` / etc. inline.
 3. Wrap the builder with `defineDocument(builder)` to get a refcounted cache.
-4. Call `.open(id)` to get a live handle — once at module scope for a singleton, or N times for multi-doc apps.
-5. Wait for `handle.whenReady` if your attachments load persisted state or open connections.
+4. Call `.open(id)` to get a live handle immediately (reactive/UI callers that subscribe before readiness), or `await .load(id)` when imperative code needs a handle that's already past `whenReady`.
+5. For `.open(id)` callers: `await handle.whenReady` before reading persisted state. `.load(id)` returns a handle already past that barrier.
 6. Read and write through `handle.tables`, `handle.kv`, `handle.awareness`, and (for per-row content docs) whatever you exposed in the returned bundle.
 7. Use `iterateActions(...)` and each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
 8. Dispose with `handle[Symbol.dispose]()` (or let a `using` block do it) when you're done — the cache waits `gcTime` before tearing the bundle down in case another caller re-opens it.
@@ -548,9 +597,8 @@ async function documentExample() {
 		_v: 1,
 	});
 
-	// Open a content handle for the row. Refcounted — dispose when done.
-	using handle = fileContentDoc.open('file-1');
-	await handle.whenReady;
+	// Load a content handle for the row. Refcounted — dispose when done.
+	await using handle = await fileContentDoc.load('file-1');
 
 	handle.content.insert(0, '# Hello from a document');
 	console.log(handle.content.toString());
@@ -988,7 +1036,7 @@ const notesDoc = defineDocument((id: string) => {
 	const markdown = attachMarkdownMaterializer(
 		{ ydoc, tables },
 		{ dir: '/tmp/epicenter/markdown' },
-	).table('notes', { serialize: slugFilename('title') });
+	).table('notes', { filename: slugFilename('title') });
 
 	return {
 		id,
@@ -1470,6 +1518,7 @@ Yjs transactions do not roll back on throw. They batch notifications; they are n
 | API | What it means |
 | --- | --- |
 | `handle.whenReady` | User-composed readiness promise — typically `Promise.all([idb.whenLoaded, ...])` |
+| `await factory.load(id)` | `open(id) + await handle.whenReady` in one step; rejects and releases the refcount if readiness fails |
 | `handle.idb.clearLocal()` (or `handle.sqlite.clearLocal()`) | Wipes persisted local state for that attachment |
 | `handle.dispose()` / `handle[Symbol.dispose]()` | Decrements refcount; last dispose arms the factory's `gcTime` timer |
 | `factory.close(id)` | Force-closes the bundle **now**; awaits `bundle.whenDisposed` |

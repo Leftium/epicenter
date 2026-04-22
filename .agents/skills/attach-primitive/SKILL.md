@@ -43,7 +43,11 @@ attachRichText(ydoc) / attachPlainText(ydoc) / attachTimeline(ydoc)
 
 ```ts
 attachMarkdownMaterializer(ydoc, { dir, waitFor })
-  .table(tables.posts, { serialize })
+  .table(tables.posts, {
+    filename: slugFilename('title'),
+    toMarkdown: fieldAsBody('content'),
+    fromMarkdown: bodyAsField('content'),
+  })
   .kv(kv);
 
 attachSqliteMaterializer(ydoc, { db, waitFor })
@@ -119,7 +123,7 @@ const factory = defineDocument((id: string) => {
   });
   const markdown   = attachMarkdownMaterializer(ydoc, {           // chainable return
     dir, waitFor: sync.whenConnected,
-  }).table(tables.posts, { serialize });
+  }).table(tables.posts, { filename: slugFilename('title') });
 
   return {
     ydoc, tables, encryption, idb, sync, markdown,

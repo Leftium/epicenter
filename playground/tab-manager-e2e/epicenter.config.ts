@@ -14,7 +14,11 @@
  */
 
 import { join } from 'node:path';
-import { createSessionStore, EPICENTER_PATHS } from '@epicenter/cli';
+import {
+	attachSessionUnlock,
+	createSessionStore,
+	EPICENTER_PATHS,
+} from '@epicenter/cli';
 import {
 	tabManagerAwarenessDefs,
 	tabManagerTables,
@@ -52,15 +56,11 @@ const tabManagerFactory = defineDocument((id: string) => {
 		filePath: EPICENTER_PATHS.persistence(id),
 	});
 
-	// Inline the old `createCliUnlock`: load the session after persistence
-	// hydrates, then apply encryption keys from it (if any).
-	const whenUnlocked = (async () => {
-		await persistence.whenLoaded;
-		const session = await sessions.load(SERVER_URL);
-		if (session?.encryptionKeys) {
-			encryption.applyKeys(session.encryptionKeys);
-		}
-	})();
+	const unlock = attachSessionUnlock(encryption, {
+		sessions,
+		serverUrl: SERVER_URL,
+		waitFor: persistence.whenLoaded,
+	});
 
 	const sync = attachSync(ydoc, {
 		url: (docId) => `${SERVER_URL}/workspaces/${docId}`,
@@ -68,12 +68,12 @@ const tabManagerFactory = defineDocument((id: string) => {
 			(await sessions.load(SERVER_URL))?.accessToken ?? null,
 		// Gate connection on local hydrate + unlock so the handshake only exchanges
 		// the delta, not the whole document.
-		waitFor: Promise.all([persistence.whenLoaded, whenUnlocked]),
+		waitFor: Promise.all([persistence.whenLoaded, unlock.whenApplied]),
 	});
 
 	const whenReady = Promise.all([
 		persistence.whenLoaded,
-		whenUnlocked,
+		unlock.whenApplied,
 		sync.whenConnected,
 	]).then(() => {});
 

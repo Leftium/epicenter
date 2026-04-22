@@ -9,7 +9,7 @@
 
 import type { Argv, CommandModule } from 'yargs';
 import { createAuthApi } from '../auth/api';
-import { createSessionStore } from '../auth/store';
+import { createSessionStore } from '../primitives/session-store';
 
 /**
  * Create the `auth` command group.

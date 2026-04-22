@@ -16,7 +16,7 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { SessionResponse } from '@epicenter/api/types';
-import { EPICENTER_PATHS } from '../paths.js';
+import { EPICENTER_PATHS } from './paths.js';
 
 /**
  * A persisted auth session for a single server.
@@ -168,3 +168,9 @@ export function createSessionStore() {
 		},
 	};
 }
+
+/**
+ * The session store instance type — `ReturnType<typeof createSessionStore>`.
+ * Useful for functions that accept a store without constructing their own.
+ */
+export type SessionStore = ReturnType<typeof createSessionStore>;

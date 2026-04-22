@@ -126,18 +126,13 @@ export {
 	attachTable,
 	attachTables,
 	type BaseRow,
-	type GetResult,
 	type InferTableRow,
-	type InvalidRowResult,
 	type LastSchema,
-	type NotFoundResult,
-	type RowResult,
 	type Table,
 	type TableDefinition,
 	type TableDefinitions,
+	TableParseError,
 	type Tables,
-	type UpdateResult,
-	type ValidRowResult,
 } from './document/attach-table.js';
 
 export {

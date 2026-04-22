@@ -279,13 +279,10 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		expect(result.errors).toHaveLength(0);
 
 		// Verify table row
-		const row = client.tables.files.get(fileId);
-		expect(row.status).toBe('valid');
-		if (row.status === 'valid') {
-			expect(row.row.name).toBe('test-note.md');
-			expect(row.row.type).toBe('file');
-			expect(row.row.createdAt).toBe(1712300000000);
-		}
+		const { data: row } = client.tables.files.get(fileId);
+		expect(row?.name).toBe('test-note.md');
+		expect(row?.type).toBe('file');
+		expect(row?.createdAt).toBe(1712300000000);
 
 		// Verify document content
 		expect(await readContent(contentDocs, fileId)).toBe(

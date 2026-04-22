@@ -101,25 +101,23 @@ export function attachFileSystemIndex(filesTable: Table<FileRow>) {
 
 		for (const rawId of changedIds) {
 			const id = rawId as FileId;
-			const result = filesTable.get(id);
+			const { data: row, error } = filesTable.get(id);
 			const prev = snapshot.get(id);
 
-			const isActive =
-				result.status === 'valid' && result.row.trashedAt === null;
+			const isActive = row !== null && !error && row.trashedAt === null;
 			const wasActive = prev !== undefined && prev.trashedAt === null;
 
 			if (!wasActive && !isActive) {
 				// Was inactive, still inactive. Keep the snapshot current for
 				// inactive rows so transitions later classify correctly.
-				if (prev && result.status === 'valid') {
-					snapshot.set(id, snapFrom(result.row));
+				if (prev && row !== null && !error) {
+					snapshot.set(id, snapFrom(row));
 				}
 				continue;
 			}
 
-			if (!wasActive && isActive) {
+			if (!wasActive && isActive && row !== null) {
 				// CREATED or RESTORED
-				const row = (result as { status: 'valid'; row: FileRow }).row;
 				addChild(row.parentId, id);
 				snapshot.set(id, snapFrom(row));
 				foldersToDisambiguate.add(row.parentId);
@@ -140,10 +138,10 @@ export function attachFileSystemIndex(filesTable: Table<FileRow>) {
 				clearPathsRecursive(id);
 				removeChild(prev.parentId, id);
 
-				if (result.status === 'not_found') {
+				if (row === null) {
 					snapshot.delete(id);
-				} else if (result.status === 'valid') {
-					snapshot.set(id, snapFrom(result.row));
+				} else if (!error) {
+					snapshot.set(id, snapFrom(row));
 				}
 
 				displayName.delete(id);
@@ -152,7 +150,8 @@ export function attachFileSystemIndex(filesTable: Table<FileRow>) {
 			}
 
 			// wasActive && isActive — row is still active, check what changed.
-			const row = (result as { status: 'valid'; row: FileRow }).row;
+			// isActive implies row !== null && !error.
+			if (row === null || error) continue;
 
 			const parentChanged = prev.parentId !== row.parentId;
 			const nameChanged = prev.name !== row.name;
@@ -251,9 +250,9 @@ export function attachFileSystemIndex(filesTable: Table<FileRow>) {
 		const childRows: FileRow[] = [];
 
 		for (const cid of childIds) {
-			const result = filesTable.get(cid);
-			if (result.status === 'valid' && result.row.trashedAt === null) {
-				childRows.push(result.row);
+			const { data: row } = filesTable.get(cid);
+			if (row !== null && row.trashedAt === null) {
+				childRows.push(row);
 			}
 		}
 
@@ -401,9 +400,9 @@ export function attachFileSystemIndex(filesTable: Table<FileRow>) {
 				let latestId: FileId | null = null;
 				let latestTime = -1;
 				for (const cid of cycleIds) {
-					const result = filesTable.get(cid);
-					if (result.status === 'valid' && result.row.updatedAt > latestTime) {
-						latestTime = result.row.updatedAt;
+					const { data: row } = filesTable.get(cid);
+					if (row !== null && row.updatedAt > latestTime) {
+						latestTime = row.updatedAt;
 						latestId = cid;
 					}
 				}
@@ -418,9 +417,9 @@ export function attachFileSystemIndex(filesTable: Table<FileRow>) {
 			inStack.add(currentId);
 			path.push(currentId);
 
-			const result = filesTable.get(currentId);
-			if (result.status !== 'valid') break;
-			currentId = result.row.parentId;
+			const { data: row } = filesTable.get(currentId);
+			if (row === null) break;
+			currentId = row.parentId;
 		}
 
 		for (const id of path) {

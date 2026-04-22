@@ -22,7 +22,9 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 import type { JsonObject } from 'wellcrafted/json';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 import { TableKey } from './keys.js';
 import type { CombinedStandardSchema } from './standard-schema.js';
@@ -34,7 +36,48 @@ import {
 } from './y-keyvalue/index.js';
 
 // ════════════════════════════════════════════════════════════════════════════
-// ROW RESULT TYPES
+// TABLE PARSE ERROR
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Errors produced when parsing unknown input against a table's schema.
+ *
+ * Surfaced by `parse()`, `get()`, `getAll()`, and `update()`. "Not found" on
+ * `get()` / `update()` is *not* an error — it's a legitimate absence and is
+ * returned as `data: null` instead.
+ */
+export const TableParseError = defineErrors({
+	/** Standard Schema validation produced issues. */
+	ValidationFailed: ({
+		id,
+		issues,
+		row,
+	}: {
+		id: string;
+		issues: readonly StandardSchemaV1.Issue[];
+		row: unknown;
+	}) => ({
+		message: `Row '${id}' failed schema validation: ${issues.map((i) => i.message).join('; ')}`,
+		id,
+		issues,
+		row,
+	}),
+	/** The table's schema returned a `Promise` from `validate()` — not supported. */
+	AsyncSchemaNotSupported: ({ id }: { id: string }) => ({
+		message: `Row '${id}' could not be parsed: async Standard Schema validate() is not supported`,
+		id,
+	}),
+	/** The migration function threw while upgrading a valid-at-parse-time row. */
+	MigrationFailed: ({ id, cause }: { id: string; cause: unknown }) => ({
+		message: `Row '${id}' could not be migrated: ${extractErrorMessage(cause)}`,
+		id,
+		cause,
+	}),
+});
+export type TableParseError = InferErrors<typeof TableParseError>;
+
+// ════════════════════════════════════════════════════════════════════════════
+// ROW TYPE
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -46,39 +89,6 @@ import {
  * Intersected with `JsonObject` to ensure all field values are JSON-serializable.
  */
 export type BaseRow = { id: string; _v: number } & JsonObject;
-
-/** A row that passed validation. */
-export type ValidRowResult<TRow> = { status: 'valid'; row: TRow };
-
-/** A row that exists but failed validation. */
-export type InvalidRowResult = {
-	status: 'invalid';
-	id: string;
-	errors: readonly StandardSchemaV1.Issue[];
-	row: unknown;
-};
-
-/**
- * A row that was not found.
- * Includes `row: undefined` so row can always be destructured regardless of status.
- */
-export type NotFoundResult = {
-	status: 'not_found';
-	id: string;
-	row: undefined;
-};
-
-/** Result of validating a row. */
-export type RowResult<TRow> = ValidRowResult<TRow> | InvalidRowResult;
-
-/** Result of getting a single row by ID. */
-export type GetResult<TRow> = RowResult<TRow> | NotFoundResult;
-
-/** Result of updating a single row */
-export type UpdateResult<TRow> =
-	| { status: 'updated'; row: TRow }
-	| NotFoundResult
-	| InvalidRowResult;
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE DEFINITION TYPES
@@ -154,11 +164,16 @@ export type Table<TRow extends BaseRow> = {
 	definition: TableDefinition<any>;
 
 	/**
-	 * Parse unknown input against the table schema and migrate to the latest version.
+	 * Parse unknown input against the table schema and migrate to the latest
+	 * version.
 	 *
 	 * Injects `id` into the input before validation. Does not write to storage.
+	 *
+	 * @returns `Result<TRow, TableParseError>`:
+	 *   - `data: TRow` when the input validates and migrates
+	 *   - `error: TableParseError` on validation / migration failure
 	 */
-	parse(id: string, input: unknown): RowResult<TRow>;
+	parse(id: string, input: unknown): Result<TRow, TableParseError>;
 
 	/** Set a row (insert or replace). Always writes the full row. */
 	set(row: TRow): void;
@@ -172,17 +187,24 @@ export type Table<TRow extends BaseRow> = {
 		},
 	): Promise<void>;
 
-	/** Get a single row by ID. */
-	get(id: string): GetResult<TRow>;
+	/**
+	 * Get a single row by ID.
+	 *
+	 * @returns `Result<TRow | null, TableParseError>`:
+	 *   - `data: TRow` when the row exists and validates
+	 *   - `data: null` when no row exists at that id (not an error — legitimate absence)
+	 *   - `error: TableParseError` when the stored row failed schema validation
+	 */
+	get(id: string): Result<TRow | null, TableParseError>;
 
-	/** Get all rows with their validation status. */
-	getAll(): RowResult<TRow>[];
+	/** Get all rows with their validation outcome. */
+	getAll(): Array<Result<TRow, TableParseError>>;
 
 	/** Get all rows that pass schema validation. */
 	getAllValid(): TRow[];
 
 	/** Get all rows that fail schema validation. */
-	getAllInvalid(): InvalidRowResult[];
+	getAllInvalid(): TableParseError[];
 
 	/** Filter valid rows by predicate. */
 	filter(predicate: (row: TRow) => boolean): TRow[];
@@ -190,8 +212,19 @@ export type Table<TRow extends BaseRow> = {
 	/** Find the first valid row matching a predicate. */
 	find(predicate: (row: TRow) => boolean): TRow | undefined;
 
-	/** Partial update a row by ID. */
-	update(id: string, partial: Partial<Omit<TRow, 'id'>>): UpdateResult<TRow>;
+	/**
+	 * Partial update a row by ID.
+	 *
+	 * @returns `Result<TRow | null, TableParseError>`:
+	 *   - `data: TRow` when the row existed, merged, and validated
+	 *   - `data: null` when no row exists at that id (nothing to update)
+	 *   - `error: TableParseError` when the current row is invalid, or the merged
+	 *     row fails validation
+	 */
+	update(
+		id: string,
+		partial: Partial<Omit<TRow, 'id'>>,
+	): Result<TRow | null, TableParseError>;
 
 	/** Delete a single row by ID. */
 	delete(id: string): void;
@@ -286,24 +319,35 @@ export function createTable<
 	type TRow = InferTableRow<TTableDefinition>;
 
 	/**
-	 * Parse and migrate a raw row value. Injects `id` into the input before validation.
+	 * Parse and migrate a raw row value. Injects `id` into the input before
+	 * validation. Returns `Result<TRow, TableParseError>`.
 	 */
-	function parseRow(id: string, input: unknown): RowResult<TRow> {
+	function parseRow(id: string, input: unknown): Result<TRow, TableParseError> {
 		const row = { ...(input as Record<string, unknown>), id };
 		const result = definition.schema['~standard'].validate(row);
-		if (result instanceof Promise)
-			throw new TypeError('Async schemas not supported');
-		if (result.issues)
-			return { status: 'invalid', id, errors: result.issues, row };
-		const migrated = definition.migrate(result.value) as TRow;
-		return { status: 'valid', row: migrated };
+		if (result instanceof Promise) {
+			return TableParseError.AsyncSchemaNotSupported({ id });
+		}
+		if (result.issues) {
+			return TableParseError.ValidationFailed({
+				id,
+				issues: result.issues,
+				row,
+			});
+		}
+		try {
+			const migrated = definition.migrate(result.value) as TRow;
+			return Ok(migrated);
+		} catch (cause) {
+			return TableParseError.MigrationFailed({ id, cause });
+		}
 	}
 
 	return {
 		name,
 		definition,
 
-		parse(id: string, input: unknown): RowResult<TRow> {
+		parse(id: string, input: unknown): Result<TRow, TableParseError> {
 			return parseRow(id, input);
 		},
 
@@ -329,31 +373,32 @@ export function createTable<
 			}
 		},
 
-		update(id: string, partial: Partial<Omit<TRow, 'id'>>): UpdateResult<TRow> {
-			const current = this.get(id);
-			if (current.status !== 'valid') return current;
+		update(
+			id: string,
+			partial: Partial<Omit<TRow, 'id'>>,
+		): Result<TRow | null, TableParseError> {
+			const { data: current, error: currentError } = this.get(id);
+			if (currentError) return Err(currentError);
+			if (current === null) return Ok(null);
 
-			const merged = { ...current.row, ...partial, id };
-			const result = parseRow(id, merged);
-			if (result.status === 'invalid') return result;
+			const merged = { ...current, ...partial, id };
+			const { data: validated, error: mergedError } = parseRow(id, merged);
+			if (mergedError) return Err(mergedError);
 
-			this.set(result.row);
-			return { status: 'updated', row: result.row };
+			this.set(validated);
+			return Ok(validated);
 		},
 
-		get(id: string): GetResult<TRow> {
+		get(id: string): Result<TRow | null, TableParseError> {
 			const raw = ykv.get(id);
-			if (raw === undefined) {
-				return { status: 'not_found', id, row: undefined };
-			}
+			if (raw === undefined) return Ok(null);
 			return parseRow(id, raw);
 		},
 
-		getAll(): RowResult<TRow>[] {
-			const results: RowResult<TRow>[] = [];
+		getAll(): Array<Result<TRow, TableParseError>> {
+			const results: Array<Result<TRow, TableParseError>> = [];
 			for (const [key, entry] of ykv.entries()) {
-				const result = parseRow(key, entry.val);
-				results.push(result);
+				results.push(parseRow(key, entry.val));
 			}
 			return results;
 		},
@@ -361,21 +406,17 @@ export function createTable<
 		getAllValid(): TRow[] {
 			const rows: TRow[] = [];
 			for (const [key, entry] of ykv.entries()) {
-				const result = parseRow(key, entry.val);
-				if (result.status === 'valid') {
-					rows.push(result.row);
-				}
+				const { data, error } = parseRow(key, entry.val);
+				if (!error) rows.push(data);
 			}
 			return rows;
 		},
 
-		getAllInvalid(): InvalidRowResult[] {
-			const invalid: InvalidRowResult[] = [];
+		getAllInvalid(): TableParseError[] {
+			const invalid: TableParseError[] = [];
 			for (const [key, entry] of ykv.entries()) {
-				const result = parseRow(key, entry.val);
-				if (result.status === 'invalid') {
-					invalid.push(result);
-				}
+				const { error } = parseRow(key, entry.val);
+				if (error) invalid.push(error);
 			}
 			return invalid;
 		},
@@ -383,20 +424,16 @@ export function createTable<
 		filter(predicate: (row: TRow) => boolean): TRow[] {
 			const rows: TRow[] = [];
 			for (const [key, entry] of ykv.entries()) {
-				const result = parseRow(key, entry.val);
-				if (result.status === 'valid' && predicate(result.row)) {
-					rows.push(result.row);
-				}
+				const { data, error } = parseRow(key, entry.val);
+				if (!error && predicate(data)) rows.push(data);
 			}
 			return rows;
 		},
 
 		find(predicate: (row: TRow) => boolean): TRow | undefined {
 			for (const [key, entry] of ykv.entries()) {
-				const result = parseRow(key, entry.val);
-				if (result.status === 'valid' && predicate(result.row)) {
-					return result.row;
-				}
+				const { data, error } = parseRow(key, entry.val);
+				if (!error && predicate(data)) return data;
 			}
 			return undefined;
 		},

@@ -138,18 +138,12 @@ describe('push', () => {
 		expect(result.skipped).toBe(0);
 		expect(result.errors).toEqual([]);
 
-		const post1 = workspace.tables.posts.get('post-1');
-		expect(post1.status).toBe('valid');
-		if (post1.status === 'valid') {
-			expect(post1.row.title).toBe('Hello World');
-			expect(post1.row.published).toBe(true);
-		}
+		const { data: post1 } = workspace.tables.posts.get('post-1');
+		expect(post1?.title).toBe('Hello World');
+		expect(post1?.published).toBe(true);
 
-		const post2 = workspace.tables.posts.get('post-2');
-		expect(post2.status).toBe('valid');
-		if (post2.status === 'valid') {
-			expect(post2.row.title).toBe('Draft Post');
-		}
+		const { data: post2 } = workspace.tables.posts.get('post-2');
+		expect(post2?.title).toBe('Draft Post');
 
 		await factory.close('test.materializer');
 	});
@@ -226,11 +220,8 @@ describe('push', () => {
 
 		expect(result.imported).toBe(1);
 
-		const note = workspace.tables.notes.get('note-1');
-		expect(note.status).toBe('valid');
-		if (note.status === 'valid') {
-			expect(note.row.body).toBe('This is the body content');
-		}
+		const { data: note } = workspace.tables.notes.get('note-1');
+		expect(note?.body).toBe('This is the body content');
 
 		await factory.close('test.materializer');
 	});
@@ -263,11 +254,8 @@ describe('push', () => {
 		const first = await workspace.materializer.push({});
 		expect(first.imported).toBe(1);
 
-		const originalPost = workspace.tables.posts.get('p1');
-		expect(originalPost.status).toBe('valid');
-		if (originalPost.status === 'valid') {
-			expect(originalPost.row.title).toBe('Original');
-		}
+		const { data: originalPost } = workspace.tables.posts.get('p1');
+		expect(originalPost?.title).toBe('Original');
 
 		// Flush observer microtasks (observer writes files on table.set() from the first push)
 		await Bun.sleep(0);
@@ -281,12 +269,9 @@ describe('push', () => {
 		const second = await workspace.materializer.push({});
 		expect(second.imported).toBe(1);
 
-		const updatedPost = workspace.tables.posts.get('p1');
-		expect(updatedPost.status).toBe('valid');
-		if (updatedPost.status === 'valid') {
-			expect(updatedPost.row.title).toBe('Updated From Disk');
-			expect(updatedPost.row.published).toBe(true);
-		}
+		const { data: updatedPost } = workspace.tables.posts.get('p1');
+		expect(updatedPost?.title).toBe('Updated From Disk');
+		expect(updatedPost?.published).toBe(true);
 
 		await factory.close('test.materializer');
 	});
@@ -625,19 +610,13 @@ describe('round-trip', () => {
 		const result = await workspace2.materializer.push({});
 		expect(result.imported).toBe(2);
 
-		const p1 = workspace2.tables.posts.get('p1');
-		expect(p1.status).toBe('valid');
-		if (p1.status === 'valid') {
-			expect(p1.row.title).toBe('Round Trip');
-			expect(p1.row.published).toBe(true);
-		}
+		const { data: p1 } = workspace2.tables.posts.get('p1');
+		expect(p1?.title).toBe('Round Trip');
+		expect(p1?.published).toBe(true);
 
-		const p2 = workspace2.tables.posts.get('p2');
-		expect(p2.status).toBe('valid');
-		if (p2.status === 'valid') {
-			expect(p2.row.title).toBe('Another');
-			expect(p2.row.published).toBe(false);
-		}
+		const { data: p2 } = workspace2.tables.posts.get('p2');
+		expect(p2?.title).toBe('Another');
+		expect(p2?.published).toBe(false);
 
 		await factory2.close('test.roundtrip.2');
 	});

@@ -38,11 +38,9 @@ describe('createTable', () => {
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
 
-			const result = helper.get('1');
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.row).toEqual({ id: '1', name: 'Alice', _v: 1 });
-			}
+			const { data, error } = helper.get('1');
+			expect(error).toBeNull();
+			expect(data).toEqual({ id: '1', name: 'Alice', _v: 1 });
 		});
 
 		test('set overwrites existing row', () => {
@@ -55,11 +53,8 @@ describe('createTable', () => {
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
 			helper.set({ id: '1', name: 'Bob', _v: 1 });
 
-			const result = helper.get('1');
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.row.name).toBe('Bob');
-			}
+			const { data } = helper.get('1');
+			expect(data?.name).toBe('Bob');
 		});
 
 		test('transact stores multiple rows atomically', () => {
@@ -114,14 +109,12 @@ describe('createTable', () => {
 			);
 			const helper = createTable(ykv, definition, 'test');
 
-			const result = helper.get('nonexistent');
-			expect(result.status).toBe('not_found');
-			if (result.status === 'not_found') {
-				expect(result.id).toBe('nonexistent');
-			}
+			const { data, error } = helper.get('nonexistent');
+			expect(error).toBeNull();
+			expect(data).toBeNull();
 		});
 
-		test('get returns invalid for corrupted data', () => {
+		test('get returns ValidationFailed error for corrupted data', () => {
 			const { ykv, yarray } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
@@ -131,12 +124,14 @@ describe('createTable', () => {
 			// Insert invalid data directly
 			yarray.push([{ key: '1', val: { id: '1', name: 123, _v: 1 }, ts: 0 }]); // name should be string
 
-			const result = helper.get('1');
-			expect(result.status).toBe('invalid');
-			if (result.status === 'invalid') {
-				expect(result.id).toBe('1');
-				expect(result.errors.length).toBeGreaterThan(0);
-				expect(result.row).toEqual({ id: '1', name: 123, _v: 1 });
+			const { data, error } = helper.get('1');
+			expect(data).toBeNull();
+			expect(error).not.toBeNull();
+			expect(error?.name).toBe('ValidationFailed');
+			if (error?.name === 'ValidationFailed') {
+				expect(error.id).toBe('1');
+				expect(error.issues.length).toBeGreaterThan(0);
+				expect(error.row).toEqual({ id: '1', name: 123, _v: 1 });
 			}
 		});
 
@@ -153,8 +148,8 @@ describe('createTable', () => {
 			const results = helper.getAll();
 			expect(results).toHaveLength(2);
 
-			const valid = results.filter((r) => r.status === 'valid');
-			const invalid = results.filter((r) => r.status === 'invalid');
+			const valid = results.filter((r) => !r.error);
+			const invalid = results.filter((r) => r.error);
 			expect(valid).toHaveLength(1);
 			expect(invalid).toHaveLength(1);
 		});
@@ -295,42 +290,30 @@ describe('createTable', () => {
 			const helper = createTable(ykv, definition, 'test');
 
 			helper.set({ id: '1', name: 'Alice', age: 25, _v: 1 });
-			const result = helper.update('1', { age: 30 });
+			const { data, error } = helper.update('1', { age: 30 });
 
-			expect(result.status).toBe('updated');
-			if (result.status === 'updated') {
-				expect(result.row).toEqual({ id: '1', name: 'Alice', age: 30, _v: 1 });
-			}
+			expect(error).toBeNull();
+			expect(data).toEqual({ id: '1', name: 'Alice', age: 30, _v: 1 });
 
 			// Verify the row is actually saved
-			const getResult = helper.get('1');
-			expect(getResult.status).toBe('valid');
-			if (getResult.status === 'valid') {
-				expect(getResult.row).toEqual({
-					id: '1',
-					name: 'Alice',
-					age: 30,
-					_v: 1,
-				});
-			}
+			const { data: saved } = helper.get('1');
+			expect(saved).toEqual({ id: '1', name: 'Alice', age: 30, _v: 1 });
 		});
 
-		test('update returns not_found for missing rows', () => {
+		test('update returns null data for missing rows', () => {
 			const { ykv } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
 			);
 			const helper = createTable(ykv, definition, 'test');
 
-			const result = helper.update('nonexistent', { name: 'Bob' });
+			const { data, error } = helper.update('nonexistent', { name: 'Bob' });
 
-			expect(result.status).toBe('not_found');
-			if (result.status === 'not_found') {
-				expect(result.id).toBe('nonexistent');
-			}
+			expect(error).toBeNull();
+			expect(data).toBeNull();
 		});
 
-		test('update returns invalid for corrupted data', () => {
+		test('update returns ValidationFailed for corrupted data', () => {
 			const { ykv, yarray } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
@@ -340,13 +323,14 @@ describe('createTable', () => {
 			// Insert invalid data directly
 			yarray.push([{ key: '1', val: { id: '1', name: 123, _v: 1 }, ts: 0 }]); // name should be string
 
-			const result = helper.update('1', { name: 'Valid' });
+			const { data, error } = helper.update('1', { name: 'Valid' });
 
-			expect(result.status).toBe('invalid');
-			if (result.status === 'invalid') {
-				expect(result.id).toBe('1');
-				expect(result.errors.length).toBeGreaterThan(0);
-				expect(result.row).toEqual({ id: '1', name: 123, _v: 1 });
+			expect(data).toBeNull();
+			expect(error?.name).toBe('ValidationFailed');
+			if (error?.name === 'ValidationFailed') {
+				expect(error.id).toBe('1');
+				expect(error.issues.length).toBeGreaterThan(0);
+				expect(error.row).toEqual({ id: '1', name: 123, _v: 1 });
 			}
 		});
 
@@ -361,15 +345,12 @@ describe('createTable', () => {
 
 			// TypeScript prevents passing `id` in partial due to Omit<TRow, 'id'>
 			// But we can test that even if someone bypasses TypeScript, the id is preserved
-			const result = helper.update('1', { name: 'Bob' } as Partial<
+			const { data } = helper.update('1', { name: 'Bob' } as Partial<
 				Omit<{ id: string; name: string }, 'id'>
 			>);
 
-			expect(result.status).toBe('updated');
-			if (result.status === 'updated') {
-				expect(result.row.id).toBe('1'); // ID is preserved
-				expect(result.row.name).toBe('Bob');
-			}
+			expect(data?.id).toBe('1'); // ID is preserved
+			expect(data?.name).toBe('Bob');
 
 			// Verify the row still exists at the original ID
 			expect(helper.has('1')).toBe(true);
@@ -621,11 +602,9 @@ describe('createTable', () => {
 				{ key: '1', val: { id: '1', name: 'Alice', _v: 1 }, ts: 0 },
 			]);
 
-			const result = helper.get('1');
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.row).toEqual({ id: '1', name: 'Alice', age: 0, _v: 2 });
-			}
+			const { data, error } = helper.get('1');
+			expect(error).toBeNull();
+			expect(data).toEqual({ id: '1', name: 'Alice', age: 0, _v: 2 });
 		});
 
 		test('passes through current version data unchanged', () => {
@@ -641,11 +620,9 @@ describe('createTable', () => {
 
 			helper.set({ id: '1', name: 'Alice', age: 30, _v: 2 });
 
-			const result = helper.get('1');
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.row).toEqual({ id: '1', name: 'Alice', age: 30, _v: 2 });
-			}
+			const { data, error } = helper.get('1');
+			expect(error).toBeNull();
+			expect(data).toEqual({ id: '1', name: 'Alice', age: 30, _v: 2 });
 		});
 	});
 });

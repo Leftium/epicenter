@@ -51,9 +51,9 @@ export function attachFileTree(filesTable: Table<FileRow>) {
 		 * deleted or is otherwise invalid.
 		 */
 		getRow(id: FileId, path: string): FileRow {
-			const result = filesTable.get(id);
-			if (result.status !== 'valid') throw FS_ERRORS.ENOENT(path);
-			return result.row;
+			const { data: row } = filesTable.get(id);
+			if (row === null) throw FS_ERRORS.ENOENT(path);
+			return row;
 		},
 
 		/**
@@ -93,10 +93,8 @@ export function attachFileTree(filesTable: Table<FileRow>) {
 			const ids = index.getChildIds(parentId);
 			const rows: FileRow[] = [];
 			for (const cid of ids) {
-				const result = filesTable.get(cid);
-				if (result.status === 'valid') {
-					rows.push(result.row);
-				}
+				const { data: row } = filesTable.get(cid);
+				if (row !== null) rows.push(row);
 			}
 			return rows;
 		},
@@ -109,10 +107,10 @@ export function attachFileTree(filesTable: Table<FileRow>) {
 			const result: FileId[] = [];
 			const children = index.getChildIds(parentId);
 			for (const cid of children) {
-				const row = filesTable.get(cid);
-				if (row.status !== 'valid') continue;
+				const { data: row } = filesTable.get(cid);
+				if (row === null) continue;
 				result.push(cid);
-				if (row.row.type === 'folder') {
+				if (row.type === 'folder') {
 					result.push(...this.descendantIds(cid));
 				}
 			}

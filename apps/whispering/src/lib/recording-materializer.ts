@@ -63,11 +63,12 @@ export function attachRecordingMarkdownFiles(
 				const toDelete: string[] = [];
 
 				for (const id of changedIds) {
-					const result = recordings.get(id);
-					if (result.status === 'valid') {
-						toWrite.push(toRecordingMarkdownFile(result.row));
-					} else if (result.status === 'not_found') {
+					const { data: row, error } = recordings.get(id);
+					if (error) continue; // invalid row — leave existing file alone
+					if (row === null) {
 						toDelete.push(`${id}.md`);
+					} else {
+						toWrite.push(toRecordingMarkdownFile(row));
 					}
 				}
 

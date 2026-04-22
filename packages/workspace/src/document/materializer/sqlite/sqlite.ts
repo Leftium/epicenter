@@ -171,16 +171,13 @@ export function attachSqliteMaterializer(
 			if (entry === undefined) continue;
 
 			for (const id of ids) {
-				const result = entry.table.get(id);
-				switch (result.status) {
-					case 'valid':
-						await insertRow(tableName, result.row);
-						break;
-					case 'invalid':
-					case 'not_found':
-						await deleteRow(tableName, id);
-						break;
+				const { data: row, error } = entry.table.get(id);
+				if (error || row === null) {
+					// Invalid or missing → drop from mirror.
+					await deleteRow(tableName, id);
+					continue;
 				}
+				await insertRow(tableName, row);
 			}
 		}
 	}

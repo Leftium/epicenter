@@ -200,9 +200,10 @@ export function attachMarkdownMaterializer(
 		return table.observe((changedIds) => {
 			void (async () => {
 				for (const id of changedIds) {
-					const getResult = table.get(id);
+					const { data: row, error } = table.get(id);
 
-					if (getResult.status === 'not_found') {
+					// Invalid or missing → unlink any previously-written file.
+					if (error || row === null) {
 						const previous = filenames.get(id);
 						if (previous) {
 							await unlink(join(directory, previous)).catch(() => {});
@@ -211,12 +212,7 @@ export function attachMarkdownMaterializer(
 						continue;
 					}
 
-					if (getResult.status !== 'valid') continue;
-
-					const { filename, content } = await rowToMarkdownFile(
-						getResult.row,
-						config,
-					);
+					const { filename, content } = await rowToMarkdownFile(row, config);
 					const previous = filenames.get(id);
 					if (previous && previous !== filename)
 						await unlink(join(directory, previous)).catch(() => {});

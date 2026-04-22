@@ -311,11 +311,7 @@ describe('attachFileSystemIndex', () => {
 		files.set(makeRow('f1', 'self-loop.txt', 'f1'));
 		const index = attachFileSystemIndex(files);
 
-		const result = files.get('f1');
-		expect(result.status).toBe('valid');
-		if (result.status === 'valid') {
-			expect(result.row.parentId).toBeNull();
-		}
+		expect(files.get('f1').data?.parentId).toBeNull();
 		expect(index.getIdByPath('/self-loop.txt')).toBe(fid('f1'));
 
 		index.dispose();
@@ -330,11 +326,7 @@ describe('attachFileSystemIndex', () => {
 		files.set({ ...makeRow('b', 'beta', 'a', 'folder'), updatedAt: 2000 });
 		const index = attachFileSystemIndex(files);
 
-		const resultB = files.get('b');
-		expect(resultB.status).toBe('valid');
-		if (resultB.status === 'valid') {
-			expect(resultB.row.parentId).toBeNull();
-		}
+		expect(files.get('b').data?.parentId).toBeNull();
 
 		// B is at root, A is child of B
 		expect(index.getIdByPath('/beta')).toBe(fid('b'));
@@ -354,11 +346,7 @@ describe('attachFileSystemIndex', () => {
 		files.set({ ...makeRow('c', 'node-c', 'b', 'folder'), updatedAt: 3000 });
 		const index = attachFileSystemIndex(files);
 
-		const resultC = files.get('c');
-		expect(resultC.status).toBe('valid');
-		if (resultC.status === 'valid') {
-			expect(resultC.row.parentId).toBeNull();
-		}
+		expect(files.get('c').data?.parentId).toBeNull();
 
 		// All three should be reachable
 		expect(index.allPaths().length).toBe(3);
@@ -389,11 +377,7 @@ describe('attachFileSystemIndex', () => {
 		files.set(makeRow('f1', 'orphan.txt', 'nonexistent'));
 		const index = attachFileSystemIndex(files);
 
-		const result = files.get('f1');
-		expect(result.status).toBe('valid');
-		if (result.status === 'valid') {
-			expect(result.row.parentId).toBeNull();
-		}
+		expect(files.get('f1').data?.parentId).toBeNull();
 		expect(index.getIdByPath('/orphan.txt')).toBe(fid('f1'));
 
 		index.dispose();
@@ -408,11 +392,7 @@ describe('attachFileSystemIndex', () => {
 		files.set(makeRow('f1', 'child.txt', 'd1'));
 		const index = attachFileSystemIndex(files);
 
-		const result = files.get('f1');
-		expect(result.status).toBe('valid');
-		if (result.status === 'valid') {
-			expect(result.row.parentId).toBeNull();
-		}
+		expect(files.get('f1').data?.parentId).toBeNull();
 		expect(index.getIdByPath('/child.txt')).toBe(fid('f1'));
 
 		index.dispose();
@@ -424,10 +404,8 @@ describe('attachFileSystemIndex', () => {
 		files.set(makeRow('f2', 'orphan-b.txt', 'gone'));
 		const index = attachFileSystemIndex(files);
 
-		const r1 = files.get('f1');
-		const r2 = files.get('f2');
-		if (r1.status === 'valid') expect(r1.row.parentId).toBeNull();
-		if (r2.status === 'valid') expect(r2.row.parentId).toBeNull();
+		expect(files.get('f1').data?.parentId).toBeNull();
+		expect(files.get('f2').data?.parentId).toBeNull();
 
 		expect(index.getIdByPath('/orphan-a.txt')).toBe(fid('f1'));
 		expect(index.getIdByPath('/orphan-b.txt')).toBe(fid('f2'));
@@ -445,10 +423,7 @@ describe('attachFileSystemIndex', () => {
 		const index = attachFileSystemIndex(files);
 
 		// d1 moved to root (parent doesn't exist)
-		const resultD1 = files.get('d1');
-		if (resultD1.status === 'valid') {
-			expect(resultD1.row.parentId).toBeNull();
-		}
+		expect(files.get('d1').data?.parentId).toBeNull();
 
 		// f1 stays under d1 since d1 is now at root
 		expect(index.getIdByPath('/lost-folder')).toBe(fid('d1'));
@@ -602,10 +577,7 @@ describe('attachFileSystemIndex', () => {
 		files.set({ ...makeRow('f2', 'conflict.txt', 'missing'), createdAt: 2000 });
 		const index = attachFileSystemIndex(files);
 
-		const result = files.get('f2');
-		if (result.status === 'valid') {
-			expect(result.row.parentId).toBeNull();
-		}
+		expect(files.get('f2').data?.parentId).toBeNull();
 
 		// Both reachable with unique paths
 		expect(index.allPaths().length).toBe(2);

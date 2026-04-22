@@ -273,10 +273,10 @@ export function createSqliteIndex(
 			const deletedIds: string[] = [];
 
 			for (const id of changedIds) {
-				const result = filesTable.get(id);
-				if (result.status !== 'valid') {
+				const { data: row } = filesTable.get(id);
+				if (row === null) {
 					deletedIds.push(id);
-				} else if (result.row.type === 'folder') {
+				} else if (row.type === 'folder') {
 					folderIds.push(id);
 				} else {
 					fileIds.push(id);
@@ -297,9 +297,8 @@ export function createSqliteIndex(
 
 			// Process folders first (path cascading must precede file processing)
 			for (const id of folderIds) {
-				const result = filesTable.get(id);
-				if (result.status !== 'valid') continue;
-				const row = result.row;
+				const { data: row } = filesTable.get(id);
+				if (row === null) continue;
 				const path = computePathForRow(id, filesTable);
 
 				// Query current path from SQLite before mutation
@@ -361,9 +360,8 @@ export function createSqliteIndex(
 
 			// Process files
 			for (const id of fileIds) {
-				const result = filesTable.get(id);
-				if (result.status !== 'valid') continue;
-				const row = result.row;
+				const { data: row } = filesTable.get(id);
+				if (row === null) continue;
 				const path = computePathForRow(id, filesTable);
 
 				let fileContent: string | null = null;
@@ -539,10 +537,8 @@ function computePathForRow(
 		if (visited.has(currentId)) return null;
 		visited.add(currentId);
 
-		const result = filesTable.get(currentId);
-		if (result.status !== 'valid') return null;
-
-		const row = result.row;
+		const { data: row } = filesTable.get(currentId);
+		if (row === null) return null;
 
 		if (row.parentId === null) {
 			return `/${row.name}`;

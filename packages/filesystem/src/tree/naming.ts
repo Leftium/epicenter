@@ -25,9 +25,9 @@ export function assertUniqueName(
 ): void {
 	const duplicate = siblingIds.find((id) => {
 		if (id === excludeId) return false;
-		const result = filesTable.get(id);
-		if (result.status !== 'valid') return false;
-		return result.row.name === name && result.row.trashedAt === null;
+		const { data: row } = filesTable.get(id);
+		if (row === null) return false;
+		return row.name === name && row.trashedAt === null;
 	});
 	if (duplicate) {
 		throw FS_ERRORS.EEXIST(`${name} already exists in parent`);

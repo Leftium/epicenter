@@ -63,6 +63,8 @@ export {
 	composeSinks,
 	consoleSink,
 	createLogger,
+	type DisposableLogSink,
+	jsonlFileSink,
 	type LogEvent,
 	type Logger,
 	type LogLevel,

@@ -1,5 +1,6 @@
 export { composeSinks } from './compose-sinks.js';
 export { consoleSink } from './console-sink.js';
+export { type DisposableLogSink, jsonlFileSink } from './jsonl-sink.js';
 export {
 	createLogger,
 	type LogEvent,

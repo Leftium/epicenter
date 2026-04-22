@@ -94,6 +94,8 @@ describe('scaling ceiling: small rows (posts)', () => {
 	const ROW_COUNTS = [1_000, 10_000, 25_000, 50_000, 100_000];
 
 	test('insert, encode, decode, read at increasing row counts', () => {
+		// 100K rows pushes past Bun's 5s default; the shape of the O(n) curve is
+		// already visible at 50K, so the extra milestone is informational only.
 		console.log('\n=== SCALING CEILING: SMALL ROWS (~75 bytes/row) ===');
 		console.log('Table: posts { id, title, views, _v }');
 
@@ -174,7 +176,7 @@ describe('scaling ceiling: small rows (posts)', () => {
 		}
 
 		printTable(results);
-	});
+	}, 60_000);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -26,8 +26,6 @@ import { skillsDocument } from '@epicenter/skills';
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import {
-	attachEncryptedKv,
-	attachEncryptedTables,
 	attachEncryption,
 	defineMutation,
 	defineQuery,
@@ -49,8 +47,8 @@ const opensidianFactory = defineDocument(
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
 		const encryption = attachEncryption(ydoc);
-		const tables = attachEncryptedTables(ydoc, encryption, opensidianTables);
-		const kv = attachEncryptedKv(ydoc, encryption, {});
+		const tables = encryption.attachTables(ydoc, opensidianTables);
+		const kv = encryption.attachKv(ydoc, {});
 
 		const fileContentDocs = createFileContentDocs({
 			workspaceId: id,

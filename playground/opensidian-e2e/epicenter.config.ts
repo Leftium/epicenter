@@ -29,8 +29,6 @@ import {
 import { createFileContentDocs } from '@epicenter/filesystem';
 import { opensidianTables } from 'opensidian/workspace';
 import {
-	attachEncryptedKv,
-	attachEncryptedTables,
 	attachEncryption,
 	attachSqlite,
 	attachSync,
@@ -58,8 +56,8 @@ const sessions = createSessionStore();
 const opensidianFactory = defineDocument((id: string) => {
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 	const encryption = attachEncryption(ydoc);
-	const tables = attachEncryptedTables(ydoc, encryption, opensidianTables);
-	const kv = attachEncryptedKv(ydoc, encryption, {});
+	const tables = encryption.attachTables(ydoc, opensidianTables);
+	const kv = encryption.attachKv(ydoc, {});
 
 	const persistence = attachSqlite(ydoc, {
 		filePath: EPICENTER_PATHS.persistence(id),

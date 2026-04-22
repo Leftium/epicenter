@@ -17,8 +17,6 @@ import {
 } from '@epicenter/workspace';
 import { createAuth } from '@epicenter/svelte/auth';
 import {
-	attachEncryptedKv,
-	attachEncryptedTables,
 	attachEncryption,
 	dispatchAction,
 } from '@epicenter/workspace';
@@ -42,8 +40,8 @@ const tabManager = defineDocument(
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
 		const encryption = attachEncryption(ydoc);
-		const tables = attachEncryptedTables(ydoc, encryption, tabManagerTables);
-		const kv = attachEncryptedKv(ydoc, encryption, {});
+		const tables = encryption.attachTables(ydoc, tabManagerTables);
+		const kv = encryption.attachKv(ydoc, {});
 		const awareness = attachAwareness(ydoc, tabManagerAwarenessDefs);
 
 		const batch = (fn: () => void) => ydoc.transact(fn);

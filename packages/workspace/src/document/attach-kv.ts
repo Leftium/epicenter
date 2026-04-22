@@ -5,8 +5,8 @@
  * wraps it with a typed `Kv`. KV uses validate-or-default semantics:
  * invalid or missing values return the default value from the KV definition.
  *
- * For encrypted storage, use `attachEncryptedKv` inside a `defineDocument`
- * builder alongside `attachEncryption`.
+ * For encrypted storage, call `encryption.attachKv` on the coordinator
+ * returned by `attachEncryption(ydoc)`.
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';

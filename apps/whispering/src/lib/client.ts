@@ -11,11 +11,7 @@ import {
 	attachIndexedDb,
 	defineDocument,
 } from '@epicenter/workspace';
-import {
-	attachEncryptedKv,
-	attachEncryptedTables,
-	attachEncryption,
-} from '@epicenter/workspace';
+import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { PATHS } from '$lib/constants/paths';
 import { attachRecordingMarkdownFiles } from './recording-materializer';
@@ -26,8 +22,8 @@ const whisperingFactory = defineDocument(
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
 		const encryption = attachEncryption(ydoc);
-		const tables = attachEncryptedTables(ydoc, encryption, whisperingTables);
-		const kv = attachEncryptedKv(ydoc, encryption, whisperingKv);
+		const tables = encryption.attachTables(ydoc, whisperingTables);
+		const kv = encryption.attachKv(ydoc, whisperingKv);
 
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);

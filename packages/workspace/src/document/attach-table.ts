@@ -5,8 +5,8 @@
  * and wraps it with a typed `Table`. Provides CRUD operations with
  * schema validation and migration on read.
  *
- * For encrypted storage, use `attachEncryptedTable` / `attachEncryptedKv`
- * from `@epicenter/workspace`.
+ * For encrypted storage, call `encryption.attachTable` / `encryption.attachKv`
+ * on the coordinator returned by `attachEncryption(ydoc)`.
  *
  * @example
  * ```typescript
@@ -142,6 +142,17 @@ export type TableDefinitions = Record<
  * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
  */
 export type Table<TRow extends BaseRow> = {
+	/** The table name (the Y.Array key this table is bound to). */
+	name: string;
+
+	/**
+	 * The underlying `TableDefinition` (schema + migration) this Table was
+	 * attached with. Exposed for consumers that need the raw schema — e.g.,
+	 * the sqlite materializer generating DDL.
+	 */
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
+	definition: TableDefinition<any>;
+
 	/**
 	 * Parse unknown input against the table schema and migrate to the latest version.
 	 *
@@ -235,7 +246,7 @@ export function attachTable<
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.on('destroy', () => ykv.dispose());
-	return createTable(ykv, definition);
+	return createTable(ykv, definition, name);
 }
 
 /**
@@ -243,8 +254,8 @@ export function attachTable<
  * `attachTable` — calls it for each entry and returns the helpers keyed by
  * table name.
  *
- * For encrypted storage, use `attachEncryptedTables` from
- * `@epicenter/workspace`.
+ * For encrypted storage, call `encryption.attachTables` on the coordinator
+ * returned by `attachEncryption(ydoc)`.
  */
 export function attachTables<T extends TableDefinitions>(
 	ydoc: Y.Doc,
@@ -270,6 +281,7 @@ export function createTable<
 >(
 	ykv: ObservableKvStore<unknown>,
 	definition: TTableDefinition,
+	name: string,
 ): Table<InferTableRow<TTableDefinition>> {
 	type TRow = InferTableRow<TTableDefinition>;
 
@@ -288,6 +300,9 @@ export function createTable<
 	}
 
 	return {
+		name,
+		definition,
+
 		parse(id: string, input: unknown): RowResult<TRow> {
 			return parseRow(id, input);
 		},

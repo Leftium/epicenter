@@ -25,8 +25,6 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defineDocument } from '@epicenter/workspace';
 import {
-	attachEncryptedKv,
-	attachEncryptedTables,
 	attachEncryption,
 	defineMutation,
 	generateId,
@@ -79,11 +77,11 @@ export const skillsDocument = defineDocument(
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
 		const encryption = attachEncryption(ydoc);
-		const tables = attachEncryptedTables(ydoc, encryption, {
+		const tables = encryption.attachTables(ydoc, {
 			skills: skillsTable,
 			references: referencesTable,
 		});
-		const kv = attachEncryptedKv(ydoc, encryption, {});
+		const kv = encryption.attachKv(ydoc, {});
 
 		const instructionsDocs = createSkillInstructionsDocs({
 			workspaceId: id,

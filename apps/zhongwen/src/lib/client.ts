@@ -13,11 +13,7 @@ import {
 	defineDocument,
 } from '@epicenter/workspace';
 import { createAuth } from '@epicenter/svelte/auth';
-import {
-	attachEncryptedKv,
-	attachEncryptedTables,
-	attachEncryption,
-} from '@epicenter/workspace';
+import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { session } from '$lib/auth';
 import { zhongwenKv, zhongwenTables } from '$lib/workspace';
@@ -27,8 +23,8 @@ const zhongwen = defineDocument(
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
 		const encryption = attachEncryption(ydoc);
-		const tables = attachEncryptedTables(ydoc, encryption, zhongwenTables);
-		const kv = attachEncryptedKv(ydoc, encryption, zhongwenKv);
+		const tables = encryption.attachTables(ydoc, zhongwenTables);
+		const kv = encryption.attachKv(ydoc, zhongwenKv);
 
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);

@@ -27,11 +27,7 @@ import {
 	attachIndexedDb,
 	defineDocument,
 } from '@epicenter/workspace';
-import {
-	attachEncryptedKv,
-	attachEncryptedTables,
-	attachEncryption,
-} from '@epicenter/workspace';
+import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createReferenceContentDocs } from './reference-content-docs.js';
 import { createSkillInstructionsDocs } from './skill-instructions-docs.js';
@@ -56,11 +52,11 @@ export const skillsDocument = defineDocument(
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
 		const encryption = attachEncryption(ydoc);
-		const tables = attachEncryptedTables(ydoc, encryption, {
+		const tables = encryption.attachTables(ydoc, {
 			skills: skillsTable,
 			references: referencesTable,
 		});
-		const kv = attachEncryptedKv(ydoc, encryption, {});
+		const kv = encryption.attachKv(ydoc, {});
 
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);

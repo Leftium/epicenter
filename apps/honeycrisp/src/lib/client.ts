@@ -17,11 +17,7 @@ import {
 } from '@epicenter/workspace';
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
-import {
-	attachEncryptedKv,
-	attachEncryptedTables,
-	attachEncryption,
-} from '@epicenter/workspace';
+import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createHoneycrispActions, honeycrispTables } from '$lib/workspace';
 
@@ -36,8 +32,8 @@ const honeycrisp = defineDocument(
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
 		const encryption = attachEncryption(ydoc);
-		const tables = attachEncryptedTables(ydoc, encryption, honeycrispTables);
-		const kv = attachEncryptedKv(ydoc, encryption, {});
+		const tables = encryption.attachTables(ydoc, honeycrispTables);
+		const kv = encryption.attachKv(ydoc, {});
 
 		const idb = attachIndexedDb(ydoc);
 		attachBroadcastChannel(ydoc);

@@ -16,8 +16,6 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-	attachEncryptedKv,
-	attachEncryptedTables,
 	attachEncryption,
 	attachSqlite,
 	generateId,
@@ -43,8 +41,8 @@ function dbPath(id: string) {
 function createTestClient() {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 	const encryption = attachEncryption(ydoc);
-	const tables = attachEncryptedTables(ydoc, encryption, opensidianTables);
-	const kv = attachEncryptedKv(ydoc, encryption, {});
+	const tables = encryption.attachTables(ydoc, opensidianTables);
+	const kv = encryption.attachKv(ydoc, {});
 	const persistence = attachSqlite(ydoc, { filePath: dbPath(WORKSPACE_ID) });
 
 	const contentDocs = createFileContentDocs({
@@ -199,8 +197,8 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 	function createImportClient() {
 		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: false });
 		const encryption = attachEncryption(ydoc);
-		const tables = attachEncryptedTables(ydoc, encryption, opensidianTables);
-		const kv = attachEncryptedKv(ydoc, encryption, {});
+		const tables = encryption.attachTables(ydoc, opensidianTables);
+		const kv = encryption.attachKv(ydoc, {});
 		const persistence = attachSqlite(ydoc, {
 			filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
 		});

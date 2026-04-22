@@ -95,11 +95,6 @@ export {
 	attachEncryption,
 	type EncryptionAttachment,
 } from './document/attach-encryption';
-export {
-	attachEncryptedKv,
-	attachEncryptedTable,
-	attachEncryptedTables,
-} from './document/attach-encrypted';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TYPES

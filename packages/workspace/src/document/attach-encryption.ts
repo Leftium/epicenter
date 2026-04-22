@@ -6,13 +6,29 @@
  * them: it derives a per-workspace HKDF keyring from base64 user keys and
  * calls `activateEncryption(keyring)` on every registered store in lockstep.
  *
+ * ## Method-on-coordinator pattern
+ *
+ * The coordinator owns the method surface for attaching its sibling
+ * primitives. Instead of top-level `attachEncryptedTable(ydoc, encryption, ...)`
+ * exports, call the methods on the returned attachment:
+ *
+ * ```ts
+ * const encryption = attachEncryption(ydoc);
+ * const tables = encryption.attachTables(ydoc, defs);
+ * const kv = encryption.attachKv(ydoc, defs);
+ * ```
+ *
+ * The method names deliberately mirror the plaintext primitives
+ * (`attachTable`, `attachTables`, `attachKv`) so the pattern reads
+ * symmetrically — "encryption's attach-tables" vs "plain attach-tables."
+ *
  * ## Registration model
  *
- * Encrypted primitives (`attachEncryptedTable`, `attachEncryptedTables`,
- * `attachEncryptedKv`) create their store, then call
- * `encryption.register(store)`. The coordinator holds the list and applies
- * the current keyring (if any) to each new registrant immediately — so
- * registering after `applyKeys` has run does not leave the store plaintext.
+ * Each method creates the backing `EncryptedYKeyValueLww` store, registers it
+ * with the coordinator, and returns the typed helper. The coordinator holds
+ * the list and applies the current keyring (if any) to each new registrant
+ * immediately — so registering after `applyKeys` has run does not leave the
+ * store plaintext.
  *
  * ## Fingerprint dedup
  *
@@ -34,18 +50,13 @@
  * - It does not wipe CRDT state. Any future "wipe encrypted blobs" API needs
  *   to coordinate with persistence to be useful — design it alongside the
  *   consumer migration.
- * - It does not own store creation. Stores are created by
- *   `attachEncryptedTable` / `attachEncryptedKv` (or by test setup) and
- *   registered here. This attachment only coordinates the encryption
- *   lifecycle across whatever stores get registered.
  * - It does not validate that every encryption-capable slot on the Y.Doc
  *   got registered. The caller owns the composition — if you pair a
- *   plaintext `attachTable` with an
- *   `attachEncryptedTable` targeting the *same slot name*, Yjs hands both
- *   calls the same underlying `Y.Array` and you get a silent
- *   plaintext-over-ciphertext race. The verb (`attachEncryptedTable` vs
- *   `attachTable`) is the primary defense; review call sites accordingly.
- *   One slot name, one attach site, one intent.
+ *   plaintext `attachTable` with `encryption.attachTable` targeting the
+ *   *same slot name*, Yjs hands both calls the same underlying `Y.Array` and
+ *   you get a silent plaintext-over-ciphertext race. The verb
+ *   (`encryption.attachTable` vs plain `attachTable`) is the primary defense;
+ *   review call sites accordingly. One slot name, one attach site, one intent.
  *
  * ## Why `workspaceId` is read from `ydoc.guid`
  *
@@ -60,11 +71,25 @@
 
 import type * as Y from 'yjs';
 import { base64ToBytes, deriveWorkspaceKey } from '../shared/crypto/index.js';
-import type { EncryptedYKeyValueLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import {
+	createEncryptedYkvLww,
+	type EncryptedYKeyValueLww,
+} from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import {
 	type EncryptionKeys,
 	encryptionKeysFingerprint,
 } from './encryption-key.js';
+import {
+	type InferTableRow,
+	type Kv,
+	type KvDefinitions,
+	type Table,
+	type TableDefinition,
+	type TableDefinitions,
+	type Tables,
+} from './index.js';
+import { createKv, createTable } from './internal.js';
+import { KV_KEY, TableKey } from './keys.js';
 
 /**
  * The coordinator treats every registered store uniformly — it only calls
@@ -89,14 +114,42 @@ export type EncryptionAttachment = {
 
 	/**
 	 * Register a store for encryption coordination. Internal entry point —
-	 * called by `attachEncryptedTable` / `attachEncryptedKv` / test setup,
-	 * not by application code.
+	 * called by the coordinator's own `attachTable` / `attachKv` methods and
+	 * by test setup, not by application code.
 	 *
 	 * If keys have already been applied, the store is activated immediately
 	 * with the cached keyring. Otherwise it is queued for the next
 	 * `applyKeys` call.
 	 */
 	register(store: AnyEncryptedStore): void;
+
+	/**
+	 * Attach an encrypted table — mirror of the plaintext `attachTable(ydoc,
+	 * name, def)` but with the store registered for encryption coordination.
+	 */
+	attachTable<
+		// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
+		TTableDefinition extends TableDefinition<any>,
+	>(
+		ydoc: Y.Doc,
+		name: string,
+		definition: TTableDefinition,
+	): Table<InferTableRow<TTableDefinition>>;
+
+	/**
+	 * Batch sugar over `attachTable` — one encrypted store per entry, keyed by
+	 * name. Mirror of the plaintext `attachTables(ydoc, defs)`.
+	 */
+	attachTables<T extends TableDefinitions>(
+		ydoc: Y.Doc,
+		definitions: T,
+	): Tables<T>;
+
+	/**
+	 * Attach the encrypted KV singleton. Mirror of the plaintext
+	 * `attachKv(ydoc, defs)`.
+	 */
+	attachKv<T extends KvDefinitions>(ydoc: Y.Doc, definitions: T): Kv<T>;
 
 	/** Resolves when the Y.Doc is destroyed and every store has been disposed. */
 	readonly whenDisposed: Promise<void>;
@@ -105,11 +158,10 @@ export type EncryptionAttachment = {
 /**
  * Create an encryption coordinator bound to `ydoc`.
  *
- * The returned object has no knowledge of which stores will be encrypted —
- * they register themselves via `encryption.register(store)` during their
- * `attachEncrypted*` calls. Call `applyKeys(keys)` after login (or whenever
- * the auth session produces keys) to activate encryption across every
- * registered store.
+ * The returned coordinator owns `attachTable` / `attachTables` / `attachKv`
+ * methods — call them to register encrypted stores. Call `applyKeys(keys)`
+ * after login (or whenever the auth session produces keys) to activate
+ * encryption across every registered store.
  */
 export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 	const stores: AnyEncryptedStore[] = [];
@@ -130,7 +182,7 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 		resolveDisposed();
 	});
 
-	return {
+	const attachment: EncryptionAttachment = {
 		applyKeys(keys) {
 			const fingerprint = encryptionKeysFingerprint(keys);
 			if (fingerprint === lastKeysFingerprint) return;
@@ -148,6 +200,26 @@ export function attachEncryption(ydoc: Y.Doc): EncryptionAttachment {
 			stores.push(store);
 			if (cachedKeyring !== undefined) store.activateEncryption(cachedKeyring);
 		},
+		attachTable(ydoc, name, definition) {
+			const store = createEncryptedYkvLww(ydoc, TableKey(name));
+			attachment.register(store);
+			return createTable(store, definition, name);
+		},
+		attachTables(ydoc, definitions) {
+			return Object.fromEntries(
+				Object.entries(definitions).map(([name, def]) => [
+					name,
+					attachment.attachTable(ydoc, name, def),
+				]),
+			) as Tables<typeof definitions>;
+		},
+		attachKv(ydoc, definitions) {
+			const store = createEncryptedYkvLww(ydoc, KV_KEY);
+			attachment.register(store);
+			return createKv(store, definitions);
+		},
 		whenDisposed,
 	};
+
+	return attachment;
 }

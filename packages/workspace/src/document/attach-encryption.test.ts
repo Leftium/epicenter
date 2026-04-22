@@ -7,7 +7,7 @@
  * to pin its contract independently of the workspace builder. Stores are
  * constructed with `createEncryptedYkvLww` and registered via
  * `encryption.register(store)` — the same pathway used by
- * `attachEncryptedTable` / `attachEncryptedKv`.
+ * `encryption.attachTable` / `encryption.attachKv`.
  */
 
 import { describe, expect, test } from 'bun:test';

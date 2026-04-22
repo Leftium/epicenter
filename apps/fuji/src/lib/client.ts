@@ -18,11 +18,7 @@ import {
 } from '@epicenter/workspace';
 import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
-import {
-	attachEncryptedKv,
-	attachEncryptedTables,
-	attachEncryption,
-} from '@epicenter/workspace';
+import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createFujiActions, fujiTables } from '$lib/workspace';
 
@@ -37,8 +33,8 @@ const fuji = defineDocument(
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
 		const encryption = attachEncryption(ydoc);
-		const tables = attachEncryptedTables(ydoc, encryption, fujiTables);
-		const kv = attachEncryptedKv(ydoc, encryption, {});
+		const tables = encryption.attachTables(ydoc, fujiTables);
+		const kv = encryption.attachKv(ydoc, {});
 		const awareness = attachAwareness(ydoc, {});
 
 		const idb = attachIndexedDb(ydoc);

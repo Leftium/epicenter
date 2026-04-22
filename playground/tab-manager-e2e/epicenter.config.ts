@@ -24,8 +24,6 @@ import {
 	tabManagerTables,
 } from '@epicenter/tab-manager/workspace';
 import {
-	attachEncryptedKv,
-	attachEncryptedTables,
 	attachEncryption,
 	attachSqlite,
 	attachSync,
@@ -46,11 +44,11 @@ const sessions = createSessionStore();
 const tabManagerFactory = defineDocument((id: string) => {
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 	const encryption = attachEncryption(ydoc);
-	const tables = attachEncryptedTables(ydoc, encryption, tabManagerTables);
+	const tables = encryption.attachTables(ydoc, tabManagerTables);
 	// Empty kv — tabManager has no KV definitions, but `.kv()` on the materializer
 	// serializes the shared kv store. Keep an empty encrypted kv attached so the
 	// materializer's `.kv()` call has something to observe.
-	const kv = attachEncryptedKv(ydoc, encryption, {});
+	const kv = encryption.attachKv(ydoc, {});
 
 	const persistence = attachSqlite(ydoc, {
 		filePath: EPICENTER_PATHS.persistence(id),

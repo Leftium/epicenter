@@ -1,20 +1,19 @@
 /**
  * Markdown Materializer Bidirectional Sync Tests
  *
- * Tests the `pushFromMarkdown` and `pullToMarkdown` methods on
- * `attachMarkdownMaterializer`. Uses real temp directories and Yjs
- * workspaces so the materializer exercises actual table set/get and
- * filesystem paths.
+ * Tests the `push` and `pull` mutations on `attachMarkdownMaterializer`.
+ * Uses real temp directories and Yjs workspaces so the materializer
+ * exercises actual table set/get and filesystem paths.
  *
  * Key behaviors:
- * - pushFromMarkdown reads `.md` files, parses frontmatter, and calls table.set()
- * - pushFromMarkdown skips non-`.md` files and files without valid frontmatter
- * - pushFromMarkdown reports errors for unreadable files
- * - pushFromMarkdown uses custom deserialize callback when provided
- * - pushFromMarkdown silently skips tables whose directories don't exist
- * - pullToMarkdown re-serializes all valid rows to disk
- * - pullToMarkdown uses custom serialize callback when provided
- * - Round-trip: pullToMarkdown → pushFromMarkdown preserves data
+ * - push reads `.md` files, parses frontmatter, and calls table.set()
+ * - push skips non-`.md` files and files without valid frontmatter
+ * - push reports errors for unreadable files
+ * - push uses custom deserialize callback when provided
+ * - push silently skips tables whose directories don't exist
+ * - pull re-serializes all valid rows to disk
+ * - pull uses custom serialize callback when provided
+ * - Round-trip: pull → push preserves data
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -115,10 +114,10 @@ function setup(options?: {
 }
 
 // ============================================================================
-// pushFromMarkdown Tests
+// push Tests
 // ============================================================================
 
-describe('pushFromMarkdown', () => {
+describe('push', () => {
 	test('imports markdown files into workspace tables', async () => {
 		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
@@ -132,7 +131,7 @@ describe('pushFromMarkdown', () => {
 			'---\nid: post-2\ntitle: Draft Post\npublished: false\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.push({});
 
 		expect(result.imported).toBe(2);
 		expect(result.skipped).toBe(0);
@@ -165,7 +164,7 @@ describe('pushFromMarkdown', () => {
 		await writeTestFile('posts/readme.txt', 'not a markdown file');
 		await writeTestFile('posts/data.json', '{"id": "test"}');
 
-		const result = await workspace.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.push({});
 
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(0);
@@ -186,7 +185,7 @@ describe('pushFromMarkdown', () => {
 			'# Just a heading\n\nSome content\n',
 		);
 
-		const result = await workspace.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.push({});
 
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(1);
@@ -199,7 +198,7 @@ describe('pushFromMarkdown', () => {
 		await workspace.whenReady;
 
 		// Don't create the posts directory — it should not exist
-		const result = await workspace.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.push({});
 
 		expect(result.imported).toBe(0);
 		expect(result.skipped).toBe(0);
@@ -230,7 +229,7 @@ describe('pushFromMarkdown', () => {
 			'---\nid: note-1\n---\n\nThis is the body content\n',
 		);
 
-		const result = await workspace.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.push({});
 
 		expect(result.imported).toBe(1);
 
@@ -254,7 +253,7 @@ describe('pushFromMarkdown', () => {
 			'---\nid: p1\ntitle: Hello\npublished: false\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.push({});
 
 		expect(result.imported).toBe(1);
 		expect(workspace.tables.posts.has('p1')).toBe(true);
@@ -272,7 +271,7 @@ describe('pushFromMarkdown', () => {
 			'---\nid: p1\ntitle: Original\npublished: false\n_v: 1\n---\n',
 		);
 
-		const first = await workspace.materializer.pushFromMarkdown();
+		const first = await workspace.materializer.push({});
 		expect(first.imported).toBe(1);
 
 		const originalPost = workspace.tables.posts.get('p1');
@@ -290,7 +289,7 @@ describe('pushFromMarkdown', () => {
 			'---\nid: p1\ntitle: Updated From Disk\npublished: true\n_v: 1\n---\n',
 		);
 
-		const second = await workspace.materializer.pushFromMarkdown();
+		const second = await workspace.materializer.push({});
 		expect(second.imported).toBe(1);
 
 		const updatedPost = workspace.tables.posts.get('p1');
@@ -316,7 +315,7 @@ describe('pushFromMarkdown', () => {
 			'---\nid: n1\nbody: Note body\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.push({});
 
 		expect(result.imported).toBe(2);
 		expect(workspace.tables.posts.has('p1')).toBe(true);
@@ -327,10 +326,10 @@ describe('pushFromMarkdown', () => {
 });
 
 // ============================================================================
-// pullToMarkdown Tests
+// pull Tests
 // ============================================================================
 
-describe('pullToMarkdown', () => {
+describe('pull', () => {
 	test('writes all valid rows to disk', async () => {
 		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
@@ -348,7 +347,7 @@ describe('pullToMarkdown', () => {
 			_v: 1,
 		});
 
-		const result = await workspace.materializer.pullToMarkdown();
+		const result = await workspace.materializer.pull({});
 
 		expect(result.written).toBe(2);
 
@@ -373,7 +372,7 @@ describe('pullToMarkdown', () => {
 			_v: 1,
 		});
 
-		await workspace.materializer.pullToMarkdown();
+		await workspace.materializer.pull({});
 
 		const entries = await listTestDir('posts');
 		expect(entries).toContain('p1.md');
@@ -399,7 +398,7 @@ describe('pullToMarkdown', () => {
 
 		workspace.tables.notes.set({ id: 'n1', body: 'Custom body', _v: 1 });
 
-		const result = await workspace.materializer.pullToMarkdown();
+		const result = await workspace.materializer.pull({});
 
 		expect(result.written).toBe(1);
 
@@ -422,7 +421,7 @@ describe('pullToMarkdown', () => {
 			_v: 1,
 		});
 
-		await workspace.materializer.pullToMarkdown();
+		await workspace.materializer.pull({});
 
 		const entries = await listTestDir('blog');
 		expect(entries).toContain('p1.md');
@@ -434,7 +433,7 @@ describe('pullToMarkdown', () => {
 		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
-		const result = await workspace.materializer.pullToMarkdown();
+		const result = await workspace.materializer.pull({});
 
 		expect(result.written).toBe(0);
 
@@ -453,7 +452,7 @@ describe('pullToMarkdown', () => {
 		});
 		workspace.tables.notes.set({ id: 'n1', body: 'Note', _v: 1 });
 
-		const result = await workspace.materializer.pullToMarkdown();
+		const result = await workspace.materializer.pull({});
 
 		expect(result.written).toBe(2);
 
@@ -472,7 +471,7 @@ describe('pullToMarkdown', () => {
 // ============================================================================
 
 describe('round-trip', () => {
-	test('pullToMarkdown then pushFromMarkdown on fresh workspace preserves row data', async () => {
+	test('pull then push on fresh workspace preserves row data', async () => {
 		// First workspace: populate and pull to disk
 		const factory1 = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
@@ -507,7 +506,7 @@ describe('round-trip', () => {
 			_v: 1,
 		});
 
-		await workspace1.materializer.pullToMarkdown();
+		await workspace1.materializer.pull({});
 		await factory1.close('test.roundtrip.1');
 
 		// Verify files on disk have valid frontmatter
@@ -537,7 +536,7 @@ describe('round-trip', () => {
 		const workspace2 = factory2.open('test.roundtrip.2');
 		await workspace2.whenReady;
 
-		const result = await workspace2.materializer.pushFromMarkdown();
+		const result = await workspace2.materializer.push({});
 		expect(result.imported).toBe(2);
 
 		const p1 = workspace2.tables.posts.get('p1');

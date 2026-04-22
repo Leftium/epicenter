@@ -1,6 +1,8 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import Type from 'typebox';
 import type * as Y from 'yjs';
+import { defineMutation } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import type { BaseRow, Kv, Table } from '../../index.js';
 import type { SerializeResult } from './markdown.js';
@@ -17,7 +19,7 @@ type TableConfig<TRow extends BaseRow> = {
 	dir?: string;
 	/** Produce the on-disk filename + content for a row. Default: `{id}.md` with toMarkdown. */
 	serialize?: (row: TRow) => MaybePromise<SerializeResult>;
-	/** Parse a markdown file back into a row. Required for `pushFromMarkdown` if custom shape. */
+	/** Parse a markdown file back into a row. Required for `push` if custom shape. */
 	deserialize?: (parsed: {
 		frontmatter: Record<string, unknown>;
 		body: string | undefined;
@@ -212,7 +214,7 @@ export function attachMarkdownMaterializer(
 
 	// ── Imperative methods (push / pull) ────────────────────────
 
-	async function pushFromMarkdown(): Promise<{
+	async function pushImpl(): Promise<{
 		imported: number;
 		skipped: number;
 		errors: string[];
@@ -266,7 +268,7 @@ export function attachMarkdownMaterializer(
 		return { imported, skipped, errors };
 	}
 
-	async function pullToMarkdown(): Promise<{ written: number }> {
+	async function pullImpl(): Promise<{ written: number }> {
 		const baseDir = await resolveDir();
 		let written = 0;
 
@@ -292,7 +294,23 @@ export function attachMarkdownMaterializer(
 
 	// ── Builder ──────────────────────────────────────────────────
 
-	const api = { whenFlushed, pushFromMarkdown, pullToMarkdown };
+	const api = {
+		whenFlushed,
+		push: defineMutation({
+			title: 'Push markdown to workspace',
+			description:
+				'Read markdown files from disk and import rows into registered tables',
+			input: Type.Object({}),
+			handler: () => pushImpl(),
+		}),
+		pull: defineMutation({
+			title: 'Pull workspace to markdown',
+			description:
+				'Re-serialize all valid rows from registered tables to markdown files on disk',
+			input: Type.Object({}),
+			handler: () => pullImpl(),
+		}),
+	};
 
 	type MaterializerBuilder = typeof api & {
 		/**

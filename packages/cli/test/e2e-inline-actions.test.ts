@@ -24,34 +24,34 @@ describe('loadConfig against inline-actions fixture', () => {
 
 	test('discovers the `demo` export as a DocumentHandle', () => {
 		expect(loaded.entries.map((e) => e.name)).toEqual(['demo']);
-		const entry = loaded.entries[0]!;
-		expect(typeof entry.handle.dispose).toBe('function');
-		expect(typeof (entry.handle as any)[Symbol.dispose]).toBe('function');
-		expect((entry.handle as any).ydoc).toBeDefined();
+		const { handle } = loaded.entries[0]!;
+		expect(typeof handle.dispose).toBe('function');
+		expect(typeof handle[Symbol.dispose]).toBe('function');
+		expect(handle.ydoc).toBeDefined();
 	});
 
-	test('bundle is the handle prototype, not the handle itself', () => {
-		const handle = loaded.entries[0]!.handle;
-		const bundle = Object.getPrototypeOf(handle);
-		// Handle owns just the disposers; the bundle owns user attachments.
-		expect(Object.keys(handle)).toEqual([]);
-		expect(Object.keys(bundle)).toContain('counter');
-		expect(Object.keys(bundle)).toContain('ydoc');
+	test('handle exposes bundle properties as own keys', () => {
+		const { handle } = loaded.entries[0]!;
+		// Spread flattens the bundle onto the handle; dispose methods and the
+		// brand symbol are non-string so they don't show in Object.keys.
+		expect(Object.keys(handle)).toContain('counter');
+		expect(Object.keys(handle)).toContain('ydoc');
+		expect(Object.keys(handle)).toContain('dispose');
 	});
 });
 
 describe('resolvePath', () => {
-	let bundle: unknown;
+	let handle: Awaited<ReturnType<typeof loadConfig>>['entries'][0]['handle'];
 
 	beforeAll(async () => {
 		const loaded = await loadConfig(FIXTURE_DIR);
-		bundle = Object.getPrototypeOf(loaded.entries[0]!.handle);
+		handle = loaded.entries[0]!.handle;
 		// Keep the workspace open for the duration of this describe; closed in
 		// the loadConfig describe's afterAll via shared cache (refcount).
 	});
 
 	test('resolves a leaf action', () => {
-		const r = resolvePath(bundle, ['counter', 'get']);
+		const r = resolvePath(handle, ['counter', 'get']);
 		expect(r.kind).toBe('action');
 		if (r.kind === 'action') {
 			expect(r.action.type).toBe('query');
@@ -60,12 +60,12 @@ describe('resolvePath', () => {
 	});
 
 	test('resolves a subtree node', () => {
-		const r = resolvePath(bundle, ['counter']);
+		const r = resolvePath(handle, ['counter']);
 		expect(r.kind).toBe('subtree');
 	});
 
 	test('reports the first missing segment', () => {
-		const r = resolvePath(bundle, ['counter', 'nope', 'further']);
+		const r = resolvePath(handle, ['counter', 'nope', 'further']);
 		expect(r.kind).toBe('missing');
 		if (r.kind === 'missing') {
 			expect(r.lastGoodPath).toEqual(['counter']);
@@ -74,8 +74,8 @@ describe('resolvePath', () => {
 	});
 
 	test('invoking a resolved action mutates state observably', async () => {
-		const get = resolvePath(bundle, ['counter', 'get']);
-		const inc = resolvePath(bundle, ['counter', 'increment']);
+		const get = resolvePath(handle, ['counter', 'get']);
+		const inc = resolvePath(handle, ['counter', 'increment']);
 		if (get.kind !== 'action' || inc.kind !== 'action') {
 			throw new Error('expected actions');
 		}
@@ -86,8 +86,8 @@ describe('resolvePath', () => {
 	});
 
 	test('invoking a mutation with an input schema applies the input', async () => {
-		const set = resolvePath(bundle, ['counter', 'set']);
-		const get = resolvePath(bundle, ['counter', 'get']);
+		const set = resolvePath(handle, ['counter', 'set']);
+		const get = resolvePath(handle, ['counter', 'get']);
 		if (set.kind !== 'action' || get.kind !== 'action') {
 			throw new Error('expected actions');
 		}

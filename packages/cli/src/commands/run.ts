@@ -3,10 +3,9 @@
  * `defineMutation` by dot-path through an opened document handle.
  *
  * Resolution: `path[0]` is the export name from `epicenter.config.ts`; the
- * remaining segments walk into the underlying bundle (the handle's prototype).
+ * remaining segments walk into the handle's own properties.
  */
 
-import type { DocumentBundle } from '@epicenter/workspace';
 import { iterateActions } from '@epicenter/workspace';
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
@@ -71,10 +70,9 @@ async function invoke(
 		);
 	}
 
-	const bundle = Object.getPrototypeOf(entry.handle) as DocumentBundle;
-	if (bundle.whenReady) await bundle.whenReady;
+	if (entry.handle.whenReady) await entry.handle.whenReady;
 
-	const resolved = resolvePath(bundle, rest);
+	const resolved = resolvePath(entry.handle, rest);
 
 	if (resolved.kind === 'missing') {
 		outputError(
@@ -82,13 +80,13 @@ async function invoke(
 				`Stopped at "${[exportName, ...resolved.lastGoodPath].join('.')}" ` +
 				`while looking for "${resolved.missingSegment}".`,
 		);
-		suggestSiblings(exportName, bundle, resolved.lastGoodPath);
+		suggestSiblings(exportName, entry.handle, resolved.lastGoodPath);
 		throw new Error('Action not found');
 	}
 
 	if (resolved.kind === 'subtree') {
 		outputError(`"${actionPath}" is not a runnable action.`);
-		suggestSiblings(exportName, bundle, resolved.path);
+		suggestSiblings(exportName, entry.handle, resolved.path);
 		throw new Error('Not an action');
 	}
 

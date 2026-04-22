@@ -243,7 +243,7 @@ describe('whenReady', () => {
 		handle.dispose();
 	});
 
-	test('handle does not inject whenReady — it comes from the prototype chain', () => {
+	test('handle exposes bundle properties as own keys (flat, no prototype magic)', () => {
 		const factory = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			return {
@@ -255,14 +255,14 @@ describe('whenReady', () => {
 			};
 		});
 		const h = factory.open('a');
-		// whenReady is accessible (via prototype)...
+		// Bundle props spread onto the handle as own enumerable properties.
 		expect(h.whenReady).toBeInstanceOf(Promise);
-		// ...but is NOT an own property on the handle.
-		expect(Object.prototype.hasOwnProperty.call(h, 'whenReady')).toBe(false);
-		// whenLoaded (Yjs-native shadow) must also not be injected.
-		expect(Object.prototype.hasOwnProperty.call(h, 'whenLoaded')).toBe(false);
-		// Only the dispose methods should be own properties on the handle.
+		expect(Object.prototype.hasOwnProperty.call(h, 'whenReady')).toBe(true);
+		expect(Object.prototype.hasOwnProperty.call(h, 'ydoc')).toBe(true);
+		// The cache injects dispose alongside.
 		expect(Object.prototype.hasOwnProperty.call(h, 'dispose')).toBe(true);
+		// Yjs-native `whenLoaded` is not part of the bundle; should be absent.
+		expect(Object.prototype.hasOwnProperty.call(h, 'whenLoaded')).toBe(false);
 		h.dispose();
 	});
 });

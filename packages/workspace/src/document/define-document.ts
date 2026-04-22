@@ -173,22 +173,25 @@ export type DocumentBundle = {
 };
 
 /**
+ * Brand symbol for handles returned by `defineDocument(...).open(id)`.
+ * Use `isDocumentHandle(value)` to check; don't read the property directly.
+ */
+export const DOCUMENT_HANDLE: unique symbol = Symbol.for(
+	'epicenter.document.handle',
+);
+
+/**
  * A reference-counted document handle. Returned by `factory.open(id)`. Each
- * call returns a distinct disposable handle over the same underlying bundle
- * (the user's `build(id)` return value — `{ ydoc, ...attachments }`). N opens
- * require N disposes.
- *
- * The handle is created via `Object.create(bundle)` — all bundle properties
- * (including `whenDisposed` and user conventions like `whenReady`) are
- * accessible through the prototype chain. Only the two dispose methods below
- * are injected by the cache.
+ * call returns a distinct disposable handle — a shallow copy of the bundle's
+ * own enumerable properties, plus `dispose`, `[Symbol.dispose]`, and a
+ * `[DOCUMENT_HANDLE]` brand. N opens require N disposes.
  *
  * Pair every `open()` with a `dispose()`:
  *
  * ```ts
  * // Manual
  * const h = docs.open('abc');
- * await h.whenReady;  // user-owned convention on the bundle
+ * await h.whenReady;
  * h.dispose();
  *
  * // Framework-scoped
@@ -206,18 +209,9 @@ export type DocumentBundle = {
  * `factory.close(id)` or `factory.closeAll()` when you need a real teardown
  * barrier.
  *
- * No top-level keys are reserved on the bundle. The cache injects only
- * `dispose` and `[Symbol.dispose]` on the handle — pick bundle property names
- * that don't collide with those two.
+ * Reserved keys on the bundle: `dispose`, `[Symbol.dispose]`, and
+ * `[DOCUMENT_HANDLE]`. Pick bundle property names that don't collide.
  */
-/**
- * Brand symbol for handles returned by `defineDocument(...).open(id)`.
- * Use `isDocumentHandle(value)` to check; don't read the property directly.
- */
-export const DOCUMENT_HANDLE: unique symbol = Symbol.for(
-	'epicenter.document.handle',
-);
-
 export type DocumentHandle<T> = T & {
 	/**
 	 * Decrement this handle's refcount. Idempotent per-handle — calling twice
@@ -241,9 +235,9 @@ export function isDocumentHandle(
 	value: unknown,
 ): value is DocumentHandle<DocumentBundle> {
 	return (
-		value != null &&
 		typeof value === 'object' &&
-		(value as Record<symbol, unknown>)[DOCUMENT_HANDLE] === true
+		value !== null &&
+		DOCUMENT_HANDLE in value
 	);
 }
 
@@ -420,13 +414,12 @@ export function defineDocument<
 				}, gcTime);
 			};
 
-			const handle = Object.create(entry.bundle) as DocumentHandle<T>;
-			Object.defineProperties(handle, {
-				dispose: { value: dispose },
-				[Symbol.dispose]: { value: dispose },
-				[DOCUMENT_HANDLE]: { value: true },
-			});
-			return handle;
+			return {
+				...entry.bundle,
+				dispose,
+				[Symbol.dispose]: dispose,
+				[DOCUMENT_HANDLE]: true,
+			};
 		},
 
 		async close(id) {

@@ -7,7 +7,7 @@
  *   3. Leaf (action) path  → action detail with flag help.
  */
 
-import type { Action, DocumentBundle } from '@epicenter/workspace';
+import type { Action } from '@epicenter/workspace';
 import { iterateActions } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule } from 'yargs';
@@ -43,7 +43,7 @@ function render(
 		entries.forEach((entry, i) => {
 			if (i > 0) console.log('');
 			console.log(entry.name);
-			printTree(Object.getPrototypeOf(entry.handle));
+			printTree(entry.handle);
 		});
 		return;
 	}
@@ -59,8 +59,7 @@ function render(
 		throw new Error('Export not found');
 	}
 
-	const bundle = Object.getPrototypeOf(entry.handle) as DocumentBundle;
-	const resolved = resolvePath(bundle, rest);
+	const resolved = resolvePath(entry.handle, rest);
 
 	if (resolved.kind === 'missing') {
 		outputError(

@@ -1,7 +1,7 @@
 /**
- * Walk a dotted path into a document bundle. The `root` passed in should be
- * the BUNDLE — the handle's prototype — because `iterateActions` and plain
- * property access via `Object.entries` skip the prototype chain.
+ * Walk a dotted path into an opened `DocumentHandle`. Since the handle is a
+ * shallow copy of the bundle plus the two dispose methods, own-property
+ * access (`Object.entries`, `obj[key]`) reaches every user attachment.
  */
 
 import type { Action } from '@epicenter/workspace';

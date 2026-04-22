@@ -1,14 +1,79 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import Type from 'typebox';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { tryAsync } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 import { defineMutation } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import type { Kv } from '../../attach-kv.js';
-import type { BaseRow, Table } from '../../attach-table.js';
+import {
+	type BaseRow,
+	type Table,
+	type TableParseError,
+} from '../../attach-table.js';
 import type { SerializeResult } from './markdown.js';
 import { assembleMarkdown } from './markdown.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';
+
+// ════════════════════════════════════════════════════════════════════════════
+// PUSH ERROR + EVENT TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Errors produced during `push` that aren't already covered by
+ * `TableParseError`. Filename / tableName provenance lives on the
+ * emitted `PushEvent`, not inside the error — the error knows its
+ * layer, the event carries external context.
+ */
+export const MaterializerPushError = defineErrors({
+	/** Reading the file from disk failed. */
+	ReadFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Read failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	/** The caller-supplied `fromMarkdown` callback threw. */
+	FromMarkdownCallbackFailed: ({ cause }: { cause: unknown }) => ({
+		message: `fromMarkdown callback threw: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type MaterializerPushError = InferErrors<typeof MaterializerPushError>;
+
+/**
+ * A single event emitted during `push`. Three kinds:
+ *
+ * - **`imported`**: the file was read, parsed, validated, and its row set.
+ * - **`skipped`**: the file couldn't be parsed as markdown-with-frontmatter
+ *   (no `---` delimiters, empty delimiters, or frontmatter that doesn't
+ *   decode to an object). The three cases collapse at the parser boundary
+ *   into a single "not a note" decision — no discriminator needed.
+ * - **`error`**: something failed. `error.name` discriminates between
+ *   `ReadFailed` / `FromMarkdownCallbackFailed` (materializer errors) and
+ *   `ValidationFailed` / `MigrationFailed` / `AsyncSchemaNotSupported`
+ *   (table parse errors).
+ */
+export type PushEvent =
+	| { kind: 'imported'; filename: string; tableName: string; id: string }
+	| { kind: 'skipped'; filename: string }
+	| {
+			kind: 'error';
+			filename: string;
+			tableName: string;
+			error: MaterializerPushError | TableParseError;
+	  };
+
+/** Aggregated result of one `push` invocation. */
+export type PushResult = {
+	imported: number;
+	skipped: number;
+	errored: number;
+	events: PushEvent[];
+};
 
 // biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv
 type AnyKv = Kv<any>;
@@ -288,55 +353,98 @@ export function attachMarkdownMaterializer(
 
 	// ── Push (imports markdown files into workspace tables) ─────
 
-	async function pushMarkdownFiles(): Promise<{
-		imported: number;
-		skipped: number;
-		errors: string[];
-	}> {
+	async function pushMarkdownFiles(): Promise<PushResult> {
 		const baseDir = await resolveDir();
-		let imported = 0;
-		let skipped = 0;
-		const errors: string[] = [];
+		const events: PushEvent[] = [];
 
 		for (const entry of registered.values()) {
-			const directory = join(baseDir, entry.config.dir ?? entry.table.name);
+			const tableName = entry.table.name;
+			const directory = join(baseDir, entry.config.dir ?? tableName);
 
 			let files: string[];
 			try {
 				files = await readdir(directory);
 			} catch {
-				continue;
+				continue; // whole directory missing → silently skip the table
 			}
 
 			for (const filename of files) {
 				if (!filename.endsWith('.md')) continue;
 
-				let content: string;
-				try {
-					content = await readFile(join(directory, filename), 'utf-8');
-				} catch (error) {
-					errors.push(`Failed to read ${filename}: ${error}`);
+				// 1. Read
+				const { data: content, error: readError } = await tryAsync({
+					try: () => readFile(join(directory, filename), 'utf-8'),
+					catch: (cause) => MaterializerPushError.ReadFailed({ cause }),
+				});
+				if (readError) {
+					events.push({ kind: 'error', filename, tableName, error: readError });
 					continue;
 				}
 
+				// 2. Parse frontmatter
 				const parsed = parseMarkdownFile(content);
 				if (!parsed) {
-					skipped++;
+					events.push({ kind: 'skipped', filename });
 					continue;
 				}
 
-				try {
-					const fromMarkdown = entry.config.fromMarkdown ?? defaultFromMarkdown;
-					const row = await fromMarkdown(parsed);
-					entry.table.set(row);
-					imported++;
-				} catch (error) {
-					errors.push(`Failed to import ${filename}: ${error}`);
+				// 3. Run user's fromMarkdown (or default) — capture throws as errors
+				const fromMarkdown: (p: MarkdownShape) => MaybePromise<BaseRow> =
+					entry.config.fromMarkdown ?? defaultFromMarkdown;
+				const { data: row, error: callbackError } = await tryAsync({
+					try: async () => fromMarkdown(parsed),
+					catch: (cause) =>
+						MaterializerPushError.FromMarkdownCallbackFailed({ cause }),
+				});
+				if (callbackError) {
+					events.push({
+						kind: 'error',
+						filename,
+						tableName,
+						error: callbackError,
+					});
+					continue;
 				}
+				// tryAsync's Result invariant guarantees non-null data when error
+				// is null; this check satisfies TS's narrowing.
+				if (row == null) continue;
+
+				// 4. Validate the returned row against the table's schema
+				const { data: validRow, error: parseError } = entry.table.parse(
+					row.id,
+					row,
+				);
+				if (parseError) {
+					events.push({
+						kind: 'error',
+						filename,
+						tableName,
+						error: parseError,
+					});
+					continue;
+				}
+
+				// 5. Commit
+				entry.table.set(validRow);
+				events.push({
+					kind: 'imported',
+					filename,
+					tableName,
+					id: validRow.id,
+				});
 			}
 		}
 
-		return { imported, skipped, errors };
+		let imported = 0;
+		let skipped = 0;
+		let errored = 0;
+		for (const event of events) {
+			if (event.kind === 'imported') imported++;
+			else if (event.kind === 'skipped') skipped++;
+			else errored++;
+		}
+
+		return { imported, skipped, errored, events };
 	}
 
 	// ── Rebuild (destructive: wipe output dir and re-materialize) ─

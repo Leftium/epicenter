@@ -112,7 +112,8 @@ async function setup(options?: {
 		};
 	});
 
-	const workspace = await factory.load('test.materializer');
+	const workspace = factory.open('test.materializer');
+	await workspace.whenReady;
 	return { workspace, factory };
 }
 
@@ -136,7 +137,7 @@ describe('push', () => {
 
 		expect(result.imported).toBe(2);
 		expect(result.skipped).toBe(0);
-		expect(result.errors).toEqual([]);
+		expect(result.errored).toBe(0);
 
 		const { data: post1 } = workspace.tables.posts.get('post-1');
 		expect(post1?.title).toBe('Hello World');
@@ -191,7 +192,90 @@ describe('push', () => {
 
 		expect(result.imported).toBe(0);
 		expect(result.skipped).toBe(0);
-		expect(result.errors).toEqual([]);
+		expect(result.errored).toBe(0);
+
+		await factory.close('test.materializer');
+	});
+
+	test('emits error event when frontmatter fails schema validation', async () => {
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
+		// Valid frontmatter structure but wrong type — title must be a string,
+		// here it's a number. `fromMarkdown` happily returns it; `table.parse()`
+		// catches the schema violation.
+		await writeTestFile(
+			'posts/bad.md',
+			'---\nid: post-bad\ntitle: 42\npublished: true\n_v: 1\n---\n',
+		);
+
+		const result = await workspace.materializer.push({});
+
+		expect(result.imported).toBe(0);
+		expect(result.skipped).toBe(0);
+		expect(result.errored).toBe(1);
+
+		const errorEvent = result.events.find((e) => e.kind === 'error');
+		expect(errorEvent?.kind).toBe('error');
+		if (errorEvent?.kind === 'error') {
+			expect(errorEvent.filename).toBe('bad.md');
+			expect(errorEvent.tableName).toBe('posts');
+			expect(errorEvent.error.name).toBe('ValidationFailed');
+		}
+
+		await factory.close('test.materializer');
+	});
+
+	test('emits error event when fromMarkdown callback throws', async () => {
+		const { workspace, factory } = await setup({
+			tables: (t) => [
+				{
+					table: t.notes,
+					config: {
+						fromMarkdown: () => {
+							throw new Error('simulated callback failure');
+						},
+					},
+				},
+			],
+		});
+		await writeTestFile(
+			'notes/boom.md',
+			'---\nid: note-boom\n---\n\nirrelevant\n',
+		);
+
+		const result = await workspace.materializer.push({});
+
+		expect(result.errored).toBe(1);
+		const errorEvent = result.events.find((e) => e.kind === 'error');
+		expect(errorEvent?.kind).toBe('error');
+		if (errorEvent?.kind === 'error') {
+			expect(errorEvent.error.name).toBe('FromMarkdownCallbackFailed');
+			expect(errorEvent.error.message).toContain('simulated callback failure');
+		}
+
+		await factory.close('test.materializer');
+	});
+
+	test('counts match event kinds (invariant)', async () => {
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
+		await writeTestFile(
+			'posts/good.md',
+			'---\nid: p1\ntitle: Good\npublished: true\n_v: 1\n---\n',
+		);
+		await writeTestFile('posts/no-frontmatter.md', 'just a heading\n');
+		await writeTestFile(
+			'posts/bad.md',
+			'---\nid: p3\ntitle: 42\npublished: true\n_v: 1\n---\n',
+		);
+
+		const result = await workspace.materializer.push({});
+
+		expect(result.imported).toBe(1);
+		expect(result.skipped).toBe(1);
+		expect(result.errored).toBe(1);
+		expect(result.events).toHaveLength(3);
+		expect(result.events.filter((e) => e.kind === 'imported')).toHaveLength(1);
+		expect(result.events.filter((e) => e.kind === 'skipped')).toHaveLength(1);
+		expect(result.events.filter((e) => e.kind === 'error')).toHaveLength(1);
 
 		await factory.close('test.materializer');
 	});
@@ -563,7 +647,8 @@ describe('round-trip', () => {
 			};
 		});
 
-		const workspace1 = await factory1.load('test.roundtrip.1');
+		const workspace1 = factory1.open('test.roundtrip.1');
+		await workspace1.whenReady;
 
 		workspace1.tables.posts.set({
 			id: 'p1',
@@ -605,7 +690,8 @@ describe('round-trip', () => {
 			};
 		});
 
-		const workspace2 = await factory2.load('test.roundtrip.2');
+		const workspace2 = factory2.open('test.roundtrip.2');
+		await workspace2.whenReady;
 
 		const result = await workspace2.materializer.push({});
 		expect(result.imported).toBe(2);

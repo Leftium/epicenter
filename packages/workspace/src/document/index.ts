@@ -92,14 +92,25 @@ export {
 
 export {
 	defineDocument,
-	DOCUMENT_HANDLE,
 	isDocumentHandle,
 	type DocumentBundle,
 	type DocumentFactory,
 	type DocumentHandle,
 } from './define-document.js';
+export { defineTable } from './define-table.js';
+export { defineKv } from './define-kv.js';
 export { docGuid } from './doc-guid.js';
 export { type DocPersistence } from './doc-persistence.js';
 export { onLocalUpdate } from './on-local-update.js';
+
+export {
+	attachEncryption,
+	type EncryptionAttachment,
+} from './attach-encryption.js';
+export {
+	EncryptionKey,
+	EncryptionKeys,
+	encryptionKeysFingerprint,
+} from './encryption-key.js';
 
 export { KV_KEY, TableKey, type KvKey } from './keys.js';

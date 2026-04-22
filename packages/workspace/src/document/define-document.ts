@@ -174,11 +174,9 @@ export type DocumentBundle = {
 
 /**
  * Brand symbol for handles returned by `defineDocument(...).open(id)`.
- * Use `isDocumentHandle(value)` to check; don't read the property directly.
+ * Module-private; use `isDocumentHandle(value)` to check.
  */
-export const DOCUMENT_HANDLE: unique symbol = Symbol.for(
-	'epicenter.document.handle',
-);
+const DOCUMENT_HANDLE: unique symbol = Symbol.for('epicenter.document.handle');
 
 /**
  * A reference-counted document handle. Returned by `factory.open(id)`. Each

@@ -80,55 +80,11 @@ export type {
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT PRIMITIVES — attach*, defineDocument, timeline, storage keys, types
+// DOCUMENT PRIMITIVES — attach*, define*, defineDocument, encryption, timeline,
+// storage keys, types — everything in src/document/ flows through its barrel.
 // ════════════════════════════════════════════════════════════════════════════
 
 export * from './document/index.js';
-
-// ════════════════════════════════════════════════════════════════════════════
-// SCHEMA DEFINITIONS (Pure)
-// ════════════════════════════════════════════════════════════════════════════
-
-export { defineKv } from './document/define-kv';
-export { defineTable } from './document/define-table';
-export {
-	attachEncryption,
-	type EncryptionAttachment,
-} from './document/attach-encryption';
-
-// ════════════════════════════════════════════════════════════════════════════
-// TYPES
-// ════════════════════════════════════════════════════════════════════════════
-
-// Runtime schemas (arktype) — for validation at deserialization boundaries
-export {
-	EncryptionKey,
-	EncryptionKeys,
-	encryptionKeysFingerprint,
-} from './document/encryption-key';
-export type {
-	Awareness,
-	AwarenessDefinitions,
-	AwarenessState,
-	BaseRow,
-	GetResult,
-	InferAwarenessValue,
-	InferKvValue,
-	InferTableRow,
-	InvalidRowResult,
-	Kv,
-	KvChange,
-	KvDefinition,
-	KvDefinitions,
-	NotFoundResult,
-	RowResult,
-	Table,
-	TableDefinition,
-	TableDefinitions,
-	Tables,
-	UpdateResult,
-	ValidRowResult,
-} from './document/index.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS
 // ════════════════════════════════════════════════════════════════════════════

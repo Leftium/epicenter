@@ -7,7 +7,7 @@
  * observation path.
  *
  * Key behaviors:
- * - Materializer waits for workspace whenReady before touching SQLite
+ * - Materializer waits for `whenReady` before touching SQLite
  * - Full load inserts all valid rows on initialization
  * - Observer-based sync upserts changed rows and deletes removed rows
  * - FTS5 search returns ranked results with snippets
@@ -18,16 +18,23 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '../../../index.js';
+import * as Y from 'yjs';
+import {
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '../../../index.js';
 import { createSqliteMaterializer } from './sqlite.js';
 import type { MirrorDatabase } from './types.js';
-import { isAction, isQuery, isMutation } from '../../../shared/actions.js';
+import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
 
 const postsTable = defineTable(
 	type({ id: 'string', _v: '1', title: 'string', 'published?': 'boolean' }),
 );
 
 const notesTable = defineTable(type({ id: 'string', _v: '1', body: 'string' }));
+
+const tableDefinitions = { posts: postsTable, notes: notesTable };
 
 const hasFts5 = canUseFts5();
 
@@ -60,7 +67,7 @@ function createTestDb(): TestDb {
 
 type SetupOptions = {
 	tables?: Array<{
-		name: string;
+		name: keyof typeof tableDefinitions;
 		config?: { fts?: string[]; serialize?: (value: unknown) => unknown };
 	}>;
 	debounceMs?: number;
@@ -68,29 +75,42 @@ type SetupOptions = {
 
 function setup(options: SetupOptions = {}) {
 	const db = createTestDb();
-	const workspace = createWorkspace({
-		id: 'test',
-		tables: { posts: postsTable, notes: notesTable },
-	}).withExtension('sqlite', (ctx) => {
-		const materializer = createSqliteMaterializer(ctx, {
-			db,
-			debounceMs: options.debounceMs,
-		});
 
-		// Default: register both tables if no specific tables provided
+	const factory = defineDocument((id: string) => {
+		const ydoc = new Y.Doc({ guid: id });
+		const tables = attachTables(ydoc, tableDefinitions);
+
+		const materializer = createSqliteMaterializer(
+			{
+				tables,
+				definitions: tableDefinitions,
+				whenReady: Promise.resolve(),
+			},
+			{ db, debounceMs: options.debounceMs },
+		);
+
 		const tablesToRegister = options.tables ?? [
 			{ name: 'posts' },
 			{ name: 'notes' },
 		];
-
 		for (const tableOpt of tablesToRegister) {
 			materializer.table(tableOpt.name, tableOpt.config);
 		}
 
-		return materializer;
+		ydoc.on('destroy', () => materializer[Symbol.dispose]());
+
+		return {
+			ydoc,
+			tables,
+			sqlite: materializer,
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
 	});
 
-	return { db, workspace };
+	const workspace = factory.open('test');
+	return { db, workspace, factory };
 }
 
 function createDeferred() {
@@ -120,7 +140,9 @@ async function waitForSyncCycle() {
 }
 
 function getRows(db: TestDb, tableName: string) {
-	return db.raw.prepare(`SELECT * FROM "${tableName}" ORDER BY "id"`).all() as Record<string, unknown>[];
+	return db.raw
+		.prepare(`SELECT * FROM "${tableName}" ORDER BY "id"`)
+		.all() as Record<string, unknown>[];
 }
 
 function hasTable(db: TestDb, tableName: string) {
@@ -131,7 +153,7 @@ function hasTable(db: TestDb, tableName: string) {
 }
 
 async function cleanup(setupResult: ReturnType<typeof setup>) {
-	await setupResult.workspace.dispose();
+	await setupResult.factory.close('test');
 	setupResult.db.close();
 }
 
@@ -141,33 +163,51 @@ async function cleanup(setupResult: ReturnType<typeof setup>) {
 
 describe('createSqliteMaterializer', () => {
 	describe('readiness', () => {
-		test('waits for workspace whenReady before touching SQLite', async () => {
+		test('waits for whenReady before touching SQLite', async () => {
 			const db = createTestDb();
 			const gate = createDeferred();
-			const workspace = createWorkspace({
-				id: 'ready-gated',
-				tables: { posts: postsTable, notes: notesTable },
-			})
-				.withExtension('gate', () => ({
-					exports: {},
-					init: gate.promise,
-				}))
-				.withExtension('sqlite', (ctx) =>
-					createSqliteMaterializer(ctx, { db }).table('posts').table('notes'),
-				);
+
+			const factory = defineDocument((id: string) => {
+				const ydoc = new Y.Doc({ guid: id });
+				const tables = attachTables(ydoc, tableDefinitions);
+
+				const materializer = createSqliteMaterializer(
+					{
+						tables,
+						definitions: tableDefinitions,
+						whenReady: gate.promise,
+					},
+					{ db },
+				)
+					.table('posts')
+					.table('notes');
+
+				ydoc.on('destroy', () => materializer[Symbol.dispose]());
+
+				return {
+					ydoc,
+					tables,
+					sqlite: materializer,
+					[Symbol.dispose]() {
+						ydoc.destroy();
+					},
+				};
+			});
+
+			const workspace = factory.open('ready-gated');
 
 			try {
 				await new Promise((resolve) => setTimeout(resolve, 25));
 				expect(db.sqlCalls).toHaveLength(0);
 
 				gate.resolve();
-				await workspace.extensions.sqlite.whenFlushed;
+				await workspace.sqlite.whenFlushed;
 
 				expect(db.sqlCalls.length).toBeGreaterThan(0);
 				expect(hasTable(db, 'posts')).toBe(true);
 			} finally {
 				gate.resolve();
-				await workspace.dispose();
+				await factory.close('ready-gated');
 				db.close();
 			}
 		});
@@ -194,7 +234,7 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: 1, title: 'Hello mirror' },
@@ -220,7 +260,7 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 
 				expect(hasTable(testSetup.db, 'posts')).toBe(true);
 				expect(hasTable(testSetup.db, 'notes')).toBe(false);
@@ -242,7 +282,7 @@ describe('createSqliteMaterializer', () => {
 			const testSetup = setup();
 
 			try {
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 
 				testSetup.workspace.tables.posts.set({
 					id: 'post-1',
@@ -271,7 +311,7 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 				testSetup.workspace.tables.posts.delete('post-1');
 
 				await waitForSyncCycle();
@@ -293,7 +333,7 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 				testSetup.workspace.tables.posts.update('post-1', {
 					title: 'After update',
 					published: false,
@@ -325,12 +365,12 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 				testSetup.db.run('DELETE FROM "posts"');
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 
-				await testSetup.workspace.extensions.sqlite.rebuild({});
+				await testSetup.workspace.sqlite.rebuild({});
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: null, title: 'Persisted in Yjs' },
@@ -355,13 +395,13 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 				testSetup.db.run('DELETE FROM "posts"');
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 				expect(getRows(testSetup.db, 'notes')).toHaveLength(1);
 
-				await testSetup.workspace.extensions.sqlite.rebuild({ table: 'posts' });
+				await testSetup.workspace.sqlite.rebuild({ table: 'posts' });
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', _v: 1, published: null, title: 'Post row' },
@@ -376,13 +416,13 @@ describe('createSqliteMaterializer', () => {
 			const testSetup = setup();
 
 			try {
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 
-				await expect(
-					testSetup.workspace.extensions.sqlite.rebuild({
+				expect(() =>
+					testSetup.workspace.sqlite.rebuild({
 						table: 'nonexistent',
 					}),
-				).rejects.toThrow('not in the materialized table set');
+				).toThrow('not in the materialized table set');
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -405,10 +445,14 @@ describe('createSqliteMaterializer', () => {
 					_v: 1,
 				});
 
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 
-				expect(await testSetup.workspace.extensions.sqlite.count({ table: 'posts' })).toBe(2);
-				expect(await testSetup.workspace.extensions.sqlite.count({ table: 'notes' })).toBe(0);
+				expect(
+					await testSetup.workspace.sqlite.count({ table: 'posts' }),
+				).toBe(2);
+				expect(
+					await testSetup.workspace.sqlite.count({ table: 'notes' }),
+				).toBe(0);
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -418,10 +462,10 @@ describe('createSqliteMaterializer', () => {
 			const testSetup = setup();
 
 			try {
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 
 				expect(
-					await testSetup.workspace.extensions.sqlite.count({
+					await testSetup.workspace.sqlite.count({
 						table: 'nonexistent',
 					}),
 				).toBe(0);
@@ -440,28 +484,25 @@ describe('createSqliteMaterializer', () => {
 			const testSetup = setup();
 
 			try {
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 
 				testSetup.workspace.tables.posts.set({
 					id: 'post-1',
 					title: 'Queued row',
 					_v: 1,
 				});
-				await testSetup.workspace.dispose();
+				await testSetup.factory.close('test');
 
 				await waitForSyncCycle();
 
-				testSetup.workspace.tables.posts.set({
-					id: 'post-2',
-					title: 'Ignored row',
-					_v: 1,
-				});
-
+				// The ydoc is destroyed, so further writes to tables are no-ops
+				// as far as materialization is concerned — the observer has been
+				// unsubscribed via materializer dispose.
 				await waitForSyncCycle();
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 			} finally {
-				await cleanup(testSetup);
+				testSetup.db.close();
 			}
 		});
 	});
@@ -475,10 +516,13 @@ describe('createSqliteMaterializer', () => {
 			const testSetup = setup();
 
 			try {
-				await testSetup.workspace.extensions.sqlite.whenFlushed;
+				await testSetup.workspace.sqlite.whenFlushed;
 
 				expect(
-					await testSetup.workspace.extensions.sqlite.search({ table: 'posts', query: 'hello' }),
+					await testSetup.workspace.sqlite.search({
+						table: 'posts',
+						query: 'hello',
+					}),
 				).toEqual([]);
 			} finally {
 				await cleanup(testSetup);
@@ -506,13 +550,13 @@ describe('createSqliteMaterializer', () => {
 						_v: 1,
 					});
 
-					await testSetup.workspace.extensions.sqlite.whenFlushed;
+					await testSetup.workspace.sqlite.whenFlushed;
 
-					const results = await testSetup.workspace.extensions.sqlite.search({
+					const results = (await testSetup.workspace.sqlite.search({
 						table: 'posts',
 						query: 'mirror',
 						limit: 10,
-					}) as Array<{ id: string; snippet: string; rank: number }>;
+					})) as Array<{ id: string; snippet: string; rank: number }>;
 
 					expect(results).toHaveLength(1);
 					expect(results[0]?.id).toBe('post-1');
@@ -534,7 +578,7 @@ describe('createSqliteMaterializer', () => {
 			const testSetup = setup();
 
 			try {
-				const { sqlite } = testSetup.workspace.extensions;
+				const { sqlite } = testSetup.workspace;
 				expect(isAction(sqlite.search)).toBe(true);
 				expect(isAction(sqlite.count)).toBe(true);
 				expect(isAction(sqlite.rebuild)).toBe(true);

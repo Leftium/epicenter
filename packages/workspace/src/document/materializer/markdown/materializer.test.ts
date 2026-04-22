@@ -21,7 +21,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '../../../index.js';
+import * as Y from 'yjs';
+import {
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '../../../index.js';
 import { createMarkdownMaterializer } from './materializer.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';
 
@@ -34,6 +39,8 @@ const postsTable = defineTable(
 );
 
 const notesTable = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
+
+const tableDefinitions = { posts: postsTable, notes: notesTable };
 
 // ============================================================================
 // Test Directory Setup
@@ -69,19 +76,20 @@ async function listTestDir(relativePath: string) {
 
 function setup(options?: {
 	tables?: Array<{
-		name: string;
+		name: keyof typeof tableDefinitions;
 		config?: Parameters<
 			ReturnType<typeof createMarkdownMaterializer>['table']
 		>[1];
 	}>;
 }) {
-	const workspace = createWorkspace({
-		id: 'test.materializer',
-		tables: { posts: postsTable, notes: notesTable },
-	}).withExtension('materializer', (ctx) => {
-		const materializer = createMarkdownMaterializer(ctx, {
-			dir: TEST_DIR,
-		});
+	const factory = defineDocument((id: string) => {
+		const ydoc = new Y.Doc({ guid: id });
+		const tables = attachTables(ydoc, tableDefinitions);
+
+		const materializer = createMarkdownMaterializer(
+			{ tables, whenReady: Promise.resolve() },
+			{ dir: TEST_DIR },
+		);
 
 		const tablesToRegister = options?.tables ?? [
 			{ name: 'posts' },
@@ -91,10 +99,21 @@ function setup(options?: {
 			materializer.table(name, config);
 		}
 
-		return materializer;
+		ydoc.on('destroy', () => materializer[Symbol.dispose]());
+
+		return {
+			ydoc,
+			tables,
+			materializer,
+			whenReady: materializer.whenFlushed,
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
 	});
 
-	return { workspace };
+	const workspace = factory.open('test.materializer');
+	return { workspace, factory };
 }
 
 // ============================================================================
@@ -103,7 +122,7 @@ function setup(options?: {
 
 describe('pushFromMarkdown', () => {
 	test('imports markdown files into workspace tables', async () => {
-		const { workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
 		await writeTestFile(
@@ -115,7 +134,7 @@ describe('pushFromMarkdown', () => {
 			'---\nid: post-2\ntitle: Draft Post\npublished: false\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.extensions.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.pushFromMarkdown();
 
 		expect(result.imported).toBe(2);
 		expect(result.skipped).toBe(0);
@@ -133,10 +152,12 @@ describe('pushFromMarkdown', () => {
 		if (post2.status === 'valid') {
 			expect(post2.row.title).toBe('Draft Post');
 		}
+
+		await factory.close('test.materializer');
 	});
 
 	test('skips non-.md files', async () => {
-		const { workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
 		await writeTestFile(
@@ -146,14 +167,16 @@ describe('pushFromMarkdown', () => {
 		await writeTestFile('posts/readme.txt', 'not a markdown file');
 		await writeTestFile('posts/data.json', '{"id": "test"}');
 
-		const result = await workspace.extensions.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.pushFromMarkdown();
 
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(0);
+
+		await factory.close('test.materializer');
 	});
 
 	test('skips files without valid frontmatter', async () => {
-		const { workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
 		await writeTestFile(
@@ -165,26 +188,30 @@ describe('pushFromMarkdown', () => {
 			'# Just a heading\n\nSome content\n',
 		);
 
-		const result = await workspace.extensions.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.pushFromMarkdown();
 
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(1);
+
+		await factory.close('test.materializer');
 	});
 
 	test('silently skips tables whose directories do not exist', async () => {
-		const { workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
 		// Don't create the posts directory — it should not exist
-		const result = await workspace.extensions.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.pushFromMarkdown();
 
 		expect(result.imported).toBe(0);
 		expect(result.skipped).toBe(0);
 		expect(result.errors).toEqual([]);
+
+		await factory.close('test.materializer');
 	});
 
 	test('uses custom deserialize callback', async () => {
-		const { workspace } = setup({
+		const { workspace, factory } = setup({
 			tables: [
 				{
 					name: 'notes',
@@ -205,7 +232,7 @@ describe('pushFromMarkdown', () => {
 			'---\nid: note-1\n---\n\nThis is the body content\n',
 		);
 
-		const result = await workspace.extensions.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.pushFromMarkdown();
 
 		expect(result.imported).toBe(1);
 
@@ -214,10 +241,12 @@ describe('pushFromMarkdown', () => {
 		if (note.status === 'valid') {
 			expect(note.row.body).toBe('This is the body content');
 		}
+
+		await factory.close('test.materializer');
 	});
 
 	test('uses custom table directory', async () => {
-		const { workspace } = setup({
+		const { workspace, factory } = setup({
 			tables: [{ name: 'posts', config: { dir: 'blog' } }],
 		});
 		await workspace.whenReady;
@@ -227,14 +256,16 @@ describe('pushFromMarkdown', () => {
 			'---\nid: p1\ntitle: Hello\npublished: false\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.extensions.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.pushFromMarkdown();
 
 		expect(result.imported).toBe(1);
 		expect(workspace.tables.posts.has('p1')).toBe(true);
+
+		await factory.close('test.materializer');
 	});
 
 	test('overwrites existing rows (set is insert-or-replace)', async () => {
-		const { workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
 		// First import
@@ -243,7 +274,7 @@ describe('pushFromMarkdown', () => {
 			'---\nid: p1\ntitle: Original\npublished: false\n_v: 1\n---\n',
 		);
 
-		const first = await workspace.extensions.materializer.pushFromMarkdown();
+		const first = await workspace.materializer.pushFromMarkdown();
 		expect(first.imported).toBe(1);
 
 		const originalPost = workspace.tables.posts.get('p1');
@@ -261,7 +292,7 @@ describe('pushFromMarkdown', () => {
 			'---\nid: p1\ntitle: Updated From Disk\npublished: true\n_v: 1\n---\n',
 		);
 
-		const second = await workspace.extensions.materializer.pushFromMarkdown();
+		const second = await workspace.materializer.pushFromMarkdown();
 		expect(second.imported).toBe(1);
 
 		const updatedPost = workspace.tables.posts.get('p1');
@@ -270,10 +301,12 @@ describe('pushFromMarkdown', () => {
 			expect(updatedPost.row.title).toBe('Updated From Disk');
 			expect(updatedPost.row.published).toBe(true);
 		}
+
+		await factory.close('test.materializer');
 	});
 
 	test('imports across multiple tables', async () => {
-		const { workspace } = setup();
+		const { workspace, factory } = setup();
 		await workspace.whenReady;
 
 		await writeTestFile(
@@ -285,11 +318,13 @@ describe('pushFromMarkdown', () => {
 			'---\nid: n1\nbody: Note body\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.extensions.materializer.pushFromMarkdown();
+		const result = await workspace.materializer.pushFromMarkdown();
 
 		expect(result.imported).toBe(2);
 		expect(workspace.tables.posts.has('p1')).toBe(true);
 		expect(workspace.tables.notes.has('n1')).toBe(true);
+
+		await factory.close('test.materializer');
 	});
 });
 
@@ -299,7 +334,7 @@ describe('pushFromMarkdown', () => {
 
 describe('pullToMarkdown', () => {
 	test('writes all valid rows to disk', async () => {
-		const { workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
 		workspace.tables.posts.set({
@@ -315,7 +350,7 @@ describe('pullToMarkdown', () => {
 			_v: 1,
 		});
 
-		const result = await workspace.extensions.materializer.pullToMarkdown();
+		const result = await workspace.materializer.pullToMarkdown();
 
 		expect(result.written).toBe(2);
 
@@ -325,10 +360,12 @@ describe('pullToMarkdown', () => {
 
 		const content2 = await readTestFile('posts/p2.md');
 		expect(content2).toContain('title: Second');
+
+		await factory.close('test.materializer');
 	});
 
 	test('creates table directory before writing', async () => {
-		const { workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
 		workspace.tables.posts.set({
@@ -338,14 +375,16 @@ describe('pullToMarkdown', () => {
 			_v: 1,
 		});
 
-		await workspace.extensions.materializer.pullToMarkdown();
+		await workspace.materializer.pullToMarkdown();
 
 		const entries = await listTestDir('posts');
 		expect(entries).toContain('p1.md');
+
+		await factory.close('test.materializer');
 	});
 
 	test('uses custom serialize callback', async () => {
-		const { workspace } = setup({
+		const { workspace, factory } = setup({
 			tables: [
 				{
 					name: 'notes',
@@ -362,16 +401,18 @@ describe('pullToMarkdown', () => {
 
 		workspace.tables.notes.set({ id: 'n1', body: 'Custom body', _v: 1 });
 
-		const result = await workspace.extensions.materializer.pullToMarkdown();
+		const result = await workspace.materializer.pullToMarkdown();
 
 		expect(result.written).toBe(1);
 
 		const content = await readTestFile('notes/n1-custom.md');
 		expect(content).toContain('Custom body');
+
+		await factory.close('test.materializer');
 	});
 
 	test('uses custom table directory', async () => {
-		const { workspace } = setup({
+		const { workspace, factory } = setup({
 			tables: [{ name: 'posts', config: { dir: 'blog' } }],
 		});
 		await workspace.whenReady;
@@ -383,23 +424,27 @@ describe('pullToMarkdown', () => {
 			_v: 1,
 		});
 
-		await workspace.extensions.materializer.pullToMarkdown();
+		await workspace.materializer.pullToMarkdown();
 
 		const entries = await listTestDir('blog');
 		expect(entries).toContain('p1.md');
+
+		await factory.close('test.materializer');
 	});
 
 	test('writes nothing when table is empty', async () => {
-		const { workspace } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
 		await workspace.whenReady;
 
-		const result = await workspace.extensions.materializer.pullToMarkdown();
+		const result = await workspace.materializer.pullToMarkdown();
 
 		expect(result.written).toBe(0);
+
+		await factory.close('test.materializer');
 	});
 
 	test('writes across multiple tables', async () => {
-		const { workspace } = setup();
+		const { workspace, factory } = setup();
 		await workspace.whenReady;
 
 		workspace.tables.posts.set({
@@ -410,7 +455,7 @@ describe('pullToMarkdown', () => {
 		});
 		workspace.tables.notes.set({ id: 'n1', body: 'Note', _v: 1 });
 
-		const result = await workspace.extensions.materializer.pullToMarkdown();
+		const result = await workspace.materializer.pullToMarkdown();
 
 		expect(result.written).toBe(2);
 
@@ -419,6 +464,8 @@ describe('pullToMarkdown', () => {
 
 		const notesEntries = await listTestDir('notes');
 		expect(notesEntries).toContain('n1.md');
+
+		await factory.close('test.materializer');
 	});
 });
 
@@ -429,12 +476,26 @@ describe('pullToMarkdown', () => {
 describe('round-trip', () => {
 	test('pullToMarkdown then pushFromMarkdown on fresh workspace preserves row data', async () => {
 		// First workspace: populate and pull to disk
-		const workspace1 = createWorkspace({
-			id: 'test.roundtrip.1',
-			tables: { posts: postsTable, notes: notesTable },
-		}).withExtension('materializer', (ctx) =>
-			createMarkdownMaterializer(ctx, { dir: TEST_DIR }).table('posts'),
-		);
+		const factory1 = defineDocument((id: string) => {
+			const ydoc = new Y.Doc({ guid: id });
+			const tables = attachTables(ydoc, tableDefinitions);
+			const materializer = createMarkdownMaterializer(
+				{ tables, whenReady: Promise.resolve() },
+				{ dir: TEST_DIR },
+			).table('posts');
+			ydoc.on('destroy', () => materializer[Symbol.dispose]());
+			return {
+				ydoc,
+				tables,
+				materializer,
+				whenReady: materializer.whenFlushed,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		});
+
+		const workspace1 = factory1.open('test.roundtrip.1');
 		await workspace1.whenReady;
 
 		workspace1.tables.posts.set({
@@ -450,8 +511,8 @@ describe('round-trip', () => {
 			_v: 1,
 		});
 
-		await workspace1.extensions.materializer.pullToMarkdown();
-		await workspace1.dispose();
+		await workspace1.materializer.pullToMarkdown();
+		await factory1.close('test.roundtrip.1');
 
 		// Verify files on disk have valid frontmatter
 		const p1Content = await readTestFile('posts/p1.md');
@@ -460,15 +521,29 @@ describe('round-trip', () => {
 		expect(p1Parsed!.frontmatter.title).toBe('Round Trip');
 
 		// Second workspace: fresh instance, push from the same directory
-		const workspace2 = createWorkspace({
-			id: 'test.roundtrip.2',
-			tables: { posts: postsTable, notes: notesTable },
-		}).withExtension('materializer', (ctx) =>
-			createMarkdownMaterializer(ctx, { dir: TEST_DIR }).table('posts'),
-		);
+		const factory2 = defineDocument((id: string) => {
+			const ydoc = new Y.Doc({ guid: id });
+			const tables = attachTables(ydoc, tableDefinitions);
+			const materializer = createMarkdownMaterializer(
+				{ tables, whenReady: Promise.resolve() },
+				{ dir: TEST_DIR },
+			).table('posts');
+			ydoc.on('destroy', () => materializer[Symbol.dispose]());
+			return {
+				ydoc,
+				tables,
+				materializer,
+				whenReady: materializer.whenFlushed,
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		});
+
+		const workspace2 = factory2.open('test.roundtrip.2');
 		await workspace2.whenReady;
 
-		const result = await workspace2.extensions.materializer.pushFromMarkdown();
+		const result = await workspace2.materializer.pushFromMarkdown();
 		expect(result.imported).toBe(2);
 
 		const p1 = workspace2.tables.posts.get('p1');
@@ -484,5 +559,7 @@ describe('round-trip', () => {
 			expect(p2.row.title).toBe('Another');
 			expect(p2.row.published).toBe(false);
 		}
+
+		await factory2.close('test.roundtrip.2');
 	});
 });

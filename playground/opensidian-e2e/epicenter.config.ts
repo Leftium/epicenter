@@ -44,7 +44,6 @@ import {
 import {
 	attachMarkdownMaterializer,
 	prepareMarkdownFiles,
-	toMarkdown,
 	toSlugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
@@ -103,8 +102,7 @@ const opensidianFactory = defineDocument((id: string) => {
 	});
 
 	async function readContent(rowId: string): Promise<string | undefined> {
-		using handle = fileContentDocs.open(rowId);
-		await handle.whenReady;
+		await using handle = await fileContentDocs.load(rowId);
 		return handle.content.read();
 	}
 
@@ -118,33 +116,34 @@ const opensidianFactory = defineDocument((id: string) => {
 		dir: MARKDOWN_DIR,
 		waitFor: whenReady,
 	}).table(tables.files, {
-		serialize: async (row) => {
+		filename: (row) =>
+			row.type === 'folder'
+				? `${row.id}.md`
+				: toSlugFilename(row.name.replace(/\.md$/i, ''), row.id),
+		toMarkdown: async (row) => {
 			if (row.type === 'folder') {
 				return {
-					filename: `${row.id}.md`,
-					content: toMarkdown({ id: row.id, name: row.name, type: 'folder' }),
+					frontmatter: { id: row.id, name: row.name, type: 'folder' },
+					body: undefined,
 				};
 			}
-			let content: string | undefined;
+			let body: string | undefined;
 			try {
-				content = await readContent(row.id);
+				body = await readContent(row.id);
 			} catch {
 				// Content doc not yet available (sync pending).
 			}
 			return {
-				filename: toSlugFilename(row.name.replace(/\.md$/i, ''), row.id),
-				content: toMarkdown(
-					{
-						id: row.id,
-						name: row.name,
-						parentId: row.parentId,
-						size: row.size,
-						createdAt: row.createdAt,
-						updatedAt: row.updatedAt,
-						trashedAt: row.trashedAt,
-					},
-					content,
-				),
+				frontmatter: {
+					id: row.id,
+					name: row.name,
+					parentId: row.parentId,
+					size: row.size,
+					createdAt: row.createdAt,
+					updatedAt: row.updatedAt,
+					trashedAt: row.trashedAt,
+				},
+				body,
 			};
 		},
 	});

@@ -21,7 +21,7 @@ import {
 	generateId,
 } from '@epicenter/workspace';
 import { createFileContentDocs } from '@epicenter/filesystem';
-import { toMarkdown } from '@epicenter/workspace/document/materializer/markdown';
+import { assembleMarkdown } from '@epicenter/workspace/document/materializer/markdown';
 import { opensidianTables } from 'opensidian/workspace';
 import * as Y from 'yjs';
 import { pushFromMarkdown } from './push-from-markdown';
@@ -73,8 +73,7 @@ async function writeContent(
 	id: string,
 	text: string,
 ) {
-	using handle = contentDocs.open(id);
-	await handle.whenReady;
+	await using handle = await contentDocs.load(id);
 	handle.content.write(text);
 }
 
@@ -82,8 +81,7 @@ async function readContent(
 	contentDocs: ReturnType<typeof createFileContentDocs>,
 	id: string,
 ) {
-	using handle = contentDocs.open(id);
-	await handle.whenReady;
+	await using handle = await contentDocs.load(id);
 	return handle.content.read();
 }
 
@@ -237,7 +235,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		body?: string,
 	): Promise<void> {
 		await mkdir(IMPORT_FILES_DIR, { recursive: true });
-		const content = toMarkdown(frontmatter, body);
+		const content = assembleMarkdown(frontmatter, body);
 		await Bun.write(join(IMPORT_FILES_DIR, filename), content);
 	}
 

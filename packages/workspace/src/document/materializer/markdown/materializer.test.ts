@@ -9,10 +9,10 @@
  * - push reads `.md` files, parses frontmatter, and calls table.set()
  * - push skips non-`.md` files and files without valid frontmatter
  * - push reports errors for unreadable files
- * - push uses custom deserialize callback when provided
+ * - push uses custom fromMarkdown callback when provided
  * - push silently skips tables whose directories don't exist
  * - pull re-serializes all valid rows to disk
- * - pull uses custom serialize callback when provided
+ * - pull uses custom filename + toMarkdown callbacks when provided
  * - Round-trip: pull → push preserves data
  */
 
@@ -80,7 +80,7 @@ type TableRegistration = {
 	config?: Parameters<Materializer['table']>[1];
 };
 
-function setup(options?: {
+async function setup(options?: {
 	tables?: (t: AttachedTables) => TableRegistration[];
 }) {
 	const factory = defineDocument((id: string) => {
@@ -109,7 +109,7 @@ function setup(options?: {
 		};
 	});
 
-	const workspace = factory.open('test.materializer');
+	const workspace = await factory.load('test.materializer');
 	return { workspace, factory };
 }
 
@@ -119,9 +119,7 @@ function setup(options?: {
 
 describe('push', () => {
 	test('imports markdown files into workspace tables', async () => {
-		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		await writeTestFile(
 			'posts/hello.md',
 			'---\nid: post-1\ntitle: Hello World\npublished: true\n_v: 1\n---\n',
@@ -154,9 +152,7 @@ describe('push', () => {
 	});
 
 	test('skips non-.md files', async () => {
-		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		await writeTestFile(
 			'posts/valid.md',
 			'---\nid: p1\ntitle: Valid\npublished: false\n_v: 1\n---\n',
@@ -173,9 +169,7 @@ describe('push', () => {
 	});
 
 	test('skips files without valid frontmatter', async () => {
-		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		await writeTestFile(
 			'posts/valid.md',
 			'---\nid: p1\ntitle: Valid\npublished: false\n_v: 1\n---\n',
@@ -194,9 +188,7 @@ describe('push', () => {
 	});
 
 	test('silently skips tables whose directories do not exist', async () => {
-		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		// Don't create the posts directory — it should not exist
 		const result = await workspace.materializer.push({});
 
@@ -207,13 +199,13 @@ describe('push', () => {
 		await factory.close('test.materializer');
 	});
 
-	test('uses custom deserialize callback', async () => {
-		const { workspace, factory } = setup({
+	test('uses custom fromMarkdown callback', async () => {
+		const { workspace, factory } = await setup({
 			tables: (t) => [
 				{
 					table: t.notes,
 					config: {
-						deserialize: (parsed) => ({
+						fromMarkdown: (parsed) => ({
 							id: parsed.frontmatter.id as string,
 							body: parsed.body ?? '',
 							_v: 1 as const,
@@ -222,8 +214,6 @@ describe('push', () => {
 				},
 			],
 		});
-		await workspace.whenReady;
-
 		await writeTestFile(
 			'notes/my-note.md',
 			'---\nid: note-1\n---\n\nThis is the body content\n',
@@ -243,11 +233,9 @@ describe('push', () => {
 	});
 
 	test('uses custom table directory', async () => {
-		const { workspace, factory } = setup({
+		const { workspace, factory } = await setup({
 			tables: (t) => [{ table: t.posts, config: { dir: 'blog' } }],
 		});
-		await workspace.whenReady;
-
 		await writeTestFile(
 			'blog/hello.md',
 			'---\nid: p1\ntitle: Hello\npublished: false\n_v: 1\n---\n',
@@ -262,9 +250,7 @@ describe('push', () => {
 	});
 
 	test('overwrites existing rows (set is insert-or-replace)', async () => {
-		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		// First import
 		await writeTestFile(
 			'posts/p1.md',
@@ -303,9 +289,7 @@ describe('push', () => {
 	});
 
 	test('imports across multiple tables', async () => {
-		const { workspace, factory } = setup();
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup();
 		await writeTestFile(
 			'posts/post.md',
 			'---\nid: p1\ntitle: Post\npublished: false\n_v: 1\n---\n',
@@ -331,9 +315,7 @@ describe('push', () => {
 
 describe('pull', () => {
 	test('writes all valid rows to disk', async () => {
-		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'First',
@@ -362,9 +344,7 @@ describe('pull', () => {
 	});
 
 	test('creates table directory before writing', async () => {
-		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'First',
@@ -380,22 +360,21 @@ describe('pull', () => {
 		await factory.close('test.materializer');
 	});
 
-	test('uses custom serialize callback', async () => {
-		const { workspace, factory } = setup({
+	test('uses custom filename and toMarkdown callbacks', async () => {
+		const { workspace, factory } = await setup({
 			tables: (t) => [
 				{
 					table: t.notes,
 					config: {
-						serialize: (row) => ({
-							filename: `${row.id}-custom.md`,
-							content: `---\nid: ${row.id}\n---\n\n${row.body}\n`,
+						filename: (row) => `${row.id}-custom.md`,
+						toMarkdown: (row) => ({
+							frontmatter: { id: row.id },
+							body: row.body as string,
 						}),
 					},
 				},
 			],
 		});
-		await workspace.whenReady;
-
 		workspace.tables.notes.set({ id: 'n1', body: 'Custom body', _v: 1 });
 
 		const result = await workspace.materializer.pull({});
@@ -409,11 +388,9 @@ describe('pull', () => {
 	});
 
 	test('uses custom table directory', async () => {
-		const { workspace, factory } = setup({
+		const { workspace, factory } = await setup({
 			tables: (t) => [{ table: t.posts, config: { dir: 'blog' } }],
 		});
-		await workspace.whenReady;
-
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'Blog Post',
@@ -430,9 +407,7 @@ describe('pull', () => {
 	});
 
 	test('writes nothing when table is empty', async () => {
-		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		const result = await workspace.materializer.pull({});
 
 		expect(result.written).toBe(0);
@@ -441,9 +416,7 @@ describe('pull', () => {
 	});
 
 	test('writes across multiple tables', async () => {
-		const { workspace, factory } = setup();
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup();
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'Post',
@@ -472,9 +445,7 @@ describe('pull', () => {
 
 describe('rebuild', () => {
 	test('removes orphan files and rewrites existing valid rows', async () => {
-		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		// Seed disk with rows + an orphan file
 		workspace.tables.posts.set({
 			id: 'p1',
@@ -505,9 +476,7 @@ describe('rebuild', () => {
 	});
 
 	test('rebuild with table argument only touches that table', async () => {
-		const { workspace, factory } = setup();
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup();
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'Post',
@@ -534,9 +503,7 @@ describe('rebuild', () => {
 	});
 
 	test('throws on unknown table name', async () => {
-		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		await expect(
 			workspace.materializer.rebuild({ table: 'notAThing' }),
 		).rejects.toThrow(/not in the materialized table set/);
@@ -545,9 +512,7 @@ describe('rebuild', () => {
 	});
 
 	test('is idempotent — rebuild twice produces identical filesystem state', async () => {
-		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
-		await workspace.whenReady;
-
+		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'A',
@@ -610,8 +575,7 @@ describe('round-trip', () => {
 			};
 		});
 
-		const workspace1 = factory1.open('test.roundtrip.1');
-		await workspace1.whenReady;
+		const workspace1 = await factory1.load('test.roundtrip.1');
 
 		workspace1.tables.posts.set({
 			id: 'p1',
@@ -653,8 +617,7 @@ describe('round-trip', () => {
 			};
 		});
 
-		const workspace2 = factory2.open('test.roundtrip.2');
-		await workspace2.whenReady;
+		const workspace2 = await factory2.load('test.roundtrip.2');
 
 		const result = await workspace2.materializer.push({});
 		expect(result.imported).toBe(2);

@@ -85,8 +85,8 @@ const tabManagerFactory = defineDocument((id: string) => {
 		{ tables, kv, whenReady },
 		{ dir: MARKDOWN_DIR },
 	)
-		.table('savedTabs', { serialize: slugFilename('title') })
-		.table('bookmarks', { serialize: slugFilename('title') })
+		.table('savedTabs', { filename: slugFilename('title') })
+		.table('bookmarks', { filename: slugFilename('title') })
 		.table('devices')
 		.kv();
 

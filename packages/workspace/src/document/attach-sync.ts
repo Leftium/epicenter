@@ -420,6 +420,16 @@ export function attachSync(
 		let attempt = 0;
 		let lastError: SyncError | undefined;
 
+		// Returns true when this iteration was superseded (reconnect/goOffline
+		// bumped runId during an await). Resets per-iteration state so the next
+		// iteration starts fresh.
+		const cancelled = (myRunId: number): boolean => {
+			if (runId === myRunId) return false;
+			attempt = 0;
+			lastError = undefined;
+			return true;
+		};
+
 		while (desired === 'online') {
 			const myRunId = runId;
 
@@ -437,22 +447,14 @@ export function attachSync(
 				};
 				status.set({ phase: 'connecting', attempt, lastError });
 				await backoff.sleep();
-				if (runId !== myRunId) {
-					attempt = 0;
-					lastError = undefined;
-					continue;
-				}
+				if (cancelled(myRunId)) continue;
 				attempt += 1;
 				continue;
 			}
 
 			const result = await attemptConnection(token, myRunId);
 
-			if (runId !== myRunId) {
-				attempt = 0;
-				lastError = undefined;
-				continue;
-			}
+			if (cancelled(myRunId)) continue;
 
 			if (result === 'connected') {
 				backoff.reset();
@@ -465,10 +467,7 @@ export function attachSync(
 				attempt += 1;
 				status.set({ phase: 'connecting', attempt, lastError });
 				await backoff.sleep();
-				if (runId !== myRunId) {
-					attempt = 0;
-					lastError = undefined;
-				}
+				cancelled(myRunId);
 			}
 		}
 

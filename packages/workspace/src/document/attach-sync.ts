@@ -446,12 +446,6 @@ export function attachSync(
 				continue;
 			}
 
-			if (runId !== myRunId) {
-				attempt = 0;
-				lastError = undefined;
-				continue;
-			}
-
 			const result = await attemptConnection(token, myRunId);
 
 			if (runId !== myRunId) {

@@ -12,7 +12,7 @@
  * ```typescript
  * import { skillsDocument } from '@epicenter/skills/node';
  *
- * await using workspace = await skillsDocument.load('epicenter.skills');
+ * using workspace = skillsDocument.open('epicenter.skills');
  * await workspace.actions.importFromDisk({ dir: '.agents/skills' });
  * await workspace.actions.exportToDisk({ dir: '.agents/skills' });
  * ```
@@ -288,8 +288,6 @@ export const skillsDocument = defineDocument(
 			referenceDocs,
 			actions,
 			batch: (fn: () => void) => ydoc.transact(fn),
-			whenReady: Promise.resolve(),
-			whenDisposed: encryption.whenDisposed,
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},

@@ -181,10 +181,6 @@ const opensidianFactory = defineDocument((id: string) => {
 		markdown,
 		sqlite,
 		whenReady,
-		whenDisposed: Promise.all([
-			persistence.whenDisposed,
-			sync.whenDisposed,
-		]).then(() => {}),
 		markdownActions,
 		[Symbol.dispose]() {
 			ydoc.destroy();

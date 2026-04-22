@@ -101,10 +101,6 @@ const tabManagerFactory = defineDocument((id: string) => {
 		sync,
 		markdown,
 		whenReady,
-		whenDisposed: Promise.all([
-			persistence.whenDisposed,
-			sync.whenDisposed,
-		]).then(() => {}),
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},

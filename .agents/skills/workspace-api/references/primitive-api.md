@@ -74,7 +74,7 @@ For workspaces that need at-rest encryption, the coordinator owns the sibling at
 
 | Helper | Purpose |
 |---|---|
-| `attachEncryption(ydoc)` | Per-ydoc encryption coordinator. Returns `{ applyKeys, register, attachTable, attachTables, attachKv, whenDisposed }`. |
+| `attachEncryption(ydoc)` | Per-ydoc encryption coordinator. Returns `{ applyKeys, register, attachTable, attachTables, attachKv, whenDisposed }`. `whenDisposed` is an attachment-level barrier — useful to consumers that want an explicit teardown gate; the `DocumentBundle` itself no longer carries one. |
 | `encryption.attachTable(ydoc, name, def)` | Singular encrypted table; self-registers with the coordinator. |
 | `encryption.attachTables(ydoc, defs)` | Batch sugar over `encryption.attachTable`. |
 | `encryption.attachKv(ydoc, defs)` | Encrypted KV singleton. |
@@ -154,8 +154,10 @@ export const entryContentDocs = defineDocument((entryId: EntryId) => {
     content,
     idb,
     sync,
-    whenReady:    idb.whenLoaded,
-    whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(() => {}),
+    // Builder-convention readiness gate — `DocumentBundle` itself no
+    // longer requires `whenReady`. Expose it so reactive/imperative
+    // consumers can await at the call site.
+    whenReady: idb.whenLoaded,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 });
@@ -182,31 +184,45 @@ Component owns the handle; the cache owns identity and the grace-period timer:
 
 Two tabs editing the same entry reconcile at the Yjs layer (IndexedDB + sync). The `defineDocument` cache dedupes in-process handles to the same `entryId`.
 
-### `open(id)` vs `load(id)`
+### `open(id)` — the only entry point
 
-Factories expose two entry points. Pick by caller shape:
-
-| API | Returns | Use when |
-|---|---|---|
-| `factory.open(id)` | `DocumentHandle<T>` (sync) | Reactive UI — render gates on `handle.whenReady` via `{#await}` or `$effect`. |
-| `factory.load(id)` | `Promise<DocumentHandle<T>>` | Imperative code — actions, CLI, tests. You need content available immediately on the next line. |
-
-`load(id)` is `open(id)` + `await handle.whenReady` with correct refcount release if readiness rejects. It exists because the two-step dance is a footgun — forgetting the await silently returns empty content.
+`factory.open(id)` returns a `DocumentHandle<T>` synchronously. There is no `factory.load()` — imperative callers pair `.open()` with `await handle.whenReady` at the call site (when the builder exposes one):
 
 ```typescript
+// Reactive: render gates on handle.whenReady inside {#await} or $effect.
+$effect(() => {
+  using handle = entryContentDocs.open(row.id);
+  // subscribe to reactive state; nested effect can await readiness if needed
+});
+
 // Imperative: read/write from an action handler, CLI, or test.
 async function readInstructions(id: SkillId): Promise<string> {
-  await using h = await instructionsDocs.load(id);
+  await using h = instructionsDocs.open(id);
+  await h.whenReady;           // builder convention — await what you need
   return h.instructions.read();
   // `await using` disposes h at scope exit → refcount--, gcTime timer arms.
 }
 ```
 
-Rules of thumb:
+`whenReady` is an **attachment-level convention** exposed by the builder — not a framework contract. Builders that compose a real readiness gate expose it under that name for grep-ability and code-review purposes; builders with nothing async to wait on expose nothing. Consumers pick the gate that fits at the call site:
 
-- `.svelte` file, `$effect`, or `{#await}` — **`open()`**.
-- Any `async function` that reads or writes content — **`load()`**.
-- Never write `using h = factory.open(id); await h.whenReady` by hand. That's what `load()` is.
+```typescript
+using h = docs.open(id);
+await h.whenReady;            // builder-composed aggregate (if exposed)
+// or:
+await h.idb.whenLoaded;       // specific attachment readiness
+// or:
+/* nothing — handle is already usable for this caller's purposes */
+```
+
+If a test or logout flow needs a teardown barrier after `close()`, opt into the attachment-level field:
+
+```typescript
+docs.close(id);
+await h.idb.whenDisposed;     // attachment-level, not bundle-level
+```
+
+The `DocumentBundle` itself no longer carries `whenReady` or `whenDisposed` — both are attachment-level conventions that consumers await on their own terms.
 
 ## GUID Convention
 

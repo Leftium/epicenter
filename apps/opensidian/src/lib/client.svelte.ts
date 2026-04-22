@@ -196,9 +196,27 @@ export function openOpenSidian() {
 	const sync = attachSync(ydoc, {
 		url: (workspaceId) =>
 			toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
-		getToken: async () => auth.token,
 		waitFor: idb.whenLoaded,
+		requiresToken: true,
 	});
+
+	// Edge detector: only wipe IDB on a genuine logged-in → logged-out transition.
+	// Cold-start-unauth (first call, `previous` still null) must be a noop so
+	// anonymous data isn't destroyed at boot.
+	let previousSession: AuthSession | null = null;
+	async function applySession(next: AuthSession | null) {
+		const wasAuthed = previousSession !== null;
+		previousSession = next;
+		if (next === null) {
+			sync.goOffline();
+			sync.setToken(null);
+			if (wasAuthed) await idb.clearLocal();
+			return;
+		}
+		encryption.applyKeys(next.encryptionKeys);
+		sync.setToken(next.token);
+		sync.reconnect();
+	}
 
 	return {
 		id,
@@ -213,6 +231,7 @@ export function openOpenSidian() {
 		fs,
 		bash,
 		actions,
+		applySession,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
@@ -258,15 +277,14 @@ export const skillReferenceDocs = skillsWorkspace.referenceDocs;
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
-	onLogin(session) {
-		workspace.encryption.applyKeys(session.encryptionKeys);
-		workspace.sync.reconnect();
-	},
-	async onLogout() {
-		await workspace.idb.clearLocal();
-		window.location.reload();
-	},
 });
+
+const dispose = $effect.root(() => {
+	$effect(() => {
+		void workspace.applySession(auth.session);
+	});
+});
+if (import.meta.hot) import.meta.hot.dispose(dispose);
 
 /** AI tool representations for the opensidian workspace. */
 export const workspaceAiTools = actionsToAiTools(workspace.actions);

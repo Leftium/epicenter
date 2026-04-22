@@ -3,7 +3,7 @@
 	import * as Popover from '@epicenter/ui/popover';
 	import { Switch } from '@epicenter/ui/switch';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import { workspaceAiTools } from '$lib/client';
+	import { workspaceAiTools } from '$lib/client.svelte';
 	import { toolTrustState } from '$lib/state/tool-trust.svelte';
 
 	const trustedTools = $derived(

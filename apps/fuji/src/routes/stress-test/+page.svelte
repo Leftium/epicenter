@@ -2,7 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
 	import { Badge } from '@epicenter/ui/badge';
-	import { workspace } from '$lib/client';
+	import { workspace } from '$lib/client.svelte';
 	import { entriesState } from '$lib/entries-state.svelte';
 	import { generateId, DateTimeString } from '@epicenter/workspace';
 	import type { EntryId } from '$lib/workspace';

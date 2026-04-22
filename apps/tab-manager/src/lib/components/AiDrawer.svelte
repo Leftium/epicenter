@@ -2,7 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Drawer from '@epicenter/ui/drawer';
 	import ZapIcon from '@lucide/svelte/icons/zap';
-	import { auth } from '$lib/client';
+	import { auth } from '$lib/client.svelte';
 	import AiChat from '$lib/components/chat/AiChat.svelte';
 	import TrustSettings from '$lib/components/chat/TrustSettings.svelte';
 

@@ -46,7 +46,7 @@ import {
 	TAB_MANAGER_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { auth, workspace, workspaceAiTools } from '$lib/client';
+import { auth, workspace, workspaceAiTools } from '$lib/client.svelte';
 import { getDeviceId } from '$lib/device/device-id';
 import {
 	type ChatMessageId,

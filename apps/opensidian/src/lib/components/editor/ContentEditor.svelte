@@ -2,7 +2,7 @@
 	import { autocompletion } from '@codemirror/autocomplete';
 	import type { FileId } from '@epicenter/filesystem';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { workspace } from '$lib/client';
+	import { workspace } from '$lib/client.svelte';
 
 	const { fileContentDocs } = workspace;
 	import { fsState } from '$lib/state/fs-state.svelte';

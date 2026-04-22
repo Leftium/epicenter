@@ -4,7 +4,7 @@
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { chatState } from '$lib/chat/chat-state.svelte';
-	import { auth, workspace } from '$lib/client';
+	import { auth, workspace } from '$lib/client.svelte';
 	import ChatInput from '$lib/components/ChatInput.svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ModelPicker from '$lib/components/ModelPicker.svelte';

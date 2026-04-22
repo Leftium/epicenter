@@ -13,7 +13,7 @@
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import { ModeWatcher } from 'mode-watcher';
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
-	import { workspace } from '$lib/client';
+	import { workspace } from '$lib/client.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
 	import { entriesState } from '$lib/entries-state.svelte';

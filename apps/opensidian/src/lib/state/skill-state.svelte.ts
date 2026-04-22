@@ -1,5 +1,5 @@
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { skillsWorkspace, workspace } from '$lib/client';
+import { skillsWorkspace, workspace } from '$lib/client.svelte';
 
 const { fs } = workspace;
 

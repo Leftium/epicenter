@@ -31,7 +31,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
-import { workspace } from '$lib/client';
+import { workspace } from '$lib/client.svelte';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { SavedTab, SavedTabId } from '$lib/workspace';
 

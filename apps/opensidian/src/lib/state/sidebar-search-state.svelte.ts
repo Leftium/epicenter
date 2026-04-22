@@ -1,6 +1,6 @@
 import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
-import { workspace } from '$lib/client';
+import { workspace } from '$lib/client.svelte';
 
 export type MatchSnippet = {
 	snippet: string;

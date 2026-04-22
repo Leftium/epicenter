@@ -3,7 +3,7 @@ import { fromTable } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { SvelteSet } from 'svelte/reactivity';
-import { workspace } from '$lib/client';
+import { workspace } from '$lib/client.svelte';
 
 const { fs } = workspace;
 import { searchParams } from '$lib/search-params.svelte';

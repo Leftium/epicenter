@@ -19,7 +19,7 @@ import {
 } from '$lib/chat/providers';
 import { ZHONGWEN_SYSTEM_PROMPT } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { auth, workspace } from '$lib/client';
+import { auth, workspace } from '$lib/client.svelte';
 import {
 	type ChatMessageId,
 	type Conversation,

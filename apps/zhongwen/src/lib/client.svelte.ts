@@ -11,6 +11,7 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 } from '@epicenter/workspace';
+import type { AuthSession } from '@epicenter/svelte/auth';
 import { createAuth } from '@epicenter/svelte/auth';
 import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -28,6 +29,20 @@ export function openZhongwen() {
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
 
+	// Edge detector: only wipe IDB on a genuine logged-in → logged-out transition.
+	// Cold-start-unauth (first call, `previous` still null) must be a noop so
+	// anonymous data isn't destroyed at boot.
+	let previousSession: AuthSession | null = null;
+	async function applySession(next: AuthSession | null) {
+		const wasAuthed = previousSession !== null;
+		previousSession = next;
+		if (next === null) {
+			if (wasAuthed) await idb.clearLocal();
+			return;
+		}
+		encryption.applyKeys(next.encryptionKeys);
+	}
+
 	return {
 		id,
 		ydoc,
@@ -35,6 +50,7 @@ export function openZhongwen() {
 		kv,
 		encryption,
 		idb,
+		applySession,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
@@ -48,11 +64,11 @@ export const workspace = openZhongwen();
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
-	onLogin(session) {
-		workspace.encryption.applyKeys(session.encryptionKeys);
-	},
-	async onLogout() {
-		await workspace.idb.clearLocal();
-		window.location.reload();
-	},
 });
+
+const dispose = $effect.root(() => {
+	$effect(() => {
+		void workspace.applySession(auth.session);
+	});
+});
+if (import.meta.hot) import.meta.hot.dispose(dispose);

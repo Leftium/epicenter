@@ -20,7 +20,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import { ModeWatcher } from 'mode-watcher';
-	import { auth, workspace } from '$lib/client';
+	import { auth, workspace } from '$lib/client.svelte';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { items } from '$lib/components/command-palette-items';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';

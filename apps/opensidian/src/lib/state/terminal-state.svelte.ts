@@ -2,7 +2,7 @@ import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
 import { defineCommand } from 'just-bash';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { workspace } from '$lib/client';
+import { workspace } from '$lib/client.svelte';
 
 const { bash, fs } = workspace;
 import { fsState } from '$lib/state/fs-state.svelte';

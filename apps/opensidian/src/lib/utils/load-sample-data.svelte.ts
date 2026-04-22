@@ -1,6 +1,6 @@
 import { toast } from '@epicenter/ui/sonner';
 import { extractErrorMessage } from 'wellcrafted/error';
-import { workspace } from '$lib/client';
+import { workspace } from '$lib/client.svelte';
 
 const { fs } = workspace;
 

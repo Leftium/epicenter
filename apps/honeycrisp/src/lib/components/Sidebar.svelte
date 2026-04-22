@@ -5,7 +5,7 @@
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { auth, workspace } from '$lib/client';
+	import { auth, workspace } from '$lib/client.svelte';
 	import FolderMenuItem from '$lib/components/FolderMenuItem.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
 </script>

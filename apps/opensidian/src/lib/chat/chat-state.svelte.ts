@@ -16,7 +16,7 @@ import {
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { auth, workspace, workspaceAiTools } from '$lib/client';
+import { auth, workspace, workspaceAiTools } from '$lib/client.svelte';
 import { skillState } from '$lib/state/skill-state.svelte';
 import {
 	type ChatMessageId,

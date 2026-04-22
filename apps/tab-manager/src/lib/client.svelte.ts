@@ -14,6 +14,7 @@ import {
 	attachSync,
 	toWsUrl,
 } from '@epicenter/workspace';
+import type { AuthSession } from '@epicenter/svelte/auth';
 import { createAuth } from '@epicenter/svelte/auth';
 import {
 	attachEncryption,
@@ -51,13 +52,32 @@ export function openTabManager() {
 	const sync = attachSync(ydoc, {
 		url: (workspaceId) =>
 			toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
-		getToken: async () => auth.token,
 		waitFor: idb.whenLoaded,
 		awareness: awareness.raw,
+		requiresToken: true,
 		rpc: {
 			dispatch: (action, input) => dispatchAction(actions, action, input),
 		},
 	});
+
+	// Edge detector: only wipe IDB on a genuine logged-in → logged-out transition.
+	// Cold-start-unauth (first call, `previous` still null) must be a noop so
+	// anonymous data isn't destroyed at boot.
+	let previousSession: AuthSession | null = null;
+	async function applySession(next: AuthSession | null) {
+		const wasAuthed = previousSession !== null;
+		previousSession = next;
+		if (next === null) {
+			sync.goOffline();
+			sync.setToken(null);
+			if (wasAuthed) await idb.clearLocal();
+			return;
+		}
+		encryption.applyKeys(next.encryptionKeys);
+		sync.setToken(next.token);
+		sync.reconnect();
+		void registerDeviceOnce();
+	}
 
 	return {
 		id,
@@ -69,12 +89,34 @@ export function openTabManager() {
 		idb,
 		sync,
 		actions,
+		applySession,
 		batch,
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
 	};
+
+	/**
+	 * Register this browser installation as a device in the workspace.
+	 *
+	 * Upserts the device row — preserves existing name if present, otherwise
+	 * generates a default. Called from `applySession` on login so encryption
+	 * keys are always active before the write reaches the Y.Doc.
+	 */
+	async function registerDeviceOnce(): Promise<void> {
+		await idb.whenLoaded;
+		const deviceId = await getDeviceId();
+		const { data: existing, error } = tables.devices.get(deviceId);
+		const existingName = !error && existing ? existing.name : null;
+		tables.devices.set({
+			id: deviceId,
+			name: existingName ?? (await generateDefaultDeviceName()),
+			lastSeen: new Date().toISOString(),
+			browser: getBrowserName(),
+			_v: 1,
+		});
+	}
 }
 
 export const workspace = openTabManager();
@@ -86,44 +128,20 @@ export const auth = createAuth({
 		const { idToken, nonce } = await getGoogleCredentials();
 		return { provider: 'google', idToken, nonce };
 	},
-	onLogin(session) {
-		workspace.encryption.applyKeys(session.encryptionKeys);
-		workspace.sync.reconnect();
-		void registerDevice();
-	},
-	async onLogout() {
-		await workspace.idb.clearLocal();
-		window.location.reload();
-	},
 });
+
+const dispose = $effect.root(() => {
+	$effect(() => {
+		void workspace.applySession(auth.session);
+	});
+});
+if (import.meta.hot) import.meta.hot.dispose(dispose);
 
 /** AI tool representations for the tab-manager workspace. */
 export const workspaceAiTools = actionsToAiTools(workspace.actions);
 
 /** Tool array type for use in TanStack AI generics. */
 export type WorkspaceTools = typeof workspaceAiTools.tools;
-
-/**
- * Register this browser installation as a device in the workspace.
- *
- * Upserts the device row — preserves existing name if present, otherwise
- * generates a default. Called from `onLogin` so encryption keys are always
- * active before the write reaches the Y.Doc.
- */
-async function registerDevice(): Promise<void> {
-	await workspace.whenReady;
-	const id = await getDeviceId();
-	const { data: existing, error } = workspace.tables.devices.get(id);
-	// Re-register on error: treat invalid row as "no prior registration".
-	const existingName = !error && existing ? existing.name : null;
-	workspace.tables.devices.set({
-		id,
-		name: existingName ?? (await generateDefaultDeviceName()),
-		lastSeen: new Date().toISOString(),
-		browser: getBrowserName(),
-		_v: 1,
-	});
-}
 
 // Publish awareness identity after initial load
 void workspace.whenReady.then(async () => {

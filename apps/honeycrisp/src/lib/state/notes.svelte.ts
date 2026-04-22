@@ -20,7 +20,7 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { DateTimeString, generateId } from '@epicenter/workspace';
-import { workspace } from '$lib/client';
+import { workspace } from '$lib/client.svelte';
 import type { FolderId, NoteId } from '$lib/workspace';
 import { searchParams } from '$lib/search-params.svelte';
 import { foldersState } from './folders.svelte';

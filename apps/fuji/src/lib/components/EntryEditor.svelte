@@ -15,7 +15,7 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { goto } from '$app/navigation';
-	import { workspace } from '$lib/client';
+	import { workspace } from '$lib/client.svelte';
 	import { entryContentDocs } from '$lib/entry-content-docs';
 	import type { Entry } from '$lib/workspace';
 	import ProseMirrorEditor from './ProseMirrorEditor.svelte';

@@ -14,7 +14,7 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { goto } from '$app/navigation';
-import { workspace } from '$lib/client';
+import { workspace } from '$lib/client.svelte';
 import type { EntryId } from '$lib/workspace';
 
 // ─── Search ──────────────────────────────────────────────────────────────────

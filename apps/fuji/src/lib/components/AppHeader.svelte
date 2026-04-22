@@ -7,7 +7,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import { auth, workspace } from '$lib/client';
+	import { auth, workspace } from '$lib/client.svelte';
 	import { entriesState } from '$lib/entries-state.svelte';
 	import BulkAddModal from './BulkAddModal.svelte';
 

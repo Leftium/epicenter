@@ -8,7 +8,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { DateTimeString } from '@epicenter/workspace';
 	import ClipboardPasteIcon from '@lucide/svelte/icons/clipboard-paste';
-	import { workspace } from '$lib/client';
+	import { workspace } from '$lib/client.svelte';
 
 	const LINE_REGEX = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(.+)$/;
 

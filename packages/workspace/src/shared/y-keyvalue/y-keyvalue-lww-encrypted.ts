@@ -39,10 +39,13 @@
  *
  * ## Re-encryption on Activation
  *
- * When `activateEncryption()` is called, only **plaintext** entries are
- * re-encrypted. Existing encrypted blobs (even on older key versions) are
- * left alone—they're already safe. Old-version ciphertext is lazily migrated
- * on the next `set()` for that key.
+ * When `activateEncryption()` is called, every entry converges to the current
+ * key version: plaintext is encrypted, old-version ciphertext (decryptable via
+ * the keyring) is re-encrypted under the current key, current-version
+ * ciphertext is skipped, and ciphertext at an unknown version is left alone
+ * (it'll catch up on a future `activateEncryption()` that includes the key).
+ * This makes `activateEncryption()` the one method that handles both
+ * post-login encryption and key rotation.
  *
  * ## Error Containment
  *
@@ -148,12 +151,13 @@ export type EncryptedYKeyValueLww<T> = ObservableKvStore<T> & {
  * `YKeyValueLww` remains the single source for conflict resolution; this wrapper
  * only transforms values at the boundary (`set` encrypts, `get`/observer decrypts).
  *
- * When no key is available, all operations pass through without
- * encryption—zero overhead, identical to a plain `YKeyValueLww<T>`.
+ * Construction always starts in passthrough mode — zero overhead, identical to
+ * a plain `YKeyValueLww<T>`. Call `activateEncryption(keyring)` when the key
+ * becomes available (typically post-login) to enable encryption and upgrade
+ * any existing plaintext or old-version entries.
  *
  * @example
  * ```typescript
- * // Start in plaintext, transition to encrypted when key arrives
  * const kv = createEncryptedYkvLww<TabData>(ydoc, 'tabs');
  * kv.set('tab-1', { url: '...' }); // stored as plaintext
  *
@@ -164,18 +168,11 @@ export type EncryptedYKeyValueLww<T> = ObservableKvStore<T> & {
  *
  * @param ydoc - The Y.Doc that owns the underlying Y.Array
  * @param arrayKey - Name of the Y.Array under `ydoc.getArray(arrayKey)`
- * @param opts.initialKeyring - Optional versioned keyring for construction-time
- *   encryption. If omitted, the store starts in passthrough mode — call
- *   `activateEncryption()` later to enable encryption.
  */
 export function createEncryptedYkvLww<T>(
 	ydoc: Y.Doc,
 	arrayKey: string,
-	opts?: {
-		initialKeyring?: ReadonlyMap<number, Uint8Array>;
-	},
 ): EncryptedYKeyValueLww<T> {
-	const initialKeyring = opts?.initialKeyring;
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | T>>(arrayKey);
 	/**
 	 * The inner LWW store. It sees `EncryptedBlob | T` as its value type—it
@@ -187,19 +184,6 @@ export function createEncryptedYkvLww<T>(
 
 	/** Active encryption state. `undefined` = passthrough mode. */
 	let encryption: EncryptionState | undefined;
-
-	if (initialKeyring) {
-		if (initialKeyring.size === 0)
-			throw new Error('Keyring must contain at least one key');
-		const version = Math.max(...initialKeyring.keys());
-		const currentKey = initialKeyring.get(version);
-		if (!currentKey) throw new Error(`Missing key for version ${version}`);
-		encryption = {
-			keyring: initialKeyring,
-			currentKey,
-			currentVersion: version,
-		};
-	}
 
 	/**
 	 * Best-effort blob decryption with keyring fallback.

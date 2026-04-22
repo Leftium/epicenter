@@ -346,9 +346,8 @@ describe('binary storage overhead', () => {
 
 		// Create Y.Doc with binary blobs (current format)
 		const binaryDoc = new Y.Doc({ guid: 'bench-binary' });
-		const binaryKv = createEncryptedYkvLww<string>(binaryDoc, 'data', {
-			initialKeyring: new Map([[1, key]]),
-		});
+		const binaryKv = createEncryptedYkvLww<string>(binaryDoc, 'data');
+		binaryKv.activateEncryption(new Map([[1, key]]));
 
 		for (const [i, val] of testValues.entries()) {
 			binaryKv.set(`key-${i}`, val);

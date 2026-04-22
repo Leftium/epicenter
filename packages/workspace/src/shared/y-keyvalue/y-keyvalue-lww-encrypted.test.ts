@@ -10,10 +10,20 @@ import {
 /** Create a single-doc encrypted KV for tests. Skips the 4-line Y.Doc ceremony. */
 function setup<T = string>(keyring?: ReadonlyMap<number, Uint8Array>) {
 	const ydoc = new Y.Doc();
-	const kv: EncryptedYKeyValueLww<T> = createEncryptedYkvLww<T>(ydoc, 'data', {
-		initialKeyring: keyring,
-	});
+	const kv: EncryptedYKeyValueLww<T> = createEncryptedYkvLww<T>(ydoc, 'data');
+	if (keyring) kv.activateEncryption(keyring);
 	return { ydoc, yarray: kv.yarray, kv };
+}
+
+/** Construct + activate in one step — replaces the old `initialKeyring` opt for tests. */
+function setupActivated<T = string>(
+	ydoc: Y.Doc,
+	arrayKey: string,
+	keyring: ReadonlyMap<number, Uint8Array>,
+): EncryptedYKeyValueLww<T> {
+	const kv = createEncryptedYkvLww<T>(ydoc, arrayKey);
+	kv.activateEncryption(keyring);
+	return kv;
 }
 
 type PlainChange<T> =
@@ -36,9 +46,8 @@ function createEncryptedBlob<T>(
 	entryKey: string,
 ): EncryptedBlob {
 	const helperDoc = new Y.Doc({ guid: 'helper-blob' });
-	const helperKv = createEncryptedYkvLww<T>(helperDoc, 'helper-data', {
-		initialKeyring: new Map([[1, key]]),
-	});
+	const helperKv = createEncryptedYkvLww<T>(helperDoc, 'helper-data');
+	helperKv.activateEncryption(new Map([[1, key]]));
 
 	helperKv.set(entryKey, value);
 
@@ -238,7 +247,7 @@ describe('createEncryptedYkvLww', () => {
 
 			yarray.push([{ key: 'plaintext', val: 'plaintext-value', ts: 1000 }]);
 
-			const kv = createEncryptedYkvLww<string>(ydoc, 'data', { initialKeyring: new Map([[1, key]]) });
+			const kv = setupActivated<string>(ydoc, 'data', new Map([[1, key]]));
 			expect(kv.get('plaintext')).toBe('plaintext-value');
 		});
 
@@ -249,7 +258,7 @@ describe('createEncryptedYkvLww', () => {
 			const encrypted = createEncryptedBlob('encrypted-value', key, 'enc');
 			yarray.push([{ key: 'enc', val: encrypted, ts: 1000 }]);
 
-			const kv = createEncryptedYkvLww<string>(ydoc, 'data', { initialKeyring: new Map([[1, key]]) });
+			const kv = setupActivated<string>(ydoc, 'data', new Map([[1, key]]));
 			expect(kv.get('enc')).toBe('encrypted-value');
 		});
 
@@ -263,7 +272,7 @@ describe('createEncryptedYkvLww', () => {
 				{ key: 'new', val: encrypted, ts: 1001 },
 			]);
 
-			const kv = createEncryptedYkvLww<string>(ydoc, 'data', { initialKeyring: new Map([[1, key]]) });
+			const kv = setupActivated<string>(ydoc, 'data', new Map([[1, key]]));
 
 			expect(kv.get('old')).toBe('old-plaintext');
 			expect(kv.get('new')).toBe('new-secret');
@@ -287,8 +296,8 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', { initialKeyring: new Map([[1, key]]) });
-			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', { initialKeyring: new Map([[1, key]]) });
+			const kv1 = setupActivated<string>(doc1, 'data', new Map([[1, key]]));
+			const kv2 = setupActivated<string>(doc2, 'data', new Map([[1, key]]));
 
 			kv1.set('shared-key', 'from-doc1');
 			syncDocs(doc1, doc2);
@@ -305,8 +314,8 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', { initialKeyring: new Map([[1, key]]) });
-			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', { initialKeyring: new Map([[1, key]]) });
+			const kv1 = setupActivated<string>(doc1, 'data', new Map([[1, key]]));
+			const kv2 = setupActivated<string>(doc2, 'data', new Map([[1, key]]));
 
 			kv1.set('token', 'abc-123');
 			syncDocs(doc1, doc2);
@@ -321,8 +330,8 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', { initialKeyring: new Map([[1, key]]) });
-			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', { initialKeyring: new Map([[1, key]]) });
+			const kv1 = setupActivated<string>(doc1, 'data', new Map([[1, key]]));
+			const kv2 = setupActivated<string>(doc2, 'data', new Map([[1, key]]));
 
 			kv1.yarray.push([
 				{
@@ -351,8 +360,8 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', { initialKeyring: new Map([[1, key]]) });
-			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', { initialKeyring: new Map([[1, key]]) });
+			const kv1 = setupActivated<string>(doc1, 'data', new Map([[1, key]]));
+			const kv2 = setupActivated<string>(doc2, 'data', new Map([[1, key]]));
 
 			kv1.set('shared', 'value-from-doc1');
 			kv2.set('shared', 'value-from-doc2');

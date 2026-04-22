@@ -107,7 +107,7 @@ Every exported function in this package falls into one of three verbs. The prefi
 |---|---|---|---|---|
 | `define*` | **None** — pure data | Schemas, defaults | Plain config object / refcounted cache | `defineTable`, `defineKv`, `defineDocument`, `defineMutation`, `defineQuery` |
 | `attach*` | **Mutates a Y.Doc** — binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle (non-idempotent — hold the reference) | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachAwareness`, `attachIndexedDb`, `attachSqlite`, `attachBroadcastChannel`, `attachSync`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods) |
-| `create*` | **Instantiates a runtime** — may allocate a `Y.Doc` or wrap an existing store | Config or an existing store | A usable instance | `createPerRowDoc`, `createUnionSchema` |
+| `create*` | **Pure construction** — no listeners, no subscriptions, no destroy registration at call time | Config or an existing store | A usable instance | `createUnionSchema` |
 
 `defineDocument(builder)` is the top-level entry point. The user owns `new Y.Doc` and every `attach*` call inside the builder; the cache owns identity (keyed by id), refcount, and the `gcTime` grace period between last-dispose and teardown. `.open(id)` returns a disposable handle.
 

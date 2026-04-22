@@ -462,7 +462,7 @@ The old encryption system had five moving parts to answer one question: does thi
 // Before — 3 steps, async, stateful
 const ydoc = new Y.Doc({ guid: id });
 const encryption = attachEncryption(ydoc);
-const tables = attachEncryptedTables(ydoc, encryption, defs);
+const tables = encryption.attachTables(ydoc, defs);
 
 await encryption.unlock(keys);
 ```
@@ -473,7 +473,7 @@ Now it's one synchronous call, no unlock step, no state machine:
 // After — sync, idempotent
 const ydoc = new Y.Doc({ guid: id });
 const encryption = attachEncryption(ydoc);
-const tables = attachEncryptedTables(ydoc, encryption, defs);
+const tables = encryption.attachTables(ydoc, defs);
 
 encryption.applyKeys(keys);  // done
 ```

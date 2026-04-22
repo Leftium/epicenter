@@ -12,7 +12,7 @@ Every persistence, sync, materializer, and binding in `packages/workspace` (plus
 | Prefix     | Meaning                                                                                                                      |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `attach*`  | Side-effectful. Registers observers, destroy listeners, or subscription state. Return shape is free — fixed surface *or* chainable builder, both are `attach*`. |
-| `create*`  | Pure construction. No listeners, no subscriptions, no destroy registration at call time. Factory-of-factories qualifies (e.g. `createFileContentDocs`, `createPerRowDoc` — the returned handle attaches later). |
+| `create*`  | Pure construction. No listeners, no subscriptions, no destroy registration at call time. Factory-of-factories qualifies (e.g. `createFileContentDocs` — returns a `defineDocument` result; nothing attaches until `.open(id)` is called). |
 
 Both return plain objects. The distinction is **what happens at call time**, not what the return value looks like. A chainable builder with `.table()/.kv()` that registers `table.observe(...)` is still `attach*` — chainability is a return-shape concern, orthogonal to naming.
 

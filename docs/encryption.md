@@ -180,7 +180,7 @@ Before activation, the wrapper is a passthrough store and `set()` writes plainte
 After activation, `set()` always encrypts.
 The active state holds the full keyring, the current key, and the current key version.
 Calling `activateEncryption()` again updates that state to a new keyring, but it does not switch the store back to plaintext mode.
-The document builder reinforces that shape: `attachEncryption(ydoc)` plus `attachEncryptedTables` / `attachEncryptedKv` register every table and KV store as encrypted wrappers from the start, and `encryption.applyKeys(...)` later activates encryption across all of them.
+The document builder reinforces that shape: `attachEncryption(ydoc)` returns a coordinator whose `encryption.attachTables(ydoc, defs)` / `encryption.attachKv(ydoc, defs)` methods register every table and KV store as encrypted wrappers from the start, and `encryption.applyKeys(...)` later activates encryption across all of them.
 
 ## What activation re-encrypts
 Activation does not rewrite everything.

@@ -1,7 +1,7 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { generateId } from '../../../shared/id.js';
-import { toMarkdown } from './markdown.js';
+import { assembleMarkdown } from './markdown.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';
 
 type PrepareResult = {
@@ -88,7 +88,7 @@ export async function prepareMarkdownFiles(
 		const filePath = join(directory, filename);
 		const newId = generateId();
 		const updatedFrontmatter = { id: newId, ...frontmatter };
-		const markdown = toMarkdown(updatedFrontmatter, body);
+		const markdown = assembleMarkdown(updatedFrontmatter, body);
 		await writeFile(filePath, markdown, 'utf-8');
 	}
 

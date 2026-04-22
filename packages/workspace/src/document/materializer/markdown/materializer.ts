@@ -1,5 +1,5 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import Type from 'typebox';
 import type * as Y from 'yjs';
 import { defineMutation } from '../../../shared/actions.js';
@@ -7,7 +7,7 @@ import type { MaybePromise } from '../../../shared/types.js';
 import type { Kv } from '../../attach-kv.js';
 import type { BaseRow, Table } from '../../attach-table.js';
 import type { SerializeResult } from './markdown.js';
-import { toMarkdown } from './markdown.js';
+import { assembleMarkdown } from './markdown.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';
 
 // biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv
@@ -15,16 +15,24 @@ type AnyKv = Kv<any>;
 // biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous tables
 type AnyTable = Table<any>;
 
+/**
+ * Symmetric shape of a parsed markdown file. `toMarkdown` produces it,
+ * `fromMarkdown` consumes it — `Parameters<fromMarkdown>[0]` ≡ `ReturnType<toMarkdown>`.
+ */
+export type MarkdownShape = {
+	frontmatter: Record<string, unknown>;
+	body: string | undefined;
+};
+
 type TableConfig<TRow extends BaseRow> = {
 	/** Subdirectory (joined onto the base `dir`) for this table's files. Default: `table.name`. */
 	dir?: string;
-	/** Produce the on-disk filename + content for a row. Default: `{id}.md` with toMarkdown. */
-	serialize?: (row: TRow) => MaybePromise<SerializeResult>;
-	/** Parse a markdown file back into a row. Required for `push` if custom shape. */
-	deserialize?: (parsed: {
-		frontmatter: Record<string, unknown>;
-		body: string | undefined;
-	}) => MaybePromise<TRow>;
+	/** Compute the on-disk filename for a row. Default: `${row.id}.md`. */
+	filename?: (row: TRow) => MaybePromise<string>;
+	/** Produce frontmatter + body for a row. Default: `{ frontmatter: row, body: undefined }`. */
+	toMarkdown?: (row: TRow) => MaybePromise<MarkdownShape>;
+	/** Parse frontmatter + body back into a row. Default: `parsed.frontmatter as TRow`. */
+	fromMarkdown?: (parsed: MarkdownShape) => MaybePromise<TRow>;
 };
 
 type KvConfig = {
@@ -45,21 +53,18 @@ type RegisteredKv = {
 	unsubscribe?: () => void;
 };
 
-/**
- * Default row serializer: `{id}.md` with the full row dumped to YAML
- * frontmatter and no body. Used whenever `config.serialize` isn't provided.
- */
-const defaultSerialize = (row: BaseRow): SerializeResult => ({
-	filename: `${row.id}.md`,
-	content: toMarkdown({ ...row }),
+/** Default filename: `${row.id}.md`. */
+const defaultFilename = (row: BaseRow): string => `${row.id}.md`;
+
+/** Default toMarkdown: dump row as frontmatter, no body. */
+const defaultToMarkdown = (row: BaseRow): MarkdownShape => ({
+	frontmatter: { ...row },
+	body: undefined,
 });
 
-/**
- * Default row deserializer: treat frontmatter as the row.
- */
-const defaultDeserialize = (parsed: {
-	frontmatter: Record<string, unknown>;
-}): BaseRow => parsed.frontmatter as BaseRow;
+/** Default fromMarkdown: treat frontmatter as the row. */
+const defaultFromMarkdown = (parsed: MarkdownShape): BaseRow =>
+	parsed.frontmatter as BaseRow;
 
 /**
  * Default KV serializer: pretty-printed JSON in `kv.json`. Used whenever a
@@ -69,6 +74,41 @@ const defaultKvSerialize = (data: Record<string, unknown>): SerializeResult => (
 	filename: 'kv.json',
 	content: JSON.stringify(data, null, 2),
 });
+
+/**
+ * Compose a row into the full on-disk artifact: filename + content string.
+ *
+ * Resolves the per-slot defaults (`filename`, `toMarkdown`) and runs them
+ * through `assembleMarkdown`. Pure except for awaiting caller-supplied promises.
+ */
+async function rowToMarkdownFile<TRow extends BaseRow>(
+	row: TRow,
+	config: TableConfig<TRow>,
+): Promise<{ filename: string; content: string }> {
+	const filenameFn = config.filename ?? defaultFilename;
+	const toMarkdownFn = config.toMarkdown ?? defaultToMarkdown;
+	const filename = await filenameFn(row);
+	const shape = await toMarkdownFn(row);
+	const content = assembleMarkdown(shape.frontmatter, shape.body);
+	return { filename, content };
+}
+
+/**
+ * Write a markdown file under `directory`, creating any intermediate
+ * subdirectories implied by a filename like `"archive/old.md"`.
+ */
+async function writeMarkdownFile(
+	directory: string,
+	filename: string,
+	content: string,
+): Promise<void> {
+	const fullPath = join(directory, filename);
+	const parent = dirname(fullPath);
+	if (parent !== directory) {
+		await mkdir(parent, { recursive: true });
+	}
+	await writeFile(fullPath, content);
+}
 
 /**
  * Create a bidirectional markdown materializer for workspace data.
@@ -81,7 +121,7 @@ const defaultKvSerialize = (data: Record<string, unknown>): SerializeResult => (
  * - `push`    — disk → workspace. Import .md files as rows (additive).
  * - `pull`    — workspace → disk. Write every row as .md file (additive).
  * - `rebuild` — workspace → disk, destructive. Clear output dir then rewrite
- *   all rows. Use for orphan cleanup or after `serialize` config changes.
+ *   all rows. Use for orphan cleanup or after config changes.
  *   Matches the sqlite materializer's `rebuild` for cross-materializer parity.
  *
  * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)` — callers
@@ -99,7 +139,11 @@ const defaultKvSerialize = (data: Record<string, unknown>): SerializeResult => (
  *     dir: './data',
  *     waitFor: idb.whenLoaded,
  *   })
- *     .table(tables.posts, { serialize: slugFilename('title') })
+ *     .table(tables.posts, {
+ *       filename: slugFilename('title'),
+ *       toMarkdown: fieldAsBody('content'),
+ *       fromMarkdown: bodyAsField('content'),
+ *     })
  *     .kv(kv);
  *
  *   return { ydoc, tables, kv, idb, markdown, [Symbol.dispose]() { ydoc.destroy(); } };
@@ -141,14 +185,13 @@ export function attachMarkdownMaterializer(
 	): Promise<() => void> {
 		const directory = join(baseDir, config.dir ?? table.name);
 		const filenames = new Map<string, string>();
-		const serialize = config.serialize ?? defaultSerialize;
 
 		await mkdir(directory, { recursive: true });
 
 		for (const row of table.getAllValid()) {
-			const result = await serialize(row);
-			await writeFile(join(directory, result.filename), result.content);
-			filenames.set(row.id, result.filename);
+			const { filename, content } = await rowToMarkdownFile(row, config);
+			await writeMarkdownFile(directory, filename, content);
+			filenames.set(row.id, filename);
 		}
 
 		// Sequential writes inside the observer avoid rename races — a parallel
@@ -169,12 +212,15 @@ export function attachMarkdownMaterializer(
 
 					if (getResult.status !== 'valid') continue;
 
-					const result = await serialize(getResult.row);
+					const { filename, content } = await rowToMarkdownFile(
+						getResult.row,
+						config,
+					);
 					const previous = filenames.get(id);
-					if (previous && previous !== result.filename)
+					if (previous && previous !== filename)
 						await unlink(join(directory, previous)).catch(() => {});
-					await writeFile(join(directory, result.filename), result.content);
-					filenames.set(id, result.filename);
+					await writeMarkdownFile(directory, filename, content);
+					filenames.set(id, filename);
 				}
 			})().catch((error) => {
 				console.warn('[markdown-materializer] table write failed:', error);
@@ -283,8 +329,8 @@ export function attachMarkdownMaterializer(
 				}
 
 				try {
-					const deserialize = entry.config.deserialize ?? defaultDeserialize;
-					const row = await deserialize(parsed);
+					const fromMarkdown = entry.config.fromMarkdown ?? defaultFromMarkdown;
+					const row = await fromMarkdown(parsed);
 					entry.table.set(row);
 					imported++;
 				} catch (error) {
@@ -334,10 +380,9 @@ export function attachMarkdownMaterializer(
 			}
 
 			await mkdir(directory, { recursive: true });
-			const serialize = entry.config.serialize ?? defaultSerialize;
 			for (const row of entry.table.getAllValid()) {
-				const result = await serialize(row);
-				await writeFile(join(directory, result.filename), result.content);
+				const { filename, content } = await rowToMarkdownFile(row, entry.config);
+				await writeMarkdownFile(directory, filename, content);
 				written++;
 			}
 		}
@@ -376,11 +421,13 @@ export function attachMarkdownMaterializer(
 				let written = 0;
 				for (const entry of registered.values()) {
 					const directory = join(baseDir, entry.config.dir ?? entry.table.name);
-					const serialize = entry.config.serialize ?? defaultSerialize;
 					await mkdir(directory, { recursive: true });
 					for (const row of entry.table.getAllValid()) {
-						const result = await serialize(row);
-						await writeFile(join(directory, result.filename), result.content);
+						const { filename, content } = await rowToMarkdownFile(
+							row,
+							entry.config,
+						);
+						await writeMarkdownFile(directory, filename, content);
 						written++;
 					}
 				}

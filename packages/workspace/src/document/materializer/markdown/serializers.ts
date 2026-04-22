@@ -1,6 +1,6 @@
 import slugify from '@sindresorhus/slugify';
 import filenamify from 'filenamify';
-import { type SerializeResult, toMarkdown } from './markdown.js';
+import { assembleMarkdown, type SerializeResult } from './markdown.js';
 
 /** Max slug length before the ID suffix. */
 const MAX_SLUG_LENGTH = 50;
@@ -47,7 +47,7 @@ export function toSlugFilename(
 /**
  * Create a serializer that uses a row field to generate `{slug}-{id}.md` filenames.
  * All row fields are written to frontmatter.
- * @remarks Produces markdown output via toMarkdown() internally.
+ * @remarks Produces markdown output via assembleMarkdown() internally.
  */
 export function slugFilename(
 	fieldName: string,
@@ -59,7 +59,7 @@ export function slugFilename(
 				typeof titleValue === 'string' ? titleValue : undefined,
 				String(row.id),
 			),
-			content: toMarkdown({ ...row }),
+			content: assembleMarkdown({ ...row }),
 		};
 	};
 }
@@ -68,7 +68,7 @@ export function slugFilename(
  * Create a serializer that moves one field into the markdown body and keeps the
  * remaining row fields in frontmatter.
  *
- * @remarks Produces markdown output via toMarkdown() internally.
+ * @remarks Produces markdown output via assembleMarkdown() internally.
  */
 export function bodyField(
 	fieldName: string,
@@ -78,7 +78,7 @@ export function bodyField(
 
 		return {
 			filename: toIdFilename(String(row.id)),
-			content: toMarkdown(
+			content: assembleMarkdown(
 				frontmatter,
 				bodyValue !== undefined && bodyValue !== null
 					? String(bodyValue)

@@ -13,7 +13,7 @@ import { convertEpicenterLinksToWikilinks } from '../../../links.js';
  * (missing key); null values are preserved (YAML `null`) so nullable
  * fields survive a future round-trip.
  */
-export function toMarkdown(
+export function assembleMarkdown(
 	frontmatter: Record<string, unknown>,
 	body?: string,
 ): string {

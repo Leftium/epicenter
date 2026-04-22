@@ -65,12 +65,17 @@ function createTestDb(): TestDb {
 	};
 }
 
+type AttachedTables = ReturnType<
+	typeof attachTables<typeof tableDefinitions>
+>;
+type Materializer = ReturnType<typeof attachSqliteMaterializer>;
+type TableRegistration = {
+	table: Parameters<Materializer['table']>[0];
+	config?: Parameters<Materializer['table']>[1];
+};
+
 type SetupOptions = {
-	tables?: Array<{
-		name: keyof typeof tableDefinitions;
-		// biome-ignore lint/suspicious/noExplicitAny: test helper — config narrowed per call site
-		config?: { fts?: any; serialize?: (value: unknown) => unknown };
-	}>;
+	tables?: (t: AttachedTables) => TableRegistration[];
 	debounceMs?: number;
 };
 
@@ -86,13 +91,11 @@ function setup(options: SetupOptions = {}) {
 			debounceMs: options.debounceMs,
 		});
 
-		const tablesToRegister = options.tables ?? [
-			{ name: 'posts' },
-			{ name: 'notes' },
-		];
-		for (const tableOpt of tablesToRegister) {
-			// biome-ignore lint/suspicious/noExplicitAny: test helper indexes by string name
-			materializer.table(tables[tableOpt.name] as any, tableOpt.config);
+		const registrations =
+			options.tables?.(tables) ??
+			([{ table: tables.posts }, { table: tables.notes }] as TableRegistration[]);
+		for (const { table, config } of registrations) {
+			materializer.table(table, config);
 		}
 
 		return {
@@ -236,7 +239,7 @@ describe('attachSqliteMaterializer', () => {
 		});
 
 		test('mirrors only specified tables when tables option is provided', async () => {
-			const testSetup = setup({ tables: [{ name: 'posts' }] });
+			const testSetup = setup({ tables: (t) => [{ table: t.posts }] });
 
 			try {
 				testSetup.workspace.tables.posts.set({
@@ -522,9 +525,9 @@ describe('attachSqliteMaterializer', () => {
 		if (hasFts5) {
 			test('search returns ranked results with snippets when fts is configured', async () => {
 				const testSetup = setup({
-					tables: [
-						{ name: 'posts', config: { fts: ['title'] } },
-						{ name: 'notes' },
+					tables: (t) => [
+						{ table: t.posts, config: { fts: ['title'] } },
+						{ table: t.notes },
 					],
 				});
 

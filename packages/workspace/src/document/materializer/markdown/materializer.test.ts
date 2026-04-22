@@ -73,13 +73,15 @@ async function listTestDir(relativePath: string) {
 	return readdir(join(TEST_DIR, relativePath));
 }
 
+type AttachedTables = ReturnType<typeof attachTables<typeof tableDefinitions>>;
+type Materializer = ReturnType<typeof attachMarkdownMaterializer>;
+type TableRegistration = {
+	table: Parameters<Materializer['table']>[0];
+	config?: Parameters<Materializer['table']>[1];
+};
+
 function setup(options?: {
-	tables?: Array<{
-		name: keyof typeof tableDefinitions;
-		config?: Parameters<
-			ReturnType<typeof attachMarkdownMaterializer>['table']
-		>[1];
-	}>;
+	tables?: (t: AttachedTables) => TableRegistration[];
 }) {
 	const factory = defineDocument((id: string) => {
 		const ydoc = new Y.Doc({ guid: id });
@@ -89,13 +91,11 @@ function setup(options?: {
 			dir: TEST_DIR,
 		});
 
-		const tablesToRegister = options?.tables ?? [
-			{ name: 'posts' },
-			{ name: 'notes' },
-		];
-		for (const { name, config } of tablesToRegister) {
-			// biome-ignore lint/suspicious/noExplicitAny: test helper indexes by string name
-			materializer.table(tables[name] as any, config);
+		const registrations =
+			options?.tables?.(tables) ??
+			([{ table: tables.posts }, { table: tables.notes }] as TableRegistration[]);
+		for (const { table, config } of registrations) {
+			materializer.table(table, config);
 		}
 
 		return {
@@ -119,7 +119,7 @@ function setup(options?: {
 
 describe('push', () => {
 	test('imports markdown files into workspace tables', async () => {
-		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
 		await workspace.whenReady;
 
 		await writeTestFile(
@@ -154,7 +154,7 @@ describe('push', () => {
 	});
 
 	test('skips non-.md files', async () => {
-		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
 		await workspace.whenReady;
 
 		await writeTestFile(
@@ -173,7 +173,7 @@ describe('push', () => {
 	});
 
 	test('skips files without valid frontmatter', async () => {
-		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
 		await workspace.whenReady;
 
 		await writeTestFile(
@@ -194,7 +194,7 @@ describe('push', () => {
 	});
 
 	test('silently skips tables whose directories do not exist', async () => {
-		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
 		await workspace.whenReady;
 
 		// Don't create the posts directory — it should not exist
@@ -209,9 +209,9 @@ describe('push', () => {
 
 	test('uses custom deserialize callback', async () => {
 		const { workspace, factory } = setup({
-			tables: [
+			tables: (t) => [
 				{
-					name: 'notes',
+					table: t.notes,
 					config: {
 						deserialize: (parsed) => ({
 							id: parsed.frontmatter.id as string,
@@ -244,7 +244,7 @@ describe('push', () => {
 
 	test('uses custom table directory', async () => {
 		const { workspace, factory } = setup({
-			tables: [{ name: 'posts', config: { dir: 'blog' } }],
+			tables: (t) => [{ table: t.posts, config: { dir: 'blog' } }],
 		});
 		await workspace.whenReady;
 
@@ -262,7 +262,7 @@ describe('push', () => {
 	});
 
 	test('overwrites existing rows (set is insert-or-replace)', async () => {
-		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
 		await workspace.whenReady;
 
 		// First import
@@ -331,7 +331,7 @@ describe('push', () => {
 
 describe('pull', () => {
 	test('writes all valid rows to disk', async () => {
-		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
 		await workspace.whenReady;
 
 		workspace.tables.posts.set({
@@ -362,7 +362,7 @@ describe('pull', () => {
 	});
 
 	test('creates table directory before writing', async () => {
-		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
 		await workspace.whenReady;
 
 		workspace.tables.posts.set({
@@ -382,9 +382,9 @@ describe('pull', () => {
 
 	test('uses custom serialize callback', async () => {
 		const { workspace, factory } = setup({
-			tables: [
+			tables: (t) => [
 				{
-					name: 'notes',
+					table: t.notes,
 					config: {
 						serialize: (row) => ({
 							filename: `${row.id}-custom.md`,
@@ -410,7 +410,7 @@ describe('pull', () => {
 
 	test('uses custom table directory', async () => {
 		const { workspace, factory } = setup({
-			tables: [{ name: 'posts', config: { dir: 'blog' } }],
+			tables: (t) => [{ table: t.posts, config: { dir: 'blog' } }],
 		});
 		await workspace.whenReady;
 
@@ -430,7 +430,7 @@ describe('pull', () => {
 	});
 
 	test('writes nothing when table is empty', async () => {
-		const { workspace, factory } = setup({ tables: [{ name: 'posts' }] });
+		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
 		await workspace.whenReady;
 
 		const result = await workspace.materializer.pull({});

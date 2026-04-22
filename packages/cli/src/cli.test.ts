@@ -1,13 +1,30 @@
 /**
  * CLI entry-point tests.
  *
- * Post-redesign surface (see `specs/20260421T155436-cli-scripting-first-redesign.md`):
- *   `auth`, `list`, `run`
- *
- * `list` and `run` land in Phases 3–4. Until then, only `auth` is registered.
+ * The binary surfaces three commands — `auth`, `list`, `run`. These tests
+ * assert registration via `--help` output so they stay decoupled from command
+ * semantics.
  */
 import { describe, expect, spyOn, test } from 'bun:test';
 import { createCLI } from './cli';
+
+function captureHelp(): Promise<string> {
+	const chunks: string[] = [];
+	const logSpy = spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+		chunks.push(args.map((a) => String(a)).join(' '));
+	});
+	const errSpy = spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+		chunks.push(args.map((a) => String(a)).join(' '));
+	});
+	return createCLI()
+		.run(['--help'])
+		.catch(() => {})
+		.finally(() => {
+			logSpy.mockRestore();
+			errSpy.mockRestore();
+		})
+		.then(() => chunks.join('\n'));
+}
 
 describe('createCLI', () => {
 	test('returns an object with a run method', () => {
@@ -29,16 +46,10 @@ describe('createCLI', () => {
 		errorSpy.mockRestore();
 	});
 
-	test('auth subcommand is registered', async () => {
-		const cli = createCLI();
-		const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
-
-		// `auth` without a subcommand should fail with yargs' demandCommand message,
-		// not an "unknown command" error — proving `auth` itself is registered.
-		await expect(cli.run(['auth'])).rejects.toThrow();
-
-		const errorOutput = errorSpy.mock.calls.flat().join(' ');
-		expect(errorOutput).not.toContain('Unknown argument');
-		errorSpy.mockRestore();
+	test('help output registers auth, list, and run', async () => {
+		const help = await captureHelp();
+		expect(help).toMatch(/\bauth\b/);
+		expect(help).toMatch(/\blist\b/);
+		expect(help).toMatch(/\brun\b/);
 	});
 });

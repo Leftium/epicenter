@@ -38,8 +38,8 @@ export function createAuthCommand(): CommandModule {
 							description: 'Server URL (e.g. https://api.epicenter.so)',
 							demandOption: true,
 						}),
-					handler: async (argv: any) => {
-						const serverUrl = argv.server as string;
+					handler: async (argv) => {
+						const serverUrl = String(argv.server);
 						const api = createAuthApi(serverUrl);
 						const codeData = await api.requestDeviceCode();
 
@@ -89,7 +89,7 @@ export function createAuthCommand(): CommandModule {
 						}
 						throw new Error('Device code expired — please run login again');
 					},
-				} as unknown as CommandModule)
+				} satisfies CommandModule)
 				.command({
 					command: 'logout',
 					describe: 'Log out from an Epicenter server',
@@ -99,9 +99,11 @@ export function createAuthCommand(): CommandModule {
 							description:
 								'Server URL to log out from (default: most recent session)',
 						}),
-					handler: async (argv: any) => {
-						const session = argv.server
-							? await sessions.load(argv.server)
+					handler: async (argv) => {
+						const server =
+							typeof argv.server === 'string' ? argv.server : undefined;
+						const session = server
+							? await sessions.load(server)
 							: await sessions.loadDefault();
 
 						if (!session) {
@@ -120,7 +122,7 @@ export function createAuthCommand(): CommandModule {
 						await sessions.clear(session.server);
 						console.log('✓ Logged out.');
 					},
-				} as unknown as CommandModule)
+				} satisfies CommandModule)
 				.command({
 					command: 'status',
 					describe: 'Show current authentication status',
@@ -129,9 +131,11 @@ export function createAuthCommand(): CommandModule {
 							type: 'string',
 							description: 'Server URL to check (default: most recent session)',
 						}),
-					handler: async (argv: any) => {
-						const session = argv.server
-							? await sessions.load(argv.server)
+					handler: async (argv) => {
+						const server =
+							typeof argv.server === 'string' ? argv.server : undefined;
+						const session = server
+							? await sessions.load(server)
 							: await sessions.loadDefault();
 
 						if (!session) {
@@ -164,7 +168,7 @@ export function createAuthCommand(): CommandModule {
 							);
 						}
 					},
-				} as unknown as CommandModule)
+				} satisfies CommandModule)
 				.demandCommand(1, 'Specify a subcommand: login, logout, or status'),
 		handler: () => {},
 	};

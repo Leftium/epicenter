@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Kv, Table, TableDefinitions } from '../../index.js';
+import type { Kv, Table } from '../../index.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import type { SerializeResult } from './markdown.js';
 import { toMarkdown } from './markdown.js';
@@ -23,7 +23,7 @@ import { parseMarkdownFile } from './parse-markdown-file.js';
  * @example
  * ```typescript
  * const markdown = createMarkdownMaterializer(
- *   { tables, definitions, whenReady },
+ *   { tables, kv, whenReady },
  *   { dir: './data' },
  * )
  *   .table('posts', { serialize: slugFilename('title') })
@@ -36,8 +36,6 @@ export function createMarkdownMaterializer<
 >(
 	ctx: {
 		tables: TTables;
-		/** Unused for markdown but accepted for API symmetry with the sqlite materializer. */
-		definitions?: TableDefinitions;
 		/** Optional KV helper — pass if `.kv()` will be called. */
 		// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv helpers
 		kv?: Kv<any>;

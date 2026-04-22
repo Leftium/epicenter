@@ -29,8 +29,7 @@ const session = createPersistedState({
 });
 
 export function openFuji() {
-	const id = 'epicenter.fuji';
-	const ydoc = new Y.Doc({ guid: id, gc: false });
+	const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
 
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(ydoc, fujiTables);
@@ -65,7 +64,9 @@ export function openFuji() {
 	}
 
 	return {
-		id,
+		get id() {
+			return ydoc.guid;
+		},
 		ydoc,
 		tables,
 		kv,

@@ -17,8 +17,7 @@ import { attachRecordingMarkdownFiles } from './recording-materializer';
 import { whisperingKv, whisperingTables } from './workspace';
 
 export function openWhispering() {
-	const id = 'whispering';
-	const ydoc = new Y.Doc({ guid: id, gc: false });
+	const ydoc = new Y.Doc({ guid: 'whispering', gc: false });
 
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(ydoc, whisperingTables);
@@ -33,7 +32,9 @@ export function openWhispering() {
 	});
 
 	return {
-		id,
+		get id() {
+			return ydoc.guid;
+		},
 		ydoc,
 		tables,
 		kv,

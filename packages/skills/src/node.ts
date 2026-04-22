@@ -279,7 +279,9 @@ export const skillsDocument = createDocumentFactory(
 		const actions = { ...readActions, ...nodeActions };
 
 		return {
-			id,
+			get id() {
+				return ydoc.guid;
+			},
 			ydoc,
 			tables,
 			kv,

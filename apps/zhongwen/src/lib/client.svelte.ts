@@ -19,8 +19,7 @@ import { session } from '$lib/auth';
 import { zhongwenKv, zhongwenTables } from '$lib/workspace';
 
 export function openZhongwen() {
-	const id = 'epicenter.zhongwen';
-	const ydoc = new Y.Doc({ guid: id, gc: false });
+	const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
 
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(ydoc, zhongwenTables);
@@ -44,7 +43,9 @@ export function openZhongwen() {
 	}
 
 	return {
-		id,
+		get id() {
+			return ydoc.guid;
+		},
 		ydoc,
 		tables,
 		kv,

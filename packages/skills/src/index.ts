@@ -81,7 +81,9 @@ export function openSkills() {
 	});
 
 	return {
-		id,
+		get id() {
+			return ydoc.guid;
+		},
 		ydoc,
 		tables,
 		kv,

@@ -27,8 +27,7 @@ const session = createPersistedState({
 });
 
 export function openHoneycrisp() {
-	const id = 'epicenter.honeycrisp';
-	const ydoc = new Y.Doc({ guid: id, gc: false });
+	const ydoc = new Y.Doc({ guid: 'epicenter.honeycrisp', gc: false });
 
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(ydoc, honeycrispTables);
@@ -61,7 +60,9 @@ export function openHoneycrisp() {
 	}
 
 	return {
-		id,
+		get id() {
+			return ydoc.guid;
+		},
 		ydoc,
 		tables,
 		kv,

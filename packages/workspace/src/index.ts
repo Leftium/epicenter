@@ -56,6 +56,22 @@ export type { MaybePromise } from './shared/types';
 export { ExtensionError } from './shared/errors';
 
 // ════════════════════════════════════════════════════════════════════════════
+// LOGGER
+// ════════════════════════════════════════════════════════════════════════════
+
+export {
+	composeSinks,
+	consoleSink,
+	createLogger,
+	type LogEvent,
+	type Logger,
+	type LogLevel,
+	type LogSink,
+	memorySink,
+	tapErr,
+} from './shared/logger/index.js';
+
+// ════════════════════════════════════════════════════════════════════════════
 // CORE TYPES
 // ════════════════════════════════════════════════════════════════════════════
 

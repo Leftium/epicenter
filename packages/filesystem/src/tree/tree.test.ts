@@ -15,16 +15,16 @@ import { attachTables } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import type { FileId } from '../ids.js';
 import { filesTable } from '../table.js';
-import { createFileTree } from './tree.js';
+import { attachFileTree } from './tree.js';
 
 function setup() {
 	const id = 'test';
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, { files: filesTable });
-	return createFileTree(tables.files);
+	return attachFileTree(tables.files);
 }
 
-describe('createFileTree', () => {
+describe('attachFileTree', () => {
 	describe('resolveId', () => {
 		test('root returns null', () => {
 			const tree = setup();

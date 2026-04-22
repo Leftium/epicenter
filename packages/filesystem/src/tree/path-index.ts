@@ -24,7 +24,7 @@ function snapFrom(row: FileRow): RowSnapshot {
  * Touch-only changes (size/updatedAt) are detected via a snapshot of
  * path-relevant fields and skipped entirely—O(1) per editing mutation.
  */
-export function createFileSystemIndex(filesTable: Table<FileRow>) {
+export function attachFileSystemIndex(filesTable: Table<FileRow>) {
 	/** "/docs/api.md" → FileId */
 	const pathToId = new Map<string, FileId>();
 	/** FileId → "/docs/api.md" (reverse lookup) */
@@ -480,4 +480,4 @@ export function createFileSystemIndex(filesTable: Table<FileRow>) {
 }
 
 /** Runtime indexes for O(1) path lookups (ephemeral, not stored in Yjs) */
-export type FileSystemIndex = ReturnType<typeof createFileSystemIndex>;
+export type FileSystemIndex = ReturnType<typeof attachFileSystemIndex>;

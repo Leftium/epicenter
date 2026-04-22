@@ -6,7 +6,7 @@ import type { FileId } from './ids.js';
 import { posixResolve } from './path.js';
 import type { FileRow } from './table.js';
 import { disambiguateNames } from './tree/naming.js';
-import { createFileTree, type FileTree } from './tree/tree.js';
+import { attachFileTree, type FileTree } from './tree/tree.js';
 
 /** Validate `fs` extends {@link IFileSystem} while preserving the full inferred type (avoids excess-property errors from `satisfies`). */
 function FileSystem<T extends IFileSystem>(fs: T): T {
@@ -39,13 +39,13 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  *   const ydoc = new Y.Doc({ guid: id });
  *   const files = attachTable(ydoc, 'files', filesTable);
  *   const contentDocs = createFileContentDocs({ ydoc });
- *   const fs = createYjsFileSystem(files, contentDocs);
+ *   const fs = attachYjsFileSystem(files, contentDocs);
  *   return { id, ydoc, files, contentDocs, fs, [Symbol.dispose]() { ydoc.destroy(); } };
  * });
  * const ws = app.open('app');
  * ```
  */
-export function createYjsFileSystem(
+export function attachYjsFileSystem(
 	filesTable: Table<FileRow>,
 	contentDocuments: FileContentDocs,
 	cwd: string = '/',
@@ -65,7 +65,7 @@ export function createYjsFileSystem(
 		handle.content.write(text);
 	}
 
-	const tree = createFileTree(filesTable);
+	const tree = attachFileTree(filesTable);
 
 	return FileSystem({
 		/** Reactive file-system indexes for path lookups and parent-child queries. */
@@ -382,5 +382,5 @@ export function createYjsFileSystem(
 	});
 }
 
-/** Inferred type of the virtual filesystem returned by {@link createYjsFileSystem}. */
-export type YjsFileSystem = ReturnType<typeof createYjsFileSystem>;
+/** Inferred type of the virtual filesystem returned by {@link attachYjsFileSystem}. */
+export type YjsFileSystem = ReturnType<typeof attachYjsFileSystem>;

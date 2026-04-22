@@ -14,7 +14,7 @@ import { attachTables } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
 import { createFileContentDocs } from './file-content-docs.js';
-import { createYjsFileSystem, type YjsFileSystem } from './file-system.js';
+import { attachYjsFileSystem, type YjsFileSystem } from './file-system.js';
 import { filesTable } from './table.js';
 
 function setup() {
@@ -26,7 +26,7 @@ function setup() {
 		workspaceId: ws.id,
 		filesTable: ws.tables.files,
 	});
-	const fs = createYjsFileSystem(ws.tables.files, contentDocs);
+	const fs = attachYjsFileSystem(ws.tables.files, contentDocs);
 	return { fs, ws, contentDocs };
 }
 

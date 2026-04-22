@@ -60,7 +60,7 @@
 		'Plugin system for custom extensions',
 	] as const;
 
-	const workspaceCode = `import { createSqliteIndex, createYjsFileSystem, filesTable } from '@epicenter/filesystem';
+	const workspaceCode = `import { createSqliteIndex, attachYjsFileSystem, filesTable } from '@epicenter/filesystem';
 import { attachIndexedDb, attachTables, defineDocument } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
@@ -83,7 +83,7 @@ export const workspaceDoc = defineDocument('opensidian', () => {
 });
 
 export const workspace = workspaceDoc.open();
-export const fs = createYjsFileSystem(workspace.tables.files, fileContentDocs);`;
+export const fs = attachYjsFileSystem(workspace.tables.files, fileContentDocs);`;
 
 	const codeAnnotations = [
 		{
@@ -112,7 +112,7 @@ export const fs = createYjsFileSystem(workspace.tables.files, fileContentDocs);`
 		},
 		{
 			id: 'filesystem',
-			line: 'createYjsFileSystem(workspace.tables.files, fileContentDocs)',
+			line: 'attachYjsFileSystem(workspace.tables.files, fileContentDocs)',
 			explanation:
 				'Wraps the raw table and document APIs into a familiar filesystem interface\u2014writeFile, mkdir, rm, mv.',
 		},

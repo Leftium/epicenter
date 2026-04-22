@@ -238,7 +238,7 @@ const opensidian = defineDocument((id: string) => {
 export const workspace = opensidian.open('opensidian');
 ```
 
-That workspace then feeds other middleware packages. `createYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToClientTools(workspace.actions)` from `@epicenter/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createAuth()` from `@epicenter/svelte` coordinates auth with encryption and sync reconnects.
+That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToClientTools(workspace.actions)` from `@epicenter/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createAuth()` from `@epicenter/svelte` coordinates auth with encryption and sync reconnects.
 
 ```text
 defineDocument(builder).open('opensidian')
@@ -249,7 +249,7 @@ defineDocument(builder).open('opensidian')
     ├─ createSqliteIndex(...)
     └─ actions
     │
-    ├─ createYjsFileSystem(...)       -> editor + terminal + file tree
+    ├─ attachYjsFileSystem(...)       -> editor + terminal + file tree
     ├─ actionsToClientTools(...)      -> local AI tool execution
     ├─ toToolDefinitions(...)         -> wire payload for chat requests
     ├─ defineDocument(skillsBuilder)  -> shared skills data source

@@ -5,7 +5,7 @@ import { generateFileId } from '../ids.js';
 import { posixResolve } from '../path.js';
 import type { FileRow } from '../table.js';
 import { assertUniqueName, validateName } from './naming.js';
-import { createFileSystemIndex } from './path-index.js';
+import { attachFileSystemIndex } from './path-index.js';
 
 /**
  * Create metadata tree operations for a POSIX-like virtual filesystem.
@@ -14,8 +14,8 @@ import { createFileSystemIndex } from './path-index.js';
  * All methods work with absolute paths (never sees `cwd`).
  * Has no knowledge of file content — only structure and metadata.
  */
-export function createFileTree(filesTable: Table<FileRow>) {
-	const index = createFileSystemIndex(filesTable);
+export function attachFileTree(filesTable: Table<FileRow>) {
+	const index = attachFileSystemIndex(filesTable);
 
 	return {
 		/** Reactive file-system indexes for path lookups and parent-child queries. */
@@ -194,5 +194,5 @@ export function createFileTree(filesTable: Table<FileRow>) {
 	};
 }
 
-/** Inferred type of the file tree returned by {@link createFileTree}. */
-export type FileTree = ReturnType<typeof createFileTree>;
+/** Inferred type of the file tree returned by {@link attachFileTree}. */
+export type FileTree = ReturnType<typeof attachFileTree>;

@@ -20,7 +20,7 @@ import {
 import {
 	createFileContentDocs,
 	createSqliteIndex,
-	createYjsFileSystem,
+	attachYjsFileSystem,
 } from '@epicenter/filesystem';
 import { skillsDocument } from '@epicenter/skills';
 import { createPersistedState } from '@epicenter/svelte';
@@ -58,7 +58,7 @@ const opensidianFactory = defineDocument(
 			attach: (doc) => attachIndexedDb(doc),
 		});
 		const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
-		const fs = createYjsFileSystem(tables.files, fileContentDocs);
+		const fs = attachYjsFileSystem(tables.files, fileContentDocs);
 		const bash = new Bash({ fs, cwd: '/' });
 
 		const actions = {

@@ -18,11 +18,11 @@ This package has a peer dependency on `yjs`.
 
 ## Quick usage
 
-The basic setup is short: attach the `files` table to a Y.Doc, then hand the table helper and content document collection to `createYjsFileSystem`.
+The basic setup is short: attach the `files` table to a Y.Doc, then hand the table helper and content document collection to `attachYjsFileSystem`.
 
 ```typescript
 import { attachTables, defineDocument } from '@epicenter/workspace';
-import { createFileContentDocs, createYjsFileSystem, filesTable } from '@epicenter/filesystem';
+import { createFileContentDocs, attachYjsFileSystem, filesTable } from '@epicenter/filesystem';
 import * as Y from 'yjs';
 
 const factory = defineDocument((id: string) => {
@@ -32,7 +32,7 @@ const factory = defineDocument((id: string) => {
     workspaceId: id,
     filesTable: tables.files,
   });
-  const fs = createYjsFileSystem(tables.files, contentDocs);
+  const fs = attachYjsFileSystem(tables.files, contentDocs);
   return { ydoc, tables, fs, [Symbol.dispose]() { ydoc.destroy(); } };
 });
 
@@ -47,7 +47,7 @@ const content = await ws.fs.readFile('/docs/greeting.txt');
 const stats = await ws.fs.stat('/docs/greeting.txt');
 ```
 
-The object returned by `createYjsFileSystem` matches the `just-bash` filesystem interface, with a few extra helpers layered on top.
+The object returned by `attachYjsFileSystem` matches the `just-bash` filesystem interface, with a few extra helpers layered on top.
 
 ## How the model works
 
@@ -68,16 +68,16 @@ It feels like a filesystem because the package keeps resolving paths, parents, a
 
 Main exports from `src/index.ts`:
 
-- `createYjsFileSystem()` and `YjsFileSystem` — the POSIX-like filesystem orchestrator
+- `attachYjsFileSystem()` and `YjsFileSystem` — the POSIX-like filesystem orchestrator
 - `filesTable`, `FileRow`, and `ColumnDefinition` — the shared metadata table and related types
-- `createFileTree()` and `createFileSystemIndex()` — path/index helpers for the metadata layer
+- `attachFileTree()` and `attachFileSystemIndex()` — path/index helpers for the metadata layer
 - `FS_ERRORS` and `FsErrorCode` — filesystem-style error helpers
 - `posixResolve()` — path normalization for slash-separated paths
 - Markdown helpers like `parseFrontmatter()`, `serializeMarkdownWithFrontmatter()`, and `serializeXmlFragmentToMarkdown()`
 - Link helpers like `convertWikilinksToInternalLinks()` and `makeInternalHref()`
 - `createSqliteIndex()` — optional SQLite-backed indexing for search results
 
-If you only need the filesystem abstraction, start with `createYjsFileSystem()` and `filesTable`. The rest supports indexing, markdown, and tree-level operations.
+If you only need the filesystem abstraction, start with `attachYjsFileSystem()` and `filesTable`. The rest supports indexing, markdown, and tree-level operations.
 
 ## POSIX-style behavior
 

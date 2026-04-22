@@ -15,7 +15,7 @@ import { attachTables } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
 import { createFileContentDocs } from '../file-content-docs.js';
-import { createYjsFileSystem } from '../file-system.js';
+import { attachYjsFileSystem } from '../file-system.js';
 import { filesTable } from '../table.js';
 import {
 	parseFrontmatter,
@@ -163,7 +163,7 @@ describe('markdown integration with YjsFileSystem', () => {
 			workspaceId: ws.id,
 			filesTable: ws.tables.files,
 		});
-		return createYjsFileSystem(ws.tables.files, contentDocs);
+		return attachYjsFileSystem(ws.tables.files, contentDocs);
 	}
 
 	test('write and read .md file with front matter', async () => {

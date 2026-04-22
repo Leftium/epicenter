@@ -188,16 +188,16 @@ export function attachYjsFileSystem(
 				if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 			}
 
+			let justCreated = false;
 			if (!id) {
 				const { parentId, name } = tree.parsePath(abs);
 				id = tree.create({ name, parentId, type: 'file', size });
+				justCreated = true;
 			}
 
-			{
-				await using handle = await contentDocuments.load(id);
-				handle.content.write(textData);
-			}
-			tree.touch(id, size);
+			await using handle = await contentDocuments.load(id);
+			handle.content.write(textData);
+			if (!justCreated) tree.touch(id, size);
 		},
 
 		async appendFile(path, data, _options?) {
@@ -302,11 +302,8 @@ export function attachYjsFileSystem(
 					);
 				}
 			} else {
-				let srcText: string;
-				{
-					await using handle = await contentDocuments.load(srcId);
-					srcText = handle.content.read();
-				}
+				await using handle = await contentDocuments.load(srcId);
+				const srcText = handle.content.read();
 				await this.writeFile(resolvedDest, srcText);
 			}
 		},

@@ -87,7 +87,7 @@ export function attachMarkdownMaterializer(
 	},
 ) {
 	const registered = new Map<string, RegisteredTable>();
-	const registeredKv = { entry: undefined as RegisteredKv | undefined };
+	let registeredKv: RegisteredKv | undefined;
 	let isDisposed = false;
 	let hasInitialized = false;
 
@@ -182,7 +182,7 @@ export function attachMarkdownMaterializer(
 		if (isDisposed) return;
 		isDisposed = true;
 		for (const entry of registered.values()) entry.unsubscribe?.();
-		registeredKv.entry?.unsubscribe?.();
+		registeredKv?.unsubscribe?.();
 	}
 
 	ydoc.once('destroy', dispose);
@@ -203,11 +203,8 @@ export function attachMarkdownMaterializer(
 			entry.unsubscribe = await materializeTable(baseDir, entry);
 		}
 
-		if (registeredKv.entry && !isDisposed) {
-			registeredKv.entry.unsubscribe = await materializeKv(
-				baseDir,
-				registeredKv.entry,
-			);
+		if (registeredKv && !isDisposed) {
+			registeredKv.unsubscribe = await materializeKv(baseDir, registeredKv);
 		}
 
 		hasInitialized = true;
@@ -336,7 +333,7 @@ export function attachMarkdownMaterializer(
 				throw new Error(
 					'attachMarkdownMaterializer: .kv() called after initial flush. All .kv() registrations must happen synchronously after construction.',
 				);
-			registeredKv.entry = {
+			registeredKv = {
 				kv: kv as AnyKv,
 				config: config ?? {},
 			};

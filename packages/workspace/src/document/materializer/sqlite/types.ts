@@ -62,29 +62,6 @@ export type MirrorStatement = {
 };
 
 /**
- * Per-table configuration for the SQLite materializer builder.
- *
- * Passed to `.table(name, config?)` to customize FTS5 indexing
- * and value serialization for individual tables.
- *
- * @example
- * ```typescript
- * attachSqliteMaterializer(ctx, { db: new Database(':memory:') })
- *   .table('posts', {
- *     fts: ['title', 'body'],
-	 *     serialize: (value) => customTransform(value),
- *   })
- * ```
- */
-export type TableMaterializerConfig = {
-	/** Column names to include in FTS5 full-text search index. */
-	fts?: string[];
-
-	/** Optional per-column value serializer override. */
-	serialize?: (value: unknown) => unknown;
-};
-
-/**
  * Optional arguments for FTS5 searches.
  *
  * Use this when you want to cap result count or choose which indexed column is

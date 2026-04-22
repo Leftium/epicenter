@@ -5,5 +5,4 @@ export type {
 	MirrorStatement,
 	SearchOptions,
 	SearchResult,
-	TableMaterializerConfig,
-	} from './types.js';
+} from './types.js';

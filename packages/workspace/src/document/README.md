@@ -16,7 +16,7 @@ The canonical primitive is `defineDocument(builder)`. You own the `Y.Doc` constr
 │  ↓ .open(id) → your bundle                                 │
 ├────────────────────────────────────────────────────────────┤
 │  attachTable / attachTables / attachKv                     │ ← Data attachments
-│  attachEncryption / attachEncryptedTables / attachEncryptedKv
+│  attachEncryption → .attachTable / .attachTables / .attachKv
 │  attachAwareness                                           │ ← Presence
 │  attachIndexedDb / attachSqlite / attachBroadcastChannel   │ ← Persistence + cross-tab
 │  attachSync                                                │ ← WebSocket sync
@@ -31,8 +31,10 @@ The canonical primitive is `defineDocument(builder)`. You own the `Y.Doc` constr
 Three prefixes, each with a consistent meaning:
 
 - **`define*`** is pure — no Y.Doc, no side effects. Schemas, KV definitions, action factories, document factories.
-- **`attach*`** binds something to an existing `Y.Doc`. Returns a typed handle. Side effects live here.
-- **`create*`** instantiates a helper from already-attached pieces (`attachSqliteMaterializer`, `createFileContentDocs`, etc.).
+- **`attach*`** binds a capability to an existing `Y.Doc` (or, in one documented cross-package case, to a sibling attachment). Side-effectful — registers observers or destroy listeners at call time. Returns a typed handle.
+- **`create*`** is pure construction — no listeners, no subscriptions at call time. Two flavors: slot-definition builders (`createTable`, `createKv`, `createAwareness`) that pair with an `attach*` sibling, and factory-of-factories (`createFileContentDocs` in `@epicenter/filesystem`) where the returned handle attaches later.
+
+See `.agents/skills/attach-primitive/SKILL.md` for the full contract (shape, invariants, barrier naming).
 
 ```typescript
 import * as Y from 'yjs';
@@ -66,18 +68,16 @@ The builder closure is where you wire everything. Because you own the return sha
 
 ### Encryption (client-side E2E)
 
+The encryption coordinator owns sibling attachments — `attachTable` / `attachTables` / `attachKv` are methods on it, not top-level exports.
+
 ```typescript
-import {
-  attachEncryption,
-  attachEncryptedTables,
-  attachEncryptedKv,
-} from '@epicenter/workspace';
+import { attachEncryption } from '@epicenter/workspace';
 
 const factory = defineDocument((id) => {
   const ydoc = new Y.Doc({ guid: id });
   const encryption = attachEncryption(ydoc);
-  const tables = attachEncryptedTables(ydoc, encryption, myTables);
-  const kv = attachEncryptedKv(ydoc, encryption, myKv);
+  const tables = encryption.attachTables(ydoc, myTables);
+  const kv = encryption.attachKv(ydoc, myKv);
   return { id, ydoc, tables, kv, encryption, [Symbol.dispose]() { ydoc.destroy(); } };
 });
 ```

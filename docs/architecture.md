@@ -131,11 +131,16 @@ Local state exists first, then optional durability, then optional network coordi
 The builder runs synchronously, but attachments load asynchronously. Conventionally the bundle exposes a `whenReady` promise — usually `idb.whenLoaded` — so callers can await full local availability:
 
 ```ts
+// Reactive callers (Svelte $effect, {#await}) use sync open() and gate on whenReady.
 const workspace = app.open('example.app');
 await workspace.whenReady;
+
+// Imperative callers collapse the two steps into one — load() bakes the await in
+// and releases the refcount correctly if whenReady rejects.
+const workspace = await app.load('example.app');
 ```
 
-That promise is the line between construction and full availability. Create now, await later.
+That promise is the line between construction and full availability. Create now, await later — or use `load()` to do both at once.
 
 ## Disposal cascades from `ydoc.destroy()`
 Teardown runs through Yjs itself. Every `attach*` function registers `ydoc.once('destroy')` internally, so when the builder's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment tears down in parallel. Each attachment exposes a `whenDisposed` promise that resolves after its real cleanup completes (IDB awaits `db.close()`, sync awaits the supervisor + `onclose`), and the bundle aggregates them:

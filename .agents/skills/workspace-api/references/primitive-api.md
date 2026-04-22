@@ -60,7 +60,7 @@ Each helper takes a `Y.Doc` and registers cleanup on `ydoc.on('destroy')`. Each 
 | `attachSync(ydoc, { url, getToken?, waitFor?, awareness? })` | `{ whenConnected, status, onStatusChange, reconnect, disposed }` |
 | `attachRichText(ydoc)` | `RichTextAttachment` — `{ read, write, binding: Y.XmlFragment }` |
 | `attachPlainText(ydoc)` | `PlainTextAttachment` — `{ read, write, binding: Y.Text }` |
-| `attachTable(ydoc, def)` | Typed row helper over `Y.Map` |
+| `attachTable(ydoc, name, def)` | Typed row helper over `Y.Map` |
 | `attachKv(ydoc, defs)` | Typed KV helper |
 | `attachAwareness(ydoc, defs)` | Typed awareness helper |
 
@@ -70,30 +70,30 @@ Each helper takes a `Y.Doc` and registers cleanup on `ydoc.on('destroy')`. Each 
 
 ## Encrypted Variants (from `@epicenter/workspace`)
 
-For workspaces that need at-rest encryption, the encrypted primitives live in `@epicenter/workspace`:
+For workspaces that need at-rest encryption, the coordinator owns the sibling attachments as methods — there are no top-level `attachEncryptedX` exports.
 
 | Helper | Purpose |
 |---|---|
-| `attachEncryption(ydoc)` | Per-ydoc encryption coordinator. Returns `{ applyKeys, register, whenDisposed }`. |
-| `attachEncryptedTable(ydoc, encryption, name, def)` | Singular encrypted table; self-registers with the coordinator. |
-| `attachEncryptedTables(ydoc, encryption, defs)` | Batch sugar over `attachEncryptedTable`. |
-| `attachEncryptedKv(ydoc, encryption, defs)` | Encrypted KV singleton. |
+| `attachEncryption(ydoc)` | Per-ydoc encryption coordinator. Returns `{ applyKeys, register, attachTable, attachTables, attachKv, whenDisposed }`. |
+| `encryption.attachTable(ydoc, name, def)` | Singular encrypted table; self-registers with the coordinator. |
+| `encryption.attachTables(ydoc, defs)` | Batch sugar over `encryption.attachTable`. |
+| `encryption.attachKv(ydoc, defs)` | Encrypted KV singleton. |
 
 Standard composition:
 
 ```ts
 const ydoc       = new Y.Doc({ guid: id, gc: false });
 const encryption = attachEncryption(ydoc);
-const tables     = attachEncryptedTables(ydoc, encryption, myTables);
-const kv         = attachEncryptedKv(ydoc, encryption, myKv);
+const tables     = encryption.attachTables(ydoc, myTables);
+const kv         = encryption.attachKv(ydoc, myKv);
 
 // Later, after login:
 encryption.applyKeys(session.encryptionKeys);
 ```
 
-Encryption is opt-in per slot — the verb carries the intent. `attachTable` (plaintext) and `attachEncryptedTable` are both available; pick one per slot.
+Encryption is opt-in per slot — the coordinator carries the intent. Plaintext `attachTable(ydoc, name, def)` (top-level) and encrypted `encryption.attachTable(ydoc, name, def)` (method) are both available; pick one per slot.
 
-> **Never mix plaintext and encrypted wrappers on the same slot name.** Yjs returns the same underlying `Y.Array` to `attachTable(ydoc, 'posts', ...)` and `attachEncryptedTable(ydoc, enc, 'posts', ...)` because `ydoc.getArray('table:posts')` is idempotent. If both run, the plaintext wrapper writes plaintext into the same yarray the encrypted wrapper thinks it owns — a silent data-at-rest leak. The framework does not catch this; the grep-able verb (`attachEncrypted*`) is the defense. One slot name, one variant, one intent.
+> **Never mix plaintext and encrypted wrappers on the same slot name.** Yjs returns the same underlying `Y.Array` to `attachTable(ydoc, 'posts', ...)` and `encryption.attachTable(ydoc, 'posts', ...)` because `ydoc.getArray('table:posts')` is idempotent. If both run, the plaintext wrapper writes plaintext into the same yarray the encrypted wrapper thinks it owns — a silent data-at-rest leak. The framework does not catch this; the grep-able call-site shape (`encryption.attach*` vs top-level `attach*`) is the defense. One slot name, one variant, one intent.
 
 IDB / broadcast / sync / sqlite transitively see already-encrypted bytes after `applyKeys` runs — the Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
 
@@ -182,6 +182,32 @@ Component owns the handle; the cache owns identity and the grace-period timer:
 
 Two tabs editing the same entry reconcile at the Yjs layer (IndexedDB + sync). The `defineDocument` cache dedupes in-process handles to the same `entryId`.
 
+### `open(id)` vs `load(id)`
+
+Factories expose two entry points. Pick by caller shape:
+
+| API | Returns | Use when |
+|---|---|---|
+| `factory.open(id)` | `DocumentHandle<T>` (sync) | Reactive UI — render gates on `handle.whenReady` via `{#await}` or `$effect`. |
+| `factory.load(id)` | `Promise<DocumentHandle<T>>` | Imperative code — actions, CLI, tests. You need content available immediately on the next line. |
+
+`load(id)` is `open(id)` + `await handle.whenReady` with correct refcount release if readiness rejects. It exists because the two-step dance is a footgun — forgetting the await silently returns empty content.
+
+```typescript
+// Imperative: read/write from an action handler, CLI, or test.
+async function readInstructions(id: SkillId): Promise<string> {
+  await using h = await instructionsDocs.load(id);
+  return h.instructions.read();
+  // `await using` disposes h at scope exit → refcount--, gcTime timer arms.
+}
+```
+
+Rules of thumb:
+
+- `.svelte` file, `$effect`, or `{#await}` — **`open()`**.
+- Any `async function` that reads or writes content — **`load()`**.
+- Never write `using h = factory.open(id); await h.whenReady` by hand. That's what `load()` is.
+
 ## GUID Convention
 
 Every content-doc `Y.Doc` GUID follows a **4-part dotted form**:
@@ -229,8 +255,8 @@ export function createFileContentDocs({
 ## Anti-Patterns
 
 ```typescript
-// ❌ Don't reach for ydoc for content operations
-const ytext = handle.content.ydoc.getText('content');
+// ❌ Don't reach through handle.ydoc to grab the raw Y type
+const fragment = handle.ydoc.getXmlFragment('content');
 
 // ✅ Use the attachment's API
 handle.content.read();

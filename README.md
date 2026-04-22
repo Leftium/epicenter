@@ -191,8 +191,7 @@ const blog = defineDocument((id: string) => {
   };
 });
 
-const workspace = blog.open('epicenter.blog');
-await workspace.whenReady;
+const workspace = await blog.load('epicenter.blog');
 workspace.tables.posts.set({ id: '1', title: 'Hello', published: false, _v: 1 });
 ```
 

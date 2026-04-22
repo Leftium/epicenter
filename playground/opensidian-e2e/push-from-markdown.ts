@@ -87,10 +87,9 @@ export async function pushFromMarkdown(ctx: {
 						? makeEpicenterLink('opensidian', 'files', match.id)
 						: null;
 				});
-				using handle = ctx.contentDocs.open(
+				await using handle = await ctx.contentDocs.load(
 					frontmatter.id as FileRow['id'],
 				);
-				await handle.whenReady;
 				handle.content.write(resolvedBody);
 			} catch (error) {
 				errors.push(`Failed to write content for ${frontmatter.id}: ${error}`);

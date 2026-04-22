@@ -42,7 +42,7 @@ epicenter run tabManager.savedTabs.create @payload.json
 cat payload.json | epicenter run tabManager.savedTabs.create
 ```
 
-`run` resolves the first path segment against the exports of `epicenter.config.ts`; everything after walks into the underlying bundle (the `DocumentHandle`'s prototype) until it hits a branded `defineQuery` / `defineMutation` node.
+`run` resolves the first path segment against the named exports of `epicenter.config.ts`; everything after walks into the underlying document handle until it hits a branded `defineQuery` / `defineMutation` node.
 
 ## What your `epicenter.config.ts` must export
 
@@ -58,6 +58,7 @@ import {
     defineQuery,
     defineMutation,
 } from '@epicenter/workspace';
+import Type from 'typebox';
 import { type } from 'arktype';
 
 const SavedTab = defineTable(type({ id: 'string', title: 'string', url: 'string', _v: '1' }));
@@ -69,13 +70,22 @@ const tabManagerFactory = defineDocument((id) => {
     return {
         ydoc,
         tables,
+
+        // Actions live beside the data they operate on.
+        // Only the operations you wrap with defineQuery/defineMutation
+        // show up in `epicenter list`.
         savedTabs: {
-            list: defineQuery({ handler: () => tables.savedTabs.getAllValid() }),
-            create: defineMutation({
-                input: /* TypeBox schema */ undefined as any,
-                handler: (input) => tables.savedTabs.upsert(input),
+            list: defineQuery({
+                description: 'List all saved tabs',
+                handler: () => tables.savedTabs.getAllValid(),
+            }),
+            delete: defineMutation({
+                input: Type.Object({ id: Type.String() }),
+                description: 'Delete a saved tab by id',
+                handler: ({ id }) => tables.savedTabs.delete(id),
             }),
         },
+
         [Symbol.dispose]() { ydoc.destroy(); },
     };
 });
@@ -83,6 +93,64 @@ const tabManagerFactory = defineDocument((id) => {
 // The opened handle is what the CLI and scripts consume.
 export const tabManager = tabManagerFactory.open('epicenter.tab-manager');
 ```
+
+## Exposing operations via CLI
+
+There is no auto-expose for `attachTable` / `attachKv` methods. If you want an operation available at `epicenter run`, wrap it in `defineQuery` or `defineMutation` inside your bundle. Expose only what you actually want available from the CLI — everything else stays as an in-process method on the Table/Kv helper, usable from `scripts/*.ts`.
+
+This is deliberate. Auto-exposing CRUD would put methods nobody asked for in your CLI tree, and the curated set would either be too narrow for some apps or too wide for others. Explicit wrapping keeps the CLI surface intentional and small.
+
+The convention is to group related actions into a nested object named after the domain they operate on:
+
+```ts
+return {
+    ydoc,
+    tables,
+
+    savedTabs: {                                       // domain
+        list: defineQuery({ ... }),                    // action
+        delete: defineMutation({ ... }),
+    },
+    bookmarks: {
+        list: defineQuery({ ... }),
+    },
+
+    // Cross-cutting actions live at the top
+    importBackup: defineMutation({ ... }),
+
+    [Symbol.dispose]() { ydoc.destroy(); },
+};
+```
+
+CLI paths: `tabManager.savedTabs.list`, `tabManager.bookmarks.list`, `tabManager.importBackup`.
+
+The framework doesn't mandate this shape — `iterateActions` walks the whole bundle and finds anything branded, no matter where it sits. Two other placements work if you prefer them:
+
+- A dedicated `actions:` slot — adds one path segment (`tabManager.actions.savedTabs.list`) in exchange for visual separation between data and operations.
+- Flat at the top — shortest path (`tabManager.listSavedTabs`) but action names have to encode the domain, and the top level becomes a grab-bag.
+
+Domain-nested is the recommended convention because it reads naturally and co-locates each action with the data it uses.
+
+## Naming your exports
+
+Every workspace handle is a **named export**. The export name becomes the first segment of every CLI dot-path. A config with a single workspace can use any name — `tabManager`, `tm`, `w` — but once you add a second workspace, the prefix disambiguates them, so a readable name ages better than a one-letter one.
+
+There is no default-export shorthand. Even a config with one workspace uses a named export. This keeps paths stable when you later add a second workspace: `tabManager.savedTabs.list` on day 1 is still `tabManager.savedTabs.list` on day 180 after you add a second workspace. A default-export shortcut would silently invalidate every script, doc, and CI job using the old path the moment you grew past one workspace.
+
+```ts
+// epicenter.config.ts
+export const tabManager = tabManagerFactory.open('epicenter.tab-manager');
+export const fuji       = fujiFactory.open('epicenter.fuji');
+// epicenter run tabManager.savedTabs.list
+// epicenter run fuji.entries.list
+```
+
+The GUID you pass to `.open()` and the export name serve **different purposes**:
+
+- `'epicenter.tab-manager'` — the Y.Doc's GUID. Controls persistence file, sync room, CRDT identity. Don't change this on a workspace with real data.
+- `tabManager` — the JS binding name. Controls the CLI path prefix. Safe to rename any time.
+
+You can rename the export freely without touching any persistent data. If you decide the prefix is too verbose six months in, rename `tabManager` → `tm` and every sync/persistence artifact stays exactly where it is.
 
 ## Scripting
 
@@ -95,7 +163,7 @@ import { writeFile } from 'node:fs/promises';
 
 try {
     await tabManager.whenReady;
-    const tabs = await tabManager.tables.savedTabs.list();
+    const tabs = tabManager.tables.savedTabs.getAllValid();
     await writeFile('./tabs.json', JSON.stringify(tabs, null, 2));
 } finally {
     tabManager.dispose();
@@ -106,6 +174,8 @@ try {
 bun run scripts/export-tabs.ts
 ```
 
+Scripts are strictly more powerful than the CLI: you get the full Table/Kv APIs, arbitrary control flow, and any npm dependency. Reach for the CLI for one-shot invocations of things you've deliberately exposed; reach for scripts for everything else.
+
 ## Public API
 
 ```ts
@@ -115,9 +185,10 @@ import {
     createSessionStore,     // device-code session persistence
     createAuthApi,          // typed Better Auth client
     EPICENTER_PATHS,        // home, authSessions, persistence(id)
+    attachSessionUnlock,    // apply stored encryption keys to an EncryptionAttachment
 } from '@epicenter/cli';
 ```
 
 ## Design doc
 
-See `specs/20260421T155436-cli-scripting-first-redesign.md` for the full rationale — why 11 commands collapsed to 3, the `DocumentBundle` / `DocumentHandle` contract, and the prototype-chain gotcha in `iterateActions`.
+See `specs/20260421T155436-cli-scripting-first-redesign.md` for the full rationale — why 11 commands collapsed to 3, the `DocumentBundle` / `DocumentHandle` contract, the design decision to not auto-expose table/kv methods, and the naming conventions.

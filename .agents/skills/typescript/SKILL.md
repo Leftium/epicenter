@@ -185,6 +185,74 @@ Load these on demand based on what you're working on:
   }
   ```
 
+## Identity Checks: Brand, Don't Probe
+
+When `isFoo(x)` is asking "is this the specific thing my factory returned," use a `Symbol` brand stamped at the factory, not a coincidental-property probe. Shape probes collide with look-alikes and rot as the type grows; the brand is unforgeable and survives normal object spreads.
+
+```typescript
+// Smell — three coincidental properties stand in for identity.
+// Any object that happens to have ydoc + dispose + Symbol.dispose passes.
+function isDocumentHandle(value: unknown): value is DocumentHandle<DocumentBundle> {
+	if (value == null || typeof value !== 'object') return false;
+	const record = value as Record<string | symbol, unknown>;
+	return (
+		'ydoc' in record &&
+		typeof record.dispose === 'function' &&
+		typeof record[Symbol.dispose] === 'function'
+	);
+}
+
+// Better — brand stamped by the factory, one check carries the intent.
+// Use `Symbol.for('<namespace>.<thing>')` — not `Symbol(...)` — so the brand
+// survives module duplication (see "Cross-package brands" below).
+export const DOCUMENT_HANDLE = Symbol.for('epicenter.document-handle');
+
+function isDocumentHandle(value: unknown): value is DocumentHandle<DocumentBundle> {
+	return (
+		value != null &&
+		typeof value === 'object' &&
+		DOCUMENT_HANDLE in value
+	);
+}
+```
+
+### Cross-package brands: `Symbol.for`, never `Symbol`
+
+Any brand that has to be recognized across a module boundary — CLI-walks-user-bundles, server-adapter-walks-workspace, AI-tool-bridge-walks-actions — must use the global symbol registry. Plain `Symbol('name')` creates a fresh reference per module evaluation; a monorepo that ends up with two instances of `@epicenter/workspace` (pnpm hoisting, dual CJS/ESM publish, bundler dedup miss, test vs. app resolution) gives each instance its own brand reference. `defineX` from copy A stamps symbol-A; `isX` from copy B checks for symbol-B; the identity check silently fails.
+
+`Symbol.for('epicenter.action')` talks to a process-global registry keyed by the string. Every call anywhere returns the same reference. The brand survives duplication.
+
+```ts
+// Wrong — local reference; fails under module duplication
+export const ACTION_BRAND = Symbol('epicenter.action');
+
+// Right — registry-resolved; always the same reference
+export const ACTION_BRAND = Symbol.for('epicenter.action');
+```
+
+Convention: namespace the key (`epicenter.action`, `epicenter.document-handle`), and centralize cross-package brand keys in one `brands.ts` per package so the duplication-safe identity set is visible and reviewable. The brand constant itself is an implementation detail — consumers import the `isX` guard, never the raw symbol.
+
+**When the brand can be local**: if the factory and the check both live in the same file and the type never crosses a package boundary, plain `Symbol()` is fine. The `Symbol.for` rule is specifically for cross-package identity.
+
+**This rule is narrow. It does NOT apply to:**
+
+- **Union narrowing via presence** — `'data' in result` / `'error' in result` on a wellcrafted `Result`, or `'error' in response` on an OAuth response union. The union *is* the contract; the presence check discriminates it.
+- **Discriminated union tags** — `switch (change.type)`. The tag is already a brand.
+- **Protocol / feature detection** — `Symbol.dispose in x`, `Symbol.asyncIterator in x`, `typeof x.then === 'function'`. These check *capability*, not identity.
+- **Single-or-function config** — `typeof baseURL === 'function'` to distinguish a value from a getter. A config API pattern, not a broken contract.
+- **Node error inspection** — `'code' in error` on `NodeJS.ErrnoException`. Upstream type genuinely requires it.
+
+**When a shape probe IS the smell, the fix is usually upstream.** If you're about to write `isFoo(x)` that shape-probes an internal factory's output, the factory should stamp a brand. If you're about to shape-probe user input or `JSON.parse` output, validate with arktype/typebox at the boundary — the probe accepts any object that happens to match; the schema rejects anything off-contract.
+
+### Casts: never `as any`, rarely `as unknown as T`
+
+`as any` in production code is a red flag: either the callee is over-narrow (fix the signature) or the caller is passing the wrong type (fix the call). `as unknown as T` double-casts that mask a real type error are the same smell in disguise — e.g., `generateId() as unknown as BrandedId` should be `as string as BrandedId`, or better, fix `generateId`'s return type.
+
+Legitimate cast exceptions:
+
+- **Generics ceremony in typed builders** — `Object.assign(handler, {...}) as unknown as Query<T, U>` when `Object.assign` erases the generic overload inference. Acceptable when the overload signature is the real contract; keep the cast at the innermost scope.
+- **Test fixtures casting mocks** — acceptable in `*.test.ts`, never leaked out of a test file.
+
 ## Boolean Naming: `is`/`has`/`can` Prefix
 
 Boolean properties, variables, and parameters MUST use a predicate prefix that reads as a yes/no question:

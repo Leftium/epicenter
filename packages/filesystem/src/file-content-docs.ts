@@ -56,8 +56,8 @@ export function createFileContentDocs({
 		return {
 			ydoc,
 			content: attachTimeline(ydoc),
+			persistence,
 			whenReady: persistence?.whenLoaded ?? Promise.resolve(),
-			whenDisposed: persistence?.whenDisposed ?? Promise.resolve(),
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},

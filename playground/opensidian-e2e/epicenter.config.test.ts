@@ -73,7 +73,8 @@ async function writeContent(
 	id: string,
 	text: string,
 ) {
-	await using handle = await contentDocs.load(id);
+	await using handle = contentDocs.open(id);
+	await handle.whenReady;
 	handle.content.write(text);
 }
 
@@ -81,7 +82,8 @@ async function readContent(
 	contentDocs: ReturnType<typeof createFileContentDocs>,
 	id: string,
 ) {
-	await using handle = await contentDocs.load(id);
+	await using handle = contentDocs.open(id);
+	await handle.whenReady;
 	return handle.content.read();
 }
 

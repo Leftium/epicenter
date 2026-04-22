@@ -166,7 +166,8 @@ export const skillsDocument = defineDocument(
 						}
 
 						{
-							await using h = await instructionsDocs.load(skillId);
+							await using h = instructionsDocs.open(skillId);
+							await h.whenReady;
 							h.instructions.write(instructions);
 						}
 
@@ -195,7 +196,8 @@ export const skillsDocument = defineDocument(
 										_v: 1,
 									});
 
-									await using h = await referenceDocs.load(refId);
+									await using h = referenceDocs.open(refId);
+									await h.whenReady;
 									h.content.write(refContent);
 								}),
 							);
@@ -223,7 +225,8 @@ export const skillsDocument = defineDocument(
 							const skillDir = join(dir, skill.name);
 							await mkdir(skillDir, { recursive: true });
 
-							await using h = await instructionsDocs.load(skill.id);
+							await using h = instructionsDocs.open(skill.id);
+							await h.whenReady;
 							const skillMd = serializeSkillMd(skill, h.instructions.read());
 							await writeFile(join(skillDir, 'SKILL.md'), skillMd, 'utf-8');
 
@@ -237,7 +240,8 @@ export const skillsDocument = defineDocument(
 
 								await Promise.all(
 									refs.map(async (ref) => {
-										await using h = await referenceDocs.load(ref.id);
+										await using h = referenceDocs.open(ref.id);
+										await h.whenReady;
 										const text = h.content.read();
 										await writeFile(join(refsDir, ref.path), text, 'utf-8');
 									}),

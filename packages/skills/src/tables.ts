@@ -32,7 +32,8 @@ import { type } from 'arktype';
  * // Activate (tier 2) — inject instructions into context
  * const skill = ws.tables.skills.find(s => s.name === 'writing-voice')
  * if (skill) {
- *   await using h = await instructionsDocs.load(skill.id)
+ *   await using h = instructionsDocs.open(skill.id)
+ *   await h.whenReady
  *   systemPrompt += h.instructions.read()
  * }
  *
@@ -73,7 +74,8 @@ export const skillsTable = defineTable(
  *
  * // Read reference content
  * for (const ref of refs) {
- *   await using h = await referenceDocs.load(ref.id)
+ *   await using h = referenceDocs.open(ref.id)
+ *   await h.whenReady
  *   const markdown = h.content.read()
  * }
  * ```

@@ -102,7 +102,8 @@ const opensidianFactory = defineDocument((id: string) => {
 	});
 
 	async function readContent(rowId: string): Promise<string | undefined> {
-		await using handle = await fileContentDocs.load(rowId);
+		await using handle = fileContentDocs.open(rowId);
+		await handle.whenReady;
 		return handle.content.read();
 	}
 

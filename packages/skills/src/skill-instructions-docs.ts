@@ -42,8 +42,8 @@ export function createSkillInstructionsDocs({
 		return {
 			ydoc,
 			instructions: attachPlainText(ydoc),
+			persistence,
 			whenReady: persistence?.whenLoaded ?? Promise.resolve(),
-			whenDisposed: persistence?.whenDisposed ?? Promise.resolve(),
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},

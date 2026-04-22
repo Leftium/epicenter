@@ -21,11 +21,25 @@ Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separat
 
 ### Client wiring
 
+A single `defineDocument` closure composes every attachment inline:
+
 ```ts
-createWorkspace(fujiWorkspace)
-  .withExtension('persistence', indexeddbPersistence)
-  .withExtension('sync', createSyncExtension({ url, getToken }))
+const factory = defineDocument((id: string) => {
+  const ydoc = new Y.Doc({ guid: id, gc: false });
+  const encryption = attachEncryption(ydoc);
+  const tables = attachEncryptedTables(ydoc, encryption, fujiTables);
+  const idb = attachIndexedDb(ydoc);
+  const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenLoaded });
+  return {
+    ydoc, tables, encryption, idb, sync,
+    whenReady: idb.whenLoaded,
+    [Symbol.dispose]() { ydoc.destroy(); },
+  };
+});
+export const workspace = factory.open('epicenter.fuji');
 ```
+
+See `apps/whispering/src/lib/client.ts` for the canonical production wiring (encryption + IndexedDB + BroadcastChannel + per-row content materialization).
 
 Encryption keys are applied on login. Local data is cleared on logout.
 

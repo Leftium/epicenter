@@ -14,18 +14,24 @@
  *
  * @example
  * ```typescript
- * const ws = createWorkspace({ id: 'app', tables: { files: filesTable } });
- * const fileContentDocs = createFileContentDocs({
- *   workspaceId: ws.id,
- *   filesTable: ws.tables.files,
+ * const factory = defineDocument((id: string) => {
+ *   const ydoc = new Y.Doc({ guid: id });
+ *   const tables = attachTables(ydoc, { files: filesTable });
+ *   const fileContentDocs = createFileContentDocs({
+ *     workspaceId: id,
+ *     filesTable: tables.files,
+ *   });
+ *   const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
+ *   return {
+ *     ydoc, tables, sqliteIndex,
+ *     whenReady: sqliteIndex.exports.whenReady,
+ *     [Symbol.dispose]() { sqliteIndex.dispose(); ydoc.destroy(); },
+ *   };
  * });
- * const workspace = ws.withExtension(
- *   'sqliteIndex',
- *   createSqliteIndex(fileContentDocs),
- * );
  *
+ * const workspace = factory.open('app');
  * await workspace.whenReady;
- * const results = workspace.extensions.sqliteIndex.search('meeting notes');
+ * const results = await workspace.sqliteIndex.exports.search('meeting notes');
  * ```
  *
  * @module
@@ -90,7 +96,7 @@ export type SearchResult = {
 	snippet: string;
 };
 
-/** Public exports surfaced on `client.extensions.sqliteIndex`. */
+/** Public exports surfaced on the document bundle's `sqliteIndex.exports`. */
 export type SqliteIndexExports = {
 	/** Raw libSQL client for arbitrary SQL queries. */
 	readonly client: Client;
@@ -105,7 +111,7 @@ export type SqliteIndexExports = {
 /** The raw extension factory return — exports plus lifecycle metadata. */
 export type SqliteIndex = {
 	exports: SqliteIndexExports;
-	/** Framework chain signal (same promise as `exports.whenReady`). */
+	/** Readiness signal (same promise as `exports.whenReady`). */
 	init: Promise<void>;
 	/** Dispose observers and close the SQLite database. */
 	dispose: () => void;
@@ -132,17 +138,19 @@ type SqliteIndexContext = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Create a SQLite index workspace extension.
- *
- * Returns a curried factory: call with options, then pass to
- * `.withExtension()`. The inner factory receives the
- * workspace context and returns the extension exports.
+ * Create a SQLite index. Returns a curried factory: call with options, then
+ * invoke the inner function with `{ tables }` inside a `defineDocument`
+ * builder to wire it into the bundle.
  *
  * @example
  * ```typescript
- * createWorkspace({ id: 'opensidian', tables: { files: filesTable } })
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sqliteIndex', createSqliteIndex(fileContentDocs));
+ * defineDocument((id: string) => {
+ *   const ydoc = new Y.Doc({ guid: id });
+ *   const tables = attachTables(ydoc, { files: filesTable });
+ *   attachIndexedDb(ydoc);
+ *   const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
+ *   return { ydoc, tables, sqliteIndex, [Symbol.dispose]() { ydoc.destroy(); } };
+ * });
  * ```
  */
 export function createSqliteIndex(

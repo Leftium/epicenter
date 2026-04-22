@@ -5,8 +5,9 @@
  * Reads auth credentials (token + encryption keys) from the CLI session store
  * at `~/.epicenter/auth/sessions.json`—run `epicenter auth login` first.
  *
- * Composes a DocumentBundle directly from attach primitives — no
- * `createWorkspace().withExtension(...)` chain.
+ * Composes a DocumentBundle by calling `attach*` primitives directly on a
+ * Y.Doc. For a `defineDocument((id) => { ... }).open(id)` variant, see
+ * `apps/whispering/src/lib/client.ts`.
  *
  * Usage:
  *   epicenter start playground/tab-manager-e2e --verbose

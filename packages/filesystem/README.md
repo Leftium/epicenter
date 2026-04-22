@@ -18,28 +18,36 @@ This package has a peer dependency on `yjs`.
 
 ## Quick usage
 
-The basic setup from the tests is short: define the `files` table in a workspace, then hand the table helper and document collection to `createYjsFileSystem`.
+The basic setup is short: attach the `files` table to a Y.Doc, then hand the table helper and content document collection to `createYjsFileSystem`.
 
 ```typescript
-import { createWorkspace } from '@epicenter/workspace';
-import { createYjsFileSystem, filesTable } from '@epicenter/filesystem';
+import { attachTables, defineDocument } from '@epicenter/workspace';
+import { createFileContentDocs, createYjsFileSystem, filesTable } from '@epicenter/filesystem';
+import * as Y from 'yjs';
 
-const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-const fs = createYjsFileSystem(
-  ws.tables.files,
-  ws.tables.files.documents.content,
-);
+const factory = defineDocument((id: string) => {
+  const ydoc = new Y.Doc({ guid: id });
+  const tables = attachTables(ydoc, { files: filesTable });
+  const contentDocs = createFileContentDocs({
+    workspaceId: id,
+    filesTable: tables.files,
+  });
+  const fs = createYjsFileSystem(tables.files, contentDocs);
+  return { ydoc, tables, fs, [Symbol.dispose]() { ydoc.destroy(); } };
+});
 
-await fs.mkdir('/docs');
-await fs.writeFile('/docs/hello.txt', 'Hello World');
-await fs.appendFile('/docs/hello.txt', ' again');
-await fs.mv('/docs/hello.txt', '/docs/greeting.txt');
+const ws = factory.open('test');
 
-const content = await fs.readFile('/docs/greeting.txt');
-const stats = await fs.stat('/docs/greeting.txt');
+await ws.fs.mkdir('/docs');
+await ws.fs.writeFile('/docs/hello.txt', 'Hello World');
+await ws.fs.appendFile('/docs/hello.txt', ' again');
+await ws.fs.mv('/docs/hello.txt', '/docs/greeting.txt');
+
+const content = await ws.fs.readFile('/docs/greeting.txt');
+const stats = await ws.fs.stat('/docs/greeting.txt');
 ```
 
-That is the actual shape used in `src/file-system.test.ts`. The object returned by `createYjsFileSystem` matches the `just-bash` filesystem interface, with a few extra helpers layered on top.
+The object returned by `createYjsFileSystem` matches the `just-bash` filesystem interface, with a few extra helpers layered on top.
 
 ## How the model works
 

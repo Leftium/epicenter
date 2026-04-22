@@ -150,11 +150,11 @@ Show how components stack:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  createWorkspace({ id, tables, kv })                        │  ← High-level
-│    Creates Y.Doc internally, binds tables/kv/capabilities   │
+│  defineDocument((id) => { ... }).open(id)                   │  ← High-level
+│    User-owned Y.Doc builder, composes attach* primitives    │
 ├─────────────────────────────────────────────────────────────┤
-│  createTables(ydoc, {...}) / createKv(ydoc, {...})          │  ← Mid-level
-│    Binds to existing Y.Doc                                  │
+│  attachTables(ydoc, {...}) / attachKv(ydoc, {...})          │  ← Mid-level
+│    Binds to an existing Y.Doc                               │
 ├─────────────────────────────────────────────────────────────┤
 │  defineTable() / defineKv()                                 │  ← Low-level
 │    Pure schema definitions                                  │

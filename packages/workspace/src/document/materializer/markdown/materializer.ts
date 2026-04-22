@@ -80,8 +80,9 @@ const defaultKvSerialize = (data: Record<string, unknown>): SerializeResult => (
  * Exposes three mutations:
  * - `push`    — disk → workspace. Import .md files as rows (additive).
  * - `pull`    — workspace → disk. Write every row as .md file (additive).
- * - `reindex` — workspace → disk, destructive. Clear output dir then rewrite
+ * - `rebuild` — workspace → disk, destructive. Clear output dir then rewrite
  *   all rows. Use for orphan cleanup or after `serialize` config changes.
+ *   Matches the sqlite materializer's `rebuild` for cross-materializer parity.
  *
  * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)` — callers
  * never call a dispose method; destroying the ydoc cascades.
@@ -295,9 +296,9 @@ export function attachMarkdownMaterializer(
 		return { imported, skipped, errors };
 	}
 
-	// ── Reindex (destructive: wipe output dir and re-materialize) ─
+	// ── Rebuild (destructive: wipe output dir and re-materialize) ─
 
-	async function reindexMarkdownFiles(
+	async function rebuildMarkdownFiles(
 		tableName?: string,
 	): Promise<{ deleted: number; written: number }> {
 		const baseDir = await resolveDir();
@@ -313,7 +314,7 @@ export function attachMarkdownMaterializer(
 
 		if (tableName !== undefined && targets.length === 0) {
 			throw new Error(
-				`Cannot reindex "${tableName}" — not in the materialized table set.`,
+				`Cannot rebuild "${tableName}" — not in the materialized table set.`,
 			);
 		}
 
@@ -386,12 +387,12 @@ export function attachMarkdownMaterializer(
 				return { written };
 			},
 		}),
-		reindex: defineMutation({
-			title: 'Reindex markdown files',
+		rebuild: defineMutation({
+			title: 'Rebuild markdown files',
 			description:
 				'Delete existing .md files in registered table directories and re-serialize all valid rows. Destructive — removes orphan files left by deleted rows or stale configs.',
 			input: Type.Object({ table: Type.Optional(Type.String()) }),
-			handler: ({ table }) => reindexMarkdownFiles(table),
+			handler: ({ table }) => rebuildMarkdownFiles(table),
 		}),
 	};
 

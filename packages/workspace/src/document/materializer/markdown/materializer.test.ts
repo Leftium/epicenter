@@ -467,10 +467,10 @@ describe('pull', () => {
 });
 
 // ============================================================================
-// reindex Tests
+// rebuild Tests
 // ============================================================================
 
-describe('reindex', () => {
+describe('rebuild', () => {
 	test('removes orphan files and rewrites existing valid rows', async () => {
 		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
 		await workspace.whenReady;
@@ -492,7 +492,7 @@ describe('reindex', () => {
 		expect(before).toContain('p1.md');
 		expect(before).toContain('orphan.md');
 
-		const result = await workspace.materializer.reindex({});
+		const result = await workspace.materializer.rebuild({});
 
 		expect(result.deleted).toBe(2); // p1.md + orphan.md both unlinked
 		expect(result.written).toBe(1); // only p1 re-written
@@ -504,7 +504,7 @@ describe('reindex', () => {
 		await factory.close('test.materializer');
 	});
 
-	test('reindex with table argument only touches that table', async () => {
+	test('rebuild with table argument only touches that table', async () => {
 		const { workspace, factory } = setup();
 		await workspace.whenReady;
 
@@ -521,7 +521,7 @@ describe('reindex', () => {
 			'---\nid: x\nbody: gone\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.reindex({ table: 'posts' });
+		const result = await workspace.materializer.rebuild({ table: 'posts' });
 
 		expect(result.deleted).toBe(1); // p1.md
 		expect(result.written).toBe(1); // p1 re-written
@@ -538,13 +538,13 @@ describe('reindex', () => {
 		await workspace.whenReady;
 
 		await expect(
-			workspace.materializer.reindex({ table: 'notAThing' }),
+			workspace.materializer.rebuild({ table: 'notAThing' }),
 		).rejects.toThrow(/not in the materialized table set/);
 
 		await factory.close('test.materializer');
 	});
 
-	test('is idempotent — reindex twice produces identical filesystem state', async () => {
+	test('is idempotent — rebuild twice produces identical filesystem state', async () => {
 		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
 		await workspace.whenReady;
 
@@ -561,19 +561,19 @@ describe('reindex', () => {
 			_v: 1,
 		});
 
-		const first = await workspace.materializer.reindex({});
+		const first = await workspace.materializer.rebuild({});
 		const stateAfterFirst = await listTestDir('posts');
 		const contentsAfterFirst = await Promise.all(
 			stateAfterFirst.map((f) => readTestFile(`posts/${f}`)),
 		);
 
-		const second = await workspace.materializer.reindex({});
+		const second = await workspace.materializer.rebuild({});
 		const stateAfterSecond = await listTestDir('posts');
 		const contentsAfterSecond = await Promise.all(
 			stateAfterSecond.map((f) => readTestFile(`posts/${f}`)),
 		);
 
-		// On the first reindex, written=2 and deleted=0 (no files existed).
+		// On the first rebuild, written=2 and deleted=0 (no files existed).
 		// On the second, deleted=2 (wipes the first's output) and written=2.
 		expect(first.written).toBe(2);
 		expect(second.written).toBe(2);

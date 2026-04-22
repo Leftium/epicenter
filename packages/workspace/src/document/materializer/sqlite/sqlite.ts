@@ -83,7 +83,12 @@ export function attachSqliteMaterializer(
 	let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 	let syncQueue = Promise.resolve();
 	let isDisposed = false;
-	let hasInitialized = false;
+	/**
+	 * Closed once `initialize()` commits (past `await waitFor`). Any `.table()`
+	 * call after this throws — the materializer is past the point where late
+	 * registrations would be picked up for DDL + full-load.
+	 */
+	let isRegistrationOpen = true;
 
 	// ── SQL primitives ───────────────────────────────────────────
 
@@ -262,6 +267,9 @@ export function attachSqliteMaterializer(
 		// Always yield a microtask so callers can finish synchronous setup
 		// (including writing initial rows) before the full-load runs.
 		await waitFor;
+		// Close the registration window: any further `.table()` call throws,
+		// even if init errors or disposes mid-flight below.
+		isRegistrationOpen = false;
 		if (isDisposed) return;
 
 		for (const [tableName, entry] of registered) {
@@ -293,8 +301,6 @@ export function attachSqliteMaterializer(
 				scheduleSync(tableName, changedIds);
 			});
 		}
-
-		hasInitialized = true;
 	}
 
 	const whenFlushed = initialize();
@@ -348,7 +354,7 @@ export function attachSqliteMaterializer(
 	const builder: MaterializerBuilder = {
 		...api,
 		table(table, config) {
-			if (hasInitialized)
+			if (!isRegistrationOpen)
 				throw new Error(
 					`attachSqliteMaterializer: .table("${table.name}") called after initial flush. All .table() registrations must happen synchronously after construction.`,
 				);

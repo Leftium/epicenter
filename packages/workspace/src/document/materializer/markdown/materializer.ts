@@ -61,6 +61,15 @@ const defaultDeserialize = (parsed: {
 }): BaseRow => parsed.frontmatter as BaseRow;
 
 /**
+ * Default KV serializer: pretty-printed JSON in `kv.json`. Used whenever a
+ * registered kv's `config.serialize` isn't provided.
+ */
+const defaultKvSerialize = (data: Record<string, unknown>): SerializeResult => ({
+	filename: 'kv.json',
+	content: JSON.stringify(data, null, 2),
+});
+
+/**
  * Create a bidirectional markdown materializer for workspace data.
  *
  * `attachMarkdownMaterializer(ydoc, { dir })` returns a chainable builder where
@@ -107,7 +116,12 @@ export function attachMarkdownMaterializer(
 	const registered = new Map<string, RegisteredTable>();
 	let registeredKv: RegisteredKv | undefined;
 	let isDisposed = false;
-	let hasInitialized = false;
+	/**
+	 * Closed once `initialize()` commits (past `await waitFor`). Any `.table()`
+	 * / `.kv()` call after this throws — the materializer is past the point
+	 * where late registrations would be picked up for initial flush.
+	 */
+	let isRegistrationOpen = true;
 
 	const resolveDir = async () => (typeof dir === 'function' ? await dir() : dir);
 
@@ -165,12 +179,7 @@ export function attachMarkdownMaterializer(
 		{ kv, config }: RegisteredKv,
 	): Promise<() => void> {
 		const state: Record<string, unknown> = { ...kv.getAll() };
-		const serialize =
-			config.serialize ??
-			((data: Record<string, unknown>) => ({
-				filename: 'kv.json',
-				content: JSON.stringify(data, null, 2),
-			}));
+		const serialize = config.serialize ?? defaultKvSerialize;
 
 		const initial = serialize(state);
 		await writeFile(join(baseDir, initial.filename), initial.content);
@@ -206,6 +215,9 @@ export function attachMarkdownMaterializer(
 		// Always yield a microtask so callers can finish synchronous setup
 		// (including `.table()` / `.kv()` registrations) before the first flush.
 		await waitFor;
+		// Close the registration window: any further `.table()` / `.kv()` call
+		// throws, even if init errors or disposes mid-flight below.
+		isRegistrationOpen = false;
 		if (isDisposed) return;
 
 		const baseDir = await resolveDir();
@@ -219,8 +231,6 @@ export function attachMarkdownMaterializer(
 		if (registeredKv && !isDisposed) {
 			registeredKv.unsubscribe = await materializeKv(baseDir, registeredKv);
 		}
-
-		hasInitialized = true;
 	}
 
 	const whenFlushed = initialize();
@@ -336,7 +346,7 @@ export function attachMarkdownMaterializer(
 	const builder: MaterializerBuilder = {
 		...api,
 		table(table, config) {
-			if (hasInitialized)
+			if (!isRegistrationOpen)
 				throw new Error(
 					`attachMarkdownMaterializer: .table("${table.name}") called after initial flush. All .table() registrations must happen synchronously after construction.`,
 				);
@@ -347,7 +357,7 @@ export function attachMarkdownMaterializer(
 			return builder;
 		},
 		kv(kv, config) {
-			if (hasInitialized)
+			if (!isRegistrationOpen)
 				throw new Error(
 					'attachMarkdownMaterializer: .kv() called after initial flush. All .kv() registrations must happen synchronously after construction.',
 				);

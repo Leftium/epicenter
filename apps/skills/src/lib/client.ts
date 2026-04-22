@@ -3,7 +3,7 @@
  *
  * `skillsWorkspace` is the shared singleton bundle (ydoc, tables, actions,
  * instructionsDocs, referenceDocs, idb, batch). IndexedDB persistence and
- * broadcast-channel fan-out are wired inside `buildSkills` — consumers
+ * broadcast-channel fan-out are wired inside `openSkills` — consumers
  * don't wire them here.
  *
  * Editors open per-skill handles via `instructionsDocs.open(id)` /

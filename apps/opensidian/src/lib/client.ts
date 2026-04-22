@@ -1,5 +1,5 @@
 /**
- * Opensidian workspace client — a direct `buildOpenSidian(id)` call that
+ * Opensidian workspace client — a direct `openOpenSidian()` call that
  * owns the Y.Doc construction and composes every attachment inline.
  *
  * Mirrors the fuji prototype: no schema/composition split, no `Object.assign`
@@ -41,7 +41,8 @@ const session = createPersistedState({
 	defaultValue: null,
 });
 
-export function buildOpenSidian(id: string) {
+export function openOpenSidian() {
+	const id = 'epicenter.opensidian';
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 
 	const encryption = attachEncryption(ydoc);
@@ -220,7 +221,7 @@ export function buildOpenSidian(id: string) {
 	};
 }
 
-export const workspace = buildOpenSidian('epicenter.opensidian');
+export const workspace = openOpenSidian();
 
 /** Per-file content Y.Doc factory — re-exported from the main workspace. */
 export const fileContentDocs = workspace.fileContentDocs;

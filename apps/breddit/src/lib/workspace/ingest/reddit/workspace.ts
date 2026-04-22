@@ -333,7 +333,8 @@ const redditKv = {
 	preferences: defineKv(type('Record<string, string> | null'), null),
 };
 
-export function buildReddit(id: string) {
+export function openReddit() {
+	const id = 'reddit';
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 	const tables = attachTables(ydoc, redditTables);
 	const kv = attachKv(ydoc, redditKv);
@@ -350,6 +351,6 @@ export function buildReddit(id: string) {
 	};
 }
 
-export const redditWorkspace = buildReddit('reddit');
+export const redditWorkspace = openReddit();
 
 export type RedditWorkspace = typeof redditWorkspace;

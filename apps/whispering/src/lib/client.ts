@@ -1,5 +1,5 @@
 /**
- * Whispering workspace client — a direct `buildWhispering(id)` call that
+ * Whispering workspace client — a direct `openWhispering()` call that
  * owns the Y.Doc construction and composes every attachment inline.
  *
  * On desktop (Tauri), `attachRecordingMarkdownFiles` mirrors the `recordings`
@@ -16,7 +16,8 @@ import { PATHS } from '$lib/constants/paths';
 import { attachRecordingMarkdownFiles } from './recording-materializer';
 import { whisperingKv, whisperingTables } from './workspace';
 
-export function buildWhispering(id: string) {
+export function openWhispering() {
+	const id = 'whispering';
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 
 	const encryption = attachEncryption(ydoc);
@@ -48,4 +49,4 @@ export function buildWhispering(id: string) {
 	};
 }
 
-export const workspace = buildWhispering('whispering');
+export const workspace = openWhispering();

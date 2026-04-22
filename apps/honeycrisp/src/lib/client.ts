@@ -1,5 +1,5 @@
 /**
- * Honeycrisp workspace client — a direct `buildHoneycrisp(id)` call that
+ * Honeycrisp workspace client — a direct `openHoneycrisp()` call that
  * owns the Y.Doc construction and composes every attachment inline.
  *
  * Access tables via `workspace.tables.folders` / `workspace.tables.notes`
@@ -26,7 +26,8 @@ const session = createPersistedState({
 	defaultValue: null,
 });
 
-export function buildHoneycrisp(id: string) {
+export function openHoneycrisp() {
+	const id = 'epicenter.honeycrisp';
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 
 	const encryption = attachEncryption(ydoc);
@@ -58,7 +59,7 @@ export function buildHoneycrisp(id: string) {
 	};
 }
 
-export const workspace = buildHoneycrisp('epicenter.honeycrisp');
+export const workspace = openHoneycrisp();
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

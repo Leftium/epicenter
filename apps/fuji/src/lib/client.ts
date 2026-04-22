@@ -2,7 +2,7 @@
  * Fuji workspace client — a direct builder call that owns the Y.Doc
  * construction and composes every attachment inline.
  *
- * `buildFuji(id)` returns the full bundle; call it once at module scope to
+ * `openFuji()` returns the full bundle; call it once at module scope to
  * get the app's singleton workspace. The bundle shape is whatever we return —
  * no framework convention, no `Object.assign` dance.
  */
@@ -27,7 +27,8 @@ const session = createPersistedState({
 	defaultValue: null,
 });
 
-export function buildFuji(id: string) {
+export function openFuji() {
+	const id = 'epicenter.fuji';
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 
 	const encryption = attachEncryption(ydoc);
@@ -62,7 +63,7 @@ export function buildFuji(id: string) {
 	};
 }
 
-export const workspace = buildFuji('epicenter.fuji');
+export const workspace = openFuji();
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

@@ -1,5 +1,5 @@
 /**
- * Tab-manager workspace client — a direct `buildTabManager(id)` call that
+ * Tab-manager workspace client — a direct `openTabManager()` call that
  * owns the Y.Doc construction and composes every attachment inline.
  *
  * Live browser state (tabs, windows, tab groups) is NOT stored here — Chrome
@@ -34,7 +34,8 @@ import {
 	tabManagerTables,
 } from './workspace/definition';
 
-export function buildTabManager(id: string) {
+export function openTabManager() {
+	const id = 'epicenter.tab-manager';
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 
 	const encryption = attachEncryption(ydoc);
@@ -76,7 +77,7 @@ export function buildTabManager(id: string) {
 	};
 }
 
-export const workspace = buildTabManager('epicenter.tab-manager');
+export const workspace = openTabManager();
 
 export const auth = createAuth({
 	baseURL: () => remoteServerUrl.current,

@@ -52,7 +52,7 @@ export type ImportProgress = {
 };
 
 // Workspace bundle type — the `redditWorkspace` singleton or any other
-// `buildReddit(id)` instance.
+// `openReddit()` instance.
 type RedditWorkspaceClient = RedditWorkspace;
 
 /** Import rows for a single table with per-row error recovery */
@@ -130,7 +130,7 @@ function transformKv(raw: ParsedRedditData): KvData {
  * Import a Reddit GDPR export ZIP file into the workspace.
  *
  * @param input - ZIP file as Blob, File, or ArrayBuffer
- * @param workspace - Reddit workspace bundle (singleton `redditWorkspace` or `buildReddit(id)`)
+ * @param workspace - Reddit workspace bundle (singleton `redditWorkspace` or `openReddit()`)
  * @param options - Optional progress callback
  * @returns Import statistics
  */

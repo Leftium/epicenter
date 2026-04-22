@@ -1,5 +1,5 @@
 /**
- * Zhongwen workspace client — a direct `buildZhongwen(id)` call that owns
+ * Zhongwen workspace client — a direct `openZhongwen()` call that owns
  * the Y.Doc construction and composes every attachment inline.
  *
  * Zhongwen is a browser-only chat app: IndexedDB persistence plus cross-tab
@@ -17,7 +17,8 @@ import * as Y from 'yjs';
 import { session } from '$lib/auth';
 import { zhongwenKv, zhongwenTables } from '$lib/workspace';
 
-export function buildZhongwen(id: string) {
+export function openZhongwen() {
+	const id = 'epicenter.zhongwen';
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 
 	const encryption = attachEncryption(ydoc);
@@ -42,7 +43,7 @@ export function buildZhongwen(id: string) {
 	};
 }
 
-export const workspace = buildZhongwen('epicenter.zhongwen');
+export const workspace = openZhongwen();
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

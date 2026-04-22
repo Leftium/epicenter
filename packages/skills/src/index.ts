@@ -1,7 +1,7 @@
 /**
  * @fileoverview Browser entry for the shared skills workspace.
  *
- * Exports `buildSkills(id)` — a direct builder that returns the full skills
+ * Exports `openSkills()` — a direct builder that returns the full skills
  * bundle (tables, KV, encryption, IndexedDB, broadcast channel, actions,
  * per-skill instruction/reference doc factories, batch helper) — and
  * `skillsWorkspace`, the singleton instance opened at `'epicenter.skills'`.
@@ -40,16 +40,17 @@ export type { Reference, Skill } from './tables.js';
 export { referencesTable, skillsTable } from './tables.js';
 
 /**
- * Build a skills workspace bundle. The guid passed in is used as the Y.Doc
- * guid — all Epicenter apps in the same process should share the singleton
- * `skillsWorkspace` export below rather than calling `buildSkills` again.
+ * Build a skills workspace bundle. All Epicenter apps in the same process
+ * should share the singleton `skillsWorkspace` export below rather than
+ * calling `openSkills` again.
  *
  * Note: in a hybrid browser+node process (e.g. Tauri), importing this AND
  * `@epicenter/skills/node` in the same process would give you two separate
  * bundles. That isn't a supported configuration today — TODO if we ever
  * need it.
  */
-export function buildSkills(id: string) {
+export function openSkills() {
+	const id = 'epicenter.skills';
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 
 	const encryption = attachEncryption(ydoc);
@@ -98,4 +99,4 @@ export function buildSkills(id: string) {
 }
 
 /** Singleton skills workspace. Construct once at module scope. */
-export const skillsWorkspace = buildSkills('epicenter.skills');
+export const skillsWorkspace = openSkills();

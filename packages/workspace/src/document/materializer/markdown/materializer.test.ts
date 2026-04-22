@@ -216,7 +216,7 @@ describe('push', () => {
 		const errorEvent = result.events.find((e) => e.kind === 'error');
 		expect(errorEvent?.kind).toBe('error');
 		if (errorEvent?.kind === 'error') {
-			expect(errorEvent.filename).toBe('bad.md');
+			expect(errorEvent.path).toBe('posts/bad.md');
 			expect(errorEvent.tableName).toBe('posts');
 			expect(errorEvent.error.name).toBe('ValidationFailed');
 		}

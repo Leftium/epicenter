@@ -56,13 +56,18 @@ export type MaterializerPushError = InferErrors<typeof MaterializerPushError>;
  *   `ReadFailed` / `FromMarkdownCallbackFailed` (materializer errors) and
  *   `ValidationFailed` / `MigrationFailed` / `AsyncSchemaNotSupported`
  *   (table parse errors).
+ *
+ * `path` is the relative path from the materializer's base `dir` (e.g.,
+ * `"posts/hello.md"` for a file under `config.dir: 'posts'`). Not the
+ * bare filename — two tables writing the same filename would be
+ * indistinguishable otherwise.
  */
 export type PushEvent =
-	| { kind: 'imported'; filename: string; tableName: string; id: string }
-	| { kind: 'skipped'; filename: string }
+	| { kind: 'imported'; path: string; tableName: string; id: string }
+	| { kind: 'skipped'; path: string }
 	| {
 			kind: 'error';
-			filename: string;
+			path: string;
 			tableName: string;
 			error: MaterializerPushError | TableParseError;
 	  };
@@ -319,6 +324,9 @@ export function attachMarkdownMaterializer(
 	function dispose() {
 		if (isDisposed) return;
 		isDisposed = true;
+		// Close the registration window even if `initialize()` never ran
+		// (e.g., waitFor stalled and the ydoc was destroyed before init).
+		isRegistrationOpen = false;
 		for (const entry of registered.values()) entry.unsubscribe?.();
 		registeredKv?.unsubscribe?.();
 	}
@@ -359,7 +367,8 @@ export function attachMarkdownMaterializer(
 
 		for (const entry of registered.values()) {
 			const tableName = entry.table.name;
-			const directory = join(baseDir, entry.config.dir ?? tableName);
+			const subdir = entry.config.dir ?? tableName;
+			const directory = join(baseDir, subdir);
 
 			let files: string[];
 			try {
@@ -371,20 +380,24 @@ export function attachMarkdownMaterializer(
 			for (const filename of files) {
 				if (!filename.endsWith('.md')) continue;
 
+				// Relative to the materializer's base dir — disambiguates two
+				// tables writing files with the same name.
+				const path = join(subdir, filename);
+
 				// 1. Read
 				const { data: content, error: readError } = await tryAsync({
 					try: () => readFile(join(directory, filename), 'utf-8'),
 					catch: (cause) => MaterializerPushError.ReadFailed({ cause }),
 				});
 				if (readError) {
-					events.push({ kind: 'error', filename, tableName, error: readError });
+					events.push({ kind: 'error', path, tableName, error: readError });
 					continue;
 				}
 
 				// 2. Parse frontmatter
 				const parsed = parseMarkdownFile(content);
 				if (!parsed) {
-					events.push({ kind: 'skipped', filename });
+					events.push({ kind: 'skipped', path });
 					continue;
 				}
 
@@ -397,16 +410,10 @@ export function attachMarkdownMaterializer(
 						MaterializerPushError.FromMarkdownCallbackFailed({ cause }),
 				});
 				if (callbackError) {
-					events.push({
-						kind: 'error',
-						filename,
-						tableName,
-						error: callbackError,
-					});
+					events.push({ kind: 'error', path, tableName, error: callbackError });
 					continue;
 				}
-				// tryAsync's Result invariant guarantees non-null data when error
-				// is null; this check satisfies TS's narrowing.
+				// tryAsync invariant: row is non-null once error is null; satisfies TS.
 				if (row == null) continue;
 
 				// 4. Validate the returned row against the table's schema
@@ -415,23 +422,13 @@ export function attachMarkdownMaterializer(
 					row,
 				);
 				if (parseError) {
-					events.push({
-						kind: 'error',
-						filename,
-						tableName,
-						error: parseError,
-					});
+					events.push({ kind: 'error', path, tableName, error: parseError });
 					continue;
 				}
 
 				// 5. Commit
 				entry.table.set(validRow);
-				events.push({
-					kind: 'imported',
-					filename,
-					tableName,
-					id: validRow.id,
-				});
+				events.push({ kind: 'imported', path, tableName, id: validRow.id });
 			}
 		}
 

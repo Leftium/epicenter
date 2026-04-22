@@ -249,6 +249,9 @@ export function attachSqliteMaterializer(
 	function dispose() {
 		if (isDisposed) return;
 		isDisposed = true;
+		// Close the registration window even if `initialize()` never ran
+		// (e.g., waitFor stalled and the ydoc was destroyed before init).
+		isRegistrationOpen = false;
 		if (syncTimeout !== null) {
 			clearTimeout(syncTimeout);
 			syncTimeout = null;

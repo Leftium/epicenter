@@ -1,4 +1,4 @@
-# Workspace API
+# Workspace Document API
 
 A typed interface over Y.js for apps that need to evolve their data schema over time.
 
@@ -6,132 +6,143 @@ A typed interface over Y.js for apps that need to evolve their data schema over 
 
 This is a wrapper around Y.js that handles schema versioning. Local-first apps can't run migration scripts, so data has to evolve gracefully. Old data coexists with new. The Workspace API bakes that into the design: define your schemas once with versions, write a migration function, and everything else is typed.
 
-It's structured in two layers. Start at the top, drop down when you need control:
+The canonical primitive is `defineDocument(builder)`. You own the `Y.Doc` construction and compose every capability (tables, KV, persistence, sync, encryption, awareness) inline with `attach*` primitives. There is no framework convention for the shape of your returned bundle — you return whatever your app needs.
 
 ```
-┌────────────────────────────────────────────────┐
-│  Your App                                      │
-├────────────────────────────────────────────────┤
-│  createWorkspace({ id, tables, kv })           │ ← Public API
-│  ↓ Result: WorkspaceClient                     │
-│  { tables, kv, documents, awareness, extensions } │
-├────────────────────────────────────────────────┤
-│  createTable(ykv, def)                         │ ← Internal building blocks
-│  createKv(ykv, defs)                            │   (used by createWorkspace
-│  createEncryptedYkvLww(yarray, { key })          │    and tests)
-├────────────────────────────────────────────────┤
-│  Y.Doc (raw CRDT)                              │ ← Escape hatch
-│  ↓ Storage: table:posts, table:users, kv      │
-└────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│  Your App                                                  │
+├────────────────────────────────────────────────────────────┤
+│  defineDocument((id) => { ydoc, tables, ...; dispose })    │ ← Public primitive
+│  ↓ .open(id) → your bundle                                 │
+├────────────────────────────────────────────────────────────┤
+│  attachTable / attachTables / attachKv                     │ ← Data attachments
+│  attachEncryption / attachEncryptedTables / attachEncryptedKv
+│  attachAwareness                                           │ ← Presence
+│  attachIndexedDb / attachSqlite / attachBroadcastChannel   │ ← Persistence + cross-tab
+│  attachSync                                                │ ← WebSocket sync
+│  createSqliteMaterializer                                  │ ← Queryable mirror
+├────────────────────────────────────────────────────────────┤
+│  Y.Doc (raw CRDT)                                          │ ← Escape hatch
+└────────────────────────────────────────────────────────────┘
 ```
 
-## The Pattern: define vs create
+## The Pattern: define vs attach vs create
 
-This codebase uses two prefixes consistently. `define*` is pure, no Y.Doc, no side effects. `create*` does instantiation:
+Three prefixes, each with a consistent meaning:
+
+- **`define*`** is pure — no Y.Doc, no side effects. Schemas, KV definitions, action factories, document factories.
+- **`attach*`** binds something to an existing `Y.Doc`. Returns a typed handle. Side effects live here.
+- **`create*`** instantiates a helper from already-attached pieces (`createSqliteMaterializer`, `createFileContentDocs`, etc.).
 
 ```typescript
-// Pure schema definitions
-const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+import * as Y from 'yjs';
+import { defineTable, defineDocument, attachTable } from '@epicenter/workspace';
+import { type } from 'arktype';
 
-// Creates Y.Doc and returns a typed client
-const client = createWorkspace({ id: 'my-app', tables: { posts } });
+// Pure schema
+const postsTable = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+
+// Document factory: owns Y.Doc creation, composes attachments
+const blog = defineDocument((id: string) => {
+  const ydoc = new Y.Doc({ guid: id });
+  const tables = {
+    posts: attachTable(ydoc, 'posts', postsTable),
+  };
+  return {
+    id,
+    ydoc,
+    tables,
+    [Symbol.dispose]() { ydoc.destroy(); },
+  };
+});
+
+const workspace = blog.open('blog');
+workspace.tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
 ```
 
-For most apps, just call `createWorkspace({...})` and you're done. It's synchronous, returns immediately, and everything is typed.
+## Composing More
 
-## If You Need More
+The builder closure is where you wire everything. Because you own the return shape, you can expose whatever handles your app needs.
 
-### Extensions
-
-Extensions add capabilities (persistence, sync, indexing) without baking them into the core. Three registration methods target different scopes:
+### Encryption (client-side E2E)
 
 ```typescript
-const client = createWorkspace({
-	id: 'my-app',
-	tables: { posts },
-})
-	// Dual-scope: registers for BOTH the workspace Y.Doc and every content Y.Doc.
-	// The factory only receives { ydoc, init }—the minimal shared contract.
-	.withExtension('persistence', indexeddbPersistence)
-	.withExtension('broadcast', broadcastChannelSync)
+import {
+  attachEncryption,
+  attachEncryptedTables,
+  attachEncryptedKv,
+} from '@epicenter/workspace';
 
-	// Workspace-only: receives the full ExtensionContext (tables, kv, awareness, etc.)
-	.withWorkspaceExtension('sync', createSyncExtension({ url: '...' }))
-	.withWorkspaceExtension('sqliteIndex', createSqliteIndex())
-
-	// Document-only: receives DocumentContext (timeline, ydoc, id, whenReady, extensions)
-	.withDocumentExtension('indexer', docIndexer);
+const factory = defineDocument((id) => {
+  const ydoc = new Y.Doc({ guid: id });
+  const encryption = attachEncryption(ydoc);
+  const tables = attachEncryptedTables(ydoc, encryption, myTables);
+  const kv = attachEncryptedKv(ydoc, encryption, myKv);
+  return { id, ydoc, tables, kv, encryption, [Symbol.dispose]() { ydoc.destroy(); } };
+});
 ```
 
-`withExtension` is sugar—it calls both `withWorkspaceExtension` and `withDocumentExtension` with the same factory. If a factory needs scope-specific fields (tables, awareness, timeline), register it with the scoped method instead.
-
-Each factory returns a flat object with custom exports alongside an optional `init` chain signal and `dispose`. The framework chains `init` promises so each extension's context sees the prior extensions' init completion. Extensions can additionally expose semantic readiness names like `whenLoaded` or `whenFlushed` for callers.
+### Persistence + sync
 
 ```typescript
-// What each scope receives:
-//
-// withExtension          → { ydoc, init }  (SharedExtensionContext)
-// withWorkspaceExtension → { id, ydoc, tables, kv, awareness, documents,
-//                          definitions, extensions, init, batch,
-//                          loadSnapshot }  (ExtensionContext)
-// withDocumentExtension  → { id, ydoc, timeline, extensions,
-//                          init }  (DocumentContext)
+import {
+  attachIndexedDb,
+  attachBroadcastChannel,
+  attachSync,
+} from '@epicenter/workspace';
+
+const factory = defineDocument((id) => {
+  const ydoc = new Y.Doc({ guid: id });
+  const tables = attachTables(ydoc, myTables);
+
+  const idb = attachIndexedDb(ydoc);
+  attachBroadcastChannel(ydoc);
+  const sync = attachSync(ydoc, {
+    url: (docId) => `wss://api.example.com/workspaces/${docId}`,
+    getToken: async () => auth.token,
+    waitFor: idb.whenLoaded,
+  });
+
+  return {
+    id, ydoc, tables, idb, sync,
+    whenReady: idb.whenLoaded,
+    [Symbol.dispose]() { ydoc.destroy(); },
+  };
+});
 ```
 
-### Internal Building Blocks
-
-The workspace is composed from two internal building blocks, `createTable(ykv, definition)` and `createKv(ykv, definitions)`. These take a pre-created encrypted store and return typed CRUD helpers. They're not publicly exported because the store type (`YKeyValueLwwEncrypted`) is internal, but they're useful in tests:
+### Awareness
 
 ```typescript
-import { createTable } from './create-table.js';
-import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import { attachAwareness } from '@epicenter/workspace';
 
-const yarray = ydoc.getArray(TableKey('posts'));
-const ykv = createEncryptedYkvLww(yarray, {});
-const posts = createTable(ykv, postsDefinition);
-
-posts.set({ id: '1', title: 'Hello', _v: 1 });
+const awareness = attachAwareness(ydoc, myAwarenessDefs);
+// awareness.setLocal({...}), awareness.observe(...), awareness.raw for y-protocols
 ```
 
-You lose the workspace wrapper and automatic lifecycle, but keep full type safety and control.
+### Per-row content documents
+
+Tables stay lean (ids, titles, metadata). Rich content lives in a separate `defineDocument` factory keyed on the row's content guid. The row holds the guid; the content factory opens a Y.Doc per row on demand. See `apps/fuji/src/lib/entry-content-doc.ts` for the canonical pattern.
 
 ## Design Decisions
 
-The code makes specific bets about what matters. Worth knowing upfront:
+**Row-level atomicity.** `set()` replaces the entire row. No field-level updates. Every write is a complete row in the latest schema.
 
-**Row-level atomicity.** `set()` replaces the entire row. No field-level updates. This keeps consistency simple when data migrates. You don't have to ask "should I merge old fields with new?" Every write is a complete row in the latest schema. If you're updating a field, read it first:
+**Migration on read, not on write.** Old data transforms when loaded, not when written. Old rows stay old in storage until explicitly rewritten.
 
-```typescript
-const result = posts.get('1');
-if (result.status === 'valid') {
-	posts.set({ ...result.row, views: result.row.views + 1 });
-}
-```
+**No write validation.** Writes aren't validated at runtime. TypeScript ensures shape; reads validate and return invalid on corruption.
 
-**Migration on read, not on write.** Old data transforms when you load it, not when you write. Old rows stay old in storage until explicitly rewritten. This enables rollback and means you don't pay the migration cost at startup.
+**No field-level observation.** Observe entire tables or KV keys. Let your UI framework handle field reactivity.
 
-**No write validation.** Writes aren't validated at runtime. TypeScript's job is to ensure the types are right; if you write garbage, reads will catch it and return invalid. Validation at write time is mostly overhead—the real bugs come from data corruption you didn't expect.
-
-**No field-level observation.** You observe entire tables or KV keys, not individual fields. This keeps the API simple. Let your UI framework handle field reactivity.
-
-**Why `_v` instead of `v`.** The underscore prefix signals "framework metadata, not user data" (same convention as `_id` in MongoDB). Users intuitively avoid underscore-prefixed fields for business data, which prevents accidental collisions with framework internals. Historically, this also avoided collision with the old `EncryptedBlob.v` field, but that rationale no longer applies—`EncryptedBlob` is now a branded bare `Uint8Array` detected via `instanceof Uint8Array && value[0] === 1`.
-
-For detailed rationale on all of this, see [the guide](docs/articles/20260127T120000-static-workspace-api-guide.md).
-
-## Document Content
-
-Tables with `.withDocument()` create per-row Y.Docs for content. The content type is determined by a content strategy passed to `.withDocument()`: `plainText` returns `Y.Text`, `richText` returns `Y.XmlFragment`, and `timeline` returns a `Timeline` with mode-switching support.
-
-The handle is the canonical interface. Content is accessed via `handle.content`—fully typed by the strategy. For `timeline` strategy: `handle.content.read()`/`handle.content.write()` for string I/O, `handle.content.asText()` for Y.Text editor binding, `handle.content.asRichText()` for Y.XmlFragment binding, `handle.content.asSheet()` for spreadsheet binding, and `handle.content.batch()` for batching mutations. For `plainText`/`richText`, `handle.content` IS the Yjs shared type—bind it directly to your editor.
-
-See `specs/20260418T120000-withdocument-content-strategy.md` for the full design.
+**Why `_v` instead of `v`.** Framework metadata prefix — same convention as `_id` in MongoDB. Users intuitively avoid underscore-prefixed fields for business data.
 
 ## Testing
 
-The tests are in `*.test.ts` files next to the implementation. Use `new Y.Doc()` for in-memory tests. Migrations are validated by reading old data and checking the result. Look at existing tests for patterns.
+Tests live in `*.test.ts` next to the implementation. Use `new Y.Doc()` for in-memory tests. Migrations are validated by reading old data and checking the result.
 
-## Go Deeper
+## Canonical references
 
-- [API Guide](docs/articles/20260127T120000-static-workspace-api-guide.md) - Examples, patterns, when to use what
-- [Specification](specs/20260126T120000-static-workspace-api.md) - Full API reference
-- [Storage Internals](specs/20260125T120000-versioned-table-kv-specification.md) - How versioning works under the hood
+- `apps/whispering/src/lib/client.ts` — encryption + IndexedDB + BroadcastChannel + per-row materialization
+- `apps/fuji/src/lib/client.ts` — encryption + IndexedDB + sync + awareness
+- `packages/workspace/README.md` — quick start
+- `packages/workspace/SYNC_ARCHITECTURE.md` — multi-device sync design

@@ -43,27 +43,43 @@ type AnyTable = Table<any>;
  *
  * @example Basic usage with type-safe table names
  * ```typescript
- * .withExtension('sqlite', (ctx) =>
- *   createSqliteMaterializer(ctx, { db })
- *     .table('posts', { fts: ['title', 'body'] })
- *     .table('users')
+ * const materializer = createSqliteMaterializer(
+ *   { tables, definitions: myTableDefs, whenReady: idb.whenLoaded },
+ *   { db },
  * )
+ *   .table('posts', { fts: ['title', 'body'] })
+ *   .table('users');
  * ```
  *
  * @example Shared SQLite file for persistence + materializer (desktop/Bun)
  * ```typescript
+ * import * as Y from 'yjs';
  * import { Database } from 'bun:sqlite';
- * import { sqlitePersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
- * import { createSqliteMaterializer } from '@epicenter/workspace/extensions/materializer/sqlite';
+ * import {
+ *   defineDocument,
+ *   attachTables,
+ *   attachSqlite,
+ *   createSqliteMaterializer,
+ * } from '@epicenter/workspace';
  *
- * // Persistence opens its own connection internally.
- * // Materializer uses a second connection to the same WAL-mode file.
- * createWorkspace(definition)
- *   .withExtension('persistence', sqlitePersistence({ filePath: 'workspace.db' }))
- *   .withExtension('sqlite', (ctx) =>
- *     createSqliteMaterializer(ctx, { db: new Database('workspace.db') })
- *       .table('posts', { fts: ['title'] })
- *   )
+ * // attachSqlite opens its own connection internally for Yjs persistence.
+ * // createSqliteMaterializer uses a second connection to the same WAL-mode file
+ * // to maintain a queryable row mirror.
+ * const factory = defineDocument((id: string) => {
+ *   const ydoc = new Y.Doc({ guid: id });
+ *   const tables = attachTables(ydoc, myTableDefs);
+ *   const persistence = attachSqlite(ydoc, { filePath: 'workspace.db' });
+ *
+ *   const sqlite = createSqliteMaterializer(
+ *     { tables, definitions: myTableDefs, whenReady: persistence.whenLoaded },
+ *     { db: new Database('workspace.db') },
+ *   ).table('posts', { fts: ['title'] });
+ *
+ *   return {
+ *     id, ydoc, tables, persistence, sqlite,
+ *     [Symbol.dispose]() { ydoc.destroy(); },
+ *   };
+ * });
  * ```
  */
 export function createSqliteMaterializer<

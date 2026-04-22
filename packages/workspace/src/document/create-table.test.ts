@@ -3,9 +3,10 @@
  *
  * Exercises the table CRUD, query, observation, and migration paths when
  * `createTable` is fed the workspace's `EncryptedYKeyValueLww` wrapper
- * (as `createWorkspace` does internally). These tests ensure row validation
- * and migration behavior remain consistent for both valid and corrupted data
- * through the encrypted store surface.
+ * (as `attachEncryptedTables` does internally inside a `defineDocument`
+ * builder). These tests ensure row validation and migration behavior remain
+ * consistent for both valid and corrupted data through the encrypted store
+ * surface.
  *
  * Key behaviors:
  * - CRUD and query operations return discriminated statuses with correct payloads.

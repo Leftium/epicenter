@@ -161,7 +161,7 @@ export function createBlogActions({ tables, batch }) {
 
 ### JSDoc on Action Methods
 
-Every action method inside `.withActions()` should have a JSDoc comment. The JSDoc and the `description` field serve **different audiences**:
+Every action method inside the `actions` object returned from the `defineDocument` builder should have a JSDoc comment. The JSDoc and the `description` field serve **different audiences**:
 
 - **`description`** — consumed by MCP servers, CLI help text, and OpenAPI specs. Keep it short and declarative ("Import skills from disk").
 - **JSDoc** — consumed by developers hovering in an IDE. Explain *why* the action exists as a separate operation, what non-obvious behavior it has, or what assumptions it makes.

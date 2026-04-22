@@ -58,7 +58,7 @@ Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted acros
 | `deletedAt` | `number` (optional, soft delete) |
 | `wordCount` | `number` (optional) |
 
-Each note has an attached document: `withDocument('body', { guid: 'id', onUpdate })` → `Y.XmlFragment`.
+Each note's body lives in a separate Y.Doc opened by a per-row content-doc factory (a dedicated `defineDocument` keyed on the row's content guid). The factory yields a `Y.XmlFragment` that ProseMirror binds to; updates flow back through `onUpdate` to refresh the row's title/preview/word count.
 
 The v1→v2 migration adds `deletedAt` and `wordCount`.
 

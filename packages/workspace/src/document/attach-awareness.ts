@@ -6,8 +6,9 @@
  * y-protocols — its constructor registers `doc.on('destroy', () => this.destroy())`,
  * so destroying the ydoc tears down the Awareness automatically.
  *
- * For workspace-level awareness with extension wiring, use `createWorkspace`
- * from `@epicenter/workspace`.
+ * To wire awareness into a sync attachment, compose inline inside a
+ * `defineDocument` builder: pass `awareness.raw` (the underlying y-protocols
+ * `Awareness`) to `attachSync(ydoc, { awareness: awareness.raw, ... })`.
  */
 
 import { Awareness as YAwareness } from 'y-protocols/awareness';

@@ -28,35 +28,44 @@
  *
  * @example
  * ```typescript
- * import { createWorkspace, defineQuery, defineMutation } from '@epicenter/workspace';
+ * import * as Y from 'yjs';
+ * import {
+ *   defineDocument,
+ *   attachTable,
+ *   defineQuery,
+ *   defineMutation,
+ * } from '@epicenter/workspace';
  * import Type from 'typebox';
  *
- * // Step 1: Create the client (with all tables and extensions)
- * const client = createWorkspace({
- *   id: 'blog',
- *   tables: { posts: postsTable },
+ * // Step 1: Compose the document inline — actions close over `tables`
+ * const blog = defineDocument((id: string) => {
+ *   const ydoc = new Y.Doc({ guid: id });
+ *   const tables = { posts: attachTable(ydoc, 'posts', postsTable) };
+ *
+ *   const actions = {
+ *     posts: {
+ *       getAll: defineQuery({
+ *         handler: () => tables.posts.getAllValid(),
+ *       }),
+ *       create: defineMutation({
+ *         input: Type.Object({ title: Type.String() }),
+ *         handler: ({ title }) => {
+ *           const id = generateId();
+ *           tables.posts.set({ id, title, _v: 1 });
+ *           return { id };
+ *         },
+ *       }),
+ *     },
+ *   };
+ *
+ *   return { id, ydoc, tables, actions, [Symbol.dispose]() { ydoc.destroy(); } };
  * });
  *
- * // Step 2: Define actions that close over the client
- * export const actions = {
- *   posts: {
- *     getAll: defineQuery({
- *       handler: () => client.tables.posts.getAllValid(),
- *     }),
- *     create: defineMutation({
- *       input: Type.Object({ title: Type.String() }),
- *       handler: ({ title }) => {
- *         const id = generateId();
- *         client.tables.posts.upsert({ id, title });
- *         return { id };
- *       },
- *     }),
- *   },
- * };
+ * const workspace = blog.open('blog');
  *
- * // Step 3: Pass both to adapters
- * createActionsRouter({ client, actions });
- * createCLI({ client, actions });
+ * // Step 2: Pass the bundle to adapters
+ * createActionsRouter({ client: workspace, actions: workspace.actions });
+ * createCLI({ client: workspace, actions: workspace.actions });
  * ```
  *
  * @module
@@ -106,9 +115,9 @@ type ActionHandler<
  * @property handler - The action implementation. Handlers close over their dependencies and have signature `(input?) => output`
  *
  * @remarks
- * **Closure-based design**: Handlers capture their dependencies (client, tables, extensions, etc.)
+ * **Closure-based design**: Handlers capture their dependencies (tables, kv, encryption, etc.)
  * via closure instead of receiving context as a parameter. This means:
- * - Handlers should be defined after the client they depend on is created
+ * - Handlers are defined inside the `defineDocument` builder, after the attachments they use
  * - Dependencies are accessed through closure, not as a parameter
  * - No type annotations needed—TypeScript infers everything naturally
  *
@@ -116,18 +125,18 @@ type ActionHandler<
  *
  * @example
  * ```typescript
- * // Assuming client is defined above:
- * // const client = createWorkspace({ id: 'blog', tables: { posts: ... } });
+ * // Inside a defineDocument builder:
+ * //   const tables = { posts: attachTable(ydoc, 'posts', postsTable) };
  *
- * // Action with input - closes over client via closure
+ * // Action with input - closes over tables
  * const config: ActionConfig<typeof inputSchema, Post> = {
  *   input: type({ id: 'string' }),
- *   handler: ({ id }) => client.tables.posts.get(id),  // client captured by closure
+ *   handler: ({ id }) => tables.posts.get(id),  // tables captured by closure
  * };
  *
  * // Action without input
  * const configNoInput: ActionConfig<undefined, Post[]> = {
- *   handler: () => client.tables.posts.getAllValid(),  // client captured by closure
+ *   handler: () => tables.posts.getAllValid(),  // tables captured by closure
  * };
  * ```
  */
@@ -231,16 +240,17 @@ export type Action<
  *
  * @example
  * ```typescript
- * // Define after creating client: const client = createWorkspace({ ... });
+ * // Inside a defineDocument builder, after `const tables = attachTables(ydoc, defs);`
  *
  * const actions: Actions = {
  *   posts: {
  *     getAll: defineQuery({
- *       handler: () => client.tables.posts.getAllValid()  // closes over client
+ *       handler: () => tables.posts.getAllValid()  // closes over tables
  *     }),
  *     create: defineMutation({
  *       handler: ({ title }) => {
- *         client.tables.posts.upsert({ id: generateId(), title });
+ *         const id = generateId();
+ *         tables.posts.set({ id, title, _v: 1 });
  *         return { id };
  *       }
  *     }),
@@ -248,7 +258,7 @@ export type Action<
  *   users: {
  *     profile: {
  *       get: defineQuery({
- *         handler: () => client.tables.users.getCurrentProfile()  // closes over client
+ *         handler: () => tables.users.getCurrentProfile()  // closes over tables
  *       }),
  *     },
  *   },
@@ -306,28 +316,30 @@ export function defineQuery({ handler, ...rest }: ActionConfig): Query {
  * The `type: 'mutation'` discriminator is attached automatically.
  * Mutations map to HTTP POST requests when exposed via the server adapter.
  *
- * Handlers close over their dependencies (client, tables, extensions, etc.) instead
- * of receiving context as a parameter. Define mutations after creating the client.
+ * Handlers close over their dependencies (tables, kv, attachments, etc.) instead
+ * of receiving context as a parameter. Define mutations inside the `defineDocument`
+ * builder, after the attachments they depend on.
  *
  * @example
  * ```typescript
- * // Assuming client is already created:
- * // const client = createWorkspace({ ... });
+ * // Inside a defineDocument builder:
+ * //   const tables = attachTables(ydoc, defs);
+ * //   const recordingsFs = attachRecordingMarkdownFiles(ydoc, tables.recordings, {...});
  *
- * // Mutation that creates a post - closes over client
+ * // Mutation that creates a post - closes over tables
  * const createPost = defineMutation({
  *   input: type({ title: 'string' }),
  *   handler: ({ title }) => {
  *     const id = generateId();
- *     client.tables.posts.upsert({ id, title });
+ *     tables.posts.set({ id, title, _v: 1 });
  *     return { id };
  *   },
  * });
  *
- * // Mutation that syncs data - closes over client and extensions
+ * // Mutation that triggers a side-effecting attachment
  * const syncMarkdown = defineMutation({
  *   description: 'Sync markdown files to YJS',
- *   handler: () => client.extensions.markdown.pullFromMarkdown(),
+ *   handler: () => recordingsFs.pullFromMarkdown(),
  * });
  * ```
  */

@@ -96,9 +96,11 @@ export type LastSchema<T extends readonly CombinedStandardSchema[]> =
 /**
  * A table definition created by `defineTable(schema)` or `defineTable(v1, v2, ...).migrate(fn)`.
  *
- * Workspace's `TableDefinition` is a structural superset — it adds a
- * `documents` field via `.withDocument()`. Values from workspace's wider
- * type satisfy this one by subtyping.
+ * For per-row content (rich text, long-form body), keep the row lean (ids,
+ * metadata, a content-doc guid) and pair the table with a separate
+ * `defineDocument(builder)` factory keyed on that content guid. Opening a row
+ * then becomes `contentDocs.open(row.contentGuid)` — the list doesn't load
+ * every content doc, and the editor doesn't contend with the table.
  *
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
  */

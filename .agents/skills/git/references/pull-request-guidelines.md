@@ -460,36 +460,36 @@ The old encryption system had five moving parts to answer one question: does thi
 
 ```typescript
 // Before — 3 steps, async, stateful
-const client = createWorkspace(def)
-  .withEncryption()
-  .withExtension('persistence', ...)
+const ydoc = new Y.Doc({ guid: id });
+const encryption = attachEncryption(ydoc);
+const tables = attachEncryptedTables(ydoc, encryption, defs);
 
-await client.encryption.unlock(keys)
+await encryption.unlock(keys);
 ```
 
-Now it's one synchronous call, no builder step, no state machine:
+Now it's one synchronous call, no unlock step, no state machine:
 
 ```typescript
-// After — sync, idempotent, no builder step
-const client = createWorkspace(def)
-  .withExtension('persistence', ...)
+// After — sync, idempotent
+const ydoc = new Y.Doc({ guid: id });
+const encryption = attachEncryption(ydoc);
+const tables = attachEncryptedTables(ydoc, encryption, defs);
 
-client.applyEncryptionKeys(keys)  // done
+encryption.applyKeys(keys);  // done
 ```
 
-`applyEncryptionKeys()` is idempotent and safe to call multiple times. The encrypted Y.Map wrapper no longer maintains a dual-cache — it encrypts on write and decrypts on read, one direction each way. The encryption runtime, key stores, IndexedDB wrappers, and dual-cache logic are all gone.
+`applyKeys()` is idempotent and safe to call multiple times. The encrypted Y.Map wrapper no longer maintains a dual-cache — it encrypts on write and decrypts on read, one direction each way. The encryption runtime, key stores, IndexedDB wrappers, and dual-cache logic are all gone.
 
 ```
 Before:
-  WorkspaceClient
-    └── .withEncryption()
-        ├── encryption-runtime.ts (state machine)
-        ├── user-key-store.ts (IndexedDB persistence)
-        └── y-keyvalue-lww-encrypted.ts (dual-cache: encrypted + decrypted)
+  attachEncryption(ydoc)
+    ├── encryption-runtime.ts (state machine)
+    ├── user-key-store.ts (IndexedDB persistence)
+    └── y-keyvalue-lww-encrypted.ts (dual-cache: encrypted + decrypted)
 
 After:
-  WorkspaceClient
-    └── .applyEncryptionKeys(keys)  // sync, one method
+  attachEncryption(ydoc)
+    └── .applyKeys(keys)  // sync, one method
         └── y-keyvalue-lww-encrypted.ts (one-way: encrypt on write, decrypt on read)
 ```
 

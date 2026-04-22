@@ -29,14 +29,12 @@ export function createSkillsActions({
 	referenceDocs: ReturnType<typeof createReferenceContentDocs>;
 }) {
 	async function readInstructions(id: string): Promise<string> {
-		using h = instructionsDocs.open(id);
-		await h.whenReady;
+		await using h = await instructionsDocs.load(id);
 		return h.instructions.read();
 	}
 
 	async function readReference(id: string): Promise<string> {
-		using h = referenceDocs.open(id);
-		await h.whenReady;
+		await using h = await referenceDocs.load(id);
 		return h.content.read();
 	}
 

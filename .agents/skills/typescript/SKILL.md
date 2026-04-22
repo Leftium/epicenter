@@ -244,6 +244,31 @@ Convention: namespace the key (`epicenter.action`, `epicenter.document-handle`),
 
 **When a shape probe IS the smell, the fix is usually upstream.** If you're about to write `isFoo(x)` that shape-probes an internal factory's output, the factory should stamp a brand. If you're about to shape-probe user input or `JSON.parse` output, validate with arktype/typebox at the boundary — the probe accepts any object that happens to match; the schema rejects anything off-contract.
 
+### Factory output: flat objects, not prototype delegation
+
+When a factory returns a "bag of data + a few lifecycle methods," spread the data and add the methods as own enumerable properties. Don't use `Object.create(bundle)` to inherit the data, and don't hide methods with non-enumerable `Object.defineProperties`.
+
+```ts
+// Smell — data lives on the prototype, methods are non-enumerable.
+// Object.keys(handle) returns []; {...handle} spreads nothing;
+// callers reach through Object.getPrototypeOf(handle) to iterate.
+const handle = Object.create(bundle);
+Object.defineProperties(handle, {
+	dispose:          { value: () => {...} },
+	[Symbol.dispose]: { value: () => {...} },
+});
+
+// Better — flat, own, enumerable. Spreads, Object.keys, and debuggers all work.
+return {
+	...bundle,
+	dispose: () => {...},
+	[Symbol.dispose]: () => {...},
+	[DOCUMENT_HANDLE]: true,
+};
+```
+
+If you're reaching for `Object.create` to get class-like delegation, either write a `class` or flatten — don't simulate one with the other. The only legitimate `Object.defineProperty` in this repo patches a Node-owned getter (`process.stdout.isTTY`) in a test; normal assignment doesn't work there.
+
 ### Casts: never `as any`, rarely `as unknown as T`
 
 `as any` in production code is a red flag: either the callee is over-narrow (fix the signature) or the caller is passing the wrong type (fix the call). `as unknown as T` double-casts that mask a real type error are the same smell in disguise — e.g., `generateId() as unknown as BrandedId` should be `as string as BrandedId`, or better, fix `generateId`'s return type.

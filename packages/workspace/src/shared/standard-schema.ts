@@ -1,5 +1,38 @@
 import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok, trySync } from 'wellcrafted/result';
+
+/**
+ * Errors produced by Standard-JSON-Schema conversion. The library recovers
+ * from every one of these (falling back to a permissive schema), so these
+ * ship to the logger, not through a Result.
+ */
+export const StandardSchemaError = defineErrors({
+	UnitFallback: ({ unit }: { unit: unknown }) => ({
+		message: `[arktype→JSON Schema] Unit type "${String(unit)}" (${typeof unit}) cannot be converted; using base schema as fallback`,
+		unit,
+	}),
+	DefaultFallback: ({
+		code,
+		base,
+	}: {
+		code: string;
+		base: Record<string, unknown>;
+	}) => ({
+		message: `[arktype→JSON Schema] Fallback triggered for code "${code}"; base schema: ${JSON.stringify(base)}`,
+		code,
+		base,
+	}),
+	ConversionFailed: ({ cause }: { cause: unknown }) => ({
+		message: `[standardSchemaToJsonSchema] Conversion failed, using permissive fallback: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type StandardSchemaError = InferErrors<typeof StandardSchemaError>;
 
 /**
  * Arktype-aware JSON Schema conversion for Standard Schemas.

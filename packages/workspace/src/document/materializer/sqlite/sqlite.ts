@@ -12,6 +12,11 @@
 
 import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import Type from 'typebox';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
 import { standardSchemaToJsonSchema } from '../../../shared/standard-schema.js';
@@ -22,6 +27,31 @@ import type { MirrorDatabase, SearchOptions, SearchResult } from './types.js';
 
 // biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
 type AnyTable = Table<any>;
+
+/** Errors surfaced by the SQLite materializer's async background sync loop. */
+export const SqliteMaterializerError = defineErrors({
+	/** Debounced flush of pending row writes to the mirror database failed. */
+	SyncFailed: ({ cause }: { cause: unknown }) => ({
+		message: `[attachSqliteMaterializer] Failed to sync SQLite materializer: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	/** An FTS5 MATCH query raised inside the mirror database. */
+	FtsSearchFailed: ({
+		tableName,
+		query,
+		cause,
+	}: {
+		tableName: string;
+		query: string;
+		cause: unknown;
+	}) => ({
+		message: `[attachSqliteMaterializer] FTS search failed on table "${tableName}" for query "${query}": ${extractErrorMessage(cause)}`,
+		tableName,
+		query,
+		cause,
+	}),
+});
+export type SqliteMaterializerError = InferErrors<typeof SqliteMaterializerError>;
 
 /**
  * Per-table configuration, generic over the specific row type so `fts` narrows

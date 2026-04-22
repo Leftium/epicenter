@@ -14,7 +14,21 @@
  * Typical use: bump a parent row's `updatedAt` when its content doc is
  * edited locally, without re-triggering on remote/persisted updates.
  */
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type * as Y from 'yjs';
+
+/** Error produced when the user-supplied `fn` throws synchronously. */
+export const OnLocalUpdateError = defineErrors({
+	CallbackThrew: ({ cause }: { cause: unknown }) => ({
+		message: `[onLocalUpdate] callback threw: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type OnLocalUpdateError = InferErrors<typeof OnLocalUpdateError>;
 
 export function onLocalUpdate(ydoc: Y.Doc, fn: () => void): () => void {
 	const handler = (tx: Y.Transaction) => {

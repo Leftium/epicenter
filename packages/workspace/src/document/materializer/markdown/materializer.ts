@@ -30,6 +30,30 @@ import { parseMarkdownFile } from './parse-markdown-file.js';
  * emitted `PushEvent`, not inside the error — the error knows its
  * layer, the event carries external context.
  */
+/**
+ * Errors produced by the background write-observer (table row → .md file,
+ * KV state → serialized file). These run inside `.catch(...)` of a detached
+ * async task, so they ship to the logger, not through a Result to the caller.
+ */
+export const MaterializerWriteError = defineErrors({
+	TableWriteFailed: ({
+		tableName,
+		cause,
+	}: {
+		tableName: string;
+		cause: unknown;
+	}) => ({
+		message: `[markdown-materializer] table write failed for "${tableName}": ${extractErrorMessage(cause)}`,
+		tableName,
+		cause,
+	}),
+	KvWriteFailed: ({ cause }: { cause: unknown }) => ({
+		message: `[markdown-materializer] kv write failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type MaterializerWriteError = InferErrors<typeof MaterializerWriteError>;
+
 export const MaterializerPushError = defineErrors({
 	/** Reading the file from disk failed. */
 	ReadFailed: ({ cause }: { cause: unknown }) => ({

@@ -18,6 +18,11 @@ import {
 	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import { tryAsync } from 'wellcrafted/result';
 import type { Awareness } from 'y-protocols/awareness';
@@ -82,6 +87,28 @@ export type RpcDispatch = (
 	action: string,
 	input: unknown,
 ) => Promise<{ data: unknown; error: unknown }>;
+
+/** Errors surfaced by the sync supervisor's background lifecycle. */
+export const SyncSupervisorError = defineErrors({
+	/**
+	 * The `waitFor` barrier (typically IndexedDB hydration) rejected before
+	 * the supervisor started. Sync proceeds anyway — better to try syncing
+	 * than to stay silently offline because persistence failed.
+	 */
+	WaitForRejected: ({ cause }: { cause: unknown }) => ({
+		message: `[attachSync] waitFor rejected; starting sync anyway: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	/**
+	 * The socket didn't fire 'close' within the shutdown timeout, so
+	 * `whenDisposed` resolves anyway rather than hanging forever.
+	 */
+	CloseTimeout: ({ timeoutMs }: { timeoutMs: number }) => ({
+		message: `[attachSync] WebSocket did not fire onclose within ${timeoutMs}ms; resolving whenDisposed anyway`,
+		timeoutMs,
+	}),
+});
+export type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
 
 /**
  * Optional RPC feature block on the config.

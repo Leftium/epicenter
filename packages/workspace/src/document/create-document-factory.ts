@@ -153,7 +153,26 @@
  * @module
  */
 
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type * as Y from 'yjs';
+
+/** Errors surfaced by the document factory's background disposal machinery. */
+export const DocumentFactoryError = defineErrors({
+	/**
+	 * The user-supplied bundle's `[Symbol.dispose]` raised. We've already
+	 * removed the bundle from the cache; the throw is informational — we
+	 * still want the underlying Y.Doc and any open refcounts torn down.
+	 */
+	BundleDisposeThrew: ({ cause }: { cause: unknown }) => ({
+		message: `[createDocumentFactory] bundle [Symbol.dispose]() threw: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type DocumentFactoryError = InferErrors<typeof DocumentFactoryError>;
 
 /**
  * The contract every `createDocumentFactory` builder must satisfy.

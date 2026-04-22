@@ -60,6 +60,7 @@
  *
  * @module
  */
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type * as Y from 'yjs';
 import {
 	decryptValue,
@@ -75,6 +76,20 @@ import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
 } from '../../document/y-keyvalue/index.js';
+
+/**
+ * Errors emitted when the encrypted observer fails to decrypt an entry.
+ * Silent-data-loss territory — we log and continue, but the log is the only
+ * record this happened, so it's typed so apps can aggregate/count.
+ */
+export const EncryptedKvError = defineErrors({
+	DecryptFailed: ({ key, reason }: { key: string; reason: string }) => ({
+		message: `[encrypted-kv] Failed to decrypt entry "${key}": ${reason}`,
+		key,
+		reason,
+	}),
+});
+export type EncryptedKvError = InferErrors<typeof EncryptedKvError>;
 
 const textEncoder = new TextEncoder();
 /** Transaction origin for re-encryption writes. Observer skips events with this origin. */

@@ -13,17 +13,17 @@
  *     const base = createPerRowDoc({
  *       workspaceId, collection: 'files', field: 'content', id: fileId,
  *       onUpdate: () => filesTable.update(fileId, { updatedAt: Date.now() }),
- *       attach,
+ *       attachPersistence,
  *     });
  *     return { ...base, content: attachTimeline(base.ydoc) };
  *   });
  *
- * Persistence is caller-owned via the `attach` callback. Any function
- * returning `{ whenLoaded, whenDisposed }` works — `attachIndexedDb` and
- * `attachSqlite` both structurally satisfy `DocPersistence`:
+ * Persistence is caller-owned via the `attachPersistence` callback. Any
+ * function returning `{ whenLoaded, whenDisposed }` works — `attachIndexedDb`
+ * and `attachSqlite` both structurally satisfy `DocPersistence`:
  *
- *   attach: (ydoc) => attachIndexedDb(ydoc)                         // browser
- *   attach: (ydoc) => attachSqlite(ydoc, { filePath })              // desktop
+ *   attachPersistence: (ydoc) => attachIndexedDb(ydoc)                 // browser
+ *   attachPersistence: (ydoc) => attachSqlite(ydoc, { filePath })      // desktop
  *   // omit for in-memory (tests, Node stubs) — falls back to a no-op
  */
 
@@ -32,9 +32,9 @@ import { docGuid } from './doc-guid.js';
 import { onLocalUpdate } from './on-local-update.js';
 
 /**
- * Consumer contract for `attach` callbacks. Both fields are required — every
- * real persistence attachment signals initial-load readiness and final
- * teardown, and requiring them here catches missing providers at the
+ * Consumer contract for `attachPersistence` callbacks. Both fields are
+ * required — every real persistence attachment signals initial-load readiness
+ * and final teardown, and requiring them here catches missing providers at the
  * callback's definition site instead of at runtime. Attachments without async
  * teardown can set `whenDisposed: Promise.resolve()`.
  *
@@ -45,12 +45,6 @@ import { onLocalUpdate } from './on-local-update.js';
 export type DocPersistence = {
 	whenLoaded: Promise<void>;
 	whenDisposed: Promise<void>;
-};
-
-/** No-op fallback when no `attach` callback is provided (pure in-memory). */
-const NO_PERSISTENCE: DocPersistence = {
-	whenLoaded: Promise.resolve(),
-	whenDisposed: Promise.resolve(),
 };
 
 type PerRowDocBase = {
@@ -66,21 +60,24 @@ export function createPerRowDoc({
 	field,
 	id,
 	onUpdate,
-	attach,
+	attachPersistence,
 }: {
 	workspaceId: string;
 	collection: string;
 	field: string;
 	id: string;
 	onUpdate: () => void;
-	attach?: (ydoc: Y.Doc) => DocPersistence;
+	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }): PerRowDocBase {
 	const ydoc = new Y.Doc({
 		guid: docGuid({ workspaceId, collection, rowId: id, field }),
 		gc: false,
 	});
 	onLocalUpdate(ydoc, onUpdate);
-	const persistence = attach?.(ydoc) ?? NO_PERSISTENCE;
+	const persistence = attachPersistence?.(ydoc) ?? {
+		whenLoaded: Promise.resolve(),
+		whenDisposed: Promise.resolve(),
+	};
 	return {
 		ydoc,
 		whenReady: persistence.whenLoaded,

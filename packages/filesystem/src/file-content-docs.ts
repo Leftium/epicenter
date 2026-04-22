@@ -48,7 +48,7 @@ export function createFileContentDocs({
 			id: fileId,
 			onUpdate: () =>
 				filesTable.update(fileId, { updatedAt: Date.now() }),
-			attach: attachPersistence,
+			attachPersistence,
 		});
 		return { ...base, content: attachTimeline(base.ydoc) };
 	});

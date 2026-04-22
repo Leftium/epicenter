@@ -100,6 +100,6 @@ export {
 } from './define-document.js';
 export { docGuid } from './doc-guid.js';
 export { createPerRowDoc, type DocPersistence } from './create-per-row-doc.js';
-export { DOCUMENTS_ORIGIN, onLocalUpdate } from './on-local-update.js';
+export { onLocalUpdate } from './on-local-update.js';
 
 export { KV_KEY, TableKey, type KvKey } from './keys.js';

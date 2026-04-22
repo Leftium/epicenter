@@ -1,8 +1,8 @@
 /**
  * Per-reference content Y.Doc factory. References are tier-3 documentation
  * loaded on demand — each reference file gets its own Y.Doc with
- * `attachPlainText`. Persistence is caller-owned via the `attach` callback
- * — see `createFileContentDocs` for the shape.
+ * `attachPlainText`. Persistence is caller-owned via the `attachPersistence`
+ * callback — see `createFileContentDocs` for the shape.
  */
 
 import {
@@ -18,11 +18,11 @@ import type { Reference } from './tables.js';
 export function createReferenceContentDocs({
 	workspaceId,
 	referencesTable,
-	attach,
+	attachPersistence,
 }: {
 	workspaceId: string;
 	referencesTable: Table<Reference>;
-	attach?: (ydoc: Y.Doc) => DocPersistence;
+	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	return defineDocument((referenceId: string) => {
 		const base = createPerRowDoc({
@@ -32,7 +32,7 @@ export function createReferenceContentDocs({
 			id: referenceId,
 			onUpdate: () =>
 				referencesTable.update(referenceId, { updatedAt: Date.now() }),
-			attach,
+			attachPersistence,
 		});
 		return { ...base, content: attachPlainText(base.ydoc) };
 	});

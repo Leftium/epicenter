@@ -8,9 +8,10 @@
  * writebacks and are skipped, so a collaborator's edit arriving via sync
  * doesn't re-trigger a local metadata bump.
  *
- * `DOCUMENTS_ORIGIN` is exposed so user-owned metadata writebacks can tag
- * their transactions with it (`ydoc.transact(fn, DOCUMENTS_ORIGIN)`) and
- * match the same filtering convention as the sync / broadcast layers.
+ * `DOCUMENTS_ORIGIN` is internal to this module and the test that verifies
+ * the filter. It's reserved for a future "framework tags its own writebacks"
+ * use case — not currently exported from the package barrel, because no
+ * consumer tags transactions with it today.
  */
 import type * as Y from 'yjs';
 

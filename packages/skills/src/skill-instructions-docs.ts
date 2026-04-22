@@ -1,7 +1,8 @@
 /**
  * Per-skill instructions Y.Doc factory. Each skill's markdown instruction body
  * lives in its own Y.Doc with `attachPlainText`. Persistence is caller-owned
- * via the `attach` callback — see `createFileContentDocs` for the shape.
+ * via the `attachPersistence` callback — see `createFileContentDocs` for the
+ * shape.
  */
 
 import {
@@ -17,11 +18,11 @@ import type { Skill } from './tables.js';
 export function createSkillInstructionsDocs({
 	workspaceId,
 	skillsTable,
-	attach,
+	attachPersistence,
 }: {
 	workspaceId: string;
 	skillsTable: Table<Skill>;
-	attach?: (ydoc: Y.Doc) => DocPersistence;
+	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	return defineDocument((skillId: string) => {
 		const base = createPerRowDoc({
@@ -31,7 +32,7 @@ export function createSkillInstructionsDocs({
 			id: skillId,
 			onUpdate: () =>
 				skillsTable.update(skillId, { updatedAt: Date.now() }),
-			attach,
+			attachPersistence,
 		});
 		return { ...base, instructions: attachPlainText(base.ydoc) };
 	});

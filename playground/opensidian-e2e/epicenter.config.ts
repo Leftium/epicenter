@@ -75,7 +75,7 @@ const opensidianFactory = defineDocument((id: string) => {
 		url: (docId) => `${SERVER_URL}/workspaces/${docId}`,
 		getToken: async () =>
 			(await sessions.load(SERVER_URL))?.accessToken ?? null,
-		waitFor: Promise.all([persistence.whenLoaded, unlock.whenApplied]),
+		waitFor: Promise.all([persistence.whenLoaded, unlock.whenChecked]),
 	});
 
 	/**
@@ -106,7 +106,7 @@ const opensidianFactory = defineDocument((id: string) => {
 
 	const whenReady = Promise.all([
 		persistence.whenLoaded,
-		unlock.whenApplied,
+		unlock.whenChecked,
 		sync.whenConnected,
 	]).then(() => {});
 

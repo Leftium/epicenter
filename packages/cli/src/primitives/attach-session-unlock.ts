@@ -3,7 +3,7 @@
  * an `EncryptionAttachment`.
  *
  * Follows the attach-primitive convention: subject first, synchronous return,
- * promise-valued barrier (`whenApplied`). Resolves even in anonymous mode
+ * promise-valued barrier (`whenChecked`). Resolves even in anonymous mode
  * (no stored session, no keys to apply) — it's a "setup complete" barrier,
  * not a "keys were applied" assertion.
  *
@@ -19,7 +19,7 @@
  * const sync = attachSync(ydoc, {
  *   url,
  *   getToken,
- *   waitFor: Promise.all([persistence.whenLoaded, unlock.whenApplied]),
+ *   waitFor: Promise.all([persistence.whenLoaded, unlock.whenChecked]),
  * });
  * ```
  */
@@ -34,7 +34,7 @@ export type SessionUnlockAttachment = {
 	 * Resolves even in anonymous mode (no stored session, no keys to apply)
 	 * — it's a "setup complete" barrier, not a "keys were applied" assertion.
 	 */
-	whenApplied: Promise<void>;
+	whenChecked: Promise<void>;
 };
 
 /**
@@ -55,12 +55,12 @@ export function attachSessionUnlock(
 		waitFor?: Promise<unknown>;
 	},
 ): SessionUnlockAttachment {
-	const whenApplied = (async () => {
+	const whenChecked = (async () => {
 		if (opts.waitFor) await opts.waitFor;
 		const session = await opts.sessions.load(opts.serverUrl);
 		if (session?.encryptionKeys) {
 			encryption.applyKeys(session.encryptionKeys);
 		}
 	})();
-	return { whenApplied };
+	return { whenChecked };
 }

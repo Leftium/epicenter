@@ -163,7 +163,78 @@ const { data, error } = await tryAsync({
 if (error) return Err(error);
 ```
 
-### When to Use trySync vs tryAsync vs try-catch
+## Consuming Result values — destructure `error` explicitly
+
+When reading a `Result<T, E>` that a library (or your own code) returns
+— like `table.get(id)`, `tryAsync(...)`, or a service method — **always
+destructure both `data` and `error` and check `error` on its own line**,
+even when both paths should produce the same action.
+
+```typescript
+// ✅ GOOD — error is destructured and checked explicitly
+const { data: row, error } = table.get(id);
+if (error) {
+  console.warn('[context] corrupted row:', error.message);
+  return null;
+}
+if (row === null) return null;       // legitimate absence
+use(row);                             // row: TRow
+
+// ❌ BAD — relies on "data is null if error exists" by coincidence
+const { data: row } = table.get(id);  // error silently swallowed
+if (row === null) return null;
+use(row);
+```
+
+Why:
+- **Reading intent**: the `if (error)` line tells future readers the
+  error case is considered, not forgotten.
+- **Distinct handling opportunity**: even if you currently do the same
+  thing on both branches, splitting the checks gives you a place to
+  log / toast / retry on errors without rewriting the control flow.
+- **Avoids coincidental behavior**: "data is null when error exists"
+  is true in wellcrafted's `Result`, but relying on that fact at the
+  call site ties your code to the representation, not the contract.
+
+### When combining conditions is OK
+
+If both cases *genuinely* produce the same action (no log, no toast,
+no retry, no distinction worth writing down), one combined condition
+is fine — as long as `error` is still destructured:
+
+```typescript
+// ✅ OK — error destructured, both cases deliberately collapsed
+const { data: row, error } = table.get(id);
+if (error || row === null) continue;  // skip in both cases
+use(row);
+```
+
+The destructure matters; it signals you thought about the error case
+and chose to collapse it. The anti-pattern is destructuring *only*
+`data` and hoping for the best.
+
+### When to split the checks
+
+Split into two explicit checks when the handling differs:
+
+```typescript
+const { data: row, error } = table.get(id);
+if (error) {
+  logger.warn('row corrupted, replacing', { id, error });
+  await replaceWithDefault(id);
+  return;
+}
+if (row === null) {
+  await createMissingRow(id);
+  return;
+}
+use(row);
+```
+
+This is the form to prefer by default — collapse back only when
+there's truly nothing distinct to say.
+
+## When to Use trySync vs tryAsync vs try-catch
 
 - **Use trySync when**:
   - Working with synchronous operations (JSON parsing, validation, calculations)

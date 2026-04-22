@@ -45,6 +45,22 @@ type RegisteredKv = {
 };
 
 /**
+ * Default row serializer: `{id}.md` with the full row dumped to YAML
+ * frontmatter and no body. Used whenever `config.serialize` isn't provided.
+ */
+const defaultSerialize = (row: BaseRow): SerializeResult => ({
+	filename: `${row.id}.md`,
+	content: toMarkdown({ ...row }),
+});
+
+/**
+ * Default row deserializer: treat frontmatter as the row.
+ */
+const defaultDeserialize = (parsed: {
+	frontmatter: Record<string, unknown>;
+}): BaseRow => parsed.frontmatter as BaseRow;
+
+/**
  * Create a bidirectional markdown materializer for workspace data.
  *
  * `attachMarkdownMaterializer(ydoc, { dir })` returns a chainable builder where
@@ -103,12 +119,7 @@ export function attachMarkdownMaterializer(
 	): Promise<() => void> {
 		const directory = join(baseDir, config.dir ?? table.name);
 		const filenames = new Map<string, string>();
-		const serialize: (row: BaseRow) => MaybePromise<SerializeResult> =
-			config.serialize ??
-			((row) => ({
-				filename: `${row.id}.md`,
-				content: toMarkdown({ ...row }),
-			}));
+		const serialize = config.serialize ?? defaultSerialize;
 
 		await mkdir(directory, { recursive: true });
 
@@ -191,7 +202,7 @@ export function attachMarkdownMaterializer(
 
 	// ── Initial flush ────────────────────────────────────────────
 
-	const whenFlushed = (async () => {
+	async function initialize() {
 		// Always yield a microtask so callers can finish synchronous setup
 		// (including `.table()` / `.kv()` registrations) before the first flush.
 		await waitFor;
@@ -210,11 +221,13 @@ export function attachMarkdownMaterializer(
 		}
 
 		hasInitialized = true;
-	})();
+	}
 
-	// ── Imperative methods (push / pull) ────────────────────────
+	const whenFlushed = initialize();
 
-	async function pushImpl(): Promise<{
+	// ── Push (imports markdown files into workspace tables) ─────
+
+	async function pushMarkdownFiles(): Promise<{
 		imported: number;
 		skipped: number;
 		errors: string[];
@@ -252,10 +265,7 @@ export function attachMarkdownMaterializer(
 				}
 
 				try {
-					const deserialize =
-						entry.config.deserialize ??
-						((p: { frontmatter: Record<string, unknown> }) =>
-							p.frontmatter as BaseRow);
+					const deserialize = entry.config.deserialize ?? defaultDeserialize;
 					const row = await deserialize(parsed);
 					entry.table.set(row);
 					imported++;
@@ -268,30 +278,6 @@ export function attachMarkdownMaterializer(
 		return { imported, skipped, errors };
 	}
 
-	async function pullImpl(): Promise<{ written: number }> {
-		const baseDir = await resolveDir();
-		let written = 0;
-
-		for (const entry of registered.values()) {
-			const directory = join(baseDir, entry.config.dir ?? entry.table.name);
-			const serialize: (row: BaseRow) => MaybePromise<SerializeResult> =
-				entry.config.serialize ??
-				((row) => ({
-					filename: `${row.id}.md`,
-					content: toMarkdown({ ...row }),
-				}));
-
-			await mkdir(directory, { recursive: true });
-			for (const row of entry.table.getAllValid()) {
-				const result = await serialize(row);
-				await writeFile(join(directory, result.filename), result.content);
-				written++;
-			}
-		}
-
-		return { written };
-	}
-
 	// ── Builder ──────────────────────────────────────────────────
 
 	const api = {
@@ -301,14 +287,28 @@ export function attachMarkdownMaterializer(
 			description:
 				'Read markdown files from disk and import rows into registered tables',
 			input: Type.Object({}),
-			handler: () => pushImpl(),
+			handler: pushMarkdownFiles,
 		}),
 		pull: defineMutation({
 			title: 'Pull workspace to markdown',
 			description:
 				'Re-serialize all valid rows from registered tables to markdown files on disk',
 			input: Type.Object({}),
-			handler: () => pullImpl(),
+			handler: async () => {
+				const baseDir = await resolveDir();
+				let written = 0;
+				for (const entry of registered.values()) {
+					const directory = join(baseDir, entry.config.dir ?? entry.table.name);
+					const serialize = entry.config.serialize ?? defaultSerialize;
+					await mkdir(directory, { recursive: true });
+					for (const row of entry.table.getAllValid()) {
+						const result = await serialize(row);
+						await writeFile(join(directory, result.filename), result.content);
+						written++;
+					}
+				}
+				return { written };
+			},
 		}),
 	};
 

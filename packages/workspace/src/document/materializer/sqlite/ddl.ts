@@ -21,13 +21,13 @@ type JsonSchema = Record<string, unknown>;
 /**
  * Generate a `CREATE TABLE IF NOT EXISTS` statement for a workspace table.
  *
- * This mirrors the JSON Schema shape exposed by `describeWorkspace()` into a
+ * Maps a table's JSON Schema (from its `defineTable(...)` definition) into a
  * SQLite table definition. Required scalar fields become `NOT NULL`, `id`
  * becomes the primary key, version discriminants use `INTEGER NOT NULL`, and
  * complex values are stored as JSON text.
  *
  * @param tableName - The SQLite table name to create
- * @param jsonSchema - The JSON Schema from `describeWorkspace().tables[name].schema`
+ * @param jsonSchema - The JSON Schema for the table's row type
  * @returns A `CREATE TABLE IF NOT EXISTS` SQL statement
  *
  * @example
@@ -89,7 +89,7 @@ export function generateDdl(
  *
  * If the schema is not versioned, this returns the original object unchanged.
  *
- * @param schema - A JSON Schema object from `describeWorkspace()`
+ * @param schema - A JSON Schema object for a table row
  * @returns The highest-version object schema when `oneOf` is present, otherwise the original schema
  *
  * @example

@@ -55,3 +55,7 @@ tmp-search/
 
 # y-sweet server data (created when running the sync server locally)
 y-sweet-data/
+
+# Editor / agent tooling state (machine-local)
+.opencode/
+.sisyphus/

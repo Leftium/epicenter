@@ -50,7 +50,7 @@ function createTestClient() {
 	const contentDocs = createFileContentDocs({
 		workspaceId: WORKSPACE_ID,
 		filesTable: tables.files,
-		attach: (contentDoc) =>
+		attachPersistence: (contentDoc) =>
 			attachSqlite(contentDoc, {
 				filePath: join(PERSISTENCE_DIR, 'content', `${contentDoc.guid}.db`),
 			}),

@@ -55,7 +55,7 @@ const opensidianFactory = defineDocument(
 		const fileContentDocs = createFileContentDocs({
 			workspaceId: id,
 			filesTable: tables.files,
-			attach: (doc) => attachIndexedDb(doc),
+			attachPersistence: (doc) => attachIndexedDb(doc),
 		});
 		const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
 		const fs = attachYjsFileSystem(tables.files, fileContentDocs);

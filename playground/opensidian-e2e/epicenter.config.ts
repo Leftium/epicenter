@@ -92,7 +92,7 @@ const opensidianFactory = defineDocument((id: string) => {
 	const fileContentDocs = createFileContentDocs({
 		workspaceId: id,
 		filesTable: tables.files,
-		attach: (contentDoc) =>
+		attachPersistence: (contentDoc) =>
 			attachSqlite(contentDoc, {
 				filePath: join(CONTENT_DIR, `${contentDoc.guid}.db`),
 			}),

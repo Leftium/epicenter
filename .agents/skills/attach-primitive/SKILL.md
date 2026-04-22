@@ -5,7 +5,7 @@ description: Contract and invariants for `attach*` composition primitives — th
 
 # Attach Primitives
 
-Every persistence, sync, materializer, and binding in `packages/workspace` (plus session-shaped primitives in `packages/cli`) follows one of three shapes. Pick the narrowest shape that describes what you're attaching to and match the invariants exactly.
+Every persistence, sync, materializer, and binding in `packages/workspace` (plus session-shaped primitives in `packages/cli`) follows one shape. Match the invariants exactly.
 
 ## Naming
 
@@ -16,68 +16,88 @@ Every persistence, sync, materializer, and binding in `packages/workspace` (plus
 
 Both return plain objects. The distinction is **what happens at call time**, not what the return value looks like. A chainable builder with `.table()/.kv()` that registers `table.observe(...)` is still `attach*` — chainability is a return-shape concern, orthogonal to naming.
 
-## The three attach variants
-
-All three obey the invariants below. Pick the one whose first argument actually describes the subject being modified. Each variant can be fixed-surface or chainable — see the materializer example under Variant 1.
-
-### Variant 1 — ydoc-bound (canonical)
+## The shape
 
 ```ts
-export function attachX(ydoc: Y.Doc, opts: XOptions): XAttachment;
+export function attachX(subject: TSubject, opts: XOptions): XAttachment;
 ```
 
-Most primitives: `attachIndexedDb`, `attachSqlite`, `attachSync`, `attachBroadcastChannel`, `attachEncryption`, `attachTable(s)`, `attachKv`, `attachAwareness`, `attachRichText`, `attachPlainText`, `attachTimeline`. Teardown via `ydoc.once('destroy', ...)`.
+**One rule.** The first argument is the subject being modified. The subject is almost always a `Y.Doc`. In the rare case where a primitive operates on an existing attachment rather than a ydoc, the subject is that attachment.
 
-**Chainable variant:** materializers ride on the same shape but take a richer `ctx` (tables/kv/whenReady) and return a builder that accepts per-entity config:
+Examples of the common form:
 
 ```ts
-export function attachMarkdownMaterializer(
-  ctx: { tables; kv?; whenReady },
-  config: { dir },
-): MaterializerBuilder; // { whenFlushed, table(), kv(), pushFrom..., pullTo..., [Symbol.dispose]() }
+attachIndexedDb(ydoc)                   // Y.Doc subject
+attachSqlite(ydoc, { filePath })
+attachSync(ydoc, { url, getToken })
+attachBroadcastChannel(ydoc)
+attachEncryption(ydoc)
+attachTable(ydoc, name, def)            // Y.Doc subject + slot key + def
+attachTables(ydoc, defs)
+attachKv(ydoc, defs)
+attachAwareness(ydoc, defs)
+attachRichText(ydoc) / attachPlainText(ydoc) / attachTimeline(ydoc)
 ```
 
-Examples: `attachMarkdownMaterializer`, `attachSqliteMaterializer`. Teardown via `[Symbol.dispose]()` on the builder (unsubscribes table observers). `whenFlushed` = "initial materialize complete." The chainable return is the only difference from the non-chainable form above — same prefix, same invariants.
-
-### Variant 2 — ydoc + coordinator
+**Chainable return is allowed** when per-entity configuration is incremental:
 
 ```ts
-export function attachX(
-  ydoc: Y.Doc,
-  coordinator: YCoordinator,
-  opts: XOptions,
-): XAttachment;
+attachMarkdownMaterializer({ tables, kv?, whenReady }, { dir })
+  .table('posts', { serialize })
+  .kv();
+
+attachSqliteMaterializer({ tables, definitions, whenReady }, { db })
+  .table('posts', { fts: ['title'] });
 ```
 
-Used when the primitive needs a sibling attachment as a dependency but still owns a slice of the ydoc. Examples: `attachEncryptedTable(ydoc, encryption, def)`, `attachEncryptedKv(ydoc, encryption, defs)`, `attachEncryptedTables(ydoc, encryption, defs)`. Teardown still via `ydoc.once('destroy')`; the coordinator owns its own lifecycle.
+Materializers take a richer context (tables/kv/whenReady) because they observe a sibling, not the ydoc directly. Same prefix, same invariants.
 
-### Variant 3 — attachment-on-attachment
+## The one exception — non-ydoc subject
+
+When a primitive modifies a sibling attachment and the coordination is cross-package (so it can't be a method on the coordinator), it's a top-level function with the attachment as first arg:
 
 ```ts
-export function attachX(
-  subject: SomeAttachment,
-  opts: XOptions,
-): XAttachment;
+attachSessionUnlock(encryption, { sessions, serverUrl, waitFor })
 ```
 
-Modifies an existing attachment without touching the ydoc directly. Example: `attachSessionUnlock(encryption, { sessions, serverUrl, waitFor })` — applies the stored CLI session's keys to an `EncryptionAttachment`. No teardown needed because there are no event listeners or resources to free; the op is one-shot async (returns a `whenApplied` barrier and nothing else).
+This is rare — one example in the whole codebase. It lives in `@epicenter/cli` and operates on an `EncryptionAttachment` defined in `@epicenter/workspace`; making it a method on the workspace type would couple packages backwards, so it stays a top-level function.
 
-## Invariants (all three variants)
+If the primitive is in-package with its coordinator, prefer method-on-coordinator (below) over a top-level `attachX(attachment, opts)`.
+
+## Coordinator pattern (the encryption case)
+
+When one attachment registers additional sibling attachments into itself, it owns the method surface:
+
+```ts
+const encryption = attachEncryption(ydoc);
+const tables = encryption.attachTables(ydoc, defs);      // method on coordinator
+const kv = encryption.attachKv(ydoc, defs);
+```
+
+vs. the top-level form that would read:
+
+```ts
+const tables = attachEncryptedTables(ydoc, encryption, defs);   // ← not used; coordinator owns this
+```
+
+The method form says "use the encryption's attach-tables" directly. Preferred when the coordinator and its siblings live in the same package.
+
+## Invariants
 
 1. **Synchronous return.** Construction never awaits. Async work goes into `when*` promises on the returned object.
-2. **Teardown hooked to the correct lifecycle.**
-   - Variants 1, 2: `ydoc.once('destroy', ...)`. Never expose a `.destroy()` method on the attachment.
-   - Variant 3: usually no teardown. If the primitive does hold listeners, use the subject attachment's own disposal signal.
-   - Chainable attach* (materializers): `[Symbol.dispose]()` method on the builder, unsubscribes observers.
+2. **Teardown hooked to the subject's lifecycle.**
+   - Y.Doc subject: `ydoc.once('destroy', ...)`. Never expose a `.destroy()` method on the attachment.
+   - Attachment subject: use the subject attachment's disposal signal; or no teardown if there are no listeners.
+   - Chainable builders (materializers): `[Symbol.dispose]()` method on the builder, unsubscribes observers.
 3. **Idempotent cleanup.** If the underlying library also registers a destroy handler (like `y-indexeddb`), your handler must be safe to run alongside it.
 4. **Plain data returned.** The attachment is a record of promises, functions, and occasionally mutable state. No ES classes, no getters that lazy-init.
-5. **No id option.** For ydoc-bound variants, `ydoc.guid` is the identity — read it off the doc, don't take it again as an option.
+5. **No id option on ydoc-bound primitives.** `ydoc.guid` is the identity — read it off the doc.
 6. **Barrier naming is semantic, not mechanical.** Pick the name that describes the actual event:
    - `whenLoaded` — local state replayed into the ydoc (IDB, SQLite)
    - `whenConnected` — remote transport up + first exchange done (sync)
-   - `whenApplied` — configuration action completed (session-unlock)
+   - `whenChecked` — configuration action settled (session-unlock — resolves even if nothing was applied)
    - `whenFlushed` — initial side-effect pass done (materializer)
-   - `whenDisposed` — teardown settled (any variant with async cleanup)
+   - `whenDisposed` — teardown settled (any subject with async cleanup)
    - `whenReady` — bundle-level aggregate only; not on individual attachments
 
 ## Composition inside `defineDocument`
@@ -87,24 +107,24 @@ Primitives compose inside a build closure:
 ```ts
 const factory = defineDocument((id: string) => {
   const ydoc       = new Y.Doc({ guid: id, gc: false });
-  const encryption = attachEncryption(ydoc);                                // variant 1
-  const tables     = attachEncryptedTables(ydoc, encryption, schema);       // variant 2
-  const idb        = attachIndexedDb(ydoc);                                 // variant 1
-  const unlock     = attachSessionUnlock(encryption, {                      // variant 3
+  const encryption = attachEncryption(ydoc);
+  const tables     = encryption.attachTables(ydoc, schema);     // coordinator method
+  const idb        = attachIndexedDb(ydoc);
+  const unlock     = attachSessionUnlock(encryption, {          // non-ydoc subject
     sessions, serverUrl, waitFor: idb.whenLoaded,
   });
-  const sync       = attachSync(ydoc, {                                     // variant 1
+  const sync       = attachSync(ydoc, {
     url, getToken,
-    waitFor: Promise.all([idb.whenLoaded, unlock.whenApplied]),
+    waitFor: Promise.all([idb.whenLoaded, unlock.whenChecked]),
   });
-  const markdown   = attachMarkdownMaterializer(                            // variant 1, chainable
+  const markdown   = attachMarkdownMaterializer(                 // chainable return
     { tables, kv, whenReady: sync.whenConnected },
     { dir },
   ).table('posts', { serialize });
 
   return {
     ydoc, tables, encryption, idb, sync, markdown,
-    whenReady:    Promise.all([idb.whenLoaded, unlock.whenApplied, sync.whenConnected]).then(() => {}),
+    whenReady:    Promise.all([idb.whenLoaded, unlock.whenChecked, sync.whenConnected]).then(() => {}),
     whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed, encryption.whenDisposed]).then(() => {}),
     [Symbol.dispose]() { ydoc.destroy(); },
   };
@@ -113,7 +133,7 @@ const factory = defineDocument((id: string) => {
 export const workspace = factory.open('my-app');
 ```
 
-The bundle aggregates child `whenLoaded` / `whenConnected` / `whenApplied` into one `whenReady`, and child `whenDisposed` into one `whenDisposed`. Consumers only await the bundle-level barriers.
+The bundle aggregates child `whenLoaded` / `whenConnected` / `whenChecked` into one `whenReady`, and child `whenDisposed` into one `whenDisposed`. Consumers only await the bundle-level barriers.
 
 ## The `waitFor` convention
 
@@ -122,25 +142,23 @@ Primitives that perform a gated startup (sync, session-unlock) accept `waitFor?:
 Use it whenever a primitive's startup must follow another's. Examples:
 - `attachSync` after local hydrate: `waitFor: idb.whenLoaded`
 - `attachSessionUnlock` after hydrate (so stored keys don't clobber freshly-hydrated plaintext mid-replay): `waitFor: persistence.whenLoaded`
-- `attachSync` after both hydrate AND unlock: `waitFor: Promise.all([idb.whenLoaded, unlock.whenApplied])`
+- `attachSync` after both hydrate AND unlock: `waitFor: Promise.all([idb.whenLoaded, unlock.whenChecked])`
 
 ## Anti-patterns
 
 - **Don't revive `ExtensionContext` / `RawExtension` / `defineExtension`.** Those were deleted for a reason — the lifecycle framework added a registration indirection that primitives don't need.
 - **Don't wrap attachments in a `createWorkspace().with(...)` chain.** Compose inline in the factory.
-- **Don't expose `dispose()` on a variant-1/2 attachment.** Destroy the Y.Doc.
+- **Don't expose `dispose()` on a ydoc-bound attachment.** Destroy the Y.Doc.
 - **Don't duck-type an attachment.** If you need to brand it, use a `Symbol.for` marker. See `skills/typescript` — runtime shape-checking is a code smell.
 - **Don't take an `id` on a ydoc-bound primitive.** Use `ydoc.guid`.
-- **Don't use `createX` for something side-effectful.** If it registers observers, destroy listeners, or subscription state at call time, it's `attach*` — even if the return value is a chainable builder. Chainability is orthogonal to the prefix.
-- **Don't use `attachX` for pure construction.** A factory that only builds plain objects (no listeners, no subscriptions) stays `create*`. Factory-of-factories where the returned handle attaches later (`createFileContentDocs`, `createPerRowDoc`) is also `create*` — nothing subscribes until the handle opens.
+- **Don't use `createX` for a side-effectful primitive.** If it registers listeners, it's `attach*`.
+- **Don't introduce `attachEncryptedX(ydoc, encryption, ...)` top-level exports.** Use `encryption.attachX(ydoc, ...)` — the coordinator owns its siblings.
 
 ## Reference implementations
 
-- `packages/workspace/src/document/attach-indexed-db.ts` — canonical variant 1 (~40 lines).
-- `packages/workspace/src/document/attach-sync.ts` — variant 1 with `whenConnected` + `waitFor`.
-- `packages/workspace/src/document/attach-encryption.ts` — variant 1 with internal state (keyring cache).
-- `packages/workspace/src/document/attach-encrypted.ts` — variant 2 (`attachEncryptedTable(s)` + `attachEncryptedKv`).
-- `packages/cli/src/primitives/attach-session-unlock.ts` — variant 3 (no teardown, single `whenApplied` barrier).
-- `packages/workspace/src/document/materializer/markdown/materializer.ts` — variant 1, chainable (builder with `.table()/.kv()` chain; still `attach*` because `.table()` registers observers).
-- `packages/workspace/src/document/materializer/sqlite/sqlite.ts` — same shape as the markdown materializer.
+- `packages/workspace/src/document/attach-indexed-db.ts` — the canonical 40-line example.
+- `packages/workspace/src/document/attach-sync.ts` — network variant with `whenConnected` + `waitFor`.
+- `packages/workspace/src/document/attach-encryption.ts` — state-owning coordinator; exposes `attachTable` / `attachTables` / `attachKv` as methods.
+- `packages/cli/src/primitives/attach-session-unlock.ts` — non-ydoc subject (cross-package exception).
+- `packages/workspace/src/document/materializer/markdown/materializer.ts` — chainable builder with `.table()/.kv()`.
 - `apps/whispering/src/lib/client.ts` — full composition inside `defineDocument`.

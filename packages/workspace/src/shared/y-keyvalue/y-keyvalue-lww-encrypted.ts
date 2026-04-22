@@ -132,9 +132,8 @@ export type EncryptedYKeyValueLww<T> = ObservableKvStore<T> & {
 	 *
 	 * When a key is active, this counts entries that failed to decrypt
 	 * (corrupted blobs, wrong key version not in keyring). When no key
-	 * is active, this counts all encrypted entries.
-	 *
-	 * Computed by iterating `inner.map` and counting undecryptable entries.
+	 * is active, this is always 0 (passthrough mode treats every entry
+	 * as readable plaintext).
 	 */
 	readonly unreadableEntryCount: number;
 
@@ -186,97 +185,59 @@ export function createEncryptedYkvLww<T>(
 	let encryption: EncryptionState | undefined;
 
 	/**
-	 * Best-effort blob decryption with keyring fallback.
+	 * Decrypt a stored value to plaintext, or return plaintext unchanged.
 	 *
-	 * Tries currentKey first (most blobs use the latest version).
-	 * On failure, reads the blob's embedded key version and tries
-	 * the matching key from the keyring.
+	 * - Plaintext input (non-blob) passes through regardless of state.
+	 * - Blob + no state (passthrough mode) → undefined (unreadable).
+	 * - Blob + state → try currentKey, fall back to the blob's recorded version.
 	 *
-	 * Pure function—no logging, no side effects. Callers decide
-	 * what to do with `undefined` (warn, skip, etc.).
+	 * Silent on failure — callers decide what to do with `undefined`.
 	 *
-	 * @param state - Defaults to the closure's `encryption`. Overridden by
-	 *   `activateEncryption()` to compare before/after readability without
-	 *   mutating the closure mid-iteration.
+	 * @param state Defaults to the closure's `encryption`. Overridden by
+	 *   `activateEncryption()` to decrypt against `nextEncryption` without
+	 *   confusing the closure mid-iteration.
 	 */
-	const tryDecryptBlob = (
-		blob: EncryptedBlob,
+	const decrypt = (
+		raw: EncryptedBlob | T,
 		aad: Uint8Array,
 		state: EncryptionState | undefined = encryption,
-	): string | undefined => {
+	): T | undefined => {
+		if (!isEncryptedBlob(raw)) return raw as T;
 		if (!state) return undefined;
 		try {
-			return decryptValue(blob, state.currentKey, aad);
+			return JSON.parse(decryptValue(raw, state.currentKey, aad)) as T;
 		} catch {
 			// Current key didn't work — try the blob's recorded key version
 		}
-		const versionKey = state.keyring.get(getKeyVersion(blob));
-		if (!versionKey || versionKey === state.currentKey) return undefined; // Missing version, or same key we already tried
+		const versionKey = state.keyring.get(getKeyVersion(raw));
+		if (!versionKey || versionKey === state.currentKey) return undefined;
 		try {
-			return decryptValue(blob, versionKey, aad);
+			return JSON.parse(decryptValue(raw, versionKey, aad)) as T;
 		} catch {
 			return undefined;
 		}
 	};
 
 	/**
-	 * Attempt to decrypt an entry. Returns a plaintext entry on success,
-	 * `undefined` on failure. When a key IS active and decryption still fails,
-	 * logs a single warning with the entry key and actionable failure reason.
+	 * Produce the value to hand to the inner store: encrypted blob when a key
+	 * is active, plaintext passthrough otherwise. Pure function of the
+	 * closure's `encryption`.
 	 */
-	const tryDecryptEntry = (
-		key: string,
-		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
-	): YKeyValueLwwEntry<T> | undefined => {
-		if (!isEncryptedBlob(entry.val)) return { ...entry, val: entry.val as T }; // Plaintext — nothing to decrypt
-		const json = tryDecryptBlob(entry.val, textEncoder.encode(key));
-		if (json !== undefined) return { ...entry, val: JSON.parse(json) as T };
-		if (!encryption) return undefined; // No key loaded yet — skip silently, activateEncryption() will catch up
-
-		const blobVersion = getKeyVersion(entry.val);
-		const isKnownKeyVersion = encryption.keyring.has(blobVersion);
-		const reason = isKnownKeyVersion
-			? 'wrong key material or corrupted blob'
-			: `keyVersion=${blobVersion} not in keyring [${[...encryption.keyring.keys()].join(', ')}]`;
-		console.warn(`[encrypted-kv] Failed to decrypt entry "${key}": ${reason}`);
-		return undefined;
-	};
-
-	/** Silent decrypt—returns plaintext value or `undefined`. No console warning. */
-	const tryDecryptValue = (
-		raw: EncryptedBlob | T,
-		aad: Uint8Array,
-		state: EncryptionState | undefined = encryption,
-	): T | undefined => {
-		if (!isEncryptedBlob(raw)) return raw as T;
-		const json = tryDecryptBlob(raw, aad, state);
-		if (!json) return undefined;
-		return JSON.parse(json) as T;
-	};
-
-	/** Count entries that can be decrypted (or are plaintext) with the current keyring. */
-	const countDecryptable = (): number => {
-		let count = 0;
-		for (const [key, entry] of inner.map)
-			if (tryDecryptValue(entry.val, textEncoder.encode(key)) !== undefined)
-				count++;
-		return count;
-	};
-
-	/** Iterate entries, decrypting each on the fly. Undecryptable entries are skipped. */
-	const iterateDecrypted = function* (
-		iterable: Iterable<[string, YKeyValueLwwEntry<EncryptedBlob | T>]>,
-	): IterableIterator<[string, YKeyValueLwwEntry<T>]> {
-		for (const [key, entry] of iterable) {
-			const val = tryDecryptValue(entry.val, textEncoder.encode(key));
-			if (val !== undefined) yield [key, { ...entry, val }];
-		}
+	const toStored = (key: string, val: T): EncryptedBlob | T => {
+		if (!encryption) return val;
+		return encryptValue(
+			JSON.stringify(val),
+			encryption.currentKey,
+			textEncoder.encode(key),
+			encryption.currentVersion,
+		);
 	};
 
 	/**
 	 * Inner observer. When entries change in the CRDT, decrypt and forward
-	 * plaintext change events to registered handlers. Skips REENCRYPT_ORIGIN writes
-	 * (those are internal re-encryption during activation, not user changes).
+	 * plaintext change events to registered handlers. Skips REENCRYPT_ORIGIN
+	 * writes (those are internal re-encryption during activation, not user
+	 * changes). Logs a single warning on undecryptable remote entries.
 	 */
 	const observer: Parameters<typeof inner.observe>[0] = (changes, origin) => {
 		if (origin === REENCRYPT_ORIGIN) return;
@@ -288,53 +249,32 @@ export function createEncryptedYkvLww<T>(
 			}
 			const entry = inner.map.get(key);
 			if (!entry) continue;
-			const decrypted = tryDecryptEntry(key, entry);
-			if (!decrypted) continue;
-			decryptedChanges.set(key, {
-				action: change.action,
-				newValue: decrypted.val,
-			});
+			const val = decrypt(entry.val, textEncoder.encode(key));
+			if (val === undefined) {
+				if (encryption && isEncryptedBlob(entry.val)) {
+					const blobVersion = getKeyVersion(entry.val);
+					const reason = encryption.keyring.has(blobVersion)
+						? 'wrong key material or corrupted blob'
+						: `keyVersion=${blobVersion} not in keyring [${[...encryption.keyring.keys()].join(', ')}]`;
+					console.warn(`[encrypted-kv] Failed to decrypt entry "${key}": ${reason}`);
+				}
+				continue;
+			}
+			decryptedChanges.set(key, { action: change.action, newValue: val });
 		}
 		if (decryptedChanges.size === 0) return;
-		for (const handler of changeHandlers)
-			handler(decryptedChanges, origin);
+		for (const handler of changeHandlers) handler(decryptedChanges, origin);
 	};
 
 	inner.observe(observer);
 
 	return {
 		set(key, val) {
-			if (!encryption) {
-				inner.set(key, val);
-				return;
-			}
-			inner.set(
-				key,
-				encryptValue(
-					JSON.stringify(val),
-					encryption.currentKey,
-					textEncoder.encode(key),
-					encryption.currentVersion,
-				),
-			);
+			inner.set(key, toStored(key, val));
 		},
 		bulkSet(entries) {
-			if (!encryption) {
-				inner.bulkSet(entries);
-				return;
-			}
-			const enc = encryption;
-
 			inner.bulkSet(
-				entries.map(({ key, val }) => ({
-					key,
-					val: encryptValue(
-						JSON.stringify(val),
-						enc.currentKey,
-						textEncoder.encode(key),
-						enc.currentVersion,
-					),
-				})),
+				entries.map(({ key, val }) => ({ key, val: toStored(key, val) })),
 			);
 		},
 		/**
@@ -344,12 +284,12 @@ export function createEncryptedYkvLww<T>(
 		get(key) {
 			const raw = inner.get(key);
 			if (raw === undefined) return undefined;
-			return tryDecryptValue(raw, textEncoder.encode(key));
+			return decrypt(raw, textEncoder.encode(key));
 		},
 		has(key) {
 			const raw = inner.get(key);
 			if (raw === undefined) return false;
-			return tryDecryptValue(raw, textEncoder.encode(key)) !== undefined;
+			return decrypt(raw, textEncoder.encode(key)) !== undefined;
 		},
 		delete(key) {
 			inner.delete(key);
@@ -358,7 +298,10 @@ export function createEncryptedYkvLww<T>(
 			inner.bulkDelete(keys);
 		},
 		*entries() {
-			yield* iterateDecrypted(inner.entries());
+			for (const [key, entry] of inner.entries()) {
+				const val = decrypt(entry.val, textEncoder.encode(key));
+				if (val !== undefined) yield [key, { ...entry, val }];
+			}
 		},
 		observe(handler) {
 			changeHandlers.add(handler);
@@ -388,44 +331,39 @@ export function createEncryptedYkvLww<T>(
 			//      upgrades at-rest data.
 			//   3. Plaintext entries → encrypt with currentKey.
 			// Ciphertext whose key version is not in the keyring is skipped
-			// (unreadable; left as-is for a future applyKeys that includes it).
+			// (unreadable; left as-is for a future activateEncryption that
+			// includes it).
 			//
-			// A readable-with-nextEncryption entry that was NOT readable with
-			// previousEncryption is emitted as a synthetic `add` event after the
-			// walk — observers catch up on entries that were silently skipped
-			// while the keyring didn't have their version.
+			// Newly-readable entries (decryptable under nextEncryption but whose
+			// version was NOT in previousEncryption's keyring) get a synthetic
+			// `add` event so observers catch up. The check is a map lookup —
+			// under authenticated crypto with immutable key versions,
+			// "version was in previous keyring" ⇔ "was decryptable before",
+			// for entries that decrypt under the new keyring.
 			const newlyReadable = new Map<string, T>();
-			const entriesToReencrypt: Array<{ key: string; val: T }> = [];
+			const toRewrite: Array<{ key: string; val: T }> = [];
 			for (const [key, entry] of inner.map) {
 				const aad = textEncoder.encode(key);
-				if (isEncryptedBlob(entry.val)) {
-					if (getKeyVersion(entry.val) === nextEncryption.currentVersion)
-						continue;
-					const decrypted = tryDecryptValue(entry.val, aad, nextEncryption);
-					if (decrypted === undefined) continue;
-					entriesToReencrypt.push({ key, val: decrypted });
-					const wasReadable = tryDecryptValue(entry.val, aad, previousEncryption);
-					if (wasReadable === undefined) newlyReadable.set(key, decrypted);
-				} else {
-					entriesToReencrypt.push({ key, val: entry.val as T });
+				if (!isEncryptedBlob(entry.val)) {
+					toRewrite.push({ key, val: entry.val as T });
+					continue;
 				}
+				if (getKeyVersion(entry.val) === nextEncryption.currentVersion) continue;
+				const val = decrypt(entry.val, aad, nextEncryption);
+				if (val === undefined) continue;
+				toRewrite.push({ key, val });
+				const wasReadable =
+					previousEncryption?.keyring.has(getKeyVersion(entry.val)) ?? false;
+				if (!wasReadable) newlyReadable.set(key, val);
 			}
 
 			// One transaction for the whole pass. Filtered by observers via
 			// REENCRYPT_ORIGIN — downstream consumers don't see re-encryption
 			// as a change (the decrypted value didn't change).
-			if (entriesToReencrypt.length > 0) {
+			if (toRewrite.length > 0) {
 				inner.doc.transact(() => {
-					for (const { key: entryKey, val } of entriesToReencrypt)
-						inner.set(
-							entryKey,
-							encryptValue(
-								JSON.stringify(val),
-								nextEncryption.currentKey,
-								textEncoder.encode(entryKey),
-								nextEncryption.currentVersion,
-							),
-						);
+					for (const { key, val } of toRewrite)
+						inner.set(key, toStored(key, val));
 				}, REENCRYPT_ORIGIN);
 			}
 
@@ -433,14 +371,17 @@ export function createEncryptedYkvLww<T>(
 			const syntheticChanges = new Map<string, KvStoreChange<T>>();
 			for (const [key, val] of newlyReadable)
 				syntheticChanges.set(key, { action: 'add', newValue: val });
-			for (const handler of changeHandlers)
-				handler(syntheticChanges, undefined);
+			for (const handler of changeHandlers) handler(syntheticChanges, undefined);
 		},
 		get unreadableEntryCount() {
-			return inner.map.size - countDecryptable();
+			if (!encryption) return 0;
+			let count = 0;
+			for (const [key, entry] of inner.map)
+				if (decrypt(entry.val, textEncoder.encode(key)) === undefined) count++;
+			return count;
 		},
 		get size() {
-			return countDecryptable();
+			return inner.map.size - this.unreadableEntryCount;
 		},
 		yarray: inner.yarray,
 		doc: inner.doc,

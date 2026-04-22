@@ -19,14 +19,23 @@ export const listCommand: CommandModule = {
 	command: 'list [path]',
 	describe: 'Tree view of exposed queries and mutations',
 	builder: (yargs: Argv) =>
-		yargs.positional('path', {
-			type: 'string',
-			describe: 'Optional dot-path to narrow the view',
-		}),
-	handler: async (argv: any) => {
-		const { entries, dispose } = await loadConfig(process.cwd());
+		yargs
+			.positional('path', {
+				type: 'string',
+				describe: 'Optional dot-path to narrow the view',
+			})
+			.option('dir', {
+				type: 'string',
+				alias: 'C',
+				default: '.',
+				description: 'Directory containing epicenter.config.ts',
+			}),
+	handler: async (argv) => {
+		const path = typeof argv.path === 'string' ? argv.path : undefined;
+		const dir = typeof argv.dir === 'string' ? argv.dir : '.';
+		const { entries, dispose } = await loadConfig(dir);
 		try {
-			render(argv.path as string | undefined, entries);
+			render(path, entries);
 		} finally {
 			await dispose();
 		}

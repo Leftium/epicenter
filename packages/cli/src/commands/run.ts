@@ -36,12 +36,19 @@ export const runCommand: CommandModule = {
 				type: 'string',
 				description: 'Path to a JSON file containing the action input',
 			})
+			.option('dir', {
+				type: 'string',
+				alias: 'C',
+				default: '.',
+				description: 'Directory containing epicenter.config.ts',
+			})
 			.options(formatYargsOptions())
 			.strict(false),
-	handler: async (argv: any) => {
-		const { entries, dispose } = await loadConfig(process.cwd());
+	handler: async (argv) => {
+		const dir = typeof argv.dir === 'string' ? argv.dir : '.';
+		const { entries, dispose } = await loadConfig(dir);
 		try {
-			await invoke(argv, entries);
+			await invoke(argv as Record<string, unknown>, entries);
 		} finally {
 			await dispose();
 		}

@@ -7,11 +7,8 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import {
-	type AuthSession,
-	readStatusCode,
-	type StoredUser,
-} from './auth-types.js';
+import type { AuthSession, StoredUser } from './auth-types.js';
+import { readStatusCode } from './auth-types.js';
 
 type BaseURL = string | (() => string);
 
@@ -69,18 +66,21 @@ export type AuthClient = {
 	/**
 	 * The current session token, or `null` if not authenticated.
 	 *
-	 * Same narrowing as `user`—extracts the token from the authenticated
+	 * Same narrowing as `user` — extracts the token from the authenticated
 	 * session so consumers don't repeat the `session ? session.token : null`
-	 * ternary in every `getToken` callback.
-	 *
-	 * @example
-	 * ```typescript
-	 * createSyncExtension({
-	 *   getToken: async () => auth.token,
-	 * })
-	 * ```
+	 * ternary. Prefer `session` when you need the full authenticated
+	 * snapshot (token + user + encryption keys) for `applySession` wiring.
 	 */
 	token: string | null;
+	/**
+	 * The full authenticated session (token + user + encryption keys), or
+	 * `null` if not authenticated.
+	 *
+	 * Single source of truth for session state. The canonical consumer is a
+	 * Svelte `$effect` that calls `workspace.applySession(auth.session)` —
+	 * every reactive read (login, logout, token rotation) fires the effect.
+	 */
+	session: AuthSession | null;
 	/**
 	 * Whether a user-initiated auth operation (sign-in, sign-up, sign-out) is
 	 * in progress. Toggles on and off with each auth operation. Use it to
@@ -165,45 +165,6 @@ export type CreateAuthOptions = {
 		get(): AuthSession | null | Promise<AuthSession | null>;
 	};
 	/**
-	 * Called whenever the session is authenticated—construction (if a cached
-	 * session exists in the store), sign-in, session restore, or token refresh.
-	 *
-	 * Fires at construction time if a cached session exists in the store,
-	 * then on every authenticated session update from Better Auth.
-	 * Consumers should use idempotent operations (e.g. `applyEncryptionKeys` is safe
-	 * to call repeatedly with the same keys).
-	 *
-	 * @example
-	 * ```typescript
-	 * onLogin(session) {
-	 *   workspace.applyEncryptionKeys(session.encryptionKeys);
-	 *   workspace.extensions.sync.reconnect();
-	 * }
-	 * ```
-	 */
-	onLogin?: (session: AuthSession) => void;
-	/**
-	 * Called on the authenticated → anonymous transition only.
-	 *
-	 * NOT called on cold start when no prior session exists—only when a
-	 * previously authenticated session ends (explicit sign-out or server
-	 * revocation).
-	 *
-	 * **Not awaited.** This fires from Better Auth's `useSession.subscribe()`
-	 * callback, which doesn't support async handlers. If the function is async,
-	 * it sequences internally (e.g. `await clearLocalData()` then `reload()`)
-	 * but the caller does not wait for it to complete.
-	 *
-	 * @example
-	 * ```typescript
-	 * async onLogout() {
-	 *   await workspace.clearLocalData();
-	 *   window.location.reload();
-	 * }
-	 * ```
-	 */
-	onLogout?: () => void | Promise<void>;
-	/**
 	 * Platform-specific credential provider for social ID token sign-in.
 	 *
 	 * Injected at creation time so the auth client can orchestrate the full
@@ -254,8 +215,6 @@ type EpicenterCustomSessionPlugin = ReturnType<
 export function createAuth({
 	baseURL,
 	session,
-	onLogin,
-	onLogout,
 	socialTokenProvider,
 }: CreateAuthOptions): AuthClient {
 	/**
@@ -296,38 +255,18 @@ export function createAuth({
 	client.useSession.subscribe((state) => {
 		if (state.isPending) return;
 
-		const prev = session.current;
-
 		if (state.data) {
 			const user = normalizeUser(state.data.user);
 			const token = state.data.session.token;
-			const authenticated = {
+			session.current = {
 				token,
 				user,
 				encryptionKeys: state.data.encryptionKeys,
 			};
-			session.current = authenticated;
-			onLogin?.(authenticated);
 		} else {
 			session.current = null;
-			if (prev !== null) {
-				onLogout?.();
-			}
 		}
 	});
-
-	// Boot: fire onLogin from the cached session so encryption keys are
-	// applied before the BA subscription's server roundtrip resolves.
-	// session.get() is sync for localStorage, async for chrome.storage.
-	const boot = session.get();
-	const applyBoot = (cached: AuthSession | null) => {
-		if (cached) onLogin?.(cached);
-	};
-	if (boot instanceof Promise) {
-		void boot.then(applyBoot);
-	} else {
-		applyBoot(boot);
-	}
 
 	return {
 		get isAuthenticated() {
@@ -340,6 +279,10 @@ export function createAuth({
 
 		get token() {
 			return session.current?.token ?? null;
+		},
+
+		get session() {
+			return session.current;
 		},
 
 		get isBusy() {

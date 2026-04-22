@@ -757,9 +757,24 @@ This is additive-compatible: if real demand shows up later, default-export short
 ### Phase 6: Consumer migration
 
 - [ ] **6.1** Rewrite `~/Code/vault/epicenter.config.ts` to the new shape. Use as smoke test.
-- [ ] **6.2** Delete or rewrite `playground/*/epicenter.config.ts` files — they reference `createCliUnlock` and the old builder API.
-- [ ] **6.3** Update `apps/whispering` if it consumes `@epicenter/cli` primitives.
-- [ ] **6.4** Rewrite `packages/cli/README.md` for the three-command + scripting model.
+  - *Status:* Outside this workspace. Track in the vault repo; not gating this spec.
+- [x] **6.2** ~~Delete or rewrite `playground/*/epicenter.config.ts` files — they reference `createCliUnlock` and the old builder API.~~
+  - *Shipped:* Both `playground/tab-manager-e2e/epicenter.config.ts` and `playground/opensidian-e2e/epicenter.config.ts` already migrated to `defineDocument` + `attachSessionUnlock` + encrypted-attach primitives. Stale `epicenter start` / `epicenter get files` / `epicenter describe` command references in docstrings + `playground/opensidian-e2e/README.md` cleaned up separately.
+- [x] **6.3** ~~Update `apps/whispering` if it consumes `@epicenter/cli` primitives.~~
+  - *Non-task:* grep confirms `apps/whispering` does not import from `@epicenter/cli`. Nothing to migrate.
+- [x] **6.4** ~~Rewrite `packages/cli/README.md` for the three-command + scripting model.~~
+  - *Shipped:* `eaff7ed5 docs(cli,skills): close auto-expose + always-prefix design decisions`. README now documents the three-command surface, the "expose operations via CLI" manual pattern, and the naming conventions.
+
+#### Known stragglers outside Phase 6 scope
+
+Grep turned up widespread `defineWorkspace` / `createWorkspace` references in historical articles:
+
+- `packages/workspace/docs/articles/*` (3 files)
+- `packages/workspace/docs/architecture/action-dispatch.md`
+- `apps/landing/src/content/blog/second-brain-infrastructure.md` (published marketing content)
+- `docs/articles/*` — several including `20251001T180000-plugins-to-workspaces.md` (ironically about the `definePlugin` → `defineWorkspace` rename, now both dead) and `20260127T120000-static-workspace-api-guide.md` (full guide to removed APIs)
+
+These are point-in-time narrative — dated filenames, historical record of design decisions. Rewriting erases context; deleting erases history. Left as a separate batch decision: keep as-is (dates in filenames let readers infer period), add banners, archive to `docs/articles/archived/`, or delete case-by-case.
 
 ---
 

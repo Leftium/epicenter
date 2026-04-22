@@ -18,26 +18,46 @@ This stores your session (access token + encryption keys) at `~/.epicenter/auth/
 
 ## Usage
 
-Start the daemon:
+Run the workspace:
 
 ```bash
 # Production (syncs from api.epicenter.so)
-epicenter start playground/opensidian-e2e --verbose
+bun run playground/opensidian-e2e/epicenter.config.ts
 
 # Local dev (syncs from localhost:8787)
-bun epicenter start playground/opensidian-e2e --verbose
+EPICENTER_SERVER=http://localhost:8787 \
+  bun run playground/opensidian-e2e/epicenter.config.ts
 ```
 
-The daemon syncs workspace data and writes markdown files to `data/files/`. It keeps running until you hit Ctrl+C. Leave it running alongside the Opensidian app if you want real-time materialization.
+Importing the config opens the handle, which kicks off persistence, sync, markdown materialization, and the SQLite mirror. The process stays alive as long as the sync socket is open; hit Ctrl+C to stop. Leave it running alongside the Opensidian app if you want real-time materialization.
 
-Query the workspace via CLI:
+Invoke a defined action:
 
 ```bash
-# These read local SQLite — same command either way
-epicenter list files -C playground/opensidian-e2e
-epicenter get files <id> -C playground/opensidian-e2e
-epicenter count files -C playground/opensidian-e2e
-epicenter describe -C playground/opensidian-e2e
+# Scan a directory for markdown files and inject IDs into frontmatter.
+epicenter run opensidian.markdownActions.prepare --directory ./some/dir \
+  -C playground/opensidian-e2e
+```
+
+Inspect workspace data from a script — scripts get the full Table API that's not exposed as defineQuery/defineMutation:
+
+```ts
+// scripts/list-files.ts
+import { opensidian } from '../playground/opensidian-e2e/epicenter.config';
+
+try {
+  await opensidian.whenReady;
+  console.log(`files: ${opensidian.tables.files.count()}`);
+  for (const row of opensidian.tables.files.getAllValid()) {
+    console.log(`  ${row.id} — ${row.name}`);
+  }
+} finally {
+  opensidian.dispose();
+}
+```
+
+```bash
+bun run scripts/list-files.ts
 ```
 
 ## What it produces

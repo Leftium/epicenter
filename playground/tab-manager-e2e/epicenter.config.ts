@@ -9,8 +9,14 @@
  * handle carries the `DOCUMENT_HANDLE` brand that `loadConfig` checks for.
  *
  * Usage:
- *   epicenter start playground/tab-manager-e2e --verbose
- *   epicenter list savedTabs -C playground/tab-manager-e2e
+ *   # Run the workspace — imports this config, which opens the handle,
+ *   # which starts persistence + sync + markdown materialization. Runs
+ *   # until Ctrl+C.
+ *   bun run playground/tab-manager-e2e/epicenter.config.ts
+ *
+ *   # `epicenter list` against this config shows an empty tree — no
+ *   # defineQuery/defineMutation wrappers are attached. Add them to the
+ *   # bundle if you want CLI-addressable operations.
  */
 
 import { join } from 'node:path';

@@ -55,13 +55,13 @@ Replace the markdown materializer's asymmetric `serialize: (row) → { filename,
   filename: (row) => toSlugFilename(row.title, row.id),
 
   // How to format — row → { frontmatter, body }
-  format: (row) => ({
+  toMarkdown: (row) => ({
     frontmatter: { id: row.id, title: row.title },
     body: row.content,
   }),
 
-  // Inverse of format — { frontmatter, body } → row
-  parse: (parsed) => ({
+  // Inverse of toMarkdown — { frontmatter, body } → row
+  fromMarkdown: (parsed) => ({
     id: parsed.frontmatter.id as string,
     title: parsed.frontmatter.title as string,
     content: parsed.body ?? '',
@@ -70,7 +70,19 @@ Replace the markdown materializer's asymmetric `serialize: (row) → { filename,
 });
 ```
 
-Now `format` and `parse` are true inverses on a shared type `{ frontmatter, body }`. `filename` is its own pure slot. The materializer glues them together internally: `writeFile(filename(row), toMarkdown(format(row)))`.
+Three slots, each takes exactly one callable. `toMarkdown` and `fromMarkdown` are true inverses over a shared `MarkdownShape` type. `filename` is its own pure slot. The materializer composes them: `writeFile(filename(row), assembleMarkdown(toMarkdown(row)))`.
+
+For common patterns like "one field is the body," ship **two independent helpers** — never a bundled pair:
+
+```ts
+.table(tables.posts, {
+  filename: slugFilename('title'),
+  toMarkdown: fieldAsBody('content'),     // row → put `content` in body
+  fromMarkdown: bodyAsField('content'),   // body → put in row.content
+});
+```
+
+Each helper returns one callable for one slot. No spread magic, no bundled `{ toMarkdown, fromMarkdown }` pair, no precedence rules. The config object always has exactly the same three optional keys, and every value is a callable you can point at.
 
 ## Research Findings
 
@@ -102,16 +114,16 @@ These are straight inverses. Our `parse` / `format` will mirror this shape, usin
 
 | Decision                         | Choice                                              | Rationale                                                    |
 | -------------------------------- | --------------------------------------------------- | ------------------------------------------------------------ |
-| Slot names                       | `filename`, `format`, `parse`                       | Aligns with gray-matter conventions (`format` ↔ `stringify`); `parse` is the dominant term across the ecosystem; `filename` is its own concern. |
+| Slot names                       | `filename`, `toMarkdown`, `fromMarkdown`            | Self-documenting in autocomplete ("produces markdown" / "consumes markdown"). `filename` stays its own concern. |
 | `serialize`/`deserialize`        | **Deleted in this cut** (no alias, no legacy path)  | Migration is small (playground + tests). Aliases add surface area without earning it. |
+| Internal helper `toMarkdown(fm, body)` | Rename to `assembleMarkdown`                  | Frees the `toMarkdown` name for the config slot.             |
 | Default `filename`               | `(row) => `${row.id}.md``                           | Current behavior preserved.                                  |
-| Default `format`                 | `(row) => ({ frontmatter: row, body: undefined })`  | Current behavior (dump row as frontmatter, no body).         |
-| Default `parse`                  | `(parsed) => parsed.frontmatter as Row`             | Current behavior (frontmatter-is-row).                       |
-| Shared type for format/parse     | `{ frontmatter: Record<string, unknown>; body: string | undefined }` | Symmetric; already matches the existing `deserialize` input. |
-| Type-level round-trip guarantee  | Formalized via a `MarkdownShape` type — both callbacks operate on it | Gives us `Parameters<parse>[0]` === `ReturnType<format>`.    |
+| Default `toMarkdown`             | `(row) => ({ frontmatter: row, body: undefined })`  | Current behavior (dump row as frontmatter, no body).         |
+| Default `fromMarkdown`           | `(parsed) => parsed.frontmatter as Row`             | Current behavior (frontmatter-is-row).                       |
+| Shared type for pair             | `MarkdownShape = { frontmatter: Record<string, unknown>; body: string | undefined }` | Symmetric; `Parameters<fromMarkdown>[0]` === `ReturnType<toMarkdown>`. |
+| Common-case helpers              | `fieldAsBody(field)` and `bodyAsField(field)` — **two independent helpers**, never a bundled pair | Each returns one callable for one slot. No spread, no `bodyField` config slot, no precedence rules. The config always has exactly 3 optional keys. |
 | Filename for a row with no `id`  | Enforced — row must always have an id (BaseRow requires it) | No changes to the id invariant.                              |
-| Async filename?                  | Allow `MaybePromise<string>` return                 | Matches existing `serialize` async semantics; needed when filename depends on a lookup. |
-| Async format/parse?              | Allow `MaybePromise` on both                        | Current `serialize` is async; preserve.                      |
+| Async callbacks?                 | Allow `MaybePromise` on all three slots             | Matches existing `serialize` async semantics; needed when the transform depends on a lookup. |
 
 ## Architecture
 
@@ -176,27 +188,45 @@ export type MarkdownShape = {
 type TableConfig<TRow extends BaseRow> = {
   dir?: string;
   filename?: (row: TRow) => MaybePromise<string>;
-  format?: (row: TRow) => MaybePromise<MarkdownShape>;
-  parse?: (parsed: MarkdownShape) => MaybePromise<TRow>;
+  toMarkdown?: (row: TRow) => MaybePromise<MarkdownShape>;
+  fromMarkdown?: (parsed: MarkdownShape) => MaybePromise<TRow>;
 };
+
+// Helpers live in serializers.ts
+export function fieldAsBody<TRow extends BaseRow>(
+  field: keyof TRow & string,
+): (row: TRow) => MarkdownShape;
+
+export function bodyAsField<TRow extends BaseRow>(
+  field: keyof TRow & string,
+): (parsed: MarkdownShape) => TRow;
 ```
 
 ## Implementation Plan
 
 ### Phase 1: Type + internal plumbing
 
-- [ ] **1.1** Add `MarkdownShape` type to `materializer.ts` and export from barrel.
-- [ ] **1.2** Rewrite `TableConfig<TRow>` to use the three new slots.
-- [ ] **1.3** Update the default `serialize`-replacement inside `materializeTable` to compose `filename` + `format` + `toMarkdown`:
+- [ ] **1.1** Rename the internal `toMarkdown(frontmatter, body): string` helper in `markdown.ts` to `assembleMarkdown` so the config slot name is free.
+- [ ] **1.2** Add `MarkdownShape` type to `materializer.ts` and export from barrel.
+- [ ] **1.3** Rewrite `TableConfig<TRow>` to use the three new slots (`filename`, `toMarkdown`, `fromMarkdown`).
+- [ ] **1.4** Update the default-replacement inside `materializeTable` to compose the three slots:
   ```ts
   const filenameFn = config.filename ?? ((row) => `${row.id}.md`);
-  const formatFn = config.format ?? ((row) => ({ frontmatter: row, body: undefined }));
+  const toMarkdownFn = config.toMarkdown ?? ((row) => ({ frontmatter: row, body: undefined }));
   const filename = await filenameFn(row);
-  const shape = await formatFn(row);
-  const content = toMarkdown(shape.frontmatter, shape.body);
+  const shape = await toMarkdownFn(row);
+  const content = assembleMarkdown(shape.frontmatter, shape.body);
   ```
-- [ ] **1.4** Rewrite the observer + `pull` paths with the same composition.
-- [ ] **1.5** Rewrite `push` to use `parse` slot with default `(parsed) => parsed.frontmatter as Row`.
+- [ ] **1.5** Rewrite the observer + `pull` paths with the same composition.
+- [ ] **1.6** Rewrite `push` to use `fromMarkdown` slot with default `(parsed) => parsed.frontmatter as Row`.
+- [ ] **1.7** Update module-level `defaultSerialize`/`defaultDeserialize` constants to match the new shape semantics (or delete them — the per-slot defaults inside `materializeTable` are simple enough).
+
+### Phase 1b: Helpers
+
+- [ ] **1.8** Rewrite `serializers.ts`:
+  - Keep `slugFilename(field)` and `toIdFilename(row)` as filename helpers (already correct shape).
+  - Replace the existing `bodyField(field)` (currently returns `SerializeResult`) with two new helpers: `fieldAsBody(field)` (for `toMarkdown` slot) and `bodyAsField(field)` (for `fromMarkdown` slot).
+  - Both helpers must be generic over `TRow extends BaseRow` so the field name is type-checked.
 
 ### Phase 2: Migrate call sites
 
@@ -261,10 +291,12 @@ type TableConfig<TRow extends BaseRow> = {
 
 ## Success Criteria
 
-- [ ] `TableConfig<TRow>` has three slots: `filename`, `format`, `parse`. `serialize` / `deserialize` are gone.
+- [ ] `TableConfig<TRow>` has three slots: `filename`, `toMarkdown`, `fromMarkdown`. `serialize` / `deserialize` are gone.
+- [ ] Internal helper renamed from `toMarkdown(fm, body)` to `assembleMarkdown(fm, body)`.
+- [ ] Two new independent helpers in `serializers.ts`: `fieldAsBody` and `bodyAsField`. Each returns one callable for one slot. No bundled pair.
 - [ ] Default behavior matches current: `{row.id}.md` filename, row-as-frontmatter, frontmatter-as-row.
-- [ ] Opensidian playground's markdown config is <15 lines of per-table logic (down from 35).
-- [ ] A test verifies `parse(format(row)) ≡ row` for at least one table.
+- [ ] Opensidian playground's markdown config is <25 lines of per-table logic (down from 35).
+- [ ] A test verifies `fromMarkdown(toMarkdown(row)) ≡ row` for at least one table.
 - [ ] All 72 materializer tests still pass.
 - [ ] `.agents/skills/attach-primitive/SKILL.md` example shows the new slot shape.
 

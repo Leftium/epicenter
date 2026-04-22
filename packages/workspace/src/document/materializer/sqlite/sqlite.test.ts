@@ -102,7 +102,6 @@ function setup(options: SetupOptions = {}) {
 			ydoc,
 			tables,
 			sqlite: materializer,
-			whenReady: Promise.resolve(),
 			[Symbol.dispose]() {
 				ydoc.destroy();
 			},
@@ -153,7 +152,7 @@ function hasTable(db: TestDb, tableName: string) {
 }
 
 async function cleanup(setupResult: ReturnType<typeof setup>) {
-	await setupResult.factory.close('test');
+	setupResult.factory.close('test');
 	setupResult.db.close();
 }
 
@@ -182,7 +181,6 @@ describe('attachSqliteMaterializer', () => {
 					ydoc,
 					tables,
 					sqlite: materializer,
-					whenReady: Promise.resolve(),
 					[Symbol.dispose]() {
 						ydoc.destroy();
 					},
@@ -202,7 +200,7 @@ describe('attachSqliteMaterializer', () => {
 				expect(hasTable(db, 'posts')).toBe(true);
 			} finally {
 				gate.resolve();
-				await factory.close('ready-gated');
+				factory.close('ready-gated');
 				db.close();
 			}
 		});
@@ -486,7 +484,7 @@ describe('attachSqliteMaterializer', () => {
 					title: 'Queued row',
 					_v: 1,
 				});
-				await testSetup.factory.close('test');
+				testSetup.factory.close('test');
 
 				await waitForSyncCycle();
 

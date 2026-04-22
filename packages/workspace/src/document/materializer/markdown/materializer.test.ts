@@ -146,7 +146,7 @@ describe('push', () => {
 		const { data: post2 } = workspace.tables.posts.get('post-2');
 		expect(post2?.title).toBe('Draft Post');
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('skips non-.md files', async () => {
@@ -163,7 +163,7 @@ describe('push', () => {
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(0);
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('skips files without valid frontmatter', async () => {
@@ -182,7 +182,7 @@ describe('push', () => {
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(1);
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('silently skips tables whose directories do not exist', async () => {
@@ -194,7 +194,7 @@ describe('push', () => {
 		expect(result.skipped).toBe(0);
 		expect(result.errored).toBe(0);
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('emits error event when frontmatter fails schema validation', async () => {
@@ -221,7 +221,7 @@ describe('push', () => {
 			expect(errorEvent.error.name).toBe('ValidationFailed');
 		}
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('emits error event when fromMarkdown callback throws', async () => {
@@ -252,7 +252,7 @@ describe('push', () => {
 			expect(errorEvent.error.message).toContain('simulated callback failure');
 		}
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('counts match event kinds (invariant)', async () => {
@@ -277,7 +277,7 @@ describe('push', () => {
 		expect(result.events.filter((e) => e.kind === 'skipped')).toHaveLength(1);
 		expect(result.events.filter((e) => e.kind === 'error')).toHaveLength(1);
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('uses custom fromMarkdown callback', async () => {
@@ -307,7 +307,7 @@ describe('push', () => {
 		const { data: note } = workspace.tables.notes.get('note-1');
 		expect(note?.body).toBe('This is the body content');
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('uses custom table directory', async () => {
@@ -324,7 +324,7 @@ describe('push', () => {
 		expect(result.imported).toBe(1);
 		expect(workspace.tables.posts.has('p1')).toBe(true);
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('overwrites existing rows (set is insert-or-replace)', async () => {
@@ -357,7 +357,7 @@ describe('push', () => {
 		expect(updatedPost?.title).toBe('Updated From Disk');
 		expect(updatedPost?.published).toBe(true);
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('imports across multiple tables', async () => {
@@ -377,7 +377,7 @@ describe('push', () => {
 		expect(workspace.tables.posts.has('p1')).toBe(true);
 		expect(workspace.tables.notes.has('n1')).toBe(true);
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 });
 
@@ -412,7 +412,7 @@ describe('pull', () => {
 		const content2 = await readTestFile('posts/p2.md');
 		expect(content2).toContain('title: Second');
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('creates table directory before writing', async () => {
@@ -429,7 +429,7 @@ describe('pull', () => {
 		const entries = await listTestDir('posts');
 		expect(entries).toContain('p1.md');
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('uses custom filename and toMarkdown callbacks', async () => {
@@ -456,7 +456,7 @@ describe('pull', () => {
 		const content = await readTestFile('notes/n1-custom.md');
 		expect(content).toContain('Custom body');
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('uses custom table directory', async () => {
@@ -475,7 +475,7 @@ describe('pull', () => {
 		const entries = await listTestDir('blog');
 		expect(entries).toContain('p1.md');
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('writes nothing when table is empty', async () => {
@@ -484,7 +484,7 @@ describe('pull', () => {
 
 		expect(result.written).toBe(0);
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('writes across multiple tables', async () => {
@@ -507,7 +507,7 @@ describe('pull', () => {
 		const notesEntries = await listTestDir('notes');
 		expect(notesEntries).toContain('n1.md');
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 });
 
@@ -544,7 +544,7 @@ describe('rebuild', () => {
 		expect(after).toContain('p1.md');
 		expect(after).not.toContain('orphan.md');
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('rebuild with table argument only touches that table', async () => {
@@ -571,7 +571,7 @@ describe('rebuild', () => {
 		const notesEntries = await listTestDir('notes');
 		expect(notesEntries).toContain('orphan.md');
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('throws on unknown table name', async () => {
@@ -580,7 +580,7 @@ describe('rebuild', () => {
 			workspace.materializer.rebuild({ table: 'notAThing' }),
 		).rejects.toThrow(/not in the materialized table set/);
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('is idempotent — rebuild twice produces identical filesystem state', async () => {
@@ -619,7 +619,7 @@ describe('rebuild', () => {
 		expect(stateAfterSecond).toEqual(stateAfterFirst);
 		expect(contentsAfterSecond).toEqual(contentsAfterFirst);
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 });
 
@@ -664,7 +664,7 @@ describe('round-trip', () => {
 		});
 
 		await workspace1.materializer.pull({});
-		await factory1.close('test.roundtrip.1');
+		factory1.close('test.roundtrip.1');
 
 		// Verify files on disk have valid frontmatter
 		const p1Content = await readTestFile('posts/p1.md');
@@ -704,7 +704,7 @@ describe('round-trip', () => {
 		expect(p2?.title).toBe('Another');
 		expect(p2?.published).toBe(false);
 
-		await factory2.close('test.roundtrip.2');
+		factory2.close('test.roundtrip.2');
 	});
 
 	test('fromMarkdown(toMarkdown(row)) preserves row — MarkdownShape round-trip', async () => {
@@ -749,7 +749,7 @@ describe('round-trip', () => {
 		expect(parsed).not.toBeNull();
 		expect(fromMarkdownFn(parsed!)).toEqual(original);
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 
 	test('inline field-to-body pair round-trips over MarkdownShape', async () => {
@@ -789,6 +789,6 @@ describe('round-trip', () => {
 		expect(parsed!.body).toBe('Body content here');
 		expect(parsed!.frontmatter.body).toBeUndefined();
 
-		await factory.close('test.materializer');
+		factory.close('test.materializer');
 	});
 });

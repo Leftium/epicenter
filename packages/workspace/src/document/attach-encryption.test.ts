@@ -14,7 +14,12 @@ import { describe, expect, test } from 'bun:test';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import * as Y from 'yjs';
 import { attachEncryption } from './attach-encryption.js';
-import { bytesToBase64 } from '../shared/crypto/index.js';
+import {
+	bytesToBase64,
+	type EncryptedBlob,
+	getKeyVersion,
+	isEncryptedBlob,
+} from '../shared/crypto/index.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type { EncryptionKeys } from './encryption-key.js';
 
@@ -125,5 +130,61 @@ describe('attachEncryption', () => {
 		const { ydoc, encryption } = setup();
 		ydoc.destroy();
 		await encryption.whenDisposed;
+	});
+
+	describe('at-rest upgrade on key rotation', () => {
+		test('v1 ciphertext gets re-encrypted to v2 when v2 becomes current', () => {
+			const { storeA, encryption } = setup();
+			const keyV1 = randomBytes(32);
+			const keyV2 = randomBytes(32);
+
+			encryption.applyKeys([
+				{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
+			]);
+			storeA.set('1', { title: 'Written with v1' });
+
+			// Sanity: the at-rest blob is a v1 ciphertext.
+			const beforeEntry = storeA.yarray.toArray().find((e) => e.key === '1');
+			expect(beforeEntry).toBeDefined();
+			expect(isEncryptedBlob(beforeEntry?.val)).toBe(true);
+			expect(getKeyVersion(beforeEntry?.val as EncryptedBlob)).toBe(1);
+
+			// Rotate: v2 is the new current key; v1 stays in the keyring so the
+			// walk can decrypt existing v1 blobs.
+			encryption.applyKeys([
+				{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
+				{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
+			]);
+
+			// At-rest blob should now be v2, not v1.
+			const afterEntry = storeA.yarray.toArray().find((e) => e.key === '1');
+			expect(afterEntry).toBeDefined();
+			expect(isEncryptedBlob(afterEntry?.val)).toBe(true);
+			expect(getKeyVersion(afterEntry?.val as EncryptedBlob)).toBe(2);
+			// And the decrypted value is unchanged.
+			expect(storeA.get('1')).toEqual({ title: 'Written with v1' });
+		});
+
+		test('same-version ciphertext is not rewritten on re-activation', () => {
+			// Test at the store level: fingerprint dedup on the coordinator's
+			// applyKeys short-circuits repeat calls before reaching the walk,
+			// so we drive activateEncryption directly to verify the walk itself
+			// skips already-current entries (perf guarantee).
+			const ydoc = new Y.Doc({ guid: 'enc-skip-current', gc: false });
+			const store = createEncryptedYkvLww<{ title: string }>(ydoc, 'data');
+			const key = randomBytes(32);
+			store.activateEncryption(new Map([[1, key]]));
+			store.set('1', { title: 'Encrypted once' });
+
+			const blobBefore = store.yarray.toArray().find((e) => e.key === '1')?.val;
+			expect(isEncryptedBlob(blobBefore)).toBe(true);
+
+			// Re-activate with the same keyring. The walk should find the
+			// entry's blob version matches currentVersion and skip it —
+			// reference equality holds because no transact runs.
+			store.activateEncryption(new Map([[1, key]]));
+			const blobAfter = store.yarray.toArray().find((e) => e.key === '1')?.val;
+			expect(blobAfter).toBe(blobBefore);
+		});
 	});
 });

@@ -99,13 +99,20 @@ export type EncryptedYKeyValueLww<T> = ObservableKvStore<T> & {
 	 * becomes the current key for new encryptions. Decryption reads
 	 * `getKeyVersion(blob)` to select the correct key from the keyring.
 	 *
-	 * There is no deactivation path—this is one-way by API surface.
-	 * Calling again with a new keyring updates the active keys.
+	 * There is no deactivation path — this is one-way by API surface. Calling
+	 * again with a new keyring updates the active keys AND re-encrypts any
+	 * entries that aren't already at the current key version.
 	 *
-	 * Only plaintext entries are re-encrypted on activation. Existing
-	 * encrypted blobs (even on older key versions) are left alone—they're
-	 * already safe. Old-version ciphertext is lazily migrated on the next
-	 * `set()` for that key.
+	 * After this call, every decryptable entry is stored as ciphertext under
+	 * the current-version key:
+	 *
+	 * - Plaintext entries → encrypted with the current-version key.
+	 * - Ciphertext at a non-current version (decryptable via the keyring) →
+	 *   decrypted and re-encrypted with the current-version key. This is how
+	 *   key rotation upgrades at-rest data.
+	 * - Ciphertext already at the current version → no-op.
+	 * - Ciphertext whose key version is not in the keyring → skipped
+	 *   (unreadable; left unchanged).
 	 *
 	 * @param keyring Map from version number to 32-byte encryption key
 	 */
@@ -157,15 +164,18 @@ export type EncryptedYKeyValueLww<T> = ObservableKvStore<T> & {
  *
  * @param ydoc - The Y.Doc that owns the underlying Y.Array
  * @param arrayKey - Name of the Y.Array under `ydoc.getArray(arrayKey)`
- * @param initialKeyring - Optional versioned keyring for construction-time
+ * @param opts.initialKeyring - Optional versioned keyring for construction-time
  *   encryption. If omitted, the store starts in passthrough mode — call
  *   `activateEncryption()` later to enable encryption.
  */
 export function createEncryptedYkvLww<T>(
 	ydoc: Y.Doc,
 	arrayKey: string,
-	initialKeyring?: ReadonlyMap<number, Uint8Array>,
+	opts?: {
+		initialKeyring?: ReadonlyMap<number, Uint8Array>;
+	},
 ): EncryptedYKeyValueLww<T> {
+	const initialKeyring = opts?.initialKeyring;
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | T>>(arrayKey);
 	/**
 	 * The inner LWW store. It sees `EncryptedBlob | T` as its value type—it
@@ -386,39 +396,54 @@ export function createEncryptedYkvLww<T>(
 			};
 			encryption = nextEncryption;
 
+			// Walk every entry and converge it to the current key version. Three
+			// cases, handled in priority order:
+			//   1. Ciphertext already at currentVersion → no-op (cheap skip).
+			//   2. Ciphertext at a non-current version that IS in the keyring →
+			//      decrypt + re-encrypt with currentKey. This is how rotation
+			//      upgrades at-rest data.
+			//   3. Plaintext entries → encrypt with currentKey.
+			// Ciphertext whose key version is not in the keyring is skipped
+			// (unreadable; left as-is for a future applyKeys that includes it).
+			//
+			// A readable-with-nextEncryption entry that was NOT readable with
+			// previousEncryption is emitted as a synthetic `add` event after the
+			// walk — observers catch up on entries that were silently skipped
+			// while the keyring didn't have their version.
 			const newlyReadable = new Map<string, T>();
-			const plaintextToEncrypt: Array<{ key: string; val: T }> = [];
+			const entriesToReencrypt: Array<{ key: string; val: T }> = [];
 			for (const [key, entry] of inner.map) {
+				const aad = textEncoder.encode(key);
 				if (isEncryptedBlob(entry.val)) {
-					const before = tryDecryptValue(
-						entry.val,
-						textEncoder.encode(key),
-						previousEncryption,
-					);
-					if (before !== undefined) continue;
-					const after = tryDecryptValue(
-						entry.val,
-						textEncoder.encode(key),
-						nextEncryption,
-					);
-					if (after !== undefined) newlyReadable.set(key, after);
-					continue;
+					if (getKeyVersion(entry.val) === nextEncryption.currentVersion)
+						continue;
+					const decrypted = tryDecryptValue(entry.val, aad, nextEncryption);
+					if (decrypted === undefined) continue;
+					entriesToReencrypt.push({ key, val: decrypted });
+					const wasReadable = tryDecryptValue(entry.val, aad, previousEncryption);
+					if (wasReadable === undefined) newlyReadable.set(key, decrypted);
+				} else {
+					entriesToReencrypt.push({ key, val: entry.val as T });
 				}
-				plaintextToEncrypt.push({ key, val: entry.val as T });
 			}
 
-			inner.doc.transact(() => {
-				for (const { key: entryKey, val } of plaintextToEncrypt)
-					inner.set(
-						entryKey,
-						encryptValue(
-							JSON.stringify(val),
-							nextEncryption.currentKey,
-							textEncoder.encode(entryKey),
-							nextEncryption.currentVersion,
-						),
-					);
-			}, REENCRYPT_ORIGIN);
+			// One transaction for the whole pass. Filtered by observers via
+			// REENCRYPT_ORIGIN — downstream consumers don't see re-encryption
+			// as a change (the decrypted value didn't change).
+			if (entriesToReencrypt.length > 0) {
+				inner.doc.transact(() => {
+					for (const { key: entryKey, val } of entriesToReencrypt)
+						inner.set(
+							entryKey,
+							encryptValue(
+								JSON.stringify(val),
+								nextEncryption.currentKey,
+								textEncoder.encode(entryKey),
+								nextEncryption.currentVersion,
+							),
+						);
+				}, REENCRYPT_ORIGIN);
+			}
 
 			if (newlyReadable.size === 0) return;
 			const syntheticChanges = new Map<string, KvStoreChange<T>>();

@@ -103,6 +103,19 @@ export type EncryptionAttachment = {
 	 * Apply encryption keys to every registered store. Synchronous — HKDF via
 	 * @noble/hashes and XChaCha20 via @noble/ciphers are both sync.
 	 *
+	 * On every call (including the first), every registered store walks its
+	 * entries and converges them to the current-version key:
+	 *
+	 * - Plaintext entries → encrypted with the current-version key.
+	 * - Ciphertext at a non-current version (but decryptable via the keyring)
+	 *   → decrypted and re-encrypted with the current-version key.
+	 * - Ciphertext already at the current version → no-op.
+	 *
+	 * This is how key rotation works: call `applyKeys` with the new keyring,
+	 * and all at-rest data upgrades to the new key. The ciphertext upgrades
+	 * propagate to peers via normal CRDT sync; eventually every device's live
+	 * view contains only current-version ciphertext.
+	 *
 	 * Dedup: a second call with a fingerprint-identical keyring is a no-op.
 	 * Order of the input array does not affect the fingerprint.
 	 *

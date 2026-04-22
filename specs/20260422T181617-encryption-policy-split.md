@@ -1,4 +1,4 @@
-# Split Encryption Mechanism from Policy
+# Encryption Policies — Docs + Rotation Fix
 
 **Date**: 2026-04-22
 **Status**: Draft
@@ -7,302 +7,230 @@
 
 ## Overview
 
-Separate the encryption *mechanism* (encrypt/decrypt, keyring with versioned fallback, coordinator bookkeeping) from the *policy* (when does re-encryption run, can you write without keys). The library ships mechanisms; apps compose the policy they want.
+Two changes ship together:
 
-Three policies cover every real Epicenter app:
+1. **Document the encryption policies** the library supports — one-off, two core, plus an app-level discipline. Previously implicit; now written down.
+2. **Extend `applyKeys`'s walk to handle key rotation correctly.** Old-version ciphertext now gets re-encrypted under the new current key on every `applyKeys` call, not just plaintext. Same `applyKeys(keys)` signature; stronger guarantee.
 
-1. **Plaintext forever** — no encryption at all.
-2. **Encrypt-after-login with eventual re-encryption** (the default) — user writes freely before sign-in; post-sign-in writes are encrypted; pre-sign-in rows get re-encrypted after login and the ciphertext propagates via normal CRDT sync.
-3. **Zero-knowledge strict** — user must unlock (password or auth) before the first write.
-
-No hidden state transitions. Every transition the app cares about is a method call the app made or a flag the app passed. The library keeps the current security guarantees available, just named and opted-into.
+**No new API surface.** No `strict` flag. No `reencryptAll` method. No `opts` parameter. This spec supersedes an earlier draft that proposed all three — those additions were speculative and didn't earn their keep.
 
 ## Motivation
 
-### Current state
+### What the library actually needs to do
 
-`attachEncryption` today bundles three things into a single hidden state transition:
+Three user stories, from observed Epicenter apps:
 
-1. **Active key state** — `encryption: EncryptionState | undefined` on each store. A store without keys writes plaintext; one with keys writes ciphertext.
-2. **Retroactive re-encryption** — `activateEncryption` walks every entry, finds plaintext, re-encrypts in place, under `REENCRYPT_ORIGIN` so the observer filters it out.
-3. **Synthetic `add` events** — when re-encryption makes previously-undecryptable ciphertext readable, it fakes downstream `add` events to catch observers up.
+- **Plaintext forever** (tab manager, any app without a privacy story): no encryption attached.
+- **Encrypt-after-login with eventual re-encryption** (fuji, whispering, opensidian, every app that offers offline-first before auth): write freely, sign in, everything converges to ciphertext on the current key.
+- **Zero-knowledge** (password managers, vaults): app blocks writes in the UI until the user unlocks.
 
-All three ship together, implicitly, triggered by the first `applyKeys(...)` call. There's no way to opt a single app out of (2) + (3) without forking the library. There's no way to opt in to a strict "cannot write without keys" mode at all.
+The first is trivially supported today — don't call `attachEncryption`. The second is what `applyKeys` does, but with one gap. The third is an app-level concern — see "Non-goals."
 
-This bundling costs ~85 lines across `y-keyvalue-lww-encrypted.ts` and `attach-encryption.ts`, but more importantly it *decides the policy for you*: "when keys arrive, everything that existed before becomes ciphertext-at-rest in one go." For apps that wanted that, great. For apps that want a stricter mode (no writes before unlock), not available. For apps that want no encryption at all, the library is silent (which is fine — you just don't call `attachEncryption`).
+### The gap in the current `applyKeys`
 
-### The insight
+Today, `applyKeys` walks every registered store and:
 
-The **read path is policy-free**. `y-keyvalue-lww-encrypted.ts:237` already handles any mix of plaintext + versioned ciphertext via one `isEncryptedBlob` branch and a keyring-with-fallback decrypt. Performance is a single byte check plus one XChaCha20-Poly1305 decrypt on hit — microseconds. There's no policy choice to make on the read side.
+- Encrypts plaintext entries → current key. ✓
+- Leaves old-version ciphertext alone (lazy migration on next `set` for that key). ✗
 
-The **write path and the re-encryption walk** are where policy lives. Surface them.
+That second behavior is wrong for key rotation. When a user rotates their password, the keyring picks up a new current version; old-version ciphertext stays old-version until someone happens to write to it. For a workspace where most rows are read-only (notes, transcriptions, history), old-version ciphertext can live forever. If rotation was triggered by "I think my old password leaked," that's a meaningful security gap.
 
 ### The stated invariant
 
-Epicenter apps that use encryption need this invariant:
+> **After `applyKeys(keys)` resolves, every decryptable entry in every registered store is ciphertext at the current key version.**
 
-> **The live state on every device eventually contains only ciphertext.**
-
-Transient plaintext on the server (while a user is mid-login, while sync races re-encryption) is acceptable — it self-heals via CRDT LWW propagation once any authenticated device runs `reencryptAll`. What matters is the eventual convergence, not the absence of any plaintext op in the CRDT history. (See "CRDT history retention" below for the nuance.)
-
-That invariant is what Policy 3 delivers, and why Policy 3 is the default.
+This extends the "eventually encrypted" invariant you had in mind to also cover rotation. It delivers the user story "rotate my password, all data upgrades to the new key" via one method call — the same one apps already make on login.
 
 ## The three policies
 
 ### Policy 1 — Plaintext forever
 
-**User story**: "This app does not use encryption. All data is plaintext at rest and over the wire."
-
-**Who this fits**: tab manager, any app where data has no privacy requirement.
+**Who**: tab manager, any app without a privacy story.
 
 ```ts
 const app = defineDocument((id) => {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, myTables);
-  const idb = attachIndexedDb(ydoc);
-  const sync = attachSync(ydoc, { url, getToken });
-  return { ydoc, tables, idb, sync, /* ... */ };
+  // no attachEncryption
+  return { ydoc, tables, /* ... */ };
 });
 ```
 
-No `attachEncryption` call. Zero encryption code involved. **Already supported today. No library change needed.**
+Already supported. No changes.
 
-### Policy 3 — Encrypt after login, with eventual re-encryption (DEFAULT)
+### Policy 2 — Encrypt-after-login with eventual re-encryption (DEFAULT)
 
-**User story**: "Use the app freely before signing in. Once you sign in, your post-login writes are end-to-end encrypted, and everything you wrote beforehand gets re-encrypted and propagates to all your devices as ciphertext. Plaintext may briefly exist on the server during the re-encryption window, but the live state converges to ciphertext everywhere."
-
-**Who this fits**: Fuji, Whispering, Opensidian, Honeycrisp, Zhongwen — any app that offers offline-first usage before auth and wants encryption to "just work" once the user signs in.
+**Who**: every Epicenter app that wants encryption and also wants offline-first usage before sign-in.
 
 ```ts
 const app = defineDocument((id) => {
-  const ydoc = new Y.Doc({ guid: id });
+  const ydoc = new Y.Doc({ guid: id, gc: false });
   const encryption = attachEncryption(ydoc);
   const tables = encryption.attachTables(ydoc, myTables);
   const kv = encryption.attachKv(ydoc, myKv);
   const idb = attachIndexedDb(ydoc);
-  const sync = attachSync(ydoc, {
-    getToken: async () => auth.token,
-    waitFor: idb.whenLoaded,
-  });
+  const sync = attachSync(ydoc, { getToken: () => auth.token, waitFor: idb.whenLoaded });
   return { ydoc, tables, kv, encryption, idb, sync, /* ... */ };
 });
 
 // On login:
 workspace.encryption.applyKeys(session.encryptionKeys);
-// applyKeys also re-encrypts existing plaintext rows, synchronously.
-// Ciphertext writes propagate via normal CRDT sync.
 workspace.sync.reconnect();
+
+// On password change (rotation):
+workspace.encryption.applyKeys(updatedSessionKeys);
+// → every entry upgrades to the new key. Ciphertext propagates via CRDT sync.
 ```
 
-**Guarantee to the user**: "The live state on every device eventually contains only ciphertext. Pre-login data becomes ciphertext on disk after you sign in, and that ciphertext version wins on every device via normal sync."
+**Guarantee**: live state on every device converges to ciphertext at the current key version. Pre-login plaintext becomes ciphertext on first login. Old-version ciphertext becomes current-version ciphertext on rotation.
 
-**How eventual re-encryption works (why this is safe under CRDT sync):**
+**How eventual rotation works across devices:**
 
 ```
-t0:  Device A writes {id: X, val: Y_plain, ts: 1000} offline. IDB only.
-t1:  Device A gets a token and signs in.
-t2:  Device A's sync connects; may upload plaintext before t3 finishes.
-     Server briefly has plaintext row X.
-t3:  applyKeys runs. reencryptAll walks plaintext rows.
-     For row X: set(X, Y) re-runs through the encrypted store → writes
-     {id: X, val: Y_enc, ts: 2000} (monotonic timestamp post-sync).
-t4:  Sync uploads ciphertext. Server's LWW layer picks ts=2000 (ciphertext)
-     winner over ts=1000 (plaintext); deletes the plaintext entry from the
-     live yarray.
-t5:  Device B (another device on the same account) downloads. Its live
-     state has only the ciphertext row.
+t0: Device A has v1 ciphertext for row X.
+t1: User changes password. Device A runs applyKeys(v1+v2).
+    → Walk re-encrypts X: {key: X, val: v2-ciphertext, ts: 2000} (monotonic).
+t2: Sync uploads ciphertext. Server's LWW picks the ts=2000 v2 entry over ts=1000 v1.
+t3: Device B downloads; its live view has v2 ciphertext.
 ```
 
-All devices converge. No app-level coordination needed across devices — the CRDT does the work.
+At microseconds per XChaCha20-Poly1305 op on small JSON blobs (per the crypto module's docstring), a walk over 3000 rows is ~30ms. 100k rows ~1s. Not a perf concern.
 
-**This is the library default.** `applyKeys(keys)` implicitly calls `reencryptAll()` to deliver this behavior. Apps get eventual encryption by default, without writing extra lines.
+### Policy 3 — Zero-knowledge (app-level discipline, not a library mode)
 
-### Policy 4 — Zero-knowledge strict
+**Who**: password managers; any "we never see your data, not even during setup" product.
 
-**User story**: "You enter a password (or sign in). Until you do, you cannot write. No data ever exists in this workspace in plaintext, anywhere."
-
-**Who this fits**: password managers; zero-knowledge, local-first, password-unlocked apps; any app where the product promise is "we never see your data, not even during setup."
+Same primitives as Policy 2, plus app-level write gating in the UI. The library does not provide a runtime strict-mode flag — see "Non-goals" for the reasoning. An app that wants runtime enforcement can build a ~10-line Proxy wrapper:
 
 ```ts
-const app = defineDocument((id) => {
-  const ydoc = new Y.Doc({ guid: id });
-  const encryption = attachEncryption(ydoc, { strict: true });
-  const tables = encryption.attachTables(ydoc, myTables);
-  const idb = attachIndexedDb(ydoc);
-  return { ydoc, tables, encryption, idb, /* ... */ };
-});
-
-// Before the user enters their password:
-workspace.tables.secrets.set({ id: '1', value: 'x', _v: 1 });
-// → throws EncryptionNotReadyError
-
-// Unlock flow (local password, no server involved):
-const userKey = deriveFromPassword(password, workspaceSalt);
-workspace.encryption.applyKeys([{ version: 1, userKeyBase64: toBase64(userKey) }]);
-
-// Now writes work.
-workspace.tables.secrets.set({ id: '1', value: 'x', _v: 1 });
+function guardedTable<T>(table: Table<T>, areKeysLoaded: () => boolean): Table<T> {
+  return new Proxy(table, {
+    get(t, prop) {
+      if ((prop === 'set' || prop === 'update' || prop === 'delete') && !areKeysLoaded())
+        throw new Error('Cannot write before unlock');
+      return t[prop];
+    },
+  });
+}
 ```
 
-**Guarantee to the user**: "No data exists in this workspace in plaintext. Ever. Not on disk, not in operations, not anywhere. If you haven't entered your password, you haven't written anything."
+**Guarantee** (enforced by the app, not the library): no data exists in plaintext. Ever. If you haven't entered your password, the UI refuses to write.
 
-## Proposed API changes
+## The change
 
-All changes are **additive**. Existing code that calls `attachEncryption(ydoc)` and `applyKeys(keys)` keeps working and keeps its current behavior. No migration required for any existing Epicenter app.
-
-### 1. `attachEncryption(ydoc, opts?)` — new optional `strict` flag
+### API: unchanged
 
 ```ts
-function attachEncryption(
-  ydoc: Y.Doc,
-  opts?: { strict?: boolean },
-): EncryptionAttachment;
+encryption.applyKeys(keys: EncryptionKeys): void;
 ```
 
-- `strict: false` (default) — writes before `applyKeys` pass through as plaintext. Current behavior; enables Policy 3.
-- `strict: true` — writes before `applyKeys` throw `EncryptionNotReadyError`. Enables Policy 4.
+One method. No opts. Same signature that's shipped for every prior version of the library.
 
-Implementation: the flag is threaded to backing `EncryptedYKeyValueLww` construction. One branch in `set` / `bulkSet`, one error type.
+### Behavior: extended walk
 
-### 2. `encryption.reencryptAll()` — new public method
+Inside `activateEncryption` on each store, the per-entry classification becomes:
 
-```ts
-type EncryptionAttachment = {
-  // ... existing methods ...
-  reencryptAll(): void;
-};
+```
+for each entry in inner.map:
+  case plaintext:
+    → encrypt with currentKey (unchanged from prior behavior)
+  case ciphertext at currentVersion:
+    → no-op, skip (new: explicit cheap skip)
+  case ciphertext at non-current version, decryptable via keyring:
+    → decrypt, re-encrypt with currentKey (new: proactive rotation)
+  case ciphertext at unknown version:
+    → skip (unchanged; will catch up on a future applyKeys if the key arrives)
 ```
 
-- Walks every registered store's entries, re-encrypts plaintext under `REENCRYPT_ORIGIN`, emits synthetic `add` events for newly-readable ciphertext.
-- Synchronous (matches `applyKeys`).
-- Throws if called before keys are active.
-- Idempotent: second call with nothing left to re-encrypt is a no-op.
+All re-encryption writes still go through `inner.doc.transact(..., REENCRYPT_ORIGIN)`, so observers don't see them as changes. Synthetic `add` events still fire for entries that became readable this pass (unchanged).
 
-Currently this logic lives inside `activateEncryption` on each store and runs implicitly on first `applyKeys`. It continues to run there (the default `applyKeys` calls it). The new public method is for:
+### Library-internal changes
 
-- **Key rotation**: after `applyKeys(newKeys)`, apps may want to explicitly re-encrypt old-version ciphertext with the new key. Call `encryption.reencryptAll()`.
-- **User-triggered migrations**: "re-encrypt my data" as a user action in settings.
-- **Explicit app-level control**: apps that want `applyKeys` to be a pure state-swap (see opt-out below).
+- `y-keyvalue-lww-encrypted.ts:activateEncryption(keyring)` — walk classifies four cases instead of two; rewrites old-version ciphertext. Roughly +10 lines.
+- `attach-encryption.ts` — unchanged. `applyKeys(keys)` does what it always did, fanning out to every store.
 
-### 3. `applyKeys(keys, opts?)` — new optional `reencryptExisting` flag
+### What apps need to do
 
-```ts
-type EncryptionAttachment = {
-  applyKeys(keys: EncryptionKeys, opts?: { reencryptExisting?: boolean }): void;
-  // ...
-};
-```
+**Nothing.** Every existing app calls `applyKeys(keys)` with no options. The signature is unchanged. The behavior change is a strict improvement: rotation now works without the app needing to do anything.
 
-- `reencryptExisting: true` (default) — runs `reencryptAll()` immediately after activating keys. Policy 3 behavior, current library default.
-- `reencryptExisting: false` — pure state-swap; does not walk existing plaintext. Apps choosing this accept that pre-login plaintext stays plaintext at rest (and on the server once synced). Rarely the right choice; available for apps that explicitly want it.
+## Why this replaces the earlier spec
 
-### 4. `activateEncryption(keyring)` on each store — stays as-is
+An earlier draft of this spec proposed:
 
-Each `EncryptedYKeyValueLww`'s `activateEncryption(keyring)` keeps doing both state-swap AND re-encryption walk, because that's what the coordinator's `applyKeys` (with default `reencryptExisting: true`) needs. When `reencryptExisting: false` is requested, the coordinator uses a lower-level state-swap path that skips the walk.
+- `attachEncryption(ydoc, { strict: true })` — a zero-knowledge mode flag.
+- `applyKeys(keys, { reencryptExisting: false })` — an opt-out for Policy 2 (never re-encrypt historical plaintext).
+- `reencryptAll()` — a public method to explicitly trigger the plaintext-walk.
 
-**Alternative considered**: split per-store `activateEncryption` into `activateEncryption` (state-swap only) + `reencryptPlaintext` (the walk). Rejected for now — the split adds a method without adding user-visible power, since no app reaches into individual stores. Revisit if we expose per-store handles.
+All three were added to support speculative use cases neither the user nor any shipped app had asked for. On review:
 
-## What's in, what's out
+- **`strict` flag**: belt-and-suspenders for app-level UI gating. An app that zero-knowledges its writes already blocks at the UI layer; a library runtime check is dead code. Adding the flag required introducing `EncryptionNotReadyError` — an asymmetric error class that doesn't match the library's `throw new Error(...)` pattern used for every other invariant violation. `defineErrors` from `wellcrafted` wasn't a fit — it's a Result-type primitive, and `set` is a sync-throw API with 394+ call sites.
+- **`reencryptExisting: false`**: opt-out for Policy 2. Policy 2 itself was speculative — no shipped app has a reason to keep pre-login plaintext plaintext at rest. The user's stated invariant ("eventually everything encrypted") is Policy 3 behavior, not Policy 2.
+- **`reencryptAll()`**: only useful if you took the `reencryptExisting: false` opt-out. Remove the opt-out → no need for the method. The documented key-rotation use case is better served by the extended walk in `applyKeys` itself.
 
-**Library-level (mechanisms — load-bearing, all stay):**
+**Lesson**: don't add API surface for speculative policies. If someone needs a knob later, the knob can land with a real user story attached.
 
-- `isEncryptedBlob`-tolerant reads with versioned keyring fallback.
-- `createEncryptedYkvLww` construction (plus optional `initialKeyring`, plus new `strict` flag).
-- Per-store `activateEncryption(keyring)`.
-- `REENCRYPT_ORIGIN` observer filter + synthetic `add` events — still used inside re-encryption walks.
-- Per-entry AAD binding, HKDF workspace-key derivation, `encryptionKeysFingerprint` dedup.
-- Coordinator's `register`, `cachedKeyring`, `lastKeysFingerprint` for late-registrant bookkeeping.
+## Deleted from the earlier spec
 
-**App-level (policy — now explicit instead of implicit):**
-
-- `applyKeys` default behavior unchanged, but documented honestly: "applies keys AND re-encrypts existing plaintext."
-- Opt-out flag `{ reencryptExisting: false }` for the rare app that wants Policy-2-shaped behavior.
-- Strict flag `{ strict: true }` on `attachEncryption` for Policy 4.
-- Public `reencryptAll()` for key rotation, user-triggered migrations, and the rare app that wants to separate the state-swap from the walk.
-
-**Deleted**: nothing. The proposal is purely additive.
+- Policy 2 (never re-encrypt historical plaintext) — dropped as a supported mode.
+- `strict` flag + `EncryptionNotReadyError` class — rejected; rationale moved to "Non-goals."
+- `reencryptAll()` method — rejected; better served by extending `applyKeys`.
+- `opts?: { reencryptExisting? }` on `applyKeys` — rejected.
+- `opts?: { reencryptPlaintext? }` on store-level `activateEncryption` — rejected.
 
 ## Security guarantees per policy
 
-| Policy | At-rest encryption | Over-the-wire encryption | Pre-login data after login | First-write latency |
-|---|---|---|---|---|
-| 1 — Plaintext | None | None | N/A — no login concept | Instant |
-| 3 — Encrypt-after-login w/ re-encrypt (default) | Eventually all ciphertext | Briefly plaintext during re-encrypt window, then ciphertext | Re-encrypted on device, propagates to server via LWW | Instant |
-| 4 — Zero-knowledge strict | Always | Always | N/A — nothing exists pre-unlock | Blocks on unlock |
+| Policy | At-rest encryption | Over-the-wire encryption | Pre-login data after login | Rotation behavior | First-write latency |
+|---|---|---|---|---|---|
+| 1 — Plaintext | None | None | N/A | N/A | Instant |
+| 2 — Encrypt after login (default) | Eventually current-version ciphertext | Briefly plaintext during re-encrypt window, then current-version ciphertext | Re-encrypted on device, propagates via LWW | **Proactive** — all entries upgrade to new key on `applyKeys` | Instant |
+| 3 — Zero-knowledge (app-gated) | Always ciphertext (app gates writes) | Always ciphertext (app gates writes) | N/A — nothing exists pre-unlock | Same as Policy 2 | Blocks on unlock |
 
-**Threat model assumptions (shared across policies):**
+### CRDT history retention — unchanged nuance
 
-- Server is honest-but-curious / subpoena-able / breach-able.
-- Client device is trusted up to the moment key material is in memory.
-- User's auth session is the root of trust for Policies 1 (if it syncs at all) and 3; user's password is the root for Policy 4.
+Yjs with `gc: false` retains the full operation log. When `applyKeys` rewrites an entry, the LWW layer deletes the losing entry from the live yarray, but the losing operation persists in the doc's update history. A full state export (`Y.encodeStateAsUpdate(ydoc)`) still contains the old op.
 
-### CRDT history retention — important nuance
-
-Yjs docs with `gc: false` (our standard setup for synced docs) retain the full operation history. When `reencryptAll` rewrites a plaintext row, the LWW layer marks the old plaintext entry as a CRDT loser and deletes it from the live yarray — but the plaintext operation itself persists in the doc's update log. A full state export (`Y.encodeStateAsUpdate(ydoc)`) still contains the plaintext op.
-
-**What this means:** Policy 3's guarantee is about *live state*, not *history*. On a device that runs `reencryptAll`, any subsequent `get(key)` returns only ciphertext or decrypted ciphertext. But a subpoena of the server's raw doc bytes could surface plaintext ops that existed transiently.
-
-If an app needs plaintext-free history, the answer is Policy 4 — nothing was ever written plaintext, so the history has no plaintext ops to retain.
-
-For Epicenter's stated invariant (*live state eventually ciphertext; transient plaintext on server acceptable*), Policy 3 is sufficient. Apps selling stronger guarantees need Policy 4.
+Policy 2's guarantee is about **live state**, not history. Apps that need history-free plaintext have to prevent plaintext from ever entering the CRDT — i.e., Policy 3's app-level gating.
 
 ## Migration impact
 
-**Zero action needed for any existing Epicenter app.** The default `applyKeys(keys)` behavior is unchanged. Existing apps that call it keep their Policy 3 behavior.
+**Zero action required.** Every existing Epicenter app calls `applyKeys(keys)`; all continue to work, just with correct rotation semantics as a free upgrade.
 
-**Apps that choose to adopt the new flags:**
-
-- Any app that wants Policy 4: add `{ strict: true }` to `attachEncryption(ydoc)`. Add error handling for `EncryptionNotReadyError` in write paths, block writes in UI until unlock completes.
-- Any app that wants Policy 2 (rare — accept pre-login plaintext staying plaintext): pass `{ reencryptExisting: false }` to `applyKeys`.
-
-**No version bump.** Packages in this repo are pre-release (`workspace@0.2.0`, everything else `@0.1.0`), unaligned, and not yet published to a public registry. Ship under the existing version. Version alignment is a separate cleanup ticket.
-
-## Implementation waves
-
-### Wave 1 — additions
-
-- Add `strict` flag to `attachEncryption(ydoc, opts?)`. Thread it to `createEncryptedYkvLww` construction. Branch in `set` / `bulkSet` / `activateEncryption` (reject activation when strict + keys already active? revisit).
-- Add `EncryptionNotReadyError` type, export from `@epicenter/workspace`.
-- Add public `reencryptAll()` method on `EncryptionAttachment`. Fans out to each registered store's existing re-encrypt walk.
-- Add optional `{ reencryptExisting }` param to `applyKeys`. Default `true` preserves current behavior.
-
-After Wave 1: all three policies are expressible; existing apps unchanged.
-
-### Wave 2 — documentation
-
-- Update `packages/workspace/README.md` "Plaintext vs encrypted" section to describe the three policies, not a binary. Include the "eventual re-encryption via CRDT sync" walkthrough.
-- Add an encryption-policies guide (`docs/guides/encryption-policies.md` or inline in workspace README) with:
-  - A policy selector ("how do I pick?")
-  - Code samples for each policy
-  - The CRDT-history-retention nuance
-- Update `.agents/skills/workspace-api/references/primitive-api.md` to cover `strict`, `reencryptAll`, `reencryptExisting`.
-- Add JSDoc to `reencryptAll` explaining legit use cases (key rotation, user-triggered migration).
-
-### Wave 3 — optional hardening (stretch)
-
-- Runtime warning if `attachSync` connects while `strict: true` and keys aren't active. (Catches wiring bugs.)
-- Tests for the CRDT convergence path described in Policy 3 — two-device scenario, device A writes plaintext pre-login, device B logs in first, re-encrypt propagates to A.
-- Benchmark `reencryptAll` at various row counts to set user expectations in docs ("100 rows: instant. 10k rows: ~0.5s on a modern laptop.").
-
-## Open questions
-
-1. **Key rotation UX.** If a user changes their password, the active keyring rotates (old keys stay for decryption, new key becomes `currentVersion`). Does `applyKeys(newKeys)` automatically re-encrypt old-version ciphertext with the new key? Currently it does NOT — only plaintext gets walked. Apps that want full-keyring-rotation call `reencryptAll` explicitly. Document this; surface as a best practice in the key-rotation section of the guide.
-
-2. **`reencryptAll` granularity.** Does it accept an optional filter for apps that want to re-encrypt one table or one key range at a time? Probably no for v1 — YAGNI. Add later if needed.
-
-3. **Error type placement.** `EncryptionNotReadyError` lives where — `@epicenter/workspace` public surface, or `@epicenter/workspace/crypto`? Pick in Wave 1.
-
-4. **Sync coupling in Policy 3.** Should `attachSync`'s `waitFor` optionally take `encryption.whenKeysApplied` so sync can be gated on encryption-ready for apps that want Policy 3 but DON'T want the transient server-side plaintext window? This approximates "Policy 3 with strict ordering." Decide in Wave 2 based on how many apps ask for it.
+No version bump — packages in this repo are pre-release (workspace@0.2.0, others @0.1.0), unaligned, not yet published. Version alignment is a separate cleanup.
 
 ## Non-goals
 
-- **Two-workspace anonymous migration model.** Considered and rejected. Policy 3 with the default `reencryptAll` achieves eventual-encryption across devices via normal CRDT sync without forcing apps to manage two `defineDocument` factories. If a specific app later needs the strictest invariant (no plaintext ever in CRDT history), use Policy 4 instead of a two-workspace split.
-- **Touch-on-write lazy re-encryption.** Mentioned in earlier discussion. Rejected — doubles every write, leaks information through re-encrypt ordering, and doesn't self-heal inactive rows.
+- **`strict` flag / library-level write gating / `EncryptionNotReadyError`.** Considered and rejected:
+  1. Belt-and-suspenders with app-level UI gating.
+  2. Asymmetric error class (nothing else in the library throws a named subclass).
+  3. `defineErrors` is a Result-type primitive; our sync-throw API doesn't fit.
+  4. Policy 3 apps that want runtime enforcement can build it themselves (10-line Proxy).
+- **`reencryptAll()` / `opts?: { reencryptExisting }`.** Considered and rejected — every use case collapses into either "rotation" (handled by the extended walk) or "opt out of eventual encryption" (no shipped app wants this).
+- **Two-workspace anonymous migration model.** Rejected — Policy 2 with the extended walk achieves eventual encryption across devices without forcing apps to manage two `defineDocument` factories.
+- **Touch-on-write lazy re-encryption.** Rejected — doubles every write, leaks ordering information, doesn't self-heal inactive rows. The eager walk on `applyKeys` is cleaner.
 - **Per-row policy choice.** Encryption is a per-store decision (via `encryption.attachTable` vs plain `attachTable`). Keep.
-- **Deprecating or breaking the current `applyKeys(keys)` signature.** No deprecation. Adding optional params only.
+- **Deprecating or breaking `applyKeys(keys)`.** No deprecation. Behavior extended within the existing signature.
 
 ## Rationale summary
 
-The library today is opinionated about *when* re-encryption happens (on first key application) and *whether* writes are allowed without keys (always). The first opinion is correct for most apps; the second is too permissive for zero-knowledge apps. By exposing both as explicit flags, the library supports every real policy without forcing any existing app to change a single line.
+The library's encryption layer was already correct for most of what Epicenter apps need. The only real gap was key rotation — existing code did lazy migration (wait for next `set`), which leaks old-version ciphertext indefinitely for read-heavy workspaces.
 
-The three policies that matter — plaintext forever, encrypt-after-login-with-eventual-re-encryption, zero-knowledge strict — cover every Epicenter app. Each is a short, honest composition of primitives. The implicit machinery stays where it belongs (inside the library) but is no longer the only way to use the library.
+Fixing that is one classification case in the per-entry walk: "ciphertext at a non-current-but-decryptable version → re-encrypt." Roughly ten lines. One method, no flags, no new errors, no new mode. The rest of the work was spec and docs — writing down the policies so future contributors don't accidentally add speculative surface area (like an earlier draft of this spec did).
+
+## Wave 1 — shipped
+
+- Extended `activateEncryption(keyring)` to re-encrypt old-version ciphertext in addition to plaintext.
+- Updated tests that asserted the old lazy-migration behavior to assert the new eager-rotation behavior.
+- Added a coordinator-level test verifying at-rest blob version upgrades on rotation.
+- Rewrote the spec (this document) to reflect the actual shipped change.
+
+## Wave 2 — docs (pending)
+
+- Update `packages/workspace/README.md` "Plaintext vs encrypted" section to describe the three policies (not two).
+- Add a short "encryption policies" explainer with the policy selector, the CRDT-history nuance, the Policy 3 Proxy pattern.
+- Update `.agents/skills/workspace-api/references/primitive-api.md`.
+
+## Wave 3 — optional hardening (stretch)
+
+- Two-device test: device A writes pre-login, device B logs in first, rotation propagates to A.
+- Benchmark `applyKeys` walk at 1K / 10K / 100K rows.
+- Rename `activateEncryption` → something that reflects the extended behavior (e.g., `applyKeyring` or `setKeyring`). Low priority — internal-only name.

@@ -10,11 +10,9 @@ import {
 /** Create a single-doc encrypted KV for tests. Skips the 4-line Y.Doc ceremony. */
 function setup<T = string>(keyring?: ReadonlyMap<number, Uint8Array>) {
 	const ydoc = new Y.Doc();
-	const kv: EncryptedYKeyValueLww<T> = createEncryptedYkvLww<T>(
-		ydoc,
-		'data',
-		keyring,
-	);
+	const kv: EncryptedYKeyValueLww<T> = createEncryptedYkvLww<T>(ydoc, 'data', {
+		initialKeyring: keyring,
+	});
 	return { ydoc, yarray: kv.yarray, kv };
 }
 
@@ -38,11 +36,9 @@ function createEncryptedBlob<T>(
 	entryKey: string,
 ): EncryptedBlob {
 	const helperDoc = new Y.Doc({ guid: 'helper-blob' });
-	const helperKv = createEncryptedYkvLww<T>(
-		helperDoc,
-		'helper-data',
-		new Map([[1, key]]),
-	);
+	const helperKv = createEncryptedYkvLww<T>(helperDoc, 'helper-data', {
+		initialKeyring: new Map([[1, key]]),
+	});
 
 	helperKv.set(entryKey, value);
 
@@ -242,7 +238,7 @@ describe('createEncryptedYkvLww', () => {
 
 			yarray.push([{ key: 'plaintext', val: 'plaintext-value', ts: 1000 }]);
 
-			const kv = createEncryptedYkvLww<string>(ydoc, 'data', new Map([[1, key]]));
+			const kv = createEncryptedYkvLww<string>(ydoc, 'data', { initialKeyring: new Map([[1, key]]) });
 			expect(kv.get('plaintext')).toBe('plaintext-value');
 		});
 
@@ -253,7 +249,7 @@ describe('createEncryptedYkvLww', () => {
 			const encrypted = createEncryptedBlob('encrypted-value', key, 'enc');
 			yarray.push([{ key: 'enc', val: encrypted, ts: 1000 }]);
 
-			const kv = createEncryptedYkvLww<string>(ydoc, 'data', new Map([[1, key]]));
+			const kv = createEncryptedYkvLww<string>(ydoc, 'data', { initialKeyring: new Map([[1, key]]) });
 			expect(kv.get('enc')).toBe('encrypted-value');
 		});
 
@@ -267,7 +263,7 @@ describe('createEncryptedYkvLww', () => {
 				{ key: 'new', val: encrypted, ts: 1001 },
 			]);
 
-			const kv = createEncryptedYkvLww<string>(ydoc, 'data', new Map([[1, key]]));
+			const kv = createEncryptedYkvLww<string>(ydoc, 'data', { initialKeyring: new Map([[1, key]]) });
 
 			expect(kv.get('old')).toBe('old-plaintext');
 			expect(kv.get('new')).toBe('new-secret');
@@ -291,8 +287,8 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', new Map([[1, key]]));
-			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', new Map([[1, key]]));
+			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', { initialKeyring: new Map([[1, key]]) });
+			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', { initialKeyring: new Map([[1, key]]) });
 
 			kv1.set('shared-key', 'from-doc1');
 			syncDocs(doc1, doc2);
@@ -309,8 +305,8 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', new Map([[1, key]]));
-			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', new Map([[1, key]]));
+			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', { initialKeyring: new Map([[1, key]]) });
+			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', { initialKeyring: new Map([[1, key]]) });
 
 			kv1.set('token', 'abc-123');
 			syncDocs(doc1, doc2);
@@ -325,8 +321,8 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', new Map([[1, key]]));
-			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', new Map([[1, key]]));
+			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', { initialKeyring: new Map([[1, key]]) });
+			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', { initialKeyring: new Map([[1, key]]) });
 
 			kv1.yarray.push([
 				{
@@ -355,8 +351,8 @@ describe('createEncryptedYkvLww', () => {
 			const doc1 = new Y.Doc({ guid: 'shared' });
 			const doc2 = new Y.Doc({ guid: 'shared' });
 
-			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', new Map([[1, key]]));
-			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', new Map([[1, key]]));
+			const kv1 = createEncryptedYkvLww<string>(doc1, 'data', { initialKeyring: new Map([[1, key]]) });
+			const kv2 = createEncryptedYkvLww<string>(doc2, 'data', { initialKeyring: new Map([[1, key]]) });
 
 			kv1.set('shared', 'value-from-doc1');
 			kv2.set('shared', 'value-from-doc2');
@@ -563,7 +559,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(isEncryptedBlob(afterEntry?.val)).toBe(true);
 		});
 
-		test('activateEncryption with key rotation preserves entries via fallback', () => {
+		test('key rotation upgrades old-version ciphertext to the new current version', () => {
 			const key1 = randomBytes(32);
 			const key2 = randomBytes(32);
 			const { kv, yarray } = setup(new Map([[1, key1]]));
@@ -577,8 +573,8 @@ describe('createEncryptedYkvLww', () => {
 					events.push({ key: entryKey, change });
 			});
 
-			// Rotate from key1 to key2 — old entries remain on key version 1,
-			// readable through version-directed fallback.
+			// Rotate from key1 to key2. v1 stays in the keyring so the walk can
+			// decrypt the existing v1 blobs; after the walk, every entry is at v2.
 			kv.activateEncryption(
 				new Map([
 					[2, key2],
@@ -589,33 +585,18 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.get('a')).toBe('alpha');
 			expect(kv.get('b')).toBe('beta');
 
+			// At-rest blobs are now v2 (rotation upgraded them).
 			for (const entry of yarray.toArray()) {
 				if (!isEncryptedBlob(entry.val)) continue;
-				expect(getKeyVersion(entry.val)).toBe(1);
+				expect(getKeyVersion(entry.val)).toBe(2);
 			}
 
-			// No delete events — entries were recovered via previous key fallback
+			// Re-encryption writes are filtered via REENCRYPT_ORIGIN, so
+			// downstream observers see no delete/add pairs.
 			const deleteEvents = events.filter(
 				(event) => event.change.action === 'delete',
 			);
 			expect(deleteEvents.length).toBe(0);
-
-			// Rotate back to key1 — entries are still version 1 and still readable.
-			events.length = 0;
-			kv.activateEncryption(
-				new Map([
-					[1, key1],
-					[2, key2],
-				]),
-			);
-			expect(kv.unreadableEntryCount).toBe(0);
-			expect(kv.get('a')).toBe('alpha');
-			expect(kv.get('b')).toBe('beta');
-
-			for (const entry of yarray.toArray()) {
-				if (!isEncryptedBlob(entry.val)) continue;
-				expect(getKeyVersion(entry.val)).toBe(1);
-			}
 		});
 
 		test('activateEncryption does not emit spurious events for plaintext re-encryption', () => {
@@ -640,7 +621,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.get('b')).toBe('beta');
 		});
 
-		test('multi-version keyring decrypts entries with different keyVersions without re-encrypting old ciphertext', () => {
+		test('multi-version keyring upgrades all decryptable entries to the current version', () => {
 			const key1 = randomBytes(32);
 			const key2 = randomBytes(32);
 			const { kv, yarray } = setup(new Map([[1, key1]]));
@@ -655,7 +636,7 @@ describe('createEncryptedYkvLww', () => {
 			}
 
 			// Activate with a two-key keyring: v2 is current, v1 is fallback.
-			// Existing encrypted blobs stay on version 1.
+			// The walk rewrites every v1 blob as v2 — eager rotation.
 			kv.activateEncryption(
 				new Map([
 					[2, key2],
@@ -663,19 +644,18 @@ describe('createEncryptedYkvLww', () => {
 				]),
 			);
 
-			// Values still readable
 			expect(kv.get('a')).toBe('alpha');
 			expect(kv.get('b')).toBe('beta');
 			expect(kv.unreadableEntryCount).toBe(0);
 
-			// Existing blobs stay at v1
+			// Every blob is now v2.
 			for (const entry of yarray.toArray()) {
 				if (isEncryptedBlob(entry.val)) {
-					expect(getKeyVersion(entry.val)).toBe(1);
+					expect(getKeyVersion(entry.val)).toBe(2);
 				}
 			}
 
-			// New writes also get version 2
+			// New writes get version 2.
 			kv.set('c', 'gamma');
 			const cEntry = yarray.toArray().find((e) => e.key === 'c');
 			expect(isEncryptedBlob(cEntry?.val)).toBe(true);

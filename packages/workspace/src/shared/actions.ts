@@ -30,7 +30,7 @@
  * ```typescript
  * import * as Y from 'yjs';
  * import {
- *   defineDocument,
+ *   createDocumentFactory,
  *   attachTable,
  *   defineQuery,
  *   defineMutation,
@@ -38,7 +38,7 @@
  * import Type from 'typebox';
  *
  * // Step 1: Compose the document inline — actions close over `tables`
- * const blog = defineDocument((id: string) => {
+ * const blog = createDocumentFactory((id: string) => {
  *   const ydoc = new Y.Doc({ guid: id });
  *   const tables = { posts: attachTable(ydoc, 'posts', postsTable) };
  *
@@ -117,7 +117,7 @@ type ActionHandler<
  * @remarks
  * **Closure-based design**: Handlers capture their dependencies (tables, kv, encryption, etc.)
  * via closure instead of receiving context as a parameter. This means:
- * - Handlers are defined inside the `defineDocument` builder, after the attachments they use
+ * - Handlers are defined inside the `createDocumentFactory` builder, after the attachments they use
  * - Dependencies are accessed through closure, not as a parameter
  * - No type annotations needed—TypeScript infers everything naturally
  *
@@ -125,7 +125,7 @@ type ActionHandler<
  *
  * @example
  * ```typescript
- * // Inside a defineDocument builder:
+ * // Inside a createDocumentFactory builder:
  * //   const tables = { posts: attachTable(ydoc, 'posts', postsTable) };
  *
  * // Action with input - closes over tables
@@ -240,7 +240,7 @@ export type Action<
  *
  * @example
  * ```typescript
- * // Inside a defineDocument builder, after `const tables = attachTables(ydoc, defs);`
+ * // Inside a createDocumentFactory builder, after `const tables = attachTables(ydoc, defs);`
  *
  * const actions: Actions = {
  *   posts: {
@@ -317,12 +317,12 @@ export function defineQuery({ handler, ...rest }: ActionConfig): Query {
  * Mutations map to HTTP POST requests when exposed via the server adapter.
  *
  * Handlers close over their dependencies (tables, kv, attachments, etc.) instead
- * of receiving context as a parameter. Define mutations inside the `defineDocument`
+ * of receiving context as a parameter. Define mutations inside the `createDocumentFactory`
  * builder, after the attachments they depend on.
  *
  * @example
  * ```typescript
- * // Inside a defineDocument builder:
+ * // Inside a createDocumentFactory builder:
  * //   const tables = attachTables(ydoc, defs);
  * //   const recordingsFs = attachRecordingMarkdownFiles(ydoc, tables.recordings, {...});
  *

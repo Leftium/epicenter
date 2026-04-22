@@ -22,7 +22,7 @@
 
 import {
 	attachTimeline,
-	defineDocument,
+	createDocumentFactory,
 	docGuid,
 	type DocPersistence,
 	onLocalUpdate,
@@ -41,7 +41,7 @@ export function createFileContentDocs({
 	filesTable: Table<FileRow>;
 	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }) {
-	return defineDocument((fileId: FileId) => {
+	return createDocumentFactory((fileId: FileId) => {
 		const ydoc = new Y.Doc({
 			guid: docGuid({
 				workspaceId,

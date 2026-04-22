@@ -7,7 +7,7 @@
  *
  * Contains branded NoteId/FolderId types, folders and notes table definitions
  * with DateTimeString timestamps, and the cross-table actions factory. The Y.Doc
- * is constructed in `client.ts` via a `defineDocument` closure that composes
+ * is constructed in `client.ts` via a `createDocumentFactory` closure that composes
  * these tables with `attachTables`.
  */
 

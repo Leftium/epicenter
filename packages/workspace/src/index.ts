@@ -7,11 +7,11 @@
  *
  * @example
  * ```typescript
- * import { defineDocument, defineTable, attachTables } from '@epicenter/workspace';
+ * import { createDocumentFactory, defineTable, attachTables } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
- * const notesDoc = defineDocument('notes', () => {
+ * const notesDoc = createDocumentFactory('notes', () => {
  *   const ydoc = new Y.Doc({ guid: 'notes' });
  *   const tables = attachTables(ydoc, { posts });
  *   return { id: 'notes', ydoc, tables };
@@ -80,7 +80,7 @@ export type {
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT PRIMITIVES — attach*, define*, defineDocument, encryption, timeline,
+// DOCUMENT PRIMITIVES — attach*, define*, createDocumentFactory, encryption, timeline,
 // storage keys, types — everything in src/document/ flows through its barrel.
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -171,7 +171,7 @@ export {
 } from './document/attach-timeline/index.js';
 
 export {
-	defineDocument,
+	createDocumentFactory,
 	isDocumentHandle,
 	type DocumentBundle,
 	type DocumentFactory,

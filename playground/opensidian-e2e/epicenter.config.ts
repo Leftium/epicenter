@@ -10,7 +10,7 @@
  * Reads auth credentials from the CLI session store at
  * `~/.epicenter/auth/sessions.json` — run `epicenter auth login` first.
  *
- * Composes a DocumentBundle via `defineDocument((id) => ...).open(id)` so the
+ * Composes a DocumentBundle via `createDocumentFactory((id) => ...).open(id)` so the
  * handle carries the `DOCUMENT_HANDLE` brand that `loadConfig` checks for.
  *
  * Usage:
@@ -38,7 +38,7 @@ import {
 	attachEncryption,
 	attachSqlite,
 	attachSync,
-	defineDocument,
+	createDocumentFactory,
 	defineMutation,
 } from '@epicenter/workspace';
 import {
@@ -58,7 +58,7 @@ mkdirSync(MATERIALIZER_DIR, { recursive: true });
 const WORKSPACE_ID = 'opensidian';
 const sessions = createSessionStore();
 
-const opensidianFactory = defineDocument((id: string) => {
+const opensidianFactory = createDocumentFactory((id: string) => {
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(ydoc, opensidianTables);
@@ -76,10 +76,13 @@ const opensidianFactory = defineDocument((id: string) => {
 
 	const sync = attachSync(ydoc, {
 		url: (docId) => `${SERVER_URL}/workspaces/${docId}`,
-		getToken: async () =>
-			(await sessions.load(SERVER_URL))?.accessToken ?? null,
 		waitFor: Promise.all([persistence.whenLoaded, unlock.whenChecked]),
 	});
+	void (async () => {
+		const loaded = await sessions.load(SERVER_URL);
+		sync.setToken(loaded?.accessToken ?? null);
+		sync.reconnect();
+	})();
 
 	/**
 	 * Per-file content persistence via `attachSqlite`. Each content Y.Doc writes

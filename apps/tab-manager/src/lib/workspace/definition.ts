@@ -6,7 +6,7 @@
  *
  * The browser-specific client wiring lives in `client.ts`, which imports
  * this schema and composes every attachment inline inside a single
- * `defineDocument` closure.
+ * `createDocumentFactory` closure.
  */
 
 import {

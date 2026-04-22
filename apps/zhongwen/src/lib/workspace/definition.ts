@@ -3,7 +3,7 @@
  *
  * Browser-agnostic: no IndexedDB, no Svelte imports, no Y.Doc construction.
  * The Y.Doc and attachments live in `client.ts` via a single
- * `defineDocument` closure.
+ * `createDocumentFactory` closure.
  */
 
 import {

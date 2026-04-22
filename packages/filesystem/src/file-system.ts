@@ -33,9 +33,9 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  * @example
  * ```typescript
  * import * as Y from 'yjs';
- * import { defineDocument, attachTable } from '@epicenter/workspace';
+ * import { createDocumentFactory, attachTable } from '@epicenter/workspace';
  *
- * const app = defineDocument((id: string) => {
+ * const app = createDocumentFactory((id: string) => {
  *   const ydoc = new Y.Doc({ guid: id });
  *   const files = attachTable(ydoc, 'files', filesTable);
  *   const contentDocs = createFileContentDocs({ ydoc });

@@ -8,14 +8,14 @@
  */
 
 import {
-	defineDocument,
+	createDocumentFactory,
 	defineMutation,
 	defineQuery,
 } from '@epicenter/workspace';
 import Type from 'typebox';
 import * as Y from 'yjs';
 
-const demoFactory = defineDocument((id: string) => {
+const demoFactory = createDocumentFactory((id: string) => {
 	const ydoc = new Y.Doc({ guid: id });
 	const state = ydoc.getMap<number>('state');
 	state.set('count', 0);

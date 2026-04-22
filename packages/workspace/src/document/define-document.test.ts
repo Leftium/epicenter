@@ -1,5 +1,5 @@
 /**
- * defineDocument tests.
+ * createDocumentFactory tests.
  *
  * Ports the load-bearing primitive-level invariants from the previous
  * `packages/workspace/src/workspace/create-documents.test.ts`, stripping out
@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { defineDocument } from './define-document.js';
+import { createDocumentFactory } from './define-document.js';
 import { DOCUMENTS_ORIGIN, onLocalUpdate } from './on-local-update.js';
 
 /**
@@ -22,7 +22,7 @@ function makeSimpleFactory(opts?: {
 	gcTime?: number;
 	buildExtra?: (ydoc: Y.Doc, id: string) => Record<string, unknown>;
 }) {
-	return defineDocument(
+	return createDocumentFactory(
 		(id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			const extra = opts?.buildExtra?.(ydoc, id) ?? {};
@@ -82,7 +82,7 @@ describe('open / cache identity', () => {
 
 	test('build closure runs without coupling to a parent workspace', () => {
 		// No workspace, no tables — just the primitive.
-		const factory = defineDocument((id: string) => {
+		const factory = createDocumentFactory((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			return {
 				ydoc,
@@ -104,11 +104,11 @@ describe('open / cache identity', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('minimal bundle type', () => {
-	test('defineDocument compiles and runs with a bundle of just { ydoc, [Symbol.dispose] }', () => {
+	test('createDocumentFactory compiles and runs with a bundle of just { ydoc, [Symbol.dispose] }', () => {
 		// No whenReady, no whenDisposed, no extra fields. This pins the
 		// contract: DocumentBundle requires nothing beyond ydoc and a sync
 		// disposer.
-		const factory = defineDocument((id: string) => {
+		const factory = createDocumentFactory((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			return {
 				ydoc,
@@ -131,7 +131,7 @@ describe('minimal bundle type', () => {
 describe('throwing build closure', () => {
 	test('error propagates and the cache does not store the id', () => {
 		let calls = 0;
-		const factory = defineDocument((id: string) => {
+		const factory = createDocumentFactory((id: string) => {
 			calls++;
 			if (calls === 1) throw new Error('boom');
 			const ydoc = new Y.Doc({ guid: id });
@@ -159,7 +159,7 @@ describe('throwing build closure', () => {
 describe('guid stability', () => {
 	test('throws if a second construction for the same id produces a different guid', () => {
 		let seed = 0;
-		const factory = defineDocument((id: string) => {
+		const factory = createDocumentFactory((id: string) => {
 			const ydoc = new Y.Doc({ guid: `${id}-${seed++}` });
 			return {
 				ydoc,
@@ -178,7 +178,7 @@ describe('guid stability', () => {
 	});
 
 	test('accepts stable guids across reconstructions', () => {
-		const factory = defineDocument((id: string) => {
+		const factory = createDocumentFactory((id: string) => {
 			const ydoc = new Y.Doc({ guid: `stable-${id}` });
 			return {
 				ydoc,
@@ -204,7 +204,7 @@ describe('guid stability', () => {
 
 describe('whenReady as builder convention', () => {
 	test('resolves immediately when the bundle exposes a pre-resolved whenReady', async () => {
-		const factory = defineDocument((id: string) => {
+		const factory = createDocumentFactory((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			return {
 				ydoc,
@@ -223,7 +223,7 @@ describe('whenReady as builder convention', () => {
 	test('composes multiple attachment ready-promises inside the builder', async () => {
 		let resolveA!: () => void;
 		let resolveB!: () => void;
-		const factory = defineDocument((id: string) => {
+		const factory = createDocumentFactory((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			const idbLike = {
 				whenLoaded: new Promise<void>((r) => {
@@ -268,7 +268,7 @@ describe('whenReady as builder convention', () => {
 	});
 
 	test('handle exposes bundle properties as own keys (flat, no prototype magic)', () => {
-		const factory = defineDocument((id: string) => {
+		const factory = createDocumentFactory((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			return {
 				ydoc,
@@ -444,7 +444,7 @@ describe('close / closeAll', () => {
 			resolveSentinel = r;
 		});
 
-		const factory = defineDocument((id: string) => {
+		const factory = createDocumentFactory((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			// Attachment-style hook: listen on destroy, resolve sentinel.
 			ydoc.on('destroy', () => {
@@ -484,7 +484,7 @@ describe('close / closeAll', () => {
 
 	test('a throwing [Symbol.dispose] is logged and does not propagate out of close()', () => {
 		let calls = 0;
-		const factory = defineDocument((id: string) => {
+		const factory = createDocumentFactory((id: string) => {
 			calls++;
 			const ydoc = new Y.Doc({ guid: id });
 			return {
@@ -575,7 +575,7 @@ describe('open / dispose', () => {
 	});
 
 	test('await using h = docs.open(id) — disposes on scope exit', async () => {
-		const factory = defineDocument(
+		const factory = createDocumentFactory(
 			(id: string) => {
 				const ydoc = new Y.Doc({ guid: id });
 				return {

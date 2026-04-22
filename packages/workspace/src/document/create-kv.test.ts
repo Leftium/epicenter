@@ -3,7 +3,7 @@
  *
  * Verifies key-value helpers over a store for set/get/delete behavior when
  * `createKv` is fed the workspace's `EncryptedYKeyValueLww` wrapper (as
- * `encryption.attachKv` does internally inside a `defineDocument` builder).
+ * `encryption.attachKv` does internally inside a `createDocumentFactory` builder).
  * KV uses validate-or-default semantics — invalid or missing data returns
  * the default.
  *

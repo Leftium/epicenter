@@ -199,7 +199,7 @@ async function writeMarkdownFile(
  *
  * @example
  * ```ts
- * const factory = defineDocument((id) => {
+ * const factory = createDocumentFactory((id) => {
  *   const ydoc = new Y.Doc({ guid: id });
  *   const tables = attachTables(ydoc, myTableDefs);
  *   const kv = attachKv(ydoc, myKvDefs);
@@ -213,7 +213,7 @@ async function writeMarkdownFile(
  *       filename: slugFilename('title'),
  *       // Inline toMarkdown / fromMarkdown callbacks when needed —
  *       // most real tables split metadata (on the row) from body
- *       // content (in a separate content-doc via defineDocument).
+ *       // content (in a separate content-doc via createDocumentFactory).
  *     })
  *     .kv(kv);
  *

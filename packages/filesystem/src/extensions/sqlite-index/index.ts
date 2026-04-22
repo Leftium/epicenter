@@ -14,7 +14,7 @@
  *
  * @example
  * ```typescript
- * const factory = defineDocument((id: string) => {
+ * const factory = createDocumentFactory((id: string) => {
  *   const ydoc = new Y.Doc({ guid: id });
  *   const tables = attachTables(ydoc, { files: filesTable });
  *   const fileContentDocs = createFileContentDocs({
@@ -139,12 +139,12 @@ type SqliteIndexContext = {
 
 /**
  * Create a SQLite index. Returns a curried factory: call with options, then
- * invoke the inner function with `{ tables }` inside a `defineDocument`
+ * invoke the inner function with `{ tables }` inside a `createDocumentFactory`
  * builder to wire it into the bundle.
  *
  * @example
  * ```typescript
- * defineDocument((id: string) => {
+ * createDocumentFactory((id: string) => {
  *   const ydoc = new Y.Doc({ guid: id });
  *   const tables = attachTables(ydoc, { files: filesTable });
  *   attachIndexedDb(ydoc);

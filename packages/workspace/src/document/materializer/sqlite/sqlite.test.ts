@@ -21,7 +21,7 @@ import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
 	attachTables,
-	defineDocument,
+	createDocumentFactory,
 	defineTable,
 } from '../../../index.js';
 import { attachSqliteMaterializer } from './sqlite.js';
@@ -82,7 +82,7 @@ type SetupOptions = {
 function setup(options: SetupOptions = {}) {
 	const db = createTestDb();
 
-	const factory = defineDocument((id: string) => {
+	const factory = createDocumentFactory((id: string) => {
 		const ydoc = new Y.Doc({ guid: id });
 		const tables = attachTables(ydoc, tableDefinitions);
 
@@ -166,7 +166,7 @@ describe('attachSqliteMaterializer', () => {
 			const db = createTestDb();
 			const gate = createDeferred();
 
-			const factory = defineDocument((id: string) => {
+			const factory = createDocumentFactory((id: string) => {
 				const ydoc = new Y.Doc({ guid: id });
 				const tables = attachTables(ydoc, tableDefinitions);
 

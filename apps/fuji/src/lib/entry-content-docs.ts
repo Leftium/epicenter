@@ -9,17 +9,17 @@ import {
 	attachIndexedDb,
 	attachRichText,
 	attachSync,
-	defineDocument,
+	createDocumentFactory,
 	docGuid,
 	onLocalUpdate,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { DateTimeString } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { auth, workspace } from '$lib/client';
+import { auth, workspace } from '$lib/client.svelte';
 import type { EntryId } from '$lib/workspace';
 
-export const entryContentDocs = defineDocument((entryId: EntryId) => {
+export const entryContentDocs = createDocumentFactory((entryId: EntryId) => {
 	const ydoc = new Y.Doc({
 		guid: docGuid({
 			workspaceId: workspace.id,
@@ -33,9 +33,11 @@ export const entryContentDocs = defineDocument((entryId: EntryId) => {
 	const idb = attachIndexedDb(ydoc);
 	const sync = attachSync(ydoc, {
 		url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
-		getToken: async () => auth.token,
 		waitFor: idb.whenLoaded,
 	});
+	// Seed with the current token; per-doc sync doesn't observe token rotation.
+	// On editor re-open the next handle picks up any refreshed token.
+	sync.setToken(auth.token);
 
 	onLocalUpdate(ydoc, () => {
 		workspace.tables.entries.update(entryId, {

@@ -1,7 +1,7 @@
 /**
  * @fileoverview Server-side entry for the shared skills workspace.
  *
- * Exports `skillsDocument` — a `defineDocument` factory like the browser
+ * Exports `skillsDocument` — a `createDocumentFactory` factory like the browser
  * entry, but with NO IndexedDB / BroadcastChannel attachments and WITH
  * `importFromDisk` / `exportToDisk` actions.
  *
@@ -23,7 +23,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { defineDocument } from '@epicenter/workspace';
+import { createDocumentFactory } from '@epicenter/workspace';
 import {
 	attachEncryption,
 	defineMutation,
@@ -72,7 +72,7 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * factories with two separate caches. That isn't a supported configuration
  * today — TODO if we ever need it.
  */
-export const skillsDocument = defineDocument(
+export const skillsDocument = createDocumentFactory(
 	(id: string) => {
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 

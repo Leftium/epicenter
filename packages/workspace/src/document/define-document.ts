@@ -1,5 +1,5 @@
 /**
- * `defineDocument` — a minimal refcounted cache for Y.Doc bundles.
+ * `createDocumentFactory` — a minimal refcounted cache for Y.Doc bundles.
  *
  * The user owns construction and disposal. The cache owns identity, refcount,
  * and the `gcTime` grace period between last-dispose and actual teardown.
@@ -35,10 +35,10 @@
  * } // [Symbol.dispose] fires on block exit
  * ```
  *
- * ### Level 2 — shared + lifecycle via `defineDocument`
+ * ### Level 2 — shared + lifecycle via `createDocumentFactory`
  *
  * ```ts
- * const docs = defineDocument(buildDoc, { gcTime: 30_000 });
+ * const docs = createDocumentFactory(buildDoc, { gcTime: 30_000 });
  *
  * // Imperative caller that needs loaded data — open, then await the
  * // builder-conventional readiness gate at the call site.
@@ -156,7 +156,7 @@
 import type * as Y from 'yjs';
 
 /**
- * The contract every `defineDocument` builder must satisfy.
+ * The contract every `createDocumentFactory` builder must satisfy.
  *
  * - `ydoc: Y.Doc` — the underlying CRDT document the cache identifies the
  *   bundle by (guid verified across re-constructions).
@@ -172,7 +172,7 @@ import type * as Y from 'yjs';
  *
  * This is the vocabulary-tier shape for documents, same stratum as `Table`,
  * `Kv`, and `Awareness`. Exported for authors writing custom builders or
- * typing bundles outside a `defineDocument` call.
+ * typing bundles outside a `createDocumentFactory` call.
  */
 export type DocumentBundle = {
 	ydoc: Y.Doc;
@@ -180,7 +180,7 @@ export type DocumentBundle = {
 };
 
 /**
- * Brand symbol for handles returned by `defineDocument(...).open(id)`.
+ * Brand symbol for handles returned by `createDocumentFactory(...).open(id)`.
  * Module-private; use `isDocumentHandle(value)` to check.
  */
 const DOCUMENT_HANDLE: unique symbol = Symbol.for('epicenter.document.handle');
@@ -228,12 +228,12 @@ export type DocumentHandle<T> = T & {
 	 */
 	dispose(): void;
 	[Symbol.dispose](): void;
-	/** Brand marker — identifies handles minted by `defineDocument.open()`. */
+	/** Brand marker — identifies handles minted by `createDocumentFactory.open()`. */
 	[DOCUMENT_HANDLE]: true;
 };
 
 /**
- * Type guard: `true` iff `value` was minted by `defineDocument(...).open(id)`.
+ * Type guard: `true` iff `value` was minted by `createDocumentFactory(...).open(id)`.
  * Checks a `Symbol.for`-branded marker — survives module duplication.
  */
 export function isDocumentHandle(
@@ -247,7 +247,7 @@ export function isDocumentHandle(
 }
 
 /**
- * Factory created by `defineDocument(build, opts?)`. Exposes cached,
+ * Factory created by `createDocumentFactory(build, opts?)`. Exposes cached,
  * ref-counted handles by id and coordinated teardown.
  *
  * The builder fully owns bundle construction and disposal. The cache owns
@@ -325,7 +325,7 @@ type DocEntry<T extends DocumentBundle> = {
  *                default — see module doc for rationale). A fresh open during
  *                the grace window cancels the pending teardown.
  */
-export function defineDocument<
+export function createDocumentFactory<
 	Id extends string,
 	T extends DocumentBundle,
 >(
@@ -351,7 +351,7 @@ export function defineDocument<
 				// best-effort — surface the stability error, not the dispose error
 			}
 			throw new Error(
-				`[defineDocument] guid instability for id=${String(id)}: ` +
+				`[createDocumentFactory] guid instability for id=${String(id)}: ` +
 					`expected ${recorded}, got ${bundle.ydoc.guid}. ` +
 					`Ensure your build closure produces a deterministic guid.`,
 			);
@@ -390,7 +390,7 @@ export function defineDocument<
 		try {
 			entry.bundle[Symbol.dispose]();
 		} catch (err) {
-			console.error('[defineDocument] bundle [Symbol.dispose]() threw:', err);
+			console.error('[createDocumentFactory] bundle [Symbol.dispose]() threw:', err);
 		}
 	}
 

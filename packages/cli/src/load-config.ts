@@ -2,14 +2,14 @@
  * Workspace config loader.
  *
  * Loads `epicenter.config.ts` and collects every named export that is an
- * opened `DocumentHandle` (returned by `defineDocument(...).open(id)`).
+ * opened `DocumentHandle` (returned by `createDocumentFactory(...).open(id)`).
  * The export name becomes the root of the dot-path used by `epicenter list`
  * and `epicenter run`.
  *
  * @example
  * ```typescript
  * // epicenter.config.ts:
- * //   const notesFactory = defineDocument((id) => ({ ydoc, tables, ... }));
+ * //   const notesFactory = createDocumentFactory((id) => ({ ydoc, tables, ... }));
  * //   export const notes = notesFactory.open('notes');
  *
  * const { entries, dispose } = await loadConfig('/path/to/project');
@@ -68,7 +68,7 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 		throw new Error(
 			`No document handles found in ${CONFIG_FILENAME}.\n` +
 				`Export an opened handle — not the factory:\n` +
-				`  const notesFactory = defineDocument((id) => ({ ydoc, tables, ... }));\n` +
+				`  const notesFactory = createDocumentFactory((id) => ({ ydoc, tables, ... }));\n` +
 				`  export const notes = notesFactory.open('notes');`,
 		);
 	}

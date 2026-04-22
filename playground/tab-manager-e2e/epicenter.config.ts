@@ -5,7 +5,7 @@
  * Reads auth credentials (token + encryption keys) from the CLI session store
  * at `~/.epicenter/auth/sessions.json`—run `epicenter auth login` first.
  *
- * Composes a DocumentBundle via `defineDocument((id) => ...).open(id)` so the
+ * Composes a DocumentBundle via `createDocumentFactory((id) => ...).open(id)` so the
  * handle carries the `DOCUMENT_HANDLE` brand that `loadConfig` checks for.
  *
  * Usage:
@@ -33,7 +33,7 @@ import {
 	attachEncryption,
 	attachSqlite,
 	attachSync,
-	defineDocument,
+	createDocumentFactory,
 } from '@epicenter/workspace';
 import {
 	attachMarkdownMaterializer,
@@ -47,7 +47,7 @@ const WORKSPACE_ID = 'epicenter.tab-manager';
 
 const sessions = createSessionStore();
 
-const tabManagerFactory = defineDocument((id: string) => {
+const tabManagerFactory = createDocumentFactory((id: string) => {
 	const ydoc = new Y.Doc({ guid: id, gc: false });
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(ydoc, tabManagerTables);
@@ -68,12 +68,15 @@ const tabManagerFactory = defineDocument((id: string) => {
 
 	const sync = attachSync(ydoc, {
 		url: (docId) => `${SERVER_URL}/workspaces/${docId}`,
-		getToken: async () =>
-			(await sessions.load(SERVER_URL))?.accessToken ?? null,
 		// Gate connection on local hydrate + unlock so the handshake only exchanges
 		// the delta, not the whole document.
 		waitFor: Promise.all([persistence.whenLoaded, unlock.whenChecked]),
 	});
+	void (async () => {
+		const loaded = await sessions.load(SERVER_URL);
+		sync.setToken(loaded?.accessToken ?? null);
+		sync.reconnect();
+	})();
 
 	const whenReady = Promise.all([
 		persistence.whenLoaded,

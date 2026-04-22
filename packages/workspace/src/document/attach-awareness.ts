@@ -7,7 +7,7 @@
  * so destroying the ydoc tears down the Awareness automatically.
  *
  * To wire awareness into a sync attachment, compose inline inside a
- * `defineDocument` builder: pass `awareness.raw` (the underlying y-protocols
+ * `createDocumentFactory` builder: pass `awareness.raw` (the underlying y-protocols
  * `Awareness`) to `attachSync(ydoc, { awareness: awareness.raw, ... })`.
  */
 

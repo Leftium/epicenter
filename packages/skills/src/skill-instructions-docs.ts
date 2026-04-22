@@ -7,7 +7,7 @@
 
 import {
 	attachPlainText,
-	defineDocument,
+	createDocumentFactory,
 	docGuid,
 	type DocPersistence,
 	onLocalUpdate,
@@ -25,7 +25,7 @@ export function createSkillInstructionsDocs({
 	skillsTable: Table<Skill>;
 	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }) {
-	return defineDocument((skillId: string) => {
+	return createDocumentFactory((skillId: string) => {
 		const ydoc = new Y.Doc({
 			guid: docGuid({
 				workspaceId,

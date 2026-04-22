@@ -46,7 +46,7 @@ type RegisteredTable = {
  *
  * @example
  * ```ts
- * const factory = defineDocument((id) => {
+ * const factory = createDocumentFactory((id) => {
  *   const ydoc = new Y.Doc({ guid: id });
  *   const tables = attachTables(ydoc, myTableDefs);
  *   const idb = attachIndexedDb(ydoc);

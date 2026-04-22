@@ -49,7 +49,7 @@ describe('resolvePath', () => {
 		// Both describe blocks share this handle via Bun's module cache:
 		// `demoFactory.open(...)` in the fixture runs once at module load, so
 		// every loadConfig() call returns the same `demo` reference. The first
-		// describe's afterAll disposes it (refcount 1 → 0), but defineDocument's
+		// describe's afterAll disposes it (refcount 1 → 0), but createDocumentFactory's
 		// default gcTime: Infinity keeps the Y.Doc alive, so these tests still
 		// read valid state. If that default ever becomes finite, split this
 		// describe into its own explicit factory.open() / dispose() lifecycle.

@@ -108,7 +108,7 @@ export type LastSchema<T extends readonly CombinedStandardSchema[]> =
  *
  * For per-row content (rich text, long-form body), keep the row lean (ids,
  * metadata, a content-doc guid) and pair the table with a separate
- * `defineDocument(builder)` factory keyed on that content guid. Opening a row
+ * `createDocumentFactory(builder)` factory keyed on that content guid. Opening a row
  * then becomes `contentDocs.open(row.contentGuid)` — the list doesn't load
  * every content doc, and the editor doesn't contend with the table.
  *

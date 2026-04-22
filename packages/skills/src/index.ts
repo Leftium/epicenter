@@ -7,7 +7,7 @@
  * `skillsWorkspace`, the singleton instance opened at `'epicenter.skills'`.
  *
  * Nested per-id factories (`instructionsDocs`, `referenceDocs`) still live
- * on `defineDocument` — the ref-counted cache earns its keep there because
+ * on `createDocumentFactory` — the ref-counted cache earns its keep there because
  * the same skill/reference id can be opened from multiple components.
  *
  * For server-side disk I/O (importFromDisk / exportToDisk), use

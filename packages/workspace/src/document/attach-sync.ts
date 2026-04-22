@@ -108,6 +108,21 @@ export type SyncAttachment = {
 	readonly status: SyncStatus;
 	/** Subscribe to status changes. Returns unsubscribe function. */
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
+	/**
+	 * Push a new bearer token into the sync attachment. The supervisor reads
+	 * this slot on every connect attempt. Pass `null` to clear the token; if
+	 * `config.requiresToken` is true, subsequent connect attempts back off
+	 * with an `auth` error until a token is set again.
+	 *
+	 * Calling `setToken` alone does not trigger a reconnect — pair with
+	 * `reconnect()` to force a fresh connection using the new token.
+	 */
+	setToken: (token: string | null) => void;
+	/**
+	 * Close the websocket, stop the supervisor, and transition to offline.
+	 * A subsequent `reconnect()` restarts the supervisor.
+	 */
+	goOffline: () => void;
 	/** Force a fresh connection with new credentials (supervisor restarts iteration). */
 	reconnect: () => void;
 	/**
@@ -144,11 +159,6 @@ export type SyncAttachmentConfig = {
 	 */
 	url: (docId: string) => string;
 	/**
-	 * Token fetcher for authenticated mode. Called fresh on each connect attempt —
-	 * reconnect() triggers a new token fetch automatically.
-	 */
-	getToken?: (docId: string) => Promise<string | null>;
-	/**
 	 * Gate the first connection attempt on another promise (typically
 	 * `attachIndexedDb(ydoc).whenLoaded`). Without this, the supervisor
 	 * connects before local state hydrates and the handshake transfers the
@@ -170,6 +180,17 @@ export type SyncAttachmentConfig = {
 	 * of whether this is set.
 	 */
 	rpc?: RpcConfig;
+	/**
+	 * Static contract: this provider requires an auth token to connect.
+	 * When true, the supervisor refuses to connect without a token and surfaces
+	 * an `auth` error (with backoff) until `setToken(token)` is called. When
+	 * false (default), connects unauthenticated — tests and public rooms.
+	 *
+	 * Declared at attach-time rather than latched by the first `setToken` call,
+	 * so `setToken(null)` after a logout returns the provider to "waiting for
+	 * token" rather than silently flipping to unauth mode.
+	 */
+	requiresToken?: boolean;
 };
 
 // ============================================================================
@@ -197,7 +218,6 @@ export function attachSync(
 	config: SyncAttachmentConfig,
 ): SyncAttachment {
 	const docId = ydoc.guid;
-	const getToken = config.getToken ? () => config.getToken!(docId) : undefined;
 	const awareness = config.awareness;
 
 	const status = createStatusEmitter<SyncStatus>({ phase: 'offline' });
@@ -205,9 +225,17 @@ export function attachSync(
 		Promise.withResolvers<void>();
 	const { promise: whenDisposed, resolve: resolveDisposed } =
 		Promise.withResolvers<void>();
-	const { promise: whenSupervisorExited, resolve: resolveSupervisorExited } =
-		Promise.withResolvers<void>();
 	const backoff = createBackoff();
+
+	/**
+	 * Token slot pushed in by `setToken`. The supervisor reads this on each
+	 * connect attempt. Whether a token is required is a static contract
+	 * (`config.requiresToken`), not a latch — so `setToken(null)` after logout
+	 * correctly returns to "waiting for token" rather than silently downgrading
+	 * to unauth.
+	 */
+	let currentToken: string | null = null;
+	const requiresToken = config.requiresToken ?? false;
 
 	/** User intent: should we be connected? */
 	let desired: 'online' | 'offline' = 'offline';
@@ -396,28 +424,21 @@ export function attachSync(
 
 			status.set({ phase: 'connecting', attempt, lastError });
 
-			let token: string | null = null;
-			if (getToken) {
-				try {
-					token = await getToken();
-					if (!token) throw new Error('No token available');
-				} catch (e) {
-					if (runId !== myRunId) {
-						attempt = 0;
-						lastError = undefined;
-						continue;
-					}
-					lastError = { type: 'auth', error: e };
-					status.set({ phase: 'connecting', attempt, lastError });
-					await backoff.sleep();
-					if (runId !== myRunId) {
-						attempt = 0;
-						lastError = undefined;
-						continue;
-					}
-					attempt += 1;
+			const token: string | null = currentToken;
+			if (requiresToken && !token) {
+				lastError = {
+					type: 'auth',
+					error: new Error('No token available'),
+				};
+				status.set({ phase: 'connecting', attempt, lastError });
+				await backoff.sleep();
+				if (runId !== myRunId) {
+					attempt = 0;
+					lastError = undefined;
 					continue;
 				}
+				attempt += 1;
+				continue;
 			}
 
 			if (runId !== myRunId) {
@@ -633,6 +654,22 @@ export function attachSync(
 		return handshakeComplete ? 'connected' : 'failed';
 	}
 
+	/**
+	 * Handle to the currently-running supervisor loop, or null when offline.
+	 * `ensureSupervisor` starts one if none is running; teardown awaits it.
+	 */
+	let currentSupervisorPromise: Promise<void> | null = null;
+
+	function ensureSupervisor() {
+		if (torn) return;
+		if (currentSupervisorPromise) return;
+		desired = 'online';
+		manageWindowListeners('add');
+		currentSupervisorPromise = runLoop().finally(() => {
+			currentSupervisorPromise = null;
+		});
+	}
+
 	function goOffline() {
 		desired = 'offline';
 		runId++;
@@ -658,17 +695,7 @@ export function attachSync(
 		} catch (e) {
 			console.warn('[attachSync] waitFor rejected; starting sync anyway', e);
 		}
-		if (torn) {
-			resolveSupervisorExited();
-			return;
-		}
-		desired = 'online';
-		manageWindowListeners('add');
-		try {
-			await runLoop();
-		} finally {
-			resolveSupervisorExited();
-		}
+		ensureSupervisor();
 	})();
 
 	// ── Teardown ──
@@ -687,9 +714,10 @@ export function attachSync(
 			}
 			const ws = websocket;
 			clearPendingRequests();
+			const running = currentSupervisorPromise;
 			goOffline();
 			status.clear();
-			await whenSupervisorExited;
+			if (running) await running;
 			await waitForWsClose(ws, 1000);
 		} finally {
 			resolveDisposed();
@@ -702,12 +730,17 @@ export function attachSync(
 			return status.get();
 		},
 		onStatusChange: status.subscribe,
+		setToken(token) {
+			currentToken = token;
+		},
+		goOffline,
 		reconnect() {
-			if (desired !== 'online') return;
+			if (torn) return;
 			runId++;
 			backoff.reset();
 			backoff.wake();
 			websocket?.close();
+			ensureSupervisor();
 		},
 		whenDisposed,
 		async rpc<

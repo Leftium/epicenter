@@ -23,7 +23,7 @@ import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
 	attachTables,
-	defineDocument,
+	createDocumentFactory,
 	defineTable,
 } from '../../../index.js';
 import {
@@ -86,7 +86,7 @@ type TableRegistration = {
 async function setup(options?: {
 	tables?: (t: AttachedTables) => TableRegistration[];
 }) {
-	const factory = defineDocument((id: string) => {
+	const factory = createDocumentFactory((id: string) => {
 		const ydoc = new Y.Doc({ guid: id });
 		const tables = attachTables(ydoc, tableDefinitions);
 
@@ -630,7 +630,7 @@ describe('rebuild', () => {
 describe('round-trip', () => {
 	test('pull then push on fresh workspace preserves row data', async () => {
 		// First workspace: populate and pull to disk
-		const factory1 = defineDocument((id: string) => {
+		const factory1 = createDocumentFactory((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			const tables = attachTables(ydoc, tableDefinitions);
 			const materializer = attachMarkdownMaterializer(ydoc, {
@@ -673,7 +673,7 @@ describe('round-trip', () => {
 		expect(p1Parsed!.frontmatter.title).toBe('Round Trip');
 
 		// Second workspace: fresh instance, push from the same directory
-		const factory2 = defineDocument((id: string) => {
+		const factory2 = createDocumentFactory((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			const tables = attachTables(ydoc, tableDefinitions);
 			const materializer = attachMarkdownMaterializer(ydoc, {
@@ -754,7 +754,7 @@ describe('round-trip', () => {
 
 	test('inline field-to-body pair round-trips over MarkdownShape', async () => {
 		// Most real apps store body content in a separate Y.Doc (via
-		// defineDocument). This test covers the simpler case where body IS a
+		// createDocumentFactory). This test covers the simpler case where body IS a
 		// row field — `notes.body` here. Inline callbacks keep the intent
 		// at the call site; no helper abstracts the destructure.
 		const { workspace, factory } = await setup({

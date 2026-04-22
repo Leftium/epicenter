@@ -7,7 +7,7 @@
 
 import {
 	attachPlainText,
-	defineDocument,
+	createDocumentFactory,
 	docGuid,
 	type DocPersistence,
 	onLocalUpdate,
@@ -25,7 +25,7 @@ export function createReferenceContentDocs({
 	referencesTable: Table<Reference>;
 	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }) {
-	return defineDocument((referenceId: string) => {
+	return createDocumentFactory((referenceId: string) => {
 		const ydoc = new Y.Doc({
 			guid: docGuid({
 				workspaceId,

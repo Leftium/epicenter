@@ -250,7 +250,8 @@ export function attachFileSystemIndex(filesTable: Table<FileRow>) {
 		const childRows: FileRow[] = [];
 
 		for (const cid of childIds) {
-			const { data: row } = filesTable.get(cid);
+			const { data: row, error } = filesTable.get(cid);
+			if (error) continue;
 			if (row !== null && row.trashedAt === null) {
 				childRows.push(row);
 			}
@@ -400,7 +401,8 @@ export function attachFileSystemIndex(filesTable: Table<FileRow>) {
 				let latestId: FileId | null = null;
 				let latestTime = -1;
 				for (const cid of cycleIds) {
-					const { data: row } = filesTable.get(cid);
+					const { data: row, error } = filesTable.get(cid);
+					if (error) continue;
 					if (row !== null && row.updatedAt > latestTime) {
 						latestTime = row.updatedAt;
 						latestId = cid;
@@ -417,8 +419,8 @@ export function attachFileSystemIndex(filesTable: Table<FileRow>) {
 			inStack.add(currentId);
 			path.push(currentId);
 
-			const { data: row } = filesTable.get(currentId);
-			if (row === null) break;
+			const { data: row, error } = filesTable.get(currentId);
+			if (error || row === null) break;
 			currentId = row.parentId;
 		}
 

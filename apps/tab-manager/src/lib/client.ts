@@ -121,8 +121,9 @@ export type WorkspaceTools = typeof workspaceAiTools.tools;
 async function registerDevice(): Promise<void> {
 	await workspace.whenReady;
 	const id = await getDeviceId();
-	const { data: existing } = workspace.tables.devices.get(id);
-	const existingName = existing?.name ?? null;
+	const { data: existing, error } = workspace.tables.devices.get(id);
+	// Re-register on error: treat invalid row as "no prior registration".
+	const existingName = !error && existing ? existing.name : null;
 	workspace.tables.devices.set({
 		id,
 		name: existingName ?? (await generateDefaultDeviceName()),

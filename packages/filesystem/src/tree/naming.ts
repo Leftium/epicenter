@@ -25,7 +25,8 @@ export function assertUniqueName(
 ): void {
 	const duplicate = siblingIds.find((id) => {
 		if (id === excludeId) return false;
-		const { data: row } = filesTable.get(id);
+		const { data: row, error } = filesTable.get(id);
+		if (error) return false; // can't determine name from invalid row
 		if (row === null) return false;
 		return row.name === name && row.trashedAt === null;
 	});

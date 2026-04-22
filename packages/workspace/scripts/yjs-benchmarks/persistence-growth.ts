@@ -16,8 +16,7 @@
 
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { attachTable } from '../../src/document/index.js';
-import { defineTable } from '../../src/workspace/index.js';
+import { attachTable, defineTable } from '../../src/index.js';
 import { formatBytes } from './helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -90,7 +89,7 @@ function createIdbSimulator(doc: Y.Doc) {
 		compactionCount++;
 	}
 
-	doc.on('update', (update: Uint8Array, origin: unknown) => {
+	doc.on('update', (update: Uint8Array) => {
 		updates.push(update);
 		if (updates.length >= IDB_TRIM_SIZE) {
 			compact();

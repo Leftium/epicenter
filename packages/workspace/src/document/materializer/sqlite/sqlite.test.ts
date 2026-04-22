@@ -68,7 +68,8 @@ function createTestDb(): TestDb {
 type SetupOptions = {
 	tables?: Array<{
 		name: keyof typeof tableDefinitions;
-		config?: { fts?: string[]; serialize?: (value: unknown) => unknown };
+		// biome-ignore lint/suspicious/noExplicitAny: test helper — config narrowed per call site
+		config?: { fts?: any; serialize?: (value: unknown) => unknown };
 	}>;
 	debounceMs?: number;
 };
@@ -80,24 +81,19 @@ function setup(options: SetupOptions = {}) {
 		const ydoc = new Y.Doc({ guid: id });
 		const tables = attachTables(ydoc, tableDefinitions);
 
-		const materializer = attachSqliteMaterializer(
-			{
-				tables,
-				definitions: tableDefinitions,
-				whenReady: Promise.resolve(),
-			},
-			{ db, debounceMs: options.debounceMs },
-		);
+		const materializer = attachSqliteMaterializer(ydoc, {
+			db,
+			debounceMs: options.debounceMs,
+		});
 
 		const tablesToRegister = options.tables ?? [
 			{ name: 'posts' },
 			{ name: 'notes' },
 		];
 		for (const tableOpt of tablesToRegister) {
-			materializer.table(tableOpt.name, tableOpt.config);
+			// biome-ignore lint/suspicious/noExplicitAny: test helper indexes by string name
+			materializer.table(tables[tableOpt.name] as any, tableOpt.config);
 		}
-
-		ydoc.on('destroy', () => materializer[Symbol.dispose]());
 
 		return {
 			ydoc,
@@ -171,18 +167,12 @@ describe('attachSqliteMaterializer', () => {
 				const ydoc = new Y.Doc({ guid: id });
 				const tables = attachTables(ydoc, tableDefinitions);
 
-				const materializer = attachSqliteMaterializer(
-					{
-						tables,
-						definitions: tableDefinitions,
-						whenReady: gate.promise,
-					},
-					{ db },
-				)
-					.table('posts')
-					.table('notes');
-
-				ydoc.on('destroy', () => materializer[Symbol.dispose]());
+				const materializer = attachSqliteMaterializer(ydoc, {
+					db,
+					waitFor: gate.promise,
+				})
+					.table(tables.posts)
+					.table(tables.notes);
 
 				return {
 					ydoc,

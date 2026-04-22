@@ -1,147 +1,108 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Kv, Table } from '../../index.js';
+import type * as Y from 'yjs';
 import type { MaybePromise } from '../../../shared/types.js';
+import type { BaseRow, Kv, Table } from '../../index.js';
 import type { SerializeResult } from './markdown.js';
 import { toMarkdown } from './markdown.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';
 
+// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv
+type AnyKv = Kv<any>;
+// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous tables
+type AnyTable = Table<any>;
+
+type TableConfig<TRow extends BaseRow> = {
+	/** Subdirectory (joined onto the base `dir`) for this table's files. Default: `table.name`. */
+	dir?: string;
+	/** Produce the on-disk filename + content for a row. Default: `{id}.md` with toMarkdown. */
+	serialize?: (row: TRow) => MaybePromise<SerializeResult>;
+	/** Parse a markdown file back into a row. Required for `pushFromMarkdown` if custom shape. */
+	deserialize?: (parsed: {
+		frontmatter: Record<string, unknown>;
+		body: string | undefined;
+	}) => MaybePromise<TRow>;
+};
+
+type KvConfig = {
+	/** Serialize the full KV state to a single file. Default: `kv.json` with JSON.stringify. */
+	serialize?: (data: Record<string, unknown>) => SerializeResult;
+};
+
+type RegisteredTable = {
+	table: AnyTable;
+	// biome-ignore lint/suspicious/noExplicitAny: internal storage — variance across heterogeneous row types
+	config: TableConfig<any>;
+	unsubscribe?: () => void;
+};
+
+type RegisteredKv = {
+	kv: AnyKv;
+	config: KvConfig;
+	unsubscribe?: () => void;
+};
+
 /**
  * Create a bidirectional markdown materializer for workspace data.
  *
- * Nothing materializes by default. Call `.table()` to opt in per table and
- * `.kv()` to opt in KV. Each `.table()` call validates the table name against
- * the workspace definition and infers the row type for the serialize callback.
+ * `attachMarkdownMaterializer(ydoc, { dir })` returns a chainable builder where
+ * `.table(tableRef, config?)` opts in per table and `.kv(kvRef, config?)` opts
+ * in a single KV mirror. Nothing materializes by default.
  *
- * The materializer awaits `ctx.whenReady` before reading data, so persistence
- * and sync have loaded before the initial flush. All `.table()` and `.kv()`
- * calls happen synchronously in the factory closure before `whenFlushed` resolves.
- *
- * Use `Symbol.dispose` (or `[Symbol.dispose]()`) for teardown. The caller
- * composes its own disposal — usually chained with other attachments.
+ * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)` — callers
+ * never call a dispose method; destroying the ydoc cascades.
  *
  * @example
- * ```typescript
- * const markdown = attachMarkdownMaterializer(
- *   { tables, kv, whenReady },
- *   { dir: './data' },
- * )
- *   .table('posts', { serialize: slugFilename('title') })
- *   .kv();
+ * ```ts
+ * const factory = defineDocument((id) => {
+ *   const ydoc = new Y.Doc({ guid: id });
+ *   const tables = attachTables(ydoc, myTableDefs);
+ *   const kv = attachKv(ydoc, myKvDefs);
+ *   const idb = attachIndexedDb(ydoc);
+ *
+ *   const markdown = attachMarkdownMaterializer(ydoc, {
+ *     dir: './data',
+ *     waitFor: idb.whenLoaded,
+ *   })
+ *     .table(tables.posts, { serialize: slugFilename('title') })
+ *     .kv(kv);
+ *
+ *   return { ydoc, tables, kv, idb, markdown, [Symbol.dispose]() { ydoc.destroy(); } };
+ * });
  * ```
  */
-export function attachMarkdownMaterializer<
-	// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
-	TTables extends Record<string, Table<any>>,
->(
-	ctx: {
-		tables: TTables;
-		/** Optional KV helper — pass if `.kv()` will be called. */
-		// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv helpers
-		kv?: Kv<any>;
-		whenReady: Promise<void>;
-	},
-	config: {
+export function attachMarkdownMaterializer(
+	ydoc: Y.Doc,
+	{
+		dir,
+		waitFor,
+	}: {
 		/** Base output directory. Accepts a string or async getter for lazy path resolution. */
 		dir: string | (() => MaybePromise<string>);
+		/**
+		 * Gate: the materializer awaits this before the initial filesystem flush.
+		 * Matches the `waitFor` convention used by `attachSync`. Omit for no gate.
+		 */
+		waitFor?: Promise<unknown>;
 	},
 ) {
-	type TableConfigByName = {
-		[TName in keyof TTables & string]?: {
-			dir?: string;
-			serialize?: TTables[TName] extends Table<infer TRow>
-				? (row: TRow) => MaybePromise<SerializeResult>
-				: never;
-			deserialize?: (parsed: {
-				frontmatter: Record<string, unknown>;
-				body: string | undefined;
-			}) => MaybePromise<
-				TTables[TName] extends Table<infer TRow> ? TRow : never
-			>;
-		};
-	};
+	const registered = new Map<string, RegisteredTable>();
+	const registeredKv = { entry: undefined as RegisteredKv | undefined };
+	let isDisposed = false;
+	let hasInitialized = false;
 
-	type TableRow<TName extends keyof TTables & string> =
-		TTables[TName] extends Table<infer TRow> ? TRow : never;
+	const resolveDir = async () => (typeof dir === 'function' ? await dir() : dir);
 
-	type MaterializerApi = {
-		whenFlushed: Promise<void>;
-		/**
-		 * Read `.md` files from disk and import them into the Yjs workspace via `table.set()`.
-		 *
-		 * Each file is parsed for YAML frontmatter and an optional body. The `deserialize`
-		 * callback (if provided per table) converts the parsed result to a row. When no
-		 * `deserialize` is configured, frontmatter fields are used as the row directly.
-		 *
-		 * **This overwrites existing rows**—`table.set()` is insert-or-replace.
-		 */
-		pushFromMarkdown(): Promise<{
-			imported: number;
-			skipped: number;
-			errors: string[];
-		}>;
-		/**
-		 * Re-materialize all Yjs table data to markdown files on disk.
-		 *
-		 * Reads every valid row from each registered table, serializes it,
-		 * and writes the result to disk. Does not remove orphaned files.
-		 */
-		pullToMarkdown(): Promise<{ written: number }>;
-	};
+	// ── Per-table materialization ───────────────────────────────
 
-	type MaterializerBuilder = MaterializerApi & {
-		[Symbol.dispose](): void;
-		table<TName extends keyof TTables & string>(
-			name: TName,
-			config?: {
-				dir?: string;
-				serialize?: TTables[TName] extends Table<infer TRow>
-					? (row: TRow) => MaybePromise<SerializeResult>
-					: never;
-				/** Parse a markdown file back into a table row. Required for `pushFromMarkdown`. Default: uses frontmatter fields directly. */
-				deserialize?: (parsed: {
-					frontmatter: Record<string, unknown>;
-					body: string | undefined;
-				}) => MaybePromise<
-					TTables[TName] extends Table<infer TRow> ? TRow : never
-				>;
-			},
-		): MaterializerBuilder;
-		/**
-		 * Opt in to KV materialization.
-		 *
-		 * Writes a single file (default: `kv.json`) containing all KV values.
-		 * The initial snapshot is seeded via `kv.getAll()`, then kept current
-		 * via `kv.observeAll()`. Custom serialize receives the accumulated
-		 * state and returns `SerializeResult`.
-		 */
-		kv(config?: {
-			serialize?: (data: Record<string, unknown>) => SerializeResult;
-		}): MaterializerBuilder;
-	};
-
-	const tableConfigs: TableConfigByName = {};
-	const tableNames = new Set<keyof TTables & string>();
-	let kvConfig:
-		| {
-				serialize?: (data: Record<string, unknown>) => SerializeResult;
-		  }
-		| undefined;
-	let shouldMaterializeKv = false;
-	const unsubscribers: Array<() => void> = [];
-
-	const materializeTable = async <TName extends keyof TTables & string>(
-		name: TName,
-		dir: string,
-	) => {
-		const table = ctx.tables[name];
-		if (!table) throw new Error(`Table "${name}" not found in workspace`);
-		const tableConfig = tableConfigs[name];
-		const directory = join(dir, tableConfig?.dir ?? name);
+	async function materializeTable(
+		baseDir: string,
+		{ table, config }: RegisteredTable,
+	): Promise<() => void> {
+		const directory = join(baseDir, config.dir ?? table.name);
 		const filenames = new Map<string, string>();
-
-		const serialize: (row: TableRow<TName>) => MaybePromise<SerializeResult> =
-			tableConfig?.serialize ??
+		const serialize: (row: BaseRow) => MaybePromise<SerializeResult> =
+			config.serialize ??
 			((row) => ({
 				filename: `${row.id}.md`,
 				content: toMarkdown({ ...row }),
@@ -157,31 +118,26 @@ export function attachMarkdownMaterializer<
 
 		// Sequential writes inside the observer avoid rename races — a parallel
 		// approach (Promise.allSettled) could delete a file another write needs.
-		const unsubscribe = table.observe((changedIds) => {
+		return table.observe((changedIds) => {
 			void (async () => {
 				for (const id of changedIds) {
 					const getResult = table.get(id);
 
 					if (getResult.status === 'not_found') {
-						const previousFilename = filenames.get(id);
-						if (previousFilename) {
-							await unlink(join(directory, previousFilename)).catch(() => {});
+						const previous = filenames.get(id);
+						if (previous) {
+							await unlink(join(directory, previous)).catch(() => {});
 							filenames.delete(id);
 						}
 						continue;
 					}
 
-					if (getResult.status !== 'valid') {
-						continue;
-					}
+					if (getResult.status !== 'valid') continue;
 
 					const result = await serialize(getResult.row);
-					const previousFilename = filenames.get(id);
-
-					if (previousFilename && previousFilename !== result.filename) {
-						await unlink(join(directory, previousFilename)).catch(() => {});
-					}
-
+					const previous = filenames.get(id);
+					if (previous && previous !== result.filename)
+						await unlink(join(directory, previous)).catch(() => {});
 					await writeFile(join(directory, result.filename), result.content);
 					filenames.set(id, result.filename);
 				}
@@ -189,168 +145,201 @@ export function attachMarkdownMaterializer<
 				console.warn('[markdown-materializer] table write failed:', error);
 			});
 		});
+	}
 
-		unsubscribers.push(unsubscribe);
-	};
-
-	const materializeKv = async (dir: string) => {
-		if (!ctx.kv) {
-			throw new Error(
-				'attachMarkdownMaterializer: `.kv()` was called but `ctx.kv` was not provided.',
-			);
-		}
-		const kv = ctx.kv;
-		const kvState: Record<string, unknown> = { ...kv.getAll() };
+	async function materializeKv(
+		baseDir: string,
+		{ kv, config }: RegisteredKv,
+	): Promise<() => void> {
+		const state: Record<string, unknown> = { ...kv.getAll() };
 		const serialize =
-			kvConfig?.serialize ??
+			config.serialize ??
 			((data: Record<string, unknown>) => ({
 				filename: 'kv.json',
 				content: JSON.stringify(data, null, 2),
 			}));
 
-		// Initial flush with the full snapshot
-		const initial = serialize(kvState);
-		await writeFile(join(dir, initial.filename), initial.content);
+		const initial = serialize(state);
+		await writeFile(join(baseDir, initial.filename), initial.content);
 
-		const unsubscribe = kv.observeAll((changes) => {
+		return kv.observeAll((changes) => {
 			void (async () => {
 				for (const [key, change] of changes) {
-					if (change.type === 'set') {
-						kvState[key] = change.value;
-						continue;
-					}
-
-					delete kvState[key];
+					if (change.type === 'set') state[key] = change.value;
+					else delete state[key];
 				}
-
-				const result = serialize(kvState);
-				await writeFile(join(dir, result.filename), result.content);
+				const result = serialize(state);
+				await writeFile(join(baseDir, result.filename), result.content);
 			})().catch((error) => {
 				console.warn('[markdown-materializer] kv write failed:', error);
 			});
 		});
+	}
 
-		unsubscribers.push(unsubscribe);
-	};
+	// ── Disposal ────────────────────────────────────────────────
 
-	/** Resolve the base directory, handling string or async getter. */
-	const resolveDir = async () =>
-		typeof config.dir === 'function' ? await config.dir() : config.dir;
+	function dispose() {
+		if (isDisposed) return;
+		isDisposed = true;
+		for (const entry of registered.values()) entry.unsubscribe?.();
+		registeredKv.entry?.unsubscribe?.();
+	}
+
+	ydoc.once('destroy', dispose);
+
+	// ── Initial flush ────────────────────────────────────────────
 
 	const whenFlushed = (async () => {
-		await ctx.whenReady;
-		const dir = await resolveDir();
-		await mkdir(dir, { recursive: true });
+		// Always yield a microtask so callers can finish synchronous setup
+		// (including `.table()` / `.kv()` registrations) before the first flush.
+		await waitFor;
+		if (isDisposed) return;
 
-		for (const name of tableNames) {
-			await materializeTable(name, dir);
+		const baseDir = await resolveDir();
+		await mkdir(baseDir, { recursive: true });
+
+		for (const entry of registered.values()) {
+			if (isDisposed) return;
+			entry.unsubscribe = await materializeTable(baseDir, entry);
 		}
 
-		if (shouldMaterializeKv) {
-			await materializeKv(dir);
+		if (registeredKv.entry && !isDisposed) {
+			registeredKv.entry.unsubscribe = await materializeKv(
+				baseDir,
+				registeredKv.entry,
+			);
 		}
+
+		hasInitialized = true;
 	})();
 
-	const api: MaterializerApi = {
-		whenFlushed,
-		async pushFromMarkdown() {
-			const dir = await resolveDir();
-			let imported = 0;
-			let skipped = 0;
-			const errors: string[] = [];
+	// ── Imperative methods (push / pull) ────────────────────────
 
-			for (const name of tableNames) {
-				const table = ctx.tables[name];
-				if (!table) continue;
-				const tableConfig = tableConfigs[name];
-				const directory = join(dir, tableConfig?.dir ?? name);
+	async function pushFromMarkdown(): Promise<{
+		imported: number;
+		skipped: number;
+		errors: string[];
+	}> {
+		const baseDir = await resolveDir();
+		let imported = 0;
+		let skipped = 0;
+		const errors: string[] = [];
 
-				let entries: string[];
+		for (const entry of registered.values()) {
+			const directory = join(baseDir, entry.config.dir ?? entry.table.name);
+
+			let files: string[];
+			try {
+				files = await readdir(directory);
+			} catch {
+				continue;
+			}
+
+			for (const filename of files) {
+				if (!filename.endsWith('.md')) continue;
+
+				let content: string;
 				try {
-					entries = await readdir(directory);
-				} catch {
+					content = await readFile(join(directory, filename), 'utf-8');
+				} catch (error) {
+					errors.push(`Failed to read ${filename}: ${error}`);
 					continue;
 				}
 
-				for (const filename of entries) {
-					if (!filename.endsWith('.md')) continue;
+				const parsed = parseMarkdownFile(content);
+				if (!parsed) {
+					skipped++;
+					continue;
+				}
 
-					let content: string;
-					try {
-						content = await readFile(join(directory, filename), 'utf-8');
-					} catch (error) {
-						errors.push(`Failed to read ${filename}: ${error}`);
-						continue;
-					}
-
-					const parsed = parseMarkdownFile(content);
-					if (!parsed) {
-						skipped++;
-						continue;
-					}
-
-					try {
-						const deserialize =
-							tableConfig?.deserialize ??
-							((p: { frontmatter: Record<string, unknown> }) => p.frontmatter);
-						const row = await deserialize(parsed);
-						table.set(row);
-						imported++;
-					} catch (error) {
-						errors.push(`Failed to import ${filename}: ${error}`);
-					}
+				try {
+					const deserialize =
+						entry.config.deserialize ??
+						((p: { frontmatter: Record<string, unknown> }) =>
+							p.frontmatter as BaseRow);
+					const row = await deserialize(parsed);
+					entry.table.set(row);
+					imported++;
+				} catch (error) {
+					errors.push(`Failed to import ${filename}: ${error}`);
 				}
 			}
+		}
 
-			return { imported, skipped, errors };
-		},
-		async pullToMarkdown() {
-			const dir = await resolveDir();
-			let written = 0;
+		return { imported, skipped, errors };
+	}
 
-			for (const name of tableNames) {
-				const table = ctx.tables[name];
-				if (!table) continue;
-				const tableConfig = tableConfigs[name];
-				const directory = join(dir, tableConfig?.dir ?? name);
+	async function pullToMarkdown(): Promise<{ written: number }> {
+		const baseDir = await resolveDir();
+		let written = 0;
 
-				const serialize: (
-					row: TableRow<typeof name>,
-				) => MaybePromise<SerializeResult> =
-					tableConfig?.serialize ??
-					((row) => ({
-						filename: `${row.id}.md`,
-						content: toMarkdown({ ...row }),
-					}));
+		for (const entry of registered.values()) {
+			const directory = join(baseDir, entry.config.dir ?? entry.table.name);
+			const serialize: (row: BaseRow) => MaybePromise<SerializeResult> =
+				entry.config.serialize ??
+				((row) => ({
+					filename: `${row.id}.md`,
+					content: toMarkdown({ ...row }),
+				}));
 
-				await mkdir(directory, { recursive: true });
-
-				for (const row of table.getAllValid()) {
-					const result = await serialize(row);
-					await writeFile(join(directory, result.filename), result.content);
-					written++;
-				}
+			await mkdir(directory, { recursive: true });
+			for (const row of entry.table.getAllValid()) {
+				const result = await serialize(row);
+				await writeFile(join(directory, result.filename), result.content);
+				written++;
 			}
+		}
 
-			return { written };
-		},
+		return { written };
+	}
+
+	// ── Builder ──────────────────────────────────────────────────
+
+	const api = { whenFlushed, pushFromMarkdown, pullToMarkdown };
+
+	type MaterializerBuilder = typeof api & {
+		/**
+		 * Opt in a workspace table for markdown materialization.
+		 *
+		 * Must be called synchronously after construction, before `whenFlushed`
+		 * resolves.
+		 */
+		table<TRow extends BaseRow>(
+			table: Table<TRow>,
+			config?: TableConfig<TRow>,
+		): MaterializerBuilder;
+		/**
+		 * Opt in the workspace Kv for markdown materialization. Single file on
+		 * disk (default `kv.json`) keeps the full Kv state.
+		 *
+		 * Must be called synchronously after construction, before `whenFlushed`
+		 * resolves.
+		 */
+		kv(kv: AnyKv, config?: KvConfig): MaterializerBuilder;
 	};
 
 	const builder: MaterializerBuilder = {
 		...api,
-		[Symbol.dispose]() {
-			for (const unsubscribe of unsubscribers.splice(0)) {
-				unsubscribe();
-			}
-		},
-		table(name, tableConfig) {
-			tableNames.add(name);
-			if (tableConfig) tableConfigs[name] = tableConfig;
+		table(table, config) {
+			if (hasInitialized)
+				throw new Error(
+					`attachMarkdownMaterializer: .table("${table.name}") called after initial flush. All .table() registrations must happen synchronously after construction.`,
+				);
+			registered.set(table.name, {
+				table: table as AnyTable,
+				config: config ?? {},
+			});
 			return builder;
 		},
-		kv(nextKvConfig) {
-			shouldMaterializeKv = true;
-			kvConfig = nextKvConfig;
+		kv(kv, config) {
+			if (hasInitialized)
+				throw new Error(
+					'attachMarkdownMaterializer: .kv() called after initial flush. All .kv() registrations must happen synchronously after construction.',
+				);
+			registeredKv.entry = {
+				kv: kv as AnyKv,
+				config: config ?? {},
+			};
 			return builder;
 		},
 	};

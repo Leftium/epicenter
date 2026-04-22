@@ -86,20 +86,18 @@ function setup(options?: {
 		const ydoc = new Y.Doc({ guid: id });
 		const tables = attachTables(ydoc, tableDefinitions);
 
-		const materializer = attachMarkdownMaterializer(
-			{ tables, whenReady: Promise.resolve() },
-			{ dir: TEST_DIR },
-		);
+		const materializer = attachMarkdownMaterializer(ydoc, {
+			dir: TEST_DIR,
+		});
 
 		const tablesToRegister = options?.tables ?? [
 			{ name: 'posts' },
 			{ name: 'notes' },
 		];
 		for (const { name, config } of tablesToRegister) {
-			materializer.table(name, config);
+			// biome-ignore lint/suspicious/noExplicitAny: test helper indexes by string name
+			materializer.table(tables[name] as any, config);
 		}
-
-		ydoc.on('destroy', () => materializer[Symbol.dispose]());
 
 		return {
 			ydoc,
@@ -479,11 +477,9 @@ describe('round-trip', () => {
 		const factory1 = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			const tables = attachTables(ydoc, tableDefinitions);
-			const materializer = attachMarkdownMaterializer(
-				{ tables, whenReady: Promise.resolve() },
-				{ dir: TEST_DIR },
-			).table('posts');
-			ydoc.on('destroy', () => materializer[Symbol.dispose]());
+			const materializer = attachMarkdownMaterializer(ydoc, {
+				dir: TEST_DIR,
+			}).table(tables.posts);
 			return {
 				ydoc,
 				tables,
@@ -524,11 +520,9 @@ describe('round-trip', () => {
 		const factory2 = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			const tables = attachTables(ydoc, tableDefinitions);
-			const materializer = attachMarkdownMaterializer(
-				{ tables, whenReady: Promise.resolve() },
-				{ dir: TEST_DIR },
-			).table('posts');
-			ydoc.on('destroy', () => materializer[Symbol.dispose]());
+			const materializer = attachMarkdownMaterializer(ydoc, {
+				dir: TEST_DIR,
+			}).table(tables.posts);
 			return {
 				ydoc,
 				tables,

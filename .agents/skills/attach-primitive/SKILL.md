@@ -39,18 +39,18 @@ attachAwareness(ydoc, defs)
 attachRichText(ydoc) / attachPlainText(ydoc) / attachTimeline(ydoc)
 ```
 
-**Chainable return is allowed** when per-entity configuration is incremental:
+**Chainable return is allowed** when per-entity configuration is incremental. Materializers follow the same `attachX(ydoc, opts)` shape — the builder registers specific table/kv references via `.table(ref, cfg)`:
 
 ```ts
-attachMarkdownMaterializer({ tables, kv?, whenReady }, { dir })
-  .table('posts', { serialize })
-  .kv();
+attachMarkdownMaterializer(ydoc, { dir, waitFor })
+  .table(tables.posts, { serialize })
+  .kv(kv);
 
-attachSqliteMaterializer({ tables, definitions, whenReady }, { db })
-  .table('posts', { fts: ['title'] });
+attachSqliteMaterializer(ydoc, { db, waitFor })
+  .table(tables.posts, { fts: ['title'] });
 ```
 
-Materializers take a richer context (tables/kv/whenReady) because they observe a sibling, not the ydoc directly. Same prefix, same invariants.
+Passing `tables.posts` directly (rather than a string name) mirrors y-prosemirror / y-codemirror — take the specific shared resource, not a bag plus a lookup key. The materializer reads `table.name` and `table.definition` off the reference internally. All `.table()` / `.kv()` registrations must happen synchronously after construction; calls after `whenFlushed` resolves throw.
 
 ## The one exception — non-ydoc subject
 
@@ -117,10 +117,9 @@ const factory = defineDocument((id: string) => {
     url, getToken,
     waitFor: Promise.all([idb.whenLoaded, unlock.whenChecked]),
   });
-  const markdown   = attachMarkdownMaterializer(                 // chainable return
-    { tables, kv, whenReady: sync.whenConnected },
-    { dir },
-  ).table('posts', { serialize });
+  const markdown   = attachMarkdownMaterializer(ydoc, {           // chainable return
+    dir, waitFor: sync.whenConnected,
+  }).table(tables.posts, { serialize });
 
   return {
     ydoc, tables, encryption, idb, sync, markdown,

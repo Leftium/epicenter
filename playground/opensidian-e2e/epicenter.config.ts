@@ -14,8 +14,14 @@
  * handle carries the `DOCUMENT_HANDLE` brand that `loadConfig` checks for.
  *
  * Usage:
- *   epicenter start playground/opensidian-e2e --verbose
- *   epicenter list files -C playground/opensidian-e2e
+ *   # Run the workspace — imports this config, which opens the handle,
+ *   # which starts persistence + sync + markdown + SQLite materialization.
+ *   # Runs until Ctrl+C.
+ *   bun run playground/opensidian-e2e/epicenter.config.ts
+ *
+ *   # Invoke the defined `markdownActions.prepare` mutation.
+ *   epicenter run opensidian.markdownActions.prepare --directory ./some/dir \
+ *     -C playground/opensidian-e2e
  */
 
 import { mkdirSync } from 'node:fs';
@@ -108,10 +114,10 @@ const opensidianFactory = defineDocument((id: string) => {
 		sync.whenConnected,
 	]).then(() => {});
 
-	const markdown = attachMarkdownMaterializer(
-		{ tables, kv, whenReady },
-		{ dir: MARKDOWN_DIR },
-	).table('files', {
+	const markdown = attachMarkdownMaterializer(ydoc, {
+		dir: MARKDOWN_DIR,
+		waitFor: whenReady,
+	}).table(tables.files, {
 		serialize: async (row) => {
 			if (row.type === 'folder') {
 				return {
@@ -143,10 +149,10 @@ const opensidianFactory = defineDocument((id: string) => {
 		},
 	});
 
-	const sqlite = attachSqliteMaterializer(
-		{ tables, definitions: opensidianTables, whenReady },
-		{ db: new Database(join(MATERIALIZER_DIR, 'opensidian.db')) },
-	).table('files', { fts: ['name'] });
+	const sqlite = attachSqliteMaterializer(ydoc, {
+		db: new Database(join(MATERIALIZER_DIR, 'opensidian.db')),
+		waitFor: whenReady,
+	}).table(tables.files, { fts: ['name'] });
 
 	/**
 	 * Scan a directory for `.md` files and inject a unique `id` into the YAML

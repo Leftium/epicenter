@@ -141,8 +141,9 @@ async function writeMarkdownFile(
  *   })
  *     .table(tables.posts, {
  *       filename: slugFilename('title'),
- *       toMarkdown: fieldAsBody('content'),
- *       fromMarkdown: bodyAsField('content'),
+ *       // Inline toMarkdown / fromMarkdown callbacks when needed —
+ *       // most real tables split metadata (on the row) from body
+ *       // content (in a separate content-doc via defineDocument).
  *     })
  *     .kv(kv);
  *

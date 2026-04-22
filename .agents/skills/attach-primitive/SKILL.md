@@ -43,10 +43,16 @@ attachRichText(ydoc) / attachPlainText(ydoc) / attachTimeline(ydoc)
 
 ```ts
 attachMarkdownMaterializer(ydoc, { dir, waitFor })
-  .table(tables.posts, {
+  .table(tables.files, {
     filename: slugFilename('title'),
-    toMarkdown: fieldAsBody('content'),
-    fromMarkdown: bodyAsField('content'),
+    // Most real tables store body content in a separate Y.Doc (via
+    // defineDocument), so toMarkdown / fromMarkdown are typically
+    // bespoke callbacks — no sugar helper can abstract the async
+    // open/await/dispose cycle usefully.
+    toMarkdown: async (row) => {
+      await using doc = await fileContentDocs.load(row.id);
+      return { frontmatter: { id: row.id, name: row.name }, body: doc.content.read() };
+    },
   })
   .kv(kv);
 
@@ -54,7 +60,7 @@ attachSqliteMaterializer(ydoc, { db, waitFor })
   .table(tables.posts, { fts: ['title'] });
 ```
 
-Passing `tables.posts` directly (rather than a string name) mirrors y-prosemirror / y-codemirror — take the specific shared resource, not a bag plus a lookup key. The materializer reads `table.name` and `table.definition` off the reference internally. All `.table()` / `.kv()` registrations must happen synchronously after construction; calls after `whenFlushed` resolves throw.
+Passing `tables.files` directly (rather than a string name) mirrors y-prosemirror / y-codemirror — take the specific shared resource, not a bag plus a lookup key. The materializer reads `table.name` and `table.definition` off the reference internally. All `.table()` / `.kv()` registrations must happen synchronously after construction; calls after `whenFlushed` resolves throw.
 
 ## The one exception — non-ydoc subject
 

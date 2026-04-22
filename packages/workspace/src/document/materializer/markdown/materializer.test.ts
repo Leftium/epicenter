@@ -31,7 +31,6 @@ import {
 	type MarkdownShape,
 } from './materializer.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';
-import { bodyAsField, fieldAsBody } from './serializers.js';
 
 // ============================================================================
 // Test Table Definitions
@@ -688,17 +687,29 @@ describe('round-trip', () => {
 		await factory.close('test.materializer');
 	});
 
-	test('fieldAsBody + bodyAsField helpers round-trip over MarkdownShape', async () => {
+	test('inline field-to-body pair round-trips over MarkdownShape', async () => {
+		// Most real apps store body content in a separate Y.Doc (via
+		// defineDocument). This test covers the simpler case where body IS a
+		// row field — `notes.body` here. Inline callbacks keep the intent
+		// at the call site; no helper abstracts the destructure.
 		const { workspace, factory } = await setup({
-			tables: (t) => [
-				{
-					table: t.notes,
-					config: {
-						toMarkdown: fieldAsBody('body'),
-						fromMarkdown: bodyAsField('body'),
+			tables: (t) =>
+				[
+					{
+						table: t.notes,
+						config: {
+							toMarkdown: (row: { id: string; body: string; _v: 1 }) => {
+								const { body, ...frontmatter } = row;
+								return { frontmatter, body };
+							},
+							fromMarkdown: (parsed: MarkdownShape) => ({
+								id: parsed.frontmatter.id as string,
+								body: parsed.body ?? '',
+								_v: 1 as const,
+							}),
+						},
 					},
-				},
-			],
+				] as unknown as TableRegistration[],
 		});
 
 		const original = { id: 'n1', body: 'Body content here', _v: 1 as const };
@@ -712,11 +723,6 @@ describe('round-trip', () => {
 		// Body ended up in the markdown body section, not frontmatter.
 		expect(parsed!.body).toBe('Body content here');
 		expect(parsed!.frontmatter.body).toBeUndefined();
-
-		// Round-trip back via the helper.
-		const recovered = bodyAsField('body')(parsed!);
-		expect(recovered.id).toBe(original.id);
-		expect(recovered.body).toBe(original.body);
 
 		await factory.close('test.materializer');
 	});

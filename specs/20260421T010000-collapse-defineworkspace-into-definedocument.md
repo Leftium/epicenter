@@ -1,15 +1,12 @@
 # Collapse `defineWorkspace` into `defineDocument`
 
 **Date**: 2026-04-21
-**Status**: In Progress — apps migrated; package cleanup remaining
+**Status**: Completed (2026-04-21) — fully superseded by `20260421T170000-collapse-document-and-workspace-primitives.md`, which killed `createWorkspace` itself.
 **Author**: AI-assisted
 **Branch**: braden-w/document-primitive
 
-> **Progress note (2026-04-21):**
-> - **Done:** All seven app `client.ts` files migrated to direct `defineDocument` closures (fuji, opensidian, whispering, tab-manager, zhongwen, honeycrisp, skills). No `defineWorkspace` calls remain in `apps/**`. `@epicenter/skills` shared-schema package migrated (Phase 5 complete).
-> - **Reverted:** Phase 1 (the `attachEncryption(ydoc, { tables, kv })` introspection refactor). Current self-registration (`attachEncryption(ydoc)` + stores registering themselves inside `attachEncryptedTable/s/Kv`) was re-examined and found cleaner than the introspection shape. The "hidden store aggregation" footgun in Problem #3 below does not exist under the deployed self-registration pattern — it was a hypothetical risk of a shape that was never actually shipped. See note inline.
-> - **Skipped:** Phase 2 (lifecycle naming unification) and Phase 3 (reentrance guards) — see per-phase notes.
-> - **Remaining:** Phase 6 — delete `defineWorkspace`, `createWorkspace`, and `WorkspaceBundle` / `WorkspaceFactory` / `WorkspaceHandle` types from `packages/workspace/`; migrate the package's own tests and benchmarks off the helper; update stale doc references.
+> **Closure note (2026-04-21):**
+> All work described here shipped. `defineWorkspace` deleted; seven apps migrated; `@epicenter/skills` migrated; `createWorkspace` subsequently deleted (commit `b62cc5ae3`) via the sibling spec referenced above. This file is retained as history of the intermediate state (apps migrated before `createWorkspace` itself was retired).
 
 ## Overview
 

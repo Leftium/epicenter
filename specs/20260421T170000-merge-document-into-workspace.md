@@ -1,7 +1,8 @@
 # Merge `@epicenter/document` into `@epicenter/workspace`
 
 **Date**: 2026-04-21
-**Status**: Draft
+**Status**: Completed (2026-04-21)
+**Shipped via**: `da1a58146 refactor(workspace): merge src/workspace/ into src/document/` (implemented with the opposite directional rename — `src/workspace/` merged into `src/document/` inside the workspace package — tighter than the original spec proposed).
 **Author**: AI-assisted (design discussion with Braden)
 **Branch**: `braden-w/document-primitive`
 

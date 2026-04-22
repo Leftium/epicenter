@@ -1,9 +1,14 @@
 ---
 title: Delete `createWorkspace`, document `DocumentBundle` contract
-status: Draft
+status: Completed (2026-04-21)
 date: 2026-04-21
 sequence: runs after `20260421T170000-merge-document-into-workspace.md`
 supersedes: 20260421T010000-collapse-defineworkspace-into-definedocument.md (completes it)
+shipped_commits:
+  - b62cc5ae3 refactor(workspace):delete createWorkspace + extension chain
+  - 01e0270fa docs:update vocabulary + rewrite SyncView after createWorkspace removal
+  - 577cbfcd6 refactor(cli):migrate to DocumentBundle, drop describe command
+  - 338c2557a docs(apps):update marketing code strings to defineDocument pattern
 ---
 
 # Delete `createWorkspace`, document `DocumentBundle` contract

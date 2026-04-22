@@ -1,6 +1,6 @@
 # applySession Unification: Collapse Auth → Workspace Imperative Coupling
 
-**Status:** Draft
+**Status:** Complete (2026-04-22)
 **Created:** 2026-04-22
 **Supersedes:** specs/20260329T012324-subscribe-based-auth.md (partial — keeps the subscribe-based core, removes callback wiring)
 

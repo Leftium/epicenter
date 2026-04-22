@@ -14,34 +14,63 @@ SvelteKit app (static adapter, SSR disabled) with three panels: a sidebar for fi
 
 ### Data model
 
-Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separate CRDTs. The entries table stays lean—just IDs, titles, tags, timestamps—while each entry's body lives in its own Y.Doc opened by a separate `defineDocument` factory keyed on the row's content guid. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
+Workspace ID: `epicenter.fuji`. Rich-text content and entry metadata are separate CRDTs. The entries table stays lean—just IDs, titles, tags, timestamps—while each entry's body lives in its own Y.Doc opened by a separate `createDocumentFactory` factory keyed on the row's content guid. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
 
 - `entries` table—`id` (EntryId), `title`, `subtitle`, `type` (string[]), `tags` (string[]), `createdAt`, `updatedAt`, `_v`. Each entry's body is opened on demand from a per-row content-doc factory and bound to ProseMirror via `y-prosemirror`.
 - KV keys—`selectedEntryId`, `viewMode` (`'table' | 'timeline'`), `sidebarCollapsed`.
 
 ### Client wiring
 
-A single `defineDocument` closure composes every attachment inline:
+Fuji's root workspace is a singleton, not a factory. `openFuji()` owns the `new Y.Doc(...)` call, composes every attachment inline, and returns the bundle directly. The bundle exposes `applySession`, a single method that handles every auth transition (login, logout, token rotation) instead of a pair of callbacks reaching across the client/workspace boundary.
 
 ```ts
-const factory = defineDocument((id: string) => {
-  const ydoc = new Y.Doc({ guid: id, gc: false });
+export function openFuji() {
+  const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
+
   const encryption = attachEncryption(ydoc);
-  const tables = attachEncryptedTables(ydoc, encryption, fujiTables);
+  const tables = encryption.attachTables(ydoc, fujiTables);
+  const kv = encryption.attachKv(ydoc, {});
+  const awareness = attachAwareness(ydoc, {});
+
   const idb = attachIndexedDb(ydoc);
-  const sync = attachSync(ydoc, { url, getToken, waitFor: idb.whenLoaded });
+  attachBroadcastChannel(ydoc);
+  const sync = attachSync(ydoc, {
+    url: (docId) => toWsUrl(`${APP_URLS.API}/workspaces/${docId}`),
+    waitFor: idb.whenLoaded,
+    awareness: awareness.raw,
+    requiresToken: true,
+  });
+
+  let previousSession: AuthSession | null = null;
+  async function applySession(next: AuthSession | null) {
+    const wasAuthed = previousSession !== null;
+    previousSession = next;
+    if (next === null) {
+      sync.goOffline();
+      sync.setToken(null);
+      if (wasAuthed) await idb.clearLocal();
+      return;
+    }
+    encryption.applyKeys(next.encryptionKeys);
+    sync.setToken(next.token);
+    sync.reconnect();
+  }
+
   return {
-    ydoc, tables, encryption, idb, sync,
+    get id() { return ydoc.guid; },
+    ydoc, tables, kv, awareness, encryption, idb, sync,
+    applySession,
     whenReady: idb.whenLoaded,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
-});
-export const workspace = factory.open('epicenter.fuji');
+}
+
+export const workspace = openFuji();
 ```
 
-See `apps/whispering/src/lib/client.ts` for the canonical production wiring (encryption + IndexedDB + BroadcastChannel + per-row content materialization).
+`bundle.id` is a getter over `ydoc.guid`, so there's only one source of truth. A Svelte `$effect.root` bridges the reactive `auth.session` rune to `workspace.applySession`; its disposer is wired into `import.meta.hot.dispose` so HMR tears down the effect cleanly.
 
-Encryption keys are applied on login. Local data is cleared on logout.
+For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/client.ts`.
 
 ### Editor
 

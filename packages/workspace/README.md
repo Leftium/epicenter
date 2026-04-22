@@ -235,7 +235,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 4. Call `.open(id)` to get a live handle — once at module scope for a singleton, or N times for multi-doc apps.
 5. Wait for `handle.whenReady` if your attachments load persisted state or open connections.
 6. Read and write through `handle.tables`, `handle.kv`, `handle.awareness`, and (for per-row content docs) whatever you exposed in the returned bundle.
-7. Use `iterateActions(...)`, `describeWorkspace(...)`, and action metadata if you want to build adapters such as HTTP, CLI, or MCP.
+7. Use `iterateActions(...)` and each action's metadata (`type`, `title`, `description`, `input`) if you want to build adapters such as HTTP, CLI, or MCP.
 8. Dispose with `handle[Symbol.dispose]()` (or let a `using` block do it) when you're done — the cache waits `gcTime` before tearing the bundle down in case another caller re-opens it.
 
 The architecture stays local-first: the workspace works offline, synchronizes opportunistically, and treats external systems as helpers around the document—not the other way around.
@@ -253,23 +253,17 @@ The ID becomes `ydoc.guid` for the workspace doc, so it is not a throwaway strin
 
 ## Core Concepts
 
-> **Note on examples below.** Many of the small snippets in this section show
-> `const workspace = createWorkspace({ id, tables })` to keep the focus on the
-> API being demonstrated (table CRUD, KV, actions). The current primitive is
-> `defineDocument(builder).open(id)` — see the **Quick Start** above for the
-> canonical shape. Everything else (`workspace.tables.*`, `workspace.kv.*`,
-> `workspace.actions.*`) is identical once you have the handle.
+> **Note on examples below.** Small snippets in this section use a minimal
+> `defineDocument((id) => { ... }).open(id)` to keep the focus on the API
+> being demonstrated (table CRUD, KV, actions). See the **Quick Start** above
+> for a more fully-composed builder with persistence and sync.
 
 ### Workspaces
 
-A workspace definition is plain data:
-
-- `id`
-- `tables`
-- `kv`
-- `awareness`
-
-A workspace handle is that definition plus a live `Y.Doc`, typed helpers, attachments, and actions — whatever your `defineDocument` builder returns.
+There is only one primitive: `defineDocument(build)`. The `build` closure takes
+an `id` and returns a bundle — `{ id, ydoc, tables, kv, awareness, actions,
+[Symbol.dispose]() {...}, ... }`. The factory caches bundles by id; `.open(id)`
+mints a live refcounted handle whose shape is whatever the builder returned.
 
 ### Yjs document
 
@@ -284,10 +278,10 @@ Tables are versioned row collections. Each row must include:
 
 At runtime, each table becomes a `Table` exposed as a direct property:
 
-- `client.tables.posts.set(row)`
-- `client.tables.posts.get(id)`
-- `client.tables.posts.update(id, partial)`
-- `client.tables.posts.delete(id)`
+- `handle.tables.posts.set(row)`
+- `handle.tables.posts.get(id)`
+- `handle.tables.posts.update(id, partial)`
+- `handle.tables.posts.delete(id)`
 
 Table access is direct property access in the current API.
 
@@ -295,17 +289,19 @@ Table access is direct property access in the current API.
 
 KV entries are for settings and scalar preferences. They are keyed by string and always return a valid value because invalid or missing data falls back to the definition's default.
 
-- `client.kv.get('theme.mode')`
-- `client.kv.set('theme.mode', 'dark')`
-- `client.kv.observe('theme.mode', ...)`
+- `handle.kv.get('theme.mode')`
+- `handle.kv.set('theme.mode', 'dark')`
+- `handle.kv.observe('theme.mode', ...)`
 
-### Extensions
+### Attachments (the extension system)
 
-Extensions are opt-in capabilities layered onto the workspace builder.
+"Extensions" in Epicenter are just `attach*` calls inside your `defineDocument`
+builder. There is no `.withExtension` chain, no extension registry, no priority
+flag — just lexical scope.
 
-- Call the relevant `attach*` function (e.g. `attachIndexedDb`, `attachSync`, `attachSqlite`, `attachEncryption`) inside your `defineDocument` builder and return the handle in the bundle.
-- Order matters only through lexical scope — later `attach*` calls see earlier ones directly.
-- For per-row content docs, build a separate `defineDocument(...)` whose `id` is the row's content guid.
+- Call the relevant `attach*` function (e.g. `attachIndexedDb`, `attachSync`, `attachSqlite`, `attachEncryption`) inside the builder and include the handle in the returned bundle.
+- Order matters only through lexical scope — later `attach*` calls see earlier handles directly.
+- For per-row content docs, write a **separate** `defineDocument((rowId) => ...)` factory and `.open(rowId)` it from the main document's actions or components.
 
 ### Actions
 
@@ -313,53 +309,37 @@ Actions are callable functions with metadata.
 
 - `defineQuery(...)` creates a read action
 - `defineMutation(...)` creates a write action
-- Attach them by returning an `actions` object from your `defineDocument` builder (e.g. via a `createMyAppActions({ tables, batch })` helper)
+- Include them in your builder's return object as `actions: { ... }` (typically via a `createMyAppActions({ tables, batch })` helper defined nearby)
 
-Handlers close over the client through normal JavaScript closure. They do not receive a framework context object.
+Handlers close over `tables`, `kv`, and anything else the builder has in scope through normal JavaScript closure. They do not receive a framework context object.
 
-### Documents
+### Per-row content documents
 
-Tables can declare document-backed content via `.withDocument(...)`. That creates typed document managers under `client.tables.<name>.documents`.
+For apps where each row has its own rich-text / plain-text / timeline content
+(files, notes, skills, entries), define a **second** `defineDocument` factory
+keyed by the row id. See **Document-backed tables** below for the full shape.
 
-If you define a `files` table with `.withDocument('content', ...)`, you get this shape at runtime:
-
-- `client.tables.files.documents.content.get(rowOrGuid)` — **sync**, returns a cached handle keyed by GUID. Construct once, reuse for the lifetime of the workspace.
-- `client.tables.files.documents.content.read(rowOrGuid)` — high-level sugar: awaits `whenLoaded`, returns the content as a string.
-- `client.tables.files.documents.content.write(rowOrGuid, text)` — replaces content.
-- `client.tables.files.documents.content.append(rowOrGuid, text)` — appends text (uses `appendText` when the strategy exposes one, else read-concat-write).
-- `client.tables.files.documents.content.open(rowOrGuid)` — legacy async accessor; equivalent to `get(id)` + `await handle.whenLoaded`.
-- `client.tables.files.documents.content.close(rowOrGuid)` / `.closeAll()` — call `close()` when you delete the underlying row; `closeAll()` runs automatically at workspace dispose.
-
-The handle returned from `.get()` is the strategy binding plus framework extras: `handle.read() / .write(...) / .binding / .asText() / .asRichText()` (strategy methods) and `handle.whenLoaded / .ydoc / .bind()` (framework extras). For UI components, the idiomatic shape is:
+Each `.open(rowId)` returns a refcounted handle. Multiple consumers (editor,
+actions, materializer) can share one underlying Y.Doc safely — the cache owns
+construction, refcounting, and `gcTime`-delayed teardown.
 
 ```svelte
 <script lang="ts">
-  const handle = $derived(workspace.tables.files.documents.content.get(fileId));
-  $effect(() => {
-    return handle.bind();   // sync transport lives while this editor is mounted
-  });
+  import { fileContentDoc } from '$lib/client';
+
+  let { fileId }: { fileId: string } = $props();
+
+  const handle = $derived(fileContentDoc.open(fileId));
+  $effect(() => () => handle.dispose());
 </script>
 
-<Editor ytext={handle.binding} />
+<Editor ytext={handle.content} />
 ```
 
-One `$effect`, no race guards, no close. The `$derived` swaps handles when the selection changes; the `$effect` cleanup releases the old bind and re-runs to bind the new one atomically.
-
-#### Bind / release — why the extra line
-
-The Y.Doc and its IndexedDB persistence are framework-owned and stay alive for the workspace's lifetime — opening a doc is cheap and we never evict. Network sync is different: an open WebSocket per cached doc scales poorly. So sync is gated on active consumers via `handle.bind()`.
-
-- `handle.bind()` retains the sync transport and returns a release function.
-- The framework refcounts binds per guid. Extensions' `onActive` hooks fire on the 0 → 1 transition; `onIdle` hooks fire after a grace period (30 s default) once the last bind is released.
-- A fresh bind during the grace window cancels the pending idle, so rapid nav doesn't flap the socket.
-- **Idle docs keep local state.** The Y.Doc, IndexedDB persistence, and buffered updates all stay live. When something re-binds, the sync provider reconnects and the CRDT delta-syncs — no cold start, no lost edits.
-- `.read()` / `.write()` / `.append()` do **not** auto-bind. They operate on local state. If you need sync-fresh programmatic reads, bind explicitly (and await connection status via `workspace.sync.onStatusChange` or similar).
-
-Workspace-scoped sync (the top-level `attachSync(ydoc, ...)` inside the main document's builder) is always-active — it opens as soon as the builder runs. Only per-document sync participates in bind/release. The grace window defaults to 30 seconds.
-
-### When to skip `.withDocument` and build your own opener
-
-Framework-managed documents are the right fit when the doc has **multiple consumers** (editor + filesystem + actions + materializer) that need to share a single Y.Doc instance per guid. One of Epicenter's apps — Fuji — uses the opposite pattern: per-entry content docs with **component-owned lifecycle**, constructed via `attach*` primitives from `@epicenter/workspace`. See `apps/fuji/src/lib/entry-content-doc.ts` for the reference shape: `new Y.Doc` + `attachRichText` + `attachIndexedDb` + `attachSync` + explicit `dispose()` on unmount. That pattern is better when there's only one consumer and you want disposal to coincide with component unmount.
+The `$derived` swaps handles when `fileId` changes; the `$effect` cleanup
+releases the old handle. Refcount→0 arms the factory's `gcTime` timer; a fresh
+open during the grace window cancels the pending teardown, so rapid navigation
+doesn't flap persistence or sync.
 
 ## Column Types
 
@@ -454,7 +434,13 @@ KV is validate-or-default. There is no migration function.
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
+import * as Y from 'yjs';
+import {
+	attachAwareness,
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '@epicenter/workspace';
 
 const notes = defineTable(
 	type({
@@ -464,79 +450,122 @@ const notes = defineTable(
 	}),
 );
 
-const workspace = createWorkspace({
-	id: 'epicenter.notes',
-	tables: { notes },
-	awareness: {
+const notesDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { notes });
+	const awareness = attachAwareness(ydoc, {
 		name: type('string'),
 		color: type('string'),
 		cursor: type({ line: 'number', column: 'number' }),
-	},
+	});
+
+	return {
+		id,
+		ydoc,
+		tables,
+		awareness,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 });
+
+const workspace = notesDoc.open('epicenter.notes');
 
 workspace.awareness.setLocal({ name: 'Braden', color: '#ff4d4f' });
 workspace.awareness.setLocalField('cursor', { line: 12, column: 3 });
-
-void workspace;
 ```
 
 ### Document-backed tables
 
+Per-row content (one Y.Doc per file/note/entry) is **a second `defineDocument`
+factory**, keyed by the row id. The main workspace holds the metadata row; the
+content factory owns the content Y.Doc. This is how the filesystem,
+opensidian, and fuji apps do it.
+
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
+import * as Y from 'yjs';
+import {
+	attachIndexedDb,
+	attachPlainText,
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '@epicenter/workspace';
 
 const files = defineTable(
 	type({
 		id: 'string',
 		name: 'string',
-		contentGuid: 'string',
 		updatedAt: 'number',
 		_v: '1',
 	}),
-).withDocument('content', {
-	guid: 'contentGuid',
-	onUpdate: () => ({ updatedAt: Date.now() }),
+);
+
+const filesDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { files });
+	const idb = attachIndexedDb(ydoc);
+
+	return {
+		id,
+		ydoc,
+		tables,
+		idb,
+		whenReady: idb.whenLoaded,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 });
 
-const workspace = createWorkspace({
-	id: 'epicenter.files',
-	tables: { files },
+// Separate factory — one Y.Doc per file, keyed by file id.
+const fileContentDoc = defineDocument((fileId: string) => {
+	const ydoc = new Y.Doc({ guid: `epicenter.files/files/${fileId}/content` });
+	const content = attachPlainText(ydoc, 'content');
+	const idb = attachIndexedDb(ydoc);
+
+	return {
+		id: fileId,
+		ydoc,
+		content,
+		idb,
+		whenReady: idb.whenLoaded,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 });
+
+const workspace = filesDoc.open('epicenter.files');
 
 async function documentExample() {
 	workspace.tables.files.set({
 		id: 'file-1',
 		name: 'hello.md',
-		contentGuid: 'doc-1',
-		updatedAt: 0,
+		updatedAt: Date.now(),
 		_v: 1,
 	});
 
-	// Sync access — returns a cached handle keyed by GUID. The handle IS the
-	// strategy binding (Timeline, PlainTextAttachment, RichTextAttachment) plus
-	// framework extras (`whenLoaded`, `ydoc`).
-	const handle = workspace.tables.files.documents.content.get('doc-1');
-	handle.write('# Hello from a document');
-	console.log(handle.read());
-	console.log(handle.currentType);
+	// Open a content handle for the row. Refcounted — dispose when done.
+	using handle = fileContentDoc.open('file-1');
+	await handle.whenReady;
 
-	// Or use the high-level sugar — string in, string out. Awaits `whenLoaded`
-	// internally so callers don't need to think about load order.
-	await workspace.tables.files.documents.content.write('doc-1', '# Updated');
-	const text = await workspace.tables.files.documents.content.read('doc-1');
-	console.log(text);
-
-	await workspace.dispose();   // closes all cached handles
-	return handle;
+	handle.content.insert(0, '# Hello from a document');
+	console.log(handle.content.toString());
 }
 
 void documentExample;
 ```
 
+Opens are refcounted: multiple callers (editor, filesystem actions,
+materializer) can `.open(fileId)` concurrently and share one Y.Doc. The cache
+tears the bundle down `gcTime` after the last handle disposes.
+
 ## Table Operations
 
-All table operations live on direct properties such as `client.tables.posts`.
+All table operations live on direct properties such as `handle.tables.posts`.
 
 ### Write operations
 
@@ -544,7 +573,12 @@ All table operations live on direct properties such as `client.tables.posts`.
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
+import * as Y from 'yjs';
+import {
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '@epicenter/workspace';
 
 const posts = defineTable(
 	type({
@@ -555,10 +589,20 @@ const posts = defineTable(
 	}),
 );
 
-const workspace = createWorkspace({
-	id: 'epicenter.examples.tables',
-	tables: { posts },
+const postsDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { posts });
+	return {
+		id,
+		ydoc,
+		tables,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 });
+
+const workspace = postsDoc.open('epicenter.examples.tables');
 
 workspace.tables.posts.set({
 	id: 'post-1',
@@ -573,8 +617,6 @@ workspace.tables.posts.set({
 	published: true,
 	_v: 1,
 });
-
-void workspace;
 ```
 
 `set(...)` is the insert-or-replace API.
@@ -591,7 +633,12 @@ Possible return values:
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
+import * as Y from 'yjs';
+import {
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '@epicenter/workspace';
 
 const posts = defineTable(
 	type({
@@ -603,10 +650,20 @@ const posts = defineTable(
 	}),
 );
 
-const workspace = createWorkspace({
-	id: 'epicenter.examples.update',
-	tables: { posts },
+const postsDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { posts });
+	return {
+		id,
+		ydoc,
+		tables,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 });
+
+const workspace = postsDoc.open('epicenter.examples.update');
 
 workspace.tables.posts.set({
 	id: 'post-1',
@@ -624,8 +681,6 @@ const updateResult = workspace.tables.posts.update('post-1', {
 if (updateResult.status === 'updated') {
 	console.log(updateResult.row.views);
 }
-
-void workspace;
 ```
 
 ### Read operations
@@ -645,7 +700,12 @@ The table helper has two styles of read:
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
+import * as Y from 'yjs';
+import {
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '@epicenter/workspace';
 
 const posts = defineTable(
 	type({
@@ -656,10 +716,20 @@ const posts = defineTable(
 	}),
 );
 
-const workspace = createWorkspace({
-	id: 'epicenter.examples.reads',
-	tables: { posts },
+const postsDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { posts });
+	return {
+		id,
+		ydoc,
+		tables,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 });
+
+const workspace = postsDoc.open('epicenter.examples.reads');
 
 workspace.tables.posts.set({ id: '1', title: 'One', published: false, _v: 1 });
 workspace.tables.posts.set({ id: '2', title: 'Two', published: true, _v: 1 });
@@ -677,8 +747,6 @@ const hasPostTwo = workspace.tables.posts.has('2');
 const count = workspace.tables.posts.count();
 
 console.log(all.length, valid.length, published.length, firstPublished?.id, hasPostTwo, count);
-
-void workspace;
 ```
 
 ### Delete operations
@@ -690,7 +758,12 @@ void workspace;
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
+import * as Y from 'yjs';
+import {
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '@epicenter/workspace';
 
 const tags = defineTable(
 	type({
@@ -700,16 +773,24 @@ const tags = defineTable(
 	}),
 );
 
-const workspace = createWorkspace({
-	id: 'epicenter.examples.deletes',
-	tables: { tags },
+const tagsDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { tags });
+	return {
+		id,
+		ydoc,
+		tables,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 });
+
+const workspace = tagsDoc.open('epicenter.examples.deletes');
 
 workspace.tables.tags.set({ id: 'tag-1', name: 'important', _v: 1 });
 workspace.tables.tags.delete('tag-1');
 workspace.tables.tags.clear();
-
-void workspace;
 ```
 
 ### Reactive updates
@@ -720,8 +801,13 @@ Use `table.get(id)` inside the callback to see whether the row now exists.
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
-import { DOCUMENTS_ORIGIN } from '@epicenter/workspace';
+import * as Y from 'yjs';
+import {
+	attachTables,
+	defineDocument,
+	defineTable,
+	DOCUMENTS_ORIGIN,
+} from '@epicenter/workspace';
 
 const files = defineTable(
 	type({
@@ -731,10 +817,20 @@ const files = defineTable(
 	}),
 );
 
-const workspace = createWorkspace({
-	id: 'epicenter.examples.observe',
-	tables: { files },
+const filesDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { files });
+	return {
+		id,
+		ydoc,
+		tables,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 });
+
+const workspace = filesDoc.open('epicenter.examples.observe');
 
 const unsubscribe = workspace.tables.files.observe((changedIds, origin) => {
 	if (origin === DOCUMENTS_ORIGIN) {
@@ -757,8 +853,6 @@ const unsubscribe = workspace.tables.files.observe((changedIds, origin) => {
 workspace.tables.files.set({ id: 'file-1', name: 'notes.md', _v: 1 });
 workspace.tables.files.delete('file-1');
 unsubscribe();
-
-void workspace;
 ```
 
 ## Attachments
@@ -1038,8 +1132,8 @@ They have four important properties:
 
 1. They are callable functions.
 2. They carry metadata (`type`, `title`, `description`, `input`).
-3. They close over the client by normal JavaScript closure.
-4. They are attached to the workspace with `.withActions(...)`.
+3. They close over `tables`, `kv`, and friends by normal JavaScript closure.
+4. They are exposed on the bundle returned from `defineDocument`'s builder (typically as `actions: { ... }`).
 
 ### Query actions
 
@@ -1048,8 +1142,10 @@ Use `defineQuery(...)` for reads.
 ```typescript
 import { type } from 'arktype';
 import Type from 'typebox';
+import * as Y from 'yjs';
 import {
-	createWorkspace,
+	attachTables,
+	defineDocument,
 	defineQuery,
 	defineTable,
 } from '@epicenter/workspace';
@@ -1063,29 +1159,42 @@ const posts = defineTable(
 	}),
 );
 
-const workspace = createWorkspace({
-	id: 'epicenter.actions.queries',
-	tables: { posts },
-}).withActions(({ tables }) => ({
-	posts: {
-		list: defineQuery({
-			title: 'List Posts',
-			description: 'List all posts.',
-			handler: () => tables.posts.getAllValid(),
-		}),
+const postsDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { posts });
 
-		getById: defineQuery({
-			title: 'Get Post',
-			description: 'Get one post by ID.',
-			input: Type.Object({ id: Type.String() }),
-			handler: ({ id }) => tables.posts.get(id),
-		}),
-	},
-}));
+	const actions = {
+		posts: {
+			list: defineQuery({
+				title: 'List Posts',
+				description: 'List all posts.',
+				handler: () => tables.posts.getAllValid(),
+			}),
+
+			getById: defineQuery({
+				title: 'Get Post',
+				description: 'Get one post by ID.',
+				input: Type.Object({ id: Type.String() }),
+				handler: ({ id }) => tables.posts.get(id),
+			}),
+		},
+	};
+
+	return {
+		id,
+		ydoc,
+		tables,
+		actions,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+});
+
+const workspace = postsDoc.open('epicenter.actions.queries');
 
 const actionType = workspace.actions.posts.list.type;
 void actionType;
-void workspace;
 ```
 
 ### Mutation actions
@@ -1095,8 +1204,10 @@ Use `defineMutation(...)` for writes or side effects.
 ```typescript
 import { type } from 'arktype';
 import Type from 'typebox';
+import * as Y from 'yjs';
 import {
-	createWorkspace,
+	attachTables,
+	defineDocument,
 	defineMutation,
 	defineTable,
 	generateId,
@@ -1111,31 +1222,44 @@ const posts = defineTable(
 	}),
 );
 
-const workspace = createWorkspace({
-	id: 'epicenter.actions.mutations',
-	tables: { posts },
-}).withActions(({ tables }) => ({
-	posts: {
-		create: defineMutation({
-			title: 'Create Post',
-			description: 'Create a new post row.',
-			input: Type.Object({ title: Type.String() }),
-			handler: ({ title }) => {
-				const id = generateId();
-				tables.posts.set({ id, title, published: false, _v: 1 });
-				return { id };
-			},
-		}),
+const postsDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { posts });
 
-		publish: defineMutation({
-			title: 'Publish Post',
-			description: 'Mark a post as published.',
-			input: Type.Object({ id: Type.String() }),
-			handler: ({ id }) => tables.posts.update(id, { published: true }),
-		}),
-	},
-}));
+	const actions = {
+		posts: {
+			create: defineMutation({
+				title: 'Create Post',
+				description: 'Create a new post row.',
+				input: Type.Object({ title: Type.String() }),
+				handler: ({ title }) => {
+					const id = generateId();
+					tables.posts.set({ id, title, published: false, _v: 1 });
+					return { id };
+				},
+			}),
 
+			publish: defineMutation({
+				title: 'Publish Post',
+				description: 'Mark a post as published.',
+				input: Type.Object({ id: Type.String() }),
+				handler: ({ id }) => tables.posts.update(id, { published: true }),
+			}),
+		},
+	};
+
+	return {
+		id,
+		ydoc,
+		tables,
+		actions,
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+});
+
+const workspace = postsDoc.open('epicenter.actions.mutations');
 void workspace;
 ```
 
@@ -1287,11 +1411,19 @@ When you call `defineDocument(builder).open(id)`, here is the actual lifecycle:
 
 ### `batch(fn)`
 
-`client.batch(fn)` groups workspace mutations into a single Yjs transaction.
+A `batch(fn)` helper on the handle groups mutations into a single Yjs
+transaction. It isn't injected by the framework — you include it yourself in
+the builder's return (`batch: (fn) => ydoc.transact(fn)`), which is what every
+app in this repo does.
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable } from '@epicenter/workspace';
+import * as Y from 'yjs';
+import {
+	attachTables,
+	defineDocument,
+	defineTable,
+} from '@epicenter/workspace';
 
 const posts = defineTable(
 	type({
@@ -1309,56 +1441,73 @@ const tags = defineTable(
 	}),
 );
 
-const workspace = createWorkspace({
-	id: 'epicenter.examples.batch',
-	tables: { posts, tags },
+const batchDoc = defineDocument((id: string) => {
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { posts, tags });
+	return {
+		id,
+		ydoc,
+		tables,
+		batch: (fn: () => void) => ydoc.transact(fn),
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
 });
+
+const workspace = batchDoc.open('epicenter.examples.batch');
 
 workspace.batch(() => {
 	workspace.tables.posts.set({ id: 'p1', title: 'One transaction', _v: 1 });
 	workspace.tables.tags.set({ id: 't1', name: 'docs', _v: 1 });
 });
-
-void workspace;
 ```
 
 Yjs transactions do not roll back on throw. They batch notifications; they are not SQL transactions.
 
-### `whenReady`, `clearLocalData`, and `dispose`
+### `whenReady`, `clearLocal`, and teardown
 
 | API | What it means |
 | --- | --- |
-| `whenReady` | Composite readiness promise across all installed extensions |
-| `clearLocalData()` | Calls extension `clearLocalData` hooks in LIFO order |
-| `dispose()` | Tears down observers, connections, and extension resources |
+| `handle.whenReady` | User-composed readiness promise — typically `Promise.all([idb.whenLoaded, ...])` |
+| `handle.idb.clearLocal()` (or `handle.sqlite.clearLocal()`) | Wipes persisted local state for that attachment |
+| `handle.dispose()` / `handle[Symbol.dispose]()` | Decrements refcount; last dispose arms the factory's `gcTime` timer |
+| `factory.close(id)` | Force-closes the bundle **now**; awaits `bundle.whenDisposed` |
+| `factory.closeAll()` | Force-closes every open document; awaits each `whenDisposed` |
 
-`dispose()` preserves data. It cleans up resources. If you want to wipe persisted local state, that is what `clearLocalData()` is for.
+`dispose()` preserves data. It releases the handle. To wipe persisted local
+state, call `clearLocal()` on the persistence attachment (`handle.idb` or
+`handle.sqlite`) directly.
 
 ### Cleanup lifecycle
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ dispose() called                                           │
+│ handle.dispose() called (or using block exits)             │
+│    refcount--                                              │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. Close open document handles                             │
-│    • document providers disconnect                         │
-│    • document observers stop                               │
+│ refcount === 0 → arm gcTime timer                          │
+│    • fresh open() during grace window cancels teardown     │
+│    • gcTime: 0 tears down immediately                      │
+│    • gcTime: Infinity (default) never auto-evicts          │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 2. Dispose extensions in LIFO order                        │
-│    • sockets close                                         │
-│    • persistence adapters flush / detach                   │
-│    • status emitters stop                                  │
+│ bundle[Symbol.dispose]() fires                             │
+│    • your builder's teardown (ydoc.destroy())              │
+│    • ydoc.destroy() cascades to every attachment via       │
+│      ydoc.once('destroy') — providers close, observers     │
+│      stop, sockets shut down                               │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. Destroy awareness + Y.Doc                               │
+│ bundle.whenDisposed settles                                │
+│    • awaited by factory.close(id) / factory.closeAll()     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -1370,24 +1519,19 @@ The public root export does not currently ship a built-in server helper. Older d
 
 What the package does give you is the raw material a server adapter needs:
 
-- `client.actions`
+- `handle.actions` (whatever your builder returned)
 - `iterateActions(...)`
-- `describeWorkspace(...)`
-- action metadata (`type`, `input`, `description`)
-- direct access to workspace tables, KV, documents, and awareness
+- action metadata (`type`, `title`, `input`, `description`)
+- direct access to `handle.tables`, `handle.kv`, `handle.awareness`, and per-row content factories
 
 If you want HTTP, CLI, or MCP on top, build or import an adapter around those primitives.
 
 ## API Reference
 
-### Workspace definition
+### Schema definition
 
 ```typescript
-import {
-	defineKv,
-	defineTable,
-	type WorkspaceDefinition,
-} from '@epicenter/workspace';
+import { defineKv, defineTable } from '@epicenter/workspace';
 ```
 
 Core definition helpers:
@@ -1421,30 +1565,18 @@ Everything below is a *convention* — the builder is free to expose more or les
 - `handle.whenReady` and `handle.whenDisposed`
 - `handle[Symbol.dispose]()`
 
-### Document content model
+### Document content attachments
 
-Open document handles expose content via `handle.content`, typed by the content strategy.
+Per-row content is just another `attach*` call inside a per-row
+`defineDocument`. Pick the attachment that matches the content shape:
 
-For timeline strategy (`content: timeline`):
+- `attachPlainText(ydoc, name)` — binds a `Y.Text`. Editor gets `handle.content` as `Y.Text`.
+- `attachRichText(ydoc, name)` — binds a `Y.XmlFragment` for prosemirror / tiptap / yrs-xml editors.
+- `attachTimeline(ydoc)` — a polymorphic timeline that can project as text, rich text, or a sheet. Exposes `read() / write(text) / appendText(text) / asText() / asRichText() / asSheet() / currentType / observe(...) / restoreFromSnapshot(binary)`.
 
-- `handle.content.read()`
-- `handle.content.write(text)`
-- `handle.content.appendText(text)`
-- `handle.content.asText()`
-- `handle.content.asRichText()`
-- `handle.content.asSheet()`
-- `handle.content.currentType`
-- `handle.content.observe(...)`
-- `handle.content.restoreFromSnapshot(binary)`
-
-For plainText strategy (`content: plainText`), `handle.content` is `Y.Text`.
-For richText strategy (`content: richText`), `handle.content` is `Y.XmlFragment`.
-
-Document managers live at `client.tables.{tableName}.documents.{documentName}` and expose:
-
-- `open(rowOrGuid)`
-- `close(rowOrGuid)`
-- `closeAll()`
+The factory (`defineDocument((rowId) => ...)`) caches these by `rowId`, so
+multiple consumers share one Y.Doc. Use `factory.open(id) / .close(id) /
+.closeAll()` to manage lifecycle.
 
 ### Actions
 
@@ -1533,15 +1665,17 @@ Public awareness methods:
 
 ```typescript
 import {
-	describeWorkspace,
-	standardSchemaToJsonSchema,
-	type ActionDescriptor,
-	type SchemaDescriptor,
-	type WorkspaceDescriptor,
+	iterateActions,
+	isAction,
+	isMutation,
+	isQuery,
 } from '@epicenter/workspace';
 ```
 
-`describeWorkspace(client)` gives you a serializable description of tables, KV, awareness, and actions. `standardSchemaToJsonSchema(...)` converts compatible standard schemas to JSON Schema.
+`iterateActions(actions)` flattens a nested action tree into `[action, path]`
+pairs. Combined with each action's `type`, `title`, `description`, and `input`
+schema, that's enough to build HTTP, CLI, or MCP adapters without coupling the
+core package to a transport.
 
 ### IDs and dates
 
@@ -1603,8 +1737,8 @@ The current pieces are:
 
 - actions with `type`, `title`, `description`, and `input`
 - `iterateActions(...)` to flatten a nested action tree
-- `describeWorkspace(...)` for schema introspection
-- `standardSchemaToJsonSchema(...)` for schema conversion where supported
+- `isAction` / `isQuery` / `isMutation` type guards
+- `@epicenter/workspace/ai` — `actionsToAiTools(...)` for TanStack AI tool bindings
 
 That is enough to build adapters that expose workspace actions over HTTP, CLI, or MCP without coupling the core package to one transport.
 

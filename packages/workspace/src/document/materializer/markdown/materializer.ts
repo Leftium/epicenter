@@ -77,6 +77,12 @@ const defaultKvSerialize = (data: Record<string, unknown>): SerializeResult => (
  * `.table(tableRef, config?)` opts in per table and `.kv(kvRef, config?)` opts
  * in a single KV mirror. Nothing materializes by default.
  *
+ * Exposes three mutations:
+ * - `push`    — disk → workspace. Import .md files as rows (additive).
+ * - `pull`    — workspace → disk. Write every row as .md file (additive).
+ * - `reindex` — workspace → disk, destructive. Clear output dir then rewrite
+ *   all rows. Use for orphan cleanup or after `serialize` config changes.
+ *
  * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)` — callers
  * never call a dispose method; destroying the ydoc cascades.
  *
@@ -289,6 +295,65 @@ export function attachMarkdownMaterializer(
 		return { imported, skipped, errors };
 	}
 
+	// ── Reindex (destructive: wipe output dir and re-materialize) ─
+
+	async function reindexMarkdownFiles(
+		tableName?: string,
+	): Promise<{ deleted: number; written: number }> {
+		const baseDir = await resolveDir();
+		let deleted = 0;
+		let written = 0;
+
+		const targets =
+			tableName !== undefined
+				? ([registered.get(tableName)].filter(
+						(entry): entry is RegisteredTable => entry !== undefined,
+					) as RegisteredTable[])
+				: [...registered.values()];
+
+		if (tableName !== undefined && targets.length === 0) {
+			throw new Error(
+				`Cannot reindex "${tableName}" — not in the materialized table set.`,
+			);
+		}
+
+		for (const entry of targets) {
+			const directory = join(baseDir, entry.config.dir ?? entry.table.name);
+
+			// Sweep existing .md files
+			try {
+				const files = await readdir(directory);
+				for (const filename of files) {
+					if (!filename.endsWith('.md')) continue;
+					await unlink(join(directory, filename)).catch(() => {});
+					deleted++;
+				}
+			} catch {
+				// Directory doesn't exist yet — fine.
+			}
+
+			await mkdir(directory, { recursive: true });
+			const serialize = entry.config.serialize ?? defaultSerialize;
+			for (const row of entry.table.getAllValid()) {
+				const result = await serialize(row);
+				await writeFile(join(directory, result.filename), result.content);
+				written++;
+			}
+		}
+
+		// Re-materialize KV if registered and this is a full reindex.
+		if (tableName === undefined && registeredKv) {
+			const { kv, config } = registeredKv;
+			const serialize = config.serialize ?? defaultKvSerialize;
+			const state = { ...kv.getAll() };
+			const result = serialize(state);
+			await writeFile(join(baseDir, result.filename), result.content);
+			written++;
+		}
+
+		return { deleted, written };
+	}
+
 	// ── Builder ──────────────────────────────────────────────────
 
 	const api = {
@@ -320,6 +385,13 @@ export function attachMarkdownMaterializer(
 				}
 				return { written };
 			},
+		}),
+		reindex: defineMutation({
+			title: 'Reindex markdown files',
+			description:
+				'Delete existing .md files in registered table directories and re-serialize all valid rows. Destructive — removes orphan files left by deleted rows or stale configs.',
+			input: Type.Object({ table: Type.Optional(Type.String()) }),
+			handler: ({ table }) => reindexMarkdownFiles(table),
 		}),
 	};
 

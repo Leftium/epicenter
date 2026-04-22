@@ -467,6 +467,126 @@ describe('pull', () => {
 });
 
 // ============================================================================
+// reindex Tests
+// ============================================================================
+
+describe('reindex', () => {
+	test('removes orphan files and rewrites existing valid rows', async () => {
+		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
+		await workspace.whenReady;
+
+		// Seed disk with rows + an orphan file
+		workspace.tables.posts.set({
+			id: 'p1',
+			title: 'Live',
+			published: true,
+			_v: 1,
+		});
+		await workspace.materializer.pull({});
+		await writeTestFile(
+			'posts/orphan.md',
+			'---\nid: orphan\ntitle: Orphan\npublished: false\n_v: 1\n---\n',
+		);
+
+		const before = await listTestDir('posts');
+		expect(before).toContain('p1.md');
+		expect(before).toContain('orphan.md');
+
+		const result = await workspace.materializer.reindex({});
+
+		expect(result.deleted).toBe(2); // p1.md + orphan.md both unlinked
+		expect(result.written).toBe(1); // only p1 re-written
+
+		const after = await listTestDir('posts');
+		expect(after).toContain('p1.md');
+		expect(after).not.toContain('orphan.md');
+
+		await factory.close('test.materializer');
+	});
+
+	test('reindex with table argument only touches that table', async () => {
+		const { workspace, factory } = setup();
+		await workspace.whenReady;
+
+		workspace.tables.posts.set({
+			id: 'p1',
+			title: 'Post',
+			published: false,
+			_v: 1,
+		});
+		workspace.tables.notes.set({ id: 'n1', body: 'Note', _v: 1 });
+		await workspace.materializer.pull({});
+		await writeTestFile(
+			'notes/orphan.md',
+			'---\nid: x\nbody: gone\n_v: 1\n---\n',
+		);
+
+		const result = await workspace.materializer.reindex({ table: 'posts' });
+
+		expect(result.deleted).toBe(1); // p1.md
+		expect(result.written).toBe(1); // p1 re-written
+
+		// notes/ is untouched — orphan still there
+		const notesEntries = await listTestDir('notes');
+		expect(notesEntries).toContain('orphan.md');
+
+		await factory.close('test.materializer');
+	});
+
+	test('throws on unknown table name', async () => {
+		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
+		await workspace.whenReady;
+
+		await expect(
+			workspace.materializer.reindex({ table: 'notAThing' }),
+		).rejects.toThrow(/not in the materialized table set/);
+
+		await factory.close('test.materializer');
+	});
+
+	test('is idempotent — reindex twice produces identical filesystem state', async () => {
+		const { workspace, factory } = setup({ tables: (t) => [{ table: t.posts }] });
+		await workspace.whenReady;
+
+		workspace.tables.posts.set({
+			id: 'p1',
+			title: 'A',
+			published: true,
+			_v: 1,
+		});
+		workspace.tables.posts.set({
+			id: 'p2',
+			title: 'B',
+			published: false,
+			_v: 1,
+		});
+
+		const first = await workspace.materializer.reindex({});
+		const stateAfterFirst = await listTestDir('posts');
+		const contentsAfterFirst = await Promise.all(
+			stateAfterFirst.map((f) => readTestFile(`posts/${f}`)),
+		);
+
+		const second = await workspace.materializer.reindex({});
+		const stateAfterSecond = await listTestDir('posts');
+		const contentsAfterSecond = await Promise.all(
+			stateAfterSecond.map((f) => readTestFile(`posts/${f}`)),
+		);
+
+		// On the first reindex, written=2 and deleted=0 (no files existed).
+		// On the second, deleted=2 (wipes the first's output) and written=2.
+		expect(first.written).toBe(2);
+		expect(second.written).toBe(2);
+		expect(second.deleted).toBe(2);
+
+		expect(stateAfterSecond).toEqual(stateAfterFirst);
+		expect(contentsAfterSecond).toEqual(contentsAfterFirst);
+
+		await factory.close('test.materializer');
+	});
+});
+
+// ============================================================================
 // Round-Trip Tests
 // ============================================================================
 

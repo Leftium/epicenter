@@ -54,14 +54,12 @@ export function attachYjsFileSystem(
 	// semantics the filesystem methods expect. Each call opens a short-lived
 	// handle, awaits IDB load, performs the op, and disposes.
 	async function readContent(id: FileId): Promise<string> {
-		using handle = contentDocuments.open(id);
-		await handle.whenReady;
+		await using handle = await contentDocuments.load(id);
 		return handle.content.read();
 	}
 
 	async function writeContent(id: FileId, text: string): Promise<void> {
-		using handle = contentDocuments.open(id);
-		await handle.whenReady;
+		await using handle = await contentDocuments.load(id);
 		handle.content.write(text);
 	}
 
@@ -221,8 +219,7 @@ export function attachYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
-			using handle = contentDocuments.open(id);
-			await handle.whenReady;
+			await using handle = await contentDocuments.load(id);
 			handle.content.appendText(text);
 			const newSize = new TextEncoder().encode(handle.content.read()).byteLength;
 			tree.touch(id, newSize);

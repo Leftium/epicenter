@@ -444,8 +444,7 @@ describe('sheet file support', () => {
 		const fileId = fs.lookupId('/data.csv');
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
-		using handle = contentDocs.open(fileId);
-		await handle.whenReady;
+		await using handle = await contentDocs.load(fileId);
 		handle.content.batch(() => {
 			handle.content.write('Name,Age\nAlice,30\n');
 			handle.content.asSheet();
@@ -459,8 +458,7 @@ describe('sheet file support', () => {
 		const fileId = fs.lookupId('/data.csv');
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
-		using handle = contentDocs.open(fileId);
-		await handle.whenReady;
+		await using handle = await contentDocs.load(fileId);
 		handle.content.batch(() => {
 			handle.content.write('A,B\n1,2\n');
 			handle.content.asSheet();

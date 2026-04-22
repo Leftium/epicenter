@@ -188,22 +188,23 @@ const DOCUMENT_HANDLE: unique symbol = Symbol.for('epicenter.document.handle');
  * own enumerable properties, plus `dispose`, `[Symbol.dispose]`, and a
  * `[DOCUMENT_HANDLE]` brand. N opens require N disposes.
  *
- * Pair every `open()` with a `dispose()`:
+ * Pair every `open()` with a `dispose()`. Imperative callers that want
+ * loaded data should use `load()` instead (see {@link DocumentFactory.load})
+ * — the examples below are for reactive/subscription patterns where you
+ * want the handle *before* readiness.
  *
  * ```ts
- * // Manual
- * const h = docs.open('abc');
- * await h.whenReady;
- * h.dispose();
- *
- * // Framework-scoped
+ * // Framework-scoped — dispose on effect cleanup
  * $effect(() => {
  *   const h = docs.open(id);
  *   return () => h.dispose();
  * });
  *
  * // TS 5.2 `using` — dispose fires on block exit
- * { using h = docs.open('abc'); await h.whenReady; }
+ * {
+ *   using h = docs.open('abc');
+ *   // subscribe to h.whenReady here
+ * }
  * ```
  *
  * `dispose()` is always synchronous — it just decrements the refcount. Async
@@ -288,6 +289,12 @@ export type DocumentFactory<Id extends string, T> = {
 	 * h.content.write('hi');
 	 * // dispose fires on block exit
 	 * ```
+	 *
+	 * Hazard: if a concurrent `close(id)` / `closeAll()` fires while
+	 * `whenReady` is in flight, the returned handle wraps a destroyed Y.Doc
+	 * — subsequent operations will throw. Same hazard applies to manual
+	 * `open() + await whenReady`, but worth naming: caller-initiated
+	 * teardown during an in-flight load is a logic error higher up.
 	 */
 	load(id: Id): Promise<DocumentHandle<T>>;
 	/**

@@ -12,7 +12,7 @@
  * ```typescript
  * import { skillsDocument } from '@epicenter/skills/node';
  *
- * using workspace = skillsDocument.open('epicenter.skills');
+ * await using workspace = await skillsDocument.load('epicenter.skills');
  * await workspace.actions.importFromDisk({ dir: '.agents/skills' });
  * await workspace.actions.exportToDisk({ dir: '.agents/skills' });
  * ```

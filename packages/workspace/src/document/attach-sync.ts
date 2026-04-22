@@ -417,7 +417,6 @@ export function attachSync(
 	// ── Supervisor loop ──
 
 	async function runLoop() {
-		let attempt = 0;
 		let lastError: SyncError | undefined;
 
 		// Returns true when this iteration was superseded (reconnect/goOffline
@@ -425,7 +424,6 @@ export function attachSync(
 		// iteration starts fresh.
 		const cancelled = (myRunId: number): boolean => {
 			if (runId === myRunId) return false;
-			attempt = 0;
 			lastError = undefined;
 			return true;
 		};
@@ -437,7 +435,7 @@ export function attachSync(
 			// clear them before starting a new attempt.
 			clearPendingRequests();
 
-			status.set({ phase: 'connecting', attempt, lastError });
+			status.set({ phase: 'connecting', attempt: backoff.retries, lastError });
 
 			const token: string | null = currentToken;
 			if (requiresToken && !token) {
@@ -445,10 +443,9 @@ export function attachSync(
 					type: 'auth',
 					error: new Error('No token available'),
 				};
-				status.set({ phase: 'connecting', attempt, lastError });
+				status.set({ phase: 'connecting', attempt: backoff.retries, lastError });
 				await backoff.sleep();
-				if (cancelled(myRunId)) continue;
-				attempt += 1;
+				cancelled(myRunId);
 				continue;
 			}
 
@@ -464,8 +461,6 @@ export function attachSync(
 			}
 
 			if (desired === 'online') {
-				attempt += 1;
-				status.set({ phase: 'connecting', attempt, lastError });
 				await backoff.sleep();
 				cancelled(myRunId);
 			}
@@ -924,6 +919,9 @@ function createBackoff() {
 		},
 		reset() {
 			retries = 0;
+		},
+		get retries() {
+			return retries;
 		},
 	};
 }

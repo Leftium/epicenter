@@ -139,9 +139,6 @@ export type EncryptedYKeyValueLww<T> = ObservableKvStore<T> & {
 
 	/** The underlying Y.Array. Contains **ciphertext** when a key is active. */
 	readonly yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>;
-
-	/** The Y.Doc that owns the array. */
-	readonly doc: Y.Doc;
 };
 
 /**
@@ -198,21 +195,21 @@ export function createEncryptedYkvLww<T>(
 	 *   confusing the closure mid-iteration.
 	 */
 	const decrypt = (
-		raw: EncryptedBlob | T,
+		stored: EncryptedBlob | T,
 		aad: Uint8Array,
 		state: EncryptionState | undefined = encryption,
 	): T | undefined => {
-		if (!isEncryptedBlob(raw)) return raw as T;
+		if (!isEncryptedBlob(stored)) return stored as T;
 		if (!state) return undefined;
 		try {
-			return JSON.parse(decryptValue(raw, state.currentKey, aad)) as T;
+			return JSON.parse(decryptValue(stored, state.currentKey, aad)) as T;
 		} catch {
 			// Current key didn't work — try the blob's recorded key version
 		}
-		const versionKey = state.keyring.get(getKeyVersion(raw));
+		const versionKey = state.keyring.get(getKeyVersion(stored));
 		if (!versionKey || versionKey === state.currentKey) return undefined;
 		try {
-			return JSON.parse(decryptValue(raw, versionKey, aad)) as T;
+			return JSON.parse(decryptValue(stored, versionKey, aad)) as T;
 		} catch {
 			return undefined;
 		}
@@ -282,9 +279,9 @@ export function createEncryptedYkvLww<T>(
 		 * on the fly (~0.01ms for XChaCha20-Poly1305 on a small JSON blob).
 		 */
 		get(key) {
-			const raw = inner.get(key);
-			if (raw === undefined) return undefined;
-			return decrypt(raw, textEncoder.encode(key));
+			const stored = inner.get(key);
+			if (stored === undefined) return undefined;
+			return decrypt(stored, textEncoder.encode(key));
 		},
 		has(key) {
 			return this.get(key) !== undefined;
@@ -382,7 +379,6 @@ export function createEncryptedYkvLww<T>(
 			return inner.map.size - this.unreadableEntryCount;
 		},
 		yarray: inner.yarray,
-		doc: inner.doc,
 		dispose() {
 			inner.unobserve(observer);
 			inner.dispose();

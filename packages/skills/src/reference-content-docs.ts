@@ -7,12 +7,13 @@
 
 import {
 	attachPlainText,
-	createPerRowDoc,
 	defineDocument,
+	docGuid,
 	type DocPersistence,
+	onLocalUpdate,
 } from '@epicenter/workspace';
 import type { Table } from '@epicenter/workspace';
-import type * as Y from 'yjs';
+import * as Y from 'yjs';
 import type { Reference } from './tables.js';
 
 export function createReferenceContentDocs({
@@ -25,15 +26,27 @@ export function createReferenceContentDocs({
 	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	return defineDocument((referenceId: string) => {
-		const base = createPerRowDoc({
-			workspaceId,
-			collection: 'references',
-			field: 'content',
-			id: referenceId,
-			onUpdate: () =>
-				referencesTable.update(referenceId, { updatedAt: Date.now() }),
-			attachPersistence,
+		const ydoc = new Y.Doc({
+			guid: docGuid({
+				workspaceId,
+				collection: 'references',
+				rowId: referenceId,
+				field: 'content',
+			}),
+			gc: false,
 		});
-		return { ...base, content: attachPlainText(base.ydoc) };
+		onLocalUpdate(ydoc, () =>
+			referencesTable.update(referenceId, { updatedAt: Date.now() }),
+		);
+		const persistence = attachPersistence?.(ydoc);
+		return {
+			ydoc,
+			content: attachPlainText(ydoc),
+			whenReady: persistence?.whenLoaded ?? Promise.resolve(),
+			whenDisposed: persistence?.whenDisposed ?? Promise.resolve(),
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
 	});
 }

@@ -7,12 +7,13 @@
 
 import {
 	attachPlainText,
-	createPerRowDoc,
 	defineDocument,
+	docGuid,
 	type DocPersistence,
+	onLocalUpdate,
 } from '@epicenter/workspace';
 import type { Table } from '@epicenter/workspace';
-import type * as Y from 'yjs';
+import * as Y from 'yjs';
 import type { Skill } from './tables.js';
 
 export function createSkillInstructionsDocs({
@@ -25,15 +26,27 @@ export function createSkillInstructionsDocs({
 	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	return defineDocument((skillId: string) => {
-		const base = createPerRowDoc({
-			workspaceId,
-			collection: 'skills',
-			field: 'instructions',
-			id: skillId,
-			onUpdate: () =>
-				skillsTable.update(skillId, { updatedAt: Date.now() }),
-			attachPersistence,
+		const ydoc = new Y.Doc({
+			guid: docGuid({
+				workspaceId,
+				collection: 'skills',
+				rowId: skillId,
+				field: 'instructions',
+			}),
+			gc: false,
 		});
-		return { ...base, instructions: attachPlainText(base.ydoc) };
+		onLocalUpdate(ydoc, () =>
+			skillsTable.update(skillId, { updatedAt: Date.now() }),
+		);
+		const persistence = attachPersistence?.(ydoc);
+		return {
+			ydoc,
+			instructions: attachPlainText(ydoc),
+			whenReady: persistence?.whenLoaded ?? Promise.resolve(),
+			whenDisposed: persistence?.whenDisposed ?? Promise.resolve(),
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
 	});
 }

@@ -99,7 +99,7 @@ export {
 	type DocumentHandle,
 } from './define-document.js';
 export { docGuid } from './doc-guid.js';
-export { createPerRowDoc, type DocPersistence } from './create-per-row-doc.js';
+export { type DocPersistence } from './doc-persistence.js';
 export { onLocalUpdate } from './on-local-update.js';
 
 export { KV_KEY, TableKey, type KvKey } from './keys.js';

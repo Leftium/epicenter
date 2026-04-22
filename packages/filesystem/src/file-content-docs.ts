@@ -22,12 +22,13 @@
 
 import {
 	attachTimeline,
-	createPerRowDoc,
 	defineDocument,
+	docGuid,
 	type DocPersistence,
+	onLocalUpdate,
 } from '@epicenter/workspace';
 import type { Table } from '@epicenter/workspace';
-import type * as Y from 'yjs';
+import * as Y from 'yjs';
 import type { FileId } from './ids.js';
 import type { FileRow } from './table.js';
 
@@ -41,16 +42,26 @@ export function createFileContentDocs({
 	attachPersistence?: (ydoc: Y.Doc) => DocPersistence;
 }) {
 	return defineDocument((fileId: FileId) => {
-		const base = createPerRowDoc({
-			workspaceId,
-			collection: 'files',
-			field: 'content',
-			id: fileId,
-			onUpdate: () =>
-				filesTable.update(fileId, { updatedAt: Date.now() }),
-			attachPersistence,
+		const ydoc = new Y.Doc({
+			guid: docGuid({
+				workspaceId,
+				collection: 'files',
+				rowId: fileId,
+				field: 'content',
+			}),
+			gc: false,
 		});
-		return { ...base, content: attachTimeline(base.ydoc) };
+		onLocalUpdate(ydoc, () => filesTable.update(fileId, { updatedAt: Date.now() }));
+		const persistence = attachPersistence?.(ydoc);
+		return {
+			ydoc,
+			content: attachTimeline(ydoc),
+			whenReady: persistence?.whenLoaded ?? Promise.resolve(),
+			whenDisposed: persistence?.whenDisposed ?? Promise.resolve(),
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
 	});
 }
 

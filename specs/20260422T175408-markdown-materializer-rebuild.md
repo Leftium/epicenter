@@ -1,4 +1,4 @@
-# Markdown Materializer `reindex` Action
+# Markdown Materializer `rebuild` Action
 
 **Date**: 2026-04-22
 **Status**: Draft
@@ -7,7 +7,7 @@
 
 ## Overview
 
-Add a `reindex` mutation to `attachMarkdownMaterializer` that clears the output directory and re-materializes every registered table + optional KV from the workspace source of truth. Matches the shape of sqlite's `rebuild` action.
+Add a `rebuild` mutation to `attachMarkdownMaterializer` that clears the output directory and re-materializes every registered table + optional KV from the workspace source of truth. Matches the shape of sqlite's `rebuild` action.
 
 ## Motivation
 
@@ -34,10 +34,10 @@ Markdown has no equivalent. There's no way to force a clean reconciliation betwe
 ### Desired State
 
 ```ts
-const result = await materializer.reindex({ table: 'posts' });
+const result = await materializer.rebuild({ table: 'posts' });
 // → { deleted: 3, written: 17 }
 
-const allResult = await materializer.reindex({});
+const allResult = await materializer.rebuild({});
 // → { deleted: 8, written: 42 }
 ```
 
@@ -47,7 +47,7 @@ const allResult = await materializer.reindex({});
 
 | Concern                        | sqlite                      | markdown (today)            | markdown (proposed)       |
 | ------------------------------ | --------------------------- | --------------------------- | ------------------------- |
-| "Drop and re-materialize"      | `rebuild(tableName?)`       | — (absent)                  | `reindex({ table? })`     |
+| "Drop and re-materialize"      | `rebuild(tableName?)`       | — (absent)                  | `rebuild({ table? })`     |
 | Orphan cleanup                 | atomic via SQL transaction  | observer-driven unlink only | rm subdirectory + re-pull |
 | Per-table vs. all              | both                        | n/a                         | both                      |
 | Action shape                   | `defineMutation` with input | n/a                         | `defineMutation` with input |
@@ -56,7 +56,7 @@ const allResult = await materializer.reindex({});
 
 ```ts
 // Inside attachMarkdownMaterializer factory
-async function reindexImpl(tableName?: string) {
+async function rebuildImpl(tableName?: string) {
   const baseDir = await resolveDir();
   let deleted = 0;
   let written = 0;
@@ -65,7 +65,7 @@ async function reindexImpl(tableName?: string) {
     ? [registered.get(tableName)].filter(Boolean) as RegisteredTable[]
     : [...registered.values()];
   if (tableName && targets.length === 0) {
-    throw new Error(`reindex: "${tableName}" not registered`);
+    throw new Error(`rebuild: "${tableName}" not registered`);
   }
 
   for (const entry of targets) {
@@ -93,11 +93,11 @@ async function reindexImpl(tableName?: string) {
 }
 
 // Surface as action
-reindex: defineMutation({
-  title: 'Reindex markdown files',
+rebuild: defineMutation({
+  title: 'Rebuild markdown files',
   description: 'Delete existing .md files and re-serialize all valid rows',
   input: Type.Object({ table: Type.Optional(Type.String()) }),
-  handler: ({ table }) => reindexImpl(table),
+  handler: ({ table }) => rebuildImpl(table),
 }),
 ```
 
@@ -105,7 +105,7 @@ reindex: defineMutation({
 
 | Decision                     | Choice                                          | Rationale                                                |
 | ---------------------------- | ----------------------------------------------- | -------------------------------------------------------- |
-| Verb                         | `reindex`                                       | Matches mental model ("rebuild the index") and doesn't collide with `rebuild` (sqlite). Alternatives: `rebuild`, `resync`, `refresh` — `reindex` fits markdown-as-index-of-rows best. |
+| Verb                         | `rebuild`                                       | Matches mental model ("rebuild the index") and doesn't collide with `rebuild` (sqlite). Alternatives: `rebuild`, `resync`, `refresh` — `rebuild` fits markdown-as-index-of-rows best. |
 | Scope                        | `{ table?: string }` — per-table or all        | Mirrors sqlite `rebuild`.                                |
 | KV handling                  | Always re-materialize KV if registered          | KV is a single file; always safe to overwrite. Could add `{ includeKv?: boolean }` if over-eager, but YAGNI for now. |
 | Orphan detection             | `unlink` every `.md` in the target subdirectory | Aggressive but simple. Alternative: track written filenames and only unlink orphans — more complex, same end state. |
@@ -120,7 +120,7 @@ reindex: defineMutation({
 Caller
   │
   ▼
-materializer.reindex({ table?: 'posts' })    [defineMutation]
+materializer.rebuild({ table?: 'posts' })    [defineMutation]
   │
   ├── if table given: validate it's registered
   │
@@ -132,27 +132,27 @@ materializer.reindex({ table?: 'posts' })    [defineMutation]
   └── return { deleted, written }
 ```
 
-Non-atomic. If the process crashes mid-reindex, the output dir may be partially wiped. That's fine — rerunning the same command cleans up.
+Non-atomic. If the process crashes mid-rebuild, the output dir may be partially wiped. That's fine — rerunning the same command cleans up.
 
 ## Implementation Plan
 
-### Phase 1: Core reindex
+### Phase 1: Core rebuild
 
-- [ ] **1.1** Add `reindexImpl(tableName?: string)` function inside `attachMarkdownMaterializer`. Iterates registered tables (or a single one), removes `.md` files, re-writes from `getAllValid()`.
-- [ ] **1.2** Add `reindex` action to the `api` object via `defineMutation` with `input: Type.Object({ table: Type.Optional(Type.String()) })`.
+- [ ] **1.1** Add `rebuildImpl(tableName?: string)` function inside `attachMarkdownMaterializer`. Iterates registered tables (or a single one), removes `.md` files, re-writes from `getAllValid()`.
+- [ ] **1.2** Add `rebuild` action to the `api` object via `defineMutation` with `input: Type.Object({ table: Type.Optional(Type.String()) })`.
 - [ ] **1.3** Throw on `table` argument that doesn't match a registered table name — use the same error-string convention as sqlite's `rebuild`.
 
 ### Phase 2: Tests
 
-- [ ] **2.1** Test: reindex removes orphan files and rewrites existing valid rows.
-- [ ] **2.2** Test: reindex with `table` argument only touches that table's subdirectory.
-- [ ] **2.3** Test: reindex throws on unknown table name.
-- [ ] **2.4** Test: reindex is idempotent (running twice produces identical filesystem state).
-- [ ] **2.5** Test: reindex after `config.dir` change updates files in the new subdirectory (and — open question — leaves the old dir or cleans it up?).
+- [ ] **2.1** Test: rebuild removes orphan files and rewrites existing valid rows.
+- [ ] **2.2** Test: rebuild with `table` argument only touches that table's subdirectory.
+- [ ] **2.3** Test: rebuild throws on unknown table name.
+- [ ] **2.4** Test: rebuild is idempotent (running twice produces identical filesystem state).
+- [ ] **2.5** Test: rebuild after `config.dir` change updates files in the new subdirectory (and — open question — leaves the old dir or cleans it up?).
 
 ### Phase 3: Documentation
 
-- [ ] **3.1** Update JSDoc on `attachMarkdownMaterializer` to list `reindex` alongside `push` / `pull`.
+- [ ] **3.1** Update JSDoc on `attachMarkdownMaterializer` to list `rebuild` alongside `push` / `pull`.
 - [ ] **3.2** Add a note to the attach-primitive skill that materializers expose `rebuild`-style reset actions for orphan cleanup.
 
 ## Edge Cases
@@ -167,44 +167,44 @@ Non-atomic. If the process crashes mid-reindex, the output dir may be partially 
 
 1. `pull` had generated `abc.md` under the old serialize.
 2. Config swapped to a serialize that now returns `xyz.md`.
-3. reindex: `unlink abc.md` (as orphan), write `xyz.md`. Correct.
+3. rebuild: `unlink abc.md` (as orphan), write `xyz.md`. Correct.
 
-### Process crash mid-reindex
+### Process crash mid-rebuild
 
 1. Some old files unlinked, no new writes yet.
 2. Filesystem is in a valid-but-incomplete state.
-3. Rerun reindex → fully consistent.
+3. Rerun rebuild → fully consistent.
 
 Not atomic; callers who need atomicity should use sqlite, not markdown.
 
 ### Subdirectory change between runs
 
 1. Table config's `dir` was `posts`, now `blog`.
-2. reindex under new config: reads only `blog/`, writes `blog/`, leaves `posts/` as orphan directory.
-3. **Open question** — should reindex recognize the old dir? Unclear how (config history isn't tracked).
+2. rebuild under new config: reads only `blog/`, writes `blog/`, leaves `posts/` as orphan directory.
+3. **Open question** — should rebuild recognize the old dir? Unclear how (config history isn't tracked).
 
 ## Open Questions
 
-1. **What should `reindex` do about the subdirectory if `config.dir` changed since last flush?**
+1. **What should `rebuild` do about the subdirectory if `config.dir` changed since last flush?**
    - Options: (a) ignore — only touch current dir; (b) accept a `cleanDirs?: string[]` input to nuke old paths; (c) store a registry of "dirs written to" and clean them all.
-   - **Recommendation**: (a). Caller who changes `dir` can `rm -rf` the old one themselves. Keep reindex predictable.
+   - **Recommendation**: (a). Caller who changes `dir` can `rm -rf` the old one themselves. Keep rebuild predictable.
 
-2. **Should `reindex` include KV?**
-   - Options: (a) always include when registered; (b) add `includeKv?: boolean` (default true); (c) add a separate `reindexKv` action.
+2. **Should `rebuild` include KV?**
+   - Options: (a) always include when registered; (b) add `includeKv?: boolean` (default true); (c) add a separate `rebuildKv` action.
    - **Recommendation**: (a). KV materialization is cheap (one JSON file); no need to gate.
 
-3. **Is `reindex` semantically different from `pull` + orphan-sweep, or should `pull` itself sweep orphans?**
+3. **Is `rebuild` semantically different from `pull` + orphan-sweep, or should `pull` itself sweep orphans?**
    - Rewriting `pull` to always sweep would be a breaking behavior change — current callers rely on `pull` being additive.
-   - **Recommendation**: Keep distinct. `pull` is idempotent-additive; `reindex` is destructive-clean.
+   - **Recommendation**: Keep distinct. `pull` is idempotent-additive; `rebuild` is destructive-clean.
 
 4. **Return shape:** `{ deleted, written }` vs `{ removed, written }` vs reusing `push`'s `{ imported, skipped, errors }`?
    - **Recommendation**: `{ deleted, written }`. `deleted` is precise; `written` matches `pull`'s return.
 
 ## Success Criteria
 
-- [ ] `materializer.reindex({})` removes all `.md` files in the base dir's table subdirectories and re-creates them from `getAllValid()`.
-- [ ] `materializer.reindex({ table: 'posts' })` only touches `posts/`.
-- [ ] Passes `epicenter run <export>.materializer.reindex` via the CLI dot-path surface.
+- [ ] `materializer.rebuild({})` removes all `.md` files in the base dir's table subdirectories and re-creates them from `getAllValid()`.
+- [ ] `materializer.rebuild({ table: 'posts' })` only touches `posts/`.
+- [ ] Passes `epicenter run <export>.materializer.rebuild` via the CLI dot-path surface.
 - [ ] Throws with a helpful error on unregistered table names.
 - [ ] 4+ new tests pass covering: orphan removal, single-table scope, unknown-table throw, idempotence.
 

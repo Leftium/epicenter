@@ -168,7 +168,7 @@ Non-breaking, additive.
 
 - [ ] **1.1** Add `name: string` and `definition: TableDefinition<...>` to the `Table<TRow>` type in `packages/workspace/src/document/attach-table.ts`.
 - [ ] **1.2** Update `attachTable(ydoc, definition, name?)` so the returned object includes `name` and `definition`. `attachTables` threads the key name through for each entry.
-- [ ] **1.3** Add `name: string` to `Kv<TDefinitions>` type in `packages/workspace/src/document/attach-kv.ts`; update `attachKv` / `attachEncryptedKv`.
+- [ ] **1.3** ~~Add `name` to `Kv`~~ — dropped. There's only one `Kv` per workspace (single `KV_KEY` Y.Array), so there's no per-kv name to expose. Markdown materializer will take `.kv(kv, { filename? })` instead — filename is a per-materializer config concern, not a Kv property.
 - [ ] **1.4** Typecheck workspace package. No consumer changes required — this is purely additive.
 
 ### Phase 2: Rename + restructure materializers

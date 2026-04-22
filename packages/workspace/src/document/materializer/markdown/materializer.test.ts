@@ -2,7 +2,7 @@
  * Markdown Materializer Bidirectional Sync Tests
  *
  * Tests the `pushFromMarkdown` and `pullToMarkdown` methods on
- * `createMarkdownMaterializer`. Uses real temp directories and Yjs
+ * `attachMarkdownMaterializer`. Uses real temp directories and Yjs
  * workspaces so the materializer exercises actual table set/get and
  * filesystem paths.
  *
@@ -27,7 +27,7 @@ import {
 	defineDocument,
 	defineTable,
 } from '../../../index.js';
-import { createMarkdownMaterializer } from './materializer.js';
+import { attachMarkdownMaterializer } from './materializer.js';
 import { parseMarkdownFile } from './parse-markdown-file.js';
 
 // ============================================================================
@@ -78,7 +78,7 @@ function setup(options?: {
 	tables?: Array<{
 		name: keyof typeof tableDefinitions;
 		config?: Parameters<
-			ReturnType<typeof createMarkdownMaterializer>['table']
+			ReturnType<typeof attachMarkdownMaterializer>['table']
 		>[1];
 	}>;
 }) {
@@ -86,7 +86,7 @@ function setup(options?: {
 		const ydoc = new Y.Doc({ guid: id });
 		const tables = attachTables(ydoc, tableDefinitions);
 
-		const materializer = createMarkdownMaterializer(
+		const materializer = attachMarkdownMaterializer(
 			{ tables, whenReady: Promise.resolve() },
 			{ dir: TEST_DIR },
 		);
@@ -479,7 +479,7 @@ describe('round-trip', () => {
 		const factory1 = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			const tables = attachTables(ydoc, tableDefinitions);
-			const materializer = createMarkdownMaterializer(
+			const materializer = attachMarkdownMaterializer(
 				{ tables, whenReady: Promise.resolve() },
 				{ dir: TEST_DIR },
 			).table('posts');
@@ -524,7 +524,7 @@ describe('round-trip', () => {
 		const factory2 = defineDocument((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
 			const tables = attachTables(ydoc, tableDefinitions);
-			const materializer = createMarkdownMaterializer(
+			const materializer = attachMarkdownMaterializer(
 				{ tables, whenReady: Promise.resolve() },
 				{ dir: TEST_DIR },
 			).table('posts');

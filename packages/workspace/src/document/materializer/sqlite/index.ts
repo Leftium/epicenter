@@ -1,5 +1,5 @@
 export { generateDdl } from './ddl.js';
-export { createSqliteMaterializer } from './sqlite.js';
+export { attachSqliteMaterializer } from './sqlite.js';
 export type {
 	MirrorDatabase,
 	MirrorStatement,

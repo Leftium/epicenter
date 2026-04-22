@@ -2,7 +2,7 @@
  * SQLite materializer—mirrors workspace table rows into queryable SQLite tables.
  *
  * Follows the same builder pattern as the markdown materializer:
- * `createSqliteMaterializer({ tables, definitions, init }, { db })` returns
+ * `attachSqliteMaterializer({ tables, definitions, init }, { db })` returns
  * a chainable builder where `.table(name, config?)` opts in per table. Nothing
  * materializes by default.
  *
@@ -43,7 +43,7 @@ type AnyTable = Table<any>;
  *
  * @example Basic usage with type-safe table names
  * ```typescript
- * const materializer = createSqliteMaterializer(
+ * const materializer = attachSqliteMaterializer(
  *   { tables, definitions: myTableDefs, whenReady: idb.whenLoaded },
  *   { db },
  * )
@@ -59,18 +59,18 @@ type AnyTable = Table<any>;
  *   defineDocument,
  *   attachTables,
  *   attachSqlite,
- *   createSqliteMaterializer,
+ *   attachSqliteMaterializer,
  * } from '@epicenter/workspace';
  *
  * // attachSqlite opens its own connection internally for Yjs persistence.
- * // createSqliteMaterializer uses a second connection to the same WAL-mode file
+ * // attachSqliteMaterializer uses a second connection to the same WAL-mode file
  * // to maintain a queryable row mirror.
  * const factory = defineDocument((id: string) => {
  *   const ydoc = new Y.Doc({ guid: id });
  *   const tables = attachTables(ydoc, myTableDefs);
  *   const persistence = attachSqlite(ydoc, { filePath: 'workspace.db' });
  *
- *   const sqlite = createSqliteMaterializer(
+ *   const sqlite = attachSqliteMaterializer(
  *     { tables, definitions: myTableDefs, whenReady: persistence.whenLoaded },
  *     { db: new Database('workspace.db') },
  *   ).table('posts', { fts: ['title'] });
@@ -82,7 +82,7 @@ type AnyTable = Table<any>;
  * });
  * ```
  */
-export function createSqliteMaterializer<
+export function attachSqliteMaterializer<
 	TTables extends Record<string, AnyTable>,
 >(
 	{ tables, definitions, whenReady }: {
@@ -176,7 +176,7 @@ export function createSqliteMaterializer<
 				.then(() => flushPendingSync())
 				.catch((error: unknown) => {
 					console.error(
-						'[createSqliteMaterializer] Failed to sync SQLite materializer.',
+						'[attachSqliteMaterializer] Failed to sync SQLite materializer.',
 						error,
 					);
 				});
@@ -439,7 +439,7 @@ export function createSqliteMaterializer<
 		 *
 		 * @example
 		 * ```typescript
-		 * createSqliteMaterializer(ctx, { db })
+		 * attachSqliteMaterializer(ctx, { db })
 		 *   .table('posts', { fts: ['title', 'body'] })
 		 *   .table('users')
 		 * ```

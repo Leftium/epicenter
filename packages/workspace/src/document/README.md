@@ -20,7 +20,7 @@ The canonical primitive is `defineDocument(builder)`. You own the `Y.Doc` constr
 │  attachAwareness                                           │ ← Presence
 │  attachIndexedDb / attachSqlite / attachBroadcastChannel   │ ← Persistence + cross-tab
 │  attachSync                                                │ ← WebSocket sync
-│  createSqliteMaterializer                                  │ ← Queryable mirror
+│  attachSqliteMaterializer                                  │ ← Queryable mirror
 ├────────────────────────────────────────────────────────────┤
 │  Y.Doc (raw CRDT)                                          │ ← Escape hatch
 └────────────────────────────────────────────────────────────┘
@@ -32,7 +32,7 @@ Three prefixes, each with a consistent meaning:
 
 - **`define*`** is pure — no Y.Doc, no side effects. Schemas, KV definitions, action factories, document factories.
 - **`attach*`** binds something to an existing `Y.Doc`. Returns a typed handle. Side effects live here.
-- **`create*`** instantiates a helper from already-attached pieces (`createSqliteMaterializer`, `createFileContentDocs`, etc.).
+- **`create*`** instantiates a helper from already-attached pieces (`attachSqliteMaterializer`, `createFileContentDocs`, etc.).
 
 ```typescript
 import * as Y from 'yjs';

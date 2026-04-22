@@ -38,12 +38,12 @@ import {
 	defineMutation,
 } from '@epicenter/workspace';
 import {
-	createMarkdownMaterializer,
+	attachMarkdownMaterializer,
 	prepareMarkdownFiles,
 	toMarkdown,
 	toSlugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
-import { createSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
+import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import Type from 'typebox';
 import * as Y from 'yjs';
 
@@ -110,7 +110,7 @@ const opensidianFactory = defineDocument((id: string) => {
 		sync.whenConnected,
 	]).then(() => {});
 
-	const markdown = createMarkdownMaterializer(
+	const markdown = attachMarkdownMaterializer(
 		{ tables, kv, whenReady },
 		{ dir: MARKDOWN_DIR },
 	).table('files', {
@@ -145,7 +145,7 @@ const opensidianFactory = defineDocument((id: string) => {
 		},
 	});
 
-	const sqlite = createSqliteMaterializer(
+	const sqlite = attachSqliteMaterializer(
 		{ tables, definitions: opensidianTables, whenReady },
 		{ db: new Database(join(MATERIALIZER_DIR, 'opensidian.db')) },
 	).table('files', { fts: ['name'] });

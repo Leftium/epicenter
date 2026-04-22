@@ -22,7 +22,7 @@ import { parseMarkdownFile } from './parse-markdown-file.js';
  *
  * @example
  * ```typescript
- * const markdown = createMarkdownMaterializer(
+ * const markdown = attachMarkdownMaterializer(
  *   { tables, kv, whenReady },
  *   { dir: './data' },
  * )
@@ -30,7 +30,7 @@ import { parseMarkdownFile } from './parse-markdown-file.js';
  *   .kv();
  * ```
  */
-export function createMarkdownMaterializer<
+export function attachMarkdownMaterializer<
 	// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
 	TTables extends Record<string, Table<any>>,
 >(
@@ -196,7 +196,7 @@ export function createMarkdownMaterializer<
 	const materializeKv = async (dir: string) => {
 		if (!ctx.kv) {
 			throw new Error(
-				'createMarkdownMaterializer: `.kv()` was called but `ctx.kv` was not provided.',
+				'attachMarkdownMaterializer: `.kv()` was called but `ctx.kv` was not provided.',
 			);
 		}
 		const kv = ctx.kv;

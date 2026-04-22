@@ -1,7 +1,7 @@
 /**
  * SQLite Materializer Tests
  *
- * Tests the full createSqliteMaterializer lifecycle: DDL generation, full load,
+ * Tests the full attachSqliteMaterializer lifecycle: DDL generation, full load,
  * incremental sync, FTS5 search, rebuild, and dispose. Uses real Yjs documents
  * with defineTable schemas so the materializer exercises the actual workspace
  * observation path.
@@ -24,7 +24,7 @@ import {
 	defineDocument,
 	defineTable,
 } from '../../../index.js';
-import { createSqliteMaterializer } from './sqlite.js';
+import { attachSqliteMaterializer } from './sqlite.js';
 import type { MirrorDatabase } from './types.js';
 import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
 
@@ -80,7 +80,7 @@ function setup(options: SetupOptions = {}) {
 		const ydoc = new Y.Doc({ guid: id });
 		const tables = attachTables(ydoc, tableDefinitions);
 
-		const materializer = createSqliteMaterializer(
+		const materializer = attachSqliteMaterializer(
 			{
 				tables,
 				definitions: tableDefinitions,
@@ -161,7 +161,7 @@ async function cleanup(setupResult: ReturnType<typeof setup>) {
 // READINESS Tests
 // ============================================================================
 
-describe('createSqliteMaterializer', () => {
+describe('attachSqliteMaterializer', () => {
 	describe('readiness', () => {
 		test('waits for whenReady before touching SQLite', async () => {
 			const db = createTestDb();
@@ -171,7 +171,7 @@ describe('createSqliteMaterializer', () => {
 				const ydoc = new Y.Doc({ guid: id });
 				const tables = attachTables(ydoc, tableDefinitions);
 
-				const materializer = createSqliteMaterializer(
+				const materializer = attachSqliteMaterializer(
 					{
 						tables,
 						definitions: tableDefinitions,

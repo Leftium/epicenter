@@ -60,7 +60,7 @@ export function createX(
 ): XBuilder; // { whenFlushed, table(), kv(), pushFrom..., pullTo..., [Symbol.dispose]() }
 ```
 
-Materializers: `createMarkdownMaterializer`, `createSqliteMaterializer`. The ctx provides the pieces they observe (tables, kv, readiness barrier), not the ydoc — they don't own the doc lifecycle, they ride on one. Teardown via a `[Symbol.dispose]()` method on the builder (unsubscribes table observers). `whenFlushed` replaces `whenLoaded` — "initial materialize complete."
+Materializers: `attachMarkdownMaterializer`, `attachSqliteMaterializer`. The ctx provides the pieces they observe (tables, kv, readiness barrier), not the ydoc — they don't own the doc lifecycle, they ride on one. Teardown via a `[Symbol.dispose]()` method on the builder (unsubscribes table observers). `whenFlushed` replaces `whenLoaded` — "initial materialize complete."
 
 ## Invariants (all four variants)
 
@@ -97,7 +97,7 @@ const factory = defineDocument((id: string) => {
     url, getToken,
     waitFor: Promise.all([idb.whenLoaded, unlock.whenApplied]),
   });
-  const markdown   = createMarkdownMaterializer(                            // variant 4
+  const markdown   = attachMarkdownMaterializer(                            // variant 4
     { tables, kv, whenReady: sync.whenConnected },
     { dir },
   ).table('posts', { serialize });

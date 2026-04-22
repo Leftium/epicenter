@@ -136,7 +136,7 @@ export async function ftsSearch(
 			};
 		});
 	} catch (error: unknown) {
-		console.warn('[createSqliteMaterializer] FTS search failed.', error);
+		console.warn('[attachSqliteMaterializer] FTS search failed.', error);
 		return [];
 	}
 }

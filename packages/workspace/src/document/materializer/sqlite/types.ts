@@ -69,7 +69,7 @@ export type MirrorStatement = {
  *
  * @example
  * ```typescript
- * createSqliteMaterializer(ctx, { db: new Database(':memory:') })
+ * attachSqliteMaterializer(ctx, { db: new Database(':memory:') })
  *   .table('posts', {
  *     fts: ['title', 'body'],
 	 *     serialize: (value) => customTransform(value),

@@ -971,7 +971,7 @@ import {
 	defineTable,
 } from '@epicenter/workspace';
 import {
-	createMarkdownMaterializer,
+	attachMarkdownMaterializer,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 
@@ -985,7 +985,7 @@ const notesDoc = defineDocument((id: string) => {
 	const sqlite = attachSqlite(ydoc, {
 		filePath: '/tmp/epicenter/notes-workspace.db',
 	});
-	const markdown = createMarkdownMaterializer(
+	const markdown = attachMarkdownMaterializer(
 		{ ydoc, tables },
 		{ dir: '/tmp/epicenter/markdown' },
 	).table('notes', { serialize: slugFilename('title') });
@@ -1020,7 +1020,7 @@ import {
 	defineDocument,
 	defineTable,
 } from '@epicenter/workspace';
-import { createSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
+import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import { type } from 'arktype';
 
 const posts = defineTable(
@@ -1037,7 +1037,7 @@ const blogDoc = defineDocument((id: string) => {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, { posts });
 	const sqlite = attachSqlite(ydoc, { filePath: '/tmp/epicenter/blog.db' });
-	const mirror = createSqliteMaterializer(
+	const mirror = attachSqliteMaterializer(
 		{ ydoc, tables },
 		{ db: new Database('/tmp/epicenter/blog.db') },
 	).table('posts', { fts: ['title', 'body'] });
@@ -1358,8 +1358,8 @@ All attachments and the `defineDocument` factory live at the package root. The o
 | Import path | What it exports | Public today |
 | --- | --- | --- |
 | `@epicenter/workspace` | `defineDocument`, `defineTable`, `defineKv`, every `attach*` (tables, kv, indexeddb, sqlite, sync, broadcast-channel, awareness, encryption, rich-text, plain-text, timeline), action helpers, ids, dates, types | Yes |
-| `@epicenter/workspace/document/materializer/markdown` | `createMarkdownMaterializer`, serializers | Yes |
-| `@epicenter/workspace/document/materializer/sqlite` | `createSqliteMaterializer`, `generateDdl`, types | Yes |
+| `@epicenter/workspace/document/materializer/markdown` | `attachMarkdownMaterializer`, serializers | Yes |
+| `@epicenter/workspace/document/materializer/sqlite` | `attachSqliteMaterializer`, `generateDdl`, types | Yes |
 | `@epicenter/workspace/ai` | `actionsToAiTools` (TanStack AI bindings) | Yes |
 | `@epicenter/workspace/shared/crypto` | Lower-level crypto primitives for encryption attachments | Yes |
 

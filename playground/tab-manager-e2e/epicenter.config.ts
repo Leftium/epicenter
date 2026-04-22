@@ -32,7 +32,7 @@ import {
 	defineDocument,
 } from '@epicenter/workspace';
 import {
-	createMarkdownMaterializer,
+	attachMarkdownMaterializer,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import * as Y from 'yjs';
@@ -77,7 +77,7 @@ const tabManagerFactory = defineDocument((id: string) => {
 		sync.whenConnected,
 	]).then(() => {});
 
-	const markdown = createMarkdownMaterializer(
+	const markdown = attachMarkdownMaterializer(
 		{ tables, kv, whenReady },
 		{ dir: MARKDOWN_DIR },
 	)

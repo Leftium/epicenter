@@ -37,9 +37,13 @@
  * ```ts
  * const docs = defineDocument(buildDoc, { gcTime: 30_000 });
  *
- * using h = docs.open('abc');  // openCount++
- * await h.whenReady;           // read through prototype chain to bundle
+ * // Imperative callers that need loaded data: use `load()`.
+ * await using h = await docs.load('abc');
  * h.ydoc.transact(() => ..., ORIGIN);
+ *
+ * // Reactive callers that want the handle immediately: use `open()`.
+ * using h = docs.open('abc');          // openCount++
+ * // subscribe to reactive state now; await h.whenReady in a $effect
  * // [Symbol.dispose] fires on block exit — openCount--
  * // refcount→0 arms the gcTime timer; a fresh open() cancels it
  * ```
@@ -252,18 +256,40 @@ export type DocumentFactory<Id extends string, T> = {
 	 * Construct-if-missing + refcount++. Returns a fresh disposable handle that
 	 * prototype-chains to the underlying bundle. Pair with `handle.dispose()`.
 	 *
-	 * If the builder exposes a `whenReady` promise on the bundle, callers may
-	 * `await handle.whenReady` after opening — but the name is a user-owned
-	 * convention, not a framework-enforced key.
+	 * Returns immediately without waiting for any async readiness. If the
+	 * builder exposes a `whenReady` promise, the returned handle may not yet
+	 * reflect persisted state — reads can observe empty content until load
+	 * completes. Use this path when you want reactive access before readiness
+	 * (e.g., UI components subscribing and rendering a loading state).
+	 *
+	 * For imperative read/write code that needs loaded data, prefer
+	 * {@link DocumentFactory.load} — it awaits `whenReady` for you and makes
+	 * the forgotten-await footgun uncallable.
 	 *
 	 * ```ts
-	 * const h = factory.open('abc');
-	 * await h.whenReady;
-	 * h.content.write('hi');
-	 * h.dispose();
+	 * // Reactive: want the handle immediately, observe readiness separately.
+	 * using h = factory.open('abc');
+	 * $effect(() => { h.whenReady?.then(() => ...); });
 	 * ```
 	 */
 	open(id: Id): DocumentHandle<T>;
+	/**
+	 * Open + await `bundle.whenReady`. Returns a handle guaranteed to reflect
+	 * persisted state (or whatever "ready" means for the bundle). Refcount is
+	 * incremented before awaiting; if `whenReady` rejects, the handle is
+	 * disposed and the rejection propagates.
+	 *
+	 * Use this from imperative call sites where you want loaded data without
+	 * the two-step `open(); await handle.whenReady` dance. Pairs naturally with
+	 * `await using` for scope-bound release.
+	 *
+	 * ```ts
+	 * await using h = await factory.load('abc');
+	 * h.content.write('hi');
+	 * // dispose fires on block exit
+	 * ```
+	 */
+	load(id: Id): Promise<DocumentHandle<T>>;
 	/**
 	 * Explicit eviction. Cancels any pending `gcTime` disposal and fires the
 	 * bundle's `[Symbol.dispose]()` synchronously. If the bundle exposes a
@@ -418,6 +444,17 @@ export function defineDocument<
 				[Symbol.dispose]: dispose,
 				[DOCUMENT_HANDLE]: true,
 			};
+		},
+
+		async load(id) {
+			const handle = factory.open(id);
+			try {
+				await handle.whenReady;
+				return handle;
+			} catch (err) {
+				handle.dispose();
+				throw err;
+			}
 		},
 
 		async close(id) {

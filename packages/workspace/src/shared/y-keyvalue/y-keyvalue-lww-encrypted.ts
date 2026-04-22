@@ -287,9 +287,7 @@ export function createEncryptedYkvLww<T>(
 			return decrypt(raw, textEncoder.encode(key));
 		},
 		has(key) {
-			const raw = inner.get(key);
-			if (raw === undefined) return false;
-			return decrypt(raw, textEncoder.encode(key)) !== undefined;
+			return this.get(key) !== undefined;
 		},
 		delete(key) {
 			inner.delete(key);
@@ -348,12 +346,12 @@ export function createEncryptedYkvLww<T>(
 					toRewrite.push({ key, val: entry.val as T });
 					continue;
 				}
-				if (getKeyVersion(entry.val) === nextEncryption.currentVersion) continue;
+				const version = getKeyVersion(entry.val);
+				if (version === nextEncryption.currentVersion) continue;
 				const val = decrypt(entry.val, aad, nextEncryption);
 				if (val === undefined) continue;
 				toRewrite.push({ key, val });
-				const wasReadable =
-					previousEncryption?.keyring.has(getKeyVersion(entry.val)) ?? false;
+				const wasReadable = previousEncryption?.keyring.has(version) ?? false;
 				if (!wasReadable) newlyReadable.set(key, val);
 			}
 

@@ -110,12 +110,17 @@ export type SyncAttachment = {
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
 	/**
 	 * Push a new bearer token into the sync attachment. The supervisor reads
-	 * this slot on every connect attempt. Pass `null` to clear the token; if
-	 * `config.requiresToken` is true, subsequent connect attempts back off
-	 * with an `auth` error until a token is set again.
+	 * this slot on every connect attempt and is woken from any in-flight
+	 * backoff sleep so a newly-arrived token is observed promptly — without
+	 * this wake, a supervisor parked in "waiting for token" or "connection
+	 * failed; backing off" would burn the full nap before re-checking.
 	 *
-	 * Calling `setToken` alone does not trigger a reconnect — pair with
-	 * `reconnect()` to force a fresh connection using the new token.
+	 * Pass `null` to clear the token; if `config.requiresToken` is true,
+	 * subsequent connect attempts back off with an `auth` error until a
+	 * token is set again.
+	 *
+	 * `setToken` does not close an open connection — pair with `reconnect()`
+	 * if you need to force a fresh socket using the new token.
 	 */
 	setToken: (token: string | null) => void;
 	/**
@@ -732,6 +737,9 @@ export function attachSync(
 		onStatusChange: status.subscribe,
 		setToken(token) {
 			currentToken = token;
+			// Wake a parked supervisor so the new token (or null) is observed
+			// immediately, not after the current backoff sleep expires.
+			backoff.wake();
 		},
 		goOffline,
 		reconnect() {

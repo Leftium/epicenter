@@ -36,8 +36,7 @@ import {
 } from './workspace/definition';
 
 export function openTabManager() {
-	const id = 'epicenter.tab-manager';
-	const ydoc = new Y.Doc({ guid: id, gc: false });
+	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: false });
 
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(ydoc, tabManagerTables);
@@ -76,11 +75,13 @@ export function openTabManager() {
 		encryption.applyKeys(next.encryptionKeys);
 		sync.setToken(next.token);
 		sync.reconnect();
-		void registerDeviceOnce();
+		void registerDevice();
 	}
 
 	return {
-		id,
+		get id() {
+			return ydoc.guid;
+		},
 		ydoc,
 		tables,
 		kv,
@@ -101,10 +102,12 @@ export function openTabManager() {
 	 * Register this browser installation as a device in the workspace.
 	 *
 	 * Upserts the device row — preserves existing name if present, otherwise
-	 * generates a default. Called from `applySession` on login so encryption
-	 * keys are always active before the write reaches the Y.Doc.
+	 * generates a default. Called from `applySession` on every applied session
+	 * (login + token rotation) so encryption keys are always active before the
+	 * write reaches the Y.Doc. The upsert is idempotent, so rotation-triggered
+	 * re-runs are harmless.
 	 */
-	async function registerDeviceOnce(): Promise<void> {
+	async function registerDevice(): Promise<void> {
 		await idb.whenLoaded;
 		const deviceId = await getDeviceId();
 		const { data: existing, error } = tables.devices.get(deviceId);

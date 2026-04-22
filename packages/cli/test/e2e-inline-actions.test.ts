@@ -46,8 +46,13 @@ describe('resolvePath', () => {
 	beforeAll(async () => {
 		const loaded = await loadConfig(FIXTURE_DIR);
 		handle = loaded.entries[0]!.handle;
-		// Keep the workspace open for the duration of this describe; closed in
-		// the loadConfig describe's afterAll via shared cache (refcount).
+		// Both describe blocks share this handle via Bun's module cache:
+		// `demoFactory.open(...)` in the fixture runs once at module load, so
+		// every loadConfig() call returns the same `demo` reference. The first
+		// describe's afterAll disposes it (refcount 1 → 0), but defineDocument's
+		// default gcTime: Infinity keeps the Y.Doc alive, so these tests still
+		// read valid state. If that default ever becomes finite, split this
+		// describe into its own explicit factory.open() / dispose() lifecycle.
 	});
 
 	test('resolves a leaf action', () => {

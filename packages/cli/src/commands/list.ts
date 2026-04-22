@@ -12,6 +12,7 @@ import { iterateActions } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
+import { dirFromArgv, dirOption } from '../util/dir-option';
 import { outputError } from '../util/format-output';
 import { resolvePath } from '../util/resolve-path';
 
@@ -24,16 +25,12 @@ export const listCommand: CommandModule = {
 				type: 'string',
 				describe: 'Optional dot-path to narrow the view',
 			})
-			.option('dir', {
-				type: 'string',
-				alias: 'C',
-				default: '.',
-				description: 'Directory containing epicenter.config.ts',
-			}),
+			.option('dir', dirOption),
 	handler: async (argv) => {
 		const path = typeof argv.path === 'string' ? argv.path : undefined;
-		const dir = typeof argv.dir === 'string' ? argv.dir : '.';
-		const { entries, dispose } = await loadConfig(dir);
+		const { entries, dispose } = await loadConfig(
+			dirFromArgv(argv as Record<string, unknown>),
+		);
 		try {
 			render(path, entries);
 		} finally {

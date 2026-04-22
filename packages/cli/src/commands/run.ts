@@ -7,8 +7,10 @@
  */
 
 import { iterateActions } from '@epicenter/workspace';
+import type { TSchema } from 'typebox';
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
+import { dirFromArgv, dirOption } from '../util/dir-option';
 import {
 	formatYargsOptions,
 	output,
@@ -36,17 +38,13 @@ export const runCommand: CommandModule = {
 				type: 'string',
 				description: 'Path to a JSON file containing the action input',
 			})
-			.option('dir', {
-				type: 'string',
-				alias: 'C',
-				default: '.',
-				description: 'Directory containing epicenter.config.ts',
-			})
+			.option('dir', dirOption)
 			.options(formatYargsOptions())
 			.strict(false),
 	handler: async (argv) => {
-		const dir = typeof argv.dir === 'string' ? argv.dir : '.';
-		const { entries, dispose } = await loadConfig(dir);
+		const { entries, dispose } = await loadConfig(
+			dirFromArgv(argv as Record<string, unknown>),
+		);
 		try {
 			await invoke(argv as Record<string, unknown>, entries);
 		} finally {
@@ -106,7 +104,7 @@ async function invoke(
 
 async function resolveInput(
 	argv: Record<string, unknown>,
-	action: { input?: unknown },
+	action: { input?: TSchema },
 ): Promise<unknown> {
 	if (action.input === undefined) return undefined;
 
@@ -131,7 +129,7 @@ async function resolveInput(
 	}
 
 	// Flat schemas: map TypeBox fields to yargs flags already parsed by yargs.
-	const yargsOpts = typeboxToYargsOptions(action.input as never);
+	const yargsOpts = typeboxToYargsOptions(action.input);
 	const input: Record<string, unknown> = {};
 	for (const key of Object.keys(yargsOpts)) {
 		if (argv[key] !== undefined) input[key] = argv[key];

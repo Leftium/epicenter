@@ -31,8 +31,6 @@ import { join, resolve } from 'node:path';
 const CONFIG_FILENAME = 'epicenter.config.ts';
 
 export type LoadConfigResult = {
-	/** Absolute path to the directory containing epicenter.config.ts. */
-	configDir: string;
 	/** Handles keyed by export name. The name is the dot-path root. */
 	entries: { name: string; handle: DocumentHandle<DocumentBundle> }[];
 	/**
@@ -51,11 +49,10 @@ export type LoadConfigResult = {
  * @throws If no config file is found or no valid handle exports are detected.
  */
 export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
-	const configDir = resolve(targetDir);
-	const configPath = join(configDir, CONFIG_FILENAME);
+	const configPath = join(resolve(targetDir), CONFIG_FILENAME);
 
 	if (!(await Bun.file(configPath).exists())) {
-		throw new Error(`No ${CONFIG_FILENAME} found in ${configDir}`);
+		throw new Error(`No ${CONFIG_FILENAME} found in ${resolve(targetDir)}`);
 	}
 
 	const module = await import(Bun.pathToFileURL(configPath).href);
@@ -77,7 +74,6 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	}
 
 	return {
-		configDir,
 		entries,
 		dispose: async () => {
 			const barriers: Promise<void>[] = [];

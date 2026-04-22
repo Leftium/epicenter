@@ -181,7 +181,7 @@ Scripts are strictly more powerful than the CLI: you get the full Table/Kv APIs,
 ```ts
 import {
     createCLI,              // binary entry (used by bin.ts)
-    loadConfig,             // { configDir, entries: [{ name, handle }], dispose() }
+    loadConfig,             // { entries: [{ name, handle }], dispose() }
     createSessionStore,     // device-code session persistence
     createAuthApi,          // typed Better Auth client
     EPICENTER_PATHS,        // home, authSessions, persistence(id)

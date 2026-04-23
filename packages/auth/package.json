@@ -1,0 +1,27 @@
+{
+	"name": "@epicenter/auth",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Framework-agnostic auth core for Epicenter. Imperative subscription API over better-auth, with an optional Svelte 5 reactive wrapper.",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts",
+		"./svelte": "./src/svelte/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"peerDependencies": {
+		"svelte": "^5.0.0"
+	},
+	"peerDependenciesMeta": {
+		"svelte": { "optional": true }
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	},
+	"license": "MIT"
+}

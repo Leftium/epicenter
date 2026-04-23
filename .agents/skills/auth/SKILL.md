@@ -119,12 +119,14 @@ auth.onSessionChange((next, previous) => {
 
 | `previous` | `next` | Meaning                 |
 | ---------- | ------ | ----------------------- |
-| `null`     | `null` | Cold-boot anonymous — silent no-op |
-| `null`     | session | Login                  |
+| `null`     | `null` | Anonymous replay (subscribe before hydration) — safe no-op |
+| `null`     | session | Login, OR cold-boot of a returning authenticated user |
 | session    | session (different token) | Token rotation |
 | session    | `null` | Logout — wipe local data |
 
 Use the `previous` argument to distinguish cold-boot from logout. Don't clear local data on every `null` branch.
+
+**Cold-boot note.** A subscriber attached *before* the store hydrates receives two calls: the initial replay with `(null, null)`, then the hydrated value via `watch` as `(session, null)`. A subscriber attached *after* hydration receives one call: `(session, null)` on replay. Both shapes look like login to handlers that key on `previous === null && next !== null` — which is the correct behavior (encryption keys and sync tokens must be re-applied on every cold boot), but it means `onLogin` fires on every page load for returning users, not only on fresh sign-in.
 
 ## Firing order on any session transition
 

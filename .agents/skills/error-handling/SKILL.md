@@ -253,3 +253,55 @@ there's truly nothing distinct to say.
   - For simple fire-and-forget operations
   - When you're outside of a function context
   - When integrating with code that expects thrown exceptions
+
+## Logging errors
+
+Typed errors are structured values, so they're also what the `@epicenter/workspace` logger wants. `log.warn` / `log.error` take a typed error unary — no message argument, no format string. The error owns its message, and the log sink gets the full object (name, fields, cause) alongside it.
+
+### The canonical pattern
+
+Mint the typed error inside `catch:`, route through Result, and log at the boundary with `tapErr`. The caller picks the level (`.warn` for recoverable, `.error` for loud) at the pipeline site — matching Rust's `tracing::warn!(?err)` convention, where level lives at the call site and never on the error variant.
+
+```ts
+import { createLogger, tapErr } from '@epicenter/workspace';
+import { tryAsync } from 'wellcrafted/result';
+
+const log = createLogger('markdown-materializer');
+
+const result = await tryAsync({
+  try: () => writeTable(path),
+  catch: (cause) => MarkdownError.TableWrite({ path, cause }),
+}).then(tapErr(log.warn)); // Result unchanged; error logged on the Err branch.
+```
+
+For direct error logging (no Result in play), pass the factory call directly — `log.warn` / `log.error` unwrap the `Err` wrapper that `defineErrors` factories return:
+
+```ts
+log.warn(MarkdownError.TableWrite({ path, cause }));
+```
+
+### Why no `log.error(message, error)`?
+
+Level is context-dependent (same error can be `warn` on a retry, `error` on the last attempt) and message lives on the error variant. That's the whole point of `defineErrors` — the variant's `message:` template encodes the "what operation failed" clause. Duplicating it at the call site would drift and rot.
+
+### Testing with `memorySink`
+
+Never assert on console output. Use `memorySink()` and inspect the events array directly:
+
+```ts
+import { createLogger, memorySink } from '@epicenter/workspace';
+
+test('logs a decrypt failure when the keyring is missing the version', () => {
+  const { sink, events } = memorySink();
+  const log = createLogger('encrypted-kv', sink);
+  // ... trigger the path ...
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      level: 'warn',
+      data: expect.objectContaining({ name: 'DecryptFailed' }),
+    }),
+  );
+});
+```
+
+See the `logging` skill for level semantics, sink composition, and the JSONL file sink.

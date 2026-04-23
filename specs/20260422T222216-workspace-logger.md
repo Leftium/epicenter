@@ -479,13 +479,11 @@ wellcrafted/ (PR #113 on wellcrafted-dev/wellcrafted, cutting 0.35.0)
     └── jsonl-sink.test.ts
 ```
 
-### Related upstream change: `defineErrors` reserves `data`
+### Related upstream change: `defineErrors` `data` reservation — tried, reverted
 
-Coupled into the same wellcrafted PR. `ValidateErrorBody` now forbids `data` as a variant field alongside `name`.
+An early draft of `wellcrafted/logger`'s `LoggableError` discriminator used `"data" in err`. A variant with a `data` body field would have silently collided with `Err<E>`'s `data: null` discriminant (proven empirically — the raw tagged branch returned `undefined` and crashed the sink). That motivated adding `data` to `ValidateErrorBody`'s reserved keys alongside `name`.
 
-Originally motivated because an early draft of `wellcrafted/logger`'s `LoggableError` discriminator used `"data" in err` — a variant with a `data` body field would have silently collided with `Err<E>`'s `data: null` discriminant (proven empirically during review — the raw tagged branch returned `undefined` and crashed the sink). The logger has since switched to `"name" in err` (the invariant non-null property every tagged error stamps), so the reservation is no longer **load-bearing** for logger safety.
-
-Keeping it anyway because: (a) it's a mild hygiene rule — any other code discriminating `Err<E>` vs raw tagged by presence would hit the same collision; (b) nobody used `data` as a variant field in practice (survey: zero hits across the monorepo), so the "breaking" part is free.
+Then the logger switched to `"name" in err` — purely structural, using the `name` field every tagged error already stamps from its factory key. The `data` reservation was no longer load-bearing, and the type-level breaking change stopped earning its keep. Wellcrafted reverted it (commit `44347f7`). As of 0.35.0, only `name` is reserved in `defineErrors` variant bodies.
 
 ### Why extract (and why now)
 
@@ -614,12 +612,15 @@ Recommendation for this monorepo: accept the wellcrafted convention as-is (don't
 - **No global logger registry.** DI all the way; every attach primitive takes an optional `log?: Logger`.
 - **`source` is required on every logger** — namespace tag for composed sinks to filter/attribute by.
 
-### Why one PR / one commit for wellcrafted changes (after review)
+### What actually shipped in wellcrafted 0.35.0 (merged state)
 
-The `data` reservation and the logger addition landed together in a single commit on wellcrafted PR #113 (not split into two). Reason: the reservation is motivated *solely* by the logger's discriminator requirement. Outside of the logger's need for safe narrowing, `data` on a variant would be harmless. One feature, one atomic change, one changelog entry — the cleaner story both to ship and to revert.
+- **PR #113 (logger)**: new `wellcrafted/logger` entry with `createLogger`, `consoleSink`, `memorySink`, `composeSinks`, `tapErr`, `LogEvent`/`LogSink`/`Logger`/`LoggableError` types. `tapErr` lives in `src/result/tap-err.ts` but is re-exported from `wellcrafted/logger` for the natural import.
+- **PR #114 (Result shape limit)**: docs-only. `docs/philosophy/err-null-is-ok-null.md` explains why `Err(null)` can't be distinguished from `Ok(null)` under this shape, why the type-level ban was tried and reverted, and the tagged-errors idiom that carries the rule instead.
+- **Both** breaking type-level changes considered during the review (`data` field reservation, `Err<E extends NonNullable<unknown>>`) were reverted. 0.35.0 ships as a pure-additive minor: new `wellcrafted/logger` export, improved docs, no breaking changes to existing API.
 
-### References (new)
+### References
 
-- wellcrafted PR: https://github.com/wellcrafted-dev/wellcrafted/pull/113
-- wellcrafted changeset: `~/Code/wellcrafted/.changeset/add-logger.md`
-- `@epicenter/workspace`'s current `shared/logger/` (pre-Wave-2 state): `packages/workspace/src/shared/logger/`
+- wellcrafted logger PR: https://github.com/wellcrafted-dev/wellcrafted/pull/113
+- wellcrafted Result-shape philosophy PR: https://github.com/wellcrafted-dev/wellcrafted/pull/114
+- wellcrafted philosophy article: https://github.com/wellcrafted-dev/wellcrafted/blob/main/docs/philosophy/err-null-is-ok-null.md
+- epicenter article (shorter, with logger near-miss): `docs/articles/ok-null-is-fine-err-null-is-a-lie.md`

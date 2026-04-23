@@ -264,20 +264,14 @@ const RecorderError = defineErrors({
 });
 ```
 
-## Reserved Field Names
+## Reserved field name: `name`
 
-Two keys are reserved at the type level in every variant body — TypeScript will error if you try to return them from a factory:
-
-- **`name`** — stamped by `defineErrors` from the factory key. A user-provided `name` would be silently overwritten, so it's flagged loudly.
-- **`data`** — collides with `Err<E>`'s `data: null` discriminator. Any narrowing over `AnyTaggedError | Err<AnyTaggedError>` (used for example by `wellcrafted/logger`'s `log.warn` / `log.error`) would silently break if a variant had a top-level `data` field.
-
-If you want to carry a structured payload alongside the message, pick a different field name (`payload`, `body`, `value`, domain-specific names like `path`, `response`, `input`).
+`name` is reserved at the type level — TypeScript errors if you return it from a factory, because the factory stamps it from the variant key.
 
 ```ts
-// ❌ Type errors
+// ❌ Type error — factory would overwrite this anyway
 defineErrors({
-  Bad1: () => ({ message: 'x', name: 'override' }),  // reserved
-  Bad2: () => ({ message: 'x', data: { foo: 1 } }),  // reserved
+  Bad: () => ({ message: 'x', name: 'override' }),
 });
 
 // ✅ Fine
@@ -289,6 +283,12 @@ defineErrors({
   }),
 });
 ```
+
+### Soft convention: avoid `data` as a field name
+
+`Err<E>` carries a `data: null` at the wrapper level (it's how the shape distinguishes `Err` from `Ok`). A variant body with its own `data` field is visually confusing — `err.data` (the wrapper's null) shadows `err.error.data` (your field) in every reader's head.
+
+This is **not** type-enforced (an earlier wellcrafted PR tried to reserve `data` and reverted — the logger's `"name" in err` discriminator doesn't depend on the reservation, so the breaking change was dropped). Prefer `payload`, `body`, `value`, or a domain-specific name like `path`, `response`, `input`.
 
 ## Related: don't call `Err(null)` — wrap caught values in a tagged error
 

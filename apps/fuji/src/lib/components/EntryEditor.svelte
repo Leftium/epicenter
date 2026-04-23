@@ -40,24 +40,10 @@
 	const id = entry.id;
 
 	const contentDoc = entryContentDocs.open(id);
-	let isLoaded = $state(false);
 
 	// Dispose the handle on unmount. Refcount grace-period idles the socket
 	// if nothing else reopens the same id within gcTime.
 	$effect(() => () => contentDoc.dispose());
-
-	// Wait for IDB hydration before revealing the editor — avoids a brief
-	// empty-content flash where ProseMirror renders against an unhydrated
-	// Y.XmlFragment before local data loads.
-	$effect(() => {
-		let cancelled = false;
-		contentDoc.whenReady.then(() => {
-			if (!cancelled) isLoaded = true;
-		});
-		return () => {
-			cancelled = true;
-		};
-	});
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);
@@ -179,16 +165,16 @@
 	</div>
 
 	<!-- Editor body -->
-	{#if isLoaded}
+	{#await contentDoc.whenReady}
+		<div class="flex flex-1 items-center justify-center">
+			<Spinner class="size-5 text-muted-foreground" />
+		</div>
+	{:then}
 		<ProseMirrorEditor
 			yxmlfragment={contentDoc.body.binding}
 			onWordCountChange={(count) => (wordCount = count)}
 		/>
-	{:else}
-		<div class="flex flex-1 items-center justify-center">
-			<Spinner class="size-5 text-muted-foreground" />
-		</div>
-	{/if}
+	{/await}
 
 	<!-- Status bar -->
 	<div

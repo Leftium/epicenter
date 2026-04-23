@@ -70,15 +70,19 @@
  * function buildDoc(id: string) {
  *   const ydoc = new Y.Doc({ guid: id });
  *   const idb  = attachIndexedDb(ydoc);
- *   const sync = attachSync(ydoc, { url });
+ *   const sync = attachSync(ydoc, { url, waitFor: idb.whenLoaded });
  *
  *   return {
  *     ydoc,
- *     idb,
- *     sync,
- *     // `whenReady` is a builder convention — expose one if it helps
- *     // consumers; the framework doesn't consume or require it.
- *     whenReady: Promise.all([idb.whenLoaded, sync.whenSynced]).then(() => {}),
+ *     body: attachRichText(ydoc),
+ *     // `whenReady` is a builder convention that answers a single question:
+ *     // "can I render the UI yet?" For local-first apps that means local
+ *     // state is in memory — i.e. `idb.whenLoaded`. Sync's `whenConnected`
+ *     // is intentionally NOT included; waiting on the network would block
+ *     // offline users and produce a blank editor over slow connections.
+ *     // Consumers that truly need remote state (CLI export, snapshot tools)
+ *     // await `sync.whenConnected` explicitly at the call site.
+ *     whenReady: idb.whenLoaded,
  *     [Symbol.dispose]() { ydoc.destroy(); },
  *   };
  * }
@@ -98,9 +102,14 @@
  * ```
  *
  * Builders may aggregate these into a bundle-level `whenReady` as a
- * convention (see Builder contract above). That name is load-bearing for
- * grep-ability and review, but it's a convention — not a contract the
- * framework enforces.
+ * convention (see Builder contract above). `whenReady` answers exactly
+ * one question for consumers: **"can I render the UI yet?"** For editors
+ * and other local-first views that answer is `idb.whenLoaded` — render as
+ * soon as the user's draft is in memory, regardless of network state.
+ * The name is load-bearing for grep-ability and review, but it's a
+ * convention — not a contract the framework enforces. Consumers typically
+ * consume it via Svelte's `{#await}` block (template-level) rather than
+ * `$effect`-plus-flag plumbing.
  *
  * ## Provider teardown
  *

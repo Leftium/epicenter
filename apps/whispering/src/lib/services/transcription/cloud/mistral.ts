@@ -1,9 +1,72 @@
 import { Mistral } from '@mistralai/mistralai';
+import { MistralError as MistralSdkError } from '@mistralai/mistralai/models/errors';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { getAudioExtension } from '$lib/services/transcription/utils';
 
 const MAX_FILE_SIZE_MB = 25 as const;
+
+export const MistralTranscriptionError = defineErrors({
+	MissingApiKey: () => ({
+		message: 'Mistral API key is required',
+	}),
+	FileTooLarge: ({
+		sizeMb,
+		maxMb,
+	}: {
+		sizeMb: number;
+		maxMb: number;
+	}) => ({
+		message: `File size ${sizeMb.toFixed(1)}MB exceeds ${maxMb}MB limit`,
+		sizeMb,
+		maxMb,
+	}),
+	FileCreationFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to create audio file for transcription: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	Unauthorized: ({ cause }: { cause: MistralSdkError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	RateLimit: ({ cause }: { cause: MistralSdkError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	PayloadTooLarge: ({ cause }: { cause: MistralSdkError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	BadRequest: ({ cause }: { cause: MistralSdkError }) => ({
+		message: cause.message,
+		cause,
+	}),
+	ServiceUnavailable: ({
+		cause,
+		status,
+	}: {
+		cause: MistralSdkError;
+		status: number;
+	}) => ({
+		message: cause.message,
+		cause,
+		status,
+	}),
+	InvalidResponse: () => ({
+		message: 'Mistral API returned an invalid response format',
+	}),
+	Unexpected: ({ cause }: { cause: unknown }) => ({
+		message: extractErrorMessage(cause),
+		cause,
+	}),
+});
+export type MistralTranscriptionError = InferErrors<
+	typeof MistralTranscriptionError
+>;
 
 export const MistralTranscriptionServiceLive = {
 	async transcribe(
@@ -15,30 +78,17 @@ export const MistralTranscriptionServiceLive = {
 			apiKey: string;
 			modelName: string;
 		},
-	): Promise<Result<string, WhisperingError>> {
-		// Pre-validate API key
-		if (!options.apiKey) {
-			return WhisperingErr({
-				title: '🔑 API Key Required',
-				description: 'Please enter your Mistral API key in settings.',
-				action: {
-					type: 'link',
-					label: 'Add API key',
-					href: '/settings/transcription',
-				},
+	): Promise<Result<string, MistralTranscriptionError>> {
+		if (!options.apiKey) return MistralTranscriptionError.MissingApiKey();
+
+		const sizeMb = audioBlob.size / (1024 * 1024);
+		if (sizeMb > MAX_FILE_SIZE_MB) {
+			return MistralTranscriptionError.FileTooLarge({
+				sizeMb,
+				maxMb: MAX_FILE_SIZE_MB,
 			});
 		}
 
-		// Check file size
-		const blobSizeInMb = audioBlob.size / (1024 * 1024);
-		if (blobSizeInMb > MAX_FILE_SIZE_MB) {
-			return WhisperingErr({
-				title: `The file size (${blobSizeInMb}MB) is too large`,
-				description: `Please upload a file smaller than ${MAX_FILE_SIZE_MB}MB.`,
-			});
-		}
-
-		// Create file from blob
 		const { data: file, error: fileError } = trySync({
 			try: () =>
 				new File(
@@ -46,22 +96,14 @@ export const MistralTranscriptionServiceLive = {
 					`recording.${getAudioExtension(audioBlob.type)}`,
 					{ type: audioBlob.type },
 				),
-			catch: (error) =>
-				WhisperingErr({
-					title: '📄 File Creation Failed',
-					description:
-						'Failed to create audio file for transcription. Please try again.',
-					action: { type: 'more-details', error },
-				}),
+			catch: (cause) => MistralTranscriptionError.FileCreationFailed({ cause }),
 		});
 
 		if (fileError) return Err(fileError);
 
-		const { data: transcription, error: mistralApiError } = await tryAsync({
+		const { data: transcription, error: apiError } = await tryAsync({
 			try: () =>
-				new Mistral({
-					apiKey: options.apiKey,
-				}).audio.transcriptions.complete({
+				new Mistral({ apiKey: options.apiKey }).audio.transcriptions.complete({
 					file,
 					model: options.modelName,
 					language:
@@ -73,55 +115,34 @@ export const MistralTranscriptionServiceLive = {
 						: undefined,
 				}),
 			catch: (error) => {
-				const message =
-					error instanceof Error ? error.message : 'Unknown error occurred';
-
-				if (message.includes('401') || message.includes('Unauthorized')) {
-					return WhisperingErr({
-						title: '🔑 Authentication Required',
-						description:
-							'Your API key appears to be invalid or expired. Please update your API key in settings.',
-						action: {
-							type: 'link',
-							label: 'Update API key',
-							href: '/settings/transcription',
-						},
-					});
+				if (!(error instanceof MistralSdkError)) {
+					return MistralTranscriptionError.Unexpected({ cause: error });
 				}
-
-				if (message.includes('429') || message.includes('rate limit')) {
-					return WhisperingErr({
-						title: '⏱️ Rate Limit Reached',
-						description: 'Too many requests. Please try again later.',
-						action: { type: 'more-details', error },
-					});
+				switch (error.statusCode) {
+					case 400:
+						return MistralTranscriptionError.BadRequest({ cause: error });
+					case 401:
+						return MistralTranscriptionError.Unauthorized({ cause: error });
+					case 413:
+						return MistralTranscriptionError.PayloadTooLarge({ cause: error });
+					case 429:
+						return MistralTranscriptionError.RateLimit({ cause: error });
+					default:
+						if (error.statusCode >= 500) {
+							return MistralTranscriptionError.ServiceUnavailable({
+								cause: error,
+								status: error.statusCode,
+							});
+						}
+						return MistralTranscriptionError.Unexpected({ cause: error });
 				}
-
-				if (message.includes('413') || message.includes('too large')) {
-					return WhisperingErr({
-						title: '📦 Audio File Too Large',
-						description:
-							'Your audio file exceeds the maximum size limit. Try reducing the file size.',
-						action: { type: 'more-details', error },
-					});
-				}
-
-				return WhisperingErr({
-					title: '❌ Transcription Failed',
-					description: message,
-					action: { type: 'more-details', error },
-				});
 			},
 		});
 
-		if (mistralApiError) return Err(mistralApiError);
+		if (apiError) return Err(apiError);
 
-		// Check if transcription is valid
 		if (!transcription || typeof transcription.text !== 'string') {
-			return WhisperingErr({
-				title: '❌ Invalid Transcription Response',
-				description: 'Mistral API returned an invalid response format.',
-			});
+			return MistralTranscriptionError.InvalidResponse();
 		}
 
 		return Ok(transcription.text.trim());

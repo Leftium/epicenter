@@ -6,59 +6,47 @@
 
 ## Overview
 
-Extract provider-specific error handling from each transcription service into its own `defineErrors` taxonomy, and centralize UI translation in a single adapter. Today every cloud provider file (openai, mistral, groq, deepgram, elevenlabs) duplicates ~150 lines of HTTP-status branching and `WhisperingErr` construction. The service layer is tangled with UI copy.
+Extract provider-specific error handling from each cloud transcription service into its own `defineErrors` taxonomy. Each provider returns `Result<string, XxxError>` (typed tagged errors) instead of `Result<string, WhisperingError>`. Call sites translate to `WhisperingError` using the existing `WhisperingErr({ title, serviceError })` convention that the rest of the codebase (`recorder.ts`, `ffmpeg.ts`, etc.) already uses.
+
+No new adapter file. No cross-provider unification. Just remove UI concerns from the service layer.
 
 ## Motivation
 
 ### Current state
 
-Every provider file follows the same pattern:
+Every cloud provider file directly constructs `WhisperingErr(...)` inside its `catch`, tangling service-layer logic with UI copy. The cloud transcription directory is the **only** place in `apps/whispering/src/lib/services/` that imports `$lib/result` — every other service domain (19 `defineErrors` sets, including `FsError`, `HttpError`, `RecorderError`) returns its own tagged error and lets call sites translate.
 
-```ts
-// openai.ts — 252 lines, groq.ts — 236, mistral.ts — 135, deepgram.ts — 210
-async transcribe(audioBlob, options): Promise<Result<string, WhisperingError>> {
-  // 1. Pre-validation (API key, file size) — returns WhisperingErr inline
-  // 2. tryAsync the SDK call
-  //    catch: narrow via instanceof (openai, groq) OR string-match (mistral) OR no-op
-  // 3. if (apiError) { ...huge status-branching block returning WhisperingErr... }
-  // 4. Ok(transcription.text)
-}
-```
+Three concrete problems:
 
-Three structural problems:
+1. **Inconsistent error classification across providers.** Each provider invents its own approach:
+   - `openai.ts` (252 lines) — `instanceof OpenAI.APIError` + switch on `status`. Clean.
+   - `groq.ts` (236 lines) — `instanceof Groq.APIError` + switch on `status`. Mirrors openai.
+   - `deepgram.ts` (210 lines) — `HttpServiceLive` returns typed `Connection | Response | Parse`, nested switch on status. Clean.
+   - `mistral.ts` (135 lines) — `message.includes('401')` **string matching**. Fragile. The Mistral SDK actually exposes `MistralError` with a `statusCode` field — the string matching is obsolete, not a limitation.
+   - `elevenlabs.ts` (67 lines) — one catch, one generic `WhisperingErr` for every failure. Lossy.
 
-1. **Every provider duplicates the status→notification mapping.** `401 → "🔑 Authentication Required"`, `429 → "⏱️ Rate Limit Reached"`, etc. The copy is *almost* identical across files, drifts subtly (compare openai's 413 copy to mistral's), and changing UI copy means editing 5 files.
+2. **UI copy lives in the service layer.** Every `401 → "🔑 Authentication Required"` mapping is inlined next to the SDK call. Changing copy means editing the service. Testing the service means importing UI types.
 
-2. **The service layer can't be tested without UI coupling.** You can't call `MistralTranscriptionServiceLive.transcribe()` in a test without pulling in `$lib/result`, `UnifiedNotificationOptions`, and the whole notification schema. The provider's job is "talk to the API"; UI translation is a separate concern it shouldn't own.
-
-3. **Error narrowing is inconsistent and sometimes unsafe.**
-   - openai/groq: `instanceof Provider.APIError` with `throw` escape hatch — works, but the `throw` inside `catch` is a code smell (fights the Result model).
-   - mistral: `message.includes('401')` — fragile string-matching; breaks if Mistral's SDK changes its error message format. PR #114's `NonNullable<unknown>` constraint also breaks this path (fixed in the companion PR by inlining translation, but the fragility remains).
-   - deepgram/elevenlabs: use `HttpServiceLive` which already has typed errors — the *best* of the bunch, but translation to `WhisperingErr` still happens inline per-provider.
+3. **Copy has already drifted.** `openai.ts` 401 copy says "Your API key appears to be invalid" — `deepgram.ts` says "Your Deepgram API key is invalid or expired." Same intent, different strings. No central pressure to align them, and no reason the service layer should be the place that aligns them.
 
 ### Desired state
 
-Providers return tagged errors. A single adapter translates any provider error into `WhisperingError`.
+Providers return tagged errors. Call sites translate using the existing `serviceError:` shorthand.
 
 ```ts
-// cloud/openai.ts — becomes ~80 lines
-//
-// Factory-shape convention (applied across all provider error sets):
-// - Variants that wrap an underlying error take `{ cause: NonNullable<unknown> }`
-//   (compatible with wellcrafted PR #114's Err<E extends NonNullable<unknown>> constraint).
-// - Variants carrying extra context add named fields after `cause`.
-// - Pre-validation variants (no SDK call made yet) take no args or the minimum
-//   context needed for the UI copy.
+// cloud/openai.ts
 export const OpenaiError = defineErrors({
-  MissingApiKey:       ()                                                   => ({ message: 'OpenAI API key is required' }),
-  InvalidApiKeyFormat: ()                                                   => ({ message: 'OpenAI API keys must start with "sk-"' }),
-  FileTooLarge:        ({ sizeMb, maxMb }: { sizeMb: number; maxMb: number }) => ({ message: `File size ${sizeMb}MB exceeds ${maxMb}MB limit`, sizeMb, maxMb }),
-  Unauthorized:        ({ cause }: { cause: OpenAI.APIError })              => ({ message: cause.message ?? 'OpenAI rejected the API key', cause }),
-  RateLimit:           ({ cause }: { cause: OpenAI.APIError })              => ({ message: cause.message, cause }),
-  BadRequest:          ({ cause }: { cause: OpenAI.APIError })              => ({ message: cause.message, cause }),
-  // ...one variant per HTTP class the OpenAI SDK distinguishes
-  Connection:          ({ cause }: { cause: OpenAI.APIError })              => ({ message: cause.message, cause }),
-  Unexpected:          ({ cause }: { cause: NonNullable<unknown> })         => ({ message: extractErrorMessage(cause), cause }),
+  MissingApiKey:       () => ({ message: 'OpenAI API key is required' }),
+  InvalidApiKeyFormat: () => ({ message: 'OpenAI API keys must start with "sk-"' }),
+  FileTooLarge:        ({ sizeMb, maxMb }: { sizeMb: number; maxMb: number }) => ({
+    message: `File size ${sizeMb}MB exceeds ${maxMb}MB limit`, sizeMb, maxMb,
+  }),
+  Unauthorized:        ({ cause }: { cause: OpenAI.APIError }) => ({ message: cause.message, cause }),
+  RateLimit:           ({ cause }: { cause: OpenAI.APIError }) => ({ message: cause.message, cause }),
+  BadRequest:          ({ cause }: { cause: OpenAI.APIError }) => ({ message: cause.message, cause }),
+  PayloadTooLarge:     ({ cause }: { cause: OpenAI.APIError }) => ({ message: cause.message, cause }),
+  Connection:          ({ cause }: { cause: OpenAI.APIError }) => ({ message: cause.message, cause }),
+  Unexpected:          ({ cause }: { cause: unknown })         => ({ message: extractErrorMessage(cause), cause }),
 });
 export type OpenaiError = InferErrors<typeof OpenaiError>;
 
@@ -68,22 +56,19 @@ export const OpenaiTranscriptionServiceLive = {
     if (!options.apiKey.startsWith('sk-')) return OpenaiError.InvalidApiKeyFormat();
 
     const sizeMb = audioBlob.size / (1024 * 1024);
-    if (sizeMb > MAX_FILE_SIZE_MB) {
-      return OpenaiError.FileTooLarge({ sizeMb, maxMb: MAX_FILE_SIZE_MB });
-    }
+    if (sizeMb > MAX_FILE_SIZE_MB) return OpenaiError.FileTooLarge({ sizeMb, maxMb: MAX_FILE_SIZE_MB });
 
     return tryAsync({
-      try: () => new OpenAI({...}).audio.transcriptions.create({...}).then(r => r.text.trim()),
+      try: () => new OpenAI({ apiKey: options.apiKey, baseURL: options.baseURL })
+        .audio.transcriptions.create({ /* ... */ })
+        .then((r) => r.text.trim()),
       catch: (error) => {
-        // `error: unknown` from the `catch` — narrow to NonNullable before dispatching.
-        // `throw null` is legal JS; reject it explicitly rather than casting around it.
-        if (error == null) return OpenaiError.Unexpected({ cause: new Error('Non-value thrown from OpenAI SDK') });
         if (!(error instanceof OpenAI.APIError)) return OpenaiError.Unexpected({ cause: error });
         switch (error.status) {
           case 401: return OpenaiError.Unauthorized({ cause: error });
           case 429: return OpenaiError.RateLimit({ cause: error });
           case 400: return OpenaiError.BadRequest({ cause: error });
-          // ...
+          case 413: return OpenaiError.PayloadTooLarge({ cause: error });
           default:  return OpenaiError.Unexpected({ cause: error });
         }
       },
@@ -92,139 +77,163 @@ export const OpenaiTranscriptionServiceLive = {
 };
 ```
 
+Call site in `$lib/query/transcription.ts`:
+
 ```ts
-// cloud/error-adapter.ts — single source of truth for UI copy
-export function transcriptionErrorToWhisperingErr(
-  err: OpenaiError | GroqError | MistralError | DeepgramError | ElevenlabsError,
-) {
-  switch (err.name) {
-    case 'MissingApiKey':
-      return WhisperingErr({
-        title: '🔑 API Key Required',
-        description: `Please enter your ${providerFor(err)} API key in settings.`,
-        action: { type: 'link', label: 'Add API key', href: '/settings/transcription' },
-      });
-    case 'Unauthorized':
-      return WhisperingErr({
-        title: '🔑 Authentication Required',
-        description: 'Your API key appears to be invalid or expired.',
-        action: { type: 'link', label: 'Update API key', href: '/settings/transcription' },
-      });
-    case 'RateLimit':
-      return WhisperingErr({
-        title: '⏱️ Rate Limit Reached',
-        description: err.message ?? 'Too many requests. Please try again later.',
-        action: { type: 'more-details', error: err.cause },
-      });
-    // ...one case per tagged variant; shared variants (Unauthorized, RateLimit) get one case each
+case 'OpenAI': {
+  const { data, error } = await services.transcriptions.openai.transcribe(blob, opts);
+  if (error) {
+    return WhisperingErr({
+      title: '❌ OpenAI transcription failed',
+      serviceError: error,  // auto-fills description from error.message, adds "More details" action
+    });
+  }
+  return Ok(data);
+}
+```
+
+That's the whole pattern. `WhisperingErr({ title, serviceError })` is defined at `$lib/result.ts:74` and already used by `recorder.ts`, `ffmpeg.ts`, and every other domain in the query layer.
+
+## Why no central adapter?
+
+A previous draft proposed a single `error-adapter.ts` with a big `switch (err.name)` mapping every provider's variants to `WhisperingErr`. Rejected because:
+
+1. **Variant collisions force per-provider branches anyway.** OpenAI's 401 and Deepgram's 401 have different copy today — the adapter would need `if (err.cause instanceof OpenAI.APIError)` inside `case 'Unauthorized'`, recreating the per-provider branching in a single file.
+2. **Doesn't match codebase convention.** Every other domain uses `WhisperingErr({ title, serviceError })` at the call site. Introducing a parallel pattern for transcription alone would be inconsistent.
+3. **The adapter becomes a merge-conflict bottleneck.** Every provider PR touches one file.
+
+If later we find the same copy duplicated across 3+ call sites in `transcription.ts`, we can extract helpers (`authRequiredNotification({ provider })`). Helpers can emerge from duplication; reversing an early unification is harder.
+
+## The two-layer split
+
+```
+┌─────────────────────────────────┐
+│   UI layer (query/transcription)│   WhisperingErr({ title, serviceError: err })
+├─────────────────────────────────┤
+│   Provider layer                │   returns Result<string, XxxError>
+│   (cloud/openai.ts, etc.)       │   no WhisperingErr, no UnifiedNotificationOptions
+└─────────────────────────────────┘
+```
+
+Provider files must not import `$lib/result`. That's the one structural rule.
+
+## Per-provider error sets
+
+Each provider's variants reflect what its mechanism actually distinguishes. No lowest-common-denominator set.
+
+### openai, groq — SDK error classes
+
+Both SDKs expose `Provider.APIError` with `.status`. Pattern:
+
+```ts
+catch: (error) => {
+  if (!(error instanceof OpenAI.APIError)) return OpenaiError.Unexpected({ cause: error });
+  switch (error.status) { /* ... */ }
+}
+```
+
+Variants: `Unauthorized | RateLimit | BadRequest | NotFound | PermissionDenied | UnprocessableEntity | PayloadTooLarge | UnsupportedMediaType | ServiceUnavailable | Connection | Unexpected` + pre-validation (`MissingApiKey`, `InvalidApiKeyFormat`, `FileTooLarge`).
+
+### mistral — SDK error class (previously string-matched)
+
+The Mistral SDK ships `MistralError` at `@mistralai/mistralai/models/errors/mistralerror`:
+
+```ts
+export declare class MistralError extends Error {
+  readonly statusCode: number;
+  readonly body: string;
+  readonly headers: Headers;
+  readonly contentType: string;
+  readonly rawResponse: Response;
+}
+```
+
+Use `instanceof MistralError` + switch on `statusCode`. Same shape as openai/groq. The existing `message.includes('401')` at `mistral.ts:79` becomes a tiny typed switch. This is a straight improvement — no HttpServiceLive migration needed.
+
+One naming note: the SDK's class is called `MistralError`, which would collide with our own tagged error set. Import with an alias (`import { MistralError as MistralSdkError } from '@mistralai/mistralai/models/errors/mistralerror'`) or name our tagged set `MistralTranscriptionError` to disambiguate.
+
+### deepgram — HttpServiceLive
+
+`HttpServiceLive.post()` already returns typed `HttpError = Connection | Response | Parse`. Map those to `DeepgramError` variants:
+
+```ts
+const { data, error: httpError } = await HttpServiceLive.post({ /* ... */ });
+if (httpError) {
+  switch (httpError.name) {
+    case 'Connection': return DeepgramError.Connection({ cause: httpError });
+    case 'Parse':      return DeepgramError.Parse({ cause: httpError });
+    case 'Response': {
+      switch (httpError.status) {
+        case 401: return DeepgramError.Unauthorized({ cause: httpError });
+        case 429: return DeepgramError.RateLimit({ cause: httpError });
+        default:  return DeepgramError.Unexpected({ cause: httpError });
+      }
+    }
   }
 }
 ```
 
-Call sites in `$lib/query/actions.ts` (or wherever transcription is kicked off) apply the adapter at the UI boundary:
+### elevenlabs — minimal upgrade
 
-```ts
-const { data, error } = await services.transcription.openai.transcribe(blob, opts);
-if (error) return rpc.notify.error(transcriptionErrorToWhisperingErr(error));
-```
+Currently a single `catch` that produces one generic `WhisperingErr`. Don't invent granularity that doesn't exist — start with `MissingApiKey | FileTooLarge | Unexpected`. The ElevenLabs SDK does ship status-specific error classes (`UnprocessableEntityError`, `ForbiddenError`, `BadRequestError`, `NotFoundError`, `TooEarlyError`), so if distinctions become worth making later, add variants incrementally.
 
-## Design
+## SDK dependencies stay
 
-### The two-layer split
+Each provider keeps its SDK. The SDKs provide multipart upload, auth, typed request shapes, and (crucially) typed errors. Rebuilding that in `HttpServiceLive` is strictly worse for openai/groq/mistral/elevenlabs. Deepgram stays on `HttpServiceLive` because it already works — no SDK was needed for that simple REST API.
 
-```
-┌─────────────────────────────────┐
-│   UI layer (query/actions)      │   transcriptionErrorToWhisperingErr(err)
-├─────────────────────────────────┤
-│   Adapter layer                 │   one file, one switch, all UI copy lives here
-├─────────────────────────────────┤
-│   Provider layer                │   returns Result<string, ProviderError>
-│   (cloud/openai.ts, etc.)        │   no WhisperingErr, no UnifiedNotificationOptions
-└─────────────────────────────────┘
-```
+SDK replacement (e.g., for bundle-size reasons) is a separate decision. Not part of this spec.
 
-**Decoupling constraint (load-bearing — enforce via ESLint if possible):**
-
-The provider file AND its colocated error set must not import anything from:
-- `$lib/result` (WhisperingErr, WhisperingError, WhisperingWarningErr)
-- `$lib/services/notifications/*` (UnifiedNotificationOptions, notification types)
-- `$lib/components/*` (UI primitives)
-
-Only the adapter layer may import from those. This is what makes providers unit-testable without UI coupling — the claim collapses if a provider's error types transitively pull in notification schemas through `WhisperingError`.
-
-Provider files may still import from:
-- `wellcrafted/*` (result, error primitives)
-- SDKs (`openai`, `@mistralai/mistralai`, `groq-sdk`, etc.)
-- `$lib/services/http` (already provider-agnostic)
-- `$lib/services/transcription/utils` (getAudioExtension, etc.)
-
-### Per-provider error sets
-
-Each provider defines error variants that reflect what *that provider* actually distinguishes, not a lowest-common-denominator set:
-
-- **openai, groq:** SDK exposes `Provider.APIError` with `status`. Variants: `Unauthorized | RateLimit | BadRequest | NotFound | PermissionDenied | UnprocessableEntity | PayloadTooLarge | UnsupportedMediaType | ServiceUnavailable | Connection | Unexpected`.
-- **mistral:** SDK throws raw errors today. Either use the string-matching fallback inside the `catch` to classify into tagged variants (ugly but contained), OR use `HttpServiceLive` + typed status codes like deepgram does. The latter is better — separate refactor.
-- **deepgram, elevenlabs:** already use `HttpServiceLive`. Lift their inline error handling into their own `defineErrors` sets.
-
-### Where shared variants go
-
-Don't create a root `TranscriptionError` union prematurely. Start with per-provider sets. After all 5 are migrated, look at the adapter's `switch` — if 80% of cases across providers collapse to identical WhisperingErr output (they will, for auth/rate-limit/connection), *then* promote a shared `HttpProviderError` base set that providers extend.
-
-Do this second, not first. Premature unification locks in assumptions before we see the real shape.
-
-### File organization
+## File organization
 
 ```
 apps/whispering/src/lib/services/transcription/cloud/
-├── error-adapter.ts          # NEW — transcriptionErrorToWhisperingErr
-├── openai.ts                 # OpenaiError + OpenaiTranscriptionServiceLive
-├── groq.ts                   # GroqError + Groq...
-├── mistral.ts                # MistralError + Mistral...
-├── deepgram.ts               # DeepgramError + Deepgram...
-└── elevenlabs.ts             # ElevenlabsError + Elevenlabs...
+├── openai.ts        # OpenaiError + OpenaiTranscriptionServiceLive
+├── groq.ts          # GroqError + Groq...
+├── mistral.ts       # MistralTranscriptionError (SDK collision) + Mistral...
+├── deepgram.ts      # DeepgramError + Deepgram...
+└── elevenlabs.ts    # ElevenlabsError + Elevenlabs...
 ```
 
-Colocate each `XxxError` in its provider file (like `FsError` lives in `fs.ts`) — it's part of the provider's public API.
+Colocate each `XxxError` in its provider file — same convention as `FsError` in `fs.ts`, `HttpError` in `http/types.ts`, etc. It's part of the provider's public API.
 
 ## Migration plan
 
-Provider-by-provider, ordered by **ROI** (biggest pain first), not by cleanliness:
+Provider-by-provider, cleanest first. Each is an independent PR. The only cross-PR file is `query/transcription.ts`, which has one case per provider — each migration updates its own case.
 
-1. **mistral** (highest ROI — small file, *current* pain). Fragile `message.includes('401')` string-matching breaks silently if the SDK rewords its error messages, and it was the blast-radius site for wellcrafted PR #114's `NonNullable<unknown>` constraint. Smallest file (135 lines), biggest payoff. Two sub-options:
-   - **(a)** Lift Mistral's transcription call onto `HttpServiceLive` like deepgram does — gives typed status codes, kills the string-match. Cleanest end state.
-   - **(b)** Keep the SDK call; move string-match classification *inside* the `catch` to produce `MistralError` tagged variants. The smell is contained to one function instead of leaking into the caller.
-   Default to (a) unless the Mistral SDK adds something `HttpServiceLive` can't (streaming, multipart oddities).
-2. **openai** (medium — SDK exposes `OpenAI.APIError` with `.status`). Biggest file (252 lines) but the structure is clean once `OpenaiError` is defined. Ships the `error-adapter.ts` shared surface; deepgram/elevenlabs plug into it later.
-3. **groq** (mirrors openai — same SDK shape). After step 3, the adapter's switch cases for openai + groq should look near-identical. **This is the decision point** for promoting a shared `HttpProviderError` base set. Don't do it earlier.
-4. **deepgram** (already HTTP-typed — lowest ROI but trivial). Lift its inline `WhisperingErr` construction into a `DeepgramError` set + adapter case.
-5. **elevenlabs** (smallest, same treatment as deepgram).
-
-Each provider is an independent PR. Adapter grows incrementally. No big-bang rewrite.
+1. **elevenlabs** (67 lines — warm-up). Minimal error set. Proves the pattern end-to-end including the call-site change.
+2. **deepgram** (210 lines — HTTP-typed already). Mechanical lift of existing switch.
+3. **openai** (252 lines — reference SDK pattern). Largest but straightforward.
+4. **groq** (236 lines — mirrors openai). Copy-paste with type swap.
+5. **mistral** (135 lines — SDK typed errors, replaces string matching). Fixes the fragility bug as a side effect.
 
 ### Test plan per step
 
-For each migrated provider:
-- Unit test the provider with a mocked SDK/HTTP layer — assert correct tagged error for each status path. Doesn't require `$lib/result` imports. **This is the payoff.**
-- Snapshot test the adapter's output for each variant.
-- Keep the existing integration test (if any) green on the action-layer call site.
+Whispering has no existing unit tests for these services, so "unit-testable providers" is a structural improvement, not an immediate backlog. For each migrated provider:
+
+- Manual smoke test: trigger each error path (invalid key, oversized file, rate limit if easy, network disconnection) and confirm the `WhisperingErr` shown matches today's copy as closely as possible.
+- Type-check: `bun run check` in `apps/whispering`.
+- Runtime check: `bun run dev` and exercise the provider.
+
+Writing unit tests becomes possible after this refactor but is scheduled separately.
 
 ## Open questions
 
-1. **Adapter location.** `cloud/error-adapter.ts` (beside providers) or `$lib/query/transcription-errors.ts` (with the call sites)? The adapter is call-site code, not service code — arguably belongs closer to `rpc.notify`. Decide during step 1.
-2. **Pre-validation errors (MissingApiKey, FileTooLarge).** These aren't really runtime errors — they're input validation. Option: hoist to a pre-check layer outside the service. Option: keep them as tagged variants (simpler, matches today's shape). Default: keep as variants.
-3. **Provider identity in the error.** The adapter needs to know "which provider" for copy like "Please enter your *Mistral* API key." Either stamp `provider: 'openai' | ...` on every variant (explicit), or dispatch on the tag's origin (the adapter's `switch` already knows). Explicit is safer but adds fields; implicit is cleaner. Revisit after 2 providers are migrated.
-4. **Self-hosted / local providers.** `speaches`, `whispercpp`, `moonshine`, `parakeet` have their own error shapes. Out of scope for this spec — likely a second taxonomy once cloud is done.
+1. **Pre-validation errors (`MissingApiKey`, `FileTooLarge`).** Input validation, not runtime errors. Could hoist to a pre-check layer. For now, keep as tagged variants — matches today's shape and defers the bigger refactor. Flag as possible follow-up.
+2. **`InvalidApiKeyFormat`.** Only openai validates the `sk-` prefix today. Keep provider-specific; don't force other providers to add one.
+3. **`Connection` variant shape.** OpenAI and Groq surface connection errors through `APIConnectionError` subclass; variant `cause` type may need adjustment per provider.
 
 ## Non-goals
 
-- Changing the UI copy. The new adapter should emit strings that match today's notifications byte-for-byte at first. Copy iteration is a separate pass.
-- Merging provider SDKs. Each provider keeps its own SDK client.
-- Replacing `WhisperingErr`. It remains the notification envelope; this spec just moves its construction to one place.
+- Creating a central adapter or cross-provider error union.
+- Changing UI copy. Post-migration, notifications should read as close to today as possible. Copy iteration is a separate pass.
+- Replacing provider SDKs.
+- Adding unit tests (enabled by this refactor, scheduled separately).
 
 ## Expected outcome
 
-- Each `cloud/*.ts` drops from 135–252 lines to ~60–100 lines.
-- One `error-adapter.ts` (~150 lines) owns all UI copy for transcription failures.
-- Adding a 6th cloud provider = define its `XxxError` + add 1–N cases to the adapter. No duplicated UI plumbing.
-- Providers become unit-testable without UI dependencies.
-- The fragile string-match in mistral goes away (either into a contained classification `switch` or into `HttpServiceLive`-typed handling).
+- **Copy moves out of the service layer.** All UI strings live at `transcription.ts` call sites.
+- **Mistral string-matching goes away.** Replaced by `instanceof MistralError` + typed switch.
+- **ElevenLabs gets real error granularity** (at least pre-validation variants separated from the catch-all).
+- **Provider files decouple from `$lib/result`.** Testable without pulling in notification schemas.
+- **Line-count change is modest** — roughly 900 → ~750 lines across the 5 providers, with ~50 net lines added at call sites. The point isn't LOC reduction; it's separating concerns.
+- **Pattern consistency.** Transcription providers stop being the outlier domain that owns UI copy.

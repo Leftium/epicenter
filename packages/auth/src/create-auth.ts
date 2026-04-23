@@ -316,8 +316,7 @@ export function createAuth({
 				try {
 					const { error } = await client.signIn.email(input);
 					if (!error) return Ok(undefined);
-					const status = readStatusCode(error);
-					if (status === 401 || status === 403)
+					if (error.status === 401 || error.status === 403)
 						return AuthError.InvalidCredentials();
 					return AuthError.SignInFailed({ cause: error });
 				} catch (error) {
@@ -412,12 +411,6 @@ export function createAuth({
  * stores (chrome.storage, localStorage) need plain JSON, so we normalize here
  * at the boundary rather than forcing every consumer to handle it.
  */
-function readStatusCode(error: unknown): number | undefined {
-	if (typeof error !== 'object' || error === null) return undefined;
-	if (!('status' in error)) return undefined;
-	return typeof error.status === 'number' ? error.status : undefined;
-}
-
 function normalizeUser(user: {
 	id: string;
 	createdAt: Date;

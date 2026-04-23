@@ -351,12 +351,14 @@ export function createAuth({
 		},
 
 		async signInWithSocialRedirect({ provider, callbackURL }) {
-			try {
-				await client.signIn.social({ provider, callbackURL });
-				return Ok(undefined);
-			} catch (error) {
-				return AuthError.SocialSignInFailed({ cause: error });
-			}
+			return runBusy(async () => {
+				try {
+					await client.signIn.social({ provider, callbackURL });
+					return Ok(undefined);
+				} catch (error) {
+					return AuthError.SocialSignInFailed({ cause: error });
+				}
+			});
 		},
 
 		async signOut() {

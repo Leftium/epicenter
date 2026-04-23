@@ -100,22 +100,19 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 		setValue(validate(newValue) ?? fallback);
 	});
 
-	function writeToStorage(newValue: T) {
+	async function setAndPersist(newValue: T): Promise<void> {
+		setValue(newValue);
 		writesInFlight++;
-		void item.setValue(newValue).finally(() => {
+		try {
+			await item.setValue(newValue);
+		} finally {
 			writesInFlight--;
 			if (writesInFlight === 0) {
 				// Re-read to catch any external changes we suppressed.
-				void item.getValue().then((v) => {
-					setValue(validate(v) ?? fallback);
-				});
+				const v = await item.getValue();
+				setValue(validate(v) ?? fallback);
 			}
-		});
-	}
-
-	function setAndPersist(newValue: T) {
-		setValue(newValue);
-		writeToStorage(newValue);
+		}
 	}
 
 	return {
@@ -129,10 +126,12 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 
 		/**
 		 * Optimistic set — updates the reactive `$state` immediately so Svelte
-		 * bindings reflect the change on the same tick, then persists async.
+		 * bindings reflect the change on the same tick, then persists async
+		 * (fire-and-forget; accessors can't return promises). Use the `set(v)`
+		 * method if you need to await persistence.
 		 */
 		set current(newValue: T) {
-			setAndPersist(newValue);
+			void setAndPersist(newValue);
 		},
 
 		/**
@@ -145,8 +144,10 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 		get: () => value,
 
 		/**
-		 * Method-form setter — mirrors `.current = value`. Updates UI immediately,
-		 * persists async (fire-and-forget).
+		 * Method-form setter — updates UI immediately, resolves once
+		 * chrome.storage has flushed. Return type `Promise<void>` is assignable
+		 * to `void`-returning consumer contracts, so callers that don't care
+		 * about durability can ignore the promise; callers that do can `await`.
 		 */
 		set: setAndPersist,
 

@@ -25,7 +25,6 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import { Ok, isResult } from 'wellcrafted/result';
-import { ActionError } from '../shared/actions.js';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type { Awareness } from 'y-protocols/awareness';
 import {
@@ -374,7 +373,7 @@ export function attachSync(
 			const normalized = isResult(raw) ? raw : Ok(raw);
 			sendResponse(normalized);
 		} catch (cause) {
-			sendResponse(ActionError.ActionFailed({ action: rpc.action, cause }));
+			sendResponse(RpcError.ActionFailed({ action: rpc.action, cause }));
 		}
 	}
 

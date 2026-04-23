@@ -13,9 +13,9 @@
  * it throws, we wrap in `Err(ActionFailed)`.
  */
 
+import { RpcError } from '@epicenter/sync';
 import { Ok, isResult } from 'wellcrafted/result';
 import {
-	ActionError,
 	type Actions,
 	type RemoteActions,
 	isAction,
@@ -69,7 +69,7 @@ function makeLeaf(path: string[], send: RemoteSend) {
 			const raw = await send(dotPath, input);
 			return isResult(raw) ? raw : Ok(raw);
 		} catch (cause) {
-			return ActionError.ActionFailed({ action: dotPath, cause });
+			return RpcError.ActionFailed({ action: dotPath, cause });
 		}
 	};
 }

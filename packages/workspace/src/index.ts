@@ -37,7 +37,6 @@ export type {
 } from './shared/actions';
 export {
 	ACTION_BRAND,
-	ActionError,
 	defineMutation,
 	defineQuery,
 	dispatchAction,

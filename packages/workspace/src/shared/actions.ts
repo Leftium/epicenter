@@ -71,8 +71,8 @@
  * @module
  */
 
+import type { RpcError } from '@epicenter/sync';
 import type { Static, TSchema } from 'typebox';
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import { isResult } from 'wellcrafted/result';
 
@@ -471,26 +471,21 @@ export async function dispatchAction(
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// ACTION ERROR (transport envelope)
+// ACTION FAILED (transport envelope)
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
  * Transport-layer error for actions invoked over RPC.
  *
- * `ActionFailed` exists to solve a wire problem: thrown errors don't cross
- * processes. Local callers never see this — they `try/catch` instead. It
- * appears only in `RemoteAction` signatures and in the RPC boundary's
- * normalization path.
+ * Exists to solve a wire problem: thrown errors don't cross processes. Local
+ * callers never see this — they `try/catch` instead. It appears only in
+ * `RemoteAction` signatures and in the RPC boundary's normalization path.
+ *
+ * Sourced from `@epicenter/sync`'s `RpcError` so the wire and the remote-action
+ * type surface share a single nominal `ActionFailed` — no re-wrapping between
+ * layers, one `name` discriminant to match on.
  */
-export const ActionError = defineErrors({
-	ActionFailed: ({ action, cause }: { action: string; cause: unknown }) => ({
-		message: `Action '${action}' failed: ${extractErrorMessage(cause)}`,
-		action,
-		cause,
-	}),
-});
-export type ActionError = InferErrors<typeof ActionError>;
-export type ActionFailed = Extract<ActionError, { name: 'ActionFailed' }>;
+export type ActionFailed = Extract<RpcError, { name: 'ActionFailed' }>;
 
 // ════════════════════════════════════════════════════════════════════════════
 // REMOTE ACTION TYPES (RPC proxy surface)

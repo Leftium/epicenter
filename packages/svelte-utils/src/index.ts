@@ -8,5 +8,6 @@ export {
 } from './persisted-map.svelte.js';
 export {
 	createPersistedState,
+	fromPersistedState,
 	PersistedError,
 } from './persisted-state.svelte.js';

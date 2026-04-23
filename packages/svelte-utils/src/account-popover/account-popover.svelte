@@ -8,7 +8,7 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import type { AuthClient } from '../auth/create-auth.svelte.js';
+	import type { AuthClient } from '@epicenter/auth-svelte';
 	import { AuthForm } from '../auth-form/index.js';
 
 	/**

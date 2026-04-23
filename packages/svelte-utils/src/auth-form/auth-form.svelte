@@ -3,7 +3,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import type { AuthClient } from '../auth/create-auth.svelte.js';
+	import type { AuthClient } from '@epicenter/auth-svelte';
 
 	let {
 		auth,

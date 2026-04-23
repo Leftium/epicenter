@@ -42,11 +42,7 @@ export type SocialTokenPayload = {
 };
 
 export type CreateAuthConfig = {
-	/**
-	 * Read once at construction. Better Auth's client does not support a lazy
-	 * baseURL — if the origin can change at runtime, the consumer must
-	 * recreate the auth client.
-	 */
+	/** Resolved once at construction; recreate the client if the origin changes. */
 	baseURL: string;
 	session: SessionStore;
 	/**
@@ -350,6 +346,8 @@ export function createAuth({
 			});
 		},
 
+		// Not wrapped in runBusy — the page navigates away on success, so
+		// isBusy is never read. The promise never resolves on the happy path.
 		async signInWithSocialRedirect({ provider, callbackURL }) {
 			try {
 				await client.signIn.social({ provider, callbackURL });

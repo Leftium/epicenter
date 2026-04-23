@@ -1,0 +1,183 @@
+---
+name: auth
+description: Epicenter auth packages — @epicenter/auth (framework-agnostic core) and @epicenter/auth-svelte (Svelte 5 reactive wrapper). Covers SessionStore contract, session/token subscription fan-out, and how consumer apps wire login/logout into sync and encryption.
+metadata:
+  author: epicenter
+  version: '1.0'
+---
+
+# Epicenter Auth
+
+Two packages:
+
+- **`@epicenter/auth`** — framework-agnostic. Owns the Better Auth transport, session-rotation interceptor, and imperative subscription fan-out. Pure TypeScript, no Svelte.
+- **`@epicenter/auth-svelte`** — thin Svelte 5 wrapper. Subscribes once to the core's `on*` primitives and projects them onto `$state`-backed getters.
+
+Everything runtime lives in the core. The Svelte package only adds reactive reads.
+
+> **Related Skills**: `factory-function-composition` for the `SessionStore` structural-contract pattern. `error-handling` for the `AuthError` variants (`InvalidCredentials`, `SignInFailed`, `SignUpFailed`, `SocialSignInFailed`).
+
+## When to Apply This Skill
+
+Use this skill when:
+
+- Wiring a new consumer app to `@epicenter/auth-svelte` (see any `apps/*/src/lib/client.svelte.ts` or `auth.ts`).
+- Reacting to login/logout/token rotation in sync, encryption, or storage layers.
+- Writing or reviewing a `SessionStore` adapter (chrome.storage, localStorage, a custom persisted state).
+- Deciding between reactive reads (`auth.session`) and imperative reads (`auth.getSession()`).
+
+## The Package Split
+
+```
+@epicenter/auth          @epicenter/auth-svelte
+├── createAuth            ├── createAuth           (shadows, wraps core)
+├── AuthCore (type)       ├── AuthClient (type)    (= AuthCore + reactive getters)
+├── SessionStore (type)   └── re-exports the core's types
+├── AuthSession, StoredUser
+└── AuthError
+```
+
+Consumer apps import `createAuth` from **`@epicenter/auth-svelte`** — never from the core directly in Svelte apps. Non-Svelte contexts (CLI, workers, tests) import from `@epicenter/auth`.
+
+## The SessionStore Contract
+
+`createAuth` takes a `SessionStore`, not a storage backend. The store is where the persisted session lives — the core reads and writes it but never persists itself.
+
+```ts
+export type SessionStore = {
+  get(): AuthSession | null;
+  set(value: AuthSession | null): void;
+  watch(fn: (next: AuthSession | null) => void): () => void;
+};
+```
+
+**Invariants** (copy exactly when writing an adapter):
+
+- All three methods are **synchronous**. Async backends (IndexedDB, chrome.storage) hydrate once at boot, cache in memory, and expose a sync read.
+- `watch` fires for **every** state change, including local writes via `set()`. Stores whose native event only fires on external change must fan out local writes themselves.
+- `set()` is fire-and-forget. It may persist asynchronously, but the next `get()` returns the new value immediately.
+
+### Prefer using `createPersistedState` / `createStorageState` directly
+
+Both factories in `@epicenter/svelte` and `apps/tab-manager/src/lib/state/storage-state.svelte.ts` are **structurally assignable** to `SessionStore`. Pass them directly:
+
+```ts
+// apps/dashboard/src/lib/auth.ts
+export const auth = createAuth({
+  baseURL: window.location.origin,
+  session: createPersistedState({
+    key: 'dashboard:authSession',
+    schema: AuthSession.or('null'),
+    defaultValue: null,
+  }),
+});
+```
+
+No adapter layer. The earlier `fromPersistedState` / `fromStorageState` adapters were folded into the factories — don't reintroduce them.
+
+## Wiring a consumer app
+
+The canonical shape (fuji, honeycrisp, opensidian, zhongwen all look like this):
+
+```ts
+import { AuthSession, createAuth } from '@epicenter/auth-svelte';
+import { createPersistedState } from '@epicenter/svelte';
+
+const session = createPersistedState({
+  key: 'fuji:authSession',
+  schema: AuthSession.or('null'),
+  defaultValue: null,
+});
+
+export const auth = createAuth({
+  baseURL: APP_URLS.API,
+  session,
+});
+```
+
+Validate the stored value with Arktype: `AuthSession.or('null')` — if storage ever holds a malformed session, the schema rejects it and the default (`null`) takes over.
+
+## Reacting to session transitions
+
+**One subscription drives everything.** In consumer apps (see `apps/fuji/src/lib/client.svelte.ts:64`), a single `auth.onSessionChange` call handles login, logout, and token rotation:
+
+```ts
+auth.onSessionChange((next, previous) => {
+  if (next === null) {
+    sync.goOffline();
+    sync.setToken(null);
+    if (previous !== null) void idb.clearLocal();  // logout, not cold-boot
+    return;
+  }
+  encryption.applyKeys(next.encryptionKeys);
+  sync.setToken(next.token);
+  sync.reconnect();
+});
+```
+
+**Transition matrix:**
+
+| `previous` | `next` | Meaning                 |
+| ---------- | ------ | ----------------------- |
+| `null`     | `null` | Cold-boot anonymous — silent no-op |
+| `null`     | session | Login                  |
+| session    | session (different token) | Token rotation |
+| session    | `null` | Logout — wipe local data |
+
+Use the `previous` argument to distinguish cold-boot from logout. Don't clear local data on every `null` branch.
+
+## Firing order on any session transition
+
+1. `session.set(next)` is called; `getSession()` now returns `next`.
+2. The store's `watch` callback runs and notifies the core.
+3. `onSessionChange` subscribers fire with `(next, previous)`.
+4. `onLogin` fires if the transition was `null → session`.
+5. `onLogout` fires if the transition was `session → null`.
+6. `onTokenChange` fires if `previous?.token !== next?.token`.
+
+Every subscriber runs in its own try/catch — one throwing does not prevent others from firing.
+
+## Subscription primitives
+
+| Method | Fires on | Replays on subscribe? |
+| ------ | -------- | --------------------- |
+| `onSessionChange(fn)` | Any session transition | Yes — with `(current, null)` |
+| `onTokenChange(fn)` | Token changes (including rotation) | Yes — with current token |
+| `onLogin(fn)` | `null → session` | Only if a session already exists |
+| `onLogout(fn)` | `session → null` | No |
+| `onBusyChange(fn)` | In-flight op counter flips 0↔non-0 | Yes — with current busy state |
+
+`isBusy` is a counter, not a boolean — overlapping ops don't flip busy false prematurely.
+
+## Reactive vs imperative reads
+
+`AuthClient` (from `@epicenter/auth-svelte`) exposes both:
+
+```ts
+// Reactive — use in templates, $derived, $effect
+auth.session       // AuthSession | null
+auth.token         // string | null
+auth.user          // StoredUser | null
+auth.isAuthenticated  // boolean
+auth.isBusy        // boolean
+
+// Imperative — use in fetch interceptors, one-shot callbacks, non-reactive contexts
+auth.getSession()
+auth.getToken()
+auth.getUser()
+auth.onSessionChange((next, previous) => { ... })
+```
+
+**Rule**: subscribe imperatively at setup time (one `onSessionChange` in the client builder). Read reactively in components. Don't mix — don't subscribe inside `$effect` when the reactive getter already exists.
+
+## Social sign-in
+
+`signInWithSocialRedirect` works anywhere (web default). `signInWithSocialPopup` requires a `socialTokenProvider` — native apps and extensions inject one at `createAuth` time. Web apps that only use redirect sign-in omit it entirely. If popup is called without a provider, it returns `AuthError.SocialSignInFailed`.
+
+## Common Pitfalls
+
+- **Subscribing inside an `$effect`** — the reactive getter already tracks. Subscribe once at setup, read reactively in components.
+- **Reading `{current}` on `auth`** — `auth` isn't a runed box. Read the reactive getters directly (`auth.session`, not `auth.session.current`).
+- **Clearing local data on cold-boot** — guard logout handlers with `if (previous !== null)`, or `null → null` at boot will wipe an anonymous user's in-progress state.
+- **Importing `createAuth` from `@epicenter/auth` in Svelte apps** — always use `@epicenter/auth-svelte` for the reactive wrapper. The core import is for framework-agnostic consumers (CLI, workers).
+- **Writing an adapter where none is needed** — if your store already exposes `{ get, set, watch }`, pass it directly; don't wrap it.

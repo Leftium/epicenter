@@ -190,7 +190,7 @@ export class BaseSyncRoom extends DurableObject {
 	 */
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get('Upgrade') === 'websocket') {
-			return this.upgrade();
+			return this.upgrade(request);
 		}
 		return new Response('Method not allowed', { status: 405 });
 	}
@@ -204,8 +204,12 @@ export class BaseSyncRoom extends DurableObject {
 	 *
 	 * Cancels any pending compaction alarm — a new client just connected, so
 	 * compacting now would be wasteful.
+	 *
+	 * The client offers `sec-websocket-protocol: epicenter, bearer.<token>`;
+	 * we echo only `epicenter` to complete the handshake. The bearer entry is
+	 * consumed by `authGuard` earlier in the chain and must not round-trip.
 	 */
-	private upgrade(): Response {
+	private upgrade(request: Request): Response {
 		void this.ctx.storage.deleteAlarm();
 
 		const pair = new WebSocketPair();
@@ -225,7 +229,23 @@ export class BaseSyncRoom extends DurableObject {
 			server.send(msg);
 		}
 
-		return new Response(null, { status: 101, webSocket: client });
+		const responseHeaders = new Headers();
+		const offered = request.headers.get('sec-websocket-protocol');
+		if (
+			offered &&
+			offered
+				.split(',')
+				.map((s) => s.trim())
+				.includes('epicenter')
+		) {
+			responseHeaders.set('sec-websocket-protocol', 'epicenter');
+		}
+
+		return new Response(null, {
+			status: 101,
+			webSocket: client,
+			headers: responseHeaders,
+		});
 	}
 
 	// --- RPC methods (called via stub.sync() / stub.getDoc()) ---

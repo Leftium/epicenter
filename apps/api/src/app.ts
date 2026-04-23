@@ -273,10 +273,23 @@ app.route('/api/assets', assetPublicRoutes);
 
 // Auth guard for protected routes
 const authGuard = factory.createMiddleware(async (c, next) => {
-	const wsToken = c.req.query('token');
-	const headers = wsToken
-		? new Headers({ authorization: `Bearer ${wsToken}` })
-		: c.req.raw.headers;
+	// WebSocket auth via subprotocol: the client offers
+	// `sec-websocket-protocol: epicenter, bearer.<token>`. We extract the
+	// bearer entry and synthesize an Authorization header for BA. The DO is
+	// responsible for echoing `epicenter` back on the 101 response to
+	// complete the handshake — we never echo the bearer.<token> entry.
+	let headers = c.req.raw.headers;
+	const offeredProtocols = headers.get('sec-websocket-protocol');
+	if (offeredProtocols) {
+		const bearer = offeredProtocols
+			.split(',')
+			.map((s) => s.trim())
+			.find((s) => s.startsWith('bearer.'));
+		if (bearer) {
+			headers = new Headers(headers);
+			headers.set('authorization', `Bearer ${bearer.slice('bearer.'.length)}`);
+		}
+	}
 
 	const result = await c.var.auth.api.getSession({ headers });
 	if (!result) return c.json(AiChatError.Unauthorized(), 401);

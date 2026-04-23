@@ -507,7 +507,7 @@ export function attachSync(
 	async function attemptConnection(
 		token: string | null,
 		myRunId: number,
-	): Promise<'connected' | 'failed' | 'cancelled'> {
+	): Promise<'connected' | 'failed'> {
 		let wsUrl = config.url(docId);
 		if (token) {
 			const parsed = new URL(wsUrl);
@@ -675,7 +675,7 @@ export function attachSync(
 				ws.close();
 			}
 			await closePromise;
-			return runId !== myRunId ? 'cancelled' : 'failed';
+			return 'failed';
 		}
 
 		await closePromise;

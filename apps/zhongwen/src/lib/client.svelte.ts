@@ -6,17 +6,21 @@
  * BroadcastChannel coordination. No server sync, no awareness.
  */
 
+import { createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachBroadcastChannel,
+	attachEncryption,
 	attachIndexedDb,
 } from '@epicenter/workspace';
-import type { AuthSession } from '@epicenter/svelte/auth';
-import { createAuth } from '@epicenter/svelte/auth';
-import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { session } from '$lib/auth';
 import { zhongwenKv, zhongwenTables } from '$lib/workspace';
+
+export const auth = createAuth({
+	baseURL: APP_URLS.API,
+	session,
+});
 
 export function openZhongwen() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.zhongwen', gc: false });
@@ -28,19 +32,13 @@ export function openZhongwen() {
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
 
-	// Edge detector: only wipe IDB on a genuine logged-in → logged-out transition.
-	// Cold-start-unauth (first call, `previous` still null) must be a noop so
-	// anonymous data isn't destroyed at boot.
-	let previousSession: AuthSession | null = null;
-	async function applySession(next: AuthSession | null) {
-		const wasAuthed = previousSession !== null;
-		previousSession = next;
+	auth.onSessionChange((next, previous) => {
 		if (next === null) {
-			if (wasAuthed) await idb.clearLocal();
+			if (previous !== null) void idb.clearLocal();
 			return;
 		}
 		encryption.applyKeys(next.encryptionKeys);
-	}
+	});
 
 	return {
 		get id() {
@@ -51,7 +49,6 @@ export function openZhongwen() {
 		kv,
 		encryption,
 		idb,
-		applySession,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
@@ -62,14 +59,8 @@ export function openZhongwen() {
 
 export const workspace = openZhongwen();
 
-export const auth = createAuth({
-	baseURL: APP_URLS.API,
-	session,
-});
-
-const dispose = $effect.root(() => {
-	$effect(() => {
-		void workspace.applySession(auth.session);
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => {
+		auth[Symbol.dispose]();
 	});
-});
-if (import.meta.hot) import.meta.hot.dispose(dispose);
+}

@@ -28,6 +28,10 @@ export const AuthError = defineErrors({
 		message: `Social sign-in failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
+	SignOutFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to sign out: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 });
 export type AuthError = InferErrors<typeof AuthError>;
 
@@ -104,7 +108,7 @@ export type AuthCore = {
 		provider: string;
 		callbackURL: string;
 	}): Promise<Result<undefined, AuthError>>;
-	signOut(): Promise<void>;
+	signOut(): Promise<Result<undefined, AuthError>>;
 	fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
 
 	[Symbol.dispose](): void;
@@ -361,8 +365,9 @@ export function createAuth({
 			return runBusy(async () => {
 				try {
 					await client.signOut();
+					return Ok(undefined);
 				} catch (error) {
-					console.error('[auth] sign-out failed:', error);
+					return AuthError.SignOutFailed({ cause: error });
 				}
 			});
 		},

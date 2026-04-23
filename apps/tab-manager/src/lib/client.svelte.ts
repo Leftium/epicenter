@@ -25,7 +25,7 @@ import {
 	getBrowserName,
 	getDeviceId,
 } from '$lib/device/device-id';
-import { remoteServerUrl, serverUrl } from '$lib/state/settings.svelte';
+import { serverUrl } from '$lib/state/settings.svelte';
 import { createTabManagerActions } from './workspace/actions';
 import {
 	tabManagerAwarenessDefs,
@@ -38,7 +38,7 @@ import {
 await session.whenReady;
 
 export const auth = createAuth({
-	baseURL: remoteServerUrl.current,
+	baseURL: serverUrl.current,
 	session,
 	socialTokenProvider: async () => {
 		const { idToken, nonce } = await getGoogleCredentials();

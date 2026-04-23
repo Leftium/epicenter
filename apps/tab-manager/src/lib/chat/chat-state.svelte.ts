@@ -47,6 +47,7 @@ import {
 import { toUiMessage } from '$lib/chat/ui-message';
 import { auth, workspace, workspaceAiTools } from '$lib/client.svelte';
 import { getDeviceId } from '$lib/device/device-id';
+import { serverUrl } from '$lib/state/settings.svelte';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -145,7 +146,7 @@ function createAiChatState() {
 			initialMessages: loadMessages(conversationId),
 			tools: workspaceAiTools.tools,
 			connection: fetchServerSentEvents(
-				() => `${remoteServerUrl.current}/ai/chat`,
+				() => `${serverUrl.current}/ai/chat`,
 				async () => {
 					const deviceId = await getDeviceId();
 					return {
@@ -546,7 +547,7 @@ function createAiChatState() {
 
 		/** URL to the billing page for credit upgrades. */
 		get billingUrl() {
-			return `${remoteServerUrl.current}/billing`;
+			return `${serverUrl.current}/billing`;
 		},
 	};
 }

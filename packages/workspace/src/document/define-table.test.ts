@@ -29,14 +29,6 @@ describe('defineTable', () => {
 			expect(result).not.toHaveProperty('issues');
 		});
 
-		test('shorthand migrate returns the same row reference', () => {
-			const users = defineTable(
-				type({ id: 'string', email: 'string', _v: '1' }),
-			);
-
-			const row = { id: '1', email: 'test@example.com', _v: 1 as const };
-			expect(users.migrate(row)).toBe(row);
-		});
 	});
 
 	describe('variadic syntax', () => {

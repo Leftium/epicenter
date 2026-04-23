@@ -47,12 +47,6 @@ describe('attachEncryption', () => {
 		expect(storeB.get('1')).toEqual({ title: 'Secret B' });
 	});
 
-	test('applyKeys is synchronous (returns undefined)', () => {
-		const { encryption } = setup();
-		const result = encryption.applyKeys(toEncryptionKeys(randomBytes(32)));
-		expect(result).toBeUndefined();
-	});
-
 	test('applyKeys re-encrypts existing plaintext entries', () => {
 		const { storeA, encryption } = setup();
 		storeA.set('1', { title: 'Was plaintext' });

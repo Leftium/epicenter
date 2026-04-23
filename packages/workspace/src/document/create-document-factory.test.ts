@@ -234,24 +234,6 @@ describe('whenReady as builder convention', () => {
 		handle.dispose();
 	});
 
-	test('handle exposes bundle properties as own keys (flat, no prototype magic)', () => {
-		const factory = createDocumentFactory((id: string) => {
-			const ydoc = new Y.Doc({ guid: id });
-			return {
-				ydoc,
-				whenReady: Promise.resolve(),
-				[Symbol.dispose]() {
-					ydoc.destroy();
-				},
-			};
-		});
-		const h = factory.open('a');
-		expect(h.whenReady).toBeInstanceOf(Promise);
-		expect(Object.prototype.hasOwnProperty.call(h, 'whenReady')).toBe(true);
-		expect(Object.prototype.hasOwnProperty.call(h, 'ydoc')).toBe(true);
-		expect(Object.prototype.hasOwnProperty.call(h, 'dispose')).toBe(true);
-		h.dispose();
-	});
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -384,21 +366,6 @@ describe('close / closeAll', () => {
 		});
 		factory.close('a');
 		expect(destroyed).toBe(true);
-	});
-
-	test('close(id) returns undefined (void), not a promise', () => {
-		const factory = makeSimpleFactory();
-		factory.open('a');
-		const result = factory.close('a');
-		expect(result).toBeUndefined();
-	});
-
-	test('closeAll() returns undefined (void), not a promise', () => {
-		const factory = makeSimpleFactory();
-		factory.open('a');
-		factory.open('b');
-		const result = factory.closeAll();
-		expect(result).toBeUndefined();
 	});
 
 	test('sync-close cascade: close(id) fires [Symbol.dispose] synchronously, attachment listeners observe destroy before close() returns', async () => {

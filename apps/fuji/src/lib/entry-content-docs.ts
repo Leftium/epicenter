@@ -41,7 +41,7 @@ export function createEntryContentDocs({
 			}),
 			gc: false,
 		});
-		const content = attachRichText(ydoc);
+		const body = attachRichText(ydoc);
 		const idb = attachIndexedDb(ydoc);
 		const sync = attachSync(ydoc, {
 			url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
@@ -59,9 +59,7 @@ export function createEntryContentDocs({
 
 		return {
 			ydoc,
-			content,
-			idb,
-			sync,
+			body,
 			whenReady: idb.whenLoaded,
 			[Symbol.dispose]() {
 				ydoc.destroy();

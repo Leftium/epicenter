@@ -59,8 +59,6 @@ export function createNoteBodyDocs({
 		return {
 			ydoc,
 			body,
-			idb,
-			sync,
 			whenReady: idb.whenLoaded,
 			[Symbol.dispose]() {
 				ydoc.destroy();

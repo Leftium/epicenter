@@ -181,7 +181,7 @@
 	<!-- Editor body -->
 	{#if isLoaded}
 		<ProseMirrorEditor
-			yxmlfragment={contentDoc.content.binding}
+			yxmlfragment={contentDoc.body.binding}
 			onWordCountChange={(count) => (wordCount = count)}
 		/>
 	{:else}

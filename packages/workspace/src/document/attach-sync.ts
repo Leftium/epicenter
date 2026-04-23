@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 
 import {
+	BEARER_SUBPROTOCOL_PREFIX,
 	decodeRpcPayload,
 	encodeAwareness,
 	encodeAwarenessStates,
@@ -11,6 +12,7 @@ import {
 	encodeSyncUpdate,
 	handleSyncPayload,
 	isRpcError,
+	MAIN_SUBPROTOCOL,
 	MESSAGE_TYPE,
 	RpcError,
 	SYNC_MESSAGE_TYPE,
@@ -510,11 +512,11 @@ export function attachSync(
 
 		// Auth via WebSocket subprotocol, not `?token=`. Query strings land in
 		// access logs, referrers, and browser history; the subprotocol header
-		// does not. We offer two protocols: `epicenter` (the real one that the
-		// server echoes back to complete the handshake) and `bearer.<token>`
-		// (a carrier the server consumes and never echoes).
-		const subprotocols = ['epicenter'];
-		if (token) subprotocols.push(`bearer.${token}`);
+		// does not. We offer two protocols: the main one (which the server
+		// echoes back to complete the handshake) and a `bearer.<token>`
+		// carrier (which the server consumes and never echoes).
+		const subprotocols = [MAIN_SUBPROTOCOL];
+		if (token) subprotocols.push(`${BEARER_SUBPROTOCOL_PREFIX}${token}`);
 		const ws = new WebSocket(wsUrl, subprotocols);
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;

@@ -4,6 +4,7 @@ import {
 } from '@better-auth/oauth-provider';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { APPS } from '@epicenter/constants/apps';
+import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -271,26 +272,31 @@ app.get(
 // Must be mounted BEFORE authGuard so GET requests aren't blocked.
 app.route('/api/assets', assetPublicRoutes);
 
+// Browsers can't set `Authorization` on WebSocket upgrades, so the client
+// smuggles the token as `sec-websocket-protocol: epicenter, bearer.<token>`.
+// If a bearer entry is present, return a copy of the headers with
+// `Authorization` synthesized; otherwise return the originals untouched.
+// The DO echoes only `epicenter` on the 101 — the bearer entry never
+// round-trips. The prefix is shared with the client via `@epicenter/sync`.
+function withBearerFromSubprotocol(original: Headers): Headers {
+	const offered = original.get('sec-websocket-protocol');
+	if (!offered) return original;
+
+	const bearer = offered
+		.split(',')
+		.map((s) => s.trim())
+		.find((s) => s.startsWith(BEARER_SUBPROTOCOL_PREFIX));
+	if (!bearer) return original;
+
+	const token = bearer.slice(BEARER_SUBPROTOCOL_PREFIX.length);
+	const next = new Headers(original);
+	next.set('authorization', `Bearer ${token}`);
+	return next;
+}
+
 // Auth guard for protected routes
 const authGuard = factory.createMiddleware(async (c, next) => {
-	// WebSocket auth via subprotocol: the client offers
-	// `sec-websocket-protocol: epicenter, bearer.<token>`. We extract the
-	// bearer entry and synthesize an Authorization header for BA. The DO is
-	// responsible for echoing `epicenter` back on the 101 response to
-	// complete the handshake — we never echo the bearer.<token> entry.
-	let headers = c.req.raw.headers;
-	const offeredProtocols = headers.get('sec-websocket-protocol');
-	if (offeredProtocols) {
-		const bearer = offeredProtocols
-			.split(',')
-			.map((s) => s.trim())
-			.find((s) => s.startsWith('bearer.'));
-		if (bearer) {
-			headers = new Headers(headers);
-			headers.set('authorization', `Bearer ${bearer.slice('bearer.'.length)}`);
-		}
-	}
-
+	const headers = withBearerFromSubprotocol(c.req.raw.headers);
 	const result = await c.var.auth.api.getSession({ headers });
 	if (!result) return c.json(AiChatError.Unauthorized(), 401);
 

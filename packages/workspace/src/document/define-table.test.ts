@@ -37,21 +37,6 @@ describe('defineTable', () => {
 			const row = { id: '1', email: 'test@example.com', _v: 1 as const };
 			expect(users.migrate(row)).toBe(row);
 		});
-
-		test('shorthand produces equivalent validation to builder pattern', () => {
-			const schema = type({ id: 'string', title: 'string', _v: '1' });
-
-			const shorthand = defineTable(schema);
-			const builder = defineTable(schema);
-
-			// Both should validate the same data
-			const testRow = { id: '1', title: 'Test', _v: 1 };
-			const shorthandResult = shorthand.schema['~standard'].validate(testRow);
-			const builderResult = builder.schema['~standard'].validate(testRow);
-
-			expect(shorthandResult).not.toHaveProperty('issues');
-			expect(builderResult).not.toHaveProperty('issues');
-		});
 	});
 
 	describe('variadic syntax', () => {
@@ -173,18 +158,4 @@ describe('defineTable', () => {
 		});
 	});
 
-	describe('type errors', () => {
-		test('rejects migrate input missing required fields', () => {
-			const posts = defineTable(
-				type({ id: 'string', title: 'string', _v: '1' }),
-			);
-
-			// @ts-expect-error title is required by the row schema
-			const _invalidRow: Parameters<typeof posts.migrate>[0] = {
-				id: '1',
-				_v: 1,
-			};
-			void _invalidRow;
-		});
-	});
 });

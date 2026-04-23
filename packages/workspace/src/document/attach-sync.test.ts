@@ -43,8 +43,14 @@ class FakeWebSocket {
 	onmessage: Listener | null = null;
 
 	readonly sent: Uint8Array[] = [];
+	readonly protocols: string[];
 
-	constructor(public readonly url: string) {
+	constructor(public readonly url: string, protocols?: string | string[]) {
+		this.protocols = Array.isArray(protocols)
+			? protocols
+			: protocols
+				? [protocols]
+				: [];
 		FakeWebSocket.instances.push(this);
 		// Synthesize `open` on a microtask so attachSync's handlers are wired.
 		queueMicrotask(() => {
@@ -183,14 +189,13 @@ describe('attachSync hasLocalChanges', () => {
 		await sync.whenDisposed;
 	});
 
-	test('requiresToken:true blocks the first connect until setToken arrives, then appends ?token=', async () => {
+	test('requiresToken:true blocks the first connect until setToken arrives, then sends token via subprotocol', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-token-gate' });
 		const sync = attachSync(ydoc, {
 			url: (id) => `ws://x/${id}`,
 			requiresToken: true,
 		});
 
-		// Supervisor should reach connecting+auth-error without opening a socket.
 		await waitFor(
 			() =>
 				sync.status.phase === 'connecting' &&
@@ -201,11 +206,33 @@ describe('attachSync hasLocalChanges', () => {
 		sync.setToken('abc123');
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
-		expect(ws.url).toContain('token=abc123');
+		expect(ws.protocols).toContain('bearer.abc123');
 
 		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
 		ws.deliver(serverStep2Frame());
 		await sync.whenConnected;
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('setToken while connected does not close the open socket', async () => {
+		const ydoc = new Y.Doc({ guid: 'test-token-live' });
+		const sync = attachSync(ydoc, {
+			url: (id) => `ws://x/${id}`,
+			requiresToken: true,
+		});
+
+		sync.setToken('first');
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		expect(ws.protocols).toContain('bearer.first');
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		ws.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		sync.setToken('second');
+		expect(ws.readyState).toBe(FakeWebSocket.OPEN);
+		expect(FakeWebSocket.instances.length).toBe(1);
 
 		ydoc.destroy();
 		await sync.whenDisposed;

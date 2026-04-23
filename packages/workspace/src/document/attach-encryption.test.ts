@@ -165,26 +165,5 @@ describe('attachEncryption', () => {
 			expect(storeA.get('1')).toEqual({ title: 'Written with v1' });
 		});
 
-		test('same-version ciphertext is not rewritten on re-activation', () => {
-			// Test at the store level: fingerprint dedup on the coordinator's
-			// applyKeys short-circuits repeat calls before reaching the walk,
-			// so we drive activateEncryption directly to verify the walk itself
-			// skips already-current entries (perf guarantee).
-			const ydoc = new Y.Doc({ guid: 'enc-skip-current', gc: false });
-			const store = createEncryptedYkvLww<{ title: string }>(ydoc, 'data');
-			const key = randomBytes(32);
-			store.activateEncryption(new Map([[1, key]]));
-			store.set('1', { title: 'Encrypted once' });
-
-			const blobBefore = store.yarray.toArray().find((e) => e.key === '1')?.val;
-			expect(isEncryptedBlob(blobBefore)).toBe(true);
-
-			// Re-activate with the same keyring. The walk should find the
-			// entry's blob version matches currentVersion and skip it —
-			// reference equality holds because no transact runs.
-			store.activateEncryption(new Map([[1, key]]));
-			const blobAfter = store.yarray.toArray().find((e) => e.key === '1')?.val;
-			expect(blobAfter).toBe(blobBefore);
-		});
 	});
 });

@@ -144,7 +144,7 @@ describe('createAwareness', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// attachAwareness (full entry point used by createDocuments)
+// attachAwareness
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('attachAwareness', () => {
@@ -156,10 +156,7 @@ describe('attachAwareness', () => {
 		expect(raw.doc).toBe(ydoc);
 	});
 
-	test('empty defs — works as a structural slot for extension wiring', () => {
-		// createDocuments uses `attachAwareness(contentYdoc, {}).raw` when a
-		// per-row content doc has no typed awareness schema but still needs an
-		// Awareness instance to hand to sync extensions.
+	test('empty defs — works as a structural slot', () => {
 		const ydoc = new Y.Doc();
 		const awareness = attachAwareness(ydoc, {});
 

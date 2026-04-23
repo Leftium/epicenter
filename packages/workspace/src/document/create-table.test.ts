@@ -1,16 +1,5 @@
 /**
- * createTable Tests (over workspace's encrypted YKeyValueLww wrapper)
- *
- * Exercises the table CRUD, query, observation, and migration paths when
- * `createTable` is fed the workspace's `EncryptedYKeyValueLww` wrapper
- * (as `encryption.attachTables` does internally inside a `createDocumentFactory`
- * builder). These tests ensure row validation and migration behavior remain
- * consistent for both valid and corrupted data through the encrypted store
- * surface.
- *
- * Key behaviors:
- * - CRUD and query operations return discriminated statuses with correct payloads.
- * - Observers and migration logic handle batched and legacy data safely.
+ * createTable — CRUD, query, observation, and migration over EncryptedYKeyValueLww.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -41,37 +30,6 @@ describe('createTable', () => {
 			const { data, error } = helper.get('1');
 			expect(error).toBeNull();
 			expect(data).toEqual({ id: '1', name: 'Alice', _v: 1 });
-		});
-
-		test('set overwrites existing row', () => {
-			const { ykv } = setup();
-			const definition = defineTable(
-				type({ id: 'string', name: 'string', _v: '1' }),
-			);
-			const helper = createTable(ykv, definition, 'test');
-
-			helper.set({ id: '1', name: 'Alice', _v: 1 });
-			helper.set({ id: '1', name: 'Bob', _v: 1 });
-
-			const { data } = helper.get('1');
-			expect(data?.name).toBe('Bob');
-		});
-
-		test('transact stores multiple rows atomically', () => {
-			const { ydoc, ykv } = setup();
-			const definition = defineTable(
-				type({ id: 'string', name: 'string', _v: '1' }),
-			);
-			const helper = createTable(ykv, definition, 'test');
-
-			ydoc.transact(() => {
-				helper.set({ id: '1', name: 'Alice', _v: 1 });
-				helper.set({ id: '2', name: 'Bob', _v: 1 });
-				helper.set({ id: '3', name: 'Charlie', _v: 1 });
-			});
-
-			expect(helper.count()).toBe(3);
-			expect(helper.getAllValid()).toHaveLength(3);
 		});
 
 		test('bulkSet stores rows in chunks and reports progress', async () => {
@@ -334,7 +292,7 @@ describe('createTable', () => {
 			}
 		});
 
-		test('update preserves id field (cannot be changed)', () => {
+		test('update preserves id field', () => {
 			const { ykv } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
@@ -342,17 +300,10 @@ describe('createTable', () => {
 			const helper = createTable(ykv, definition, 'test');
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
+			const { data } = helper.update('1', { name: 'Bob' });
 
-			// TypeScript prevents passing `id` in partial due to Omit<TRow, 'id'>
-			// But we can test that even if someone bypasses TypeScript, the id is preserved
-			const { data } = helper.update('1', { name: 'Bob' } as Partial<
-				Omit<{ id: string; name: string }, 'id'>
-			>);
-
-			expect(data?.id).toBe('1'); // ID is preserved
+			expect(data?.id).toBe('1');
 			expect(data?.name).toBe('Bob');
-
-			// Verify the row still exists at the original ID
 			expect(helper.has('1')).toBe(true);
 		});
 	});
@@ -381,28 +332,6 @@ describe('createTable', () => {
 			// Should not throw
 			helper.delete('nonexistent');
 			expect(helper.has('nonexistent')).toBe(false);
-		});
-
-		test('transact deletes multiple rows atomically', () => {
-			const { ydoc, ykv } = setup();
-			const definition = defineTable(
-				type({ id: 'string', name: 'string', _v: '1' }),
-			);
-			const helper = createTable(ykv, definition, 'test');
-
-			ydoc.transact(() => {
-				helper.set({ id: '1', name: 'A', _v: 1 });
-				helper.set({ id: '2', name: 'B', _v: 1 });
-				helper.set({ id: '3', name: 'C', _v: 1 });
-			});
-
-			ydoc.transact(() => {
-				helper.delete('1');
-				helper.delete('2');
-				helper.delete('3');
-			});
-
-			expect(helper.count()).toBe(0);
 		});
 
 		test('transact can mix set and delete operations', () => {

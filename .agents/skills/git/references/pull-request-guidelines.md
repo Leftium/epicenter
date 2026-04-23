@@ -150,7 +150,7 @@ Show how components stack:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  defineDocument((id) => { ... }).open(id)                   │  ← High-level
+│  createDocumentFactory((id) => { ... }).open(id)            │  ← High-level
 │    User-owned Y.Doc builder, composes attach* primitives    │
 ├─────────────────────────────────────────────────────────────┤
 │  attachTables(ydoc, {...}) / attachKv(ydoc, {...})          │  ← Mid-level

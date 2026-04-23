@@ -59,7 +59,7 @@ Extract to a variable when:
 
 ### Applies To
 
-- `defineTable()`, `defineKv()`, `defineDocument()` builders
+- `defineTable()`, `defineKv()`, `createDocumentFactory()` builders
 - `attachTables()`, `attachKv()` factory calls
 - Schema definitions (arktype, zod, etc.)
 - Configuration objects passed to factories

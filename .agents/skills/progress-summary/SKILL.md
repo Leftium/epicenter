@@ -109,7 +109,7 @@ Use ASCII diagrams liberally. They're more scannable than prose.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  defineDocument((id) => { ... }).open(id)                        │  ← High-level
+│  createDocumentFactory((id) => { ... }).open(id)                 │  ← High-level
 │    User-owned Y.Doc builder, composes attach* primitives         │
 ├─────────────────────────────────────────────────────────────────┤
 │  attachTables(ydoc, {...}) / attachKv(ydoc, {...})               │  ← Mid-level

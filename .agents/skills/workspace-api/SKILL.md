@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), defineDocument, attach* primitives, and action composition. Use when the user mentions workspace, defineTable, defineKv, defineDocument, attachTables, attachSync, attachIndexedDb, attachSqlite, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, composing attachments inline, or attaching actions to a document bundle.
+description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), createDocumentFactory, attach* primitives, and action composition. Use when the user mentions workspace, defineTable, defineKv, createDocumentFactory, attachTables, attachSync, attachIndexedDb, attachSqlite, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, composing attachments inline, or attaching actions to a document bundle.
 metadata:
   author: epicenter
   version: '6.0'
@@ -22,7 +22,7 @@ Type-safe schema definitions for tables and KV stores.
 - Adding a new version to an existing table definition
 - Writing table migration functions
 - Reading, writing, or observing table/KV data
-- Composing a live document with `defineDocument(builder)` + `attach*` primitives
+- Composing a live document with `createDocumentFactory(builder)` + `attach*` primitives
 - Attaching persistence (`attachIndexedDb`, `attachSqlite`), sync (`attachSync`), or materializers inline
 - Writing server-side Bun scripts with `connectWorkspace()`
 ## Tables
@@ -128,7 +128,7 @@ const newId = generateConversationId();  // Good
 
 ## Actions
 
-Actions wrap table operations as `defineMutation` (writes) or `defineQuery` (reads). Build them in a small factory that closes over `tables` and `batch`, then attach the result to the bundle returned from your `defineDocument` builder.
+Actions wrap table operations as `defineMutation` (writes) or `defineQuery` (reads). Build them in a small factory that closes over `tables` and `batch`, then attach the result to the bundle returned from your `createDocumentFactory` builder.
 
 ```typescript
 import { defineMutation, defineQuery } from '@epicenter/workspace';
@@ -154,14 +154,14 @@ export function createBlogActions({ tables, batch }) {
 	};
 }
 
-// Inside defineDocument(...):
+// Inside createDocumentFactory(...):
 //   const actions = createBlogActions({ tables, batch });
 //   return { id, ydoc, tables, actions, batch, /* ... */ };
 ```
 
 ### JSDoc on Action Methods
 
-Every action method inside the `actions` object returned from the `defineDocument` builder should have a JSDoc comment. The JSDoc and the `description` field serve **different audiences**:
+Every action method inside the `actions` object returned from the `createDocumentFactory` builder should have a JSDoc comment. The JSDoc and the `description` field serve **different audiences**:
 
 - **`description`** — consumed by MCP servers, CLI help text, and OpenAPI specs. Keep it short and declarative ("Import skills from disk").
 - **JSDoc** — consumed by developers hovering in an IDE. Explain *why* the action exists as a separate operation, what non-obvious behavior it has, or what assumptions it makes.
@@ -194,7 +194,7 @@ src/lib/
 │   ├── actions.ts                      ← Isomorphic action factory: createXActions({ tables, batch })
 │   └── index.ts                        ← Barrel: re-exports definition + actions only
 │
-└── client.ts                           ← Runtime singleton: defineDocument(builder) composing
+└── client.ts                           ← Runtime singleton: createDocumentFactory(builder) composing
                                            attachTables, attachIndexedDb/Sqlite, attachSync,
                                            attachEncryption, and runtime-specific actions
 ```
@@ -228,7 +228,7 @@ src/lib/
 1. **`definition.ts`** — Pure schema. `defineTable()`, `defineKv()`, branded ID types and generators. Isomorphic.
 2. **`actions.ts`** — Factory that takes `{ tables, batch }` and returns an action tree of `defineQuery`/`defineMutation`. Isomorphic — no browser/Node APIs.
 3. **`index.ts`** — Barrel that re-exports from `definition.ts` and `actions.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
-4. **`client.ts`** — Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Wraps `defineDocument(builder)` where the builder composes runtime-specific attachments (IndexedDB vs SQLite, browser vs Node APIs) and assembles the full bundle (including runtime-specific actions). Exports the singleton via `.open(id)` as a named export (`export const workspace = xDoc.open('epicenter.x')`).
+4. **`client.ts`** — Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Wraps `createDocumentFactory(builder)` where the builder composes runtime-specific attachments (IndexedDB vs SQLite, browser vs Node APIs) and assembles the full bundle (including runtime-specific actions). Exports the singleton via `.open(id)` as a named export (`export const workspace = xDoc.open('epicenter.x')`).
 
 ### Import Convention
 
@@ -278,7 +278,7 @@ export function createMyAppActions({ tables, batch }) {
 }
 
 // src/lib/client.ts — browser-specific attachments + runtime actions
-const myApp = defineDocument((id: string) => {
+const myApp = createDocumentFactory((id: string) => {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, myAppTables);
   const idb = attachIndexedDb(ydoc);
@@ -329,7 +329,7 @@ This ordering matters because sync only exchanges the delta between local state 
 
 ```typescript
 // ✅ Correct — persistence loads first, sync waits for idb, exchanges delta only
-defineDocument((id) => {
+createDocumentFactory((id) => {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, myTables);
   const sqlite = attachSqlite(ydoc, { filePath: '...' });
@@ -342,7 +342,7 @@ defineDocument((id) => {
 });
 
 // ❌ Wrong — sync starts before local state is loaded, downloads full document
-defineDocument((id) => {
+createDocumentFactory((id) => {
   const ydoc = new Y.Doc({ guid: id });
   const sync = attachSync(ydoc, { url, getToken }); // no waitFor
   const sqlite = attachSqlite(ydoc, { filePath: '...' });
@@ -391,7 +391,7 @@ Code references:
 
 - `packages/workspace/src/document/define-table.ts`
 - `packages/workspace/src/document/define-kv.ts`
-- `packages/workspace/src/document/define-document.ts`
+- `packages/workspace/src/document/create-document-factory.ts`
 - `packages/workspace/src/document/attach-table.ts`
 - `packages/workspace/src/document/attach-kv.ts`
 - `packages/workspace/src/document/attach-sync.ts`

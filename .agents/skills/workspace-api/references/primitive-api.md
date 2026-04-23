@@ -2,9 +2,9 @@
 
 ## When to Read This
 
-Read when composing any Y.Doc in the app — the top-level workspace doc *and* per-row content docs, settings, skills, or any other standalone Y.Doc. Every live document goes through `defineDocument(builder)` where the builder owns `new Y.Doc(...)` and every `attach*` call.
+Read when composing any Y.Doc in the app — the top-level workspace doc *and* per-row content docs, settings, skills, or any other standalone Y.Doc. Every live document goes through `createDocumentFactory(builder)` where the builder owns `new Y.Doc(...)` and every `attach*` call.
 
-`.withDocument()` on tables was removed. Per-row content docs are now their own `defineDocument` factory, keyed on the row's content guid.
+`.withDocument()` on tables was removed. Per-row content docs are now their own `createDocumentFactory` factory, keyed on the row's content guid.
 
 ## The Primitive: Just Y.Doc + attach\*
 
@@ -48,7 +48,7 @@ Everything you need is in Yjs itself:
 - `ydoc.destroy()` — teardown (fires `'destroy'`; every `attach*` self-registers cleanup via `ydoc.on('destroy', ...)`).
 - `onLocalUpdate(ydoc, fn)` — side effects triggered only by **local** transactions (e.g. bumping a parent row's `updatedAt`). Filters out remote sync updates so you don't loop.
 
-The builder is a plain function. For a cached, refcounted factory (shared handles, grace-period teardown), wrap it with `defineDocument` — see below.
+The builder is a plain function. For a cached, refcounted factory (shared handles, grace-period teardown), wrap it with `createDocumentFactory` — see below.
 
 ## Attach Helpers
 
@@ -108,7 +108,7 @@ There is no `whenSynced` composite. If you need both, `Promise.all([idb.whenLoad
 
 ## Canonical Per-Row Content Doc
 
-Replaces the old `.withDocument('content', { content: richText, guid: 'id', onUpdate })` on a table. The builder closure passes directly to `defineDocument` — no named intermediate function, no explicit `gcTime` (30 s is the cache default):
+Replaces the old `.withDocument('content', { content: richText, guid: 'id', onUpdate })` on a table. The builder closure passes directly to `createDocumentFactory` — no named intermediate function, no explicit `gcTime` (30 s is the cache default):
 
 ```typescript
 // apps/fuji/src/lib/entry-content-docs.ts
@@ -116,7 +116,7 @@ import {
   attachIndexedDb,
   attachRichText,
   attachSync,
-  defineDocument,
+  createDocumentFactory,
   docGuid,
   onLocalUpdate,
   toWsUrl,
@@ -124,7 +124,7 @@ import {
 import * as Y from 'yjs';
 import { auth, workspace } from '$lib/client';
 
-export const entryContentDocs = defineDocument((entryId: EntryId) => {
+export const entryContentDocs = createDocumentFactory((entryId: EntryId) => {
   const ydoc = new Y.Doc({
     guid: docGuid({
       workspaceId: workspace.id,  // no literal prefix — comes from the workspace
@@ -182,7 +182,7 @@ Component owns the handle; the cache owns identity and the grace-period timer:
 {/await}
 ```
 
-Two tabs editing the same entry reconcile at the Yjs layer (IndexedDB + sync). The `defineDocument` cache dedupes in-process handles to the same `entryId`.
+Two tabs editing the same entry reconcile at the Yjs layer (IndexedDB + sync). The `createDocumentFactory` cache dedupes in-process handles to the same `entryId`.
 
 ### `open(id)` — the only entry point
 
@@ -258,7 +258,7 @@ export function createFileContentDocs({
   filesTable: Table<FileRow>;
   persistence?: 'indexeddb' | 'none';
 }) {
-  return defineDocument((fileId: FileId) => {
+  return createDocumentFactory((fileId: FileId) => {
     const ydoc = new Y.Doc({
       guid: docGuid({ workspaceId, collection: 'files', rowId: fileId, field: 'content' }),
       gc: false,
@@ -299,11 +299,11 @@ new Y.Doc({ guid, gc: false });
 
 ## One primitive for every doc
 
-There is no separate workspace/document split anymore. The app's top-level workspace doc is a `defineDocument(builder)` with `attachTables` + `attachKv` + `attachAwareness` + persistence + sync in the builder; per-row content docs are another `defineDocument` with `attachRichText` / `attachPlainText` / `attachTimeline` + their own persistence + sync. Both are keyed by id and refcounted by the cache.
+There is no separate workspace/document split anymore. The app's top-level workspace doc is a `createDocumentFactory(builder)` with `attachTables` + `attachKv` + `attachAwareness` + persistence + sync in the builder; per-row content docs are another `createDocumentFactory` with `attachRichText` / `attachPlainText` / `attachTimeline` + their own persistence + sync. Both are keyed by id and refcounted by the cache.
 
 ## Code References
 
-- `packages/workspace/src/document/define-document.ts` — the cache + refcount primitive
+- `packages/workspace/src/document/create-document-factory.ts` — the cache + refcount primitive
 - `packages/workspace/src/document/attach-indexed-db.ts` — persistence attach
 - `packages/workspace/src/document/attach-sync.ts` — sync attach (supervisor, backoff, awareness)
 - `packages/workspace/src/document/attach-rich-text.ts`, `attach-plain-text.ts`

@@ -75,7 +75,7 @@ Extraction has a cost: every reader pays attention tax to context-switch into th
 
 ### Concrete examples from this codebase
 
-- `DocumentHandle` / `DocumentFactory` — previously in their own `define-document.types.ts` file that existed only to keep them out of a bucket. Used only by `define-document.ts`. **Inlined** back into `define-document.ts` — zero reader benefit to the separation, and the separate file's own docstring admitted it was a workaround.
+- `DocumentHandle` / `DocumentFactory` — previously in their own `create-document-factory.types.ts` file that existed only to keep them out of a bucket. Used only by `create-document-factory.ts`. **Inlined** back into `create-document-factory.ts` — zero reader benefit to the separation, and the separate file's own docstring admitted it was a workaround.
 - `ContentHandle` / `ContentStrategy` — declared, exported, zero importers. **Deleted** (dead extraction).
 - `CombinedStandardSchema` — 5-line type, imported by 9+ files across two packages, documented public contract. **Extracted** to `standard-schema.ts` — small, but crosses a package boundary and has a named reason to exist.
 - `KV_KEY = 'kv'` / `TableKey(name)` — one-line constant + one-line function, but they're the reserved-prefix contract documented in public READMEs. **Extracted** — the contract is the value, not the size.

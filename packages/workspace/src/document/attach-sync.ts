@@ -910,7 +910,7 @@ function createLivenessMonitor(ws: WebSocket) {
 function waitForWsClose(
 	ws: WebSocket | null,
 	timeoutMs: number,
-	log?: Logger,
+	log: Logger,
 ): Promise<void> {
 	if (!ws || ws.readyState === WebSocket.CLOSED) return Promise.resolve();
 	return new Promise<void>((resolve) => {
@@ -921,7 +921,7 @@ function waitForWsClose(
 		ws.addEventListener('close', onClose, { once: true });
 		const timer = setTimeout(() => {
 			ws.removeEventListener('close', onClose);
-			log?.warn(SyncSupervisorError.CloseTimeout({ timeoutMs }));
+			log.warn(SyncSupervisorError.CloseTimeout({ timeoutMs }));
 			resolve();
 		}, timeoutMs);
 	});

@@ -23,3 +23,30 @@ export const MAIN_SUBPROTOCOL = 'epicenter';
 
 /** Prefix that identifies a bearer-token subprotocol entry. */
 export const BEARER_SUBPROTOCOL_PREFIX = 'bearer.';
+
+/**
+ * Parse a `Sec-WebSocket-Protocol` header value into its list of tokens.
+ *
+ * RFC 6455 specifies the value as a comma-separated list of RFC 7230 tokens,
+ * with optional whitespace after commas. Returns an empty list if the header
+ * is absent.
+ */
+export function parseSubprotocols(header: string | null): string[] {
+	if (!header) return [];
+	return header.split(',').map((s) => s.trim());
+}
+
+/**
+ * Extract the bearer token from a `Sec-WebSocket-Protocol` header, if present.
+ *
+ * The client encodes the token as `bearer.<token>` in the subprotocol list.
+ * Returns `null` when no bearer entry is offered (e.g. cookie-only browser
+ * auth, or an unauthenticated request the caller will reject downstream).
+ */
+export function extractBearerToken(headers: Headers): string | null {
+	const offered = headers.get('sec-websocket-protocol');
+	const bearer = parseSubprotocols(offered).find((s) =>
+		s.startsWith(BEARER_SUBPROTOCOL_PREFIX),
+	);
+	return bearer ? bearer.slice(BEARER_SUBPROTOCOL_PREFIX.length) : null;
+}

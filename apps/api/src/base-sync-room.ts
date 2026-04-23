@@ -16,6 +16,7 @@ import { DurableObject } from 'cloudflare:workers';
 import {
 	MAIN_SUBPROTOCOL,
 	decodeSyncRequest,
+	parseSubprotocols,
 	stateVectorsEqual,
 } from '@epicenter/sync';
 import { Awareness } from 'y-protocols/awareness';
@@ -235,14 +236,10 @@ export class BaseSyncRoom extends DurableObject {
 		}
 
 		const responseHeaders = new Headers();
-		const offered = request.headers.get('sec-websocket-protocol');
-		if (
-			offered &&
-			offered
-				.split(',')
-				.map((s) => s.trim())
-				.includes(MAIN_SUBPROTOCOL)
-		) {
+		const offered = parseSubprotocols(
+			request.headers.get('sec-websocket-protocol'),
+		);
+		if (offered.includes(MAIN_SUBPROTOCOL)) {
 			responseHeaders.set('sec-websocket-protocol', MAIN_SUBPROTOCOL);
 		}
 

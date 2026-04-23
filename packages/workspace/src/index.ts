@@ -25,15 +25,26 @@
 // ACTION SYSTEM
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { Action, Actions, Mutation, Query } from './shared/actions';
+export type {
+	Action,
+	ActionFailed,
+	Actions,
+	Mutation,
+	Query,
+	RemoteAction,
+	RemoteActions,
+	RemoteReturn,
+} from './shared/actions';
 export {
 	ACTION_BRAND,
+	ActionError,
 	defineMutation,
 	defineQuery,
 	dispatchAction,
 	isAction,
 	isMutation,
 	isQuery,
+	isResult,
 	iterateActions,
 } from './shared/actions';
 
@@ -42,6 +53,7 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { InferRpcMap, RpcActionMap } from './rpc/types';
+export { createRemoteActions, type RemoteSend } from './rpc/remote-actions';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SHARED TYPES

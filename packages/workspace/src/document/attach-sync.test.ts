@@ -282,15 +282,17 @@ describe('attachSync hasLocalChanges', () => {
 		await sync.whenDisposed;
 	});
 
-	test('inbound RPC request with dispatch config forwards to handler and returns its result', async () => {
+	test('inbound RPC request with dispatch config forwards to handler and Ok-wraps raw return value', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-rpc-dispatch' });
 		const calls: Array<{ action: string; input: unknown }> = [];
 		const sync = attachSync(ydoc, {
 			url: (id) => `ws://x/${id}`,
 			rpc: {
+				// Return a raw value — attachSync's handler is responsible for
+				// normalizing it into a `{data, error}` envelope on the wire.
 				dispatch: async (action, input) => {
 					calls.push({ action, input });
-					return { data: { echo: input, action }, error: null };
+					return { echo: input, action };
 				},
 			},
 		});

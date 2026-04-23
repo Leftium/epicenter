@@ -72,6 +72,11 @@
  */
 
 import type { Static, TSchema } from 'typebox';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
+import { isResult } from 'wellcrafted/result';
+
+export { isResult };
 
 /**
  * Global symbol brand used to reliably detect actions across package boundaries.
@@ -450,7 +455,7 @@ export async function dispatchAction(
 	actions: Actions,
 	path: string,
 	input: unknown,
-): Promise<{ data: unknown; error: unknown }> {
+): Promise<unknown> {
 	const segments = path.split('.');
 	let target: unknown = actions;
 	for (const segment of segments) {
@@ -462,5 +467,60 @@ export async function dispatchAction(
 	if (!isAction(target)) {
 		throw new Error(`Action not found: ${path}`);
 	}
-	return (await target(input as never)) as { data: unknown; error: unknown };
+	return await target(input as never);
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// ACTION ERROR (transport envelope)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Transport-layer error for actions invoked over RPC.
+ *
+ * `ActionFailed` exists to solve a wire problem: thrown errors don't cross
+ * processes. Local callers never see this — they `try/catch` instead. It
+ * appears only in `RemoteAction` signatures and in the RPC boundary's
+ * normalization path.
+ */
+export const ActionError = defineErrors({
+	ActionFailed: ({ action, cause }: { action: string; cause: unknown }) => ({
+		message: `Action '${action}' failed: ${extractErrorMessage(cause)}`,
+		action,
+		cause,
+	}),
+});
+export type ActionError = InferErrors<typeof ActionError>;
+export type ActionFailed = Extract<ActionError, { name: 'ActionFailed' }>;
+
+// ════════════════════════════════════════════════════════════════════════════
+// REMOTE ACTION TYPES (RPC proxy surface)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Unwrap Promise if present; then wrap in `Result<_, ActionFailed>`,
+ * merging with any existing Result error channel.
+ */
+export type RemoteReturn<TOutput> = TOutput extends Promise<infer Inner>
+	? RemoteReturn<Inner>
+	: TOutput extends Result<infer T, infer E>
+		? Promise<Result<T, E | ActionFailed>>
+		: Promise<Result<TOutput, ActionFailed>>;
+
+export type RemoteAction<A extends Action> = A extends Action<
+	infer TInput,
+	infer TOutput
+>
+	? (
+			...args: TInput extends TSchema ? [input: Static<TInput>] : []
+		) => RemoteReturn<TOutput>
+	: never;
+
+// Order matters: Action must be checked before Actions, because functions
+// with properties structurally satisfy Actions' index signature.
+export type RemoteActions<A extends Actions> = {
+	[K in keyof A]: A[K] extends Action
+		? RemoteAction<A[K]>
+		: A[K] extends Actions
+			? RemoteActions<A[K]>
+			: never;
+};

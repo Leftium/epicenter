@@ -24,7 +24,8 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import { tryAsync } from 'wellcrafted/result';
+import { Ok, isResult } from 'wellcrafted/result';
+import { ActionError } from '../shared/actions.js';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type { Awareness } from 'y-protocols/awareness';
 import {
@@ -76,18 +77,17 @@ export type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
 /**
  * Inbound RPC dispatcher provided by the caller.
  *
- * Return a Result-ish shape: `{ data, error }` where `error` is an RpcError
- * payload (or any serializable error) or null. `action` is a dot-path string
- * (e.g. `'tabs.close'`).
+ * Returns `Promise<unknown>` — the value may be raw, a Result `{data, error}`,
+ * sync or async. `attachSync`'s inbound handler is the sole place that
+ * normalizes: already-Result values pass through; raw values get `Ok`-wrapped;
+ * throws become `Err(ActionFailed)`. `action` is a dot-path string (e.g.
+ * `'tabs.close'`).
  *
  * Defined here (not imported from `@epicenter/workspace`) to avoid a circular
  * dep — `attachSync` stays at the primitive layer and delegates action lookup
  * and invocation to the caller.
  */
-export type RpcDispatch = (
-	action: string,
-	input: unknown,
-) => Promise<{ data: unknown; error: unknown }>;
+export type RpcDispatch = (action: string, input: unknown) => Promise<unknown>;
 
 /** Errors surfaced by the sync supervisor's background lifecycle. */
 export const SyncSupervisorError = defineErrors({
@@ -365,18 +365,17 @@ export function attachSync(
 			return;
 		}
 
-		const { data, error } = await tryAsync({
-			try: () => config.rpc!.dispatch(rpc.action, rpc.input),
-			catch: (err) =>
-				RpcError.ActionFailed({ action: rpc.action, cause: err }),
-		});
-
-		if (error) {
-			sendResponse({ data: null, error });
-			return;
+		// Normalize the dispatch return value into a `{data, error}` wire payload:
+		// - raw throw → Err(ActionFailed)
+		// - raw value → Ok-wrap
+		// - already a Result → forward unchanged
+		try {
+			const raw = await config.rpc.dispatch(rpc.action, rpc.input);
+			const normalized = isResult(raw) ? raw : Ok(raw);
+			sendResponse(normalized);
+		} catch (cause) {
+			sendResponse(ActionError.ActionFailed({ action: rpc.action, cause }));
 		}
-		// dispatch returns `{ data, error }` directly — forward it unchanged.
-		sendResponse(data as { data: unknown; error: unknown });
 	}
 
 	// ── Message senders ──

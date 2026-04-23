@@ -55,19 +55,6 @@ describe('defineTable', () => {
 	});
 
 	describe('variadic syntax', () => {
-		test('creates valid table definition with single version', () => {
-			const posts = defineTable(
-				type({ id: 'string', title: 'string', _v: '1' }),
-			);
-
-			const result = posts.schema['~standard'].validate({
-				id: '1',
-				title: 'Hello',
-				_v: 1,
-			});
-			expect(result).not.toHaveProperty('issues');
-		});
-
 		test('creates table definition with multiple versions that validates both', () => {
 			const posts = defineTable(
 				type({ id: 'string', title: 'string', _v: '1' }),
@@ -122,66 +109,7 @@ describe('defineTable', () => {
 	});
 
 	describe('schema patterns', () => {
-		test('two version migration with _v discriminant', () => {
-			const posts = defineTable(
-				type({ id: 'string', title: 'string', _v: '1' }),
-				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-			).migrate((row) => {
-				if (row._v === 1) return { ...row, views: 0, _v: 2 };
-				return row;
-			});
-
-			// Both versions should validate
-			const v1Result = posts.schema['~standard'].validate({
-				id: '1',
-				title: 'Test',
-				_v: 1,
-			});
-			expect(v1Result).not.toHaveProperty('issues');
-
-			const migrated = posts.migrate({
-				id: '1',
-				title: 'Test',
-				_v: 1,
-			});
-			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
-		});
-
-		test('two version migration with _v', () => {
-			const posts = defineTable(
-				type({ id: 'string', title: 'string', _v: '1' }),
-				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-			).migrate((row) => {
-				if (row._v === 1) return { ...row, views: 0, _v: 2 };
-				return row;
-			});
-
-			// Both versions should validate
-			const v1Result = posts.schema['~standard'].validate({
-				id: '1',
-				title: 'Test',
-				_v: 1,
-			});
-			expect(v1Result).not.toHaveProperty('issues');
-
-			const v2Result = posts.schema['~standard'].validate({
-				id: '1',
-				title: 'Test',
-				views: 10,
-				_v: 2,
-			});
-			expect(v2Result).not.toHaveProperty('issues');
-
-			// Migrate v1 to v2
-			const migrated = posts.migrate({
-				id: '1',
-				title: 'Test',
-				_v: 1,
-			});
-			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
-		});
-
-		test('three-version migration uses switch and preserves latest rows', () => {
+		test('three-version migration composes v1→v2→v3 and preserves latest rows', () => {
 			const posts = defineTable(
 				type({ id: 'string', title: 'string', _v: '1' }),
 				type({
@@ -190,58 +118,58 @@ describe('defineTable', () => {
 					views: 'number',
 					_v: '2',
 				}),
+				type({
+					id: 'string',
+					title: 'string',
+					views: 'number',
+					author: 'string',
+					_v: '3',
+				}),
 			).migrate((row) => {
 				switch (row._v) {
 					case 1:
-						return { ...row, views: 0, _v: 2 };
+						return { ...row, views: 0, author: 'unknown', _v: 3 };
 					case 2:
+						return { ...row, author: 'unknown', _v: 3 };
+					case 3:
 						return row;
 				}
 			});
 
-			// V1 data should validate
-			const v1Result = posts.schema['~standard'].validate({
-				id: '1',
-				title: 'Test',
-				_v: 1,
-			});
-			expect(v1Result).not.toHaveProperty('issues');
+			// All three versions validate
+			for (const input of [
+				{ id: '1', title: 'Test', _v: 1 },
+				{ id: '1', title: 'Test', views: 10, _v: 2 },
+				{ id: '1', title: 'Test', views: 10, author: 'a', _v: 3 },
+			]) {
+				expect(posts.schema['~standard'].validate(input)).not.toHaveProperty(
+					'issues',
+				);
+			}
 
-			// V2 data should validate
-			const v2Result = posts.schema['~standard'].validate({
-				id: '1',
-				title: 'Test',
-				views: 10,
-				_v: 2,
-			});
-			expect(v2Result).not.toHaveProperty('issues');
-
-			// Migrate v1 to v2
-			const migrated = posts.migrate({
-				id: '1',
-				title: 'Test',
-				_v: 1,
-			});
-			expect(migrated).toEqual({
+			// v1 → v3
+			expect(posts.migrate({ id: '1', title: 'Test', _v: 1 })).toEqual({
 				id: '1',
 				title: 'Test',
 				views: 0,
-				_v: 2,
+				author: 'unknown',
+				_v: 3,
 			});
 
-			// V2 passes through unchanged
-			const alreadyLatest = posts.migrate({
+			// v2 → v3
+			expect(
+				posts.migrate({ id: '1', title: 'Test', views: 5, _v: 2 }),
+			).toEqual({
 				id: '1',
 				title: 'Test',
 				views: 5,
-				_v: 2,
+				author: 'unknown',
+				_v: 3,
 			});
-			expect(alreadyLatest).toEqual({
-				id: '1',
-				title: 'Test',
-				views: 5,
-				_v: 2,
-			});
+
+			// v3 passes through unchanged
+			const latest = { id: '1', title: 'Test', views: 5, author: 'a', _v: 3 as const };
+			expect(posts.migrate(latest)).toEqual(latest);
 		});
 	});
 

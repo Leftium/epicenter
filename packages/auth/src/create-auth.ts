@@ -251,22 +251,21 @@ export function createAuth({
 	// (onSuccess may have rotated it and BA's async refetch can emit a
 	// stale pre-rotation value). On initial establishment (current is
 	// null), use BA's token.
-	const unsubBA = client.useSession.subscribe((state) => {
-		if (state.isPending) return;
-		const current = session.get();
-		if (state.data) {
-			session.set({
-				token: current?.token ?? state.data.session.token,
-				user: normalizeUser(state.data.user),
-				encryptionKeys: state.data.encryptionKeys,
-			});
-		} else if (current !== null) {
-			session.set(null);
-		}
-	});
-	disposers.push(() => {
-		if (typeof unsubBA === 'function') unsubBA();
-	});
+	disposers.push(
+		client.useSession.subscribe((state) => {
+			if (state.isPending) return;
+			const current = session.get();
+			if (state.data) {
+				session.set({
+					token: current?.token ?? state.data.session.token,
+					user: normalizeUser(state.data.user),
+					encryptionKeys: state.data.encryptionKeys,
+				});
+			} else if (current !== null) {
+				session.set(null);
+			}
+		}),
+	);
 
 	return {
 		getToken: () => session.get()?.token ?? null,

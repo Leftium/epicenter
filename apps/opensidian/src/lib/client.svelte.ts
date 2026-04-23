@@ -215,7 +215,7 @@ export function openOpenSidian() {
 		}
 		encryption.applyKeys(next.encryptionKeys);
 		sync.setToken(next.token);
-		sync.reconnect();
+		if (previous?.token !== next.token) sync.reconnect();
 	});
 
 	return {

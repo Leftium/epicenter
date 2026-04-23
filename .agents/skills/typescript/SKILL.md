@@ -278,6 +278,33 @@ Legitimate cast exceptions:
 - **Generics ceremony in typed builders** — `Object.assign(handler, {...}) as unknown as Query<T, U>` when `Object.assign` erases the generic overload inference. Acceptable when the overload signature is the real contract; keep the cast at the innermost scope.
 - **Test fixtures casting mocks** — acceptable in `*.test.ts`, never leaked out of a test file.
 
+### Optional properties: `?.` over `in` or truthiness
+
+When a property is optional in the type (`foo?: () => void`, including symbol keys like `[Symbol.asyncDispose]?: () => Promise<void>`), access it with optional chaining. Don't `in`-check, don't cast, don't truthiness-check. The type already proves the call is safe; runtime probes are redundant and invite casts.
+
+```ts
+// Bad — runtime `in` check + cast
+if (Symbol.asyncDispose in sink) {
+  await (sink as AsyncDisposable)[Symbol.asyncDispose]();
+}
+
+// Bad — truthiness check before call
+if (handler.onError) handler.onError(err);
+
+// Good — optional chaining handles it
+await sink[Symbol.asyncDispose]?.();
+handler.onError?.(err);
+```
+
+`Partial<AsyncDisposable>` and optional-function property types compose cleanly with `?.()` — no casts needed — and it works identically for string, symbol, and computed keys. Real example from the workspace-logger:
+
+```ts
+type LogSink = ((event: LogEvent) => void) & Partial<AsyncDisposable>;
+
+for (const sink of sinks) await sink[Symbol.asyncDispose]?.();
+// consoleSink has no dispose → no-op; jsonlFileSink has it → awaited
+```
+
 ## Boolean Naming: `is`/`has`/`can` Prefix
 
 Boolean properties, variables, and parameters MUST use a predicate prefix that reads as a yes/no question:

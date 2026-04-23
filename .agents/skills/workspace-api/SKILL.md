@@ -14,7 +14,7 @@ metadata:
 
 Type-safe schema definitions for tables and KV stores.
 
-> **Related Skills**: See `yjs` for Yjs CRDT patterns and shared types. See `svelte` for reactive wrappers (`fromTable`, `fromKv`).
+> **Related Skills**: See `yjs` for Yjs CRDT patterns and shared types. See `svelte` for reactive wrappers (`fromTable`, `fromKv`). See `attach-primitive` for the full contract and invariants every `attach*` function must follow.
 
 ## When to Apply This Skill
 

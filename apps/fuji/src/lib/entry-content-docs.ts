@@ -1,7 +1,10 @@
 /**
  * Per-entry content Y.Doc factory with IndexedDB persistence and WebSocket
- * sync. Consumers open a handle via `entryContentDocs.open(entryId)`, await
- * `whenReady` before reading, and let `using` handle disposal.
+ * sync. Exports a `createEntryContentDocs(deps)` builder so the parent
+ * workspace wires it with its own table + token source — no upward import
+ * back into `client.svelte.ts`. Consumers open a handle via
+ * `entryContentDocs.open(entryId)`, await `whenReady` before reading, and
+ * let `using` handle disposal.
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -10,49 +13,59 @@ import {
 	attachRichText,
 	attachSync,
 	createDocumentFactory,
+	DateTimeString,
 	docGuid,
 	onLocalUpdate,
+	type Table,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { DateTimeString } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { auth, workspace } from '$lib/client.svelte';
-import type { EntryId } from '$lib/workspace';
+import type { Entry, EntryId } from '$lib/workspace';
 
-export const entryContentDocs = createDocumentFactory((entryId: EntryId) => {
-	const ydoc = new Y.Doc({
-		guid: docGuid({
-			workspaceId: workspace.id,
-			collection: 'entries',
-			rowId: entryId,
-			field: 'content',
-		}),
-		gc: false,
-	});
-	const content = attachRichText(ydoc);
-	const idb = attachIndexedDb(ydoc);
-	const sync = attachSync(ydoc, {
-		url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
-		waitFor: idb.whenLoaded,
-	});
-	// Seed with the current token; per-doc sync doesn't observe token rotation.
-	// On editor re-open the next handle picks up any refreshed token.
-	sync.setToken(auth.token);
-
-	onLocalUpdate(ydoc, () => {
-		workspace.tables.entries.update(entryId, {
-			updatedAt: DateTimeString.now(),
+export function createEntryContentDocs({
+	workspaceId,
+	entriesTable,
+	getToken,
+}: {
+	workspaceId: string;
+	entriesTable: Table<Entry>;
+	getToken: () => string | null;
+}) {
+	return createDocumentFactory((entryId: EntryId) => {
+		const ydoc = new Y.Doc({
+			guid: docGuid({
+				workspaceId,
+				collection: 'entries',
+				rowId: entryId,
+				field: 'content',
+			}),
+			gc: false,
 		});
-	});
+		const content = attachRichText(ydoc);
+		const idb = attachIndexedDb(ydoc);
+		const sync = attachSync(ydoc, {
+			url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
+			waitFor: idb.whenLoaded,
+		});
+		// Seed with the current token; per-doc sync doesn't observe token rotation.
+		// On editor re-open the next handle picks up any refreshed token.
+		sync.setToken(getToken());
 
-	return {
-		ydoc,
-		content,
-		idb,
-		sync,
-		whenReady: idb.whenLoaded,
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	};
-});
+		onLocalUpdate(ydoc, () => {
+			entriesTable.update(entryId, {
+				updatedAt: DateTimeString.now(),
+			});
+		});
+
+		return {
+			ydoc,
+			content,
+			idb,
+			sync,
+			whenReady: idb.whenLoaded,
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
+	});
+}

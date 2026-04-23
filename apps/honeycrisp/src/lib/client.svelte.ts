@@ -18,6 +18,7 @@ import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
+import { createNoteBodyDocs } from '$lib/note-body-docs';
 import { createHoneycrispActions, honeycrispTables } from '$lib/workspace';
 
 const session = createPersistedState({
@@ -39,6 +40,14 @@ export function openHoneycrisp() {
 		url: (docId) => toWsUrl(`${APP_URLS.API}/workspaces/${docId}`),
 		waitFor: idb.whenLoaded,
 		requiresToken: true,
+	});
+
+	const noteBodyDocs = createNoteBodyDocs({
+		workspaceId: ydoc.guid,
+		notesTable: tables.notes,
+		// Lazy: read `auth.token` when a handle opens, not when the factory is
+		// constructed (auth is declared after this function returns).
+		getToken: () => auth.token,
 	});
 
 	// Edge detector: only wipe IDB on a genuine logged-in → logged-out transition.
@@ -70,6 +79,7 @@ export function openHoneycrisp() {
 		idb,
 		sync,
 		actions: createHoneycrispActions(tables),
+		noteBodyDocs,
 		applySession,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,
@@ -80,6 +90,7 @@ export function openHoneycrisp() {
 }
 
 export const workspace = openHoneycrisp();
+export const noteBodyDocs = workspace.noteBodyDocs;
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

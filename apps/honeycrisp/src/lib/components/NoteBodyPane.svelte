@@ -1,6 +1,6 @@
 <script lang="ts">
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
-	import { noteBodyDocs } from '$lib/note-body-docs';
+	import { noteBodyDocs } from '$lib/client.svelte';
 	import { notesState } from '$lib/state';
 
 	let { noteId }: { noteId: string } = $props();

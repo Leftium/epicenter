@@ -20,6 +20,7 @@ import { createPersistedState } from '@epicenter/svelte';
 import { AuthSession, createAuth } from '@epicenter/svelte/auth';
 import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
+import { createEntryContentDocs } from '$lib/entry-content-docs';
 import { createFujiActions, fujiTables } from '$lib/workspace';
 
 const session = createPersistedState({
@@ -43,6 +44,14 @@ export function openFuji() {
 		waitFor: idb.whenLoaded,
 		awareness: awareness.raw,
 		requiresToken: true,
+	});
+
+	const entryContentDocs = createEntryContentDocs({
+		workspaceId: ydoc.guid,
+		entriesTable: tables.entries,
+		// Lazy: read `auth.token` when a handle opens, not when the factory is
+		// constructed (auth is declared after this function returns).
+		getToken: () => auth.token,
 	});
 
 	// Edge detector: only wipe IDB on a genuine logged-in → logged-out transition.
@@ -75,6 +84,7 @@ export function openFuji() {
 		idb,
 		sync,
 		actions: createFujiActions(tables),
+		entryContentDocs,
 		applySession,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,
@@ -85,6 +95,7 @@ export function openFuji() {
 }
 
 export const workspace = openFuji();
+export const entryContentDocs = workspace.entryContentDocs;
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

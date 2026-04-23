@@ -1,7 +1,9 @@
 /**
  * Per-note body Y.Doc factory with IndexedDB persistence and WebSocket sync.
- * Consumers open a handle via `noteBodyDocs.open(noteId)`, await `whenReady`
- * before reading, and let `using` handle disposal.
+ * Exports a `createNoteBodyDocs(deps)` builder so the parent workspace wires
+ * it with its own table + token source — no upward import back into
+ * `client.svelte.ts`. Consumers open a handle via `noteBodyDocs.open(noteId)`,
+ * await `whenReady` before reading, and let `using` handle disposal.
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -10,49 +12,59 @@ import {
 	attachRichText,
 	attachSync,
 	createDocumentFactory,
+	DateTimeString,
 	docGuid,
 	onLocalUpdate,
+	type Table,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { DateTimeString } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { auth, workspace } from '$lib/client.svelte';
-import type { NoteId } from '$lib/workspace';
+import type { Note, NoteId } from '$lib/workspace';
 
-export const noteBodyDocs = createDocumentFactory((noteId: NoteId) => {
-	const ydoc = new Y.Doc({
-		guid: docGuid({
-			workspaceId: workspace.id,
-			collection: 'notes',
-			rowId: noteId,
-			field: 'body',
-		}),
-		gc: false,
-	});
-	const body = attachRichText(ydoc);
-	const idb = attachIndexedDb(ydoc);
-	const sync = attachSync(ydoc, {
-		url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
-		waitFor: idb.whenLoaded,
-	});
-	// Seed with the current token; per-doc sync doesn't observe token rotation.
-	// On editor re-open the next handle picks up any refreshed token.
-	sync.setToken(auth.token);
-
-	onLocalUpdate(ydoc, () => {
-		workspace.tables.notes.update(noteId, {
-			updatedAt: DateTimeString.now(),
+export function createNoteBodyDocs({
+	workspaceId,
+	notesTable,
+	getToken,
+}: {
+	workspaceId: string;
+	notesTable: Table<Note>;
+	getToken: () => string | null;
+}) {
+	return createDocumentFactory((noteId: NoteId) => {
+		const ydoc = new Y.Doc({
+			guid: docGuid({
+				workspaceId,
+				collection: 'notes',
+				rowId: noteId,
+				field: 'body',
+			}),
+			gc: false,
 		});
-	});
+		const body = attachRichText(ydoc);
+		const idb = attachIndexedDb(ydoc);
+		const sync = attachSync(ydoc, {
+			url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
+			waitFor: idb.whenLoaded,
+		});
+		// Seed with the current token; per-doc sync doesn't observe token rotation.
+		// On editor re-open the next handle picks up any refreshed token.
+		sync.setToken(getToken());
 
-	return {
-		ydoc,
-		body,
-		idb,
-		sync,
-		whenReady: idb.whenLoaded,
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	};
-});
+		onLocalUpdate(ydoc, () => {
+			notesTable.update(noteId, {
+				updatedAt: DateTimeString.now(),
+			});
+		});
+
+		return {
+			ydoc,
+			body,
+			idb,
+			sync,
+			whenReady: idb.whenLoaded,
+			[Symbol.dispose]() {
+				ydoc.destroy();
+			},
+		};
+	});
+}

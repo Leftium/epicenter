@@ -7,7 +7,7 @@
  * let `using` handle disposal.
  */
 
-import type { AuthCore } from '@epicenter/auth';
+import type { AuthCore } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachIndexedDb,

@@ -193,40 +193,38 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 	};
 }
 
-// ── SessionStore adapter ─────────────────────────────────────────────────────
-
-import type { AuthSession, SessionStore } from '@epicenter/auth';
+// ── get/set/watch adapter ────────────────────────────────────────────────────
 
 /**
- * Shape of a `createStorageState` return value narrowed to what the
- * SessionStore adapter needs. `.current` is authoritative after
- * `whenReady` resolves.
- */
-type StorageSessionState = {
-	current: AuthSession | null;
-	whenReady: Promise<void>;
-	watch(fn: (value: AuthSession | null) => void): () => void;
-};
-
-/**
- * Adapt a `createStorageState` store to the `SessionStore` contract used by
- * `@epicenter/auth`.
+ * Adapt a `createStorageState` store (or any `{ current, whenReady, watch }`
+ * triple where `watch` only fires on external changes) to a
+ * `{ get, set, watch, whenReady }` contract.
  *
- * Two things bridge the gap from chrome.storage to sync SessionStore:
+ * Two things bridge the gap:
  *
  * 1. **Hydration.** chrome.storage is async. The adapter re-exports
- *    `whenReady` so the caller can await it before constructing `createAuth`;
+ *    `whenReady` so the caller can await it before constructing consumers;
  *    after that, `.current` is authoritative.
  * 2. **Local-write fan-out.** The underlying `watch` only fires on external
- *    changes (from other extension contexts). SessionStore's contract
- *    requires watchers to fire on every change — including writes made via
+ *    changes (from other extension contexts). Consumers (e.g. a SessionStore)
+ *    need watchers to fire on every change — including writes made via
  *    `set()`. The adapter keeps its own watcher set and notifies them
  *    directly from `set()`, in addition to forwarding external changes.
+ *
+ * Structurally assignable to `SessionStore` from `@epicenter/auth` when `T` is
+ * `AuthSession | null`, but the adapter itself has no auth dependency.
  */
-export function fromStorageState(
-	state: StorageSessionState,
-): SessionStore & { whenReady: Promise<void> } {
-	const watchers = new Set<(value: AuthSession | null) => void>();
+export function fromStorageState<T>(state: {
+	current: T;
+	whenReady: Promise<void>;
+	watch(fn: (value: T) => void): () => void;
+}): {
+	get(): T;
+	set(value: T): void;
+	watch(fn: (value: T) => void): () => void;
+	whenReady: Promise<void>;
+} {
+	const watchers = new Set<(value: T) => void>();
 
 	state.watch((next) => {
 		for (const fn of watchers) fn(next);

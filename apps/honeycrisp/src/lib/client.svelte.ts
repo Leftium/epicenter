@@ -2,29 +2,36 @@
  * Honeycrisp workspace client — a direct `openHoneycrisp()` call that
  * owns the Y.Doc construction and composes every attachment inline.
  *
- * `applySession` handles every auth transition (login, logout, token
- * rotation) through a single method. A Svelte `$effect` in this module
- * bridges the reactive `auth.session` rune to that method.
+ * Auth transitions drive every sync decision through a single
+ * `auth.onSessionChange` subscription: login (re)applies encryption keys
+ * and reconnects, logout clears local data, token rotation re-arms the
+ * sync transport.
  */
 
+import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
+import { createPersistedState, fromPersistedState } from '@epicenter/svelte';
 import {
 	attachBroadcastChannel,
+	attachEncryption,
 	attachIndexedDb,
 	attachSync,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { createPersistedState } from '@epicenter/svelte';
-import { AuthSession, createAuth } from '@epicenter/svelte/auth';
-import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createNoteBodyDocs } from '$lib/note-body-docs';
 import { createHoneycrispActions, honeycrispTables } from '$lib/workspace';
 
-const session = createPersistedState({
+const sessionState = createPersistedState({
 	key: 'honeycrisp:authSession',
 	schema: AuthSession.or('null'),
 	defaultValue: null,
+});
+const session = fromPersistedState(sessionState);
+
+export const auth = createAuth({
+	baseURL: APP_URLS.API,
+	session,
 });
 
 export function openHoneycrisp() {
@@ -45,28 +52,20 @@ export function openHoneycrisp() {
 	const noteBodyDocs = createNoteBodyDocs({
 		workspaceId: ydoc.guid,
 		notesTable: tables.notes,
-		// Lazy: read `auth.token` when a handle opens, not when the factory is
-		// constructed (auth is declared after this function returns).
-		getToken: () => auth.token,
+		auth,
 	});
 
-	// Edge detector: only wipe IDB on a genuine logged-in → logged-out transition.
-	// Cold-start-unauth (first call, `previous` still null) must be a noop so
-	// anonymous data isn't destroyed at boot.
-	let previousSession: AuthSession | null = null;
-	async function applySession(next: AuthSession | null) {
-		const wasAuthed = previousSession !== null;
-		previousSession = next;
+	auth.onSessionChange((next, previous) => {
 		if (next === null) {
 			sync.goOffline();
 			sync.setToken(null);
-			if (wasAuthed) await idb.clearLocal();
+			if (previous !== null) void idb.clearLocal();
 			return;
 		}
 		encryption.applyKeys(next.encryptionKeys);
 		sync.setToken(next.token);
 		sync.reconnect();
-	}
+	});
 
 	return {
 		get id() {
@@ -80,7 +79,6 @@ export function openHoneycrisp() {
 		sync,
 		actions: createHoneycrispActions(tables),
 		noteBodyDocs,
-		applySession,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
@@ -92,14 +90,8 @@ export function openHoneycrisp() {
 export const workspace = openHoneycrisp();
 export const noteBodyDocs = workspace.noteBodyDocs;
 
-export const auth = createAuth({
-	baseURL: APP_URLS.API,
-	session,
-});
-
-const dispose = $effect.root(() => {
-	$effect(() => {
-		void workspace.applySession(auth.session);
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => {
+		auth[Symbol.dispose]();
 	});
-});
-if (import.meta.hot) import.meta.hot.dispose(dispose);
+}

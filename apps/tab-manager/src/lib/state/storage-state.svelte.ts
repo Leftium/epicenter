@@ -192,3 +192,60 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 		},
 	};
 }
+
+// ── SessionStore adapter ─────────────────────────────────────────────────────
+
+/**
+ * Shape of a `createStorageState` return value narrowed to what a
+ * SessionStore adapter needs.
+ */
+type StorageStateLike<T> = {
+	current: T;
+	get(): Promise<T>;
+	whenReady: Promise<void>;
+	watch(fn: (value: T) => void): () => void;
+};
+
+/**
+ * Adapt a `createStorageState` store to the `SessionStore` contract used by
+ * `@epicenter/auth`.
+ *
+ * Two things bridge the gap from chrome.storage to sync SessionStore:
+ *
+ * 1. **Hydration.** chrome.storage is async. The adapter re-exports
+ *    `whenReady` so the caller can await it before constructing `createAuth`;
+ *    after that, `.current` is authoritative and `get()` reads the cache
+ *    synchronously.
+ * 2. **Local-write fan-out.** The underlying `watch` only fires on external
+ *    changes (from other extension contexts). SessionStore's contract
+ *    requires watchers to fire on every change — including writes made via
+ *    `set()`. The adapter keeps its own watcher set and notifies them
+ *    directly from `set()`, in addition to forwarding external changes.
+ */
+export function fromStorageState<T>(state: StorageStateLike<T>): {
+	whenReady: Promise<void>;
+	get(): T;
+	set(value: T): void;
+	watch(fn: (value: T) => void): () => void;
+} {
+	const watchers = new Set<(value: T) => void>();
+
+	state.watch((next) => {
+		for (const fn of watchers) fn(next);
+	});
+
+	return {
+		whenReady: state.whenReady,
+		get: () => state.current,
+		set: (value) => {
+			state.current = value;
+			for (const fn of watchers) fn(value);
+		},
+		watch(fn) {
+			watchers.add(fn);
+			return () => {
+				watchers.delete(fn);
+			};
+		},
+	};
+}

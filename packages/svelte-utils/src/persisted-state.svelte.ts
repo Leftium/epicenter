@@ -226,3 +226,36 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		},
 	};
 }
+
+// ── SessionStore adapter ─────────────────────────────────────────────────────
+
+/**
+ * Shape of a `createPersistedState` return value, narrowed to what a
+ * SessionStore adapter needs. Typed structurally so callers can also hand-roll
+ * a persisted store with the same methods.
+ */
+type PersistedStateLike<T> = {
+	current: T;
+	get(): T;
+	watch(fn: (value: T) => void): () => void;
+};
+
+/**
+ * Adapt a `createPersistedState` store to the `SessionStore` contract used by
+ * `@epicenter/auth`. localStorage is already synchronous and already fans out
+ * local writes to watchers, so this is a thin shape translation — `set(value)`
+ * becomes `current = value`.
+ */
+export function fromPersistedState<T>(state: PersistedStateLike<T>): {
+	get(): T;
+	set(value: T): void;
+	watch(fn: (value: T) => void): () => void;
+} {
+	return {
+		get: () => state.get(),
+		set: (value) => {
+			state.current = value;
+		},
+		watch: (fn) => state.watch(fn),
+	};
+}

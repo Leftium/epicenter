@@ -234,7 +234,7 @@ export function createAuth({
 			onSuccess: (context) => {
 				const newToken = context.response.headers.get('set-auth-token');
 				const current = session.get();
-				if (newToken && current !== null) {
+				if (newToken && current !== null && newToken !== current.token) {
 					session.set({ ...current, token: newToken });
 				}
 			},

@@ -263,3 +263,33 @@ const RecorderError = defineErrors({
   }),
 });
 ```
+
+## Reserved Field Names
+
+Two keys are reserved at the type level in every variant body — TypeScript will error if you try to return them from a factory:
+
+- **`name`** — stamped by `defineErrors` from the factory key. A user-provided `name` would be silently overwritten, so it's flagged loudly.
+- **`data`** — collides with `Err<E>`'s `data: null` discriminator. Any narrowing over `AnyTaggedError | Err<AnyTaggedError>` (used for example by `wellcrafted/logger`'s `log.warn` / `log.error`) would silently break if a variant had a top-level `data` field.
+
+If you want to carry a structured payload alongside the message, pick a different field name (`payload`, `body`, `value`, domain-specific names like `path`, `response`, `input`).
+
+```ts
+// ❌ Type errors
+defineErrors({
+  Bad1: () => ({ message: 'x', name: 'override' }),  // reserved
+  Bad2: () => ({ message: 'x', data: { foo: 1 } }),  // reserved
+});
+
+// ✅ Fine
+defineErrors({
+  Good: ({ path, payload }: { path: string; payload: unknown }) => ({
+    message: `failed at ${path}`,
+    path,
+    payload,
+  }),
+});
+```
+
+## Related: `Err(null)` is a type error too
+
+`wellcrafted`'s `Err` constructor is typed `<E extends NonNullable<unknown>>` — `Err(null)` and `Err(undefined)` are compile errors. A failure with no reason is meaningless, and structurally it collides with `Ok(null)`. Pass a real error value (string, `Error`, tagged error from `defineErrors`, etc.) or use `Ok(null)` / `Ok(undefined)` if the intent was "completed with no payload." See [docs/articles/ok-null-is-fine-err-null-is-a-lie.md](../../docs/articles/ok-null-is-fine-err-null-is-a-lie.md) for the full rationale.

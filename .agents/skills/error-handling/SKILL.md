@@ -256,14 +256,14 @@ there's truly nothing distinct to say.
 
 ## Logging errors
 
-Typed errors are structured values, so they're also what the `@epicenter/workspace` logger wants. `log.warn` / `log.error` take a typed error unary — no message argument, no format string. The error owns its message, and the log sink gets the full object (name, fields, cause) alongside it.
+Typed errors are structured values, so they're also what the `wellcrafted/logger` wants. `log.warn` / `log.error` take a typed error unary — no message argument, no format string. The error owns its message, and the log sink gets the full object (name, fields, cause) alongside it.
 
 ### The canonical pattern
 
 Mint the typed error inside `catch:`, route through Result, and log at the boundary with `tapErr`. The caller picks the level (`.warn` for recoverable, `.error` for loud) at the pipeline site — matching Rust's `tracing::warn!(?err)` convention, where level lives at the call site and never on the error variant.
 
 ```ts
-import { createLogger, tapErr } from '@epicenter/workspace';
+import { createLogger, tapErr } from 'wellcrafted/logger';
 import { tryAsync } from 'wellcrafted/result';
 
 const log = createLogger('markdown-materializer');
@@ -289,7 +289,7 @@ Level is context-dependent (same error can be `warn` on a retry, `error` on the 
 Never assert on console output. Use `memorySink()` and inspect the events array directly:
 
 ```ts
-import { createLogger, memorySink } from '@epicenter/workspace';
+import { createLogger, memorySink } from 'wellcrafted/logger';
 
 test('logs a decrypt failure when the keyring is missing the version', () => {
   const { sink, events } = memorySink();

@@ -1,19 +1,23 @@
 ---
 name: logging
-description: Use `@epicenter/workspace`'s structured logger for library-side diagnostics. 5 levels (trace/debug/info/warn/error), typed errors on warn/error, DI-only sink. Use when wiring a new attach primitive, adding a background error path, or setting up a file-backed log. Do NOT use `console.*` in library code.
+description: Use `wellcrafted/logger` for structured library-side diagnostics. 5 levels (trace/debug/info/warn/error), typed errors on warn/error, DI-only sink. Use when wiring a new attach primitive, adding a background error path, or setting up a file-backed log. Do NOT use `console.*` in library code.
 metadata:
   author: epicenter
-  version: '1.0'
+  version: '2.0'
 ---
 
 # Workspace Logger
 
 Structured, level-keyed, field-oriented logging for library code. Modeled on Rust's `tracing`. Completes the `defineErrors` story: errors are structured data; level lives at the call site.
 
+## Where it lives
+
+The core (`createLogger`, `consoleSink`, `memorySink`, `composeSinks`, `tapErr`, and their types) ships from **`wellcrafted/logger`** — runtime-agnostic, browser-safe. The Bun-only `jsonlFileSink` + `DisposableLogSink` ship from **`@epicenter/workspace`** because they need `Bun.file(path).writer()` and `node:fs`.
+
 ## Quickstart
 
 ```ts
-import { createLogger, consoleSink } from '@epicenter/workspace';
+import { createLogger } from 'wellcrafted/logger';
 
 const log = createLogger('markdown-materializer'); // defaults to consoleSink
 
@@ -50,13 +54,18 @@ Do NOT attach a `severity` to `defineErrors` variants. That's `miette`'s pattern
 A sink is `((event) => void) & Partial<AsyncDisposable>` — a callable with optional resource cleanup.
 
 ```ts
+// Core — runtime-agnostic, browser-safe
 import {
   createLogger,
   consoleSink,    // default; mirrors old console.* behavior
   memorySink,     // for tests; returns { sink, events }
-  jsonlFileSink,  // Bun/Node only; appends one JSON line per event
   composeSinks,   // fan out to multiple sinks
-} from '@epicenter/workspace';
+  tapErr,         // Result-flow combinator
+} from 'wellcrafted/logger';
+
+// Bun-only file sink — ships from the workspace package because it needs
+// `Bun.file(path).writer()` and `node:fs`
+import { jsonlFileSink } from '@epicenter/workspace';
 ```
 
 ### `jsonlFileSink(path)` — Bun-only

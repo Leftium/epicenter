@@ -168,7 +168,7 @@ impl Serialize for MyError {
 
 This pattern ensures clean, type-safe error handling across the Rust-TypeScript boundary with minimal boilerplate and maximum type safety.
 
-## `tracing` ↔ `@epicenter/workspace` Logger
+## `tracing` ↔ `wellcrafted/logger`
 
 `defineErrors` mirrors `thiserror`; the workspace logger mirrors `tracing`. Together they give TypeScript the same split Rust has: errors are data, level is chosen at the emit site.
 

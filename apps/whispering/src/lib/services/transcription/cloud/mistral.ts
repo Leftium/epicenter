@@ -1,5 +1,6 @@
 import { Mistral } from '@mistralai/mistralai';
 import { MistralError as MistralSdkError } from '@mistralai/mistralai/models/errors';
+import { ConnectionError as MistralConnectionError } from '@mistralai/mistralai/models/errors/httpclienterrors';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -55,6 +56,10 @@ export const MistralTranscriptionError = defineErrors({
 		message: cause.message,
 		cause,
 		status,
+	}),
+	Connection: ({ cause }: { cause: MistralConnectionError }) => ({
+		message: cause.message,
+		cause,
 	}),
 	InvalidResponse: () => ({
 		message: 'Mistral API returned an invalid response format',
@@ -115,6 +120,9 @@ export const MistralTranscriptionServiceLive = {
 						: undefined,
 				}),
 			catch: (error) => {
+				if (error instanceof MistralConnectionError) {
+					return MistralTranscriptionError.Connection({ cause: error });
+				}
 				if (!(error instanceof MistralSdkError)) {
 					return MistralTranscriptionError.Unexpected({ cause: error });
 				}

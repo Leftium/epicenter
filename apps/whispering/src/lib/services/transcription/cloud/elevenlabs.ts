@@ -8,7 +8,7 @@ import { type Result, tryAsync } from 'wellcrafted/result';
 
 const MAX_FILE_SIZE_MB = 1000 as const;
 
-export const ElevenlabsError = defineErrors({
+export const ElevenLabsError = defineErrors({
 	MissingApiKey: () => ({
 		message: 'ElevenLabs API key is required',
 	}),
@@ -28,9 +28,9 @@ export const ElevenlabsError = defineErrors({
 		cause,
 	}),
 });
-export type ElevenlabsError = InferErrors<typeof ElevenlabsError>;
+export type ElevenLabsError = InferErrors<typeof ElevenLabsError>;
 
-export const ElevenlabsTranscriptionServiceLive = {
+export const ElevenLabsTranscriptionServiceLive = {
 	transcribe: async (
 		audioBlob: Blob,
 		options: {
@@ -40,12 +40,12 @@ export const ElevenlabsTranscriptionServiceLive = {
 			apiKey: string;
 			modelName: string;
 		},
-	): Promise<Result<string, ElevenlabsError>> => {
-		if (!options.apiKey) return ElevenlabsError.MissingApiKey();
+	): Promise<Result<string, ElevenLabsError>> => {
+		if (!options.apiKey) return ElevenLabsError.MissingApiKey();
 
 		const sizeMb = audioBlob.size / (1024 * 1024);
 		if (sizeMb > MAX_FILE_SIZE_MB) {
-			return ElevenlabsError.FileTooLarge({
+			return ElevenLabsError.FileTooLarge({
 				sizeMb,
 				maxMb: MAX_FILE_SIZE_MB,
 			});
@@ -67,10 +67,10 @@ export const ElevenlabsTranscriptionServiceLive = {
 				});
 				return transcription.text.trim();
 			},
-			catch: (error) => ElevenlabsError.Unexpected({ cause: error }),
+			catch: (error) => ElevenLabsError.Unexpected({ cause: error }),
 		});
 	},
 };
 
 export type ElevenLabsTranscriptionService =
-	typeof ElevenlabsTranscriptionServiceLive;
+	typeof ElevenLabsTranscriptionServiceLive;

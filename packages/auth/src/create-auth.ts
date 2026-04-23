@@ -241,31 +241,17 @@ export function createAuth({
 		},
 	});
 
-	// Two writers touch `session`: this subscription (cold-boot hydration,
-	// cross-tab sign-in/out) and the `onSuccess` interceptor above (header
-	// token rotation). If BA re-emits with a cached pre-rotation token for
-	// the same user, a naive write here clobbers the fresh token and the
-	// next request 401s. Skip writes that would move us backward: same user,
-	// different token — trust the rotation that already happened.
 	const unsubBA = client.useSession.subscribe((state) => {
 		if (state.isPending) return;
-		const current = session.get();
 		if (state.data) {
-			const baToken = state.data.session.token;
-			const baUserId = state.data.user.id;
-			if (
-				current !== null &&
-				current.user.id === baUserId &&
-				current.token !== baToken
-			) {
-				return;
-			}
+			const user = normalizeUser(state.data.user);
+			const token = state.data.session.token;
 			session.set({
-				token: baToken,
-				user: normalizeUser(state.data.user),
+				token,
+				user,
 				encryptionKeys: state.data.encryptionKeys,
 			});
-		} else if (current !== null) {
+		} else {
 			session.set(null);
 		}
 	});

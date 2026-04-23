@@ -146,7 +146,7 @@ function createAiChatState() {
 			initialMessages: loadMessages(conversationId),
 			tools: workspaceAiTools.tools,
 			connection: fetchServerSentEvents(
-				() => `${APP_URLS.API}/ai/chat`,
+				`${APP_URLS.API}/ai/chat`,
 				async () => {
 					const deviceId = await getDeviceId();
 					return {
@@ -546,9 +546,7 @@ function createAiChatState() {
 		},
 
 		/** URL to the billing page for credit upgrades. */
-		get billingUrl() {
-			return `${APP_URLS.API}/billing`;
-		},
+		billingUrl: `${APP_URLS.API}/billing`,
 	};
 }
 

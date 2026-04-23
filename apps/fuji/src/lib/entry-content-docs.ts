@@ -45,7 +45,7 @@ export function createEntryContentDocs({
 		const body = attachRichText(ydoc);
 		const idb = attachIndexedDb(ydoc);
 		const sync = attachSync(ydoc, {
-			url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
+			url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 			waitFor: idb.whenLoaded,
 		});
 		sync.setToken(auth.getToken());

@@ -98,7 +98,7 @@ function createChatState() {
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
 			connection: fetchServerSentEvents(
-				() => `${APP_URLS.API}/ai/chat`,
+				`${APP_URLS.API}/ai/chat`,
 				() => ({
 					fetchClient: auth.fetch,
 					body: {

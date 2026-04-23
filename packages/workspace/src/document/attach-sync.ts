@@ -188,10 +188,10 @@ export type SyncAttachment = {
 
 export type SyncAttachmentConfig = {
 	/**
-	 * WebSocket URL for the room. Receives the Y.Doc's GUID. Must use ws:/wss:.
-	 * Use `toWsUrl()` to convert an HTTP URL.
+	 * WebSocket URL for the room. Must use ws:/wss:. Use `toWsUrl()` to convert
+	 * an HTTP URL. Typically interpolates `ydoc.guid` into the path.
 	 */
-	url: (docId: string) => string;
+	url: string;
 	/**
 	 * Gate the first connection attempt on another promise (typically
 	 * `attachIndexedDb(ydoc).whenLoaded`). Without this, the supervisor
@@ -257,7 +257,6 @@ export function attachSync(
 	ydoc: Y.Doc,
 	config: SyncAttachmentConfig,
 ): SyncAttachment {
-	const docId = ydoc.guid;
 	const awareness = config.awareness;
 	const log = config.log ?? createLogger('attachSync');
 
@@ -508,7 +507,7 @@ export function attachSync(
 		token: string | null,
 		myRunId: number,
 	): Promise<'connected' | 'failed'> {
-		const wsUrl = config.url(docId);
+		const wsUrl = config.url;
 
 		// Auth via WebSocket subprotocol, not `?token=`. Query strings land in
 		// access logs, referrers, and browser history; the subprotocol header

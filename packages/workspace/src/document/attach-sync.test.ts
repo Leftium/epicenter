@@ -130,7 +130,7 @@ async function waitFor<T>(predicate: () => T | undefined, timeoutMs = 1000) {
 describe('attachSync hasLocalChanges', () => {
 	test('connected status exposes hasLocalChanges: false after clean handshake', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-doc-1' });
-		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
 		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
@@ -148,7 +148,7 @@ describe('attachSync hasLocalChanges', () => {
 
 	test('local update sends debounced SYNC_STATUS probe; echo flips hasLocalChanges back to false', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-doc-2' });
-		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
 		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
@@ -194,7 +194,7 @@ describe('attachSync hasLocalChanges', () => {
 	test('requiresToken:true blocks the first connect until setToken arrives, then sends token via subprotocol', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-token-gate' });
 		const sync = attachSync(ydoc, {
-			url: (id) => `ws://x/${id}`,
+			url: `ws://x/${ydoc.guid}`,
 			requiresToken: true,
 		});
 
@@ -221,7 +221,7 @@ describe('attachSync hasLocalChanges', () => {
 	test('setToken while connected does not close the open socket', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-token-live' });
 		const sync = attachSync(ydoc, {
-			url: (id) => `ws://x/${id}`,
+			url: `ws://x/${ydoc.guid}`,
 			requiresToken: true,
 		});
 
@@ -242,7 +242,7 @@ describe('attachSync hasLocalChanges', () => {
 
 	test('goOffline() closes the socket, prevents reconnect, and reconnect() re-opens', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-offline' });
-		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
 		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
@@ -269,7 +269,7 @@ describe('attachSync hasLocalChanges', () => {
 
 	test('inbound RPC request without dispatch config responds with ActionNotFound', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-rpc-no-dispatch' });
-		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
 		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
@@ -315,7 +315,7 @@ describe('attachSync hasLocalChanges', () => {
 		const ydoc = new Y.Doc({ guid: 'test-rpc-dispatch' });
 		const calls: Array<{ action: string; input: unknown }> = [];
 		const sync = attachSync(ydoc, {
-			url: (id) => `ws://x/${id}`,
+			url: `ws://x/${ydoc.guid}`,
 			rpc: {
 				// Return a raw value — attachSync's handler is responsible for
 				// normalizing it into a `{data, error}` envelope on the wire.
@@ -372,7 +372,7 @@ describe('attachSync hasLocalChanges', () => {
 	test('inbound RPC with dispatch returning a Result passes the envelope through untouched', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-rpc-result-passthrough' });
 		const sync = attachSync(ydoc, {
-			url: (id) => `ws://x/${id}`,
+			url: `ws://x/${ydoc.guid}`,
 			rpc: {
 				// Handler returns an Err directly; attachSync must not re-wrap it.
 				dispatch: async () => ({
@@ -426,7 +426,7 @@ describe('attachSync hasLocalChanges', () => {
 	test('inbound RPC with dispatch that throws responds with RpcError.ActionFailed carrying the cause', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-rpc-throw' });
 		const sync = attachSync(ydoc, {
-			url: (id) => `ws://x/${id}`,
+			url: `ws://x/${ydoc.guid}`,
 			rpc: {
 				dispatch: async () => {
 					throw new Error('handler exploded');
@@ -482,7 +482,7 @@ describe('attachSync hasLocalChanges', () => {
 
 	test('outbound rpc() resolves with Ok when response carries {data, error:null}', async () => {
 		const ydoc = new Y.Doc({ guid: 'outbound-ok' });
-		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
 		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
@@ -523,7 +523,7 @@ describe('attachSync hasLocalChanges', () => {
 
 	test('outbound rpc() passes an RpcError response through unchanged', async () => {
 		const ydoc = new Y.Doc({ guid: 'outbound-rpcerror' });
-		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
 		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
@@ -570,7 +570,7 @@ describe('attachSync hasLocalChanges', () => {
 		// ActionFailed with the original error as `cause`. This is a property
 		// of the legacy sync.rpc() API — createRemoteActions preserves E.
 		const ydoc = new Y.Doc({ guid: 'outbound-wrap' });
-		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
 		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
@@ -630,9 +630,9 @@ describe('attachSync hasLocalChanges', () => {
 		const bobDoc = new Y.Doc({ guid: 'e2e-bob' });
 
 		const bobDispatchCalls: Array<{ action: string; input: unknown }> = [];
-		const aliceSync = attachSync(aliceDoc, { url: () => 'ws://alice' });
+		const aliceSync = attachSync(aliceDoc, { url: 'ws://alice' });
 		const bobSync = attachSync(bobDoc, {
-			url: () => 'ws://bob',
+			url: 'ws://bob',
 			rpc: {
 				dispatch: async (action, input) => {
 					bobDispatchCalls.push({ action, input });
@@ -697,7 +697,7 @@ describe('attachSync hasLocalChanges', () => {
 
 	test('fresh connection resets version counters — prior unacked writes do not leak state', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-doc-3' });
-		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
 
 		const firstWs = await waitFor(() => FakeWebSocket.instances[0]);
 		await waitFor(() => firstWs.readyState === FakeWebSocket.OPEN);

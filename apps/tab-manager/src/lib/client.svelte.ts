@@ -60,8 +60,7 @@ export function openTabManager() {
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
 	const sync = attachSync(ydoc, {
-		url: (workspaceId) =>
-			toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		awareness: awareness.raw,
 		requiresToken: true,

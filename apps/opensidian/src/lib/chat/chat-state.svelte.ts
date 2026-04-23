@@ -93,7 +93,7 @@ function createAiChatState() {
 			initialMessages: loadMessages(conversationId),
 			tools: workspaceAiTools.tools,
 			connection: fetchServerSentEvents(
-				() => `${APP_URLS.API}/ai/chat`,
+				`${APP_URLS.API}/ai/chat`,
 				async () => ({
 					fetchClient: createAiChatFetch(auth.fetch),
 					body: {

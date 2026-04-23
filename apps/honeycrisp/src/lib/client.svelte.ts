@@ -43,7 +43,7 @@ export function openHoneycrisp() {
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
 	const sync = attachSync(ydoc, {
-		url: (docId) => toWsUrl(`${APP_URLS.API}/workspaces/${docId}`),
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		requiresToken: true,
 	});

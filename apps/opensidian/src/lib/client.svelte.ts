@@ -200,8 +200,7 @@ export function openOpenSidian() {
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
 	const sync = attachSync(ydoc, {
-		url: (workspaceId) =>
-			toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
+		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		requiresToken: true,
 	});

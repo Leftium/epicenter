@@ -12,8 +12,11 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
+	decodeRpcPayload,
+	encodeRpcRequest,
 	encodeSyncStatus,
 	encodeSyncStep2,
+	isRpcError,
 	MESSAGE_TYPE,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
@@ -176,6 +179,161 @@ describe('attachSync hasLocalChanges', () => {
 		});
 
 		unsubscribe();
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('requiresToken:true blocks the first connect until setToken arrives, then appends ?token=', async () => {
+		const ydoc = new Y.Doc({ guid: 'test-token-gate' });
+		const sync = attachSync(ydoc, {
+			url: (id) => `ws://x/${id}`,
+			requiresToken: true,
+		});
+
+		// Supervisor should reach connecting+auth-error without opening a socket.
+		await waitFor(
+			() =>
+				sync.status.phase === 'connecting' &&
+				sync.status.lastError?.type === 'auth',
+		);
+		expect(FakeWebSocket.instances.length).toBe(0);
+
+		sync.setToken('abc123');
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		expect(ws.url).toContain('token=abc123');
+
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		ws.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('goOffline() closes the socket, prevents reconnect, and reconnect() re-opens', async () => {
+		const ydoc = new Y.Doc({ guid: 'test-offline' });
+		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		ws.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		sync.goOffline();
+		expect(sync.status).toEqual({ phase: 'offline' });
+		expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+
+		// Give the supervisor a beat to confirm it's NOT re-opening on its own.
+		await new Promise((r) => setTimeout(r, 50));
+		expect(FakeWebSocket.instances.length).toBe(1);
+
+		sync.reconnect();
+		const ws2 = await waitFor(() => FakeWebSocket.instances[1]);
+		await waitFor(() => ws2.readyState === FakeWebSocket.OPEN);
+		ws2.deliver(serverStep2Frame());
+		await waitFor(() => sync.status.phase === 'connected');
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('inbound RPC request without dispatch config responds with ActionNotFound', async () => {
+		const ydoc = new Y.Doc({ guid: 'test-rpc-no-dispatch' });
+		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		ws.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		const seenBefore = ws.sent.length;
+		ws.deliver(
+			encodeRpcRequest({
+				requestId: 42,
+				targetClientId: ydoc.clientID,
+				requesterClientId: 9999,
+				action: 'nothing.here',
+				input: null,
+			}),
+		);
+
+		const response = await waitFor<Uint8Array>(() => {
+			for (let i = seenBefore; i < ws.sent.length; i++) {
+				const frame = ws.sent[i]!;
+				if (peekMessageType(frame) === MESSAGE_TYPE.RPC) return frame;
+			}
+			return undefined;
+		}, 500);
+
+		const dec = decoding.createDecoder(response);
+		decoding.readVarUint(dec); // MESSAGE_TYPE.RPC
+		const parsed = decodeRpcPayload(dec);
+		expect(parsed.type).toBe('response');
+		if (parsed.type !== 'response') throw new Error('unreachable');
+		expect(parsed.requestId).toBe(42);
+		expect(parsed.result.data).toBeNull();
+		expect(isRpcError(parsed.result.error)).toBe(true);
+		expect((parsed.result.error as { name: string }).name).toBe(
+			'ActionNotFound',
+		);
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('inbound RPC request with dispatch config forwards to handler and returns its result', async () => {
+		const ydoc = new Y.Doc({ guid: 'test-rpc-dispatch' });
+		const calls: Array<{ action: string; input: unknown }> = [];
+		const sync = attachSync(ydoc, {
+			url: (id) => `ws://x/${id}`,
+			rpc: {
+				dispatch: async (action, input) => {
+					calls.push({ action, input });
+					return { data: { echo: input, action }, error: null };
+				},
+			},
+		});
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		ws.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		const seenBefore = ws.sent.length;
+		ws.deliver(
+			encodeRpcRequest({
+				requestId: 7,
+				targetClientId: ydoc.clientID,
+				requesterClientId: 9999,
+				action: 'tabs.close',
+				input: { tabIds: [1, 2] },
+			}),
+		);
+
+		const response = await waitFor<Uint8Array>(() => {
+			for (let i = seenBefore; i < ws.sent.length; i++) {
+				const frame = ws.sent[i]!;
+				if (peekMessageType(frame) === MESSAGE_TYPE.RPC) return frame;
+			}
+			return undefined;
+		}, 500);
+
+		expect(calls).toEqual([
+			{ action: 'tabs.close', input: { tabIds: [1, 2] } },
+		]);
+
+		const dec = decoding.createDecoder(response);
+		decoding.readVarUint(dec);
+		const parsed = decodeRpcPayload(dec);
+		expect(parsed.type).toBe('response');
+		if (parsed.type !== 'response') throw new Error('unreachable');
+		expect(parsed.requestId).toBe(7);
+		expect(parsed.result).toEqual({
+			data: { echo: { tabIds: [1, 2] }, action: 'tabs.close' },
+			error: null,
+		});
+
 		ydoc.destroy();
 		await sync.whenDisposed;
 	});

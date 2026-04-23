@@ -29,6 +29,7 @@
  */
 
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
+import { APP_URLS } from '@epicenter/constants/vite';
 import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
@@ -47,7 +48,6 @@ import {
 import { toUiMessage } from '$lib/chat/ui-message';
 import { auth, workspace, workspaceAiTools } from '$lib/client.svelte';
 import { getDeviceId } from '$lib/device/device-id';
-import { serverUrl } from '$lib/state/settings.svelte';
 import {
 	type ChatMessageId,
 	type Conversation,
@@ -146,7 +146,7 @@ function createAiChatState() {
 			initialMessages: loadMessages(conversationId),
 			tools: workspaceAiTools.tools,
 			connection: fetchServerSentEvents(
-				() => `${serverUrl.current}/ai/chat`,
+				() => `${APP_URLS.API}/ai/chat`,
 				async () => {
 					const deviceId = await getDeviceId();
 					return {
@@ -547,7 +547,7 @@ function createAiChatState() {
 
 		/** URL to the billing page for credit upgrades. */
 		get billingUrl() {
-			return `${serverUrl.current}/billing`;
+			return `${APP_URLS.API}/billing`;
 		},
 	};
 }

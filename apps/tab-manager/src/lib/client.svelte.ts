@@ -8,6 +8,7 @@
  */
 
 import { createAuth } from '@epicenter/auth-svelte';
+import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachAwareness,
 	attachBroadcastChannel,
@@ -25,7 +26,6 @@ import {
 	getBrowserName,
 	getDeviceId,
 } from '$lib/device/device-id';
-import { serverUrl } from '$lib/state/settings.svelte';
 import { createTabManagerActions } from './workspace/actions';
 import {
 	tabManagerAwarenessDefs,
@@ -38,7 +38,7 @@ import {
 await session.whenReady;
 
 export const auth = createAuth({
-	baseURL: serverUrl.current,
+	baseURL: APP_URLS.API,
 	session,
 	socialTokenProvider: async () => {
 		const { idToken, nonce } = await getGoogleCredentials();
@@ -61,7 +61,7 @@ export function openTabManager() {
 	attachBroadcastChannel(ydoc);
 	const sync = attachSync(ydoc, {
 		url: (workspaceId) =>
-			toWsUrl(`${serverUrl.current}/workspaces/${workspaceId}`),
+			toWsUrl(`${APP_URLS.API}/workspaces/${workspaceId}`),
 		waitFor: idb.whenLoaded,
 		awareness: awareness.raw,
 		requiresToken: true,

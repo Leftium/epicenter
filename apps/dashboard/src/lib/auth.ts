@@ -1,7 +1,7 @@
-import { createPersistedState } from '@epicenter/svelte';
-import { AuthSession, createAuth } from '@epicenter/svelte/auth';
+import { AuthSession, createAuth } from '@epicenter/auth-svelte';
+import { createPersistedState, fromPersistedState } from '@epicenter/svelte';
 
-export const session = createPersistedState({
+const sessionState = createPersistedState({
 	key: 'dashboard:authSession',
 	schema: AuthSession.or('null'),
 	defaultValue: null,
@@ -9,5 +9,5 @@ export const session = createPersistedState({
 
 export const auth = createAuth({
 	baseURL: window.location.origin,
-	session,
+	session: fromPersistedState(sessionState),
 });

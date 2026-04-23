@@ -30,6 +30,7 @@
 	},
 	"dependencies": {
 		"@epicenter/api": "workspace:*",
+		"@epicenter/auth-svelte": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",

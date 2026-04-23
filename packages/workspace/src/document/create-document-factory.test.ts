@@ -124,10 +124,13 @@ describe('throwing build closure', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('guid stability', () => {
-	test('throws if a second construction for the same id produces a different guid', () => {
+	test('stable guids reconstruct; drifting guid throws on reconstruction', () => {
 		let seed = 0;
+		let stable = false;
 		const factory = createDocumentFactory((id: string) => {
-			const ydoc = new Y.Doc({ guid: `${id}-${seed++}` });
+			const ydoc = new Y.Doc({
+				guid: stable ? `stable-${id}` : `${id}-${seed++}`,
+			});
 			return {
 				ydoc,
 				[Symbol.dispose]() {
@@ -136,32 +139,24 @@ describe('guid stability', () => {
 			};
 		});
 
-		const h1 = factory.open('foo');
-		expect(h1.ydoc.guid).toBe('foo-0');
-		// Evict so the next open() reruns the closure.
-		h1.dispose();
-		factory.close('foo');
-		expect(() => factory.open('foo')).toThrow(/guid instability/);
-	});
-
-	test('accepts stable guids across reconstructions', () => {
-		const factory = createDocumentFactory((id: string) => {
-			const ydoc = new Y.Doc({ guid: `stable-${id}` });
-			return {
-				ydoc,
-				[Symbol.dispose]() {
-					ydoc.destroy();
-				},
-			};
-		});
-		const h1 = factory.open('foo');
+		// Stable branch: same guid across reconstructions is accepted.
+		stable = true;
+		const h1 = factory.open('stable');
 		const guid1 = h1.ydoc.guid;
 		h1.dispose();
-		factory.close('foo');
-		const h2 = factory.open('foo');
+		factory.close('stable');
+		const h2 = factory.open('stable');
 		expect(h2.ydoc.guid).toBe(guid1);
 		expect(h2.ydoc).not.toBe(h1.ydoc); // fresh ydoc after close
 		h2.dispose();
+
+		// Drift branch: guid changes across reconstructions and the factory throws.
+		stable = false;
+		const drift1 = factory.open('drift');
+		expect(drift1.ydoc.guid).toBe('drift-0');
+		drift1.dispose();
+		factory.close('drift');
+		expect(() => factory.open('drift')).toThrow(/guid instability/);
 	});
 });
 

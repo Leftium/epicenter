@@ -93,7 +93,7 @@ describe('createTable', () => {
 			}
 		});
 
-		test('getAll returns valid and invalid rows', () => {
+		test('getAll / getAllValid / getAllInvalid partition results by validity', () => {
 			const { ykv, yarray } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
@@ -101,45 +101,18 @@ describe('createTable', () => {
 			const helper = createTable(ykv, definition, 'test');
 
 			helper.set({ id: '1', name: 'Valid', _v: 1 });
-			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid
+			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid: name type
+			yarray.push([{ key: '3', val: { id: '3', _v: 1 }, ts: 0 }]); // invalid: missing name
 
 			const results = helper.getAll();
-			expect(results).toHaveLength(2);
+			expect(results).toHaveLength(3);
+			expect(results.filter((r) => !r.error)).toHaveLength(1);
+			expect(results.filter((r) => r.error)).toHaveLength(2);
 
-			const valid = results.filter((r) => !r.error);
-			const invalid = results.filter((r) => r.error);
-			expect(valid).toHaveLength(1);
-			expect(invalid).toHaveLength(1);
-		});
-
-		test('getAllValid skips invalid rows', () => {
-			const { ykv, yarray } = setup();
-			const definition = defineTable(
-				type({ id: 'string', name: 'string', _v: '1' }),
-			);
-			const helper = createTable(ykv, definition, 'test');
-
-			helper.set({ id: '1', name: 'Valid', _v: 1 });
-			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid
-
-			const rows = helper.getAllValid();
-			expect(rows).toHaveLength(1);
-			expect(rows[0]).toEqual({ id: '1', name: 'Valid', _v: 1 });
-		});
-
-		test('getAllInvalid returns only invalid rows', () => {
-			const { ykv, yarray } = setup();
-			const definition = defineTable(
-				type({ id: 'string', name: 'string', _v: '1' }),
-			);
-			const helper = createTable(ykv, definition, 'test');
-
-			helper.set({ id: '1', name: 'Valid', _v: 1 });
-			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid
-			yarray.push([{ key: '3', val: { id: '3', _v: 1 }, ts: 0 }]); // also invalid - missing name
+			const valid = helper.getAllValid();
+			expect(valid).toEqual([{ id: '1', name: 'Valid', _v: 1 }]);
 
 			const invalid = helper.getAllInvalid();
-			expect(invalid).toHaveLength(2);
 			expect(invalid.map((r) => r.id).sort()).toEqual(['2', '3']);
 		});
 	});
@@ -309,7 +282,7 @@ describe('createTable', () => {
 	});
 
 	describe('delete operations', () => {
-		test('delete removes existing row', () => {
+		test('delete removes an existing row and is a no-op for a missing one', () => {
 			const { ykv } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
@@ -318,19 +291,10 @@ describe('createTable', () => {
 
 			helper.set({ id: '1', name: 'Alice', _v: 1 });
 			helper.delete('1');
-
 			expect(helper.has('1')).toBe(false);
-		});
 
-		test('delete is a no-op for missing row', () => {
-			const { ykv } = setup();
-			const definition = defineTable(
-				type({ id: 'string', name: 'string', _v: '1' }),
-			);
-			const helper = createTable(ykv, definition, 'test');
-
-			// Should not throw
-			helper.delete('nonexistent');
+			// Missing row delete doesn't throw and leaves state empty.
+			expect(() => helper.delete('nonexistent')).not.toThrow();
 			expect(helper.has('nonexistent')).toBe(false);
 		});
 

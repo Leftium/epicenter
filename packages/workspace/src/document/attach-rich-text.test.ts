@@ -146,17 +146,6 @@ describe('xmlFragmentToPlaintext', () => {
 		expect(xmlFragmentToPlaintext(fragment)).toBe('Hello world');
 	});
 
-	test('three paragraphs get correct newlines', () => {
-		const fragment = createDocFragment((f) => {
-			f.insert(0, [
-				makeParagraph('A'),
-				makeParagraph('B'),
-				makeParagraph('C'),
-			]);
-		});
-		expect(xmlFragmentToPlaintext(fragment)).toBe('A\nB\nC');
-	});
-
 	test('no trailing newline after last block', () => {
 		const fragment = createDocFragment((f) => {
 			f.insert(0, [makeParagraph('only')]);

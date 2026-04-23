@@ -81,25 +81,6 @@ describe('attachEncryption', () => {
 		expect(storeA.get('1')).toEqual({ title: 'Order test' });
 	});
 
-	test('key rotation: data written with old key remains readable after rotation', () => {
-		const { storeA, encryption } = setup();
-		const keyV1 = randomBytes(32);
-		const keyV2 = randomBytes(32);
-
-		encryption.applyKeys([{ version: 1, userKeyBase64: bytesToBase64(keyV1) }]);
-		storeA.set('old', { title: 'Written with v1' });
-
-		encryption.applyKeys([
-			{ version: 2, userKeyBase64: bytesToBase64(keyV2) },
-			{ version: 1, userKeyBase64: bytesToBase64(keyV1) },
-		]);
-
-		expect(storeA.get('old')).toEqual({ title: 'Written with v1' });
-
-		storeA.set('new', { title: 'Written with v2' });
-		expect(storeA.get('new')).toEqual({ title: 'Written with v2' });
-	});
-
 	test('plaintext writes are readable before applyKeys is called', () => {
 		const { storeA } = setup();
 		storeA.set('1', { title: 'Plaintext' });
@@ -157,6 +138,12 @@ describe('attachEncryption', () => {
 			expect(getKeyVersion(afterEntry?.val as EncryptedBlob)).toBe(2);
 			// And the decrypted value is unchanged.
 			expect(storeA.get('1')).toEqual({ title: 'Written with v1' });
+
+			// New writes after rotation use v2 and are readable.
+			storeA.set('new', { title: 'Written with v2' });
+			expect(storeA.get('new')).toEqual({ title: 'Written with v2' });
+			const newEntry = storeA.yarray.toArray().find((e) => e.key === 'new');
+			expect(getKeyVersion(newEntry?.val as EncryptedBlob)).toBe(2);
 		});
 
 	});

@@ -23,64 +23,45 @@ export type AuthClient = Omit<AuthCore, 'isAuthenticated' | 'isBusy'> & {
  * Svelte 5 wrapper around `@epicenter/auth`'s `createAuth`.
  *
  * Subscribes once to the core's `on*` primitives and projects them onto
- * reactive boxes. The returned object also re-exposes every imperative
- * method from the core (including `on*` registrations and
- * `[Symbol.dispose]`), so consumers can mix reactive reads with imperative
- * subscriptions — the workspace `applySession` wiring is one of those
- * imperative consumers.
+ * reactive `$state` bindings. Every imperative method on the core is spread
+ * through unchanged — consumers can mix reactive reads (`auth.session`) with
+ * imperative calls (`auth.getToken()`, `auth.onSessionChange(...)`). The
+ * imperative methods are still useful in non-reactive contexts (fetch
+ * interceptors, one-shot callbacks) where subscribing would be a footgun.
  */
 export function createAuth(config: CreateAuthConfig): AuthClient {
 	const core = createAuthCore(config);
 
-	const token = $state<{ current: string | null }>({
-		current: core.getToken(),
-	});
-	const session = $state<{ current: AuthSession | null }>({
-		current: core.getSession(),
-	});
-	const busy = $state<{ current: boolean }>({ current: core.isBusy() });
+	let token = $state(core.getToken());
+	let session = $state(core.getSession());
+	let busy = $state(core.isBusy());
 
 	core.onTokenChange((next) => {
-		token.current = next;
+		token = next;
 	});
 	core.onSessionChange((next) => {
-		session.current = next;
+		session = next;
 	});
 	core.onBusyChange((next) => {
-		busy.current = next;
+		busy = next;
 	});
 
 	return {
-		getToken: core.getToken,
-		getSession: core.getSession,
-		getUser: core.getUser,
-		onSessionChange: core.onSessionChange,
-		onTokenChange: core.onTokenChange,
-		onLogin: core.onLogin,
-		onLogout: core.onLogout,
-		onBusyChange: core.onBusyChange,
-		signIn: core.signIn,
-		signUp: core.signUp,
-		signInWithSocialPopup: core.signInWithSocialPopup,
-		signInWithSocialRedirect: core.signInWithSocialRedirect,
-		signOut: core.signOut,
-		fetch: core.fetch,
-		[Symbol.dispose]: core[Symbol.dispose].bind(core),
-
+		...core,
 		get token() {
-			return token.current;
+			return token;
 		},
 		get session() {
-			return session.current;
+			return session;
 		},
 		get user() {
-			return session.current?.user ?? null;
+			return session?.user ?? null;
 		},
 		get isAuthenticated() {
-			return session.current !== null;
+			return session !== null;
 		},
 		get isBusy() {
-			return busy.current;
+			return busy;
 		},
 	};
 }

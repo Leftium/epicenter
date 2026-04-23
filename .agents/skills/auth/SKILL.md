@@ -130,19 +130,19 @@ Use the `previous` argument to distinguish cold-boot from logout. Don't clear lo
 
 ## Session store write ownership
 
-Two code paths write to the session store. Each owns a non-overlapping case, partitioned by whether the store currently holds a session:
+Two code paths write to the session store, partitioned by **field**:
 
-| Writer | Condition | What it writes |
-| ------ | --------- | -------------- |
-| `useSession.subscribe` | `current === null` | Full enriched session from `/auth/get-session` (token, user, encryptionKeys) |
-| `onSuccess` fetch interceptor | `current !== null` | `{ ...current, token: rotatedToken }` from `set-auth-token` response header |
-| `useSession.subscribe` | `state.data` is falsy | `null` (sign-out, server-side revocation) |
+| Writer | Fields owned | When |
+| ------ | ------------ | ---- |
+| `onSuccess` fetch interceptor | `token` only | Token rotation via `set-auth-token` response header. Writes `{ ...current, token: rotatedToken }`. |
+| `useSession.subscribe` | `user`, `encryptionKeys` (always); `token` (initial only) | Session establishment, profile updates, encryption key rotation, account switch. |
+| `useSession.subscribe` | `null` | Sign-out, server-side revocation. |
 
-**Why the partition exists.** Better Auth's `signIn`/`signUp` responses return `{ token, user }` but NOT `encryptionKeys` — only `/auth/get-session` (via the `customSession` plugin) returns the full enriched session. So `useSession.subscribe` must handle initial establishment. Token rotation via `set-auth-token` header must be written immediately by `onSuccess` because the old token is revoked. By gating `useSession` data writes on `current === null`, the two writers never race on the same transition.
+**Token strategy:** `current?.token ?? state.data.session.token` — if we already have a session, preserve our token (onSuccess may have rotated it and BA's async refetch can emit a stale pre-rotation value). On initial establishment (current is null), use BA's token.
+
+**Why field-level, not null-partition.** An earlier design gated `useSession` data writes on `current === null`. This blocked encryption key rotation, account switching without sign-out, and user profile updates — all cases where `useSession` legitimately carries new data while a session already exists. The field-level partition solves the token race without blocking those flows.
 
 **Cross-tab sign-in/out** is handled by the persisted store's platform events (`StorageEvent` for `createPersistedState`, `chrome.storage.onChanged` for `createStorageState`), not by `useSession.subscribe`. Both stores propagate external writes to all `watch` subscribers automatically.
-
-**Do not re-introduce a second data writer.** The race that existed previously (useSession emitting a stale pre-rotation token that clobbers `onSuccess`'s fresh write) was a real bug in BA's async refetch path. The partition eliminates it structurally.
 
 ## Firing order on any session transition
 

@@ -517,5 +517,134 @@ describe('createTable', () => {
 			expect(error).toBeNull();
 			expect(data).toEqual({ id: '1', name: 'Alice', age: 30, _v: 2 });
 		});
+
+		test('three-version migration chain v1→v2→v3 composes at read time', () => {
+			const { ykv, yarray } = setup();
+			const definition = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+				type({
+					id: 'string',
+					title: 'string',
+					views: 'number',
+					author: 'string',
+					_v: '3',
+				}),
+			).migrate((row) => {
+				switch (row._v) {
+					case 1:
+						return { ...row, views: 0, author: 'unknown', _v: 3 };
+					case 2:
+						return { ...row, author: 'unknown', _v: 3 };
+					case 3:
+						return row;
+				}
+			});
+			const helper = createTable(ykv, definition, 'test');
+
+			yarray.push([
+				{ key: 'a', val: { id: 'a', title: 'V1', _v: 1 }, ts: 0 },
+				{ key: 'b', val: { id: 'b', title: 'V2', views: 7, _v: 2 }, ts: 0 },
+			]);
+
+			expect(helper.get('a').data).toEqual({
+				id: 'a',
+				title: 'V1',
+				views: 0,
+				author: 'unknown',
+				_v: 3,
+			});
+			expect(helper.get('b').data).toEqual({
+				id: 'b',
+				title: 'V2',
+				views: 7,
+				author: 'unknown',
+				_v: 3,
+			});
+		});
+
+		test('returns MigrationFailed when the migrator throws', () => {
+			const { ykv, yarray } = setup();
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+				type({ id: 'string', name: 'string', age: 'number', _v: '2' }),
+			).migrate((row) => {
+				if (row._v === 1) throw new Error('migration broke');
+				return row;
+			});
+			const helper = createTable(ykv, definition, 'test');
+
+			yarray.push([
+				{ key: '1', val: { id: '1', name: 'Alice', _v: 1 }, ts: 0 },
+			]);
+
+			const { data, error } = helper.get('1');
+			expect(data).toBeNull();
+			expect(error?.name).toBe('MigrationFailed');
+			if (error?.name === 'MigrationFailed') {
+				expect(error.id).toBe('1');
+				expect(error.cause).toBeInstanceOf(Error);
+				expect((error.cause as Error).message).toBe('migration broke');
+			}
+		});
+	});
+
+	describe('async schema', () => {
+		test('get returns AsyncSchemaNotSupported when validate yields a Promise', () => {
+			const { ykv } = setup();
+			const syncDef = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
+			// Swap in an async-returning validate to exercise the async guard.
+			const asyncDef = {
+				...syncDef,
+				schema: {
+					...syncDef.schema,
+					'~standard': {
+						...syncDef.schema['~standard'],
+						validate: () => Promise.resolve({ value: {} }),
+					},
+				},
+			} as unknown as typeof syncDef;
+			const helper = createTable(ykv, asyncDef, 'test');
+
+			// Any stored row triggers parseRow, which must detect the Promise.
+			ykv.set('1', { id: '1', name: 'Alice', _v: 1 });
+
+			const { data, error } = helper.get('1');
+			expect(data).toBeNull();
+			expect(error?.name).toBe('AsyncSchemaNotSupported');
+			if (error?.name === 'AsyncSchemaNotSupported') {
+				expect(error.id).toBe('1');
+			}
+		});
+	});
+
+	describe('update validation', () => {
+		test('returns ValidationFailed when the merged row fails schema', () => {
+			const { ykv } = setup();
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', age: 'number>0', _v: '1' }),
+			);
+			const helper = createTable(ykv, definition, 'test');
+
+			helper.set({ id: '1', name: 'Alice', age: 25, _v: 1 });
+
+			// Current row is valid; the partial update violates age>0.
+			const { data, error } = helper.update('1', {
+				age: -5,
+			} as unknown as Partial<{ name: string; age: number }>);
+
+			expect(data).toBeNull();
+			expect(error?.name).toBe('ValidationFailed');
+
+			// And the stored row is unchanged.
+			expect(helper.get('1').data).toEqual({
+				id: '1',
+				name: 'Alice',
+				age: 25,
+				_v: 1,
+			});
+		});
 	});
 });

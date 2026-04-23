@@ -2,31 +2,37 @@
  * Fuji workspace client — a direct builder call that owns the Y.Doc
  * construction and composes every attachment inline.
  *
- * `openFuji()` returns the full bundle; call it once at module scope to
- * get the app's singleton workspace. The bundle exposes `applySession` so
- * every auth transition is a single method call, not a pair of callbacks
- * reaching across the client/workspace boundary.
+ * Auth transitions drive every sync decision through a single
+ * `auth.onSessionChange` subscription: login (re)applies encryption keys
+ * and reconnects, logout clears local data, token rotation re-arms the
+ * sync transport.
  */
 
+import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
+import { createPersistedState, fromPersistedState } from '@epicenter/svelte';
 import {
 	attachAwareness,
 	attachBroadcastChannel,
+	attachEncryption,
 	attachIndexedDb,
 	attachSync,
 	toWsUrl,
 } from '@epicenter/workspace';
-import { createPersistedState } from '@epicenter/svelte';
-import { AuthSession, createAuth } from '@epicenter/svelte/auth';
-import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createEntryContentDocs } from '$lib/entry-content-docs';
 import { createFujiActions, fujiTables } from '$lib/workspace';
 
-const session = createPersistedState({
+const sessionState = createPersistedState({
 	key: 'fuji:authSession',
 	schema: AuthSession.or('null'),
 	defaultValue: null,
+});
+const session = fromPersistedState(sessionState);
+
+export const auth = createAuth({
+	baseURL: APP_URLS.API,
+	session,
 });
 
 export function openFuji() {
@@ -49,28 +55,24 @@ export function openFuji() {
 	const entryContentDocs = createEntryContentDocs({
 		workspaceId: ydoc.guid,
 		entriesTable: tables.entries,
-		// Lazy: read `auth.token` when a handle opens, not when the factory is
-		// constructed (auth is declared after this function returns).
-		getToken: () => auth.token,
+		auth,
 	});
 
-	// Edge detector: only wipe IDB on a genuine logged-in → logged-out transition.
-	// Cold-start-unauth (first call, `previous` still null) must be a noop so
-	// anonymous data isn't destroyed at boot.
-	let previousSession: AuthSession | null = null;
-	async function applySession(next: AuthSession | null) {
-		const wasAuthed = previousSession !== null;
-		previousSession = next;
+	// Every session transition routes through this single subscription.
+	// Logout (previous !== null, next === null) wipes local data; login and
+	// token rotation (next !== null) re-apply encryption keys and re-arm sync.
+	// Cold-boot-anonymous is a silent no-op — neither branch runs.
+	auth.onSessionChange((next, previous) => {
 		if (next === null) {
 			sync.goOffline();
 			sync.setToken(null);
-			if (wasAuthed) await idb.clearLocal();
+			if (previous !== null) void idb.clearLocal();
 			return;
 		}
 		encryption.applyKeys(next.encryptionKeys);
 		sync.setToken(next.token);
 		sync.reconnect();
-	}
+	});
 
 	return {
 		get id() {
@@ -85,7 +87,6 @@ export function openFuji() {
 		sync,
 		actions: createFujiActions(tables),
 		entryContentDocs,
-		applySession,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
@@ -97,14 +98,8 @@ export function openFuji() {
 export const workspace = openFuji();
 export const entryContentDocs = workspace.entryContentDocs;
 
-export const auth = createAuth({
-	baseURL: APP_URLS.API,
-	session,
-});
-
-const dispose = $effect.root(() => {
-	$effect(() => {
-		void workspace.applySession(auth.session);
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => {
+		auth[Symbol.dispose]();
 	});
-});
-if (import.meta.hot) import.meta.hot.dispose(dispose);
+}

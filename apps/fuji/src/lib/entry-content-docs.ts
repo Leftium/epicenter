@@ -1,12 +1,13 @@
 /**
  * Per-entry content Y.Doc factory with IndexedDB persistence and WebSocket
  * sync. Exports a `createEntryContentDocs(deps)` builder so the parent
- * workspace wires it with its own table + token source — no upward import
+ * workspace wires it with its own table + auth core — no upward import
  * back into `client.svelte.ts`. Consumers open a handle via
  * `entryContentDocs.open(entryId)`, await `whenReady` before reading, and
  * let `using` handle disposal.
  */
 
+import type { AuthCore } from '@epicenter/auth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachIndexedDb,
@@ -25,11 +26,11 @@ import type { Entry, EntryId } from '$lib/workspace';
 export function createEntryContentDocs({
 	workspaceId,
 	entriesTable,
-	getToken,
+	auth,
 }: {
 	workspaceId: string;
 	entriesTable: Table<Entry>;
-	getToken: () => string | null;
+	auth: Pick<AuthCore, 'getToken' | 'onTokenChange'>;
 }) {
 	return createDocumentFactory((entryId: EntryId) => {
 		const ydoc = new Y.Doc({
@@ -47,9 +48,10 @@ export function createEntryContentDocs({
 			url: (docId) => toWsUrl(`${APP_URLS.API}/docs/${docId}`),
 			waitFor: idb.whenLoaded,
 		});
-		// Seed with the current token; per-doc sync doesn't observe token rotation.
-		// On editor re-open the next handle picks up any refreshed token.
-		sync.setToken(getToken());
+		sync.setToken(auth.getToken());
+		const unsubscribeToken = auth.onTokenChange((token) => {
+			sync.setToken(token);
+		});
 
 		onLocalUpdate(ydoc, () => {
 			entriesTable.update(entryId, {
@@ -62,6 +64,7 @@ export function createEntryContentDocs({
 			body,
 			whenReady: idb.whenLoaded,
 			[Symbol.dispose]() {
+				unsubscribeToken();
 				ydoc.destroy();
 			},
 		};

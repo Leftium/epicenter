@@ -68,7 +68,7 @@ export type SyncError =
 
 export type SyncStatus =
 	| { phase: 'offline' }
-	| { phase: 'connecting'; attempt: number; lastError?: SyncError }
+	| { phase: 'connecting'; retries: number; lastError?: SyncError }
 	| { phase: 'connected'; hasLocalChanges: boolean };
 
 export type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
@@ -470,7 +470,7 @@ export function attachSync(
 			// clear them before starting a new attempt.
 			clearPendingRequests();
 
-			status.set({ phase: 'connecting', attempt: backoff.retries, lastError });
+			status.set({ phase: 'connecting', retries: backoff.retries, lastError });
 
 			const token: string | null = currentToken;
 			if (requiresToken && !token) {
@@ -478,7 +478,7 @@ export function attachSync(
 					type: 'auth',
 					error: new Error('No token available'),
 				};
-				status.set({ phase: 'connecting', attempt: backoff.retries, lastError });
+				status.set({ phase: 'connecting', retries: backoff.retries, lastError });
 				await backoff.sleep();
 				cancelled(myRunId);
 				continue;

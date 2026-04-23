@@ -67,7 +67,7 @@
 			case 'connecting':
 				if (s.lastError?.type === 'auth')
 					return 'Authentication failed—click to reconnect';
-				if (s.attempt > 0) return `Reconnecting (attempt ${s.attempt})…`;
+				if (s.retries > 0) return `Reconnecting (retry ${s.retries})…`;
 				return 'Connecting…';
 			case 'offline':
 				return 'Offline—click to reconnect';

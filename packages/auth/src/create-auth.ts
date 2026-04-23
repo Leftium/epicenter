@@ -398,20 +398,26 @@ export function createAuth({
 /**
  * Convert BA's `Date` fields to ISO strings for JSON-safe persistence.
  *
- * Spread through any additional fields that BA's `customSession` or
- * `user.additionalFields` config adds — only the two Date fields need
- * conversion for storage. Arktype's default keyword behavior preserves
- * undeclared keys at validation time, so extras survive the round trip
- * even though `StoredUser.infer` only types the declared fields. Consumers
- * that need typed access to extras should declare them in BA's
- * `user.additionalFields` and mirror them in `StoredUser`.
+ * BA returns `createdAt` and `updatedAt` as `Date` objects. Persisted session
+ * stores (chrome.storage, localStorage) need plain JSON, so we normalize here
+ * at the boundary rather than forcing every consumer to handle it.
  */
-function normalizeUser(
-	user: { createdAt: Date; updatedAt: Date } & Record<string, unknown>,
-): StoredUser {
+function normalizeUser(user: {
+	id: string;
+	createdAt: Date;
+	updatedAt: Date;
+	email: string;
+	emailVerified: boolean;
+	name: string;
+	image?: string | null;
+}): StoredUser {
 	return {
-		...user,
+		id: user.id,
 		createdAt: user.createdAt.toISOString(),
 		updatedAt: user.updatedAt.toISOString(),
-	} as StoredUser;
+		email: user.email,
+		emailVerified: user.emailVerified,
+		name: user.name,
+		image: user.image,
+	};
 }

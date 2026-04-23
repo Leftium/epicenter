@@ -10,7 +10,7 @@
 
 import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createPersistedState, fromPersistedState } from '@epicenter/svelte';
+import { createPersistedState } from '@epicenter/svelte';
 import {
 	attachAwareness,
 	attachBroadcastChannel,
@@ -23,12 +23,11 @@ import * as Y from 'yjs';
 import { createEntryContentDocs } from '$lib/entry-content-docs';
 import { createFujiActions, fujiTables } from '$lib/workspace';
 
-const sessionState = createPersistedState({
+const session = createPersistedState({
 	key: 'fuji:authSession',
 	schema: AuthSession.or('null'),
 	defaultValue: null,
 });
-const session = fromPersistedState(sessionState);
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,

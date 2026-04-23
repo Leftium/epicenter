@@ -167,6 +167,15 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		}
 	}
 
+	function setAndPersist(nextValue: StandardSchemaV1.InferOutput<TSchema>) {
+		setValue(nextValue);
+		try {
+			storageApi.setItem(key, JSON.stringify(nextValue));
+		} catch (error) {
+			onUpdateError?.(error);
+		}
+	}
+
 	// Cross-tab sync: `storage` event fires when ANOTHER tab writes to localStorage.
 	// sessionStorage doesn't fire cross-tab events, so enabling this is harmless.
 	if (syncTabs) {
@@ -193,12 +202,7 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 			return value;
 		},
 		set current(newValue: StandardSchemaV1.InferOutput<TSchema>) {
-			setValue(newValue);
-			try {
-				storageApi.setItem(key, JSON.stringify(newValue));
-			} catch (error) {
-				onUpdateError?.(error);
-			}
+			setAndPersist(newValue);
 		},
 		/**
 		 * Authoritative read—returns the current value synchronously.
@@ -218,39 +222,17 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		get(): StandardSchemaV1.InferOutput<TSchema> {
 			return value;
 		},
+		/**
+		 * Method-form setter for `{ get, set, watch }` consumers (e.g. the
+		 * `SessionStore` contract from `@epicenter/auth`). Equivalent to
+		 * assigning `.current` — both set the reactive value and persist.
+		 */
+		set: setAndPersist,
 		watch(listener: (value: StandardSchemaV1.InferOutput<TSchema>) => void) {
 			listeners.add(listener);
 			return () => {
 				listeners.delete(listener);
 			};
 		},
-	};
-}
-
-// ── get/set/watch adapter ────────────────────────────────────────────────────
-
-/**
- * Adapt a `createPersistedState` store (or any `{ current, watch }` pair) to a
- * `{ get, set, watch }` contract. localStorage is synchronous and already fans
- * out local writes to watchers, so this is a thin shape translation —
- * `set(value)` becomes `current = value`.
- *
- * Structurally assignable to `SessionStore` from `@epicenter/auth` when `T` is
- * `AuthSession | null`, but the adapter itself has no auth dependency.
- */
-export function fromPersistedState<T>(state: {
-	current: T;
-	watch(fn: (value: T) => void): () => void;
-}): {
-	get(): T;
-	set(value: T): void;
-	watch(fn: (value: T) => void): () => void;
-} {
-	return {
-		get: () => state.current,
-		set: (value) => {
-			state.current = value;
-		},
-		watch: state.watch,
 	};
 }

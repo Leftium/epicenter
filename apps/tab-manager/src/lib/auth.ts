@@ -10,21 +10,21 @@
  */
 
 import { AuthSession } from '@epicenter/auth-svelte';
-import {
-	createStorageState,
-	fromStorageState,
-} from './state/storage-state.svelte';
+import { createStorageState } from './state/storage-state.svelte';
 
 const GOOGLE_CLIENT_ID =
 	'702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
 
-const sessionState = createStorageState('local:authSession', {
+/**
+ * Persisted auth snapshot in `chrome.storage.local`. Structurally satisfies
+ * `SessionStore` from `@epicenter/auth` — pass directly to `createAuth`.
+ * Callers must `await session.whenReady` before constructing auth so the
+ * sync `get()` returns the persisted value instead of `fallback`.
+ */
+export const session = createStorageState('local:authSession', {
 	fallback: null,
 	schema: AuthSession.or('null'),
 });
-
-/** Persisted auth snapshot in `chrome.storage.local`, adapted to `SessionStore`. */
-export const session = fromStorageState(sessionState);
 
 export async function getGoogleCredentials(): Promise<{
 	idToken: string;

@@ -23,7 +23,7 @@ import {
 	attachYjsFileSystem,
 } from '@epicenter/filesystem';
 import { skillsWorkspace } from '@epicenter/skills';
-import { createPersistedState, fromPersistedState } from '@epicenter/svelte';
+import { createPersistedState } from '@epicenter/svelte';
 import {
 	attachEncryption,
 	defineMutation,
@@ -32,15 +32,15 @@ import {
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { Bash } from 'just-bash';
 import Type from 'typebox';
+import { Ok } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { opensidianTables } from './workspace/definition';
 
-const sessionState = createPersistedState({
+const session = createPersistedState({
 	key: 'opensidian:authSession',
 	schema: AuthSession.or('null'),
 	defaultValue: null,
 });
-const session = fromPersistedState(sessionState);
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
@@ -73,7 +73,7 @@ export function openOpenSidian() {
 				input: Type.Object({
 					query: Type.String({ description: 'The search query string' }),
 				}),
-				handler: async ({ query }) => sqliteIndex.exports.search(query),
+				handler: async ({ query }) => Ok(await sqliteIndex.exports.search(query)),
 			}),
 			read: defineQuery({
 				title: 'Read File',
@@ -89,15 +89,15 @@ export function openOpenSidian() {
 					const MAX_LENGTH = 50_000;
 
 					if (content.length > MAX_LENGTH) {
-						return {
+						return Ok({
 							content: content.slice(0, MAX_LENGTH),
 							truncated: true,
 							totalLength: content.length,
 							note: `Content truncated at ${MAX_LENGTH} chars. Use bash head/tail for specific sections.`,
-						};
+						});
 					}
 
-					return { content, truncated: false };
+					return Ok({ content, truncated: false });
 				},
 			}),
 			list: defineQuery({
@@ -111,7 +111,7 @@ export function openOpenSidian() {
 				}),
 				handler: async ({ path }) => {
 					const entries = await fs.readdir(path ?? '/');
-					return { entries };
+					return Ok({ entries });
 				},
 			}),
 			write: defineMutation({
@@ -124,7 +124,7 @@ export function openOpenSidian() {
 				}),
 				handler: async ({ path, content }) => {
 					await fs.writeFile(path, content);
-					return { success: true, path };
+					return Ok({ success: true, path });
 				},
 			}),
 			create: defineMutation({
@@ -137,7 +137,7 @@ export function openOpenSidian() {
 				}),
 				handler: async ({ path }) => {
 					await fs.writeFile(path, '');
-					return { success: true, path };
+					return Ok({ success: true, path });
 				},
 			}),
 			delete: defineMutation({
@@ -148,7 +148,7 @@ export function openOpenSidian() {
 				}),
 				handler: async ({ path }) => {
 					await fs.rm(path);
-					return { success: true, path };
+					return Ok({ success: true, path });
 				},
 			}),
 			move: defineMutation({
@@ -160,7 +160,7 @@ export function openOpenSidian() {
 				}),
 				handler: async ({ src, dst }) => {
 					await fs.mv(src, dst);
-					return { success: true, from: src, to: dst };
+					return Ok({ success: true, from: src, to: dst });
 				},
 			}),
 			mkdir: defineMutation({
@@ -171,7 +171,7 @@ export function openOpenSidian() {
 				}),
 				handler: async ({ path }) => {
 					await fs.mkdir(path);
-					return { success: true, path };
+					return Ok({ success: true, path });
 				},
 			}),
 		},
@@ -187,11 +187,11 @@ export function openOpenSidian() {
 				}),
 				handler: async ({ command }) => {
 					const result = await bash.exec(command);
-					return {
+					return Ok({
 						stdout: result.stdout,
 						stderr: result.stderr,
 						exitCode: result.exitCode,
-					};
+					});
 				},
 			}),
 		},

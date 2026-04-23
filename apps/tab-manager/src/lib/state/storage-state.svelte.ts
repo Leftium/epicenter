@@ -66,6 +66,13 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 	const item = storage.defineItem<T>(key, { fallback });
 
 	let value = $state<T>(fallback);
+	const watchers = new Set<(value: T) => void>();
+
+	function setValue(next: T) {
+		if (Object.is(value, next)) return;
+		value = next;
+		for (const watcher of watchers) watcher(next);
+	}
 
 	/**
 	 * Number of writes we initiated that haven't resolved yet.
@@ -75,54 +82,46 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 	 * back (harmless but wasteful), or worse, revert the UI to a stale value
 	 * when rapid writes overlap (set "A" → set "B" → watch fires "A" → flicker).
 	 *
-	 * While writes are in-flight we suppress watch. Once the last write lands,
-	 * we re-read storage to pick up any external changes we missed.
+	 * While writes are in-flight we suppress the chrome.storage callback. Once
+	 * the last write lands, we re-read storage to pick up any external changes
+	 * we missed.
 	 */
 	let writesInFlight = 0;
 
-	/**
-	 * External change watchers — notified when chrome.storage changes
-	 * from another extension context (NOT from our own writes).
-	 *
-	 * Inherits the same `writesInFlight` suppression as the internal
-	 * `item.watch` — only genuinely external mutations fire callbacks.
-	 */
-	const externalWatchers = new Set<(newValue: T) => void>();
-
 	// Async init — load persisted value from chrome.storage.
-	// Exposes a promise so consumers can await readiness before reading.
 	const whenReady = item.getValue().then((persisted) => {
-		value = validate(persisted) ?? fallback;
+		setValue(validate(persisted) ?? fallback);
 	});
 
-	// Sync external changes from other extension contexts, with validation.
+	// External changes from other extension contexts.
 	// Suppressed while we have our own writes in-flight to avoid echo/flicker.
 	item.watch((newValue) => {
 		if (writesInFlight > 0) return;
-		value = validate(newValue) ?? fallback;
-		for (const watcher of externalWatchers) watcher(value);
+		setValue(validate(newValue) ?? fallback);
 	});
 
-	/** Persist a value and track the in-flight write. */
-	const writeToStorage = (newValue: T): Promise<void> => {
+	function writeToStorage(newValue: T) {
 		writesInFlight++;
-		return item.setValue(newValue).finally(() => {
+		void item.setValue(newValue).finally(() => {
 			writesInFlight--;
 			if (writesInFlight === 0) {
 				// Re-read to catch any external changes we suppressed.
 				void item.getValue().then((v) => {
-					value = validate(v) ?? fallback;
+					setValue(validate(v) ?? fallback);
 				});
 			}
 		});
-	};
+	}
+
+	function setAndPersist(newValue: T) {
+		setValue(newValue);
+		writeToStorage(newValue);
+	}
 
 	return {
 		/**
-		 * Reactive value for Svelte template bindings.
-		 *
-		 * Starts as `fallback` before chrome.storage loads.
-		 * Use `.get()` for imperative reads that need the real value.
+		 * Reactive value for Svelte template bindings. Starts as `fallback`
+		 * before chrome.storage loads; await `whenReady` for the real value.
 		 */
 		get current(): T {
 			return value;
@@ -133,114 +132,39 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 		 * bindings reflect the change on the same tick, then persists async.
 		 */
 		set current(newValue: T) {
-			value = newValue;
-			void writeToStorage(newValue);
+			setAndPersist(newValue);
 		},
 
 		/**
-		 * Authoritative read — waits for chrome.storage to load, then returns the real value.
+		 * Synchronous read — returns the in-memory value.
 		 *
-		 * Unlike `.current` (which returns the fallback before chrome.storage loads),
-		 * `.get()` guarantees the returned value is from storage. Use this in imperative
-		 * code (boot scripts, closures, event handlers) — `.current` is for templates.
-		 *
-		 * @example
-		 * ```typescript
-		 * const cached = await session.get();
-		 * if (cached) {
-		 *   console.log('Cached session:', cached.token);
-		 * }
-		 * ```
+		 * Before `whenReady` resolves this returns `fallback`. After `whenReady`
+		 * this is authoritative and matches `.current`. Use in contexts like
+		 * `SessionStore.get()` where the contract is sync and the caller has
+		 * already gated on `whenReady` at construction time.
 		 */
-		async get(): Promise<T> {
-			await whenReady;
-			return value;
-		},
+		get: () => value,
 
 		/**
-		 * Awaitable set — updates UI immediately, resolves once persisted.
-		 * Useful when callers need to know the write completed.
+		 * Method-form setter — mirrors `.current = value`. Updates UI immediately,
+		 * persists async (fire-and-forget).
 		 */
-		async set(newValue: T): Promise<void> {
-			value = newValue;
-			await writeToStorage(newValue);
-		},
+		set: setAndPersist,
 
 		/**
 		 * Resolves once the initial value has been loaded from chrome.storage.
-		 *
-		 * Prefer `.get()` for one-off reads. `whenReady` is useful when composing
-		 * multiple stores' readiness (e.g. `Promise.all([a.whenReady, b.whenReady])`).
+		 * After this resolves, `.current` / `get()` reflect the persisted value.
 		 */
 		whenReady,
 
 		/**
-		 * Watch for external changes from other extension contexts.
-		 *
-		 * Only fires when chrome.storage is mutated externally (e.g. sign-out
-		 * in a popup reflects in the sidebar). Writes from this context are
-		 * suppressed — use reactive `$effect` or `$derived` over `.current`
-		 * when you need to react to local changes.
-		 *
-		 * @returns Unsubscribe function
+		 * Watch for any change — local writes and external changes from other
+		 * extension contexts. Fires exactly once per value change.
 		 */
 		watch(callback: (value: T) => void): () => void {
-			externalWatchers.add(callback);
+			watchers.add(callback);
 			return () => {
-				externalWatchers.delete(callback);
-			};
-		},
-	};
-}
-
-// ── get/set/watch adapter ────────────────────────────────────────────────────
-
-/**
- * Adapt a `createStorageState` store (or any `{ current, whenReady, watch }`
- * triple where `watch` only fires on external changes) to a
- * `{ get, set, watch, whenReady }` contract.
- *
- * Two things bridge the gap:
- *
- * 1. **Hydration.** chrome.storage is async. The adapter re-exports
- *    `whenReady` so the caller can await it before constructing consumers;
- *    after that, `.current` is authoritative.
- * 2. **Local-write fan-out.** The underlying `watch` only fires on external
- *    changes (from other extension contexts). Consumers (e.g. a SessionStore)
- *    need watchers to fire on every change — including writes made via
- *    `set()`. The adapter keeps its own watcher set and notifies them
- *    directly from `set()`, in addition to forwarding external changes.
- *
- * Structurally assignable to `SessionStore` from `@epicenter/auth` when `T` is
- * `AuthSession | null`, but the adapter itself has no auth dependency.
- */
-export function fromStorageState<T>(state: {
-	current: T;
-	whenReady: Promise<void>;
-	watch(fn: (value: T) => void): () => void;
-}): {
-	get(): T;
-	set(value: T): void;
-	watch(fn: (value: T) => void): () => void;
-	whenReady: Promise<void>;
-} {
-	const watchers = new Set<(value: T) => void>();
-
-	state.watch((next) => {
-		for (const fn of watchers) fn(next);
-	});
-
-	return {
-		whenReady: state.whenReady,
-		get: () => state.current,
-		set: (value) => {
-			state.current = value;
-			for (const fn of watchers) fn(value);
-		},
-		watch(fn) {
-			watchers.add(fn);
-			return () => {
-				watchers.delete(fn);
+				watchers.delete(callback);
 			};
 		},
 	};

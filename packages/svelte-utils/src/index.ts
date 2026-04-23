@@ -1,3 +1,4 @@
+export { createAiChatFetch } from './create-ai-chat-fetch.js';
 export { fromDocument } from './from-document.svelte.js';
 export { fromKv } from './from-kv.svelte.js';
 export { fromTable } from './from-table.svelte.js';

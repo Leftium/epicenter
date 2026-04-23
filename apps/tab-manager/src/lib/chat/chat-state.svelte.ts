@@ -29,8 +29,7 @@
  */
 
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
-import { fromTable } from '@epicenter/svelte';
-import { createAiChatFetch } from '@epicenter/svelte/auth';
+import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';

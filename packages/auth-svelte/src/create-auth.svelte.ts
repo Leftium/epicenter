@@ -11,10 +11,7 @@ import type { AuthSession, StoredUser } from '@epicenter/auth';
  * `auth.session` / `auth.token` / `auth.isBusy` directly without manual
  * effect wiring. All imperative methods on the core pass through unchanged.
  */
-export type AuthClient = Omit<
-	AuthCore,
-	'getToken' | 'getSession' | 'getUser' | 'isAuthenticated' | 'isBusy'
-> & {
+export type AuthClient = Omit<AuthCore, 'isAuthenticated' | 'isBusy'> & {
 	readonly token: string | null;
 	readonly session: AuthSession | null;
 	readonly user: StoredUser | null;
@@ -54,6 +51,9 @@ export function createAuth(config: CreateAuthConfig): AuthClient {
 	});
 
 	return {
+		getToken: core.getToken,
+		getSession: core.getSession,
+		getUser: core.getUser,
 		onSessionChange: core.onSessionChange,
 		onTokenChange: core.onTokenChange,
 		onLogin: core.onLogin,

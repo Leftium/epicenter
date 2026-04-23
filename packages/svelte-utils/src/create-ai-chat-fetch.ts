@@ -22,7 +22,7 @@ import { Ok, tryAsync } from 'wellcrafted/result';
  *
  * @example
  * ```ts
- * import { createAiChatFetch } from '@epicenter/svelte/auth';
+ * import { createAiChatFetch } from '@epicenter/svelte';
  * import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
  *
  * // In chat-state.svelte.ts:

@@ -128,6 +128,22 @@ Use the `previous` argument to distinguish cold-boot from logout. Don't clear lo
 
 **Cold-boot note.** A subscriber attached *before* the store hydrates receives two calls: the initial replay with `(null, null)`, then the hydrated value via `watch` as `(session, null)`. A subscriber attached *after* hydration receives one call: `(session, null)` on replay. Both shapes look like login to handlers that key on `previous === null && next !== null` — which is the correct behavior (encryption keys and sync tokens must be re-applied on every cold boot), but it means `onLogin` fires on every page load for returning users, not only on fresh sign-in.
 
+## Session store write ownership
+
+Two code paths write to the session store. Each owns a non-overlapping case, partitioned by whether the store currently holds a session:
+
+| Writer | Condition | What it writes |
+| ------ | --------- | -------------- |
+| `useSession.subscribe` | `current === null` | Full enriched session from `/auth/get-session` (token, user, encryptionKeys) |
+| `onSuccess` fetch interceptor | `current !== null` | `{ ...current, token: rotatedToken }` from `set-auth-token` response header |
+| `useSession.subscribe` | `state.data` is falsy | `null` (sign-out, server-side revocation) |
+
+**Why the partition exists.** Better Auth's `signIn`/`signUp` responses return `{ token, user }` but NOT `encryptionKeys` — only `/auth/get-session` (via the `customSession` plugin) returns the full enriched session. So `useSession.subscribe` must handle initial establishment. Token rotation via `set-auth-token` header must be written immediately by `onSuccess` because the old token is revoked. By gating `useSession` data writes on `current === null`, the two writers never race on the same transition.
+
+**Cross-tab sign-in/out** is handled by the persisted store's platform events (`StorageEvent` for `createPersistedState`, `chrome.storage.onChanged` for `createStorageState`), not by `useSession.subscribe`. Both stores propagate external writes to all `watch` subscribers automatically.
+
+**Do not re-introduce a second data writer.** The race that existed previously (useSession emitting a stale pre-rotation token that clobbers `onSuccess`'s fresh write) was a real bug in BA's async refetch path. The partition eliminates it structurally.
+
 ## Firing order on any session transition
 
 1. `session.set(next)` is called; `getSession()` now returns `next`.
@@ -183,3 +199,6 @@ auth.onSessionChange((next, previous) => { ... })
 - **Clearing local data on cold-boot** — guard logout handlers with `if (previous !== null)`, or `null → null` at boot will wipe an anonymous user's in-progress state.
 - **Importing `createAuth` from `@epicenter/auth` in Svelte apps** — always use `@epicenter/auth-svelte` for the reactive wrapper. The core import is for framework-agnostic consumers (CLI, workers).
 - **Writing an adapter where none is needed** — if your store already exposes `{ get, set, watch }`, pass it directly; don't wrap it.
+- **Wrapping `signInWithSocialRedirect` in `runBusy`** — the page navigates away on success. `isBusy` is never read, and the promise never resolves on the happy path. The other auth ops (`signIn`, `signUp`, `signOut`, `signInWithSocialPopup`) genuinely use `runBusy` because the user waits for a result.
+- **Passing `baseURL` as a function** — `createAuthClient` only accepts a string. The value is read once at construction. If the origin can change at runtime (e.g. tab-manager's `remoteServerUrl`), the consumer must recreate the auth client — a lazy thunk cannot be honored.
+- **Adding a second data writer to the session store** — see "Session store write ownership" above. The partition on `current === null` eliminates the token rotation race. Adding another path that writes session data when `current !== null` reintroduces the race with `onSuccess`.

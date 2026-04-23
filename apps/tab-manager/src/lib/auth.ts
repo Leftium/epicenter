@@ -1,26 +1,30 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Exports the persisted session and Google credentials helper. The `auth`
- * (createAuth) instance itself lives in `./client.svelte` alongside the
- * workspace, where a `$effect.root` bridges `auth.session` to
- * `workspace.applySession(session)`.
+ * Exports the persisted session store (adapted to `SessionStore`) and the
+ * Google credentials helper. The `auth` instance itself lives in
+ * `./client.svelte` alongside the workspace.
  *
- * @see {@link ./client.svelte} — auth + workspace + applySession wiring
+ * @see {@link ./client.svelte} — auth + workspace + onSessionChange wiring
  * @see {@link ./state/storage-state.svelte} — chrome.storage reactive wrapper
  */
 
-import { AuthSession } from '@epicenter/svelte/auth';
-import { createStorageState } from './state/storage-state.svelte';
+import { AuthSession } from '@epicenter/auth-svelte';
+import {
+	createStorageState,
+	fromStorageState,
+} from './state/storage-state.svelte';
 
 const GOOGLE_CLIENT_ID =
 	'702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
 
-/** Persisted auth snapshot in `chrome.storage.local`. */
-export const session = createStorageState('local:authSession', {
+const sessionState = createStorageState('local:authSession', {
 	fallback: null,
 	schema: AuthSession.or('null'),
 });
+
+/** Persisted auth snapshot in `chrome.storage.local`, adapted to `SessionStore`. */
+export const session = fromStorageState(sessionState);
 
 export async function getGoogleCredentials(): Promise<{
 	idToken: string;

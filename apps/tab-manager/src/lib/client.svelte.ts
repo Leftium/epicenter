@@ -7,18 +7,15 @@
  * `browser-state.svelte.ts`.
  */
 
+import { createAuth } from '@epicenter/auth-svelte';
 import {
 	attachAwareness,
 	attachBroadcastChannel,
+	attachEncryption,
 	attachIndexedDb,
 	attachSync,
-	toWsUrl,
-} from '@epicenter/workspace';
-import type { AuthSession } from '@epicenter/svelte/auth';
-import { createAuth } from '@epicenter/svelte/auth';
-import {
-	attachEncryption,
 	dispatchAction,
+	toWsUrl,
 } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import * as Y from 'yjs';
@@ -34,6 +31,20 @@ import {
 	tabManagerAwarenessDefs,
 	tabManagerTables,
 } from './workspace/definition';
+
+// Hydrate the persisted session from chrome.storage before constructing auth.
+// After this resolves, `session.get()` is sync-authoritative; the core can
+// read the real value at every call without racing chrome.storage.
+await session.whenReady;
+
+export const auth = createAuth({
+	baseURL: () => remoteServerUrl.current,
+	session,
+	socialTokenProvider: async () => {
+		const { idToken, nonce } = await getGoogleCredentials();
+		return { provider: 'google', idToken, nonce };
+	},
+});
 
 export function openTabManager() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: false });
@@ -59,24 +70,18 @@ export function openTabManager() {
 		},
 	});
 
-	// Edge detector: only wipe IDB on a genuine logged-in → logged-out transition.
-	// Cold-start-unauth (first call, `previous` still null) must be a noop so
-	// anonymous data isn't destroyed at boot.
-	let previousSession: AuthSession | null = null;
-	async function applySession(next: AuthSession | null) {
-		const wasAuthed = previousSession !== null;
-		previousSession = next;
+	auth.onSessionChange((next, previous) => {
 		if (next === null) {
 			sync.goOffline();
 			sync.setToken(null);
-			if (wasAuthed) await idb.clearLocal();
+			if (previous !== null) void idb.clearLocal();
 			return;
 		}
 		encryption.applyKeys(next.encryptionKeys);
 		sync.setToken(next.token);
 		sync.reconnect();
 		void registerDevice();
-	}
+	});
 
 	return {
 		get id() {
@@ -90,7 +95,6 @@ export function openTabManager() {
 		idb,
 		sync,
 		actions,
-		applySession,
 		batch,
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
@@ -102,10 +106,10 @@ export function openTabManager() {
 	 * Register this browser installation as a device in the workspace.
 	 *
 	 * Upserts the device row — preserves existing name if present, otherwise
-	 * generates a default. Called from `applySession` on every applied session
-	 * (login + token rotation) so encryption keys are always active before the
-	 * write reaches the Y.Doc. The upsert is idempotent, so rotation-triggered
-	 * re-runs are harmless.
+	 * generates a default. Called from the auth subscription on every applied
+	 * session (login + token rotation) so encryption keys are always active
+	 * before the write reaches the Y.Doc. The upsert is idempotent, so
+	 * rotation-triggered re-runs are harmless.
 	 */
 	async function registerDevice(): Promise<void> {
 		await idb.whenLoaded;
@@ -124,21 +128,11 @@ export function openTabManager() {
 
 export const workspace = openTabManager();
 
-export const auth = createAuth({
-	baseURL: () => remoteServerUrl.current,
-	session,
-	socialTokenProvider: async () => {
-		const { idToken, nonce } = await getGoogleCredentials();
-		return { provider: 'google', idToken, nonce };
-	},
-});
-
-const dispose = $effect.root(() => {
-	$effect(() => {
-		void workspace.applySession(auth.session);
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => {
+		auth[Symbol.dispose]();
 	});
-});
-if (import.meta.hot) import.meta.hot.dispose(dispose);
+}
 
 /** AI tool representations for the tab-manager workspace. */
 export const workspaceAiTools = actionsToAiTools(workspace.actions);

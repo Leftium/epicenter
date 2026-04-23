@@ -19,6 +19,23 @@
  * - **Natural JavaScript**: Uses standard closures, no framework magic
  * - **Introspectable**: Callable functions with metadata properties for adapters
  *
+ * ## Transport Widens the Error Surface
+ *
+ * An action's return type depends on where it's called from. **Local** callers
+ * see the handler's signature verbatim — sync stays sync, raw stays raw, throws
+ * throw. **Remote** callers (over `attachSync` RPC) always see
+ * `Promise<Result<TOutput, TError | ActionError>>`: the transport wraps raw
+ * values in `Ok`, converts thrown errors into `Err(ActionError)`, and passes
+ * existing `Result`s through. This means a mutation declared as
+ * `(input) => Result<T, FooError>` becomes `Promise<Result<T, FooError | ActionError>>`
+ * once it crosses the wire — the error union widens by `ActionError`, and the
+ * return becomes a `Promise`. This is intentional: handlers stay ergonomic
+ * locally (write plain JS, throw when it makes sense), while remote callers get
+ * a uniform `Result` envelope they can pattern-match on. When writing a handler
+ * that will be exposed remotely, assume any thrown error will reach remote
+ * callers as `ActionError` — if you need structured errors on the wire, return
+ * `Err(...)` explicitly.
+ *
  * ## Exports
  *
  * - {@link defineQuery} - Define a read operation

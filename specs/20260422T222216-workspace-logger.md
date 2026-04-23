@@ -583,19 +583,25 @@ expect(events[0]).toMatchObject({ level: 'warn', source: 'test' });
 - [ ] Fresh `bun install` in epicenter; `bun test` workspace; spot-check a call site (e.g., `packages/workspace/src/shared/standard-schema.ts`) compiles + runs unchanged
 - [ ] Report per-wave: commit hash, test status, any deviations
 
-### Follow-up: wellcrafted `Result` symmetry (shipping alongside)
+### Follow-up: wellcrafted `Result` shape limit (documented, not patched)
 
-During review we confirmed empirically that `Ok(null)` and `Err(null)` are **structurally identical** — both produce `{ data: null, error: null }`. The built-in `isErr` check (`result.error !== null`) misclassifies `Err(null)` as Ok. `Ok(null)` is a legitimate "success with empty payload" (the "not-found-is-not-an-error" pattern); `Err(null)` is meaningless (a failure with no reason) but structurally legal.
+During review we confirmed empirically that `Ok(null)` and `Err(null)` are **structurally identical** — both produce `{ data: null, error: null }`. The built-in `isErr` check (`result.error !== null`) misclassifies `Err(null)` as Ok. `Ok(null)` is a legitimate "success with empty payload" (the "not-found-is-not-an-error" pattern); `Err(null)` is a lie (a failure with no reason) that the shape can't represent distinctly from Ok.
 
 **Why this doesn't break our logger.** `LoggableError`'s `"name" in err` discriminator is purely structural — `AnyTaggedError` always has a top-level `name` (stamped by `defineErrors` from the factory key); `Err<AnyTaggedError>` has exactly `{ error, data }` at the top level and no `name`. No null-checks anywhere. The edge never reaches `unwrapLoggable`.
 
-**Shipping in the same wellcrafted release as the logger** (PR #114): `Err<E extends NonNullable<unknown>>` — `Err(null)` and `Err(undefined)` become compile errors. `Err<E>` *type* unchanged; generic code still works. Consumer survey across the monorepo showed zero real usages of `Err(null)` / `Err(undefined)`, so the breaking part was free.
+**What wellcrafted PR #114 tried and reverted.** An earlier version of that PR constrained `Err<E extends NonNullable<unknown>>` so `Err(null)` would be a compile error. That was reverted because the ban was:
 
-**Broader principle, documented**: `docs/articles/ok-null-is-fine-err-null-is-a-lie.md` explains why any discriminator relying on `data === null` alone is wrong, even after the `Err(null)` ban (someone can still cast `as Err<null>` through runtime paths). Always discriminate by the error side.
+- **Shallow** — bypassed by `as any`, `as NonNullable<T>`, and direct object construction. The PR's own migration in `src/query/utils.ts` used `as NonNullable<TError>` casts, exactly the footgun the ban was meant to discourage.
+- **Widely costly** — every `catch (error: unknown)` boundary hits friction with `NonNullable<unknown>`, and the natural fix is another cast.
+- **Teaching the wrong lesson** — "add `as NonNullable<T>`" is not the right answer; "use `defineErrors` and pass `{ cause }`" is. Documentation carries that lesson more reliably than a compile error.
 
-**Candidate fixes still on the table** (future discussions, not this PR):
+What #114 actually ships: **docs-only**. The `Err<E>` constructor accepts any `E`. The shape limit is documented in `docs/philosophy/err-null-is-ok-null.md` in wellcrafted and cross-referenced in the `result-types` skill. Tagged errors from `defineErrors` are non-null by construction, so the shape's invariant holds naturally for consumers following the idiomatic pattern.
 
-- Add tag-based discrimination `_tag: "Ok" | "Err"` — bigger breaking change, larger runtime payload, but eliminates the structural ambiguity at the type level too.
+**Broader principle, documented in epicenter**: `docs/articles/ok-null-is-fine-err-null-is-a-lie.md`. Short form of the wellcrafted philosophy doc with the logger near-miss anecdote included.
+
+**Candidate fix still on the table** (future discussion, not this PR):
+
+- Add tag-based discrimination `_tag: "Ok" | "Err"` — bigger breaking change, larger runtime payload, but eliminates the structural ambiguity. Only worth it if the convention-plus-idiom approach visibly fails in practice.
 - Correct the `skills/result-types/SKILL.md` wording ("one is always null") and add an article documenting the invariant + the `Ok(null)` edge.
 
 Recommendation for this monorepo: accept the wellcrafted convention as-is (don't pass `Err(null)`), write a follow-up article for the `docs/articles/` shelf, and optionally file a wellcrafted issue for the harder fix.

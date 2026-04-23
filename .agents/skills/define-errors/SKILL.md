@@ -290,6 +290,24 @@ defineErrors({
 });
 ```
 
-## Related: `Err(null)` is a type error too
+## Related: don't call `Err(null)` — wrap caught values in a tagged error
 
-`wellcrafted`'s `Err` constructor is typed `<E extends NonNullable<unknown>>` — `Err(null)` and `Err(undefined)` are compile errors. A failure with no reason is meaningless, and structurally it collides with `Ok(null)`. Pass a real error value (string, `Error`, tagged error from `defineErrors`, etc.) or use `Ok(null)` / `Ok(undefined)` if the intent was "completed with no payload." See [docs/articles/ok-null-is-fine-err-null-is-a-lie.md](../../../docs/articles/ok-null-is-fine-err-null-is-a-lie.md) for the full rationale.
+`wellcrafted`'s Result shape can't distinguish `Err(null)` from `Ok(null)` — both produce `{ data: null, error: null }`, and `isErr` reads both as success. The `Err` constructor accepts any `E`; there's no type-level ban (one was tried and reverted because it was bypassable by casts and taught the wrong fix).
+
+The rule lives in idiom: **at every `catch (error: unknown)` boundary, wrap the caught value in a tagged error from `defineErrors`, don't pass it straight to `Err`.**
+
+```ts
+// ❌ If error is ever null/undefined at runtime, Err silently becomes Ok
+catch: (error) => Err(error)
+
+// ✅ Tagged error is always non-null by construction
+const Errors = defineErrors({
+  Unexpected: ({ cause }: { cause: unknown }) => ({
+    message: extractErrorMessage(cause),
+    cause,
+  }),
+});
+catch: (error) => Errors.Unexpected({ cause: error })
+```
+
+See [docs/articles/ok-null-is-fine-err-null-is-a-lie.md](../../../docs/articles/ok-null-is-fine-err-null-is-a-lie.md) for the full rationale — and the wellcrafted philosophy doc at `docs/philosophy/err-null-is-ok-null.md` for the deep dive on why the type-level ban failed.

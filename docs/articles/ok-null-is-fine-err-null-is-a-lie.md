@@ -1,4 +1,4 @@
-Never discriminate a `Result` by checking if `data` is null. `Ok(null)` is a perfectly valid value — "the record didn't exist, and that's not an error" is a common pattern. `Err(null)` is a lie — it claims failure with no reason to give. wellcrafted makes `Err(null)` a compile error (the constructor is typed `<E extends NonNullable<unknown>>`), but `Ok(null)` is still legal, so `data === null` alone can never identify failure. Always discriminate by the error side: `isErr(result)` or `result.error !== null`.
+Never discriminate a `Result` by checking if `data` is null. `Ok(null)` is a perfectly valid value — "the record didn't exist, and that's not an error" is a common pattern. `Err(null)` is a lie — it claims failure with no reason to give. The wellcrafted shape can't tell the two apart, and no type-level trick we tried managed to close the gap without creating worse problems. Always discriminate by the error side: `isErr(result)` or `result.error !== null`, and construct `Err` with a real error value (ideally a tagged error from `defineErrors`).
 
 In wellcrafted today:
 
@@ -18,21 +18,20 @@ Ok(null)   // { data: null, error: null }
 Err(null)  // { error: null, data: null }
 ```
 
-Same keys, same values, same shape. No runtime check on their own fields can tell them apart. The built-in `isErr`:
+Same keys, same values, same shape. The built-in `isErr` is `result.error !== null`, which returns `false` for both. A failure passed as `Err(null)` silently becomes a success. Empirically confirmed, not theoretical.
 
-```ts
-export function isErr<T, E>(result: Result<T, E>): result is Err<E> {
-  return result.error !== null;
-}
-```
+This is a consequence of the destructure-friendly shape wellcrafted chose — the same `{ data, error }` Supabase and SvelteKit load functions use. Rust and Haskell avoid the collision by putting a discriminant tag next to the payload instead of inside it. Wellcrafted can't add a tag without giving up the shape; the shape is the whole point.
 
-…returns `false` for `Err(null)`. The `null`-error case is misclassified as success. Empirically confirmed, not theoretical.
+## Why the type-level ban didn't survive
 
-## The type system handles half of it
+We tried `Err<E extends NonNullable<unknown>>` to make `Err(null)` a compile error. Shipped it briefly, then reverted it. Two reasons:
 
-wellcrafted's `Err` constructor is typed `<E extends NonNullable<unknown>>`. `Err(null)` and `Err(undefined)` are compile errors. Rust's `Result<T, E>` solves the same problem by forcing `E` to be a meaningful type (use `Err(())` for "failure without detail", not `Err(null)`); Haskell's `Either` does the same with `Left ()`. wellcrafted now closes the call-site path.
+- **Shallow enforcement.** The constraint catches the literal `Err(null)`, but `Err(value as any)`, `Err(value as NonNullable<T>)`, and direct object construction all slip through. The ban's own migration in wellcrafted's `src/query/utils.ts` had to add `as NonNullable<TError>` casts in three places — exactly the kind of "silence the type error without fixing the bug" pattern the ban was meant to discourage.
+- **Wide cost.** Every `catch (error: unknown)` boundary hits friction with `NonNullable<unknown>`. The natural fix is a cast, not a refactor, so the type error teaches the wrong lesson more often than the right one.
 
-But the *type* `Err<E>` still accepts any `E`, and `Ok<T>` still accepts `T = null`. Which means you can still end up with a `{ data: null, error: null }` shape through casts or unchecked runtime paths, and you can *always* have `Ok(null)` legitimately. So the question "is this an Err?" can never be answered by "is `data` null?" — that check passes for `Ok<null>` forever.
+The right lesson (use `defineErrors` and pass `{ cause }`) is better delivered by documentation and idiom than by a type error whose Stack Overflow answer is `as any`.
+
+See the wellcrafted philosophy doc [`docs/philosophy/err-null-is-ok-null.md`](https://github.com/wellcrafted-dev/wellcrafted/blob/main/docs/philosophy/err-null-is-ok-null.md) for the full write-up.
 
 ## The rule
 
@@ -49,7 +48,23 @@ if (result.error !== null) { /* handle error */ }
 if (isErr(result)) { /* handle error */ }
 ```
 
-If you ever find yourself writing `"data" in x` or `x.data === null` to distinguish success from failure, stop. The check is symmetric in the wrong direction: `Ok(T)` where `T = null` matches it.
+And never call `Err(null)` or `Err(undefined)`. Either use `Ok(null)` / `Ok(undefined)` (if what you meant was success-with-no-payload) or mint a tagged error via `defineErrors` and pass *that* to `Err`:
+
+```ts
+const Errors = defineErrors({
+  Unexpected: ({ cause }: { cause: unknown }) => ({
+    message: extractErrorMessage(cause),
+    cause,
+  }),
+});
+
+const result = await tryAsync({
+  try:   async () => fetchThing(),
+  catch: (error) => Errors.Unexpected({ cause: error }),
+});
+```
+
+The tagged error `{ name: 'Unexpected', message, cause }` is a constructed object — always non-null. `Err(taggedError)` produces a result whose `error` side is non-null, so `isErr` reads it correctly. The shape's invariant is preserved, and you didn't have to know the invariant existed.
 
 ## The logger discriminator that almost got this wrong
 
@@ -80,11 +95,11 @@ Wherever you touch a wellcrafted `Result`, check the error side:
 ```ts
 const { data, error } = await tryAsync({ try: ..., catch: ... });
 if (error) {
-  // handle — error is guaranteed non-null here, by contract
+  // handle — by convention the error side is never null
 }
 use(data);
 ```
 
 Wherever you discriminate a union that includes an `Err<>` wrapper against another shape, pick an invariant non-null field (like `name`), not a null-valued one.
 
-And if you're ever tempted to cast around the `Err(null)` ban: you're describing a failure without a reason. Either the failure has a reason — pass it — or what you really have is an `Ok` of nothing.
+And if you're about to write `Err(null)`: the shape is telling you something. Either you meant `Ok(null)`, or you haven't defined the error type yet. Both are fixable by looking at the call site. Neither is fixable by the constructor.

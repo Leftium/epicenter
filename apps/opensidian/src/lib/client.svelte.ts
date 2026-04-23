@@ -9,6 +9,7 @@
  * piece binds to the same `ydoc` / `tables` instance.
  */
 
+import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachBroadcastChannel,
@@ -22,8 +23,7 @@ import {
 	attachYjsFileSystem,
 } from '@epicenter/filesystem';
 import { skillsWorkspace } from '@epicenter/skills';
-import { createPersistedState } from '@epicenter/svelte';
-import { AuthSession, createAuth } from '@epicenter/svelte/auth';
+import { createPersistedState, fromPersistedState } from '@epicenter/svelte';
 import {
 	attachEncryption,
 	defineMutation,
@@ -35,10 +35,16 @@ import Type from 'typebox';
 import * as Y from 'yjs';
 import { opensidianTables } from './workspace/definition';
 
-const session = createPersistedState({
+const sessionState = createPersistedState({
 	key: 'opensidian:authSession',
 	schema: AuthSession.or('null'),
 	defaultValue: null,
+});
+const session = fromPersistedState(sessionState);
+
+export const auth = createAuth({
+	baseURL: APP_URLS.API,
+	session,
 });
 
 export function openOpenSidian() {
@@ -200,23 +206,17 @@ export function openOpenSidian() {
 		requiresToken: true,
 	});
 
-	// Edge detector: only wipe IDB on a genuine logged-in → logged-out transition.
-	// Cold-start-unauth (first call, `previous` still null) must be a noop so
-	// anonymous data isn't destroyed at boot.
-	let previousSession: AuthSession | null = null;
-	async function applySession(next: AuthSession | null) {
-		const wasAuthed = previousSession !== null;
-		previousSession = next;
+	auth.onSessionChange((next, previous) => {
 		if (next === null) {
 			sync.goOffline();
 			sync.setToken(null);
-			if (wasAuthed) await idb.clearLocal();
+			if (previous !== null) void idb.clearLocal();
 			return;
 		}
 		encryption.applyKeys(next.encryptionKeys);
 		sync.setToken(next.token);
 		sync.reconnect();
-	}
+	});
 
 	return {
 		get id() {
@@ -233,7 +233,6 @@ export function openOpenSidian() {
 		fs,
 		bash,
 		actions,
-		applySession,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,
 		[Symbol.dispose]() {
@@ -276,17 +275,11 @@ export { skillsWorkspace };
 export const skillInstructionsDocs = skillsWorkspace.instructionsDocs;
 export const skillReferenceDocs = skillsWorkspace.referenceDocs;
 
-export const auth = createAuth({
-	baseURL: APP_URLS.API,
-	session,
-});
-
-const dispose = $effect.root(() => {
-	$effect(() => {
-		void workspace.applySession(auth.session);
+if (import.meta.hot) {
+	import.meta.hot.dispose(() => {
+		auth[Symbol.dispose]();
 	});
-});
-if (import.meta.hot) import.meta.hot.dispose(dispose);
+}
 
 /** AI tool representations for the opensidian workspace. */
 export const workspaceAiTools = actionsToAiTools(workspace.actions);

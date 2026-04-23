@@ -14,10 +14,12 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import {
 	decodeRpcPayload,
 	encodeRpcRequest,
+	encodeRpcResponse,
 	encodeSyncStatus,
 	encodeSyncStep2,
 	isRpcError,
 	MESSAGE_TYPE,
+	RpcError,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
 import * as Y from 'yjs';
@@ -469,6 +471,228 @@ describe('attachSync hasLocalChanges', () => {
 
 		ydoc.destroy();
 		await sync.whenDisposed;
+	});
+
+	// ── Outbound rpc() — caller-side response handling ────────────────────
+	//
+	// These tests drive the client half of the wire: call `sync.rpc()`,
+	// pluck the emitted request frame to learn the requestId, then inject
+	// a response frame with various payloads and verify the pending-promise
+	// resolver at attach-sync.ts:812-832 routes to the right branch.
+
+	test('outbound rpc() resolves with Ok when response carries {data, error:null}', async () => {
+		const ydoc = new Y.Doc({ guid: 'outbound-ok' });
+		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		ws.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		const seenBefore = ws.sent.length;
+		const rpcPromise = sync.rpc(12345, 'tabs.close', { tabIds: [1] });
+
+		// Capture the outgoing request frame to learn its requestId.
+		const requestFrame = await waitFor<Uint8Array>(() => {
+			for (let i = seenBefore; i < ws.sent.length; i++) {
+				const frame = ws.sent[i]!;
+				if (peekMessageType(frame) === MESSAGE_TYPE.RPC) return frame;
+			}
+			return undefined;
+		});
+		const dec = decoding.createDecoder(requestFrame);
+		decoding.readVarUint(dec);
+		const parsed = decodeRpcPayload(dec);
+		if (parsed.type !== 'request') throw new Error('expected request');
+
+		ws.deliver(
+			encodeRpcResponse({
+				requestId: parsed.requestId,
+				requesterClientId: ydoc.clientID,
+				result: { data: { closedCount: 1 }, error: null },
+			}),
+		);
+
+		const result = await rpcPromise;
+		expect(result.data).toEqual({ closedCount: 1 });
+		expect(result.error).toBeNull();
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('outbound rpc() passes an RpcError response through unchanged', async () => {
+		const ydoc = new Y.Doc({ guid: 'outbound-rpcerror' });
+		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		ws.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		const seenBefore = ws.sent.length;
+		const rpcPromise = sync.rpc(12345, 'tabs.close', { tabIds: [1] });
+
+		const requestFrame = await waitFor<Uint8Array>(() => {
+			for (let i = seenBefore; i < ws.sent.length; i++) {
+				const frame = ws.sent[i]!;
+				if (peekMessageType(frame) === MESSAGE_TYPE.RPC) return frame;
+			}
+			return undefined;
+		});
+		const dec = decoding.createDecoder(requestFrame);
+		decoding.readVarUint(dec);
+		const parsed = decodeRpcPayload(dec);
+		if (parsed.type !== 'request') throw new Error('expected request');
+
+		// Remote side emitted a recognizable RpcError — the outbound handler
+		// must recognize it via isRpcError and pass it through, not re-wrap.
+		ws.deliver(
+			encodeRpcResponse({
+				requestId: parsed.requestId,
+				requesterClientId: ydoc.clientID,
+				result: RpcError.ActionFailed({
+					action: 'tabs.close',
+					cause: 'kaboom',
+				}),
+			}),
+		);
+
+		const result = await rpcPromise;
+		expect(result.data).toBeNull();
+		expect(isRpcError(result.error)).toBe(true);
+		expect((result.error as RpcError).name).toBe('ActionFailed');
+	});
+
+	test('outbound rpc() wraps an unknown (non-RpcError) error as RpcError.ActionFailed', async () => {
+		// This is the "type erasure" path: a peer returns a typed Err that
+		// isn't an RpcError variant. The client-side handler re-wraps it as
+		// ActionFailed with the original error as `cause`. This is a property
+		// of the legacy sync.rpc() API — createRemoteActions preserves E.
+		const ydoc = new Y.Doc({ guid: 'outbound-wrap' });
+		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		ws.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		const seenBefore = ws.sent.length;
+		const rpcPromise = sync.rpc(12345, 'tabs.close', { tabIds: [1] });
+
+		const requestFrame = await waitFor<Uint8Array>(() => {
+			for (let i = seenBefore; i < ws.sent.length; i++) {
+				const frame = ws.sent[i]!;
+				if (peekMessageType(frame) === MESSAGE_TYPE.RPC) return frame;
+			}
+			return undefined;
+		});
+		const dec = decoding.createDecoder(requestFrame);
+		decoding.readVarUint(dec);
+		const parsed = decodeRpcPayload(dec);
+		if (parsed.type !== 'request') throw new Error('expected request');
+
+		const typedErr = {
+			name: 'BrowserApiFailed',
+			message: 'no tab 999',
+		};
+		ws.deliver(
+			encodeRpcResponse({
+				requestId: parsed.requestId,
+				requesterClientId: ydoc.clientID,
+				result: { data: null, error: typedErr },
+			}),
+		);
+
+		const result = await rpcPromise;
+		expect(result.data).toBeNull();
+		const err = result.error as RpcError;
+		expect(err.name).toBe('ActionFailed');
+		if (err.name !== 'ActionFailed') throw new Error('unreachable');
+		expect(err.action).toBe('tabs.close');
+		// The typed error survives as `cause`, one layer deep.
+		expect(err.cause).toEqual(typedErr);
+	});
+
+	// ── End-to-end loopback — proves the full wire protocol works ─────────
+	//
+	// Two attachSync peers, their FakeWebSockets cross-wired so a frame sent
+	// by one gets delivered to the other's `onmessage`. This simulates the
+	// broker routing RPC frames between clients. A real `sync.rpc()` call
+	// from Alice travels through her socket → Bob's socket → Bob's inbound
+	// dispatch handler → back through Bob's socket → Alice's socket → Alice's
+	// pending-request resolver.
+	//
+	// This is the test that says "RPC actually works end-to-end."
+
+	test('end-to-end RPC: Alice calls Bob, Bob handles, Alice gets the response', async () => {
+		const aliceDoc = new Y.Doc({ guid: 'e2e-alice' });
+		const bobDoc = new Y.Doc({ guid: 'e2e-bob' });
+
+		const bobDispatchCalls: Array<{ action: string; input: unknown }> = [];
+		const aliceSync = attachSync(aliceDoc, { url: () => 'ws://alice' });
+		const bobSync = attachSync(bobDoc, {
+			url: () => 'ws://bob',
+			rpc: {
+				dispatch: async (action, input) => {
+					bobDispatchCalls.push({ action, input });
+					const tabIds = (input as { tabIds: number[] }).tabIds;
+					return { closedCount: tabIds.length };
+				},
+			},
+		});
+
+		const aliceWs = await waitFor(() => FakeWebSocket.instances[0]);
+		const bobWs = await waitFor(() => FakeWebSocket.instances[1]);
+		await waitFor(() => aliceWs.readyState === FakeWebSocket.OPEN);
+		await waitFor(() => bobWs.readyState === FakeWebSocket.OPEN);
+		aliceWs.deliver(serverStep2Frame());
+		bobWs.deliver(serverStep2Frame());
+		await aliceSync.whenConnected;
+		await bobSync.whenConnected;
+
+		// Fire the RPC — Alice doesn't know where her frames "go" from the
+		// FakeWebSocket's perspective, so the test plays broker by polling
+		// her sent queue and redelivering to Bob.
+		const aliceSentBefore = aliceWs.sent.length;
+		const rpcPromise = aliceSync.rpc(bobDoc.clientID, 'tabs.close', {
+			tabIds: [1, 2, 3],
+		});
+
+		const requestFrame = await waitFor<Uint8Array>(() => {
+			for (let i = aliceSentBefore; i < aliceWs.sent.length; i++) {
+				const frame = aliceWs.sent[i]!;
+				if (peekMessageType(frame) === MESSAGE_TYPE.RPC) return frame;
+			}
+			return undefined;
+		});
+
+		// Route request → Bob (broker simulation).
+		const bobSentBefore = bobWs.sent.length;
+		bobWs.deliver(requestFrame);
+
+		// Wait for Bob's response to appear on his send queue, then route back.
+		const responseFrame = await waitFor<Uint8Array>(() => {
+			for (let i = bobSentBefore; i < bobWs.sent.length; i++) {
+				const frame = bobWs.sent[i]!;
+				if (peekMessageType(frame) === MESSAGE_TYPE.RPC) return frame;
+			}
+			return undefined;
+		});
+		aliceWs.deliver(responseFrame);
+
+		const result = await rpcPromise;
+
+		expect(result.error).toBeNull();
+		expect(result.data).toEqual({ closedCount: 3 });
+		expect(bobDispatchCalls).toEqual([
+			{ action: 'tabs.close', input: { tabIds: [1, 2, 3] } },
+		]);
+
+		aliceDoc.destroy();
+		bobDoc.destroy();
+		await aliceSync.whenDisposed;
+		await bobSync.whenDisposed;
 	});
 
 	test('fresh connection resets version counters — prior unacked writes do not leak state', async () => {

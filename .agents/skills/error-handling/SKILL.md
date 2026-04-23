@@ -26,6 +26,7 @@ Load these on demand based on what you're working on:
 - If working with **toast notifications for errors** (`toastOnError`, `extractErrorMessage` in UI), read [references/toast-on-error.md](references/toast-on-error.md)
 - If working with **real-world codebase examples and wrapping scenario guidelines**, read [references/real-world-examples.md](references/real-world-examples.md)
 - If working with **HTTP route handlers and status-response error conversion**, read [references/http-handlers.md](references/http-handlers.md)
+- If working with **workspace actions** (`defineQuery` / `defineMutation` — when to throw vs. return `Err`, how remote callers see your errors, `ActionFailed` semantics), read [../workspace-api/references/action-return-shapes.md](../workspace-api/references/action-return-shapes.md)
 
 ## Use trySync/tryAsync Instead of try-catch for Graceful Error Handling
 

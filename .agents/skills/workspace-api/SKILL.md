@@ -159,6 +159,29 @@ export function createBlogActions({ tables, batch }) {
 //   return { id, ydoc, tables, actions, batch, /* ... */ };
 ```
 
+### Return shapes — local vs. remote contract
+
+Actions have **two** type surfaces depending on how they're invoked. **Local**
+callers see the handler's signature verbatim — sync stays sync, raw stays raw,
+throws throw. **Remote** callers (via `createRemoteActions` or `sync.rpc()`)
+always get `Promise<Result<T, E | ActionFailed>>`: the transport wraps raw
+values in `Ok`, converts thrown errors into `Err(RpcError.ActionFailed)`, and
+passes existing `Result`s through.
+
+**Rule of thumb:**
+
+- **Return `Err(TypedError)`** for failures your caller should branch on.
+- **Throw** for bugs / invariants. On the wire, throws become `ActionFailed`
+  — the caller loses the stack and can only say "something broke."
+- **Return raw** when failure isn't a meaningful concept for the operation.
+
+If you need structured errors on the wire, `return Err(...)` explicitly —
+don't throw and hope.
+
+For the full matrix (every caller's view of every handler shape, all the
+decision trees, and the normalization boundaries), read
+[references/action-return-shapes.md](references/action-return-shapes.md).
+
 ### JSDoc on Action Methods
 
 Every action method inside the `actions` object returned from the `createDocumentFactory` builder should have a JSDoc comment. The JSDoc and the `description` field serve **different audiences**:
@@ -386,6 +409,7 @@ Load these on demand based on what you're working on:
 - If working with **table migrations** (migration function rules, direct-to-latest strategy, migration anti-patterns, `as const` note), read [references/table-migrations.md](references/table-migrations.md)
 - If working with **table/KV CRUD or observation** (`get`, `set`, `update`, `observe`, Svelte observer guidance), read [references/table-kv-crud-observation.md](references/table-kv-crud-observation.md)
 - If working with **per-row or standalone Y.Docs** (raw `new Y.Doc({ guid, gc })` + `attachRichText`/`attachPlainText`, `attachIndexedDb`, `attachSync`, `whenLoaded` vs `whenConnected`), read [references/primitive-api.md](references/primitive-api.md)
+- If working with **action return shapes, throw vs `Err`, remote error envelopes, `createRemoteActions`, `RemoteActions<A>`, `ActionFailed`, or the local/remote type-surface split**, read [references/action-return-shapes.md](references/action-return-shapes.md)
 
 Code references:
 

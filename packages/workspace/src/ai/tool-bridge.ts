@@ -20,6 +20,7 @@
  */
 
 import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
+import { isResult } from 'wellcrafted/result';
 import type { Action, Actions } from '../shared/actions';
 import { iterateActions } from '../shared/actions';
 
@@ -152,7 +153,18 @@ export function actionsToAiTools<TActions extends Actions>(
 			`${action.type}: ${path.join(ACTION_NAME_SEPARATOR)}`,
 		...(action.input && { inputSchema: action.input }),
 		...(action.type === 'mutation' && { needsApproval: true }),
-		execute: async (args: unknown) => (action.input ? action(args) : action()),
+		// Handlers may return raw values, Results, or throw. TanStack AI's
+		// `execute` contract is: return data on success, throw on failure.
+		// So we detect Result shape at runtime: Err → throw; Ok → return data;
+		// raw → return as-is. Thrown errors propagate naturally.
+		execute: async (args: unknown) => {
+			const raw = action.input ? await action(args) : await action();
+			if (isResult(raw)) {
+				if (raw.error !== null) throw raw.error;
+				return raw.data;
+			}
+			return raw;
+		},
 	}));
 
 	// Derive wire definitions directly from actions—avoids the type-widening

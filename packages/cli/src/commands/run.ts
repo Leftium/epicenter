@@ -6,8 +6,9 @@
  * remaining segments walk into the handle's own properties.
  */
 
-import { iterateActions } from '@epicenter/workspace';
+import { isResult, iterateActions } from '@epicenter/workspace';
 import type { TSchema } from 'typebox';
+import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
 import { dirFromArgv, dirOption } from '../util/dir-option';
@@ -97,9 +98,23 @@ async function invoke(
 
 	const { action } = resolved;
 	const input = await resolveInput(argv, action);
-	const result =
+	const format = argv.format as 'json' | 'jsonl' | undefined;
+
+	// Handlers return raw values, Results, or throw. Throws bubble up through
+	// yargs' default error handler (stderr + non-zero exit). For Results we
+	// print `.data` on Ok and route `.error` to stderr + exit 1 so shell
+	// pipelines see the failure. Raw values print as-is.
+	const raw =
 		action.input !== undefined ? await action(input) : await action();
-	output(result, { format: argv.format as 'json' | 'jsonl' | undefined });
+	if (isResult(raw)) {
+		if (raw.error !== null) {
+			outputError(extractErrorMessage(raw.error));
+			process.exit(1);
+		}
+		output(raw.data, { format });
+		return;
+	}
+	output(raw, { format });
 }
 
 async function resolveInput(

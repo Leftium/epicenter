@@ -1,8 +1,4 @@
-export {
-	AuthSession,
-	readStatusCode,
-	StoredUser,
-} from './auth-types.ts';
+export { AuthSession, StoredUser } from './auth-types.ts';
 export {
 	type AuthCore,
 	AuthError,

@@ -168,7 +168,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type * as Y from 'yjs';
-import { createLogger, type Logger } from '../shared/logger/index.js';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 
 /** Errors surfaced by the document factory's background disposal machinery. */
 export const DocumentFactoryError = defineErrors({

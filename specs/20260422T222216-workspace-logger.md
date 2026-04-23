@@ -1,9 +1,11 @@
 # Workspace Logger — JSONL, Local, DI
 
 **Date**: 2026-04-22
-**Status**: Draft
+**Status**: Phases 1–5 implemented. Addendum 2026-04-23 below — core extracted to `wellcrafted/logger`; workspace now owns only the Bun-specific `jsonlFileSink`.
 **Author**: AI-assisted
 **Branch**: braden-w/document-primitive (or successor)
+
+> **See the [Addendum](#addendum-202604-23--extraction-to-wellcraftedlogger) at the bottom for the current state and the Wave 2–4 integration plan.**
 
 ## Overview
 
@@ -69,6 +71,33 @@ Result: JSONL tail-able in real time, structured errors preserved (defineErrors 
 
 **Key finding**: Yjs providers consistently use direct `console.*`. That's the baseline. Pino/Winston are heavyweight for library code; for in-library logging the right shape is closer to console's ergonomics with structured output preserved.
 
+### Inspirational stack: Rust's `thiserror` + `tracing`
+
+`wellcrafted`'s `defineErrors` is explicitly modeled on [thiserror](https://docs.rs/thiserror) — the file's own docs cite it, and the 1:1 mapping (`#[error("...")]` ↔ `` message: `...` ``, `HttpError::Connection { ... }` ↔ `HttpError.Connection({ ... })`) is intentional. This spec completes that story by adding the **`tracing`** half: structured, level-keyed, field-oriented emission.
+
+Ecosystem adoption (crates.io all-time):
+
+| Crate | Downloads | Role |
+|---|---|---|
+| `thiserror` | 917M | Library error modeling — dominant, no serious competitor |
+| `anyhow` | 638M | App-level error aggregation |
+| `log` | 835M | Logger facade — still widely used (ripgrep) |
+| `tracing` | 555M | Structured logger — rising (rust-analyzer, deno, tokio ecosystem) |
+| `miette` | 48M | Diagnostic-style errors with severity |
+
+**Accurate framing**: thiserror **is** the dominant Rust choice for library errors. For logging, `tracing` is where the ecosystem is heading but `log` is still the boring default — adoption isn't unanimous. We align with `tracing` because it's structured and async-first, but the patterns translate to `log`-style transports too.
+
+### The level-on-variant question (considered and rejected)
+
+Tempting idea: declare the level on each `defineErrors` variant (via an object form or tagged builder) so `log.emit(err)` can route automatically. [`miette`](https://docs.rs/miette) does this via `#[diagnostic(severity(...))]`.
+
+**Rejected**, for two concrete reasons:
+
+1. **No Rust logging library does it.** Every production `tracing`/`log`/`slog` call site hard-codes the level in the macro name: `tracing::warn!(?err, "...")`. Miette is a diagnostics library (user-facing compiler-style output), not a general logger. We're building a logger; follow the tracing convention.
+2. **It's context-dependent.** The same error can be `warn` during retry and `error` on the last attempt. Putting a default on the variant means every site that disagrees has to override — no simplification in practice.
+
+**Consequence**: wellcrafted's `defineErrors` stays unchanged. Level lives at the call site (`log.warn(err)` / `log.error(err)`), matching Rust's actual convention.
+
 ### Bun-specific I/O
 
 `Bun.file(path).writer()` returns a `FileSink` that:
@@ -93,8 +122,11 @@ Syncing them via Yjs would flood the CRDT with transient operational data. Logs 
 | ----------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------ |
 | Location of log file                      | **Caller decides** via explicit path            | Matches `attachSqlite({ filePath })`; no hidden convention         |
 | Shape of `LogEvent`                       | `{ ts, level, source, message, data? }`         | Five essential fields; drop was not essential.                     |
-| Unified `data` field (vs separate `context`/`error`) | Single `data: unknown`                | Errors aren't special — sinks handle serialization                 |
-| Log levels                                | `'debug' | 'info' | 'warn' | 'error'`            | Four levels covers every real use                                  |
+| Unified `data` field for info/debug       | Single `data: unknown`                          | Free-form for non-error events; Rust's `tracing::info!` does the same |
+| Error-level calls accept typed errors     | `log.error(err: TypedError)` unary              | Error IS the data — name, message, fields, cause all flow through  |
+| Log levels                                | `'trace' | 'debug' | 'info' | 'warn' | 'error'`  | 5 levels — matches `tracing`, `log`, Python, Pino; enables 1:1 OTel mapping |
+| Skip `fatal`                              | Process-termination is app concern              | Library shouldn't decide to exit; caller does `log.error` + `process.exit` |
+| Level on `defineErrors` variants          | **No** — level lives at call site               | Matches `tracing::warn!(?err)` convention; context-dependent anyway |
 | Global sink registry                      | **No**                                          | DI only; no hidden state                                           |
 | Library-wide "default logger"             | **No**                                          | Each attach primitive takes an optional `log` option               |
 | Default when no logger passed             | Console sink (matches current behavior)         | Zero-config, backward compatible                                   |
@@ -110,57 +142,123 @@ Syncing them via Yjs would flood the CRDT with transient operational data. Logs 
 ### Type shape
 
 ```
-┌─────────────────────────────────────────────────────┐
-│ LogEvent                                            │
-│   ts:      number       ← epoch millis              │
-│   level:   LogLevel     ← 'debug'|'info'|'warn'|'error' │
-│   source:  string       ← from createLogger()       │
-│   message: string       ← human text                │
-│   data?:   unknown      ← anything; sink serializes │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ LogEvent                                                    │
+│   ts:      number       ← epoch millis                      │
+│   level:   LogLevel     ← 'trace'|'debug'|'info'|'warn'|'error' │
+│   source:  string       ← from createLogger()               │
+│   message: string       ← human text                        │
+│   data?:   unknown      ← anything; sink serializes         │
+└─────────────────────────────────────────────────────────────┘
                     │
                     ▼  emitted via
-┌─────────────────────────────────────────────────────┐
-│ LogSink = (event: LogEvent) => void                 │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ LogSink =                                                    │
+│   ((event: LogEvent) => void) & Partial<AsyncDisposable>     │
+│   ↑ optional [Symbol.asyncDispose]() for sinks that own      │
+│     resources (file handles, network sockets, etc.)          │
+└──────────────────────────────────────────────────────────────┘
                     │
                     ▼  constructed by
 ┌─────────────────────────────────────────────────────┐
-│ consoleSink                   ← default; ships in   │
-│ jsonlFileSink(path)           ← Bun file writer     │
+│ consoleSink                   ← constant; no dispose│
+│ jsonlFileSink(path)           ← Bun writer; disposes│
 │ memorySink()                  ← for tests           │
+│ composeSinks(...sinks)        ← fans out; forwards  │
+│                                 dispose to members  │
 │ <custom>                      ← any (event) => void │
 └─────────────────────────────────────────────────────┘
 ```
 
+### Disposal discipline — align with `using`
+
+Every sink is typed `LogSink & Partial<AsyncDisposable>`. Sinks that own resources implement `[Symbol.asyncDispose]`; sinks that don't leave it `undefined`. Composed sinks forward disposal to each member. Callers use `await using` for scope-bound cleanup — matching epicenter's existing idiom (`using bundle = factory.open(...)`).
+
+```ts
+// Type (imported from wellcrafted-adjacent; TS 5.2+ lib built-in)
+type LogSink = ((event: LogEvent) => void) & Partial<AsyncDisposable>;
+```
+
 ### Caller flow
 
+```ts
+// STEP 1 — construct sink(s) at app startup. Use `await using` for auto-cleanup.
+await using fileSink = jsonlFileSink(join(DATA_DIR, 'app.log.jsonl'));
+const sink = composeSinks(consoleSink, fileSink);
+
+// STEP 2 — create scoped loggers
+const log = createLogger('markdown-materializer', sink);
+
+// STEP 3 — pass loggers to library primitives
+const markdown = attachMarkdownMaterializer(ydoc, { dir, log });
+
+// STEP 4 — library emits structured events
+log.warn(MarkdownError.TableWrite({ path, cause }));
+// → sink receives { ts, level: 'warn', source: 'markdown-materializer', message, data }
+// → consoleSink writes to stderr with formatted prefix
+// → jsonlFileSink appends one JSON line
+
+// STEP 5 — disposal happens automatically at scope exit
+// (fileSink.flush() + fileSink.end() invoked via Symbol.asyncDispose)
 ```
-STEP 1: Construct sink(s) at app startup or build-closure time
-────────────────────────────────────────────────────────────────
-  const sink = jsonlFileSink(join(DATA_DIR, '.log.jsonl'));
 
-STEP 2: Create a Logger from source + sink
-────────────────────────────────────────────────────────────────
-  const log = createLogger('markdown-materializer', sink);
+### Logger API
 
-STEP 3: Pass the logger to library primitives via `log` option
-────────────────────────────────────────────────────────────────
-  const markdown = attachMarkdownMaterializer(ydoc, { dir, log });
+Two-shape surface: **unary-typed-error** for warn/error, **free-form `(message, data?)`** for trace/debug/info.
 
-STEP 4: Library emits structured events
-────────────────────────────────────────────────────────────────
-  log.warn('table write failed', { path, error });
-  → sink receives: { ts, level: 'warn', source: 'markdown-materializer',
-                     message: 'table write failed',
-                     data: { path, error } }
-  → consoleSink writes to stderr with formatted prefix
-  → jsonlFileSink appends one JSON line
+```ts
+type Logger = {
+  // Error-path — takes a typed error. Error carries its own message/fields/cause.
+  error(err: TypedError): void;
+  warn(err: TypedError): void;
 
-STEP 5: Caller closes sinks on shutdown (Bun/Node apps)
-────────────────────────────────────────────────────────────────
-  process.on('beforeExit', () => sink.close());
+  // Free-form events — no enumeration required (matches tracing::info! idiom)
+  info(message: string, data?: unknown): void;
+  debug(message: string, data?: unknown): void;
+  trace(message: string, data?: unknown): void;
+};
 ```
+
+**Why split the shape?** Errors *propagate as values*, so they need types (Result flow, pattern matching). Log events *dead-end*, so enumerating them is a tax with no payoff. This is the line Rust draws between `thiserror` and `tracing::info!`; we draw it the same place.
+
+**Why no `emit(err)` convenience method?** Because it would require the error to declare its own level, and we decided against that (see "level-on-variant question" above). Caller explicitly picks `log.warn` or `log.error` — one extra character in exchange for zero hidden routing.
+
+### `wellcrafted/defineErrors` — no changes required
+
+Errors stay pure data. Existing function-shorthand API is exactly what we need:
+
+```ts
+const MarkdownError = defineErrors({
+  BadYaml: ({ cause }: { cause: unknown }) => ({
+    message: `Invalid YAML: ${extractErrorMessage(cause)}`, cause,
+  }),
+  TableWrite: ({ path, cause }: { path: string; cause: unknown }) => ({
+    message: `Failed to write table at ${path}`, path, cause,
+  }),
+});
+
+log.warn(MarkdownError.TableWrite({ path, cause }));
+```
+
+### `tapErr` combinator
+
+The Result-flow version of the error-path log call. Mirrors Effect's `tapErrorCause` and Rust's `.inspect_err`. Takes a **log method** (not the whole logger) so level is explicit at the pipeline site.
+
+```ts
+const tapErr = <T, E extends TypedError>(logFn: (err: E) => void) =>
+  (result: Result<T, E>): Result<T, E> => {
+    if (result.error) logFn(result.error);
+    return result;
+  };
+
+// Usage — caller picks .warn or .error where they compose
+const result = await tryAsync({
+  try: () => writeTable(path),
+  catch: (cause) => MarkdownError.TableWrite({ path, cause }),
+}).then(tapErr(log.warn));
+```
+
+No message argument — the typed error owns its message. No level ambiguity — caller supplied the method.
 
 ### File layout
 
@@ -179,35 +277,50 @@ packages/workspace/src/shared/logger/
 ### Phase 1 — core logger module
 
 - [ ] **1.1** Create `packages/workspace/src/shared/logger/logger.ts`:
-  - Export `LogLevel`, `LogEvent`, `LogSink`, `Logger` types
+  - Export `LogLevel` (5 levels), `LogEvent`, `LogSink`, `Logger` types
   - Export `createLogger(source: string, sink?: LogSink): Logger`
+  - `Logger` exposes `.error(err) / .warn(err) / .info(msg, data?) / .debug(msg, data?) / .trace(msg, data?)`
   - Default sink parameter: `consoleSink`
 - [ ] **1.2** Create `console-sink.ts` with the default console sink that matches current `console.*` behavior (prefix, level-appropriate method, error objects pretty-printed)
 - [ ] **1.3** Create `memory-sink.ts` — a sink that pushes events to an array (returned by the factory for test inspection)
-- [ ] **1.4** Export from `packages/workspace/src/index.ts`
-- [ ] **1.5** Tests: emits events through sinks, levels work, source prefix correct, native Errors get `.name`/`.message`/`.stack` preserved, defineErrors objects flow through unmodified
+- [ ] **1.4** Create `compose-sinks.ts` — `composeSinks(...sinks: LogSink[]): LogSink` for fan-out
+- [ ] **1.5** Create `tap-err.ts` — `tapErr(logFn)` combinator that accepts a log method (not the whole logger) so caller supplies level at composition time
+- [ ] **1.6** Export from `packages/workspace/src/index.ts`
+- [ ] **1.7** Tests: emits events through sinks, 5 levels work, source prefix correct, native Errors get `.name`/`.message`/`.stack` preserved, defineErrors objects flow through unmodified, `tapErr(log.warn)` / `tapErr(log.error)` logs-and-returns
 
 ### Phase 2 — JSONL sink (Bun-backed)
 
 - [ ] **2.1** Create `jsonl-sink.ts`:
-  - `jsonlFileSink(path: string): LogSink & { close(): Promise<void> }`
+  - `jsonlFileSink(path: string): LogSink` — return type includes optional `[Symbol.asyncDispose]`
   - Open a `Bun.file(path).writer()` on construction
   - Serialize each event as one JSON line with ISO 8601 ts
-  - Close method flushes and ends the writer
+  - Implement `[Symbol.asyncDispose]` on the returned sink that flushes and ends the writer
 - [ ] **2.2** Handle error serialization: native Errors get `{ name, message, stack }`; everything else passes through JSON.stringify as-is (defineErrors objects serialize naturally because they're plain objects)
-- [ ] **2.3** Tests: writes to a temp file, parses JSON lines, close flushes buffered writes
+- [ ] **2.3** `composeSinks` forwards disposal: iterate members, await each `sink[Symbol.asyncDispose]?.()` — optional chaining means consoleSink is a no-op
+- [ ] **2.4** Tests: writes to a temp file, parses JSON lines, `await using sink = ...` flushes buffered writes at scope exit
 
-### Phase 3 — migrate library call sites
+### Phase 3 — define error variants for every raw-catch site
 
-- [ ] **3.1** Materializer modules (markdown + sqlite): add `log?: Logger` option; default to `createLogger(<source>, consoleSink)` if not provided; replace `console.warn` / `console.error` calls with `log.warn` / `log.error`
-- [ ] **3.2** Repeat for `attach-sync.ts`, `y-keyvalue-lww-encrypted.ts`, `on-local-update.ts`, `attach-timeline/sheet.ts`, etc. — anything currently using `console.warn` / `console.error` for diagnostic output
-- [ ] **3.3** Update tests that asserted on console output, if any (likely few — most tests check return values, not console)
+Audit finding: zero current `console.*` sites log a typed error; all 12 log raw native `Error`s caught from `try`/`.catch()`. The clean break requires minting a typed error on every error path first, so `log.warn(err)` / `log.error(err)` is always unary-typed.
 
-### Phase 4 — playground + documentation
+- [ ] **3.1** For each of the 12 call sites, either (a) add a new variant to the module's existing `defineErrors` block (e.g., `MarkdownError.TableWrite`, `SyncError.WaitForRejected`), or (b) wrap the raw `catch` in `tryAsync` with a `catch:` that mints the typed error.
+- [ ] **3.2** Update `packages/workspace/src/shared/errors.ts` (and module-local error files) with the new variants. Ensure every variant's `message` template encodes the "what operation failed" clause the log message used to own.
 
-- [ ] **4.1** Opensidian playground config: add a `jsonlFileSink` co-located with the markdown output directory
-- [ ] **4.2** Update `.agents/skills/error-handling` (or create new `skills/logging`) with "consuming the logger" examples
-- [ ] **4.3** Update `attach-primitive/SKILL.md` example to show the `log` option
+### Phase 4 — migrate library call sites
+
+- [ ] **4.1** Materializer modules (markdown + sqlite): add `log?: Logger` option; default to `createLogger(<source>, consoleSink)`; replace `console.warn` / `console.error` with `log.warn(typedErr)` / `log.error(typedErr)`.
+- [ ] **4.2** Repeat for `attach-sync.ts`, `y-keyvalue-lww-encrypted.ts`, `on-local-update.ts`, `define-document.ts`, `shared/standard-schema.ts` — all 12 sites.
+- [ ] **4.3** Where the Result pipeline already carries a typed error, replace the manual `if (error) console.error(...)` pattern with `.then(tapErr(log.warn))` or `.then(tapErr(log.error))`.
+- [ ] **4.4** Update tests that asserted on console output, if any (likely few — most tests check return values, not console)
+
+### Phase 5 — playground + skill documentation
+
+- [ ] **5.1** Opensidian playground config: add a `jsonlFileSink` co-located with the markdown output directory
+- [ ] **5.2** Update `.claude/skills/define-errors/SKILL.md` — no API change, but add a "logging typed errors" sub-section showing `log.warn(MyError.Variant(...))` / `log.error(...)` as the canonical consumption pattern alongside `Result` flow.
+- [ ] **5.3** Update `.claude/skills/error-handling/SKILL.md` — add a "logging errors" section. Canonical pattern: mint typed error in `catch:` → route via Result → `.then(tapErr(log.warn))` or `log.error(err)` at the boundary. Caller picks level at the site.
+- [ ] **5.4** Update `.claude/skills/rust-errors/SKILL.md` — extend the Rust↔TS mapping to include the 5-level `tracing` ↔ `Logger` mapping. Explicitly note that — matching `tracing` convention — level is chosen at the call site, not on the error type.
+- [ ] **5.5** New skill `.claude/skills/logging/SKILL.md` — covers `createLogger`, the 5 levels, when to use which, `tapErr(log.warn)` combinator, `memorySink` for tests, `composeSinks` for fan-out. Keep short — this is a usage reference, not a design doc.
+- [ ] **5.6** Update `attach-primitive/SKILL.md` example to show the `log` option
 
 ## Edge Cases
 
@@ -216,7 +329,7 @@ packages/workspace/src/shared/logger/
 1. `jsonlFileSink(path)` opens the writer on construction.
 2. App runs, logger emits, writer buffers + periodically flushes.
 3. On process exit: Bun closes file handles, but **pending buffered writes may be lost** without an explicit flush.
-4. **Mitigation**: app-level `beforeExit` / `SIGINT` handler calls `sink.close()` which flushes and ends.
+4. **Mitigation**: `await using fileSink = jsonlFileSink(path)` binds disposal to the enclosing scope. The sink's `[Symbol.asyncDispose]` flushes and ends the writer when scope exits. This matches the rest of the codebase's `using` idiom and removes the need for manual `beforeExit` handlers in the common case.
 
 ### Log file does not exist yet
 
@@ -283,15 +396,21 @@ packages/workspace/src/shared/logger/
 
 ## Success Criteria
 
-- [ ] `createLogger('source', sink)` returns a `Logger` with `.debug`/`.info`/`.warn`/`.error` methods
+- [ ] `wellcrafted/defineErrors` is **not modified** — pure-data errors, existing API
+- [ ] `createLogger('source', sink)` returns a `Logger` with `.trace`/`.debug`/`.info`/`.warn`/`.error` methods
+- [ ] `.warn(err)` / `.error(err)` accept a typed error unary; `.trace`/`.debug`/`.info` take `(message, data?)`
 - [ ] Default (`createLogger('source')`) uses `consoleSink` and matches current output shape
-- [ ] `jsonlFileSink(path)` appends one JSON-per-line, closable via `.close()`
-- [ ] `defineErrors` objects flow through to the sink with structure intact (verified via test with a known error)
+- [ ] `jsonlFileSink(path)` appends one JSON-per-line; `await using` scope exit flushes + ends the writer via `[Symbol.asyncDispose]`
+- [ ] `LogSink` type is `((event) => void) & Partial<AsyncDisposable>` — no runtime `in` check required
+- [ ] `composeSinks(a, b, c)` forwards disposal: `sink[Symbol.asyncDispose]?.()` is awaited for each member
+- [ ] `tapErr(logFn)` returns the Result unchanged, calling `logFn(result.error)` only on the error branch
+- [ ] `composeSinks(...)` fans out one event to every sink
+- [ ] `defineErrors` objects flow through to the sink with structure intact (verified via test)
 - [ ] Native Error objects get `{ name, message, stack }` in JSONL output (not empty `{}`)
-- [ ] All 14 library call sites migrated from `console.*` to `log.*`
+- [ ] All 12 library call sites migrated from `console.*` to `log.warn(err)` / `log.error(err)`; each has a corresponding typed error variant
 - [ ] Opensidian playground adds a co-located JSONL sink and demonstrates tail-able output
 - [ ] 600+ workspace tests continue to pass
-- [ ] Memory sink enables test assertions: `expect(events).toContainEqual({ kind: 'warn', ... })`
+- [ ] Memory sink enables test assertions: `expect(events).toContainEqual({ level: 'warn', ... })`
 
 ## References
 
@@ -301,9 +420,13 @@ packages/workspace/src/shared/logger/
 - `packages/workspace/src/document/materializer/sqlite/sqlite.ts:155` — sync failure
 - `packages/workspace/src/document/materializer/sqlite/fts.ts:139` — FTS failure (currently returns empty, swallowing the error)
 - `.claude/skills/error-handling/SKILL.md` — Result consumption patterns; logger should compose with these
-- `.claude/skills/define-errors/SKILL.md` — typed error patterns; logger's `data` field flows these through
+- `.claude/skills/define-errors/SKILL.md` — typed error patterns; logger's `log.emit(err)` consumes these
 - Bun `FileSink` documentation: https://bun.sh/docs/api/file-io#writing-files-bun-write
 - Pino's `transport` model for reference: https://getpino.io/#/docs/transports
+- Rust's `thiserror`: https://docs.rs/thiserror — `defineErrors`' original inspiration
+- Rust's `tracing`: https://docs.rs/tracing — 5-level structured logging, field-oriented emission
+- Rust's `miette`: https://docs.rs/miette — precedent for per-variant `severity` attribute
+- OpenTelemetry Logs Data Model: https://opentelemetry.io/docs/specs/otel/logs/data-model/ — severity mapping compatibility
 
 ## Suggested Execution Prompt
 
@@ -311,16 +434,184 @@ Copy into a fresh session to hand off:
 
 > Execute `specs/20260422T222216-workspace-logger.md` on branch `braden-w/document-primitive` at `/Users/braden/conductor/workspaces/epicenter/copenhagen-v1`.
 >
-> Context: add a minimal structured logger to `@epicenter/workspace`. Default behavior matches current `console.*` output. Opt-in JSONL file sink via Bun's native `FileSink`. No global state, no library-owned paths — DI all the way.
+> Context: add a minimal structured logger to `@epicenter/workspace`, modeled on Rust's `thiserror` + `tracing` + `miette`. Completes the `defineErrors` → `tracing` story already started by wellcrafted. Default behavior matches current `console.*` output. Opt-in JSONL file sink via Bun's `FileSink`. No global state, no library-owned paths — DI all the way.
 >
 > Phases:
-> 1. Core logger module + console + memory sinks (~100 lines, one commit)
-> 2. JSONL sink (~60 lines, one commit)
-> 3. Migrate 14 library call sites (~80 lines of diff, one commit)
-> 4. Playground integration + skill docs (~50 lines, one commit)
+> 1. Core logger module — 5-level `Logger`, `composeSinks`, `tapErr` combinator, console + memory sinks (~120 lines, one commit)
+> 2. JSONL sink with Bun `FileSink` (~60 lines, one commit)
+> 3. Define error variants for every raw-catch site — all 12 sites get a typed error variant. Mint typed errors in `tryAsync`/`.catch` (~100 lines, one commit)
+> 4. Migrate 12 library call sites to `log.warn(err)` / `log.error(err)` / `.then(tapErr(log.warn))` (~80 lines of diff, one commit)
+> 5. Playground integration + skill docs (define-errors, error-handling, rust-errors updates; new `logging` skill) (~80 lines, one commit)
 >
-> Follow the spec's Design Decisions table exactly — unified `data` field, caller-decides-path, four levels, no global registry. Open questions have recommended answers in the spec; confirm them as you go.
+> Follow the spec's Design Decisions table exactly — 5 levels (no fatal), unary-typed-error on warn/error, free-form on info/debug/trace, caller-decides-path, no global registry, no level on error variants (caller picks level at site, matching Rust's `tracing::warn!(?err)` convention).
 >
 > Run `bun test` after each phase. Known pre-existing failures in `create-table.test.ts`, `attach-encryption.test.ts`, etc. are from parallel refactors — ignore them, don't fix.
 >
 > Report per-phase: commit hash, tests passing, any design deviations from the spec.
+
+---
+
+## Addendum 2026-04-23 — Extraction to `wellcrafted/logger`
+
+### What changed
+
+After Phases 1–5 shipped in `@epicenter/workspace`, the core pieces turned out to be runtime-agnostic and entirely built on `wellcrafted/error` + `wellcrafted/result`. They don't belong downstream — they belong in the same package that owns `defineErrors`. So we extracted them.
+
+**Net effect: zero call-site changes in epicenter.** The workspace barrel re-exports the same names from `wellcrafted/logger` and keeps the Bun-only pieces local.
+
+### Where each piece lives now
+
+```
+wellcrafted/ (PR #113 on wellcrafted-dev/wellcrafted, cutting 0.35.0)
+└── src/logger/          ← runtime-agnostic, browser-safe
+    ├── types.ts          LogLevel, LogEvent, LogSink, Logger, LoggableError
+    ├── create-logger.ts
+    ├── console-sink.ts
+    ├── memory-sink.ts
+    ├── compose-sinks.ts
+    ├── tap-err.ts        Result-flow combinator; uses isErr
+    └── index.ts          → published as `wellcrafted/logger` subpath
+
+@epicenter/workspace
+└── src/shared/logger/
+    ├── index.ts          re-exports * from 'wellcrafted/logger' + local jsonl bits
+    ├── jsonl-sink.ts     Bun-only (FileSink + node:fs) — STAYS HERE
+    └── jsonl-sink.test.ts
+```
+
+### Related upstream change: `defineErrors` reserves `data`
+
+Coupled into the same wellcrafted PR. `ValidateErrorBody` now forbids `data` as a variant field alongside `name`. Required because `wellcrafted/logger`'s `LoggableError = AnyTaggedError | Err<AnyTaggedError>` uses `"data" in err` to discriminate — and a variant with a `data` body field would silently collide with `Err<E>`'s `data: null` discriminant (proven empirically during review — the raw tagged branch returned `undefined` and crashed the sink).
+
+This is a type-level breaking change. No real-world usage of `data` as a variant field was observed across the canonical consumers checked (epicenter monorepo).
+
+### Why extract (and why now)
+
+Three concrete reasons:
+
+1. **`tapErr` imports `Result` from `wellcrafted/result`.** Keeping it in workspace meant every consumer imported from two packages to do one thing. Consolidation is a one-liner fix.
+2. **The core has no runtime dependencies beyond `console.*`.** Browser apps, Node CLIs, and non-epicenter wellcrafted consumers should all get it without pulling in `@epicenter/workspace`.
+3. **The `"data" in err` discriminator is safer when `data` reservation lives upstream with `defineErrors`, not in workspace's logger.** One package owns both halves of the contract.
+
+Deferred to keep wellcrafted runtime-agnostic:
+
+- **`jsonlFileSink`** — uses `Bun.file(path).writer()` and `mkdirSync`. Pure Bun. Stays in `@epicenter/workspace`.
+- **`DisposableLogSink`** — the `LogSink & AsyncDisposable` narrow exists mainly to type `jsonlFileSink`'s return so `await using` works. Ships alongside.
+
+### How downstream integration works — direct imports, no re-export barrel
+
+We considered a thin re-export barrel in `packages/workspace/src/shared/logger/index.ts` to preserve every existing import path. **Rejected in favor of direct imports.** Reasons:
+
+- A re-export would be pure indirection. The source of truth IS `wellcrafted/logger`; hiding that behind a workspace re-export invents a fake second import path with zero semantic value.
+- Direct imports teach the right mental model — the dependency is visible at every call site. "This wants the core" → `wellcrafted/logger`. "This wants the Bun file sink" → `@epicenter/workspace`.
+- Fewer files in `packages/workspace/src/shared/logger/` — only the Bun-specific `jsonl-sink.ts` + its test remain.
+
+Consumer call sites import from `wellcrafted/logger` directly:
+
+```ts
+// Before (pre-extraction)
+import { createLogger, type Logger } from '../shared/logger/index.js';
+
+// After (Wave 2)
+import { createLogger, type Logger } from 'wellcrafted/logger';
+```
+
+The `@epicenter/workspace` barrel keeps exporting only the Bun-specific pieces:
+
+```ts
+// packages/workspace/src/index.ts — LOGGER section
+export {
+  type DisposableLogSink,
+  jsonlFileSink,
+} from './shared/logger/jsonl-sink.js';
+```
+
+### Usage — what actually happens in app code
+
+**Default (one sink, console):**
+```ts
+const log = createLogger('markdown-materializer'); // consoleSink is the default
+log.info('ready');
+```
+
+**Production (fan-out across sinks):**
+```ts
+await using fileSink = jsonlFileSink(join(DATA_DIR, 'app.log.jsonl'));
+const sharedSink = composeSinks(consoleSink, fileSink);
+
+attachMarkdownMaterializer(ydoc, { dir, log: createLogger('markdown', sharedSink) });
+attachSqliteMaterializer(ydoc, { db,  log: createLogger('sqlite',   sharedSink) });
+attachSync(ydoc,                     { url, log: createLogger('sync',    sharedSink) });
+// Every event fans to console AND file. Source tags which subsystem spoke.
+```
+
+**Tests:**
+```ts
+const { sink, events } = memorySink();
+const log = createLogger('test', sink);
+// trigger path
+expect(events[0]).toMatchObject({ level: 'warn', source: 'test' });
+```
+
+`createLogger` always takes exactly one sink. `composeSinks` is how you get fan-out. `consoleSink` is the default when no sink is passed.
+
+### Execution plan — Waves 2–4
+
+**Wave 2 — thin out workspace logger** (triggered when `wellcrafted@0.35.0` is on npm)
+- [ ] Bump root catalog `wellcrafted` dep to `^0.35.0`
+- [ ] Delete from `packages/workspace/src/shared/logger/`:
+  - `create-logger.ts` + `.test.ts`
+  - `console-sink.ts` (+ test if any)
+  - `memory-sink.ts`
+  - `compose-sinks.ts`
+  - `tap-err.ts`
+  - `types.ts` if present locally
+- [ ] Rewrite `shared/logger/index.ts` as the thin barrel (code above)
+- [ ] Keep `jsonl-sink.ts` + `jsonl-sink.test.ts` untouched
+- [ ] Run `bun test` in workspace — target 626 pass / 0 fail (no call-site migration expected)
+- [ ] Confirm `bun run typecheck` clean
+- [ ] Commit: `refactor(workspace): extract logger core to wellcrafted/logger`
+
+**Wave 3 — skill docs**
+- [ ] `.agents/skills/logging/SKILL.md` — imports move to `wellcrafted/logger` for core (`createLogger`, `consoleSink`, `memorySink`, `composeSinks`, `tapErr`, types). `jsonlFileSink` + `DisposableLogSink` imports stay on `@epicenter/workspace`. One-liner note explaining the split so consumers understand the boundary.
+- [ ] `.agents/skills/error-handling/SKILL.md` — update the "Logging errors" sample imports
+- [ ] `.agents/skills/rust-errors/SKILL.md` — update the `tracing` ↔ `Logger` section's imports
+- [ ] `.agents/skills/define-errors/SKILL.md` — brief note that `data` (like `name`) is now reserved at the type level, link to the logger's discriminator as the reason
+
+**Wave 4 — verify**
+- [ ] Fresh `bun install` in epicenter; `bun test` workspace; spot-check a call site (e.g., `packages/workspace/src/shared/standard-schema.ts`) compiles + runs unchanged
+- [ ] Report per-wave: commit hash, test status, any deviations
+
+### Follow-up: wellcrafted `Result` symmetry (not this change's scope)
+
+During review we confirmed empirically that `Ok(null)` and `Err(null)` are **structurally identical** in wellcrafted today — both produce `{ data: null, error: null }`. The built-in `isErr` check (`result.error !== null`) misclassifies `Err(null)` as Ok.
+
+**Why this doesn't break our logger.** `LoggableError`'s `"data" in err` discriminator is safe because `AnyTaggedError` requires `{ name: string, message: string }` (both non-nullable), which rules out `Err<AnyTaggedError>(null)` at the type level. The edge never reaches `unwrapLoggable`.
+
+**Why it's still a wellcrafted-level rough edge worth flagging.** The `Result<T, E>` type is asymmetric: `Ok(null)` is a legitimate "success with empty payload" case (common pattern — "not found is not an error"), but `Err(null)` is meaningless (a failure with no reason) yet structurally legal. The convention "don't call `Err(null)`" is implicit, not type-enforced. Any discriminator that relies on `data === null` alone to mean Err is wrong in the general case.
+
+**Candidate fixes** (each is a separate wellcrafted discussion):
+
+- Constrain `Err<E extends NonNullable<unknown>>` — forbids `Err(null)` at compile time. Minimal change, potentially breaking for existing consumers who pass nullable errors.
+- Add tag-based discrimination `_tag: "Ok" | "Err"` — bigger breaking change, larger runtime payload, but eliminates the ambiguity entirely.
+- Correct the `skills/result-types/SKILL.md` wording ("one is always null") and add an article documenting the invariant + the `Ok(null)` edge.
+
+Recommendation for this monorepo: accept the wellcrafted convention as-is (don't pass `Err(null)`), write a follow-up article for the `docs/articles/` shelf, and optionally file a wellcrafted issue for the harder fix.
+
+### Invariants and commitments
+
+- **Public API surface unchanged from the perspective of `@epicenter/workspace` consumers.** Every symbol name is preserved. Only the physical location of source files moves.
+- **`defineErrors` variants cannot use `data` as a field.** Enforced at type level upstream. Rename to `payload`/`body`/`value` if needed — no such variant exists today, but this becomes a permanent rule.
+- **`jsonlFileSink` is Bun-only.** Browser apps don't import it; server/CLI apps that want it do via `@epicenter/workspace`.
+- **No global logger registry.** DI all the way; every attach primitive takes an optional `log?: Logger`.
+- **`source` is required on every logger** — namespace tag for composed sinks to filter/attribute by.
+
+### Why one PR / one commit for wellcrafted changes (after review)
+
+The `data` reservation and the logger addition landed together in a single commit on wellcrafted PR #113 (not split into two). Reason: the reservation is motivated *solely* by the logger's discriminator requirement. Outside of the logger's need for safe narrowing, `data` on a variant would be harmless. One feature, one atomic change, one changelog entry — the cleaner story both to ship and to revert.
+
+### References (new)
+
+- wellcrafted PR: https://github.com/wellcrafted-dev/wellcrafted/pull/113
+- wellcrafted changeset: `~/Code/wellcrafted/.changeset/add-logger.md`
+- `@epicenter/workspace`'s current `shared/logger/` (pre-Wave-2 state): `packages/workspace/src/shared/logger/`

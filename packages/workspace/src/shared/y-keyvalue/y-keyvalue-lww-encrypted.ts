@@ -62,7 +62,7 @@
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type * as Y from 'yjs';
-import { createLogger, type Logger } from '../logger/index.js';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 import {
 	decryptValue,
 	type EncryptedBlob,

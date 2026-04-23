@@ -25,7 +25,7 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import { tryAsync } from 'wellcrafted/result';
-import { createLogger, type Logger } from '../shared/logger/index.js';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 import type { Awareness } from 'y-protocols/awareness';
 import {
 	applyAwarenessUpdate,

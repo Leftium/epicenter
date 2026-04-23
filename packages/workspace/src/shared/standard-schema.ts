@@ -5,7 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, trySync } from 'wellcrafted/result';
-import { createLogger } from './logger/index.js';
+import { createLogger } from 'wellcrafted/logger';
 
 const log = createLogger('standard-schema');
 

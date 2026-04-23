@@ -19,7 +19,7 @@ import {
 } from 'wellcrafted/error';
 import type * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
-import { createLogger, type Logger } from '../../../shared/logger/index.js';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 import { standardSchemaToJsonSchema } from '../../../shared/standard-schema.js';
 import type { BaseRow, Table, TableDefinition } from '../../attach-table.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';

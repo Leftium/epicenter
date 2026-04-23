@@ -3,9 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-import { composeSinks } from './compose-sinks.js';
+import { composeSinks, createLogger } from 'wellcrafted/logger';
 import { jsonlFileSink } from './jsonl-sink.js';
-import { createLogger } from './logger.js';
 
 const TestError = defineErrors({
 	Boom: ({ cause }: { cause: unknown }) => ({

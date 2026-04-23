@@ -13,7 +13,7 @@
  */
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { LogEvent, LogSink } from './logger.js';
+import type { LogEvent, LogSink } from 'wellcrafted/logger';
 
 function normalizeForJson(value: unknown): unknown {
 	if (value instanceof Error) {

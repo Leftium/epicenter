@@ -8,7 +8,7 @@
  * @module
  */
 
-import type { Logger } from '../../../shared/logger/index.js';
+import type { Logger } from 'wellcrafted/logger';
 import { quoteIdentifier } from './ddl.js';
 import { SqliteMaterializerError } from './sqlite.js';
 import type { MirrorDatabase, SearchOptions, SearchResult } from './types.js';

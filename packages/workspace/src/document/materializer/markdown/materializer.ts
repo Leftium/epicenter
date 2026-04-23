@@ -9,7 +9,7 @@ import {
 import { tryAsync } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 import { defineMutation } from '../../../shared/actions.js';
-import { createLogger, type Logger } from '../../../shared/logger/index.js';
+import { createLogger, type Logger } from 'wellcrafted/logger';
 import type { MaybePromise } from '../../../shared/types.js';
 import type { Kv } from '../../attach-kv.js';
 import {

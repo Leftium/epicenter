@@ -537,9 +537,7 @@ function createAiChatState() {
 			switchConversation(conversationId);
 		},
 
-		get availableProviders() {
-			return AVAILABLE_PROVIDERS;
-		},
+		availableProviders: AVAILABLE_PROVIDERS,
 
 		modelsForProvider(providerName: string): readonly string[] {
 			return PROVIDER_MODELS[providerName as Provider] ?? [];

@@ -241,17 +241,28 @@ export function createAuth({
 		},
 	});
 
+	// Two transitions write session data; each owns a non-overlapping case:
+	//
+	// 1. Initial establishment (current is null): useSession.subscribe writes
+	//    the full enriched session from /auth/get-session (which includes
+	//    encryptionKeys via customSession — signIn/signUp responses don't).
+	// 2. Token rotation (current is not null): the onSuccess fetch interceptor
+	//    writes { ...current, token: newToken } from the set-auth-token header.
+	//
+	// By partitioning on `current === null`, the two writers never race on
+	// the same transition. Cross-tab sign-in is handled by the persisted
+	// store's platform events (StorageEvent / chrome.storage.onChanged).
 	const unsubBA = client.useSession.subscribe((state) => {
 		if (state.isPending) return;
+		const current = session.get();
 		if (state.data) {
-			const user = normalizeUser(state.data.user);
-			const token = state.data.session.token;
+			if (current !== null) return;
 			session.set({
-				token,
-				user,
+				token: state.data.session.token,
+				user: normalizeUser(state.data.user),
 				encryptionKeys: state.data.encryptionKeys,
 			});
-		} else {
+		} else if (current !== null) {
 			session.set(null);
 		}
 	});

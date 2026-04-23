@@ -137,7 +137,7 @@ const sqlite   = attachSqliteMaterializer(ydoc, { db, log: createLogger('sqlite'
 
 ## Browser
 
-`createLogger` + `consoleSink` + `memorySink` + `composeSinks` are pure JS, browser-safe. `jsonlFileSink` is Bun-only (uses `Bun.file(path).writer()` + `node:fs`) — browser apps just don't import it.
+`createLogger` + `consoleSink` + `memorySink` + `composeSinks` + `tapErr` are pure JS, browser-safe. `jsonlFileSink` is Bun-only (uses `Bun.file(path).writer()` + `node:fs`) — browser apps just don't import it.
 
 ## Event shape
 

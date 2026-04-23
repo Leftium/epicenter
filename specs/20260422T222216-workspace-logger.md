@@ -481,17 +481,18 @@ wellcrafted/ (PR #113 on wellcrafted-dev/wellcrafted, cutting 0.35.0)
 
 ### Related upstream change: `defineErrors` reserves `data`
 
-Coupled into the same wellcrafted PR. `ValidateErrorBody` now forbids `data` as a variant field alongside `name`. Required because `wellcrafted/logger`'s `LoggableError = AnyTaggedError | Err<AnyTaggedError>` uses `"data" in err` to discriminate — and a variant with a `data` body field would silently collide with `Err<E>`'s `data: null` discriminant (proven empirically during review — the raw tagged branch returned `undefined` and crashed the sink).
+Coupled into the same wellcrafted PR. `ValidateErrorBody` now forbids `data` as a variant field alongside `name`.
 
-This is a type-level breaking change. No real-world usage of `data` as a variant field was observed across the canonical consumers checked (epicenter monorepo).
+Originally motivated because an early draft of `wellcrafted/logger`'s `LoggableError` discriminator used `"data" in err` — a variant with a `data` body field would have silently collided with `Err<E>`'s `data: null` discriminant (proven empirically during review — the raw tagged branch returned `undefined` and crashed the sink). The logger has since switched to `"name" in err` (the invariant non-null property every tagged error stamps), so the reservation is no longer **load-bearing** for logger safety.
+
+Keeping it anyway because: (a) it's a mild hygiene rule — any other code discriminating `Err<E>` vs raw tagged by presence would hit the same collision; (b) nobody used `data` as a variant field in practice (survey: zero hits across the monorepo), so the "breaking" part is free.
 
 ### Why extract (and why now)
 
-Three concrete reasons:
+Two concrete reasons:
 
 1. **`tapErr` imports `Result` from `wellcrafted/result`.** Keeping it in workspace meant every consumer imported from two packages to do one thing. Consolidation is a one-liner fix.
 2. **The core has no runtime dependencies beyond `console.*`.** Browser apps, Node CLIs, and non-epicenter wellcrafted consumers should all get it without pulling in `@epicenter/workspace`.
-3. **The `"data" in err` discriminator is safer when `data` reservation lives upstream with `defineErrors`, not in workspace's logger.** One package owns both halves of the contract.
 
 Deferred to keep wellcrafted runtime-agnostic:
 
@@ -582,18 +583,19 @@ expect(events[0]).toMatchObject({ level: 'warn', source: 'test' });
 - [ ] Fresh `bun install` in epicenter; `bun test` workspace; spot-check a call site (e.g., `packages/workspace/src/shared/standard-schema.ts`) compiles + runs unchanged
 - [ ] Report per-wave: commit hash, test status, any deviations
 
-### Follow-up: wellcrafted `Result` symmetry (not this change's scope)
+### Follow-up: wellcrafted `Result` symmetry (shipping alongside)
 
-During review we confirmed empirically that `Ok(null)` and `Err(null)` are **structurally identical** in wellcrafted today — both produce `{ data: null, error: null }`. The built-in `isErr` check (`result.error !== null`) misclassifies `Err(null)` as Ok.
+During review we confirmed empirically that `Ok(null)` and `Err(null)` are **structurally identical** — both produce `{ data: null, error: null }`. The built-in `isErr` check (`result.error !== null`) misclassifies `Err(null)` as Ok. `Ok(null)` is a legitimate "success with empty payload" (the "not-found-is-not-an-error" pattern); `Err(null)` is meaningless (a failure with no reason) but structurally legal.
 
-**Why this doesn't break our logger.** `LoggableError`'s `"data" in err` discriminator is safe because `AnyTaggedError` requires `{ name: string, message: string }` (both non-nullable), which rules out `Err<AnyTaggedError>(null)` at the type level. The edge never reaches `unwrapLoggable`.
+**Why this doesn't break our logger.** `LoggableError`'s `"name" in err` discriminator is purely structural — `AnyTaggedError` always has a top-level `name` (stamped by `defineErrors` from the factory key); `Err<AnyTaggedError>` has exactly `{ error, data }` at the top level and no `name`. No null-checks anywhere. The edge never reaches `unwrapLoggable`.
 
-**Why it's still a wellcrafted-level rough edge worth flagging.** The `Result<T, E>` type is asymmetric: `Ok(null)` is a legitimate "success with empty payload" case (common pattern — "not found is not an error"), but `Err(null)` is meaningless (a failure with no reason) yet structurally legal. The convention "don't call `Err(null)`" is implicit, not type-enforced. Any discriminator that relies on `data === null` alone to mean Err is wrong in the general case.
+**Shipping in the same wellcrafted release as the logger** (PR #114): `Err<E extends NonNullable<unknown>>` — `Err(null)` and `Err(undefined)` become compile errors. `Err<E>` *type* unchanged; generic code still works. Consumer survey across the monorepo showed zero real usages of `Err(null)` / `Err(undefined)`, so the breaking part was free.
 
-**Candidate fixes** (each is a separate wellcrafted discussion):
+**Broader principle, documented**: `docs/articles/ok-null-is-fine-err-null-is-a-lie.md` explains why any discriminator relying on `data === null` alone is wrong, even after the `Err(null)` ban (someone can still cast `as Err<null>` through runtime paths). Always discriminate by the error side.
 
-- Constrain `Err<E extends NonNullable<unknown>>` — forbids `Err(null)` at compile time. Minimal change, potentially breaking for existing consumers who pass nullable errors.
-- Add tag-based discrimination `_tag: "Ok" | "Err"` — bigger breaking change, larger runtime payload, but eliminates the ambiguity entirely.
+**Candidate fixes still on the table** (future discussions, not this PR):
+
+- Add tag-based discrimination `_tag: "Ok" | "Err"` — bigger breaking change, larger runtime payload, but eliminates the structural ambiguity at the type level too.
 - Correct the `skills/result-types/SKILL.md` wording ("one is always null") and add an article documenting the invariant + the `Ok(null)` edge.
 
 Recommendation for this monorepo: accept the wellcrafted convention as-is (don't pass `Err(null)`), write a follow-up article for the `docs/articles/` shelf, and optionally file a wellcrafted issue for the harder fix.

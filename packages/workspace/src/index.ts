@@ -56,13 +56,13 @@ export type { MaybePromise } from './shared/types';
 export { ExtensionError } from './shared/errors';
 
 // ════════════════════════════════════════════════════════════════════════════
-// LOGGER (Bun-specific bits only — core lives in `wellcrafted/logger`)
+// JSONL FILE SINK (Bun-only)
 // ════════════════════════════════════════════════════════════════════════════
 //
-// `createLogger`, `consoleSink`, `memorySink`, `composeSinks`, `tapErr`, and
-// their types all live in `wellcrafted/logger`. Import them directly from
-// there. This package only ships the Bun-only `jsonlFileSink` that can't
-// live in a runtime-agnostic package.
+// The logger core (`createLogger`, `consoleSink`, `memorySink`, `composeSinks`,
+// `tapErr`, types) lives in `wellcrafted/logger` — import directly from there.
+// This package only ships `jsonlFileSink`, which uses `Bun.file(path).writer()`
+// and `node:fs` and can't live in a runtime-agnostic package.
 
 export {
 	type DisposableLogSink,

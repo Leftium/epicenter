@@ -1,4 +1,4 @@
-Never discriminate a `Result` by checking if `data` is null. `Ok(null)` is a perfectly valid value — "the record didn't exist, and that's not an error" is a common pattern. `Err(null)` is a lie — it claims failure with no reason to give. The type system allows both; the semantics don't. Always discriminate by the error side: `isErr(result)` or `result.error !== null`.
+Never discriminate a `Result` by checking if `data` is null. `Ok(null)` is a perfectly valid value — "the record didn't exist, and that's not an error" is a common pattern. `Err(null)` is a lie — it claims failure with no reason to give. wellcrafted makes `Err(null)` a compile error (the constructor is typed `<E extends NonNullable<unknown>>`), but `Ok(null)` is still legal, so `data === null` alone can never identify failure. Always discriminate by the error side: `isErr(result)` or `result.error !== null`.
 
 In wellcrafted today:
 
@@ -28,11 +28,11 @@ export function isErr<T, E>(result: Result<T, E>): result is Err<E> {
 
 …returns `false` for `Err(null)`. The `null`-error case is misclassified as success. Empirically confirmed, not theoretical.
 
-## But it works in practice
+## The type system handles half of it
 
-Because nobody should be calling `Err(null)`. What would it mean? "This failed, here's the reason: nothing." Rust's `Result<T, E>` solves this by forcing `E` to be a meaningful type — if you want "failure without detail" you use `Err(())`, not `Err(null)`. Haskell's `Either` does the same with `Left ()`.
+wellcrafted's `Err` constructor is typed `<E extends NonNullable<unknown>>`. `Err(null)` and `Err(undefined)` are compile errors. Rust's `Result<T, E>` solves the same problem by forcing `E` to be a meaningful type (use `Err(())` for "failure without detail", not `Err(null)`); Haskell's `Either` does the same with `Left ()`. wellcrafted now closes the call-site path.
 
-wellcrafted's `Result` doesn't enforce it at the type level. The convention is implicit: pass a real error to `Err`. Every `defineErrors` factory honors this — variants are `{ name, message, ...fields }`, never null. The discriminator works *in practice* because no one violates the convention.
+But the *type* `Err<E>` still accepts any `E`, and `Ok<T>` still accepts `T = null`. Which means you can still end up with a `{ data: null, error: null }` shape through casts or unchecked runtime paths, and you can *always* have `Ok(null)` legitimately. So the question "is this an Err?" can never be answered by "is `data` null?" — that check passes for `Ok<null>` forever.
 
 ## The rule
 
@@ -87,4 +87,4 @@ use(data);
 
 Wherever you discriminate a union that includes an `Err<>` wrapper against another shape, pick an invariant non-null field (like `name`), not a null-valued one.
 
-And if you're ever tempted to write `Err(null)`: you're describing a failure without a reason. Either the failure has a reason — pass it — or what you really have is an `Ok` of nothing.
+And if you're ever tempted to cast around the `Err(null)` ban: you're describing a failure without a reason. Either the failure has a reason — pass it — or what you really have is an `Ok` of nothing.

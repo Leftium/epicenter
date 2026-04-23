@@ -29,8 +29,10 @@ function serializeEvent(event: LogEvent): string {
 		level,
 		source,
 		message,
-		...(data === undefined ? {} : { data: normalizeForJson(data) }),
+		...(data === undefined ? {} : { data }),
 	};
+	// The replacer handles native Error instances at every depth — the
+	// top-level `data` and any nested `cause`/sub-errors all go through here.
 	return `${JSON.stringify(line, (_key, val) => normalizeForJson(val))}\n`;
 }
 
@@ -39,12 +41,14 @@ export type DisposableLogSink = LogSink & AsyncDisposable;
 export function jsonlFileSink(path: string): DisposableLogSink {
 	mkdirSync(dirname(path), { recursive: true });
 	const writer = Bun.file(path).writer();
-	const sink = ((event: LogEvent) => {
+	const write = (event: LogEvent) => {
 		writer.write(serializeEvent(event));
-	}) as DisposableLogSink;
-	sink[Symbol.asyncDispose] = async () => {
+	};
+	const dispose = async (): Promise<void> => {
 		await writer.flush();
 		await writer.end();
 	};
-	return sink;
+	return Object.assign(write, {
+		[Symbol.asyncDispose]: dispose,
+	}) satisfies DisposableLogSink;
 }

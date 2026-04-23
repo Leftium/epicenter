@@ -292,4 +292,4 @@ defineErrors({
 
 ## Related: `Err(null)` is a type error too
 
-`wellcrafted`'s `Err` constructor is typed `<E extends NonNullable<unknown>>` — `Err(null)` and `Err(undefined)` are compile errors. A failure with no reason is meaningless, and structurally it collides with `Ok(null)`. Pass a real error value (string, `Error`, tagged error from `defineErrors`, etc.) or use `Ok(null)` / `Ok(undefined)` if the intent was "completed with no payload." See [docs/articles/ok-null-is-fine-err-null-is-a-lie.md](../../docs/articles/ok-null-is-fine-err-null-is-a-lie.md) for the full rationale.
+`wellcrafted`'s `Err` constructor is typed `<E extends NonNullable<unknown>>` — `Err(null)` and `Err(undefined)` are compile errors. A failure with no reason is meaningless, and structurally it collides with `Ok(null)`. Pass a real error value (string, `Error`, tagged error from `defineErrors`, etc.) or use `Ok(null)` / `Ok(undefined)` if the intent was "completed with no payload." See [docs/articles/ok-null-is-fine-err-null-is-a-lie.md](../../../docs/articles/ok-null-is-fine-err-null-is-a-lie.md) for the full rationale.

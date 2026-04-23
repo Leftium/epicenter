@@ -12,8 +12,6 @@ import type { AuthSession, StoredUser } from './auth-types.ts';
 import { readStatusCode } from './auth-types.ts';
 import type { SessionStore } from './session-store.ts';
 
-type BaseURL = string | (() => string);
-
 export const AuthError = defineErrors({
 	InvalidCredentials: () => ({
 		message: 'Invalid email or password.',
@@ -44,7 +42,12 @@ export type SocialTokenPayload = {
 };
 
 export type CreateAuthConfig = {
-	baseURL: BaseURL;
+	/**
+	 * Read once at construction. Better Auth's client does not support a lazy
+	 * baseURL — if the origin can change at runtime, the consumer must
+	 * recreate the auth client.
+	 */
+	baseURL: string;
 	session: SessionStore;
 	/**
 	 * Platform-specific credential provider for social ID token sign-in.
@@ -215,7 +218,7 @@ export function createAuth({
 	);
 
 	const client = createAuthClient({
-		baseURL: typeof baseURL === 'function' ? baseURL() : baseURL,
+		baseURL,
 		basePath: '/auth',
 		plugins: [InferPlugin<EpicenterCustomSessionPlugin>()],
 		fetchOptions: {

@@ -38,7 +38,7 @@ import {
 await session.whenReady;
 
 export const auth = createAuth({
-	baseURL: () => remoteServerUrl.current,
+	baseURL: remoteServerUrl.current,
 	session,
 	socialTokenProvider: async () => {
 		const { idToken, nonce } = await getGoogleCredentials();

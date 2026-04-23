@@ -340,6 +340,110 @@ describe('attachSync hasLocalChanges', () => {
 		await sync.whenDisposed;
 	});
 
+	test('inbound RPC with dispatch returning a Result passes the envelope through untouched', async () => {
+		const ydoc = new Y.Doc({ guid: 'test-rpc-result-passthrough' });
+		const sync = attachSync(ydoc, {
+			url: (id) => `ws://x/${id}`,
+			rpc: {
+				// Handler returns an Err directly; attachSync must not re-wrap it.
+				dispatch: async () => ({
+					data: null,
+					error: { name: 'BrowserApiFailed', message: 'no tab 999' },
+				}),
+			},
+		});
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		ws.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		const seenBefore = ws.sent.length;
+		ws.deliver(
+			encodeRpcRequest({
+				requestId: 11,
+				targetClientId: ydoc.clientID,
+				requesterClientId: 9999,
+				action: 'tabs.close',
+				input: { tabIds: [999] },
+			}),
+		);
+
+		const response = await waitFor<Uint8Array>(() => {
+			for (let i = seenBefore; i < ws.sent.length; i++) {
+				const frame = ws.sent[i]!;
+				if (peekMessageType(frame) === MESSAGE_TYPE.RPC) return frame;
+			}
+			return undefined;
+		}, 500);
+
+		const dec = decoding.createDecoder(response);
+		decoding.readVarUint(dec);
+		const parsed = decodeRpcPayload(dec);
+		expect(parsed.type).toBe('response');
+		if (parsed.type !== 'response') throw new Error('unreachable');
+		// The typed error survives on the wire — the handler's own Err shape
+		// reaches the remote caller, not a wrapped RpcError.
+		expect(parsed.result.data).toBeNull();
+		expect(parsed.result.error).toEqual({
+			name: 'BrowserApiFailed',
+			message: 'no tab 999',
+		});
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
+	test('inbound RPC with dispatch that throws responds with RpcError.ActionFailed carrying the cause', async () => {
+		const ydoc = new Y.Doc({ guid: 'test-rpc-throw' });
+		const sync = attachSync(ydoc, {
+			url: (id) => `ws://x/${id}`,
+			rpc: {
+				dispatch: async () => {
+					throw new Error('handler exploded');
+				},
+			},
+		});
+
+		const ws = await waitFor(() => FakeWebSocket.instances[0]);
+		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
+		ws.deliver(serverStep2Frame());
+		await sync.whenConnected;
+
+		const seenBefore = ws.sent.length;
+		ws.deliver(
+			encodeRpcRequest({
+				requestId: 12,
+				targetClientId: ydoc.clientID,
+				requesterClientId: 9999,
+				action: 'tabs.close',
+				input: null,
+			}),
+		);
+
+		const response = await waitFor<Uint8Array>(() => {
+			for (let i = seenBefore; i < ws.sent.length; i++) {
+				const frame = ws.sent[i]!;
+				if (peekMessageType(frame) === MESSAGE_TYPE.RPC) return frame;
+			}
+			return undefined;
+		}, 500);
+
+		const dec = decoding.createDecoder(response);
+		decoding.readVarUint(dec);
+		const parsed = decodeRpcPayload(dec);
+		expect(parsed.type).toBe('response');
+		if (parsed.type !== 'response') throw new Error('unreachable');
+		expect(parsed.result.data).toBeNull();
+		expect(isRpcError(parsed.result.error)).toBe(true);
+		const err = parsed.result.error as { name: string; action: string };
+		expect(err.name).toBe('ActionFailed');
+		expect(err.action).toBe('tabs.close');
+
+		ydoc.destroy();
+		await sync.whenDisposed;
+	});
+
 	test('fresh connection resets version counters — prior unacked writes do not leak state', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-doc-3' });
 		const sync = attachSync(ydoc, { url: (id) => `ws://x/${id}` });

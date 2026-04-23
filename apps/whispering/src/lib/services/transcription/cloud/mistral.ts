@@ -57,7 +57,6 @@ export const MistralTranscriptionServiceLive = {
 
 		if (fileError) return Err(fileError);
 
-		// Make the transcription request
 		const { data: transcription, error: mistralApiError } = await tryAsync({
 			try: () =>
 				new Mistral({
@@ -74,59 +73,48 @@ export const MistralTranscriptionServiceLive = {
 						: undefined,
 				}),
 			catch: (error) => {
-				// Return the error directly for processing
-				return Err(error);
+				const message =
+					error instanceof Error ? error.message : 'Unknown error occurred';
+
+				if (message.includes('401') || message.includes('Unauthorized')) {
+					return WhisperingErr({
+						title: '🔑 Authentication Required',
+						description:
+							'Your API key appears to be invalid or expired. Please update your API key in settings.',
+						action: {
+							type: 'link',
+							label: 'Update API key',
+							href: '/settings/transcription',
+						},
+					});
+				}
+
+				if (message.includes('429') || message.includes('rate limit')) {
+					return WhisperingErr({
+						title: '⏱️ Rate Limit Reached',
+						description: 'Too many requests. Please try again later.',
+						action: { type: 'more-details', error },
+					});
+				}
+
+				if (message.includes('413') || message.includes('too large')) {
+					return WhisperingErr({
+						title: '📦 Audio File Too Large',
+						description:
+							'Your audio file exceeds the maximum size limit. Try reducing the file size.',
+						action: { type: 'more-details', error },
+					});
+				}
+
+				return WhisperingErr({
+					title: '❌ Transcription Failed',
+					description: message,
+					action: { type: 'more-details', error },
+				});
 			},
 		});
 
-		if (mistralApiError) {
-			// Handle Mistral API errors
-			const errorMessage =
-				mistralApiError instanceof Error
-					? mistralApiError.message
-					: 'Unknown error occurred';
-
-			// Check for common HTTP status codes
-			if (
-				errorMessage.includes('401') ||
-				errorMessage.includes('Unauthorized')
-			) {
-				return WhisperingErr({
-					title: '🔑 Authentication Required',
-					description:
-						'Your API key appears to be invalid or expired. Please update your API key in settings.',
-					action: {
-						type: 'link',
-						label: 'Update API key',
-						href: '/settings/transcription',
-					},
-				});
-			}
-
-			if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
-				return WhisperingErr({
-					title: '⏱️ Rate Limit Reached',
-					description: 'Too many requests. Please try again later.',
-					action: { type: 'more-details', error: mistralApiError },
-				});
-			}
-
-			if (errorMessage.includes('413') || errorMessage.includes('too large')) {
-				return WhisperingErr({
-					title: '📦 Audio File Too Large',
-					description:
-						'Your audio file exceeds the maximum size limit. Try reducing the file size.',
-					action: { type: 'more-details', error: mistralApiError },
-				});
-			}
-
-			// Generic error fallback
-			return WhisperingErr({
-				title: '❌ Transcription Failed',
-				description: errorMessage,
-				action: { type: 'more-details', error: mistralApiError },
-			});
-		}
+		if (mistralApiError) return Err(mistralApiError);
 
 		// Check if transcription is valid
 		if (!transcription || typeof transcription.text !== 'string') {

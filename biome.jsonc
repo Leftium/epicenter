@@ -117,31 +117,6 @@
 			// Vendored PostHog analytics snippet — minified code, not worth linting
 			"includes": ["**/posthog.astro"],
 			"linter": { "enabled": false }
-		},
-		{
-			// @epicenter/auth core entry must stay framework-agnostic.
-			// Block imports from the ./svelte subpath so the Svelte peer
-			// dep is never loaded by non-Svelte consumers.
-			"includes": [
-				"packages/auth/src/index.ts",
-				"packages/auth/src/create-auth.ts"
-			],
-			"linter": {
-				"rules": {
-					"style": {
-						"noRestrictedImports": {
-							"level": "error",
-							"options": {
-								"paths": {
-									"./svelte": "Auth core must not depend on the Svelte wrapper.",
-									"./svelte/index": "Auth core must not depend on the Svelte wrapper.",
-									"./svelte/create-auth.svelte": "Auth core must not depend on the Svelte wrapper."
-								}
-							}
-						}
-					}
-				}
-			}
 		}
 	]
 }

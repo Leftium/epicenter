@@ -39,37 +39,40 @@ This spec covers the auth extraction only. A companion spec (to be written after
 
 ### Package layout
 
+Two packages from day one. Yjs precedent: `yjs` core stays framework-agnostic; every framework/provider binding (`y-prosemirror`, `y-quill`, `y-websocket`, `y-indexeddb`) ships as a separate package. Same rationale here — zero mandatory dependencies, no optional-peer machinery, package boundary enforces isolation without a lint rule.
+
 ```
 packages/auth/
-├── package.json               # @epicenter/auth, workspace:*
-├── tsconfig.json              # extends tsconfig.base.json
+├── package.json               # @epicenter/auth, zero svelte
+├── tsconfig.json              # extends tsconfig.base.json (no DOM)
 └── src/
     ├── index.ts               # barrel: createAuth, AuthCore, AuthSession, StoredUser, EncryptionKeys re-exports
     ├── create-auth.ts         # framework-agnostic core
-    ├── auth-types.ts          # moved from svelte-utils
-    └── svelte/
-        ├── index.ts           # barrel
-        └── create-auth.svelte.ts
+    └── auth-types.ts          # moved from svelte-utils
+
+packages/auth-svelte/
+├── package.json               # @epicenter/auth-svelte, depends on @epicenter/auth
+├── tsconfig.json              # extends tsconfig.base.dom.json
+└── src/
+    ├── index.ts               # barrel
+    └── create-auth.svelte.ts
 ```
 
-Subpath exports with **optional** Svelte peer:
+```json
+// @epicenter/auth/package.json
+{ "exports": { ".": "./src/index.ts" } }
+```
 
 ```json
+// @epicenter/auth-svelte/package.json
 {
-  "exports": {
-    ".": "./src/index.ts",
-    "./svelte": "./src/svelte/index.ts"
-  },
-  "peerDependencies":     { "svelte": "^5.0.0" },
-  "peerDependenciesMeta": { "svelte": { "optional": true } }
+  "exports": { ".": "./src/index.ts" },
+  "dependencies":     { "@epicenter/auth": "workspace:*" },
+  "peerDependencies": { "svelte": "^5.0.0" }
 }
 ```
 
-Non-Svelte consumers (future CLI, workers, server tooling) write `import { createAuth } from '@epicenter/auth'` and never touch `src/svelte/`. Runtime guarantee: `src/index.ts` does not import from `src/svelte/`, so Svelte never loads. The optional-peer marker suppresses pnpm install warnings for consumers that don't use the subpath.
-
-Isolation rests on one invariant: **the core entry (`src/index.ts`) must not import from `src/svelte/`**. Easy to enforce with a lint rule or just discipline in review.
-
-If external publishing ever surfaces a real isolation problem, splitting to `@epicenter/auth-svelte` is mechanical — move `src/svelte/` to a new package, bump one import path, zero API change.
+Non-Svelte consumers (future CLI, workers, server tooling) `import { createAuth } from '@epicenter/auth'` — svelte never enters the dep tree. Svelte apps `import { createAuth } from '@epicenter/auth-svelte'`.
 
 ### Core API — `packages/auth/src/create-auth.ts`
 
@@ -176,12 +179,12 @@ async function runBusy<T>(fn: () => Promise<T>): Promise<T> {
 
 `isBusy()` returns `busyCount > 0`. Fixes the existing concurrency bug where two overlapping ops would flip busy false prematurely.
 
-### Svelte wrapper — `packages/auth/src/svelte/create-auth.svelte.ts`
+### Svelte wrapper — `packages/auth-svelte/src/create-auth.svelte.ts`
 
 Both packages export a function named `createAuth`. The import path distinguishes them — callers never see both in the same file, so there's no name collision at the type level. Same name keeps migration churn minimal (Svelte apps already type `createAuth`).
 
 ```ts
-// @epicenter/auth/svelte
+// @epicenter/auth-svelte
 import { createAuth as createAuthCore, type CreateAuthConfig } from '@epicenter/auth';
 
 export function createAuth(config: CreateAuthConfig) {
@@ -275,21 +278,21 @@ Per-doc syncs now observe rotation. Workspace and per-doc wiring use the same AP
 
 ## Naming — resolved
 
-Both packages export `createAuth`. Path distinguishes them:
+Both packages export `createAuth`. Package name distinguishes them:
 
 ```ts
 // Non-Svelte consumer (CLI, worker, server):
 import { createAuth } from '@epicenter/auth';
 
 // Svelte consumer (fuji, honeycrisp, opensidian, dashboard, tab-manager):
-import { createAuth } from '@epicenter/auth/svelte';
+import { createAuth } from '@epicenter/auth-svelte';
 ```
 
 Callers never see both in one file, so there's no name collision. Migration churn stays minimal — existing `createAuth` call sites only need their import path updated, not renamed. Grep disambiguates via the import source, not the function name.
 
 ## Migration plan
 
-1. **Create `packages/auth` shell** — package.json, tsconfig, empty `src/index.ts` + `src/svelte/index.ts`. Wire into `pnpm-workspace.yaml`. Verify `pnpm install` succeeds from a non-Svelte context with zero peer-dep warnings (probe by adding `@epicenter/auth` to a non-Svelte package temporarily and checking `pnpm why svelte`). Add an eslint `no-restricted-imports` rule blocking `./svelte/**` from `src/index.ts` and `src/create-auth.ts`.
+1. **Create `packages/auth` and `packages/auth-svelte` shells** — package.json, tsconfig, empty `src/index.ts` for each. Bun's `packages/*` workspace glob auto-picks them up. `@epicenter/auth` has zero framework deps; `@epicenter/auth-svelte` has `@epicenter/auth: workspace:*` + `svelte` peer. No lint rule needed — the package boundary enforces isolation.
 2. **Move `AuthSession` + related types** — `auth-types.ts` from `packages/svelte-utils/src/auth/` into `packages/auth/src/`. Re-export from the old location so nothing else breaks during migration. **Do not move `create-ai-chat-fetch.ts`** — it has no auth dependency; it stays in `svelte-utils` (or moves to a more appropriate home like `@epicenter/ai` as a separate change, out of scope here).
 3. **Define `SessionStore` type and adapters** — the type lands in `packages/auth`. The two adapters (`fromPersistedState`, `fromStorageState`) land next to the stores they wrap: `packages/svelte-utils/src/persisted-state.svelte.ts` and `apps/tab-manager/src/lib/state/storage-state.svelte.ts`. The chrome-storage adapter exposes `whenReady`.
 4. **Build `createAuth` core** — port logic from the current `.svelte.ts` file. Replace `$state`-backed `isBusy` with a counter (see `isBusy` semantics above). Replace reactive getters with imperative `getX()`. Add the five `on*` registries with firing order per spec. Wrap every subscriber call in try/catch with logger. Audit that `@epicenter/auth` imports zero from `@epicenter/svelte-utils`.
@@ -303,8 +306,8 @@ Callers never see both in one file, so there's no name collision. Migration chur
    - Subscriber throwing does not prevent other subscribers from firing
    - `isBusy` counter: two overlapping ops only fires `onBusyChange(false)` once, when both settle
    - `[Symbol.dispose]` unsubscribes from better-auth's `useSession`, clears registries, rejects pending ops? (decide during impl — probably leaves promises dangling, doesn't cancel)
-6. **Build `createAuth` Svelte wrapper** — ~30 lines in `packages/auth/src/svelte/create-auth.svelte.ts`.
-7. **Migrate consumers** — one commit per app. fuji, honeycrisp, opensidian each swap `@epicenter/svelte-utils/auth` → `@epicenter/auth/svelte` and replace `applySession` bridge with the `onSessionChange` pattern above. dashboard, tab-manager, zhongwen just swap the import path (no applySession to migrate).
+6. **Build `createAuth` Svelte wrapper** — ~30 lines in `packages/auth-svelte/src/create-auth.svelte.ts`.
+7. **Migrate consumers** — one commit per app. fuji, honeycrisp, opensidian each swap `@epicenter/svelte-utils/auth` → `@epicenter/auth-svelte` and replace `applySession` bridge with the `onSessionChange` pattern above. dashboard, tab-manager, zhongwen just swap the import path (no applySession to migrate).
 8. **Delete old `svelte-utils/auth`** — once every consumer is off it. Keep `auth-form` and other unrelated subpaths.
 9. **Typecheck + test across the repo.**
 
@@ -316,7 +319,7 @@ Module-scope subscriber registrations leak across HMR reloads if not managed. Th
 
 ```ts
 // In client.svelte.ts
-import { createAuth } from '@epicenter/auth/svelte';
+import { createAuth } from '@epicenter/auth-svelte';
 export const auth = createAuth({ baseURL: APP_URLS.API, session });
 
 const unsubscribeSession = auth.onSessionChange((next, previous) => { ... });
@@ -337,8 +340,7 @@ Each subscription returns an unsubscribe fn; HMR dispose calls them all. The cor
 - **`session.current =` vs `session.set(...)`.** Current code mutates via property assignment. The new `SessionStore` uses explicit `set()`. The adapter for `createPersistedState` translates one to the other — no behavior change visible to auth.
 - **`auth.fetch` and in-flight rotation.** `fetch` reads `session.get()?.token` at request time. The rotation interceptor calls `session.set(...)` before any subscriber fires, so a `fetch` call triggered from inside a subscriber sees the new token. Documented as an invariant in the firing-order section.
 - **Social popup requires a DOM.** Core stays framework-agnostic but not environment-agnostic: `signInWithSocialPopup` without a `socialTokenProvider` errors at runtime. Core-only CLI/worker consumers should omit the popup method or accept that it will reject.
-- **Optional peer verification.** pnpm's handling of `peerDependenciesMeta.optional` in workspace setups needs a one-time verification during step 1 (try `pnpm install` with `@epicenter/auth` in a non-Svelte dependent and check for warnings).
-- **IDE import ambiguity on `createAuth`.** VS Code auto-import will offer both `@epicenter/auth` and `@epicenter/auth/svelte`. Reviewers must confirm the right one. Low-severity; the wrong import fails type-check immediately (the Svelte wrapper has reactive getters the core doesn't).
+- **IDE import ambiguity on `createAuth`.** VS Code auto-import will offer both `@epicenter/auth` and `@epicenter/auth-svelte`. Reviewers must confirm the right one. Low-severity; the wrong import fails type-check immediately (the Svelte wrapper has reactive getters the core doesn't).
 - **`BetterAuthOptions` type drag.** The current file imports `InferPlugin<EpicenterCustomSessionPlugin>` which transitively references `better-auth`'s server package types. Verify during step 4 that this doesn't pull server-only runtime code into the core.
 
 ## Out of scope (follow-ups)

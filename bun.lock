@@ -483,12 +483,21 @@
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
+    },
+    "packages/auth-svelte": {
+      "name": "@epicenter/auth-svelte",
+      "version": "0.1.0",
+      "dependencies": {
+        "@epicenter/auth": "workspace:*",
+      },
+      "devDependencies": {
+        "svelte": "catalog:",
+        "svelte-check": "catalog:",
+        "typescript": "catalog:",
+      },
       "peerDependencies": {
         "svelte": "^5.0.0",
       },
-      "optionalPeers": [
-        "svelte",
-      ],
     },
     "packages/cli": {
       "name": "@epicenter/cli",
@@ -936,6 +945,8 @@
     "@epicenter/api": ["@epicenter/api@workspace:apps/api"],
 
     "@epicenter/auth": ["@epicenter/auth@workspace:packages/auth"],
+
+    "@epicenter/auth-svelte": ["@epicenter/auth-svelte@workspace:packages/auth-svelte"],
 
     "@epicenter/breddit": ["@epicenter/breddit@workspace:apps/breddit"],
 

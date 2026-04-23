@@ -1,6 +1,7 @@
 import yargs from 'yargs';
 import { createAuthCommand } from './commands/auth';
 import { listCommand } from './commands/list';
+import { peersCommand } from './commands/peers';
 import { runCommand } from './commands/run';
 
 /**
@@ -18,6 +19,7 @@ export function createCLI() {
 				.scriptName('epicenter')
 				.command(createAuthCommand())
 				.command(listCommand)
+				.command(peersCommand)
 				.command(runCommand)
 				.demandCommand(1)
 				.strict()

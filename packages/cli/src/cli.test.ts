@@ -46,10 +46,11 @@ describe('createCLI', () => {
 		errorSpy.mockRestore();
 	});
 
-	test('help output registers auth, list, and run', async () => {
+	test('help output registers auth, list, peers, and run', async () => {
 		const help = await captureHelp();
 		expect(help).toMatch(/\bauth\b/);
 		expect(help).toMatch(/\blist\b/);
+		expect(help).toMatch(/\bpeers\b/);
 		expect(help).toMatch(/\brun\b/);
 	});
 });

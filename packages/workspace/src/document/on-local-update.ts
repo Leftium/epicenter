@@ -20,6 +20,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type * as Y from 'yjs';
+import { createLogger, type Logger } from '../shared/logger/index.js';
 
 /** Error produced when the user-supplied `fn` throws synchronously. */
 export const OnLocalUpdateError = defineErrors({
@@ -30,14 +31,18 @@ export const OnLocalUpdateError = defineErrors({
 });
 export type OnLocalUpdateError = InferErrors<typeof OnLocalUpdateError>;
 
-export function onLocalUpdate(ydoc: Y.Doc, fn: () => void): () => void {
+export function onLocalUpdate(
+	ydoc: Y.Doc,
+	fn: () => void,
+	{ log = createLogger('onLocalUpdate') }: { log?: Logger } = {},
+): () => void {
 	const handler = (tx: Y.Transaction) => {
 		if (!tx.local) return;
 		if (tx.changed.size === 0) return;
 		try {
 			fn();
-		} catch (err) {
-			console.error('[onLocalUpdate] callback threw:', err);
+		} catch (cause) {
+			log.error(OnLocalUpdateError.CallbackThrew({ cause }));
 		}
 	};
 	ydoc.on('afterTransaction', handler);

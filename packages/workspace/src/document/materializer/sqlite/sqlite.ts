@@ -19,6 +19,7 @@ import {
 } from 'wellcrafted/error';
 import type * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
+import { createLogger, type Logger } from '../../../shared/logger/index.js';
 import { standardSchemaToJsonSchema } from '../../../shared/standard-schema.js';
 import type { BaseRow, Table, TableDefinition } from '../../attach-table.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
@@ -98,6 +99,7 @@ export function attachSqliteMaterializer(
 		db,
 		debounceMs = 100,
 		waitFor,
+		log = createLogger('attachSqliteMaterializer'),
 	}: {
 		db: MirrorDatabase;
 		debounceMs?: number;
@@ -106,6 +108,11 @@ export function attachSqliteMaterializer(
 		 * Matches the `waitFor` convention used by `attachSync`. Omit for no gate.
 		 */
 		waitFor?: Promise<unknown>;
+		/**
+		 * Logger for background failures (debounced sync flush, FTS query).
+		 * Defaults to a console-backed logger with source `attachSqliteMaterializer`.
+		 */
+		log?: Logger;
 	},
 ) {
 	const registered = new Map<string, RegisteredTable>();
@@ -181,11 +188,8 @@ export function attachSqliteMaterializer(
 			syncTimeout = null;
 			syncQueue = syncQueue
 				.then(() => flushPendingSync())
-				.catch((error: unknown) => {
-					console.error(
-						'[attachSqliteMaterializer] Failed to sync SQLite materializer.',
-						error,
-					);
+				.catch((cause: unknown) => {
+					log.error(SqliteMaterializerError.SyncFailed({ cause }));
 				});
 		}, debounceMs);
 	}
@@ -223,7 +227,7 @@ export function attachSqliteMaterializer(
 		const entry = registered.get(tableName);
 		const ftsColumns = entry?.config.fts;
 		if (ftsColumns === undefined || ftsColumns.length === 0) return [];
-		return ftsSearch(db, tableName, ftsColumns, query, options);
+		return ftsSearch(db, tableName, ftsColumns, query, options, log);
 	}
 
 	async function count(tableName: string): Promise<number> {

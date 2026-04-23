@@ -5,6 +5,9 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, trySync } from 'wellcrafted/result';
+import { createLogger } from './logger/index.js';
+
+const log = createLogger('standard-schema');
 
 /**
  * Errors produced by Standard-JSON-Schema conversion. The library recovers
@@ -53,7 +56,8 @@ export type StandardSchemaError = InferErrors<typeof StandardSchemaError>;
  * so the conversion succeeds.
  *
  * Non-undefined fallbacks (morphs, predicates, proto types, etc.) are logged
- * with console.warn and preserve the partial schema so other fields aren't lost.
+ * via the workspace logger and preserve the partial schema so other fields
+ * aren't lost.
  *
  * @see https://arktype.io/docs/json-schema - arktype's toJsonSchema docs
  */
@@ -64,19 +68,15 @@ const ARKTYPE_FALLBACK = {
 		base: Record<string, unknown>;
 	}): Record<string, unknown> => {
 		if (ctx.unit === undefined) return {};
-		console.warn(
-			`[arktype→JSON Schema] Unit type "${String(ctx.unit)}" (${typeof ctx.unit}) cannot be converted. ` +
-				`Using base schema as fallback.`,
-		);
+		log.warn(StandardSchemaError.UnitFallback({ unit: ctx.unit }));
 		return ctx.base;
 	},
 	default: (ctx: {
 		code: string;
 		base: Record<string, unknown>;
 	}): Record<string, unknown> => {
-		console.warn(
-			`[arktype→JSON Schema] Fallback triggered for code "${ctx.code}". ` +
-				`Base schema: ${JSON.stringify(ctx.base)}`,
+		log.warn(
+			StandardSchemaError.DefaultFallback({ code: ctx.code, base: ctx.base }),
 		);
 		return ctx.base;
 	},
@@ -115,11 +115,8 @@ export function standardSchemaToJsonSchema(
 					fallback: ARKTYPE_FALLBACK,
 				},
 			}),
-		catch: (e) => {
-			console.warn(
-				'[standardSchemaToJsonSchema] Conversion failure, using permissive fallback:',
-				e,
-			);
+		catch: (cause) => {
+			log.warn(StandardSchemaError.ConversionFailed({ cause }));
 			return Ok({});
 		},
 	});

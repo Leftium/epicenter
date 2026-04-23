@@ -25,6 +25,7 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import { tryAsync } from 'wellcrafted/result';
+import { createLogger, type Logger } from '../shared/logger/index.js';
 import type { Awareness } from 'y-protocols/awareness';
 import {
 	applyAwarenessUpdate,
@@ -223,6 +224,12 @@ export type SyncAttachmentConfig = {
 	 * token" rather than silently flipping to unauth mode.
 	 */
 	requiresToken?: boolean;
+	/**
+	 * Logger for background supervisor failures (waitFor rejections, socket
+	 * close timeouts). Defaults to a console-backed logger with source
+	 * `attachSync`.
+	 */
+	log?: Logger;
 };
 
 // ============================================================================
@@ -251,6 +258,7 @@ export function attachSync(
 ): SyncAttachment {
 	const docId = ydoc.guid;
 	const awareness = config.awareness;
+	const log = config.log ?? createLogger('attachSync');
 
 	const status = createStatusEmitter<SyncStatus>({ phase: 'offline' });
 	const { promise: whenConnected, resolve: resolveConnected } =
@@ -712,8 +720,8 @@ export function attachSync(
 	void (async () => {
 		try {
 			await config.waitFor;
-		} catch (e) {
-			console.warn('[attachSync] waitFor rejected; starting sync anyway', e);
+		} catch (cause) {
+			log.warn(SyncSupervisorError.WaitForRejected({ cause }));
 		}
 		ensureSupervisor();
 	})();
@@ -738,7 +746,7 @@ export function attachSync(
 			goOffline();
 			status.clear();
 			if (running) await running;
-			await waitForWsClose(ws, 1000);
+			await waitForWsClose(ws, 1000, log);
 		} finally {
 			resolveDisposed();
 		}
@@ -901,6 +909,7 @@ function createLivenessMonitor(ws: WebSocket) {
 function waitForWsClose(
 	ws: WebSocket | null,
 	timeoutMs: number,
+	log?: Logger,
 ): Promise<void> {
 	if (!ws || ws.readyState === WebSocket.CLOSED) return Promise.resolve();
 	return new Promise<void>((resolve) => {
@@ -911,9 +920,7 @@ function waitForWsClose(
 		ws.addEventListener('close', onClose, { once: true });
 		const timer = setTimeout(() => {
 			ws.removeEventListener('close', onClose);
-			console.warn(
-				`[attachSync] WebSocket did not fire onclose within ${timeoutMs}ms; resolving whenDisposed anyway`,
-			);
+			log?.warn(SyncSupervisorError.CloseTimeout({ timeoutMs }));
 			resolve();
 		}, timeoutMs);
 	});

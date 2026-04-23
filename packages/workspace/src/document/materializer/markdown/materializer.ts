@@ -9,6 +9,7 @@ import {
 import { tryAsync } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 import { defineMutation } from '../../../shared/actions.js';
+import { createLogger, type Logger } from '../../../shared/logger/index.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import type { Kv } from '../../attach-kv.js';
 import {
@@ -250,6 +251,7 @@ export function attachMarkdownMaterializer(
 	{
 		dir,
 		waitFor,
+		log = createLogger('markdown-materializer'),
 	}: {
 		/** Base output directory. Accepts a string or async getter for lazy path resolution. */
 		dir: string | (() => MaybePromise<string>);
@@ -258,6 +260,11 @@ export function attachMarkdownMaterializer(
 		 * Matches the `waitFor` convention used by `attachSync`. Omit for no gate.
 		 */
 		waitFor?: Promise<unknown>;
+		/**
+		 * Logger for background write-observer failures (table row → file,
+		 * KV state → file). Defaults to a console-backed logger.
+		 */
+		log?: Logger;
 	},
 ) {
 	const registered = new Map<string, RegisteredTable>();
@@ -313,8 +320,13 @@ export function attachMarkdownMaterializer(
 					await writeMarkdownFile(directory, filename, content);
 					filenames.set(id, filename);
 				}
-			})().catch((error) => {
-				console.warn('[markdown-materializer] table write failed:', error);
+			})().catch((cause) => {
+				log.warn(
+					MaterializerWriteError.TableWriteFailed({
+						tableName: table.name,
+						cause,
+					}),
+				);
 			});
 		});
 	}
@@ -337,8 +349,8 @@ export function attachMarkdownMaterializer(
 				}
 				const result = serialize(state);
 				await writeFile(join(baseDir, result.filename), result.content);
-			})().catch((error) => {
-				console.warn('[markdown-materializer] kv write failed:', error);
+			})().catch((cause) => {
+				log.warn(MaterializerWriteError.KvWriteFailed({ cause }));
 			});
 		});
 	}

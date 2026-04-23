@@ -159,6 +159,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type * as Y from 'yjs';
+import { createLogger, type Logger } from '../shared/logger/index.js';
 
 /** Errors surfaced by the document factory's background disposal machinery. */
 export const DocumentFactoryError = defineErrors({
@@ -349,7 +350,10 @@ export function createDocumentFactory<
 	T extends DocumentBundle,
 >(
 	build: (id: Id) => T,
-	{ gcTime = Number.POSITIVE_INFINITY }: { gcTime?: number } = {},
+	{
+		gcTime = Number.POSITIVE_INFINITY,
+		log = createLogger('createDocumentFactory'),
+	}: { gcTime?: number; log?: Logger } = {},
 ): DocumentFactory<Id, T> {
 	const openDocuments = new Map<Id, DocEntry<T>>();
 	const recordedGuids = new Map<Id, string>();
@@ -408,8 +412,8 @@ export function createDocumentFactory<
 		// opt into a specific attachment field at the call site.
 		try {
 			entry.bundle[Symbol.dispose]();
-		} catch (err) {
-			console.error('[createDocumentFactory] bundle [Symbol.dispose]() threw:', err);
+		} catch (cause) {
+			log.error(DocumentFactoryError.BundleDisposeThrew({ cause }));
 		}
 	}
 

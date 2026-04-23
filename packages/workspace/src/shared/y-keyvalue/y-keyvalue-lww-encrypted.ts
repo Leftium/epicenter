@@ -62,6 +62,7 @@
  */
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type * as Y from 'yjs';
+import { createLogger, type Logger } from '../logger/index.js';
 import {
 	decryptValue,
 	type EncryptedBlob,
@@ -183,6 +184,7 @@ export type EncryptedYKeyValueLww<T> = ObservableKvStore<T> & {
 export function createEncryptedYkvLww<T>(
 	ydoc: Y.Doc,
 	arrayKey: string,
+	{ log = createLogger('encrypted-kv') }: { log?: Logger } = {},
 ): EncryptedYKeyValueLww<T> {
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | T>>(arrayKey);
 	/**
@@ -268,7 +270,7 @@ export function createEncryptedYkvLww<T>(
 					const reason = encryption.keyring.has(blobVersion)
 						? 'wrong key material or corrupted blob'
 						: `keyVersion=${blobVersion} not in keyring [${[...encryption.keyring.keys()].join(', ')}]`;
-					console.warn(`[encrypted-kv] Failed to decrypt entry "${key}": ${reason}`);
+					log.warn(EncryptedKvError.DecryptFailed({ key, reason }));
 				}
 				continue;
 			}

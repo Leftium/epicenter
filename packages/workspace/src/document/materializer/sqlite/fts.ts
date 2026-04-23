@@ -8,7 +8,9 @@
  * @module
  */
 
+import type { Logger } from '../../../shared/logger/index.js';
 import { quoteIdentifier } from './ddl.js';
+import { SqliteMaterializerError } from './sqlite.js';
 import type { MirrorDatabase, SearchOptions, SearchResult } from './types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -101,6 +103,7 @@ export async function ftsSearch(
 	ftsColumns: string[],
 	query: string,
 	options?: SearchOptions,
+	log?: Logger,
 ): Promise<SearchResult[]> {
 	const trimmed = query.trim();
 	if (!trimmed) {
@@ -135,8 +138,10 @@ export async function ftsSearch(
 				rank: Number(r.rank ?? 0),
 			};
 		});
-	} catch (error: unknown) {
-		console.warn('[attachSqliteMaterializer] FTS search failed.', error);
+	} catch (cause: unknown) {
+		log?.warn(
+			SqliteMaterializerError.FtsSearchFailed({ tableName, query: trimmed, cause }),
+		);
 		return [];
 	}
 }

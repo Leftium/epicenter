@@ -12,6 +12,10 @@
 	"scripts": {
 		"typecheck": "tsc --noEmit"
 	},
+	"dependencies": {
+		"@epicenter/workspace": "workspace:*",
+		"arktype": "catalog:"
+	},
 	"devDependencies": {
 		"@types/bun": "catalog:",
 		"typescript": "catalog:"

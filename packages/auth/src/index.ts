@@ -1,1 +1,5 @@
-// @epicenter/auth core
+export {
+	AuthSession,
+	readStatusCode,
+	StoredUser,
+} from './auth-types.ts';

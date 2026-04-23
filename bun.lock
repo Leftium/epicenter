@@ -479,6 +479,10 @@
     "packages/auth": {
       "name": "@epicenter/auth",
       "version": "0.1.0",
+      "dependencies": {
+        "@epicenter/workspace": "workspace:*",
+        "arktype": "catalog:",
+      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -580,6 +584,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@epicenter/api": "workspace:*",
+        "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",

@@ -86,20 +86,52 @@ It's easy to write a double-dispose or leak here. The version above can't — th
 
 ## Async-gate variant
 
-When the resource has a `whenReady` promise you need to wait on, keep the handle non-nullable and gate rendering on a separate boolean:
+When the resource exposes a readiness promise (`whenReady`, `whenLoaded`), gate rendering in the **template** with `{#await}`. Do NOT introduce a `$state(false)` flag + `$effect` that flips it inside `.then()` — Svelte already owns promise lifecycles, cancellation, and error branching. Rebuilding that in userland is pure ceremony.
 
 ```svelte
 <script lang="ts">
 	const resource = openResource(id);
-	let isLoaded = $state(false);
+	$effect(() => () => resource.dispose());
+</script>
 
+{#await resource.whenReady}
+	<div class="flex h-full items-center justify-center">
+		<Spinner class="size-5 text-muted-foreground" />
+	</div>
+{:then}
+	<Editor binding={resource.body.binding} />
+{:catch error}
+	<ErrorState {error} />
+{/await}
+```
+
+### Anti-pattern — don't do this
+
+```svelte
+<!-- ❌ Re-implements {#await} with extra state and a cancellation flag -->
+<script lang="ts">
+	let isLoaded = $state(false);
 	$effect(() => {
 		let cancelled = false;
 		resource.whenReady.then(() => { if (!cancelled) isLoaded = true; });
-		return () => { cancelled = true; resource.dispose(); };
+		return () => { cancelled = true; };
 	});
 </script>
+
+{#if isLoaded}<Editor />{:else}<Spinner />{/if}
 ```
+
+Three problems, every time:
+1. **One idea, three primitives.** A state var, a subscription effect, and an if/else branch collectively say what `{#await}` says in four lines.
+2. **Silent unhandled rejections.** The `.then()` chain drops errors on the floor. `{#await}`'s `{:catch}` makes failure explicit and catchable.
+3. **Manual cancellation.** The `cancelled` flag exists because `.then()` fires after unmount. `{#await}` tears down the subscription when the block does.
+
+### When you still need `$state` flags
+
+`{#await}` is for **one stable promise** driving one render branch. Reach for `$state` + `$effect` only when:
+- The flag is toggled imperatively by user action (`isSaving` around an `await save()` in a click handler).
+- You're composing multiple promises with custom logic (race, timeout, retry).
+- The flag reflects an external reactive source (`$derived(query.isPending)` from TanStack Query, a Svelte store, `createSubscriber`).
 
 ## `$state.raw` for non-proxyable handles
 

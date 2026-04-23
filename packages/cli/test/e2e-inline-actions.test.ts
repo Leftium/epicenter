@@ -145,9 +145,9 @@ describe('epicenter list (subprocess)', () => {
 	});
 
 	test('renders a leaf action detail with argument help', async () => {
-		const { stdout, exitCode } = await runCli(['list', 'demo.counter.set']);
+		const { stdout, exitCode } = await runCli(['list', 'counter.set']);
 		expect(exitCode).toBe(0);
-		expect(stdout).toContain('demo.counter.set  (mutation)');
+		expect(stdout).toContain('counter.set  (mutation)');
 		expect(stdout).toContain('--value <number>');
 		expect(stdout).toContain('required');
 	});
@@ -155,7 +155,7 @@ describe('epicenter list (subprocess)', () => {
 
 describe('epicenter run (subprocess)', () => {
 	test('invokes a query with no input', async () => {
-		const { stdout, exitCode } = await runCli(['run', 'demo.counter.get']);
+		const { stdout, exitCode } = await runCli(['run', 'counter.get']);
 		expect(exitCode).toBe(0);
 		expect(stdout.trim()).toBe('0');
 	});
@@ -163,7 +163,7 @@ describe('epicenter run (subprocess)', () => {
 	test('passes flag-shaped inputs through to the action', async () => {
 		const { stdout, exitCode } = await runCli([
 			'run',
-			'demo.counter.set',
+			'counter.set',
 			'--value',
 			'7',
 		]);
@@ -174,7 +174,7 @@ describe('epicenter run (subprocess)', () => {
 	test('accepts inline JSON as the positional input', async () => {
 		const { stdout, exitCode } = await runCli([
 			'run',
-			'demo.counter.set',
+			'counter.set',
 			'{"value":9}',
 		]);
 		expect(exitCode).toBe(0);
@@ -182,21 +182,21 @@ describe('epicenter run (subprocess)', () => {
 	});
 
 	test('lists siblings when a path lands on a subtree', async () => {
-		const { stderr, exitCode } = await runCli(['run', 'demo.counter']);
+		const { stderr, exitCode } = await runCli(['run', 'counter']);
 		expect(exitCode).not.toBe(0);
 		expect(stderr).toContain('is not a runnable action');
-		expect(stderr).toContain('demo.counter.get');
-		expect(stderr).toContain('demo.counter.set');
+		expect(stderr).toContain('counter.get');
+		expect(stderr).toContain('counter.set');
 	});
 
 	test('reports the first missing segment', async () => {
 		const { stderr, exitCode } = await runCli([
 			'run',
-			'demo.counter.explode',
+			'counter.explode',
 		]);
 		expect(exitCode).not.toBe(0);
 		expect(stderr).toContain('is not defined');
-		expect(stderr).toContain('demo.counter');
+		expect(stderr).toContain('counter');
 		expect(stderr).toContain('explode');
 	});
 });

@@ -2,7 +2,7 @@
  * `epicenter list [dot.path]` — render a tree of runnable actions.
  *
  * Three modes:
- *   1. No argument         → group by export name, full tree for each.
+ *   1. No argument         → full tree for the resolved workspace entry.
  *   2. Partial path        → subtree under that path.
  *   3. Leaf (action) path  → action detail with flag help.
  */
@@ -14,7 +14,9 @@ import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
 import { dirFromArgv, dirOption } from '../util/dir-option';
 import { outputError } from '../util/format-output';
+import { resolveEntry } from '../util/resolve-entry';
 import { resolvePath } from '../util/resolve-path';
+import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
 
 export const listCommand: CommandModule = {
 	command: 'list [path]',
@@ -25,14 +27,15 @@ export const listCommand: CommandModule = {
 				type: 'string',
 				describe: 'Optional dot-path to narrow the view',
 			})
-			.option('dir', dirOption),
+			.option('dir', dirOption)
+			.option('workspace', workspaceOption),
 	handler: async (argv) => {
-		const path = typeof argv.path === 'string' ? argv.path : undefined;
-		const { entries, dispose } = await loadConfig(
-			dirFromArgv(argv as Record<string, unknown>),
-		);
+		const args = argv as Record<string, unknown>;
+		const path = typeof args.path === 'string' ? args.path : undefined;
+		const { entries, dispose } = await loadConfig(dirFromArgv(args));
 		try {
-			render(path, entries);
+			const entry = resolveEntry(entries, workspaceFromArgv(args));
+			render(path, entry);
 		} finally {
 			await dispose();
 		}
@@ -41,36 +44,22 @@ export const listCommand: CommandModule = {
 
 function render(
 	pathArg: string | undefined,
-	entries: LoadConfigResult['entries'],
+	entry: LoadConfigResult['entries'][number],
 ): void {
 	const segments = pathArg ? pathArg.split('.').filter(Boolean) : [];
 
 	if (segments.length === 0) {
-		entries.forEach((entry, i) => {
-			if (i > 0) console.log('');
-			console.log(entry.name);
-			printTree(entry.handle);
-		});
+		console.log(entry.name);
+		printTree(entry.handle);
 		return;
 	}
 
-	const exportName = segments[0]!;
-	const rest = segments.slice(1);
-	const entry = entries.find((e) => e.name === exportName);
-	if (!entry) {
-		outputError(
-			`No export named "${exportName}" in epicenter.config.ts. ` +
-				`Available: ${entries.map((e) => e.name).join(', ')}`,
-		);
-		throw new Error('Export not found');
-	}
-
-	const resolved = resolvePath(entry.handle, rest);
+	const resolved = resolvePath(entry.handle, segments);
 
 	if (resolved.kind === 'missing') {
 		outputError(
 			`"${pathArg}" is not defined. Stopped at ` +
-				`"${[exportName, ...resolved.lastGoodPath].join('.')}" ` +
+				`"${resolved.lastGoodPath.join('.')}" ` +
 				`while looking for "${resolved.missingSegment}".`,
 		);
 		throw new Error('Path not found');

@@ -1,9 +1,6 @@
 /**
  * `epicenter run <dot.path> [args...]` — invoke a `defineQuery` /
  * `defineMutation` by dot-path through an opened document handle.
- *
- * Resolution: `path[0]` is the export name from `epicenter.config.ts`; the
- * remaining segments walk into the handle's own properties.
  */
 
 import { isResult, iterateActions } from '@epicenter/workspace';
@@ -18,7 +15,9 @@ import {
 	outputError,
 } from '../util/format-output';
 import { parseJsonInput, readStdinSync } from '../util/parse-input';
+import { resolveEntry } from '../util/resolve-entry';
 import { resolvePath } from '../util/resolve-path';
+import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
 import { typeboxToYargsOptions } from '../util/typebox-to-yargs';
 
 export const runCommand: CommandModule = {
@@ -29,7 +28,7 @@ export const runCommand: CommandModule = {
 			.positional('action', {
 				type: 'string',
 				demandOption: true,
-				describe: 'Action path, e.g. tabManager.savedTabs.create',
+				describe: 'Action path, e.g. savedTabs.create',
 			})
 			.positional('input', {
 				type: 'string',
@@ -40,14 +39,15 @@ export const runCommand: CommandModule = {
 				description: 'Path to a JSON file containing the action input',
 			})
 			.option('dir', dirOption)
+			.option('workspace', workspaceOption)
 			.options(formatYargsOptions())
 			.strict(false),
 	handler: async (argv) => {
-		const { entries, dispose } = await loadConfig(
-			dirFromArgv(argv as Record<string, unknown>),
-		);
+		const args = argv as Record<string, unknown>;
+		const { entries, dispose } = await loadConfig(dirFromArgv(args));
 		try {
-			await invoke(argv as Record<string, unknown>, entries);
+			const entry = resolveEntry(entries, workspaceFromArgv(args));
+			await invoke(args, entry);
 		} finally {
 			await dispose();
 		}
@@ -56,43 +56,32 @@ export const runCommand: CommandModule = {
 
 async function invoke(
 	argv: Record<string, unknown>,
-	entries: LoadConfigResult['entries'],
+	entry: LoadConfigResult['entries'][number],
 ): Promise<void> {
 	const actionPath = String(argv.action ?? '');
 	const segments = actionPath.split('.').filter(Boolean);
 
 	if (segments.length === 0) {
-		throw new Error('Provide an action path, e.g. `tabManager.savedTabs.list`.');
-	}
-
-	const exportName = segments[0]!;
-	const rest = segments.slice(1);
-	const entry = entries.find((e) => e.name === exportName);
-	if (!entry) {
-		const names = entries.map((e) => e.name).join(', ');
-		throw new Error(
-			`No export named "${exportName}" in epicenter.config.ts. ` +
-				`Available exports: ${names}`,
-		);
+		throw new Error('Provide an action path, e.g. `savedTabs.list`.');
 	}
 
 	if (entry.handle.whenReady) await entry.handle.whenReady;
 
-	const resolved = resolvePath(entry.handle, rest);
+	const resolved = resolvePath(entry.handle, segments);
 
 	if (resolved.kind === 'missing') {
 		outputError(
 			`"${actionPath}" is not defined. ` +
-				`Stopped at "${[exportName, ...resolved.lastGoodPath].join('.')}" ` +
+				`Stopped at "${resolved.lastGoodPath.join('.')}" ` +
 				`while looking for "${resolved.missingSegment}".`,
 		);
-		suggestSiblings(exportName, entry.handle, resolved.lastGoodPath);
+		suggestSiblings(entry.handle, resolved.lastGoodPath);
 		throw new Error('Action not found');
 	}
 
 	if (resolved.kind === 'subtree') {
 		outputError(`"${actionPath}" is not a runnable action.`);
-		suggestSiblings(exportName, entry.handle, resolved.path);
+		suggestSiblings(entry.handle, resolved.path);
 		throw new Error('Not an action');
 	}
 
@@ -100,10 +89,6 @@ async function invoke(
 	const input = await resolveInput(argv, action);
 	const format = argv.format as 'json' | 'jsonl' | undefined;
 
-	// Handlers return raw values, Results, or throw. Throws bubble up through
-	// yargs' default error handler (stderr + non-zero exit). For Results we
-	// print `.data` on Ok and route `.error` to stderr + exit 1 so shell
-	// pipelines see the failure. Raw values print as-is.
 	const raw =
 		action.input !== undefined ? await action(input) : await action();
 	if (isResult(raw)) {
@@ -152,11 +137,7 @@ async function resolveInput(
 	return input;
 }
 
-function suggestSiblings(
-	exportName: string,
-	bundle: unknown,
-	parentPath: string[],
-): void {
+function suggestSiblings(bundle: unknown, parentPath: string[]): void {
 	let node: unknown = bundle;
 	for (const seg of parentPath) {
 		if (node == null || typeof node !== 'object') return;
@@ -170,7 +151,7 @@ function suggestSiblings(
 	outputError('');
 	outputError('Exposed actions at this path:');
 	for (const [action, path] of siblings) {
-		const full = [exportName, ...parentPath, ...path].join('.');
+		const full = [...parentPath, ...path].join('.');
 		outputError(`  ${full}  (${action.type})`);
 	}
 }

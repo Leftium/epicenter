@@ -8,10 +8,31 @@
 
 import { defineMutation, defineQuery } from '@epicenter/workspace';
 import Type from 'typebox';
-import { Ok, tryAsync } from 'wellcrafted/result';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { getDeviceId } from '$lib/device/device-id';
 import { generateBookmarkId, generateSavedTabId } from './definition';
 import type { Tables } from './tables';
+
+export const TabError = defineErrors({
+	BrowserApiFailed: ({
+		operation,
+		cause,
+	}: {
+		operation: string;
+		cause: unknown;
+	}) => ({
+		message: `Browser API '${operation}' failed: ${extractErrorMessage(cause)}`,
+		operation,
+		cause,
+	}),
+});
+export type TabError = InferErrors<typeof TabError>;
+export type BrowserApiFailed = Extract<TabError, { name: 'BrowserApiFailed' }>;
 
 export function createTabManagerActions({
 	tables,
@@ -61,11 +82,16 @@ export function createTabManagerActions({
 				description: 'Close one or more tabs by their IDs.',
 				input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
 				handler: async ({ tabIds }) => {
-					await tryAsync({
+					const { error } = await tryAsync({
 						try: () => browser.tabs.remove(tabIds),
-						catch: () => Ok(undefined),
+						catch: (cause) =>
+							TabError.BrowserApiFailed({
+								operation: 'tabs.remove',
+								cause,
+							}),
 					});
-					return { closedCount: tabIds.length };
+					if (error) return Err(error);
+					return Ok({ closedCount: tabIds.length });
 				},
 			}),
 			open: defineMutation({
@@ -253,12 +279,20 @@ export function createTabManagerActions({
 					pinned: Type.Boolean(),
 				}),
 				handler: async ({ id, url, pinned }) => {
-					await tryAsync({
+					// Only delete the saved record once the browser tab has actually
+					// been re-created — otherwise a failed `tabs.create` silently
+					// loses the saved URL.
+					const { error } = await tryAsync({
 						try: () => browser.tabs.create({ url, pinned }),
-						catch: () => Ok(undefined),
+						catch: (cause) =>
+							TabError.BrowserApiFailed({
+								operation: 'tabs.create',
+								cause,
+							}),
 					});
+					if (error) return Err(error);
 					tables.savedTabs.delete(id);
-					return { restored: true };
+					return Ok({ restored: true });
 				},
 			}),
 			restoreAll: defineMutation({

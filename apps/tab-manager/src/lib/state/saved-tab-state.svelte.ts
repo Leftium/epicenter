@@ -41,11 +41,6 @@ export const SavedTabError = defineErrors({
 		url,
 		cause,
 	}),
-	RestoreFailed: ({ id, cause }: { id: string; cause: unknown }) => ({
-		message: `Failed to restore saved tab '${id}': ${extractErrorMessage(cause)}`,
-		id,
-		cause,
-	}),
 	RestoreAllFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to restore all saved tabs: ${extractErrorMessage(cause)}`,
 		cause,
@@ -102,18 +97,15 @@ function createSavedTabState() {
 		/**
 		 * Restore a saved tab — re-open in browser and delete the record.
 		 *
-		 * Delegates to the `savedTabs.restore` workspace action.
+		 * Delegates to the `savedTabs.restore` workspace action, which now
+		 * returns `Result` — on browser API failure the saved record is kept
+		 * so the user doesn't lose the URL.
 		 */
 		async restore(savedTab: SavedTab) {
-			return tryAsync({
-				try: () =>
-					workspace.actions.savedTabs.restore({
-						id: savedTab.id,
-						url: savedTab.url,
-						pinned: savedTab.pinned,
-					}),
-				catch: (cause) =>
-					SavedTabError.RestoreFailed({ id: savedTab.id, cause }),
+			return workspace.actions.savedTabs.restore({
+				id: savedTab.id,
+				url: savedTab.url,
+				pinned: savedTab.pinned,
 			});
 		},
 

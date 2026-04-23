@@ -34,7 +34,9 @@
 	},
 	"license": "MIT",
 	"scripts": {
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"bench": "bun test ./src/__benchmarks__/*.bench.ts --timeout 60000"
 	},
 	"dependencies": {
 		"@ark/json-schema": "^0.0.4",

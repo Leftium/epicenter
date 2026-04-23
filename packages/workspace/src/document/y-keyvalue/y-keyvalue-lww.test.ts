@@ -11,7 +11,7 @@
  *
  * See also:
  * - `y-keyvalue.ts` for positional (rightmost-wins) alternative
- * - `__benchmarks__/conflict-resolution.bench.test.ts` for side-by-side behavioral comparison
+ * - `__benchmarks__/conflict-resolution.bench.ts` for side-by-side behavioral comparison
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';

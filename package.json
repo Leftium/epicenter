@@ -108,6 +108,8 @@
 		"lint:check": "biome lint",
 		"release": "changeset version && changeset publish",
 		"typecheck": "turbo run typecheck",
+		"test": "turbo run test",
+		"bench": "turbo run bench",
 		"bump-version": "bun run scripts/bump-version.ts",
 		"clean": "bun run scripts/clean.ts",
 		"nuke": "bun run scripts/clean.ts --nuke",

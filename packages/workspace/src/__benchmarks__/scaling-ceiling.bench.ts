@@ -3,7 +3,7 @@
  *
  * Answers: "Where does the actual performance wall hit—and what causes it?"
  *
- * Unlike storage-overhead.bench.test.ts (which extrapolates from 1K-row measurements),
+ * Unlike storage-overhead.bench.ts (which extrapolates from 1K-row measurements),
  * this file RUNS real workloads at 1K → 100K rows and measures what napkin math can't:
  *
  * - Insert timing (captures the O(n²) compound from YKeyValueLww's per-write array scan)

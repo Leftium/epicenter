@@ -7,7 +7,7 @@
  * and practical ceiling estimates for row counts.
  *
  * For comprehensive scaling measurements (timing, memory, encode/decode, multi-table),
- * see `scaling-ceiling.bench.test.ts`.
+ * see `scaling-ceiling.bench.ts`.
  */
 
 import { describe, test } from 'bun:test';

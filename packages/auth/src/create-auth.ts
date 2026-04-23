@@ -33,6 +33,16 @@ export const AuthError = defineErrors({
 });
 export type AuthError = InferErrors<typeof AuthError>;
 
+/**
+ * Payload returned by a native/extension `socialTokenProvider`. Identifies
+ * which Better Auth social provider to verify the ID token against.
+ */
+export type SocialTokenPayload = {
+	provider: string;
+	idToken: string;
+	nonce: string;
+};
+
 export type CreateAuthConfig = {
 	baseURL: BaseURL;
 	session: SessionStore;
@@ -44,11 +54,7 @@ export type CreateAuthConfig = {
 	 * apps and extensions provide this; web apps that only use redirect
 	 * sign-in can omit it.
 	 */
-	socialTokenProvider?: () => Promise<{
-		provider: string;
-		idToken: string;
-		nonce: string;
-	}>;
+	socialTokenProvider?: () => Promise<SocialTokenPayload>;
 };
 
 export type AuthCore = {
@@ -153,9 +159,9 @@ export function createAuth({
 
 	const disposers: Array<() => void> = [];
 
-	function safeRun<A extends unknown[]>(fn: (...args: A) => void, args: A) {
+	function safeRun(fn: () => void) {
 		try {
-			fn(...args);
+			fn();
 		} catch (error) {
 			console.error('[auth] subscriber threw:', error);
 		}
@@ -165,21 +171,21 @@ export function createAuth({
 		next: AuthSession | null,
 		previous: AuthSession | null,
 	) {
-		for (const sub of sessionSubs) safeRun(sub, [next, previous]);
+		for (const sub of sessionSubs) safeRun(() => sub(next, previous));
 		if (previous === null && next !== null) {
-			for (const sub of loginSubs) safeRun(sub, [next]);
+			for (const sub of loginSubs) safeRun(() => sub(next));
 		} else if (previous !== null && next === null) {
-			for (const sub of logoutSubs) safeRun(sub, []);
+			for (const sub of logoutSubs) safeRun(() => sub());
 		}
 		const prevToken = previous?.token ?? null;
 		const nextToken = next?.token ?? null;
 		if (prevToken !== nextToken) {
-			for (const sub of tokenSubs) safeRun(sub, [nextToken]);
+			for (const sub of tokenSubs) safeRun(() => sub(nextToken));
 		}
 	}
 
 	function notifyBusyChange(busy: boolean) {
-		for (const sub of busySubs) safeRun(sub, [busy]);
+		for (const sub of busySubs) safeRun(() => sub(busy));
 	}
 
 	async function runBusy<T>(fn: () => Promise<T>): Promise<T> {
@@ -258,14 +264,14 @@ export function createAuth({
 		isBusy: () => busyCount > 0,
 
 		onSessionChange(fn) {
-			safeRun(fn, [session.get(), null]);
+			safeRun(() => fn(session.get(), null));
 			sessionSubs.add(fn);
 			return () => {
 				sessionSubs.delete(fn);
 			};
 		},
 		onTokenChange(fn) {
-			safeRun(fn, [session.get()?.token ?? null]);
+			safeRun(() => fn(session.get()?.token ?? null));
 			tokenSubs.add(fn);
 			return () => {
 				tokenSubs.delete(fn);
@@ -273,7 +279,7 @@ export function createAuth({
 		},
 		onLogin(fn) {
 			const current = session.get();
-			if (current !== null) safeRun(fn, [current]);
+			if (current !== null) safeRun(() => fn(current));
 			loginSubs.add(fn);
 			return () => {
 				loginSubs.delete(fn);
@@ -286,7 +292,7 @@ export function createAuth({
 			};
 		},
 		onBusyChange(fn) {
-			safeRun(fn, [busyCount > 0]);
+			safeRun(() => fn(busyCount > 0));
 			busySubs.add(fn);
 			return () => {
 				busySubs.delete(fn);

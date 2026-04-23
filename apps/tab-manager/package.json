@@ -20,6 +20,7 @@
 		"postinstall": "wxt prepare"
 	},
 	"dependencies": {
+		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/ui": "workspace:*",

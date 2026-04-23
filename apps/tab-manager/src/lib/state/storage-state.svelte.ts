@@ -195,15 +195,17 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 
 // ── SessionStore adapter ─────────────────────────────────────────────────────
 
+import type { AuthSession, SessionStore } from '@epicenter/auth';
+
 /**
- * Shape of a `createStorageState` return value narrowed to what a
- * SessionStore adapter needs.
+ * Shape of a `createStorageState` return value narrowed to what the
+ * SessionStore adapter needs. `.current` is authoritative after
+ * `whenReady` resolves.
  */
-type StorageStateLike<T> = {
-	current: T;
-	get(): Promise<T>;
+type StorageSessionState = {
+	current: AuthSession | null;
 	whenReady: Promise<void>;
-	watch(fn: (value: T) => void): () => void;
+	watch(fn: (value: AuthSession | null) => void): () => void;
 };
 
 /**
@@ -214,21 +216,17 @@ type StorageStateLike<T> = {
  *
  * 1. **Hydration.** chrome.storage is async. The adapter re-exports
  *    `whenReady` so the caller can await it before constructing `createAuth`;
- *    after that, `.current` is authoritative and `get()` reads the cache
- *    synchronously.
+ *    after that, `.current` is authoritative.
  * 2. **Local-write fan-out.** The underlying `watch` only fires on external
  *    changes (from other extension contexts). SessionStore's contract
  *    requires watchers to fire on every change — including writes made via
  *    `set()`. The adapter keeps its own watcher set and notifies them
  *    directly from `set()`, in addition to forwarding external changes.
  */
-export function fromStorageState<T>(state: StorageStateLike<T>): {
-	whenReady: Promise<void>;
-	get(): T;
-	set(value: T): void;
-	watch(fn: (value: T) => void): () => void;
-} {
-	const watchers = new Set<(value: T) => void>();
+export function fromStorageState(
+	state: StorageSessionState,
+): SessionStore & { whenReady: Promise<void> } {
+	const watchers = new Set<(value: AuthSession | null) => void>();
 
 	state.watch((next) => {
 		for (const fn of watchers) fn(next);

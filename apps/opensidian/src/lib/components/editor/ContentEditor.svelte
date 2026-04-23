@@ -23,23 +23,7 @@
 	// Parent (ContentPanel) wraps in {#key activeFileId}, so fileId is stable
 	// for this instance's lifetime. Open once, dispose on unmount.
 	const handle = fileContentDocs.open(fileId);
-	let isLoaded = $state(false);
-
-	// `asText()` on Timeline mutates when the doc is empty — it pushes an
-	// entry. If called before persistence hydrates, it races the IDB replay
-	// and can corrupt the timeline (phantom text entry alongside the real
-	// stored entries). Gate on `whenReady` so we only read mode after the
-	// doc has its real state.
-	$effect(() => {
-		let cancelled = false;
-		handle.whenReady.then(() => {
-			if (!cancelled) isLoaded = true;
-		});
-		return () => {
-			cancelled = true;
-			handle.dispose();
-		};
-	});
+	$effect(() => () => handle.dispose());
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
@@ -64,14 +48,20 @@
 	);
 </script>
 
-{#if isLoaded}
+<!--
+	Gate on whenReady — `asText()` on Timeline mutates when the doc is empty
+	(it pushes an entry). Calling it before persistence hydrates races the
+	IDB replay and can corrupt the timeline (phantom text entry alongside
+	the real stored entries).
+-->
+{#await handle.whenReady}
+	<div class="flex h-full items-center justify-center">
+		<Spinner class="size-5 text-muted-foreground" />
+	</div>
+{:then}
 	<CodeMirrorEditor
 		ytext={handle.content.asText()}
 		{extensions}
 		{filename}
 	/>
-{:else}
-	<div class="flex h-full items-center justify-center">
-		<Spinner class="size-5 text-muted-foreground" />
-	</div>
-{/if}
+{/await}

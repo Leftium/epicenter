@@ -133,16 +133,10 @@ export const fs = attachYjsFileSystem(workspace.tables.files, fileContentDocs);`
 		},
 	] as const;
 
-	let highlightedCode = $state('');
-
-	$effect(() => {
-		codeToHtml(workspaceCode, {
-			lang: 'typescript',
-			themes: { light: 'github-light', dark: 'github-dark' },
-			defaultColor: false,
-		}).then((html) => {
-			highlightedCode = html;
-		});
+	const highlightedCode = codeToHtml(workspaceCode, {
+		lang: 'typescript',
+		themes: { light: 'github-light', dark: 'github-dark' },
+		defaultColor: false,
 	});
 </script>
 
@@ -268,12 +262,12 @@ export const fs = attachYjsFileSystem(workspace.tables.files, fileContentDocs);`
 			</Card.Header>
 			<Card.Content class="p-0">
 				<div class="overflow-x-auto p-4 text-sm leading-relaxed">
-					{#if highlightedCode}
-						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						{@html highlightedCode}
-					{:else}
+					{#await highlightedCode}
 						<pre class="font-mono"><code>{workspaceCode}</code></pre>
-					{/if}
+					{:then html}
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						{@html html}
+					{/await}
 				</div>
 			</Card.Content>
 		</Card.Root>

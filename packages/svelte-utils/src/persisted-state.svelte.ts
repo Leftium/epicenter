@@ -223,8 +223,7 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 			return value;
 		},
 		/**
-		 * Method-form setter for `{ get, set, watch }` consumers (e.g. the
-		 * `SessionStore` contract from `@epicenter/auth`). Equivalent to
+		 * Method-form setter for `{ get, set, watch }` consumers. Equivalent to
 		 * assigning `.current` — both set the reactive value and persist.
 		 */
 		set: setAndPersist,

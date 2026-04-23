@@ -139,9 +139,8 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 		 * Synchronous read — returns the in-memory value.
 		 *
 		 * Before `whenReady` resolves this returns `fallback`. After `whenReady`
-		 * this is authoritative and matches `.current`. Use in contexts like
-		 * `SessionStore.get()` where the contract is sync and the caller has
-		 * already gated on `whenReady` at construction time.
+		 * this is authoritative and matches `.current`. Use when a consumer's
+		 * contract is sync and the caller has already gated on `whenReady`.
 		 */
 		get: () => value,
 

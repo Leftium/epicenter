@@ -22,6 +22,7 @@
         "@better-auth/oauth-provider": "catalog:",
         "@epicenter/constants": "workspace:*",
         "@epicenter/sync": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "@tanstack/ai": "catalog:",
         "@tanstack/ai-anthropic": "catalog:",
@@ -480,8 +481,11 @@
       "name": "@epicenter/auth",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/api": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "arktype": "catalog:",
+        "better-auth": "catalog:",
+        "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",

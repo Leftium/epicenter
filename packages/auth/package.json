@@ -13,8 +13,11 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@epicenter/api": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
-		"arktype": "catalog:"
+		"arktype": "catalog:",
+		"better-auth": "catalog:",
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",

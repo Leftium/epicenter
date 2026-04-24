@@ -26,10 +26,15 @@ describe('findPeer — numeric / clientID mode', () => {
 		expect(findPeer('99', peers)).toEqual({ kind: 'not-found' });
 	});
 
-	test('numeric mode ignores deviceName that happens to equal the number', () => {
+	test('numeric target ignores string fields that happen to equal the number', () => {
 		const peers = peersOf([[55, { deviceName: '42' }]]);
-		// "42" still routes to clientID mode — spec edge case
+		// "42" always routes to clientID mode — use `--peer field=42` to match string values
 		expect(findPeer('42', peers)).toEqual({ kind: 'not-found' });
+	});
+
+	test('bare non-numeric target without `=` is not-found (no default field)', () => {
+		const peers = peersOf([[42, { deviceName: 'myMacbook' }]]);
+		expect(findPeer('myMacbook', peers)).toEqual({ kind: 'not-found' });
 	});
 });
 
@@ -74,34 +79,13 @@ describe('findPeer — k=v explicit field mode', () => {
 	});
 });
 
-describe('findPeer — bare deviceName mode', () => {
-	test('exact match', () => {
-		const peers = peersOf([[42, { deviceName: 'myMacbook' }]]);
-		expect(findPeer('myMacbook', peers)).toEqual({
-			kind: 'found',
-			clientID: 42,
-			state: { deviceName: 'myMacbook' },
-		});
-	});
-
-	test('case-insensitive unique match → case-suggest', () => {
-		const peers = peersOf([
-			[42, { deviceName: 'myMacbook' }],
-			[188, { deviceName: 'workLaptop' }],
-		]);
-		expect(findPeer('mymacbook', peers)).toEqual({
-			kind: 'case-suggest',
-			actual: 'myMacbook',
-			clientID: 42,
-		});
-	});
-
+describe('findPeer — k=v case-ambiguity and field hygiene', () => {
 	test('case-insensitive multiple matches → case-ambiguous (sorted ASC)', () => {
 		const peers = peersOf([
 			[188, { deviceName: 'workMacbook' }],
 			[42, { deviceName: 'myMacbook' }],
 		]);
-		const result = findPeer('MACBOOK', peers);
+		const result = findPeer('deviceName=MACBOOK', peers);
 		expect(result).toEqual({
 			kind: 'case-ambiguous',
 			matches: [
@@ -111,17 +95,12 @@ describe('findPeer — bare deviceName mode', () => {
 		});
 	});
 
-	test('no match → not-found', () => {
-		const peers = peersOf([[42, { deviceName: 'myMacbook' }]]);
-		expect(findPeer('ghost', peers)).toEqual({ kind: 'not-found' });
-	});
-
-	test('peers without deviceName field are skipped', () => {
+	test('peers without the requested field are skipped', () => {
 		const peers = peersOf([
 			[42, { role: 'dev' }],
 			[188, { deviceName: 'workLaptop' }],
 		]);
-		expect(findPeer('workLaptop', peers)).toEqual({
+		expect(findPeer('deviceName=workLaptop', peers)).toEqual({
 			kind: 'found',
 			clientID: 188,
 			state: { deviceName: 'workLaptop' },
@@ -133,6 +112,6 @@ describe('findPeer — bare deviceName mode', () => {
 			[42, { deviceName: { nested: 'thing' } as unknown as string }],
 			[188, { deviceName: 'workLaptop' }],
 		]);
-		expect(findPeer('nested', peers)).toEqual({ kind: 'not-found' });
+		expect(findPeer('deviceName=nested', peers)).toEqual({ kind: 'not-found' });
 	});
 });

@@ -92,7 +92,7 @@ describe('emitMissError', () => {
 		]);
 	});
 
-	test('not-found with no peers seen → timeout waiting for peer', () => {
+	test('not-found with no peers seen → no peers seen after wait', () => {
 		cap = captureErrors();
 		emitMissError(
 			'myMacbook',
@@ -102,7 +102,7 @@ describe('emitMissError', () => {
 			5000,
 		);
 		expect(cap.lines).toEqual([
-			'error: timeout after 5000ms waiting for peer myMacbook',
+			'error: no peers seen after waiting 5000ms for "myMacbook"',
 		]);
 	});
 });

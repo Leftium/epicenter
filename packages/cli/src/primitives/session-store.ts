@@ -64,7 +64,7 @@ function normalizeUrl(url: string): string {
  * // Load by server
  * const session = await sessions.load('https://api.epicenter.so');
  *
- * // Load most recent (when no --server flag)
+ * // Load most recent (when no server argument)
  * const latest = await sessions.loadDefault();
  *
  * // Clear on logout

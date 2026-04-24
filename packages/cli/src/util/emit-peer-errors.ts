@@ -23,7 +23,7 @@ export function emitMissError(
 	result: FindPeerResult,
 	sawPeers: boolean,
 	workspace: string | undefined,
-	timeoutMs: number,
+	waitMs: number,
 ): void {
 	const scope = workspace ? ` in workspace ${workspace}` : '';
 	if (result.kind === 'case-suggest') {
@@ -40,7 +40,9 @@ export function emitMissError(
 		return;
 	}
 	if (!sawPeers) {
-		outputError(`error: timeout after ${timeoutMs}ms waiting for peer ${target}`);
+		outputError(
+			`error: no peers seen after waiting ${waitMs}ms for "${target}"`,
+		);
 		return;
 	}
 	outputError(`error: no peer matches "${target}"${scope}`);

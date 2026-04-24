@@ -3,18 +3,23 @@
  *
  * For each workspace entry (or a single entry narrowed by `-w`):
  *   1. await `handle.sync.whenConnected` (awareness requires the transport)
- *   2. snapshot `awareness.getStates()` and print a `console.table`
+ *   2. snapshot `awareness.getStates()`, or poll up to `--wait <ms>` if the
+ *      snapshot is empty (default: 0 = true one-shot)
+ *   3. emit a `console.table` (default) or JSON (`--format json`)
  *
- * This is a one-shot snapshot, not a registry. A peer that hasn't broadcast
- * its awareness state by the time `whenConnected` resolves will not appear —
- * re-run the command. See `handle-attachments.ts` for awareness invariants.
+ * This is a snapshot, not a registry. A peer that hasn't broadcast its
+ * awareness state is invisible — pass `--wait 2000` to give slow peers a
+ * chance before emitting. See `handle-attachments.ts` for awareness
+ * invariants (~30s TTL, session-local clientID).
  *
- * Prints `no peers connected` when every workspace's snapshot is empty.
+ * Prints `no peers connected` to stderr when every workspace is empty (text
+ * mode only; JSON mode always emits a valid array, even if empty).
  */
 
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
 import { dirFromArgv, dirOption } from '../util/dir-option';
+import { formatYargsOptions, output } from '../util/format-output';
 import {
 	getSync,
 	readPeers,
@@ -22,6 +27,9 @@ import {
 } from '../util/handle-attachments';
 import { resolveEntry } from '../util/resolve-entry';
 import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
+
+const POLL_INTERVAL_MS = 100;
+const DEFAULT_WAIT_MS = 0;
 
 type PeerRow = { clientID: number } & Record<string, unknown>;
 
@@ -34,18 +42,30 @@ export const peersCommand: CommandModule = {
 	command: 'peers',
 	describe: 'List peers you can target with `run --peer`',
 	builder: (yargs: Argv) =>
-		yargs.option('dir', dirOption).option('workspace', workspaceOption),
+		yargs
+			.option('dir', dirOption)
+			.option('workspace', workspaceOption)
+			.option('wait', {
+				type: 'number',
+				default: DEFAULT_WAIT_MS,
+				description: `Ms to wait for awareness to populate (default ${DEFAULT_WAIT_MS} = one-shot snapshot)`,
+			})
+			.options(formatYargsOptions()),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
 		const workspaceArg = workspaceFromArgv(args);
+		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
+		const format = args.format as 'json' | 'jsonl' | undefined;
 		const { entries, dispose } = await loadConfig(dirFromArgv(args));
 		try {
 			const selected: LoadConfigResult['entries'] = workspaceArg
 				? [resolveEntry(entries, workspaceArg)]
 				: entries;
 
-			const snapshots = await Promise.all(selected.map(snapshotEntry));
-			printSnapshots(snapshots, { elideHeader: workspaceArg !== undefined });
+			const snapshots = await Promise.all(
+				selected.map((e) => snapshotEntry(e, waitMs)),
+			);
+			emit(snapshots, { elideHeader: workspaceArg !== undefined, format });
 		} finally {
 			await dispose();
 			await Promise.all(
@@ -60,19 +80,39 @@ export const peersCommand: CommandModule = {
 
 async function snapshotEntry(
 	entry: LoadConfigResult['entries'][number],
+	waitMs: number,
 ): Promise<WorkspaceSnapshot> {
 	const sync = getSync(entry.handle);
 	if (sync?.whenConnected) await sync.whenConnected;
-	return { name: entry.name, peers: readPeers(entry.handle) };
+
+	const deadline = Date.now() + waitMs;
+	while (true) {
+		const peers = readPeers(entry.handle);
+		if (peers.size > 0 || Date.now() >= deadline) {
+			return { name: entry.name, peers };
+		}
+		await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+	}
 }
 
-function printSnapshots(
+function emit(
 	snapshots: WorkspaceSnapshot[],
-	{ elideHeader }: { elideHeader: boolean },
+	{
+		elideHeader,
+		format,
+	}: { elideHeader: boolean; format: 'json' | 'jsonl' | undefined },
 ): void {
+	if (format === 'json' || format === 'jsonl') {
+		const flat = snapshots.flatMap(({ name, peers }) =>
+			buildPeerRows(peers).map((row) => ({ workspace: name, ...row })),
+		);
+		output(flat, { format });
+		return;
+	}
+
 	const nonEmpty = snapshots.filter((s) => s.peers.size > 0);
 	if (nonEmpty.length === 0) {
-		console.log('no peers connected');
+		console.error('no peers connected');
 		return;
 	}
 	for (let i = 0; i < nonEmpty.length; i++) {

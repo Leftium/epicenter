@@ -10,9 +10,16 @@ describe('resolveEntry', () => {
 		expect(resolveEntry([notes], undefined)).toBe(notes);
 	});
 
-	test('auto-selects single entry even when -w is provided', () => {
+	test('selects single entry by name when -w matches', () => {
 		const notes = fakeEntry('notes');
 		expect(resolveEntry([notes], 'notes')).toBe(notes);
+	});
+
+	test('throws when -w typo does not match single entry (no silent fallthrough)', () => {
+		const notes = fakeEntry('notes');
+		expect(() => resolveEntry([notes], 'nots')).toThrow(
+			"No workspace 'nots'",
+		);
 	});
 
 	test('selects by name with -w for multiple entries', () => {

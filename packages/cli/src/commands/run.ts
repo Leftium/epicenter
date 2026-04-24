@@ -2,9 +2,14 @@
  * `epicenter run <dot.path> [input]` — invoke a `defineQuery` /
  * `defineMutation` by dot-path through an opened document handle.
  *
- * `input` is JSON: inline positional, `@file.json`, `--file`, or stdin.
+ * `input` is JSON: inline positional, `@file.json` (curl convention), or stdin.
  * With `--peer <target>`, the invocation is dispatched over the sync
  * room's RPC channel to a remote peer instead of running locally.
+ *
+ * Exit codes:
+ *   1 — usage error (unknown action, workspace miss, missing sync for `--peer`)
+ *   2 — runtime error (local action returned Err, or remote RPC failed)
+ *   3 — peer-miss (`--peer <target>` didn't resolve within `--wait`)
  */
 
 import { isResult, iterateActions } from '@epicenter/workspace';
@@ -13,26 +18,27 @@ import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
 import { dirFromArgv, dirOption } from '../util/dir-option';
 import { emitMissError, emitRpcError } from '../util/emit-peer-errors';
+import { EXIT } from '../util/exit-codes';
 import { findPeer, type FindPeerResult } from '../util/find-peer';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { getSync, readPeers } from '../util/handle-attachments';
-import { parseJsonInput, readStdinSync } from '../util/parse-input';
+import { parseJsonInput, readStdin } from '../util/parse-input';
 import { resolveEntry } from '../util/resolve-entry';
 import { resolvePath } from '../util/resolve-path';
 import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
 
 const POLL_INTERVAL_MS = 100;
-const DEFAULT_PEER_TIMEOUT_MS = 5000;
+const DEFAULT_PEER_WAIT_MS = 5000;
 
 const peerOption: Options = {
 	type: 'string',
 	description:
-		'Remote peer target: bare deviceName, <field>=<value>, or numeric clientID',
+		'Remote peer target: <field>=<value> or numeric clientID',
 };
 
-const peerTimeoutOption: Options = {
+const waitOption: Options = {
 	type: 'number',
-	description: `Remote RPC timeout in ms; requires --peer (default ${DEFAULT_PEER_TIMEOUT_MS})`,
+	description: `Total ms to wait for peer resolution + RPC; requires --peer (default ${DEFAULT_PEER_WAIT_MS})`,
 };
 
 export const runCommand: CommandModule = {
@@ -50,15 +56,11 @@ export const runCommand: CommandModule = {
 				type: 'string',
 				describe: 'Inline JSON or @file.json',
 			})
-			.option('file', {
-				type: 'string',
-				description: 'Path to a JSON file containing the action input',
-			})
 			.option('dir', dirOption)
 			.option('workspace', workspaceOption)
 			.option('peer', peerOption)
-			.option('peer-timeout', peerTimeoutOption)
-			.implies('peer-timeout', 'peer')
+			.option('wait', waitOption)
+			.implies('wait', 'peer')
 			.options(formatYargsOptions())
 			.strict(),
 	handler: async (argv) => {
@@ -117,16 +119,14 @@ async function invoke(
 	const peerTarget =
 		typeof argv.peer === 'string' && argv.peer.length > 0 ? argv.peer : undefined;
 	if (peerTarget !== undefined) {
-		const timeoutMs =
-			typeof argv['peer-timeout'] === 'number'
-				? (argv['peer-timeout'] as number)
-				: DEFAULT_PEER_TIMEOUT_MS;
+		const waitMs =
+			typeof argv.wait === 'number' ? argv.wait : DEFAULT_PEER_WAIT_MS;
 		await invokeRemote({
 			entry,
 			actionPath,
 			input,
 			peerTarget,
-			timeoutMs,
+			waitMs,
 			format,
 			workspaceArg: workspaceFromArgv(argv),
 		});
@@ -138,7 +138,7 @@ async function invoke(
 	if (isResult(raw)) {
 		if (raw.error !== null) {
 			outputError(extractErrorMessage(raw.error));
-			process.exitCode = 1;
+			process.exitCode = EXIT.RUNTIME;
 			return;
 		}
 		output(raw.data, { format });
@@ -152,7 +152,7 @@ type InvokeRemoteOptions = {
 	actionPath: string;
 	input: unknown;
 	peerTarget: string;
-	timeoutMs: number;
+	waitMs: number;
 	format: 'json' | 'jsonl' | undefined;
 	workspaceArg: string | undefined;
 };
@@ -162,23 +162,21 @@ async function invokeRemote({
 	actionPath,
 	input,
 	peerTarget,
-	timeoutMs,
+	waitMs,
 	format,
 	workspaceArg,
 }: InvokeRemoteOptions): Promise<void> {
 	const sync = getSync(entry.handle);
 
 	if (!sync?.rpc) {
-		outputError(
+		throw new Error(
 			`Workspace "${entry.name}" has no sync attachment; --peer requires sync.`,
 		);
-		process.exitCode = 1;
-		return;
 	}
 
 	if (sync.whenConnected) await sync.whenConnected;
 
-	const deadline = Date.now() + timeoutMs;
+	const deadline = Date.now() + waitMs;
 	let lastResult: FindPeerResult = { kind: 'not-found' };
 	let sawPeers = false;
 
@@ -192,8 +190,8 @@ async function invokeRemote({
 	}
 
 	if (lastResult.kind !== 'found') {
-		emitMissError(peerTarget, lastResult, sawPeers, workspaceArg, timeoutMs);
-		process.exitCode = 1;
+		emitMissError(peerTarget, lastResult, sawPeers, workspaceArg, waitMs);
+		process.exitCode = EXIT.PEER_MISS;
 		return;
 	}
 
@@ -205,7 +203,7 @@ async function invokeRemote({
 
 	if (result.error !== null) {
 		emitRpcError(result.error, targetClientId, peerState);
-		process.exitCode = 1;
+		process.exitCode = EXIT.RUNTIME;
 		return;
 	}
 	output(result.data, { format });
@@ -218,18 +216,11 @@ async function resolveInput(
 		typeof argv.input === 'string' && argv.input.length > 0
 			? (argv.input as string)
 			: undefined;
-	const file = typeof argv.file === 'string' ? (argv.file as string) : undefined;
-	const stdinContent = readStdinSync();
-	const hasStdin = stdinContent !== undefined;
+	const stdinContent = await readStdin();
 
-	if (!positional && !file && !hasStdin) return undefined;
+	if (!positional && stdinContent === undefined) return undefined;
 
-	const { data, error } = parseJsonInput({
-		positional,
-		file,
-		hasStdin,
-		stdinContent,
-	});
+	const { data, error } = parseJsonInput({ positional, stdinContent });
 	if (error) throw new Error(error.message);
 	return data;
 }

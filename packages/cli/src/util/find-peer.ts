@@ -1,26 +1,30 @@
 /**
  * Resolve a `--peer <target>` flag against a map of awareness states.
  *
- * Three modes (no overlap):
+ * Two modes (no overlap):
  *   - all digits        → `clientID` lookup (numeric)
  *   - contains '='      → `<field>=<value>` (split on first '=')
- *   - otherwise         → match awareness field `deviceName`
  *
- * String-field modes try exact first, then fall back to case-insensitive
+ * The CLI assumes no field-name convention. Bundles that want stable
+ * addressing publish a field they chose (`deviceName`, `hostname`, `userId`,
+ * …) and callers name it explicitly on the command line.
+ *
+ * `k=v` mode tries exact first, then falls back to case-insensitive
  * substring. Miss shapes:
  *   - unique substring hit                       → `case-suggest`
  *   - multiple exact or substring hits           → `case-ambiguous`
  *   - otherwise                                  → `not-found`
  *
  * "Case-insensitive" here means the lowercased target appears as a substring
- * of the lowercased peer value — so `mymacbook` suggests `myMacbook`, and
- * `MACBOOK` reports both `myMacbook` and `workMacbook` as ambiguous.
+ * of the lowercased peer value — so `deviceName=mymacbook` suggests
+ * `myMacbook`, and `deviceName=MACBOOK` reports both `myMacbook` and
+ * `workMacbook` as ambiguous.
  *
  * Numeric mode has no fuzzy fallback — a missing clientID is just `not-found`.
  *
- * Edge: `--peer key=val=with=equals` splits on the first '='. The target
- * `--peer 42` with a peer named `deviceName: "42"` still routes to numeric
- * clientID mode. Use `--peer deviceName=42` to disambiguate.
+ * Edge: `--peer key=val=with=equals` splits on the first '='. A purely
+ * numeric target always routes to clientID mode; to match a string field
+ * whose value happens to be digits, use `--peer field=42`.
  */
 import type { AwarenessState } from './handle-attachments';
 
@@ -53,8 +57,7 @@ export function findPeer(
 		return matchField(field, value, peers);
 	}
 
-	// Mode 3 — bare name → `deviceName`
-	return matchField('deviceName', target, peers);
+	return { kind: 'not-found' };
 }
 
 type FieldHit = { value: string; clientID: number; state: AwarenessState };

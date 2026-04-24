@@ -1,4 +1,4 @@
-import { readFileSync, readSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -7,13 +7,9 @@ import {
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 export type ParseInputOptions = {
-	/** Positional argument (inline JSON or @file) */
+	/** Positional argument: inline JSON, or `@file.json` (curl convention) */
 	positional?: string;
-	/** --file flag value */
-	file?: string;
-	/** Whether stdin has data (process.stdin.isTTY === false) */
-	hasStdin?: boolean;
-	/** Stdin content (if hasStdin) */
+	/** Stdin content (undefined = no piped input) */
 	stdinContent?: string;
 };
 
@@ -62,13 +58,13 @@ function readJsonFile<T>(filePath: string): Result<T, ParseInputError> {
 
 /**
  * Parse JSON input from various sources.
- * Priority: positional > --file > stdin. Callers must check that at least
- * one source is populated; if all are empty, returns `Ok(undefined as T)`.
+ * Priority: positional (inline JSON or `@file`) > stdin.
+ * Returns `Ok(undefined as T)` when no source is populated.
  */
 export function parseJsonInput<T = unknown>(
 	options: ParseInputOptions,
 ): Result<T, ParseInputError> {
-	// 1. Check positional (could be inline JSON or @file)
+	// 1. Positional: inline JSON, or `@file.json` (curl convention).
 	if (options.positional) {
 		if (options.positional.startsWith('@')) {
 			const filePath = options.positional.slice(1);
@@ -77,39 +73,61 @@ export function parseJsonInput<T = unknown>(
 		return parseJson<T>(options.positional);
 	}
 
-	// 2. Check --file flag
-	if (options.file) {
-		return readJsonFile<T>(options.file);
-	}
-
-	// 3. Check stdin
-	if (options.hasStdin && options.stdinContent) {
+	// 2. Stdin.
+	if (options.stdinContent) {
 		return parseJson<T>(options.stdinContent);
 	}
 
 	return Ok(undefined as T);
 }
 
+const STDIN_FIRST_BYTE_TIMEOUT_MS = 100;
+
 /**
- * Read stdin content synchronously (for CLI use).
- * Returns undefined if stdin is a TTY (interactive).
+ * Read piped stdin content (for CLI use). Returns undefined when:
+ *   - stdin is a TTY (interactive terminal — no pipe)
+ *   - no data arrives within `STDIN_FIRST_BYTE_TIMEOUT_MS` (handles the
+ *     pathological case where `isTTY` reports false but no writer is
+ *     actually connected, e.g. some CI/Docker TTY-allocation shapes —
+ *     a naive blocking read hangs forever in that scenario).
+ *
+ * Once the first byte arrives we read to EOF without a further timeout,
+ * so large piped payloads are not truncated.
  */
-export function readStdinSync(): string | undefined {
+export async function readStdin(): Promise<string | undefined> {
 	if (process.stdin.isTTY) return undefined;
 
+	const reader = Bun.stdin.stream().getReader();
 	try {
-		const chunks: Buffer[] = [];
-		const fd = 0; // stdin file descriptor
-		const buf = Buffer.alloc(1024);
-		let bytesRead: number;
+		const firstChunk = await Promise.race([
+			reader.read(),
+			new Promise<{ done: true; value?: undefined }>((resolve) =>
+				setTimeout(
+					() => resolve({ done: true }),
+					STDIN_FIRST_BYTE_TIMEOUT_MS,
+				),
+			),
+		]);
+		if (firstChunk.done || !firstChunk.value) return undefined;
 
-		// biome-ignore lint/suspicious/noAssignInExpressions: idiomatic read loop
-		while ((bytesRead = readSync(fd, buf, 0, buf.length, null)) > 0) {
-			chunks.push(buf.subarray(0, bytesRead));
+		const chunks: Uint8Array[] = [firstChunk.value];
+		while (true) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			if (value) chunks.push(value);
 		}
 
-		return Buffer.concat(chunks).toString('utf-8').trim() || undefined;
+		const total = chunks.reduce((n, c) => n + c.length, 0);
+		const buf = new Uint8Array(total);
+		let offset = 0;
+		for (const c of chunks) {
+			buf.set(c, offset);
+			offset += c.length;
+		}
+		return new TextDecoder().decode(buf).trim() || undefined;
 	} catch {
 		return undefined;
+	} finally {
+		reader.releaseLock();
 	}
 }

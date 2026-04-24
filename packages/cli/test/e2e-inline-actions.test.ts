@@ -190,23 +190,6 @@ describe('epicenter run (subprocess)', () => {
 		}
 	});
 
-	test('accepts --file flag', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'epicenter-cli-'));
-		const path = join(dir, 'input.json');
-		writeFileSync(path, '{"value":13}');
-		try {
-			const { stdout, exitCode } = await runCli([
-				'run',
-				'counter.set',
-				'--file',
-				path,
-			]);
-			expect(exitCode).toBe(0);
-			expect(stdout.trim()).toBe('13');
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
 
 	test('accepts JSON piped via stdin', async () => {
 		const proc = Bun.spawn(['bun', 'run', BIN_PATH, 'run', 'counter.set'], {
@@ -225,11 +208,11 @@ describe('epicenter run (subprocess)', () => {
 		expect(stdout.trim()).toBe('15');
 	});
 
-	test('rejects --peer-timeout without --peer', async () => {
+	test('rejects --wait without --peer', async () => {
 		const { stderr, exitCode } = await runCli([
 			'run',
 			'counter.get',
-			'--peer-timeout',
+			'--wait',
 			'10000',
 		]);
 		expect(exitCode).not.toBe(0);

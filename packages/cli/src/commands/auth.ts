@@ -5,24 +5,35 @@
  * the user approves in a browser, and the CLI picks up the session automatically.
  *
  * All sessions stored in the unified auth store at `$EPICENTER_HOME/auth/sessions.json`.
+ *
+ * Server URL is a positional with a default (`https://api.epicenter.so`).
+ * Self-hosters pass their own URL; everyone else omits it.
  */
 
 import type { Argv, CommandModule } from 'yargs';
 import { createAuthApi } from '../auth/api';
 import { createSessionStore } from '../primitives/session-store';
 
+const DEFAULT_SERVER = 'https://api.epicenter.so';
+
 /**
  * Create the `auth` command group.
  *
  * @example
  * ```bash
- * epicenter auth login --server https://api.epicenter.so
- * epicenter auth logout
+ * epicenter auth login                             # defaults to api.epicenter.so
+ * epicenter auth login https://self-hosted.com     # self-hosted override
  * epicenter auth status
+ * epicenter auth logout
  * ```
  */
 export function createAuthCommand(): CommandModule {
 	const sessions = createSessionStore();
+
+	const serverPositional = {
+		type: 'string' as const,
+		describe: `Server URL (default: ${DEFAULT_SERVER})`,
+	};
 
 	return {
 		command: 'auth <subcommand>',
@@ -30,16 +41,14 @@ export function createAuthCommand(): CommandModule {
 		builder: (yargs: Argv) =>
 			yargs
 				.command({
-					command: 'login',
+					command: 'login [server]',
 					describe: 'Log in to an Epicenter server (opens browser)',
-					builder: (y: Argv) =>
-						y.option('server', {
-							type: 'string',
-							description: 'Server URL (e.g. https://api.epicenter.so)',
-							demandOption: true,
-						}),
+					builder: (y: Argv) => y.positional('server', serverPositional),
 					handler: async (argv) => {
-						const serverUrl = String(argv.server);
+						const serverUrl =
+							typeof argv.server === 'string' && argv.server.length > 0
+								? argv.server
+								: DEFAULT_SERVER;
 						const api = createAuthApi(serverUrl);
 						const codeData = await api.requestDeviceCode();
 
@@ -91,13 +100,12 @@ export function createAuthCommand(): CommandModule {
 					},
 				} satisfies CommandModule)
 				.command({
-					command: 'logout',
-					describe: 'Log out from an Epicenter server',
+					command: 'logout [server]',
+					describe: 'Log out from an Epicenter server (default: most recent session)',
 					builder: (y: Argv) =>
-						y.option('server', {
+						y.positional('server', {
 							type: 'string',
-							description:
-								'Server URL to log out from (default: most recent session)',
+							describe: 'Server URL (default: most recent session)',
 						}),
 					handler: async (argv) => {
 						const server =
@@ -124,12 +132,12 @@ export function createAuthCommand(): CommandModule {
 					},
 				} satisfies CommandModule)
 				.command({
-					command: 'status',
-					describe: 'Show current authentication status',
+					command: 'status [server]',
+					describe: 'Show current authentication status (default: most recent session)',
 					builder: (y: Argv) =>
-						y.option('server', {
+						y.positional('server', {
 							type: 'string',
-							description: 'Server URL to check (default: most recent session)',
+							describe: 'Server URL (default: most recent session)',
 						}),
 					handler: async (argv) => {
 						const server =

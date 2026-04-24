@@ -7,11 +7,11 @@ Syncs the Opensidian workspace from the Epicenter API down to local files. The d
 Log in to the Epicenter API first:
 
 ```bash
-# Production
-epicenter auth login --server https://api.epicenter.so
+# Production (server URL defaults to https://api.epicenter.so)
+epicenter auth login
 
 # Local dev (requires apps/api running)
-bun epicenter auth login --server http://localhost:8787
+bun epicenter auth login http://localhost:8787
 ```
 
 This stores your session (access token + encryption keys) at `~/.epicenter/auth/sessions.json`.

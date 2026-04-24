@@ -20,14 +20,14 @@
  *     not a directory.
  *   - **clientID is session-local.** Re-randomized on every `new Y.Doc()`,
  *     so numeric clientIDs are stable within one presence session only.
- *     Scripts that need stable addressing should prefer `deviceName=...`
- *     or a `k=v` field match, not numeric IDs.
- *   - **deviceName is a convention, not a contract.** The CLI's bare-name
- *     `--peer myMacbook` form assumes peers publish `deviceName` into
- *     awareness via `attachAwareness({ deviceName: ... })`. If no peer does,
- *     use `--peer field=value` against whatever field *is* published.
- *     Persistent peer identity (across reconnects) belongs in a shared Y.Map
- *     on the doc, not in awareness.
+ *   - **No field-name convention.** The CLI picks no default identity
+ *     field. Bundles that want stable addressing across reconnects
+ *     persist an identifier locally (e.g. localStorage) and publish it
+ *     into awareness under whatever name they choose (`deviceName`,
+ *     `hostname`, `userId`, …). Callers address it explicitly as
+ *     `--peer <field>=<value>`. Persistent peer identity (as opposed to
+ *     session presence) belongs in a shared Y.Map on the doc, not in
+ *     awareness.
  */
 import type { SyncAttachment } from '@epicenter/workspace';
 

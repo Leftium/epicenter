@@ -11,7 +11,7 @@
  * by hand-running the command against a playground config.
  */
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { emitMissError, emitRpcError } from './run';
+import { emitMissError, emitRpcError } from './emit-peer-errors';
 
 function captureErrors() {
 	const lines: string[] = [];

@@ -14,7 +14,13 @@
  *     `.raw`). Both shapes must work.
  */
 import type { SyncAttachment } from '@epicenter/workspace';
-import type { AwarenessState } from './find-peer';
+
+/**
+ * Shape the CLI sees for a peer's awareness state. Users' bundles may
+ * attach a typed `Awareness<TDefs>` wrapper, but the CLI is bundle-agnostic
+ * so it works with the most general shape: an arbitrary string-keyed record.
+ */
+export type AwarenessState = Record<string, unknown>;
 
 export function getSync(handle: unknown): SyncAttachment | undefined {
 	if (handle == null || typeof handle !== 'object') return undefined;

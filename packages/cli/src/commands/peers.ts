@@ -12,8 +12,11 @@
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
 import { dirFromArgv, dirOption } from '../util/dir-option';
-import type { AwarenessState } from '../util/find-peer';
-import { getSync, readPeers } from '../util/handle-attachments';
+import {
+	getSync,
+	readPeers,
+	type AwarenessState,
+} from '../util/handle-attachments';
 import { resolveEntry } from '../util/resolve-entry';
 import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
 

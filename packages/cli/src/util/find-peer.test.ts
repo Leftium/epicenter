@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { findPeer, type AwarenessState } from './find-peer';
+import { findPeer } from './find-peer';
+import type { AwarenessState } from './handle-attachments';
 
 function peersOf(
 	rows: Array<[number, AwarenessState]>,

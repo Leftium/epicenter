@@ -22,7 +22,7 @@
  * `--peer 42` with a peer named `deviceName: "42"` still routes to numeric
  * clientID mode. Use `--peer deviceName=42` to disambiguate.
  */
-export type AwarenessState = Record<string, unknown>;
+import type { AwarenessState } from './handle-attachments';
 
 export type FindPeerResult =
 	| { kind: 'found'; clientID: number }

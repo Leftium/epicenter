@@ -12,6 +12,7 @@ import {
 	attachBroadcastChannel,
 	attachEncryption,
 	attachIndexedDb,
+	type Document,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { session } from '$lib/auth';
@@ -54,7 +55,7 @@ export function openZhongwen() {
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	};
+	} satisfies Document;
 }
 
 export const workspace = openZhongwen();

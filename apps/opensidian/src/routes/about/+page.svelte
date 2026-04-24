@@ -90,7 +90,7 @@ export const fs = attachYjsFileSystem(workspace.tables.files, fileContentDocs);`
 			id: 'define-document',
 			line: "defineDocument('opensidian', () => { ... })",
 			explanation:
-				'Declares the document factory—the function runs once per open() call and returns a DocumentBundle: an id, a Y.Doc, attached tables, and lifecycle hooks. Cached by guid so the same open() yields the same bundle.',
+				'Declares the document factory—the function runs once per open() call and returns a Document: an id, a Y.Doc, attached tables, and lifecycle hooks. Cached by guid so the same open() yields the same bundle.',
 		},
 		{
 			id: 'attach-tables',

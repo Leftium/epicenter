@@ -1,6 +1,6 @@
 /**
  * Minimal fixture — one document handle with inline `defineQuery` / `defineMutation`
- * nodes. No sqlite, sync, or encryption: the `DocumentBundle` contract is
+ * nodes. No sqlite, sync, or encryption: the `Document` contract is
  * just `{ ydoc, [Symbol.dispose] }` and that is all this fixture needs.
  *
  * Used by `test/e2e-inline-actions.test.ts` to exercise dot-path resolution

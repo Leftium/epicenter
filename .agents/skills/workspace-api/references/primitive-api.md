@@ -74,7 +74,7 @@ For workspaces that need at-rest encryption, the coordinator owns the sibling at
 
 | Helper | Purpose |
 |---|---|
-| `attachEncryption(ydoc)` | Per-ydoc encryption coordinator. Returns `{ applyKeys, register, attachTable, attachTables, attachKv, whenDisposed }`. `whenDisposed` is an attachment-level barrier — useful to consumers that want an explicit teardown gate; the `DocumentBundle` itself no longer carries one. |
+| `attachEncryption(ydoc)` | Per-ydoc encryption coordinator. Returns `{ applyKeys, register, attachTable, attachTables, attachKv, whenDisposed }`. `whenDisposed` is an attachment-level barrier — useful to consumers that want an explicit teardown gate; the `Document` itself no longer carries one. |
 | `encryption.attachTable(ydoc, name, def)` | Singular encrypted table; self-registers with the coordinator. |
 | `encryption.attachTables(ydoc, defs)` | Batch sugar over `encryption.attachTable`. |
 | `encryption.attachKv(ydoc, defs)` | Encrypted KV singleton. |
@@ -154,7 +154,7 @@ export const entryContentDocs = createDocumentFactory((entryId: EntryId) => {
     content,
     idb,
     sync,
-    // Optional typed field on `DocumentBundle` (`Promise<unknown>`).
+    // Optional typed field on `Document` (`Promise<unknown>`).
     // Expose whatever "ready" means for this bundle. For a multi-step
     // cascade: `Promise.all([persistence.whenLoaded,
     // unlock.whenChecked, sync.whenConnected])` — the tuple-typed
@@ -206,7 +206,7 @@ async function readInstructions(id: SkillId): Promise<string> {
 }
 ```
 
-`whenReady` is an **optional typed field** on `DocumentBundle` (`Promise<unknown>`). The builder composes it from whatever attachment signals matter; consumers `await handle.whenReady` for a single barrier. The framework neither reads nor requires it — builders with nothing async to wait on simply omit it. Consumers can pick the gate that fits at the call site:
+`whenReady` is an **optional typed field** on `Document` (`Promise<unknown>`). The builder composes it from whatever attachment signals matter; consumers `await handle.whenReady` for a single barrier. The framework neither reads nor requires it — builders with nothing async to wait on simply omit it. Consumers can pick the gate that fits at the call site:
 
 ```typescript
 using h = docs.open(id);
@@ -224,7 +224,7 @@ docs.close(id);
 await h.idb.whenDisposed;     // attachment-level, not bundle-level
 ```
 
-`whenReady` is the one typed-optional on `DocumentBundle`. `whenDisposed` remains a builder-level convention — expose `bundle.whenDisposed` explicitly if you need a teardown barrier, or reach into a specific attachment (`h.idb.whenDisposed`).
+`whenReady` is the one typed-optional on `Document`. `whenDisposed` remains a builder-level convention — expose `bundle.whenDisposed` explicitly if you need a teardown barrier, or reach into a specific attachment (`h.idb.whenDisposed`).
 
 ## GUID Convention
 

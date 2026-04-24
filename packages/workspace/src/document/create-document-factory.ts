@@ -223,6 +223,16 @@ export type Document = {
 	readonly whenReady?: Promise<unknown>;
 	readonly whenDisposed?: Promise<unknown>;
 	[Symbol.dispose](): void;
+	/**
+	 * Builders attach whatever they need (tables, kv, sync, actions, …); the
+	 * framework only reads `ydoc`, `whenReady`, `whenDisposed`, and
+	 * `[Symbol.dispose]`. The index signature lets bundle literals carry
+	 * extras without falling foul of excess-property checks at
+	 * `satisfies Document` sites. Callers reading through
+	 * `DocumentHandle<Document>` see extras as `unknown` and must narrow —
+	 * exactly the right ergonomics for a structural contract.
+	 */
+	readonly [key: string]: unknown;
 };
 
 /**

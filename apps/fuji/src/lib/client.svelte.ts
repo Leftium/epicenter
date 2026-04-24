@@ -18,6 +18,7 @@ import {
 	attachIndexedDb,
 	attachSync,
 	toWsUrl,
+	type Document,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createEntryContentDocs } from '$lib/entry-content-docs';
@@ -91,7 +92,7 @@ export function openFuji() {
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	};
+	} satisfies Document;
 }
 
 export const workspace = openFuji();

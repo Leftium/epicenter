@@ -10,6 +10,7 @@ import { type } from 'arktype';
 import {
 	attachKv,
 	attachTables,
+	type Document,
 } from '@epicenter/workspace';
 import { defineKv, defineTable } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -348,7 +349,7 @@ export function openReddit() {
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	};
+	} satisfies Document;
 }
 
 export const redditWorkspace = openReddit();

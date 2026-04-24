@@ -199,7 +199,7 @@ export {
 export {
 	createDocumentFactory,
 	isDocumentHandle,
-	type DocumentBundle,
+	type Document,
 	type DocumentFactory,
 	type DocumentHandle,
 } from './document/create-document-factory.js';

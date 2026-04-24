@@ -9,6 +9,7 @@
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
+	type Document,
 } from '@epicenter/workspace';
 import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -41,13 +42,11 @@ export function openWhispering() {
 		encryption,
 		idb,
 		batch: (fn: () => void) => ydoc.transact(fn),
-		whenReady: Promise.all([idb.whenLoaded, recordingsFs.whenFlushed]).then(
-			() => {},
-		),
+		whenReady: Promise.all([idb.whenLoaded, recordingsFs.whenFlushed]),
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	};
+	} satisfies Document;
 }
 
 export const workspace = openWhispering();

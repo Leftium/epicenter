@@ -192,7 +192,7 @@ When `isFoo(x)` is asking "is this the specific thing my factory returned," use 
 ```typescript
 // Smell — three coincidental properties stand in for identity.
 // Any object that happens to have ydoc + dispose + Symbol.dispose passes.
-function isDocumentHandle(value: unknown): value is DocumentHandle<DocumentBundle> {
+function isDocumentHandle(value: unknown): value is DocumentHandle<Document> {
 	if (value == null || typeof value !== 'object') return false;
 	const record = value as Record<string | symbol, unknown>;
 	return (
@@ -207,7 +207,7 @@ function isDocumentHandle(value: unknown): value is DocumentHandle<DocumentBundl
 // survives module duplication (see "Cross-package brands" below).
 export const DOCUMENT_HANDLE = Symbol.for('epicenter.document-handle');
 
-function isDocumentHandle(value: unknown): value is DocumentHandle<DocumentBundle> {
+function isDocumentHandle(value: unknown): value is DocumentHandle<Document> {
 	return (
 		value != null &&
 		typeof value === 'object' &&

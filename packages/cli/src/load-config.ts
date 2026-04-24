@@ -23,7 +23,7 @@
 
 import {
 	isDocumentHandle,
-	type DocumentBundle,
+	type Document,
 	type DocumentHandle,
 } from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
@@ -46,15 +46,15 @@ export type LoadConfigResult = {
 	 */
 	entries: {
 		name: string;
-		handle: DocumentHandle<DocumentBundle>;
+		handle: DocumentHandle<Document>;
 		actions: ActionIndex;
 	}[];
 	/**
-	 * Release every handle. Calls `.dispose()` on each and awaits both the
-	 * top-level `handle.whenDisposed` barrier AND the optional `sync.whenDisposed`
-	 * attachment barrier, so the CLI exits cleanly after flushing persistence
-	 * and closing sync sockets — regardless of whether the bundle aggregates
-	 * attachment disposal into its own barrier.
+	 * Release every handle. Calls `.dispose()` on each and awaits the
+	 * `sync.whenDisposed` attachment barrier (if present), so the CLI exits
+	 * cleanly after closing sync sockets. Bundle-level disposal barriers are
+	 * not part of the `Document` contract — reach into the specific
+	 * attachment if you need a different gate.
 	 */
 	dispose(): Promise<void>;
 };
@@ -94,11 +94,10 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	return {
 		entries,
 		dispose: async () => {
-			const barriers: Promise<void>[] = [];
+			const barriers: Promise<unknown>[] = [];
 			for (const { handle } of entries) {
 				const sync = getSync(handle);
 				if (sync?.whenDisposed) barriers.push(sync.whenDisposed);
-				if (handle.whenDisposed) barriers.push(handle.whenDisposed);
 				handle.dispose();
 			}
 			await Promise.all(barriers);

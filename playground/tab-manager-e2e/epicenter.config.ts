@@ -5,7 +5,7 @@
  * Reads auth credentials (token + encryption keys) from the CLI session store
  * at `~/.epicenter/auth/sessions.json`—run `epicenter auth login` first.
  *
- * Composes a DocumentBundle via `createDocumentFactory((id) => ...).open(id)` so the
+ * Composes a Document via `createDocumentFactory((id) => ...).open(id)` so the
  * handle carries the `DOCUMENT_HANDLE` brand that `loadConfig` checks for.
  *
  * Usage:

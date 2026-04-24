@@ -17,6 +17,7 @@ import {
 	attachSync,
 	dispatchAction,
 	toWsUrl,
+	type Document,
 } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import * as Y from 'yjs';
@@ -99,7 +100,7 @@ export function openTabManager() {
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	};
+	} satisfies Document;
 
 	/**
 	 * Register this browser installation as a device in the workspace.

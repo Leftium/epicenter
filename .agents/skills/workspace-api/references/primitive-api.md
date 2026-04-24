@@ -35,8 +35,7 @@ function buildMyDoc(id: string) {
     content,
     idb,
     sync,
-    whenReady:    idb.whenLoaded,
-    whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]),
+    whenReady: idb.whenLoaded,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 }
@@ -224,7 +223,7 @@ docs.close(id);
 await h.idb.whenDisposed;     // attachment-level, not bundle-level
 ```
 
-`whenReady` is the one typed-optional on `Document`. `whenDisposed` remains a builder-level convention — expose `bundle.whenDisposed` explicitly if you need a teardown barrier, or reach into a specific attachment (`h.idb.whenDisposed`).
+`whenReady` is the one typed-optional on `Document`. Disposal is fully attachment-driven: each attachment self-registers cleanup on `ydoc.on('destroy')`, and `[Symbol.dispose]()` is synchronous. There's no aggregated bundle-level disposal barrier — callers needing one (tests that close-then-reopen, CLI exit) reach for a specific attachment field at the call site (`await h.idb.whenDisposed`).
 
 ## GUID Convention
 

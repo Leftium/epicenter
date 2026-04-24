@@ -92,7 +92,7 @@ function createX({ log = createLogger('x') }: { log?: Logger } = {}) { ... }
 const log = config.log ?? createLogger('attachSync');
 ```
 
-**Triage**: zero hits in `packages/workspace` and `packages/sync` as of this writing — the codebase is clean here. New `console.*` calls in library code should be refused at PR review.
+**Triage**: this category is verified periodically — the codebase has historically been clean. Treat any hit as a regression and route through `wellcrafted/logger` before merging. New `console.*` in library code should be refused at PR review unless the call site is explicitly a CLI command, test, or benchmark.
 
 ## 5. Exhaustive `never` Checks as Union-Churn Signals
 
@@ -103,6 +103,8 @@ grep -rn ": never\s*=" packages --include="*.ts" -B10
 ```
 
 **Why it matters**: each `never` check is a contract promise — "if this union grows a variant, every consumer with this check will break." That's *good* — it's the type system catching missed cases. But if adding a single variant breaks five different switches, the variants are probably overlapping, the union is too broad, or the same logic is being implemented in too many places.
+
+**Example (justified)**: `packages/cli/src/util/emit-peer-errors.ts:89` exhaustively switches over `RpcError` variants. `RpcError` has well-bounded variants (well under five), the switch is the canonical formatter, and other code routes through it rather than re-implementing. Single point of enforcement, healthy use of the pattern.
 
 **Triage**: count call sites on the discriminated type. If 1-2 switches enforce exhaustiveness, fine. 5+ is a smell — consider:
 

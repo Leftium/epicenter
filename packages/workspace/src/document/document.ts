@@ -124,15 +124,16 @@
  *  sync.whenDisposed   — ditto, per provider
  * ```
  *
- * Builders may aggregate these into a bundle-level `whenReady` as a
- * convention (see Builder contract above). `whenReady` answers exactly
- * one question for consumers: **"can I render the UI yet?"** For editors
- * and other local-first views that answer is `idb.whenLoaded` — render as
- * soon as the user's draft is in memory, regardless of network state.
- * The name is load-bearing for grep-ability and review, but it's a
- * convention — not a contract the framework enforces. Consumers typically
- * consume it via Svelte's `{#await}` block (template-level) rather than
- * `$effect`-plus-flag plumbing.
+ * Builders may aggregate these into the bundle-level `whenReady` slot
+ * (declared optionally on `Document` — see Builder contract above).
+ * `whenReady` answers exactly one question for consumers: **"can I render
+ * the UI yet?"** For editors and other local-first views that answer is
+ * `idb.whenLoaded` — render as soon as the user's draft is in memory,
+ * regardless of network state. The framework declares the typed slot for
+ * ergonomics (CLI / UI consumers get typed access without duck-typing) but
+ * doesn't read or enforce its semantics — what "ready" means is the
+ * builder's call. Consumers typically consume it via Svelte's `{#await}`
+ * block (template-level) rather than `$effect`-plus-flag plumbing.
  *
  * ## Provider teardown
  *

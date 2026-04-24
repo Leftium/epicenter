@@ -1,5 +1,16 @@
 /**
- * `createDocumentFactory` — a minimal refcounted cache for Y.Doc bundles.
+ * `Document` — the structural contract for a Y.Doc bundle, plus the
+ * `createDocumentFactory` cache that hands out refcounted handles to one.
+ *
+ * `Document` is the vocabulary primitive: `{ ydoc, whenReady?, [Symbol.dispose] }`
+ * plus whatever else a builder attaches. Every `open*` builder in the
+ * codebase returns one (typed `satisfies Document`); the rest of the
+ * platform — `WorkspaceGate`, the CLI, materializers, filesystem ops,
+ * migrations — reads through that contract.
+ *
+ * `createDocumentFactory` is the optional cache: pass a builder, get back
+ * `{ open(id), close(id), closeAll() }` that mints refcounted handles by id
+ * with a `gcTime` grace period between last-dispose and teardown.
  *
  * The user owns construction and disposal. The cache owns identity, refcount,
  * and the `gcTime` grace period between last-dispose and actual teardown.
@@ -72,11 +83,11 @@
  *
  * ## Builder contract
  *
- * The builder returns a bundle typed
- * `T extends { ydoc: Y.Doc } & Disposable` — i.e., any object with a
- * `ydoc: Y.Doc` and a synchronous `[Symbol.dispose]()`. Anything else
- * (readiness promises, attachment handles, materializer interfaces) is at
- * the builder's discretion and flows through the handle verbatim:
+ * The builder returns a bundle typed `T extends Document` — i.e., any
+ * object with `ydoc: Y.Doc`, an optional `whenReady?: Promise<unknown>`,
+ * and a synchronous `[Symbol.dispose]()`. Anything else (attachment
+ * handles, materializer interfaces, action factories) is at the builder's
+ * discretion and flows through the handle verbatim:
  *
  * ```ts
  * function buildDoc(id: string) {

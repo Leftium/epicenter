@@ -180,8 +180,7 @@ async function invokeRemote(
 		return;
 	}
 
-	const targetClientId = lastResult.clientID;
-	const peerState = readPeers(entry.handle).get(targetClientId) ?? {};
+	const { clientID: targetClientId, state: peerState } = lastResult;
 	const remaining = Math.max(1, deadline - Date.now());
 	const result = await sync.rpc(targetClientId, actionPath, input, {
 		timeout: remaining,

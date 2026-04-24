@@ -14,7 +14,11 @@ describe('findPeer — numeric / clientID mode', () => {
 			[42, { deviceName: 'myMacbook' }],
 			[188, { deviceName: 'workLaptop' }],
 		]);
-		expect(findPeer('42', peers)).toEqual({ kind: 'found', clientID: 42 });
+		expect(findPeer('42', peers)).toEqual({
+			kind: 'found',
+			clientID: 42,
+			state: { deviceName: 'myMacbook' },
+		});
 	});
 
 	test('numeric miss is not-found — no fuzzy fallback', () => {
@@ -38,6 +42,7 @@ describe('findPeer — k=v explicit field mode', () => {
 		expect(findPeer('deviceName=workLaptop', peers)).toEqual({
 			kind: 'found',
 			clientID: 188,
+			state: { deviceName: 'workLaptop', role: 'prod' },
 		});
 	});
 
@@ -46,6 +51,7 @@ describe('findPeer — k=v explicit field mode', () => {
 		expect(findPeer('deviceName=42', peers)).toEqual({
 			kind: 'found',
 			clientID: 55,
+			state: { deviceName: '42' },
 		});
 	});
 
@@ -54,6 +60,7 @@ describe('findPeer — k=v explicit field mode', () => {
 		expect(findPeer('key=val=with=equals', peers)).toEqual({
 			kind: 'found',
 			clientID: 7,
+			state: { key: 'val=with=equals' },
 		});
 	});
 
@@ -73,6 +80,7 @@ describe('findPeer — bare deviceName mode', () => {
 		expect(findPeer('myMacbook', peers)).toEqual({
 			kind: 'found',
 			clientID: 42,
+			state: { deviceName: 'myMacbook' },
 		});
 	});
 
@@ -116,6 +124,7 @@ describe('findPeer — bare deviceName mode', () => {
 		expect(findPeer('workLaptop', peers)).toEqual({
 			kind: 'found',
 			clientID: 188,
+			state: { deviceName: 'workLaptop' },
 		});
 	});
 

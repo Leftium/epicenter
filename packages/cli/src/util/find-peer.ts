@@ -25,7 +25,7 @@
 import type { AwarenessState } from './handle-attachments';
 
 export type FindPeerResult =
-	| { kind: 'found'; clientID: number }
+	| { kind: 'found'; clientID: number; state: AwarenessState }
 	| { kind: 'case-suggest'; actual: string; clientID: number }
 	| {
 			kind: 'case-ambiguous';
@@ -40,7 +40,8 @@ export function findPeer(
 	// Mode 1 — all digits → clientID
 	if (/^\d+$/.test(target)) {
 		const clientID = Number(target);
-		if (peers.has(clientID)) return { kind: 'found', clientID };
+		const state = peers.get(clientID);
+		if (state !== undefined) return { kind: 'found', clientID, state };
 		return { kind: 'not-found' };
 	}
 
@@ -56,39 +57,52 @@ export function findPeer(
 	return matchField('deviceName', target, peers);
 }
 
+type FieldHit = { value: string; clientID: number; state: AwarenessState };
+
 function matchField(
 	field: string,
 	value: string,
 	peers: Map<number, AwarenessState>,
 ): FindPeerResult {
-	const exact: Array<{ value: string; clientID: number }> = [];
-	const caseMatches: Array<{ value: string; clientID: number }> = [];
+	const exact: FieldHit[] = [];
+	const caseMatches: FieldHit[] = [];
 	const needle = value.toLowerCase();
 
 	for (const [clientID, state] of peers) {
 		const raw = state[field];
 		if (typeof raw !== 'string') continue;
-		if (raw === value) exact.push({ value: raw, clientID });
+		if (raw === value) exact.push({ value: raw, clientID, state });
 		else if (raw.toLowerCase().includes(needle))
-			caseMatches.push({ value: raw, clientID });
+			caseMatches.push({ value: raw, clientID, state });
 	}
 
-	if (exact.length === 1) return { kind: 'found', clientID: exact[0]!.clientID };
+	if (exact.length === 1) {
+		const hit = exact[0]!;
+		return { kind: 'found', clientID: hit.clientID, state: hit.state };
+	}
 	if (exact.length > 1) {
-		return { kind: 'case-ambiguous', matches: exact.sort(byClientID) };
+		return { kind: 'case-ambiguous', matches: exact.sort(byClientID).map(stripState) };
 	}
 
 	if (caseMatches.length === 1) {
+		const hit = caseMatches[0]!;
 		return {
 			kind: 'case-suggest',
-			actual: caseMatches[0]!.value,
-			clientID: caseMatches[0]!.clientID,
+			actual: hit.value,
+			clientID: hit.clientID,
 		};
 	}
 	if (caseMatches.length > 1) {
-		return { kind: 'case-ambiguous', matches: caseMatches.sort(byClientID) };
+		return {
+			kind: 'case-ambiguous',
+			matches: caseMatches.sort(byClientID).map(stripState),
+		};
 	}
 	return { kind: 'not-found' };
+}
+
+function stripState(hit: FieldHit): { value: string; clientID: number } {
+	return { value: hit.value, clientID: hit.clientID };
 }
 
 function byClientID(

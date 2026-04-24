@@ -7,10 +7,16 @@ import { runCommand } from './commands/run';
 /**
  * Create the Epicenter CLI instance.
  *
- * Post-redesign surface (see `specs/20260421T155436-cli-scripting-first-redesign.md`):
- *   - `auth` — manage Epicenter server sessions
- *   - `list` — tree view of runnable actions
- *   - `run`  — invoke a `defineQuery` / `defineMutation` node by dot-path
+ * Introspect and invoke `defineQuery` / `defineMutation` actions in
+ * `epicenter.config.ts`, either locally or on a peer that's online right now.
+ *
+ *   - `auth`  — manage Epicenter server sessions (pre-workspace)
+ *   - `list`  — tree view of runnable actions (local schema is authoritative)
+ *   - `run`   — invoke one by dot-path; `--peer` dispatches over RPC
+ *   - `peers` — enumerate other clients currently online via Yjs awareness
+ *
+ * Specs: `specs/20260421T155436-cli-scripting-first-redesign.md` (base
+ * surface), `specs/20260423T174126-cli-remote-peer-rpc.md` (`peers` + `--peer`).
  */
 export function createCLI() {
 	return {

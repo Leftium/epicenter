@@ -4,8 +4,6 @@
 	import { fromDocument } from '@epicenter/svelte';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { workspace } from '$lib/client.svelte';
-
-	const { fileContentDocs } = workspace;
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
@@ -21,7 +19,7 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	const doc = fromDocument(fileContentDocs, () => fileId);
+	const doc = fromDocument(workspace.fileContentDocs, () => fileId);
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),

@@ -4,8 +4,6 @@ import { toast } from '@epicenter/ui/sonner';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { SvelteSet } from 'svelte/reactivity';
 import { workspace } from '$lib/client.svelte';
-
-const { fs } = workspace;
 import { searchParams } from '$lib/search-params.svelte';
 
 /**
@@ -380,7 +378,7 @@ function createFsState() {
 			await withErrorToast(async () => {
 				const parentPath = parentId ? (state.getPath(parentId) ?? '/') : '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-				await fs.writeFile(path, '');
+				await workspace.fs.writeFile(path, '');
 				toast.success(`Created ${path}`);
 			}, 'Failed to create file');
 		},
@@ -389,7 +387,7 @@ function createFsState() {
 			await withErrorToast(async () => {
 				const parentPath = parentId ? (state.getPath(parentId) ?? '/') : '/';
 				const path = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`;
-				await fs.mkdir(path);
+				await workspace.fs.mkdir(path);
 				if (parentId) expandedIds.add(parentId);
 				toast.success(`Created ${path}/`);
 			}, 'Failed to create folder');
@@ -399,7 +397,7 @@ function createFsState() {
 			await withErrorToast(async () => {
 				const path = state.getPath(id);
 				if (!path) return;
-				await fs.rm(path, { recursive: true });
+				await workspace.fs.rm(path, { recursive: true });
 				if (searchParams.file === id) searchParams.update({ file: null });
 				openFileIds.delete(id);
 				toast.success(`Deleted ${path}`);
@@ -414,7 +412,7 @@ function createFsState() {
 					oldPath.substring(0, oldPath.lastIndexOf('/')) || '/';
 				const newPath =
 					parentPath === '/' ? `/${newName}` : `${parentPath}/${newName}`;
-				await fs.mv(oldPath, newPath);
+				await workspace.fs.mv(oldPath, newPath);
 				toast.success(`Renamed to ${newName}`);
 			}, 'Failed to rename');
 		},
@@ -422,8 +420,8 @@ function createFsState() {
 		/** Cleanup — call from +layout.svelte onDestroy if needed. */
 		async dispose() {
 			filesMap.destroy();
-			fs.index.dispose();
-			fs.dispose();
+			workspace.fs.index.dispose();
+			workspace.fs.dispose();
 		},
 	};
 

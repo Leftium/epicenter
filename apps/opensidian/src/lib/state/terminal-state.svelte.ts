@@ -3,8 +3,6 @@ import { type } from 'arktype';
 import { defineCommand } from 'just-bash';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { workspace } from '$lib/client.svelte';
-
-const { bash, fs } = workspace;
 import { fsState } from '$lib/state/fs-state.svelte';
 
 /**
@@ -55,7 +53,7 @@ function createTerminalState() {
 	// Uses registerCommand() instead of the constructor's customCommands
 	// option to avoid a circular dependency (workspace → fs-state).
 
-	bash.registerCommand(
+	workspace.bash.registerCommand(
 		defineCommand('open', async (args) => {
 			const path = args[0];
 			if (!path)
@@ -64,7 +62,7 @@ function createTerminalState() {
 					stderr: 'Usage: open <path>',
 					exitCode: 1,
 				};
-			const id = fs.lookupId(path);
+			const id = workspace.fs.lookupId(path);
 			if (!id)
 				return {
 					stdout: '',
@@ -154,7 +152,7 @@ function createTerminalState() {
 			historyIndex = -1;
 			const { data: entry } = await tryAsync({
 				try: async () => {
-					const result = await bash.exec(command);
+					const result = await workspace.bash.exec(command);
 					return {
 						type: 'output' as const,
 						stdout: result.stdout,

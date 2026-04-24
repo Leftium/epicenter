@@ -12,7 +12,7 @@
 
 import type { Argv, CommandModule } from 'yargs';
 import { createAuthApi } from '../auth/api';
-import { createSessionStore } from '../primitives/session-store';
+import { createSessionStore } from '../auth/session-store';
 
 const DEFAULT_SERVER = 'https://api.epicenter.so';
 

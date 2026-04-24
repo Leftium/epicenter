@@ -18,7 +18,6 @@ import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
 import { dirFromArgv, dirOption } from '../util/dir-option';
 import { emitMissError, emitRpcError } from '../util/emit-peer-errors';
-import { EXIT } from '../util/exit-codes';
 import { findPeer, type FindPeerResult } from '../util/find-peer';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { getSync, readPeers } from '../util/handle-attachments';
@@ -127,7 +126,7 @@ async function invoke(
 	if (isResult(raw)) {
 		if (raw.error !== null) {
 			outputError(extractErrorMessage(raw.error));
-			process.exitCode = EXIT.RUNTIME;
+			process.exitCode = 2; // runtime error (local Err)
 			return;
 		}
 		output(raw.data, { format });
@@ -180,7 +179,7 @@ async function invokeRemote({
 
 	if (lastResult.kind !== 'found') {
 		emitMissError(peerTarget, lastResult, sawPeers, workspaceArg, waitMs);
-		process.exitCode = EXIT.PEER_MISS;
+		process.exitCode = 3; // peer miss
 		return;
 	}
 
@@ -192,7 +191,7 @@ async function invokeRemote({
 
 	if (result.error !== null) {
 		emitRpcError(result.error, targetClientId, peerState);
-		process.exitCode = EXIT.RUNTIME;
+		process.exitCode = 2; // runtime error (remote RPC)
 		return;
 	}
 	output(result.data, { format });

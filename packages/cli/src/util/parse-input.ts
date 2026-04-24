@@ -81,53 +81,18 @@ export function parseJsonInput<T = unknown>(
 	return Ok(undefined as T);
 }
 
-const STDIN_FIRST_BYTE_TIMEOUT_MS = 100;
-
 /**
- * Read piped stdin content (for CLI use). Returns undefined when:
- *   - stdin is a TTY (interactive terminal — no pipe)
- *   - no data arrives within `STDIN_FIRST_BYTE_TIMEOUT_MS` (handles the
- *     pathological case where `isTTY` reports false but no writer is
- *     actually connected, e.g. some CI/Docker TTY-allocation shapes —
- *     a naive blocking read hangs forever in that scenario).
+ * Read piped stdin content (for CLI use). Returns undefined when stdin
+ * is a TTY (interactive terminal — no pipe).
  *
- * Once the first byte arrives we read to EOF without a further timeout,
- * so large piped payloads are not truncated.
+ * Caveat: if stdin reports non-TTY but no writer is connected (pathological
+ * CI/Docker TTY-allocation shapes), `Bun.stdin.text()` blocks until the OS
+ * closes the fd. This is rare; the fix is environmental (redirect
+ * `</dev/null`) rather than adding per-invocation latency for the common
+ * healthy-pipe case.
  */
 export async function readStdin(): Promise<string | undefined> {
 	if (process.stdin.isTTY) return undefined;
-
-	const reader = Bun.stdin.stream().getReader();
-	try {
-		const firstChunk = await Promise.race([
-			reader.read(),
-			new Promise<{ done: true; value?: undefined }>((resolve) =>
-				setTimeout(
-					() => resolve({ done: true }),
-					STDIN_FIRST_BYTE_TIMEOUT_MS,
-				),
-			),
-		]);
-		if (firstChunk.done || !firstChunk.value) return undefined;
-
-		const chunks: Uint8Array[] = [firstChunk.value];
-		while (true) {
-			const { value, done } = await reader.read();
-			if (done) break;
-			if (value) chunks.push(value);
-		}
-
-		const total = chunks.reduce((n, c) => n + c.length, 0);
-		const buf = new Uint8Array(total);
-		let offset = 0;
-		for (const c of chunks) {
-			buf.set(c, offset);
-			offset += c.length;
-		}
-		return new TextDecoder().decode(buf).trim() || undefined;
-	} catch {
-		return undefined;
-	} finally {
-		reader.releaseLock();
-	}
+	const text = await Bun.stdin.text();
+	return text.trim() || undefined;
 }

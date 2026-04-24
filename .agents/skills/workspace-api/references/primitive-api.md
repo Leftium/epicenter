@@ -154,9 +154,11 @@ export const entryContentDocs = createDocumentFactory((entryId: EntryId) => {
     content,
     idb,
     sync,
-    // Builder-convention readiness gate — `DocumentBundle` itself no
-    // longer requires `whenReady`. Expose it so reactive/imperative
-    // consumers can await at the call site.
+    // Optional typed field on `DocumentBundle` (`Promise<unknown>`).
+    // Expose whatever "ready" means for this bundle. For a multi-step
+    // cascade: `Promise.all([persistence.whenLoaded,
+    // unlock.whenChecked, sync.whenConnected])` — the tuple-typed
+    // Promise assigns directly, no `.then(() => undefined)` needed.
     whenReady: idb.whenLoaded,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
@@ -204,7 +206,7 @@ async function readInstructions(id: SkillId): Promise<string> {
 }
 ```
 
-`whenReady` is an **attachment-level convention** exposed by the builder — not a framework contract. Builders that compose a real readiness gate expose it under that name for grep-ability and code-review purposes; builders with nothing async to wait on expose nothing. Consumers pick the gate that fits at the call site:
+`whenReady` is an **optional typed field** on `DocumentBundle` (`Promise<unknown>`). The builder composes it from whatever attachment signals matter; consumers `await handle.whenReady` for a single barrier. The framework neither reads nor requires it — builders with nothing async to wait on simply omit it. Consumers can pick the gate that fits at the call site:
 
 ```typescript
 using h = docs.open(id);
@@ -222,7 +224,7 @@ docs.close(id);
 await h.idb.whenDisposed;     // attachment-level, not bundle-level
 ```
 
-The `DocumentBundle` itself no longer carries `whenReady` or `whenDisposed` — both are attachment-level conventions that consumers await on their own terms.
+`whenReady` is the one typed-optional on `DocumentBundle`. `whenDisposed` remains a builder-level convention — expose `bundle.whenDisposed` explicitly if you need a teardown barrier, or reach into a specific attachment (`h.idb.whenDisposed`).
 
 ## GUID Convention
 

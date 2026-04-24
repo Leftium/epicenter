@@ -114,7 +114,7 @@ const opensidianFactory = createDocumentFactory((id: string) => {
 		persistence.whenLoaded,
 		unlock.whenChecked,
 		sync.whenConnected,
-	]).then(() => {});
+	]);
 
 	const markdown = attachMarkdownMaterializer(ydoc, {
 		dir: MARKDOWN_DIR,

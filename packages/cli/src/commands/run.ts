@@ -84,7 +84,7 @@ async function invoke(
 ): Promise<void> {
 	const actionPath = String(argv.action);
 
-	if (entry.handle.whenReady) await entry.handle.whenReady;
+	await entry.handle.whenReady;
 
 	const action = entry.actions.get(actionPath);
 	if (!action) {
@@ -159,8 +159,6 @@ async function invokeRemote({
 			`Workspace "${entry.name}" has no sync attachment; --peer requires sync.`,
 		);
 	}
-
-	if (sync.whenConnected) await sync.whenConnected;
 
 	const deadline = Date.now() + waitMs;
 	let lastResult: FindPeerResult = { kind: 'not-found' };

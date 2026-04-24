@@ -193,18 +193,27 @@ export type DocumentFactoryError = InferErrors<typeof DocumentFactoryError>;
  *   `closeAll()` and by refcount→0 after `gcTime` elapses. Typically just
  *   `ydoc.destroy()`; attachments self-wire via `ydoc.on('destroy')` and run
  *   their async cleanup in the background.
+ * - `whenReady?: Promise<unknown>` — **optional** readiness barrier the
+ *   builder may expose. Composed by the builder from whatever attachment
+ *   signals (`persistence.whenLoaded`, `unlock.whenChecked`, `sync.whenConnected`,
+ *   …) define "ready" for this bundle. The framework neither reads nor
+ *   requires it — it's a typed extension point consumers can `await` when
+ *   they want a single barrier, instead of awaiting individual attachment
+ *   signals. The `unknown` type means `Promise.all([...])` is directly
+ *   assignable without a `.then(() => undefined)` tail; the resolved value
+ *   is discarded at await sites.
  *
- * Readiness and teardown barriers are **not** part of this contract — if a
- * builder exposes them (e.g. `whenReady`, `whenDisposed`, `idb.whenLoaded`)
- * that's a builder-level convention consumers can await at the call site.
- * The framework neither reads nor requires them.
+ * Other readiness / teardown signals (`whenDisposed`, `idb.whenLoaded`,
+ * etc.) remain builder-level conventions — expose them where they help
+ * consumers, but they aren't part of the contract.
  *
  * This is the vocabulary-tier shape for documents, same stratum as `Table`,
  * `Kv`, and `Awareness`. Exported for authors writing custom builders or
  * typing bundles outside a `createDocumentFactory` call.
  */
 export type DocumentBundle = {
-	ydoc: Y.Doc;
+	readonly ydoc: Y.Doc;
+	readonly whenReady?: Promise<unknown>;
 	[Symbol.dispose](): void;
 };
 

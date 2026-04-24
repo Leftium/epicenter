@@ -203,10 +203,7 @@ async function resolveInput(
 			? (argv.input as string)
 			: undefined;
 	const stdinContent = await readStdin();
-
-	const { data, error } = parseJsonInput({ positional, stdinContent });
-	if (error) throw new Error(error.message);
-	return data;
+	return parseJsonInput({ positional, stdinContent });
 }
 
 function emitActionList(

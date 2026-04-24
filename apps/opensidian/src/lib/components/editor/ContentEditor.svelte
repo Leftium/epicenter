@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { autocompletion } from '@codemirror/autocomplete';
 	import type { FileId } from '@epicenter/filesystem';
+	import { fromDocument } from '@epicenter/svelte';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { workspace } from '$lib/client.svelte';
 
@@ -21,9 +22,9 @@
 	);
 
 	// Parent (ContentPanel) wraps in {#key activeFileId}, so fileId is stable
-	// for this instance's lifetime. Open once, dispose on unmount.
-	const handle = fileContentDocs.open(fileId);
-	$effect(() => () => handle.dispose());
+	// for this instance's lifetime. `fromDocument` opens on mount and disposes
+	// on unmount.
+	const doc = fromDocument(fileContentDocs, () => fileId);
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
@@ -54,13 +55,13 @@
 	IDB replay and can corrupt the timeline (phantom text entry alongside
 	the real stored entries).
 -->
-{#await handle.whenReady}
+{#await doc.current.whenReady}
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />
 	</div>
 {:then}
 	<CodeMirrorEditor
-		ytext={handle.content.asText()}
+		ytext={doc.current.content.asText()}
 		{extensions}
 		{filename}
 	/>

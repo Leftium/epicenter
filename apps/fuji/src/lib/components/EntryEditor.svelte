@@ -10,6 +10,7 @@
 	import * as StarRating from '@epicenter/ui/star-rating';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import { fromDocument } from '@epicenter/svelte';
 	import { DateTimeString } from '@epicenter/workspace';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
@@ -39,11 +40,10 @@
 	// to remount on navigation, so entry.id never changes within an instance.
 	const id = entry.id;
 
-	const contentDoc = entryContentDocs.open(id);
-
-	// Dispose the handle on unmount. Refcount grace-period idles the socket
-	// if nothing else reopens the same id within gcTime.
-	$effect(() => () => contentDoc.dispose());
+	// `fromDocument` opens the handle on mount and disposes on unmount.
+	// Refcount grace-period idles the socket if nothing else reopens the
+	// same id within gcTime.
+	const contentDoc = fromDocument(entryContentDocs, () => id);
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);
@@ -165,13 +165,13 @@
 	</div>
 
 	<!-- Editor body -->
-	{#await contentDoc.whenReady}
+	{#await contentDoc.current.whenReady}
 		<div class="flex flex-1 items-center justify-center">
 			<Spinner class="size-5 text-muted-foreground" />
 		</div>
 	{:then}
 		<ProseMirrorEditor
-			yxmlfragment={contentDoc.body.binding}
+			yxmlfragment={contentDoc.current.body.binding}
 			onWordCountChange={(count) => (wordCount = count)}
 		/>
 	{/await}

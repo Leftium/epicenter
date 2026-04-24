@@ -31,7 +31,7 @@
 			? [
 					sharedLinkDecorations,
 					wikilinkAutocomplete({
-						workspaceId: workspace.id,
+						workspaceId: workspace.ydoc.guid,
 						tableName: 'files',
 						getFiles: () =>
 							workspace.tables.files

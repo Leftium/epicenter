@@ -202,7 +202,7 @@ export {
 	type Document,
 	type DocumentFactory,
 	type DocumentHandle,
-} from './document/create-document-factory.js';
+} from './document/document.js';
 export { defineTable } from './document/define-table.js';
 export { defineKv } from './document/define-kv.js';
 export { docGuid } from './document/doc-guid.js';

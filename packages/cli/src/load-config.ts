@@ -36,8 +36,13 @@ export type LoadConfigResult = {
 	/**
 	 * One record per named export that resolves to an opened `DocumentHandle`.
 	 *
-	 * - `handle` is the bundle-spread surface used for in-process scripting
-	 *   (`entry.handle.tables.foo.read()`, etc.).
+	 * - `handle` is generic `DocumentHandle<Document>` — the runtime brand
+	 *   check + dispose hook the CLI needs to release each handle on exit.
+	 *   Reads through `handle` (e.g. `handle.tables`) resolve to `unknown`
+	 *   because `loadConfig` walks arbitrary configs and can't know each
+	 *   bundle's shape statically. For typed scripting, import the config
+	 *   file directly: `import { workspace } from './epicenter.config.ts'`
+	 *   and use the inferred shape.
 	 * - `actions` is the CLI's canonical dot-path lookup, built via
 	 *   `iterateActions`. The CLI dispatches exclusively through this index —
 	 *   it never walks `handle` looking for actions, which is what keeps

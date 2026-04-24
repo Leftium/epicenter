@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createDocumentFactory } from './create-document-factory.js';
+import { createDocumentFactory } from './document.js';
 import { onLocalUpdate } from './on-local-update.js';
 
 /**

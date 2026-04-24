@@ -196,23 +196,21 @@ export type DocumentFactoryError = InferErrors<typeof DocumentFactoryError>;
  * - `whenReady?: Promise<unknown>` — **optional** readiness barrier the
  *   builder may expose. Composed by the builder from whatever attachment
  *   signals (`persistence.whenLoaded`, `unlock.whenChecked`, `sync.whenConnected`,
- *   …) define "ready" for this bundle.
- * - `whenDisposed?: Promise<unknown>` — **optional** teardown barrier. Same
- *   idea as `whenReady` but for destruction: composed by the builder from
- *   attachment `whenDisposed` signals, awaited by consumers after
- *   `dispose()` / `factory.close(id)` to ensure buffered writes have
- *   flushed and connections have closed.
+ *   …) define "ready" for this bundle. Typed `Promise<unknown>` so
+ *   `Promise.all([...])` is directly assignable — no `.then(() => undefined)`
+ *   tail needed. The framework neither reads nor requires it; it's a typed
+ *   extension point for consumers that want a single aggregate instead of
+ *   awaiting individual attachment signals.
  *
- * Both barriers are typed `Promise<unknown>` so `Promise.all([...])` is
- * directly assignable — no `.then(() => undefined)` tail needed. The
- * resolved value is discarded at await sites. The framework neither reads
- * nor requires either field; they're typed extension points for consumers
- * (CLIs, tests, scripts) that want a single aggregate instead of awaiting
- * individual attachment signals.
+ * Disposal barriers are deliberately NOT part of the contract. Each
+ * attachment self-wires `ydoc.on('destroy')` and runs its async cleanup in
+ * the background; `[Symbol.dispose]()` is synchronous. Callers that need a
+ * teardown gate reach for the specific attachment field at the call site
+ * (`await h.idb.whenDisposed`) — rare in production, occasional in tests.
  *
  * Per-attachment readiness signals (`idb.whenLoaded`, `sync.whenConnected`,
  * etc.) live on the attachment objects the builder returns; the bundle-
- * level barriers are just the optional aggregates.
+ * level `whenReady` is just the optional aggregate.
  *
  * This is the vocabulary-tier shape for documents, same stratum as `Table`,
  * `Kv`, and `Awareness`. Exported for authors writing custom builders or
@@ -221,16 +219,14 @@ export type DocumentFactoryError = InferErrors<typeof DocumentFactoryError>;
 export type Document = {
 	readonly ydoc: Y.Doc;
 	readonly whenReady?: Promise<unknown>;
-	readonly whenDisposed?: Promise<unknown>;
 	[Symbol.dispose](): void;
 	/**
 	 * Builders attach whatever they need (tables, kv, sync, actions, …); the
-	 * framework only reads `ydoc`, `whenReady`, `whenDisposed`, and
-	 * `[Symbol.dispose]`. The index signature lets bundle literals carry
-	 * extras without falling foul of excess-property checks at
-	 * `satisfies Document` sites. Callers reading through
-	 * `DocumentHandle<Document>` see extras as `unknown` and must narrow —
-	 * exactly the right ergonomics for a structural contract.
+	 * framework only reads `ydoc`, `whenReady`, and `[Symbol.dispose]`. The
+	 * index signature lets bundle literals carry extras without falling foul
+	 * of excess-property checks at `satisfies Document` sites. Callers
+	 * reading through `DocumentHandle<Document>` see extras as `unknown` and
+	 * must narrow — exactly the right ergonomics for a structural contract.
 	 */
 	readonly [key: string]: unknown;
 };

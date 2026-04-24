@@ -341,7 +341,6 @@ export function openReddit() {
 	const kv = attachKv(ydoc, redditKv);
 	// no persistence/sync/encryption — in-memory-only importer target
 	return {
-		id,
 		ydoc,
 		tables,
 		kv,

@@ -219,9 +219,6 @@ export function openOpenSidian() {
 	});
 
 	return {
-		get id() {
-			return ydoc.guid;
-		},
 		ydoc,
 		tables,
 		kv,

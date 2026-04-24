@@ -42,9 +42,6 @@ export function openZhongwen() {
 	});
 
 	return {
-		get id() {
-			return ydoc.guid;
-		},
 		ydoc,
 		tables,
 		kv,

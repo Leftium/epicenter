@@ -40,7 +40,7 @@ export function attachRecordingMarkdownFiles(
 	recordings: Table<Recording>,
 	config: {
 		dir: MaybePromise<string>;
-		whenReady: Promise<void>;
+		whenReady: Promise<unknown>;
 	},
 ): RecordingMarkdownFilesAttachment {
 	if (!isTauri()) {

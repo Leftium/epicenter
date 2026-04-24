@@ -75,9 +75,6 @@ export function openFuji() {
 	});
 
 	return {
-		get id() {
-			return ydoc.guid;
-		},
 		ydoc,
 		tables,
 		kv,

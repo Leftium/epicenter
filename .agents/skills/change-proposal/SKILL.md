@@ -19,6 +19,8 @@ Follow [writing-voice](../writing-voice/SKILL.md) for prose sections.
 
 For trivial changes (typo fix, single-line edit, obvious bug), skip this and just do it.
 
+If the change reshapes a product surface (new command, new route, new primary API), state the post-change one-sentence meaning using [one-sentence-test](../one-sentence-test/SKILL.md) alongside the diagrams and diffs. It anchors the proposal to what the product *is*, not just what changed.
+
 ## The Three Tools
 
 ### 1. Before/After Diffs

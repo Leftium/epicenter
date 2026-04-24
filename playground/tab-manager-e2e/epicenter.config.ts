@@ -82,7 +82,7 @@ const tabManagerFactory = createDocumentFactory((id: string) => {
 		persistence.whenLoaded,
 		unlock.whenChecked,
 		sync.whenConnected,
-	]).then(() => {});
+	]);
 
 	const markdown = attachMarkdownMaterializer(
 		{ tables, kv, whenReady },

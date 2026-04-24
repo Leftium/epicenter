@@ -161,7 +161,7 @@ describe('guid stability', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// whenReady — user-owned convention on the bundle (not a framework contract)
+// whenReady — typed optional field on DocumentBundle, composed by the builder
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('whenReady as builder convention', () => {

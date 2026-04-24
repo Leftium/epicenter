@@ -8,14 +8,14 @@ export type IndexedDbAttachment = {
 	 * `y-indexeddb`'s upstream `whenSynced` name. Pair with `sync.whenConnected`
 	 * when you also need remote state.
 	 */
-	whenLoaded: Promise<void>;
+	whenLoaded: Promise<unknown>;
 	clearLocal: () => Promise<void>;
 	/**
 	 * Resolves after the Y.Doc is destroyed AND IndexedDB's async teardown
 	 * completes. Opt-in — tests and CLIs flushing before exit await this.
 	 * Named symmetrically with `whenLoaded` — both are promises.
 	 */
-	whenDisposed: Promise<void>;
+	whenDisposed: Promise<unknown>;
 };
 
 export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
@@ -34,7 +34,7 @@ export function attachIndexedDb(ydoc: Y.Doc): IndexedDbAttachment {
 		}
 	});
 	return {
-		whenLoaded: idb.whenSynced.then(() => {}),
+		whenLoaded: idb.whenSynced,
 		clearLocal: () => idb.clearData(),
 		whenDisposed,
 	};

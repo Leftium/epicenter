@@ -165,7 +165,7 @@ export type EncryptionAttachment = {
 	attachKv<T extends KvDefinitions>(ydoc: Y.Doc, definitions: T): Kv<T>;
 
 	/** Resolves when the Y.Doc is destroyed and every store has been disposed. */
-	readonly whenDisposed: Promise<void>;
+	readonly whenDisposed: Promise<unknown>;
 };
 
 /**

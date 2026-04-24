@@ -69,7 +69,7 @@ const app = defineDocument((id: string) => {
 			idb.whenDisposed,
 			sync.whenDisposed,
 			encryption.whenDisposed,
-		]).then(() => {}),
+		]),
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},

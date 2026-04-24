@@ -9,7 +9,7 @@ export type BroadcastChannelAttachment = {
 	 * Named symmetrically with `attachIndexedDb`'s `whenDisposed` — opt-in signal
 	 * for tests and CLIs flushing before exit.
 	 */
-	whenDisposed: Promise<void>;
+	whenDisposed: Promise<unknown>;
 };
 
 /**

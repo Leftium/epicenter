@@ -132,7 +132,7 @@ export type SyncAttachment = {
 	 * Browser apps generally await `idb.whenLoaded` to render; only CLIs
 	 * and tools that strictly need remote state await `whenConnected`.
 	 */
-	whenConnected: Promise<void>;
+	whenConnected: Promise<unknown>;
 	/** Current connection status. */
 	readonly status: SyncStatus;
 	/** Subscribe to status changes. Returns unsubscribe function. */
@@ -163,7 +163,7 @@ export type SyncAttachment = {
 	 * Resolves after the ydoc is destroyed and the websocket teardown completes.
 	 * Named symmetrically with `whenConnected` — both are promises.
 	 */
-	whenDisposed: Promise<void>;
+	whenDisposed: Promise<unknown>;
 	/**
 	 * Invoke an action on a remote peer in this room.
 	 *

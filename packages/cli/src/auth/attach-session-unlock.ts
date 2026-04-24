@@ -34,7 +34,7 @@ export type SessionUnlockAttachment = {
 	 * Resolves even in anonymous mode (no stored session, no keys to apply)
 	 * — it's a "setup complete" barrier, not a "keys were applied" assertion.
 	 */
-	whenChecked: Promise<void>;
+	whenChecked: Promise<unknown>;
 };
 
 /**

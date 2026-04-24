@@ -13,6 +13,6 @@
  * `attachSqlite`) return richer types that structurally satisfy this shape.
  */
 export type DocPersistence = {
-	whenLoaded: Promise<void>;
-	whenDisposed: Promise<void>;
+	whenLoaded: Promise<unknown>;
+	whenDisposed: Promise<unknown>;
 };

@@ -45,7 +45,7 @@ const app = defineDocument((id: string) => {
 		idb,
 		sync,
 		whenReady: idb.whenLoaded,
-		whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]).then(() => {}),
+		whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed]),
 		[Symbol.dispose]() { ydoc.destroy(); },
 	};
 });

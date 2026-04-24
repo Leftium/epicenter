@@ -14,14 +14,14 @@ export type SqliteAttachment = {
 	 * draft is in memory, edits are safe." Not CRDT convergence. Pair with
 	 * `sync.whenConnected` when you also need remote state.
 	 */
-	whenLoaded: Promise<void>;
+	whenLoaded: Promise<unknown>;
 	clearLocal: () => Promise<void>;
 	/**
 	 * Resolves after the Y.Doc is destroyed AND final compaction + DB close
 	 * complete. Opt-in — tests and CLIs flushing before exit await this.
 	 * Named symmetrically with `whenLoaded` — both are promises.
 	 */
-	whenDisposed: Promise<void>;
+	whenDisposed: Promise<unknown>;
 };
 
 export function attachSqlite(

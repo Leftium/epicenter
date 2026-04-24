@@ -196,24 +196,32 @@ export type DocumentFactoryError = InferErrors<typeof DocumentFactoryError>;
  * - `whenReady?: Promise<unknown>` — **optional** readiness barrier the
  *   builder may expose. Composed by the builder from whatever attachment
  *   signals (`persistence.whenLoaded`, `unlock.whenChecked`, `sync.whenConnected`,
- *   …) define "ready" for this bundle. The framework neither reads nor
- *   requires it — it's a typed extension point consumers can `await` when
- *   they want a single barrier, instead of awaiting individual attachment
- *   signals. The `unknown` type means `Promise.all([...])` is directly
- *   assignable without a `.then(() => undefined)` tail; the resolved value
- *   is discarded at await sites.
+ *   …) define "ready" for this bundle.
+ * - `whenDisposed?: Promise<unknown>` — **optional** teardown barrier. Same
+ *   idea as `whenReady` but for destruction: composed by the builder from
+ *   attachment `whenDisposed` signals, awaited by consumers after
+ *   `dispose()` / `factory.close(id)` to ensure buffered writes have
+ *   flushed and connections have closed.
  *
- * Other readiness / teardown signals (`whenDisposed`, `idb.whenLoaded`,
- * etc.) remain builder-level conventions — expose them where they help
- * consumers, but they aren't part of the contract.
+ * Both barriers are typed `Promise<unknown>` so `Promise.all([...])` is
+ * directly assignable — no `.then(() => undefined)` tail needed. The
+ * resolved value is discarded at await sites. The framework neither reads
+ * nor requires either field; they're typed extension points for consumers
+ * (CLIs, tests, scripts) that want a single aggregate instead of awaiting
+ * individual attachment signals.
+ *
+ * Per-attachment readiness signals (`idb.whenLoaded`, `sync.whenConnected`,
+ * etc.) live on the attachment objects the builder returns; the bundle-
+ * level barriers are just the optional aggregates.
  *
  * This is the vocabulary-tier shape for documents, same stratum as `Table`,
  * `Kv`, and `Awareness`. Exported for authors writing custom builders or
  * typing bundles outside a `createDocumentFactory` call.
  */
-export type DocumentBundle = {
+export type Document = {
 	readonly ydoc: Y.Doc;
 	readonly whenReady?: Promise<unknown>;
+	readonly whenDisposed?: Promise<unknown>;
 	[Symbol.dispose](): void;
 };
 
@@ -276,7 +284,7 @@ export type DocumentHandle<T> = T & {
  */
 export function isDocumentHandle(
 	value: unknown,
-): value is DocumentHandle<DocumentBundle> {
+): value is DocumentHandle<Document> {
 	return (
 		typeof value === 'object' &&
 		value !== null &&
@@ -341,7 +349,7 @@ export type DocumentFactory<Id extends string, T> = {
 	closeAll(): void;
 };
 
-type DocEntry<T extends DocumentBundle> = {
+type DocEntry<T extends Document> = {
 	/** The user's pristine `build()` return value. Never mutated. */
 	bundle: T;
 	openCount: number;
@@ -365,7 +373,7 @@ type DocEntry<T extends DocumentBundle> = {
  */
 export function createDocumentFactory<
 	Id extends string,
-	T extends DocumentBundle,
+	T extends Document,
 >(
 	build: (id: Id) => T,
 	{

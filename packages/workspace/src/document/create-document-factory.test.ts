@@ -73,7 +73,7 @@ describe('open / cache identity', () => {
 describe('minimal bundle type', () => {
 	test('createDocumentFactory compiles and runs with a bundle of just { ydoc, [Symbol.dispose] }', () => {
 		// No whenReady, no whenDisposed, no extra fields. This pins the
-		// contract: DocumentBundle requires nothing beyond ydoc and a sync
+		// contract: Document requires nothing beyond ydoc and a sync
 		// disposer.
 		const factory = createDocumentFactory((id: string) => {
 			const ydoc = new Y.Doc({ guid: id });
@@ -161,7 +161,7 @@ describe('guid stability', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// whenReady — typed optional field on DocumentBundle, composed by the builder
+// whenReady — typed optional field on Document, composed by the builder
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('whenReady as builder convention', () => {
@@ -201,9 +201,7 @@ describe('whenReady as builder convention', () => {
 				ydoc,
 				idbLike,
 				syncLike,
-				whenReady: Promise.all([idbLike.whenLoaded, syncLike.whenLoaded]).then(
-					() => {},
-				),
+				whenReady: Promise.all([idbLike.whenLoaded, syncLike.whenLoaded]),
 				[Symbol.dispose]() {
 					ydoc.destroy();
 				},

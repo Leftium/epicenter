@@ -1,12 +1,20 @@
 # @epicenter/cli
 
-A thin shell around your `epicenter.config.ts`. Three responsibilities:
+> Introspect and invoke `defineQuery` / `defineMutation` actions in your `epicenter.config.ts`, either locally or on a peer that's online right now.
 
-1. Manage authentication sessions with Epicenter servers (`auth`).
-2. Render a tree of the queries and mutations your config exposes (`list`).
-3. Invoke one of them by dot-path (`run`).
+The surface is two verbs × two scopes, plus a pre-workspace session command:
 
-Anything bigger than that — bulk operations, exports, ad-hoc transforms — is a user-authored `.ts` script that imports the config and runs under `bun run`. The config self-loads at import time, so there is nothing for the CLI to bootstrap.
+```
+               Local            Remote
+             ┌─────────┬─────────────────┐
+ Enumerate   │  list   │  peers          │
+ Invoke      │  run    │  run --peer     │
+             └─────────┴─────────────────┘
+
+ Cross-cutting: auth   (server session, pre-workspace)
+```
+
+Every command earns its place against that grid. Anything bigger — bulk operations, exports, ad-hoc transforms — is a user-authored `.ts` script that imports the config and runs under `bun run`. The config self-loads at import time, so there is nothing for the CLI to bootstrap.
 
 ## Installation
 
@@ -22,27 +30,49 @@ Inside this monorepo:
 
 The package exposes the `epicenter` binary via `src/bin.ts`.
 
-## The three commands
+## The four commands
 
 ```bash
-# auth
+# auth — server session (pre-workspace; no --dir or --workspace)
 epicenter auth login --server https://api.epicenter.so
 epicenter auth status
 epicenter auth logout
 
-# introspect
+# list — what can I do here (local schema)
 epicenter list                                      # every export + full tree
 epicenter list tabManager.savedTabs                 # subtree
 epicenter list tabManager.savedTabs.create          # action detail with flag help
 
-# invoke
+# run — do one (locally, or on a remote peer with --peer)
 epicenter run tabManager.savedTabs.list
 epicenter run tabManager.savedTabs.create --title "Hi" --url "https://..."
 epicenter run tabManager.savedTabs.create @payload.json
 cat payload.json | epicenter run tabManager.savedTabs.create
+epicenter run tabManager.savedTabs.list --peer alice-laptop
+
+# peers — who else is online I could ask (remote presence snapshot)
+epicenter peers
+epicenter peers -w tabManager
 ```
 
 `run` resolves the first path segment against the named exports of `epicenter.config.ts`; everything after walks into the underlying document handle until it hits a branded `defineQuery` / `defineMutation` node.
+
+### Local vs. remote
+
+The grid is strict. `list` reads the local config only — your config is authoritative about what actions exist. `peers` reads remote awareness only — you don't appear in your own peer list, it's a snapshot of *other* clients currently online via the sync room. `run` straddles both cells: local by default, remote when `--peer <target>` is set (match by `deviceName`, numeric `clientID`, or `field=value`). `--peer` is an address, not a mode — the verb and schema are unchanged, only the dispatch target moves.
+
+Peer presence has a ~30s liveness window (inherited from Yjs awareness): a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--timeout` expires (default 5s).
+
+### Common flags
+
+| Flag | Alias | Commands | Purpose |
+| ---- | ----- | -------- | ------- |
+| `--dir` | `-C` | `list`, `run`, `peers` | Directory containing `epicenter.config.ts` (default `.`). Mirrors `git -C`. |
+| `--workspace` | `-w` | `list`, `run`, `peers` | Narrow to one export when the config has multiple workspaces. |
+| `--peer` | — | `run` | Dispatch invocation to a live remote peer over the sync room's RPC channel. |
+| `--timeout` | — | `run --peer` | RPC timeout in ms (default 5000). |
+
+`auth` intentionally takes no workspace flags — it manages server sessions, not workspace state.
 
 ## What your `epicenter.config.ts` must export
 
@@ -189,6 +219,8 @@ import {
 } from '@epicenter/cli';
 ```
 
-## Design doc
+## Design docs
 
-See `specs/20260421T155436-cli-scripting-first-redesign.md` for the full rationale — why 11 commands collapsed to 3, the `DocumentBundle` / `DocumentHandle` contract, the design decision to not auto-expose table/kv methods, and the naming conventions.
+- `specs/20260421T155436-cli-scripting-first-redesign.md` — base surface (`auth`, `list`, `run`) and the scripting-first rationale; why 11 commands collapsed to the current grid.
+- `specs/20260423T174126-cli-remote-peer-rpc.md` — the remote column: `peers` + `run --peer` over the sync room's RPC channel.
+- `specs/20260423T010000-cli-json-only-input.md` — `run` takes JSON only; no schema-to-flags bridge.

@@ -7,13 +7,17 @@
 
 ## Overview
 
-The CLI invokes actions locally against opened handles today. This spec extends it to invoke actions on **remote peers** connected to the same Yjs sync room, using the existing RPC-over-Yjs infrastructure.
+The CLI surface is two verbs (enumerate, invoke) × two scopes (local, remote). The local column ships — `list` enumerates actions, `run` invokes them. This spec fills in the remote column:
 
-Adds:
-- `epicenter peers` — enumerate connected peers per workspace
-- `--peer <target>` flag on `run` — invoke actions on a remote peer
+```
+               Local            Remote
+             ┌─────────┬─────────────────┐
+ Enumerate   │  list   │  peers          │  ← this spec
+ Invoke      │  run    │  run --peer     │  ← this spec
+             └─────────┴─────────────────┘
+```
 
-No new primitives. No wire protocol changes. No framework-injected actions. The CLI uses the **local config as the authoritative schema**, and remote peers are pure executors.
+No new primitives. No wire protocol changes. No framework-injected actions. The CLI uses the **local config as the authoritative schema**, and remote peers are pure executors. `--peer` is an address, not a mode — the verb and schema are unchanged, only the dispatch target moves.
 
 ## Motivation
 
@@ -60,42 +64,181 @@ The CLI's local config is the authoritative source for action trees, schemas, an
 └──────────────────────────────────────────────────────────┘
 ```
 
+## Terminal Sessions (the north star)
+
+Everything below exists to make these sessions work.
+
+```bash
+# Discovery — one console.table per workspace
+$ epicenter peers
+
+tabManager
+┌──────────┬────────────┬─────────┬────────────────┐
+│ clientID │ deviceName │ version │ activeTabCount │
+├──────────┼────────────┼─────────┼────────────────┤
+│    42    │ myMacbook  │ 1.5.0   │ 12             │
+│   188    │ workLaptop │ 1.5.0   │ 4              │
+│   203    │ phone      │ 1.4.2   │ 2              │
+└──────────┴────────────┴─────────┴────────────────┘
+
+whispering
+┌──────────┬────────────┐
+│ clientID │ deviceName │
+├──────────┼────────────┤
+│    55    │ myMacbook  │
+└──────────┴────────────┘
+
+# Narrowed — workspace header elided
+$ epicenter peers -w tabManager
+┌──────────┬────────────┬─────────┬────────────────┐
+│ clientID │ deviceName │ version │ activeTabCount │
+├──────────┼────────────┼─────────┼────────────────┤
+│    42    │ myMacbook  │ 1.5.0   │ 12             │
+│   188    │ workLaptop │ 1.5.0   │ 4              │
+│   203    │ phone      │ 1.4.2   │ 2              │
+└──────────┴────────────┴─────────┴────────────────┘
+
+$ epicenter peers
+no peers connected
+
+# Local invocation — unchanged
+$ epicenter run tabs.close --tab-ids 1 2 3
+closed 3 tabs
+
+# Remote — three target modes
+$ epicenter run --peer myMacbook tabs.close --tab-ids 1 2 3       # bare → deviceName
+closed 3 tabs on myMacbook
+
+$ epicenter run --peer deviceName=workLaptop tabs.close ...        # k=v → explicit field
+closed 3 tabs on workLaptop
+
+$ epicenter run --peer 42 tabs.close ...                           # digits → clientID
+closed 3 tabs on clientID 42
+
+# Error ergonomics
+$ epicenter run --peer mymacbook tabs.close
+error: no peer matches "mymacbook"
+did you mean: myMacbook?
+
+$ epicenter run --peer MACBOOK tabs.close
+error: no peer matches "MACBOOK"
+multiple peers match case-insensitively:
+  myMacbook        (42)
+  workMacbook      (188)
+
+$ epicenter run --peer ghost tabs.close
+error: no peer matches "ghost"
+run `epicenter peers` to see connected peers
+
+$ epicenter run --peer ghost tabs.close -w tabManager
+error: no peer matches "ghost" in workspace tabManager
+run `epicenter peers -w tabManager` to see connected peers
+
+$ epicenter run --peer myMacbook tabs.closeAll
+error: ActionNotFound "tabs.closeAll" on myMacbook (42, v1.4.2)
+       local version: 1.5.0
+
+$ epicenter run --peer myMacbook tabs.close --tab-ids 1
+error: timeout after 5000ms waiting for peer myMacbook
+```
+
+All non-success paths exit `1`.
+
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
-| Schema source | Local config only | In practice, the CLI and remote peer run the same workspace package. Local types are authoritative. Drift shows as `ActionNotFound` at dispatch. |
-| Sync connection | Reuse `entry.handle.sync` | Factory already attaches sync with URL, auth, awareness. The CLI is already a peer. |
-| Remote discovery | Not built | Version skew is an edge case. If users hit it, add `__actions__.list` later as a debug tool. |
-| Target matching | `--peer <target>` — clientId / `key=value` / bare string | No mandatory awareness contract. Always falls back to clientId. |
-| Peer enumeration | Dynamic `console.table` over `awareness.getStates()` | No assumed schema. Columns are the union of keys across peers. |
-| Device naming | Convention, not primitive | Apps that want `--peer myMacbook` declare `deviceName: type('string')` in awareness defs and publish on init. Four lines, no new helper. |
-| Flag scope | Per-command (matches `--workspace`, `--dir`) | Not global. |
+| Schema source | Local config only | CLI and peer share the same workspace package in practice. Drift surfaces as `ActionNotFound`. |
+| Sync connection | Reuse `entry.handle.sync` | Factory already attaches sync + auth + awareness via `attachSessionUnlock`. The CLI is already a peer. |
+| Target resolution | Three modes, no overlap | `all digits` → clientID • `contains '='` → field match • `else` → `deviceName` match |
+| Fuzzy fallback | Case-insensitive exact, not Levenshtein | Catches the common typo (capitalization) without risking wrong suggestions |
+| Miss-with-no-suggestion | Point to `epicenter peers` | Teaches the discovery command; no guessing |
+| Peer enumeration | `console.table` per workspace | Homogeneous schema within a workspace; heterogeneous across |
+| Column order | `clientID` first; rest alphabetical | Framework-owned column is anchored; user columns stable |
+| Device naming | Convention, privileged by CLI | Framework stays arbitrary K/V. CLI leans on `deviceName` for bare-match ergonomics. |
+| Settle timing | `run --peer`: bounded poll • `peers`: fixed 500ms window | Target-known case polls deterministically; enumeration is best-effort snapshot |
+| Timeout | 5000ms default, `--timeout <ms>` override | Standard; adjustable per invocation |
+| Exit codes | Flat: `0` success, `1` any failure | Granularity only when a real script needs it |
+| Peer row order | `clientID` ASC | Stable across runs; scripts get determinism |
+| Process exit | Await `sync.whenDisposed` before `process.exit` | Prevents stale awareness on other peers after the CLI returns |
+| CLI identity | Silent by default | `--announce` deferred as non-goal; CLI is ephemeral |
 
-## Non-Goals
+## Target Resolution
 
-- **`list --peer`** — local `list` is authoritative. If the peer's tree differs, that's a version skew problem.
-- **Remote discovery RPC** — out of v1. Add only if real users hit it.
-- **New framework-injected actions** — no `__actions__.list`, no reserved namespace.
-- **`attachDeviceName` primitive** — the convention is trivial enough to inline.
-- **Direct peer-to-peer connection** — all RPC flows through the sync room's DO.
-- **Cross-time data attribution** — apps that need stable `deviceId` for attribution roll their own on top (tab-manager already does).
+```
+--peer 42                    → all digits          → clientID (numeric)
+--peer deviceName=myMacbook  → contains '='        → match that field exactly
+--peer myMacbook             → else                → match `deviceName` exactly
+
+miss paths:
+  exact miss + unique case-insensitive match  → "did you mean: <actual>?"
+  exact miss + multiple case-insensitive hits → "multiple peers match case-insensitively: ..."
+  exact miss + no case-insensitive match      → "run `epicenter peers` to see connected peers"
+
+edge:
+  --peer key=val=with=equals   → split on first '='. key="key", value="val=with=equals"
+  --peer 42 when deviceName="42" → routes to clientID; escape with `--peer deviceName=42`
+```
+
+## Render Rules (`peers`)
+
+```
+1. Group peers by workspace             (framework-owned)
+2. Omit workspace header if -w narrows to one
+3. Within a workspace:
+   - column #1: clientID
+   - remaining columns: union of awareness keys in that workspace, alphabetical
+   - rows: sorted by clientID ASC
+   - empty cells render blank
+4. "no peers connected" when nothing connects within the 500ms settle window
+```
+
+## Settle Timing
+
+| Command | Barrier |
+| --- | --- |
+| `peers` | `await sync.whenConnected; await sleep(500)` then snapshot `awareness.getStates()` |
+| `run --peer <X>` | `await sync.whenConnected`, then poll `awareness.getStates()` until `findPeer(X)` resolves or `--timeout` elapses |
+
+`handle.whenReady` alone is insufficient — it resolves on local IDB load, not remote awareness.
+
+## Process Lifecycle
+
+```
+1. openHandle()                        (factory, attachSync starts supervisor)
+2. await handle.whenReady              (local IDB)
+3. --peer only: await whenConnected + settle
+4. invoke (local dispatchAction or handle.sync.rpc)
+5. print result / error
+6. handle.dispose()                    (sync return; async teardown in background)
+7. await handle.sync.whenDisposed      ← prevents stale awareness on peers
+8. process.exit(code)
+```
+
+## Non-Goals (v1)
+
+- **`list --peer`** — local `list` is authoritative.
+- **Remote discovery RPC / `__actions__.list`** — add when real users hit version skew.
+- **`--all-peers` / `--peer='*'`** — broadcast UX (exit codes, matchers, consistency) needs real use cases before designing.
+- **`attachDeviceName` primitive** — two apps use the pattern today; extract on third adoption.
+- **`createRpcDispatch` helper** — current inline form `rpc: { dispatch: (a, i) => dispatchAction(actions, a, i) }` is self-documenting; DRY savings aren't real.
+- **`--announce` CLI identity** — CLI stays silent; revisit if debugging pain appears.
+- **Levenshtein fuzzy match** — case-insensitive fallback + `epicenter peers` pointer covers real typos.
+- **`--json` output** — next spec; scripting UX decision independent of this one.
+- **Direct peer-to-peer** — all RPC flows through the sync room's DO.
+- **Cross-time data attribution** — apps needing stable `deviceId` roll their own (e.g., tab-manager's `devices` table).
 
 ## Identity Model
-
-Three layers exist in the runtime; the CLI consumes them, no new abstractions:
 
 | Layer | Stability | Readability | Source |
 | --- | --- | --- | --- |
 | `clientID` | Ephemeral (per connection) | Numeric | Yjs, always present |
 | `deviceName` (convention) | Stable (persisted by app) | Readable, user-editable | App declares in awareness defs, publishes on init |
-| `deviceId` (app-specific) | Stable across renames | Not readable (NanoID) | Apps add on top if needed (e.g. tab-manager's `devices` table) |
-
-`--peer <target>` resolution walks: explicit numeric clientId → `key=value` match → bare value matched against any string awareness field → error.
+| `deviceId` (app-specific) | Stable across renames | Not readable (NanoID) | Apps add on top if needed (e.g. tab-manager `devices` table) |
 
 ## Convention (optional, inline)
 
-Apps that want `epicenter run --peer myMacbook` ergonomics:
+Apps that want `--peer myMacbook` ergonomics:
 
 ```ts
 // epicenter.config.ts
@@ -104,67 +247,54 @@ const awareness = attachAwareness(ydoc, {
   deviceName: type('string'),
 });
 
-// On init (wherever the app boots):
+// On init:
 const name = storage.get('deviceName') ?? generateDefaultName();
 storage.set('deviceName', name);
 awareness.setLocalField('deviceName', name);
 ```
 
-No helper. No primitive. Just schema + four lines. Consistent with the existing typed awareness API.
+Apps that also want version diagnostics in error messages:
+
+```ts
+const awareness = attachAwareness(ydoc, {
+  ...yourDefs,
+  deviceName: type('string'),
+  version: type('string'),
+});
+awareness.setLocalField('version', PACKAGE_VERSION);
+```
 
 ## Implementation Plan
 
-### Phase 1 — `peers` command
+TDD against the terminal sessions above. Implementer picks test infrastructure (stub handle, cross-wired `FakeWebSocket` peers, or subprocess) per case — whichever is cheapest.
 
-- [ ] **1** `packages/cli/src/util/match-peer.ts`: `findPeerClientId(awareness, target): number | undefined`. Resolution: numeric string → clientId; `k=v` → field match; bare value → first string field match.
-- [ ] **2** `packages/cli/src/commands/peers.ts`: iterate entries (narrow with `-w`), await `whenReady`, render `awareness.getStates()` via `console.table`.
-- [ ] **3** Register in `cli.ts` alongside `run` and `list`.
-- [ ] **4** Unit tests for `findPeerClientId` (numeric, `k=v`, bare fallback, no match).
+### Phase 1 — `peers`
 
-### Phase 2 — `--peer` flag on `run`
+- [ ] **1** `packages/cli/src/util/find-peer.ts`: resolver with modes (numeric / `k=v` / `deviceName`) and miss-shape union (`found | case-suggest | case-ambiguous | not-found`).
+- [ ] **2** `packages/cli/src/util/render-peers.ts`: group by workspace, `console.table` rows with `clientID` first, alphabetical columns, clientID-ASC ordering.
+- [ ] **3** `packages/cli/src/commands/peers.ts`: iterate entries (respect `-w`), `await sync.whenConnected`, 500ms settle, render. "no peers connected" when empty.
+- [ ] **4** Register in `cli.ts`.
+- [ ] **5** Unit tests for each resolver mode + each miss shape.
 
-- [ ] **5** `packages/cli/src/util/peer-option.ts` following `workspaceOption`/`dirOption` pattern.
-- [ ] **6** In `run.ts` handler, after `resolveEntry`:
-  - If `--peer` set: await `entry.handle.whenReady`, resolve `targetClientId` via `findPeerClientId`, validate input against local schema as usual, call `entry.handle.sync.rpc(targetClientId, segments.join('.'), input)`, handle `Result` envelope.
-  - Else: unchanged local path.
-- [ ] **7** Self-targeting: if `--peer` resolves to own `awareness.clientID`, error with "use local invocation instead."
-- [ ] **8** E2E tests: spawn two peers against the fixture, invoke cross-peer.
+### Phase 2 — `run --peer`
 
-### Phase 3 — Document the convention
+- [ ] **6** `packages/cli/src/util/peer-option.ts` following `workspaceOption` pattern.
+- [ ] **7** `--timeout` option, default 5000ms.
+- [ ] **8** In `run.ts`: when `--peer` set, `await sync.whenConnected`, poll awareness until resolve-or-timeout, validate input locally, call `handle.sync.rpc(clientId, path, input, { timeout })`, format result/error.
+- [ ] **9** `formatRpcError`: `ActionNotFound` includes peer deviceName/clientID/version where present; `Timeout` shows ms; `PeerOffline` matches error; self-target error points to bare `run`.
+- [ ] **10** Process-exit: `await handle.sync.whenDisposed` before `process.exit`.
+- [ ] **11** Integration tests against stub handle (mock `sync.rpc`) covering all terminal sessions above.
 
-- [ ] **9** Add a short section to `packages/workspace/README.md` explaining the `deviceName` convention for CLI ergonomics. Link to `apps/tab-manager` as reference.
+### Phase 3 — Convention docs
 
-## CLI API Shape
-
-```bash
-# Enumeration
-epicenter peers                        # all workspaces (or narrow with -w)
-epicenter peers -w tabManager
-
-# Remote invocation — action path identical to local (already unified)
-epicenter run --peer myMacbook tabs.close --tab-ids 1 2 3
-epicenter run --peer deviceName=myMacbook tabs.close ...     # explicit key
-epicenter run --peer 42 tabs.close ...                        # clientId fallback
-```
-
-`list` stays local-only. `run` without `--peer` is unchanged.
-
-## Edge Cases
-
-1. **Peer offline** — `sync.rpc` returns `PeerOffline`. CLI prints to stderr, exits 1.
-2. **Timeout** — default 5000ms. Add `--timeout` flag if needed.
-3. **Ambiguous `--peer` match** — two peers match via different fields. Error with candidate list.
-4. **Self-targeting** — error: "use local invocation."
-5. **`ActionNotFound` on remote** — peer missing an action the local tree has (version skew). Error surfaces with the RPC error message — this is the diagnostic signal users need.
-6. **Awareness not yet populated** — `whenReady` resolves after `sync.whenConnected`. May need explicit "first awareness received" event, or a small settle window. **Needs verification during implementation.**
+- [ ] **12** Short section in `packages/workspace/README.md` — `deviceName` convention + optional `version` for diagnostics. Link tab-manager as reference.
 
 ## Success Criteria
 
-- [ ] `epicenter peers` renders a dynamic table of connected peers per workspace.
-- [ ] `epicenter run --peer <target> <path> [args]` invokes remotely; output is identical to local invocation.
-- [ ] `--peer` works with clientId, `k=v`, and bare-string match.
-- [ ] Local `run` and `list` performance unchanged when `--peer` is absent.
-- [ ] An app can opt into `--peer myMacbook` ergonomics in four lines (awareness def + init publish).
+- [ ] Every terminal session in "Terminal Sessions" produces the output shown.
+- [ ] `run` and `list` (no `--peer`) are unchanged behaviorally and performance-wise.
+- [ ] An app opts into `--peer <name>` ergonomics in ≤4 lines (awareness def + init publish).
+- [ ] Process exits cleanly after CLI return; peer awareness on other devices reflects disconnect within normal sync latency.
 
 ## References
 

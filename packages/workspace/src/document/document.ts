@@ -22,9 +22,17 @@
  * `[Symbol.dispose]` (for teardown).
  *
  * `Document` declares one optional typed slot, `whenReady?: Promise<unknown>`,
- * for builders that want to expose the aggregated "can I render yet?" promise
- * — purely an ergonomic affordance so consumers (CLI, UI skeletons) get
- * typed access without duck-typing. Disposal barriers are NOT in the type:
+ * for builders that want to expose the aggregated "can I render yet?" promise.
+ * The cache itself never reads it, but the rest of the platform does:
+ * `WorkspaceGate` blocks rendering on it, the CLI's `run` command awaits it
+ * before invoking actions, Whispering's database and settings migrations gate
+ * on it, `@epicenter/filesystem` ops await it before touching paths, the
+ * sqlite-index materializer awaits it before its initial rebuild, and every
+ * editor (`EntryEditor`, `NoteBodyPane`, `ContentEditor`, ...) gates its
+ * `{#await}` block on it. So `whenReady` is the platform's readiness
+ * convention. The framework declares it as a typed optional so consumers get
+ * typed access without duck-typing, but the meaning of "ready" is convention,
+ * set by the builder, not enforced by the cache. Disposal barriers are NOT in the type:
  * `[Symbol.dispose]()` is synchronous, attachments self-wire async cleanup
  * via `ydoc.on('destroy')`, and callers needing a real teardown barrier
  * opt into a specific attachment field at the call site
@@ -124,16 +132,18 @@
  *  sync.whenDisposed   — ditto, per provider
  * ```
  *
- * Builders may aggregate these into the bundle-level `whenReady` slot
- * (declared optionally on `Document` — see Builder contract above).
- * `whenReady` answers exactly one question for consumers: **"can I render
- * the UI yet?"** For editors and other local-first views that answer is
- * `idb.whenLoaded` — render as soon as the user's draft is in memory,
- * regardless of network state. The framework declares the typed slot for
- * ergonomics (CLI / UI consumers get typed access without duck-typing) but
- * doesn't read or enforce its semantics — what "ready" means is the
- * builder's call. Consumers typically consume it via Svelte's `{#await}`
- * block (template-level) rather than `$effect`-plus-flag plumbing.
+ * Builders aggregate these into the bundle-level `whenReady` slot (declared
+ * optionally on `Document` — see Builder contract above). `whenReady` is the
+ * platform's readiness convention: the answer to **"can I read persisted
+ * state yet?"** For editors and other local-first views that answer is
+ * `idb.whenLoaded` (render as soon as the user's draft is in memory,
+ * regardless of network state). The cache itself never reads it, but
+ * `WorkspaceGate`, the CLI's `run` command, migrations, filesystem ops, the
+ * sqlite-index materializer, and every editor's `{#await}` block all do. The
+ * framework declares the typed slot so those consumers get typed access
+ * without duck-typing; what "ready" means is convention, set by the builder.
+ * Consumers typically consume it via Svelte's `{#await}` block
+ * (template-level) rather than `$effect`-plus-flag plumbing.
  *
  * ## Provider teardown
  *
@@ -222,9 +232,12 @@ export type DocumentFactoryError = InferErrors<typeof DocumentFactoryError>;
  *   signals (`persistence.whenLoaded`, `unlock.whenChecked`, `sync.whenConnected`,
  *   …) define "ready" for this bundle. Typed `Promise<unknown>` so
  *   `Promise.all([...])` is directly assignable — no `.then(() => undefined)`
- *   tail needed. The framework neither reads nor requires it; it's a typed
- *   extension point for consumers that want a single aggregate instead of
- *   awaiting individual attachment signals.
+ *   tail needed. The cache itself does not read it, but it is the platform's
+ *   readiness convention: `WorkspaceGate`, the CLI's `run` command, Whispering's
+ *   migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and
+ *   every editor's `{#await}` block all gate on it. The framework declares it
+ *   as a typed optional so consumers get typed access without duck-typing; the
+ *   meaning of "ready" is set by the builder, not enforced by the cache.
  *
  * Disposal barriers are deliberately NOT part of the contract. Each
  * attachment self-wires `ydoc.on('destroy')` and runs its async cleanup in

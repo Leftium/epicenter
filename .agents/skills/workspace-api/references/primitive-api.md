@@ -153,11 +153,15 @@ export const entryContentDocs = createDocumentFactory((entryId: EntryId) => {
     content,
     idb,
     sync,
-    // Optional typed field on `Document` (`Promise<unknown>`).
-    // Expose whatever "ready" means for this bundle. For a multi-step
-    // cascade: `Promise.all([persistence.whenLoaded,
-    // unlock.whenChecked, sync.whenConnected])` — the tuple-typed
-    // Promise assigns directly, no `.then(() => undefined)` needed.
+    // The platform's readiness convention, declared as a typed
+    // optional on `Document` (`Promise<unknown>`). The cache does
+    // not read it, but `WorkspaceGate`, the CLI, migrations,
+    // filesystem ops, the sqlite-index materializer, and every
+    // editor's `{#await}` block all do. Compose whatever "ready"
+    // means for this bundle. For a multi-step cascade:
+    // `Promise.all([persistence.whenLoaded, unlock.whenChecked,
+    // sync.whenConnected])`. The tuple-typed Promise assigns
+    // directly, no `.then(() => undefined)` needed.
     whenReady: idb.whenLoaded,
     [Symbol.dispose]() { ydoc.destroy(); },
   };
@@ -205,7 +209,7 @@ async function readInstructions(id: SkillId): Promise<string> {
 }
 ```
 
-`whenReady` is an **optional typed field** on `Document` (`Promise<unknown>`). The builder composes it from whatever attachment signals matter; consumers `await handle.whenReady` for a single barrier. The framework neither reads nor requires it — builders with nothing async to wait on simply omit it. Consumers can pick the gate that fits at the call site:
+`whenReady` is an **optional typed field** on `Document` (`Promise<unknown>`) and the platform's readiness convention. The builder composes it from whatever attachment signals matter; consumers `await handle.whenReady` for a single barrier. The cache itself does not read it, but the rest of the platform does: `WorkspaceGate`, the CLI's `run` command, Whispering's migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and every editor's `{#await}` block all gate on it. Builders with nothing async to wait on can simply omit the field. Consumers can also pick a more specific gate at the call site:
 
 ```typescript
 using h = docs.open(id);

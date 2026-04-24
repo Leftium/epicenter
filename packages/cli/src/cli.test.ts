@@ -1,9 +1,9 @@
 /**
  * CLI entry-point tests.
  *
- * The binary surfaces three commands — `auth`, `list`, `run`. These tests
- * assert registration via `--help` output so they stay decoupled from command
- * semantics.
+ * The binary surfaces four commands — `auth`, `list`, `peers`, `run`. These
+ * tests assert registration via `--help` output so they stay decoupled from
+ * command semantics.
  */
 import { describe, expect, spyOn, test } from 'bun:test';
 import { createCLI } from './cli';

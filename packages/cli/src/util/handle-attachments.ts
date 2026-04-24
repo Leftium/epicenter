@@ -1,33 +1,26 @@
 /**
- * Duck-typed readers over a document handle's optional `sync` and
- * `awareness` attachments.
+ * Safely read optional `sync` and `awareness` attachments off a document
+ * handle whose bundle shape the CLI does not know statically.
  *
- * `handle.sync` is usually the `SyncAttachment` from `attachSync`, but the
- * CLI operates on arbitrary user bundles — so we duck-type the fields we
- * care about (`whenConnected`, `whenDisposed`, `rpc`) in one place instead
- * of re-declaring the cast at every call site.
+ * The CLI operates on arbitrary user bundles — `epicenter.config.ts` can
+ * put anything on the handle, and the attachments are *conventional* names
+ * (`sync`, `awareness`), not contract. So we:
  *
- * `handle.awareness` may be either a raw y-protocols `Awareness` or the
- * typed wrapper from `attachAwareness` (which exposes `.raw`). Same idea.
+ *   - treat them as possibly-undefined at the boundary,
+ *   - import the authoritative `SyncAttachment` type from `@epicenter/workspace`
+ *     so future API changes propagate (no local duplicate shape),
+ *   - duck-type awareness because users may attach either a raw y-protocols
+ *     `Awareness` or the typed wrapper from `attachAwareness` (which exposes
+ *     `.raw`). Both shapes must work.
  */
+import type { SyncAttachment } from '@epicenter/workspace';
 import type { AwarenessState } from './find-peer';
 
-export type HandleSync = {
-	whenConnected?: Promise<void>;
-	whenDisposed?: Promise<void>;
-	rpc?: (
-		clientId: number,
-		action: string,
-		input: unknown,
-		options?: { timeout?: number },
-	) => Promise<{ data: unknown; error: unknown }>;
-};
-
-export function getSync(handle: unknown): HandleSync | undefined {
+export function getSync(handle: unknown): SyncAttachment | undefined {
 	if (handle == null || typeof handle !== 'object') return undefined;
 	const sync = (handle as { sync?: unknown }).sync;
 	if (sync == null || typeof sync !== 'object') return undefined;
-	return sync as HandleSync;
+	return sync as SyncAttachment;
 }
 
 type AwarenessLike = {

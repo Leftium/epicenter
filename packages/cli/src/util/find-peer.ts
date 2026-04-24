@@ -3,12 +3,13 @@
  *
  * Three modes (no overlap):
  *   - all digits        → `clientID` lookup (numeric)
- *   - contains '='      → `<field>=<value>` exact match (split on first '=')
- *   - otherwise         → match awareness field `deviceName` exactly
+ *   - contains '='      → `<field>=<value>` (split on first '=')
+ *   - otherwise         → match awareness field `deviceName`
  *
- * Miss shapes (for string-field modes):
- *   - exact miss, unique case-insensitive substring hit  → `case-suggest`
- *   - exact miss, multiple case-insensitive substring hits → `case-ambiguous`
+ * String-field modes try exact first, then fall back to case-insensitive
+ * substring. Miss shapes:
+ *   - unique substring hit                       → `case-suggest`
+ *   - multiple exact or substring hits           → `case-ambiguous`
  *   - otherwise                                  → `not-found`
  *
  * "Case-insensitive" here means the lowercased target appears as a substring

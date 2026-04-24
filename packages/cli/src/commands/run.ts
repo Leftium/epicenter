@@ -9,7 +9,7 @@
 import { isResult, iterateActions } from '@epicenter/workspace';
 import type { TSchema } from 'typebox';
 import { extractErrorMessage } from 'wellcrafted/error';
-import type { Argv, CommandModule } from 'yargs';
+import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
 import { dirFromArgv, dirOption } from '../util/dir-option';
 import { findPeer, type AwarenessState, type FindPeerResult } from '../util/find-peer';
@@ -18,24 +18,32 @@ import {
 	output,
 	outputError,
 } from '../util/format-output';
-import { getSync, readPeers } from '../util/handle-peers';
+import { getSync, readPeers } from '../util/handle-attachments';
 import { parseJsonInput, readStdinSync } from '../util/parse-input';
-import {
-	peerFromArgv,
-	peerOption,
-	timeoutFromArgv,
-	timeoutOption,
-} from '../util/peer-option';
 import { resolveEntry } from '../util/resolve-entry';
 import { resolvePath } from '../util/resolve-path';
 import { typeboxToYargsOptions } from '../util/typebox-to-yargs';
 import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
 
 const POLL_INTERVAL_MS = 100;
+const DEFAULT_PEER_TIMEOUT_MS = 5000;
+
+const peerOption: Options = {
+	type: 'string',
+	description:
+		'Remote peer target: bare deviceName, <field>=<value>, or numeric clientID',
+};
+
+const timeoutOption: Options = {
+	type: 'number',
+	default: DEFAULT_PEER_TIMEOUT_MS,
+	description: `Remote RPC timeout in ms (default ${DEFAULT_PEER_TIMEOUT_MS})`,
+};
 
 export const runCommand: CommandModule = {
 	command: 'run <action> [input]',
-	describe: 'Invoke a defineQuery / defineMutation by dot-path',
+	describe:
+		'Invoke a defineQuery / defineMutation by dot-path, locally or on a remote peer (--peer)',
 	builder: (yargs: Argv) =>
 		yargs
 			.positional('action', {
@@ -110,7 +118,8 @@ async function invoke(
 	const input = await resolveInput(argv, action);
 	const format = argv.format as 'json' | 'jsonl' | undefined;
 
-	const peerTarget = peerFromArgv(argv);
+	const peerTarget =
+		typeof argv.peer === 'string' && argv.peer.length > 0 ? argv.peer : undefined;
 	if (peerTarget !== undefined) {
 		await invokeRemote(argv, entry, actionPath, input, peerTarget);
 		return;
@@ -147,7 +156,7 @@ async function invokeRemote(
 		return;
 	}
 
-	const timeoutMs = timeoutFromArgv(argv);
+	const timeoutMs = argv.timeout as number;
 	const format = argv.format as 'json' | 'jsonl' | undefined;
 	const workspaceArg = workspaceFromArgv(argv);
 

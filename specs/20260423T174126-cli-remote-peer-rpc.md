@@ -1,9 +1,37 @@
 # CLI Remote Peer RPC
 
 **Date**: 2026-04-23
-**Status**: Draft
+**Status**: Shipped (Phases 1 & 2); Phase 3 (docs) deferred
 **Author**: AI-assisted
 **Depends on**: `specs/20260423T010000-unify-dot-path-format.md` (shipped)
+
+## Shipped Summary
+
+Phases 1 and 2 landed with deliberate simplifications. The verdict: **worth it.** The RPC pipeline was already paid for; wiring the CLI into it was a small, self-contained change (~3 files net), and the remote column now mirrors the local column symmetrically. No new primitives, no wire changes, as planned.
+
+### Deviations from the original plan
+
+| Planned artifact | Shipped reality | Why the change is fine (or better) |
+| --- | --- | --- |
+| `util/render-peers.ts` separate file | Rendering inlined into `commands/peers.ts:66-102` (commit `94082c5`) | Single consumer; split was premature extraction. Rule of thumb: don't extract a shared util for symmetry alone — shared files earn their place by 2+ consumers. |
+| `util/peer-option.ts` | `peerOption` and `timeoutOption` inlined in `run.ts:31-41` | Same rule: single-consumer flags stay inline. `workspaceOption`/`dirOption` earn shared files because they're reused 3×. |
+| `util/handle-peers.ts` | Renamed to `util/handle-attachments.ts` and widened to cover both `sync` and `awareness` | Module describes the capability (reading optional attachments off an arbitrary bundle), not the first caller. |
+| "Case-insensitive exact" fuzzy fallback | **Substring-of-lowercased** match (`find-peer.ts:66-73`) | Strictly more useful — `MACBOOK` correctly disambiguates `myMacbook` vs `workMacbook` instead of silently being `not-found`. Documented in the source jsdoc and covered by tests. Spec wording is stale, not the code. |
+| Phase 3 — `packages/workspace/README.md` convention section | Not done | Convention is described as JSDoc in `packages/cli/src/util/handle-attachments.ts` instead; workspace README hasn't needed it yet. Revisit when a second app adopts `deviceName`. |
+
+### Code smells found during status audit
+
+1. **Post-dispose awareness-settle loop is duplicated** in `run.ts:75-82` and `peers.ts:46-53` — both do `await dispose()` then iterate entries awaiting `sync.whenDisposed`. This is a small DRY violation that matters because future commands will copy it. Candidate: fold into `loadConfig`'s returned `dispose()` so callers get clean teardown for free.
+2. **`exact.length > 1` returns `case-ambiguous`** (`find-peer.ts:77-79`) — technically correct shape, but the error message "multiple peers match case-insensitively" is misleading when the collisions are case-*sensitively* equal (two peers sharing `deviceName: "myMacbook"`). Minor; edge case.
+3. **`run.ts:184-186` re-reads `readPeers(entry.handle)` after the find loop** to get `peerState` for error formatting. If the peer disconnects between resolution and RPC dispatch, `peerState` is `{}` and the error message loses deviceName/version. Acceptable (caller sees a different error anyway), but worth a one-line comment.
+4. **`POLL_INTERVAL_MS = 100` hardcoded** in `run.ts:28`. Fine for now; flag if tests ever need to control it.
+5. **Spec wording drift on fuzzy matching** — spec says "case-insensitive exact", code does substring. Update the spec (below) or the code. Code is the better behavior; spec is wrong.
+
+### Leftover work
+
+- [ ] Spec-wording fix: replace "case-insensitive exact" language in the Design Decisions table + Target Resolution section with "case-insensitive substring." (Cosmetic; code is correct.)
+- [ ] Phase 3 docs — deferred until a second app adopts the `deviceName` convention.
+- [ ] Optional refactor: move the `sync.whenDisposed` post-dispose wait into `loadConfig`'s dispose contract so `run.ts` and `peers.ts` don't each reimplement it.
 
 ## Overview
 
@@ -268,26 +296,26 @@ awareness.setLocalField('version', PACKAGE_VERSION);
 
 TDD against the terminal sessions above. Implementer picks test infrastructure (stub handle, cross-wired `FakeWebSocket` peers, or subprocess) per case — whichever is cheapest.
 
-### Phase 1 — `peers`
+### Phase 1 — `peers` (shipped)
 
-- [ ] **1** `packages/cli/src/util/find-peer.ts`: resolver with modes (numeric / `k=v` / `deviceName`) and miss-shape union (`found | case-suggest | case-ambiguous | not-found`).
-- [ ] **2** `packages/cli/src/util/render-peers.ts`: group by workspace, `console.table` rows with `clientID` first, alphabetical columns, clientID-ASC ordering.
-- [ ] **3** `packages/cli/src/commands/peers.ts`: iterate entries (respect `-w`), `await sync.whenConnected`, 500ms settle, render. "no peers connected" when empty.
-- [ ] **4** Register in `cli.ts`.
-- [ ] **5** Unit tests for each resolver mode + each miss shape.
+- [x] **1** `packages/cli/src/util/find-peer.ts`: resolver with modes (numeric / `k=v` / `deviceName`) and miss-shape union.
+- [x] **2** ~~`util/render-peers.ts`~~ — inlined into `commands/peers.ts` (intentional; single consumer).
+- [x] **3** `packages/cli/src/commands/peers.ts`: iterate entries (respect `-w`), `await sync.whenConnected`, 500ms settle, render. "no peers connected" when empty.
+- [x] **4** Registered in `cli.ts`.
+- [x] **5** Unit tests for each resolver mode + each miss shape (`find-peer.test.ts`).
 
-### Phase 2 — `run --peer`
+### Phase 2 — `run --peer` (shipped)
 
-- [ ] **6** `packages/cli/src/util/peer-option.ts` following `workspaceOption` pattern.
-- [ ] **7** `--timeout` option, default 5000ms.
-- [ ] **8** In `run.ts`: when `--peer` set, `await sync.whenConnected`, poll awareness until resolve-or-timeout, validate input locally, call `handle.sync.rpc(clientId, path, input, { timeout })`, format result/error.
-- [ ] **9** `formatRpcError`: `ActionNotFound` includes peer deviceName/clientID/version where present; `Timeout` shows ms; `PeerOffline` matches error; self-target error points to bare `run`.
-- [ ] **10** Process-exit: `await handle.sync.whenDisposed` before `process.exit`.
-- [ ] **11** Integration tests against stub handle (mock `sync.rpc`) covering all terminal sessions above.
+- [x] **6** ~~`util/peer-option.ts`~~ — `peerOption` inlined in `run.ts` (intentional; single consumer).
+- [x] **7** `--timeout` option, default 5000ms.
+- [x] **8** In `run.ts`: when `--peer` set, `await sync.whenConnected`, poll awareness until resolve-or-timeout, call `handle.sync.rpc(clientId, path, input, { timeout })`, format result/error.
+- [x] **9** `emitRpcError`: handles `ActionNotFound`, `Timeout`, `PeerOffline`, `ActionFailed`, `Disconnected` with deviceName/clientID/version where present.
+- [x] **10** Process-exit: `await handle.sync.whenDisposed` before `process.exit`.
+- [x] **11** Integration tests in `run.test.ts` + `peers.test.ts`.
 
-### Phase 3 — Convention docs
+### Phase 3 — Convention docs (deferred)
 
-- [ ] **12** Short section in `packages/workspace/README.md` — `deviceName` convention + optional `version` for diagnostics. Link tab-manager as reference.
+- [ ] **12** Short section in `packages/workspace/README.md` — `deviceName` convention + optional `version` for diagnostics. *Currently documented as JSDoc in `packages/cli/src/util/handle-attachments.ts`; revisit when a second app adopts the convention.*
 
 ## Success Criteria
 

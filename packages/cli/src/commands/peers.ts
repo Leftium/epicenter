@@ -3,8 +3,11 @@
  *
  * For each workspace entry (or a single entry narrowed by `-w`):
  *   1. await `handle.sync.whenConnected` (awareness requires the transport)
- *   2. wait 500ms for peers to settle
- *   3. snapshot `awareness.getStates()` and print a `console.table`
+ *   2. snapshot `awareness.getStates()` and print a `console.table`
+ *
+ * This is a one-shot snapshot, not a registry. A peer that hasn't broadcast
+ * its awareness state by the time `whenConnected` resolves will not appear —
+ * re-run the command. See `handle-attachments.ts` for awareness invariants.
  *
  * Prints `no peers connected` when every workspace's snapshot is empty.
  */
@@ -19,8 +22,6 @@ import {
 } from '../util/handle-attachments';
 import { resolveEntry } from '../util/resolve-entry';
 import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
-
-const SETTLE_MS = 500;
 
 type PeerRow = { clientID: number } & Record<string, unknown>;
 
@@ -62,7 +63,6 @@ async function snapshotEntry(
 ): Promise<WorkspaceSnapshot> {
 	const sync = getSync(entry.handle);
 	if (sync?.whenConnected) await sync.whenConnected;
-	await new Promise((r) => setTimeout(r, SETTLE_MS));
 	return { name: entry.name, peers: readPeers(entry.handle) };
 }
 

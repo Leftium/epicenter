@@ -34,7 +34,7 @@ epicenter run tabManager.tabs.close --tab-ids 1 2 3
 
 ### Problems (revised — see Prerequisite note)
 
-1. **Thesis drift.** `packages/cli/CLAUDE.md` is explicit: the CLI is scripting-first. Bulk ops, exports, and transforms belong in user-authored `bun run scripts/*.ts` that import the config directly and get full type inference. Ergonomic interactive flag invocation is a different product (a form builder, basically) and isn't what this CLI claims to be.
+1. **Thesis drift.** `packages/cli/README.md` is explicit: the CLI is scripting-first. Bulk ops, exports, and transforms belong in user-authored `bun run scripts/*.ts` that import the config directly and get full type inference. Ergonomic interactive flag invocation is a different product (a form builder, basically) and isn't what this CLI claims to be.
 2. **Bridge layer silently accumulates edge cases.** Nested objects, unions, refinements, `anyOf`/`allOf`, custom string formats — each has to be mapped to yargs semantics or produce surprising behavior. The more the schema language grows, the more this bridge owes.
 3. **Dead weight.** `typebox-to-yargs.ts` is 119 lines (+ test file) that only serves the flat-schema interactive case. Nothing else in the CLI or workspace uses it.
 4. **`.strict(false)` in `run.ts:67` is forced by this bridge.** Today unknown flags are silently dropped because the bridge needs to inject arbitrary per-action options at parse time. Removing the bridge lets the command flip to `.strict(true)` — unknown flags fail fast, which is the correct scripting-CLI behavior.
@@ -104,4 +104,4 @@ All three work today. The flag form becomes the only change — removed, not rep
 - `packages/cli/src/util/typebox-to-yargs.ts` — deleted (+ `typebox-to-yargs.test.ts`)
 - `packages/cli/src/util/parse-input.ts` — keep; handles JSON parsing
 - `packages/workspace/src/shared/actions.ts:327-333,376-382` — `defineQuery` / `defineMutation` wrappers (no runtime validation today — out of scope for this spec, but context for the Prerequisite note)
-- `packages/cli/CLAUDE.md` — one-sentence thesis and the "user-authored `bun run` script" escape hatch
+- `packages/cli/README.md` — one-sentence thesis and the "user-authored `bun run` script" escape hatch

@@ -12,6 +12,22 @@
  *   - duck-type awareness because users may attach either a raw y-protocols
  *     `Awareness` or the typed wrapper from `attachAwareness` (which exposes
  *     `.raw`). Both shapes must work.
+ *
+ * Awareness invariants the CLI relies on (from y-protocols/awareness):
+ *
+ *   - **Ephemeral.** ~30s liveness window; peers that crashed silently
+ *     disappear after `outdatedTimeout`. Awareness is a liveness probe,
+ *     not a directory.
+ *   - **clientID is session-local.** Re-randomized on every `new Y.Doc()`,
+ *     so numeric clientIDs are stable within one presence session only.
+ *     Scripts that need stable addressing should prefer `deviceName=...`
+ *     or a `k=v` field match, not numeric IDs.
+ *   - **deviceName is a convention, not a contract.** The CLI's bare-name
+ *     `--peer myMacbook` form assumes peers publish `deviceName` into
+ *     awareness via `attachAwareness({ deviceName: ... })`. If no peer does,
+ *     use `--peer field=value` against whatever field *is* published.
+ *     Persistent peer identity (across reconnects) belongs in a shared Y.Map
+ *     on the doc, not in awareness.
  */
 import type { SyncAttachment } from '@epicenter/workspace';
 

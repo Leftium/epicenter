@@ -5,6 +5,8 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../src/load-config';
 import { resolvePath } from '../src/util/resolve-path';
@@ -144,11 +146,12 @@ describe('epicenter list (subprocess)', () => {
 		expect(stdout).toContain('set  (mutation)');
 	});
 
-	test('renders a leaf action detail with argument help', async () => {
+	test('renders a leaf action detail with JSON input shape', async () => {
 		const { stdout, exitCode } = await runCli(['list', 'counter.set']);
 		expect(exitCode).toBe(0);
 		expect(stdout).toContain('counter.set  (mutation)');
-		expect(stdout).toContain('--value <number>');
+		expect(stdout).toContain('Input fields (pass as JSON)');
+		expect(stdout).toContain('value: number');
 		expect(stdout).toContain('required');
 	});
 });
@@ -160,17 +163,6 @@ describe('epicenter run (subprocess)', () => {
 		expect(stdout.trim()).toBe('0');
 	});
 
-	test('passes flag-shaped inputs through to the action', async () => {
-		const { stdout, exitCode } = await runCli([
-			'run',
-			'counter.set',
-			'--value',
-			'7',
-		]);
-		expect(exitCode).toBe(0);
-		expect(stdout.trim()).toBe('7');
-	});
-
 	test('accepts inline JSON as the positional input', async () => {
 		const { stdout, exitCode } = await runCli([
 			'run',
@@ -179,6 +171,69 @@ describe('epicenter run (subprocess)', () => {
 		]);
 		expect(exitCode).toBe(0);
 		expect(stdout.trim()).toBe('9');
+	});
+
+	test('accepts @file.json positional', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'epicenter-cli-'));
+		const path = join(dir, 'input.json');
+		writeFileSync(path, '{"value":11}');
+		try {
+			const { stdout, exitCode } = await runCli([
+				'run',
+				'counter.set',
+				`@${path}`,
+			]);
+			expect(exitCode).toBe(0);
+			expect(stdout.trim()).toBe('11');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('accepts --file flag', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'epicenter-cli-'));
+		const path = join(dir, 'input.json');
+		writeFileSync(path, '{"value":13}');
+		try {
+			const { stdout, exitCode } = await runCli([
+				'run',
+				'counter.set',
+				'--file',
+				path,
+			]);
+			expect(exitCode).toBe(0);
+			expect(stdout.trim()).toBe('13');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('accepts JSON piped via stdin', async () => {
+		const proc = Bun.spawn(['bun', 'run', BIN_PATH, 'run', 'counter.set'], {
+			cwd: FIXTURE_DIR,
+			stdout: 'pipe',
+			stderr: 'pipe',
+			stdin: 'pipe',
+		});
+		proc.stdin.write('{"value":15}');
+		await proc.stdin.end();
+		const [stdout, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			proc.exited,
+		]);
+		expect(exitCode).toBe(0);
+		expect(stdout.trim()).toBe('15');
+	});
+
+	test('rejects unknown flags under yargs strict mode', async () => {
+		const { stderr, exitCode } = await runCli([
+			'run',
+			'counter.set',
+			'--value',
+			'7',
+		]);
+		expect(exitCode).not.toBe(0);
+		expect(stderr.toLowerCase()).toContain('unknown argument');
 	});
 
 	test('lists siblings when a path lands on a subtree', async () => {

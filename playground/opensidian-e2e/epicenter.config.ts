@@ -20,7 +20,7 @@
  *   bun run playground/opensidian-e2e/epicenter.config.ts
  *
  *   # Invoke the defined `markdownActions.prepare` mutation.
- *   epicenter run opensidian.markdownActions.prepare --directory ./some/dir \
+ *   epicenter run opensidian.markdownActions.prepare '{"directory":"./some/dir"}' \
  *     -C playground/opensidian-e2e
  */
 

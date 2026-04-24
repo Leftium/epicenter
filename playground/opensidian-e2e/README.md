@@ -35,7 +35,7 @@ Invoke a defined action:
 
 ```bash
 # Scan a directory for markdown files and inject IDs into frontmatter.
-epicenter run opensidian.markdownActions.prepare --directory ./some/dir \
+epicenter run opensidian.markdownActions.prepare '{"directory":"./some/dir"}' \
   -C playground/opensidian-e2e
 ```
 

@@ -4,7 +4,7 @@
  * Three modes:
  *   1. No argument         → full tree for the resolved workspace entry.
  *   2. Partial path        → subtree under that path.
- *   3. Leaf (action) path  → action detail with flag help.
+ *   3. Leaf (action) path  → action detail with JSON input shape.
  */
 
 import type { Action } from '@epicenter/workspace';
@@ -131,7 +131,7 @@ function printActionDetail(path: string, action: Action): void {
 	}
 	if (action.input) {
 		console.log('');
-		console.log('  Arguments:');
+		console.log('  Input fields (pass as JSON):');
 		for (const line of describeInput(action.input)) console.log(`    ${line}`);
 	}
 }
@@ -145,7 +145,7 @@ function describeInput(schema: TSchema): string[] {
 		const typeLabel = f.type ?? 'value';
 		const req = required.has(key) ? 'required' : 'optional';
 		const desc = f.description ? `  ${f.description}` : '';
-		lines.push(`--${key} <${typeLabel}>  ${req}${desc}`);
+		lines.push(`${key}: ${typeLabel}  (${req})${desc}`);
 	}
 	return lines;
 }

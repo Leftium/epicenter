@@ -1,13 +1,13 @@
 /**
- * `epicenter run <dot.path> [args...]` — invoke a `defineQuery` /
+ * `epicenter run <dot.path> [input]` — invoke a `defineQuery` /
  * `defineMutation` by dot-path through an opened document handle.
  *
+ * `input` is JSON: inline positional, `@file.json`, `--file`, or stdin.
  * With `--peer <target>`, the invocation is dispatched over the sync
  * room's RPC channel to a remote peer instead of running locally.
  */
 
 import { isResult, iterateActions } from '@epicenter/workspace';
-import type { TSchema } from 'typebox';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
@@ -19,7 +19,6 @@ import { getSync, readPeers } from '../util/handle-attachments';
 import { parseJsonInput, readStdinSync } from '../util/parse-input';
 import { resolveEntry } from '../util/resolve-entry';
 import { resolvePath } from '../util/resolve-path';
-import { typeboxToYargsOptions } from '../util/typebox-to-yargs';
 import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
 
 const POLL_INTERVAL_MS = 100;
@@ -61,7 +60,7 @@ export const runCommand: CommandModule = {
 			.option('peer', peerOption)
 			.option('timeout', timeoutOption)
 			.options(formatYargsOptions())
-			.strict(false),
+			.strict(),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
 		const { entries, dispose } = await loadConfig(dirFromArgv(args));
@@ -195,11 +194,10 @@ async function invokeRemote(
 
 async function resolveInput(
 	argv: Record<string, unknown>,
-	action: { input?: TSchema },
+	action: { input?: unknown },
 ): Promise<unknown> {
 	if (action.input === undefined) return undefined;
 
-	// Escape hatch: positional `@file.json`, inline JSON, `--file`, or stdin.
 	const positional =
 		typeof argv.input === 'string' && argv.input.length > 0
 			? (argv.input as string)
@@ -208,24 +206,16 @@ async function resolveInput(
 	const stdinContent = readStdinSync();
 	const hasStdin = stdinContent !== undefined;
 
-	if (positional || file || hasStdin) {
-		const { data, error } = parseJsonInput({
-			positional,
-			file,
-			hasStdin,
-			stdinContent,
-		});
-		if (error) throw new Error(error.message);
-		return data;
-	}
+	if (!positional && !file && !hasStdin) return undefined;
 
-	// Flat schemas: map TypeBox fields to yargs flags already parsed by yargs.
-	const yargsOpts = typeboxToYargsOptions(action.input);
-	const input: Record<string, unknown> = {};
-	for (const key of Object.keys(yargsOpts)) {
-		if (argv[key] !== undefined) input[key] = argv[key];
-	}
-	return input;
+	const { data, error } = parseJsonInput({
+		positional,
+		file,
+		hasStdin,
+		stdinContent,
+	});
+	if (error) throw new Error(error.message);
+	return data;
 }
 
 function suggestSiblings(bundle: unknown, parentPath: string[]): void {

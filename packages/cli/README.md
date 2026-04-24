@@ -41,11 +41,11 @@ epicenter auth logout
 # list — what can I do here (local schema)
 epicenter list                                      # every export + full tree
 epicenter list tabManager.savedTabs                 # subtree
-epicenter list tabManager.savedTabs.create          # action detail with flag help
+epicenter list tabManager.savedTabs.create          # action detail with JSON input shape
 
 # run — do one (locally, or on a remote peer with --peer)
 epicenter run tabManager.savedTabs.list
-epicenter run tabManager.savedTabs.create --title "Hi" --url "https://..."
+epicenter run tabManager.savedTabs.create '{"title":"Hi","url":"https://..."}'
 epicenter run tabManager.savedTabs.create @payload.json
 cat payload.json | epicenter run tabManager.savedTabs.create
 epicenter run tabManager.savedTabs.list --peer alice-laptop

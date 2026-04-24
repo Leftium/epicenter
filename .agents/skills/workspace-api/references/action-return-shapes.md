@@ -44,7 +44,7 @@ tabs.close: defineMutation({
 | Caller                        | Ok path                          | Err(BrowserApiFailed)                            | Handler throws                                     |
 | ----------------------------- | -------------------------------- | ------------------------------------------------ | -------------------------------------------------- |
 | **Local** (in-process)        | `{data:{closedCount:1}, error:null}` | `{data:null, error:BrowserApiFailed}`        | throws at `await`                                  |
-| **CLI** `epicenter run`       | prints `{"closedCount":1}`, exit 0 | stderr + exit 1                                | stderr stack trace + exit 1 (via yargs)            |
+| **CLI** `epicenter run`       | prints `{"closedCount":1}`, exit 0 | stderr + exit 1                                | stderr stack trace + exit 1                        |
 | **AI bridge** (TanStack AI)   | AI sees `{closedCount:1}`        | AI sees "tool call failed: …"                    | propagates — AI sees failure                       |
 | **`createRemoteActions`**     | `Ok({closedCount:1})`            | `Err(BrowserApiFailed)` — typed, no re-wrap      | `Err(RpcError.ActionFailed{cause: <throw>})`       |
 | **`sync.rpc()`** (peer RPC)   | `Ok({closedCount:1})`            | `Err(RpcError.ActionFailed{cause: BrowserApiFailed})` — **E erased** | `Err(RpcError.ActionFailed{cause: <throw>})` |

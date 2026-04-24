@@ -225,6 +225,17 @@ describe('epicenter run (subprocess)', () => {
 		expect(stdout.trim()).toBe('15');
 	});
 
+	test('rejects --peer-timeout without --peer', async () => {
+		const { stderr, exitCode } = await runCli([
+			'run',
+			'counter.get',
+			'--peer-timeout',
+			'10000',
+		]);
+		expect(exitCode).not.toBe(0);
+		expect(stderr.toLowerCase()).toContain('missing dependent');
+	});
+
 	test('rejects unknown flags under yargs strict mode', async () => {
 		const { stderr, exitCode } = await runCli([
 			'run',

@@ -61,7 +61,7 @@ epicenter peers -w tabManager
 
 The grid is strict. `list` reads the local config only — your config is authoritative about what actions exist. `peers` reads remote awareness only — you don't appear in your own peer list, it's a snapshot of *other* clients currently online via the sync room. `run` straddles both cells: local by default, remote when `--peer <target>` is set (match by `deviceName`, numeric `clientID`, or `field=value`). `--peer` is an address, not a mode — the verb and schema are unchanged, only the dispatch target moves.
 
-Peer presence has a ~30s liveness window (inherited from Yjs awareness): a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--timeout` expires (default 5s).
+Peer presence has a ~30s liveness window (inherited from Yjs awareness): a peer that crashed recently may still appear; a peer that just connected may take a beat to show up. `run --peer` polls for the target until it resolves or `--peer-timeout` expires (default 5s).
 
 ### Common flags
 
@@ -70,7 +70,7 @@ Peer presence has a ~30s liveness window (inherited from Yjs awareness): a peer 
 | `--dir` | `-C` | `list`, `run`, `peers` | Directory containing `epicenter.config.ts` (default `.`). Mirrors `git -C`. |
 | `--workspace` | `-w` | `list`, `run`, `peers` | Narrow to one export when the config has multiple workspaces. |
 | `--peer` | — | `run` | Dispatch invocation to a live remote peer over the sync room's RPC channel. |
-| `--timeout` | — | `run --peer` | RPC timeout in ms (default 5000). |
+| `--peer-timeout` | — | `run --peer` | RPC timeout in ms (default 5000); implies `--peer`. |
 
 `auth` intentionally takes no workspace flags — it manages server sessions, not workspace state.
 

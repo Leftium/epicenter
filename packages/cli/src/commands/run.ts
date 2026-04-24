@@ -30,10 +30,9 @@ const peerOption: Options = {
 		'Remote peer target: bare deviceName, <field>=<value>, or numeric clientID',
 };
 
-const timeoutOption: Options = {
+const peerTimeoutOption: Options = {
 	type: 'number',
-	default: DEFAULT_PEER_TIMEOUT_MS,
-	description: `Remote RPC timeout in ms (default ${DEFAULT_PEER_TIMEOUT_MS})`,
+	description: `Remote RPC timeout in ms; requires --peer (default ${DEFAULT_PEER_TIMEOUT_MS})`,
 };
 
 export const runCommand: CommandModule = {
@@ -58,7 +57,8 @@ export const runCommand: CommandModule = {
 			.option('dir', dirOption)
 			.option('workspace', workspaceOption)
 			.option('peer', peerOption)
-			.option('timeout', timeoutOption)
+			.option('peer-timeout', peerTimeoutOption)
+			.implies('peer-timeout', 'peer')
 			.options(formatYargsOptions())
 			.strict(),
 	handler: async (argv) => {
@@ -152,7 +152,10 @@ async function invokeRemote(
 		return;
 	}
 
-	const timeoutMs = argv.timeout as number;
+	const timeoutMs =
+		typeof argv['peer-timeout'] === 'number'
+			? (argv['peer-timeout'] as number)
+			: DEFAULT_PEER_TIMEOUT_MS;
 	const format = argv.format as 'json' | 'jsonl' | undefined;
 	const workspaceArg = workspaceFromArgv(argv);
 

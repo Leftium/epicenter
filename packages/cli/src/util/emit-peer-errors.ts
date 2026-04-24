@@ -5,14 +5,17 @@
  * case-ambiguous, not-found with/without peers seen).
  *
  * `emitRpcError` formats the five `RpcError` variants (ActionNotFound,
- * Timeout, PeerOffline, ActionFailed, Disconnected) plus an unknown-shape
- * fallback — all labeled with whatever presence info the peer advertised
- * (deviceName, version) at resolution time.
+ * Timeout, PeerOffline, ActionFailed, Disconnected) — all labeled with
+ * whatever presence info the peer advertised (deviceName, version) at
+ * resolution time. The exhaustive switch is enforced at compile time via
+ * the `never` check: adding a new variant to `@epicenter/sync`'s
+ * `RpcError` breaks the CLI build until a case is added here.
  *
  * Kept separate from `run.ts` so the formatting is unit-testable without
  * standing up the full invoke pipeline.
  */
 
+import type { RpcError } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { FindPeerResult } from './find-peer';
 import { outputError } from './format-output';
@@ -51,46 +54,41 @@ export function emitMissError(
 }
 
 export function emitRpcError(
-	error: unknown,
+	error: RpcError,
 	targetClientId: number,
 	peerState: AwarenessState,
 ): void {
-	if (error == null || typeof error !== 'object' || !('name' in error)) {
-		outputError(`error: ${extractErrorMessage(error)}`);
-		return;
-	}
-	const e = error as {
-		name: string;
-		action?: string;
-		ms?: number;
-		cause?: unknown;
-	};
 	const deviceName =
 		typeof peerState.deviceName === 'string' ? peerState.deviceName : undefined;
 	const version =
 		typeof peerState.version === 'string' ? peerState.version : undefined;
 	const peerLabel = formatPeerLabel(targetClientId, deviceName, version);
 
-	switch (e.name) {
+	switch (error.name) {
 		case 'ActionNotFound':
-			outputError(`error: ActionNotFound "${e.action}" on ${peerLabel}`);
+			outputError(`error: ActionNotFound "${error.action}" on ${peerLabel}`);
 			return;
 		case 'Timeout':
-			outputError(`error: timeout after ${e.ms}ms on ${peerLabel}`);
+			outputError(`error: timeout after ${error.ms}ms on ${peerLabel}`);
 			return;
 		case 'PeerOffline':
 			outputError(`error: peer ${peerLabel} is offline`);
 			return;
 		case 'ActionFailed':
 			outputError(
-				`error: "${e.action}" failed on ${peerLabel}: ${extractErrorMessage(e.cause)}`,
+				`error: "${error.action}" failed on ${peerLabel}: ${extractErrorMessage(error.cause)}`,
 			);
 			return;
 		case 'Disconnected':
 			outputError(`error: connection lost before ${peerLabel} responded`);
 			return;
-		default:
-			outputError(`error: ${extractErrorMessage(error)}`);
+		default: {
+			// Exhaustiveness: adding a new variant to @epicenter/sync's RpcError
+			// narrows this branch to the new variant and breaks the `never` check,
+			// forcing a handler here.
+			const _exhaustive: never = error;
+			void _exhaustive;
+		}
 	}
 }
 

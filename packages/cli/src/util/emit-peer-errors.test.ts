@@ -4,12 +4,17 @@
  * Covers the error shapes from the spec's Terminal Sessions section:
  *   - miss: case-suggest / case-ambiguous / not-found (with and without peers,
  *     with and without -w)
- *   - rpc: ActionNotFound / Timeout / PeerOffline / ActionFailed
+ *   - rpc: ActionNotFound / Timeout / PeerOffline / ActionFailed / Disconnected
  *
  * Capture `console.error` and assert line-by-line. Covers formatting only —
  * the full resolver + polling flow is exercised by `find-peer.test.ts` and
  * by hand-running the command against a playground config.
+ *
+ * RPC error values are constructed via `RpcError.X({...}).error` so they
+ * match the wire shape exactly — same path production takes after receiving
+ * an error over the sync channel.
  */
+import { RpcError } from '@epicenter/workspace';
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { emitMissError, emitRpcError } from './emit-peer-errors';
 
@@ -114,7 +119,7 @@ describe('emitRpcError', () => {
 	test('ActionNotFound with deviceName + version', () => {
 		cap = captureErrors();
 		emitRpcError(
-			{ name: 'ActionNotFound', action: 'tabs.closeAll' },
+			RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error,
 			42,
 			{ deviceName: 'myMacbook', version: '1.4.2' },
 		);
@@ -126,7 +131,7 @@ describe('emitRpcError', () => {
 	test('ActionNotFound without deviceName falls back to clientID label', () => {
 		cap = captureErrors();
 		emitRpcError(
-			{ name: 'ActionNotFound', action: 'tabs.closeAll' },
+			RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error,
 			42,
 			{},
 		);
@@ -137,7 +142,7 @@ describe('emitRpcError', () => {
 
 	test('Timeout reports ms and peer', () => {
 		cap = captureErrors();
-		emitRpcError({ name: 'Timeout', ms: 5000 }, 42, {
+		emitRpcError(RpcError.Timeout({ ms: 5000 }).error, 42, {
 			deviceName: 'myMacbook',
 		});
 		expect(cap.lines).toEqual([
@@ -147,18 +152,19 @@ describe('emitRpcError', () => {
 
 	test('PeerOffline', () => {
 		cap = captureErrors();
-		emitRpcError({ name: 'PeerOffline' }, 42, { deviceName: 'myMacbook' });
+		emitRpcError(RpcError.PeerOffline().error, 42, {
+			deviceName: 'myMacbook',
+		});
 		expect(cap.lines).toEqual(['error: peer myMacbook (42) is offline']);
 	});
 
 	test('ActionFailed surfaces underlying cause', () => {
 		cap = captureErrors();
 		emitRpcError(
-			{
-				name: 'ActionFailed',
+			RpcError.ActionFailed({
 				action: 'tabs.close',
 				cause: new Error('Tab 99 not found'),
-			},
+			}).error,
 			42,
 			{ deviceName: 'myMacbook' },
 		);
@@ -169,7 +175,7 @@ describe('emitRpcError', () => {
 
 	test('Disconnected', () => {
 		cap = captureErrors();
-		emitRpcError({ name: 'Disconnected' }, 42, {});
+		emitRpcError(RpcError.Disconnected().error, 42, {});
 		expect(cap.lines).toEqual([
 			'error: connection lost before clientID 42 responded',
 		]);

@@ -53,6 +53,7 @@ export {
 
 export type { InferRpcMap, RpcActionMap } from './rpc/types';
 export { createRemoteActions, type RemoteSend } from './rpc/remote-actions';
+export { isRpcError, RpcError } from '@epicenter/sync';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SHARED TYPES

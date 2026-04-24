@@ -18,14 +18,18 @@ import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
 import type { ActionIndex } from '../util/action-index';
-import { dirFromArgv, dirOption } from '../util/dir-option';
+import {
+	dirFromArgv,
+	dirOption,
+	workspaceFromArgv,
+	workspaceOption,
+} from '../util/common-options';
 import {
 	formatYargsOptions,
 	output,
 	outputError,
 } from '../util/format-output';
 import { resolveEntry } from '../util/resolve-entry';
-import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
 
 export const listCommand: CommandModule = {
 	command: 'list [path]',

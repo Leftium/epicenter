@@ -18,7 +18,12 @@
 
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
-import { dirFromArgv, dirOption } from '../util/dir-option';
+import {
+	dirFromArgv,
+	dirOption,
+	workspaceFromArgv,
+	workspaceOption,
+} from '../util/common-options';
 import { formatYargsOptions, output } from '../util/format-output';
 import {
 	getSync,
@@ -26,7 +31,6 @@ import {
 	type AwarenessState,
 } from '../util/handle-attachments';
 import { resolveEntry } from '../util/resolve-entry';
-import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
 
 const POLL_INTERVAL_MS = 100;
 const DEFAULT_WAIT_MS = 0;
@@ -68,12 +72,6 @@ export const peersCommand: CommandModule = {
 			emit(snapshots, { elideHeader: workspaceArg !== undefined, format });
 		} finally {
 			await dispose();
-			await Promise.all(
-				entries.map(async (entry) => {
-					const sync = getSync(entry.handle);
-					if (sync?.whenDisposed) await sync.whenDisposed;
-				}),
-			);
 		}
 	},
 };

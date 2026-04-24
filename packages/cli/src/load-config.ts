@@ -28,6 +28,7 @@ import {
 } from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
 import { type ActionIndex, buildActionIndex } from './util/action-index';
+import { getSync } from './util/handle-attachments';
 
 const CONFIG_FILENAME = 'epicenter.config.ts';
 
@@ -49,9 +50,11 @@ export type LoadConfigResult = {
 		actions: ActionIndex;
 	}[];
 	/**
-	 * Release every handle. Calls `.dispose()` on each and awaits any
-	 * `whenDisposed` barrier exposed on the underlying bundle, so the CLI
-	 * exits cleanly after flushing persistence / closing sync sockets.
+	 * Release every handle. Calls `.dispose()` on each and awaits both the
+	 * top-level `handle.whenDisposed` barrier AND the optional `sync.whenDisposed`
+	 * attachment barrier, so the CLI exits cleanly after flushing persistence
+	 * and closing sync sockets — regardless of whether the bundle aggregates
+	 * attachment disposal into its own barrier.
 	 */
 	dispose(): Promise<void>;
 };
@@ -93,6 +96,8 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 		dispose: async () => {
 			const barriers: Promise<void>[] = [];
 			for (const { handle } of entries) {
+				const sync = getSync(handle);
+				if (sync?.whenDisposed) barriers.push(sync.whenDisposed);
 				if (handle.whenDisposed) barriers.push(handle.whenDisposed);
 				handle.dispose();
 			}

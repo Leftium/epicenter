@@ -16,15 +16,19 @@ import { isResult } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
-import { dirFromArgv, dirOption } from '../util/dir-option';
+import type { ActionIndex } from '../util/action-index';
+import {
+	dirFromArgv,
+	dirOption,
+	workspaceFromArgv,
+	workspaceOption,
+} from '../util/common-options';
 import { emitMissError, emitRpcError } from '../util/emit-peer-errors';
 import { findPeer, type FindPeerResult } from '../util/find-peer';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { getSync, readPeers } from '../util/handle-attachments';
-import type { ActionIndex } from '../util/action-index';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 import { resolveEntry } from '../util/resolve-entry';
-import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
 
 const POLL_INTERVAL_MS = 100;
 const DEFAULT_PEER_WAIT_MS = 5000;
@@ -70,12 +74,6 @@ export const runCommand: CommandModule = {
 			await invoke(args, entry);
 		} finally {
 			await dispose();
-			await Promise.all(
-				entries.map(async (entry) => {
-					const sync = getSync(entry.handle);
-					if (sync?.whenDisposed) await sync.whenDisposed;
-				}),
-			);
 		}
 	},
 };

@@ -117,7 +117,19 @@ async function invoke(
 	const peerTarget =
 		typeof argv.peer === 'string' && argv.peer.length > 0 ? argv.peer : undefined;
 	if (peerTarget !== undefined) {
-		await invokeRemote(argv, entry, actionPath, input, peerTarget);
+		const timeoutMs =
+			typeof argv['peer-timeout'] === 'number'
+				? (argv['peer-timeout'] as number)
+				: DEFAULT_PEER_TIMEOUT_MS;
+		await invokeRemote({
+			entry,
+			actionPath,
+			input,
+			peerTarget,
+			timeoutMs,
+			format,
+			workspaceArg: workspaceFromArgv(argv),
+		});
 		return;
 	}
 
@@ -135,13 +147,25 @@ async function invoke(
 	output(raw, { format });
 }
 
-async function invokeRemote(
-	argv: Record<string, unknown>,
-	entry: LoadConfigResult['entries'][number],
-	actionPath: string,
-	input: unknown,
-	peerTarget: string,
-): Promise<void> {
+type InvokeRemoteOptions = {
+	entry: LoadConfigResult['entries'][number];
+	actionPath: string;
+	input: unknown;
+	peerTarget: string;
+	timeoutMs: number;
+	format: 'json' | 'jsonl' | undefined;
+	workspaceArg: string | undefined;
+};
+
+async function invokeRemote({
+	entry,
+	actionPath,
+	input,
+	peerTarget,
+	timeoutMs,
+	format,
+	workspaceArg,
+}: InvokeRemoteOptions): Promise<void> {
 	const sync = getSync(entry.handle);
 
 	if (!sync?.rpc) {
@@ -151,13 +175,6 @@ async function invokeRemote(
 		process.exitCode = 1;
 		return;
 	}
-
-	const timeoutMs =
-		typeof argv['peer-timeout'] === 'number'
-			? (argv['peer-timeout'] as number)
-			: DEFAULT_PEER_TIMEOUT_MS;
-	const format = argv.format as 'json' | 'jsonl' | undefined;
-	const workspaceArg = workspaceFromArgv(argv);
 
 	if (sync.whenConnected) await sync.whenConnected;
 

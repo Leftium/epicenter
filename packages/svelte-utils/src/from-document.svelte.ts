@@ -8,10 +8,11 @@ import type {
  * id and disposes it on unmount or id swap.
  *
  * The id is read through `idFn` inside a `$derived`, so the handle tracks
- * prop/state changes atomically: derived re-evaluates → new handle opens →
- * effect cleanup disposes the old one → refcount for the old id drops to
- * zero and the factory's gcTime grace period starts. Rapid flips back to a
- * recent id cancel the pending teardown (factory-level behavior).
+ * prop/state changes. When the id changes, the factory opens a handle for
+ * the new id and the effect's teardown disposes the handle for the old id;
+ * the two operations may briefly overlap depending on Svelte's scheduling,
+ * which the factory's refcount tolerates. Rapid flips back to a recent id
+ * cancel the pending teardown (factory-level behavior).
  *
  * Why a getter (`() => id`) and not the id directly: destructured props and
  * `$state` reads are not reactive when captured at module top — see Svelte's

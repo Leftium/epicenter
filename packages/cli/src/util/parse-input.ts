@@ -4,7 +4,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Err, type Result, trySync } from 'wellcrafted/result';
+import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 export type ParseInputOptions = {
 	/** Positional argument (inline JSON or @file) */
@@ -30,10 +30,6 @@ const ParseInputError = defineErrors({
 		message: `Error reading file '${path}': ${extractErrorMessage(cause)}`,
 		path,
 		cause,
-	}),
-	NoInputProvided: () => ({
-		message:
-			'No input provided. Use inline JSON, --file, @file, or pipe via stdin.',
 	}),
 });
 type ParseInputError = InferErrors<typeof ParseInputError>;
@@ -66,7 +62,8 @@ function readJsonFile<T>(filePath: string): Result<T, ParseInputError> {
 
 /**
  * Parse JSON input from various sources.
- * Priority: positional > --file > stdin
+ * Priority: positional > --file > stdin. Callers must check that at least
+ * one source is populated; if all are empty, returns `Ok(undefined as T)`.
  */
 export function parseJsonInput<T = unknown>(
 	options: ParseInputOptions,
@@ -90,7 +87,7 @@ export function parseJsonInput<T = unknown>(
 		return parseJson<T>(options.stdinContent);
 	}
 
-	return ParseInputError.NoInputProvided();
+	return Ok(undefined as T);
 }
 
 /**

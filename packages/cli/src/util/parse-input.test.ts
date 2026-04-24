@@ -99,13 +99,13 @@ describe('parseJsonInput', () => {
 		expect(result.error?.message).toContain('File not found');
 	});
 
-	test('returns error when no input provided', () => {
+	test('returns Ok(undefined) when no input provided', () => {
 		const options: ParseInputOptions = {};
 
 		const result = parseJsonInput(options);
 
-		expect(result.error).toBeDefined();
-		expect(result.error?.message).toContain('No input provided');
+		expect(result.error).toBeNull();
+		expect(result.data).toBeUndefined();
 	});
 
 	test('prioritizes positional over --file', () => {

@@ -83,7 +83,7 @@ async function invoke(
 	argv: Record<string, unknown>,
 	entry: LoadConfigResult['entries'][number],
 ): Promise<void> {
-	const actionPath = String(argv.action ?? '');
+	const actionPath = String(argv.action);
 	const segments = actionPath.split('.').filter(Boolean);
 
 	if (segments.length === 0) {
@@ -111,7 +111,7 @@ async function invoke(
 	}
 
 	const { action } = resolved;
-	const input = await resolveInput(argv, action);
+	const input = await resolveInput(argv);
 	const format = argv.format as 'json' | 'jsonl' | undefined;
 
 	const peerTarget =
@@ -194,10 +194,7 @@ async function invokeRemote(
 
 async function resolveInput(
 	argv: Record<string, unknown>,
-	action: { input?: unknown },
 ): Promise<unknown> {
-	if (action.input === undefined) return undefined;
-
 	const positional =
 		typeof argv.input === 'string' && argv.input.length > 0
 			? (argv.input as string)

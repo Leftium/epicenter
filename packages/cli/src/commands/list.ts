@@ -17,6 +17,7 @@ import type { Action } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
+import type { ActionIndex } from '../util/action-index';
 import { dirFromArgv, dirOption } from '../util/dir-option';
 import {
 	formatYargsOptions,
@@ -115,10 +116,7 @@ function render(
 
 type TreeNode = { name: string; children: Map<string, TreeNode>; action?: Action };
 
-function printTree(
-	actions: LoadConfigResult['entries'][number]['actions'],
-	prefix: string,
-): void {
+function printTree(actions: ActionIndex, prefix: string): void {
 	const pfx = prefix ? prefix + '.' : '';
 	const root: TreeNode = { name: '', children: new Map() };
 	let count = 0;

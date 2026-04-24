@@ -22,6 +22,7 @@ import { EXIT } from '../util/exit-codes';
 import { findPeer, type FindPeerResult } from '../util/find-peer';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { getSync, readPeers } from '../util/handle-attachments';
+import type { ActionIndex } from '../util/action-index';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 import { resolveEntry } from '../util/resolve-entry';
 import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
@@ -85,10 +86,6 @@ async function invoke(
 	entry: LoadConfigResult['entries'][number],
 ): Promise<void> {
 	const actionPath = String(argv.action);
-
-	if (actionPath.length === 0) {
-		throw new Error('Provide an action path, e.g. `savedTabs.list`.');
-	}
 
 	if (entry.handle.whenReady) await entry.handle.whenReady;
 
@@ -210,8 +207,6 @@ async function resolveInput(
 			: undefined;
 	const stdinContent = await readStdin();
 
-	if (!positional && stdinContent === undefined) return undefined;
-
 	const { data, error } = parseJsonInput({ positional, stdinContent });
 	if (error) throw new Error(error.message);
 	return data;
@@ -233,7 +228,7 @@ function emitActionList(
  * matches, stay silent — the top-level "not defined" error stands alone.
  */
 function emitNearestSiblings(
-	actions: LoadConfigResult['entries'][number]['actions'],
+	actions: ActionIndex,
 	missedPath: string,
 ): void {
 	const parts = missedPath.split('.');

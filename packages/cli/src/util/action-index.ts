@@ -12,10 +12,8 @@
  *   - `list`, `run`, and sibling suggestions all want the same data;
  *     the index is the canonical source.
  *
- * The index is a `ReadonlyMap<string, Action>` with two extras:
- *   - `under(prefix)` — every `[path, action]` at or under `prefix`
- *     (empty prefix returns everything);
- *   - `children(prefix)` — immediate sub-segment names at `prefix`.
+ * The index is a `ReadonlyMap<string, Action>` plus `under(prefix)` —
+ * every `[path, action]` at or under `prefix` (empty prefix returns all).
  */
 
 import type { Action } from '@epicenter/workspace';
@@ -23,7 +21,6 @@ import { iterateActions } from '@epicenter/workspace';
 
 export type ActionIndex = ReadonlyMap<string, Action> & {
 	under(prefix: string): Array<[string, Action]>;
-	children(prefix: string): string[];
 };
 
 export function buildActionIndex(handle: unknown): ActionIndex {
@@ -44,17 +41,5 @@ export function buildActionIndex(handle: unknown): ActionIndex {
 		return out;
 	}
 
-	function children(prefix: string): string[] {
-		const pfx = prefix ? prefix + '.' : '';
-		const out = new Set<string>();
-		for (const k of map.keys()) {
-			if (prefix && !k.startsWith(pfx)) continue;
-			const rest = prefix ? k.slice(pfx.length) : k;
-			const head = rest.split('.')[0];
-			if (head) out.add(head);
-		}
-		return [...out];
-	}
-
-	return Object.assign(map, { under, children });
+	return Object.assign(map, { under });
 }

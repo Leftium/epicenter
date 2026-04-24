@@ -75,18 +75,6 @@ describe('ActionIndex', () => {
 		expect(actions.under('counter.nope')).toEqual([]);
 	});
 
-	test('children() lists direct sub-segments at a prefix', () => {
-		expect(actions.children('counter').sort()).toEqual([
-			'get',
-			'increment',
-			'set',
-		]);
-	});
-
-	test('children("") lists top-level segments', () => {
-		expect(actions.children('').sort()).toEqual(['counter']);
-	});
-
 	test('invoking a resolved action mutates state observably', async () => {
 		const get = actions.get('counter.get');
 		const inc = actions.get('counter.increment');

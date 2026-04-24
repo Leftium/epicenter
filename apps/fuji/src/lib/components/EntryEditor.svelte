@@ -36,14 +36,7 @@
 		workspace.actions.entries.update({ id: entry.id, ...updates });
 	}
 
-	// Stable for this component's lifetime — parent uses {#key entryId}
-	// to remount on navigation, so entry.id never changes within an instance.
-	const id = entry.id;
-
-	// `fromDocument` opens the handle on mount and disposes on unmount.
-	// Refcount grace-period idles the socket if nothing else reopens the
-	// same id within gcTime.
-	const contentDoc = fromDocument(entryContentDocs, () => id);
+	const contentDoc = fromDocument(entryContentDocs, () => entry.id);
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);

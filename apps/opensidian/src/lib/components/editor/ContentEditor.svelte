@@ -21,9 +21,6 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	// Parent (ContentPanel) wraps in {#key activeFileId}, so fileId is stable
-	// for this instance's lifetime. `fromDocument` opens on mount and disposes
-	// on unmount.
 	const doc = fromDocument(fileContentDocs, () => fileId);
 
 	const sharedLinkDecorations = linkDecorations({

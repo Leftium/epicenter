@@ -7,8 +7,6 @@
 
 	let { noteId }: { noteId: string } = $props();
 
-	// Parent wraps in {#key noteId}, so noteId is stable for this instance's
-	// lifetime. `fromDocument` opens on mount and disposes on unmount.
 	const doc = fromDocument(noteBodyDocs, () => noteId);
 </script>
 

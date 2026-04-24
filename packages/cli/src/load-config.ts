@@ -27,12 +27,27 @@ import {
 	type DocumentHandle,
 } from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
+import { type ActionIndex, buildActionIndex } from './util/action-index';
 
 const CONFIG_FILENAME = 'epicenter.config.ts';
 
 export type LoadConfigResult = {
-	/** Handles keyed by export name. The name is the dot-path root. */
-	entries: { name: string; handle: DocumentHandle<DocumentBundle> }[];
+	/**
+	 * One record per named export that resolves to an opened `DocumentHandle`.
+	 *
+	 * - `handle` is the bundle-spread surface used for in-process scripting
+	 *   (`entry.handle.tables.foo.read()`, etc.).
+	 * - `actions` is the CLI's canonical dot-path lookup, built via
+	 *   `iterateActions`. The CLI dispatches exclusively through this index —
+	 *   it never walks `handle` looking for actions, which is what keeps
+	 *   framework internals like `ydoc`, `sync`, and `tables` out of the
+	 *   addressable path namespace.
+	 */
+	entries: {
+		name: string;
+		handle: DocumentHandle<DocumentBundle>;
+		actions: ActionIndex;
+	}[];
 	/**
 	 * Release every handle. Calls `.dispose()` on each and awaits any
 	 * `whenDisposed` barrier exposed on the underlying bundle, so the CLI
@@ -61,7 +76,7 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	for (const [name, value] of Object.entries(module)) {
 		if (name === 'default') continue;
 		if (!isDocumentHandle(value)) continue;
-		entries.push({ name, handle: value });
+		entries.push({ name, handle: value, actions: buildActionIndex(value) });
 	}
 
 	if (entries.length === 0) {

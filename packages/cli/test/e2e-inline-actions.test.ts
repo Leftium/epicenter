@@ -9,7 +9,6 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../src/load-config';
-import { resolvePath } from '../src/util/resolve-path';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/inline-actions');
 
@@ -42,64 +41,68 @@ describe('loadConfig against inline-actions fixture', () => {
 	});
 });
 
-describe('resolvePath', () => {
-	let handle: Awaited<ReturnType<typeof loadConfig>>['entries'][0]['handle'];
+describe('ActionIndex', () => {
+	let actions: Awaited<ReturnType<typeof loadConfig>>['entries'][0]['actions'];
 
 	beforeAll(async () => {
 		const loaded = await loadConfig(FIXTURE_DIR);
-		handle = loaded.entries[0]!.handle;
-		// Both describe blocks share this handle via Bun's module cache:
-		// `demoFactory.open(...)` in the fixture runs once at module load, so
-		// every loadConfig() call returns the same `demo` reference. The first
-		// describe's afterAll disposes it (refcount 1 → 0), but createDocumentFactory's
-		// default gcTime: Infinity keeps the Y.Doc alive, so these tests still
-		// read valid state. If that default ever becomes finite, split this
-		// describe into its own explicit factory.open() / dispose() lifecycle.
+		actions = loaded.entries[0]!.actions;
+		// Both describe blocks share the underlying handle via Bun's module
+		// cache: `demoFactory.open(...)` in the fixture runs once at module
+		// load, so every loadConfig() call returns the same `demo` reference.
+		// The first describe's afterAll disposes it (refcount 1 → 0), but
+		// createDocumentFactory's default gcTime: Infinity keeps the Y.Doc
+		// alive, so these tests still read valid state. If that default ever
+		// becomes finite, split this describe into its own explicit
+		// factory.open() / dispose() lifecycle.
 	});
 
-	test('resolves a leaf action', () => {
-		const r = resolvePath(handle, ['counter', 'get']);
-		expect(r.kind).toBe('action');
-		if (r.kind === 'action') {
-			expect(r.action.type).toBe('query');
-			expect(r.path).toEqual(['counter', 'get']);
-		}
+	test('get() returns a leaf action by dot-path', () => {
+		const a = actions.get('counter.get');
+		expect(a?.type).toBe('query');
 	});
 
-	test('resolves a subtree node', () => {
-		const r = resolvePath(handle, ['counter']);
-		expect(r.kind).toBe('subtree');
+	test('get() returns undefined for a subtree path', () => {
+		expect(actions.get('counter')).toBeUndefined();
 	});
 
-	test('reports the first missing segment', () => {
-		const r = resolvePath(handle, ['counter', 'nope', 'further']);
-		expect(r.kind).toBe('missing');
-		if (r.kind === 'missing') {
-			expect(r.lastGoodPath).toEqual(['counter']);
-			expect(r.missingSegment).toBe('nope');
-		}
+	test('under() returns descendants for a subtree prefix', () => {
+		const paths = actions.under('counter').map(([p]) => p).sort();
+		expect(paths).toEqual(['counter.get', 'counter.increment', 'counter.set']);
+	});
+
+	test('under() for a missing prefix returns empty', () => {
+		expect(actions.under('counter.nope')).toEqual([]);
+	});
+
+	test('children() lists direct sub-segments at a prefix', () => {
+		expect(actions.children('counter').sort()).toEqual([
+			'get',
+			'increment',
+			'set',
+		]);
+	});
+
+	test('children("") lists top-level segments', () => {
+		expect(actions.children('').sort()).toEqual(['counter']);
 	});
 
 	test('invoking a resolved action mutates state observably', async () => {
-		const get = resolvePath(handle, ['counter', 'get']);
-		const inc = resolvePath(handle, ['counter', 'increment']);
-		if (get.kind !== 'action' || inc.kind !== 'action') {
-			throw new Error('expected actions');
-		}
-		const before = await get.action();
-		await inc.action();
-		const after = await get.action();
+		const get = actions.get('counter.get');
+		const inc = actions.get('counter.increment');
+		if (!get || !inc) throw new Error('expected actions');
+		const before = await get();
+		await inc();
+		const after = await get();
 		expect(after).toBe((before as number) + 1);
 	});
 
 	test('invoking a mutation with an input schema applies the input', async () => {
-		const set = resolvePath(handle, ['counter', 'set']);
-		const get = resolvePath(handle, ['counter', 'get']);
-		if (set.kind !== 'action' || get.kind !== 'action') {
-			throw new Error('expected actions');
-		}
-		await (set.action as any)({ value: 42 });
-		expect(await get.action()).toBe(42);
+		const set = actions.get('counter.set');
+		const get = actions.get('counter.get');
+		if (!set || !get) throw new Error('expected actions');
+		await (set as any)({ value: 42 });
+		expect(await get()).toBe(42);
 	});
 });
 

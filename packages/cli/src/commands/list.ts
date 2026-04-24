@@ -14,7 +14,6 @@
  */
 
 import type { Action } from '@epicenter/workspace';
-import { iterateActions } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
@@ -25,7 +24,6 @@ import {
 	outputError,
 } from '../util/format-output';
 import { resolveEntry } from '../util/resolve-entry';
-import { resolvePath } from '../util/resolve-path';
 import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
 
 export const listCommand: CommandModule = {
@@ -68,92 +66,85 @@ function describeAction(action: Action, path: string): ActionDescriptor {
 	return desc;
 }
 
-function collectActions(root: unknown, prefix: string[]): ActionDescriptor[] {
-	if (root == null || typeof root !== 'object') return [];
-	const out: ActionDescriptor[] = [];
-	for (const [action, path] of iterateActions(root)) {
-		out.push(describeAction(action, [...prefix, ...path].join('.')));
-	}
-	return out;
-}
-
 function render(
 	pathArg: string | undefined,
 	entry: LoadConfigResult['entries'][number],
 	format: 'json' | 'jsonl' | undefined,
 ): void {
-	const segments = pathArg ? pathArg.split('.').filter(Boolean) : [];
+	const path = pathArg?.split('.').filter(Boolean).join('.') ?? '';
 
-	if (segments.length === 0) {
+	if (path === '') {
+		const all = [...entry.actions].map(([p, a]) => describeAction(a, p));
 		if (format) {
-			output(collectActions(entry.handle, []), { format });
+			output(all, { format });
 			return;
 		}
 		console.log(entry.name);
-		printTree(entry.handle);
+		printTree(entry.actions, '');
 		return;
 	}
 
-	const resolved = resolvePath(entry.handle, segments);
+	const action = entry.actions.get(path);
+	if (action) {
+		if (format) {
+			output(describeAction(action, path), { format });
+			return;
+		}
+		printActionDetail(path, action);
+		return;
+	}
 
-	if (resolved.kind === 'missing') {
-		outputError(
-			`"${pathArg}" is not defined. Stopped at ` +
-				`"${resolved.lastGoodPath.join('.')}" ` +
-				`while looking for "${resolved.missingSegment}".`,
-		);
+	const descendants = entry.actions.under(path);
+	if (descendants.length === 0) {
+		outputError(`"${pathArg}" is not defined.`);
 		throw new Error('Path not found');
 	}
 
-	const joinedPath = segments.join('.');
-
-	if (resolved.kind === 'action') {
-		if (format) {
-			output(describeAction(resolved.action, joinedPath), { format });
-			return;
-		}
-		printActionDetail(joinedPath, resolved.action);
-		return;
-	}
-
 	if (format) {
-		output(collectActions(resolved.node, segments), { format });
+		output(
+			descendants.map(([p, a]) => describeAction(a, p)),
+			{ format },
+		);
 		return;
 	}
-	console.log(joinedPath);
-	printTree(resolved.node);
+	console.log(path);
+	printTree(entry.actions, path);
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
 
 type TreeNode = { name: string; children: Map<string, TreeNode>; action?: Action };
 
-function printTree(root: unknown): void {
-	if (root == null || typeof root !== 'object') {
-		console.log('  (no actions exposed)');
-		return;
-	}
-	const tree: TreeNode = { name: '', children: new Map() };
+function printTree(
+	actions: LoadConfigResult['entries'][number]['actions'],
+	prefix: string,
+): void {
+	const pfx = prefix ? prefix + '.' : '';
+	const root: TreeNode = { name: '', children: new Map() };
 	let count = 0;
-	for (const [action, path] of iterateActions(root)) {
+	for (const [path, action] of actions) {
+		if (prefix && !path.startsWith(pfx) && path !== prefix) continue;
+		const rest = prefix ? path.slice(pfx.length) : path;
+		if (!rest) continue;
+		const parts = rest.split('.');
 		count++;
-		let node = tree;
-		for (let i = 0; i < path.length; i++) {
-			const seg = path[i]!;
+		let node = root;
+		for (let i = 0; i < parts.length; i++) {
+			const seg = parts[i]!;
 			let child = node.children.get(seg);
 			if (!child) {
 				child = { name: seg, children: new Map() };
 				node.children.set(seg, child);
 			}
 			node = child;
-			if (i === path.length - 1) node.action = action;
+			if (i === parts.length - 1) node.action = action;
 		}
 	}
 	if (count === 0) {
 		console.log('  (no actions exposed)');
 		return;
 	}
-	printChildren(tree, '');
+	printChildren(root, '');
 }
 
 function printChildren(node: TreeNode, prefix: string): void {

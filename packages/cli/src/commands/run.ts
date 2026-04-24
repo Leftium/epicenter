@@ -12,7 +12,7 @@
  *   3 — peer-miss (`--peer <target>` didn't resolve within `--wait`)
  */
 
-import { isResult, iterateActions } from '@epicenter/workspace';
+import { isResult } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
@@ -24,7 +24,6 @@ import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { getSync, readPeers } from '../util/handle-attachments';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 import { resolveEntry } from '../util/resolve-entry';
-import { resolvePath } from '../util/resolve-path';
 import { workspaceFromArgv, workspaceOption } from '../util/workspace-option';
 
 const POLL_INTERVAL_MS = 100;
@@ -86,33 +85,26 @@ async function invoke(
 	entry: LoadConfigResult['entries'][number],
 ): Promise<void> {
 	const actionPath = String(argv.action);
-	const segments = actionPath.split('.').filter(Boolean);
 
-	if (segments.length === 0) {
+	if (actionPath.length === 0) {
 		throw new Error('Provide an action path, e.g. `savedTabs.list`.');
 	}
 
 	if (entry.handle.whenReady) await entry.handle.whenReady;
 
-	const resolved = resolvePath(entry.handle, segments);
-
-	if (resolved.kind === 'missing') {
-		outputError(
-			`"${actionPath}" is not defined. ` +
-				`Stopped at "${resolved.lastGoodPath.join('.')}" ` +
-				`while looking for "${resolved.missingSegment}".`,
-		);
-		suggestSiblings(entry.handle, resolved.lastGoodPath);
+	const action = entry.actions.get(actionPath);
+	if (!action) {
+		const descendants = entry.actions.under(actionPath);
+		if (descendants.length > 0) {
+			outputError(`"${actionPath}" is not a runnable action.`);
+			emitActionList(descendants);
+			throw new Error('Not an action');
+		}
+		outputError(`"${actionPath}" is not defined.`);
+		emitNearestSiblings(entry.actions, actionPath);
 		throw new Error('Action not found');
 	}
 
-	if (resolved.kind === 'subtree') {
-		outputError(`"${actionPath}" is not a runnable action.`);
-		suggestSiblings(entry.handle, resolved.path);
-		throw new Error('Not an action');
-	}
-
-	const { action } = resolved;
 	const input = await resolveInput(argv);
 	const format = argv.format as 'json' | 'jsonl' | undefined;
 
@@ -225,21 +217,32 @@ async function resolveInput(
 	return data;
 }
 
-function suggestSiblings(bundle: unknown, parentPath: string[]): void {
-	let node: unknown = bundle;
-	for (const seg of parentPath) {
-		if (node == null || typeof node !== 'object') return;
-		node = (node as Record<string, unknown>)[seg];
-	}
-	if (node == null || typeof node !== 'object') return;
-
-	const siblings = [...iterateActions(node)];
-	if (siblings.length === 0) return;
-
+function emitActionList(
+	descendants: Array<[string, { type: string }]>,
+): void {
 	outputError('');
 	outputError('Exposed actions at this path:');
-	for (const [action, path] of siblings) {
-		const full = [...parentPath, ...path].join('.');
-		outputError(`  ${full}  (${action.type})`);
+	for (const [path, action] of descendants) {
+		outputError(`  ${path}  (${action.type})`);
+	}
+}
+
+/**
+ * After a miss, walk up the requested path looking for the longest prefix
+ * that has any exposed actions and emit them as suggestions. If nothing
+ * matches, stay silent — the top-level "not defined" error stands alone.
+ */
+function emitNearestSiblings(
+	actions: LoadConfigResult['entries'][number]['actions'],
+	missedPath: string,
+): void {
+	const parts = missedPath.split('.');
+	while (parts.length > 0) {
+		parts.pop();
+		const prefix = parts.join('.');
+		const alts = actions.under(prefix);
+		if (alts.length === 0) continue;
+		emitActionList(alts);
+		return;
 	}
 }

@@ -23,7 +23,7 @@ import { join } from 'node:path';
 import {
 	attachSessionUnlock,
 	createSessionStore,
-	EPICENTER_PATHS,
+	epicenterPaths,
 } from '@epicenter/cli';
 import {
 	tabManagerAwarenessDefs,
@@ -57,7 +57,7 @@ const tabManagerFactory = createDocumentFactory((id: string) => {
 	const kv = encryption.attachKv(ydoc, {});
 
 	const persistence = attachSqlite(ydoc, {
-		filePath: EPICENTER_PATHS.persistence(id),
+		filePath: epicenterPaths.persistence(id),
 	});
 
 	const unlock = attachSessionUnlock(encryption, {

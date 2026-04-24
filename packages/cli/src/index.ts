@@ -5,7 +5,7 @@ export {
 	attachSessionUnlock,
 	type SessionUnlockAttachment,
 } from './auth/attach-session-unlock';
-export { EPICENTER_PATHS } from './auth/paths';
+export { epicenterPaths } from './auth/paths';
 export {
 	type AuthSession,
 	createSessionStore,

@@ -16,7 +16,7 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { SessionResponse } from '@epicenter/api/types';
-import { EPICENTER_PATHS } from './paths.js';
+import { epicenterPaths } from './paths.js';
 
 /**
  * A persisted auth session for a single server.
@@ -72,7 +72,7 @@ function normalizeUrl(url: string): string {
  * ```
  */
 export function createSessionStore() {
-	const path = EPICENTER_PATHS.authSessions();
+	const path = epicenterPaths.authSessions();
 
 	type Store = Record<string, AuthSession>;
 

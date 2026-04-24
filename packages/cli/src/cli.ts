@@ -1,5 +1,5 @@
 import yargs from 'yargs';
-import { createAuthCommand } from './commands/auth';
+import { authCommand } from './commands/auth';
 import { listCommand } from './commands/list';
 import { peersCommand } from './commands/peers';
 import { runCommand } from './commands/run';
@@ -23,7 +23,7 @@ export function createCLI() {
 		run: async (argv: string[]) => {
 			const cli = yargs()
 				.scriptName('epicenter')
-				.command(createAuthCommand())
+				.command(authCommand)
 				.command(listCommand)
 				.command(peersCommand)
 				.command(runCommand)

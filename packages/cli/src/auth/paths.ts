@@ -9,15 +9,15 @@
  *
  * @example
  * ```typescript
- * import { EPICENTER_PATHS } from '@epicenter/cli';
+ * import { epicenterPaths } from '@epicenter/cli';
  *
- * EPICENTER_PATHS.home()
+ * epicenterPaths.home()
  * // → '/Users/braden/.epicenter'
  *
- * EPICENTER_PATHS.authSessions()
+ * epicenterPaths.authSessions()
  * // → '/Users/braden/.epicenter/auth/sessions.json'
  *
- * EPICENTER_PATHS.persistence('epicenter.fuji')
+ * epicenterPaths.persistence('epicenter.fuji')
  * // → '/Users/braden/.epicenter/persistence/epicenter.fuji.db'
  * ```
  */
@@ -25,7 +25,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-/** Resolve the Epicenter home directory. Not exported—use `EPICENTER_PATHS.home()`. */
+/** Resolve the Epicenter home directory. Not exported—use `epicenterPaths.home()`. */
 function resolveHome(): string {
 	return Bun.env.EPICENTER_HOME ?? join(homedir(), '.epicenter');
 }
@@ -33,13 +33,10 @@ function resolveHome(): string {
 /**
  * Grouped path resolution for all files under `~/.epicenter/`.
  *
- * Follows the codebase convention of SCREAMING_CASE constant objects with
- * callable members (like `APPS`, `FS_ERRORS`, `MESSAGE_TYPE`).
- *
  * Each method calls `resolveHome()` directly—no `this` references—so
- * destructuring is safe: `const { persistence } = EPICENTER_PATHS`.
+ * destructuring is safe: `const { persistence } = epicenterPaths`.
  */
-export const EPICENTER_PATHS = {
+export const epicenterPaths = {
 	/**
 	 * The Epicenter home directory.
 	 *
@@ -48,7 +45,7 @@ export const EPICENTER_PATHS = {
 	 *
 	 * @example
 	 * ```typescript
-	 * const home = EPICENTER_PATHS.home();
+	 * const home = epicenterPaths.home();
 	 * // → '/Users/braden/.epicenter'
 	 * ```
 	 */
@@ -64,7 +61,7 @@ export const EPICENTER_PATHS = {
 	 *
 	 * @example
 	 * ```typescript
-	 * EPICENTER_PATHS.authSessions()
+	 * epicenterPaths.authSessions()
 	 * // → '/Users/braden/.epicenter/auth/sessions.json'
 	 * ```
 	 */
@@ -85,7 +82,7 @@ export const EPICENTER_PATHS = {
 	 * ```typescript
 	 * import { sqlitePersistence } from '@epicenter/workspace/extensions/persistence/sqlite';
 	 *
-	 * sqlitePersistence({ filePath: EPICENTER_PATHS.persistence('epicenter.fuji') })
+	 * sqlitePersistence({ filePath: epicenterPaths.persistence('epicenter.fuji') })
 	 * // → '~/.epicenter/persistence/epicenter.fuji.db'
 	 * ```
 	 */

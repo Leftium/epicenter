@@ -16,8 +16,15 @@ import { createSessionStore } from '../auth/session-store';
 
 const DEFAULT_SERVER = 'https://api.epicenter.so';
 
+const sessions = createSessionStore();
+
+const serverPositional = {
+	type: 'string' as const,
+	describe: `Server URL (default: ${DEFAULT_SERVER})`,
+};
+
 /**
- * Create the `auth` command group.
+ * `auth` command group.
  *
  * @example
  * ```bash
@@ -27,19 +34,11 @@ const DEFAULT_SERVER = 'https://api.epicenter.so';
  * epicenter auth logout
  * ```
  */
-export function createAuthCommand(): CommandModule {
-	const sessions = createSessionStore();
-
-	const serverPositional = {
-		type: 'string' as const,
-		describe: `Server URL (default: ${DEFAULT_SERVER})`,
-	};
-
-	return {
-		command: 'auth <subcommand>',
-		describe: 'Manage authentication with Epicenter servers',
-		builder: (yargs: Argv) =>
-			yargs
+export const authCommand: CommandModule = {
+	command: 'auth <subcommand>',
+	describe: 'Manage authentication with Epicenter servers',
+	builder: (yargs: Argv) =>
+		yargs
 				.command({
 					command: 'login [server]',
 					describe: 'Log in to an Epicenter server (opens browser)',
@@ -177,7 +176,6 @@ export function createAuthCommand(): CommandModule {
 						}
 					},
 				} satisfies CommandModule)
-				.demandCommand(1, 'Specify a subcommand: login, logout, or status'),
-		handler: () => {},
-	};
-}
+			.demandCommand(1, 'Specify a subcommand: login, logout, or status'),
+	handler: () => {},
+};

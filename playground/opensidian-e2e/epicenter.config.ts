@@ -30,7 +30,7 @@ import { Database } from 'bun:sqlite';
 import {
 	attachSessionUnlock,
 	createSessionStore,
-	EPICENTER_PATHS,
+	epicenterPaths,
 } from '@epicenter/cli';
 import { createFileContentDocs } from '@epicenter/filesystem';
 import { opensidianTables } from 'opensidian/workspace';
@@ -65,7 +65,7 @@ const opensidianFactory = createDocumentFactory((id: string) => {
 	const kv = encryption.attachKv(ydoc, {});
 
 	const persistence = attachSqlite(ydoc, {
-		filePath: EPICENTER_PATHS.persistence(id),
+		filePath: epicenterPaths.persistence(id),
 	});
 
 	const unlock = attachSessionUnlock(encryption, {
@@ -90,7 +90,7 @@ const opensidianFactory = createDocumentFactory((id: string) => {
 	 * Survives restarts without relying on sync hydration.
 	 */
 	const CONTENT_DIR = join(
-		EPICENTER_PATHS.home(),
+		epicenterPaths.home(),
 		'persistence',
 		id,
 		'content',

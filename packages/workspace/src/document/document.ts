@@ -3,9 +3,21 @@
  *
  * The user owns construction and disposal. The cache owns identity, refcount,
  * and the `gcTime` grace period between last-dispose and actual teardown.
- * Readiness **and** disposal-barriers are attachment-level conventions, not
- * framework concerns — bundles expose them (or don't) as they see fit, and
- * consumers await whichever gate fits at the call site.
+ *
+ * Readiness composition is the builder's job — they aggregate attachment
+ * signals (`idb.whenLoaded`, `sync.whenConnected`, …) into whatever shape
+ * the bundle needs. The framework neither reads nor orchestrates these
+ * promises; the cache only touches `ydoc` (for identity) and
+ * `[Symbol.dispose]` (for teardown).
+ *
+ * `Document` declares one optional typed slot, `whenReady?: Promise<unknown>`,
+ * for builders that want to expose the aggregated "can I render yet?" promise
+ * — purely an ergonomic affordance so consumers (CLI, UI skeletons) get
+ * typed access without duck-typing. Disposal barriers are NOT in the type:
+ * `[Symbol.dispose]()` is synchronous, attachments self-wire async cleanup
+ * via `ydoc.on('destroy')`, and callers needing a real teardown barrier
+ * opt into a specific attachment field at the call site
+ * (`await h.idb.whenDisposed`).
  *
  * ```text
  *  builder (user)                     cache (this module)

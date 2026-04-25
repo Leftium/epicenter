@@ -12,7 +12,6 @@
  *   3 — peer-miss (`--peer <target>` didn't resolve within `--wait`)
  */
 
-import { isResult } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
@@ -119,18 +118,18 @@ async function invoke(
 		return;
 	}
 
-	const raw =
-		action.input !== undefined ? await action(input) : await action();
-	if (isResult(raw)) {
-		if (raw.error !== null) {
-			outputError(extractErrorMessage(raw.error));
-			process.exitCode = 2; // runtime error (local Err)
-			return;
-		}
-		output(raw.data, { format });
+	const invoke = action as unknown as (input?: unknown) => Promise<{
+		data: unknown;
+		error: unknown;
+	}>;
+	const result =
+		action.input !== undefined ? await invoke(input) : await invoke();
+	if (result.error !== null) {
+		outputError(extractErrorMessage(result.error));
+		process.exitCode = 2; // runtime error (local Err)
 		return;
 	}
-	output(raw, { format });
+	output(result.data, { format });
 }
 
 type InvokeRemoteOptions = {

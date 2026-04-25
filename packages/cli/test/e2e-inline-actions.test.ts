@@ -82,7 +82,7 @@ describe('ActionIndex', () => {
 		const before = await get();
 		await inc();
 		const after = await get();
-		expect(after.data).toBe((before.data as number) + 1);
+		expect(after).toBe((before as number) + 1);
 	});
 
 	test('invoking a mutation with an input schema applies the input', async () => {
@@ -90,7 +90,7 @@ describe('ActionIndex', () => {
 		const get = actions.get('counter.get');
 		if (!set || !get) throw new Error('expected actions');
 		await (set as any)({ value: 42 });
-		expect((await get()).data).toBe(42);
+		expect(await get()).toBe(42);
 	});
 });
 

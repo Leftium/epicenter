@@ -112,17 +112,6 @@ export const SyncSupervisorError = defineErrors({
 });
 export type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
 
-/**
- * Optional RPC feature block on the config.
- *
- * When omitted, `attachSync` responds to inbound RPC requests with
- * `RpcError.ActionNotFound` — remote callers receive a typed error rather
- * than a timeout.
- */
-export type RpcConfig = {
-	dispatch: RpcDispatch;
-};
-
 export type SyncAttachment = {
 	/**
 	 * Resolves after the WebSocket handshake completes and the first sync
@@ -137,21 +126,6 @@ export type SyncAttachment = {
 	readonly status: SyncStatus;
 	/** Subscribe to status changes. Returns unsubscribe function. */
 	onStatusChange: (listener: (status: SyncStatus) => void) => () => void;
-	/**
-	 * Push a new bearer token into the sync attachment. The supervisor reads
-	 * this slot on every connect attempt and is woken from any in-flight
-	 * backoff sleep so a newly-arrived token is observed promptly — without
-	 * this wake, a supervisor parked in "waiting for token" or "connection
-	 * failed; backing off" would burn the full nap before re-checking.
-	 *
-	 * Pass `null` to clear the token; if `config.requiresToken` is true,
-	 * subsequent connect attempts back off with an `auth` error until a
-	 * token is set again.
-	 *
-	 * `setToken` does not close an open connection — pair with `reconnect()`
-	 * if you need to force a fresh socket using the new token.
-	 */
-	setToken: (token: string | null) => void;
 	/**
 	 * Close the websocket, stop the supervisor, and transition to offline.
 	 * A subsequent `reconnect()` restarts the supervisor.
@@ -206,25 +180,30 @@ export type SyncAttachmentConfig = {
 	 */
 	awareness?: Awareness;
 	/**
-	 * Optional inbound RPC handler. When provided, incoming RPC requests are
+	 * Inbound RPC dispatcher. When provided, incoming RPC requests are
 	 * forwarded to `dispatch(action, input)`; when omitted, `attachSync`
 	 * responds with `RpcError.ActionNotFound`.
 	 *
 	 * Outbound RPC (the `rpc()` method on the attachment) works regardless
 	 * of whether this is set.
 	 */
-	rpc?: RpcConfig;
+	dispatch?: RpcDispatch;
 	/**
-	 * Static contract: this provider requires an auth token to connect.
-	 * When true, the supervisor refuses to connect without a token and surfaces
-	 * an `auth` error (with backoff) until `setToken(token)` is called. When
-	 * false (default), connects unauthenticated — tests and public rooms.
+	 * Token sourcing callback. When provided, the supervisor calls `getToken()`
+	 * before each connect attempt to fetch a fresh bearer token (sent over the
+	 * WebSocket subprotocol). Returning `null` keeps the supervisor parked in
+	 * an `auth` error state until a subsequent `reconnect()` (or backoff
+	 * iteration) finds a non-null token.
 	 *
-	 * Declared at attach-time rather than latched by the first `setToken` call,
-	 * so `setToken(null)` after a logout returns the provider to "waiting for
-	 * token" rather than silently flipping to unauth mode.
+	 * May be sync or async — the supervisor `await`s either way. Sync returns
+	 * skip the microtask hop in the common case where the token is already in
+	 * memory.
+	 *
+	 * Providing this callback IS the declaration that the connection is
+	 * authenticated. Omit it for unauthenticated providers (tests, public
+	 * rooms) — `attachSync` then connects without a bearer subprotocol.
 	 */
-	requiresToken?: boolean;
+	getToken?: () => string | null | Promise<string | null>;
 	/**
 	 * Logger for background supervisor failures (waitFor rejections, socket
 	 * close timeouts). Defaults to a console-backed logger with source
@@ -268,14 +247,11 @@ export function attachSync(
 	const backoff = createBackoff();
 
 	/**
-	 * Token slot pushed in by `setToken`. The supervisor reads this on each
-	 * connect attempt. Whether a token is required is a static contract
-	 * (`config.requiresToken`), not a latch — so `setToken(null)` after logout
-	 * correctly returns to "waiting for token" rather than silently downgrading
-	 * to unauth.
+	 * Whether this connection is authenticated. Inferred from the presence of
+	 * `getToken` — supplying that callback IS the declaration that a token is
+	 * required. Without it, the supervisor connects unauthenticated.
 	 */
-	let currentToken: string | null = null;
-	const requiresToken = config.requiresToken ?? false;
+	const requiresToken = typeof config.getToken === 'function';
 
 	/** User intent: should we be connected? */
 	let desired: 'online' | 'offline' = 'offline';
@@ -337,7 +313,7 @@ export function attachSync(
 
 	/**
 	 * Handle an inbound RPC request: delegate action lookup to the caller
-	 * via `config.rpc.dispatch`, and send the response back to the requester.
+	 * via `config.dispatch`, and send the response back to the requester.
 	 *
 	 * When no dispatcher is configured, respond with `ActionNotFound` so the
 	 * caller sees a typed error instead of a timeout.
@@ -357,7 +333,8 @@ export function attachSync(
 				}),
 			);
 
-		if (!config.rpc) {
+		const dispatch = config.dispatch;
+		if (!dispatch) {
 			sendResponse({
 				data: null,
 				error: RpcError.ActionNotFound({ action: rpc.action }).error,
@@ -370,7 +347,7 @@ export function attachSync(
 		// - raw value → Ok-wrap
 		// - already a Result → forward unchanged
 		try {
-			const raw = await config.rpc.dispatch(rpc.action, rpc.input);
+			const raw = await dispatch(rpc.action, rpc.input);
 			const normalized = isResult(raw) ? raw : Ok(raw);
 			sendResponse(normalized);
 		} catch (cause) {
@@ -471,9 +448,21 @@ export function attachSync(
 
 			status.set({ phase: 'connecting', retries: backoff.retries, lastError });
 
-			const token: string | null = currentToken;
+			let token: string | null = null;
+			if (config.getToken) {
+				try {
+					token = await config.getToken();
+				} catch (cause) {
+					token = null;
+					lastError = { type: 'auth', error: cause };
+				}
+				if (cancelled(myRunId)) continue;
+				// Recovered: a fresh token clears any prior auth error so the
+				// 'connecting' status doesn't display a stale one.
+				if (token && lastError?.type === 'auth') lastError = undefined;
+			}
 			if (requiresToken && !token) {
-				lastError = {
+				lastError = lastError ?? {
 					type: 'auth',
 					error: new Error('No token available'),
 				};
@@ -759,12 +748,6 @@ export function attachSync(
 			return status.get();
 		},
 		onStatusChange: status.subscribe,
-		setToken(token) {
-			currentToken = token;
-			// Wake a parked supervisor so the new token (or null) is observed
-			// immediately, not after the current backoff sleep expires.
-			backoff.wake();
-		},
 		goOffline,
 		reconnect() {
 			if (torn) return;

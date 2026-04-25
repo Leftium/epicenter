@@ -191,11 +191,12 @@ describe('attachSync hasLocalChanges', () => {
 		await sync.whenDisposed;
 	});
 
-	test('requiresToken:true blocks the first connect until setToken arrives, then sends token via subprotocol', async () => {
+	test('getToken returning null blocks the first connect; reconnect after token becomes available proceeds with bearer subprotocol', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-token-gate' });
+		let token: string | null = null;
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			requiresToken: true,
+			getToken: async () => token,
 		});
 
 		await waitFor(
@@ -205,7 +206,8 @@ describe('attachSync hasLocalChanges', () => {
 		);
 		expect(FakeWebSocket.instances.length).toBe(0);
 
-		sync.setToken('abc123');
+		token = 'abc123';
+		sync.reconnect();
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
 		expect(ws.protocols).toContain('bearer.abc123');
@@ -218,21 +220,21 @@ describe('attachSync hasLocalChanges', () => {
 		await sync.whenDisposed;
 	});
 
-	test('setToken while connected does not close the open socket', async () => {
+	test('updating the token source mid-session does not close the open socket; takes effect on reconnect', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-token-live' });
+		let token: string | null = 'first';
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			requiresToken: true,
+			getToken: async () => token,
 		});
 
-		sync.setToken('first');
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
 		expect(ws.protocols).toContain('bearer.first');
 		await waitFor(() => ws.readyState === FakeWebSocket.OPEN);
 		ws.deliver(serverStep2Frame());
 		await sync.whenConnected;
 
-		sync.setToken('second');
+		token = 'second';
 		expect(ws.readyState).toBe(FakeWebSocket.OPEN);
 		expect(FakeWebSocket.instances.length).toBe(1);
 
@@ -316,13 +318,11 @@ describe('attachSync hasLocalChanges', () => {
 		const calls: Array<{ action: string; input: unknown }> = [];
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			rpc: {
-				// Return a raw value — attachSync's handler is responsible for
-				// normalizing it into a `{data, error}` envelope on the wire.
-				dispatch: async (action, input) => {
-					calls.push({ action, input });
-					return { echo: input, action };
-				},
+			// Return a raw value — attachSync's handler is responsible for
+			// normalizing it into a `{data, error}` envelope on the wire.
+			dispatch: async (action, input) => {
+				calls.push({ action, input });
+				return { echo: input, action };
 			},
 		});
 
@@ -373,13 +373,11 @@ describe('attachSync hasLocalChanges', () => {
 		const ydoc = new Y.Doc({ guid: 'test-rpc-result-passthrough' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			rpc: {
-				// Handler returns an Err directly; attachSync must not re-wrap it.
-				dispatch: async () => ({
-					data: null,
-					error: { name: 'BrowserApiFailed', message: 'no tab 999' },
-				}),
-			},
+			// Handler returns an Err directly; attachSync must not re-wrap it.
+			dispatch: async () => ({
+				data: null,
+				error: { name: 'BrowserApiFailed', message: 'no tab 999' },
+			}),
 		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
@@ -427,10 +425,8 @@ describe('attachSync hasLocalChanges', () => {
 		const ydoc = new Y.Doc({ guid: 'test-rpc-throw' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			rpc: {
-				dispatch: async () => {
-					throw new Error('handler exploded');
-				},
+			dispatch: async () => {
+				throw new Error('handler exploded');
 			},
 		});
 
@@ -633,12 +629,10 @@ describe('attachSync hasLocalChanges', () => {
 		const aliceSync = attachSync(aliceDoc, { url: 'ws://alice' });
 		const bobSync = attachSync(bobDoc, {
 			url: 'ws://bob',
-			rpc: {
-				dispatch: async (action, input) => {
-					bobDispatchCalls.push({ action, input });
-					const tabIds = (input as { tabIds: number[] }).tabIds;
-					return { closedCount: tabIds.length };
-				},
+			dispatch: async (action, input) => {
+				bobDispatchCalls.push({ action, input });
+				const tabIds = (input as { tabIds: number[] }).tabIds;
+				return { closedCount: tabIds.length };
 			},
 		});
 

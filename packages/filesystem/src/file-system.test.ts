@@ -10,11 +10,15 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { attachTables } from '@epicenter/workspace';
+import { attachTables, createDisposableCache } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
-import { createFileContentDocs } from './file-content-docs.js';
+import {
+	createFileContentDoc,
+	type FileContentDocs,
+} from './file-content-docs.js';
 import { attachYjsFileSystem, type YjsFileSystem } from './file-system.js';
+import type { FileId } from './ids.js';
 import { filesTable } from './table.js';
 
 function setup() {
@@ -22,10 +26,15 @@ function setup() {
 	const ydoc = new Y.Doc({ guid: id });
 	const tables = attachTables(ydoc, { files: filesTable });
 	const ws = { id, ydoc, tables };
-	const contentDocs = createFileContentDocs({
-		workspaceId: ws.id,
-		filesTable: ws.tables.files,
-	});
+	const contentDocs = createDisposableCache(
+		(fileId: FileId) =>
+			createFileContentDoc({
+				fileId,
+				workspaceId: ws.id,
+				filesTable: ws.tables.files,
+			}),
+		{ gcTime: Number.POSITIVE_INFINITY },
+	);
 	const fs = attachYjsFileSystem(ws.tables.files, contentDocs);
 	return { fs, ws, contentDocs };
 }
@@ -390,7 +399,7 @@ describe('mv preserves content (no conversion)', () => {
 
 function getTimelineLength(
 	fs: YjsFileSystem,
-	contentDocs: ReturnType<typeof createFileContentDocs>,
+	contentDocs: FileContentDocs,
 	path: string,
 ): number {
 	const id = fs.lookupId(path);

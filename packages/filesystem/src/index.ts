@@ -9,7 +9,8 @@ export {
 } from './extensions/sqlite-index/index.js';
 // File content documents
 export {
-	createFileContentDocs,
+	createFileContentDoc,
+	type FileContentDoc,
 	type FileContentDocs,
 } from './file-content-docs.js';
 // File system (orchestrator)

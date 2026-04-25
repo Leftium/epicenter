@@ -11,11 +11,12 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { attachTables } from '@epicenter/workspace';
+import { attachTables, createDisposableCache } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
-import { createFileContentDocs } from '../file-content-docs.js';
+import { createFileContentDoc } from '../file-content-docs.js';
 import { attachYjsFileSystem } from '../file-system.js';
+import type { FileId } from '../ids.js';
 import { filesTable } from '../table.js';
 import {
 	parseFrontmatter,
@@ -159,10 +160,15 @@ describe('markdown integration with YjsFileSystem', () => {
 		const ydoc = new Y.Doc({ guid: id });
 		const tables = attachTables(ydoc, { files: filesTable });
 		const ws = { id, ydoc, tables };
-		const contentDocs = createFileContentDocs({
-			workspaceId: ws.id,
-			filesTable: ws.tables.files,
-		});
+		const contentDocs = createDisposableCache(
+			(fileId: FileId) =>
+				createFileContentDoc({
+					fileId,
+					workspaceId: ws.id,
+					filesTable: ws.tables.files,
+				}),
+			{ gcTime: Number.POSITIVE_INFINITY },
+		);
 		return attachYjsFileSystem(ws.tables.files, contentDocs);
 	}
 

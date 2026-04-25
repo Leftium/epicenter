@@ -25,37 +25,9 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
-import { tryAsync } from 'wellcrafted/result';
 import { workspace } from '$lib/client.svelte';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { SavedTab, SavedTabId } from '$lib/workspace';
-
-export const SavedTabError = defineErrors({
-	SaveFailed: ({ url, cause }: { url: string; cause: unknown }) => ({
-		message: `Failed to save tab '${url}': ${extractErrorMessage(cause)}`,
-		url,
-		cause,
-	}),
-	RestoreAllFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to restore all saved tabs: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	RemoveFailed: ({ id, cause }: { id: string; cause: unknown }) => ({
-		message: `Failed to remove saved tab '${id}': ${extractErrorMessage(cause)}`,
-		id,
-		cause,
-	}),
-	RemoveAllFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to remove all saved tabs: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-export type SavedTabError = InferErrors<typeof SavedTabError>;
 
 function createSavedTabState() {
 	const tabsMap = fromTable(workspace.tables.savedTabs);
@@ -74,32 +46,29 @@ function createSavedTabState() {
 		/**
 		 * Save a tab — snapshot its metadata to Y.Doc and close the browser tab.
 		 *
-		 * Delegates to the `savedTabs.save` workspace action so the operation
-		 * is AI-callable and follows the same code path as programmatic saves.
-		 * Silently no-ops for tabs without a URL.
+		 * Delegates to the `savedTabs.save` workspace action. Silently no-ops
+		 * for tabs without a URL. The action's Result envelope flows through
+		 * to callers; today the action's Err channel is `never` because
+		 * browser-API failures during the close step are intentionally
+		 * swallowed inside the handler.
 		 */
 		async save(tab: BrowserTab) {
 			if (!tab.url) return;
-			const url = tab.url;
-			return tryAsync({
-				try: () =>
-					workspace.actions.savedTabs.save({
-						browserTabId: tab.id,
-						url,
-						title: tab.title || 'Untitled',
-						favIconUrl: tab.favIconUrl,
-						pinned: tab.pinned,
-					}),
-				catch: (cause) => SavedTabError.SaveFailed({ url, cause }),
+			return workspace.actions.savedTabs.save({
+				browserTabId: tab.id,
+				url: tab.url,
+				title: tab.title || 'Untitled',
+				favIconUrl: tab.favIconUrl,
+				pinned: tab.pinned,
 			});
 		},
 
 		/**
 		 * Restore a saved tab — re-open in browser and delete the record.
 		 *
-		 * Delegates to the `savedTabs.restore` workspace action, which now
-		 * returns `Result` — on browser API failure the saved record is kept
-		 * so the user doesn't lose the URL.
+		 * The action returns `Result<{ restored }, BrowserApiFailed>` — the
+		 * saved record is preserved on `tabs.create` failure so the user
+		 * doesn't lose the URL.
 		 */
 		async restore(savedTab: SavedTab) {
 			return workspace.actions.savedTabs.restore({
@@ -109,41 +78,19 @@ function createSavedTabState() {
 			});
 		},
 
-		/**
-		 * Restore all saved tabs at once.
-		 *
-		 * Delegates to the `savedTabs.restoreAll` workspace action which
-		 * fires all tab creations in parallel and batch-deletes from Y.Doc.
-		 */
+		/** Restore all saved tabs at once. */
 		async restoreAll() {
-			return tryAsync({
-				try: () => workspace.actions.savedTabs.restoreAll({}),
-				catch: (cause) => SavedTabError.RestoreAllFailed({ cause }),
-			});
+			return workspace.actions.savedTabs.restoreAll();
 		},
 
-		/**
-		 * Delete a saved tab without restoring it.
-		 *
-		 * Delegates to the `savedTabs.remove` workspace action.
-		 */
+		/** Delete a saved tab without restoring it. */
 		async remove(id: SavedTabId) {
-			return tryAsync({
-				try: () => workspace.actions.savedTabs.remove({ id }),
-				catch: (cause) => SavedTabError.RemoveFailed({ id, cause }),
-			});
+			return workspace.actions.savedTabs.remove({ id });
 		},
 
-		/**
-		 * Delete all saved tabs without restoring them.
-		 *
-		 * Delegates to the `savedTabs.removeAll` workspace action.
-		 */
+		/** Delete all saved tabs without restoring them. */
 		async removeAll() {
-			return tryAsync({
-				try: () => workspace.actions.savedTabs.removeAll({}),
-				catch: (cause) => SavedTabError.RemoveAllFailed({ cause }),
-			});
+			return workspace.actions.savedTabs.removeAll();
 		},
 	};
 }

@@ -18,7 +18,6 @@
 
 import type { CommandPaletteItem } from '@epicenter/ui/command-palette';
 import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-import { toastOnError } from '@epicenter/ui/sonner';
 import ArchiveIcon from '@lucide/svelte/icons/archive';
 import ArrowDownAZIcon from '@lucide/svelte/icons/arrow-down-a-z';
 import CopyMinusIcon from '@lucide/svelte/icons/copy-minus';
@@ -197,9 +196,7 @@ export const items: CommandPaletteItem[] = [
 				async onConfirm() {
 					const tabsWithUrls = allTabs.filter((tab) => tab.url);
 					await Promise.allSettled(
-						tabsWithUrls.map((tab) =>
-						savedTabState.save(tab).then((r) => toastOnError(r, 'Failed to save tab')),
-						),
+						tabsWithUrls.map((tab) => savedTabState.save(tab)),
 					);
 				},
 			});

@@ -26,7 +26,7 @@
  * numeric target always routes to clientID mode; to match a string field
  * whose value happens to be digits, use `--peer field=42`.
  */
-import type { AwarenessState } from './handle-attachments';
+import type { AwarenessState } from './awareness';
 
 export type FindPeerResult =
 	| { kind: 'found'; clientID: number; state: AwarenessState }

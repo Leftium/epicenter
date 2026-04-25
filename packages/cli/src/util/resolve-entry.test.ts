@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { resolveEntry } from './resolve-entry';
 
 const fakeEntry = (name: string) =>
-	({ name, handle: {} }) as Parameters<typeof resolveEntry>[0][number];
+	({ name, workspace: {} }) as Parameters<typeof resolveEntry>[0][number];
 
 describe('resolveEntry', () => {
 	test('auto-selects when only one entry exists', () => {

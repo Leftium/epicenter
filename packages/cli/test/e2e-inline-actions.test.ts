@@ -1,14 +1,20 @@
 /**
  * End-to-end coverage for the `list` and `run` commands against a minimal
  * fixture that exercises inline `defineQuery` / `defineMutation` nodes on a
- * `DocumentHandle` — no sqlite, sync, or encryption involved.
+ * `LoadedWorkspace` — no sqlite, sync, or encryption involved.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { isAction } from '@epicenter/workspace';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../src/load-config';
+import {
+	actionsUnder,
+	findAction,
+	walkActions,
+} from '../src/util/walk-actions';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/inline-actions');
 
@@ -23,61 +29,56 @@ describe('loadConfig against inline-actions fixture', () => {
 		await loaded.dispose();
 	});
 
-	test('discovers the `demo` export as a DocumentHandle', () => {
+	test('discovers the `demo` export as a LoadedWorkspace', () => {
 		expect(loaded.entries.map((e) => e.name)).toEqual(['demo']);
-		const { handle } = loaded.entries[0]!;
-		expect(typeof handle.dispose).toBe('function');
-		expect(typeof handle[Symbol.dispose]).toBe('function');
-		expect(handle.ydoc).toBeDefined();
-	});
-
-	test('handle exposes bundle properties as own keys', () => {
-		const { handle } = loaded.entries[0]!;
-		// Spread flattens the bundle onto the handle; dispose methods and the
-		// brand symbol are non-string so they don't show in Object.keys.
-		expect(Object.keys(handle)).toContain('counter');
-		expect(Object.keys(handle)).toContain('ydoc');
-		expect(Object.keys(handle)).toContain('dispose');
+		const { workspace } = loaded.entries[0]!;
+		expect(typeof workspace[Symbol.dispose]).toBe('function');
+		expect(workspace.whenReady).toBeInstanceOf(Promise);
+		expect(workspace.actions).toBeDefined();
 	});
 });
 
-describe('ActionIndex', () => {
-	let actions: Awaited<ReturnType<typeof loadConfig>>['entries'][0]['actions'];
+describe('walk-actions helpers', () => {
+	let actions: unknown;
 
 	beforeAll(async () => {
 		const loaded = await loadConfig(FIXTURE_DIR);
-		actions = loaded.entries[0]!.actions;
-		// Both describe blocks share the underlying handle via Bun's module
-		// cache: `demoFactory.open(...)` in the fixture runs once at module
-		// load, so every loadConfig() call returns the same `demo` reference.
-		// The first describe's afterAll disposes it (refcount 1 → 0), but
-		// createDocumentFactory's default gcTime: Infinity keeps the Y.Doc
-		// alive, so these tests still read valid state. If that default ever
-		// becomes finite, split this describe into its own explicit
-		// factory.open() / dispose() lifecycle.
+		actions = loaded.entries[0]!.workspace.actions;
+		// Bun's module cache means subsequent loadConfig() calls in this file
+		// return the same `demo` reference. The first describe's afterAll
+		// disposes it, but the underlying state map is owned by the fixture
+		// module's top-level `state` binding, so reads here still work.
 	});
 
-	test('get() returns a leaf action by dot-path', () => {
-		const a = actions.get('counter.get');
-		expect(a?.type).toBe('query');
+	test('findAction returns a leaf action by dot-path', () => {
+		const a = findAction(actions, 'counter.get');
+		expect(a).toBeDefined();
+		expect(isAction(a)).toBe(true);
 	});
 
-	test('get() returns undefined for a subtree path', () => {
-		expect(actions.get('counter')).toBeUndefined();
+	test('findAction returns undefined for a subtree path', () => {
+		expect(findAction(actions, 'counter')).toBeUndefined();
 	});
 
-	test('under() returns descendants for a subtree prefix', () => {
-		const paths = actions.under('counter').map(([p]) => p).sort();
+	test('actionsUnder returns descendants for a subtree prefix', () => {
+		const paths = actionsUnder(actions, 'counter')
+			.map(([p]) => p)
+			.sort();
 		expect(paths).toEqual(['counter.get', 'counter.increment', 'counter.set']);
 	});
 
-	test('under() for a missing prefix returns empty', () => {
-		expect(actions.under('counter.nope')).toEqual([]);
+	test('actionsUnder for a missing prefix returns empty', () => {
+		expect(actionsUnder(actions, 'counter.nope')).toEqual([]);
+	});
+
+	test('walkActions yields every leaf with full dot-path', () => {
+		const paths = [...walkActions(actions)].map(([p]) => p).sort();
+		expect(paths).toEqual(['counter.get', 'counter.increment', 'counter.set']);
 	});
 
 	test('invoking a resolved action mutates state observably', async () => {
-		const get = actions.get('counter.get');
-		const inc = actions.get('counter.increment');
+		const get = findAction(actions, 'counter.get');
+		const inc = findAction(actions, 'counter.increment');
 		if (!get || !inc) throw new Error('expected actions');
 		const before = await get();
 		await inc();
@@ -86,10 +87,10 @@ describe('ActionIndex', () => {
 	});
 
 	test('invoking a mutation with an input schema applies the input', async () => {
-		const set = actions.get('counter.set');
-		const get = actions.get('counter.get');
+		const set = findAction(actions, 'counter.set');
+		const get = findAction(actions, 'counter.get');
 		if (!set || !get) throw new Error('expected actions');
-		await (set as any)({ value: 42 });
+		await (set as (input: unknown) => Promise<unknown>)({ value: 42 });
 		expect(await get()).toBe(42);
 	});
 });

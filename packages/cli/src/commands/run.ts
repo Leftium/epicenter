@@ -1,6 +1,6 @@
 /**
  * `epicenter run <dot.path> [input]` — invoke a `defineQuery` /
- * `defineMutation` by dot-path through an opened document handle.
+ * `defineMutation` by dot-path through a loaded workspace.
  *
  * `input` is JSON: inline positional, `@file.json` (curl convention), or stdin.
  * With `--peer <target>`, the invocation is dispatched over the sync
@@ -16,7 +16,7 @@ import { invokeNormalized } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
-import type { ActionIndex } from '../util/action-index';
+import { readPeers } from '../util/awareness';
 import {
 	dirFromArgv,
 	dirOption,
@@ -26,9 +26,9 @@ import {
 import { emitMissError, emitRpcError } from '../util/emit-peer-errors';
 import { findPeer, type FindPeerResult } from '../util/find-peer';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
-import { getSync, readPeers } from '../util/handle-attachments';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 import { resolveEntry } from '../util/resolve-entry';
+import { actionsUnder, findAction } from '../util/walk-actions';
 
 const POLL_INTERVAL_MS = 100;
 const DEFAULT_PEER_WAIT_MS = 5000;
@@ -83,19 +83,20 @@ async function invoke(
 	entry: LoadConfigResult['entries'][number],
 ): Promise<void> {
 	const actionPath = String(argv.action);
+	const { workspace } = entry;
 
-	await entry.handle.whenReady;
+	await workspace.whenReady;
 
-	const action = entry.actions.get(actionPath);
+	const action = findAction(workspace.actions, actionPath);
 	if (!action) {
-		const descendants = entry.actions.under(actionPath);
+		const descendants = actionsUnder(workspace.actions, actionPath);
 		if (descendants.length > 0) {
 			outputError(`"${actionPath}" is not a runnable action.`);
 			emitActionList(descendants);
 			throw new Error('Not an action');
 		}
 		outputError(`"${actionPath}" is not defined.`);
-		emitNearestSiblings(entry.actions, actionPath);
+		emitNearestSiblings(workspace.actions, actionPath);
 		throw new Error('Action not found');
 	}
 
@@ -147,7 +148,8 @@ async function invokeRemote({
 	format,
 	workspaceArg,
 }: InvokeRemoteOptions): Promise<void> {
-	const sync = getSync(entry.handle);
+	const { workspace } = entry;
+	const sync = workspace.sync;
 
 	if (!sync?.rpc) {
 		throw new Error(
@@ -160,7 +162,7 @@ async function invokeRemote({
 	let sawPeers = false;
 
 	while (true) {
-		const peers = readPeers(entry.handle);
+		const peers = readPeers(workspace);
 		if (peers.size > 0) sawPeers = true;
 		lastResult = findPeer(peerTarget, peers);
 		if (lastResult.kind !== 'not-found') break;
@@ -214,15 +216,12 @@ function emitActionList(
  * that has any exposed actions and emit them as suggestions. If nothing
  * matches, stay silent — the top-level "not defined" error stands alone.
  */
-function emitNearestSiblings(
-	actions: ActionIndex,
-	missedPath: string,
-): void {
+function emitNearestSiblings(actions: unknown, missedPath: string): void {
 	const parts = missedPath.split('.');
 	while (parts.length > 0) {
 		parts.pop();
 		const prefix = parts.join('.');
-		const alts = actions.under(prefix);
+		const alts = actionsUnder(actions, prefix);
 		if (alts.length === 0) continue;
 		emitActionList(alts);
 		return;

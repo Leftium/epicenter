@@ -19,7 +19,7 @@ import type { RpcError } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { FindPeerResult } from './find-peer';
 import { outputError } from './format-output';
-import type { AwarenessState } from './handle-attachments';
+import type { AwarenessState } from './awareness';
 
 export function emitMissError(
 	target: string,

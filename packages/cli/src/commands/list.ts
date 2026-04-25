@@ -17,7 +17,6 @@ import type { Action } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
-import type { ActionIndex } from '../util/action-index';
 import {
 	dirFromArgv,
 	dirOption,
@@ -30,6 +29,7 @@ import {
 	outputError,
 } from '../util/format-output';
 import { resolveEntry } from '../util/resolve-entry';
+import { actionsUnder, findAction, walkActions } from '../util/walk-actions';
 
 export const listCommand: CommandModule = {
 	command: 'list [path]',
@@ -76,20 +76,23 @@ function render(
 	entry: LoadConfigResult['entries'][number],
 	format: 'json' | 'jsonl' | undefined,
 ): void {
+	const { workspace } = entry;
 	const path = pathArg?.split('.').filter(Boolean).join('.') ?? '';
 
 	if (path === '') {
-		const all = [...entry.actions].map(([p, a]) => describeAction(a, p));
+		const all = [...walkActions(workspace.actions)].map(([p, a]) =>
+			describeAction(a, p),
+		);
 		if (format) {
 			output(all, { format });
 			return;
 		}
 		console.log(entry.name);
-		printTree(entry.actions, '');
+		printTree(workspace.actions, '');
 		return;
 	}
 
-	const action = entry.actions.get(path);
+	const action = findAction(workspace.actions, path);
 	if (action) {
 		if (format) {
 			output(describeAction(action, path), { format });
@@ -99,7 +102,7 @@ function render(
 		return;
 	}
 
-	const descendants = entry.actions.under(path);
+	const descendants = actionsUnder(workspace.actions, path);
 	if (descendants.length === 0) {
 		outputError(`"${pathArg}" is not defined.`);
 		throw new Error('Path not found');
@@ -113,18 +116,18 @@ function render(
 		return;
 	}
 	console.log(path);
-	printTree(entry.actions, path);
+	printTree(workspace.actions, path);
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
 
 type TreeNode = { name: string; children: Map<string, TreeNode>; action?: Action };
 
-function printTree(actions: ActionIndex, prefix: string): void {
+function printTree(actions: unknown, prefix: string): void {
 	const pfx = prefix ? prefix + '.' : '';
 	const root: TreeNode = { name: '', children: new Map() };
 	let count = 0;
-	for (const [path, action] of actions) {
+	for (const [path, action] of walkActions(actions)) {
 		if (prefix && !path.startsWith(pfx) && path !== prefix) continue;
 		const rest = prefix ? path.slice(pfx.length) : path;
 		if (!rest) continue;

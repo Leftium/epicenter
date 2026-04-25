@@ -2,15 +2,15 @@
  * `epicenter peers` — list who you can run `--peer` against.
  *
  * For each workspace entry (or a single entry narrowed by `-w`):
- *   1. await `handle.sync.whenConnected` (awareness requires the transport)
- *   2. snapshot `awareness.getStates()`, or poll up to `--wait <ms>` if the
- *      snapshot is empty (default: 0 = true one-shot)
+ *   1. await `workspace.sync.whenConnected` (awareness requires the transport)
+ *   2. snapshot `workspace.awareness.getStates()`, or poll up to `--wait <ms>`
+ *      if the snapshot is empty (default: 0 = true one-shot)
  *   3. emit a `console.table` (default) or JSON (`--format json`)
  *
  * This is a snapshot, not a registry. A peer that hasn't broadcast its
  * awareness state is invisible — pass `--wait 2000` to give slow peers a
- * chance before emitting. See `handle-attachments.ts` for awareness
- * invariants (~30s TTL, session-local clientID).
+ * chance before emitting. See `util/awareness.ts` for awareness invariants
+ * (~30s TTL, session-local clientID).
  *
  * Prints `no peers connected` to stderr when every workspace is empty (text
  * mode only; JSON mode always emits a valid array, even if empty).
@@ -18,6 +18,7 @@
 
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
+import { type AwarenessState, readPeers } from '../util/awareness';
 import {
 	dirFromArgv,
 	dirOption,
@@ -25,11 +26,6 @@ import {
 	workspaceOption,
 } from '../util/common-options';
 import { formatYargsOptions, output } from '../util/format-output';
-import {
-	getSync,
-	readPeers,
-	type AwarenessState,
-} from '../util/handle-attachments';
 import { resolveEntry } from '../util/resolve-entry';
 
 const POLL_INTERVAL_MS = 100;
@@ -80,12 +76,12 @@ async function snapshotEntry(
 	entry: LoadConfigResult['entries'][number],
 	waitMs: number,
 ): Promise<WorkspaceSnapshot> {
-	const sync = getSync(entry.handle);
-	if (sync?.whenConnected) await sync.whenConnected;
+	const { workspace } = entry;
+	if (workspace.sync?.whenConnected) await workspace.sync.whenConnected;
 
 	const deadline = Date.now() + waitMs;
 	while (true) {
-		const peers = readPeers(entry.handle);
+		const peers = readPeers(workspace);
 		if (peers.size > 0 || Date.now() >= deadline) {
 			return { name: entry.name, peers };
 		}

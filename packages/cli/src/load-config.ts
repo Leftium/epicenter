@@ -1,75 +1,92 @@
 /**
  * Workspace config loader.
  *
- * Loads `epicenter.config.ts` and collects every named export that is an
- * opened `DocumentHandle` (returned by `createDocumentFactory(...).open(id)`).
- * The export name becomes the root of the dot-path used by `epicenter list`
- * and `epicenter run`.
+ * Loads `epicenter.config.ts` and collects every named export that quacks
+ * like a workspace — an object with `whenReady` and `[Symbol.dispose]`.
+ * Optional first-class fields (`actions`, `sync`, `awareness`) are read
+ * directly off the export; the loader does no walking, no brand check, no
+ * factory trickery.
  *
  * @example
  * ```typescript
  * // epicenter.config.ts:
- * //   const notesFactory = createDocumentFactory((id) => ({ ydoc, tables, ... }));
- * //   export const notes = notesFactory.open('notes');
+ * //   const ydoc = new Y.Doc({ guid: 'notes' });
+ * //   const idb = attachIndexedDb(ydoc);
+ * //   const tables = attachTables(ydoc, schemas);
+ * //   const actions = createNotesActions(tables);
+ * //   const sync = attachSync(ydoc, { ... });
+ * //   export const notes = {
+ * //     whenReady: idb.whenLoaded,
+ * //     actions,
+ * //     sync,
+ * //     [Symbol.dispose]() { ydoc.destroy(); },
+ * //   };
  *
  * const { entries, dispose } = await loadConfig('/path/to/project');
  * try {
- *   // ... walk entries, invoke actions ...
+ *   for (const { name, workspace } of entries) {
+ *     await workspace.whenReady;
+ *     // dispatch actions, read sync, ...
+ *   }
  * } finally {
  *   await dispose();
  * }
  * ```
  */
 
-import {
-	isDocumentHandle,
-	type Document,
-	type DocumentHandle,
-} from '@epicenter/workspace';
+import type { Actions, SyncAttachment } from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
-import { type ActionIndex, buildActionIndex } from './util/action-index';
-import { getSync } from './util/handle-attachments';
 
 const CONFIG_FILENAME = 'epicenter.config.ts';
 
+/**
+ * Minimal awareness shape the CLI relies on. Users typically attach the
+ * typed wrapper from `attachAwareness` (which exposes `.raw`) or the raw
+ * y-protocols `Awareness`. Either shape works — `readPeers` does the
+ * unwrapping.
+ */
+export type AwarenessLike = {
+	clientID: number;
+	getStates(): Map<number, unknown>;
+};
+
+/**
+ * The shape every loaded workspace export must satisfy. Extra fields are
+ * ignored by the CLI; only these are addressed.
+ */
+export type LoadedWorkspace = {
+	readonly whenReady: Promise<unknown>;
+	readonly actions?: Actions;
+	readonly sync?: SyncAttachment;
+	readonly awareness?: AwarenessLike | { raw: AwarenessLike };
+	[Symbol.dispose](): void;
+};
+
 export type LoadConfigResult = {
+	entries: { name: string; workspace: LoadedWorkspace }[];
 	/**
-	 * One record per named export that resolves to an opened `DocumentHandle`.
-	 *
-	 * - `handle` is generic `DocumentHandle<Document>` — the runtime brand
-	 *   check + dispose hook the CLI needs to release each handle on exit.
-	 *   Reads through `handle` (e.g. `handle.tables`) resolve to `unknown`
-	 *   because `loadConfig` walks arbitrary configs and can't know each
-	 *   bundle's shape statically. For typed scripting, import the config
-	 *   file directly: `import { workspace } from './epicenter.config.ts'`
-	 *   and use the inferred shape.
-	 * - `actions` is the CLI's canonical dot-path lookup, built via
-	 *   `iterateActions`. The CLI dispatches exclusively through this index —
-	 *   it never walks `handle` looking for actions, which is what keeps
-	 *   framework internals like `ydoc`, `sync`, and `tables` out of the
-	 *   addressable path namespace.
-	 */
-	entries: {
-		name: string;
-		handle: DocumentHandle<Document>;
-		actions: ActionIndex;
-	}[];
-	/**
-	 * Release every handle. Calls `.dispose()` on each and awaits the
-	 * `sync.whenDisposed` attachment barrier (if present), so the CLI exits
-	 * cleanly after closing sync sockets. Bundle-level disposal barriers are
-	 * not part of the `Document` contract — reach into the specific
-	 * attachment if you need a different gate.
+	 * Release every workspace. Disposes each (synchronous) and awaits any
+	 * `sync.whenDisposed` barriers so the CLI exits cleanly after closing
+	 * sockets.
 	 */
 	dispose(): Promise<void>;
 };
 
+function isLoadedWorkspace(value: unknown): value is LoadedWorkspace {
+	if (value == null || typeof value !== 'object') return false;
+	const v = value as Record<PropertyKey, unknown>;
+	if (!('whenReady' in v)) return false;
+	const dispose = v[Symbol.dispose];
+	return typeof dispose === 'function';
+}
+
 /**
- * Load opened document handles from an `epicenter.config.ts` file.
- * Default exports are skipped; use named exports so the CLI can address
- * them by name.
+ * Load workspace exports from an `epicenter.config.ts` file. Default
+ * exports are skipped; use named exports so the CLI can address them by
+ * name.
  *
- * @throws If no config file is found or no valid handle exports are detected.
+ * @throws If no config file is found or no valid workspace exports are
+ * detected.
  */
 export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	const configPath = join(resolve(targetDir), CONFIG_FILENAME);
@@ -83,16 +100,19 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 	const entries: LoadConfigResult['entries'] = [];
 	for (const [name, value] of Object.entries(module)) {
 		if (name === 'default') continue;
-		if (!isDocumentHandle(value)) continue;
-		entries.push({ name, handle: value, actions: buildActionIndex(value) });
+		if (!isLoadedWorkspace(value)) continue;
+		entries.push({ name, workspace: value });
 	}
 
 	if (entries.length === 0) {
 		throw new Error(
-			`No document handles found in ${CONFIG_FILENAME}.\n` +
-				`Export an opened handle — not the factory:\n` +
-				`  const notesFactory = createDocumentFactory((id) => ({ ydoc, tables, ... }));\n` +
-				`  export const notes = notesFactory.open('notes');`,
+			`No workspaces found in ${CONFIG_FILENAME}.\n` +
+				`Export an object with whenReady and [Symbol.dispose]:\n` +
+				`  export const notes = {\n` +
+				`    whenReady: idb.whenLoaded,\n` +
+				`    actions, sync,\n` +
+				`    [Symbol.dispose]() { ydoc.destroy(); },\n` +
+				`  };`,
 		);
 	}
 
@@ -100,13 +120,11 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 		entries,
 		dispose: async () => {
 			const barriers: Promise<unknown>[] = [];
-			for (const { handle } of entries) {
-				const sync = getSync(handle);
-				if (sync?.whenDisposed) barriers.push(sync.whenDisposed);
-				handle.dispose();
+			for (const { workspace } of entries) {
+				if (workspace.sync?.whenDisposed) barriers.push(workspace.sync.whenDisposed);
+				workspace[Symbol.dispose]();
 			}
 			await Promise.all(barriers);
 		},
 	};
 }
-

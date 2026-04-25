@@ -18,9 +18,14 @@ import { join } from 'node:path';
 import {
 	attachEncryption,
 	attachSqlite,
+	createDisposableCache,
 	generateId,
 } from '@epicenter/workspace';
-import { createFileContentDocs } from '@epicenter/filesystem';
+import {
+	createFileContentDoc,
+	type FileContentDocs,
+	type FileId,
+} from '@epicenter/filesystem';
 import { assembleMarkdown } from '@epicenter/workspace/document/materializer/markdown';
 import { opensidianTables } from 'opensidian/workspace';
 import * as Y from 'yjs';
@@ -45,14 +50,23 @@ function createTestClient() {
 	const kv = encryption.attachKv(ydoc, {});
 	const persistence = attachSqlite(ydoc, { filePath: dbPath(WORKSPACE_ID) });
 
-	const contentDocs = createFileContentDocs({
-		workspaceId: WORKSPACE_ID,
-		filesTable: tables.files,
-		attachPersistence: (contentDoc) =>
-			attachSqlite(contentDoc, {
-				filePath: join(PERSISTENCE_DIR, 'content', `${contentDoc.guid}.db`),
+	const contentDocs = createDisposableCache(
+		(fileId: FileId) =>
+			createFileContentDoc({
+				fileId,
+				workspaceId: WORKSPACE_ID,
+				filesTable: tables.files,
+				attachPersistence: (contentDoc) =>
+					attachSqlite(contentDoc, {
+						filePath: join(
+							PERSISTENCE_DIR,
+							'content',
+							`${contentDoc.guid}.db`,
+						),
+					}),
 			}),
-	});
+		{ gcTime: 0 },
+	);
 
 	const client = {
 		id: WORKSPACE_ID,
@@ -69,20 +83,17 @@ function createTestClient() {
 }
 
 async function writeContent(
-	contentDocs: ReturnType<typeof createFileContentDocs>,
+	contentDocs: FileContentDocs,
 	id: string,
 	text: string,
 ) {
-	await using handle = contentDocs.open(id);
+	await using handle = contentDocs.open(id as FileId);
 	await handle.whenReady;
 	handle.content.write(text);
 }
 
-async function readContent(
-	contentDocs: ReturnType<typeof createFileContentDocs>,
-	id: string,
-) {
-	await using handle = contentDocs.open(id);
+async function readContent(contentDocs: FileContentDocs, id: string) {
+	await using handle = contentDocs.open(id as FileId);
 	await handle.whenReady;
 	return handle.content.read();
 }
@@ -203,18 +214,23 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 			filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
 		});
 
-		const contentDocs = createFileContentDocs({
-			workspaceId: WORKSPACE_ID,
-			filesTable: tables.files,
-			attach: (contentDoc) =>
-				attachSqlite(contentDoc, {
-					filePath: join(
-						IMPORT_PERSISTENCE,
-						'content',
-						`${contentDoc.guid}.db`,
-					),
+		const contentDocs = createDisposableCache(
+			(fileId: FileId) =>
+				createFileContentDoc({
+					fileId,
+					workspaceId: WORKSPACE_ID,
+					filesTable: tables.files,
+					attachPersistence: (contentDoc) =>
+						attachSqlite(contentDoc, {
+							filePath: join(
+								IMPORT_PERSISTENCE,
+								'content',
+								`${contentDoc.guid}.db`,
+							),
+						}),
 				}),
-		});
+			{ gcTime: 0 },
+		);
 
 		const client = {
 			id: WORKSPACE_ID,

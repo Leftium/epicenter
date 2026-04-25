@@ -1,5 +1,5 @@
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { skillsWorkspace, workspace } from '$lib/client.svelte';
+import { opensidian, skillsWorkspace } from '$lib/client.svelte';
 
 /** A global skill loaded from the @epicenter/skills workspace. */
 type GlobalSkill = { name: string; instructions: string };
@@ -81,7 +81,7 @@ function createSkillState() {
 
 		const { data } = await tryAsync({
 			try: async () => {
-				const entries = await workspace.fs.readdir('/skills');
+				const entries = await opensidian.fs.readdir('/skills');
 				const markdownEntries = entries.filter((entry) =>
 					entry.endsWith('.md'),
 				);
@@ -89,7 +89,7 @@ function createSkillState() {
 				return Promise.all(
 					markdownEntries.map(async (entry) => ({
 						name: entry.replace('.md', ''),
-						content: await workspace.fs.readFile(`/skills/${entry}`),
+						content: await opensidian.fs.readFile(`/skills/${entry}`),
 					})),
 				);
 			},

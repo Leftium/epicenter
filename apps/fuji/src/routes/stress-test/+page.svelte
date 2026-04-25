@@ -2,7 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
 	import { Badge } from '@epicenter/ui/badge';
-	import { workspace } from '$lib/client.svelte';
+	import { fuji } from '$lib/client.svelte';
 	import { entriesState } from '$lib/entries-state.svelte';
 	import { generateId, DateTimeString } from '@epicenter/workspace';
 	import type { EntryId } from '$lib/workspace';
@@ -164,7 +164,7 @@
 			const rows = Array.from({ length: count }, (_, i) => generateEntryRow(i, now));
 
 			const insertStart = performance.now();
-			await workspace.tables.entries.bulkSet(rows, {
+			await fuji.tables.entries.bulkSet(rows, {
 				chunkSize: INSERT_CHUNK_SIZE,
 				onProgress: (p) => {
 					progress = p;
@@ -174,18 +174,18 @@
 
 			// Read performance
 			const readStart = performance.now();
-			const allValid = workspace.tables.entries.getAllValid();
+			const allValid = fuji.tables.entries.getAllValid();
 			const readTimeMs = performance.now() - readStart;
 
 			// Filter performance
 			const filterStart = performance.now();
-			const stressEntries = workspace.tables.entries.filter((e) =>
+			const stressEntries = fuji.tables.entries.filter((e) =>
 				e.tags.includes('stress-test'),
 			);
 			const filterTimeMs = performance.now() - filterStart;
 
 			// Y.Doc binary size
-			const ydocSizeBytes = Y.encodeStateAsUpdate(workspace.ydoc).byteLength;
+			const ydocSizeBytes = Y.encodeStateAsUpdate(fuji.ydoc).byteLength;
 
 			results = {
 				insertTimeMs,
@@ -211,12 +211,12 @@
 		clearing = true;
 
 		try {
-			const stressEntries = workspace.tables.entries.filter((e) =>
+			const stressEntries = fuji.tables.entries.filter((e) =>
 				e.tags.includes('stress-test'),
 			);
 			const ids = stressEntries.map((e) => e.id);
 
-			await workspace.tables.entries.bulkDelete(ids);
+			await fuji.tables.entries.bulkDelete(ids);
 
 			results = null;
 			toast.success(`Cleared ${ids.length.toLocaleString()} stress-test entries`);

@@ -4,13 +4,13 @@
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { chatState } from '$lib/chat/chat-state.svelte';
-	import { auth, workspace } from '$lib/client.svelte';
+	import { auth, zhongwen } from '$lib/client.svelte';
 	import ChatInput from '$lib/components/ChatInput.svelte';
 	import ChatMessage from '$lib/components/ChatMessage.svelte';
 	import ModelPicker from '$lib/components/ModelPicker.svelte';
 	import ZhongwenSidebar from '$lib/components/ZhongwenSidebar.svelte';
 
-	const showPinyin = fromKv(workspace.kv, 'showPinyin');
+	const showPinyin = fromKv(zhongwen.kv, 'showPinyin');
 	let dismissedError = $state(false);
 	let submitError = $state<string | null>(null);
 

@@ -4,7 +4,7 @@
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { auth, workspace } from '$lib/client.svelte';
+	import { auth, opensidian } from '$lib/client.svelte';
 	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';
 </script>
@@ -55,8 +55,8 @@
 		</a>
 		<AccountPopover
 			{auth}
-			sync={workspace.sync}
-			clearLocalData={() => workspace.idb.clearLocal()}
+			sync={opensidian.sync}
+			clearLocalData={() => opensidian.idb.clearLocal()}
 			syncNoun="notes"
 			onSocialSignIn={() =>
 				auth.signInWithSocialRedirect({

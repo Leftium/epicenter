@@ -5,7 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
-import { workspace } from '$lib/client';
+import { whispering } from '$lib/client';
 import { defineMutation } from '$lib/query/client';
 import {
 	WhisperingErr,
@@ -36,7 +36,7 @@ type TransformationRunCompleted = Extract<
 >;
 type TransformationRunFailed = Extract<TransformationRun, { status: 'failed' }>;
 type TransformationStepRun = ReturnType<
-	typeof workspace.tables.transformationStepRuns.getAllValid
+	typeof whispering.tables.transformationStepRuns.getAllValid
 >[number];
 type TransformationStepRunRunning = Extract<
 	TransformationStepRun,
@@ -343,7 +343,7 @@ async function runTransformation({
 			status: 'running',
 			_v: 1,
 		} satisfies TransformationStepRunRunning;
-		workspace.tables.transformationStepRuns.set(stepRun);
+		whispering.tables.transformationStepRuns.set(stepRun);
 
 		const handleStepResult = await handleStep({
 			input: currentInput,
@@ -358,7 +358,7 @@ async function runTransformation({
 				completedAt: failedNow,
 				error: handleStepResult.error,
 			};
-			workspace.tables.transformationStepRuns.set(failedStepRun);
+			whispering.tables.transformationStepRuns.set(failedStepRun);
 			const failedRun: TransformationRunFailed = {
 				...transformationRun,
 				status: 'failed',
@@ -377,7 +377,7 @@ async function runTransformation({
 			completedAt: new Date().toISOString(),
 			output: handleStepOutput,
 		};
-		workspace.tables.transformationStepRuns.set(completedStepRun);
+		whispering.tables.transformationStepRuns.set(completedStepRun);
 
 		currentInput = handleStepOutput;
 	}

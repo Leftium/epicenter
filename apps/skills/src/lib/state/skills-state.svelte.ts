@@ -1,7 +1,7 @@
 import type { Skill } from '@epicenter/skills';
 import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
-import { workspace } from '$lib/client';
+import { skillsWorkspace } from '$lib/client';
 
 /**
  * Reactive skills state singleton.
@@ -22,8 +22,8 @@ import { workspace } from '$lib/client';
  * ```
  */
 function createSkillsState() {
-	const skillsMap = fromTable(workspace.tables.skills);
-	const referencesMap = fromTable(workspace.tables.references);
+	const skillsMap = fromTable(skillsWorkspace.tables.skills);
+	const referencesMap = fromTable(skillsWorkspace.tables.references);
 
 	const skills = $derived(
 		[...skillsMap.values()]
@@ -91,7 +91,7 @@ function createSkillsState() {
 		 */
 		createSkill(name: string) {
 			const id = generateId();
-			workspace.tables.skills.set({
+			skillsWorkspace.tables.skills.set({
 				id,
 				name,
 				description: 'TODO—describe when and why to use this skill.',
@@ -118,22 +118,22 @@ function createSkillsState() {
 				Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
 			>,
 		) {
-			workspace.tables.skills.update(id, { ...updates, updatedAt: Date.now() });
+			skillsWorkspace.tables.skills.update(id, { ...updates, updatedAt: Date.now() });
 		},
 
 		/**
 		 * Delete a skill and cascade-delete all its references.
 		 *
-		 * Uses `workspace.batch()` to collapse observer notifications.
+		 * Uses `skillsWorkspace.batch()` to collapse observer notifications.
 		 * If the deleted skill was selected, selects the next skill
 		 * alphabetically—or clears the selection if none remain.
 		 */
 		deleteSkill(id: string) {
-			workspace.batch(() => {
+			skillsWorkspace.batch(() => {
 				for (const ref of referencesMap.values()) {
-					if (ref.skillId === id) workspace.tables.references.delete(ref.id);
+					if (ref.skillId === id) skillsWorkspace.tables.references.delete(ref.id);
 				}
-				workspace.tables.skills.delete(id);
+				skillsWorkspace.tables.skills.delete(id);
 			});
 
 			if (selectedSkillId === id) {
@@ -149,7 +149,7 @@ function createSkillsState() {
 		 */
 		createReference(skillId: string, path: string) {
 			const id = generateId();
-			workspace.tables.references.set({
+			skillsWorkspace.tables.references.set({
 				id,
 				skillId,
 				path,
@@ -161,7 +161,7 @@ function createSkillsState() {
 
 		/** Remove a file reference by ID. */
 		deleteReference(id: string) {
-			workspace.tables.references.delete(id);
+			skillsWorkspace.tables.references.delete(id);
 		},
 	};
 }

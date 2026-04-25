@@ -27,12 +27,12 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
-import { workspace } from '$lib/client.svelte';
+import { tabManager } from '$lib/client.svelte';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { Bookmark, BookmarkId } from '$lib/workspace';
 
 function createBookmarkState() {
-	const bookmarksMap = fromTable(workspace.tables.bookmarks);
+	const bookmarksMap = fromTable(tabManager.tables.bookmarks);
 
 	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
 	const bookmarks = $derived(
@@ -72,7 +72,7 @@ function createBookmarkState() {
 		 */
 		async toggle(tab: BrowserTab) {
 			if (!tab.url) return;
-			return workspace.actions.bookmarks.toggle({
+			return tabManager.actions.bookmarks.toggle({
 				url: tab.url,
 				title: tab.title || 'Untitled',
 				favIconUrl: tab.favIconUrl,
@@ -81,17 +81,17 @@ function createBookmarkState() {
 
 		/** Open a bookmark in a new browser tab without removing the bookmark. */
 		async open(bookmark: Bookmark) {
-			return workspace.actions.bookmarks.open({ url: bookmark.url });
+			return tabManager.actions.bookmarks.open({ url: bookmark.url });
 		},
 
 		/** Delete a bookmark by ID. */
 		async remove(id: BookmarkId) {
-			return workspace.actions.bookmarks.remove({ id });
+			return tabManager.actions.bookmarks.remove({ id });
 		},
 
 		/** Delete all bookmarks. */
 		async removeAll() {
-			return workspace.actions.bookmarks.removeAll();
+			return tabManager.actions.bookmarks.removeAll();
 		},
 	};
 }

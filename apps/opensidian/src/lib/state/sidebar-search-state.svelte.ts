@@ -1,6 +1,6 @@
 import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
-import { workspace } from '$lib/client.svelte';
+import { opensidian } from '$lib/client.svelte';
 
 export type MatchSnippet = {
 	snippet: string;
@@ -107,7 +107,7 @@ function createSidebarSearchState() {
 	}
 
 	async function executeSearch(query: string, offset: number) {
-		const client = workspace.sqliteIndex.client;
+		const client = opensidian.sqliteIndex.client;
 		const trimmed = query.trim();
 
 		try {

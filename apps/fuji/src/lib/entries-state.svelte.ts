@@ -14,7 +14,7 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { goto } from '$app/navigation';
-import { actions, tables } from '$lib/client.svelte';
+import { fuji } from '$lib/fuji/client';
 import type { EntryId } from '$lib/workspace';
 
 // ─── Search ──────────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ export function matchesEntrySearch(
 // ─── Entries State ───────────────────────────────────────────────────────────
 
 function createEntriesState() {
-	const map = fromTable(tables.entries);
+	const map = fromTable(fuji.tables.entries);
 	const all = $derived([...map.values()]);
 	const active = $derived(all.filter((e) => e.deletedAt === undefined));
 	const deleted = $derived(all.filter((e) => e.deletedAt !== undefined));
@@ -75,7 +75,7 @@ function createEntriesState() {
 		 * navigates to `/entries/{id}` so the editor opens immediately.
 		 */
 		createEntry() {
-			const { id } = actions.entries.create({});
+			const { id } = fuji.actions.entries.create({});
 			goto(`/entries/${id}`);
 		},
 	};

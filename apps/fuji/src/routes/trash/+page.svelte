@@ -7,7 +7,7 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
-	import { actions, tables } from '$lib/client.svelte';
+	import { fuji } from '$lib/fuji/client';
 	import { entriesState } from '$lib/entries-state.svelte';
 	import { relativeTime } from '$lib/format';
 
@@ -75,7 +75,7 @@
 										size="icon-sm"
 										title="Restore entry"
 										onclick={() => {
-										actions.entries.restore({ id: entry.id });
+										fuji.actions.entries.restore({ id: entry.id });
 										goto(`/entries/${entry.id}`);
 									}}
 									>
@@ -91,7 +91,7 @@
 												description: `"${entry.title || 'Untitled'}" will be permanently removed. This cannot be undone.`,
 												confirm: { text: 'Delete forever', variant: 'destructive' },
 												onConfirm: () => {
-													tables.entries.delete(entry.id);
+													fuji.tables.entries.delete(entry.id);
 												},
 											});
 										}}

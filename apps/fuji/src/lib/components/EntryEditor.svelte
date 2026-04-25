@@ -16,7 +16,7 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { goto } from '$app/navigation';
-	import { actions, entryContentDocs } from '$lib/client.svelte';
+	import { fuji } from '$lib/fuji/client';
 	import type { Entry } from '$lib/workspace';
 	import ProseMirrorEditor from './ProseMirrorEditor.svelte';
 	import TagInput from './TagInput.svelte';
@@ -33,10 +33,10 @@
 			rating: number;
 		}>,
 	) {
-		actions.entries.update({ id: entry.id, ...updates });
+		fuji.actions.entries.update({ id: entry.id, ...updates });
 	}
 
-	const contentDoc = fromDisposableCache(entryContentDocs, () => entry.id);
+	const contentDoc = fromDisposableCache(fuji.entryContentDocs, () => entry.id);
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);
@@ -61,7 +61,7 @@
 					description: `"${entry.title || 'Untitled'}" will be moved to recently deleted.`,
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
-						actions.entries.delete({ id: entry.id });
+						fuji.actions.entries.delete({ id: entry.id });
 						goto('/');
 					},
 				});

@@ -59,6 +59,42 @@ const posts = defineTable(
 });
 ```
 
+### Row Type Inference
+
+**Always derive row types with `InferTableRow<typeof X>` against the table definition.** Export the type from the same file that calls `defineTable()`. Consumers `import type` it directly — never re-derive.
+
+```typescript
+// ✅ Correct — schema is the single source of truth
+const postsTable = defineTable(/* ... */);
+export type Post = InferTableRow<typeof postsTable>;
+```
+
+```typescript
+// ❌ Wrong — goes through the runtime Table instance
+type Post = ReturnType<typeof workspace.tables.posts.getAllValid>[number];
+
+// ❌ Wrong — same smell with different method
+type Post = ReturnType<typeof workspace.tables.posts.getAll>[number];
+```
+
+Why `InferTableRow` is better:
+- Source of truth is the schema, not a method signature.
+- Doesn't require importing/building the runtime client (works in workers, server code, isomorphic modules).
+- Survives method renames and signature changes.
+- Matches the convention used across every app in this repo.
+
+**Don't relay types through state files.** Reactive state files (e.g. `*.svelte.ts`) should `import type` from the workspace definition module, not redefine or re-export the row type. Other consumers should also import the type directly from the workspace module — not from the state file. State files export runtime values; the workspace module exports types.
+
+```typescript
+// state/posts.svelte.ts
+import type { Post } from '$lib/workspace';     // ✅ import directly
+// export type { Post };                         // ❌ pass-through re-export
+
+// some-component.svelte
+import { posts } from '$lib/state/posts.svelte';  // runtime
+import type { Post } from '$lib/workspace';        // type — same source as state file
+```
+
 ## KV Stores
 
 KV stores use `defineKv(schema, defaultValue)`. No versioning, no migration—invalid stored data falls back to the default.

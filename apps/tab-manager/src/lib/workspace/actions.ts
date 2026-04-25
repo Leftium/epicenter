@@ -99,26 +99,35 @@ export function createTabManagerActions({
 				description:
 					'Open a new tab with the given URL on the current device.',
 				input: Type.Object({ url: Type.String() }),
-				handler: async ({ url }) => {
-					const { data: tab, error } = await tryAsync({
-						try: () => browser.tabs.create({ url }),
-						catch: () => Ok(undefined),
-					});
-					if (error || !tab) return { tabId: -1 };
-					return { tabId: tab.id ?? -1 };
-				},
+				handler: async ({ url }) =>
+					tryAsync({
+						try: async () => {
+							const tab = await browser.tabs.create({ url });
+							return { tabId: tab.id ?? -1 };
+						},
+						catch: (cause) =>
+							TabError.BrowserApiFailed({
+								operation: 'tabs.create',
+								cause,
+							}),
+					}),
 			}),
 			activate: defineMutation({
 				title: 'Activate Tab',
 				description: 'Activate (focus) a specific tab by its ID.',
 				input: Type.Object({ tabId: Type.Number() }),
-				handler: async ({ tabId }) => {
-					const { error } = await tryAsync({
-						try: () => browser.tabs.update(tabId, { active: true }),
-						catch: () => Ok(undefined),
-					});
-					return { activated: !error };
-				},
+				handler: async ({ tabId }) =>
+					tryAsync({
+						try: async () => {
+							await browser.tabs.update(tabId, { active: true });
+							return { activated: true };
+						},
+						catch: (cause) =>
+							TabError.BrowserApiFailed({
+								operation: 'tabs.update',
+								cause,
+							}),
+					}),
 			}),
 			save: defineMutation({
 				title: 'Save Tabs',
@@ -168,25 +177,27 @@ export function createTabManagerActions({
 					title: Type.Optional(Type.String()),
 					color: Type.Optional(Type.String()),
 				}),
-				handler: async ({ tabIds, title, color }) => {
-					const { data: groupId, error: groupError } = await tryAsync({
-						try: () =>
-							browser.tabs.group({ tabIds: tabIds as [number, ...number[]] }),
-						catch: () => Ok(undefined),
-					});
-					if (groupError || groupId === undefined) return { groupId: -1 };
-					if (title || color) {
-						const updateProps: Browser.tabGroups.UpdateProperties = {};
-						if (title) updateProps.title = title;
-						if (color) updateProps.color = color as `${Browser.tabGroups.Color}`;
-						await tryAsync({
-							try: () =>
-								browser.tabGroups.update(groupId as number, updateProps),
-							catch: () => Ok(undefined),
-						});
-					}
-					return { groupId: groupId as number };
-				},
+				handler: async ({ tabIds, title, color }) =>
+					tryAsync({
+						try: async () => {
+							const groupId = await browser.tabs.group({
+								tabIds: tabIds as [number, ...number[]],
+							});
+							if (title || color) {
+								const updateProps: Browser.tabGroups.UpdateProperties = {};
+								if (title) updateProps.title = title;
+								if (color)
+									updateProps.color = color as `${Browser.tabGroups.Color}`;
+								await browser.tabGroups.update(groupId, updateProps);
+							}
+							return { groupId };
+						},
+						catch: (cause) =>
+							TabError.BrowserApiFailed({
+								operation: 'tabs.group',
+								cause,
+							}),
+					}),
 			}),
 			pin: defineMutation({
 				title: 'Pin Tabs',
@@ -372,13 +383,18 @@ export function createTabManagerActions({
 				description:
 					'Open a bookmarked URL in a new browser tab. The bookmark is not deleted.',
 				input: Type.Object({ url: Type.String() }),
-				handler: async ({ url }) => {
-					const { data: tab, error } = await tryAsync({
-						try: () => browser.tabs.create({ url }),
-						catch: () => Ok(undefined),
-					});
-					return { tabId: error || !tab ? -1 : (tab.id ?? -1) };
-				},
+				handler: async ({ url }) =>
+					tryAsync({
+						try: async () => {
+							const tab = await browser.tabs.create({ url });
+							return { tabId: tab.id ?? -1 };
+						},
+						catch: (cause) =>
+							TabError.BrowserApiFailed({
+								operation: 'tabs.create',
+								cause,
+							}),
+					}),
 			}),
 			remove: defineMutation({
 				title: 'Remove Bookmark',

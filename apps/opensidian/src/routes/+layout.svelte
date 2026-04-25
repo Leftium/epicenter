@@ -3,7 +3,7 @@
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
-	import { whenReady } from '$lib/client.svelte';
+	import { opensidian } from '$lib/opensidian/client';
 	import '../app.css';
 
 	let { children } = $props();
@@ -12,6 +12,6 @@
 <ConfirmationDialog />
 <Toaster />
 <ModeWatcher />
-<WorkspaceGate {whenReady}>
+<WorkspaceGate whenReady={opensidian.whenReady}>
 	{@render children()}
 </WorkspaceGate>

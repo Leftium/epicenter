@@ -9,7 +9,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import FileIcon from '@lucide/svelte/icons/file';
 	import TextIcon from '@lucide/svelte/icons/text';
-	import { auth } from '$lib/client.svelte';
+	import { auth } from '$lib/opensidian/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import { searchState } from '$lib/state/search-state.svelte';
 	import { sidebarSearchState } from '$lib/state/sidebar-search-state.svelte';

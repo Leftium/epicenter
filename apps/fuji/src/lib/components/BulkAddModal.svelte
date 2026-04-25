@@ -8,7 +8,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { DateTimeString } from '@epicenter/workspace';
 	import ClipboardPasteIcon from '@lucide/svelte/icons/clipboard-paste';
-	import { fuji } from '$lib/client.svelte';
+	import { actions } from '$lib/client.svelte';
 
 	const LINE_REGEX = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(.+)$/;
 
@@ -60,7 +60,7 @@
 				title: text,
 				date: DateTimeString.stringify(iso, timezone),
 			}));
-			void fuji.actions.entries.bulkCreate({ entries: items });
+			actions.entries.bulkCreate({ entries: items });
 			toast.success(`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`);
 			isOpen = false;
 			rawText = '';

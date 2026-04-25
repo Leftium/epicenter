@@ -7,7 +7,7 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { goto } from '$app/navigation';
-	import { fuji } from '$lib/client.svelte';
+	import { actions, fuji } from '$lib/client.svelte';
 	import { entriesState } from '$lib/entries-state.svelte';
 	import { relativeTime } from '$lib/format';
 
@@ -75,7 +75,7 @@
 										size="icon-sm"
 										title="Restore entry"
 										onclick={() => {
-										void fuji.actions.entries.restore({ id: entry.id });
+										actions.entries.restore({ id: entry.id });
 										goto(`/entries/${entry.id}`);
 									}}
 									>

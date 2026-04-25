@@ -14,7 +14,7 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { goto } from '$app/navigation';
-import { fuji } from '$lib/client.svelte';
+import { actions, fuji } from '$lib/client.svelte';
 import type { EntryId } from '$lib/workspace';
 
 // ─── Search ──────────────────────────────────────────────────────────────────
@@ -74,10 +74,9 @@ function createEntriesState() {
 		 * Delegates to the workspace `entries.create` action, then
 		 * navigates to `/entries/{id}` so the editor opens immediately.
 		 */
-		async createEntry() {
-			const { data, error } = await fuji.actions.entries.create({});
-			if (error) throw error;
-			goto(`/entries/${data.id}`);
+		createEntry() {
+			const { id } = actions.entries.create({});
+			goto(`/entries/${id}`);
 		},
 	};
 }

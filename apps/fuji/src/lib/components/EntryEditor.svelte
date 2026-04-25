@@ -16,7 +16,7 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { goto } from '$app/navigation';
-	import { entryContentDocs, fuji } from '$lib/client.svelte';
+	import { actions, entryContentDocs } from '$lib/client.svelte';
 	import type { Entry } from '$lib/workspace';
 	import ProseMirrorEditor from './ProseMirrorEditor.svelte';
 	import TagInput from './TagInput.svelte';
@@ -33,7 +33,7 @@
 			rating: number;
 		}>,
 	) {
-		void fuji.actions.entries.update({ id: entry.id, ...updates });
+		actions.entries.update({ id: entry.id, ...updates });
 	}
 
 	const contentDoc = fromDisposableCache(entryContentDocs, () => entry.id);
@@ -61,7 +61,7 @@
 					description: `"${entry.title || 'Untitled'}" will be moved to recently deleted.`,
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
-						void fuji.actions.entries.delete({ id: entry.id });
+						actions.entries.delete({ id: entry.id });
 						goto('/');
 					},
 				});

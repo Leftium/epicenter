@@ -29,7 +29,7 @@ export function createNoteBodyDocs({
 }: {
 	workspaceId: string;
 	notesTable: Table<Note>;
-	auth: Pick<AuthCore, 'getToken' | 'onTokenChange'>;
+	auth: Pick<AuthCore, 'getToken'>;
 }) {
 	return createDocumentFactory((noteId: NoteId) => {
 		const ydoc = new Y.Doc({
@@ -43,13 +43,14 @@ export function createNoteBodyDocs({
 		});
 		const body = attachRichText(ydoc);
 		const idb = attachIndexedDb(ydoc);
-		const sync = attachSync(ydoc, {
+		// Token is sourced via getToken on each connect attempt, so token
+		// rotations are picked up on natural reconnects without disrupting an
+		// open note-body connection. The workspace-level client owns the
+		// "force reconnect on session change" decision.
+		attachSync(ydoc, {
 			url: toWsUrl(`${APP_URLS.API}/docs/${ydoc.guid}`),
 			waitFor: idb.whenLoaded,
-		});
-		sync.setToken(auth.getToken());
-		const unsubscribeToken = auth.onTokenChange((token) => {
-			sync.setToken(token);
+			getToken: () => auth.getToken(),
 		});
 
 		onLocalUpdate(ydoc, () => {
@@ -63,7 +64,6 @@ export function createNoteBodyDocs({
 			body,
 			whenReady: idb.whenLoaded,
 			[Symbol.dispose]() {
-				unsubscribeToken();
 				ydoc.destroy();
 			},
 		};

@@ -137,7 +137,7 @@ export function createFujiActions(tables: FujiTables) {
 						Type.Number({ description: 'Rating from 0–5 (0 = unrated)' }),
 					),
 				}),
-				handler: ({ title, subtitle, type: entryType, tags, rating }) => {
+				handler: async ({ title, subtitle, type: entryType, tags, rating }) => {
 					const id = generateId<EntryId>();
 					const now = DateTimeString.now();
 					tables.entries.set({
@@ -192,7 +192,7 @@ export function createFujiActions(tables: FujiTables) {
 						}),
 					),
 				}),
-				handler: ({ id, ...fields }) => {
+				handler: async ({ id, ...fields }) => {
 					return tables.entries.update(id, {
 						...fields,
 						updatedAt: DateTimeString.now(),
@@ -213,7 +213,7 @@ export function createFujiActions(tables: FujiTables) {
 				input: Type.Object({
 					id: Type.String({ description: 'Entry ID to soft-delete' }),
 				}),
-				handler: ({ id }) => {
+				handler: async ({ id }) => {
 					return tables.entries.update(id, {
 						deletedAt: DateTimeString.now(),
 						updatedAt: DateTimeString.now(),
@@ -232,7 +232,7 @@ export function createFujiActions(tables: FujiTables) {
 				input: Type.Object({
 					id: Type.String({ description: 'Entry ID to restore' }),
 				}),
-				handler: ({ id }) => {
+				handler: async ({ id }) => {
 					return tables.entries.update(id, {
 						deletedAt: undefined,
 						updatedAt: DateTimeString.now(),
@@ -259,7 +259,7 @@ export function createFujiActions(tables: FujiTables) {
 						}),
 					),
 				}),
-				handler: ({ entries: items }) => {
+				handler: async ({ entries: items }) => {
 					const now = DateTimeString.now();
 					const rows = items.map(({ title, date }) => ({
 						id: generateId<EntryId>(),

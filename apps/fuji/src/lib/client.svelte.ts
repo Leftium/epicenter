@@ -17,6 +17,7 @@ import {
 	attachEncryption,
 	attachIndexedDb,
 	attachSync,
+	dispatchAction,
 	toWsUrl,
 	type Document,
 } from '@epicenter/workspace';
@@ -45,11 +46,13 @@ export function openFuji() {
 
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
+	const actions = createFujiActions(tables);
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		awareness: awareness.raw,
-		requiresToken: true,
+		getToken: () => auth.getToken(),
+		dispatch: (action, input) => dispatchAction(actions, action, input),
 	});
 
 	const entryContentDocs = createEntryContentDocs({
@@ -62,15 +65,15 @@ export function openFuji() {
 	// Logout (previous !== null, next === null) wipes local data; login and
 	// token rotation (next !== null) re-apply encryption keys and re-arm sync.
 	// Cold-boot-anonymous is a silent no-op — neither branch runs.
+	// Token sourcing is pulled by `attachSync` via the `getToken` callback;
+	// reconnect() forces it to pick up the latest token.
 	auth.onSessionChange((next, previous) => {
 		if (next === null) {
 			sync.goOffline();
-			sync.setToken(null);
 			if (previous !== null) void idb.clearLocal();
 			return;
 		}
 		encryption.applyKeys(next.encryptionKeys);
-		sync.setToken(next.token);
 		if (previous?.token !== next.token) sync.reconnect();
 	});
 
@@ -82,7 +85,7 @@ export function openFuji() {
 		encryption,
 		idb,
 		sync,
-		actions: createFujiActions(tables),
+		actions,
 		entryContentDocs,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,

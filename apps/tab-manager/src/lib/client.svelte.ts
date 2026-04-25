@@ -64,21 +64,17 @@ export function openTabManager() {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
 		awareness: awareness.raw,
-		requiresToken: true,
-		rpc: {
-			dispatch: (action, input) => dispatchAction(actions, action, input),
-		},
+		getToken: () => auth.getToken(),
+		dispatch: (action, input) => dispatchAction(actions, action, input),
 	});
 
 	auth.onSessionChange((next, previous) => {
 		if (next === null) {
 			sync.goOffline();
-			sync.setToken(null);
 			if (previous !== null) void idb.clearLocal();
 			return;
 		}
 		encryption.applyKeys(next.encryptionKeys);
-		sync.setToken(next.token);
 		if (previous?.token !== next.token) sync.reconnect();
 		if (previous === null) void registerDevice();
 	});

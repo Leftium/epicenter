@@ -16,6 +16,7 @@ import {
 	attachEncryption,
 	attachIndexedDb,
 	attachSync,
+	dispatchAction,
 	toWsUrl,
 	type Document,
 } from '@epicenter/workspace';
@@ -43,10 +44,12 @@ export function openHoneycrisp() {
 
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
+	const actions = createHoneycrispActions(tables);
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		requiresToken: true,
+		getToken: () => auth.getToken(),
+		dispatch: (action, input) => dispatchAction(actions, action, input),
 	});
 
 	const noteBodyDocs = createNoteBodyDocs({
@@ -58,12 +61,10 @@ export function openHoneycrisp() {
 	auth.onSessionChange((next, previous) => {
 		if (next === null) {
 			sync.goOffline();
-			sync.setToken(null);
 			if (previous !== null) void idb.clearLocal();
 			return;
 		}
 		encryption.applyKeys(next.encryptionKeys);
-		sync.setToken(next.token);
 		if (previous?.token !== next.token) sync.reconnect();
 	});
 
@@ -74,7 +75,7 @@ export function openHoneycrisp() {
 		encryption,
 		idb,
 		sync,
-		actions: createHoneycrispActions(tables),
+		actions,
 		noteBodyDocs,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		whenReady: idb.whenLoaded,

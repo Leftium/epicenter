@@ -15,6 +15,7 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
+	dispatchAction,
 	toWsUrl,
 	type Document,
 } from '@epicenter/workspace';
@@ -203,18 +204,17 @@ export function openOpenSidian() {
 	const sync = attachSync(ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		requiresToken: true,
+		getToken: () => auth.getToken(),
+		dispatch: (action, input) => dispatchAction(actions, action, input),
 	});
 
 	auth.onSessionChange((next, previous) => {
 		if (next === null) {
 			sync.goOffline();
-			sync.setToken(null);
 			if (previous !== null) void idb.clearLocal();
 			return;
 		}
 		encryption.applyKeys(next.encryptionKeys);
-		sync.setToken(next.token);
 		if (previous?.token !== next.token) sync.reconnect();
 	});
 

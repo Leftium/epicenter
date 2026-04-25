@@ -18,7 +18,6 @@ import {
 	attachSync,
 	dispatchAction,
 	toWsUrl,
-	type Document,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createNoteBodyDocs } from '$lib/note-body-docs';
@@ -82,7 +81,7 @@ export function openHoneycrisp() {
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	} satisfies Document;
+	};
 }
 
 export const workspace = openHoneycrisp();

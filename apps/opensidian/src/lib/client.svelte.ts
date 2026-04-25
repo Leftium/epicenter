@@ -17,7 +17,6 @@ import {
 	attachSync,
 	dispatchAction,
 	toWsUrl,
-	type Document,
 } from '@epicenter/workspace';
 import {
 	createFileContentDocs,
@@ -235,7 +234,7 @@ export function openOpenSidian() {
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	} satisfies Document;
+	};
 }
 
 export const workspace = openOpenSidian();

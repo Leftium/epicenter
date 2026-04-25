@@ -9,7 +9,6 @@
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	type Document,
 } from '@epicenter/workspace';
 import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
@@ -43,7 +42,7 @@ export function openWhispering() {
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
-	} satisfies Document;
+	};
 }
 
 export const workspace = openWhispering();

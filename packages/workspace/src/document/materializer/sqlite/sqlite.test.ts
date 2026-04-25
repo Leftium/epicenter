@@ -21,7 +21,7 @@ import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
 	attachTables,
-	createDocumentFactory,
+	createDisposableCache,
 	defineTable,
 } from '../../../index.js';
 import { attachSqliteMaterializer } from './sqlite.js';
@@ -82,7 +82,7 @@ type SetupOptions = {
 function setup(options: SetupOptions = {}) {
 	const db = createTestDb();
 
-	const factory = createDocumentFactory((id: string) => {
+	const cache = createDisposableCache((id: string) => {
 		const ydoc = new Y.Doc({ guid: id });
 		const tables = attachTables(ydoc, tableDefinitions);
 
@@ -106,10 +106,10 @@ function setup(options: SetupOptions = {}) {
 				ydoc.destroy();
 			},
 		};
-	});
+	}, { gcTime: 0 });
 
-	const workspace = factory.open('test');
-	return { db, workspace, factory };
+	const workspace = cache.open('test');
+	return { db, workspace, cache };
 }
 
 function createDeferred() {
@@ -152,7 +152,7 @@ function hasTable(db: TestDb, tableName: string) {
 }
 
 async function cleanup(setupResult: ReturnType<typeof setup>) {
-	setupResult.factory.close('test');
+	setupResult.workspace[Symbol.dispose]();
 	setupResult.db.close();
 }
 
@@ -166,7 +166,7 @@ describe('attachSqliteMaterializer', () => {
 			const db = createTestDb();
 			const gate = createDeferred();
 
-			const factory = createDocumentFactory((id: string) => {
+			const cache = createDisposableCache((id: string) => {
 				const ydoc = new Y.Doc({ guid: id });
 				const tables = attachTables(ydoc, tableDefinitions);
 
@@ -185,9 +185,9 @@ describe('attachSqliteMaterializer', () => {
 						ydoc.destroy();
 					},
 				};
-			});
+			}, { gcTime: 0 });
 
-			const workspace = factory.open('ready-gated');
+			const workspace = cache.open('ready-gated');
 
 			try {
 				await new Promise((resolve) => setTimeout(resolve, 25));
@@ -200,7 +200,7 @@ describe('attachSqliteMaterializer', () => {
 				expect(hasTable(db, 'posts')).toBe(true);
 			} finally {
 				gate.resolve();
-				factory.close('ready-gated');
+				workspace[Symbol.dispose]();
 				db.close();
 			}
 		});
@@ -486,7 +486,7 @@ describe('attachSqliteMaterializer', () => {
 					title: 'Queued row',
 					_v: 1,
 				});
-				testSetup.factory.close('test');
+				testSetup.workspace[Symbol.dispose]();
 
 				await waitForSyncCycle();
 

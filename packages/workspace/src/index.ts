@@ -7,15 +7,20 @@
  *
  * @example
  * ```typescript
- * import { createDocumentFactory, defineTable, attachTables } from '@epicenter/workspace';
+ * import { attachTables, createDisposableCache, defineTable } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
- * const notesDoc = createDocumentFactory('notes', () => {
- *   const ydoc = new Y.Doc({ guid: 'notes' });
- *   const tables = attachTables(ydoc, { posts });
- *   return { id: 'notes', ydoc, tables };
- * });
+ *
+ * // Singleton workspace: inline at module scope, no factory wrapper.
+ * const ydoc = new Y.Doc({ guid: 'notes' });
+ * const tables = attachTables(ydoc, { posts });
+ *
+ * // Per-row docs: createDisposableCache wraps a pure builder.
+ * const noteBodyDocs = createDisposableCache(
+ *   (noteId) => buildNoteBody({ noteId, notesTable: tables.posts }),
+ *   { gcTime: 5_000 },
+ * );
  * ```
  *
  * @packageDocumentation
@@ -103,8 +108,9 @@ export type {
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DOCUMENT PRIMITIVES — attach*, define*, createDocumentFactory, encryption, timeline,
-// storage keys, types — everything in src/document/ flows through its barrel.
+// DOCUMENT PRIMITIVES — attach*, define*, createDisposableCache, encryption,
+// timeline, storage keys, types — everything in src/document/ + src/cache/
+// flows through its barrel.
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
@@ -193,12 +199,10 @@ export {
 } from './document/attach-timeline/index.js';
 
 export {
-	createDocumentFactory,
-	isDocumentHandle,
-	type Document,
-	type DocumentFactory,
-	type DocumentHandle,
-} from './document/document.js';
+	createDisposableCache,
+	type DisposableCache,
+	DisposableCacheError,
+} from './cache/disposable-cache.js';
 export { defineTable } from './document/define-table.js';
 export { defineKv } from './document/define-kv.js';
 export { docGuid } from './document/doc-guid.js';

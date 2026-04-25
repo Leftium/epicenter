@@ -441,10 +441,10 @@ describe('attachSqliteMaterializer', () => {
 				await testSetup.workspace.sqlite.whenFlushed;
 
 				expect(
-					(await testSetup.workspace.sqlite.count({ table: 'posts' })).data,
+					await testSetup.workspace.sqlite.count({ table: 'posts' }),
 				).toBe(2);
 				expect(
-					(await testSetup.workspace.sqlite.count({ table: 'notes' })).data,
+					await testSetup.workspace.sqlite.count({ table: 'notes' }),
 				).toBe(0);
 			} finally {
 				await cleanup(testSetup);
@@ -458,11 +458,9 @@ describe('attachSqliteMaterializer', () => {
 				await testSetup.workspace.sqlite.whenFlushed;
 
 				expect(
-					(
-						await testSetup.workspace.sqlite.count({
-							table: 'nonexistent',
-						})
-					).data,
+					await testSetup.workspace.sqlite.count({
+						table: 'nonexistent',
+					}),
 				).toBe(0);
 			} finally {
 				await cleanup(testSetup);
@@ -514,12 +512,10 @@ describe('attachSqliteMaterializer', () => {
 				await testSetup.workspace.sqlite.whenFlushed;
 
 				expect(
-					(
-						await testSetup.workspace.sqlite.search({
-							table: 'posts',
-							query: 'hello',
-						})
-					).data,
+					await testSetup.workspace.sqlite.search({
+						table: 'posts',
+						query: 'hello',
+					}),
 				).toEqual([]);
 			} finally {
 				await cleanup(testSetup);
@@ -553,7 +549,7 @@ describe('attachSqliteMaterializer', () => {
 						table: 'posts',
 						query: 'mirror',
 						limit: 10,
-					})).data as Array<{ id: string; snippet: string; rank: number }>;
+					})) as Array<{ id: string; snippet: string; rank: number }>;
 
 					expect(results).toHaveLength(1);
 					expect(results[0]?.id).toBe('post-1');

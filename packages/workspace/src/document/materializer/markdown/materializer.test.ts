@@ -133,7 +133,7 @@ describe('push', () => {
 			'---\nid: post-2\ntitle: Draft Post\npublished: false\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = (await workspace.materializer.push({})).data!;
 
 		expect(result.imported).toBe(2);
 		expect(result.skipped).toBe(0);
@@ -158,7 +158,7 @@ describe('push', () => {
 		await writeTestFile('posts/readme.txt', 'not a markdown file');
 		await writeTestFile('posts/data.json', '{"id": "test"}');
 
-		const result = await workspace.materializer.push({});
+		const result = (await workspace.materializer.push({})).data!;
 
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(0);
@@ -177,7 +177,7 @@ describe('push', () => {
 			'# Just a heading\n\nSome content\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = (await workspace.materializer.push({})).data!;
 
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(1);
@@ -188,7 +188,7 @@ describe('push', () => {
 	test('silently skips tables whose directories do not exist', async () => {
 		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
 		// Don't create the posts directory — it should not exist
-		const result = await workspace.materializer.push({});
+		const result = (await workspace.materializer.push({})).data!;
 
 		expect(result.imported).toBe(0);
 		expect(result.skipped).toBe(0);
@@ -207,7 +207,7 @@ describe('push', () => {
 			'---\nid: post-bad\ntitle: 42\npublished: true\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = (await workspace.materializer.push({})).data!;
 
 		expect(result.imported).toBe(0);
 		expect(result.skipped).toBe(0);
@@ -242,7 +242,7 @@ describe('push', () => {
 			'---\nid: note-boom\n---\n\nirrelevant\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = (await workspace.materializer.push({})).data!;
 
 		expect(result.errored).toBe(1);
 		const errorEvent = result.events.find((e) => e.kind === 'error');
@@ -267,7 +267,7 @@ describe('push', () => {
 			'---\nid: p3\ntitle: 42\npublished: true\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = (await workspace.materializer.push({})).data!;
 
 		expect(result.imported).toBe(1);
 		expect(result.skipped).toBe(1);
@@ -300,7 +300,7 @@ describe('push', () => {
 			'---\nid: note-1\n---\n\nThis is the body content\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = (await workspace.materializer.push({})).data!;
 
 		expect(result.imported).toBe(1);
 
@@ -319,7 +319,7 @@ describe('push', () => {
 			'---\nid: p1\ntitle: Hello\npublished: false\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = (await workspace.materializer.push({})).data!;
 
 		expect(result.imported).toBe(1);
 		expect(workspace.tables.posts.has('p1')).toBe(true);
@@ -335,7 +335,7 @@ describe('push', () => {
 			'---\nid: p1\ntitle: Original\npublished: false\n_v: 1\n---\n',
 		);
 
-		const first = await workspace.materializer.push({});
+		const first = (await workspace.materializer.push({})).data!;
 		expect(first.imported).toBe(1);
 
 		const { data: originalPost } = workspace.tables.posts.get('p1');
@@ -350,7 +350,7 @@ describe('push', () => {
 			'---\nid: p1\ntitle: Updated From Disk\npublished: true\n_v: 1\n---\n',
 		);
 
-		const second = await workspace.materializer.push({});
+		const second = (await workspace.materializer.push({})).data!;
 		expect(second.imported).toBe(1);
 
 		const { data: updatedPost } = workspace.tables.posts.get('p1');
@@ -371,7 +371,7 @@ describe('push', () => {
 			'---\nid: n1\nbody: Note body\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.push({});
+		const result = (await workspace.materializer.push({})).data!;
 
 		expect(result.imported).toBe(2);
 		expect(workspace.tables.posts.has('p1')).toBe(true);
@@ -401,7 +401,7 @@ describe('pull', () => {
 			_v: 1,
 		});
 
-		const result = await workspace.materializer.pull({});
+		const result = (await workspace.materializer.pull({})).data!;
 
 		expect(result.written).toBe(2);
 
@@ -449,7 +449,7 @@ describe('pull', () => {
 		});
 		workspace.tables.notes.set({ id: 'n1', body: 'Custom body', _v: 1 });
 
-		const result = await workspace.materializer.pull({});
+		const result = (await workspace.materializer.pull({})).data!;
 
 		expect(result.written).toBe(1);
 
@@ -480,7 +480,7 @@ describe('pull', () => {
 
 	test('writes nothing when table is empty', async () => {
 		const { workspace, factory } = await setup({ tables: (t) => [{ table: t.posts }] });
-		const result = await workspace.materializer.pull({});
+		const result = (await workspace.materializer.pull({})).data!;
 
 		expect(result.written).toBe(0);
 
@@ -497,7 +497,7 @@ describe('pull', () => {
 		});
 		workspace.tables.notes.set({ id: 'n1', body: 'Note', _v: 1 });
 
-		const result = await workspace.materializer.pull({});
+		const result = (await workspace.materializer.pull({})).data!;
 
 		expect(result.written).toBe(2);
 
@@ -535,7 +535,7 @@ describe('rebuild', () => {
 		expect(before).toContain('p1.md');
 		expect(before).toContain('orphan.md');
 
-		const result = await workspace.materializer.rebuild({});
+		const result = (await workspace.materializer.rebuild({})).data!;
 
 		expect(result.deleted).toBe(2); // p1.md + orphan.md both unlinked
 		expect(result.written).toBe(1); // only p1 re-written
@@ -562,7 +562,7 @@ describe('rebuild', () => {
 			'---\nid: x\nbody: gone\n_v: 1\n---\n',
 		);
 
-		const result = await workspace.materializer.rebuild({ table: 'posts' });
+		const result = (await workspace.materializer.rebuild({ table: 'posts' })).data!;
 
 		expect(result.deleted).toBe(1); // p1.md
 		expect(result.written).toBe(1); // p1 re-written
@@ -598,13 +598,13 @@ describe('rebuild', () => {
 			_v: 1,
 		});
 
-		const first = await workspace.materializer.rebuild({});
+		const first = (await workspace.materializer.rebuild({})).data!;
 		const stateAfterFirst = await listTestDir('posts');
 		const contentsAfterFirst = await Promise.all(
 			stateAfterFirst.map((f) => readTestFile(`posts/${f}`)),
 		);
 
-		const second = await workspace.materializer.rebuild({});
+		const second = (await workspace.materializer.rebuild({})).data!;
 		const stateAfterSecond = await listTestDir('posts');
 		const contentsAfterSecond = await Promise.all(
 			stateAfterSecond.map((f) => readTestFile(`posts/${f}`)),
@@ -693,7 +693,7 @@ describe('round-trip', () => {
 		const workspace2 = factory2.open('test.roundtrip.2');
 		await workspace2.whenReady;
 
-		const result = await workspace2.materializer.push({});
+		const result = (await workspace2.materializer.push({})).data!;
 		expect(result.imported).toBe(2);
 
 		const { data: p1 } = workspace2.tables.posts.get('p1');

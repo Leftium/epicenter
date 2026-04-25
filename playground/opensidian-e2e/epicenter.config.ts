@@ -77,12 +77,9 @@ const opensidianFactory = createDocumentFactory((id: string) => {
 	const sync = attachSync(ydoc, {
 		url: (docId) => `${SERVER_URL}/workspaces/${docId}`,
 		waitFor: Promise.all([persistence.whenLoaded, unlock.whenChecked]),
+		getToken: async () =>
+			(await sessions.load(SERVER_URL))?.accessToken ?? null,
 	});
-	void (async () => {
-		const loaded = await sessions.load(SERVER_URL);
-		sync.setToken(loaded?.accessToken ?? null);
-		sync.reconnect();
-	})();
 
 	/**
 	 * Per-file content persistence via `attachSqlite`. Each content Y.Doc writes

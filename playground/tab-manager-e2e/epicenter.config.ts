@@ -71,12 +71,9 @@ const tabManagerFactory = createDocumentFactory((id: string) => {
 		// Gate connection on local hydrate + unlock so the handshake only exchanges
 		// the delta, not the whole document.
 		waitFor: Promise.all([persistence.whenLoaded, unlock.whenChecked]),
+		getToken: async () =>
+			(await sessions.load(SERVER_URL))?.accessToken ?? null,
 	});
-	void (async () => {
-		const loaded = await sessions.load(SERVER_URL);
-		sync.setToken(loaded?.accessToken ?? null);
-		sync.reconnect();
-	})();
 
 	const whenReady = Promise.all([
 		persistence.whenLoaded,

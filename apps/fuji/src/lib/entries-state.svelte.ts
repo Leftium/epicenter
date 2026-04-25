@@ -74,9 +74,10 @@ function createEntriesState() {
 		 * Delegates to the workspace `entries.create` action, then
 		 * navigates to `/entries/{id}` so the editor opens immediately.
 		 */
-		createEntry() {
-			const { id } = workspace.actions.entries.create({});
-			goto(`/entries/${id}`);
+		async createEntry() {
+			const { data, error } = await workspace.actions.entries.create({});
+			if (error) throw error;
+			goto(`/entries/${data.id}`);
 		},
 	};
 }

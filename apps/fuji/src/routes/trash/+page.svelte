@@ -75,7 +75,7 @@
 										size="icon-sm"
 										title="Restore entry"
 										onclick={() => {
-										workspace.actions.entries.restore({ id: entry.id });
+										void workspace.actions.entries.restore({ id: entry.id });
 										goto(`/entries/${entry.id}`);
 									}}
 									>

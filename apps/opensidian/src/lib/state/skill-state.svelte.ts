@@ -51,11 +51,16 @@ function createSkillState() {
 
 		const { data } = await tryAsync({
 			try: async () => {
-				const catalog = await skillsWorkspace.actions.listSkills();
+				const { data: catalog, error } =
+					await skillsWorkspace.actions.listSkills();
+				if (error) throw error;
 				const loadedSkills = await Promise.all(
-					catalog.map(async ({ id }) =>
-						skillsWorkspace.actions.getSkill({ id }),
-					),
+					catalog.map(async ({ id }) => {
+						const { data: entry } = await skillsWorkspace.actions.getSkill({
+							id,
+						});
+						return entry;
+					}),
 				);
 
 				return loadedSkills

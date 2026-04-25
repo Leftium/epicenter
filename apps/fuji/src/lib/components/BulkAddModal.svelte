@@ -60,7 +60,7 @@
 				title: text,
 				date: DateTimeString.stringify(iso, timezone),
 			}));
-			workspace.actions.entries.bulkCreate({ entries: items });
+			void workspace.actions.entries.bulkCreate({ entries: items });
 			toast.success(`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`);
 			isOpen = false;
 			rawText = '';

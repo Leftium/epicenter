@@ -33,7 +33,7 @@
 			rating: number;
 		}>,
 	) {
-		workspace.actions.entries.update({ id: entry.id, ...updates });
+		void workspace.actions.entries.update({ id: entry.id, ...updates });
 	}
 
 	const contentDoc = fromDocument(entryContentDocs, () => entry.id);
@@ -61,7 +61,7 @@
 					description: `"${entry.title || 'Untitled'}" will be moved to recently deleted.`,
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
-						workspace.actions.entries.delete({ id: entry.id });
+						void workspace.actions.entries.delete({ id: entry.id });
 						goto('/');
 					},
 				});

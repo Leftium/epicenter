@@ -12,6 +12,7 @@
  *   3 — peer-miss (`--peer <target>` didn't resolve within `--wait`)
  */
 
+import { invokeNormalized } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
@@ -118,12 +119,7 @@ async function invoke(
 		return;
 	}
 
-	const invoke = action as unknown as (input?: unknown) => Promise<{
-		data: unknown;
-		error: unknown;
-	}>;
-	const result =
-		action.input !== undefined ? await invoke(input) : await invoke();
+	const result = await invokeNormalized(action, input, actionPath);
 	if (result.error !== null) {
 		outputError(extractErrorMessage(result.error));
 		process.exitCode = 2; // runtime error (local Err)

@@ -27,7 +27,7 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
-import { tabManager } from '$lib/client.svelte';
+import { actions, tabManager } from '$lib/client.svelte';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { Bookmark, BookmarkId } from '$lib/workspace';
 
@@ -72,7 +72,7 @@ function createBookmarkState() {
 		 */
 		async toggle(tab: BrowserTab) {
 			if (!tab.url) return;
-			return tabManager.actions.bookmarks.toggle({
+			return actions.bookmarks.toggle({
 				url: tab.url,
 				title: tab.title || 'Untitled',
 				favIconUrl: tab.favIconUrl,
@@ -81,17 +81,17 @@ function createBookmarkState() {
 
 		/** Open a bookmark in a new browser tab without removing the bookmark. */
 		async open(bookmark: Bookmark) {
-			return tabManager.actions.bookmarks.open({ url: bookmark.url });
+			return actions.bookmarks.open({ url: bookmark.url });
 		},
 
 		/** Delete a bookmark by ID. */
 		async remove(id: BookmarkId) {
-			return tabManager.actions.bookmarks.remove({ id });
+			return actions.bookmarks.remove({ id });
 		},
 
 		/** Delete all bookmarks. */
 		async removeAll() {
-			return tabManager.actions.bookmarks.removeAll();
+			return actions.bookmarks.removeAll();
 		},
 	};
 }

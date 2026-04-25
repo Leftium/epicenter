@@ -23,9 +23,9 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createDocumentFactory } from '@epicenter/workspace';
 import {
 	attachEncryption,
+	createDisposableCache,
 	defineMutation,
 	generateId,
 } from '@epicenter/workspace';
@@ -37,9 +37,9 @@ import {
 } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { parseSkillMd } from './parse.js';
-import { createReferenceContentDocs } from './reference-content-docs.js';
+import { createReferenceContentDoc } from './reference-content-docs.js';
 import { serializeSkillMd } from './serialize.js';
-import { createSkillInstructionsDocs } from './skill-instructions-docs.js';
+import { createSkillInstructionsDoc } from './skill-instructions-docs.js';
 import { createSkillsActions } from './skills-actions.js';
 import { referencesTable, type Skill, skillsTable } from './tables.js';
 import * as Y from 'yjs';
@@ -72,7 +72,7 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * factories with two separate caches. That isn't a supported configuration
  * today — TODO if we ever need it.
  */
-export const skillsDocument = createDocumentFactory(
+export const skillsDocument = createDisposableCache(
 	(id: string) => {
 		const ydoc = new Y.Doc({ guid: id, gc: false });
 
@@ -83,14 +83,20 @@ export const skillsDocument = createDocumentFactory(
 		});
 		const kv = encryption.attachKv(ydoc, {});
 
-		const instructionsDocs = createSkillInstructionsDocs({
-			workspaceId: id,
-			skillsTable: tables.skills,
-		});
-		const referenceDocs = createReferenceContentDocs({
-			workspaceId: id,
-			referencesTable: tables.references,
-		});
+		const instructionsDocs = createDisposableCache((skillId: string) =>
+			createSkillInstructionsDoc({
+				skillId,
+				workspaceId: id,
+				skillsTable: tables.skills,
+			}),
+		);
+		const referenceDocs = createDisposableCache((referenceId: string) =>
+			createReferenceContentDoc({
+				referenceId,
+				workspaceId: id,
+				referencesTable: tables.references,
+			}),
+		);
 
 		const readActions = createSkillsActions({
 			tables,

@@ -2,7 +2,7 @@ import { createPersistedState } from '@epicenter/svelte';
 import { type } from 'arktype';
 import { defineCommand } from 'just-bash';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { opensidian } from '$lib/client.svelte';
+import { bash, fs } from '$lib/client.svelte';
 import { fsState } from '$lib/state/fs-state.svelte';
 
 /**
@@ -53,7 +53,7 @@ function createTerminalState() {
 	// Uses registerCommand() instead of the constructor's customCommands
 	// option to avoid a circular dependency (workspace → fs-state).
 
-	opensidian.bash.registerCommand(
+	bash.registerCommand(
 		defineCommand('open', async (args) => {
 			const path = args[0];
 			if (!path)
@@ -62,7 +62,7 @@ function createTerminalState() {
 					stderr: 'Usage: open <path>',
 					exitCode: 1,
 				};
-			const id = opensidian.fs.lookupId(path);
+			const id = fs.lookupId(path);
 			if (!id)
 				return {
 					stdout: '',
@@ -152,7 +152,7 @@ function createTerminalState() {
 			historyIndex = -1;
 			const { data: entry } = await tryAsync({
 				try: async () => {
-					const result = await opensidian.bash.exec(command);
+					const result = await bash.exec(command);
 					return {
 						type: 'output' as const,
 						stdout: result.stdout,

@@ -25,7 +25,7 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import { tabManager } from '$lib/client.svelte';
+import { actions, tabManager } from '$lib/client.svelte';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { SavedTab, SavedTabId } from '$lib/workspace';
 
@@ -54,7 +54,7 @@ function createSavedTabState() {
 		 */
 		async save(tab: BrowserTab) {
 			if (!tab.url) return;
-			return tabManager.actions.savedTabs.save({
+			return actions.savedTabs.save({
 				browserTabId: tab.id,
 				url: tab.url,
 				title: tab.title || 'Untitled',
@@ -71,7 +71,7 @@ function createSavedTabState() {
 		 * doesn't lose the URL.
 		 */
 		async restore(savedTab: SavedTab) {
-			return tabManager.actions.savedTabs.restore({
+			return actions.savedTabs.restore({
 				id: savedTab.id,
 				url: savedTab.url,
 				pinned: savedTab.pinned,
@@ -80,17 +80,17 @@ function createSavedTabState() {
 
 		/** Restore all saved tabs at once. */
 		async restoreAll() {
-			return tabManager.actions.savedTabs.restoreAll();
+			return actions.savedTabs.restoreAll();
 		},
 
 		/** Delete a saved tab without restoring it. */
 		async remove(id: SavedTabId) {
-			return tabManager.actions.savedTabs.remove({ id });
+			return actions.savedTabs.remove({ id });
 		},
 
 		/** Delete all saved tabs without restoring them. */
 		async removeAll() {
-			return tabManager.actions.savedTabs.removeAll();
+			return actions.savedTabs.removeAll();
 		},
 	};
 }

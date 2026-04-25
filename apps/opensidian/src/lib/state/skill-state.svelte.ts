@@ -1,6 +1,5 @@
-import { skillsActions } from '@epicenter/skills';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { fs } from '$lib/client.svelte';
+import { fs, skillsActions } from '$lib/client.svelte';
 
 /** A global skill loaded from the @epicenter/skills workspace. */
 type GlobalSkill = { name: string; instructions: string };

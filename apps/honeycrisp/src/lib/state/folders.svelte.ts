@@ -20,7 +20,7 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
-import { honeycrisp } from '$lib/client.svelte';
+import { actions, honeycrisp } from '$lib/client.svelte';
 import type { FolderId } from '$lib/workspace';
 import { searchParams } from '$lib/search-params.svelte';
 
@@ -96,7 +96,7 @@ function createFoldersState() {
 		 * ```
 		 */
 		deleteFolder(folderId: FolderId) {
-			honeycrisp.actions.folders.delete({ folderId });
+			actions.folders.delete({ folderId });
 			if (searchParams.folder === folderId) {
 				searchParams.update({ folder: null, note: null });
 			}

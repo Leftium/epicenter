@@ -3,7 +3,7 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { opensidian } from '$lib/client.svelte';
+	import { fileContentDocs, opensidian } from '$lib/client.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
@@ -19,7 +19,7 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	const doc = fromDisposableCache(opensidian.fileContentDocs, () => fileId);
+	const doc = fromDisposableCache(fileContentDocs, () => fileId);
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),

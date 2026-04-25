@@ -8,10 +8,10 @@
  * @module
  */
 
-import { defineQuery, type Table } from '@epicenter/workspace';
+import { defineQuery, type DisposableCache, type Table } from '@epicenter/workspace';
 import Type from 'typebox';
-import type { createReferenceContentDocs } from './reference-content-docs.js';
-import type { createSkillInstructionsDocs } from './skill-instructions-docs.js';
+import type { ReferenceContentDoc } from './reference-content-docs.js';
+import type { SkillInstructionsDoc } from './skill-instructions-docs.js';
 import type { Reference, Skill } from './tables.js';
 
 export type SkillsTables = {
@@ -25,8 +25,8 @@ export function createSkillsActions({
 	referenceDocs,
 }: {
 	tables: SkillsTables;
-	instructionsDocs: ReturnType<typeof createSkillInstructionsDocs>;
-	referenceDocs: ReturnType<typeof createReferenceContentDocs>;
+	instructionsDocs: DisposableCache<string, SkillInstructionsDoc>;
+	referenceDocs: DisposableCache<string, ReferenceContentDoc>;
 }) {
 	async function readInstructions(id: string): Promise<string> {
 		await using h = instructionsDocs.open(id);

@@ -83,13 +83,13 @@ function createSavedTabState() {
 			return actions.savedTabs.restoreAll();
 		},
 
-		/** Delete a saved tab without restoring it. */
-		async remove(id: SavedTabId) {
+		/** Delete a saved tab without restoring it. Synchronous CRDT delete. */
+		remove(id: SavedTabId) {
 			return actions.savedTabs.remove({ id });
 		},
 
-		/** Delete all saved tabs without restoring them. */
-		async removeAll() {
+		/** Delete all saved tabs without restoring them. Synchronous CRDT batch delete. */
+		removeAll() {
 			return actions.savedTabs.removeAll();
 		},
 	};

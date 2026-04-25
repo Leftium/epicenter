@@ -168,7 +168,7 @@
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
 						// Pure CRDT writes — can't fail, no Result to toast.
-						bookmarkState.toggle(tab);
+						void bookmarkState.toggle(tab);
 					}}
 				>
 					<StarIcon

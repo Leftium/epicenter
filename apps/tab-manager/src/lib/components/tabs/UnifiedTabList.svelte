@@ -99,7 +99,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Restore All"
-								onclick={() => savedTabState.restoreAll()}
+								onclick={() => void savedTabState.restoreAll()}
 							>
 								<RotateCcwIcon />
 							</Button>

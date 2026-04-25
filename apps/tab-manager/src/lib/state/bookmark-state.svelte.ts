@@ -84,13 +84,13 @@ function createBookmarkState() {
 			return actions.bookmarks.open({ url: bookmark.url });
 		},
 
-		/** Delete a bookmark by ID. */
-		async remove(id: BookmarkId) {
+		/** Delete a bookmark by ID. Synchronous CRDT delete. */
+		remove(id: BookmarkId) {
 			return actions.bookmarks.remove({ id });
 		},
 
-		/** Delete all bookmarks. */
-		async removeAll() {
+		/** Delete all bookmarks. Synchronous CRDT batch delete. */
+		removeAll() {
 			return actions.bookmarks.removeAll();
 		},
 	};

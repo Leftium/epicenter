@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { fromDocument } from '@epicenter/svelte';
+	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import HoneycripEditor from '$lib/editor/Editor.svelte';
 	import { noteBodyDocs } from '$lib/client.svelte';
@@ -7,7 +7,7 @@
 
 	let { noteId }: { noteId: string } = $props();
 
-	const doc = fromDocument(noteBodyDocs, () => noteId);
+	const doc = fromDisposableCache(noteBodyDocs, () => noteId);
 </script>
 
 {#await doc.current.whenReady}

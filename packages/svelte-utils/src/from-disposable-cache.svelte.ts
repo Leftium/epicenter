@@ -1,18 +1,15 @@
-import type {
-	DocumentFactory,
-	DocumentHandle,
-} from '@epicenter/workspace';
+import type { DisposableCache } from '@epicenter/workspace';
 
 /**
- * Reactive binding to a `DocumentFactory`. Opens the handle for the current
- * id and disposes it on unmount or id swap.
+ * Reactive binding to a `DisposableCache`. Opens a handle for the current id
+ * and disposes it on unmount or id swap.
  *
  * The id is read through `idFn` inside a `$derived`, so the handle tracks
- * prop/state changes. When the id changes, the factory opens a handle for
- * the new id and the effect's teardown disposes the handle for the old id;
- * the two operations may briefly overlap depending on Svelte's scheduling,
- * which the factory's refcount tolerates. Rapid flips back to a recent id
- * cancel the pending teardown (factory-level behavior).
+ * prop/state changes. When the id changes, the cache opens a handle for the
+ * new id and the effect's teardown disposes the handle for the old id; the
+ * two operations may briefly overlap depending on Svelte's scheduling, which
+ * the cache's refcount tolerates. Rapid flips back to a recent id cancel the
+ * pending teardown (cache-level `gcTime` behavior).
  *
  * Why a getter (`() => id`) and not the id directly: destructured props and
  * `$state` reads are not reactive when captured at module top — see Svelte's
@@ -22,27 +19,30 @@ import type {
  * @example
  * ```svelte
  * <script lang="ts">
- *   import { fromDocument } from '@epicenter/svelte';
+ *   import { fromDisposableCache } from '@epicenter/svelte';
  *   import { referenceDocs } from '$lib/client';
  *
  *   let { id }: { id: string } = $props();
- *   const doc = fromDocument(referenceDocs, () => id);
+ *   const doc = fromDisposableCache(referenceDocs, () => id);
  * </script>
  *
  * <CodeMirrorEditor ytext={doc.current.content.binding} />
  * ```
  */
-export function fromDocument<Id extends string, T>(
-	factory: DocumentFactory<Id, T>,
+export function fromDisposableCache<
+	Id extends string | number,
+	T extends Disposable,
+>(
+	cache: DisposableCache<Id, T>,
 	idFn: () => Id,
-): { readonly current: DocumentHandle<T> } {
-	const handle = $derived(factory.open(idFn()));
+): { readonly current: T & Disposable } {
+	const handle = $derived(cache.open(idFn()));
 	$effect(() => {
 		// Synchronous read tracks `handle` as a dependency AND snapshots the
 		// current value so the cleanup disposes the OLD handle on swap, not
 		// the new one (the `handle` binding is live).
 		const h = handle;
-		return () => h.dispose();
+		return () => h[Symbol.dispose]();
 	});
 	return {
 		// Getter, not a plain property — `handle` is a `$derived` local and

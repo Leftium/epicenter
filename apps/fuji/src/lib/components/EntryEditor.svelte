@@ -10,7 +10,7 @@
 	import * as StarRating from '@epicenter/ui/star-rating';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { fromDocument } from '@epicenter/svelte';
+	import { fromDisposableCache } from '@epicenter/svelte';
 	import { DateTimeString } from '@epicenter/workspace';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
@@ -36,7 +36,7 @@
 		void workspace.actions.entries.update({ id: entry.id, ...updates });
 	}
 
-	const contentDoc = fromDocument(entryContentDocs, () => entry.id);
+	const contentDoc = fromDisposableCache(entryContentDocs, () => entry.id);
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);

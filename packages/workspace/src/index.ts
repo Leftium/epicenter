@@ -42,6 +42,7 @@ export {
 	defineMutation,
 	defineQuery,
 	dispatchAction,
+	invokeNormalized,
 	isAction,
 	isMutation,
 	isQuery,

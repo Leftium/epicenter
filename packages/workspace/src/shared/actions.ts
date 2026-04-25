@@ -40,7 +40,7 @@
  * @module
  */
 
-import type { RpcError } from '@epicenter/sync';
+import { RpcError } from '@epicenter/sync';
 import type { Static, TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import { Ok, isResult } from 'wellcrafted/result';
@@ -304,6 +304,47 @@ export async function dispatchAction(
 		throw new Error(`Action not found: ${path}`);
 	}
 	return await target(input as never);
+}
+
+/**
+ * Invoke an action and normalize its return into a uniform
+ * `Promise<Result<T, RpcError>>`.
+ *
+ * The single canonical normalize: raw values get `Ok`-wrapped, existing
+ * `Result`s pass through, and thrown errors become `Err(ActionFailed)`. Used
+ * by every consumer that doesn't know the handler shape ahead of time —
+ * AI tool bridge, CLI dispatch, and the inbound RPC handler.
+ *
+ * The `errorLabel` (defaulting to `action.title` or `'anonymous'`) appears
+ * as `action` on the returned `RpcError.ActionFailed`, so callers see
+ * meaningful context in error reports without the util needing the dotted
+ * path itself.
+ *
+ * @example
+ * ```ts
+ * const result = await invokeNormalized<{ closedCount: number }>(
+ *   workspace.actions.tabs.close,
+ *   { tabIds: [1, 2] },
+ *   'tabs.close',
+ * );
+ * if (result.error) { ... }
+ * console.log(result.data.closedCount);
+ * ```
+ */
+export async function invokeNormalized<T = unknown>(
+	action: Action,
+	input?: unknown,
+	errorLabel: string = action.title ?? 'anonymous',
+): Promise<Result<T, RpcError>> {
+	try {
+		const ret =
+			action.input !== undefined
+				? await (action as (i: unknown) => unknown)(input)
+				: await (action as () => unknown)();
+		return (isResult(ret) ? ret : Ok(ret)) as Result<T, RpcError>;
+	} catch (cause) {
+		return RpcError.ActionFailed({ action: errorLabel, cause });
+	}
 }
 
 // ════════════════════════════════════════════════════════════════════════════

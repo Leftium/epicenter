@@ -15,7 +15,7 @@ import {
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { auth, opensidian, workspaceAiTools } from '$lib/client.svelte';
+import { auth, tables, whenReady, workspaceAiTools } from '$lib/client.svelte';
 import { skillState } from '$lib/state/skill-state.svelte';
 import {
 	type ChatMessageId,
@@ -35,7 +35,7 @@ function getNumberValue(value: JsonValue | undefined, fallback = 0) {
 }
 
 function createAiChatState() {
-	const conversationsMap = fromTable(opensidian.tables.conversations);
+	const conversationsMap = fromTable(tables.conversations);
 	const conversations = $derived(
 		[...conversationsMap.values()]
 			.sort(
@@ -49,7 +49,7 @@ function createAiChatState() {
 		const id = generateConversationId();
 		const now = Date.now();
 
-		opensidian.tables.conversations.set({
+		tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: DEFAULT_PROVIDER,
@@ -66,14 +66,14 @@ function createAiChatState() {
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		opensidian.tables.conversations.update(conversationId, {
+		tables.conversations.update(conversationId, {
 			...patch,
 			updatedAt: Date.now(),
 		});
 	}
 
 	function loadMessages(conversationId: ConversationId) {
-		return opensidian.tables.chatMessages
+		return tables.chatMessages
 			.filter((message) => message.conversationId === conversationId)
 			.sort((a, b) => a.createdAt - b.createdAt)
 			.map(toUiMessage);
@@ -122,7 +122,7 @@ function createAiChatState() {
 				}),
 			),
 			onFinish: (message) => {
-				opensidian.tables.chatMessages.set({
+				tables.chatMessages.set({
 					id: message.id as ChatMessageId,
 					conversationId,
 					role: 'assistant',
@@ -231,7 +231,7 @@ function createAiChatState() {
 					id: userMessageId,
 				});
 
-				opensidian.tables.chatMessages.set({
+				tables.chatMessages.set({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
@@ -253,7 +253,7 @@ function createAiChatState() {
 			reload() {
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					opensidian.tables.chatMessages.delete(lastMessage.id as ChatMessageId);
+					tables.chatMessages.delete(lastMessage.id as ChatMessageId);
 				}
 
 				void chat.reload();
@@ -307,14 +307,14 @@ function createAiChatState() {
 		(searchParams.chat ?? '') as ConversationId,
 	);
 
-	const _unobserveConversations = opensidian.tables.conversations.observe(() => {
+	const _unobserveConversations = tables.conversations.observe(() => {
 		reconcileHandles();
 	});
-	const _unobserveChatMessages = opensidian.tables.chatMessages.observe(() => {
+	const _unobserveChatMessages = tables.chatMessages.observe(() => {
 		refreshFns.get(activeConversationId)?.();
 	});
 
-	void opensidian.whenReady.then(() => {
+	void whenReady.then(() => {
 		void skillState.loadAllSkills();
 		reconcileHandles();
 
@@ -340,7 +340,7 @@ function createAiChatState() {
 		const now = Date.now();
 		const active = handles.get(activeConversationId);
 
-		opensidian.tables.conversations.set({
+		tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: active?.provider ?? DEFAULT_PROVIDER,

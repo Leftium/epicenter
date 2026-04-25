@@ -30,9 +30,31 @@ export const TabError = defineErrors({
 		operation,
 		cause,
 	}),
+	/**
+	 * The saved-tab record was written successfully, but `browser.tabs.remove`
+	 * failed during the close-source-tab step. The save is intact in the
+	 * workspace; only the cleanup half failed. Surfaced as the `closeResult`
+	 * channel on `savedTabs.save`'s mixed return so callers can warn the user
+	 * without losing the success of the save.
+	 */
+	SaveCloseFailed: ({
+		url,
+		browserTabId,
+		cause,
+	}: {
+		url: string;
+		browserTabId: number;
+		cause: unknown;
+	}) => ({
+		message: `Saved '${url}' but couldn't close tab ${browserTabId}: ${extractErrorMessage(cause)}`,
+		url,
+		browserTabId,
+		cause,
+	}),
 });
 export type TabError = InferErrors<typeof TabError>;
 export type BrowserApiFailed = Extract<TabError, { name: 'BrowserApiFailed' }>;
+export type SaveCloseFailed = Extract<TabError, { name: 'SaveCloseFailed' }>;
 
 export function createTabManagerActions({
 	tables,
@@ -253,7 +275,8 @@ export function createTabManagerActions({
 			 */
 			save: defineMutation({
 				title: 'Save Tab',
-				description: 'Save a tab for later by its metadata, then close it.',
+				description:
+					'Save a tab for later by its metadata, then close the source tab. The save always succeeds (modulo CRDT errors); the close is best-effort and reported separately on `closeResult`.',
 				input: Type.Object({
 					browserTabId: Type.Number(),
 					url: Type.String(),
@@ -273,11 +296,16 @@ export function createTabManagerActions({
 						savedAt: Date.now(),
 						_v: 1,
 					});
-					await tryAsync({
+					// The save (Y.Doc write) always succeeded by here. The close
+					// is partial-success: surface its own Result so callers can
+					// distinguish "saved and closed" from "saved but tab still
+					// open" without losing the fact that the save itself worked.
+					const closeResult = await tryAsync({
 						try: () => browser.tabs.remove(browserTabId),
-						catch: () => Ok(undefined),
+						catch: (cause) =>
+							TabError.SaveCloseFailed({ url, browserTabId, cause }),
 					});
-					return { saved: true };
+					return { saved: true as const, closeResult };
 				},
 			}),
 			restore: defineMutation({

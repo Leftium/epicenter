@@ -1,9 +1,7 @@
 /**
  * Honeycrisp workspace client.
  *
- * `openHoneycrisp()` returns the bare workspace bundle (ydoc + tables + kv +
- * encryption + idb). App-specific layers — actions, sync, per-note body cache —
- * are sibling exports at module scope.
+ * Module-scope flat exports — the file IS the workspace recipe, top-down.
  *
  * Auth transitions drive every sync decision through a single
  * `auth.onSessionChange` subscription: login (re)applies encryption keys
@@ -31,6 +29,7 @@ import {
 	type NoteId,
 } from '$lib/workspace';
 
+// ─── identity ──────────────────────────────────────────────────────────
 const session = createPersistedState({
 	key: 'honeycrisp:authSession',
 	schema: AuthSession.or('null'),
@@ -42,60 +41,50 @@ export const auth = createAuth({
 	session,
 });
 
-function openHoneycrisp() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.honeycrisp', gc: false });
+// ─── ydoc + state ──────────────────────────────────────────────────────
+export const ydoc = new Y.Doc({ guid: 'epicenter.honeycrisp', gc: false });
+export const encryption = attachEncryption(ydoc);
+export const tables = encryption.attachTables(ydoc, honeycrispTables);
+export const kv = encryption.attachKv(ydoc, {});
 
-	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, honeycrispTables);
-	const kv = encryption.attachKv(ydoc, {});
+// ─── storage ───────────────────────────────────────────────────────────
+export const idb = attachIndexedDb(ydoc);
+attachBroadcastChannel(ydoc);
 
-	const idb = attachIndexedDb(ydoc);
-	attachBroadcastChannel(ydoc);
-
-	return {
-		ydoc,
-		tables,
-		kv,
-		encryption,
-		idb,
-		batch: (fn: () => void) => ydoc.transact(fn),
-		whenReady: idb.whenLoaded,
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	};
-}
-
-export const honeycrisp = openHoneycrisp();
-
-export const actions = createHoneycrispActions(honeycrisp.tables);
-
-export const sync = attachSync(honeycrisp.ydoc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${honeycrisp.ydoc.guid}`),
-	waitFor: honeycrisp.idb.whenLoaded,
-	getToken: () => auth.getToken(),
-	dispatch: (action, input) => dispatchAction(actions, action, input),
-});
-
+// ─── per-row content cache ─────────────────────────────────────────────
 export const noteBodyDocs = createDisposableCache(
 	(noteId: NoteId) =>
 		createNoteBodyDoc({
 			noteId,
-			workspaceId: honeycrisp.ydoc.guid,
-			notesTable: honeycrisp.tables.notes,
+			workspaceId: ydoc.guid,
+			notesTable: tables.notes,
 			auth,
 			apiUrl: APP_URLS.API,
 		}),
 	{ gcTime: 5_000 },
 );
 
+// ─── actions + sync ────────────────────────────────────────────────────
+export const actions = createHoneycrispActions(tables);
+
+export const sync = attachSync(ydoc, {
+	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+	waitFor: idb.whenLoaded,
+	getToken: () => auth.getToken(),
+	dispatch: (action, input) => dispatchAction(actions, action, input),
+});
+
+export const batch = (fn: () => void) => ydoc.transact(fn);
+export const whenReady = idb.whenLoaded;
+
+// ─── session lifecycle ─────────────────────────────────────────────────
 auth.onSessionChange((next, previous) => {
 	if (next === null) {
 		sync.goOffline();
-		if (previous !== null) void honeycrisp.idb.clearLocal();
+		if (previous !== null) void idb.clearLocal();
 		return;
 	}
-	honeycrisp.encryption.applyKeys(next.encryptionKeys);
+	encryption.applyKeys(next.encryptionKeys);
 	if (previous?.token !== next.token) sync.reconnect();
 });
 

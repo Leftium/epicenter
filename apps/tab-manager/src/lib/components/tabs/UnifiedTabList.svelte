@@ -99,7 +99,7 @@
 								variant="ghost"
 								size="icon-xs"
 								tooltip="Restore All"
-							onclick={() => savedTabState.restoreAll().then((r) => toastOnError(r, 'Failed to restore tabs'))}
+								onclick={() => savedTabState.restoreAll()}
 							>
 								<RotateCcwIcon />
 							</Button>
@@ -108,7 +108,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete All"
-							onclick={() => savedTabState.removeAll().then((r) => toastOnError(r, 'Failed to remove tabs'))}
+								onclick={() => savedTabState.removeAll()}
 							>
 								<Trash2Icon />
 							</Button>
@@ -184,8 +184,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-							onclick={() =>
-							savedTabState.remove(tab.id).then((r) => toastOnError(r, 'Failed to remove tab'))}
+								onclick={() => savedTabState.remove(tab.id)}
 							>
 								<Trash2Icon />
 							</Button>
@@ -227,7 +226,7 @@
 								size="icon-xs"
 								class="text-destructive"
 								tooltip="Delete"
-							onclick={() => bookmarkState.remove(bookmark.id).then((r) => toastOnError(r, 'Failed to remove bookmark'))}
+								onclick={() => bookmarkState.remove(bookmark.id)}
 							>
 								<Trash2Icon />
 							</Button>

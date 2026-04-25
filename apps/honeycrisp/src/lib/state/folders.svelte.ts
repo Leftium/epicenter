@@ -20,14 +20,14 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
-import { actions, honeycrisp } from '$lib/client.svelte';
+import { actions, tables } from '$lib/client.svelte';
 import type { FolderId } from '$lib/workspace';
 import { searchParams } from '$lib/search-params.svelte';
 
 function createFoldersState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
-	const foldersMap = fromTable(honeycrisp.tables.folders);
+	const foldersMap = fromTable(tables.folders);
 
 	const folders = $derived([...foldersMap.values()]);
 
@@ -59,7 +59,7 @@ function createFoldersState() {
 		 */
 		createFolder() {
 			const id = generateId() as FolderId;
-			honeycrisp.tables.folders.set({
+			tables.folders.set({
 				id,
 				name: 'New Folder',
 				sortOrder: foldersMap.size,
@@ -79,7 +79,7 @@ function createFoldersState() {
 		 * ```
 		 */
 		renameFolder(folderId: FolderId, name: string) {
-			honeycrisp.tables.folders.update(folderId, { name });
+			tables.folders.update(folderId, { name });
 		},
 
 		/**

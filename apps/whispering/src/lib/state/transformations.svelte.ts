@@ -21,7 +21,7 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { nanoid } from 'nanoid/non-secure';
-import { whispering } from '$lib/client';
+import { batch, tables } from '$lib/client';
 import {
 	type TransformationStep,
 	transformationSteps,
@@ -29,11 +29,11 @@ import {
 
 /** Transformation row type inferred from the workspace table schema. */
 export type Transformation = ReturnType<
-	typeof whispering.tables.transformations.getAllValid
+	typeof tables.transformations.getAllValid
 >[number];
 
 function createTransformations() {
-	const map = fromTable(whispering.tables.transformations);
+	const map = fromTable(tables.transformations);
 
 	// Memoize sorted array with $derived for referential stability.
 	const sorted = $derived(
@@ -69,21 +69,21 @@ function createTransformations() {
 		 * Create or update a transformation. Writes to Yjs → observer updates SvelteMap.
 		 */
 		set(transformation: Transformation) {
-			whispering.tables.transformations.set(transformation);
+			tables.transformations.set(transformation);
 		},
 
 		/**
 		 * Partially update a transformation by ID.
 		 */
 		update(id: string, partial: Partial<Omit<Transformation, 'id' | '_v'>>) {
-			return whispering.tables.transformations.update(id, partial);
+			return tables.transformations.update(id, partial);
 		},
 
 		/**
 		 * Delete a transformation by ID.
 		 */
 		delete(id: string) {
-			whispering.tables.transformations.delete(id);
+			tables.transformations.delete(id);
 		},
 
 		/** Total number of transformations. */
@@ -140,7 +140,7 @@ export function saveTransformationWithSteps(
 	transformation: Transformation,
 	steps: TransformationStep[],
 ) {
-	whispering.batch(() => {
+	batch(() => {
 		transformations.set({
 			...transformation,
 			updatedAt: new Date().toISOString(),

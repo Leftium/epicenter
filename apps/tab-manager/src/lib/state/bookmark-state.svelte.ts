@@ -27,12 +27,12 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
-import { actions, tabManager } from '$lib/client.svelte';
+import { actions, tables } from '$lib/client.svelte';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { Bookmark, BookmarkId } from '$lib/workspace';
 
 function createBookmarkState() {
-	const bookmarksMap = fromTable(tabManager.tables.bookmarks);
+	const bookmarksMap = fromTable(tables.bookmarks);
 
 	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
 	const bookmarks = $derived(

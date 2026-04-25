@@ -3,7 +3,7 @@ import { fromTable } from '@epicenter/svelte';
 import { toast } from '@epicenter/ui/sonner';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { SvelteSet } from 'svelte/reactivity';
-import { fs, opensidian } from '$lib/client.svelte';
+import { fs, tables } from '$lib/client.svelte';
 import { searchParams } from '$lib/search-params.svelte';
 
 /**
@@ -39,7 +39,7 @@ type InteractionMode =
  */
 function createFsState() {
 	// ── Reactive source ──────────────────────────────────────────────
-	const filesMap = fromTable(opensidian.tables.files);
+	const filesMap = fromTable(tables.files);
 
 	// ── Reactive state ───────────────────────────────────────────────
 	const openFileIds = new SvelteSet<FileId>();

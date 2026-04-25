@@ -2,7 +2,7 @@
 	import { Input } from '@epicenter/ui/input';
 	import * as Table from '@epicenter/ui/table';
 	import Search from '@lucide/svelte/icons/search';
-	import { whispering } from '$lib/client';
+	import { whisperingKv } from '$lib/workspace';
 	import { commands } from '$lib/commands';
 	import { rpc } from '$lib/query';
 	import {
@@ -20,7 +20,7 @@
 	/** Look up the definition default for a shortcut key from the correct store. */
 	function getDefaultShortcut(commandId: string): string | null {
 		if (type === 'local') {
-			const defs = whispering.definitions.kv as Record<
+			const defs = whisperingKv as Record<
 				string,
 				{ defaultValue: unknown }
 			>;

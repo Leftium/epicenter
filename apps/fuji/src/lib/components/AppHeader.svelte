@@ -7,7 +7,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import { auth, fuji, sync } from '$lib/client.svelte';
+	import { auth, idb, sync } from '$lib/client.svelte';
 	import { entriesState } from '$lib/entries-state.svelte';
 	import BulkAddModal from './BulkAddModal.svelte';
 
@@ -55,7 +55,7 @@
 		<AccountPopover
 			{auth}
 			sync={sync}
-			clearLocalData={() => fuji.idb.clearLocal()}
+			clearLocalData={() => idb.clearLocal()}
 			syncNoun="entries"
 			onSocialSignIn={() =>
 				auth.signInWithSocialRedirect({

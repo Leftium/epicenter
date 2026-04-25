@@ -1,15 +1,10 @@
 /**
  * Browser entry for the shared skills workspace.
  *
- * `openSkills()` returns the bare workspace bundle (ydoc + tables + kv +
- * encryption + idb). The per-row content caches (`instructionsDocs`,
- * `referenceDocs`) and the action layer (`skillsActions`) are sibling
- * exports at module scope — they conceptually manage *other* Y.Docs (one
- * per skill / reference) and shouldn't be nested under the workspace bundle.
- *
- * Per-id caches (`instructionsDocs`, `referenceDocs`) wrap pure builders in
- * `createDisposableCache` — the refcounted cache earns its keep because the
- * same skill/reference id can be opened from multiple components.
+ * Module-scope flat exports — the file IS the workspace recipe, top-down.
+ * Per-row caches (`instructionsDocs`, `referenceDocs`) and the action layer
+ * (`skillsActions`) sit at the same level as the workspace primitives;
+ * everything is a top-level export.
  *
  * For server-side disk I/O (importFromDisk / exportToDisk), use
  * `@epicenter/skills/node` instead.
@@ -38,42 +33,26 @@ import { referencesTable, skillsTable } from './tables.js';
 export type { Reference, Skill } from './tables.js';
 export { referencesTable, skillsTable } from './tables.js';
 
-function openSkills() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.skills', gc: false });
+// ─── ydoc + state ──────────────────────────────────────────────────────
+export const ydoc = new Y.Doc({ guid: 'epicenter.skills', gc: false });
+export const encryption = attachEncryption(ydoc);
+export const tables = encryption.attachTables(ydoc, {
+	skills: skillsTable,
+	references: referencesTable,
+});
+export const kv = encryption.attachKv(ydoc, {});
 
-	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, {
-		skills: skillsTable,
-		references: referencesTable,
-	});
-	const kv = encryption.attachKv(ydoc, {});
+// ─── storage ───────────────────────────────────────────────────────────
+export const idb = attachIndexedDb(ydoc);
+attachBroadcastChannel(ydoc);
 
-	const idb = attachIndexedDb(ydoc);
-	attachBroadcastChannel(ydoc);
-
-	return {
-		ydoc,
-		tables,
-		kv,
-		encryption,
-		idb,
-		batch: (fn: () => void) => ydoc.transact(fn),
-		whenReady: idb.whenLoaded,
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	};
-}
-
-/** Singleton skills workspace. Construct once at module scope. */
-export const skillsWorkspace = openSkills();
-
+// ─── per-row content caches ────────────────────────────────────────────
 export const instructionsDocs = createDisposableCache(
 	(skillId: string) =>
 		createSkillInstructionsDoc({
 			skillId,
-			workspaceId: skillsWorkspace.ydoc.guid,
-			skillsTable: skillsWorkspace.tables.skills,
+			workspaceId: ydoc.guid,
+			skillsTable: tables.skills,
 			attachPersistence: (doc) => attachIndexedDb(doc),
 		}),
 	{ gcTime: 5_000 },
@@ -83,15 +62,19 @@ export const referenceDocs = createDisposableCache(
 	(referenceId: string) =>
 		createReferenceContentDoc({
 			referenceId,
-			workspaceId: skillsWorkspace.ydoc.guid,
-			referencesTable: skillsWorkspace.tables.references,
+			workspaceId: ydoc.guid,
+			referencesTable: tables.references,
 			attachPersistence: (doc) => attachIndexedDb(doc),
 		}),
 	{ gcTime: 5_000 },
 );
 
+// ─── actions ───────────────────────────────────────────────────────────
 export const skillsActions = createSkillsActions({
-	tables: skillsWorkspace.tables,
+	tables,
 	instructionsDocs,
 	referenceDocs,
 });
+
+export const batch = (fn: () => void) => ydoc.transact(fn);
+export const whenReady = idb.whenLoaded;

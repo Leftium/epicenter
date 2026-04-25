@@ -1,9 +1,7 @@
 /**
  * Fuji workspace client.
  *
- * `openFuji()` returns the bare workspace bundle (ydoc + tables + kv +
- * awareness + encryption + idb). App-specific layers — actions, sync, per-row
- * content cache — are sibling exports at module scope.
+ * Module-scope flat exports — the file IS the workspace recipe, top-down.
  *
  * Auth transitions drive every sync decision through a single
  * `auth.onSessionChange` subscription: login (re)applies encryption keys
@@ -28,6 +26,7 @@ import * as Y from 'yjs';
 import { createEntryContentDoc } from '$lib/entry-content-docs';
 import { createFujiActions, fujiTables, type EntryId } from '$lib/workspace';
 
+// ─── identity ──────────────────────────────────────────────────────────
 const session = createPersistedState({
 	key: 'fuji:authSession',
 	schema: AuthSession.or('null'),
@@ -39,56 +38,45 @@ export const auth = createAuth({
 	session,
 });
 
-function openFuji() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
+// ─── ydoc + state ──────────────────────────────────────────────────────
+export const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
+export const encryption = attachEncryption(ydoc);
+export const tables = encryption.attachTables(ydoc, fujiTables);
+export const kv = encryption.attachKv(ydoc, {});
+export const awareness = attachAwareness(ydoc, {});
 
-	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, fujiTables);
-	const kv = encryption.attachKv(ydoc, {});
-	const awareness = attachAwareness(ydoc, {});
+// ─── storage ───────────────────────────────────────────────────────────
+export const idb = attachIndexedDb(ydoc);
+attachBroadcastChannel(ydoc);
 
-	const idb = attachIndexedDb(ydoc);
-	attachBroadcastChannel(ydoc);
-
-	return {
-		ydoc,
-		tables,
-		kv,
-		awareness,
-		encryption,
-		idb,
-		batch: (fn: () => void) => ydoc.transact(fn),
-		whenReady: idb.whenLoaded,
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	};
-}
-
-export const fuji = openFuji();
-
-export const actions = createFujiActions(fuji.tables);
-
-export const sync = attachSync(fuji.ydoc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${fuji.ydoc.guid}`),
-	waitFor: fuji.idb.whenLoaded,
-	awareness: fuji.awareness.raw,
-	getToken: () => auth.getToken(),
-	dispatch: (action, input) => dispatchAction(actions, action, input),
-});
-
+// ─── per-row content cache ─────────────────────────────────────────────
 export const entryContentDocs = createDisposableCache(
 	(entryId: EntryId) =>
 		createEntryContentDoc({
 			entryId,
-			workspaceId: fuji.ydoc.guid,
-			entriesTable: fuji.tables.entries,
+			workspaceId: ydoc.guid,
+			entriesTable: tables.entries,
 			auth,
 			apiUrl: APP_URLS.API,
 		}),
 	{ gcTime: 5_000 },
 );
 
+// ─── actions + sync ────────────────────────────────────────────────────
+export const actions = createFujiActions(tables);
+
+export const sync = attachSync(ydoc, {
+	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+	waitFor: idb.whenLoaded,
+	awareness: awareness.raw,
+	getToken: () => auth.getToken(),
+	dispatch: (action, input) => dispatchAction(actions, action, input),
+});
+
+export const batch = (fn: () => void) => ydoc.transact(fn);
+export const whenReady = idb.whenLoaded;
+
+// ─── session lifecycle ─────────────────────────────────────────────────
 // Every session transition routes through this single subscription.
 // Logout (previous !== null, next === null) wipes local data; login and
 // token rotation (next !== null) re-apply encryption keys and re-arm sync.
@@ -96,10 +84,10 @@ export const entryContentDocs = createDisposableCache(
 auth.onSessionChange((next, previous) => {
 	if (next === null) {
 		sync.goOffline();
-		if (previous !== null) void fuji.idb.clearLocal();
+		if (previous !== null) void idb.clearLocal();
 		return;
 	}
-	fuji.encryption.applyKeys(next.encryptionKeys);
+	encryption.applyKeys(next.encryptionKeys);
 	if (previous?.token !== next.token) sync.reconnect();
 });
 

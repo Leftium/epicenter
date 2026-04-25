@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { fromDisposableCache } from '@epicenter/svelte';
-	import { referenceDocs } from '$lib/client';
+	import { referenceDocs } from '@epicenter/skills';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 
 	let { id }: { id: string } = $props();

@@ -151,7 +151,11 @@
 					tooltip="Save for later"
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						savedTabState.save(tab).then((r) => toastOnError(r, 'Failed to save tab'));
+						// Save always succeeds in the workspace; toast only if the
+						// source-tab close half failed (partial-success path).
+						savedTabState.save(tab).then((result) => {
+							if (result?.closeResult.error) toastOnError(result.closeResult);
+						});
 					}}
 				>
 					<ArchiveIcon />
@@ -163,7 +167,8 @@
 					tooltip={isBookmarked ? 'Remove bookmark' : 'Bookmark'}
 					onclick={(e: MouseEvent) => {
 						e.stopPropagation();
-						bookmarkState.toggle(tab).then((r) => toastOnError(r, 'Failed to toggle bookmark'));
+						// Pure CRDT writes — can't fail, no Result to toast.
+						bookmarkState.toggle(tab);
 					}}
 				>
 					<StarIcon

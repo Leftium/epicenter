@@ -1,9 +1,7 @@
 /**
  * Tab-manager workspace client.
  *
- * `openTabManager()` returns the bare workspace bundle. App-specific layers —
- * actions, sync, awareness publish, AI tool wrapping — are sibling exports
- * at module scope.
+ * Module-scope flat exports — the file IS the workspace recipe, top-down.
  *
  * Live browser state (tabs, windows, tab groups) is NOT stored here — Chrome
  * is the sole authority for ephemeral browser state. See
@@ -35,6 +33,7 @@ import {
 	tabManagerTables,
 } from './workspace/definition';
 
+// ─── identity ──────────────────────────────────────────────────────────
 // Hydrate the persisted session from chrome.storage before constructing auth.
 // After this resolves, `session.get()` is sync-authoritative; the core can
 // read the real value at every call without racing chrome.storage.
@@ -49,43 +48,27 @@ export const auth = createAuth({
 	},
 });
 
-function openTabManager() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: false });
+// ─── ydoc + state ──────────────────────────────────────────────────────
+export const ydoc = new Y.Doc({ guid: 'epicenter.tab-manager', gc: false });
+export const encryption = attachEncryption(ydoc);
+export const tables = encryption.attachTables(ydoc, tabManagerTables);
+export const kv = encryption.attachKv(ydoc, {});
+export const awareness = attachAwareness(ydoc, tabManagerAwarenessDefs);
 
-	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, tabManagerTables);
-	const kv = encryption.attachKv(ydoc, {});
-	const awareness = attachAwareness(ydoc, tabManagerAwarenessDefs);
+// ─── storage ───────────────────────────────────────────────────────────
+export const idb = attachIndexedDb(ydoc);
+attachBroadcastChannel(ydoc);
 
-	const idb = attachIndexedDb(ydoc);
-	attachBroadcastChannel(ydoc);
+export const batch = (fn: () => void) => ydoc.transact(fn);
+export const whenReady = idb.whenLoaded;
 
-	return {
-		ydoc,
-		tables,
-		kv,
-		awareness,
-		encryption,
-		idb,
-		batch: (fn: () => void) => ydoc.transact(fn),
-		whenReady: idb.whenLoaded,
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	};
-}
+// ─── actions + sync ────────────────────────────────────────────────────
+export const actions = createTabManagerActions({ tables, batch });
 
-export const tabManager = openTabManager();
-
-export const actions = createTabManagerActions({
-	tables: tabManager.tables,
-	batch: tabManager.batch,
-});
-
-export const sync = attachSync(tabManager.ydoc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${tabManager.ydoc.guid}`),
-	waitFor: tabManager.idb.whenLoaded,
-	awareness: tabManager.awareness.raw,
+export const sync = attachSync(ydoc, {
+	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+	waitFor: idb.whenLoaded,
+	awareness: awareness.raw,
 	getToken: () => auth.getToken(),
 	dispatch: (action, input) => dispatchAction(actions, action, input),
 });
@@ -100,11 +83,11 @@ export const sync = attachSync(tabManager.ydoc, {
  * rotation-triggered re-runs are harmless.
  */
 async function registerDevice(): Promise<void> {
-	await tabManager.idb.whenLoaded;
+	await idb.whenLoaded;
 	const deviceId = await getDeviceId();
-	const { data: existing, error } = tabManager.tables.devices.get(deviceId);
+	const { data: existing, error } = tables.devices.get(deviceId);
 	const existingName = !error && existing ? existing.name : null;
-	tabManager.tables.devices.set({
+	tables.devices.set({
 		id: deviceId,
 		name: existingName ?? (await generateDefaultDeviceName()),
 		lastSeen: new Date().toISOString(),
@@ -113,13 +96,14 @@ async function registerDevice(): Promise<void> {
 	});
 }
 
+// ─── session lifecycle ─────────────────────────────────────────────────
 auth.onSessionChange((next, previous) => {
 	if (next === null) {
 		sync.goOffline();
-		if (previous !== null) void tabManager.idb.clearLocal();
+		if (previous !== null) void idb.clearLocal();
 		return;
 	}
-	tabManager.encryption.applyKeys(next.encryptionKeys);
+	encryption.applyKeys(next.encryptionKeys);
 	if (previous?.token !== next.token) sync.reconnect();
 	if (previous === null) void registerDevice();
 });
@@ -130,6 +114,7 @@ if (import.meta.hot) {
 	});
 }
 
+// ─── AI tools ──────────────────────────────────────────────────────────
 /** AI tool representations for the tab-manager workspace. */
 export const workspaceAiTools = actionsToAiTools(actions);
 
@@ -137,7 +122,7 @@ export const workspaceAiTools = actionsToAiTools(actions);
 export type WorkspaceTools = typeof workspaceAiTools.tools;
 
 // Publish awareness identity after initial load
-void tabManager.whenReady.then(async () => {
+void whenReady.then(async () => {
 	const deviceId = await getDeviceId();
-	tabManager.awareness.setLocal({ deviceId, client: 'extension' });
+	awareness.setLocal({ deviceId, client: 'extension' });
 });

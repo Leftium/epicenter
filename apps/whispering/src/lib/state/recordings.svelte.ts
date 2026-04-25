@@ -21,14 +21,14 @@
  * ```
  */
 import { fromTable } from '@epicenter/svelte';
-import { whispering } from '$lib/client';
+import { tables } from '$lib/client';
 import type { Recording } from '$lib/workspace';
 
 /** Re-exported from the workspace definition for consumer convenience. */
 export type { Recording } from '$lib/workspace';
 
 function createRecordings() {
-	const map = fromTable(whispering.tables.recordings);
+	const map = fromTable(tables.recordings);
 
 	// Memoize sorted array with $derived so consumers get a stable reference.
 	// Without this, every access creates a new array → TanStack Table's $derived
@@ -80,7 +80,7 @@ function createRecordings() {
 		 * No manual cache invalidation needed—the observer handles UI updates.
 		 */
 		set(recording: Omit<Recording, '_v'>) {
-			whispering.tables.recordings.set({ ...recording, _v: 2 } as Recording);
+			tables.recordings.set({ ...recording, _v: 2 } as Recording);
 		},
 
 		/**
@@ -90,7 +90,7 @@ function createRecordings() {
 		 * Returns the update result for error handling.
 		 */
 		update(id: string, partial: Partial<Omit<Recording, 'id' | '_v'>>) {
-			return whispering.tables.recordings.update(id, partial);
+			return tables.recordings.update(id, partial);
 		},
 
 		/**
@@ -100,7 +100,7 @@ function createRecordings() {
 		 * Callers should clean up audio URLs before calling this.
 		 */
 		delete(id: string) {
-			whispering.tables.recordings.delete(id);
+			tables.recordings.delete(id);
 		},
 
 		/**
@@ -111,7 +111,7 @@ function createRecordings() {
 		 * and audio blobs separately via `services.blobs.audio.delete(ids)`.
 		 */
 		async bulkDelete(ids: string[]) {
-			await whispering.tables.recordings.bulkDelete(ids);
+			await tables.recordings.bulkDelete(ids);
 		},
 
 		/** Total number of recordings. */

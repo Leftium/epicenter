@@ -13,7 +13,7 @@
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import { ModeWatcher } from 'mode-watcher';
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
-	import { fuji } from '$lib/client.svelte';
+	import { whenReady } from '$lib/client.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
 	import { entriesState } from '$lib/entries-state.svelte';
@@ -68,7 +68,7 @@
 	}}
 />
 
-<WorkspaceGate whenReady={fuji.whenReady}>
+<WorkspaceGate whenReady={whenReady}>
 	<Tooltip.Provider>
 		<div class="flex h-screen flex-col">
 			<AppHeader onOpenSearch={() => (paletteOpen = true)} />

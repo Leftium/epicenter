@@ -1,5 +1,6 @@
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { fs, skillsActions } from '$lib/client.svelte';
+import { skillsActions } from '@epicenter/skills';
+import { fs } from '$lib/client.svelte';
 
 /** A global skill loaded from the @epicenter/skills workspace. */
 type GlobalSkill = { name: string; instructions: string };
@@ -13,7 +14,7 @@ type VaultSkill = { name: string; content: string };
  * Opensidian assembles skills from two separate sources because they solve
  * different problems:
  *
- * 1. **Global skills** come from `skillsWorkspace`, the shared
+ * 1. **Global skills** come from the shared
  *    `@epicenter/skills` workspace persisted in its own IndexedDB database.
  *    These are ecosystem-wide conventions imported through Epicenter's skills
  *    tooling and shared across apps.

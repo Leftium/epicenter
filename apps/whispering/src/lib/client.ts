@@ -2,9 +2,9 @@
  * Whispering workspace client.
  *
  * On desktop (Tauri), `recordingsFs` mirrors the `recordings` table into
- * `{id}.md` files on disk. It's a no-op in the browser. The mirror is a
- * sibling of the bare workspace bundle since it operates on the workspace's
- * tables but isn't itself part of the workspace primitive.
+ * `{id}.md` files on disk. It's a no-op in the browser.
+ *
+ * Module-scope flat exports — the file IS the workspace recipe, top-down.
  */
 
 import {
@@ -17,37 +17,20 @@ import { PATHS } from '$lib/constants/paths';
 import { attachRecordingMarkdownFiles } from './recording-materializer';
 import { whisperingKv, whisperingTables } from './workspace';
 
-function openWhispering() {
-	const ydoc = new Y.Doc({ guid: 'whispering', gc: false });
+// ─── ydoc + state ──────────────────────────────────────────────────────
+export const ydoc = new Y.Doc({ guid: 'whispering', gc: false });
+export const encryption = attachEncryption(ydoc);
+export const tables = encryption.attachTables(ydoc, whisperingTables);
+export const kv = encryption.attachKv(ydoc, whisperingKv);
 
-	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, whisperingTables);
-	const kv = encryption.attachKv(ydoc, whisperingKv);
+// ─── storage + materializers ───────────────────────────────────────────
+export const idb = attachIndexedDb(ydoc);
+attachBroadcastChannel(ydoc);
 
-	const idb = attachIndexedDb(ydoc);
-	attachBroadcastChannel(ydoc);
+export const recordingsFs = attachRecordingMarkdownFiles(ydoc, tables.recordings, {
+	dir: PATHS.DB.RECORDINGS(),
+	whenReady: idb.whenLoaded,
+});
 
-	return {
-		ydoc,
-		tables,
-		kv,
-		encryption,
-		idb,
-		batch: (fn: () => void) => ydoc.transact(fn),
-		whenReady: idb.whenLoaded,
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	};
-}
-
-export const whispering = openWhispering();
-
-export const recordingsFs = attachRecordingMarkdownFiles(
-	whispering.ydoc,
-	whispering.tables.recordings,
-	{
-		dir: PATHS.DB.RECORDINGS(),
-		whenReady: whispering.idb.whenLoaded,
-	},
-);
+export const batch = (fn: () => void) => ydoc.transact(fn);
+export const whenReady = Promise.all([idb.whenLoaded, recordingsFs.whenFlushed]);

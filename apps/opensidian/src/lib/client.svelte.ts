@@ -1,10 +1,9 @@
 /**
  * Opensidian workspace client.
  *
- * `openOpenSidian()` returns the bare workspace bundle (ydoc + tables + kv +
- * encryption + idb). App-specific layers — per-file content cache, sqlite
- * index, virtual filesystem, bash emulator, actions, sync — are sibling
- * exports at module scope, constructed in dependency order.
+ * Module-scope flat exports — the file IS the workspace recipe, top-down.
+ * Per-row content cache, sqlite index, virtual filesystem, bash, actions, and
+ * sync are all top-level exports at the same level as the workspace primitives.
  */
 
 import { AuthSession, createAuth } from '@epicenter/auth-svelte';
@@ -15,7 +14,6 @@ import {
 	createSqliteIndex,
 	type FileId,
 } from '@epicenter/filesystem';
-import { skillsActions, skillsWorkspace } from '@epicenter/skills';
 import { createPersistedState } from '@epicenter/svelte';
 import {
 	attachBroadcastChannel,
@@ -35,6 +33,7 @@ import { Ok } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { opensidianTables } from './workspace/definition';
 
+// ─── identity ──────────────────────────────────────────────────────────
 const session = createPersistedState({
 	key: 'opensidian:authSession',
 	schema: AuthSession.or('null'),
@@ -46,52 +45,34 @@ export const auth = createAuth({
 	session,
 });
 
-function openOpenSidian() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.opensidian', gc: false });
+// ─── ydoc + state ──────────────────────────────────────────────────────
+export const ydoc = new Y.Doc({ guid: 'epicenter.opensidian', gc: false });
+export const encryption = attachEncryption(ydoc);
+export const tables = encryption.attachTables(ydoc, opensidianTables);
+export const kv = encryption.attachKv(ydoc, {});
 
-	const encryption = attachEncryption(ydoc);
-	const tables = encryption.attachTables(ydoc, opensidianTables);
-	const kv = encryption.attachKv(ydoc, {});
+// ─── storage ───────────────────────────────────────────────────────────
+export const idb = attachIndexedDb(ydoc);
+attachBroadcastChannel(ydoc);
 
-	const idb = attachIndexedDb(ydoc);
-	attachBroadcastChannel(ydoc);
-
-	return {
-		ydoc,
-		tables,
-		kv,
-		encryption,
-		idb,
-		batch: (fn: () => void) => ydoc.transact(fn),
-		whenReady: idb.whenLoaded,
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	};
-}
-
-export const opensidian = openOpenSidian();
-
+// ─── per-file content cache ────────────────────────────────────────────
 export const fileContentDocs = createDisposableCache(
 	(fileId: FileId) =>
 		createFileContentDoc({
 			fileId,
-			workspaceId: opensidian.ydoc.guid,
-			filesTable: opensidian.tables.files,
+			workspaceId: ydoc.guid,
+			filesTable: tables.files,
 			attachPersistence: (doc) => attachIndexedDb(doc),
 		}),
 	{ gcTime: 5_000 },
 );
 
-const sqliteIndexAttachment = createSqliteIndex(fileContentDocs)({
-	tables: opensidian.tables,
-});
-export const sqliteIndex = sqliteIndexAttachment.exports;
-
-export const fs = attachYjsFileSystem(opensidian.tables.files, fileContentDocs);
-
+// ─── filesystem layer ──────────────────────────────────────────────────
+export const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables }).exports;
+export const fs = attachYjsFileSystem(tables.files, fileContentDocs);
 export const bash = new Bash({ fs, cwd: '/' });
 
+// ─── actions ───────────────────────────────────────────────────────────
 export const actions = {
 	files: {
 		search: defineQuery({
@@ -225,33 +206,27 @@ export const actions = {
 	},
 };
 
-export const sync = attachSync(opensidian.ydoc, {
-	url: toWsUrl(`${APP_URLS.API}/workspaces/${opensidian.ydoc.guid}`),
-	waitFor: opensidian.idb.whenLoaded,
+// ─── sync ──────────────────────────────────────────────────────────────
+export const sync = attachSync(ydoc, {
+	url: toWsUrl(`${APP_URLS.API}/workspaces/${ydoc.guid}`),
+	waitFor: idb.whenLoaded,
 	getToken: () => auth.getToken(),
 	dispatch: (action, input) => dispatchAction(actions, action, input),
 });
 
+export const batch = (fn: () => void) => ydoc.transact(fn);
+export const whenReady = idb.whenLoaded;
+
+// ─── session lifecycle ─────────────────────────────────────────────────
 auth.onSessionChange((next, previous) => {
 	if (next === null) {
 		sync.goOffline();
-		if (previous !== null) void opensidian.idb.clearLocal();
+		if (previous !== null) void idb.clearLocal();
 		return;
 	}
-	opensidian.encryption.applyKeys(next.encryptionKeys);
+	encryption.applyKeys(next.encryptionKeys);
 	if (previous?.token !== next.token) sync.reconnect();
 });
-
-/**
- * Global skills workspace — ecosystem-wide skills shared across all Epicenter
- * apps.
- *
- * SEPARATE workspace from opensidian. Uses its own Yjs document
- * (`epicenter.skills`) with its own IndexedDB persistence. Skills are imported
- * via the CLI (`epicenter skills import`) or the dedicated skills app, then
- * synced to all Epicenter apps via the skills workspace CRDT.
- */
-export { skillsActions, skillsWorkspace };
 
 if (import.meta.hot) {
 	import.meta.hot.dispose(() => {
@@ -259,8 +234,13 @@ if (import.meta.hot) {
 	});
 }
 
+// ─── AI tools ──────────────────────────────────────────────────────────
 /** AI tool representations for the opensidian workspace. */
 export const workspaceAiTools = actionsToAiTools(actions);
 
 /** Tool array type for use in TanStack AI generics. */
 export type WorkspaceTools = typeof workspaceAiTools.tools;
+
+// For the global skills workspace, import from `@epicenter/skills` directly:
+//   import { tables, instructionsDocs, referenceDocs, skillsActions } from '@epicenter/skills';
+// SEPARATE workspace from opensidian — its own Y.Doc, its own IndexedDB.

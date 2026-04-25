@@ -20,15 +20,15 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { nanoid } from 'nanoid/non-secure';
-import { whispering } from '$lib/client';
+import { tables } from '$lib/client';
 
 /** Transformation step row type inferred from the workspace table schema. */
 export type TransformationStep = ReturnType<
-	typeof whispering.tables.transformationSteps.getAllValid
+	typeof tables.transformationSteps.getAllValid
 >[number];
 
 function createTransformationSteps() {
-	const map = fromTable(whispering.tables.transformationSteps);
+	const map = fromTable(tables.transformationSteps);
 
 	return {
 		/**
@@ -64,7 +64,7 @@ function createTransformationSteps() {
 		 * Create or update a step. Writes to Yjs → observer updates SvelteMap.
 		 */
 		set(step: TransformationStep) {
-			whispering.tables.transformationSteps.set(step);
+			tables.transformationSteps.set(step);
 		},
 
 		/**
@@ -74,14 +74,14 @@ function createTransformationSteps() {
 			id: string,
 			partial: Partial<Omit<TransformationStep, 'id' | '_v'>>,
 		) {
-			return whispering.tables.transformationSteps.update(id, partial);
+			return tables.transformationSteps.update(id, partial);
 		},
 
 		/**
 		 * Delete a step by ID.
 		 */
 		delete(id: string) {
-			whispering.tables.transformationSteps.delete(id);
+			tables.transformationSteps.delete(id);
 		},
 
 		/**
@@ -92,7 +92,7 @@ function createTransformationSteps() {
 		deleteByTransformationId(transformationId: string) {
 			for (const [id, step] of map) {
 				if (step.transformationId === transformationId) {
-					whispering.tables.transformationSteps.delete(id);
+					tables.transformationSteps.delete(id);
 				}
 			}
 		},

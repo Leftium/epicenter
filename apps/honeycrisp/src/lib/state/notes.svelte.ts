@@ -20,7 +20,7 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { DateTimeString, generateId } from '@epicenter/workspace';
-import { honeycrisp } from '$lib/client.svelte';
+import { tables } from '$lib/client.svelte';
 import type { FolderId, NoteId } from '$lib/workspace';
 import { searchParams } from '$lib/search-params.svelte';
 import { foldersState } from './folders.svelte';
@@ -28,7 +28,7 @@ import { foldersState } from './folders.svelte';
 function createNotesState() {
 	// ─── Reactive State ──────────────────────────────────────────────────
 
-	const allNotesMap = fromTable(honeycrisp.tables.notes);
+	const allNotesMap = fromTable(tables.notes);
 
 	/** All valid notes (including deleted). Cached — only recomputes when table changes. */
 	const allNotes = $derived([...allNotesMap.values()]);
@@ -92,7 +92,7 @@ function createNotesState() {
 		 */
 		createNote(folderId?: FolderId | null) {
 			const id = generateId() as NoteId;
-			honeycrisp.tables.notes.set({
+			tables.notes.set({
 				id,
 				folderId: folderId ?? undefined,
 				title: '',
@@ -121,7 +121,7 @@ function createNotesState() {
 		 * ```
 		 */
 		softDeleteNote(noteId: NoteId) {
-			honeycrisp.tables.notes.update(noteId, {
+			tables.notes.update(noteId, {
 				deletedAt: DateTimeString.now(),
 			});
 			if (searchParams.note === noteId) {
@@ -147,7 +147,7 @@ function createNotesState() {
 			const folderExists = note.folderId
 				? foldersState.folders.some((f) => f.id === note.folderId)
 				: true;
-			honeycrisp.tables.notes.update(noteId, {
+			tables.notes.update(noteId, {
 				deletedAt: undefined,
 				...(folderExists ? {} : { folderId: undefined }),
 			});
@@ -166,7 +166,7 @@ function createNotesState() {
 		 * ```
 		 */
 		permanentlyDeleteNote(noteId: NoteId) {
-			honeycrisp.tables.notes.delete(noteId);
+			tables.notes.delete(noteId);
 			if (searchParams.note === noteId) {
 				searchParams.update({ note: null });
 			}
@@ -187,7 +187,7 @@ function createNotesState() {
 		pinNote(noteId: NoteId) {
 			const note = allNotesMap.get(noteId);
 			if (!note) return;
-			honeycrisp.tables.notes.update(noteId, {
+			tables.notes.update(noteId, {
 				pinned: !note.pinned,
 			});
 		},
@@ -207,7 +207,7 @@ function createNotesState() {
 		 * ```
 		 */
 		moveNoteToFolder(noteId: NoteId, folderId: FolderId | undefined) {
-			honeycrisp.tables.notes.update(noteId, { folderId });
+			tables.notes.update(noteId, { folderId });
 		},
 
 		/**
@@ -236,7 +236,7 @@ function createNotesState() {
 		}) {
 			const selectedNoteId = searchParams.note;
 			if (!selectedNoteId) return;
-			honeycrisp.tables.notes.update(selectedNoteId, {
+			tables.notes.update(selectedNoteId, {
 				title,
 				preview,
 				wordCount,

@@ -3,7 +3,7 @@
 	import { createSubscriber } from 'svelte/reactivity';
 	import type * as Y from 'yjs';
 	import { encodeStateAsUpdate } from 'yjs';
-	import { skillsWorkspace } from '$lib/client';
+	import { ydoc } from '@epicenter/skills';
 	import { skillsState } from '$lib/state/skills-state.svelte';
 
 	/**
@@ -31,7 +31,7 @@
 	}
 
 	const skillCount = $derived(skillsState.skills.length);
-	const storageSize = createYdocSize(skillsWorkspace.ydoc);
+	const storageSize = createYdocSize(ydoc);
 
 	function formatBytes(bytes: number): string {
 		if (bytes === 0) return '0 B';

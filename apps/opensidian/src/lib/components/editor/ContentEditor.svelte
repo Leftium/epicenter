@@ -3,7 +3,7 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import { fileContentDocs, opensidian } from '$lib/client.svelte';
+	import { fileContentDocs, tables, ydoc } from '$lib/client.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
@@ -31,10 +31,10 @@
 			? [
 					sharedLinkDecorations,
 					wikilinkAutocomplete({
-						workspaceId: opensidian.ydoc.guid,
+						workspaceId: ydoc.guid,
 						tableName: 'files',
 						getFiles: () =>
-							opensidian.tables.files
+							tables.files
 								.getAllValid()
 								.filter((r) => r.type === 'file')
 								.map((r) => ({ id: r.id, name: r.name })),

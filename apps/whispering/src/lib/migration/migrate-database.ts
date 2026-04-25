@@ -4,7 +4,6 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { whispering } from '$lib/client';
 
 const MIGRATION_KEY = 'whispering:db-migration';
 export type DbMigrationState = 'pending' | 'done';
@@ -48,7 +47,7 @@ export async function migrateDatabaseToWorkspace({
 	workspace: ws,
 	onProgress,
 }: {
-	workspace: typeof whispering;
+	workspace: { whenReady: Promise<unknown> };
 	onProgress: (message: string) => void;
 }): Promise<Result<MigrationResult, MigrationError>> {
 	const result: MigrationResult = {

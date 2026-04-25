@@ -15,7 +15,7 @@
 import { fromTable } from '@epicenter/svelte';
 import { goto } from '$app/navigation';
 import { fuji } from '$lib/fuji/client';
-import type { EntryId } from '$lib/workspace';
+import type { Entry, EntryId } from '$lib/workspace';
 
 // ─── Search ──────────────────────────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ import type { EntryId } from '$lib/workspace';
  * contains the query.
  */
 export function matchesEntrySearch(
-	entry: { title: string; subtitle: string; tags: string[]; type: string[] },
+	entry: Pick<Entry, 'title' | 'subtitle' | 'tags' | 'type'>,
 	query: string,
 ): boolean {
 	const q = query.trim().toLowerCase();

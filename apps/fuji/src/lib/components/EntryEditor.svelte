@@ -8,6 +8,7 @@
 	} from '@epicenter/ui/natural-language-date-input';
 	import * as Popover from '@epicenter/ui/popover';
 	import * as StarRating from '@epicenter/ui/star-rating';
+	import { toastOnError } from '@epicenter/ui/sonner';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { fromDisposableCache } from '@epicenter/svelte';
@@ -23,16 +24,12 @@
 
 	let { entry }: { entry: Entry } = $props();
 
-	function updateEntry(
-		updates: Partial<{
-			title: string;
-			subtitle: string;
-			type: string[];
-			tags: string[];
-			date: DateTimeString;
-			rating: number;
-		}>,
-	) {
+	type EntryUpdate = Omit<
+		Parameters<typeof fuji.actions.entries.update>[0],
+		'id'
+	>;
+
+	function updateEntry(updates: EntryUpdate) {
 		fuji.actions.entries.update({ id: entry.id, ...updates });
 	}
 
@@ -61,7 +58,10 @@
 					description: `"${entry.title || 'Untitled'}" will be moved to recently deleted.`,
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
-						fuji.actions.entries.delete({ id: entry.id });
+						toastOnError(
+							fuji.actions.entries.delete({ id: entry.id }),
+							'Couldn\'t delete entry',
+						);
 						goto('/');
 					},
 				});

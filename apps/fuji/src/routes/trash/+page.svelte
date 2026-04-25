@@ -2,6 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
+	import { toastOnError } from '@epicenter/ui/sonner';
 	import * as Table from '@epicenter/ui/table';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
@@ -75,7 +76,10 @@
 										size="icon-sm"
 										title="Restore entry"
 										onclick={() => {
-										fuji.actions.entries.restore({ id: entry.id });
+										toastOnError(
+											fuji.actions.entries.restore({ id: entry.id }),
+											'Couldn\'t restore entry',
+										);
 										goto(`/entries/${entry.id}`);
 									}}
 									>

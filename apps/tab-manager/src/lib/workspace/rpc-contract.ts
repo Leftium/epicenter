@@ -15,6 +15,6 @@
  * ```
  */
 import type { InferRpcMap } from '@epicenter/workspace';
-import type { workspace } from '../client.svelte';
+import type { actions } from '../client.svelte';
 
-export type TabManagerRpc = InferRpcMap<(typeof workspace)['actions']>;
+export type TabManagerRpc = InferRpcMap<typeof actions>;

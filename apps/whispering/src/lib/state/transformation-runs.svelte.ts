@@ -18,15 +18,15 @@
  * ```
  */
 import { fromTable } from '@epicenter/svelte';
-import { tables } from '$lib/client';
+import { whispering } from '$lib/whispering/client';
 
 /** Transformation run row type inferred from the workspace table schema. */
 export type TransformationRun = ReturnType<
-	typeof tables.transformationRuns.getAllValid
+	typeof whispering.tables.transformationRuns.getAllValid
 >[number];
 
 function createTransformationRuns() {
-	const map = fromTable(tables.transformationRuns);
+	const map = fromTable(whispering.tables.transformationRuns);
 
 	return {
 		/** All transformation runs as a reactive SvelteMap. */
@@ -78,7 +78,7 @@ function createTransformationRuns() {
 		 * Create or update a run.
 		 */
 		set(run: Omit<TransformationRun, '_v'>) {
-			tables.transformationRuns.set({
+			whispering.tables.transformationRuns.set({
 				...run,
 				_v: 1,
 			} as TransformationRun);
@@ -88,7 +88,7 @@ function createTransformationRuns() {
 		 * Delete a run by ID.
 		 */
 		delete(id: string) {
-			tables.transformationRuns.delete(id);
+			whispering.tables.transformationRuns.delete(id);
 		},
 
 		/** Total number of runs. */

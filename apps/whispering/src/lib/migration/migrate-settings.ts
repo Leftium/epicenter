@@ -9,7 +9,7 @@
  */
 
 import { Ok, tryAsync, trySync } from 'wellcrafted/result';
-import { batch, kv, whenReady } from '$lib/client';
+import { whispering } from '$lib/whispering/client';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { whisperingKv } from '$lib/workspace';
 
@@ -31,8 +31,8 @@ function setMigrationState(state: MigrationState): void {
 // Type-widened accessors for dynamic key writes. The mapping tables guarantee
 // runtime correctness; these bypass the generic constraints that require
 // literal key types we can't produce from a data-driven loop.
-const setKv = kv.set as (key: string, value: unknown) => void;
-const getKv = kv.get as (key: string) => unknown;
+const setKv = whispering.kv.set as (key: string, value: unknown) => void;
+const getKv = whispering.kv.get as (key: string) => unknown;
 const getKvDefault = (key: string) =>
 	(whisperingKv as Record<string, { defaultValue: unknown }>)[key]
 		?.defaultValue;
@@ -77,7 +77,7 @@ export async function migrateOldSettings(): Promise<void> {
 	// real persisted values (not defaults). This ensures the first-write-wins
 	// check correctly detects user-set values.
 	const { error: readyError } = await tryAsync({
-		try: () => whenReady,
+		try: () => whispering.whenReady,
 		catch: (err) => {
 			console.warn(
 				'[settings-migration] whenReady failed, aborting:',
@@ -92,7 +92,7 @@ export async function migrateOldSettings(): Promise<void> {
 	// Batch into a single Yjs transaction so settings.observeAll
 	// fires once with all changes, not 43 individual updates.
 
-	batch(() => {
+	whispering.batch(() => {
 		for (const { oldKey, newKey, convert } of WORKSPACE_KEY_MAP) {
 			trySync({
 				try: () => {

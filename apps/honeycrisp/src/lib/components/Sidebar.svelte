@@ -5,7 +5,7 @@
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { auth, idb, sync } from '$lib/client.svelte';
+	import { auth, honeycrisp } from '$lib/honeycrisp/client';
 	import FolderMenuItem from '$lib/components/FolderMenuItem.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
 </script>
@@ -17,8 +17,8 @@
 			<div class="flex items-center gap-1">
 				<AccountPopover
 					{auth}
-					{sync}
-					clearLocalData={() => idb.clearLocal()}
+					sync={honeycrisp.sync}
+					clearLocalData={() => honeycrisp.idb.clearLocal()}
 					syncNoun="notes"
 					onSocialSignIn={() =>
 						auth.signInWithSocialRedirect({

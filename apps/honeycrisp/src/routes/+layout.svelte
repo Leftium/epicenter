@@ -5,7 +5,7 @@
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
-	import { whenReady } from '$lib/client.svelte';
+	import { honeycrisp } from '$lib/honeycrisp/client';
 	import { queryClient } from '$lib/query/client';
 	import '@epicenter/ui/app.css';
 	import * as Tooltip from '@epicenter/ui/tooltip';
@@ -16,7 +16,7 @@
 <svelte:head><title>Honeycrisp</title></svelte:head>
 
 <QueryClientProvider client={queryClient}>
-	<WorkspaceGate whenReady={whenReady}>
+	<WorkspaceGate whenReady={honeycrisp.whenReady}>
 		<Tooltip.Provider>{@render children()}</Tooltip.Provider>
 	</WorkspaceGate>
 </QueryClientProvider>

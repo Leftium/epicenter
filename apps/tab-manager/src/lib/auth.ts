@@ -3,9 +3,9 @@
  *
  * Exports the persisted session store (adapted to `SessionStore`) and the
  * Google credentials helper. The `auth` instance itself lives in
- * `./client.svelte` alongside the workspace.
+ * `./tab-manager/client` alongside the workspace.
  *
- * @see {@link ./client.svelte} — auth + workspace + onSessionChange wiring
+ * @see {@link ./tab-manager/client} — auth + workspace + onSessionChange wiring
  * @see {@link ./state/storage-state.svelte} — chrome.storage reactive wrapper
  */
 

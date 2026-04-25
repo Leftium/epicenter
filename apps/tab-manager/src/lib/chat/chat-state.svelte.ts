@@ -46,7 +46,7 @@ import {
 	TAB_MANAGER_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { auth, batch, tables, whenReady, workspaceAiTools } from '$lib/client.svelte';
+import { auth, tabManager, workspaceAiTools } from '$lib/tab-manager/client';
 import { getDeviceId } from '$lib/device/device-id';
 import {
 	type ChatMessageId,
@@ -63,7 +63,7 @@ import {
 function createAiChatState() {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
 
-	const conversationsMap = fromTable(tables.conversations);
+	const conversationsMap = fromTable(tabManager.tables.conversations);
 	const conversations = $derived(
 		[...conversationsMap.values()]
 			.sort((a, b) => b.updatedAt - a.updatedAt),
@@ -79,7 +79,7 @@ function createAiChatState() {
 		if (conversations.length > 0) return undefined;
 		const id = generateConversationId();
 		const now = Date.now();
-		tables.conversations.set({
+		tabManager.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: DEFAULT_PROVIDER,
@@ -98,7 +98,7 @@ function createAiChatState() {
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		tables.conversations.update(conversationId, {
+		tabManager.tables.conversations.update(conversationId, {
 			...patch,
 			updatedAt: Date.now(),
 		});
@@ -106,7 +106,7 @@ function createAiChatState() {
 
 	/** Load persisted messages for a conversation from Y.Doc. */
 	function loadMessages(conversationId: ConversationId) {
-		return tables.chatMessages
+		return tabManager.tables.chatMessages
 			.filter((m) => m.conversationId === conversationId)
 			.sort((a, b) => a.createdAt - b.createdAt)
 			.map(toUiMessage);
@@ -175,7 +175,7 @@ function createAiChatState() {
 				);
 			},
 			onFinish: (message) => {
-				tables.chatMessages.set({
+				tabManager.tables.chatMessages.set({
 					id: message.id as ChatMessageId,
 					conversationId,
 					role: 'assistant',
@@ -307,7 +307,7 @@ function createAiChatState() {
 			// ── Derived convenience ──
 
 			get lastMessagePreview() {
-				const msgs = tables.chatMessages
+				const msgs = tabManager.tables.chatMessages
 					.filter((m) => m.conversationId === conversationId)
 					.sort((a, b) => b.createdAt - a.createdAt);
 				const last = msgs[0];
@@ -340,7 +340,7 @@ function createAiChatState() {
 					id: userMessageId,
 				});
 
-				tables.chatMessages.set({
+				tabManager.tables.chatMessages.set({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
@@ -360,7 +360,7 @@ function createAiChatState() {
 			reload() {
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					tables.chatMessages.delete(lastMessage.id as ChatMessageId);
+					tabManager.tables.chatMessages.delete(lastMessage.id as ChatMessageId);
 				}
 				void chat.reload();
 			},
@@ -425,15 +425,15 @@ function createAiChatState() {
 
 	// ── Observers ────────────────────────────────────────────────────────────
 
-	const _unobserveConversations = tables.conversations.observe(() => {
+	const _unobserveConversations = tabManager.tables.conversations.observe(() => {
 		reconcileHandles();
 	});
-	const _unobserveChatMessages = tables.chatMessages.observe(() => {
+	const _unobserveChatMessages = tabManager.tables.chatMessages.observe(() => {
 		refreshFns.get(activeConversationId)?.();
 	});
 
 	// Initialize after persistence loads
-	void whenReady.then(() => {
+	void tabManager.whenReady.then(() => {
 		reconcileHandles();
 		const newId = ensureDefaultConversation();
 		if (conversations.length > 0) {
@@ -455,7 +455,7 @@ function createAiChatState() {
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 
-		tables.conversations.set({
+		tabManager.tables.conversations.set({
 			id,
 			title: opts?.title ?? 'New Chat',
 			parentId: opts?.parentId,
@@ -480,18 +480,18 @@ function createAiChatState() {
 	function deleteConversation(conversationId: ConversationId) {
 		destroyConversation(conversationId);
 
-		const msgs = tables.chatMessages
+		const msgs = tabManager.tables.chatMessages
 			.getAllValid()
 			.filter((m) => m.conversationId === conversationId);
-		batch(() => {
+		tabManager.batch(() => {
 			for (const m of msgs) {
-				tables.chatMessages.delete(m.id);
+				tabManager.tables.chatMessages.delete(m.id);
 			}
-			tables.conversations.delete(conversationId);
+			tabManager.tables.conversations.delete(conversationId);
 		});
 
 		if (activeConversationId === conversationId) {
-			const remaining = tables.conversations
+			const remaining = tabManager.tables.conversations
 				.getAllValid()
 				.sort((a, b) => b.updatedAt - a.updatedAt);
 			const first = remaining[0];

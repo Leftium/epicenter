@@ -25,12 +25,12 @@
  */
 
 import { fromTable } from '@epicenter/svelte';
-import { actions, tables } from '$lib/client.svelte';
+import { tabManager } from '$lib/tab-manager/client';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { SavedTab, SavedTabId } from '$lib/workspace';
 
 function createSavedTabState() {
-	const tabsMap = fromTable(tables.savedTabs);
+	const tabsMap = fromTable(tabManager.tables.savedTabs);
 
 	/** All saved tabs, sorted by most recently saved first. Cached via $derived. */
 	const tabs = $derived(
@@ -54,7 +54,7 @@ function createSavedTabState() {
 		 */
 		async save(tab: BrowserTab) {
 			if (!tab.url) return;
-			return actions.savedTabs.save({
+			return tabManager.actions.savedTabs.save({
 				browserTabId: tab.id,
 				url: tab.url,
 				title: tab.title || 'Untitled',
@@ -71,7 +71,7 @@ function createSavedTabState() {
 		 * doesn't lose the URL.
 		 */
 		async restore(savedTab: SavedTab) {
-			return actions.savedTabs.restore({
+			return tabManager.actions.savedTabs.restore({
 				id: savedTab.id,
 				url: savedTab.url,
 				pinned: savedTab.pinned,
@@ -80,17 +80,17 @@ function createSavedTabState() {
 
 		/** Restore all saved tabs at once. */
 		async restoreAll() {
-			return actions.savedTabs.restoreAll();
+			return tabManager.actions.savedTabs.restoreAll();
 		},
 
 		/** Delete a saved tab without restoring it. Synchronous CRDT delete. */
 		remove(id: SavedTabId) {
-			return actions.savedTabs.remove({ id });
+			return tabManager.actions.savedTabs.remove({ id });
 		},
 
 		/** Delete all saved tabs without restoring them. Synchronous CRDT batch delete. */
 		removeAll() {
-			return actions.savedTabs.removeAll();
+			return tabManager.actions.savedTabs.removeAll();
 		},
 	};
 }

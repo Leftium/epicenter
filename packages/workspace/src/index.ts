@@ -31,12 +31,9 @@ export type {
 	Actions,
 	Mutation,
 	Query,
-	RemoteAction,
 	RemoteActions,
-	RemoteReturn,
 } from './shared/actions';
 export {
-	ACTION_BRAND,
 	defineMutation,
 	defineQuery,
 	dispatchAction,
@@ -141,7 +138,6 @@ export {
 	attachSync,
 	toWsUrl,
 	type DefaultRpcMap,
-	type RpcConfig,
 	type RpcDispatch,
 	type SyncAttachment,
 	type SyncAttachmentConfig,

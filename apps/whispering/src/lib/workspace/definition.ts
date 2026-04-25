@@ -74,6 +74,9 @@ const transformations = defineTable(
 	}),
 );
 
+/** Transformation row type inferred from the latest workspace table schema version. */
+export type Transformation = InferTableRow<typeof transformations>;
+
 /**
  * Individual steps within a transformation pipeline.
  *
@@ -119,6 +122,9 @@ const transformationSteps = defineTable(
 	}),
 );
 
+/** Transformation step row type inferred from the latest workspace table schema version. */
+export type TransformationStep = InferTableRow<typeof transformationSteps>;
+
 /**
  * Execution records for transformation pipelines. One run per invocation.
  *
@@ -150,6 +156,9 @@ const transformationRuns = defineTable(
 	),
 );
 
+/** Transformation run row type inferred from the latest workspace table schema version. */
+export type TransformationRun = InferTableRow<typeof transformationRuns>;
+
 /**
  * Per-step execution records within a transformation run.
  *
@@ -176,6 +185,9 @@ const transformationStepRuns = defineTable(
 		),
 	),
 );
+
+/** Transformation step run row type inferred from the latest workspace table schema version. */
+export type TransformationStepRun = InferTableRow<typeof transformationStepRuns>;
 
 /**
  * Synced settings stored as individual KV entries with last-write-wins resolution.

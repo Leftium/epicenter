@@ -12,10 +12,8 @@
 	import { goto } from '$app/navigation';
 	import { rpc } from '$lib/query';
 	import { settings } from '$lib/state/settings.svelte';
-	import {
-		type Transformation,
-		transformations,
-	} from '$lib/state/transformations.svelte';
+	import { transformations } from '$lib/state/transformations.svelte';
+	import type { Transformation } from '$lib/workspace';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	const sortedTransformations = $derived(transformations.sorted);

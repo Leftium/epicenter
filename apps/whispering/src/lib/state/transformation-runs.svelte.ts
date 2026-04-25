@@ -19,11 +19,7 @@
  */
 import { fromTable } from '@epicenter/svelte';
 import { whispering } from '$lib/whispering/client';
-
-/** Transformation run row type inferred from the workspace table schema. */
-export type TransformationRun = ReturnType<
-	typeof whispering.tables.transformationRuns.getAllValid
->[number];
+import type { TransformationRun } from '$lib/workspace';
 
 function createTransformationRuns() {
 	const map = fromTable(whispering.tables.transformationRuns);

@@ -15,15 +15,14 @@ import {
 import { services } from '$lib/services';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
-import {
-	type TransformationRun,
-	transformationRuns,
-} from '$lib/state/transformation-runs.svelte';
-import {
-	type TransformationStep,
-	transformationSteps,
-} from '$lib/state/transformation-steps.svelte';
-import type { Transformation } from '$lib/state/transformations.svelte';
+import { transformationRuns } from '$lib/state/transformation-runs.svelte';
+import { transformationSteps } from '$lib/state/transformation-steps.svelte';
+import type {
+	Transformation,
+	TransformationRun,
+	TransformationStep,
+	TransformationStepRun,
+} from '$lib/workspace';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 
 type TransformationRunRunning = Extract<
@@ -35,9 +34,6 @@ type TransformationRunCompleted = Extract<
 	{ status: 'completed' }
 >;
 type TransformationRunFailed = Extract<TransformationRun, { status: 'failed' }>;
-type TransformationStepRun = ReturnType<
-	typeof whispering.tables.transformationStepRuns.getAllValid
->[number];
 type TransformationStepRunRunning = Extract<
 	TransformationStepRun,
 	{ status: 'running' }

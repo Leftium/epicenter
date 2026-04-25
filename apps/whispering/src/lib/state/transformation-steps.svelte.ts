@@ -21,11 +21,7 @@
 import { fromTable } from '@epicenter/svelte';
 import { nanoid } from 'nanoid/non-secure';
 import { whispering } from '$lib/whispering/client';
-
-/** Transformation step row type inferred from the workspace table schema. */
-export type TransformationStep = ReturnType<
-	typeof whispering.tables.transformationSteps.getAllValid
->[number];
+import type { TransformationStep } from '$lib/workspace';
 
 function createTransformationSteps() {
 	const map = fromTable(whispering.tables.transformationSteps);

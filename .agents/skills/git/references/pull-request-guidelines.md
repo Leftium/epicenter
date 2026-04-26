@@ -275,47 +275,6 @@ State the simplest possible description of what the old system accomplished, the
 
 The fix then lands with zero effort—the reader is already rooting for it.
 
-##### Bold Topic Sentences for Long PRs
-
-For PRs with multiple distinct concerns, use `---` separators and bold opening sentences as scannable anchors. These are NOT section headers—they're topic sentences that let someone skim the PR and understand its shape.
-
-```markdown
----
-
-**First, a small correction: SYNC_STATUS was documented as a heartbeat but it isn't one.**
-
-Liveness is already handled by text-level ping/pong. What SYNC_STATUS actually
-needs to do is track whether the client has local changes...
-
----
-
-**The Durable Object message handler needed a cleaner return shape before RPC could be added.**
-
-The old handler returned an optional-fields bag...
-```
-
-Use this when a PR has 3+ distinct concerns that each need their own context. For simpler PRs, just write paragraphs.
-
-##### "Came Along for the Ride" Transitions
-
-When a PR includes secondary improvements that aren't the main point, subordinate them explicitly:
-
-**Good**: "Two follow-up improvements came along for the ride. First, fingerprint dedup..."
-
-**Good**: "While getting there required fixing a few things that were already slightly wrong..."
-
-This signals to the reader: "the main narrative is done, here are bonuses." Without this transition, the reader doesn't know if they're still in the main argument or reading about side effects.
-
-##### Sequential Journey for Multi-Part PRs
-
-When a PR builds on itself in stages (protocol + routing + client + typed contracts + structural collapse), tell the story in the order it happened. The reader follows the same journey you did:
-
-1. State the end goal ("peer-to-peer RPC over the sync layer")
-2. Walk through each prerequisite in the order you hit it
-3. Each step motivates the next: "the handler needed a cleaner shape *before* RPC could be added"
-
-This only works for PRs where the order matters. For PRs with independent concerns, bold topic sentences work better.
-
 ##### Lead with What Dies (API-collapse PRs)
 
 For PRs that delete or fundamentally reshape an established API surface — especially when the change ripples across many call sites or packages — flip the usual "open with WHY" into a stronger variant: **open with what dies, named explicitly, and let the deletion verb do the work.** The reader anchors on what's gone before what arrives, which makes the rest of the description make sense.
@@ -371,6 +330,47 @@ Hold metadata (commit count, scope, file count) until after the story. Numbers d
 > This PR deletes `Document`, `DocumentBundle`, `DocumentHandle`, `createDocumentFactory`, `defineDocument`, `defineWorkspace`, `ActionIndex`, `iterateActions`, `ACTION_BRAND`. We replaced them with inline `attach*` calls. Net: 520 commits, 534 files.
 
 The list is there, but the reader has no idea why any of those types existed in the first place, why they were wrong, or what survived. It reads as destruction without architecture. The good version makes the reader understand the *necessity* of each deletion before the inventory lands.
+
+##### Bold Topic Sentences for Long PRs
+
+For PRs with multiple distinct concerns, use `---` separators and bold opening sentences as scannable anchors. These are NOT section headers—they're topic sentences that let someone skim the PR and understand its shape.
+
+```markdown
+---
+
+**First, a small correction: SYNC_STATUS was documented as a heartbeat but it isn't one.**
+
+Liveness is already handled by text-level ping/pong. What SYNC_STATUS actually
+needs to do is track whether the client has local changes...
+
+---
+
+**The Durable Object message handler needed a cleaner return shape before RPC could be added.**
+
+The old handler returned an optional-fields bag...
+```
+
+Use this when a PR has 3+ distinct concerns that each need their own context. For simpler PRs, just write paragraphs.
+
+##### "Came Along for the Ride" Transitions
+
+When a PR includes secondary improvements that aren't the main point, subordinate them explicitly:
+
+**Good**: "Two follow-up improvements came along for the ride. First, fingerprint dedup..."
+
+**Good**: "While getting there required fixing a few things that were already slightly wrong..."
+
+This signals to the reader: "the main narrative is done, here are bonuses." Without this transition, the reader doesn't know if they're still in the main argument or reading about side effects.
+
+##### Sequential Journey for Multi-Part PRs
+
+When a PR builds on itself in stages (protocol + routing + client + typed contracts + structural collapse), tell the story in the order it happened. The reader follows the same journey you did:
+
+1. State the end goal ("peer-to-peer RPC over the sync layer")
+2. Walk through each prerequisite in the order you hit it
+3. Each step motivates the next: "the handler needed a cleaner shape *before* RPC could be added"
+
+This only works for PRs where the order matters. For PRs with independent concerns, bold topic sentences work better.
 
 ##### Casual Closing Stats
 

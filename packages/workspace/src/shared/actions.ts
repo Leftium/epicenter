@@ -89,8 +89,13 @@ type ActionConfig<TInput extends TSchema | undefined, R> = {
 
 /**
  * Metadata properties attached to a callable action.
+ *
+ * Source-agnostic: this same shape describes both a local `Action` (where
+ * `input` is a live `TSchema`) and the wire-side `ActionManifestEntry`
+ * received over awareness (where `input` is the schema's JSON form). Renderers
+ * and inspection tools can take this single type regardless of source.
  */
-type ActionMeta<TInput extends TSchema | undefined = TSchema | undefined> = {
+export type ActionMeta<TInput extends TSchema | undefined = TSchema | undefined> = {
 	type: 'query' | 'mutation';
 	/** Short, human-readable display name for UI surfaces (e.g. 'Close Tabs'). Falls back to path-derived name if omitted. */
 	title?: string;

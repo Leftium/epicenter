@@ -12,14 +12,18 @@
  * without an additional fetch.
  */
 
-import { type Actions, isAction } from './actions.js';
+import { type ActionMeta, type Actions, isAction } from './actions.js';
 
-export type ActionManifestEntry = {
-	type: 'query' | 'mutation';
-	input?: object;
-	title?: string;
-	description?: string;
-};
+/**
+ * One entry in the published action manifest. Structurally identical to
+ * `ActionMeta` — the wire shape and the local-metadata shape are the same
+ * type, so a single renderer can consume either source without conversion.
+ *
+ * The `input` schema travels as JSON (TypeBox `TSchema` IS valid JSON Schema
+ * by construction), so consumers reading `device.offers` over awareness see
+ * the exact same fields as a local `Action`'s metadata.
+ */
+export type ActionManifestEntry = ActionMeta;
 
 export type ActionManifest = Record<string, ActionManifestEntry>;
 

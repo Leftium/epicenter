@@ -22,7 +22,6 @@
 
 import type { LoadedWorkspace } from '../load-config';
 import { type AwarenessState, readPeers } from './awareness';
-import { readDevice } from './peer-state';
 
 const POLL_INTERVAL_MS = 100;
 
@@ -38,7 +37,7 @@ export function findPeer(
 	const sorted = [...peers.keys()].sort((a, b) => a - b);
 	for (const clientID of sorted) {
 		const state = peers.get(clientID)!;
-		if (readDevice(state)?.id === deviceId) {
+		if (state.device?.id === deviceId) {
 			return { kind: 'found', clientID, state };
 		}
 	}

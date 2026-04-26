@@ -31,7 +31,6 @@ import {
 	output,
 	outputError,
 } from '../util/format-output';
-import { readDevice, readOffers } from '../util/peer-state';
 import { resolveEntry } from '../util/resolve-entry';
 
 const DEFAULT_WAIT_MS = 500;
@@ -168,8 +167,8 @@ export function selfSection(
 }
 
 export function peerSection(state: AwarenessState, clientID?: number): Section {
-	const device = readDevice(state);
-	const entries = readOffers(state);
+	const device = state.device;
+	const entries = device?.offers ?? {};
 	const name = device?.name || device?.id || `clientID ${clientID ?? '?'}`;
 	const suffix = Object.keys(entries).length === 0 ? ' (online, offers: 0)' : ' (online)';
 	return {

@@ -25,7 +25,6 @@ import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type WorkspaceEntry } from '../load-config';
 import { type AwarenessState, readPeers } from '../util/awareness';
 import { waitForAnyPeer } from '../util/peer-polling';
-import { readDevice } from '../util/peer-state';
 import {
 	dirFromArgv,
 	dirOption,
@@ -126,7 +125,7 @@ function emit(
 export function buildPeerRows(peers: Map<number, AwarenessState>): PeerRow[] {
 	const rows: PeerRow[] = [];
 	for (const [clientID, state] of peers) {
-		const device = readDevice(state);
+		const device = state.device;
 		rows.push({
 			clientID,
 			deviceId: device?.id ?? '',

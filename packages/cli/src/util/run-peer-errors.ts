@@ -18,7 +18,6 @@ import type { RpcError } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { outputError } from './format-output';
 import type { AwarenessState } from './awareness';
-import { readDevice } from './peer-state';
 
 export function emitMissError(
 	target: string,
@@ -43,7 +42,7 @@ export function emitRpcError(
 	targetClientId: number,
 	peerState: AwarenessState,
 ): void {
-	const device = readDevice(peerState);
+	const device = peerState.device;
 	const peerLabel = device?.name
 		? `${device.name} (${targetClientId}${device.platform ? `, ${device.platform}` : ''})`
 		: `clientID ${targetClientId}`;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { findPeer } from './peer-polling';
+import { findPeer } from './peer-wait';
 import type { AwarenessState } from './awareness';
 
 /**

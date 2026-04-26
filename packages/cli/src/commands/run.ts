@@ -30,7 +30,7 @@ import {
 } from '../util/common-options';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
-import { waitForPeer } from '../util/peer-polling';
+import { waitForPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
 import { emitMissError, emitRpcError } from '../util/run-peer-errors';
 

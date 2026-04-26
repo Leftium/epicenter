@@ -24,7 +24,7 @@
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type WorkspaceEntry } from '../load-config';
 import { type AwarenessState, readPeers } from '../util/awareness';
-import { waitForAnyPeer } from '../util/peer-polling';
+import { waitForAnyPeer } from '../util/peer-wait';
 import {
 	dirFromArgv,
 	dirOption,

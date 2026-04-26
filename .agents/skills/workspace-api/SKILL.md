@@ -14,7 +14,7 @@ metadata:
 
 Type-safe schema definitions for tables and KV stores.
 
-> **Related Skills**: See `yjs` for Yjs CRDT patterns and shared types. See `svelte` for reactive wrappers (`fromTable`, `fromKv`). See `attach-primitive` for the full contract and invariants every `attach*` function must follow.
+> **Related Skills**: See `yjs` for Yjs CRDT patterns and shared types. See `svelte` for reactive wrappers (`fromTable`, `fromKv`) and the **commit-on-blur pattern** — the preferred way to wire Svelte text inputs to workspace string fields without writing N transactions per keystroke. See `attach-primitive` for the full contract and invariants every `attach*` function must follow.
 
 ## When to Apply This Skill
 

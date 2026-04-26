@@ -1,4 +1,4 @@
-# Commit-on-blur Survives Tab Close (with Five Lines of Svelte)
+# Commit-on-blur Survives Tab Close (with Six Lines of Svelte)
 
 Most autosave UIs have the same problem. You wire `onblur` to commit, the user types something, then hits Cmd+W. The blur event never fires. The data is gone.
 
@@ -6,14 +6,12 @@ The usual fix is per-keystroke commits — write to your store on every `oninput
 
 Here's a better fix.
 
-## The five lines
+## The six lines
 
 ```svelte
 <!-- +layout.svelte -->
-<svelte:document
-  onvisibilitychange={flushPendingEdits}
-  onpagehide={flushPendingEdits}
-/>
+<svelte:document onvisibilitychange={flushPendingEdits} />
+<svelte:window onpagehide={flushPendingEdits} />
 ```
 
 ```ts
@@ -28,6 +26,8 @@ function flushPendingEdits() {
 ```
 
 That's it. Every `<input onblur={...}>` in your app now survives Cmd+W, Cmd+Q, tab switch, browser minimize, and iOS app-switch — because forcing `.blur()` on the focused element synchronously fires its blur event, which synchronously runs your commit handler.
+
+Two special elements, not one: `visibilitychange` is a document event, `pagehide` is a window event. That's not a Svelte choice — it's how the DOM ships them, and Svelte's `packages/svelte/elements.d.ts` reflects it: `onvisibilitychange` lives on `SvelteDocumentAttributes`, `onpagehide` lives on `SvelteWindowAttributes`. Putting `onpagehide` on `<svelte:document>` typechecks loosely but won't fire reliably; keep them on the right element.
 
 ## Why this works
 
@@ -110,9 +110,9 @@ The commit-on-blur + visibilitychange pattern gives you per-edit-session granula
 | Y.Doc transactions per typing session | N | 1 | 1 |
 | Sync messages on the wire | N | 1 | 1 |
 | Cmd+W mid-edit | last ~100ms maybe lost | **whole session lost** | last ~100ms maybe lost |
-| Code complexity | inline `oninput` | inline `onblur` | inline `onblur` + 5 global lines |
+| Code complexity | inline `oninput` | inline `onblur` | inline `onblur` + 6 global lines |
 
-You're paying five lines for the resilience. Same data-loss profile as per-keystroke. Same idiomatic call sites as if you ignored the problem.
+You're paying six lines for the resilience. Same data-loss profile as per-keystroke. Same idiomatic call sites as if you ignored the problem.
 
 ## When it doesn't apply
 
@@ -128,6 +128,6 @@ For text editors that need character-level CRDT merging, you don't want commit-o
 
 ## The takeaway
 
-The default Svelte commit-on-blur pattern has a bug — Cmd+W skips your save. The fix is one `<svelte:document>` element in your root layout, listening for `visibilitychange` and `pagehide`, calling `.blur()` on the focused element. Five lines. Synchronous all the way through to your Y.Doc update. No per-keystroke churn, no debounce timers, no local state buffer.
+The default Svelte commit-on-blur pattern has a bug — Cmd+W skips your save. The fix is two special elements in your root layout — `<svelte:document onvisibilitychange>` and `<svelte:window onpagehide>` — calling `.blur()` on the focused element. Six lines. Synchronous all the way through to your Y.Doc update. No per-keystroke churn, no debounce timers, no local state buffer.
 
 It's the kind of pattern you write once at the layout level and forget. Every `<input onblur>` in your app inherits the safety net.

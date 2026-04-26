@@ -527,6 +527,90 @@ Without JSDoc and a meaningful name, extract it anyway — the indirection isn't
 
 Functions used **2 or more times** should always stay extracted — this rule only applies to single-use functions.
 
+# Commit-on-Blur for Workspace String Fields
+
+For plain string fields backed by a workspace table or Y.Map row (title, subtitle, name, description, license, label), **commit on `onblur`, not `oninput`**. Per-keystroke writes turn one typing session into N Yjs transactions, N IDB writes, N sync messages, and N BroadcastChannel posts. Commit-on-blur collapses that to one.
+
+The pattern has two halves: the **per-input handler** and the **app-wide safety net**. Both are required — the safety net is what makes commit-on-blur survive Cmd+W mid-edit.
+
+## The handler
+
+```svelte
+<input
+  type="text"
+  value={entry.title}
+  onblur={(e) => {
+    const next = e.currentTarget.value;
+    if (next !== entry.title) updateEntry({ title: next });
+  }}
+/>
+```
+
+The compare-then-write guard avoids a no-op Yjs transaction when focus passes through an unchanged field. For factories that update many fields, extract a small `commit(field, next)` helper that does the compare internally.
+
+## The safety net (app-wide, in `+layout.svelte`)
+
+```svelte
+<script lang="ts">
+  function flushPendingEdits() {
+    if (
+      document.visibilityState === 'hidden' &&
+      document.activeElement instanceof HTMLElement
+    ) {
+      document.activeElement.blur();
+    }
+  }
+</script>
+
+<svelte:document onvisibilitychange={flushPendingEdits} />
+<svelte:window onpagehide={flushPendingEdits} />
+```
+
+When the page is being hidden (tab close, Cmd+W, tab switch, window minimize, iOS app-switch, bfcache), `.blur()` on the focused element synchronously dispatches its blur event, which synchronously runs your commit handler, which synchronously updates the Y.Doc — all before the page tears down. Six lines, one place, every `<input onblur>` in the app inherits the resilience.
+
+`visibilitychange` is a document event, `pagehide` is a window event. Per Svelte's `packages/svelte/elements.d.ts`, `onvisibilitychange` lives on `SvelteDocumentAttributes` and `onpagehide` lives on `SvelteWindowAttributes` — keep them on the right element. Listen to both: visibilitychange is more reliable on iOS Safari, pagehide catches bfcache navigations.
+
+## The default for new apps
+
+Every new app under `apps/*` should ship the safety net in `+layout.svelte` as part of scaffolding. Treat it like `<Toaster />` or `<ModeWatcher />` — a layout-level concern that's free once installed. See `workspace-app-layout` for where this fits in the `+layout.svelte` checklist.
+
+## When NOT to use commit-on-blur
+
+| Field type | Pattern |
+|---|---|
+| Plain string Y.Map field (title, subtitle, name, description, license) | **commit-on-blur** |
+| Y.Text bound through y-prosemirror / y-codemirror / tiptap | per-keystroke (CRDT operates at character level) |
+| Discrete selectors (radio, checkbox, datepicker, tag pickers) | inline event handler — already one event per action |
+| Search box / filter that doesn't persist | local `$state` only, no commit |
+| Component-local form state submitted on a button click | accumulate in `$state`, commit in the click handler |
+
+For Y.Text fields you specifically want every keystroke to participate in operational transform — commit-on-blur defeats the point of the CRDT.
+
+## Defensive variant: local state + focus flag
+
+If a sibling tab editing the same row could clobber in-progress typing (rare in personal apps), reach for a local-state buffer with a focus flag — but only if the clobber actually shows up:
+
+```svelte
+<script lang="ts">
+  let localTitle = $state(entry.title);
+  let editing = $state(false);
+  $effect(() => { if (!editing) localTitle = entry.title; });
+</script>
+
+<input
+  bind:value={localTitle}
+  onfocus={() => (editing = true)}
+  onblur={() => {
+    editing = false;
+    if (localTitle !== entry.title) commit(localTitle);
+  }}
+/>
+```
+
+For true conflict-free text editing across tabs, switch the field to Y.Text + a CRDT-aware editor binding instead.
+
+See `docs/articles/commit-on-blur-survives-tab-close.md` for the full rationale, persistence-layer reliability table, and the page-lifecycle guarantees behind the safety net.
+
 # Styling
 
 For general CSS and Tailwind guidelines, see the `styling` skill.

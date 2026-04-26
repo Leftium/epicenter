@@ -1,12 +1,14 @@
 # Document-primitive rollout — orchestration tracker
 
-**Status**: active (PR-A in flight; PR-D / PR-E queued)
+**Status**: active (PR-A merged 2026-04-26; PR-D / PR-E queued)
 
-Live status for the multi-PR rollout. Update as work lands.
+Live status for the multi-PR rollout. Update as work lands. This file gets deleted once PR-E ships per the post-merge convention.
 
 **Plan revision (2026-04-25):** what was originally PR-B and PR-C have been folded into PR-A. The arc ends with the factory teardown; PR-A ships terminal state. PR-D and PR-E are unchanged.
 
-**Plan revision (2026-04-25, late):** Phase 2's seven deletions executed *with one reversal*. Deletions 1, 2, 4, 5, 6, 7 landed verbatim. Deletion 3 (delete `openFuji()` wrappers) executed first then got reversed by the iso/env/client three-file split — see the gravestone in the Phase 2 spec and the resolution in `specs/20260425T225350-app-workspace-folder-env-split.md`. The article `workspaces-were-documents-all-along.md` got v4 + v5 codas covering both the framework teardown and the wrapper restoration, since that contradiction is the most useful artifact this PR produced.
+**Plan revision (2026-04-25, late):** Phase 2's seven deletions executed *with one reversal*. Deletions 1, 2, 4, 5, 6, 7 landed verbatim. Deletion 3 (delete `openFuji()` wrappers) executed first then got reversed by the iso/env/client three-file split — see `specs/20260425T225350-app-workspace-folder-env-split.md` for the resolution and `docs/articles/workspaces-were-documents-all-along.md` v5 for the narrative. The contradiction between v3 ("delete the wrapper") and v5 ("un-delete the wrapper, but for a different reason — bleed prevention, not encapsulation") is the most durable artifact PR-A produced.
+
+**Status update (2026-04-26):** PR-A merged at `252dced47`. Scaffolding files (PR body draft, Phase 1 + Phase 2 execution prompts) deleted in a follow-up cleanup PR per the convention landed during PR-A: durable artifacts (architecture specs, skills, articles) stay; scaffolding (PR body drafts, executed prompts, in-flight trackers) gets deleted once the work it scaffolds is complete. This tracker stays until PR-E lands.
 
 ---
 
@@ -54,9 +56,9 @@ PR-E (CLI cross-device)       ← spec: 20260425T000000-device-actions-via-aware
 
 | PR | Status | Description location | Notes |
 |---|---|---|---|
-| PR-A | Phase 1 + Phase 2 landed on `drop-document-factory`; PR body finalize pending | `specs/20260425T180000-pr-body-document-primitive.md` | Phase 1 + 6/7 of Phase 2's deletions executed verbatim. Deletion 3 reversed mid-flight (see Phase 2 gravestone + `20260425T225350-app-workspace-folder-env-split.md`). Article v4 + v5 coda shipped. Body file rewrites at finalize time. |
-| PR-D | Architecture specced | `specs/20260425T000000-device-actions-via-awareness.md` | Implementation prompt drafted after PR-A merges, against real merged shapes. |
-| PR-E | Architecture specced | `specs/20260425T000000-device-actions-via-awareness.md` Phase 3 | Implementation prompt drafted after PR-D merges. |
+| PR-A | **MERGED 2026-04-26** (`252dced47`) | https://github.com/EpicenterHQ/epicenter/pull/1705 | 520 commits. Both phases landed; six of seven Deletion targets executed; Deletion 3 reversed mid-flight (iso/env/client split). PR body draft + execution prompts deleted post-merge. |
+| PR-D | Architecture specced; implementation prompt pending | `specs/20260425T000000-device-actions-via-awareness.md` | Now ready to draft against real merged shapes in main. |
+| PR-E | Architecture specced; implementation prompt pending | `specs/20260425T000000-device-actions-via-awareness.md` Phase 3 | Drafted after PR-D merges. |
 
 ---
 

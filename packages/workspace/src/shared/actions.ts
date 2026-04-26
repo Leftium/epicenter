@@ -306,6 +306,30 @@ export type ActionFailed = Extract<RpcError, { name: 'ActionFailed' }>;
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
+ * Per-remote-call options, threaded through every wrapped leaf as a trailing
+ * optional argument. The proxy passes these to `sync.rpc(...)` directly —
+ * same shape, same name, single source of truth.
+ *
+ * Currently just `timeout`. Cancellation via `AbortSignal` is deliberately
+ * out — the underlying transport doesn't support it (a real cancel requires
+ * a CANCEL frame the server understands). Add when plumbed through.
+ */
+export type RemoteCallOptions = {
+	/** Per-call override of the default RPC timeout (ms). Default: 5000. */
+	timeout?: number;
+};
+
+/**
+ * Append an optional `RemoteCallOptions` parameter to an existing arg tuple.
+ * No-arg handlers `(): R` become `(input?: undefined, options?: RemoteCallOptions) => ...`
+ * so callers can always pass options as the second arg, regardless of whether
+ * the action has input.
+ */
+type WithOptions<Args extends readonly unknown[]> = Args extends []
+	? [input?: undefined, options?: RemoteCallOptions]
+	: [...Args, options?: RemoteCallOptions];
+
+/**
  * Compute the wrapped shape of a single action callable for remote/normalized
  * consumption. Four flat branches:
  *
@@ -315,16 +339,17 @@ export type ActionFailed = Extract<RpcError, { name: 'ActionFailed' }>;
  * - `(...) => R`                     → `(...) => Promise<Result<R, RpcError>>`
  *
  * The data type is unchanged; the error union widens by `RpcError` (to cover
- * transport failures: `ActionFailed`, `Disconnected`, etc.).
+ * transport failures: `ActionFailed`, `Disconnected`, etc.). Every wrapped
+ * leaf accepts a trailing `RemoteCallOptions` for per-call overrides.
  */
 export type WrapAction<F> = F extends (...args: infer Args) => infer R
 	? R extends Promise<infer Inner>
 		? Inner extends Result<infer T, infer E>
-			? (...args: Args) => Promise<Result<T, E | RpcError>>
-			: (...args: Args) => Promise<Result<Inner, RpcError>>
+			? (...args: WithOptions<Args>) => Promise<Result<T, E | RpcError>>
+			: (...args: WithOptions<Args>) => Promise<Result<Inner, RpcError>>
 		: R extends Result<infer T, infer E>
-			? (...args: Args) => Promise<Result<T, E | RpcError>>
-			: (...args: Args) => Promise<Result<R, RpcError>>
+			? (...args: WithOptions<Args>) => Promise<Result<T, E | RpcError>>
+			: (...args: WithOptions<Args>) => Promise<Result<R, RpcError>>
 	: never;
 
 /**

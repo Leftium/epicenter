@@ -22,7 +22,7 @@
  */
 
 import type { Argv, CommandModule } from 'yargs';
-import { loadConfig, type LoadConfigResult } from '../load-config';
+import { loadConfig, type WorkspaceEntry } from '../load-config';
 import type { AwarenessState } from '../util/awareness';
 import { waitForAnyPeer } from '../util/peer-polling';
 import { readDevice } from '../util/peer-state';
@@ -70,7 +70,7 @@ export const peersCommand: CommandModule = {
 		const format = args.format as 'json' | 'jsonl' | undefined;
 		const { entries, dispose } = await loadConfig(dirFromArgv(args));
 		try {
-			const selected: LoadConfigResult['entries'] = workspaceArg
+			const selected: WorkspaceEntry[] = workspaceArg
 				? [resolveEntry(entries, workspaceArg)]
 				: entries;
 
@@ -85,11 +85,11 @@ export const peersCommand: CommandModule = {
 };
 
 async function snapshotEntry(
-	entry: LoadConfigResult['entries'][number],
+	entry: WorkspaceEntry,
 	waitMs: number,
 ): Promise<WorkspaceSnapshot> {
-	const peers = await waitForAnyPeer(entry.workspace, waitMs);
-	return { name: entry.name, peers };
+	await waitForAnyPeer(entry.workspace, waitMs);
+	return { name: entry.name, peers: readPeers(entry.workspace) };
 }
 
 function emit(

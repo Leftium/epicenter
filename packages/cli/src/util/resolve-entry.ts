@@ -1,11 +1,9 @@
-import type { LoadConfigResult } from '../load-config';
-
-type Entry = LoadConfigResult['entries'][number];
+import type { WorkspaceEntry } from '../load-config';
 
 export function resolveEntry(
-	entries: LoadConfigResult['entries'],
+	entries: WorkspaceEntry[],
 	workspace: string | undefined,
-): Entry {
+): WorkspaceEntry {
 	const names = entries.map((e) => e.name).join(', ');
 
 	if (workspace !== undefined) {

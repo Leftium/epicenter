@@ -62,8 +62,14 @@ export type LoadedWorkspace = {
 	[Symbol.dispose](): void;
 };
 
+/** One named workspace export from `epicenter.config.ts`. */
+export type WorkspaceEntry = {
+	name: string;
+	workspace: LoadedWorkspace;
+};
+
 export type LoadConfigResult = {
-	entries: { name: string; workspace: LoadedWorkspace }[];
+	entries: WorkspaceEntry[];
 	/**
 	 * Release every workspace. Disposes each (synchronous) and awaits any
 	 * `sync.whenDisposed` barriers so the CLI exits cleanly after closing
@@ -107,7 +113,7 @@ function classifyWorkspaceExport(value: unknown): WorkspaceCheck {
 	const reasons: string[] = [];
 	if (!hasWhenReady) {
 		reasons.push('missing `whenReady`');
-	} else if (typeof (v.whenReady as { then?: unknown } | null)?.then !== 'function') {
+	} else if (typeof (v.whenReady as { then?: unknown })?.then !== 'function') {
 		reasons.push('`whenReady` must be a Promise (or thenable)');
 	}
 	if (!hasDispose) reasons.push('missing `[Symbol.dispose]`');
@@ -133,7 +139,7 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 
 	const module = await import(Bun.pathToFileURL(configPath).href);
 
-	const entries: LoadConfigResult['entries'] = [];
+	const entries: WorkspaceEntry[] = [];
 	for (const [name, value] of Object.entries(module)) {
 		if (name === 'default') continue;
 		const check = classifyWorkspaceExport(value);

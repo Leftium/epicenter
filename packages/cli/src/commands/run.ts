@@ -19,7 +19,7 @@ import {
 } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
-import { loadConfig, type LoadConfigResult } from '../load-config';
+import { loadConfig, type WorkspaceEntry } from '../load-config';
 import {
 	dirFromArgv,
 	dirOption,
@@ -82,7 +82,7 @@ export const runCommand: CommandModule = {
 
 async function invoke(
 	argv: Record<string, unknown>,
-	entry: LoadConfigResult['entries'][number],
+	entry: WorkspaceEntry,
 ): Promise<void> {
 	const actionPath = String(argv.action);
 	const { workspace } = entry;
@@ -133,7 +133,7 @@ async function invoke(
 }
 
 type InvokeRemoteOptions = {
-	entry: LoadConfigResult['entries'][number];
+	entry: WorkspaceEntry;
 	actionPath: string;
 	input: unknown;
 	peerTarget: string;

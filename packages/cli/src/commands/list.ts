@@ -17,7 +17,7 @@
 import { actionManifest, type ActionManifest } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule, Options } from 'yargs';
-import { loadConfig, type LoadConfigResult } from '../load-config';
+import { loadConfig, type WorkspaceEntry } from '../load-config';
 import { type AwarenessState, readPeers } from '../util/awareness';
 import { waitForAnyPeer, waitForPeer } from '../util/peer-polling';
 import {
@@ -126,7 +126,7 @@ type Selection = {
  * code; the caller just bails).
  */
 async function selectSections(
-	entry: LoadConfigResult['entries'][number],
+	entry: WorkspaceEntry,
 	{ peerTarget, all, waitMs }: Selection,
 ): Promise<Section[] | null> {
 	const { workspace } = entry;
@@ -157,7 +157,7 @@ async function selectSections(
 }
 
 export function selfSection(
-	entry: LoadConfigResult['entries'][number],
+	entry: WorkspaceEntry,
 	mode: 'local' | 'all',
 ): Section {
 	const entries = entry.workspace.actions

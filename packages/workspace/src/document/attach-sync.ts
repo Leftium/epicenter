@@ -36,6 +36,11 @@ import {
 } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
+import {
+	type Actions,
+	type RemoteCallOptions,
+	dispatchAction,
+} from '../shared/actions.js';
 
 /**
  * Minimal Y.Doc sync attachment — connects a Y.Doc to a WebSocket sync server.
@@ -73,22 +78,6 @@ export type SyncStatus =
 	| { phase: 'connecting'; retries: number; lastError?: SyncError }
 	| { phase: 'connected'; hasLocalChanges: boolean };
 
-export type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
-
-/**
- * Inbound RPC dispatcher provided by the caller.
- *
- * Returns `Promise<unknown>` — the value may be raw, a Result `{data, error}`,
- * sync or async. `attachSync`'s inbound handler is the sole place that
- * normalizes: already-Result values pass through; raw values get `Ok`-wrapped;
- * throws become `Err(ActionFailed)`. `action` is a dot-path string (e.g.
- * `'tabs.close'`).
- *
- * Defined here (not imported from `@epicenter/workspace`) to avoid a circular
- * dep — `attachSync` stays at the primitive layer and delegates action lookup
- * and invocation to the caller.
- */
-export type RpcDispatch = (action: string, input: unknown) => Promise<unknown>;
 
 /** Errors surfaced by the sync supervisor's background lifecycle. */
 export const SyncSupervisorError = defineErrors({
@@ -156,7 +145,7 @@ export type SyncAttachment = {
 		target: number,
 		action: TAction,
 		input?: TMap[TAction]['input'],
-		options?: { timeout?: number },
+		options?: RemoteCallOptions,
 	): Promise<Result<TMap[TAction]['output'], RpcError>>;
 };
 
@@ -180,14 +169,20 @@ export type SyncAttachmentConfig = {
 	 */
 	awareness?: Awareness;
 	/**
-	 * Inbound RPC dispatcher. When provided, incoming RPC requests are
-	 * forwarded to `dispatch(action, input)`; when omitted, `attachSync`
-	 * responds with `RpcError.ActionNotFound`.
+	 * Inbound action tree. Incoming RPC requests are routed by dot-path
+	 * against this tree via `dispatchAction`; raw returns get `Ok`-wrapped,
+	 * throws become `Err(ActionFailed)`, existing `Result`s pass through.
 	 *
-	 * Outbound RPC (the `rpc()` method on the attachment) works regardless
-	 * of whether this is set.
+	 * Wrapping the dispatch path (auth gates, audit logs, rate limits) is
+	 * an upstream concern — compose the action tree itself before passing
+	 * it here. Userland helpers like `withAuthGate(actions, ...)` are the
+	 * right home for that, not a callback in this config.
+	 *
+	 * When omitted, `attachSync` responds to inbound RPCs with
+	 * `RpcError.ActionNotFound`. Outbound RPC (the `rpc()` method on the
+	 * attachment) works regardless.
 	 */
-	dispatch?: RpcDispatch;
+	actions?: Actions;
 	/**
 	 * Token sourcing callback. When provided, the supervisor calls `getToken()`
 	 * before each connect attempt to fetch a fresh bearer token (sent over the
@@ -333,8 +328,10 @@ export function attachSync(
 				}),
 			);
 
-		const dispatch = config.dispatch;
-		if (!dispatch) {
+		// No actions configured → surface ActionNotFound so the caller sees a
+		// typed error rather than a timeout.
+		const actions = config.actions;
+		if (!actions) {
 			sendResponse({
 				data: null,
 				error: RpcError.ActionNotFound({ action: rpc.action }).error,
@@ -342,12 +339,11 @@ export function attachSync(
 			return;
 		}
 
-		// Normalize the dispatch return value into a `{data, error}` wire payload:
-		// - raw throw → Err(ActionFailed)
-		// - raw value → Ok-wrap
-		// - already a Result → forward unchanged
+		// Walk the action tree, normalize the return into a `{data, error}` wire
+		// payload: raw throw → Err(ActionFailed); raw value → Ok-wrap; existing
+		// Result → forward unchanged.
 		try {
-			const raw = await dispatch(rpc.action, rpc.input);
+			const raw = await dispatchAction(actions, rpc.action, rpc.input);
 			const normalized = isResult(raw) ? raw : Ok(raw);
 			sendResponse(normalized);
 		} catch (cause) {

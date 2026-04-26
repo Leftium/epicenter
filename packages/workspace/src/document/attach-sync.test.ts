@@ -23,6 +23,8 @@ import {
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
 import * as Y from 'yjs';
+import Type from 'typebox';
+import { defineMutation } from '../shared/actions.js';
 import { attachSync } from './attach-sync.js';
 
 // ── Minimal WebSocket stub ───────────────────────────────────────────────
@@ -313,16 +315,23 @@ describe('attachSync hasLocalChanges', () => {
 		await sync.whenDisposed;
 	});
 
-	test('inbound RPC request with dispatch config forwards to handler and Ok-wraps raw return value', async () => {
+	test('inbound RPC request with actions config forwards to handler and Ok-wraps raw return value', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-rpc-dispatch' });
 		const calls: Array<{ action: string; input: unknown }> = [];
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			// Return a raw value — attachSync's handler is responsible for
-			// normalizing it into a `{data, error}` envelope on the wire.
-			dispatch: async (action, input) => {
-				calls.push({ action, input });
-				return { echo: input, action };
+			actions: {
+				tabs: {
+					// Return a raw value — attachSync's handler is responsible for
+					// normalizing it into a `{data, error}` envelope on the wire.
+					close: defineMutation({
+						input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
+						handler: (input) => {
+							calls.push({ action: 'tabs.close', input });
+							return { echo: input, action: 'tabs.close' };
+						},
+					}),
+				},
 			},
 		});
 
@@ -369,15 +378,21 @@ describe('attachSync hasLocalChanges', () => {
 		await sync.whenDisposed;
 	});
 
-	test('inbound RPC with dispatch returning a Result passes the envelope through untouched', async () => {
+	test('inbound RPC with action returning a Result passes the envelope through untouched', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-rpc-result-passthrough' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			// Handler returns an Err directly; attachSync must not re-wrap it.
-			dispatch: async () => ({
-				data: null,
-				error: { name: 'BrowserApiFailed', message: 'no tab 999' },
-			}),
+			actions: {
+				tabs: {
+					// Handler returns an Err directly; attachSync must not re-wrap it.
+					close: defineMutation({
+						handler: () => ({
+							data: null,
+							error: { name: 'BrowserApiFailed', message: 'no tab 999' },
+						}),
+					}),
+				},
+			},
 		});
 
 		const ws = await waitFor(() => FakeWebSocket.instances[0]);
@@ -421,12 +436,18 @@ describe('attachSync hasLocalChanges', () => {
 		await sync.whenDisposed;
 	});
 
-	test('inbound RPC with dispatch that throws responds with RpcError.ActionFailed carrying the cause', async () => {
+	test('inbound RPC with action that throws responds with RpcError.ActionFailed carrying the cause', async () => {
 		const ydoc = new Y.Doc({ guid: 'test-rpc-throw' });
 		const sync = attachSync(ydoc, {
 			url: `ws://x/${ydoc.guid}`,
-			dispatch: async () => {
-				throw new Error('handler exploded');
+			actions: {
+				tabs: {
+					close: defineMutation({
+						handler: () => {
+							throw new Error('handler exploded');
+						},
+					}),
+				},
 			},
 		});
 
@@ -629,10 +650,16 @@ describe('attachSync hasLocalChanges', () => {
 		const aliceSync = attachSync(aliceDoc, { url: 'ws://alice' });
 		const bobSync = attachSync(bobDoc, {
 			url: 'ws://bob',
-			dispatch: async (action, input) => {
-				bobDispatchCalls.push({ action, input });
-				const tabIds = (input as { tabIds: number[] }).tabIds;
-				return { closedCount: tabIds.length };
+			actions: {
+				tabs: {
+					close: defineMutation({
+						input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
+						handler: (input) => {
+							bobDispatchCalls.push({ action: 'tabs.close', input });
+							return { closedCount: input.tabIds.length };
+						},
+					}),
+				},
 			},
 		});
 

@@ -49,13 +49,31 @@ export {
 	isResult,
 } from './shared/actions';
 
+export {
+	actionManifest,
+	type ActionManifest,
+	type ActionManifestEntry,
+} from './shared/action-manifest.js';
+
 // ════════════════════════════════════════════════════════════════════════════
-// RPC
+// RPC + PEER DISPATCH
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { InferRpcMap, RpcActionMap } from './rpc/types';
-export { createRemoteActions, type RemoteSend } from './rpc/remote-actions';
 export { isRpcError, RpcError } from '@epicenter/sync';
+
+// Peer dispatch (cross-device action calling) — see `peer<T>(workspace, deviceId)`.
+export { peer } from './rpc/peer.js';
+export type { RemoteCallOptions } from './shared/actions.js';
+
+// ════════════════════════════════════════════════════════════════════════════
+// DEVICE IDENTITY
+// ════════════════════════════════════════════════════════════════════════════
+
+export {
+	getOrCreateDeviceId,
+	type SimpleStorage,
+} from './shared/device-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // SHARED TYPES
@@ -143,8 +161,6 @@ export {
 export {
 	attachSync,
 	toWsUrl,
-	type DefaultRpcMap,
-	type RpcDispatch,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
 	type SyncStatus,
@@ -171,6 +187,12 @@ export {
 	type KvDefinition,
 	type KvDefinitions,
 } from './document/attach-kv.js';
+
+export {
+	standardAwarenessDefs,
+	PeerDevice,
+	Platform,
+} from './document/standard-awareness-defs.js';
 
 export {
 	attachAwareness,

@@ -166,6 +166,8 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 						// Skip callback for invalid values
 						break;
 					}
+					default:
+						change satisfies never;
 				}
 			};
 

@@ -80,30 +80,42 @@ export function openZhongwen() {
 }
 ```
 
-### `<binding>.ts` — pure env factory (with auth dep injection if needed)
+### `<binding>.ts` — pure env factory (with auth + device dep injection)
 
-For apps with sync, the factory takes `auth` as an injected dependency so
-sync's `getToken` and any auth-using attachments can stay inside the
-factory while the `auth` instance itself stays outside it.
+For apps with sync, the factory takes `auth` and a `device` descriptor as
+injected dependencies. `auth` powers sync's `getToken`. `device` is the
+identity descriptor (`{ id, name, platform }`) — the factory adds `offers`
+(via `actionManifest(actions)`) and publishes the full `PeerDevice` into
+awareness so other peers can discover and dispatch to this runtime.
 
 ```ts
 // apps/fuji/src/lib/fuji/browser.ts
 import type { AuthClient } from '@epicenter/auth-svelte';
 import {
-	attachBroadcastChannel, attachIndexedDb, attachSync,
-	dispatchAction, toWsUrl,
+	actionManifest, attachBroadcastChannel, attachIndexedDb, attachSync,
+	type DeviceDescriptor, toWsUrl,
 } from '@epicenter/workspace';
 import { openFuji as openFujiDoc } from './index';
 
-export function openFuji({ auth }: { auth: AuthClient }) {
+export function openFuji({
+	auth,
+	device,
+}: {
+	auth: AuthClient;
+	device: DeviceDescriptor;
+}) {
 	const doc = openFujiDoc();
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(/* ... */),
 		waitFor: idb.whenLoaded,
+		awareness: doc.awareness.raw,
 		getToken: () => auth.getToken(),
-		dispatch: (action, input) => dispatchAction(doc.actions, action, input),
+		actions: doc.actions,
+	});
+	doc.awareness.setLocal({
+		device: { ...device, offers: actionManifest(doc.actions) },
 	});
 	return { ...doc, idb, sync, whenReady: idb.whenLoaded };
 }
@@ -121,13 +133,14 @@ export function openZhongwen() {
 }
 ```
 
-### `client.ts` — running singleton + auth + lifecycle
+### `client.ts` — running singleton + auth + device + lifecycle
 
 ```ts
 // apps/fuji/src/lib/fuji/client.ts
 import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
+import { getOrCreateDeviceId } from '@epicenter/workspace';
 import { openFuji } from './browser';
 
 const session = createPersistedState({
@@ -137,7 +150,15 @@ const session = createPersistedState({
 });
 
 export const auth = createAuth({ baseURL: APP_URLS.API, session });
-export const fuji = openFuji({ auth });
+
+export const fuji = openFuji({
+	auth,
+	device: {
+		id: getOrCreateDeviceId(localStorage),
+		name: 'Fuji',
+		platform: 'web',
+	},
+});
 
 auth.onSessionChange((next, previous) => {
 	if (next === null) {
@@ -153,6 +174,11 @@ if (import.meta.hot) {
 	import.meta.hot.dispose(() => { auth[Symbol.dispose](); });
 }
 ```
+
+For tab-manager (async chrome.storage), the descriptor is built as a
+Promise — the factory accepts `Promise<DeviceDescriptor<DeviceId>>` and
+publishes awareness in the background. `tabManager.whenReady` gates
+dependent work without forcing TLA at the call site.
 
 For apps without auth (whispering), `client.ts` is minimal but still exists
 for consistency:

@@ -2,11 +2,13 @@ import type { AuthClient } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	actionManifest,
+	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
 	type DeviceDescriptor,
+	standardAwarenessDefs,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createNoteBodyDoc } from '$lib/note-body-docs';
@@ -37,20 +39,23 @@ export function openHoneycrisp({
 		{ gcTime: 5_000 },
 	);
 
+	const awareness = attachAwareness(
+		doc.ydoc,
+		{ ...standardAwarenessDefs },
+		{ device: { ...device, offers: actionManifest(doc.actions) } },
+	);
+
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		awareness: doc.awareness.raw,
+		awareness: awareness.raw,
 		getToken: () => auth.getToken(),
 		actions: doc.actions,
 	});
 
-	doc.awareness.setLocal({
-		device: { ...device, offers: actionManifest(doc.actions) },
-	});
-
 	return {
 		...doc,
+		awareness,
 		idb,
 		noteBodyDocs,
 		sync,

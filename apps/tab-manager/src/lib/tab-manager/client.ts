@@ -20,15 +20,14 @@ export const auth = createAuth({
 });
 
 /**
- * Resolve the device descriptor in the background — the factory accepts a
- * Promise and gates dependent work on `tabManager.whenReady`. No TLA at this
- * call site; the page renders immediately and `whenReady` is awaited where it
- * matters (registerDevice below, UI render gates).
+ * Resolve the device descriptor before constructing the workspace. `id` and
+ * `name` resolve in parallel — the chrome.storage read and the platform-info
+ * lookup are independent.
  *
- * `id` and `name` resolve in parallel — the chrome.storage read and the
- * platform-info lookup are independent.
+ * Awareness publishes this descriptor synchronously at attach time, so the
+ * factory awaits it before returning.
  */
-const devicePromise = Promise.all([
+const device = await Promise.all([
 	getOrCreateDeviceIdAsync<DeviceId>({
 		getItem: (k) => storage.getItem<string>(`local:${k}`),
 		setItem: async (k, v) => {
@@ -42,19 +41,19 @@ const devicePromise = Promise.all([
 	platform: 'chrome-extension' as const,
 }));
 
-export const tabManager = openTabManager({ auth, device: devicePromise });
+export const tabManager = await openTabManager({ auth, device });
 
 /**
  * Register this browser installation as a device in the workspace.
  *
  * Upserts the device row — preserves existing name if present, otherwise
- * uses the resolved default. Awaits both idb and device resolution before
- * writing. Idempotent: fires on every applied session (login + token
- * rotation), so `lastSeen` stays current.
+ * uses the resolved default. Awaits idb hydration before writing.
+ * Idempotent: fires on every applied session (login + token rotation),
+ * so `lastSeen` stays current.
  */
 async function registerDevice(): Promise<void> {
 	await tabManager.whenReady;
-	const { id, name } = await tabManager.device;
+	const { id, name } = tabManager.device;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
 	tabManager.tables.devices.set({

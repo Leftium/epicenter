@@ -147,7 +147,7 @@ function createAiChatState() {
 			connection: fetchServerSentEvents(
 				`${APP_URLS.API}/ai/chat`,
 				async () => {
-					const { id: deviceId } = await tabManager.device;
+					const { id: deviceId } = tabManager.device;
 					return {
 						fetchClient: createAiChatFetch(auth.fetch),
 						body: {

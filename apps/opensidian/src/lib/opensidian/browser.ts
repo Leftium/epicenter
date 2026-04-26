@@ -8,6 +8,7 @@ import {
 } from '@epicenter/filesystem';
 import {
 	actionManifest,
+	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
@@ -15,6 +16,7 @@ import {
 	defineMutation,
 	defineQuery,
 	type DeviceDescriptor,
+	standardAwarenessDefs,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -180,20 +182,23 @@ export function openOpensidian({
 		},
 	};
 
+	const awareness = attachAwareness(
+		doc.ydoc,
+		{ ...standardAwarenessDefs },
+		{ device: { ...device, offers: actionManifest(actions) } },
+	);
+
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		awareness: doc.awareness.raw,
+		awareness: awareness.raw,
 		getToken: () => auth.getToken(),
 		actions,
 	});
 
-	doc.awareness.setLocal({
-		device: { ...device, offers: actionManifest(actions) },
-	});
-
 	return {
 		...doc,
+		awareness,
 		idb,
 		fileContentDocs,
 		sqliteIndex,

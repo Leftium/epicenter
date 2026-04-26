@@ -8,32 +8,42 @@ import type { AuthClient } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	actionManifest,
+	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
 	type DeviceDescriptor,
+	standardAwarenessDefs,
 	toWsUrl,
 } from '@epicenter/workspace';
 import type { DeviceId } from '$lib/workspace/definition';
 import { openTabManager as openTabManagerDoc } from './index';
 
 /**
- * Sync construction. The async device resolution fires in the background;
- * `whenReady` gates anything that needs the resolved descriptor (UI render,
- * device-row registration). Action handlers close over `device.id`, a Promise
- * that's microtask-cheap to await once boot completes.
+ * Construction is async because awareness publishes the device descriptor
+ * synchronously at attach time (no two-step "online but no device yet"
+ * window). Awaiting the descriptor up front means every peer sees a
+ * well-formed `state.device` from the first frame.
+ *
+ * `whenReady` still gates UI render on idb hydration; sync (the WebSocket)
+ * is independent and connects whenever the network allows.
  */
-export function openTabManager({
+export async function openTabManager({
 	auth,
 	device,
 }: {
 	auth: AuthClient;
 	device: DeviceDescriptor<DeviceId> | Promise<DeviceDescriptor<DeviceId>>;
 }) {
-	const devicePromise = Promise.resolve(device);
-	const deviceIdPromise = devicePromise.then((d) => d.id);
+	const resolvedDevice = await Promise.resolve(device);
 
-	const doc = openTabManagerDoc({ deviceId: deviceIdPromise });
+	const doc = openTabManagerDoc({ deviceId: Promise.resolve(resolvedDevice.id) });
+
+	const awareness = attachAwareness(
+		doc.ydoc,
+		{ ...standardAwarenessDefs },
+		{ device: { ...resolvedDevice, offers: actionManifest(doc.actions) } },
+	);
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
@@ -41,30 +51,22 @@ export function openTabManager({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		awareness: doc.awareness.raw,
+		awareness: awareness.raw,
 		getToken: () => auth.getToken(),
 		actions: doc.actions,
 	});
 
-	// Publish awareness once the descriptor resolves — fires in background.
-	void devicePromise.then((d) => {
-		doc.awareness.setLocal({
-			device: { ...d, offers: actionManifest(doc.actions) },
-		});
-	});
-
 	return {
 		...doc,
+		awareness,
 		idb,
 		sync,
 		/**
-		 * Resolves when IndexedDB has hydrated AND the device descriptor has
-		 * resolved (chrome.storage read + browser/OS detection). Gates UI
-		 * render and any consumer that needs `tabManager.device` to be
-		 * populated. Does NOT gate sync (the WebSocket can connect at any
-		 * time, including never if the extension is offline).
+		 * Resolves when IndexedDB has hydrated the local snapshot — the UI
+		 * can render with persisted data. Does NOT gate sync (the WebSocket
+		 * can connect at any time, including never if the extension is offline).
 		 */
-		whenReady: Promise.all([idb.whenLoaded, devicePromise]).then(() => {}),
-		device: devicePromise,
+		whenReady: idb.whenLoaded,
+		device: resolvedDevice,
 	};
 }

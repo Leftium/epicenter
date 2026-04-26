@@ -28,7 +28,7 @@
 	 * being hidden. This catches the "user typed in a field, hits Cmd+W"
 	 * case — `.blur()` synchronously dispatches the blur event, so any
 	 * commit-on-blur handler runs and updates the Y.Doc before the page is
-	 * destroyed. See docs/articles/save-on-tab-close.md for the full chain.
+	 * destroyed. See docs/articles/commit-on-blur-survives-tab-close.md.
 	 */
 	function flushPendingEdits() {
 		if (
@@ -69,15 +69,15 @@
 	BroadcastChannel observers fire after; their async work usually
 	completes within the browser's grace period.
 
-	Listening to both visibilitychange and pagehide for cross-browser
-	coverage (visibilitychange is more reliable on iOS Safari).
+	visibilitychange is a document event, pagehide is a window event
+	(per Svelte's elements.d.ts). Listening to both gives cross-browser
+	coverage — visibilitychange is more reliable on iOS Safari, pagehide
+	catches bfcache navigations.
 -->
-<svelte:document
-	onvisibilitychange={flushPendingEdits}
-	onpagehide={flushPendingEdits}
-/>
+<svelte:document onvisibilitychange={flushPendingEdits} />
 
 <svelte:window
+	onpagehide={flushPendingEdits}
 	onkeydown={(event) => {
 		const isInputFocused =
 			event.target instanceof HTMLInputElement ||

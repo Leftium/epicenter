@@ -222,6 +222,31 @@ export type SyncAttachmentConfig = {
 	 * it — they sync but don't publish identity.
 	 *
 	 * Mutually exclusive with `awareness` (an external instance) — pass one.
+	 *
+	 * ─── Why the action manifest lives in awareness ────────────────────
+	 *
+	 * `device.offers` carries the full action manifest (~10kB typical).
+	 * Awareness is built for tiny ephemeral state, and it rebroadcasts
+	 * the full state of every known peer every ~15s. So this costs
+	 * `N²·M` wire traffic per 15s window where N is peer count and M
+	 * is manifest size.
+	 *
+	 * We do it anyway because awareness's 30s TTL is the load-bearing
+	 * feature. When a peer disconnects — cleanly via `Symbol.dispose`,
+	 * or via crash, lid close, network drop — their manifest evaporates
+	 * with their awareness state. No bookkeeping, no garbage collection,
+	 * no stale entries accumulating in a `Y.Map`. The auto-cleanup is
+	 * the *whole* benefit.
+	 *
+	 * Trip wire — factor offers out of awareness when:
+	 *   - N > 20 concurrent peers, or
+	 *   - M > 100 actions per peer (manifest > ~50kB)
+	 *
+	 * The cleanest alternative is `Y.Map<deviceId, Manifest>` in the
+	 * workspace doc with cleanup on `Symbol.dispose`. You trade
+	 * automatic TTL for proportional wire traffic (manifest syncs once
+	 * via CRDT, not every 15s), but inherit the stale-entry problem on
+	 * ungraceful disconnect.
 	 */
 	device?: DeviceDescriptor;
 	/**

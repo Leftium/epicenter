@@ -1,7 +1,7 @@
 # Device-scoped action discovery and invocation via awareness
 
 **Date**: 2026-04-25
-**Status**: queued (PR-D / PR-E architecture). Call-side API superseded by `specs/20260425T210000-remote-action-dispatch.md`; awareness-publishing piece still load-bearing.
+**Status**: shipped (awareness publishing convention). Call-side API superseded by `specs/20260425T210000-remote-action-dispatch.md`; awareness-publishing piece is what landed.
 **Author**: AI-assisted, pairing with Braden
 **Builds on**: `specs/20260424T180000-drop-document-factory-attach-everything.md` (the post-factory architecture)
 

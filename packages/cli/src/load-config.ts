@@ -22,15 +22,12 @@
  * //     [Symbol.dispose]() { ydoc.destroy(); },
  * //   };
  *
- * const { entries, dispose } = await loadConfig('/path/to/project');
- * try {
- *   for (const { name, workspace } of entries) {
- *     await workspace.whenReady;
- *     // dispatch actions, read sync, ...
- *   }
- * } finally {
- *   await dispose();
+ * await using config = await loadConfig('/path/to/project');
+ * for (const { name, workspace } of config.entries) {
+ *   await workspace.whenReady;
+ *   // dispatch actions, read sync, ...
  * }
+ * // sockets flushed automatically on scope exit
  * ```
  */
 
@@ -69,11 +66,15 @@ export type WorkspaceEntry = {
 export type LoadConfigResult = {
 	entries: WorkspaceEntry[];
 	/**
-	 * Release every workspace. Disposes each (synchronous) and awaits any
-	 * `sync.whenDisposed` barriers so the CLI exits cleanly after closing
-	 * sockets.
+	 * Release every workspace. Calls each `workspace[Symbol.dispose]()`
+	 * (synchronous) and awaits any `sync.whenDisposed` barriers so the CLI
+	 * exits cleanly after closing sockets.
+	 *
+	 * Implements `[Symbol.asyncDispose]` so callers can write
+	 * `await using config = await loadConfig(...)` per TC39 explicit
+	 * resource management.
 	 */
-	dispose(): Promise<void>;
+	[Symbol.asyncDispose](): Promise<void>;
 };
 
 /**
@@ -165,7 +166,7 @@ export async function loadConfig(targetDir: string): Promise<LoadConfigResult> {
 
 	return {
 		entries,
-		dispose: async () => {
+		async [Symbol.asyncDispose]() {
 			const barriers: Promise<unknown>[] = [];
 			for (const { workspace } of entries) {
 				if (workspace.sync?.whenDisposed) barriers.push(workspace.sync.whenDisposed);

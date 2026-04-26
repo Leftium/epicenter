@@ -100,15 +100,11 @@ export const listCommand: CommandModule = {
 			return;
 		}
 
-		const { entries, dispose } = await loadConfig(dirFromArgv(args));
-		try {
-			const entry = resolveEntry(entries, workspaceFromArgv(args));
-			const sections = await selectSections(entry, { peerTarget, all, waitMs });
-			if (sections === null) return; // peer-not-found, exitCode already set
-			renderSections(sections, path, format, { multi: all });
-		} finally {
-			await dispose();
-		}
+		await using config = await loadConfig(dirFromArgv(args));
+		const entry = resolveEntry(config.entries, workspaceFromArgv(args));
+		const sections = await selectSections(entry, { peerTarget, all, waitMs });
+		if (sections === null) return; // peer-not-found, exitCode already set
+		renderSections(sections, path, format, { multi: all });
 	},
 };
 

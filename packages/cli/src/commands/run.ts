@@ -70,13 +70,9 @@ export const runCommand: CommandModule = {
 			.strict(),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
-		const { entries, dispose } = await loadConfig(dirFromArgv(args));
-		try {
-			const entry = resolveEntry(entries, workspaceFromArgv(args));
-			await invoke(args, entry);
-		} finally {
-			await dispose();
-		}
+		await using config = await loadConfig(dirFromArgv(args));
+		const entry = resolveEntry(config.entries, workspaceFromArgv(args));
+		await invoke(args, entry);
 	},
 };
 

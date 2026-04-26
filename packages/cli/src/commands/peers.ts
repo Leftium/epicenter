@@ -68,19 +68,15 @@ export const peersCommand: CommandModule = {
 		const workspaceArg = workspaceFromArgv(args);
 		const waitMs = typeof args.wait === 'number' ? args.wait : DEFAULT_WAIT_MS;
 		const format = args.format as 'json' | 'jsonl' | undefined;
-		const { entries, dispose } = await loadConfig(dirFromArgv(args));
-		try {
-			const selected: WorkspaceEntry[] = workspaceArg
-				? [resolveEntry(entries, workspaceArg)]
-				: entries;
+		await using config = await loadConfig(dirFromArgv(args));
+		const selected: WorkspaceEntry[] = workspaceArg
+			? [resolveEntry(config.entries, workspaceArg)]
+			: config.entries;
 
-			const snapshots = await Promise.all(
-				selected.map((e) => snapshotEntry(e, waitMs)),
-			);
-			emit(snapshots, { elideHeader: workspaceArg !== undefined, format });
-		} finally {
-			await dispose();
-		}
+		const snapshots = await Promise.all(
+			selected.map((e) => snapshotEntry(e, waitMs)),
+		);
+		emit(snapshots, { elideHeader: workspaceArg !== undefined, format });
 	},
 };
 

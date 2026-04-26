@@ -20,7 +20,7 @@ describe('loadConfig against inline-actions fixture', () => {
 	});
 
 	afterAll(async () => {
-		await loaded.dispose();
+		await loaded[Symbol.asyncDispose]();
 	});
 
 	test('discovers the `demo` export as a LoadedWorkspace', () => {

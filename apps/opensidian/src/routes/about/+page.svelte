@@ -61,36 +61,31 @@
 	] as const;
 
 	const workspaceCode = `import { createSqliteIndex, attachYjsFileSystem, filesTable } from '@epicenter/filesystem';
-import { attachIndexedDb, attachTables, defineDocument } from '@epicenter/workspace';
+import { attachIndexedDb, attachTables } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
-export const workspaceDoc = defineDocument('opensidian', () => {
+export function openOpensidian() {
   const ydoc = new Y.Doc({ guid: 'opensidian' });
   const tables = attachTables(ydoc, { files: filesTable });
   const idb = attachIndexedDb(ydoc);
   const sqliteIndex = createSqliteIndex(tables.files);
+  const fs = attachYjsFileSystem(tables.files, fileContentDocs);
 
   return {
-    id: 'opensidian',
-    ydoc,
-    tables,
+    ydoc, tables, idb, sqliteIndex, fs,
     whenReady: idb.whenLoaded,
-    [Symbol.dispose]() {
-      sqliteIndex.dispose();
-      idb[Symbol.dispose]();
-    },
+    [Symbol.dispose]() { ydoc.destroy(); },
   };
-});
+}
 
-export const workspace = workspaceDoc.open();
-export const fs = attachYjsFileSystem(workspace.tables.files, fileContentDocs);`;
+export const opensidian = openOpensidian();`;
 
 	const codeAnnotations = [
 		{
-			id: 'define-document',
-			line: "defineDocument('opensidian', () => { ... })",
+			id: 'open-opensidian',
+			line: 'export function openOpensidian() { ... }',
 			explanation:
-				'Declares the document factory—the function runs once per open() call and returns a Document: an id, a Y.Doc, attached tables, and lifecycle hooks. Cached by guid so the same open() yields the same bundle.',
+				'A plain factory: constructs a Y.Doc and composes attachments inline. The module-scope `opensidian` singleton is the running thing; the factory exists so tests, codegen, and tooling can build a fresh doc without lifecycle.',
 		},
 		{
 			id: 'attach-tables',

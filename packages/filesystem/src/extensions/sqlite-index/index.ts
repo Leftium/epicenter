@@ -14,24 +14,15 @@
  *
  * @example
  * ```typescript
- * const factory = createDocumentFactory((id: string) => {
- *   const ydoc = new Y.Doc({ guid: id });
- *   const tables = attachTables(ydoc, { files: filesTable });
- *   const fileContentDocs = createFileContentDocs({
- *     workspaceId: id,
- *     filesTable: tables.files,
- *   });
- *   const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
- *   return {
- *     ydoc, tables, sqliteIndex,
- *     whenReady: sqliteIndex.exports.whenReady,
- *     [Symbol.dispose]() { sqliteIndex.dispose(); ydoc.destroy(); },
- *   };
+ * const ydoc = new Y.Doc({ guid: 'app' });
+ * const tables = attachTables(ydoc, { files: filesTable });
+ * const fileContentDocs = createFileContentDocs({
+ *   workspaceId: 'app',
+ *   filesTable: tables.files,
  * });
- *
- * const workspace = factory.open('app');
- * await workspace.whenReady;
- * const results = await workspace.sqliteIndex.exports.search('meeting notes');
+ * const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
+ * await sqliteIndex.exports.whenReady;
+ * const results = await sqliteIndex.exports.search('meeting notes');
  * ```
  *
  * @module
@@ -139,18 +130,14 @@ type SqliteIndexContext = {
 
 /**
  * Create a SQLite index. Returns a curried factory: call with options, then
- * invoke the inner function with `{ tables }` inside a `createDocumentFactory`
- * builder to wire it into the bundle.
+ * invoke the inner function with `{ tables }` to wire it into the workspace.
  *
  * @example
  * ```typescript
- * createDocumentFactory((id: string) => {
- *   const ydoc = new Y.Doc({ guid: id });
- *   const tables = attachTables(ydoc, { files: filesTable });
- *   attachIndexedDb(ydoc);
- *   const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
- *   return { ydoc, tables, sqliteIndex, [Symbol.dispose]() { ydoc.destroy(); } };
- * });
+ * const ydoc = new Y.Doc({ guid: 'app' });
+ * const tables = attachTables(ydoc, { files: filesTable });
+ * attachIndexedDb(ydoc);
+ * const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
  * ```
  */
 export function createSqliteIndex(

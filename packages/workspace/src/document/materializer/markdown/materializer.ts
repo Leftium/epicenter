@@ -224,26 +224,22 @@ async function writeMarkdownFile(
  *
  * @example
  * ```ts
- * const factory = createDocumentFactory((id) => {
- *   const ydoc = new Y.Doc({ guid: id });
- *   const tables = attachTables(ydoc, myTableDefs);
- *   const kv = attachKv(ydoc, myKvDefs);
- *   const idb = attachIndexedDb(ydoc);
+ * const ydoc = new Y.Doc({ guid: 'workspace' });
+ * const tables = attachTables(ydoc, myTableDefs);
+ * const kv = attachKv(ydoc, myKvDefs);
+ * const idb = attachIndexedDb(ydoc);
  *
- *   const markdown = attachMarkdownMaterializer(ydoc, {
- *     dir: './data',
- *     waitFor: idb.whenLoaded,
+ * const markdown = attachMarkdownMaterializer(ydoc, {
+ *   dir: './data',
+ *   waitFor: idb.whenLoaded,
+ * })
+ *   .table(tables.posts, {
+ *     filename: slugFilename('title'),
+ *     // Inline toMarkdown / fromMarkdown callbacks when needed —
+ *     // most real tables split metadata (on the row) from body
+ *     // content (in a separate content-doc via createDisposableCache).
  *   })
- *     .table(tables.posts, {
- *       filename: slugFilename('title'),
- *       // Inline toMarkdown / fromMarkdown callbacks when needed —
- *       // most real tables split metadata (on the row) from body
- *       // content (in a separate content-doc via createDocumentFactory).
- *     })
- *     .kv(kv);
- *
- *   return { ydoc, tables, kv, idb, markdown, [Symbol.dispose]() { ydoc.destroy(); } };
- * });
+ *   .kv(kv);
  * ```
  */
 export function attachMarkdownMaterializer(

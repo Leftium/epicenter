@@ -4,9 +4,9 @@
  * Browser-agnostic: no Chrome APIs, no IndexedDB, no Svelte imports.
  * This file can be safely imported by the CLI daemon or any Node/Bun process.
  *
- * The browser-specific client wiring lives in `client.ts`, which imports
- * this schema and composes every attachment inline inside a single
- * `createDocumentFactory` closure.
+ * The extension-bound wiring lives in `lib/tab-manager/extension.ts`, which
+ * imports this schema and composes every attachment inside its `openTabManager`
+ * factory.
  */
 
 import {

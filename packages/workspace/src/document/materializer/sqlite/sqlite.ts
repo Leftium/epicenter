@@ -77,20 +77,16 @@ type RegisteredTable = {
  *
  * @example
  * ```ts
- * const factory = createDocumentFactory((id) => {
- *   const ydoc = new Y.Doc({ guid: id });
- *   const tables = attachTables(ydoc, myTableDefs);
- *   const idb = attachIndexedDb(ydoc);
+ * const ydoc = new Y.Doc({ guid: 'workspace' });
+ * const tables = attachTables(ydoc, myTableDefs);
+ * const idb = attachIndexedDb(ydoc);
  *
- *   const sqlite = attachSqliteMaterializer(ydoc, {
- *     db: new Database('workspace.db'),
- *     waitFor: idb.whenLoaded,
- *   })
- *     .table(tables.posts, { fts: ['title', 'body'] })
- *     .table(tables.users);
- *
- *   return { ydoc, tables, idb, sqlite, [Symbol.dispose]() { ydoc.destroy(); } };
- * });
+ * const sqlite = attachSqliteMaterializer(ydoc, {
+ *   db: new Database('workspace.db'),
+ *   waitFor: idb.whenLoaded,
+ * })
+ *   .table(tables.posts, { fts: ['title', 'body'] })
+ *   .table(tables.users);
  * ```
  */
 export function attachSqliteMaterializer(

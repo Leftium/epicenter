@@ -7,8 +7,8 @@
  *
  * Contains branded NoteId/FolderId types, folders and notes table definitions
  * with DateTimeString timestamps, and the cross-table actions factory. The Y.Doc
- * is constructed in `client.ts` via a `createDocumentFactory` closure that composes
- * these tables with `attachTables`.
+ * is constructed in `lib/honeycrisp/index.ts` (iso) and `browser.ts` (env-bound),
+ * composing these tables with `attachTables` inside `openHoneycrisp`.
  */
 
 import {

@@ -6,9 +6,9 @@
  * y-protocols — its constructor registers `doc.on('destroy', () => this.destroy())`,
  * so destroying the ydoc tears down the Awareness automatically.
  *
- * To wire awareness into a sync attachment, compose inline inside a
- * `createDocumentFactory` builder: pass `awareness.raw` (the underlying y-protocols
- * `Awareness`) to `attachSync(ydoc, { awareness: awareness.raw, ... })`.
+ * To wire awareness into a sync attachment, pass `awareness.raw` (the
+ * underlying y-protocols `Awareness`) to
+ * `attachSync(ydoc, { awareness: awareness.raw, ... })`.
  */
 
 import { Awareness as YAwareness } from 'y-protocols/awareness';

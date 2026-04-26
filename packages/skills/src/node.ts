@@ -1,8 +1,8 @@
 /**
  * @fileoverview Server-side entry for the shared skills workspace.
  *
- * Exports `skillsDocument` — a `createDocumentFactory` factory like the browser
- * entry, but with NO IndexedDB / BroadcastChannel attachments and WITH
+ * Exports `skillsDocument` — a `createDisposableCache` keyed by guid like the
+ * browser entry, but with NO IndexedDB / BroadcastChannel attachments and WITH
  * `importFromDisk` / `exportToDisk` actions.
  *
  * Uses the same `'epicenter.skills'` guid as the browser entry, so data

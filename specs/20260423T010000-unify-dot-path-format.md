@@ -1,7 +1,7 @@
 # Unify CLI and RPC Dot-Path Format
 
 **Date**: 2026-04-23
-**Status**: Shipped (commit `ba95256`)
+**Status**: shipped (commit `ba95256`)
 **Author**: AI-assisted
 
 ## Overview

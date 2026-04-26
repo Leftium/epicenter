@@ -1,7 +1,7 @@
 # Remote action dispatch — calling actions on a peer device
 
 **Date:** 2026-04-25
-**Status:** Proposed (revised after critical review)
+**Status:** queued (proposed, revised after critical review). Supersedes the `invoke()` shape in `specs/20260425T000000-device-actions-via-awareness.md`.
 **Depends on:** `specs/20260425T200000-actions-passthrough-adr.md` landing first
 **Supersedes:** the `invoke()` proposal in `specs/20260425T000000-device-actions-via-awareness.md`
 **Revision:** v2 — reshaped after design critique. Curried API; primitive promoted; invariants made explicit; per-call options as MVP.

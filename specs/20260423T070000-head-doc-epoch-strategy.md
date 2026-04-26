@@ -1,7 +1,7 @@
 # Head Doc + Epoch Strategy for `gc: false` Workspaces
 
 **Date**: 2026-04-23
-**Status**: Draft
+**Status**: queued
 **Author**: AI-assisted (conversation with Braden)
 **Branch**: none yet
 

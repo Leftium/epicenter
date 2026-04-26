@@ -1,11 +1,39 @@
 ---
 name: auth-core-package
-status: Draft
+status: shipped
 ---
 
 # Extract framework-agnostic auth core into `packages/auth`
 
-## Motivation
+## Shipped notes (2026-04-25)
+
+This spec was originally marked `queued`. The migration actually landed on the `drop-document-factory` branch across ~24 commits. `packages/auth/` and `packages/auth-svelte/` exist with the full `AuthCore` surface; all six apps consume `@epicenter/auth-svelte` and use `auth.onSessionChange(...)` in place of the old `applySession` Svelte-effect bridge. Steps 1–8 of the migration plan landed; **step 5 (unit tests) did not** and remains the highest-leverage follow-up.
+
+### Divergences from the spec as written
+
+1. **`signOut` returns `Result<undefined, AuthError>` instead of `Promise<void>`** (commit `e2f7ed3c9`). Improvement — gives consumers a consistent error contract across all auth ops.
+
+2. **HMR pattern only calls `auth[Symbol.dispose]()`**, not the spec's `unsubscribeSession() + auth[Symbol.dispose]()` two-step. `Symbol.dispose` clears all subscriber registries via `.clear()`, so the Set is dropped and the old core becomes unreachable on the next module evaluation. Spec was over-cautious; shipped form is functionally equivalent and one line shorter per app.
+
+3. **Per-doc rotation uses `getToken: () => auth.getToken()` (live read at connect time), not `auth.onTokenChange(token => sync.setToken(token))` (subscription per handle)**. Documented in `apps/fuji/src/lib/entry-content-docs.ts:53-56`. The supervisor in `attach-sync.ts:451-454` calls `getToken()` before every connect attempt, so natural reconnects pick up rotations without per-doc subscriptions to leak. Per-doc factories now register **zero** subscribers; they take `Pick<AuthCore, 'getToken'>` only. Strictly simpler than the spec.
+
+4. **Field-level session writer partition** (commits `e3b2a38b8`, `d11ae8e00`, `ff852c3c2`) — `onSuccess` interceptor owns token writes; `useSession.subscribe` owns user/keys writes. Not in the original spec; added to fix a real race where BA's async `useSession` refetch would clobber a token the `onSuccess` interceptor had just rotated. Inline JSDoc explains the partition. Working *with* better-auth, not fighting it.
+
+### Out-of-scope follow-ups — status
+
+| Follow-up | Status |
+|---|---|
+| `attachSync` redesign (replace `setToken`/`requiresToken` with `url:` callback) | **partially done** — `setToken` removed, `getToken` callback added on `attachSync`, `requiresToken` is now internal (derived from presence of `getToken`). The unified `url: () => string \| null` closure was rejected in favor of separate `url` (string) + `getToken` (callback). |
+| Removing `sync.setToken` / `sync.reconnect` | `setToken` gone; `reconnect()` retained at 4 app `client.ts` call sites where session-change forces a workspace-doc reconnect. Marginal value remaining; keep. |
+| Collapsing `applySession` into `onLogin`/`onLogout` | **Not done.** All apps still use a single `onSessionChange` with `if (next === null)` / `if (previous?.token !== next.token)` branching. The `onLogin`/`onLogout` API exists on `AuthCore` but has zero call sites — candidate for either deletion or a sweeping migration. |
+
+### Open follow-up worth doing
+
+**Land the unit tests from step 5.** The spec lists 8 specific invariants (replay-on-subscribe semantics, firing order, isBusy counter under overlapping ops, subscriber-error isolation, etc.). Zero are guarded today. This is the highest-leverage cleanup before further auth changes — refactors against an untested contract drift silently.
+
+---
+
+## Motivation (original spec, retained for context)
 
 `createAuth` in `packages/svelte-utils/src/auth/create-auth.svelte.ts` is a Svelte-flavored adapter around `better-auth/client`. Its public API is **reactive getters only**: `auth.token`, `auth.session`, `auth.user`, `auth.isAuthenticated`, `auth.isBusy`.
 

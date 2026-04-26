@@ -1,7 +1,7 @@
 # Actions are passthrough; transport wraps
 
 **Date:** 2026-04-25
-**Status:** Proposed
+**Status:** shipped (commits `2be551876` add invokeNormalized; `81cd627ee` makes defineMutation/defineQuery passthrough)
 **Supersedes:** the "always-async, always-Result" decision in `specs/20260424T180000-drop-document-factory-attach-everything.md` (lines 176-240, 251-252) and `specs/20260425T120000-execution-prompt-phase-1.md` § Change 5.
 
 ## TL;DR
@@ -211,8 +211,22 @@ Each phase is independently revertible by `git revert`. The riskiest phase is A2
 
 **`handleRpcRequest` and `invokeNormalized`** — the RPC server-side handler does its own normalize today. Could be replaced with `invokeNormalized` for consistency, but the inlined version is well-tested and handles the wire-encoding particulars (`encodeRpcResponse`). Leave inline for now; revisit if drift appears.
 
+## Background — earlier formulation (collapsed in from `local-passthrough-remote-result.md`)
+
+Before this ADR was written, the same conclusion had been argued in a separate spec (`20260423T020000-local-passthrough-remote-result.md`, now deleted — its content is preserved here so the reasoning isn't lost). That spec framed the problem as **"two type surfaces, not one"**:
+
+- **Local** (in-process): the action's signature is literally the handler's signature. Sync stays sync. Raw stays raw. Throws throw. Returned `Result` stays `Result`.
+- **Remote** (RPC proxy / websocket): always `(input) => Promise<Result<T, E | RpcError>>`. Forced async, forced envelope — because transport demands it.
+
+**Why the v0 unified attempt failed (kept here as institutional memory).** A first pass ("`20260422T234500-unified-action-invocation.md`", strict-Result variant) tried to collapse both onto `Promise<Result<T, E | ActionFailed>>` at definition time. The migration showed the cost: every local caller had to `await` and destructure `{data, error}` — even for handlers that literally cannot fail (`() => tables.posts.getAllValid()`). Most handlers in the codebase genuinely have no error channel. Forcing one on them is ergonomic tax with no safety payoff, because locally you can `try/catch` a throw like any other JS function.
+
+**`ActionFailed` (now `RpcError.ActionFailed`) exists to solve a wire problem** — thrown errors don't cross processes. It doesn't need to exist in the local call graph. The decision in this ADR honors that boundary: definers are passthrough; the wire boundary (`createRemoteActions`) and the in-process consumers that simulate a wire boundary (`invokeNormalized`) are where the envelope shows up.
+
+The earlier spec also noted the analogy to **tRPC** (server procedures are plain async functions; the client proxy introduces `Promise`), **TanStack Query** (mutation function returns whatever it returns; `mutate`/`mutateAsync` are wrappers), and **gRPC** (server handlers are sync or async; the generated client wraps for the wire). All three put transport semantics at the transport layer, not at the definition layer. This ADR adopts the same split.
+
 ## Cross-references
 
 - `specs/20260424T180000-drop-document-factory-attach-everything.md` — the original "always-async-Result" decision this ADR supersedes. Lines 176-240 (Change 5 design) and 251-252 (design decision summary).
 - `specs/20260425T120000-execution-prompt-phase-1.md` — the execution prompt for Phase 1, which landed the unified wrap. Specifically § Change 5.
 - `specs/20260425T210000-remote-action-dispatch.md` — companion design doc for cross-device action execution. Depends on this ADR landing first.
+- ~~`specs/20260423T020000-local-passthrough-remote-result.md`~~ — collapsed into the "Background — earlier formulation" section above; file deleted.

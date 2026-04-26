@@ -21,6 +21,24 @@
 
 	let { children } = $props();
 
+	// ─── Tab-close safety net ────────────────────────────────────────────────────
+
+	/**
+	 * Force-fire onblur on the currently-focused element when the page is
+	 * being hidden. This catches the "user typed in a field, hits Cmd+W"
+	 * case — `.blur()` synchronously dispatches the blur event, so any
+	 * commit-on-blur handler runs and updates the Y.Doc before the page is
+	 * destroyed. See docs/articles/save-on-tab-close.md for the full chain.
+	 */
+	function flushPendingEdits() {
+		if (
+			document.visibilityState === 'hidden' &&
+			document.activeElement instanceof HTMLElement
+		) {
+			document.activeElement.blur();
+		}
+	}
+
 	// ─── Command Palette ─────────────────────────────────────────────────────────
 
 	let paletteOpen = $state(false);
@@ -41,6 +59,23 @@
 </script>
 
 <svelte:head><title>Fuji</title></svelte:head>
+
+<!--
+	Tab-close safety net: when the page is being hidden (Cmd+W, tab switch,
+	window minimize, mobile app-switch, bfcache), force-blur the focused
+	element. Any input wired to commit on `onblur` (e.g., the title /
+	subtitle inputs in EntryEditor) gets its handler fired synchronously,
+	updating the Y.Doc before the page is torn down. y-indexeddb +
+	BroadcastChannel observers fire after; their async work usually
+	completes within the browser's grace period.
+
+	Listening to both visibilitychange and pagehide for cross-browser
+	coverage (visibilitychange is more reliable on iOS Safari).
+-->
+<svelte:document
+	onvisibilitychange={flushPendingEdits}
+	onpagehide={flushPendingEdits}
+/>
 
 <svelte:window
 	onkeydown={(event) => {

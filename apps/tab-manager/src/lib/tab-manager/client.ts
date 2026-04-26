@@ -49,7 +49,8 @@ export const tabManager = openTabManager({ auth, device: devicePromise });
  *
  * Upserts the device row — preserves existing name if present, otherwise
  * uses the resolved default. Awaits both idb and device resolution before
- * writing. Idempotent under repeated calls (token rotation is harmless).
+ * writing. Idempotent: fires on every applied session (login + token
+ * rotation), so `lastSeen` stays current.
  */
 async function registerDevice(): Promise<void> {
 	await tabManager.whenReady;
@@ -73,7 +74,7 @@ auth.onSessionChange((next, previous) => {
 	}
 	tabManager.encryption.applyKeys(next.encryptionKeys);
 	if (previous?.token !== next.token) tabManager.sync.reconnect();
-	if (previous === null) void registerDevice();
+	void registerDevice();
 });
 
 if (import.meta.hot) {

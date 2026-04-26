@@ -57,6 +57,13 @@ export function openTabManager({
 		...doc,
 		idb,
 		sync,
+		/**
+		 * Resolves when IndexedDB has hydrated AND the device descriptor has
+		 * resolved (chrome.storage read + browser/OS detection). Gates UI
+		 * render and any consumer that needs `tabManager.device` to be
+		 * populated. Does NOT gate sync (the WebSocket can connect at any
+		 * time, including never if the extension is offline).
+		 */
 		whenReady: Promise.all([idb.whenLoaded, devicePromise]).then(() => {}),
 		device: devicePromise,
 	};

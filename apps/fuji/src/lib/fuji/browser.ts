@@ -54,6 +54,11 @@ export function openFuji({
 		idb,
 		entryContentDocs,
 		sync,
+		/**
+		 * Resolves when IndexedDB has hydrated the local snapshot — the UI can
+		 * render with persisted data. Does NOT gate sync (the WebSocket can
+		 * connect at any time, including never if the user is offline).
+		 */
 		whenReady: idb.whenLoaded,
 	};
 }

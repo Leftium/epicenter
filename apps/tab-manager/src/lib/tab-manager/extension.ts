@@ -28,11 +28,9 @@ export function openTabManager({
 	device,
 }: {
 	auth: AuthClient;
-	device: DeviceDescriptor | Promise<DeviceDescriptor>;
+	device: DeviceDescriptor<DeviceId> | Promise<DeviceDescriptor<DeviceId>>;
 }) {
-	const devicePromise = Promise.resolve(device) as Promise<
-		DeviceDescriptor & { id: DeviceId }
-	>;
+	const devicePromise = Promise.resolve(device);
 	const deviceIdPromise = devicePromise.then((d) => d.id);
 
 	const doc = openTabManagerDoc({ deviceId: deviceIdPromise });

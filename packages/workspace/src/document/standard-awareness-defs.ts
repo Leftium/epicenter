@@ -62,8 +62,16 @@ export type PeerDevice = typeof PeerDevice.infer;
  * Input shape for workspace factories. The factory adds `offers` (computed
  * from the workspace's actions) before publishing into awareness, so app
  * code never assembles the offers map by hand.
+ *
+ * Generic over `TId` so apps with branded ID types (e.g. tab-manager's
+ * `DeviceId`) can carry the brand through the factory without `as` casts.
+ * Defaults to `string` — SPAs and untyped consumers see no difference.
  */
-export type DeviceDescriptor = Omit<PeerDevice, 'offers'>;
+export type DeviceDescriptor<TId extends string = string> = {
+	id: TId;
+	name: string;
+	platform: Platform;
+};
 
 /**
  * Spread into `attachAwareness` defs to enable typed access to the

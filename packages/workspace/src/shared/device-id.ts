@@ -33,13 +33,18 @@ const KEY = 'epicenter:deviceId';
 /**
  * Read the persisted deviceId from a sync store, or generate-and-persist one
  * if absent. Idempotent — subsequent calls return the same value.
+ *
+ * Generic over the return type so apps with a branded ID alias can call
+ * `getOrCreateDeviceId<DeviceId>(localStorage)` without an `as` cast.
  */
-export function getOrCreateDeviceId(storage: SimpleStorage): string {
+export function getOrCreateDeviceId<T extends string = string>(
+	storage: SimpleStorage,
+): T {
 	const existing = storage.getItem(KEY);
-	if (existing) return existing;
+	if (existing) return existing as T;
 	const fresh = generateGuid();
 	storage.setItem(KEY, fresh);
-	return fresh;
+	return fresh as unknown as T;
 }
 
 /**
@@ -47,12 +52,12 @@ export function getOrCreateDeviceId(storage: SimpleStorage): string {
  * tauri-plugin-store). Resolve once at boot and treat the result as a plain
  * string — don't await it on every call.
  */
-export async function getOrCreateDeviceIdAsync(
+export async function getOrCreateDeviceIdAsync<T extends string = string>(
 	storage: AsyncStorage,
-): Promise<string> {
+): Promise<T> {
 	const existing = await storage.getItem(KEY);
-	if (existing) return existing;
+	if (existing) return existing as T;
 	const fresh = generateGuid();
 	await storage.setItem(KEY, fresh);
-	return fresh;
+	return fresh as unknown as T;
 }

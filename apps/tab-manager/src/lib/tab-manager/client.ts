@@ -24,17 +24,23 @@ export const auth = createAuth({
  * Promise and gates dependent work on `tabManager.whenReady`. No TLA at this
  * call site; the page renders immediately and `whenReady` is awaited where it
  * matters (registerDevice below, UI render gates).
+ *
+ * `id` and `name` resolve in parallel — the chrome.storage read and the
+ * platform-info lookup are independent.
  */
-const devicePromise = (async () => {
-	const id = (await getOrCreateDeviceIdAsync({
+const devicePromise = Promise.all([
+	getOrCreateDeviceIdAsync<DeviceId>({
 		getItem: (k) => storage.getItem<string>(`local:${k}`),
 		setItem: async (k, v) => {
 			await storage.setItem(`local:${k}`, v);
 		},
-	})) as DeviceId;
-	const name = await generateDefaultDeviceName();
-	return { id, name, platform: 'chrome-extension' as const };
-})();
+	}),
+	generateDefaultDeviceName(),
+]).then(([id, name]) => ({
+	id,
+	name,
+	platform: 'chrome-extension' as const,
+}));
 
 export const tabManager = openTabManager({ auth, device: devicePromise });
 

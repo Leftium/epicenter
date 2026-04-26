@@ -9,6 +9,17 @@
  * To wire awareness into a sync attachment, pass `awareness.raw` (the
  * underlying y-protocols `Awareness`) to
  * `attachSync(ydoc, { awareness: awareness.raw, ... })`.
+ *
+ * Awareness invariants (from y-protocols/awareness):
+ *
+ *   - **Ephemeral.** ~30s liveness window; peers that crashed silently
+ *     disappear after `outdatedTimeout`. Awareness is a liveness probe,
+ *     not a directory.
+ *   - **clientID is session-local.** Re-randomized on every `new Y.Doc()`,
+ *     so numeric clientIDs are stable within one presence session only.
+ *   - **No field-name convention.** Bundles that want stable addressing
+ *     across reconnects persist an identifier locally and publish it into
+ *     awareness under whatever name they choose.
  */
 
 import { Awareness as YAwareness } from 'y-protocols/awareness';

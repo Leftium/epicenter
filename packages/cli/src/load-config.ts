@@ -40,10 +40,10 @@ import { join, resolve } from 'node:path';
 const CONFIG_FILENAME = 'epicenter.config.ts';
 
 /**
- * Minimal awareness shape the CLI relies on. Users typically attach the
- * typed wrapper from `attachAwareness` (which exposes `.raw`) or the raw
- * y-protocols `Awareness`. Either shape works — `readPeers` does the
- * unwrapping.
+ * Minimal awareness shape the CLI relies on — the structural subset of
+ * y-protocols `Awareness`. Workspaces using the typed wrapper from
+ * `attachAwareness` should pass `awareness.raw`, matching the existing
+ * `attachSync({ awareness: awareness.raw, ... })` convention.
  */
 export type AwarenessLike = {
 	clientID: number;
@@ -58,7 +58,7 @@ export type LoadedWorkspace = {
 	readonly whenReady: Promise<unknown>;
 	readonly actions?: Actions;
 	readonly sync?: SyncAttachment;
-	readonly awareness?: AwarenessLike | { raw: AwarenessLike };
+	readonly awareness?: AwarenessLike;
 	[Symbol.dispose](): void;
 };
 

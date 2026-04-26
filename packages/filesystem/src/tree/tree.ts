@@ -1,11 +1,11 @@
-import type { TableHelper } from '@epicenter/workspace';
+import type { Table } from '@epicenter/workspace';
 import { FS_ERRORS } from '../errors.js';
 import type { FileId } from '../ids.js';
 import { generateFileId } from '../ids.js';
 import { posixResolve } from '../path.js';
 import type { FileRow } from '../table.js';
 import { assertUniqueName, validateName } from './naming.js';
-import { createFileSystemIndex } from './path-index.js';
+import { attachFileSystemIndex } from './path-index.js';
 
 /**
  * Create metadata tree operations for a POSIX-like virtual filesystem.
@@ -14,8 +14,8 @@ import { createFileSystemIndex } from './path-index.js';
  * All methods work with absolute paths (never sees `cwd`).
  * Has no knowledge of file content — only structure and metadata.
  */
-export function createFileTree(filesTable: TableHelper<FileRow>) {
-	const index = createFileSystemIndex(filesTable);
+export function attachFileTree(filesTable: Table<FileRow>) {
+	const index = attachFileSystemIndex(filesTable);
 
 	return {
 		/** Reactive file-system indexes for path lookups and parent-child queries. */
@@ -51,9 +51,10 @@ export function createFileTree(filesTable: TableHelper<FileRow>) {
 		 * deleted or is otherwise invalid.
 		 */
 		getRow(id: FileId, path: string): FileRow {
-			const result = filesTable.get(id);
-			if (result.status !== 'valid') throw FS_ERRORS.ENOENT(path);
-			return result.row;
+			const { data: row, error } = filesTable.get(id);
+			if (error) throw FS_ERRORS.ENOENT(path); // invalid row → treat as missing
+			if (row === null) throw FS_ERRORS.ENOENT(path);
+			return row;
 		},
 
 		/**
@@ -93,10 +94,10 @@ export function createFileTree(filesTable: TableHelper<FileRow>) {
 			const ids = index.getChildIds(parentId);
 			const rows: FileRow[] = [];
 			for (const cid of ids) {
-				const result = filesTable.get(cid);
-				if (result.status === 'valid') {
-					rows.push(result.row);
-				}
+				const { data: row, error } = filesTable.get(cid);
+				if (error) continue; // skip invalid rows
+				if (row === null) continue;
+				rows.push(row);
 			}
 			return rows;
 		},
@@ -109,10 +110,11 @@ export function createFileTree(filesTable: TableHelper<FileRow>) {
 			const result: FileId[] = [];
 			const children = index.getChildIds(parentId);
 			for (const cid of children) {
-				const row = filesTable.get(cid);
-				if (row.status !== 'valid') continue;
+				const { data: row, error } = filesTable.get(cid);
+				if (error) continue;
+				if (row === null) continue;
 				result.push(cid);
-				if (row.row.type === 'folder') {
+				if (row.type === 'folder') {
 					result.push(...this.descendantIds(cid));
 				}
 			}
@@ -194,5 +196,5 @@ export function createFileTree(filesTable: TableHelper<FileRow>) {
 	};
 }
 
-/** Inferred type of the file tree returned by {@link createFileTree}. */
-export type FileTree = ReturnType<typeof createFileTree>;
+/** Inferred type of the file tree returned by {@link attachFileTree}. */
+export type FileTree = ReturnType<typeof attachFileTree>;

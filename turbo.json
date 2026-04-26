@@ -20,6 +20,14 @@
 			"cache": false,
 			"inputs": ["**/*.{ts,tsx,js,jsx,svelte,md,json}"]
 		},
+		"test": {
+			"cache": false,
+			"inputs": ["**/*.{ts,tsx,js,jsx,svelte,json}"]
+		},
+		"bench": {
+			"cache": false,
+			"inputs": ["**/*.bench.ts"]
+		},
 		"format": {
 			"cache": false,
 			"inputs": ["**/*.{ts,tsx,js,jsx,svelte,md,json}"]

@@ -3,21 +3,23 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
 	/**
+	 * @deprecated Use `AccountPopover` from `@epicenter/svelte/account-popover`.
+	 *
+	 * This component is kept for the migration window only — it is structurally
+	 * coupled to the legacy extension-chain workspace shape
+	 * (`workspace.extensions.sync.*`, `workspace.clearLocalData()`). Migrated
+	 * apps pass `sync={workspace.sync}` + `clearLocalData={() => workspace.idb.clearLocal()}`
+	 * to `AccountPopover` directly. Deleted once every app migrates.
+	 *
 	 * Shared account + sync status popover used across all workspace apps.
-	 *
-	 * Shows sync connection state, auth info, and a sign-out button that
-	 * checks for unsynced changes before proceeding. When signed out, renders
-	 * the standard AuthForm.
-	 *
-	 * Mount once in each app's root layout alongside `<ConfirmationDialog />`.
 	 */
-	import type { SyncStatus } from '@epicenter/workspace/extensions/sync/websocket';
+	import type { SyncStatus } from '@epicenter/workspace';
 	import Cloud from '@lucide/svelte/icons/cloud';
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import type { AuthClient } from '../auth/create-auth.svelte.js';
+	import type { AuthClient } from '@epicenter/auth-svelte';
 	import { AuthForm } from '../auth-form/index.js';
 
 	type SyncStatusPopoverProps = {
@@ -71,7 +73,7 @@
 			case 'connecting':
 				if (s.lastError?.type === 'auth')
 					return 'Authentication failed—click to reconnect';
-				if (s.attempt > 0) return `Reconnecting (attempt ${s.attempt})…`;
+				if (s.retries > 0) return `Reconnecting (retry ${s.retries})…`;
 				return 'Connecting…';
 			case 'offline':
 				return 'Offline—click to reconnect';

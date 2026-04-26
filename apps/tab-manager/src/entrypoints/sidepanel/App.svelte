@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SyncStatusPopover } from '@epicenter/svelte/sync-status-popover';
+	import { AccountPopover } from '@epicenter/svelte/account-popover';
 	import { Button } from '@epicenter/ui/button';
 	import { CommandPalette } from '@epicenter/ui/command-palette';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
@@ -20,7 +20,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import { ModeWatcher } from 'mode-watcher';
-	import { auth, workspace } from '$lib/client';
+	import { auth, tabManager } from '$lib/tab-manager/client';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import { items } from '$lib/components/command-palette-items';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
@@ -173,9 +173,10 @@
 				>
 					<ZapIcon />
 				</Button>
-				<SyncStatusPopover
+				<AccountPopover
 					{auth}
-					{workspace}
+					sync={tabManager.sync}
+					clearLocalData={() => tabManager.idb.clearLocal()}
 					syncNoun="tabs"
 					onSocialSignIn={() => auth.signInWithSocialPopup()}
 				/>

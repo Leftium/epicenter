@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { SyncStatusPopover } from '@epicenter/svelte/sync-status-popover';
+	import { AccountPopover } from '@epicenter/svelte/account-popover';
 	import * as Collapsible from '@epicenter/ui/collapsible';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { auth, workspace } from '$lib/client';
+	import { auth, honeycrisp } from '$lib/honeycrisp/client';
 	import FolderMenuItem from '$lib/components/FolderMenuItem.svelte';
 	import { foldersState, notesState, viewState } from '$lib/state';
 </script>
@@ -15,9 +15,10 @@
 		<div class="flex items-center justify-between px-2 py-1">
 			<span class="text-sm font-semibold">Honeycrisp</span>
 			<div class="flex items-center gap-1">
-				<SyncStatusPopover
+				<AccountPopover
 					{auth}
-					{workspace}
+					sync={honeycrisp.sync}
+					clearLocalData={() => honeycrisp.idb.clearLocal()}
 					syncNoun="notes"
 					onSocialSignIn={() =>
 						auth.signInWithSocialRedirect({

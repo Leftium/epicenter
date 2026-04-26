@@ -58,7 +58,7 @@ import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import type { Brand } from 'wellcrafted/brand';
-import type { EncryptionKeys } from '../../workspace/encryption-key';
+import type { EncryptionKeys } from '../../document/encryption-key';
 
 const NONCE_LENGTH = 24;
 const TAG_LENGTH = 16;

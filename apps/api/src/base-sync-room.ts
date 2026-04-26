@@ -13,7 +13,12 @@
  */
 
 import { DurableObject } from 'cloudflare:workers';
-import { decodeSyncRequest, stateVectorsEqual } from '@epicenter/sync';
+import {
+	MAIN_SUBPROTOCOL,
+	decodeSyncRequest,
+	parseSubprotocols,
+	stateVectorsEqual,
+} from '@epicenter/sync';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
@@ -83,7 +88,7 @@ type SyncRoomConfig = {
  * ## Auth & data isolation
  *
  * Handled upstream by `authGuard` middleware in app.ts. The Worker validates
- * the session (cookie or `?token=` query param for WebSocket) via Better Auth
+ * the session (cookie, or `bearer.<token>` subprotocol for WebSocket) via Better Auth
  * before calling RPC methods or forwarding fetch. The DO itself does not
  * re-validate — it trusts the Worker boundary.
  *
@@ -190,7 +195,7 @@ export class BaseSyncRoom extends DurableObject {
 	 */
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get('Upgrade') === 'websocket') {
-			return this.upgrade();
+			return this.upgrade(request);
 		}
 		return new Response('Method not allowed', { status: 405 });
 	}
@@ -204,8 +209,13 @@ export class BaseSyncRoom extends DurableObject {
 	 *
 	 * Cancels any pending compaction alarm — a new client just connected, so
 	 * compacting now would be wasteful.
+	 *
+	 * The client offers `sec-websocket-protocol: <MAIN_SUBPROTOCOL>, bearer.<token>`;
+	 * we echo only the main subprotocol to complete the handshake. The bearer
+	 * entry is consumed by `authGuard` earlier in the chain and must not
+	 * round-trip.
 	 */
-	private upgrade(): Response {
+	private upgrade(request: Request): Response {
 		void this.ctx.storage.deleteAlarm();
 
 		const pair = new WebSocketPair();
@@ -225,7 +235,19 @@ export class BaseSyncRoom extends DurableObject {
 			server.send(msg);
 		}
 
-		return new Response(null, { status: 101, webSocket: client });
+		const responseHeaders = new Headers();
+		const offered = parseSubprotocols(
+			request.headers.get('sec-websocket-protocol'),
+		);
+		if (offered.includes(MAIN_SUBPROTOCOL)) {
+			responseHeaders.set('sec-websocket-protocol', MAIN_SUBPROTOCOL);
+		}
+
+		return new Response(null, {
+			status: 101,
+			webSocket: client,
+			headers: responseHeaders,
+		});
 	}
 
 	// --- RPC methods (called via stub.sync() / stub.getDoc()) ---

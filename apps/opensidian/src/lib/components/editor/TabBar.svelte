@@ -1,10 +1,10 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
-	import { SyncStatusPopover } from '@epicenter/svelte/sync-status-popover';
+	import { AccountPopover } from '@epicenter/svelte/account-popover';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { auth, workspace } from '$lib/client';
+	import { auth, opensidian } from '$lib/opensidian/client';
 	import GithubIcon from '$lib/components/icons/GithubIcon.svelte';
 	import { fsState } from '$lib/state/fs-state.svelte';
 </script>
@@ -53,9 +53,10 @@
 		>
 			<GithubIcon class="size-4" />
 		</a>
-		<SyncStatusPopover
+		<AccountPopover
 			{auth}
-			{workspace}
+			sync={opensidian.sync}
+			clearLocalData={() => opensidian.idb.clearLocal()}
 			syncNoun="notes"
 			onSocialSignIn={() =>
 				auth.signInWithSocialRedirect({

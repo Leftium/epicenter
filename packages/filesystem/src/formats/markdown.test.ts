@@ -11,10 +11,12 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createWorkspace } from '@epicenter/workspace';
+import { attachTables, createDisposableCache } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
-import { createYjsFileSystem } from '../file-system.js';
+import { createFileContentDoc } from '../file-content-docs.js';
+import { attachYjsFileSystem } from '../file-system.js';
+import type { FileId } from '../ids.js';
 import { filesTable } from '../table.js';
 import {
 	parseFrontmatter,
@@ -154,8 +156,20 @@ describe('XmlFragment serialization', () => {
 
 describe('markdown integration with YjsFileSystem', () => {
 	function setup() {
-		const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-		return createYjsFileSystem(ws.tables.files, ws.documents.files.content);
+		const id = 'test';
+		const ydoc = new Y.Doc({ guid: id });
+		const tables = attachTables(ydoc, { files: filesTable });
+		const ws = { id, ydoc, tables };
+		const contentDocs = createDisposableCache(
+			(fileId: FileId) =>
+				createFileContentDoc({
+					fileId,
+					workspaceId: ws.id,
+					filesTable: ws.tables.files,
+				}),
+			{ gcTime: Number.POSITIVE_INFINITY },
+		);
+		return attachYjsFileSystem(ws.tables.files, contentDocs);
 	}
 
 	test('write and read .md file with front matter', async () => {

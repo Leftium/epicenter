@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		"./workspace": "./src/lib/workspace/index.ts"
+		"./workspace": "./src/lib/workspace.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",
@@ -33,6 +33,7 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@epicenter/auth-svelte": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@epicenter/constants": "workspace:*",
@@ -49,6 +50,7 @@
 		"date-fns": "catalog:",
 		"nanoid": "catalog:",
 		"prosemirror-model": "^1.25.0",
+		"typebox": "catalog:",
 		"prosemirror-state": "^1.4.0",
 		"prosemirror-view": "^1.41.0",
 		"wellcrafted": "catalog:",

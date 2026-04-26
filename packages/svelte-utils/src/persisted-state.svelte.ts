@@ -167,6 +167,15 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		}
 	}
 
+	function setAndPersist(nextValue: StandardSchemaV1.InferOutput<TSchema>) {
+		setValue(nextValue);
+		try {
+			storageApi.setItem(key, JSON.stringify(nextValue));
+		} catch (error) {
+			onUpdateError?.(error);
+		}
+	}
+
 	// Cross-tab sync: `storage` event fires when ANOTHER tab writes to localStorage.
 	// sessionStorage doesn't fire cross-tab events, so enabling this is harmless.
 	if (syncTabs) {
@@ -193,12 +202,7 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 			return value;
 		},
 		set current(newValue: StandardSchemaV1.InferOutput<TSchema>) {
-			setValue(newValue);
-			try {
-				storageApi.setItem(key, JSON.stringify(newValue));
-			} catch (error) {
-				onUpdateError?.(error);
-			}
+			setAndPersist(newValue);
 		},
 		/**
 		 * Authoritative read—returns the current value synchronously.
@@ -218,6 +222,11 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 		get(): StandardSchemaV1.InferOutput<TSchema> {
 			return value;
 		},
+		/**
+		 * Method-form setter for `{ get, set, watch }` consumers. Equivalent to
+		 * assigning `.current` — both set the reactive value and persist.
+		 */
+		set: setAndPersist,
 		watch(listener: (value: StandardSchemaV1.InferOutput<TSchema>) => void) {
 			listeners.add(listener);
 			return () => {

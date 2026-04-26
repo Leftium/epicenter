@@ -1,5 +1,6 @@
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { fs, skillsWorkspace } from '$lib/client';
+import { skillsActions } from '@epicenter/skills';
+import { opensidian } from '$lib/opensidian/client';
 
 /** A global skill loaded from the @epicenter/skills workspace. */
 type GlobalSkill = { name: string; instructions: string };
@@ -13,7 +14,7 @@ type VaultSkill = { name: string; content: string };
  * Opensidian assembles skills from two separate sources because they solve
  * different problems:
  *
- * 1. **Global skills** come from `skillsWorkspace`, the shared
+ * 1. **Global skills** come from the shared
  *    `@epicenter/skills` workspace persisted in its own IndexedDB database.
  *    These are ecosystem-wide conventions imported through Epicenter's skills
  *    tooling and shared across apps.
@@ -51,11 +52,9 @@ function createSkillState() {
 
 		const { data } = await tryAsync({
 			try: async () => {
-				const catalog = await skillsWorkspace.actions.listSkills();
+				const catalog = skillsActions.listSkills();
 				const loadedSkills = await Promise.all(
-					catalog.map(async ({ id }) =>
-						skillsWorkspace.actions.getSkill({ id }),
-					),
+					catalog.map(({ id }) => skillsActions.getSkill({ id })),
 				);
 
 				return loadedSkills
@@ -76,7 +75,7 @@ function createSkillState() {
 
 		const { data } = await tryAsync({
 			try: async () => {
-				const entries = await fs.readdir('/skills');
+				const entries = await opensidian.fs.readdir('/skills');
 				const markdownEntries = entries.filter((entry) =>
 					entry.endsWith('.md'),
 				);
@@ -84,7 +83,7 @@ function createSkillState() {
 				return Promise.all(
 					markdownEntries.map(async (entry) => ({
 						name: entry.replace('.md', ''),
-						content: await fs.readFile(`/skills/${entry}`),
+						content: await opensidian.fs.readFile(`/skills/${entry}`),
 					})),
 				);
 			},

@@ -2,7 +2,16 @@
 	Installed from @ieedan/std
 */
 
-import { isLetter } from './is-letter.js';
+const LETTER_REGEX = /[a-zA-Z]/;
+
+function isLetter(char: string): boolean {
+	if (char.length > 1) {
+		throw new Error(
+			`You probably only meant to pass a character to this function. Instead you gave ${char}`,
+		);
+	}
+	return LETTER_REGEX.test(char);
+}
 
 /** Converts a `camelCase` string to a `snake_case` string
  *

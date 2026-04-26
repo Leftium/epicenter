@@ -1,32 +1,80 @@
 /**
- * @fileoverview Isomorphic workspace tables and factory for agent skills.
+ * Browser entry for the shared skills workspace.
  *
- * This entry point is safe to import in any runtime (browser, Node, Bun).
- * For server-side disk I/O actions, use `@epicenter/skills/node` instead.
+ * Module-scope flat exports — the file IS the workspace recipe, top-down.
+ * Per-row caches (`instructionsDocs`, `referenceDocs`) and the action layer
+ * (`skillsActions`) sit at the same level as the workspace primitives;
+ * everything is a top-level export.
  *
- * @example Browser — tables only
+ * For server-side disk I/O (importFromDisk / exportToDisk), use
+ * `@epicenter/skills/node` instead.
+ *
+ * @example
  * ```typescript
- * import { createSkillsWorkspace } from '@epicenter/skills'
- *
- * const ws = createSkillsWorkspace()
- *   .withExtension('persistence', indexeddbPersistence)
- * ```
- *
- * @example Server — with disk I/O
- * ```typescript
- * import { createSkillsWorkspace } from '@epicenter/skills/node'
- *
- * const ws = createSkillsWorkspace()
- * await ws.actions.importFromDisk({ dir: '.agents/skills' })
+ * import { instructionsDocs } from '@epicenter/skills';
+ * const handle = instructionsDocs.open(skillId);
  * ```
  *
  * @module
  */
 
-export { skillsDefinition } from './definition.js';
-export type { Reference, Skill } from './tables.js';
+import {
+	attachBroadcastChannel,
+	attachEncryption,
+	attachIndexedDb,
+	createDisposableCache,
+} from '@epicenter/workspace';
+import * as Y from 'yjs';
+import { createReferenceContentDoc } from './reference-content-docs.js';
+import { createSkillInstructionsDoc } from './skill-instructions-docs.js';
+import { createSkillsActions } from './skills-actions.js';
+import { referencesTable, skillsTable } from './tables.js';
 
-// Tables + types (for embedding in custom workspaces)
+export type { Reference, Skill } from './tables.js';
 export { referencesTable, skillsTable } from './tables.js';
-// Workspace factory + definition
-export { createSkillsWorkspace } from './workspace.js';
+
+// ─── ydoc + state ──────────────────────────────────────────────────────
+export const ydoc = new Y.Doc({ guid: 'epicenter.skills', gc: false });
+export const encryption = attachEncryption(ydoc);
+export const tables = encryption.attachTables(ydoc, {
+	skills: skillsTable,
+	references: referencesTable,
+});
+export const kv = encryption.attachKv(ydoc, {});
+
+// ─── storage ───────────────────────────────────────────────────────────
+export const idb = attachIndexedDb(ydoc);
+attachBroadcastChannel(ydoc);
+
+// ─── per-row content caches ────────────────────────────────────────────
+export const instructionsDocs = createDisposableCache(
+	(skillId: string) =>
+		createSkillInstructionsDoc({
+			skillId,
+			workspaceId: ydoc.guid,
+			skillsTable: tables.skills,
+			attachPersistence: (doc) => attachIndexedDb(doc),
+		}),
+	{ gcTime: 5_000 },
+);
+
+export const referenceDocs = createDisposableCache(
+	(referenceId: string) =>
+		createReferenceContentDoc({
+			referenceId,
+			workspaceId: ydoc.guid,
+			referencesTable: tables.references,
+			attachPersistence: (doc) => attachIndexedDb(doc),
+		}),
+	{ gcTime: 5_000 },
+);
+
+// ─── actions ───────────────────────────────────────────────────────────
+export const skillsActions = createSkillsActions({
+	tables,
+	instructionsDocs,
+	referenceDocs,
+});
+
+export const batch = (fn: () => void) => ydoc.transact(fn);
+export const whenReady = idb.whenLoaded;

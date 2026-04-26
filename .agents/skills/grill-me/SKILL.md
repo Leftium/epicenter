@@ -8,3 +8,5 @@ Interview me relentlessly about every aspect of this plan until we reach a share
 Ask the questions one at a time.
 
 If a question can be answered by exploring the codebase, explore the codebase instead.
+
+Once branches feel resolved, apply [one-sentence-test](../one-sentence-test/SKILL.md) before declaring shared understanding — if we can't name the thing in one concrete sentence, the understanding isn't shared yet.

@@ -22,13 +22,12 @@
 		}),
 	);
 
-	function update(
-		field: 'name' | 'description' | 'license' | 'compatibility',
-		value: string,
+	function updateSkill(
+		updates: Partial<
+			Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
+		>,
 	) {
-		skillsState.updateSkill(skill.id, {
-			[field]: value || undefined,
-		});
+		skillsState.updateSkill(skill.id, updates);
 	}
 </script>
 
@@ -49,7 +48,10 @@
 			<Field.Content>
 				<Input
 					value={skill.name}
-					oninput={(e) => update('name', e.currentTarget.value)}
+					onblur={(e) => {
+						const next = e.currentTarget.value;
+						if (next !== skill.name) updateSkill({ name: next });
+					}}
 					placeholder="my-skill"
 					class="font-mono text-sm"
 				/>
@@ -64,7 +66,10 @@
 			<Field.Content>
 				<Input
 					value={skill.license ?? ''}
-					oninput={(e) => update('license', e.currentTarget.value)}
+					onblur={(e) => {
+						const next = e.currentTarget.value || undefined;
+						if (next !== skill.license) updateSkill({ license: next });
+					}}
 					placeholder="MIT"
 				/>
 			</Field.Content>
@@ -76,7 +81,10 @@
 		<Field.Content>
 			<Textarea
 				value={skill.description}
-				oninput={(e) => update('description', e.currentTarget.value)}
+				onblur={(e) => {
+					const next = e.currentTarget.value;
+					if (next !== skill.description) updateSkill({ description: next });
+				}}
 				placeholder="Describe when and why to use this skill..."
 				rows={2}
 				class="resize-none"
@@ -92,7 +100,10 @@
 		<Field.Content>
 			<Input
 				value={skill.compatibility ?? ''}
-				oninput={(e) => update('compatibility', e.currentTarget.value)}
+				onblur={(e) => {
+					const next = e.currentTarget.value || undefined;
+					if (next !== skill.compatibility) updateSkill({ compatibility: next });
+				}}
 				placeholder="Claude Code, OpenCode, Cursor..."
 			/>
 		</Field.Content>

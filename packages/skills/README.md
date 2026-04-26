@@ -8,12 +8,11 @@ Opensidian wires it up like this in `apps/opensidian/src/lib/client.ts`:
 
 ```typescript
 import { createSkillsWorkspace } from '@epicenter/skills';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
 
-export const skillsWorkspace = createSkillsWorkspace().withExtension(
-	'persistence',
-	indexeddbPersistence,
-);
+// createSkillsWorkspace() is a defineDocument(builder).open(id) shortcut that
+// attaches IndexedDB persistence internally. See packages/skills/src/client.ts
+// for the full composition if you need to customize sync or encryption.
+export const skillsWorkspace = createSkillsWorkspace();
 ```
 
 The workspace ships with read actions for progressive disclosure. This example comes from `packages/skills/src/workspace.ts`:
@@ -56,7 +55,7 @@ Creates an isomorphic workspace client with three read actions already attached:
 - `getSkill({ id })` for one skill plus instructions
 - `getSkillWithReferences({ id })` for the full skill bundle
 
-The returned client is still a normal Epicenter workspace builder, so apps can add persistence, sync, or more actions with the usual `.withExtension()` and `.withActions()` chain.
+The returned value is a live document handle. Apps that need a different persistence target or their own sync configuration can copy the builder at `packages/skills/src/client.ts` and compose their own `defineDocument(builder)` with different `attach*` calls.
 
 ### `skillsTable`
 

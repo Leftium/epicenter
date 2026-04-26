@@ -1,6 +1,6 @@
 {
 	"name": "@epicenter/workspace",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Local-first workspace library. CRDT-backed tables, key-value stores, and sync — built on Yjs.",
 	"keywords": [
 		"local-first",
@@ -27,18 +27,16 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
-		"./extensions/persistence/indexeddb": "./src/extensions/persistence/indexeddb.ts",
-		"./extensions/sync/websocket": "./src/extensions/sync/websocket.ts",
-		"./extensions/sync/broadcast-channel": "./src/extensions/sync/broadcast-channel.ts",
 		"./shared/crypto": "./src/shared/crypto/index.ts",
-		"./extensions/materializer/markdown": "./src/extensions/materializer/markdown/index.ts",
+		"./document/materializer/markdown": "./src/document/materializer/markdown/index.ts",
 		"./ai": "./src/ai/index.ts",
-		"./extensions/persistence/sqlite": "./src/extensions/persistence/sqlite.ts",
-		"./extensions/materializer/sqlite": "./src/extensions/materializer/sqlite/index.ts"
+		"./document/materializer/sqlite": "./src/document/materializer/sqlite/index.ts"
 	},
 	"license": "MIT",
 	"scripts": {
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"test": "bun test",
+		"bench": "bun test ./src/__benchmarks__/*.bench.ts --timeout 60000"
 	},
 	"dependencies": {
 		"@ark/json-schema": "^0.0.4",
@@ -65,16 +63,13 @@
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
 		"y-indexeddb": "catalog:",
-		"y-protocols": "catalog:",
-		"remark-parse": "^11.0.0",
-		"unified": "^11.0.5"
+		"y-protocols": "catalog:"
 	},
 	"peerDependencies": {
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
 		"@types/diff": "^8.0.0",
-		"@types/mdast": "^4.0.4",
 		"@types/node": "catalog:",
 		"better-sqlite3": "^12.4.1",
 		"drizzle-kit": "catalog:",

@@ -15,7 +15,7 @@
 import { describe, expect, test } from 'bun:test';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import * as Y from 'yjs';
-import type { YKeyValueLwwEntry } from '../y-keyvalue/y-keyvalue-lww';
+import type { YKeyValueLwwEntry } from '../../document/y-keyvalue/index.js';
 import { createEncryptedYkvLww } from '../y-keyvalue/y-keyvalue-lww-encrypted';
 import {
 	base64ToBytes,
@@ -346,12 +346,8 @@ describe('binary storage overhead', () => {
 
 		// Create Y.Doc with binary blobs (current format)
 		const binaryDoc = new Y.Doc({ guid: 'bench-binary' });
-		const binaryArray =
-			binaryDoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-		const binaryKv = createEncryptedYkvLww<string>(
-			binaryArray,
-			new Map([[1, key]]),
-		);
+		const binaryKv = createEncryptedYkvLww<string>(binaryDoc, 'data');
+		binaryKv.activateEncryption(new Map([[1, key]]));
 
 		for (const [i, val] of testValues.entries()) {
 			binaryKv.set(`key-${i}`, val);
@@ -362,7 +358,7 @@ describe('binary storage overhead', () => {
 		const base64Array = base64Doc.getArray<YKeyValueLwwEntry<string>>('data');
 
 		// Extract binary entries and convert to base64 string representation
-		const binaryEntries = binaryArray.toArray();
+		const binaryEntries = binaryKv.yarray.toArray();
 		const base64Entries: YKeyValueLwwEntry<string>[] = binaryEntries.map(
 			(entry) => {
 				const val = entry.val;

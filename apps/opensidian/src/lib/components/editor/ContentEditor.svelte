@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { autocompletion } from '@codemirror/autocomplete';
 	import type { FileId } from '@epicenter/filesystem';
+	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import type { Timeline } from '@epicenter/workspace';
-	import { workspace } from '$lib/client';
+	import { opensidian } from '$lib/opensidian/client';
 	import { fsState } from '$lib/state/fs-state.svelte';
-	import { opensidian } from '$lib/workspace/definition';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
 	import { wikilinkAutocomplete } from './extensions/wikilink-autocomplete';
@@ -20,7 +19,7 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	let content = $state<Timeline | null>(null);
+	const doc = fromDisposableCache(opensidian.fileContentDocs, () => fileId);
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => fsState.selectFile(ref.id as FileId),
@@ -32,10 +31,10 @@
 			? [
 					sharedLinkDecorations,
 					wikilinkAutocomplete({
-						workspaceId: opensidian.id,
+						workspaceId: opensidian.ydoc.guid,
 						tableName: 'files',
 						getFiles: () =>
-							workspace.tables.files
+							opensidian.tables.files
 								.getAllValid()
 								.filter((r) => r.type === 'file')
 								.map((r) => ({ id: r.id, name: r.name })),
@@ -43,32 +42,22 @@
 				]
 			: [sharedLinkDecorations, autocompletion()],
 	);
-
-	$effect(() => {
-		const id = fileId;
-		let cancelled = false;
-		content = null;
-		workspace.documents.files.content.open(id).then((openedContent) => {
-			if (cancelled) return;
-			// Guard against race condition — if file changed while loading, ignore
-			if (fsState.activeFileId !== id) return;
-			content = openedContent;
-		});
-
-		return () => {
-			cancelled = true;
-			if (content) {
-				workspace.documents.files.content.close(id);
-			}
-			content = null;
-		};
-	});
 </script>
 
-{#if content}
-	<CodeMirrorEditor ytext={content.asText()} {extensions} {filename} />
-{:else}
+<!--
+	Gate on whenReady — `asText()` on Timeline mutates when the doc is empty
+	(it pushes an entry). Calling it before persistence hydrates races the
+	IDB replay and can corrupt the timeline (phantom text entry alongside
+	the real stored entries).
+-->
+{#await doc.current.whenReady}
 	<div class="flex h-full items-center justify-center">
 		<Spinner class="size-5 text-muted-foreground" />
 	</div>
-{/if}
+{:then}
+	<CodeMirrorEditor
+		ytext={doc.current.content.asText()}
+		{extensions}
+		{filename}
+	/>
+{/await}

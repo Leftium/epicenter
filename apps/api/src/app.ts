@@ -4,6 +4,7 @@ import {
 } from '@better-auth/oauth-provider';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { APPS } from '@epicenter/constants/apps';
+import { extractBearerToken } from '@epicenter/sync';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -271,13 +272,20 @@ app.get(
 // Must be mounted BEFORE authGuard so GET requests aren't blocked.
 app.route('/api/assets', assetPublicRoutes);
 
-// Auth guard for protected routes
+// Auth guard for protected routes.
+//
+// Browsers can't set `Authorization` on WebSocket upgrades, so clients
+// smuggle the token as `sec-websocket-protocol: epicenter, bearer.<token>`.
+// When a bearer entry is present, synthesize an `Authorization` header for
+// Better Auth; otherwise pass the original headers through (cookie auth
+// still works for same-origin browser requests).
 const authGuard = factory.createMiddleware(async (c, next) => {
-	const wsToken = c.req.query('token');
-	const headers = wsToken
-		? new Headers({ authorization: `Bearer ${wsToken}` })
-		: c.req.raw.headers;
-
+	const token = extractBearerToken(c.req.raw.headers);
+	let headers = c.req.raw.headers;
+	if (token) {
+		headers = new Headers(headers);
+		headers.set('authorization', `Bearer ${token}`);
+	}
 	const result = await c.var.auth.api.getSession({ headers });
 	if (!result) return c.json(AiChatError.Unauthorized(), 401);
 

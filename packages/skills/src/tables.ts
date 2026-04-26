@@ -3,24 +3,20 @@
  *
  * Maps the [agentskills.io](https://agentskills.io/specification) skill
  * package format to Yjs CRDT-backed tables. Each frontmatter field becomes
- * a column; the markdown instruction body lives in a per-row Y.Doc via
- * `.withDocument('instructions')`.
+ * a column; the markdown instruction body lives in a per-row Y.Doc opened
+ * through the app-owned `instructionsDocs` factory.
  *
  * @module
  */
 
-import {
-	defineTable,
-	type InferTableRow,
-	plainText,
-} from '@epicenter/workspace';
+import { defineTable, type InferTableRow } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 /**
  * Skills table—one row per skill, 1:1 mapping to SKILL.md.
  *
- * Frontmatter fields map to columns. The markdown instructions live in
- * an attached Y.Doc via `.withDocument('instructions')`, enabling
+ * Frontmatter fields map to columns. The markdown instructions live in a
+ * per-row Y.Doc opened through the `instructionsDocs` factory, enabling
  * collaborative Y.Text editing in browser-based editors.
  *
  * The `id` is a stable nanoid for FK relationships. The `name` column
@@ -29,20 +25,22 @@ import { type } from 'arktype';
  *
  * @example
  * ```typescript
- * // Catalog (tier 1)—which skills exist?
+ * // Catalog (tier 1) — which skills exist?
  * const catalog = ws.tables.skills.getAllValid()
  *   .map(s => ({ name: s.name, description: s.description }))
  *
- * // Activate (tier 2)—inject instructions into context
+ * // Activate (tier 2) — inject instructions into context
  * const skill = ws.tables.skills.find(s => s.name === 'writing-voice')
  * if (skill) {
- *   const content = await ws.documents.skills.instructions.open(skill.id)
- *   systemPrompt += content.read()
+ *   await using h = instructionsDocs.open(skill.id)
+ *   await h.whenReady
+ *   systemPrompt += h.instructions.read()
  * }
  *
- * // Editor binding—collaborative Y.Text editing
- * const content = await ws.documents.skills.instructions.open(skill.id)
- * editor.bind(content.binding)
+ * // Editor binding — collaborative Y.Text editing
+ * const handle = instructionsDocs.open(skill.id)
+ * editor.bind(handle.instructions.binding)
+ * // ...on unmount: handle.dispose()
  * ```
  */
 export const skillsTable = defineTable(
@@ -57,18 +55,14 @@ export const skillsTable = defineTable(
 		updatedAt: 'number',
 		_v: '1',
 	}),
-).withDocument('instructions', {
-	content: plainText,
-	guid: 'id',
-	onUpdate: () => ({ updatedAt: Date.now() }),
-});
+);
 
 /**
  * References table—one row per markdown file in a skill's `references/` directory.
  *
  * References are additional documentation loaded on demand (tier 3 in the
  * progressive disclosure model). Each reference file gets its own Y.Doc
- * via `.withDocument('content')` for collaborative editing.
+ * opened through the `referenceDocs` factory for collaborative editing.
  *
  * The `path` column stores the filename relative to the `references/` directory
  * (e.g., `"component-patterns.md"`), not the full filesystem path.
@@ -80,8 +74,9 @@ export const skillsTable = defineTable(
  *
  * // Read reference content
  * for (const ref of refs) {
- *   const content = await ws.documents.references.content.open(ref.id)
- *   const markdown = content.read()
+ *   await using h = referenceDocs.open(ref.id)
+ *   await h.whenReady
+ *   const markdown = h.content.read()
  * }
  * ```
  */
@@ -93,11 +88,7 @@ export const referencesTable = defineTable(
 		updatedAt: 'number',
 		_v: '1',
 	}),
-).withDocument('content', {
-	content: plainText,
-	guid: 'id',
-	onUpdate: () => ({ updatedAt: Date.now() }),
-});
+);
 
 export type Skill = InferTableRow<typeof skillsTable>;
 export type Reference = InferTableRow<typeof referencesTable>;

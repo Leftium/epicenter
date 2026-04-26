@@ -15,7 +15,7 @@ import {
 	asDeviceIdentifier,
 	type Device,
 	type DeviceAcquisitionOutcome,
-} from '$lib/services/types';
+} from '$lib/services/recorder/types';
 
 /**
  * Audio recording data returned from the Rust method

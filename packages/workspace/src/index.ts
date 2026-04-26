@@ -3,16 +3,24 @@
  *
  * This root export provides the full workspace API and shared utilities.
  *
- * - `@epicenter/workspace` - Full API (workspace creation, tables, KV, extensions)
- * - `@epicenter/workspace/extensions` - Extension plugins (persistence, sync)
+ * - `@epicenter/workspace` - Full API (documents, tables, KV, attachments)
  *
  * @example
  * ```typescript
- * import { createWorkspace, defineTable } from '@epicenter/workspace';
+ * import { attachTables, createDisposableCache, defineTable } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
- * const client = createWorkspace({ id: 'my-app', tables: { posts } });
+ *
+ * // Singleton workspace: inline at module scope, no factory wrapper.
+ * const ydoc = new Y.Doc({ guid: 'notes' });
+ * const tables = attachTables(ydoc, { posts });
+ *
+ * // Per-row docs: createDisposableCache wraps a pure builder.
+ * const noteBodyDocs = createDisposableCache(
+ *   (noteId) => buildNoteBody({ noteId, notesTable: tables.posts }),
+ *   { gcTime: 5_000 },
+ * );
  * ```
  *
  * @packageDocumentation
@@ -22,15 +30,23 @@
 // ACTION SYSTEM
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { Action, Actions, Mutation, Query } from './shared/actions';
+export type {
+	Action,
+	ActionFailed,
+	Actions,
+	Mutation,
+	Query,
+	RemoteActions,
+} from './shared/actions';
 export {
-	ACTION_BRAND,
 	defineMutation,
 	defineQuery,
+	dispatchAction,
+	invokeNormalized,
 	isAction,
 	isMutation,
 	isQuery,
-	iterateActions,
+	isResult,
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -38,22 +54,34 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { InferRpcMap, RpcActionMap } from './rpc/types';
+export { createRemoteActions, type RemoteSend } from './rpc/remote-actions';
+export { isRpcError, RpcError } from '@epicenter/sync';
 
 // ════════════════════════════════════════════════════════════════════════════
-// LIFECYCLE PROTOCOL
+// SHARED TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-export type {
-	Extension,
-	MaybePromise,
-} from './workspace/lifecycle';
-export type { DocumentContext } from './workspace/types';
+export type { MaybePromise } from './shared/types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ERROR TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
 export { ExtensionError } from './shared/errors';
+
+// ════════════════════════════════════════════════════════════════════════════
+// JSONL FILE SINK (Bun-only)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// The logger core (`createLogger`, `consoleSink`, `memorySink`, `composeSinks`,
+// `tapErr`, types) lives in `wellcrafted/logger` — import directly from there.
+// This package only ships `jsonlFileSink`, which uses `Bun.file(path).writer()`
+// and `node:fs` and can't live in a runtime-agnostic package.
+
+export {
+	type DisposableLogSink,
+	jsonlFileSink,
+} from './shared/logger/jsonl-sink.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // CORE TYPES
@@ -80,103 +108,118 @@ export type {
 export { DateTimeString } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
-// TIMELINE
+// DOCUMENT PRIMITIVES — attach*, define*, createDisposableCache, encryption,
+// timeline, storage keys, types — everything in src/document/ + src/cache/
+// flows through its barrel.
 // ════════════════════════════════════════════════════════════════════════════
 
-export type {
-	ContentType,
-	RichTextEntry,
-	SheetBinding,
-	SheetEntry,
-	TextEntry,
-	TimelineEntry,
-} from './timeline';
 export {
+	attachIndexedDb,
+	type IndexedDbAttachment,
+} from './document/attach-indexed-db.js';
+
+export {
+	attachSqlite,
+	type SqliteAttachment,
+} from './document/attach-sqlite.js';
+
+export {
+	attachBroadcastChannel,
+	BC_ORIGIN,
+	type BroadcastChannelAttachment,
+} from './document/attach-broadcast-channel.js';
+
+export {
+	attachRichText,
+	xmlFragmentToPlaintext,
+	type RichTextAttachment,
+} from './document/attach-rich-text.js';
+
+export {
+	attachPlainText,
+	type PlainTextAttachment,
+} from './document/attach-plain-text.js';
+
+export {
+	attachSync,
+	toWsUrl,
+	type DefaultRpcMap,
+	type RpcDispatch,
+	type SyncAttachment,
+	type SyncAttachmentConfig,
+	type SyncStatus,
+} from './document/attach-sync.js';
+
+export {
+	attachTable,
+	attachTables,
+	type BaseRow,
+	type InferTableRow,
+	type LastSchema,
+	type Table,
+	type TableDefinition,
+	type TableDefinitions,
+	TableParseError,
+	type Tables,
+} from './document/attach-table.js';
+
+export {
+	attachKv,
+	type InferKvValue,
+	type Kv,
+	type KvChange,
+	type KvDefinition,
+	type KvDefinitions,
+} from './document/attach-kv.js';
+
+export {
+	attachAwareness,
+	type Awareness,
+	type AwarenessDefinitions,
+	type AwarenessState,
+	type InferAwarenessValue,
+} from './document/attach-awareness.js';
+
+export type { CombinedStandardSchema } from './document/standard-schema.js';
+
+export {
+	attachTimeline,
 	computeMidpoint,
 	generateInitialOrders,
+	parseSheetFromCsv,
+	populateFragmentFromText,
+	serializeSheetToCsv,
+	type ContentType,
+	type RichTextEntry,
+	type SheetBinding,
+	type SheetEntry,
+	type TextEntry,
 	type Timeline,
-} from './timeline';
-// ════════════════════════════════════════════════════════════════════════════
-// Y.DOC STORAGE KEYS
-// ════════════════════════════════════════════════════════════════════════════
+	type TimelineEntry,
+} from './document/attach-timeline/index.js';
 
-export type { KvKey, TableKey as TableKeyType } from './workspace/ydoc-keys';
-export { KV_KEY, TableKey } from './workspace/ydoc-keys';
+export {
+	createDisposableCache,
+	type DisposableCache,
+	DisposableCacheError,
+} from './cache/disposable-cache.js';
+export { defineTable } from './document/define-table.js';
+export { defineKv } from './document/define-kv.js';
+export { docGuid } from './document/doc-guid.js';
+export { type DocPersistence } from './document/doc-persistence.js';
+export { onLocalUpdate } from './document/on-local-update.js';
 
-// ════════════════════════════════════════════════════════════════════════════
-// SCHEMA DEFINITIONS (Pure)
-// ════════════════════════════════════════════════════════════════════════════
-
-export { defineKv } from './workspace/define-kv';
-export { defineTable } from './workspace/define-table';
-export { defineWorkspace } from './workspace/define-workspace';
-export { plainText, richText, timeline } from './workspace/strategies';
-
-// ════════════════════════════════════════════════════════════════════════════
-// WORKSPACE CREATION
-// ════════════════════════════════════════════════════════════════════════════
-
-export { createWorkspace } from './workspace/create-workspace';
-
-// ════════════════════════════════════════════════════════════════════════════
-// INTROSPECTION
-// ════════════════════════════════════════════════════════════════════════════
-
-export type {
-	ActionDescriptor,
-	SchemaDescriptor,
-	WorkspaceDescriptor,
-} from './workspace/describe-workspace';
-export { describeWorkspace } from './workspace/describe-workspace';
-
-// ════════════════════════════════════════════════════════════════════════════
-// TYPES
-// ════════════════════════════════════════════════════════════════════════════
-
-// Runtime schemas (arktype) — for validation at deserialization boundaries
+export {
+	attachEncryption,
+	type EncryptionAttachment,
+} from './document/attach-encryption.js';
 export {
 	EncryptionKey,
 	EncryptionKeys,
 	encryptionKeysFingerprint,
-} from './workspace/encryption-key';
-export type {
-	AnyWorkspaceClient,
-	AwarenessDefinitions,
-	AwarenessHelper,
-	AwarenessState,
-	BaseRow,
-	ContentHandle,
-	ContentStrategy,
-	DocumentConfig,
-	Documents,
-	DocumentsHelper,
-	PlainTextHandle,
-	RichTextHandle,
-	ExtensionContext,
-	ExtensionFactory,
-	GetResult,
-	InferAwarenessValue,
-	InferKvValue,
-	InferTableRow,
-	InvalidRowResult,
-	KvChange,
-	KvDefinition,
-	KvDefinitions,
-	KvHelper,
-	NotFoundResult,
-	RowResult,
-	SharedExtensionContext,
-	TableDefinition,
-	TableDefinitions,
-	TableHelper,
-	TablesHelper,
-	UpdateResult,
-	ValidRowResult,
-	WorkspaceClient,
-	WorkspaceClientBuilder,
-	WorkspaceDefinition,
-} from './workspace/types';
+} from './document/encryption-key.js';
 
+export { KV_KEY, TableKey, type KvKey } from './document/keys.js';
 // ════════════════════════════════════════════════════════════════════════════
 // EPICENTER LINKS
 // ════════════════════════════════════════════════════════════════════════════

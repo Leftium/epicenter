@@ -31,12 +31,16 @@ Use this pattern when you need to:
 | `bun lint`         | **Fix** lint issues (biome)                    | Development |
 | `bun lint:check`   | Check lint issues                              | CI          |
 | `bun typecheck`    | Type checking (tsc, svelte-check, astro check) | Both        |
+| `bun test`         | Run unit tests (`*.test.ts` only)              | Both        |
+| `bun bench`        | Run benchmarks (`*.bench.ts`; reports, no assertions) | Manual |
 
 ## Convention
 
 - No suffix = **fix** (modifies files)
 - `:check` suffix = check only (for CI, no modifications)
 - `typecheck` alone = type checking (separate concern, cannot auto-fix)
+- `test` runs only `*.test.ts`; `bench` runs only `*.bench.ts`. A file is
+  one or the other — never both. Benchmarks print reports; tests assert.
 
 ## Dev Scripts
 

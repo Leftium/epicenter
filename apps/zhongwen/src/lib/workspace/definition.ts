@@ -1,13 +1,14 @@
 /**
- * Workspace schema — branded IDs, table definitions, and workspace definition.
+ * Workspace schema — branded IDs and table/kv definitions.
  *
- * Browser-agnostic: no IndexedDB, no Svelte imports.
+ * Browser-agnostic: no IndexedDB, no Svelte imports, no Y.Doc construction.
+ * The Y.Doc and attachments live in `lib/zhongwen/index.ts` (iso) and
+ * `lib/zhongwen/browser.ts` (env-bound), composed through `openZhongwen`.
  */
 
 import {
 	defineKv,
 	defineTable,
-	defineWorkspace,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -60,16 +61,14 @@ const chatMessagesTable = defineTable(
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Workspace Definition
+// Schema Records
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const definition = defineWorkspace({
-	id: 'epicenter.zhongwen' as const,
-	tables: {
-		conversations: conversationsTable,
-		chatMessages: chatMessagesTable,
-	},
-	kv: {
-		showPinyin: defineKv(type('boolean'), true),
-	},
-});
+export const zhongwenTables = {
+	conversations: conversationsTable,
+	chatMessages: chatMessagesTable,
+};
+
+export const zhongwenKv = {
+	showPinyin: defineKv(type('boolean'), true),
+};

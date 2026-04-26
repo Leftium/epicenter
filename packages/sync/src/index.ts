@@ -37,3 +37,14 @@ export {
 
 // RPC error variants and type guard (used by both server and client)
 export { isRpcError, RpcError } from './rpc-errors';
+
+// Transport origin sentinels (shared across all sync layers)
+export { BC_ORIGIN, SYNC_ORIGIN } from './origins';
+
+// WebSocket subprotocol auth (shared client/server constants + helpers)
+export {
+	BEARER_SUBPROTOCOL_PREFIX,
+	MAIN_SUBPROTOCOL,
+	extractBearerToken,
+	parseSubprotocols,
+} from './auth-subprotocol';

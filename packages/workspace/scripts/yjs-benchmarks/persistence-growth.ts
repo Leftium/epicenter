@@ -16,8 +16,7 @@
 
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import { createTables } from '../../src/workspace/create-tables.js';
-import { defineTable } from '../../src/workspace/index.js';
+import { attachTable, defineTable } from '../../src/index.js';
 import { formatBytes } from './helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -90,7 +89,7 @@ function createIdbSimulator(doc: Y.Doc) {
 		compactionCount++;
 	}
 
-	doc.on('update', (update: Uint8Array, origin: unknown) => {
+	doc.on('update', (update: Uint8Array) => {
 		updates.push(update);
 		if (updates.length >= IDB_TRIM_SIZE) {
 			compact();
@@ -133,7 +132,7 @@ function main() {
 
 	// ── Setup ────────────────────────────────────────────────────────────────
 	const ydoc = new Y.Doc();
-	const tables = createTables(ydoc, { events: eventDefinition });
+	const tables = { events: attachTable(ydoc, "events", eventDefinition) };
 	const idb = createIdbSimulator(ydoc);
 
 	// ── Seed steady-state rows ──────────────────────────────────────────────
@@ -389,7 +388,7 @@ function main() {
 	const finalState = Y.encodeStateAsUpdate(ydoc);
 	const freshDoc = new Y.Doc();
 	Y.applyUpdate(freshDoc, finalState);
-	const freshTables = createTables(freshDoc, { events: eventDefinition });
+	const freshTables = { events: attachTable(freshDoc, "events", eventDefinition) };
 	const freshSize = Y.encodeStateAsUpdate(freshDoc).byteLength;
 
 	console.log(

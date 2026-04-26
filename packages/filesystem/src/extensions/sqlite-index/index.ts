@@ -14,20 +14,26 @@
  *
  * @example
  * ```typescript
- * const ws = createWorkspace({ id: 'app', tables: { files: filesTable } })
- *   .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
- *
- * await ws.whenReady;
- * const results = await ws.extensions.sqliteIndex.search('meeting notes');
+ * const ydoc = new Y.Doc({ guid: 'app' });
+ * const tables = attachTables(ydoc, { files: filesTable });
+ * const fileContentDocs = createFileContentDocs({
+ *   workspaceId: 'app',
+ *   filesTable: tables.files,
+ * });
+ * const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
+ * await sqliteIndex.exports.whenReady;
+ * const results = await sqliteIndex.exports.search('meeting notes');
  * ```
  *
  * @module
  */
 
-import type { Documents, TableHelper, Timeline } from '@epicenter/workspace';
+import type { Table } from '@epicenter/workspace';
 import type { Client, InStatement } from '@libsql/client-wasm';
 import { createClient } from '@libsql/client-wasm';
 
+import type { FileContentDocs } from '../../file-content-docs.js';
+import type { FileId } from '../../ids.js';
 import type { FileRow } from '../../table.js';
 
 const MAX_PATH_DEPTH = 50;
@@ -81,8 +87,8 @@ export type SearchResult = {
 	snippet: string;
 };
 
-/** The public surface returned by the SQLite index extension. */
-export type SqliteIndex = {
+/** Public exports surfaced on the document bundle's `sqliteIndex.exports`. */
+export type SqliteIndexExports = {
 	/** Raw libSQL client for arbitrary SQL queries. */
 	readonly client: Client;
 	/** Full-text search across file names and content. */
@@ -91,8 +97,15 @@ export type SqliteIndex = {
 	rebuild: () => Promise<void>;
 	/** Resolves after the initial rebuild completes. */
 	whenReady: Promise<void>;
-	/** Tear down observers and close the SQLite database. */
-	destroy: () => void;
+};
+
+/** The raw extension factory return — exports plus lifecycle metadata. */
+export type SqliteIndex = {
+	exports: SqliteIndexExports;
+	/** Readiness signal (same promise as `exports.whenReady`). */
+	init: Promise<void>;
+	/** Dispose observers and close the SQLite database. */
+	dispose: () => void;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -106,16 +119,8 @@ export type SqliteIndex = {
  * (using `filesTable` from `@epicenter/filesystem`) satisfies this.
  */
 type SqliteIndexContext = {
-	tables: { files: TableHelper<FileRow> };
-	documents: {
-		files: {
-			content: Documents<
-				FileRow,
-				Record<string, unknown>,
-				Record<string, never>,
-				Timeline
-			>;
-		};
+	tables: {
+		files: Table<FileRow>;
 	};
 };
 
@@ -124,25 +129,29 @@ type SqliteIndexContext = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Create a SQLite index workspace extension.
- *
- * Returns a curried factory: call with options, then pass to
- * `.withWorkspaceExtension()`. The inner factory receives the
- * workspace context and returns the extension exports.
+ * Create a SQLite index. Returns a curried factory: call with options, then
+ * invoke the inner function with `{ tables }` to wire it into the workspace.
  *
  * @example
  * ```typescript
- * createWorkspace({ id: 'opensidian', tables: { files: filesTable } })
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
+ * const ydoc = new Y.Doc({ guid: 'app' });
+ * const tables = attachTables(ydoc, { files: filesTable });
+ * attachIndexedDb(ydoc);
+ * const sqliteIndex = createSqliteIndex(fileContentDocs)({ tables });
  * ```
  */
-export function createSqliteIndex({
-	debounceMs = 100,
-}: SqliteIndexOptions = {}) {
+export function createSqliteIndex(
+	contentDocs: FileContentDocs,
+	{ debounceMs = 100 }: SqliteIndexOptions = {},
+) {
 	return (context: SqliteIndexContext): SqliteIndex => {
 		const filesTable = context.tables.files;
-		const contentDocs = context.documents.files.content;
+
+		async function readFileContent(id: FileId): Promise<string> {
+			await using handle = contentDocs.open(id);
+			await handle.whenReady;
+			return handle.content.read();
+		}
 
 		const client = createClient({ url: ':memory:' });
 		let syncTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -194,8 +203,7 @@ export function createSqliteIndex({
 					continue;
 				}
 				try {
-					const content = await contentDocs.open(row.id);
-					const text = content.read();
+					const text = await readFileContent(row.id);
 					contentMap.set(row.id, text || null);
 				} catch {
 					contentMap.set(row.id, null);
@@ -253,10 +261,10 @@ export function createSqliteIndex({
 			const deletedIds: string[] = [];
 
 			for (const id of changedIds) {
-				const result = filesTable.get(id);
-				if (result.status !== 'valid') {
+				const { data: row, error } = filesTable.get(id);
+				if (error || row === null) {
 					deletedIds.push(id);
-				} else if (result.row.type === 'folder') {
+				} else if (row.type === 'folder') {
 					folderIds.push(id);
 				} else {
 					fileIds.push(id);
@@ -277,9 +285,8 @@ export function createSqliteIndex({
 
 			// Process folders first (path cascading must precede file processing)
 			for (const id of folderIds) {
-				const result = filesTable.get(id);
-				if (result.status !== 'valid') continue;
-				const row = result.row;
+				const { data: row, error } = filesTable.get(id);
+				if (error || row === null) continue;
 				const path = computePathForRow(id, filesTable);
 
 				// Query current path from SQLite before mutation
@@ -341,15 +348,13 @@ export function createSqliteIndex({
 
 			// Process files
 			for (const id of fileIds) {
-				const result = filesTable.get(id);
-				if (result.status !== 'valid') continue;
-				const row = result.row;
+				const { data: row, error } = filesTable.get(id);
+				if (error || row === null) continue;
 				const path = computePathForRow(id, filesTable);
 
 				let fileContent: string | null = null;
 				try {
-					const content = await contentDocs.open(row.id);
-					const text = content.read();
+					const text = await readFileContent(row.id);
 					fileContent = text || null;
 				} catch {
 					fileContent = null;
@@ -433,11 +438,14 @@ export function createSqliteIndex({
 
 		// ── Extension exports ─────────────────────────────────────────
 		return {
-			client,
-			search,
-			rebuild,
-			whenReady,
-			destroy() {
+			exports: {
+				client,
+				search,
+				rebuild,
+				whenReady,
+			},
+			init: whenReady,
+			dispose() {
 				if (syncTimeout) clearTimeout(syncTimeout);
 				unobserve?.();
 				client.close();
@@ -509,7 +517,7 @@ function computePaths(rows: FileRow[]): Map<string, string> {
  */
 function computePathForRow(
 	id: string,
-	filesTable: TableHelper<FileRow>,
+	filesTable: Table<FileRow>,
 ): string | null {
 	const visited = new Set<string>();
 
@@ -517,10 +525,8 @@ function computePathForRow(
 		if (visited.has(currentId)) return null;
 		visited.add(currentId);
 
-		const result = filesTable.get(currentId);
-		if (result.status !== 'valid') return null;
-
-		const row = result.row;
+		const { data: row, error } = filesTable.get(currentId);
+		if (error || row === null) return null;
 
 		if (row.parentId === null) {
 			return `/${row.name}`;

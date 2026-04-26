@@ -1,21 +1,26 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Exports the persisted session and Google credentials helper. The actual
- * `auth` (createAuth) lives in the workspace client where
- * `onLogin`/`onLogout` can wire workspace unlock and sync reconnect.
+ * Exports the persisted session store (adapted to `SessionStore`) and the
+ * Google credentials helper. The `auth` instance itself lives in
+ * `./tab-manager/client` alongside the workspace.
  *
- * @see {@link ./client} — auth with onLogin/onLogout
+ * @see {@link ./tab-manager/client} — auth + workspace + onSessionChange wiring
  * @see {@link ./state/storage-state.svelte} — chrome.storage reactive wrapper
  */
 
-import { AuthSession } from '@epicenter/svelte/auth';
+import { AuthSession } from '@epicenter/auth-svelte';
 import { createStorageState } from './state/storage-state.svelte';
 
 const GOOGLE_CLIENT_ID =
 	'702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
 
-/** Persisted auth snapshot in `chrome.storage.local`. */
+/**
+ * Persisted auth snapshot in `chrome.storage.local`. Structurally satisfies
+ * `SessionStore` from `@epicenter/auth` — pass directly to `createAuth`.
+ * Callers must `await session.whenReady` before constructing auth so the
+ * sync `get()` returns the persisted value instead of `fallback`.
+ */
 export const session = createStorageState('local:authSession', {
 	fallback: null,
 	schema: AuthSession.or('null'),

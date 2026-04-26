@@ -9,9 +9,9 @@
  *
  * @example
  * ```typescript
- * // Unauthenticated (login flows)
+ * // Device-code flow (login)
  * const api = createAuthApi('https://api.epicenter.so');
- * const { token, user } = await api.signInWithEmail('me@example.com', 'pw');
+ * const code = await api.requestDeviceCode();
  *
  * // Authenticated (session operations)
  * const authed = createAuthApi('https://api.epicenter.so', token);
@@ -19,24 +19,11 @@
  * ```
  */
 
+import type { SessionResponse } from '@epicenter/api/types';
+
 const CLIENT_ID = 'epicenter-cli';
 
 // ─── Response types ──────────────────────────────────────────────────────────
-
-/** Derived from Better Auth's `$Infer` — always matches the actual API response. */
-import type { SessionResponse } from '@epicenter/api/types';
-
-/**
- * Response from `/auth/sign-in/email` with the bearer plugin active.
- *
- * The `token` field is added by the `bearer()` plugin and isn't
- * reflected in Better Auth's `$Infer` types, so this is partially hand-written.
- */
-export type SignInResponse = {
-	token: string;
-	expiresAt: string;
-	user: SessionResponse['user'];
-};
 
 export type DeviceCodeResponse = {
 	device_code: string;
@@ -100,19 +87,7 @@ export function createAuthApi(serverUrl: string, token?: string) {
 	}
 
 	return {
-		// ── Password auth ──────────────────────────────────────────────────
-
-		/**
-		 * Sign in with email and password.
-		 *
-		 * @returns Session token and user info.
-		 */
-		signInWithEmail(email: string, password: string) {
-			return request<SignInResponse>('POST', '/auth/sign-in/email', {
-				email,
-				password,
-			});
-		},
+		// ── Session ────────────────────────────────────────────────────────
 
 		/**
 		 * Sign out the current session.
@@ -125,8 +100,6 @@ export function createAuthApi(serverUrl: string, token?: string) {
 			if (token) headers.authorization = `Bearer ${token}`;
 			await fetch(`${serverUrl}/auth/sign-out`, { method: 'POST', headers });
 		},
-
-		// ── Session ────────────────────────────────────────────────────────
 
 		/**
 		 * Get the current session and user info.

@@ -109,11 +109,11 @@ Use ASCII diagrams liberally. They're more scannable than prose.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  defineWorkspace() + workspace.create()                          │  ← High-level
-│    Creates Y.Doc internally, binds tables/kv/capabilities        │
+│  createDocumentFactory((id) => { ... }).open(id)                 │  ← High-level
+│    User-owned Y.Doc builder, composes attach* primitives         │
 ├─────────────────────────────────────────────────────────────────┤
-│  createTables(ydoc, {...}) / createKv(ydoc, {...})               │  ← Mid-level
-│    Binds to existing Y.Doc                                       │
+│  attachTables(ydoc, {...}) / attachKv(ydoc, {...})               │  ← Mid-level
+│    Binds to an existing Y.Doc                                    │
 ├─────────────────────────────────────────────────────────────────┤
 │  defineTable() / defineKv()                                      │  ← Low-level
 │    Pure schema definitions                                       │

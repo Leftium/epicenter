@@ -2,7 +2,7 @@ import type { FileId } from '@epicenter/filesystem';
 import { createPersistedState } from '@epicenter/svelte';
 import type { CommandPaletteItem } from '@epicenter/ui/command-palette';
 import { type } from 'arktype';
-import { workspace } from '$lib/client';
+import { opensidian } from '$lib/opensidian/client';
 import { getFileIcon } from '$lib/utils/file-icons';
 import { fsState } from './fs-state.svelte';
 
@@ -73,7 +73,7 @@ function createSearchState() {
 				const scope = scopeState.current;
 				// Add column filter for content-only mode
 				const ftsQuery = scope === 'content' ? `content:${trimmed}` : trimmed;
-				const results = await workspace.extensions.sqliteIndex.search(ftsQuery);
+				const results = await opensidian.sqliteIndex.search(ftsQuery);
 
 				contentResults = results.map((r) => ({
 					id: r.id,

@@ -1,11 +1,12 @@
-import type { Documents, TableHelper, Timeline } from '@epicenter/workspace';
+import type { Table } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
 import { FS_ERRORS } from './errors.js';
+import type { FileContentDocs } from './file-content-docs.js';
 import type { FileId } from './ids.js';
 import { posixResolve } from './path.js';
 import type { FileRow } from './table.js';
 import { disambiguateNames } from './tree/naming.js';
-import { createFileTree, type FileTree } from './tree/tree.js';
+import { attachFileTree, type FileTree } from './tree/tree.js';
 
 /** Validate `fs` extends {@link IFileSystem} while preserving the full inferred type (avoids excess-property errors from `satisfies`). */
 function FileSystem<T extends IFileSystem>(fs: T): T {
@@ -16,8 +17,8 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  * Create a POSIX-like virtual filesystem backed by Yjs CRDTs.
  *
  * Thin orchestrator that delegates metadata operations to {@link FileTree}
- * and content I/O to document handles (backed by a
- * {@link Documents}). Every method applies `cwd` via
+ * and content I/O to a per-file content-doc factory (produced by
+ * {@link createFileContentDocs}). Every method applies `cwd` via
  * {@link posixResolve}, then calls the appropriate sub-service.
  *
  * The returned object satisfies the `IFileSystem` interface from `just-bash`,
@@ -31,21 +32,21 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  *
  * @example
  * ```typescript
- * const ws = createWorkspace({ id: 'app', tables: { files: filesTable } });
- * const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
+ * import * as Y from 'yjs';
+ * import { attachTable } from '@epicenter/workspace';
+ *
+ * const ydoc = new Y.Doc({ guid: 'app' });
+ * const files = attachTable(ydoc, 'files', filesTable);
+ * const contentDocs = createFileContentDocs({ ydoc });
+ * const fs = attachYjsFileSystem(files, contentDocs);
  * ```
  */
-export function createYjsFileSystem(
-	filesTable: TableHelper<FileRow>,
-	contentDocuments: Documents<
-		FileRow,
-		Record<string, unknown>,
-		Record<string, never>,
-		Timeline
-	>,
+export function attachYjsFileSystem(
+	filesTable: Table<FileRow>,
+	contentDocuments: FileContentDocs,
 	cwd: string = '/',
 ) {
-	const tree = createFileTree(filesTable);
+	const tree = attachFileTree(filesTable);
 
 	return FileSystem({
 		/** Reactive file-system indexes for path lookups and parent-child queries. */
@@ -63,7 +64,8 @@ export function createYjsFileSystem(
 		 * ```typescript
 		 * const fileId = fs.lookupId('/docs/readme.md');
 		 * if (fileId) {
-		 *   const doc = await documents.open(fileId);
+		 *   const doc = documents.get(fileId);
+		 *   await doc.whenLoaded;
 		 * }
 		 * ```
 		 */
@@ -157,8 +159,9 @@ export function createYjsFileSystem(
 			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
-			const content = await contentDocuments.open(id);
-			return content.read();
+			await using handle = contentDocuments.open(id);
+			await handle.whenReady;
+			return handle.content.read();
 		},
 
 		async readFileBuffer(path) {
@@ -182,14 +185,17 @@ export function createYjsFileSystem(
 				if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 			}
 
+			let justCreated = false;
 			if (!id) {
 				const { parentId, name } = tree.parsePath(abs);
 				id = tree.create({ name, parentId, type: 'file', size });
+				justCreated = true;
 			}
 
-			const content = await contentDocuments.open(id);
-			content.write(textData);
-			tree.touch(id, size);
+			await using handle = contentDocuments.open(id);
+			await handle.whenReady;
+			handle.content.write(textData);
+			if (!justCreated) tree.touch(id, size);
 		},
 
 		async appendFile(path, data, _options?) {
@@ -202,9 +208,10 @@ export function createYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
-			const content = await contentDocuments.open(id);
-			content.appendText(text);
-			const newSize = new TextEncoder().encode(content.read()).byteLength;
+			await using handle = contentDocuments.open(id);
+			await handle.whenReady;
+			handle.content.appendText(text);
+			const newSize = new TextEncoder().encode(handle.content.read()).byteLength;
 			tree.touch(id, newSize);
 		},
 
@@ -294,8 +301,9 @@ export function createYjsFileSystem(
 					);
 				}
 			} else {
-				const content = await contentDocuments.open(srcId);
-				const srcText = content.read();
+				await using handle = contentDocuments.open(srcId);
+				await handle.whenReady;
+				const srcText = handle.content.read();
 				await this.writeFile(resolvedDest, srcText);
 			}
 		},
@@ -363,5 +371,5 @@ export function createYjsFileSystem(
 	});
 }
 
-/** Inferred type of the virtual filesystem returned by {@link createYjsFileSystem}. */
-export type YjsFileSystem = ReturnType<typeof createYjsFileSystem>;
+/** Inferred type of the virtual filesystem returned by {@link attachYjsFileSystem}. */
+export type YjsFileSystem = ReturnType<typeof attachYjsFileSystem>;

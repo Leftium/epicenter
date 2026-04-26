@@ -1,11 +1,30 @@
 /**
- * CLI Tests
+ * CLI entry-point tests.
  *
- * These tests verify that the CLI entry point correctly dispatches
- * commands via top-level commands (get, list, count, delete, tables, kv, export, auth, start).
+ * The binary surfaces four commands — `auth`, `list`, `peers`, `run`. These
+ * tests assert registration via `--help` output so they stay decoupled from
+ * command semantics.
  */
 import { describe, expect, spyOn, test } from 'bun:test';
 import { createCLI } from './cli';
+
+function captureHelp(): Promise<string> {
+	const chunks: string[] = [];
+	const logSpy = spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+		chunks.push(args.map((a) => String(a)).join(' '));
+	});
+	const errSpy = spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+		chunks.push(args.map((a) => String(a)).join(' '));
+	});
+	return createCLI()
+		.run(['--help'])
+		.catch(() => {})
+		.finally(() => {
+			logSpy.mockRestore();
+			errSpy.mockRestore();
+		})
+		.then(() => chunks.join('\n'));
+}
 
 describe('createCLI', () => {
 	test('returns an object with a run method', () => {
@@ -25,5 +44,13 @@ describe('createCLI', () => {
 		const errorOutput = errorSpy.mock.calls.flat().join(' ');
 		expect(errorOutput).toContain('epicenter');
 		errorSpy.mockRestore();
+	});
+
+	test('help output registers auth, list, peers, and run', async () => {
+		const help = await captureHelp();
+		expect(help).toMatch(/\bauth\b/);
+		expect(help).toMatch(/\blist\b/);
+		expect(help).toMatch(/\bpeers\b/);
+		expect(help).toMatch(/\brun\b/);
 	});
 });

@@ -10,16 +10,18 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createWorkspace } from '@epicenter/workspace';
+import { attachTables } from '@epicenter/workspace';
+import * as Y from 'yjs';
 import type { FileId } from '../ids.js';
 import { filesTable } from '../table.js';
-import { createFileSystemIndex } from './path-index.js';
+import { attachFileSystemIndex } from './path-index.js';
 
 const fid = (s: string) => s as FileId;
 
 function setup() {
-	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	return { files: ws.tables.files, ws };
+	const ydoc = new Y.Doc({ guid: 'test' });
+	const tables = attachTables(ydoc, { files: filesTable });
+	return { files: tables.files, ydoc };
 }
 
 function makeRow(
@@ -41,16 +43,16 @@ function makeRow(
 	};
 }
 
-describe('createFileSystemIndex', () => {
+describe('attachFileSystemIndex', () => {
 	// ═══════════════════════════════════════════════════════════════════════
 	// BASIC INDEX BUILDING
 	// ═══════════════════════════════════════════════════════════════════════
 
 	test('empty table — no paths or children', () => {
 		const { files } = setup();
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
-		expect(index.pathCount).toBe(0);
+		expect(index.allPaths().length).toBe(0);
 		expect(index.getChildIds(null)).toEqual([]);
 
 		index.dispose();
@@ -59,7 +61,7 @@ describe('createFileSystemIndex', () => {
 	test('indexes a single root file by absolute path', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'hello.txt'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/hello.txt')).toBe(fid('f1'));
 		expect(index.getChildIds(null)).toContain(fid('f1'));
@@ -72,9 +74,9 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f1', 'a.txt'));
 		files.set(makeRow('f2', 'b.txt'));
 		files.set(makeRow('f3', 'c.txt'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
-		expect(index.pathCount).toBe(3);
+		expect(index.allPaths().length).toBe(3);
 		expect(index.getIdByPath('/a.txt')).toBe(fid('f1'));
 		expect(index.getIdByPath('/b.txt')).toBe(fid('f2'));
 		expect(index.getIdByPath('/c.txt')).toBe(fid('f3'));
@@ -88,7 +90,7 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('d1', 'docs', null, 'folder'));
 		files.set(makeRow('f1', 'api.md', 'd1'));
 		files.set(makeRow('f2', 'readme.md', 'd1'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/docs')).toBe(fid('d1'));
 		expect(index.getIdByPath('/docs/api.md')).toBe(fid('f1'));
@@ -106,7 +108,7 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('d2', 'b', 'd1', 'folder'));
 		files.set(makeRow('d3', 'c', 'd2', 'folder'));
 		files.set(makeRow('f1', 'file.txt', 'd3'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/a/b/c/file.txt')).toBe(fid('f1'));
 		expect(index.getChildIds(fid('d2'))).toEqual([fid('d3')]);
@@ -118,7 +120,7 @@ describe('createFileSystemIndex', () => {
 	test('empty folder gets a path but no children entry', () => {
 		const { files } = setup();
 		files.set(makeRow('d1', 'empty', null, 'folder'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/empty')).toBe(fid('d1'));
 		expect(index.getChildIds(fid('d1'))).toEqual([]);
@@ -134,11 +136,11 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'active.txt'));
 		files.set({ ...makeRow('f2', 'trashed.txt'), trashedAt: Date.now() });
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/active.txt')).toBe(fid('f1'));
 		expect(index.hasPath('/trashed.txt')).toBe(false);
-		expect(index.pathCount).toBe(1);
+		expect(index.allPaths().length).toBe(1);
 
 		index.dispose();
 	});
@@ -150,7 +152,7 @@ describe('createFileSystemIndex', () => {
 			trashedAt: Date.now(),
 		});
 		files.set(makeRow('f1', 'readme.md', 'd1'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.hasPath('/docs')).toBe(false);
 		// Child's parent is trashed → orphan → moved to root
@@ -163,10 +165,10 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		files.set({ ...makeRow('f1', 'report.txt'), trashedAt: Date.now() });
 		files.set(makeRow('f2', 'report.txt'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/report.txt')).toBe(fid('f2'));
-		expect(index.pathCount).toBe(1);
+		expect(index.allPaths().length).toBe(1);
 
 		index.dispose();
 	});
@@ -177,7 +179,7 @@ describe('createFileSystemIndex', () => {
 
 	test('reactive — adding a file updates index', () => {
 		const { files } = setup();
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.hasPath('/new.txt')).toBe(false);
 
@@ -191,7 +193,7 @@ describe('createFileSystemIndex', () => {
 	test('reactive — trashing a file removes it', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'hello.txt'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/hello.txt')).toBe(fid('f1'));
 
@@ -205,7 +207,7 @@ describe('createFileSystemIndex', () => {
 	test('reactive — rename updates path', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'old.txt'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		files.update('f1', { name: 'new.txt' });
 
@@ -220,7 +222,7 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('d1', 'src', null, 'folder'));
 		files.set(makeRow('d2', 'lib', null, 'folder'));
 		files.set(makeRow('f1', 'util.ts', 'd1'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/src/util.ts')).toBe(fid('f1'));
 
@@ -238,7 +240,7 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		files.set(makeRow('d1', 'folder', null, 'folder'));
 		files.set(makeRow('f1', 'file.txt', 'd1'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/folder/file.txt')).toBe(fid('f1'));
 
@@ -253,12 +255,12 @@ describe('createFileSystemIndex', () => {
 	test('reactive — deleting a file removes it', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'doomed.txt'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		files.delete('f1');
 
 		expect(index.hasPath('/doomed.txt')).toBe(false);
-		expect(index.pathCount).toBe(0);
+		expect(index.allPaths().length).toBe(0);
 
 		index.dispose();
 	});
@@ -267,7 +269,7 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		files.set(makeRow('d1', 'old-name', null, 'folder'));
 		files.set(makeRow('f1', 'child.txt', 'd1'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		files.update('d1', { name: 'new-name' });
 
@@ -286,7 +288,7 @@ describe('createFileSystemIndex', () => {
 	test('dispose stops observing — mutations after dispose do not update index', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'before.txt'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/before.txt')).toBe(fid('f1'));
 
@@ -307,13 +309,9 @@ describe('createFileSystemIndex', () => {
 	test('circular ref — self-referencing file is fixed', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'self-loop.txt', 'f1'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
-		const result = files.get('f1');
-		expect(result.status).toBe('valid');
-		if (result.status === 'valid') {
-			expect(result.row.parentId).toBeNull();
-		}
+		expect(files.get('f1').data?.parentId).toBeNull();
 		expect(index.getIdByPath('/self-loop.txt')).toBe(fid('f1'));
 
 		index.dispose();
@@ -326,13 +324,9 @@ describe('createFileSystemIndex', () => {
 		// After fix: B.parentId = null, A.parentId = B → tree is root→B→A
 		files.set({ ...makeRow('a', 'alpha', 'b', 'folder'), updatedAt: 1000 });
 		files.set({ ...makeRow('b', 'beta', 'a', 'folder'), updatedAt: 2000 });
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
-		const resultB = files.get('b');
-		expect(resultB.status).toBe('valid');
-		if (resultB.status === 'valid') {
-			expect(resultB.row.parentId).toBeNull();
-		}
+		expect(files.get('b').data?.parentId).toBeNull();
 
 		// B is at root, A is child of B
 		expect(index.getIdByPath('/beta')).toBe(fid('b'));
@@ -350,16 +344,12 @@ describe('createFileSystemIndex', () => {
 		files.set({ ...makeRow('a', 'node-a', 'c', 'folder'), updatedAt: 1000 });
 		files.set({ ...makeRow('b', 'node-b', 'a', 'folder'), updatedAt: 2000 });
 		files.set({ ...makeRow('c', 'node-c', 'b', 'folder'), updatedAt: 3000 });
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
-		const resultC = files.get('c');
-		expect(resultC.status).toBe('valid');
-		if (resultC.status === 'valid') {
-			expect(resultC.row.parentId).toBeNull();
-		}
+		expect(files.get('c').data?.parentId).toBeNull();
 
 		// All three should be reachable
-		expect(index.pathCount).toBe(3);
+		expect(index.allPaths().length).toBe(3);
 
 		index.dispose();
 	});
@@ -370,10 +360,10 @@ describe('createFileSystemIndex', () => {
 		// Cycle: x→y→x
 		files.set({ ...makeRow('x', 'x-file', 'y', 'folder'), updatedAt: 1000 });
 		files.set({ ...makeRow('y', 'y-file', 'x', 'folder'), updatedAt: 2000 });
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/clean.txt')).toBe(fid('clean'));
-		expect(index.pathCount).toBe(3);
+		expect(index.allPaths().length).toBe(3);
 
 		index.dispose();
 	});
@@ -385,13 +375,9 @@ describe('createFileSystemIndex', () => {
 	test('orphan — parent does not exist, file moved to root', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'orphan.txt', 'nonexistent'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
-		const result = files.get('f1');
-		expect(result.status).toBe('valid');
-		if (result.status === 'valid') {
-			expect(result.row.parentId).toBeNull();
-		}
+		expect(files.get('f1').data?.parentId).toBeNull();
 		expect(index.getIdByPath('/orphan.txt')).toBe(fid('f1'));
 
 		index.dispose();
@@ -404,13 +390,9 @@ describe('createFileSystemIndex', () => {
 			trashedAt: Date.now(),
 		});
 		files.set(makeRow('f1', 'child.txt', 'd1'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
-		const result = files.get('f1');
-		expect(result.status).toBe('valid');
-		if (result.status === 'valid') {
-			expect(result.row.parentId).toBeNull();
-		}
+		expect(files.get('f1').data?.parentId).toBeNull();
 		expect(index.getIdByPath('/child.txt')).toBe(fid('f1'));
 
 		index.dispose();
@@ -420,12 +402,10 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'orphan-a.txt', 'gone'));
 		files.set(makeRow('f2', 'orphan-b.txt', 'gone'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
-		const r1 = files.get('f1');
-		const r2 = files.get('f2');
-		if (r1.status === 'valid') expect(r1.row.parentId).toBeNull();
-		if (r2.status === 'valid') expect(r2.row.parentId).toBeNull();
+		expect(files.get('f1').data?.parentId).toBeNull();
+		expect(files.get('f2').data?.parentId).toBeNull();
 
 		expect(index.getIdByPath('/orphan-a.txt')).toBe(fid('f1'));
 		expect(index.getIdByPath('/orphan-b.txt')).toBe(fid('f2'));
@@ -440,13 +420,10 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		files.set(makeRow('d1', 'lost-folder', 'vanished', 'folder'));
 		files.set(makeRow('f1', 'deep-orphan.txt', 'd1'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		// d1 moved to root (parent doesn't exist)
-		const resultD1 = files.get('d1');
-		if (resultD1.status === 'valid') {
-			expect(resultD1.row.parentId).toBeNull();
-		}
+		expect(files.get('d1').data?.parentId).toBeNull();
 
 		// f1 stays under d1 since d1 is now at root
 		expect(index.getIdByPath('/lost-folder')).toBe(fid('d1'));
@@ -463,7 +440,7 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		files.set({ ...makeRow('a', 'foo.txt'), createdAt: 1000, updatedAt: 1000 });
 		files.set({ ...makeRow('b', 'foo.txt'), createdAt: 2000, updatedAt: 2000 });
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/foo.txt')).toBe(fid('a'));
 		expect(index.getIdByPath('/foo (1).txt')).toBe(fid('b'));
@@ -476,7 +453,7 @@ describe('createFileSystemIndex', () => {
 		files.set({ ...makeRow('a', 'doc.md'), createdAt: 1000 });
 		files.set({ ...makeRow('b', 'doc.md'), createdAt: 2000 });
 		files.set({ ...makeRow('c', 'doc.md'), createdAt: 3000 });
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/doc.md')).toBe(fid('a'));
 		expect(index.getIdByPath('/doc (1).md')).toBe(fid('b'));
@@ -489,7 +466,7 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		files.set({ ...makeRow('a', 'Makefile'), createdAt: 1000 });
 		files.set({ ...makeRow('b', 'Makefile'), createdAt: 2000 });
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/Makefile')).toBe(fid('a'));
 		expect(index.getIdByPath('/Makefile (1)')).toBe(fid('b'));
@@ -503,7 +480,7 @@ describe('createFileSystemIndex', () => {
 		files.set({ ...makeRow('d2', 'src', null, 'folder'), createdAt: 2000 });
 		files.set(makeRow('f1', 'index.ts', 'd1'));
 		files.set(makeRow('f2', 'index.ts', 'd2'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/src')).toBe(fid('d1'));
 		expect(index.getIdByPath('/src (1)')).toBe(fid('d2'));
@@ -519,7 +496,7 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('d2', 'b', null, 'folder'));
 		files.set(makeRow('f1', 'same.txt', 'd1'));
 		files.set(makeRow('f2', 'same.txt', 'd2'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.getIdByPath('/a/same.txt')).toBe(fid('f1'));
 		expect(index.getIdByPath('/b/same.txt')).toBe(fid('f2'));
@@ -543,7 +520,7 @@ describe('createFileSystemIndex', () => {
 		}
 		files.set(makeRow('deep-file', 'bottom.txt', parentId));
 
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		// Depth 52 file should NOT have a path
 		expect(index.allPaths().some((p) => p.endsWith('/bottom.txt'))).toBe(false);
@@ -565,7 +542,7 @@ describe('createFileSystemIndex', () => {
 		}
 		files.set(makeRow('leaf', 'file.txt', parentId));
 
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
 		expect(index.allPaths().some((p) => p.endsWith('/file.txt'))).toBe(true);
 
@@ -577,10 +554,10 @@ describe('createFileSystemIndex', () => {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	test('batch mutations trigger rebuild', () => {
-		const { files, ws } = setup();
-		const index = createFileSystemIndex(files);
+		const { files, ydoc } = setup();
+		const index = attachFileSystemIndex(files);
 
-		ws.batch(() => {
+		ydoc.transact(() => {
 			files.set(makeRow('d1', 'folder', null, 'folder'));
 			files.set(makeRow('f1', 'inside.txt', 'd1'));
 			files.set(makeRow('f2', 'root.txt'));
@@ -589,7 +566,7 @@ describe('createFileSystemIndex', () => {
 		expect(index.getIdByPath('/folder')).toBe(fid('d1'));
 		expect(index.getIdByPath('/folder/inside.txt')).toBe(fid('f1'));
 		expect(index.getIdByPath('/root.txt')).toBe(fid('f2'));
-		expect(index.pathCount).toBe(3);
+		expect(index.allPaths().length).toBe(3);
 
 		index.dispose();
 	});
@@ -598,15 +575,12 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		files.set({ ...makeRow('f1', 'conflict.txt'), createdAt: 1000 });
 		files.set({ ...makeRow('f2', 'conflict.txt', 'missing'), createdAt: 2000 });
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
-		const result = files.get('f2');
-		if (result.status === 'valid') {
-			expect(result.row.parentId).toBeNull();
-		}
+		expect(files.get('f2').data?.parentId).toBeNull();
 
 		// Both reachable with unique paths
-		expect(index.pathCount).toBe(2);
+		expect(index.allPaths().length).toBe(2);
 
 		index.dispose();
 	});
@@ -615,14 +589,14 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'first.txt'));
 		files.set(makeRow('f2', 'second.txt'));
-		const index = createFileSystemIndex(files);
+		const index = attachFileSystemIndex(files);
 
-		expect(index.pathCount).toBe(2);
+		expect(index.allPaths().length).toBe(2);
 
 		files.delete('f1');
 		files.delete('f2');
 
-		expect(index.pathCount).toBe(0);
+		expect(index.allPaths().length).toBe(0);
 		expect(index.getChildIds(null)).toEqual([]);
 
 		index.dispose();

@@ -7,7 +7,10 @@
 	import SunIcon from '@lucide/svelte/icons/sun';
 	import { toggleMode } from 'mode-watcher';
 	import { Button } from '#/button/index.js';
-	import type { LightSwitchProps } from './types';
+
+	type LightSwitchProps = {
+		variant?: 'ghost' | 'outline';
+	};
 
 	let { variant = 'outline' }: LightSwitchProps = $props();
 </script>

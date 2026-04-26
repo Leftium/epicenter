@@ -8,58 +8,35 @@
 	} from '@epicenter/ui/natural-language-date-input';
 	import * as Popover from '@epicenter/ui/popover';
 	import * as StarRating from '@epicenter/ui/star-rating';
+	import { toastOnError } from '@epicenter/ui/sonner';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import { fromDisposableCache } from '@epicenter/svelte';
 	import { DateTimeString } from '@epicenter/workspace';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import type { RichTextHandle } from '@epicenter/workspace';
 	import { goto } from '$app/navigation';
-	import { workspace } from '$lib/client';
+	import { fuji } from '$lib/fuji/client';
 	import type { Entry } from '$lib/workspace';
 	import ProseMirrorEditor from './ProseMirrorEditor.svelte';
 	import TagInput from './TagInput.svelte';
 
 	let { entry }: { entry: Entry } = $props();
 
-	function updateEntry(
-		updates: Partial<{
-			title: string;
-			subtitle: string;
-			type: string[];
-			tags: string[];
-			date: DateTimeString;
-			rating: number;
-		}>,
-	) {
-		workspace.actions.entries.update({ id: entry.id, ...updates });
+	type EntryUpdate = Omit<
+		Parameters<typeof fuji.actions.entries.update>[0],
+		'id'
+	>;
+
+	function updateEntry(updates: EntryUpdate) {
+		toastOnError(
+			fuji.actions.entries.update({ id: entry.id, ...updates }),
+			'Couldn\'t save changes',
+		);
 	}
 
-	// Stable for this component's lifetime — parent uses {#key entryId}
-	// to remount on navigation, so entry.id never changes within an instance.
-	const id = entry.id;
-
-	let richTextContent = $state<RichTextHandle | null>(null);
-
-	$effect(() => {
-		let cancelled = false;
-		workspace.documents.entries.content.open(id).then((openedContent) => {
-			if (cancelled) {
-				workspace.documents.entries.content.close(id);
-				return;
-			}
-			richTextContent = openedContent;
-		});
-
-		return () => {
-			cancelled = true;
-			if (richTextContent) {
-				workspace.documents.entries.content.close(id);
-			}
-			richTextContent = null;
-		};
-	});
+	const contentDoc = fromDisposableCache(fuji.entryContentDocs, () => entry.id);
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);
@@ -84,7 +61,10 @@
 					description: `"${entry.title || 'Untitled'}" will be moved to recently deleted.`,
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
-						workspace.actions.entries.delete({ id: entry.id });
+						toastOnError(
+							fuji.actions.entries.delete({ id: entry.id }),
+							'Couldn\'t delete entry',
+						);
 						goto('/');
 					},
 				});
@@ -101,14 +81,20 @@
 			class="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground"
 			placeholder="Entry title"
 			value={entry.title}
-			oninput={(e) => updateEntry({ title: e.currentTarget.value })}
+			onblur={(e) => {
+				const next = e.currentTarget.value;
+				if (next !== entry.title) updateEntry({ title: next });
+			}}
 		>
 		<input
 			type="text"
 			class="w-full bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/60"
 			placeholder="Subtitle — a one-liner for your blog listing"
 			value={entry.subtitle}
-			oninput={(e) => updateEntry({ subtitle: e.currentTarget.value })}
+			onblur={(e) => {
+				const next = e.currentTarget.value;
+				if (next !== entry.subtitle) updateEntry({ subtitle: next });
+			}}
 		>
 
 		<div class="flex flex-wrap items-center gap-4">
@@ -181,16 +167,16 @@
 	</div>
 
 	<!-- Editor body -->
-	{#if richTextContent}
-		<ProseMirrorEditor
-			yxmlfragment={richTextContent.binding}
-			onWordCountChange={(count) => (wordCount = count)}
-		/>
-	{:else}
+	{#await contentDoc.current.whenReady}
 		<div class="flex flex-1 items-center justify-center">
 			<Spinner class="size-5 text-muted-foreground" />
 		</div>
-	{/if}
+	{:then}
+		<ProseMirrorEditor
+			yxmlfragment={contentDoc.current.body.binding}
+			onWordCountChange={(count) => (wordCount = count)}
+		/>
+	{/await}
 
 	<!-- Status bar -->
 	<div

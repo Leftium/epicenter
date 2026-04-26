@@ -7,12 +7,14 @@
  */
 
 import { type } from 'arktype';
-import { defineKv, defineTable, defineWorkspace } from '@epicenter/workspace';
+import {
+	attachKv,
+	attachTables,
+} from '@epicenter/workspace';
+import { defineKv, defineTable } from '@epicenter/workspace';
+import * as Y from 'yjs';
 
-export const redditWorkspace = defineWorkspace({
-	id: 'reddit',
-
-	tables: {
+const redditTables = {
 		/** posts.csv */
 		posts: defineTable(
 			type({
@@ -323,13 +325,31 @@ export const redditWorkspace = defineWorkspace({
 				_v: '1',
 			}),
 		),
-	},
+};
 
-	kv: {
-		// Singleton values from CSV files
-		statistics: defineKv(type('Record<string, string> | null'), null),
-		preferences: defineKv(type('Record<string, string> | null'), null),
-	},
-});
+const redditKv = {
+	// Singleton values from CSV files
+	statistics: defineKv(type('Record<string, string> | null'), null),
+	preferences: defineKv(type('Record<string, string> | null'), null),
+};
+
+export function openReddit() {
+	const id = 'reddit';
+	const ydoc = new Y.Doc({ guid: id, gc: false });
+	const tables = attachTables(ydoc, redditTables);
+	const kv = attachKv(ydoc, redditKv);
+	// no persistence/sync/encryption — in-memory-only importer target
+	return {
+		ydoc,
+		tables,
+		kv,
+		batch: (fn: () => void) => ydoc.transact(fn),
+		[Symbol.dispose]() {
+			ydoc.destroy();
+		},
+	};
+}
+
+export const redditWorkspace = openReddit();
 
 export type RedditWorkspace = typeof redditWorkspace;

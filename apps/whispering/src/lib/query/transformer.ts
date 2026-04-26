@@ -5,7 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
-import { workspace } from '$lib/client';
+import { whispering } from '$lib/whispering/client';
 import { defineMutation } from '$lib/query/client';
 import {
 	WhisperingErr,
@@ -15,15 +15,14 @@ import {
 import { services } from '$lib/services';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
-import {
-	type TransformationRun,
-	transformationRuns,
-} from '$lib/state/transformation-runs.svelte';
-import {
-	type TransformationStep,
-	transformationSteps,
-} from '$lib/state/transformation-steps.svelte';
-import type { Transformation } from '$lib/state/transformations.svelte';
+import { transformationRuns } from '$lib/state/transformation-runs.svelte';
+import { transformationSteps } from '$lib/state/transformation-steps.svelte';
+import type {
+	Transformation,
+	TransformationRun,
+	TransformationStep,
+	TransformationStepRun,
+} from '$lib/workspace';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 
 type TransformationRunRunning = Extract<
@@ -35,9 +34,6 @@ type TransformationRunCompleted = Extract<
 	{ status: 'completed' }
 >;
 type TransformationRunFailed = Extract<TransformationRun, { status: 'failed' }>;
-type TransformationStepRun = ReturnType<
-	typeof workspace.tables.transformationStepRuns.getAllValid
->[number];
 type TransformationStepRunRunning = Extract<
 	TransformationStepRun,
 	{ status: 'running' }
@@ -343,7 +339,7 @@ async function runTransformation({
 			status: 'running',
 			_v: 1,
 		} satisfies TransformationStepRunRunning;
-		workspace.tables.transformationStepRuns.set(stepRun);
+		whispering.tables.transformationStepRuns.set(stepRun);
 
 		const handleStepResult = await handleStep({
 			input: currentInput,
@@ -358,7 +354,7 @@ async function runTransformation({
 				completedAt: failedNow,
 				error: handleStepResult.error,
 			} satisfies TransformationStepRunFailed;
-			workspace.tables.transformationStepRuns.set(failedStepRun);
+			whispering.tables.transformationStepRuns.set(failedStepRun);
 			const failedRun = {
 				...transformationRun,
 				status: 'failed',
@@ -377,7 +373,7 @@ async function runTransformation({
 			completedAt: new Date().toISOString(),
 			output: handleStepOutput,
 		} satisfies TransformationStepRunCompleted;
-		workspace.tables.transformationStepRuns.set(completedStepRun);
+		whispering.tables.transformationStepRuns.set(completedStepRun);
 
 		currentInput = handleStepOutput;
 	}

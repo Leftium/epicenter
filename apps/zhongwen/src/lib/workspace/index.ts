@@ -3,7 +3,8 @@ export {
 	ChatMessageId,
 	type Conversation,
 	ConversationId,
-	definition,
 	generateChatMessageId,
 	generateConversationId,
+	zhongwenKv,
+	zhongwenTables,
 } from './definition';

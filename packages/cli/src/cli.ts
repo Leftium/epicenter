@@ -1,48 +1,32 @@
 import yargs from 'yargs';
-import { createAuthCommand } from './commands/auth';
-import {
-	countCommand,
-	deleteCommand,
-	exportCommand,
-	getCommand,
-	listCommand,
-	tablesCommand,
-} from './commands/data';
-import { describeCommand } from './commands/describe';
-import { kvCommand } from './commands/kv';
-import { initCommand } from './commands/project';
-import { rpcCommand } from './commands/rpc';
-import { runActionCommand } from './commands/run';
-import { sizeCommand } from './commands/size';
-import { startCommand } from './commands/start';
+import { authCommand } from './commands/auth';
+import { listCommand } from './commands/list';
+import { peersCommand } from './commands/peers';
+import { runCommand } from './commands/run';
 
 /**
  * Create the Epicenter CLI instance.
  *
- * Registers all top-level commands: table CRUD (get, list, count, delete),
- * tables, kv, export, init, run, describe, start, and auth.
+ * Introspect and invoke `defineQuery` / `defineMutation` actions in
+ * `epicenter.config.ts`, either locally or on a peer that's online right now.
  *
- * @returns An object with a `run` method that parses and executes CLI commands.
+ *   - `auth`  — manage Epicenter server sessions (pre-workspace)
+ *   - `list`  — tree view of runnable actions (local schema is authoritative)
+ *   - `run`   — invoke one by dot-path; `--peer` dispatches over RPC
+ *   - `peers` — enumerate other clients currently online via Yjs awareness
+ *
+ * Specs: `specs/20260421T155436-cli-scripting-first-redesign.md` (base
+ * surface), `specs/20260423T174126-cli-remote-peer-rpc.md` (`peers` + `--peer`).
  */
 export function createCLI() {
 	return {
 		run: async (argv: string[]) => {
 			const cli = yargs()
 				.scriptName('epicenter')
-				.command(startCommand)
-				.command(getCommand)
+				.command(authCommand)
 				.command(listCommand)
-				.command(countCommand)
-				.command(deleteCommand)
-				.command(tablesCommand)
-				.command(kvCommand)
-				.command(exportCommand)
-				.command(initCommand)
-				.command(runActionCommand)
-				.command(describeCommand)
-				.command(sizeCommand)
-				.command(rpcCommand)
-				.command(createAuthCommand())
+				.command(peersCommand)
+				.command(runCommand)
 				.demandCommand(1)
 				.strict()
 				.exitProcess(false)

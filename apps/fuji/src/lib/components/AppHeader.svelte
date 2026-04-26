@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SyncStatusPopover } from '@epicenter/svelte/sync-status-popover';
+	import { AccountPopover } from '@epicenter/svelte/account-popover';
 	import { Button } from '@epicenter/ui/button';
 	import { GitHubButton, getStars } from '@epicenter/ui/github-button';
 	import { Kbd } from '@epicenter/ui/kbd';
@@ -7,7 +7,7 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import { auth, workspace } from '$lib/client';
+	import { auth, fuji } from '$lib/fuji/client';
 	import { entriesState } from '$lib/entries-state.svelte';
 	import BulkAddModal from './BulkAddModal.svelte';
 
@@ -52,9 +52,10 @@
 	</div>
 	<!-- Right: external links + theme -->
 	<div class="flex items-center gap-1">
-		<SyncStatusPopover
+		<AccountPopover
 			{auth}
-			{workspace}
+			sync={fuji.sync}
+			clearLocalData={() => fuji.idb.clearLocal()}
 			syncNoun="entries"
 			onSocialSignIn={() =>
 				auth.signInWithSocialRedirect({

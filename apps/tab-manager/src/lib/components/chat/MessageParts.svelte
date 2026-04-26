@@ -6,7 +6,7 @@
 	} from '@tanstack/ai-client';
 	import DOMPurify from 'dompurify';
 	import { marked } from 'marked';
-	import type { WorkspaceTools } from '$lib/client';
+	import type { WorkspaceTools } from '$lib/tab-manager/client';
 	import ThinkingPart from './ThinkingPart.svelte';
 	import ToolCallPart from './ToolCallPart.svelte';
 	import ToolResultPart from './ToolResultPart.svelte';

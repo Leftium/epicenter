@@ -14,8 +14,8 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { goto } from '$app/navigation';
-import { workspace } from '$lib/client';
-import type { EntryId } from '$lib/workspace';
+import { fuji } from '$lib/fuji/client';
+import type { Entry, EntryId } from '$lib/workspace';
 
 // ─── Search ──────────────────────────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ import type { EntryId } from '$lib/workspace';
  * contains the query.
  */
 export function matchesEntrySearch(
-	entry: { title: string; subtitle: string; tags: string[]; type: string[] },
+	entry: Pick<Entry, 'title' | 'subtitle' | 'tags' | 'type'>,
 	query: string,
 ): boolean {
 	const q = query.trim().toLowerCase();
@@ -47,7 +47,7 @@ export function matchesEntrySearch(
 // ─── Entries State ───────────────────────────────────────────────────────────
 
 function createEntriesState() {
-	const map = fromTable(workspace.tables.entries);
+	const map = fromTable(fuji.tables.entries);
 	const all = $derived([...map.values()]);
 	const active = $derived(all.filter((e) => e.deletedAt === undefined));
 	const deleted = $derived(all.filter((e) => e.deletedAt !== undefined));
@@ -75,7 +75,7 @@ function createEntriesState() {
 		 * navigates to `/entries/{id}` so the editor opens immediately.
 		 */
 		createEntry() {
-			const { id } = workspace.actions.entries.create({});
+			const { id } = fuji.actions.entries.create({});
 			goto(`/entries/${id}`);
 		},
 	};

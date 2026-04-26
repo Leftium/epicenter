@@ -13,13 +13,31 @@
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import { ModeWatcher } from 'mode-watcher';
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
-	import { workspace } from '$lib/client';
+	import { fuji } from '$lib/fuji/client';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import EntriesSidebar from '$lib/components/EntriesSidebar.svelte';
 	import { entriesState } from '$lib/entries-state.svelte';
 	import '@epicenter/ui/app.css';
 
 	let { children } = $props();
+
+	// ─── Tab-close safety net ────────────────────────────────────────────────────
+
+	/**
+	 * Force-fire onblur on the currently-focused element when the page is
+	 * being hidden. This catches the "user typed in a field, hits Cmd+W"
+	 * case — `.blur()` synchronously dispatches the blur event, so any
+	 * commit-on-blur handler runs and updates the Y.Doc before the page is
+	 * destroyed. See docs/articles/commit-on-blur-survives-tab-close.md.
+	 */
+	function flushPendingEdits() {
+		if (
+			document.visibilityState === 'hidden' &&
+			document.activeElement instanceof HTMLElement
+		) {
+			document.activeElement.blur();
+		}
+	}
 
 	// ─── Command Palette ─────────────────────────────────────────────────────────
 
@@ -42,7 +60,24 @@
 
 <svelte:head><title>Fuji</title></svelte:head>
 
+<!--
+	Tab-close safety net: when the page is being hidden (Cmd+W, tab switch,
+	window minimize, mobile app-switch, bfcache), force-blur the focused
+	element. Any input wired to commit on `onblur` (e.g., the title /
+	subtitle inputs in EntryEditor) gets its handler fired synchronously,
+	updating the Y.Doc before the page is torn down. y-indexeddb +
+	BroadcastChannel observers fire after; their async work usually
+	completes within the browser's grace period.
+
+	visibilitychange is a document event, pagehide is a window event
+	(per Svelte's elements.d.ts). Listening to both gives cross-browser
+	coverage — visibilitychange is more reliable on iOS Safari, pagehide
+	catches bfcache navigations.
+-->
+<svelte:document onvisibilitychange={flushPendingEdits} />
+
 <svelte:window
+	onpagehide={flushPendingEdits}
 	onkeydown={(event) => {
 		const isInputFocused =
 			event.target instanceof HTMLInputElement ||
@@ -68,7 +103,7 @@
 	}}
 />
 
-<WorkspaceGate whenReady={workspace.whenReady}>
+<WorkspaceGate whenReady={fuji.whenReady}>
 	<Tooltip.Provider>
 		<div class="flex h-screen flex-col">
 			<AppHeader onOpenSearch={() => (paletteOpen = true)} />

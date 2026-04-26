@@ -1,7 +1,6 @@
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { fromTable } from '@epicenter/svelte';
-import { createAiChatFetch } from '@epicenter/svelte/auth';
+import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import type { JsonValue } from 'wellcrafted/json';
 import {
@@ -16,7 +15,7 @@ import {
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
 import { toUiMessage } from '$lib/chat/ui-message';
-import { auth, workspace, workspaceAiTools } from '$lib/client';
+import { auth, opensidian, workspaceAiTools } from '$lib/opensidian/client';
 import { skillState } from '$lib/state/skill-state.svelte';
 import {
 	type ChatMessageId,
@@ -36,7 +35,7 @@ function getNumberValue(value: JsonValue | undefined, fallback = 0) {
 }
 
 function createAiChatState() {
-	const conversationsMap = fromTable(workspace.tables.conversations);
+	const conversationsMap = fromTable(opensidian.tables.conversations);
 	const conversations = $derived(
 		[...conversationsMap.values()]
 			.sort(
@@ -50,7 +49,7 @@ function createAiChatState() {
 		const id = generateConversationId();
 		const now = Date.now();
 
-		workspace.tables.conversations.set({
+		opensidian.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: DEFAULT_PROVIDER,
@@ -67,14 +66,14 @@ function createAiChatState() {
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		workspace.tables.conversations.update(conversationId, {
+		opensidian.tables.conversations.update(conversationId, {
 			...patch,
 			updatedAt: Date.now(),
 		});
 	}
 
 	function loadMessages(conversationId: ConversationId) {
-		return workspace.tables.chatMessages
+		return opensidian.tables.chatMessages
 			.filter((message) => message.conversationId === conversationId)
 			.sort((a, b) => a.createdAt - b.createdAt)
 			.map(toUiMessage);
@@ -94,7 +93,7 @@ function createAiChatState() {
 			initialMessages: loadMessages(conversationId),
 			tools: workspaceAiTools.tools,
 			connection: fetchServerSentEvents(
-				() => `${APP_URLS.API}/ai/chat`,
+				`${APP_URLS.API}/ai/chat`,
 				async () => ({
 					fetchClient: createAiChatFetch(auth.fetch),
 					body: {
@@ -123,7 +122,7 @@ function createAiChatState() {
 				}),
 			),
 			onFinish: (message) => {
-				workspace.tables.chatMessages.set({
+				opensidian.tables.chatMessages.set({
 					id: message.id as ChatMessageId,
 					conversationId,
 					role: 'assistant',
@@ -232,7 +231,7 @@ function createAiChatState() {
 					id: userMessageId,
 				});
 
-				workspace.tables.chatMessages.set({
+				opensidian.tables.chatMessages.set({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
@@ -254,7 +253,7 @@ function createAiChatState() {
 			reload() {
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					workspace.tables.chatMessages.delete(lastMessage.id as ChatMessageId);
+					opensidian.tables.chatMessages.delete(lastMessage.id as ChatMessageId);
 				}
 
 				void chat.reload();
@@ -308,14 +307,14 @@ function createAiChatState() {
 		(searchParams.chat ?? '') as ConversationId,
 	);
 
-	const _unobserveConversations = workspace.tables.conversations.observe(() => {
+	const _unobserveConversations = opensidian.tables.conversations.observe(() => {
 		reconcileHandles();
 	});
-	const _unobserveChatMessages = workspace.tables.chatMessages.observe(() => {
+	const _unobserveChatMessages = opensidian.tables.chatMessages.observe(() => {
 		refreshFns.get(activeConversationId)?.();
 	});
 
-	void workspace.whenReady.then(() => {
+	void opensidian.whenReady.then(() => {
 		void skillState.loadAllSkills();
 		reconcileHandles();
 
@@ -341,7 +340,7 @@ function createAiChatState() {
 		const now = Date.now();
 		const active = handles.get(activeConversationId);
 
-		workspace.tables.conversations.set({
+		opensidian.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: active?.provider ?? DEFAULT_PROVIDER,

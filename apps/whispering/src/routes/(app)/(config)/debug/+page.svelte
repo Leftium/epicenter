@@ -15,7 +15,7 @@
 	} from 'wellcrafted/error';
 	import { tryAsync, trySync } from 'wellcrafted/result';
 	import * as Y from 'yjs';
-	import { workspace } from '$lib/client';
+	import { whispering } from '$lib/whispering/client';
 
 	const DebugStressTestError = defineErrors({
 		GenerateFailed: ({ cause }: { cause: unknown }) => ({
@@ -37,28 +37,28 @@
 
 	function createMetrics() {
 		const tableDefs = [
-			{ label: 'Recordings', count: () => workspace.tables.recordings.count() },
+			{ label: 'Recordings', count: () => whispering.tables.recordings.count() },
 			{
 				label: 'Transformations',
-				count: () => workspace.tables.transformations.count(),
+				count: () => whispering.tables.transformations.count(),
 			},
 			{
 				label: 'Transformation Steps',
-				count: () => workspace.tables.transformationSteps.count(),
+				count: () => whispering.tables.transformationSteps.count(),
 			},
 			{
 				label: 'Transformation Runs',
-				count: () => workspace.tables.transformationRuns.count(),
+				count: () => whispering.tables.transformationRuns.count(),
 			},
 			{
 				label: 'Transformation Step Runs',
-				count: () => workspace.tables.transformationStepRuns.count(),
+				count: () => whispering.tables.transformationStepRuns.count(),
 			},
 		] as const;
 
 		function snapshot() {
 			return {
-				ydocSize: Y.encodeStateAsUpdate(workspace.ydoc).byteLength,
+				ydocSize: Y.encodeStateAsUpdate(whispering.ydoc).byteLength,
 				tables: tableDefs.map((t) => ({ label: t.label, count: t.count() })),
 			};
 		}
@@ -103,11 +103,11 @@
 		let lastError = $state<DebugStressTestError | null>(null);
 
 		function measure(label: string, count: number, operation: () => void) {
-			const sizeBefore = Y.encodeStateAsUpdate(workspace.ydoc).byteLength;
+			const sizeBefore = Y.encodeStateAsUpdate(whispering.ydoc).byteLength;
 			const start = performance.now();
 			operation();
 			const durationMs = performance.now() - start;
-			const sizeAfter = Y.encodeStateAsUpdate(workspace.ydoc).byteLength;
+			const sizeAfter = Y.encodeStateAsUpdate(whispering.ydoc).byteLength;
 			lastResult = {
 				label,
 				durationMs,
@@ -146,11 +146,11 @@
 				const { error } = trySync({
 					try: () => {
 						measure('Generated', count, () => {
-							workspace.ydoc.transact(() => {
+							whispering.ydoc.transact(() => {
 								for (let i = 0; i < count; i++) {
 									const now = new Date().toISOString();
 									const transcript = content;
-									workspace.tables.recordings.set({
+									whispering.tables.recordings.set({
 										id: nanoid(),
 										title: transcript,
 										recordedAt: now,
@@ -178,9 +178,9 @@
 					return false;
 				const { error } = trySync({
 					try: () => {
-						const count = workspace.tables.recordings.count();
+						const count = whispering.tables.recordings.count();
 						measure('Deleted', count, () =>
-							workspace.tables.recordings.clear(),
+							whispering.tables.recordings.clear(),
 						);
 					},
 					catch: (cause) => DebugStressTestError.DeleteFailed({ cause }),

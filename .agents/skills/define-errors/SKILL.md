@@ -263,3 +263,51 @@ const RecorderError = defineErrors({
   }),
 });
 ```
+
+## Reserved field name: `name`
+
+`name` is reserved at the type level — TypeScript errors if you return it from a factory, because the factory stamps it from the variant key.
+
+```ts
+// ❌ Type error — factory would overwrite this anyway
+defineErrors({
+  Bad: () => ({ message: 'x', name: 'override' }),
+});
+
+// ✅ Fine
+defineErrors({
+  Good: ({ path, payload }: { path: string; payload: unknown }) => ({
+    message: `failed at ${path}`,
+    path,
+    payload,
+  }),
+});
+```
+
+### Soft convention: avoid `data` as a field name
+
+`Err<E>` carries a `data: null` at the wrapper level (it's how the shape distinguishes `Err` from `Ok`). A variant body with its own `data` field is visually confusing — `err.data` (the wrapper's null) shadows `err.error.data` (your field) in every reader's head.
+
+This is **not** type-enforced (an earlier wellcrafted PR tried to reserve `data` and reverted — the logger's `"name" in err` discriminator doesn't depend on the reservation, so the breaking change was dropped). Prefer `payload`, `body`, `value`, or a domain-specific name like `path`, `response`, `input`.
+
+## Related: don't call `Err(null)` — wrap caught values in a tagged error
+
+`wellcrafted`'s Result shape can't distinguish `Err(null)` from `Ok(null)` — both produce `{ data: null, error: null }`, and `isErr` reads both as success. The `Err` constructor accepts any `E`; there's no type-level ban (one was tried and reverted because it was bypassable by casts and taught the wrong fix).
+
+The rule lives in idiom: **at every `catch (error: unknown)` boundary, wrap the caught value in a tagged error from `defineErrors`, don't pass it straight to `Err`.**
+
+```ts
+// ❌ If error is ever null/undefined at runtime, Err silently becomes Ok
+catch: (error) => Err(error)
+
+// ✅ Tagged error is always non-null by construction
+const Errors = defineErrors({
+  Unexpected: ({ cause }: { cause: unknown }) => ({
+    message: extractErrorMessage(cause),
+    cause,
+  }),
+});
+catch: (error) => Errors.Unexpected({ cause: error })
+```
+
+See [docs/articles/ok-null-is-fine-err-null-is-a-lie.md](../../../docs/articles/ok-null-is-fine-err-null-is-a-lie.md) for the full rationale — and the wellcrafted philosophy doc at `docs/philosophy/err-null-is-ok-null.md` for the deep dive on why the type-level ban failed.

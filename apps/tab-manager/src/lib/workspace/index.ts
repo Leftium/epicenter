@@ -13,7 +13,8 @@ export {
 	generateSavedTabId,
 	type SavedTab,
 	SavedTabId,
-	tabManager,
+	tabManagerAwarenessDefs,
+	tabManagerTables,
 	type ToolTrust,
 } from './definition';
-export { createTabManagerWorkspace } from './workspace';
+export { createTabManagerActions } from './actions';

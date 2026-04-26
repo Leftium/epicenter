@@ -27,41 +27,12 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { SvelteSet } from 'svelte/reactivity';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
-import { tryAsync } from 'wellcrafted/result';
-import { workspace } from '$lib/client';
+import { tabManager } from '$lib/tab-manager/client';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { Bookmark, BookmarkId } from '$lib/workspace';
 
-export const BookmarkError = defineErrors({
-	ToggleFailed: ({ url, cause }: { url: string; cause: unknown }) => ({
-		message: `Failed to toggle bookmark for '${url}': ${extractErrorMessage(cause)}`,
-		url,
-		cause,
-	}),
-	OpenFailed: ({ url, cause }: { url: string; cause: unknown }) => ({
-		message: `Failed to open bookmark '${url}': ${extractErrorMessage(cause)}`,
-		url,
-		cause,
-	}),
-	RemoveFailed: ({ id, cause }: { id: string; cause: unknown }) => ({
-		message: `Failed to remove bookmark '${id}': ${extractErrorMessage(cause)}`,
-		id,
-		cause,
-	}),
-	RemoveAllFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to remove all bookmarks: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-export type BookmarkError = InferErrors<typeof BookmarkError>;
-
 function createBookmarkState() {
-	const bookmarksMap = fromTable(workspace.tables.bookmarks);
+	const bookmarksMap = fromTable(tabManager.tables.bookmarks);
 
 	/** All bookmarks, sorted by most recently created first. Cached via $derived. */
 	const bookmarks = $derived(
@@ -96,61 +67,31 @@ function createBookmarkState() {
 		},
 
 		/**
-		 * Toggle a bookmark for a tab—add if not bookmarked, remove if already bookmarked.
-		 *
-		 * Delegates to the `bookmarks.toggle` workspace action so the operation
-		 * is AI-callable and follows the same code path as programmatic toggles.
-		 * Silently no-ops for tabs without a URL.
+		 * Toggle a bookmark for a tab — add if not bookmarked, remove if already
+		 * bookmarked. Silently no-ops for tabs without a URL.
 		 */
 		async toggle(tab: BrowserTab) {
 			if (!tab.url) return;
-			const url = tab.url;
-			return tryAsync({
-				try: () =>
-					workspace.actions.bookmarks.toggle({
-						url,
-						title: tab.title || 'Untitled',
-						favIconUrl: tab.favIconUrl,
-					}),
-				catch: (cause) => BookmarkError.ToggleFailed({ url, cause }),
+			return tabManager.actions.bookmarks.toggle({
+				url: tab.url,
+				title: tab.title || 'Untitled',
+				favIconUrl: tab.favIconUrl,
 			});
 		},
 
-		/**
-		 * Open a bookmark in a new browser tab without removing the bookmark.
-		 *
-		 * Delegates to the `bookmarks.open` workspace action.
-		 */
+		/** Open a bookmark in a new browser tab without removing the bookmark. */
 		async open(bookmark: Bookmark) {
-			return tryAsync({
-				try: () => workspace.actions.bookmarks.open({ url: bookmark.url }),
-				catch: (cause) =>
-					BookmarkError.OpenFailed({ url: bookmark.url, cause }),
-			});
+			return tabManager.actions.bookmarks.open({ url: bookmark.url });
 		},
 
-		/**
-		 * Delete a bookmark by ID.
-		 *
-		 * Delegates to the `bookmarks.remove` workspace action.
-		 */
-		async remove(id: BookmarkId) {
-			return tryAsync({
-				try: () => workspace.actions.bookmarks.remove({ id }),
-				catch: (cause) => BookmarkError.RemoveFailed({ id, cause }),
-			});
+		/** Delete a bookmark by ID. Synchronous CRDT delete. */
+		remove(id: BookmarkId) {
+			return tabManager.actions.bookmarks.remove({ id });
 		},
 
-		/**
-		 * Delete all bookmarks.
-		 *
-		 * Delegates to the `bookmarks.removeAll` workspace action.
-		 */
-		async removeAll() {
-			return tryAsync({
-				try: () => workspace.actions.bookmarks.removeAll({}),
-				catch: (cause) => BookmarkError.RemoveAllFailed({ cause }),
-			});
+		/** Delete all bookmarks. Synchronous CRDT batch delete. */
+		removeAll() {
+			return tabManager.actions.bookmarks.removeAll();
 		},
 	};
 }

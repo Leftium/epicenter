@@ -1,5 +1,5 @@
+import { AuthSession } from '@epicenter/auth-svelte';
 import { createPersistedState } from '@epicenter/svelte';
-import { AuthSession } from '@epicenter/svelte/auth';
 
 export const session = createPersistedState({
 	key: 'zhongwen:authSession',

@@ -22,7 +22,7 @@ Use this pattern when you need to:
 
 Load these on demand based on what you're working on:
 
-- If working with **type placement and constants organization** (`types.ts` location, co-location rules, options/IDs naming), read [references/type-organization.md](references/type-organization.md)
+- If working with **type placement and constants organization** (`types.ts` location, co-location rules, inline-vs-extract hop test, options/IDs naming), read [references/type-organization.md](references/type-organization.md)
 - If working with **factory-focused refactors** (parameter destructuring, extracting coupled `let` state into sub-factories), read [references/factory-patterns.md](references/factory-patterns.md)
 - If working with **arktype + branded IDs** (optional property syntax, brand constructors, workspace table IDs), read [references/runtime-schema-patterns.md](references/runtime-schema-patterns.md)
 - If working with **test writing and test file layout** (inline single-use setup, source-shadowing tests), read [references/testing-patterns.md](references/testing-patterns.md)
@@ -184,6 +184,126 @@ Load these on demand based on what you're working on:
   	return JSON.parse(raw);
   }
   ```
+
+## Identity Checks: Brand, Don't Probe
+
+When `isFoo(x)` is asking "is this the specific thing my factory returned," use a `Symbol` brand stamped at the factory, not a coincidental-property probe. Shape probes collide with look-alikes and rot as the type grows; the brand is unforgeable and survives normal object spreads.
+
+```typescript
+// Smell — three coincidental properties stand in for identity.
+// Any object that happens to have ydoc + dispose + Symbol.dispose passes.
+function isDocumentHandle(value: unknown): value is DocumentHandle<Document> {
+	if (value == null || typeof value !== 'object') return false;
+	const record = value as Record<string | symbol, unknown>;
+	return (
+		'ydoc' in record &&
+		typeof record.dispose === 'function' &&
+		typeof record[Symbol.dispose] === 'function'
+	);
+}
+
+// Better — brand stamped by the factory, one check carries the intent.
+// Use `Symbol.for('<namespace>.<thing>')` — not `Symbol(...)` — so the brand
+// survives module duplication (see "Cross-package brands" below).
+export const DOCUMENT_HANDLE = Symbol.for('epicenter.document-handle');
+
+function isDocumentHandle(value: unknown): value is DocumentHandle<Document> {
+	return (
+		value != null &&
+		typeof value === 'object' &&
+		DOCUMENT_HANDLE in value
+	);
+}
+```
+
+### Cross-package brands: `Symbol.for`, never `Symbol`
+
+Any brand that has to be recognized across a module boundary — CLI-walks-user-bundles, server-adapter-walks-workspace, AI-tool-bridge-walks-actions — must use the global symbol registry. Plain `Symbol('name')` creates a fresh reference per module evaluation; a monorepo that ends up with two instances of `@epicenter/workspace` (pnpm hoisting, dual CJS/ESM publish, bundler dedup miss, test vs. app resolution) gives each instance its own brand reference. `defineX` from copy A stamps symbol-A; `isX` from copy B checks for symbol-B; the identity check silently fails.
+
+`Symbol.for('epicenter.action')` talks to a process-global registry keyed by the string. Every call anywhere returns the same reference. The brand survives duplication.
+
+```ts
+// Wrong — local reference; fails under module duplication
+export const ACTION_BRAND = Symbol('epicenter.action');
+
+// Right — registry-resolved; always the same reference
+export const ACTION_BRAND = Symbol.for('epicenter.action');
+```
+
+Convention: namespace the key (`epicenter.action`, `epicenter.document-handle`), and centralize cross-package brand keys in one `brands.ts` per package so the duplication-safe identity set is visible and reviewable. The brand constant itself is an implementation detail — consumers import the `isX` guard, never the raw symbol.
+
+**When the brand can be local**: if the factory and the check both live in the same file and the type never crosses a package boundary, plain `Symbol()` is fine. The `Symbol.for` rule is specifically for cross-package identity.
+
+**This rule is narrow. It does NOT apply to:**
+
+- **Union narrowing via presence** — `'data' in result` / `'error' in result` on a wellcrafted `Result`, or `'error' in response` on an OAuth response union. The union *is* the contract; the presence check discriminates it.
+- **Discriminated union tags** — `switch (change.type)`. The tag is already a brand.
+- **Protocol / feature detection** — `Symbol.dispose in x`, `Symbol.asyncIterator in x`, `typeof x.then === 'function'`. These check *capability*, not identity.
+- **Single-or-function config** — `typeof baseURL === 'function'` to distinguish a value from a getter. A config API pattern, not a broken contract.
+- **Node error inspection** — `'code' in error` on `NodeJS.ErrnoException`. Upstream type genuinely requires it.
+
+**When a shape probe IS the smell, the fix is usually upstream.** If you're about to write `isFoo(x)` that shape-probes an internal factory's output, the factory should stamp a brand. If you're about to shape-probe user input or `JSON.parse` output, validate with arktype/typebox at the boundary — the probe accepts any object that happens to match; the schema rejects anything off-contract.
+
+### Factory output: flat objects, not prototype delegation
+
+When a factory returns a "bag of data + a few lifecycle methods," spread the data and add the methods as own enumerable properties. Don't use `Object.create(bundle)` to inherit the data, and don't hide methods with non-enumerable `Object.defineProperties`.
+
+```ts
+// Smell — data lives on the prototype, methods are non-enumerable.
+// Object.keys(handle) returns []; {...handle} spreads nothing;
+// callers reach through Object.getPrototypeOf(handle) to iterate.
+const handle = Object.create(bundle);
+Object.defineProperties(handle, {
+	dispose:          { value: () => {...} },
+	[Symbol.dispose]: { value: () => {...} },
+});
+
+// Better — flat, own, enumerable. Spreads, Object.keys, and debuggers all work.
+return {
+	...bundle,
+	dispose: () => {...},
+	[Symbol.dispose]: () => {...},
+	[DOCUMENT_HANDLE]: true,
+};
+```
+
+If you're reaching for `Object.create` to get class-like delegation, either write a `class` or flatten — don't simulate one with the other. The only legitimate `Object.defineProperty` in this repo patches a Node-owned getter (`process.stdout.isTTY`) in a test; normal assignment doesn't work there.
+
+### Casts: never `as any`, rarely `as unknown as T`
+
+`as any` in production code is a red flag: either the callee is over-narrow (fix the signature) or the caller is passing the wrong type (fix the call). `as unknown as T` double-casts that mask a real type error are the same smell in disguise — e.g., `generateId() as unknown as BrandedId` should be `as string as BrandedId`, or better, fix `generateId`'s return type.
+
+Legitimate cast exceptions:
+
+- **Generics ceremony in typed builders** — `Object.assign(handler, {...}) as unknown as Query<T, U>` when `Object.assign` erases the generic overload inference. Acceptable when the overload signature is the real contract; keep the cast at the innermost scope.
+- **Test fixtures casting mocks** — acceptable in `*.test.ts`, never leaked out of a test file.
+
+### Optional properties: `?.` over `in` or truthiness
+
+When a property is optional in the type (`foo?: () => void`, including symbol keys like `[Symbol.asyncDispose]?: () => Promise<void>`), access it with optional chaining. Don't `in`-check, don't cast, don't truthiness-check. The type already proves the call is safe; runtime probes are redundant and invite casts.
+
+```ts
+// Bad — runtime `in` check + cast
+if (Symbol.asyncDispose in sink) {
+  await (sink as AsyncDisposable)[Symbol.asyncDispose]();
+}
+
+// Bad — truthiness check before call
+if (handler.onError) handler.onError(err);
+
+// Good — optional chaining handles it
+await sink[Symbol.asyncDispose]?.();
+handler.onError?.(err);
+```
+
+`Partial<AsyncDisposable>` and optional-function property types compose cleanly with `?.()` — no casts needed — and it works identically for string, symbol, and computed keys. Real example from the workspace-logger:
+
+```ts
+type LogSink = ((event: LogEvent) => void) & Partial<AsyncDisposable>;
+
+for (const sink of sinks) await sink[Symbol.asyncDispose]?.();
+// consoleSink has no dispose → no-op; jsonlFileSink has it → awaited
+```
 
 ## Boolean Naming: `is`/`has`/`can` Prefix
 

@@ -160,26 +160,37 @@ The [`@epicenter/workspace`](packages/workspace) package wraps this into a singl
 
 ```typescript
 import { type } from 'arktype';
-import { createWorkspace, defineTable, defineWorkspace } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
-  import { createSyncExtension } from '@epicenter/workspace/extensions/sync/websocket';
+import * as Y from 'yjs';
+import {
+  attachIndexedDb,
+  attachSync,
+  attachTables,
+  defineDocument,
+  defineTable,
+  toWsUrl,
+} from '@epicenter/workspace';
 
-    const posts = defineTable(
+const posts = defineTable(
   type({ id: 'string', title: 'string', published: 'boolean', _v: '1' }),
-      );
+);
 
-      const definition = defineWorkspace({
-  id: 'epicenter.blog',
-  tables: { posts },
+const blog = defineDocument((id: string) => {
+  const ydoc = new Y.Doc({ guid: id });
+  const tables = attachTables(ydoc, { posts });
+  const idb = attachIndexedDb(ydoc);
+  const sync = attachSync(ydoc, {
+    url: (docId) => toWsUrl(`http://localhost:3913/rooms/${docId}`),
+    waitFor: idb.whenLoaded,
   });
 
-const workspace = createWorkspace(definition)
-  .withExtension('persistence', indexeddbPersistence)
-  .withExtension('sync', createSyncExtension({
-    url: (docId) => `ws://localhost:3913/rooms/${docId}`,
-  }));
+  return {
+    id, ydoc, tables, idb, sync,
+    whenReady: idb.whenLoaded,
+    [Symbol.dispose]() { ydoc.destroy(); },
+  };
+});
 
-await workspace.whenReady;
+const workspace = await blog.load('epicenter.blog');
 workspace.tables.posts.set({ id: '1', title: 'Hello', published: false, _v: 1 });
 ```
 
@@ -262,7 +273,7 @@ We publish our implementation specs. These are the reasoning behind non-obvious 
 | --- | --- |
 | [Encrypted Workspace Storage](specs/20260213T005300-encrypted-workspace-storage.md) | XChaCha20-Poly1305 at the CRDT value level; server-managed keys with self-hosting as the trust boundary |
 | [Y-Sweet Persistence Architecture](specs/20260212T190000-y-sweet-persistence-architecture.md) | How Yjs documents persist and compact in Durable Objects |
-| [Simple Definition-First Workspace API](specs/20260201T120000-simple-definition-first-workspace.md) | The `defineTable` → `createWorkspace` → `.withExtension()` builder pattern |
+| [Simple Definition-First Workspace API](specs/20260201T120000-simple-definition-first-workspace.md) | The `defineTable` → `defineDocument` + `attach*` composition pattern |
 | [Resilient Client Architecture](specs/20260119T231252-resilient-client-architecture.md) | How workspace clients handle offline, reconnect, and extension failures |
 | [Migrate to @epicenter/sync](specs/20260214T120800-migrate-y-sweet-to-epicenter-sync.md) | Custom sync protocol replacing Y-Sweet with our own framing layer |
 

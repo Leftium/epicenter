@@ -1,5 +1,7 @@
-export { fromKv } from './fromKv.svelte.js';
-export { fromTable } from './fromTable.svelte.js';
+export { createAiChatFetch } from './create-ai-chat-fetch.js';
+export { fromDisposableCache } from './from-disposable-cache.svelte.js';
+export { fromKv } from './from-kv.svelte.js';
+export { fromTable } from './from-table.svelte.js';
 export {
 	createPersistedMap,
 	defineEntry,

@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid/non-secure';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { workspace } from '$lib/client';
+import { whispering } from '$lib/whispering/client';
 import { ToastServiceLive } from '$lib/services/toast';
 import {
 	type DbMigrationState,
@@ -82,7 +82,7 @@ function createMigrationDialog() {
 			const { data: migrationOutcome } = await tryAsync({
 				try: () =>
 					migrateDatabaseToWorkspace({
-						workspace,
+						workspace: { whenReady: whispering.whenReady },
 						onProgress: addLog,
 					}),
 				catch: (error) => {
@@ -226,9 +226,9 @@ function createMigrationDialog() {
 			migrationResult = null;
 
 			addLog('Clearing workspace tables...');
-			workspace.tables.recordings.clear();
-			workspace.tables.transformations.clear();
-			workspace.tables.transformationSteps.clear();
+			whispering.tables.recordings.clear();
+			whispering.tables.transformations.clear();
+			whispering.tables.transformationSteps.clear();
 			addLog('✅ Workspace tables cleared');
 
 			addLog('Resetting migration state...');

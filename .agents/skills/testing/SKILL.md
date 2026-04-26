@@ -36,6 +36,23 @@ External reading:
 
 > **Related Skills**: See `services-layer` for the service patterns being tested. See `typescript` for type testing conventions.
 
+## Tests vs. Benchmarks
+
+Two distinct file extensions, two distinct purposes:
+
+- **`*.test.ts`** — asserts behavior with `expect()`. Runs under `bun test`
+  (repo default, CI). A test file without at least one `expect()` call does
+  not belong under this extension.
+- **`*.bench.ts`** — measures and reports. Prints tables, timings, or
+  storage sizes. Runs under `bun bench` only. No assertions required
+  (perf thresholds on shared hardware flake; prefer visual trends).
+
+A single file is one or the other, never both. Benchmarks live under
+`src/__benchmarks__/` within a package; tests are colocated with the module
+they cover. The `bun test` default-discovery glob picks up only `*.test.ts`
+and friends, so renaming a report from `.test.ts` → `.bench.ts` is what
+excludes it from CI.
+
 ## File-Level Doc Comments
 
 Every `.test.ts` file MUST start with a JSDoc block explaining what is being tested and the key behaviors verified. This serves as documentation for the module's contract.

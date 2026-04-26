@@ -1,35 +1,19 @@
 /**
- * Fuji workspace — schema definition, branded IDs, and workspace factory.
+ * Fuji workspace — schema definition, branded IDs, and actions factory.
  *
  * Fuji is a personal CMS with a 1:1 mapping to your blog. Entries are content
  * pieces—articles, thoughts, ideas—organized by tags and type, displayed in a
  * data table with an editor panel. Each entry has a rich-text content document
  * for collaborative editing via ProseMirror + y-prosemirror.
- *
- * The factory returns a non-terminal builder. Consumers chain `.withExtension()`
- * to add persistence, encryption, sync, or other capabilities.
- *
- * @example
- * ```typescript
- * import { createFujiWorkspace } from '$lib/workspace'
- *
- * const ws = createFujiWorkspace()
- *   .withExtension('persistence', indexeddbPersistence)
- *
- * // Create an entry via action (CLI, AI, or UI)
- * ws.actions.entries.create({ title: 'My Post', tags: ['draft'] })
- * ```
  */
 
 import {
-	createWorkspace,
 	DateTimeString,
 	defineMutation,
 	defineTable,
-	defineWorkspace,
 	generateId,
-	richText,
 	type InferTableRow,
+	type Tables,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
 import Type from 'typebox';
@@ -64,9 +48,11 @@ export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
  * rather than being permanently destroyed—critical for CRDT conflict safety
  * when two devices diverge.
  *
- * The rich-text content document is attached via `.withDocument('content')` and
- * keyed by entry `id` for a 1:1 mapping. Edits to the document automatically
- * touch `updatedAt`.
+ * The rich-text content document is a separate Y.Doc per entry. Apps own
+ * content-doc construction via `buildEntryContentDoc` in `entry-content-docs.ts`,
+ * which wires IndexedDB persistence and bumps `updatedAt` via
+ * `onLocalUpdate`. Editor components bind through
+ * `entryContentDocs.open(id)`.
  */
 const entriesTable = defineTable(
 	type({
@@ -104,26 +90,24 @@ const entriesTable = defineTable(
 			case 2:
 				return row;
 		}
-	})
-	.withDocument('content', {
-		content: richText,
-		guid: 'id',
-		onUpdate: () => ({ updatedAt: DateTimeString.now() }),
 	});
 
 export type Entry = InferTableRow<typeof entriesTable>;
 
-// ─── Workspace ────────────────────────────────────────────────────────────────
+// ─── Table map ─────────────────────────────────────────────────────────────────
 
-export const fuji = defineWorkspace({
-	id: 'epicenter.fuji',
-	tables: { entries: entriesTable },
-});
+/**
+ * Table definitions for the fuji workspace. Composed directly in `client.ts`
+ * via `attachTables(ydoc, fujiTables)`. Kept separate so actions and future
+ * consumers can derive their input types from one source of truth.
+ */
+export const fujiTables = { entries: entriesTable };
+export type FujiTables = Tables<typeof fujiTables>;
 
-// ─── Factory ──────────────────────────────────────────────────────────────────
+// ─── Actions ──────────────────────────────────────────────────────────────────
 
-export function createFujiWorkspace() {
-	return createWorkspace(fuji).withActions(({ tables }) => ({
+export function createFujiActions(tables: FujiTables) {
+	return {
 		entries: {
 			/**
 			 * Create a new entry with sensible defaults.
@@ -154,7 +138,7 @@ export function createFujiWorkspace() {
 					),
 				}),
 				handler: ({ title, subtitle, type: entryType, tags, rating }) => {
-					const id = generateId() as EntryId;
+					const id = generateId<EntryId>();
 					const now = DateTimeString.now();
 					tables.entries.set({
 						id,
@@ -278,7 +262,7 @@ export function createFujiWorkspace() {
 				handler: ({ entries: items }) => {
 					const now = DateTimeString.now();
 					const rows = items.map(({ title, date }) => ({
-						id: generateId() as EntryId,
+						id: generateId<EntryId>(),
 						title,
 						subtitle: '',
 						type: [] as string[],
@@ -296,5 +280,5 @@ export function createFujiWorkspace() {
 				},
 			}),
 		},
-	}));
+	};
 }

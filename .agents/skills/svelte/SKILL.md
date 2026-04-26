@@ -3,7 +3,7 @@ name: svelte
 description: Svelte 5 patterns including runes ($state, $derived, $props), TanStack Query, SvelteMap reactive state, shadcn-svelte components, and component composition. Use when the user mentions .svelte files, Svelte components, or when using TanStack Query, fromTable/fromKv, or shadcn-svelte UI.
 metadata:
   author: epicenter
-  version: '2.0'
+  version: '2.1'
 ---
 
 # Svelte Guidelines
@@ -28,6 +28,124 @@ Use this pattern when you need to:
 - Convert SvelteMap data to arrays for derived state or component props.
 - Avoid template gotchas (unicode escapes in HTML vs JS context).
 - Extract repetitive markup into data-driven `{#each}` or `{#snippet}` patterns.
+
+# Prop-Keyed Resources: Let the Tree Own the Lifecycle
+
+When a component owns a disposable resource (subscription, socket, timer, any handle with a `dispose()`/`close()`/`unsubscribe()` method) whose identity depends on a prop, open it synchronously and let the parent control mount/unmount with `{#key}` or `{#if}`. Don't store the resource in nullable `$state` and re-open it inside an `$effect` — that reimplements component mount/unmount in user-space.
+
+## The rule
+
+```svelte
+<!-- Parent: one lifecycle boundary, structurally visible -->
+{#if resourceId}
+	{#key resourceId}
+		<ResourceView id={resourceId} />
+	{/key}
+{/if}
+
+<!-- Child: id is stable for this instance; open sync, dispose on unmount -->
+<script lang="ts">
+	let { id }: { id: string } = $props();
+
+	const resource = openResource(id);
+	$effect(() => () => resource.dispose());
+</script>
+
+<SomeView data={resource.data} />
+```
+
+The child's handle is non-nullable. No `{#if handle}` guard leaks into markup. The effect has one line because its only job is cleanup.
+
+## The anti-pattern
+
+```svelte
+<!-- Reimplements mount/unmount by hand -->
+<script lang="ts">
+	let { id }: { id: string } = $props();
+	let handle = $state<Resource | null>(null);
+
+	$effect(() => {
+		const h = openResource(id);
+		handle = h;
+		return () => { h.dispose(); handle = null; };
+	});
+</script>
+
+{#if handle}
+	<SomeView data={handle.data} />
+{/if}
+```
+
+It's easy to write a double-dispose or leak here. The version above can't — the body is the cleanup.
+
+## Decision check
+
+1. Is the id a prop? → Parent keys on it with `{#key}`; child opens sync.
+2. Can the id be absent? → Parent wraps in `{#if id}<Child {id} />{/if}`; child opens sync.
+3. Does the component have local UI state (selection, zoom, scroll) that must survive an id swap without persistence? → rare exception; the nullable-state pattern is justified.
+
+## Async-gate variant
+
+When the resource exposes a readiness promise (`whenReady`, `whenLoaded`), gate rendering in the **template** with `{#await}`. Do NOT introduce a `$state(false)` flag + `$effect` that flips it inside `.then()` — Svelte already owns promise lifecycles, cancellation, and error branching. Rebuilding that in userland is pure ceremony.
+
+```svelte
+<script lang="ts">
+	const resource = openResource(id);
+	$effect(() => () => resource.dispose());
+</script>
+
+{#await resource.whenReady}
+	<div class="flex h-full items-center justify-center">
+		<Spinner class="size-5 text-muted-foreground" />
+	</div>
+{:then}
+	<Editor binding={resource.body.binding} />
+{:catch error}
+	<ErrorState {error} />
+{/await}
+```
+
+### Anti-pattern — don't do this
+
+```svelte
+<!-- ❌ Re-implements {#await} with extra state and a cancellation flag -->
+<script lang="ts">
+	let isLoaded = $state(false);
+	$effect(() => {
+		let cancelled = false;
+		resource.whenReady.then(() => { if (!cancelled) isLoaded = true; });
+		return () => { cancelled = true; };
+	});
+</script>
+
+{#if isLoaded}<Editor />{:else}<Spinner />{/if}
+```
+
+Three problems, every time:
+1. **One idea, three primitives.** A state var, a subscription effect, and an if/else branch collectively say what `{#await}` says in four lines.
+2. **Silent unhandled rejections.** The `.then()` chain drops errors on the floor. `{#await}`'s `{:catch}` makes failure explicit and catchable.
+3. **Manual cancellation.** The `cancelled` flag exists because `.then()` fires after unmount. `{#await}` tears down the subscription when the block does.
+
+### When you still need `$state` flags
+
+`{#await}` is for **one stable promise** driving one render branch. Reach for `$state` + `$effect` only when:
+- The flag is toggled imperatively by user action (`isSaving` around an `await save()` in a click handler).
+- You're composing multiple promises with custom logic (race, timeout, retry).
+- The flag reflects an external reactive source (`$derived(query.isPending)` from TanStack Query, a Svelte store, `createSubscriber`).
+
+## `$state.raw` for non-proxyable handles
+
+Svelte's deep proxy can break handles whose methods rely on `this` being the original instance, or that hold internal non-reactive state. Prefer keeping handles out of `$state` entirely (the rule above). If a handle must live in state, use `$state.raw(handle)` to skip proxying.
+
+## Project-specific application
+
+In this codebase, the rule applies to any component calling `*Docs.open()` (Yjs doc handles from `createDocumentFactory`). Search: `$state<ReturnType<typeof .*\.open>`. Every hit is a candidate for the rule above.
+
+## Related
+
+- The `sync-construction-async-property-ui-render-gate-pattern` skill covers the service-layer equivalent for clients with async-ready properties.
+- `docs/articles/svelte-5-createsubscriber-pattern.md` covers `createSubscriber` for wrapping external event sources into reactive values — a different job than component-scoped handles.
+- `docs/articles/20260420T160000-state-handle-null-is-the-component-lifecycle-in-disguise.md` walks through why this rule exists and when Pattern B is still correct.
 
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 
@@ -409,6 +527,90 @@ Without JSDoc and a meaningful name, extract it anyway — the indirection isn't
 
 Functions used **2 or more times** should always stay extracted — this rule only applies to single-use functions.
 
+# Commit-on-Blur for Workspace String Fields
+
+For plain string fields backed by a workspace table or Y.Map row (title, subtitle, name, description, license, label), **commit on `onblur`, not `oninput`**. Per-keystroke writes turn one typing session into N Yjs transactions, N IDB writes, N sync messages, and N BroadcastChannel posts. Commit-on-blur collapses that to one.
+
+The pattern has two halves: the **per-input handler** and the **app-wide safety net**. Both are required — the safety net is what makes commit-on-blur survive Cmd+W mid-edit.
+
+## The handler
+
+```svelte
+<input
+  type="text"
+  value={entry.title}
+  onblur={(e) => {
+    const next = e.currentTarget.value;
+    if (next !== entry.title) updateEntry({ title: next });
+  }}
+/>
+```
+
+The compare-then-write guard avoids a no-op Yjs transaction when focus passes through an unchanged field. For factories that update many fields, extract a small `commit(field, next)` helper that does the compare internally.
+
+## The safety net (app-wide, in `+layout.svelte`)
+
+```svelte
+<script lang="ts">
+  function flushPendingEdits() {
+    if (
+      document.visibilityState === 'hidden' &&
+      document.activeElement instanceof HTMLElement
+    ) {
+      document.activeElement.blur();
+    }
+  }
+</script>
+
+<svelte:document onvisibilitychange={flushPendingEdits} />
+<svelte:window onpagehide={flushPendingEdits} />
+```
+
+When the page is being hidden (tab close, Cmd+W, tab switch, window minimize, iOS app-switch, bfcache), `.blur()` on the focused element synchronously dispatches its blur event, which synchronously runs your commit handler, which synchronously updates the Y.Doc — all before the page tears down. Six lines, one place, every `<input onblur>` in the app inherits the resilience.
+
+`visibilitychange` is a document event, `pagehide` is a window event. Per Svelte's `packages/svelte/elements.d.ts`, `onvisibilitychange` lives on `SvelteDocumentAttributes` and `onpagehide` lives on `SvelteWindowAttributes` — keep them on the right element. Listen to both: visibilitychange is more reliable on iOS Safari, pagehide catches bfcache navigations.
+
+## The default for new apps
+
+Every new app under `apps/*` should ship the safety net in `+layout.svelte` as part of scaffolding. Treat it like `<Toaster />` or `<ModeWatcher />` — a layout-level concern that's free once installed. See `workspace-app-layout` for where this fits in the `+layout.svelte` checklist.
+
+## When NOT to use commit-on-blur
+
+| Field type | Pattern |
+|---|---|
+| Plain string Y.Map field (title, subtitle, name, description, license) | **commit-on-blur** |
+| Y.Text bound through y-prosemirror / y-codemirror / tiptap | per-keystroke (CRDT operates at character level) |
+| Discrete selectors (radio, checkbox, datepicker, tag pickers) | inline event handler — already one event per action |
+| Search box / filter that doesn't persist | local `$state` only, no commit |
+| Component-local form state submitted on a button click | accumulate in `$state`, commit in the click handler |
+
+For Y.Text fields you specifically want every keystroke to participate in operational transform — commit-on-blur defeats the point of the CRDT.
+
+## Defensive variant: local state + focus flag
+
+If a sibling tab editing the same row could clobber in-progress typing (rare in personal apps), reach for a local-state buffer with a focus flag — but only if the clobber actually shows up:
+
+```svelte
+<script lang="ts">
+  let localTitle = $state(entry.title);
+  let editing = $state(false);
+  $effect(() => { if (!editing) localTitle = entry.title; });
+</script>
+
+<input
+  bind:value={localTitle}
+  onfocus={() => (editing = true)}
+  onblur={() => {
+    editing = false;
+    if (localTitle !== entry.title) commit(localTitle);
+  }}
+/>
+```
+
+For true conflict-free text editing across tabs, switch the field to Y.Text + a CRDT-aware editor binding instead.
+
+See `docs/articles/commit-on-blur-survives-tab-close.md` for the full rationale, persistence-layer reliability table, and the page-lifecycle guarantees behind the safety net.
+
 # Styling
 
 For general CSS and Tailwind guidelines, see the `styling` skill.
@@ -700,11 +902,11 @@ When **3 or more sequential sibling elements** follow an identical pattern with 
 For more complex repeated patterns (e.g., toolbar buttons with tooltips), use `{#snippet}` to define the shared structure once:
 
 ```svelte
-{#snippet toggleButton(pressed: boolean, onToggle: () => void, icon: typeof BoldIcon, label: string)}
+{#snippet toggleButton(pressed: boolean, onToggle: () => void, Icon: typeof BoldIcon, label: string)}
 	<Tooltip.Root>
 		<Tooltip.Trigger>
 			<Toggle size="sm" {pressed} onPressedChange={onToggle}>
-				<svelte:component this={icon} class="size-4" />
+				<Icon class="size-4" />
 			</Toggle>
 		</Tooltip.Trigger>
 		<Tooltip.Content>{label}</Tooltip.Content>
@@ -786,7 +988,7 @@ Always use the `Spinner` component from `@epicenter/ui/spinner` instead of plain
 
 ## Full-Page Loading (Async Gate)
 
-When gating UI on an async promise (e.g. `whenReady`, `whenSynced`), use `Empty.*` for both loading and error states. This keeps the structure symmetric:
+When gating UI on an async promise (e.g. `whenReady`, `whenLoaded`), use `Empty.*` for both loading and error states. This keeps the structure symmetric:
 
 ```svelte
 <script lang="ts">

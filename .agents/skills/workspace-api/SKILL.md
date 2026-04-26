@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), withActions, and extension ordering. Use when the user mentions workspace, defineTable, defineKv, createWorkspace, withActions, withExtension, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, chaining extensions, or attaching actions to a workspace client.
+description: Workspace API patterns for defineTable, defineKv, versioning, migrations, data access (CRUD + observation), createDocumentFactory, attach* primitives, and action composition. Use when the user mentions workspace, defineTable, defineKv, createDocumentFactory, attachTables, attachSync, attachIndexedDb, attachSqlite, defineQuery, defineMutation, connectWorkspace, or when defining schemas, reading/writing table data, observing changes, writing migrations, composing attachments inline, or attaching actions to a document bundle.
 metadata:
   author: epicenter
   version: '6.0'
@@ -14,7 +14,7 @@ metadata:
 
 Type-safe schema definitions for tables and KV stores.
 
-> **Related Skills**: See `yjs` for Yjs CRDT patterns and shared types. See `svelte` for reactive wrappers (`fromTable`, `fromKv`).
+> **Related Skills**: See `yjs` for Yjs CRDT patterns and shared types. See `svelte` for reactive wrappers (`fromTable`, `fromKv`) and the **commit-on-blur pattern** — the preferred way to wire Svelte text inputs to workspace string fields without writing N transactions per keystroke. See `attach-primitive` for the full contract and invariants every `attach*` function must follow.
 
 ## When to Apply This Skill
 
@@ -22,8 +22,8 @@ Type-safe schema definitions for tables and KV stores.
 - Adding a new version to an existing table definition
 - Writing table migration functions
 - Reading, writing, or observing table/KV data
-- Attaching actions to a workspace client via `.withActions()`
-- Chaining extensions with `.withExtension()` or `.withWorkspaceExtension()`
+- Composing a live document with `createDocumentFactory(builder)` + `attach*` primitives
+- Attaching persistence (`attachIndexedDb`, `attachSqlite`), sync (`attachSync`), or materializers inline
 - Writing server-side Bun scripts with `connectWorkspace()`
 ## Tables
 
@@ -57,6 +57,42 @@ const posts = defineTable(
 			return row;
 	}
 });
+```
+
+### Row Type Inference
+
+**Always derive row types with `InferTableRow<typeof X>` against the table definition.** Export the type from the same file that calls `defineTable()`. Consumers `import type` it directly — never re-derive.
+
+```typescript
+// ✅ Correct — schema is the single source of truth
+const postsTable = defineTable(/* ... */);
+export type Post = InferTableRow<typeof postsTable>;
+```
+
+```typescript
+// ❌ Wrong — goes through the runtime Table instance
+type Post = ReturnType<typeof workspace.tables.posts.getAllValid>[number];
+
+// ❌ Wrong — same smell with different method
+type Post = ReturnType<typeof workspace.tables.posts.getAll>[number];
+```
+
+Why `InferTableRow` is better:
+- Source of truth is the schema, not a method signature.
+- Doesn't require importing/building the runtime client (works in workers, server code, isomorphic modules).
+- Survives method renames and signature changes.
+- Matches the convention used across every app in this repo.
+
+**Don't relay types through state files.** Reactive state files (e.g. `*.svelte.ts`) should `import type` from the workspace definition module, not redefine or re-export the row type. Other consumers should also import the type directly from the workspace module — not from the state file. State files export runtime values; the workspace module exports types.
+
+```typescript
+// state/posts.svelte.ts
+import type { Post } from '$lib/workspace';     // ✅ import directly
+// export type { Post };                         // ❌ pass-through re-export
+
+// some-component.svelte
+import { posts } from '$lib/state/posts.svelte';  // runtime
+import type { Post } from '$lib/workspace';        // type — same source as state file
 ```
 
 ## KV Stores
@@ -126,15 +162,15 @@ const newId = generateConversationId();  // Good
 // const newId = generateId() as string as ConversationId;  // Bad
 ```
 
-## Actions (`.withActions()`)
+## Actions
 
-Actions wrap workspace operations as `defineMutation` (writes) or `defineQuery` (reads). Attach them via `.withActions()` on a workspace builder—the call is non-terminal, so you can chain `.withExtension()` after it.
+Actions wrap table operations as `defineMutation` (writes) or `defineQuery` (reads). Build them in a small factory that closes over `tables` and `batch`, then attach the result to the bundle returned from your `createDocumentFactory` builder.
 
 ```typescript
-import { createWorkspace, defineMutation, defineQuery, defineWorkspace } from '@epicenter/workspace';
+import { defineMutation, defineQuery } from '@epicenter/workspace';
 
-export function createBlogWorkspace() {
-	return createWorkspace(blogDefinition).withActions(({ tables }) => ({
+export function createBlogActions({ tables, batch }) {
+	return {
 		/**
 		 * Mark a post as published and record the publication timestamp.
 		 *
@@ -146,16 +182,45 @@ export function createBlogWorkspace() {
 			description: 'Publish a draft post',
 			input: type({ id: PostId }),
 			handler: ({ id }) => {
-				tables.posts.update({ id, published: true, publishedAt: Date.now() });
+				batch(() => {
+					tables.posts.update({ id, published: true, publishedAt: Date.now() });
+				});
 			},
 		}),
-	}));
+	};
 }
+
+// Inside createDocumentFactory(...):
+//   const actions = createBlogActions({ tables, batch });
+//   return { id, ydoc, tables, actions, batch, /* ... */ };
 ```
+
+### Return shapes — local vs. remote contract
+
+Actions have **two** type surfaces depending on how they're invoked. **Local**
+callers see the handler's signature verbatim — sync stays sync, raw stays raw,
+throws throw. **Remote** callers (via `createRemoteActions` or `sync.rpc()`)
+always get `Promise<Result<T, E | ActionFailed>>`: the transport wraps raw
+values in `Ok`, converts thrown errors into `Err(RpcError.ActionFailed)`, and
+passes existing `Result`s through.
+
+**Rule of thumb:**
+
+- **Return `Err(TypedError)`** for failures your caller should branch on.
+- **Throw** for bugs / invariants. On the wire, throws become `ActionFailed`
+  — the caller loses the stack and can only say "something broke."
+- **Return raw** when failure isn't a meaningful concept for the operation.
+
+If you need structured errors on the wire, `return Err(...)` explicitly —
+don't throw and hope.
+
+For the full matrix (every caller's view of every handler shape, all the
+decision trees, and the normalization boundaries), read
+[references/action-return-shapes.md](references/action-return-shapes.md).
 
 ### JSDoc on Action Methods
 
-Every action method inside `.withActions()` should have a JSDoc comment. The JSDoc and the `description` field serve **different audiences**:
+Every action method inside the `actions` object returned from the `createDocumentFactory` builder should have a JSDoc comment. The JSDoc and the `description` field serve **different audiences**:
 
 - **`description`** — consumed by MCP servers, CLI help text, and OpenAPI specs. Keep it short and declarative ("Import skills from disk").
 - **JSDoc** — consumed by developers hovering in an IDE. Explain *why* the action exists as a separate operation, what non-obvious behavior it has, or what assumptions it makes.
@@ -184,12 +249,13 @@ Each app splits workspace code into an **isomorphic `workspace/` folder** and a 
 src/lib/
 │
 ├── workspace/                          ← 100% isomorphic (safe for Node, Bun, browser)
-│   ├── definition.ts                   ← Schema: defineWorkspace, defineTable, branded IDs
-│   ├── workspace.ts                    ← Factory: createWorkspace(definition) + isomorphic actions
-│   └── index.ts                        ← Barrel: re-exports definition + workspace only
+│   ├── definition.ts                   ← Schema: defineTable, defineKv, branded IDs
+│   ├── actions.ts                      ← Isomorphic action factory: createXActions({ tables, batch })
+│   └── index.ts                        ← Barrel: re-exports definition + actions only
 │
-└── client.ts                           ← Runtime singleton: extensions, encryption, sync,
-                                           runtime-specific actions (browser APIs, Node fs, etc.)
+└── client.ts                           ← Runtime singleton: createDocumentFactory(builder) composing
+                                           attachTables, attachIndexedDb/Sqlite, attachSync,
+                                           attachEncryption, and runtime-specific actions
 ```
 
 ```
@@ -199,9 +265,9 @@ src/lib/
                     └────────────┬────────────┘
                                  │ imports
                     ┌────────────▼────────────┐
-                    │     workspace.ts         │
-                    │  createX() factory       │
-                    │  + isomorphic actions    │
+                    │     actions.ts           │
+                    │  createXActions factory  │
+                    │  ({ tables, batch })     │
                     └────────────┬────────────┘
                                  │ imports
    ┌─────────────────────────────┼─────────────────────────────┐
@@ -210,18 +276,18 @@ src/lib/
 ┌──────────────┐   ┌──────────────────┐   ┌──────────────────┐
 │ client.ts    │   │ server-client.ts │   │ cli-client.ts    │
 │ (browser)    │   │ (Node/Bun)       │   │ (CLI)            │
-│ IndexedDB    │   │ SQLite           │   │ filesystem       │
-│ WebSocket    │   │ TCP sync         │   │ persistence      │
+│ attachIndex… │   │ attachSqlite     │   │ attachSqlite     │
+│ attachSync   │   │ attachSync       │   │ (no sync)        │
 │ Chrome APIs  │   │ Node fs APIs     │   │                  │
 └──────────────┘   └──────────────────┘   └──────────────────┘
 ```
 
 ### Layering Rules
 
-1. **`definition.ts`** — Pure schema. `defineWorkspace()`, `defineTable()`, `defineKv()`, branded ID types and generators. Isomorphic.
-2. **`workspace.ts`** — Factory function that calls `createWorkspace(definition)`. May chain `.withActions()` for **isomorphic** actions (table reads/writes only). Isomorphic.
-3. **`index.ts`** — Barrel that re-exports from `definition.ts` and `workspace.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
-4. **`client.ts`** — Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Calls the factory, chains `.withEncryption()`, `.withExtension()`, and runtime-specific `.withActions()`. Exports the singleton as a named export (`export const workspace = ...`).
+1. **`definition.ts`** — Pure schema. `defineTable()`, `defineKv()`, branded ID types and generators. Isomorphic.
+2. **`actions.ts`** — Factory that takes `{ tables, batch }` and returns an action tree of `defineQuery`/`defineMutation`. Isomorphic — no browser/Node APIs.
+3. **`index.ts`** — Barrel that re-exports from `definition.ts` and `actions.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
+4. **`client.ts`** — Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Wraps `createDocumentFactory(builder)` where the builder composes runtime-specific attachments (IndexedDB vs SQLite, browser vs Node APIs) and assembles the full bundle (including runtime-specific actions). Exports the singleton via `.open(id)` as a named export (`export const workspace = xDoc.open('epicenter.x')`).
 
 ### Import Convention
 
@@ -253,12 +319,12 @@ The barrel is 100% isomorphic, so this single subpath is safe for any consumer (
 
 ### Isomorphic vs Runtime-Specific Actions
 
-Isomorphic actions (table reads/writes, portable logic) belong in the exported `workspace.ts` factory. Runtime-specific actions—whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands—are chained via `.withActions()` in the client file closest to that runtime.
+Isomorphic actions (table reads/writes, portable logic) belong in the exported `actions.ts` factory. Runtime-specific actions—whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands—live in the `client.ts` builder where the relevant attachments and APIs are in scope.
 
 ```typescript
-// workspace.ts — isomorphic actions (exported via barrel)
-export function createMyApp() {
-  return createWorkspace(definition).withActions(({ tables }) => ({
+// workspace/actions.ts — isomorphic actions (exported via barrel)
+export function createMyAppActions({ tables, batch }) {
+  return {
     devices: {
       list: defineQuery({
         title: 'List Devices',
@@ -267,14 +333,19 @@ export function createMyApp() {
         handler: () => ({ devices: tables.devices.getAllValid() }),
       }),
     },
-  }));
+  };
 }
 
-// src/lib/client.ts — browser-specific actions chained at the runtime boundary
-export const workspace = createMyApp()
-  .withExtension('persistence', indexeddbPersistence)
-  .withExtension('sync', createSyncExtension({ ... }))
-  .withActions(({ tables }) => ({
+// src/lib/client.ts — browser-specific attachments + runtime actions
+const myApp = createDocumentFactory((id: string) => {
+  const ydoc = new Y.Doc({ guid: id });
+  const tables = attachTables(ydoc, myAppTables);
+  const idb = attachIndexedDb(ydoc);
+  const sync = attachSync(ydoc, { url, waitFor: idb.whenLoaded });
+  const batch = (fn) => ydoc.transact(fn);
+
+  const actions = {
+    ...createMyAppActions({ tables, batch }),
     tabs: {
       close: defineMutation({
         title: 'Close Tabs',
@@ -286,61 +357,56 @@ export const workspace = createMyApp()
         },
       }),
     },
-  }));
+  };
 
-// OR: src/lib/server-client.ts — Node/Bun-specific at the server boundary
-export const workspace = createMyApp()
-  .withExtension('persistence', sqlitePersistence)
-  .withActions(({ tables }) => ({
-    files: {
-      importFromDisk: defineMutation({
-        title: 'Import Files',
-        description: 'Import files from a local directory.',
-        input: Type.Object({ dirPath: Type.String() }),
-        handler: async ({ dirPath }) => {
-          const entries = await readdir(dirPath);  // Node fs API
-          // ...
-        },
-      }),
-    },
-  }));
+  return { id, ydoc, tables, idb, sync, actions, batch, /* whenReady, … */ };
+});
+
+export const workspace = myApp.open('epicenter.myapp');
 ```
 
-## Extension Ordering
+## Attachment Ordering
 
-Extensions initialize in registration order. Each extension's factory receives a `whenReady` promise that resolves when all previously registered extensions have finished initializing. Whether this creates a waterfall depends on whether each extension awaits it:
+Attachments compose through plain lexical scope, so ordering is explicit: if `sync` needs to wait for local state, its `waitFor` option reads `idb.whenLoaded` — and `idb` must be defined first.
 
-| Extension | Awaits prior `whenReady`? | Behavior |
+| Attachment | Typical `waitFor` | Behavior |
 |---|---|---|
-| `filesystemPersistence` | No | Starts loading SQLite immediately |
-| `indexeddbPersistence` | No | Starts loading IndexedDB immediately |
-| `createCliUnlock` | Yes | Waits for persistence, then applies encryption keys |
-| `createSyncExtension` | Yes | Waits for everything before it, then opens WebSocket |
-| `createMarkdownMaterializer` | Yes | Waits for persistence + sync, then materializes |
+| `attachSqlite` | — | Starts loading SQLite immediately |
+| `attachIndexedDb` | — | Starts loading IndexedDB immediately |
+| `attachEncryption` + `applyKeys` | after auth | Applied after auth resolves encryption keys |
+| `attachSync` | `idb.whenLoaded` (or `sqlite.whenLoaded`) | Opens WebSocket after local replay |
 
-The standard chain is **persistence → unlock → sync**:
+The standard shape is **persistence first, then sync with `waitFor`**:
 
 ```
-persistence starts loading ────────────────────→ done
-                                                   ↓
-                        unlock waits... ──────────→ applies keys → done
-                                                                    ↓
-                        sync waits... ─────────────────────────────→ connects
+attachIndexedDb  ────────────→ idb.whenLoaded resolves
+                                       ↓
+attachSync({ waitFor: idb.whenLoaded }) ────→ WebSocket opens → synced
 ```
 
 This ordering matters because sync only exchanges the delta between local state and the server. Without persistence loading first, every cold start downloads the full document.
 
 ```typescript
-// ✅ Correct — persistence loads first, sync exchanges delta only
-createWorkspace(definition)
-  .withExtension('persistence', filesystemPersistence({ filePath: '...' }))
-  .withWorkspaceExtension('unlock', createCliUnlock(sessions, SERVER_URL))
-  .withExtension('sync', createSyncExtension({ url: ..., getToken: ... }))
+// ✅ Correct — persistence loads first, sync waits for idb, exchanges delta only
+createDocumentFactory((id) => {
+  const ydoc = new Y.Doc({ guid: id });
+  const tables = attachTables(ydoc, myTables);
+  const sqlite = attachSqlite(ydoc, { filePath: '...' });
+  const sync = attachSync(ydoc, {
+    url: (docId) => toWsUrl(`${serverUrl}/workspaces/${docId}`),
+    getToken,
+    waitFor: sqlite.whenLoaded,
+  });
+  return { id, ydoc, tables, sqlite, sync, /* ... */ };
+});
 
 // ❌ Wrong — sync starts before local state is loaded, downloads full document
-createWorkspace(definition)
-  .withExtension('sync', createSyncExtension({ url: ..., getToken: ... }))
-  .withExtension('persistence', filesystemPersistence({ filePath: '...' }))
+createDocumentFactory((id) => {
+  const ydoc = new Y.Doc({ guid: id });
+  const sync = attachSync(ydoc, { url, getToken }); // no waitFor
+  const sqlite = attachSqlite(ydoc, { filePath: '...' });
+  return { id, ydoc, sqlite, sync, /* ... */ };
+});
 ```
 
 ### `connectWorkspace` (CLI/Script Shortcut)
@@ -378,13 +444,16 @@ Load these on demand based on what you're working on:
 
 - If working with **table migrations** (migration function rules, direct-to-latest strategy, migration anti-patterns, `as const` note), read [references/table-migrations.md](references/table-migrations.md)
 - If working with **table/KV CRUD or observation** (`get`, `set`, `update`, `observe`, Svelte observer guidance), read [references/table-kv-crud-observation.md](references/table-kv-crud-observation.md)
-- If working with **document content APIs** (`withDocument`, `handle.read/write`, mode bindings, `handle.batch`, `handle.ydoc` anti-pattern), read [references/document-content.md](references/document-content.md)
+- If working with **per-row or standalone Y.Docs** (raw `new Y.Doc({ guid, gc })` + `attachRichText`/`attachPlainText`, `attachIndexedDb`, `attachSync`, `whenLoaded` vs `whenConnected`), read [references/primitive-api.md](references/primitive-api.md)
+- If working with **action return shapes, throw vs `Err`, remote error envelopes, `createRemoteActions`, `RemoteActions<A>`, `ActionFailed`, or the local/remote type-surface split**, read [references/action-return-shapes.md](references/action-return-shapes.md)
 
 Code references:
 
-- `packages/workspace/src/workspace/define-table.ts`
-- `packages/workspace/src/workspace/define-kv.ts`
-- `packages/workspace/src/workspace/index.ts`
-- `packages/workspace/src/workspace/create-tables.ts`
-- `packages/workspace/src/workspace/create-kv.ts`
-- `packages/workspace/src/workspace/create-workspace.ts`
+- `packages/workspace/src/document/define-table.ts`
+- `packages/workspace/src/document/define-kv.ts`
+- `packages/workspace/src/document/create-document-factory.ts`
+- `packages/workspace/src/document/attach-table.ts`
+- `packages/workspace/src/document/attach-kv.ts`
+- `packages/workspace/src/document/attach-sync.ts`
+- `packages/workspace/src/document/attach-indexed-db.ts`
+- `packages/workspace/src/document/attach-sqlite.ts`

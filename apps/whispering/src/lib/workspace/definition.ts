@@ -1,4 +1,4 @@
-import { defineKv, defineTable, defineWorkspace, type InferTableRow } from '@epicenter/workspace';
+import { defineKv, defineTable, type InferTableRow } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
@@ -74,6 +74,9 @@ const transformations = defineTable(
 	}),
 );
 
+/** Transformation row type inferred from the latest workspace table schema version. */
+export type Transformation = InferTableRow<typeof transformations>;
+
 /**
  * Individual steps within a transformation pipeline.
  *
@@ -119,6 +122,9 @@ const transformationSteps = defineTable(
 	}),
 );
 
+/** Transformation step row type inferred from the latest workspace table schema version. */
+export type TransformationStep = InferTableRow<typeof transformationSteps>;
+
 /**
  * Execution records for transformation pipelines. One run per invocation.
  *
@@ -150,6 +156,9 @@ const transformationRuns = defineTable(
 	),
 );
 
+/** Transformation run row type inferred from the latest workspace table schema version. */
+export type TransformationRun = InferTableRow<typeof transformationRuns>;
+
 /**
  * Per-step execution records within a transformation run.
  *
@@ -176,6 +185,9 @@ const transformationStepRuns = defineTable(
 		),
 	),
 );
+
+/** Transformation step run row type inferred from the latest workspace table schema version. */
+export type TransformationStepRun = InferTableRow<typeof transformationStepRuns>;
 
 /**
  * Synced settings stored as individual KV entries with last-write-wins resolution.
@@ -326,27 +338,29 @@ const shortcuts = {
 } as const;
 
 /**
- * The Whispering workspace definition — 5 normalized tables for domain data
- * and ~40 KV entries for synced preferences.
+ * Whispering table schemas — 5 normalized tables for domain data.
+ * Consumed by `attachTables` in `client.ts`.
  */
-export const whisperingDefinition = defineWorkspace({
-	id: 'whispering',
-	tables: {
-		recordings,
-		transformations,
-		transformationSteps,
-		transformationRuns,
-		transformationStepRuns,
-	},
-	kv: {
-		...sound,
-		...output,
-		...ui,
-		...dataRetention,
-		...recording,
-		...transcription,
-		...transformation,
-		...analytics,
-		...shortcuts,
-	},
-});
+export const whisperingTables = {
+	recordings,
+	transformations,
+	transformationSteps,
+	transformationRuns,
+	transformationStepRuns,
+};
+
+/**
+ * Whispering KV schemas — ~40 entries for synced preferences.
+ * Consumed by `attachKv` in `client.ts`.
+ */
+export const whisperingKv = {
+	...sound,
+	...output,
+	...ui,
+	...dataRetention,
+	...recording,
+	...transcription,
+	...transformation,
+	...analytics,
+	...shortcuts,
+};

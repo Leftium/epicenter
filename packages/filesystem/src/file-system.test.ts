@@ -10,15 +10,33 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createWorkspace } from '@epicenter/workspace';
+import { attachTables, createDisposableCache } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
-import { createYjsFileSystem, type YjsFileSystem } from './file-system.js';
+import * as Y from 'yjs';
+import {
+	createFileContentDoc,
+	type FileContentDocs,
+} from './file-content-docs.js';
+import { attachYjsFileSystem, type YjsFileSystem } from './file-system.js';
+import type { FileId } from './ids.js';
 import { filesTable } from './table.js';
 
 function setup() {
-	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
-	return { fs, ws };
+	const id = 'test';
+	const ydoc = new Y.Doc({ guid: id });
+	const tables = attachTables(ydoc, { files: filesTable });
+	const ws = { id, ydoc, tables };
+	const contentDocs = createDisposableCache(
+		(fileId: FileId) =>
+			createFileContentDoc({
+				fileId,
+				workspaceId: ws.id,
+				filesTable: ws.tables.files,
+			}),
+		{ gcTime: Number.POSITIVE_INFINITY },
+	);
+	const fs = attachYjsFileSystem(ws.tables.files, contentDocs);
+	return { fs, ws, contentDocs };
 }
 
 describe('YjsFileSystem', () => {
@@ -379,48 +397,45 @@ describe('mv preserves content (no conversion)', () => {
 	});
 });
 
-async function getTimelineLength(
+function getTimelineLength(
 	fs: YjsFileSystem,
-	documents: { open(input: string): Promise<{ length: number }> },
+	contentDocs: FileContentDocs,
 	path: string,
-): Promise<number> {
+): number {
 	const id = fs.lookupId(path);
 	if (!id) throw new Error(`No file at ${path}`);
-	const content = await documents.open(id);
-	return content.length;
+	using handle = contentDocs.open(id);
+	return handle.content.length;
 }
 
 describe('timeline content storage', () => {
 	test('text append (appendFile on text entry)', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
+		const { fs, contentDocs } = setup();
 		await fs.writeFile('/log.txt', 'line1\n');
 		await fs.appendFile('/log.txt', 'line2\n');
 		expect(await fs.readFile('/log.txt')).toBe('line1\nline2\n');
 		// Append to text should not grow timeline
-		expect(await getTimelineLength(fs, documents, '/log.txt')).toBe(1);
+		expect(getTimelineLength(fs, contentDocs, '/log.txt')).toBe(1);
 	});
 
 	test('Uint8Array writes are treated as text (no mode switch)', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
+		const { fs, contentDocs } = setup();
 		await fs.writeFile('/file.dat', 'text v1');
-		expect(await getTimelineLength(fs, documents, '/file.dat')).toBe(1);
+		expect(getTimelineLength(fs, contentDocs, '/file.dat')).toBe(1);
 
 		// Uint8Array is decoded to text — same mode, overwrites in-place
 		await fs.writeFile('/file.dat', new Uint8Array([0x48, 0x69])); // "Hi"
-		expect(await getTimelineLength(fs, documents, '/file.dat')).toBe(1);
+		expect(getTimelineLength(fs, contentDocs, '/file.dat')).toBe(1);
 		expect(await fs.readFile('/file.dat')).toBe('Hi');
 	});
 
 	test('same-mode text overwrite does NOT grow timeline', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
+		const { fs, contentDocs } = setup();
 		await fs.writeFile('/file.txt', 'first');
 		await fs.writeFile('/file.txt', 'second');
 		await fs.writeFile('/file.txt', 'third');
 		expect(await fs.readFile('/file.txt')).toBe('third');
-		expect(await getTimelineLength(fs, documents, '/file.txt')).toBe(1);
+		expect(getTimelineLength(fs, contentDocs, '/file.txt')).toBe(1);
 	});
 
 	test('readFileBuffer returns correct bytes for text entry', async () => {
@@ -433,31 +448,31 @@ describe('timeline content storage', () => {
 
 describe('sheet file support', () => {
 	test('readFile returns CSV for sheet-mode file', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
+		const { fs, contentDocs } = setup();
 		await fs.writeFile('/data.csv', 'placeholder');
 		const fileId = fs.lookupId('/data.csv');
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
-		const content = await documents.open(fileId);
-		content.batch(() => {
-			content.write('Name,Age\nAlice,30\n');
-			content.asSheet();
+		await using handle = contentDocs.open(fileId);
+		await handle.whenReady;
+		handle.content.batch(() => {
+			handle.content.write('Name,Age\nAlice,30\n');
+			handle.content.asSheet();
 		});
 		expect(await fs.readFile('/data.csv')).toBe('Name,Age\nAlice,30\n');
 	});
 
 	test('writeFile on sheet-mode re-parses CSV in place', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
+		const { fs, contentDocs } = setup();
 		await fs.writeFile('/data.csv', 'placeholder');
 		const fileId = fs.lookupId('/data.csv');
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
-		const content = await documents.open(fileId);
-		content.batch(() => {
-			content.write('A,B\n1,2\n');
-			content.asSheet();
+		await using handle = contentDocs.open(fileId);
+		await handle.whenReady;
+		handle.content.batch(() => {
+			handle.content.write('A,B\n1,2\n');
+			handle.content.asSheet();
 		});
 		await fs.writeFile('/data.csv', 'X,Y\n3,4\n');
 		expect(await fs.readFile('/data.csv')).toBe('X,Y\n3,4\n');
@@ -532,30 +547,5 @@ describe('just-bash integration', () => {
 		await bash.exec('printf "line1\\nline2\\nline3\\n" > /file.txt');
 		const result = await bash.exec('wc -l /file.txt');
 		expect(result.stdout.trim()).toContain('3');
-	});
-});
-
-describe('document integration', () => {
-	test('hard row deletion triggers automatic content doc cleanup', async () => {
-		const { fs, ws } = setup();
-		const documents = ws.documents.files.content;
-
-		// Write a file to create both the row and the content doc
-		await fs.writeFile('/test.txt', 'hello world');
-		const fileId = fs.lookupId('/test.txt');
-		expect(fileId).toBeDefined();
-		if (!fileId) throw new Error('Expected /test.txt to exist');
-
-		// Open the content doc
-		const content1 = await documents.open(fileId);
-
-		// Hard-delete the row directly from the table.
-		// The documents manager's table observer should automatically close the content doc.
-		ws.tables.files.delete(fileId);
-
-		// Re-opening should create a FRESH instance
-		// because the documents manager's row-deletion observer called close()
-		const content2 = await documents.open(fileId);
-		expect(content2).not.toBe(content1);
 	});
 });

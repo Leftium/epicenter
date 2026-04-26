@@ -60,49 +60,54 @@
 		'Plugin system for custom extensions',
 	] as const;
 
-	const workspaceCode = `import { createSqliteIndex, createYjsFileSystem, filesTable } from '@epicenter/filesystem';
-import { defineWorkspace, createWorkspace } from '@epicenter/workspace';
-import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/indexeddb';
+	const workspaceCode = `import { createSqliteIndex, attachYjsFileSystem, filesTable } from '@epicenter/filesystem';
+import { attachIndexedDb, attachTables } from '@epicenter/workspace';
+import * as Y from 'yjs';
 
-const definition = defineWorkspace({
-  id: 'opensidian',
-  tables: { files: filesTable },
-});
+export function openOpensidian() {
+  const ydoc = new Y.Doc({ guid: 'opensidian' });
+  const tables = attachTables(ydoc, { files: filesTable });
+  const idb = attachIndexedDb(ydoc);
+  const sqliteIndex = createSqliteIndex(tables.files);
+  const fs = attachYjsFileSystem(tables.files, fileContentDocs);
 
-export const workspace = createWorkspace(definition)
-  .withExtension('persistence', indexeddbPersistence)
-  .withWorkspaceExtension('sqliteIndex', createSqliteIndex());
+  return {
+    ydoc, tables, idb, sqliteIndex, fs,
+    whenReady: idb.whenLoaded,
+    [Symbol.dispose]() { ydoc.destroy(); },
+  };
+}
 
-export const fs = createYjsFileSystem(workspace.tables.files, workspace.documents.files.content);`;
+export const opensidian = openOpensidian();`;
 
 	const codeAnnotations = [
 		{
-			id: 'define-workspace',
-			line: 'defineWorkspace({ id, tables })',
+			id: 'open-opensidian',
+			line: 'export function openOpensidian() { ... }',
 			explanation:
-				'Declares the workspace schema—a unique ID and typed tables. Each table becomes a Y.Map of rows inside a shared Y.Doc.',
+				'A plain factory: constructs a Y.Doc and composes attachments inline. The module-scope `opensidian` singleton is the running thing; the factory exists so tests, codegen, and tooling can build a fresh doc without lifecycle.',
 		},
 		{
-			id: 'create-workspace',
-			line: 'createWorkspace(definition)',
+			id: 'attach-tables',
+			line: 'attachTables(ydoc, { files: filesTable })',
 			explanation:
-				'Instantiates the workspace from the definition. Returns a builder—chain .withExtension() to add persistence, sync, or other capabilities.',
+				'Binds the typed table schemas to the shared Y.Doc. Each table becomes a Y.Map of rows with a typed, reactive surface.',
 		},
 		{
 			id: 'persistence',
-			line: ".withExtension('persistence', indexeddbPersistence)",
+			line: 'attachIndexedDb(ydoc)',
 			explanation:
 				"Attaches IndexedDB persistence\u2014every Y.Doc update is written to the browser's local storage automatically.",
 		},
 		{
 			id: 'sqlite-index',
-			line: ".withWorkspaceExtension('sqliteIndex', createSqliteIndex())",
+			line: 'createSqliteIndex(tables.files)',
 			explanation:
-				'Spins up a WASM SQLite database that mirrors the Yjs table into SQL rows for fast tree queries.',
+				'Spins up a WASM SQLite database that mirrors the Yjs files table into SQL rows for fast tree queries.',
 		},
 		{
 			id: 'filesystem',
-			line: 'createYjsFileSystem(workspace.tables.files, workspace.documents.files.content)',
+			line: 'attachYjsFileSystem(workspace.tables.files, fileContentDocs)',
 			explanation:
 				'Wraps the raw table and document APIs into a familiar filesystem interface\u2014writeFile, mkdir, rm, mv.',
 		},
@@ -123,16 +128,10 @@ export const fs = createYjsFileSystem(workspace.tables.files, workspace.document
 		},
 	] as const;
 
-	let highlightedCode = $state('');
-
-	$effect(() => {
-		codeToHtml(workspaceCode, {
-			lang: 'typescript',
-			themes: { light: 'github-light', dark: 'github-dark' },
-			defaultColor: false,
-		}).then((html) => {
-			highlightedCode = html;
-		});
+	const highlightedCode = codeToHtml(workspaceCode, {
+		lang: 'typescript',
+		themes: { light: 'github-light', dark: 'github-dark' },
+		defaultColor: false,
 	});
 </script>
 
@@ -258,12 +257,12 @@ export const fs = createYjsFileSystem(workspace.tables.files, workspace.document
 			</Card.Header>
 			<Card.Content class="p-0">
 				<div class="overflow-x-auto p-4 text-sm leading-relaxed">
-					{#if highlightedCode}
-						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-						{@html highlightedCode}
-					{:else}
+					{#await highlightedCode}
 						<pre class="font-mono"><code>{workspaceCode}</code></pre>
-					{/if}
+					{:then html}
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						{@html html}
+					{/await}
 				</div>
 			</Card.Content>
 		</Card.Root>

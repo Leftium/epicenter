@@ -41,7 +41,6 @@
  * - {@link defineQuery} - Define a read operation
  * - {@link defineMutation} - Define a write operation
  * - {@link isAction}, {@link isQuery}, {@link isMutation} - Type guards for action definitions
- * - {@link iterateActions} - Traverse and introspect action definition trees
  *
  * @module
  */
@@ -220,28 +219,6 @@ export function isQuery(value: unknown): value is Query {
  */
 export function isMutation(value: unknown): value is Mutation {
 	return isAction(value) && value.type === 'mutation';
-}
-
-/**
- * Iterate over action definitions, yielding each action with its path.
- */
-export function* iterateActions(
-	actions: object,
-	path: string[] = [],
-): Generator<[Action, string[]]> {
-	for (const [key, value] of Object.entries(actions)) {
-		const currentPath = [...path, key];
-		if (isAction(value)) {
-			yield [value, currentPath];
-		} else if (
-			value != null &&
-			typeof value === 'object' &&
-			!Array.isArray(value) &&
-			!(value instanceof Promise)
-		) {
-			yield* iterateActions(value, currentPath);
-		}
-	}
 }
 
 /**

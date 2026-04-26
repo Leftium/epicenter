@@ -21,7 +21,7 @@
 
 import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
 import type { Action, Actions } from '../shared/actions';
-import { invokeNormalized, iterateActions } from '../shared/actions';
+import { invokeNormalized, isAction } from '../shared/actions';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -142,7 +142,7 @@ export function actionsToAiTools<TActions extends Actions>(
 	tools: (AnyClientTool & { name: ActionNames<TActions> })[];
 	definitions: ToolDefinition[];
 } {
-	const entries = [...iterateActions(actions)];
+	const entries = [...walkActionTree(actions)];
 
 	const tools = entries.map(([action, path]) => ({
 		__toolSide: 'client' as const,
@@ -198,6 +198,31 @@ export function actionsToAiTools<TActions extends Actions>(
  * `"foo_bar"`.
  */
 const ACTION_NAME_SEPARATOR = '_';
+
+/**
+ * Walk an `Actions` tree, yielding each leaf with its key path. Local helper —
+ * the CLI has its own `walkActions` that yields the dotted-path form it wants;
+ * this one yields path arrays so the AI bridge can join with its own
+ * separator.
+ */
+function* walkActionTree(
+	actions: object,
+	path: string[] = [],
+): Generator<[Action, string[]]> {
+	for (const [key, value] of Object.entries(actions)) {
+		const currentPath = [...path, key];
+		if (isAction(value)) {
+			yield [value, currentPath];
+		} else if (
+			value != null &&
+			typeof value === 'object' &&
+			!Array.isArray(value) &&
+			!(value instanceof Promise)
+		) {
+			yield* walkActionTree(value, currentPath);
+		}
+	}
+}
 
 /** JSON Schema with `properties` and `required` guaranteed present. */
 type NormalizedJsonSchema = JSONSchema &

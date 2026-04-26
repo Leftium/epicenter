@@ -47,7 +47,6 @@ export {
 	isMutation,
 	isQuery,
 	isResult,
-	iterateActions,
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════

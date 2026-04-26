@@ -1,8 +1,8 @@
 /**
  * `peer<T>()` unit tests — proxy mechanics + first-match resolution +
- * disconnect short-circuit. Tests use a mock `Peers` and mock `sync.rpc` —
- * no real Y.Doc, no real awareness. The peer-resolution logic itself is
- * covered in `attach-peers.test.ts`.
+ * disconnect short-circuit. Tests use a mock `SyncAttachment` — no real
+ * Y.Doc, no real WebSocket, no real awareness. The peer-resolution logic
+ * itself is covered in attach-sync.test.ts (presence section).
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -10,9 +10,12 @@ import Type from 'typebox';
 import { Err, Ok, isErr } from 'wellcrafted/result';
 import type { Result } from 'wellcrafted/result';
 import { RpcError, isRpcError } from '@epicenter/sync';
-import type { FoundPeer } from '../document/attach-peers.js';
+import type {
+	FoundPeer,
+	SyncAttachment,
+} from '@epicenter/workspace';
 import { defineMutation, defineQuery } from '../shared/actions.js';
-import { peer, type PeerWorkspace } from './peer.js';
+import { peer } from './peer.js';
 
 // Reference action shape used to type the test proxy. Handlers are never
 // invoked here — only the *type* flows through `peer<typeof TestActions>`.
@@ -41,14 +44,23 @@ type RpcCall = {
 };
 
 /**
- * Mock `Peers` keyed on a mutable `present` map; tests can drop a peer
- * mid-call by mutating the map and invoking the captured observer.
+ * Mock SyncAttachment — keeps a mutable `present` map of deviceId→clientId
+ * so tests can drop a peer mid-call by mutating it and firing observers.
+ * Only `find`, `observe`, and `rpc` are populated; tests never touch the
+ * connection-lifecycle methods.
  */
-function mockPeers(initial: Record<string, number>) {
-	const present = new Map(Object.entries(initial));
+function mockSync(opts: {
+	present: Record<string, number>;
+	respond: (call: RpcCall) => Promise<Result<unknown, RpcError>>;
+	calls?: RpcCall[];
+}): SyncAttachment & { drop(deviceId: string): void } {
+	const present = new Map(Object.entries(opts.present));
 	const observers = new Set<() => void>();
+	const calls = opts.calls ?? [];
+
 	return {
-		find(deviceId: string): FoundPeer | undefined {
+		// peer-discovery surface
+		find(deviceId): FoundPeer | undefined {
 			const clientId = present.get(deviceId);
 			if (clientId === undefined) return undefined;
 			return {
@@ -63,10 +75,26 @@ function mockPeers(initial: Record<string, number>) {
 				},
 			};
 		},
-		observe(cb: () => void) {
+		observe(cb) {
 			observers.add(cb);
 			return () => observers.delete(cb);
 		},
+		// rpc dispatch
+		async rpc(target, action, input, options) {
+			const call = { target, action, input, options };
+			calls.push(call);
+			return opts.respond(call);
+		},
+		// transport surface — irrelevant for these tests, but the type wants them
+		whenConnected: Promise.resolve(),
+		whenDisposed: Promise.resolve(),
+		status: { phase: 'offline' as const },
+		onStatusChange: () => () => {},
+		goOffline: () => {},
+		reconnect: () => {},
+		peers: () => new Map(),
+		raw: { awareness: null },
+		// test helper
 		drop(deviceId: string) {
 			present.delete(deviceId);
 			for (const cb of observers) cb();
@@ -74,35 +102,16 @@ function mockPeers(initial: Record<string, number>) {
 	};
 }
 
-function mockWorkspace(opts: {
-	peers: ReturnType<typeof mockPeers>;
-	respond: (call: RpcCall) => Promise<Result<unknown, RpcError>>;
-	calls?: RpcCall[];
-}): PeerWorkspace {
-	const calls = opts.calls ?? [];
-	return {
-		peers: opts.peers,
-		sync: {
-			async rpc(target, action, input, options) {
-				const call = { target, action, input, options };
-				calls.push(call);
-				return opts.respond(call);
-			},
-		},
-	};
-}
-
 describe('peer<T>()', () => {
 	it('builds a proxy whose dot-path becomes the rpc action arg', async () => {
-		const peers = mockPeers({ mac: 42 });
 		const calls: RpcCall[] = [];
-		const ws = mockWorkspace({
-			peers,
+		const sync = mockSync({
+			present: { mac: 42 },
 			calls,
 			respond: async () => Ok({ closedCount: 1 }),
 		});
 
-		const remote = peer<TestActions>(ws, 'mac');
+		const remote = peer<TestActions>(sync, 'mac');
 		const result = await remote.tabs.close({ tabIds: [1] }, { timeout: 1000 });
 
 		expect(calls).toHaveLength(1);
@@ -115,17 +124,16 @@ describe('peer<T>()', () => {
 	});
 
 	it('returns Err(PeerNotFound) without sending when peer is absent', async () => {
-		const peers = mockPeers({});
 		const calls: RpcCall[] = [];
-		const ws = mockWorkspace({
-			peers,
+		const sync = mockSync({
+			present: {},
 			calls,
 			respond: async () => {
 				throw new Error('rpc should not be called');
 			},
 		});
 
-		const remote = peer<TestActions>(ws, 'ghost');
+		const remote = peer<TestActions>(sync, 'ghost');
 		const result = await remote.foo.bar({});
 		expect(calls).toHaveLength(0);
 		expect(isErr(result)).toBe(true);
@@ -135,13 +143,12 @@ describe('peer<T>()', () => {
 	});
 
 	it('passes a Result through unchanged when the peer returns one', async () => {
-		const peers = mockPeers({ mac: 1 });
-		const ws = mockWorkspace({
-			peers,
+		const sync = mockSync({
+			present: { mac: 1 },
 			respond: async () => Err(RpcError.ActionNotFound({ action: 'x' }).error),
 		});
 
-		const remote = peer<TestActions>(ws, 'mac');
+		const remote = peer<TestActions>(sync, 'mac');
 		const result = await remote.x();
 		expect(isErr(result)).toBe(true);
 		if (isErr(result) && isRpcError(result.error)) {
@@ -150,17 +157,16 @@ describe('peer<T>()', () => {
 	});
 
 	it('rejects with PeerLeft when the peer drops mid-call', async () => {
-		const peers = mockPeers({ mac: 7 });
 		// Hold the rpc response forever so the disconnect can race ahead.
-		const ws = mockWorkspace({
-			peers,
+		const sync = mockSync({
+			present: { mac: 7 },
 			respond: () => new Promise<Result<unknown, RpcError>>(() => {}),
 		});
 
-		const remote = peer<TestActions>(ws, 'mac');
+		const remote = peer<TestActions>(sync, 'mac');
 		const callPromise = remote.tabs.close({ tabIds: [1] });
 
-		peers.drop('mac');
+		sync.drop('mac');
 
 		const result = await callPromise;
 		expect(isErr(result)).toBe(true);

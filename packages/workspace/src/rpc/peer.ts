@@ -30,7 +30,6 @@
 import { RpcError } from '@epicenter/sync';
 import { type Result } from 'wellcrafted/result';
 import { Err, Ok, isResult } from 'wellcrafted/result';
-import type { Peers } from '../document/attach-peers.js';
 import type { SyncAttachment } from '../document/attach-sync.js';
 import type {
 	Actions,
@@ -39,25 +38,19 @@ import type {
 } from '../shared/actions.js';
 
 /**
- * Workspace shape required by `peer()`. Duck-typed against the workspace
- * bundle's `peers` (from `attachPeers`) and `sync` (from `attachSync`).
- * Narrowed via `Pick` so this type stays in lockstep with the real surfaces.
- */
-export type PeerWorkspace = {
-	peers: Pick<Peers, 'find' | 'observe'>;
-	sync: Pick<SyncAttachment, 'rpc'>;
-};
-
-/**
  * Build a typed peer proxy for `deviceId`. Each leaf method dispatches via
- * `workspace.sync.rpc` and returns `Promise<Result<T, E | RpcError>>`.
+ * `sync.rpc` and returns `Promise<Result<T, E | RpcError>>`.
+ *
+ * Takes a `SyncAttachment` directly — sync owns peer discovery (`find`,
+ * `observe`) since it's the source of truth for who's connected. Pass the
+ * workspace bundle's `sync` field, e.g. `peer<TActions>(fuji.sync, 'mac')`.
  */
 export function peer<TActions extends Actions>(
-	workspace: PeerWorkspace,
+	sync: SyncAttachment,
 	deviceId: string,
 ): RemoteActions<TActions> {
 	const send: Sender = async (path, input, options) => {
-		const found = workspace.peers.find(deviceId);
+		const found = sync.find(deviceId);
 		if (!found) return Err(RpcError.PeerNotFound({ peer: deviceId }).error);
 
 		// Race the rpc against a peer-removed signal. If the matched peer
@@ -70,13 +63,13 @@ export function peer<TActions extends Actions>(
 				unsubscribe();
 				resolveCall(v);
 			};
-			const unsubscribe = workspace.peers.observe(() => {
-				if (!workspace.peers.find(deviceId)) {
+			const unsubscribe = sync.observe(() => {
+				if (!sync.find(deviceId)) {
 					settle(Err(RpcError.PeerLeft({ peer: deviceId }).error));
 				}
 			});
 
-			workspace.sync
+			sync
 				.rpc(found.clientId, path, input, options)
 				.then((res) => settle(isResult(res) ? res : Ok(res)))
 				.catch((cause) =>

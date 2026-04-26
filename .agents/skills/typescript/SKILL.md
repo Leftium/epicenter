@@ -420,7 +420,22 @@ switch (error.name) {
 }
 ```
 
-Why `satisfies never` and not the older `const _exhaustive: never = error; void _exhaustive;` dance: the unused-variable suppression is brittle (depends on lint config), and `satisfies never` is the idiom TypeScript 4.9+ blesses. Same compile-time guarantee, no dead code at runtime.
+Why `satisfies never` and not `const _exhaustive: never = error; void _exhaustive;`? Same compile-time guarantee, less emit, no unused-variable suppression dance.
+
+```typescript
+// satisfies — type-level only, strips to the bare expression
+default: error satisfies never;
+// emits: default: error;
+
+// const form — declares a real binding, needs `void` to silence unused-var
+default: {
+	const _exhaustive: never = error;
+	void _exhaustive;
+}
+// emits: default: { const _exhaustive = error; void _exhaustive; }
+```
+
+`satisfies` (TS 4.9+) is the blessed idiom for "assert conformance without producing a value."
 
 **When NOT to add an exhaustive check:**
 

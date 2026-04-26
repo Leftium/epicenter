@@ -1,7 +1,7 @@
 # attachPeers — collapse the awareness/sync wiring boilerplate
 
 **Date:** 2026-04-26
-**Status:** Draft
+**Status:** Superseded by [`20260426T130000-fold-awareness-into-sync.md`](./20260426T130000-fold-awareness-into-sync.md). Commits 6df9d04a9 / c26c2915b / 07aee8de2 / 086651ee7 landed this design before we recognized the deeper collapse — those commits are starting state for the follow-up spec, not output to revert.
 **Author:** AI-assisted (Braden + Claude)
 **Branch:** `post-pr-1705-cleanup`
 

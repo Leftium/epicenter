@@ -10,11 +10,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../src/load-config';
-import {
-	actionsUnder,
-	findAction,
-	walkActions,
-} from '../src/util/walk-actions';
+import { findAction } from '../src/util/find-action';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/inline-actions');
 
@@ -38,7 +34,7 @@ describe('loadConfig against inline-actions fixture', () => {
 	});
 });
 
-describe('walk-actions helpers', () => {
+describe('findAction', () => {
 	let actions: unknown;
 
 	beforeAll(async () => {
@@ -50,30 +46,18 @@ describe('walk-actions helpers', () => {
 		// module's top-level `state` binding, so reads here still work.
 	});
 
-	test('findAction returns a leaf action by dot-path', () => {
+	test('returns a leaf action by dot-path', () => {
 		const a = findAction(actions, 'counter.get');
 		expect(a).toBeDefined();
 		expect(isAction(a)).toBe(true);
 	});
 
-	test('findAction returns undefined for a subtree path', () => {
+	test('returns undefined for a subtree path', () => {
 		expect(findAction(actions, 'counter')).toBeUndefined();
 	});
 
-	test('actionsUnder returns descendants for a subtree prefix', () => {
-		const paths = actionsUnder(actions, 'counter')
-			.map(([p]) => p)
-			.sort();
-		expect(paths).toEqual(['counter.get', 'counter.increment', 'counter.set']);
-	});
-
-	test('actionsUnder for a missing prefix returns empty', () => {
-		expect(actionsUnder(actions, 'counter.nope')).toEqual([]);
-	});
-
-	test('walkActions yields every leaf with full dot-path', () => {
-		const paths = [...walkActions(actions)].map(([p]) => p).sort();
-		expect(paths).toEqual(['counter.get', 'counter.increment', 'counter.set']);
+	test('returns undefined for a missing leaf', () => {
+		expect(findAction(actions, 'counter.nope')).toBeUndefined();
 	});
 
 	test('invoking a resolved action mutates state observably', async () => {

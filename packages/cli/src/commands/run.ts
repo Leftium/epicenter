@@ -12,11 +12,14 @@
  *   3 — peer-miss (`--peer <target>` didn't resolve within `--wait`)
  */
 
-import { invokeNormalized } from '@epicenter/workspace';
+import {
+	actionManifest,
+	type ActionManifest,
+	invokeNormalized,
+} from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
-import { waitForPeer } from '../util/peer-polling';
 import {
 	dirFromArgv,
 	dirOption,
@@ -24,10 +27,11 @@ import {
 	workspaceOption,
 } from '../util/common-options';
 import { emitMissError, emitRpcError } from '../util/emit-peer-errors';
+import { findAction } from '../util/find-action';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
+import { waitForPeer } from '../util/peer-polling';
 import { resolveEntry } from '../util/resolve-entry';
-import { actionsUnder, findAction } from '../util/walk-actions';
 
 const DEFAULT_PEER_WAIT_MS = 5000;
 
@@ -87,14 +91,15 @@ async function invoke(
 
 	const action = findAction(workspace.actions, actionPath);
 	if (!action) {
-		const descendants = actionsUnder(workspace.actions, actionPath);
+		const manifest = actionManifest(workspace.actions ?? {});
+		const descendants = entriesUnder(manifest, actionPath);
 		if (descendants.length > 0) {
 			outputError(`"${actionPath}" is not a runnable action.`);
 			emitActionList(descendants);
 			throw new Error('Not an action');
 		}
 		outputError(`"${actionPath}" is not defined.`);
-		emitNearestSiblings(workspace.actions, actionPath);
+		emitNearestSiblings(manifest, actionPath);
 		throw new Error('Action not found');
 	}
 
@@ -188,6 +193,17 @@ async function resolveInput(
 	return parseJsonInput({ positional, stdinContent });
 }
 
+function entriesUnder(
+	manifest: ActionManifest,
+	prefix: string,
+): Array<[string, ActionManifest[string]]> {
+	if (!prefix) return Object.entries(manifest);
+	const pfx = prefix + '.';
+	return Object.entries(manifest).filter(
+		([p]) => p === prefix || p.startsWith(pfx),
+	);
+}
+
 function emitActionList(
 	descendants: Array<[string, { type: string }]>,
 ): void {
@@ -203,12 +219,15 @@ function emitActionList(
  * that has any exposed actions and emit them as suggestions. If nothing
  * matches, stay silent — the top-level "not defined" error stands alone.
  */
-function emitNearestSiblings(actions: unknown, missedPath: string): void {
+function emitNearestSiblings(
+	manifest: ActionManifest,
+	missedPath: string,
+): void {
 	const parts = missedPath.split('.');
 	while (parts.length > 0) {
 		parts.pop();
 		const prefix = parts.join('.');
-		const alts = actionsUnder(actions, prefix);
+		const alts = entriesUnder(manifest, prefix);
 		if (alts.length === 0) continue;
 		emitActionList(alts);
 		return;

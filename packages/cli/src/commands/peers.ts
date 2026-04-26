@@ -1,10 +1,15 @@
 /**
- * `epicenter peers` — list who you can run `--peer` against.
+ * `epicenter peers` — presence-only view of who's connected right now.
+ *
+ * Shows just the identity fields needed to target a peer with
+ * `run --peer` or `list --peer`: deviceId, friendly name, platform, and the
+ * session-local clientID. Action introspection lives in `list --peer` and
+ * `list --all` — this command stays narrow.
  *
  * For each workspace entry (or a single entry narrowed by `-w`):
  *   1. await `workspace.sync.whenConnected` (awareness requires the transport)
  *   2. snapshot `workspace.awareness.getStates()`, or poll up to `--wait <ms>`
- *      if the snapshot is empty (default: 0 = true one-shot)
+ *      if the snapshot is empty
  *   3. emit a `console.table` (default) or JSON (`--format json`)
  *
  * This is a snapshot, not a registry. A peer that hasn't broadcast its
@@ -29,9 +34,14 @@ import { formatYargsOptions, output } from '../util/format-output';
 import { resolveEntry } from '../util/resolve-entry';
 
 const POLL_INTERVAL_MS = 100;
-const DEFAULT_WAIT_MS = 0;
+const DEFAULT_WAIT_MS = 500;
 
-type PeerRow = { clientID: number } & Record<string, unknown>;
+type PeerRow = {
+	clientID: number;
+	deviceId: string;
+	name: string;
+	platform: string;
+};
 
 type WorkspaceSnapshot = {
 	name: string;
@@ -40,7 +50,8 @@ type WorkspaceSnapshot = {
 
 export const peersCommand: CommandModule = {
 	command: 'peers',
-	describe: 'List peers you can target with `run --peer`',
+	describe:
+		'List connected peers (presence). Use `list --peer` or `list --all` for action introspection.',
 	builder: (yargs: Argv) =>
 		yargs
 			.option('dir', dirOption)
@@ -119,20 +130,23 @@ function emit(
 	}
 }
 
+/**
+ * Project each awareness state to a presence row. Reads only `device.{id,
+ * name, platform}` — `device.offers` (the action manifest) is intentionally
+ * dropped here; that lives in `list --peer` / `list --all`.
+ */
 export function buildPeerRows(peers: Map<number, AwarenessState>): PeerRow[] {
-	const keys = new Set<string>();
-	for (const state of peers.values()) {
-		for (const key of Object.keys(state)) keys.add(key);
-	}
-	const sortedKeys = [...keys].sort();
-
 	const rows: PeerRow[] = [];
 	for (const [clientID, state] of peers) {
-		const row: PeerRow = { clientID };
-		for (const key of sortedKeys) {
-			row[key] = key in state ? state[key] : '';
-		}
-		rows.push(row);
+		const device = state.device as
+			| { id?: string; name?: string; platform?: string }
+			| undefined;
+		rows.push({
+			clientID,
+			deviceId: device?.id ?? '',
+			name: device?.name ?? '',
+			platform: device?.platform ?? '',
+		});
 	}
 	rows.sort((a, b) => a.clientID - b.clientID);
 	return rows;

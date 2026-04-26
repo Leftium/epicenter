@@ -1,7 +1,9 @@
 import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
+import { actionManifest } from '@epicenter/workspace';
 import { openHoneycrisp } from './browser';
+import { deviceId } from './device-id';
 
 const session = createPersistedState({
 	key: 'honeycrisp:authSession',
@@ -15,6 +17,15 @@ export const auth = createAuth({
 });
 
 export const honeycrisp = openHoneycrisp({ auth });
+
+honeycrisp.awareness.setLocal({
+	device: {
+		id: deviceId,
+		name: 'Honeycrisp',
+		platform: 'web',
+		offers: actionManifest(honeycrisp.actions),
+	},
+});
 
 auth.onSessionChange((next, previous) => {
 	if (next === null) {

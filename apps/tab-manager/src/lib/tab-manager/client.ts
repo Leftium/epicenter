@@ -1,5 +1,6 @@
 import { createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
+import { actionManifest } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { getGoogleCredentials, session } from '$lib/auth';
 import {
@@ -71,8 +72,17 @@ export const workspaceAiTools = actionsToAiTools(tabManager.actions);
 /** Tool array type for use in TanStack AI generics. */
 export type WorkspaceTools = typeof workspaceAiTools.tools;
 
-// Publish awareness identity after initial load
+// Publish device identity + offered actions into awareness so other peers
+// can discover what this Tab Manager extension instance handles. Written
+// after initial load — `getDeviceId()` reads chrome.storage which is async.
 void tabManager.whenReady.then(async () => {
 	const deviceId = await getDeviceId();
-	tabManager.awareness.setLocal({ deviceId, client: 'extension' });
+	tabManager.awareness.setLocal({
+		device: {
+			id: deviceId,
+			name: await generateDefaultDeviceName(),
+			platform: 'chrome-extension',
+			offers: actionManifest(tabManager.actions),
+		},
+	});
 });

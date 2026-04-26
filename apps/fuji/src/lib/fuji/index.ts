@@ -1,6 +1,7 @@
 import {
 	attachAwareness,
 	attachEncryption,
+	standardAwarenessDefs,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createFujiActions, fujiTables } from '$lib/workspace';
@@ -10,7 +11,7 @@ export function openFuji() {
 	const encryption = attachEncryption(ydoc);
 	const tables = encryption.attachTables(ydoc, fujiTables);
 	const kv = encryption.attachKv(ydoc, {});
-	const awareness = attachAwareness(ydoc, {});
+	const awareness = attachAwareness(ydoc, { ...standardAwarenessDefs });
 	const actions = createFujiActions(tables);
 	return {
 		ydoc,

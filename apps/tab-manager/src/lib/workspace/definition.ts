@@ -292,11 +292,3 @@ export const tabManagerTables = {
 	toolTrust: toolTrustTable,
 };
 
-/**
- * Awareness field definitions — published per-client identity for
- * multi-device presence.
- */
-export const tabManagerAwarenessDefs = {
-	deviceId: type('string'),
-	client: type('"extension" | "desktop" | "cli"'),
-};

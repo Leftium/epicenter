@@ -1,8 +1,10 @@
 import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
+import { actionManifest } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { openOpensidian } from './browser';
+import { deviceId } from './device-id';
 
 const session = createPersistedState({
 	key: 'opensidian:authSession',
@@ -16,6 +18,15 @@ export const auth = createAuth({
 });
 
 export const opensidian = openOpensidian({ auth });
+
+opensidian.awareness.setLocal({
+	device: {
+		id: deviceId,
+		name: 'Opensidian',
+		platform: 'web',
+		offers: actionManifest(opensidian.actions),
+	},
+});
 
 auth.onSessionChange((next, previous) => {
 	if (next === null) {

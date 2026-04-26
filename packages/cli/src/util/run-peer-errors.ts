@@ -42,10 +42,8 @@ export function emitRpcError(
 	targetClientId: number,
 	peerState: AwarenessState,
 ): void {
-	const device = peerState.device;
-	const peerLabel = device?.name
-		? `${device.name} (${targetClientId}${device.platform ? `, ${device.platform}` : ''})`
-		: `clientID ${targetClientId}`;
+	const { device } = peerState;
+	const peerLabel = `${device.name} (${targetClientId}, ${device.platform})`;
 
 	switch (error.name) {
 		case 'ActionNotFound':

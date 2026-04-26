@@ -129,13 +129,12 @@ function emit(
  */
 export function buildPeerRows(peers: Map<number, AwarenessState>): PeerRow[] {
 	const rows: PeerRow[] = [];
-	for (const [clientID, state] of peers) {
-		const device = state.device;
+	for (const [clientID, { device }] of peers) {
 		rows.push({
 			clientID,
-			deviceId: device?.id ?? '',
-			name: device?.name ?? '',
-			platform: device?.platform ?? '',
+			deviceId: device.id,
+			name: device.name,
+			platform: device.platform,
 		});
 	}
 	rows.sort((a, b) => a.clientID - b.clientID);

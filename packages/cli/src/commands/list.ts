@@ -151,7 +151,7 @@ async function selectSections(
 	const ordered = [...peers.entries()].sort(([a], [b]) => a - b);
 	return [
 		selfSection(entry, 'all'),
-		...ordered.map(([clientID, state]) => peerSection(state, clientID)),
+		...ordered.map(([, state]) => peerSection(state)),
 	];
 }
 
@@ -169,15 +169,13 @@ export function selfSection(
 	};
 }
 
-export function peerSection(state: AwarenessState, clientID?: number): Section {
-	const device = state.device;
-	const entries = device?.offers ?? {};
-	const name = device?.name || device?.id || `clientID ${clientID ?? '?'}`;
-	const suffix = Object.keys(entries).length === 0 ? ' (online, offers: 0)' : ' (online)';
+export function peerSection(state: AwarenessState): Section {
+	const { device } = state;
+	const suffix = Object.keys(device.offers).length === 0 ? ' (online, offers: 0)' : ' (online)';
 	return {
-		label: `${name}${suffix}`,
-		peer: device?.id || `clientID:${clientID ?? '?'}`,
-		entries,
+		label: `${device.name}${suffix}`,
+		peer: device.id,
+		entries: device.offers,
 	};
 }
 

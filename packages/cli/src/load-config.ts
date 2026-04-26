@@ -60,8 +60,9 @@ export type LoadedWorkspace = {
 
 /**
  * Per-peer awareness state typed against `standardAwarenessDefs`
- * (`{ device?: PeerDevice }`). Validated by the awareness wrapper at the
- * boundary, so `state.device` is `PeerDevice | undefined` without casts.
+ * (`{ device: PeerDevice }`). Validated by the awareness wrapper at the
+ * boundary; `device` is set synchronously at attach time, so consumers
+ * read `state.device.{id,name,platform,offers}` without `?.`.
  */
 export type AwarenessState = WorkspaceAwarenessState<
 	typeof standardAwarenessDefs

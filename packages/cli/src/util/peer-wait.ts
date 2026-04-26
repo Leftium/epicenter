@@ -34,7 +34,7 @@ export function findPeer(
 	const sorted = [...peers.keys()].sort((a, b) => a - b);
 	for (const clientID of sorted) {
 		const state = peers.get(clientID)!;
-		if (state.device?.id === deviceId) {
+		if (state.device.id === deviceId) {
 			return { kind: 'found', clientID, state };
 		}
 	}

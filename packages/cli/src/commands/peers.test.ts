@@ -64,16 +64,6 @@ describe('buildPeerRows', () => {
 		expect(Object.keys(rows[0]!)).not.toContain('device');
 	});
 
-	test('missing device field renders as empty strings', () => {
-		const rows = buildPeerRows(new Map([[42, {}]]));
-		expect(rows[0]).toEqual({
-			clientID: 42,
-			deviceId: '',
-			name: '',
-			platform: '',
-		});
-	});
-
 	test('empty map yields empty row list', () => {
 		expect(buildPeerRows(new Map())).toEqual([]);
 	});

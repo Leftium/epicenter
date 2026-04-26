@@ -34,7 +34,6 @@
 import type {
 	Actions,
 	PeerAwarenessState,
-	Peers,
 	SyncAttachment,
 } from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
@@ -45,15 +44,14 @@ const CONFIG_FILENAME = 'epicenter.config.ts';
  * The shape every loaded workspace export must satisfy. Extra fields are
  * ignored by the CLI; only these are addressed.
  *
- * `peers` is the wrapper from `attachPeers` — owns the standard awareness
- * schema and exposes `list()` / `find()` / `observe()` plus the underlying
- * awareness instance as an escape hatch.
+ * `sync` (from `attachSync(doc, { device })`) carries presence inline —
+ * `peers()` / `find()` / `observe()` live on the SyncAttachment when the
+ * workspace was constructed with a `device`.
  */
 export type LoadedWorkspace = {
 	readonly whenReady: Promise<unknown>;
 	readonly actions?: Actions;
 	readonly sync?: SyncAttachment;
-	readonly peers?: Peers;
 	[Symbol.dispose](): void;
 };
 
@@ -90,7 +88,7 @@ export type LoadConfigResult = {
  *
  *   - `workspace` — looks like a workspace and validates.
  *   - `invalid`   — has at least one workspace-shaped field (`whenReady`,
- *                   `[Symbol.dispose]`, `actions`, `sync`, `peers`) but
+ *                   `[Symbol.dispose]`, `actions`, `sync`) but
  *                   is missing required fields. The user clearly intended a
  *                   workspace; the loader should fail loud naming the
  *                   export and what's wrong.
@@ -112,8 +110,7 @@ function classifyWorkspaceExport(value: unknown): WorkspaceCheck {
 		hasWhenReady ||
 		hasDispose ||
 		'actions' in v ||
-		'sync' in v ||
-		'peers' in v;
+		'sync' in v;
 
 	if (!looksWorkspaceShaped) return { kind: 'unrelated' };
 

@@ -147,7 +147,7 @@ async function selectSections(
 
 	// --all: best-effort wait for awareness to populate, then snapshot.
 	await waitForAnyPeer(workspace, deadline);
-	const peers = workspace.peers?.list() ?? new Map<number, AwarenessState>();
+	const peers = workspace.sync?.peers() ?? new Map<number, AwarenessState>();
 	const ordered = [...peers.entries()].sort(([a], [b]) => a - b);
 	return [
 		selfSection(entry, 'all'),

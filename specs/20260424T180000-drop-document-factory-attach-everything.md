@@ -4,6 +4,16 @@
 **Status**: shipped (PR #1705, merged 2026-04-26 at `252dced47`). The v4 reasoning landed; the v5 amendment to Layer 4 below covers the iso/env/client reversal. The always-async-Result section was reversed by `specs/20260425T200000-actions-passthrough-adr.md`.
 **Author**: AI-assisted, pairing with Braden
 
+> ⚠ **v5 amendment — read this before relying on the Overview, the Design decisions table, or any Layer text.**
+>
+> The "no `openFuji()` wrapper function — the module IS the workspace" axiom that runs through the [thesis](#one-sentence-thesis), the [Overview](#overview), the [Design decisions table](#design-decisions), and the original Layer 4 was **reversed within hours** when a Node consumer needed to construct the workspace's Y.Doc without dragging in `y-indexeddb`. Bundle bleed prevention required restoring the wrapper as a *seam* between iso construction and env binding.
+>
+> **Terminal shape**: every app is split into three files — `index.ts` (iso doc factory), `<binding>.ts` (env factory), `client.ts` (singleton + auth + lifecycle). The convention is specced at `specs/20260425T225350-app-workspace-folder-env-split.md` and codified at `.claude/skills/workspace-app-layout/SKILL.md`. The Layer 4 section below carries the corrected example; the Overview and Design decisions table are preserved as the v3 reasoning that produced the reversal — historical context, not a template.
+>
+> The v4 reasoning (delete `Document` / `DocumentBundle` / `DocumentHandle` / `createDocumentFactory` / `ActionIndex` / etc., keep `createDisposableCache` for the refcount-cache problem) **landed unchanged**. v5 is only about the wrapper-deletion axiom.
+>
+> The article `docs/articles/workspaces-were-documents-all-along.md` walks the v3 → v4 → v5 narrative end-to-end.
+
 ---
 
 ## One-sentence thesis

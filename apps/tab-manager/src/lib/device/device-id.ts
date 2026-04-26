@@ -1,77 +1,40 @@
 /**
  * Device identity for multi-device tab sync.
  *
- * Provides stable device identification using browser storage.
- * Each browser installation gets a unique NanoID on first access,
- * persisted in storage.local across sessions.
+ * `chrome.storage` is async, so the deviceId is exposed as a cached promise.
+ * Resolved once at module load; every `await getDeviceId()` after that is a
+ * microtask handing back the same value.
  */
 
-import { generateId } from '@epicenter/workspace';
+import { getOrCreateDeviceIdAsync } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
 import type { DeviceId } from '$lib/workspace';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Device ID Storage
-// ─────────────────────────────────────────────────────────────────────────────
+const deviceIdPromise = getOrCreateDeviceIdAsync({
+	getItem: (k) => storage.getItem<string>(`local:${k}`),
+	setItem: async (k, v) => {
+		await storage.setItem(`local:${k}`, v);
+	},
+}) as Promise<DeviceId>;
 
-/**
- * Device ID storage item.
- * Auto-generates a NanoID on first access if not already set.
- */
-const deviceIdItem = storage.defineItem<string>('local:deviceId', {
-	init: () => generateId(),
-});
-
-/**
- * In-memory cache for device ID to avoid repeated storage lookups.
- * Reset on browser restart (null initially).
- */
-let cachedDeviceId: DeviceId | null = null;
-
-/**
- * Get the stable device ID for this browser installation.
- * Generated once on first install, persisted in storage.local.
- * Cached in memory after first access to avoid repeated storage calls.
- */
-export async function getDeviceId(): Promise<DeviceId> {
-	// Return cached value if available
-	if (cachedDeviceId !== null) {
-		return cachedDeviceId;
-	}
-
-	// getValue() can technically return null if storage fails, but our init
-	// function ensures a value is always generated. Assert non-null here.
-	const deviceId = await deviceIdItem.getValue();
-	if (!deviceId) {
-		throw new Error('Device ID not found - storage may have failed');
-	}
-
-	// Cache for future calls
-	cachedDeviceId = deviceId as DeviceId;
-	return cachedDeviceId;
+/** Stable per-installation device ID. Same value every call. */
+export function getDeviceId(): Promise<DeviceId> {
+	return deviceIdPromise;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Browser & OS Detection
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Get the current browser name from WXT environment.
- */
+/** Browser name from WXT environment. */
 export function getBrowserName(): string {
-	return import.meta.env.BROWSER; // 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera'
+	return import.meta.env.BROWSER;
 }
 
-/**
- * Capitalize first letter of a string.
- */
-function capitalize(str: string): string {
-	return str.charAt(0).toUpperCase() + str.slice(1);
-}
+const capitalize = (str: string) =>
+	str.charAt(0).toUpperCase() + str.slice(1);
 
-/**
- * Generate a default device name like "Chrome on macOS".
- */
+/** Default device label like "Chrome on macOS". */
 export async function generateDefaultDeviceName(): Promise<string> {
 	const browserName = capitalize(import.meta.env.BROWSER);
 	const platformInfo = await browser.runtime.getPlatformInfo();

@@ -59,6 +59,13 @@ export const PeerDevice = type({
 export type PeerDevice = typeof PeerDevice.infer;
 
 /**
+ * Input shape for workspace factories. The factory adds `offers` (computed
+ * from the workspace's actions) before publishing into awareness, so app
+ * code never assembles the offers map by hand.
+ */
+export type DeviceDescriptor = Omit<PeerDevice, 'offers'>;
+
+/**
  * Spread into `attachAwareness` defs to enable typed access to the
  * `state.device` field on peer awareness states.
  */

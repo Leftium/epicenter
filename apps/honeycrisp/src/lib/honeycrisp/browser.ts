@@ -1,17 +1,25 @@
 import type { AuthClient } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
+	actionManifest,
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
+	type DeviceDescriptor,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createNoteBodyDoc } from '$lib/note-body-docs';
 import type { NoteId } from '$lib/workspace';
 import { openHoneycrisp as openHoneycrispDoc } from './index';
 
-export function openHoneycrisp({ auth }: { auth: AuthClient }) {
+export function openHoneycrisp({
+	auth,
+	device,
+}: {
+	auth: AuthClient;
+	device: DeviceDescriptor;
+}) {
 	const doc = openHoneycrispDoc();
 
 	const idb = attachIndexedDb(doc.ydoc);
@@ -35,6 +43,10 @@ export function openHoneycrisp({ auth }: { auth: AuthClient }) {
 		awareness: doc.awareness.raw,
 		getToken: () => auth.getToken(),
 		actions: doc.actions,
+	});
+
+	doc.awareness.setLocal({
+		device: { ...device, offers: actionManifest(doc.actions) },
 	});
 
 	return {

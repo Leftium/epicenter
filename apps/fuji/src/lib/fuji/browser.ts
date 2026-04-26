@@ -1,17 +1,25 @@
 import type { AuthClient } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
+	actionManifest,
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
+	type DeviceDescriptor,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createEntryContentDoc } from '$lib/entry-content-docs';
 import type { EntryId } from '$lib/workspace';
 import { openFuji as openFujiDoc } from './index';
 
-export function openFuji({ auth }: { auth: AuthClient }) {
+export function openFuji({
+	auth,
+	device,
+}: {
+	auth: AuthClient;
+	device: DeviceDescriptor;
+}) {
 	const doc = openFujiDoc();
 
 	const idb = attachIndexedDb(doc.ydoc);
@@ -35,6 +43,10 @@ export function openFuji({ auth }: { auth: AuthClient }) {
 		awareness: doc.awareness.raw,
 		getToken: () => auth.getToken(),
 		actions: doc.actions,
+	});
+
+	doc.awareness.setLocal({
+		device: { ...device, offers: actionManifest(doc.actions) },
 	});
 
 	return {

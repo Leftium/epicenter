@@ -33,6 +33,7 @@
 export type {
 	Action,
 	ActionFailed,
+	ActionMeta,
 	Actions,
 	Mutation,
 	Query,
@@ -71,7 +72,9 @@ export type { RemoteCallOptions } from './shared/actions.js';
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
+	type AsyncStorage,
 	getOrCreateDeviceId,
+	getOrCreateDeviceIdAsync,
 	type SimpleStorage,
 } from './shared/device-id.js';
 
@@ -189,6 +192,7 @@ export {
 } from './document/attach-kv.js';
 
 export {
+	type DeviceDescriptor,
 	standardAwarenessDefs,
 	PeerDevice,
 	Platform,

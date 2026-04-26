@@ -1,9 +1,8 @@
 import { AuthSession, createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
-import { actionManifest } from '@epicenter/workspace';
+import { getOrCreateDeviceId } from '@epicenter/workspace';
 import { openFuji } from './browser';
-import { deviceId } from './device-id';
 
 const session = createPersistedState({
 	key: 'fuji:authSession',
@@ -16,17 +15,12 @@ export const auth = createAuth({
 	session,
 });
 
-export const fuji = openFuji({ auth });
-
-// Publish device identity + offered actions into awareness so other peers
-// can discover what this Fuji instance handles. Written once at boot;
-// awareness echoes it to every peer in the workspace.
-fuji.awareness.setLocal({
+export const fuji = openFuji({
+	auth,
 	device: {
-		id: deviceId,
+		id: getOrCreateDeviceId(localStorage),
 		name: 'Fuji',
 		platform: 'web',
-		offers: actionManifest(fuji.actions),
 	},
 });
 

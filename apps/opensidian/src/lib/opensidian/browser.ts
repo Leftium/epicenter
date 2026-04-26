@@ -7,12 +7,14 @@ import {
 	type FileId,
 } from '@epicenter/filesystem';
 import {
+	actionManifest,
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
 	defineMutation,
 	defineQuery,
+	type DeviceDescriptor,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -20,7 +22,13 @@ import Type from 'typebox';
 import { Ok } from 'wellcrafted/result';
 import { openOpensidian as openOpensidianDoc } from './index';
 
-export function openOpensidian({ auth }: { auth: AuthClient }) {
+export function openOpensidian({
+	auth,
+	device,
+}: {
+	auth: AuthClient;
+	device: DeviceDescriptor;
+}) {
 	const doc = openOpensidianDoc();
 
 	const idb = attachIndexedDb(doc.ydoc);
@@ -178,6 +186,10 @@ export function openOpensidian({ auth }: { auth: AuthClient }) {
 		awareness: doc.awareness.raw,
 		getToken: () => auth.getToken(),
 		actions,
+	});
+
+	doc.awareness.setLocal({
+		device: { ...device, offers: actionManifest(actions) },
 	});
 
 	return {

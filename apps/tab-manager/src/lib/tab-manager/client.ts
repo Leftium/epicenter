@@ -1,6 +1,5 @@
 import { createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { actionManifest } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { getGoogleCredentials, session } from '$lib/auth';
 import {
@@ -15,6 +14,11 @@ import { openTabManager } from './extension';
 // read the real value at every call without racing chrome.storage.
 await session.whenReady;
 
+// Resolve device identity up-front so the workspace factory can publish it
+// into awareness as part of construction (no post-hoc setLocal).
+const deviceId = await getDeviceId();
+const deviceName = await generateDefaultDeviceName();
+
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
 	session,
@@ -24,25 +28,27 @@ export const auth = createAuth({
 	},
 });
 
-export const tabManager = openTabManager({ auth });
+export const tabManager = openTabManager({
+	auth,
+	device: { id: deviceId, name: deviceName, platform: 'chrome-extension' },
+});
 
 /**
  * Register this browser installation as a device in the workspace.
  *
  * Upserts the device row — preserves existing name if present, otherwise
- * generates a default. Called from the auth subscription on every applied
+ * uses the default. Called from the auth subscription on every applied
  * session (login + token rotation) so encryption keys are always active
  * before the write reaches the Y.Doc. The upsert is idempotent, so
  * rotation-triggered re-runs are harmless.
  */
 async function registerDevice(): Promise<void> {
 	await tabManager.idb.whenLoaded;
-	const deviceId = await getDeviceId();
 	const { data: existing, error } = tabManager.tables.devices.get(deviceId);
 	const existingName = !error && existing ? existing.name : null;
 	tabManager.tables.devices.set({
 		id: deviceId,
-		name: existingName ?? (await generateDefaultDeviceName()),
+		name: existingName ?? deviceName,
 		lastSeen: new Date().toISOString(),
 		browser: getBrowserName(),
 		_v: 1,
@@ -71,18 +77,3 @@ export const workspaceAiTools = actionsToAiTools(tabManager.actions);
 
 /** Tool array type for use in TanStack AI generics. */
 export type WorkspaceTools = typeof workspaceAiTools.tools;
-
-// Publish device identity + offered actions into awareness so other peers
-// can discover what this Tab Manager extension instance handles. Written
-// after initial load — `getDeviceId()` reads chrome.storage which is async.
-void tabManager.whenReady.then(async () => {
-	const deviceId = await getDeviceId();
-	tabManager.awareness.setLocal({
-		device: {
-			id: deviceId,
-			name: await generateDefaultDeviceName(),
-			platform: 'chrome-extension',
-			offers: actionManifest(tabManager.actions),
-		},
-	});
-});

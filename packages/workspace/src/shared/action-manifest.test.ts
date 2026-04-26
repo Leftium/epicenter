@@ -1,29 +1,7 @@
-import { describe, expect, it, test } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import Type from 'typebox';
-import type { ActionMeta } from './actions.js';
 import { defineMutation, defineQuery } from './actions.js';
-import type { ActionManifestEntry } from './action-manifest.js';
 import { actionManifest } from './action-manifest.js';
-
-// Type-level invariant: ActionManifestEntry IS ActionMeta. The renderer in
-// the CLI relies on this — local actions and remote manifest entries flow
-// through the same code path. If this dedup ever drifts, the assignments
-// below stop compiling.
-type Equal<X, Y> =
-	(<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2)
-		? true
-		: false;
-const _entryEqualsMeta: Equal<ActionManifestEntry, ActionMeta> = true;
-void _entryEqualsMeta;
-
-test('ActionManifestEntry is structurally identical to ActionMeta', () => {
-	// Runtime equivalent of the type-level check: a plain object that
-	// satisfies ActionMeta also satisfies ActionManifestEntry, both ways.
-	const meta: ActionMeta = { type: 'query' };
-	const entry: ActionManifestEntry = meta;
-	const back: ActionMeta = entry;
-	expect(back).toEqual(meta);
-});
 
 describe('actionManifest', () => {
 	it('flattens nested action trees to dot-path keys', () => {

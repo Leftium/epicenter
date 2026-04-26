@@ -53,7 +53,6 @@ export {
 export {
 	actionManifest,
 	type ActionManifest,
-	type ActionManifestEntry,
 } from './shared/action-manifest.js';
 
 // ════════════════════════════════════════════════════════════════════════════

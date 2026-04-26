@@ -34,7 +34,7 @@ export type Platform = typeof Platform.infer;
 
 /**
  * Single manifest entry for one action — wire-validation shape. Richer
- * TypeScript shape lives in `ActionManifestEntry`.
+ * TypeScript shape lives in `ActionMeta` (the same shape used locally).
  */
 const ActionManifestEntrySchema = type({
 	type: '"query" | "mutation"',

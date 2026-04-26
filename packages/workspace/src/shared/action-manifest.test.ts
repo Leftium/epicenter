@@ -88,4 +88,45 @@ describe('actionManifest', () => {
 		const manifest = actionManifest(actions);
 		expect(Object.keys(manifest)).toEqual(['real']);
 	});
+
+	it('survives JSON round-trip — wire-safe, no symbol-keyed properties', () => {
+		const actions = {
+			entries: {
+				create: defineMutation({
+					title: 'Create Entry',
+					description: 'Make one',
+					input: Type.Object({ title: Type.String() }),
+					handler: () => ({ id: 'x' }),
+				}),
+				delete: defineMutation({
+					handler: ({ id }: { id: string }) => ({ deleted: id }),
+					input: Type.Object({ id: Type.String() }),
+				}),
+			},
+		};
+
+		const manifest = actionManifest(actions);
+		const roundTripped = JSON.parse(JSON.stringify(manifest));
+
+		expect(roundTripped).toEqual({
+			'entries.create': {
+				type: 'mutation',
+				title: 'Create Entry',
+				description: 'Make one',
+				input: {
+					type: 'object',
+					properties: { title: { type: 'string' } },
+					required: ['title'],
+				},
+			},
+			'entries.delete': {
+				type: 'mutation',
+				input: {
+					type: 'object',
+					properties: { id: { type: 'string' } },
+					required: ['id'],
+				},
+			},
+		});
+	});
 });

@@ -135,7 +135,7 @@ function buildProxy<T>(path: string[], send: Sender): T {
 			return buildProxy([...path, prop], send);
 		},
 		apply(_t, _this, args: unknown[]) {
-			const [input, options] = args as [unknown, RemoteCallOptions | undefined];
+			const [input, options] = args as [unknown?, RemoteCallOptions?];
 			return send(path.join('.'), input, options);
 		},
 	}) as T;

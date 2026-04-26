@@ -75,9 +75,7 @@ export function emitRpcError(
 		case 'Disconnected':
 			outputError(`error: connection lost before ${peerLabel} responded`);
 			return;
-		default: {
-			const _exhaustive: never = error;
-			void _exhaustive;
-		}
+		default:
+			error satisfies never;
 	}
 }

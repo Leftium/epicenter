@@ -23,7 +23,9 @@
 
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
-import { type AwarenessState, readPeers } from '../util/awareness';
+import type { AwarenessState } from '../util/awareness';
+import { waitForAnyPeer } from '../util/await-peers';
+import { readDevice } from '../util/peer-state';
 import {
 	dirFromArgv,
 	dirOption,
@@ -33,7 +35,6 @@ import {
 import { formatYargsOptions, output } from '../util/format-output';
 import { resolveEntry } from '../util/resolve-entry';
 
-const POLL_INTERVAL_MS = 100;
 const DEFAULT_WAIT_MS = 500;
 
 type PeerRow = {
@@ -87,17 +88,8 @@ async function snapshotEntry(
 	entry: LoadConfigResult['entries'][number],
 	waitMs: number,
 ): Promise<WorkspaceSnapshot> {
-	const { workspace } = entry;
-	if (workspace.sync?.whenConnected) await workspace.sync.whenConnected;
-
-	const deadline = Date.now() + waitMs;
-	while (true) {
-		const peers = readPeers(workspace);
-		if (peers.size > 0 || Date.now() >= deadline) {
-			return { name: entry.name, peers };
-		}
-		await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-	}
+	const peers = await waitForAnyPeer(entry.workspace, waitMs);
+	return { name: entry.name, peers };
 }
 
 function emit(
@@ -138,9 +130,7 @@ function emit(
 export function buildPeerRows(peers: Map<number, AwarenessState>): PeerRow[] {
 	const rows: PeerRow[] = [];
 	for (const [clientID, state] of peers) {
-		const device = state.device as
-			| { id?: string; name?: string; platform?: string }
-			| undefined;
+		const device = readDevice(state);
 		rows.push({
 			clientID,
 			deviceId: device?.id ?? '',

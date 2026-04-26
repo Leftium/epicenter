@@ -16,7 +16,7 @@ import { invokeNormalized } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
-import { readPeers } from '../util/awareness';
+import { waitForPeer } from '../util/await-peers';
 import {
 	dirFromArgv,
 	dirOption,
@@ -24,13 +24,11 @@ import {
 	workspaceOption,
 } from '../util/common-options';
 import { emitMissError, emitRpcError } from '../util/emit-peer-errors';
-import { findPeer, type FindPeerResult } from '../util/find-peer';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 import { resolveEntry } from '../util/resolve-entry';
 import { actionsUnder, findAction } from '../util/walk-actions';
 
-const POLL_INTERVAL_MS = 100;
 const DEFAULT_PEER_WAIT_MS = 5000;
 
 const peerOption: Options = {
@@ -158,25 +156,14 @@ async function invokeRemote({
 	}
 
 	const deadline = Date.now() + waitMs;
-	let lastResult: FindPeerResult = { kind: 'not-found' };
-	let sawPeers = false;
-
-	while (true) {
-		const peers = readPeers(workspace);
-		if (peers.size > 0) sawPeers = true;
-		lastResult = findPeer(peerTarget, peers);
-		if (lastResult.kind === 'found') break;
-		if (Date.now() >= deadline) break;
-		await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-	}
-
-	if (lastResult.kind !== 'found') {
-		emitMissError(peerTarget, sawPeers, workspaceArg, waitMs);
+	const found = await waitForPeer(workspace, peerTarget, waitMs);
+	if (found.kind !== 'found') {
+		emitMissError(peerTarget, found.sawPeers, workspaceArg, waitMs);
 		process.exitCode = 3; // peer miss
 		return;
 	}
 
-	const { clientID: targetClientId, state: peerState } = lastResult;
+	const { clientID: targetClientId, state: peerState } = found;
 	const remaining = Math.max(1, deadline - Date.now());
 	const result = await sync.rpc(targetClientId, actionPath, input, {
 		timeout: remaining,

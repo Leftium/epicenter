@@ -1,15 +1,14 @@
 /**
- * Unit coverage for the source-agnostic helpers in `list.ts`. The renderer
- * itself is exercised end-to-end against the inline-actions fixture in
- * `test/e2e-inline-actions.test.ts`; here we lock the pure projection
- * helpers so the source contract (Map<dotPath, ActionMeta>) is enforced
- * regardless of where the entries came from.
+ * Unit coverage for the pure section helpers in `list.ts`. Renderer text
+ * output and CLI argv plumbing live in `test/e2e-list-peer.test.ts`; here
+ * we lock the pure projections that build the Section[] the renderer
+ * consumes.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { defineMutation, defineQuery } from '@epicenter/workspace';
 import Type from 'typebox';
-import { sourceAll, sourceLocal, sourcePeer } from './list';
+import { filterByPath, peerSection, selfSection } from './list';
 
 const fixtureActions = {
 	counter: {
@@ -25,127 +24,100 @@ const fixtureActions = {
 	},
 };
 
-describe('sourceLocal', () => {
-	test('returns flat dot-path map over a nested action tree', () => {
-		const map = sourceLocal(fixtureActions);
-		expect([...map.keys()].sort()).toEqual(['counter.get', 'counter.set']);
-	});
-
-	test('preserves type/description/input metadata on each entry', () => {
-		const map = sourceLocal(fixtureActions);
-		expect(map.get('counter.get')).toMatchObject({
-			type: 'query',
-			description: 'Read the current counter value',
-		});
-		const setEntry = map.get('counter.set');
-		expect(setEntry?.type).toBe('mutation');
-		expect(setEntry?.input).toBeDefined();
-	});
-
-	test('returns empty map for undefined or empty actions', () => {
-		expect(sourceLocal(undefined).size).toBe(0);
-		expect(sourceLocal({}).size).toBe(0);
-	});
-});
-
-describe('sourcePeer', () => {
-	test('reads device.offers as a flat dot-path map', () => {
-		const state = {
-			device: {
-				id: 'mac-1',
-				name: 'mac',
-				offers: {
-					'tabs.close': { type: 'mutation' as const },
-					'tabs.list': { type: 'query' as const, description: 'List' },
-				},
-			},
-		};
-		const map = sourcePeer(state);
-		expect([...map.keys()].sort()).toEqual(['tabs.close', 'tabs.list']);
-		expect(map.get('tabs.list')).toMatchObject({
-			type: 'query',
-			description: 'List',
-		});
-	});
-
-	test('returns empty map when device.offers is undefined', () => {
-		const map = sourcePeer({ device: { id: 'x', name: 'y' } });
-		expect(map.size).toBe(0);
-	});
-
-	test('returns empty map when state has no device field', () => {
-		expect(sourcePeer({}).size).toBe(0);
-	});
-});
-
-describe('sourceAll', () => {
-	function fakeWorkspace(opts: {
-		actions?: typeof fixtureActions;
-		peers?: Map<number, unknown>;
-	}) {
-		const peers = opts.peers ?? new Map();
-		const selfId = 1;
-		return {
+const fakeEntry = (name: string, actions?: typeof fixtureActions) =>
+	({
+		name,
+		workspace: {
 			whenReady: Promise.resolve(),
-			actions: opts.actions,
-			awareness: {
-				clientID: selfId,
-				getStates: () => new Map([[selfId, {}], ...peers]),
-			},
+			actions,
 			[Symbol.dispose]() {},
-		} as unknown as Parameters<typeof sourceAll>[0];
-	}
+		},
+	}) as unknown as Parameters<typeof selfSection>[0];
 
-	test('self section is always first, even with no peers', () => {
-		const sections = sourceAll(fakeWorkspace({ actions: fixtureActions }));
-		expect(sections).toHaveLength(1);
-		expect(sections[0]!.peer).toBe('self');
-		expect([...sections[0]!.entries.keys()].sort()).toEqual([
+describe('selfSection', () => {
+	test('local mode uses the entry name as the label', () => {
+		const section = selfSection(fakeEntry('demo', fixtureActions), 'local');
+		expect(section.label).toBe('demo');
+		expect(section.peer).toBe('self');
+		expect(Object.keys(section.entries).sort()).toEqual([
 			'counter.get',
 			'counter.set',
 		]);
 	});
 
-	test('peers ordered by clientID asc; self stays first', () => {
-		const peers = new Map<number, unknown>([
-			[
-				900,
-				{
-					device: {
-						id: 'late',
-						name: 'late',
-						platform: 'web',
-						offers: {},
-					},
-				},
-			],
-			[
-				100,
-				{
-					device: {
-						id: 'early',
-						name: 'early',
-						platform: 'web',
-						offers: { 'tabs.close': { type: 'mutation' as const } },
-					},
-				},
-			],
-		]);
-		const sections = sourceAll(
-			fakeWorkspace({ actions: fixtureActions, peers }),
-		);
-		expect(sections.map((s) => s.peer)).toEqual(['self', 'early', 'late']);
+	test('all mode uses the canonical "self (this device)" label', () => {
+		const section = selfSection(fakeEntry('demo', fixtureActions), 'all');
+		expect(section.label).toBe('self (this device)');
 	});
 
-	test('peer with no offers renders with empty entries (not omitted)', () => {
-		const peers = new Map<number, unknown>([
-			[2, { device: { id: 'silent', name: 'silent', platform: 'web' } }],
+	test('handles workspace with no actions field', () => {
+		const section = selfSection(fakeEntry('demo'), 'local');
+		expect(section.entries).toEqual({});
+	});
+});
+
+describe('peerSection', () => {
+	test('reads device.offers and device.name; uses "(online)" suffix when offers exist', () => {
+		const section = peerSection({
+			device: {
+				id: 'mac-1',
+				name: 'mac',
+				platform: 'tauri',
+				offers: { 'tabs.close': { type: 'mutation' } },
+			},
+		});
+		expect(section.label).toBe('mac (online)');
+		expect(section.peer).toBe('mac-1');
+		expect(Object.keys(section.entries)).toEqual(['tabs.close']);
+	});
+
+	test('falls back to deviceId when name is missing', () => {
+		const section = peerSection({
+			device: { id: '0xabc', name: '', platform: '', offers: {} },
+		});
+		expect(section.label).toBe('0xabc (online, offers: 0)');
+	});
+
+	test('uses clientID label when device is missing', () => {
+		const section = peerSection({}, 999);
+		expect(section.label).toBe('clientID 999 (online, offers: 0)');
+		expect(section.peer).toBe('clientID:999');
+	});
+
+	test('"(online, offers: 0)" suffix when manifest is empty', () => {
+		const section = peerSection({
+			device: { id: 'silent', name: 'silent', platform: 'web' },
+		});
+		expect(section.label).toContain('offers: 0');
+		expect(section.entries).toEqual({});
+	});
+});
+
+describe('filterByPath', () => {
+	const entries = {
+		'counter.get': { type: 'query' as const },
+		'counter.set': { type: 'mutation' as const },
+		'other.thing': { type: 'query' as const },
+	};
+
+	test('empty path returns the input unchanged', () => {
+		expect(filterByPath(entries, '')).toBe(entries);
+	});
+
+	test('exact-leaf path returns just that leaf', () => {
+		expect(Object.keys(filterByPath(entries, 'counter.get'))).toEqual([
+			'counter.get',
 		]);
-		const sections = sourceAll(
-			fakeWorkspace({ actions: fixtureActions, peers }),
-		);
-		expect(sections).toHaveLength(2);
-		expect(sections[1]!.entries.size).toBe(0);
-		expect(sections[1]!.label).toContain('offers: 0');
+	});
+
+	test('subtree prefix returns descendants', () => {
+		expect(Object.keys(filterByPath(entries, 'counter')).sort()).toEqual([
+			'counter.get',
+			'counter.set',
+		]);
+	});
+
+	test('non-matching prefix returns empty', () => {
+		expect(filterByPath(entries, 'nope')).toEqual({});
 	});
 });

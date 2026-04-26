@@ -1,52 +1,53 @@
 /**
  * `epicenter list [dot.path]` — render exposed actions, locally or on a peer.
  *
- * Three sources, one renderer. Default reads the local workspace's action
- * tree; `--peer <deviceId>` reads from a connected peer's awareness; `--all`
- * fans out across self and every connected peer in one invocation.
+ * Three sources, one shape, one renderer.
  *
- * Modes:
- *   1. No path                → full tree for the chosen source(s).
- *   2. Partial dotted path    → subtree under that prefix.
- *   3. Leaf (action) path     → action detail with JSON input shape.
+ *   list                       local tree (default; no network)
+ *   list <path>                local subtree or leaf detail
+ *   list --peer <deviceId>     that peer's tree (or detail with <path>)
+ *   list --all                 self + every connected peer
+ *   list --all <path>          who offers it?
  *
- * Output:
- *   - Default: ASCII tree (human)
- *   - `--format json`: flat array of `{ path, type, description?, input? }`.
- *     With `--all`, each row also carries a `peer` field naming the source.
- *
- * The published manifest (`device.offers` on awareness) is structurally
- * `Record<dotPath, ActionMeta>`, so the renderer is the same regardless of
- * whether the entries came from a local walk or a remote peer's awareness
- * state.
+ * `--peer` and `--all` are mutually exclusive. The renderer takes a list
+ * of `Section`s (one or many) and prints text or JSON; sources are pure
+ * functions that produce sections — that's the whole flow.
  */
 
-import type { ActionMeta, Actions } from '@epicenter/workspace';
+import { actionManifest, type ActionManifest } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule, Options } from 'yargs';
-import {
-	loadConfig,
-	type LoadConfigResult,
-	type LoadedWorkspace,
-} from '../load-config';
+import { loadConfig, type LoadConfigResult } from '../load-config';
 import { type AwarenessState, readPeers } from '../util/awareness';
+import { waitForAnyPeer, waitForPeer } from '../util/await-peers';
 import {
 	dirFromArgv,
 	dirOption,
 	workspaceFromArgv,
 	workspaceOption,
 } from '../util/common-options';
-import { findPeer } from '../util/find-peer';
 import {
 	formatYargsOptions,
 	output,
 	outputError,
 } from '../util/format-output';
+import { readDevice, readOffers } from '../util/peer-state';
 import { resolveEntry } from '../util/resolve-entry';
-import { walkActions } from '../util/walk-actions';
 
-const POLL_INTERVAL_MS = 100;
 const DEFAULT_WAIT_MS = 500;
+
+type Format = 'json' | 'jsonl' | undefined;
+
+/**
+ * One section to render. `peer` is `'self'` for the local source or the
+ * remote peer's deviceId — surfaced in JSON output so scripts can
+ * attribute each action back to its source.
+ */
+type Section = {
+	label: string;
+	peer: string;
+	entries: ActionManifest;
+};
 
 const peerOption: Options = {
 	type: 'string',
@@ -66,7 +67,8 @@ const waitOption: Options = {
 
 export const listCommand: CommandModule = {
 	command: 'list [path]',
-	describe: 'Tree view of exposed queries and mutations (use --peer or --all to inspect remotely)',
+	describe:
+		'Tree view of exposed queries and mutations (use --peer or --all to inspect remotely)',
 	builder: (yargs: Argv) =>
 		yargs
 			.positional('path', {
@@ -81,8 +83,8 @@ export const listCommand: CommandModule = {
 			.options(formatYargsOptions()),
 	handler: async (argv) => {
 		const args = argv as Record<string, unknown>;
-		const pathArg = typeof args.path === 'string' ? args.path : undefined;
-		const format = args.format as 'json' | 'jsonl' | undefined;
+		const path = typeof args.path === 'string' ? args.path : '';
+		const format = args.format as Format;
 		const peerTarget =
 			typeof args.peer === 'string' && args.peer.length > 0
 				? args.peer
@@ -101,260 +103,198 @@ export const listCommand: CommandModule = {
 		const { entries, dispose } = await loadConfig(dirFromArgv(args));
 		try {
 			const entry = resolveEntry(entries, workspaceFromArgv(args));
-			if (peerTarget !== undefined && peerTarget !== 'self') {
-				await renderPeer(entry, peerTarget, pathArg, waitMs, format);
-				return;
-			}
-			if (all) {
-				await renderAll(entry, pathArg, waitMs, format);
-				return;
-			}
-			renderLocal(entry, pathArg, format);
+			const sections = await selectSections(entry, { peerTarget, all, waitMs });
+			if (sections === null) return; // peer-not-found, exitCode already set
+			renderSections(sections, path, format, { multi: all });
 		} finally {
 			await dispose();
 		}
 	},
 };
 
-// ─── Source helpers (pure) ───────────────────────────────────────────────────
+// ─── Source selection ────────────────────────────────────────────────────────
 
-/** Walk a local actions tree into a flat dot-path map of metadata. */
-export function sourceLocal(actions: Actions | undefined): Map<string, ActionMeta> {
-	const out = new Map<string, ActionMeta>();
-	if (!actions) return out;
-	for (const [path, action] of walkActions(actions)) {
-		out.set(path, action);
+type Selection = {
+	peerTarget: string | undefined;
+	all: boolean;
+	waitMs: number;
+};
+
+/**
+ * Pick the sections to render based on flags. Returns `null` when a
+ * `--peer` lookup misses (the function emits the error and sets the exit
+ * code; the caller just bails).
+ */
+async function selectSections(
+	entry: LoadConfigResult['entries'][number],
+	{ peerTarget, all, waitMs }: Selection,
+): Promise<Section[] | null> {
+	const { workspace } = entry;
+
+	if (peerTarget === undefined && !all) {
+		return [selfSection(entry, 'local')];
 	}
-	return out;
+
+	if (peerTarget !== undefined) {
+		const found = await waitForPeer(workspace, peerTarget, waitMs);
+		if (found.kind !== 'found') {
+			outputError(`error: no peer matches deviceId "${peerTarget}"`);
+			outputError('run `epicenter peers` to see connected peers');
+			process.exitCode = 3;
+			return null;
+		}
+		return [peerSection(found.state)];
+	}
+
+	// --all: best-effort wait for awareness to populate, then snapshot.
+	await waitForAnyPeer(workspace, waitMs);
+	const peers = readPeers(workspace);
+	const ordered = [...peers.entries()].sort(([a], [b]) => a - b);
+	return [
+		selfSection(entry, 'all'),
+		...ordered.map(([clientID, state]) => peerSection(state, clientID)),
+	];
 }
 
-/** Read a single peer's `device.offers` manifest from its awareness state. */
-export function sourcePeer(state: AwarenessState): Map<string, ActionMeta> {
-	const offers = (state.device as { offers?: Record<string, ActionMeta> } | undefined)
-		?.offers;
-	const out = new Map<string, ActionMeta>();
-	if (!offers) return out;
-	for (const [path, entry] of Object.entries(offers)) {
-		out.set(path, entry);
+export function selfSection(
+	entry: LoadConfigResult['entries'][number],
+	mode: 'local' | 'all',
+): Section {
+	const entries = entry.workspace.actions
+		? actionManifest(entry.workspace.actions)
+		: {};
+	return {
+		label: mode === 'all' ? 'self (this device)' : entry.name,
+		peer: 'self',
+		entries,
+	};
+}
+
+export function peerSection(state: AwarenessState, clientID?: number): Section {
+	const device = readDevice(state);
+	const entries = readOffers(state);
+	const name = device?.name || device?.id || `clientID ${clientID ?? '?'}`;
+	const suffix = Object.keys(entries).length === 0 ? ' (online, offers: 0)' : ' (online)';
+	return {
+		label: `${name}${suffix}`,
+		peer: device?.id || `clientID:${clientID ?? '?'}`,
+		entries,
+	};
+}
+
+// ─── Rendering ───────────────────────────────────────────────────────────────
+
+/**
+ * `multi` distinguishes `--all` (always tag rows with `peer`, allow zero
+ * matches per-section) from local/--peer (single section, missing path is
+ * an error). It's a presentation flag, not a structural one — selection
+ * already gave us the sections; we just need to know which mode the user
+ * asked for.
+ */
+function renderSections(
+	sections: Section[],
+	path: string,
+	format: Format,
+	{ multi }: { multi: boolean },
+): void {
+	if (format) {
+		renderJson(sections, path, format, { multi });
+		return;
 	}
-	return out;
+	renderText(sections, path, { multi });
+}
+
+function renderJson(
+	sections: Section[],
+	path: string,
+	format: Exclude<Format, undefined>,
+	{ multi }: { multi: boolean },
+): void {
+	// Single-section + leaf path = single object (preserves pre-existing
+	// `list <leaf> --format json` shape).
+	if (!multi && path && sections[0]!.entries[path]) {
+		output(describeAction(sections[0]!.entries[path]!, path), { format });
+		return;
+	}
+
+	const rows: Array<{ peer?: string } & ReturnType<typeof describeAction>> = [];
+	for (const section of sections) {
+		const subset = filterByPath(section.entries, path);
+		for (const [p, meta] of Object.entries(subset)) {
+			const row = describeAction(meta, p);
+			rows.push(multi ? { peer: section.peer, ...row } : row);
+		}
+	}
+	if (path && rows.length === 0) {
+		fail(`"${path}" ${multi ? 'not found on any peer' : 'is not defined'}.`);
+		return;
+	}
+	output(rows, { format });
+}
+
+function renderText(
+	sections: Section[],
+	path: string,
+	{ multi }: { multi: boolean },
+): void {
+	let totalMatches = 0;
+	let printed = 0;
+
+	for (const section of sections) {
+		const subset = filterByPath(section.entries, path);
+		const matches = Object.keys(subset).length;
+		totalMatches += matches;
+
+		// In --all, skip sections that don't carry the requested path; in
+		// single-section mode, always print the section (the empty body is
+		// handled by printSection / the totalMatches==0 fail below).
+		if (multi && path && matches === 0) continue;
+
+		if (printed > 0) console.log('');
+		console.log(section.label);
+		printSection(subset, path);
+		printed++;
+	}
+
+	if (path && totalMatches === 0) {
+		fail(`"${path}" ${multi ? 'not found on any peer' : 'is not defined'}.`);
+	}
 }
 
 /**
- * Self plus every connected peer. Self is always first. Peers follow in
- * clientID-ascending order so the same workspace renders deterministically
- * across runs (mirrors `buildPeerRows` ordering).
+ * Print one section's body. Three cases: empty, exact-leaf detail, tree.
+ * The caller has already filtered to entries under `path` (if set).
  */
-export type AllSection = {
-	label: string;
-	peer: string;
-	entries: Map<string, ActionMeta>;
-};
-
-export function sourceAll(workspace: LoadedWorkspace): AllSection[] {
-	const sections: AllSection[] = [
-		{
-			label: 'self (this device)',
-			peer: 'self',
-			entries: sourceLocal(workspace.actions),
-		},
-	];
-	const peers = readPeers(workspace);
-	const ordered = [...peers.entries()].sort(([a], [b]) => a - b);
-	for (const [clientID, state] of ordered) {
-		const device = state.device as
-			| { id?: string; name?: string }
-			| undefined;
-		const name = device?.name ?? device?.id ?? `clientID ${clientID}`;
-		const entries = sourcePeer(state);
-		const suffix = entries.size === 0 ? ' (online, offers: 0)' : ' (online)';
-		sections.push({
-			label: `${name}${suffix}`,
-			peer: device?.id ?? `clientID:${clientID}`,
-			entries,
-		});
-	}
-	return sections;
-}
-
-// ─── Local mode ──────────────────────────────────────────────────────────────
-
-function renderLocal(
-	entry: LoadConfigResult['entries'][number],
-	pathArg: string | undefined,
-	format: 'json' | 'jsonl' | undefined,
-): void {
-	const entries = sourceLocal(entry.workspace.actions);
-	renderSection(entries, pathArg, entry.name, format);
-}
-
-function renderSection(
-	entries: Map<string, ActionMeta>,
-	pathArg: string | undefined,
-	label: string,
-	format: 'json' | 'jsonl' | undefined,
-): void {
-	const path = pathArg?.split('.').filter(Boolean).join('.') ?? '';
-
-	if (path === '') {
-		const all = [...entries].map(([p, a]) => describeAction(a, p));
-		if (format) {
-			output(all, { format });
-			return;
-		}
-		console.log(label);
-		printTree(entries, '');
+function printSection(entries: ActionManifest, path: string): void {
+	const keys = Object.keys(entries);
+	if (keys.length === 0) {
+		console.log('  (no actions exposed)');
 		return;
 	}
-
-	const action = entries.get(path);
-	if (action) {
-		if (format) {
-			output(describeAction(action, path), { format });
-			return;
-		}
-		printActionDetail(path, action);
+	const leaf = path ? entries[path] : undefined;
+	if (leaf && keys.length === 1) {
+		printActionDetail(path, leaf);
 		return;
 	}
-
-	const descendants = entriesUnder(entries, path);
-	if (descendants.size === 0) {
-		outputError(`"${pathArg}" is not defined.`);
-		throw new Error('Path not found');
-	}
-
-	if (format) {
-		output(
-			[...descendants].map(([p, a]) => describeAction(a, p)),
-			{ format },
-		);
-		return;
-	}
-	console.log(path);
 	printTree(entries, path);
 }
 
-// ─── Remote single-peer mode ─────────────────────────────────────────────────
-
-async function renderPeer(
-	entry: LoadConfigResult['entries'][number],
-	peerTarget: string,
-	pathArg: string | undefined,
-	waitMs: number,
-	format: 'json' | 'jsonl' | undefined,
-): Promise<void> {
-	const { workspace } = entry;
-	if (workspace.sync?.whenConnected) await workspace.sync.whenConnected;
-
-	const deadline = Date.now() + waitMs;
-	let state: AwarenessState | undefined;
-	while (true) {
-		const peers = readPeers(workspace);
-		const found = findPeer(peerTarget, peers);
-		if (found.kind === 'found') {
-			state = found.state;
-			break;
-		}
-		if (Date.now() >= deadline) break;
-		await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-	}
-
-	if (!state) {
-		outputError(`error: no peer matches deviceId "${peerTarget}"`);
-		outputError('run `epicenter peers` to see connected peers');
-		process.exitCode = 3;
-		return;
-	}
-
-	const entries = sourcePeer(state);
-	const device = state.device as { name?: string; id?: string } | undefined;
-	const label = device?.name ?? device?.id ?? peerTarget;
-	renderSection(entries, pathArg, label, format);
+function fail(message: string): void {
+	outputError(`error: ${message}`);
+	process.exitCode = 1;
 }
 
-// ─── --all mode ──────────────────────────────────────────────────────────────
+// ─── Pure helpers ────────────────────────────────────────────────────────────
 
-async function renderAll(
-	entry: LoadConfigResult['entries'][number],
-	pathArg: string | undefined,
-	waitMs: number,
-	format: 'json' | 'jsonl' | undefined,
-): Promise<void> {
-	const { workspace } = entry;
-	if (workspace.sync?.whenConnected) await workspace.sync.whenConnected;
-
-	// Poll for peers up to the deadline. Self is always present, so we wait
-	// only to give awareness a chance to populate.
-	const deadline = Date.now() + waitMs;
-	while (true) {
-		if (readPeers(workspace).size > 0 || Date.now() >= deadline) break;
-		await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-	}
-
-	const sections = sourceAll(workspace);
-	const path = pathArg?.split('.').filter(Boolean).join('.') ?? '';
-
-	if (format) {
-		const rows: Array<{ peer: string } & ReturnType<typeof describeAction>> = [];
-		for (const section of sections) {
-			const subset = path ? filterToPathOrUnder(section.entries, path) : section.entries;
-			for (const [p, a] of subset) {
-				rows.push({ peer: section.peer, ...describeAction(a, p) });
-			}
-		}
-		if (path && rows.length === 0) {
-			outputError(`error: "${pathArg}" not found on any peer`);
-			process.exitCode = 1;
-			return;
-		}
-		output(rows, { format });
-		return;
-	}
-
-	let anyMatch = false;
-	for (let i = 0; i < sections.length; i++) {
-		const section = sections[i]!;
-		const subset = path ? filterToPathOrUnder(section.entries, path) : section.entries;
-		if (path && subset.size === 0) continue;
-		anyMatch = true;
-		if (i > 0) console.log('');
-		console.log(section.label);
-		if (subset.size === 0) continue;
-		// When path resolves to a single leaf on this peer, print detail; else tree.
-		const leaf = path ? subset.get(path) : undefined;
-		if (leaf && subset.size === 1) {
-			printActionDetail(path, leaf);
-		} else {
-			printTree(subset, path);
-		}
-	}
-	if (path && !anyMatch) {
-		outputError(`error: "${pathArg}" not found on any peer`);
-		process.exitCode = 1;
-	}
-}
-
-function filterToPathOrUnder(
-	entries: Map<string, ActionMeta>,
-	path: string,
-): Map<string, ActionMeta> {
+export function filterByPath(entries: ActionManifest, path: string): ActionManifest {
+	if (!path) return entries;
 	const pfx = path + '.';
-	const out = new Map<string, ActionMeta>();
-	for (const [p, a] of entries) {
-		if (p === path || p.startsWith(pfx)) out.set(p, a);
+	const out: ActionManifest = {};
+	for (const [p, meta] of Object.entries(entries)) {
+		if (p === path || p.startsWith(pfx)) out[p] = meta;
 	}
 	return out;
 }
-
-function entriesUnder(
-	entries: Map<string, ActionMeta>,
-	prefix: string,
-): Map<string, ActionMeta> {
-	if (!prefix) return entries;
-	return filterToPathOrUnder(entries, prefix);
-}
-
-// ─── Renderer (source-agnostic; reads metadata only) ─────────────────────────
 
 type ActionDescriptor = {
 	path: string;
@@ -363,29 +303,28 @@ type ActionDescriptor = {
 	input?: unknown;
 };
 
-function describeAction(action: ActionMeta, path: string): ActionDescriptor {
+function describeAction(action: ActionManifest[string], path: string): ActionDescriptor {
 	const desc: ActionDescriptor = { path, type: action.type };
 	if (action.description) desc.description = action.description;
 	if (action.input) desc.input = action.input;
 	return desc;
 }
 
+// ─── Renderer primitives (text mode) ─────────────────────────────────────────
+
 type TreeNode = {
 	name: string;
 	children: Map<string, TreeNode>;
-	action?: ActionMeta;
+	action?: ActionManifest[string];
 };
 
-function printTree(entries: Map<string, ActionMeta>, prefix: string): void {
+function printTree(entries: ActionManifest, prefix: string): void {
 	const pfx = prefix ? prefix + '.' : '';
 	const root: TreeNode = { name: '', children: new Map() };
-	let count = 0;
-	for (const [path, action] of entries) {
-		if (prefix && !path.startsWith(pfx) && path !== prefix) continue;
+	for (const [path, action] of Object.entries(entries)) {
 		const rest = prefix ? path.slice(pfx.length) : path;
 		if (!rest) continue;
 		const parts = rest.split('.');
-		count++;
 		let node = root;
 		for (let i = 0; i < parts.length; i++) {
 			const seg = parts[i]!;
@@ -397,10 +336,6 @@ function printTree(entries: Map<string, ActionMeta>, prefix: string): void {
 			node = child;
 			if (i === parts.length - 1) node.action = action;
 		}
-	}
-	if (count === 0) {
-		console.log('  (no actions exposed)');
-		return;
 	}
 	printChildren(root, '');
 }
@@ -422,7 +357,7 @@ function printChildren(node: TreeNode, prefix: string): void {
 	});
 }
 
-function printActionDetail(path: string, action: ActionMeta): void {
+function printActionDetail(path: string, action: ActionManifest[string]): void {
 	console.log(`${path}  (${action.type})`);
 	if (action.description) {
 		console.log('');

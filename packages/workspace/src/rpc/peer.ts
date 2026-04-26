@@ -65,6 +65,8 @@ export function resolvePeer(
 	const states = awareness.getStates();
 	const clientIds = [...states.keys()].sort((a, b) => a - b);
 	for (const clientId of clientIds) {
+		// Raw y-protocols states are unvalidated; a peer between connect
+		// and first awareness frame appears as null/{}. Guard accordingly.
 		const state = states.get(clientId) as
 			| { device?: { id?: string } }
 			| undefined;

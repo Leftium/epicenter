@@ -9,7 +9,6 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	attachPeers,
 	attachSync,
 	type DeviceDescriptor,
 	toWsUrl,
@@ -37,22 +36,18 @@ export async function openTabManager({
 
 	const doc = openTabManagerDoc({ deviceId: Promise.resolve(resolvedDevice.id) });
 
-	const peers = attachPeers(doc, { device: resolvedDevice });
-
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 
-	const sync = attachSync(doc.ydoc, {
+	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-		waitFor: idb.whenLoaded,
-		awareness: peers.awareness.raw,
+		waitFor: idb,
+		device: resolvedDevice,
 		getToken: () => auth.getToken(),
-		actions: doc.actions,
 	});
 
 	return {
 		...doc,
-		peers,
 		idb,
 		sync,
 		/**

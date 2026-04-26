@@ -9,7 +9,6 @@ import {
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	attachPeers,
 	attachSync,
 	createDisposableCache,
 	defineMutation,
@@ -180,19 +179,18 @@ export function openOpensidian({
 		},
 	};
 
-	const peers = attachPeers({ ydoc: doc.ydoc, actions }, { device });
-
-	const sync = attachSync(doc.ydoc, {
-		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-		waitFor: idb.whenLoaded,
-		awareness: peers.awareness.raw,
-		getToken: () => auth.getToken(),
-		actions,
-	});
+	const sync = attachSync(
+		{ ydoc: doc.ydoc, actions },
+		{
+			url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
+			waitFor: idb,
+			device,
+			getToken: () => auth.getToken(),
+		},
+	);
 
 	return {
 		...doc,
-		peers,
 		idb,
 		fileContentDocs,
 		sqliteIndex,

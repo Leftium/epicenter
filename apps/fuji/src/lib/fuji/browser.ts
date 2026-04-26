@@ -3,7 +3,6 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	attachPeers,
 	attachSync,
 	createDisposableCache,
 	type DeviceDescriptor,
@@ -37,19 +36,15 @@ export function openFuji({
 		{ gcTime: 5_000 },
 	);
 
-	const peers = attachPeers(doc, { device });
-
-	const sync = attachSync(doc.ydoc, {
+	const sync = attachSync(doc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
-		waitFor: idb.whenLoaded,
-		awareness: peers.awareness.raw,
+		waitFor: idb,
+		device,
 		getToken: () => auth.getToken(),
-		actions: doc.actions,
 	});
 
 	return {
 		...doc,
-		peers,
 		idb,
 		entryContentDocs,
 		sync,

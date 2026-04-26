@@ -1,23 +1,14 @@
 import { createAuth } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
+import { getOrCreateDeviceIdAsync } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
+import { storage } from '@wxt-dev/storage';
 import { getGoogleCredentials, session } from '$lib/auth';
-import {
-	generateDefaultDeviceName,
-	getBrowserName,
-	getDeviceId,
-} from '$lib/device/device-id';
+import type { DeviceId } from '$lib/workspace/definition';
 import { openTabManager } from './extension';
 
 // Hydrate the persisted session from chrome.storage before constructing auth.
-// After this resolves, `session.get()` is sync-authoritative; the core can
-// read the real value at every call without racing chrome.storage.
 await session.whenReady;
-
-// Resolve device identity up-front so the workspace factory can publish it
-// into awareness as part of construction (no post-hoc setLocal).
-const deviceId = await getDeviceId();
-const deviceName = await generateDefaultDeviceName();
 
 export const auth = createAuth({
 	baseURL: APP_URLS.API,
@@ -28,29 +19,42 @@ export const auth = createAuth({
 	},
 });
 
-export const tabManager = openTabManager({
-	auth,
-	device: { id: deviceId, name: deviceName, platform: 'chrome-extension' },
-});
+/**
+ * Resolve the device descriptor in the background — the factory accepts a
+ * Promise and gates dependent work on `tabManager.whenReady`. No TLA at this
+ * call site; the page renders immediately and `whenReady` is awaited where it
+ * matters (registerDevice below, UI render gates).
+ */
+const devicePromise = (async () => {
+	const id = (await getOrCreateDeviceIdAsync({
+		getItem: (k) => storage.getItem<string>(`local:${k}`),
+		setItem: async (k, v) => {
+			await storage.setItem(`local:${k}`, v);
+		},
+	})) as DeviceId;
+	const name = await generateDefaultDeviceName();
+	return { id, name, platform: 'chrome-extension' as const };
+})();
+
+export const tabManager = openTabManager({ auth, device: devicePromise });
 
 /**
  * Register this browser installation as a device in the workspace.
  *
  * Upserts the device row — preserves existing name if present, otherwise
- * uses the default. Called from the auth subscription on every applied
- * session (login + token rotation) so encryption keys are always active
- * before the write reaches the Y.Doc. The upsert is idempotent, so
- * rotation-triggered re-runs are harmless.
+ * uses the resolved default. Awaits both idb and device resolution before
+ * writing. Idempotent under repeated calls (token rotation is harmless).
  */
 async function registerDevice(): Promise<void> {
-	await tabManager.idb.whenLoaded;
-	const { data: existing, error } = tabManager.tables.devices.get(deviceId);
+	await tabManager.whenReady;
+	const { id, name } = await tabManager.device;
+	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
 	tabManager.tables.devices.set({
-		id: deviceId,
-		name: existingName ?? deviceName,
+		id,
+		name: existingName ?? name,
 		lastSeen: new Date().toISOString(),
-		browser: getBrowserName(),
+		browser: import.meta.env.BROWSER,
 		_v: 1,
 	});
 }
@@ -77,3 +81,28 @@ export const workspaceAiTools = actionsToAiTools(tabManager.actions);
 
 /** Tool array type for use in TanStack AI generics. */
 export type WorkspaceTools = typeof workspaceAiTools.tools;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Device naming
+// ─────────────────────────────────────────────────────────────────────────────
+
+const capitalize = (str: string) =>
+	str.charAt(0).toUpperCase() + str.slice(1);
+
+/** Default device label like "Chrome on macOS". */
+async function generateDefaultDeviceName(): Promise<string> {
+	const browserName = capitalize(import.meta.env.BROWSER);
+	const platformInfo = await browser.runtime.getPlatformInfo();
+	const osName = (
+		{
+			mac: 'macOS',
+			win: 'Windows',
+			linux: 'Linux',
+			cros: 'ChromeOS',
+			android: 'Android',
+			openbsd: 'OpenBSD',
+			fuchsia: 'Fuchsia',
+		} satisfies Record<Browser.runtime.PlatformInfo['os'], string>
+	)[platformInfo.os];
+	return `${browserName} on ${osName}`;
+}

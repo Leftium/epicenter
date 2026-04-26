@@ -14,16 +14,28 @@ import {
 	type DeviceDescriptor,
 	toWsUrl,
 } from '@epicenter/workspace';
+import type { DeviceId } from '$lib/workspace/definition';
 import { openTabManager as openTabManagerDoc } from './index';
 
+/**
+ * Sync construction. The async device resolution fires in the background;
+ * `whenReady` gates anything that needs the resolved descriptor (UI render,
+ * device-row registration). Action handlers close over `device.id`, a Promise
+ * that's microtask-cheap to await once boot completes.
+ */
 export function openTabManager({
 	auth,
 	device,
 }: {
 	auth: AuthClient;
-	device: DeviceDescriptor;
+	device: DeviceDescriptor | Promise<DeviceDescriptor>;
 }) {
-	const doc = openTabManagerDoc();
+	const devicePromise = Promise.resolve(device) as Promise<
+		DeviceDescriptor & { id: DeviceId }
+	>;
+	const deviceIdPromise = devicePromise.then((d) => d.id);
+
+	const doc = openTabManagerDoc({ deviceId: deviceIdPromise });
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
@@ -36,14 +48,18 @@ export function openTabManager({
 		actions: doc.actions,
 	});
 
-	doc.awareness.setLocal({
-		device: { ...device, offers: actionManifest(doc.actions) },
+	// Publish awareness once the descriptor resolves — fires in background.
+	void devicePromise.then((d) => {
+		doc.awareness.setLocal({
+			device: { ...d, offers: actionManifest(doc.actions) },
+		});
 	});
 
 	return {
 		...doc,
 		idb,
 		sync,
-		whenReady: idb.whenLoaded,
+		whenReady: Promise.all([idb.whenLoaded, devicePromise]).then(() => {}),
+		device: devicePromise,
 	};
 }

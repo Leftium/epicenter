@@ -14,8 +14,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
-import { getDeviceId } from '$lib/device/device-id';
-import { generateBookmarkId, generateSavedTabId } from './definition';
+import { type DeviceId, generateBookmarkId, generateSavedTabId } from './definition';
 import type { Tables } from './tables';
 
 export const TabError = defineErrors({
@@ -59,9 +58,11 @@ export type SaveCloseFailed = Extract<TabError, { name: 'SaveCloseFailed' }>;
 export function createTabManagerActions({
 	tables,
 	batch,
+	deviceId,
 }: {
 	tables: Tables;
 	batch: (fn: () => void) => void;
+	deviceId: Promise<DeviceId>;
 }) {
 	return {
 		devices: {
@@ -159,7 +160,7 @@ export function createTabManagerActions({
 					close: Type.Optional(Type.Boolean()),
 				}),
 				handler: async ({ tabIds, close }) => {
-					const deviceId = await getDeviceId();
+					const sourceDeviceId = await deviceId;
 					const results = await Promise.allSettled(
 						tabIds.map((id) => browser.tabs.get(id)),
 					);
@@ -174,7 +175,7 @@ export function createTabManagerActions({
 							title: tab.title || 'Untitled',
 							favIconUrl: tab.favIconUrl,
 							pinned: tab.pinned ?? false,
-							sourceDeviceId: deviceId,
+							sourceDeviceId,
 							savedAt: Date.now(),
 							_v: 1,
 						});
@@ -285,14 +286,14 @@ export function createTabManagerActions({
 					pinned: Type.Boolean(),
 				}),
 				handler: async ({ browserTabId, url, title, favIconUrl, pinned }) => {
-					const deviceId = await getDeviceId();
+					const sourceDeviceId = await deviceId;
 					tables.savedTabs.set({
 						id: generateSavedTabId(),
 						url,
 						title,
 						favIconUrl,
 						pinned,
-						sourceDeviceId: deviceId,
+						sourceDeviceId,
 						savedAt: Date.now(),
 						_v: 1,
 					});
@@ -392,14 +393,14 @@ export function createTabManagerActions({
 							removedCount: allMatching.length,
 						};
 					}
-					const deviceId = await getDeviceId();
+					const sourceDeviceId = await deviceId;
 					tables.bookmarks.set({
 						id: generateBookmarkId(),
 						url,
 						title,
 						favIconUrl,
 						description: undefined,
-						sourceDeviceId: deviceId,
+						sourceDeviceId,
 						createdAt: Date.now(),
 						_v: 1,
 					});

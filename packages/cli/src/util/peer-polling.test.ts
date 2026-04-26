@@ -2,10 +2,16 @@ import { describe, expect, test } from 'bun:test';
 import { findPeer } from './peer-polling';
 import type { AwarenessState } from './awareness';
 
+/**
+ * Test helper — lets fixtures pass partial / malformed device shapes
+ * (we're testing graceful handling of runtime data that violates the
+ * schema). Production code receives `AwarenessState` already validated
+ * by the awareness wrapper.
+ */
 function peersOf(
-	rows: Array<[number, AwarenessState]>,
+	rows: Array<[number, unknown]>,
 ): Map<number, AwarenessState> {
-	return new Map(rows);
+	return new Map(rows) as Map<number, AwarenessState>;
 }
 
 describe('findPeer — exact deviceId match, first-match-wins', () => {
@@ -17,7 +23,7 @@ describe('findPeer — exact deviceId match, first-match-wins', () => {
 		expect(findPeer('iphone-15', peers)).toEqual({
 			kind: 'found',
 			clientID: 188,
-			state: { device: { id: 'iphone-15', name: 'Phone' } },
+			state: { device: { id: 'iphone-15', name: 'Phone' } } as AwarenessState,
 		});
 	});
 

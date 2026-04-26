@@ -36,9 +36,9 @@ describe('buildPeerRows', () => {
 	test('rows are sorted by clientID ASC', () => {
 		const rows = buildPeerRows(
 			new Map([
-				[203, { device: { id: 'p', name: 'phone', platform: 'web' } }],
-				[42, { device: { id: 'm', name: 'mac', platform: 'tauri' } }],
-				[188, { device: { id: 'w', name: 'work', platform: 'web' } }],
+				[203, { device: { id: 'p', name: 'phone', platform: 'web', offers: {} } }],
+				[42, { device: { id: 'm', name: 'mac', platform: 'tauri', offers: {} } }],
+				[188, { device: { id: 'w', name: 'work', platform: 'web', offers: {} } }],
 			]),
 		);
 		expect(rows.map((r) => r.clientID)).toEqual([42, 188, 203]);

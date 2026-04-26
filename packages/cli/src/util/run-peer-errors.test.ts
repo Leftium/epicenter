@@ -8,7 +8,17 @@
  */
 import { RpcError } from '@epicenter/workspace';
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import type { AwarenessState } from './awareness';
 import { emitMissError, emitRpcError } from './run-peer-errors';
+
+/**
+ * Test helper — fixtures intentionally pass partial / missing device
+ * fields to exercise emitRpcError's fallback labelling. Production
+ * states arrive validated by the awareness wrapper.
+ */
+function mockState(partial: object): AwarenessState {
+	return partial as AwarenessState;
+}
 
 function captureErrors() {
 	const lines: string[] = [];
@@ -60,9 +70,11 @@ describe('emitRpcError', () => {
 
 	test('ActionNotFound labels with device.name + platform', () => {
 		cap = captureErrors();
-		emitRpcError(RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error, 42, {
-			device: { name: 'MacBook', platform: 'tauri' },
-		});
+		emitRpcError(
+			RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error,
+			42,
+			mockState({ device: { name: 'MacBook', platform: 'tauri' } }),
+		);
 		expect(cap.lines).toEqual([
 			'error: ActionNotFound "tabs.closeAll" on MacBook (42, tauri)',
 		]);
@@ -73,7 +85,7 @@ describe('emitRpcError', () => {
 		emitRpcError(
 			RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error,
 			42,
-			{},
+			mockState({}),
 		);
 		expect(cap.lines).toEqual([
 			'error: ActionNotFound "tabs.closeAll" on clientID 42',
@@ -82,23 +94,31 @@ describe('emitRpcError', () => {
 
 	test('Timeout reports ms and peer', () => {
 		cap = captureErrors();
-		emitRpcError(RpcError.Timeout({ ms: 5000 }).error, 42, {
-			device: { name: 'MacBook' },
-		});
+		emitRpcError(
+			RpcError.Timeout({ ms: 5000 }).error,
+			42,
+			mockState({ device: { name: 'MacBook' } }),
+		);
 		expect(cap.lines).toEqual(['error: timeout after 5000ms on MacBook (42)']);
 	});
 
 	test('PeerOffline', () => {
 		cap = captureErrors();
-		emitRpcError(RpcError.PeerOffline().error, 42, {
-			device: { name: 'MacBook' },
-		});
+		emitRpcError(
+			RpcError.PeerOffline().error,
+			42,
+			mockState({ device: { name: 'MacBook' } }),
+		);
 		expect(cap.lines).toEqual(['error: peer MacBook (42) is offline']);
 	});
 
 	test('PeerNotFound surfaces the deviceId', () => {
 		cap = captureErrors();
-		emitRpcError(RpcError.PeerNotFound({ peer: 'macbook-pro' }).error, 0, {});
+		emitRpcError(
+			RpcError.PeerNotFound({ peer: 'macbook-pro' }).error,
+			0,
+			mockState({}),
+		);
 		expect(cap.lines).toEqual([
 			'error: no peer with deviceId "macbook-pro"',
 		]);
@@ -106,7 +126,11 @@ describe('emitRpcError', () => {
 
 	test('PeerLeft surfaces the deviceId', () => {
 		cap = captureErrors();
-		emitRpcError(RpcError.PeerLeft({ peer: 'macbook-pro' }).error, 0, {});
+		emitRpcError(
+			RpcError.PeerLeft({ peer: 'macbook-pro' }).error,
+			0,
+			mockState({}),
+		);
 		expect(cap.lines).toEqual([
 			'error: peer "macbook-pro" disconnected before responding',
 		]);
@@ -120,7 +144,7 @@ describe('emitRpcError', () => {
 				cause: new Error('Tab 99 not found'),
 			}).error,
 			42,
-			{ device: { name: 'MacBook' } },
+			mockState({ device: { name: 'MacBook' } }),
 		);
 		expect(cap.lines).toEqual([
 			'error: "tabs.close" failed on MacBook (42): Tab 99 not found',
@@ -129,7 +153,7 @@ describe('emitRpcError', () => {
 
 	test('Disconnected', () => {
 		cap = captureErrors();
-		emitRpcError(RpcError.Disconnected().error, 42, {});
+		emitRpcError(RpcError.Disconnected().error, 42, mockState({}));
 		expect(cap.lines).toEqual([
 			'error: connection lost before clientID 42 responded',
 		]);

@@ -73,7 +73,7 @@ describe('peerSection', () => {
 
 	test('falls back to deviceId when name is missing', () => {
 		const section = peerSection({
-			device: { id: '0xabc', name: '', platform: '', offers: {} },
+			device: { id: '0xabc', name: '', platform: 'web', offers: {} },
 		});
 		expect(section.label).toBe('0xabc (online, offers: 0)');
 	});
@@ -86,7 +86,7 @@ describe('peerSection', () => {
 
 	test('"(online, offers: 0)" suffix when manifest is empty', () => {
 		const section = peerSection({
-			device: { id: 'silent', name: 'silent', platform: 'web' },
+			device: { id: 'silent', name: 'silent', platform: 'web', offers: {} },
 		});
 		expect(section.label).toContain('offers: 0');
 		expect(section.entries).toEqual({});

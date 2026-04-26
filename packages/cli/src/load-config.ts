@@ -34,31 +34,29 @@
  * ```
  */
 
-import type { Actions, SyncAttachment } from '@epicenter/workspace';
+import type {
+	Actions,
+	Awareness,
+	standardAwarenessDefs,
+	SyncAttachment,
+} from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
 
 const CONFIG_FILENAME = 'epicenter.config.ts';
 
 /**
- * Minimal awareness shape the CLI relies on — the structural subset of
- * y-protocols `Awareness`. Workspaces using the typed wrapper from
- * `attachAwareness` should pass `awareness.raw`, matching the existing
- * `attachSync({ awareness: awareness.raw, ... })` convention.
- */
-export type AwarenessLike = {
-	clientID: number;
-	getStates(): Map<number, unknown>;
-};
-
-/**
  * The shape every loaded workspace export must satisfy. Extra fields are
  * ignored by the CLI; only these are addressed.
+ *
+ * `awareness` is the typed wrapper from `attachAwareness` — the CLI
+ * expects `standardAwarenessDefs` so `state.device` carries `PeerDevice`
+ * type without casts at consumption sites.
  */
 export type LoadedWorkspace = {
 	readonly whenReady: Promise<unknown>;
 	readonly actions?: Actions;
 	readonly sync?: SyncAttachment;
-	readonly awareness?: AwarenessLike;
+	readonly awareness?: Awareness<typeof standardAwarenessDefs>;
 	[Symbol.dispose](): void;
 };
 

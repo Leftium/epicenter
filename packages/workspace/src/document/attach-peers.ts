@@ -19,17 +19,27 @@ import {
  */
 export type PeerAwarenessState = AwarenessState<typeof standardAwarenessDefs>;
 
+export type FoundPeer = {
+	clientId: number;
+	state: PeerAwarenessState;
+};
+
 /**
  * Returned by `attachPeers`. Owns an awareness instance scoped to the
- * standard `device` schema and exposes typed lookup helpers.
+ * standard `device` schema and exposes peer-shaped lookup helpers.
  *
  * `awareness` is the escape hatch — pass `awareness.raw` to `attachSync`,
- * or use `setLocal` / `setLocalField` to mutate the published device.
+ * or `setLocal` / `setLocalField` on it to mutate the published device
+ * after attach time.
  */
 export type Peers = {
 	awareness: Awareness<typeof standardAwarenessDefs>;
-	peers(): Map<number, PeerAwarenessState>;
-	findPeer(deviceId: string): { clientId: number; state: PeerAwarenessState } | undefined;
+	/** Snapshot of every connected peer (excludes self). */
+	list(): Map<number, PeerAwarenessState>;
+	/** First peer publishing `deviceId`, by ascending clientId. */
+	find(deviceId: string): FoundPeer | undefined;
+	/** Subscribe to peer change events. Returns an unsubscribe function. */
+	observe(callback: () => void): () => void;
 };
 
 /**
@@ -46,8 +56,7 @@ export type DocWithActions = {
  *
  * Owns the `standardAwarenessDefs` schema and the `actionManifest(actions)`
  * derivation, so app code never types either of them. The published device
- * carries `{ id, name, platform, offers }` from the first frame; consumers
- * read peers via `peers()` or resolve a specific peer with `findPeer(id)`.
+ * carries `{ id, name, platform, offers }` from the first frame.
  *
  * Pair with `attachSync` for transport: `attachSync(doc.ydoc, { awareness:
  * peers.awareness.raw, actions: doc.actions, ... })`.
@@ -70,8 +79,8 @@ export function attachPeers<TDoc extends DocWithActions>(
 
 	return {
 		awareness,
-		peers: () => awareness.peers(),
-		findPeer(deviceId) {
+		list: () => awareness.peers(),
+		find(deviceId) {
 			const all = awareness.peers();
 			const sorted = [...all.keys()].sort((a, b) => a - b);
 			for (const clientId of sorted) {
@@ -82,5 +91,6 @@ export function attachPeers<TDoc extends DocWithActions>(
 			}
 			return undefined;
 		},
+		observe: (callback) => awareness.observe(callback),
 	};
 }

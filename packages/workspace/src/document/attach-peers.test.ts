@@ -35,7 +35,7 @@ describe('attachPeers', () => {
 		});
 	});
 
-	test('peers() excludes self, includes remote peers with valid state', () => {
+	test('list() excludes self, includes remote peers with valid state', () => {
 		const doc = makeDoc();
 		const peers = attachPeers(doc, {
 			device: { id: 'mac-1', name: 'MacBook', platform: 'web' },
@@ -50,12 +50,12 @@ describe('attachPeers', () => {
 			},
 		});
 
-		const result = peers.peers();
+		const result = peers.list();
 		expect(result.has(peers.awareness.raw.clientID)).toBe(false);
 		expect(result.get(202)?.device.id).toBe('iphone-15');
 	});
 
-	test('findPeer matches by deviceId; returns undefined when absent', () => {
+	test('find() matches by deviceId; returns undefined when absent', () => {
 		const doc = makeDoc();
 		const peers = attachPeers(doc, {
 			device: { id: 'mac-1', name: 'MacBook', platform: 'web' },
@@ -70,14 +70,14 @@ describe('attachPeers', () => {
 			},
 		});
 
-		const found = peers.findPeer('iphone-15');
+		const found = peers.find('iphone-15');
 		expect(found?.clientId).toBe(202);
 		expect(found?.state.device.name).toBe('Phone');
 
-		expect(peers.findPeer('ghost')).toBeUndefined();
+		expect(peers.find('ghost')).toBeUndefined();
 	});
 
-	test('findPeer prefers lowest clientId on duplicate deviceIds', () => {
+	test('find() prefers lowest clientId on duplicate deviceIds', () => {
 		const doc = makeDoc();
 		const peers = attachPeers(doc, {
 			device: { id: 'mac-1', name: 'MacBook', platform: 'web' },
@@ -91,16 +91,16 @@ describe('attachPeers', () => {
 		dup(50);
 		dup(100);
 
-		expect(peers.findPeer('shared')?.clientId).toBe(50);
+		expect(peers.find('shared')?.clientId).toBe(50);
 	});
 
-	test('findPeer skips peers whose device fails validation', () => {
+	test('find() skips peers whose device fails validation', () => {
 		const doc = makeDoc();
 		const peers = attachPeers(doc, {
 			device: { id: 'mac-1', name: 'MacBook', platform: 'web' },
 		});
 
 		peers.awareness.raw.getStates().set(202, { device: { id: 'malformed' } });
-		expect(peers.findPeer('malformed')).toBeUndefined();
+		expect(peers.find('malformed')).toBeUndefined();
 	});
 });

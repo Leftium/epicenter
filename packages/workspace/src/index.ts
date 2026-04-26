@@ -208,6 +208,7 @@ export {
 export {
 	attachPeers,
 	type DocWithActions,
+	type FoundPeer,
 	type PeerAwarenessState,
 	type Peers,
 } from './document/attach-peers.js';

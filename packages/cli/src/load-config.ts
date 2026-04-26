@@ -7,21 +7,21 @@
  * directly off the export; the loader does no walking, no brand check, no
  * factory trickery.
  *
- * @example
- * ```typescript
- * // epicenter.config.ts:
- * //   const ydoc = new Y.Doc({ guid: 'notes' });
- * //   const idb = attachIndexedDb(ydoc);
- * //   const tables = attachTables(ydoc, schemas);
- * //   const actions = createNotesActions(tables);
- * //   const sync = attachSync(ydoc, { ... });
- * //   export const notes = {
- * //     whenReady: idb.whenLoaded,
- * //     actions,
- * //     sync,
- * //     [Symbol.dispose]() { ydoc.destroy(); },
- * //   };
+ * The recommended config style is to export the result of an `openFoo()`
+ * factory directly — the same factory the app uses elsewhere — instead of
+ * hand-rolling the workspace shape. The CLI consumes whichever fields the
+ * factory exposes.
  *
+ * @example
+ * ```ts
+ * // epicenter.config.ts
+ * import { openFuji } from '@my/app/server';
+ * export const fuji = openFuji({ auth, device });
+ * ```
+ *
+ * Then on the consumer side:
+ *
+ * ```ts
  * await using config = await loadConfig('/path/to/project');
  * for (const { name, workspace } of config.entries) {
  *   await workspace.whenReady;

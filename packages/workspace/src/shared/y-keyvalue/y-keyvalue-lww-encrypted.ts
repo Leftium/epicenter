@@ -328,11 +328,11 @@ export function createEncryptedYkvLww<T>(
 			const nextVersion = Math.max(...keyring.keys());
 			const nextKey = keyring.get(nextVersion);
 			if (!nextKey) throw new Error(`Missing key for version ${nextVersion}`);
-			const nextEncryption: EncryptionState = {
+			const nextEncryption = {
 				keyring,
 				currentKey: nextKey,
 				currentVersion: nextVersion,
-			};
+			} satisfies EncryptionState;
 			encryption = nextEncryption;
 
 			// Walk every entry and converge it to the current key version. Three

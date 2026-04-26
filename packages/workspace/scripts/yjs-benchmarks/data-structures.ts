@@ -194,14 +194,14 @@ function benchmarkMapPlain(
 	const doc = new Y.Doc({ gc: gcEnabled });
 	const ymap = doc.getMap<PlainRow>('data');
 
-	const result: BenchmarkResult = {
+	const result = {
 		name: 'Y.Map<id, PlainObject>',
 		gcEnabled,
 		updateStrategy: strategy,
 		timings: { insert: 0, update: 0, delete: 0, recreate: 0 },
 		sizes: { afterInsert: 0, afterUpdate: 0, afterDelete: 0, afterRecreate: 0 },
 		structs: { total: 0, deleted: 0, gc: 0 },
-	};
+	} satisfies BenchmarkResult;
 
 	// INSERT
 	let start = performance.now();
@@ -276,14 +276,14 @@ function benchmarkArrayPlain(
 	const doc = new Y.Doc({ gc: gcEnabled });
 	const yarray = doc.getArray<PlainRow>('data');
 
-	const result: BenchmarkResult = {
+	const result = {
 		name: 'Y.Array<PlainObject>',
 		gcEnabled,
 		updateStrategy: strategy,
 		timings: { insert: 0, update: 0, delete: 0, recreate: 0 },
 		sizes: { afterInsert: 0, afterUpdate: 0, afterDelete: 0, afterRecreate: 0 },
 		structs: { total: 0, deleted: 0, gc: 0 },
-	};
+	} satisfies BenchmarkResult;
 
 	// INSERT
 	let start = performance.now();
@@ -357,14 +357,14 @@ function benchmarkMapYMap(
 	const doc = new Y.Doc({ gc: gcEnabled });
 	const ymap = doc.getMap<Y.Map<unknown>>('data');
 
-	const result: BenchmarkResult = {
+	const result = {
 		name: 'Y.Map<id, Y.Map>',
 		gcEnabled,
 		updateStrategy: strategy,
 		timings: { insert: 0, update: 0, delete: 0, recreate: 0 },
 		sizes: { afterInsert: 0, afterUpdate: 0, afterDelete: 0, afterRecreate: 0 },
 		structs: { total: 0, deleted: 0, gc: 0 },
-	};
+	} satisfies BenchmarkResult;
 
 	// INSERT
 	let start = performance.now();
@@ -454,14 +454,14 @@ function benchmarkArrayYMap(
 	const doc = new Y.Doc({ gc: gcEnabled });
 	const yarray = doc.getArray<Y.Map<unknown>>('data');
 
-	const result: BenchmarkResult = {
+	const result = {
 		name: 'Y.Array<Y.Map>',
 		gcEnabled,
 		updateStrategy: strategy,
 		timings: { insert: 0, update: 0, delete: 0, recreate: 0 },
 		sizes: { afterInsert: 0, afterUpdate: 0, afterDelete: 0, afterRecreate: 0 },
 		structs: { total: 0, deleted: 0, gc: 0 },
-	};
+	} satisfies BenchmarkResult;
 
 	// INSERT
 	let start = performance.now();
@@ -718,7 +718,7 @@ function printAnalysis(allResults: BenchmarkResult[]) {
 	console.log('\n  GC IMPACT');
 	console.log(`  ${'─'.repeat(70)}`);
 
-	const strategies: UpdateStrategy[] = ['single-column', 'full-row'];
+	const strategies = ['single-column', 'full-row'] satisfies UpdateStrategy[];
 	for (const strategy of strategies) {
 		const label = strategy === 'single-column' ? 'Single Column' : 'Full Row';
 		console.log(`\n  ${label} Updates:`);
@@ -794,7 +794,7 @@ async function main() {
 `);
 
 	const allResults: BenchmarkResult[] = [];
-	const strategies: UpdateStrategy[] = ['single-column', 'full-row', 'mixed'];
+	const strategies = ['single-column', 'full-row', 'mixed'] satisfies UpdateStrategy[];
 	const benchmarks = [
 		benchmarkMapPlain,
 		benchmarkArrayPlain,

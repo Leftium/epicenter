@@ -348,42 +348,42 @@ async function runTransformation({
 
 		if (isErr(handleStepResult)) {
 			const failedNow = new Date().toISOString();
-			const failedStepRun: TransformationStepRunFailed = {
+			const failedStepRun = {
 				...stepRun,
 				status: 'failed',
 				completedAt: failedNow,
 				error: handleStepResult.error,
-			};
+			} satisfies TransformationStepRunFailed;
 			whispering.tables.transformationStepRuns.set(failedStepRun);
-			const failedRun: TransformationRunFailed = {
+			const failedRun = {
 				...transformationRun,
 				status: 'failed',
 				completedAt: failedNow,
 				error: handleStepResult.error,
-			};
+			} satisfies TransformationRunFailed;
 			transformationRuns.set(failedRun);
 			return Ok(failedRun);
 		}
 
 		const handleStepOutput = handleStepResult.data;
 
-		const completedStepRun: TransformationStepRunCompleted = {
+		const completedStepRun = {
 			...stepRun,
 			status: 'completed',
 			completedAt: new Date().toISOString(),
 			output: handleStepOutput,
-		};
+		} satisfies TransformationStepRunCompleted;
 		whispering.tables.transformationStepRuns.set(completedStepRun);
 
 		currentInput = handleStepOutput;
 	}
 
-	const completedRun: TransformationRunCompleted = {
+	const completedRun = {
 		...transformationRun,
 		status: 'completed',
 		completedAt: new Date().toISOString(),
 		output: currentInput,
-	};
+	} satisfies TransformationRunCompleted;
 	transformationRuns.set(completedRun);
 	return Ok(completedRun);
 }

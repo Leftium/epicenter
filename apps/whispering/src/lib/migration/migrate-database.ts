@@ -50,11 +50,11 @@ export async function migrateDatabaseToWorkspace({
 	workspace: { whenReady: Promise<unknown> };
 	onProgress: (message: string) => void;
 }): Promise<Result<MigrationResult, MigrationError>> {
-	const result: MigrationResult = {
+	const result = {
 		recordings: { total: 0, migrated: 0, skipped: 0, failed: 0 },
 		transformations: { total: 0, migrated: 0, skipped: 0, failed: 0 },
 		steps: { total: 0, migrated: 0, skipped: 0, failed: 0 },
-	};
+	} satisfies MigrationResult;
 
 	const { error: readyError } = await tryAsync({
 		try: () => ws.whenReady,

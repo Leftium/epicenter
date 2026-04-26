@@ -83,7 +83,7 @@
 	);
 	const DATE_FORMAT = 'PP p'; // e.g., Aug 13, 2025, 10:00 AM
 
-	const columns: ColumnDef<Recording>[] = [
+	const columns = [
 		{
 			id: 'select',
 			header: ({ table }) =>
@@ -227,7 +227,7 @@
 				});
 			},
 		},
-	];
+	] satisfies ColumnDef<Recording>[];
 
 	let sorting = createPersistedState({
 		key: 'whispering-recordings-data-table-sorting',

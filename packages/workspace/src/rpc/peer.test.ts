@@ -1,19 +1,18 @@
 /**
  * `peer<T>()` unit tests — proxy mechanics + first-match resolution +
- * disconnect short-circuit. Tests use minimal mock workspaces (no real
- * Y.Doc / sync). End-to-end coverage with two real workspaces lives in
- * `__tests__/peer-e2e.test.ts`.
+ * disconnect short-circuit. Tests use a mock `Peers` and mock `sync.rpc` —
+ * no real Y.Doc, no real awareness. The peer-resolution logic itself is
+ * covered in `attach-peers.test.ts`.
  */
 
 import { describe, expect, it } from 'bun:test';
 import Type from 'typebox';
-import { Awareness as YAwareness } from 'y-protocols/awareness';
-import * as Y from 'yjs';
 import { Err, Ok, isErr } from 'wellcrafted/result';
 import type { Result } from 'wellcrafted/result';
 import { RpcError, isRpcError } from '@epicenter/sync';
+import type { FoundPeer } from '../document/attach-peers.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
-import { peer, resolvePeer, type PeerWorkspace } from './peer.js';
+import { peer, type PeerWorkspace } from './peer.js';
 
 // Reference action shape used to type the test proxy. Handlers are never
 // invoked here — only the *type* flows through `peer<typeof TestActions>`.
@@ -41,15 +40,48 @@ type RpcCall = {
 	options?: { timeout?: number };
 };
 
-/** Build a mock workspace whose `sync.rpc` resolves with the supplied responder. */
+/**
+ * Mock `Peers` keyed on a mutable `present` map; tests can drop a peer
+ * mid-call by mutating the map and invoking the captured observer.
+ */
+function mockPeers(initial: Record<string, number>) {
+	const present = new Map(Object.entries(initial));
+	const observers = new Set<() => void>();
+	return {
+		find(deviceId: string): FoundPeer | undefined {
+			const clientId = present.get(deviceId);
+			if (clientId === undefined) return undefined;
+			return {
+				clientId,
+				state: {
+					device: {
+						id: deviceId,
+						name: deviceId,
+						platform: 'web',
+						offers: {},
+					},
+				},
+			};
+		},
+		observe(cb: () => void) {
+			observers.add(cb);
+			return () => observers.delete(cb);
+		},
+		drop(deviceId: string) {
+			present.delete(deviceId);
+			for (const cb of observers) cb();
+		},
+	};
+}
+
 function mockWorkspace(opts: {
-	awareness: YAwareness;
+	peers: ReturnType<typeof mockPeers>;
 	respond: (call: RpcCall) => Promise<Result<unknown, RpcError>>;
 	calls?: RpcCall[];
 }): PeerWorkspace {
 	const calls = opts.calls ?? [];
 	return {
-		awareness: { raw: opts.awareness },
+		peers: opts.peers,
 		sync: {
 			async rpc(target, action, input, options) {
 				const call = { target, action, input, options };
@@ -60,57 +92,12 @@ function mockWorkspace(opts: {
 	};
 }
 
-describe('resolvePeer', () => {
-	it('returns Err(PeerNotFound) when awareness is empty', () => {
-		const ydoc = new Y.Doc();
-		const awareness = new YAwareness(ydoc);
-		const result = resolvePeer(awareness, 'nonexistent');
-		expect(isErr(result)).toBe(true);
-		if (isErr(result)) {
-			expect(isRpcError(result.error)).toBe(true);
-			expect(result.error.name).toBe('PeerNotFound');
-		}
-	});
-
-	it('returns the matching clientId', () => {
-		const ydoc = new Y.Doc();
-		const awareness = new YAwareness(ydoc);
-		awareness.setLocalState({ device: { id: 'macbook-pro' } });
-		const result = resolvePeer(awareness, 'macbook-pro');
-		expect(result.error).toBeNull();
-		expect(result.data).toBe(awareness.clientID);
-	});
-
-	it('first-match by clientId-ascending order on duplicates', () => {
-		const ydoc = new Y.Doc();
-		const awareness = new YAwareness(ydoc);
-		// Inject two states sharing the same deviceId at different clientIds.
-		awareness.getStates().set(50, { device: { id: 'shared' } });
-		awareness.getStates().set(20, { device: { id: 'shared' } });
-		awareness.getStates().set(80, { device: { id: 'shared' } });
-		const result = resolvePeer(awareness, 'shared');
-		expect(result.data).toBe(20);
-	});
-
-	it('skips states with mismatched deviceId', () => {
-		const ydoc = new Y.Doc();
-		const awareness = new YAwareness(ydoc);
-		awareness.getStates().set(10, { device: { id: 'other' } });
-		awareness.getStates().set(20, { device: { id: 'target' } });
-		const result = resolvePeer(awareness, 'target');
-		expect(result.data).toBe(20);
-	});
-});
-
 describe('peer<T>()', () => {
 	it('builds a proxy whose dot-path becomes the rpc action arg', async () => {
-		const ydoc = new Y.Doc();
-		const awareness = new YAwareness(ydoc);
-		awareness.getStates().set(42, { device: { id: 'mac' } });
-
+		const peers = mockPeers({ mac: 42 });
 		const calls: RpcCall[] = [];
 		const ws = mockWorkspace({
-			awareness,
+			peers,
 			calls,
 			respond: async () => Ok({ closedCount: 1 }),
 		});
@@ -128,12 +115,10 @@ describe('peer<T>()', () => {
 	});
 
 	it('returns Err(PeerNotFound) without sending when peer is absent', async () => {
-		const ydoc = new Y.Doc();
-		const awareness = new YAwareness(ydoc);
-
+		const peers = mockPeers({});
 		const calls: RpcCall[] = [];
 		const ws = mockWorkspace({
-			awareness,
+			peers,
 			calls,
 			respond: async () => {
 				throw new Error('rpc should not be called');
@@ -150,12 +135,9 @@ describe('peer<T>()', () => {
 	});
 
 	it('passes a Result through unchanged when the peer returns one', async () => {
-		const ydoc = new Y.Doc();
-		const awareness = new YAwareness(ydoc);
-		awareness.getStates().set(1, { device: { id: 'mac' } });
-
+		const peers = mockPeers({ mac: 1 });
 		const ws = mockWorkspace({
-			awareness,
+			peers,
 			respond: async () => Err(RpcError.ActionNotFound({ action: 'x' }).error),
 		});
 
@@ -167,26 +149,18 @@ describe('peer<T>()', () => {
 		}
 	});
 
-	it('rejects with PeerLeft when awareness change drops the peer mid-call', async () => {
-		const ydoc = new Y.Doc();
-		const awareness = new YAwareness(ydoc);
-		awareness.getStates().set(7, { device: { id: 'mac' } });
-
+	it('rejects with PeerLeft when the peer drops mid-call', async () => {
+		const peers = mockPeers({ mac: 7 });
 		// Hold the rpc response forever so the disconnect can race ahead.
 		const ws = mockWorkspace({
-			awareness,
+			peers,
 			respond: () => new Promise<Result<unknown, RpcError>>(() => {}),
 		});
 
 		const remote = peer<TestActions>(ws, 'mac');
 		const callPromise = remote.tabs.close({ tabIds: [1] });
 
-		// Drop the peer from awareness and emit a change event.
-		awareness.getStates().delete(7);
-		awareness.emit('change', [
-			{ added: [], updated: [], removed: [7] },
-			'local',
-		]);
+		peers.drop('mac');
 
 		const result = await callPromise;
 		expect(isErr(result)).toBe(true);

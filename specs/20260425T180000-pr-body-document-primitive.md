@@ -6,7 +6,38 @@
 
 ---
 
-This branch ships terminal state for the workspace primitive arc, the package consolidation that surfaced alongside it, and the CLI redesign that the new shapes unblocked. **520 commits, 534 files, +37,672 / -23,256, 19 packages/apps touched.** Single PR because most of the work is structurally coupled — you can't delete `Document` without rewriting the CLI loader, you can't split `@epicenter/auth` without migrating six apps' session subscriptions, you can't move actions to passthrough without touching every Result-consuming call site.
+This branch deletes `defineWorkspace` and the `withExtension` chain that drove every workspace in the codebase for a year. The terminal API is **`attach*` primitives composed inline against a Y.Doc the caller owns** — no builder, no extension slots, no framework-imposed bundle shape. Domain shapes emerge in the caller; the framework just provides composable verbs.
+
+```ts
+// Before
+const workspace = createFujiWorkspace()
+  .withExtension('persistence', indexeddbPersistence)
+  .withExtension('sync', createSyncExtension({ url, getToken }));
+
+// After
+const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
+const encryption = attachEncryption(ydoc);
+const tables = encryption.attachTables(ydoc, fujiTables);
+const kv = encryption.attachKv(ydoc, {});
+const awareness = attachAwareness(ydoc, {});
+const actions = createFujiActions(tables);
+const idb = attachIndexedDb(ydoc);
+const sync = attachSync(ydoc, {
+  url, waitFor: idb.whenLoaded, awareness: awareness.raw,
+  getToken: () => auth.getToken(),
+  dispatch: (method, input) => dispatchAction(actions, method, input),
+});
+```
+
+The chain wasn't doing real work. Each `.withExtension(name, factory)` call was a typed closure with extra ceremony to make the extension's exports reachable through the framework's generic shape. Once you have a Y.Doc as a local variable, `attachIndexedDb(ydoc)` is shorter and exposes its own typed handle (`idb.whenLoaded`, `idb.clearLocal`) without traveling through a slot. Sync wiring that referenced both persistence (`waitFor: idb.whenLoaded`) and awareness was contorted under the chain. It reads naturally under closures.
+
+The framework collapsed with the chain. `Document` (a structural contract for "what a workspace returns"), `DocumentBundle`, `DocumentHandle` (a refcounted brand around bundles), `DocumentFactory`, `createDocumentFactory`, `defineDocument`, `defineWorkspace`, `ActionIndex` (a flat map of branded actions walked from arbitrary bundles), `iterateActions`, `ACTION_BRAND` (the symbol that made the walk possible), `entry.handle` envelope in the CLI loader — all gone. What's left is the smallest set of primitives that can build everything those layers were built to do, plus one piece of factory-shaped infrastructure (`createDisposableCache`) that survived because it does work the caller can't trivially do inline: refcount + grace-period teardown for any `Disposable`. Y.Docs are the most common case in this codebase; audio decoders, worker connections, and Tauri webview handles fit the same shape.
+
+The package surface follows the API. `@epicenter/yjs-doc` got renamed to `@epicenter/document`; `@epicenter/document` got merged wholesale into `@epicenter/workspace`. One published surface, one barrel, one place to find anything. `@epicenter/auth` split into framework-agnostic core + Svelte wrapper because `createAuth` was Svelte-coupled and unusable from Node tooling.
+
+Apps composed on the new primitives end up in three files per app — iso doc factory, env factory, singleton + lifecycle — because once you have a portable iso layer, build configs and Node tooling can construct the doc without dragging in `y-indexeddb` or `BroadcastChannel`. That's the iso/env/client convention codified at `.claude/skills/workspace-app-layout/SKILL.md`.
+
+**520 commits, 534 files, +37,672 / -23,256, 19 packages/apps touched.** Single PR because most of the work is structurally coupled — you can't delete `Document` without rewriting the CLI loader, you can't split `@epicenter/auth` without migrating six apps' session subscriptions, you can't move actions to passthrough without touching every Result-consuming call site.
 
 There is no follow-up cleanup PR for shapes introduced here. Two additive layers (awareness publishing, CLI cross-device dispatch) ship as separate PRs after this one merges. Architecture for those lives at `specs/20260425T000000-device-actions-via-awareness.md`.
 

@@ -8,7 +8,7 @@
  *
  * For each workspace entry (or a single entry narrowed by `-w`):
  *   1. await `workspace.sync.whenConnected` (awareness requires the transport)
- *   2. snapshot `workspace.awareness.getStates()`, or poll up to `--wait <ms>`
+ *   2. snapshot `workspace.peers.list()`, or poll up to `--wait <ms>`
  *      if the snapshot is empty
  *   3. emit a `console.table` (default) or JSON (`--format json`)
  *
@@ -88,7 +88,7 @@ async function snapshotEntry(
 ): Promise<WorkspaceSnapshot> {
 	await waitForAnyPeer(entry.workspace, Date.now() + waitMs);
 	const peers =
-		entry.workspace.awareness?.peers() ?? new Map<number, AwarenessState>();
+		entry.workspace.peers?.list() ?? new Map<number, AwarenessState>();
 	return { name: entry.name, peers };
 }
 

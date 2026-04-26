@@ -61,14 +61,14 @@ export async function waitForPeer(
 ): Promise<WaitForPeerResult> {
 	if (workspace.sync?.whenConnected) await workspace.sync.whenConnected;
 
-	const awareness = workspace.awareness;
-	if (!awareness) return { kind: 'not-found', sawPeers: false };
+	const peers = workspace.peers;
+	if (!peers) return { kind: 'not-found', sawPeers: false };
 
 	let sawPeers = false;
 	const tryMatch = (): WaitForPeerResult | null => {
-		const peers = awareness.peers();
-		if (peers.size > 0) sawPeers = true;
-		const found = findPeer(deviceId, peers);
+		const list = peers.list();
+		if (list.size > 0) sawPeers = true;
+		const found = findPeer(deviceId, list);
 		return found.kind === 'found' ? found : null;
 	};
 
@@ -79,7 +79,7 @@ export async function waitForPeer(
 	if (remaining <= 0) return { kind: 'not-found', sawPeers };
 
 	return new Promise((resolve) => {
-		const stop = awareness.observe(() => {
+		const stop = peers.observe(() => {
 			const result = tryMatch();
 			if (result) {
 				clearTimeout(timer);
@@ -110,17 +110,17 @@ export async function waitForAnyPeer(
 ): Promise<void> {
 	if (workspace.sync?.whenConnected) await workspace.sync.whenConnected;
 
-	const awareness = workspace.awareness;
-	if (!awareness) return;
+	const peers = workspace.peers;
+	if (!peers) return;
 
-	if (awareness.peers().size > 0) return;
+	if (peers.list().size > 0) return;
 
 	const remaining = deadline - Date.now();
 	if (remaining <= 0) return;
 
 	return new Promise((resolve) => {
-		const stop = awareness.observe(() => {
-			if (awareness.peers().size > 0) {
+		const stop = peers.observe(() => {
+			if (peers.list().size > 0) {
 				clearTimeout(timer);
 				stop();
 				resolve();

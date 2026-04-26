@@ -33,9 +33,8 @@
 
 import type {
 	Actions,
-	Awareness,
-	AwarenessState as WorkspaceAwarenessState,
-	standardAwarenessDefs,
+	PeerAwarenessState,
+	Peers,
 	SyncAttachment,
 } from '@epicenter/workspace';
 import { join, resolve } from 'node:path';
@@ -46,27 +45,25 @@ const CONFIG_FILENAME = 'epicenter.config.ts';
  * The shape every loaded workspace export must satisfy. Extra fields are
  * ignored by the CLI; only these are addressed.
  *
- * `awareness` is the typed wrapper from `attachAwareness` — the CLI
- * expects `standardAwarenessDefs` so `state.device` carries `PeerDevice`
- * type without casts at consumption sites.
+ * `peers` is the wrapper from `attachPeers` — owns the standard awareness
+ * schema and exposes `list()` / `find()` / `observe()` plus the underlying
+ * awareness instance as an escape hatch.
  */
 export type LoadedWorkspace = {
 	readonly whenReady: Promise<unknown>;
 	readonly actions?: Actions;
 	readonly sync?: SyncAttachment;
-	readonly awareness?: Awareness<typeof standardAwarenessDefs>;
+	readonly peers?: Peers;
 	[Symbol.dispose](): void;
 };
 
 /**
- * Per-peer awareness state typed against `standardAwarenessDefs`
- * (`{ device: PeerDevice }`). Validated by the awareness wrapper at the
- * boundary; `device` is set synchronously at attach time, so consumers
- * read `state.device.{id,name,platform,offers}` without `?.`.
+ * Per-peer awareness state under the standard `device` schema. Re-exported
+ * from `@epicenter/workspace` for ergonomic consumption — `state.device` is
+ * set synchronously at attach time, so consumers read
+ * `state.device.{id,name,platform,offers}` without `?.`.
  */
-export type AwarenessState = WorkspaceAwarenessState<
-	typeof standardAwarenessDefs
->;
+export type AwarenessState = PeerAwarenessState;
 
 /** One named workspace export from `epicenter.config.ts`. */
 export type WorkspaceEntry = {
@@ -93,7 +90,7 @@ export type LoadConfigResult = {
  *
  *   - `workspace` — looks like a workspace and validates.
  *   - `invalid`   — has at least one workspace-shaped field (`whenReady`,
- *                   `[Symbol.dispose]`, `actions`, `sync`, `awareness`) but
+ *                   `[Symbol.dispose]`, `actions`, `sync`, `peers`) but
  *                   is missing required fields. The user clearly intended a
  *                   workspace; the loader should fail loud naming the
  *                   export and what's wrong.
@@ -116,7 +113,7 @@ function classifyWorkspaceExport(value: unknown): WorkspaceCheck {
 		hasDispose ||
 		'actions' in v ||
 		'sync' in v ||
-		'awareness' in v;
+		'peers' in v;
 
 	if (!looksWorkspaceShaped) return { kind: 'unrelated' };
 

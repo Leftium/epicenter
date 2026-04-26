@@ -7,13 +7,11 @@
 import type { AuthClient } from '@epicenter/auth-svelte';
 import { APP_URLS } from '@epicenter/constants/vite';
 import {
-	actionManifest,
-	attachAwareness,
 	attachBroadcastChannel,
 	attachIndexedDb,
+	attachPeers,
 	attachSync,
 	type DeviceDescriptor,
-	standardAwarenessDefs,
 	toWsUrl,
 } from '@epicenter/workspace';
 import type { DeviceId } from '$lib/workspace/definition';
@@ -39,11 +37,7 @@ export async function openTabManager({
 
 	const doc = openTabManagerDoc({ deviceId: Promise.resolve(resolvedDevice.id) });
 
-	const awareness = attachAwareness(
-		doc.ydoc,
-		{ ...standardAwarenessDefs },
-		{ device: { ...resolvedDevice, offers: actionManifest(doc.actions) } },
-	);
+	const peers = attachPeers(doc, { device: resolvedDevice });
 
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
@@ -51,14 +45,14 @@ export async function openTabManager({
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
-		awareness: awareness.raw,
+		awareness: peers.awareness.raw,
 		getToken: () => auth.getToken(),
 		actions: doc.actions,
 	});
 
 	return {
 		...doc,
-		awareness,
+		peers,
 		idb,
 		sync,
 		/**

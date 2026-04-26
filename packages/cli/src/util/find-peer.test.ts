@@ -8,110 +8,45 @@ function peersOf(
 	return new Map(rows);
 }
 
-describe('findPeer — numeric / clientID mode', () => {
-	test('all-digits target matches clientID exactly', () => {
+describe('findPeer — exact deviceId match, first-match-wins', () => {
+	test('matches the peer publishing the deviceId', () => {
 		const peers = peersOf([
-			[42, { deviceName: 'myMacbook' }],
-			[188, { deviceName: 'workLaptop' }],
+			[42, { device: { id: 'macbook-pro', name: 'MacBook' } }],
+			[188, { device: { id: 'iphone-15', name: 'Phone' } }],
 		]);
-		expect(findPeer('42', peers)).toEqual({
-			kind: 'found',
-			clientID: 42,
-			state: { deviceName: 'myMacbook' },
-		});
-	});
-
-	test('numeric miss is not-found — no fuzzy fallback', () => {
-		const peers = peersOf([[42, { deviceName: 'myMacbook' }]]);
-		expect(findPeer('99', peers)).toEqual({ kind: 'not-found' });
-	});
-
-	test('numeric target ignores string fields that happen to equal the number', () => {
-		const peers = peersOf([[55, { deviceName: '42' }]]);
-		// "42" always routes to clientID mode — use `--peer field=42` to match string values
-		expect(findPeer('42', peers)).toEqual({ kind: 'not-found' });
-	});
-
-	test('bare non-numeric target without `=` is not-found (no default field)', () => {
-		const peers = peersOf([[42, { deviceName: 'myMacbook' }]]);
-		expect(findPeer('myMacbook', peers)).toEqual({ kind: 'not-found' });
-	});
-});
-
-describe('findPeer — k=v explicit field mode', () => {
-	test('matches by explicit field', () => {
-		const peers = peersOf([
-			[42, { deviceName: 'myMacbook', role: 'dev' }],
-			[188, { deviceName: 'workLaptop', role: 'prod' }],
-		]);
-		expect(findPeer('deviceName=workLaptop', peers)).toEqual({
+		expect(findPeer('iphone-15', peers)).toEqual({
 			kind: 'found',
 			clientID: 188,
-			state: { deviceName: 'workLaptop', role: 'prod' },
+			state: { device: { id: 'iphone-15', name: 'Phone' } },
 		});
 	});
 
-	test('escape hatch: numeric deviceName via deviceName=42', () => {
-		const peers = peersOf([[55, { deviceName: '42' }]]);
-		expect(findPeer('deviceName=42', peers)).toEqual({
-			kind: 'found',
-			clientID: 55,
-			state: { deviceName: '42' },
-		});
-	});
-
-	test('splits on first = — value may contain more equals signs', () => {
-		const peers = peersOf([[7, { key: 'val=with=equals' }]]);
-		expect(findPeer('key=val=with=equals', peers)).toEqual({
-			kind: 'found',
-			clientID: 7,
-			state: { key: 'val=with=equals' },
-		});
-	});
-
-	test('case-insensitive miss → case-suggest', () => {
-		const peers = peersOf([[42, { deviceName: 'myMacbook' }]]);
-		expect(findPeer('deviceName=MYMACBOOK', peers)).toEqual({
-			kind: 'case-suggest',
-			actual: 'myMacbook',
-			clientID: 42,
-		});
-	});
-});
-
-describe('findPeer — k=v case-ambiguity and field hygiene', () => {
-	test('case-insensitive multiple matches → case-ambiguous (sorted ASC)', () => {
+	test('first match wins on duplicate deviceIds (clientID-ascending)', () => {
 		const peers = peersOf([
-			[188, { deviceName: 'workMacbook' }],
-			[42, { deviceName: 'myMacbook' }],
+			[200, { device: { id: 'shared' } }],
+			[50, { device: { id: 'shared' } }],
+			[100, { device: { id: 'shared' } }],
 		]);
-		const result = findPeer('deviceName=MACBOOK', peers);
-		expect(result).toEqual({
-			kind: 'case-ambiguous',
-			matches: [
-				{ value: 'myMacbook', clientID: 42 },
-				{ value: 'workMacbook', clientID: 188 },
-			],
-		});
+		const result = findPeer('shared', peers);
+		expect(result.kind).toBe('found');
+		if (result.kind === 'found') expect(result.clientID).toBe(50);
 	});
 
-	test('peers without the requested field are skipped', () => {
-		const peers = peersOf([
-			[42, { role: 'dev' }],
-			[188, { deviceName: 'workLaptop' }],
-		]);
-		expect(findPeer('deviceName=workLaptop', peers)).toEqual({
-			kind: 'found',
-			clientID: 188,
-			state: { deviceName: 'workLaptop' },
-		});
+	test('returns not-found when no peer publishes the deviceId', () => {
+		const peers = peersOf([[42, { device: { id: 'macbook-pro' } }]]);
+		expect(findPeer('ghost', peers)).toEqual({ kind: 'not-found' });
 	});
 
-	test('non-string field values are skipped', () => {
+	test('returns not-found when peers have no device field at all', () => {
+		const peers = peersOf([[42, { something: 'else' }]]);
+		expect(findPeer('macbook-pro', peers)).toEqual({ kind: 'not-found' });
+	});
+
+	test('returns not-found when device field is malformed', () => {
 		const peers = peersOf([
-			[42, { deviceName: { nested: 'thing' } as unknown as string }],
-			[188, { deviceName: 'workLaptop' }],
+			[42, { device: 'not-an-object' as unknown as Record<string, unknown> }],
+			[100, { device: { name: 'no-id-here' } }],
 		]);
-		expect(findPeer('deviceName=nested', peers)).toEqual({ kind: 'not-found' });
+		expect(findPeer('macbook-pro', peers)).toEqual({ kind: 'not-found' });
 	});
 });

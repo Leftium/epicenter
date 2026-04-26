@@ -1,18 +1,10 @@
 /**
  * Error-emission tests for the `run --peer` path.
  *
- * Covers the error shapes from the spec's Terminal Sessions section:
- *   - miss: case-suggest / case-ambiguous / not-found (with and without peers,
- *     with and without -w)
- *   - rpc: ActionNotFound / Timeout / PeerOffline / ActionFailed / Disconnected
- *
- * Capture `console.error` and assert line-by-line. Covers formatting only —
- * the full resolver + polling flow is exercised by `find-peer.test.ts` and
- * by hand-running the command against a playground config.
- *
- * RPC error values are constructed via `RpcError.X({...}).error` so they
- * match the wire shape exactly — same path production takes after receiving
- * an error over the sync channel.
+ * Covers the simplified miss shapes (no peers seen, peers seen but no match)
+ * and every `RpcError` variant. Capture `console.error` and assert
+ * line-by-line. RPC errors are constructed via `RpcError.X({...}).error` so
+ * they match the wire shape exactly.
  */
 import { RpcError } from '@epicenter/workspace';
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
@@ -35,79 +27,29 @@ describe('emitMissError', () => {
 	let cap: ReturnType<typeof captureErrors>;
 	afterEach(() => cap?.restore());
 
-	test('case-suggest → "did you mean"', () => {
+	test('peers present but no match → points at `epicenter peers`', () => {
 		cap = captureErrors();
-		emitMissError(
-			'mymacbook',
-			{ kind: 'case-suggest', actual: 'myMacbook', clientID: 42 },
-			true,
-			undefined,
-			5000,
-		);
+		emitMissError('ghost', true, undefined, 5000);
 		expect(cap.lines).toEqual([
-			'error: no peer matches "mymacbook"',
-			'did you mean: myMacbook?',
-		]);
-	});
-
-	test('case-ambiguous → lists padded name + clientID', () => {
-		cap = captureErrors();
-		emitMissError(
-			'MACBOOK',
-			{
-				kind: 'case-ambiguous',
-				matches: [
-					{ value: 'myMacbook', clientID: 42 },
-					{ value: 'workMacbook', clientID: 188 },
-				],
-			},
-			true,
-			undefined,
-			5000,
-		);
-		expect(cap.lines).toEqual([
-			'error: no peer matches "MACBOOK"',
-			'multiple peers match case-insensitively:',
-			'  myMacbook        (42)',
-			'  workMacbook      (188)',
-		]);
-	});
-
-	test('not-found with peers present → points at `epicenter peers`', () => {
-		cap = captureErrors();
-		emitMissError('ghost', { kind: 'not-found' }, true, undefined, 5000);
-		expect(cap.lines).toEqual([
-			'error: no peer matches "ghost"',
+			'error: no peer matches deviceId "ghost"',
 			'run `epicenter peers` to see connected peers',
 		]);
 	});
 
-	test('not-found with peers present + -w → scoped hint', () => {
+	test('peers present + -w → scoped hint', () => {
 		cap = captureErrors();
-		emitMissError(
-			'ghost',
-			{ kind: 'not-found' },
-			true,
-			'tabManager',
-			5000,
-		);
+		emitMissError('ghost', true, 'tabManager', 5000);
 		expect(cap.lines).toEqual([
-			'error: no peer matches "ghost" in workspace tabManager',
+			'error: no peer matches deviceId "ghost" in workspace tabManager',
 			'run `epicenter peers -w tabManager` to see connected peers',
 		]);
 	});
 
-	test('not-found with no peers seen → no peers seen after wait', () => {
+	test('no peers seen during wait → "no peers seen after waiting"', () => {
 		cap = captureErrors();
-		emitMissError(
-			'myMacbook',
-			{ kind: 'not-found' },
-			false,
-			undefined,
-			5000,
-		);
+		emitMissError('macbook-pro', false, undefined, 5000);
 		expect(cap.lines).toEqual([
-			'error: no peers seen after waiting 5000ms for "myMacbook"',
+			'error: no peers seen after waiting 5000ms for "macbook-pro"',
 		]);
 	});
 });
@@ -116,19 +58,17 @@ describe('emitRpcError', () => {
 	let cap: ReturnType<typeof captureErrors>;
 	afterEach(() => cap?.restore());
 
-	test('ActionNotFound with deviceName + version', () => {
+	test('ActionNotFound labels with device.name + platform', () => {
 		cap = captureErrors();
-		emitRpcError(
-			RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error,
-			42,
-			{ deviceName: 'myMacbook', version: '1.4.2' },
-		);
+		emitRpcError(RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error, 42, {
+			device: { name: 'MacBook', platform: 'tauri' },
+		});
 		expect(cap.lines).toEqual([
-			'error: ActionNotFound "tabs.closeAll" on myMacbook (42, v1.4.2)',
+			'error: ActionNotFound "tabs.closeAll" on MacBook (42, tauri)',
 		]);
 	});
 
-	test('ActionNotFound without deviceName falls back to clientID label', () => {
+	test('ActionNotFound without device falls back to clientID label', () => {
 		cap = captureErrors();
 		emitRpcError(
 			RpcError.ActionNotFound({ action: 'tabs.closeAll' }).error,
@@ -143,19 +83,33 @@ describe('emitRpcError', () => {
 	test('Timeout reports ms and peer', () => {
 		cap = captureErrors();
 		emitRpcError(RpcError.Timeout({ ms: 5000 }).error, 42, {
-			deviceName: 'myMacbook',
+			device: { name: 'MacBook' },
 		});
-		expect(cap.lines).toEqual([
-			'error: timeout after 5000ms on myMacbook (42)',
-		]);
+		expect(cap.lines).toEqual(['error: timeout after 5000ms on MacBook (42)']);
 	});
 
 	test('PeerOffline', () => {
 		cap = captureErrors();
 		emitRpcError(RpcError.PeerOffline().error, 42, {
-			deviceName: 'myMacbook',
+			device: { name: 'MacBook' },
 		});
-		expect(cap.lines).toEqual(['error: peer myMacbook (42) is offline']);
+		expect(cap.lines).toEqual(['error: peer MacBook (42) is offline']);
+	});
+
+	test('PeerNotFound surfaces the deviceId', () => {
+		cap = captureErrors();
+		emitRpcError(RpcError.PeerNotFound({ peer: 'macbook-pro' }).error, 0, {});
+		expect(cap.lines).toEqual([
+			'error: no peer with deviceId "macbook-pro"',
+		]);
+	});
+
+	test('PeerLeft surfaces the deviceId', () => {
+		cap = captureErrors();
+		emitRpcError(RpcError.PeerLeft({ peer: 'macbook-pro' }).error, 0, {});
+		expect(cap.lines).toEqual([
+			'error: peer "macbook-pro" disconnected before responding',
+		]);
 	});
 
 	test('ActionFailed surfaces underlying cause', () => {
@@ -166,10 +120,10 @@ describe('emitRpcError', () => {
 				cause: new Error('Tab 99 not found'),
 			}).error,
 			42,
-			{ deviceName: 'myMacbook' },
+			{ device: { name: 'MacBook' } },
 		);
 		expect(cap.lines).toEqual([
-			'error: "tabs.close" failed on myMacbook (42): Tab 99 not found',
+			'error: "tabs.close" failed on MacBook (42): Tab 99 not found',
 		]);
 	});
 

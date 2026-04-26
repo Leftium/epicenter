@@ -165,13 +165,13 @@ async function invokeRemote({
 		const peers = readPeers(workspace);
 		if (peers.size > 0) sawPeers = true;
 		lastResult = findPeer(peerTarget, peers);
-		if (lastResult.kind !== 'not-found') break;
+		if (lastResult.kind === 'found') break;
 		if (Date.now() >= deadline) break;
 		await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
 	}
 
 	if (lastResult.kind !== 'found') {
-		emitMissError(peerTarget, lastResult, sawPeers, workspaceArg, waitMs);
+		emitMissError(peerTarget, sawPeers, workspaceArg, waitMs);
 		process.exitCode = 3; // peer miss
 		return;
 	}

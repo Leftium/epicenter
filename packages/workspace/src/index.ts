@@ -163,9 +163,11 @@ export {
 export {
 	attachSync,
 	toWsUrl,
+	type AttachSyncDoc,
 	type SyncAttachment,
 	type SyncAttachmentConfig,
 	type SyncStatus,
+	type WaitForBarrier,
 } from './document/attach-sync.js';
 
 export {

@@ -28,19 +28,31 @@ import {
 import type { Result } from 'wellcrafted/result';
 import { Ok, isResult } from 'wellcrafted/result';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import type { Awareness } from 'y-protocols/awareness';
 import {
+	Awareness as YAwareness,
 	applyAwarenessUpdate,
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import type * as Y from 'yjs';
+import * as Y from 'yjs';
 import type { DefaultRpcMap, RpcActionMap } from '../rpc/types.js';
+import { actionManifest } from '../shared/action-manifest.js';
 import {
 	type Actions,
 	type RemoteCallOptions,
 	dispatchAction,
 } from '../shared/actions.js';
+import {
+	type Awareness as TypedAwareness,
+	createAwareness,
+} from './attach-awareness.js';
+import {
+	type DeviceDescriptor,
+	type FoundPeer,
+	type PeerAwarenessState,
+	type PeerDevice,
+	standardAwarenessDefs,
+} from './standard-awareness-defs.js';
 
 /**
  * Minimal Y.Doc sync attachment — connects a Y.Doc to a WebSocket sync server.
@@ -147,7 +159,43 @@ export type SyncAttachment = {
 		input?: TMap[TAction]['input'],
 		options?: RemoteCallOptions,
 	): Promise<Result<TMap[TAction]['output'], RpcError>>;
+	/**
+	 * Snapshot of every connected peer (excludes self). Empty when this
+	 * sync wasn't constructed with a `device` (i.e. no presence published).
+	 */
+	peers(): Map<number, PeerAwarenessState>;
+	/**
+	 * First peer publishing `deviceId`, by ascending clientId. Returns
+	 * `undefined` when no peer matches or when no presence is configured.
+	 */
+	find(deviceId: string): FoundPeer | undefined;
+	/**
+	 * Subscribe to peer change events. Fires when peers join, leave, or
+	 * update their state. Returns an unsubscribe function. No-op when no
+	 * presence is configured.
+	 */
+	observe(callback: () => void): () => void;
+	/**
+	 * Escape hatch — the underlying y-protocols handles. Use for advanced
+	 * cases (custom event listeners, integrations expecting raw types).
+	 * `awareness` is `null` when no presence was configured.
+	 */
+	raw: { awareness: YAwareness | null };
 };
+
+/**
+ * Anything with a `.whenLoaded` promise (typically `attachIndexedDb` or
+ * `attachSqlite` results). Lets `waitFor` accept the attachment directly
+ * rather than reaching into `.whenLoaded`.
+ */
+export type WaitForBarrier = Promise<unknown> | { whenLoaded: Promise<unknown> };
+
+/**
+ * First arg of `attachSync`. Either a bare `Y.Doc` (content docs) or a
+ * doc bundle (workspace docs); when a bundle is passed and no `actions`
+ * is set in config, sync uses `doc.actions` for inbound RPC dispatch.
+ */
+export type AttachSyncDoc = Y.Doc | { ydoc: Y.Doc; actions?: Actions };
 
 export type SyncAttachmentConfig = {
 	/**
@@ -157,17 +205,35 @@ export type SyncAttachmentConfig = {
 	url: string;
 	/**
 	 * Gate the first connection attempt on another promise (typically
-	 * `attachIndexedDb(ydoc).whenLoaded`). Without this, the supervisor
+	 * `attachIndexedDb(ydoc).whenLoaded`). Accepts the attachment directly
+	 * (uses its `.whenLoaded`) or a raw promise. Without this, the supervisor
 	 * connects before local state hydrates and the handshake transfers the
 	 * full document instead of just the delta.
 	 */
-	waitFor?: Promise<unknown>;
+	waitFor?: WaitForBarrier;
 	/**
-	 * Optional awareness instance. When provided, the attachment syncs presence
-	 * state across peers and emits/consumes AWARENESS messages. Per-row content
-	 * docs typically skip this; workspace-level docs provide it.
+	 * Publish this peer's identity into awareness. When set, `attachSync`
+	 * constructs a standard-schema awareness internally and synchronously
+	 * publishes `{ device: { ...device, offers: actionManifest(actions) } }`
+	 * before returning. The attachment's `peers()` / `find()` / `observe()`
+	 * become meaningful.
+	 *
+	 * Workspace docs pass this; content docs (entries, notes, files) omit
+	 * it — they sync but don't publish identity.
+	 *
+	 * Mutually exclusive with `awareness` (an external instance) — pass one.
 	 */
-	awareness?: Awareness;
+	device?: DeviceDescriptor;
+	/**
+	 * External awareness instance. Escape hatch for custom presence schemas
+	 * (cursors on content docs, typing indicators). When provided, sync
+	 * carries presence over the wire but does NOT type the `peers()` /
+	 * `find()` surface — those return empty/undefined since the schema is
+	 * unknown to sync. Use the awareness's own typed wrapper instead.
+	 *
+	 * Standard "I am a device" presence: pass `device` instead.
+	 */
+	awareness?: YAwareness;
 	/**
 	 * Inbound action tree. Incoming RPC requests are routed by dot-path
 	 * against this tree via `dispatchAction`; raw returns get `Ok`-wrapped,
@@ -178,9 +244,9 @@ export type SyncAttachmentConfig = {
 	 * it here. Userland helpers like `withAuthGate(actions, ...)` are the
 	 * right home for that, not a callback in this config.
 	 *
-	 * When omitted, `attachSync` responds to inbound RPCs with
-	 * `RpcError.ActionNotFound`. Outbound RPC (the `rpc()` method on the
-	 * attachment) works regardless.
+	 * Defaults to the doc bundle's `.actions` (when first arg is a bundle).
+	 * When neither this nor `doc.actions` is set, inbound RPCs receive
+	 * `RpcError.ActionNotFound`. Outbound RPC works regardless.
 	 */
 	actions?: Actions;
 	/**
@@ -228,10 +294,44 @@ export function toWsUrl(httpUrl: string): string {
 }
 
 export function attachSync(
-	ydoc: Y.Doc,
+	doc: AttachSyncDoc,
 	config: SyncAttachmentConfig,
 ): SyncAttachment {
-	const awareness = config.awareness;
+	// Resolve doc bundle vs bare ydoc.
+	const ydoc = doc instanceof Y.Doc ? doc : doc.ydoc;
+	const docActions = doc instanceof Y.Doc ? undefined : doc.actions;
+	const actions = config.actions ?? docActions;
+
+	if (config.device && config.awareness) {
+		throw new Error(
+			'[attachSync] pass either `device` (standard presence) or `awareness` ' +
+				'(external instance for custom schemas) — not both.',
+		);
+	}
+
+	// Awareness is internally-owned when `device` is provided; externally-owned
+	// when `awareness` is provided; absent otherwise. Only the internal path
+	// gets a typed wrapper (we know the schema there).
+	let awareness: YAwareness | null = null;
+	let typedAwareness: TypedAwareness<typeof standardAwarenessDefs> | null = null;
+	if (config.device) {
+		awareness = new YAwareness(ydoc);
+		typedAwareness = createAwareness(awareness, standardAwarenessDefs);
+		typedAwareness.setLocal({
+			device: {
+				...config.device,
+				offers: actionManifest(actions ?? {}),
+			} satisfies PeerDevice,
+		});
+	} else if (config.awareness) {
+		awareness = config.awareness;
+	}
+
+	const waitForPromise =
+		config.waitFor && 'whenLoaded' in config.waitFor
+			? config.waitFor.whenLoaded
+			: config.waitFor;
+
 	const log = config.log ?? createLogger('attachSync');
 
 	const status = createStatusEmitter<SyncStatus>({ phase: 'offline' });
@@ -330,7 +430,6 @@ export function attachSync(
 
 		// No actions configured → surface ActionNotFound so the caller sees a
 		// typed error rather than a timeout.
-		const actions = config.actions;
 		if (!actions) {
 			sendResponse({
 				data: null,
@@ -705,7 +804,7 @@ export function attachSync(
 	// silently stay offline because persistence failed.
 	void (async () => {
 		try {
-			await config.waitFor;
+			await waitForPromise;
 		} catch (cause) {
 			log.warn(SyncSupervisorError.WaitForRejected({ cause }));
 		}
@@ -754,6 +853,25 @@ export function attachSync(
 			ensureSupervisor();
 		},
 		whenDisposed,
+		peers: () =>
+			typedAwareness ? typedAwareness.peers() : new Map(),
+		find(deviceId) {
+			if (!typedAwareness) return undefined;
+			const all = typedAwareness.peers();
+			const sorted = [...all.keys()].sort((a, b) => a - b);
+			for (const clientId of sorted) {
+				const state = all.get(clientId)!;
+				if (state.device.id === deviceId) {
+					return { clientId, state };
+				}
+			}
+			return undefined;
+		},
+		observe(callback) {
+			if (!typedAwareness) return () => {};
+			return typedAwareness.observe(callback);
+		},
+		raw: { awareness },
 		async rpc<
 			TMap extends RpcActionMap = DefaultRpcMap,
 			TAction extends string & keyof TMap = string & keyof TMap,

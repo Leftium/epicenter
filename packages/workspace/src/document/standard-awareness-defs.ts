@@ -80,3 +80,9 @@ export type DeviceDescriptor<TId extends string = string> = {
 export const standardAwarenessDefs = {
 	device: PeerDevice,
 };
+
+/** A peer's awareness state under the standard `device` schema. */
+export type PeerAwarenessState = { device: PeerDevice };
+
+/** Result of a `find(deviceId)` lookup — clientId plus full peer state. */
+export type FoundPeer = { clientId: number; state: PeerAwarenessState };

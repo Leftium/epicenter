@@ -3,26 +3,20 @@ import { actionManifest } from '../shared/action-manifest.js';
 import type { Actions } from '../shared/actions.js';
 import {
 	type Awareness,
-	type AwarenessState,
 	attachAwareness,
 } from './attach-awareness.js';
 import {
 	type DeviceDescriptor,
+	type FoundPeer,
+	type PeerAwarenessState,
 	type PeerDevice,
 	standardAwarenessDefs,
 } from './standard-awareness-defs.js';
 
-/**
- * Per-peer awareness state under the `standardAwarenessDefs` schema.
- * Every field is required: `attachPeers` publishes synchronously at attach
- * time, so any state on the wire (local or remote) carries `device` in full.
- */
-export type PeerAwarenessState = AwarenessState<typeof standardAwarenessDefs>;
-
-export type FoundPeer = {
-	clientId: number;
-	state: PeerAwarenessState;
-};
+// Re-export so existing callers keep their import paths during the
+// fold-into-sync migration. These canonically live in
+// standard-awareness-defs.ts now.
+export type { FoundPeer, PeerAwarenessState };
 
 /**
  * Returned by `attachPeers`. Owns an awareness instance scoped to the

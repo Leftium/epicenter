@@ -746,3 +746,90 @@ describe('attachSync hasLocalChanges', () => {
 	});
 });
 
+// ── Presence (device + standard awareness) ──────────────────────────────
+
+describe('attachSync presence', () => {
+	test('device publishes synchronously with offers derived from actions', () => {
+		const ydoc = new Y.Doc({ guid: 'presence-1' });
+		const actions = {
+			tabs: {
+				close: defineMutation({
+					input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
+					handler: () => ({ closedCount: 0 }),
+				}),
+			},
+		};
+
+		const sync = attachSync(
+			{ ydoc, actions },
+			{
+				url: `ws://x/${ydoc.guid}`,
+				device: { id: 'mac-1', name: 'MacBook', platform: 'web' },
+			},
+		);
+
+		const localState = sync.raw.awareness?.getLocalState() as {
+			device: { id: string; offers: Record<string, unknown> };
+		};
+		expect(localState.device.id).toBe('mac-1');
+		expect(Object.keys(localState.device.offers)).toEqual(['tabs.close']);
+
+		ydoc.destroy();
+	});
+
+	test('peers() excludes self; find() resolves by deviceId', () => {
+		const ydoc = new Y.Doc({ guid: 'presence-2' });
+		const sync = attachSync(
+			{ ydoc },
+			{
+				url: `ws://x/${ydoc.guid}`,
+				device: { id: 'mac-1', name: 'MacBook', platform: 'web' },
+			},
+		);
+
+		sync.raw.awareness!.getStates().set(202, {
+			device: {
+				id: 'iphone-15',
+				name: 'Phone',
+				platform: 'tauri',
+				offers: {},
+			},
+		});
+
+		const peers = sync.peers();
+		expect(peers.has(sync.raw.awareness!.clientID)).toBe(false);
+		expect(peers.get(202)?.device.id).toBe('iphone-15');
+
+		expect(sync.find('iphone-15')?.clientId).toBe(202);
+		expect(sync.find('ghost')).toBeUndefined();
+
+		ydoc.destroy();
+	});
+
+	test('peers/find/observe are no-ops when no device configured', () => {
+		const ydoc = new Y.Doc({ guid: 'presence-3' });
+		const sync = attachSync(ydoc, { url: `ws://x/${ydoc.guid}` });
+
+		expect(sync.peers().size).toBe(0);
+		expect(sync.find('anything')).toBeUndefined();
+		const unsubscribe = sync.observe(() => {});
+		expect(typeof unsubscribe).toBe('function');
+		expect(sync.raw.awareness).toBeNull();
+
+		ydoc.destroy();
+	});
+
+	test('rejects passing both device and external awareness', () => {
+		const ydoc = new Y.Doc({ guid: 'presence-4' });
+		expect(() =>
+			attachSync(ydoc, {
+				url: `ws://x/${ydoc.guid}`,
+				device: { id: 'a', name: 'a', platform: 'web' },
+				// biome-ignore lint/suspicious/noExplicitAny: testing the runtime guard
+				awareness: {} as any,
+			}),
+		).toThrow(/either `device`.*or `awareness`/);
+		ydoc.destroy();
+	});
+});
+

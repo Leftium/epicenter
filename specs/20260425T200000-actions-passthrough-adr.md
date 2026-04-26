@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-25
 **Status:** shipped (commits `2be551876` add invokeNormalized; `81cd627ee` makes defineMutation/defineQuery passthrough)
-**Supersedes:** the "always-async, always-Result" decision in `specs/20260424T180000-drop-document-factory-attach-everything.md` (lines 176-240, 251-252) and `specs/20260425T120000-execution-prompt-phase-1.md` § Change 5.
+**Supersedes:** the "always-async, always-Result" decision in `specs/20260424T180000-drop-document-factory-attach-everything.md` (lines 176-240, 251-252) and the now-deleted Phase 1 execution prompt's § Change 5 (executed in commits `fd3a1ce8d` through `88ef425b1`, then walked back to passthrough by this ADR's `2be551876` + `81cd627ee`).
 
 ## TL;DR
 
@@ -227,6 +227,6 @@ The earlier spec also noted the analogy to **tRPC** (server procedures are plain
 ## Cross-references
 
 - `specs/20260424T180000-drop-document-factory-attach-everything.md` — the original "always-async-Result" decision this ADR supersedes. Lines 176-240 (Change 5 design) and 251-252 (design decision summary).
-- `specs/20260425T120000-execution-prompt-phase-1.md` — the execution prompt for Phase 1, which landed the unified wrap. Specifically § Change 5.
+- ~~`specs/20260425T120000-execution-prompt-phase-1.md`~~ — Phase 1 execution prompt, which landed the unified wrap (§ Change 5). Deleted post-merge per the scaffolding-files convention; Phase 1 commits `fd3a1ce8d` through `88ef425b1` are the durable record.
 - `specs/20260425T210000-remote-action-dispatch.md` — companion design doc for cross-device action execution. Depends on this ADR landing first.
 - ~~`specs/20260423T020000-local-passthrough-remote-result.md`~~ — collapsed into the "Background — earlier formulation" section above; file deleted.

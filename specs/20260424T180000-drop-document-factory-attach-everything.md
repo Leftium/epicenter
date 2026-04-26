@@ -1,7 +1,7 @@
 # Drop `createDocumentFactory`: domain attaches and inline composition
 
 **Date**: 2026-04-24
-**Status**: active — rationale for in-flight Phase 2 teardown (`specs/20260425T180001-execution-prompt-phase-2-teardown.md`); supersedes the readiness-only direction in `20260424T000000-self-gating-attachments.md`. Note: the always-async-Result section was reversed by `20260425T200000-actions-passthrough-adr.md`.
+**Status**: shipped (PR #1705, merged 2026-04-26 at `252dced47`). The v4 reasoning landed; the v5 amendment to Layer 4 below covers the iso/env/client reversal. The always-async-Result section was reversed by `specs/20260425T200000-actions-passthrough-adr.md`.
 **Author**: AI-assisted, pairing with Braden
 
 ---

@@ -30,7 +30,10 @@
 	>;
 
 	function updateEntry(updates: EntryUpdate) {
-		fuji.actions.entries.update({ id: entry.id, ...updates });
+		toastOnError(
+			fuji.actions.entries.update({ id: entry.id, ...updates }),
+			'Couldn\'t save changes',
+		);
 	}
 
 	const contentDoc = fromDisposableCache(fuji.entryContentDocs, () => entry.id);
@@ -78,14 +81,20 @@
 			class="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground"
 			placeholder="Entry title"
 			value={entry.title}
-			oninput={(e) => updateEntry({ title: e.currentTarget.value })}
+			onblur={(e) => {
+				const next = e.currentTarget.value;
+				if (next !== entry.title) updateEntry({ title: next });
+			}}
 		>
 		<input
 			type="text"
 			class="w-full bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/60"
 			placeholder="Subtitle — a one-liner for your blog listing"
 			value={entry.subtitle}
-			oninput={(e) => updateEntry({ subtitle: e.currentTarget.value })}
+			onblur={(e) => {
+				const next = e.currentTarget.value;
+				if (next !== entry.subtitle) updateEntry({ subtitle: next });
+			}}
 		>
 
 		<div class="flex flex-wrap items-center gap-4">

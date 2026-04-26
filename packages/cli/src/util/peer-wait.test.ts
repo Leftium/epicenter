@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import type { AwarenessState } from '../load-config';
 import { findPeer } from './peer-wait';
-import type { AwarenessState } from './awareness';
 
 /**
  * Test helper — lets fixtures pass partial / malformed device shapes

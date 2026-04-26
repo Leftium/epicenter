@@ -34,6 +34,7 @@
 import type {
 	Actions,
 	Awareness,
+	AwarenessState as WorkspaceAwarenessState,
 	standardAwarenessDefs,
 	SyncAttachment,
 } from '@epicenter/workspace';
@@ -56,6 +57,15 @@ export type LoadedWorkspace = {
 	readonly awareness?: Awareness<typeof standardAwarenessDefs>;
 	[Symbol.dispose](): void;
 };
+
+/**
+ * Per-peer awareness state typed against `standardAwarenessDefs`
+ * (`{ device?: PeerDevice }`). Validated by the awareness wrapper at the
+ * boundary, so `state.device` is `PeerDevice | undefined` without casts.
+ */
+export type AwarenessState = WorkspaceAwarenessState<
+	typeof standardAwarenessDefs
+>;
 
 /** One named workspace export from `epicenter.config.ts`. */
 export type WorkspaceEntry = {

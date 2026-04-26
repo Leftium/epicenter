@@ -16,8 +16,8 @@
 
 import type { RpcError } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
+import type { AwarenessState } from '../load-config';
 import { outputError } from './format-output';
-import type { AwarenessState } from './awareness';
 
 export function emitMissError(
 	target: string,

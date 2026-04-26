@@ -8,7 +8,7 @@
  */
 import { RpcError } from '@epicenter/workspace';
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import type { AwarenessState } from './awareness';
+import type { AwarenessState } from '../load-config';
 import { emitMissError, emitRpcError } from './run-peer-errors';
 
 /**

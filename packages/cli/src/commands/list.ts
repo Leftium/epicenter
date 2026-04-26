@@ -17,8 +17,11 @@
 import { actionManifest, type ActionManifest } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule, Options } from 'yargs';
-import { loadConfig, type WorkspaceEntry } from '../load-config';
-import { type AwarenessState, readPeers } from '../util/awareness';
+import {
+	type AwarenessState,
+	loadConfig,
+	type WorkspaceEntry,
+} from '../load-config';
 import { waitForAnyPeer, waitForPeer } from '../util/peer-wait';
 import {
 	dirFromArgv,
@@ -144,7 +147,7 @@ async function selectSections(
 
 	// --all: best-effort wait for awareness to populate, then snapshot.
 	await waitForAnyPeer(workspace, deadline);
-	const peers = readPeers(workspace);
+	const peers = workspace.awareness?.peers() ?? new Map<number, AwarenessState>();
 	const ordered = [...peers.entries()].sort(([a], [b]) => a - b);
 	return [
 		selfSection(entry, 'all'),

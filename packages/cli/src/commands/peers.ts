@@ -22,8 +22,11 @@
  */
 
 import type { Argv, CommandModule } from 'yargs';
-import { loadConfig, type WorkspaceEntry } from '../load-config';
-import { type AwarenessState, readPeers } from '../util/awareness';
+import {
+	type AwarenessState,
+	loadConfig,
+	type WorkspaceEntry,
+} from '../load-config';
 import { waitForAnyPeer } from '../util/peer-wait';
 import {
 	dirFromArgv,
@@ -84,7 +87,9 @@ async function snapshotEntry(
 	waitMs: number,
 ): Promise<WorkspaceSnapshot> {
 	await waitForAnyPeer(entry.workspace, Date.now() + waitMs);
-	return { name: entry.name, peers: readPeers(entry.workspace) };
+	const peers =
+		entry.workspace.awareness?.peers() ?? new Map<number, AwarenessState>();
+	return { name: entry.name, peers };
 }
 
 function emit(

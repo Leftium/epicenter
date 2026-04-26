@@ -20,8 +20,7 @@
  * copy the deviceId → `--peer <id>`.
  */
 
-import type { LoadedWorkspace } from '../load-config';
-import type { AwarenessState } from './awareness';
+import type { AwarenessState, LoadedWorkspace } from '../load-config';
 
 export type FindPeerResult =
 	| { kind: 'found'; clientID: number; state: AwarenessState }

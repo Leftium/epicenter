@@ -22,6 +22,7 @@
 
 import type { LoadedWorkspace } from '../load-config';
 import { type AwarenessState, readPeers } from './awareness';
+import { readDevice } from './peer-state';
 
 const POLL_INTERVAL_MS = 100;
 
@@ -37,44 +38,45 @@ export function findPeer(
 	const sorted = [...peers.keys()].sort((a, b) => a - b);
 	for (const clientID of sorted) {
 		const state = peers.get(clientID)!;
-		const peerDeviceId = (state.device as { id?: string } | undefined)?.id;
-		if (peerDeviceId === deviceId) return { kind: 'found', clientID, state };
+		if (readDevice(state)?.id === deviceId) {
+			return { kind: 'found', clientID, state };
+		}
 	}
 	return { kind: 'not-found' };
 }
 
 /**
  * Wait for a single peer to appear by deviceId. Returns the resolved
- * awareness state, or `not-found` if the deadline expired.
+ * awareness state, or `not-found` once `deadline` is reached.
  *
- * `sawPeers` is reported separately so callers (e.g. `run --peer`) can
+ * Takes an absolute `deadline` (ms timestamp) rather than a relative
+ * duration so callers can share one budget across multiple phases —
+ * `run --peer` uses the same deadline for peer resolution and the
+ * follow-up RPC, which keeps the time-accounting straight without
+ * duplicating `Date.now() + waitMs` in two places.
+ *
+ * `sawPeers` is reported on the not-found branch so callers can
  * distinguish "no peers seen at all" from "peers seen but none matched"
  * in their error messages.
  */
 export type WaitForPeerResult =
-	| { kind: 'found'; clientID: number; state: AwarenessState; sawPeers: true }
+	| { kind: 'found'; clientID: number; state: AwarenessState }
 	| { kind: 'not-found'; sawPeers: boolean };
 
 export async function waitForPeer(
 	workspace: LoadedWorkspace,
 	deviceId: string,
-	waitMs: number,
+	deadline: number,
 ): Promise<WaitForPeerResult> {
 	if (workspace.sync?.whenConnected) await workspace.sync.whenConnected;
 
-	const deadline = Date.now() + waitMs;
 	let sawPeers = false;
 	while (true) {
 		const peers = readPeers(workspace);
 		if (peers.size > 0) sawPeers = true;
 		const found = findPeer(deviceId, peers);
 		if (found.kind === 'found') {
-			return {
-				kind: 'found',
-				clientID: found.clientID,
-				state: found.state,
-				sawPeers: true,
-			};
+			return { kind: 'found', clientID: found.clientID, state: found.state };
 		}
 		if (Date.now() >= deadline) return { kind: 'not-found', sawPeers };
 		await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
@@ -82,23 +84,23 @@ export async function waitForPeer(
 }
 
 /**
- * Wait for awareness to show *any* peer, up to the deadline. Returns the
- * snapshot of peers seen at the time of return (possibly empty — for
- * `--all` we want to render even when no peers showed up).
+ * Wait for awareness to show *any* peer, up to the deadline. Best-effort:
+ * returns when at least one peer is visible OR the deadline expires.
  *
- * Differs from `waitForPeer` in that it never returns "not-found": the
- * caller always gets a snapshot, just possibly an empty one.
+ * Returns void deliberately. The caller decides freshness — call
+ * `readPeers(workspace)` after this resolves to get the snapshot. This
+ * keeps the contract honest: an in-flight peer might appear between
+ * "wait satisfied" and "use the snapshot," and pretending otherwise
+ * would cache a value that's already a hair stale at return.
  */
 export async function waitForAnyPeer(
 	workspace: LoadedWorkspace,
-	waitMs: number,
-): Promise<Map<number, AwarenessState>> {
+	deadline: number,
+): Promise<void> {
 	if (workspace.sync?.whenConnected) await workspace.sync.whenConnected;
 
-	const deadline = Date.now() + waitMs;
 	while (true) {
-		const peers = readPeers(workspace);
-		if (peers.size > 0 || Date.now() >= deadline) return peers;
+		if (readPeers(workspace).size > 0 || Date.now() >= deadline) return;
 		await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
 	}
 }

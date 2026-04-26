@@ -1,51 +1,30 @@
 /**
- * Typed projections over an awareness state.
+ * Typed projections over an awareness state. The `device` field is
+ * convention-shaped (see `PeerDevice` in
+ * `@epicenter/workspace/standard-awareness-defs`) — apps that opt in via
+ * `standardAwarenessDefs` publish this exact shape, validated by arktype
+ * at the boundary. Here we only narrow for TypeScript without
+ * re-validating: a peer that publishes a malformed state is a publishing
+ * bug, not a CLI concern.
  *
- * Every CLI command that consumes peer awareness needs the same two
- * accessors: presence fields (`device.id` / `name` / `platform`) and the
- * action manifest (`device.offers`). Without these, every call site
- * repeats the same `state.device as { … }` cast — which has happened
- * four times so far across `list`, `peers`, and the error formatter.
- *
- * The runtime shape is enforced upstream by the arktype `PeerDevice`
- * schema in `@epicenter/workspace/standard-awareness-defs`. Here we only
- * narrow for TypeScript without re-validating — a peer that publishes a
- * malformed state is a publishing bug, not a CLI concern.
+ * Two readers atop the one cast:
+ *   - `readDevice` for presence (id / name / platform).
+ *   - `readOffers` for the published action manifest.
  */
 
-import type { ActionManifest } from '@epicenter/workspace';
+import type { ActionManifest, PeerDevice } from '@epicenter/workspace';
 import type { AwarenessState } from './awareness';
 
-export type PeerPresence = {
-	id: string;
-	name: string;
-	platform: string;
-};
-
-/**
- * Read presence fields from an awareness state. Returns `undefined` when
- * the peer hasn't published a `device` yet (boot race) — callers should
- * treat that as "online but anonymous".
- */
-export function readDevice(state: AwarenessState): PeerPresence | undefined {
-	const device = state.device as
-		| Partial<PeerPresence> & { offers?: ActionManifest }
-		| undefined;
-	if (!device) return undefined;
-	return {
-		id: device.id ?? '',
-		name: device.name ?? '',
-		platform: device.platform ?? '',
-	};
+function asDevice(state: AwarenessState): PeerDevice | undefined {
+	return state.device as PeerDevice | undefined;
 }
 
-/**
- * Read the published action manifest from an awareness state. Empty map
- * when the peer hasn't published offers (boot race, or an app that opts
- * out of publishing).
- */
+/** Presence fields from a peer awareness state. `undefined` = no `device` published yet. */
+export function readDevice(state: AwarenessState): PeerDevice | undefined {
+	return asDevice(state);
+}
+
+/** Published action manifest from a peer awareness state. Empty when none. */
 export function readOffers(state: AwarenessState): ActionManifest {
-	const offers = (state.device as { offers?: ActionManifest } | undefined)
-		?.offers;
-	return offers ?? {};
+	return asDevice(state)?.offers ?? {};
 }

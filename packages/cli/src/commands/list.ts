@@ -135,8 +135,9 @@ async function selectSections(
 		return [selfSection(entry, 'local')];
 	}
 
+	const deadline = Date.now() + waitMs;
 	if (peerTarget !== undefined) {
-		const found = await waitForPeer(workspace, peerTarget, waitMs);
+		const found = await waitForPeer(workspace, peerTarget, deadline);
 		if (found.kind !== 'found') {
 			outputError(`error: no peer matches deviceId "${peerTarget}"`);
 			outputError('run `epicenter peers` to see connected peers');
@@ -147,7 +148,7 @@ async function selectSections(
 	}
 
 	// --all: best-effort wait for awareness to populate, then snapshot.
-	await waitForAnyPeer(workspace, waitMs);
+	await waitForAnyPeer(workspace, deadline);
 	const peers = readPeers(workspace);
 	const ordered = [...peers.entries()].sort(([a], [b]) => a - b);
 	return [
@@ -245,10 +246,10 @@ function renderText(
 		const matches = Object.keys(subset).length;
 		totalMatches += matches;
 
-		// In --all, skip sections that don't carry the requested path; in
-		// single-section mode, always print the section (the empty body is
-		// handled by printSection / the totalMatches==0 fail below).
-		if (multi && path && matches === 0) continue;
+		// Skip sections with no entries matching the requested path. In
+		// single-section mode the totalMatches==0 fail below speaks for
+		// itself, with no noisy "(no actions exposed)" preamble.
+		if (path && matches === 0) continue;
 
 		if (printed > 0) console.log('');
 		console.log(section.label);
@@ -366,8 +367,7 @@ function printActionDetail(path: string, action: ActionManifest[string]): void {
 	if (action.input) {
 		console.log('');
 		console.log('  Input fields (pass as JSON):');
-		for (const line of describeInput(action.input as TSchema))
-			console.log(`    ${line}`);
+		for (const line of describeInput(action.input)) console.log(`    ${line}`);
 	}
 }
 

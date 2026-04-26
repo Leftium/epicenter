@@ -1,10 +1,9 @@
 /**
- * Subprocess coverage for `list --peer` and `list --all`.
- *
- * Happy-path source helpers (sourceLocal/sourcePeer/sourceAll) are unit-tested
- * in `src/commands/list.test.ts`; here we cover the CLI argv plumbing and the
- * negative paths a real user can hit with the inline-actions fixture (which
- * has no sync attachment, so awareness stays empty).
+ * Subprocess coverage for `list --peer` and `list --all`. Pure section
+ * helpers (selfSection / peerSection / filterByPath) are unit-tested in
+ * `src/commands/list.test.ts`; here we cover the CLI argv plumbing and
+ * the negative paths a real user can hit with the inline-actions fixture
+ * (which has no sync attachment, so awareness stays empty).
  */
 
 import { describe, expect, test } from 'bun:test';

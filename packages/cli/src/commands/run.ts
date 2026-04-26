@@ -13,9 +13,11 @@
  */
 
 import {
+	type Action,
 	actionManifest,
 	type ActionManifest,
 	invokeNormalized,
+	isAction,
 } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
@@ -26,19 +28,17 @@ import {
 	workspaceFromArgv,
 	workspaceOption,
 } from '../util/common-options';
-import { emitMissError, emitRpcError } from '../util/emit-peer-errors';
-import { findAction } from '../util/find-action';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 import { waitForPeer } from '../util/peer-polling';
 import { resolveEntry } from '../util/resolve-entry';
+import { emitMissError, emitRpcError } from '../util/run-peer-errors';
 
 const DEFAULT_PEER_WAIT_MS = 5000;
 
 const peerOption: Options = {
 	type: 'string',
-	description:
-		'Remote peer target: <field>=<value> or numeric clientID',
+	description: 'Invoke on a remote peer by deviceId',
 };
 
 const waitOption: Options = {
@@ -160,8 +160,13 @@ async function invokeRemote({
 		);
 	}
 
+	// `--wait` is the end-to-end budget: peer resolution + RPC share one
+	// deadline. If the peer is already in awareness, RPC gets the full
+	// budget; if peer resolution chews 4s of 5s, RPC gets 1s. Users care
+	// about total latency, not per-phase breakdown — see waitOption
+	// description.
 	const deadline = Date.now() + waitMs;
-	const found = await waitForPeer(workspace, peerTarget, waitMs);
+	const found = await waitForPeer(workspace, peerTarget, deadline);
 	if (found.kind !== 'found') {
 		emitMissError(peerTarget, found.sawPeers, workspaceArg, waitMs);
 		process.exitCode = 3; // peer miss
@@ -232,4 +237,19 @@ function emitNearestSiblings(
 		emitActionList(alts);
 		return;
 	}
+}
+
+/**
+ * Resolve a dotted action path against the workspace's action tree. Walks
+ * segments directly — no full-tree iteration. Returns the callable
+ * `Action` so we can invoke it; metadata-only lookups belong on
+ * `actionManifest()`.
+ */
+function findAction(actions: unknown, path: string): Action | undefined {
+	let target: unknown = actions;
+	for (const segment of path.split('.')) {
+		if (target == null || typeof target !== 'object') return undefined;
+		target = (target as Record<string, unknown>)[segment];
+	}
+	return isAction(target) ? target : undefined;
 }

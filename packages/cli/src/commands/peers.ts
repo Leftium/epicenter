@@ -23,7 +23,7 @@
 
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type WorkspaceEntry } from '../load-config';
-import type { AwarenessState } from '../util/awareness';
+import { type AwarenessState, readPeers } from '../util/awareness';
 import { waitForAnyPeer } from '../util/peer-polling';
 import { readDevice } from '../util/peer-state';
 import {
@@ -60,7 +60,7 @@ export const peersCommand: CommandModule = {
 			.option('wait', {
 				type: 'number',
 				default: DEFAULT_WAIT_MS,
-				description: `Ms to wait for awareness to populate (default ${DEFAULT_WAIT_MS} = one-shot snapshot)`,
+				description: `Ms to wait for awareness to populate (default ${DEFAULT_WAIT_MS}; pass 0 for a one-shot snapshot)`,
 			})
 			.options(formatYargsOptions()),
 	handler: async (argv) => {
@@ -88,7 +88,7 @@ async function snapshotEntry(
 	entry: WorkspaceEntry,
 	waitMs: number,
 ): Promise<WorkspaceSnapshot> {
-	await waitForAnyPeer(entry.workspace, waitMs);
+	await waitForAnyPeer(entry.workspace, Date.now() + waitMs);
 	return { name: entry.name, peers: readPeers(entry.workspace) };
 }
 

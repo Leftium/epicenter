@@ -8,7 +8,7 @@
  */
 import { RpcError } from '@epicenter/workspace';
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { emitMissError, emitRpcError } from './emit-peer-errors';
+import { emitMissError, emitRpcError } from './run-peer-errors';
 
 function captureErrors() {
 	const lines: string[] = [];

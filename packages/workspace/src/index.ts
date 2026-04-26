@@ -205,6 +205,13 @@ export {
 	type InferAwarenessValue,
 } from './document/attach-awareness.js';
 
+export {
+	attachPeers,
+	type DocWithActions,
+	type PeerAwarenessState,
+	type Peers,
+} from './document/attach-peers.js';
+
 export type { CombinedStandardSchema } from './document/standard-schema.js';
 
 export {

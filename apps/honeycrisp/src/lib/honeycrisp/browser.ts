@@ -5,7 +5,6 @@ import {
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	dispatchAction,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createNoteBodyDoc } from '$lib/note-body-docs';
@@ -33,8 +32,9 @@ export function openHoneycrisp({ auth }: { auth: AuthClient }) {
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
+		awareness: doc.awareness.raw,
 		getToken: () => auth.getToken(),
-		dispatch: (action, input) => dispatchAction(doc.actions, action, input),
+		actions: doc.actions,
 	});
 
 	return {

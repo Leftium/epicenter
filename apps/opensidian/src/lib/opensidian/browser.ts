@@ -13,7 +13,6 @@ import {
 	createDisposableCache,
 	defineMutation,
 	defineQuery,
-	dispatchAction,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -176,8 +175,9 @@ export function openOpensidian({ auth }: { auth: AuthClient }) {
 	const sync = attachSync(doc.ydoc, {
 		url: toWsUrl(`${APP_URLS.API}/workspaces/${doc.ydoc.guid}`),
 		waitFor: idb.whenLoaded,
+		awareness: doc.awareness.raw,
 		getToken: () => auth.getToken(),
-		dispatch: (action, input) => dispatchAction(actions, action, input),
+		actions,
 	});
 
 	return {

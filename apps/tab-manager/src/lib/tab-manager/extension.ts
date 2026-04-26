@@ -10,7 +10,6 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachSync,
-	dispatchAction,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { openTabManager as openTabManagerDoc } from './index';
@@ -26,7 +25,7 @@ export function openTabManager({ auth }: { auth: AuthClient }) {
 		waitFor: idb.whenLoaded,
 		awareness: doc.awareness.raw,
 		getToken: () => auth.getToken(),
-		dispatch: (action, input) => dispatchAction(doc.actions, action, input),
+		actions: doc.actions,
 	});
 
 	return {

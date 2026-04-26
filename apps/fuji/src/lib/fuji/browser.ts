@@ -5,7 +5,6 @@ import {
 	attachIndexedDb,
 	attachSync,
 	createDisposableCache,
-	dispatchAction,
 	toWsUrl,
 } from '@epicenter/workspace';
 import { createEntryContentDoc } from '$lib/entry-content-docs';
@@ -35,7 +34,7 @@ export function openFuji({ auth }: { auth: AuthClient }) {
 		waitFor: idb.whenLoaded,
 		awareness: doc.awareness.raw,
 		getToken: () => auth.getToken(),
-		dispatch: (action, input) => dispatchAction(doc.actions, action, input),
+		actions: doc.actions,
 	});
 
 	return {

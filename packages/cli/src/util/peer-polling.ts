@@ -1,24 +1,51 @@
 /**
- * Awareness polling — the single source of truth across `list`, `peers`,
- * and `run`. Every CLI command that targets a remote peer needs the same
- * dance: await `sync.whenConnected` so awareness can populate, then poll
- * until either the deadline expires or the answer arrives.
+ * Find and wait for peers on the awareness wire.
+ *
+ * Every CLI command that targets a remote peer needs the same dance:
+ * await `sync.whenConnected` so awareness can populate, then poll until
+ * either the answer arrives or the deadline expires. `findPeer` is the
+ * one-shot lookup; `waitForPeer` and `waitForAnyPeer` are the polling
+ * variants that wrap it.
  *
  * `whenConnected` resolves after the sync handshake; the server typically
  * sends `AWARENESS(all clients)` in the same write window, so a small
  * grace period (callers default to 500ms for `list`/`peers`, 5000ms for
  * `run`) catches the burst plus any concurrent peer joins.
+ *
+ * `findPeer` matches by exact `device.id`. The per-installation deviceId
+ * convention (`getOrCreateDeviceId`) makes collisions cryptographically
+ * improbable, so "first match by clientID-asc" is correct rather than
+ * ambiguous. No fuzzy matching, no kv-pair query DSL, no numeric
+ * clientID escape hatch — the discovery flow is `epicenter peers` →
+ * copy the deviceId → `--peer <id>`.
  */
 
 import type { LoadedWorkspace } from '../load-config';
 import { type AwarenessState, readPeers } from './awareness';
-import { findPeer } from './find-peer';
 
 const POLL_INTERVAL_MS = 100;
 
+export type FindPeerResult =
+	| { kind: 'found'; clientID: number; state: AwarenessState }
+	| { kind: 'not-found' };
+
+/** One-shot exact-match lookup by `device.id`. First match by clientID-asc. */
+export function findPeer(
+	deviceId: string,
+	peers: Map<number, AwarenessState>,
+): FindPeerResult {
+	const sorted = [...peers.keys()].sort((a, b) => a - b);
+	for (const clientID of sorted) {
+		const state = peers.get(clientID)!;
+		const peerDeviceId = (state.device as { id?: string } | undefined)?.id;
+		if (peerDeviceId === deviceId) return { kind: 'found', clientID, state };
+	}
+	return { kind: 'not-found' };
+}
+
 /**
  * Wait for a single peer to appear by deviceId. Returns the resolved
- * awareness state, or `null` if the deadline expired with no match.
+ * awareness state, or `not-found` if the deadline expired.
  *
  * `sawPeers` is reported separately so callers (e.g. `run --peer`) can
  * distinguish "no peers seen at all" from "peers seen but none matched"

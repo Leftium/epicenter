@@ -16,7 +16,7 @@ import { invokeNormalized } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
-import { waitForPeer } from '../util/await-peers';
+import { waitForPeer } from '../util/peer-polling';
 import {
 	dirFromArgv,
 	dirOption,

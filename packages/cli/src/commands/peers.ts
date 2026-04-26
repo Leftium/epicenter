@@ -24,7 +24,7 @@
 import type { Argv, CommandModule } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
 import type { AwarenessState } from '../util/awareness';
-import { waitForAnyPeer } from '../util/await-peers';
+import { waitForAnyPeer } from '../util/peer-polling';
 import { readDevice } from '../util/peer-state';
 import {
 	dirFromArgv,

@@ -19,7 +19,7 @@ import Type, { type TSchema } from 'typebox';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { loadConfig, type LoadConfigResult } from '../load-config';
 import { type AwarenessState, readPeers } from '../util/awareness';
-import { waitForAnyPeer, waitForPeer } from '../util/await-peers';
+import { waitForAnyPeer, waitForPeer } from '../util/peer-polling';
 import {
 	dirFromArgv,
 	dirOption,

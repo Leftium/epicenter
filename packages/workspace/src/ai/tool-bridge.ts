@@ -203,7 +203,9 @@ const ACTION_NAME_SEPARATOR = '_';
  * Walk an `Actions` tree, yielding each leaf with its key path. Local helper —
  * the CLI has its own `walkActions` that yields the dotted-path form it wants;
  * this one yields path arrays so the AI bridge can join with its own
- * separator.
+ * separator. The `Actions` type guarantees nodes are either `Action` callables
+ * or nested `Actions` objects, so a plain `typeof === 'object'` recurse-guard
+ * is sufficient.
  */
 function* walkActionTree(
 	actions: object,
@@ -213,12 +215,7 @@ function* walkActionTree(
 		const currentPath = [...path, key];
 		if (isAction(value)) {
 			yield [value, currentPath];
-		} else if (
-			value != null &&
-			typeof value === 'object' &&
-			!Array.isArray(value) &&
-			!(value instanceof Promise)
-		) {
+		} else if (typeof value === 'object' && value !== null) {
 			yield* walkActionTree(value, currentPath);
 		}
 	}

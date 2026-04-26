@@ -194,7 +194,8 @@ export {
 
 export {
 	type DeviceDescriptor,
-	standardAwarenessDefs,
+	type FoundPeer,
+	type PeerAwarenessState,
 	PeerDevice,
 	Platform,
 } from './document/standard-awareness-defs.js';
@@ -206,14 +207,6 @@ export {
 	type AwarenessState,
 	type InferAwarenessValue,
 } from './document/attach-awareness.js';
-
-export {
-	attachPeers,
-	type DocWithActions,
-	type FoundPeer,
-	type PeerAwarenessState,
-	type Peers,
-} from './document/attach-peers.js';
 
 export type { CombinedStandardSchema } from './document/standard-schema.js';
 

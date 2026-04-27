@@ -35,14 +35,13 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
-import { tryDaemonDispatch } from '../daemon/sibling-dispatch';
-import { loadConfig, type WorkspaceEntry } from '../load-config';
 import {
-	dirFromArgv,
-	dirOption,
-	workspaceFromArgv,
-	workspaceOption,
-} from '../util/common-options';
+	renderDaemonResult,
+	resolveTarget,
+	tryGetDaemon,
+} from '../daemon/sibling-dispatch';
+import { loadConfig, type WorkspaceEntry } from '../load-config';
+import { dirOption, workspaceOption } from '../util/common-options';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 import { explainEmpty, waitForPeer } from '../util/peer-wait';
@@ -170,7 +169,7 @@ export const runCommand: CommandModule = {
 				: undefined;
 		const waitMs =
 			typeof args.wait === 'number' ? args.wait : DEFAULT_PEER_WAIT_MS;
-		const userWorkspace = workspaceFromArgv(args);
+		const target = resolveTarget(args);
 		const input = await resolveInput(args);
 
 		const ctx: RunCtx = {
@@ -178,31 +177,25 @@ export const runCommand: CommandModule = {
 			input,
 			peerTarget,
 			waitMs,
-			workspaceArg: userWorkspace,
+			workspaceArg: target.userWorkspace,
 		};
 
 		// Auto-detect: dispatch through the daemon when one is running. Falls
 		// through to the in-process path when no daemon answers.
-		const dispatched = await tryDaemonDispatch<RunResult>(
-			args,
-			userWorkspace,
-			'run',
-			(workspace) => ({ ...ctx, workspaceArg: workspace }),
-		);
-		if (dispatched.kind === 'mismatch') return;
-		if (dispatched.kind === 'dispatched') {
-			if (dispatched.result.error === null) {
-				renderRunResult(dispatched.result.data, format);
-				return;
-			}
-			outputError(`error: ${dispatched.result.error.message}`);
-			process.exitCode = 1;
+		const daemon = await tryGetDaemon(target);
+		if (daemon === 'mismatch') return;
+		if (daemon) {
+			const result = await daemon.call<RunResult>('run', {
+				...ctx,
+				workspaceArg: daemon.workspace,
+			});
+			await renderDaemonResult(result, (data) => renderRunResult(data, format));
 			return;
 		}
 
 		// Fallback: load config in-process.
-		await using config = await loadConfig(dirFromArgv(args));
-		const entry = resolveEntry(config.entries, userWorkspace);
+		await using config = await loadConfig(target.absDir);
+		const entry = resolveEntry(config.entries, target.userWorkspace);
 		const result = await runCore(entry, ctx);
 		renderRunResult(result, format);
 	},

@@ -11,8 +11,8 @@
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Process lifecycle".
  */
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 import type { Argv, CommandModule } from 'yargs';
 
@@ -23,6 +23,7 @@ import {
 	type DaemonMetadata,
 	isProcessAlive,
 	readMetadata,
+	readMetadataFromPath,
 	unlinkMetadata,
 } from '../daemon/metadata.js';
 import { runtimeDir, socketPathFor } from '../daemon/paths.js';
@@ -51,7 +52,7 @@ export type RunDownDeps = {
 		socketPath: string,
 		cmd: string,
 		args?: unknown,
-		options?: { timeoutMs?: number },
+		timeoutMs?: number,
 	) => Promise<Result<void, IpcClientError | SerializedError>>;
 	kill?: (pid: number, signal: NodeJS.Signals) => void;
 };
@@ -83,9 +84,7 @@ async function shutdownOne(
 	deps: Required<RunDownDeps>,
 ): Promise<DownOutcome> {
 	const sock = socketPathFor(meta.dir);
-	const reply = await deps.ipcCall(sock, 'shutdown', undefined, {
-		timeoutMs: SHUTDOWN_TIMEOUT_MS,
-	});
+	const reply = await deps.ipcCall(sock, 'shutdown', undefined, SHUTDOWN_TIMEOUT_MS);
 
 	if (reply.error === null) {
 		return { kind: 'graceful', pid: meta.pid, dir: meta.dir };
@@ -130,7 +129,7 @@ export async function runDown(
 		const entries = existsSync(root) ? readdirSync(root) : [];
 		const metas = entries
 			.filter((name) => name.endsWith('.meta.json'))
-			.map((name) => readMetadataFromFile(`${root}/${name}`))
+			.map((name) => readMetadataFromPath(join(root, name)))
 			.filter((m): m is DaemonMetadata => m !== null);
 
 		const outcomes = await Promise.all(
@@ -146,19 +145,6 @@ export async function runDown(
 	}
 	const outcome = await shutdownOne(meta, resolved);
 	return { outcomes: [outcome] };
-}
-
-/**
- * Helper: read metadata by absolute path (the `--all` enumeration knows the
- * filename, not the workspace dir). Returns `null` on any read/parse error.
- */
-function readMetadataFromFile(path: string): DaemonMetadata | null {
-	try {
-		const raw = readFileSync(path, 'utf8');
-		return JSON.parse(raw) as DaemonMetadata;
-	} catch {
-		return null;
-	}
 }
 
 export const downCommand: CommandModule = {

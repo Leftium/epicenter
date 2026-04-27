@@ -16,7 +16,9 @@ import { resolve } from 'node:path';
 
 import type { Argv, CommandModule } from 'yargs';
 
-import { ipcCall, type IpcCallResult } from '../daemon/ipc-client.js';
+import { ipcCall, type IpcClientError } from '../daemon/ipc-client.js';
+import type { SerializedError } from '../daemon/ipc-server.js';
+import type { Result } from 'wellcrafted/result';
 import {
 	type DaemonMetadata,
 	isProcessAlive,
@@ -40,16 +42,17 @@ export type DownOptions = {
  */
 export type RunDownDeps = {
 	/**
-	 * Non-generic mirror of `ipcCall`. `down` only checks `ok`, never reads
-	 * `data`, so a `void` return is sufficient — and avoids the generic
-	 * inference noise that comes with reusing `typeof ipcCall` in tests.
+	 * Non-generic mirror of `ipcCall`. `down` only checks for success, never
+	 * reads `data`, so a `void` payload is sufficient — and avoids the
+	 * generic inference noise that comes with reusing `typeof ipcCall` in
+	 * tests.
 	 */
 	ipcCall?: (
 		socketPath: string,
 		cmd: string,
 		args?: unknown,
 		options?: { timeoutMs?: number },
-	) => Promise<IpcCallResult<void>>;
+	) => Promise<Result<void, IpcClientError | SerializedError>>;
 	kill?: (pid: number, signal: NodeJS.Signals) => void;
 };
 
@@ -80,11 +83,11 @@ async function shutdownOne(
 	deps: Required<RunDownDeps>,
 ): Promise<DownOutcome> {
 	const sock = socketPathFor(meta.dir);
-	const reply: IpcCallResult = await deps.ipcCall(sock, 'shutdown', undefined, {
+	const reply = await deps.ipcCall(sock, 'shutdown', undefined, {
 		timeoutMs: SHUTDOWN_TIMEOUT_MS,
 	});
 
-	if (reply.ok) {
+	if (reply.error === null) {
 		return { kind: 'graceful', pid: meta.pid, dir: meta.dir };
 	}
 

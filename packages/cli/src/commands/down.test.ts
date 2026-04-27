@@ -71,7 +71,7 @@ describe('runDown — graceful', () => {
 		const result = await runDown(
 			{ dir: workDir, all: false },
 			{
-				ipcCall: async () => ({ ok: true, data: undefined }),
+				ipcCall: async () => ({ data: undefined, error: null }),
 				kill: () => {
 					throw new Error('kill should not be called on graceful path');
 				},
@@ -100,8 +100,13 @@ describe('runDown — SIGTERM fallback', () => {
 			{ dir: workDir, all: false },
 			{
 				ipcCall: async () => ({
-					ok: false,
-					error: { name: 'NoDaemon', message: 'timeout after 1000ms' },
+					data: null,
+					error: {
+						name: 'NoDaemon',
+						message: 'timeout after 1000ms',
+						socketPath: '',
+						timeoutMs: 1000,
+					},
 				}),
 				kill: (pid, sig) => {
 					killed.push({ pid, sig });
@@ -159,7 +164,7 @@ describe('runDown --all', () => {
 			const result = await runDown(
 				{ dir: '.', all: true },
 				{
-					ipcCall: async () => ({ ok: true, data: undefined }),
+					ipcCall: async () => ({ data: undefined, error: null }),
 					kill: () => {},
 				},
 			);

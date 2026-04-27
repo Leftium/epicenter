@@ -8,8 +8,9 @@
  *   on any connect / timeout / parse failure so callers can branch
  *   without try/catch noise.
  * - {@link ipcCall} — request/response with a single terminal frame.
- *   Connection failures collapse into the `NoDaemon` error variant so
- *   "no daemon running" is just another `{ok: false}` outcome.
+ *   Connection failures collapse into the `IpcClientError.NoDaemon` /
+ *   `IpcClientError.Timeout` variants so "no daemon running" is just
+ *   another `Err` outcome.
  * - {@link ipcStream} — async iterator over a streamed reply. Yields each
  *   `data` payload until the server sends `end: true` or an error frame.
  *
@@ -18,20 +19,48 @@
  */
 
 import { existsSync } from 'node:fs';
-import { connect, type Socket } from 'node:net';
-import { createInterface } from 'node:readline';
 
-import type { IpcResponse } from './ipc-server.js';
+import type { Socket } from 'bun';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
+
+import type { IpcFrame, SerializedError } from './ipc-server.js';
 
 /**
- * Result shape returned by {@link ipcCall} and the per-frame yield of
- * {@link ipcStream}'s underlying request. The `NoDaemon` variant signals a
- * transport-level failure (no socket, connect refused, timeout) — distinct
- * from a handler-level error returned by a live daemon.
+ * Tagged-error variants emitted by the IPC client itself (not by the
+ * server). `NoDaemon` covers any connect-level failure (missing socket,
+ * ECONNREFUSED, transport closed before reply); `Timeout` is the local
+ * deadline expiring.
  */
-export type IpcCallResult<T = unknown> =
-	| { ok: true; data: T }
-	| { ok: false; error: { name: string; message: string } };
+export const IpcClientError = defineErrors({
+	NoDaemon: ({
+		socketPath,
+		cause,
+	}: {
+		socketPath: string;
+		cause?: unknown;
+	}) => ({
+		message: `no daemon at ${socketPath}${cause ? `: ${extractErrorMessage(cause)}` : ''}`,
+		socketPath,
+		cause,
+	}),
+	Timeout: ({
+		socketPath,
+		timeoutMs,
+	}: {
+		socketPath: string;
+		timeoutMs: number;
+	}) => ({
+		message: `timed out after ${timeoutMs}ms waiting for ${socketPath}`,
+		socketPath,
+		timeoutMs,
+	}),
+});
+export type IpcClientError = InferErrors<typeof IpcClientError>;
 
 /** Default per-frame read timeout (ms) for {@link ipcCall} / {@link ipcStream}. */
 const DEFAULT_CALL_TIMEOUT_MS = 5000;
@@ -39,9 +68,61 @@ const DEFAULT_CALL_TIMEOUT_MS = 5000;
 /** Default ping timeout (ms). Tight on purpose: ping is a fast-path probe. */
 const DEFAULT_PING_TIMEOUT_MS = 250;
 
+/** Per-connection state for line-buffered reads on the client side. */
+type ClientSocketData = {
+	buffer: string;
+	onLine: (line: string) => void;
+	onClose: () => void;
+	onError: (err: unknown) => void;
+};
+
+/**
+ * Open a Bun unix socket with line-buffered reads. The caller supplies
+ * line/close/error callbacks; this helper handles the buffer accumulation
+ * and the `Bun.connect` plumbing.
+ */
+async function connectLineSocket(
+	socketPath: string,
+	callbacks: {
+		onLine: (line: string) => void;
+		onClose: () => void;
+		onError: (err: unknown) => void;
+	},
+): Promise<Socket<ClientSocketData>> {
+	return Bun.connect<ClientSocketData>({
+		unix: socketPath,
+		socket: {
+			open(socket) {
+				socket.data = {
+					buffer: '',
+					onLine: callbacks.onLine,
+					onClose: callbacks.onClose,
+					onError: callbacks.onError,
+				};
+			},
+			data(socket, chunk) {
+				socket.data.buffer += chunk.toString('utf8');
+				let nl = socket.data.buffer.indexOf('\n');
+				while (nl !== -1) {
+					const line = socket.data.buffer.slice(0, nl);
+					socket.data.buffer = socket.data.buffer.slice(nl + 1);
+					socket.data.onLine(line);
+					nl = socket.data.buffer.indexOf('\n');
+				}
+			},
+			close(socket) {
+				socket.data.onClose();
+			},
+			error(socket, err) {
+				socket.data.onError(err);
+			},
+		},
+	});
+}
+
 /**
  * Cheap liveness probe. Sends `{cmd: 'ping'}` and resolves `true` iff the
- * daemon answers with any `ok: true` frame within `timeoutMs`.
+ * daemon answers with any success frame within `timeoutMs`.
  *
  * Never throws. Connection failures (`ECONNREFUSED`, `ENOENT`, missing
  * socket file, timeout) all resolve `false` so callers can use this as a
@@ -55,136 +136,140 @@ export async function ipcPing(
 
 	return new Promise<boolean>((resolve) => {
 		let settled = false;
+		let socket: Socket<ClientSocketData> | undefined;
 		const finish = (value: boolean) => {
 			if (settled) return;
 			settled = true;
-			try {
-				rl.close();
-			} catch {
-				// best effort
-			}
-			socket.destroy();
+			if (socket) socket.end();
 			clearTimeout(timer);
 			resolve(value);
 		};
 
-		const socket = connect(socketPath);
-		const rl = createInterface({ input: socket });
-
 		const timer = setTimeout(() => finish(false), timeoutMs);
 
-		rl.on('line', (line) => {
-			let frame: IpcResponse;
-			try {
-				frame = JSON.parse(line) as IpcResponse;
-			} catch {
-				return;
-			}
-			// Per the W3 contract, the server may emit `BadRequest` with id ''
-			// for un-parseable lines — drop frames with no/empty id silently.
-			if (!('id' in frame) || frame.id !== 'ping') return;
-			finish(frame.ok === true);
-		});
-
-		socket.on('connect', () => {
-			socket.write(`${JSON.stringify({ id: 'ping', cmd: 'ping' })}\n`);
-		});
-
-		socket.on('error', () => finish(false));
-		socket.on('close', () => finish(false));
+		connectLineSocket(socketPath, {
+			onLine: (line) => {
+				let frame: IpcFrame;
+				try {
+					frame = JSON.parse(line) as IpcFrame;
+				} catch {
+					return;
+				}
+				// Server may emit BadRequest with id '' for un-parseable lines —
+				// drop frames with no/empty id silently.
+				if (!('id' in frame) || frame.id !== 'ping') return;
+				finish(frame.error === null);
+			},
+			onClose: () => finish(false),
+			onError: () => finish(false),
+		}).then(
+			(s) => {
+				if (settled) {
+					s.end();
+					return;
+				}
+				socket = s;
+				s.write(`${JSON.stringify({ id: 'ping', cmd: 'ping' })}\n`);
+			},
+			() => finish(false),
+		);
 	});
 }
 
 /**
  * Single-shot request/response. Resolves with the first non-streamed frame
- * matching the request `id`. Connection-level failures collapse into the
- * `NoDaemon` error variant rather than throwing.
+ * matching the request `id`, wrapped as a {@link Result}. Connection-level
+ * failures collapse into {@link IpcClientError} variants; handler-level
+ * errors flow through as the server-side `SerializedError`.
  */
 export async function ipcCall<T = unknown>(
 	socketPath: string,
 	cmd: string,
 	args?: unknown,
 	options?: { timeoutMs?: number },
-): Promise<IpcCallResult<T>> {
+): Promise<Result<T, IpcClientError | SerializedError>> {
 	const timeoutMs = options?.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
 	const id = `c-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 	if (!existsSync(socketPath)) {
-		return {
-			ok: false,
-			error: {
-				name: 'NoDaemon',
-				message: `no socket at ${socketPath}`,
-			},
-		};
+		return IpcClientError.NoDaemon({ socketPath }) as Result<
+			T,
+			IpcClientError
+		>;
 	}
 
-	return new Promise<IpcCallResult<T>>((resolve) => {
+	return new Promise<Result<T, IpcClientError | SerializedError>>((resolve) => {
 		let settled = false;
-		const finish = (result: IpcCallResult<T>) => {
+		let socket: Socket<ClientSocketData> | undefined;
+		const finish = (result: Result<T, IpcClientError | SerializedError>) => {
 			if (settled) return;
 			settled = true;
-			try {
-				rl.close();
-			} catch {
-				// best effort
-			}
-			socket.destroy();
+			if (socket) socket.end();
 			clearTimeout(timer);
 			resolve(result);
 		};
 
-		const socket = connect(socketPath);
-		const rl = createInterface({ input: socket });
-
 		const timer = setTimeout(() => {
-			finish({
-				ok: false,
-				error: { name: 'NoDaemon', message: `timeout after ${timeoutMs}ms` },
-			});
+			finish(
+				IpcClientError.Timeout({ socketPath, timeoutMs }) as Result<
+					T,
+					IpcClientError
+				>,
+			);
 		}, timeoutMs);
 
-		rl.on('line', (line) => {
-			let frame: IpcResponse;
-			try {
-				frame = JSON.parse(line) as IpcResponse;
-			} catch {
-				return;
-			}
-			// Drop frames with no/empty id (e.g. server BadRequest for blank lines).
-			if (!('id' in frame) || !frame.id) return;
-			if (frame.id !== id) return;
+		connectLineSocket(socketPath, {
+			onLine: (line) => {
+				let frame: IpcFrame<T>;
+				try {
+					frame = JSON.parse(line) as IpcFrame<T>;
+				} catch {
+					return;
+				}
+				// Drop frames with no/empty id (e.g. server BadRequest for blank lines).
+				if (!('id' in frame) || !frame.id) return;
+				if (frame.id !== id) return;
 
-			if (frame.ok) {
-				finish({ ok: true, data: frame.data as T });
-			} else {
-				finish({ ok: false, error: frame.error });
-			}
-		});
-
-		socket.on('connect', () => {
-			socket.write(`${JSON.stringify({ id, cmd, args })}\n`);
-		});
-
-		socket.on('error', (err: NodeJS.ErrnoException) => {
-			finish({
-				ok: false,
-				error: {
-					name: 'NoDaemon',
-					message: `${err.code ?? 'connect failed'}: ${err.message}`,
-				},
-			});
-		});
-
-		socket.on('close', () => {
-			finish({
-				ok: false,
-				error: {
-					name: 'NoDaemon',
-					message: 'connection closed before response',
-				},
-			});
-		});
+				if (frame.error === null) {
+					finish({ data: frame.data, error: null });
+				} else {
+					finish({ data: null, error: frame.error });
+				}
+			},
+			onClose: () => {
+				finish(
+					IpcClientError.NoDaemon({
+						socketPath,
+						cause: 'connection closed before response',
+					}) as Result<T, IpcClientError>,
+				);
+			},
+			onError: (err) => {
+				finish(
+					IpcClientError.NoDaemon({ socketPath, cause: err }) as Result<
+						T,
+						IpcClientError
+					>,
+				);
+			},
+		}).then(
+			(s) => {
+				if (settled) {
+					s.end();
+					return;
+				}
+				socket = s;
+				s.write(`${JSON.stringify({ id, cmd, args })}\n`);
+			},
+			(err) => {
+				finish(
+					IpcClientError.NoDaemon({ socketPath, cause: err }) as Result<
+						T,
+						IpcClientError
+					>,
+				);
+			},
+		);
 	});
 }
 
@@ -193,9 +278,10 @@ export async function ipcCall<T = unknown>(
  * The iterator completes when the server sends a frame with `end: true`,
  * an error frame (which throws), or the connection closes.
  *
- * Connection-level failures throw; handler-level error frames also throw
- * with the wire `{name, message}` preserved as `Error.name` / `Error.message`.
- * Streaming is rare enough that try/catch at call sites is acceptable.
+ * Connection-level failures throw an `IpcClientError`; handler-level error
+ * frames also throw with the wire `{name, message, ...}` preserved as
+ * `Error.name` / `Error.message`. Streaming is rare enough that try/catch
+ * at call sites is acceptable.
  */
 export async function* ipcStream<T = unknown>(
 	socketPath: string,
@@ -203,8 +289,9 @@ export async function* ipcStream<T = unknown>(
 	args?: unknown,
 ): AsyncGenerator<T> {
 	if (!existsSync(socketPath)) {
-		const err = new Error(`no socket at ${socketPath}`);
-		err.name = 'NoDaemon';
+		const tagged = IpcClientError.NoDaemon({ socketPath });
+		const err = new Error(tagged.error.message);
+		err.name = tagged.error.name;
 		throw err;
 	}
 
@@ -227,51 +314,50 @@ export async function* ipcStream<T = unknown>(
 			? Promise.resolve(queue.shift()!)
 			: new Promise<Item>((resolve) => waiters.push(resolve));
 
-	let socket: Socket;
+	let socket: Socket<ClientSocketData>;
 	try {
-		socket = connect(socketPath);
+		socket = await connectLineSocket(socketPath, {
+			onLine: (line) => {
+				let frame: IpcFrame<T>;
+				try {
+					frame = JSON.parse(line) as IpcFrame<T>;
+				} catch {
+					return;
+				}
+				if (!('id' in frame) || !frame.id) return;
+				if (frame.id !== id) return;
+
+				if (frame.error !== null) {
+					push({
+						kind: 'error',
+						name: frame.error.name,
+						message: frame.error.message,
+					});
+					return;
+				}
+				if (frame.data !== undefined) {
+					push({ kind: 'data', value: frame.data as T });
+				}
+				if (frame.end) push({ kind: 'end' });
+			},
+			onClose: () => push({ kind: 'end' }),
+			onError: (err) => {
+				const tagged = IpcClientError.NoDaemon({ socketPath, cause: err });
+				push({
+					kind: 'error',
+					name: tagged.error.name,
+					message: tagged.error.message,
+				});
+			},
+		});
 	} catch (cause) {
-		const err = new Error(
-			cause instanceof Error ? cause.message : String(cause),
-		);
-		err.name = 'NoDaemon';
+		const tagged = IpcClientError.NoDaemon({ socketPath, cause });
+		const err = new Error(tagged.error.message);
+		err.name = tagged.error.name;
 		throw err;
 	}
 
-	const rl = createInterface({ input: socket });
-	rl.on('line', (line) => {
-		let frame: IpcResponse;
-		try {
-			frame = JSON.parse(line) as IpcResponse;
-		} catch {
-			return;
-		}
-		if (!('id' in frame) || !frame.id) return;
-		if (frame.id !== id) return;
-
-		if (!frame.ok) {
-			push({ kind: 'error', name: frame.error.name, message: frame.error.message });
-			return;
-		}
-		if (frame.data !== undefined) {
-			push({ kind: 'data', value: frame.data as T });
-		}
-		if (frame.end) push({ kind: 'end' });
-	});
-
-	socket.on('connect', () => {
-		socket.write(`${JSON.stringify({ id, cmd, args })}\n`);
-	});
-
-	socket.on('error', (err: NodeJS.ErrnoException) => {
-		push({
-			kind: 'error',
-			name: 'NoDaemon',
-			message: `${err.code ?? 'connect failed'}: ${err.message}`,
-		});
-	});
-
-	socket.on('close', () => push({ kind: 'end' }));
+	socket.write(`${JSON.stringify({ id, cmd, args })}\n`);
 
 	try {
 		while (true) {
@@ -285,11 +371,6 @@ export async function* ipcStream<T = unknown>(
 			yield item.value;
 		}
 	} finally {
-		try {
-			rl.close();
-		} catch {
-			// best effort
-		}
-		socket.destroy();
+		socket.end();
 	}
 }

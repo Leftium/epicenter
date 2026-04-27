@@ -33,9 +33,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+	type IpcFrame,
 	type IpcHandler,
 	type IpcRequest,
-	type IpcResponse,
 	startIpcServer,
 } from '../daemon/ipc-server';
 import { writeMetadata } from '../daemon/metadata';
@@ -178,7 +178,7 @@ describe('runUp — already running', () => {
 
 		const pingHandler: IpcHandler = (req: IpcRequest, send) => {
 			if (req.cmd === 'ping') {
-				const r: IpcResponse = { id: req.id, ok: true, data: 'pong' };
+				const r: IpcFrame = { id: req.id, data: 'pong', error: null };
 				send(r);
 			}
 		};
@@ -209,7 +209,7 @@ describe('runUp — already running', () => {
 				),
 			).rejects.toThrow(/daemon already running \(pid=/);
 		} finally {
-			await new Promise<void>((res) => server.close(() => res()));
+			server.stop();
 		}
 	});
 });

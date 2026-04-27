@@ -89,11 +89,11 @@ describe('listCore — local mode', () => {
 			mode: { kind: 'local' },
 			waitMs: 0,
 		});
-		expect(result.kind).toBe('sections');
-		if (result.kind !== 'sections') return;
-		expect(result.sections).toHaveLength(1);
-		expect(result.sections[0]!.label).toBe('demo');
-		expect(result.sections[0]!.peer).toBe('self');
+		expect(result.error).toBeNull();
+		if (result.error !== null) return;
+		expect(result.data.sections).toHaveLength(1);
+		expect(result.data.sections[0]!.label).toBe('demo');
+		expect(result.data.sections[0]!.peer).toBe('self');
 	});
 });
 
@@ -186,7 +186,7 @@ describe('listCore — IPC parity', () => {
 						entry,
 						req.args as Parameters<typeof listCore>[1],
 					);
-					send({ id: req.id, ok: true, data });
+					send({ id: req.id, data, error: null });
 				})();
 			}
 		};
@@ -197,11 +197,11 @@ describe('listCore — IPC parity', () => {
 				mode: { kind: 'local' },
 				waitMs: 0,
 			});
-			expect(reply.ok).toBe(true);
-			if (!reply.ok) return;
+			expect(reply.error).toBeNull();
+			if (reply.error !== null) return;
 			expect(reply.data).toEqual(direct);
 		} finally {
-			await new Promise<void>((res) => server.close(() => res()));
+			server.stop();
 		}
 	});
 });

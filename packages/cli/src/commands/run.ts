@@ -29,7 +29,12 @@ import {
 	walkActions,
 } from '@epicenter/workspace';
 import type { AwarenessState } from '../load-config';
-import { extractErrorMessage } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { ipcCall, ipcPing } from '../daemon/ipc-client';
 import { socketPathFor } from '../daemon/paths';
@@ -80,34 +85,69 @@ export type RunCtx = {
 };
 
 /**
- * Result of {@link runCore}. The renderer turns every variant into
- * stdout / stderr / exitCode. Carrying the exit code in-band is the
- * thing that lets the IPC path drive `process.exitCode` exactly the way
- * the in-process path does.
+ * Domain errors returned by {@link runCore}. Carrying the failure mode
+ * in-band lets the renderer set `process.exitCode` exactly the way the
+ * in-process path does — even when the result arrived over IPC.
  *
- * - `ok`: action ran, `data` is the return value (rendered to stdout).
- * - `usageError`: bad action path / missing sync; exitCode=1.
- * - `runtimeError`: action returned Err (or remote RPC failed); exitCode=2.
- * - `peerMiss`: `--peer` target didn't resolve within `waitMs`; exitCode=3.
+ * - `UsageError`: bad action path / missing sync; renderer exitCode=1.
+ * - `RuntimeError`: action returned Err locally; renderer exitCode=2.
+ * - `PeerMiss`: `--peer` target didn't resolve within `waitMs`; exitCode=3.
+ * - `RpcError`: remote RPC returned an `RpcError`; exitCode=2.
  */
-export type RunResult =
-	| { kind: 'ok'; data: unknown }
-	| { kind: 'usageError'; message: string; suggestions?: string[] }
-	| { kind: 'runtimeError'; message: string }
-	| {
-			kind: 'peerMiss';
-			peerTarget: string;
-			sawPeers: boolean;
-			workspaceArg?: string;
-			waitMs: number;
-			emptyReason: string | null;
-	  }
-	| {
-			kind: 'rpcError';
-			error: RpcError;
-			targetClientId: number;
-			peerState: AwarenessState;
-	  };
+export const RunError = defineErrors({
+	UsageError: ({
+		message,
+		suggestions,
+	}: {
+		message: string;
+		suggestions?: string[];
+	}) => ({ message, suggestions }),
+	RuntimeError: ({ cause }: { cause: unknown }) => ({
+		message: extractErrorMessage(cause),
+		cause,
+	}),
+	PeerMiss: ({
+		peerTarget,
+		sawPeers,
+		workspaceArg,
+		waitMs,
+		emptyReason,
+	}: {
+		peerTarget: string;
+		sawPeers: boolean;
+		workspaceArg?: string;
+		waitMs: number;
+		emptyReason: string | null;
+	}) => ({
+		message: `no peer matches deviceId "${peerTarget}"`,
+		peerTarget,
+		sawPeers,
+		workspaceArg,
+		waitMs,
+		emptyReason,
+	}),
+	RpcError: ({
+		cause,
+		targetClientId,
+		peerState,
+	}: {
+		cause: RpcError;
+		targetClientId: number;
+		peerState: AwarenessState;
+	}) => ({
+		message: `RPC failed: ${cause.name}`,
+		cause,
+		targetClientId,
+		peerState,
+	}),
+});
+export type RunError = InferErrors<typeof RunError>;
+
+/** Success payload for {@link runCore}: the action's return value. */
+export type RunSuccess = { data: unknown };
+
+/** {@link runCore}'s return type — `Result` with the {@link RunError} union. */
+export type RunResult = Result<RunSuccess, RunError>;
 
 export const runCommand: CommandModule = {
 	command: 'run <action> [input]',
@@ -165,7 +205,7 @@ export const runCommand: CommandModule = {
 					...ctx,
 					workspaceArg: inherited,
 				});
-				if (reply.ok) {
+				if (reply.error === null) {
 					renderRunResult(reply.data, format);
 					return;
 				}
@@ -201,17 +241,15 @@ export async function runCore(
 		const entries = [...walkActions(workspace.actions ?? {})];
 		const descendants = entriesUnder(entries, ctx.actionPath);
 		if (descendants.length > 0) {
-			return {
-				kind: 'usageError',
+			return RunError.UsageError({
 				message: `"${ctx.actionPath}" is not a runnable action.`,
 				suggestions: descendants.map(([p, a]) => `  ${p}  (${a.type})`),
-			};
+			});
 		}
-		return {
-			kind: 'usageError',
+		return RunError.UsageError({
 			message: `"${ctx.actionPath}" is not defined.`,
 			suggestions: nearestSiblingLines(entries, ctx.actionPath),
-		};
+		});
 	}
 
 	if (ctx.peerTarget !== undefined) {
@@ -220,9 +258,9 @@ export async function runCore(
 
 	const result = await invokeAction(action, ctx.input, ctx.actionPath);
 	if (result.error !== null) {
-		return { kind: 'runtimeError', message: extractErrorMessage(result.error) };
+		return RunError.RuntimeError({ cause: result.error });
 	}
-	return { kind: 'ok', data: result.data };
+	return { data: { data: result.data }, error: null };
 }
 
 async function invokeRemoteCore(
@@ -234,10 +272,9 @@ async function invokeRemoteCore(
 	const sync = workspace.sync;
 
 	if (!sync?.rpc) {
-		return {
-			kind: 'usageError',
+		return RunError.UsageError({
 			message: `Workspace "${entry.name}" has no sync attachment; --peer requires sync.`,
-		};
+		});
 	}
 
 	const deadline = Date.now() + ctx.waitMs;
@@ -247,14 +284,13 @@ async function invokeRemoteCore(
 		deadline,
 	);
 	if (!hit) {
-		return {
-			kind: 'peerMiss',
+		return RunError.PeerMiss({
 			peerTarget: ctx.peerTarget!,
 			sawPeers,
 			workspaceArg: ctx.workspaceArg,
 			waitMs: ctx.waitMs,
 			emptyReason: explainEmpty(workspace),
-		};
+		});
 	}
 
 	const { clientID: targetClientId, state: peerState } = hit;
@@ -264,51 +300,56 @@ async function invokeRemoteCore(
 	});
 
 	if (result.error !== null) {
-		return {
-			kind: 'rpcError',
-			error: result.error,
+		return RunError.RpcError({
+			cause: result.error,
 			targetClientId,
 			peerState,
-		};
+		});
 	}
-	return { kind: 'ok', data: result.data };
+	return { data: { data: result.data }, error: null };
 }
 
 function renderRunResult(
 	result: RunResult,
 	format: 'json' | 'jsonl' | undefined,
 ): void {
-	switch (result.kind) {
-		case 'ok':
-			output(result.data, { format });
-			return;
-		case 'usageError': {
-			outputError(result.message);
-			if (result.suggestions && result.suggestions.length > 0) {
+	if (result.error === null) {
+		output(result.data.data, { format });
+		return;
+	}
+	switch (result.error.name) {
+		case 'UsageError': {
+			outputError(result.error.message);
+			if (result.error.suggestions && result.error.suggestions.length > 0) {
 				outputError('');
 				outputError('Exposed actions at this path:');
-				for (const line of result.suggestions) outputError(line);
+				for (const line of result.error.suggestions) outputError(line);
 			}
 			process.exitCode = 1;
 			return;
 		}
-		case 'runtimeError':
-			outputError(result.message);
+		case 'RuntimeError':
+			outputError(result.error.message);
 			process.exitCode = 2;
 			return;
-		case 'peerMiss': {
+		case 'PeerMiss': {
 			emitMissError(
-				result.peerTarget,
-				result.sawPeers,
-				result.workspaceArg,
-				result.waitMs,
+				result.error.peerTarget,
+				result.error.sawPeers,
+				result.error.workspaceArg,
+				result.error.waitMs,
 			);
-			if (result.emptyReason) outputError(`  reason: ${result.emptyReason}`);
+			if (result.error.emptyReason)
+				outputError(`  reason: ${result.error.emptyReason}`);
 			process.exitCode = 3;
 			return;
 		}
-		case 'rpcError':
-			emitRpcError(result.error, result.targetClientId, result.peerState);
+		case 'RpcError':
+			emitRpcError(
+				result.error.cause,
+				result.error.targetClientId,
+				result.error.peerState,
+			);
 			process.exitCode = 2;
 			return;
 	}

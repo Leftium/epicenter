@@ -34,6 +34,8 @@ import {
 	type SyncAttachment,
 } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
 import { ipcCall, ipcPing } from '../daemon/ipc-client';
 import { readMetadata } from '../daemon/metadata';
@@ -98,21 +100,34 @@ export type ListCtx = {
 };
 
 /**
- * Result of {@link listCore}. Render-ready: `sections` is the list the
- * text/JSON renderers consume, `mode` is preserved so the renderer can
- * tell single-source from `--all`.
- *
- * The `peerMiss` variant is the only failure path that survives across
- * IPC; it's translated to stderr + exitCode=3 by the renderer on either
- * side of the wire.
+ * Domain errors returned by {@link listCore}. `PeerMiss` is the only failure
+ * path that survives across IPC — translated to stderr + exitCode=3 by the
+ * renderer on either side of the wire.
  */
-export type ListResult =
-	| { kind: 'sections'; sections: Section[]; mode: ListMode }
-	| {
-			kind: 'peerMiss';
-			deviceId: string;
-			emptyReason: string | null;
-	  };
+export const ListError = defineErrors({
+	PeerMiss: ({
+		deviceId,
+		emptyReason,
+	}: {
+		deviceId: string;
+		emptyReason: string | null;
+	}) => ({
+		message: `no peer matches deviceId "${deviceId}"${emptyReason ? ` (${emptyReason})` : ''}`,
+		deviceId,
+		emptyReason,
+	}),
+});
+export type ListError = InferErrors<typeof ListError>;
+
+/**
+ * Success payload for {@link listCore}. `sections` is the list the
+ * text/JSON renderers consume; `mode` is preserved so the renderer can
+ * tell single-source from `--all`.
+ */
+export type ListSuccess = { sections: Section[]; mode: ListMode };
+
+/** {@link listCore}'s return type — `Result` with the {@link ListError} union. */
+export type ListResult = Result<ListSuccess, ListError>;
 
 const peerOption: Options = {
 	type: 'string',
@@ -175,7 +190,7 @@ export const listCommand: CommandModule = {
 				if (inherited === 'mismatch') return; // exitCode already set
 				const ctx: ListCtx = { path, mode, waitMs };
 				const reply = await ipcCall<ListResult>(sock, 'list', ctx);
-				if (reply.ok) {
+				if (reply.error === null) {
 					await renderResult(reply.data, path, format);
 					return;
 				}
@@ -208,9 +223,8 @@ export async function listCore(
 
 	if (mode.kind === 'local') {
 		return {
-			kind: 'sections',
-			sections: [selfSection(entry, 'local')],
-			mode,
+			data: { sections: [selfSection(entry, 'local')], mode },
+			error: null,
 		};
 	}
 
@@ -218,16 +232,17 @@ export async function listCore(
 	if (mode.kind === 'peer') {
 		const { hit } = await waitForPeer(workspace, mode.deviceId, deadline);
 		if (!hit) {
-			return {
-				kind: 'peerMiss',
+			return ListError.PeerMiss({
 				deviceId: mode.deviceId,
 				emptyReason: explainEmpty(workspace),
-			};
+			});
 		}
 		return {
-			kind: 'sections',
-			sections: [await peerSection(hit.state, workspace.sync!)],
-			mode,
+			data: {
+				sections: [await peerSection(hit.state, workspace.sync!)],
+				mode,
+			},
+			error: null,
 		};
 	}
 
@@ -235,9 +250,8 @@ export async function listCore(
 	await waitForAnyPeer(workspace, deadline);
 	if (!workspace.sync) {
 		return {
-			kind: 'sections',
-			sections: [selfSection(entry, 'all')],
-			mode,
+			data: { sections: [selfSection(entry, 'all')], mode },
+			error: null,
 		};
 	}
 	const ordered = [...workspace.sync.peers().entries()].sort(([a], [b]) => a - b);
@@ -245,7 +259,7 @@ export async function listCore(
 	for (const [, state] of ordered) {
 		sections.push(await peerSection(state, workspace.sync));
 	}
-	return { kind: 'sections', sections, mode };
+	return { data: { sections, mode }, error: null };
 }
 
 function parseMode(args: Record<string, unknown>): ListMode | null {
@@ -343,14 +357,21 @@ async function renderResult(
 	path: string,
 	format: Format,
 ): Promise<void> {
-	if (result.kind === 'peerMiss') {
-		outputError(`error: no peer matches deviceId "${result.deviceId}"`);
-		outputError('run `epicenter peers` to see connected peers');
-		if (result.emptyReason) outputError(`  reason: ${result.emptyReason}`);
-		process.exitCode = 3;
+	if (result.error !== null) {
+		switch (result.error.name) {
+			case 'PeerMiss':
+				outputError(
+					`error: no peer matches deviceId "${result.error.deviceId}"`,
+				);
+				outputError('run `epicenter peers` to see connected peers');
+				if (result.error.emptyReason)
+					outputError(`  reason: ${result.error.emptyReason}`);
+				process.exitCode = 3;
+				return;
+		}
 		return;
 	}
-	await renderSections(result.sections, path, format, result.mode);
+	await renderSections(result.data.sections, path, format, result.data.mode);
 }
 
 /**

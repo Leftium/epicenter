@@ -1,11 +1,16 @@
 /**
  * Workspace config loader.
  *
- * The contract is one line: a workspace is any named export with
- * `[Symbol.dispose]`. The loader trusts whatever the user's factory
- * returns — it does no walking, no brand check, no field validation.
- * Fields the CLI knows about (`whenReady`, `actions`, `sync`) are read
- * off the export when present; everything else is ignored.
+ * Contract:
+ *
+ *   A named export becomes a workspace if it implements [Symbol.dispose]
+ *   (called at exit; the discriminator). If it also has:
+ *
+ *     whenReady: Promise         awaited before action invocations
+ *     actions:   Actions          exposed to `run` and `list`
+ *     sync:      SyncAttachment   enables --peer + `peers`
+ *
+ *   …the CLI uses them. Anything else is the factory's business.
  *
  * The recommended config style is to export the result of an `openFoo()`
  * factory directly — the same factory the app uses elsewhere — and let
@@ -23,7 +28,7 @@
  * ```ts
  * await using config = await loadConfig('/path/to/project');
  * for (const { name, workspace } of config.entries) {
- *   await workspace.whenReady;
+ *   if (workspace.whenReady) await workspace.whenReady;
  *   // dispatch actions, read sync, ...
  * }
  * // sockets flushed automatically on scope exit
@@ -40,18 +45,29 @@ import { join, resolve } from 'node:path';
 const CONFIG_FILENAME = 'epicenter.config.ts';
 
 /**
- * The shape every loaded workspace export must satisfy. Extra fields are
- * ignored by the CLI; only these are addressed.
- *
- * `sync` (from `attachSync(doc, { device })`) carries presence inline —
- * `peers()` / `find()` / `observe()` live on the SyncAttachment when the
- * workspace was constructed with a `device`.
+ * Fields the CLI looks at on each workspace export. Only `[Symbol.dispose]`
+ * is required (it's the discriminator); everything else is read when
+ * present. Extra fields the factory returns are ignored.
  */
 export type LoadedWorkspace = {
-	readonly whenReady: Promise<unknown>;
-	readonly actions?: Actions;
-	readonly sync?: SyncAttachment;
+	/**
+	 * Called by the CLI at exit. The discriminator — its presence is what
+	 * marks the export as a workspace.
+	 */
 	[Symbol.dispose](): void;
+
+	/** Awaited before any action invocation, if present. */
+	readonly whenReady?: Promise<unknown>;
+
+	/** Exposes runnable actions to `epicenter run` / `epicenter list`. */
+	readonly actions?: Actions;
+
+	/**
+	 * Enables `--peer` targeting and `epicenter peers`. `attachSync(doc, { device })`
+	 * carries presence inline — `peers()` / `find()` / `observe()` live on the
+	 * SyncAttachment when the workspace was constructed with a `device`.
+	 */
+	readonly sync?: SyncAttachment;
 };
 
 /**

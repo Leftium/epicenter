@@ -29,7 +29,7 @@ import {
 } from '../util/common-options';
 import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
-import { waitForPeer } from '../util/peer-wait';
+import { explainEmpty, waitForPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
 import { emitMissError, emitRpcError } from '../util/run-peer-errors';
 
@@ -82,7 +82,7 @@ async function invoke(
 	const actionPath = String(argv.action);
 	const { workspace } = entry;
 
-	await workspace.whenReady;
+	if (workspace.whenReady) await workspace.whenReady;
 
 	const action = resolveActionPath(workspace.actions ?? {}, actionPath);
 	if (!action) {
@@ -164,6 +164,8 @@ async function invokeRemote({
 	const found = await waitForPeer(workspace, peerTarget, deadline);
 	if (found.kind !== 'found') {
 		emitMissError(peerTarget, found.sawPeers, workspaceArg, waitMs);
+		const why = explainEmpty(workspace);
+		if (why) outputError(`  reason: ${why}`);
 		process.exitCode = 3; // peer miss
 		return;
 	}

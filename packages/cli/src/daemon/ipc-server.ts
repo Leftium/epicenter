@@ -21,7 +21,7 @@
 import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import type { Socket, UnixSocketListener } from 'bun';
+import type { Socket } from 'bun';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -98,11 +98,11 @@ export type IpcHandler = (
 ) => void | Promise<void>;
 
 /**
- * Public handle returned by {@link startIpcServer}. Hides the underlying
- * Bun listener type — callers (`up.ts`) only see this alias plus `.stop()`
- * and `.unix` for paths/lifecycle.
+ * Public handle returned by {@link startIpcServer}. Narrowed to the surface
+ * callers actually use — `.stop()` for graceful shutdown — so the per-socket
+ * data generic and the rest of Bun's listener API stay implementation detail.
  */
-export type IpcServerHandle = UnixSocketListener<IpcSocketData>;
+export type IpcServerHandle = { stop(): void };
 
 /** Per-connection state held in `socket.data` for line-buffered reads. */
 type IpcSocketData = { buffer: string };

@@ -45,7 +45,15 @@ export type DaemonMetadata = {
 
 /** Read metadata for `dir`, or `null` if the sidecar is absent or unreadable. */
 export function readMetadata(dir: string): DaemonMetadata | null {
-	const path = metadataPathFor(dir);
+	return readMetadataFromPath(metadataPathFor(dir));
+}
+
+/**
+ * Read a metadata sidecar by absolute file path. Used when enumerating
+ * `<runtimeDir>/*.meta.json` (e.g. `epicenter down --all` and `epicenter ps`),
+ * where the caller knows the file path but not the workspace dir it maps to.
+ */
+export function readMetadataFromPath(path: string): DaemonMetadata | null {
 	if (!existsSync(path)) return null;
 	try {
 		const raw = readFileSync(path, 'utf8');

@@ -3,6 +3,7 @@ import { authCommand } from './commands/auth';
 import { listCommand } from './commands/list';
 import { peersCommand } from './commands/peers';
 import { runCommand } from './commands/run';
+import { upCommand } from './commands/up';
 
 /**
  * Create the Epicenter CLI instance.
@@ -27,6 +28,7 @@ export function createCLI() {
 				.command(listCommand)
 				.command(peersCommand)
 				.command(runCommand)
+				.command(upCommand)
 				.demandCommand(1)
 				.strict()
 				.exitProcess(false)

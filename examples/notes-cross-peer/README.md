@@ -15,13 +15,13 @@ bun x epicenter auth login        # one-time, https://api.epicenter.so
 
 ## Run
 
-**Terminal 1** — keep peer-a connected for 60s so peer-b can hit it:
+**Terminal 1** — bring peer-a online as a long-lived peer (Ctrl-C to stop):
 
 ```bash
-bun x epicenter peers --dir examples/notes-cross-peer/peer-a --wait 60000
+bun x epicenter up --dir examples/notes-cross-peer/peer-a
 ```
 
-**Terminal 2** — within that 60s window:
+**Terminal 2** — peer-b auto-detects the daemon and reuses its warm connection:
 
 ```bash
 bun x epicenter list --dir examples/notes-cross-peer/peer-b --peer notes-repro-peer-a

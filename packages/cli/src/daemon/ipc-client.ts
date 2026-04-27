@@ -3,10 +3,9 @@
  *
  * Counterpart to `ipc-server.ts`. Three surfaces:
  *
- * - {@link ipcPing} — cheap liveness probe used by sibling auto-detect
- *   (Wave 6) and orphan inspection (Wave 2). Never throws; returns `false`
- *   on any connect / timeout / parse failure so callers can branch
- *   without try/catch noise.
+ * - {@link ipcPing} — cheap liveness probe used by sibling auto-detect and
+ *   orphan inspection. Never throws; returns `false` on any connect / timeout
+ *   / parse failure so callers can branch without try/catch noise.
  * - {@link ipcCall} — request/response with a single terminal frame.
  *   Connection failures collapse into the `IpcClientError.NoDaemon` /
  *   `IpcClientError.Timeout` variants so "no daemon running" is just

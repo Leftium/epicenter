@@ -1,11 +1,11 @@
 /**
  * Newline-delimited JSON IPC server bound to a Unix socket.
  *
- * The daemon (`epicenter up`, Wave 5) listens here so sibling CLI invocations
- * targeting the same `--dir` can reuse its warm workspace. Clients open the
- * socket, write one JSON request per line, and read zero-or-more JSON
- * responses (each tagged with the matching `id`); a response carrying
- * `end: true` terminates a streamed reply.
+ * The `epicenter up` daemon listens here so sibling CLI invocations targeting
+ * the same `--dir` can reuse its warm workspace. Clients open the socket,
+ * write one JSON request per line, and read zero-or-more JSON responses
+ * (each tagged with the matching `id`); a response carrying `end: true`
+ * terminates a streamed reply.
  *
  * Wire shape is a `Result<T, SerializedError>` envelope augmented with
  * frame-level metadata (`id`, optional `end`). `data: null + error: ...`

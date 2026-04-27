@@ -32,6 +32,7 @@ import { type Result } from 'wellcrafted/result';
 import { Err, Ok, isResult } from 'wellcrafted/result';
 import type { SyncAttachment } from '../document/attach-sync.js';
 import type {
+	ActionManifest,
 	Actions,
 	RemoteActions,
 	RemoteCallOptions,
@@ -86,6 +87,62 @@ type Sender = (
 	input: unknown,
 	options?: RemoteCallOptions,
 ) => Promise<Result<unknown, RpcError>>;
+
+/**
+ * Fetch a peer's full action manifest via the runtime-injected `system.describe`
+ * RPC. Returns the same `ActionManifest` shape the local `describeActions` walker
+ * produces, with live `input` schemas retained.
+ *
+ * Same peer-resolution and peer-removed race semantics as {@link peer}: if the
+ * matched peer disappears mid-call, the in-flight Promise resolves immediately
+ * with `RpcError.PeerLeft`.
+ *
+ * @example
+ * ```ts
+ * const result = await describePeer(workspace.sync, 'macbook-pro');
+ * if (result.error) toast.error(extractErrorMessage(result.error));
+ * else for (const [path, meta] of Object.entries(result.data)) { ... }
+ * ```
+ */
+export function describePeer(
+	sync: SyncAttachment,
+	deviceId: string,
+): Promise<Result<ActionManifest, RpcError>> {
+	const found = sync.find(deviceId);
+	if (!found) {
+		return Promise.resolve(Err(RpcError.PeerNotFound({ peer: deviceId }).error));
+	}
+
+	return new Promise((resolveCall) => {
+		let settled = false;
+		const settle = (v: Result<ActionManifest, RpcError>) => {
+			if (settled) return;
+			settled = true;
+			unsubscribe();
+			resolveCall(v);
+		};
+		const unsubscribe = sync.observe(() => {
+			if (!sync.find(deviceId)) {
+				settle(Err(RpcError.PeerLeft({ peer: deviceId }).error));
+			}
+		});
+
+		sync
+			.rpc(found.clientId, 'system.describe', undefined)
+			.then((res) =>
+				settle(
+					isResult(res)
+						? (res as Result<ActionManifest, RpcError>)
+						: Ok(res as ActionManifest),
+				),
+			)
+			.catch((cause) =>
+				settle(
+					Err(RpcError.ActionFailed({ action: 'system.describe', cause }).error),
+				),
+			);
+	});
+}
 
 /**
  * Recursive Proxy: walking `proxy.tabs.close` returns nested proxies; calling

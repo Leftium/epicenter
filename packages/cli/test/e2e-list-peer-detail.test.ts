@@ -1,7 +1,7 @@
 /**
  * Peer-mode detail rendering — regression for the manifest-out-of-awareness
  * refactor. Peer manifests are fetched once via
- * `peerSystem(sync, deviceId).describe()`; detail mode renders directly
+ * `describePeer(sync, deviceId)`; detail mode renders directly
  * from that fetched manifest with no second RTT, and `printActionDetail`
  * is now sync.
  */

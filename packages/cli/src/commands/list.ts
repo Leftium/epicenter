@@ -14,15 +14,15 @@
  * functions that produce sections — that's the whole flow.
  *
  * Peer manifests are fetched once per invocation via
- * `peerSystem(sync, deviceId).describe()` — awareness no longer carries
- * action manifests, so detail-mode renders from the same fetched object
- * as tree-mode (no second RTT).
+ * `describePeer(sync, deviceId)` — awareness no longer carries action
+ * manifests, so detail-mode renders from the same fetched object as
+ * tree-mode (no second RTT).
  */
 
 import {
 	type ActionManifest,
 	describeActions,
-	peerSystem,
+	describePeer,
 	type SyncAttachment,
 } from '@epicenter/workspace';
 import Type, { type TSchema } from 'typebox';
@@ -157,13 +157,14 @@ async function selectSections(
 			process.exitCode = 3;
 			return null;
 		}
-		return [await peerSection(found.state, workspace.sync)];
+		// `waitForPeer` returning 'found' implies sync existed (peers live on it).
+		return [await peerSection(found.state, workspace.sync!)];
 	}
 
 	// --all: best-effort wait for awareness to populate, then snapshot.
 	await waitForAnyPeer(workspace, deadline);
-	const peers = workspace.sync?.peers() ?? new Map<number, AwarenessState>();
-	const ordered = [...peers.entries()].sort(([a], [b]) => a - b);
+	if (!workspace.sync) return [selfSection(entry, 'all')];
+	const ordered = [...workspace.sync.peers().entries()].sort(([a], [b]) => a - b);
 	const sections: Section[] = [selfSection(entry, 'all')];
 	for (const [, state] of ordered) {
 		sections.push(await peerSection(state, workspace.sync));
@@ -186,19 +187,10 @@ export function selfSection(
 
 export async function peerSection(
 	state: AwarenessState,
-	sync: SyncAttachment | undefined,
+	sync: SyncAttachment,
 ): Promise<Section> {
 	const { device } = state;
-	if (!sync) {
-		return {
-			label: `${device.name} (online, schema unavailable)`,
-			peer: device.id,
-			entries: {},
-			unavailableReason: 'no sync attachment',
-		};
-	}
-
-	const result = await peerSystem(sync, device.id).describe();
+	const result = await describePeer(sync, device.id);
 	if (result.error) {
 		const err = result.error as { name?: string; message?: string };
 		const reason = err.message ?? err.name ?? 'unknown error';

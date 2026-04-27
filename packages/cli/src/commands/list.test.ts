@@ -79,7 +79,7 @@ describe('peerSection', () => {
 		} as unknown as import('@epicenter/workspace').SyncAttachment;
 	}
 
-	test('fetches manifest via peerSystem and renders "(online)" suffix when entries exist', async () => {
+	test('fetches manifest via describePeer and renders "(online)" suffix when entries exist', async () => {
 		const sync = fakeSync({
 			findClientId: 42,
 			describeResult: {
@@ -134,14 +134,6 @@ describe('peerSection', () => {
 		expect(section.entries).toEqual({});
 	});
 
-	test('handles missing sync attachment gracefully', async () => {
-		const section = await peerSection(
-			{ device: { id: 'mac', name: 'mac', platform: 'tauri' } },
-			undefined,
-		);
-		expect(section.label).toContain('schema unavailable');
-		expect(section.unavailableReason).toBe('no sync attachment');
-	});
 });
 
 describe('filterByPath', () => {

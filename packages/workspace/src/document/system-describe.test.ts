@@ -8,8 +8,8 @@
  *     user actions and returns the live action manifest.
  *   - User code cannot publish a top-level `system` namespace — `attachSync`
  *     throws at bootstrap.
- *   - `peerSystem(sync, deviceId).describe()` round-trips between two
- *     attachments and returns the remote manifest.
+ *   - `describePeer(sync, deviceId)` round-trips between two attachments
+ *     and returns the remote manifest.
  *   - Awareness carries no manifest — only the device descriptor.
  */
 
@@ -24,7 +24,7 @@ import * as decoding from 'lib0/decoding';
 import Type from 'typebox';
 import * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../shared/actions.js';
-import { peerSystem } from '../rpc/peer-system.js';
+import { describePeer } from '../rpc/peer.js';
 import { attachSync } from './attach-sync.js';
 
 // ── Minimal WebSocket stub (mirrors attach-sync.test.ts) ─────────────────
@@ -229,7 +229,7 @@ describe('system.describe', () => {
 	});
 });
 
-describe('peerSystem(sync, deviceId).describe()', () => {
+describe('describePeer(sync, deviceId)', () => {
 	test('round-trips between two attachments via system.describe', async () => {
 		// Two ydocs sharing one in-memory wire. The "remote" ydoc registers a
 		// peer awareness state on the "local" sync directly; for RPC we wire
@@ -297,7 +297,7 @@ describe('peerSystem(sync, deviceId).describe()', () => {
 			localWs.deliver(frame);
 		};
 
-		const result = await peerSystem(localSync, 'remote').describe();
+		const result = await describePeer(localSync, 'remote');
 		expect(result.error).toBeNull();
 		const manifest = result.data!;
 		expect(Object.keys(manifest).sort()).toEqual(['tabs.close']);

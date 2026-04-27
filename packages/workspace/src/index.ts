@@ -61,8 +61,7 @@ export type { InferRpcMap, RpcActionMap } from './rpc/types';
 export { isRpcError, RpcError } from '@epicenter/sync';
 
 // Peer dispatch (cross-device action calling) — see `peer<T>(workspace, deviceId)`.
-export { peer } from './rpc/peer.js';
-export { peerSystem } from './rpc/peer-system.js';
+export { peer, describePeer } from './rpc/peer.js';
 export type { RemoteCallOptions } from './shared/actions.js';
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -20,7 +20,6 @@
  * branch.
  */
 
-import { resolve } from 'node:path';
 import {
 	type Action,
 	invokeAction,
@@ -36,8 +35,7 @@ import {
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Argv, CommandModule, Options } from 'yargs';
-import { ipcCall, ipcPing } from '../daemon/ipc-client';
-import { socketPathFor } from '../daemon/paths';
+import { tryDaemonDispatch } from '../daemon/sibling-dispatch';
 import { loadConfig, type WorkspaceEntry } from '../load-config';
 import {
 	dirFromArgv,
@@ -49,7 +47,6 @@ import { formatYargsOptions, output, outputError } from '../util/format-output';
 import { parseJsonInput, readStdin } from '../util/parse-input';
 import { explainEmpty, waitForPeer } from '../util/peer-wait';
 import { resolveEntry } from '../util/resolve-entry';
-import { inheritWorkspace } from './list';
 
 const DEFAULT_PEER_WAIT_MS = 5000;
 
@@ -195,20 +192,19 @@ export const runCommand: CommandModule = {
 
 		// Auto-detect path.
 		if (!noUp) {
-			const absDir = resolve(dirFromArgv(args));
-			const sock = socketPathFor(absDir);
-			if (await ipcPing(sock)) {
-				const inherited = inheritWorkspace(absDir, userWorkspace);
-				if (inherited === 'mismatch') return; // exitCode already set
-				const reply = await ipcCall<RunResult>(sock, 'run', {
-					...ctx,
-					workspaceArg: inherited,
-				});
-				if (reply.error === null) {
-					renderRunResult(reply.data, format);
+			const dispatched = await tryDaemonDispatch<RunResult>(
+				args,
+				userWorkspace,
+				'run',
+				(workspace) => ({ ...ctx, workspaceArg: workspace }),
+			);
+			if (dispatched.kind === 'mismatch') return;
+			if (dispatched.kind === 'dispatched') {
+				if (dispatched.result.error === null) {
+					renderRunResult(dispatched.result.data, format);
 					return;
 				}
-				outputError(`error: ${reply.error.message}`);
+				outputError(`error: ${dispatched.result.error.message}`);
 				process.exitCode = 1;
 				return;
 			}

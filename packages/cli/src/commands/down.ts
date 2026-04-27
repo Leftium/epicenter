@@ -15,7 +15,7 @@ import { resolve } from 'node:path';
 
 import type { Argv, CommandModule } from 'yargs';
 
-import { ipcCall } from '../daemon/ipc-client.js';
+import { daemonClient } from '../daemon/ipc-client.js';
 import {
 	type DaemonMetadata,
 	enumerateDaemons,
@@ -34,11 +34,18 @@ export type DownOptions = {
 };
 
 /**
- * Test seam for `runDown`. Tests stub `ipcCall` to simulate a hung daemon
+ * Test seam for `runDown`. Tests stub `shutdown` to simulate a hung daemon
  * and `kill` to capture the SIGTERM fallback without actually signaling pids.
+ *
+ * `shutdown(socketPath, timeoutMs)` is the production wiring; tests pass an
+ * inline async fn whose return shape mirrors `daemonClient(...).shutdown`
+ * (a `Result` whose `error === null` means the daemon ack'd cleanly).
  */
+export type ShutdownReply = Awaited<
+	ReturnType<ReturnType<typeof daemonClient>['shutdown']>
+>;
 export type RunDownDeps = {
-	ipcCall?: typeof ipcCall;
+	shutdown?: (socketPath: string, timeoutMs: number) => Promise<ShutdownReply>;
 	kill?: (pid: number, signal: NodeJS.Signals) => void;
 };
 
@@ -69,7 +76,7 @@ async function shutdownOne(
 	deps: Required<RunDownDeps>,
 ): Promise<DownOutcome> {
 	const sock = socketPathFor(meta.dir);
-	const reply = await deps.ipcCall(sock, 'shutdown', undefined, SHUTDOWN_TIMEOUT_MS);
+	const reply = await deps.shutdown(sock, SHUTDOWN_TIMEOUT_MS);
 
 	if (reply.error === null) {
 		return { kind: 'graceful', pid: meta.pid, dir: meta.dir };
@@ -105,7 +112,9 @@ export async function runDown(
 	deps: RunDownDeps = {},
 ): Promise<DownResult> {
 	const resolved: Required<RunDownDeps> = {
-		ipcCall: deps.ipcCall ?? ipcCall,
+		shutdown:
+			deps.shutdown ??
+			((sock, timeoutMs) => daemonClient(sock, timeoutMs).shutdown()),
 		kill: deps.kill ?? ((pid, sig) => process.kill(pid, sig)),
 	};
 

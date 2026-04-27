@@ -187,8 +187,11 @@ export const runCommand: CommandModule = {
 		// running. Falls through to the standalone path otherwise.
 		const daemon = await tryGetDaemon(target);
 		if (daemon) {
-			const result = await daemon.call<RunResult>('run', ctx);
-			await renderDaemonResult(result, (data) => renderRunResult(data, format));
+			const transport = await daemon.run(ctx);
+			// Outer is transport, inner is the runCore Result (UsageError, RpcError, ...).
+			await renderDaemonResult(transport, (inner) =>
+				renderRunResult(inner, format),
+			);
 			return;
 		}
 

@@ -57,7 +57,7 @@ afterEach(() => {
 });
 
 describe('runDown: graceful', () => {
-	test('reports graceful when ipcCall returns ok', async () => {
+	test('reports graceful when shutdown returns ok', async () => {
 		writeMetadata(workDir, {
 			pid: process.pid,
 			dir: workDir,
@@ -69,7 +69,7 @@ describe('runDown: graceful', () => {
 		const result = await runDown(
 			{ dir: workDir, all: false },
 			{
-				ipcCall: async () => ({ data: undefined, error: null }),
+				shutdown: async () => ({ data: null, error: null }),
 				kill: () => {
 					throw new Error('kill should not be called on graceful path');
 				},
@@ -82,7 +82,7 @@ describe('runDown: graceful', () => {
 });
 
 describe('runDown: SIGTERM fallback', () => {
-	test('falls through to kill when ipcCall returns NoDaemon', async () => {
+	test('falls through to kill when shutdown returns NoDaemon', async () => {
 		writeMetadata(workDir, {
 			pid: process.pid,
 			dir: workDir,
@@ -95,7 +95,7 @@ describe('runDown: SIGTERM fallback', () => {
 		const result = await runDown(
 			{ dir: workDir, all: false },
 			{
-				ipcCall: async () => ({
+				shutdown: async () => ({
 					data: null,
 					error: {
 						name: 'NoDaemon',
@@ -120,8 +120,8 @@ describe('runDown: absent', () => {
 		const result = await runDown(
 			{ dir: workDir, all: false },
 			{
-				ipcCall: async () => {
-					throw new Error('ipcCall should not be called when metadata is absent');
+				shutdown: async () => {
+					throw new Error('shutdown should not be called when metadata is absent');
 				},
 				kill: () => {
 					throw new Error('kill should not be called when metadata is absent');
@@ -156,7 +156,7 @@ describe('runDown --all', () => {
 			const result = await runDown(
 				{ dir: '.', all: true },
 				{
-					ipcCall: async () => ({ data: undefined, error: null }),
+					shutdown: async () => ({ data: null, error: null }),
 					kill: () => {},
 				},
 			);

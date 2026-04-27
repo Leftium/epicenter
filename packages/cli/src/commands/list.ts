@@ -177,15 +177,18 @@ export const listCommand: CommandModule = {
 		// it. Falls through to the standalone path when no daemon answers.
 		const daemon = await tryGetDaemon(target);
 		if (daemon) {
-			const result = await daemon.call<ListResult>('list', {
+			const transport = await daemon.list({
 				path,
 				mode,
 				waitMs,
 				workspace: target.userWorkspace,
 			});
-			await renderDaemonResult(result, (data) =>
-				renderResult(data, path, format),
-			);
+			// Daemon returns a Result<ListResult, ...>: outer is transport, inner
+			// is the listCore Result (PeerMiss etc.). Unwrap one level so the
+			// renderer sees a ListResult, the same shape the cold path emits.
+			await renderDaemonResult(transport, async (inner) => {
+				await renderResult(inner, path, format);
+			});
 			return;
 		}
 

@@ -33,7 +33,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-	type IpcRoutes,
 	startIpcServer,
 } from '../daemon/ipc-server';
 import { writeMetadata } from '../daemon/metadata';
@@ -175,10 +174,11 @@ describe('runUp: already running', () => {
 		const sockPath = socketPathFor(workDir);
 		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
 
-		const routes: IpcRoutes = {
-			ping: async () => ({ data: 'pong', error: null }),
-		};
-		const server = await startIpcServer(sockPath, routes);
+		const { Hono } = await import('hono');
+		const app = new Hono().post('/ping', (c) =>
+			c.json({ data: 'pong' as const, error: null }),
+		);
+		const server = await startIpcServer(sockPath, app);
 
 		writeMetadata(workDir, {
 			pid: process.pid,

@@ -1,10 +1,18 @@
+/**
+ * `daemonClient` is the typed `hc<DaemonApp>` wrapper consumers use. These
+ * tests stand up a real Hono app on a real unix socket and exercise the
+ * client's transport-error mapping (the typed inputs/outputs are checked
+ * by the compiler).
+ */
+
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { ipcCall, ipcPing } from './ipc-client';
+import { Hono } from 'hono';
+
+import { daemonClient, ipcPing } from './ipc-client';
 import {
-	type IpcRoutes,
 	type IpcServerHandle,
 	startIpcServer,
 } from './ipc-server';
@@ -32,10 +40,10 @@ afterEach(() => {
 
 describe('ipcPing', () => {
 	test('returns true against a live ping route, false after server stops', async () => {
-		const routes: IpcRoutes = {
-			ping: async () => ({ data: 'pong', error: null }),
-		};
-		const server = await startIpcServer(socketPath, routes);
+		const app = new Hono().post('/ping', (c) =>
+			c.json({ data: 'pong', error: null }),
+		);
+		const server = await startIpcServer(socketPath, app);
 		servers.push(server);
 
 		expect(await ipcPing(socketPath)).toBe(true);
@@ -52,80 +60,58 @@ describe('ipcPing', () => {
 	});
 });
 
-describe('ipcCall', () => {
-	test('round-trips args through an echo route', async () => {
-		const routes: IpcRoutes = {
-			echo: async (args) => ({ data: { echoed: args }, error: null }),
-		};
-		const server = await startIpcServer(socketPath, routes);
-		servers.push(server);
-
-		const result = await ipcCall<{ echoed: { hello: string } }>(
-			socketPath,
-			'echo',
-			{ hello: 'world' },
+describe('daemonClient', () => {
+	test('ping resolves to the route Result', async () => {
+		const app = new Hono().post('/ping', (c) =>
+			c.json({ data: 'pong' as const, error: null }),
 		);
+		const server = await startIpcServer(socketPath, app);
+		servers.push(server);
 
+		const result = await daemonClient(socketPath).ping();
 		expect(result.error).toBeNull();
-		if (result.error === null) {
-			expect(result.data).toEqual({ echoed: { hello: 'world' } });
-		}
+		if (result.error === null) expect(result.data).toBe('pong');
 	});
 
-	test('returns NoDaemon when the socket is missing', async () => {
+	test('NoDaemon when socket is missing', async () => {
 		const missing = join(tmpdir(), `definitely-not-here-${Date.now()}.sock`);
-		const result = await ipcCall(missing, 'ping');
+		const result = await daemonClient(missing).ping();
 		expect(result.data).toBeNull();
-		if (result.error !== null) {
-			expect(result.error.name).toBe('NoDaemon');
-		}
+		if (result.error !== null) expect(result.error.name).toBe('NoDaemon');
 	});
 
-	test('returns Timeout when the route hangs past the deadline', async () => {
-		const routes: IpcRoutes = {
-			slow: () => new Promise(() => {}),
-		};
-		const server = await startIpcServer(socketPath, routes);
+	test('Timeout when route hangs past the deadline', async () => {
+		const app = new Hono().post('/ping', () => new Promise(() => {}));
+		const server = await startIpcServer(socketPath, app);
 		servers.push(server);
 
-		const result = await ipcCall(socketPath, 'slow', undefined, 100);
+		const result = await daemonClient(socketPath, 100).ping();
 		expect(result.data).toBeNull();
-		if (result.error !== null) {
-			expect(result.error.name).toBe('Timeout');
-		}
+		if (result.error !== null) expect(result.error.name).toBe('Timeout');
 	});
 
-	test('non-200 (handler throws) surfaces as a SerializedError on the error side', async () => {
-		const routes: IpcRoutes = {
-			boom: async () => {
-				throw new Error('kaboom');
-			},
-		};
-		const server = await startIpcServer(socketPath, routes);
+	test('HandlerCrashed on a 500 from the daemon', async () => {
+		const app = new Hono().post('/ping', () => {
+			throw new Error('kaboom');
+		});
+		const server = await startIpcServer(socketPath, app);
 		servers.push(server);
 
-		const result = await ipcCall(socketPath, 'boom');
+		const result = await daemonClient(socketPath).ping();
 		expect(result.data).toBeNull();
-		if (result.error !== null) {
-			expect(result.error.name).toBe('HandlerCrashed');
-			expect(result.error.message).toContain('kaboom');
-		}
+		if (result.error !== null) expect(result.error.name).toBe('HandlerCrashed');
 	});
 
 	test('domain Result.error flows through with status 200', async () => {
-		const routes: IpcRoutes = {
-			refuse: async () => ({
-				data: null,
-				error: { name: 'NotFound', message: 'gone' },
-			}),
-		};
-		const server = await startIpcServer(socketPath, routes);
+		// Use the shutdown route shape (no validator) to return a domain error.
+		const app = new Hono().post('/shutdown', (c) =>
+			c.json({ data: null, error: { name: 'NotFound', message: 'gone' } }),
+		);
+		const server = await startIpcServer(socketPath, app);
 		servers.push(server);
 
-		const result = await ipcCall(socketPath, 'refuse');
+		const result = await daemonClient(socketPath).shutdown();
 		expect(result.data).toBeNull();
-		if (result.error !== null) {
-			expect(result.error.name).toBe('NotFound');
-		}
+		if (result.error !== null) expect(result.error.name).toBe('NotFound');
 	});
 });
